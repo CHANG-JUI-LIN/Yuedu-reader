@@ -57,7 +57,7 @@ final class HomeEditorUITests: XCTestCase {
         edit.tap()
         // At the bottom the minimized bar hides its buttons; 完成 is the home's last button.
         XCTAssertTrue(app.buttons["home.editDone"].waitForExistence(timeout: 10), app.debugDescription)
-        XCTAssertTrue(app.switches["瀏覽器"].firstMatch.waitForExistence(timeout: 5), "範圍's card holds the browser's switch")
+        XCTAssertTrue(app.switches["瀏覽器"].firstMatch.waitForExistence(timeout: 5), "更多's card holds the browser's switch")
         for _ in 0..<8 { app.swipeDown() }
         XCTAssertTrue(app.buttons["home.editDoneBar"].waitForExistence(timeout: 5), app.debugDescription)
         attach(app, "home-editing")

@@ -3592,7 +3592,6 @@
 
 /* Unified library 5d-1: 範圍 holds the libraries */
 "探索還沒有內容" = "Nothing to Explore Yet";
-"從右上角的範圍打開書庫或來源配置。" = "Open a library or source from the scope menu in the top-right corner.";
 
 /* Unified library 5d-2: 編輯首頁 */
 "編輯首頁" = "Edit Home";
@@ -3627,6 +3626,7 @@
 /* Unified library 5d-3d: 聚合設定 */
 "聚合設定" = "Aggregation";
 "偏好閱讀語言" = "Preferred Reading Languages";
+"參與聚合的來源" = "Aggregated Sources";
 "新增語言" = "Add Language";
 "推薦範圍" = "Recommendations";
 "優先推薦偏好語言" = "Prefer These Languages";

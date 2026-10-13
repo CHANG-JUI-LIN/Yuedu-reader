@@ -33,6 +33,19 @@ final class PublicLibraryLiveUITests: XCTestCase {
         add(attachment)
     }
 
+    /// The first of 青空文庫's works on the home: 最新 takes its libraries in turn (LibraryOrderTests).
+    /// 範圍, which opened 青空文庫's own page, left 探索 with decision 36 (2026-10-13); that page
+    /// opens from 資源庫 (5h).
+    @MainActor
+    private func homeAozoraWork(_ app: XCUIApplication) -> XCUIElement {
+        let latest = app.descendants(matching: .any).matching(NSPredicate(format: "label == %@", "最新")).firstMatch
+        for _ in 0..<8 where !(latest.exists && latest.isHittable) { app.swipeUp() }
+        XCTAssertTrue(latest.exists, app.debugDescription)
+        let work = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "home.card.aozora.")).firstMatch
+        XCTAssertTrue(work.waitForExistence(timeout: 90), "青空文庫's works in 最新, once its catalog is read\n\(app.debugDescription)")
+        return work
+    }
+
     @MainActor
     func testGutenbergWithoutPro() throws {
         guard enabled("PUBLIC_LIBRARY_LIVE_UI") else { throw XCTSkip("Explicit live Gutenberg release check") }
@@ -104,7 +117,7 @@ final class PublicLibraryLiveUITests: XCTestCase {
     }
 
     /// The catalog published on yuedureader.com (2026-10-11): pulling the home down fetches it
-    /// even within the daily check, and 範圍 → 青空文庫 then shows its works.
+    /// even within the daily check, and 最新 then shows its works.
     @MainActor
     func testAozoraCatalogFromTheWebsite() throws {
         guard enabled("AOZORA_CATALOG_LIVE_UI") else { throw XCTSkip("Explicit live Aozora catalog check") }
@@ -115,22 +128,11 @@ final class PublicLibraryLiveUITests: XCTestCase {
         let tab = app.tabBars.buttons["探索"].firstMatch
         XCTAssertTrue(tab.waitForExistence(timeout: 30))
         tab.tap()
-        let menu = app.buttons["explore.scopeMenu"].firstMatch
-        XCTAssertTrue(menu.waitForExistence(timeout: 15), app.debugDescription)
+        XCTAssertTrue(app.buttons["explore.more"].firstMatch.waitForExistence(timeout: 15), app.debugDescription)
         app.swipeDown()
 
-        menu.tap()
-        let aozora = app.buttons["青空文庫"].firstMatch
-        XCTAssertTrue(aozora.waitForExistence(timeout: 5), app.debugDescription)
-        aozora.tap()
-        // 範圍 shows 青空文庫's own sections (decision 35): 新上架作品's covers, once the catalog is read.
-        let cover = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "home.card.aozora.")).firstMatch
-        XCTAssertTrue(cover.waitForExistence(timeout: 90), app.debugDescription)
-        XCTAssertTrue(app.buttons["新上架作品"].firstMatch.exists, app.debugDescription)
+        _ = homeAozoraWork(app)
         screenshot(app, "aozora-from-website")
-
-        menu.tap()
-        app.buttons["全部"].firstMatch.tap()
     }
 
     /// 作品詳情's order (maintainer, 2026-10-12): the work's 分類 under the author open 依分類's
@@ -138,6 +140,9 @@ final class PublicLibraryLiveUITests: XCTestCase {
     @MainActor
     func testAozoraWorkDetailOrder() throws {
         guard enabled("AOZORA_CATALOG_LIVE_UI") else { throw XCTSkip("Explicit live Aozora catalog check") }
+        // 依分類 is a section of 青空文庫's own page, which 範圍 opened until decision 36
+        // (2026-10-13). Back with 資源庫 (5h): open the page from there and drop this skip.
+        throw XCTSkip("青空文庫's own page has no entry until 資源庫 (5h)")
         let app = XCUIApplication()
         app.launchArguments = ["-AppleLanguages", "(zh-Hant)", "-AppleLocale", "zh_TW",
                                "-yd_source_disclaimer_accepted", "YES", "-reset-explore-home"]
@@ -197,16 +202,8 @@ final class PublicLibraryLiveUITests: XCTestCase {
         let tab = app.tabBars.buttons["探索"].firstMatch
         XCTAssertTrue(tab.waitForExistence(timeout: 30))
         tab.tap()
-        let menu = app.buttons["explore.scopeMenu"].firstMatch
-        XCTAssertTrue(menu.waitForExistence(timeout: 15), app.debugDescription)
-        menu.tap()
-        let aozora = app.buttons["青空文庫"].firstMatch
-        XCTAssertTrue(aozora.waitForExistence(timeout: 5), app.debugDescription)
-        aozora.tap()
-        // 青空文庫's own sections (decision 35) → 新上架作品's first work.
-        let work = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "home.card.aozora.")).firstMatch
-        XCTAssertTrue(work.waitForExistence(timeout: 90), app.debugDescription)
-        screenshot(app, "aozora-scope-page")
+        let work = homeAozoraWork(app)
+        screenshot(app, "aozora-home-latest")
         let title = String(work.label.split(whereSeparator: { "，、,".contains($0) }).first ?? "")
         // A run before this one may have added it: start with it off the shelf.
         let shelfTab = app.tabBars.buttons["書架"].firstMatch
@@ -282,15 +279,7 @@ final class PublicLibraryLiveUITests: XCTestCase {
         let tab = app.tabBars.buttons["探索"].firstMatch
         XCTAssertTrue(tab.waitForExistence(timeout: 30))
         tab.tap()
-        let menu = app.buttons["explore.scopeMenu"].firstMatch
-        XCTAssertTrue(menu.waitForExistence(timeout: 15), app.debugDescription)
-        menu.tap()
-        let aozora = app.buttons["青空文庫"].firstMatch
-        XCTAssertTrue(aozora.waitForExistence(timeout: 5), app.debugDescription)
-        aozora.tap()
-        let work = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "home.card.aozora.")).firstMatch
-        XCTAssertTrue(work.waitForExistence(timeout: 90), app.debugDescription)
-        work.tap()
+        homeAozoraWork(app).tap()
 
         let source = app.descendants(matching: .any)["detail.info.source"].firstMatch
         XCTAssertTrue(source.waitForExistence(timeout: 15), app.debugDescription)
@@ -332,12 +321,7 @@ final class PublicLibraryLiveUITests: XCTestCase {
         let tab = app.tabBars.buttons["探索"].firstMatch
         XCTAssertTrue(tab.waitForExistence(timeout: 30))
         tab.tap()
-        let menu = app.buttons["explore.scopeMenu"].firstMatch
-        XCTAssertTrue(menu.waitForExistence(timeout: 15), app.debugDescription)
-        menu.tap()
-        let gutenberg = app.buttons["Project Gutenberg"].firstMatch
-        XCTAssertTrue(gutenberg.waitForExistence(timeout: 5), app.debugDescription)
-        gutenberg.tap()
+        // The home's Gutenberg rows (古騰堡熱門, 精選): 範圍 left 探索 with decision 36.
         let work = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "home.card.gutenberg.")).firstMatch
         XCTAssertTrue(work.waitForExistence(timeout: 90), app.debugDescription)
         work.tap()

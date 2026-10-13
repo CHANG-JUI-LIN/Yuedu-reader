@@ -35,7 +35,7 @@ final class DetailReaderBackSwipeUITests: XCTestCase {
     private func openDiscoveredBook(_ app: XCUIApplication, named name: String) {
         guard let category = Self.categories[name] else { return XCTFail("No fixture category for \(name)") }
         // At the end of the home, drawn once scrolled to.
-        XCTAssertTrue(app.buttons["explore.scopeMenu"].firstMatch.waitForExistence(timeout: 20), app.debugDescription)
+        XCTAssertTrue(app.buttons["explore.more"].firstMatch.waitForExistence(timeout: 20), app.debugDescription)
         let edit = app.buttons["home.edit"].firstMatch
         for _ in 0..<12 where !(edit.exists && edit.isHittable) { app.swipeUp() }
         XCTAssertTrue(edit.waitForExistence(timeout: 5), app.debugDescription)
@@ -314,7 +314,7 @@ final class DetailReaderBackSwipeUITests: XCTestCase {
         if !fromSearch {
             // 作品詳情 is one page: back from it is Explore's home.
             app.navigationBars.buttons.firstMatch.tap()
-            XCTAssertTrue(app.buttons["explore.scopeMenu"].firstMatch.waitForExistence(timeout: 10), app.debugDescription)
+            XCTAssertTrue(app.buttons["explore.more"].firstMatch.waitForExistence(timeout: 10), app.debugDescription)
         }
     }
 
@@ -1148,7 +1148,7 @@ final class DetailReaderBackSwipeUITests: XCTestCase {
         XCTAssertTrue(content.waitForNonExistence(timeout: 10), app.debugDescription)
         XCTAssertTrue(read.waitForExistence(timeout: 10), "Back from the reader is 探索's 作品詳情.\n\(app.debugDescription)")
         app.navigationBars.buttons.firstMatch.tap()
-        XCTAssertTrue(app.buttons["explore.scopeMenu"].firstMatch.waitForExistence(timeout: 10),
+        XCTAssertTrue(app.buttons["explore.more"].firstMatch.waitForExistence(timeout: 10),
                       "One 作品詳情 under the reader, then the home.\n\(app.debugDescription)")
 
         // The shelf: its card coordinator opens the reader, whose 作品詳情 is hosted by UIKit.

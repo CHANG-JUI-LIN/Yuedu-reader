@@ -11,6 +11,8 @@ enum ExploreNavigationRoute: Hashable {
     case searchInSource(sourceURL: String)
     /// 書源管理, pushed on every version.
     case sourceManager
+    /// 聚合設定, from 探索's ••• (偏好閱讀語言, 參與聚合的來源; Phase 5 plan, decision 36).
+    case aggregationSettings
 
     static func == (lhs: Self, rhs: Self) -> Bool {
         switch (lhs, rhs) {
@@ -22,7 +24,7 @@ enum ExploreNavigationRoute: Hashable {
             return lhsReference == rhsReference
         case (.searchInSource(let lhsURL), .searchInSource(let rhsURL)):
             return lhsURL == rhsURL
-        case (.sourceManager, .sourceManager):
+        case (.sourceManager, .sourceManager), (.aggregationSettings, .aggregationSettings):
             return true
         default:
             return false
@@ -45,6 +47,8 @@ enum ExploreNavigationRoute: Hashable {
             hasher.combine(sourceURL)
         case .sourceManager:
             hasher.combine(7)
+        case .aggregationSettings:
+            hasher.combine(8)
         }
     }
 }
