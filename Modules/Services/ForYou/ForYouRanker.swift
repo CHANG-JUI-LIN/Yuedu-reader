@@ -165,7 +165,10 @@ struct ForYouExposureLog: Codable, Equatable, Sendable {
         for key in keys { shown[key] = date }
     }
 
-    func recentlyShown(at date: Date) -> Set<String> {
-        Set(shown.filter { date.timeIntervalSince($0.value) <= Self.window }.keys)
+    /// Shown in the 7 days before today. Today's showings do not count yet: every load of the
+    /// day (a relaunch, a pull to refresh, the form's preview) then gives the same section.
+    func recentlyShown(at date: Date, calendar: Calendar = .current) -> Set<String> {
+        let today = calendar.startOfDay(for: date)
+        return Set(shown.filter { $0.value < today && date.timeIntervalSince($0.value) <= Self.window }.keys)
     }
 }

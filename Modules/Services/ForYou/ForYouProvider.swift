@@ -20,8 +20,6 @@ extension HomeSection {
     static let forYouCategoriesKey = "forYou.categories"
     /// The home's categories 為你推薦 leaves out, by `ExploreCategoryReference.id`.
     static let forYouExcludedKey = "forYou.excluded"
-    /// "off" when the home's library rows do not count.
-    static let forYouLibrariesKey = "forYou.libraries"
 
     var forYouAddedCategories: [ExploreCategoryReference] {
         decodeParameter([ExploreCategoryReference].self, forKey: Self.forYouCategoriesKey) ?? []
@@ -29,10 +27,6 @@ extension HomeSection {
 
     var forYouExcludedCategories: Set<String> {
         Set(decodeParameter([String].self, forKey: Self.forYouExcludedKey) ?? [])
-    }
-
-    var forYouUsesLibraries: Bool {
-        parameters[Self.forYouLibrariesKey] != "off"
     }
 
     private func decodeParameter<T: Decodable>(_ type: T.Type, forKey key: String) -> T? {
@@ -123,6 +117,12 @@ final class ForYouProvider: HomeSectionProviding {
         section.binding == .forYou ? .withHome : nil
     }
 
+    /// The categories it reads: a home whose categories changed loads it again.
+    func inputsKey(for section: HomeSection) -> String? {
+        guard section.binding == .forYou else { return nil }
+        return ForYouInputs.categories(on: homeSections(), for: section).map(\.id).joined(separator: "\u{1E}")
+    }
+
     func load(_ section: HomeSection) async throws -> [CollectionEntry] {
         guard section.binding == .forYou else { return [] }
         let started = now()
@@ -131,7 +131,7 @@ final class ForYouProvider: HomeSectionProviding {
         let hadHome = home != nil
         let installed = Dictionary(sources().map { ($0.bookSourceUrl, $0) }, uniquingKeysWith: { first, _ in first })
         var inputs: [ForYouCandidate] = []
-        var failures: [Error] = []
+        var failed = 0
         var asked = 0
         for category in ForYouInputs.categories(on: homeSections(), for: section) {
             guard let source = installed[category.sourceURL] else { continue }
@@ -147,7 +147,7 @@ final class ForYouProvider: HomeSectionProviding {
                     let fetched = try await firstPages.firstPage(of: category, in: source).value
                     books = ForYouCandidates(sourceURL: category.sourceURL, categoryURL: category.url, fetchedAt: now(), books: fetched)
                 } catch {
-                    failures.append(error)
+                    failed += 1
                     AppLogger.network("⟐ 為你推薦 kept a category's earlier books", error: error, context: [
                         "source": source.bookSourceName, "category": category.title, "cached": "\(books?.books.count ?? 0)",
                     ])
@@ -158,7 +158,7 @@ final class ForYouProvider: HomeSectionProviding {
                                               position: position, tags: ReadingGenreProfile.tags(fromSourceKind: book.kind)))
             }
         }
-        if section.forYouUsesLibraries, let home {
+        if let home {
             for row in await home.settledLibraryEntries() {
                 for (position, entry) in row.entries.enumerated() {
                     guard case .item(_, let summary, _) = entry else { continue }
@@ -168,8 +168,11 @@ final class ForYouProvider: HomeSectionProviding {
                 }
             }
         }
-        if inputs.isEmpty, asked > 0, failures.count == asked, let first = failures.first {
-            throw try SourceFailure.classify(first)
+        // Every category failed with nothing saved: the section takes no room (maintainer,
+        // 2026-10-13); each category's own row shows its failure.
+        if inputs.isEmpty, asked > 0, failed == asked {
+            AppLogger.network("⟐ 為你推薦 has nothing: every category failed", context: ["categories": "\(asked)"])
+            return []
         }
         let date = now()
         let recent = ShelfProvider(store: shelf).continueReading(limit: HomeRow.limit).reduce(into: ForYouRanker.Recent()) { recent, entry in

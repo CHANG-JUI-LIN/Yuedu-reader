@@ -30,6 +30,8 @@ final class HomeModel: ObservableObject {
         let sourceName: String
         let policy: SectionLoadPolicy
         var state: RowState
+        /// `HomeSectionProviding.inputsKey`: what the row read besides its section.
+        var inputsKey: String? = nil
     }
 
     @Published private(set) var rows: [Row] = []
@@ -75,7 +77,8 @@ final class HomeModel: ObservableObject {
     /// - A row whose source and content are unchanged keeps what it loaded, and takes the
     ///   section's new title and layout (呈現方式, 5d-3).
     /// - A row whose content changed under the same id starts again at once if it had been
-    ///   asked for: its view is the same view, so nothing else would ask again.
+    ///   asked for: its view is the same view, so nothing else would ask again. 為你推薦's content
+    ///   includes the home's categories (`inputsKey`).
     /// - `hiddenFromLatest`: the libraries 聚合設定's 顯示在最新 turns off (5d-3f). They get
     ///   no 最新 row, so they are not asked for one.
     func sync(with page: HomePage, hiddenFromLatest: Set<SourceInstanceKey> = []) async {
@@ -100,14 +103,16 @@ final class HomeModel: ObservableObject {
                 guard let policy = provider.loadPolicy(for: section) else { continue }
                 let id = Self.rowID(section: section.id, source: provider.instance)
                 servedBy[id] = provider
-                if var kept = existing[id], kept.section.loadsSameContent(as: section), kept.policy == policy {
+                let inputsKey = provider.inputsKey(for: section)
+                if var kept = existing[id], kept.section.loadsSameContent(as: section), kept.policy == policy,
+                   kept.inputsKey == inputsKey {
                     kept.section = section
                     built.append(kept)
                 } else {
                     if existing[id] != nil, requested.contains(id) { restarted.append(id) }
                     requested.remove(id)
                     built.append(Row(id: id, section: section, source: provider.instance, sourceName: provider.displayName,
-                                     policy: policy, state: .idle))
+                                     policy: policy, state: .idle, inputsKey: inputsKey))
                 }
             }
         }

@@ -1,3 +1,4 @@
+import Combine
 import Foundation
 import Testing
 @testable import yuedu_app
@@ -152,7 +153,7 @@ struct ForYouProviderTests {
                 if fails { throw URLError(.notConnectedToInternet) }
                 return names
             },
-            primeCookies: { _ in }, store: candidates)
+            primeCookies: { _ in }, store: candidates, lanes: DiscoverRequestLanes())
         let home = FakeHome()
         let forYou = HomeSection(layout: .row, binding: .forYou)
         let homeSections = sections ?? [HomeSection(layout: .row, binding: .sourceCategories([category])), forYou]
@@ -227,10 +228,13 @@ struct ForYouProviderTests {
         #expect(lines.count == 1)
     }
 
-    @Test("with nothing cached and every category failed, the section fails")
-    func failsWhenNothing() async throws {
+    @Test("with nothing cached and every category failed, the section takes no room")
+    func emptyWhenNothing() async throws {
         let f = fixture(fails: true)
-        await #expect(throws: SourceFailure.self) { try await f.provider.load(f.section) }
+        let before = Set(DiagnosticLog.shared.snapshot().map(\.id))
+        #expect(try await f.provider.load(f.section).isEmpty)
+        let lines = DiagnosticLog.shared.snapshot().filter { !before.contains($0.id) && $0.message.contains("為你推薦 has nothing") }
+        #expect(lines.count == 1)
     }
 
     @Test("the home's library rows count, and send no request")
@@ -242,9 +246,73 @@ struct ForYouProviderTests {
         let entries = try await f.provider.load(f.section)
         #expect(titles(entries) == ["書庫書"])
         #expect(await f.requests.log.isEmpty)
+    }
 
-        var off = f.section
-        off.parameters[HomeSection.forYouLibrariesKey] = "off"
-        #expect(try await f.provider.load(off).isEmpty)
+    @Test("every load of a day gives the same section; the next day explores books not shown")
+    func stableWithinADay() async throws {
+        let sources = (0..<4).map { BookSource(bookSourceUrl: "https://day-\($0)-\(UUID().uuidString).test", bookSourceName: "源\($0)") }
+        let categories = sources.map { ExploreCategoryReference(sourceURL: $0.bookSourceUrl, title: "熱門", url: "/hot") }
+        let candidates = ForYouCandidateStore(directory: scratch("candidates"))
+        let exposure = ForYouExposureStore(fileURL: scratch("shown.json"))
+        let genres = ReadingGenreRecorder(fileURL: scratch("genres.json"))
+        let shelf = BookStore(metadataFileURL: scratch("books_meta.json"))
+        let calendar = Calendar.current
+        let day1 = calendar.date(bySettingHour: 10, minute: 0, second: 0, of: Date())!
+        let day2 = day1.addingTimeInterval(24 * 3600)
+        let pages = DiscoverFirstPages(pageLoader: SectionPageLoader { _, _, _ in Issue.record("nothing is asked"); return [] },
+                                       primeCookies: { _ in }, store: candidates, lanes: DiscoverRequestLanes())
+        func provider(at date: Date) async -> ForYouProvider {
+            for (index, source) in sources.enumerated() {
+                let books = (0..<10).map { n in
+                    OnlineBook(name: "\(index)-\(n)", author: "作者\(index)-\(n)", intro: "", coverUrl: "", bookUrl: "https://x.test/\(index)/\(n)",
+                               tocUrl: "", wordCount: "", lastChapter: "", kind: "", sourceId: source.id, sourceName: source.bookSourceName)
+                }
+                await candidates.write(ForYouCandidates(sourceURL: source.bookSourceUrl, categoryURL: "/hot",
+                                                        fetchedAt: date.addingTimeInterval(-3600), books: books))
+            }
+            return ForYouProvider(firstPages: pages, home: nil, shelf: shelf, candidates: candidates,
+                                  homeSections: { [HomeSection(layout: .row, binding: .sourceCategories(categories))] },
+                                  sources: { sources }, genres: genres, exposure: exposure,
+                                  languages: { .init(languages: ["zh"], scope: .any) }, now: { date })
+        }
+        let section = HomeSection(layout: .row, binding: .forYou)
+        let first = titles(try await provider(at: day1).load(section))
+        let again = titles(try await provider(at: day1.addingTimeInterval(3600)).load(section))
+        #expect(first.count == HomeRow.limit)
+        #expect(again == first)
+
+        let next = titles(try await provider(at: day2).load(section))
+        let explored = stride(from: 3, to: next.count, by: 4).map { next[$0] }
+        #expect(explored.count == HomeRow.limit / 4)
+        #expect(Set(explored).isDisjoint(with: first))
+    }
+
+    @Test("the home's categories changing loads it again")
+    func restartsOnNewInputs() async throws {
+        let f = fixture()
+        let other = ExploreCategoryReference(sourceURL: source.bookSourceUrl, title: "完本", url: "/end")
+        var sections = [HomeSection(layout: .row, binding: .sourceCategories([category])), f.section]
+        let source = source
+        let model = HomeModel(providers: {
+            [ForYouProvider(firstPages: f.pages, home: nil, shelf: BookStore(metadataFileURL: scratch("books_meta.json")),
+                            candidates: f.candidates, homeSections: { sections }, sources: { [source] },
+                            genres: ReadingGenreRecorder(fileURL: scratch("genres.json")),
+                            exposure: ForYouExposureStore(fileURL: scratch("shown.json")),
+                            languages: { .init(languages: ["zh"], scope: .any) })]
+        }, waitForSources: {})
+        await model.sync(with: HomePage(sections: sections))
+        let id = try #require(model.rows.first?.id)
+        func loaded() async {
+            _ = await model.$rows.values.first { $0.first.map { if case .loaded = $0.state { true } else { false } } ?? false }
+        }
+        model.load(id)
+        await loaded()
+        #expect(await f.requests.log == ["fetch /hot"])
+
+        sections.insert(HomeSection(layout: .row, binding: .sourceCategories([other])), at: 1)
+        await model.sync(with: HomePage(sections: sections))
+        // A new row, idle, then loading again on its own.
+        await loaded()
+        #expect(await f.requests.log == ["fetch /hot", "fetch /end"])
     }
 }

@@ -120,8 +120,8 @@ struct DiscoverFirstPagesTests {
         ExploreCategoryReference(sourceURL: source.bookSourceUrl, title: url, url: url)
     }
 
-    private func pages(_ probe: FetchProbe, store: ForYouCandidateStore = ForYouCandidateStore(directory: scratchDirectory()))
-        -> DiscoverFirstPages {
+    private func pages(_ probe: FetchProbe, store: ForYouCandidateStore = ForYouCandidateStore(directory: scratchDirectory()),
+                       lanes: DiscoverRequestLanes? = nil) -> DiscoverFirstPages {
         DiscoverFirstPages(
             pageLoader: SectionPageLoader { item, _, source in
                 let name = "\(source.bookSourceUrl)\(item.url ?? "")"
@@ -130,7 +130,7 @@ struct DiscoverFirstPagesTests {
                 return [book("\(name)-1", source: source.id), book("\(name)-2", source: source.id)]
             },
             primeCookies: { await probe.record("prime \($0.bookSourceUrl)") },
-            store: store)
+            store: store, lanes: lanes ?? DiscoverRequestLanes())
     }
 
     @Test("two asks for one category send one request")
@@ -168,6 +168,27 @@ struct DiscoverFirstPagesTests {
         _ = try await new.value
         _ = try await other.value
         #expect(await probe.log.filter { $0.hasPrefix("prime") }.count == 2)
+    }
+
+    @Test("two homes share one queue per source, and one request per category")
+    func homesShareTheQueue() async throws {
+        let probe = FetchProbe()
+        let lanes = DiscoverRequestLanes()
+        let home = pages(probe, lanes: lanes), preview = pages(probe, lanes: lanes)
+        let a = source("a")
+        let hot = home.firstPage(of: category(a, "/hot"), in: a)
+        let joined = preview.firstPage(of: category(a, "/hot"), in: a)
+        let new = preview.firstPage(of: category(a, "/new"), in: a)
+
+        await probe.waitForEntries(2)
+        #expect(await probe.log == ["prime a", "fetch a/hot"])
+        await probe.release("a/hot")
+        #expect(try await joined.value.map(\.name) == hot.value.map(\.name))
+        await probe.waitForEntries(4)
+        // The preview primes its own cookies, after the home's request.
+        #expect(Array(await probe.log.suffix(2)) == ["prime a", "fetch a/new"])
+        await probe.release("a/new")
+        _ = try await new.value
     }
 
     @Test("priming runs again after a new sync")
@@ -208,7 +229,7 @@ struct DiscoverFirstPagesTests {
                 throw Down()
             },
             primeCookies: { _ in },
-            store: ForYouCandidateStore(directory: scratchDirectory()))
+            store: ForYouCandidateStore(directory: scratchDirectory()), lanes: DiscoverRequestLanes())
         let a = source("a")
         await #expect(throws: Down.self) { try await pages.firstPage(of: category(a, "/hot"), in: a).value }
         await #expect(throws: Down.self) { try await pages.firstPage(of: category(a, "/hot"), in: a).value }

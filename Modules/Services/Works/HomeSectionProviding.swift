@@ -29,6 +29,13 @@ protocol HomeSectionProviding: SourceProvider {
     func loadPolicy(for section: HomeSection) -> SectionLoadPolicy?
     /// The first page of `section`'s row. Throws `SourceFailure`; an empty row is not a failure.
     func load(_ section: HomeSection) async throws -> [CollectionEntry]
+    /// What `section` reads besides itself, as a key: a row whose key changed loads again.
+    /// 為你推薦 reads the home's categories; every other section reads only itself (nil).
+    func inputsKey(for section: HomeSection) -> String?
+}
+
+extension HomeSectionProviding {
+    func inputsKey(for section: HomeSection) -> String? { nil }
 }
 
 enum HomeRow {
