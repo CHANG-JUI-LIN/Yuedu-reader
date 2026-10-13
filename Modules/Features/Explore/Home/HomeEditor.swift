@@ -40,7 +40,7 @@ extension HomeSection {
 // MARK: - The home, being edited
 
 /// The home's sections as cards, hidden ones included, then 新增欄目, the 首頁配置's card and
-/// 範圍's.
+/// •••'s.
 struct HomeEditingSections<RowContent: View>: View {
     /// `HomePage.editableSections`.
     let sections: [HomeSection]
@@ -76,7 +76,7 @@ struct HomeEditingSections<RowContent: View>: View {
         }
         addCard
         if let configuration { configurationCard(configuration) }
-        scopeCard
+        moreCard
     }
 
     private func card(_ section: HomeSection, at index: Int) -> some View {
@@ -189,10 +189,11 @@ struct HomeEditingSections<RowContent: View>: View {
         .padding(.trailing, DSSpacing.lg)
     }
 
-    /// 範圍's own entries: the browser's switch (settled decision 13).
-    private var scopeCard: some View {
+    /// •••'s own entries: the browser's switch (settled decision 13). Titled 更多, the •••'s
+    /// name, since 範圍 left 探索 (decision 36, maintainer, 2026-10-13).
+    private var moreCard: some View {
         VStack(alignment: .leading, spacing: DSSpacing.sm) {
-            Text(localized("範圍"))
+            Text(localized("更多"))
                 .font(DSFont.headline)
                 .foregroundStyle(DSColor.textPrimary)
                 .accessibilityAddTraits(.isHeader)

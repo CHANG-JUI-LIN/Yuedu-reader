@@ -2,12 +2,11 @@ import SwiftUI
 
 /// 探索's root since unified library 5c-3 (design §13.3): the reader's sections, in their order,
 /// across every source — Emby's model under Apple Books' covers (Phase 5 plan, settled
-/// decision 11). 範圍 shows one library in its place, as choosing an Emby library shows that
-/// library (decision 35, 2026-10-12, which overturned decision 19's filtered home: 青空文庫
-/// kept only 最新): a public library as a home of its own sections, in the home's layouts
-/// (`LibraryHomePage`); a connection or a book source as its own page. 範圍 holds every other
-/// way in: the 首頁配置 (5d-4, decision 22) and the browser (5d-1, settled decision 12, which
-/// took 我的書庫 off the home). There is no catalog entry at
+/// decision 11). Its one ••• (decision 36, 2026-10-13, which took 範圍 away) holds every other
+/// way in: 編輯首頁, the 首頁配置 (5d-4, decision 22), 聚合設定, and the browser (5d-1, settled
+/// decision 12, which took 我的書庫 off the home). A library's own page in the home's layouts
+/// (`LibraryHomePage`, decision 35), which 範圍 showed in place of the home, waits for 資源庫
+/// (5h) to open it. There is no catalog entry at
 /// the top (decision 20's, removed 2026-10-11 by the maintainer): a reader adds the sections
 /// they want, and a row's 查看全部 opens the rest of what it shows.
 ///
@@ -44,7 +43,6 @@ private struct ExploreHomeRoot: View {
     @ObservedObject private var tabModel = ExploreTabModel.shared
     @ObservedObject private var aozora = AozoraCatalogStore.shared
     @ObservedObject private var aggregation = AggregationSettingsStore.shared
-    @AppStorage(ExploreSettings.scopeKey) private var storedScope = ExploreScope.all.rawValue
     @AppStorage(ExploreSettings.modeKey) private var storedMode = ExploreMode.publicLibraries.rawValue
     @AppStorage(ExploreSettings.showsBrowserKey) private var showsBrowser = true
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -59,6 +57,10 @@ private struct ExploreHomeRoot: View {
     @State private var addsSection = false
     /// The section 新增欄目 just added, brought into view: it is at the end of the home.
     @State private var addedSection: UUID?
+    /// iOS 17: ••• is a chooser sheet, and what was picked runs once it is gone
+    /// (Technotes/iOS17MenuModalPresentation.md).
+    @State private var showsMoreChooser = false
+    @State private var moreSequence = DismissalSequencedPresentation<ExploreMoreAction>()
 
     private struct BrowserPresentation: Identifiable {
         let id = UUID()
@@ -84,19 +86,10 @@ private struct ExploreHomeRoot: View {
     }
 
 
-    /// The stored scope while its source is still there; 全部 otherwise.
-    private var scope: ExploreScope {
-        let stored = ExploreScope(rawValue: storedScope)
-        guard case .source(let key) = stored else { return .all }
-        return ExploreHomeScope.isAvailable(key, sources: sourceStore.enabledSources, connections: connections,
-                                            librariesAvailable: availability.isAvailable) ? stored : .all
-    }
-
-    /// The source 範圍 keeps; nil for 全部.
-    private var scopeKey: SourceInstanceKey? {
-        if case .source(let key) = scope { return key }
-        return nil
-    }
+    /// 範圍 left 探索 (Phase 5 plan, decision 36): 探索 is always the home, and a stored scope
+    /// is no longer read (the value stays stored). The library pages below (`libraryHome`,
+    /// `placePage`) have no entry until 資源庫 (5h) opens them.
+    private var scopeKey: SourceInstanceKey? { nil }
 
     /// The sections drawn, in the reader's languages' order (聚合設定, 5d-3d).
     private var groups: [HomeSectionGroup] {
@@ -121,12 +114,6 @@ private struct ExploreHomeRoot: View {
     /// serves nothing until its catalog is read).
     private var librarySyncKey: [AnyHashable] {
         [libraryPage, availability.isAvailable, aozora.catalog != nil]
-    }
-
-    /// The libraries in 書庫順序 (聚合設定, 5d-3e), as 範圍 lists them.
-    private var libraries: [LibraryListing] {
-        LibraryListing.ordered(connections: connections.catalogs, librariesAvailable: availability.isAvailable,
-                               order: aggregation.settings.libraryOrder)
     }
 
     /// What the rows are built from; any change builds them again.
@@ -188,11 +175,6 @@ private struct ExploreHomeRoot: View {
             await libraryModel.sync(with: libraryPage)
         }
         .task { await aozora.load() }
-        .onChange(of: storedScope) { _, _ in
-            // Another page in place: what was pushed over the last one goes, and so does 編輯首頁.
-            path = NavigationPath()
-            isEditing = false
-        }
         // 編輯首頁 edits one 首頁配置; deleting it, the one 預設 takes the place of, ends the edit.
         .onChange(of: pageStore.selectedConfiguration) { _, _ in
             if isEditing { setEditing(false) }
@@ -361,10 +343,6 @@ private struct ExploreHomeRoot: View {
                     } else {
                         UnavailableLabel(localized("探索還沒有內容"), systemImage: "rectangle.stack")
                     }
-                } description: {
-                    if !hasNoSections {
-                        Text(localized("從右上角的範圍打開書庫或來源配置。")).foregroundStyle(DSColor.textSecondary)
-                    }
                 } actions: {
                     if hasNoSections {
                         Button(localized("新增欄目")) { addsSection = true }
@@ -377,17 +355,7 @@ private struct ExploreHomeRoot: View {
                 }
             }
         }
-        .refreshable {
-            model.reload()
-            // 訂閱的最新文章 shows what the RSS tab stored; pulling down fetches the feeds too, as
-            // the RSS tab's own refresh does (decision 29), then reads them again.
-            async let feeds: Void = refreshSubscriptions()
-            // 青空文庫's rows are read from its catalog. Pulling down checks for it again, as
-            // 青空文庫's own page does, instead of waiting out the daily check: a device that
-            // found none (the catalog went unpublished until 2026-10-11) would wait a day.
-            if availability.isAvailable { await aozora.load(forceRefresh: true) }
-            await feeds
-        }
+        .refreshable { await refresh() }
         // Again when a sync changes the rows: a Gutenberg row added while the home shows.
         .task(id: model.rows.map(\.id)) { model.homeAppeared(in: nil) }
         // On the stack's root, not the stack: coming back from a page the home pushed is coming
@@ -406,6 +374,19 @@ private struct ExploreHomeRoot: View {
         HomeRowHost(group: group, store: store, aozoraIndex: aozora.catalog, model: model, isEditable: isEditable,
                     push: push,
                     openSettings: { path.append(HomeEditRoute.section(group.section.id)) })
+    }
+
+    /// Pull to refresh, and ••• → 重新整理.
+    private func refresh() async {
+        model.reload()
+        // 訂閱的最新文章 shows what the RSS tab stored; refreshing fetches the feeds too, as the
+        // RSS tab's own refresh does (decision 29), then reads them again.
+        async let feeds: Void = refreshSubscriptions()
+        // 青空文庫's rows are read from its catalog. Refreshing checks for it again, as 青空文庫's
+        // own page does, instead of waiting out the daily check: a device that found none (the
+        // catalog went unpublished until 2026-10-11) would wait a day.
+        if availability.isAvailable { await aozora.load(forceRefresh: true) }
+        await feeds
     }
 
     /// Only when a section the home shows reads the feeds: a home without one sends nothing.
@@ -437,29 +418,81 @@ private struct ExploreHomeRoot: View {
                     .accessibilityIdentifier("home.editDoneBar")
             }
         } else {
-            scopeAndPageItems
+            ToolbarItem(placement: .topBarTrailing) { moreControl }
         }
     }
 
-    @ToolbarContentBuilder
-    private var scopeAndPageItems: some ToolbarContent {
-        ToolbarItem(placement: .topBarTrailing) {
-            ExploreScopeMenu(scope: Binding(get: { scope }, set: { storedScope = $0.rawValue }),
-                             libraries: libraries, sources: exploreSources,
-                             configuration: Binding(get: { pageStore.selectedConfiguration }, set: { pageStore.select($0) }),
-                             configurations: pageStore.configurations, showsBrowser: showsBrowser,
-                             openBrowser: { openBrowser(.resume) })
-        }
-        // A 首頁配置 is a home's: a library's own page has none to add to.
-        if scopeKey == nil {
-            ToolbarItem(placement: .topBarTrailing) {
-                Button { configurationPrompt = .create } label: {
-                    Image(systemName: "plus")
-                        .accessibilityHidden(true)
-                }
-                .accessibilityLabel(localized("新增首頁配置"))
-                .accessibilityIdentifier("home.addConfiguration")
+    /// 探索's one ••• (Phase 5 plan, decisions 30 and 36). A native menu from iOS 18; on iOS 17
+    /// a chooser sheet, since 新增首頁配置's alert and the browser's cover would be dropped while
+    /// the menu dismisses.
+    @ViewBuilder
+    private var moreControl: some View {
+        if MenuModalPresentationPolicy.requiresDismissalSequencedChooser {
+            Button {
+                moreSequence.cancel()
+                showsMoreChooser = true
+            } label: {
+                Image(systemName: "ellipsis")
+                    .accessibilityHidden(true)
             }
+            .accessibilityLabel(localized("更多"))
+            .accessibilityIdentifier("explore.more")
+            .sheet(isPresented: $showsMoreChooser, onDismiss: {
+                moreSequence.consumeAfterDismissal().map(perform)
+            }) {
+                AdaptiveSheetContainer(maxWidth: DSLayout.readableCompactWidth) {
+                    DismissalSequencedActionChooser(title: localized("更多"), actions: moreChoices,
+                                                    onSelect: { moreSequence.select($0) })
+                }
+            }
+        } else {
+            ExploreMoreMenu(configuration: Binding(get: { pageStore.selectedConfiguration },
+                                                   set: { pageStore.select($0) }),
+                            configurations: pageStore.configurations, showsBrowser: showsBrowser,
+                            perform: perform)
+        }
+    }
+
+    /// The chooser's rows: the menu's items, with each 首頁配置 a row of its own.
+    private var moreChoices: [DismissalSequencedAction<ExploreMoreAction>] {
+        var actions = [DismissalSequencedAction(route: ExploreMoreAction.editHome, title: localized("編輯首頁"),
+                                                systemImage: "pencil")]
+        actions += pageStore.configurations.map { configuration in
+            let isSelected = configuration.id == pageStore.selectedConfiguration
+            return DismissalSequencedAction(
+                route: .selectConfiguration(configuration.id), title: configuration.name,
+                systemImage: isSelected ? "checkmark" : "square.stack",
+                // The menu's check mark, said in words: the chooser's rows have no selected state.
+                subtitle: isSelected ? [localized("首頁配置"), localized("使用中")].joined(separator: " · ") : localized("首頁配置"))
+        }
+        actions += [
+            DismissalSequencedAction(route: .newConfiguration, title: localized("新增首頁配置"), systemImage: "plus"),
+            DismissalSequencedAction(route: .readingLanguages, title: localized("偏好閱讀語言"), systemImage: "globe"),
+            DismissalSequencedAction(route: .aggregatedSources, title: localized("參與聚合的來源"),
+                                     systemImage: "square.stack.3d.up"),
+            DismissalSequencedAction(route: .refresh, title: localized("重新整理"), systemImage: "arrow.clockwise"),
+        ]
+        if showsBrowser {
+            actions.append(DismissalSequencedAction(route: .browser, title: localized("瀏覽器"), systemImage: "safari"))
+        }
+        return actions
+    }
+
+    private func perform(_ action: ExploreMoreAction) {
+        switch action {
+        case .editHome:
+            setEditing(true)
+        case .selectConfiguration(let id):
+            pageStore.select(id)
+        case .newConfiguration:
+            configurationPrompt = .create
+        case .readingLanguages, .aggregatedSources:
+            // Both are 聚合設定's (decision 36): the languages are its first section.
+            path.append(ExploreNavigationRoute.aggregationSettings)
+        case .refresh:
+            Task { await refresh() }
+        case .browser:
+            openBrowser(.resume)
         }
     }
 
@@ -623,74 +656,72 @@ struct LibraryListing: Identifiable, Hashable {
     }
 }
 
-/// 範圍, a picker in a menu (design §13.3), which opens nothing modal. Book sources sit in a
-/// submenu of their own: a reader can have thousands. Below them, the 首頁配置 submenu (5d-4),
-/// then the browser, which is presented rather than shown in place (5d-1).
-private struct ExploreScopeMenu: View {
-    @Binding var scope: ExploreScope
-    /// In 書庫順序.
-    let libraries: [LibraryListing]
-    let sources: [BookSource]
+/// What 探索's ••• does (Phase 5 plan, decisions 30 and 36), from the menu or iOS 17's chooser.
+enum ExploreMoreAction: Hashable {
+    case editHome
+    case selectConfiguration(HomeConfigurationID)
+    case newConfiguration
+    case readingLanguages
+    case aggregatedSources
+    case refresh
+    case browser
+}
+
+/// 探索's ••• from iOS 18: 編輯首頁, the 首頁配置 submenu (a picker, then 新增首頁配置), the two
+/// entries into 聚合設定, 重新整理, and the browser, which is presented rather than shown in
+/// place (5d-1).
+private struct ExploreMoreMenu: View {
     @Binding var configuration: HomeConfigurationID
     let configurations: [HomeConfigurationListing]
     let showsBrowser: Bool
-    let openBrowser: () -> Void
+    let perform: (ExploreMoreAction) -> Void
 
     var body: some View {
         Menu {
-            Picker(localized("範圍"), selection: $scope) {
-                Label(localized("全部"), systemImage: "square.grid.2x2").tag(ExploreScope.all)
+            Button { perform(.editHome) } label: {
+                Label(localized("編輯首頁"), systemImage: "pencil")
             }
-            if !libraries.isEmpty {
-                Picker(localized("範圍"), selection: $scope) {
-                    ForEach(libraries) { library in
-                        Label(library.name, systemImage: library.systemImage)
-                            .tag(ExploreScope.source(library.key))
-                    }
-                }
-            }
-            if !sources.isEmpty {
-                Menu(localized("來源配置")) {
-                    Picker(localized("來源配置"), selection: $scope) {
-                        ForEach(sources) { source in
-                            Text(source.bookSourceName)
-                                .tag(ExploreScope.source(SourceInstanceKey(type: .bookSource, id: source.bookSourceUrl)))
-                        }
-                    }
-                }
-            }
-            // A submenu, as 來源配置's: inline, its check mark read as a second 範圍 choice,
-            // and the section's title was not drawn. The current one is the subtitle.
+            // A submenu: inline, its check mark would read as a choice of the whole menu. The
+            // current one is the subtitle.
             Menu {
                 Picker(localized("首頁配置"), selection: $configuration) {
                     ForEach(configurations) { configuration in
                         Text(configuration.name).tag(configuration.id)
                     }
                 }
+                Section {
+                    Button { perform(.newConfiguration) } label: {
+                        Label(localized("新增首頁配置"), systemImage: "plus")
+                    }
+                }
             } label: {
                 Label(localized("首頁配置"), systemImage: "square.stack")
                 Text(configurations.first { $0.id == configuration }?.name ?? "")
             }
-            if showsBrowser {
-                Section {
-                    Button(action: openBrowser) {
+            Section {
+                Button { perform(.readingLanguages) } label: {
+                    Label(localized("偏好閱讀語言"), systemImage: "globe")
+                }
+                Button { perform(.aggregatedSources) } label: {
+                    Label(localized("參與聚合的來源"), systemImage: "square.stack.3d.up")
+                }
+            }
+            Section {
+                Button { perform(.refresh) } label: {
+                    Label(localized("重新整理"), systemImage: "arrow.clockwise")
+                }
+                if showsBrowser {
+                    Button { perform(.browser) } label: {
                         Label(localized("瀏覽器"), systemImage: "safari")
                     }
                 }
             }
         } label: {
-            Image(systemName: scope == .all ? "rectangle.stack" : "rectangle.stack.fill")
+            Image(systemName: "ellipsis")
                 .accessibilityHidden(true)
         }
-        .accessibilityLabel(localized("範圍"))
-        .accessibilityValue(valueName)
-        .accessibilityIdentifier("explore.scopeMenu")
-    }
-
-    private var valueName: String {
-        guard case .source(let key) = scope else { return localized("全部") }
-        if key.type == .bookSource { return sources.first { $0.bookSourceUrl == key.id }?.bookSourceName ?? key.id }
-        return libraries.first { $0.key == key }?.name ?? key.id
+        .accessibilityLabel(localized("更多"))
+        .accessibilityIdentifier("explore.more")
     }
 }
 
@@ -699,11 +730,17 @@ private struct ExploreScopeMenu: View {
         .environmentObject(BookStore())
 }
 
-#Preview("範圍：青空文庫") {
-    let defaults = UserDefaults(suiteName: "preview.explore.libraryHome") ?? .standard
-    defaults.set(ExploreScope.source(SourceInstanceKey(type: .aozora, id: PublicLibraryID.aozora.rawValue)).rawValue,
-                 forKey: ExploreSettings.scopeKey)
-    return ExploreHome(browser: BrowserState())
-        .environmentObject(BookStore())
-        .defaultAppStorage(defaults)
+#Preview("•••，iOS 18 起的選單") {
+    @Previewable @State var configuration = HomeConfigurationID.defaults
+    NavigationStack {
+        Text(configuration.rawValue)
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    ExploreMoreMenu(configuration: $configuration,
+                                    configurations: [.init(id: .defaults, name: localized("預設")),
+                                                     .init(id: .blank, name: localized("空白"))],
+                                    showsBrowser: true, perform: { _ in })
+                }
+            }
+    }
 }

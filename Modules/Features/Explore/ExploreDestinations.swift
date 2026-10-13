@@ -59,6 +59,8 @@ private struct ExploreRouteDestinations: ViewModifier {
             .environmentObject(store)
         case .sourceManager:
             BookSourceListView()
+        case .aggregationSettings:
+            AggregationSettingsView()
         }
     }
 

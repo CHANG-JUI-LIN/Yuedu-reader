@@ -2,7 +2,7 @@ import XCTest
 
 /// Unified library 5d-3d and 5d-3e: 設定 → 聚合設定 (Phase 5 plan, decision 21). 偏好閱讀語言
 /// starts as the interface language; a language added there leads Gutenberg's categories once
-/// moved first, and the choice survives a relaunch. 書庫順序 orders 範圍. 隱藏已讀
+/// moved first, and the choice survives a relaunch. 書庫順序 orders the libraries' rows. 隱藏已讀
 /// starts on for 最新 and 相關. 首頁欄目 edits the home 探索 saved.
 final class AggregationSettingsUITests: XCTestCase {
     override func setUpWithError() throws { continueAfterFailure = false }
@@ -115,20 +115,16 @@ final class AggregationSettingsUITests: XCTestCase {
         XCTAssertTrue(isAbove(aozora, gutenberg))
         attach(app, "aggregation-library-order")
 
-        // 範圍 lists them in that order. The tab bar shows on 設定's root only.
-        app.navigationBars.buttons.element(boundBy: 0).tap()
-        let exploreTab = app.tabBars.buttons["探索"].firstMatch
-        XCTAssertTrue(exploreTab.waitForExistence(timeout: 5), app.debugDescription)
-        exploreTab.tap()
-        let menu = app.buttons["explore.scopeMenu"].firstMatch
-        XCTAssertTrue(menu.waitForExistence(timeout: 10), app.debugDescription)
-        menu.tap()
-        let aozoraOption = app.buttons["青空文庫"].firstMatch
-        XCTAssertTrue(aozoraOption.waitForExistence(timeout: 5), app.debugDescription)
-        XCTAssertTrue(isAbove(aozoraOption, app.buttons["Project Gutenberg"].firstMatch))
-        attach(app, "scope-menu-library-order")
-
+        // Saved: a relaunch reads it back. (範圍, which listed the libraries in this order, left
+        // 探索 with decision 36; 最新 takes its libraries in it, LibraryOrderTests.)
         app.terminate()
+        let relaunched = application(fresh: false)
+        relaunched.launch()
+        openAggregationSettings(relaunched)
+        let rereadAozora = relaunched.descendants(matching: .any)["aggregation.library.aozora.builtin.aozora"].firstMatch
+        XCTAssertTrue(rereadAozora.waitForExistence(timeout: 5), relaunched.debugDescription)
+        XCTAssertEqual(rereadAozora.value as? String, "第 1 個")
+        relaunched.terminate()
         // Leave the simulator as a new install has it, for the Explore tests after this one.
         application(fresh: true).launch()
     }

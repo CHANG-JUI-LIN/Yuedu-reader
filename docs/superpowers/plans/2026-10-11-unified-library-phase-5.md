@@ -269,6 +269,19 @@
 
 34. **Given 2026-10-12** (maintainer, with an Emby screenshot of 選擇模板). Adding a section shows what each layout looks like: the layout choice is a list of live previews (real covers, the layout's own shape: 列表預覽－全寬, 海報牆－雙排…) titled by the layout's name, not a picker of names. Built with 30's layout work (精選, 專題集合), in 新增欄目 and the section form's 呈現方式.
 
+36. **Answered 2026-10-13, starting 探索's toolbar** (maintainer, by option and in their own words):
+    - **範圍 leaves 探索 in this step,** not with 5h: until 資源庫 exists, a library is not browsed on its own from 探索. A stored scope is no longer read (the value stays stored, as old settings do).
+    - **參與聚合的來源** in ••• pushes the existing 聚合設定 page.
+    - **偏好閱讀語言** in ••• pushes 聚合設定 too, whose first section it becomes: 「在聚合頁面設定頁面最上面啊，還有你這個聚合設定頁面他媽給我對齊emby的聚合設定好不好，別自己亂寫」.
+    - **聚合設定 follows Emby's Home Screen page** (emby.media "User Prefs HomeScreen", Emby Server 4.10: Library Order, then Home Sections with each section's options, then "Hide fully played content" at the bottom), under the languages:
+      1. 偏好閱讀語言 and 推薦範圍;
+      2. 書庫順序;
+      3. 首頁欄目;
+      4. 隱藏已讀.
+    - **顯示在最新 moves into the 最新 section's own options,** as Emby 4.10 moved "Latest" inclusion into each section's Libraries option. 聚合設定 no longer lists it; it is still set in one place.
+    - **隱藏已讀 becomes one switch for the whole home,** as Emby's "Hide fully played content". 繼續閱讀 is unaffected. Either old switch being off migrates to off.
+    - **Steps:** 探索's ••• first (this decision's first three points), then 聚合設定 rearranged.
+
 ### Open, for the maintainer (each with a recommendation)
 
 These change what is built, so no step that depends on one starts until it is answered.
@@ -1554,3 +1567,26 @@ Not split (one meaning everywhere): 確認刪除 (three alert titles), 是／否
   - UI: `testWorkDetailShowsTheShelfCopysEditedTitle` now also opens the renamed shelf book from 搜索 and finds the reader's title, 簡介 and 移除書架. Passed on iOS 27 and iOS 17.5.
   - UI, iOS 27: `testSearchDetailReaderLoadsAndReturns`, `testDetailReaderLoadsAndReturns` and `WorkDetailUITests` passed. `testSearchDetailMangaReaderLoadsAndReturns` and `testSearchTabMangaResultOpensEveryTime` opened the manga reader from the search detail, but in webtoon mode (`webtoon_page_1` on screen), so "The first page's image must be on screen" failed. That is the leftover reading mode recorded in the previous entry.
   - UI, iOS 17.5: `testSearchTabMangaResultOpensEveryTime` (guardrail 12) and `testSearchDetailReaderLoadsAndReturns` passed.
+
+#### What landed — 探索's ••• (2026-10-13)
+
+- **Decision 36's first three points.** 探索's toolbar is one ••• (更多). Branch `explore/toolbar-menu`.
+- **Changes:**
+  - ••• holds 編輯首頁; 首頁配置 (a submenu: the configurations as a picker, then 新增首頁配置; its label also reads the current one); 偏好閱讀語言 and 參與聚合的來源, which both push 聚合設定 (`ExploreNavigationRoute.aggregationSettings`); 重新整理, which runs what pull-to-refresh runs (`refresh()`, one function for both); and 瀏覽器 when it is shown.
+  - iOS 17: ••• is a button opening `DismissalSequencedActionChooser`, and the chosen action runs from the sheet's `onDismiss` (新增首頁配置's alert and the browser's cover would be lost to the menu's dismissal; Technotes/iOS17MenuModalPresentation.md). The chooser has no submenu, so each 首頁配置 is a row of its own, the current one marked by a check and 「首頁配置 · 使用中」.
+  - 範圍 is gone: `ExploreScopeMenu`, its `#Preview`, the toolbar's 新增首頁配置 button (`home.addConfiguration`, now in ••• → 首頁配置) and the empty home's line 「從右上角的範圍打開書庫或來源配置。」 (removed from all five tables). `ExploreScope`, `ExploreSettings.scopeKey` and its migration stay; the stored value is not read and not deleted.
+  - 編輯首頁's card that holds the browser's switch is titled 更多, the •••'s name, instead of 範圍 (maintainer, 2026-10-13, by option).
+  - New string 參與聚合的來源 in five languages.
+- **Disclosed:**
+  - **A library is not browsed on its own until 資源庫 (5h).** `ExploreHome` still has the library pages (`libraryHome`, `placePage`, `LibraryHomePage`), now unreachable: `scopeKey` is always nil. They are kept for 5h to open, not deleted.
+  - `PublicLibraryLiveUITests.testAozoraWorkDetailOrder` skips until 5h: it starts from 青空文庫's 依分類, a section of that page. The other live tests open their work from the home (青空文庫's from 最新, Gutenberg's from its rows).
+  - `ExploreHomeUITests.testScopeShowsTheLibrarysOwnPage` and `testConnectionIsInScope` are deleted: what they tested left with 範圍. `AggregationSettingsUITests.testLibraryOrder` checks the order after a relaunch instead of in 範圍; 最新's order is `LibraryOrderTests.latestTakesTurnsInOrder`.
+- **Not test-first:** the UI tests were rewritten for ••• with the change.
+- **Tests:**
+  - New UI test `ExploreHomeUITests.testMoreOpensAggregationSettings`: ••• → 偏好閱讀語言 and ••• → 參與聚合的來源 each push 聚合設定 and come back to the home; ••• → 重新整理 keeps it drawn.
+  - `ExploreHomeUITests`' helpers open ••• (the native menu, or the chooser on iOS 17), and 新增首頁配置 is reached through ••• → 首頁配置.
+  - Unit: `ExploreHomeTests`, `ExploreSettingsTests`, `LibraryOrderTests`: 19 tests in 3 suites passed (iOS 27).
+  - UI, iOS 27: all of `ExploreHomeUITests` (8), `AggregationSettingsUITests` (4) and `HomeEditorUITests` (5), plus `DetailReaderBackSwipeUITests`' `testDetailReaderLoadsAndReturns` and `testReaderOpensWorkDetailAndReturnsToIt`: 19 passed.
+  - UI, iOS 17.5 (the chooser): `testMoreOpensAggregationSettings`, `testConfigurationsAndTheBrowser`, `testCustomPageMovesIn`, `testNewInstallShowsTheDefaultSections`, `HomeEditorUITests.testEditHomeInPlace` passed.
+  - The live `PublicLibraryLiveUITests` were not run (network; opt-in).
+- **Next:** 聚合設定 rearranged on Emby's Home Screen page (decision 36's last three points).
