@@ -3776,3 +3776,7 @@
 "資源庫" = "Sources";
 "所有來源都在這裡" = "Every Source Is Here";
 "來源配置、遠端書庫和 RSS 訂閱從設定和 RSS 分頁搬到了資源庫。" = "Sources, remote libraries and subscriptions moved here from Settings and the Subscriptions tab.";
+"所有來源配置" = "All Sources";
+"還沒有支援發現的來源配置" = "No sources with Discover yet";
+"沒有來源配置" = "No Sources";
+"%d 個訂閱源" = "%d feeds";

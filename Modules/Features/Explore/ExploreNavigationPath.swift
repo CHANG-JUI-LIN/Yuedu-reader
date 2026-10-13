@@ -17,6 +17,8 @@ enum ExploreNavigationRoute: Hashable {
     case subscriptions
     /// A public library's own page (decision 35), opened from 資源庫 (5h).
     case library(SourceInstanceKey)
+    /// 資源庫's sources with a discover page: one group's, or all of them (decision 31).
+    case sources(group: String?)
 
     static func == (lhs: Self, rhs: Self) -> Bool {
         switch (lhs, rhs) {
@@ -33,6 +35,8 @@ enum ExploreNavigationRoute: Hashable {
             return true
         case (.library(let lhsKey), .library(let rhsKey)):
             return lhsKey == rhsKey
+        case (.sources(let lhsGroup), .sources(let rhsGroup)):
+            return lhsGroup == rhsGroup
         default:
             return false
         }
@@ -61,6 +65,9 @@ enum ExploreNavigationRoute: Hashable {
         case .library(let key):
             hasher.combine(10)
             hasher.combine(key)
+        case .sources(let group):
+            hasher.combine(11)
+            hasher.combine(group)
         }
     }
 }

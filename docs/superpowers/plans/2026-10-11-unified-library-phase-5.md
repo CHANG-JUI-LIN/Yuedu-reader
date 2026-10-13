@@ -1785,3 +1785,45 @@ Not split (one meaning everywhere): 確認刪除 (three alert titles), 是／否
   - UI, iOS 27: `LibraryTabUITests`, `HomeEditorUITests.testSubscriptionArticles`, `RemoteLibrarySettingsUITests`, `BookSourceManagementUITests`, `ExploreHomeUITests` and `PublicLibraryStorefrontUITests` passed. Screenshots checked: the card, the four groups, the five tabs; Gutenberg's page pushed with its inline title.
   - UI, iOS 17.5: the same set, 21 tests, passed (5 skipped as before: environment-gated).
 - **Next:** 5h-2, 常用書源 and 所有書源 on 資源庫's root, with the root's source search.
+
+#### What landed — 5h-2: 資源庫's cards, its sources by group, and its search (2026-10-13)
+
+- **Branch `library/sources`.** Three corrections from the maintainer, in order, all on this branch:
+  1. 「老子就說了資源庫的排列方式要他媽原本我探索頁寫好的的格狀和列表，你是聽不懂阿嬤？」: 5h-1 had drawn the root as a settings-style grouped `List`, reading decision 31's grid-or-list as the 所有書源 page's alone. The root itself is laid out by the old 探索 root's 格狀 and 每列欄數.
+  2. 「我超你嗎這也太醜了吧」, with a reference (a media app's "Media Servers" and "Modules" cards). The old tiles came back first, verbatim from `ed0c5602^`, and were rejected on sight. Each entry is now a card as the reference draws it.
+  3. 「不要常用來源了，還有書源沒帶圖片的話全都是一個符號或圖片」: 常用 (the recently opened sources, chosen by option earlier the same day) is dropped before it shipped; a source has no picture of its own, so every source shows the same symbol.
+- **The card (`ExploreEntryLabel`, `ExploreTile.swift`):**
+  - a small rounded square top leading: a library's symbol in the tint on a tinted ground, or a neutral symbol on grey (every source `square.grid.2x2.fill`, a group `folder.fill`, an empty section's `plus`);
+  - a count pill top trailing (a group's sources, RSS 訂閱's unread articles);
+  - the name, then a line about it and a line of detail (a source: its groups, its site; a remote library: its kind, its host; a public library: its site, and 青空文庫's work count once its catalog is read);
+  - on the card surface with a soft shadow (`DSLayout.exploreCard*`).
+  - In the grid every card keeps the lines its column width has room for (two at two across, one at three, none at four), so a row's cards end together; the list shows only the lines a card has.
+  - VoiceOver reads the link's name, and a count as its value (「%d 個來源配置」, 「%d 未讀」); the pill is hidden.
+- **Layout:** 格狀 and 每列欄數 (2, 3 or 4) in the root's one ••• (decision 31), stored under the old 探索 root's keys `explore.showsGrid` and `explore.gridColumnCount` (restored in `ExploreSettings`), so a reader's choice from before 5d-1b holds again. Accessibility text sizes get the list. `ExploreGridDensity.fitting` and its tests are restored from before 5d-1b.
+- **The root's sections** (quiet `title3` names, the managing page beside the name as a small control, `slider.horizontal.3`):
+  - 公有書庫: Gutenberg and 青空文庫, each pushing its page.
+  - 遠端書庫 (beside it: 管理遠端書庫): each connection; with none, one card into 管理遠端書庫.
+  - 來源配置 (beside it: 管理來源配置): 所有來源配置, then a card per group (`LibrarySourceGroups`: name order; a source counted once in each group it names). Each pushes `LibrarySourcesView`, that group's sources (or all) as cards, with Legado's long-press actions (`LibrarySourceEntry`, `BookSourceActionMenuItems`). The root never lays every source flat. With no source that has a discover page, one card into 管理來源配置 (「還沒有支援發現的來源配置」).
+  - 訂閱: RSS 訂閱, with its feed count and unread pill.
+  - The card saying what moved sits on top, in the same card style.
+- **Search** (maintainer's choice, 2026-10-13): 「搜尋來源配置」 in the bar narrows the sources in place by name or group, through `DiscoverViewModel.exploreSources(_:inGroup:matching:)`, as the old root and Legado's explore page do; nothing found shows the system's search empty state.
+- **Route:** `ExploreNavigationRoute.sources(group:)`.
+- **Background:** the explore page background, as the old 探索 root had (5h-1 used the app surface).
+- **Not test-first:** the card was rewritten against the maintainer's reference and screenshots; `LibrarySourceGroupsTests` was written with it.
+- **Tests:**
+  - Unit, iOS 27: `ExploreEntryLabelTests` (density at each text size; the old keys), `LibrarySourceGroupsTests` (name order, a source counted once per group, no groups), `RootTabCustomizationTests`, `ExploreSourceFilterTests`: 14 tests in 4 suites passed.
+  - UI, new: `LibraryTabUITests.testGridAndList`:
+    - with 格狀 at two columns, Gutenberg and 青空文庫 sit side by side;
+    - the ••• holds 格狀 and 每列欄數;
+    - with the list, the two are stacked at the same width.
+  - UI, new: `LibraryTabUITests.testSourcesByGroup`, on a three-source fixture library (`-book-source-store-dir`):
+    - 所有來源配置 reads 「3 個來源配置」 and each group its count;
+    - no source is on the root;
+    - 男频 opens its two sources and not the other;
+    - the search 「女频」 leaves only that source.
+  - First failures, all in the tests:
+    - `male.swipeUp()` on a card registered as a tap and opened the group.
+    - On iOS 17.5 the RSS card was below the fold. The grid builds its cards only near the screen, so `scrolledTo` swipes until it exists.
+  - UI, iOS 27 and iOS 17.5: `LibraryTabUITests` (3), `RemoteLibrarySettingsUITests` (3, one skipped as before), `BookSourceManagementUITests` (2, one skipped as before) and `HomeEditorUITests.testSubscriptionArticles` passed.
+  - Screenshots checked against the reference: the root's sections and cards, a group's page.
+- **Next:** 5h-3, a book source's discover-page display settings (列表／雜誌, 豎排榜單關鍵詞, 展示數量, 預加載 from the old keys), then 封面並發數 in the network settings.
