@@ -1,17 +1,4 @@
 import SwiftUI
-import UniformTypeIdentifiers
-
-private enum BookSourceImportPresentationRoute: Hashable {
-    /// 手動新增 — an empty source in the editor. Sequenced with the imports because it is now
-    /// reached from the same 「+」 menu, and on iOS 17 that menu can swallow its sheet too.
-    case add
-    case local
-    case network
-}
-
-private enum BookSourceFileImportRoute: Hashable {
-    case document
-}
 
 // MARK: - Book Source List (Legado Style)
 
@@ -25,27 +12,12 @@ struct BookSourceListView: View {
     private let store: BookSourceStore
     @StateObject private var model: BookSourceManagementModel
     @Bindable private var gs = GlobalSettings.shared
-    @State private var showAdd = false
     @State private var editingSource: BookSource? = nil
-    @State private var showImport = false
-    @State private var showImportFile = false
-    @State private var showFirstLevelImportFile = false
-    @State private var bookSourceFileImportSequence =
-        DismissalSequencedPresentation<BookSourceFileImportRoute>()
-    @State private var importJSON = ""
+    /// 新增來源配置: the 「+」, the empty state's import and 粘貼源 (`BookSourceAddFlow`).
+    @StateObject private var addFlow: BookSourceAddFlow
+    /// This screen's own outcomes (grouping, copying, deleting); the add flow shows its own.
     @State private var importError: String? = nil
     @State private var importSuccess: String? = nil
-    @State private var showNetworkImport = false
-    /// Owns the import confirmation list for every manual route into this screen.
-    @StateObject private var importCoordinator = BookSourceImportCoordinator()
-    /// Parsed sources waiting for the sheet in front of them to finish dismissing before the
-    /// confirmation list can be presented. Same ordering constraint as 書源驗證 below.
-    @State private var queuedImportSources: [BookSource]?
-    @State private var importURLString = ""
-    @State private var networkImportLoading = false
-    @State private var showLegacyImportChooser = false
-    @State private var legacyImportSequence =
-        DismissalSequencedPresentation<BookSourceImportPresentationRoute>()
     @State private var loginSource: BookSource? = nil
     @State private var variableEditingSource: BookSource? = nil
 
@@ -86,6 +58,7 @@ struct BookSourceListView: View {
     ) {
         let healthChecker = healthChecker ?? .shared
         self.store = store
+        _addFlow = StateObject(wrappedValue: BookSourceAddFlow(store: store))
         _healthChecker = ObservedObject(wrappedValue: healthChecker)
         _model = StateObject(
             wrappedValue: BookSourceManagementModel(store: store, healthChecker: healthChecker))
@@ -177,7 +150,7 @@ struct BookSourceListView: View {
             )
             .toolbar {
                 ToolbarItemGroup(placement: .navigationBarTrailing) {
-                    addSourceToolbarControl
+                    BookSourceAddToolbarControl(flow: addFlow)
                     Menu {
                         Button {
                             enableAll()
@@ -236,7 +209,7 @@ struct BookSourceListView: View {
                             Label(localized("按域名分組"), systemImage: "globe")
                         }
                         Button {
-                            pasteFromClipboard()
+                            addFlow.pasteFromClipboard()
                         } label: {
                             Label(localized("粘貼源"), systemImage: "doc.on.clipboard")
                         }
@@ -246,41 +219,7 @@ struct BookSourceListView: View {
                     .accessibilityLabel(localized("更多"))
                 }
             }
-            .sheet(
-                isPresented: $showLegacyImportChooser,
-                onDismiss: presentLegacyImportAfterChooserDismissal
-            ) {
-                AdaptiveSheetContainer(maxWidth: DSLayout.readableCompactWidth) {
-                    DismissalSequencedActionChooser(
-                        title: localized("新增來源配置"),
-                        actions: [
-                            DismissalSequencedAction(
-                                route: .add,
-                                title: localized("手動新增"),
-                                systemImage: "square.and.pencil"
-                            ),
-                            DismissalSequencedAction(
-                                route: .local,
-                                title: localized("本地導入"),
-                                systemImage: "doc.badge.plus"
-                            ),
-                            DismissalSequencedAction(
-                                route: .network,
-                                title: localized("網路導入"),
-                                systemImage: "network"
-                            ),
-                        ],
-                        onSelect: { legacyImportSequence.select($0) }
-                    )
-                }
-            }
-            .sheet(isPresented: $showAdd) {
-                AdaptiveSheetContainer(maxWidth: DSLayout.readableExpandedWidth) {
-                    BookSourceEditView(source: BookSource()) { src in
-                        store.add(src)
-                    }
-                }
-            }
+            .bookSourceAddFlow(addFlow)
             .sheet(item: $pendingExport) { export in
                 ShareExportSheet(export: export)
             }
@@ -296,34 +235,6 @@ struct BookSourceListView: View {
                         store.update(updated)
                     }
                 }
-            }
-            .sheet(
-                isPresented: $showImport,
-                onDismiss: handleImportSheetDismissal
-            ) {
-                AdaptiveSheetContainer(maxWidth: DSLayout.readablePanelWidth) {
-                    importSheet
-                }
-            }
-            .fileImporter(
-                isPresented: $showFirstLevelImportFile,
-                allowedContentTypes: bookSourceImportContentTypes,
-                onCompletion: handleBookSourceImportFile
-            )
-            .sheet(
-                isPresented: $showNetworkImport,
-                onDismiss: presentQueuedImportReview
-            ) {
-                AdaptiveSheetContainer(maxWidth: DSLayout.readablePanelWidth) {
-                    networkImportSheet
-                }
-            }
-            .sheet(item: $importCoordinator.pending) { _ in
-                BookSourceImportReviewSheet(
-                    coordinator: importCoordinator,
-                    onConfirm: commitImportReview,
-                    onCancel: { importCoordinator.cancel() }
-                )
             }
             .sheet(item: $loginSource) { src in
                 BookSourceLoginSheet(source: src) { loginSource = nil }
@@ -485,58 +396,6 @@ struct BookSourceListView: View {
                 }
             }
 
-    }
-
-    /// One 「+」 entry for 手動新增 and both import routes — the separate ⤓ button is gone.
-    /// The iOS 17 compatibility path still applies: every destination behind it is a sheet or
-    /// document picker, which a still-dismissing menu can drop.
-    @ViewBuilder
-    private var addSourceToolbarControl: some View {
-        if MenuModalPresentationPolicy.requiresDismissalSequencedChooser {
-            Button {
-                legacyImportSequence.cancel()
-                showLegacyImportChooser = true
-            } label: {
-                Image(systemName: "plus")
-            }
-            .accessibilityLabel(localized("新增來源配置"))
-        } else {
-            Menu {
-                Button {
-                    showAdd = true
-                } label: {
-                    Label(localized("手動新增"), systemImage: "square.and.pencil")
-                }
-                Divider()
-                Button {
-                    showImport = true
-                } label: {
-                    Label(localized("本地導入"), systemImage: "doc.badge.plus")
-                }
-                Button {
-                    showNetworkImport = true
-                } label: {
-                    Label(localized("網路導入"), systemImage: "network")
-                }
-            } label: {
-                Image(systemName: "plus")
-            }
-            .accessibilityLabel(localized("新增來源配置"))
-        }
-    }
-
-    private func presentLegacyImportAfterChooserDismissal() {
-        guard let route = legacyImportSequence.consumeAfterDismissal() else {
-            return
-        }
-        switch route {
-        case .add:
-            showAdd = true
-        case .local:
-            showImport = true
-        case .network:
-            showNetworkImport = true
-        }
     }
 
     // MARK: - Source List
@@ -972,7 +831,7 @@ struct BookSourceListView: View {
                 .font(DSFont.subheadline).foregroundColor(DSColor.textSecondary)
                 .multilineTextAlignment(.center)
             Button {
-                showImport = true
+                addFlow.begin(.local)
             } label: {
                 Label(localized("匯入來源配置 JSON"), systemImage: "square.and.arrow.down")
                     .font(DSFont.headline).foregroundColor(.white)
@@ -982,275 +841,6 @@ struct BookSourceListView: View {
             Spacer()
         }
         .padding()
-    }
-
-    // MARK: - Import Sheet
-    private var importSheet: some View {
-        NavigationStack {
-            VStack(spacing: 0) {
-                HStack(alignment: .top, spacing: 10) {
-                    Image(systemName: "info.circle").foregroundColor(DSColor.accent)
-                    Text(localized("貼上 Legado 格式的來源配置 JSON（支援單個 {} 或陣列 []），或選取 .json 文件。"))
-                        .font(DSFont.caption).foregroundColor(DSColor.textSecondary)
-                }
-                .padding()
-                .background(DSColor.accent.opacity(0.06))
-                .clipShape(RoundedRectangle(cornerRadius: 10))
-                .padding()
-
-                TextEditor(text: $importJSON)
-                    .font(DSFont.fixed(size: 13, design: .monospaced))
-                    .padding(8)
-                    .background(Color.secondary.opacity(0.15))
-                    .clipShape(RoundedRectangle(cornerRadius: 10))
-                    .padding(.horizontal)
-                    .frame(maxHeight: 280)
-
-                Button {
-                    requestBookSourceFileImport()
-                } label: {
-                    Label(localized("從文件選取 .json"), systemImage: "doc.badge.plus")
-                        .frame(maxWidth: .infinity).padding()
-                        .background(Color.secondary.opacity(0.15))
-                        .clipShape(RoundedRectangle(cornerRadius: 12))
-                        .padding(.horizontal)
-                }
-                .buttonStyle(.plain)
-                .padding(.top, 12)
-
-                Spacer()
-            }
-            .navigationTitle(localized("匯入來源配置"))
-            .toolbarTitleDisplayMode(.inline)
-            .themedAppSurface(for: .settings)
-            .toolbar {
-                ToolbarItem(placement: .topBarLeading) {
-                    Button {
-                        bookSourceFileImportSequence.cancel()
-                        showImport = false
-                        importJSON = ""
-                    } label: {
-                        Image(systemName: "xmark")
-                    }
-                }
-                ToolbarItem(placement: .topBarTrailing) {
-                    Button {
-                        doImport(importJSON)
-                    } label: {
-                        Image(systemName: "checkmark")
-                    }
-                    .disabled(importJSON.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-                }
-            }
-        }
-        .fileImporter(
-            isPresented: $showImportFile,
-            allowedContentTypes: bookSourceImportContentTypes,
-            onCompletion: handleBookSourceImportFile
-        )
-    }
-
-    private var bookSourceImportContentTypes: [UTType] {
-        [
-            .json,
-            .plainText,
-            UTType(filenameExtension: "yds") ?? .data,
-            UTType(filenameExtension: "mrs") ?? .data,
-        ]
-    }
-
-    private func requestBookSourceFileImport() {
-        if BookSourceImportPresentationPolicy.requiresFirstLevelImporter {
-            bookSourceFileImportSequence.select(.document)
-            showImport = false
-        } else {
-            showImportFile = true
-        }
-    }
-
-    private func presentBookSourceFileImporterAfterSheetDismissal() {
-        guard bookSourceFileImportSequence.consumeAfterDismissal() == .document else {
-            return
-        }
-        showFirstLevelImportFile = true
-    }
-
-    private func handleBookSourceImportFile(_ result: Result<URL, Error>) {
-        switch result {
-        case .success(let url):
-            let isSecurityScoped = url.startAccessingSecurityScopedResource()
-            defer {
-                if isSecurityScoped {
-                    url.stopAccessingSecurityScopedResource()
-                }
-            }
-            guard let data = try? Data(contentsOf: url) else {
-                importError = localized("無法讀取文件")
-                return
-            }
-            doImportData(data, ext: url.pathExtension)
-        case .failure(let error):
-            importError = error.localizedDescription
-        }
-    }
-
-    private func doImportData(_ data: Data, ext: String) {
-        do {
-            queueImportReview(try store.parseForImport(data: data, fileExtension: ext))
-        } catch {
-            importError = error.localizedDescription
-        }
-    }
-
-    private func doImport(_ json: String) {
-        let trimmed = json.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else { return }
-        do {
-            queueImportReview(try store.parseForImport(json: trimmed))
-        } catch {
-            importError = error.localizedDescription
-        }
-    }
-
-    // MARK: - Import Review
-
-    /// Nothing is written until the user confirms: every manual route parses, then shows the
-    /// confirmation list. When a sheet is still on screen the list has to wait for its real
-    /// `onDismiss` — presenting on the frame the previous sheet dismisses is unreliable, the
-    /// same constraint 書源驗證 works around above.
-    private func queueImportReview(_ sources: [BookSource]) {
-        importJSON = ""
-        if showImport || showNetworkImport {
-            queuedImportSources = sources
-            showImport = false
-            showNetworkImport = false
-        } else {
-            importCoordinator.present(sources: sources)
-        }
-    }
-
-    private func presentQueuedImportReview() {
-        guard let sources = queuedImportSources else { return }
-        queuedImportSources = nil
-        importCoordinator.present(sources: sources)
-    }
-
-    /// The import sheet dismisses for two different reasons — the user picked 從文件選取, or a
-    /// parsed pack is waiting for review. Only one is ever pending.
-    private func handleImportSheetDismissal() {
-        presentBookSourceFileImporterAfterSheetDismissal()
-        presentQueuedImportReview()
-    }
-
-    private func commitImportReview() {
-        do {
-            let count = try importCoordinator.confirmImport()
-            importSuccess = String(format: localized("成功匯入 %d 個來源配置"), count)
-        } catch {
-            importError = error.localizedDescription
-        }
-    }
-
-    // MARK: - Network Import Sheet
-
-    private var networkImportSheet: some View {
-        NavigationStack {
-            VStack(spacing: 0) {
-                HStack(alignment: .top, spacing: 10) {
-                    Image(systemName: "network").foregroundColor(DSColor.accent)
-                    Text(localized("輸入來源配置 JSON 的網路地址，支援直接返回 JSON 的 URL。"))
-                        .font(DSFont.caption).foregroundColor(DSColor.textSecondary)
-                }
-                .padding()
-                .background(DSColor.accent.opacity(0.06))
-                .clipShape(RoundedRectangle(cornerRadius: 10))
-                .padding()
-
-                TextField("https://example.com/booksource.json", text: $importURLString)
-                    .textFieldStyle(.roundedBorder)
-                    .keyboardType(.URL)
-                    .autocorrectionDisabled()
-                    .textInputAutocapitalization(.never)
-                    .padding(.horizontal)
-
-                if networkImportLoading {
-                    ProgressView()
-                        .padding(.top, 24)
-                }
-
-                Spacer()
-            }
-            .navigationTitle(localized("網路導入"))
-            .toolbarTitleDisplayMode(.inline)
-            .themedAppSurface(for: .settings)
-            .toolbar {
-                ToolbarItem(placement: .topBarLeading) {
-                    Button {
-                        showNetworkImport = false
-                        importURLString = ""
-                    } label: {
-                        Image(systemName: "xmark")
-                    }
-                }
-                ToolbarItem(placement: .topBarTrailing) {
-                    Button {
-                        doNetworkImport()
-                    } label: {
-                        Image(systemName: "checkmark")
-                    }
-                    .disabled(
-                        importURLString.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-                        || networkImportLoading)
-                }
-            }
-        }
-    }
-
-    private func doNetworkImport() {
-        let urlString = importURLString.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard let url = URL(string: urlString) else {
-            importError = localized("無效的 URL")
-            return
-        }
-        networkImportLoading = true
-        URLSession.shared.dataTask(with: url) { data, _, error in
-            DispatchQueue.main.async {
-                networkImportLoading = false
-                if let err = error {
-                    importError = err.localizedDescription
-                    return
-                }
-                guard let data, let text = String(data: data, encoding: .utf8)
-                        ?? String(data: data, encoding: .isoLatin1) else {
-                    importError = localized("無法解析伺服器回應")
-                    return
-                }
-                importURLString = ""
-                // `queueImportReview` closes this sheet and sequences the review list.
-                doImport(text)
-            }
-        }.resume()
-    }
-
-    /// 粘貼源: imports the clipboard's book-source JSON (or fetches it when the
-    /// clipboard holds a URL), through the same single import path as 本地導入.
-    private func pasteFromClipboard() {
-        guard let text = UIPasteboard.general.string,
-              !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
-            importError = localized("剪貼簿為空")
-            return
-        }
-        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        if trimmed.hasPrefix("http://") || trimmed.hasPrefix("https://") {
-            importURLString = trimmed
-            doNetworkImport()
-            return
-        }
-        do {
-            queueImportReview(try store.parseForImport(json: trimmed))
-        } catch {
-            importError = error.localizedDescription
-        }
     }
 
     // MARK: - Utilities

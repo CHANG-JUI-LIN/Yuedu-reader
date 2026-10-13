@@ -1854,3 +1854,21 @@ Not split (one meaning everywhere): 確認刪除 (three alert titles), 是／否
 - **Checked, as decision 31 asks before 5h removes anything:** the custom explore pages moved into 首頁配置 in 5d-4 (`HomePageStore.moveCustomPages`), still chosen and edited from 探索; `custom_explore_pages.json` stays on disk for older builds. Nothing here removes them.
 - **Left of decision 31:** 資源庫's ••• holds only the layout choices; decision 31 allows 新增來源 and 來源管理 there too (5h-4).
 - **Next:** 5h-4, 資源庫's •••.
+
+#### What landed — 5h-4: 資源庫's ••• (decision 31, 2026-10-13)
+
+- **Branch `library/more-menu`.** Maintainer's answer (by option, the recommended one): the ••• holds 新增來源配置 and 管理來源配置 with the layout, as decision 31 allows, and 新增來源配置 is 來源配置管理's own flow, shared rather than copied.
+- **One flow (`BookSourceAddFlow`, `BookSourceAddFlow.swift`):** 手動新增, 本地導入 (paste or pick a file) and 網路導入, the parse, the iOS 17 sequencing of the file picker and the review list, and the confirmation list (`BookSourceImportCoordinator`). Moved out of `BookSourceListView` unchanged; 來源配置管理's 「+」 (`BookSourceAddToolbarControl`), its empty state's 匯入 and 粘貼源 use it. `.bookSourceAddFlow(_:)` attaches the sheets, pickers and its outcome alert to the screen that opens it, so each opener is a first-level presenter.
+  - The list page keeps its own alert for its own outcomes (grouping, copying, deleting).
+  - **Changed while moving:** a file that cannot be read is logged (`AppLogger.error`) as well as shown, where `try?` dropped the error; the network fetch is `async` instead of a callback; the sheets' ✕ and ✓ have VoiceOver labels (關閉, 匯入), which they lacked.
+  - **The source disclaimer:** 來源配置管理 asks for it as it opens; 資源庫 never did. `begin(_:)` shows it first when it has not been accepted, and the chosen route follows its dismissal.
+- **資源庫's •••:** from iOS 18 a native menu: 新增來源配置 (a submenu of the three routes), 管理來源配置 (pushes 來源配置管理), then 格狀 and 每列欄數. On iOS 17 a chooser (`DismissalSequencedActionChooser`), as 探索's ••• is, since the routes are sheets a dismissing menu drops: the three routes (subtitled 新增來源配置), 管理來源配置, 格狀 and 列表, and with the grid 2・3・4 欄, the current ones marked 使用中. The section's own 管理來源配置 control stays.
+- **Not test-first:** the move came first, then `BookSourceAddFlowTests`.
+- **Tests:**
+  - Unit, iOS 27: `BookSourceAddFlowTests`: a route waits for the disclaimer then opens; each route opens its sheet; the iOS 17 chooser opens a route only after it dismisses; text that is not a source is an error and nothing is reviewed; the review waits for the import sheet to dismiss and writes nothing. 5 tests passed.
+    - The first build failed: the new file needed `import Combine` for `@Published` (this target builds with member-import visibility).
+  - UI, new: `LibraryTabUITests.testMoreMenu`: the ••• has 新增來源配置 and 管理來源配置; 網路匯入 opens its sheet and 關閉 closes it; 管理來源配置 pushes 來源配置管理, whose 「+」 → 本機匯入 opens 匯入來源配置.
+    - First failure, in the test: it looked for the keys 本地導入／網路導入, whose zh-Hant text is 本機匯入／網路匯入.
+  - UI, updated: `testGridAndList` checks iOS 17's chooser rows (格狀, 3 欄) where the menu has 每列欄數.
+  - UI, iOS 27 and iOS 17.5: `LibraryTabUITests` (4) and `BookSourceManagementUITests` (2, one skipped as before) passed. Screenshots checked: the iOS 27 menu and its submenu; the iOS 17 chooser.
+- **Decision 31 is done for 資源庫.** **Next:** the plan's remaining Phase 5 steps.
