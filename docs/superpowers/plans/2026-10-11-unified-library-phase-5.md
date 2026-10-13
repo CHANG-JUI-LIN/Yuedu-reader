@@ -1871,4 +1871,11 @@ Not split (one meaning everywhere): 確認刪除 (three alert titles), 是／否
     - First failure, in the test: it looked for the keys 本地導入／網路導入, whose zh-Hant text is 本機匯入／網路匯入.
   - UI, updated: `testGridAndList` checks iOS 17's chooser rows (格狀, 3 欄) where the menu has 每列欄數.
   - UI, iOS 27 and iOS 17.5: `LibraryTabUITests` (4) and `BookSourceManagementUITests` (2, one skipped as before) passed. Screenshots checked: the iOS 27 menu and its submenu; the iOS 17 chooser.
-- **Decision 31 is done for 資源庫.** **Next:** the plan's remaining Phase 5 steps.
+- **Decision 31 is done for 資源庫.** **Next:** follow-up 3, the discover page's category pick keyed by the source's address.
+
+#### What landed — follow-up 3: a discover page's shown categories follow the source's address (2026-10-13)
+
+- **Branch `explore/category-selection-key`.** 發現頁設定's pick of shown categories was stored under `discover.categorySelection.<source UUID>`, a device-local id, so importing a source again lost it (design D4). It is now `discover.shownCategories.<bookSourceUrl>` (`DiscoverViewModel.categorySelectionKey(sourceURL:)`).
+- **The old value:** when the address has no pick, the one under the source's current id is read and written under the address; the old key is left where it is. 全部顯示 clears both, as it cleared the old one before, or the next visit would read the old pick again. Picks under ids of sources no longer in the library stay untouched.
+- **Test-first:** `ExploreSettingsTests` gained "a pick survives the source being imported again" and "a pick stored under the old id is read, and the old value stays" (with 全部顯示 clearing both). Both failed on the old storage (the re-imported source showed no pick; nothing was written under the address), then passed. `discoverCategorySelection` now checks the new key.
+- **Tests:** unit, iOS 27: `ExploreSettingsTests` and `ExploreSourceFilterTests` (14 tests), `DiscoverViewModelReloadTests` and `DiscoverKindsCacheTests` (11 tests) passed. No view changed, so no UI test was run.

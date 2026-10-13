@@ -145,8 +145,8 @@ final class DiscoverViewModel: ObservableObject {
 
     /// The categories the reader picked to see (發現頁設定), or `nil` when none is picked
     /// and the page shows every one. Once some are picked the page shows those alone, so
-    /// a category the source adds later stays off. Stored per source under the key
-    /// 發現頁設定 used before the page showed every category, so a choice made then holds.
+    /// a category the source adds later stays off. Stored per source address
+    /// (`categorySelectionKey(sourceURL:)`); a choice stored under the source's old id holds.
     @Published private(set) var shownCategoryKeys: Set<String>?
     private let categorySelectionPrefix = "discover.categorySelection."
 
@@ -276,25 +276,40 @@ final class DiscoverViewModel: ObservableObject {
         buildSections(from: items)
     }
 
-    private var categorySelectionKey: String? {
+    /// The pick is the source's, keyed by its address (Phase 5 plan, follow-up 3; design D4):
+    /// the device-local id changes when the source is imported again.
+    nonisolated static func categorySelectionKey(sourceURL: String) -> String {
+        "discover.shownCategories." + sourceURL
+    }
+
+    /// Where a pick made before follow-up 3 was stored: under the source's device-local id.
+    /// Read when the address has none, and left in place.
+    private var legacyCategorySelectionKey: String? {
         selectedSourceId.map { categorySelectionPrefix + $0.uuidString }
     }
 
     private func loadCategorySelection() {
-        guard let key = categorySelectionKey,
-              let stored = UserDefaults.standard.stringArray(forKey: key) else {
+        let defaults = UserDefaults.standard
+        let key = Self.categorySelectionKey(sourceURL: sourceURL)
+        if let stored = defaults.stringArray(forKey: key) {
+            shownCategoryKeys = Set(stored)
+        } else if let legacyKey = legacyCategorySelectionKey, let stored = defaults.stringArray(forKey: legacyKey) {
+            shownCategoryKeys = Set(stored)
+            defaults.set(stored, forKey: key)
+        } else {
             shownCategoryKeys = nil
-            return
         }
-        shownCategoryKeys = Set(stored)
     }
 
     private func persistCategorySelection() {
-        guard let key = categorySelectionKey else { return }
+        let defaults = UserDefaults.standard
+        let key = Self.categorySelectionKey(sourceURL: sourceURL)
         if let keys = shownCategoryKeys {
-            UserDefaults.standard.set(keys.sorted(), forKey: key)
+            defaults.set(keys.sorted(), forKey: key)
         } else {
-            UserDefaults.standard.removeObject(forKey: key)
+            defaults.removeObject(forKey: key)
+            // 全部顯示 clears the old pick too, or the next visit would read it again.
+            legacyCategorySelectionKey.map(defaults.removeObject(forKey:))
         }
     }
 

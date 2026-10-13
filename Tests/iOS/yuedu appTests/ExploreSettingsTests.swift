@@ -120,7 +120,7 @@ struct ExploreSettingsTests {
         var source = BookSource()
         source.bookSourceName = "發現頁設定測試"
         source.bookSourceUrl = "https://discover-settings.test"
-        let storageKey = "discover.categorySelection." + source.id.uuidString
+        let storageKey = DiscoverViewModel.categorySelectionKey(sourceURL: source.bookSourceUrl)
         defer { UserDefaults.standard.removeObject(forKey: storageKey) }
 
         let discover = DiscoverViewModel(source: source)
@@ -149,6 +149,55 @@ struct ExploreSettingsTests {
         #expect(!discover.hasCustomCategorySelection)
         #expect(UserDefaults.standard.object(forKey: storageKey) == nil)
         #expect(discover.sections.map(\.item.title) == ["月票榜", "畅销榜", "玄幻"])
+    }
+
+    /// Follow-up 3 of the Phase 5 plan: the pick is the source's, keyed by its address, so
+    /// it survives the source being imported again (a new device-local id).
+    @MainActor
+    @Test("a pick survives the source being imported again")
+    func categorySelectionSurvivesReimport() throws {
+        var source = BookSource()
+        source.bookSourceUrl = "https://discover-reimport.test"
+        let storageKey = DiscoverViewModel.categorySelectionKey(sourceURL: source.bookSourceUrl)
+        defer { UserDefaults.standard.removeObject(forKey: storageKey) }
+
+        let discover = DiscoverViewModel(source: source)
+        discover.items = Self.discoverRaw.compactMap(DiscoverViewModel.mapItem)
+        let month = try #require(discover.items.first { $0.title == "月票榜" })
+        discover.toggleCategorySelection(month)
+
+        var reimported = source
+        reimported.id = UUID()
+        #expect(DiscoverViewModel(source: reimported).isCategorySelected(month))
+    }
+
+    /// A pick made before the change, under the source's old id, is read and kept where it was.
+    @MainActor
+    @Test("a pick stored under the old id is read, and the old value stays")
+    func categorySelectionReadsTheOldKey() throws {
+        var source = BookSource()
+        source.bookSourceUrl = "https://discover-old-key.test"
+        let oldKey = "discover.categorySelection." + source.id.uuidString
+        let storageKey = DiscoverViewModel.categorySelectionKey(sourceURL: source.bookSourceUrl)
+        defer {
+            UserDefaults.standard.removeObject(forKey: oldKey)
+            UserDefaults.standard.removeObject(forKey: storageKey)
+        }
+        let items = Self.discoverRaw.compactMap(DiscoverViewModel.mapItem)
+        let month = try #require(items.first { $0.title == "月票榜" })
+        UserDefaults.standard.set([month.stableKey], forKey: oldKey)
+
+        let discover = DiscoverViewModel(source: source)
+        #expect(discover.isCategorySelected(month))
+        #expect(UserDefaults.standard.stringArray(forKey: storageKey) == [month.stableKey])
+        #expect(UserDefaults.standard.stringArray(forKey: oldKey) == [month.stableKey])
+
+        // 全部顯示 clears the pick wherever it was stored, so the old one does not come back.
+        discover.items = items
+        discover.showAllCategories()
+        #expect(UserDefaults.standard.object(forKey: storageKey) == nil)
+        #expect(UserDefaults.standard.object(forKey: oldKey) == nil)
+        #expect(!DiscoverViewModel(source: source).hasCustomCategorySelection)
     }
 
     @Test("explore buttons, inputs and toggles become controls; a button without an action runs its url")
