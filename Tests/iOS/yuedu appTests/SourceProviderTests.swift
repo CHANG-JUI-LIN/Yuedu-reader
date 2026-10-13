@@ -71,6 +71,46 @@ struct OPDSProviderTests {
         #expect(page.next == CollectionCursor(value: "https://opds.example/root?page=2"))
     }
 
+    /// Follow-up 5 of the Phase 5 plan: 「最新」 follows the catalog's sort/new link before the
+    /// root's own books.
+    @Test("最新 follows the catalog's sort/new link")
+    func latestFollowsSortNew() async throws {
+        var requested: [URL] = []
+        let provider = makeProvider(kind: .opds) { request in
+            requested.append(request.url!)
+            if request.url?.path == "/newest" {
+                return (200, Self.newest, "application/atom+xml")
+            }
+            return (200, Self.atom.replacingOccurrences(
+                of: "<id>root</id><title>Root</title>",
+                with: #"<id>root</id><title>Root</title><link rel="http://opds-spec.org/sort/new" href="/newest" type="application/atom+xml"/>"#),
+                "application/atom+xml")
+        }
+        let entries = try await provider.load(HomeSection(layout: .row, binding: .latest))
+        #expect(requested.map(\.path) == ["/root", "/newest"])
+        guard case .item(_, let summary, _) = entries.first else {
+            Issue.record("unexpected entries: \(entries)")
+            return
+        }
+        #expect(summary.title == "球狀閃電")
+    }
+
+    @Test("without one, 最新 is the root's own books")
+    func latestWithoutSortNew() async throws {
+        var requested: [URL] = []
+        let provider = makeProvider(kind: .opds) { request in
+            requested.append(request.url!)
+            return (200, Self.atom, "application/atom+xml")
+        }
+        let entries = try await provider.load(HomeSection(layout: .row, binding: .latest))
+        #expect(requested.map(\.path) == ["/root"])
+        guard case .item(_, let summary, _) = entries.first else {
+            Issue.record("unexpected entries: \(entries)")
+            return
+        }
+        #expect(summary.title == "三體")
+    }
+
     @Test("a cursor is fetched as given, and an empty feed is an empty page")
     func cursorAndEmpty() async throws {
         var requested: [URL] = []
@@ -157,6 +197,16 @@ struct OPDSProviderTests {
         <link rel="http://opds-spec.org/acquisition" href="/book.epub" type="application/epub+zip"/>
       </entry>
       <entry><id>orphan</id><title>Nowhere</title></entry>
+    </feed>
+    """
+
+    static let newest = """
+    <feed xmlns="http://www.w3.org/2005/Atom">
+      <id>newest</id><title>Newest</title>
+      <entry>
+        <id>urn:isbn:9787536693968</id><title>球狀閃電</title><author><name>劉慈欣</name></author>
+        <link rel="http://opds-spec.org/acquisition" href="/ball.epub" type="application/epub+zip"/>
+      </entry>
     </feed>
     """
 }

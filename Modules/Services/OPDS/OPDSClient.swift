@@ -88,6 +88,15 @@ struct OPDSFeed {
     var searchDescriptionURL: URL?
     var search: OPDSSearch?
     var alternateURL: URL?
+    /// The catalog's newest additions (`http://opds-spec.org/sort/new`): a link of the feed's
+    /// own, or else the first navigation entry with that relation. Home's 「最新」 follows it.
+    var newestURL: URL?
+
+    /// OPDS 1.2's relation for a catalog's newest additions, which OPDS 2 keeps.
+    static func isNewestRelation(_ rel: String) -> Bool {
+        let rel = rel.lowercased()
+        return rel == "http://opds-spec.org/sort/new" || rel == "https://opds-spec.org/sort/new"
+    }
 }
 
 enum OPDSError: LocalizedError {
@@ -287,6 +296,10 @@ private final class OPDSFeedParserDelegate: NSObject, XMLParserDelegate {
     private let feedURL: URL
     private var elements: [(name: String, text: String, base: URL)] = []
     private var current: OPDSEntry?
+    /// The current entry leads to the newest additions (`OPDSFeed.isNewestRelation`).
+    private var currentIsNewest = false
+    /// A navigation entry's newest-additions link, used when the feed has no link of its own.
+    private var newestEntryURL: URL?
     private var authors: [String] = []
 
     init(feedURL: URL) { self.feedURL = feedURL }
@@ -298,13 +311,17 @@ private final class OPDSFeedParserDelegate: NSObject, XMLParserDelegate {
         let base = attributes["xml:base"].flatMap { URL(string: $0, relativeTo: inherited)?.absoluteURL } ?? inherited
         let parent = elements.last?.name
         elements.append((name, "", base))
-        if name == "entry" { current = OPDSEntry(id: "", title: ""); authors = [] }
+        if name == "entry" { current = OPDSEntry(id: "", title: ""); currentIsNewest = false; authors = [] }
         if name == "category", parent == "entry", current?.category == nil,
            OPDSEntry.isCategoryScheme(attributes["scheme"]) {
             let named = Self.plain(attributes["label"] ?? attributes["term"] ?? "", limit: 512)
             if !named.isEmpty { current?.category = named }
         }
         if name == "link" { handleLink(attributes, base: base) }
+    }
+
+    func parserDidEndDocument(_ parser: XMLParser) {
+        if feed.newestURL == nil { feed.newestURL = newestEntryURL }
     }
 
     func parser(_ parser: XMLParser, foundCharacters string: String) {
@@ -342,6 +359,7 @@ private final class OPDSFeedParserDelegate: NSObject, XMLParserDelegate {
             guard var entry = current else { return }
             current = nil
             guard entry.isBook || entry.isNavigation else { return }
+            if currentIsNewest, entry.isNavigation, newestEntryURL == nil { newestEntryURL = entry.navigationURL }
             entry.author = authors.isEmpty ? nil : authors.joined(separator: ", ")
             entry.authorNames = authors
             if entry.id.isEmpty { entry.id = entry.acquisitions.first?.url.absoluteString ?? entry.navigationURL?.absoluteString ?? "" }
@@ -373,6 +391,13 @@ private final class OPDSFeedParserDelegate: NSObject, XMLParserDelegate {
         }
         guard let resolved = URL(string: href, relativeTo: base)?.absoluteURL,
               OPDSClient.url(from: resolved.absoluteString) != nil else { return }
+        if OPDSFeed.isNewestRelation(rel) {
+            if current == nil {
+                if feed.newestURL == nil { feed.newestURL = resolved }
+                return
+            }
+            currentIsNewest = true
+        }
         if rel == "alternate", type == "text/html" {
             if current != nil { current?.alternateURL = resolved }
             else { feed.alternateURL = resolved }
@@ -386,7 +411,8 @@ private final class OPDSFeedParserDelegate: NSObject, XMLParserDelegate {
                 current?.acquisitions.append(OPDSAcquisition(url: resolved, type: attributes["type"] ?? "", rel: rel, size: attributes["length"].flatMap(Int64.init)))
             } else if rel.hasSuffix("/image/thumbnail") { current?.thumbnailURL = resolved }
             else if rel.hasSuffix("/image") { current?.coverURL = resolved }
-            else if type.contains("application/atom+xml") || rel == "subsection", current?.navigationURL == nil { current?.navigationURL = resolved }
+            else if type.contains("application/atom+xml") || rel == "subsection" || OPDSFeed.isNewestRelation(rel),
+                    current?.navigationURL == nil { current?.navigationURL = resolved }
         } else if rel == "next" { feed.nextPageURL = resolved }
     }
 }

@@ -85,6 +85,12 @@ private struct Mapper {
 
         feed.entries += (document.navigation ?? []).compactMap { mapper.navigationEntry($0) }
         for group in document.groups ?? [] { feed.entries += mapper.entries(for: group) }
+        if feed.newestURL == nil {
+            let navigation = (document.navigation ?? []) + (document.groups ?? []).flatMap { $0.navigation ?? [] }
+            feed.newestURL = navigation.first { link in
+                link.templated != true && link.rels.contains(where: OPDSFeed.isNewestRelation)
+            }.flatMap { resolve($0.href) }
+        }
         feed.entries += (document.publications ?? []).compactMap { mapper.entry(for: $0) }
         return feed
     }
@@ -103,7 +109,8 @@ private struct Mapper {
             return
         }
         guard link.templated != true, let url = resolve(link.href) else { return }
-        if rels.contains("next") { feed.nextPageURL = url }
+        if rels.contains(where: OPDSFeed.isNewestRelation) { if feed.newestURL == nil { feed.newestURL = url } }
+        else if rels.contains("next") { feed.nextPageURL = url }
         else if rels.contains("alternate"), link.mime == "text/html" { feed.alternateURL = url }
     }
 
