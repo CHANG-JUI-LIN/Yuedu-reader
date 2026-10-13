@@ -177,11 +177,12 @@ struct DiscoverFirstPagesTests {
         let home = pages(probe, lanes: lanes), preview = pages(probe, lanes: lanes)
         let a = source("a")
         let hot = home.firstPage(of: category(a, "/hot"), in: a)
-        let joined = preview.firstPage(of: category(a, "/hot"), in: a)
-        let new = preview.firstPage(of: category(a, "/new"), in: a)
-
+        // The home's request is on its way before the preview asks: an ask reads the store
+        // first (7a-5), so asked together either home might start the request.
         await probe.waitForEntries(2)
         #expect(await probe.log == ["prime a", "fetch a/hot"])
+        let joined = preview.firstPage(of: category(a, "/hot"), in: a)
+        let new = preview.firstPage(of: category(a, "/new"), in: a)
         await probe.release("a/hot")
         #expect(try await joined.value.map(\.name) == hot.value.map(\.name))
         await probe.waitForEntries(4)
