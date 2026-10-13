@@ -88,7 +88,8 @@ extension CollectionEntry {
         return .item(record,
                      WorkSummary(title: book.name, authors: record.authors,
                                  cover: cover.map { .remote($0, headers: source.parsedHeaders) } ?? .generated(seed: book.name),
-                                 blurb: blurb, language: nil, contentKind: record.contentKind),
+                                 blurb: blurb, language: nil, contentKind: record.contentKind,
+                                 category: WorkSummary.category(fromSourceKind: book.kind)),
                      .onlineBook(FrozenOnlineBook(book: book)))
     }
 }

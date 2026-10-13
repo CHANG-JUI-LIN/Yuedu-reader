@@ -163,6 +163,10 @@ private struct Mapper {
         }
         entry.language = metadata.language.first.map { Self.plain($0, limit: 64) }
         entry.identifiers = metadata.identifier.map { [Self.plain($0, limit: 512)] } ?? []
+        entry.category = metadata.subject.lazy
+            .filter { OPDSEntry.isCategoryScheme($0.scheme) }
+            .map { Self.plain($0.name, limit: 512) }
+            .first { !$0.isEmpty }
         guard entry.isBook || entry.isNavigation else { return nil }
         if entry.alternateURL == nil, entry.isBook { entry.alternateURL = feedAlternateURL }
         entry.id = metadata.identifier ?? entry.navigationURL?.absoluteString
@@ -249,8 +253,9 @@ extension OPDS2FeedParser {
         var description: String?
         var language: [String] = []
         var author: [Contributor] = []
+        var subject: [Subject] = []
 
-        private enum CodingKeys: String, CodingKey { case identifier, title, description, language, author }
+        private enum CodingKeys: String, CodingKey { case identifier, title, description, language, author, subject }
 
         init(from decoder: Decoder) throws {
             let values = try decoder.container(keyedBy: CodingKeys.self)
@@ -259,6 +264,25 @@ extension OPDS2FeedParser {
             description = try values.decodeIfPresent(String.self, forKey: .description)
             language = try values.decodeIfPresent(OneOrMany<String>.self, forKey: .language)?.values ?? []
             author = try values.decodeIfPresent(OneOrMany<Contributor>.self, forKey: .author)?.values ?? []
+            subject = try values.decodeIfPresent(OneOrMany<Subject>.self, forKey: .subject)?.values ?? []
+        }
+    }
+
+    /// A subject is a bare name or an object with `name` and optional `scheme`.
+    struct Subject: Decodable {
+        var name: String
+        var scheme: String?
+
+        private enum CodingKeys: String, CodingKey { case name, scheme }
+
+        init(from decoder: Decoder) throws {
+            do {
+                name = try decoder.singleValueContainer().decode(String.self)
+            } catch DecodingError.typeMismatch {
+                let values = try decoder.container(keyedBy: CodingKeys.self)
+                name = try values.decode(LocalizedString.self, forKey: .name).value
+                scheme = try values.decodeIfPresent(String.self, forKey: .scheme)
+            }
         }
     }
 

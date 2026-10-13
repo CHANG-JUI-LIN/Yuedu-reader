@@ -108,20 +108,38 @@ struct WorkSummary: Hashable, Sendable {
     var blurb: String?
     var language: String?
     var contentKind: ContentKind
+    /// The source's own category, when it names one (decision 37: never made up).
+    var category: String?
 
     static let titleLimit = 500
     static let authorLimit = 20
     static let authorLengthLimit = 200
     static let blurbLimit = 300
+    static let categoryLimit = 40
 
-    /// `blurb` must already be plain text; `OPDSClient.plainMetadata` turns HTML into it.
-    init(title: String, authors: [String], cover: CoverReference?, blurb: String?, language: String?, contentKind: ContentKind) {
+    /// `blurb` and `category` must already be plain text; `OPDSClient.plainMetadata` turns HTML
+    /// into it.
+    init(title: String, authors: [String], cover: CoverReference?, blurb: String?, language: String?, contentKind: ContentKind,
+         category: String? = nil) {
         self.title = String(title.prefix(Self.titleLimit))
         self.authors = authors.prefix(Self.authorLimit).map { String($0.prefix(Self.authorLengthLimit)) }
         self.cover = cover
         self.blurb = blurb.map { String($0.prefix(Self.blurbLimit)) }.flatMap { $0.isEmpty ? nil : $0 }
         self.language = language
         self.contentKind = contentKind
+        self.category = category.map { String($0.trimmingCharacters(in: .whitespacesAndNewlines).prefix(Self.categoryLimit)) }
+            .flatMap { $0.isEmpty ? nil : $0 }
+    }
+
+    /// A book source's `kind` mixes its tags: genre, status, a date, a word count. The first one
+    /// with no digit in it, which is the genre the sources put first. A plain split: a search
+    /// route builds this where its destination is made (Technotes/iOS17SearchWatchdogPostmortem.md,
+    /// guardrail 5).
+    nonisolated static func category(fromSourceKind kind: String) -> String? {
+        let separators = CharacterSet(charactersIn: ",，、|/;；").union(.whitespacesAndNewlines)
+        return kind.prefix(1_000).components(separatedBy: separators)
+            .first { tag in !tag.isEmpty && !tag.contains { ("0"..."9").contains($0) || ("０"..."９").contains($0) } }
+            .map { String($0.prefix(categoryLimit)) }
     }
 }
 

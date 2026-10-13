@@ -360,6 +360,9 @@ enum DSLayout {
     static let homeCompactCoverWidth: CGFloat = 100
     /// A cover in 圖文資訊清單, beside its text.
     static let homeListCoverWidth: CGFloat = 60
+    /// 精選's cover (decision 37), beside its text on the cover's colour: the largest on the
+    /// home, one book to a page.
+    static let homeFeaturedCoverWidth: CGFloat = 132
     /// 精簡閱讀卡片's cover (5d-3c), beside its text on the cover's colour.
     static let homeCompactReadingCardCoverWidth: CGFloat = 64
     /// 訂閱的最新文章's card (5g) in the sideways layouts: wider than a cover, since an article's

@@ -57,6 +57,16 @@ struct OPDSEntry: Identifiable, Hashable {
     var language: String?
     /// `dc:identifier`s (OPDS 1) or `metadata.identifier` (OPDS 2), as the feed wrote them.
     var identifiers: [String] = []
+    /// The first named category (OPDS 1 `<category>`, OPDS 2 `metadata.subject`), past
+    /// classification codes, for 精選's card (decision 37). Nil when the feed names none.
+    var category: String?
+
+    /// Classification codes and the DCMI type, which name no category a reader reads: Gutenberg
+    /// tags each book `LCC` "PL" and `DCMIType` "Text" before its subject headings.
+    static func isCategoryScheme(_ scheme: String?) -> Bool {
+        guard let scheme = scheme?.lowercased(), !scheme.isEmpty else { return true }
+        return !scheme.hasSuffix("/lcc") && !scheme.hasSuffix("/dcmitype")
+    }
 
     var isBook: Bool { !acquisitions.isEmpty }
     var isNavigation: Bool { acquisitions.isEmpty && navigationURL != nil }
@@ -286,8 +296,14 @@ private final class OPDSFeedParserDelegate: NSObject, XMLParserDelegate {
         if rootName == nil { rootName = name }
         let inherited = elements.last?.base ?? feedURL
         let base = attributes["xml:base"].flatMap { URL(string: $0, relativeTo: inherited)?.absoluteURL } ?? inherited
+        let parent = elements.last?.name
         elements.append((name, "", base))
         if name == "entry" { current = OPDSEntry(id: "", title: ""); authors = [] }
+        if name == "category", parent == "entry", current?.category == nil,
+           OPDSEntry.isCategoryScheme(attributes["scheme"]) {
+            let named = Self.plain(attributes["label"] ?? attributes["term"] ?? "", limit: 512)
+            if !named.isEmpty { current?.category = named }
+        }
         if name == "link" { handleLink(attributes, base: base) }
     }
 

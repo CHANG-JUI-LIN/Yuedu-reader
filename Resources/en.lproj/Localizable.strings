@@ -3612,6 +3612,8 @@
 "呈現方式" = "Layout";
 "大型閱讀卡片" = "Large Reading Cards";
 "精簡閱讀卡片" = "Compact Reading Cards";
+"精選" = "Featured";
+"查看作品" = "View Book";
 "書籍" = "Book";
 "從繼續閱讀移除" = "Remove from Continue Reading";
 "標記為已讀完" = "Mark as Finished";

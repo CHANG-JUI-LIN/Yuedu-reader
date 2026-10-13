@@ -25,6 +25,8 @@ struct HomeCardContent: Identifiable {
     private(set) var author: String
     /// The source's plain-text blurb, for the layouts with room for it; none for a shelf copy.
     let blurb: String?
+    /// The source's own category, for 精選 (decision 37); none for a shelf copy.
+    let category: String?
     let cover: Cover
     /// The Emby line: 已加入書架, 已下載, or a shelf copy's 新增 or how far it is read.
     let detail: String?
@@ -57,6 +59,7 @@ struct HomeCardContent: Identifiable {
         if case .copy(let bookID) = opening, let book = shelfBooks[bookID] {
             cover = .shelf(book)
             blurb = nil
+            category = nil
             let read = book.currentPosition
             detail = BookshelfAccessibility.readingStatus(for: book)
             progress = read > 0 && read < 0.99 ? read : nil
@@ -67,6 +70,7 @@ struct HomeCardContent: Identifiable {
         }
         cover = .reference(summary.cover, session: Self.session(for: opening, connections: connections))
         blurb = summary.blurb
+        category = summary.category
         let status = status(record.key)
         detail = status?.title
         progress = nil
@@ -100,6 +104,7 @@ struct HomeCardContent: Identifiable {
         title = "Placeholder title"
         author = "Author"
         blurb = "A blurb as long as a source's, over two lines of a card."
+        category = "Category"
         cover = .placeholder
         detail = nil
         kind = .text

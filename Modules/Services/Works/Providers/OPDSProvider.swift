@@ -67,7 +67,8 @@ extension WorkSummary {
             blurb: connectionID == PublicLibraryID.gutenberg.rawValue
                 ? nil : entry.summary.map { OPDSClient.plainMetadata($0, limit: WorkSummary.blurbLimit) },
             language: entry.language,
-            contentKind: record.contentKind
+            contentKind: record.contentKind,
+            category: entry.category
         )
     }
 }
