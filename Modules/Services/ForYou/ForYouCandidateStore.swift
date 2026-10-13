@@ -85,4 +85,36 @@ actor ForYouCandidateStore {
             return nil
         }
     }
+
+    /// Every saved category's books whose source is in `sources` (its URL → its id now), for
+    /// 作品詳情's versions (7b-1): what the reader's sources listed, read with no request.
+    /// Ordered by source, then category, so a source's first book is always the same one.
+    func savedBooks(sources: [String: UUID]) -> [OnlineBook] {
+        let files: [URL]
+        do {
+            files = try FileManager.default.contentsOfDirectory(at: directory, includingPropertiesForKeys: nil)
+                .filter { $0.pathExtension == "json" }
+        } catch CocoaError.fileReadNoSuchFile {
+            return []
+        } catch {
+            AppLogger.cache("⟐ for-you candidates folder unreadable", error: error, context: [:])
+            return []
+        }
+        var saved: [ForYouCandidates] = []
+        for file in files {
+            do {
+                saved.append(try JSONDecoder().decode(ForYouCandidates.self, from: Data(contentsOf: file)))
+            } catch {
+                AppLogger.cache("⟐ for-you candidates unreadable", error: error, context: ["file": file.lastPathComponent])
+            }
+        }
+        return saved.sorted { ($0.sourceURL, $0.categoryURL) < ($1.sourceURL, $1.categoryURL) }.flatMap { candidates in
+            guard let id = sources[candidates.sourceURL] else { return [OnlineBook]() }
+            return candidates.books.map { book in
+                var book = book
+                book.sourceId = id
+                return book
+            }
+        }
+    }
 }

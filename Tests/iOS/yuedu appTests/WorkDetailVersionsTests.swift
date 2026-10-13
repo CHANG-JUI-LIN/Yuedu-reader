@@ -182,7 +182,8 @@ struct WorkDetailShelfVersionsTests {
         let unrelated = ReadingBook(title: "球狀閃電", author: "劉慈欣", source: "local_epub", contentFilename: "b.epub")
         store.saveReadingBook(unrelated)
 
-        let provider = ShelfProvider(store: store, webDAVRoots: { [instance.id: root] })
+        let provider = ShelfProvider(store: store, webDAVRoots: { [instance.id: root] },
+                                     candidates: ForYouCandidateStore(directory: folder.appendingPathComponent("ForYou")), sources: { [] })
         let tapped = WorkDetailRoute(.gutenberg(gutenberg))
         let versions = await provider.versions(of: tapped, aozora: nil)
         // The copy was taken from the Gutenberg book, whose page reads it. The WebDAV file the
@@ -223,7 +224,8 @@ struct WorkDetailShelfVersionsTests {
         copy.aozora = AozoraBookSource(originalFilename: "61517.zip", sourceEncoding: 0, catalogWorkID: work.id)
         store.saveReadingBook(copy)
 
-        let provider = ShelfProvider(store: store)
+        let provider = ShelfProvider(store: store, candidates: ForYouCandidateStore(directory: folder.appendingPathComponent("ForYou")),
+                                     sources: { [] })
         let fromShelf = try #require(provider.items([copy]).first.flatMap(WorkDetailRoute.init))
         let versions = await provider.versions(of: fromShelf, aozora: index)
         guard versions.count == 1, case .aozora(let shown) = versions[0].opening else {
@@ -234,5 +236,79 @@ struct WorkDetailShelfVersionsTests {
 
         // Without the catalog (not read yet, or offline with no cache) the copy is all there is.
         #expect(await provider.versions(of: fromShelf, aozora: nil).map(\.nodeKey) == [.copy(copy.id)])
+    }
+
+    /// 7b-1 (maintainer, 2026-10-13): what the reader's sources listed on the home, and
+    /// 青空文庫's catalog, join the versions with no request.
+    @Test("the work's books in the candidate cache and 青空文庫's catalog join, after the tapped item")
+    func offers() async throws {
+        let folder = FileManager.default.temporaryDirectory.appendingPathComponent("WorkDetail-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let store = BookStore(metadataFileURL: folder.appendingPathComponent("books_meta.json"))
+        defer {
+            WorkIndexService.waitForPendingSavesForTesting()
+            store.waitForQueuedWrites()
+        }
+        let a = BookSource(bookSourceUrl: "https://a.example", bookSourceName: "甲")
+        let b = BookSource(bookSourceUrl: "https://b.example", bookSourceName: "乙")
+        var off = BookSource(bookSourceUrl: "https://off.example", bookSourceName: "關")
+        off.enabled = false
+        func book(_ name: String, in source: BookSource) -> OnlineBook {
+            OnlineBook(name: name, author: "劉慈欣", intro: "", coverUrl: "", bookUrl: "\(source.bookSourceUrl)/\(name)", tocUrl: "",
+                       wordCount: "", lastChapter: "", kind: "", sourceId: UUID(), sourceName: source.bookSourceName)
+        }
+        let candidates = ForYouCandidateStore(directory: folder.appendingPathComponent("ForYou"))
+        for source in [b, off] {
+            await candidates.write(ForYouCandidates(sourceURL: source.bookSourceUrl, categoryURL: "\(source.bookSourceUrl)/rank",
+                                                    fetchedAt: Date(), books: [book("球狀閃電", in: source), book("三體", in: source)]))
+        }
+        let provider = ShelfProvider(store: store, candidates: candidates, sources: { [a, b, off] })
+        let tapped = try #require(WorkDetailRoute(.onlineBook(book("三體", in: a), source: a)))
+        let index = SeriesCardsTests.catalog(titles: ["三體"])
+        let versions = await provider.versions(of: tapped, aozora: index)
+        let work = try #require(index.worksByID["1"])
+        #expect(versions.map(\.nodeKey) == [tapped.nodeKey, SourceRecord.derived(from: work).key,
+                                             SourceItemKey(instance: SourceInstanceKey(type: .bookSource, id: b.bookSourceUrl),
+                                                           item: OnlineBookURLKey.normalize("https://b.example/三體"))])
+        guard case .onlineBook(let offered) = versions.last?.opening else {
+            Issue.record("b's book is a book-source version: \(versions)")
+            return
+        }
+        #expect(offered.book.sourceId == b.id, "opens through the installed source")
+    }
+
+    /// 7b-1's cost, measured: a full cache (40 categories of 40 books, 20 sources) read and matched.
+    @Test("measure: versions with a full candidate cache")
+    func offersLargeCache() async throws {
+        let folder = FileManager.default.temporaryDirectory.appendingPathComponent("WorkDetail-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let store = BookStore(metadataFileURL: folder.appendingPathComponent("books_meta.json"))
+        defer {
+            WorkIndexService.waitForPendingSavesForTesting()
+            store.waitForQueuedWrites()
+        }
+        let sources = (0..<20).map { BookSource(bookSourceUrl: "https://s\($0).example", bookSourceName: "源\($0)") }
+        let candidates = ForYouCandidateStore(directory: folder.appendingPathComponent("ForYou"))
+        for category in 0..<40 {
+            let source = sources[category % sources.count]
+            let books = (0..<40).map { n in
+                OnlineBook(name: n == 7 ? "三體" : "候選書第\(category)之\(n)本", author: n == 7 ? "劉慈欣" : "作者\(n)", intro: "",
+                           coverUrl: "", bookUrl: "\(source.bookSourceUrl)/\(category)/\(n)", tocUrl: "", wordCount: "",
+                           lastChapter: "", kind: "", sourceId: UUID(), sourceName: source.bookSourceName)
+            }
+            await candidates.write(ForYouCandidates(sourceURL: source.bookSourceUrl, categoryURL: "\(source.bookSourceUrl)/\(category)",
+                                                    fetchedAt: Date(), books: books))
+        }
+        let provider = ShelfProvider(store: store, candidates: candidates, sources: { sources })
+        let tapped = WorkDetailRoute(.gutenberg(GutenbergBook(id: 1, title: "三體", author: "劉慈欣")))
+        var versions: [WorkDetailRoute] = []
+        for run in 0..<3 {
+            let started = SourcePerfTrace.now
+            versions = await provider.versions(of: tapped, aozora: nil)
+            print("⏱ works.measure versions(1600 cached) run \(run): \(String(format: "%.1f", (SourcePerfTrace.now - started) * 1000))ms")
+        }
+        #expect(versions.count == 1 + sources.count, "one per source")
     }
 }
