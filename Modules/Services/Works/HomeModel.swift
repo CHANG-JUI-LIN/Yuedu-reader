@@ -43,6 +43,10 @@ final class HomeModel: ObservableObject {
     private var queueTails: [SourceInstanceKey: Task<Void, Never>] = [:]
     /// Rows queued or loading, so a 重試 or pull to refresh never starts a second load.
     private var active: Set<String> = []
+    /// The last pull to refresh; 為你推薦 asks again for what it read before it.
+    private(set) var refreshedAt: Date?
+    /// 為你推薦's loads waiting for the library rows that load with the home.
+    private var settleWaiters: [CheckedContinuation<Void, Never>] = []
 
     /// - Parameters:
     ///   - providers: the sources now, asked again at each `sync`
@@ -58,8 +62,11 @@ final class HomeModel: ObservableObject {
     /// it lives (Discovery Phase 7a-1).
     static func live(shelf: BookStore) -> HomeModel {
         let firstPages = DiscoverFirstPages()
-        return HomeModel(providers: { SourceProviderRegistry.shared.homeProviders(shelf: shelf, firstPages: firstPages) },
-                         waitForSources: { await BookSourceStore.shared.waitUntilLoaded() })
+        let home = WeakHomeModel()
+        let model = HomeModel(providers: { SourceProviderRegistry.shared.homeProviders(shelf: shelf, firstPages: firstPages, home: home.model) },
+                              waitForSources: { await BookSourceStore.shared.waitUntilLoaded() })
+        home.model = model
+        return model
     }
 
     // MARK: - Building
@@ -142,6 +149,7 @@ final class HomeModel: ObservableObject {
 
     /// Pull to refresh: rows already loaded load again.
     func reload() {
+        refreshedAt = Date()
         for row in rows where requested.contains(row.id) && !active.contains(row.id) {
             start(row)
         }
@@ -170,7 +178,10 @@ final class HomeModel: ObservableObject {
     }
 
     private func fetch(_ rowID: String) async {
-        defer { active.remove(rowID) }
+        defer {
+            active.remove(rowID)
+            resumeSettleWaiters()
+        }
         guard let row = row(rowID), let provider = providers[rowID] else { return }
         setState(.loading, of: rowID)
         let started = SourcePerfTrace.now
@@ -195,5 +206,47 @@ final class HomeModel: ObservableObject {
     private func setState(_ state: RowState, of rowID: String) {
         guard let index = rows.firstIndex(where: { $0.id == rowID }) else { return }
         rows[index].state = state
+    }
+}
+
+// MARK: - 為你推薦's library inputs
+
+/// The home a `ForYouProvider` reads its library rows from; held weakly, so a provider never
+/// keeps a closed home alive.
+@MainActor
+final class WeakHomeModel {
+    weak var model: HomeModel?
+}
+
+extension HomeModel: ForYouHomeRows {
+    /// Once no library row loading with the home (`.withHome`) is still on its way: what the
+    /// library rows have loaded, in the home's order. 為你推薦 reads these and never asks a
+    /// library itself (Discovery Phase 7a).
+    func settledLibraryEntries() async -> [ForYouLibraryRow] {
+        while !libraryRowsSettled {
+            await withCheckedContinuation { settleWaiters.append($0) }
+        }
+        return rows.compactMap { row in
+            guard Self.isLibrary(row), case .loaded(let entries) = row.state else { return nil }
+            return ForYouLibraryRow(source: row.source, entries: entries)
+        }
+    }
+
+    private static func isLibrary(_ row: Row) -> Bool {
+        switch row.source.type {
+        case .opds, .webDAV, .calibre, .gutenberg, .aozora: return true
+        case .library, .bookSource, .bibliographic: return false
+        }
+    }
+
+    private var libraryRowsSettled: Bool {
+        !rows.contains { $0.policy == .withHome && Self.isLibrary($0) && active.contains($0.id) }
+    }
+
+    private func resumeSettleWaiters() {
+        guard libraryRowsSettled, !settleWaiters.isEmpty else { return }
+        let waiters = settleWaiters
+        settleWaiters = []
+        waiters.forEach { $0.resume() }
     }
 }

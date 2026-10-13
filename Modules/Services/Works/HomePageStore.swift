@@ -19,7 +19,7 @@ import Foundation
 @MainActor
 final class HomePageStore: ObservableObject {
     /// The app's home; the editor (5d) changes the same one the home draws.
-    static let shared = HomePageStore()
+    static let shared = HomePageStore(insertsForYouOnce: true)
 
     /// Every configuration; nil until the home is first made.
     @Published private(set) var home: HomeConfigurations?
@@ -48,14 +48,18 @@ final class HomePageStore: ObservableObject {
     private let customPagesURL: URL
     private let defaults: UserDefaults
     private let queue = DispatchQueue(label: "com.yuedu.explore.home")
+    /// Whether this store puts 為你推薦 on a saved home once; only the app's own does, so a
+    /// test's home is read as it was saved.
+    private let insertsForYouOnce: Bool
 
     /// - Parameter customPagesURL: the custom pages that move in; beside the home by default.
     init(fileURL: URL = StorageLocations.applicationSupportRoot.appendingPathComponent("explore_home.json"),
-         customPagesURL: URL? = nil, defaults: UserDefaults = .standard) {
+         customPagesURL: URL? = nil, defaults: UserDefaults = .standard, insertsForYouOnce: Bool = false) {
         self.fileURL = fileURL
         self.customPagesURL = customPagesURL
             ?? fileURL.deletingLastPathComponent().appendingPathComponent("custom_explore_pages.json")
         self.defaults = defaults
+        self.insertsForYouOnce = insertsForYouOnce
         load()
     }
 
@@ -69,6 +73,8 @@ final class HomePageStore: ObservableObject {
     func pageOrDefaults(mode: ExploreMode, publicLibrariesAvailable: Bool) -> HomePage {
         if let page { return page }
         let defaultPage = HomePageDefaults.page(mode: mode, publicLibrariesAvailable: publicLibrariesAvailable)
+        // The defaults have 為你推薦 already; it is never inserted again.
+        if insertsForYouOnce { defaults.set(true, forKey: Self.forYouInsertedKey) }
         var made = HomeConfigurations(sections: defaultPage.sections)
         if !isReadOnly { moveCustomPages(into: &made) }
         home = made
@@ -163,6 +169,27 @@ final class HomePageStore: ObservableObject {
         queue.sync {}
     }
     #endif
+
+    // MARK: - 為你推薦
+
+    /// Set once 為你推薦 has been put on a home: by the defaults, or inserted into a saved one.
+    static let forYouInsertedKey = "home.forYouInserted"
+
+    /// Everyone gets 為你推薦 once (Discovery Phase 7a, maintainer's decision 4): a saved home
+    /// gets it in the 首頁配置 the reader is on (預設 when that is 空白, which the reader keeps
+    /// empty on purpose), after 系列下一本, else 繼續閱讀, else first. Deleting it afterwards
+    /// sticks. Not on a file this build only reads.
+    private func insertForYouOnce(into home: inout HomeConfigurations) {
+        guard insertsForYouOnce, !isReadOnly, !defaults.bool(forKey: Self.forYouInsertedKey) else { return }
+        defaults.set(true, forKey: Self.forYouInsertedKey)
+        let target = home.selectedID == .blank ? HomeConfigurationID.defaults : home.selectedID
+        var sections = home.sections(of: target)
+        guard !sections.contains(where: { $0.binding == .forYou }) else { return }
+        let after = sections.lastIndex { $0.binding == .nextInSeries } ?? sections.lastIndex { $0.binding == .continueReading }
+        sections.insert(HomeSection(layout: .row, binding: .forYou), at: after.map { $0 + 1 } ?? 0)
+        home.setSections(sections, of: target)
+        AppLogger.cache("⟐ 為你推薦 put on the saved home", context: ["configuration": target.rawValue])
+    }
 
     // MARK: - Custom pages
 
@@ -266,18 +293,22 @@ final class HomePageStore: ObservableObject {
                 read = HomeConfigurations(sections: try JSONDecoder().decode(HomePage.self, from: data).sections)
                 readLegacyLatestExcluded(data)
                 moveCustomPages(into: &read)
+                insertForYouOnce(into: &read)
                 home = read
                 write()
                 return
             }
             read = try JSONDecoder().decode(HomeConfigurations.self, from: data)
+            let inserted = insertsForYouOnce && !defaults.bool(forKey: Self.forYouInsertedKey)
+            insertForYouOnce(into: &read)
             if read.customPagesPending {
                 moveCustomPages(into: &read)
                 home = read
-                if !read.customPagesPending { write() }
+                if !read.customPagesPending || inserted { write() }
                 return
             }
             home = read
+            if inserted { write() }
         } catch {
             AppLogger.cache("⟐ explore home could not be decoded", error: error)
             isReadOnly = !keepAside(data)

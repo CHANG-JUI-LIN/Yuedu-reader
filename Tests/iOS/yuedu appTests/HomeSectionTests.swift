@@ -74,6 +74,7 @@ struct HomeSectionTests {
             case .gutenbergLists: "featured"
             case .gutenbergShelf("popular"): "popular"
             case .nextInSeries: "next"
+            case .forYou: "forYou"
             default: "other"
             }
         }
@@ -84,16 +85,17 @@ struct HomeSectionTests {
     private var featured: [String] { ["featured"] }
 
     // 我的書庫 left the defaults in 5d-1 (settled decision 12): 範圍 holds the libraries.
-    @Test("book-source readers start from 繼續閱讀 → 系列下一本 → 最新 → 古騰堡熱門 → 精選")
+    // 為你推薦 after 系列下一本 for everyone since Discovery Phase 7a (maintainer's decision 4).
+    @Test("book-source readers start from 繼續閱讀 → 系列下一本 → 為你推薦 → 最新 → 古騰堡熱門 → 精選")
     func bookSourceDefaults() {
         let page = HomePageDefaults.page(mode: .bookSources, publicLibrariesAvailable: true)
-        #expect(kinds(page) == ["continue", "next", "latest", "popular"] + featured)
+        #expect(kinds(page) == ["continue", "next", "forYou", "latest", "popular"] + featured)
     }
 
-    @Test("public-library readers and new installs start from 繼續閱讀 → 系列下一本 → 古騰堡熱門 → 精選 → 最新")
+    @Test("public-library readers and new installs start from 繼續閱讀 → 系列下一本 → 為你推薦 → 古騰堡熱門 → 精選 → 最新")
     func publicLibraryDefaults() {
         let page = HomePageDefaults.page(mode: .publicLibraries, publicLibrariesAvailable: true)
-        #expect(kinds(page) == ["continue", "next", "popular"] + featured + ["latest"])
+        #expect(kinds(page) == ["continue", "next", "forYou", "popular"] + featured + ["latest"])
         #expect(!page.sections.contains { if case .gutenbergCollection = $0.binding { true } else { false } })
     }
 
@@ -117,7 +119,7 @@ struct HomeSectionTests {
             #expect(!kinds(page).contains("popular"))
         }
         let page = HomePageDefaults.page(mode: .bookSources, publicLibrariesAvailable: false)
-        #expect(kinds(page) == ["continue", "next", "latest"])
+        #expect(kinds(page) == ["continue", "next", "forYou", "latest"])
     }
 
     @Test("every default section is enabled, untitled and has its own id")

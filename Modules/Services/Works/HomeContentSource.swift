@@ -22,7 +22,7 @@ extension HomeSectionBinding {
     /// Nil for 我的書庫 and a later build's binding, which the form does not offer.
     var contentOwner: HomeContentOwner? {
         switch self {
-        case .continueReading, .latest, .related, .nextInSeries, .subscriptionArticles: .appData
+        case .continueReading, .latest, .related, .nextInSeries, .subscriptionArticles, .forYou: .appData
         case .opdsFeed(let connectionID, _): .connection(id: connectionID)
         case .gutenbergCollection, .gutenbergLists, .gutenbergFeed, .gutenbergShelf: .gutenberg
         case .aozoraNew, .aozoraIndex: .aozora
@@ -32,7 +32,7 @@ extension HomeSectionBinding {
     }
 
     /// App 資料's choices, in the order they are listed.
-    static let appData: [HomeSectionBinding] = [.continueReading, .nextInSeries, .latest, .related, .subscriptionArticles]
+    static let appData: [HomeSectionBinding] = [.continueReading, .nextInSeries, .forYou, .latest, .related, .subscriptionArticles]
 
     /// 青空文庫's choices: 新着, then each index.
     static let aozora: [HomeSectionBinding] = [.aozoraNew] + ["authors", "titles", "categories"].map { .aozoraIndex(kind: $0) }
