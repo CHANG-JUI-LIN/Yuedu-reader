@@ -14,34 +14,32 @@ import Foundation
 ///   already fetched.
 ///
 /// One per home: `SourceProviderRegistry.homeProviders` hands it to the providers it makes,
-/// and calls `beginSync()` each time it makes them.
+/// and calls `beginSync()` each time it makes them. The queue and the requests on their way
+/// are the app's (`DiscoverRequestLanes.shared`), not the home's: 探索's home, a library's home
+/// and a section form's preview can be open at once, and a source's JS runtime must still see
+/// one discover fetch at a time.
 @MainActor
 final class DiscoverFirstPages {
     typealias PrimeCookies = @Sendable (BookSource) async -> Void
 
-    private struct Key: Hashable {
-        let sourceURL: String
-        let categoryURL: String
-    }
-
     private let pageLoader: SectionPageLoader
     private let primeCookies: PrimeCookies
     private let store: ForYouCandidateStore
+    private let lanes: DiscoverRequestLanes
     private let now: @Sendable () -> Date
-    private var inFlight: [Key: (id: UUID, task: Task<[OnlineBook], Error>)] = [:]
-    /// The last fetch queued for each source; the next one starts after it.
-    private var laneTails: [String: Task<[OnlineBook], Error>] = [:]
     private var primed: Set<String> = []
 
     init(
         pageLoader: SectionPageLoader = .live,
         primeCookies: @escaping PrimeCookies = { await BookSourceFetcher.shared.primeDiscoverCookies(in: $0) },
         store: ForYouCandidateStore = .shared,
+        lanes: DiscoverRequestLanes = .shared,
         now: @escaping @Sendable () -> Date = Date.init
     ) {
         self.pageLoader = pageLoader
         self.primeCookies = primeCookies
         self.store = store
+        self.lanes = lanes
         self.now = now
     }
 
@@ -54,17 +52,11 @@ final class DiscoverFirstPages {
     /// category already on its way; otherwise queues behind the source's other fetches.
     /// Failures are logged by `SectionPageLoader` and thrown to every asker.
     func firstPage(of category: ExploreCategoryReference, in source: BookSource) -> Task<[OnlineBook], Error> {
-        let key = Key(sourceURL: source.bookSourceUrl, categoryURL: category.url)
-        if let running = inFlight[key] { return running.task }
-        let id = UUID()
-        let previous = laneTails[key.sourceURL]
+        let key = DiscoverRequestLanes.Key(sourceURL: source.bookSourceUrl, categoryURL: category.url)
+        if let running = lanes.running(key) { return running }
         let primes = primed.insert(key.sourceURL).inserted
         let pageLoader = pageLoader, primeCookies = primeCookies, store = store, now = now
-        // On the main actor, so the request is forgotten before anyone waiting on it resumes:
-        // an ask after a failure fetches again.
-        let task = Task<[OnlineBook], Error> { @MainActor in
-            defer { if inFlight[key]?.id == id { inFlight[key] = nil } }
-            _ = await previous?.result
+        return lanes.enqueue(key) {
             if primes { await primeCookies(source) }
             guard let item = category.cardItem else { return [] }
             let section = DiscoverShowcaseSection(item: item, coverBaseURL: source.bookSourceUrl,
@@ -74,8 +66,42 @@ final class DiscoverFirstPages {
                                                fetchedAt: now(), books: books))
             return books
         }
+    }
+}
+
+/// The app's discover requests by source: one at a time per source, and one per category on
+/// its way, whichever home asked.
+@MainActor
+final class DiscoverRequestLanes {
+    static let shared = DiscoverRequestLanes()
+
+    struct Key: Hashable {
+        let sourceURL: String
+        let categoryURL: String
+    }
+
+    private var inFlight: [Key: (id: UUID, task: Task<[OnlineBook], Error>)] = [:]
+    /// The last request queued for each source; the next one starts after it.
+    private var tails: [String: Task<[OnlineBook], Error>] = [:]
+
+    /// The request for `key` on its way, to join.
+    func running(_ key: Key) -> Task<[OnlineBook], Error>? {
+        inFlight[key]?.task
+    }
+
+    /// Runs `work` after the source's requests queued before it.
+    func enqueue(_ key: Key, _ work: @escaping @MainActor () async throws -> [OnlineBook]) -> Task<[OnlineBook], Error> {
+        let id = UUID()
+        let previous = tails[key.sourceURL]
+        // On the main actor, so the request is forgotten before anyone waiting on it resumes:
+        // an ask after a failure fetches again.
+        let task = Task<[OnlineBook], Error> { @MainActor in
+            defer { if inFlight[key]?.id == id { inFlight[key] = nil } }
+            _ = await previous?.result
+            return try await work()
+        }
         inFlight[key] = (id, task)
-        laneTails[key.sourceURL] = task
+        tails[key.sourceURL] = task
         return task
     }
 }

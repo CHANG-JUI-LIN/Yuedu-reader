@@ -34,6 +34,7 @@ private final class FakeProvider: HomeSectionProviding {
     let policy: (HomeSection) -> SectionLoadPolicy?
     var gates: [Gate] = []
     var failure: (any Error)?
+    var readsHomeLibraryRows = false
     /// Stands in for the network's answer time (step 6's measurement).
     var latency: Duration?
     private(set) var loads: [UUID] = []
@@ -137,6 +138,40 @@ struct HomeModelTests {
         #expect(rows(home).map(\.source.id) == ["a"])
         #expect(isLoaded(rows(home)[0].state))
         #expect(a.loads.count == 1)
+    }
+
+    @Test("a row that reads the home's library rows loads again when one comes or goes (為你推薦)", .timeLimit(.minutes(1)))
+    func libraryRowsChangeReloadsTheirReader() async throws {
+        let reader = FakeProvider("forYou") { $0.binding == .forYou ? .parallel : nil }
+        reader.readsHomeLibraryRows = true
+        let a = FakeProvider("a") { $0.binding == .latest ? .parallel : nil }
+        let library = FakeProvider("b", type: .opds) { $0.binding == .latest ? .parallel : nil }
+        let home = model([reader, a, library])
+        let page = HomePage(sections: [HomeSection(layout: .row, binding: .forYou), HomeSection(layout: .row, binding: .latest)])
+        await home.sync(with: page)
+        // 為你推薦 waits for the library rows on their way (`settledLibraryEntries`); this
+        // reader is asked after them.
+        for row in rows(home) where row.source != reader.instance { home.load(row.id) }
+        await until(home) { $0.allSatisfy { $0.source == reader.instance || isLoaded($0.state) } }
+        for row in rows(home) where row.source == reader.instance { home.load(row.id) }
+        await until(home) { $0.allSatisfy { isLoaded($0.state) } }
+
+        await home.sync(with: page, hiddenFromLatest: [a.instance])
+        #expect(reader.loads.count == 1, "a book source's row is not one it reads")
+        await home.sync(with: page, hiddenFromLatest: [a.instance, library.instance])
+        await until(home) { $0.allSatisfy { isLoaded($0.state) } }
+        #expect(reader.loads.count == 2)
+        #expect(library.loads.count == 1)
+
+        // It comes back: the reader starts again at once, before the library row's view asks
+        // for it, and once more when the library row has loaded.
+        await home.sync(with: page, hiddenFromLatest: [a.instance])
+        await until(home) { $0.allSatisfy { $0.source != reader.instance || isLoaded($0.state) } }
+        let libraryRow = try #require(rows(home).first { $0.source == library.instance })
+        home.load(libraryRow.id)
+        await until(home) { $0.allSatisfy { isLoaded($0.state) } && reader.loads.count == 4 }
+        #expect(reader.loads.count == 4)
+        #expect(library.loads.count == 2)
     }
 
     @Test("a row whose content changed under the same id loads again by itself once it had loaded")

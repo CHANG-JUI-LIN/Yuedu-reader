@@ -3590,6 +3590,9 @@
 "系列下一本" = "Next in Series";
 "訂閱的最新文章" = "Latest from Subscriptions";
 "為你推薦" = "For You";
+"來源分類" = "Categories";
+"加入分類" = "Add Category";
+"首頁上的分類都會列在這裡；移除只影響為你推薦。" = "Every category on the home is listed here; removing one affects only “For You”.";
 
 /* Unified library 5d-1: 範圍 holds the libraries */
 "探索還沒有內容" = "Nothing to Explore Yet";

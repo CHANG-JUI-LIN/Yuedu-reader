@@ -114,14 +114,15 @@ struct ForYouRankerTests {
 
 @Suite("For You exposure log")
 struct ForYouExposureLogTests {
-    @Test("a work counts as shown for 7 days")
+    @Test("a work counts as shown from the next day, for 7 days")
     func week() {
         let start = Date(timeIntervalSince1970: 1_800_000_000)
         var log = ForYouExposureLog()
         log.record(["甲"], at: start)
+        #expect(log.recentlyShown(at: start).isEmpty, "not on the day it was shown")
         #expect(log.recentlyShown(at: start.addingTimeInterval(6 * 86_400)) == ["甲"])
         #expect(log.recentlyShown(at: start.addingTimeInterval(7 * 86_400 + 1)).isEmpty)
         log.record(["乙"], at: start.addingTimeInterval(8 * 86_400))
-        #expect(log.recentlyShown(at: start.addingTimeInterval(8 * 86_400)) == ["乙"], "old entries are dropped")
+        #expect(log.recentlyShown(at: start.addingTimeInterval(9 * 86_400)) == ["乙"], "old entries are dropped")
     }
 }

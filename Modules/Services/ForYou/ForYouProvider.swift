@@ -20,8 +20,6 @@ extension HomeSection {
     static let forYouCategoriesKey = "forYou.categories"
     /// The home's categories 為你推薦 leaves out, by `ExploreCategoryReference.id`.
     static let forYouExcludedKey = "forYou.excluded"
-    /// "off" when the home's library rows do not count.
-    static let forYouLibrariesKey = "forYou.libraries"
 
     var forYouAddedCategories: [ExploreCategoryReference] {
         decodeParameter([ExploreCategoryReference].self, forKey: Self.forYouCategoriesKey) ?? []
@@ -31,8 +29,40 @@ extension HomeSection {
         Set(decodeParameter([String].self, forKey: Self.forYouExcludedKey) ?? [])
     }
 
-    var forYouUsesLibraries: Bool {
-        parameters[Self.forYouLibrariesKey] != "off"
+    /// 加入分類 in 為你推薦's form: a home category left out comes back; any other is added.
+    mutating func addForYouCategory(_ reference: ExploreCategoryReference, homeSections: [HomeSection]) {
+        var excluded = forYouExcludedCategories
+        if excluded.remove(reference.id) != nil {
+            setParameter(excluded.sorted(), forKey: Self.forYouExcludedKey)
+        }
+        guard !ForYouInputs.categories(on: homeSections, for: self).contains(where: { $0.id == reference.id }) else { return }
+        setParameter(forYouAddedCategories + [reference], forKey: Self.forYouCategoriesKey)
+    }
+
+    /// 移除 in 為你推薦's form: one it added goes; one of the home's is left out.
+    mutating func removeForYouCategory(_ reference: ExploreCategoryReference, homeSections: [HomeSection]) {
+        let added = forYouAddedCategories
+        if added.contains(reference) {
+            setParameter(added.filter { $0 != reference }, forKey: Self.forYouCategoriesKey)
+        }
+        if ForYouInputs.categories(on: homeSections, for: HomeSection(layout: layout, binding: .forYou)).contains(reference) {
+            setParameter((forYouExcludedCategories.union([reference.id])).sorted(), forKey: Self.forYouExcludedKey)
+        }
+    }
+
+    /// Empty removes the parameter.
+    private mutating func setParameter<T: Encodable & Collection>(_ value: T, forKey key: String) {
+        guard !value.isEmpty else {
+            parameters[key] = nil
+            return
+        }
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.sortedKeys]
+        do {
+            parameters[key] = String(decoding: try encoder.encode(value), as: UTF8.self)
+        } catch {
+            AppLogger.cache("⟐ 為你推薦 option could not be stored", error: error, context: ["key": key])
+        }
     }
 
     private func decodeParameter<T: Decodable>(_ type: T.Type, forKey key: String) -> T? {
@@ -123,6 +153,15 @@ final class ForYouProvider: HomeSectionProviding {
         section.binding == .forYou ? .withHome : nil
     }
 
+    /// It mixes in the home's library rows (`ForYouHomeRows.settledLibraryEntries`).
+    var readsHomeLibraryRows: Bool { true }
+
+    /// The categories it reads: a home whose categories changed loads it again.
+    func inputsKey(for section: HomeSection) -> String? {
+        guard section.binding == .forYou else { return nil }
+        return ForYouInputs.categories(on: homeSections(), for: section).map(\.id).joined(separator: "\u{1E}")
+    }
+
     func load(_ section: HomeSection) async throws -> [CollectionEntry] {
         guard section.binding == .forYou else { return [] }
         let started = now()
@@ -131,23 +170,31 @@ final class ForYouProvider: HomeSectionProviding {
         let hadHome = home != nil
         let installed = Dictionary(sources().map { ($0.bookSourceUrl, $0) }, uniquingKeysWith: { first, _ in first })
         var inputs: [ForYouCandidate] = []
-        var failures: [Error] = []
+        var failed = 0
         var asked = 0
+        var fetched = 0
+        var cacheSeconds: TimeInterval = 0
         for category in ForYouInputs.categories(on: homeSections(), for: section) {
             guard let source = installed[category.sourceURL] else { continue }
             asked += 1
+            let reading = SourcePerfTrace.now
             var books = await candidates.read(sourceURL: category.sourceURL, categoryURL: category.url, sourceID: source.id)
+            cacheSeconds += SourcePerfTrace.now - reading
             let fresh = books.map { cached in
                 cached.isFresh(at: started) && !(refreshedAt.map { cached.fetchedAt < $0 } ?? false)
             } ?? false
             if !fresh {
                 // The home went away: nothing more is asked for it.
                 if hadHome, home == nil { break }
+                let fetching = SourcePerfTrace.now
+                defer { SourcePerfTrace.record("forYou.fetch", "source=\(source.bookSourceName) category=\(category.title)",
+                                               since: fetching, thresholdMs: 0) }
+                fetched += 1
                 do {
-                    let fetched = try await firstPages.firstPage(of: category, in: source).value
-                    books = ForYouCandidates(sourceURL: category.sourceURL, categoryURL: category.url, fetchedAt: now(), books: fetched)
+                    let page = try await firstPages.firstPage(of: category, in: source).value
+                    books = ForYouCandidates(sourceURL: category.sourceURL, categoryURL: category.url, fetchedAt: now(), books: page)
                 } catch {
-                    failures.append(error)
+                    failed += 1
                     AppLogger.network("⟐ 為你推薦 kept a category's earlier books", error: error, context: [
                         "source": source.bookSourceName, "category": category.title, "cached": "\(books?.books.count ?? 0)",
                     ])
@@ -158,7 +205,9 @@ final class ForYouProvider: HomeSectionProviding {
                                               position: position, tags: ReadingGenreProfile.tags(fromSourceKind: book.kind)))
             }
         }
-        if section.forYouUsesLibraries, let home {
+        SourcePerfTrace.record("forYou.cache", "categories=\(asked) fetched=\(fetched)",
+                               since: SourcePerfTrace.now - cacheSeconds, thresholdMs: 0)
+        if let home {
             for row in await home.settledLibraryEntries() {
                 for (position, entry) in row.entries.enumerated() {
                     guard case .item(_, let summary, _) = entry else { continue }
@@ -168,8 +217,11 @@ final class ForYouProvider: HomeSectionProviding {
                 }
             }
         }
-        if inputs.isEmpty, asked > 0, failures.count == asked, let first = failures.first {
-            throw try SourceFailure.classify(first)
+        // Every category failed with nothing saved: the section takes no room (maintainer,
+        // 2026-10-13); each category's own row shows its failure.
+        if inputs.isEmpty, asked > 0, failed == asked {
+            AppLogger.network("⟐ 為你推薦 has nothing: every category failed", context: ["categories": "\(asked)"])
+            return []
         }
         let date = now()
         let recent = ShelfProvider(store: shelf).continueReading(limit: HomeRow.limit).reduce(into: ForYouRanker.Recent()) { recent, entry in
@@ -178,10 +230,14 @@ final class ForYouProvider: HomeSectionProviding {
             if let category = summary.category { recent.tags.append(category) }
         }
         let shown = await exposure.recentlyShown(at: date)
+        let weights = await genres.profile().weights(at: date)
+        let ranking = SourcePerfTrace.now
+        let shelfWorks = ForYouRanker.shelfWorks(shelf.books)
         let ranked = ForYouRanker.rank(
-            candidates: inputs, shelf: ForYouRanker.shelfWorks(shelf.books),
-            weights: await genres.profile().weights(at: date), recent: recent, recentlyShown: shown,
+            candidates: inputs, shelf: shelfWorks, weights: weights, recent: recent, recentlyShown: shown,
             languages: languages(), seed: Self.seed(for: date), limit: HomeRow.limit)
+        SourcePerfTrace.record("forYou.rank", "candidates=\(inputs.count) shelf=\(shelfWorks.count) entries=\(ranked.count)",
+                               since: ranking, thresholdMs: 0)
         await exposure.record(ranked.compactMap(ForYouRanker.workKey(of:)), at: date)
         return ranked
     }

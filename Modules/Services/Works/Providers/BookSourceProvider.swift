@@ -16,13 +16,14 @@ final class BookSourceProvider: HomeSectionProviding {
         self.firstPages = firstPages
     }
 
-    /// A provider with a first-page fetcher of its own.
+    /// A provider with a first-page fetcher and a queue of its own, for tests.
     convenience init(
         source: BookSource,
         pageLoader: SectionPageLoader,
         primeCookies: @escaping DiscoverFirstPages.PrimeCookies
     ) {
-        self.init(source: source, firstPages: DiscoverFirstPages(pageLoader: pageLoader, primeCookies: primeCookies))
+        self.init(source: source, firstPages: DiscoverFirstPages(pageLoader: pageLoader, primeCookies: primeCookies,
+                                                                 lanes: DiscoverRequestLanes()))
     }
 
     var instance: SourceInstanceKey { SourceInstanceKey(type: .bookSource, id: source.bookSourceUrl) }
