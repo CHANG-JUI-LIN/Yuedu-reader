@@ -92,6 +92,11 @@ final class HomeSectionEditor: ObservableObject {
             $0.binding = binding
             $0.parameters = parameters
             if followsChoice { $0.title = title }
+            // Lists are drawn as 專題集合 and books never are (`HomeLayoutStyle.choices`): a
+            // choice across the two takes the layout that draws it.
+            if !HomeLayoutStyle.choices(for: binding).contains($0.layout.style) {
+                $0.layout = binding.listsCollections ? .collection : .row
+            }
         }
         if followsChoice { chosenTitle = title }
     }

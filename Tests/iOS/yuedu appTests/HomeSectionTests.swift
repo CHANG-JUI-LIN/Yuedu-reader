@@ -71,7 +71,7 @@ struct HomeSectionTests {
             case .myLibrary: "library"
             case .continueReading: "continue"
             case .latest: "latest"
-            case .gutenbergCollection: "featured"
+            case .gutenbergLists: "featured"
             case .gutenbergShelf("popular"): "popular"
             case .nextInSeries: "next"
             default: "other"
@@ -79,7 +79,9 @@ struct HomeSectionTests {
         }
     }
 
-    private var featured: [String] { Array(repeating: "featured", count: PublicLibraryCollection.all.count) }
+    /// 精選書單: the bundled lists as one section of cards (專題集合, decision 37), since
+    /// 2026-10-13 in place of a row per list.
+    private var featured: [String] { ["featured"] }
 
     // 我的書庫 left the defaults in 5d-1 (settled decision 12): 範圍 holds the libraries.
     @Test("book-source readers start from 繼續閱讀 → 系列下一本 → 最新 → 古騰堡熱門 → 精選")
@@ -92,11 +94,7 @@ struct HomeSectionTests {
     func publicLibraryDefaults() {
         let page = HomePageDefaults.page(mode: .publicLibraries, publicLibrariesAvailable: true)
         #expect(kinds(page) == ["continue", "next", "popular"] + featured + ["latest"])
-        let lists = page.sections.compactMap { section -> String? in
-            if case .gutenbergCollection(let id) = section.binding { return id }
-            return nil
-        }
-        #expect(lists == PublicLibraryCollection.all.map(\.id))
+        #expect(!page.sections.contains { if case .gutenbergCollection = $0.binding { true } else { false } })
     }
 
     @Test("a Gutenberg shelf is kept by id and read on the endpoint this build uses")

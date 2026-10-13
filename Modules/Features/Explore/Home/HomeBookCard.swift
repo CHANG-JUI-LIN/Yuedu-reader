@@ -123,10 +123,16 @@ struct HomeCardContent: Identifiable {
         case .opdsEntry(_, let connectionID), .webDAVFile(_, let connectionID):
             return connections.connection(id: connectionID).map { connections.httpClient(for: $0).session }
         case .gutenberg:
-            return connections.connection(id: PublicLibraryID.gutenberg.rawValue).map { connections.httpClient(for: $0).session }
+            return gutenbergSession(connections: connections)
         default:
             return nil
         }
+    }
+
+    /// Gutenberg's covers, through its built-in connection: a book's card and a list's artwork.
+    @MainActor
+    static func gutenbergSession(connections: RemoteLibraryConnectionStore) -> URLSession? {
+        connections.connection(id: PublicLibraryID.gutenberg.rawValue).map { connections.httpClient(for: $0).session }
     }
 
     /// The shelf copy the card shows, whose ••• acts on it (5d-3c).

@@ -1662,3 +1662,53 @@ Not split (one meaning everywhere): 確認刪除 (three alert titles), 是／否
   - UI: `ExploreHomeUITests.testFeaturedCardMenu` (new) finds the ••• inside the fixture's 精選 shelf card and opens it.
   - Both passed with `testCompactCardMenu` on iOS 27 and on iOS 17.5. `testLongPressChangesTheLayout` passed on both before the ••• fix.
 - **Next:** 專題集合 (a card per collection, its artwork from the first three covers), then decision 34's live previews.
+
+#### What landed — 專題集合 and 精選書單 (decision 37, 2026-10-13)
+
+- **Decisions 30 and 37, 專題集合's half.** Branch `explore/collection-layout`.
+- **Answered the same day, by option:**
+  - The lists are Gutenberg's four bundled lists only. 青空文庫's indexes and book-source categories are not cards: a category would need a fetch per card.
+  - A new install's home has one 專題集合 section in place of a row per list.
+- **The section.**
+  - A new binding, `.gutenbergLists` (stored as `"gutenbergLists"`), is titled 精選書單, the name 分類 already gives these four lists. It is drawn in the new layout `.collection` (`"collection"`).
+  - One card per list: the list's name (title3, a size under the section's), then its first three covers side by side and tilted on a plain ground. This is the storefront's 精選書單 card without its "Project Gutenberg" line, since the home names no source (decision 19).
+  - A list to a page, the next one past the edge, two to a page on a wide screen. A tap opens the whole list (`.publicLibrary(.collection(id:))`).
+  - VoiceOver reads one button per card, labelled with the list's name. The artwork is hidden. The id is `home.collection.gutenberg.<id>`.
+  - 兒童與青少年 has two books, so its artwork has two covers. Screenshotted: it looks finished.
+  - The section has no 查看全部: no page lists the four lists alone. Its name is plain text.
+- **Data.**
+  - `CollectionEntry.collection(CollectionSummary)`: the list's id, name, first three books (`WorkSummary`, Gutenberg's own covers), count, languages, and `CollectionOpening`.
+  - The provider makes them from the bundled lists without a request.
+  - The artwork is one view, `CollectionCoverArtwork`, generic over the cover it draws. The storefront draws `PublicLibraryCover` with it, the home `HomeCardCover` through Gutenberg's cover session (`HomeCardContent.gutenbergSession`, which a book card now shares).
+- **Layout rule, in one place:** `HomeLayoutStyle.choices(for:)`.
+  - A section of lists offers 專題集合 alone, so its long press and its form show no 呈現方式. A section of books never offers 專題集合.
+  - Choosing a content source across the two sets the layout that draws it.
+  - 新增欄目's 專題集合 starts with 精選書單 chosen. 專題集合 is not offered where the public libraries are not (China).
+  - A book section whose stored layout is somehow 專題集合 draws a row, as an unknown layout does.
+- **偏好閱讀語言:** a list goes by its best-placed book's language.
+  - Under 只推薦偏好語言, a list is left out only when none of its books is in a preferred language. 小說與文學 holds 吶喊, so a Chinese-only reader keeps it.
+  - Before, each list's row left out its other-language books. A list card has no books to leave out.
+- **隱藏已讀** leaves the lists alone: a list is not a book.
+- **Behaviour, for the maintainer to veto:**
+  - **Saved homes are unchanged:** an existing 預設 keeps its four rows. 新增首頁配置 → 從預設開始 copies the saved 預設, so it is unchanged too. The four single-list sections stay addable in 選擇內容來源, after 精選書單.
+  - **`LibraryHomePage`** (a library's own page, decision 35) keeps its four rows. Only the defaults were named.
+  - **An older build** reads the binding as unknown, keeps it, and draws nothing for it.
+- **Strings:** 「專題集合」 in all five tables. 「精選書單」 already existed.
+- **Test-first:** `CollectionLayoutTests` (the lists and their first books, languages, defaults, stored values, layout choices, 隱藏已讀) was written before the API and failed to compile.
+- **Tests:**
+  - Unit, iOS 27: the new suite with `HomeLayoutStyleTests`, `HomeSectionTests`, `HomeConfigurationTests`, `HomeModelTests`, `HideReadTests`, `ReadingLanguagesTests`, `HomeSectionEditorTests`, `SourceProviderTests`, `FeaturedLayoutTests`, `HomeSectionGroupTests`, `HomeCardTests`: 71 tests in 11 suites passed. The default-page expectations in `HomeSectionTests` and `HomeLayoutStyleTests` were updated for the new default.
+  - UI, new: `HomeEditorUITests.testListsAreCollectionCards` checks:
+    - 中文書籍's card is whole above the tab bar, a list to a page, and reads 中文書籍;
+    - a swipe pages to 兒童與青少年's two covers;
+    - a tap opens 中文書籍;
+    - the header's long press has 隱藏 and no 呈現方式.
+  - UI, updated:
+    - Tests that waited for 中文書籍's first book as "the home is drawn" now wait for its card.
+    - `HomeEditorUITests` uses 熱門, answered by a downloads fixture of four books outside the bundled lists, as its row of books. `testAddSections` starts from no 兒童與青少年 section.
+    - `PublicLibraryStorefrontUITests` opens 紅樓夢 from 熱門, given a fixture holding it, and the 中文書籍 page from its card.
+  - UI, iOS 27: `HomeEditorUITests` (7), `ExploreHomeUITests` (9), `AggregationSettingsUITests` (4) and `PublicLibraryStorefrontUITests` (2 run, 3 skipped as before) passed.
+    - `testListsAreCollectionCards` first failed: it looked for the header as a button, and a header without 查看全部 is text.
+    - It passed after that fix, and again after the card's name became title3.
+  - UI, iOS 17.5: the same four suites passed (HomeEditorUITests 7, ExploreHomeUITests 9, AggregationSettingsUITests 4, PublicLibraryStorefrontUITests 2 run and 3 skipped as before).
+- **Not checked by a test:** the storefront's own 精選書單 now draws through `CollectionCoverArtwork`, and no UI test opens the storefront. The refactor keeps its modifiers as they were: the same HStack, rotation, ground, clip and hidden artwork.
+- **Next:** decision 34, the layout choice as live previews.

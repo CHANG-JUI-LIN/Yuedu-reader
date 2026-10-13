@@ -21,8 +21,8 @@ struct HomeReadFilter {
             return true
         // 繼續閱讀 is what is being read. 系列下一本 never offers a book read to the end: it
         // offers the one after it. An article's read state is the RSS tab's. An index's chips
-        // and 我的書庫's tiles are not books.
-        case .continueReading, .nextInSeries, .subscriptionArticles, .aozoraIndex, .myLibrary, .unknown:
+        // and 我的書庫's tiles are not books, nor are 精選書單's lists.
+        case .continueReading, .nextInSeries, .subscriptionArticles, .aozoraIndex, .gutenbergLists, .myLibrary, .unknown:
             return false
         }
     }

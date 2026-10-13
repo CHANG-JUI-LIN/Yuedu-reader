@@ -3,8 +3,9 @@ import XCTest
 /// Deterministic UI coverage: scroll-driven card expansion and paging, fixture-only OPDS.
 /// The test changes no book-source data outside its own temporary directory.
 ///
-/// Since unified library 5c-3 the cards open from the Explore home's 精選 rows, as a new install
-/// sees them (`-reset-explore-home`), and the store's own pages from a row's name.
+/// Since unified library 5c-3 the cards open from the Explore home, as a new install sees it
+/// (`-reset-explore-home`): its books from 熱門, answered here by a fixture, and the store's
+/// lists from 精選書單's cards (decision 37).
 final class PublicLibraryStorefrontUITests: XCTestCase {
     private var fixtureDirectory: URL!
 
@@ -43,6 +44,15 @@ final class PublicLibraryStorefrontUITests: XCTestCase {
         </feed>
         """
         try Data(authors.utf8).write(to: fixtureDirectory.appendingPathComponent("ebooks_author_10001.opds.xml"))
+        // 熱門, the home's row of books, holding the three books above.
+        let popular = """
+        <feed xmlns="http://www.w3.org/2005/Atom"><title>Popular</title>
+        <entry><id>https://www.gutenberg.org/ebooks/24264.opds</id><title>紅樓夢</title><content>曹雪芹</content><link rel="subsection" type="application/atom+xml" href="/ebooks/24264.opds"/></entry>
+        <entry><id>https://www.gutenberg.org/ebooks/23962.opds</id><title>西遊記</title><content>吳承恩</content><link rel="subsection" type="application/atom+xml" href="/ebooks/23962.opds"/></entry>
+        <entry><id>https://www.gutenberg.org/ebooks/23950.opds</id><title>三國志演義</title><content>羅貫中</content><link rel="subsection" type="application/atom+xml" href="/ebooks/23950.opds"/></entry>
+        </feed>
+        """
+        try Data(popular.utf8).write(to: fixtureDirectory.appendingPathComponent("ebooks_search.opds@sort_order=downloads.xml"))
     }
 
     override func tearDownWithError() throws {
@@ -60,7 +70,7 @@ final class PublicLibraryStorefrontUITests: XCTestCase {
         return app
     }
 
-    /// A 精選 card on the home, scrolled to.
+    /// A book of 熱門 on the home, scrolled to.
     @MainActor
     private func homeCard(_ app: XCUIApplication, _ number: Int) -> XCUIElement {
         let card = app.buttons["home.card.gutenberg.\(number)"].firstMatch
@@ -138,7 +148,7 @@ final class PublicLibraryStorefrontUITests: XCTestCase {
     /// The store's pages are pushed by value (unified library 5c, decision 5), and since 5f a book
     /// opens 作品詳情 on top of the page it was tapped on (Phase 5 plan, decision 27). 作品詳情 is
     /// the book's one page (decision 28): the catalog entry's format, actions and description are
-    /// on it, with no second page under it. The page is 中文書籍's, opened from its row's name.
+    /// on it, with no second page under it. The page is 中文書籍's, opened from its 精選書單 card.
     @MainActor
     func testBookFromAPushedPageKeepsTheStack() {
         let app = application()
@@ -146,10 +156,10 @@ final class PublicLibraryStorefrontUITests: XCTestCase {
         let explore = app.tabBars.buttons["探索"].firstMatch
         XCTAssertTrue(explore.waitForExistence(timeout: 30))
         explore.tap()
-        let header = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH 'home.row.header.' AND label == '中文書籍'")).firstMatch
-        for _ in 0..<4 where !header.waitForExistence(timeout: 3) { app.swipeUp() }
-        XCTAssertTrue(header.exists, app.debugDescription)
-        header.tap()
+        let list = app.buttons["home.collection.gutenberg.chinese"].firstMatch
+        for _ in 0..<4 where !list.waitForExistence(timeout: 3) { app.swipeUp() }
+        XCTAssertTrue(list.exists, app.debugDescription)
+        list.tap()
         XCTAssertTrue(app.navigationBars["中文書籍"].waitForExistence(timeout: 10))
         app.buttons["publicLibrary.book.gutenberg:https://www.gutenberg.org/ebooks/24264.opds"].firstMatch.tap()
         let source = app.descendants(matching: .any)["detail.info.source"].firstMatch
@@ -169,7 +179,7 @@ final class PublicLibraryStorefrontUITests: XCTestCase {
         app.navigationBars.buttons.firstMatch.tap()
         XCTAssertTrue(app.navigationBars["中文書籍"].waitForExistence(timeout: 10), "Back from 作品詳情 returns to the page it was opened from")
         app.navigationBars.buttons.firstMatch.tap()
-        XCTAssertTrue(header.waitForExistence(timeout: 10), "Back from 中文書籍 returns to the home")
+        XCTAssertTrue(list.waitForExistence(timeout: 10), "Back from 中文書籍 returns to the home")
         XCTAssertTrue(app.tabBars.buttons["探索"].firstMatch.isHittable, "The home is 探索's root")
     }
 

@@ -36,12 +36,16 @@ struct HomeSectionLayout: RawRepresentable, Codable, Hashable, Sendable {
     /// 精選 (decisions 30 and 37): one book to a page, a large cover beside its title, author,
     /// category and blurb, paged sideways. A build before it draws a row and keeps the value.
     static let featured = Self(rawValue: "featured")
+    /// 專題集合 (decisions 30 and 37): a card per list, its name over artwork made of its first
+    /// covers. A section of lists only; a build before it keeps the value.
+    static let collection = Self(rawValue: "collection")
 
     /// The custom-page layout this is, if it is one.
     var componentKind: CustomExploreComponent.Kind? { .init(rawValue: rawValue) }
 
     var isKnown: Bool {
-        componentKind != nil || [.tiles, .row, .readingCard, .compactReadingCard, .multiRow, .coverGrid, .list, .rankedList, .featured].contains(self)
+        componentKind != nil || [.tiles, .row, .readingCard, .compactReadingCard, .multiRow, .coverGrid, .list, .rankedList,
+                                 .featured, .collection].contains(self)
     }
 }
 
@@ -62,6 +66,9 @@ enum HomeSectionBinding: Hashable, Sendable {
     case opdsFeed(connectionID: String, url: String)
     /// A list bundled with the app (`PublicLibraryCollection`); sends no request.
     case gutenbergCollection(id: String)
+    /// 精選書單: every bundled list, a card each (專題集合, decision 37); sends no request. A
+    /// build before it reads it as `.unknown`, keeps it, and draws nothing for it.
+    case gutenbergLists
     /// A Gutenberg feed; loads when the home shows (Phase 5 plan, decision 15).
     case gutenbergFeed(url: String)
     /// One of Gutenberg's shelves (`GutenbergShelf`: 熱門, 最新, a language), by id, resolved on
@@ -94,7 +101,7 @@ extension HomeSectionBinding: Codable {
 
     private enum Kind: String {
         case myLibrary, continueReading, latest, sourceCategories, opdsFeed
-        case gutenbergCollection, gutenbergFeed, gutenbergShelf, aozoraNew, aozoraIndex, related, nextInSeries
+        case gutenbergCollection, gutenbergLists, gutenbergFeed, gutenbergShelf, aozoraNew, aozoraIndex, related, nextInSeries
         case subscriptionArticles
     }
 
@@ -115,6 +122,7 @@ extension HomeSectionBinding: Codable {
             self = .opdsFeed(connectionID: try container.decode(String.self, forKey: .connectionID),
                              url: try container.decode(String.self, forKey: .url))
         case .gutenbergCollection: self = .gutenbergCollection(id: try container.decode(String.self, forKey: .id))
+        case .gutenbergLists: self = .gutenbergLists
         case .gutenbergFeed: self = .gutenbergFeed(url: try container.decode(String.self, forKey: .url))
         case .gutenbergShelf: self = .gutenbergShelf(id: try container.decode(String.self, forKey: .id))
         case .aozoraNew: self = .aozoraNew
@@ -148,6 +156,8 @@ extension HomeSectionBinding: Codable {
         case .gutenbergCollection(let id):
             try container.encode(Kind.gutenbergCollection.rawValue, forKey: .type)
             try container.encode(id, forKey: .id)
+        case .gutenbergLists:
+            try container.encode(Kind.gutenbergLists.rawValue, forKey: .type)
         case .gutenbergFeed(let url):
             try container.encode(Kind.gutenbergFeed.rawValue, forKey: .type)
             try container.encode(url, forKey: .url)
@@ -247,11 +257,11 @@ enum HomePageDefaults {
         let popular = publicLibrariesAvailable
             ? [HomeSection(id: makeID(), layout: .row, binding: .gutenbergShelf(id: "popular"))]
             : []
-        // 精選: one section per bundled list, titled by the list (plan decision 11).
+        // 精選書單: the bundled lists, a card each (專題集合, decision 37), in place of a row per
+        // list (plan decision 11) since 2026-10-13. A new install's 預設 only: a saved home keeps
+        // its rows.
         let featured = publicLibrariesAvailable
-            ? PublicLibraryCollection.all.map {
-                HomeSection(id: makeID(), layout: .row, binding: .gutenbergCollection(id: $0.id))
-            }
+            ? [HomeSection(id: makeID(), layout: .collection, binding: .gutenbergLists)]
             : []
         switch mode {
         case .bookSources:

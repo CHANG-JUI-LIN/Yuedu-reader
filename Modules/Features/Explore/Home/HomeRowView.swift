@@ -20,6 +20,7 @@ extension HomeSection {
         case .sourceCategories(let categories): return categories.first?.title ?? sourceName
         case .gutenbergCollection(let id):
             return PublicLibraryCollection.all.first { $0.id == id }.map { localized($0.titleKey) } ?? sourceName
+        case .gutenbergLists: return localized("精選書單")
         case .gutenbergShelf(let id): return GutenbergShelf.shelf(id: id)?.title ?? sourceName
         case .aozoraNew: return localized(AozoraBrowseMode.newest.titleKey)
         case .aozoraIndex(let kind): return AozoraBrowseMode(rawValue: kind).map { localized($0.titleKey) } ?? sourceName
@@ -35,18 +36,22 @@ struct HomeRowContent {
     var locations: [CollectionLocation]
     /// 訂閱的最新文章's articles (5g), drawn as articles, not as books.
     var articles: [SubscriptionArticle] = []
+    /// 專題集合's lists (decision 37), a card each.
+    var collections: [CollectionSummary] = []
 
-    var isEmpty: Bool { cards.isEmpty && locations.isEmpty && articles.isEmpty }
+    var isEmpty: Bool { cards.isEmpty && locations.isEmpty && articles.isEmpty && collections.isEmpty }
 
     @MainActor
     init(entries: [CollectionEntry], status: (SourceItemKey) -> CopyLookup.Status?, shelfBooks: [UUID: ReadingBook]) {
         var cards: [HomeCardContent] = []
         var locations: [CollectionLocation] = []
         var articles: [SubscriptionArticle] = []
+        var collections: [CollectionSummary] = []
         for entry in entries {
             switch entry {
             case .location(let location): locations.append(location)
             case .article(let article): articles.append(article)
+            case .collection(let collection): collections.append(collection)
             case .item:
                 if let card = HomeCardContent(entry, status: status, shelfBooks: shelfBooks) {
                     cards.append(card)
@@ -56,6 +61,7 @@ struct HomeRowContent {
         self.cards = cards
         self.locations = locations
         self.articles = articles
+        self.collections = collections
     }
 
     /// One pass over the shelf, for the copies this row shows.
@@ -96,6 +102,8 @@ struct HomeRowView: View {
     /// A card was tapped; the row's other cards come along for the public-library carousel.
     let open: (HomeCardContent, [HomeCardContent]) -> Void
     let openLocation: (CollectionLocation) -> Void
+    /// A list of 專題集合 was tapped; none in a fixture or the form's preview.
+    var openCollection: (CollectionSummary) -> Void = { _ in }
     /// An article of 訂閱的最新文章 was tapped (5g); none in a fixture or the form's preview.
     var openArticle: (SubscriptionArticle) -> Void = { _ in }
     /// The section's long press (5d-2, decision 14); none in a fixture.
@@ -158,21 +166,25 @@ struct HomeRowView: View {
     private var actionsMenu: some View {
         if let actions {
             let layout = group.section.layout
-            Menu {
-                Picker(localized("呈現方式"), selection: Binding(
-                    get: { layout.style },
-                    set: { actions.setLayout(HomeSectionLayout(style: $0, ranked: layout.showsRanks)) })) {
-                    ForEach(HomeLayoutStyle.allCases) { style in
-                        Label(localized(style.titleKey), systemImage: style.symbol).tag(style)
+            let choices = HomeLayoutStyle.choices(for: group.section.binding)
+            // A section of lists has 專題集合 alone: nothing to choose.
+            if choices.count > 1 {
+                Menu {
+                    Picker(localized("呈現方式"), selection: Binding(
+                        get: { layout.style },
+                        set: { actions.setLayout(HomeSectionLayout(style: $0, ranked: layout.showsRanks)) })) {
+                        ForEach(choices) { style in
+                            Label(localized(style.titleKey), systemImage: style.symbol).tag(style)
+                        }
                     }
+                    if layout.style == .list {
+                        Toggle(localized("顯示排名"), isOn: Binding(
+                            get: { layout.showsRanks },
+                            set: { actions.setLayout(HomeSectionLayout(style: .list, ranked: $0)) }))
+                    }
+                } label: {
+                    Label(localized("呈現方式"), systemImage: "rectangle.3.group")
                 }
-                if layout.style == .list {
-                    Toggle(localized("顯示排名"), isOn: Binding(
-                        get: { layout.showsRanks },
-                        set: { actions.setLayout(HomeSectionLayout(style: .list, ranked: $0)) }))
-                }
-            } label: {
-                Label(localized("呈現方式"), systemImage: "rectangle.3.group")
             }
             Button(localized("動作：隱藏"), systemImage: "eye.slash", action: actions.hide)
             Button(localized("設定"), systemImage: "slider.horizontal.3", action: actions.openSettings)
@@ -201,6 +213,9 @@ struct HomeRowView: View {
         case .loaded:
             if let content {
                 if !content.locations.isEmpty { locationChips(content.locations) }
+                if !content.collections.isEmpty {
+                    HomeCollectionCards(collections: content.collections, open: openCollection)
+                }
                 if !content.cards.isEmpty { cards(content.cards) }
                 if !content.articles.isEmpty {
                     HomeArticleCards(layout: group.section.layout, articles: content.articles, open: openArticle)

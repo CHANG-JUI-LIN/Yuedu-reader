@@ -74,14 +74,24 @@ private struct HomeNewSectionFlow: View {
     let close: () -> Void
     @State private var editor: HomeSectionEditor?
     @State private var showsForm = false
+    @ObservedObject private var availability = PublicLibraryAvailability.shared
+
+    /// 專題集合 draws lists, which only Gutenberg's bundled lists offer today: not where the
+    /// public libraries are not offered.
+    private var styles: [HomeLayoutStyle] {
+        HomeLayoutStyle.allCases.filter { $0 != .collection || availability.isAvailable }
+    }
 
     var body: some View {
         NavigationStack {
             List {
                 Section {
-                    ForEach(HomeLayoutStyle.allCases) { style in
+                    ForEach(styles) { style in
                         Button {
-                            editor = HomeSectionEditor(layout: HomeSectionLayout(style: style), preview: .preview(shelf: store))
+                            let editor = HomeSectionEditor(layout: HomeSectionLayout(style: style), preview: .preview(shelf: store))
+                            // The one source of lists, chosen already; 資料來源 can still change it.
+                            if style == .collection { editor.choose(.gutenbergLists) }
+                            self.editor = editor
                             showsForm = true
                         } label: {
                             Label(localized(style.titleKey), systemImage: style.symbol)
@@ -392,14 +402,18 @@ struct HomeSectionForm: View {
 
     @ViewBuilder
     private var layoutRows: some View {
-        Picker(localized("呈現方式"), selection: Binding(
-            get: { draft.layout.style },
-            set: { editor.setLayout(HomeSectionLayout(style: $0, ranked: draft.layout.showsRanks)) })) {
-            ForEach(HomeLayoutStyle.allCases) { style in
-                Label(localized(style.titleKey), systemImage: style.symbol).tag(style)
+        let choices = draft.binding.map(HomeLayoutStyle.choices(for:)) ?? HomeLayoutStyle.allCases
+        // A section of lists has 專題集合 alone: nothing to choose.
+        if choices.count > 1 {
+            Picker(localized("呈現方式"), selection: Binding(
+                get: { draft.layout.style },
+                set: { editor.setLayout(HomeSectionLayout(style: $0, ranked: draft.layout.showsRanks)) })) {
+                ForEach(choices) { style in
+                    Label(localized(style.titleKey), systemImage: style.symbol).tag(style)
+                }
             }
+            .accessibilityIdentifier("homeSection.layout")
         }
-        .accessibilityIdentifier("homeSection.layout")
         if draft.layout.style == .list {
             Toggle(localized("顯示排名"), isOn: Binding(
                 get: { draft.layout.showsRanks },

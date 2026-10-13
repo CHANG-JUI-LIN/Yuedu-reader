@@ -101,6 +101,9 @@ enum HomeDesignFixtureData {
                 state: .loaded([])),
             row(.gutenbergCollection(id: chinese.id), layout: .featured, source: gutenberg,
                 name: localized("Project Gutenberg"), policy: .local, state: .loaded(collection)),
+            // 專題集合 (decision 37): the bundled lists, a card each.
+            row(.gutenbergLists, layout: .collection, source: gutenberg, name: localized("Project Gutenberg"),
+                policy: .local, state: .loaded(PublicLibraryCollection.all.map { .collection(.bundledGutenberg($0)) })),
             // One list in each of the other layouts (5d-3).
             row(.gutenbergCollection(id: chinese.id), source: gutenberg, name: localized("Project Gutenberg"),
                 policy: .local, state: .loaded(collection)),

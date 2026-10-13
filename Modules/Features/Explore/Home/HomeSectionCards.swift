@@ -55,6 +55,9 @@ struct HomeSectionCards: View {
             case .coverGrid: grid
             case .list: list
             case .featured: featured
+            // A section of books is never offered 專題集合 (`HomeLayoutStyle.choices`); a stored
+            // one draws the row every section can take, as an unknown layout does.
+            case .collection: rail
             }
         }
         .environment(\.publicLibraryCoverScope, rowID)
@@ -254,7 +257,7 @@ struct HomeSectionCards: View {
 }
 
 /// The sideways layouts' scrolling: margins as wide as the header's, one card at a time.
-private struct HomeSidewaysScroll: ViewModifier {
+struct HomeSidewaysScroll: ViewModifier {
     func body(content: Content) -> some View {
         content
             .contentMargins(.horizontal, DSSpacing.lg, for: .scrollContent)
