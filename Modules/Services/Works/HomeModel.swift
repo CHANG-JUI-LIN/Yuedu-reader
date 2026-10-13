@@ -46,12 +46,20 @@ final class HomeModel: ObservableObject {
 
     /// - Parameters:
     ///   - providers: the sources now, asked again at each `sync`
-    ///     (`SourceProviderRegistry.homeProviders(shelf:)`).
+    ///     (`SourceProviderRegistry.homeProviders(shelf:firstPages:)`).
     ///   - waitForSources: returns once the book-source library is read
     ///     (`BookSourceStore.waitUntilLoaded`).
     init(providers: @escaping () -> [any HomeSectionProviding], waitForSources: @escaping () async -> Void) {
         makeProviders = providers
         self.waitForSources = waitForSources
+    }
+
+    /// A home served by the sources now, with one first-page fetcher of its own for as long as
+    /// it lives (Discovery Phase 7a-1).
+    static func live(shelf: BookStore) -> HomeModel {
+        let firstPages = DiscoverFirstPages()
+        return HomeModel(providers: { SourceProviderRegistry.shared.homeProviders(shelf: shelf, firstPages: firstPages) },
+                         waitForSources: { await BookSourceStore.shared.waitUntilLoaded() })
     }
 
     // MARK: - Building

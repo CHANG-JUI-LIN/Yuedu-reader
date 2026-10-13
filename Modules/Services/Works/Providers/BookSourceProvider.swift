@@ -3,26 +3,26 @@ import Foundation
 /// A book source (來源配置) on the Explore home (unified library 5b): its discover categories
 /// as rows, and the category the reader picked to stand for its 「最新」 (design §13.3).
 ///
-/// Pages come through `SectionPageLoader`, the one loader of a category's pages, after the
-/// discover cookies are primed as the source's own page primes them (audit §12.3).
+/// Pages come through the home's `DiscoverFirstPages` (Discovery Phase 7a-1), which primes the
+/// discover cookies once per source per sync, as the source's own page primes them (audit
+/// §12.3), queues the source's fetches one at a time and saves each page for 為你推薦.
 @MainActor
 final class BookSourceProvider: HomeSectionProviding {
     let source: BookSource
-    private let pageLoader: SectionPageLoader
-    private let primeCookies: @Sendable (BookSource) async -> Void
-    /// Priming drops the site's token and fetches the search page again
-    /// (`primeDiscoverCookiesIfNeeded`), so it runs once per provider, that is once per home
-    /// sync, as the source's own page primes once per load, not once per row.
-    private var priming: Task<Void, Never>?
+    private let firstPages: DiscoverFirstPages
 
-    init(
-        source: BookSource,
-        pageLoader: SectionPageLoader = .live,
-        primeCookies: @escaping @Sendable (BookSource) async -> Void = { await BookSourceFetcher.shared.primeDiscoverCookies(in: $0) }
-    ) {
+    init(source: BookSource, firstPages: DiscoverFirstPages) {
         self.source = source
-        self.pageLoader = pageLoader
-        self.primeCookies = primeCookies
+        self.firstPages = firstPages
+    }
+
+    /// A provider with a first-page fetcher of its own.
+    convenience init(
+        source: BookSource,
+        pageLoader: SectionPageLoader,
+        primeCookies: @escaping DiscoverFirstPages.PrimeCookies
+    ) {
+        self.init(source: source, firstPages: DiscoverFirstPages(pageLoader: pageLoader, primeCookies: primeCookies))
     }
 
     var instance: SourceInstanceKey { SourceInstanceKey(type: .bookSource, id: source.bookSourceUrl) }
@@ -34,16 +34,10 @@ final class BookSourceProvider: HomeSectionProviding {
     }
 
     func load(_ section: HomeSection) async throws -> [CollectionEntry] {
-        guard let category = category(for: section), let item = category.cardItem else { return [] }
-        if priming == nil {
-            let prime = primeCookies, source = source
-            priming = Task { await prime(source) }
-        }
-        await priming?.value
-        let section = DiscoverShowcaseSection(item: item, coverBaseURL: source.bookSourceUrl, coverHeaders: source.parsedHeaders)
+        guard let category = category(for: section), category.cardItem != nil else { return [] }
         do {
-            let displays = try await pageLoader.books(page: 1, of: section, in: source, after: [])
-            return displays.prefix(HomeRow.limit).map { entry($0.book) }
+            let books = try await firstPages.firstPage(of: category, in: source).value
+            return books.prefix(HomeRow.limit).map { entry($0) }
         } catch {
             throw try SourceFailure.classify(error)
         }

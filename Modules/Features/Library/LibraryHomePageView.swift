@@ -30,9 +30,7 @@ private struct LibraryHomePageContent: View {
     init(key: SourceInstanceKey, store: BookStore) {
         self.key = key
         self.store = store
-        _model = StateObject(wrappedValue: HomeModel(
-            providers: { SourceProviderRegistry.shared.homeProviders(shelf: store) },
-            waitForSources: { await BookSourceStore.shared.waitUntilLoaded() }))
+        _model = StateObject(wrappedValue: HomeModel.live(shelf: store))
     }
 
     private var page: HomePage? {

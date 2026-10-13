@@ -94,3 +94,11 @@ ForYouProvider (.forYou, policy .withHome)
 - Every step's tests pass on iOS 27 and iOS 17.5 where it has UI; the Phase 5 regression passes after the last step.
 
 ## What landed
+
+### 7a-1 (branch `discovery/7a-1-candidate-cache`)
+
+- `OnlineBook` is `Codable`.
+- `Modules/Services/ForYou/ForYouCandidateStore.swift`: `ForYouCandidates` (12 h freshness, 40 books) and the store, an actor writing `Caches/ForYou/<md5>.json` atomically; a missing file is absent, an unreadable one is absent and logged; read books take the source's current id.
+- `Modules/Services/ForYou/DiscoverFirstPages.swift`: one per home (`HomeModel.live(shelf:)`, used by 探索's home, a library's home and the section form's preview). `firstPage(of:in:)` returns the shared task: a second ask for a category joins it; a source's fetches queue one after another; cookies are primed once per source until `beginSync()`, which `SourceProviderRegistry.homeProviders(shelf:sources:firstPages:)` calls each time it makes the providers (once per sync, as before). Every page is written to the store.
+- `BookSourceProvider` loads through it; its test initializer (`pageLoader:primeCookies:`) makes a fetcher of its own, so `BookSourceProviderTests` are unchanged.
+- Tests (written first): `ForYouCandidateStoreTests` (round trip, freshness, cap, undecodable + log, re-imported id) and `DiscoverFirstPagesTests` (joining, lanes, priming per sync, a row writes the store, a failure is fetched again). With `BookSourceProviderTests`, `HomeModelTests`, `HomeModelSchedulingTests`, `LocalHomeRowTests`, `ExploreHomeTests`: 41 passed on iOS 27.
