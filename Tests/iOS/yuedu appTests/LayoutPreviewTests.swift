@@ -2,31 +2,54 @@ import Foundation
 import Testing
 @testable import yuedu_app
 
-/// Decision 34: 呈現方式 shows each layout drawn with a sample of classics whose covers the app
-/// carries, the same everywhere and offline.
+/// Decision 34: 呈現方式 shows each layout drawn with books whose covers the app carries, the
+/// same everywhere and offline. The maintainer, 2026-10-13: each layout its own covers, no book
+/// in two layouts.
 @Suite("呈現方式's previews")
 @MainActor
 struct LayoutPreviewTests {
-    @Test("The cards are the sample classics, in order, each drawn from its bundled cover")
+    private var bookLayouts: [HomeLayoutStyle] { HomeLayoutStyle.allCases.filter { $0 != .collection } }
+
+    @Test("Every layout of books has its own sample, in order, each card drawn from its bundled cover")
     func cards() throws {
         let sample = HomeLayoutSample.standard
-        #expect(sample.cards.map(\.title) == HomeLayoutSample.books.map(\.title))
-        for (card, book) in zip(sample.cards, HomeLayoutSample.books) {
-            guard case .reference(.copyFile(let path), _) = card.cover else {
-                Issue.record("\(book.title) has no bundled cover")
-                continue
+        for style in bookLayouts {
+            let books = try #require(HomeLayoutSample.books[style], "\(style) has no sample")
+            #expect(!books.isEmpty)
+            let cards = sample.cards(for: style)
+            #expect(cards.map(\.title) == books.map(\.title))
+            for (card, book) in zip(cards, books) {
+                #expect(card.kind == book.kind)
+                guard case .reference(.copyFile(let path), _) = card.cover else {
+                    Issue.record("\(book.title) has no bundled cover")
+                    continue
+                }
+                #expect(path.hasSuffix("layout-sample-\(book.cover).jpg"))
+                #expect(FileManager.default.fileExists(atPath: path))
             }
-            #expect(path.hasSuffix("layout-sample-\(ExternalIdentifier.gutenbergNumber(from: book.id) ?? "").jpg"))
-            #expect(FileManager.default.fileExists(atPath: path))
         }
     }
 
-    @Test("專題集合's sample: 小說與文學 and 兒童與青少年, every artwork cover bundled")
+    @Test("No book is in two layouts or in a list")
+    func noRepeats() {
+        let all = HomeLayoutSample.books.values.flatMap { $0 } + HomeLayoutSample.lists.flatMap(\.books)
+        #expect(Set(all.map(\.cover)).count == all.count)
+        #expect(Set(all.map(\.title)).count == all.count)
+    }
+
+    @Test("多行橫向輪播 is comics, as are the 漫畫 list's books")
+    func comics() {
+        #expect(HomeLayoutSample.books[.multiRow]?.allSatisfy { $0.kind == .comic } == true)
+        #expect(HomeLayoutSample.lists.first { $0.id == "comics" }?.books.allSatisfy { $0.kind == .comic } == true)
+    }
+
+    @Test("專題集合's sample: 漫畫 and 東方經典, every artwork cover bundled")
     func lists() {
         let sample = HomeLayoutSample.standard
-        #expect(sample.collections.map(\.id) == ["fiction", "children"])
-        #expect(sample.collections.map(\.title) == [localized("小說與文學"), localized("兒童與青少年")])
+        #expect(sample.collections.map(\.id) == ["comics", "easternClassics"])
+        #expect(sample.collections.map(\.title) == [localized("漫畫"), localized("東方經典")])
         for collection in sample.collections {
+            #expect(collection.books.count == CollectionSummary.artworkLimit)
             for book in collection.books {
                 guard case .copyFile(let path)? = book.cover else {
                     Issue.record("\(book.title) has no bundled cover")

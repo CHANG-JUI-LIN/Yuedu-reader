@@ -115,6 +115,24 @@ struct HomeCardContent: Identifiable {
         route = nil
     }
 
+    /// A book in 呈現方式's previews (`HomeLayoutSample`): its bundled cover, its title and author
+    /// as its edition has them, and nothing to open (a preview is not touched).
+    init(sample title: String, author: String, kind: ContentKind, cover: CoverReference?) {
+        id = SourceItemKey(instance: SourceInstanceKey(type: .library, id: "layoutSample"), item: title)
+        self.title = title
+        self.author = author
+        blurb = nil
+        category = nil
+        self.cover = .reference(cover, session: nil)
+        detail = nil
+        self.kind = kind
+        progress = nil
+        accessibilityLabel = title
+        accessibilityValue = author
+        opening = .copy(UUID())
+        route = nil
+    }
+
     /// A library's covers come through its connection's session, which carries its sign-in;
     /// Gutenberg's through the built-in connection's, as the store and a shelf copy load them.
     @MainActor
