@@ -258,6 +258,10 @@ final class HomeEditorUITests: XCTestCase {
         let featured = app.buttons["homeNewSection.layout.featured"].firstMatch
         for _ in 0..<8 where !featured.isHittable { app.swipeUp() }
         attach(app, "home-new-section-previews-more")
+        // The list's end: 精選 and 專題集合.
+        app.swipeUp()
+        attach(app, "home-new-section-previews-end")
+        for _ in 0..<8 where !featured.isHittable { app.swipeDown() }
         featured.tap()
         let layout = app.buttons["homeSection.layout"].firstMatch
         XCTAssertTrue(layout.waitForExistence(timeout: 5), app.debugDescription)

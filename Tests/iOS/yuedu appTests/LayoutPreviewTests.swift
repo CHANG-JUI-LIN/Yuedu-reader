@@ -30,11 +30,21 @@ struct LayoutPreviewTests {
         }
     }
 
-    @Test("No book is in two layouts or in a list")
+    @Test("No book is in two layouts or in a list, and no series or magazine appears twice")
     func noRepeats() {
         let all = HomeLayoutSample.books.values.flatMap { $0 } + HomeLayoutSample.lists.flatMap(\.books)
         #expect(Set(all.map(\.cover)).count == all.count)
         #expect(Set(all.map(\.title)).count == all.count)
+        // Two issues of one magazine, or two books of one series, read as a repeat.
+        let works = Dictionary(grouping: all, by: \.work).filter { $0.value.count > 1 }
+        #expect(works.isEmpty, "\(works.mapValues { $0.map(\.title) })")
+    }
+
+    @Test("Each layout shows as many books as its preview has room for on a phone")
+    func counts() {
+        let expected: [HomeLayoutStyle: Int] = [.featured: 3, .readingCard: 3, .compactReadingCard: 3, .list: 3,
+                                                .row: 6, .multiRow: 12, .coverGrid: 12]
+        #expect(HomeLayoutSample.books.mapValues(\.count) == expected)
     }
 
     @Test("多行橫向輪播 is comics, as are the 漫畫 list's books")

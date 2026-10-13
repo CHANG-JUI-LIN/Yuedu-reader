@@ -12,11 +12,14 @@ import SwiftUI
 
 /// One book a preview is drawn with: its cover, bundled as `layout-sample-<cover>.jpg`, and its
 /// title and author as its edition has them. Every cover is in the public domain worldwide:
-/// Standard Ebooks' (CC0), or a scan on Wikimedia Commons of a work whose artist died before
-/// 1956 or is unknown and published before 1900 (Technotes/LayoutSampleCovers.md lists each).
+/// Standard Ebooks' (CC0, made from paintings whose painters died before 1956), or a scan on
+/// Wikimedia Commons of a work whose artist died before 1956 or is unknown and published before
+/// 1931 (Technotes/LayoutSampleCovers.md lists each).
 struct HomeLayoutSampleBook: Hashable {
     let cover: String
     let title: String
+    /// The series or magazine it belongs to: two issues of one magazine are a repeat.
+    let work: String
     let author: String
     var language: String
     var kind: ContentKind = .text
@@ -37,60 +40,60 @@ struct HomeLayoutSample {
     /// or in a list (`LayoutPreviewTests`).
     static let books: [HomeLayoutStyle: [HomeLayoutSampleBook]] = [
         .featured: [
-            .init(cover: "pride-and-prejudice", title: "Pride and Prejudice", author: "Jane Austen", language: "en"),
-            .init(cover: "the-odyssey", title: "The Odyssey", author: "Homer", language: "en"),
-            .init(cover: "dorian-gray", title: "The Picture of Dorian Gray", author: "Oscar Wilde", language: "en"),
+            .init(cover: "pride-and-prejudice", title: "Pride and Prejudice", work: "Pride and Prejudice", author: "Jane Austen", language: "en"),
+            .init(cover: "the-odyssey", title: "The Odyssey", work: "The Odyssey", author: "Homer", language: "en"),
+            .init(cover: "dorian-gray", title: "The Picture of Dorian Gray", work: "The Picture of Dorian Gray", author: "Oscar Wilde", language: "en"),
         ],
         .readingCard: [
-            .init(cover: "wuthering-heights", title: "Wuthering Heights", author: "Emily Brontë", language: "en"),
-            .init(cover: "treasure-island", title: "Treasure Island", author: "Robert Louis Stevenson", language: "en"),
-            .init(cover: "alice", title: "Alice's Adventures in Wonderland", author: "Lewis Carroll", language: "en"),
+            .init(cover: "wuthering-heights", title: "Wuthering Heights", work: "Wuthering Heights", author: "Emily Brontë", language: "en"),
+            .init(cover: "treasure-island", title: "Treasure Island", work: "Treasure Island", author: "Robert Louis Stevenson", language: "en"),
+            .init(cover: "alice", title: "Alice's Adventures in Wonderland", work: "Alice", author: "Lewis Carroll", language: "en"),
         ],
         .row: [
-            .init(cover: "moby-dick", title: "Moby Dick", author: "Herman Melville", language: "en"),
-            .init(cover: "dracula", title: "Dracula", author: "Bram Stoker", language: "en"),
-            .init(cover: "jane-eyre", title: "Jane Eyre", author: "Charlotte Brontë", language: "en"),
-            .init(cover: "monte-cristo", title: "The Count of Monte Cristo", author: "Alexandre Dumas", language: "en"),
-            .init(cover: "frankenstein", title: "Frankenstein", author: "Mary Shelley", language: "en"),
-            .init(cover: "war-and-peace", title: "War and Peace", author: "Leo Tolstoy", language: "en"),
+            .init(cover: "moby-dick", title: "Moby Dick", work: "Moby Dick", author: "Herman Melville", language: "en"),
+            .init(cover: "dracula", title: "Dracula", work: "Dracula", author: "Bram Stoker", language: "en"),
+            .init(cover: "jane-eyre", title: "Jane Eyre", work: "Jane Eyre", author: "Charlotte Brontë", language: "en"),
+            .init(cover: "crime-and-punishment", title: "Crime and Punishment", work: "Crime and Punishment", author: "Fyodor Dostoevsky", language: "en"),
+            .init(cover: "frankenstein", title: "Frankenstein", work: "Frankenstein", author: "Mary Shelley", language: "en"),
+            .init(cover: "war-and-peace", title: "War and Peace", work: "War and Peace", author: "Leo Tolstoy", language: "en"),
         ],
         .compactReadingCard: [
-            .init(cover: "seito", title: "青鞜", author: "長沼智恵子", language: "ja"),
-            .init(cover: "myojo", title: "明星", author: "藤島武二", language: "ja"),
-            .init(cover: "yoimachigusa", title: "宵待草", author: "竹久夢二", language: "ja"),
+            .init(cover: "tangsong-chuanqi", title: "唐宋傳奇集", work: "唐宋傳奇集", author: "魯迅", language: "zh"),
+            .init(cover: "omoigusa", title: "思ひ草", work: "思ひ草", author: "佐佐木信綱", language: "ja"),
+            .init(cover: "sishui", title: "死水", work: "死水", author: "聞一多", language: "zh"),
         ],
         .list: [
-            .init(cover: "aiaigasa", title: "相合傘", author: "泉鏡花", language: "ja"),
-            .init(cover: "uzurakago", title: "鶉籠", author: "夏目漱石", language: "ja"),
-            .init(cover: "wagahai", title: "吾輩ハ猫デアル", author: "夏目漱石", language: "ja"),
+            .init(cover: "aiaigasa", title: "相合傘", work: "相合傘", author: "泉鏡花", language: "ja"),
+            .init(cover: "canshijie", title: "慘世界", work: "慘世界", author: "蘇曼殊、陳由己", language: "zh"),
+            .init(cover: "wagahai", title: "吾輩ハ猫デアル", work: "吾輩ハ猫デアル", author: "夏目漱石", language: "ja"),
         ],
         .multiRow: [
-            .init(cover: "little-nemo", title: "Little Nemo in Slumberland", author: "Winsor McCay", language: "en", kind: .comic),
-            .init(cover: "becassine", title: "Bécassine chez les Alliés", author: "Caumery, J.-P. Pinchon", language: "fr", kind: .comic),
-            .init(cover: "rarebit-fiend", title: "Dreams of the Rarebit Fiend", author: "Winsor McCay", language: "en", kind: .comic),
-            .init(cover: "fenouillard", title: "La Famille Fenouillard", author: "Christophe", language: "fr", kind: .comic),
-            .init(cover: "yellow-kid", title: "The Yellow Kid", author: "R. F. Outcault", language: "en", kind: .comic),
-            .init(cover: "tintin-lutin", title: "Tintin-Lutin", author: "Benjamin Rabier, Fred Isly", language: "fr", kind: .comic),
-            .init(cover: "mutt-and-jeff", title: "Mutt and Jeff", author: "Bud Fisher", language: "en", kind: .comic),
-            .init(cover: "sammy-sneeze", title: "Little Sammy Sneeze", author: "Winsor McCay", language: "en", kind: .comic),
-            .init(cover: "my-resolutions", title: "My Resolutions", author: "R. F. Outcault", language: "en", kind: .comic),
-            .init(cover: "upside-downs", title: "The Upside Downs", author: "Gustave Verbeek", language: "en", kind: .comic),
-            .init(cover: "tige", title: "Tige: His Story", author: "R. F. Outcault", language: "en", kind: .comic),
-            .init(cover: "buster-brown", title: "Buster Brown", author: "R. F. Outcault", language: "en", kind: .comic),
+            .init(cover: "little-nemo", title: "Little Nemo in Slumberland", work: "Little Nemo", author: "Winsor McCay", language: "en", kind: .comic),
+            .init(cover: "becassine", title: "Bécassine chez les Alliés", work: "Bécassine", author: "Caumery, J.-P. Pinchon", language: "fr", kind: .comic),
+            .init(cover: "kyosai-manga", title: "暁斎漫画", work: "暁斎漫画", author: "河鍋暁斎", language: "ja", kind: .comic),
+            .init(cover: "rarebit-fiend", title: "Dreams of the Rarebit Fiend", work: "Dreams of the Rarebit Fiend", author: "Winsor McCay", language: "en", kind: .comic),
+            .init(cover: "fenouillard", title: "La Famille Fenouillard", work: "La Famille Fenouillard", author: "Christophe", language: "fr", kind: .comic),
+            .init(cover: "yellow-kid", title: "The Yellow Kid", work: "The Yellow Kid", author: "R. F. Outcault", language: "en", kind: .comic),
+            .init(cover: "monsieur-jabot", title: "Histoire de M. Jabot", work: "Histoire de M. Jabot", author: "Rodolphe Töpffer", language: "fr", kind: .comic),
+            .init(cover: "mutt-and-jeff", title: "Mutt and Jeff", work: "Mutt and Jeff", author: "Bud Fisher", language: "en", kind: .comic),
+            .init(cover: "tintin-lutin", title: "Tintin-Lutin", work: "Tintin-Lutin", author: "Benjamin Rabier, Fred Isly", language: "fr", kind: .comic),
+            .init(cover: "sammy-sneeze", title: "Little Sammy Sneeze", work: "Little Sammy Sneeze", author: "Winsor McCay", language: "en", kind: .comic),
+            .init(cover: "my-resolutions", title: "My Resolutions", work: "Buster Brown", author: "R. F. Outcault", language: "en", kind: .comic),
+            .init(cover: "upside-downs", title: "The Upside Downs", work: "The Upside Downs", author: "Gustave Verbeek", language: "en", kind: .comic),
         ],
         .coverGrid: [
-            .init(cover: "jugend-1896-12", title: "Jugend, 1896 Nr. 12", author: "Ludwig von Zumbusch", language: "de"),
-            .init(cover: "life-1909", title: "Life, August 19, 1909", author: "Coles Phillips", language: "en"),
-            .init(cover: "tokyo-puck-1909", title: "東京パック 1909年2月", author: "北沢楽天", language: "ja"),
-            .init(cover: "punch-1872", title: "Punch, 27 April 1872", author: "Richard Doyle", language: "en"),
-            .init(cover: "hototogisu-1908", title: "ホトトギス 1908年1月", author: "高浜虚子", language: "ja"),
-            .init(cover: "simplicissimus-1913", title: "Simplicissimus, Badenummer 1913", author: "Brynolf Wennerberg", language: "de"),
-            .init(cover: "ally-sloper-1892", title: "Ally Sloper's Half Holiday, 1 October 1892", author: "W. Fletcher Thomas", language: "en"),
-            .init(cover: "good-housekeeping-1915", title: "Good Housekeeping, February 1915", author: "Coles Phillips", language: "en"),
-            .init(cover: "jugend-1896-31", title: "Jugend, 1896 Nr. 31", author: "Fritz Erler", language: "de"),
-            .init(cover: "hototogisu-1907", title: "ホトトギス 1907年7月", author: "高浜虚子", language: "ja"),
-            .init(cover: "comic-cuts-1890", title: "Comic Cuts, No. 1, 1890", author: "", language: "en"),
-            .init(cover: "life-1921", title: "Life, March 3, 1921", author: "Coles Phillips", language: "en"),
+            .init(cover: "jugend-1896-12", title: "Jugend, 1896 Nr. 12", work: "Jugend", author: "Ludwig von Zumbusch", language: "de"),
+            .init(cover: "cocorico-1898", title: "Cocorico, n° 1, 1898", work: "Cocorico", author: "Alfons Mucha", language: "fr"),
+            .init(cover: "life-1909", title: "Life, August 19, 1909", work: "Life", author: "Coles Phillips", language: "en"),
+            .init(cover: "tokyo-puck-1909", title: "東京パック 1909年2月", work: "東京パック", author: "北沢楽天", language: "ja"),
+            .init(cover: "assiette-au-beurre-1901", title: "L'Assiette au beurre, n° 37, 1901", work: "L'Assiette au beurre", author: "Albert Guillaume", language: "fr"),
+            .init(cover: "yellow-book-1894", title: "The Yellow Book, Volume I", work: "The Yellow Book", author: "Aubrey Beardsley", language: "en"),
+            .init(cover: "simplicissimus-1913", title: "Simplicissimus, Badenummer 1913", work: "Simplicissimus", author: "Brynolf Wennerberg", language: "de"),
+            .init(cover: "punch-1872", title: "Punch, 27 April 1872", work: "Punch", author: "Richard Doyle", language: "en"),
+            .init(cover: "gil-blas-1898", title: "Gil Blas illustré, 1898 n° 21", work: "Gil Blas", author: "Théophile Alexandre Steinlen", language: "fr"),
+            .init(cover: "ally-sloper-1892", title: "Ally Sloper's Half Holiday, 1 October 1892", work: "Ally Sloper's Half Holiday", author: "W. Fletcher Thomas", language: "en"),
+            .init(cover: "pele-mele-1895", title: "Le Pêle-Mêle, n° 1, 1895", work: "Le Pêle-Mêle", author: "", language: "fr"),
+            .init(cover: "comic-cuts-1890", title: "Comic Cuts, No. 1, 1890", work: "Comic Cuts", author: "", language: "en"),
         ],
     ]
 
@@ -98,14 +101,14 @@ struct HomeLayoutSample {
     /// touched); `.gutenbergCollection` is only the one case `CollectionOpening` has.
     static let lists: [(id: String, titleKey: String, books: [HomeLayoutSampleBook])] = [
         (id: "comics", titleKey: "漫畫", books: [
-            .init(cover: "chojugiga", title: "鳥獣人物戯画", author: "伝 鳥羽僧正", language: "ja", kind: .comic),
-            .init(cover: "hokusai-manga", title: "北斎漫画", author: "葛飾北斎", language: "ja", kind: .comic),
-            .init(cover: "max-und-moritz", title: "Max und Moritz", author: "Wilhelm Busch", language: "de", kind: .comic),
+            .init(cover: "chojugiga", title: "鳥獣人物戯画", work: "鳥獣人物戯画", author: "伝 鳥羽僧正", language: "ja", kind: .comic),
+            .init(cover: "hokusai-manga", title: "北斎漫画", work: "北斎漫画", author: "葛飾北斎", language: "ja", kind: .comic),
+            .init(cover: "max-und-moritz", title: "Max und Moritz", work: "Max und Moritz", author: "Wilhelm Busch", language: "de", kind: .comic),
         ]),
         (id: "easternClassics", titleKey: "東方經典", books: [
-            .init(cover: "midaregami", title: "みだれ髪", author: "与謝野晶子", language: "ja"),
-            .init(cover: "kokoro", title: "心", author: "夏目漱石", language: "ja"),
-            .init(cover: "panghuang", title: "彷徨", author: "魯迅", language: "zh"),
+            .init(cover: "midaregami", title: "みだれ髪", work: "みだれ髪", author: "与謝野晶子", language: "ja"),
+            .init(cover: "kokoro", title: "心", work: "心", author: "夏目漱石", language: "ja"),
+            .init(cover: "panghuang", title: "彷徨", work: "彷徨", author: "魯迅", language: "zh"),
         ]),
     ]
 
