@@ -45,6 +45,29 @@ struct OPDSParserTests {
         #expect(!unsupported.isSupported)
     }
 
+    @Test("the newest additions: the feed's own sort/new link, or else a navigation entry's")
+    func newestLink() throws {
+        let entryOnly = """
+        <feed xmlns="http://www.w3.org/2005/Atom"><id>r</id><title>R</title>
+          <entry><id>a</id><title>By author</title><link rel="subsection" href="/by-author" type="application/atom+xml;profile=opds-catalog"/></entry>
+          <entry><id>n</id><title>New</title><link rel="http://opds-spec.org/sort/new" href="/new" type="application/atom+xml;profile=opds-catalog;kind=acquisition"/></entry>
+        </feed>
+        """
+        let fromEntry = try OPDSClient.parseFeed(data: Data(entryOnly.utf8), feedURL: feedURL)
+        #expect(fromEntry.newestURL == URL(string: "https://example.com/new"))
+        #expect(fromEntry.entries.map(\.title) == ["By author", "New"], "the entry stays a navigation entry")
+
+        let feedLink = """
+        <feed xmlns="http://www.w3.org/2005/Atom"><id>r</id><title>R</title>
+          <link rel="HTTP://opds-spec.org/sort/new" href="/latest" type="application/atom+xml;profile=opds-catalog;kind=acquisition"/>
+          <entry><id>n</id><title>New</title><link rel="http://opds-spec.org/sort/new" href="/new" type="application/atom+xml"/></entry>
+        </feed>
+        """
+        #expect(try OPDSClient.parseFeed(data: Data(feedLink.utf8), feedURL: feedURL).newestURL
+                == URL(string: "https://example.com/latest"))
+        #expect(try OPDSClient.parseFeed(data: Data(sample.utf8), feedURL: feedURL).newestURL == nil)
+    }
+
     @Test("parses feed title, pagination and search links")
     func feedLevelLinks() throws {
         let feed = try OPDSClient.parseFeed(data: Data(sample.utf8), feedURL: feedURL)

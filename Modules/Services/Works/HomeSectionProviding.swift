@@ -67,14 +67,21 @@ extension OPDSProvider: HomeSectionProviding {
         }
     }
 
-    /// 「最新」 (§13.3): the root's own books, or else the first navigation feed's. The parser
-    /// keeps no `rel` on navigation entries, so a feed's `sort/new` link cannot be found yet.
+    /// 「最新」 (§13.3): the catalog's newest additions where its root links them
+    /// (`OPDSFeed.newestURL`, Phase 5 follow-up 5), else the root's own books, else the first
+    /// navigation feed's.
     func load(_ section: HomeSection) async throws -> [CollectionEntry] {
         switch section.binding {
         case .opdsFeed(_, let url):
             return try await browse(CollectionLocation(id: url, title: ""), after: nil).items(limit: HomeRow.limit)
         case .latest:
-            let root = try await browse(nil, after: nil)
+            guard let rootURL else { throw SourceFailure(kind: .invalidAddress, underlying: OPDSError.invalidURL) }
+            let feed = try await feed(rootURL, isSearch: false)
+            if let newest = feed.newestURL {
+                return try await browse(CollectionLocation(id: newest.absoluteString, title: ""), after: nil)
+                    .items(limit: HomeRow.limit)
+            }
+            let root = await Self.page(from: feed, connectionID: instance.id, record: makeRecord, opening: makeOpening)
             let items = root.items(limit: HomeRow.limit)
             if !items.isEmpty { return items }
             guard let first = root.entries.firstLocation else { return [] }

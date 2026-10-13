@@ -246,4 +246,26 @@ struct OPDS2ParserTests {
             Issue.record("Empty body must not become an empty catalog")
         } catch OPDSError.noData {} catch { Issue.record("Unexpected error: \(error)") }
     }
+
+    @Test("the newest additions: the feed's own sort/new link, or else a navigation link's")
+    func newestLink() throws {
+        let navigation = """
+        {"metadata": {"title": "C"},
+         "navigation": [
+           {"href": "authors", "title": "Authors", "type": "application/opds+json"},
+           {"href": "new", "title": "New", "type": "application/opds+json", "rel": "http://opds-spec.org/sort/new"}
+         ]}
+        """
+        let fromNavigation = try OPDS2FeedParser.parse(data: Data(navigation.utf8), feedURL: base)
+        #expect(fromNavigation.newestURL == URL(string: "https://opds-test.pglaf.org/opds/new"))
+
+        let feedLink = """
+        {"metadata": {"title": "C"},
+         "links": [{"rel": ["http://opds-spec.org/sort/new"], "href": "latest", "type": "application/opds+json"}],
+         "navigation": [{"href": "new", "title": "New", "type": "application/opds+json", "rel": "http://opds-spec.org/sort/new"}]}
+        """
+        #expect(try OPDS2FeedParser.parse(data: Data(feedLink.utf8), feedURL: base).newestURL
+                == URL(string: "https://opds-test.pglaf.org/opds/latest"))
+        #expect(try OPDS2FeedParser.parse(data: Data(root.utf8), feedURL: base).newestURL == nil)
+    }
 }
