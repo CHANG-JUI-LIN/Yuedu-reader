@@ -283,6 +283,12 @@
     - **Steps:** 探索's ••• first (this decision's first three points), then 聚合設定 rearranged.
     - **Answered the same day, by option:** the home's sections are listed on 聚合設定 itself, as Emby lists its Home Sections, each opening its own options; the separate 首頁欄目 page folds in. 編輯首頁's card that holds the browser's switch is titled 更多.
 
+37. **Answered 2026-10-13, starting decision 30's layouts** (maintainer, by option, each the recommendation):
+    - **精選 is a horizontally paged large card, one book per page,** as Apple Books' featured: a large cover, the title, the author, the category, a one-line description and 查看作品; swipe for the next book.
+    - **Missing data is not made up.** The category is carried from where a source has one (a book source's `kind`, an OPDS entry's category); a line with nothing to show is not drawn. With little data, the large cover and the layout carry the card ("最少資料時也要漂亮").
+    - **專題集合: one card is one collection** (a bundled Gutenberg list, a book source's category…), with the collection's name and artwork; a tap opens that list.
+    - **The artwork is made from the collection's first covers,** as the public-library storefront does today (three real covers, staggered on a base colour); no bundled illustrations.
+
 ### Open, for the maintainer (each with a recommendation)
 
 These change what is built, so no step that depends on one starts until it is answered.
@@ -1623,3 +1629,36 @@ Not split (one meaning everywhere): 確認刪除 (three alert titles), 是／否
   - UI, iOS 27: `AggregationSettingsUITests` (4), `ExploreHomeUITests` (9) and `HomeEditorUITests` (5) passed. `testShowInLatestOff` and `testAddSections` failed on the first run for the two reasons above, and passed after the fixes, along with `testHomeSections`.
   - UI, iOS 17.5: `AggregationSettingsUITests` (4), `testShowInLatestOff`, `testMoreOpensAggregationSettings` and `testAddSections` passed. `testHomeSections` passed again after the row fix.
 - **Next:** decisions 30 and 34: the 精選 and 專題集合 layouts, and 新增欄目's layout choice as live previews.
+
+#### What landed — 精選 (decision 37, 2026-10-13)
+
+- **Decisions 30 and 37, 精選's half.** Branch `explore/featured-layout`. 專題集合 is next.
+- **The layout.** 呈現方式 → 精選 (`HomeLayoutStyle.featured`, stored as `"featured"`) draws one book to a page, as Apple Books' featured does. The next book shows past the edge; a regular-width screen shows two to a page.
+  - Each page (`HomeFeaturedCard`) has a large cover (`DSLayout.homeFeaturedCoverWidth`, 132pt, scaled with text) on the cover's own colour, as 精簡閱讀卡片 draws it.
+  - Beside the cover: category, title, author, two lines of blurb, and a 查看作品 capsule. The card is one button that opens 作品詳情. The capsule is drawn in its label and is hidden from VoiceOver, so the card stays one stop.
+  - At accessibility text sizes the text goes under the cover.
+  - VoiceOver reads the title, then the category, the author and the status, then the blurb: the card's whole text, as on screen (`HomeCardContent.featuredAccessibilityValue`).
+  - A shelf copy keeps the ••• 精簡閱讀卡片 gives it (從繼續閱讀移除, 標記為已讀完), at the card's trailing bottom, beside 查看作品, and on the card's VoiceOver actions. 大型閱讀卡片 has none, as before.
+- **Missing data is not drawn and never made up.** A bundled Gutenberg book has a title, an author and a generated cover, and is a full card of those. A shelf copy in 繼續閱讀 shows its 已讀 line and progress bar in place of a blurb.
+- **Where the category comes from** (`WorkSummary.category`, bounded to 40 characters):
+  - **OPDS 1:** the first `<category>` of the entry, its `label` before its `term`. Classification codes (a scheme ending in `/lcc`) and the DCMI type are skipped. Gutenberg's book feed gives its LCSH subject, e.g. "Upper class -- China -- Fiction". Its list feeds carry no categories, so their rows show none.
+  - **OPDS 2:** the first `subject` with a plain name, again skipping LCC and DCMI type.
+  - **Book sources:** `WorkSummary.category(fromSourceKind:)` takes the first tag of `kind` with no digits in it. "玄幻,連載,2023-01-01" gives 玄幻, and "2023-01-01 120萬字 都市" gives 都市.
+  - 青空文庫 and the shelf have none.
+- **Other sections in 精選:**
+  - 訂閱的最新文章 draws its landscape article cards, as it does for every layout but 圖文資訊清單.
+  - An index's chips (青空文庫's authors) stay chips.
+  - A custom page's 精選卡片 kind (`.featuredCards`) still maps to 橫向單排書架. A build before this one reads `"featured"` as unknown, keeps it, and draws a row.
+- **Strings:** 「精選」 and 「查看作品」, in all five tables.
+- **Previews and fixture:** `#Preview("精選，資料齊全與最少")` shows a book-source book with everything, a bundled Gutenberg book with the least, and the accessibility-size stack. The design fixture adds 繼續閱讀 and 中文書籍 in 精選.
+- **Test-first:** `FeaturedLayoutTests` (atom categories, OPDS 2 subjects, a source's kind, the stored value) was written before the API and failed to compile. `featuredValue` was added with the ••• fix.
+- **Found on the way:**
+  - The first cut passed no menu, so 繼續閱讀 set to 精選 would have lost the shelf copy's ••• for touch and VoiceOver. Fixed before merging, and covered by `ExploreHomeUITests.testFeaturedCardMenu`.
+  - A `#Preview` that built its data inline crashed the Swift compiler while it diagnosed a missing conformance. The data now comes from a plain helper function.
+- **Tests:**
+  - Unit, iOS 27: `FeaturedLayoutTests`, `HomeLayoutStyleTests`, `OPDSParserTests`, `OPDS2ParserTests`, `GutenbergOPDS2FixtureTests`, `SourceRecordDerivationTests`, `SearchWorkRouteTests`: 55 tests in 7 suites passed.
+  - Unit, iOS 27, after the ••• fix: `FeaturedLayoutTests` (with the new `featuredValue`) and `HomeLayoutStyleTests`, 11 tests passed.
+  - UI: `HomeEditorUITests.testLongPressChoosesFeatured` (new). It long-presses 中文書籍, picks 精選, checks that the first page is whole and over 60% of the screen wide with the next one past the edge, and that the card reads 紅樓夢 then 曹雪芹 and never 查看作品. It then swipes and checks that the next book settles at the leading edge.
+  - UI: `ExploreHomeUITests.testFeaturedCardMenu` (new) finds the ••• inside the fixture's 精選 shelf card and opens it.
+  - Both passed with `testCompactCardMenu` on iOS 27 and on iOS 17.5. `testLongPressChangesTheLayout` passed on both before the ••• fix.
+- **Next:** 專題集合 (a card per collection, its artwork from the first three covers), then decision 34's live previews.

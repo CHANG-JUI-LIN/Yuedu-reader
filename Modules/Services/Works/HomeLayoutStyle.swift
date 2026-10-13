@@ -13,6 +13,7 @@ enum HomeLayoutStyle: String, CaseIterable, Identifiable, Sendable {
     case multiRow
     case coverGrid
     case list
+    case featured
 
     var id: String { rawValue }
 
@@ -24,6 +25,7 @@ enum HomeLayoutStyle: String, CaseIterable, Identifiable, Sendable {
         case .multiRow: "多行橫向輪播"
         case .coverGrid: "固定封面網格"
         case .list: "圖文資訊清單"
+        case .featured: "精選"
         }
     }
 
@@ -35,6 +37,7 @@ enum HomeLayoutStyle: String, CaseIterable, Identifiable, Sendable {
         case .multiRow: "rectangle.grid.3x2"
         case .coverGrid: "square.grid.3x3"
         case .list: "list.bullet.rectangle"
+        case .featured: "rectangle.on.rectangle.angled"
         }
     }
 }
@@ -50,6 +53,7 @@ extension HomeSectionLayout {
         case .multiRow: return .multiRow
         case .coverGrid: return .coverGrid
         case .list, .rankedList: return .list
+        case .featured: return .featured
         default: break
         }
         switch componentKind {
@@ -81,6 +85,7 @@ extension HomeSectionLayout {
         case .multiRow: self = .multiRow
         case .coverGrid: self = .coverGrid
         case .list: self = ranked ? .rankedList : .list
+        case .featured: self = .featured
         }
     }
 

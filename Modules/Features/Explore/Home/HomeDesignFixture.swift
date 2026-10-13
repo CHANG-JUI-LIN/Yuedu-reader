@@ -96,6 +96,11 @@ enum HomeDesignFixtureData {
                 state: .loaded([])),
             row(.continueReading, layout: .readingCard, source: .localLibrary, name: localized("書架"), policy: .local,
                 state: .loaded([])),
+            // 精選 (decision 37): shelf copies, and a bundled list with no blurb or category.
+            row(.continueReading, layout: .featured, source: .localLibrary, name: localized("書架"), policy: .local,
+                state: .loaded([])),
+            row(.gutenbergCollection(id: chinese.id), layout: .featured, source: gutenberg,
+                name: localized("Project Gutenberg"), policy: .local, state: .loaded(collection)),
             // One list in each of the other layouts (5d-3).
             row(.gutenbergCollection(id: chinese.id), source: gutenberg, name: localized("Project Gutenberg"),
                 policy: .local, state: .loaded(collection)),

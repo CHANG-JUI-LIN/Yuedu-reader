@@ -10,6 +10,8 @@ import SwiftUI
 // - 多行橫向輪播: two rows of smaller covers, swiped sideways together.
 // - 固定封面網格: a fixed number of columns, read downwards.
 // - 圖文資訊清單: a small cover beside the title, author and blurb; ranked as an option.
+// - 精選 (decisions 30 and 37): as Apple Books' featured, one book to a page on the cover's
+//   colour: a large cover beside the category, title, author, a line of blurb and 查看作品.
 // The grid and the list show a few rows when the section has 查看全部 and everything when it
 // has not, since nothing else would show the rest. A loading section draws the same layout
 // with blank cards, so the page does not jump when the books arrive.
@@ -33,6 +35,7 @@ struct HomeSectionCards: View {
     @ScaledMetric(relativeTo: .headline) private var readingCoverWidth = DSLayout.homeReadingCardCoverWidth
     @ScaledMetric(relativeTo: .headline) private var listCoverWidth = DSLayout.homeListCoverWidth
     @ScaledMetric(relativeTo: .headline) private var compactReadingCoverWidth = DSLayout.homeCompactReadingCardCoverWidth
+    @ScaledMetric(relativeTo: .headline) private var featuredCoverWidth = DSLayout.homeFeaturedCoverWidth
     @State private var gridWidth: CGFloat = 0
 
     /// Rows the grid shows, and books the list shows, when 查看全部 has the rest.
@@ -51,14 +54,17 @@ struct HomeSectionCards: View {
             case .multiRow: multiRow
             case .coverGrid: grid
             case .list: list
+            case .featured: featured
             }
         }
         .environment(\.publicLibraryCoverScope, rowID)
     }
 
     /// One card's button: the identifier the UI tests find it by, and the label VoiceOver reads.
+    /// - Parameter value: what VoiceOver reads after the label, when the layout shows more than
+    ///   the card's own value.
     private func button(_ index: Int, in shown: [HomeCardContent], rank: Int? = nil, menu: [HomeCardMenuItem] = [],
-                        @ViewBuilder label: () -> some View) -> some View {
+                        value: String? = nil, @ViewBuilder label: () -> some View) -> some View {
         let card = shown[index]
         let rankText = rank.map { $0.formatted() }
         return Button {
@@ -71,7 +77,7 @@ struct HomeSectionCards: View {
         .accessibilityElement(children: .ignore)
         .accessibilityAddTraits(.isButton)
         .accessibilityLabel([rankText, card.accessibilityLabel].compactMap { $0 }.joined(separator: ", "))
-        .accessibilityValue(card.accessibilityValue)
+        .accessibilityValue(value ?? card.accessibilityValue)
         // The ••• menu's items, also on the card for VoiceOver's actions rotor.
         .accessibilityActions {
             ForEach(menu) { item in Button(item.title, action: item.perform) }
@@ -133,6 +139,37 @@ struct HomeSectionCards: View {
                                                reservesMenuSpace: !menu.isEmpty)
                     }
                     // Beside the card's button, not in it: a menu inside a button is not reachable.
+                    .overlay(alignment: .bottomTrailing) {
+                        if !menu.isEmpty { HomeCardMenuButton(card: card, items: menu) }
+                    }
+                    .containerRelativeFrame(.horizontal) { length, _ in
+                        let peek = cards.count > perScreen ? DSLayout.homeReadingCardPeek + DSSpacing.md : 0
+                        let gaps = DSSpacing.md * CGFloat(perScreen - 1)
+                        return max(0, (length - gaps - peek) / CGFloat(perScreen))
+                    }
+                }
+            }
+            .scrollTargetLayout()
+        }
+        .modifier(HomeSidewaysScroll())
+    }
+
+    // MARK: 精選
+
+    /// One book to a page, the next one showing past the edge; two to a page on a wider screen.
+    private var featured: some View {
+        let perScreen = horizontalSizeClass == .regular ? 2 : 1
+        return ScrollView(.horizontal) {
+            LazyHStack(alignment: .top, spacing: DSSpacing.md) {
+                ForEach(cards.indices, id: \.self) { index in
+                    let card = cards[index]
+                    let menu = HomeCardMenuItem.items(for: card, actions: bookActions)
+                    button(index, in: cards, menu: menu, value: card.featuredAccessibilityValue) {
+                        HomeFeaturedCard(content: card, coverWidth: featuredCoverWidth,
+                                         stacksVertically: dynamicTypeSize.isAccessibilitySize,
+                                         reservesMenuSpace: !menu.isEmpty)
+                    }
+                    // Beside the card's button, as 精簡閱讀卡片 has it: a shelf copy's •••.
                     .overlay(alignment: .bottomTrailing) {
                         if !menu.isEmpty { HomeCardMenuButton(card: card, items: menu) }
                     }
@@ -288,6 +325,102 @@ struct HomeReadingCard: View {
         }
         .multilineTextAlignment(.leading)
         .frame(maxWidth: .infinity, alignment: .leading)
+    }
+}
+
+// MARK: - 精選
+
+/// 精選's page (decision 37): a large cover and, beside it, the category, title, author, a line
+/// of blurb and 查看作品, in white on the cover's colour, as 精簡閱讀卡片 draws it. A line the
+/// source has nothing for is not drawn, so a 青空文庫 work with its generated cover and title
+/// alone is still a full card. A shelf copy shows how far it is read in place of the blurb.
+/// The text goes under the cover at accessibility text sizes.
+struct HomeFeaturedCard: View {
+    let content: HomeCardContent
+    let coverWidth: CGFloat
+    var stacksVertically = false
+    /// Keeps the trailing bottom clear for a shelf copy's ••• drawn over the card.
+    var reservesMenuSpace = false
+
+    @Environment(\.colorSchemeContrast) private var contrast
+    /// The cover's average colour, once the cover has drawn.
+    @State private var coverColor: CoverTint.RGB?
+
+    private var coverSize: CGSize {
+        CGSize(width: coverWidth, height: coverWidth / DSLayout.discoverCoverAspectRatio)
+    }
+
+    private var ground: Color {
+        guard let coverColor else { return DSColor.coverTintPlaceholder }
+        return CoverTint.background(for: coverColor, minimumContrast: contrast == .increased ? 7 : 4.5).color
+    }
+
+    var body: some View {
+        let layout = stacksVertically
+            ? AnyLayout(VStackLayout(alignment: .leading, spacing: DSSpacing.md))
+            : AnyLayout(HStackLayout(alignment: .top, spacing: DSSpacing.lg))
+        layout {
+            HomeCardCover(cover: content.cover, title: content.title, author: content.author, size: coverSize)
+                .modifier(PublicLibraryCoverAnchor(id: content.publicLibraryBookID))
+                .environment(\.coverImageObserver, { image in
+                    Task {
+                        let color = await Task.detached(priority: .utility) { CoverTint.average(of: image) }.value
+                        if color != coverColor { coverColor = color }
+                    }
+                })
+            text
+        }
+        .padding(DSSpacing.lg)
+        .frame(maxWidth: .infinity, minHeight: coverSize.height + DSSpacing.lg * 2, alignment: .topLeading)
+        .background(ground, in: RoundedRectangle(cornerRadius: DSRadius.xl, style: .continuous))
+        .contentShape(RoundedRectangle(cornerRadius: DSRadius.xl, style: .continuous))
+        .animation(DSAnimation.standard, value: coverColor)
+    }
+
+    private var text: some View {
+        VStack(alignment: .leading, spacing: DSSpacing.xs) {
+            if let category = content.category {
+                Text(category)
+                    .font(DSFont.caption.weight(.semibold))
+                    .lineLimit(1)
+            }
+            Text(content.title)
+                .font(DSFont.title3.weight(.bold))
+                .lineLimit(3)
+            if !content.author.isEmpty {
+                Text(content.author)
+                    .font(DSFont.subheadline)
+                    .lineLimit(1)
+            }
+            if let blurb = content.blurb {
+                Text(blurb)
+                    .font(DSFont.footnote)
+                    .lineLimit(2)
+                    .padding(.top, DSSpacing.xxs)
+            } else if let detail = content.detail {
+                Text(detail)
+                    .font(DSFont.footnote)
+                    .lineLimit(1)
+            }
+            if let progress = content.progress {
+                HomeProgressBar(progress: progress)
+                    .clipShape(Capsule())
+            }
+            Spacer(minLength: DSSpacing.md)
+            // The card is the button (one VoiceOver stop, which opens the work); this says so.
+            Text(localized("查看作品"))
+                .font(DSFont.subheadline.weight(.semibold))
+                .foregroundStyle(ground)
+                .padding(.horizontal, DSSpacing.lg)
+                .padding(.vertical, DSSpacing.sm)
+                .background(DSColor.textOnAccent, in: Capsule())
+                .accessibilityHidden(true)
+                .padding(.trailing, reservesMenuSpace && !stacksVertically ? DSLayout.minimumTapTarget - DSSpacing.lg : 0)
+                .padding(.bottom, reservesMenuSpace && stacksVertically ? DSLayout.minimumTapTarget - DSSpacing.lg : 0)
+        }
+        .foregroundStyle(DSColor.textOnAccent)
+        .multilineTextAlignment(.leading)
+        .frame(maxWidth: .infinity, minHeight: stacksVertically ? nil : coverSize.height, alignment: .topLeading)
     }
 }
 
@@ -481,6 +614,39 @@ struct HomeListRow: View {
         }
     }
 }
+
+#if DEBUG
+/// 精選's preview cards: a book-source book with everything, and a bundled Gutenberg book with a
+/// title, an author and a generated cover, nothing else.
+@MainActor
+private func featuredPreviewCards() -> [HomeCardContent] {
+    var source = BookSource()
+    source.bookSourceUrl = "https://source.example"
+    let book = OnlineBook(name: "宿命之環", author: "愛潛水的烏賊",
+                          intro: "灰霧之上，命運的環一圈圈收緊；一個從夢裡醒來的人，發現自己的日子已經被寫好了。",
+                          coverUrl: "", bookUrl: "https://source.example/book/1", tocUrl: "", wordCount: "",
+                          lastChapter: "", kind: "玄幻,連載", sourceId: source.id, sourceName: "S")
+    let entries: [CollectionEntry] = [
+        CollectionEntry.onlineBook(book, source: source),
+        CollectionEntry.bundledGutenberg(PublicLibraryCollection.all[0].books[0]),
+    ]
+    return entries.compactMap { HomeCardContent($0, status: { _ in nil }, shelfBooks: [:]) }
+}
+
+#Preview("精選，資料齊全與最少") {
+    let cards = featuredPreviewCards()
+    ScrollView {
+        VStack(alignment: .leading, spacing: DSSpacing.lg) {
+            ForEach(cards) { card in
+                HomeFeaturedCard(content: card, coverWidth: DSLayout.homeFeaturedCoverWidth)
+            }
+            HomeFeaturedCard(content: cards[0], coverWidth: DSLayout.homeFeaturedCoverWidth, stacksVertically: true)
+                .environment(\.dynamicTypeSize, .accessibility2)
+        }
+        .padding(DSSpacing.lg)
+    }
+}
+#endif
 
 /// A rank in a small square: white on red, teal and orange for the top three, grey for
 /// the rest: 圖文資訊清單's ranks (5d-3), as custom pages' rankings had them.

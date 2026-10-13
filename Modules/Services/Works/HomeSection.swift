@@ -33,12 +33,15 @@ struct HomeSectionLayout: RawRepresentable, Codable, Hashable, Sendable {
     /// its own, which would raise `HomePage.currentSchemaVersion`.
     static let list = Self(rawValue: "list")
     static let rankedList = Self(rawValue: "rankedList")
+    /// 精選 (decisions 30 and 37): one book to a page, a large cover beside its title, author,
+    /// category and blurb, paged sideways. A build before it draws a row and keeps the value.
+    static let featured = Self(rawValue: "featured")
 
     /// The custom-page layout this is, if it is one.
     var componentKind: CustomExploreComponent.Kind? { .init(rawValue: rawValue) }
 
     var isKnown: Bool {
-        componentKind != nil || [.tiles, .row, .readingCard, .compactReadingCard, .multiRow, .coverGrid, .list, .rankedList].contains(self)
+        componentKind != nil || [.tiles, .row, .readingCard, .compactReadingCard, .multiRow, .coverGrid, .list, .rankedList, .featured].contains(self)
     }
 }
 

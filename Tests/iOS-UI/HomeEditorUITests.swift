@@ -120,6 +120,50 @@ final class HomeEditorUITests: XCTestCase {
         attach(app, "home-section-ranked-list")
     }
 
+    /// Decision 37: 精選 draws one book to a page, the whole card on screen with the next one
+    /// showing past the edge; a swipe brings the next book in.
+    @MainActor
+    func testLongPressChoosesFeatured() {
+        let app = launchExplore()
+        let header = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@ AND label CONTAINS %@",
+                                                      "home.row.header.", listTitle)).firstMatch
+        let book = app.buttons[card].firstMatch
+        header.press(forDuration: 1.0)
+        let layouts = app.buttons["呈現方式"].firstMatch
+        XCTAssertTrue(layouts.waitForExistence(timeout: 5), app.debugDescription)
+        layouts.tap()
+        let featured = app.buttons["精選"].firstMatch
+        XCTAssertTrue(featured.waitForExistence(timeout: 5), app.debugDescription)
+        featured.tap()
+
+        XCTAssertTrue(book.waitForExistence(timeout: 5))
+        let screen = app.frame
+        XCTAssertGreaterThan(book.frame.width, screen.width * 0.6, "one book to a page: \(book.frame)")
+        XCTAssertGreaterThanOrEqual(book.frame.minX, 0, "the first page is whole: \(book.frame)")
+        XCTAssertLessThan(book.frame.maxX, screen.maxX, "the next page shows past the edge: \(book.frame)")
+        XCTAssertTrue(book.isHittable)
+        // One VoiceOver stop: the title, then the author; 查看作品 is drawn, not read.
+        XCTAssertEqual(book.label, "紅樓夢")
+        XCTAssertTrue((book.value as? String)?.contains("曹雪芹") ?? false, "\(book.value ?? "")")
+        XCTAssertFalse("\(book.label) \(book.value ?? "")".contains("查看作品"))
+        attach(app, "home-section-featured")
+
+        // The next book: the card that starts right of the first one, on the same line.
+        let rowY = book.frame.midY
+        let next = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@ AND identifier != %@",
+                                                    "home.card.gutenberg.", card))
+            .allElementsBoundByIndex.first { abs($0.frame.midY - rowY) < 4 && $0.frame.minX > book.frame.minX }
+        XCTAssertNotNil(next, app.debugDescription)
+        book.swipeLeft()
+        if let nextCard = next {
+            let settled = NSPredicate { _, _ in nextCard.frame.minX >= 0 && nextCard.frame.minX < screen.width / 4 }
+            expectation(for: settled, evaluatedWith: nil)
+            waitForExpectations(timeout: 5)
+            XCTAssertTrue(nextCard.isHittable)
+        }
+        attach(app, "home-section-featured-next")
+    }
+
     /// Long-pressing a section's name offers 隱藏, 設定 and 刪除; 刪除 asks first.
     @MainActor
     func testLongPressDeletesASection() {
