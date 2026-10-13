@@ -97,12 +97,13 @@ struct AudiobookDetailView: View {
         searchBook: SearchBook,
         initialOrigin: BookOrigin? = nil,
         onRemoveFromShelf: (() -> Void)? = nil,
-        onSourceKindChange: ((BookOrigin) -> Void)? = nil
+        onSourceKindChange: ((BookOrigin) -> Void)? = nil,
+        workVersions: BookDetailInfoChoice? = nil
     ) {
         self.searchBook = searchBook
         self.onRemoveFromShelf = onRemoveFromShelf
         self.onSourceKindChange = onSourceKindChange
-        self.workVersions = nil
+        self.workVersions = workVersions
         if let origin = initialOrigin
             ?? searchBook.preferredOrigin(for: .audio)
             ?? searchBook.origins.first {
@@ -304,6 +305,8 @@ struct AudiobookDetailView: View {
                     SourcePickerSheet(
                         searchBook: searchBook,
                         currentOrigin: currentOrigin,
+                        otherVersions: otherWorkVersions,
+                        onSelectVersion: { id in pendingVersion = id },
                         onSelectOrigin: { origin in pendingOrigin = origin }
                     )
                 }

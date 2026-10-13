@@ -46,6 +46,8 @@ Do not replace this with an id-only route that re-reads `SearchAggregator`.
 
 `SearchResultDestination` is a separate `View`. It receives only the route and required environment data. It must not capture `BookSearchView` or its `@StateObject SearchAggregator`.
 
+Since unified library 5f-4c (2026-10-13) it draws `WorkDetailView`, a work having one page wherever it is opened from. The `WorkDetailRoute` is made once in the destination's `init` from the route's snapshot (`WorkDetailRoute(searchResult:)`), with the snapshot's content kind and row text, so no HTML is parsed there. The snapshot itself is passed along, so the result's version is still drawn as `OnlineBookDetailDestination(.search(snapshot))` with its origins in 換源. Both pushes (the iOS 18 value route and iOS 17's `SearchPagePush.result`) still end in this one destination.
+
 ### Bounded Detail Presentation
 
 `OnlineBookDetailPresentationPolicy` bounds source-controlled introduction metadata before SwiftUI sees it:

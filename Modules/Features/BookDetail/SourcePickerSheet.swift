@@ -4,26 +4,34 @@ import SwiftUI
 
 /// The sources a search result was found in, as a plain list with the current one
 /// checked — the way iOS marks the selected row of a choice list.
+///
+/// On 作品詳情 (unified library 5f-4c) the work's known reading sources come first, as in
+/// `SourceSearchSheet`; the result's own origins follow, kept apart (decision 32).
 struct SourcePickerSheet: View {
     let searchBook: SearchBook
     let currentOrigin: BookOrigin?
+    var otherVersions: [BookDetailInfoChoice.Option] = []
+    var onSelectVersion: (String) -> Void = { _ in }
     let onSelectOrigin: (BookOrigin) -> Void
 
     @Environment(\.dismiss) private var dismiss
 
     var body: some View {
         NavigationStack {
-            List(searchBook.origins) { origin in
-                SourceOriginRow(
-                    origin: origin,
-                    kind: searchBook.contentKind(for: origin) ?? .text,
-                    isCurrent: origin.id == currentOrigin?.id,
-                    action: {
-                        onSelectOrigin(origin)
-                        dismiss()
+            List {
+                if otherVersions.isEmpty {
+                    origins
+                } else {
+                    Section(localized("已知的閱讀來源")) {
+                        ForEach(otherVersions) { version in
+                            SourceVersionRow(title: version.title) {
+                                onSelectVersion(version.id)
+                                dismiss()
+                            }
+                        }
                     }
-                )
-                .listRowBackground(Color.clear)
+                    Section { origins }
+                }
             }
             .listStyle(.plain)
             .scrollContentBackground(.hidden)
@@ -39,6 +47,21 @@ struct SourcePickerSheet: View {
                     SourceSheetCloseButton { dismiss() }
                 }
             }
+        }
+    }
+
+    private var origins: some View {
+        ForEach(searchBook.origins) { origin in
+            SourceOriginRow(
+                origin: origin,
+                kind: searchBook.contentKind(for: origin) ?? .text,
+                isCurrent: origin.id == currentOrigin?.id,
+                action: {
+                    onSelectOrigin(origin)
+                    dismiss()
+                }
+            )
+            .listRowBackground(Color.clear)
         }
     }
 }
@@ -104,6 +127,25 @@ struct SourceOriginRow: View {
     }
 }
 
+/// A known reading source of the work in a 換源 list (decision 32): picking it switches
+/// 作品詳情 to that version once the sheet has dismissed.
+struct SourceVersionRow: View {
+    let title: String
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            Text(title)
+                .font(DSFont.body)
+                .foregroundStyle(DSColor.textPrimary)
+                .frame(maxWidth: .infinity, minHeight: DSLayout.minimumTapTarget, alignment: .leading)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .listRowBackground(Color.clear)
+    }
+}
+
 /// Leading close button of the 換源 sheets.
 struct SourceSheetCloseButton: View {
     let action: () -> Void
@@ -128,4 +170,19 @@ struct SourceSheetCloseButton: View {
     }
     let book = SearchBook(name: "斗羅大陸", author: "唐家三少", origins: origins)
     return SourcePickerSheet(searchBook: book, currentOrigin: origins.first, onSelectOrigin: { _ in })
+}
+
+#Preview("選擇來源，作品的已知閱讀來源") {
+    let origins = ["示範來源配置", "另一個來源配置"].enumerated().map { index, name in
+        BookOrigin(
+            sourceId: UUID(), sourceName: name,
+            bookUrl: "https://example.com/\(index)", tocUrl: "", coverUrl: "",
+            intro: "", lastChapter: "第 1450 章 終章", wordCount: "", kind: "",
+            runtimeVariables: nil
+        )
+    }
+    let book = SearchBook(name: "斗羅大陸", author: "唐家三少", origins: origins)
+    return SourcePickerSheet(searchBook: book, currentOrigin: origins.first,
+                             otherVersions: [.init(id: "copy", title: "書架 · 已讀 42%")],
+                             onSelectOrigin: { _ in })
 }

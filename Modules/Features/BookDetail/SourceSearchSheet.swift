@@ -56,18 +56,10 @@ struct SourceSearchSheet: View {
             List {
                 Section(localized("已知的閱讀來源")) {
                     ForEach(otherVersions) { version in
-                        Button {
+                        SourceVersionRow(title: version.title) {
                             onSelectVersion(version.id)
                             dismiss()
-                        } label: {
-                            Text(version.title)
-                                .font(DSFont.body)
-                                .foregroundStyle(DSColor.textPrimary)
-                                .frame(maxWidth: .infinity, minHeight: DSLayout.minimumTapTarget, alignment: .leading)
-                                .contentShape(Rectangle())
                         }
-                        .buttonStyle(.plain)
-                        .listRowBackground(Color.clear)
                     }
                 }
                 if aggregator.isSearching && aggregator.results.isEmpty {

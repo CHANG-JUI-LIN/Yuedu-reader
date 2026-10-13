@@ -141,7 +141,8 @@ extension SourceRecord {
         )
     }
 
-    static func derived(from book: OnlineBook, source: BookSource) -> SourceRecord {
+    /// - Parameter contentKind: a search result's kind, snapshotted when it arrived; nil infers it.
+    static func derived(from book: OnlineBook, source: BookSource, contentKind: OnlineBookContentKind? = nil) -> SourceRecord {
         SourceRecord(
             key: SourceItemKey(
                 instance: SourceInstanceKey(type: .bookSource, id: source.bookSourceUrl),
@@ -150,7 +151,7 @@ extension SourceRecord {
             title: book.name,
             authors: authorList(book.author),
             language: nil,
-            contentKind: ContentKind(book.inferredContentKind(source: source)),
+            contentKind: ContentKind(contentKind ?? book.inferredContentKind(source: source)),
             identifiers: [],
             copyID: nil,
             acquisitions: [.readOnline]

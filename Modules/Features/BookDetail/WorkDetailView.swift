@@ -77,6 +77,9 @@ struct WorkDetailView: View {
     /// Set when a reader opened the page: only the version it reads is shown (decision 32:
     /// the work's other copies are not versions of it, and reading one would stack a reader).
     let readerContext: WorkDetailReaderContext?
+    /// Set when 搜索 opened the page (5f-4c): the result its route was made from, frozen at the
+    /// tap. Its version's page keeps the result's origins for 換源, as the result's own page did.
+    let searchResult: SearchBook?
     @EnvironmentObject private var store: BookStore
     @Environment(\.appDependencies) private var dependencies
     @ObservedObject private var connections = RemoteLibraryConnectionStore.shared
@@ -113,10 +116,12 @@ struct WorkDetailView: View {
     /// are read again without the copy.
     @State private var versionsRevision = 0
 
-    init(route: WorkDetailRoute, onRemoveFromShelf: (() -> Void)? = nil, readerContext: WorkDetailReaderContext? = nil) {
+    init(route: WorkDetailRoute, onRemoveFromShelf: (() -> Void)? = nil, readerContext: WorkDetailReaderContext? = nil,
+         searchResult: SearchBook? = nil) {
         self.route = route
         self.onRemoveFromShelf = onRemoveFromShelf
         self.readerContext = readerContext
+        self.searchResult = searchResult
         _versions = State(initialValue: [route])
         if readerContext != nil { _chosen = State(initialValue: route.nodeKey) }
     }
@@ -180,7 +185,7 @@ struct WorkDetailView: View {
                 .id(version.nodeKey)
         } else if let version = selected, let book = onlineBook(of: version) {
             OnlineBookDetailDestination(
-                .book(book),
+                onlineEntry(of: version, book: book),
                 onRemoveFromShelf: { leftShelf(version) },
                 workVersions: versionChoice(version)
             )
@@ -468,6 +473,13 @@ struct WorkDetailView: View {
         case .copy(let id): copy(id).flatMap(OnlineBook.init(shelfCopy:))
         case .opdsEntry, .webDAVFile, .gutenberg, .aozora: nil
         }
+    }
+
+    /// The page of a book-source version: 搜索's result as it was found, with its origins for 換源;
+    /// every other one (a row's book, a shelf copy) as its own book.
+    private func onlineEntry(of version: WorkDetailRoute, book: OnlineBook) -> OnlineBookDetailDestination.Entry {
+        if let searchResult, version.nodeKey == route.nodeKey { return .search(searchResult) }
+        return .book(book)
     }
 
     /// A book-source page took its book off the shelf. The copy the page was opened for takes
