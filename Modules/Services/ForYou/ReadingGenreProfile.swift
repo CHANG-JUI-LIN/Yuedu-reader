@@ -109,12 +109,7 @@ actor ReadingGenreRecorder {
         var profile = profile()
         guard profile.record(tags: tags, book: book, at: now()) else { return }
         loaded = profile
-        do {
-            try FileManager.default.createDirectory(at: fileURL.deletingLastPathComponent(), withIntermediateDirectories: true)
-            try JSONEncoder().encode(profile).write(to: fileURL, options: .atomic)
-        } catch {
-            AppLogger.cache("⟐ reading genres could not be saved", error: error, context: ["file": fileURL.path])
-        }
+        ForYouFile.write(profile, to: fileURL, label: "reading genres")
     }
 
     /// A book opened: its tags are read off the main thread (the copy's sidecar, else its book
@@ -134,20 +129,6 @@ actor ReadingGenreRecorder {
     }
 
     private func load() -> ReadingGenreProfile {
-        let data: Data
-        do {
-            data = try Data(contentsOf: fileURL)
-        } catch CocoaError.fileReadNoSuchFile {
-            return ReadingGenreProfile()
-        } catch {
-            AppLogger.cache("⟐ reading genres unreadable", error: error, context: ["file": fileURL.path])
-            return ReadingGenreProfile()
-        }
-        do {
-            return try JSONDecoder().decode(ReadingGenreProfile.self, from: data)
-        } catch {
-            AppLogger.cache("⟐ reading genres unreadable", error: error, context: ["file": fileURL.path])
-            return ReadingGenreProfile()
-        }
+        ForYouFile.read(ReadingGenreProfile.self, from: fileURL, label: "reading genres") ?? ReadingGenreProfile()
     }
 }

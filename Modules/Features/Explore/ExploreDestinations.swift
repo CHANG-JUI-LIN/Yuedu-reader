@@ -208,7 +208,8 @@ enum ExplorePlace {
             guard let aozoraIndex, let mode = AozoraBrowseMode(rawValue: kind) else { return nil }
             return .publicLibrary(.aozoraCatalog(mode, aozoraIndex))
         // 訂閱的最新文章: the rest is RSS 訂閱 (`ExploreNavigationRoute.subscriptions`).
-        case .myLibrary, .continueReading, .related, .nextInSeries, .subscriptionArticles, .unknown:
+        // 為你推薦 is mixed from many places; no page lists it whole.
+        case .myLibrary, .continueReading, .related, .nextInSeries, .subscriptionArticles, .forYou, .unknown:
             return nil
         }
     }

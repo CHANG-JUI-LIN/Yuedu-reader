@@ -17,6 +17,7 @@ extension HomeSection {
         case .related: return localized("相關")
         case .nextInSeries: return localized("系列下一本")
         case .subscriptionArticles: return localized("訂閱的最新文章")
+        case .forYou: return localized("為你推薦")
         case .sourceCategories(let categories): return categories.first?.title ?? sourceName
         case .gutenbergCollection(let id):
             return PublicLibraryCollection.all.first { $0.id == id }.map { localized($0.titleKey) } ?? sourceName
