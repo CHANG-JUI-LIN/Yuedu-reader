@@ -198,11 +198,41 @@ struct DiscoverFirstPagesTests {
         let a = source("a")
         await probe.release("a/hot")
         await probe.release("a/new")
+        await probe.release("a/end")
         _ = try await pages.firstPage(of: category(a, "/hot"), in: a).value
         _ = try await pages.firstPage(of: category(a, "/new"), in: a).value
         pages.beginSync()
+        _ = try await pages.firstPage(of: category(a, "/end"), in: a).value
+        #expect(await probe.log == ["prime a", "fetch a/hot", "fetch a/new", "prime a", "fetch a/end"])
+    }
+
+    @Test("a page fetched in the home's life answers a later ask, until a pull to refresh")
+    func answersFromTheStore() async throws {
+        let probe = FetchProbe()
+        let store = ForYouCandidateStore(directory: scratchDirectory())
+        let pages = pages(probe, store: store)
+        let a = source("a")
+        await probe.release("a/hot")
+        let fetched = try await pages.firstPage(of: category(a, "/hot"), in: a).value
+        // 為你推薦 fetched it as the home appeared; the row asks when it comes into view.
+        #expect(try await pages.firstPage(of: category(a, "/hot"), in: a).value.map(\.name) == fetched.map(\.name))
+        #expect(await probe.log == ["prime a", "fetch a/hot"])
+
+        pages.refresh()
         _ = try await pages.firstPage(of: category(a, "/hot"), in: a).value
-        #expect(await probe.log == ["prime a", "fetch a/hot", "fetch a/new", "prime a", "fetch a/hot"])
+        #expect(await probe.log == ["prime a", "fetch a/hot", "fetch a/hot"])
+    }
+
+    @Test("a page saved before the home was made is fetched again")
+    func olderPagesFetchAgain() async throws {
+        let probe = FetchProbe()
+        let store = ForYouCandidateStore(directory: scratchDirectory())
+        let a = source("a")
+        await store.write(ForYouCandidates(sourceURL: "a", categoryURL: "/hot", fetchedAt: Date().addingTimeInterval(-60),
+                                           books: [book("舊", source: a.id)]))
+        let pages = pages(probe, store: store)
+        await probe.release("a/hot")
+        #expect(try await pages.firstPage(of: category(a, "/hot"), in: a).value.map(\.name) == ["a/hot-1", "a/hot-2"])
     }
 
     @Test("a row's first page is written to the candidate store")

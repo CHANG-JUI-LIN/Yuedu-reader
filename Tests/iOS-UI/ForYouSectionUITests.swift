@@ -89,13 +89,20 @@ final class ForYouSectionUITests: XCTestCase {
     /// Its form lists the home's categories; 加入分類 adds one from a source, and 移除 takes it
     /// away. 新增欄目 offers it among App 資料.
     @MainActor
-    func testFormAddsAndRemovesACategory() {
+    func testFormAddsAndRemovesACategory() throws {
         let app = launchExplore()
         let forYou = header(app)
         XCTAssertTrue(forYou.waitForExistence(timeout: 20), app.debugDescription)
         forYou.press(forDuration: 1.0)
-        let settings = app.buttons["設定"].firstMatch
-        XCTAssertTrue(settings.waitForExistence(timeout: 5), app.debugDescription)
+        // The header menu's 設定, not the 設定 tab, which iOS 17 lists first.
+        let tabBar = app.tabBars.firstMatch
+        func menuSettings() -> XCUIElement? {
+            app.buttons.matching(NSPredicate(format: "label == %@", "設定")).allElementsBoundByIndex
+                .first { !tabBar.exists || !tabBar.frame.contains(CGPoint(x: $0.frame.midX, y: $0.frame.midY)) }
+        }
+        let shown = expectation(for: NSPredicate { _, _ in menuSettings() != nil }, evaluatedWith: nil)
+        wait(for: [shown], timeout: 5)
+        let settings = try XCTUnwrap(menuSettings(), app.debugDescription)
         settings.tap()
 
         let add = app.buttons["homeSection.forYou.add"].firstMatch

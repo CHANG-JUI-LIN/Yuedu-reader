@@ -40,11 +40,15 @@ final class HomeModel: ObservableObject {
 
     private let makeProviders: () -> [any HomeSectionProviding]
     private let waitForSources: () async -> Void
+    private let firstPages: DiscoverFirstPages?
     private var providers: [String: any HomeSectionProviding] = [:]
     private var requested: Set<String> = []
     private var queueTails: [SourceInstanceKey: Task<Void, Never>] = [:]
     /// Rows queued or loading, so a 重試 or pull to refresh never starts a second load.
     private var active: Set<String> = []
+    /// Rows a sync changed while they loaded: they start again once that load ends, which
+    /// shows nothing (`isCurrent`).
+    private var rerun: Set<String> = []
     /// The last pull to refresh; 為你推薦 asks again for what it read before it.
     private(set) var refreshedAt: Date?
     /// 為你推薦's loads waiting for the library rows that load with the home.
@@ -55,18 +59,32 @@ final class HomeModel: ObservableObject {
     ///     (`SourceProviderRegistry.homeProviders(shelf:firstPages:)`).
     ///   - waitForSources: returns once the book-source library is read
     ///     (`BookSourceStore.waitUntilLoaded`).
-    init(providers: @escaping () -> [any HomeSectionProviding], waitForSources: @escaping () async -> Void) {
+    ///   - firstPages: the home's first-page fetcher; a pull to refresh asks every category again.
+    init(providers: @escaping () -> [any HomeSectionProviding], waitForSources: @escaping () async -> Void,
+         firstPages: DiscoverFirstPages? = nil) {
         makeProviders = providers
         self.waitForSources = waitForSources
+        self.firstPages = firstPages
     }
 
     /// A home served by the sources now, with one first-page fetcher of its own for as long as
     /// it lives (Discovery Phase 7a-1).
     static func live(shelf: BookStore) -> HomeModel {
-        let firstPages = DiscoverFirstPages()
+        make(firstPages: DiscoverFirstPages(), waitForSources: { await BookSourceStore.shared.waitUntilLoaded() }) { firstPages, home in
+            SourceProviderRegistry.shared.homeProviders(shelf: shelf, firstPages: firstPages, home: home)
+        }
+    }
+
+    /// `live`'s wiring with the providers given: `firstPages` serves the home for its life and
+    /// is refreshed by its pull to refresh; 為你推薦 gets the home weakly.
+    static func make(
+        firstPages: DiscoverFirstPages,
+        waitForSources: @escaping () async -> Void,
+        providers: @escaping @MainActor (DiscoverFirstPages, (any ForYouHomeRows)?) -> [any HomeSectionProviding]
+    ) -> HomeModel {
         let home = WeakHomeModel()
-        let model = HomeModel(providers: { SourceProviderRegistry.shared.homeProviders(shelf: shelf, firstPages: firstPages, home: home.model) },
-                              waitForSources: { await BookSourceStore.shared.waitUntilLoaded() })
+        let model = HomeModel(providers: { providers(firstPages, home.model) }, waitForSources: waitForSources,
+                              firstPages: firstPages)
         home.model = model
         return model
     }
@@ -128,7 +146,14 @@ final class HomeModel: ObservableObject {
         requested.formIntersection(servedBy.keys)
         rows = built
         isReady = true
-        for id in restarted { load(id) }
+        for id in restarted {
+            if active.contains(id) {
+                requested.insert(id)
+                rerun.insert(id)
+            } else {
+                load(id)
+            }
+        }
     }
 
     private func isLatest(_ section: HomeSection) -> Bool {
@@ -163,6 +188,7 @@ final class HomeModel: ObservableObject {
     /// Pull to refresh: rows already loaded load again.
     func reload() {
         refreshedAt = Date()
+        firstPages?.refresh()
         for row in rows where requested.contains(row.id) && !active.contains(row.id) {
             start(row)
         }
@@ -193,6 +219,7 @@ final class HomeModel: ObservableObject {
     private func fetch(_ rowID: String) async {
         defer {
             active.remove(rowID)
+            if rerun.remove(rowID) != nil, let current = row(rowID) { start(current) }
             resumeSettleWaiters()
         }
         guard let row = row(rowID), let provider = providers[rowID] else { return }
@@ -203,7 +230,7 @@ final class HomeModel: ObservableObject {
             SourcePerfTrace.record("home.row", "source=\(row.source.type.rawValue) entries=\(entries.count)",
                                    since: started, thresholdMs: 0)
             // The row may have been removed or changed while this loaded.
-            guard self.row(rowID)?.section.loadsSameContent(as: row.section) == true else { return }
+            guard isCurrent(row) else { return }
             setState(.loaded(entries), of: rowID)
             if Self.isLibrary(row.source) { restartLibraryReaders() }
         } catch is CancellationError {
@@ -212,9 +239,15 @@ final class HomeModel: ObservableObject {
             AppLogger.network("⟐ home row failed", error: error, context: [
                 "source": "\(row.source.type.rawValue):\(row.source.id)", "section": row.section.id.uuidString,
             ])
-            guard self.row(rowID)?.section.loadsSameContent(as: row.section) == true else { return }
+            guard isCurrent(row) else { return }
             setState(.failed(error.localizedDescription), of: rowID)
         }
+    }
+
+    /// Whether `row`, as a load began, is still the row: same content, same inputs.
+    private func isCurrent(_ row: Row) -> Bool {
+        guard let current = self.row(row.id) else { return false }
+        return current.section.loadsSameContent(as: row.section) && current.inputsKey == row.inputsKey
     }
 
     /// A library row loaded after the rows that read the library rows (為你推薦) had finished,

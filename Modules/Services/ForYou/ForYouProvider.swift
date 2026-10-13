@@ -169,40 +169,65 @@ final class ForYouProvider: HomeSectionProviding {
         let refreshedAt = home?.refreshedAt
         let hadHome = home != nil
         let installed = Dictionary(sources().map { ($0.bookSourceUrl, $0) }, uniquingKeysWith: { first, _ in first })
-        var inputs: [ForYouCandidate] = []
+        var inputs: [ForYouInput] = []
         var failed = 0
-        var asked = 0
-        var fetched = 0
         var cacheSeconds: TimeInterval = 0
+        var reads: [(category: ExploreCategoryReference, source: BookSource, books: ForYouCandidates?, fresh: Bool)] = []
         for category in ForYouInputs.categories(on: homeSections(), for: section) {
             guard let source = installed[category.sourceURL] else { continue }
-            asked += 1
             let reading = SourcePerfTrace.now
-            var books = await candidates.read(sourceURL: category.sourceURL, categoryURL: category.url, sourceID: source.id)
+            let books = await candidates.read(sourceURL: category.sourceURL, categoryURL: category.url, sourceID: source.id)
             cacheSeconds += SourcePerfTrace.now - reading
             let fresh = books.map { cached in
                 cached.isFresh(at: started) && !(refreshedAt.map { cached.fetchedAt < $0 } ?? false)
             } ?? false
-            if !fresh {
-                // The home went away: nothing more is asked for it.
-                if hadHome, home == nil { break }
-                let fetching = SourcePerfTrace.now
-                defer { SourcePerfTrace.record("forYou.fetch", "source=\(source.bookSourceName) category=\(category.title)",
-                                               since: fetching, thresholdMs: 0) }
-                fetched += 1
-                do {
-                    let page = try await firstPages.firstPage(of: category, in: source).value
-                    books = ForYouCandidates(sourceURL: category.sourceURL, categoryURL: category.url, fetchedAt: now(), books: page)
-                } catch {
+            reads.append((category, source, books, fresh))
+        }
+        let asked = reads.count
+        // The stale categories are asked for at once, a source's one after another and the
+        // sources side by side, as the lanes run them (7a-5: one at a time made a cold home's
+        // 為你推薦 wait for every request in turn).
+        let stale = Dictionary(grouping: reads.indices.filter { !reads[$0].fresh }) { reads[$0].source.bookSourceUrl }
+        let fetched = stale.values.reduce(0) { $0 + $1.count }
+        let asks = reads.map { ($0.category, $0.source) }
+        let fetches = stale.values.map { indices in
+            Task { @MainActor in
+                var pages: [(index: Int, result: Result<[OnlineBook], Error>)] = []
+                for index in indices {
+                    // The home went away: nothing more is asked for it.
+                    if hadHome, home == nil { break }
+                    let (category, source) = asks[index]
+                    let fetching = SourcePerfTrace.now
+                    do {
+                        pages.append((index, .success(try await firstPages.firstPage(of: category, in: source).value)))
+                    } catch {
+                        pages.append((index, .failure(error)))
+                    }
+                    SourcePerfTrace.record("forYou.fetch", "source=\(source.bookSourceName) category=\(category.title)",
+                                           since: fetching, thresholdMs: 0)
+                }
+                return pages
+            }
+        }
+        for fetch in fetches {
+            for (index, result) in await fetch.value {
+                let (category, source, cached, _) = reads[index]
+                switch result {
+                case .success(let page):
+                    reads[index].books = ForYouCandidates(sourceURL: category.sourceURL, categoryURL: category.url,
+                                                          fetchedAt: now(), books: page)
+                case .failure(let error):
                     failed += 1
                     AppLogger.network("⟐ 為你推薦 kept a category's earlier books", error: error, context: [
-                        "source": source.bookSourceName, "category": category.title, "cached": "\(books?.books.count ?? 0)",
+                        "source": source.bookSourceName, "category": category.title, "cached": "\(cached?.books.count ?? 0)",
                     ])
                 }
             }
-            for (position, book) in (books?.books ?? []).enumerated() {
-                inputs.append(ForYouCandidate(entry: .onlineBook(book, source: source), source: source.bookSourceUrl,
-                                              position: position, tags: ReadingGenreProfile.tags(fromSourceKind: book.kind)))
+        }
+        for read in reads {
+            for (position, book) in (read.books?.books ?? []).enumerated() {
+                inputs.append(ForYouInput(entry: .onlineBook(book, source: read.source), source: read.source.bookSourceUrl,
+                                          position: position, tags: .sourceKind(book.kind)))
             }
         }
         SourcePerfTrace.record("forYou.cache", "categories=\(asked) fetched=\(fetched)",
@@ -211,9 +236,8 @@ final class ForYouProvider: HomeSectionProviding {
             for row in await home.settledLibraryEntries() {
                 for (position, entry) in row.entries.enumerated() {
                     guard case .item(_, let summary, _) = entry else { continue }
-                    inputs.append(ForYouCandidate(entry: entry, source: "\(row.source.type.rawValue):\(row.source.id)",
-                                                  position: position,
-                                                  tags: ReadingGenreProfile.normalizedTags(summary.category.map { [$0] } ?? [])))
+                    inputs.append(ForYouInput(entry: entry, source: "\(row.source.type.rawValue):\(row.source.id)",
+                                              position: position, tags: .raw(summary.category.map { [$0] } ?? [])))
                 }
             }
         }
@@ -231,20 +255,49 @@ final class ForYouProvider: HomeSectionProviding {
         }
         let shown = await exposure.recentlyShown(at: date)
         let weights = await genres.profile().weights(at: date)
-        let ranking = SourcePerfTrace.now
-        let shelfWorks = ForYouRanker.shelfWorks(shelf.books)
-        let ranked = ForYouRanker.rank(
-            candidates: inputs, shelf: shelfWorks, weights: weights, recent: recent, recentlyShown: shown,
-            languages: languages(), seed: Self.seed(for: date), limit: HomeRow.limit)
-        SourcePerfTrace.record("forYou.rank", "candidates=\(inputs.count) shelf=\(shelfWorks.count) entries=\(ranked.count)",
-                               since: ranking, thresholdMs: 0)
-        await exposure.record(ranked.compactMap(ForYouRanker.workKey(of:)), at: date)
+        let books = shelf.books, languages = languages(), seed = Self.seed(for: date), offered = inputs
+        // Off the main actor: folding titles and tags costs ICU transforms, about 0.1 ms each
+        // in a Debug simulator build (7a-5: 2000 shelf books and 600 candidates took 450 ms).
+        let (ranked, keys) = await Task.detached(priority: .userInitiated) {
+            let ranking = SourcePerfTrace.now
+            let candidates = offered.map(\.candidate)
+            let shelfWorks = ForYouRanker.shelfWorks(books)
+            let ranked = ForYouRanker.rank(
+                candidates: candidates, shelf: shelfWorks, weights: weights, recent: recent, recentlyShown: shown,
+                languages: languages, seed: seed, limit: HomeRow.limit)
+            SourcePerfTrace.record("forYou.rank", "candidates=\(candidates.count) shelf=\(shelfWorks.count) entries=\(ranked.count)",
+                                   since: ranking, thresholdMs: 0)
+            return (ranked, ranked.compactMap(ForYouRanker.workKey(of:)))
+        }.value
+        await exposure.record(keys, at: date)
         return ranked
     }
 
     /// The day, so the explored books stay put within it.
     static func seed(for date: Date) -> UInt64 {
         UInt64(max(0, Calendar.current.ordinality(of: .day, in: .era, for: date) ?? 0))
+    }
+}
+
+/// A book an input offered, its tags not yet folded: `ForYouProvider` folds them off the main actor.
+private struct ForYouInput: Sendable {
+    enum Tags: Sendable {
+        /// A book source's `kind` (`ReadingGenreProfile.tags(fromSourceKind:)`).
+        case sourceKind(String)
+        case raw([String])
+    }
+
+    let entry: CollectionEntry
+    let source: String
+    let position: Int
+    let tags: Tags
+
+    var candidate: ForYouCandidate {
+        let folded = switch tags {
+        case .sourceKind(let kind): ReadingGenreProfile.tags(fromSourceKind: kind)
+        case .raw(let raw): ReadingGenreProfile.normalizedTags(raw)
+        }
+        return ForYouCandidate(entry: entry, source: source, position: position, tags: folded)
     }
 }
 
