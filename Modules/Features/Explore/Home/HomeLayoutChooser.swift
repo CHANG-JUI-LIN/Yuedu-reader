@@ -117,13 +117,13 @@ struct HomeLayoutSample {
         HomeLayoutSample(
             cards: books.mapValues { books in
                 books.map { HomeCardContent(sample: $0.title, author: $0.author, kind: $0.kind,
-                                           cover: bundledCover(of: $0) ?? .generated(seed: $0.title)) }
+                                           cover: bundledCover(of: $0)) }
             },
             collections: lists.map { list in
                 CollectionSummary(id: list.id, title: localized(list.titleKey),
                                   books: list.books.map { book in
                                       WorkSummary(title: book.title, authors: book.author.isEmpty ? [] : [book.author],
-                                                  cover: bundledCover(of: book) ?? .generated(seed: book.title), blurb: nil,
+                                                  cover: bundledCover(of: book), blurb: nil,
                                                   language: book.language, contentKind: book.kind)
                                   },
                                   languages: list.books.map(\.language),
@@ -131,8 +131,8 @@ struct HomeLayoutSample {
             })
     }
 
-    /// The bundled cover of a sample book. A missing file is a packaging bug, logged, and the
-    /// book is drawn with a generated cover (`LayoutPreviewTests` checks every file is there).
+    /// The bundled cover of a sample book. A missing file is a packaging bug: logged, and the
+    /// book drawn without a cover (`LayoutPreviewTests` checks every file is there).
     static func bundledCover(of book: HomeLayoutSampleBook) -> CoverReference? {
         guard let path = Bundle.main.path(forResource: "layout-sample-\(book.cover)", ofType: "jpg") else {
             AppLogger.error("Layout sample cover missing from the app bundle", context: ["cover": book.cover])
