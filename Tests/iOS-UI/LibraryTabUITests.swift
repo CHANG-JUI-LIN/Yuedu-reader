@@ -37,6 +37,11 @@ final class LibraryTabUITests: XCTestCase {
         return element
     }
 
+    /// An item of the open •••: the iOS 17 chooser's row also reads its subtitle after the title.
+    private func item(_ app: XCUIApplication, _ title: String) -> XCUIElement {
+        app.buttons.matching(NSPredicate(format: "label == %@ OR label BEGINSWITH %@", title, title + ",")).firstMatch
+    }
+
     private func back(_ app: XCUIApplication) {
         app.navigationBars.buttons.element(boundBy: 0).tap()
     }
@@ -101,10 +106,14 @@ final class LibraryTabUITests: XCTestCase {
         XCTAssertLessThan(gutenberg.frame.maxX, aozora.frame.minX)
         attach(grid, "library-grid")
 
-        // The page's one menu holds 格狀 and 每列欄數.
+        // The page's one menu holds 格狀 and 每列欄數; iOS 17's chooser, 格狀 and each column count.
         grid.buttons["library.more"].firstMatch.tap()
-        XCTAssertTrue(grid.buttons["格狀"].firstMatch.waitForExistence(timeout: 5), grid.debugDescription)
-        XCTAssertTrue(grid.buttons["每列欄數"].firstMatch.exists, grid.debugDescription)
+        XCTAssertTrue(item(grid, "格狀").waitForExistence(timeout: 5), grid.debugDescription)
+        if #available(iOS 18, *) {
+            XCTAssertTrue(grid.buttons["每列欄數"].firstMatch.exists, grid.debugDescription)
+        } else {
+            XCTAssertTrue(item(grid, "3 欄").exists, grid.debugDescription)
+        }
         grid.terminate()
 
         let list = launch(["-explore.showsGrid", "NO"])
@@ -167,5 +176,47 @@ final class LibraryTabUITests: XCTestCase {
         XCTAssertTrue(app.buttons["library.source.女频書源"].waitForExistence(timeout: 5), app.debugDescription)
         XCTAssertFalse(app.buttons["library.source.男频書源甲"].exists)
         XCTAssertFalse(app.buttons["library.sources.all"].exists)
+    }
+
+    /// The ••• (decision 31): 新增來源配置 opens the same import as 來源配置管理's 「+」, and
+    /// 管理來源配置 pushes 來源配置管理. On iOS 17 both are rows of a chooser.
+    @MainActor
+    func testMoreMenu() {
+        let app = launch()
+        let more = app.buttons["library.more"].firstMatch
+        XCTAssertTrue(more.waitForExistence(timeout: 5), app.debugDescription)
+        more.tap()
+        if #available(iOS 18, *) {
+            let add = app.buttons["新增來源配置"].firstMatch
+            XCTAssertTrue(add.waitForExistence(timeout: 5), app.debugDescription)
+            XCTAssertTrue(app.buttons["管理來源配置"].firstMatch.exists, app.debugDescription)
+            attach(app, "library-more-menu")
+            add.tap()
+        }
+        let network = item(app, "網路匯入")
+        XCTAssertTrue(network.waitForExistence(timeout: 5), app.debugDescription)
+        XCTAssertTrue(item(app, "手動新增").exists && item(app, "本機匯入").exists, app.debugDescription)
+        attach(app, "library-more-add")
+        network.tap()
+        XCTAssertTrue(app.navigationBars["網路匯入"].waitForExistence(timeout: 5), app.debugDescription)
+        attach(app, "library-more-network-import")
+        app.navigationBars["網路匯入"].buttons["關閉"].tap()
+        XCTAssertFalse(app.navigationBars["網路匯入"].waitForExistence(timeout: 2), app.debugDescription)
+
+        more.tap()
+        let manage = item(app, "管理來源配置")
+        XCTAssertTrue(manage.waitForExistence(timeout: 5), app.debugDescription)
+        manage.tap()
+        XCTAssertTrue(app.navigationBars["來源配置管理"].waitForExistence(timeout: 5), app.debugDescription)
+
+        // 來源配置管理's 「+」 opens the same flow.
+        app.navigationBars["來源配置管理"].buttons["新增來源配置"].tap()
+        let local = item(app, "本機匯入")
+        XCTAssertTrue(local.waitForExistence(timeout: 5), app.debugDescription)
+        local.tap()
+        XCTAssertTrue(app.navigationBars["匯入來源配置"].waitForExistence(timeout: 5), app.debugDescription)
+        attach(app, "source-manager-local-import")
+        app.navigationBars["匯入來源配置"].buttons["關閉"].tap()
+        XCTAssertFalse(app.navigationBars["匯入來源配置"].waitForExistence(timeout: 2), app.debugDescription)
     }
 }

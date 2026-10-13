@@ -21,6 +21,7 @@ struct LibraryTabRoot: View {
     @ObservedObject private var aozora = AozoraCatalogStore.shared
     @ObservedObject private var rss = RSSStore.shared
     @AppStorage(ExploreSettings.showsGridKey) private var showsGrid = true
+    @AppStorage(ExploreSettings.gridColumnCountKey) private var gridColumnCount = ExploreGridDensity.default.rawValue
     /// The first-launch card saying what moved here (maintainer's choice, 2026-10-13).
     @AppStorage(Self.noticeDismissedKey) private var noticeDismissed = false
 
@@ -33,8 +34,19 @@ struct LibraryTabRoot: View {
     @State private var sourceGroups: [LibrarySourceGroups.Group] = []
     @State private var sourceActionSheet: BookSourceActionSheet?
     @State private var sourcePendingDeletion: BookSource?
+    /// 新增來源配置 from the •••: the same flow as 來源配置管理's 「+」.
+    @StateObject private var addFlow = BookSourceAddFlow()
+    @State private var showsMoreChooser = false
+    @State private var moreSequence = DismissalSequencedPresentation<LibraryMoreAction>()
 
     static let noticeDismissedKey = "library.tabNoticeDismissed"
+
+    private enum LibraryMoreAction: Hashable {
+        case add(BookSourceAddRoute)
+        case manageSources
+        case showsGrid(Bool)
+        case columns(Int)
+    }
 
     private struct BrowserEntryPresentation: Identifiable {
         let id = UUID()
@@ -94,16 +106,7 @@ struct LibraryTabRoot: View {
             .pageBackgroundToolbar(for: .explore)
             .rootTabTitle(localized("資源庫"), onScroll: .minimizesBar)
             .toolbar {
-                ToolbarItem(placement: .topBarTrailing) {
-                    Menu {
-                        LibraryLayoutMenuItems()
-                    } label: {
-                        Image(systemName: "ellipsis")
-                            .accessibilityHidden(true)
-                    }
-                    .accessibilityLabel(localized("更多"))
-                    .accessibilityIdentifier("library.more")
-                }
+                ToolbarItem(placement: .topBarTrailing) { moreControl }
             }
             .searchable(text: $query, placement: .navigationBarDrawer(displayMode: .always),
                         prompt: localized("搜索來源配置"))
@@ -112,6 +115,7 @@ struct LibraryTabRoot: View {
                 sourceGroups = LibrarySourceGroups.groups(of: exploreSources)
             }
             .bookSourceActionSheets(sheet: $sourceActionSheet, pendingDeletion: $sourcePendingDeletion)
+            .bookSourceAddFlow(addFlow)
             .fullScreenCover(item: $browserEntry) { presentation in
                 NavigationStack {
                     BrowserPage(browser: browser, entry: presentation.entry)
@@ -126,6 +130,95 @@ struct LibraryTabRoot: View {
             if let book = selection.selectedBook { path.append(WorkDetailRoute(book)) }
         }
         .environment(\.explorePush) { $0.append(to: &path) }
+    }
+
+    // MARK: •••
+
+    /// 資源庫's one ••• (decision 31): 新增來源配置, 管理來源配置 and the layout. A native menu from
+    /// iOS 18; on iOS 17 a chooser, since 新增來源配置's sheets would be dropped while the menu
+    /// dismisses (`Technotes/iOS17MenuModalPresentation.md`).
+    @ViewBuilder
+    private var moreControl: some View {
+        if MenuModalPresentationPolicy.requiresDismissalSequencedChooser {
+            Button {
+                moreSequence.cancel()
+                showsMoreChooser = true
+            } label: {
+                Image(systemName: "ellipsis")
+                    .accessibilityHidden(true)
+            }
+            .accessibilityLabel(localized("更多"))
+            .accessibilityIdentifier("library.more")
+            .sheet(isPresented: $showsMoreChooser, onDismiss: {
+                moreSequence.consumeAfterDismissal().map(perform)
+            }) {
+                AdaptiveSheetContainer(maxWidth: DSLayout.readableCompactWidth) {
+                    DismissalSequencedActionChooser(title: localized("更多"), actions: moreChoices,
+                                                    onSelect: { moreSequence.select($0) })
+                }
+            }
+        } else {
+            Menu {
+                Menu {
+                    BookSourceAddMenuItems(flow: addFlow)
+                } label: {
+                    Label(localized("新增來源配置"), systemImage: "plus")
+                }
+                Button {
+                    perform(.manageSources)
+                } label: {
+                    Label(localized("管理來源配置"), systemImage: "slider.horizontal.3")
+                }
+                Divider()
+                LibraryLayoutMenuItems()
+            } label: {
+                Image(systemName: "ellipsis")
+                    .accessibilityHidden(true)
+            }
+            .accessibilityLabel(localized("更多"))
+            .accessibilityIdentifier("library.more")
+        }
+    }
+
+    /// The chooser's rows: the menu's items, with each layout choice a row of its own and the
+    /// menu's check mark said in words.
+    private var moreChoices: [DismissalSequencedAction<LibraryMoreAction>] {
+        var actions = BookSourceAddRoute.allCases.map { route in
+            DismissalSequencedAction(route: LibraryMoreAction.add(route), title: localized(route.titleKey),
+                                     systemImage: route.systemImage, subtitle: localized("新增來源配置"))
+        }
+        actions.append(DismissalSequencedAction(route: .manageSources, title: localized("管理來源配置"),
+                                                systemImage: "slider.horizontal.3"))
+        for grid in [true, false] {
+            actions.append(DismissalSequencedAction(
+                route: .showsGrid(grid), title: localized(grid ? "格狀" : "列表"),
+                systemImage: grid == showsGrid ? "checkmark" : (grid ? "square.grid.2x2" : "list.bullet"),
+                subtitle: grid == showsGrid ? localized("使用中") : nil))
+        }
+        if showsGrid {
+            for density in ExploreGridDensity.allCases {
+                let isCurrent = density.rawValue == gridColumnCount
+                actions.append(DismissalSequencedAction(
+                    route: .columns(density.rawValue), title: String(format: localized("%d 欄"), density.rawValue),
+                    systemImage: isCurrent ? "checkmark" : "rectangle.split.3x1",
+                    subtitle: isCurrent ? [localized("每列欄數"), localized("使用中")].joined(separator: " · ")
+                        : localized("每列欄數")))
+            }
+        }
+        return actions
+    }
+
+    private func perform(_ action: LibraryMoreAction) {
+        switch action {
+        case .add(let route):
+            addFlow.begin(route)
+        case .manageSources:
+            path.append(ExploreNavigationRoute.sourceManager)
+        case .showsGrid(let grid):
+            showsGrid = grid
+        case .columns(let count):
+            gridColumnCount = count
+        }
     }
 
     // MARK: Sections
