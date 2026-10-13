@@ -140,21 +140,16 @@ final class PublicLibraryLiveUITests: XCTestCase {
     @MainActor
     func testAozoraWorkDetailOrder() throws {
         guard enabled("AOZORA_CATALOG_LIVE_UI") else { throw XCTSkip("Explicit live Aozora catalog check") }
-        // 依分類 is a section of 青空文庫's own page, which 範圍 opened until decision 36
-        // (2026-10-13). Back with 資源庫 (5h): open the page from there and drop this skip.
-        throw XCTSkip("青空文庫's own page has no entry until 資源庫 (5h)")
+        // 依分類 is a section of 青空文庫's own page, which 資源庫 opens (5h).
         let app = XCUIApplication()
         app.launchArguments = ["-AppleLanguages", "(zh-Hant)", "-AppleLocale", "zh_TW",
                                "-yd_source_disclaimer_accepted", "YES", "-reset-explore-home"]
         app.launch()
-        let tab = app.tabBars.buttons["探索"].firstMatch
+        let tab = app.tabBars.buttons["資源庫"].firstMatch
         XCTAssertTrue(tab.waitForExistence(timeout: 30))
         tab.tap()
-        let menu = app.buttons["explore.scopeMenu"].firstMatch
-        XCTAssertTrue(menu.waitForExistence(timeout: 15), app.debugDescription)
-        menu.tap()
-        let aozora = app.buttons["青空文庫"].firstMatch
-        XCTAssertTrue(aozora.waitForExistence(timeout: 5), app.debugDescription)
+        let aozora = app.buttons["library.public.builtin.aozora"].firstMatch
+        XCTAssertTrue(aozora.waitForExistence(timeout: 15), app.debugDescription)
         aozora.tap()
         // A work from 依分類's 小說・故事: a newly added work can have no NDC yet, and then no 分類.
         let byCategory = app.buttons["依分類"].firstMatch

@@ -3771,3 +3771,8 @@
 "適應" = "Fit";
 "平鋪" = "Tile";
 "拉伸" = "Stretch";
+
+/* 資源庫 tab (Phase 5, 5h) */
+"資源庫" = "Sources";
+"所有來源都在這裡" = "Every Source Is Here";
+"來源配置、遠端書庫和 RSS 訂閱從設定和 RSS 分頁搬到了資源庫。" = "Sources, remote libraries and subscriptions moved here from Settings and the Subscriptions tab.";

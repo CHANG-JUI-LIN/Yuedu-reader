@@ -61,10 +61,11 @@ final class BookSourceManagementUITests: XCTestCase {
         for label in ["不允許", "Don’t Allow"] where app.buttons[label].waitForExistence(timeout: 3) {
             app.buttons[label].tap()
         }
-        let settingsTab = app.tabBars.buttons["設定"].firstMatch
-        XCTAssertTrue(settingsTab.waitForExistence(timeout: 60), "settings tab should exist")
-        settingsTab.tap()
-        let manageRow = app.buttons["管理來源配置"].firstMatch
+        // 管理來源配置 is 資源庫's since 5h (Phase 5 plan, decision 30).
+        let libraryTab = app.tabBars.buttons["資源庫"].firstMatch
+        XCTAssertTrue(libraryTab.waitForExistence(timeout: 60), "資源庫 tab should exist")
+        libraryTab.tap()
+        let manageRow = app.buttons["library.sources"].firstMatch
         for _ in 0..<6 where !manageRow.exists {
             app.swipeUp()
         }
@@ -136,11 +137,11 @@ final class BookSourceManagementUITests: XCTestCase {
             app.buttons[label].tap()
         }
 
-        let settingsTab = app.tabBars.buttons["設定"].firstMatch
-        XCTAssertTrue(settingsTab.waitForExistence(timeout: 20), "settings tab should exist")
-        settingsTab.tap()
+        let libraryTab = app.tabBars.buttons["資源庫"].firstMatch
+        XCTAssertTrue(libraryTab.waitForExistence(timeout: 20), "資源庫 tab should exist")
+        libraryTab.tap()
 
-        let manageRow = app.buttons["管理來源配置"].firstMatch
+        let manageRow = app.buttons["library.sources"].firstMatch
         for _ in 0..<6 where !manageRow.exists {
             app.swipeUp()
         }

@@ -305,7 +305,7 @@ struct AppearanceThemeWriteBackTests {
         let fixture = Fixture(settings)
         defer { fixture.restore() }
         fixture.reset(iconSize: 24, columns: 3)
-        settings.rootTabVisibleIDs = RootTabItem.allCases.map(\.rawValue)
+        settings.rootTabVisibleIDs = RootTabItem.tabs.map(\.rawValue)
 
         let a = Self.colourTheme("A")
         let b = Self.colourTheme("B")
@@ -314,18 +314,19 @@ struct AppearanceThemeWriteBackTests {
         settings.appearanceThemeID = a.id
         settings.rootTabVisibleIDs = [RootTabItem.bookshelf.rawValue]
         // 設定 is re-added by the sanitizer, and that sanitized value is what the theme
-        // records — a theme must not be able to store a bar the user cannot escape.
+        // records — a theme must not be able to store a bar the user cannot escape. 資源庫 is
+        // shown too: a list that does not name it predates it.
         let stored = settings.customAppearanceThemes.first { $0.id == a.id }?.extras?.visibleTabIDs
-        #expect(stored == [RootTabItem.bookshelf.rawValue, RootTabItem.settings.rawValue])
+        #expect(stored == [RootTabItem.bookshelf.rawValue, RootTabItem.library.rawValue, RootTabItem.settings.rawValue])
 
         settings.appearanceThemeID = b.id
-        #expect(settings.visibleRootTabs.count == RootTabItem.allCases.count)
+        #expect(settings.visibleRootTabs.count == RootTabItem.tabs.count)
 
         settings.appearanceThemeID = a.id
-        #expect(settings.visibleRootTabs == [.bookshelf, .settings])
+        #expect(settings.visibleRootTabs == [.bookshelf, .library, .settings])
 
         settings.appearanceThemeID = GlobalSettings.defaultAppearanceThemeID
-        #expect(settings.visibleRootTabs.count == RootTabItem.allCases.count)
+        #expect(settings.visibleRootTabs.count == RootTabItem.tabs.count)
     }
 
     @Test func aThemeNamingNoUsableTabFallsBackRatherThanEmptyingTheBar() async throws {

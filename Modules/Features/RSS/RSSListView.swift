@@ -75,8 +75,10 @@ struct RSSListView: View {
         visibleSources(store.rootSources())
     }
 
+    /// RSS 訂閱, pushed on the stack of 資源庫 or 探索 (Phase 5 plan, decision 30: no longer a
+    /// tab, so no stack of its own).
     var body: some View {
-        NavigationStack {
+        Group {
             ZStack {
                 PageBackgroundView(scope: .rss)
                     .ignoresSafeArea()
@@ -89,12 +91,12 @@ struct RSSListView: View {
                     .padding(.horizontal, 20)
                     .padding(.top, 16)
                     .padding(.bottom, 36)
-                    .rootTabTitleScrollAnchor()
                 }
                 .softScrollEdges()
                 .scrollIndicators(.visible)
             }
-            .rootTabTitle(localized("RSS 訂閱"), onScroll: .minimizesBar)
+            .navigationTitle(localized("RSS 訂閱"))
+            .toolbarTitleDisplayMode(.inline)
             .pageBackgroundToolbar(for: .rss)
             .toolbar {
                 // Two separate glass pills. A ToolbarSpacer (iOS 26+) breaks the
@@ -1688,5 +1690,5 @@ private struct RSSSourceInfoSheet: View {
 }
 
 #Preview {
-    RSSListView()
+    NavigationStack { RSSListView() }
 }

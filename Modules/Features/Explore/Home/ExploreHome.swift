@@ -5,9 +5,8 @@ import SwiftUI
 /// decision 11). Its one ••• (decision 36, 2026-10-13, which took 範圍 away) holds every other
 /// way in: 編輯首頁, the 首頁配置 (5d-4, decision 22), 聚合設定, and the browser (5d-1, settled
 /// decision 12, which took 我的書庫 off the home). A library's own page in the home's layouts
-/// (`LibraryHomePage`, decision 35), which 範圍 showed in place of the home, waits for 資源庫
-/// (5h) to open it. There is no catalog entry at
-/// the top (decision 20's, removed 2026-10-11 by the maintainer): a reader adds the sections
+/// (`LibraryHomePage`, decision 35) is 資源庫's (5h, `LibraryHomePageView`). There is no
+/// catalog entry at the top (decision 20's, removed 2026-10-11 by the maintainer): a reader adds the sections
 /// they want, and a row's 查看全部 opens the rest of what it shows.
 ///
 /// - One stack for everything the home opens (decision 5): Explore's routes, the libraries'
@@ -34,8 +33,6 @@ private struct ExploreHomeRoot: View {
     @ObservedObject var browser: BrowserState
 
     @StateObject private var model: HomeModel
-    /// 範圍's public library's own sections, apart from the home's rows, which stay loaded.
-    @StateObject private var libraryModel: HomeModel
     @ObservedObject private var pageStore = HomePageStore.shared
     @ObservedObject private var sourceStore = BookSourceStore.shared
     @ObservedObject private var connections = RemoteLibraryConnectionStore.shared
@@ -73,9 +70,6 @@ private struct ExploreHomeRoot: View {
         _model = StateObject(wrappedValue: HomeModel(
             providers: { SourceProviderRegistry.shared.homeProviders(shelf: store) },
             waitForSources: { await BookSourceStore.shared.waitUntilLoaded() }))
-        _libraryModel = StateObject(wrappedValue: HomeModel(
-            providers: { SourceProviderRegistry.shared.homeProviders(shelf: store) },
-            waitForSources: { await BookSourceStore.shared.waitUntilLoaded() }))
     }
 
     // MARK: State
@@ -85,33 +79,12 @@ private struct ExploreHomeRoot: View {
                               hasImportedSources: tabModel.hasSources, librariesAvailable: availability.isAvailable)
     }
 
-
-    /// 範圍 left 探索 (Phase 5 plan, decision 36): 探索 is always the home, and a stored scope
-    /// is no longer read (the value stays stored). The library pages below (`libraryHome`,
-    /// `placePage`) have no entry until 資源庫 (5h) opens them.
-    private var scopeKey: SourceInstanceKey? { nil }
-
     /// The sections drawn, in the reader's languages' order (聚合設定, 5d-3d).
     private var groups: [HomeSectionGroup] {
-        groups(of: model, in: nil)
-    }
-
-    private func groups(of model: HomeModel, in scope: SourceInstanceKey?) -> [HomeSectionGroup] {
         let lookup = store.copyLookup()
-        return model.groups(in: scope, languages: aggregation.readingLanguages,
+        return model.groups(in: nil, languages: aggregation.readingLanguages,
                             libraryOrder: aggregation.settings.libraryOrder,
                             readFilter: HomeReadFilter(hides: aggregation.hidesRead, isRead: lookup.isRead))
-    }
-
-    /// 範圍's public library's sections; nil for 全部, a connection or a book source.
-    private var libraryPage: HomePage? {
-        scopeKey.flatMap { LibraryHomePage.page(for: $0, languages: aggregation.readingLanguages.languages) }
-    }
-
-    /// What the library's rows are built from: its page, and whether its provider serves (青空文庫
-    /// serves nothing until its catalog is read).
-    private var librarySyncKey: [AnyHashable] {
-        [libraryPage, availability.isAvailable, aozora.catalog != nil]
     }
 
     /// What the rows are built from; any change builds them again.
@@ -140,7 +113,7 @@ private struct ExploreHomeRoot: View {
 
     var body: some View {
         NavigationStack(path: $path) {
-            root
+            home
             .toolbar { toolbar }
             .homeConfigurationPrompts($configurationPrompt)
             .sheet(isPresented: $addsSection) {
@@ -163,14 +136,11 @@ private struct ExploreHomeRoot: View {
         .environment(\.openPublicLibraryBooks) { selection in
             if let book = selection.selectedBook { path.append(WorkDetailRoute(book)) }
         }
+        .environment(\.explorePush) { $0.append(to: &path) }
         .task(id: syncKey) {
             // Saved here, not while drawing: the first read saves the defaults.
             await model.sync(with: pageStore.pageOrDefaults(mode: mode, publicLibrariesAvailable: availability.isAvailable),
                              hiddenFromLatest: Set(aggregation.settings.hiddenFromLatest ?? []))
-        }
-        .task(id: librarySyncKey) {
-            guard let libraryPage else { return }
-            await libraryModel.sync(with: libraryPage)
         }
         .task { await aozora.load() }
         // 編輯首頁 edits one 首頁配置; deleting it, the one 預設 takes the place of, ends the edit.
@@ -179,119 +149,6 @@ private struct ExploreHomeRoot: View {
         }
         .onReceive(sourceStore.sourcesPublisher) { _ in
             exploreSources = DiscoverViewModel.exploreSources(in: sourceStore)
-        }
-    }
-
-    // MARK: One library
-
-    /// 範圍's library or source in place of the home (decision 35): a public library's own
-    /// sections, or a connection's or a book source's own page, the one its 查看全部 opens.
-    @ViewBuilder
-    private var root: some View {
-        if let key = scopeKey, libraryPage != nil {
-            libraryHome(key)
-        } else if let key = scopeKey,
-           let place = ExplorePlace.page(of: key, name: scopeName(key)) {
-            placePage(place)
-                .id(key)
-                .showsRootTabBarOnlyHere()
-        } else {
-            home
-        }
-    }
-
-    @ViewBuilder
-    private func placePage(_ place: ExplorePush) -> some View {
-        switch place {
-        case .explore(.source(let sourceURL)):
-            if let source = sourceStore.sources.first(where: { $0.bookSourceUrl == sourceURL }) {
-                ExploreSourcePage(source: source) { address in openBrowser(.open(address)) }
-            }
-        case .feed(let route):
-            OPDSFeedView(route: route)
-        case .folder(let route):
-            WebDAVDirectoryView(route: route)
-        default:
-            // `ExplorePlace.page(of:name:)` names no other page; a public library has its sections.
-            EmptyView()
-        }
-    }
-
-    private func scopeName(_ key: SourceInstanceKey) -> String {
-        ExploreHomeScope.name(of: key, sources: sourceStore.sources, connections: connections)
-    }
-
-    /// A public library's sections, drawn as the home draws its own: read-only, since they are
-    /// made, not a 首頁配置.
-    private func libraryHome(_ key: SourceInstanceKey) -> some View {
-        let groups = groups(of: libraryModel, in: key)
-        return ScrollView {
-            LazyVStack(alignment: .leading, spacing: DSSpacing.xxl) {
-                ForEach(groups) { group in
-                    groupHost(group, model: libraryModel, isEditable: false).id(group.section.id)
-                }
-                libraryFooter(key)
-                    .padding(.horizontal, DSSpacing.lg)
-            }
-            .padding(.vertical, DSSpacing.lg)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .rootTabTitleScrollAnchor()
-        }
-        .overlay {
-            if key.type == .aozora, aozora.catalog == nil {
-                if case .failed(let error, _) = aozora.state {
-                    ContentUnavailableView {
-                        UnavailableLabel(localized("青空文庫"), systemImage: "books.vertical")
-                    } description: {
-                        Text(error.localizedDescription)
-                    } actions: {
-                        Button(localized("重試")) { Task { await aozora.load(forceRefresh: true) } }
-                            .disabled(aozora.isRefreshing)
-                    }
-                } else {
-                    ProgressView(localized("正在更新目錄"))
-                }
-            } else if !libraryModel.isReady {
-                ProgressView()
-            }
-        }
-        .refreshable {
-            libraryModel.reload()
-            if key.type == .aozora { await aozora.load(forceRefresh: true) }
-        }
-        // Gutenberg's shelves load with the page, those below the fold too.
-        .task(id: libraryModel.rows.map(\.id)) { libraryModel.homeAppeared(in: key) }
-        .onAppear { libraryModel.reloadLocal() }
-        .id(key)
-        .background(PageBackgroundView(scope: .explore).ignoresSafeArea())
-        .pageBackgroundToolbar(for: .explore)
-        .rootTabTitle(scopeName(key), onScroll: .minimizesBar)
-        .animation(reduceMotion ? nil : DSAnimation.standard, value: groups.map(\.id))
-    }
-
-    /// Where the library's books come from, as its store page said it.
-    @ViewBuilder
-    private func libraryFooter(_ key: SourceInstanceKey) -> some View {
-        switch key.type {
-        case .aozora:
-            VStack(alignment: .leading, spacing: DSSpacing.xs) {
-                Text(.init(localized("書誌資料：青空文庫（[CC BY 4.0](https://creativecommons.org/licenses/by/4.0/)）")))
-                if aozora.catalog != nil, case .failed = aozora.state { Text(localized("目錄更新失敗，仍顯示已儲存的目錄。")) }
-            }
-            .dsSectionFooter()
-        case .gutenberg:
-            VStack(alignment: .leading, spacing: DSSpacing.sm) {
-                // Gutenberg's subjects and bookshelves, as its store page offered them. Not in the
-                // toolbar: beside 範圍 and the library's name, it put both under 「更多」.
-                NavigationLink(value: PublicLibraryRoute.categories(aozora.catalog)) {
-                    Label(localized("瀏覽所有分類"), systemImage: "books.vertical")
-                }
-                .accessibilityIdentifier("publicLibrary.categories")
-                Text(localized("Project Gutenberg 的書在美國屬於公有領域；所在地區的著作權規定可能不同。"))
-                    .dsSectionFooter()
-            }
-        default:
-            EmptyView()
         }
     }
 
@@ -509,7 +366,7 @@ private struct ExploreHomeRoot: View {
 
 /// One section, resolved against the shelf when it draws. Its own view, so a section that did
 /// not change is not drawn again when another one loads.
-private struct HomeRowHost: View {
+struct HomeRowHost: View {
     let group: HomeSectionGroup
     let store: BookStore
     let aozoraIndex: AozoraCatalogIndex?
@@ -519,7 +376,6 @@ private struct HomeRowHost: View {
     let isEditable: Bool
     let push: (ExplorePush) -> Void
     let openSettings: () -> Void
-    @Environment(\.openRSSTab) private var openRSSTab
     @State private var confirmsDelete = false
 
     var body: some View {
@@ -578,10 +434,10 @@ private struct HomeRowHost: View {
     }
 
     /// The page of a section of one source. 最新 across several has none: no one page lists
-    /// them all. 訂閱的最新文章's is the RSS tab itself (decision 29), when it is shown.
+    /// them all. 訂閱的最新文章's is RSS 訂閱 (decision 29), pushed since RSS left the tabs (5h).
     private var showAll: (() -> Void)? {
         if group.section.binding == .subscriptionArticles {
-            return openRSSTab.map { open in { open() } }
+            return { push(.explore(.subscriptions)) }
         }
         guard group.rows.count == 1,
               let target = ExplorePlace.showAll(group.rows[0], aozoraIndex: aozoraIndex) else { return nil }

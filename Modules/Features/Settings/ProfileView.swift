@@ -7,8 +7,6 @@ struct SettingsView: View {
     @Environment(\.openURL) private var openURL
     @Environment(\.colorScheme) private var colorScheme
     @Bindable private var gs = GlobalSettings.shared
-    @State private var showSourceList = false
-    @State private var showRemoteLibraries = false
     @State private var showAggregationSettings = false
     @State private var showDownloadManager = false
     @State private var showReplaceRules = false
@@ -111,20 +109,8 @@ struct SettingsView: View {
                     // 書架顯示 (每列欄數, 預設封面) lives in 外觀主題's 介面 since 2026-09-29.
 
                     // ── Book Source Management ──
+                    // 管理來源配置 and 遠端書庫 are 資源庫's since 5h (Phase 5 plan, decision 30).
                     Section(header: Text(localized("來源配置管理")).foregroundStyle(DSColor.textSecondary)) {
-                        DSSettingsRow(
-                            icon: "books.vertical.fill",
-                            title: localized("管理來源配置"),
-                            action: { showSourceList = true }
-                        )
-
-                        DSSettingsRow(
-                            icon: "externaldrive.connected.to.line.below",
-                            title: localized("遠端書庫"),
-                            action: { showRemoteLibraries = true }
-                        )
-                        .accessibilityIdentifier("settings_remote_libraries")
-
                         // 聚合設定 (unified library 5d-3d, decision 21): here only, as Emby's
                         // aggregation settings sit in its user settings.
                         DSSettingsRow(
@@ -252,17 +238,8 @@ struct SettingsView: View {
             .rootTabTitle(localized("設定"), onScroll: .minimizesBar)
             // Back from 外觀主題: its 淺色／深色 preview ends here.
             .onAppear { gs.endAppearanceSlotPreview() }
-            .navigationDestination(isPresented: $showRemoteLibraries) {
-                RemoteLibrarySettingsView()
-            }
             .navigationDestination(isPresented: $showAggregationSettings) {
                 AggregationSettingsView()
-            }
-            // Pushed on every version (2026-10-10): its importers then always have a
-            // first-level presenter, and it is configuration like 遠端書庫 beside it.
-            .navigationDestination(isPresented: $showSourceList) {
-                BookSourceListView()
-                    .environmentObject(store)
             }
             #if DEBUG
             // Screenshot/driver hook: `-open-diagnostics` pushes 診斷與回報 straight

@@ -11,7 +11,8 @@ struct ContentView: View {
     /// follows it by itself.
     @Environment(\.legibilityWeight) private var legibilityWeight
     @Bindable private var gs = GlobalSettings.shared
-    @StateObject private var rssStore = RSSStore.shared
+    /// 探索's browser, which 資源庫's pages open too: one browser, left as it was.
+    @StateObject private var browser = BrowserState()
     @ObservedObject private var importDrainer = SharedImportQueueDrainer.shared
     /// Whether any screen is hiding the tab bar — answered from every tab, not only the
     /// screen's own (`RootTabBarVisibility`).
@@ -30,10 +31,6 @@ struct ContentView: View {
         /// Search only this source (a book label tapped on its detail page, as legado's
         /// `SearchActivity.start(source, kind)`); nil searches every enabled source.
         var sourceURL: String? = nil
-    }
-
-    private var rssUnreadCount: Int {
-        rssStore.totalUnreadCount()
     }
 
     private var effectiveColorScheme: ColorScheme {
@@ -327,14 +324,13 @@ struct ContentView: View {
                     .tabItem {
                         rootTabItemLabel(for: tab)
                     }
-                    .badge(tab == .rss && rssUnreadCount > 0 ? Text("\(rssUnreadCount)") : nil)
             }
         }
     }
 
     private var stableSlotsTabView: some View {
         TabView(selection: $selectedRootTab) {
-            ForEach(RootTabItem.allCases) { tab in
+            ForEach(RootTabItem.tabs) { tab in
                 if gs.isRootTabVisible(tab) {
                     rootTabContent(for: tab)
                         .modifier(ThemedSurfaceBackground(
@@ -347,8 +343,7 @@ struct ContentView: View {
                         .tabItem {
                             rootTabItemLabel(for: tab)
                         }
-                        .badge(tab == .rss && rssUnreadCount > 0 ? Text("\(rssUnreadCount)") : nil)
-                } else {
+                    } else {
                     EmptyView()
                 }
             }
@@ -363,22 +358,18 @@ struct ContentView: View {
         gs.usesCustomRootTabIconSize
     }
 
-    /// 探索's 訂閱的最新文章 opens the RSS tab as its 查看全部; nothing while that tab is hidden.
-    private var openRSSTab: (@MainActor () -> Void)? {
-        guard gs.isRootTabVisible(.rss) else { return nil }
-        return { selectedRootTab = .rss }
-    }
-
     @ViewBuilder
     private func rootTabContent(for tab: RootTabItem) -> some View {
         switch tab {
         case .bookshelf:
             HomeView()
         case .explore:
-            BrowserView()
-                .environment(\.openRSSTab, openRSSTab)
+            BrowserView(browser: browser)
+        case .library:
+            LibraryTabRoot(browser: browser)
         case .rss:
-            RSSListView()
+            // Not a tab since 5h (`RootTabItem.tabs` leaves it out); its feeds are in 資源庫.
+            EmptyView()
         case .settings:
             SettingsView()
         case .search:
