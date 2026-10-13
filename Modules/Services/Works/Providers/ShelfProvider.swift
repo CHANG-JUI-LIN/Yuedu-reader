@@ -191,9 +191,9 @@ final class ShelfProvider: CollectionBrowsing {
     }
 
     /// 作品詳情's versions (5f): the tapped item, its copies on the shelf, and the other members
-    /// of the works those belong to in the index (`WorkVersions.merge`). Only shelf copies and
-    /// WebDAV files are indexed, so a library or public-library book reaches its work through a
-    /// copy of it.
+    /// of the works those belong to in the index that the reader knows (`WorkVersions.merge`,
+    /// `WorkVersions.known`). Only shelf copies and WebDAV files are indexed, so a library or
+    /// public-library book reaches its work through a copy of it.
     ///
     /// A copy taken from a public library is listed as the library's book even when nothing
     /// else lists it — opened from 書架 or 繼續閱讀, its work holds no public-library item
@@ -202,7 +202,8 @@ final class ShelfProvider: CollectionBrowsing {
     ///   it (not read yet, or no cache offline) the copy stands for itself.
     func versions(of tapped: WorkDetailRoute, aozora: AozoraCatalogIndex?) async -> [WorkDetailRoute] {
         let started = SourcePerfTrace.now
-        var copies = store.copyLookup().copies(for: tapped.record.key).filter(\.isInBookshelf)
+        let lookup = store.copyLookup()
+        var copies = lookup.copies(for: tapped.record.key).filter(\.isInBookshelf)
         if case .copy(let id) = tapped.opening, !copies.contains(where: { $0.id == id }),
            let book = store.shelfRecord(id: id) {
             copies.append(book)
@@ -220,7 +221,10 @@ final class ShelfProvider: CollectionBrowsing {
             members += index.entries(of: work).map(\.nodeKey)
         }
         let copyRoutes = items(copies).compactMap(WorkDetailRoute.init)
-        let memberRoutes = entries(for: members, shelf: shelf, files: files).compactMap(WorkDetailRoute.init)
+        let memberRoutes = WorkVersions.known(entries(for: members, shelf: shelf, files: files).compactMap(WorkDetailRoute.init),
+                                              readFrom: { key in
+            lookup.copies(for: key).contains { $0.isInBookshelf || $0.lastOpenedDate != nil }
+        })
         let versions = WorkVersions.merge(
             tapped: tapped,
             copies: zip(copyRoutes, copies.map(\.lastOpenedDate)).map { ($0, $1) },
