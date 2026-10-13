@@ -360,6 +360,10 @@ enum DSLayout {
     static let homeCompactCoverWidth: CGFloat = 100
     /// A cover in 圖文資訊清單, beside its text.
     static let homeListCoverWidth: CGFloat = 60
+    /// A layout's preview in 呈現方式 (decision 34): the layout drawn at half size, cut off at this
+    /// height, so each shows its own shape.
+    static let homeLayoutPreviewScale: CGFloat = 0.5
+    static let homeLayoutPreviewHeight: CGFloat = 150
     /// 精選's cover (decision 37), beside its text on the cover's colour: the largest on the
     /// home, one book to a page.
     static let homeFeaturedCoverWidth: CGFloat = 132

@@ -46,6 +46,8 @@ final class DetailReaderBackSwipeUITests: XCTestCase {
         add.tap()
         let layout = app.buttons["homeNewSection.layout.row"].firstMatch
         XCTAssertTrue(layout.waitForExistence(timeout: 5), app.debugDescription)
+        // Each layout is a row with its preview (decision 34).
+        for _ in 0..<4 where !layout.isHittable { app.swipeUp() }
         layout.tap()
         let source = app.buttons["homeSection.source"].firstMatch
         XCTAssertTrue(source.waitForExistence(timeout: 5), app.debugDescription)

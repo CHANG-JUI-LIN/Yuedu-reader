@@ -86,18 +86,12 @@ private struct HomeNewSectionFlow: View {
         NavigationStack {
             List {
                 Section {
-                    ForEach(styles) { style in
-                        Button {
-                            let editor = HomeSectionEditor(layout: HomeSectionLayout(style: style), preview: .preview(shelf: store))
-                            // The one source of lists, chosen already; 資料來源 can still change it.
-                            if style == .collection { editor.choose(.gutenbergLists) }
-                            self.editor = editor
-                            showsForm = true
-                        } label: {
-                            Label(localized(style.titleKey), systemImage: style.symbol)
-                                .foregroundStyle(DSColor.textPrimary)
-                        }
-                        .accessibilityIdentifier("homeNewSection.layout.\(style.rawValue)")
+                    HomeLayoutChoiceRows(choices: styles, sample: .standard, identifierPrefix: "homeNewSection.layout") { style in
+                        let editor = HomeSectionEditor(layout: HomeSectionLayout(style: style), preview: .preview(shelf: store))
+                        // The one source of lists, chosen already; 資料來源 can still change it.
+                        if style == .collection { editor.choose(.gutenbergLists) }
+                        self.editor = editor
+                        showsForm = true
                     }
                 } header: {
                     Text(localized("呈現方式"))
@@ -135,6 +129,8 @@ private enum HomeSectionFormPush: Hashable {
     case latestCategory(String)
     /// The section's category, picked again under other filters, by source URL.
     case filters(String)
+    /// 呈現方式's previews (decision 34).
+    case layouts
 }
 
 /// 刪除, which leaves the page once the reader confirms. The one view of the form that leaves
@@ -282,6 +278,11 @@ struct HomeSectionForm: View {
                         push = nil
                     }
                 }
+            case .layouts:
+                HomeLayoutChoicePage(choices: layoutChoices, current: draft.layout, sample: .standard) { style in
+                    editor.setLayout(HomeSectionLayout(style: style, ranked: draft.layout.showsRanks))
+                    push = nil
+                }
             case .filters(let url):
                 if let source = sources.sources.first(where: { $0.bookSourceUrl == url }) {
                     HomeCategoryChoices(source: source, filterValues: editor.filterValues(forSourceURL: url),
@@ -402,16 +403,23 @@ struct HomeSectionForm: View {
 
     @ViewBuilder
     private var layoutRows: some View {
-        let choices = draft.binding.map(HomeLayoutStyle.choices(for:)) ?? HomeLayoutStyle.allCases
         // A section of lists has 專題集合 alone: nothing to choose.
-        if choices.count > 1 {
-            Picker(localized("呈現方式"), selection: Binding(
-                get: { draft.layout.style },
-                set: { editor.setLayout(HomeSectionLayout(style: $0, ranked: draft.layout.showsRanks)) })) {
-                ForEach(choices) { style in
-                    Label(localized(style.titleKey), systemImage: style.symbol).tag(style)
+        if layoutChoices.count > 1 {
+            Button { push = .layouts } label: {
+                LabeledContent(localized("呈現方式")) {
+                    HStack(spacing: DSSpacing.xs) {
+                        Text(localized(draft.layout.style.titleKey))
+                            .foregroundStyle(DSColor.textSecondary)
+                        Image(systemName: "chevron.right")
+                            .font(DSFont.footnote.weight(.semibold))
+                            .foregroundStyle(DSColor.textTertiary)
+                            .accessibilityHidden(true)
+                    }
                 }
+                .foregroundStyle(DSColor.textPrimary)
             }
+            .accessibilityLabel(localized("呈現方式"))
+            .accessibilityValue(localized(draft.layout.style.titleKey))
             .accessibilityIdentifier("homeSection.layout")
         }
         if draft.layout.style == .list {
@@ -419,6 +427,10 @@ struct HomeSectionForm: View {
                 get: { draft.layout.showsRanks },
                 set: { editor.setLayout(HomeSectionLayout(style: .list, ranked: $0)) }))
         }
+    }
+
+    private var layoutChoices: [HomeLayoutStyle] {
+        draft.binding.map(HomeLayoutStyle.choices(for:)) ?? HomeLayoutStyle.allCases
     }
 
     private var sourceRow: some View {
