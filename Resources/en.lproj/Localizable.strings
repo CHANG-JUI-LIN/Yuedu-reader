@@ -3801,3 +3801,6 @@
 "同時下載的封面上限，書架和書籍詳情的封面也算在內。數字越低捲動時越不容易發熱，但封面出現得慢一些。" = "The most covers downloading at once, counting those on the bookshelf and book details. Lower runs cooler while scrolling, but covers appear more slowly.";
 "列表是上方一排分類、下方所選分類的書；雜誌是每個分類一排書架或一欄榜單。這頁的設定套用到每個來源配置的發現頁。" = "List shows the categories along the top and the chosen one's books below; Magazine shows each category as a shelf or a chart. These settings apply to every source's Discover page.";
 "顯示設定" = "Display";
+"尋找可用來源" = "Find Sources";
+"找到 %d 個來源" = "Found %d Sources";
+"點兩下在已啟用的來源配置中搜尋這部作品" = "Double-tap to search your enabled sources for this work";

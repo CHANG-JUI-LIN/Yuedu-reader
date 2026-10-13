@@ -82,17 +82,21 @@ struct WorkDetailView: View {
     let searchResult: SearchBook?
     @EnvironmentObject private var store: BookStore
     @Environment(\.appDependencies) private var dependencies
+    @Environment(\.scenePhase) private var scenePhase
     @ObservedObject private var connections = RemoteLibraryConnectionStore.shared
     @ObservedObject private var aozora = AozoraCatalogStore.shared
     @StateObject private var actions = RemoteLibraryActionModel()
     @StateObject private var authorWorks = AuthorWorksModel()
     @StateObject private var toc = WorkTableOfContentsModel()
+    /// 「尋找可用來源」 (7b-2): the books its search found of the work join `versions`.
+    @StateObject private var finder = WorkSourceFinder()
     @State private var showChapterList = false
     /// The chapter picked from 查看全部, opened once its sheet is gone.
     @State private var pendingChapter: OnlineChapterRef?
     /// The series a version on this device belongs to (同系列); nil while read, or when none.
     @State private var series: WorkSeriesShelf?
-    @State private var versions: [WorkDetailRoute]
+    /// The versions this device knows of the work (`ShelfProvider.versions`).
+    @State private var listed: [WorkDetailRoute]
     @State private var versionsLoaded = false
     /// The version picked from 來源; nil shows the primary one.
     @State private var chosen: SourceItemKey?
@@ -122,10 +126,12 @@ struct WorkDetailView: View {
         self.onRemoveFromShelf = onRemoveFromShelf
         self.readerContext = readerContext
         self.searchResult = searchResult
-        _versions = State(initialValue: [route])
+        _listed = State(initialValue: [route])
         if readerContext != nil { _chosen = State(initialValue: route.nodeKey) }
     }
 
+    /// The versions 來源 lists: those known, then those 「尋找可用來源」 found.
+    private var versions: [WorkDetailRoute] { WorkSourceFinder.joined(listed, found: finder.found) }
     private var selected: WorkDetailRoute? { WorkVersions.selected(in: versions, chosen: chosen) }
     private var author: String { route.summary.authors.joined(separator: "、") }
 
@@ -139,7 +145,7 @@ struct WorkDetailView: View {
                     versionsLoaded = true
                     return
                 }
-                versions = await ShelfProvider(store: store).versions(of: route, aozora: aozora.catalog)
+                listed = await ShelfProvider(store: store).versions(of: route, aozora: aozora.catalog)
                 versionsLoaded = true
                 // A 青空文庫 copy stands for itself until the catalog is read; reading it changes
                 // this task's id, and the versions are read again with the work.
@@ -166,6 +172,16 @@ struct WorkDetailView: View {
                 series = await ShelfProvider(store: store).series(of: versions.filter { seriesLoad.versions.contains($0.nodeKey) })
             }
             .onDisappear { actions.cancelForDisappearance() }
+            .onChange(of: scenePhase) { _, phase in finder.setPresentationActive(phase == .active) }
+            .onChange(of: finder.state) { _, state in
+                // The search ran on its own; say how it ended, as the row now does.
+                switch state {
+                case .done, .failed, .noSources:
+                    UIAccessibility.post(notification: .announcement, argument: findSourcesItem.value)
+                case .idle, .searching:
+                    break
+                }
+            }
     }
 
     /// A book-source version, found or on the shelf, is its source's own page; every other
@@ -459,7 +475,9 @@ struct WorkDetailView: View {
         case .gutenberg(let book):
             return gutenbergAuthors[selected.nodeKey]?.mainAuthors.first.map { .gutenberg($0, excluding: book) }
         case .copy, .opdsEntry, .webDAVFile:
-            return .shelf(versions: versions)
+            // The versions known: a book 「尋找可用來源」 found is no shelf work, and each one
+            // found would read the author's works again.
+            return .shelf(versions: listed)
         case .onlineBook:
             return nil
         }
@@ -596,7 +614,10 @@ struct WorkDetailView: View {
 
     private var infoItems: [BookDetailInfoItem] {
         guard let version = selected else { return [] }
-        var result = [sourceItem(version)] + contributorItems(version)
+        var result = [sourceItem(version)]
+        // Not on the page a reader opened: it shows that reader's book only (decision 32).
+        if readerContext == nil { result.append(findSourcesItem) }
+        result += contributorItems(version)
         if let item = libraryItem(of: version), let format = selectedFormat(of: version) {
             result.append(BookDetailInfoItem(
                 id: "format", label: localized("格式"), value: formatLabel(format),
@@ -633,6 +654,43 @@ struct WorkDetailView: View {
         return BookDetailInfoItem(
             id: "source", label: localized("來源"), value: sourceName(of: version), detail: localized("換源"),
             choice: choice, accessibilityInputLabels: [localized("換源")])
+    }
+
+    /// 「尋找可用來源」 (7b-2): searches the enabled sources for the work only when tapped; what
+    /// it finds joins 來源.
+    private var findSourcesItem: BookDetailInfoItem {
+        let added = versions.count - listed.count
+        let value: String
+        var detail: String?
+        var action: (() -> Void)? = findSources
+        switch finder.state {
+        case .idle:
+            value = ""
+        case .searching:
+            value = localized("搜尋來源配置中…")
+            action = nil
+        case .done(let more):
+            value = added > 0 ? String(format: localized("找到 %d 個來源"), added) : localized("未找到其他來源配置")
+            if more {
+                detail = localized("繼續搜索")
+                action = { finder.resume() }
+            }
+        case .failed:
+            value = localized("搜索失敗")
+            detail = localized("重試")
+        case .noSources:
+            value = localized("沒有可用的來源配置，請先啟用來源配置")
+        }
+        return BookDetailInfoItem(id: "findSources", label: localized("尋找可用來源"), value: value, detail: detail,
+                                  action: action, accessibilityHint: action == nil ? nil : localized("點兩下在已啟用的來源配置中搜尋這部作品"))
+    }
+
+    private func findSources() {
+        // The page stays on the version shown: with nothing listed readable, the first book found
+        // would otherwise become the version shown, and the page its source's.
+        if chosen == nil { chosen = selected?.nodeKey }
+        finder.setPresentationActive(scenePhase == .active)
+        finder.find(route, sources: BookSourceStore.shared.sources)
     }
 
     /// The work's versions, `version` selected; nil when it is the only one. A book-source
@@ -959,4 +1017,20 @@ private struct WorkDetailActionRow: View {
         }
     }
     .environmentObject(BookStore())
+}
+
+#Preview("作品詳情 · 尋找可用來源") {
+    // The row as 作品資訊 shows it before, during and after its search.
+    ScrollView {
+        BookDetailInfoSection(items: [
+            BookDetailInfoItem(id: "idle", label: localized("尋找可用來源"), value: "", action: {}),
+            BookDetailInfoItem(id: "searching", label: localized("尋找可用來源"), value: localized("搜尋來源配置中…")),
+            BookDetailInfoItem(id: "found", label: localized("尋找可用來源"),
+                               value: String(format: localized("找到 %d 個來源"), 3), action: {}),
+            BookDetailInfoItem(id: "paused", label: localized("尋找可用來源"), value: localized("未找到其他來源配置"),
+                               detail: localized("繼續搜索"), action: {}),
+            BookDetailInfoItem(id: "failed", label: localized("尋找可用來源"), value: localized("搜索失敗"),
+                               detail: localized("重試"), action: {}),
+        ])
+    }
 }

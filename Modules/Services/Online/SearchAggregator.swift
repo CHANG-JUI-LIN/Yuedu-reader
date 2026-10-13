@@ -394,6 +394,9 @@ class SearchAggregator: ObservableObject {
         var timedOut: Int = 0
         /// Sources skipped this search because they are in a timeout cooldown.
         var skipped: Int = 0
+        /// Of `completed`, the sources whose fetch failed and that are shown as no results
+        /// (Phase 0b), so a caller can tell 「沒有找到」 from a search no source answered.
+        var failedAsEmpty: Int = 0
 
         var fraction: Double {
             guard total > 0 else { return 0 }
@@ -659,6 +662,7 @@ class SearchAggregator: ObservableObject {
                         self.completedSourceIds.insert(sourceId)
                         self.successfulSourceIds.insert(sourceId)
                         self.answerTally.count(answer)
+                        if case .failedAsEmpty = answer { self.internalProgress.failedAsEmpty += 1 }
                         // Phase 0b: a failure the fetcher reported as "no results" still
                         // counts as a success here. Counting it in SourceHealthStore (cooldown)
                         // is design §17 item 9, not yet decided.
