@@ -227,3 +227,8 @@ Measured with `ForYouMeasurementTests` (iOS 27 simulator, Debug): a home of 5 so
 - Tests: `WorkSourceFinderTests` (written before the model; matching, joined, outcome incl. failedAsEmpty, no sources). UI: `WorkSourceFinderUITests` — a Gutenberg work's page searches only when tapped and, with the one source's host unreachable, says 搜尋失敗. 沒有找到 needs a source that answers, which these tests cannot serve offline; its mapping is the `outcome` unit test.
 - `作者其他作品` reads the versions known (`listed`), not those found: a found book is no shelf work, and each one would read the author's works again.
 - Results: unit (finder, offers, shelf versions, search route) 18 passed on iOS 27; UI `WorkSourceFinderUITests` + `WorkDetailUITests` 2 of 2 on iOS 27 and iOS 17.5.
+
+### Phase 7b acceptance (2026-10-14, main e00acf4e)
+- UI, the 7a list plus WorkDetail and WorkSourceFinder: iOS 27, 41 passed, 1 skipped, 0 failed of that list; iOS 17.5, 45 run, 40 passed, 5 skipped by design, 0 failed.
+- `DetailReaderBackSwipeUITests`, added to the run this time, fails on main **before** 7b too: at c6c2af51, `testInstantEdgeBack`, `testInstantTurnHidesMenu` and `testDetailMangaReaderLoadsAndReturns` fail as they do after it (iOS 27; the page-turn, edge-back and manga-image tests across the suite fail the same way). Not 7b's; left for its own task. `testClassicReaderControlsFromExploreAreAccessible` failed once after 7b ("Next Chapter" not yet there) and passed twice in a row on the same code, and before 7b: flaky.
+- On iOS 17.5 the run with that suite hit the wrapper's 40-minute limit inside it; the list above was run again without it.
