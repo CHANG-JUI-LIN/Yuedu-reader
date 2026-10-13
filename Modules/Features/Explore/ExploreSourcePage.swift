@@ -4,8 +4,8 @@ import SwiftUI
 // MARK: - A source's discover page
 
 /// One explore source's whole discover page, opened from 探索's list: every category the
-/// source lists with the source's own filters above them, as Apple Books lays out a
-/// store. The gear opens 發現頁設定, which
+/// source lists with the source's own filters above them — as Apple Books lays out a
+/// store, or as Legado lists them (發現頁顯示設定 › 佈局). The gear opens 發現頁設定, which
 /// picks the categories the page shows; the avatar opens the source's login page — where
 /// Legado sources keep their settings.
 struct ExploreSourcePage: View {
@@ -15,6 +15,7 @@ struct ExploreSourcePage: View {
     /// A page link picked in 發現頁設定, opened once the sheet has gone: the browser
     /// covers the whole screen, which cannot come up while the sheet is still there.
     @State private var pendingPageAddress: String?
+    @AppStorage(ExploreSettings.sourcePageLayoutKey) private var layout = ExploreSourcePageLayout.default
     private let source: BookSource
     /// Opens a category that is a web page (a source's `java.startBrowser` link).
     let onNavigate: (String) -> Void
@@ -33,7 +34,14 @@ struct ExploreSourcePage: View {
     }
 
     var body: some View {
-        DiscoverShowcaseView(discover: discover, onOpenPage: onNavigate)
+        Group {
+            switch layout {
+            case .magazine:
+                DiscoverShowcaseView(discover: discover, onOpenPage: onNavigate)
+            case .list:
+                DiscoverListLayoutView(discover: discover, onOpenPage: onNavigate)
+            }
+        }
             .background(PageBackgroundView(scope: .explore).ignoresSafeArea())
             .pageBackgroundToolbar(for: .explore)
             .navigationTitle(currentSource.bookSourceName)

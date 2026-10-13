@@ -19,13 +19,55 @@ enum ExploreSettings {
     static let showsGridKey = "explore.showsGrid"
     static let gridColumnCountKey = "explore.gridColumnCount"
 
-    /// Words that put a category in a numbered chart rather than a shelf of covers. A title
-    /// matches a keyword whatever its letter case, so `top` also covers `TOP` and `Top`.
-    static let rankedKeywords = [
+    // MARK: A source's discover page (Phase 5 plan, decision 31)
+
+    // 5d-1b deleted these with 探索設定; decision 31 brings them back as the discover page's
+    // display settings, global for now, under the same keys so a reader's old choices hold.
+
+    static let sourcePageLayoutKey = "explore.sourcePageLayout"
+    static let rankedKeywordsKey = "explore.rankedKeywords"
+    static let chartBookCountKey = "explore.chartBookCount"
+    static let shelfBookCountKey = "explore.shelfBookCount"
+    static let preloadCountKey = "explore.preloadCount"
+
+    /// Words that put a category in a numbered chart rather than a shelf of covers: the
+    /// set 探索 matched before the list could be edited. A title matches a keyword
+    /// whatever its letter case, so `top` also covers `TOP` and `Top`.
+    static let defaultRankedKeywords = [
         "榜", "排行", "畅销", "暢銷", "热销", "熱銷", "热门", "熱門", "完本", "完结", "完結", "top",
     ]
-    /// Books in each chart column.
-    static let chartBookCount = 4
+
+    /// Books in each chart column: four, as before the setting.
+    static let chartBookCountOptions = [3, 4, 5, 6, 8, 10]
+    static let defaultChartBookCount = 4
+    /// Books on each shelf; 0 shows the category's whole first page, as shelves always did.
+    static let shelfBookCountOptions = [6, 8, 10, 12, 20, 0]
+    static let defaultShelfBookCount = 0
+    /// Categories queued after the one coming into view; 0, as before, queues none.
+    static let preloadCountOptions = [0, 1, 2, 3, 5]
+    static let defaultPreloadCount = 0
+    /// 封面並發數 (`BookCoverLoader.downloadLimitKey`), in 網路設定; 0, as before, sets no limit.
+    static let coverDownloadLimitOptions = [2, 4, 6, 8, 0]
+
+    static var rankedKeywords: [String] {
+        guard let stored = UserDefaults.standard.string(forKey: rankedKeywordsKey) else {
+            return defaultRankedKeywords
+        }
+        return decodeKeywords(stored)
+    }
+
+    /// One keyword per line: a keyword is a word, never a line break.
+    static func encodeKeywords(_ keywords: [String]) -> String {
+        keywords.joined(separator: "\n")
+    }
+
+    static func decodeKeywords(_ raw: String) -> [String] {
+        raw.split(separator: "\n").map(String.init).filter { !$0.isEmpty }
+    }
+
+    static var preloadCount: Int {
+        UserDefaults.standard.object(forKey: preloadCountKey) as? Int ?? defaultPreloadCount
+    }
 
     /// A saved 首屏頁面 source becomes the home's 範圍, once (Phase 5 plan, settled decision 13):
     /// only when the reader has not picked a 範圍 and the source still exists. A custom page is
@@ -85,6 +127,32 @@ enum ExploreScope: Hashable, Sendable {
         switch self {
         case .all: ""
         case .source(let key): key.type.rawValue + ":" + key.id
+        }
+    }
+}
+
+/// How a source's page lays out its categories.
+enum ExploreSourcePageLayout: String, CaseIterable, Identifiable {
+    /// Legado's: the categories along the top, the chosen one's books listed below.
+    case list
+    /// Each category as a shelf of covers or a numbered chart — Apple Books' store.
+    case magazine
+
+    static let `default` = ExploreSourcePageLayout.magazine
+
+    var id: String { rawValue }
+
+    var titleKey: String {
+        switch self {
+        case .list: "列表"
+        case .magazine: "雜誌"
+        }
+    }
+
+    var systemImage: String {
+        switch self {
+        case .list: "list.bullet"
+        case .magazine: "square.grid.2x2"
         }
     }
 }

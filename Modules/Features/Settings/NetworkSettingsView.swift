@@ -2,6 +2,8 @@ import SwiftUI
 
 struct NetworkSettingsView: View {
     @Bindable private var settings = GlobalSettings.shared
+    /// 封面並發數, 探索設定's until 5d-1b; a network setting since decision 31, same key.
+    @AppStorage(BookCoverLoader.downloadLimitKey) private var coverDownloadLimit = 0
     @Environment(\.dismiss) private var dismiss
 
     var body: some View {
@@ -32,6 +34,21 @@ struct NetworkSettingsView: View {
                     )
                 } footer: {
                     Text(localized("換源搜索時順便抓取每個來源配置的目錄，點選來源配置可立即切換；代價是搜索期間的網路請求加倍"))
+                        .dsSectionFooter()
+                }
+                .interfaceSectionSurface()
+                Section {
+                    Picker(selection: $coverDownloadLimit) {
+                        ForEach(ExploreSettings.coverDownloadLimitOptions, id: \.self) { limit in
+                            Text(limit == 0 ? localized("不限制") : limit.formatted()).tag(limit)
+                        }
+                    } label: {
+                        Text(localized("封面並發數"))
+                    }
+                    .pickerStyle(.menu)
+                    .accessibilityIdentifier("network.coverDownloadLimit")
+                } footer: {
+                    Text(localized("同時下載的封面上限，書架和書籍詳情的封面也算在內。數字越低捲動時越不容易發熱，但封面出現得慢一些。"))
                         .dsSectionFooter()
                 }
                 .interfaceSectionSurface()
