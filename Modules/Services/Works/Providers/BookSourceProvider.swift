@@ -62,12 +62,27 @@ final class BookSourceProvider: HomeSectionProviding {
     }
 
     private func entry(_ book: OnlineBook) -> CollectionEntry {
-        let record = SourceRecord.derived(from: book, source: source)
+        .onlineBook(book, source: source)
+    }
+}
+
+extension CollectionEntry {
+    /// A book-source book as 作品詳情 opens it: a row of Explore's home (`BookSourceProvider`) and
+    /// a result of 搜索 (`WorkDetailRoute(searchResult:)`, unified library 5f-4c) make the same item.
+    ///
+    /// - Parameters:
+    ///   - contentKind: a search result's kind, snapshotted when it arrived; nil infers it.
+    ///   - blurb: a search result's row text, made when it arrived; nil reads the book's intro.
+    ///     A search route never parses its HTML again where the destination is built
+    ///     (Technotes/iOS17SearchWatchdogPostmortem.md, guardrail 5).
+    static func onlineBook(_ book: OnlineBook, source: BookSource,
+                           contentKind: OnlineBookContentKind? = nil, blurb: String? = nil) -> CollectionEntry {
+        let record = SourceRecord.derived(from: book, source: source, contentKind: contentKind)
         let base = URL(string: source.bookSourceUrl)
         let cover = URL(string: book.coverUrl.trimmingCharacters(in: .whitespacesAndNewlines), relativeTo: base)
             .map(\.absoluteURL)
             .flatMap { $0.scheme?.hasPrefix("http") == true ? $0 : nil }
-        let blurb = SearchResultIPSDiagnostics.sanitizeIntroForSearchRow(
+        let blurb = blurb ?? SearchResultIPSDiagnostics.sanitizeIntroForSearchRow(
             OnlineBookDetailPresentationPolicy.sanitizeIntro(book.intro)
         )
         return .item(record,
@@ -75,6 +90,28 @@ final class BookSourceProvider: HomeSectionProviding {
                                  cover: cover.map { .remote($0, headers: source.parsedHeaders) } ?? .generated(seed: book.name),
                                  blurb: blurb, language: nil, contentKind: record.contentKind),
                      .onlineBook(FrozenOnlineBook(book: book)))
+    }
+}
+
+extension WorkDetailRoute {
+    /// 搜索's result as 作品詳情 opens it (unified library 5f-4c, decision 29), built from the
+    /// snapshot the route froze at the tap (Technotes/iOS17SearchWatchdogPostmortem.md, guardrail 1).
+    /// The version is the origin the result's own page opens on — an audiobook's first audio
+    /// origin, else the first — so the versions, the pin and the shelf lookup name the source shown.
+    ///
+    /// Nil when the result has no origin, or its source is no longer installed.
+    @MainActor
+    init?(searchResult: SearchBook, sources: BookSourceStore = .shared) {
+        let kind = searchResult.inferredContentKind()
+        guard let origin = (kind == .audio ? searchResult.preferredOrigin(for: .audio) : nil) ?? searchResult.origins.first
+        else { return nil }
+        guard let source = sources.source(id: origin.sourceId) else {
+            AppLogger.error("⟐ search result's source is gone", context: ["source": origin.sourceName])
+            return nil
+        }
+        let book = OnlineBook(detailOrigin: origin, in: searchResult)
+        self.init(CollectionEntry.onlineBook(book, source: source, contentKind: searchResult.contentKind(for: origin) ?? kind,
+                                             blurb: searchResult.displayIntro))
     }
 }
 

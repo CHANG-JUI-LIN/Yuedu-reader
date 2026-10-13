@@ -71,13 +71,30 @@ private struct SearchPagePushDestination: View {
 /// Resolves a frozen route without capturing `BookSearchView` or its live
 /// `SearchAggregator`. The inherited store is forwarded explicitly to preserve
 /// the existing detail-view environment contract.
+///
+/// A result opens 作品詳情 (unified library 5f-4c, decision 29: a work has one page wherever it
+/// is opened from), made in `init` from the route's snapshot: SwiftUI may build the destination
+/// again as the page updates, so it reads only the snapshot and an indexed source lookup. Its
+/// version is drawn as the result's own page, with the work's known reading sources first in 換源.
 private struct SearchResultDestination: View {
     let route: BookSearchResultRoute
+    private let work: WorkDetailRoute?
     @EnvironmentObject private var bookStore: BookStore
 
+    init(route: BookSearchResultRoute) {
+        self.route = route
+        work = WorkDetailRoute(searchResult: route.snapshot)
+    }
+
     var body: some View {
-        OnlineBookDetailDestination(.search(route.snapshot))
-            .environmentObject(bookStore)
+        if let work {
+            WorkDetailView(route: work, searchResult: route.snapshot)
+                .environmentObject(bookStore)
+        } else {
+            ContentUnavailableView {
+                UnavailableLabel(localized("來源配置已被刪除"), systemImage: "books.vertical")
+            }
+        }
     }
 }
 

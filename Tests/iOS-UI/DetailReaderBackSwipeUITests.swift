@@ -1018,7 +1018,7 @@ final class DetailReaderBackSwipeUITests: XCTestCase {
         XCTAssertEqual(XCTWaiter.wait(for: [left], timeout: 10), .completed)
         app.terminate()
         app.launchArguments = ["-explore.mode", "sources", "-AppleLanguages", "(en)", "-AppleLocale", "en_US",
-                               "-yd_root_tab_visible_ids", "(bookshelf, settings)", "-bookLayoutIsGrid", "NO"]
+                               "-yd_root_tab_visible_ids", "(bookshelf, settings, search)", "-bookLayoutIsGrid", "NO"]
         app.launch()
 
         // 編輯書籍資訊 renames the copy.
@@ -1054,6 +1054,19 @@ final class DetailReaderBackSwipeUITests: XCTestCase {
         save.tap()
         let renamed = app.descendants(matching: .any).matching(NSPredicate(format: "label BEGINSWITH %@", edited + "，")).firstMatch
         XCTAssertTrue(renamed.waitForExistence(timeout: 10), app.debugDescription)
+
+        // 搜索's result for the same book opens 作品詳情 (5f-4c, decision 29), the source's page
+        // with the reader's title and 簡介, as the shelf's does.
+        openSearchedBook(app, query: "navigation swipe", named: "Navigation Swipe Fixture")
+        XCTAssertTrue(app.staticTexts[edited].firstMatch.waitForExistence(timeout: 15), app.debugDescription)
+        XCTAssertTrue(app.staticTexts[ownIntro].firstMatch.waitForExistence(timeout: 15), app.debugDescription)
+        XCTAssertTrue(remove.waitForExistence(timeout: 15), app.debugDescription)
+        attachScreenshot(app, named: "Work detail - from 搜索")
+        // Back to 搜索's root, where the tab bar is.
+        app.navigationBars.buttons.firstMatch.tap()
+        let libraryTab = app.tabBars.buttons["Library"].firstMatch
+        XCTAssertTrue(libraryTab.waitForExistence(timeout: 10), app.debugDescription)
+        libraryTab.tap()
 
         // 作品詳情 shows the copy's title once its source has answered with its own.
         renamed.buttons["More"].firstMatch.tap()

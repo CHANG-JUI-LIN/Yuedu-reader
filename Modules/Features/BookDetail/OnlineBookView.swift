@@ -112,14 +112,15 @@ struct OnlineBookView: View {
         sourceSwitchBookId: UUID? = nil,
         onRemoveFromShelf: (() -> Void)? = nil,
         onContinueReading: ((Int?) -> Void)? = nil,
-        onSourceKindChange: ((BookOrigin) -> Void)? = nil
+        onSourceKindChange: ((BookOrigin) -> Void)? = nil,
+        workVersions: BookDetailInfoChoice? = nil
     ) {
         self.searchBook = searchBook
         self.sourceSwitchBookId = sourceSwitchBookId
         self.onRemoveFromShelf = onRemoveFromShelf
         self.onContinueReading = onContinueReading
         self.onSourceKindChange = onSourceKindChange
-        self.workVersions = nil
+        self.workVersions = workVersions
         if let origin = initialOrigin ?? searchBook.origins.first {
             _currentBook = State(initialValue: OnlineBook(detailOrigin: origin, in: searchBook))
         } else {
@@ -338,6 +339,8 @@ struct OnlineBookView: View {
                     SourcePickerSheet(
                         searchBook: searchBook,
                         currentOrigin: currentOrigin,
+                        otherVersions: otherWorkVersions,
+                        onSelectVersion: { id in pendingVersion = id },
                         onSelectOrigin: { origin in pendingOrigin = origin }
                     )
                 }
