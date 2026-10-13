@@ -130,6 +130,12 @@ struct HomeCardContent: Identifiable {
     }
 
     /// The shelf copy the card shows, whose ••• acts on it (5d-3c).
+    /// What VoiceOver reads after 精選's title: the card's whole text, as on screen, so the
+    /// category and the blurb too; a line the card does not draw is not read.
+    var featuredAccessibilityValue: String {
+        [category, accessibilityValue, blurb].compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: ", ")
+    }
+
     var shelfBook: ReadingBook? {
         if case .shelf(let book) = cover { book } else { nil }
     }

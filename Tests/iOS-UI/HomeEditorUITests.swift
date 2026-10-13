@@ -142,6 +142,10 @@ final class HomeEditorUITests: XCTestCase {
         XCTAssertGreaterThanOrEqual(book.frame.minX, 0, "the first page is whole: \(book.frame)")
         XCTAssertLessThan(book.frame.maxX, screen.maxX, "the next page shows past the edge: \(book.frame)")
         XCTAssertTrue(book.isHittable)
+        // One VoiceOver stop: the title, then the author; 查看作品 is drawn, not read.
+        XCTAssertEqual(book.label, "紅樓夢")
+        XCTAssertTrue((book.value as? String)?.contains("曹雪芹") ?? false, "\(book.value ?? "")")
+        XCTAssertFalse("\(book.label) \(book.value ?? "")".contains("查看作品"))
         attach(app, "home-section-featured")
 
         // The next book: the card that starts right of the first one, on the same line.

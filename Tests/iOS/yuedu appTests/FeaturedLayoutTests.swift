@@ -75,6 +75,26 @@ struct FeaturedLayoutTests {
         #expect(summary.category == "玄幻")
     }
 
+    @Test("VoiceOver reads 精選's whole card: category, author, then blurb; nothing it does not draw")
+    func featuredValue() throws {
+        var source = BookSource()
+        source.bookSourceUrl = "https://source.example"
+        let book = OnlineBook(name: "宿命之環", author: "愛潛水的烏賊", intro: "灰霧之上。", coverUrl: "",
+                              bookUrl: "https://site.example/book/1", tocUrl: "", wordCount: "",
+                              lastChapter: "", kind: "玄幻,連載", sourceId: source.id, sourceName: "S")
+        let full = try #require(HomeCardContent(CollectionEntry.onlineBook(book, source: source),
+                                                status: { _ in nil }, shelfBooks: [:]))
+        #expect(full.accessibilityLabel == "宿命之環")
+        #expect(full.featuredAccessibilityValue == "玄幻, 愛潛水的烏賊, 灰霧之上。")
+
+        let bare = OnlineBook(name: "無題", author: "", intro: "", coverUrl: "",
+                              bookUrl: "https://site.example/book/2", tocUrl: "", wordCount: "",
+                              lastChapter: "", kind: "", sourceId: source.id, sourceName: "S")
+        let least = try #require(HomeCardContent(CollectionEntry.onlineBook(bare, source: source),
+                                                 status: { _ in nil }, shelfBooks: [:]))
+        #expect(least.featuredAccessibilityValue == "")
+    }
+
     @Test("精選 is written as its own value, so a build before it keeps it and draws a row")
     func storedValue() throws {
         let layout = HomeSectionLayout(style: .featured)

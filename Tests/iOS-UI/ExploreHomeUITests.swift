@@ -201,6 +201,35 @@ final class ExploreHomeUITests: XCTestCase {
         attach(app, "home-compact-card-menu")
     }
 
+    /// 精選 (decision 37), in the design fixture's 繼續閱讀: a shelf copy's large card keeps the
+    /// ••• 精簡閱讀卡片 has, inside the card and reachable on its own.
+    @MainActor
+    func testFeaturedCardMenu() {
+        let app = application(extra: ["-explore-home-fixture"])
+        app.launch()
+        let mores = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH 'home.card.more.'"))
+        XCTAssertTrue(mores.firstMatch.waitForExistence(timeout: 20), app.debugDescription)
+        let cards = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH 'home.card.' AND NOT identifier BEGINSWITH 'home.card.more.'"))
+        // 精選's card is the tall one; its ••• sits inside it.
+        func featuredMore() -> XCUIElement? {
+            let tall = cards.allElementsBoundByIndex.filter { $0.frame.height > 200 && $0.frame.width > app.frame.width * 0.6 }
+            return mores.allElementsBoundByIndex.first { more in tall.contains { $0.frame.contains(more.frame) } }
+        }
+        var more = featuredMore()
+        for _ in 0..<4 where more == nil {
+            app.swipeUp()
+            more = featuredMore()
+        }
+        XCTAssertNotNil(more, app.debugDescription)
+        guard let found = more else { return }
+        XCTAssertEqual(found.label, "更多")
+        XCTAssertTrue(found.isHittable)
+        attach(app, "home-featured-card")
+        found.tap()
+        XCTAssertTrue(app.buttons["從繼續閱讀移除"].firstMatch.waitForExistence(timeout: 5), app.debugDescription)
+        attach(app, "home-featured-card-menu")
+    }
+
     /// ••• switches 首頁配置 (unified library 5d-4, under ••• since decision 36) and opens the
     /// browser (5d-1). A 首頁配置 made from 新增首頁配置 starts from 空白 or 預設; 編輯首頁 deletes
     /// it. With the browser hidden (編輯首頁, 5d-2), ••• leaves it out.

@@ -163,12 +163,15 @@ struct HomeSectionCards: View {
             LazyHStack(alignment: .top, spacing: DSSpacing.md) {
                 ForEach(cards.indices, id: \.self) { index in
                     let card = cards[index]
-                    // The card's whole text, as on screen: the category and the blurb too.
-                    let value = [card.category, card.accessibilityValue, card.blurb]
-                        .compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: ", ")
-                    button(index, in: cards, value: value) {
+                    let menu = HomeCardMenuItem.items(for: card, actions: bookActions)
+                    button(index, in: cards, menu: menu, value: card.featuredAccessibilityValue) {
                         HomeFeaturedCard(content: card, coverWidth: featuredCoverWidth,
-                                         stacksVertically: dynamicTypeSize.isAccessibilitySize)
+                                         stacksVertically: dynamicTypeSize.isAccessibilitySize,
+                                         reservesMenuSpace: !menu.isEmpty)
+                    }
+                    // Beside the card's button, as 精簡閱讀卡片 has it: a shelf copy's •••.
+                    .overlay(alignment: .bottomTrailing) {
+                        if !menu.isEmpty { HomeCardMenuButton(card: card, items: menu) }
                     }
                     .containerRelativeFrame(.horizontal) { length, _ in
                         let peek = cards.count > perScreen ? DSLayout.homeReadingCardPeek + DSSpacing.md : 0
@@ -336,6 +339,8 @@ struct HomeFeaturedCard: View {
     let content: HomeCardContent
     let coverWidth: CGFloat
     var stacksVertically = false
+    /// Keeps the trailing bottom clear for a shelf copy's ••• drawn over the card.
+    var reservesMenuSpace = false
 
     @Environment(\.colorSchemeContrast) private var contrast
     /// The cover's average colour, once the cover has drawn.
@@ -410,6 +415,8 @@ struct HomeFeaturedCard: View {
                 .padding(.vertical, DSSpacing.sm)
                 .background(DSColor.textOnAccent, in: Capsule())
                 .accessibilityHidden(true)
+                .padding(.trailing, reservesMenuSpace && !stacksVertically ? DSLayout.minimumTapTarget - DSSpacing.lg : 0)
+                .padding(.bottom, reservesMenuSpace && stacksVertically ? DSLayout.minimumTapTarget - DSSpacing.lg : 0)
         }
         .foregroundStyle(DSColor.textOnAccent)
         .multilineTextAlignment(.leading)
