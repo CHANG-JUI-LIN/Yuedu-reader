@@ -77,7 +77,7 @@ ForYouProvider (.forYou, policy .withHome)
 ### 7a-4: the section
 
 - `HomeSectionBinding.forYou` (stored `"forYou"`; an older build keeps it as `.unknown`). App 資料 lists it (`HomeSectionBinding.appData`); its title is 為你推薦; `HomeReadFilter` hides read books in it; `HomeSectionGroup` orders it like 「最新」.
-- `ForYouProvider` (registry: one, after the libraries). Policy `.withHome`. Load: resolve inputs; read the cache; take the library rows' loaded entries; fetch the stale categories through `DiscoverFirstPages`, one at a time; rank. Pull to refresh treats every category as stale.
+- `ForYouProvider` (registry: one, after the libraries). Policy `.withHome`. Load: resolve inputs; read the cache; take the library rows' loaded entries; fetch the stale categories through `DiscoverFirstPages`, a source's one at a time and the sources side by side (changed in 7a-5 from one at a time overall); rank. Pull to refresh treats every category as stale.
 - **Options** (the section form): 來源分類 — the inputs, each removable, with 「加入分類」 pushing the existing category picker. Stored in `section.parameters` (`forYou.categories`, `forYou.excluded`), so the schema version is unchanged. The home's library rows always count (the 書庫欄目 switch was dropped in review: a library the reader keeps on the home is one they want).
 - **Defaults and migration:** `HomePageDefaults` puts it after 系列下一本; `HomePageStore` inserts it once into the selected 首頁配置 (`home.forYouInserted`).
 - `#Preview`s with real-shaped data and a large-text variant; VoiceOver reads each card as the other rows' cards do.
@@ -144,3 +144,21 @@ ForYouProvider (.forYou, policy .withHome)
 - Spans (7a-5): `forYou.cache` (categories asked, fetched, time reading the cache), `forYou.fetch` per category, `forYou.rank` (candidates, shelf works, entries).
 - `HomeEditorUITests`' layout tests take 熱門's own card (`popularCard`): 為你推薦, above it, holds the same Gutenberg book.
 - Tests: `HomeModelTests.libraryRowsChangeReloadsTheirReader` (goes, then comes back), `ForYouSectionTests.addAndRemove`, `ForYouProviderTests` (`stableWithinADay`, `restartsOnNewInputs`, `emptyWhenNothing`); UI `ForYouSectionUITests` (new install shows it above 熱門 and opens a book; the form adds and removes a category; 新增欄目 offers it).
+
+### 7a-5 (branch `discovery/7a-5-measurement`)
+
+Measured with `ForYouMeasurementTests` (iOS 27 simulator, Debug): a home of 5 sources × 3 categories and a Gutenberg-like library row loading with the home, built through `HomeModel.make` (the same wiring as `HomeModel.live`), 40 ms per request.
+
+| | before | after |
+|---|---|---|
+| cold home (nothing cached): requests | 31 (15 categories asked twice) | 16 (15 categories + 1 library) |
+| cold home: 為你推薦 ready | 744 ms | 191 ms |
+| pull to refresh: requests | 16 | 16 |
+| warm home (cache < 12 h): requests | 16, none of 為你推薦's | 16, none of 為你推薦's |
+| warm home: 為你推薦 ready | 72 ms | 70 ms |
+| ranking 600 candidates, 2000 shelf books (main actor) | 450 ms (`shelfWorks` 187 + `rank` 260) | 0 on the main actor; 240 ms off it (`shelfWorks` 180 + `rank` 62) |
+
+- **Cold duplicates.** 為你推薦 fetched every stale category as the home appeared; each row then fetched its category again on coming into view. `DiscoverFirstPages` now answers from the candidate store a page saved since the home was made or since its last pull to refresh (`refresh()`, called by `HomeModel.reload`): one request per category in a home's life, and a row coming into view shows the page 為你推薦 fetched moments before. A failure saves nothing, so the next ask fetches again. `HomeModel.make(firstPages:waitForSources:providers:)` is `live`'s wiring, so the measurement exercises it.
+- **Serial fetches.** 為你推薦 asked its stale categories one after another; now a source's run in turn and the sources side by side (the lanes already serialize per source). A closed home still stops each source's remaining fetches.
+- **Ranking.** Folding a title or tag (`WorkMatchKey.fold`: two ICU transforms) costs about 0.1 ms each; `shelfWorks` folds the whole shelf. `rank` now folds each candidate once and compares the shelf and kept books through a title index; tag folding, `shelfWorks`, `rank` and the exposure keys run in one detached task. `WorkMatchKey.fold` itself is shared with search merging and left as is.
+- Tests: `DiscoverFirstPagesTests` (`answersFromTheStore`, `olderPagesFetchAgain`; `primingPerSync` asks a third category), `ForYouProviderTests.stale` refreshes `firstPages` as `HomeModel.reload` does, `ForYouMeasurementTests` (`requests`, `largeRanking`).

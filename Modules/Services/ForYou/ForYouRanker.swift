@@ -46,8 +46,12 @@ enum ForYouRanker {
     /// The key a work is remembered by in `ForYouExposureLog`.
     static func workKey(of entry: CollectionEntry) -> String? {
         guard case .item(_, let summary, _) = entry else { return nil }
-        return ([WorkMatchKey.title(summary.title)] + summary.authors.map(WorkMatchKey.author).sorted())
-            .joined(separator: "\u{1F}")
+        return workKey(title: WorkMatchKey.title(summary.title), authors: summary.authors.map(WorkMatchKey.author))
+    }
+
+    /// `workKey(of:)` from keys already folded.
+    private static func workKey(title: String, authors: [String]) -> String {
+        ([title] + authors.sorted()).joined(separator: "\u{1F}")
     }
 
     /// - Parameters:
@@ -68,21 +72,26 @@ enum ForYouRanker {
         let recentAuthors = recent.authors.map(WorkMatchKey.author)
         let recentTags = Set(ReadingGenreProfile.normalizedTags(recent.tags))
 
-        // 1. Dedupe; the shelf and, under 只推薦, other languages left out.
+        // 1. Dedupe; the shelf and, under 只推薦, other languages left out. Compared by title
+        // first: folding a title costs ICU transforms (7a-5), so each is folded once.
+        let shelfByTitle = Dictionary(grouping: shelf, by: \.title).mapValues { $0.map(\.authors) }
+        var keptByTitle: [String: [[String]]] = [:]
         var kept: [Scored] = []
         for candidate in candidates {
             guard case .item(let record, let summary, _) = candidate.entry else { continue }
             if languages.scope == .only, languages.rank(of: summary.language ?? record.language) == .other { continue }
             let title = WorkMatchKey.title(summary.title)
             let authors = summary.authors.map(WorkMatchKey.author)
-            if shelf.contains(where: { $0.title == title && WorkMatchKey.authorKeysCompatible($0.authors, authors) }) { continue }
-            if kept.contains(where: { $0.title == title && WorkMatchKey.authorKeysCompatible($0.authors, authors) }) { continue }
+            if shelfByTitle[title]?.contains(where: { WorkMatchKey.authorKeysCompatible($0, authors) }) == true { continue }
+            if keptByTitle[title]?.contains(where: { WorkMatchKey.authorKeysCompatible($0, authors) }) == true { continue }
+            keptByTitle[title, default: []].append(authors)
             // 2. Score.
             var score = candidate.tags.reduce(0) { $0 + (weights[$1] ?? 0) }
             if WorkMatchKey.authorKeysCompatible(recentAuthors, authors) { score += recentAuthorBonus }
             if !recentTags.isDisjoint(with: candidate.tags) { score += recentTagBonus }
             score += positionBonus * max(0, 1 - Double(candidate.position) / positionSpan)
-            kept.append(Scored(candidate: candidate, title: title, authors: authors, score: score, index: kept.count))
+            kept.append(Scored(candidate: candidate, key: workKey(title: title, authors: authors), score: score,
+                               index: kept.count))
         }
 
         // 3. Mix, 4. explore.
@@ -97,7 +106,7 @@ enum ForYouRanker {
         }
         var taken = Set(main.map(\.index))
         var generator = SplitMix64(seed: seed)
-        let unseen = kept.filter { !taken.contains($0.index) && !recentlyShown.contains(workKey(of: $0.candidate.entry) ?? "") }
+        let unseen = kept.filter { !taken.contains($0.index) && !recentlyShown.contains($0.key) }
             .shuffled(using: &generator)
         let leftovers = mixed(kept).filter { !taken.contains($0.index) }
         var explored: [Scored] = []
@@ -124,8 +133,8 @@ enum ForYouRanker {
 
     private struct Scored {
         let candidate: ForYouCandidate
-        let title: String
-        let authors: [String]
+        /// `workKey(of:)`'s.
+        let key: String
         let score: Double
         /// Its place among the kept books.
         let index: Int

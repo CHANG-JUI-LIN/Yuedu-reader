@@ -215,8 +215,9 @@ struct ForYouProviderTests {
         // What was just saved is fresh …
         _ = try await f.provider.load(f.section)
         #expect(await f.requests.log.count == 1)
-        // … until the reader pulls to refresh.
+        // … until the reader pulls to refresh (`HomeModel.reload` moves both).
         f.home.refreshedAt = Date().addingTimeInterval(60)
+        f.pages.refresh()
         _ = try await f.provider.load(f.section)
         #expect(await f.requests.log.count == 2)
     }

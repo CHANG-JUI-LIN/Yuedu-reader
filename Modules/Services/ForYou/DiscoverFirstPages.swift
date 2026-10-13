@@ -12,6 +12,9 @@ import Foundation
 ///   page primes once per load (`primeDiscoverCookiesIfNeeded` drops the site's token).
 /// - **Every page is saved** to `ForYouCandidateStore`, so 為你推薦 reads what the rows
 ///   already fetched.
+/// - **One request per category in the home's life**, until its pull to refresh: a page saved
+///   since then answers a later ask (Discovery Phase 7a-5). 為你推薦 asks for every stale
+///   category as the home appears; the rows coming into view later read what it fetched.
 ///
 /// One per home: `SourceProviderRegistry.homeProviders` hands it to the providers it makes,
 /// and calls `beginSync()` each time it makes them. The queue and the requests on their way
@@ -28,6 +31,8 @@ final class DiscoverFirstPages {
     private let lanes: DiscoverRequestLanes
     private let now: @Sendable () -> Date
     private var primed: Set<String> = []
+    /// Pages saved since then answer from the store: the home's making, or its last pull to refresh.
+    private var answersSince: Date
 
     init(
         pageLoader: SectionPageLoader = .live,
@@ -41,6 +46,12 @@ final class DiscoverFirstPages {
         self.store = store
         self.lanes = lanes
         self.now = now
+        answersSince = now()
+    }
+
+    /// Pull to refresh: every category is asked for again.
+    func refresh() {
+        answersSince = now()
     }
 
     /// The providers were made again: each source primes its cookies again before its next fetch.
@@ -48,11 +59,27 @@ final class DiscoverFirstPages {
         primed.removeAll()
     }
 
-    /// The category's first page, without the books it repeats. Joins a request for the same
-    /// category already on its way; otherwise queues behind the source's other fetches.
-    /// Failures are logged by `SectionPageLoader` and thrown to every asker.
+    /// The category's first page, without the books it repeats: the page saved since
+    /// `answersSince`, else a request. Joins a request for the same category already on its
+    /// way; otherwise queues behind the source's other fetches. Failures are logged by
+    /// `SectionPageLoader` and thrown to every asker; a failure saves nothing, so the next ask
+    /// fetches again.
     func firstPage(of category: ExploreCategoryReference, in source: BookSource) -> Task<[OnlineBook], Error> {
         let key = DiscoverRequestLanes.Key(sourceURL: source.bookSourceUrl, categoryURL: category.url)
+        if let running = lanes.running(key) { return running }
+        let since = answersSince, store = store
+        return Task { @MainActor in
+            if let saved = await store.read(sourceURL: key.sourceURL, categoryURL: key.categoryURL, sourceID: source.id),
+               saved.fetchedAt >= since {
+                return saved.books
+            }
+            return try await self.fetch(category, key, in: source).value
+        }
+    }
+
+    private func fetch(_ category: ExploreCategoryReference, _ key: DiscoverRequestLanes.Key,
+                       in source: BookSource) -> Task<[OnlineBook], Error> {
+        // Another ask may have started it while this one read the store.
         if let running = lanes.running(key) { return running }
         let primes = primed.insert(key.sourceURL).inserted
         let pageLoader = pageLoader, primeCookies = primeCookies, store = store, now = now

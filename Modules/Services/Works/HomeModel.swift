@@ -40,6 +40,7 @@ final class HomeModel: ObservableObject {
 
     private let makeProviders: () -> [any HomeSectionProviding]
     private let waitForSources: () async -> Void
+    private let firstPages: DiscoverFirstPages?
     private var providers: [String: any HomeSectionProviding] = [:]
     private var requested: Set<String> = []
     private var queueTails: [SourceInstanceKey: Task<Void, Never>] = [:]
@@ -55,18 +56,32 @@ final class HomeModel: ObservableObject {
     ///     (`SourceProviderRegistry.homeProviders(shelf:firstPages:)`).
     ///   - waitForSources: returns once the book-source library is read
     ///     (`BookSourceStore.waitUntilLoaded`).
-    init(providers: @escaping () -> [any HomeSectionProviding], waitForSources: @escaping () async -> Void) {
+    ///   - firstPages: the home's first-page fetcher; a pull to refresh asks every category again.
+    init(providers: @escaping () -> [any HomeSectionProviding], waitForSources: @escaping () async -> Void,
+         firstPages: DiscoverFirstPages? = nil) {
         makeProviders = providers
         self.waitForSources = waitForSources
+        self.firstPages = firstPages
     }
 
     /// A home served by the sources now, with one first-page fetcher of its own for as long as
     /// it lives (Discovery Phase 7a-1).
     static func live(shelf: BookStore) -> HomeModel {
-        let firstPages = DiscoverFirstPages()
+        make(firstPages: DiscoverFirstPages(), waitForSources: { await BookSourceStore.shared.waitUntilLoaded() }) { firstPages, home in
+            SourceProviderRegistry.shared.homeProviders(shelf: shelf, firstPages: firstPages, home: home)
+        }
+    }
+
+    /// `live`'s wiring with the providers given: `firstPages` serves the home for its life and
+    /// is refreshed by its pull to refresh; 為你推薦 gets the home weakly.
+    static func make(
+        firstPages: DiscoverFirstPages,
+        waitForSources: @escaping () async -> Void,
+        providers: @escaping @MainActor (DiscoverFirstPages, (any ForYouHomeRows)?) -> [any HomeSectionProviding]
+    ) -> HomeModel {
         let home = WeakHomeModel()
-        let model = HomeModel(providers: { SourceProviderRegistry.shared.homeProviders(shelf: shelf, firstPages: firstPages, home: home.model) },
-                              waitForSources: { await BookSourceStore.shared.waitUntilLoaded() })
+        let model = HomeModel(providers: { providers(firstPages, home.model) }, waitForSources: waitForSources,
+                              firstPages: firstPages)
         home.model = model
         return model
     }
@@ -163,6 +178,7 @@ final class HomeModel: ObservableObject {
     /// Pull to refresh: rows already loaded load again.
     func reload() {
         refreshedAt = Date()
+        firstPages?.refresh()
         for row in rows where requested.contains(row.id) && !active.contains(row.id) {
             start(row)
         }
