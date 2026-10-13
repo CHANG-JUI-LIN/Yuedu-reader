@@ -1712,3 +1712,35 @@ Not split (one meaning everywhere): 確認刪除 (three alert titles), 是／否
   - UI, iOS 17.5: the same four suites passed (HomeEditorUITests 7, ExploreHomeUITests 9, AggregationSettingsUITests 4, PublicLibraryStorefrontUITests 2 run and 3 skipped as before).
 - **Not checked by a test:** the storefront's own 精選書單 now draws through `CollectionCoverArtwork`, and no UI test opens the storefront. The refactor keeps its modifiers as they were: the same HStack, rotation, ground, clip and hidden artwork.
 - **Next:** decision 34, the layout choice as live previews.
+
+#### What landed — 呈現方式's live previews (decision 34, 2026-10-13)
+
+- **Decision 34.** Branch `explore/layout-previews`. Choosing a layout shows the layouts themselves, as Emby's 選擇模板 does.
+- **Where:**
+  - 新增欄目's first page: every layout is a row, its name over its preview. 專題集合 is offered only where the public libraries are.
+  - The section form's 呈現方式: a row with the current layout's name pushes 呈現方式, the same rows for the section's choices (`HomeLayoutStyle.choices(for:)`), with a checkmark on the current one. Choosing goes back. Hidden for a section of lists, which has one choice. 顯示排名 stays a toggle under 圖文資訊清單.
+- **The preview** (`HomeLayoutPreview`): the real layout (`HomeSectionCards`, `HomeCollectionCards`) drawn at a phone's width and scaled to half (`DSLayout.homeLayoutPreviewScale`), cut off at 150 points (`homeLayoutPreviewHeight`). It cannot be touched, scrolled or read.
+- **Maintainer's correction, mid-step:** 「純標題就行了，別給我加上 sf symbol，還有示例圖片給我照幾本好看封面的書來當範例」.
+  - A row's name is plain text: no symbol.
+  - The sample is eight real Gutenberg books picked for their covers, in colours apart: The Great Gatsby, Pride and Prejudice, Alice's Adventures in Wonderland, Treasure Island, The Picture of Dorian Gray, Emma, The Wonderful Wizard of Oz, Peter Pan. 專題集合's sample is the bundled lists 小說與文學 and 兒童與青少年, whose first books are classics too.
+  - Their covers are Gutenberg's own, bundled as `Resources/Assets/layout-sample-<number>.jpg` (11 files, 260 KB). The previews look the same offline and where the public libraries are not offered.
+  - Every section previews with this sample. The first version drew a section's own books once loaded, else 中文書籍 or the shelf. 中文書籍's covers are generated, and the maintainer wanted good-looking books, so that is gone.
+- **VoiceOver:** each row is one button labelled with the layout's name, selected when current. The preview is hidden. The form's row reads 呈現方式 with the layout as its value.
+- **Not changed:** the long-press menu's 呈現方式 is still the plain picker of names. Only 新增欄目 and the form were named.
+- **A missing sample cover** is logged (`AppLogger.error`), and the book keeps its usual cover. That is a packaging bug, which `LayoutPreviewTests` catches. It is not a fallback for anything external.
+- **Not test-first:** the previews were written first, then `LayoutPreviewTests`. Its first run failed because a `GutenbergBook`'s id is its OPDS address, not its number. The covers are now found by `ExternalIdentifier.gutenbergNumber`.
+- **Tests:**
+  - Unit, iOS 27: `LayoutPreviewTests` (the eight cards in order, each from its bundled file; the two lists, every artwork cover bundled), `CollectionLayoutTests`, `HomeSectionEditorTests`. 13 tests in 3 suites passed.
+  - UI, new: `HomeEditorUITests.testLayoutPreviews`:
+    - 新增欄目's rows are named by layout and taller than 120 points;
+    - choosing 精選 gives the form's row the value 精選;
+    - the pushed page has 精選 selected and no 專題集合;
+    - choosing 圖文資訊清單 goes back with that value.
+    - Its first run failed: 精選's row is far down the page and not built until scrolled near. The test now scrolls to it.
+  - UI, updated: `startSection` (HomeEditorUITests) and `DetailReaderBackSwipeUITests`' section helper scroll to their layout row, since the rows are now tall.
+  - UI, iOS 27: `HomeEditorUITests` (8) passed. Screenshots checked: plain names, the classics' covers in every layout.
+  - UI, iOS 17.5: `HomeEditorUITests` (8) and `DetailReaderBackSwipeUITests.testDetailReaderLoadsAndReturns` passed.
+    - In the first full run, `testLayoutPreviews` ended with "Test crashed with signal kill" while waiting for 新增欄目's rows, after `testAddSections` had opened the same page fine.
+    - Rerun alone, a sample of the app while it waited showed the main thread idle, answering the test's accessibility queries. It passed.
+    - The whole suite then passed again (8/8). The kill did not recur, and its cause is not known.
+  - `DetailReaderBackSwipeUITests`, iOS 27, run before the sample change: the detail tests passed. The 9 page-turn gesture tests and the manga tests failed as recorded before Phase 5 (test-order state).

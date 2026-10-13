@@ -227,6 +227,48 @@ final class HomeEditorUITests: XCTestCase {
         attach(app, "home-collection-menu")
     }
 
+    /// Decision 34: 新增欄目 shows each layout drawn small with real covers, read by its name; the
+    /// form's 呈現方式 opens the same previews with the section's own books, the current one
+    /// selected, and a choice comes back to the form.
+    @MainActor
+    func testLayoutPreviews() {
+        let app = launchExplore()
+        let add = app.buttons["homeEditor.addSection"].firstMatch
+        let edit = app.buttons["home.edit"].firstMatch
+        for _ in 0..<8 where !edit.isHittable { app.swipeUp() }
+        edit.tap()
+        for _ in 0..<8 where !add.isHittable { app.swipeUp() }
+        add.tap()
+        let compact = app.buttons["homeNewSection.layout.compactReadingCard"].firstMatch
+        XCTAssertTrue(compact.waitForExistence(timeout: 5), app.debugDescription)
+        XCTAssertEqual(compact.label, "精簡閱讀卡片")
+        XCTAssertGreaterThan(compact.frame.height, 120, "the name over a preview: \(compact.frame)")
+        attach(app, "home-new-section-previews")
+
+        let featured = app.buttons["homeNewSection.layout.featured"].firstMatch
+        for _ in 0..<8 where !featured.isHittable { app.swipeUp() }
+        attach(app, "home-new-section-previews-more")
+        featured.tap()
+        let layout = app.buttons["homeSection.layout"].firstMatch
+        XCTAssertTrue(layout.waitForExistence(timeout: 5), app.debugDescription)
+        XCTAssertEqual(layout.value as? String, "精選")
+        layout.tap()
+        XCTAssertTrue(app.buttons["homeSection.layoutChoice.readingCard"].firstMatch.waitForExistence(timeout: 5),
+                      app.debugDescription)
+        attach(app, "home-section-layout-previews")
+        // 精選 is far down the list; its row is built once it scrolls near.
+        let current = app.buttons["homeSection.layoutChoice.featured"].firstMatch
+        for _ in 0..<8 where !current.isHittable { app.swipeUp() }
+        XCTAssertTrue(current.exists, app.debugDescription)
+        XCTAssertTrue(current.isSelected, "the current layout is selected")
+        XCTAssertFalse(app.buttons["homeSection.layoutChoice.collection"].exists, "a section of books has no 專題集合")
+        let list = app.buttons["homeSection.layoutChoice.list"].firstMatch
+        for _ in 0..<8 where !list.isHittable { app.swipeUp() }
+        list.tap()
+        XCTAssertTrue(layout.waitForExistence(timeout: 5), app.debugDescription)
+        XCTAssertEqual(layout.value as? String, "圖文資訊清單")
+    }
+
     /// Long-pressing a section's name offers 隱藏, 設定 and 刪除; 刪除 asks first.
     @MainActor
     func testLongPressDeletesASection() {
@@ -285,7 +327,10 @@ final class HomeEditorUITests: XCTestCase {
         for _ in 0..<8 where !add.isHittable { app.swipeUp() }
         add.tap()
         let style = app.buttons["homeNewSection.layout.\(layout)"].firstMatch
-        XCTAssertTrue(style.waitForExistence(timeout: 5), app.debugDescription)
+        // Each layout is a row with its preview (decision 34): scrolled to.
+        XCTAssertTrue(app.buttons["homeNewSection.layout.row"].firstMatch.waitForExistence(timeout: 5), app.debugDescription)
+        for _ in 0..<8 where !style.isHittable { app.swipeUp() }
+        XCTAssertTrue(style.isHittable, app.debugDescription)
         style.tap()
         let addButton = app.buttons["homeSection.add"].firstMatch
         XCTAssertTrue(addButton.waitForExistence(timeout: 5), app.debugDescription)
