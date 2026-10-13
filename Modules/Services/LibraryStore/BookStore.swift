@@ -256,19 +256,25 @@ class BookStore: ObservableObject, BookProvider {
     /// (`OffShelfReadRecords`). Nil for a store on any shelf but the app's own, which then
     /// leaves no names behind.
     private let offShelfReadRecordsDefaults: UserDefaults?
+    /// Where opening a book records its genres for 為你推薦 (Discovery Phase 7a-2). Nil for a
+    /// store on any shelf but the app's own.
+    private let readingGenres: ReadingGenreRecorder?
 
     /// - Parameter legacyReaderSettingsDefaults: where builds before
     ///   `BookReaderSettingsStore` kept the fixed-page reading mode. Only the app's own
     ///   store passes one; a store opened on any other shelf must not claim those keys.
     /// - Parameter offShelfReadRecordsDefaults: where removed books leave their names.
     ///   Only the app's own store passes one, so a test's shelf never writes the app's list.
+    /// - Parameter readingGenres: where opened books' genres go; only the app's own store passes one.
     init(
         metadataFileURL: URL = BookStore.booksMetaFileURL,
         legacyReaderSettingsDefaults: UserDefaults? = nil,
-        offShelfReadRecordsDefaults: UserDefaults? = nil
+        offShelfReadRecordsDefaults: UserDefaults? = nil,
+        readingGenres: ReadingGenreRecorder? = nil
     ) {
         self.metadataFileURL = metadataFileURL
         self.offShelfReadRecordsDefaults = offShelfReadRecordsDefaults
+        self.readingGenres = readingGenres
         readerSettings = BookReaderSettingsStore(
             fileURL: metadataFileURL.deletingPathExtension().appendingPathExtension("reader-settings.json")
         )
@@ -995,6 +1001,7 @@ class BookStore: ObservableObject, BookProvider {
         // Opening the book counts as acknowledging any new chapters.
         records[idx].hasNewChapterUpdate = false
         saveMeta()
+        readingGenres?.bookOpened(records[idx], metadata: importedMetadata, sources: .shared)
     }
 
     /// 從繼續閱讀移除 (unified library 5d-3c): out of 繼續閱讀 until the book is opened again.
