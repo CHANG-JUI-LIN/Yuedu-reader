@@ -46,8 +46,7 @@ private struct HomeSectionFormHost: View {
 extension HomeModel {
     /// The form's preview: a home of its own, served by the same sources as the home.
     static func preview(shelf: BookStore) -> HomeModel {
-        HomeModel(providers: { SourceProviderRegistry.shared.homeProviders(shelf: shelf) },
-                  waitForSources: { await BookSourceStore.shared.waitUntilLoaded() })
+        live(shelf: shelf)
     }
 }
 

@@ -67,9 +67,7 @@ private struct ExploreHomeRoot: View {
     init(store: BookStore, browser: BrowserState) {
         self.store = store
         self.browser = browser
-        _model = StateObject(wrappedValue: HomeModel(
-            providers: { SourceProviderRegistry.shared.homeProviders(shelf: store) },
-            waitForSources: { await BookSourceStore.shared.waitUntilLoaded() }))
+        _model = StateObject(wrappedValue: HomeModel.live(shelf: store))
     }
 
     // MARK: State

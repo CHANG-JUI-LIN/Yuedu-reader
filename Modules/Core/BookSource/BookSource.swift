@@ -401,7 +401,7 @@ struct BookSource: Identifiable, Codable {
 
 // MARK: - Search Results / Book Info
 
-struct OnlineBook: Identifiable, Sendable {
+struct OnlineBook: Identifiable, Codable, Sendable {
     var id = UUID()
     var name: String
     var author: String
