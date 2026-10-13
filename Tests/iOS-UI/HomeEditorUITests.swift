@@ -51,6 +51,15 @@ final class HomeEditorUITests: XCTestCase {
         return app
     }
 
+    /// 熱門's own copy of `card`, the first below its header: 為你推薦 (Phase 7a-4), above it,
+    /// can hold the same book.
+    @MainActor
+    private func popularCard(_ app: XCUIApplication, under header: XCUIElement) throws -> XCUIElement {
+        let top = header.frame.maxY
+        return try XCTUnwrap(app.buttons.matching(identifier: card).allElementsBoundByIndex
+            .filter { $0.frame.minY >= top }.min { $0.frame.minY < $1.frame.minY }, app.debugDescription)
+    }
+
     @MainActor
     private func attach(_ app: XCUIApplication, _ name: String) {
         let attachment = XCTAttachment(screenshot: app.screenshot())
@@ -101,11 +110,11 @@ final class HomeEditorUITests: XCTestCase {
     /// 5d-3: 呈現方式, from the same long press, redraws the section: 圖文資訊清單 gives each book
     /// the width of the screen, and 顯示排名 puts its rank first in what VoiceOver reads.
     @MainActor
-    func testLongPressChangesTheLayout() {
+    func testLongPressChangesTheLayout() throws {
         let app = launchExplore()
         let header = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@ AND label CONTAINS %@",
                                                       "home.row.header.", listTitle)).firstMatch
-        let book = app.buttons[card].firstMatch
+        var book = try popularCard(app, under: header)
         XCTAssertLessThan(book.frame.width, app.frame.width / 2, "橫向單排書架 shows several books to a screen")
 
         header.press(forDuration: 1.0)
@@ -117,6 +126,7 @@ final class HomeEditorUITests: XCTestCase {
         attach(app, "home-section-layouts")
         list.tap()
         XCTAssertTrue(book.waitForExistence(timeout: 5))
+        book = try popularCard(app, under: header)
         XCTAssertGreaterThan(book.frame.width, app.frame.width * 0.8, app.debugDescription)
         XCTAssertFalse(book.label.first?.isNumber ?? true, "an unranked list reads no rank")
         attach(app, "home-section-list")
@@ -136,11 +146,10 @@ final class HomeEditorUITests: XCTestCase {
     /// Decision 37: 精選 draws one book to a page, the whole card on screen with the next one
     /// showing past the edge; a swipe brings the next book in.
     @MainActor
-    func testLongPressChoosesFeatured() {
+    func testLongPressChoosesFeatured() throws {
         let app = launchExplore()
         let header = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@ AND label CONTAINS %@",
                                                       "home.row.header.", listTitle)).firstMatch
-        let book = app.buttons[card].firstMatch
         header.press(forDuration: 1.0)
         let layouts = app.buttons["呈現方式"].firstMatch
         XCTAssertTrue(layouts.waitForExistence(timeout: 5), app.debugDescription)
@@ -149,7 +158,8 @@ final class HomeEditorUITests: XCTestCase {
         XCTAssertTrue(featured.waitForExistence(timeout: 5), app.debugDescription)
         featured.tap()
 
-        XCTAssertTrue(book.waitForExistence(timeout: 5))
+        XCTAssertTrue(app.buttons[card].firstMatch.waitForExistence(timeout: 5))
+        let book = try popularCard(app, under: header)
         let screen = app.frame
         XCTAssertGreaterThan(book.frame.width, screen.width * 0.6, "one book to a page: \(book.frame)")
         XCTAssertGreaterThanOrEqual(book.frame.minX, 0, "the first page is whole: \(book.frame)")

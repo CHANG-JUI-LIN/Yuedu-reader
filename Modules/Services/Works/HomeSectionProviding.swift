@@ -32,10 +32,14 @@ protocol HomeSectionProviding: SourceProvider {
     /// What `section` reads besides itself, as a key: a row whose key changed loads again.
     /// 為你推薦 reads the home's categories; every other section reads only itself (nil).
     func inputsKey(for section: HomeSection) -> String?
+    /// Whether its rows read the home's library rows (為你推薦): such a row loads again when a
+    /// library row comes or goes, e.g. 顯示在最新 turned off.
+    var readsHomeLibraryRows: Bool { get }
 }
 
 extension HomeSectionProviding {
     func inputsKey(for section: HomeSection) -> String? { nil }
+    var readsHomeLibraryRows: Bool { false }
 }
 
 enum HomeRow {

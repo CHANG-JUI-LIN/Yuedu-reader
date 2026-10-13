@@ -78,7 +78,7 @@ final class HomeModel: ObservableObject {
     ///   section's new title and layout (呈現方式, 5d-3).
     /// - A row whose content changed under the same id starts again at once if it had been
     ///   asked for: its view is the same view, so nothing else would ask again. 為你推薦's content
-    ///   includes the home's categories (`inputsKey`).
+    ///   includes the home's categories (`inputsKey`) and its library rows (`readsHomeLibraryRows`).
     /// - `hiddenFromLatest`: the libraries 聚合設定's 顯示在最新 turns off (5d-3f). They get
     ///   no 最新 row, so they are not asked for one.
     func sync(with page: HomePage, hiddenFromLatest: Set<SourceInstanceKey> = []) async {
@@ -88,6 +88,7 @@ final class HomeModel: ObservableObject {
         var built: [Row] = []
         var restarted: [String] = []
         var servedBy: [String: any HomeSectionProviding] = [:]
+        var planned: [(section: HomeSection, providers: [any HomeSectionProviding])] = []
         for section in page.sections where section.isEnabled {
             if case .myLibrary = section.binding { continue }
             let serving: [any HomeSectionProviding]
@@ -99,11 +100,18 @@ final class HomeModel: ObservableObject {
             if serving.isEmpty, section.binding.isKnown, !isLatest(section) {
                 AppLogger.cache("⟐ home section has no source to serve it", context: ["section": section.id.uuidString])
             }
+            planned.append((section, serving))
+        }
+        let libraryRows = planned.flatMap { section, providers in
+            providers.filter { Self.isLibrary($0.instance) }.map { Self.rowID(section: section.id, source: $0.instance) }
+        }.joined(separator: "\u{1E}")
+        for (section, serving) in planned {
             for provider in serving {
                 guard let policy = provider.loadPolicy(for: section) else { continue }
                 let id = Self.rowID(section: section.id, source: provider.instance)
                 servedBy[id] = provider
-                let inputsKey = provider.inputsKey(for: section)
+                var inputsKey = provider.inputsKey(for: section)
+                if provider.readsHomeLibraryRows { inputsKey = (inputsKey ?? "") + "\u{1D}" + libraryRows }
                 if var kept = existing[id], kept.section.loadsSameContent(as: section), kept.policy == policy,
                    kept.inputsKey == inputsKey {
                     kept.section = section
@@ -197,6 +205,7 @@ final class HomeModel: ObservableObject {
             // The row may have been removed or changed while this loaded.
             guard self.row(rowID)?.section.loadsSameContent(as: row.section) == true else { return }
             setState(.loaded(entries), of: rowID)
+            if Self.isLibrary(row.source) { restartLibraryReaders() }
         } catch is CancellationError {
             setState(.idle, of: rowID)
         } catch {
@@ -205,6 +214,16 @@ final class HomeModel: ObservableObject {
             ])
             guard self.row(rowID)?.section.loadsSameContent(as: row.section) == true else { return }
             setState(.failed(error.localizedDescription), of: rowID)
+        }
+    }
+
+    /// A library row loaded after the rows that read the library rows (為你推薦) had finished,
+    /// e.g. one brought back on the home, whose view asks for it after the sync: they read again.
+    /// One still on its way reads it anyway (`settledLibraryEntries`).
+    private func restartLibraryReaders() {
+        for row in rows where providers[row.id]?.readsHomeLibraryRows == true
+            && requested.contains(row.id) && !active.contains(row.id) {
+            start(row)
         }
     }
 
@@ -232,20 +251,20 @@ extension HomeModel: ForYouHomeRows {
             await withCheckedContinuation { settleWaiters.append($0) }
         }
         return rows.compactMap { row in
-            guard Self.isLibrary(row), case .loaded(let entries) = row.state else { return nil }
+            guard Self.isLibrary(row.source), case .loaded(let entries) = row.state else { return nil }
             return ForYouLibraryRow(source: row.source, entries: entries)
         }
     }
 
-    private static func isLibrary(_ row: Row) -> Bool {
-        switch row.source.type {
+    private static func isLibrary(_ source: SourceInstanceKey) -> Bool {
+        switch source.type {
         case .opds, .webDAV, .calibre, .gutenberg, .aozora: return true
         case .library, .bookSource, .bibliographic: return false
         }
     }
 
     private var libraryRowsSettled: Bool {
-        !rows.contains { $0.policy == .withHome && Self.isLibrary($0) && active.contains($0.id) }
+        !rows.contains { $0.policy == .withHome && Self.isLibrary($0.source) && active.contains($0.id) }
     }
 
     private func resumeSettleWaiters() {

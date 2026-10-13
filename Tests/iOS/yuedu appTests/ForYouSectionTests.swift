@@ -88,6 +88,26 @@ struct ForYouSectionTests {
         #expect(reopened.page?.sections.contains { $0.binding == .forYou } == false)
     }
 
+    @Test("加入分類 adds or brings back a category; 移除 takes its own away or leaves the home's out")
+    func addAndRemove() {
+        let hot = ExploreCategoryReference(sourceURL: "a", title: "熱門", url: "/hot")
+        let end = ExploreCategoryReference(sourceURL: "b", title: "完本", url: "/end")
+        let home = [HomeSection(layout: .row, binding: .sourceCategories([hot]))]
+        var forYou = HomeSection(layout: .row, binding: .forYou)
+
+        forYou.removeForYouCategory(hot, homeSections: home)
+        #expect(ForYouInputs.categories(on: home, for: forYou).isEmpty)
+        forYou.addForYouCategory(hot, homeSections: home)
+        #expect(ForYouInputs.categories(on: home, for: forYou) == [hot])
+        #expect(forYou.parameters.isEmpty, "bringing a home category back stores nothing")
+
+        forYou.addForYouCategory(end, homeSections: home)
+        #expect(ForYouInputs.categories(on: home, for: forYou) == [hot, end])
+        forYou.removeForYouCategory(end, homeSections: home)
+        #expect(ForYouInputs.categories(on: home, for: forYou) == [hot])
+        #expect(forYou.parameters.isEmpty)
+    }
+
     @Test("its inputs: the home's categories and 「最新」's, its own, less the left out")
     func inputs() {
         let hot = ExploreCategoryReference(sourceURL: "a", title: "熱門", url: "/hot")
