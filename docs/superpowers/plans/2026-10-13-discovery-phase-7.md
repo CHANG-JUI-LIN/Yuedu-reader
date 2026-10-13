@@ -164,3 +164,8 @@ Measured with `ForYouMeasurementTests` (iOS 27 simulator, Debug): a home of 5 so
 - **Inputs changing during a load.** A library row that changes while 為你推薦 is loading restarted nothing (the row was active), and the stale result was then shown. `HomeModel` now marks such a row `rerun` and starts it again when the load ends, and a load's result is applied only if the row's `inputsKey` is still the one it started with (`isCurrent`). Test: `HomeModelTests.inputsChangeDuringALoad`.
 - Known edge, left: a library row that finishes loading after 為你推薦 read the settled library entries but before its own load ends is not picked up until the next sync (pull to refresh, or the home changing).
 - Tests: `DiscoverFirstPagesTests` (`answersFromTheStore`, `olderPagesFetchAgain`; `primingPerSync` asks a third category), `ForYouProviderTests.stale` refreshes `firstPages` as `HomeModel.reload` does, `ForYouMeasurementTests` (`requests`, `largeRanking`).
+
+### Phase 7a acceptance (2026-10-13, main 623fb96b)
+
+- UI, iOS 27 and iOS 17.5: ForYouSection, RemoteLibraryNavigation, PublicLibraryStorefront, ExploreHome, HomeEditor, AggregationSettings, LibraryTab, DiscoverDisplaySettings, RemoteLibrarySettings, BookSourceManagement, PublicLibrarySearchTab — 43 tests each (5 skipped by design). iOS 27 all passed. iOS 17.5 failed one: `ForYouSectionUITests.testFormAddsAndRemovesACategory` tapped the 設定 *tab*, which iOS 17 lists before the header menu's 設定; the test now takes the button outside the tab bar (48138941) and passes on both, with HomeEditor, 11 of 11 each.
+- `AggregationSettingsUITests.testLibraryOrder`, flaky in an earlier run, passed on both.
