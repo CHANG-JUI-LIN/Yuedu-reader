@@ -13,12 +13,17 @@ struct DiscoverShowcaseView: View {
     /// Opens a category that is a web page rather than a book list.
     var onOpenPage: ((String) -> Void)?
 
+    /// Which categories are charts follows these words; read so a change redraws.
+    @AppStorage(ExploreSettings.rankedKeywordsKey)
+    private var rankedKeywords = ExploreSettings.encodeKeywords(ExploreSettings.defaultRankedKeywords)
+
     /// Categories that open a page (a source's `java.startBrowser` link).
     private var pageItems: [DiscoverCardItem] {
         discover.pageItems
     }
 
     var body: some View {
+        let _ = rankedKeywords
         ScrollView {
             LazyVStack(alignment: .leading, spacing: DSSpacing.xl) {
                 if !discover.filters.isEmpty || (onOpenPage != nil && !pageItems.isEmpty) {
@@ -300,6 +305,14 @@ struct DiscoverSectionView: View {
     let onAppearLoad: () -> Void
     let onRetry: () -> Void
 
+    /// 發現頁顯示設定's 橫滑展示數; 0 shows the whole first page.
+    @AppStorage(ExploreSettings.shelfBookCountKey)
+    private var shelfBookCount = ExploreSettings.defaultShelfBookCount
+
+    private var shelfBooks: [DiscoverBookDisplay] {
+        shelfBookCount > 0 ? Array(section.books.prefix(shelfBookCount)) : section.books
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: DSSpacing.sm) {
             DiscoverSectionHeader(section: section, source: source)
@@ -323,7 +336,7 @@ struct DiscoverSectionView: View {
             // DiscoverFeaturedCard), so lazily materializing them can't change the
             // shelf's height.
             LazyHStack(alignment: .top, spacing: DSSpacing.md) {
-                ForEach(section.books) { display in
+                ForEach(shelfBooks) { display in
                     NavigationLink(value: ExploreNavigationRoute.book(display.book)) {
                         DiscoverFeaturedCard(display: display, section: section)
                     }
@@ -391,9 +404,10 @@ private struct DiscoverChartColumn: View {
     /// height tracks only the columns built so far AND anything taller draws outside
     /// it: a full column next to an empty 「暫無發現內容」 one once rendered straight
     /// over the section below. Every column must therefore be the same height —
-    /// `prefix` and the reserved height stay driven by this one value, the same for every
-    /// column.
-    private let reservedRows = ExploreSettings.chartBookCount
+    /// `prefix` and the reserved height stay driven by this one value — 發現頁顯示設定's
+    /// 豎排展示數, the same for every column.
+    @AppStorage(ExploreSettings.chartBookCountKey)
+    private var reservedRows = ExploreSettings.defaultChartBookCount
 
     /// One chart row at default text size: the cover plus `DSSpacing.sm` above and
     /// below. `@ScaledMetric` keeps it in step with Dynamic Type instead of clipping.
@@ -752,6 +766,80 @@ struct DiscoverCategoryBookList: View {
                 paging.fail((error as NSError).localizedDescription)
             }
         }
+    }
+}
+
+// MARK: - List layout
+
+/// A source's page as Legado lays it out (發現頁顯示設定 › 佈局 › 列表): its filters and
+/// page links, its categories as chips along the top, and the chosen category's books as
+/// a list of cards below.
+struct DiscoverListLayoutView: View {
+    @ObservedObject var discover: DiscoverViewModel
+    /// Opens a category that is a web page rather than a book list.
+    var onOpenPage: ((String) -> Void)?
+
+    /// The chosen category, by the key that survives a reload; the first until one is chosen.
+    @State private var selectedKey: String?
+
+    private var selectedSection: DiscoverShowcaseSection? {
+        discover.sections.first { $0.item.stableKey == selectedKey } ?? discover.sections.first
+    }
+
+    private var pageItems: [DiscoverCardItem] {
+        onOpenPage == nil ? [] : discover.pageItems
+    }
+
+    var body: some View {
+        VStack(spacing: 0) {
+            if !discover.filters.isEmpty || !pageItems.isEmpty {
+                DiscoverControlsRow(
+                    discover: discover,
+                    pageItems: pageItems,
+                    onOpenPage: { onOpenPage?($0) }
+                )
+                .padding(.top, DSSpacing.sm)
+            }
+            if !discover.sections.isEmpty {
+                categoryChips
+            }
+            if discover.isLoadingItems && discover.sections.isEmpty {
+                ProgressView()
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else if let section = selectedSection, let source = discover.selectedSource {
+                DiscoverCategoryBookList(
+                    section: section,
+                    source: source,
+                    onRefresh: { discover.reload(forceRefresh: true) }
+                )
+                // A reload rebuilds the sections; their books start again from page one.
+                .id(section.id)
+            } else {
+                ScrollView {
+                    DiscoverEmptyState(discover: discover)
+                }
+                .refreshable { discover.reload(forceRefresh: true) }
+            }
+        }
+    }
+
+    private var categoryChips: some View {
+        ScrollView(.horizontal) {
+            HStack(spacing: DSSpacing.sm) {
+                ForEach(discover.sections) { section in
+                    DSChip(
+                        title: section.title,
+                        isSelected: section.id == selectedSection?.id,
+                        minWidth: DSLayout.capsuleControlMinWidth
+                    ) {
+                        selectedKey = section.item.stableKey
+                    }
+                }
+            }
+            .padding(.horizontal, DSSpacing.lg)
+            .padding(.vertical, DSSpacing.sm)
+        }
+        .scrollIndicators(.hidden)
     }
 }
 

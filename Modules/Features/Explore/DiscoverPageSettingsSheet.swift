@@ -4,7 +4,8 @@ import SwiftUI
 /// chips, a card for each group the source draws (☆ 排行榜 ☆), to pick the ones the page
 /// shows. With none picked the page shows every category; 全部顯示 clears the pick. Under
 /// 快捷操作 with it sit the source's own controls — its buttons, inputs and toggles, run
-/// as legado-E and MD3 run them — and its page links.
+/// as legado-E and MD3 run them — and its page links. 顯示設定 in its bar holds how every
+/// source's page lays out and loads.
 struct DiscoverPageSettingsSheet: View {
     @ObservedObject var discover: DiscoverViewModel
     /// Opens one of the source's page links; the source's page shows it once the sheet
@@ -93,6 +94,15 @@ struct DiscoverPageSettingsSheet: View {
                     Button { dismiss() } label: {
                         Label(localized("關閉"), systemImage: "xmark")
                     }
+                }
+                // How every source's page lays out and loads (decision 31).
+                ToolbarItem(placement: .topBarTrailing) {
+                    NavigationLink {
+                        DiscoverDisplaySettingsView()
+                    } label: {
+                        Label(localized("顯示設定"), systemImage: "slider.horizontal.3")
+                    }
+                    .accessibilityIdentifier("discover.displaySettings")
                 }
             }
             .alert(

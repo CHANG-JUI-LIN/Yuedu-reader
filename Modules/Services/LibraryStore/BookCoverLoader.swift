@@ -30,6 +30,11 @@ enum BookCoverLoader {
     /// footprint by ~5×.
     private static let maxCoverPixelSize = CoverPixelSize.standard.longEdge
 
+    /// 網路設定 › 封面並發數: at most this many covers downloading at once, anywhere in the
+    /// app; 0 — the default, and how it always was — sets no limit beyond URLSession's own.
+    static let downloadLimitKey = "coverDownloadLimit"
+    static var downloadLimit: Int { UserDefaults.standard.integer(forKey: downloadLimitKey) }
+
     /// Headers for a cover request: browser UA + Referer (the source's base URL),
     /// with the source's own header rule layered on top (it may override the UA).
     ///
@@ -110,11 +115,14 @@ enum BookCoverLoader {
 
         let data: Data
         let response: URLResponse
+        await CoverDownloadGate.shared.enter(limit: downloadLimit)
         do { (data, response) = try await (session ?? .shared).data(for: request) }
         catch {
+            await CoverDownloadGate.shared.leave()
             AppLogger.network("⟐ cover request failed", error: error, context: ["url": String(urlString.prefix(300))])
             return nil
         }
+        await CoverDownloadGate.shared.leave()
         if let http = response as? HTTPURLResponse, !(200..<300).contains(http.statusCode) {
             AppLogger.network(
                 "⟐ cover request rejected",

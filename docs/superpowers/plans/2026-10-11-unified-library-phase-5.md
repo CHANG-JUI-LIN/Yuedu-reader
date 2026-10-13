@@ -1827,3 +1827,30 @@ Not split (one meaning everywhere): 確認刪除 (three alert titles), 是／否
   - UI, iOS 27 and iOS 17.5: `LibraryTabUITests` (3), `RemoteLibrarySettingsUITests` (3, one skipped as before), `BookSourceManagementUITests` (2, one skipped as before) and `HomeEditorUITests.testSubscriptionArticles` passed.
   - Screenshots checked against the reference: the root's sections and cards, a group's page.
 - **Next:** 5h-3, a book source's discover-page display settings (列表／雜誌, 豎排榜單關鍵詞, 展示數量, 預加載 from the old keys), then 封面並發數 in the network settings.
+
+#### What landed — 5h-3: a source's discover-page display settings, and 封面並發數 in 網路設定 (decision 31, 2026-10-13)
+
+- **Branch `library/discover-settings`.** Decision 31 brings back four of the settings 5d-1b deleted with 探索設定, on the page that owns them, and moves 封面並發數 to the network settings.
+- **How they came back:** 5d-1b's deletions were reverse-applied (`git diff ed0c5602 ed0c5602^`) to the files unchanged since: the magazine layout's chart rows, shelf prefix and the list layout (`DiscoverShowcaseView`), the page's layout switch (`ExploreSourcePage`), `CoverDownloadGate` and `BookCoverLoader`'s gate. Their comments now name 發現頁顯示設定 and 網路設定 instead of 探索設定.
+- **The same keys, so a reader's old choices hold:** `explore.sourcePageLayout`, `explore.rankedKeywords`, `explore.chartBookCount`, `explore.shelfBookCount`, `explore.preloadCount` and `coverDownloadLimit`, with their old defaults (雜誌; the twelve chart words; 4; 全部; 0; 不限制). Nothing was migrated or reset.
+- **Where (`DiscoverDisplaySettingsView`, 顯示設定):** a source's 發現頁設定 sheet has 顯示設定 in its bar (`slider.horizontal.3`), pushing:
+  - 佈局, 列表 or 雜誌; its footer says the page's settings apply to every source's discover page;
+  - for 雜誌 only: 豎排榜單關鍵詞 (add, swipe to delete), 恢復預設關鍵詞, 榜單展示數量 (豎排展示數, 橫滑展示數) and 預加載 (預加載數量).
+  - They are global defaults, as decision 31 says; no per-source override, and the reader is never asked to set each source.
+  - The sheet's categories, 快捷操作 and the source's own controls are unchanged.
+- **預加載** (`DiscoverViewModel.loadSection`): coming to a category also queues that many of the never-tried categories after it, on the same one-at-a-time queue, so a larger number is a longer queue, never more requests at once. A failed category waits for its own retry.
+- **Chart keywords:** `DiscoverViewModel.sectionStyle(for:rankedKeywords:)` takes the list, so the test does not depend on stored defaults; the page reads it each time, so an edit shows at once.
+- **封面並發數** is a section of 網路設定 (`network.coverDownloadLimit`), with its old footer: the shelf's and the detail pages' covers count too.
+- **Strings:** the old ones from `ed0c5602^` in all five languages, plus 顯示設定 and the 佈局 footer's new sentence.
+- **Not test-first:** the restore came first, then the tests.
+- **Tests:**
+  - Unit, iOS 27: `ExploreSettingsTests` (charts follow the given keywords; keywords round-trip one per line; every setting keeps its old key; the cover gate queues past its limit and does not with none) and the related suites: 38 tests in 6 suites passed.
+  - UI, new: `DiscoverDisplaySettingsUITests`, on a one-source fixture library:
+    - `testDisplaySettingsFromTheSourcePage`: 資源庫 → 所有來源配置 → the source → 發現頁設定 → 顯示設定; the 佈局 row, 豎排榜單關鍵詞 with 榜, then (scrolled) 榜單展示數量 and 預加載.
+    - `testCoverDownloadLimitInNetworkSettings`: 設定 → 網路設定 has 封面並發數.
+    - First failure, in the test: 預加載 is below the twelve keywords and the form builds rows only near the screen; the test swipes until it exists.
+  - UI, iOS 27: both passed. Screenshots checked: the page's top (佈局, its footer, the keywords) and its foot (恢復預設關鍵詞, the counts, 預加載).
+  - UI, iOS 17.5: `DiscoverDisplaySettingsUITests` (2) and `LibraryTabUITests` (3) passed.
+- **Checked, as decision 31 asks before 5h removes anything:** the custom explore pages moved into 首頁配置 in 5d-4 (`HomePageStore.moveCustomPages`), still chosen and edited from 探索; `custom_explore_pages.json` stays on disk for older builds. Nothing here removes them.
+- **Left of decision 31:** 資源庫's ••• holds only the layout choices; decision 31 allows 新增來源 and 來源管理 there too (5h-4).
+- **Next:** 5h-4, 資源庫's •••.
