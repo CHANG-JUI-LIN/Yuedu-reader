@@ -1744,3 +1744,44 @@ Not split (one meaning everywhere): 確認刪除 (three alert titles), 是／否
     - Rerun alone, a sample of the app while it waited showed the main thread idle, answering the test's accessibility queries. It passed.
     - The whole suite then passed again (8/8). The kill did not recur, and its cause is not known.
   - `DetailReaderBackSwipeUITests`, iOS 27, run before the sample change: the detail tests passed. The 9 page-turn gesture tests and the manga tests failed as recorded before Phase 5 (test-order state).
+
+#### What landed — 5h-1: the 資源庫 tab (decisions 30 and 31, 2026-10-13)
+
+- **Branch `explore/library-tab`.** The tabs are 書架・探索・資源庫・搜尋・設定. RSS is no longer a tab.
+- **Maintainer's answers (2026-10-13, by option):**
+  - 資源庫 can be hidden, and is shown by default.
+  - RSS's unread count moves to 資源庫's RSS 訂閱 row.
+  - The change is told by a card at the top of 資源庫 that the reader closes.
+  - 資源庫 takes no custom tab icon: it uses `building.columns.fill`.
+- **Tabs (`RootTabItem`):**
+  - `RootTabItem.tabs` is the drawn order. `.rss` stays in the enum, never drawn, so a reader's custom RSS icon and the saved lists and theme packs naming it still decode.
+  - **Migration of `yd_root_tab_visible_ids`** (and a theme's `visibleTabIDs`): a saved list predates 資源庫, so a list that does not name it shows it. Hiding it writes `-library` into the list, so it stays hidden. `RootTabItem.addedLater` names the tabs this applies to. The stored value is not rewritten until the reader changes a tab; `rss` in an old list is ignored.
+  - The 書架-or-another-content-tab rule counts 資源庫 as a content tab.
+- **資源庫's root (`LibraryTabRoot`):** a `List` in one `NavigationStack` with 探索's destinations.
+  - The card: 所有來源都在這裡, and what moved. Closing it is stored (`library.tabNoticeDismissed`).
+  - 公有書庫: Gutenberg and 青空文庫, where they are offered, each pushing its own page (`LibraryHomePageView`, the page 範圍 showed until decision 36; moved out of `ExploreHome`, unchanged).
+  - 遠端書庫: each connection pushes its catalog, as 探索 opened it; then 管理遠端書庫.
+  - 來源配置: 管理來源配置 pushes the source list.
+  - RSS 訂閱 pushes `RSSListView` with the unread badge.
+  - The large title minimizes the bar on scroll, as 探索's and 設定's do.
+- **Moved out:**
+  - 設定 loses 管理來源配置 and 遠端書庫. Its 來源配置管理 header stays over its remaining rows.
+  - `RSSListView` is a pushed page now: inline title 「RSS 訂閱」, no stack of its own.
+  - 探索's 訂閱的最新文章 查看全部 pushes RSS 訂閱 inside 探索 (before, it switched to the RSS tab).
+  - 探索 and 資源庫 share one `BrowserState`, owned by `ContentView`, so the browser keeps its tabs whichever opens it.
+  - `ExploreHome` loses the unreachable library-page code (`libraryHome`, `placePage`, `scopeKey`…); `HomeRowHost` is shared with the library page.
+- **資源庫's background** is the app surface (`themedAppSurface`), the same as 設定's. The library pages keep 探索's page background.
+- **Docs:** CLAUDE.md, `docs/design.md` and both `yuedu-ios-design` skills name `LibraryTabRoot` (資源庫) where they named `RSSListView` (RSS) as a tab root. This repo has no AGENTS.md.
+- **Not in this step (5h's next slices):** 常用書源 and 所有書源 on the root (grid or list, columns from `explore.showsGrid` / `explore.gridColumnCount`), the root's source search, Legado's long-press actions, a book source's discover-page display settings (列表／雜誌, 豎排榜單關鍵詞, 展示數量, 預加載, reading the old keys), and 封面並發數 in the network settings. Custom explore pages are untouched here.
+- **`PublicLibraryLiveUITests.testAozoraWorkDetailOrder`** is un-skipped and now reaches 青空文庫 through 資源庫 (`library.public.builtin.aozora`). It needs the live-network environment flag, so it was not run here.
+- **Debug only:** `-reset-library-notice` shows the card again for a UI test. A `-library.tabNoticeDismissed NO` launch argument would win over the close button's write.
+- **Tests:**
+  - Test-first: `RootTabCustomizationTests`' new tests (the tab order; 資源庫 joins an old list; hiding it sticks; a custom RSS icon still decodes) were written first and failed to compile, as expected.
+  - Unit, iOS 27: `RootTabCustomizationTests` and `AppearanceThemeWriteBackTests` (which now expects 資源庫 in a theme's list) and the related suites: 36 tests passed.
+    - The "at least one content tab" test first failed: 資源庫 is a content tab, so a list naming only 設定 kept it. Its input now hides 資源庫 with `-library`.
+  - UI, new: `LibraryTabUITests.testTabsAndRows` (the five tab names; the card's 關閉 closes it; Gutenberg, RSS 訂閱, 來源配置管理 and 遠端書庫 open; 設定 has neither row).
+    - First runs failed: the 搜索 tab's zh-Hant label is 搜尋; and the card did not close, since a `-library.tabNoticeDismissed` launch argument outranks the app's write. Fixed with `-reset-library-notice`.
+  - UI, repointed: `RemoteLibrarySettingsUITests` and `BookSourceManagementUITests` enter through 資源庫; `HomeEditorUITests.testSubscriptionArticles` expects RSS 訂閱 pushed in 探索; `LocalizedScreenshotUITests` finds 設定 as the last tab.
+  - UI, iOS 27: `LibraryTabUITests`, `HomeEditorUITests.testSubscriptionArticles`, `RemoteLibrarySettingsUITests`, `BookSourceManagementUITests`, `ExploreHomeUITests` and `PublicLibraryStorefrontUITests` passed. Screenshots checked: the card, the four groups, the five tabs; Gutenberg's page pushed with its inline title.
+  - UI, iOS 17.5: the same set, 21 tests, passed (5 skipped as before: environment-gated).
+- **Next:** 5h-2, 常用書源 and 所有書源 on 資源庫's root, with the root's source search.

@@ -96,8 +96,8 @@ final class LocalizedScreenshotUITests: XCTestCase {
         if back.exists { back.tap() } else { app.buttons["reader_close_button"].tap() }
         Thread.sleep(forTimeInterval: 2.0)
 
-        // Settings is the second-to-last tab in the default tab order.
-        let settingsIndex = tabBar.buttons.count - 2
+        // Settings is the last tab in the default tab order (書架・探索・資源庫・搜尋・設定).
+        let settingsIndex = tabBar.buttons.count - 1
         if settingsIndex >= 0 {
             tabBar.buttons.element(boundBy: settingsIndex).tap()
             Thread.sleep(forTimeInterval: 2.0)

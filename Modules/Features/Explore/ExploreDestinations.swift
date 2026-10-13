@@ -61,6 +61,10 @@ private struct ExploreRouteDestinations: ViewModifier {
             BookSourceListView()
         case .aggregationSettings:
             AggregationSettingsView()
+        case .subscriptions:
+            RSSListView()
+        case .library(let key):
+            LibraryHomePageView(key: key)
         }
     }
 
@@ -108,12 +112,6 @@ enum ExploreItemTarget {
 /// An article of 訂閱的最新文章 (unified library 5g), by the id the RSS tab stores it under.
 struct SubscriptionArticleRoute: Hashable {
     let articleID: String
-}
-
-extension EnvironmentValues {
-    /// Switches to the RSS tab: 訂閱的最新文章's 查看全部 (Phase 5 plan, decision 29). Nil while
-    /// the reader hides that tab, so the section offers no 查看全部.
-    @Entry var openRSSTab: (@MainActor () -> Void)? = nil
 }
 
 enum ExplorePush: Hashable {
@@ -207,7 +205,7 @@ enum ExplorePlace {
         case .aozoraIndex(let kind):
             guard let aozoraIndex, let mode = AozoraBrowseMode(rawValue: kind) else { return nil }
             return .publicLibrary(.aozoraCatalog(mode, aozoraIndex))
-        // 訂閱的最新文章: the rest is the RSS tab, switched to (`openRSSTab`), not pushed.
+        // 訂閱的最新文章: the rest is RSS 訂閱 (`ExploreNavigationRoute.subscriptions`).
         case .myLibrary, .continueReading, .related, .nextInSeries, .subscriptionArticles, .unknown:
             return nil
         }

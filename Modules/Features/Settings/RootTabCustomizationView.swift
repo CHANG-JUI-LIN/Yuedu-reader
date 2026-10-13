@@ -27,7 +27,7 @@ struct RootTabCustomizationView: View {
             visibleTabsSection
             tabPresentationSection
 
-            ForEach(RootTabItem.allCases) { tab in
+            ForEach(RootTabItem.tabs) { tab in
                 iconSection(for: tab)
             }
         }
@@ -50,7 +50,7 @@ struct RootTabCustomizationView: View {
 
     private var visibleTabsSection: some View {
         Section {
-            ForEach(RootTabItem.allCases) { tab in
+            ForEach(RootTabItem.tabs) { tab in
                 if tab.isAlwaysVisible {
                     HStack {
                         Label(localized(tab.titleKey), systemImage: tab.defaultSystemImage)

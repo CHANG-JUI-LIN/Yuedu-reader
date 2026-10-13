@@ -500,10 +500,9 @@ final class HomeEditorUITests: XCTestCase {
         for _ in 0..<5 where !newest.isHittable { app.swipeUp() }
         attach(app, "home-subscription-row")
 
-        // 查看全部 is the RSS tab (decision 29), with the same feed in it.
+        // 查看全部 is RSS 訂閱 (decision 29), pushed since RSS left the tabs (5h).
         header.tap()
-        let rssTab = app.tabBars.buttons["RSS 訂閱"].firstMatch
-        wait(for: [expectation(for: NSPredicate(format: "isSelected == true"), evaluatedWith: rssTab)], timeout: 5)
+        XCTAssertTrue(app.navigationBars["RSS 訂閱"].waitForExistence(timeout: 5), app.debugDescription)
         attach(app, "home-subscription-show-all")
     }
 }

@@ -5,16 +5,31 @@ import UIKit
 enum RootTabItem: String, CaseIterable, Codable, Hashable, Identifiable {
     case bookshelf
     case explore
-    case rss
-    case settings
+    /// 資源庫 (Phase 5 plan, decisions 30 and 31): every library and source, RSS's feeds too.
+    case library
     case search
+    case settings
+    /// No longer a tab (decision 30): its feeds are in 資源庫. Kept so a reader's custom RSS
+    /// tab icon and the lists and theme packs naming it still decode; never drawn.
+    case rss
 
     var id: String { rawValue }
+
+    /// The tabs drawn, in order: 書架・探索・資源庫・搜尋・設定 (decision 30).
+    static let tabs: [RootTabItem] = [.bookshelf, .explore, .library, .search, .settings]
+
+    /// Tabs added after readers had saved which tabs they show. A saved list that does not name
+    /// one predates it, so the tab is shown; hiding it writes `hiddenMarker` into the list.
+    static let addedLater: [RootTabItem] = [.library]
+
+    /// What a saved list holds for a tab in `addedLater` the reader hid.
+    var hiddenMarker: String { "-" + rawValue }
 
     var titleKey: String {
         switch self {
         case .bookshelf: return "書架"
         case .explore: return "探索"
+        case .library: return "資源庫"
         case .rss: return "RSS 訂閱"
         case .settings: return "設定"
         case .search: return "搜索"
@@ -25,6 +40,7 @@ enum RootTabItem: String, CaseIterable, Codable, Hashable, Identifiable {
         switch self {
         case .bookshelf: return "books.vertical.fill"
         case .explore: return "safari.fill"
+        case .library: return "building.columns.fill"
         case .rss: return "newspaper.fill"
         case .settings: return "gearshape.fill"
         // No filled variant exists for the glass; this is the intended icon.
@@ -256,21 +272,36 @@ extension GlobalSettings {
     static let initialCustomRootTabIconSize = 28.0
 
     static var defaultRootTabVisibleIDs: [String] {
-        RootTabItem.allCases.map(\.rawValue)
+        RootTabItem.tabs.map(\.rawValue)
     }
 
+    /// The tabs shown, in `RootTabItem.tabs` order, then the markers of the later tabs hidden.
+    /// A tab added later that the list does not name is shown: the list predates it.
     static func sanitizedRootTabVisibleIDs(_ ids: [String]) -> [String] {
         let requested = Set(ids)
-        var visible = RootTabItem.allCases.filter { requested.contains($0.rawValue) }
+        let hidden = RootTabItem.addedLater.filter { requested.contains($0.hiddenMarker) && !requested.contains($0.rawValue) }
+        var visible = RootTabItem.tabs.filter { tab in
+            requested.contains(tab.rawValue) || (RootTabItem.addedLater.contains(tab) && !hidden.contains(tab))
+        }
         if !visible.contains(.settings) {
             visible.append(.settings)
         }
         if !visible.contains(where: \.isContentTab) {
             visible.insert(.bookshelf, at: 0)
         }
-        return RootTabItem.allCases
-            .filter { tab in visible.contains(tab) }
-            .map(\.rawValue)
+        return RootTabItem.tabs.filter { visible.contains($0) }.map(\.rawValue)
+            + hidden.filter { !visible.contains($0) }.map(\.hiddenMarker)
+    }
+
+    /// `ids` with `tab` shown or hidden; a later tab hidden leaves its marker.
+    static func updatedRootTabVisibleIDs(_ ids: [String], setting tab: RootTabItem, visible: Bool) -> [String] {
+        var ids = ids.filter { $0 != tab.rawValue && $0 != tab.hiddenMarker }
+        if visible {
+            ids.append(tab.rawValue)
+        } else if RootTabItem.addedLater.contains(tab) {
+            ids.append(tab.hiddenMarker)
+        }
+        return sanitizedRootTabVisibleIDs(ids)
     }
 
     static func sanitizedRootTabIconSize(_ value: Double) -> Double {
@@ -293,15 +324,7 @@ extension GlobalSettings {
 
     func setRootTab(_ tab: RootTabItem, visible: Bool) {
         guard !tab.isAlwaysVisible else { return }
-        var ids = rootTabVisibleIDs
-        if visible {
-            if !ids.contains(tab.rawValue) {
-                ids.append(tab.rawValue)
-            }
-        } else {
-            ids.removeAll { $0 == tab.rawValue }
-        }
-        rootTabVisibleIDs = Self.sanitizedRootTabVisibleIDs(ids)
+        rootTabVisibleIDs = Self.updatedRootTabVisibleIDs(rootTabVisibleIDs, setting: tab, visible: visible)
     }
 
     func fallbackRootTab(for tab: RootTabItem) -> RootTabItem {

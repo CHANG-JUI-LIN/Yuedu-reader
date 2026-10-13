@@ -16,8 +16,10 @@ struct RootTabCustomizationTests {
 
     @Test("at least one content tab remains visible")
     func atLeastOneContentTabRemainsVisible() {
+        // 資源庫 hidden too: a list naming none of it would show it (`libraryJoinsOldLists`).
         let ids = GlobalSettings.sanitizedRootTabVisibleIDs([
-            RootTabItem.settings.rawValue
+            RootTabItem.settings.rawValue,
+            RootTabItem.library.hiddenMarker
         ])
 
         #expect(ids.contains(RootTabItem.bookshelf.rawValue))
@@ -29,42 +31,52 @@ struct RootTabCustomizationTests {
         let ids = GlobalSettings.sanitizedRootTabVisibleIDs([
             "unknown",
             RootTabItem.search.rawValue,
-            RootTabItem.rss.rawValue,
+            RootTabItem.library.rawValue,
             RootTabItem.bookshelf.rawValue,
             RootTabItem.settings.rawValue
         ])
 
         #expect(ids == [
             RootTabItem.bookshelf.rawValue,
-            RootTabItem.rss.rawValue,
-            RootTabItem.settings.rawValue,
-            RootTabItem.search.rawValue
+            RootTabItem.library.rawValue,
+            RootTabItem.search.rawValue,
+            RootTabItem.settings.rawValue
         ])
     }
 
-    @Test("hiding RSS keeps the iOS 17 root tab slot order stable")
-    func hidingRSSKeepsStableRootTabSlots() {
-        let visible = GlobalSettings.sanitizedRootTabVisibleIDs([
-            RootTabItem.bookshelf.rawValue,
-            RootTabItem.explore.rawValue,
-            RootTabItem.settings.rawValue,
-            RootTabItem.search.rawValue
-        ])
+    @Test("the tabs are 書架・探索・資源庫・搜尋・設定; RSS is no longer one (decision 30)")
+    func tabOrder() {
+        #expect(RootTabItem.tabs == [.bookshelf, .explore, .library, .search, .settings])
+        #expect(GlobalSettings.defaultRootTabVisibleIDs == RootTabItem.tabs.map(\.rawValue))
+    }
 
-        #expect(RootTabItem.allCases == [
-            .bookshelf,
-            .explore,
-            .rss,
-            .settings,
-            .search,
-        ])
-        #expect(visible == [
-            RootTabItem.bookshelf.rawValue,
-            RootTabItem.explore.rawValue,
-            RootTabItem.settings.rawValue,
-            RootTabItem.search.rawValue,
-        ])
-        #expect(RootTabItem.allCases.firstIndex(of: .settings) == 3)
+    @Test("A list saved before 資源庫 existed shows it; a shown or hidden RSS tab is dropped")
+    func libraryJoinsOldLists() {
+        let everything = GlobalSettings.sanitizedRootTabVisibleIDs(["bookshelf", "explore", "rss", "settings", "search"])
+        #expect(everything == ["bookshelf", "explore", "library", "search", "settings"])
+        let rssHidden = GlobalSettings.sanitizedRootTabVisibleIDs(["bookshelf", "explore", "settings", "search"])
+        #expect(rssHidden == ["bookshelf", "explore", "library", "search", "settings"])
+    }
+
+    @Test("Hiding 資源庫 is kept: the list remembers it was hidden, not that it never existed")
+    @MainActor
+    func hidingLibrarySticks() {
+        let ids = GlobalSettings.sanitizedRootTabVisibleIDs(
+            GlobalSettings.updatedRootTabVisibleIDs(["bookshelf", "explore", "library", "search", "settings"],
+                                             setting: .library, visible: false))
+        #expect(!ids.contains("library"))
+        #expect(GlobalSettings.sanitizedRootTabVisibleIDs(ids) == ids, "stable once hidden")
+        let shown = GlobalSettings.sanitizedRootTabVisibleIDs(
+            GlobalSettings.updatedRootTabVisibleIDs(ids, setting: .library, visible: true))
+        #expect(shown.contains("library"))
+    }
+
+    @Test("A custom RSS tab icon stays stored: its tab still decodes")
+    func rssIconAssetKept() {
+        let asset = RootTabIconAsset(tabID: "rss", slotRawValue: "light", fileName: "rss.png",
+                                     originalFileName: "rss.png", addedAt: Date())
+        #expect(asset.tab == .rss)
+        #expect(!RootTabItem.tabs.contains(.rss))
     }
 
     @Test("tab icon size is clamped")

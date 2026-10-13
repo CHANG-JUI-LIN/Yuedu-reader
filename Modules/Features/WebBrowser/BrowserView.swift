@@ -700,7 +700,8 @@ struct WebViewRepresentable: UIViewRepresentable {
 /// there when they come back to it from 探索's list.
 struct BrowserView: View {
     @EnvironmentObject var store: BookStore
-    @StateObject private var browser = BrowserState()
+    /// ContentView's, which 資源庫 shares.
+    @ObservedObject var browser: BrowserState
 
     var body: some View {
         ExploreTabRoot(browser: browser)
@@ -1298,7 +1299,7 @@ struct WebTOCSheet: View {
 }
 
 #Preview("Explore and browser") {
-    BrowserView()
+    BrowserView(browser: BrowserState())
         .environmentObject(BookStore())
         .environmentObject(SubscriptionStore.shared)
 }

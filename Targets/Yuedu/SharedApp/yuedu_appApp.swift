@@ -79,6 +79,10 @@ struct yuedu_appApp: App {
         if ProcessInfo.processInfo.arguments.contains("-reset-public-library-explore") {
             UserDefaults.standard.removeObject(forKey: ExploreSettings.modeKey)
         }
+        // 資源庫's first-launch card, shown again.
+        if ProcessInfo.processInfo.arguments.contains("-reset-library-notice") {
+            UserDefaults.standard.removeObject(forKey: LibraryTabRoot.noticeDismissedKey)
+        }
         // The home as a new install sees it: no saved sections, 範圍 全部, no 聚合設定. Before
         // anything reads `HomePageStore.shared` or `AggregationSettingsStore.shared`.
         if ProcessInfo.processInfo.arguments.contains("-reset-explore-home") {
