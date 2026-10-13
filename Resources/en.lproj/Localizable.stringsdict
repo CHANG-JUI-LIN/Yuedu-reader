@@ -1161,5 +1161,21 @@
 			<string>%d Highlights Selected</string>
 		</dict>
 	</dict>
+	<key>找到 %d 個來源</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>%#@n@</string>
+		<key>n</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringPluralRuleType</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>d</string>
+			<key>one</key>
+			<string>Found %d Source</string>
+			<key>other</key>
+			<string>Found %d Sources</string>
+		</dict>
+	</dict>
 </dict>
 </plist>
