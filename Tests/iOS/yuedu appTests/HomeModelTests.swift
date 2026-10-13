@@ -174,6 +174,30 @@ struct HomeModelTests {
         #expect(library.loads.count == 2)
     }
 
+    @Test("a row whose inputs change while it loads loads again, and the earlier load's books are dropped", .timeLimit(.minutes(1)))
+    func inputsChangeDuringALoad() async throws {
+        let reader = FakeProvider("forYou") { $0.binding == .forYou ? .parallel : nil }
+        reader.readsHomeLibraryRows = true
+        let gate = Gate()
+        reader.gates = [gate]
+        let library = FakeProvider("b", type: .opds) { $0.binding == .latest ? .parallel : nil }
+        let home = model([reader, library])
+        let page = HomePage(sections: [HomeSection(layout: .row, binding: .forYou), HomeSection(layout: .row, binding: .latest)])
+        await home.sync(with: page)
+        let readerRow = try #require(rows(home).first { $0.source == reader.instance })
+        home.load(readerRow.id)
+        await until(home) { $0.first { $0.id == readerRow.id }?.state == .loading }
+
+        // The library goes while the first load is on its way.
+        await home.sync(with: page, hiddenFromLatest: [library.instance])
+        gate.open()
+        await until(home) { rows in
+            guard case .loaded(let entries)? = rows.first(where: { $0.id == readerRow.id })?.state else { return false }
+            return entries == [.location(CollectionLocation(id: "forYou/2", title: "forYou"))]
+        }
+        #expect(reader.loads.count == 2)
+    }
+
     @Test("a row whose content changed under the same id loads again by itself once it had loaded")
     func changedContentReloads() async {
         let a = FakeProvider("a") { _ in .parallel }

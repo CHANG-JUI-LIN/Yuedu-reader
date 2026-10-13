@@ -46,6 +46,9 @@ final class HomeModel: ObservableObject {
     private var queueTails: [SourceInstanceKey: Task<Void, Never>] = [:]
     /// Rows queued or loading, so a 重試 or pull to refresh never starts a second load.
     private var active: Set<String> = []
+    /// Rows a sync changed while they loaded: they start again once that load ends, which
+    /// shows nothing (`isCurrent`).
+    private var rerun: Set<String> = []
     /// The last pull to refresh; 為你推薦 asks again for what it read before it.
     private(set) var refreshedAt: Date?
     /// 為你推薦's loads waiting for the library rows that load with the home.
@@ -143,7 +146,14 @@ final class HomeModel: ObservableObject {
         requested.formIntersection(servedBy.keys)
         rows = built
         isReady = true
-        for id in restarted { load(id) }
+        for id in restarted {
+            if active.contains(id) {
+                requested.insert(id)
+                rerun.insert(id)
+            } else {
+                load(id)
+            }
+        }
     }
 
     private func isLatest(_ section: HomeSection) -> Bool {
@@ -209,6 +219,7 @@ final class HomeModel: ObservableObject {
     private func fetch(_ rowID: String) async {
         defer {
             active.remove(rowID)
+            if rerun.remove(rowID) != nil, let current = row(rowID) { start(current) }
             resumeSettleWaiters()
         }
         guard let row = row(rowID), let provider = providers[rowID] else { return }
@@ -219,7 +230,7 @@ final class HomeModel: ObservableObject {
             SourcePerfTrace.record("home.row", "source=\(row.source.type.rawValue) entries=\(entries.count)",
                                    since: started, thresholdMs: 0)
             // The row may have been removed or changed while this loaded.
-            guard self.row(rowID)?.section.loadsSameContent(as: row.section) == true else { return }
+            guard isCurrent(row) else { return }
             setState(.loaded(entries), of: rowID)
             if Self.isLibrary(row.source) { restartLibraryReaders() }
         } catch is CancellationError {
@@ -228,9 +239,15 @@ final class HomeModel: ObservableObject {
             AppLogger.network("⟐ home row failed", error: error, context: [
                 "source": "\(row.source.type.rawValue):\(row.source.id)", "section": row.section.id.uuidString,
             ])
-            guard self.row(rowID)?.section.loadsSameContent(as: row.section) == true else { return }
+            guard isCurrent(row) else { return }
             setState(.failed(error.localizedDescription), of: rowID)
         }
+    }
+
+    /// Whether `row`, as a load began, is still the row: same content, same inputs.
+    private func isCurrent(_ row: Row) -> Bool {
+        guard let current = self.row(row.id) else { return false }
+        return current.section.loadsSameContent(as: row.section) && current.inputsKey == row.inputsKey
     }
 
     /// A library row loaded after the rows that read the library rows (為你推薦) had finished,
