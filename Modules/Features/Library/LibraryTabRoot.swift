@@ -5,19 +5,34 @@ import SwiftUI
 /// source configurations, the remote-library connections and the RSS feeds are managed here,
 /// no longer in 設定 or a tab of their own. 探索 stays the cover wall across them all.
 ///
+/// Laid out by the old 探索 root's 格狀 and 每列欄數, now in this page's •••, as cards the way
+/// the maintainer's reference draws its media servers and modules (2026-10-13). The search
+/// narrows the sources in place, as the old root and Legado's explore page do.
+///
 /// One stack, with 探索's destinations: every page here is one 探索 already pushes.
 struct LibraryTabRoot: View {
     @ObservedObject var browser: BrowserState
     @EnvironmentObject private var store: BookStore
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @ObservedObject private var availability = PublicLibraryAvailability.shared
     @ObservedObject private var connections = RemoteLibraryConnectionStore.shared
     @ObservedObject private var aggregation = AggregationSettingsStore.shared
+    @ObservedObject private var sourceStore = BookSourceStore.shared
+    @ObservedObject private var aozora = AozoraCatalogStore.shared
     @ObservedObject private var rss = RSSStore.shared
+    @AppStorage(ExploreSettings.showsGridKey) private var showsGrid = true
     /// The first-launch card saying what moved here (maintainer's choice, 2026-10-13).
     @AppStorage(Self.noticeDismissedKey) private var noticeDismissed = false
 
     @State private var path = NavigationPath()
     @State private var browserEntry: BrowserEntryPresentation?
+    @State private var query = ""
+    /// The sources with a discover page, and their groups: worked out when the sources change,
+    /// not on every redraw, since a reader may have tens of thousands.
+    @State private var exploreSources: [BookSource] = []
+    @State private var sourceGroups: [LibrarySourceGroups.Group] = []
+    @State private var sourceActionSheet: BookSourceActionSheet?
+    @State private var sourcePendingDeletion: BookSource?
 
     static let noticeDismissedKey = "library.tabNoticeDismissed"
 
@@ -31,67 +46,72 @@ struct LibraryTabRoot: View {
                                order: aggregation.settings.libraryOrder)
     }
 
+    private var trimmedQuery: String {
+        query.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    /// The sources whose name or group holds the search, as Legado's explore search narrows them.
+    private var matchingSources: [BookSource] {
+        DiscoverViewModel.exploreSources(exploreSources, inGroup: nil, matching: trimmedQuery)
+    }
+
     var body: some View {
         NavigationStack(path: $path) {
-            List {
-                if !noticeDismissed {
-                    Section { notice.rootTabTitleScrollAnchor() }
-                        .interfaceSectionSurface()
-                }
-                let publicLibraries = libraries.filter { $0.key.type == .gutenberg || $0.key.type == .aozora }
-                if !publicLibraries.isEmpty {
-                    Section(localized("公有書庫")) {
-                        ForEach(publicLibraries) { library in
-                            NavigationLink(value: ExploreNavigationRoute.library(library.key)) {
-                                Label(library.name, systemImage: library.systemImage)
-                                    .labelStyle(IconConsistentLabelStyle())
+            ScrollView {
+                VStack(alignment: .leading, spacing: DSSpacing.xl) {
+                    if trimmedQuery.isEmpty {
+                        if !noticeDismissed {
+                            notice
+                        }
+                        publicLibrariesSection
+                        remoteLibrariesSection
+                        sourcesSection
+                        subscriptionsSection
+                    } else if !matchingSources.isEmpty {
+                        LibrarySection(localized("來源配置")) { layout in
+                            ForEach(matchingSources) { source in
+                                sourceEntry(source, layout: layout)
                             }
-                            .accessibilityIdentifier("library.public.\(library.key.id)")
-                            .modifier(FirstRowScrollAnchor(isFirstRow: noticeDismissed && library.id == publicLibraries.first?.id))
                         }
                     }
-                    .interfaceSectionSurface()
                 }
-                let remoteLibraries = libraries.filter { $0.key.type != .gutenberg && $0.key.type != .aozora }
-                let remoteSectionIsFirst = noticeDismissed && publicLibraries.isEmpty
-                Section(localized("遠端書庫")) {
-                    ForEach(remoteLibraries) { library in
-                        remoteLibraryLink(library)
-                            .accessibilityIdentifier("library.remote.\(library.key.id)")
-                            .modifier(FirstRowScrollAnchor(isFirstRow: remoteSectionIsFirst && library.id == remoteLibraries.first?.id))
-                    }
-                    NavigationLink {
-                        RemoteLibrarySettingsView()
-                    } label: {
-                        Label(localized("管理遠端書庫"), systemImage: "externaldrive.connected.to.line.below")
-                            .labelStyle(IconConsistentLabelStyle())
-                    }
-                    .accessibilityIdentifier("library.manageRemote")
-                    .modifier(FirstRowScrollAnchor(isFirstRow: remoteSectionIsFirst && remoteLibraries.isEmpty))
-                }
-                .interfaceSectionSurface()
-                Section(localized("來源配置")) {
-                    NavigationLink(value: ExploreNavigationRoute.sourceManager) {
-                        Label(localized("管理來源配置"), systemImage: "books.vertical.fill")
-                            .labelStyle(IconConsistentLabelStyle())
-                    }
-                    .accessibilityIdentifier("library.sources")
-                }
-                .interfaceSectionSurface()
-                Section {
-                    NavigationLink(value: ExploreNavigationRoute.subscriptions) {
-                        Label(localized("RSS 訂閱"), systemImage: "newspaper.fill")
-                            .labelStyle(IconConsistentLabelStyle())
-                    }
-                    // RSS's unread count, which its tab carried (maintainer's choice, 2026-10-13).
-                    .badge(rss.totalUnreadCount())
-                    .accessibilityIdentifier("library.rss")
-                }
-                .interfaceSectionSurface()
+                // The page's full width even when a search finds nothing: while the search is
+                // active the scroll view takes its content's width (the old 探索 root, iOS 27).
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.horizontal, DSSpacing.lg)
+                .padding(.vertical, DSSpacing.sm)
+                .animation(reduceMotion ? nil : DSAnimation.standard, value: showsGrid)
+                .rootTabTitleScrollAnchor()
             }
-            .softScrollEdges()
-            .themedAppSurface()
+            .overlay {
+                if !trimmedQuery.isEmpty && matchingSources.isEmpty {
+                    ContentUnavailableView.search(text: trimmedQuery)
+                }
+            }
+            .rootTabSearchScrollEdges()
+            .scrollDismissesKeyboard(.immediately)
+            .background(PageBackgroundView(scope: .explore).ignoresSafeArea())
+            .pageBackgroundToolbar(for: .explore)
             .rootTabTitle(localized("資源庫"), onScroll: .minimizesBar)
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Menu {
+                        LibraryLayoutMenuItems()
+                    } label: {
+                        Image(systemName: "ellipsis")
+                            .accessibilityHidden(true)
+                    }
+                    .accessibilityLabel(localized("更多"))
+                    .accessibilityIdentifier("library.more")
+                }
+            }
+            .searchable(text: $query, placement: .navigationBarDrawer(displayMode: .always),
+                        prompt: localized("搜索來源配置"))
+            .onReceive(sourceStore.sourcesPublisher) { _ in
+                exploreSources = DiscoverViewModel.exploreSources(in: sourceStore)
+                sourceGroups = LibrarySourceGroups.groups(of: exploreSources)
+            }
+            .bookSourceActionSheets(sheet: $sourceActionSheet, pendingDeletion: $sourcePendingDeletion)
             .fullScreenCover(item: $browserEntry) { presentation in
                 NavigationStack {
                     BrowserPage(browser: browser, entry: presentation.entry)
@@ -108,13 +128,145 @@ struct LibraryTabRoot: View {
         .environment(\.explorePush) { $0.append(to: &path) }
     }
 
+    // MARK: Sections
+
+    @ViewBuilder
+    private var publicLibrariesSection: some View {
+        let publicLibraries = libraries.filter { $0.key.type == .gutenberg || $0.key.type == .aozora }
+        if !publicLibraries.isEmpty {
+            LibrarySection(localized("公有書庫")) { layout in
+                ForEach(publicLibraries) { library in
+                    NavigationLink(value: ExploreNavigationRoute.library(library.key)) {
+                        ExploreEntryLabel(title: library.name, artwork: .symbol(library.systemImage), layout: layout,
+                                          subtitle: publicLibrarySite(library.key.type),
+                                          detail: publicLibraryCount(library.key.type))
+                    }
+                    .buttonStyle(ExploreTileButtonStyle())
+                    .accessibilityLabel(library.name)
+                    .accessibilityIdentifier("library.public.\(library.key.id)")
+                }
+            }
+        }
+    }
+
+    private var remoteLibrariesSection: some View {
+        let remoteLibraries = libraries.filter { $0.key.type != .gutenberg && $0.key.type != .aozora }
+        return LibrarySection(localized("遠端書庫")) {
+            NavigationLink {
+                RemoteLibrarySettingsView()
+            } label: {
+                LibrarySectionAccessoryLabel()
+            }
+            .accessibilityLabel(localized("管理遠端書庫"))
+            .accessibilityIdentifier("library.manageRemote")
+        } content: { layout in
+            ForEach(remoteLibraries) { library in
+                remoteLibraryLink(library, layout: layout)
+                    .accessibilityLabel(library.name)
+                    .accessibilityIdentifier("library.remote.\(library.key.id)")
+            }
+            if remoteLibraries.isEmpty {
+                // Nothing connected: the card is how to connect one.
+                NavigationLink {
+                    RemoteLibrarySettingsView()
+                } label: {
+                    ExploreEntryLabel(title: localized("管理遠端書庫"), artwork: .neutral("plus"), layout: layout)
+                }
+                .buttonStyle(ExploreTileButtonStyle())
+                .accessibilityLabel(localized("管理遠端書庫"))
+                .accessibilityIdentifier("library.remote.add")
+            }
+        }
+    }
+
+    /// 所有來源配置, then a card for each group (decision 31): never every source on the root.
+    private var sourcesSection: some View {
+        LibrarySection(localized("來源配置")) {
+            NavigationLink(value: ExploreNavigationRoute.sourceManager) {
+                LibrarySectionAccessoryLabel()
+            }
+            .accessibilityLabel(localized("管理來源配置"))
+            .accessibilityIdentifier("library.sources")
+        } content: { layout in
+            if exploreSources.isEmpty {
+                NavigationLink(value: ExploreNavigationRoute.sourceManager) {
+                    ExploreEntryLabel(title: localized("管理來源配置"), artwork: .neutral("plus"), layout: layout,
+                                      subtitle: localized("還沒有支援發現的來源配置"))
+                }
+                .buttonStyle(ExploreTileButtonStyle())
+                .accessibilityLabel(localized("管理來源配置"))
+                .accessibilityIdentifier("library.sources.add")
+            } else {
+                NavigationLink(value: ExploreNavigationRoute.sources(group: nil)) {
+                    ExploreEntryLabel(title: localized("所有來源配置"), artwork: .source, layout: layout,
+                                      corner: .count(exploreSources.count))
+                }
+                .buttonStyle(ExploreTileButtonStyle())
+                .accessibilityLabel(localized("所有來源配置"))
+                .accessibilityValue(String(format: localized("%d 個來源配置"), exploreSources.count))
+                .accessibilityIdentifier("library.sources.all")
+                ForEach(sourceGroups) { group in
+                    NavigationLink(value: ExploreNavigationRoute.sources(group: group.name)) {
+                        ExploreEntryLabel(title: group.name, artwork: .neutral("folder.fill"), layout: layout,
+                                          corner: .count(group.count))
+                    }
+                    .buttonStyle(ExploreTileButtonStyle())
+                    .accessibilityLabel(group.name)
+                    .accessibilityValue(String(format: localized("%d 個來源配置"), group.count))
+                    .accessibilityIdentifier("library.group.\(group.name)")
+                }
+            }
+        }
+    }
+
+    private var subscriptionsSection: some View {
+        LibrarySection(localized("訂閱")) { layout in
+            let unread = rss.totalUnreadCount()
+            NavigationLink(value: ExploreNavigationRoute.subscriptions) {
+                // RSS's unread count, which its tab carried (maintainer's choice, 2026-10-13).
+                ExploreEntryLabel(title: localized("RSS 訂閱"), artwork: .symbol("newspaper.fill"), layout: layout,
+                                  subtitle: rss.sources.isEmpty ? nil : String(format: localized("%d 個訂閱源"), rss.sources.count),
+                                  corner: unread > 0 ? .count(unread) : nil)
+            }
+            .buttonStyle(ExploreTileButtonStyle())
+            .accessibilityLabel(localized("RSS 訂閱"))
+            .accessibilityValue(unread > 0 ? String(format: localized("%d 未讀"), unread) : "")
+            .accessibilityIdentifier("library.rss")
+        }
+    }
+
+    private func sourceEntry(_ source: BookSource, layout: ExploreEntryLabel.Layout) -> some View {
+        LibrarySourceEntry(source: source, layout: layout, sheet: $sourceActionSheet,
+                           pendingDeletion: $sourcePendingDeletion) {
+            path.append(ExploreNavigationRoute.searchInSource(sourceURL: source.bookSourceUrl))
+        }
+    }
+
+    /// The site a public library's books come from.
+    private func publicLibrarySite(_ type: ProviderType) -> String? {
+        switch type {
+        case .gutenberg: "gutenberg.org"
+        case .aozora: "aozora.gr.jp"
+        default: nil
+        }
+    }
+
+    /// How many works 青空文庫's catalog lists, once it is read. Gutenberg's feeds give no total.
+    private func publicLibraryCount(_ type: ProviderType) -> String? {
+        guard type == .aozora, let catalog = aozora.catalog else { return nil }
+        return String(format: localized("%d 本"), catalog.worksByID.count)
+    }
+
     /// A remote library's catalog: its root feed or folder, as 探索 opens it.
     @ViewBuilder
-    private func remoteLibraryLink(_ library: LibraryListing) -> some View {
-        let label = Label(library.name, systemImage: library.systemImage).labelStyle(IconConsistentLabelStyle())
+    private func remoteLibraryLink(_ library: LibraryListing, layout: ExploreEntryLabel.Layout) -> some View {
+        let connection = connections.connections.first { $0.id == library.key.id }
+        let label = ExploreEntryLabel(title: library.name, artwork: .symbol(library.systemImage), layout: layout,
+                                      subtitle: connection?.kind.libraryTitle,
+                                      detail: connection.flatMap { URL(string: $0.url)?.host() })
         switch ExplorePlace.page(of: library.key, name: library.name) {
-        case .feed(let route): NavigationLink(value: route) { label }
-        case .folder(let route): NavigationLink(value: route) { label }
+        case .feed(let route): NavigationLink(value: route) { label }.buttonStyle(ExploreTileButtonStyle())
+        case .folder(let route): NavigationLink(value: route) { label }.buttonStyle(ExploreTileButtonStyle())
         default: label
         }
     }
@@ -146,15 +298,10 @@ struct LibraryTabRoot: View {
             .accessibilityLabel(localized("關閉"))
             .accessibilityIdentifier("library.noticeClose")
         }
-    }
-}
-
-/// The root title's scroll anchor on the list's first row, whichever section it is in.
-private struct FirstRowScrollAnchor: ViewModifier {
-    let isFirstRow: Bool
-
-    func body(content: Content) -> some View {
-        if isFirstRow { content.rootTabTitleScrollAnchor() } else { content }
+        .padding(.leading, DSSpacing.md)
+        .padding(.vertical, DSSpacing.sm)
+        .interfaceCardSurface(in: RoundedRectangle(cornerRadius: DSRadius.xl, style: .continuous))
+        .shadow(color: DSColor.shadow, radius: DSLayout.exploreCardShadowRadius, y: DSLayout.exploreCardShadowY)
     }
 }
 

@@ -14,6 +14,10 @@ enum ExploreSettings {
     /// The deleted 首屏頁面 choice: `source:<url>` or `page:<uuid>`. Read only by
     /// `migrateLegacyLanding` and, for a page, `HomePageStore`.
     static let legacyLandingKey = "explore.landing"
+    /// The old 探索 root's 格狀 and 每列欄數, now 資源庫's (Phase 5 plan, decision 31): the same
+    /// keys, so a reader's choice from before 5d-1b still holds.
+    static let showsGridKey = "explore.showsGrid"
+    static let gridColumnCountKey = "explore.gridColumnCount"
 
     /// Words that put a category in a numbered chart rather than a shelf of covers. A title
     /// matches a keyword whatever its letter case, so `top` also covers `TOP` and `Top`.

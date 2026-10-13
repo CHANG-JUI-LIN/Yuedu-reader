@@ -404,6 +404,13 @@ enum DSLayout {
     /// this much further on (書架, as Apple Music's and Books' home titles go).
     static let rootTabTitleFadeStart: CGFloat = 10
     static let rootTabTitleFadeDistance: CGFloat = 30
+    /// The square on a 資源庫 card, and its symbol or glyph, at the default text size. They
+    /// follow Dynamic Type.
+    static let exploreCardArtworkSide: CGFloat = 36
+    static let exploreCardArtworkSize: CGFloat = 18
+    /// The soft shadow lifting a 資源庫 card off the page.
+    static let exploreCardShadowRadius: CGFloat = 8
+    static let exploreCardShadowY: CGFloat = 2
     /// Side of the square artwork at the top of an audiobook detail page — Podcasts'
     /// show artwork, a little narrower than a book jacket is tall.
     static let bookDetailSquareArtworkSide: CGFloat = 168

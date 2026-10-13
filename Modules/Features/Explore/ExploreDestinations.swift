@@ -65,6 +65,8 @@ private struct ExploreRouteDestinations: ViewModifier {
             RSSListView()
         case .library(let key):
             LibraryHomePageView(key: key)
+        case .sources(let group):
+            LibrarySourcesView(group: group)
         }
     }
 
