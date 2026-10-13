@@ -1709,3 +1709,6 @@ Not split (one meaning everywhere): 確認刪除 (three alert titles), 是／否
   - UI, iOS 27: `HomeEditorUITests` (7), `ExploreHomeUITests` (9), `AggregationSettingsUITests` (4) and `PublicLibraryStorefrontUITests` (2 run, 3 skipped as before) passed.
     - `testListsAreCollectionCards` first failed: it looked for the header as a button, and a header without 查看全部 is text.
     - It passed after that fix, and again after the card's name became title3.
+  - UI, iOS 17.5: the same four suites passed (HomeEditorUITests 7, ExploreHomeUITests 9, AggregationSettingsUITests 4, PublicLibraryStorefrontUITests 2 run and 3 skipped as before).
+- **Not checked by a test:** the storefront's own 精選書單 now draws through `CollectionCoverArtwork`, and no UI test opens the storefront. The refactor keeps its modifiers as they were: the same HStack, rotation, ground, clip and hidden artwork.
+- **Next:** decision 34, the layout choice as live previews.
