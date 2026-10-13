@@ -43,13 +43,14 @@ struct HideReadTests {
         #expect(!lookup.isRead(.location(CollectionLocation(id: "x", title: "place"))))
     }
 
-    @Test("最新 and 相關 leave read books out, each by its own switch; other sections keep them")
+    @Test("one switch leaves read books out of the whole home but 繼續閱讀 (decision 36)")
     func filtered() {
         let gutenberg = SourceInstanceKey(type: .gutenberg, id: PublicLibraryID.gutenberg.rawValue)
         let books = [GutenbergBook(id: 1342, title: "read", author: ""), GutenbergBook(id: 84, title: "unread", author: "")]
         let entries = books.map(CollectionEntry.bundledGutenberg)
         let sections = [HomeSection(layout: .row, binding: .latest), HomeSection(layout: .row, binding: .related),
-                        HomeSection(layout: .row, binding: .gutenbergCollection(id: "x"))]
+                        HomeSection(layout: .row, binding: .gutenbergCollection(id: "x")),
+                        HomeSection(layout: .row, binding: .continueReading)]
         let rows = sections.map { section in
             HomeModel.Row(id: HomeModel.rowID(section: section.id, source: gutenberg), section: section, source: gutenberg,
                           sourceName: "", policy: .local, state: .loaded(entries))
@@ -58,29 +59,48 @@ struct HideReadTests {
             if case .item(let record, _, _) = entry { return record.title == "read" }
             return false
         }
-        func shown(latest: Bool, related: Bool) -> [[String]] {
-            HomeScopeFilter.groups(rows, in: nil,
-                                   readFilter: HomeReadFilter(hidesInLatest: latest, hidesInRelated: related, isRead: isRead))
+        func shown(hides: Bool) -> [[String]] {
+            HomeScopeFilter.groups(rows, in: nil, readFilter: HomeReadFilter(hides: hides, isRead: isRead))
                 .map { group in
                     guard case .loaded(let loaded) = group.state else { return [] }
                     return titles(loaded)
                 }
         }
-        #expect(shown(latest: true, related: true) == [["unread"], ["unread"], ["read", "unread"]])
-        #expect(shown(latest: false, related: true) == [["read", "unread"], ["unread"], ["read", "unread"]])
-        #expect(shown(latest: true, related: false) == [["unread"], ["read", "unread"], ["read", "unread"]])
+        #expect(shown(hides: true) == [["unread"], ["unread"], ["unread"], ["read", "unread"]])
+        #expect(shown(hides: false) == [["read", "unread"], ["read", "unread"], ["read", "unread"], ["read", "unread"]])
+        // An article's read state is the RSS tab's, not this switch's.
+        #expect(!HomeReadFilter(hides: true, isRead: isRead).hides(in: .subscriptionArticles))
+        #expect(!HomeReadFilter(hides: true, isRead: isRead).hides(in: .nextInSeries))
     }
 
-    @Test("both switches start on, and are saved")
-    func store() {
+    private func store(_ stored: AggregationSettings?) throws -> (AggregationSettingsStore, UserDefaults, String) {
         let suite = "HideReadTests-\(UUID().uuidString)"
-        let defaults = UserDefaults(suiteName: suite)!
+        let defaults = try #require(UserDefaults(suiteName: suite))
+        if let stored { defaults.set(try JSONEncoder().encode(stored), forKey: AggregationSettingsStore.defaultsKey) }
+        return (AggregationSettingsStore(defaults: defaults), defaults, suite)
+    }
+
+    @Test("the switch starts on, and either old switch off starts it off")
+    func migration() throws {
+        for (stored, expected) in [(nil, true), (AggregationSettings(), true),
+                                   (AggregationSettings(hidesReadInLatest: false), false),
+                                   (AggregationSettings(hidesReadInRelated: false), false),
+                                   (AggregationSettings(hidesReadInLatest: true, hidesReadInRelated: true), true)] as [(AggregationSettings?, Bool)] {
+            let (store, defaults, suite) = try store(stored)
+            defer { defaults.removePersistentDomain(forName: suite) }
+            #expect(store.hidesRead == expected)
+        }
+    }
+
+    @Test("the new switch is saved and wins; the old values stay stored")
+    func saved() throws {
+        let (store, defaults, suite) = try store(AggregationSettings(hidesReadInLatest: false))
         defer { defaults.removePersistentDomain(forName: suite) }
-        let store = AggregationSettingsStore(defaults: defaults)
-        #expect(store.hidesReadInLatest && store.hidesReadInRelated)
-        store.setHidesReadInRelated(false)
+        store.setHidesRead(true)
         let reread = AggregationSettingsStore(defaults: defaults)
-        #expect(reread.hidesReadInLatest)
-        #expect(!reread.hidesReadInRelated)
+        #expect(reread.hidesRead)
+        let data = try #require(defaults.data(forKey: AggregationSettingsStore.defaultsKey))
+        let raw = try #require(try JSONSerialization.jsonObject(with: data) as? [String: Any])
+        #expect(raw["hidesReadInLatest"] as? Bool == false, "an older build still reads its own value")
     }
 }

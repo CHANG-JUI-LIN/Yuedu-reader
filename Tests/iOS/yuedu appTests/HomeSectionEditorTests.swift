@@ -118,6 +118,36 @@ struct HomeSectionEditorTests {
         #expect(editor.filterValues(forSourceURL: other.sourceURL) == ["頻道": "女"])
         #expect(store.page?.sections[1].filterValues(forSourceURL: other.sourceURL) == ["頻道": "女"])
     }
+
+    /// Decision 36: 顯示在最新 is set in 最新's form, still 聚合設定's one value.
+    @Test("最新's libraries: a section on the home writes 聚合設定 at once; 新增欄目 waits for 新增")
+    func latestLibraries() throws {
+        let (store, cleanup) = try makeStore()
+        defer { cleanup() }
+        let suite = "HomeSectionEditorTests-aggregation-\(UUID().uuidString)"
+        let defaults = try #require(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let aggregation = AggregationSettingsStore(defaults: defaults)
+        let gutenberg = SourceInstanceKey(type: .gutenberg, id: PublicLibraryID.gutenberg.rawValue)
+        let aozora = SourceInstanceKey(type: .aozora, id: PublicLibraryID.aozora.rawValue)
+
+        let latest = try #require(store.page?.sections[1])
+        let onHome = HomeSectionEditor(section: latest, store: store, aggregation: aggregation, preview: preview())
+        onHome.setShownInLatest(false, for: gutenberg)
+        #expect(!aggregation.isShownInLatest(gutenberg))
+        #expect(!onHome.isShownInLatest(gutenberg))
+        #expect(onHome.hiddenFromLatest == [gutenberg])
+
+        let new = HomeSectionEditor(newSectionIn: store, layout: .row, aggregation: aggregation, preview: preview())
+        new.choose(.latest)
+        new.setShownInLatest(true, for: gutenberg)
+        new.setShownInLatest(false, for: aozora)
+        #expect(new.isShownInLatest(gutenberg) && !new.isShownInLatest(aozora))
+        #expect(new.hiddenFromLatest == [aozora], "the preview shows the form's choice")
+        #expect(!aggregation.isShownInLatest(gutenberg) && aggregation.isShownInLatest(aozora), "取消 would leave 聚合設定 as it was")
+        #expect(new.add())
+        #expect(aggregation.isShownInLatest(gutenberg) && !aggregation.isShownInLatest(aozora))
+    }
 }
 
 /// Unified library 5d-5: a section's own discover filters (Phase 5 plan, decision 23).

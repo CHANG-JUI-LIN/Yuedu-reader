@@ -158,6 +158,7 @@ struct HomeSectionForm: View {
     @ObservedObject private var aggregation = AggregationSettingsStore.shared
     @ObservedObject private var sources = BookSourceStore.shared
     @ObservedObject private var connections = RemoteLibraryConnectionStore.shared
+    @ObservedObject private var availability = PublicLibraryAvailability.shared
     @EnvironmentObject private var store: BookStore
     /// 選擇內容來源 as a sheet.
     @State private var showsPicker = false
@@ -200,8 +201,9 @@ struct HomeSectionForm: View {
                     Text(localized("預覽"))
                 }
                 .interfaceSectionSurface()
-                .task(id: page) {
-                    await preview.sync(with: page, hiddenFromLatest: Set(aggregation.settings.hiddenFromLatest ?? []))
+                // Again when 顯示在最新 changes: the preview loads 最新 without those libraries.
+                .task(id: [AnyHashable(page), AnyHashable(editor.hiddenFromLatest)]) {
+                    await preview.sync(with: page, hiddenFromLatest: editor.hiddenFromLatest)
                     // The reader's own tap: the page loads whatever its source's policy.
                     for row in preview.rows { preview.load(row.id) }
                 }
@@ -218,7 +220,10 @@ struct HomeSectionForm: View {
                 if let category = filteredCategory { filtersRow(category) }
             }
             .interfaceSectionSurface()
-            if draft.binding == .latest { latestParameters }
+            if draft.binding == .latest {
+                latestLibraries
+                latestParameters
+            }
             if !editor.isNew {
                 Section {
                     Toggle(localized("在首頁顯示"), isOn: Binding(get: { draft.isEnabled }, set: { editor.setEnabled($0) }))
@@ -285,6 +290,31 @@ struct HomeSectionForm: View {
     }
 
     // MARK: 最新
+
+    /// 顯示在最新 (decision 36: Emby 4.10 sets a section's libraries in its own options), in
+    /// 書庫順序. None in China without a connection saved.
+    @ViewBuilder
+    private var latestLibraries: some View {
+        let libraries = LibraryListing.ordered(connections: connections.catalogs, librariesAvailable: availability.isAvailable,
+                                               order: aggregation.settings.libraryOrder)
+        if !libraries.isEmpty {
+            Section {
+                ForEach(libraries) { library in
+                    Toggle(isOn: Binding(get: { editor.isShownInLatest(library.key) },
+                                         set: { editor.setShownInLatest($0, for: library.key) })) {
+                        SettingsRowLabel(library.name, systemImage: library.systemImage)
+                    }
+                    .accessibilityIdentifier("homeSection.latest.library.\(library.key.type.rawValue).\(library.key.id)")
+                }
+            } header: {
+                Text(localized("顯示在最新"))
+            } footer: {
+                Text(localized("每個首頁配置的最新都用這份設定。"))
+                    .dsSectionFooter()
+            }
+            .interfaceSectionSurface()
+        }
+    }
 
     /// 最新's parameters: the category each book source shows in it (design §13.3). A source
     /// with none picked has no 最新 row; the libraries' are their own.
@@ -468,6 +498,18 @@ extension HomeContentOwner {
         HomeSectionForm(
             editor: HomeSectionEditor(
                 section: HomeSection(layout: .row, binding: .gutenbergCollection(id: PublicLibraryCollection.chinese.id)),
+                store: HomePageStore(fileURL: FileManager.default.temporaryDirectory.appendingPathComponent("preview-home.json")),
+                preview: .preview(shelf: BookStore())),
+            isInSheet: false)
+    }
+    .environmentObject(BookStore())
+}
+
+#Preview("最新，顯示在最新") {
+    NavigationStack {
+        HomeSectionForm(
+            editor: HomeSectionEditor(
+                section: HomeSection(layout: .row, binding: .latest),
                 store: HomePageStore(fileURL: FileManager.default.temporaryDirectory.appendingPathComponent("preview-home.json")),
                 preview: .preview(shelf: BookStore())),
             isInSheet: false)

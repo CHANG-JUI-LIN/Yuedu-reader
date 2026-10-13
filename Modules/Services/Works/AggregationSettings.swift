@@ -3,7 +3,8 @@ import Foundation
 
 // Unified library 5d-3d: 聚合設定 (Phase 5 plan, decision 21), mapped from the Emby user
 // settings that shape its aggregation: 偏好閱讀語言 and 推薦範圍 (5d-3d), 書庫順序 (5d-3e),
-// 顯示在最新 (5d-3f), 隱藏已讀 (5d-3g).
+// 顯示在最新 (5d-3f, set in the 最新 section's form since decision 36), 隱藏已讀 (5d-3g, one
+// switch for the whole home since decision 36).
 
 struct AggregationSettings: Codable, Equatable, Sendable {
     /// Nil until the reader chooses: then `ReadingLanguagePreferences.initial`, which follows
@@ -16,16 +17,22 @@ struct AggregationSettings: Codable, Equatable, Sendable {
     /// reader or by the move of the 最新 section's own list (`adoptLegacyLatestExcluded`). A
     /// library removed and added again under the same id stays off.
     var hiddenFromLatest: [SourceInstanceKey]?
-    /// 隱藏已讀 in 最新 and in 相關 (`HomeReadFilter`); nil is on, as Emby starts
-    /// `HidePlayedInLatest`.
+    /// 隱藏已讀 for the whole home but 繼續閱讀 (`HomeReadFilter`), as Emby's "Hide fully played
+    /// content" (decision 36). Nil until the reader sets it: then the two switches before it.
+    var hidesRead: Bool?
+    /// 隱藏已讀 in 最新 and in 相關 until decision 36 (nil is on, as Emby starts
+    /// `HidePlayedInLatest`). Read only while `hidesRead` is nil, and kept as stored: a build
+    /// before decision 36 reads them.
     var hidesReadInLatest: Bool?
     var hidesReadInRelated: Bool?
 
     init(readingLanguages: ReadingLanguagePreferences? = nil, libraryOrder: [SourceInstanceKey]? = nil,
-         hiddenFromLatest: [SourceInstanceKey]? = nil, hidesReadInLatest: Bool? = nil, hidesReadInRelated: Bool? = nil) {
+         hiddenFromLatest: [SourceInstanceKey]? = nil, hidesRead: Bool? = nil,
+         hidesReadInLatest: Bool? = nil, hidesReadInRelated: Bool? = nil) {
         self.readingLanguages = readingLanguages
         self.libraryOrder = libraryOrder
         self.hiddenFromLatest = hiddenFromLatest
+        self.hidesRead = hidesRead
         self.hidesReadInLatest = hidesReadInLatest
         self.hidesReadInRelated = hidesReadInRelated
     }
@@ -95,16 +102,14 @@ final class AggregationSettingsStore: ObservableObject {
         }
     }
 
-    /// 隱藏已讀, 最新 and 相關 each on until the reader turns it off.
-    var hidesReadInLatest: Bool { settings.hidesReadInLatest ?? true }
-    var hidesReadInRelated: Bool { settings.hidesReadInRelated ?? true }
-
-    func setHidesReadInLatest(_ hides: Bool) {
-        edit { $0.hidesReadInLatest = hides }
+    /// 隱藏已讀: on until the reader turns it off. Before it is set, off if either of the two
+    /// switches it replaced was (maintainer, 2026-10-13).
+    var hidesRead: Bool {
+        settings.hidesRead ?? ((settings.hidesReadInLatest ?? true) && (settings.hidesReadInRelated ?? true))
     }
 
-    func setHidesReadInRelated(_ hides: Bool) {
-        edit { $0.hidesReadInRelated = hides }
+    func setHidesRead(_ hides: Bool) {
+        edit { $0.hidesRead = hides }
     }
 
     /// Until 5d-3f, 最新 kept its own 排除的來源 (decision 21 makes 顯示在最新 the one place).
