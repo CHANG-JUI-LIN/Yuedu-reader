@@ -43,6 +43,17 @@ struct WorkDetailVersionsTests {
         #expect(WorkVersions.primary(in: versions) == newer)
     }
 
+    /// Decision 32: 已知的閱讀來源 are the sources the reader has read from or put on the
+    /// shelf; a file the index matched by title and author, never opened, is not one.
+    @Test("the work's members are only the sources the reader knows")
+    func knownMembers() {
+        let shelved = copy()
+        let read = file("讀過.epub")
+        let unread = file("沒開過.epub")
+        let known = WorkVersions.known([shelved, unread, read], readFrom: { $0 == read.record.key })
+        #expect(known.map(\.nodeKey) == [shelved.nodeKey, read.nodeKey])
+    }
+
     @Test("a tapped copy of no listed item is listed once, under its own key")
     func tappedCopy() {
         let id = UUID()
@@ -142,7 +153,7 @@ struct WorkDetailVersionsTests {
 @MainActor
 @Suite("Work detail versions on the shelf", .serialized)
 struct WorkDetailShelfVersionsTests {
-    @Test("a Gutenberg book reaches its WebDAV file through its copy on the shelf")
+    @Test("a Gutenberg book's copy on the shelf leaves out a WebDAV file never opened")
     func throughCopy() async throws {
         let folder = FileManager.default.temporaryDirectory.appendingPathComponent("WorkDetail-\(UUID().uuidString)")
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
@@ -174,15 +185,16 @@ struct WorkDetailShelfVersionsTests {
         let provider = ShelfProvider(store: store, webDAVRoots: { [instance.id: root] })
         let tapped = WorkDetailRoute(.gutenberg(gutenberg))
         let versions = await provider.versions(of: tapped, aozora: nil)
-        // The copy was taken from the Gutenberg book, whose page reads it.
-        #expect(versions.map(\.nodeKey) == [tapped.nodeKey, fileRecord.key])
+        // The copy was taken from the Gutenberg book, whose page reads it. The WebDAV file the
+        // index matched by title and author was never opened, so it is not a known source.
+        #expect(versions.map(\.nodeKey) == [tapped.nodeKey])
         #expect(WorkVersions.primary(in: versions) == tapped)
 
         // Tapped as the shelf shows it, the copy finds the same work, and the Gutenberg book
         // stands for it there too (2026-10-12: opened from 書架, the copy led as 「書架」).
         let fromShelf = try #require(provider.items([copy]).first.flatMap(WorkDetailRoute.init))
         let shelfVersions = await provider.versions(of: fromShelf, aozora: nil)
-        #expect(shelfVersions.map(\.nodeKey) == [tapped.nodeKey, fileRecord.key])
+        #expect(shelfVersions.map(\.nodeKey) == [tapped.nodeKey])
         guard case .gutenberg(let book) = shelfVersions.first?.opening else {
             Issue.record("the Gutenberg book leads: \(shelfVersions)")
             return

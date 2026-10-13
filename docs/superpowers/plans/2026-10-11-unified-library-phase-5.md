@@ -1517,3 +1517,13 @@ Not split (one meaning everywhere): 確認刪除 (three alert titles), 是／否
   - Unit: `WorkTableOfContentsTests.epubChapters` expects the targets `[1 nil, 2 nil, 2 "later"]`. With `CoreTextScrollTests`, `ContinuousScrollRestoreTests`, `BrowserViewportHostTests`, `ChapterDocumentStoreTests`, `CoreTextScrollOnlineCacheTests`: 60 tests in 6 suites passed.
   - Live UI `testGutenbergWorkListsItsChapters`: sets 翻頁 explicitly (滑動, then 捲動) from the reader's 設定 panel, then opens row 2 「I hope Mr. Bingley will like it. CHAPTER II.」 and requires the controls' chapter page > 1 (paged mode draws its 頁尾 into the page, so the controls are what both modes expose). Before: 1/141. After: paged 52/161, scroll 43/141, both on CHAPTER II (offset 31165 in both modes). Puts back the mode it found when that was not 捲動.
   - Also passed: `WorkDetailUITests`, `testAozoraWorkListsItsChapters`, and `DetailReaderBackSwipeUITests`' `testDetailReaderLoadsAndReturns`, `testReaderOpensWorkDetailAndReturnsToIt`, `testSearchDetailReaderLoadsAndReturns`.
+
+#### What landed — 5f-5: 已知的閱讀來源 (2026-10-13)
+
+- **Decision 32 (answered 2026-10-12):** 其他版本 becomes 已知的閱讀來源, listing only sources the reader has read from or put on the shelf; 作品詳情's 來源 menu follows the same rule.
+- **Changes:**
+  - `WorkVersions.known(_:readFrom:)`: of a work's index members, a copy is kept (the index lists only shelf copies); a library file is kept only when a copy of it is on the shelf or was opened (`lastOpenedDate`). `ShelfProvider.versions(of:)` filters the members through it, with the same `CopyLookup` it reads the tapped item's copies from. The tapped item and the public-library book a copy was taken from stay, as before.
+  - One list feeds both controls, so the 來源 menu and the 換源 sheet's section change together. The section is titled 已知的閱讀來源 (five languages); 其他版本 is removed.
+- **Behaviour change:** a WebDAV file the index matched to the work by title and author, never opened, no longer appears on 作品詳情. Opened from its own folder, it is the tapped item and is still listed.
+- **Next:** 5f-4c (搜索's results), redone on this rule.
+- **Tests:** `WorkDetailVersionsTests.knownMembers` (new); `WorkDetailShelfVersionsTests.throughCopy` now expects the never-opened WebDAV file left out. With `ExploreItemTargetTests`, `CopyLookupTests`: 21 tests in 4 suites passed. `WorkDetailUITests` passed (iOS 27).

@@ -3,8 +3,8 @@ import SwiftUI
 /// 換源 for a book opened outside search: searches the enabled sources for the title
 /// and lists every match, grouped by book, with the current source checked.
 ///
-/// On 作品詳情 (unified library 5f-3) the work's other versions come first — its shelf copy,
-/// a library's file — so the page has one 來源 control: this sheet, opened by a button, never
+/// On 作品詳情 (unified library 5f-3) the work's other known reading sources come first — its
+/// shelf copy, a library's file read from (decision 32) — so the page has one 來源 control: this sheet, opened by a button, never
 /// a modal from a menu (iOS 17 drops those; Technotes/iOS17MenuModalPresentation.md).
 struct SourceSearchSheet: View {
     let query: String
@@ -54,7 +54,7 @@ struct SourceSearchSheet: View {
     private var content: some View {
         if !otherVersions.isEmpty {
             List {
-                Section(localized("其他版本")) {
+                Section(localized("已知的閱讀來源")) {
                     ForEach(otherVersions) { version in
                         Button {
                             onSelectVersion(version.id)

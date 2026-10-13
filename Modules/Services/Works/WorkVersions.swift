@@ -91,8 +91,8 @@ enum WorkVersions {
     /// The versions 作品詳情 lists, each once, by its node key:
     /// 1. the copies on the shelf, the one opened most recently first;
     /// 2. the item tapped;
-    /// 3. the other members of its work in the index (shelf copies and WebDAV files), in the
-    ///    index's order.
+    /// 3. the other members of its work in the index (shelf copies and WebDAV files read from,
+    ///    `known`), in the index's order.
     ///
     /// A copy taken from a listed library item (青空文庫, Gutenberg, an OPDS entry, a WebDAV
     /// file) is that item's version, not one of its own: the item stands in its place, and its
@@ -126,6 +126,14 @@ enum WorkVersions {
         add(tapped)
         members.forEach(add)
         return versions
+    }
+
+    /// Decision 32 (已知的閱讀來源): of a work's members in the index, the sources the reader
+    /// knows — a copy they put on the shelf (the index lists only those), or a library file
+    /// they read from. A file the index matched by title and author and the reader never opened
+    /// is left out.
+    static func known(_ members: [WorkDetailRoute], readFrom: (SourceItemKey) -> Bool) -> [WorkDetailRoute] {
+        members.filter { $0.record.copyID != nil || readFrom($0.record.key) }
     }
 
     /// The version 作品詳情's main button acts on until one is chosen: the first readable one.
