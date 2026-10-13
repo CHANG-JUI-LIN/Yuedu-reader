@@ -192,6 +192,9 @@ enum ExplorePlace {
             return .feed(OPDSFeedRoute(catalogID: connectionID, url: url, title: row.section.displayTitle(sourceName: row.sourceName)))
         case .gutenbergCollection(let id):
             return .publicLibrary(.collection(id: id))
+        // Each card opens its own list; no page lists the lists alone.
+        case .gutenbergLists:
+            return nil
         case .gutenbergFeed(let url):
             return .feed(OPDSFeedRoute(catalogID: gutenbergID, url: url, title: row.section.displayTitle(sourceName: row.sourceName), presentation: .storefront))
         case .gutenbergShelf(let id):
@@ -207,6 +210,13 @@ enum ExplorePlace {
         // 訂閱的最新文章: the rest is the RSS tab, switched to (`openRSSTab`), not pushed.
         case .myLibrary, .continueReading, .related, .nextInSeries, .subscriptionArticles, .unknown:
             return nil
+        }
+    }
+
+    /// A card of 專題集合: the whole list.
+    static func page(of collection: CollectionSummary) -> ExplorePush {
+        switch collection.opening {
+        case .gutenbergCollection(let id): .publicLibrary(.collection(id: id))
         }
     }
 

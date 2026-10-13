@@ -535,6 +535,7 @@ private struct HomeRowHost: View {
                         guard let row = group.rows.first else { return }
                         ExplorePlace.page(of: location, in: row, aozoraIndex: aozoraIndex).map(push)
                     },
+                    openCollection: { push(ExplorePlace.page(of: $0)) },
                     openArticle: { push(.article(SubscriptionArticleRoute(articleID: $0.id))) },
                     actions: actions,
                     bookActions: bookActions)

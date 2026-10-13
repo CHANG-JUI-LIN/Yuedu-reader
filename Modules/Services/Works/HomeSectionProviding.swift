@@ -92,6 +92,7 @@ extension GutenbergProvider: HomeSectionProviding {
         guard availability == .available else { return nil }
         switch section.binding {
         case .gutenbergCollection(let id): return PublicLibraryCollection.all.contains { $0.id == id } ? .local : nil
+        case .gutenbergLists: return .local
         case .gutenbergFeed: return .withHome
         case .gutenbergShelf(let id): return GutenbergShelf.shelf(id: id) == nil ? nil : .withHome
         case .latest: return .withHome
@@ -104,6 +105,8 @@ extension GutenbergProvider: HomeSectionProviding {
         case .gutenbergCollection(let id):
             guard let collection = PublicLibraryCollection.all.first(where: { $0.id == id }) else { return [] }
             return collection.books.map(CollectionEntry.bundledGutenberg)
+        case .gutenbergLists:
+            return PublicLibraryCollection.all.map { .collection(.bundledGutenberg($0)) }
         case .gutenbergFeed(let url):
             return try await browse(CollectionLocation(id: url, title: ""), after: nil).items(limit: HomeRow.limit)
         case .gutenbergShelf(let id):
@@ -127,6 +130,19 @@ extension CollectionEntry {
                           cover: book.coverURL.map { .remote($0, headers: [:]) } ?? .generated(seed: book.title),
                           blurb: nil, language: book.language, contentKind: .text),
               .gutenberg(book))
+    }
+}
+
+extension CollectionSummary {
+    /// A Gutenberg bundled list, its first books with Gutenberg's own covers, as its row has them.
+    static func bundledGutenberg(_ collection: PublicLibraryCollection) -> CollectionSummary {
+        let books = collection.books.compactMap { book -> WorkSummary? in
+            guard case .item(_, let summary, _) = CollectionEntry.bundledGutenberg(book) else { return nil }
+            return summary
+        }
+        return CollectionSummary(id: collection.id, title: localized(collection.titleKey), books: books,
+                                 languages: collection.books.compactMap(\.language),
+                                 opening: .gutenbergCollection(id: collection.id))
     }
 }
 

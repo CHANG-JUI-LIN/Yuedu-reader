@@ -14,6 +14,8 @@ enum HomeLayoutStyle: String, CaseIterable, Identifiable, Sendable {
     case coverGrid
     case list
     case featured
+    /// 專題集合: lists, not books; offered only for a section of lists (`choices(for:)`).
+    case collection
 
     var id: String { rawValue }
 
@@ -26,6 +28,7 @@ enum HomeLayoutStyle: String, CaseIterable, Identifiable, Sendable {
         case .coverGrid: "固定封面網格"
         case .list: "圖文資訊清單"
         case .featured: "精選"
+        case .collection: "專題集合"
         }
     }
 
@@ -38,7 +41,14 @@ enum HomeLayoutStyle: String, CaseIterable, Identifiable, Sendable {
         case .coverGrid: "square.grid.3x3"
         case .list: "list.bullet.rectangle"
         case .featured: "rectangle.on.rectangle.angled"
+        case .collection: "square.stack"
         }
+    }
+
+    /// What 呈現方式 offers a section: 專題集合 alone for a section of lists, every other
+    /// layout for a section of books. One place, for the long press, the form and 新增欄目.
+    static func choices(for binding: HomeSectionBinding) -> [HomeLayoutStyle] {
+        binding.listsCollections ? [.collection] : allCases.filter { $0 != .collection }
     }
 }
 
@@ -54,6 +64,7 @@ extension HomeSectionLayout {
         case .coverGrid: return .coverGrid
         case .list, .rankedList: return .list
         case .featured: return .featured
+        case .collection: return .collection
         default: break
         }
         switch componentKind {
@@ -86,6 +97,7 @@ extension HomeSectionLayout {
         case .coverGrid: self = .coverGrid
         case .list: self = ranked ? .rankedList : .list
         case .featured: self = .featured
+        case .collection: self = .collection
         }
     }
 

@@ -57,6 +57,40 @@ enum CollectionEntry: Hashable, Sendable {
     /// An RSS article (訂閱的最新文章, unified library 5g): not a work, so it has no record,
     /// no summary and no 作品詳情 (design §13.8: articles are never made `Book`s).
     case article(SubscriptionArticle)
+    /// A list offered whole, a card of 專題集合 (Phase 5 plan, decision 37).
+    case collection(CollectionSummary)
+}
+
+/// A list a source offers whole, for 專題集合 (decision 37): its name, the first books its
+/// artwork is made of, and the list it opens. Bounded when made: at most three books.
+struct CollectionSummary: Hashable, Sendable, Identifiable {
+    /// The artwork shows the first three covers, as the storefront's 精選書單 does.
+    static let artworkLimit = 3
+
+    let id: String
+    let title: String
+    /// The first books, in the list's order, at most `artworkLimit`.
+    let books: [WorkSummary]
+    let bookCount: Int
+    /// Every language the list's books are in, so 偏好閱讀語言 can place the list.
+    let languages: [String]
+    let opening: CollectionOpening
+
+    init(id: String, title: String, books: [WorkSummary], languages: [String], opening: CollectionOpening) {
+        self.id = id
+        self.title = title
+        self.books = Array(books.prefix(Self.artworkLimit))
+        bookCount = books.count
+        var seen = Set<String>()
+        self.languages = languages.filter { !$0.isEmpty && seen.insert($0).inserted }
+        self.opening = opening
+    }
+}
+
+/// Where a 專題集合 card leads: the whole list.
+enum CollectionOpening: Hashable, Sendable {
+    /// One of Gutenberg's bundled lists (`PublicLibraryCollection`).
+    case gutenbergCollection(id: String)
 }
 
 /// What opening an item needs, frozen when the entry is made, so a destination never

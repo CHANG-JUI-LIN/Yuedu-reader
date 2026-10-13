@@ -12,15 +12,28 @@ final class HomeEditorUITests: XCTestCase {
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         try Data("<feed xmlns=\"http://www.w3.org/2005/Atom\"><title>Latest</title></feed>".utf8)
             .write(to: directory.appendingPathComponent("ebooks_search.opds.xml"))
+        // 熱門, by downloads: the home's row of books since its bundled lists became 精選書單's
+        // cards (decision 37). Books of no bundled list, so a list's preview is told apart.
+        let books = [(2701, "Moby Dick", "Herman Melville"), (1513, "Romeo and Juliet", "William Shakespeare"),
+                     (2641, "A Room with a View", "E. M. Forster"), (145, "Middlemarch", "George Eliot")]
+        let entries = books.map { number, title, author in
+            "<entry><id>https://www.gutenberg.org/ebooks/\(number).opds</id><title>\(title)</title><content>\(author)</content>"
+                + "<link rel=\"subsection\" type=\"application/atom+xml\" href=\"/ebooks/\(number).opds\"/></entry>"
+        }.joined()
+        try Data("<feed xmlns=\"http://www.w3.org/2005/Atom\"><title>Popular</title>\(entries)</feed>".utf8)
+            .write(to: directory.appendingPathComponent("ebooks_search.opds@sort_order=downloads.xml"))
     }
 
     override func tearDownWithError() throws {
         try FileManager.default.removeItem(at: directory)
     }
 
-    /// 精選's first list, 中文書籍, and one of its cards.
-    private let listTitle = "中文書籍"
-    private let card = "home.card.gutenberg.24264"
+    /// 熱門, a new install's row of books, and its first card.
+    private let listTitle = "熱門"
+    private let card = "home.card.gutenberg.2701"
+    /// 精選書單, the bundled lists as 專題集合's cards, and 中文書籍's.
+    private let listsTitle = "精選書單"
+    private let listCard = "home.collection.gutenberg.chinese"
 
     @MainActor
     private func launchExplore(_ extraArguments: [String] = []) -> XCUIApplication {
@@ -143,8 +156,8 @@ final class HomeEditorUITests: XCTestCase {
         XCTAssertLessThan(book.frame.maxX, screen.maxX, "the next page shows past the edge: \(book.frame)")
         XCTAssertTrue(book.isHittable)
         // One VoiceOver stop: the title, then the author; 查看作品 is drawn, not read.
-        XCTAssertEqual(book.label, "紅樓夢")
-        XCTAssertTrue((book.value as? String)?.contains("曹雪芹") ?? false, "\(book.value ?? "")")
+        XCTAssertEqual(book.label, "Moby Dick")
+        XCTAssertTrue((book.value as? String)?.contains("Herman Melville") ?? false, "\(book.value ?? "")")
         XCTAssertFalse("\(book.label) \(book.value ?? "")".contains("查看作品"))
         attach(app, "home-section-featured")
 
@@ -162,6 +175,56 @@ final class HomeEditorUITests: XCTestCase {
             XCTAssertTrue(nextCard.isHittable)
         }
         attach(app, "home-section-featured-next")
+    }
+
+    /// Decision 37: 精選書單's lists are 專題集合's cards, a list to a page, each read by its name;
+    /// its long press offers no 呈現方式, since lists have one layout.
+    @MainActor
+    func testListsAreCollectionCards() {
+        let app = launchExplore()
+        let list = app.buttons[listCard].firstMatch
+        // The whole card, above the tab bar.
+        let tabBarTop = app.tabBars.firstMatch.frame.minY
+        for _ in 0..<6 where !list.exists || list.frame.maxY > tabBarTop { app.swipeUp() }
+        XCTAssertTrue(list.isHittable, app.debugDescription)
+        XCTAssertEqual(list.label, "中文書籍")
+        XCTAssertGreaterThan(list.frame.width, app.frame.width * 0.6, "a list to a page: \(list.frame)")
+        XCTAssertTrue(app.buttons["home.collection.gutenberg.fiction"].firstMatch.exists, "the next list follows")
+        attach(app, "home-collection-cards")
+
+        // Swiped, the lists page by; 兒童與青少年 holds two books, so two covers.
+        let rowY = list.frame.midY / app.frame.height
+        func drag(from start: CGFloat, to end: CGFloat) {
+            app.coordinate(withNormalizedOffset: CGVector(dx: start, dy: rowY))
+                .press(forDuration: 0.05, thenDragTo: app.coordinate(withNormalizedOffset: CGVector(dx: end, dy: rowY)))
+        }
+        let children = app.buttons["home.collection.gutenberg.children"].firstMatch
+        for _ in 0..<4 where !(children.exists && children.frame.minX >= 0 && children.frame.minX < app.frame.width / 4) {
+            drag(from: 0.85, to: 0.15)
+        }
+        XCTAssertTrue(children.isHittable, app.debugDescription)
+        attach(app, "home-collection-two-books")
+        for _ in 0..<4 where !(list.exists && list.frame.minX >= 0) { drag(from: 0.15, to: 0.85) }
+        XCTAssertTrue(list.isHittable, app.debugDescription)
+
+        // A tap opens the whole list.
+        list.tap()
+        XCTAssertTrue(app.navigationBars["中文書籍"].waitForExistence(timeout: 10), app.debugDescription)
+        app.navigationBars.buttons.element(boundBy: 0).tap()
+        XCTAssertTrue(list.waitForExistence(timeout: 10), app.debugDescription)
+
+        // No page lists the lists alone, so the name is text, not a 查看全部 button.
+        let header = app.descendants(matching: .any).matching(NSPredicate(format: "identifier BEGINSWITH %@ AND label == %@",
+                                                                          "home.row.header.", listsTitle)).firstMatch
+        for _ in 0..<6 where !header.isHittable {
+            if header.exists, header.frame.minY < app.frame.midY { app.swipeDown() } else { app.swipeUp() }
+        }
+        XCTAssertTrue(header.isHittable, app.debugDescription)
+        XCTAssertEqual(header.elementType, .staticText)
+        header.press(forDuration: 1.0)
+        XCTAssertTrue(app.buttons["隱藏"].firstMatch.waitForExistence(timeout: 5), app.debugDescription)
+        XCTAssertFalse(app.buttons["呈現方式"].exists, "lists have one layout")
+        attach(app, "home-collection-menu")
     }
 
     /// Long-pressing a section's name offers 隱藏, 設定 and 刪除; 刪除 asks first.
@@ -240,7 +303,7 @@ final class HomeEditorUITests: XCTestCase {
         let edit = app.buttons["home.edit"].firstMatch
         for _ in 0..<8 where !edit.isHittable { app.swipeUp() }
         edit.tap()
-        XCTAssertEqual(sectionCards(app, named: "兒童與青少年").count, 1)
+        XCTAssertEqual(sectionCards(app, named: "兒童與青少年").count, 0, "a new install has 精選書單, not a row per list")
 
         // A library: Gutenberg's bundled list.
         startSection(app, layout: "coverGrid")
@@ -257,7 +320,7 @@ final class HomeEditorUITests: XCTestCase {
         app.buttons["homeSection.add"].firstMatch.tap()
         // The home brings the new section, at its end, into view.
         XCTAssertTrue(app.buttons["homeEditor.addSection"].waitForExistence(timeout: 5), app.debugDescription)
-        XCTAssertEqual(sectionCards(app, named: "兒童與青少年").count, 2, app.debugDescription)
+        XCTAssertEqual(sectionCards(app, named: "兒童與青少年").count, 1, app.debugDescription)
         attach(app, "home-new-section-added")
 
         // A book source's category.

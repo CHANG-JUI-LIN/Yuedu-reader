@@ -106,8 +106,8 @@ final class ExploreHomeUITests: XCTestCase {
         app.buttons[start].firstMatch.tap()
     }
 
-    /// 精選's first list: a row of covers, so the home is drawn.
-    private let featuredCard = "home.card.gutenberg.24264"
+    /// 精選書單's first list, a 專題集合 card (decision 37), so the home is drawn.
+    private let featuredCard = "home.collection.gutenberg.chinese"
     private let gutenbergID = "builtin.gutenberg"
 
     /// A new install, without book sources: 繼續閱讀 (empty, so not drawn), then 精選. No

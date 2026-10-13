@@ -202,10 +202,25 @@ private struct PublicLibraryCollectionArtwork: View {
     let collection: PublicLibraryCollection
 
     var body: some View {
+        let books = Array(collection.books.prefix(CollectionSummary.artworkLimit))
+        CollectionCoverArtwork(count: books.count) { index, _ in
+            PublicLibraryCover(title: books[index].title, author: books[index].author, coverURL: books[index].coverURL)
+        }
+    }
+}
+
+/// A list's artwork: its first covers side by side, tilted, on a plain ground. The storefront's
+/// 精選書單 drew it first; the home's 專題集合 (decision 37) draws it with the home's covers.
+/// `cover` draws one cover in the size given, a third of the artwork's width by its height.
+struct CollectionCoverArtwork<Cover: View>: View {
+    let count: Int
+    @ViewBuilder let cover: (Int, CGSize) -> Cover
+
+    var body: some View {
         GeometryReader { proxy in
             HStack(spacing: DSSpacing.lg) {
-                ForEach(Array(collection.books.prefix(3))) { book in
-                    PublicLibraryCover(title: book.title, author: book.author, coverURL: book.coverURL)
+                ForEach(0..<count, id: \.self) { index in
+                    cover(index, CGSize(width: proxy.size.width / 3, height: proxy.size.height))
                         .frame(width: proxy.size.width / 3, height: proxy.size.height)
                 }
             }

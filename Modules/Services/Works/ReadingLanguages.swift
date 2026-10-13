@@ -54,12 +54,17 @@ struct ReadingLanguagePreferences: Codable, Equatable, Sendable {
     /// A section's books in the preferred languages' order, each language keeping the
     /// source's order among its books; under 只推薦, without the books known to be in another
     /// language. Places (an index's groups, a feed's) go first: a row draws them apart from the
-    /// books, as chips, in their own order.
+    /// books, as chips, in their own order. A list (專題集合) goes by its best-placed book's
+    /// language: a list with a book in a preferred language is never left out.
     func arrange(_ entries: [CollectionEntry]) -> [CollectionEntry] {
         guard scope != .any, !languages.isEmpty else { return entries }
         let ranked = entries.enumerated().compactMap { offset, entry -> (Rank, Int, CollectionEntry)? in
-            guard case .item(let record, let summary, _) = entry else { return (.preferred(-1), offset, entry) }
-            let rank = rank(of: summary.language ?? record.language)
+            let rank: Rank
+            switch entry {
+            case .item(let record, let summary, _): rank = self.rank(of: summary.language ?? record.language)
+            case .collection(let list): rank = list.languages.map { self.rank(of: $0) }.min() ?? .unknown
+            case .location, .article: return (.preferred(-1), offset, entry)
+            }
             if scope == .only, rank == .other { return nil }
             return (rank, offset, entry)
         }

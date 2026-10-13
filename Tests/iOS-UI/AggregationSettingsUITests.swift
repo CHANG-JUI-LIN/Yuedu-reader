@@ -180,7 +180,7 @@ final class AggregationSettingsUITests: XCTestCase {
         XCTAssertTrue(exploreTab.waitForExistence(timeout: 5), app.debugDescription)
         exploreTab.tap()
         // 精選's first card shows once the home is read, and so saved.
-        XCTAssertTrue(app.buttons["home.card.gutenberg.24264"].firstMatch.waitForExistence(timeout: 20), app.debugDescription)
+        XCTAssertTrue(app.buttons["home.collection.gutenberg.chinese"].firstMatch.waitForExistence(timeout: 20), app.debugDescription)
 
         openAggregationSettings(app)
         // On the page itself, as Emby lists its Home Sections (decision 36).

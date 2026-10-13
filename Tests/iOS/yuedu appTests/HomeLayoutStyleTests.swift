@@ -65,12 +65,17 @@ struct HomeLayoutStyleTests {
         #expect(page.sections[1].binding == .related)
     }
 
-    @Test("繼續閱讀 starts as 精簡閱讀卡片; the other defaults as a row")
+    @Test("繼續閱讀 starts as 精簡閱讀卡片, 精選書單 as 專題集合; the other defaults as a row")
     func defaults() {
         for mode in ExploreMode.allCases {
             let page = HomePageDefaults.page(mode: mode, publicLibrariesAvailable: true)
             for section in page.sections {
-                #expect(section.layout == (section.binding == .continueReading ? .compactReadingCard : .row))
+                let expected: HomeSectionLayout = switch section.binding {
+                case .continueReading: .compactReadingCard
+                case .gutenbergLists: .collection
+                default: .row
+                }
+                #expect(section.layout == expected)
             }
         }
     }

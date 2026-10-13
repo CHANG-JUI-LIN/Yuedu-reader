@@ -24,7 +24,7 @@ extension HomeSectionBinding {
         switch self {
         case .continueReading, .latest, .related, .nextInSeries, .subscriptionArticles: .appData
         case .opdsFeed(let connectionID, _): .connection(id: connectionID)
-        case .gutenbergCollection, .gutenbergFeed, .gutenbergShelf: .gutenberg
+        case .gutenbergCollection, .gutenbergLists, .gutenbergFeed, .gutenbergShelf: .gutenberg
         case .aozoraNew, .aozoraIndex: .aozora
         case .sourceCategories(let references): references.first.map { .bookSource(url: $0.sourceURL) }
         case .myLibrary, .unknown: nil
@@ -37,10 +37,14 @@ extension HomeSectionBinding {
     /// 青空文庫's choices: 新着, then each index.
     static let aozora: [HomeSectionBinding] = [.aozoraNew] + ["authors", "titles", "categories"].map { .aozoraIndex(kind: $0) }
 
-    /// Gutenberg's bundled lists, which send no request.
+    /// Gutenberg's bundled lists, which send no request: 精選書單, all of them as cards, then each
+    /// list as a section of its own.
     static var gutenbergCollections: [HomeSectionBinding] {
-        PublicLibraryCollection.all.map { .gutenbergCollection(id: $0.id) }
+        [.gutenbergLists] + PublicLibraryCollection.all.map { .gutenbergCollection(id: $0.id) }
     }
+
+    /// A section of lists, drawn as 專題集合's cards whatever its stored layout.
+    var listsCollections: Bool { self == .gutenbergLists }
 }
 
 extension HomeSection {
