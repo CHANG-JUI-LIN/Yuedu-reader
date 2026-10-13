@@ -25,13 +25,13 @@ extension ReaderView {
     func workDetailDestination(_ route: WorkDetailRoute) -> some View {
         WorkDetailView(route: route, readerContext: WorkDetailReaderContext(
             bookId: bookId,
-            continueReading: { chapterIndex in
+            continueReading: { target in
                 if let navigator = readerNavigator {
                     navigator.returnFromDetail {
-                        if let chapterIndex { jumpToChapter(chapterIndex) }
+                        if let target { jumpToTOCEntry(target.entry) }
                     }
                 } else {
-                    pendingDetailChapterIndex = chapterIndex
+                    pendingDetailTOCTarget = target
                     showWorkDetail = false
                 }
             },

@@ -64,13 +64,25 @@ enum WorkTableOfContents {
         }
     }
 
-    /// The reader's chapters: the EPUB's own table of contents, else its spine.
+    /// The reader's chapters: the EPUB's own table of contents, else its spine. An entry inside
+    /// a spine item keeps its anchor in `url`, as the EPUB writes it (`href#fragment`).
     static func epubChapters(of session: PublicationSession) -> [OnlineChapterRef] {
         if !session.tocEntries.isEmpty {
-            return ReaderTOCChapterMapper.chapters(from: session.tocEntries, session: session).map {
-                OnlineChapterRef(index: $0.index, title: $0.title, url: $0.href)
+            return ReaderTOCChapterMapper.chapters(from: session.tocEntries, session: session).map { entry in
+                OnlineChapterRef(index: entry.index, title: entry.title,
+                                 url: entry.fragment.map { "\(entry.href)#\($0)" } ?? entry.href)
             }
         }
         return session.chapters.map { OnlineChapterRef(index: $0.index, title: $0.title, url: $0.href) }
+    }
+
+    /// Where the reader opens `chapter`: its spine item (a TXT's chapter), at the entry's anchor
+    /// when it has one. A TXT chapter's `url` is its index's number, which has no anchor.
+    static func target(of chapter: OnlineChapterRef) -> ReaderTOCTarget {
+        guard let hash = chapter.url.firstIndex(of: "#") else {
+            return ReaderTOCTarget(spineIndex: chapter.index, fragment: nil)
+        }
+        let fragment = String(chapter.url[chapter.url.index(after: hash)...])
+        return ReaderTOCTarget(spineIndex: chapter.index, fragment: fragment.isEmpty ? nil : fragment)
     }
 }

@@ -4,6 +4,8 @@ import SwiftUI
 // existing format-specific reader. Shelf membership never determines readability.
 struct BookReaderView: View {
     let bookId: UUID
+    /// 作品詳情's 目錄 entry the reader opens at (`ReaderView`'s opening restore goes on to it).
+    var openingTOCTarget: ReaderTOCTarget?
     @EnvironmentObject var store: BookStore
     @Environment(\.appDependencies) private var dependencies
     @Environment(\.readerNavigator) private var readerNavigator
@@ -39,7 +41,7 @@ struct BookReaderView: View {
             } else if shouldUseFixedPageReader {
                 FixedPageReaderView(bookId: bookId)
             } else {
-                ReaderView(bookId: bookId)
+                ReaderView(bookId: bookId, openingTOCTarget: openingTOCTarget)
             }
         }
         .environment(\.rootTabBarVisibility, isInTabNavigation ? rootTabBarVisibility : nil)

@@ -1,3 +1,4 @@
+import Combine
 import SwiftUI
 import UIKit
 import YueduCoreText
@@ -185,13 +186,92 @@ extension ReaderView {
 
     /// Navigate to a TOC entry, honoring its in-spine anchor so sub-sections of one spine file
     /// land on their own page instead of the file's start.
+    ///
+    /// An anchor is known only once its spine item is laid out. For one that is not yet — a
+    /// Project Gutenberg chapter in a file not read yet — the jump lands once it is: in paged
+    /// mode after the item's layout, awaited as an internal link awaits it
+    /// (`BrowserLayoutPageEngine.resolveInternalLink`); in scroll mode when the item enters the
+    /// scroll window (`resolvePendingScrollTOCEntry`), since the scroll engine lays its chapters
+    /// out itself as they come into view.
     func jumpToTOCEntry(_ chapter: BookChapter) {
         let position = tocPosition(for: chapter, engine: epubRenderer.engine)
-        jumpToChapter(position.spineIndex, charOffset: position.charOffset)
+        guard usesCoreTextEPUB, let engine = epubRenderer.engine,
+              let fragment = chapter.fragment, !fragment.isEmpty,
+              tocAnchorOffset(for: chapter, engine: engine) == nil else {
+            jumpToChapter(position.spineIndex, charOffset: position.charOffset)
+            return
+        }
+        if effectiveScrollMode, epubRenderer.scrollEngine != nil {
+            jumpToChapter(position.spineIndex, charOffset: 0)
+            pendingScrollTOCEntry = ReaderPendingTOCEntry(entry: chapter, generation: chapterJumpGeneration)
+            return
+        }
+        let generation = chapterJumpGeneration
+        Task { @MainActor in
+            await engine.preloadChapter(at: position.spineIndex)
+            // Another jump came while the spine item was laid out, or the reader rebuilt its engine.
+            guard generation == chapterJumpGeneration, engine === epubRenderer.engine else { return }
+            if tocAnchorOffset(for: chapter, engine: engine) == nil {
+                logTOCAnchorMiss(chapter, anchorCount: engine.chapterAnchorOffsets(forSpine: position.spineIndex)?.count)
+            }
+            let resolved = tocPosition(for: chapter, engine: engine)
+            jumpToChapter(resolved.spineIndex, charOffset: resolved.charOffset)
+        }
+    }
+
+    /// The scroll window's chapters changed, on whichever scroll engine is current (a reslice
+    /// replaces it). `@Published` announces in `willSet`, from inside the engine's insertion, so
+    /// the jump it leads to is made on the next main-queue turn, after the insertion is done.
+    var scrollChaptersInserted: AnyPublisher<Void, Never> {
+        epubRenderer.$scrollEngine
+            .compactMap { $0 }
+            .map { $0.$chapterRanges.map { _ in () } }
+            .switchToLatest()
+            .receive(on: DispatchQueue.main)
+            .eraseToAnyPublisher()
+    }
+
+    /// Scroll mode: a chapter entered the scroll window. The 目錄 entry waiting at its spine
+    /// item's start goes on to its anchor once that is laid out — once.
+    func resolvePendingScrollTOCEntry() {
+        guard let pending = pendingScrollTOCEntry else { return }
+        guard pending.generation == chapterJumpGeneration, let scrollEngine = epubRenderer.scrollEngine else {
+            pendingScrollTOCEntry = nil
+            AppLogger.render("⟐ tocJump superseded before its anchor was laid out spine=\(pending.entry.index)")
+            return
+        }
+        // Its loading placeholder can enter the window first; the chapter's anchors come with
+        // its content.
+        guard let anchors = scrollEngine.anchorOffsets(forChapter: pending.entry.index) else { return }
+        pendingScrollTOCEntry = nil
+        if anchors[pending.entry.fragment ?? ""] == nil { logTOCAnchorMiss(pending.entry, anchorCount: anchors.count) }
+        let resolved = tocPosition(for: pending.entry, engine: epubRenderer.engine)
+        jumpToChapter(resolved.spineIndex, charOffset: resolved.charOffset)
+    }
+
+    /// Landing at the spine item's start when the entry named an anchor is a real miss.
+    private func logTOCAnchorMiss(_ chapter: BookChapter, anchorCount: Int?) {
+        AppLogger.render("⟐ tocJump anchor not found spine=\(chapter.index) fragment=\((chapter.fragment ?? "").prefix(80)) "
+            + "anchors=\(anchorCount ?? -1)")
+    }
+
+    /// The opening restore has put the reader on `restoredSpine`: 作品詳情's 目錄 entry, if it
+    /// opened the reader, is reached from there, once.
+    func openAtOpeningTOCTarget(restoredSpine: Int) {
+        guard let target = pendingOpeningTOCTarget else { return }
+        pendingOpeningTOCTarget = nil
+        guard target.spineIndex == restoredSpine else {
+            // The saved position is the entry's spine item; another one means the reader was
+            // read elsewhere since, and that position wins.
+            AppLogger.render("⟐ openingTOCTarget dropped target=\(target.spineIndex) restored=\(restoredSpine)")
+            return
+        }
+        jumpToTOCEntry(target.entry)
     }
 
     func jumpToChapter(_ idx: Int, charOffset: Int = 0) {
         guard chapters.indices.contains(idx) else { return }
+        chapterJumpGeneration &+= 1
         if effectiveScrollMode, epubRenderer.scrollEngine != nil {
             let position = CoreTextReadingPosition(spineIndex: idx, charOffset: charOffset)
             currentChapterIndex = idx
