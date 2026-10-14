@@ -261,9 +261,14 @@ struct SearchRecentsTests {
     func englishSourceCountPlural() throws {
         let path = try #require(Bundle.main.path(forResource: "en", ofType: "lproj"))
         let english = try #require(Bundle(path: path))
+        // The stringsdict's plural category comes from the formatting locale, not from the
+        // bundle the format was read from. An English user's process locale is English; the
+        // simulator's is zh_TW, whose only category is `other` ("1 sources"). So the format
+        // is applied as an English user's app applies it.
+        let locale = Locale(identifier: "en")
 
-        #expect(String(format: localized("%d 源", bundle: english), 1) == "1 source")
-        #expect(String(format: localized("%d 源", bundle: english), 3) == "3 sources")
+        #expect(String(format: localized("%d 源", bundle: english), locale: locale, 1) == "1 source")
+        #expect(String(format: localized("%d 源", bundle: english), locale: locale, 3) == "3 sources")
     }
 
     // MARK: Helpers
