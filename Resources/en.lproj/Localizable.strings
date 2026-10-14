@@ -3804,3 +3804,8 @@
 "尋找可用來源" = "Find Sources";
 "找到 %d 個來源" = "Found %d Sources";
 "點兩下在已啟用的來源配置中搜尋這部作品" = "Double-tap to search your enabled sources for this work";
+
+/* Unified library 3a-2: removing a value filled in automatically */
+"移除自動補上的簡介" = "Remove Filled-In Description";
+"移除自動補上的封面" = "Remove Filled-In Cover";
+"自動補上・%@" = "Filled in from %@";

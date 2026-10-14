@@ -197,6 +197,7 @@ struct yuedu_appApp: App {
                 #endif
             }
                 .environmentObject(bookStore)
+                .environment(bookStore.filledCovers)
                 .environmentObject(subscriptionStore)
                 .environment(\.appDependencies, .live)
                 #if DEBUG

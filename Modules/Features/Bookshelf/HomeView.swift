@@ -289,15 +289,17 @@ struct HomeView: View {
             AppLogger.info("⟐ openBook staged token=\(requestToken) hasPendingToken=\(pendingReaderOpenToken != nil)")
             // Same resolver the cards use, so the lifted card carries the very
             // image the shelf was showing (including a 預設封面).
+            let filledCover = store.filledCovers.path(for: book)
             let snapshot = BookshelfCoverStyle.snapshot(
                 for: book,
                 colorScheme: colorScheme,
+                filledCover: filledCover,
                 sourceSize: sourceGeometry?.frame.size
                     ?? readerGeometryStore.frame(for: book.id, onPage: page)?.size
             )
             let snapshotUpgrade = snapshot == nil
                 ? nil
-                : BookshelfCoverStyle.snapshotUpgrade(for: book, colorScheme: colorScheme)
+                : BookshelfCoverStyle.snapshotUpgrade(for: book, colorScheme: colorScheme, filledCover: filledCover)
             AppLogger.info("⟐ openBook snapshot resolved hasSnapshot=\(snapshot != nil)")
             Task { @MainActor in
                 AppLogger.info("⟐ openBook begin resolveOpeningDirection bookID=\(book.id)")
@@ -1291,6 +1293,10 @@ struct EditBookSheet: View {
     @State private var coverUrlInput: String
     @State private var isApplyingCover = false
     @State private var coverErrorMessage: String?
+    /// Who gave the description and cover the filler filled in, when either is in effect
+    /// (unified library 3a-2): the sheet offers to remove them. Read from the sidecar once.
+    @State private var filledIntroOrigin: String?
+    @State private var filledCoverOrigin: String?
     @Environment(\.presentationMode) var dismiss
     @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
     @EnvironmentObject private var store: BookStore
@@ -1408,6 +1414,12 @@ struct EditBookSheet: View {
                         TextField(localized("簡介"), text: $introInput, axis: .vertical)
                             .lineLimit(3...10)
                             .accessibilityIdentifier("bookInfo.intro")
+                        if let origin = filledIntroOrigin, introInput.isEmpty {
+                            removeFilledButton(localized("移除自動補上的簡介"), origin: origin) {
+                                store.removeFilledValue(.intro, of: book.id)
+                                filledIntroOrigin = nil
+                            }
+                        }
                     } header: {
                         Text(localized("簡介")).foregroundStyle(DSColor.textSecondary)
                     } footer: {
@@ -1443,6 +1455,7 @@ struct EditBookSheet: View {
                     .interfaceSectionSurface()
                 }
                 .softScrollEdges()
+                .task { loadFilledOrigins() }
                 .navigationTitle(localized("書籍資訊"))
                 .themedAppSurface(for: .bookshelf)
                 .alert(
@@ -1520,6 +1533,12 @@ struct EditBookSheet: View {
                 }
                 .disabled(isApplyingCover)
             }
+            if let origin = filledCoverOrigin, store.filledCovers.path(for: liveBook) != nil {
+                removeFilledButton(localized("移除自動補上的封面"), origin: origin) {
+                    store.removeFilledValue(.cover, of: book.id)
+                    filledCoverOrigin = nil
+                }
+            }
         } header: {
             Text(localized("封面"))
                 .foregroundStyle(DSColor.textSecondary)
@@ -1549,6 +1568,27 @@ struct EditBookSheet: View {
         .interfaceSectionSurface()
     }
 
+    /// A filled value's 移除, naming where it came from.
+    private func removeFilledButton(_ title: String, origin: String, action: @escaping () -> Void) -> some View {
+        Button(role: .destructive, action: action) {
+            Label {
+                VStack(alignment: .leading, spacing: DSSpacing.xxs) {
+                    Text(title)
+                    Text(String(format: localized("自動補上・%@"), origin))
+                        .font(DSFont.caption)
+                        .foregroundStyle(DSColor.textSecondary)
+                }
+            } icon: {
+                Image(systemName: "trash")
+            }
+        }
+    }
+
+    private func loadFilledOrigins() {
+        filledIntroOrigin = store.filledValue(.intro, of: liveBook).map { FilledMetadata.providerName($0.provider) }
+        filledCoverOrigin = store.filledValue(.cover, of: liveBook).map { FilledMetadata.providerName($0.provider) }
+    }
+
     private var canApplyCoverUrl: Bool {
         let trimmed = coverUrlInput.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty, let url = URL(string: trimmed) else { return false }
@@ -1561,7 +1601,7 @@ struct EditBookSheet: View {
     private var coverArtwork: some View {
         BookshelfCoverArtwork(
             book: liveBook,
-            plan: .bookInfo(for: liveBook),
+            plan: .bookInfo(for: liveBook, filledCover: store.filledCovers.path(for: liveBook)),
             displaySize: CGSize(width: DSLayout.bookCoverHeroWidth, height: DSLayout.bookCoverHeroHeight)
         )
     }
