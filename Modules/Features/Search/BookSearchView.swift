@@ -135,6 +135,8 @@ private struct PublicLibrarySearchSection: View {
 private struct IOS17SearchResults: View {
     /// The shelf's matches; `nil` shows no shelf section.
     let shelf: ShelfSearchModel?
+    /// The saved libraries' answers; `nil` shows no 我的書庫 section.
+    var libraries: LibrarySearchModel? = nil
     let rows: [IOS17SearchResultTableRow]
     let showsLoadMore: Bool
     let sourcesNotice: String?
@@ -143,8 +145,8 @@ private struct IOS17SearchResults: View {
     let onSelect: (UUID) -> Void
     let onLoadMore: () -> Void
     let submitGutenberg: () -> Void
-    /// Opens a shelf match's 作品詳情 on the tab's stack.
-    var openShelfMatch: (WorkDetailRoute) -> Void = { _ in }
+    /// Opens a shelf or library match's 作品詳情 on the tab's stack.
+    var openWork: (WorkDetailRoute) -> Void = { _ in }
     @ObservedObject private var aozora = AozoraCatalogStore.shared
     @Environment(\.openPublicLibraryBooks) private var openBooks
     @Environment(\.colorScheme) private var colorScheme
@@ -154,6 +156,9 @@ private struct IOS17SearchResults: View {
         let index = aozora.catalog
         let matches = libraryQuery.flatMap { query in index?.search(query) } ?? []
         let shelfMatches = shelf?.matches ?? []
+        let libraryMatches = libraries?.matches ?? []
+        let libraryNotices = (libraries.map { $0.isSearching && $0.matches.isEmpty } == true ? [localized("搜索中…")] : [])
+            + (libraries?.failures.map(\.line) ?? [])
         IOS17SearchResultTable(
             content: IOS17SearchResultTableContent(
                 shelf: shelfMatches.map {
@@ -173,7 +178,9 @@ private struct IOS17SearchResults: View {
                             }
                         } ?? []
                     )
-                }
+                },
+                remoteLibraries: libraryMatches.map(IOS17SearchResultTableRow.init(libraryMatch:)),
+                remoteLibraryNotices: libraryNotices
             ),
             onSelect: onSelect,
             onLoadMore: onLoadMore,
@@ -192,7 +199,14 @@ private struct IOS17SearchResults: View {
                     AppLogger.error("⟐ search tap found no shelf match", context: ["id": id.uuidString])
                     return
                 }
-                openShelfMatch(match.route)
+                openWork(match.route)
+            },
+            onSelectLibraryBook: { id in
+                guard let match = libraryMatches.first(where: { $0.id == id }) else {
+                    AppLogger.error("⟐ search tap found no library match", context: ["id": id.uuidString])
+                    return
+                }
+                openWork(match.route)
             }
         )
     }
@@ -257,6 +271,8 @@ struct BookSearchView: View {
     /// The shelf's matches as you type (unified search 4b-1); read only by the views that
     /// draw them.
     @State private var shelfSearch = ShelfSearchModel()
+    /// The saved OPDS and Calibre libraries' answers, asked on submit (unified search 4b-2).
+    @State private var librarySearch = LibrarySearchModel()
     @AppStorage(RecentSearchQueries.storageKey) private var recentQueries = RecentSearchQueries()
 
     /// The scope this page searches: its own session scope, else the saved one.
@@ -384,6 +400,7 @@ struct BookSearchView: View {
                 submittedQuery = ""
                 needsSearchResubmission = false
                 aggregator.cancelAndClear()
+                librarySearch.clear()
             }
         }
         .alert(
@@ -478,14 +495,17 @@ struct BookSearchView: View {
         List {
             if showsCombinedResults {
                 let shelfHasMatches = !shelfSearch.matches.isEmpty
+                let librariesShow = librarySearch.isSearching || !librarySearch.matches.isEmpty
+                    || !librarySearch.failures.isEmpty
                 ShelfSearchSection(model: shelfSearch, anchorsTitle: true)
+                LibrarySearchSection(model: librarySearch, anchorsTitle: !shelfHasMatches)
                 if !aggregator.results.isEmpty || sourcesNotice != nil {
-                    Section(localized("來源配置")) { sourceRows(anchorsTitle: !shelfHasMatches) }
+                    Section(localized("來源配置")) { sourceRows(anchorsTitle: !shelfHasMatches && !librariesShow) }
                 }
                 if offersPublicLibraries {
                     PublicLibrarySearchSection(
                         query: trimmedQuery,
-                        anchorsTitle: !shelfHasMatches && aggregator.results.isEmpty && sourcesNotice == nil,
+                        anchorsTitle: !shelfHasMatches && !librariesShow && aggregator.results.isEmpty && sourcesNotice == nil,
                         submitGutenberg: submitGutenberg
                     )
                 }
@@ -548,6 +568,7 @@ struct BookSearchView: View {
     private var iOS17ResultList: some View {
         IOS17SearchResults(
             shelf: showsCombinedResults ? shelfSearch : nil,
+            libraries: showsCombinedResults ? librarySearch : nil,
             rows: aggregator.results.map(IOS17SearchResultTableRow.init(searchBook:)),
             showsLoadMore: canLoadMore,
             sourcesNotice: showsCombinedResults ? sourcesNotice : nil,
@@ -568,7 +589,7 @@ struct BookSearchView: View {
                 aggregator.loadMore()
             },
             submitGutenberg: submitGutenberg,
-            openShelfMatch: { [tabNavigation] route in tabNavigation?.path.append(route) }
+            openWork: { [tabNavigation] route in tabNavigation?.path.append(route) }
         )
     }
 
@@ -659,14 +680,24 @@ struct BookSearchView: View {
         aggregator.search(query: q, sources: sources)
     }
 
-    /// The keyboard's Search: the sources, or with no source at all, Gutenberg. Ignored while
-    /// the source library is still being read, so a large library is not taken for none.
+    /// The keyboard's Search: the saved libraries and the sources; with neither, Gutenberg
+    /// where it is offered. Ignored while the source library is still being read, so a large
+    /// library is not taken for none.
     private func submit() {
-        if offersPublicLibraries, enabledSources.isEmpty {
-            guard sourceStore.isLoaded else { return }
-            submitGutenberg()
-        } else {
+        let searchesLibraries = isTabRoot && tabNavigation != nil && librarySearch.hasLibraries
+        if searchesLibraries, !trimmedQuery.isEmpty {
+            librarySearch.start(trimmedQuery, store: bookStore)
+        }
+        guard enabledSources.isEmpty, searchesLibraries || offersPublicLibraries else {
             doSearch()
+            return
+        }
+        guard sourceStore.isLoaded else { return }
+        if searchesLibraries {
+            // The libraries answer; having no source is not an error here.
+            if !trimmedQuery.isEmpty { recentQueries = recentQueries.recording(trimmedQuery) }
+        } else {
+            submitGutenberg()
         }
     }
 

@@ -24,6 +24,20 @@ struct IOS17SearchResultTableRow: Identifiable, Equatable {
     let coverURL: String
     /// A shelf copy's cover as the shelf decides it (unified search 4b-1); nil for a result.
     var shelfCover: IOS17ShelfCover? = nil
+    /// A library book's cover request: its connection's headers and session (unified search
+    /// 4b-2); nil for a result.
+    var remoteCover: IOS17RemoteCover? = nil
+}
+
+/// How a library book's cover is asked for: with its connection's headers and, for a
+/// library that signs in, its own session, as `BookCoverImage` asks for it.
+struct IOS17RemoteCover: Equatable {
+    var headers: [String: String]
+    var session: URLSession?
+
+    static func == (lhs: Self, rhs: Self) -> Bool {
+        lhs.headers == rhs.headers && lhs.session === rhs.session
+    }
 }
 
 /// A shelf copy's cover for the UIKit row, taken from the shelf's own `BookshelfCoverPlan`:
@@ -57,6 +71,10 @@ struct IOS17SearchResultTableContent: Equatable {
     var sourcesNotice: String? = nil
     /// The public libraries' section, under the sources' (the 搜索 tab's root only).
     var library: IOS17SearchLibrarySection? = nil
+    /// The saved OPDS and Calibre libraries' books (unified search 4b-2), under the shelf's.
+    var remoteLibraries: [IOS17SearchResultTableRow] = []
+    /// Their status lines: searching, or each library that could not answer.
+    var remoteLibraryNotices: [String] = []
 
     func requiresReload(comparedTo previous: Self?) -> Bool {
         self != previous
