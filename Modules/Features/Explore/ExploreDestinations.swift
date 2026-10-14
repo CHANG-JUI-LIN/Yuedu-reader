@@ -69,6 +69,8 @@ private struct ExploreRouteDestinations: ViewModifier {
             LibrarySourcesView(group: group)
         case .module(let id):
             RuleModuleDetailView(moduleID: id)
+        case .moduleList(let route):
+            ModuleListPage(route: route)
         }
     }
 
@@ -213,9 +215,13 @@ enum ExplorePlace {
             guard let aozoraIndex, let mode = AozoraBrowseMode(rawValue: kind) else { return nil }
             return .publicLibrary(.aozoraCatalog(mode, aozoraIndex))
         // 訂閱的最新文章: the rest is RSS 訂閱 (`ExploreNavigationRoute.subscriptions`).
-        // 為你推薦 is mixed from many places; no page lists it whole. A module list's whole page
-        // is a step of its own after Phase 6f (6f-2): no page browses a provider's location yet.
-        case .myLibrary, .continueReading, .related, .nextInSeries, .subscriptionArticles, .forYou, .module, .unknown:
+        // A module list's whole page, page by page, with the section's values (6f-2).
+        case .module(let moduleID, let entryID):
+            return .explore(.moduleList(ModuleListRoute(moduleID: moduleID, entryID: entryID,
+                                                        title: row.section.displayTitle(sourceName: row.sourceName),
+                                                        parameters: row.section.parameters)))
+        // 為你推薦 is mixed from many places; no page lists it whole.
+        case .myLibrary, .continueReading, .related, .nextInSeries, .subscriptionArticles, .forYou, .unknown:
             return nil
         }
     }

@@ -443,3 +443,19 @@ How these fit together:
   - `ModuleContentSourceTests` (6) on iOS 27: owner and name; lists, never search; editable parameters and current values, the same as the request's; editor round trip, with a cleared parameter going back to the default; rows follow the library through a removal; the version changes the inputs.
   - Regressions on iOS 27, 58/58: `HomeSectionEditorTests`, `HomeModelTests`, `ModuleProviderTests`, `RuleModuleImportTests`, `ExploreHomeTests`, `HomeSectionTests`.
   - `ModuleLibraryUITests.testModuleListOnTheHome`: install from 資源庫, then 編輯首頁 → 新增欄目 → 選擇內容來源 → 模組 → 新書. 資料來源 reads 「測試模組 › 新書」, the preview loads the fixture list (`new.html`), and after 新增 the home shows the row. The whole class passes 3/3 on iOS 27 and 3/3 on iOS 17.5.
+
+### 6f-2 (branch `modules/6f2-show-all`)
+
+- **查看全部 of a module row:** `ExplorePlace.showAll` maps `.module` to `ExploreNavigationRoute.moduleList(ModuleListRoute)`. The route freezes the list, its title and the section's values when the page is pushed.
+- **`ModuleListModel`** reads the list through the module's provider, so it uses the same requests, host gate and cache as the row (`ModuleProvider.page(ofList:parameters:after:)`).
+  - The first page loads on open, and each later one only on 載入更多.
+  - A failed next page keeps the books already read, and the button turns into 重試.
+  - A module that was removed, or no longer has the list, shows 「找不到這個模組。」.
+  - **Disclosed guard:** a page that brings no new book ends the list. It guards a site that ignores the page parameter and answers every page with the same books, which would otherwise loop 載入更多 and draw cards twice. It stays as long as module sites can ignore their paging.
+- **`ModuleListPage`** shows the cards in `HomeSectionCards`' `coverGrid`, with no 查看全部, so every card is drawn. A card opens 作品詳情.
+  - **Found by the UI test:** the grid draws its covers only after it has measured its width, and a `LazyVStack` never gave it one, so the page came up empty. The page now uses a `VStack`, as the home's row does. The grid itself is still lazy.
+- Every string reuses an existing key. Previews cover a removed module and loading.
+- **Tests:**
+  - `ModuleListPageTests` (5): page by page with the section's values, ending on an empty page; a repeated page ends the list; a first-page failure, and a next-page failure that keeps what was read; missing module or list; 查看全部's route.
+  - With `ModuleProviderTests` and `ModuleContentSourceTests`: 24/24 on iOS 27.
+  - `testModuleListOnTheHome` now also taps the row header, sees the list page with the fixture's books and no 載入更多. It passes on iOS 27 and iOS 17.5.

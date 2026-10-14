@@ -22,6 +22,8 @@ enum ExploreNavigationRoute: Hashable {
     /// An installed module's page (Phase 6e), by its id: the page reads the installed list, so
     /// an update or a removal shows at once.
     case module(id: String)
+    /// A module row's 查看全部 (Phase 6f-2), with the section's values frozen in the route.
+    case moduleList(ModuleListRoute)
 
     static func == (lhs: Self, rhs: Self) -> Bool {
         switch (lhs, rhs) {
@@ -42,6 +44,8 @@ enum ExploreNavigationRoute: Hashable {
             return lhsGroup == rhsGroup
         case (.module(let lhsID), .module(let rhsID)):
             return lhsID == rhsID
+        case (.moduleList(let lhsRoute), .moduleList(let rhsRoute)):
+            return lhsRoute == rhsRoute
         default:
             return false
         }
@@ -76,6 +80,9 @@ enum ExploreNavigationRoute: Hashable {
         case .module(let id):
             hasher.combine(12)
             hasher.combine(id)
+        case .moduleList(let route):
+            hasher.combine(13)
+            hasher.combine(route)
         }
     }
 }
