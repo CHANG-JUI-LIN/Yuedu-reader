@@ -1075,55 +1075,13 @@ class ModernParserBridge {
         earlyFilter: ((_ name: String, _ author: String) -> Bool)? = nil
     ) throws -> [OnlineBook] {
         let engine = makeEngine()
-        engine.setContent(html, baseUrl: baseURL)
-
-        let listRule = source.ruleSearch.bookList
-        guard !listRule.isEmpty else { return [] }
-
-        let elements = engine.getElements(ruleStr: listRule)
-        guard !elements.isEmpty else { return [] }
-
-        var books: [OnlineBook] = []
-        for element in elements {
-            engine.setContent(element, baseUrl: baseURL)
-
-            let name = engine.getString(ruleStr: source.ruleSearch.name)
-            guard !name.isEmpty else { continue }
-
-            let author = engine.getString(ruleStr: source.ruleSearch.author)
-
-            // Early filter (Legado BookList idea): a rejected item skips the
-            // remaining six rule evaluations below — for strict matchers like
-            // 換源 that's most of the per-page parsing work.
-            if let earlyFilter, !earlyFilter(name, author) { continue }
-
-            let bookUrl = engine.getString(ruleStr: source.ruleSearch.bookUrl, isUrl: true)
-            let coverUrl = engine.getOptionalURL(ruleStr: source.ruleSearch.coverUrl)
-            let intro = engine.getString(ruleStr: source.ruleSearch.intro)
-            let wordCount = engine.getString(ruleStr: source.ruleSearch.wordCount)
-            let lastChapter = engine.getString(ruleStr: source.ruleSearch.lastChapter)
-            // Android Legado parses `kind` with getStringList and joins the values.
-            // Besides preserving multiple categories, this keeps the intermediate
-            // `result` as a mutable List for trailing JS such as `result.add(...)`.
-            let kind = engine.getStringList(ruleStr: source.ruleSearch.kind)
-                .joined(separator: ",")
-
-            books.append(OnlineBook(
-                name: name,
-                author: author,
-                intro: intro,
-                coverUrl: coverUrl,
-                bookUrl: bookUrl,
-                // SearchBook.tocUrl is empty in Legado. The real TOC URL is
-                // resolved by ruleBookInfo.tocUrl after opening the detail page.
-                tocUrl: "",
-                wordCount: wordCount,
-                lastChapter: lastChapter,
-                kind: kind,
-                sourceId: source.id,
-                sourceName: source.bookSourceName
-            ))
-        }
+        let rule = source.ruleSearch
+        let books = RuleListMapping.items(
+            engine: engine, content: html, baseURL: baseURL, listRule: rule.bookList,
+            fields: RuleListFields(name: rule.name, author: rule.author, bookUrl: rule.bookUrl, coverUrl: rule.coverUrl,
+                                   intro: rule.intro, wordCount: rule.wordCount, lastChapter: rule.lastChapter, kind: rule.kind),
+            earlyFilter: earlyFilter
+        ).map { OnlineBook($0, source: source) }
 
         engine.setContent(html, baseUrl: baseURL)
         return books
@@ -2337,47 +2295,18 @@ class ModernParserBridge {
             return discoverItemsAsBooks(html: html, source: source)
         }
 
-        let nameRule = useSearch ? search.name : explore.name
-        let authorRule = useSearch ? search.author : explore.author
-        let bookUrlRule = useSearch ? search.bookUrl : explore.bookUrl
-        let coverRule = useSearch ? search.coverUrl : explore.coverUrl
-        let introRule = useSearch ? search.intro : explore.intro
-        let wordCountRule = useSearch ? search.wordCount : explore.wordCount
-        let lastChapterRule = useSearch ? search.lastChapter : explore.lastChapter
-        let kindRule = useSearch ? search.kind : explore.kind
+        let fields = useSearch
+            ? RuleListFields(name: search.name, author: search.author, bookUrl: search.bookUrl, coverUrl: search.coverUrl,
+                             intro: search.intro, wordCount: search.wordCount, lastChapter: search.lastChapter, kind: search.kind)
+            : RuleListFields(name: explore.name, author: explore.author, bookUrl: explore.bookUrl, coverUrl: explore.coverUrl,
+                             intro: explore.intro, wordCount: explore.wordCount, lastChapter: explore.lastChapter, kind: explore.kind)
 
-        // Parse books for one bookList variant. Resets engine content to the full
-        // page first, because the per-element loop reassigns it.
+        // One bookList variant. A cover rule that matches nothing (a bookList narrowed past the
+        // <img>, like zymk's `class.item@h3`) leaves the cover empty, which is what the
+        // cover-broaden retry below looks for.
         func parseBooks(listVariant: String) -> [OnlineBook] {
-            engine.setContent(html, baseUrl: baseURL)
-            let elements = engine.getElements(ruleStr: listVariant)
-            var result: [OnlineBook] = []
-            for element in elements {
-                engine.setContent(element, baseUrl: baseURL)
-                let name = engine.getString(ruleStr: nameRule)
-                guard !name.isEmpty else { continue }
-                let bookUrl = engine.getString(ruleStr: bookUrlRule, isUrl: true)
-                // A cover rule that matches nothing (a bookList narrowed past the <img>,
-                // like zymk's `class.item@h3`) leaves the cover empty, which is what the
-                // cover-broaden retry below looks for.
-                let coverUrl = engine.getOptionalURL(ruleStr: coverRule)
-                result.append(OnlineBook(
-                    name: name,
-                    author: engine.getString(ruleStr: authorRule),
-                    intro: engine.getString(ruleStr: introRule),
-                    coverUrl: coverUrl,
-                    bookUrl: bookUrl,
-                    // Explore results have the same SearchBook contract: do
-                    // not mistake the detail URL for an already-resolved TOC.
-                    tocUrl: "",
-                    wordCount: engine.getString(ruleStr: wordCountRule),
-                    lastChapter: engine.getString(ruleStr: lastChapterRule),
-                    kind: engine.getStringList(ruleStr: kindRule)
-                        .joined(separator: ","),
-                    sourceId: source.id, sourceName: source.bookSourceName
-                ))
-            }
-            return result
+            RuleListMapping.items(engine: engine, content: html, baseURL: baseURL, listRule: listVariant, fields: fields)
+                .map { OnlineBook($0, source: source) }
         }
 
         var books = parseBooks(listVariant: listRule)

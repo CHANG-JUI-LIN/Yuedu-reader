@@ -86,7 +86,7 @@ How these fit together:
   "author": "someone",
   "site": "https://example.com",
   "version": "1.0.0",
-  "requiredVersion": "3.0",
+  "requiredVersion": "2.0",
   "hosts": ["example.com", "img.example.com"],
   "rateLimit": "2/1000",
   "modules": [
@@ -271,3 +271,42 @@ How these fit together:
   - Search does not go through it.
 - **Measured** (Debug, iOS 27 simulator): 50,000 sources in **111 ms**, off the main actor.
 - **Tests:** `BookSourceManifestTests` (5): capabilities per rule and whitespace; hosts and rate; the home provider agrees; the registry skips disabled sources; the 50k measurement. These pass with `ProviderManifestTests`: 9/9 on iOS 27.
+
+### 6c (branch `modules/6c-format`)
+
+- **`RuleListMapping`** (`Modules/Core/RuleEngine/ModernParser/RuleListMapping.swift`) reads one list's items with `RuleListFields`: name, author, url, cover, intro, word count, last chapter and kind.
+  - `ModernParserBridge.parseSearchResults` and `parseExploreResults` both read through it, so there is one mapping path. `OnlineBook(_:source:)` builds the 來源配置 result, with an empty `tocUrl` as before.
+  - **One order change:** explore now reads `author` right after `name`, where it used to come after `bookUrl` and the cover. This is visible only to a rule with JS side effects across fields. Search's order and its early filter are unchanged.
+  - `parseSearchResults` no longer parses the page twice; its first `setContent` was redundant.
+- **`RuleModule`** (`Modules/Services/RuleModules/RuleModule.swift`) holds the format above.
+  - A parameter's numeric `value` reads as its text.
+  - `params` may be left out.
+  - The search entry has no `id`.
+  - Unknown keys survive because the store keeps the bytes as imported.
+  - `RuleModuleVersion` compares numeric dot versions; missing parts count as zero.
+- **`RuleModuleValidator`** throws a typed `RuleModuleRejection` that names the field. It rejects:
+  - over 256 KB, over 50 entries, or no entry at all;
+  - not JSON, or a missing or mistyped field (from the decoding path);
+  - an id that is not file-safe, or a duplicate entry id;
+  - a non-numeric `version` or `requiredVersion`, or a `requiredVersion` above the running app's;
+  - `@js:` / `<js>`, judged by the engine's own `splitSourceRule`, so the two never disagree;
+  - `@get` / `@put`;
+  - a `{{…}}` that is not declared. In a request that means a parameter, `page` / `offset`, or `keyword` on search only. A list rule declares nothing.
+  - an unknown parameter type, or an enumeration without options;
+  - a method other than GET / POST;
+  - a request URL that is not http(s), whose host is built from a parameter, or whose host is not listed in `hosts`. Hosts compare case-insensitively, and the port is not part of the host.
+  - **Legado's `url,{…}` option tail** (`webView`, `js`, …), via `.urlOptions`. The module states its method, body, headers and charset in their own fields. A template after a comma is filled before Legado would split, so it is not a tail. **For 6d:** the request is built from the module's own fields and never goes through `AnalyzeUrl`'s option parsing.
+- **Example changed:** its `requiredVersion` was lowered from `3.0` to `2.0`. The app is `2.0.8` (`xcconfig/Yuedu-reader_version.xcconfig`), so the shipping validator rejected the documented example. A test validates it against the running app's version.
+- **`RuleModuleStore`** (`Application Support/Modules/<id>/`) holds `module.json` (the bytes as imported), `install.json` (subscription URL and dates) and `cache/`.
+  - **Install** writes a hidden staging folder and moves it into place, so a module appears whole or not at all.
+  - **Update** needs the same id and a higher version; otherwise it throws `notNewer` (已是最新版本). It drops the cache.
+  - **Remove** deletes the folder.
+  - **List** re-reads the disk every time and caches nothing. An unreadable or no-longer-valid folder is logged through `AppLogger`, reported in `failures`, and never overwritten.
+  - **Open for 6e:** a module the running app now rejects can't be updated in place, because its subscription URL is read only after its file validates. If 6e offers 檢查更新 on a failed row, read `install.json` independently.
+- **Tests:** `RuleModuleTests.swift` has 4 suites and 22 tests:
+  - the format and versions;
+  - the validator, one case per rejection plus a clean module;
+  - the store: install, update, remove, corrupt file, empty;
+  - the mapping: search and explore through the bridge, explore's own eight rules each in their slot, the early filter, a module's JSON list.
+
+  The bridge-versus-mapping comparison is circular now that the bridge calls the mapping. The real before/after evidence is the existing parsing suites: `CoverLinkRuleTests`, `ModernParserBridgeChapterCompatibilityTests`, `JSONDiscoverBridgeRegressionTests` and `ChangeSourceTOCResolutionTests`, which pass with the new suites, 45/45 on iOS 27.
