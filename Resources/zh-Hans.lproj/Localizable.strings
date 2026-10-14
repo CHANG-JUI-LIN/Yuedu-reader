@@ -3814,3 +3814,6 @@
 /* Unified library 3d: the automatic fill's setting */
 "自動補齊書籍資料" = "自动补齐书籍资料";
 "書名、作者與 ISBN 會送到 Open Library 與你啟用的來源配置，用來補上空白的封面、簡介與分類；只在 Wi-Fi 下進行。" = "书名、作者与 ISBN 会发送到 Open Library 与你启用的来源配置，用来补上空白的封面、简介与分类；仅在 Wi-Fi 下进行。";
+/* Unified search 4b-2: 搜索's saved-libraries section and a library's status line */
+"我的書庫" = "我的书库";
+"%@：無法搜尋（%@）" = "%@：无法搜索（%@）";

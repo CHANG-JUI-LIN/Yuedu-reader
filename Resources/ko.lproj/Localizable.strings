@@ -3815,3 +3815,6 @@
 /* Unified library 3d: the automatic fill's setting */
 "自動補齊書籍資料" = "도서 정보 자동 채우기";
 "書名、作者與 ISBN 會送到 Open Library 與你啟用的來源配置，用來補上空白的封面、簡介與分類；只在 Wi-Fi 下進行。" = "제목, 저자, ISBN을 Open Library와 활성화된 소스로 보내 비어 있는 표지, 소개, 분류를 채웁니다. Wi-Fi에서만 진행합니다.";
+/* Unified search 4b-2: 搜索's saved-libraries section and a library's status line */
+"我的書庫" = "내 라이브러리";
+"%@：無法搜尋（%@）" = "%@: 검색할 수 없음 (%@)";

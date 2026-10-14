@@ -24,6 +24,21 @@ extension IOS17SearchResultTableRow {
                                         defaultCover: plan.defaultCover)
         )
     }
+
+    /// A saved library's book, its cover asked for as the SwiftUI row's `HomeCoverArtwork`
+    /// asks for it.
+    init(libraryMatch match: LibrarySearchMatch) {
+        switch match.card.cover {
+        case .reference(.remote(let url, let headers), let session):
+            self.init(id: match.id, content: match.rowContent, coverURL: url.absoluteString,
+                      remoteCover: IOS17RemoteCover(headers: headers, session: session))
+        case .reference(.copyFile(let path), _):
+            self.init(id: match.id, content: match.rowContent, coverURL: "",
+                      shelfCover: IOS17ShelfCover(own: .indexedCover(path: path), usesCatalogCover: false, defaultCover: nil))
+        case .reference(.generated, _), .reference(nil, _), .shelf, .placeholder:
+            self.init(id: match.id, content: match.rowContent, coverURL: "")
+        }
+    }
 }
 
 /// Native iOS 17 search-result list.
@@ -42,6 +57,7 @@ struct IOS17SearchResultTable: UIViewControllerRepresentable {
     var onSearchGutenberg: () -> Void = {}
     var onSelectWork: (String) -> Void = { _ in }
     var onSelectShelfBook: (UUID) -> Void = { _ in }
+    var onSelectLibraryBook: (UUID) -> Void = { _ in }
 
     func makeUIViewController(context _: Context) -> IOS17SearchResultTableViewController {
         IOS17SearchResultTableViewController()
@@ -57,7 +73,8 @@ struct IOS17SearchResultTable: UIViewControllerRepresentable {
             onLoadMore: onLoadMore,
             onSearchGutenberg: onSearchGutenberg,
             onSelectWork: onSelectWork,
-            onSelectShelfBook: onSelectShelfBook
+            onSelectShelfBook: onSelectShelfBook,
+            onSelectLibraryBook: onSelectLibraryBook
         )
     }
 }
@@ -66,12 +83,15 @@ struct IOS17SearchResultTable: UIViewControllerRepresentable {
 final class IOS17SearchResultTableViewController: UITableViewController {
     fileprivate enum Section: Hashable {
         case shelf
+        case remoteLibraries
         case results
         case library
     }
 
     fileprivate enum Item: Hashable {
         case shelfBook(UUID)
+        case libraryBook(UUID)
+        case libraryNotice(Int)
         case result(UUID)
         case loadMore
         case notice
@@ -91,7 +111,9 @@ final class IOS17SearchResultTableViewController: UITableViewController {
     private var onSearchGutenberg: () -> Void = {}
     private var onSelectWork: (String) -> Void = { _ in }
     private var onSelectShelfBook: (UUID) -> Void = { _ in }
+    private var onSelectLibraryBook: (UUID) -> Void = { _ in }
     private var shelfRowsByID: [UUID: IOS17SearchResultTableRow] = [:]
+    private var libraryRowsByID: [UUID: IOS17SearchResultTableRow] = [:]
     private var worksByID: [String: IOS17SearchLibrarySection.Work] = [:]
     private var dataSource: IOS17SearchResultDataSource!
 
@@ -134,10 +156,12 @@ final class IOS17SearchResultTableViewController: UITableViewController {
         onLoadMore: @escaping () -> Void,
         onSearchGutenberg: @escaping () -> Void,
         onSelectWork: @escaping (String) -> Void,
-        onSelectShelfBook: @escaping (UUID) -> Void
+        onSelectShelfBook: @escaping (UUID) -> Void,
+        onSelectLibraryBook: @escaping (UUID) -> Void
     ) {
         loadViewIfNeeded()
         self.onSelectShelfBook = onSelectShelfBook
+        self.onSelectLibraryBook = onSelectLibraryBook
         self.onSelect = onSelect
         self.onLoadMore = onLoadMore
         self.onSearchGutenberg = onSearchGutenberg
@@ -148,7 +172,7 @@ final class IOS17SearchResultTableViewController: UITableViewController {
         defer {
             SourcePerfTrace.record(
                 "search.iOS17.nativeTableApply",
-                "\(content.rows.count) rows shelf=\(content.shelf.count) loadMore=\(content.showsLoadMore) works=\(content.library?.works.count ?? -1)",
+                "\(content.rows.count) rows shelf=\(content.shelf.count) libraries=\(content.remoteLibraries.count) loadMore=\(content.showsLoadMore) works=\(content.library?.works.count ?? -1)",
                 since: startedAt,
                 thresholdMs: 4
             )
@@ -156,6 +180,7 @@ final class IOS17SearchResultTableViewController: UITableViewController {
         currentContent = content
         rowsByID = Dictionary(uniqueKeysWithValues: content.rows.map { ($0.id, $0) })
         shelfRowsByID = Dictionary(content.shelf.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+        libraryRowsByID = Dictionary(content.remoteLibraries.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
         worksByID = Dictionary((content.library?.works ?? []).map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
 
         var snapshot = NSDiffableDataSourceSnapshot<Section, Item>()
@@ -165,10 +190,19 @@ final class IOS17SearchResultTableViewController: UITableViewController {
             snapshot.appendItems(content.shelf.filter { seen.insert($0.id).inserted }.map { .shelfBook($0.id) },
                                  toSection: .shelf)
         }
+        let hasRemoteLibraries = !content.remoteLibraries.isEmpty || !content.remoteLibraryNotices.isEmpty
+        if hasRemoteLibraries {
+            snapshot.appendSections([.remoteLibraries])
+            var seen = Set<UUID>()
+            snapshot.appendItems(
+                content.remoteLibraries.filter { seen.insert($0.id).inserted }.map { .libraryBook($0.id) }
+                    + content.remoteLibraryNotices.indices.map { .libraryNotice($0) },
+                toSection: .remoteLibraries)
+        }
         let sourceItems = content.rows.map { Item.result($0.id) }
             + (content.showsLoadMore ? [.loadMore] : [])
             + (content.sourcesNotice != nil && content.rows.isEmpty ? [.notice] : [])
-        if !sourceItems.isEmpty || (content.library == nil && content.shelf.isEmpty) {
+        if !sourceItems.isEmpty || (content.library == nil && content.shelf.isEmpty && !hasRemoteLibraries) {
             snapshot.appendSections([.results])
             snapshot.appendItems(sourceItems, toSection: .results)
         }
@@ -179,7 +213,7 @@ final class IOS17SearchResultTableViewController: UITableViewController {
             snapshot.appendItems([.gutenbergSearch] + works.map { .work($0.id) }, toSection: .library)
         }
         // Headers name the parts only when more than one can be there.
-        dataSource.titlesSections = content.library != nil || !content.shelf.isEmpty
+        dataSource.titlesSections = content.library != nil || !content.shelf.isEmpty || hasRemoteLibraries
         dataSource.applySnapshotUsingReloadData(snapshot)
     }
 
@@ -190,6 +224,10 @@ final class IOS17SearchResultTableViewController: UITableViewController {
         switch item {
         case .shelfBook(let id):
             onSelectShelfBook(id)
+        case .libraryBook(let id):
+            onSelectLibraryBook(id)
+        case .libraryNotice:
+            break
         case .result(let id):
             onSelect(id)
         case .loadMore:
@@ -204,7 +242,10 @@ final class IOS17SearchResultTableViewController: UITableViewController {
     }
 
     override func tableView(_ tableView: UITableView, shouldHighlightRowAt indexPath: IndexPath) -> Bool {
-        dataSource.itemIdentifier(for: indexPath) != .notice
+        switch dataSource.itemIdentifier(for: indexPath) {
+        case .notice, .libraryNotice, nil: false
+        default: true
+        }
     }
 
     private func configureDataSource() {
@@ -226,6 +267,27 @@ final class IOS17SearchResultTableViewController: UITableViewController {
                 }
                 cell.configure(with: row)
                 return cell
+
+            case .libraryBook(let id):
+                guard
+                    let cell = tableView.dequeueReusableCell(
+                        withIdentifier: Self.resultCellIdentifier,
+                        for: indexPath
+                    ) as? IOS17SearchResultTableCell,
+                    let row = self.libraryRowsByID[id]
+                else {
+                    return nil
+                }
+                cell.configure(with: row)
+                return cell
+
+            case .libraryNotice(let index):
+                var configuration = UIListContentConfiguration.cell()
+                let notices = self.currentContent?.remoteLibraryNotices ?? []
+                configuration.text = notices.indices.contains(index) ? notices[index] : nil
+                configuration.textProperties.color = UIColor(DSColor.textSecondary)
+                configuration.textProperties.font = self.font(.subheadline)
+                return self.plainCell(Self.noticeCellIdentifier, configuration: configuration, traits: .staticText)
 
             case .result(let id):
                 guard
@@ -335,6 +397,7 @@ fileprivate final class IOS17SearchResultDataSource: UITableViewDiffableDataSour
         guard titlesSections else { return nil }
         switch sectionIdentifier(for: section) {
         case .shelf: return localized("書架")
+        case .remoteLibraries: return localized("我的書庫")
         case .results: return localized("來源配置")
         case .library: return localized("公有書庫")
         case nil: return nil
@@ -569,7 +632,8 @@ private final class IOS17SearchResultTableCell: UITableViewCell {
             return
         }
 
-        if let cached = BookCoverLoader.cachedImage(for: row.coverURL) {
+        let session = row.remoteCover?.session
+        if let cached = BookCoverLoader.cachedImage(for: row.coverURL, session: session) {
             showCover(cached, representedID: row.id)
             return
         }
@@ -581,11 +645,12 @@ private final class IOS17SearchResultTableCell: UITableViewCell {
         coverTask = Task { [weak self] in
             let headers = BookCoverLoader.headers(
                 sourceBaseURL: nil,
-                sourceHeaders: [:]
+                sourceHeaders: row.remoteCover?.headers ?? [:]
             )
             let image = await BookCoverLoader.loadImage(
                 urlString: row.coverURL,
-                headers: headers
+                headers: headers,
+                session: session
             )
             guard !Task.isCancelled, let image else { return }
             self?.showCover(image, representedID: row.id)
