@@ -34,18 +34,42 @@ final class BookSourceFillProvider: MetadataFillProvider {
     let grade: MetadataMatchGrade = .b
     private let search: Searching
     private let sourceURL: @MainActor (UUID) -> String?
+    private let hasSources: @MainActor () -> Bool
+    /// `hasSources()`, asked once: a provider lives for one pass, and the source list is
+    /// thousands long.
+    private var sourcesKnown: Bool?
 
-    init(search: Searching? = nil, sourceURL: (@MainActor (UUID) -> String?)? = nil) {
+    init(search: Searching? = nil, sourceURL: (@MainActor (UUID) -> String?)? = nil,
+         hasSources: (@MainActor () -> Bool)? = nil) {
         self.search = search ?? Self.live
         self.sourceURL = sourceURL ?? { BookSourceStore.shared.source(id: $0)?.bookSourceUrl }
+        self.hasSources = hasSources ?? { !Self.eligibleSources().isEmpty }
     }
 
-    /// A copy that came from a book source has its own source's values already (tier 1).
+    /// A copy that came from a book source has its own source's values already (tier 1). With
+    /// no source to ask, nothing is asked and nothing recorded, so adding sources later asks.
     func canLookUp(_ query: MetadataFillQuery) -> Bool {
         query.copySource.type != .bookSource
             && !query.title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
             && query.authors.contains { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
             && !query.missing.isDisjoint(with: Self.fields)
+            && anySource
+    }
+
+    private var anySource: Bool {
+        if let sourcesKnown { return sourcesKnown }
+        let known = hasSources()
+        sourcesKnown = known
+        return known
+    }
+
+    /// The enabled sources whose search rule reads a description or categories, in the
+    /// reader's order, at most `sourcesPerCopy`.
+    static func eligibleSources() -> [BookSource] {
+        Array(BookSourceStore.shared.enabledSources
+            .lazy
+            .filter { !$0.ruleSearch.intro.isEmpty || !$0.ruleSearch.kind.isEmpty }
+            .prefix(sourcesPerCopy))
     }
 
     func lookUp(_ query: MetadataFillQuery) async throws -> MetadataFillResult {
@@ -105,15 +129,13 @@ final class BookSourceFillProvider: MetadataFillProvider {
     /// `sourcesPerCopy`, at the reader's 搜索並發數; stops at the first match with a
     /// description.
     static let live: Searching = { title, author in
-        let sources = BookSourceStore.shared.enabledSources
-            .filter { !$0.ruleSearch.intro.isEmpty || !$0.ruleSearch.kind.isEmpty }
-            .prefix(sourcesPerCopy)
+        let sources = eligibleSources()
         var found = Search(origins: [], answered: 0, queried: sources.count)
         var hasDescription = false
         await BookOriginSearchService.stream(
             title: title,
             author: author,
-            sources: Array(sources),
+            sources: sources,
             concurrency: NetworkSearchSettings.clampedConcurrency(GlobalSettings.shared.searchConcurrency),
             fetcher: AppDependencies.live.bookSourceFetcher,
             requiresAuthor: true,

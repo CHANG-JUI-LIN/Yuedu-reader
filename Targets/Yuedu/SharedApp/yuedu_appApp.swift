@@ -280,6 +280,8 @@ struct yuedu_appApp: App {
                     // attach below, which awaits and would overwrite a newer phase with this one.
                     WebDAVIndexCoordinator.shared.setActive(scenePhase == .active)
                     Task { await WebDAVIndexCoordinator.shared.attach(store: bookStore.remoteRecords) }
+                    // Unified library 3d: empty covers and descriptions fill in the foreground, on Wi-Fi.
+                    bookStore.metadataFill.setActive(scenePhase == .active)
                     // Seamless iCloud: merge with the cloud on launch.
                     if GlobalSettings.shared.iCloudAutoSync {
                         Task { try? await ICloudSyncManager.shared.sync(reason: "launch") }
@@ -288,6 +290,7 @@ struct yuedu_appApp: App {
                 .onChange(of: scenePhase) { _, newPhase in
                     MainThreadMonitor.shared.notePhase(String(describing: newPhase))
                     WebDAVIndexCoordinator.shared.setActive(newPhase == .active)
+                    bookStore.metadataFill.setActive(newPhase == .active)
                     // Diagnostics session bookkeeping: reaching the background is
                     // this app's definition of "survived", and is also the last
                     // reliable moment to get buffered log lines onto disk.

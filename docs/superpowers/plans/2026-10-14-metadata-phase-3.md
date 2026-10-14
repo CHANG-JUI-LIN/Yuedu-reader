@@ -243,3 +243,20 @@ Branch `metadata/3d-schedule`:
   - **Outcomes:** a non-2xx status (429, 5xx) is a failure; no record is empty.
 - **The `.bibliographic` switch sites:** they name where a shelf copy came from (`copySourceName`, `SourceLabel`, Explore's place lists), and no copy or place is ever bibliographic, so they are unreachable for it and left as they are.
 - **Tests:** `OpenLibraryFillProviderTests` (9, `URLProtocol` on the provider's own session, no network); 9/9 on iOS 27.
+
+### 3d (branch `metadata/3d-schedule`)
+
+- **`MetadataFillCoordinator`** (owned by `BookStore`, started from `yuedu_appApp` on scene phase):
+  - **When:** the app is active, `NetworkPathMonitor.allowsBackgroundWork` (Wi-Fi or wired, the WebDAV indexing rule), Low Power Mode off, and 設定 → 網路設定 → 自動補齊書籍資料 on (`GlobalSettings.autoFillBookMetadata`, default on). Any of them stopping cancels the pass; the ledger is saved after every answer, so the next pass goes on from there.
+  - **Triggers:** becoming active, the shelf loading, a new id on the shelf, and `ImportedMetadataStore.announcedWrites` for a shelf copy. The filler's own writes pass `announces: false`.
+  - **A pass:** text copies only, sidecars read off the main thread, one `MetadataFillRunner.fill` call, ⏱ `metadata.fill.pass`. A filled cover goes straight into `FilledCoverIndex`.
+  - **Setting footer:** 「書名、作者與 ISBN 會送到 Open Library 與你啟用的來源配置，用來補上空白的封面、簡介與分類；只在 Wi-Fi 下進行。」
+- **Two bugs found in the simulator acceptance, fixed at the root:**
+  - **A newly imported EPUB was never sent to Open Library.** `importEpub` inserted the book into the shelf, which started a pass, and only then wrote the sidecar carrying its ISBN: the pass saw a copy without an ISBN. The sidecar is now written before the shelf insert. Other writers that add identifiers to a copy already on the shelf (re-read, Calibre, remote imports) announce the write, and the coordinator runs again for it.
+  - **With no book source enabled, every copy was recorded as a book-source `failed`** (retried after 7 days for nothing). `BookSourceFillProvider.canLookUp` now asks `hasSources()` (once per provider), so such a copy is not asked and nothing is recorded.
+- **Acceptance (iOS 27 simulator, 2026-10-14, Wi-Fi):**
+  - Relaunch with Fantastic Mr Fox (ISBN 9780140328721) already on the shelf: `metadata.fill.openLibrary 2679ms`, `pass 2681ms copies=3 asked=1 filled=1 failed=0`.
+  - Importing Charlotte's Web (9780064400558): `openLibrary 4364ms`, `pass 4365ms copies=4 asked=1 filled=1 failed=0`, cover on the shelf at once.
+  - Relaunch afterwards: `pass 2ms copies=4 asked=0`: nothing is asked twice.
+  - The 40-source cap for book sources is still unmeasured: this simulator has no sources enabled.
+- **Tests:** `MetadataFillCoordinatorTests` (5, incl. `laterSidecar`), `BookSourceFillProviderTests` (6), `MetadataFillRunnerTests`, `MetadataFillLedgerTests`, `FilledMetadataTests`, `ImportedMetadataStoreTests`: 40/40 on iOS 27.

@@ -3809,3 +3809,7 @@
 "移除自動補上的簡介" = "Remove Filled-In Description";
 "移除自動補上的封面" = "Remove Filled-In Cover";
 "自動補上・%@" = "Filled in from %@";
+
+/* Unified library 3d: the automatic fill's setting */
+"自動補齊書籍資料" = "Fill In Missing Book Details";
+"書名、作者與 ISBN 會送到 Open Library 與你啟用的來源配置，用來補上空白的封面、簡介與分類；只在 Wi-Fi 下進行。" = "Titles, authors and ISBNs are sent to Open Library and your enabled sources to fill in missing covers, descriptions and categories, over Wi-Fi only.";
