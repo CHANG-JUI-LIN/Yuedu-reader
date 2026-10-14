@@ -228,3 +228,18 @@ Branch `metadata/3d-schedule`:
   - `shouldStop` asked again after a batch is handed over. Existing callers decide by count only, so their behavior does not change.
 - **Not measured yet:** the 40-source cap and its timing are measured with the scheduler in 3d, on a shelf with real sources.
 - **Tests:** `BookSourceFillProviderTests` (6), `BookOriginSearchServiceTests` (+1), `MetadataFillRunnerTests`, `FilledMetadataTests`; 34/34 on iOS 27.
+
+### 3c (branch `metadata/3c-open-library`)
+
+- **`OpenLibraryFillProvider`** (A):
+  - **Which copies:** only those with an ISBN-13 (ISBN-10s are converted on import).
+  - **Search:** one `search.json` request with every ISBN of the copy (`q=isbn:(a OR b)`). `fields` includes `editions`, the edition the ISBN names, with its own key, cover and ISBNs; this was checked live on 2026-10-14 with 三體 9787536692930 → `/books/OL25840916M`, cover 10246665, `chi`.
+  - **Match:** the edition must carry one of the copy's ISBNs (compared as ISBN-13s), else the answer is empty.
+  - **Cover:** the edition's own (`covers.openlibrary.org/b/id/<cover_i>-L.jpg?default=false`; a 404 means no cover), saved as `ol-<id>.jpg` in `Caches/Works/covers`. The work's cover is never used: it may be another language's edition.
+  - **Description and subjects:** the work's description (`/works/<id>.json`, string or `{type, value}`) and its subjects, kept only in the copy's own script (`WritingScript` of the title: CJK, Latin, other). 三體's Chinese edition belongs to a work described in English, and that is not given to a Chinese book. Subjects are additionally limited to 5, ≤24 characters, none with ":".
+  - **Identifiers:** `openLibraryWork` and `openLibraryEdition`. The index never joins different languages (`WorkIndex` line 163), so the work id does not merge translations.
+  - **Requests:** User-Agent `RemoteLibraryHTTPClient.userAgent` (no email), through `WebFetcher`.
+  - **`RequestPacer`:** at most one request per second per host. That is the terms' rate, not a settle-wait.
+  - **Outcomes:** a non-2xx status (429, 5xx) is a failure; no record is empty.
+- **The `.bibliographic` switch sites:** they name where a shelf copy came from (`copySourceName`, `SourceLabel`, Explore's place lists), and no copy or place is ever bibliographic, so they are unreachable for it and left as they are.
+- **Tests:** `OpenLibraryFillProviderTests` (9, `URLProtocol` on the provider's own session, no network); 9/9 on iOS 27.
