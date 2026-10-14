@@ -80,6 +80,15 @@ struct yuedu_appApp: App {
         if ProcessInfo.processInfo.arguments.contains("-reset-public-library-explore") {
             UserDefaults.standard.removeObject(forKey: ExploreSettings.modeKey)
         }
+        // Reading settings as the launch arguments give them (`-yd_scroll_mode`,
+        // `-yd_page_turn_style`, …). Since 排版生效範圍 (2026-09-28) the reader wears the
+        // shared and per-theme stores over those keys, so a value an earlier run left there
+        // (a scroll-mode test's) would win. Emptied, the next read captures them from the keys.
+        if ProcessInfo.processInfo.arguments.contains("-reset-reading-settings") {
+            for key in GlobalSettings.readingSettingsStoreKeys + [GlobalSettings.readingSettingSyncRecordsKey] {
+                UserDefaults.standard.removeObject(forKey: key)
+            }
+        }
         // 資源庫's first-launch card, shown again.
         if ProcessInfo.processInfo.arguments.contains("-reset-library-notice") {
             UserDefaults.standard.removeObject(forKey: LibraryTabRoot.noticeDismissedKey)
