@@ -212,3 +212,36 @@ The six match rules (audit §11.2) and where each ends up:
 - **Measured** (`SearchWorkMergeBenchmarkTests.mergeCost`, 2 sources × 1,000, half Simplified, iOS 27 simulator, 3 runs): under 換源's rule `search.presentation.workKeys` 85–105 ms per 1,000 off the main actor (new for 換源), `search.presentation.mainMerge` 25–27 ms per 1,000 with all 1,000 kept (was 15–17 ms keeping 500: the Simplified half was dropped), the same per-book cost as 搜索's 25–28 ms. The fan-out's main-actor check folds each kept book once (≈85 µs); the parser's early filter has already dropped the rest, off the main thread (`BookOriginSearchServiceTests.earlyFilterRunsOffTheMainThread` pins it: the fan-out's child tasks do not inherit the main actor), about items × 85 µs per source.
 - **Behaviour change (maintainer, 2026-10-14: 「照樣補」, kept):** the metadata filler (Phase 3, automatic, on by default) goes through the same fan-out, so a Traditional copy missing its description can now be filled from a source's Simplified result of the same work (三體 ← 三体). It has no script guard; kept as the same work unless the maintainer wants the filler to skip a result whose script differs from the copy's.
 - **Tests:** `ChangeSourceMatchTests` (+3: folded titles, folded title without an author, folding keeps different authors and sequels apart; punctuation-only title), `SearchKeyCharacterizationTests` (pins now on `makeKey`, the key that stays), `SearchAggregatorCharacterizationTests` (`changeSourceKeepsItsRule` → `changeSourceFoldsTitles`), `BookOriginSearchServiceTests` (+2 `keepsFoldedTitles`, `earlyFilterRunsOffTheMainThread`), with `WorkSourceFinderTests`, `BookSourceSearchFanOutTests`, `BookSourceFillProviderTests`, `SearchFirstResultSpanTests`: 53/53 on iOS 27, then `BookOriginSearchServiceTests` 10/10 with the thread test.
+
+### Phase 4 acceptance (branch `search/4-acceptance`)
+
+**§16, item by item** (iOS 27 simulator, iPhone 18 Pro; iOS 17.5 where marked):
+
+1. **One row 三體 · 劉慈欣 with four members** — `LibrarySearchTests.designAcceptanceRow` (new): shelf EPUB (ISBN, zh-Hans) + Calibre (EPUB and PDF under one `urn:uuid`, same ISBN) + OPDS zh-Hant + a source's 三体/刘慈欣 → the first row has 4 members. The row reads 「在書架上 · 3 源」 (spoken 「三體，劉慈欣，在書架上，3 源」): the shelf is the badge, the 3 are Calibre, OPDS and the source. **Asked:** whether this counts as 「標示四個來源」.
+2. **三體II apart** — same test, and `SearchWorkResolverTests`, `UnifiedSearchTests`.
+3. **作品詳情** — opening the row gives 3 versions (`ShelfProvider.versions` with the row's extras): the shelf copy, Calibre, OPDS (the source's book joins when its source is installed). **Differs from §16:** versions are one per item (Phase 5 decision 32), not two editions grouped as 簡體 (shelf + Calibre) / 繁體 (OPDS). **Asked.** The cover is the shelf copy's (`WorkDetailVersions*`); the description from 來源配置 goes through Phase 3's filler (`BookSourceFillProviderTests`).
+4. **Calibre offline** — `LibrarySearchTests` (other results still shown; the status line names the reason; `failed`, not `empty`, logged).
+5. **No Gutenberg request unless asked; none in China** — `SourceProviderTests`, `PublicLibrarySearchTabUITests` (Gutenberg only from its row).
+6. **iOS 17.5** — UIKit table and frozen route (`IOS17SearchResultTableTests`, `SearchWorkRouteTests`); `DetailReaderBackSwipeUITests.testSearchTabWorkPushesAndPopsTenTimes` (new: 10 pushes and pops from the 搜索 tab) and the 3-round manga test pass with no watchdog; both `PublicLibrarySearchTabUITests` pass (the public libraries on iOS 17, the item's 必測).
+7. **VoiceOver** — `UnifiedSearchTests.voiceOverLabel`, and item 1's spoken label above.
+8. **Numbers** — `works.search.local` at 2,000 copies: 1.4 ms (Phase 1: 1.7 ms, Debug `-Onone`). `search.firstResult`: below.
+9. **Shelf hashes unchanged** — `designAcceptanceRow` compares every shelf book's `stableHash(strippedForSync())` before and after searching and opening the work.
+
+**`search.firstResult`** (`-O` wholemodule, Phase 0's setup: 6 sources from `RULE` without `知秋起点.json`, cache 0 days, 三体 / 斗罗大陆 / 凡人修仙传 × 3, ms, medians):
+
+| Build | Conditions | 三体 | 斗罗大陆 | 凡人修仙传 |
+|---|---|---|---|---|
+| Phase 0 (recorded) | — | 385 | 315 | 366 |
+| Phase 0 `31ca4ba0`, re-run this session | 光遇 rate-limited (46 × 429) | 325 | 332 | 329 |
+| Phase 4, Open Library on | 光遇 not limited | 597 | 541 | 1127 |
+| Phase 4, Open Library on | rate-limited (106 × 429) | 406 | 428 | 351 |
+| Phase 4, Open Library off | rate-limited (80 × 429) | 476 | 446 | 423 |
+
+- The first result is whichever source answers first, so the network decides most of it: the same build moves by hundreds of ms between runs, and turning Open Library off did not make it faster.
+- What our code adds, measured where 起点's 100-book batch answers first: the merge hop from arrival to `firstResult` is 14–17 ms (Phase 0: 8–9 ms); the extra 6–8 ms is the off-main `workKeys` fold, by design since 4c-1. 起点's own arrival after the reset is 30–60 ms later than Phase 0's in those runs (and +424 / +686 ms with Open Library off), before any of our merging, i.e. the network. `search.unified.resolve`: 1–37 ms per publication.
+
+**Fixes on the branch:**
+- `GlobalSettings.searchOpenLibrary` reads the default with `bool(forKey:)`, so a launch argument's `NO` (an `NSString`, which `as? Bool` ignored) turns it off.
+- `PublicLibrarySearchTabUITests`: launch with Open Library off (it would take the keyboard's Search from Gutenberg, 4b-3) and type a Latin query, tapping the Gutenberg row: typing Chinese through XCUITest also submits on the iOS 27 simulator (the query lands in recents with no Return).
+
+**Not Phase 4:** `RecentReadingReaderChromeUITests` fails because the simulator no longer has the shelf books it opens (Alice, 紅樓夢, こころ, 운수 좋은 날).
