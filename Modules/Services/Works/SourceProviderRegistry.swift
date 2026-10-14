@@ -72,6 +72,20 @@ final class SourceProviderRegistry {
         return manifests
     }
 
+    /// The manifest of every enabled 來源配置, in the library's order (Phase 6b). Callers wait
+    /// for `BookSourceStore.waitUntilLoaded()` first.
+    func sourceManifests(in store: BookSourceStore = .shared) async -> [ProviderManifest] {
+        await Self.sourceManifests(of: store.enabledSources)
+    }
+
+    /// Derived off the main actor: a library can hold 50,000 sources.
+    nonisolated static func sourceManifests(of sources: [BookSource]) async -> [ProviderManifest] {
+        let started = SourcePerfTrace.now
+        let manifests = await Task.detached(priority: .utility) { sources.map(BookSourceManifest.derive) }.value
+        SourcePerfTrace.record("works.registry.sourceManifests", "sources=\(sources.count)", since: started, thresholdMs: 0)
+        return manifests
+    }
+
     /// Every source that can put rows on the Explore home (5b), in the order 「最新」 lists
     /// them: the shelf (and 訂閱的最新文章, which serves no 最新), saved connections, Gutenberg,
     /// Aozora, then the explore sources as 探索 lists them. WebDAV connections read `shelf.remoteRecords` for their 「最新」.
