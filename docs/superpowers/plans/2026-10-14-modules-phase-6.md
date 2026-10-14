@@ -255,3 +255,19 @@ How these fit together:
   - 訂閱 / 為你推薦.
 
   These pass with `SourceProviderRegistryTests`, `OPDSProviderTests`, `WebDAVProviderTests`, `AozoraProviderTests`, `ShelfProviderTests` and `AozoraLibraryDownloadServiceTests`: 23/23 on iOS 27. The `HomeModelTests` / `ForYouMeasurementTests` fakes declare `hosts`.
+
+### 6b (branch `modules/6b-source-manifests`)
+
+- **`BookSourceManifest`** (`Modules/Services/Works/BookSourceManifest.swift`, nonisolated) derives a 來源配置's capabilities from its rules. Whitespace is no rule.
+  - `searchUrl` gives `search(.onSubmit)`.
+  - `exploreUrl` gives `homeSections`.
+  - Any book-info rule (name, author, cover, intro, kind, tocUrl) gives `metadata`.
+  - `ruleToc.chapterList` together with `ruleContent.content` gives `reading`.
+  - `hosts` comes from `cleanedBookSourceURL`, so the `#` comment is dropped.
+  - `rateLimit` is `concurrentRate`, or nil when it is empty or `0`.
+- **`BookSourceProvider`** reports its hosts, extra capabilities and rate through the same functions, so the Explore home's provider of a source and the registry agree.
+- **`SourceProviderRegistry.sourceManifests(in:)`** lists the enabled sources in the library's order, derived off the main actor. The span is `works.registry.sourceManifests`.
+  - Nothing is stored per source.
+  - Search does not go through it.
+- **Measured** (Debug, iOS 27 simulator): 50,000 sources in **111 ms**, off the main actor.
+- **Tests:** `BookSourceManifestTests` (5): capabilities per rule and whitespace; hosts and rate; the home provider agrees; the registry skips disabled sources; the 50k measurement. These pass with `ProviderManifestTests`: 9/9 on iOS 27.
