@@ -461,6 +461,42 @@ final class DetailReaderBackSwipeUITests: XCTestCase {
         }
     }
 
+    /// Unified search acceptance (design §16 item 6): the 搜索 tab's one list of works — a UIKit
+    /// table on iOS 17 — pushes 作品詳情 from a frozen route; ten pushes and pops in a row
+    /// neither freeze the app nor lose the row.
+    @MainActor
+    func testSearchTabWorkPushesAndPopsTenTimes() throws {
+        continueAfterFailure = false
+        try configureStoreKit()
+        let app = XCUIApplication()
+        app.launchArguments = ["-explore.mode", "sources", "-reset-explore-home", "-reset-reading-settings", "-AppleLanguages", "(zh-Hans)", "-AppleLocale", "zh_CN",
+                               "-yd_root_tab_visible_ids", "(bookshelf, explore, settings, search)"]
+        app.launch()
+        let searchTab = app.tabBars.buttons["搜索"]
+        XCTAssertTrue(searchTab.waitForExistence(timeout: 15), app.debugDescription)
+        searchTab.tap()
+        let search = app.searchFields.firstMatch
+        XCTAssertTrue(search.waitForExistence(timeout: 15), app.debugDescription)
+        search.tap()
+        search.typeText("manga fixture\n")
+        let result = app.descendants(matching: .any)
+            .matching(NSPredicate(format: "label CONTAINS %@ AND (elementType == %d OR elementType == %d)",
+                                  "Navigation Manga Fixture", XCUIElement.ElementType.cell.rawValue,
+                                  XCUIElement.ElementType.button.rawValue)).firstMatch
+        XCTAssertTrue(result.waitForExistence(timeout: 20), app.debugDescription)
+        attachScreenshot(app, named: "Search tab one list of works")
+        let read = app.buttons.matching(NSPredicate(format: "label IN %@", ["立即阅读", "继续阅读"])).firstMatch
+        for round in 1...10 {
+            result.tap()
+            XCTAssertTrue(read.waitForExistence(timeout: 15), "Round \(round): the row must open 作品詳情.\n\(app.debugDescription)")
+            app.navigationBars.buttons.element(boundBy: 0).tap()
+            let left = XCTNSPredicateExpectation(predicate: NSPredicate(format: "exists == false"), object: read)
+            XCTAssertEqual(XCTWaiter.wait(for: [left], timeout: 8), .completed,
+                           "Round \(round): Back must return to the results.\n\(app.debugDescription)")
+            XCTAssertTrue(result.waitForExistence(timeout: 8), "Round \(round): the row must still be listed.\n\(app.debugDescription)")
+        }
+    }
+
     /// The shelf opens a manga with its card push, whose bar belongs to the shelf's
     /// UIKit navigation controller rather than to a SwiftUI stack. The book is added
     /// right before the app leaves the foreground and is killed: the shelf saves on a
