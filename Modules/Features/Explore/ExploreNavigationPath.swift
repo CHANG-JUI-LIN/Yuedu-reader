@@ -19,6 +19,9 @@ enum ExploreNavigationRoute: Hashable {
     case library(SourceInstanceKey)
     /// 資源庫's sources with a discover page: one group's, or all of them (decision 31).
     case sources(group: String?)
+    /// An installed module's page (Phase 6e), by its id: the page reads the installed list, so
+    /// an update or a removal shows at once.
+    case module(id: String)
 
     static func == (lhs: Self, rhs: Self) -> Bool {
         switch (lhs, rhs) {
@@ -37,6 +40,8 @@ enum ExploreNavigationRoute: Hashable {
             return lhsKey == rhsKey
         case (.sources(let lhsGroup), .sources(let rhsGroup)):
             return lhsGroup == rhsGroup
+        case (.module(let lhsID), .module(let rhsID)):
+            return lhsID == rhsID
         default:
             return false
         }
@@ -68,6 +73,9 @@ enum ExploreNavigationRoute: Hashable {
         case .sources(let group):
             hasher.combine(11)
             hasher.combine(group)
+        case .module(let id):
+            hasher.combine(12)
+            hasher.combine(id)
         }
     }
 }

@@ -20,6 +20,7 @@ struct LibraryTabRoot: View {
     @ObservedObject private var sourceStore = BookSourceStore.shared
     @ObservedObject private var aozora = AozoraCatalogStore.shared
     @ObservedObject private var rss = RSSStore.shared
+    @ObservedObject private var modules = RuleModuleLibrary.shared
     @AppStorage(ExploreSettings.showsGridKey) private var showsGrid = true
     @AppStorage(ExploreSettings.gridColumnCountKey) private var gridColumnCount = ExploreGridDensity.default.rawValue
     /// The first-launch card saying what moved here (maintainer's choice, 2026-10-13).
@@ -36,6 +37,8 @@ struct LibraryTabRoot: View {
     @State private var sourcePendingDeletion: BookSource?
     /// 新增來源配置 from the •••: the same flow as 來源配置管理's 「+」.
     @StateObject private var addFlow = BookSourceAddFlow()
+    /// 新增模組 (Phase 6e).
+    @StateObject private var moduleFlow = RuleModuleAddFlow()
     @State private var showsMoreChooser = false
     @State private var moreSequence = DismissalSequencedPresentation<LibraryMoreAction>()
 
@@ -43,6 +46,7 @@ struct LibraryTabRoot: View {
 
     private enum LibraryMoreAction: Hashable {
         case add(BookSourceAddRoute)
+        case addModule(RuleModuleAddRoute)
         case manageSources
         case showsGrid(Bool)
         case columns(Int)
@@ -78,6 +82,7 @@ struct LibraryTabRoot: View {
                         publicLibrariesSection
                         remoteLibrariesSection
                         sourcesSection
+                        RuleModuleSection(library: modules) { moduleFlow.begin(.address) }
                         subscriptionsSection
                     } else if !matchingSources.isEmpty {
                         LibrarySection(localized("來源配置")) { layout in
@@ -94,6 +99,9 @@ struct LibraryTabRoot: View {
                 .padding(.vertical, DSSpacing.sm)
                 .animation(reduceMotion ? nil : DSAnimation.standard, value: showsGrid)
                 .rootTabTitleScrollAnchor()
+                // Not beside `bookSourceAddFlow`: two file importers on one view, and SwiftUI
+                // presents only one of them.
+                .ruleModuleAddFlow(moduleFlow)
             }
             .overlay {
                 if !trimmedQuery.isEmpty && matchingSources.isEmpty {
@@ -116,6 +124,7 @@ struct LibraryTabRoot: View {
             }
             .bookSourceActionSheets(sheet: $sourceActionSheet, pendingDeletion: $sourcePendingDeletion)
             .bookSourceAddFlow(addFlow)
+            .task { if !modules.isLoaded { await modules.load() } }
             .fullScreenCover(item: $browserEntry) { presentation in
                 NavigationStack {
                     BrowserPage(browser: browser, entry: presentation.entry)
@@ -134,7 +143,7 @@ struct LibraryTabRoot: View {
 
     // MARK: •••
 
-    /// 資源庫's one ••• (decision 31): 新增來源配置, 管理來源配置 and the layout. A native menu from
+    /// 資源庫's one ••• (decision 31): 新增來源配置, 管理來源配置, 新增模組 (Phase 6e) and the layout. A native menu from
     /// iOS 18; on iOS 17 a chooser, since 新增來源配置's sheets would be dropped while the menu
     /// dismisses (`Technotes/iOS17MenuModalPresentation.md`).
     @ViewBuilder
@@ -169,6 +178,11 @@ struct LibraryTabRoot: View {
                 } label: {
                     Label(localized("管理來源配置"), systemImage: "slider.horizontal.3")
                 }
+                Menu {
+                    RuleModuleAddMenuItems(flow: moduleFlow)
+                } label: {
+                    Label(localized("新增模組"), systemImage: "puzzlepiece.extension")
+                }
                 Divider()
                 LibraryLayoutMenuItems()
             } label: {
@@ -189,6 +203,10 @@ struct LibraryTabRoot: View {
         }
         actions.append(DismissalSequencedAction(route: .manageSources, title: localized("管理來源配置"),
                                                 systemImage: "slider.horizontal.3"))
+        actions += RuleModuleAddRoute.allCases.map { route in
+            DismissalSequencedAction(route: LibraryMoreAction.addModule(route), title: localized(route.titleKey),
+                                     systemImage: route.systemImage, subtitle: localized("新增模組"))
+        }
         for grid in [true, false] {
             actions.append(DismissalSequencedAction(
                 route: .showsGrid(grid), title: localized(grid ? "格狀" : "列表"),
@@ -212,6 +230,8 @@ struct LibraryTabRoot: View {
         switch action {
         case .add(let route):
             addFlow.begin(route)
+        case .addModule(let route):
+            moduleFlow.begin(route)
         case .manageSources:
             path.append(ExploreNavigationRoute.sourceManager)
         case .showsGrid(let grid):
