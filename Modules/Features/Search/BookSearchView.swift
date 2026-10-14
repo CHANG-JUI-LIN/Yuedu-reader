@@ -290,7 +290,8 @@ struct BookSearchView: View {
     /// The shelf's matches as you type (unified search 4b-1); read only by the views that
     /// draw them.
     @State private var shelfSearch = ShelfSearchModel()
-    /// The saved OPDS and Calibre libraries' answers, asked on submit (unified search 4b-2).
+    /// The saved OPDS and Calibre libraries' answers (unified search 4b-2) and the modules' (Phase
+    /// 6g), asked on submit.
     @State private var librarySearch = LibrarySearchModel()
     /// Open Library's, asked on submit when 搜尋時也查 Open Library is on (4b-3).
     @State private var openLibrarySearch = LibrarySearchModel.openLibrary()
@@ -416,6 +417,11 @@ struct BookSearchView: View {
         .onSubmit(of: .search) { submit() }
         .task(id: showsCombinedResults ? trimmedQuery : "") {
             await shelfSearch.search(showsCombinedResults ? trimmedQuery : "", in: bookStore)
+        }
+        .task {
+            // The modules a submit asks are known only once their library has been read, and
+            // 搜索 may be the first page opened.
+            await RuleModuleLibrary.shared.loadIfNeeded()
         }
         .task(id: offersPublicLibraries) {
             // 青空文庫's catalog may not have been read yet when 探索 was never opened.

@@ -7,7 +7,7 @@ import SwiftUI
 /// One part's find, frozen when found: what its row draws and what opening it needs.
 enum UnifiedSearchPayload {
     case shelf(ShelfSearchMatch)
-    /// A saved library's book, or Open Library's (`ItemOpening.bibliographic`).
+    /// A saved library's book, or a module's or Open Library's (`ItemOpening.bibliographic`).
     case library(LibrarySearchMatch)
     /// A 青空文庫 work.
     case publicLibrary(WorkDetailRoute)
