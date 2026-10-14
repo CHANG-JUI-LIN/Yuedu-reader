@@ -259,3 +259,7 @@ The maintainer's pick after 7b (2026-10-14): fix `DetailReaderBackSwipeUITests`,
 ### 永久會員 next to a monthly plan (branch `fix/pro-lifetime-precedence`)
 - `testMonthlyAlongsideLifetimeKeepsTheCancellationReminder` showed 已訂閱. The Phase 5 note blamed plan precedence, but the policy already puts lifetime first and its unit test passes. The app's `Transaction.currentEntitlements` held only the monthly plan, while the test session held both transactions. The test bought them back to back with the deprecated synchronous `buyProduct(productIdentifier:)`. With the Swift `buyProduct(identifier:options:)`, which returns once the transaction is written, the app reads both. Product code is unchanged.
 - Every purchase in `ProStatusNavigationUITests` now uses the Swift API. iOS 27: 6 of 6.
+
+### iOS 17.5 purchase tests (branch `fix/ios17-product-load`)
+- "The product should load" on iOS 17.5 is the test environment. `await Storefront.current` never returns there: storekitd reports the storefront as null over and over ("Storefront identifier not provided"), while the test session's `storefront` reads USA, even when set explicitly. So `Product.products` is never asked. The App Store does not use Xcode's test server. The app is not changed for it.
+- Product loading had swallowed its error. `SubscriptionStore` now logs the request, the products loaded for which storefront, and a failure with its error. iOS 27: `Products loaded …lifetime,…monthly of 2 for storefront 143441`; the buy and free-user tests passed.

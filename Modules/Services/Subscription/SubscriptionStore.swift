@@ -254,6 +254,7 @@ final class SubscriptionStore: ObservableObject {
     // MARK: - Product loading
 
     func loadProducts() async {
+        Self.subscriptionLog.notice("Products load requested")
         let storefront = await Storefront.current
         await loadProducts(forStorefrontID: storefront?.id, forceReload: false)
     }
@@ -306,11 +307,17 @@ final class SubscriptionStore: ObservableObject {
                 loaded.first { $0.id == pp.rawValue }
             }
             loadedStorefrontID = storefrontID
+            Self.subscriptionLog.notice(
+                "Products loaded \(self.products.map(\.id).joined(separator: ","), privacy: .public) of \(ids.count) for storefront \(storefrontID ?? "nil", privacy: .public)"
+            )
             if products.count != ProProduct.allCases.count {
                 lastErrorMessage = localized("無法載入訂閱項目，請稍後再試")
             }
         } catch {
             guard generation == productLoadGeneration else { return }
+            Self.subscriptionLog.error(
+                "Products failed to load for storefront \(storefrontID ?? "nil", privacy: .public): \(String(describing: error), privacy: .public)"
+            )
             lastErrorMessage = localized("無法載入訂閱項目，請稍後再試")
         }
     }
