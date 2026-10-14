@@ -422,12 +422,10 @@ class SearchAggregator: ObservableObject {
     /// search would look broken even when the cloud is aggregating correctly.
     private let perAggregateSourceTimeout: UInt64 = 30
 
-    /// JS-runtime searchUrls (aggregators + jsLib-backed API sources) get the longer budget;
-    /// plain `{{key}}`-template sources stay fail-fast.
-    nonisolated static func searchTimeout(
-        for source: BookSource, normal: UInt64, aggregate: UInt64
-    ) -> UInt64 {
-        source.shouldUseLegadoRuntimeFetch(for: source.searchUrl) ? aggregate : normal
+    private var fanOut: BookSourceSearchFanOut {
+        BookSourceSearchFanOut(
+            concurrency: maxConcurrency, timeout: perSourceTimeout, aggregateTimeout: perAggregateSourceTimeout
+        )
     }
 
     /// Current search task (used for cancellation)
@@ -500,11 +498,12 @@ class SearchAggregator: ObservableObject {
         var empty = 0
         var failedAsEmpty = 0
 
-        mutating func count(_ answer: SourceAnswer) {
-            switch answer {
+        mutating func count(_ outcome: SearchSourceOutcome) {
+            switch outcome {
             case .results: withResults += 1
             case .empty: empty += 1
             case .failedAsEmpty: failedAsEmpty += 1
+            case .timedOut, .failed: break
             }
         }
 
@@ -613,85 +612,51 @@ class SearchAggregator: ObservableObject {
         let q = currentQuery
         let generation = searchGeneration
         let policy = applyAutoPause ? autoPausePolicy : SearchAutoPausePolicy(count: 0)
-        let concurrency = min(maxConcurrency, sources.count)
-        let timeout = perSourceTimeout
-        let aggregateTimeout = perAggregateSourceTimeout
+        let fanOut = fanOut
 
         searchTask = Task { [weak self] in
-            await withTaskGroup(of: SearchBatchResult.self) { group in
-                var nextSourceIndex = 0
-
-                func enqueueNextSource() {
-                    guard nextSourceIndex < sources.count else { return }
-                    let source = sources[nextSourceIndex]
-                    nextSourceIndex += 1
-                    let sourceTimeout = Self.searchTimeout(
-                        for: source, normal: timeout, aggregate: aggregateTimeout
-                    )
-                    group.addTask {
-                        guard !Task.isCancelled else { return .failed(source.id) }
-                        // Each source has its own timeout; cancel on expiry
-                        return await Self.searchSingleSource(
-                            query: q,
-                            source: source,
-                            timeout: sourceTimeout
-                        ) { [weak self] books in
-                            await self?.mergeBatch(books, source: source, query: q, generation: generation)
-                        }
-                    }
+            // Streaming: merge each returned source without animation.
+            // Large imported packs can contain 1000+ sources, so animated
+            // mutations here overwhelm SwiftUI's list diffing on iOS 18.
+            await fanOut.run(query: q, sources: sources, request: .firstPage { [weak self] source, books in
+                await self?.mergeBatch(books, source: source, query: q, generation: generation)
+            }) { source, answer in
+                guard let self else { return false }
+                let sourceId = source.id
+                switch answer.outcome {
+                case .results, .empty, .failedAsEmpty:
+                    await self.mergeBatch(answer.books, source: source, query: q, generation: generation)
+                    self.internalProgress.completed += 1
+                    self.completedSourceIds.insert(sourceId)
+                    self.successfulSourceIds.insert(sourceId)
+                    self.answerTally.count(answer.outcome)
+                    if answer.outcome == .failedAsEmpty { self.internalProgress.failedAsEmpty += 1 }
+                    // Phase 0b: a failure the fetcher reported as "no results" still
+                    // counts as a success here. Counting it in SourceHealthStore (cooldown)
+                    // is design §17 item 9, not yet decided.
+                    SourceHealthStore.shared.recordSuccess(sourceId, responseMs: answer.elapsedMs)
+                case .timedOut:
+                    self.internalProgress.timedOut += 1
+                    self.completedSourceIds.insert(sourceId)
+                    SourceHealthStore.shared.recordFailure(sourceId)
+                case .failed:
+                    self.internalProgress.failed += 1
+                    self.completedSourceIds.insert(sourceId)
+                    SourceHealthStore.shared.recordFailure(sourceId)
                 }
+                self.requestResultsPublication(force: false, reason: "progress")
 
-                for _ in 0..<concurrency {
-                    enqueueNextSource()
+                // Auto-pause enters the same resumable paused state as the
+                // manual control, so the user can tap to continue the rest.
+                if self.shouldAutoPause(query: q, policy: policy) {
+                    self.requestResultsPublication(force: true, reason: "autoPause")
+                    self.logPublicationSummary(reason: "autoPause")
+                    self.isPaused = true
+                    self.isSearching = false
+                    SourceHealthStore.shared.flush()
+                    return false
                 }
-
-                // Streaming: merge each returned source without animation.
-                // Large imported packs can contain 1000+ sources, so animated
-                // mutations here overwhelm SwiftUI's list diffing on iOS 18.
-                while let batchResult = await group.next() {
-                    // A pause/supersede cancels this task. Bail before recording
-                    // the result so the in-flight source stays "unfinished" and
-                    // resume() re-runs it.
-                    guard !Task.isCancelled, let self = self else { break }
-
-                    switch batchResult {
-                    case .success(let sourceId, let books, let answer, let elapsedMs):
-                        let source = sources.first { $0.id == sourceId }
-                        await self.mergeBatch(books, source: source, query: q, generation: generation)
-                        self.internalProgress.completed += 1
-                        self.completedSourceIds.insert(sourceId)
-                        self.successfulSourceIds.insert(sourceId)
-                        self.answerTally.count(answer)
-                        if case .failedAsEmpty = answer { self.internalProgress.failedAsEmpty += 1 }
-                        // Phase 0b: a failure the fetcher reported as "no results" still
-                        // counts as a success here. Counting it in SourceHealthStore (cooldown)
-                        // is design §17 item 9, not yet decided.
-                        SourceHealthStore.shared.recordSuccess(sourceId, responseMs: elapsedMs)
-                    case .timeout(let sourceId):
-                        self.internalProgress.timedOut += 1
-                        self.completedSourceIds.insert(sourceId)
-                        SourceHealthStore.shared.recordFailure(sourceId)
-                    case .failed(let sourceId):
-                        self.internalProgress.failed += 1
-                        self.completedSourceIds.insert(sourceId)
-                        SourceHealthStore.shared.recordFailure(sourceId)
-                    }
-                    self.requestResultsPublication(force: false, reason: "progress")
-
-                    // Auto-pause enters the same resumable paused state as the
-                    // manual control, so the user can tap to continue the rest.
-                    if self.shouldAutoPause(query: q, policy: policy) {
-                        self.requestResultsPublication(force: true, reason: "autoPause")
-                        self.logPublicationSummary(reason: "autoPause")
-                        self.isPaused = true
-                        self.isSearching = false
-                        SourceHealthStore.shared.flush()
-                        group.cancelAll()
-                        return
-                    }
-
-                    enqueueNextSource()
-                }
+                return true
             }
 
             // Only a run that finished on its own clears the flag; a paused or
@@ -733,58 +698,27 @@ class SearchAggregator: ObservableObject {
         searchPage += 1
         let page = searchPage
         let q = currentQuery
-        let concurrency = min(maxConcurrency, candidates.count)
-        let timeout = perSourceTimeout
-        let aggregateTimeout = perAggregateSourceTimeout
+        let fanOut = fanOut
         isSearching = true
 
         searchTask = Task { [weak self] in
-            await withTaskGroup(of: (UUID, [OnlineBook]?, Bool?, Double).self) { group in
-                var nextSourceIndex = 0
-
-                func enqueueNextSource() {
-                    guard nextSourceIndex < candidates.count else { return }
-                    let source = candidates[nextSourceIndex]
-                    nextSourceIndex += 1
-                    let sourceTimeout = Self.searchTimeout(
-                        for: source, normal: timeout, aggregate: aggregateTimeout
-                    )
-                    group.addTask {
-                        guard !Task.isCancelled else { return (source.id, nil, nil, 0) }
-                        let outcome = await Self.searchPageWithTimeout(
-                            query: q, source: source, page: page, timeout: sourceTimeout
-                        )
-                        return (source.id, outcome.books, outcome.hasMore, outcome.elapsedMs)
-                    }
-                }
-
-                for _ in 0..<concurrency {
-                    enqueueNextSource()
-                }
-
-                while let (sourceId, books, hasMore, elapsedMs) = await group.next() {
-                    guard !Task.isCancelled, let self else { break }
-                    if let books {
-                        let source = candidates.first { $0.id == sourceId }
-                        let newlyMerged = await self.mergeBatch(
-                            books,
-                            source: source,
-                            query: q,
-                            generation: nil
-                        )
-                        // The source's own hasMoreRule verdict wins; without one,
-                        // a page that contributed nothing new means exhausted.
-                        if hasMore == false || (hasMore != true && newlyMerged == 0) {
-                            self.exhaustedSourceIds.insert(sourceId)
-                        }
-                        SourceHealthStore.shared.recordSuccess(sourceId, responseMs: elapsedMs)
-                    } else {
-                        // A failed/timed-out later page: stop paging that source,
-                        // but don't strike its health — page 1 already succeeded.
+            await fanOut.run(query: q, sources: candidates, request: .page(page)) { source, answer in
+                guard let self else { return false }
+                let sourceId = source.id
+                if answer.outcome.answered {
+                    let newlyMerged = await self.mergeBatch(answer.books, source: source, query: q, generation: nil)
+                    // The source's own hasMoreRule verdict wins; without one,
+                    // a page that contributed nothing new means exhausted.
+                    if answer.hasMore == false || (answer.hasMore != true && newlyMerged == 0) {
                         self.exhaustedSourceIds.insert(sourceId)
                     }
-                    enqueueNextSource()
+                    SourceHealthStore.shared.recordSuccess(sourceId, responseMs: answer.elapsedMs)
+                } else {
+                    // A failed/timed-out later page: stop paging that source,
+                    // but don't strike its health — page 1 already succeeded.
+                    self.exhaustedSourceIds.insert(sourceId)
                 }
+                return true
             }
 
             guard let self, !Task.isCancelled else { return }
@@ -954,105 +888,6 @@ class SearchAggregator: ObservableObject {
                 + "coalesced=\(publicationMetrics.coalesced) "
                 + "suppressed=\(publicationMetrics.suppressed)"
         )
-    }
-
-    // MARK: - Single-source search with timeout (static method, no actor isolation issues)
-    //
-    // Uses withThrowingTaskGroup for timeout:
-    // - Task A: actual search
-    // - Task B: sleep(timeout) then throw TimeoutError
-    // Whichever completes first is returned; the other is cancelAll()
-
-    /// What a source that answered in time said.
-    private enum SourceAnswer: Sendable {
-        case results
-        case empty
-        case failedAsEmpty
-    }
-
-    private enum SearchBatchResult: Sendable {
-        case success(UUID, [OnlineBook], answer: SourceAnswer, elapsedMs: Double)
-        case timeout(UUID)
-        case failed(UUID)
-    }
-
-    private static func searchSingleSource(
-        query: String,
-        source: BookSource,
-        timeout: UInt64,
-        onBatch: @escaping @Sendable ([OnlineBook]) async -> Void
-    ) async -> SearchBatchResult {
-        let sourceId = source.id
-        let startedAt = ProcessInfo.processInfo.systemUptime
-        do {
-            return try await withThrowingTaskGroup(
-                of: BookSourceFetcher.SearchStreamingOutcome.self
-            ) { group in
-                group.addTask {
-                    try await BookSourceFetcher.shared.searchStreaming(
-                        query: query,
-                        in: source,
-                        onBatch: onBatch
-                    )
-                }
-                group.addTask {
-                    try await Task.sleep(nanoseconds: timeout * 1_000_000_000)
-                    throw SearchTimeoutError()
-                }
-                guard let result = try await group.next() else {
-                    throw CancellationError()
-                }
-                group.cancelAll()
-                let elapsedMs = (ProcessInfo.processInfo.systemUptime - startedAt) * 1000
-                let answer: SourceAnswer = result.failure != nil
-                    ? .failedAsEmpty
-                    : (result.books.isEmpty ? .empty : .results)
-                return .success(
-                    sourceId, result.streamed ? [] : result.books, answer: answer, elapsedMs: elapsedMs
-                )
-            }
-        } catch is CancellationError {
-            return .failed(sourceId)
-        } catch is SearchTimeoutError {
-            return .timeout(sourceId)
-        } catch {
-            return .failed(sourceId)
-        }
-    }
-
-    /// One page-N fetch for 載入更多: plain (non-streaming) search with the same
-    /// per-source timeout discipline. books nil = failed or timed out; hasMore
-    /// is the source's own `hasMoreRule` verdict (nil = unknown → heuristics).
-    private static func searchPageWithTimeout(
-        query: String,
-        source: BookSource,
-        page: Int,
-        timeout: UInt64
-    ) async -> (books: [OnlineBook]?, hasMore: Bool?, elapsedMs: Double) {
-        let startedAt = ProcessInfo.processInfo.systemUptime
-        do {
-            return try await withThrowingTaskGroup(
-                of: (books: [OnlineBook], hasMore: Bool?).self
-            ) { group in
-                group.addTask {
-                    try await BookSourceFetcher.shared.searchPage(
-                        query: query, in: source, page: page
-                    )
-                }
-                group.addTask {
-                    try await Task.sleep(nanoseconds: timeout * 1_000_000_000)
-                    throw SearchTimeoutError()
-                }
-                guard let result = try await group.next() else {
-                    throw CancellationError()
-                }
-                group.cancelAll()
-                let elapsedMs = (ProcessInfo.processInfo.systemUptime - startedAt) * 1000
-                return (result.books, result.hasMore, elapsedMs)
-            }
-        } catch {
-            return (nil, nil, (ProcessInfo.processInfo.systemUptime - startedAt) * 1000)
-        }
     }
 
     private func shouldAutoPause(query: String, policy: SearchAutoPausePolicy) -> Bool {
@@ -1272,6 +1107,3 @@ class SearchAggregator: ObservableObject {
         }
     }
 }
-
-// MARK: - Timeout Error
-private struct SearchTimeoutError: Error {}
