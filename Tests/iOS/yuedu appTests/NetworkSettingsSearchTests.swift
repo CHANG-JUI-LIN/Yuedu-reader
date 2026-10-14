@@ -108,8 +108,8 @@ struct NetworkSettingsSearchTests {
         fastSource.jsLib = "function noop() { return ''; }"
         fastSource.searchUrl = "https://example.com/search?q={{key}}&page={{page}}"
 
-        #expect(SearchAggregator.searchTimeout(for: runtimeSource, normal: 12, aggregate: 30) == 30)
-        #expect(SearchAggregator.searchTimeout(for: fastSource, normal: 12, aggregate: 30) == 12)
+        #expect(BookSourceSearchFanOut.timeout(for: runtimeSource, normal: 12, aggregate: 30) == 30)
+        #expect(BookSourceSearchFanOut.timeout(for: fastSource, normal: 12, aggregate: 30) == 12)
     }
 
     @MainActor

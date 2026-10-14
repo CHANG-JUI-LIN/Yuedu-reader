@@ -118,3 +118,13 @@ The six match rules (audit §11.2) and where each ends up:
 - Regressions (§19): `IOS17SearchResultTableTests`, `ChangeSourceMatchTests`, `SearchRecentsTests`, plus each step's list; `ruby scripts/check_localizations.rb`.
 
 ## What landed
+
+### 4a (branch `search/4a-participants`)
+
+- **Re-cut:** the plan said to extract `searchSingleSource` + `mergeBatch`. `mergeBatch` merges `SearchBook`s by the old rules, which 4c replaces with the work layer's; extracting it only to delete it is churn. What a unified search reuses is the *fetching* half, so 4a extracts that, and the participant protocol arrives in 4b-1 with its second conformer (one conformer would be a protocol shaped by guesswork).
+- **`BookSourceSearchFanOut`** (`Modules/Services/Online/BookSourceSearchFanOut.swift`): the sliding window (`concurrency` sources at a time, a finished source hands its slot on), each source against its own timeout (12 s, 30 s for JS-driven ones), page 1 streamed or a later page whole. It fetches and does not merge: `onAnswer` runs on the main actor in finishing order and may stop the rest (auto-pause).
+  - `SearchAggregator`'s first search and 載入更多 each had their own copy of this window; both now run this one. Merging, progress, health, auto-pause, resume and paging bookkeeping stay in `SearchAggregator`, unchanged.
+  - `searchTimeout(for:normal:aggregate:)` moved to `BookSourceSearchFanOut.timeout(for:…)`.
+- **`SearchSourceOutcome`**: `results`, `empty`, `failedAsEmpty` (Phase 0b), `timedOut`, `failed`; `answered` is the first three. It replaces the aggregator's private `SourceAnswer` / `SearchBatchResult`.
+- **No behavior change:** `SearchAggregatorCharacterizationTests` and `SearchKeyCharacterizationTests` untouched and green.
+- **Tests:** `BookSourceSearchFanOutTests` (4) + `SearchKeyCharacterizationTests`, `SearchAggregatorCharacterizationTests`, `SearchFirstResultSpanTests`, `WorkSourceFinderTests`, `SearchSourceScopeTests`, `SearchResultPublicationGateTests`, `NetworkSettingsSearchTests`, `IOS17SearchResultTableTests`, `AggregateSearchStreamingTests`: 55/55 on iOS 27.
