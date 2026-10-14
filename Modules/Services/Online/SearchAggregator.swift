@@ -54,8 +54,8 @@ final class SearchBook: Identifiable {
     /// on the main actor during a search.
     let normalizedName: String
 
-    /// 搜索's keys for the row (`SearchMergeRule.work`), from the book that made it; nil
-    /// under 換源's rule.
+    /// The row's `WorkMatchKey` keys, from the book that made it: both merge rules bucket and
+    /// compare by them (`SearchMergeRule`). Nil only for a row made outside the aggregator.
     let workKeys: SearchWorkKeys?
 
     /// Snapshots are index-aligned with `origins`. Production search batches build
@@ -82,13 +82,6 @@ final class SearchBook: Identifiable {
         return "\(n)||||\(a)"
     }
 
-    /// Name-only normalized key. Used to bucket candidates that share a title so
-    /// their authors can then be compared for compatibility (`isLikelySameBook`),
-    /// instead of requiring an exact name+author match to merge sources.
-    static func nameKey(_ name: String) -> String {
-        normalize(name)
-    }
-
     /// Normalize string: strip whitespace/punctuation, convert fullwidth to halfwidth
     private static func normalize(_ s: String) -> String {
         s.lowercased()
@@ -98,40 +91,34 @@ final class SearchBook: Identifiable {
             ?? s.lowercased().trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
-    /// Heuristic "same book" test used for 換源 (source switching).
+    /// Heuristic "same book" test used for 換源, 換封面 and 尋找可用來源.
     ///
-    /// The title must be an **exact** match after normalization. Containment is
-    /// deliberately *not* allowed for the title: a substring rule matches sequels
-    /// and spin-offs (e.g. "斗罗大陆" vs "斗罗大陆3" / "斗罗大陆之笔"), which would
-    /// offer the wrong book as an alternative source.
+    /// Titles compare by `WorkMatchKey` (unified search 4d, maintainer 2026-10-14), so
+    /// 三體／三体／三體！ are one book. The folded title must be an **exact** match:
+    /// containment is deliberately *not* allowed, since a substring rule matches sequels and
+    /// spin-offs (e.g. "斗罗大陆" vs "斗罗大陆3" / "斗罗大陆之笔"), which would offer the wrong
+    /// book as an alternative source.
     ///
-    /// The author is a *soft* filter: it only excludes a candidate when BOTH sides
-    /// report a non-empty author AND those authors are incompatible (equal, or one
-    /// contains the other — e.g. "唐家三少" vs "唐家三少著"). This keeps alternative
-    /// sources discoverable even when a source omits the author (very common),
-    /// which is why the previous exact `(name, author)` key match returned empty.
+    /// The author is a *soft* filter: it only excludes a candidate when BOTH sides report a
+    /// non-empty author AND those authors are incompatible (`WorkMatchKey.compatible`: equal,
+    /// or one contains the other — e.g. "唐家三少" vs "唐家三少著"). This keeps alternative
+    /// sources discoverable even when a source omits the author (very common), which is why
+    /// the previous exact `(name, author)` key match returned empty. 搜索 differs here: a
+    /// result without an author is its own row there (`SearchMergeRule.work`).
     static func isLikelySameBook(
         name lhsName: String, author lhsAuthor: String,
         name rhsName: String, author rhsAuthor: String
     ) -> Bool {
-        let n1 = normalize(lhsName)
-        let n2 = normalize(rhsName)
-        guard !n1.isEmpty, !n2.isEmpty else { return false }
-        guard n1 == n2 else { return false }
-
-        let a1 = normalize(lhsAuthor)
-        let a2 = normalize(rhsAuthor)
-        if a1.isEmpty || a2.isEmpty { return true }
-        return fieldsCompatible(a1, a2)
+        isLikelySameBook(SearchWorkKeys(name: lhsName, author: lhsAuthor),
+                         SearchWorkKeys(name: rhsName, author: rhsAuthor))
     }
 
-    /// Two already-normalized fields are compatible when equal, or when one
-    /// contains the other (guarding against trivial 1-character substrings).
-    private static func fieldsCompatible(_ a: String, _ b: String) -> Bool {
-        if a == b { return true }
-        if a.count >= 2 && b.contains(a) { return true }
-        if b.count >= 2 && a.contains(b) { return true }
-        return false
+    /// `isLikelySameBook` over keys already folded: each fold runs ICU transforms (≈85 µs a
+    /// book), so a caller comparing many books against one folds that one once.
+    static func isLikelySameBook(_ lhs: SearchWorkKeys, _ rhs: SearchWorkKeys) -> Bool {
+        guard !lhs.title.isEmpty, lhs.title == rhs.title else { return false }
+        if lhs.author.isEmpty || rhs.author.isEmpty { return true }
+        return WorkMatchKey.compatible(lhs.author, rhs.author)
     }
 
     /// Primary cover URL (first non-empty one)
@@ -386,8 +373,9 @@ enum SearchMergeRule: Sendable {
     /// 三體／三体／三體！ are one row; a title merges only when both sides name compatible
     /// authors (a result without one is its own row) and the content kind is the same.
     case work
-    /// 換源 and 尋找可用來源, until 4d (asked first): `SearchBook.nameKey`, and an empty
-    /// author merges with any.
+    /// 換源 and 尋找可用來源 (4d, maintainer 2026-10-14): the same `WorkMatchKey` titles, but
+    /// an empty author merges with any (`SearchBook.isLikelySameBook`) and kinds are not
+    /// compared.
     case changeSource
 
     init(_ origin: SearchOrigin) {
@@ -896,7 +884,7 @@ class SearchAggregator: ObservableObject {
         let now = ProcessInfo.processInfo.systemUptime
         if resultsNeedSort {
             resultsNeedSort = false
-            sortResults(query: Self.normalizedSearchQuery(currentQuery))
+            sortResults(query: currentQuery)
         }
         let publishedResults = internalResults.map { $0.publicationSnapshot() }
         objectWillChange.send()
@@ -967,7 +955,7 @@ class SearchAggregator: ObservableObject {
         let preparedBooks = await SearchResultPresentationBuilder.prepareBatch(
             books,
             source: source,
-            foldsWorkKeys: mergeRule == .work
+            foldsWorkKeys: true
         )
         let mainMergeStartedAt = ProcessInfo.processInfo.systemUptime
         defer {
@@ -1022,45 +1010,26 @@ class SearchAggregator: ObservableObject {
 
         // Filter out results completely unrelated to the search keyword, then find the row
         // this book belongs to under the search's rule.
-        let titleKey: String
-        let existingIndex: Int?
-        switch mergeRule {
-        case .work:
-            guard let keys = preparedBook.workKeys else {
-                // `mergeBatch` asks for the keys under this rule; a book without them is a
-                // bug in that path, not a book to show.
-                assertionFailure("work-rule merge without work keys")
-                AppLogger.error("⟐ search merge without work keys", context: ["source": book.sourceName])
-                return false
-            }
-            let isRelated = !q.isEmpty && (keys.title.contains(q) || keys.author.contains(q) || q.contains(keys.title))
-            guard isRelated else { return false }
-            titleKey = keys.title
-            let kind = preparedOrigin.presentation.contentKind
-            // Same work title, both authors named and compatible, same kind (design §7.2).
-            existingIndex = deduplicationMap[keys.title]?.first { idx in
-                idx < internalResults.count
-                    && WorkMatchKey.authorKeysCompatible([keys.author], [internalResults[idx].workKeys?.author ?? ""])
-                    && internalResults[idx].inferredContentKind() == kind
-            }
-        case .changeSource:
-            let normalizedName = Self.normalizedSearchText(book.name)
-            let normalizedAuthor = Self.normalizedSearchText(book.author)
-            let isRelated = !q.isEmpty && (
-                normalizedName.contains(q) ||
-                normalizedAuthor.contains(q) ||
-                q.contains(normalizedName)
-            )
-            guard isRelated else { return false }
-            // Bucket by title, then merge into the first same-title result whose
-            // author is compatible (equal, or one side empty). Same title with a
-            // clearly different author stays a separate book.
-            titleKey = SearchBook.nameKey(book.name)
-            existingIndex = deduplicationMap[titleKey]?.first { idx in
-                idx < internalResults.count
-                    && SearchBook.isLikelySameBook(
-                        name: book.name, author: book.author,
-                        name: internalResults[idx].name, author: internalResults[idx].author)
+        guard let keys = preparedBook.workKeys else {
+            // `mergeBatch` asks for the keys; a book without them is a bug in that path,
+            // not a book to show.
+            assertionFailure("search merge without work keys")
+            AppLogger.error("⟐ search merge without work keys", context: ["source": book.sourceName])
+            return false
+        }
+        let isRelated = !q.isEmpty && (keys.title.contains(q) || keys.author.contains(q) || q.contains(keys.title))
+        guard isRelated else { return false }
+        let titleKey = keys.title
+        let existingIndex = deduplicationMap[titleKey]?.first { idx in
+            guard idx < internalResults.count, let rowKeys = internalResults[idx].workKeys else { return false }
+            switch mergeRule {
+            case .work:
+                // Same work title, both authors named and compatible, same kind (design §7.2).
+                return WorkMatchKey.authorKeysCompatible([keys.author], [rowKeys.author])
+                    && internalResults[idx].inferredContentKind() == preparedOrigin.presentation.contentKind
+            case .changeSource:
+                // Same work title; an author missing on either side merges (4d).
+                return SearchBook.isLikelySameBook(keys, rowKeys)
             }
         }
 
@@ -1093,22 +1062,10 @@ class SearchAggregator: ObservableObject {
         return true
     }
 
-    private static func normalizedSearchText(_ text: String) -> String {
-        text.lowercased()
-            .applyingTransform(.fullwidthToHalfwidth, reverse: false)?
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-            .replacingOccurrences(of: " ", with: "")
-            ?? text.lowercased()
-    }
-
-    private static func normalizedSearchQuery(_ query: String) -> String {
-        normalizedSearchText(LegadoSearchKeyword.matchingTitle(from: query))
-    }
-
     // MARK: - Three-tier Sorting
 
     private func sortResults(query: String) {
-        let q = mergeRule == .work ? queryKey(query) : Self.normalizedSearchText(query)
+        let q = queryKey(query)
 
         // Decorate–sort–undecorate. A comparator body runs O(n log n) times, so
         // anything derived inside it is recomputed tens of thousands of times per
@@ -1134,27 +1091,20 @@ class SearchAggregator: ObservableObject {
         rebuildDeduplicationMap()
     }
 
-    /// The query as the search's rule compares titles: folded by `WorkMatchKey` for 搜索, so
-    /// a Simplified query finds and ranks a Traditional title; 換源's normalization otherwise.
+    /// The query as titles are compared: folded by `WorkMatchKey`, so a Simplified query
+    /// finds and ranks a Traditional title (搜索 since 4c-1, 換源 since 4d).
     private func queryKey(_ query: String) -> String {
-        switch mergeRule {
-        case .work: WorkMatchKey.title(LegadoSearchKeyword.matchingTitle(from: query))
-        case .changeSource: Self.normalizedSearchQuery(query)
-        }
+        WorkMatchKey.title(LegadoSearchKeyword.matchingTitle(from: query))
     }
 
-    /// A row's title as the search's rule compares it; also its dedup bucket.
+    /// A row's folded title; also its dedup bucket. Never nil: rows are made only from books
+    /// with keys (`mergeBook`); `normalizedName` only keeps the type total.
     private func rowKey(_ book: SearchBook) -> String {
-        switch mergeRule {
-        // Never nil under the work rule: its rows are made only from books with keys
-        // (`mergeBook`); `normalizedName` only keeps the type total.
-        case .work: book.workKeys?.title ?? book.normalizedName
-        case .changeSource: book.normalizedName
-        }
+        book.workKeys?.title ?? book.normalizedName
     }
 
     /// - Parameter normalizedName: already run through the same normalization the
-    ///   query gets (`SearchBook.normalizedName` for a merged result).
+    ///   query gets (`rowKey` for a merged result).
     private static func matchScore(normalizedName: String, query: String) -> Int {
         guard !query.isEmpty else { return 0 }
 
@@ -1169,8 +1119,8 @@ class SearchAggregator: ObservableObject {
     private func rebuildDeduplicationMap() {
         deduplicationMap.removeAll(keepingCapacity: true)
         for (index, book) in internalResults.enumerated() {
-            // Keys pre-computed per row (`normalizedName` is `SearchBook.nameKey`, `workKeys`
-            // were folded off the main actor) — no ICU transform per entry per rebuild.
+            // Keys pre-computed per row (`workKeys` were folded off the main actor) — no ICU
+            // transform per entry per rebuild.
             deduplicationMap[rowKey(book), default: []].append(index)
         }
     }

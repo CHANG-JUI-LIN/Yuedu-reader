@@ -18,7 +18,7 @@ enum WorkMatchKey {
 
     /// Both sides name at least one author, and some author of one is compatible with some
     /// author of the other: equal, or one contains the other and has at least 2 characters
-    /// (the rule `SearchAggregator.fieldsCompatible` uses). B-level merging needs this;
+    /// (the rule `SearchBook.isLikelySameBook` uses). B-level merging needs this;
     /// an empty side is never compatible (design §7.2), unlike today's search merge.
     static func authorsCompatible(_ lhs: [String], _ rhs: [String]) -> Bool {
         authorKeysCompatible(lhs.map(author), rhs.map(author))

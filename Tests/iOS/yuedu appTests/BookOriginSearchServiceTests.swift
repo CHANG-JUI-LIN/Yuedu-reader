@@ -29,6 +29,26 @@ struct BookOriginSearchServiceTests {
         ])
     }
 
+    @Test("a Simplified or punctuated title of the same book is kept (4d)")
+    func keepsFoldedTitles() async {
+        let source = makeSource("folded")
+        let fetcher = ScriptedOriginFetcher([
+            source.bookSourceUrl: .success([
+                book("三体", "刘慈欣", in: source, path: "simplified"),
+                book("三體！", "", in: source, path: "punctuated"),
+                book("三体", "王晉康", in: source, path: "other-author"),
+                book("三体II", "刘慈欣", in: source, path: "sequel"),
+            ]),
+        ])
+
+        let origins = await collect(title: "三體", author: "劉慈欣", sources: [source], fetcher: fetcher)
+
+        #expect(Set(origins.map(\.bookUrl)) == [
+            "\(source.bookSourceUrl)/simplified/三体",
+            "\(source.bookSourceUrl)/punctuated/三體！",
+        ])
+    }
+
     @Test("a repeated source and URL is kept once, and the excluded origin is dropped")
     func deduplicatesAndExcludes() async {
         let source = makeSource("dedup")

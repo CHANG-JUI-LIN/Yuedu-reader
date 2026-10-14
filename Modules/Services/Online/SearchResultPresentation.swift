@@ -23,12 +23,13 @@ struct PreparedSearchOrigin: Sendable {
 struct PreparedSearchResult: Sendable {
     let book: OnlineBook
     let preparedOrigin: PreparedSearchOrigin
-    /// 搜索's work keys; nil for a search that keeps 換源's rule (`SearchMergeRule`).
+    /// The book's `WorkMatchKey` keys, which every aggregator search merges by (搜索 since
+    /// 4c-1, 換源 since 4d); nil when the caller did not ask for them (`foldsWorkKeys`).
     var workKeys: SearchWorkKeys? = nil
 }
 
-/// A book's title and author as 搜索 compares them (unified search 4c-1): `WorkMatchKey`'s
-/// keys, folded off the main actor with the rest of the row. The fold runs ICU's
+/// A book's title and author as 搜索 (unified search 4c-1) and 換源 (4d) compare them:
+/// `WorkMatchKey`'s keys, folded off the main actor with the rest of the row. The fold runs ICU's
 /// Traditional-Simplified transform, too costly for the main actor at aggregate-source volume.
 struct SearchWorkKeys: Hashable, Sendable {
     let title: String

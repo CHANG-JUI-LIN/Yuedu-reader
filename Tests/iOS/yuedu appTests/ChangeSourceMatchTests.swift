@@ -74,5 +74,47 @@ struct ChangeSourceMatchTests {
         #expect(!SearchBook.isLikelySameBook(
             name: "", author: "旅人",
             name: "星辰之海", author: "旅人"))
+        // A title of punctuation alone folds to nothing (4d).
+        #expect(!SearchBook.isLikelySameBook(
+            name: "！！", author: "旅人",
+            name: "？", author: "旅人"))
+    }
+
+    // MARK: - Unified search 4d (maintainer, 2026-10-14): titles by `WorkMatchKey`
+
+    @Test("Traditional, Simplified and punctuation variants of a title are the same book")
+    func workKeyTitlesMatch() {
+        #expect(SearchBook.isLikelySameBook(
+            name: "三體", author: "劉慈欣",
+            name: "三体", author: "刘慈欣"))
+        #expect(SearchBook.isLikelySameBook(
+            name: "三體", author: "劉慈欣",
+            name: "三體！", author: "劉慈欣"))
+        #expect(SearchBook.isLikelySameBook(
+            name: "斗羅大陸", author: "唐家三少",
+            name: "斗罗大陆", author: "唐家三少著"))
+    }
+
+    @Test("a folded title without an author on one side still matches")
+    func workKeyTitleWithoutAuthorMatches() {
+        #expect(SearchBook.isLikelySameBook(
+            name: "三體", author: "劉慈欣",
+            name: "三体", author: ""))
+        #expect(SearchBook.isLikelySameBook(
+            name: "三体", author: " ",
+            name: "三體！", author: "劉慈欣"))
+    }
+
+    @Test("folding does not join different authors or sequels")
+    func workKeyStillRejects() {
+        #expect(!SearchBook.isLikelySameBook(
+            name: "三體", author: "劉慈欣",
+            name: "三体", author: "王晉康"))
+        #expect(!SearchBook.isLikelySameBook(
+            name: "三體", author: "劉慈欣",
+            name: "三体II", author: "刘慈欣"))
+        #expect(!SearchBook.isLikelySameBook(
+            name: "斗羅大陸", author: "唐家三少",
+            name: "斗罗大陆3", author: "唐家三少"))
     }
 }
