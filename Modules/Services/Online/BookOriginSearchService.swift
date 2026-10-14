@@ -23,8 +23,12 @@ enum BookOriginSearchService {
     ///   - excludingOriginKey: an origin to hide — 換源 excludes the one in use.
     ///   - sourceFilter: decides whether a source is worth querying at all;
     ///     封面搜索 skips sources whose search rule has no cover field.
+    ///   - requiresAuthor: keep only results whose source gave an author, so title and author
+    ///     both match (the design's level B; the metadata filler, Phase 3b).
     ///   - shouldStop: given the running match count, returns true to stop early.
     ///   - onBatch: one source's matches, already deduped, on the main actor.
+    ///   - onSourceAnswered: called for each source that answered within its time, matches
+    ///     or not, so a caller can tell "nobody has it" from "nobody answered".
     static func stream(
         title: String,
         author: String,
@@ -33,7 +37,9 @@ enum BookOriginSearchService {
         fetcher: BookSourceFetching,
         excludingOriginKey: String? = nil,
         sourceFilter: ((BookSource) -> Bool)? = nil,
+        requiresAuthor: Bool = false,
         shouldStop: (Int) -> Bool = { _ in false },
+        onSourceAnswered: () -> Void = {},
         onBatch: ([BookOrigin]) -> Void
     ) async {
         let queried = sourceFilter.map { filter in sources.filter(filter) } ?? sources
@@ -68,13 +74,19 @@ enum BookOriginSearchService {
 
             while let list = await group.next() {
                 if Task.isCancelled { break }
-                guard let list else { continue }
+                guard let list else {
+                    // Timed out or failed: its slot goes to the next source.
+                    enqueueNextSource()
+                    continue
+                }
+                onSourceAnswered()
                 var shouldPause = false
                 // Collect the whole source's matches and hand them over once:
                 // per-book callbacks re-published (and re-diffed) the caller's
                 // list for every single origin.
                 var batchOrigins: [BookOrigin] = []
                 for ob in list {
+                    if requiresAuthor && ob.author.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { continue }
                     guard SearchBook.isLikelySameBook(
                         name: title, author: author,
                         name: ob.name, author: ob.author
@@ -109,6 +121,10 @@ enum BookOriginSearchService {
                 if !batchOrigins.isEmpty {
                     emittedCount += batchOrigins.count
                     onBatch(batchOrigins)
+                    // Asked again after the batch is handed over: a caller deciding by what
+                    // the matches carry (the metadata filler stops at a description) knows
+                    // only now.
+                    if shouldStop(emittedCount) { shouldPause = true }
                 }
                 if shouldPause {
                     group.cancelAll()

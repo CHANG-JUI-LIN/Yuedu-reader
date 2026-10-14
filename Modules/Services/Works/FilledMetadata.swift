@@ -121,7 +121,8 @@ extension BookStore {
         let resolved = MetadataResolver.resolve(field, anchor: .copy(book.id), copySource: record.key.instance, copyValue: nil,
                                                 values: values, decisions: workDecisions.decisions(involving: .copy(book.id)))
         guard let resolved, !resolved.value.isEmpty, case .provider(let provider, _, _) = resolved.provenance,
-              metadataFillLedger.entry(copyID: book.id, provider: provider)?.outcome == .found else { return nil }
+              metadataFillLedger.entry(copyID: book.id, provider: MetadataFillRunner.ledgerKey(forPlace: provider))?.outcome == .found
+        else { return nil }
         return (resolved.value, provider)
     }
 }
