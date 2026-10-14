@@ -1298,7 +1298,14 @@ final class DetailReaderBackSwipeUITests: XCTestCase {
         let content = app.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", "Reserved edge navigation")).firstMatch
         XCTAssertTrue(content.waitForExistence(timeout: 30), app.debugDescription)
         let originalPage = content.label
-        let edge = app.coordinate(withNormalizedOffset: CGVector(dx: 0.02, dy: 0.5))
+        var edge = app.coordinate(withNormalizedOffset: CGVector(dx: 0.02, dy: 0.5))
+        if #unavailable(iOS 26) {
+            // Before iOS 26's content-pop recognizer (and its 30 pt reservation,
+            // NavigationBackSwipeReservationController.backGesture), UIKit's screen-edge
+            // recognizer begins only on a touch at the physical edge, where a finger
+            // sliding in from the bezel lands: from 8 pt it fails at once (iOS 17.5).
+            edge = app.coordinate(withNormalizedOffset: .zero).withOffset(CGVector(dx: 1, dy: app.frame.height * 0.5))
+        }
         let shortDrag = app.coordinate(withNormalizedOffset: CGVector(dx: 0.12, dy: 0.5))
         // The hold belongs to the user's gesture: releasing a short, stationary
         // drag must cancel, preserving the same reader and reading position.
@@ -1320,9 +1327,14 @@ final class DetailReaderBackSwipeUITests: XCTestCase {
         }
 
         let end = app.coordinate(withNormalizedOffset: CGVector(dx: 0.85, dy: 0.5))
-        // Also exercise the reserved strip away from the physical screen edge.
-        let reservedStrip = app.coordinate(withNormalizedOffset: .zero).withOffset(CGVector(dx: 28, dy: app.frame.height * 0.5))
-        reservedStrip.press(forDuration: 0.05, thenDragTo: end)
+        if #available(iOS 26, *) {
+            // Also exercise the reserved strip away from the physical screen edge.
+            let reservedStrip = app.coordinate(withNormalizedOffset: .zero).withOffset(CGVector(dx: 28, dy: app.frame.height * 0.5))
+            reservedStrip.press(forDuration: 0.05, thenDragTo: end)
+        } else {
+            // No reserved strip before iOS 26 (see `edge`): a 28 pt start never begins.
+            edge.press(forDuration: 0.05, thenDragTo: end)
+        }
         XCTAssertTrue(read.waitForExistence(timeout: 8), "Edge drag must pop to the original detail.\n\(app.debugDescription)")
         XCTAssertFalse(content.exists)
         let attachment = XCTAttachment(screenshot: app.screenshot())
