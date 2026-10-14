@@ -1,7 +1,8 @@
 import XCTest
 
 /// Unified library 5d-1b (Phase 5 plan, decision 17 as amended 2026-10-11): one search on the
-/// 搜索 tab covers the sources and a 公有書庫 section, with no scope to switch. Gutenberg's search answers from fixtures; the test changes no
+/// 搜索 tab covers the sources and the public libraries, with no scope to switch (one list of
+/// works since unified search 4c-3). Gutenberg's search answers from fixtures; the test changes no
 /// book-source data outside its own temporary directory.
 final class PublicLibrarySearchTabUITests: XCTestCase {
     private var fixtureDirectory: URL!
@@ -47,13 +48,17 @@ final class PublicLibrarySearchTabUITests: XCTestCase {
         add(attachment)
     }
 
-    /// With no book source the 公有書庫 section is the whole result, and the keyboard's Search
-    /// asks Gutenberg; its results open in the tab's own stack, and a book pushes 作品詳情 onto it.
+    /// With no book source and no Open Library the public libraries are the whole result, and
+    /// 「在 Project Gutenberg 搜尋」 asks Gutenberg (the keyboard's Search does too: the next test);
+    /// its results open in the tab's own stack, and a book pushes 作品詳情 onto it.
     @MainActor
     func testNoSourcesSearchesThePublicLibraries() {
         let app = XCUIApplication()
         app.launchArguments = ["-AppleLanguages", "(zh-Hant)", "-AppleLocale", "zh_TW",
                                "-yd_source_disclaimer_accepted", "YES",
+                               // Nothing else configured: with Open Library on (its default), the
+                               // keyboard's Search asks it instead of Gutenberg (unified search 4b-3).
+                               "-yd_search_open_library", "NO",
                                "-book-source-store-dir", fixtureDirectory.appendingPathComponent("sources").path]
         app.launchEnvironment["YUEDU_PUBLIC_LIBRARY_FIXTURES"] = fixtureDirectory.path
         app.launch()
@@ -66,13 +71,16 @@ final class PublicLibrarySearchTabUITests: XCTestCase {
         let field = app.searchFields.firstMatch
         XCTAssertTrue(field.waitForExistence(timeout: 10))
         field.tap()
-        field.typeText("紅樓夢")
+        // Latin letters: typing Chinese through XCUITest also submits on the iOS 27 simulator,
+        // which would push Gutenberg's results before the row could be seen. The fixture feed
+        // answers 紅樓夢 whatever the query.
+        field.typeText("Hong Lou Meng")
         // iOS 17 lists it in a UIKit table, later systems in a SwiftUI list.
         let gutenberg = app.descendants(matching: .any)["publicLibrary.searchGutenberg"].firstMatch
         XCTAssertTrue(gutenberg.waitForExistence(timeout: 5), app.debugDescription)
         XCTAssertFalse(app.buttons["公有書庫"].exists, "no scope to switch")
         attach(app, "search-tab-library-section")
-        field.typeText("\n")
+        gutenberg.tap()
         let result = app.buttons["publicLibrary.book.gutenberg:https://www.gutenberg.org/ebooks/24264.opds"].firstMatch
         XCTAssertTrue(result.waitForExistence(timeout: 15), app.debugDescription)
         attach(app, "search-tab-gutenberg-results")
@@ -107,6 +115,9 @@ final class PublicLibrarySearchTabUITests: XCTestCase {
         let app = XCUIApplication()
         app.launchArguments = ["-AppleLanguages", "(zh-Hant)", "-AppleLocale", "zh_TW",
                                "-yd_source_disclaimer_accepted", "YES",
+                               // Nothing else configured: with Open Library on (its default), the
+                               // keyboard's Search asks it instead of Gutenberg (unified search 4b-3).
+                               "-yd_search_open_library", "NO",
                                "-book-source-store-dir", fixtureDirectory.appendingPathComponent("sources").path]
         app.launchEnvironment["YUEDU_PUBLIC_LIBRARY_FIXTURES"] = fixtureDirectory.path
         app.launch()

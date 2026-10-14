@@ -126,6 +126,60 @@ struct LibrarySearchTests {
         #expect(workRow.remoteCover == row.remoteCover)
     }
 
+    @Test("§16 items 1–2: the shelf, Calibre's EPUB and PDF, an OPDS zh-Hant copy and a source are one 三體 · 劉慈欣; 三體II apart")
+    func designAcceptanceRow() async throws {
+        let (store, folder) = try makeStore()
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let calibre = library("s16-calibre", name: "Calibre", kind: .calibre) { request in
+            request.url?.path == "/search" ? .feed(Self.calibreFeed) : .feed(Self.rootWithSearch)
+        }
+        let opds = library("s16-opds", name: "OPDS", kind: .opds) { request in
+            request.url?.path == "/search" ? .feed(Self.hantFeed) : .feed(Self.rootWithSearch)
+        }
+        let libraries = LibrarySearchModel(search: LibrarySearch(providers: { [calibre, opds] }))
+        libraries.start("三體", store: store)
+        await libraries.waitForTesting()
+        #expect(libraries.matches.count == 3, "Calibre's 三體 (one entry, two formats) and 球狀閃電; OPDS's 三體")
+
+        let copy = ReadingBook(title: "三體", author: "劉慈欣", source: "local", contentFilename: "\(UUID().uuidString).epub")
+        let sequel = ReadingBook(title: "三體II：黑暗森林", author: "劉慈欣", source: "local",
+                                 contentFilename: "\(UUID().uuidString).epub")
+        store.saveReadingBook(copy)
+        store.saveReadingBook(sequel)
+        // §16 item 9: what iCloud compares, before anything below runs.
+        func shelfHashes() -> [UUID: String] {
+            Dictionary(uniqueKeysWithValues: store.books.map { ($0.id, ICloudSyncManager.stableHash($0.strippedForSync())) })
+        }
+        let hashesBefore = shelfHashes()
+        let entries = ShelfProvider(store: store).items([copy, sequel])
+        let isbn = try #require(ExternalIdentifier.normalized(.isbn13, "9787536692930"))
+        let shelf = [
+            ShelfSearchMatch(book: copy, route: try #require(WorkDetailRoute(entries[0])), identifiers: [isbn], language: "zh-Hans"),
+            ShelfSearchMatch(book: sequel, route: try #require(WorkDetailRoute(entries[1]))),
+        ]
+        let source = SearchBook(name: "三体", author: "刘慈欣", origins: [
+            BookOrigin(sourceId: UUID(), sourceName: "來源", bookUrl: "/s16/1", tocUrl: "", coverUrl: "", intro: "",
+                       lastChapter: "", wordCount: "", kind: "", runtimeVariables: nil),
+        ])
+        let works = UnifiedSearchModel(sourceURL: { _ in nil })
+
+        await works.update(UnifiedSearchParts(shelf: shelf, libraries: libraries.matches, sources: [source]), query: "三體")
+
+        let row = try #require(works.rows.first)
+        #expect(row.content.title == "三體")
+        #expect(row.content.author == "劉慈欣")
+        #expect(row.members.count == 4, "the shelf copy, Calibre, OPDS and the source: \(row.members.map(\.title))")
+        print("§16 row detail: \(row.content.detail) | spoken: \(row.content.accessibilityLabel)")
+        let apart = works.rows.first { $0.content.title == "三體II：黑暗森林" }
+        #expect(apart?.members.count == 1, "三體II is its own row")
+
+        // Opening the row: 作品詳情's route and its versions, as `UnifiedSearchDestination` builds them.
+        let parts = try #require(row.selection.destination())
+        let versions = await ShelfProvider(store: store).versions(of: parts.route, aozora: nil, also: parts.versions)
+        #expect(versions.count == 3, "the shelf copy, Calibre and OPDS; the source has no saved source here")
+        #expect(shelfHashes() == hashesBefore, "§16 item 9: searching and opening the work writes no shelf book")
+    }
+
     // MARK: - Fixtures
 
     static let rootWithSearch = """
@@ -140,6 +194,33 @@ struct LibrarySearchTests {
         <id>urn:isbn:9787536692930</id><title>三體</title><author><name>劉慈欣</name></author>
         <link rel="http://opds-spec.org/image/thumbnail" href="/cover.jpg" type="image/jpeg"/>
         <link rel="http://opds-spec.org/acquisition" href="/book.epub" type="application/epub+zip"/>
+      </entry>
+    </feed>
+    """
+
+    /// §16's Calibre: 三體 as EPUB and PDF under one `urn:uuid`, with the shelf copy's ISBN; 球狀閃電.
+    static let calibreFeed = """
+    <feed xmlns="http://www.w3.org/2005/Atom" xmlns:dc="http://purl.org/dc/terms/"><id>search</id><title>Search</title>
+      <entry>
+        <id>urn:uuid:5f1c0d2e-0000-4000-8000-000000000016</id><title>三體</title><author><name>劉慈欣</name></author>
+        <dc:identifier>urn:isbn:9787536692930</dc:identifier><dc:language>zh-Hans</dc:language>
+        <link rel="http://opds-spec.org/acquisition" href="/get/epub/16" type="application/epub+zip"/>
+        <link rel="http://opds-spec.org/acquisition" href="/get/pdf/16" type="application/pdf"/>
+      </entry>
+      <entry>
+        <id>urn:uuid:5f1c0d2e-0000-4000-8000-000000000017</id><title>球狀閃電</title><author><name>劉慈欣</name></author>
+        <link rel="http://opds-spec.org/acquisition" href="/get/epub/17" type="application/epub+zip"/>
+      </entry>
+    </feed>
+    """
+
+    /// §16's OPDS: 三體 in Traditional Chinese, no ISBN.
+    static let hantFeed = """
+    <feed xmlns="http://www.w3.org/2005/Atom" xmlns:dc="http://purl.org/dc/terms/"><id>search</id><title>Search</title>
+      <entry>
+        <id>urn:uuid:5f1c0d2e-0000-4000-8000-000000000018</id><title>三體</title><author><name>劉慈欣</name></author>
+        <dc:language>zh-Hant</dc:language>
+        <link rel="http://opds-spec.org/acquisition" href="/book/18.epub" type="application/epub+zip"/>
       </entry>
     </feed>
     """

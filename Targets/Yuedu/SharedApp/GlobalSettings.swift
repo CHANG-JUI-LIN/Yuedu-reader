@@ -2346,8 +2346,10 @@ class GlobalSettings {
             (UserDefaults.standard.object(forKey: "yd_search_cache_days") as? Int) ?? 5
         autoFillBookMetadata =
             (UserDefaults.standard.object(forKey: "yd_auto_fill_book_metadata") as? Bool) ?? true
-        searchOpenLibrary =
-            (UserDefaults.standard.object(forKey: "yd_search_open_library") as? Bool) ?? true
+        // `bool(forKey:)` once set: it also reads a launch argument's "NO", which `as? Bool`
+        // does not (the UI tests turn Open Library off that way).
+        searchOpenLibrary = UserDefaults.standard.object(forKey: "yd_search_open_library") == nil
+            || UserDefaults.standard.bool(forKey: "yd_search_open_library")
         changeSourceLoadToc =
             (UserDefaults.standard.object(forKey: "yd_change_source_load_toc") as? Bool) ?? false
         iCloudAutoSync =
