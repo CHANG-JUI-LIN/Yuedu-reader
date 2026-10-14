@@ -31,18 +31,16 @@ enum MetadataResolver {
     ///
     /// - `anchor`: the copy's key (`SourceItemKey.copy`), so decisions survive 換源.
     /// - `copyValue`: what `ReadingBook` holds for the field, if anything.
-    /// - `values`: the sidecar's values for this copy.
-    /// - `bibliographicIsALevel`: whether a bibliographic database's record matched this
-    ///   copy by identifier. Only then may its values fill in (design §8.1); nothing in
-    ///   Phase 1 produces them.
+    /// - `values`: the sidecar's values for this copy. A bibliographic database's values are
+    ///   there only when its record matched the copy by identifier (design §8.1): the
+    ///   filler writes them only then (`MetadataFillRunner`, Phase 3).
     static func resolve(
         _ field: MetadataField,
         anchor: SourceItemKey,
         copySource: SourceInstanceKey,
         copyValue: MetadataPayload?,
         values: [MetadataValue],
-        decisions: [WorkDecision],
-        bibliographicIsALevel: Bool = false
+        decisions: [WorkDecision]
     ) -> Resolved? {
         for decision in decisions {
             if case .override(let a, let f, let value, let at) = decision, a == anchor, f == field {
@@ -72,7 +70,7 @@ enum MetadataResolver {
         if field == .title || field == .authors { return nil }
 
         let ranked = values
-            .filter { $0.field == field && (bibliographicIsALevel || $0.provider.type != .bibliographic) }
+            .filter { $0.field == field }
             .sorted { rank($0, copySource: copySource) < rank($1, copySource: copySource) }
         if let best = ranked.first {
             return Resolved(value: best.value, provenance: .provider(best.provider, sourceItem: best.sourceItem, fetchedAt: best.fetchedAt))
