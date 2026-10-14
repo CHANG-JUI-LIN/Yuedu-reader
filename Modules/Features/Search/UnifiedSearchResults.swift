@@ -266,6 +266,7 @@ struct UnifiedSearchFeed: View {
     let offersPublicLibraries: Bool
     let model: UnifiedSearchModel
     @ObservedObject private var aozora = AozoraCatalogStore.shared
+    @State private var publicLibrary = PublicLibrarySearchModel()
 
     /// 青空文庫's matches the list takes; the rest are behind 顯示全部.
     static let publicLibraryLimit = 50
@@ -277,19 +278,35 @@ struct UnifiedSearchFeed: View {
         let shelf: [ShelfSearchMatch]
         let libraries: [UUID]
         let bibliographic: [UUID]
-        let publicLibrary: Bool
+        /// 青空文庫's matches for this query, counted; nil until they are found.
+        let publicLibrary: Int?
         let sources: Int
+    }
+
+    /// What 青空文庫 is searched for: once per query, not per publication.
+    private struct PublicLibraryQuery: Equatable {
+        let query: String
+        let catalogLoaded: Bool
+    }
+
+    /// This query's 青空文庫 answer, once found; nil while the public libraries are not offered.
+    private var publicLibraryAnswer: PublicLibrarySearchModel.Answer? {
+        guard offersPublicLibraries, let answer = publicLibrary.answer, answer.query == query else { return nil }
+        return answer
     }
 
     private var trigger: Trigger {
         Trigger(query: query, shelf: shelf.matches, libraries: libraries.matches.map(\.id),
                 bibliographic: bibliographic.matches.map(\.id),
-                publicLibrary: offersPublicLibraries && aozora.catalog != nil, sources: aggregator.publicationRevision)
+                publicLibrary: publicLibraryAnswer?.works.count, sources: aggregator.publicationRevision)
     }
 
     var body: some View {
         Color.clear
             .accessibilityHidden(true)
+            .task(id: PublicLibraryQuery(query: offersPublicLibraries ? query : "", catalogLoaded: aozora.catalog != nil)) {
+                await publicLibrary.search(offersPublicLibraries ? query : "", in: aozora.catalog)
+            }
             .task(id: trigger) {
                 guard !query.isEmpty else {
                     model.clear()
@@ -297,8 +314,8 @@ struct UnifiedSearchFeed: View {
                 }
                 var parts = UnifiedSearchParts(shelf: shelf.matches, libraries: libraries.matches,
                                                bibliographic: bibliographic.matches, sources: aggregator.results)
-                if offersPublicLibraries, let index = aozora.catalog {
-                    let matches = index.search(query)
+                if let answer = publicLibraryAnswer {
+                    let (matches, index) = (answer.works, answer.index)
                     parts.publicLibrary = matches.prefix(Self.publicLibraryLimit)
                         .compactMap { WorkDetailRoute(.aozora($0, index: index)) }
                     if matches.count > Self.publicLibraryLimit {
