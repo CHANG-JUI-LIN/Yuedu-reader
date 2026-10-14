@@ -41,6 +41,16 @@ extension IOS17SearchResultTableRow {
     }
 }
 
+extension IOS17SearchAnswerSection {
+    /// The section as the SwiftUI one draws it: books, 「搜索中…」 while none has come, then
+    /// each failure.
+    @MainActor
+    init(model: LibrarySearchModel) {
+        rows = model.matches.map(IOS17SearchResultTableRow.init(libraryMatch:))
+        notices = (model.isSearching && model.matches.isEmpty ? [localized("搜索中…")] : []) + model.failures.map(\.line)
+    }
+}
+
 /// Native iOS 17 search-result list.
 ///
 /// Build 45 watchdog reports from iOS 17.0 and 17.7.2 both ended in
@@ -57,7 +67,7 @@ struct IOS17SearchResultTable: UIViewControllerRepresentable {
     var onSearchGutenberg: () -> Void = {}
     var onSelectWork: (String) -> Void = { _ in }
     var onSelectShelfBook: (UUID) -> Void = { _ in }
-    var onSelectLibraryBook: (UUID) -> Void = { _ in }
+    var onSelectAnswerBook: (UUID) -> Void = { _ in }
 
     func makeUIViewController(context _: Context) -> IOS17SearchResultTableViewController {
         IOS17SearchResultTableViewController()
@@ -74,7 +84,7 @@ struct IOS17SearchResultTable: UIViewControllerRepresentable {
             onSearchGutenberg: onSearchGutenberg,
             onSelectWork: onSelectWork,
             onSelectShelfBook: onSelectShelfBook,
-            onSelectLibraryBook: onSelectLibraryBook
+            onSelectAnswerBook: onSelectAnswerBook
         )
     }
 }
@@ -86,12 +96,14 @@ final class IOS17SearchResultTableViewController: UITableViewController {
         case remoteLibraries
         case results
         case library
+        case bibliographic
     }
 
     fileprivate enum Item: Hashable {
         case shelfBook(UUID)
-        case libraryBook(UUID)
-        case libraryNotice(Int)
+        /// A book of a part asked on submit (我的書庫, 書目資料庫).
+        case answerBook(UUID)
+        case answerNotice(Section, Int)
         case result(UUID)
         case loadMore
         case notice
@@ -111,9 +123,9 @@ final class IOS17SearchResultTableViewController: UITableViewController {
     private var onSearchGutenberg: () -> Void = {}
     private var onSelectWork: (String) -> Void = { _ in }
     private var onSelectShelfBook: (UUID) -> Void = { _ in }
-    private var onSelectLibraryBook: (UUID) -> Void = { _ in }
+    private var onSelectAnswerBook: (UUID) -> Void = { _ in }
     private var shelfRowsByID: [UUID: IOS17SearchResultTableRow] = [:]
-    private var libraryRowsByID: [UUID: IOS17SearchResultTableRow] = [:]
+    private var answerRowsByID: [UUID: IOS17SearchResultTableRow] = [:]
     private var worksByID: [String: IOS17SearchLibrarySection.Work] = [:]
     private var dataSource: IOS17SearchResultDataSource!
 
@@ -157,11 +169,11 @@ final class IOS17SearchResultTableViewController: UITableViewController {
         onSearchGutenberg: @escaping () -> Void,
         onSelectWork: @escaping (String) -> Void,
         onSelectShelfBook: @escaping (UUID) -> Void,
-        onSelectLibraryBook: @escaping (UUID) -> Void
+        onSelectAnswerBook: @escaping (UUID) -> Void
     ) {
         loadViewIfNeeded()
         self.onSelectShelfBook = onSelectShelfBook
-        self.onSelectLibraryBook = onSelectLibraryBook
+        self.onSelectAnswerBook = onSelectAnswerBook
         self.onSelect = onSelect
         self.onLoadMore = onLoadMore
         self.onSearchGutenberg = onSearchGutenberg
@@ -172,7 +184,7 @@ final class IOS17SearchResultTableViewController: UITableViewController {
         defer {
             SourcePerfTrace.record(
                 "search.iOS17.nativeTableApply",
-                "\(content.rows.count) rows shelf=\(content.shelf.count) libraries=\(content.remoteLibraries.count) loadMore=\(content.showsLoadMore) works=\(content.library?.works.count ?? -1)",
+                "\(content.rows.count) rows shelf=\(content.shelf.count) libraries=\(content.remoteLibraries?.rows.count ?? -1) bibliographic=\(content.bibliographic?.rows.count ?? -1) loadMore=\(content.showsLoadMore) works=\(content.library?.works.count ?? -1)",
                 since: startedAt,
                 thresholdMs: 4
             )
@@ -180,7 +192,9 @@ final class IOS17SearchResultTableViewController: UITableViewController {
         currentContent = content
         rowsByID = Dictionary(uniqueKeysWithValues: content.rows.map { ($0.id, $0) })
         shelfRowsByID = Dictionary(content.shelf.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
-        libraryRowsByID = Dictionary(content.remoteLibraries.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+        answerRowsByID = Dictionary(
+            ((content.remoteLibraries?.rows ?? []) + (content.bibliographic?.rows ?? [])).map { ($0.id, $0) },
+            uniquingKeysWith: { first, _ in first })
         worksByID = Dictionary((content.library?.works ?? []).map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
 
         var snapshot = NSDiffableDataSourceSnapshot<Section, Item>()
@@ -190,19 +204,21 @@ final class IOS17SearchResultTableViewController: UITableViewController {
             snapshot.appendItems(content.shelf.filter { seen.insert($0.id).inserted }.map { .shelfBook($0.id) },
                                  toSection: .shelf)
         }
-        let hasRemoteLibraries = !content.remoteLibraries.isEmpty || !content.remoteLibraryNotices.isEmpty
-        if hasRemoteLibraries {
-            snapshot.appendSections([.remoteLibraries])
-            var seen = Set<UUID>()
+        var seenAnswers = Set<UUID>()
+        func appendAnswers(_ answers: IOS17SearchAnswerSection?, as section: Section) {
+            guard let answers, !answers.isEmpty else { return }
+            snapshot.appendSections([section])
             snapshot.appendItems(
-                content.remoteLibraries.filter { seen.insert($0.id).inserted }.map { .libraryBook($0.id) }
-                    + content.remoteLibraryNotices.indices.map { .libraryNotice($0) },
-                toSection: .remoteLibraries)
+                answers.rows.filter { seenAnswers.insert($0.id).inserted }.map { .answerBook($0.id) }
+                    + answers.notices.indices.map { .answerNotice(section, $0) },
+                toSection: section)
         }
+        appendAnswers(content.remoteLibraries, as: .remoteLibraries)
+        let hasAnswers = !(content.remoteLibraries?.isEmpty ?? true) || !(content.bibliographic?.isEmpty ?? true)
         let sourceItems = content.rows.map { Item.result($0.id) }
             + (content.showsLoadMore ? [.loadMore] : [])
             + (content.sourcesNotice != nil && content.rows.isEmpty ? [.notice] : [])
-        if !sourceItems.isEmpty || (content.library == nil && content.shelf.isEmpty && !hasRemoteLibraries) {
+        if !sourceItems.isEmpty || (content.library == nil && content.shelf.isEmpty && !hasAnswers) {
             snapshot.appendSections([.results])
             snapshot.appendItems(sourceItems, toSection: .results)
         }
@@ -212,8 +228,9 @@ final class IOS17SearchResultTableViewController: UITableViewController {
             let works = library.works.filter { seen.insert($0.id).inserted }
             snapshot.appendItems([.gutenbergSearch] + works.map { .work($0.id) }, toSection: .library)
         }
+        appendAnswers(content.bibliographic, as: .bibliographic)
         // Headers name the parts only when more than one can be there.
-        dataSource.titlesSections = content.library != nil || !content.shelf.isEmpty || hasRemoteLibraries
+        dataSource.titlesSections = content.library != nil || !content.shelf.isEmpty || hasAnswers
         dataSource.applySnapshotUsingReloadData(snapshot)
     }
 
@@ -224,9 +241,9 @@ final class IOS17SearchResultTableViewController: UITableViewController {
         switch item {
         case .shelfBook(let id):
             onSelectShelfBook(id)
-        case .libraryBook(let id):
-            onSelectLibraryBook(id)
-        case .libraryNotice:
+        case .answerBook(let id):
+            onSelectAnswerBook(id)
+        case .answerNotice:
             break
         case .result(let id):
             onSelect(id)
@@ -243,7 +260,7 @@ final class IOS17SearchResultTableViewController: UITableViewController {
 
     override func tableView(_ tableView: UITableView, shouldHighlightRowAt indexPath: IndexPath) -> Bool {
         switch dataSource.itemIdentifier(for: indexPath) {
-        case .notice, .libraryNotice, nil: false
+        case .notice, .answerNotice, nil: false
         default: true
         }
     }
@@ -268,22 +285,23 @@ final class IOS17SearchResultTableViewController: UITableViewController {
                 cell.configure(with: row)
                 return cell
 
-            case .libraryBook(let id):
+            case .answerBook(let id):
                 guard
                     let cell = tableView.dequeueReusableCell(
                         withIdentifier: Self.resultCellIdentifier,
                         for: indexPath
                     ) as? IOS17SearchResultTableCell,
-                    let row = self.libraryRowsByID[id]
+                    let row = self.answerRowsByID[id]
                 else {
                     return nil
                 }
                 cell.configure(with: row)
                 return cell
 
-            case .libraryNotice(let index):
+            case .answerNotice(let section, let index):
                 var configuration = UIListContentConfiguration.cell()
-                let notices = self.currentContent?.remoteLibraryNotices ?? []
+                let answers = section == .bibliographic ? self.currentContent?.bibliographic : self.currentContent?.remoteLibraries
+                let notices = answers?.notices ?? []
                 configuration.text = notices.indices.contains(index) ? notices[index] : nil
                 configuration.textProperties.color = UIColor(DSColor.textSecondary)
                 configuration.textProperties.font = self.font(.subheadline)
@@ -398,6 +416,7 @@ fileprivate final class IOS17SearchResultDataSource: UITableViewDiffableDataSour
         switch sectionIdentifier(for: section) {
         case .shelf: return localized("書架")
         case .remoteLibraries: return localized("我的書庫")
+        case .bibliographic: return localized("書目資料庫")
         case .results: return localized("來源配置")
         case .library: return localized("公有書庫")
         case nil: return nil

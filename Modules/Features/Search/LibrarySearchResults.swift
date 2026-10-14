@@ -1,18 +1,18 @@
 import SwiftUI
 
-/// One book a saved library found for 搜索 (unified search 4b-2), as the home draws one of
-/// its items, with the 作品詳情 route frozen when it was found.
+/// One book a saved library (unified search 4b-2) or Open Library (4b-3) found for 搜索, as the
+/// home draws one of its items, with the 作品詳情 route frozen when it was found.
 struct LibrarySearchMatch: Identifiable {
     /// Made once, when the answer arrives, so the iOS 17 table can diff its rows.
     let id = UUID()
     let card: HomeCardContent
     let route: WorkDetailRoute
     let connectionID: String
-    /// The library's name: the row's detail line.
-    let libraryName: String
+    /// The row's detail line: the library's name, or 只有資料 for Open Library.
+    let detail: String
 
     var rowContent: SearchBookListRowContent {
-        SearchBookListRowContent(title: card.title, titleTag: nil, author: card.author, detail: libraryName)
+        SearchBookListRowContent(title: card.title, titleTag: nil, author: card.author, detail: detail)
     }
 }
 
@@ -28,27 +28,41 @@ struct LibrarySearchFailure: Identifiable, Equatable {
     }
 }
 
-/// 搜索's 我的書庫 section: every saved OPDS and Calibre library asked on submit, each
-/// answering on its own (unified search 4b-2). Owned by the search page and read only by the
-/// views that draw it.
+/// A section of 搜索 asked on submit, each place answering on its own: 我的書庫 (the saved OPDS
+/// and Calibre libraries, unified search 4b-2) and 書目資料庫 (Open Library, 4b-3). Owned by
+/// the search page and read only by the views that draw it.
 @Observable
 @MainActor
 final class LibrarySearchModel {
     private(set) var matches: [LibrarySearchMatch] = []
     private(set) var failures: [LibrarySearchFailure] = []
     private(set) var isSearching = false
-    @ObservationIgnored private let search: LibrarySearch
+    @ObservationIgnored private let search: any SearchAnswering
+    /// A row's detail line for the answer it came in.
+    @ObservationIgnored private let detail: (LibrarySearchAnswer) -> String
     @ObservationIgnored private var running: Task<Void, Never>?
 
-    init(search: LibrarySearch? = nil) {
+    /// The saved libraries, each row naming its library.
+    init(search: (any SearchAnswering)? = nil) {
         self.search = search ?? LibrarySearch()
+        detail = \.name
     }
 
-    var hasLibraries: Bool { search.hasLibraries }
+    /// Open Library: data only, every row says so.
+    static func openLibrary(_ search: (any SearchAnswering)? = nil) -> LibrarySearchModel {
+        LibrarySearchModel(search: search ?? OpenLibrarySearch(), detail: { _ in localized("只有資料") })
+    }
+
+    private init(search: any SearchAnswering, detail: @escaping (LibrarySearchAnswer) -> String) {
+        self.search = search
+        self.detail = detail
+    }
+
+    var isAvailable: Bool { search.isAvailable }
 
     func start(_ query: String, store: BookStore) {
         clear()
-        guard search.hasLibraries else { return }
+        guard search.isAvailable else { return }
         isSearching = true
         running = Task { [weak self] in
             guard let self else { return }
@@ -84,7 +98,7 @@ final class LibrarySearchModel {
                 guard let card = HomeCardContent(entry, status: lookup.status(for:), shelfBooks: [:]),
                       let route = card.route else { return nil }
                 return LibrarySearchMatch(card: card, route: route, connectionID: answer.connectionID,
-                                          libraryName: answer.name)
+                                          detail: detail(answer))
             }
         case .failed(let reason):
             failures.append(LibrarySearchFailure(id: answer.connectionID, name: answer.name, reason: reason))
@@ -94,14 +108,20 @@ final class LibrarySearchModel {
     }
 }
 
-/// The 我的書庫 section of the 搜索 tab's results on iOS 18 and later.
+/// A section of the 搜索 tab's results asked on submit (我的書庫, 書目資料庫), on iOS 18 and later.
 struct LibrarySearchSection: View {
+    let title: String
     let model: LibrarySearchModel
     let anchorsTitle: Bool
 
+    /// Whether the section shows at all.
+    static func shows(_ model: LibrarySearchModel) -> Bool {
+        model.isSearching || !model.matches.isEmpty || !model.failures.isEmpty
+    }
+
     var body: some View {
-        if model.isSearching || !model.matches.isEmpty || !model.failures.isEmpty {
-            Section(localized("我的書庫")) {
+        if Self.shows(model) {
+            Section(title) {
                 ForEach(model.matches) { match in
                     NavigationLink(value: match.route) {
                         SearchBookListRow(content: match.rowContent) {
@@ -146,7 +166,7 @@ struct LibrarySearchSection: View {
     model.receiveForPreview(LibrarySearchAnswer(connectionID: "calibre", name: "Calibre",
                                                 outcome: .failed("無法連線到伺服器"), entries: []), store: store)
     return NavigationStack {
-        List { LibrarySearchSection(model: model, anchorsTitle: false) }
+        List { LibrarySearchSection(title: localized("我的書庫"), model: model, anchorsTitle: false) }
             .listStyle(.plain)
     }
     .environmentObject(store)

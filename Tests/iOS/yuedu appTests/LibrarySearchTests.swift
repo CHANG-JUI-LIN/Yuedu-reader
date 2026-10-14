@@ -115,10 +115,13 @@ struct LibrarySearchTests {
         #expect(row.coverURL == "https://row.library.test/cover.jpg")
         #expect(row.remoteCover != nil)
 
+        let section = IOS17SearchAnswerSection(model: model)
+        #expect(section.rows == [row] && section.notices.isEmpty)
         let empty = IOS17SearchResultTableContent(rows: [], showsLoadMore: false)
-        let withLibrary = IOS17SearchResultTableContent(rows: [], showsLoadMore: false, remoteLibraries: [row])
+        let withLibrary = IOS17SearchResultTableContent(rows: [], showsLoadMore: false, remoteLibraries: section)
         #expect(withLibrary.requiresReload(comparedTo: empty))
-        let withNotice = IOS17SearchResultTableContent(rows: [], showsLoadMore: false, remoteLibraryNotices: ["搜索中…"])
+        let withNotice = IOS17SearchResultTableContent(
+            rows: [], showsLoadMore: false, remoteLibraries: IOS17SearchAnswerSection(rows: [], notices: ["搜索中…"]))
         #expect(withNotice.requiresReload(comparedTo: empty))
     }
 

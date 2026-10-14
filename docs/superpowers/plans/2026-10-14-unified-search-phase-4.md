@@ -84,7 +84,7 @@ BookSearchView (搜索 tab; also the session-scoped and per-source uses)
 ### 4b-3: Open Library
 
 - `OpenLibrarySearchParticipant`: `search.json?q=<keyword>&fields=key,title,author_name,cover_i,language,isbn&limit=20`, through `WebFetcher` + `RequestPacer.openLibrary`, app User-Agent (no email).
-- Results are `viewOnly` (「只有資料」); 作品詳情 shows 「尋找可用來源」 and no reading button.
+- Results are `viewOnly` (「只有資料」); 作品詳情 shows 「尋找可用來源」 and, as for every data-only version, a disabled 開始閱讀 with 目前沒有可閱讀的來源 (one path; changed while building 4b-3).
 - Setting 「搜尋時也查 Open Library」 (default on) + footer; strings in all five languages.
 - **Tests:** stub responses; toggle off → no request; rows are data-only.
 
@@ -152,3 +152,14 @@ The six match rules (audit §11.2) and where each ends up:
 - **Left for 4c:** an empty 我的書庫 with no source shows an empty list rather than 「沒有找到」; 4c's single list owns the one empty state. WebDAV-indexed files join through the work index there too.
 - **Not seen on screen:** no OPDS server is reachable from the simulator this session; the rows are covered by tests.
 - **Tests:** `LibrarySearchTests` (5, URLProtocol stub per host: results, empty, Calibre 404, offline, no search; timeout of one library while the other answers; root read once; iOS 17 row and reload) + `ShelfSearchTests`, `IOS17SearchResultTableTests`, `SearchSourceScopeTests`: 26 passed on iOS 27.
+
+### 4b-3 (branch `search/4b3-open-library`)
+
+- **`OpenLibrarySearch`** (`Modules/Services/Works/OpenLibrarySearch.swift`): one `search.json?q=…&fields=key,title,author_name,cover_i,language,isbn&limit=20` request on submit, through `WebFetcher` and the same `RequestPacer.openLibrary` as Phase 3's fill (one a second, app User-Agent, no email), 15 s timeout. Each work is a data-only item: key `SourceItemKey(OpenLibrary.key, "/works/OL…W")` (the key Phase 3 records a filled copy's source under), `openLibraryWork` identifier, at most 5 distinct ISBN-13s, `acquisitions: [.viewOnly]`, cover `covers.openlibrary.org/b/id/<cover_i>-M.jpg` (by cover id), language from MARC codes when the work has exactly one. ⏱ `search.openLibrary` span; failures logged through `AppLogger.network` with their kind.
+- **`ItemOpening.bibliographic`** (new case): not readable, never where a copy came from (`readsItsCopies` false), 來源 names it Open Library (`FilledMetadata.providerName`, the one naming path), its status says 只有資料. Every other switch treats it as having nothing to open, read, list or edit; 探索 would push it to 作品詳情.
+- **One model for both submit parts:** `SearchAnswering` (the saved libraries, Open Library) → `LibrarySearchModel`; Open Library's rows say 只有資料, the libraries' name their library. Section 書目資料庫 comes last on iOS 18; the iOS 17 table's 我的書庫 and 書目資料庫 are the same `IOS17SearchAnswerSection` values.
+- **Setting:** 設定 → 網路設定 → 「搜尋時也查 Open Library」 (default on, key `yd_search_open_library`) with a one-sentence footer saying the search words go to Open Library. Off: no request at all.
+- **Submit (behaviour change, vetoable):** `SearchSubmitPlan.decide` (pure, tested). With no source at all and something else answering (a saved library, or Open Library with its setting on), Search shows no 「沒有可用的來源配置」 alert and no longer pushes Gutenberg on its own; 公有書庫's row still offers Gutenberg. Since Open Library is on by default, a sourceless user now gets Open Library's data-only results (and in China, results instead of the alert).
+- **Not merged with the shelf yet:** an Open Library work and a shelf copy filled from it are separate rows, and 作品詳情 opened from the Open Library row does not list that copy: the work index joins only shelf and file members. 4c's rule A (shared identifier, the `openLibraryWork` id and ISBNs recorded here) merges them.
+- **Strings:** 書目資料庫, 只有資料, the toggle and its footer in all five languages (the footer uses each language's 尋找可用來源 wording).
+- **Tests:** `OpenLibrarySearchTests` (6: data-only items under Phase 3's key with cover and capped ISBNs, request carries the app UA and no email; setting off sends nothing; empty and 503; rows say 只有資料; the submit decision table; MARC codes), reusing Phase 3's `OpenLibraryStub`; with `OpenLibraryFillProviderTests`, `LibrarySearchTests`, `WorkDetailVersionsTests`, `WorkDetailShelfVersionsTests`, `OPDSProviderTests`, `ShelfProviderTests`, `IOS17SearchResultTableTests`, `ShelfSearchTests`: 57 passed on iOS 27.

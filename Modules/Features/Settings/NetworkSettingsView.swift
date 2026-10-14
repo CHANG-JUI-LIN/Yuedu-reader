@@ -62,6 +62,14 @@ struct NetworkSettingsView: View {
                         .dsSectionFooter()
                 }
                 .interfaceSectionSurface()
+                Section {
+                    Toggle(localized("搜尋時也查 Open Library"), isOn: $settings.searchOpenLibrary)
+                        .accessibilityIdentifier("network.searchOpenLibrary")
+                } footer: {
+                    Text(localized("在搜索按下搜尋時，關鍵字會送到 Open Library；找到的書只有資料，可再尋找可用來源。"))
+                        .dsSectionFooter()
+                }
+                .interfaceSectionSurface()
             }
             .softScrollEdges()
             .themedAppSurface(for: .settings)

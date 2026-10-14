@@ -1754,6 +1754,11 @@ class GlobalSettings {
     var autoFillBookMetadata: Bool {
         didSet { UserDefaults.standard.set(autoFillBookMetadata, forKey: "yd_auto_fill_book_metadata") }
     }
+    /// 搜尋時也查 Open Library (unified search 4b-3): 搜索 sends its words to Open Library on
+    /// submit, for books no source carries. On by default (maintainer, 2026-10-14).
+    var searchOpenLibrary: Bool {
+        didSet { UserDefaults.standard.set(searchOpenLibrary, forKey: "yd_search_open_library") }
+    }
     /// 換源搜索時順便抓每個候選源的目錄（Legado `changeSourceLoadToc`）。Tapping a source
     /// whose TOC was captured this way switches without a network round trip. Off by default
     /// — same as Legado — because it turns one request per source into two.
@@ -2341,6 +2346,8 @@ class GlobalSettings {
             (UserDefaults.standard.object(forKey: "yd_search_cache_days") as? Int) ?? 5
         autoFillBookMetadata =
             (UserDefaults.standard.object(forKey: "yd_auto_fill_book_metadata") as? Bool) ?? true
+        searchOpenLibrary =
+            (UserDefaults.standard.object(forKey: "yd_search_open_library") as? Bool) ?? true
         changeSourceLoadToc =
             (UserDefaults.standard.object(forKey: "yd_change_source_load_toc") as? Bool) ?? false
         iCloudAutoSync =

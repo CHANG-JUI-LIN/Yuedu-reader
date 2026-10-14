@@ -3818,3 +3818,8 @@
 /* Unified search 4b-2: 搜索's saved-libraries section and a library's status line */
 "我的書庫" = "マイライブラリ";
 "%@：無法搜尋（%@）" = "%@：検索できません（%@）";
+/* Unified search 4b-3: Open Library in 搜索 */
+"書目資料庫" = "書誌データベース";
+"只有資料" = "情報のみ";
+"搜尋時也查 Open Library" = "検索時に Open Library も検索";
+"在搜索按下搜尋時，關鍵字會送到 Open Library；找到的書只有資料，可再尋找可用來源。" = "検索するとキーワードが Open Library に送信されます。見つかった本は情報のみで、「利用できるソースを探す」で読める場所を探せます。";

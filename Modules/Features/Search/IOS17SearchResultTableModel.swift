@@ -49,6 +49,15 @@ struct IOS17ShelfCover: Equatable {
     var defaultCover: CoverImageSource?
 }
 
+/// A part of the search asked on submit (`LibrarySearchModel`), as values: its books, then its
+/// status lines (searching, or each place that could not answer).
+struct IOS17SearchAnswerSection: Equatable {
+    var rows: [IOS17SearchResultTableRow]
+    var notices: [String]
+
+    var isEmpty: Bool { rows.isEmpty && notices.isEmpty }
+}
+
 /// The 公有書庫 part of the same search (unified library 5d-1b), as values like the result
 /// rows: Gutenberg's search to submit, then 青空文庫's matches.
 struct IOS17SearchLibrarySection: Equatable {
@@ -71,10 +80,10 @@ struct IOS17SearchResultTableContent: Equatable {
     var sourcesNotice: String? = nil
     /// The public libraries' section, under the sources' (the 搜索 tab's root only).
     var library: IOS17SearchLibrarySection? = nil
-    /// The saved OPDS and Calibre libraries' books (unified search 4b-2), under the shelf's.
-    var remoteLibraries: [IOS17SearchResultTableRow] = []
-    /// Their status lines: searching, or each library that could not answer.
-    var remoteLibraryNotices: [String] = []
+    /// 我的書庫: the saved OPDS and Calibre libraries (unified search 4b-2), under the shelf's.
+    var remoteLibraries: IOS17SearchAnswerSection? = nil
+    /// 書目資料庫: Open Library (4b-3), last.
+    var bibliographic: IOS17SearchAnswerSection? = nil
 
     func requiresReload(comparedTo previous: Self?) -> Bool {
         self != previous

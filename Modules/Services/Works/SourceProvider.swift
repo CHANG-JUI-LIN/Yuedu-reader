@@ -108,6 +108,9 @@ enum ItemOpening: Hashable, Sendable {
     case aozora(AozoraWork)
     /// A book-source result: `ExploreNavigationRoute.book`.
     case onlineBook(FrozenOnlineBook)
+    /// A bibliographic database's record (Open Library, unified search 4b-3): data only, with
+    /// nothing to open; 作品詳情 offers 尋找可用來源.
+    case bibliographic
 }
 
 /// An `OnlineBook` in a `Hashable` value, compared by its id as `ExploreNavigationRoute.book` is.

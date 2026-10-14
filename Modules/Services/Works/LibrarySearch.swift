@@ -1,6 +1,18 @@
 import Foundation
 
-/// One saved OPDS or Calibre connection's answer to a search (unified search 4b-2).
+/// A part of 搜索 that answers on submit, one answer per place it asks: the saved libraries
+/// (4b-2), Open Library (4b-3). `LibrarySearchModel` draws either.
+@MainActor
+protocol SearchAnswering: AnyObject {
+    /// Whether a search would ask anyone.
+    var isAvailable: Bool { get }
+    /// Asks every place; `onAnswer` gets each answer as it arrives. Returns when all have
+    /// answered or the calling task is cancelled.
+    func search(_ query: String, onAnswer: (LibrarySearchAnswer) -> Void) async
+}
+
+/// One place's answer to a search: a saved OPDS or Calibre connection (unified search 4b-2),
+/// or Open Library (4b-3).
 struct LibrarySearchAnswer: Identifiable, Equatable, Sendable {
     enum Outcome: Equatable, Sendable {
         case results
@@ -29,7 +41,7 @@ struct LibrarySearchAnswer: Identifiable, Equatable, Sendable {
 /// per connection for the life of this object, so a second search sends one request per
 /// library, as `OPDSBrowseModel` does after its first load.
 @MainActor
-final class LibrarySearch {
+final class LibrarySearch: SearchAnswering {
     static let timeout: Duration = .seconds(20)
 
     private let providers: @MainActor () -> [any OPDSFeedProviding]
@@ -48,10 +60,8 @@ final class LibrarySearch {
     }
 
     /// Whether any library would be asked.
-    var hasLibraries: Bool { !providers().isEmpty }
+    var isAvailable: Bool { !providers().isEmpty }
 
-    /// Asks every library; `onAnswer` gets each answer as it arrives, in arrival order.
-    /// Returns when all have answered or the calling task is cancelled.
     func search(_ query: String, onAnswer: (LibrarySearchAnswer) -> Void) async {
         let query = query.trimmingCharacters(in: .whitespacesAndNewlines)
         let libraries = providers()
@@ -119,7 +129,7 @@ final class LibrarySearch {
     }
 
     /// `operation`, or a `SourceFailure` of kind `.timeout` when it takes longer than `limit`.
-    private static func within<T: Sendable>(_ limit: Duration, _ operation: @escaping @Sendable () async throws -> T) async throws -> T {
+    static func within<T: Sendable>(_ limit: Duration, _ operation: @escaping @Sendable () async throws -> T) async throws -> T {
         try await withThrowingTaskGroup(of: T.self) { group in
             group.addTask { try await operation() }
             group.addTask {
