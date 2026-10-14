@@ -101,6 +101,11 @@ final class HomeSectionEditor: ObservableObject {
         if followsChoice { chosenTitle = title }
     }
 
+    /// A module list's parameter (Phase 6f), by its name; nil goes back to the module's default.
+    func setParameter(_ name: String, to value: String?) {
+        change { $0.parameters[name] = value }
+    }
+
     // MARK: 最新's categories
 
     /// The categories picked for 最新, one per book source (design §13.3: a book source's 最新 is

@@ -214,7 +214,7 @@ enum ExplorePlace {
             return .publicLibrary(.aozoraCatalog(mode, aozoraIndex))
         // 訂閱的最新文章: the rest is RSS 訂閱 (`ExploreNavigationRoute.subscriptions`).
         // 為你推薦 is mixed from many places; no page lists it whole. A module list's whole page
-        // comes with the module rows on the home (Phase 6f).
+        // is a step of its own after Phase 6f (6f-2): no page browses a provider's location yet.
         case .myLibrary, .continueReading, .related, .nextInSeries, .subscriptionArticles, .forYou, .module, .unknown:
             return nil
         }

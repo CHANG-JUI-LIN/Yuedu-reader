@@ -40,6 +40,8 @@ private struct ExploreHomeRoot: View {
     @ObservedObject private var tabModel = ExploreTabModel.shared
     @ObservedObject private var aozora = AozoraCatalogStore.shared
     @ObservedObject private var aggregation = AggregationSettingsStore.shared
+    /// Its installs, updates and removals change the rows (Phase 6f).
+    @ObservedObject private var modules = RuleModuleLibrary.shared
     @AppStorage(ExploreSettings.modeKey) private var storedMode = ExploreMode.publicLibraries.rawValue
     @AppStorage(ExploreSettings.showsBrowserKey) private var showsBrowser = true
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -88,7 +90,8 @@ private struct ExploreHomeRoot: View {
     /// What the rows are built from; any change builds them again.
     private var syncKey: [AnyHashable] {
         [pageStore.page, connections.catalogs.map(\.id), exploreSources.map(\.bookSourceUrl), availability.isAvailable,
-         aozora.catalog != nil, aggregation.settings.hiddenFromLatest]
+         aozora.catalog != nil, aggregation.settings.hiddenFromLatest,
+         modules.modules.map { "\($0.module.id)@\($0.module.version)" }]
     }
 
     /// Every section is settled with nothing in it, so the home would be blank: a China

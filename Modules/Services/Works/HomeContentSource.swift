@@ -6,7 +6,8 @@ import Foundation
 //   訂閱的最新文章, the RSS subscriptions' articles (5g, decision 26);
 // - 書庫: each OPDS or Calibre connection's feeds, Gutenberg's lists and feeds, 青空文庫's
 //   新着 and indexes. A WebDAV connection serves 最新 only, so it is not listed;
-// - 來源配置: each book source's discover categories.
+// - 來源配置: each book source's discover categories;
+// - 模組: each installed module's lists (Phase 6f).
 // 外部服務 waits for Phase 3 (decision 23). 最近加入書架, 書架分組 and 閱讀統計 have no binding.
 
 /// Who serves a binding, as 選擇內容來源 groups it and marks the current one 「目前」.
@@ -16,11 +17,12 @@ enum HomeContentOwner: Hashable, Sendable {
     case gutenberg
     case aozora
     case bookSource(url: String)
+    /// An installed module (Phase 6f).
+    case module(id: String)
 }
 
 extension HomeSectionBinding {
-    /// Nil for 我的書庫 and a later build's binding, which the form does not offer, and for a
-    /// module's list until 選擇內容來源 lists modules (Phase 6f).
+    /// Nil for 我的書庫 and a later build's binding, which the form does not offer.
     var contentOwner: HomeContentOwner? {
         switch self {
         case .continueReading, .latest, .related, .nextInSeries, .subscriptionArticles, .forYou: .appData
@@ -28,7 +30,8 @@ extension HomeSectionBinding {
         case .gutenbergCollection, .gutenbergLists, .gutenbergFeed, .gutenbergShelf: .gutenberg
         case .aozoraNew, .aozoraIndex: .aozora
         case .sourceCategories(let references): references.first.map { .bookSource(url: $0.sourceURL) }
-        case .myLibrary, .module, .unknown: nil
+        case .module(let moduleID, _): .module(id: moduleID)
+        case .myLibrary, .unknown: nil
         }
     }
 

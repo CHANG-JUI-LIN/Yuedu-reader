@@ -86,9 +86,14 @@ final class SourceProviderRegistry {
         return manifests
     }
 
+    /// One provider per installed module, oldest install first (Phase 6f).
+    static func moduleProviders(in library: RuleModuleLibrary) -> [ModuleProvider] {
+        library.modules.map { ModuleProvider(module: $0.module) }
+    }
+
     /// Every source that can put rows on the Explore home (5b), in the order 「最新」 lists
     /// them: the shelf (and 訂閱的最新文章, which serves no 最新), saved connections, Gutenberg,
-    /// Aozora, then the explore sources as 探索 lists them. WebDAV connections read `shelf.remoteRecords` for their 「最新」.
+    /// Aozora, the installed modules, then the explore sources as 探索 lists them. WebDAV connections read `shelf.remoteRecords` for their 「最新」.
     ///
     /// Callers wait for `BookSourceStore.waitUntilLoaded()` first: before the library is read
     /// every source would look deleted.
@@ -97,7 +102,8 @@ final class SourceProviderRegistry {
     ///   - firstPages: the home's own, kept for as long as the home (Discovery Phase 7a-1), so
     ///     its rows and 為你推薦 share one queue per source across syncs.
     ///   - home: the home 為你推薦 reads its library rows from (7a-4).
-    func homeProviders(shelf: BookStore, sources: BookSourceStore = .shared,
+    ///   - modules: the installed modules (Phase 6f); callers wait for its first read.
+    func homeProviders(shelf: BookStore, sources: BookSourceStore = .shared, modules: RuleModuleLibrary = .shared,
                        firstPages: DiscoverFirstPages, home: (any ForYouHomeRows)? = nil) -> [any HomeSectionProviding] {
         firstPages.beginSync()
         var providers: [any HomeSectionProviding] = [ShelfProvider(store: shelf), SubscriptionArticlesProvider()]
@@ -109,6 +115,7 @@ final class SourceProviderRegistry {
         }
         providers.append(gutenberg)
         providers.append(aozoraProvider)
+        providers += Self.moduleProviders(in: modules)
         providers.append(ForYouProvider(firstPages: firstPages, home: home, shelf: shelf))
         providers += DiscoverViewModel.exploreSources(in: sources).map { BookSourceProvider(source: $0, firstPages: firstPages) }
         return providers.filter { $0.availability != .hiddenInRegion }

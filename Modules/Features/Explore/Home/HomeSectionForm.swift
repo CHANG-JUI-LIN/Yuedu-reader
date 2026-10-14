@@ -166,6 +166,7 @@ struct HomeSectionForm: View {
     @ObservedObject private var sources = BookSourceStore.shared
     @ObservedObject private var connections = RemoteLibraryConnectionStore.shared
     @ObservedObject private var availability = PublicLibraryAvailability.shared
+    @ObservedObject private var modules: RuleModuleLibrary
     @EnvironmentObject private var store: BookStore
     /// 選擇內容來源 as a sheet.
     @State private var showsPicker = false
@@ -173,9 +174,10 @@ struct HomeSectionForm: View {
     /// (`Technotes/iOS17SearchWatchdogPostmortem.md`, guardrail 12).
     @State private var push: HomeSectionFormPush?
 
-    init(editor: HomeSectionEditor, isInSheet: Bool, added: @escaping () -> Void = {}) {
+    init(editor: HomeSectionEditor, isInSheet: Bool, modules: RuleModuleLibrary = .shared, added: @escaping () -> Void = {}) {
         self.editor = editor
         self.isInSheet = isInSheet
+        self.modules = modules
         self.added = added
         preview = editor.preview
     }
@@ -233,6 +235,9 @@ struct HomeSectionForm: View {
             }
             if draft.binding == .forYou {
                 forYouCategories
+            }
+            if let entry = moduleEntry, !entry.editableParams.isEmpty {
+                moduleParameters(entry)
             }
             if !editor.isNew {
                 Section {
@@ -496,7 +501,7 @@ struct HomeSectionForm: View {
     private var sourceDescription: String {
         guard let binding = draft.binding, let owner = binding.contentOwner else { return localized("未設定") }
         let item = HomeSection(layout: draft.layout, binding: binding).displayTitle(sourceName: "")
-        return [owner.name(sources: sources, connections: connections), item.isEmpty ? draft.title : item]
+        return [owner.name(sources: sources, connections: connections, modules: modules), item.isEmpty ? draft.title : item]
             .filter { !$0.isEmpty }
             .joined(separator: " › ")
     }
@@ -510,6 +515,48 @@ struct HomeSectionForm: View {
             showsPicker = false
             push = nil
         }
+    }
+
+    // MARK: A module's list
+
+    /// The module list the section shows, while its module is installed.
+    private var moduleEntry: RuleModule.Entry? {
+        guard case .module(let moduleID, let entryID) = draft.binding else { return nil }
+        return modules.module(id: moduleID)?.module.modules.first { $0.id == entryID }
+    }
+
+    /// Its parameters, written to the section by name (Phase 6f): a choice is a `Picker`, a
+    /// count a `Stepper`, typed text is kept once the reader is done with it.
+    private func moduleParameters(_ entry: RuleModule.Entry) -> some View {
+        Section {
+            ForEach(entry.editableParams, id: \.name) { param in
+                let title = param.title ?? param.name
+                let value = param.currentValue(in: draft.parameters)
+                switch param.kind {
+                case .enumeration:
+                    Picker(title, selection: Binding(get: { value }, set: { editor.setParameter(param.name, to: $0) })) {
+                        ForEach(param.enumOptions ?? [], id: \.value) { option in
+                            Text(option.title).tag(option.value)
+                        }
+                    }
+                    .accessibilityIdentifier("homeSection.parameter.\(param.name)")
+                case .count:
+                    let count = Int(value) ?? 1
+                    Stepper(value: Binding(get: { count }, set: { editor.setParameter(param.name, to: String($0)) }),
+                            in: 1...max(100, count)) {
+                        LabeledContent(title, value: String(count))
+                    }
+                    .accessibilityValue(String(count))
+                    .accessibilityIdentifier("homeSection.parameter.\(param.name)")
+                default:
+                    HomeModuleTextParameter(title: title, committed: value) { editor.setParameter(param.name, to: $0) }
+                        .accessibilityIdentifier("homeSection.parameter.\(param.name)")
+                }
+            }
+        } header: {
+            Text(localized("篩選"))
+        }
+        .interfaceSectionSurface()
     }
 
     // MARK: Preview
@@ -539,11 +586,43 @@ struct HomeSectionForm: View {
     }
 }
 
+/// A module list's `input` parameter. Kept on submit or when the field loses focus, never on
+/// each keystroke: every value written reloads the preview with a real request.
+private struct HomeModuleTextParameter: View {
+    let title: String
+    let committed: String
+    let commit: (String?) -> Void
+    @State private var text = ""
+    @FocusState private var focused: Bool
+
+    var body: some View {
+        LabeledContent(title) {
+            TextField(title, text: $text)
+                .multilineTextAlignment(.trailing)
+                .textInputAutocapitalization(.never)
+                .autocorrectionDisabled()
+                .submitLabel(.done)
+                .focused($focused)
+                .onSubmit(save)
+        }
+        .onAppear { text = committed }
+        .onChange(of: committed) { _, value in if !focused { text = value } }
+        .onChange(of: focused) { _, isFocused in if !isFocused { save() } }
+    }
+
+    private func save() {
+        guard text != committed else { return }
+        commit(text.isEmpty ? nil : text)
+    }
+}
+
 extension HomeContentOwner {
     /// The name 選擇內容來源 and the form's 資料來源 give it.
     @MainActor
-    func name(sources: BookSourceStore, connections: RemoteLibraryConnectionStore) -> String {
+    func name(sources: BookSourceStore, connections: RemoteLibraryConnectionStore,
+              modules: RuleModuleLibrary = .shared) -> String {
         switch self {
+        case .module(let id): modules.module(id: id)?.module.title ?? id
         case .appData: localized("App 資料")
         case .connection(let id): connections.connection(id: id)?.name ?? ""
         case .gutenberg: localized("Project Gutenberg")
@@ -578,6 +657,20 @@ extension HomeContentOwner {
                 store: HomePageStore(fileURL: FileManager.default.temporaryDirectory.appendingPathComponent("preview-home.json")),
                 preview: .preview(shelf: BookStore())),
             isInSheet: false)
+    }
+    .environmentObject(BookStore())
+}
+
+#Preview("模組的清單") {
+    let module = RuleModulePreviewData.module()
+    return NavigationStack {
+        HomeSectionForm(
+            editor: HomeSectionEditor(
+                section: HomeSection(layout: .row, title: "新書", binding: .module(moduleID: module.id, entryID: "new"),
+                                     parameters: ["sort": "new"]),
+                store: HomePageStore(fileURL: FileManager.default.temporaryDirectory.appendingPathComponent("preview-home.json")),
+                preview: .preview(shelf: BookStore())),
+            isInSheet: false, modules: RuleModulePreviewData.listsLibrary())
     }
     .environmentObject(BookStore())
 }
