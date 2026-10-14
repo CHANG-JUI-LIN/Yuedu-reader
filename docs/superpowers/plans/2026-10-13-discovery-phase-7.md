@@ -232,3 +232,20 @@ Measured with `ForYouMeasurementTests` (iOS 27 simulator, Debug): a home of 5 so
 - UI, the 7a list plus WorkDetail and WorkSourceFinder: iOS 27, 41 passed, 1 skipped, 0 failed of that list; iOS 17.5, 45 run, 40 passed, 5 skipped by design, 0 failed.
 - `DetailReaderBackSwipeUITests`, added to the run this time, fails on main **before** 7b too: at c6c2af51, `testInstantEdgeBack`, `testInstantTurnHidesMenu` and `testDetailMangaReaderLoadsAndReturns` fail as they do after it (iOS 27; the page-turn, edge-back and manga-image tests across the suite fail the same way). Not 7b's; left for its own task. `testClassicReaderControlsFromExploreAreAccessible` failed once after 7b ("Next Chapter" not yet there) and passed twice in a row on the same code, and before 7b: flaky.
 - On iOS 17.5 the run with that suite hit the wrapper's 40-minute limit inside it; the list above was run again without it.
+
+## What landed (reader back-swipe suite, after 7b)
+
+The maintainer's pick after 7b (2026-10-14): fix `DetailReaderBackSwipeUITests`, failing on main before 7b.
+
+### State left by earlier runs (branch `fix/reader-backswipe-tests`, e250b1ad)
+- Paged-text tests opened a scrolling reader: since 排版生效範圍 (2026-09-28) the shared and per-theme reading stores win over `-yd_scroll_mode` / `-yd_page_turn_style`, and a scroll-mode test had written scroll mode into them. `-reset-reading-settings` (DEBUG) empties the stores at launch; each test's first launch passes it.
+- Manga tests opened as a webtoon or on page 2: the fixture's `clean` now also drops the fixture books' own reader settings, and the suite's doc says to `clean` then `prepare` before each run.
+- iOS 27: the whole suite, 31 passed.
+
+### iOS 17 edge back (branch `fix/ios17-cover-edge-back`)
+- On iOS 17.5 every edge-back test failed, in every page-turn mode, at both steps that start the drag 8 pt or 28 pt from the edge. They had never passed on 17.5: the earlier report of slide and curl passing came from a run killed at the 40-minute limit.
+- Measured with temporary logs: before iOS 26 the navigation controller's screen-edge recognizer accepts the touch but fails on its own from 8 pt and from 28 pt; from 1 pt it begins and pops. The 30 pt reservation is iOS 26's content-pop recognizer (`NavigationBackSwipeReservationController.backGesture`, as documented there).
+- Maintainer's decision (by option): the test follows what each system offers. iOS 26+ is unchanged (8 pt edge, 28 pt reserved strip). Before iOS 26 the edge drags start at 1 pt, where a finger sliding in from the bezel lands, and the 28 pt step is the edge drag. No second back-navigation path.
+- Tried and dropped: making the cover and instant page-turn pans wait for a screen-edge recognizer. A/B on iOS 17.5 (`testCoverEdgeBack`, 1 pt edge) passed with and without it, so it is not shipped. Product code is unchanged.
+- Results: iOS 17.5, the five edge-back tests pass (instant run alone; see below). iOS 27, the five passed.
+- Found, not fixed: on iOS 17.5, in a multi-test run, the test's `SKTestSession` set-up grows from 0 s to 92 s by the third test, and the runner is killed ("Test crashed with signal kill") about 130 s into that test. The same test passes alone in 45 s.
