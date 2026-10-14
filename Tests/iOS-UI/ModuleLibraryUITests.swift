@@ -13,17 +13,30 @@ final class ModuleLibraryUITests: XCTestCase {
         continueAfterFailure = false
     }
 
-    private func launch() -> XCUIApplication {
+    private func launch(disclaimerAccepted: Bool = true) -> XCUIApplication {
         let folder = FileManager.default.temporaryDirectory.appendingPathComponent("ModuleLibraryUITests-\(UUID().uuidString)")
         let app = XCUIApplication()
         app.launchArguments = ["-AppleLanguages", "(zh-Hant)", "-AppleLocale", "zh_TW",
-                               "-yd_source_disclaimer_accepted", "YES",
+                               "-yd_source_disclaimer_accepted", disclaimerAccepted ? "YES" : "NO",
                                "-rule-module-store-dir", folder.path]
         app.launch()
         let tab = app.tabBars.buttons["資源庫"].firstMatch
         XCTAssertTrue(tab.waitForExistence(timeout: 30), app.debugDescription)
         tab.tap()
+        XCTAssertTrue(app.buttons["library.more"].firstMatch.waitForExistence(timeout: 10), app.debugDescription)
         return app
+    }
+
+    /// 資源庫's •••. On iOS 27 the bar slides away as the page scrolls (`.minimizesBar`), so the
+    /// page goes back to its top first.
+    private func tapMore(_ app: XCUIApplication) {
+        let more = app.buttons["library.more"].firstMatch
+        var swipes = 0
+        while !more.isHittable, swipes < 8 {
+            app.scrollViews.firstMatch.swipeDown(velocity: .fast)
+            swipes += 1
+        }
+        more.tap()
     }
 
     private func attach(_ app: XCUIApplication, _ name: String) {
@@ -55,7 +68,7 @@ final class ModuleLibraryUITests: XCTestCase {
         attach(app, "modules-empty")
 
         // ••• → 新增模組 → 從網址; on iOS 17 a chooser row, opened once the chooser has gone.
-        app.buttons["library.more"].firstMatch.tap()
+        tapMore(app)
         if #available(iOS 18, *) {
             let add = app.buttons["新增模組"].firstMatch
             XCTAssertTrue(add.waitForExistence(timeout: 5), app.debugDescription)
@@ -101,5 +114,40 @@ final class ModuleLibraryUITests: XCTestCase {
         XCTAssertTrue(scrolledTo(app.buttons["library.modules.add"].firstMatch, in: app).waitForExistence(timeout: 10),
                       app.debugDescription)
         attach(app, "modules-removed")
+    }
+
+    /// 6e-2: a `yuedu://module?src=` link, opened from outside, shows the source disclaimer the
+    /// first time, then the same import sheet as 從網址, already loading the module.
+    @MainActor
+    func testOpenLinkShowsDisclaimerThenImport() throws {
+        guard #available(iOS 16.4, *) else { throw XCTSkip("XCUIDevice.system.open(_:) needs iOS 16.4") }
+        let app = launch(disclaimerAccepted: false)
+        let link = try XCTUnwrap(URL(string: "yuedu://module?src=" + Self.fixtureURL))
+        XCTAssertTrue(app.tabBars.buttons["資源庫"].firstMatch.isSelected, app.debugDescription)
+        // From the system, as a link tapped elsewhere arrives: `XCUIApplication.open(_:)`
+        // relaunches the app instead (seen: a new pid, back on 書架, launch arguments gone).
+        XCUIDevice.shared.system.open(link)
+        let springboard = XCUIApplication(bundleIdentifier: "com.apple.springboard")
+        let confirm = springboard.buttons["Open"].firstMatch
+        if confirm.waitForExistence(timeout: 5) { confirm.tap() }
+
+        let proceed = app.buttons["繼續"].firstMatch
+        XCTAssertTrue(proceed.waitForExistence(timeout: 10), app.debugDescription)
+        attach(app, "module-link-disclaimer")
+        proceed.tap()
+
+        let commit = app.buttons["module.import.commit"].firstMatch
+        XCTAssertTrue(commit.waitForExistence(timeout: 15), app.debugDescription)
+        XCTAssertFalse(app.textFields["module.import.address"].exists, "the link is the address: no field to fill")
+        XCTAssertTrue(app.staticTexts["localhost"].exists, "the sites it connects to are shown first")
+        attach(app, "module-link-preview")
+        commit.tap()
+        XCTAssertFalse(commit.waitForExistence(timeout: 3), "the sheet closes once the module is added")
+        // The link reaches the window already open, not a new one starting on 書架.
+        XCTAssertTrue(app.tabBars.buttons["資源庫"].firstMatch.isSelected, app.debugDescription)
+
+        let card = scrolledTo(app.buttons["library.module.uitest.module"].firstMatch, in: app)
+        XCTAssertTrue(card.waitForExistence(timeout: 10), app.debugDescription)
+        attach(app, "module-link-card")
     }
 }

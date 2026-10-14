@@ -70,4 +70,25 @@ struct BookSourceImportDeepLinkTests {
         let url = try #require(URL(string: "yuedu://import/bookSource?src="))
         #expect(BookSourceImportDeepLink.sourceURL(from: url) == nil)
     }
+
+    // MARK: Modules (Phase 6e-2)
+
+    @Test("yuedu://module?src=URL 是模組連結，不是來源配置連結")
+    func parsesModuleLink() throws {
+        let url = try #require(URL(string: "yuedu://module?src=https%3A%2F%2Fexample.com%2Fmodule.json"))
+        #expect(BookSourceImportDeepLink.target(from: url) == .module(try #require(URL(string: "https://example.com/module.json"))))
+        #expect(BookSourceImportDeepLink.sourceURL(from: url) == nil, "a module is never imported as 來源配置")
+        let withPath = try #require(URL(string: "yuedu://module/install?url=https%3A%2F%2Fexample.com%2Fm.json"))
+        #expect(BookSourceImportDeepLink.target(from: withPath) == .module(try #require(URL(string: "https://example.com/m.json"))))
+    }
+
+    @Test("來源配置連結仍是來源配置；legado://module 與缺 src 的模組連結不算")
+    func moduleLinkBoundaries() throws {
+        let sources = try #require(URL(string: "yuedu://import/auto?src=https%3A%2F%2Fexample.com%2Fs.json"))
+        #expect(BookSourceImportDeepLink.target(from: sources) == .sources(try #require(URL(string: "https://example.com/s.json"))))
+        #expect(BookSourceImportDeepLink.target(from: try #require(URL(string: "legado://module?src=https://example.com/m.json"))) == nil)
+        #expect(BookSourceImportDeepLink.target(from: try #require(URL(string: "yuedu://module"))) == nil)
+        #expect(BookSourceImportDeepLink.target(from: try #require(URL(string: "yuedu://module?src="))) == nil)
+    }
 }
+

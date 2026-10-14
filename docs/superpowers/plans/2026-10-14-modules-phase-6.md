@@ -402,3 +402,22 @@ How these fit together:
   - `ModuleLibraryUITests.testAddFromAddressThenRemove`, against a local fixture server: ••• → 新增模組 → 從網址 → load → commit; the card appears; the page lists the entry and the URL; remove. It passes on iOS 27 (37.9 s) and iOS 17.5 (29.7 s).
   - `LibraryTabUITests.testMoreMenu`, since the ••• changed: passes on iOS 27 and iOS 17.5.
   - `check_localizations`, `git diff --check` and the title-mode grep are clean.
+
+### 6e-2 (branch `modules/6e2-deeplink`)
+
+- **One parser:** `BookSourceImportDeepLink.target(from:)` returns `.sources(URL)` or `.module(URL)`. `yuedu://module?src=` (or `url=`, under any path) is a module, on the `yuedu` scheme only. `sourceURL(from:)` keeps its callers and never answers for a module link, so a module can never be imported as 來源配置.
+- **`RuleModuleLinkPresenter`** opens a module link from both entries:
+  - the app's `onOpenURL`;
+  - a page in the in-app browser. `JsBridgeBrowserView` already intercepted every `yuedu://` link and now routes module links here.
+- **What it shows:** the same `RuleModuleImportSheet` as 從網址, with the address already loading and no address field.
+  - The first time, the source disclaimer comes first, through the same `SourceDisclaimerGate`. The sheet opens from the disclaimer's real dismissal completion.
+  - It presents from the top view controller, because a root SwiftUI sheet cannot show over the reader or the browser. The browser presents its own 來源配置 links the same way.
+  - Nothing is written until ✓.
+- **Investigated and not a bug:** after opening a link the UI test found the app back on 書架. A first guess was that the multi-scene app opens a new scene per URL. `handlesExternalEvents` did not change the result, so it was reverted.
+  - Logging showed a new pid: `XCUIApplication.open(_:)` relaunches the app.
+  - `simctl openurl` keeps the same pid.
+  - The test now opens the link through `XCUIDevice.shared.system.open(_:)`, the way a link tapped elsewhere arrives, and accepts SpringBoard's confirmation.
+- **Also fixed:** in `testAddFromAddressThenRemove`, the ••• could not be tapped on iOS 27 after scrolling to the module card, because the bar slides away (`.minimizesBar`). `tapMore` now scrolls back to the top first.
+- **Tests:**
+  - `BookSourceImportDeepLinkTests`: 9/9, 2 of them new.
+  - `ModuleLibraryUITests`: 2/2 on iOS 17.5 and 2/2 on iOS 27. The new `testOpenLinkShowsDisclaimerThenImport` goes link → disclaimer → preview → ✓ → card, with the tab still 資源庫 at the end.

@@ -223,6 +223,10 @@ struct yuedu_appApp: App {
                         return
                     }
                     guard TestFlightAccessController.shared.state.allowsUse else { return }
+                    if case .module(let address) = BookSourceImportDeepLink.target(from: incomingURL) {
+                        RuleModuleLinkPresenter.present(address)
+                        return
+                    }
                     bookSourceDeepLinkHandler.handle(url: incomingURL)
                 }
                 .sheet(isPresented: bookSourceImportSheetBinding) {
