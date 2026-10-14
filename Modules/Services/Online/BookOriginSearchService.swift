@@ -47,6 +47,8 @@ enum BookOriginSearchService {
 
         var seenOriginKeys = Set<String>()
         var emittedCount = 0
+        // Folded once: each fold runs ICU transforms (4d).
+        let target = SearchWorkKeys(name: title, author: author)
 
         await withTaskGroup(of: [OnlineBook]?.self) { group in
             var nextSourceIndex = 0
@@ -88,8 +90,7 @@ enum BookOriginSearchService {
                 for ob in list {
                     if requiresAuthor && ob.author.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { continue }
                     guard SearchBook.isLikelySameBook(
-                        name: title, author: author,
-                        name: ob.name, author: ob.author
+                        target, SearchWorkKeys(name: ob.name, author: ob.author)
                     ) else { continue }
                     // Dedup only the same source + URL. Aggregation channels from
                     // different sources may share a URL but remain distinct rules.
@@ -146,6 +147,8 @@ enum BookOriginSearchService {
         seconds: UInt64 = 20
     ) async -> [OnlineBook]? {
         let startedAt = ProcessInfo.processInfo.systemUptime
+        // Folded once per source, off the main actor; the filter runs per parsed item.
+        let target = SearchWorkKeys(name: bookTitle, author: bookAuthor)
         let books: [OnlineBook]? = await withTaskGroup(of: [OnlineBook]?.self) { group in
             group.addTask {
                 // Early filter (Legado BookList idea): reject non-matching items
@@ -156,10 +159,7 @@ enum BookOriginSearchService {
                     query: query,
                     in: source,
                     earlyFilter: { name, author in
-                        SearchBook.isLikelySameBook(
-                            name: bookTitle, author: bookAuthor,
-                            name: name, author: author
-                        )
+                        SearchBook.isLikelySameBook(target, SearchWorkKeys(name: name, author: author))
                     }
                 )
             }

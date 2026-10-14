@@ -11,8 +11,8 @@ import Testing
 struct SearchKeyCharacterizationTests {
     @Test("keys fold case, full-width forms and spaces")
     func keysFoldCaseWidthAndSpaces() {
-        #expect(SearchBook.nameKey("ＡＢＣ") == SearchBook.nameKey("abc"))
-        #expect(SearchBook.nameKey(" 三 體 ") == SearchBook.nameKey("三體"))
+        #expect(SearchBook.makeKey(name: "ＡＢＣ", author: "") == SearchBook.makeKey(name: "abc", author: ""))
+        #expect(SearchBook.makeKey(name: " 三 體 ", author: "") == SearchBook.makeKey(name: "三體", author: ""))
         #expect(SearchBook.makeKey(name: "三體 ", author: " 劉慈欣") == SearchBook.makeKey(name: "三體", author: "劉慈欣"))
     }
 
@@ -23,17 +23,12 @@ struct SearchKeyCharacterizationTests {
 
     @Test("punctuation is kept in the key")
     func punctuationIsKept() {
-        // 換源's key (`SearchBook.nameKey`, `isLikelySameBook`) until 4d, which is asked
-        // first. 搜索 merges by `WorkMatchKey` since 4c-1, which folds punctuation
-        // (`SearchWorkMergeTests`). The comment on `normalize` says it strips punctuation;
-        // it does not.
-        #expect(SearchBook.nameKey("三體！") != SearchBook.nameKey("三體"))
-    }
-
-    @Test("Traditional and Simplified Chinese do not share a key")
-    func traditionalAndSimplifiedDiffer() {
-        // 換源's key until 4d; 搜索 folds them since 4c-1 (`SearchWorkMergeTests`).
-        #expect(SearchBook.nameKey("三体") != SearchBook.nameKey("三體"))
+        // The off-shelf records' key (`OffShelfReadRecords`): stored data, so it stays. 搜索
+        // (4c-1) and 換源 (4d) compare titles by `WorkMatchKey` instead, which folds
+        // punctuation and Traditional / Simplified (`ChangeSourceMatchTests`). The comment
+        // on `normalize` says it strips punctuation; it does not.
+        #expect(SearchBook.makeKey(name: "三體！", author: "") != SearchBook.makeKey(name: "三體", author: ""))
+        #expect(SearchBook.makeKey(name: "三体", author: "") != SearchBook.makeKey(name: "三體", author: ""))
     }
 }
 
@@ -181,23 +176,33 @@ struct SearchAggregatorCharacterizationTests {
         #expect(results.count == 2)
     }
 
-    @Test("換源 keeps its own rule until 4d: no fold, and an empty author still merges")
-    func changeSourceKeepsItsRule() async throws {
+    @Test("換源 folds titles like 搜索 (4d), and an empty author still merges")
+    func changeSourceFoldsTitles() async throws {
         let a = makeSource("change-a")
         let b = makeSource("change-b")
+        let c = makeSource("change-c")
         let folded = try await search("三體", [
             (a, [book("三體", "劉慈欣", in: a)]),
-            (b, [book("三体", "劉慈欣", in: b)]),
+            (b, [book("三体", "刘慈欣", in: b)]),
+            (c, [book("三體！", "", in: c)]),
         ], origin: .changeSource)
-        #expect(folded.count == 1, "三体 is unrelated to 三體 under 換源's key: dropped")
-        #expect(folded.first?.name == "三體")
+        #expect(folded.count == 1)
+        #expect(folded.first?.origins.count == 3)
 
-        let c = makeSource("change-c")
+        let d = makeSource("change-d")
         let noAuthor = try await search("三體", [
-            (c, [book("三體", "", in: c, path: "1"), book("三體", "劉慈欣", in: c, path: "2")]),
+            (d, [book("三體", "", in: d, path: "1"), book("三體", "劉慈欣", in: d, path: "2")]),
         ], origin: .changeSource)
         #expect(noAuthor.count == 1)
         #expect(noAuthor.first?.origins.count == 2)
+
+        let e = makeSource("change-e")
+        let otherAuthor = try await search("三體", [
+            (e, [book("三體", "劉慈欣", in: e, path: "1"), book("三体", "王晉康", in: e, path: "2"),
+                 book("三體II", "劉慈欣", in: e, path: "3")]),
+        ], origin: .changeSource)
+        #expect(otherAuthor.count == 3, "a different author and a sequel stay apart")
+        #expect(Set(otherAuthor.map(\.name)) == ["三體", "三体", "三體II"])
     }
 
     // MARK: - Helpers
