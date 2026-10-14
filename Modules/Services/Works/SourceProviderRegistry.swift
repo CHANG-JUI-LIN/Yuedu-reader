@@ -64,6 +64,14 @@ final class SourceProviderRegistry {
         return providers.filter { $0.availability != .hiddenInRegion }
     }
 
+    /// The manifest of every source that can be browsed now, in `browsableProviders`' order
+    /// (Phase 6a).
+    func manifests(shelf: BookStore? = nil) async -> [ProviderManifest] {
+        var manifests: [ProviderManifest] = []
+        for provider in browsableProviders(shelf: shelf) { manifests.append(await provider.manifest()) }
+        return manifests
+    }
+
     /// Every source that can put rows on the Explore home (5b), in the order 「最新」 lists
     /// them: the shelf (and 訂閱的最新文章, which serves no 最新), saved connections, Gutenberg,
     /// Aozora, then the explore sources as 探索 lists them. WebDAV connections read `shelf.remoteRecords` for their 「最新」.

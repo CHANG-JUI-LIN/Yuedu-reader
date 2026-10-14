@@ -234,3 +234,24 @@ How these fit together:
 - **Checks:** `ruby scripts/check_localizations.rb`; VoiceOver labels checked on the new screens (`docs/design.md` §7).
 
 ## What landed
+
+### 6a (branch `modules/6a-manifest`)
+
+- **`ProviderManifest`** (`Modules/Services/Works/ProviderManifest.swift`): instance, display name, availability, capabilities, hosts, rate limit.
+  - It is computed by `SourceProvider.manifest()` from what the provider already reports: `CollectionBrowsing` gives `.browse` and its `capabilities().search` (left out when `.none`), and `HomeSectionProviding` gives `.homeSections`.
+  - Nothing is stored. `SectionLoadPolicy` stays per section.
+- **`SourceProvider`** gains three requirements:
+  - `hosts` is explicit in every provider, so none can forget it:
+    - shelf, 訂閱 and 為你推薦: none (on-device or already fetched);
+    - OPDS / Calibre / Gutenberg: their root's host;
+    - WebDAV: its normalized root's host;
+    - 青空文庫: the catalog's host, then `AozoraLibraryDownloadService.host` (the download guard now reads the same constant);
+    - a 來源配置: its `bookSourceUrl`'s host.
+  - `additionalCapabilities` and `rateLimit` default to none; 6b fills them for 來源配置.
+- **`SourceProviderRegistry.manifests(shelf:)`** lists the browsable providers' manifests in their order.
+- **Tests:** `ProviderManifestTests` (4):
+  - `browsableProviders` and `homeProviders` pinned: their order, the region gate, Gutenberg still found by id in China, a source without an explore rule absent from the home;
+  - every built-in manifest;
+  - 訂閱 / 為你推薦.
+
+  These pass with `SourceProviderRegistryTests`, `OPDSProviderTests`, `WebDAVProviderTests`, `AozoraProviderTests`, `ShelfProviderTests` and `AozoraLibraryDownloadServiceTests`: 23/23 on iOS 27. The `HomeModelTests` / `ForYouMeasurementTests` fakes declare `hosts`.

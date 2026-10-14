@@ -19,6 +19,12 @@ protocol SourceProvider: AnyObject {
     var instance: SourceInstanceKey { get }
     var displayName: String { get }
     var availability: ProviderAvailability { get }
+    /// The hosts its requests go to; empty for on-device data (`ProviderManifest.hosts`).
+    var hosts: [String] { get }
+    /// Capabilities beyond the protocols it conforms to (`ProviderManifest`); none by default.
+    var additionalCapabilities: Set<ProviderCapability> { get }
+    /// Its declared request rate (`ProviderManifest.rateLimit`); none by default.
+    var rateLimit: String? { get }
 }
 
 /// How a source can be searched (design §5, `CatalogSearching.searchPolicy`).

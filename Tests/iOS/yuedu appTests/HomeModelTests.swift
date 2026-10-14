@@ -31,6 +31,7 @@ private final class FakeProvider: HomeSectionProviding {
     let instance: SourceInstanceKey
     let displayName: String
     let availability: ProviderAvailability = .available
+    let hosts: [String] = []
     let policy: (HomeSection) -> SectionLoadPolicy?
     var gates: [Gate] = []
     var failure: (any Error)?

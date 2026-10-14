@@ -29,6 +29,7 @@ final class BookSourceProvider: HomeSectionProviding {
     var instance: SourceInstanceKey { SourceInstanceKey(type: .bookSource, id: source.bookSourceUrl) }
     var displayName: String { source.bookSourceName }
     var availability: ProviderAvailability { .available }
+    var hosts: [String] { URL(string: source.bookSourceUrl)?.providerHosts ?? [] }
 
     func loadPolicy(for section: HomeSection) -> SectionLoadPolicy? {
         category(for: section) == nil ? nil : .serialPerSource

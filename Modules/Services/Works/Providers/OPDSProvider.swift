@@ -17,6 +17,10 @@ protocol OPDSFeedProviding: CollectionBrowsing {
 }
 
 extension OPDSFeedProviding {
+    var hosts: [String] { rootURL?.providerHosts ?? [] }
+}
+
+extension OPDSFeedProviding {
     /// Entries the provider makes a record of are items (for OPDS, those with an acquisition;
     /// for Gutenberg, also its navigation links to a book); other navigation entries are
     /// locations. An entry with neither leads nowhere and is left out.
