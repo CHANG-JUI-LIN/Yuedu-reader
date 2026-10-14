@@ -35,10 +35,15 @@ final class ModuleProvider: CollectionBrowsing, HomeSectionProviding {
                 entry.id.map { .location(CollectionLocation(id: $0, title: entry.title ?? "")) }
             }, next: nil)
         }
-        guard let entry = entry(location.id) else {
-            throw SourceFailure(kind: .unavailable, underlying: FetchError.invalidURL(location.id))
+        return try await page(ofList: location.id, parameters: [:], after: cursor)
+    }
+
+    /// One page of a list with a section's own values (查看全部, Phase 6f-2).
+    func page(ofList entryID: String, parameters: [String: String], after cursor: CollectionCursor?) async throws -> CollectionPage {
+        guard let entry = entry(entryID) else {
+            throw SourceFailure(kind: .unavailable, underlying: FetchError.invalidURL(entryID))
         }
-        return try await page(of: entry, parameters: [:], after: cursor)
+        return try await page(of: entry, parameters: parameters, after: cursor)
     }
 
     // MARK: - Home
@@ -65,7 +70,7 @@ final class ModuleProvider: CollectionBrowsing, HomeSectionProviding {
 
     // MARK: - Pages
 
-    private func entry(_ id: String) -> RuleModule.Entry? {
+    func entry(_ id: String) -> RuleModule.Entry? {
         module.modules.first { $0.id == id }
     }
 

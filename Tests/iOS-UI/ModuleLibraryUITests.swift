@@ -216,5 +216,15 @@ final class ModuleLibraryUITests: XCTestCase {
         for _ in 0..<12 where !(card.exists && card.isHittable) { app.swipeUp() }
         XCTAssertTrue(card.isHittable, "the home shows the module's row")
         attach(app, "module-row-on-home")
+
+        // 6f-2: its header leads to 查看全部, the whole list.
+        let header = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@ AND label CONTAINS %@",
+                                                      "home.row.header.", "新書")).firstMatch
+        XCTAssertTrue(header.waitForExistence(timeout: 5), app.debugDescription)
+        header.tap()
+        XCTAssertTrue(app.navigationBars["新書"].waitForExistence(timeout: 5), app.debugDescription)
+        XCTAssertTrue(app.buttons.matching(book).firstMatch.waitForExistence(timeout: 10), app.debugDescription)
+        XCTAssertFalse(app.buttons["module.list.more"].exists, "a list with no paging has one page")
+        attach(app, "module-list-page")
     }
 }
