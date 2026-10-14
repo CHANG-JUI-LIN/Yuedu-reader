@@ -49,6 +49,24 @@ struct BookOriginSearchServiceTests {
         ])
     }
 
+    @Test("the parser's same-book filter never runs on the main thread")
+    func earlyFilterRunsOffTheMainThread() async {
+        // Since 4d it folds every parsed item with `WorkMatchKey` (ICU, ≈85 µs a book): on the
+        // main actor a 400-source 換源 would stall the reader.
+        let source = makeSource("early-filter-thread")
+        let fetcher = ScriptedOriginFetcher([
+            source.bookSourceUrl: .success([
+                book("三体", "刘慈欣", in: source, path: "1"),
+                book("球狀閃電", "劉慈欣", in: source, path: "2"),
+            ]),
+        ])
+
+        _ = await collect(title: "三體", author: "劉慈欣", sources: [source], fetcher: fetcher)
+
+        #expect(fetcher.filterThreads.count == 2)
+        #expect(!fetcher.filterThreads.contains(true), "the early filter ran on the main thread")
+    }
+
     @Test("a repeated source and URL is kept once, and the excluded origin is dropped")
     func deduplicatesAndExcludes() async {
         let source = makeSource("dedup")
@@ -243,6 +261,29 @@ private final class ScriptedOriginFetcher: BookSourceFetching, @unchecked Sendab
     var queriedSourceURLs: [String] {
         lock.withLock { queried }
     }
+
+    /// For each item the early filter was asked about: whether it ran on the main thread.
+    var filterThreads: [Bool] {
+        lock.withLock { filtered }
+    }
+    private var filtered: [Bool] = []
+
+    /// As the protocol's post-filtering default, recording the thread of each call.
+    func search(
+        query: String,
+        in source: BookSource,
+        earlyFilter: ((_ name: String, _ author: String) -> Bool)?
+    ) async throws -> [OnlineBook] {
+        let books = try await search(query: query, in: source)
+        guard let earlyFilter else { return books }
+        return books.filter { book in
+            let onMain = Self.isMainThread()
+            lock.withLock { filtered.append(onMain) }
+            return earlyFilter(book.name, book.author)
+        }
+    }
+
+    private static func isMainThread() -> Bool { Thread.isMainThread }
 
     func search(query: String, in source: BookSource) async throws -> [OnlineBook] {
         lock.withLock { queried.append(source.bookSourceUrl) }
