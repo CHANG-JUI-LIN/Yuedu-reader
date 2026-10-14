@@ -32,6 +32,33 @@ struct SearchWorkMergeBenchmarkTests {
         }
     }
 
+    @Test("the resolver over 1,000 source rows, 50 library books and 20 Open Library works, 3 runs")
+    func resolverCost() {
+        let rows = (0..<1_000).map { i in
+            let keys = SearchWorkKeys(name: i.isMultiple(of: 2) ? "三體第\(i % 300)部" : "三体第\(i % 300)部", author: "作者\(i % 50)")
+            return SearchCandidate(id: .bookSourceRow(UUID()), kind: .bookSource, title: "三體第\(i % 300)部", titleKey: keys.title,
+                                   authorKeys: [keys.author], contentKind: .text, language: nil, identifiers: [],
+                                   itemKeys: [SourceItemKey(instance: SourceInstanceKey(type: .bookSource, id: "s\(i % 7)"), item: "\(i)")],
+                                   isReadable: true, sourceCount: 1 + i % 3)
+        }
+        let others = (0..<70).map { i in
+            let title = "三體第\(i)部"
+            return SearchCandidate(id: .item(SourceItemKey(instance: SourceInstanceKey(type: .opds, id: "c"), item: "\(i)")),
+                                   kind: i < 50 ? .library : .bibliographic, title: title, titleKey: WorkMatchKey.title(title),
+                                   authorKeys: [WorkMatchKey.author("作者\(i % 50)")], contentKind: .text, language: nil,
+                                   identifiers: [], itemKeys: [SourceItemKey(instance: SourceInstanceKey(type: .opds, id: "c"), item: "\(i)")],
+                                   isReadable: i < 50, sourceCount: 1)
+        }
+        for run in 1...3 {
+            let clock = ContinuousClock()
+            let started = clock.now
+            let works = SearchWorkResolver.resolve(rows + others, query: "三體")
+            let elapsed = clock.now - started
+            let ms = Double(elapsed.components.seconds) * 1000 + Double(elapsed.components.attoseconds) / 1e15
+            print("⏱ bench search.resolve run=\(run) candidates=\(rows.count + others.count) works=\(works.count) total=\(String(format: "%.1f", ms))ms")
+        }
+    }
+
     // MARK: - Helpers (as `SearchAggregatorCharacterizationTests`)
 
     private func search(_ query: String, _ batches: [(BookSource, [OnlineBook])], origin: SearchOrigin) async throws -> Int {
