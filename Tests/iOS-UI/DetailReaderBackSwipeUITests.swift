@@ -16,16 +16,7 @@ final class DetailReaderBackSwipeUITests: XCTestCase {
 
     @MainActor
     private func configureStoreKit() throws {
-        let configuration = URL(fileURLWithPath: #filePath)
-            .deletingLastPathComponent()
-            .deletingLastPathComponent()
-            .deletingLastPathComponent()
-            .appendingPathComponent("Configuration/YueduPro.storekit")
-        let session = try SKTestSession(contentsOf: configuration)
-        session.resetToDefaultState()
-        session.disableDialogs = true
-        session.clearTransactions()
-        storeKitSession = session
+        storeKitSession = try StoreKitTestSessions.fresh(StoreKitTestSessions.yueduPro())
     }
 
     /// Each fixture source's one discover category (scripts/navigation_swipe_fixture.py).

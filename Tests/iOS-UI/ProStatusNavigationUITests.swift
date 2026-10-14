@@ -156,17 +156,7 @@ final class ProStatusNavigationUITests: XCTestCase {
 
     @MainActor
     private func makeStoreKitSession() throws -> SKTestSession {
-        // Tests/iOS-UI/<this file> → repository root.
-        let configuration = URL(fileURLWithPath: #filePath)
-            .deletingLastPathComponent()
-            .deletingLastPathComponent()
-            .deletingLastPathComponent()
-            .appendingPathComponent("Configuration/YueduPro.storekit")
-        let session = try SKTestSession(contentsOf: configuration)
-        session.resetToDefaultState()
-        session.disableDialogs = true
-        session.clearTransactions()
-        return session
+        try StoreKitTestSessions.fresh(StoreKitTestSessions.yueduPro())
     }
 
     @MainActor
