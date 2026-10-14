@@ -1,3 +1,4 @@
+import Combine
 import Foundation
 
 /// Unified library 1b: one sidecar file per copy, `<directory>/<copy id>.json`, holding what
@@ -23,13 +24,22 @@ final class ImportedMetadataStore: @unchecked Sendable {
             .appendingPathComponent("metadata", isDirectory: true))
     }
 
+    /// The copies whose sidecar an import or a re-read just wrote, sent on the main queue after
+    /// the write: what arrives after a copy joined the shelf (a Calibre transfer's ISBN, an
+    /// OPF read again) is how the metadata filler (3d) learns there is more to look up.
+    let announcedWrites = PassthroughSubject<UUID, Never>()
+
     /// Merges into the copy's sidecar: identifiers are unioned, and a value replaces an earlier
     /// one of the same field from the same place. An Aozora book first records its OPF, then
     /// its catalog work; both survive.
-    func write(_ metadata: ImportedMetadata) {
+    ///
+    /// - `announces`: false for the filler's own writes, which must not set it off again.
+    func write(_ metadata: ImportedMetadata, announces: Bool = true) {
         guard !metadata.isEmpty else { return }
         queue.async { [self] in
             writeNow(metadata)
+            guard announces else { return }
+            DispatchQueue.main.async { [self] in announcedWrites.send(metadata.copyID) }
         }
     }
 

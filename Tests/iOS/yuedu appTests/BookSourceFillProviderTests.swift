@@ -13,11 +13,13 @@ struct BookSourceFillProviderTests {
 
     @Test("only a copy that did not come from a book source, with a title and an author, is looked up")
     func whoIsLookedUp() {
-        let provider = BookSourceFillProvider(search: { _, _ in .init(origins: [], answered: 1, queried: 1) })
+        let provider = BookSourceFillProvider(search: { _, _ in .init(origins: [], answered: 1, queried: 1) }, hasSources: { true })
         #expect(provider.canLookUp(query()))
         #expect(!provider.canLookUp(query(copySource: SourceInstanceKey(type: .bookSource, id: "https://a.example"))))
         #expect(!provider.canLookUp(query(authors: ["  "])))
         #expect(!provider.canLookUp(query(missing: [.language, .publisher])))
+        let sourceless = BookSourceFillProvider(search: { _, _ in .init(origins: [], answered: 0, queried: 0) }, hasSources: { false })
+        #expect(!sourceless.canLookUp(query()), "no source to ask: not asked, and nothing recorded")
     }
 
     @Test("the first match with a description gives it and its categories, as that source")
@@ -27,7 +29,7 @@ struct BookSourceFillProviderTests {
                 origin(sourceA, "https://a.example", intro: "", kind: "科幻"),
                 origin(sourceB, "https://b.example", intro: "<p>地球文明與三體文明</p>", kind: "科幻,連載,88萬字"),
             ], answered: 2, queried: 2)
-        }, sourceURL: { [urls] in urls[$0] })
+        }, sourceURL: { [urls] in urls[$0] }, hasSources: { true })
 
         let result = try await provider.lookUp(query())
 
@@ -41,7 +43,7 @@ struct BookSourceFillProviderTests {
     func categoriesOnly() async throws {
         let provider = BookSourceFillProvider(search: { [sourceA] _, _ in
             .init(origins: [origin(sourceA, "https://a.example", intro: " ", kind: "奇幻、冒險")], answered: 1, queried: 1)
-        }, sourceURL: { [urls] in urls[$0] })
+        }, sourceURL: { [urls] in urls[$0] }, hasSources: { true })
 
         let result = try await provider.lookUp(query())
 
@@ -50,10 +52,10 @@ struct BookSourceFillProviderTests {
 
     @Test("sources that answered without the book are an empty answer; none answering is a failure")
     func emptyVersusFailed() async throws {
-        let empty = BookSourceFillProvider(search: { _, _ in .init(origins: [], answered: 3, queried: 3) })
+        let empty = BookSourceFillProvider(search: { _, _ in .init(origins: [], answered: 3, queried: 3) }, hasSources: { true })
         #expect(try await empty.lookUp(query()).values.isEmpty)
 
-        let failed = BookSourceFillProvider(search: { _, _ in .init(origins: [], answered: 0, queried: 3) })
+        let failed = BookSourceFillProvider(search: { _, _ in .init(origins: [], answered: 0, queried: 3) }, hasSources: { true })
         await #expect(throws: BookSourceFillProvider.LookupError.self) { try await failed.lookUp(query()) }
     }
 
@@ -73,7 +75,7 @@ struct BookSourceFillProviderTests {
         store.saveReadingBook(book)
         let provider = BookSourceFillProvider(search: { [sourceA] _, _ in
             .init(origins: [origin(sourceA, "https://a.example", intro: "簡介", kind: "")], answered: 1, queried: 1)
-        }, sourceURL: { [urls] in urls[$0] })
+        }, sourceURL: { [urls] in urls[$0] }, hasSources: { true })
         let runner = MetadataFillRunner(providers: [provider], ledger: store.metadataFillLedger,
                                         write: { store.importedMetadata.write($0) })
 

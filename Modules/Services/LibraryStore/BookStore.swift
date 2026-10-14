@@ -834,13 +834,12 @@ class BookStore: ObservableObject, BookProvider {
 
             try Task.checkCancellation()
             let persistStart = ProcessInfo.processInfo.systemUptime
-            try await MainActor.run {
-                try Task.checkCancellation()
-                self.records.insert(finalBook, at: 0)
-                self.saveMeta()
-            }
             if let session {
                 // Unified library 1b: what the OPF says beyond title and author, beside the copy.
+                // Queued before the copy joins the shelf, so anything the shelf change sets off
+                // (the metadata filler, 3d) reads it: the sidecar store's reads wait for its
+                // queued writes. A cancelled import leaves it behind until the next complete
+                // load removes it (`remove(notIn:)`).
                 let metadata = session.publication.metadata
                 importedMetadata.write(ImportedMetadataCapture.epub(
                     copy: finalBook,
@@ -853,6 +852,11 @@ class BookStore: ObservableObject, BookProvider {
                     published: metadata.published,
                     series: ImportedMetadataCapture.EPUBSeries(metadata)
                 ))
+            }
+            try await MainActor.run {
+                try Task.checkCancellation()
+                self.records.insert(finalBook, at: 0)
+                self.saveMeta()
             }
             importTrace(
                 "stage=persist done elapsedMs=\(String(format: "%.1f", (ProcessInfo.processInfo.systemUptime - persistStart) * 1000)) totalElapsedMs=\(String(format: "%.1f", (ProcessInfo.processInfo.systemUptime - importStartUptime) * 1000))"

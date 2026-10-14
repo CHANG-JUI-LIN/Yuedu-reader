@@ -7,8 +7,9 @@ import Foundation
 /// - A pass runs while the app is active, the network allows background work (Wi-Fi or wired,
 ///   not expensive or constrained: the rule WebDAV indexing uses), Low Power Mode is off and
 ///   設定 → 網路設定 → 自動補齊書籍資料 is on.
-/// - It starts when the app becomes active, when the shelf has loaded, and when a book joins
-///   the shelf; it stops when any condition stops holding. Each copy is asked once per
+/// - It starts when the app becomes active, when the shelf has loaded, when a book joins the
+///   shelf, and when an import writes more about a shelf copy (`announcedWrites`); it stops
+///   when any condition stops holding. Each copy is asked once per
 ///   provider (`MetadataFillLedger`), so a pass after the first asks only new or changed
 ///   copies.
 @MainActor
@@ -44,6 +45,9 @@ final class MetadataFillCoordinator {
             .removeDuplicates()
             .sink { [weak self] ids in self?.shelfChanged(ids) }
             .store(in: &cancellables)
+        store.importedMetadata.announcedWrites
+            .sink { [weak self] id in self?.sidecarWritten(id) }
+            .store(in: &cancellables)
         NotificationCenter.default.publisher(for: .NSProcessInfoPowerStateDidChange)
             .receive(on: RunLoop.main)
             .sink { [weak self] _ in self?.conditionsChanged() }
@@ -68,6 +72,12 @@ final class MetadataFillCoordinator {
         let added = !ids.subtracting(knownShelf).isEmpty
         knownShelf = ids
         if added, mayRun { start() }
+    }
+
+    /// An import or re-read wrote more about a shelf copy (an ISBN, a description) after it
+    /// joined the shelf.
+    private func sidecarWritten(_ id: UUID) {
+        if knownShelf.contains(id), mayRun { start() }
     }
 
     private func start() {
@@ -117,7 +127,7 @@ final class MetadataFillCoordinator {
 
     /// A sidecar write, and a filled cover straight into the shelf's index.
     private static func write(_ metadata: ImportedMetadata, to store: BookStore) {
-        store.importedMetadata.write(metadata)
+        store.importedMetadata.write(metadata, announces: false)
         if let name = metadata.values.first(where: { $0.field == .cover }).flatMap({ FilledMetadata.coverFileName($0.value) }) {
             store.filledCovers.set(FilledMetadata.coverDirectory.appendingPathComponent(name).path, for: metadata.copyID)
         }

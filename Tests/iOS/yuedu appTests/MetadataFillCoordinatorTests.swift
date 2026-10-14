@@ -71,6 +71,29 @@ struct MetadataFillCoordinatorTests {
         #expect(provider.titles == ["三體", "球狀閃電"])
     }
 
+    @Test("an ISBN written after the copy joined the shelf sets off another pass; the filler's own writes do not")
+    func laterSidecar() async throws {
+        let (store, directory) = try makeStore()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let copy = book("Fantastic Mr Fox")
+        store.saveReadingBook(copy)
+        let provider = CountingProvider(answer: [.intro: .text("A fox.")], needsISBN: true)
+        let coordinator = MetadataFillCoordinator(store: store, makeProviders: { [provider] }, network: StubNetwork(allowed: true),
+                                                  isEnabled: { true }, isLowPower: { false })
+        coordinator.setActive(true)
+        await coordinator.waitUntilIdleForTesting()
+        #expect(provider.titles.isEmpty, "no ISBN yet")
+
+        let isbn = ExternalIdentifier.normalized(.isbn13, "9780140328721")!
+        let announced = store.importedMetadata.announcedWrites.values.makeAsyncIterator()
+        var iterator = announced
+        store.importedMetadata.write(ImportedMetadata(copyID: copy.id, sourceItem: .copy(copy.id), identifiers: [isbn], values: []))
+        _ = await iterator.next()
+        await coordinator.waitUntilIdleForTesting()
+        #expect(provider.titles == ["Fantastic Mr Fox"])
+        #expect(!coordinator.isRunning, "its own write did not start another pass")
+    }
+
     @Test("a filled cover reaches the shelf's index at once")
     func coverReachesIndex() async throws {
         let (store, directory) = try makeStore()
@@ -105,11 +128,17 @@ private final class CountingProvider: MetadataFillProvider {
     let key = OpenLibrary.key
     let grade: MetadataMatchGrade = .a
     let answer: [MetadataField: MetadataPayload]
+    let needsISBN: Bool
     var titles: [String] = []
 
-    init(answer: [MetadataField: MetadataPayload] = [:]) { self.answer = answer }
+    init(answer: [MetadataField: MetadataPayload] = [:], needsISBN: Bool = false) {
+        self.answer = answer
+        self.needsISBN = needsISBN
+    }
 
-    func canLookUp(_ query: MetadataFillQuery) -> Bool { true }
+    func canLookUp(_ query: MetadataFillQuery) -> Bool {
+        !needsISBN || query.identifiers.contains { $0.scheme == .isbn13 }
+    }
 
     func lookUp(_ query: MetadataFillQuery) async throws -> MetadataFillResult {
         titles.append(query.title)
