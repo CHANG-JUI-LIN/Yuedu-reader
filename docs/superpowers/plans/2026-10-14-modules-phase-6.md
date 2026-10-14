@@ -367,3 +367,38 @@ How these fit together:
   - The one failure, `LibraryHomePageTests.gutenbergSections`, is stale on main and not caused by this step.
   - It was written 2026-10-12. a338bbea (2026-10-13) put `.gutenbergLists` at the front of `gutenbergCollections`, so the test's suffix of `PublicLibraryCollection.all.count` is one short.
   - It is handed off as a separate task.
+
+### 6e (branch `modules/6e-library-ui`)
+
+- **Part A (26b245a5), no UI:**
+  - `SourceDisclaimerGate` holds the 免責聲明 step that `BookSourceAddFlow` had inline; both add flows now pass through it.
+  - `RuleModuleLibrary` (`@MainActor`, `.shared`) owns the installed list: it loads, installs, updates and removes off the main actor, then reloads (span `modules.library.load`). `FilledMetadata.providerName` now names a module by its title.
+  - `RuleModuleImportModel` drives the import sheet: it fetches from an address, a file or the clipboard, shows a preview, checks for updates, then commits. Downloads go through `RuleModuleClient.download`, with the same host gate on every redirect as 6d.
+  - `RuleModuleMessages` gives every rejection and store error a localized sentence. 53 keys in all five languages.
+  - `RuleModuleImportTests` (8).
+- **Part B, the UI:**
+  - **資源庫 「模組」** (`RuleModuleSection`): after 來源配置, in the 資源庫 card style.
+    - It shows the installed modules, with name, version and author.
+    - A module that no longer validates appears as a card with its reason and a remove action.
+    - The empty card opens 從網址.
+  - **••• → 新增模組** (`RuleModuleAddFlow`):
+    - It offers 從網址, 從檔案 and 從剪貼簿.
+    - From iOS 18 it is a nested menu. On iOS 17 it adds three rows to the chooser, sequenced by dismissal.
+    - The disclaimer is shared with 來源配置.
+    - The file importer sits on the inner stack, not beside `bookSourceAddFlow`, because SwiftUI presents only one of two `.fileImporter`s on one view.
+  - **The import sheet** (`RuleModuleImportSheet`) shows the manifest before anything is written: information, entries, the sites it connects to, and any rejection.
+  - **The module's page** (`RuleModuleDetailView`) is pushed through `ExploreNavigationRoute.module(id:)`. It shows the manifest, the subscription URL with 檢查更新, and 移除模組 behind a confirmation dialog. `ExplorePlace.page(of:)` now opens it for `.module`.
+  - Previews:
+    - the group empty, with two modules, and with a failure;
+    - the page;
+    - the import sheet, valid and rejected.
+- **Decisions taken here (each changeable on the maintainer's word):**
+  - **Hosts on update:** an update that adds sites lists them under 新增的網站 before it replaces anything. Nothing is written until the reader confirms.
+  - **官方模組:** the subgroup is not drawn until the app ships a module.
+  - **Deep link:** `yuedu://module?src=` moves to its own step, 6e-2. `JsBridgeBrowserView` treats every `yuedu://` host as a 來源配置 link and has to learn the difference first.
+  - **A rejected module offers only 移除.** 檢查更新 on it would need `install.json` read without validating the file (the open point from 6c), and is left out.
+- **Not yet in the registry:** `browsableProviders` and `homeProviders` still do not list modules. That comes in 6f, with 選擇內容來源.
+- **Tests:**
+  - `ModuleLibraryUITests.testAddFromAddressThenRemove`, against a local fixture server: ••• → 新增模組 → 從網址 → load → commit; the card appears; the page lists the entry and the URL; remove. It passes on iOS 27 (37.9 s) and iOS 17.5 (29.7 s).
+  - `LibraryTabUITests.testMoreMenu`, since the ••• changed: passes on iOS 27 and iOS 17.5.
+  - `check_localizations`, `git diff --check` and the title-mode grep are clean.

@@ -67,6 +67,8 @@ private struct ExploreRouteDestinations: ViewModifier {
             LibraryHomePageView(key: key)
         case .sources(let group):
             LibrarySourcesView(group: group)
+        case .module(let id):
+            RuleModuleDetailView(moduleID: id)
         }
     }
 
@@ -161,8 +163,9 @@ enum ExplorePlace {
             return .publicLibrary(.gutenbergHome)
         case .aozora:
             return .publicLibrary(.aozoraHome)
-        // A module's page comes with 資源庫's 模組 (Phase 6e).
-        case .library, .bibliographic, .module:
+        case .module:
+            return .explore(.module(id: source.id))
+        case .library, .bibliographic:
             return nil
         }
     }
@@ -211,7 +214,7 @@ enum ExplorePlace {
             return .publicLibrary(.aozoraCatalog(mode, aozoraIndex))
         // 訂閱的最新文章: the rest is RSS 訂閱 (`ExploreNavigationRoute.subscriptions`).
         // 為你推薦 is mixed from many places; no page lists it whole. A module list's whole page
-        // comes with 資源庫's 模組 (Phase 6e).
+        // comes with the module rows on the home (Phase 6f).
         case .myLibrary, .continueReading, .related, .nextInSeries, .subscriptionArticles, .forYou, .module, .unknown:
             return nil
         }

@@ -28,7 +28,15 @@ struct RuleModuleStore: Sendable {
     let directory: URL
 
     static var defaultDirectory: URL {
-        URL.applicationSupportDirectory.appendingPathComponent("Modules", isDirectory: true)
+        #if DEBUG
+        // UI-test hook: `-rule-module-store-dir <path>` points every store (the library and each
+        // module's page cache) at a scratch folder. Compiled out of Release.
+        let arguments = ProcessInfo.processInfo.arguments
+        if let index = arguments.firstIndex(of: "-rule-module-store-dir"), arguments.indices.contains(index + 1) {
+            return URL(fileURLWithPath: arguments[index + 1], isDirectory: true)
+        }
+        #endif
+        return URL.applicationSupportDirectory.appendingPathComponent("Modules", isDirectory: true)
     }
 
     init(directory: URL = RuleModuleStore.defaultDirectory) {
