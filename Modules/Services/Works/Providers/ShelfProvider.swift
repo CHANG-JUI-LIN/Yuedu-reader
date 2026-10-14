@@ -64,6 +64,22 @@ final class ShelfProvider: CollectionBrowsing {
         }
     }
 
+    /// 搜索's 書架 section (unified search 4b-1): the shelf copies of the works whose title or
+    /// author matches `query` by `WorkMatchKey`, works with an equal title first. Reads the
+    /// index as last refreshed: `WorkIndexService.current()` before the first search, and
+    /// again when the shelf changes.
+    func searchCopies(_ query: String) -> [ReadingBook] {
+        let works = store.workIndex.search(query)
+        guard !works.isEmpty else { return [] }
+        let shelf = Dictionary(store.books.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+        var seen = Set<UUID>()
+        return works.flatMap(\.members).compactMap { key in
+            guard key.instance == .localLibrary, let id = UUID(uuidString: key.item),
+                  let book = shelf[id], seen.insert(id).inserted else { return nil }
+            return book
+        }
+    }
+
     /// 繼續閱讀: the copies opened most recently, newest first (design §13.3), leaving out
     /// those taken out since they were last opened (5d-3c).
     func continueReading(limit: Int) -> [CollectionEntry] {

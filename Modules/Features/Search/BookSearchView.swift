@@ -129,9 +129,12 @@ private struct PublicLibrarySearchSection: View {
     }
 }
 
-/// iOS 17's results in the native table, with the 公有書庫 rows under the sources' when the
-/// tab's root offers them. A view of its own for the same reason as `PublicLibrarySearchSection`.
+/// iOS 17's results in the native table: the shelf's matches above the sources' results,
+/// and the 公有書庫 rows under them when the tab's root offers them. A view of its own for the
+/// same reason as `PublicLibrarySearchSection`.
 private struct IOS17SearchResults: View {
+    /// The shelf's matches; `nil` shows no shelf section.
+    let shelf: ShelfSearchModel?
     let rows: [IOS17SearchResultTableRow]
     let showsLoadMore: Bool
     let sourcesNotice: String?
@@ -140,14 +143,23 @@ private struct IOS17SearchResults: View {
     let onSelect: (UUID) -> Void
     let onLoadMore: () -> Void
     let submitGutenberg: () -> Void
+    /// Opens a shelf match's 作品詳情 on the tab's stack.
+    var openShelfMatch: (WorkDetailRoute) -> Void = { _ in }
     @ObservedObject private var aozora = AozoraCatalogStore.shared
     @Environment(\.openPublicLibraryBooks) private var openBooks
+    @Environment(\.colorScheme) private var colorScheme
+    @Environment(FilledCoverIndex.self) private var filledCovers: FilledCoverIndex?
 
     var body: some View {
         let index = aozora.catalog
         let matches = libraryQuery.flatMap { query in index?.search(query) } ?? []
+        let shelfMatches = shelf?.matches ?? []
         IOS17SearchResultTable(
             content: IOS17SearchResultTableContent(
+                shelf: shelfMatches.map {
+                    IOS17SearchResultTableRow(shelfBook: $0.book, colorScheme: colorScheme,
+                                              filledCover: filledCovers?.path(for: $0.book))
+                },
                 rows: rows,
                 showsLoadMore: showsLoadMore,
                 sourcesNotice: sourcesNotice,
@@ -174,6 +186,13 @@ private struct IOS17SearchResults: View {
                     return
                 }
                 openBooks?(selection)
+            },
+            onSelectShelfBook: { id in
+                guard let match = shelfMatches.first(where: { $0.id == id }) else {
+                    AppLogger.error("⟐ search tap found no shelf match", context: ["id": id.uuidString])
+                    return
+                }
+                openShelfMatch(match.route)
             }
         )
     }
@@ -235,6 +254,9 @@ struct BookSearchView: View {
     /// it had collapsed as the push starts (`_navigationControllerWillShowViewController:`,
     /// right after SwiftUI hid it), which left a bar-high band above the classic top bar.
     @State private var recentReaderRoute: DetailReaderRoute?
+    /// The shelf's matches as you type (unified search 4b-1); read only by the views that
+    /// draw them.
+    @State private var shelfSearch = ShelfSearchModel()
     @AppStorage(RecentSearchQueries.storageKey) private var recentQueries = RecentSearchQueries()
 
     /// The scope this page searches: its own session scope, else the saved one.
@@ -254,10 +276,12 @@ struct BookSearchView: View {
         isTabRoot && tabNavigation != nil && availability.isAvailable
     }
 
-    /// One search for both (Phase 5 plan decision 17, as amended 2026-10-11): the sources'
-    /// results, then a 公有書庫 section, as soon as there is a query.
+    /// One search for all (Phase 5 plan decision 17, as amended 2026-10-11; unified search
+    /// 4b): the shelf's matches, the sources' results, then a 公有書庫 section where the
+    /// public libraries are offered, as soon as there is a query. Only the tab's root: its
+    /// stack carries 作品詳情.
     private var showsCombinedResults: Bool {
-        offersPublicLibraries && !trimmedQuery.isEmpty
+        isTabRoot && tabNavigation != nil && !trimmedQuery.isEmpty
     }
 
     /// What the sources' part says while it has no result.
@@ -345,6 +369,9 @@ struct BookSearchView: View {
             )
         }
         .onSubmit(of: .search) { submit() }
+        .task(id: showsCombinedResults ? trimmedQuery : "") {
+            await shelfSearch.search(showsCombinedResults ? trimmedQuery : "", in: bookStore)
+        }
         .task(id: offersPublicLibraries) {
             // 青空文庫's catalog may not have been read yet when 探索 was never opened.
             if offersPublicLibraries, AozoraCatalogStore.shared.catalog == nil {
@@ -450,16 +477,20 @@ struct BookSearchView: View {
     private var modernResultList: some View {
         List {
             if showsCombinedResults {
+                let shelfHasMatches = !shelfSearch.matches.isEmpty
+                ShelfSearchSection(model: shelfSearch, anchorsTitle: true)
                 if !aggregator.results.isEmpty || sourcesNotice != nil {
-                    Section(localized("來源配置")) { sourceRows }
+                    Section(localized("來源配置")) { sourceRows(anchorsTitle: !shelfHasMatches) }
                 }
-                PublicLibrarySearchSection(
-                    query: trimmedQuery,
-                    anchorsTitle: aggregator.results.isEmpty && sourcesNotice == nil,
-                    submitGutenberg: submitGutenberg
-                )
+                if offersPublicLibraries {
+                    PublicLibrarySearchSection(
+                        query: trimmedQuery,
+                        anchorsTitle: !shelfHasMatches && aggregator.results.isEmpty && sourcesNotice == nil,
+                        submitGutenberg: submitGutenberg
+                    )
+                }
             } else {
-                sourceRows
+                sourceRows(anchorsTitle: true)
             }
         }
         .modifier(SearchResultsScrollEdges(isTabRoot: isTabRoot))
@@ -470,16 +501,18 @@ struct BookSearchView: View {
     }
 
     /// The sources' results, 載入更多, and while there is no result what the search is doing.
+    /// - Parameter anchorsTitle: whether the first row measures the list's scroll for the
+    ///   搜索 tab's title; false under the shelf's section, whose first row does.
     @available(iOS 18.0, *)
     @ViewBuilder
-    private var sourceRows: some View {
+    private func sourceRows(anchorsTitle: Bool) -> some View {
         if let sourcesNotice {
             Text(sourcesNotice)
                 .font(DSFont.subheadline)
                 .foregroundStyle(DSColor.textSecondary)
                 .listRowBackground(Color.clear)
                 .listRowSeparator(.hidden, edges: .top)
-                .background { Color.clear.rootTabTitleScrollAnchor() }
+                .background { if anchorsTitle { Color.clear.rootTabTitleScrollAnchor() } }
         }
         ForEach(aggregator.results) { book in
             resultLink(for: book)
@@ -497,7 +530,7 @@ struct BookSearchView: View {
             )
             .background {
                 // The first result measures the list's scroll for the 搜索 tab's title.
-                if book.id == aggregator.results.first?.id {
+                if anchorsTitle, book.id == aggregator.results.first?.id {
                     Color.clear.rootTabTitleScrollAnchor()
                 }
             }
@@ -514,10 +547,11 @@ struct BookSearchView: View {
 
     private var iOS17ResultList: some View {
         IOS17SearchResults(
+            shelf: showsCombinedResults ? shelfSearch : nil,
             rows: aggregator.results.map(IOS17SearchResultTableRow.init(searchBook:)),
             showsLoadMore: canLoadMore,
             sourcesNotice: showsCombinedResults ? sourcesNotice : nil,
-            libraryQuery: showsCombinedResults ? trimmedQuery : nil,
+            libraryQuery: showsCombinedResults && offersPublicLibraries ? trimmedQuery : nil,
             onSelect: { id in
                 guard let book = aggregator.results.first(where: { $0.id == id }) else {
                     // The row on screen is no longer among the results, so the tap opens
@@ -533,7 +567,8 @@ struct BookSearchView: View {
             onLoadMore: {
                 aggregator.loadMore()
             },
-            submitGutenberg: submitGutenberg
+            submitGutenberg: submitGutenberg,
+            openShelfMatch: { [tabNavigation] route in tabNavigation?.path.append(route) }
         )
     }
 
