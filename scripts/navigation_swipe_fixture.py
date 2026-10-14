@@ -171,7 +171,17 @@ def main():
     else:
         directory = support(args.simulator)
         update_records(directory / "book_sources.json", lambda r: r.get("id") not in SOURCE_IDS)
-        update_records(directory / "books_meta.json", lambda r: r.get("bookSourceId") not in SOURCE_IDS)
+        books = directory / "books_meta.json"
+        removed = {r.get("id") for r in (json.loads(books.read_text()) if books.exists() else [])
+                   if r.get("bookSourceId") in SOURCE_IDS}
+        update_records(books, lambda r: r.get("bookSourceId") not in SOURCE_IDS)
+        # The books' own reader settings (BookReaderSettingsStore): a manga test that failed
+        # between switching to webtoon and back left the fixture book a webtoon.
+        settings = directory / "books_meta.reader-settings.json"
+        if settings.exists():
+            stored = json.loads(settings.read_text())
+            stored["books"] = [b for b in stored.get("books", []) if b.get("bookID") not in removed]
+            settings.write_text(json.dumps(stored))
         drop_cached_pages(args.simulator)
 
 
