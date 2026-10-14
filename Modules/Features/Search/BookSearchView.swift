@@ -31,10 +31,13 @@ private struct SearchResultNavigationModifier<Destination: View>: ViewModifier {
         case .selectedItem:
             content
         case .valueRoute:
-            content.navigationDestination(
-                for: BookSearchResultRoute.self,
-                destination: destination
-            )
+            content
+                .navigationDestination(
+                    for: BookSearchResultRoute.self,
+                    destination: destination
+                )
+                // The tab root's works (unified search 4c-3).
+                .navigationDestination(for: UnifiedSearchResultRoute.self, destination: UnifiedSearchDestination.init(route:))
         }
     }
 }
@@ -53,6 +56,8 @@ private enum SearchPagePush: Hashable {
     /// A search result. Pushed this way on iOS 17 only; later systems push results by
     /// value from the list's `NavigationLink`.
     case result(BookSearchResultRoute)
+    /// A work of the tab root's one list (unified search 4c-3), on iOS 17 likewise.
+    case work(UnifiedSearchResultRoute)
 }
 
 /// Resolves a push without capturing `BookSearchView` or its live `SearchAggregator`
@@ -64,6 +69,8 @@ private struct SearchPagePushDestination: View {
         switch push {
         case .result(let route):
             SearchResultDestination(route: route)
+        case .work(let route):
+            UnifiedSearchDestination(route: route)
         }
     }
 }
@@ -88,7 +95,30 @@ private struct SearchResultDestination: View {
 
     var body: some View {
         if let work {
-            WorkDetailView(route: work, searchResult: route.snapshot)
+            WorkDetailView(route: work, searchResults: [work.nodeKey: route.snapshot])
+                .environmentObject(bookStore)
+        } else {
+            ContentUnavailableView {
+                UnavailableLabel(localized("來源配置已被刪除"), systemImage: "books.vertical")
+            }
+        }
+    }
+}
+
+/// A work of the tab root's one list (unified search 4c-3): 作品詳情 of its lead, with every
+/// other member as a version and each book-source member's result for its page's 換源. Made
+/// in `init` from the selection frozen at the tap, as `SearchResultDestination` is.
+private struct UnifiedSearchDestination: View {
+    private let parts: UnifiedSearchDestinationParts?
+    @EnvironmentObject private var bookStore: BookStore
+
+    init(route: UnifiedSearchResultRoute) {
+        parts = route.snapshot.destination()
+    }
+
+    var body: some View {
+        if let parts {
+            WorkDetailView(route: parts.route, searchResults: parts.searchResults, searchVersions: parts.versions)
                 .environmentObject(bookStore)
         } else {
             ContentUnavailableView {
@@ -113,102 +143,91 @@ private struct SearchPageTitle: ViewModifier {
     }
 }
 
-/// The 公有書庫 section of the 搜索 tab's results (unified library 5d-1b, Phase 5 plan
-/// decision 17). A view of its own, so the search page never reads the store's carousel
-/// action, which changes whenever the carousel does (postmortem guardrail 13).
-private struct PublicLibrarySearchSection: View {
-    let query: String
-    let anchorsTitle: Bool
-    let submitGutenberg: () -> Void
-    @ObservedObject private var aozora = AozoraCatalogStore.shared
-    @Environment(\.openPublicLibraryBooks) private var openBooks
-
-    var body: some View {
-        PublicLibrarySearchResults(query: query, index: aozora.catalog, anchorsTitle: anchorsTitle,
-                                   submitGutenberg: submitGutenberg, select: { openBooks?($0) })
-    }
-}
-
-/// iOS 17's results in the native table: the shelf's matches above the sources' results,
-/// and the 公有書庫 rows under them when the tab's root offers them. A view of its own for the
-/// same reason as `PublicLibrarySearchSection`.
+/// iOS 17's results in the native table: at the tab's root, the one list of works (unified
+/// search 4c-3); elsewhere, the sources' results. A view of its own, so the search page never
+/// reads the parts' changing finds (postmortem guardrail 13).
 private struct IOS17SearchResults: View {
-    /// The shelf's matches; `nil` shows no shelf section.
-    let shelf: ShelfSearchModel?
-    /// The saved libraries' answers; `nil` shows no 我的書庫 section.
+    /// The tab root's works; `nil` shows the sources' `rows` instead.
+    let works: UnifiedSearchModel?
     var libraries: LibrarySearchModel? = nil
-    /// Open Library's; `nil` shows no 書目資料庫 section.
     var bibliographic: LibrarySearchModel? = nil
     let rows: [IOS17SearchResultTableRow]
     let showsLoadMore: Bool
-    let sourcesNotice: String?
-    /// The query the libraries are searched for; `nil` shows no library section.
-    let libraryQuery: String?
+    var sourcesSearching = false
+    var sourcesPaused = false
+    /// The query submitted, while it is still the one in the field.
+    var submittedQuery: String? = nil
+    /// The query Gutenberg is offered for; nil where the public libraries are not.
+    var gutenbergQuery: String? = nil
     let onSelect: (UUID) -> Void
     let onLoadMore: () -> Void
     let submitGutenberg: () -> Void
-    /// Opens a shelf or library match's 作品詳情 on the tab's stack.
-    var openWork: (WorkDetailRoute) -> Void = { _ in }
-    @ObservedObject private var aozora = AozoraCatalogStore.shared
-    @Environment(\.openPublicLibraryBooks) private var openBooks
+    /// Pushes a work's 作品詳情 through the page's one item destination.
+    var openWork: (UnifiedSearchResultRoute) -> Void = { _ in }
     @Environment(\.colorScheme) private var colorScheme
     @Environment(FilledCoverIndex.self) private var filledCovers: FilledCoverIndex?
 
     var body: some View {
-        let index = aozora.catalog
-        let matches = libraryQuery.flatMap { query in index?.search(query) } ?? []
-        let shelfMatches = shelf?.matches ?? []
-        let libraryMatches = (libraries?.matches ?? []) + (bibliographic?.matches ?? [])
+        let workRows = works?.rows ?? []
         IOS17SearchResultTable(
             content: IOS17SearchResultTableContent(
-                shelf: shelfMatches.map {
-                    IOS17SearchResultTableRow(shelfBook: $0.book, colorScheme: colorScheme,
-                                              filledCover: filledCovers?.path(for: $0.book))
-                },
-                rows: rows,
+                rows: works == nil ? rows : [],
                 showsLoadMore: showsLoadMore,
-                sourcesNotice: sourcesNotice,
-                library: libraryQuery.map { query in
-                    IOS17SearchLibrarySection(
-                        query: query,
-                        works: index.map { index in
-                            matches.prefix(PublicLibrarySearchResults.visibleMatchCount).map { work in
-                                .init(id: work.id, title: work.title,
-                                      author: work.credits.compactMap { index.personsByID[$0.person]?.name }.joined(separator: "、"))
-                            }
-                        } ?? []
+                works: works.map { works in
+                    IOS17SearchWorksSection(
+                        rows: workRows.map {
+                            IOS17SearchResultTableRow(unified: $0, colorScheme: colorScheme,
+                                                      filledCover: { filledCovers?.path(for: $0) })
+                        },
+                        status: UnifiedSearchStatus(
+                            hasRows: !workRows.isEmpty, isSearching: sourcesSearching || works.isResolving,
+                            isPaused: sourcesPaused,
+                            othersSearching: (libraries?.isSearching ?? false) || (bibliographic?.isSearching ?? false),
+                            submittedQuery: submittedQuery,
+                            failures: (libraries?.failures ?? []) + (bibliographic?.failures ?? [])),
+                        offersGutenberg: gutenbergQuery != nil,
+                        query: gutenbergQuery ?? ""
                     )
-                },
-                remoteLibraries: libraries.map(IOS17SearchAnswerSection.init(model:)),
-                bibliographic: bibliographic.map(IOS17SearchAnswerSection.init(model:))
+                }
             ),
             onSelect: onSelect,
             onLoadMore: onLoadMore,
             onSearchGutenberg: submitGutenberg,
             onSelectWork: { id in
-                guard let index,
-                      let selection = PublicLibraryBookSelection(books: matches.map { .aozora($0, index) },
-                                                                 selectedID: "aozora:" + id) else {
-                    AppLogger.error("⟐ search tap found no Aozora work", context: ["id": id])
+                guard let row = workRows.first(where: { $0.id == id }) else {
+                    AppLogger.error("⟐ search tap found no work", context: ["id": id.uuidString, "rows": workRows.count])
                     return
                 }
-                openBooks?(selection)
-            },
-            onSelectShelfBook: { id in
-                guard let match = shelfMatches.first(where: { $0.id == id }) else {
-                    AppLogger.error("⟐ search tap found no shelf match", context: ["id": id.uuidString])
-                    return
-                }
-                openWork(match.route)
-            },
-            onSelectAnswerBook: { id in
-                guard let match = libraryMatches.first(where: { $0.id == id }) else {
-                    AppLogger.error("⟐ search tap found no library match", context: ["id": id.uuidString])
-                    return
-                }
-                openWork(match.route)
+                openWork(UnifiedSearchResultRoute(id: row.id, snapshot: row.selection))
             }
         )
+    }
+}
+
+/// The tab root's one list on iOS 18 and later: its status computed here, so the search page
+/// never reads the parts' changing finds (guardrail 13).
+@available(iOS 18.0, *)
+private struct ModernUnifiedSearchRows: View {
+    let works: UnifiedSearchModel
+    let libraries: LibrarySearchModel
+    let bibliographic: LibrarySearchModel
+    let sourcesSearching: Bool
+    let sourcesPaused: Bool
+    let submittedQuery: String?
+    let canLoadMore: Bool
+    let loadMore: () -> Void
+    let gutenbergQuery: String?
+    let submitGutenberg: () -> Void
+
+    var body: some View {
+        UnifiedSearchRows(
+            model: works,
+            status: UnifiedSearchStatus(
+                hasRows: !works.rows.isEmpty, isSearching: sourcesSearching || works.isResolving,
+                isPaused: sourcesPaused, othersSearching: libraries.isSearching || bibliographic.isSearching,
+                submittedQuery: submittedQuery, failures: libraries.failures + bibliographic.failures),
+            canLoadMore: canLoadMore, loadMore: loadMore,
+            gutenbergQuery: gutenbergQuery, submitGutenberg: submitGutenberg)
     }
 }
 
@@ -275,6 +294,9 @@ struct BookSearchView: View {
     @State private var librarySearch = LibrarySearchModel()
     /// Open Library's, asked on submit when 搜尋時也查 Open Library is on (4b-3).
     @State private var openLibrarySearch = LibrarySearchModel.openLibrary()
+    /// Every part's finds merged into one list of works (4c-3); read only by the views that
+    /// draw it.
+    @State private var unifiedSearch = UnifiedSearchModel()
     @AppStorage(RecentSearchQueries.storageKey) private var recentQueries = RecentSearchQueries()
 
     /// The scope this page searches: its own session scope, else the saved one.
@@ -295,9 +317,9 @@ struct BookSearchView: View {
     }
 
     /// One search for all (Phase 5 plan decision 17, as amended 2026-10-11; unified search
-    /// 4b): the shelf's matches, the sources' results, then a 公有書庫 section where the
-    /// public libraries are offered, as soon as there is a query. Only the tab's root: its
-    /// stack carries 作品詳情.
+    /// 4b, 4c-3): one list of works from the shelf, the saved libraries, 青空文庫 where the
+    /// public libraries are offered, the sources and Open Library, as soon as there is a
+    /// query. Only the tab's root: its stack carries 作品詳情.
     private var showsCombinedResults: Bool {
         isTabRoot && tabNavigation != nil && !trimmedQuery.isEmpty
     }
@@ -354,6 +376,11 @@ struct BookSearchView: View {
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .background(PageBackgroundView(scope: .search))
+            .background {
+                UnifiedSearchFeed(query: showsCombinedResults ? trimmedQuery : "", shelf: shelfSearch,
+                                  libraries: librarySearch, bibliographic: openLibrarySearch, aggregator: aggregator,
+                                  offersPublicLibraries: offersPublicLibraries, model: unifiedSearch)
+            }
         }
         .background(PageBackgroundView(scope: .search).ignoresSafeArea())
         .pageBackgroundToolbar(for: .search)
@@ -404,6 +431,7 @@ struct BookSearchView: View {
                 aggregator.cancelAndClear()
                 librarySearch.clear()
                 openLibrarySearch.clear()
+                unifiedSearch.clear()
             }
         }
         .alert(
@@ -497,26 +525,14 @@ struct BookSearchView: View {
     private var modernResultList: some View {
         List {
             if showsCombinedResults {
-                let shelfHasMatches = !shelfSearch.matches.isEmpty
-                let librariesShow = LibrarySearchSection.shows(librarySearch)
-                ShelfSearchSection(model: shelfSearch, anchorsTitle: true)
-                LibrarySearchSection(title: localized("我的書庫"), model: librarySearch, anchorsTitle: !shelfHasMatches)
-                if !aggregator.results.isEmpty || sourcesNotice != nil {
-                    Section(localized("來源配置")) { sourceRows(anchorsTitle: !shelfHasMatches && !librariesShow) }
-                }
-                if offersPublicLibraries {
-                    PublicLibrarySearchSection(
-                        query: trimmedQuery,
-                        anchorsTitle: !shelfHasMatches && !librariesShow && aggregator.results.isEmpty && sourcesNotice == nil,
-                        submitGutenberg: submitGutenberg
-                    )
-                }
-                LibrarySearchSection(
-                    title: localized("書目資料庫"), model: openLibrarySearch,
-                    anchorsTitle: !shelfHasMatches && !librariesShow && aggregator.results.isEmpty && sourcesNotice == nil
-                        && !offersPublicLibraries)
+                ModernUnifiedSearchRows(
+                    works: unifiedSearch, libraries: librarySearch, bibliographic: openLibrarySearch,
+                    sourcesSearching: aggregator.isSearching, sourcesPaused: aggregator.isPaused,
+                    submittedQuery: shouldShowEmptyResult ? submittedQuery : nil,
+                    canLoadMore: canLoadMore, loadMore: { aggregator.loadMore() },
+                    gutenbergQuery: offersPublicLibraries ? trimmedQuery : nil, submitGutenberg: submitGutenberg)
             } else {
-                sourceRows(anchorsTitle: true)
+                sourceRows
             }
         }
         .modifier(SearchResultsScrollEdges(isTabRoot: isTabRoot))
@@ -526,19 +542,18 @@ struct BookSearchView: View {
         .navigationLinkIndicatorVisibility(.hidden)
     }
 
-    /// The sources' results, 載入更多, and while there is no result what the search is doing.
-    /// - Parameter anchorsTitle: whether the first row measures the list's scroll for the
-    ///   搜索 tab's title; false under the shelf's section, whose first row does.
+    /// The sources' results where the page is not the tab's root, 載入更多, and while there is
+    /// no result what the search is doing.
     @available(iOS 18.0, *)
     @ViewBuilder
-    private func sourceRows(anchorsTitle: Bool) -> some View {
+    private var sourceRows: some View {
         if let sourcesNotice {
             Text(sourcesNotice)
                 .font(DSFont.subheadline)
                 .foregroundStyle(DSColor.textSecondary)
                 .listRowBackground(Color.clear)
                 .listRowSeparator(.hidden, edges: .top)
-                .background { if anchorsTitle { Color.clear.rootTabTitleScrollAnchor() } }
+                .background { Color.clear.rootTabTitleScrollAnchor() }
         }
         ForEach(aggregator.results) { book in
             resultLink(for: book)
@@ -556,7 +571,7 @@ struct BookSearchView: View {
             )
             .background {
                 // The first result measures the list's scroll for the 搜索 tab's title.
-                if anchorsTitle, book.id == aggregator.results.first?.id {
+                if book.id == aggregator.results.first?.id {
                     Color.clear.rootTabTitleScrollAnchor()
                 }
             }
@@ -573,13 +588,15 @@ struct BookSearchView: View {
 
     private var iOS17ResultList: some View {
         IOS17SearchResults(
-            shelf: showsCombinedResults ? shelfSearch : nil,
-            libraries: showsCombinedResults ? librarySearch : nil,
-            bibliographic: showsCombinedResults ? openLibrarySearch : nil,
-            rows: aggregator.results.map(IOS17SearchResultTableRow.init(searchBook:)),
+            works: showsCombinedResults ? unifiedSearch : nil,
+            libraries: librarySearch,
+            bibliographic: openLibrarySearch,
+            rows: showsCombinedResults ? [] : aggregator.results.map(IOS17SearchResultTableRow.init(searchBook:)),
             showsLoadMore: canLoadMore,
-            sourcesNotice: showsCombinedResults ? sourcesNotice : nil,
-            libraryQuery: showsCombinedResults && offersPublicLibraries ? trimmedQuery : nil,
+            sourcesSearching: aggregator.isSearching,
+            sourcesPaused: aggregator.isPaused,
+            submittedQuery: shouldShowEmptyResult ? submittedQuery : nil,
+            gutenbergQuery: offersPublicLibraries ? trimmedQuery : nil,
             onSelect: { id in
                 guard let book = aggregator.results.first(where: { $0.id == id }) else {
                     // The row on screen is no longer among the results, so the tap opens
@@ -596,7 +613,7 @@ struct BookSearchView: View {
                 aggregator.loadMore()
             },
             submitGutenberg: submitGutenberg,
-            openWork: { [tabNavigation] route in tabNavigation?.path.append(route) }
+            openWork: { route in pushed = .work(route) }
         )
     }
 
@@ -706,6 +723,8 @@ struct BookSearchView: View {
         case .sources:
             doSearch()
         case .othersOnly:
+            // Nothing to ask of the sources; the list's empty state waits for the others.
+            submittedQuery = trimmedQuery
             recentQueries = recentQueries.recording(trimmedQuery)
         case .gutenberg:
             submitGutenberg()

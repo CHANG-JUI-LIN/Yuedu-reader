@@ -154,30 +154,22 @@ struct IOS17SearchResultTableTests {
         #expect(changedLoadMore.requiresReload(comparedTo: original))
     }
 
-    @Test("the libraries' rows and the sources' notice reload the UIKit table as the query changes")
-    func libraryChangesReload() {
-        let work = IOS17SearchLibrarySection.Work(id: "000879", title: "羅生門", author: "芥川竜之介")
-        let typed = IOS17SearchResultTableContent(
-            rows: [], showsLoadMore: false,
-            library: IOS17SearchLibrarySection(query: "羅", works: [work])
-        )
-        let longer = IOS17SearchResultTableContent(
-            rows: [], showsLoadMore: false,
-            library: IOS17SearchLibrarySection(query: "羅生", works: [work])
-        )
-        let fewer = IOS17SearchResultTableContent(
-            rows: [], showsLoadMore: false,
-            library: IOS17SearchLibrarySection(query: "羅", works: [])
-        )
-        let searching = IOS17SearchResultTableContent(
-            rows: [], showsLoadMore: false, sourcesNotice: "搜索中…",
-            library: IOS17SearchLibrarySection(query: "羅", works: [work])
-        )
-
+    @Test("the works' rows, status lines and Gutenberg's query reload the UIKit table")
+    func worksChangesReload() {
+        // Rewritten in unified search 4c-3: the tab root's 書架, 我的書庫, 來源配置, 公有書庫 and
+        // 書目資料庫 sections became one list of works, so its parts reload as one section.
+        func content(_ rows: [IOS17SearchResultTableRow], leading: String? = nil, query: String = "羅") -> IOS17SearchResultTableContent {
+            var status = UnifiedSearchStatus()
+            status.leading = leading
+            return IOS17SearchResultTableContent(rows: [], showsLoadMore: false,
+                                                 works: IOS17SearchWorksSection(rows: rows, status: status,
+                                                                                offersGutenberg: true, query: query))
+        }
+        let typed = content([makeRow(title: "羅生門")])
         #expect(!typed.requiresReload(comparedTo: typed))
-        #expect(longer.requiresReload(comparedTo: typed), "the Gutenberg row names the query")
-        #expect(fewer.requiresReload(comparedTo: typed))
-        #expect(searching.requiresReload(comparedTo: typed))
+        #expect(content([makeRow(title: "羅生門")], query: "羅生").requiresReload(comparedTo: typed), "the Gutenberg row names the query")
+        #expect(content([]).requiresReload(comparedTo: typed))
+        #expect(content([], leading: "搜索中…").requiresReload(comparedTo: content([])))
     }
 
     @Test("UIKit row maps only bounded search presentation values")

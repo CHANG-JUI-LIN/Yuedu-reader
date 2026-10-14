@@ -41,13 +41,20 @@ extension IOS17SearchResultTableRow {
     }
 }
 
-extension IOS17SearchAnswerSection {
-    /// The section as the SwiftUI one draws it: books, 「搜索中…」 while none has come, then
-    /// each failure.
+extension IOS17SearchResultTableRow {
+    /// A work of the tab root's one list (unified search 4c-3): its cover as its lead's part
+    /// asks for it, its words the work's.
     @MainActor
-    init(model: LibrarySearchModel) {
-        rows = model.matches.map(IOS17SearchResultTableRow.init(libraryMatch:))
-        notices = (model.isSearching && model.matches.isEmpty ? [localized("搜索中…")] : []) + model.failures.map(\.line)
+    init(unified row: UnifiedSearchRow, colorScheme: ColorScheme, filledCover: (ReadingBook) -> String?) {
+        let base: IOS17SearchResultTableRow = switch row.lead {
+        case .shelf(let match): IOS17SearchResultTableRow(shelfBook: match.book, colorScheme: colorScheme,
+                                                          filledCover: filledCover(match.book))
+        case .library(let match): IOS17SearchResultTableRow(libraryMatch: match)
+        case .bookSource(let book): IOS17SearchResultTableRow(searchBook: book)
+        case .publicLibrary: IOS17SearchResultTableRow(id: row.id, content: row.content, coverURL: "")
+        }
+        self.init(id: row.id, content: row.content, coverURL: base.coverURL, shelfCover: base.shelfCover,
+                  remoteCover: base.remoteCover)
     }
 }
 
@@ -65,9 +72,8 @@ struct IOS17SearchResultTable: UIViewControllerRepresentable {
     let onSelect: (UUID) -> Void
     let onLoadMore: () -> Void
     var onSearchGutenberg: () -> Void = {}
-    var onSelectWork: (String) -> Void = { _ in }
-    var onSelectShelfBook: (UUID) -> Void = { _ in }
-    var onSelectAnswerBook: (UUID) -> Void = { _ in }
+    /// A work of the tab root's list, by its row's id.
+    var onSelectWork: (UUID) -> Void = { _ in }
 
     func makeUIViewController(context _: Context) -> IOS17SearchResultTableViewController {
         IOS17SearchResultTableViewController()
@@ -82,9 +88,7 @@ struct IOS17SearchResultTable: UIViewControllerRepresentable {
             onSelect: onSelect,
             onLoadMore: onLoadMore,
             onSearchGutenberg: onSearchGutenberg,
-            onSelectWork: onSelectWork,
-            onSelectShelfBook: onSelectShelfBook,
-            onSelectAnswerBook: onSelectAnswerBook
+            onSelectWork: onSelectWork
         )
     }
 }
@@ -92,23 +96,19 @@ struct IOS17SearchResultTable: UIViewControllerRepresentable {
 @MainActor
 final class IOS17SearchResultTableViewController: UITableViewController {
     fileprivate enum Section: Hashable {
-        case shelf
-        case remoteLibraries
+        /// The sources' results, where the page is not the tab's root.
         case results
-        case library
-        case bibliographic
+        /// The tab root's one list (unified search 4c-3): no header, as on iOS 18.
+        case works
     }
 
     fileprivate enum Item: Hashable {
-        case shelfBook(UUID)
-        /// A book of a part asked on submit (我的書庫, 書目資料庫).
-        case answerBook(UUID)
-        case answerNotice(Section, Int)
         case result(UUID)
+        case work(UUID)
         case loadMore
-        case notice
+        /// A status line of the works' list, by its place in `statusLines`.
+        case notice(Int)
         case gutenbergSearch
-        case work(String)
     }
 
     private static let resultCellIdentifier = "IOS17SearchResultCell"
@@ -118,16 +118,13 @@ final class IOS17SearchResultTableViewController: UITableViewController {
 
     private var currentContent: IOS17SearchResultTableContent?
     private var rowsByID: [UUID: IOS17SearchResultTableRow] = [:]
+    /// The works' status lines in table order: the leading one, then the trailing ones.
+    private var statusLines: [String] = []
     private var onSelect: (UUID) -> Void = { _ in }
     private var onLoadMore: () -> Void = {}
     private var onSearchGutenberg: () -> Void = {}
-    private var onSelectWork: (String) -> Void = { _ in }
-    private var onSelectShelfBook: (UUID) -> Void = { _ in }
-    private var onSelectAnswerBook: (UUID) -> Void = { _ in }
-    private var shelfRowsByID: [UUID: IOS17SearchResultTableRow] = [:]
-    private var answerRowsByID: [UUID: IOS17SearchResultTableRow] = [:]
-    private var worksByID: [String: IOS17SearchLibrarySection.Work] = [:]
-    private var dataSource: IOS17SearchResultDataSource!
+    private var onSelectWork: (UUID) -> Void = { _ in }
+    private var dataSource: UITableViewDiffableDataSource<Section, Item>!
 
     init() {
         super.init(style: .plain)
@@ -167,13 +164,9 @@ final class IOS17SearchResultTableViewController: UITableViewController {
         onSelect: @escaping (UUID) -> Void,
         onLoadMore: @escaping () -> Void,
         onSearchGutenberg: @escaping () -> Void,
-        onSelectWork: @escaping (String) -> Void,
-        onSelectShelfBook: @escaping (UUID) -> Void,
-        onSelectAnswerBook: @escaping (UUID) -> Void
+        onSelectWork: @escaping (UUID) -> Void
     ) {
         loadViewIfNeeded()
-        self.onSelectShelfBook = onSelectShelfBook
-        self.onSelectAnswerBook = onSelectAnswerBook
         self.onSelect = onSelect
         self.onLoadMore = onLoadMore
         self.onSearchGutenberg = onSearchGutenberg
@@ -184,53 +177,33 @@ final class IOS17SearchResultTableViewController: UITableViewController {
         defer {
             SourcePerfTrace.record(
                 "search.iOS17.nativeTableApply",
-                "\(content.rows.count) rows shelf=\(content.shelf.count) libraries=\(content.remoteLibraries?.rows.count ?? -1) bibliographic=\(content.bibliographic?.rows.count ?? -1) loadMore=\(content.showsLoadMore) works=\(content.library?.works.count ?? -1)",
+                "\(content.rows.count) rows works=\(content.works?.rows.count ?? -1) loadMore=\(content.showsLoadMore)",
                 since: startedAt,
                 thresholdMs: 4
             )
         }
         currentContent = content
-        rowsByID = Dictionary(uniqueKeysWithValues: content.rows.map { ($0.id, $0) })
-        shelfRowsByID = Dictionary(content.shelf.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
-        answerRowsByID = Dictionary(
-            ((content.remoteLibraries?.rows ?? []) + (content.bibliographic?.rows ?? [])).map { ($0.id, $0) },
-            uniquingKeysWith: { first, _ in first })
-        worksByID = Dictionary((content.library?.works ?? []).map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
-
         var snapshot = NSDiffableDataSourceSnapshot<Section, Item>()
-        if !content.shelf.isEmpty {
-            snapshot.appendSections([.shelf])
+        if let works = content.works {
+            rowsByID = Dictionary(works.rows.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+            statusLines = [works.status.leading].compactMap { $0 } + works.status.trailing
+            let leadingCount = works.status.leading == nil ? 0 : 1
             var seen = Set<UUID>()
-            snapshot.appendItems(content.shelf.filter { seen.insert($0.id).inserted }.map { .shelfBook($0.id) },
-                                 toSection: .shelf)
-        }
-        var seenAnswers = Set<UUID>()
-        func appendAnswers(_ answers: IOS17SearchAnswerSection?, as section: Section) {
-            guard let answers, !answers.isEmpty else { return }
-            snapshot.appendSections([section])
+            snapshot.appendSections([.works])
             snapshot.appendItems(
-                answers.rows.filter { seenAnswers.insert($0.id).inserted }.map { .answerBook($0.id) }
-                    + answers.notices.indices.map { .answerNotice(section, $0) },
-                toSection: section)
-        }
-        appendAnswers(content.remoteLibraries, as: .remoteLibraries)
-        let hasAnswers = !(content.remoteLibraries?.isEmpty ?? true) || !(content.bibliographic?.isEmpty ?? true)
-        let sourceItems = content.rows.map { Item.result($0.id) }
-            + (content.showsLoadMore ? [.loadMore] : [])
-            + (content.sourcesNotice != nil && content.rows.isEmpty ? [.notice] : [])
-        if !sourceItems.isEmpty || (content.library == nil && content.shelf.isEmpty && !hasAnswers) {
+                (leadingCount == 1 ? [.notice(0)] : [])
+                    + works.rows.filter { seen.insert($0.id).inserted }.map { .work($0.id) }
+                    + (content.showsLoadMore ? [.loadMore] : [])
+                    + (works.offersGutenberg ? [.gutenbergSearch] : [])
+                    + works.status.trailing.indices.map { .notice(leadingCount + $0) },
+                toSection: .works)
+        } else {
+            rowsByID = Dictionary(content.rows.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+            statusLines = []
             snapshot.appendSections([.results])
-            snapshot.appendItems(sourceItems, toSection: .results)
+            snapshot.appendItems(content.rows.map { .result($0.id) } + (content.showsLoadMore ? [.loadMore] : []),
+                                 toSection: .results)
         }
-        if let library = content.library {
-            snapshot.appendSections([.library])
-            var seen = Set<String>()
-            let works = library.works.filter { seen.insert($0.id).inserted }
-            snapshot.appendItems([.gutenbergSearch] + works.map { .work($0.id) }, toSection: .library)
-        }
-        appendAnswers(content.bibliographic, as: .bibliographic)
-        // Headers name the parts only when more than one can be there.
-        dataSource.titlesSections = content.library != nil || !content.shelf.isEmpty || hasAnswers
         dataSource.applySnapshotUsingReloadData(snapshot)
     }
 
@@ -239,75 +212,34 @@ final class IOS17SearchResultTableViewController: UITableViewController {
         guard let item = dataSource.itemIdentifier(for: indexPath) else { return }
 
         switch item {
-        case .shelfBook(let id):
-            onSelectShelfBook(id)
-        case .answerBook(let id):
-            onSelectAnswerBook(id)
-        case .answerNotice:
-            break
         case .result(let id):
             onSelect(id)
+        case .work(let id):
+            onSelectWork(id)
         case .loadMore:
             onLoadMore()
         case .notice:
             break
         case .gutenbergSearch:
             onSearchGutenberg()
-        case .work(let id):
-            onSelectWork(id)
         }
     }
 
     override func tableView(_ tableView: UITableView, shouldHighlightRowAt indexPath: IndexPath) -> Bool {
         switch dataSource.itemIdentifier(for: indexPath) {
-        case .notice, .answerNotice, nil: false
+        case .notice, nil: false
         default: true
         }
     }
 
     private func configureDataSource() {
-        dataSource = IOS17SearchResultDataSource(
+        dataSource = UITableViewDiffableDataSource<Section, Item>(
             tableView: tableView
         ) { [weak self] tableView, indexPath, item in
             guard let self else { return nil }
 
             switch item {
-            case .shelfBook(let id):
-                guard
-                    let cell = tableView.dequeueReusableCell(
-                        withIdentifier: Self.resultCellIdentifier,
-                        for: indexPath
-                    ) as? IOS17SearchResultTableCell,
-                    let row = self.shelfRowsByID[id]
-                else {
-                    return nil
-                }
-                cell.configure(with: row)
-                return cell
-
-            case .answerBook(let id):
-                guard
-                    let cell = tableView.dequeueReusableCell(
-                        withIdentifier: Self.resultCellIdentifier,
-                        for: indexPath
-                    ) as? IOS17SearchResultTableCell,
-                    let row = self.answerRowsByID[id]
-                else {
-                    return nil
-                }
-                cell.configure(with: row)
-                return cell
-
-            case .answerNotice(let section, let index):
-                var configuration = UIListContentConfiguration.cell()
-                let answers = section == .bibliographic ? self.currentContent?.bibliographic : self.currentContent?.remoteLibraries
-                let notices = answers?.notices ?? []
-                configuration.text = notices.indices.contains(index) ? notices[index] : nil
-                configuration.textProperties.color = UIColor(DSColor.textSecondary)
-                configuration.textProperties.font = self.font(.subheadline)
-                return self.plainCell(Self.noticeCellIdentifier, configuration: configuration, traits: .staticText)
-
-            case .result(let id):
+            case .result(let id), .work(let id):
                 guard
                     let cell = tableView.dequeueReusableCell(
                         withIdentifier: Self.resultCellIdentifier,
@@ -345,9 +277,9 @@ final class IOS17SearchResultTableViewController: UITableViewController {
                 cell.accessibilityTraits = .button
                 return cell
 
-            case .notice:
+            case .notice(let index):
                 var configuration = UIListContentConfiguration.cell()
-                configuration.text = self.currentContent?.sourcesNotice
+                configuration.text = self.statusLines.indices.contains(index) ? self.statusLines[index] : nil
                 configuration.textProperties.color = UIColor(DSColor.textSecondary)
                 configuration.textProperties.font = self.font(.subheadline)
                 return self.plainCell(Self.noticeCellIdentifier, configuration: configuration, traits: .staticText)
@@ -356,7 +288,7 @@ final class IOS17SearchResultTableViewController: UITableViewController {
                 var configuration = UIListContentConfiguration.cell()
                 configuration.text = String(
                     format: localized("在 Project Gutenberg 搜尋「%@」"),
-                    self.currentContent?.library?.query ?? ""
+                    self.currentContent?.works?.query ?? ""
                 )
                 configuration.image = UIImage(systemName: "magnifyingglass")
                 configuration.textProperties.color = .tintColor
@@ -365,17 +297,6 @@ final class IOS17SearchResultTableViewController: UITableViewController {
                 let cell = self.plainCell(Self.libraryCellIdentifier, configuration: configuration, traits: .button)
                 cell.accessibilityIdentifier = "publicLibrary.searchGutenberg"
                 return cell
-
-            case .work(let id):
-                var configuration = UIListContentConfiguration.subtitleCell()
-                configuration.text = self.worksByID[id]?.title
-                configuration.secondaryText = self.worksByID[id]?.author
-                configuration.textProperties.color = UIColor(DSColor.textPrimary)
-                configuration.textProperties.font = self.font(.body)
-                configuration.secondaryTextProperties.color = UIColor(DSColor.textSecondary)
-                configuration.secondaryTextProperties.font = self.font(.caption)
-                configuration.textToSecondaryTextVerticalPadding = DSSpacing.xs
-                return self.plainCell(Self.libraryCellIdentifier, configuration: configuration, traits: .button)
             }
         }
         dataSource.defaultRowAnimation = .none
@@ -403,24 +324,6 @@ extension IOS17SearchResultTableViewController {
         cell.accessibilityTraits = traits
         cell.accessibilityIdentifier = nil
         return cell
-    }
-}
-
-/// Names the sources' and the libraries' parts when the table holds both.
-@MainActor
-fileprivate final class IOS17SearchResultDataSource: UITableViewDiffableDataSource<IOS17SearchResultTableViewController.Section, IOS17SearchResultTableViewController.Item> {
-    var titlesSections = false
-
-    override func tableView(_ tableView: UITableView, titleForHeaderInSection section: Int) -> String? {
-        guard titlesSections else { return nil }
-        switch sectionIdentifier(for: section) {
-        case .shelf: return localized("書架")
-        case .remoteLibraries: return localized("我的書庫")
-        case .bibliographic: return localized("書目資料庫")
-        case .results: return localized("來源配置")
-        case .library: return localized("公有書庫")
-        case nil: return nil
-        }
     }
 }
 

@@ -12,10 +12,13 @@ struct SearchBookListRowContent: Equatable {
     let titleTag: String?
     let author: String
     let detail: String
+    /// The detail as VoiceOver reads it, when its parts are joined for the eye (「在書架上 · 3 源」
+    /// is heard as 「在書架上，3 源」); nil reads `detail`.
+    var spokenDetail: String? = nil
 
     /// The whole row as VoiceOver reads it.
     var accessibilityLabel: String {
-        [title, titleTag ?? "", author, detail]
+        [title, titleTag ?? "", author, spokenDetail ?? detail]
             .filter { !$0.isEmpty }
             .joined(separator: "，")
     }

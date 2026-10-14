@@ -3814,10 +3814,11 @@
 "自動補齊書籍資料" = "Fill In Missing Book Details";
 "書名、作者與 ISBN 會送到 Open Library 與你啟用的來源配置，用來補上空白的封面、簡介與分類；只在 Wi-Fi 下進行。" = "Titles, authors and ISBNs are sent to Open Library and your enabled sources to fill in missing covers, descriptions and categories, over Wi-Fi only.";
 /* Unified search 4b-2: 搜索's saved-libraries section and a library's status line */
-"我的書庫" = "My Libraries";
 "%@：無法搜尋（%@）" = "%@: Couldn’t search (%@)";
 /* Unified search 4b-3: Open Library in 搜索 */
-"書目資料庫" = "Book Databases";
 "只有資料" = "Details Only";
+"在書架上" = "On Shelf";
+"可閱讀" = "Readable";
+"青空文庫的全部結果" = "All Aozora Bunko Results";
 "搜尋時也查 Open Library" = "Also Search Open Library";
 "在搜索按下搜尋時，關鍵字會送到 Open Library；找到的書只有資料，可再尋找可用來源。" = "When you search, your search words are sent to Open Library; books found there have details only, and Find Sources looks for a way to read them.";

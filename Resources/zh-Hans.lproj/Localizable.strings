@@ -3815,10 +3815,11 @@
 "自動補齊書籍資料" = "自动补齐书籍资料";
 "書名、作者與 ISBN 會送到 Open Library 與你啟用的來源配置，用來補上空白的封面、簡介與分類；只在 Wi-Fi 下進行。" = "书名、作者与 ISBN 会发送到 Open Library 与你启用的来源配置，用来补上空白的封面、简介与分类；仅在 Wi-Fi 下进行。";
 /* Unified search 4b-2: 搜索's saved-libraries section and a library's status line */
-"我的書庫" = "我的书库";
 "%@：無法搜尋（%@）" = "%@：无法搜索（%@）";
 /* Unified search 4b-3: Open Library in 搜索 */
-"書目資料庫" = "书目数据库";
 "只有資料" = "仅有资料";
+"在書架上" = "在书架上";
+"可閱讀" = "可阅读";
+"青空文庫的全部結果" = "青空文库的全部结果";
 "搜尋時也查 Open Library" = "搜索时也查 Open Library";
 "在搜索按下搜尋時，關鍵字會送到 Open Library；找到的書只有資料，可再尋找可用來源。" = "在搜索中按下搜索时，关键词会发送到 Open Library；找到的书仅有资料，可再查找可用来源。";

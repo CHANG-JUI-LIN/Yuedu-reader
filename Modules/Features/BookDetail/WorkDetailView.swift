@@ -77,9 +77,12 @@ struct WorkDetailView: View {
     /// Set when a reader opened the page: only the version it reads is shown (decision 32:
     /// the work's other copies are not versions of it, and reading one would stack a reader).
     let readerContext: WorkDetailReaderContext?
-    /// Set when 搜索 opened the page (5f-4c): the result its route was made from, frozen at the
-    /// tap. Its version's page keeps the result's origins for 換源, as the result's own page did.
-    let searchResult: SearchBook?
+    /// Set when 搜索 opened the page (5f-4c, unified search 4c-3): each book-source version's
+    /// result, by node key, frozen at the tap. Such a version's page keeps its result's origins
+    /// for 換源, as the result's own page did.
+    let searchResults: [SourceItemKey: SearchBook]
+    /// The work's other members 搜索 found (4c-3), listed with the versions this device knows.
+    let searchVersions: [WorkDetailRoute]
     @EnvironmentObject private var store: BookStore
     @Environment(\.appDependencies) private var dependencies
     @Environment(\.scenePhase) private var scenePhase
@@ -121,12 +124,13 @@ struct WorkDetailView: View {
     @State private var versionsRevision = 0
 
     init(route: WorkDetailRoute, onRemoveFromShelf: (() -> Void)? = nil, readerContext: WorkDetailReaderContext? = nil,
-         searchResult: SearchBook? = nil) {
+         searchResults: [SourceItemKey: SearchBook] = [:], searchVersions: [WorkDetailRoute] = []) {
         self.route = route
         self.onRemoveFromShelf = onRemoveFromShelf
         self.readerContext = readerContext
-        self.searchResult = searchResult
-        _listed = State(initialValue: [route])
+        self.searchResults = searchResults
+        self.searchVersions = searchVersions
+        _listed = State(initialValue: WorkVersions.merge(tapped: route, copies: [], members: searchVersions))
         if readerContext != nil { _chosen = State(initialValue: route.nodeKey) }
     }
 
@@ -145,7 +149,7 @@ struct WorkDetailView: View {
                     versionsLoaded = true
                     return
                 }
-                listed = await ShelfProvider(store: store).versions(of: route, aozora: aozora.catalog)
+                listed = await ShelfProvider(store: store).versions(of: route, aozora: aozora.catalog, also: searchVersions)
                 versionsLoaded = true
                 // A 青空文庫 copy stands for itself until the catalog is read; reading it changes
                 // this task's id, and the versions are read again with the work.
@@ -496,7 +500,7 @@ struct WorkDetailView: View {
     /// The page of a book-source version: 搜索's result as it was found, with its origins for 換源;
     /// every other one (a row's book, a shelf copy) as its own book.
     private func onlineEntry(of version: WorkDetailRoute, book: OnlineBook) -> OnlineBookDetailDestination.Entry {
-        if let searchResult, version.nodeKey == route.nodeKey { return .search(searchResult) }
+        if let searchResult = searchResults[version.nodeKey] { return .search(searchResult) }
         return .book(book)
     }
 

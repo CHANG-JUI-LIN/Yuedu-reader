@@ -5,11 +5,18 @@ import SwiftUI
 struct ShelfSearchMatch: Identifiable, Equatable {
     let book: ReadingBook
     let route: WorkDetailRoute
+    /// What the work index knows of the copy beyond its record (its sidecar's ISBNs, the Open
+    /// Library work its metadata was filled from), so 搜索 merges it with what shares one
+    /// (unified search 4c-3, rule A).
+    var identifiers: Set<ExternalIdentifier> = []
+    /// Its language code as the index knows it; nil when unknown.
+    var language: String? = nil
     var id: UUID { book.id }
 
     static func == (lhs: Self, rhs: Self) -> Bool {
         lhs.book.id == rhs.book.id && lhs.book.title == rhs.book.title && lhs.book.author == rhs.book.author
             && lhs.book.currentPosition == rhs.book.currentPosition && lhs.book.coverImagePath == rhs.book.coverImagePath
+            && lhs.identifiers == rhs.identifiers && lhs.language == rhs.language
     }
 }
 
@@ -36,59 +43,14 @@ final class ShelfSearchModel {
         }
         let provider = ShelfProvider(store: store)
         let books = provider.searchCopies(query)
+        let indexed = store.workIndex.entries(for: Set(books.map { SourceItemKey.copy($0.id) }))
         let found = zip(books, provider.items(books)).compactMap { book, entry in
-            WorkDetailRoute(entry).map { ShelfSearchMatch(book: book, route: $0) }
+            WorkDetailRoute(entry).map { route in
+                let known = indexed[.copy(book.id)]
+                return ShelfSearchMatch(book: book, route: route, identifiers: Set(known?.identifiers ?? []),
+                                        language: known?.language?.language)
+            }
         }
         if found != matches { matches = found }
     }
-}
-
-/// The 書架 section of the 搜索 tab's results on iOS 18 and later: each copy as the shelf
-/// draws it, opening 作品詳情.
-struct ShelfSearchSection: View {
-    let model: ShelfSearchModel
-    /// The first row measures the list's scroll for the 搜索 tab's title.
-    let anchorsTitle: Bool
-    @Environment(\.colorScheme) private var colorScheme
-
-    var body: some View {
-        if !model.matches.isEmpty {
-            Section(localized("書架")) {
-                ForEach(model.matches) { match in
-                    NavigationLink(value: match.route) {
-                        SearchBookListRow(content: SearchBookListRowContent(shelfBook: match.book)) {
-                            BookshelfCoverStyle.artwork(
-                                for: match.book,
-                                colorScheme: colorScheme,
-                                displaySize: CGSize(width: DSLayout.searchListCoverWidth, height: DSLayout.searchListCoverHeight)
-                            )
-                        }
-                    }
-                    .listRowInsets(EdgeInsets(top: 0, leading: DSLayout.searchListHorizontalInset,
-                                              bottom: 0, trailing: DSLayout.searchListHorizontalInset))
-                    .listRowBackground(Color.clear)
-                    .listRowSeparator(match.id == model.matches.first?.id ? .hidden : .automatic, edges: .top)
-                    .background {
-                        if anchorsTitle, match.id == model.matches.first?.id {
-                            Color.clear.rootTabTitleScrollAnchor()
-                        }
-                    }
-                }
-            }
-        }
-    }
-}
-
-#Preview {
-    let store = BookStore()
-    let model = ShelfSearchModel()
-    return NavigationStack {
-        List { ShelfSearchSection(model: model, anchorsTitle: false) }
-            .listStyle(.plain)
-            .task {
-                store.saveReadingBook(ReadingBook(title: "三體", author: "劉慈欣", source: "local", contentFilename: "a.txt"))
-                await model.search("三体", in: store)
-            }
-    }
-    .environmentObject(store)
 }

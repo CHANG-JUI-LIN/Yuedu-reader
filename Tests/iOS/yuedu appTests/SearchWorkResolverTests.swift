@@ -67,6 +67,7 @@ struct SearchWorkResolverTests {
         #expect(merged.count == 1)
         #expect(merged[0].availability == .readable)
         #expect(merged[0].lead == source)
+        #expect(merged[0].sourceCount == 1, "Open Library is data, not a place to read from")
     }
 
     @Test("ties: score, then on the shelf, readable, data only; then the shorter title; then more sources")
