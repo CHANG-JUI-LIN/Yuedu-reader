@@ -153,8 +153,9 @@ struct OpenLibraryFillProviderTests {
     }
 }
 
-/// Answers by URL path from a table; records every request.
-private final class OpenLibraryStub: URLProtocol, @unchecked Sendable {
+/// Answers by URL path from a table; records every request. Shared with
+/// `OpenLibrarySearchTests`.
+final class OpenLibraryStub: URLProtocol, @unchecked Sendable {
     enum Reply {
         case json(String)
         case image

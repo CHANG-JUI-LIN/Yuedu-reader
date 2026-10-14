@@ -137,6 +137,8 @@ private struct IOS17SearchResults: View {
     let shelf: ShelfSearchModel?
     /// The saved libraries' answers; `nil` shows no 我的書庫 section.
     var libraries: LibrarySearchModel? = nil
+    /// Open Library's; `nil` shows no 書目資料庫 section.
+    var bibliographic: LibrarySearchModel? = nil
     let rows: [IOS17SearchResultTableRow]
     let showsLoadMore: Bool
     let sourcesNotice: String?
@@ -156,9 +158,7 @@ private struct IOS17SearchResults: View {
         let index = aozora.catalog
         let matches = libraryQuery.flatMap { query in index?.search(query) } ?? []
         let shelfMatches = shelf?.matches ?? []
-        let libraryMatches = libraries?.matches ?? []
-        let libraryNotices = (libraries.map { $0.isSearching && $0.matches.isEmpty } == true ? [localized("搜索中…")] : [])
-            + (libraries?.failures.map(\.line) ?? [])
+        let libraryMatches = (libraries?.matches ?? []) + (bibliographic?.matches ?? [])
         IOS17SearchResultTable(
             content: IOS17SearchResultTableContent(
                 shelf: shelfMatches.map {
@@ -179,8 +179,8 @@ private struct IOS17SearchResults: View {
                         } ?? []
                     )
                 },
-                remoteLibraries: libraryMatches.map(IOS17SearchResultTableRow.init(libraryMatch:)),
-                remoteLibraryNotices: libraryNotices
+                remoteLibraries: libraries.map(IOS17SearchAnswerSection.init(model:)),
+                bibliographic: bibliographic.map(IOS17SearchAnswerSection.init(model:))
             ),
             onSelect: onSelect,
             onLoadMore: onLoadMore,
@@ -201,7 +201,7 @@ private struct IOS17SearchResults: View {
                 }
                 openWork(match.route)
             },
-            onSelectLibraryBook: { id in
+            onSelectAnswerBook: { id in
                 guard let match = libraryMatches.first(where: { $0.id == id }) else {
                     AppLogger.error("⟐ search tap found no library match", context: ["id": id.uuidString])
                     return
@@ -273,6 +273,8 @@ struct BookSearchView: View {
     @State private var shelfSearch = ShelfSearchModel()
     /// The saved OPDS and Calibre libraries' answers, asked on submit (unified search 4b-2).
     @State private var librarySearch = LibrarySearchModel()
+    /// Open Library's, asked on submit when 搜尋時也查 Open Library is on (4b-3).
+    @State private var openLibrarySearch = LibrarySearchModel.openLibrary()
     @AppStorage(RecentSearchQueries.storageKey) private var recentQueries = RecentSearchQueries()
 
     /// The scope this page searches: its own session scope, else the saved one.
@@ -401,6 +403,7 @@ struct BookSearchView: View {
                 needsSearchResubmission = false
                 aggregator.cancelAndClear()
                 librarySearch.clear()
+                openLibrarySearch.clear()
             }
         }
         .alert(
@@ -495,10 +498,9 @@ struct BookSearchView: View {
         List {
             if showsCombinedResults {
                 let shelfHasMatches = !shelfSearch.matches.isEmpty
-                let librariesShow = librarySearch.isSearching || !librarySearch.matches.isEmpty
-                    || !librarySearch.failures.isEmpty
+                let librariesShow = LibrarySearchSection.shows(librarySearch)
                 ShelfSearchSection(model: shelfSearch, anchorsTitle: true)
-                LibrarySearchSection(model: librarySearch, anchorsTitle: !shelfHasMatches)
+                LibrarySearchSection(title: localized("我的書庫"), model: librarySearch, anchorsTitle: !shelfHasMatches)
                 if !aggregator.results.isEmpty || sourcesNotice != nil {
                     Section(localized("來源配置")) { sourceRows(anchorsTitle: !shelfHasMatches && !librariesShow) }
                 }
@@ -509,6 +511,10 @@ struct BookSearchView: View {
                         submitGutenberg: submitGutenberg
                     )
                 }
+                LibrarySearchSection(
+                    title: localized("書目資料庫"), model: openLibrarySearch,
+                    anchorsTitle: !shelfHasMatches && !librariesShow && aggregator.results.isEmpty && sourcesNotice == nil
+                        && !offersPublicLibraries)
             } else {
                 sourceRows(anchorsTitle: true)
             }
@@ -569,6 +575,7 @@ struct BookSearchView: View {
         IOS17SearchResults(
             shelf: showsCombinedResults ? shelfSearch : nil,
             libraries: showsCombinedResults ? librarySearch : nil,
+            bibliographic: showsCombinedResults ? openLibrarySearch : nil,
             rows: aggregator.results.map(IOS17SearchResultTableRow.init(searchBook:)),
             showsLoadMore: canLoadMore,
             sourcesNotice: showsCombinedResults ? sourcesNotice : nil,
@@ -684,20 +691,26 @@ struct BookSearchView: View {
     /// where it is offered. Ignored while the source library is still being read, so a large
     /// library is not taken for none.
     private func submit() {
-        let searchesLibraries = isTabRoot && tabNavigation != nil && librarySearch.hasLibraries
-        if searchesLibraries, !trimmedQuery.isEmpty {
-            librarySearch.start(trimmedQuery, store: bookStore)
+        // At the tab's root, the parts that answer on submit are asked first, whatever the
+        // sources do.
+        let atRoot = isTabRoot && tabNavigation != nil
+        var othersAnswer = false
+        if atRoot, !trimmedQuery.isEmpty {
+            for part in [librarySearch, openLibrarySearch] where part.isAvailable {
+                part.start(trimmedQuery, store: bookStore)
+                othersAnswer = true
+            }
         }
-        guard enabledSources.isEmpty, searchesLibraries || offersPublicLibraries else {
+        switch SearchSubmitPlan.decide(hasSources: !enabledSources.isEmpty, sourcesLoaded: sourceStore.isLoaded,
+                                       othersAnswer: othersAnswer, offersPublicLibraries: offersPublicLibraries) {
+        case .sources:
             doSearch()
-            return
-        }
-        guard sourceStore.isLoaded else { return }
-        if searchesLibraries {
-            // The libraries answer; having no source is not an error here.
-            if !trimmedQuery.isEmpty { recentQueries = recentQueries.recording(trimmedQuery) }
-        } else {
+        case .othersOnly:
+            recentQueries = recentQueries.recording(trimmedQuery)
+        case .gutenberg:
             submitGutenberg()
+        case .waitForSources:
+            break
         }
     }
 
