@@ -25,7 +25,7 @@ extension HomeSection {
         case .gutenbergShelf(let id): return GutenbergShelf.shelf(id: id)?.title ?? sourceName
         case .aozoraNew: return localized(AozoraBrowseMode.newest.titleKey)
         case .aozoraIndex(let kind): return AozoraBrowseMode(rawValue: kind).map { localized($0.titleKey) } ?? sourceName
-        case .opdsFeed, .gutenbergFeed, .myLibrary, .unknown: return sourceName
+        case .opdsFeed, .gutenbergFeed, .module, .myLibrary, .unknown: return sourceName
         }
     }
 }
@@ -268,7 +268,7 @@ enum SourceKindSymbol {
         case .opds, .calibre: "server.rack"
         case .webDAV: "externaldrive.connected.to.line.below"
         case .gutenberg, .aozora: "building.columns"
-        case .bookSource, .bibliographic: nil
+        case .bookSource, .bibliographic, .module: nil
         }
     }
 }

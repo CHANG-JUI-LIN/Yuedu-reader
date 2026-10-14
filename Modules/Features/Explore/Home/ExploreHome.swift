@@ -468,7 +468,7 @@ enum ExploreHomeScope {
             return connections.connection(id: key.id).map { ProviderType($0.kind) } == key.type
         case .gutenberg, .aozora:
             return librariesAvailable
-        case .library, .bibliographic:
+        case .library, .bibliographic, .module:
             return false
         }
     }
@@ -479,7 +479,7 @@ enum ExploreHomeScope {
         case .opds, .calibre, .webDAV: connections.connection(id: key.id)?.name ?? key.id
         case .gutenberg: localized("Project Gutenberg")
         case .aozora: localized("青空文庫")
-        case .library, .bibliographic: key.id
+        case .library, .bibliographic, .module: key.id
         }
     }
 }

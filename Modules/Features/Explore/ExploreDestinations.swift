@@ -161,7 +161,8 @@ enum ExplorePlace {
             return .publicLibrary(.gutenbergHome)
         case .aozora:
             return .publicLibrary(.aozoraHome)
-        case .library, .bibliographic:
+        // A module's page comes with 資源庫's 模組 (Phase 6e).
+        case .library, .bibliographic, .module:
             return nil
         }
     }
@@ -183,7 +184,7 @@ enum ExplorePlace {
                                            title: row.section.displayTitle(sourceName: row.sourceName), presentation: .storefront))
             case .aozora:
                 return aozoraIndex.map { .publicLibrary(.aozoraCatalog(.newest, $0)) }
-            case .webDAV, .library, .bibliographic:
+            case .webDAV, .library, .bibliographic, .module:
                 // A WebDAV library's newest files are gathered from every folder; no page lists them.
                 return nil
             }
@@ -209,8 +210,9 @@ enum ExplorePlace {
             guard let aozoraIndex, let mode = AozoraBrowseMode(rawValue: kind) else { return nil }
             return .publicLibrary(.aozoraCatalog(mode, aozoraIndex))
         // 訂閱的最新文章: the rest is RSS 訂閱 (`ExploreNavigationRoute.subscriptions`).
-        // 為你推薦 is mixed from many places; no page lists it whole.
-        case .myLibrary, .continueReading, .related, .nextInSeries, .subscriptionArticles, .forYou, .unknown:
+        // 為你推薦 is mixed from many places; no page lists it whole. A module list's whole page
+        // comes with 資源庫's 模組 (Phase 6e).
+        case .myLibrary, .continueReading, .related, .nextInSeries, .subscriptionArticles, .forYou, .module, .unknown:
             return nil
         }
     }
@@ -249,7 +251,7 @@ enum ExplorePlace {
                                                    index: aozoraIndex))
             default: return nil
             }
-        case .bookSource, .gutenberg, .library, .bibliographic:
+        case .bookSource, .gutenberg, .library, .bibliographic, .module:
             // The shelf's groups have no page outside the shelf yet.
             return nil
         }

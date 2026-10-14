@@ -143,7 +143,7 @@ extension RuleModule.ListRules {
     /// The same mapping a 來源配置's search list uses.
     var fields: RuleListFields {
         RuleListFields(name: title, author: author ?? "", bookUrl: url ?? "", coverUrl: cover ?? "",
-                       intro: intro ?? "", wordCount: "", lastChapter: "", kind: kind ?? "")
+                       intro: intro ?? "", wordCount: "", lastChapter: "", kind: kind ?? "", language: language ?? "")
     }
 }
 

@@ -18,7 +18,7 @@ enum SourceLabel {
             return localized("Project Gutenberg")
         case .aozora:
             return localized("青空文庫")
-        case .library, .bibliographic:
+        case .library, .bibliographic, .module:
             if book.aozora != nil { return localized("青空文庫") }
             // A remote copy whose connection was removed: its kind is gone with it.
             if book.remoteSource != nil { return localized("遠端書庫") }

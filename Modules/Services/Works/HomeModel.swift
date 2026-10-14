@@ -292,7 +292,7 @@ extension HomeModel: ForYouHomeRows {
     private static func isLibrary(_ source: SourceInstanceKey) -> Bool {
         switch source.type {
         case .opds, .webDAV, .calibre, .gutenberg, .aozora: return true
-        case .library, .bookSource, .bibliographic: return false
+        case .library, .bookSource, .bibliographic, .module: return false
         }
     }
 

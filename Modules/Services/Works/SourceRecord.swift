@@ -17,6 +17,8 @@ enum ProviderType: String, Codable, Hashable, Sendable {
     case bookSource
     /// Bibliographic databases (Open Library…), later phases.
     case bibliographic
+    /// Installed rule modules (Phase 6d), by `RuleModule.id`.
+    case module
 }
 
 /// One place of a kind: a remote connection, a book source, a public library.

@@ -310,3 +310,60 @@ How these fit together:
   - the mapping: search and explore through the bridge, explore's own eight rules each in their slot, the early filter, a module's JSON list.
 
   The bridge-versus-mapping comparison is circular now that the bridge calls the mapping. The real before/after evidence is the existing parsing suites: `CoverLinkRuleTests`, `ModernParserBridgeChapterCompatibilityTests`, `JSONDiscoverBridgeRegressionTests` and `ChangeSourceTOCResolutionTests`, which pass with the new suites, 45/45 on iOS 27.
+
+### 6d (branch `modules/6d-provider`)
+
+- **`RuleModuleClient`** (`Modules/Services/RuleModules/RuleModuleClient.swift`) reads one page of an entry.
+  - **Request:** the entry's own `request` fields. `{{name}}` is filled from the values; it is percent-encoded in the URL and body, raw in headers. There is no `AnalyzeUrl`.
+  - **Address checks:** `safeURL`, then the module's `hosts`.
+  - **Fetch:** through `WebFetcher.fetchPage` under `SourceRateLimit.run(rate: module.rateLimit, key: "module:<id>")`.
+  - **Decoding:** `HTMLResponseDecoder.decode(…declaredCharset:)` with the entry's `charset`.
+  - **Parsing:** the list rules on a bare `ModernRuleEngine()` (no JS evaluator, never `BookSourceSession`) through `RuleListMapping`. The span is `module.page`.
+  - **Redirects:** `WebFetcher.fetchPage` gained an optional `redirect:` gate, a per-task `URLSessionTaskDelegate`. A redirect whose target fails `safeURL` or the hosts list is **never sent**; its 3xx comes back and becomes `invalidAddress`. Every other caller passes nil and is unchanged.
+  - **Failures:**
+    - non-2xx → `rejected(status)`;
+    - an undecodable body → `parse`;
+    - a host or `safeURL` refusal → `invalidAddress`;
+    - URL errors → `SourceFailure.classify`.
+
+    `ModuleProvider` logs each one through `AppLogger.network` with the module, entry, kind and status.
+  - **An empty list is not a failure.**
+  - **Cache:** one file per entry and its values (SHA-256 of the sorted values) under the module's `cache/`, answered while younger than `cacheDuration`. No duration means no cache.
+    - An unreadable cache file counts as a miss and is logged (`AppLogger.cache`), then replaced.
+    - Update and remove already clear the folder (6c).
+- **Values:** each parameter's default, else an enumeration's first option. The section's own `parameters` (by parameter name) override it. `page` counts from 1 and `offset` from 0. The next offset advances by the number of items read; an empty page ends the list.
+- **`ModuleProvider: CollectionBrowsing, HomeSectionProviding`** (`ModuleProvider.swift`).
+  - The root lists the entries as locations; an entry's location is its pages.
+  - A home section loads its first page, up to `HomeRow.limit` items, `.parallel`, one lane per module through its rate key. An entry the module no longer has is not served.
+  - **Items** are `.item(record, summary, .bibliographic)`. Each record is `viewOnly` and keyed by the item's URL, or by title and author when the list has no url rule (otherwise every item would read the page's address).
+  - Summaries are plain and bounded through `OPDSClient.plainMetadata` and `WorkSummary`'s limits. The category comes from `WorkSummary.category(fromSourceKind:)`.
+  - **A cover is a request too:** it is taken only from the module's hosts; otherwise it is generated.
+  - Search reports `.none` until 6g joins modules to 搜索.
+- **`ProviderType.module`** and **`HomeSectionBinding.module(moduleID:entryID:)`** (type key `module`; an older build keeps it as `.unknown`).
+  - **Departure from the plan:** the parameters are not in the binding. They are the section's existing `parameters` dictionary, which was there for exactly this and was unused.
+  - Every exhaustive switch got `.module`:
+    - it is no library in 書庫順序 or 為你推薦's inputs;
+    - it has no 範圍 page and no 查看全部 yet (6e);
+    - 選擇內容來源 lists it from 6f;
+    - 隱藏已讀 applies.
+  - `FilledMetadata.providerName` shows the module's id for now. A module's title needs an owner of the installed list, which comes with 6e.
+- **Not yet in the registry:** neither `browsableProviders` nor `homeProviders` lists modules. That comes in 6e and 6f.
+- **Tests:** `ModuleProviderTests` (13), with a `URLProtocol` stub on the client's own session:
+  - an HTML list (data-only items, plain blurb, a cover from another host generated);
+  - defaults;
+  - a JSON list with its language;
+  - the root;
+  - paging by page and by offset;
+  - a redirect to an undeclared host is refused and never requested;
+  - a redirect within the hosts is followed;
+  - 403 is `rejected`;
+  - an empty list is empty;
+  - the cache (within the duration, per values, after it);
+  - the manifest and the binding round-trip;
+  - template filling.
+
+  With the 6c suites: 35/35 on iOS 27.
+- **Regressions (iOS 27):** 78/79 pass. The suites are `HomeSectionTests`, `HomePageStoreTests`, `ExploreHomeTests`, `OpenLibrarySearchTests`, `HomeModelTests`, `HomeModelSchedulingTests`, `LocalHomeRowTests`, `ProviderManifestTests`, `LibraryHomePageTests`, `CoverLinkRuleTests`, `ModernParserBridgeChapterCompatibilityTests` and `ChangeSourceTOCResolutionTests`.
+  - The one failure, `LibraryHomePageTests.gutenbergSections`, is stale on main and not caused by this step.
+  - It was written 2026-10-12. a338bbea (2026-10-13) put `.gutenbergLists` at the front of `gutenbergCollections`, so the test's suffix of `PublicLibraryCollection.all.count` is one short.
+  - It is handed off as a separate task.
