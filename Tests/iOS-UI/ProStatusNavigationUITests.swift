@@ -32,10 +32,10 @@ final class ProStatusNavigationUITests: XCTestCase {
     }
 
     @MainActor
-    func testMonthlySubscriberCanManageAndUpgrade() throws {
+    func testMonthlySubscriberCanManageAndUpgrade() async throws {
         let session = try makeStoreKitSession()
         defer { session.clearTransactions() }
-        try session.buyProduct(productIdentifier: Self.monthlyID)
+        _ = try await session.buyProduct(identifier: Self.monthlyID, options: [])
 
         let app = openProRow(expectsPro: true, subtitle: "Subscribed. Thanks for your support!")
         assertStatusPage(app)
@@ -52,10 +52,10 @@ final class ProStatusNavigationUITests: XCTestCase {
     }
 
     @MainActor
-    func testLifetimeOwnerHasNothingToManageOrBuy() throws {
+    func testLifetimeOwnerHasNothingToManageOrBuy() async throws {
         let session = try makeStoreKitSession()
         defer { session.clearTransactions() }
-        try session.buyProduct(productIdentifier: Self.lifetimeID)
+        _ = try await session.buyProduct(identifier: Self.lifetimeID, options: [])
 
         let app = openProRow(expectsPro: true, subtitle: "Lifetime member. Thanks for your support!")
         assertStatusPage(app)
@@ -67,11 +67,14 @@ final class ProStatusNavigationUITests: XCTestCase {
     }
 
     @MainActor
-    func testMonthlyAlongsideLifetimeKeepsTheCancellationReminder() throws {
+    func testMonthlyAlongsideLifetimeKeepsTheCancellationReminder() async throws {
         let session = try makeStoreKitSession()
         defer { session.clearTransactions() }
-        try session.buyProduct(productIdentifier: Self.monthlyID)
-        try session.buyProduct(productIdentifier: Self.lifetimeID)
+        // The Swift API returns once each transaction is written. With the deprecated
+        // `buyProduct(productIdentifier:)` the app read only the monthly one of two
+        // back-to-back purchases and named the plan 已訂閱.
+        _ = try await session.buyProduct(identifier: Self.monthlyID, options: [])
+        _ = try await session.buyProduct(identifier: Self.lifetimeID, options: [])
 
         let app = openProRow(expectsPro: true, subtitle: "Lifetime member. Thanks for your support!")
         assertStatusPage(app)
@@ -109,10 +112,10 @@ final class ProStatusNavigationUITests: XCTestCase {
     /// Pro stays active through an upgrade, so this is the path a thank-you page keyed
     /// only to Pro turning on never reached — along with its cancellation reminder.
     @MainActor
-    func testUpgradeToLifetimeCelebratesAndRemindsToCancelMonthly() throws {
+    func testUpgradeToLifetimeCelebratesAndRemindsToCancelMonthly() async throws {
         let session = try makeStoreKitSession()
         defer { session.clearTransactions() }
-        try session.buyProduct(productIdentifier: Self.monthlyID)
+        _ = try await session.buyProduct(identifier: Self.monthlyID, options: [])
 
         let app = openProRow(expectsPro: true, subtitle: "Subscribed. Thanks for your support!")
         assertStatusPage(app)
