@@ -217,9 +217,9 @@ The six match rules (audit §11.2) and where each ends up:
 
 **§16, item by item** (iOS 27 simulator, iPhone 18 Pro; iOS 17.5 where marked):
 
-1. **One row 三體 · 劉慈欣 with four members** — `LibrarySearchTests.designAcceptanceRow` (new): shelf EPUB (ISBN, zh-Hans) + Calibre (EPUB and PDF under one `urn:uuid`, same ISBN) + OPDS zh-Hant + a source's 三体/刘慈欣 → the first row has 4 members. The row reads 「在書架上 · 3 源」 (spoken 「三體，劉慈欣，在書架上，3 源」): the shelf is the badge, the 3 are Calibre, OPDS and the source. **Asked:** whether this counts as 「標示四個來源」.
+1. **One row 三體 · 劉慈欣 with four members** — `LibrarySearchTests.designAcceptanceRow` (new): shelf EPUB (ISBN, zh-Hans) + Calibre (EPUB and PDF under one `urn:uuid`, same ISBN) + OPDS zh-Hant + a source's 三体/刘慈欣 → the first row has 4 members. The row reads 「在書架上 · 3 源」 (spoken 「三體，劉慈欣，在書架上，3 源」): the shelf is the badge, the 3 are Calibre, OPDS and the source. **Maintainer (2026-10-14): kept** — the shelf is the badge, not a source.
 2. **三體II apart** — same test, and `SearchWorkResolverTests`, `UnifiedSearchTests`.
-3. **作品詳情** — opening the row gives 3 versions (`ShelfProvider.versions` with the row's extras): the shelf copy, Calibre, OPDS (the source's book joins when its source is installed). The cover is the shelf copy's (`WorkDetailVersions*`). **Differs from §16, asked:**
+3. **作品詳情** — opening the row gives 3 versions (`ShelfProvider.versions` with the row's extras): the shelf copy, Calibre, OPDS (the source's book joins when its source is installed). The cover is the shelf copy's (`WorkDetailVersions*`). **Differs from §16; maintainer (2026-10-14): all kept as they are** (one row per item, Editorial Minimalism's actions, no attribution):
    - versions are one per item (Phase 5 decision 32), not two editions grouped as 簡體 (shelf + Calibre) / 繁體 (OPDS);
    - the actions are one primary (開始／繼續閱讀) beside 加入書架 (Editorial Minimalism, 2026-10-12: one primary action), not 繼續閱讀、線上閱讀、下載、加入書架 side by side;
    - the description from 來源配置 is filled by Phase 3's filler (`BookSourceFillProviderTests`) and shown without naming where it came from (Editorial Minimalism: sources understated); no test shows it attributed.
