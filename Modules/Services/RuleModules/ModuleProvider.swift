@@ -51,6 +51,12 @@ final class ModuleProvider: CollectionBrowsing, HomeSectionProviding {
         return .parallel
     }
 
+    /// An update may change a list's rules under the same section: the version makes its row
+    /// load again (`HomeModel.sync`).
+    func inputsKey(for section: HomeSection) -> String? {
+        module.version
+    }
+
     func load(_ section: HomeSection) async throws -> [CollectionEntry] {
         guard case .module(let moduleID, let entryID) = section.binding, moduleID == module.id,
               let entry = entry(entryID) else { return [] }

@@ -421,3 +421,25 @@ How these fit together:
 - **Tests:**
   - `BookSourceImportDeepLinkTests`: 9/9, 2 of them new.
   - `ModuleLibraryUITests`: 2/2 on iOS 17.5 and 2/2 on iOS 27. The new `testOpenLinkShowsDisclaimerThenImport` goes link → disclaimer → preview → ✓ → card, with the tab still 資源庫 at the end.
+
+### 6f (branch `modules/6f-content-source`)
+
+- **Registry:** `homeProviders` lists one `ModuleProvider` per installed module (`SourceProviderRegistry.moduleProviders(in:)`), after 青空文庫. `HomeModel.live` waits for `RuleModuleLibrary.loadIfNeeded()` along with the 來源配置 library.
+  - ExploreHome observes the library. Each module's id and version are part of its sync key, so an install, update or removal resyncs the home.
+  - `ModuleProvider.inputsKey` is the module's version, so an update restarts its rows.
+- **Ownership:** `HomeContentOwner.module(id:)`, named by the module's title, or its id once it is removed.
+- **選擇內容來源:** a 「模組」 group appears when any module is installed. A module opens its lists (`HomeModuleChoices`) with the current one checked, and a list titles the section after itself (`HomeContentChoice.lists(of:)`). A module's search entry is not listed.
+  - The 來源配置 row's symbol is now `square.grid.2x2.fill`, the one 資源庫 uses for 來源配置. `puzzlepiece.extension` was shared with the new modules group in the same list. *(Changeable on the maintainer's word.)*
+- **The form** shows the list's parameters under 篩選, an existing key, written to the section by name (`HomeSectionEditor.setParameter`).
+  - `enumeration` is a `Picker`.
+  - `count` is a `Stepper` from 1 to max(100, current). The format gives no bound.
+  - `input` is a text field kept on submit or focus loss, never per keystroke, because each value reloads the preview with a real request.
+  - `constant`, `page` and `offset` are not shown.
+  - `Param.currentValue(in:)` is the one rule for both the form and the request (`Entry.values` uses it).
+- **The preview** loads the module's real first page, through the same `homeProviders` as the home.
+- **Removed module:** nothing serves the section, so it has no row, exactly as for a removed connection (`HomeModel.sync` logs it).
+- **Deferred to 6f-2: 查看全部 for a module row.** No page yet browses a provider's location with paging, and building one (view, paging model, previews, UI test) is its own step. The row header has no chevron until then.
+- **Tests:**
+  - `ModuleContentSourceTests` (6) on iOS 27: owner and name; lists, never search; editable parameters and current values, the same as the request's; editor round trip, with a cleared parameter going back to the default; rows follow the library through a removal; the version changes the inputs.
+  - Regressions on iOS 27, 58/58: `HomeSectionEditorTests`, `HomeModelTests`, `ModuleProviderTests`, `RuleModuleImportTests`, `ExploreHomeTests`, `HomeSectionTests`.
+  - `ModuleLibraryUITests.testModuleListOnTheHome`: install from 資源庫, then 編輯首頁 → 新增欄目 → 選擇內容來源 → 模組 → 新書. 資料來源 reads 「測試模組 › 新書」, the preview loads the fixture list (`new.html`), and after 新增 the home shows the row. The whole class passes 3/3 on iOS 27 and 3/3 on iOS 17.5.

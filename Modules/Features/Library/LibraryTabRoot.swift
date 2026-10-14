@@ -124,7 +124,7 @@ struct LibraryTabRoot: View {
             }
             .bookSourceActionSheets(sheet: $sourceActionSheet, pendingDeletion: $sourcePendingDeletion)
             .bookSourceAddFlow(addFlow)
-            .task { if !modules.isLoaded { await modules.load() } }
+            .task { await modules.loadIfNeeded() }
             .fullScreenCover(item: $browserEntry) { presentation in
                 NavigationStack {
                     BrowserPage(browser: browser, entry: presentation.entry)

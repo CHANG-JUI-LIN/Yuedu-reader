@@ -70,7 +70,10 @@ final class HomeModel: ObservableObject {
     /// A home served by the sources now, with one first-page fetcher of its own for as long as
     /// it lives (Discovery Phase 7a-1).
     static func live(shelf: BookStore) -> HomeModel {
-        make(firstPages: DiscoverFirstPages(), waitForSources: { await BookSourceStore.shared.waitUntilLoaded() }) { firstPages, home in
+        make(firstPages: DiscoverFirstPages(), waitForSources: {
+            await BookSourceStore.shared.waitUntilLoaded()
+            await RuleModuleLibrary.shared.loadIfNeeded()
+        }) { firstPages, home in
             SourceProviderRegistry.shared.homeProviders(shelf: shelf, firstPages: firstPages, home: home)
         }
     }

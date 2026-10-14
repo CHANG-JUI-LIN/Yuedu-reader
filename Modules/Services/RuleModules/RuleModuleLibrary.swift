@@ -28,6 +28,12 @@ final class RuleModuleLibrary: ObservableObject {
         modules.first { $0.module.id == id }
     }
 
+    /// The first read, for a screen that may open before 資源庫 has read it (the Explore home).
+    func loadIfNeeded() async {
+        guard !isLoaded else { return }
+        await load()
+    }
+
     /// Reads the disk again.
     func load() async {
         generation += 1

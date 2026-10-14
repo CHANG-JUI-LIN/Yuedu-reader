@@ -19,6 +19,15 @@ struct HomeContentChoice: Equatable {
     var filterValues: [String: String] = [:]
 }
 
+extension HomeContentChoice {
+    /// A module's lists (Phase 6f), each titled after itself. Its search entry is no list.
+    static func lists(of module: RuleModule) -> [HomeContentChoice] {
+        module.modules.compactMap { entry in
+            entry.id.map { HomeContentChoice(binding: .module(moduleID: module.id, entryID: $0), itemTitle: entry.title ?? $0) }
+        }
+    }
+}
+
 struct HomeContentSourcePicker: View {
     let current: HomeSectionBinding?
     /// The section's parameters: a book source's categories list under its filter values.
@@ -30,6 +39,7 @@ struct HomeContentSourcePicker: View {
     @ObservedObject private var connections = RemoteLibraryConnectionStore.shared
     @ObservedObject private var availability = PublicLibraryAvailability.shared
     @ObservedObject private var sources = BookSourceStore.shared
+    @ObservedObject private var modules = RuleModuleLibrary.shared
 
     init(current: HomeSectionBinding?, parameters: [String: String] = [:], isPushed: Bool,
          choose: @escaping (HomeContentChoice) -> Void, cancel: @escaping () -> Void) {
@@ -95,16 +105,34 @@ struct HomeContentSourcePicker: View {
                 NavigationLink {
                     HomeSourceChoices(current: current, parameters: parameters, choose: choose)
                 } label: {
-                    ownerLabel(localized("來源配置"), systemImage: "puzzlepiece.extension",
+                    ownerLabel(localized("來源配置"), systemImage: "square.grid.2x2.fill",
                                isCurrent: { if case .bookSource = owner { true } else { false } }())
                 }
                 .accessibilityIdentifier("homePicker.bookSources")
             }
             .interfaceSectionSurface()
+
+            if !modules.modules.isEmpty {
+                Section {
+                    ForEach(modules.modules, id: \.module.id) { installed in
+                        NavigationLink {
+                            HomeModuleChoices(module: installed.module, current: current, choose: choose)
+                        } label: {
+                            ownerLabel(installed.module.title, systemImage: "puzzlepiece.extension",
+                                       isCurrent: owner == .module(id: installed.module.id))
+                        }
+                        .accessibilityIdentifier("homePicker.module.\(installed.module.id)")
+                    }
+                } header: {
+                    Text(localized("模組"))
+                }
+                .interfaceSectionSurface()
+            }
         }
         .navigationTitle(localized("選擇內容來源"))
         .toolbarTitleDisplayMode(.inline)
         .themedAppSurface(for: .explore)
+        .task { await modules.loadIfNeeded() }
         .toolbar {
             if !isPushed {
                 ToolbarItem(placement: .cancellationAction) {
@@ -303,6 +331,35 @@ private struct HomeAozoraChoices: View {
     }
 }
 
+// MARK: - 模組
+
+/// A module's lists (Phase 6f): the one in use is checked.
+struct HomeModuleChoices: View {
+    let module: RuleModule
+    let current: HomeSectionBinding?
+    let choose: (HomeContentChoice) -> Void
+
+    var body: some View {
+        List {
+            Section {
+                ForEach(HomeContentChoice.lists(of: module), id: \.binding) { choice in
+                    HomeChoiceRow(title: choice.itemTitle, isCurrent: current == choice.binding) {
+                        choose(choice)
+                    }
+                }
+            } footer: {
+                if let description = module.description, !description.isEmpty {
+                    Text(description).dsSectionFooter()
+                }
+            }
+            .interfaceSectionSurface()
+        }
+        .navigationTitle(module.title)
+        .toolbarTitleDisplayMode(.inline)
+        .themedAppSurface(for: .explore)
+    }
+}
+
 // MARK: - 來源配置
 
 /// Every book source 探索 lists, searchable: a reader can have thousands, so only the rows on
@@ -468,6 +525,13 @@ struct HomeCategoryChoices: View {
         .toolbarTitleDisplayMode(.inline)
         .themedAppSurface(for: .explore)
         .task { await listing.load() }
+    }
+}
+
+#Preview("模組的清單") {
+    NavigationStack {
+        HomeModuleChoices(module: RuleModulePreviewData.module(), current: .module(moduleID: "preview.module", entryID: "new"),
+                          choose: { _ in })
     }
 }
 

@@ -37,11 +37,23 @@ extension RuleModule.Entry {
             case .page, .offset:
                 values[param.name] = String(position)
             default:
-                values[param.name] = parameters[param.name] ?? param.value ?? param.enumOptions?.first?.value ?? ""
+                values[param.name] = param.currentValue(in: parameters)
             }
         }
         if let keyword { values["keyword"] = keyword }
         return values
+    }
+
+    /// What the section form offers the reader (Phase 6f): not a constant, nor the paging.
+    var editableParams: [RuleModule.Param] {
+        params.filter { [.input, .count, .enumeration].contains($0.kind) }
+    }
+}
+
+extension RuleModule.Param {
+    /// The section's own value, else the default, else an enumeration's first option.
+    func currentValue(in parameters: [String: String]) -> String {
+        parameters[name] ?? value ?? enumOptions?.first?.value ?? ""
     }
 }
 

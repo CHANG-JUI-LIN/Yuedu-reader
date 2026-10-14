@@ -91,4 +91,3 @@ struct BookSourceImportDeepLinkTests {
         #expect(BookSourceImportDeepLink.target(from: try #require(URL(string: "yuedu://module?src="))) == nil)
     }
 }
-
