@@ -166,6 +166,7 @@ final class UnifiedSearchModel {
                 return url
             }
         }
+        SourcePerfTrace.record("search.unified.candidates", "candidates=\(candidates.count)", since: started, thresholdMs: 0)
         isResolving = true
         let works = await Task.detached(priority: .userInitiated) {
             SearchWorkResolver.resolve(candidates, query: query)
@@ -266,7 +267,7 @@ struct UnifiedSearchFeed: View {
     let model: UnifiedSearchModel
     @ObservedObject private var aozora = AozoraCatalogStore.shared
 
-    /// 青空文庫's matches the list takes; the rest are behind 「青空文庫的全部結果」.
+    /// 青空文庫's matches the list takes; the rest are behind 顯示全部.
     static let publicLibraryLimit = 50
 
     /// What the list is made from, compared cheaply: a source row that gained origins keeps its
@@ -360,7 +361,7 @@ struct UnifiedSearchRows: View {
             }
         }
         if let overflow = model.publicLibraryOverflow {
-            NavigationLink(localized("青空文庫的全部結果"), value: overflow)
+            NavigationLink(localized("顯示全部"), value: overflow)
                 .listRowBackground(Color.clear)
         }
         if canLoadMore {

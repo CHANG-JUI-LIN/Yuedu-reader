@@ -3819,6 +3819,5 @@
 "只有資料" = "Details Only";
 "在書架上" = "On Shelf";
 "可閱讀" = "Readable";
-"青空文庫的全部結果" = "All Aozora Bunko Results";
 "搜尋時也查 Open Library" = "Also Search Open Library";
 "在搜索按下搜尋時，關鍵字會送到 Open Library；找到的書只有資料，可再尋找可用來源。" = "When you search, your search words are sent to Open Library; books found there have details only, and Find Sources looks for a way to read them.";
