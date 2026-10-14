@@ -635,6 +635,9 @@ class SearchAggregator: ObservableObject {
         let fanOut = fanOut
 
         searchTask = Task { [weak self] in
+            if applyAutoPause, let trace = self?.firstResultTrace, trace.generation == generation {
+                SourcePerfTrace.record("search.dispatch", trace.detail, since: trace.start, thresholdMs: 0)
+            }
             // Streaming: merge each returned source without animation.
             // Large imported packs can contain 1000+ sources, so animated
             // mutations here overwhelm SwiftUI's list diffing on iOS 18.
