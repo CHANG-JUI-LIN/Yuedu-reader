@@ -192,3 +192,20 @@ Branch `metadata/3d-schedule`:
   - **`MetadataCompleteness`** (cover 3, intro 2, authors 2, tags/language/series 1).
 - **Resolver:** `bibliographicIsALevel` is gone. A database's values in the sidecar are A-level by construction (only the runner writes them, only from A providers).
 - **Tests:** `MetadataFillRunnerTests` (12), `MetadataFillLedgerTests` (3), `MetadataResolverTests` (updated); 24/24 on iOS 27.
+
+### 3a-2 (branch `metadata/3a-2-display`)
+
+- **`FilledCoverIndex`** (`@Observable`, owned by `BookStore.filledCovers`, injected at the app root):
+  - holds copy id → absolute path of the filled cover;
+  - is rebuilt off the main thread from the coverless copies' sidecars (`refreshFilledCovers()`, after every complete shelf load);
+  - logs a file that `Caches` lost.
+- **Cover plan:** `BookshelfCoverPlan.shelf(…filledCover:)` puts a filled cover in the own-cover slot when the book has neither a saved nor a catalog cover. 強制使用預設封面 still wins.
+  - **`ShelfCoverSlot`** reads the index from the environment, so only cover slots redraw. It replaces the direct plan in `BookshelfCoverStyle.artwork` and `HomeCoverArtwork` (作品詳情).
+  - The open-book snapshot is passed the same path.
+- **`ReadingBook.hasOwnCoverArtwork`:** a saved cover, or a remote library's catalog cover.
+- **Removing a filled value:** `BookStore.removeFilledValue(_:of:)` records `override(field, "")`; a cover also leaves the index.
+  - `filledValue(_:of:)` returns a value only when the provider in effect has a `found` ledger entry for the copy, so an import's own values are never offered.
+  - 書籍資訊 shows 「移除自動補上的封面／簡介」 with 「自動補上・<provider>」 under it. The intro button appears only while the reader's own description is empty.
+  - Strings are in all five languages.
+- **`OpenLibrary.key`** (`bibliographic/openlibrary`) and `FilledMetadata.providerName`.
+- **Tests:** `FilledMetadataTests` (8), `CopyMetadataTests` and `CoverImagePipelineTests` unchanged; 38/38 on iOS 27.

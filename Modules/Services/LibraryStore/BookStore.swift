@@ -248,6 +248,12 @@ class BookStore: ObservableObject, BookProvider {
         store: self,
         worksDirectory: metadataFileURL.deletingLastPathComponent().appendingPathComponent("Works", isDirectory: true)
     )
+    /// Unified library Phase 3: which provider was asked about which copy (`Works/metadata-fill.json`).
+    @MainActor lazy var metadataFillLedger = MetadataFillLedger(
+        worksDirectory: metadataFileURL.deletingLastPathComponent().appendingPathComponent("Works", isDirectory: true)
+    )
+    /// Phase 3a-2: the covers the filler gave copies with none, for the shelf's cover slots.
+    @MainActor lazy var filledCovers = FilledCoverIndex()
     /// Whether the last load read both the shelf and the reading records. Only then may a
     /// book missing from `records` be taken as gone, and its list removed.
     private var recordsLoadedCompletely = false
@@ -2996,6 +3002,8 @@ class BookStore: ObservableObject, BookProvider {
             importedMetadata.remove(notIn: bookIDs)
         }
         if didRepair || chapterStore.hasUnwrittenChanges { saveMetaImmediately() }
+        // Phase 3a-2: the covers the filler gave copies with none, for the shelf.
+        Task { @MainActor [weak self] in await self?.refreshFilledCovers() }
     }
 
     /// Whether the shelf is known to be complete: the file decoded, or there is no shelf

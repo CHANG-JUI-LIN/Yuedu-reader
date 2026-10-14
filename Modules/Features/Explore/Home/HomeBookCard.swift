@@ -302,7 +302,7 @@ struct HomeCoverArtwork: View {
     var body: some View {
         switch cover {
         case .shelf(let book):
-            BookshelfCoverArtwork(book: book, plan: .shelf(for: book, colorScheme: colorScheme), displaySize: size)
+            ShelfCoverSlot(book: book, colorScheme: colorScheme, displaySize: size)
         case .reference(.remote(let url, let headers), let session):
             BookCoverImage(coverURL: url.absoluteString, title: title, author: author, sourceHeaders: headers,
                            session: session)

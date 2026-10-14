@@ -25,18 +25,14 @@ enum BookshelfCoverStyle {
     /// covers landed.
     @MainActor
     static func artwork(for book: ReadingBook, colorScheme: ColorScheme, displaySize: CGSize) -> some View {
-        BookshelfCoverArtwork(
-            book: book,
-            plan: .shelf(for: book, colorScheme: colorScheme),
-            displaySize: displaySize
-        )
+        ShelfCoverSlot(book: book, colorScheme: colorScheme, displaySize: displaySize)
     }
 
     /// The bitmap a card is drawing, from memory only: the largest decoded size of
     /// the artwork the card resolves to. Nil when that is the generated cover, a
     /// catalog cover, or a saved cover that has not been decoded yet. Never reads a file.
-    static func image(for book: ReadingBook, colorScheme: ColorScheme) -> UIImage? {
-        guard case .bitmap(let image, _) = cachedArtwork(for: .shelf(for: book, colorScheme: colorScheme)) else {
+    static func image(for book: ReadingBook, colorScheme: ColorScheme, filledCover: String? = nil) -> UIImage? {
+        guard case .bitmap(let image, _) = cachedArtwork(for: .shelf(for: book, colorScheme: colorScheme, filledCover: filledCover)) else {
             return nil
         }
         return image
@@ -53,9 +49,10 @@ enum BookshelfCoverStyle {
     static func snapshot(
         for book: ReadingBook,
         colorScheme: ColorScheme,
+        filledCover: String? = nil,
         sourceSize: CGSize? = nil
     ) -> UIImage? {
-        switch cachedArtwork(for: .shelf(for: book, colorScheme: colorScheme)) {
+        switch cachedArtwork(for: .shelf(for: book, colorScheme: colorScheme, filledCover: filledCover)) {
         case .bitmap(let image, _):
             return image
         case .pending:
@@ -88,9 +85,10 @@ enum BookshelfCoverStyle {
     @MainActor
     static func snapshotUpgrade(
         for book: ReadingBook,
-        colorScheme: ColorScheme
+        colorScheme: ColorScheme,
+        filledCover: String? = nil
     ) -> (@MainActor () -> UIImage?)? {
-        guard case .bitmap(_, let source) = cachedArtwork(for: .shelf(for: book, colorScheme: colorScheme)) else {
+        guard case .bitmap(_, let source) = cachedArtwork(for: .shelf(for: book, colorScheme: colorScheme, filledCover: filledCover)) else {
             return nil
         }
         let pipeline = CoverImagePipeline.shared
@@ -166,8 +164,10 @@ enum BookshelfCoverStyle {
 ///    unless 強制使用預設封面 is on.
 /// 2. When there is none, or it turns out missing or unusable: a remote-library
 ///    book's catalog cover, drawn by `BookCoverImage` with the catalog's session.
-/// 3. Otherwise the user's 預設封面 for this book.
-/// 4. Otherwise `GeneratedBookCover`.
+/// 3. For a book with neither, the cover the filler gave it (unified library 3a-2,
+///    `FilledCoverIndex`), in the own cover's slot.
+/// 4. Otherwise the user's 預設封面 for this book.
+/// 5. Otherwise `GeneratedBookCover`.
 ///
 /// A step that has to be read from disk is only known to be unavailable once its
 /// load finishes. Until then the slot shows a placeholder instead of skipping
@@ -187,19 +187,23 @@ struct BookshelfCoverPlan: Equatable {
     var author: String
 
     /// A shelf row or grid cell, and the transition that lifts it.
+    /// - `filledCover`: the filler's cover for this book (`FilledCoverIndex.path(for:)`).
     static func shelf(
         for book: ReadingBook,
         colorScheme: ColorScheme,
+        filledCover: String? = nil,
         forcesDefaultCover: Bool = GlobalSettings.shared.useDefaultCoverForAllBooks
     ) -> BookshelfCoverPlan {
         let seed = book.id.uuidString
         let savedCover = book.coverImagePath.flatMap { $0.isEmpty ? nil : $0 }
         let hasCatalogCover = book.remoteSource != nil && book.coverUrl?.isEmpty == false
+        let ownCover: CoverImageSource? = savedCover.map { .bookCover(filename: $0) }
+            ?? (hasCatalogCover ? nil : filledCover.map { .indexedCover(path: $0) })
         return BookshelfCoverPlan(
             // 強制使用預設封面: the book's own artwork is never drawn, even when the
             // library is empty; that case falls through to the generated cover, as
             // Legado's built-in default cover does.
-            ownCover: forcesDefaultCover ? nil : savedCover.map { .bookCover(filename: $0) },
+            ownCover: forcesDefaultCover ? nil : ownCover,
             catalogFallback: !forcesDefaultCover && hasCatalogCover
                 ? CatalogFallback(defaultCoverSeed: seed)
                 : nil,
@@ -213,9 +217,10 @@ struct BookshelfCoverPlan: Equatable {
     /// 書籍資訊's preview: the saved cover as it is, even with 強制使用預設封面 on,
     /// because it is the cover being edited; otherwise `BookCoverImage` for the
     /// book's own address.
-    static func bookInfo(for book: ReadingBook) -> BookshelfCoverPlan {
+    static func bookInfo(for book: ReadingBook, filledCover: String? = nil) -> BookshelfCoverPlan {
         BookshelfCoverPlan(
-            ownCover: book.coverImagePath.flatMap { $0.isEmpty ? nil : .bookCover(filename: $0) },
+            ownCover: book.coverImagePath.flatMap { $0.isEmpty ? nil : .bookCover(filename: $0) }
+                ?? filledCover.map { .indexedCover(path: $0) },
             catalogFallback: CatalogFallback(defaultCoverSeed: nil),
             defaultCover: nil,
             title: book.title,
@@ -225,6 +230,24 @@ struct BookshelfCoverPlan: Equatable {
 }
 
 // MARK: - Artwork view
+
+/// A shelf cover slot with the cover the filler gave the book, if any (unified library 3a-2):
+/// reads `FilledCoverIndex` from the environment, so a filled cover arriving redraws the
+/// slots alone.
+struct ShelfCoverSlot: View {
+    let book: ReadingBook
+    let colorScheme: ColorScheme
+    let displaySize: CGSize
+    @Environment(FilledCoverIndex.self) private var filledCovers: FilledCoverIndex?
+
+    var body: some View {
+        BookshelfCoverArtwork(
+            book: book,
+            plan: .shelf(for: book, colorScheme: colorScheme, filledCover: filledCovers?.path(for: book)),
+            displaySize: displaySize
+        )
+    }
+}
 
 /// One cover slot. Its body only composes what memory already has (a decoded
 /// bitmap, the placeholder, or a fallback that needs no file); the disk is read by
