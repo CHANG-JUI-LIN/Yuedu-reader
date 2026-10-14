@@ -11,6 +11,19 @@ extension IOS17SearchResultTableRow {
             coverURL: book.coverUrl
         )
     }
+
+    /// A shelf copy, its cover as the shelf decides it.
+    @MainActor
+    init(shelfBook book: ReadingBook, colorScheme: ColorScheme, filledCover: String?) {
+        let plan = BookshelfCoverPlan.shelf(for: book, colorScheme: colorScheme, filledCover: filledCover)
+        self.init(
+            id: book.id,
+            content: SearchBookListRowContent(shelfBook: book),
+            coverURL: plan.catalogFallback != nil ? (book.coverUrl ?? "") : "",
+            shelfCover: IOS17ShelfCover(own: plan.ownCover, usesCatalogCover: plan.catalogFallback != nil,
+                                        defaultCover: plan.defaultCover)
+        )
+    }
 }
 
 /// Native iOS 17 search-result list.
@@ -28,6 +41,7 @@ struct IOS17SearchResultTable: UIViewControllerRepresentable {
     let onLoadMore: () -> Void
     var onSearchGutenberg: () -> Void = {}
     var onSelectWork: (String) -> Void = { _ in }
+    var onSelectShelfBook: (UUID) -> Void = { _ in }
 
     func makeUIViewController(context _: Context) -> IOS17SearchResultTableViewController {
         IOS17SearchResultTableViewController()
@@ -42,7 +56,8 @@ struct IOS17SearchResultTable: UIViewControllerRepresentable {
             onSelect: onSelect,
             onLoadMore: onLoadMore,
             onSearchGutenberg: onSearchGutenberg,
-            onSelectWork: onSelectWork
+            onSelectWork: onSelectWork,
+            onSelectShelfBook: onSelectShelfBook
         )
     }
 }
@@ -50,11 +65,13 @@ struct IOS17SearchResultTable: UIViewControllerRepresentable {
 @MainActor
 final class IOS17SearchResultTableViewController: UITableViewController {
     fileprivate enum Section: Hashable {
+        case shelf
         case results
         case library
     }
 
     fileprivate enum Item: Hashable {
+        case shelfBook(UUID)
         case result(UUID)
         case loadMore
         case notice
@@ -73,6 +90,8 @@ final class IOS17SearchResultTableViewController: UITableViewController {
     private var onLoadMore: () -> Void = {}
     private var onSearchGutenberg: () -> Void = {}
     private var onSelectWork: (String) -> Void = { _ in }
+    private var onSelectShelfBook: (UUID) -> Void = { _ in }
+    private var shelfRowsByID: [UUID: IOS17SearchResultTableRow] = [:]
     private var worksByID: [String: IOS17SearchLibrarySection.Work] = [:]
     private var dataSource: IOS17SearchResultDataSource!
 
@@ -114,9 +133,11 @@ final class IOS17SearchResultTableViewController: UITableViewController {
         onSelect: @escaping (UUID) -> Void,
         onLoadMore: @escaping () -> Void,
         onSearchGutenberg: @escaping () -> Void,
-        onSelectWork: @escaping (String) -> Void
+        onSelectWork: @escaping (String) -> Void,
+        onSelectShelfBook: @escaping (UUID) -> Void
     ) {
         loadViewIfNeeded()
+        self.onSelectShelfBook = onSelectShelfBook
         self.onSelect = onSelect
         self.onLoadMore = onLoadMore
         self.onSearchGutenberg = onSearchGutenberg
@@ -127,20 +148,27 @@ final class IOS17SearchResultTableViewController: UITableViewController {
         defer {
             SourcePerfTrace.record(
                 "search.iOS17.nativeTableApply",
-                "\(content.rows.count) rows loadMore=\(content.showsLoadMore) works=\(content.library?.works.count ?? -1)",
+                "\(content.rows.count) rows shelf=\(content.shelf.count) loadMore=\(content.showsLoadMore) works=\(content.library?.works.count ?? -1)",
                 since: startedAt,
                 thresholdMs: 4
             )
         }
         currentContent = content
         rowsByID = Dictionary(uniqueKeysWithValues: content.rows.map { ($0.id, $0) })
+        shelfRowsByID = Dictionary(content.shelf.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
         worksByID = Dictionary((content.library?.works ?? []).map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
 
         var snapshot = NSDiffableDataSourceSnapshot<Section, Item>()
+        if !content.shelf.isEmpty {
+            snapshot.appendSections([.shelf])
+            var seen = Set<UUID>()
+            snapshot.appendItems(content.shelf.filter { seen.insert($0.id).inserted }.map { .shelfBook($0.id) },
+                                 toSection: .shelf)
+        }
         let sourceItems = content.rows.map { Item.result($0.id) }
             + (content.showsLoadMore ? [.loadMore] : [])
             + (content.sourcesNotice != nil && content.rows.isEmpty ? [.notice] : [])
-        if !sourceItems.isEmpty || content.library == nil {
+        if !sourceItems.isEmpty || (content.library == nil && content.shelf.isEmpty) {
             snapshot.appendSections([.results])
             snapshot.appendItems(sourceItems, toSection: .results)
         }
@@ -150,8 +178,8 @@ final class IOS17SearchResultTableViewController: UITableViewController {
             let works = library.works.filter { seen.insert($0.id).inserted }
             snapshot.appendItems([.gutenbergSearch] + works.map { .work($0.id) }, toSection: .library)
         }
-        // Headers name the two parts only when both can be there.
-        dataSource.titlesSections = content.library != nil
+        // Headers name the parts only when more than one can be there.
+        dataSource.titlesSections = content.library != nil || !content.shelf.isEmpty
         dataSource.applySnapshotUsingReloadData(snapshot)
     }
 
@@ -160,6 +188,8 @@ final class IOS17SearchResultTableViewController: UITableViewController {
         guard let item = dataSource.itemIdentifier(for: indexPath) else { return }
 
         switch item {
+        case .shelfBook(let id):
+            onSelectShelfBook(id)
         case .result(let id):
             onSelect(id)
         case .loadMore:
@@ -184,6 +214,19 @@ final class IOS17SearchResultTableViewController: UITableViewController {
             guard let self else { return nil }
 
             switch item {
+            case .shelfBook(let id):
+                guard
+                    let cell = tableView.dequeueReusableCell(
+                        withIdentifier: Self.resultCellIdentifier,
+                        for: indexPath
+                    ) as? IOS17SearchResultTableCell,
+                    let row = self.shelfRowsByID[id]
+                else {
+                    return nil
+                }
+                cell.configure(with: row)
+                return cell
+
             case .result(let id):
                 guard
                     let cell = tableView.dequeueReusableCell(
@@ -291,6 +334,7 @@ fileprivate final class IOS17SearchResultDataSource: UITableViewDiffableDataSour
     override func tableView(_ tableView: UITableView, titleForHeaderInSection section: Int) -> String? {
         guard titlesSections else { return nil }
         switch sectionIdentifier(for: section) {
+        case .shelf: return localized("書架")
         case .results: return localized("來源配置")
         case .library: return localized("公有書庫")
         case nil: return nil
@@ -520,6 +564,11 @@ private final class IOS17SearchResultTableCell: UITableViewCell {
         coverTask = nil
         generatedCoverSeed = (row.content.title, row.content.author)
 
+        if let shelfCover = row.shelfCover {
+            loadShelfCover(shelfCover, for: row)
+            return
+        }
+
         if let cached = BookCoverLoader.cachedImage(for: row.coverURL) {
             showCover(cached, representedID: row.id)
             return
@@ -539,6 +588,44 @@ private final class IOS17SearchResultTableCell: UITableViewCell {
                 headers: headers
             )
             guard !Task.isCancelled, let image else { return }
+            self?.showCover(image, representedID: row.id)
+        }
+    }
+
+    /// A shelf copy's cover in the shelf's order (`BookshelfCoverArtwork.load`): its own
+    /// artwork, then its catalog cover, then 預設封面, then the generated cover.
+    private func loadShelfCover(_ cover: IOS17ShelfCover, for row: IOS17SearchResultTableRow) {
+        showsRemoteCover = false
+        applyGeneratedCover()
+        guard let size = CoverPixelSize.fitting(
+            pointSize: CGSize(width: DSLayout.searchListCoverWidth, height: DSLayout.searchListCoverHeight),
+            scale: traitCollection.displayScale
+        ) else { return }
+        coverTask = Task { [weak self] in
+            if let own = cover.own {
+                switch await CoverImagePipeline.shared.image(for: CoverImageRequest(source: own, size: size)) {
+                case .image(let image):
+                    self?.showCover(image, representedID: row.id)
+                    return
+                case .unavailable:
+                    break
+                case .superseded, .cancelled:
+                    return
+                }
+            }
+            if cover.usesCatalogCover {
+                guard !row.coverURL.isEmpty,
+                      let image = await BookCoverLoader.loadImage(
+                          urlString: row.coverURL,
+                          headers: BookCoverLoader.headers(sourceBaseURL: nil, sourceHeaders: [:])
+                      ) else { return }
+                guard !Task.isCancelled else { return }
+                self?.showCover(image, representedID: row.id)
+                return
+            }
+            guard let fallback = cover.defaultCover,
+                  case .image(let image) = await CoverImagePipeline.shared.image(for: CoverImageRequest(source: fallback, size: size)),
+                  !Task.isCancelled else { return }
             self?.showCover(image, representedID: row.id)
         }
     }

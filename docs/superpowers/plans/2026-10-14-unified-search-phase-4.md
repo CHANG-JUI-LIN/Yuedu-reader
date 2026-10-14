@@ -128,3 +128,15 @@ The six match rules (audit §11.2) and where each ends up:
 - **`SearchSourceOutcome`**: `results`, `empty`, `failedAsEmpty` (Phase 0b), `timedOut`, `failed`; `answered` is the first three. It replaces the aggregator's private `SourceAnswer` / `SearchBatchResult`.
 - **No behavior change:** `SearchAggregatorCharacterizationTests` and `SearchKeyCharacterizationTests` untouched and green.
 - **Tests:** `BookSourceSearchFanOutTests` (4) + `SearchKeyCharacterizationTests`, `SearchAggregatorCharacterizationTests`, `SearchFirstResultSpanTests`, `WorkSourceFinderTests`, `SearchSourceScopeTests`, `SearchResultPublicationGateTests`, `NetworkSettingsSearchTests`, `IOS17SearchResultTableTests`, `AggregateSearchStreamingTests`: 55/55 on iOS 27.
+
+### 4b-1 (branch `search/4b1-shelf`)
+
+- **`ShelfProvider.searchCopies(_:)`**: the shelf copies of the works `WorkIndexService.search` finds (first production caller; `WorkMatchKey` folding, so 三体 finds 三體; equal titles first). WebDAV-indexed files are in the same index; they join with 我的書庫 in 4b-2.
+- **`ShelfSearchModel`** (`Modules/Features/Search/ShelfSearchResults.swift`): as you type, owned by the search page, read only by the views drawing it (postmortem guardrail 13). It brings the index up to date (`current()`) before its first search and again only when `BookStore.mutationRevision` moved; each match carries its 作品詳情 route, frozen when found.
+- **搜索 tab root:** the combined list now shows whenever there is a query at the tab's root (before: only where the public libraries are offered), so the shelf is searched in China too; the 公有書庫 section keeps its own region gate. Order: 書架, 來源配置, 公有書庫. Only the first row of the first non-empty section anchors the title's scroll.
+- **iOS 18:** `ShelfSearchSection`, rows drawn as 最近閱讀's (`SearchBookListRow` + `BookshelfCoverStyle.artwork`, so filled covers and 強制使用預設封面 apply), `NavigationLink(value: WorkDetailRoute)` on the tab's path.
+- **iOS 17:** a 書架 section in the UIKit table (`Item.shelfBook`), rows `IOS17SearchResultTableRow(shelfBook:colorScheme:filledCover:)`. `IOS17ShelfCover` carries the shelf's `BookshelfCoverPlan` (own artwork → catalog cover → 預設封面 → generated), loaded through `CoverImagePipeline` like the shelf's slots; a tap appends the frozen route to the tab's one path.
+- **Measured** (`WorkIndexBenchmarkTests`, 2,000 copies, iOS 27 simulator): `works.search.local` 1.4 ms per keystroke; the warm refresh that runs once after a shelf change 56.4 ms; cold 332 ms (first search after launch).
+- **Not seen on screen:** the simulator tool's text input did not reach the search field this session; the rows are covered by tests, and the 4c acceptance takes screenshots through a UI test.
+- **Unrelated failure found:** `SearchRecentsTests.englishSourceCountPlural` fails on main (English 「%d 源」 plural); not this branch's (no strings touched), filed as its own task.
+- **Tests:** `ShelfSearchTests` (5) + `IOS17SearchResultTableTests`; `SearchRecentsTests` all but the plural test above.
