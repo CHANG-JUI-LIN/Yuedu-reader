@@ -25,6 +25,9 @@ enum AozoraLibraryDownloadError: LocalizedError, Equatable {
 /// It deliberately has no subscription dependency and never contacts a mirror.
 @MainActor
 final class AozoraLibraryDownloadService: AozoraLibraryDownloading {
+    /// The only host a 青空文庫 book is downloaded from.
+    nonisolated static let host = "www.aozora.gr.jp"
+
     private let temporaryDirectory: URL
     private let download: (URL, URL) async throws -> Void
     private var operations: [String: Task<ReadingBook, any Error>] = [:]
@@ -68,7 +71,7 @@ final class AozoraLibraryDownloadService: AozoraLibraryDownloading {
             }
         }
         do {
-            guard let url = URL(string: work.text), url.scheme == "https", url.host == "www.aozora.gr.jp",
+            guard let url = URL(string: work.text), url.scheme == "https", url.host == Self.host,
                   url.user == nil, url.password == nil, url.port == nil, url.query == nil, url.fragment == nil,
                   url.pathExtension == "zip" else { throw AozoraLibraryDownloadError.invalidURL }
             try Task.checkCancellation()

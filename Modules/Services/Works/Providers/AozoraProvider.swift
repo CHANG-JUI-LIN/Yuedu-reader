@@ -23,6 +23,8 @@ final class AozoraProvider: CollectionBrowsing {
 
     var instance: SourceInstanceKey { SourceInstanceKey(type: .aozora, id: PublicLibraryID.aozora.rawValue) }
     var displayName: String { localized("青空文庫") }
+    /// Its catalog, then its books.
+    var hosts: [String] { AozoraCatalogStore.manifestURL.providerHosts + [AozoraLibraryDownloadService.host] }
     var availability: ProviderAvailability {
         guard availabilitySource.isAvailable else { return .hiddenInRegion }
         return catalog() == nil ? .catalogNotReady : .available

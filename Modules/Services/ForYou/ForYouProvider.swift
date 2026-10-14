@@ -148,6 +148,8 @@ final class ForYouProvider: HomeSectionProviding {
     var instance: SourceInstanceKey { Self.instanceKey }
     var displayName: String { localized("為你推薦") }
     var availability: ProviderAvailability { .available }
+    /// It reads the pages the home has already fetched.
+    var hosts: [String] { [] }
 
     func loadPolicy(for section: HomeSection) -> SectionLoadPolicy? {
         section.binding == .forYou ? .withHome : nil

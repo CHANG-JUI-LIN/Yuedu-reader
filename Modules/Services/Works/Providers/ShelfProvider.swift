@@ -33,6 +33,7 @@ final class ShelfProvider: CollectionBrowsing {
     var instance: SourceInstanceKey { .localLibrary }
     var displayName: String { localized("書架") }
     var availability: ProviderAvailability { .available }
+    var hosts: [String] { [] }
 
     func capabilities() async -> CollectionCapabilities {
         CollectionCapabilities(search: .asYouType, paginates: false)

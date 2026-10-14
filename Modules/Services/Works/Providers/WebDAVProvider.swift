@@ -27,6 +27,7 @@ final class WebDAVProvider: CollectionBrowsing {
     var availability: ProviderAvailability { .available }
     /// The connection's root, normalized as `WebDAVBrowseClient.rootURL` is.
     var rootURL: URL? { RemoteLibraryConnection.normalizedURL(connection.url, kind: .webDAV) }
+    var hosts: [String] { rootURL?.providerHosts ?? [] }
 
     /// WebDAV has no server search; the folder view filters what it listed.
     func capabilities() async -> CollectionCapabilities {

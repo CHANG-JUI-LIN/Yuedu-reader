@@ -61,6 +61,8 @@ final class SubscriptionArticlesProvider: HomeSectionProviding {
     var instance: SourceInstanceKey { Self.instanceKey }
     var displayName: String { localized("RSS 訂閱") }
     var availability: ProviderAvailability { .available }
+    /// It reads the articles RSS has already fetched.
+    var hosts: [String] { [] }
 
     func loadPolicy(for section: HomeSection) -> SectionLoadPolicy? {
         guard case .subscriptionArticles = section.binding else { return nil }

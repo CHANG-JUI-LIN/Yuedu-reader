@@ -24,6 +24,7 @@ private final class LibraryRow: HomeSectionProviding {
     let instance = SourceInstanceKey(type: .gutenberg, id: "gutenberg")
     let displayName = "Gutenberg"
     let availability: ProviderAvailability = .available
+    let hosts: [String] = []
     let counter: RequestCounter
     let source = BookSource(bookSourceUrl: "https://gutenberg.test", bookSourceName: "Gutenberg")
 
