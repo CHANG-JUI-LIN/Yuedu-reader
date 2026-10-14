@@ -249,3 +249,9 @@ The maintainer's pick after 7b (2026-10-14): fix `DetailReaderBackSwipeUITests`,
 - Tried and dropped: making the cover and instant page-turn pans wait for a screen-edge recognizer. A/B on iOS 17.5 (`testCoverEdgeBack`, 1 pt edge) passed with and without it, so it is not shipped. Product code is unchanged.
 - Results: iOS 17.5, the five edge-back tests pass (instant run alone; see below). iOS 27, the five passed.
 - Found, not fixed: on iOS 17.5, in a multi-test run, the test's `SKTestSession` set-up grows from 0 s to 92 s by the third test, and the runner is killed ("Test crashed with signal kill") about 130 s into that test. The same test passes alone in 45 s.
+
+### One StoreKit test session per run (branch `fix/storekit-session-per-test`)
+- The iOS 17.5 runner kill above: timed per step, all of it is `SKTestSession(contentsOf:)`, 0.005 s for the first in a runner process, then 36 s, then 92 s, even with the earlier sessions released (tried first: releasing them in `tearDown` changed nothing, and is not shipped). Reset and clearing take under 1 ms.
+- `StoreKitTestSessions.fresh(_:)` (UI tests) keeps one session per configuration file for the run and resets it for each test; `DetailReaderBackSwipeUITests` and `ProStatusNavigationUITests` use it. `LocalReaderProfilingUITests` keeps its own: one opt-in test that keeps its transactions on purpose.
+- Results: iOS 17.5, set-up 0.02–0.04 s for all nine tests; cover, curl and instant edge back passed in one run. iOS 27, `ProStatusNavigationUITests` 5 of 6. The one failure, `testMonthlyAlongsideLifetimeKeepsTheCancellationReminder` (shows 已訂閱, not 永久會員), was already recorded in the Phase 5 plan.
+- Found, not fixed: on iOS 17.5 the two purchase tests fail at "the product should load". That happens alone too, on the run's first session, which is the same code path as before this change.
