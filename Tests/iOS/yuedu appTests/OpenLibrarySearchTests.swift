@@ -100,12 +100,11 @@ struct OpenLibrarySearchTests {
         #expect(SearchSubmitPlan.decide(hasSources: false, sourcesLoaded: false, othersAnswer: true, offersPublicLibraries: false) == .waitForSources)
     }
 
-    @Test("MARC language codes become the two-letter ones")
+    @Test("MARC language codes read as the other sources' tags")
     func languages() {
-        #expect(OpenLibrarySearch.languageCode("chi") == "zh")
-        #expect(OpenLibrarySearch.languageCode("jpn") == "ja")
-        #expect(OpenLibrarySearch.languageCode("eng") == "en")
-        #expect(OpenLibrarySearch.languageCode("xyz") == nil)
+        #expect(LanguageTag("chi")?.identifier == "zh")
+        #expect(LanguageTag("jpn")?.identifier == "ja")
+        #expect(LanguageTag("eng")?.identifier == "en")
     }
 
     // MARK: - Helpers

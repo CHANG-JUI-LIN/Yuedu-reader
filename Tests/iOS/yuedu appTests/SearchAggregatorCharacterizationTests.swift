@@ -23,14 +23,16 @@ struct SearchKeyCharacterizationTests {
 
     @Test("punctuation is kept in the key")
     func punctuationIsKept() {
-        // Current behavior (audit §11.2); Phase 4 is expected to change this.
-        // The comment on `normalize` says it strips punctuation; it does not.
+        // 換源's key (`SearchBook.nameKey`, `isLikelySameBook`) until 4d, which is asked
+        // first. 搜索 merges by `WorkMatchKey` since 4c-1, which folds punctuation
+        // (`SearchWorkMergeTests`). The comment on `normalize` says it strips punctuation;
+        // it does not.
         #expect(SearchBook.nameKey("三體！") != SearchBook.nameKey("三體"))
     }
 
     @Test("Traditional and Simplified Chinese do not share a key")
     func traditionalAndSimplifiedDiffer() {
-        // Current behavior (audit §11.2); Phase 4 is expected to change this.
+        // 換源's key until 4d; 搜索 folds them since 4c-1 (`SearchWorkMergeTests`).
         #expect(SearchBook.nameKey("三体") != SearchBook.nameKey("三體"))
     }
 }
@@ -57,24 +59,26 @@ struct SearchAggregatorCharacterizationTests {
         #expect(results.first?.origins.count == 2)
     }
 
-    @Test("the first result to arrive fixes the merged row's author")
-    func firstArrivalFixesTheAuthor() async throws {
-        // Current behavior (audit §11.2); Phase 4 is expected to change this.
+    @Test("a result without an author is its own row, whichever arrives first")
+    func noAuthorIsItsOwnRow() async throws {
+        // Changed on purpose in unified search 4c-1 (maintainer's decision 1, design §7.2):
+        // the first arrival used to fix the merged row's author, so a no-author result
+        // that came first took every 劉慈欣 copy under an empty author. A title merges only
+        // when both sides name compatible authors.
         // Both books come from one source in one batch, so their order is deterministic.
         let source = makeSource("first-author")
         let withoutAuthorFirst = try await search("三體", [
             (source, [book("三體", "", in: source, path: "1"), book("三體", "劉慈欣", in: source, path: "2")]),
         ])
-        #expect(withoutAuthorFirst.count == 1)
-        #expect(withoutAuthorFirst.first?.author == "")
-        #expect(withoutAuthorFirst.first?.origins.count == 2)
+        #expect(withoutAuthorFirst.count == 2)
+        #expect(Set(withoutAuthorFirst.map(\.author)) == ["", "劉慈欣"])
+        #expect(withoutAuthorFirst.allSatisfy { $0.origins.count == 1 })
 
         let other = makeSource("first-author-reversed")
         let withAuthorFirst = try await search("三體", [
             (other, [book("三體", "劉慈欣", in: other, path: "1"), book("三體", "", in: other, path: "2")]),
         ])
-        #expect(withAuthorFirst.count == 1)
-        #expect(withAuthorFirst.first?.author == "劉慈欣")
+        #expect(withAuthorFirst.count == 2)
     }
 
     @Test("authors that contain one another merge; different authors stay apart")
@@ -113,13 +117,14 @@ struct SearchAggregatorCharacterizationTests {
     func tieBreaks() async throws {
         let a = makeSource("ties-a")
         let b = makeSource("ties-b")
+        // Authors named, so the two 三體二 merge under the work rule (4c-1).
         let results = try await search("三體", [
             (a, [
-                book("三體一", "", in: a),
-                book("三體前傳", "", in: a),
-                book("三體二", "", in: a),
+                book("三體一", "劉慈欣", in: a),
+                book("三體前傳", "劉慈欣", in: a),
+                book("三體二", "劉慈欣", in: a),
             ]),
-            (b, [book("三體二", "", in: b)]),
+            (b, [book("三體二", "劉慈欣", in: b)]),
         ])
 
         // All three start with the query (same score). 三體前傳 is longer; of the two
@@ -140,13 +145,69 @@ struct SearchAggregatorCharacterizationTests {
         #expect(results.map(\.name) == ["三體"])
     }
 
+    // MARK: - Work rule (unified search 4c-1)
+
+    @Test("搜索 merges by the work key: Traditional, Simplified and punctuation fold together")
+    func workKeyFolds() async throws {
+        let a = makeSource("work-a")
+        let b = makeSource("work-b")
+        let c = makeSource("work-c")
+        let results = try await search("三體", [
+            (a, [book("三體", "劉慈欣", in: a)]),
+            (b, [book("三体", "刘慈欣", in: b)]),
+            (c, [book("三體！", "劉慈欣", in: c)]),
+        ])
+        #expect(results.count == 1)
+        #expect(results.first?.origins.count == 3)
+    }
+
+    @Test("a Simplified query finds and ranks a Traditional title exactly")
+    func simplifiedQueryFindsTraditional() async throws {
+        let source = makeSource("work-query")
+        let results = try await search("三体", [
+            (source, [book("三體II", "劉慈欣", in: source, path: "2"), book("三體", "劉慈欣", in: source, path: "1")]),
+        ])
+        #expect(results.map(\.name) == ["三體", "三體II"])
+    }
+
+    @Test("the same title and author in another kind stays apart")
+    func contentKindKeepsApart() async throws {
+        let text = makeSource("work-text")
+        let audio = makeSource("work-audio", type: 1)
+        let results = try await search("三體", [
+            (text, [book("三體", "劉慈欣", in: text)]),
+            (audio, [book("三體", "劉慈欣", in: audio)]),
+        ])
+        #expect(results.count == 2)
+    }
+
+    @Test("換源 keeps its own rule until 4d: no fold, and an empty author still merges")
+    func changeSourceKeepsItsRule() async throws {
+        let a = makeSource("change-a")
+        let b = makeSource("change-b")
+        let folded = try await search("三體", [
+            (a, [book("三體", "劉慈欣", in: a)]),
+            (b, [book("三体", "劉慈欣", in: b)]),
+        ], origin: .changeSource)
+        #expect(folded.count == 1, "三体 is unrelated to 三體 under 換源's key: dropped")
+        #expect(folded.first?.name == "三體")
+
+        let c = makeSource("change-c")
+        let noAuthor = try await search("三體", [
+            (c, [book("三體", "", in: c, path: "1"), book("三體", "劉慈欣", in: c, path: "2")]),
+        ], origin: .changeSource)
+        #expect(noAuthor.count == 1)
+        #expect(noAuthor.first?.origins.count == 2)
+    }
+
     // MARK: - Helpers
 
     /// Stores each source's books in the search cache, runs one search over all the
     /// sources, waits for it to finish, and returns the published rows.
     private func search(
         _ query: String,
-        _ batches: [(BookSource, [OnlineBook])]
+        _ batches: [(BookSource, [OnlineBook])],
+        origin: SearchOrigin = .searchTab
     ) async throws -> [SearchBook] {
         let settings = GlobalSettings.shared
         let savedCacheDays = settings.searchCacheDays
@@ -166,14 +227,15 @@ struct SearchAggregatorCharacterizationTests {
             settings.searchCacheDays = savedCacheDays
         }
 
-        aggregator.search(query: query, sources: batches.map(\.0))
+        aggregator.search(query: query, sources: batches.map(\.0), origin: origin)
         try await waitUntil { !aggregator.isSearching }
         #expect(aggregator.progress.completed == batches.count)
         return aggregator.results
     }
 
-    private func makeSource(_ name: String) -> BookSource {
+    private func makeSource(_ name: String, type: Int = 0) -> BookSource {
         var source = BookSource()
+        source.bookSourceType = type
         source.bookSourceName = "Phase 0 \(name)"
         source.bookSourceUrl = "https://phase0-search.test/\(name)"
         source.searchUrl = "https://phase0-search.test/\(name)/search?q={{key}}"

@@ -23,6 +23,21 @@ struct PreparedSearchOrigin: Sendable {
 struct PreparedSearchResult: Sendable {
     let book: OnlineBook
     let preparedOrigin: PreparedSearchOrigin
+    /// 搜索's work keys; nil for a search that keeps 換源's rule (`SearchMergeRule`).
+    var workKeys: SearchWorkKeys? = nil
+}
+
+/// A book's title and author as 搜索 compares them (unified search 4c-1): `WorkMatchKey`'s
+/// keys, folded off the main actor with the rest of the row. The fold runs ICU's
+/// Traditional-Simplified transform, too costly for the main actor at aggregate-source volume.
+struct SearchWorkKeys: Hashable, Sendable {
+    let title: String
+    let author: String
+
+    init(name: String, author: String) {
+        title = WorkMatchKey.title(name)
+        self.author = WorkMatchKey.author(author)
+    }
 }
 
 /// Stable stack-frame boundaries for watchdog `.ips` reports.
@@ -120,7 +135,8 @@ enum SearchResultPresentationBuilder {
     @inline(never)
     static func prepareBatch(
         _ books: [OnlineBook],
-        source: BookSource?
+        source: BookSource?,
+        foldsWorkKeys: Bool = false
     ) async -> [PreparedSearchResult] {
         guard !books.isEmpty else { return [] }
 
@@ -130,7 +146,7 @@ enum SearchResultPresentationBuilder {
             type: source?.bookSourceType
         )
         let worker = Task.detached(priority: .userInitiated) {
-            prepareBatchSynchronously(books, source: snapshot)
+            prepareBatchSynchronously(books, source: snapshot, foldsWorkKeys: foldsWorkKeys)
         }
         return await withTaskCancellationHandler {
             await worker.value
@@ -142,7 +158,8 @@ enum SearchResultPresentationBuilder {
     @inline(never)
     private static func prepareBatchSynchronously(
         _ books: [OnlineBook],
-        source: SourceSnapshot
+        source: SourceSnapshot,
+        foldsWorkKeys: Bool
     ) -> [PreparedSearchResult] {
         assert(
             !Thread.isMainThread,
@@ -217,14 +234,21 @@ enum SearchResultPresentationBuilder {
             return values
         }
 
-        return zip(booksWithKinds, zip(origins, presentations)).map { element in
+        let workKeys: [SearchWorkKeys]? = foldsWorkKeys
+            ? SourcePerfTrace.span("search.presentation.workKeys", detail, thresholdMs: 4) {
+                booksWithKinds.map { SearchWorkKeys(name: $0.name, author: $0.author) }
+            }
+            : nil
+
+        return zip(booksWithKinds, zip(origins, presentations)).enumerated().map { index, element in
             let (book, prepared) = element
             return PreparedSearchResult(
                 book: book,
                 preparedOrigin: PreparedSearchOrigin(
                     origin: prepared.0,
                     presentation: prepared.1
-                )
+                ),
+                workKeys: workKeys?[index]
             )
         }
     }

@@ -54,6 +54,10 @@ final class SearchBook: Identifiable {
     /// on the main actor during a search.
     let normalizedName: String
 
+    /// 搜索's keys for the row (`SearchMergeRule.work`), from the book that made it; nil
+    /// under 換源's rule.
+    let workKeys: SearchWorkKeys?
+
     /// Snapshots are index-aligned with `origins`. Production search batches build
     /// them off the main actor before constructing or mutating a `SearchBook`.
     private var originPresentations: [SearchOriginPresentation]
@@ -228,6 +232,7 @@ final class SearchBook: Identifiable {
         self.id = id
         self.name = name
         self.normalizedName = Self.normalize(name)
+        self.workKeys = nil
         self.author = author
         self.origins = origins
         self.originPresentations = preparedOrigins.map(\.presentation)
@@ -241,6 +246,7 @@ final class SearchBook: Identifiable {
         id: UUID = UUID(),
         name: String,
         author: String,
+        workKeys: SearchWorkKeys? = nil,
         preparedOrigins: [PreparedSearchOrigin]
     ) {
         let origins = preparedOrigins.map(\.origin)
@@ -249,6 +255,7 @@ final class SearchBook: Identifiable {
         self.id = id
         self.name = name
         self.normalizedName = Self.normalize(name)
+        self.workKeys = workKeys
         self.author = author
         self.origins = origins
         self.originPresentations = presentations
@@ -283,6 +290,7 @@ final class SearchBook: Identifiable {
             id: id,
             name: name,
             author: author,
+            workKeys: workKeys,
             origins: origins,
             originPresentations: originPresentations,
             rowPresentation: rowPresentation
@@ -293,6 +301,7 @@ final class SearchBook: Identifiable {
         id: UUID,
         name: String,
         author: String,
+        workKeys: SearchWorkKeys?,
         origins: [BookOrigin],
         originPresentations: [SearchOriginPresentation],
         rowPresentation: RowPresentation
@@ -300,6 +309,7 @@ final class SearchBook: Identifiable {
         self.id = id
         self.name = name
         self.normalizedName = Self.normalize(name)
+        self.workKeys = workKeys
         self.author = author
         self.origins = origins
         self.originPresentations = originPresentations
@@ -368,6 +378,21 @@ final class SearchBook: Identifiable {
 enum SearchOrigin: String, Sendable {
     case searchTab
     case changeSource
+}
+
+/// How one search tells its books apart.
+enum SearchMergeRule: Sendable {
+    /// 搜索 (unified search 4c-1, maintainer's decision 1): `WorkMatchKey` titles, so
+    /// 三體／三体／三體！ are one row; a title merges only when both sides name compatible
+    /// authors (a result without one is its own row) and the content kind is the same.
+    case work
+    /// 換源 and 尋找可用來源, until 4d (asked first): `SearchBook.nameKey`, and an empty
+    /// author merges with any.
+    case changeSource
+
+    init(_ origin: SearchOrigin) {
+        self = origin == .searchTab ? .work : .changeSource
+    }
 }
 
 @MainActor
@@ -466,6 +491,8 @@ class SearchAggregator: ObservableObject {
     private var allSources: [BookSource] = []
     private var completedSourceIds: Set<UUID> = []
     private var currentQuery = ""
+    /// The current search's rule: 搜索's work rule, or 換源's (set per search).
+    private var mergeRule = SearchMergeRule.work
     private var autoPausePolicy = SearchAutoPausePolicy(count: 0)
 
     /// Sources declaring `coverDecodeJs`, keyed by id — merged results register
@@ -560,6 +587,7 @@ class SearchAggregator: ObservableObject {
         isPaused = false
 
         currentQuery = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        mergeRule = SearchMergeRule(origin)
         allSources = activeSources
         coverDecodeSourcesById = Dictionary(
             uniqueKeysWithValues: activeSources
@@ -894,7 +922,7 @@ class SearchAggregator: ObservableObject {
         guard policy.isEnabled else { return false }
         // Normalize the query the same way `sortResults` does, otherwise an exact
         // title (in a different case/width) is scored as fuzzy and undercounts.
-        let normalizedQuery = Self.normalizedSearchQuery(query)
+        let normalizedQuery = queryKey(query)
         var exactCount = 0
         var fuzzyCount = 0
         // Count source hits (origins), not deduplicated titles. A single-title
@@ -903,7 +931,7 @@ class SearchAggregator: ObservableObject {
         // why auto-pause appeared to do nothing ("自動暫停不生效").
         for result in internalResults {
             let hits = result.origins.count
-            if matchScore(name: result.name, query: normalizedQuery) == 3 {
+            if Self.matchScore(normalizedName: rowKey(result), query: normalizedQuery) == 3 {
                 exactCount += hits
             } else {
                 fuzzyCount += hits
@@ -933,7 +961,8 @@ class SearchAggregator: ObservableObject {
     ) async -> Int {
         let preparedBooks = await SearchResultPresentationBuilder.prepareBatch(
             books,
-            source: source
+            source: source,
+            foldsWorkKeys: mergeRule == .work
         )
         let mainMergeStartedAt = ProcessInfo.processInfo.systemUptime
         defer {
@@ -944,7 +973,7 @@ class SearchAggregator: ObservableObject {
                 thresholdMs: 4
             )
         }
-        let q = Self.normalizedSearchQuery(query)
+        let q = queryKey(query)
         var mergedCount = 0
         var processed = 0
         for preparedBook in preparedBooks {
@@ -986,33 +1015,55 @@ class SearchAggregator: ObservableObject {
         let preparedOrigin = preparedBook.preparedOrigin
         let origin = preparedOrigin.origin
 
-        // Filter out results completely unrelated to the search keyword.
-        let normalizedName = Self.normalizedSearchText(book.name)
-        let normalizedAuthor = Self.normalizedSearchText(book.author)
-
-        let isRelated = !q.isEmpty && (
-            normalizedName.contains(q) ||
-            normalizedAuthor.contains(q) ||
-            q.contains(normalizedName)
-        )
-        guard isRelated else { return false }
+        // Filter out results completely unrelated to the search keyword, then find the row
+        // this book belongs to under the search's rule.
+        let titleKey: String
+        let existingIndex: Int?
+        switch mergeRule {
+        case .work:
+            guard let keys = preparedBook.workKeys else {
+                // `mergeBatch` asks for the keys under this rule; a book without them is a
+                // bug in that path, not a book to show.
+                assertionFailure("work-rule merge without work keys")
+                AppLogger.error("⟐ search merge without work keys", context: ["source": book.sourceName])
+                return false
+            }
+            let isRelated = !q.isEmpty && (keys.title.contains(q) || keys.author.contains(q) || q.contains(keys.title))
+            guard isRelated else { return false }
+            titleKey = keys.title
+            let kind = preparedOrigin.presentation.contentKind
+            // Same work title, both authors named and compatible, same kind (design §7.2).
+            existingIndex = deduplicationMap[keys.title]?.first { idx in
+                idx < internalResults.count
+                    && WorkMatchKey.authorKeysCompatible([keys.author], [internalResults[idx].workKeys?.author ?? ""])
+                    && internalResults[idx].inferredContentKind() == kind
+            }
+        case .changeSource:
+            let normalizedName = Self.normalizedSearchText(book.name)
+            let normalizedAuthor = Self.normalizedSearchText(book.author)
+            let isRelated = !q.isEmpty && (
+                normalizedName.contains(q) ||
+                normalizedAuthor.contains(q) ||
+                q.contains(normalizedName)
+            )
+            guard isRelated else { return false }
+            // Bucket by title, then merge into the first same-title result whose
+            // author is compatible (equal, or one side empty). Same title with a
+            // clearly different author stays a separate book.
+            titleKey = SearchBook.nameKey(book.name)
+            existingIndex = deduplicationMap[titleKey]?.first { idx in
+                idx < internalResults.count
+                    && SearchBook.isLikelySameBook(
+                        name: book.name, author: book.author,
+                        name: internalResults[idx].name, author: internalResults[idx].author)
+            }
+        }
 
         if !origin.coverUrl.isEmpty {
             CoverDecodeService.shared.registerIfNeeded(
                 coverUrl: origin.coverUrl,
                 source: coverDecodeSourcesById[book.sourceId]
             )
-        }
-
-        // Bucket by title, then merge into the first same-title result whose
-        // author is compatible (equal, or one side empty). Same title with a
-        // clearly different author stays a separate book.
-        let nameKey = SearchBook.nameKey(book.name)
-        let existingIndex = deduplicationMap[nameKey]?.first { idx in
-            idx < internalResults.count
-                && SearchBook.isLikelySameBook(
-                    name: book.name, author: book.author,
-                    name: internalResults[idx].name, author: internalResults[idx].author)
         }
 
         if let existingIndex {
@@ -1028,9 +1079,10 @@ class SearchAggregator: ObservableObject {
             let searchBook = SearchBook(
                 name: book.name,
                 author: book.author,
+                workKeys: preparedBook.workKeys,
                 preparedOrigins: [preparedOrigin]
             )
-            deduplicationMap[nameKey, default: []].append(internalResults.count)
+            deduplicationMap[titleKey, default: []].append(internalResults.count)
             internalResults.append(searchBook)
         }
         return true
@@ -1051,7 +1103,7 @@ class SearchAggregator: ObservableObject {
     // MARK: - Three-tier Sorting
 
     private func sortResults(query: String) {
-        let q = Self.normalizedSearchText(query)
+        let q = mergeRule == .work ? queryKey(query) : Self.normalizedSearchText(query)
 
         // Decorate–sort–undecorate. A comparator body runs O(n log n) times, so
         // anything derived inside it is recomputed tens of thousands of times per
@@ -1059,7 +1111,7 @@ class SearchAggregator: ObservableObject {
         // comparison. Each input is now derived exactly once per book.
         var decorated = internalResults.map { book in
             (
-                score: Self.matchScore(normalizedName: book.normalizedName, query: q),
+                score: Self.matchScore(normalizedName: rowKey(book), query: q),
                 nameLength: book.name.count,
                 originCount: book.origins.count,
                 book: book
@@ -1077,12 +1129,23 @@ class SearchAggregator: ObservableObject {
         rebuildDeduplicationMap()
     }
 
-    /// Match score: 3 = name exactly equals keyword, 2 = name starts with keyword,
-    /// 1 = name contains keyword, 0 = no match.
-    /// Simplified-Chinese sources search simplified Chinese; for traditional Chinese
-    /// search, import traditional-Chinese sources.
-    private func matchScore(name: String, query: String) -> Int {
-        Self.matchScore(normalizedName: Self.normalizedSearchText(name), query: query)
+    /// The query as the search's rule compares titles: folded by `WorkMatchKey` for 搜索, so
+    /// a Simplified query finds and ranks a Traditional title; 換源's normalization otherwise.
+    private func queryKey(_ query: String) -> String {
+        switch mergeRule {
+        case .work: WorkMatchKey.title(LegadoSearchKeyword.matchingTitle(from: query))
+        case .changeSource: Self.normalizedSearchQuery(query)
+        }
+    }
+
+    /// A row's title as the search's rule compares it; also its dedup bucket.
+    private func rowKey(_ book: SearchBook) -> String {
+        switch mergeRule {
+        // Never nil under the work rule: its rows are made only from books with keys
+        // (`mergeBook`); `normalizedName` only keeps the type total.
+        case .work: book.workKeys?.title ?? book.normalizedName
+        case .changeSource: book.normalizedName
+        }
     }
 
     /// - Parameter normalizedName: already run through the same normalization the
@@ -1101,9 +1164,9 @@ class SearchAggregator: ObservableObject {
     private func rebuildDeduplicationMap() {
         deduplicationMap.removeAll(keepingCapacity: true)
         for (index, book) in internalResults.enumerated() {
-            // `normalizedName` is `SearchBook.nameKey(book.name)` pre-computed —
-            // same key, without an ICU transform per entry per rebuild.
-            deduplicationMap[book.normalizedName, default: []].append(index)
+            // Keys pre-computed per row (`normalizedName` is `SearchBook.nameKey`, `workKeys`
+            // were folded off the main actor) — no ICU transform per entry per rebuild.
+            deduplicationMap[rowKey(book), default: []].append(index)
         }
     }
 }

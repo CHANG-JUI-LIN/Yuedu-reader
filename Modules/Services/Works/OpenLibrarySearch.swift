@@ -89,7 +89,8 @@ final class OpenLibrarySearch: SearchAnswering {
         let title = OPDSClient.plainMetadata(doc.title ?? "", limit: 200)
         guard !title.isEmpty else { return nil }
         let authors = (doc.author_name ?? []).prefix(5).map { OPDSClient.plainMetadata($0, limit: 100) }.filter { !$0.isEmpty }
-        let language = (doc.language?.count == 1 ? doc.language?.first : nil).flatMap(Self.languageCode(_:))
+        // MARC codes (`chi`, `jpn`) read as every other source's tags are.
+        let language = (doc.language?.count == 1 ? doc.language?.first : nil).flatMap { LanguageTag($0)?.identifier }
         var identifiers = Set<ExternalIdentifier>()
         if let workID = key.split(separator: "/").last.flatMap({ ExternalIdentifier.normalized(.openLibraryWork, String($0)) }) {
             identifiers.insert(workID)
@@ -109,24 +110,6 @@ final class OpenLibrarySearch: SearchAnswering {
         let summary = WorkSummary(title: title, authors: Array(authors), cover: cover, blurb: nil,
                                   language: language, contentKind: .text)
         return .item(record, summary, .bibliographic)
-    }
-
-    /// Open Library's MARC (ISO 639-2/B) codes as the two-letter ones the other sources use;
-    /// none for a language not listed here.
-    nonisolated static func languageCode(_ marc: String) -> String? {
-        switch marc.lowercased() {
-        case "chi", "zho": "zh"
-        case "jpn": "ja"
-        case "kor": "ko"
-        case "eng": "en"
-        case "fre", "fra": "fr"
-        case "ger", "deu": "de"
-        case "spa": "es"
-        case "ita": "it"
-        case "por": "pt"
-        case "rus": "ru"
-        default: nil
-        }
     }
 
     struct Response: Decodable, Sendable {
