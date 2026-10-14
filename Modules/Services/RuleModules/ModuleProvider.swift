@@ -23,9 +23,10 @@ final class ModuleProvider: CollectionBrowsing, HomeSectionProviding {
     var hosts: [String] { module.hosts }
     var rateLimit: String? { module.rateLimit }
 
-    /// Searched once 6g joins it to 搜索.
+    /// A module with a `search` is asked by 搜索 on submit (Phase 6g, `ModuleSearch`).
     func capabilities() async -> CollectionCapabilities {
-        CollectionCapabilities(search: .none, paginates: module.modules.contains { $0.paging != nil })
+        CollectionCapabilities(search: module.search == nil ? .none : .onSubmit,
+                               paginates: module.modules.contains { $0.paging != nil })
     }
 
     /// The root lists the entries; an entry's location is its page.
@@ -44,6 +45,13 @@ final class ModuleProvider: CollectionBrowsing, HomeSectionProviding {
             throw SourceFailure(kind: .unavailable, underlying: FetchError.invalidURL(entryID))
         }
         return try await page(of: entry, parameters: parameters, after: cursor)
+    }
+
+    /// The first page of the module's search for `keyword` (搜索, Phase 6g); nil when the
+    /// module has no search.
+    func search(_ keyword: String) async throws -> CollectionPage? {
+        guard let search = module.search else { return nil }
+        return try await page(of: search, parameters: [:], after: nil, keyword: keyword)
     }
 
     // MARK: - Home
@@ -75,10 +83,11 @@ final class ModuleProvider: CollectionBrowsing, HomeSectionProviding {
     }
 
     private func page(of entry: RuleModule.Entry, parameters: [String: String],
-                      after cursor: CollectionCursor?) async throws -> CollectionPage {
+                      after cursor: CollectionCursor?, keyword: String? = nil) async throws -> CollectionPage {
         let position = cursor.flatMap { Int($0.value) } ?? entry.firstPosition
         do {
-            let page = try await client.page(of: entry, in: module, values: entry.values(parameters, position: position))
+            let page = try await client.page(of: entry, in: module,
+                                             values: entry.values(parameters, position: position, keyword: keyword))
             let instance = instance
             let hasURLRule = !(entry.list.url ?? "").trimmingCharacters(in: .whitespaces).isEmpty
             let hosts = Set(module.hosts.map { $0.lowercased() })

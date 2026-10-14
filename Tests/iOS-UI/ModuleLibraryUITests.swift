@@ -7,7 +7,10 @@ import XCTest
 /// `python3 -m http.server 18766 --bind 127.0.0.1` in a folder holding
 /// - `uitest-module.json`: id `uitest.module`, title 測試模組, hosts `["localhost"]`, one list
 ///   `new` (新書) requesting `http://localhost:18766/new.html` with rules `li` / `h3@text`;
-/// - `new.html`: `<ul><li><h3>模組第一本</h3></li><li><h3>模組第二本</h3></li></ul>`.
+///   Its `search` requests `http://localhost:18766/s.html?k={{keyword}}` with rules `li` /
+///   `h3@text` / `span@text` (6g);
+/// - `new.html`: `<ul><li><h3>模組第一本</h3></li><li><h3>模組第二本</h3></li></ul>`;
+/// - `s.html`: `<ul><li><h3>模組搜尋結果</h3><span>測試作者</span></li></ul>`, whatever the query.
 ///
 /// The app asks `localhost`: `safeURL` refuses the `127.0.0.1` literal.
 final class ModuleLibraryUITests: XCTestCase {
@@ -226,5 +229,27 @@ final class ModuleLibraryUITests: XCTestCase {
         XCTAssertTrue(app.buttons.matching(book).firstMatch.waitForExistence(timeout: 10), app.debugDescription)
         XCTAssertFalse(app.buttons["module.list.more"].exists, "a list with no paging has one page")
         attach(app, "module-list-page")
+    }
+
+    /// 6g: a module with a search answers 搜尋 on submit, its book a data-only row.
+    @MainActor
+    func testModuleAnswersSearch() {
+        let sources = FileManager.default.temporaryDirectory.appendingPathComponent("ModuleSearchUITests-\(UUID().uuidString)")
+        // No source and Open Library off: the module is the only place a submit asks.
+        let app = launch(extra: ["-yd_search_open_library", "NO", "-book-source-store-dir", sources.path])
+        addFixtureModule(app)
+
+        app.tabBars.buttons["搜尋"].firstMatch.tap()
+        let field = app.searchFields.firstMatch
+        XCTAssertTrue(field.waitForExistence(timeout: 10), app.debugDescription)
+        field.tap()
+        // Latin letters: typing Chinese through XCUITest submits early on the iOS 27 simulator.
+        field.typeText("Module")
+        let row = app.descendants(matching: .any).matching(NSPredicate(format: "label CONTAINS %@", "模組搜尋結果")).firstMatch
+        XCTAssertFalse(row.waitForExistence(timeout: 3), "nothing is asked as you type")
+        field.typeText("\n")
+        XCTAssertTrue(row.waitForExistence(timeout: 15), app.debugDescription)
+        XCTAssertTrue(row.label.contains("只有資料"), row.label)
+        attach(app, "module-search-result")
     }
 }

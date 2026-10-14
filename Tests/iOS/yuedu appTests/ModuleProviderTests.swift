@@ -255,6 +255,8 @@ final class ModuleStub: URLProtocol, @unchecked Sendable {
         case json(String)
         case status(Int)
         case redirect(String)
+        /// Never answers: a site that hangs.
+        case hang
     }
 
     nonisolated(unsafe) private static var replies: [String: Reply] = [:]
@@ -293,6 +295,7 @@ final class ModuleStub: URLProtocol, @unchecked Sendable {
             let response = HTTPURLResponse(url: url, statusCode: 302, httpVersion: "HTTP/1.1", headerFields: ["Location": location])!
             client?.urlProtocol(self, wasRedirectedTo: URLRequest(url: URL(string: location)!), redirectResponse: response)
             finish(302, ["Location": location], Data())
+        case .hang: break
         case nil: finish(404, [:], Data())
         }
     }
