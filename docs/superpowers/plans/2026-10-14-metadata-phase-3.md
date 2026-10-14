@@ -209,3 +209,22 @@ Branch `metadata/3d-schedule`:
   - Strings are in all five languages.
 - **`OpenLibrary.key`** (`bibliographic/openlibrary`) and `FilledMetadata.providerName`.
 - **Tests:** `FilledMetadataTests` (8), `CopyMetadataTests` and `CoverImagePipelineTests` unchanged; 38/38 on iOS 27.
+
+### 3b (branch `metadata/3b-book-sources`)
+
+- **`BookSourceFillProvider`** (B):
+  - **Which copies:** local and remote-library copies with a title and an author, missing a description or categories. A book-source copy is never looked up.
+  - **Search:** the enabled sources whose search rule reads `intro` or `kind`, the first 40 in the reader's order (`sourcesPerCopy`), at 搜索並發數, through `BookOriginSearchService.stream` with `requiresAuthor` (title equal, both authors present and compatible). It stops at the first match carrying a description.
+  - **Result:**
+    - the first match with a description gives it, sanitized by `OnlineBookDetailPresentationPolicy.sanitizeIntro`;
+    - it also gives its categories (`kind` split, without numbers or long phrases, at most 5);
+    - without a description, the first match with categories gives those.
+  - **Ledger:** one entry under `bookSource/*` per copy. Each value keeps the source that gave it (`MetadataFillResult.place`), and `MetadataFillRunner.ledgerKey(forPlace:)` maps it back.
+  - **Outcomes:** no source answering is `failed`; sources answering without the book is `empty`. A ⏱ `metadata.fill.sources` span is recorded per copy.
+- **Bug fixed in the shared fan-out** (`BookOriginSearchService.stream`, also used by 換源 and 封面搜索): a source that failed or timed out never handed its slot to the next source. With every slot failing, the fan-out ended early and the remaining sources were never asked. Test: `failedSourceKeepsTheFanOutGoing`.
+- **Also added to `stream`:**
+  - `onSourceAnswered`;
+  - `requiresAuthor`;
+  - `shouldStop` asked again after a batch is handed over. Existing callers decide by count only, so their behavior does not change.
+- **Not measured yet:** the 40-source cap and its timing are measured with the scheduler in 3d, on a shelf with real sources.
+- **Tests:** `BookSourceFillProviderTests` (6), `BookOriginSearchServiceTests` (+1), `MetadataFillRunnerTests`, `FilledMetadataTests`; 34/34 on iOS 27.

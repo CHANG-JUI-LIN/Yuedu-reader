@@ -108,6 +108,30 @@ struct BookOriginSearchServiceTests {
         #expect(batches.map(\.count) == [2, 1])
     }
 
+    @Test("a source that fails gives its slot to the next source, and only answers are counted")
+    func failedSourceKeepsTheFanOutGoing() async {
+        // Until Phase 3b a failed source's slot was dropped: with one slot, the fan-out ended
+        // at the first failure and the remaining sources were never asked.
+        let failing = makeSource("slot-failing")
+        let answering = makeSource("slot-answering")
+        let fetcher = ScriptedOriginFetcher([
+            failing.bookSourceUrl: .failure(URLError(.badServerResponse)),
+            answering.bookSourceUrl: .success([book("三體", "劉慈欣", in: answering)]),
+        ])
+        var answered = 0
+        var origins: [BookOrigin] = []
+
+        await BookOriginSearchService.stream(
+            title: "三體", author: "劉慈欣", sources: [failing, answering], concurrency: 1, fetcher: fetcher,
+            onSourceAnswered: { answered += 1 },
+            onBatch: { origins.append(contentsOf: $0) }
+        )
+
+        #expect(fetcher.queriedSourceURLs == [failing.bookSourceUrl, answering.bookSourceUrl])
+        #expect(origins.map(\.sourceId) == [answering.id])
+        #expect(answered == 1)
+    }
+
     @Test("a source that throws answers nil, the same as one that times out")
     func thrownErrorLooksLikeATimeout() async {
         // Current behavior: `searchSourceWithTimeout` discards the error with `try?`, so

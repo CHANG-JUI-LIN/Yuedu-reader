@@ -25,6 +25,8 @@ struct MetadataFillQuery: Hashable, Sendable {
     var title: String
     var authors: [String]
     var identifiers: [ExternalIdentifier]
+    /// The place the copy came from (`SourceRecord.key.instance`).
+    var copySource: SourceInstanceKey
     /// The fields to look for; a provider may ignore the rest.
     var missing: Set<MetadataField>
 }
@@ -36,6 +38,9 @@ struct MetadataFillResult: Hashable, Sendable {
     var identifiers: [ExternalIdentifier] = []
     /// The provider's record, kept on each value written.
     var sourceItem: SourceItemKey?
+    /// The place that gave the values, when the provider asks many (each book source is its
+    /// own place); nil means the provider itself.
+    var place: SourceInstanceKey?
 }
 
 @MainActor
@@ -139,6 +144,12 @@ final class MetadataFillRunner {
         var failed = 0
     }
 
+    /// The ledger key of the provider that wrote a value from `place`: every book source
+    /// is asked as one (`BookSourceFillProvider.allSourcesKey`).
+    nonisolated static func ledgerKey(forPlace place: SourceInstanceKey) -> SourceInstanceKey {
+        place.type == .bookSource ? BookSourceFillProvider.allSourcesKey : place
+    }
+
     private let providers: [any MetadataFillProvider]
     private let ledger: MetadataFillLedger
     private let write: @MainActor (ImportedMetadata) -> Void
@@ -181,7 +192,7 @@ final class MetadataFillRunner {
             if provider.grade == .b { wanted.remove(.cover) }
             guard !wanted.isEmpty else { continue }
             let query = MetadataFillQuery(copyID: copy.copyID, title: copy.title, authors: copy.authors,
-                                          identifiers: copy.identifiers, missing: wanted)
+                                          identifiers: copy.identifiers, copySource: copy.copySource, missing: wanted)
             guard provider.canLookUp(query) else { continue }
             if let entry = ledger.entry(copyID: copy.copyID, provider: provider.key),
                !entry.shouldAskAgain(inputs: copy.inputs, now: now()) { continue }
@@ -201,7 +212,8 @@ final class MetadataFillRunner {
             let values = result.values
                 .filter { wanted.contains($0.key) && !$0.value.isEmpty }
                 .sorted { $0.key.rawValue < $1.key.rawValue }
-                .map { MetadataValue(field: $0.key, value: $0.value, provider: provider.key, sourceItem: result.sourceItem, fetchedAt: at) }
+                .map { MetadataValue(field: $0.key, value: $0.value, provider: result.place ?? provider.key,
+                                     sourceItem: result.sourceItem, fetchedAt: at) }
             ledger.record(copyID: copy.copyID, provider: provider.key, outcome: values.isEmpty ? .empty : .found,
                           inputs: copy.inputs, at: at)
             guard !values.isEmpty else { continue }
