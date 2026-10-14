@@ -50,7 +50,7 @@ struct MetadataResolverTests {
         #expect(resolve(.title, copy: nil, values: values) == nil)
     }
 
-    @Test("field priority: the copy's file, then its source, then others; bibliographic only at A-level")
+    @Test("field priority: the copy's file, then its source, then others, then bibliographic databases")
     func fieldPriority() {
         let file = value(.intro, "檔案", .localLibrary, at: t0)
         let source = value(.intro, "來源", calibre, at: t1)
@@ -59,8 +59,8 @@ struct MetadataResolverTests {
         #expect(resolve(.intro, values: [bibliographic, other, source, file])?.value == .text("檔案"))
         #expect(resolve(.intro, values: [bibliographic, other, source])?.value == .text("來源"))
         #expect(resolve(.intro, values: [bibliographic, other])?.value == .text("其他"))
-        #expect(resolve(.intro, values: [bibliographic]) == nil, "not A-level")
-        #expect(resolve(.intro, values: [bibliographic], aLevel: true)?.provenance == .provider(openLibrary, sourceItem: nil, fetchedAt: t1))
+        // Only the filler writes a database's values, and only on an identifier match (Phase 3).
+        #expect(resolve(.intro, values: [bibliographic])?.provenance == .provider(openLibrary, sourceItem: nil, fetchedAt: t1))
     }
 
     @Test("within one place, the newest value wins")
@@ -73,8 +73,8 @@ struct MetadataResolverTests {
     @Test("a cover: the copy's own before any database")
     func cover() {
         let bibliographic = value(.cover, "https://covers.example/1.jpg", openLibrary)
-        #expect(resolve(.cover, copy: .text("local.jpg"), values: [bibliographic], aLevel: true)?.provenance == .copy)
-        #expect(resolve(.cover, copy: nil, values: [bibliographic], aLevel: true)?.value == .text("https://covers.example/1.jpg"))
+        #expect(resolve(.cover, copy: .text("local.jpg"), values: [bibliographic])?.provenance == .copy)
+        #expect(resolve(.cover, copy: nil, values: [bibliographic])?.value == .text("https://covers.example/1.jpg"))
     }
 
     @Test("decisions about another copy do not apply")
@@ -89,10 +89,10 @@ struct MetadataResolverTests {
 
     private func resolve(
         _ field: MetadataField, copy: MetadataPayload? = nil, values: [MetadataValue] = [],
-        decisions: [WorkDecision] = [], aLevel: Bool = false
+        decisions: [WorkDecision] = []
     ) -> MetadataResolver.Resolved? {
         MetadataResolver.resolve(field, anchor: anchor, copySource: calibre, copyValue: copy, values: values,
-                                 decisions: decisions, bibliographicIsALevel: aLevel)
+                                 decisions: decisions)
     }
 
     private func value(_ field: MetadataField, _ text: String, _ provider: SourceInstanceKey,
