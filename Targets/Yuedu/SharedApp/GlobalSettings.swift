@@ -1748,6 +1748,12 @@ class GlobalSettings {
     var searchCacheDays: Int {
         didSet { UserDefaults.standard.set(searchCacheDays, forKey: "yd_search_cache_days") }
     }
+    /// Unified library 3d: fill empty covers, descriptions and categories from Open Library
+    /// and the enabled book sources (`MetadataFillCoordinator`). On by default (maintainer,
+    /// 2026-10-14).
+    var autoFillBookMetadata: Bool {
+        didSet { UserDefaults.standard.set(autoFillBookMetadata, forKey: "yd_auto_fill_book_metadata") }
+    }
     /// 換源搜索時順便抓每個候選源的目錄（Legado `changeSourceLoadToc`）。Tapping a source
     /// whose TOC was captured this way switches without a network round trip. Off by default
     /// — same as Legado — because it turns one request per source into two.
@@ -2333,6 +2339,8 @@ class GlobalSettings {
             (UserDefaults.standard.object(forKey: "yd_search_auto_pause_count") as? Int) ?? 0
         searchCacheDays =
             (UserDefaults.standard.object(forKey: "yd_search_cache_days") as? Int) ?? 5
+        autoFillBookMetadata =
+            (UserDefaults.standard.object(forKey: "yd_auto_fill_book_metadata") as? Bool) ?? true
         changeSourceLoadToc =
             (UserDefaults.standard.object(forKey: "yd_change_source_load_toc") as? Bool) ?? false
         iCloudAutoSync =

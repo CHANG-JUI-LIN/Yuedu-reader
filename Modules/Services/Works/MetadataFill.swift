@@ -168,10 +168,12 @@ final class MetadataFillRunner {
     @discardableResult
     func fill(_ candidates: [MetadataFillCandidate], limit: Int? = nil) async -> Report {
         var report = Report()
-        let ordered = candidates.enumerated().sorted {
-            let (a, b) = (MetadataCompleteness.score(present: $0.element.present), MetadataCompleteness.score(present: $1.element.present))
-            return a != b ? a < b : $0.offset < $1.offset
-        }.map(\.element)
+        // Scored once each: `present` resolves every fillable field.
+        let scores: [Int] = candidates.map { MetadataCompleteness.score(present: $0.present) }
+        let order: [Int] = candidates.indices.sorted { (a: Int, b: Int) -> Bool in
+            scores[a] != scores[b] ? scores[a] < scores[b] : a < b
+        }
+        let ordered: [MetadataFillCandidate] = order.map { candidates[$0] }
         for copy in ordered {
             if Task.isCancelled { break }
             if let limit, report.asked >= limit { break }

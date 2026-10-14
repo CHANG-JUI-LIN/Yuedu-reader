@@ -5,6 +5,7 @@ struct NetworkSettingsView: View {
     /// 封面並發數, 探索設定's until 5d-1b; a network setting since decision 31, same key.
     @AppStorage(BookCoverLoader.downloadLimitKey) private var coverDownloadLimit = 0
     @Environment(\.dismiss) private var dismiss
+    @EnvironmentObject private var store: BookStore
 
     var body: some View {
         NavigationStack {
@@ -49,6 +50,15 @@ struct NetworkSettingsView: View {
                     .accessibilityIdentifier("network.coverDownloadLimit")
                 } footer: {
                     Text(localized("同時下載的封面上限，書架和書籍詳情的封面也算在內。數字越低捲動時越不容易發熱，但封面出現得慢一些。"))
+                        .dsSectionFooter()
+                }
+                .interfaceSectionSurface()
+                Section {
+                    Toggle(localized("自動補齊書籍資料"), isOn: $settings.autoFillBookMetadata)
+                        .accessibilityIdentifier("network.autoFillBookMetadata")
+                        .onChange(of: settings.autoFillBookMetadata) { store.metadataFill.conditionsChanged() }
+                } footer: {
+                    Text(localized("書名、作者與 ISBN 會送到 Open Library 與你啟用的來源配置，用來補上空白的封面、簡介與分類；只在 Wi-Fi 下進行。"))
                         .dsSectionFooter()
                 }
                 .interfaceSectionSurface()
@@ -104,4 +114,5 @@ struct NetworkSettingsView: View {
 
 #Preview {
     NetworkSettingsView()
+        .environmentObject(BookStore())
 }

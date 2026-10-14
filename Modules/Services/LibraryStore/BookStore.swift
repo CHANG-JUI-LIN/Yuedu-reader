@@ -254,6 +254,8 @@ class BookStore: ObservableObject, BookProvider {
     )
     /// Phase 3a-2: the covers the filler gave copies with none, for the shelf's cover slots.
     @MainActor lazy var filledCovers = FilledCoverIndex()
+    /// Phase 3d: when the filler runs. Idle until the app marks it active.
+    @MainActor lazy var metadataFill = MetadataFillCoordinator(store: self)
     /// Whether the last load read both the shelf and the reading records. Only then may a
     /// book missing from `records` be taken as gone, and its list removed.
     private var recordsLoadedCompletely = false
