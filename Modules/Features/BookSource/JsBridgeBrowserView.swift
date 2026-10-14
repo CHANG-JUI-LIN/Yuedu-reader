@@ -626,8 +626,9 @@ struct JsBridgeBrowserRepresentable: UIViewRepresentable {
         ) {
             // Intercept book-source import deep links so WKWebView doesn't try to
             // navigate to them (an unhandled custom scheme fails as "unsupported URL").
-            // We handle our own `yuedu://` scheme plus Legado's `legado://import/...`,
-            // which most 書源 update pages emit (e.g. the 更新書源 download button).
+            // We handle our own `yuedu://` scheme (來源配置 and module links) plus Legado's
+            // `legado://import/...`, which most 書源 update pages emit (e.g. the 更新書源
+            // download button).
             guard let url = navigationAction.request.url else {
                 decisionHandler(.allow)
                 return
@@ -826,6 +827,11 @@ struct JsBridgeBrowserRepresentable: UIViewRepresentable {
         }
 
         private func handleImportURL(_ url: URL, webView: WKWebView) {
+            // A module link (Phase 6e-2) opens the module import, over this page.
+            if case .module(let address) = BookSourceImportDeepLink.target(from: url) {
+                RuleModuleLinkPresenter.present(address)
+                return
+            }
             guard let sourceURL = Self.onlineImportSourceURL(from: url) else {
                 presentImportResult(localized("無效的來源配置導入連結"), in: webView)
                 return
