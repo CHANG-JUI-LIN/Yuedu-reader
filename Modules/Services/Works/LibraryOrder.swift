@@ -10,7 +10,7 @@ enum LibraryOrder {
     static func isLibrary(_ key: SourceInstanceKey) -> Bool {
         switch key.type {
         case .opds, .calibre, .webDAV, .gutenberg, .aozora: true
-        case .library, .bibliographic, .bookSource: false
+        case .library, .bibliographic, .bookSource, .module: false
         }
     }
 

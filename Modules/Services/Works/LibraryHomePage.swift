@@ -21,7 +21,7 @@ enum LibraryHomePage {
         case .gutenberg:
             bindings = GutenbergShelf.shelves(languages: languages).map { .gutenbergShelf(id: $0.id) }
                 + HomeSectionBinding.gutenbergCollections
-        case .opds, .calibre, .webDAV, .bookSource, .library, .bibliographic:
+        case .opds, .calibre, .webDAV, .bookSource, .library, .bibliographic, .module:
             return nil
         }
         // The library's own content only: a shelf copy opened from 繼續閱讀 still shows only itself

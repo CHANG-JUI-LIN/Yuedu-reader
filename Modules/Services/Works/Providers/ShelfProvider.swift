@@ -298,7 +298,7 @@ final class ShelfProvider: CollectionBrowsing {
                     WorkDetailRoute(.gutenberg(GutenbergBook(id: number, title: copy.record.title,
                                                              author: copy.record.authors.first ?? "")))
                 }
-            case .opds, .calibre, .webDAV, .bookSource, .library, .bibliographic:
+            case .opds, .calibre, .webDAV, .bookSource, .library, .bibliographic, .module:
                 // A remote library's item is listed through its connection's index or feed.
                 origin = nil
             }

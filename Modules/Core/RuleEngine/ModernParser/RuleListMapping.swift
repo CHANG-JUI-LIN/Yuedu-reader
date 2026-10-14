@@ -11,10 +11,12 @@ struct RuleListFields: Sendable {
     var wordCount: String
     var lastChapter: String
     var kind: String
+    /// A module's (6d); 來源配置 have no language rule.
+    var language: String = ""
 }
 
 /// One list item as its rules read it.
-struct RuleListItem: Equatable, Sendable {
+struct RuleListItem: Codable, Equatable, Sendable {
     var name: String
     var author: String
     var bookUrl: String
@@ -24,6 +26,7 @@ struct RuleListItem: Equatable, Sendable {
     var lastChapter: String
     /// Every value of the kind rule, joined with `,` as Legado's `getStringList` result is.
     var kind: String
+    var language: String = ""
 }
 
 enum RuleListMapping {
@@ -62,7 +65,8 @@ enum RuleListMapping {
                 // Android Legado parses `kind` with getStringList and joins the values. Besides
                 // keeping several categories, this leaves the intermediate `result` a mutable
                 // List for trailing JS such as `result.add(...)`.
-                kind: engine.getStringList(ruleStr: fields.kind).joined(separator: ",")
+                kind: engine.getStringList(ruleStr: fields.kind).joined(separator: ","),
+                language: fields.language.isEmpty ? "" : engine.getString(ruleStr: fields.language)
             ))
         }
         return items

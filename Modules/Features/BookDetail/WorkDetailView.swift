@@ -791,7 +791,7 @@ struct WorkDetailView: View {
         case .bookSource:
             copy?.bookSourceId.flatMap { BookSourceStore.shared.source(id: $0)?.bookSourceName }
                 .flatMap { $0.isEmpty ? nil : $0 } ?? localized("書架")
-        case .library, .bibliographic: localized("書架")
+        case .library, .bibliographic, .module: localized("書架")
         }
     }
 

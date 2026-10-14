@@ -19,7 +19,8 @@ enum HomeContentOwner: Hashable, Sendable {
 }
 
 extension HomeSectionBinding {
-    /// Nil for 我的書庫 and a later build's binding, which the form does not offer.
+    /// Nil for 我的書庫 and a later build's binding, which the form does not offer, and for a
+    /// module's list until 選擇內容來源 lists modules (Phase 6f).
     var contentOwner: HomeContentOwner? {
         switch self {
         case .continueReading, .latest, .related, .nextInSeries, .subscriptionArticles, .forYou: .appData
@@ -27,7 +28,7 @@ extension HomeSectionBinding {
         case .gutenbergCollection, .gutenbergLists, .gutenbergFeed, .gutenbergShelf: .gutenberg
         case .aozoraNew, .aozoraIndex: .aozora
         case .sourceCategories(let references): references.first.map { .bookSource(url: $0.sourceURL) }
-        case .myLibrary, .unknown: nil
+        case .myLibrary, .module, .unknown: nil
         }
     }
 

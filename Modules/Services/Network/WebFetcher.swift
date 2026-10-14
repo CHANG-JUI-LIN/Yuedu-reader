@@ -92,13 +92,17 @@ actor WebFetcher {
     /// caller: a non-2xx response comes back instead of being thrown. A source's
     /// `loginCheckJs` reads that response — its login wall, its Cloudflare page — before
     /// anything decides it failed (`BookSourceFetcher.fetchStageHTML`).
+    ///
+    /// - Parameter redirect: asked before each redirect is followed. A refused redirect is not
+    ///   sent: its 3xx response comes back as the answer. Nil follows every redirect.
     nonisolated func fetchPage(
         url: URL,
         method: String,
         body: String?,
         headers: [String: String],
         baseURL: String,
-        bodyCharset: String? = nil
+        bodyCharset: String? = nil,
+        redirect: (@Sendable (URL) -> Bool)? = nil
     ) async throws -> FetchedPage {
         let request = await buildRequest(
             url: url, method: method, body: body,
@@ -122,7 +126,10 @@ actor WebFetcher {
 
         do {
             let (data, response) = try await PerHostSemaphore.shared.withLock(host: host) {
-                try await self.session.data(for: request)
+                if let redirect {
+                    return try await self.session.data(for: request, delegate: RedirectGate(allows: redirect))
+                }
+                return try await self.session.data(for: request)
             }
             let latencyMs = Int((CFAbsoluteTimeGetCurrent() - fetchStart) * 1000)
             return FetchedPage(request: request, data: data, response: response, latencyMs: latencyMs)
@@ -226,5 +233,20 @@ actor WebFetcher {
         let cookies = session.configuration.httpCookieStorage?.cookies(for: url) ?? HTTPCookieStorage.shared.cookies(for: url) ?? []
         guard !cookies.isEmpty else { return nil }
         return HTTPCookie.requestHeaderFields(with: cookies)["Cookie"]
+    }
+}
+
+/// Asks before a redirect is followed (`WebFetcher.fetchPage(redirect:)`).
+private final class RedirectGate: NSObject, URLSessionTaskDelegate, Sendable {
+    let allows: @Sendable (URL) -> Bool
+
+    init(allows: @escaping @Sendable (URL) -> Bool) {
+        self.allows = allows
+    }
+
+    func urlSession(_ session: URLSession, task: URLSessionTask, willPerformHTTPRedirection response: HTTPURLResponse,
+                    newRequest request: URLRequest) async -> URLRequest? {
+        guard let url = request.url, allows(url) else { return nil }
+        return request
     }
 }
