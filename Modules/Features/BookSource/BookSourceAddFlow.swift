@@ -55,7 +55,7 @@ final class BookSourceAddFlow: ObservableObject {
     @Published var showsImportFile = false
     @Published var showsFirstLevelImportFile = false
     @Published var showsNetworkImport = false
-    @Published var showsDisclaimer = false
+    @Published private var disclaimer = SourceDisclaimerGate<BookSourceAddRoute>()
     @Published var importJSON = ""
     @Published var importURLString = ""
     @Published var networkImportLoading = false
@@ -67,8 +67,6 @@ final class BookSourceAddFlow: ObservableObject {
 
     private var chooserSequence = DismissalSequencedPresentation<BookSourceAddRoute>()
     private var fileImportSequence = DismissalSequencedPresentation<BookSourceFileImportRoute>()
-    /// The route asked for before the source disclaimer was accepted.
-    private var routeAfterDisclaimer: BookSourceAddRoute?
     /// Parsed sources waiting for the sheet in front of them to finish dismissing before the
     /// confirmation list can be presented.
     private var queuedImportSources: [BookSource]?
@@ -90,11 +88,7 @@ final class BookSourceAddFlow: ObservableObject {
     /// Opens a route. 來源配置管理 asks for the source disclaimer as it opens; 資源庫 does not,
     /// so a reader who has not accepted it sees it first, and the route follows its dismissal.
     func begin(_ route: BookSourceAddRoute) {
-        guard GlobalSettings.shared.sourceDisclaimerAccepted else {
-            routeAfterDisclaimer = route
-            showsDisclaimer = true
-            return
-        }
+        guard let route = disclaimer.pass(route) else { return }
         switch route {
         case .add: showsEditor = true
         case .local: showsImport = true
@@ -102,15 +96,17 @@ final class BookSourceAddFlow: ObservableObject {
         }
     }
 
+    var showsDisclaimer: Bool {
+        get { disclaimer.isPresented }
+        set { disclaimer.isPresented = newValue }
+    }
+
     func acceptDisclaimer() {
-        GlobalSettings.shared.sourceDisclaimerAccepted = true
-        showsDisclaimer = false
+        disclaimer.accept()
     }
 
     func afterDisclaimerDismissal() {
-        guard let route = routeAfterDisclaimer else { return }
-        routeAfterDisclaimer = nil
-        if GlobalSettings.shared.sourceDisclaimerAccepted { begin(route) }
+        disclaimer.afterDismissal().map(begin)
     }
 
     /// iOS 17's chooser in place of the 「+」 menu.

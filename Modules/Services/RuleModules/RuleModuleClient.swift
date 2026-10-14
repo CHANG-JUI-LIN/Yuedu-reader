@@ -117,6 +117,28 @@ struct RuleModuleClient: Sendable {
                                      listRule: list.items, fields: list.fields)
     }
 
+    /// A module file, for 新增模組 and 檢查更新: through the same `WebFetcher` path as the
+    /// module's own requests, `safeURL` on the address and on every redirect (a refused redirect
+    /// is never sent). Any host: the module's `hosts` bind its requests, not where it is shared.
+    nonisolated static func download(_ address: String, fetcher: WebFetcher = .shared) async throws -> (data: Data, url: URL) {
+        let trimmed = address.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let url = safeURL(string: trimmed) else {
+            throw SourceFailure(kind: .invalidAddress, underlying: FetchError.invalidURL(trimmed))
+        }
+        let page = try await fetcher.fetchPage(url: url, method: "GET", body: nil,
+                                               headers: ["Accept": "application/json, text/plain, */*"], baseURL: "",
+                                               redirect: { safeURL(string: $0.absoluteString) != nil })
+        let status = page.statusCode
+        if (300...399).contains(status) {
+            let location = (page.response as? HTTPURLResponse)?.value(forHTTPHeaderField: "Location") ?? ""
+            throw SourceFailure(kind: .invalidAddress, underlying: FetchError.invalidURL(location))
+        }
+        guard (200...299).contains(status) else {
+            throw SourceFailure(kind: .rejected, status: status, underlying: FetchError.httpError(status))
+        }
+        return (page.data, url)
+    }
+
     /// `text` with each `{{name}}` replaced by its value, percent-encoded for a URL or a form
     /// body. The validator let no other template through.
     static func fill(_ text: String, _ values: [String: String], encode: Bool) -> String {
