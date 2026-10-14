@@ -214,32 +214,6 @@ How these fit together:
   - a module result merges with a shelf copy of the same work;
   - no request is sent before submit.
 
-### 6g (branch `modules/6g-search`)
-
-- **`ModuleSearch: SearchAnswering`** asks every installed module that has a `search`, and only on submit.
-  - Each module runs in its own task under its own timeout of 20 s (`LibrarySearch.within`), so one hanging or refusing module fails only its own answer.
-  - The query is trimmed, and an empty query sends nothing.
-  - Answers are keyed `module:<id>`, so they never collide with a connection's id.
-  - Each answer is timed as a `search.module` span.
-- **`ModuleProvider.search(_:)`** runs the module's `search` entry through the same page path as its lists, with `{{keyword}}` filled and percent-encoded. That path covers the hosts gate, the redirect gate, the rate limit and the logging.
-  - `capabilities()` now says `.onSubmit` for a module with a search, so its manifest lists `.search(.onSubmit)`.
-- **Joined beside the saved libraries.** `LibrarySearchModel` now takes several parts, asks them together, and keeps searching until the last has answered.
-  - The libraries' model is `[LibrarySearch(), ModuleSearch()]`.
-  - The submit, the clear when the field empties, the feed's merge trigger, the iOS 17 and iOS 18+ status lines and the failure lines (「測試模組：無法搜尋（…）」) all reach modules with no new wiring.
-  - A module's books are `.bibliographic` items, so `SearchWorkResolver` treats them as data-only members of a work. They never lead over a readable copy and never count toward 「N 源」.
-- **Search page:** `BookSearchView` loads `RuleModuleLibrary` when it appears. 搜索 can be the first page opened, and `isAvailable` reads the installed modules synchronously, so without the load modules would silently never be asked.
-- **Tests:**
-  - `ModuleSearchTests` (6):
-    - results, with a module without a search left unasked and the trimmed CJK keyword encoded;
-    - empty, refused (403) and hanging (its own 300 ms timeout);
-    - nothing sent before submit or for a blank query;
-    - asked together with a library part, with the failed module as its own status line;
-    - a module's 三體 merges with the shelf's copy into one row that is 在書架上, led by the shelf, with 0 源;
-    - the manifest's search capability.
-  - With `ModuleProviderTests`, `LibrarySearchTests`, `OpenLibrarySearchTests` and `UnifiedSearchTests`: 42/42 on iOS 27.
-  - `ModuleLibraryUITests.testModuleAnswersSearch` (iOS 27): add the fixture module, type in 搜尋 (no row as you type), submit, and the module's book appears as a 只有資料 row.
-  - The fixture module gained a `search` entry and `s.html`.
-
 ### 6h: module metadata (asked before starting)
 
 - Whether a module's `metadata` entry may feed Phase 3's automatic filler. That filler would send shelf titles to the module's hosts without the reader acting.
@@ -485,3 +459,29 @@ How these fit together:
   - `ModuleListPageTests` (5): page by page with the section's values, ending on an empty page; a repeated page ends the list; a first-page failure, and a next-page failure that keeps what was read; missing module or list; 查看全部's route.
   - With `ModuleProviderTests` and `ModuleContentSourceTests`: 24/24 on iOS 27.
   - `testModuleListOnTheHome` now also taps the row header, sees the list page with the fixture's books and no 載入更多. It passes on iOS 27 and iOS 17.5.
+
+### 6g (branch `modules/6g-search`)
+
+- **`ModuleSearch: SearchAnswering`** asks every installed module that has a `search`, and only on submit.
+  - Each module runs in its own task under its own timeout of 20 s (`LibrarySearch.within`), so one hanging or refusing module fails only its own answer.
+  - The query is trimmed, and an empty query sends nothing.
+  - Answers are keyed `module:<id>`, so they never collide with a connection's id.
+  - Each answer is timed as a `search.module` span.
+- **`ModuleProvider.search(_:)`** runs the module's `search` entry through the same page path as its lists, with `{{keyword}}` filled and percent-encoded. That path covers the hosts gate, the redirect gate, the rate limit and the logging.
+  - `capabilities()` now says `.onSubmit` for a module with a search, so its manifest lists `.search(.onSubmit)`.
+- **Joined beside the saved libraries.** `LibrarySearchModel` now takes several parts, asks them together, and keeps searching until the last has answered.
+  - The libraries' model is `[LibrarySearch(), ModuleSearch()]`.
+  - The submit, the clear when the field empties, the feed's merge trigger, the iOS 17 and iOS 18+ status lines and the failure lines (「測試模組：無法搜尋（…）」) all reach modules with no new wiring.
+  - A module's books are `.bibliographic` items, so `SearchWorkResolver` treats them as data-only members of a work. They never lead over a readable copy and never count toward 「N 源」.
+- **Search page:** `BookSearchView` loads `RuleModuleLibrary` when it appears. 搜索 can be the first page opened, and `isAvailable` reads the installed modules synchronously, so without the load modules would silently never be asked.
+- **Tests:**
+  - `ModuleSearchTests` (6):
+    - results, with a module without a search left unasked and the trimmed CJK keyword encoded;
+    - empty, refused (403) and hanging (its own 300 ms timeout);
+    - nothing sent before submit or for a blank query;
+    - asked together with a library part, with the failed module as its own status line;
+    - a module's 三體 merges with the shelf's copy into one row that is 在書架上, led by the shelf, with 0 源;
+    - the manifest's search capability.
+  - With `ModuleProviderTests`, `LibrarySearchTests`, `OpenLibrarySearchTests` and `UnifiedSearchTests`: 42/42 on iOS 27.
+  - `ModuleLibraryUITests.testModuleAnswersSearch` (iOS 27): add the fixture module, type in 搜尋 (no row as you type), submit, and the module's book appears as a 只有資料 row.
+  - The fixture module gained a `search` entry and `s.html`.
