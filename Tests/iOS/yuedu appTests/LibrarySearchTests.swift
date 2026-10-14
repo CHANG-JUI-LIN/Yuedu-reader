@@ -1,4 +1,5 @@
 import Foundation
+import SwiftUI
 import Testing
 @testable import yuedu_app
 
@@ -115,14 +116,14 @@ struct LibrarySearchTests {
         #expect(row.coverURL == "https://row.library.test/cover.jpg")
         #expect(row.remoteCover != nil)
 
-        let section = IOS17SearchAnswerSection(model: model)
-        #expect(section.rows == [row] && section.notices.isEmpty)
-        let empty = IOS17SearchResultTableContent(rows: [], showsLoadMore: false)
-        let withLibrary = IOS17SearchResultTableContent(rows: [], showsLoadMore: false, remoteLibraries: section)
-        #expect(withLibrary.requiresReload(comparedTo: empty))
-        let withNotice = IOS17SearchResultTableContent(
-            rows: [], showsLoadMore: false, remoteLibraries: IOS17SearchAnswerSection(rows: [], notices: ["搜索中…"]))
-        #expect(withNotice.requiresReload(comparedTo: empty))
+        // In the tab root's one list (4c-3) the library's book leads its work and keeps this
+        // cover request.
+        let works = UnifiedSearchModel(sourceURL: { _ in nil })
+        await works.update(UnifiedSearchParts(libraries: model.matches), query: "三體")
+        let work = try #require(works.rows.first)
+        let workRow = IOS17SearchResultTableRow(unified: work, colorScheme: .light, filledCover: { _ in nil })
+        #expect(workRow.coverURL == row.coverURL)
+        #expect(workRow.remoteCover == row.remoteCover)
     }
 
     // MARK: - Fixtures

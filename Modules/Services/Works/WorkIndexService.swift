@@ -154,6 +154,15 @@ final class WorkIndexService {
         Dictionary((file?.remoteInputs ?? []).map { ($0.record.key, $0) }, uniquingKeysWith: { first, _ in first })
     }
 
+    /// The current index's entries for `keys`, by node key; empty before the first refresh.
+    /// What 搜索 compares a shelf copy by beyond its record (unified search 4c-3): the
+    /// identifiers and language its sidecar holds.
+    func entries(for keys: Set<SourceItemKey>) -> [SourceItemKey: WorkIndexEntry] {
+        guard let index, !keys.isEmpty else { return [:] }
+        return Dictionary(index.entries.filter { keys.contains($0.nodeKey) }.map { ($0.nodeKey, $0) },
+                          uniquingKeysWith: { first, _ in first })
+    }
+
     /// Local search over the current index; empty before the first refresh.
     func search(_ query: String) -> [Work] {
         guard let index else { return [] }

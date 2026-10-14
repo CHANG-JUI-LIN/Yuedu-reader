@@ -38,7 +38,11 @@ struct SearchCandidate: Hashable, Sendable {
 
 extension SearchCandidate {
     /// An item as its part's frozen route has it.
-    init(route: WorkDetailRoute, kind: Kind) {
+    /// - Parameters:
+    ///   - identifiers: what is known of it beyond its record: a shelf copy's sidecar (an ISBN
+    ///     read from the package, the Open Library work its metadata was filled from).
+    ///   - language: the work index's language for it, when its record names none.
+    init(route: WorkDetailRoute, kind: Kind, identifiers: Set<ExternalIdentifier> = [], language: String? = nil) {
         self.init(
             id: .item(route.nodeKey),
             kind: kind,
@@ -46,8 +50,8 @@ extension SearchCandidate {
             titleKey: WorkMatchKey.title(route.summary.title),
             authorKeys: route.summary.authors.map(WorkMatchKey.author).filter { !$0.isEmpty },
             contentKind: route.record.contentKind,
-            language: LanguageTag(route.record.language ?? route.summary.language)?.language,
-            identifiers: route.record.identifiers,
+            language: LanguageTag(route.record.language ?? route.summary.language)?.language ?? language,
+            identifiers: route.record.identifiers.union(identifiers),
             itemKeys: [route.record.key],
             isReadable: route.isReadable,
             sourceCount: 1
@@ -95,7 +99,8 @@ struct UnifiedSearchResult: Identifiable, Hashable, Sendable {
     /// and cover.
     let members: [SearchCandidate]
     let availability: Availability
-    /// The places it can be had from, the shelf not among them.
+    /// The places it can be read from, the shelf not among them, nor a place of data only
+    /// (Open Library): the row's 「N 源」.
     let sourceCount: Int
     /// 3 the title is the query, 2 it starts with it, 1 it contains it (or the query contains
     /// the title), 0 otherwise (an author match).
@@ -159,7 +164,7 @@ enum SearchWorkResolver {
             let result = UnifiedSearchResult(
                 members: ordered,
                 availability: availability,
-                sourceCount: ordered.filter { $0.kind != .shelf }.reduce(0) { $0 + $1.sourceCount },
+                sourceCount: ordered.filter { $0.kind != .shelf && $0.isReadable }.reduce(0) { $0 + $1.sourceCount },
                 score: ordered.map { score(titleKey: $0.titleKey, query: queryKey) }.max() ?? 0
             )
             return (result, firstIndex[root] ?? 0)

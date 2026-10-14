@@ -1,4 +1,5 @@
 import Foundation
+import SwiftUI
 import Testing
 @testable import yuedu_app
 
@@ -56,6 +57,32 @@ struct SearchWorkMergeBenchmarkTests {
             let elapsed = clock.now - started
             let ms = Double(elapsed.components.seconds) * 1000 + Double(elapsed.components.attoseconds) / 1e15
             print("⏱ bench search.resolve run=\(run) candidates=\(rows.count + others.count) works=\(works.count) total=\(String(format: "%.1f", ms))ms")
+        }
+    }
+
+    @Test("搜索's one list over 1,000 source rows: main-actor candidates, the merge, the iOS 17 rows; 3 runs")
+    func unifiedUpdateCost() async {
+        // As the aggregator publishes them: keys folded off the main actor when the book arrived.
+        let rows = (0..<1_000).map { i in
+            let name = i.isMultiple(of: 2) ? "三體第\(i % 300)部" : "三体第\(i % 300)部"
+            let origins = (0...(i % 3)).map { o in
+                BookOrigin(sourceId: UUID(), sourceName: "S\(o)", bookUrl: "https://bench.test/\(i)/\(o)", tocUrl: "",
+                           coverUrl: "", intro: "", lastChapter: "", wordCount: "", kind: "", runtimeVariables: nil)
+            }
+            return SearchBook(name: name, author: "作者\(i % 50)", workKeys: SearchWorkKeys(name: name, author: "作者\(i % 50)"),
+                              preparedOrigins: SearchResultPresentationBuilder.prepareOrigins(origins, sourceStore: .shared))
+        }
+        let model = UnifiedSearchModel(sourceURL: { "https://source.test/\($0.uuidString)" })
+        let clock = ContinuousClock()
+        func ms(_ duration: Duration) -> String {
+            String(format: "%.1f", Double(duration.components.seconds) * 1000 + Double(duration.components.attoseconds) / 1e15)
+        }
+        for run in 1...3 {
+            let started = clock.now
+            await model.update(UnifiedSearchParts(sources: rows), query: "三體")
+            let updated = clock.now
+            let table = model.rows.map { IOS17SearchResultTableRow(unified: $0, colorScheme: .light, filledCover: { _ in nil }) }
+            print("⏱ bench search.unified run=\(run) rows=\(rows.count) works=\(model.rows.count) update=\(ms(updated - started))ms iOS17Rows=\(table.count) \(ms(clock.now - updated))ms")
         }
     }
 

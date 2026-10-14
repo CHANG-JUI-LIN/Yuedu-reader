@@ -401,6 +401,10 @@ class SearchAggregator: ObservableObject {
     /// scene-aware publication gate so bursts do not trigger unbounded list diffs.
     /// Merging and sorting always operate on `internalResults`.
     private(set) var results: [SearchBook] = []
+    /// Bumped with every publication of `results`. A row's snapshot compares by id alone, so a
+    /// row that gained origins compares equal; 搜索's one list re-reads the results by this
+    /// (unified search 4c-3).
+    private(set) var publicationRevision = 0
     @Published var isSearching = false
     /// True when at least one source that answered successfully has not yet been
     /// exhausted by 載入更多 rounds — drives the "load more" row in the UI.
@@ -897,6 +901,7 @@ class SearchAggregator: ObservableObject {
         let publishedResults = internalResults.map { $0.publicationSnapshot() }
         objectWillChange.send()
         results = publishedResults
+        publicationRevision &+= 1
         progress = internalProgress
         hasMoreResults = internalHasMoreResults
         publicationGate.didPublish(at: now)

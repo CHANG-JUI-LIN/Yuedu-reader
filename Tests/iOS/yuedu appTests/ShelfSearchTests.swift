@@ -69,16 +69,6 @@ struct ShelfSearchTests {
         #expect(plain.shelfCover?.own == nil)
     }
 
-    @Test("the iOS 17 table content changes when the shelf's matches do")
-    func iOS17ContentReloads() {
-        let copy = book("三體", "劉慈欣")
-        let empty = IOS17SearchResultTableContent(rows: [], showsLoadMore: false)
-        let withShelf = IOS17SearchResultTableContent(
-            shelf: [IOS17SearchResultTableRow(shelfBook: copy, colorScheme: .light, filledCover: nil)],
-            rows: [], showsLoadMore: false)
-        #expect(withShelf.requiresReload(comparedTo: empty))
-    }
-
     // MARK: - Helpers
 
     private func makeStore() throws -> (BookStore, URL) {

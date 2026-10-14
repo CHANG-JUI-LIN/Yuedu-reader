@@ -49,41 +49,22 @@ struct IOS17ShelfCover: Equatable {
     var defaultCover: CoverImageSource?
 }
 
-/// A part of the search asked on submit (`LibrarySearchModel`), as values: its books, then its
-/// status lines (searching, or each place that could not answer).
-struct IOS17SearchAnswerSection: Equatable {
+/// The 搜索 tab root's one list of works (unified search 4c-3), as values: its rows, what it
+/// says besides them, and whether Gutenberg's search is offered.
+struct IOS17SearchWorksSection: Equatable {
     var rows: [IOS17SearchResultTableRow]
-    var notices: [String]
-
-    var isEmpty: Bool { rows.isEmpty && notices.isEmpty }
-}
-
-/// The 公有書庫 part of the same search (unified library 5d-1b), as values like the result
-/// rows: Gutenberg's search to submit, then 青空文庫's matches.
-struct IOS17SearchLibrarySection: Equatable {
-    struct Work: Identifiable, Equatable {
-        let id: String
-        let title: String
-        let author: String
-    }
-
-    let query: String
-    let works: [Work]
+    var status: UnifiedSearchStatus
+    var offersGutenberg: Bool
+    /// The query Gutenberg's row names.
+    var query: String = ""
 }
 
 struct IOS17SearchResultTableContent: Equatable {
-    /// The shelf's copies (the 搜索 tab's root only), above the sources' results.
-    var shelf: [IOS17SearchResultTableRow] = []
+    /// The sources' results where the page is not the tab's root.
     let rows: [IOS17SearchResultTableRow]
     let showsLoadMore: Bool
-    /// What the sources' part says while it has no row: searching, paused, or nothing found.
-    var sourcesNotice: String? = nil
-    /// The public libraries' section, under the sources' (the 搜索 tab's root only).
-    var library: IOS17SearchLibrarySection? = nil
-    /// 我的書庫: the saved OPDS and Calibre libraries (unified search 4b-2), under the shelf's.
-    var remoteLibraries: IOS17SearchAnswerSection? = nil
-    /// 書目資料庫: Open Library (4b-3), last.
-    var bibliographic: IOS17SearchAnswerSection? = nil
+    /// The tab root's works; set, it replaces `rows`.
+    var works: IOS17SearchWorksSection? = nil
 
     func requiresReload(comparedTo previous: Self?) -> Bool {
         self != previous

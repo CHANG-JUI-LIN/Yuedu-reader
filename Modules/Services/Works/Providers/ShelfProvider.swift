@@ -224,9 +224,13 @@ final class ShelfProvider: CollectionBrowsing {
     /// A copy taken from a public library is listed as the library's book even when nothing
     /// else lists it — opened from 書架 or 繼續閱讀, its work holds no public-library item
     /// (2026-10-12: ホノルル from 書架 showed only 來源 書架).
-    /// - Parameter aozora: 青空文庫's catalog, which a 青空文庫 copy's work is read from; without
-    ///   it (not read yet, or no cache offline) the copy stands for itself.
-    func versions(of tapped: WorkDetailRoute, aozora: AozoraCatalogIndex?) async -> [WorkDetailRoute] {
+    /// - Parameters:
+    ///   - aozora: 青空文庫's catalog, which a 青空文庫 copy's work is read from; without it (not
+    ///     read yet, or no cache offline) the copy stands for itself.
+    ///   - extra: the work's other members 搜索 found (unified search 4c-3), listed after the
+    ///     index's, each once, a copy's origin standing for it as for any member.
+    func versions(of tapped: WorkDetailRoute, aozora: AozoraCatalogIndex?,
+                  also extra: [WorkDetailRoute] = []) async -> [WorkDetailRoute] {
         let started = SourcePerfTrace.now
         let lookup = store.copyLookup()
         var copies = lookup.copies(for: tapped.record.key).filter(\.isInBookshelf)
@@ -254,7 +258,8 @@ final class ShelfProvider: CollectionBrowsing {
         let versions = WorkVersions.merge(
             tapped: tapped,
             copies: zip(copyRoutes, copies.map(\.lastOpenedDate)).map { ($0, $1) },
-            members: memberRoutes + Self.publicLibraryOrigins(of: [tapped] + copyRoutes + memberRoutes, aozora: aozora)
+            members: memberRoutes + extra
+                + Self.publicLibraryOrigins(of: [tapped] + copyRoutes + memberRoutes + extra, aozora: aozora)
                 + (await offers(of: tapped, aozora: aozora)))
         SourcePerfTrace.record("works.detail.versions", "copies=\(copies.count) members=\(members.count) versions=\(versions.count)",
                                since: started, thresholdMs: 0)
