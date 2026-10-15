@@ -288,6 +288,38 @@ struct CoverLinkRuleTests {
         #expect(parsed.search?.bookUrl == "https://example.com/search?key=first")
         #expect(parsed.explore?.bookUrl == "https://example.com/explore")
     }
+
+    /// A site's "no results" message laid out as a list row (biquge-style search.php:
+    /// 「没有找到包含：…的小说」 in the row's name cell, no link): the source's link rule finds
+    /// nothing in it, so it is not a book (search 9a, maintainer 2026-10-15).
+    @Test("a search row whose link rule finds no link is dropped; the books around it stay")
+    func searchRowWithoutItsLinkIsDropped() throws {
+        var source = BookSource()
+        source.bookSourceUrl = "https://example.com"
+        source.bookSourceName = "筆趣閣"
+        source.ruleSearch.bookList = ".novelslist2 li"
+        source.ruleSearch.name = ".s2@text"
+        source.ruleSearch.author = ".s4@text"
+        source.ruleSearch.bookUrl = ".s2 a@href"
+        let notFound = #"""
+            <div class="novelslist2"><ul>\#
+            <li><span class="s2">没有找到包含：仙子破道曲的小说</span><span class="s4"></span></li>\#
+            </ul></div>
+            """#
+        let bridge = ModernParserBridge(source: source)
+        let base = "https://example.com/search.php?keyword=仙子破道曲"
+        #expect(try bridge.parseSearchResults(html: notFound, baseURL: base, source: source).isEmpty)
+
+        let mixed = #"""
+            <div class="novelslist2"><ul>\#
+            <li><span class="s2"><a href="/book/1/">仙子破道曲</a></span><span class="s4">漆黑烈焰使</span></li>\#
+            <li><span class="s2">广告</span></li>\#
+            </ul></div>
+            """#
+        let books = try bridge.parseSearchResults(html: mixed, baseURL: base, source: source)
+        #expect(books.map(\.name) == ["仙子破道曲"])
+        #expect(books.first?.bookUrl == "https://example.com/book/1/")
+    }
 }
 
 @Suite("ModernParserBridge Chapter Compatibility", .serialized)
@@ -325,13 +357,15 @@ struct ModernParserBridgeChapterCompatibilityTests {
 
     @Test("Search, detail, and discover parse kind with Legado List semantics")
     func kindRulesUseStringListSemantics() throws {
-        let html = #"{"data":{"ret_data":[{"book_name":"Fixture","category":"玄幻","score":"9.1","genre":4}]}}"#
+        // A real link field: a literal URL as the rule finds nothing in JSON, which 搜尋 now
+        // treats as a row without a book link (search 9a).
+        let html = #"{"data":{"ret_data":[{"book_name":"Fixture","url":"/book/1","category":"玄幻","score":"9.1","genre":4}]}}"#
         let kindRule = #"$.category&&$.score@js:"{{$.genre}}"==4?result.add("有声书"):result;result"#
         var source = BookSource()
         source.bookSourceUrl = "https://example.com"
         source.ruleSearch.bookList = "$.data.ret_data.*"
         source.ruleSearch.name = "$.book_name"
-        source.ruleSearch.bookUrl = "https://example.com/book/1"
+        source.ruleSearch.bookUrl = "$.url"
         source.ruleSearch.kind = kindRule
         source.ruleExplore.bookList = source.ruleSearch.bookList
         source.ruleExplore.name = source.ruleSearch.name
