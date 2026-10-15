@@ -99,9 +99,17 @@ enum RegexHighlightDecorationRenderer {
                 descent = lineDescent
             }
 
+            // Online and TXT body text centres itself in its line with `.baselineOffset`, and
+            // CoreText draws that as a raise of the glyphs off `origin`; the box rises with them.
+            let raise = (attributedString.attribute(
+                .baselineOffset,
+                at: highlightedRange.location,
+                effectiveRange: nil
+            ) as? NSNumber).map { CGFloat($0.doubleValue) } ?? 0
+
             let glyphRect = CGRect(
                 x: origin.x + min(startOffset, endOffset),
-                y: origin.y - descent,
+                y: origin.y + raise - descent,
                 width: abs(endOffset - startOffset),
                 height: max(1, ascent + descent)
             )
