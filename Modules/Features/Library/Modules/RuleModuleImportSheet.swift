@@ -159,7 +159,14 @@ struct RuleModuleManifestSections: View {
         } header: {
             Text(localized("會連線的網站")).foregroundStyle(DSColor.textSecondary)
         } footer: {
-            Text(localized("模組只會向這些網站送出請求，封面也只從這些網站載入。")).dsSectionFooter()
+            VStack(alignment: .leading, spacing: DSSpacing.xs) {
+                Text(localized("模組只會向這些網站送出請求，封面也只從這些網站載入。"))
+                // Phase 6h: a module with a search fills by default (maintainer, 2026-10-15).
+                if module.search != nil {
+                    Text(localized("自動補齊書籍資料開啟時，書架上的書名與作者也會送到這些網站，用來補上空白的簡介與分類；可在「資料來源」取消勾選。"))
+                }
+            }
+            .dsSectionFooter()
         }
         .interfaceSectionSurface()
     }

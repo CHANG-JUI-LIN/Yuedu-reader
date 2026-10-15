@@ -12,10 +12,16 @@ import Foundation
 ///   when any condition stops holding. Each copy is asked once per
 ///   provider (`MetadataFillLedger`), so a pass after the first asks only new or changed
 ///   copies.
+/// - The places it asks, and their order, are 資料來源's (`MetadataFillOrder`, Phase 6h). When
+///   that list or the installed modules change, a running pass stops at once and starts again
+///   with the new places: a module just unchecked or removed is asked nothing more.
 @MainActor
 final class MetadataFillCoordinator {
     private let store: BookStore
     private let makeProviders: @MainActor () -> [any MetadataFillProvider]
+    /// What the providers need read first: the installed modules, which nothing else may have
+    /// loaded yet when 探索, 資源庫 and 搜索 were never opened.
+    private let prepare: @MainActor () async -> Void
     private let network: NetworkPathProviding
     private let isEnabled: @MainActor () -> Bool
     private let isLowPower: @MainActor () -> Bool
@@ -27,13 +33,17 @@ final class MetadataFillCoordinator {
     private var knownShelf: Set<UUID> = []
     private var cancellables: Set<AnyCancellable> = []
 
+    /// - Parameter placesChanged: the places to ask changed; by default 資料來源's order or the
+    ///   installed modules that can fill.
     init(store: BookStore,
          makeProviders: (@MainActor () -> [any MetadataFillProvider])? = nil,
+         placesChanged: AnyPublisher<Void, Never>? = nil,
          network: NetworkPathProviding = NetworkPathMonitor.shared,
          isEnabled: (@MainActor () -> Bool)? = nil,
          isLowPower: (@MainActor () -> Bool)? = nil) {
         self.store = store
-        self.makeProviders = makeProviders ?? { [OpenLibraryFillProvider(), BookSourceFillProvider()] }
+        self.makeProviders = makeProviders ?? Self.liveProviders
+        prepare = makeProviders == nil ? { await RuleModuleLibrary.shared.loadIfNeeded() } : {}
         self.network = network
         self.isEnabled = isEnabled ?? { GlobalSettings.shared.autoFillBookMetadata }
         self.isLowPower = isLowPower ?? { ProcessInfo.processInfo.isLowPowerModeEnabled }
@@ -47,6 +57,9 @@ final class MetadataFillCoordinator {
             .store(in: &cancellables)
         store.importedMetadata.announcedWrites
             .sink { [weak self] id in self?.sidecarWritten(id) }
+            .store(in: &cancellables)
+        (placesChanged ?? Self.livePlacesChanged)
+            .sink { [weak self] in self?.placesChanged() }
             .store(in: &cancellables)
         NotificationCenter.default.publisher(for: .NSProcessInfoPowerStateDidChange)
             .receive(on: RunLoop.main)
@@ -67,6 +80,29 @@ final class MetadataFillCoordinator {
     }
 
     private var mayRun: Bool { isActive && isEnabled() && network.allowsBackgroundWork && !isLowPower() }
+
+    /// A running pass holds the providers it started with: it is replaced, not left to finish.
+    private func placesChanged() {
+        stop()
+        if mayRun { start() }
+    }
+
+    /// 資料來源's checked places, first first.
+    private static func liveProviders() -> [any MetadataFillProvider] {
+        let modules = RuleModuleLibrary.shared.fillingModules
+        return MetadataFillOrderStore.shared.order(modules: modules.map(\.id)).providers(modules: modules)
+    }
+
+    /// Each value is published once on subscribing: only later changes count.
+    private static var livePlacesChanged: AnyPublisher<Void, Never> {
+        let order = MetadataFillOrderStore.shared.$stored.dropFirst().map { _ in () }
+        let modules = RuleModuleLibrary.shared.$modules
+            .map { $0.map(\.module).filter { $0.search != nil }.map(\.id) }
+            .removeDuplicates()
+            .dropFirst()
+            .map { _ in () }
+        return order.merge(with: modules).eraseToAnyPublisher()
+    }
 
     private func shelfChanged(_ ids: Set<UUID>) {
         let added = !ids.subtracting(knownShelf).isEmpty
@@ -114,6 +150,8 @@ final class MetadataFillCoordinator {
     /// One pass over the shelf as it is now. The ledger is saved after every answer, so a pass
     /// stopped half-way goes on from where it was next time.
     private func runPass() async {
+        await prepare()
+        guard !Task.isCancelled else { return }
         let runner = MetadataFillRunner(providers: makeProviders(), ledger: store.metadataFillLedger,
                                         write: { [store] in Self.write($0, to: store) })
         store.metadataFillLedger.keep(only: Set(store.books.map(\.id)))
