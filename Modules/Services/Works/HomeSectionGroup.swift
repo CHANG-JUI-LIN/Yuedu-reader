@@ -52,8 +52,10 @@ struct HomeSectionGroup: Identifiable, Equatable {
         return .loaded([])
     }
 
-    /// Loaded with nothing in it: the home gives it no room.
+    /// Loaded with nothing in it: the home gives it no room. AI 推薦 is never settled empty:
+    /// with no list yet it offers 產生推薦 (AI 推薦 plan 8c).
     var isSettledEmpty: Bool {
+        if section.binding == .aiRecommendations { return false }
         if case .loaded(let entries) = state { return entries.isEmpty }
         return false
     }

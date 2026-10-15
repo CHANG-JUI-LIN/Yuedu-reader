@@ -220,8 +220,8 @@ enum ExplorePlace {
             return .explore(.moduleList(ModuleListRoute(moduleID: moduleID, entryID: entryID,
                                                         title: row.section.displayTitle(sourceName: row.sourceName),
                                                         parameters: row.section.parameters)))
-        // 為你推薦 is mixed from many places; no page lists it whole.
-        case .myLibrary, .continueReading, .related, .nextInSeries, .subscriptionArticles, .forYou, .unknown:
+        // 為你推薦 is mixed from many places; no page lists it whole. AI 推薦's row is its whole list.
+        case .myLibrary, .continueReading, .related, .nextInSeries, .subscriptionArticles, .forYou, .aiRecommendations, .unknown:
             return nil
         }
     }

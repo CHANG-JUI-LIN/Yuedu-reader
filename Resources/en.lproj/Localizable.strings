@@ -3885,3 +3885,10 @@
 "這個分類沒有其他作品" = "No other books in this category";
 "書架上還沒有讀過的書" = "No book on the shelf has been read yet";
 "AI 推薦的作品都已在書架上" = "Every work AI recommended is already on the shelf";
+"AI 推薦" = "AI Picks";
+"官方模組" = "Official Modules";
+"產生推薦" = "Get Recommendations";
+"AI 產生 · %@ · %@" = "AI-generated · %@ · %@";
+"正在產生推薦…" = "Getting recommendations…";
+"正在查詢封面與簡介（%d/%d）" = "Looking up covers and descriptions (%d/%d)";
+"依你最近讀的 30 本書推薦作品；會把書名、作者和分類送到你設定的 AI 服務。" = "Recommends works from the last 30 books you read. Their titles, authors and categories are sent to the AI service you set up.";
