@@ -140,9 +140,12 @@ enum AIBookSummaryPlanner {
     /// in. Switching the interface language then asks for new summaries instead of mixing two
     /// languages into one.
     static func recipe(_ language: AIAnswerLanguage) -> String { promptVersion + "." + language.rawValue }
-    /// Source text per request, in UTF-16 units. Around ten thousand CJK characters.
-    static let batchUTF16 = 12_000
-    static let batchParts = 8
+    /// Source text per request, in UTF-16 units: around forty-eight thousand CJK characters. A
+    /// digest restates its chapter without thinking, so a long batch costs time only in what
+    /// it writes; at 12,000 a million-character novel took about 85 requests (maintainer,
+    /// 2026-10-15). Changing it re-cuts no stored digest: they are kept per chapter.
+    static let batchUTF16 = 48_000
+    static let batchParts = 32
 
     static func plan(source: AIBookContentAdapter, record: AIBookSummaryRecord, language: AIAnswerLanguage) -> AIBookSummaryPlan {
         let boundary = source.boundary()
