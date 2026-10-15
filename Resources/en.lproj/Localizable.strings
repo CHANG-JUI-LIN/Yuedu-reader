@@ -3529,7 +3529,6 @@
 "編者" = "Editor";
 
 
-"在 Project Gutenberg 搜尋「%@」" = "Search Project Gutenberg for “%@”";
 
 // Explore first-import guide
 
@@ -3982,3 +3981,4 @@
 "推薦理由" = "Why It's Recommended";
 "AI 產生" = "AI-generated";
 "未找到可用來源" = "No Available Sources Found";
+"正在載入更多" = "Loading more";

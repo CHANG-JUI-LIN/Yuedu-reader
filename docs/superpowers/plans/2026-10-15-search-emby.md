@@ -147,3 +147,29 @@ The maintainer approved 9a–9e as written: the chips are 類型 and 來源配�
 - **Tests:**
   - `CoverLinkRuleTests.searchRowWithoutItsLinkIsDropped` (new): a biquge-style 「没有找到包含：…」 row is dropped, and a row with a link beside a linkless ad keeps only the book.
   - The parser, search and real-source suites (ModernParser*, Qidian/Qimo/local source fixtures, AnalyzeUrl, AggregateSearchStreaming, BookSourceSearchFanOut, RuleModule*, ChangeSourceTOCResolution): 187/187 on iOS 27.
+
+### 9b — branch `search/9b-auto-load` (2026-10-15)
+
+- **Auto-load.**
+  - 載入更多 is gone from both lists.
+  - While the sources have more pages, the list ends with a spinner (「正在載入更多」 for VoiceOver; nothing to tap). Showing it loads the next page.
+    - iOS 18: `SearchLoadMoreRow`, a `.task` keyed on the row count and `canLoadMore`. It is used in the tab root's list and in the pushed sources' list.
+    - iOS 17: the table's `willDisplay` of its `.loadMore` item.
+  - A running search does not ask again. When it ends, `canLoadMore` changes: SwiftUI's task id changes, and iOS 17's content compares unequal and reloads, so a spinner still on screen asks then.
+  - `SearchAggregator.loadMore` keeps its own guards and the 5-page limit.
+- **Gutenberg merged.**
+  - `LibrarySearch` asks Gutenberg with the saved OPDS and Calibre libraries, on submit only, where `PublicLibraryAvailability` allows it.
+  - Its search address needs no root feed: `searchURL(search: nil)` is tried first, so one search sends one request.
+  - Its books are `.library` matches named Project Gutenberg. The resolver counts them as `.publicLibrary`.
+- **Removed:**
+  - the 「在 Project Gutenberg 搜尋」 row, on both iOS 17 and iOS 18, and its string in all five languages;
+  - `submitGutenberg`;
+  - `SearchSubmitPlan.gutenberg` and its `offersPublicLibraries` parameter. With no 來源配置, Gutenberg is simply one of the others that answer.
+- **Docs:** PublicLibraries.md now says when Gutenberg is asked: once per sent search, first page only.
+- **Tests:**
+  - `LibrarySearchTests.gutenbergJoins` and `.defaultLibraries` (new);
+  - `IOS17SearchResultTableTests.lastRowLoadsMore` (new), with the reload tests rewritten for `hasMore`/`canLoadMore`;
+  - `OpenLibrarySearchTests.submitPlan` rewritten;
+  - `UnifiedSearchTests` updated;
+  - 47/47 on iOS 27.
+  - `PublicLibrarySearchTabUITests`, both cases rewritten to find Gutenberg's book in the one list: 2/2 on iOS 27 and on iOS 17.5.

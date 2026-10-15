@@ -152,16 +152,12 @@ private struct IOS17SearchResults: View {
     var libraries: LibrarySearchModel? = nil
     var bibliographic: LibrarySearchModel? = nil
     let rows: [IOS17SearchResultTableRow]
-    let showsLoadMore: Bool
+    let paging: SearchPaging
     var sourcesSearching = false
     var sourcesPaused = false
     /// The query submitted, while it is still the one in the field.
     var submittedQuery: String? = nil
-    /// The query Gutenberg is offered for; nil where the public libraries are not.
-    var gutenbergQuery: String? = nil
     let onSelect: (UUID) -> Void
-    let onLoadMore: () -> Void
-    let submitGutenberg: () -> Void
     /// Pushes a work's 作品詳情 through the page's one item destination.
     var openWork: (UnifiedSearchResultRoute) -> Void = { _ in }
     @Environment(\.colorScheme) private var colorScheme
@@ -172,7 +168,8 @@ private struct IOS17SearchResults: View {
         IOS17SearchResultTable(
             content: IOS17SearchResultTableContent(
                 rows: works == nil ? rows : [],
-                showsLoadMore: showsLoadMore,
+                hasMore: paging.hasMore,
+                canLoadMore: paging.canLoadMore,
                 works: works.map { works in
                     IOS17SearchWorksSection(
                         rows: workRows.map {
@@ -184,15 +181,12 @@ private struct IOS17SearchResults: View {
                             isPaused: sourcesPaused,
                             othersSearching: (libraries?.isSearching ?? false) || (bibliographic?.isSearching ?? false),
                             submittedQuery: submittedQuery,
-                            failures: (libraries?.failures ?? []) + (bibliographic?.failures ?? [])),
-                        offersGutenberg: gutenbergQuery != nil,
-                        query: gutenbergQuery ?? ""
+                            failures: (libraries?.failures ?? []) + (bibliographic?.failures ?? []))
                     )
                 }
             ),
             onSelect: onSelect,
-            onLoadMore: onLoadMore,
-            onSearchGutenberg: submitGutenberg,
+            onLoadMore: paging.loadMore,
             onSelectWork: { id in
                 guard let row = workRows.first(where: { $0.id == id }) else {
                     AppLogger.error("⟐ search tap found no work", context: ["id": id.uuidString, "rows": workRows.count])
@@ -214,10 +208,7 @@ private struct ModernUnifiedSearchRows: View {
     let sourcesSearching: Bool
     let sourcesPaused: Bool
     let submittedQuery: String?
-    let canLoadMore: Bool
-    let loadMore: () -> Void
-    let gutenbergQuery: String?
-    let submitGutenberg: () -> Void
+    let paging: SearchPaging
 
     var body: some View {
         UnifiedSearchRows(
@@ -226,8 +217,7 @@ private struct ModernUnifiedSearchRows: View {
                 hasRows: !works.rows.isEmpty, isSearching: sourcesSearching || works.isResolving,
                 isPaused: sourcesPaused, othersSearching: libraries.isSearching || bibliographic.isSearching,
                 submittedQuery: submittedQuery, failures: libraries.failures + bibliographic.failures),
-            canLoadMore: canLoadMore, loadMore: loadMore,
-            gutenbergQuery: gutenbergQuery, submitGutenberg: submitGutenberg)
+            paging: paging)
     }
 }
 
@@ -266,7 +256,7 @@ struct BookSearchView: View {
     // this body (Technotes/iOS17ReaderNavigationWatchdog.md).
     @Environment(\.scenePhase) private var scenePhase
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    /// The tab's stack, which Gutenberg's results are pushed onto. A reference that never
+    /// The tab's stack, which 作品詳情 is pushed onto. A reference that never
     /// changes (postmortem guardrail 13).
     @Environment(\.searchTabNavigation) private var tabNavigation
 
@@ -535,8 +525,7 @@ struct BookSearchView: View {
                     works: unifiedSearch, libraries: librarySearch, bibliographic: openLibrarySearch,
                     sourcesSearching: aggregator.isSearching, sourcesPaused: aggregator.isPaused,
                     submittedQuery: shouldShowEmptyResult ? submittedQuery : nil,
-                    canLoadMore: canLoadMore, loadMore: { aggregator.loadMore() },
-                    gutenbergQuery: offersPublicLibraries ? trimmedQuery : nil, submitGutenberg: submitGutenberg)
+                    paging: paging)
             } else {
                 sourceRows
             }
@@ -548,8 +537,8 @@ struct BookSearchView: View {
         .navigationLinkIndicatorVisibility(.hidden)
     }
 
-    /// The sources' results where the page is not the tab's root, 載入更多, and while there is
-    /// no result what the search is doing.
+    /// The sources' results where the page is not the tab's root, the spinner that loads the
+    /// next page, and while there is no result what the search is doing.
     @available(iOS 18.0, *)
     @ViewBuilder
     private var sourceRows: some View {
@@ -583,13 +572,7 @@ struct BookSearchView: View {
             }
         }
 
-        // 載入更多: fetch the next result page from every source that
-        // answered the last round and hasn't been exhausted yet.
-        if canLoadMore {
-            loadMoreButton
-            .listRowSeparator(.hidden)
-            .listRowBackground(Color.clear)
-        }
+        SearchLoadMoreRow(paging: paging, shownCount: aggregator.results.count)
     }
 
     private var iOS17ResultList: some View {
@@ -598,11 +581,10 @@ struct BookSearchView: View {
             libraries: librarySearch,
             bibliographic: openLibrarySearch,
             rows: showsCombinedResults ? [] : aggregator.results.map(IOS17SearchResultTableRow.init(searchBook:)),
-            showsLoadMore: canLoadMore,
+            paging: paging,
             sourcesSearching: aggregator.isSearching,
             sourcesPaused: aggregator.isPaused,
             submittedQuery: shouldShowEmptyResult ? submittedQuery : nil,
-            gutenbergQuery: offersPublicLibraries ? trimmedQuery : nil,
             onSelect: { id in
                 guard let book = aggregator.results.first(where: { $0.id == id }) else {
                     // The row on screen is no longer among the results, so the tap opens
@@ -615,10 +597,6 @@ struct BookSearchView: View {
                 }
                 pushed = .result(BookSearchResultRoute(id: id, snapshot: book))
             },
-            onLoadMore: {
-                aggregator.loadMore()
-            },
-            submitGutenberg: submitGutenberg,
             openWork: { route in pushed = .work(route) }
         )
     }
@@ -631,19 +609,12 @@ struct BookSearchView: View {
         }
     }
 
-    private var canLoadMore: Bool {
-        aggregator.hasMoreResults && !aggregator.isSearching && !aggregator.isPaused
-    }
-
-    private var loadMoreButton: some View {
-        Button {
-            aggregator.loadMore()
-        } label: {
-            Label(localized("載入更多"), systemImage: "arrow.down.circle")
-                .font(DSFont.subheadline)
-                .foregroundStyle(DSColor.accent)
-                .frame(maxWidth: .infinity, minHeight: DSLayout.minimumTapTarget)
-        }
+    /// The sources' next page: loaded when the list's end is reached (search 9b). A paused
+    /// search keeps its spinner hidden, as it showed no 載入更多 before.
+    private var paging: SearchPaging {
+        SearchPaging(hasMore: aggregator.hasMoreResults && !aggregator.isPaused,
+                     canLoadMore: aggregator.hasMoreResults && !aggregator.isSearching && !aggregator.isPaused,
+                     loadMore: { aggregator.loadMore() })
     }
 
     // MARK: Empty State
@@ -710,9 +681,9 @@ struct BookSearchView: View {
         aggregator.search(query: q, sources: sources)
     }
 
-    /// The keyboard's Search: the saved libraries and the sources; with neither, Gutenberg
-    /// where it is offered. Ignored while the source library is still being read, so a large
-    /// library is not taken for none.
+    /// The keyboard's Search: the saved libraries with Gutenberg where it is offered, the
+    /// modules, Open Library and the sources. Ignored while the source library is still being
+    /// read, so a large library is not taken for none.
     private func submit() {
         // At the tab's root, the parts that answer on submit are asked first, whatever the
         // sources do.
@@ -725,30 +696,16 @@ struct BookSearchView: View {
             }
         }
         switch SearchSubmitPlan.decide(hasSources: !enabledSources.isEmpty, sourcesLoaded: sourceStore.isLoaded,
-                                       othersAnswer: othersAnswer, offersPublicLibraries: offersPublicLibraries) {
+                                       othersAnswer: othersAnswer) {
         case .sources:
             doSearch()
         case .othersOnly:
             // Nothing to ask of the sources; the list's empty state waits for the others.
             submittedQuery = trimmedQuery
             recentQueries = recentQueries.recording(trimmedQuery)
-        case .gutenberg:
-            submitGutenberg()
         case .waitForSources:
             break
         }
-    }
-
-    /// Gutenberg is asked only here, on an explicit submit (its terms; `PublicLibraries.md`).
-    private func submitGutenberg() {
-        let q = trimmedQuery
-        guard !q.isEmpty else { return }
-        recentQueries = recentQueries.recording(q)
-        // By value, onto the path a book in it pushes 作品詳情 onto (see `SearchTabNavigation`).
-        tabNavigation?.path.append(OPDSFeedRoute(
-            catalogID: PublicLibraryID.gutenberg.rawValue,
-            url: PublicLibrary.gutenbergSearchURL(query: q).absoluteString,
-            title: String(q.prefix(500)), presentation: .storefront))
     }
 
     /// 最近搜索: the same search again, as if typed and submitted.

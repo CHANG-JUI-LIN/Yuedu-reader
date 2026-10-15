@@ -11,8 +11,8 @@ struct SearchView: View {
     }
 }
 
-/// The 搜索 tab's stack, for the pages on it that push by value: Gutenberg's results and
-/// 作品詳情. One path for every page past the root, so back pops one page (postmortem guardrail
+/// The 搜索 tab's stack, for the pages on it that push by value: 作品詳情 and 青空文庫's full
+/// list. One path for every page past the root, so back pops one page (postmortem guardrail
 /// 11: an item-based push under a bound path lost its place, and back from 作品詳情 on
 /// Gutenberg's results returned to the root). A reference that never changes, so the search
 /// page can hold it without its body depending on the path (guardrail 13).

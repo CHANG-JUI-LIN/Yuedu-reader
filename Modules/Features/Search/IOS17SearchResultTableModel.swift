@@ -49,20 +49,20 @@ struct IOS17ShelfCover: Equatable {
     var defaultCover: CoverImageSource?
 }
 
-/// The 搜索 tab root's one list of works (unified search 4c-3), as values: its rows, what it
-/// says besides them, and whether Gutenberg's search is offered.
+/// The 搜索 tab root's one list of works (unified search 4c-3), as values: its rows and what it
+/// says besides them.
 struct IOS17SearchWorksSection: Equatable {
     var rows: [IOS17SearchResultTableRow]
     var status: UnifiedSearchStatus
-    var offersGutenberg: Bool
-    /// The query Gutenberg's row names.
-    var query: String = ""
 }
 
 struct IOS17SearchResultTableContent: Equatable {
     /// The sources' results where the page is not the tab's root.
     let rows: [IOS17SearchResultTableRow]
-    let showsLoadMore: Bool
+    /// The sources have more pages: the list ends with a spinner that loads them (search 9b).
+    let hasMore: Bool
+    /// The search is idle, so showing the spinner may ask for the next page.
+    var canLoadMore: Bool = false
     /// The tab root's works; set, it replaces `rows`.
     var works: IOS17SearchWorksSection? = nil
 

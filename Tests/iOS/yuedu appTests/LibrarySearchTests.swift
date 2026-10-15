@@ -38,6 +38,44 @@ struct LibrarySearchTests {
         #expect(answers[noSearch.instance.id]?.outcome == .noSearch, "no search link is not a failure")
     }
 
+    /// Search 9b: Gutenberg is searched with the libraries when the search is sent, its terms'
+    /// "on submit" (PublicLibraries.md), instead of a row that opened its own page.
+    @Test("Gutenberg answers with the libraries, asking only its search page")
+    func gutenbergJoins() async {
+        var requested: [URL] = []
+        let availability = PublicLibraryAvailability(defaults: UserDefaults(suiteName: "library-search-\(UUID().uuidString)")!)
+        let gutenberg = GutenbergProvider(availability: availability) { url in
+            requested.append(url)
+            var entry = OPDSEntry(id: "https://www.gutenberg.org/ebooks/1342.opds", title: "Pride and Prejudice")
+            entry.navigationURL = URL(string: "https://www.gutenberg.org/ebooks/1342.opds")
+            var feed = OPDSFeed()
+            feed.entries = [entry]
+            return feed
+        }
+        var answers: [String: LibrarySearchAnswer] = [:]
+        await LibrarySearch(providers: { [gutenberg] }).search("austen") { answers[$0.connectionID] = $0 }
+
+        #expect(requested == [PublicLibrary.gutenbergSearchURL(query: "austen")], "no root first, no second page")
+        #expect(answers[gutenberg.instance.id]?.outcome == .results)
+        #expect(answers[gutenberg.instance.id]?.entries.count == 1)
+    }
+
+    @Test("the libraries asked: saved OPDS and Calibre, then Gutenberg where it is offered; never WebDAV")
+    func defaultLibraries() {
+        let availability = PublicLibraryAvailability(defaults: UserDefaults(suiteName: "library-search-\(UUID().uuidString)")!)
+        let gutenberg = GutenbergProvider(availability: availability) { _ in OPDSFeed() }
+        let opds = OPDSCatalog(name: "家裡", url: "https://home.library.test/opds", kind: .opds)
+        let webDAV = OPDSCatalog(name: "雲端", url: "https://dav.library.test/", kind: .webDAV)
+        func ids() -> [String] {
+            LibrarySearch.libraries(catalogs: [opds, webDAV], gutenberg: gutenberg) { catalog in
+                OPDSProvider(connection: catalog, store: .shared)
+            }.map(\.instance.id)
+        }
+        #expect(ids() == [opds.id, PublicLibraryID.gutenberg.rawValue])
+        availability.receive(countryCode: "CHN")
+        #expect(ids() == [opds.id], "no public libraries in the China region")
+    }
+
     @Test("the model shows the books it found and the libraries that failed, with their names")
     func modelSections() async throws {
         let (store, folder) = try makeStore()
