@@ -179,9 +179,9 @@ struct UnifiedSearchTests {
         #expect(tableRow.content == row.content)
         #expect(tableRow.shelfCover?.own == .indexedCover(path: "/covers/ol-1.jpg"))
 
-        let empty = IOS17SearchResultTableContent(rows: [], hasMore: false,
+        let empty = IOS17SearchResultTableContent(rows: [],
                                                   works: IOS17SearchWorksSection(groups: [], status: .init()))
-        let filled = IOS17SearchResultTableContent(rows: [], hasMore: false,
+        let filled = IOS17SearchResultTableContent(rows: [],
                                                    works: IOS17SearchWorksSection(groups: [IOS17SearchWorkGroup(kind: .text, title: "書籍", rows: [tableRow])],
                                                                                     status: .init()))
         #expect(filled.requiresReload(comparedTo: empty))

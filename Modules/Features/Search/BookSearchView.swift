@@ -152,7 +152,6 @@ private struct IOS17SearchResults: View {
     var libraries: LibrarySearchModel? = nil
     var bibliographic: LibrarySearchModel? = nil
     let rows: [IOS17SearchResultTableRow]
-    let paging: SearchPaging
     var sourcesSearching = false
     var sourcesPaused = false
     /// The query submitted, while it is still the one in the field.
@@ -169,8 +168,6 @@ private struct IOS17SearchResults: View {
         IOS17SearchResultTable(
             content: IOS17SearchResultTableContent(
                 rows: works == nil ? rows : [],
-                hasMore: paging.hasMore,
-                canLoadMore: paging.canLoadMore,
                 works: works.map { works in
                     IOS17SearchWorksSection(
                         groups: groups.map { group in
@@ -190,7 +187,6 @@ private struct IOS17SearchResults: View {
                 }
             ),
             onSelect: onSelect,
-            onLoadMore: paging.loadMore,
             onSelectWork: { id in
                 guard let row = workRows.first(where: { $0.id == id }) else {
                     AppLogger.error("⟐ search tap found no work", context: ["id": id.uuidString, "rows": workRows.count])
@@ -212,7 +208,6 @@ private struct ModernUnifiedSearchRows: View {
     let sourcesSearching: Bool
     let sourcesPaused: Bool
     let submittedQuery: String?
-    let paging: SearchPaging
 
     var body: some View {
         UnifiedSearchRows(
@@ -221,8 +216,7 @@ private struct ModernUnifiedSearchRows: View {
                 hasRows: !works.groups.isEmpty, isSearching: sourcesSearching || works.isResolving,
                 isPaused: sourcesPaused, othersSearching: libraries.isSearching || bibliographic.isSearching,
                 submittedQuery: submittedQuery, failures: libraries.failures + bibliographic.failures,
-                filteredOut: works.isFilteredOut),
-            paging: paging)
+                filteredOut: works.isFilteredOut))
     }
 }
 
@@ -546,8 +540,7 @@ struct BookSearchView: View {
                 ModernUnifiedSearchRows(
                     works: unifiedSearch, libraries: librarySearch, bibliographic: openLibrarySearch,
                     sourcesSearching: aggregator.isSearching, sourcesPaused: aggregator.isPaused,
-                    submittedQuery: shouldShowEmptyResult ? submittedQuery : nil,
-                    paging: paging)
+                    submittedQuery: shouldShowEmptyResult ? submittedQuery : nil)
             } else {
                 sourceRows
             }
@@ -559,8 +552,8 @@ struct BookSearchView: View {
         .navigationLinkIndicatorVisibility(.hidden)
     }
 
-    /// The sources' results where the page is not the tab's root, the spinner that loads the
-    /// next page, and while there is no result what the search is doing.
+    /// The sources' results where the page is not the tab's root, and while there is no
+    /// result what the search is doing.
     @available(iOS 18.0, *)
     @ViewBuilder
     private var sourceRows: some View {
@@ -593,8 +586,6 @@ struct BookSearchView: View {
                 }
             }
         }
-
-        SearchLoadMoreRow(paging: paging, shownCount: aggregator.results.count)
     }
 
     private var iOS17ResultList: some View {
@@ -603,7 +594,6 @@ struct BookSearchView: View {
             libraries: librarySearch,
             bibliographic: openLibrarySearch,
             rows: showsCombinedResults ? [] : aggregator.results.map(IOS17SearchResultTableRow.init(searchBook:)),
-            paging: paging,
             sourcesSearching: aggregator.isSearching,
             sourcesPaused: aggregator.isPaused,
             submittedQuery: shouldShowEmptyResult ? submittedQuery : nil,
@@ -629,14 +619,6 @@ struct BookSearchView: View {
         ) {
             AggregatedResultRow(book: book)
         }
-    }
-
-    /// The sources' next page: loaded when the list's end is reached (search 9b). A paused
-    /// search keeps its spinner hidden, as it showed no 載入更多 before.
-    private var paging: SearchPaging {
-        SearchPaging(hasMore: aggregator.hasMoreResults && !aggregator.isPaused,
-                     canLoadMore: aggregator.hasMoreResults && !aggregator.isSearching && !aggregator.isPaused,
-                     loadMore: { aggregator.loadMore() })
     }
 
     // MARK: Empty State

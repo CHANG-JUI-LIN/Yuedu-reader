@@ -366,13 +366,12 @@ struct UnifiedSearchCover: View {
 }
 
 /// The list's rows on iOS 18 and later, inside the page's `List`: the leading status line,
-/// the works in groups by kind under a header each (search 9c), 青空文庫's full list, the
-/// spinner that loads the next page, then the trailing lines.
+/// the works in groups by kind under a header each (search 9c), 青空文庫's full list, then the
+/// trailing lines.
 @available(iOS 18.0, *)
 struct UnifiedSearchRows: View {
     let model: UnifiedSearchModel
     let status: UnifiedSearchStatus
-    let paging: SearchPaging
 
     var body: some View {
         let groups = model.groups
@@ -406,7 +405,6 @@ struct UnifiedSearchRows: View {
             NavigationLink(localized("顯示全部"), value: overflow)
                 .listRowBackground(Color.clear)
         }
-        SearchLoadMoreRow(paging: paging, shownCount: model.rows.count)
         ForEach(Array(status.trailing.enumerated()), id: \.offset) { offset, line in
             statusLine(line, anchors: status.leading == nil && firstID == nil && offset == 0)
         }
@@ -436,8 +434,7 @@ struct UnifiedSearchRows: View {
         List {
             UnifiedSearchRows(model: model,
                               status: UnifiedSearchStatus(hasRows: true, isSearching: false, isPaused: false,
-                                                          othersSearching: true, submittedQuery: "三體", failures: [failure]),
-                              paging: SearchPaging(hasMore: true, canLoadMore: false, loadMore: {}))
+                                                          othersSearching: true, submittedQuery: "三體", failures: [failure]))
         }
         .listStyle(.plain)
         .task { await model.update(rows, query: "三體") }

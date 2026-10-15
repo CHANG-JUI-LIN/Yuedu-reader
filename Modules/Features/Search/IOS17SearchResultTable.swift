@@ -70,7 +70,6 @@ extension IOS17SearchResultTableRow {
 struct IOS17SearchResultTable: UIViewControllerRepresentable {
     let content: IOS17SearchResultTableContent
     let onSelect: (UUID) -> Void
-    let onLoadMore: () -> Void
     /// A work of the tab root's list, by its row's id.
     var onSelectWork: (UUID) -> Void = { _ in }
 
@@ -85,7 +84,6 @@ struct IOS17SearchResultTable: UIViewControllerRepresentable {
         viewController.update(
             content: content,
             onSelect: onSelect,
-            onLoadMore: onLoadMore,
             onSelectWork: onSelectWork
         )
     }
@@ -100,22 +98,18 @@ final class IOS17SearchResultTableViewController: UITableViewController {
         case leading
         /// The tab root's works of one kind, under its header (search 9c).
         case group(ContentKind)
-        /// The spinner and the status lines under the works.
+        /// The status lines under the works.
         case trailing
     }
 
     fileprivate enum Item: Hashable {
         case result(UUID)
         case work(UUID)
-        /// The spinner after the last row while more pages exist (search 9b): showing it asks
-        /// for the next page.
-        case loadMore
         /// A status line of the works' list, by its place in `statusLines`.
         case notice(Int)
     }
 
     private static let resultCellIdentifier = "IOS17SearchResultCell"
-    private static let loadMoreCellIdentifier = "IOS17SearchLoadMoreCell"
     private static let noticeCellIdentifier = "IOS17SearchNoticeCell"
     private static let headerIdentifier = "IOS17SearchGroupHeader"
 
@@ -126,7 +120,6 @@ final class IOS17SearchResultTableViewController: UITableViewController {
     /// Each group's header.
     private var groupTitles: [ContentKind: String] = [:]
     private var onSelect: (UUID) -> Void = { _ in }
-    private var onLoadMore: () -> Void = {}
     private var onSelectWork: (UUID) -> Void = { _ in }
     private var dataSource: UITableViewDiffableDataSource<Section, Item>!
 
@@ -159,7 +152,6 @@ final class IOS17SearchResultTableViewController: UITableViewController {
             IOS17SearchResultTableCell.self,
             forCellReuseIdentifier: Self.resultCellIdentifier
         )
-        tableView.register(IOS17SearchLoadingCell.self, forCellReuseIdentifier: Self.loadMoreCellIdentifier)
         tableView.register(UITableViewHeaderFooterView.self, forHeaderFooterViewReuseIdentifier: Self.headerIdentifier)
         // Only the groups have headers; the status sections sit flush.
         tableView.sectionHeaderTopPadding = 0
@@ -170,12 +162,10 @@ final class IOS17SearchResultTableViewController: UITableViewController {
     func update(
         content: IOS17SearchResultTableContent,
         onSelect: @escaping (UUID) -> Void,
-        onLoadMore: @escaping () -> Void,
         onSelectWork: @escaping (UUID) -> Void
     ) {
         loadViewIfNeeded()
         self.onSelect = onSelect
-        self.onLoadMore = onLoadMore
         self.onSelectWork = onSelectWork
         guard content.requiresReload(comparedTo: currentContent) else { return }
 
@@ -183,7 +173,7 @@ final class IOS17SearchResultTableViewController: UITableViewController {
         defer {
             SourcePerfTrace.record(
                 "search.iOS17.nativeTableApply",
-                "\(content.rows.count) rows works=\(content.works?.rows.count ?? -1) more=\(content.hasMore) canLoad=\(content.canLoadMore)",
+                "\(content.rows.count) rows works=\(content.works?.rows.count ?? -1)",
                 since: startedAt,
                 thresholdMs: 4
             )
@@ -206,8 +196,7 @@ final class IOS17SearchResultTableViewController: UITableViewController {
                 snapshot.appendSections([.group(group.kind)])
                 snapshot.appendItems(items, toSection: .group(group.kind))
             }
-            let trailing = (content.hasMore ? [Item.loadMore] : [])
-                + works.status.trailing.indices.map { Item.notice(leadingCount + $0) }
+            let trailing = works.status.trailing.indices.map { Item.notice(leadingCount + $0) }
             if !trailing.isEmpty {
                 snapshot.appendSections([.trailing])
                 snapshot.appendItems(trailing, toSection: .trailing)
@@ -216,8 +205,7 @@ final class IOS17SearchResultTableViewController: UITableViewController {
             rowsByID = Dictionary(content.rows.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
             statusLines = []
             snapshot.appendSections([.results])
-            snapshot.appendItems(content.rows.map { .result($0.id) } + (content.hasMore ? [.loadMore] : []),
-                                 toSection: .results)
+            snapshot.appendItems(content.rows.map { .result($0.id) }, toSection: .results)
         }
         dataSource.applySnapshotUsingReloadData(snapshot)
     }
@@ -231,7 +219,7 @@ final class IOS17SearchResultTableViewController: UITableViewController {
             onSelect(id)
         case .work(let id):
             onSelectWork(id)
-        case .loadMore, .notice:
+        case .notice:
             break
         }
     }
@@ -264,17 +252,9 @@ final class IOS17SearchResultTableViewController: UITableViewController {
 
     override func tableView(_ tableView: UITableView, shouldHighlightRowAt indexPath: IndexPath) -> Bool {
         switch dataSource.itemIdentifier(for: indexPath) {
-        case .notice, .loadMore, nil: false
+        case .notice, nil: false
         default: true
         }
-    }
-
-    /// Reaching the end loads the next page (search 9b). A running search does not ask again;
-    /// when it ends, `canLoadMore` changes the content, the reload shows the spinner again,
-    /// and this asks then.
-    override func tableView(_ tableView: UITableView, willDisplay cell: UITableViewCell, forRowAt indexPath: IndexPath) {
-        guard dataSource.itemIdentifier(for: indexPath) == .loadMore, currentContent?.canLoadMore == true else { return }
-        onLoadMore()
     }
 
     private func configureDataSource() {
@@ -297,9 +277,6 @@ final class IOS17SearchResultTableViewController: UITableViewController {
                 cell.configure(with: row)
                 return cell
 
-            case .loadMore:
-                return tableView.dequeueReusableCell(withIdentifier: Self.loadMoreCellIdentifier, for: indexPath)
-
             case .notice(let index):
                 var configuration = UIListContentConfiguration.cell()
                 configuration.text = self.statusLines.indices.contains(index) ? self.statusLines[index] : nil
@@ -309,39 +286,6 @@ final class IOS17SearchResultTableViewController: UITableViewController {
             }
         }
         dataSource.defaultRowAnimation = .none
-    }
-}
-
-/// The spinner row after the last result while more pages exist; nothing to tap.
-private final class IOS17SearchLoadingCell: UITableViewCell {
-    override init(style: UITableViewCell.CellStyle, reuseIdentifier: String?) {
-        super.init(style: style, reuseIdentifier: reuseIdentifier)
-        backgroundColor = .clear
-        selectionStyle = .none
-        let spinner = UIActivityIndicatorView(style: .medium)
-        spinner.translatesAutoresizingMaskIntoConstraints = false
-        spinner.startAnimating()
-        contentView.addSubview(spinner)
-        NSLayoutConstraint.activate([
-            spinner.centerXAnchor.constraint(equalTo: contentView.centerXAnchor),
-            spinner.topAnchor.constraint(equalTo: contentView.topAnchor, constant: DSSpacing.md),
-            spinner.bottomAnchor.constraint(equalTo: contentView.bottomAnchor, constant: -DSSpacing.md),
-        ])
-        isAccessibilityElement = true
-        accessibilityLabel = localized("正在載入更多")
-        accessibilityTraits = .updatesFrequently
-        separatorInset = UIEdgeInsets(top: 0, left: 0, bottom: 0, right: .greatestFiniteMagnitude)
-    }
-
-    @available(*, unavailable)
-    required init?(coder _: NSCoder) {
-        fatalError("init(coder:) is unavailable")
-    }
-
-    override func prepareForReuse() {
-        super.prepareForReuse()
-        // A reused spinner stops when its row leaves the screen.
-        (contentView.subviews.first as? UIActivityIndicatorView)?.startAnimating()
     }
 }
 
