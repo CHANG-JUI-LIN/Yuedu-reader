@@ -44,7 +44,7 @@ Phase 6 deferred it to this plan (maintainer, 2026-10-14).
 - **One answer language:** `AIAnswerLanguage` (the app's language), for the reasons only. Titles stay as published.
 - **Covers and descriptions:** Open Library lookups go through the existing client.
   - They happen only while generating, never when the home opens.
-  - They happen only if 資料來源 (6h) has Open Library checked. Otherwise the work shows `GeneratedBookCover`.
+  - They happen only if 資料來源 (6h, `MetadataFillOrderStore.shared`, the `.openLibrary` entry's `isEnabled`) has Open Library checked. Otherwise the work shows `GeneratedBookCover`.
   - A match needs title and author (B); a title alone never takes a cover.
 - **Stored result:** one file, `Application Support/AIRecommendations/latest.json`.
   - It holds the works, `generatedAt`, the service name and model.
@@ -83,17 +83,17 @@ Each step is a branch, with its tests first.
   - A `revision` is published.
 - `AIRecommendationService` (`@MainActor`, `.shared`) has one use case, `generate()`:
   1. Reads the inputs.
-     - Recency: `lastOpenedDate ?? addedDate`.
-     - Category and intro from the cached detail, as `AIBookshelfOrganizerModel.shelfBooks` reads them.
+     - Recency: books with a `lastOpenedDate`, newest first. A book never opened is not 「最近讀的」, so it is not sent.
+     - Category from the cached detail, as `AIBookshelfOrganizerModel.shelfBooks` reads it. Nothing else of the book is sent: no intro, no notes, no progress (decision 2).
      - Genres: `ReadingGenreRecorder.shared.profile().weights(at:)`.
   2. Calls the active service (`AIProviderAssembly.activeService()`).
   3. Parses the answer.
-  4. Resolves each work through Open Library's search, title and author, confidence B. This happens only when 資料來源 has Open Library checked.
+  4. Resolves each work through Open Library's search, title and author, confidence B. This happens only when 資料來源's `.openLibrary` entry is checked.
   5. Saves the result. A failure leaves the stored list as it was.
 - States: idle, generating, failed(message), unavailable(reason).
 - Spans `ai.recommend` and `ai.recommend.resolve`. `AIDiagnostics` feature `aiRecommendations`.
 - Tests:
-  - with a scripted provider and a stubbed lookup: inputs (recency order, 30 cap, genres);
+  - with a scripted provider and a stubbed lookup: inputs (recency order, never-opened books left out, 30 cap, genres, no intro in the request);
   - the lookup is skipped when Open Library is unchecked;
   - a failure keeps the old list;
   - the store round-trips.
@@ -111,14 +111,16 @@ Each step is a branch, with its tests first.
   - the service's missing-setup message with a link to AI 設定.
   - The progress and failure are shown in the row.
 - The row's header subtitle is 「AI 產生 · {service} · {date}」.
-- 「重新產生」 is added to the row's section actions, through a per-binding hook in `HomeSectionActions`.
+- 「重新產生」 sits in a visible ••• in the row's header (decision 3), which also holds the row's existing section actions. The long-press `.contextMenu` keeps the same items; it is not the only way in. (Open until the maintainer confirms; see the review question.)
+- The row draws with all five layouts (decision 1): the stored works go through the same `HomeSectionLayout` / `HomeLayoutStyle` path as any row. Only the call-to-action, progress and failure states are layout-independent, drawn in the row's place.
 - In 選擇內容來源, a 官方模組 group lists 「AI 推薦」.
 - `#Preview`: empty, generating, loaded, Pro-locked.
 - Tests:
   - the provider serves the store;
   - its `inputsKey` follows the revision;
   - `HomeSection` codable round-trip and owner;
-  - registry order (`ProviderManifestTests`).
+  - registry order (`ProviderManifestTests`);
+  - the editor offers all five layouts for the binding, and each draws the stored works.
 
 ### 8d — 資源庫 官方模組
 
