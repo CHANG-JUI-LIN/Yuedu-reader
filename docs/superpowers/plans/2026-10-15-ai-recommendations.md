@@ -177,3 +177,23 @@ Each step is a branch, with its tests first.
   - The prompt asks for 20 real works by their published titles, an author for each, and a one-sentence reason in the answer language. Data is treated as data.
   - `parse` is strict: a non-JSON answer, or a work missing its title or author, throws `LLMError.invalidSchema`; a cut-off answer throws `incompleteOutput`. Titles lose wrapping brackets. Works on the shelf, and repeats, are dropped by `WorkMatchKey` (title equal, authors compatible). At most 20 kept. Every work on the shelf gives an empty list, not a failure.
 - Tests: `AIRecommendationTests` 10/10.
+
+### 8b — branch `ai-rec/8b-service` (2026-10-15)
+
+- `AIRecommendationStore` (Services/AI): `latest.json` holds `AIRecommendationList`.
+  - Each entry is the work plus the Open Library match: its `SourceRecord`, cover and blurb.
+  - The list also holds `generatedAt`, the service name and the model.
+  - `revision` is bumped on every write.
+  - `setMatch` writes into the current list only. A match for a list that has since been replaced is dropped.
+- `AIRecommendationService.generate(shelf:)` is the one use case.
+  - **Inputs:** the books with a `lastOpenedDate`, newest first, 30 at most. Their category is read through `AIBookshelfOrganizerModel.shelfBooks(store:records:)`, which gained a `records` parameter so there is one path for cached categories. Genres come from the recorder.
+  - **Failures:** `nothingRead` (no book opened) and `nothingNew` (every suggestion already on the shelf) fail the run, so the old list is kept. A missing service fails with `Unavailable.message`. These cover the plan's "unavailable"; there is no separate state.
+  - **Differs from the plan's order:** the works are saved as soon as the answer parses, and the Open Library lookups follow, each written as found (`.resolving(completed:total:)`). This is because the lookups are paced at one request a second, two requests a work, so up to about 40 s. The home shows the works while covers arrive.
+  - **Disclosed degradation:** a lookup that fails is logged (`AppLogger.network`), and that work keeps its generated cover. Open Library is external. The other works go on.
+  - **When lookups run:** only when 資料來源 (`MetadataFillOrderStore`) has Open Library checked.
+- **Open Library code, one path each:**
+  - `OpenLibrarySearch.work(title:author:)` searches by `title` and `author` (5 candidates) and matches at B. It does not read 搜尋時也查 Open Library.
+  - `OpenLibraryFillProvider.description(workKey:script:)` is extracted from `lookUp`, which now calls it.
+- Spans: `ai.recommend` (outcome ok/failed/invalid) and `ai.recommend.resolve` (matched/failed counts). Diagnostics feature: `aiRecommendations`.
+- Two new strings in all five lproj.
+- Tests: `AIRecommendationServiceTests` 10 (new), the new `OpenLibrarySearchTests.workByTitleAndAuthor`, plus `AIRecommendationTests`, `OpenLibraryFillProviderTests` and `AIBookshelfOrganizerTests`: 42/42.

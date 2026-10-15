@@ -109,6 +109,33 @@ struct OpenLibrarySearchTests {
 
     // MARK: - Helpers
 
+    @Test("AI 推薦's lookup: by title and author, matched only when both agree; the search setting is not read")
+    func workByTitleAndAuthor() async throws {
+        OpenLibraryStub.install(["/search.json": .json(#"""
+        {"numFound": 2, "docs": [
+          {"key": "/works/OL1W", "title": "三體 II", "author_name": ["劉慈欣"]},
+          {"key": "/works/OL17267881W", "title": "三体", "author_name": ["刘慈欣"], "cover_i": 8245041}
+        ]}
+        """#)])
+        let search = makeSearch(enabled: false)
+        let found = try #require(try await search.work(title: "三體", author: "劉慈欣"))
+        #expect(found.record.key.item == "/works/OL17267881W")
+        guard case .remote(let cover, _) = found.cover else {
+            Issue.record("expected a remote cover, got \(String(describing: found.cover))")
+            return
+        }
+        #expect(cover.absoluteString == "https://covers.openlibrary.org/b/id/8245041-M.jpg")
+        let items = URLComponents(url: try #require(OpenLibraryStub.requests.first?.url), resolvingAgainstBaseURL: false)?.queryItems ?? []
+        #expect(items.first { $0.name == "title" }?.value == "三體")
+        #expect(items.first { $0.name == "author" }?.value == "劉慈欣")
+        #expect(items.first { $0.name == "q" } == nil)
+
+        #expect(try await search.work(title: "三體", author: "別人") == nil, "a title alone never matches")
+        OpenLibraryStub.install(["/search.json": .json(#"{"numFound": 1, "docs": [{"key": "/works/OL2W", "title": "球狀閃電", "author_name": ["劉慈欣"]}]}"#)])
+        let uncovered = try #require(try await search.work(title: "球狀閃電", author: "劉慈欣"))
+        #expect(uncovered.cover == nil, "no cover id is no cover, not a generated one")
+    }
+
     private func makeSearch(enabled: Bool = true) -> OpenLibrarySearch {
         let configuration = URLSessionConfiguration.ephemeral
         configuration.protocolClasses = [OpenLibraryStub.self]

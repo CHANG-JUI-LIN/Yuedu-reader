@@ -109,8 +109,11 @@ final class AIBookshelfOrganizerModel: ObservableObject {
     /// Everything the shelf knows about its books without going to the network: an online
     /// book's category and blurb come from the detail page the source already returned, when
     /// that page is still cached.
-    static func shelfBooks(store: BookStore) async -> [AIBookshelfOrganizer.Book] {
-        let records = store.books
+    ///
+    /// - Parameter records: the books to read, in their order; the whole shelf when nil. AI 推薦
+    ///   reads its 30 most recently read books through here.
+    static func shelfBooks(store: BookStore, records: [ReadingBook]? = nil) async -> [AIBookshelfOrganizer.Book] {
+        let records = records ?? store.books
         let sources = Dictionary(BookSourceStore.shared.sources.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
         struct Request: Sendable {
             let book: AIBookshelfOrganizer.Book

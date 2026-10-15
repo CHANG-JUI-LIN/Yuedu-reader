@@ -62,11 +62,33 @@ final class OpenLibrarySearch: SearchAnswering {
     }
 
     private func entries(for query: String) async throws -> [CollectionEntry] {
+        try await entries([URLQueryItem(name: "q", value: query)], limit: Self.limit)
+    }
+
+    /// Candidates looked at for one work by title and author: the right one is near the top.
+    static let workLimit = 5
+
+    /// The work `title` by `author` names, matched as the work index merges at B: the title
+    /// equal and the authors compatible (`WorkMatchKey`). A title alone never matches. Nil when
+    /// Open Library has no such work. AI 推薦 asks this for each suggestion; it does not read
+    /// 搜尋時也查 Open Library, which is about 搜索 (its caller checks 資料來源 instead).
+    func work(title: String, author: String) async throws -> (record: SourceRecord, cover: CoverReference?)? {
+        let found = try await entries([URLQueryItem(name: "title", value: title), URLQueryItem(name: "author", value: author)],
+                                      limit: Self.workLimit)
+        let titleKey = WorkMatchKey.title(title)
+        for case let .item(record, summary, _) in found
+        where WorkMatchKey.title(record.title) == titleKey && WorkMatchKey.authorsCompatible([author], record.authors) {
+            if case .generated = summary.cover { return (record, nil) }
+            return (record, summary.cover)
+        }
+        return nil
+    }
+
+    private func entries(_ query: [URLQueryItem], limit: Int) async throws -> [CollectionEntry] {
         var components = URLComponents(string: "https://openlibrary.org/search.json")!
-        components.queryItems = [
-            URLQueryItem(name: "q", value: query),
+        components.queryItems = query + [
             URLQueryItem(name: "fields", value: "key,title,author_name,cover_i,language,isbn"),
-            URLQueryItem(name: "limit", value: String(Self.limit)),
+            URLQueryItem(name: "limit", value: String(limit)),
         ]
         let url = components.url!
         await pacer.wait(for: url.host ?? "")

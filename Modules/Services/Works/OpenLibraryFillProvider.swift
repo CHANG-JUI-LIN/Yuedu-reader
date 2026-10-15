@@ -64,10 +64,8 @@ final class OpenLibraryFillProvider: MetadataFillProvider {
             let subjects = Self.subjects(doc.subject ?? []).filter { WritingScript(of: $0) == script }
             if !subjects.isEmpty { values[.tags] = .texts(subjects) }
         }
-        if query.missing.contains(.intro), let url = URL(string: "https://openlibrary.org\(workKey).json") {
-            let work = try JSONDecoder().decode(WorkResponse.self, from: try await get(url))
-            let intro = OnlineBookDetailPresentationPolicy.sanitizeIntro(work.description?.text ?? "", indentParagraphs: false)
-            if !intro.isEmpty, WritingScript(of: intro) == script { values[.intro] = .text(intro) }
+        if query.missing.contains(.intro), let intro = try await description(workKey: workKey, script: script) {
+            values[.intro] = .text(intro)
         }
         // The edition's own cover only: the work's may be another language's edition.
         if query.missing.contains(.cover), let coverID = edition.cover_i, coverID > 0 {
@@ -82,6 +80,15 @@ final class OpenLibraryFillProvider: MetadataFillProvider {
                           editionID.flatMap { ExternalIdentifier.normalized(.openLibraryEdition, $0) }].compactMap { $0 },
             sourceItem: SourceItemKey(instance: key, item: workKey)
         )
+    }
+
+    /// The work's description as plain text, when it has one written in `script`; nil
+    /// otherwise. One request.
+    func description(workKey: String, script: WritingScript) async throws -> String? {
+        guard let url = URL(string: "https://openlibrary.org\(workKey).json") else { return nil }
+        let work = try JSONDecoder().decode(WorkResponse.self, from: try await get(url))
+        let intro = OnlineBookDetailPresentationPolicy.sanitizeIntro(work.description?.text ?? "", indentParagraphs: false)
+        return !intro.isEmpty && WritingScript(of: intro) == script ? intro : nil
     }
 
     /// Subjects as categories: Open Library's are long and many, so only short ones, at most 5.
