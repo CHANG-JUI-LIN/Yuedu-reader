@@ -194,3 +194,28 @@ The maintainer approved 9a–9e as written: the chips are 類型 and 來源配�
 - **Tests:**
   - `UnifiedSearchTests.groups` and `.filteredOut`, `IOS17SearchResultTableTests.groupSections` (all new); the existing ones were updated for `groups`. 25/25 on iOS 27.
   - `PublicLibrarySearchTabUITests.testNoSourcesSearchesThePublicLibraries` now also checks the 書籍 header and the 類型 chip. It passes on iOS 27 and iOS 17.5, and the screenshots were checked.
+
+### 9d — branch `search/9d-aggregation-sources` (2026-10-15)
+
+- **聚合設定 is laid out like Emby's 聚合資料.** 數據來源 comes first, then 偏好閱讀語言, 推薦範圍, 書庫順序 and 隱藏已讀.
+  - 首頁欄目 is removed (it belongs to 編輯首頁), together with its five strings.
+- **數據來源** (`AggregationDataSourcesSection`): each row is a `LabeledContent` with an n/m count and pushes its checklist. VoiceOver reads the count in words: 「已勾選 2 個，共 3 個」.
+  - **搜尋來源** (`SearchSourcesView`):
+    - It lists the saved OPDS and Calibre libraries, Gutenberg and 青空文庫, all in 書庫順序, then the installed modules that have a search. WebDAV is left out because it has no search.
+    - 搜尋時也查 Open Library moved here as its own switch. It still uses the same `GlobalSettings.searchOpenLibrary` value, so nothing needed migrating, and it was removed from 網路設定.
+    - 來源配置 are not listed: they are chosen with the search's own chip.
+    - The other switches are the new optional `AggregationSettings.hiddenFromSearch`. Settings saved before this change read as all checked.
+  - **最新來源** (`LatestSourcesView`): the same `hiddenFromLatest` switches that 最新's own options show. Both pages edit one store.
+  - **資料來源** opens the existing `MetadataFillSourcesView`. 網路設定 keeps its own 資料來源 link to the same page: one list, one store, two ways in.
+- **Where 搜尋來源 is honoured:**
+  - `LibrarySearch.libraries(shown:)` covers OPDS, Calibre and Gutenberg.
+  - `ModuleSearch(shown:)` covers the modules.
+  - 青空文庫's search as you type now requires both `offersPublicLibraries` and its own switch.
+  - Open Library uses its existing switch.
+- **Tests:**
+  - New `AggregationDataSourcesTests` (round trip and old values, places and count, an unchecked library is not asked), plus a check in `ModuleSearchTests`. The aggregation, latest, hide-read, order, language, editor, module-search and library-search suites pass, 40/40 on iOS 27.
+  - UI tests:
+    - `AggregationSettingsUITests.testDataSources` replaces `testHomeSections`;
+    - `ExploreHomeUITests.testShowInLatestOff` now goes through 最新來源;
+    - all of `AggregationSettingsUITests`, `testShowInLatestOff` and `ModuleLibraryUITests.testModuleInMetadataFillSources` pass on iOS 27;
+    - `testDataSources`, `testShowInLatestOff` and `testModuleInMetadataFillSources` pass on iOS 17.5.

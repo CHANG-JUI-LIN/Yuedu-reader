@@ -3,8 +3,9 @@ import Foundation
 
 // Unified library 5d-3d: 聚合設定 (Phase 5 plan, decision 21), mapped from the Emby user
 // settings that shape its aggregation: 偏好閱讀語言 and 推薦範圍 (5d-3d), 書庫順序 (5d-3e),
-// 顯示在最新 (5d-3f, set in the 最新 section's form since decision 36), 隱藏已讀 (5d-3g, one
-// switch for the whole home since decision 36).
+// 顯示在最新 (5d-3f, set in the 最新 section's form since decision 36, and in 數據來源's 最新來源
+// since search 9d), 隱藏已讀 (5d-3g, one switch for the whole home since decision 36), and
+// 搜尋來源 (search 9d).
 
 struct AggregationSettings: Codable, Equatable, Sendable {
     /// Nil until the reader chooses: then `ReadingLanguagePreferences.initial`, which follows
@@ -17,6 +18,9 @@ struct AggregationSettings: Codable, Equatable, Sendable {
     /// reader or by the move of the 最新 section's own list (`adoptLegacyLatestExcluded`). A
     /// library removed and added again under the same id stays off.
     var hiddenFromLatest: [SourceInstanceKey]?
+    /// The libraries and modules 搜尋來源 turns off (search 9d), as `hiddenFromLatest` does for
+    /// 最新. Nil until set. Open Library's switch stays `GlobalSettings.searchOpenLibrary`.
+    var hiddenFromSearch: [SourceInstanceKey]?
     /// 隱藏已讀 for the whole home but 繼續閱讀 (`HomeReadFilter`), as Emby's "Hide fully played
     /// content" (decision 36). Nil until the reader sets it: then the two switches before it.
     var hidesRead: Bool?
@@ -27,11 +31,12 @@ struct AggregationSettings: Codable, Equatable, Sendable {
     var hidesReadInRelated: Bool?
 
     init(readingLanguages: ReadingLanguagePreferences? = nil, libraryOrder: [SourceInstanceKey]? = nil,
-         hiddenFromLatest: [SourceInstanceKey]? = nil, hidesRead: Bool? = nil,
-         hidesReadInLatest: Bool? = nil, hidesReadInRelated: Bool? = nil) {
+         hiddenFromLatest: [SourceInstanceKey]? = nil, hiddenFromSearch: [SourceInstanceKey]? = nil,
+         hidesRead: Bool? = nil, hidesReadInLatest: Bool? = nil, hidesReadInRelated: Bool? = nil) {
         self.readingLanguages = readingLanguages
         self.libraryOrder = libraryOrder
         self.hiddenFromLatest = hiddenFromLatest
+        self.hiddenFromSearch = hiddenFromSearch
         self.hidesRead = hidesRead
         self.hidesReadInLatest = hidesReadInLatest
         self.hidesReadInRelated = hidesReadInRelated
@@ -99,6 +104,20 @@ final class AggregationSettingsStore: ObservableObject {
             hidden.removeAll { $0 == key }
             if !shown { hidden.append(key) }
             settings.hiddenFromLatest = hidden
+        }
+    }
+
+    /// 搜尋來源, for one library or module: searched unless the reader unchecked it.
+    func isShownInSearch(_ key: SourceInstanceKey) -> Bool {
+        !(settings.hiddenFromSearch ?? []).contains(key)
+    }
+
+    func setShownInSearch(_ shown: Bool, for key: SourceInstanceKey) {
+        edit { settings in
+            var hidden = settings.hiddenFromSearch ?? []
+            hidden.removeAll { $0 == key }
+            if !shown { hidden.append(key) }
+            settings.hiddenFromSearch = hidden
         }
     }
 

@@ -3,8 +3,8 @@ import XCTest
 /// Unified library 5d-3d and 5d-3e: 設定 → 聚合設定 (Phase 5 plan, decision 21), laid out as
 /// Emby's Home Screen page since decision 36. 偏好閱讀語言 starts as the interface language; a
 /// language added there leads Gutenberg's categories once moved first, and the choice survives
-/// a relaunch. 書庫順序 orders the libraries' rows. 隱藏已讀, one switch, starts on. The home's
-/// sections are listed on the page and edit the home 探索 saved.
+/// a relaunch. 書庫順序 orders the libraries' rows. 隱藏已讀, one switch, starts on. 數據來源
+/// (search 9d) lists each purpose's places with how many are checked.
 final class AggregationSettingsUITests: XCTestCase {
     override func setUpWithError() throws { continueAfterFailure = false }
 
@@ -165,48 +165,65 @@ final class AggregationSettingsUITests: XCTestCase {
         application(fresh: true).launch()
     }
 
+    /// Search 9d: 數據來源 on top, each purpose with its n/m; 搜尋來源 lists the libraries and Open
+    /// Library (moved from 網路設定), and a switch turned off there counts and lasts. The home's
+    /// sections are no longer on the page.
+    /// 「已勾選 2 個，共 3 個」 as numbers.
+    private func checkedCount(_ row: XCUIElement) -> (checked: Int, total: Int) {
+        let numbers = (row.value as? String ?? "").split(whereSeparator: { !$0.isNumber }).compactMap { Int($0) }
+        guard numbers.count == 2 else {
+            XCTFail("not a count: \(row.value ?? "")")
+            return (-1, -1)
+        }
+        return (numbers[0], numbers[1])
+    }
+
     @MainActor
-    func testHomeSections() {
+    func testDataSources() {
         let app = application(fresh: true)
+        app.launchArguments += ["-yd_search_open_library", "YES"]
         app.launch()
         openAggregationSettings(app)
-        // Before 探索 first opens there is no home yet.
-        let notYet = app.staticTexts["打開探索後，首頁欄目會列在這裡。"].firstMatch
-        reveal(notYet, in: app)
-        XCTAssertTrue(notYet.waitForExistence(timeout: 5), app.debugDescription)
+
+        let search = app.buttons["aggregation.dataSources.search"].firstMatch
+        XCTAssertTrue(search.waitForExistence(timeout: 5), app.debugDescription)
+        XCTAssertTrue(app.buttons["aggregation.dataSources.latest"].exists)
+        XCTAssertTrue(app.buttons["aggregation.dataSources.metadata"].exists)
+        // Gutenberg, 青空文庫, Open Library and any module that searches, all checked; spoken as
+        // words, not a fraction.
+        let total = checkedCount(search).total
+        XCTAssertGreaterThanOrEqual(total, 3, "\(search.value ?? "")")
+        XCTAssertEqual(checkedCount(search).checked, total, "\(search.value ?? "")")
+        XCTAssertFalse(app.staticTexts["首頁欄目"].exists, "the home's sections are 編輯首頁's")
+        attach(app, "aggregation-data-sources")
+
+        search.tap()
+        XCTAssertTrue(app.navigationBars["搜尋來源"].waitForExistence(timeout: 5), app.debugDescription)
+        let gutenberg = app.switches["aggregation.search.gutenberg.builtin.gutenberg"].firstMatch
+        XCTAssertTrue(gutenberg.waitForExistence(timeout: 5), app.debugDescription)
+        XCTAssertTrue(app.switches["aggregation.search.openLibrary"].exists, app.debugDescription)
+        XCTAssertEqual(gutenberg.value as? String, "1")
+        // The switch sits at the row's trailing end (the row is the element on iOS 17).
+        gutenberg.coordinate(withNormalizedOffset: CGVector(dx: 1, dy: 0.5)).withOffset(CGVector(dx: -30, dy: 0)).tap()
+        XCTAssertEqual(gutenberg.value as? String, "0")
+        attach(app, "aggregation-search-sources")
         app.navigationBars.buttons.element(boundBy: 0).tap()
-
-        let exploreTab = app.tabBars.buttons["探索"].firstMatch
-        XCTAssertTrue(exploreTab.waitForExistence(timeout: 5), app.debugDescription)
-        exploreTab.tap()
-        // 精選's first card shows once the home is read, and so saved.
-        XCTAssertTrue(app.buttons["home.collection.gutenberg.chinese"].firstMatch.waitForExistence(timeout: 20), app.debugDescription)
-
-        openAggregationSettings(app)
-        // On the page itself, as Emby lists its Home Sections (decision 36).
-        let rows = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "aggregation.homeSection."))
-        reveal(rows.firstMatch, in: app)
-        XCTAssertTrue(rows.firstMatch.waitForExistence(timeout: 5), app.debugDescription)
-        // A row reads its section's name, and 已隱藏 when hidden.
-        XCTAssertFalse(rows.firstMatch.label.contains("已隱藏"), rows.firstMatch.label)
-        // It names the 首頁配置 it edits.
-        let configuration = app.descendants(matching: .any)["aggregation.homeConfiguration"].firstMatch
-        XCTAssertTrue(configuration.exists, app.debugDescription)
-        XCTAssertTrue("\(configuration.label) \(configuration.value ?? "")".contains("預設"), configuration.debugDescription)
-        attach(app, "aggregation-home-sections")
-
-        // A section's own page, the one 編輯首頁 pushes: hiding it shows here.
-        rows.firstMatch.tap()
-        let shown = app.switches.firstMatch
-        XCTAssertTrue(shown.waitForExistence(timeout: 5), app.debugDescription)
-        XCTAssertEqual(shown.value as? String, "1")
-        shown.coordinate(withNormalizedOffset: CGVector(dx: 1, dy: 0.5)).withOffset(CGVector(dx: -30, dy: 0)).tap()
-        XCTAssertEqual(shown.value as? String, "0")
-        app.navigationBars.buttons.element(boundBy: 0).tap()
-        XCTAssertTrue(rows.firstMatch.waitForExistence(timeout: 5), app.debugDescription)
-        XCTAssertTrue(rows.firstMatch.label.hasSuffix("已隱藏"), rows.firstMatch.label)
+        XCTAssertTrue(search.waitForExistence(timeout: 5))
+        XCTAssertEqual(checkedCount(search).checked, total - 1, search.debugDescription)
 
         app.terminate()
+        let relaunched = application(fresh: false)
+        relaunched.launch()
+        openAggregationSettings(relaunched)
+        let reread = relaunched.buttons["aggregation.dataSources.search"].firstMatch
+        XCTAssertTrue(reread.waitForExistence(timeout: 5))
+        XCTAssertEqual(checkedCount(reread).checked, total - 1, reread.debugDescription)
+        reread.tap()
+        let off = relaunched.switches["aggregation.search.gutenberg.builtin.gutenberg"].firstMatch
+        XCTAssertTrue(off.waitForExistence(timeout: 5))
+        off.coordinate(withNormalizedOffset: CGVector(dx: 1, dy: 0.5)).withOffset(CGVector(dx: -30, dy: 0)).tap()
+        XCTAssertEqual(off.value as? String, "1", "left checked for the other tests")
+        relaunched.terminate()
         application(fresh: true).launch()
     }
 }

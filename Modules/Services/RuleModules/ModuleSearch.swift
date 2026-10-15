@@ -11,13 +11,17 @@ final class ModuleSearch: SearchAnswering {
     private let providers: @MainActor () -> [ModuleProvider]
     private let timeout: Duration
 
-    init(providers: (@MainActor () -> [ModuleProvider])? = nil, timeout: Duration = ModuleSearch.timeout) {
+    private let shown: @MainActor (SourceInstanceKey) -> Bool
+
+    init(providers: (@MainActor () -> [ModuleProvider])? = nil, timeout: Duration = ModuleSearch.timeout,
+         shown: (@MainActor (SourceInstanceKey) -> Bool)? = nil) {
         self.providers = providers ?? { SourceProviderRegistry.moduleProviders(in: .shared) }
         self.timeout = timeout
+        self.shown = shown ?? { AggregationSettingsStore.shared.isShownInSearch($0) }
     }
 
-    /// The modules a search asks: those with a search.
-    private var searching: [ModuleProvider] { providers().filter { $0.module.search != nil } }
+    /// The modules a search asks: those with a search that 搜尋來源 keeps checked (search 9d).
+    private var searching: [ModuleProvider] { providers().filter { $0.module.search != nil && shown($0.instance) } }
 
     var isAvailable: Bool { !searching.isEmpty }
 

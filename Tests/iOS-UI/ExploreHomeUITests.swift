@@ -144,8 +144,9 @@ final class ExploreHomeUITests: XCTestCase {
         attach(app, "explore-home-gutenberg-latest")
     }
 
-    /// 顯示在最新 (5d-3f), in 最新's own options since decision 36: turned off for Gutenberg in
-    /// 設定 → 聚合設定 → 最新, Gutenberg's 最新 is not asked for and its book is not on the home.
+    /// 顯示在最新 (5d-3f), in 最新's own options since decision 36 and 數據來源's 最新來源 since
+    /// search 9d: turned off for Gutenberg in 設定 → 聚合設定 → 最新來源, Gutenberg's 最新 is not
+    /// asked for and its book is not on the home.
     @MainActor
     func testShowInLatestOff() {
         let app = application()
@@ -159,12 +160,11 @@ final class ExploreHomeUITests: XCTestCase {
         for _ in 0..<4 where !row.exists { app.swipeUp() }
         XCTAssertTrue(row.waitForExistence(timeout: 5))
         row.tap()
-        let latest = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@ AND label BEGINSWITH %@",
-                                                      "aggregation.homeSection.", "最新")).firstMatch
-        for _ in 0..<4 where !latest.isHittable { app.swipeUp() }
+        // 數據來源 → 最新來源 (search 9d): the same switches 最新's own options show.
+        let latest = app.buttons["aggregation.dataSources.latest"].firstMatch
         XCTAssertTrue(latest.waitForExistence(timeout: 5), app.debugDescription)
         latest.tap()
-        let toggle = app.switches["homeSection.latest.library.gutenberg.\(gutenbergID)"].firstMatch
+        let toggle = app.switches["aggregation.latest.gutenberg.\(gutenbergID)"].firstMatch
         for _ in 0..<3 where !toggle.isHittable { app.swipeUp() }
         XCTAssertTrue(toggle.waitForExistence(timeout: 5), app.debugDescription)
         XCTAssertEqual(toggle.value as? String, "1")

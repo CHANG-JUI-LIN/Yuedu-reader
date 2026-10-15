@@ -118,6 +118,8 @@ struct ModuleSearchTests {
         ModuleStub.install(["example.com/s": .html(html([("三體", "劉慈欣")]))])
 
         #expect(!ModuleSearch(providers: { [f.plain] }).isAvailable, "no module with a search: nothing to ask")
+        #expect(!ModuleSearch(providers: { [f.searching] }, shown: { _ in false }).isAvailable,
+                "unchecked in 搜尋來源 (search 9d): not asked")
         let model = LibrarySearchModel(searches: [ModuleSearch(providers: { [f.searching] })])
         #expect(model.isAvailable)
         #expect(ModuleStub.urls.isEmpty, "made and asked whether it would search: nothing sent")
