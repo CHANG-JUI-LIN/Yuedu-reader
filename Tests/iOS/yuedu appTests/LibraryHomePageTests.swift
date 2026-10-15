@@ -25,7 +25,9 @@ struct LibraryHomePageTests {
         #expect(bindings.first == .gutenbergShelf(id: "popular"))
         #expect(bindings.contains(.gutenbergShelf(id: "latest")))
         #expect(bindings.contains(.gutenbergShelf(id: "zh")))
-        #expect(Array(bindings.suffix(PublicLibraryCollection.all.count)) == HomeSectionBinding.gutenbergCollections)
+        // 精選書單 leads the bundled lists (專題集合, a338bbea), so they are one more than the lists.
+        #expect(Array(bindings.suffix(HomeSectionBinding.gutenbergCollections.count)) == HomeSectionBinding.gutenbergCollections)
+        #expect(bindings.filter { $0 == .gutenbergLists }.count == 1)
     }
 
     /// A row's id is its section's: an id made anew on every build would load every row again
