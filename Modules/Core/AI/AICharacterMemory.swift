@@ -29,7 +29,10 @@ struct AIMemorySpan: Codable, Hashable, Sendable {
 }
 
 struct AIMemoryBudget: Codable, Hashable, Sendable {
-    var unitCharacters = 1_200
+    /// Source characters per extraction request. It was 1,200, which made a long book
+    /// hundreds of requests (maintainer, 2026-10-15); a book already analysed keeps the size
+    /// it was analysed in (`AICharacterMemoryService.prepare`).
+    var unitCharacters = 4_000
     var auxiliaryCharacters = 200
     var maximumInputCharacters = 10_000
     var maximumInputBytes = 32_000

@@ -95,7 +95,7 @@ struct AIPhase3CharacterMemoryTests {
         let dir = temporary(); defer { try? FileManager.default.removeItem(at: dir) }
         let store = AICharacterMemoryStore(directory: dir), provider = Provider()
         let service = AICharacterMemoryService(store: store, provider: provider, origin: .testFixture)
-        let proposal = try service.prepare(source: source, wholeBook: false, budget: .init())
+        let proposal = try await service.prepare(source: source, wholeBook: false, budget: .init())
         #expect(await provider.requests.isEmpty)
         #expect(try await store.load(book: book) == nil)
         #expect(proposal.units.count == 1)
@@ -110,9 +110,33 @@ struct AIPhase3CharacterMemoryTests {
         #expect(coverage.missing.count == 1 && coverage.committedUnits == 1)
     }
 
+    /// 4,000-character units (maintainer, 2026-10-15: 1,200 made a long book hundreds of
+    /// requests). A record is matched by its unit's exact range, so a book analysed in the old
+    /// units keeps them: planning it again in new ones would ask for every unit again.
+    @Test @MainActor func aBookAnalysedInSmallerUnitsKeepsThem() async throws {
+        #expect(AIMemoryBudget().unitCharacters == 4_000)
+        let text = String(repeating: "人物1在信裡被提及。\n", count: 300)
+        let source = source([text])
+        let dir = temporary(); defer { try? FileManager.default.removeItem(at: dir) }
+        let store = AICharacterMemoryStore(directory: dir), provider = Provider()
+        let service = AICharacterMemoryService(store: store, provider: provider, origin: .testFixture)
+        let old = try await service.prepare(source: source, wholeBook: true, budget: AIMemoryBudget(unitCharacters: 1_200))
+        #expect(old.units.count == 3)
+        try await service.start(confirmed: old, source: source); await service.wait(book: book)
+        #expect(await provider.requests.count == 3)
+
+        let again = try await service.prepare(source: source, wholeBook: true, budget: .init())
+        #expect(again.budget.unitCharacters == 1_200)
+        let coverage = try await service.coverage(job: again, source: source)
+        #expect(coverage.committedUnits == coverage.plannedUnits)
+
+        let fresh = AICharacterMemoryService(store: AICharacterMemoryStore(directory: temporary()), provider: provider, origin: .testFixture)
+        #expect(try await fresh.prepare(source: source, wholeBook: true, budget: .init()).units.count == 1)
+    }
+
     @Test func longUnicodeChapterCoversEveryPrimaryCharacterWithoutOverlap() throws {
         let text = String(repeating: "𠮷👩🏽‍🚀e\u{301}人物1在信裡被提及。\n", count: 400)
-        let source = source([text]), job = try plan(source)
+        let source = source([text]), job = try plan(source, budget: AIMemoryBudget(unitCharacters: 1_200))
         #expect(job.units.count > 2)
         #expect(job.units.compactMap { $0.primary.text(in: source) }.joined() == text)
         #expect(job.units.reduce(0) { $0 + $1.primary.end - $1.primary.start } == text.utf16.count)

@@ -165,7 +165,7 @@ struct AICharacterMemoryView: View {
         error = nil
         Task {
             do {
-                let job = try service.prepare(source: adapter, wholeBook: buildWholeBook, budget: budget)
+                let job = try await service.prepare(source: adapter, wholeBook: buildWholeBook, budget: budget)
                 proposalCoverage = try await service.coverage(job: job, source: adapter)
                 proposal = job
             } catch { self.error = error.localizedDescription }
