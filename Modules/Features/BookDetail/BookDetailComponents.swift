@@ -949,10 +949,12 @@ struct BookDetailInfoSection: View {
 // MARK: - Section header
 
 /// A section title in Apple's store style, with an optional trailing 「查看全部」.
-struct BookDetailSectionHeader: View {
+struct BookDetailSectionHeader<Accessory: View>: View {
     let title: String
     var actionTitle: String?
     var action: (() -> Void)?
+    /// Beside the title: 同題材's category menu.
+    @ViewBuilder var accessory: () -> Accessory
 
     var body: some View {
         HStack(alignment: .firstTextBaseline) {
@@ -960,6 +962,7 @@ struct BookDetailSectionHeader: View {
                 .font(DSFont.title3.weight(.bold))
                 .foregroundStyle(DSColor.textPrimary)
                 .accessibilityAddTraits(.isHeader)
+            accessory()
             Spacer(minLength: DSSpacing.sm)
             if let actionTitle, let action {
                 Button(action: action) {
@@ -977,6 +980,12 @@ struct BookDetailSectionHeader: View {
                 .buttonStyle(.plain)
             }
         }
+    }
+}
+
+extension BookDetailSectionHeader where Accessory == EmptyView {
+    init(title: String, actionTitle: String? = nil, action: (() -> Void)? = nil) {
+        self.init(title: title, actionTitle: actionTitle, action: action, accessory: { EmptyView() })
     }
 }
 

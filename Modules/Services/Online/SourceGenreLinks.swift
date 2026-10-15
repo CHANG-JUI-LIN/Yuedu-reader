@@ -29,6 +29,26 @@ enum SourceGenreMatching {
         return nil
     }
 
+    /// The categories the book's genres name, in the genres' order, each once.
+    static func matchedCategories(for tags: [String], among items: [DiscoverCardItem]) -> [DiscoverCardItem] {
+        var seen = Set<String>()
+        return tags.compactMap { category(for: $0, among: items) }
+            .filter { seen.insert(normalized($0.title)).inserted }
+    }
+
+    /// The category 同題材 reads (`RelatedCategoryChoiceStore`): the one picked for the book
+    /// from 其他分類 while the source still lists it; else the genre picked latest for the
+    /// source among those the book's genres name; else the first of those.
+    static func relatedCategory(
+        for tags: [String], among items: [DiscoverCardItem], preferred: [String], bookPick: String?
+    ) -> DiscoverCardItem? {
+        if let bookPick, let item = category(for: bookPick, among: items) { return item }
+        let matched = matchedCategories(for: tags, among: items)
+        let ranks = Dictionary(preferred.enumerated().map { (normalized($0.element), $0.offset) },
+                               uniquingKeysWith: { first, _ in first })
+        return matched.min { (ranks[normalized($0.title)] ?? .max) < (ranks[normalized($1.title)] ?? .max) }
+    }
+
     /// Case, character width and spacing set aside: 「ＡＢＣ 小說」 names the category 「abc小說」.
     static func normalized(_ text: String) -> String {
         text.folding(options: [.caseInsensitive, .widthInsensitive], locale: nil)
@@ -49,6 +69,31 @@ enum SourceGenreMatching {
         }
         return Array(filtered.prefix(limit))
     }
+}
+
+/// What 同題材's menu offers: the categories the book's genres name, in the genres' order,
+/// then the source's other categories, each once.
+struct RelatedCategoryChoices: Equatable {
+    var matched: [String]
+    var others: [String]
+    var current: String
+
+    init(matched: [String], others: [String], current: String) {
+        self.matched = matched
+        self.others = others
+        self.current = current
+    }
+
+    init(tags: [String], items: [DiscoverCardItem], current: String) {
+        let matched = SourceGenreMatching.matchedCategories(for: tags, among: items).map(\.title)
+        var seen = Set(matched.map(SourceGenreMatching.normalized))
+        let others = items.filter { $0.isFetchable && seen.insert(SourceGenreMatching.normalized($0.title)).inserted }
+            .map(\.title)
+        self.init(matched: matched, others: others, current: current)
+    }
+
+    /// The menu shows only when there is something to pick.
+    var offersChoice: Bool { matched.count + others.count > 1 }
 }
 
 /// One detail page's genre links and its 同題材 section, both read from the book's source.
@@ -82,6 +127,8 @@ final class SourceGenreLinks: ObservableObject {
     static let relatedLimit = 12
 
     @Published private(set) var related: Related = .hidden
+    /// What the section's menu offers; nil while 同題材 is hidden.
+    @Published private(set) var choices: RelatedCategoryChoices?
 
     typealias LoadCategories = @Sendable (BookSource) async -> [ModernParserBridge.DiscoverItem]
     typealias PrimeCookies = @Sendable (BookSource) async -> Void
@@ -89,6 +136,7 @@ final class SourceGenreLinks: ObservableObject {
     private let loadCategories: LoadCategories
     private let primeCookies: PrimeCookies
     private let pageLoader: SectionPageLoader
+    private let choiceStore: RelatedCategoryChoiceStore
     private var categories: Task<[DiscoverCardItem], Never>?
     private var categoriesSource: String?
     /// The page's last finished load; the same one is not run again when the page reappears.
@@ -101,11 +149,13 @@ final class SourceGenreLinks: ObservableObject {
         primeCookies: @escaping PrimeCookies = {
             await BookSourceFetcher.shared.primeDiscoverCookies(in: $0)
         },
-        pageLoader: SectionPageLoader = .live
+        pageLoader: SectionPageLoader = .live,
+        choiceStore: RelatedCategoryChoiceStore = .shared
     ) {
         self.loadCategories = loadCategories
         self.primeCookies = primeCookies
         self.pageLoader = pageLoader
+        self.choiceStore = choiceStore
     }
 
     /// `source`'s categories, read once for the page. Not cancelled with the page's task: the
@@ -136,22 +186,55 @@ final class SourceGenreLinks: ObservableObject {
     func load(key: String, source: BookSource?, tags: [String], book: OnlineBook) async {
         guard key != loadedKey else { return }
         related = .hidden
+        choices = nil
+        await loadRelated(key: key, source: source, tags: tags, book: book, switching: false)
+    }
+
+    /// Loads 同題材 again after it failed.
+    func retryRelated(key: String, source: BookSource?, tags: [String], book: OnlineBook) async {
+        loadedKey = nil
+        await loadRelated(key: key, source: source, tags: tags, book: book, switching: true)
+    }
+
+    /// The reader picked `title` from the section's menu: it is remembered
+    /// (`RelatedCategoryChoiceStore`) and its first page replaces the shown books when it
+    /// arrives, the section staying in place meanwhile.
+    func choose(_ title: String, key: String, source: BookSource?, tags: [String], book: OnlineBook) async {
+        guard let source, let choices, title != choices.current else { return }
+        let fromGenres = choices.matched.contains(title)
+        choiceStore.record(title, fromGenres: fromGenres, source: source.bookSourceUrl, book: book.bookUrl)
+        loadedKey = nil
+        await loadRelated(key: key, source: source, tags: tags, book: book, switching: true)
+    }
+
+    /// - Parameter switching: whether the section is already shown, and stays shown until the
+    ///   new books arrive rather than vanishing under the reader.
+    private func loadRelated(key: String, source: BookSource?, tags: [String], book: OnlineBook, switching: Bool) async {
         guard let source else {
+            related = .hidden
+            choices = nil
             loadedKey = key
             return
         }
         let items = await categories(of: source).value
         guard !Task.isCancelled else { return }
-        guard let match = SourceGenreMatching.firstCategory(for: tags, among: items),
-              let reference = ExploreCategoryReference(source: source, item: match.item)
+        let sourceKey = source.bookSourceUrl
+        guard let item = SourceGenreMatching.relatedCategory(
+                  for: tags, among: items,
+                  preferred: choiceStore.preferred(source: sourceKey),
+                  bookPick: choiceStore.bookPick(source: sourceKey, book: book.bookUrl)),
+              let reference = ExploreCategoryReference(source: source, item: item)
         else {
+            related = .hidden
+            choices = nil
             loadedKey = key
             return
         }
 
-        related = .loading(reference)
+        choices = RelatedCategoryChoices(tags: tags, items: items, current: item.title)
+        if !switching { related = .loading(reference) }
         var section = DiscoverShowcaseSection(
-            item: match.item, coverBaseURL: source.bookSourceUrl, coverHeaders: source.parsedHeaders
+            item: item, coverBaseURL: source.bookSourceUrl, coverHeaders: source.parsedHeaders
         )
         let started = SourcePerfTrace.now
         do {
@@ -162,19 +245,20 @@ final class SourceGenreLinks: ObservableObject {
                                    since: started, thresholdMs: 0)
             section.books = shown
             section.phase = .loaded
-            related = shown.isEmpty ? .hidden : .loaded(reference, section)
+            // A category the reader picked keeps its header even when it has no other book, so
+            // the menu stays to pick another.
+            if shown.isEmpty, !switching {
+                related = .hidden
+                choices = nil
+            } else {
+                related = .loaded(reference, section)
+            }
         } catch {
             // `SectionPageLoader` has logged the failure.
             guard !Task.isCancelled else { return }
             related = .failed(reference, error.localizedDescription)
         }
         loadedKey = key
-    }
-
-    /// Loads 同題材 again after it failed.
-    func retryRelated(key: String, source: BookSource?, tags: [String], book: OnlineBook) async {
-        loadedKey = nil
-        await load(key: key, source: source, tags: tags, book: book)
     }
 
     /// Where tapping `tag` leads: the source's category of that name, once its categories have
