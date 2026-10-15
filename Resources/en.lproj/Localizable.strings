@@ -3982,3 +3982,7 @@
 "AI 產生" = "AI-generated";
 "未找到可用來源" = "No Available Sources Found";
 "正在載入更多" = "Loading more";
+"搜尋分組：書籍" = "Books";
+"搜尋分組：漫畫" = "Comics";
+"搜尋分組：有聲書" = "Audiobooks";
+"沒有這個類型的作品" = "No works of this type";

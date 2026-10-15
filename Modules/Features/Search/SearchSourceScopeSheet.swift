@@ -6,21 +6,11 @@ struct SearchSourceScopeCapsule: View {
     let action: () -> Void
 
     var body: some View {
+        // A filter chip beside 類型 (search 9c), tinted while it narrows the search.
         Button(action: action) {
-            Label(
-                title,
-                systemImage: isCustom
-                    ? "checkmark.circle.fill"
-                    : "line.3.horizontal.decrease.circle.fill"
-            )
-            .font(DSFont.caption)
+            SearchFilterChipLabel(title: title)
         }
-        .buttonStyle(.borderedProminent)
-        .buttonBorderShape(.capsule)
-        .controlSize(.small)
-        .frame(minHeight: DSLayout.minimumTapTarget, alignment: .leading)
-        .contentShape(Rectangle())
-        .tint(DSColor.accent)
+        .searchFilterChip(isActive: isCustom)
         .accessibilityLabel(localized("搜索範圍"))
         .accessibilityValue(title)
     }

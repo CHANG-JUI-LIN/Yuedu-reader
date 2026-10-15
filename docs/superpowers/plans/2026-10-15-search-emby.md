@@ -173,3 +173,24 @@ The maintainer approved 9a–9e as written: the chips are 類型 and 來源配�
   - `UnifiedSearchTests` updated;
   - 47/47 on iOS 27.
   - `PublicLibrarySearchTabUITests`, both cases rewritten to find Gutenberg's book in the one list: 2/2 on iOS 27 and on iOS 17.5.
+
+### 9c — branch `search/9c-groups` (2026-10-15)
+
+- **Groups.**
+  - `UnifiedSearchGroup.groups(of:kind:filter:)` groups by the lead's `contentKind` in the order 書籍, 漫畫, 有聲書, keeping the resolver's order within each group and leaving out empty groups. The resolver merges only within one kind, so every work belongs to exactly one group.
+  - `UnifiedSearchModel.groups` uses it.
+  - The headers use their own keys, 「搜尋分組：…」, because en needs the plural (Books, Audiobooks) and the existing 書籍 / 有聲書 keys are singular.
+  - **iOS 18:** one `Section` per group with a headline header. The title's scroll anchor stays on the first row, because a plain list pins its header.
+  - **iOS 17:** the table has one section per group, plus a section for the leading status line and one for the trailing status lines and spinner.
+    - Headers come from the delegate's `viewForHeaderInSection`, since the diffable data source owns `dataSource`. Each header is a single heading element for VoiceOver.
+    - `sectionHeaderTopPadding` is 0.
+    - Rows remain bounded value rows (`IOS17SearchWorkGroup`).
+- **Chips.**
+  - **類型** is a `Menu` holding a `Picker` (全部 / 書籍 / 漫畫 / 有聲書). It opens no modal, and `UnifiedSearchModel.kindFilter` keeps the choice for as long as the page lives. Its VoiceOver label is 類型, and its value is the current choice.
+  - **來源配置** is the same capsule and the same sheet, restyled as a chip (title plus chevron, tinted when the scope is custom). It is still a Button, not a menu item, because of the iOS 17 menu → sheet race.
+  - The chip row shows at the tab root even with no 來源配置 (only 類型 then). The pushed sources-only page has neither groups nor 類型: its rows are the sources' results, not works.
+  - The chips show no per-kind counts, so the page body never reads the results (guardrail 13).
+- **When 類型 filters everything out**, the page shows 「沒有這個類型的作品」 instead of a blank page (`UnifiedSearchStatus(filteredOut:)`). A search still running shows 搜索中… first.
+- **Tests:**
+  - `UnifiedSearchTests.groups` and `.filteredOut`, `IOS17SearchResultTableTests.groupSections` (all new); the existing ones were updated for `groups`. 25/25 on iOS 27.
+  - `PublicLibrarySearchTabUITests.testNoSourcesSearchesThePublicLibraries` now also checks the 書籍 header and the 類型 chip. It passes on iOS 27 and iOS 17.5, and the screenshots were checked.

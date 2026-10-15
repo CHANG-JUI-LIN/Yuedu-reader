@@ -153,8 +153,10 @@ struct IOS17SearchResultTableTests {
         func content(_ rows: [IOS17SearchResultTableRow], leading: String? = nil) -> IOS17SearchResultTableContent {
             var status = UnifiedSearchStatus()
             status.leading = leading
-            return IOS17SearchResultTableContent(rows: [], hasMore: false,
-                                                 works: IOS17SearchWorksSection(rows: rows, status: status))
+            return IOS17SearchResultTableContent(
+                rows: [], hasMore: false,
+                works: IOS17SearchWorksSection(groups: rows.isEmpty ? [] : [IOS17SearchWorkGroup(kind: .text, title: "書籍", rows: rows)],
+                                               status: status))
         }
         let typed = content([makeRow(title: "羅生門")])
         #expect(!typed.requiresReload(comparedTo: typed))
@@ -186,6 +188,38 @@ struct IOS17SearchResultTableTests {
         #expect(loads == 0, "a search still running is not asked again")
         try show(canLoadMore: true)
         #expect(loads == 1)
+    }
+
+    /// Search 9c: a section per kind under its header, the status lines and the spinner in
+    /// sections of their own with none.
+    @Test("the works are in a section per kind, each with its header")
+    @MainActor
+    func groupSections() throws {
+        let controller = IOS17SearchResultTableViewController()
+        var status = UnifiedSearchStatus()
+        status.trailing = ["Calibre：無法搜尋（離線）"]
+        controller.update(
+            content: IOS17SearchResultTableContent(
+                rows: [], hasMore: true,
+                works: IOS17SearchWorksSection(groups: [
+                    IOS17SearchWorkGroup(kind: .text, title: localized("搜尋分組：書籍"), rows: [makeRow()]),
+                    IOS17SearchWorkGroup(kind: .audio, title: localized("搜尋分組：有聲書"),
+                                         rows: [makeRow(title: "有聲", id: UUID())]),
+                ], status: status)),
+            onSelect: { _ in }, onLoadMore: {}, onSelectWork: { _ in })
+        let table = try #require(controller.tableView)
+        #expect(table.numberOfSections == 3, "書籍, 有聲書, then the spinner and the status line")
+        func header(_ section: Int) -> String? {
+            (controller.tableView(table, viewForHeaderInSection: section) as? UITableViewHeaderFooterView)
+                .flatMap { ($0.contentConfiguration as? UIListContentConfiguration)?.text }
+        }
+        #expect(header(0) == localized("搜尋分組：書籍"))
+        #expect(header(1) == localized("搜尋分組：有聲書"))
+        #expect(header(2) == nil)
+        #expect(controller.tableView(table, heightForHeaderInSection: 2) == 0)
+        #expect(table.numberOfRows(inSection: 2) == 2)
+        let spinner = try #require(table.dataSource?.tableView(table, cellForRowAt: IndexPath(row: 0, section: 2)))
+        #expect(spinner.accessibilityLabel == localized("正在載入更多"))
     }
 
     @Test("UIKit row maps only bounded search presentation values")

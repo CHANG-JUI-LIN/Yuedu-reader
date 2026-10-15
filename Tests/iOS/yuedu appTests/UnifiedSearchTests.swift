@@ -180,11 +180,48 @@ struct UnifiedSearchTests {
         #expect(tableRow.shelfCover?.own == .indexedCover(path: "/covers/ol-1.jpg"))
 
         let empty = IOS17SearchResultTableContent(rows: [], hasMore: false,
-                                                  works: IOS17SearchWorksSection(rows: [], status: .init()))
+                                                  works: IOS17SearchWorksSection(groups: [], status: .init()))
         let filled = IOS17SearchResultTableContent(rows: [], hasMore: false,
-                                                   works: IOS17SearchWorksSection(rows: [tableRow], status: .init()))
+                                                   works: IOS17SearchWorksSection(groups: [IOS17SearchWorkGroup(kind: .text, title: "書籍", rows: [tableRow])],
+                                                                                    status: .init()))
         #expect(filled.requiresReload(comparedTo: empty))
         #expect(!filled.requiresReload(comparedTo: filled))
+    }
+
+    /// Search 9c: groups by kind, as Emby's search lists 人物, 電影 and 電視劇.
+    @Test("groups: 書籍, 漫畫, 有聲書 in that order, each in the resolver's order, empty ones left out")
+    func groups() {
+        let rows: [(String, ContentKind)] = [("聽", .audio), ("一", .text), ("畫", .comic), ("二", .text)]
+        let all = UnifiedSearchGroup.groups(of: rows, kind: \.1, filter: nil)
+        #expect(all.map(\.kind) == [.text, .comic, .audio])
+        #expect(all.first?.rows.map(\.0) == ["一", "二"])
+        let books = UnifiedSearchGroup.groups(of: rows.filter { $0.1 != .comic }, kind: \.1, filter: nil)
+        #expect(books.map(\.kind) == [.text, .audio], "no 漫畫 header without a comic")
+        let comics = UnifiedSearchGroup.groups(of: rows, kind: \.1, filter: .comic)
+        #expect(comics.map(\.kind) == [.comic], "類型 keeps its kind's group alone")
+        #expect(ContentKind.text.searchGroupTitle == localized("搜尋分組：書籍"))
+    }
+
+    @Test("類型 that leaves nothing says so instead of a blank page")
+    func filteredOut() async {
+        let model = UnifiedSearchModel(sourceURL: { _ in nil })
+        await model.update(UnifiedSearchParts(sources: [sourceRow("三體", "劉慈欣", origins: 1)]), query: "三體")
+        #expect(model.groups.map(\.kind) == [.text])
+        model.kindFilter = .comic
+        #expect(model.groups.isEmpty)
+        #expect(model.isFilteredOut)
+        let status = UnifiedSearchStatus(hasRows: !model.groups.isEmpty, isSearching: false, isPaused: false,
+                                         othersSearching: false, submittedQuery: "三體", failures: [],
+                                         filteredOut: model.isFilteredOut)
+        #expect(status.leading == localized("沒有這個類型的作品"))
+        let stillSearching = UnifiedSearchStatus(hasRows: false, isSearching: true, isPaused: false, othersSearching: false,
+                                                 submittedQuery: "三體", failures: [], filteredOut: true)
+        #expect(stillSearching.leading == localized("搜索中…"), "a comic may yet come")
+        model.kindFilter = .text
+        #expect(!model.isFilteredOut)
+        model.clear()
+        #expect(model.kindFilter == .text, "the choice outlasts the query")
+        #expect(!model.isFilteredOut, "nothing found is not filtered out")
     }
 
     @Test("search navigation: a work route freezes the tapped selection")

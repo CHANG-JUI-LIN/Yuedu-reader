@@ -96,8 +96,12 @@ final class IOS17SearchResultTableViewController: UITableViewController {
     fileprivate enum Section: Hashable {
         /// The sources' results, where the page is not the tab's root.
         case results
-        /// The tab root's one list (unified search 4c-3): no header, as on iOS 18.
-        case works
+        /// The tab root's status line above its works.
+        case leading
+        /// The tab root's works of one kind, under its header (search 9c).
+        case group(ContentKind)
+        /// The spinner and the status lines under the works.
+        case trailing
     }
 
     fileprivate enum Item: Hashable {
@@ -113,11 +117,14 @@ final class IOS17SearchResultTableViewController: UITableViewController {
     private static let resultCellIdentifier = "IOS17SearchResultCell"
     private static let loadMoreCellIdentifier = "IOS17SearchLoadMoreCell"
     private static let noticeCellIdentifier = "IOS17SearchNoticeCell"
+    private static let headerIdentifier = "IOS17SearchGroupHeader"
 
     private var currentContent: IOS17SearchResultTableContent?
     private var rowsByID: [UUID: IOS17SearchResultTableRow] = [:]
     /// The works' status lines in table order: the leading one, then the trailing ones.
     private var statusLines: [String] = []
+    /// Each group's header.
+    private var groupTitles: [ContentKind: String] = [:]
     private var onSelect: (UUID) -> Void = { _ in }
     private var onLoadMore: () -> Void = {}
     private var onSelectWork: (UUID) -> Void = { _ in }
@@ -153,6 +160,9 @@ final class IOS17SearchResultTableViewController: UITableViewController {
             forCellReuseIdentifier: Self.resultCellIdentifier
         )
         tableView.register(IOS17SearchLoadingCell.self, forCellReuseIdentifier: Self.loadMoreCellIdentifier)
+        tableView.register(UITableViewHeaderFooterView.self, forHeaderFooterViewReuseIdentifier: Self.headerIdentifier)
+        // Only the groups have headers; the status sections sit flush.
+        tableView.sectionHeaderTopPadding = 0
         configureDataSource()
     }
 
@@ -183,15 +193,25 @@ final class IOS17SearchResultTableViewController: UITableViewController {
         if let works = content.works {
             rowsByID = Dictionary(works.rows.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
             statusLines = [works.status.leading].compactMap { $0 } + works.status.trailing
+            groupTitles = Dictionary(works.groups.map { ($0.kind, $0.title) }, uniquingKeysWith: { first, _ in first })
             let leadingCount = works.status.leading == nil ? 0 : 1
+            if leadingCount == 1 {
+                snapshot.appendSections([.leading])
+                snapshot.appendItems([.notice(0)], toSection: .leading)
+            }
             var seen = Set<UUID>()
-            snapshot.appendSections([.works])
-            snapshot.appendItems(
-                (leadingCount == 1 ? [.notice(0)] : [])
-                    + works.rows.filter { seen.insert($0.id).inserted }.map { .work($0.id) }
-                    + (content.hasMore ? [.loadMore] : [])
-                    + works.status.trailing.indices.map { .notice(leadingCount + $0) },
-                toSection: .works)
+            for group in works.groups {
+                let items = group.rows.filter { seen.insert($0.id).inserted }.map { Item.work($0.id) }
+                guard !items.isEmpty else { continue }
+                snapshot.appendSections([.group(group.kind)])
+                snapshot.appendItems(items, toSection: .group(group.kind))
+            }
+            let trailing = (content.hasMore ? [Item.loadMore] : [])
+                + works.status.trailing.indices.map { Item.notice(leadingCount + $0) }
+            if !trailing.isEmpty {
+                snapshot.appendSections([.trailing])
+                snapshot.appendItems(trailing, toSection: .trailing)
+            }
         } else {
             rowsByID = Dictionary(content.rows.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
             statusLines = []
@@ -214,6 +234,32 @@ final class IOS17SearchResultTableViewController: UITableViewController {
         case .loadMore, .notice:
             break
         }
+    }
+
+    override func tableView(_ tableView: UITableView, viewForHeaderInSection section: Int) -> UIView? {
+        guard let title = groupTitle(section),
+              let header = tableView.dequeueReusableHeaderFooterView(withIdentifier: Self.headerIdentifier) else { return nil }
+        var configuration = UIListContentConfiguration.plainHeader()
+        configuration.text = title
+        configuration.textProperties.font = font(.headline)
+        configuration.textProperties.color = UIColor(DSColor.textPrimary)
+        configuration.directionalLayoutMargins.leading = DSLayout.searchListHorizontalInset
+        header.contentConfiguration = configuration
+        // One element VoiceOver reads as a heading, as SwiftUI's section header is.
+        header.isAccessibilityElement = true
+        header.accessibilityLabel = title
+        header.accessibilityTraits = .header
+        return header
+    }
+
+    override func tableView(_ tableView: UITableView, heightForHeaderInSection section: Int) -> CGFloat {
+        groupTitle(section) == nil ? 0 : UITableView.automaticDimension
+    }
+
+    /// The header of a group's section; nil for the status sections.
+    private func groupTitle(_ section: Int) -> String? {
+        guard case .group(let kind) = dataSource.sectionIdentifier(for: section) else { return nil }
+        return groupTitles[kind]
     }
 
     override func tableView(_ tableView: UITableView, shouldHighlightRowAt indexPath: IndexPath) -> Bool {

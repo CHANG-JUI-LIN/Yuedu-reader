@@ -49,11 +49,20 @@ struct IOS17ShelfCover: Equatable {
     var defaultCover: CoverImageSource?
 }
 
-/// The 搜索 tab root's one list of works (unified search 4c-3), as values: its rows and what it
-/// says besides them.
+/// The 搜索 tab root's one list of works (unified search 4c-3), as values: its groups by kind
+/// (search 9c) and what it says besides them.
 struct IOS17SearchWorksSection: Equatable {
-    var rows: [IOS17SearchResultTableRow]
+    var groups: [IOS17SearchWorkGroup]
     var status: UnifiedSearchStatus
+
+    var rows: [IOS17SearchResultTableRow] { groups.flatMap(\.rows) }
+}
+
+/// One kind's works under its header.
+struct IOS17SearchWorkGroup: Equatable {
+    var kind: ContentKind
+    var title: String
+    var rows: [IOS17SearchResultTableRow]
 }
 
 struct IOS17SearchResultTableContent: Equatable {

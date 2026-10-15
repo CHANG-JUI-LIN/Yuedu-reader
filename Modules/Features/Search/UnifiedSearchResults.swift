@@ -138,6 +138,8 @@ struct UnifiedSearchParts {
 @MainActor
 final class UnifiedSearchModel {
     private(set) var rows: [UnifiedSearchRow] = []
+    /// The 類型 chip's choice (search 9c); nil lists every kind. Kept while the page lives.
+    var kindFilter: ContentKind?
     private(set) var publicLibraryOverflow: PublicLibraryRoute?
     /// A merge is running for finds not yet on screen.
     private(set) var isResolving = false
@@ -182,6 +184,16 @@ final class UnifiedSearchModel {
         }, overflow: parts.publicLibraryOverflow, query: query)
         SourcePerfTrace.record("search.unified.resolve", "candidates=\(candidates.count) works=\(works.count)",
                                since: started, thresholdMs: 0)
+    }
+
+    /// The rows in groups by kind, `kindFilter`'s alone when it is set (search 9c).
+    var groups: [UnifiedSearchGroup<UnifiedSearchRow>] {
+        UnifiedSearchGroup.groups(of: rows, kind: \.kind, filter: kindFilter)
+    }
+
+    /// Works were found, and 類型 leaves none of them.
+    var isFilteredOut: Bool {
+        kindFilter != nil && !rows.isEmpty && !rows.contains { $0.kind == kindFilter }
     }
 
     func clear() {
@@ -241,13 +253,16 @@ struct UnifiedSearchStatus: Equatable {
     ///   - isSearching: the sources are still asked, or the finds are being merged.
     ///   - othersSearching: a saved library or Open Library is still asked.
     ///   - submittedQuery: the query submitted, when it is still the one in the field.
+    ///   - filteredOut: works were found and the 類型 chip leaves none (search 9c).
     init(hasRows: Bool, isSearching: Bool, isPaused: Bool, othersSearching: Bool, submittedQuery: String?,
-         failures: [LibrarySearchFailure]) {
+         failures: [LibrarySearchFailure], filteredOut: Bool = false) {
         if !hasRows {
             if isSearching || othersSearching {
                 leading = localized("搜索中…")
             } else if isPaused {
                 leading = localized("已暫停")
+            } else if filteredOut {
+                leading = localized("沒有這個類型的作品")
             } else if let submittedQuery {
                 leading = String(format: localized("沒有找到「%@」"), submittedQuery)
             }
@@ -351,7 +366,8 @@ struct UnifiedSearchCover: View {
 }
 
 /// The list's rows on iOS 18 and later, inside the page's `List`: the leading status line,
-/// the works, 青空文庫's full list, the spinner that loads the next page, then the trailing lines.
+/// the works in groups by kind under a header each (search 9c), 青空文庫's full list, the
+/// spinner that loads the next page, then the trailing lines.
 @available(iOS 18.0, *)
 struct UnifiedSearchRows: View {
     let model: UnifiedSearchModel
@@ -359,29 +375,40 @@ struct UnifiedSearchRows: View {
     let paging: SearchPaging
 
     var body: some View {
-        let rows = model.rows
+        let groups = model.groups
+        let firstID = groups.first?.rows.first?.id
         if let leading = status.leading {
             statusLine(leading, anchors: true)
         }
-        ForEach(rows) { row in
-            NavigationLink(value: UnifiedSearchResultRoute(id: row.id, snapshot: row.selection)) {
-                SearchBookListRow(content: row.content) { UnifiedSearchCover(payload: row.lead) }
-            }
-            .listRowInsets(EdgeInsets(top: 0, leading: DSLayout.searchListHorizontalInset,
-                                      bottom: 0, trailing: DSLayout.searchListHorizontalInset))
-            .listRowBackground(Color.clear)
-            .listRowSeparator(row.id == rows.first?.id ? .hidden : .automatic, edges: .top)
-            .background {
-                if status.leading == nil, row.id == rows.first?.id { Color.clear.rootTabTitleScrollAnchor() }
+        ForEach(groups) { group in
+            Section {
+                ForEach(group.rows) { row in
+                    NavigationLink(value: UnifiedSearchResultRoute(id: row.id, snapshot: row.selection)) {
+                        SearchBookListRow(content: row.content) { UnifiedSearchCover(payload: row.lead) }
+                    }
+                    .listRowInsets(EdgeInsets(top: 0, leading: DSLayout.searchListHorizontalInset,
+                                              bottom: 0, trailing: DSLayout.searchListHorizontalInset))
+                    .listRowBackground(Color.clear)
+                    .listRowSeparator(row.id == group.rows.first?.id ? .hidden : .automatic, edges: .top)
+                    .background {
+                        // The first row, not its header: a plain list's header stays pinned.
+                        if status.leading == nil, row.id == firstID { Color.clear.rootTabTitleScrollAnchor() }
+                    }
+                }
+            } header: {
+                Text(group.kind.searchGroupTitle)
+                    .font(DSFont.headline)
+                    .foregroundStyle(DSColor.textPrimary)
+                    .textCase(nil)
             }
         }
         if let overflow = model.publicLibraryOverflow {
             NavigationLink(localized("顯示全部"), value: overflow)
                 .listRowBackground(Color.clear)
         }
-        SearchLoadMoreRow(paging: paging, shownCount: rows.count)
+        SearchLoadMoreRow(paging: paging, shownCount: model.rows.count)
         ForEach(Array(status.trailing.enumerated()), id: \.offset) { offset, line in
-            statusLine(line, anchors: status.leading == nil && rows.isEmpty && offset == 0)
+            statusLine(line, anchors: status.leading == nil && firstID == nil && offset == 0)
         }
     }
 
