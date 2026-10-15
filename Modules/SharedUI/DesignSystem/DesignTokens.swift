@@ -280,8 +280,8 @@ enum DSLayout {
     static let feedbackBadgeFillOpacity: Double = 0.15
     /// 回饋中心: the dark disc behind an attachment's remove button, legible on any picture.
     static let feedbackRemoveButtonBackdropOpacity: Double = 0.6
-    /// 回饋中心: the screenshot card's picture width (截圖後顯示意見回饋入口).
-    static let feedbackScreenshotCardWidth: CGFloat = 120
+    /// 回饋中心: the info disc at the front of the 問題回報 capsule (截圖後顯示意見回饋入口).
+    static let feedbackScreenshotPromptIconSide: CGFloat = 40
     /// Visible width of the tab a tucked-away mini-player leaves on the screen edge. The
     /// tab stays thin so it does not cover text; its hit region is `minimumTapTarget`.
     static let miniPlayerEdgeHandleWidth: CGFloat = 20
