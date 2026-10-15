@@ -109,6 +109,16 @@ struct yuedu_appApp: App {
                 }
             }
         }
+        // AI 推薦 as before its first run (8f): no stored list, so the row offers 產生推薦.
+        if ProcessInfo.processInfo.arguments.contains("-reset-ai-recommendations") {
+            do {
+                if FileManager.default.fileExists(atPath: AIRecommendationStore.directory.path) {
+                    try FileManager.default.removeItem(at: AIRecommendationStore.directory)
+                }
+            } catch {
+                AppLogger.error("AI recommendations reset failed: \(error)")
+            }
+        }
         // A custom page saved before 5d-4, chosen as the old 首屏頁面, for the move into 首頁配置.
         if ProcessInfo.processInfo.arguments.contains("-seed-custom-explore-page") {
             LegacyCustomExplorePages.seedForTesting()

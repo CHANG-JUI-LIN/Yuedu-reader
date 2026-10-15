@@ -279,3 +279,28 @@ Each step is a branch, with its tests first.
   - `AIRecommendationSectionTests`: `cardsCarryTheReason` and `emptyReason` (new).
   - `WorkSourceFinderStatusTests` (new, 2).
   - With `WorkSourceFinderTests`, `WorkDetailVersionsTests` and `HomeCardTests`: 27/27 on iOS 27. No UI run here: 8f opens an AI pick on both OSes.
+
+### 8f — branch `ai-rec/8f-acceptance` (2026-10-15)
+
+- **`-debug-ai-endpoint <url>`** (DEBUG only), in `AIProviderAssembly.activeService()`, the one place every AI feature reads its service.
+  - With it, the active service is an `OpenAICompatibleProvider` at that address, named 「Fixture」.
+  - The reader's profiles and keys are neither read nor changed.
+- **`-reset-ai-recommendations`** (DEBUG only) deletes `AIRecommendationStore.directory` at launch, so the row offers 產生推薦 again.
+- **`scripts/ai_recommendation_fixture.py`:**
+  - It serves port 18767 on 127.0.0.1 only.
+  - It answers each `POST …/chat/completions` with a strict `{"works": …}`, alternating between 十二國記・鬼吹燈 and 球狀閃電・銀河英雄傳說.
+  - Restart it before a run. Its first answer is the first list.
+- **`AIRecommendationUITests.testGenerateOpenAndRegenerate`:**
+  - It imports a text book and opens it once, because a run sends recently read books.
+  - It adds the section from 資源庫 → AI 推薦 → 加到首頁, then taps 產生推薦 on the home.
+  - It sees both works and the 「AI 產生 · Fixture · …」 subtitle.
+  - It opens 十二國記: 推薦理由, AI 產生, the reason, and 尋找可用來源 = 「未找到可用來源」.
+  - It runs 重新產生 from the row's ••• and sees the second list replace the first.
+  - Open Library is unchecked for the launch through `-yd_metadata_fill_order` in the argument domain, so nothing leaves the machine.
+- **iOS 17 test fix:**
+  - The AI row is the home's last, and iOS 17's opaque tab bar covered the card's centre, so the tap landed on the tab bar.
+  - The test now scrolls the card clear of the tab bar first. This is the test's reach, not an app defect: on iOS 17 the home scrolls the row up like any other.
+- **Runs:** the acceptance test passes on iOS 27 and on iOS 17.5.
+- **Regressions on iOS 27:**
+  - Passed: `AIRecommendationUITests`, `ModuleLibraryUITests` 6/6 and `WorkSourceFinderUITests` 1/1 (8e's idle value; a readable Gutenberg book still reads empty).
+  - `HomeEditorUITests` 7/8 in the batch. `testAddSections` failed when it tapped 最新's editor card straight after `swipeDown`, still in scroll momentum, so the tap only stopped the scroll. It passed alone (87 s). Neither 8e nor 8f touches the editor.

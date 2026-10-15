@@ -169,6 +169,18 @@ enum AIProviderAssembly {
     /// Background jobs — 全書摘要, 整章翻譯, 書架整理 — run on the default service and model;
     /// only the assistant's composer picks per conversation.
     static func activeService() -> Result<ActiveService, Unavailable> {
+        #if DEBUG
+        // `-debug-ai-endpoint <url>`: an OpenAI-compatible fixture stands in for the reader's
+        // service (AI 推薦 8f, `scripts/ai_recommendation_fixture.py`), as `-debug-force-pro`
+        // stands in for Pro. Nothing the reader configured is read or changed. Debug builds only.
+        let arguments = ProcessInfo.processInfo.arguments
+        if let index = arguments.firstIndex(of: "-debug-ai-endpoint"), arguments.indices.contains(index + 1) {
+            guard let url = AIEndpoint.chatCompletionsURL(base: arguments[index + 1]) else { return .failure(.invalidEndpoint) }
+            return .success(ActiveService(provider: OpenAICompatibleProvider(endpoint: url, apiKey: "fixture",
+                                                                             defaultModel: "fixture-model"),
+                                          name: "Fixture"))
+        }
+        #endif
         do {
             let profiles = try AIProviderStore.shared.profiles()
             guard let profile = profiles.first(where: { $0.id == AIProviderStore.shared.activeID }) ?? profiles.first else { return .failure(.notConfigured) }

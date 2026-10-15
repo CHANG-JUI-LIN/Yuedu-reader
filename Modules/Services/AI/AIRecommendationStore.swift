@@ -33,8 +33,8 @@ struct AIRecommendationList: Codable, Equatable, Sendable {
 /// (like 為你推薦's genre profile, it is not synced).
 @MainActor
 final class AIRecommendationStore: ObservableObject {
-    static let shared = AIRecommendationStore(
-        directory: StorageLocations.support.appendingPathComponent("AIRecommendations", isDirectory: true))
+    nonisolated static let directory = StorageLocations.support.appendingPathComponent("AIRecommendations", isDirectory: true)
+    static let shared = AIRecommendationStore(directory: directory)
 
     @Published private(set) var list: AIRecommendationList?
     /// Bumped on every write, for the home section's inputs key.
