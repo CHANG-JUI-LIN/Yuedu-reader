@@ -93,6 +93,10 @@ enum HomeSectionBinding: Hashable, Sendable {
     /// `parameters`, by the module's parameter names. A build before it reads it as `.unknown`
     /// and writes it back as it came.
     case module(moduleID: String, entryID: String)
+    /// AI 推薦, the official module (AI 推薦 plan 8c): the works the reader's AI service last
+    /// suggested (`AIRecommendationProvider`), generated only when the reader asks. A build
+    /// before it reads it as `.unknown` and writes it back as it came.
+    case aiRecommendations
     /// A binding a later build wrote, kept exactly as it was read.
     case unknown(PreservedJSON)
 
@@ -110,7 +114,7 @@ extension HomeSectionBinding: Codable {
     private enum Kind: String {
         case myLibrary, continueReading, latest, sourceCategories, opdsFeed
         case gutenbergCollection, gutenbergLists, gutenbergFeed, gutenbergShelf, aozoraNew, aozoraIndex, related, nextInSeries
-        case subscriptionArticles, forYou, module
+        case subscriptionArticles, forYou, module, aiRecommendations
     }
 
     init(from decoder: Decoder) throws {
@@ -139,6 +143,7 @@ extension HomeSectionBinding: Codable {
         case .nextInSeries: self = .nextInSeries
         case .subscriptionArticles: self = .subscriptionArticles
         case .forYou: self = .forYou
+        case .aiRecommendations: self = .aiRecommendations
         case .module:
             self = .module(moduleID: try container.decode(String.self, forKey: .moduleID),
                            entryID: try container.decode(String.self, forKey: .entryID))
@@ -189,6 +194,8 @@ extension HomeSectionBinding: Codable {
             try container.encode(Kind.subscriptionArticles.rawValue, forKey: .type)
         case .forYou:
             try container.encode(Kind.forYou.rawValue, forKey: .type)
+        case .aiRecommendations:
+            try container.encode(Kind.aiRecommendations.rawValue, forKey: .type)
         case .module(let moduleID, let entryID):
             try container.encode(Kind.module.rawValue, forKey: .type)
             try container.encode(moduleID, forKey: .moduleID)

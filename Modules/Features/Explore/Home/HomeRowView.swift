@@ -18,6 +18,7 @@ extension HomeSection {
         case .nextInSeries: return localized("系列下一本")
         case .subscriptionArticles: return localized("訂閱的最新文章")
         case .forYou: return localized("為你推薦")
+        case .aiRecommendations: return localized("AI 推薦")
         case .sourceCategories(let categories): return categories.first?.title ?? sourceName
         case .gutenbergCollection(let id):
             return PublicLibraryCollection.all.first { $0.id == id }.map { localized($0.titleKey) } ?? sourceName
@@ -131,19 +132,8 @@ struct HomeRowView: View {
 
     @ViewBuilder
     private var header: some View {
-        let label = HStack(alignment: .firstTextBaseline, spacing: DSSpacing.sm) {
-            Text(group.title)
-                .font(DSFont.title2.weight(.bold))
-                .foregroundStyle(DSColor.textPrimary)
-            if showAll != nil {
-                Image(systemName: "chevron.right")
-                    .font(DSFont.title3.weight(.semibold))
-                    .foregroundStyle(DSColor.textTertiary)
-                    .accessibilityHidden(true)
-            }
-        }
-        .multilineTextAlignment(.leading)
-        .padding(.horizontal, DSSpacing.lg)
+        let label = HomeRowTitle(title: group.title, showsChevron: showAll != nil)
+            .padding(.horizontal, DSSpacing.lg)
 
         if let showAll {
             Button(action: showAll) { label }
@@ -165,32 +155,7 @@ struct HomeRowView: View {
     /// Also the header's VoiceOver actions: a context menu's items are offered there.
     @ViewBuilder
     private var actionsMenu: some View {
-        if let actions {
-            let layout = group.section.layout
-            let choices = HomeLayoutStyle.choices(for: group.section.binding)
-            // A section of lists has 專題集合 alone: nothing to choose.
-            if choices.count > 1 {
-                Menu {
-                    Picker(localized("呈現方式"), selection: Binding(
-                        get: { layout.style },
-                        set: { actions.setLayout(HomeSectionLayout(style: $0, ranked: layout.showsRanks)) })) {
-                        ForEach(choices) { style in
-                            Label(localized(style.titleKey), systemImage: style.symbol).tag(style)
-                        }
-                    }
-                    if layout.style == .list {
-                        Toggle(localized("顯示排名"), isOn: Binding(
-                            get: { layout.showsRanks },
-                            set: { actions.setLayout(HomeSectionLayout(style: .list, ranked: $0)) }))
-                    }
-                } label: {
-                    Label(localized("呈現方式"), systemImage: "rectangle.3.group")
-                }
-            }
-            Button(localized("動作：隱藏"), systemImage: "eye.slash", action: actions.hide)
-            Button(localized("設定"), systemImage: "slider.horizontal.3", action: actions.openSettings)
-            Button(localized("刪除"), systemImage: "trash", role: .destructive, action: actions.delete)
-        }
+        if let actions { HomeSectionActionsMenu(section: group.section, actions: actions) }
     }
 
     // MARK: States
@@ -255,6 +220,72 @@ struct HomeRowView: View {
         }
         .contentMargins(.horizontal, DSSpacing.lg, for: .scrollContent)
         .scrollIndicators(.hidden)
+    }
+}
+
+// MARK: - Shared by every row
+
+/// A section's name over its row, in the home's title style; a chevron when it leads to
+/// 查看全部, and a line under it when the section says where its books came from (AI 推薦).
+struct HomeRowTitle: View {
+    let title: String
+    var subtitle: String? = nil
+    var showsChevron = false
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: DSSpacing.xxs) {
+            HStack(alignment: .firstTextBaseline, spacing: DSSpacing.sm) {
+                Text(title)
+                    .font(DSFont.title2.weight(.bold))
+                    .foregroundStyle(DSColor.textPrimary)
+                if showsChevron {
+                    Image(systemName: "chevron.right")
+                        .font(DSFont.title3.weight(.semibold))
+                        .foregroundStyle(DSColor.textTertiary)
+                        .accessibilityHidden(true)
+                }
+            }
+            if let subtitle {
+                Text(subtitle)
+                    .font(DSFont.footnote)
+                    .foregroundStyle(DSColor.textSecondary)
+            }
+        }
+        .multilineTextAlignment(.leading)
+    }
+}
+
+/// A section's own edits: 呈現方式, 隱藏, 設定 and 刪除. The header's long press offers them,
+/// and AI 推薦's ••• after 重新產生.
+struct HomeSectionActionsMenu: View {
+    let section: HomeSection
+    let actions: HomeSectionActions
+
+    var body: some View {
+        let layout = section.layout
+        let choices = HomeLayoutStyle.choices(for: section.binding)
+        // A section of lists has 專題集合 alone: nothing to choose.
+        if choices.count > 1 {
+            Menu {
+                Picker(localized("呈現方式"), selection: Binding(
+                    get: { layout.style },
+                    set: { actions.setLayout(HomeSectionLayout(style: $0, ranked: layout.showsRanks)) })) {
+                    ForEach(choices) { style in
+                        Label(localized(style.titleKey), systemImage: style.symbol).tag(style)
+                    }
+                }
+                if layout.style == .list {
+                    Toggle(localized("顯示排名"), isOn: Binding(
+                        get: { layout.showsRanks },
+                        set: { actions.setLayout(HomeSectionLayout(style: .list, ranked: $0)) }))
+                }
+            } label: {
+                Label(localized("呈現方式"), systemImage: "rectangle.3.group")
+            }
+        }
+        Button(localized("動作：隱藏"), systemImage: "eye.slash", action: actions.hide)
+        Button(localized("設定"), systemImage: "slider.horizontal.3", action: actions.openSettings)
+        Button(localized("刪除"), systemImage: "trash", role: .destructive, action: actions.delete)
     }
 }
 

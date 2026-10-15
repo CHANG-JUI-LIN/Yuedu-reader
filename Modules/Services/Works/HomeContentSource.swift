@@ -19,6 +19,8 @@ enum HomeContentOwner: Hashable, Sendable {
     case bookSource(url: String)
     /// An installed module (Phase 6f).
     case module(id: String)
+    /// The app's own modules: AI 推薦 (AI 推薦 plan 8c).
+    case official
 }
 
 extension HomeSectionBinding {
@@ -31,12 +33,16 @@ extension HomeSectionBinding {
         case .aozoraNew, .aozoraIndex: .aozora
         case .sourceCategories(let references): references.first.map { .bookSource(url: $0.sourceURL) }
         case .module(let moduleID, _): .module(id: moduleID)
+        case .aiRecommendations: .official
         case .myLibrary, .unknown: nil
         }
     }
 
     /// App 資料's choices, in the order they are listed.
     static let appData: [HomeSectionBinding] = [.continueReading, .nextInSeries, .forYou, .latest, .related, .subscriptionArticles]
+
+    /// 官方模組's choices.
+    static let official: [HomeSectionBinding] = [.aiRecommendations]
 
     /// 青空文庫's choices: 新着, then each index.
     static let aozora: [HomeSectionBinding] = [.aozoraNew] + ["authors", "titles", "categories"].map { .aozoraIndex(kind: $0) }

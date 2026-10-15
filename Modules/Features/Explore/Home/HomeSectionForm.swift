@@ -563,7 +563,11 @@ struct HomeSectionForm: View {
 
     @ViewBuilder
     private var previewContent: some View {
-        if !preview.isReady {
+        if draft.binding == .aiRecommendations {
+            // The stored list, as the home draws it; the preview never asks the AI service.
+            AIRecommendationRow(section: HomeSection(layout: draft.layout, binding: .aiRecommendations),
+                                title: localized("AI 推薦"), canGenerate: false, open: { _, _ in })
+        } else if !preview.isReady {
             ProgressView().frame(maxWidth: .infinity)
         } else if let group = preview.groups(in: nil, languages: aggregation.readingLanguages,
                                              libraryOrder: aggregation.settings.libraryOrder).first,
@@ -624,6 +628,7 @@ extension HomeContentOwner {
         switch self {
         case .module(let id): modules.module(id: id)?.module.title ?? id
         case .appData: localized("App 資料")
+        case .official: localized("官方模組")
         case .connection(let id): connections.connection(id: id)?.name ?? ""
         case .gutenberg: localized("Project Gutenberg")
         case .aozora: localized("青空文庫")

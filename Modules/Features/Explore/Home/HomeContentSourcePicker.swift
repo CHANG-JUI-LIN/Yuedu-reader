@@ -112,6 +112,18 @@ struct HomeContentSourcePicker: View {
             }
             .interfaceSectionSurface()
 
+            Section {
+                ForEach(HomeSectionBinding.official, id: \.self) { binding in
+                    HomeChoiceRow(title: HomeSection(layout: .row, binding: binding).displayTitle(sourceName: ""),
+                                  isCurrent: current == binding) {
+                        choose(HomeContentChoice(binding: binding))
+                    }
+                }
+            } header: {
+                Text(localized("官方模組"))
+            }
+            .interfaceSectionSurface()
+
             if !modules.modules.isEmpty {
                 Section {
                     ForEach(modules.modules, id: \.module.id) { installed in

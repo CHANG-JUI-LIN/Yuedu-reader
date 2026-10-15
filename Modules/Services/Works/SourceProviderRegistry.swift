@@ -117,6 +117,7 @@ final class SourceProviderRegistry {
         providers.append(aozoraProvider)
         providers += Self.moduleProviders(in: modules)
         providers.append(ForYouProvider(firstPages: firstPages, home: home, shelf: shelf))
+        providers.append(AIRecommendationProvider())
         providers += DiscoverViewModel.exploreSources(in: sources).map { BookSourceProvider(source: $0, firstPages: firstPages) }
         return providers.filter { $0.availability != .hiddenInRegion }
     }

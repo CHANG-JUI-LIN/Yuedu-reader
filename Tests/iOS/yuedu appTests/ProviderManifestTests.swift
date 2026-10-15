@@ -74,7 +74,7 @@ struct ProviderManifestTests {
         #expect(f.registry.opdsProvider(catalogID: PublicLibraryID.gutenberg.rawValue) != nil)
     }
 
-    @Test("home providers: the shelf, 訂閱, connections, Gutenberg, 青空文庫, 為你推薦, then the explore sources")
+    @Test("home providers: the shelf, 訂閱, connections, Gutenberg, 青空文庫, 為你推薦, AI 推薦, then the explore sources")
     func homeOrder() throws {
         let f = try makeFixture()
         defer { try? FileManager.default.removeItem(at: f.folder) }
@@ -89,6 +89,7 @@ struct ProviderManifestTests {
             SourceInstanceKey(type: .gutenberg, id: PublicLibraryID.gutenberg.rawValue),
             SourceInstanceKey(type: .aozora, id: PublicLibraryID.aozora.rawValue),
             ForYouProvider.instanceKey,
+            AIRecommendationProvider.instanceKey,
             SourceInstanceKey(type: .bookSource, id: "https://explore.example"),
         ], "a source with no explore rule puts nothing on the home")
         f.availability.receive(countryCode: "CHN")

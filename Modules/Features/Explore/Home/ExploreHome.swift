@@ -380,6 +380,22 @@ struct HomeRowHost: View {
     @State private var confirmsDelete = false
 
     var body: some View {
+        row
+            .homeSectionDeleteConfirmation(isPresented: $confirmsDelete, title: group.section.editorTitle()) {
+                HomePageStore.shared.edit { $0.removeSection(group.section.id) }
+            }
+    }
+
+    @ViewBuilder
+    private var row: some View {
+        if group.section.binding == .aiRecommendations {
+            AIRecommendationRow(section: group.section, title: group.title, actions: actions, open: open)
+        } else {
+            rowView
+        }
+    }
+
+    private var rowView: some View {
         HomeRowView(group: group, content: content,
                     load: { for row in group.rows { model.load(row.id) } },
                     request: {
@@ -396,9 +412,6 @@ struct HomeRowHost: View {
                     openArticle: { push(.article(SubscriptionArticleRoute(articleID: $0.id))) },
                     actions: actions,
                     bookActions: bookActions)
-            .homeSectionDeleteConfirmation(isPresented: $confirmsDelete, title: group.section.editorTitle()) {
-                HomePageStore.shared.edit { $0.removeSection(group.section.id) }
-            }
     }
 
     private var actions: HomeSectionActions? {

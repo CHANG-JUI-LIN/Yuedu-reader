@@ -197,3 +197,34 @@ Each step is a branch, with its tests first.
 - Spans: `ai.recommend` (outcome ok/failed/invalid) and `ai.recommend.resolve` (matched/failed counts). Diagnostics feature: `aiRecommendations`.
 - Two new strings in all five lproj.
 - Tests: `AIRecommendationServiceTests` 10 (new), the new `OpenLibrarySearchTests.workByTitleAndAuthor`, plus `AIRecommendationTests`, `OpenLibraryFillProviderTests` and `AIBookshelfOrganizerTests`: 42/42.
+
+### 8c — branch `ai-rec/8c-home-section` (2026-10-15)
+
+- **The binding:** `HomeSectionBinding.aiRecommendations` (Codable `type: aiRecommendations`). Its owner is a new `HomeContentOwner.official`, and `HomeSectionBinding.official` lists it.
+  - It hides read books, as every row of books does.
+  - It takes every book layout, the same choices as 為你推薦.
+  - It has no 查看全部: the row is the whole list.
+- **The provider:** `AIRecommendationProvider` (`.local`, no hosts) is registered after 為你推薦.
+  - Its instance key is `(.library, "aiRecommendations")`. That is not a library row, so 為你推薦 never mixes AI picks in.
+  - An unmatched work's record is `(.bibliographic, "aiRecommendations")`, which `FilledMetadata.providerName` names 「AI 推薦」.
+  - Each entry is `.item(record, summary, .bibliographic)`. The title and author are the AI's. The cover is Open Library's, or `.generated`.
+- **Differs from the plan (plan review):** there is no `inputsKey` or home sync on every store write.
+  - A sync per Open Library match would flash the row back to its placeholder about 20 times.
+  - Instead, `AIRecommendationRow` draws the observed store directly through `AIRecommendationProvider.entries(from:)`, the same builder `load` uses.
+  - The home's own load of the row is unused but harmless.
+- **`HomeSectionGroup.isSettledEmpty`** is never true for AI 推薦. With no list, the row offers 產生推薦, and a home whose only section is AI 推薦 is not shown as blank.
+- **`AIRecommendationRow`:**
+  - The header is `HomeRowTitle`, now shared with `HomeRowView`, with the subtitle 「AI 產生 · {service} · {date}」.
+  - A visible ••• sits as a sibling of the header element. It offers 重新產生 plus `HomeSectionActionsMenu` (呈現方式／隱藏／設定／刪除, now shared with the long press).
+  - On iOS 17 the ••• is a `DismissalSequencedActionChooser`: 重新產生, each layout with 使用中, 隱藏, 設定 and 刪除.
+  - The status area shows one of:
+    - 需要 Pro with 升級 (a button, not in the menu);
+    - progress for generating, and for the Open Library pass (n/total);
+    - the failure with 重試, or with AI 助手設定 when the service is missing;
+    - before the first list, a line naming what is sent, with 產生推薦.
+  - Cards go through `HomeSectionCards` in the section's layout.
+  - The editor's preview draws the stored list with `canGenerate: false`, so it never spends quota.
+  - Previews: 尚未產生, and 已產生 in every layout.
+- **選擇內容來源** has a 官方模組 section listing AI 推薦. It is always listed.
+- Seven new strings in all five lproj.
+- **Tests:** `AIRecommendationSectionTests` 4 (new); `ProviderManifestTests.homeOrder` updated. Together with `AIRecommendationServiceTests`, `HomeSectionTests`, `HomePageStoreTests`, `ExploreHomeTests` and `ForYouSectionTests`: 45/45.
