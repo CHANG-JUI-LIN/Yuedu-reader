@@ -52,7 +52,7 @@ extension HomeModel {
 
 // MARK: - 新增欄目
 
-/// 新增欄目, in a sheet over the home: a layout, then the form. The home closes it (`close`,
+/// 新增欄目, full screen over the home: a layout, then the form. The home closes it (`close`,
 /// and after `added`): nothing in it reads `dismiss`, which loops on iOS 17 under a form that
 /// pushes (`HomeSectionFormHost`).
 struct HomeNewSectionSheet: View {

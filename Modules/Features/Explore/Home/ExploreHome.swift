@@ -117,7 +117,8 @@ private struct ExploreHomeRoot: View {
             home
             .toolbar { toolbar }
             .homeConfigurationPrompts($configurationPrompt)
-            .sheet(isPresented: $addsSection) {
+            // Full screen, as Forward's 選擇模板: the gallery's previews run to the screen's edges.
+            .fullScreenCover(isPresented: $addsSection) {
                 HomeNewSectionSheet(added: { addedSection = $0; addsSection = false }, close: { addsSection = false })
                     .environmentObject(store)
             }
