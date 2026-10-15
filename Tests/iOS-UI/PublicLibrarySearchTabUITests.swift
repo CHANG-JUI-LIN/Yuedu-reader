@@ -86,6 +86,11 @@ final class PublicLibrarySearchTabUITests: XCTestCase {
         XCTAssertFalse(app.descendants(matching: .any)["publicLibrary.searchGutenberg"].exists, "no row to ask Gutenberg")
         XCTAssertFalse(app.buttons["載入更多"].exists, "no button to load more")
         XCTAssertFalse(app.buttons["公有書庫"].exists, "no scope to switch")
+        // Search 9c: the works under a header per kind, and the 類型 chip above them.
+        // A SwiftUI section header is static text; iOS 17's UIKit header is a heading element.
+        XCTAssertTrue(app.descendants(matching: .any).matching(NSPredicate(format: "label == %@", "書籍")).firstMatch.exists,
+                      app.debugDescription)
+        XCTAssertTrue(app.descendants(matching: .any)["search.kindFilter"].firstMatch.exists, app.debugDescription)
         attach(app, "search-tab-gutenberg-in-list")
 
         result.tap()

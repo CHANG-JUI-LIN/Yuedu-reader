@@ -165,6 +165,7 @@ private struct IOS17SearchResults: View {
 
     var body: some View {
         let workRows = works?.rows ?? []
+        let groups = works?.groups ?? []
         IOS17SearchResultTable(
             content: IOS17SearchResultTableContent(
                 rows: works == nil ? rows : [],
@@ -172,16 +173,19 @@ private struct IOS17SearchResults: View {
                 canLoadMore: paging.canLoadMore,
                 works: works.map { works in
                     IOS17SearchWorksSection(
-                        rows: workRows.map {
-                            IOS17SearchResultTableRow(unified: $0, colorScheme: colorScheme,
-                                                      filledCover: { filledCovers?.path(for: $0) })
+                        groups: groups.map { group in
+                            IOS17SearchWorkGroup(kind: group.kind, title: group.kind.searchGroupTitle, rows: group.rows.map {
+                                IOS17SearchResultTableRow(unified: $0, colorScheme: colorScheme,
+                                                          filledCover: { filledCovers?.path(for: $0) })
+                            })
                         },
                         status: UnifiedSearchStatus(
-                            hasRows: !workRows.isEmpty, isSearching: sourcesSearching || works.isResolving,
+                            hasRows: !groups.isEmpty, isSearching: sourcesSearching || works.isResolving,
                             isPaused: sourcesPaused,
                             othersSearching: (libraries?.isSearching ?? false) || (bibliographic?.isSearching ?? false),
                             submittedQuery: submittedQuery,
-                            failures: (libraries?.failures ?? []) + (bibliographic?.failures ?? []))
+                            failures: (libraries?.failures ?? []) + (bibliographic?.failures ?? []),
+                            filteredOut: works.isFilteredOut)
                     )
                 }
             ),
@@ -214,9 +218,10 @@ private struct ModernUnifiedSearchRows: View {
         UnifiedSearchRows(
             model: works,
             status: UnifiedSearchStatus(
-                hasRows: !works.rows.isEmpty, isSearching: sourcesSearching || works.isResolving,
+                hasRows: !works.groups.isEmpty, isSearching: sourcesSearching || works.isResolving,
                 isPaused: sourcesPaused, othersSearching: libraries.isSearching || bibliographic.isSearching,
-                submittedQuery: submittedQuery, failures: libraries.failures + bibliographic.failures),
+                submittedQuery: submittedQuery, failures: libraries.failures + bibliographic.failures,
+                filteredOut: works.isFilteredOut),
             paging: paging)
     }
 }
@@ -312,7 +317,12 @@ struct BookSearchView: View {
     /// public libraries are offered, the sources and Open Library, as soon as there is a
     /// query. Only the tab's root: its stack carries 作品詳情.
     private var showsCombinedResults: Bool {
-        isTabRoot && tabNavigation != nil && !trimmedQuery.isEmpty
+        isAtTabRoot && !trimmedQuery.isEmpty
+    }
+
+    /// The 搜索 tab's root, whose stack carries 作品詳情 and whose list is the works'.
+    private var isAtTabRoot: Bool {
+        isTabRoot && tabNavigation != nil
     }
 
     /// What the sources' part says while it has no result.
@@ -334,7 +344,7 @@ struct BookSearchView: View {
                 // No rule under the scope row: as in Apple Books' search, the content
                 // starts below the controls, and on iOS 26 the list's soft scroll edge
                 // marks where it slides out of view.
-                if !enabledSources.isEmpty {
+                if isAtTabRoot || !enabledSources.isEmpty {
                     sourceScopeBar
                 }
 
@@ -463,18 +473,26 @@ struct BookSearchView: View {
 
     // MARK: Source Scope
 
-    /// The scope capsule, and at the other end, while a search runs or is paused, its
-    /// progress ring — the one pause / resume control on the page. Manual companion to
+    /// The filter chips, as Emby's search has them (search 9c): 類型 at the tab's root, whose
+    /// list is grouped by kind, and the 來源配置 scope where there are sources; at the other
+    /// end, while a search runs or is paused, its progress ring — the one pause / resume
+    /// control on the page. Manual companion to
     /// the network-settings auto-pause: tap to pause the in-flight search (battery,
     /// traffic) and again to resume the sources not yet asked. Auto-pause lands in the
     /// same paused state, so the same ring resumes an automatically paused search.
     private var sourceScopeBar: some View {
-        HStack {
-            SearchSourceScopeCapsule(
-                title: sourceScopeSummary,
-                isCustom: activeScope.mode == .custom,
-                action: { showsSourceScopeSheet = true }
-            )
+        HStack(spacing: DSSpacing.sm) {
+            if isAtTabRoot {
+                SearchKindFilterChip(model: unifiedSearch)
+            }
+            if !enabledSources.isEmpty {
+                // A button, not a menu item: a sheet from a menu is lost on iOS 17.
+                SearchSourceScopeCapsule(
+                    title: sourceScopeSummary,
+                    isCustom: activeScope.mode == .custom,
+                    action: { showsSourceScopeSheet = true }
+                )
+            }
             Spacer(minLength: DSSpacing.sm)
             if isSearchInProgress {
                 SearchProgressControl(
