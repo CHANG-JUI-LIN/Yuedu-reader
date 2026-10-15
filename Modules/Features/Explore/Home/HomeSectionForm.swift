@@ -83,23 +83,15 @@ private struct HomeNewSectionFlow: View {
 
     var body: some View {
         NavigationStack {
-            List {
-                Section {
-                    HomeLayoutChoiceRows(choices: styles, sample: .standard, identifierPrefix: "homeNewSection.layout") { style in
-                        let editor = HomeSectionEditor(layout: HomeSectionLayout(style: style), preview: .preview(shelf: store))
-                        // The one source of lists, chosen already; 資料來源 can still change it.
-                        if style == .collection { editor.choose(.gutenbergLists) }
-                        self.editor = editor
-                        showsForm = true
-                    }
-                } header: {
-                    Text(localized("呈現方式"))
-                }
-                .interfaceSectionSurface()
+            HomeLayoutGallery(choices: styles, sample: .standard, identifierPrefix: "homeNewSection.layout") { style in
+                let editor = HomeSectionEditor(layout: HomeSectionLayout(style: style), preview: .preview(shelf: store))
+                // The one source of lists, chosen already; 資料來源 can still change it.
+                if style == .collection { editor.choose(.gutenbergLists) }
+                self.editor = editor
+                showsForm = true
             }
             .navigationTitle(localized("新增欄目"))
             .toolbarTitleDisplayMode(.inline)
-            .themedAppSurface(for: .explore)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button { close() } label: {

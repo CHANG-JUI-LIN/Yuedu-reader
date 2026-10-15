@@ -1,9 +1,10 @@
 import SwiftUI
 
 // Phase 5 plan, decision 34 (the maintainer, with Emby's 選擇模板): choosing a section's layout
-// shows what each one looks like. Each choice is the layout's name, plain, over a live
-// preview: the real layout drawn small with books whose covers suit it. In 新增欄目's first
-// page and behind the form's 呈現方式.
+// shows what each one looks like. The maintainer, 2026-10-15, after Forward's 選擇模板: a
+// gallery, not a list. Each choice is the real layout at its real size, cut off by the screen's
+// edge, with its name centred under it; a layout read downwards shows two rows. In 新增欄目's
+// first page and behind the form's 呈現方式.
 //
 // The maintainer, 2026-10-13: each layout gets the covers that suit it best, no book in two
 // layouts, and not only Gutenberg's. Painted covers for 精選 and 大型閱讀卡片, comic books for
@@ -142,67 +143,74 @@ struct HomeLayoutSample {
     }
 }
 
-/// One row per layout: its name, a checkmark on the current one, and its preview. Rows of a
-/// `List` section, so 新增欄目 and the form's page lay them out alike.
-struct HomeLayoutChoiceRows: View {
+/// The layouts as a gallery: each one's preview, then its name centred under it, with a
+/// checkmark on the current one. 新增欄目 and the form's page lay them out alike.
+struct HomeLayoutGallery: View {
     let choices: [HomeLayoutStyle]
     var current: HomeSectionLayout?
     let sample: HomeLayoutSample
-    /// The rows' accessibility identifiers, `<prefix>.<layout>`.
+    /// The choices' accessibility identifiers, `<prefix>.<layout>`.
     let identifierPrefix: String
     let choose: (HomeLayoutStyle) -> Void
 
     var body: some View {
-        ForEach(choices) { style in
-            let isCurrent = current?.style == style
-            Button { choose(style) } label: {
-                VStack(alignment: .leading, spacing: DSSpacing.sm) {
-                    HStack(spacing: DSSpacing.sm) {
-                        Text(localized(style.titleKey))
-                            .foregroundStyle(DSColor.textPrimary)
-                        Spacer(minLength: DSSpacing.sm)
-                        if isCurrent {
-                            Image(systemName: "checkmark")
-                                .font(DSFont.body.weight(.semibold))
-                                .foregroundStyle(.tint)
-                                .accessibilityHidden(true)
-                        }
-                    }
-                    // The current layout as set (圖文資訊清單 with or without ranks).
-                    HomeLayoutPreview(layout: current.flatMap { $0.style == style ? $0 : nil } ?? HomeSectionLayout(style: style),
-                                      sample: sample)
+        ScrollView {
+            LazyVStack(spacing: DSSpacing.xxl) {
+                ForEach(choices) { style in
+                    choice(style)
                 }
-                .padding(.vertical, DSSpacing.xs)
-                .contentShape(Rectangle())
             }
-            .buttonStyle(.plain)
-            // The name is the choice; the preview shows it and is not read.
-            .accessibilityElement(children: .ignore)
-            .accessibilityLabel(localized(style.titleKey))
-            .accessibilityAddTraits(isCurrent ? [.isButton, .isSelected] : .isButton)
-            .accessibilityIdentifier("\(identifierPrefix).\(style.rawValue)")
+            .padding(.vertical, DSSpacing.xl)
         }
+        .background(PageBackgroundView(scope: .explore).ignoresSafeArea())
+        .pageBackgroundToolbar(for: .explore)
+    }
+
+    private func choice(_ style: HomeLayoutStyle) -> some View {
+        let isCurrent = current?.style == style
+        return Button { choose(style) } label: {
+            VStack(spacing: DSSpacing.md) {
+                // The current layout as set (圖文資訊清單 with or without ranks).
+                HomeLayoutPreview(layout: current.flatMap { $0.style == style ? $0 : nil } ?? HomeSectionLayout(style: style),
+                                  sample: sample)
+                HStack(spacing: DSSpacing.xs) {
+                    if isCurrent {
+                        Image(systemName: "checkmark")
+                            .font(DSFont.body.weight(.semibold))
+                            .foregroundStyle(.tint)
+                            .accessibilityHidden(true)
+                    }
+                    Text(localized(style.titleKey))
+                        .font(DSFont.body)
+                        .foregroundStyle(DSColor.textPrimary)
+                }
+                .multilineTextAlignment(.center)
+                .frame(maxWidth: .infinity)
+                .padding(.horizontal, DSSpacing.lg)
+            }
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(ExploreTileButtonStyle())
+        // The name is the choice; the preview shows it and is not read.
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(localized(style.titleKey))
+        .accessibilityAddTraits(isCurrent ? [.isButton, .isSelected] : .isButton)
+        .accessibilityIdentifier("\(identifierPrefix).\(style.rawValue)")
     }
 }
 
-/// A layout drawn small: the real layout at a phone's width, scaled down into a short frame and
-/// cut off below, so each shows its own shape. Nothing in it can be touched or read.
+/// A layout at its real size, with the books that suit it: a sideways one runs past the
+/// screen's edge, one read downwards stops after `DSLayout.homeLayoutPreviewRows` rows. Nothing
+/// in it can be touched or read.
 struct HomeLayoutPreview: View {
     let layout: HomeSectionLayout
     let sample: HomeLayoutSample
 
     var body: some View {
-        GeometryReader { proxy in
-            let scale = DSLayout.homeLayoutPreviewScale
-            content
-                .frame(width: proxy.size.width / scale, height: proxy.size.height / scale, alignment: .topLeading)
-                .scaleEffect(scale, anchor: .topLeading)
-        }
-        .frame(height: DSLayout.homeLayoutPreviewHeight)
-        .clipped()
-        .scrollDisabled(true)
-        .allowsHitTesting(false)
-        .accessibilityHidden(true)
+        content
+            .scrollDisabled(true)
+            .allowsHitTesting(false)
+            .accessibilityHidden(true)
     }
 
     @ViewBuilder
@@ -211,11 +219,12 @@ struct HomeLayoutPreview: View {
             HomeCollectionCards(collections: sample.collections, open: { _ in })
         } else if sample.cards(for: layout.style).isEmpty {
             HomeSectionCards(layout: layout, cards: (0..<6).map(HomeCardContent.placeholder),
-                             rowID: "layoutPreview.\(layout.rawValue)", hasShowAll: false, open: { _, _ in })
+                             rowID: "layoutPreview.\(layout.rawValue)", hasShowAll: false, open: { _, _ in },
+                             previewRows: DSLayout.homeLayoutPreviewRows)
                 .redacted(reason: .placeholder)
         } else {
             HomeSectionCards(layout: layout, cards: sample.cards(for: layout.style), rowID: "layoutPreview.\(layout.rawValue)",
-                             hasShowAll: false, open: { _, _ in })
+                             hasShowAll: false, open: { _, _ in }, previewRows: DSLayout.homeLayoutPreviewRows)
         }
     }
 }
@@ -228,16 +237,10 @@ struct HomeLayoutChoicePage: View {
     let choose: (HomeLayoutStyle) -> Void
 
     var body: some View {
-        List {
-            Section {
-                HomeLayoutChoiceRows(choices: choices, current: current, sample: sample,
-                                     identifierPrefix: "homeSection.layoutChoice", choose: choose)
-            }
-            .interfaceSectionSurface()
-        }
-        .navigationTitle(localized("呈現方式"))
-        .toolbarTitleDisplayMode(.inline)
-        .themedAppSurface(for: .explore)
+        HomeLayoutGallery(choices: choices, current: current, sample: sample,
+                          identifierPrefix: "homeSection.layoutChoice", choose: choose)
+            .navigationTitle(localized("呈現方式"))
+            .toolbarTitleDisplayMode(.inline)
     }
 }
 

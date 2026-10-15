@@ -26,6 +26,8 @@ struct HomeSectionCards: View {
     let open: (HomeCardContent, [HomeCardContent]) -> Void
     /// What a shelf copy's ••• offers on 精簡閱讀卡片; none in a fixture or a loading row.
     var bookActions: HomeBookActions?
+    /// 呈現方式's gallery: the rows a layout read downwards shows (`HomeLayoutPreview`).
+    var previewRows: Int?
 
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
@@ -34,7 +36,8 @@ struct HomeSectionCards: View {
     @ScaledMetric(relativeTo: .subheadline) private var compactCoverWidth = DSLayout.homeCompactCoverWidth
     @ScaledMetric(relativeTo: .headline) private var readingCoverWidth = DSLayout.homeReadingCardCoverWidth
     @ScaledMetric(relativeTo: .headline) private var listCoverWidth = DSLayout.homeListCoverWidth
-    @ScaledMetric(relativeTo: .headline) private var compactReadingCoverWidth = DSLayout.homeCompactReadingCardCoverWidth
+    @ScaledMetric(relativeTo: .subheadline) private var compactReadingCoverWidth = DSLayout.homeCompactReadingCardCoverWidth
+    @ScaledMetric(relativeTo: .subheadline) private var continueCardWidth = DSLayout.homeContinueCardWidth
     @ScaledMetric(relativeTo: .headline) private var featuredCoverWidth = DSLayout.homeFeaturedCoverWidth
     @State private var gridWidth: CGFloat = 0
 
@@ -130,25 +133,29 @@ struct HomeSectionCards: View {
     // MARK: 精簡閱讀卡片
 
     private var compactReadingCards: some View {
-        let perScreen = horizontalSizeClass == .regular ? 2 : 1
+        let stacks = dynamicTypeSize.isAccessibilitySize
         return ScrollView(.horizontal) {
-            LazyHStack(alignment: .top, spacing: DSSpacing.md) {
+            LazyHStack(alignment: .top, spacing: DSSpacing.lg) {
                 ForEach(cards.indices, id: \.self) { index in
                     let card = cards[index]
                     let menu = HomeCardMenuItem.items(for: card, actions: bookActions)
                     button(index, in: cards, menu: menu) {
                         HomeCompactReadingCard(content: card, coverWidth: compactReadingCoverWidth,
-                                               stacksVertically: dynamicTypeSize.isAccessibilitySize,
-                                               reservesMenuSpace: !menu.isEmpty)
+                                               stacksVertically: stacks, reservesMenuSpace: !menu.isEmpty)
                     }
                     // Beside the card's button, not in it: a menu inside a button is not reachable.
-                    .overlay(alignment: .bottomTrailing) {
-                        if !menu.isEmpty { HomeCardMenuButton(card: card, items: menu) }
+                    // Centred on the trailing edge, as Apple Books' Continue card has it.
+                    .overlay(alignment: stacks ? .bottomTrailing : .trailing) {
+                        if !menu.isEmpty {
+                            HomeCardMenuButton(card: card, items: menu)
+                                .padding(.trailing, DSSpacing.xxs)
+                        }
                     }
+                    // Apple Books' width, the next card past it; the whole width, less a peek,
+                    // when the text goes under the cover at accessibility sizes.
                     .containerRelativeFrame(.horizontal) { length, _ in
-                        let peek = cards.count > perScreen ? DSLayout.homeReadingCardPeek + DSSpacing.md : 0
-                        let gaps = DSSpacing.md * CGFloat(perScreen - 1)
-                        return max(0, (length - gaps - peek) / CGFloat(perScreen))
+                        guard stacks else { return min(continueCardWidth, length) }
+                        return max(0, length - (cards.count > 1 ? DSLayout.homeReadingCardPeek + DSSpacing.lg : 0))
                     }
                 }
             }
@@ -221,7 +228,8 @@ struct HomeSectionCards: View {
         let spacing = DSSpacing.md
         let count = gridColumns
         let coverWidth = max(0, (gridWidth - spacing * CGFloat(count - 1)) / CGFloat(count))
-        let shown = hasShowAll ? Array(cards.prefix(count * Self.gridRows)) : cards
+        let rows = previewRows ?? (hasShowAll ? Self.gridRows : nil)
+        let shown = rows.map { Array(cards.prefix(count * $0)) } ?? cards
         return LazyVGrid(columns: Array(repeating: GridItem(.fixed(coverWidth), spacing: spacing, alignment: .top), count: count),
                          alignment: .leading, spacing: DSSpacing.lg) {
             if gridWidth > 0 {
@@ -240,7 +248,8 @@ struct HomeSectionCards: View {
     // MARK: 圖文資訊清單
 
     private var list: some View {
-        let shown = hasShowAll ? Array(cards.prefix(Self.listCount)) : cards
+        let count = previewRows ?? (hasShowAll ? Self.listCount : nil)
+        let shown = count.map { Array(cards.prefix($0)) } ?? cards
         return VStack(alignment: .leading, spacing: 0) {
             ForEach(shown.indices, id: \.self) { index in
                 button(index, in: shown, rank: layout.showsRanks ? index + 1 : nil) {
@@ -482,14 +491,16 @@ struct HomeCardMenuButton: View {
     }
 }
 
-/// A small cover and, beside it, the title, author and kind・progress in white on the
-/// cover's main colour, darkened until white text on it is legible (4.5:1, 7:1 with
-/// 增加對比). All the text is white: a dimmed line would fall under that contrast. The text goes under the cover at accessibility text sizes.
+/// Apple Books' Continue card, measured on a 440pt phone: a 40×60 cover inset 10, then the
+/// title (two lines), author and kind・progress in 15pt, centred against the cover. The title
+/// and author are white; the kind line is the cover's hue made light. The ground is the cover's
+/// main colour, darkened until that line reads at 4.5:1 (7:1 with 增加對比), so white does too.
+/// The text goes under the cover at accessibility text sizes.
 struct HomeCompactReadingCard: View {
     let content: HomeCardContent
     let coverWidth: CGFloat
     var stacksVertically = false
-    /// Keeps the trailing bottom clear for the ••• drawn over the card.
+    /// Keeps the trailing edge clear for the ••• drawn over the card.
     var reservesMenuSpace = false
 
     @Environment(\.colorSchemeContrast) private var contrast
@@ -500,15 +511,21 @@ struct HomeCompactReadingCard: View {
         CGSize(width: coverWidth, height: coverWidth / DSLayout.discoverCoverAspectRatio)
     }
 
+    /// The kind line's colour; the placeholder ground's grey until the cover has drawn.
+    private var line: CoverTint.RGB {
+        CoverTint.lightTint(for: coverColor ?? CoverTint.placeholder)
+    }
+
     private var ground: Color {
         guard let coverColor else { return DSColor.coverTintPlaceholder }
-        return CoverTint.background(for: coverColor, minimumContrast: contrast == .increased ? 7 : 4.5).color
+        return CoverTint.background(for: coverColor, under: line, minimumContrast: contrast == .increased ? 7 : 4.5).color
     }
 
     var body: some View {
+        let inset = DSLayout.homeContinueCardInset
         let layout = stacksVertically
             ? AnyLayout(VStackLayout(alignment: .leading, spacing: DSSpacing.md))
-            : AnyLayout(HStackLayout(alignment: .top, spacing: DSSpacing.md))
+            : AnyLayout(HStackLayout(alignment: .center, spacing: inset))
         layout {
             HomeCardCover(cover: content.cover, title: content.title, author: content.author, size: coverSize)
                 .modifier(PublicLibraryCoverAnchor(id: content.publicLibraryBookID))
@@ -518,35 +535,40 @@ struct HomeCompactReadingCard: View {
                         if color != coverColor { coverColor = color }
                     }
                 })
+                // The cover and its inset set the card's height; the text centres against it
+                // and may run into the inset, as Apple Books' four lines do.
+                .padding(.vertical, stacksVertically ? 0 : inset)
             text
         }
-        .padding(DSSpacing.md)
-        .frame(maxWidth: .infinity, minHeight: coverSize.height + DSSpacing.md * 2, alignment: .topLeading)
-        .background(ground, in: RoundedRectangle(cornerRadius: DSRadius.xl, style: .continuous))
-        .contentShape(RoundedRectangle(cornerRadius: DSRadius.xl, style: .continuous))
+        .padding(.horizontal, inset)
+        .padding(.vertical, stacksVertically ? inset : 0)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(ground, in: RoundedRectangle(cornerRadius: DSRadius.md, style: .continuous))
+        .contentShape(RoundedRectangle(cornerRadius: DSRadius.md, style: .continuous))
         .animation(DSAnimation.standard, value: coverColor)
     }
 
     private var text: some View {
-        VStack(alignment: .leading, spacing: DSSpacing.xxs) {
+        VStack(alignment: .leading, spacing: 0) {
             Text(content.title)
-                .font(DSFont.headline)
+                .font(DSFont.subheadline.weight(.semibold).leading(.tight))
                 .lineLimit(2)
             if !content.author.isEmpty {
                 Text(content.author)
-                    .font(DSFont.subheadline)
+                    .font(DSFont.subheadline.leading(.tight))
                     .lineLimit(1)
             }
-            Spacer(minLength: DSSpacing.sm)
             Text(content.kindAndDetail)
-                .font(DSFont.caption)
+                .font(DSFont.subheadline.leading(.tight))
+                .foregroundStyle(line.color)
                 .lineLimit(1)
-                .padding(.trailing, reservesMenuSpace && !stacksVertically ? DSLayout.minimumTapTarget - DSSpacing.md : 0)
-                .padding(.bottom, reservesMenuSpace && stacksVertically ? DSLayout.minimumTapTarget - DSSpacing.md : 0)
         }
         .foregroundStyle(DSColor.textOnAccent)
         .multilineTextAlignment(.leading)
-        .frame(maxWidth: .infinity, minHeight: stacksVertically ? nil : coverSize.height, alignment: .topLeading)
+        .fixedSize(horizontal: false, vertical: true)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.trailing, reservesMenuSpace && !stacksVertically ? DSLayout.minimumTapTarget : 0)
+        .padding(.bottom, reservesMenuSpace && stacksVertically ? DSLayout.minimumTapTarget - DSSpacing.md : 0)
     }
 }
 

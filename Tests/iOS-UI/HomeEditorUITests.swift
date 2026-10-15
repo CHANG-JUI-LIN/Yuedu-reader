@@ -252,7 +252,8 @@ final class HomeEditorUITests: XCTestCase {
         let compact = app.buttons["homeNewSection.layout.compactReadingCard"].firstMatch
         XCTAssertTrue(compact.waitForExistence(timeout: 5), app.debugDescription)
         XCTAssertEqual(compact.label, "精簡閱讀卡片")
-        XCTAssertGreaterThan(compact.frame.height, 120, "the name over a preview: \(compact.frame)")
+        // Its preview is the card at its real size (80pt, Apple Books' Continue), the name under it.
+        XCTAssertGreaterThan(compact.frame.height, 100, "the name under a preview: \(compact.frame)")
         attach(app, "home-new-section-previews")
 
         let featured = app.buttons["homeNewSection.layout.featured"].firstMatch
@@ -275,7 +276,8 @@ final class HomeEditorUITests: XCTestCase {
         for _ in 0..<8 where !current.isHittable { app.swipeUp() }
         XCTAssertTrue(current.exists, app.debugDescription)
         XCTAssertTrue(current.isSelected, "the current layout is selected")
-        XCTAssertFalse(app.buttons["homeSection.layoutChoice.collection"].exists, "a section of books has no 專題集合")
+        // No source is chosen yet, so every layout is offered; a section of books leaving out
+        // 專題集合 is `HomeLayoutStyleTests.choices`.
         let list = app.buttons["homeSection.layoutChoice.list"].firstMatch
         for _ in 0..<8 where !list.isHittable { app.swipeUp() }
         list.tap()
