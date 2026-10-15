@@ -60,6 +60,12 @@ final class OpenAICompatibleProvider: LLMProviding, @unchecked Sendable {
         )
     }
 
+    /// DeepSeek's output allowance. Its models write up to 384K tokens
+    /// (https://api-docs.deepseek.com/quick_start/pricing) and bill only what they write, so a
+    /// thinking answer gets room to finish instead of 16,384 tokens it could spend thinking. A
+    /// service whose ceiling is unknown keeps the request's: some refuse a larger one outright.
+    static let deepSeekOutputTokens = 65_536
+
     // MARK: - Wire format
 
     /// Typed rather than an untyped dictionary, so a field can't be misspelled into silence.
@@ -113,10 +119,12 @@ final class OpenAICompatibleProvider: LLMProviding, @unchecked Sendable {
         urlRequest.httpMethod = "POST"
         urlRequest.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
         urlRequest.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        // DeepSeek Flash defaults to reasoning. Make that intent explicit while keeping
-        // max_tokens as the caller-visible total budget (reasoning plus final content).
-        let deepSeekThinking = endpoint.host?.lowercased() == "api.deepseek.com" &&
-            ["deepseek-flash", "deepseek-v4-flash", "deepseek-v4-pro", "deepseek-reasoner"].contains(model)
+        // DeepSeek thinks by default, at high, and max_tokens covers the thinking as well as
+        // the answer (https://api-docs.deepseek.com/guides/thinking_mode). Every model on its
+        // endpoint is sent the feature's choice: one the list of model names missed thought at
+        // high whatever the feature asked.
+        let deepSeek = endpoint.host?.lowercased() == "api.deepseek.com"
+        let effort = request.reasoningEffort ?? .high
         // Anthropic's compatibility endpoint passes temperature and top_p on to Claude, and
         // Claude refuses them: the two together 400 on every Claude 4 model, any value 400s on
         // Opus 4.7 and later, Opus 5 and Fable, anything but the default on Sonnet 5. So every
@@ -129,11 +137,12 @@ final class OpenAICompatibleProvider: LLMProviding, @unchecked Sendable {
                 ChatRequestBody.Message(role: $0.role.rawValue, content: $0.content)
             },
             temperature: sendsSampling ? request.temperature ?? 0.2 : nil,
-            maxTokens: request.maxTokens ?? LLMGenerationRequest.defaultMaxTokens,
+            maxTokens: deepSeek ? max(request.maxTokens ?? 0, Self.deepSeekOutputTokens)
+                : request.maxTokens ?? LLMGenerationRequest.defaultMaxTokens,
             topP: sendsSampling ? request.topP ?? 1.0 : nil,
             stream: stream ? true : nil,
-            thinking: deepSeekThinking ? .init(type: "enabled") : nil,
-            reasoningEffort: deepSeekThinking ? (request.reasoningEffort?.rawValue ?? "high") : nil
+            thinking: deepSeek ? .init(type: effort == .off ? "disabled" : "enabled") : nil,
+            reasoningEffort: deepSeek && effort != .off ? effort.rawValue : nil
         )
         urlRequest.httpBody = try JSONEncoder().encode(body)
         return urlRequest

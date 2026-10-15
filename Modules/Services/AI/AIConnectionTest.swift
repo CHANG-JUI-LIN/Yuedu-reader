@@ -25,7 +25,8 @@ enum AIConnectionTest {
             LLMMessage(role: .user, content: "OK?"),
         ],
         maxTokens: 8192,
-        temperature: 0
+        temperature: 0,
+        reasoningEffort: .off
     )
 
     static func run(

@@ -123,7 +123,9 @@ enum AIAgenticAssistant {
                 ),
                 maxTokens: isFinal ? answerMaxTokens : plannerMaxTokens,
                 temperature: temperature,
-                topP: topP
+                topP: topP,
+                // Any step may finish with the answer, so every step thinks as an answer does.
+                reasoningEffort: AIQuestionEvidence.reasoningEffort
             )
             let raw = try await provider.generate(request)
             try raw.validateCompletion()
@@ -265,7 +267,8 @@ enum AIAgenticAssistant {
             ],
             maxTokens: answerMaxTokens,
             temperature: temperature,
-            topP: topP
+            topP: topP,
+            reasoningEffort: AIQuestionEvidence.reasoningEffort
         )
         let raw = try await provider.generate(request)
         try raw.validateCompletion()

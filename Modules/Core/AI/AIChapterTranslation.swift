@@ -72,7 +72,7 @@ enum AIChapterTranslation {
         return LLMGenerationRequest(messages: [
             LLMMessage(role: .system, content: systemPrompt(language: language)),
             LLMMessage(role: .user, content: String(decoding: try encoder.encode(payload), as: UTF8.self)),
-        ], temperature: 0.3)
+        ], temperature: 0.3, reasoningEffort: .off)
     }
 
     /// Paragraph text → translation. Every paragraph must come back exactly once with text:

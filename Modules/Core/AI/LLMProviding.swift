@@ -24,7 +24,10 @@ struct LLMMessage: Codable, Hashable, Sendable {
 }
 
 /// A generation request. The caller places retrieved text in data messages; the provider stays a transport.
-enum LLMReasoningEffort: String, Sendable { case low, high, max }
+/// How hard a thinking model thinks before it answers. `off` turns thinking off: the
+/// mechanical features (翻譯, 查詞, 書架整理, chapter digests, 人物 extraction) ask for it, as
+/// thinking only makes them slower and eats the output allowance (maintainer, 2026-10-15).
+enum LLMReasoningEffort: String, Sendable { case off, low, high, max }
 
 struct LLMGenerationRequest: Sendable {
     /// The output budget — reasoning plus answer — of a request that sets none, the same a

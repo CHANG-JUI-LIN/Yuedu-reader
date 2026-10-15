@@ -76,6 +76,6 @@ enum AIWordLookup {
         return LLMGenerationRequest(messages: [
             LLMMessage(role: .system, content: systemPrompt(language: language)),
             LLMMessage(role: .user, content: lines.joined(separator: "\n")),
-        ], temperature: 0.3)
+        ], temperature: 0.3, reasoningEffort: .off)
     }
 }
