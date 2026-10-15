@@ -544,3 +544,31 @@ How these fit together:
   - With `MetadataFillCoordinatorTests`, `MetadataFillRunnerTests`, `MetadataFillLedgerTests`, `ModuleSearchTests` and `FilledMetadataTests`: 44/44 on iOS 27.
   - `ModuleLibraryUITests.testModuleInMetadataFillSources`: add the fixture module, then 設定 → 網路設定 → 資料來源. The three places are in order, the module is last and checked, and it unchecks. It passes on iOS 27 (41 s) and iOS 17.5 (28 s).
   - One iOS 27 run stalled at every step on "App animations complete notification not received". The app binary was the one that had just passed, so this was simulator state. After `simctl shutdown all` it passed.
+
+### Acceptance (2026-10-15, branch `modules/6-acceptance`)
+
+- **Built-in providers:** `ProviderManifestTests` pins every built-in manifest, `browsableProviders` and `homeProviders`. It passes.
+- **50,000 來源配置:** manifests in 111 ms, off the main actor (6b).
+- **The fixture module** (`ModuleLibraryUITests`, 5 tests) passes 5/5 on iOS 27 (iPhone 18 Pro Max) and 5/5 on iOS 17.5:
+  - it appears in 資源庫 when added by address or by link;
+  - its entry fills a home row, and 查看全部 shows the whole list;
+  - its search answers 搜尋 on submit, and nothing is asked as you type;
+  - it appears in 資料來源, checked and last;
+  - 移除模組 takes its card away and brings back the empty card. `RuleModuleStoreTests` checks that the folder is deleted.
+- **Deviation, not ticked:** the acceptance said a removed module's home row 「shows the removed state」. What shipped in 6f is that the section has no row, as for a removed connection (`HomeModel.sync` logs it). This goes to the maintainer.
+- **A module with `@js:`** is refused, with its reason shown, before anything is written: `RuleModuleImportTests.refusals` and `RuleModuleValidatorTests`.
+- **Requests:**
+  - A redirect to an undeclared host is refused and never sent, and covers come only from `hosts` (`ModuleProviderTests`).
+  - A list loads only when its row or page is on screen, and search runs only on submit (`ModuleSearchTests.onSubmitOnly`, `testModuleAnswersSearch`).
+  - The automatic fill is the one exception, by the maintainer's decision (6h).
+- **Parsing unchanged:** `CoverLinkRuleTests`, `ModernParserBridgeChapterCompatibilityTests`, `JSONDiscoverBridgeRegressionTests` and `ChangeSourceTOCResolutionTests` pass. This run had 17 suites and 110 tests, all passing on iOS 27, every module suite included.
+- **Checks:**
+  - `check_localizations` is OK.
+  - The new screens' icon buttons carry labels, and their symbols are hidden.
+  - 資料來源 rows reorder through 上移 / 下移 actions as well as by drag.
+- **Simulator note:**
+  - On the iPhone 18 Pro (C01C0272), `testAddFromAddressThenRemove` failed 6 times in a row. The 「新增模組」 card was drawn but missing from the accessibility snapshot.
+  - It was not the fill coordinator (fill off: still failing), and not the search page's library load (removed: still failing).
+  - The same build passes on another iOS 27 device (iPhone 18 Pro Max), and on iOS 17.5.
+  - The same device had stalled on every step earlier in the day ("App animations complete notification not received") until `simctl shutdown all`. So this is that device's state, not the app.
+  - The test now attaches its screenshot before asserting, so a failure keeps the picture.
