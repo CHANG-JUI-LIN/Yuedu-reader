@@ -3883,3 +3883,5 @@
 "同題材分類" = "Category for More in This Genre";
 "其他分類" = "Other Categories";
 "這個分類沒有其他作品" = "No other books in this category";
+"書架上還沒有讀過的書" = "No book on the shelf has been read yet";
+"AI 推薦的作品都已在書架上" = "Every work AI recommended is already on the shelf";
