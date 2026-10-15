@@ -47,6 +47,8 @@ final class AIBookSummaryService: ObservableObject {
     }
 
     private enum Stop: Error { case budget }
+    /// Chapter-digest requests in flight at once (maintainer, 2026-10-15).
+    static let concurrentDigests = 3
 
     private func provider() throws -> (any LLMProviding, Service) {
         if let injectedProvider {
@@ -171,12 +173,13 @@ final class AIBookSummaryService: ObservableObject {
                 }
             }
 
-            // 1. Chapter digests. A chapter split across batches is saved once all its parts are in.
+            // 1. Chapter digests, `concurrentDigests` batches at a time (maintainer, 2026-10-15:
+            // they do not depend on one another). Each call is reserved before it goes out, and
+            // each batch is saved as it comes back; the first failure stops the run, as one
+            // batch at a time did. A chapter split across batches is saved once all its parts are in.
             var pieces: [Int: [Int: String]] = [:]
-            for batch in plan.batches {
+            func apply(_ batch: AIBookSummaryPlan.Batch, _ raw: LLMRawResponse) async throws {
                 try owned()
-                let request = try AIBookSummaryPrompt.digestRequest(batch: batch, source: source, language: plan.language)
-                let raw = try await generate(request, feature: "bookSummaryDigest")
                 let summaries = try AIBookSummaryPrompt.parseDigests(raw, batch: batch)
                 for part in batch.parts {
                     pieces[part.order, default: [:]][part.index] = summaries[part.id]
@@ -190,6 +193,41 @@ final class AIBookSummaryService: ObservableObject {
                 }
                 try await commit()
             }
+            var waiting = plan.batches[...]
+            var budgetReached = false
+            try await withThrowingTaskGroup(of: (AIBookSummaryPlan.Batch, LLMRawResponse).self, returning: Void.self,
+                                            isolation: MainActor.shared) { group in
+                var inFlight = 0
+                while true {
+                    while inFlight < Self.concurrentDigests, !budgetReached, let batch = waiting.popFirst() {
+                        try owned()
+                        let request = try AIBookSummaryPrompt.digestRequest(batch: batch, source: source, language: plan.language)
+                        do { try await reserve() } catch Stop.budget {
+                            // Out of confirmed calls: the batches in flight still come back and are kept.
+                            budgetReached = true
+                            break
+                        }
+                        let trace = AIDiagnosticStore.shared.begin(feature: "bookSummaryDigest", bookID: book, adapter: source,
+                                                                   boundary: plan.boundary, origin: origin)
+                        group.addTask {
+                            let raw: LLMRawResponse
+                            do {
+                                raw = try await AIDiagnostics.$current.withValue(trace) { try await provider.generate(request, model: model) }
+                            } catch {
+                                await AIDiagnosticStore.shared.finish(trace)
+                                throw error
+                            }
+                            await AIDiagnosticStore.shared.finish(trace)
+                            return (batch, raw)
+                        }
+                        inFlight += 1
+                    }
+                    guard inFlight > 0, let (batch, raw) = try await group.next() else { break }
+                    inFlight -= 1
+                    try await apply(batch, raw)
+                }
+            }
+            if budgetReached { throw Stop.budget }
 
             // 2. Volumes whose digests changed.
             for volume in plan.readVolumes {

@@ -183,6 +183,62 @@ struct AIBookSummaryTests {
         #expect(record.callsSpent == digestsOnly.estimatedCalls)
     }
 
+    // MARK: - Batches (maintainer, 2026-10-15: bigger batches, three at a time)
+
+    @Test("digest batches carry up to 48K UTF-16 and 32 chapters: a long book is a quarter of the requests")
+    func batchesAreLarge() {
+        #expect(AIBookSummaryPlanner.batchUTF16 == 48_000)
+        #expect(AIBookSummaryPlanner.batchParts == 32)
+        // 100 chapters of 4,000 characters: 12 to a batch. It was 34 batches at 12K.
+        let long = String(repeating: "張若塵盤膝而坐，運轉神石。", count: 4_000 / 13 + 1).prefix(4_000)
+        let plan = AIBookSummaryPlanner.plan(source: adapter(texts: Array(repeating: String(long), count: 100), readingAt: (99, 4_000)),
+                                             record: AIBookSummaryRecord(), language: .traditionalChinese)
+        #expect(plan.batches.count == 9)
+        #expect(plan.batches.allSatisfy { $0.parts.count <= 32 && $0.parts.reduce(0) { $0 + $1.end - $1.start } <= 48_000 })
+        // 200 short chapters: 32 to a batch.
+        let short = AIBookSummaryPlanner.plan(source: adapter(texts: Array(repeating: "短章。", count: 200), readingAt: (199, 3)),
+                                              record: AIBookSummaryRecord(), language: .traditionalChinese)
+        #expect(short.batches.count == 7)
+    }
+
+    @Test(.timeLimit(.minutes(1))) @MainActor func digestBatchesRunThreeAtATime() async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        // The first three digest requests are held until all three have arrived: a run that
+        // sent them one at a time would never get past the first.
+        let provider = SummaryProvider(holdFirst: 3)
+        let service = AIBookSummaryService(store: AIBookSummaryStore(directory: directory), provider: provider, origin: .testFixture)
+        let source = adapter(texts: Array(repeating: "短章。", count: 200), readingAt: (199, 3))
+        let plan = try await service.plan(source: source)
+        #expect(plan.batches.count == 7)
+        try service.start(plan: plan, source: source)
+        await service.wait(book: source.chunkBookID)
+        #expect(service.runs[source.chunkBookID] == .idle)
+        #expect(await provider.mostInFlight == AIBookSummaryService.concurrentDigests)
+        let record = try #require(service.records[source.chunkBookID])
+        #expect(record.digests.count == 200)
+        #expect(record.callsSpent == (await provider.calls))
+    }
+
+    @Test(.timeLimit(.minutes(1))) @MainActor func aFailedBatchStopsTheRunAndKeepsTheFinishedOnes() async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let provider = SummaryProvider(failingDigestCall: 4)
+        let service = AIBookSummaryService(store: AIBookSummaryStore(directory: directory), provider: provider, origin: .testFixture)
+        let source = adapter(texts: Array(repeating: "短章。", count: 200), readingAt: (199, 3))
+        let plan = try await service.plan(source: source)
+        try service.start(plan: plan, source: source)
+        await service.wait(book: source.chunkBookID)
+        guard case .failed = service.runs[source.chunkBookID] else {
+            Issue.record("expected the run to fail, got \(String(describing: service.runs[source.chunkBookID]))")
+            return
+        }
+        let record = try #require(service.records[source.chunkBookID])
+        #expect(!record.digests.isEmpty)
+        #expect(record.digests.count < 200)
+        #expect(record.book == nil)
+    }
+
     // MARK: - Fixtures
 
     private func adapter(texts: [String?], titles: [String]? = nil, readingAt position: (Int, Int)) -> AIBookContentAdapter {
@@ -199,10 +255,38 @@ struct AIBookSummaryTests {
         let identifier = "summary-fixture"
         let defaultModel = "fixture"
         private(set) var calls = 0
+        private(set) var mostInFlight = 0
+        private var inFlight = 0
+        private var digestCalls = 0
+        private var held: [CheckedContinuation<Void, Never>] = []
+        private var holdFirst: Int
+        private let failingDigestCall: Int?
+
+        init(holdFirst: Int = 0, failingDigestCall: Int? = nil) {
+            self.holdFirst = holdFirst
+            self.failingDigestCall = failingDigestCall
+        }
 
         func generate(_ request: LLMGenerationRequest, model: String?) async throws -> LLMRawResponse {
             calls += 1
-            if request.messages.first?.content == AIBookSummaryPrompt.digestSystem(.current),
+            inFlight += 1
+            mostInFlight = max(mostInFlight, inFlight)
+            defer { inFlight -= 1 }
+            let isDigest = request.messages.first?.content == AIBookSummaryPrompt.digestSystem(.current)
+            if isDigest {
+                digestCalls += 1
+                if digestCalls == failingDigestCall { throw LLMError.providerError("fixture failure") }
+                if holdFirst > 0 {
+                    if digestCalls < holdFirst {
+                        await withCheckedContinuation { held.append($0) }
+                    } else if digestCalls == holdFirst {
+                        holdFirst = 0
+                        held.forEach { $0.resume() }
+                        held = []
+                    }
+                }
+            }
+            if isDigest,
                let data = request.messages.last?.content.data(using: .utf8),
                let payload = try JSONSerialization.jsonObject(with: data) as? [String: [[String: String]]],
                let items = payload["items"] {
