@@ -29,6 +29,9 @@ enum LibrarySourceGroups {
 /// 格狀 and 每列欄數. At accessibility text sizes a card cannot hold its name in a column, so it
 /// is the list whatever the setting.
 struct LibraryEntries<Content: View>: View {
+    /// False lays every card out at once, for a section that only ever holds a few
+    /// (`RuleModuleSection` says why it needs that).
+    var isLazy = true
     @ViewBuilder let content: (ExploreEntryLabel.Layout) -> Content
 
     @AppStorage(ExploreSettings.showsGridKey) private var showsGrid = true
@@ -42,17 +45,62 @@ struct LibraryEntries<Content: View>: View {
 
     var body: some View {
         switch layout {
-        case .grid(let density):
+        case .grid(let density) where isLazy:
             LazyVGrid(
                 columns: Array(repeating: GridItem(.flexible(), spacing: DSSpacing.md), count: density.rawValue),
                 spacing: DSSpacing.md
             ) {
                 content(layout)
             }
-        case .list:
+        case .grid(let density):
+            EqualColumns(count: density.rawValue, spacing: DSSpacing.md) {
+                content(layout)
+            }
+        case .list where isLazy:
             LazyVStack(spacing: DSSpacing.md) {
                 content(layout)
             }
+        case .list:
+            VStack(spacing: DSSpacing.md) {
+                content(layout)
+            }
+        }
+    }
+}
+
+/// The lazy grid's columns, laid out at once: equal widths, each row as tall as its tallest
+/// card, every card centred in its row as `LazyVGrid` centres them.
+private struct EqualColumns: Layout {
+    let count: Int
+    let spacing: CGFloat
+
+    private func columnWidth(_ width: CGFloat) -> CGFloat {
+        max(0, (width - spacing * CGFloat(count - 1)) / CGFloat(count))
+    }
+
+    private func rows(_ subviews: Subviews, column: CGFloat) -> [(range: Range<Int>, height: CGFloat)] {
+        stride(from: 0, to: subviews.count, by: count).map { start in
+            let range = start..<min(start + count, subviews.count)
+            let height = range.map { subviews[$0].sizeThatFits(ProposedViewSize(width: column, height: nil)).height }.max() ?? 0
+            return (range, height)
+        }
+    }
+
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+        let width = proposal.replacingUnspecifiedDimensions().width
+        let heights = rows(subviews, column: columnWidth(width)).map(\.height)
+        return CGSize(width: width, height: heights.reduce(0, +) + spacing * CGFloat(max(heights.count - 1, 0)))
+    }
+
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+        let column = columnWidth(bounds.width)
+        var y = bounds.minY
+        for row in rows(subviews, column: column) {
+            for (offset, index) in row.range.enumerated() {
+                let center = CGPoint(x: bounds.minX + CGFloat(offset) * (column + spacing) + column / 2, y: y + row.height / 2)
+                subviews[index].place(at: center, anchor: .center, proposal: ProposedViewSize(width: column, height: nil))
+            }
+            y += row.height + spacing
         }
     }
 }
@@ -60,12 +108,14 @@ struct LibraryEntries<Content: View>: View {
 /// A section of 資源庫: its name, quiet, with the page that manages it beside it, then its cards.
 struct LibrarySection<Accessory: View, Content: View>: View {
     let title: String
+    var isLazy = true
     @ViewBuilder let accessory: () -> Accessory
     @ViewBuilder let content: (ExploreEntryLabel.Layout) -> Content
 
-    init(_ title: String, @ViewBuilder accessory: @escaping () -> Accessory = { EmptyView() },
+    init(_ title: String, isLazy: Bool = true, @ViewBuilder accessory: @escaping () -> Accessory = { EmptyView() },
          @ViewBuilder content: @escaping (ExploreEntryLabel.Layout) -> Content) {
         self.title = title
+        self.isLazy = isLazy
         self.accessory = accessory
         self.content = content
     }
@@ -80,7 +130,7 @@ struct LibrarySection<Accessory: View, Content: View>: View {
                 accessory()
             }
             .padding(.leading, DSSpacing.xs)
-            LibraryEntries(content: content)
+            LibraryEntries(isLazy: isLazy, content: content)
         }
     }
 }

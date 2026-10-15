@@ -3892,3 +3892,11 @@
 "正在產生推薦…" = "Getting recommendations…";
 "正在查詢封面與簡介（%d/%d）" = "Looking up covers and descriptions (%d/%d)";
 "依你最近讀的 30 本書推薦作品；會把書名、作者和分類送到你設定的 AI 服務。" = "Recommends works from the last 30 books you read. Their titles, authors and categories are sent to the AI service you set up.";
+"匯入的模組" = "Imported Modules";
+"依你最近讀的書推薦作品" = "Works picked from what you've been reading";
+"上次產生" = "Last Generated";
+"尚未產生" = "Not Yet";
+"推薦作品" = "Works";
+"加到首頁" = "Add to Home";
+"已在首頁" = "On Home";
+"會送出最近讀的 30 本書的書名、作者和分類，以及閱讀類型偏好，只送到這個服務。" = "Sends the titles, authors and categories of the last 30 books you read, and your genre preferences, to this service only.";

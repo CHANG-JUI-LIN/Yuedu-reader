@@ -131,6 +131,24 @@ final class ModuleLibraryUITests: XCTestCase {
         attach(app, "modules-removed")
     }
 
+    /// AI 推薦 8d: 官方模組 lists AI 推薦 even with no module imported, and the empty 新增模組
+    /// card still shows under 匯入的模組. Its page names what is sent and offers 產生推薦.
+    @MainActor
+    func testOfficialModuleIsListed() {
+        let app = launch(extra: ["-debug-force-pro"])
+        XCTAssertTrue(scrolledTo(app.buttons["library.modules.add"].firstMatch, in: app).waitForExistence(timeout: 10),
+                      "an official module does not hide the empty 新增模組 card\n\(app.debugDescription)")
+        let official = scrolledTo(app.buttons["library.module.official.aiRecommendations"].firstMatch, in: app)
+        XCTAssertTrue(official.waitForExistence(timeout: 10), app.debugDescription)
+        XCTAssertEqual(official.label, "AI 推薦")
+        attach(app, "modules-official")
+        official.tap()
+
+        XCTAssertTrue(app.navigationBars["AI 推薦"].waitForExistence(timeout: 5), app.debugDescription)
+        XCTAssertTrue(app.buttons["aiModule.generate"].firstMatch.waitForExistence(timeout: 5), app.debugDescription)
+        attach(app, "modules-official-page")
+    }
+
     /// 6e-2: a `yuedu://module?src=` link, opened from outside, shows the source disclaimer the
     /// first time, then the same import sheet as 從網址, already loading the module.
     @MainActor

@@ -82,6 +82,7 @@ struct LibraryTabRoot: View {
                         publicLibrariesSection
                         remoteLibrariesSection
                         sourcesSection
+                        OfficialModuleSection()
                         RuleModuleSection(library: modules) { moduleFlow.begin(.address) }
                         subscriptionsSection
                     } else if !matchingSources.isEmpty {

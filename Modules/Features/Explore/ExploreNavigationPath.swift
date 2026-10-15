@@ -24,6 +24,8 @@ enum ExploreNavigationRoute: Hashable {
     case module(id: String)
     /// A module row's 查看全部 (Phase 6f-2), with the section's values frozen in the route.
     case moduleList(ModuleListRoute)
+    /// 官方模組's AI 推薦 page (AI 推薦 plan 8d).
+    case aiRecommendations
 
     static func == (lhs: Self, rhs: Self) -> Bool {
         switch (lhs, rhs) {
@@ -36,7 +38,7 @@ enum ExploreNavigationRoute: Hashable {
         case (.searchInSource(let lhsURL), .searchInSource(let rhsURL)):
             return lhsURL == rhsURL
         case (.sourceManager, .sourceManager), (.aggregationSettings, .aggregationSettings),
-             (.subscriptions, .subscriptions):
+             (.subscriptions, .subscriptions), (.aiRecommendations, .aiRecommendations):
             return true
         case (.library(let lhsKey), .library(let rhsKey)):
             return lhsKey == rhsKey
@@ -83,6 +85,8 @@ enum ExploreNavigationRoute: Hashable {
         case .moduleList(let route):
             hasher.combine(13)
             hasher.combine(route)
+        case .aiRecommendations:
+            hasher.combine(14)
         }
     }
 }
