@@ -48,7 +48,8 @@ struct AIProviderTests {
             let provider = OpenAICompatibleProvider(endpoint: URL(string: "https://\(host)/v1/chat/completions")!, apiKey: "fixture", defaultModel: "deepseek-flash")
             let wire = try provider.makeURLRequest(for: request, model: "deepseek-flash", stream: false)
             let body = try #require(try JSONSerialization.jsonObject(with: wire.httpBody!) as? [String: Any])
-            #expect(body["max_tokens"] as? Int == 16_384)
+            // DeepSeek's allowance is raised to 64K (AIReasoningBudgetTests); others keep the request's.
+            #expect(body["max_tokens"] as? Int == (host == "api.deepseek.com" ? OpenAICompatibleProvider.deepSeekOutputTokens : 16_384))
             #expect((body["thinking"] != nil) == (host == "api.deepseek.com"))
             #expect(body["reasoning_effort"] as? String == (host == "api.deepseek.com" ? "high" : nil))
         }
@@ -67,7 +68,8 @@ struct AIProviderTests {
             let body = try #require(try JSONSerialization.jsonObject(with: wire.httpBody!) as? [String: Any])
             #expect((body["temperature"] as? Double) == (sendsSampling ? 0.2 : nil))
             #expect((body["top_p"] as? Double) == (sendsSampling ? 1 : nil))
-            #expect(body["max_tokens"] as? Int == LLMGenerationRequest.defaultMaxTokens)
+            #expect(body["max_tokens"] as? Int == (host == "api.deepseek.com" ? OpenAICompatibleProvider.deepSeekOutputTokens
+                                                  : LLMGenerationRequest.defaultMaxTokens))
         }
     }
 

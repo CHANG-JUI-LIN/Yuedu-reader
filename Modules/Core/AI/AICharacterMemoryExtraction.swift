@@ -82,10 +82,11 @@ enum AIMemoryExtraction {
             "analysisVersion": unit.analysisVersion, "dependencyDigest": unit.dependencyDigest,
             "safeAfterSpine": "\(safeAfter.spine)", "safeAfterUTF16": "\(safeAfter.utf16)", "tokenCount": "unavailable",
             "inputBytes": "\(try JSONEncoder().encode(messages).count)", "outputTokens": "\(job.budget.outputTokens)"])
-        // These short, evidence-checked segments need bounded reasoning so the model
-        // reaches its JSON output instead of spending the entire allowance on deliberation.
+        // Extraction copies names and quotes out of the text and every one is checked against
+        // it, so it does not think: thinking at low still spent most of the allowance before
+        // the JSON (maintainer, 2026-10-15).
         return .init(unit: unit, segments: segments, background: background, safeAfter: safeAfter,
-            request: .init(messages: messages, maxTokens: job.budget.outputTokens, temperature: 0, topP: 1, reasoningEffort: .low))
+            request: .init(messages: messages, maxTokens: job.budget.outputTokens, temperature: 0, topP: 1, reasoningEffort: .off))
     }
 
     static func validate(raw: LLMRawResponse, input: Input, source: AIBookContentAdapter) throws -> AIMemoryRecord {

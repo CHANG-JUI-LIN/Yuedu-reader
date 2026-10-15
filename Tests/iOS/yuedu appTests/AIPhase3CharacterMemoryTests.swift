@@ -135,6 +135,8 @@ struct AIPhase3CharacterMemoryTests {
         let text = "蒙面人到了。" + String(repeating: "風在吹。", count: 30) + "蒙面人就是柳青。"
         let source = source([text]), job = try plan(source)
         let input = try AIMemoryExtraction.input(unit: job.units[0], source: source, job: job, previous: [])
+        // Extraction does not think (maintainer, 2026-10-15; AIReasoningBudgetTests).
+        #expect(input.request.reasoningEffort == .off)
         let raw = LLMRawResponse(content: #"{"complete":true,"mentions":[{"id":"m","surface":"蒙面人","type":"person","unresolved":true,"evidence":{"segmentID":"s0","quote":"蒙面人到了。"}}],"facts":[],"aliases":[]}"#, provider: "mock", model: "mock")
         let value = try AIMemoryExtraction.validate(raw: raw, input: input, source: source)
         #expect(value.mentions[0].evidence.span.end == "蒙面人到了。".utf16.count)

@@ -86,7 +86,7 @@ enum AIBookshelfOrganizer {
         return LLMGenerationRequest(messages: [
             LLMMessage(role: .system, content: systemPrompt(language: language)),
             LLMMessage(role: .user, content: String(decoding: data, as: UTF8.self)),
-        ], temperature: 0.2)
+        ], temperature: 0.2, reasoningEffort: .off)
     }
 
     /// Book → proposed group for one batch. A book the model listed as unsure, or left out,

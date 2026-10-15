@@ -302,7 +302,7 @@ enum AIBookSummaryPrompt {
         }
         let data = try JSONSerialization.data(withJSONObject: ["items": items], options: [.sortedKeys])
         return LLMGenerationRequest(messages: [.init(role: .system, content: digestSystem(language)),
-            .init(role: .user, content: String(decoding: data, as: UTF8.self))], temperature: 0.2)
+            .init(role: .user, content: String(decoding: data, as: UTF8.self))], temperature: 0.2, reasoningEffort: digestEffort)
     }
 
     /// Every part in the batch, once, with a non-empty summary — or nothing is kept.
@@ -349,9 +349,14 @@ enum AIBookSummaryPrompt {
         return result
     }
 
+    /// A chapter digest restates the chapter: thinking only slows it (maintainer, 2026-10-15).
+    static let digestEffort: LLMReasoningEffort = .off
+
+    /// A volume's or the book's summary weighs many digests: it thinks at high.
     static func reduceRequest(scope: String, heading: String, items: [String], language: AIAnswerLanguage) -> LLMGenerationRequest {
         LLMGenerationRequest(messages: [.init(role: .system, content: reduceSystem(scope: scope, language: language)),
-            .init(role: .user, content: heading + "\n\n" + items.joined(separator: "\n\n"))], temperature: 0.3)
+            .init(role: .user, content: heading + "\n\n" + items.joined(separator: "\n\n"))], temperature: 0.3,
+            reasoningEffort: .high)
     }
 
     static func parseReduce(_ raw: LLMRawResponse) throws -> String {

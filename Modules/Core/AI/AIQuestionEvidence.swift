@@ -148,8 +148,14 @@ enum AIQuestionPrompt {
             "characters": "\(String(decoding: encoded, as: UTF8.self).count)", "outputTokenReserve": "\(budget.maximumOutputTokens)",
             "historyIDs": selectedHistory.map { $0.id.uuidString }.joined(separator: ","), "selected": "\(selected.count)"])
         return .init(request: .init(messages: messages, maxTokens: budget.maximumOutputTokens,
-            temperature: AIRAGPipeline.temperature, topP: AIRAGPipeline.topP), evidence: selected, history: selectedHistory)
+            temperature: AIRAGPipeline.temperature, topP: AIRAGPipeline.topP, reasoningEffort: AIQuestionEvidence.reasoningEffort),
+            evidence: selected, history: selectedHistory)
     }
+}
+
+extension AIQuestionEvidence {
+    /// 問書 answers from the evidence: it thinks at high (maintainer, 2026-10-15).
+    static let reasoningEffort: LLMReasoningEffort = .high
 }
 
 extension AIQuestionEvidence {
