@@ -23,6 +23,9 @@ enum CoverTint {
         }
     }
 
+    /// A card's ground until its cover has drawn (`DSColor.coverTintPlaceholder`).
+    static let placeholder = RGB(red: 0.30, green: 0.31, blue: 0.33)
+
     /// Thread-safe; one for every average instead of a context per call.
     private static let context = CIContext(options: [.workingColorSpace: NSNull()])
 
@@ -88,20 +91,61 @@ enum CoverTint {
         return 0.2126 * linear(rgb.red) + 0.7152 * linear(rgb.green) + 0.0722 * linear(rgb.blue)
     }
 
+    /// The WCAG contrast ratio between two colours, in either order.
+    static func contrast(_ first: RGB, _ second: RGB) -> Double {
+        let (a, b) = (luminance(first), luminance(second))
+        return (max(a, b) + 0.05) / (min(a, b) + 0.05)
+    }
+
     /// The contrast ratio of white text on the colour.
     static func contrastWithWhite(_ rgb: RGB) -> Double {
-        1.05 / (luminance(rgb) + 0.05)
+        contrast(RGB(red: 1, green: 1, blue: 1), rgb)
+    }
+
+    /// 精簡閱讀卡片's kind line, as Apple Books draws 書籍・12% on its Continue card: the
+    /// cover's hue, light, at no more than a set saturation; grey for a grey cover.
+    /// A hue that stays dark at that brightness (blue, violet) is mixed towards white until it
+    /// is as light as `DSLayout.homeContinueTintMinimumLuminance`, so a ground dark enough
+    /// for 7:1 under it exists.
+    static func lightTint(for rgb: RGB) -> RGB {
+        var hue: CGFloat = 0, saturation: CGFloat = 0, brightness: CGFloat = 0, alpha: CGFloat = 0
+        UIColor(red: rgb.red, green: rgb.green, blue: rgb.blue, alpha: 1)
+            .getHue(&hue, saturation: &saturation, brightness: &brightness, alpha: &alpha)
+        var red: CGFloat = 0, green: CGFloat = 0, blue: CGFloat = 0
+        UIColor(hue: hue, saturation: min(saturation, DSLayout.homeContinueTintSaturation),
+                brightness: DSLayout.homeContinueTintBrightness, alpha: 1)
+            .getRed(&red, green: &green, blue: &blue, alpha: &alpha)
+        let tint = RGB(red: red, green: green, blue: blue)
+        let floor = DSLayout.homeContinueTintMinimumLuminance
+        guard luminance(tint) < floor else { return tint }
+        func mixed(_ white: Double) -> RGB {
+            RGB(red: tint.red + (1 - tint.red) * white, green: tint.green + (1 - tint.green) * white,
+                blue: tint.blue + (1 - tint.blue) * white)
+        }
+        // More white is monotonically lighter; white itself is past the floor.
+        var low = 0.0, high = 1.0
+        for _ in 0..<24 {
+            let middle = (low + high) / 2
+            if luminance(mixed(middle)) >= floor { high = middle } else { low = middle }
+        }
+        return mixed(high)
     }
 
     /// The colour as it is when white text on it already reaches `minimumContrast`, else
     /// darkened just enough that it does: a dark cover keeps its colour, a pale one deepens.
     static func background(for rgb: RGB, minimumContrast: Double) -> RGB {
-        guard contrastWithWhite(rgb) < minimumContrast else { return rgb }
-        // Darker is monotonically more contrast; black gives 21:1, so a factor exists.
+        background(for: rgb, under: RGB(red: 1, green: 1, blue: 1), minimumContrast: minimumContrast)
+    }
+
+    /// The same for a light `foreground`: darkened just enough that it reaches
+    /// `minimumContrast` on the colour. White, lighter still, then reads at least as well.
+    static func background(for rgb: RGB, under foreground: RGB, minimumContrast: Double) -> RGB {
+        guard contrast(foreground, rgb) < minimumContrast else { return rgb }
+        // Darker is monotonically more contrast under a light foreground; black is the most.
         var low = 0.0, high = 1.0
         for _ in 0..<24 {
             let middle = (low + high) / 2
-            if contrastWithWhite(rgb.scaled(by: middle)) >= minimumContrast { low = middle } else { high = middle }
+            if contrast(foreground, rgb.scaled(by: middle)) >= minimumContrast { low = middle } else { high = middle }
         }
         return rgb.scaled(by: low)
     }

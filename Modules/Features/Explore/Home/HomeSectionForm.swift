@@ -52,7 +52,7 @@ extension HomeModel {
 
 // MARK: - 新增欄目
 
-/// 新增欄目, in a sheet over the home: a layout, then the form. The home closes it (`close`,
+/// 新增欄目, full screen over the home: a layout, then the form. The home closes it (`close`,
 /// and after `added`): nothing in it reads `dismiss`, which loops on iOS 17 under a form that
 /// pushes (`HomeSectionFormHost`).
 struct HomeNewSectionSheet: View {
@@ -83,23 +83,15 @@ private struct HomeNewSectionFlow: View {
 
     var body: some View {
         NavigationStack {
-            List {
-                Section {
-                    HomeLayoutChoiceRows(choices: styles, sample: .standard, identifierPrefix: "homeNewSection.layout") { style in
-                        let editor = HomeSectionEditor(layout: HomeSectionLayout(style: style), preview: .preview(shelf: store))
-                        // The one source of lists, chosen already; 資料來源 can still change it.
-                        if style == .collection { editor.choose(.gutenbergLists) }
-                        self.editor = editor
-                        showsForm = true
-                    }
-                } header: {
-                    Text(localized("呈現方式"))
-                }
-                .interfaceSectionSurface()
+            HomeLayoutGallery(choices: styles, sample: .standard, identifierPrefix: "homeNewSection.layout") { style in
+                let editor = HomeSectionEditor(layout: HomeSectionLayout(style: style), preview: .preview(shelf: store))
+                // The one source of lists, chosen already; 資料來源 can still change it.
+                if style == .collection { editor.choose(.gutenbergLists) }
+                self.editor = editor
+                showsForm = true
             }
             .navigationTitle(localized("新增欄目"))
             .toolbarTitleDisplayMode(.inline)
-            .themedAppSurface(for: .explore)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button { close() } label: {

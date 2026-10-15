@@ -228,3 +228,30 @@ Each step is a branch, with its tests first.
 - **選擇內容來源** has a 官方模組 section listing AI 推薦. It is always listed.
 - Seven new strings in all five lproj.
 - **Tests:** `AIRecommendationSectionTests` 4 (new); `ProviderManifestTests.homeOrder` updated. Together with `AIRecommendationServiceTests`, `HomeSectionTests`, `HomePageStoreTests`, `ExploreHomeTests` and `ForYouSectionTests`: 45/45.
+
+### 8d — branch `ai-rec/8d-library` (2026-10-15)
+
+- **資源庫's 模組 split in two.**
+  - `OfficialModuleSection` (官方模組) always lists AI 推薦. It is a card, sparkles, with the subtitle 「依你最近讀的書推薦作品」.
+  - `RuleModuleSection` is now 匯入的模組. Its empty 新增模組 card depends on imported modules only.
+- **The route:** `ExploreNavigationRoute.aiRecommendations` (hash 14) opens `AIRecommendationModuleView`.
+- **`AIRecommendationModuleView`** is a `Form`:
+  - the service and model, with a footer naming what is sent and where; AI 助手設定 when no service is set;
+  - the last run (上次產生, 推薦作品, 生成服務, or 尚未產生), and the progress or failure;
+  - 產生推薦／重新產生, and 加到首頁 (or 已在首頁) when the home page exists;
+  - 需要 Pro with 升級 without Pro.
+- **VoiceOver workaround (framework defect, disclosed):**
+  - On the iOS 27 simulator, with 官方模組 above it, 匯入的模組's `LazyVGrid` stayed in the accessibility tree as an empty, zero-sized element. 新增模組 could not be reached by VoiceOver or the UI test.
+  - What did not change it:
+    - a separate view;
+    - `.id`;
+    - a `ForEach` rewrite;
+    - no dialog or alert;
+    - a bare button;
+    - no loading spinner;
+    - making 官方模組 eager.
+  - With no official section, it passed.
+  - The fix: `LibrarySection(isLazy: false)` lays 匯入的模組 out at once (`EqualColumns`, a `Layout` with the lazy grid's columns). A reader imports a handful of modules.
+  - Delete `isLazy: false` once `testOfficialModuleIsListed` passes without it.
+- Eight new strings in all five lproj.
+- **Tests:** `ModuleLibraryUITests.testOfficialModuleIsListed` (new). The whole `ModuleLibraryUITests` class is 6/6 on iOS 27; on iOS 17.5, `testOfficialModuleIsListed` and `testAddFromAddressThenRemove` pass.

@@ -38,6 +38,29 @@ struct HomeCompactReadingCardTests {
         }
     }
 
+    @Test("the kind line is the cover's hue made light, and the ground darkens until that line reads at 4.5:1 (7:1)")
+    func kindLineTint() {
+        let green = CoverTint.RGB(red: 0.12, green: 0.42, blue: 0.23)
+        let tint = CoverTint.lightTint(for: green)
+        // The cover's hue: green stays the strongest channel, and the line is light.
+        #expect(tint.green > tint.red && tint.green > tint.blue)
+        #expect(CoverTint.luminance(tint) > 0.3)
+        // A grey cover gives a grey line, not a colour it does not have.
+        let grey = CoverTint.lightTint(for: CoverTint.RGB(red: 0.5, green: 0.5, blue: 0.5))
+        #expect(abs(grey.red - grey.green) < 0.001 && abs(grey.green - grey.blue) < 0.001)
+
+        for cover in [green, CoverTint.RGB(red: 1, green: 1, blue: 1), CoverTint.RGB(red: 0.95, green: 0.85, blue: 0.4),
+                      CoverTint.RGB(red: 0.02, green: 0.02, blue: 0.05)] {
+            let line = CoverTint.lightTint(for: cover)
+            for minimum in [4.5, 7.0] {
+                let ground = CoverTint.background(for: cover, under: line, minimumContrast: minimum)
+                #expect(CoverTint.contrast(line, ground) >= minimum)
+                // White, lighter than the line, reads at least as well.
+                #expect(CoverTint.contrastWithWhite(ground) >= minimum)
+            }
+        }
+    }
+
     private func card(_ book: ReadingBook) throws -> HomeCardContent {
         let record = SourceRecord.derived(from: book, context: SourceRecordContext(bookSourceURL: { _ in nil },
                                                                                     connectionKind: { _ in nil },

@@ -117,7 +117,8 @@ private struct ExploreHomeRoot: View {
             home
             .toolbar { toolbar }
             .homeConfigurationPrompts($configurationPrompt)
-            .sheet(isPresented: $addsSection) {
+            // Full screen, as Forward's 選擇模板: the gallery's previews run to the screen's edges.
+            .fullScreenCover(isPresented: $addsSection) {
                 HomeNewSectionSheet(added: { addedSection = $0; addsSection = false }, close: { addsSection = false })
                     .environmentObject(store)
             }
@@ -261,14 +262,7 @@ private struct ExploreHomeRoot: View {
     @ToolbarContentBuilder
     private var toolbar: some ToolbarContent {
         if isEditing {
-            ToolbarItem(placement: .topBarTrailing) {
-                Button { addsSection = true } label: {
-                    Image(systemName: "plus")
-                        .accessibilityHidden(true)
-                }
-                .accessibilityLabel(localized("新增欄目"))
-                .accessibilityIdentifier("home.addSectionBar")
-            }
+            // 新增欄目 is the card at the end of the editor, not a ＋ here too.
             ToolbarItem(placement: .confirmationAction) {
                 Button(localized("完成")) { setEditing(false) }
                     .accessibilityIdentifier("home.editDoneBar")

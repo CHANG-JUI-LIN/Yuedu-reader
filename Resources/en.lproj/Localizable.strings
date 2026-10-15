@@ -3969,3 +3969,12 @@
 "無法連線到回報服務，請檢查網路後再試。" = "Couldn’t reach the feedback service. Check your connection and try again.";
 "回報服務暫時出了問題，請稍後再試。" = "The feedback service ran into a problem. Please try again later.";
 "目前：%@" = "Current: %@";
+
+"匯入的模組" = "Imported Modules";
+"依你最近讀的書推薦作品" = "Works picked from what you've been reading";
+"上次產生" = "Last Generated";
+"尚未產生" = "Not Yet";
+"推薦作品" = "Works";
+"加到首頁" = "Add to Home";
+"已在首頁" = "On Home";
+"會送出最近讀的 30 本書的書名、作者和分類，以及閱讀類型偏好，只送到這個服務。" = "Sends the titles, authors and categories of the last 30 books you read, and your genre preferences, to this service only.";

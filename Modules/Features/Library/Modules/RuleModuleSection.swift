@@ -1,8 +1,24 @@
 import SwiftUI
 
-/// 資源庫's 模組 (Phase 6e): a card per installed module, as the other groups draw theirs, and
-/// a card for each folder that could not be read, which can only be removed. 官方模組 joins
-/// when the app ships one.
+/// 資源庫's 官方模組 (AI 推薦 plan 8d): the app's own modules, always listed, above 匯入的模組.
+struct OfficialModuleSection: View {
+    var body: some View {
+        LibrarySection(localized("官方模組")) { layout in
+            NavigationLink(value: ExploreNavigationRoute.aiRecommendations) {
+                ExploreEntryLabel(title: localized("AI 推薦"), artwork: .symbol("sparkles"), layout: layout,
+                                  subtitle: localized("依你最近讀的書推薦作品"))
+            }
+            .buttonStyle(ExploreTileButtonStyle())
+            .accessibilityLabel(localized("AI 推薦"))
+            .accessibilityValue(localized("依你最近讀的書推薦作品"))
+            .accessibilityIdentifier("library.module.official.aiRecommendations")
+        }
+    }
+}
+
+/// 資源庫's 匯入的模組 (Phase 6e): a card per installed module, as the other groups draw theirs,
+/// and a card for each folder that could not be read, which can only be removed. Its 新增模組
+/// card depends on the imported modules alone; 官方模組 is `OfficialModuleSection`.
 struct RuleModuleSection: View {
     @ObservedObject var library: RuleModuleLibrary
     /// 新增模組 from the empty card: by address, as the most common way in.
@@ -11,7 +27,13 @@ struct RuleModuleSection: View {
     @State private var removalFailure: String?
 
     var body: some View {
-        LibrarySection(localized("模組")) { layout in
+        // Eager, not lazy: with 官方模組 above it, this section's lazy grid stayed in the
+        // accessibility tree as an empty, zero-sized element on the iOS 27 simulator, so
+        // VoiceOver never reached 新增模組 (2026-10-15; making 官方模組 eager did not help, and
+        // neither did dropping the loading spinner). A reader imports a handful of modules, so
+        // laziness bought nothing here. Delete `isLazy: false` once `testOfficialModuleIsListed`
+        // passes without it.
+        LibrarySection(localized("匯入的模組"), isLazy: false) { layout in
             if !library.isLoaded {
                 ProgressView()
                     .frame(maxWidth: .infinity, alignment: .leading)

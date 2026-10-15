@@ -45,7 +45,7 @@ enum DSColor {
     /// Text on strong functional fills.
     static let textOnAccent = Color.white
     /// 精簡閱讀卡片's ground until its cover's colour is known: dark enough for white text.
-    static let coverTintPlaceholder = Color(red: 0.30, green: 0.31, blue: 0.33)
+    static let coverTintPlaceholder = CoverTint.placeholder.color
     /// Secondary text (captions, subtitles)
     static var textSecondary: Color { themedText(\.secondary, fallback: .secondaryLabel) }
     /// Third-level text (footnotes, metadata) — the level iOS calls `tertiaryLabel`.
@@ -374,15 +374,22 @@ enum DSLayout {
     static let homeCompactCoverWidth: CGFloat = 100
     /// A cover in 圖文資訊清單, beside its text.
     static let homeListCoverWidth: CGFloat = 60
-    /// A layout's preview in 呈現方式 (decision 34): the layout drawn at half size, cut off at this
-    /// height, so each shows its own shape.
-    static let homeLayoutPreviewScale: CGFloat = 0.5
-    static let homeLayoutPreviewHeight: CGFloat = 150
+    /// A layout's preview in 呈現方式 (decision 34): the layout at its real size, as a template
+    /// gallery shows it; a layout read downwards shows this many rows.
+    static let homeLayoutPreviewRows = 2
     /// 精選's cover (decision 37), beside its text on the cover's colour: the largest on the
     /// home, one book to a page.
     static let homeFeaturedCoverWidth: CGFloat = 132
-    /// 精簡閱讀卡片's cover (5d-3c), beside its text on the cover's colour.
-    static let homeCompactReadingCardCoverWidth: CGFloat = 64
+    /// 精簡閱讀卡片 (5d-3c), measured off Apple Books' Continue card on a 440pt phone: a 278×80
+    /// card, its 40×60 cover inset 10 on every side and 10 from the text. Scaled with Dynamic Type.
+    static let homeCompactReadingCardCoverWidth: CGFloat = 40
+    static let homeContinueCardWidth: CGFloat = 278
+    static let homeContinueCardInset: CGFloat = 10
+    /// Its kind line's colour: the cover's hue at most this saturated, at this brightness.
+    static let homeContinueTintSaturation: CGFloat = 0.55
+    static let homeContinueTintBrightness: CGFloat = 0.78
+    /// …and at least this light (WCAG luminance), so a ground exists under it at 7:1.
+    static let homeContinueTintMinimumLuminance = 0.4
     /// 訂閱的最新文章's card (5g) in the sideways layouts: wider than a cover, since an article's
     /// picture is landscape. Scaled with Dynamic Type.
     static let homeArticleCardWidth: CGFloat = 240

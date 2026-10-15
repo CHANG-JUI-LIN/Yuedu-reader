@@ -65,6 +65,14 @@ struct HomeLayoutStyleTests {
         #expect(page.sections[1].binding == .related)
     }
 
+    @Test("a section of books is offered every layout but 專題集合; a section of lists only 專題集合")
+    func choices() {
+        for binding in [HomeSectionBinding.continueReading, .latest, .aiRecommendations] {
+            #expect(HomeLayoutStyle.choices(for: binding) == HomeLayoutStyle.allCases.filter { $0 != .collection })
+        }
+        #expect(HomeLayoutStyle.choices(for: .gutenbergLists) == [.collection])
+    }
+
     @Test("繼續閱讀 starts as 精簡閱讀卡片, 精選書單 as 專題集合; the other defaults as a row")
     func defaults() {
         for mode in ExploreMode.allCases {
