@@ -393,10 +393,8 @@ class SearchAggregator: ObservableObject {
     /// row that gained origins compares equal; 搜索's one list re-reads the results by this
     /// (unified search 4c-3).
     private(set) var publicationRevision = 0
+    /// The search is running: page 1, then for 搜索 the later pages (search 9e).
     @Published var isSearching = false
-    /// True when at least one source that answered successfully has not yet been
-    /// exhausted by 載入更多 rounds — drives the "load more" row in the UI.
-    private(set) var hasMoreResults = false
     /// Paused — either automatically (auto-pause threshold reached) or manually
     /// (floating pause control). Results stay on screen and `resume()` continues
     /// over the sources that had not finished.
@@ -439,10 +437,19 @@ class SearchAggregator: ObservableObject {
     /// search would look broken even when the cloud is aggregating correctly.
     private let perAggregateSourceTimeout: UInt64 = 30
 
-    private var fanOut: BookSourceSearchFanOut {
+    private func fanOut(concurrency: Int) -> BookSourceSearchFanOut {
         BookSourceSearchFanOut(
-            concurrency: maxConcurrency, timeout: perSourceTimeout, aggregateTimeout: perAggregateSourceTimeout
+            concurrency: concurrency, timeout: perSourceTimeout, aggregateTimeout: perAggregateSourceTimeout,
+            fetcher: fetcher
         )
+    }
+
+    private let fetcher: BookSourceFetcher
+    private let device: SearchDeviceConditions
+
+    init(fetcher: BookSourceFetcher = .shared, device: SearchDeviceConditions = .live) {
+        self.fetcher = fetcher
+        self.device = device
     }
 
     /// Current search task (used for cancellation)
@@ -453,7 +460,6 @@ class SearchAggregator: ObservableObject {
     /// per-batch sorts don't each pay a SwiftUI diff.
     private var internalResults: [SearchBook] = []
     private var internalProgress = SearchProgress()
-    private var internalHasMoreResults = false
     /// Set by a merge, consumed by the next publication — see `mergeBatch`.
     private var resultsNeedSort = false
 
@@ -491,17 +497,20 @@ class SearchAggregator: ObservableObject {
     /// their cover URLs so the cover loader can decrypt them after download.
     private var coverDecodeSourcesById: [UUID: BookSource] = [:]
 
-    // 載入更多 (cross-source paging, Legado-style). `searchPage` is the page all
-    // sources are currently at; a source that stops yielding NEW merged results
-    // (or fails a page) enters `exhaustedSourceIds` and is skipped on the next
-    // round — Legado's exhaustedSources idea. Only sources that answered page 1
-    // successfully (`successfulSourceIds`) are paged at all.
+    // Later pages (cross-source paging, Legado-style). 搜索 fetches them by itself once page 1
+    // is in, round after round, at the pace the phone allows (search 9e, maintainer
+    // 2026-10-15: no paging for the reader to do, no freeze, no hot phone). `searchPage` is the
+    // last page every paged source finished; a source that stops yielding NEW merged results
+    // (or fails a page) enters `exhaustedSourceIds` and is skipped from then on — Legado's
+    // exhaustedSources idea. Only sources whose page 1 had books (`pagedSourceIds`) are paged.
     private var searchPage = 1
-    private var successfulSourceIds: Set<UUID> = []
+    private var pagedSourceIds: Set<UUID> = []
     private var exhaustedSourceIds: Set<UUID> = []
-    /// Upper bound on 載入更多 rounds so a misbehaving source that repeats
-    /// results forever cannot drive unbounded fan-outs.
-    private let maxSearchPages = 5
+    /// 搜索 pages on; 換源 and 尋找可用來源 never did and still stop at page 1.
+    private var pagesLaterPages = false
+    /// Upper bound on rounds (maintainer, 2026-10-15: 10), so a misbehaving source that
+    /// returns new books on every page cannot drive unbounded fan-outs.
+    private let maxSearchPages = 10
 
     /// `search.firstResult`: from `search(query:sources:origin:)` to the end of the first
     /// merge that added a book to that search. The generation ties the span to one search,
@@ -568,14 +577,14 @@ class SearchAggregator: ObservableObject {
             total: activeSources.count,
             skipped: skippedCount
         )
-        internalHasMoreResults = false
         requestResultsPublication(force: true, reason: "reset")
         deduplicationMap = [:]
         answerTally = SourceAnswerTally()
         completedSourceIds = []
         searchPage = 1
-        successfulSourceIds = []
+        pagedSourceIds = []
         exhaustedSourceIds = []
+        pagesLaterPages = origin == .searchTab
         isPaused = false
 
         currentQuery = query.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -632,7 +641,7 @@ class SearchAggregator: ObservableObject {
         let q = currentQuery
         let generation = searchGeneration
         let policy = applyAutoPause ? autoPausePolicy : SearchAutoPausePolicy(count: 0)
-        let fanOut = fanOut
+        let fanOut = fanOut(concurrency: maxConcurrency)
 
         searchTask = Task { [weak self] in
             if applyAutoPause, let trace = self?.firstResultTrace, trace.generation == generation {
@@ -651,7 +660,8 @@ class SearchAggregator: ObservableObject {
                     await self.mergeBatch(answer.books, source: source, query: q, generation: generation)
                     self.internalProgress.completed += 1
                     self.completedSourceIds.insert(sourceId)
-                    self.successfulSourceIds.insert(sourceId)
+                    // A page 1 without books has no page 2 worth asking for.
+                    if answer.outcome == .results { self.pagedSourceIds.insert(sourceId) }
                     self.answerTally.count(answer.outcome)
                     if answer.outcome == .failedAsEmpty { self.internalProgress.failedAsEmpty += 1 }
                     // Phase 0b: a failure the fetcher reported as "no results" still
@@ -682,75 +692,98 @@ class SearchAggregator: ObservableObject {
                 return true
             }
 
-            // Only a run that finished on its own clears the flag; a paused or
-            // superseded run is cancelled and leaves state for resume().
-            guard let self, !Task.isCancelled else { return }
-            self.updateHasMoreResults()
-            self.requestResultsPublication(force: true, reason: "complete")
-            self.isSearching = false
-            SourceHealthStore.shared.flush()
-            self.logPublicationSummary(reason: "complete")
+            // Only a run that finished on its own goes on; a paused or superseded run is
+            // cancelled and leaves state for resume(), and an auto-paused one waits for it.
+            let device: SearchDeviceConditions? = {
+                guard let self, !Task.isCancelled, !self.isPaused else { return nil }
+                self.requestResultsPublication(force: true, reason: "firstPageComplete")
+                self.logPublicationSummary(reason: "firstPageComplete")
+                return self.device
+            }()
+            guard let device else { return }
+            await SearchAggregator.runLaterPagesThenFinish(query: q, device: device) { [weak self] in self }
         }
     }
 
-    // MARK: - 載入更多 (cross-source paging)
+    // MARK: - Later pages (cross-source paging, search 9e)
 
-    private var loadMoreCandidates: [BookSource] {
-        allSources.filter {
-            successfulSourceIds.contains($0.id) && !exhaustedSourceIds.contains($0.id)
-        }
+    private struct LaterPageRound {
+        let page: Int
+        let sources: [BookSource]
     }
 
-    private func updateHasMoreResults() {
-        internalHasMoreResults = searchPage < maxSearchPages
-            && !internalResults.isEmpty
-            && !loadMoreCandidates.isEmpty
+    /// The next round, or nil when 搜索 has no page left to ask for.
+    private func nextLaterPageRound() -> LaterPageRound? {
+        guard pagesLaterPages, !isPaused, !internalResults.isEmpty, searchPage < maxSearchPages else { return nil }
+        let sources = allSources.filter { pagedSourceIds.contains($0.id) && !exhaustedSourceIds.contains($0.id) }
+        guard !sources.isEmpty else { return nil }
+        return LaterPageRound(page: searchPage + 1, sources: sources)
     }
 
-    /// Fetches the next result page from every source that answered the previous
-    /// round and hasn't been exhausted. A source contributing zero NEW merged
-    /// origins (or failing the page) is exhausted and skipped from then on.
-    func loadMore() {
-        guard !isSearching, !isPaused, hasMoreResults else { return }
-        let candidates = loadMoreCandidates
-        guard !candidates.isEmpty, searchPage < maxSearchPages else {
-            internalHasMoreResults = false
-            requestResultsPublication(force: true, reason: "loadMoreExhausted")
-            return
-        }
-        searchPage += 1
-        let page = searchPage
-        let q = currentQuery
-        let fanOut = fanOut
-        isSearching = true
+    /// Runs the later pages after page 1 (or from where a pause stopped them), then ends the
+    /// search. The aggregator is held weakly between rounds, so a search page that went away
+    /// stops its search, as page 1's fan-out always did.
+    private static func runLaterPagesThenFinish(query q: String, device: SearchDeviceConditions,
+                                                aggregator: @escaping @MainActor () -> SearchAggregator?) async {
+        await runLaterPages(query: q, device: device, aggregator: aggregator)
+        guard !Task.isCancelled, let finished = aggregator() else { return }
+        finished.requestResultsPublication(force: true, reason: "complete")
+        finished.isSearching = false
+        SourceHealthStore.shared.flush()
+        finished.logPublicationSummary(reason: "complete")
+    }
 
-        searchTask = Task { [weak self] in
-            await fanOut.run(query: q, sources: candidates, request: .page(page)) { source, answer in
-                guard let self else { return false }
-                let sourceId = source.id
-                if answer.outcome.answered {
-                    let newlyMerged = await self.mergeBatch(answer.books, source: source, query: q, generation: nil)
-                    // The source's own hasMoreRule verdict wins; without one,
-                    // a page that contributed nothing new means exhausted.
-                    if answer.hasMore == false || (answer.hasMore != true && newlyMerged == 0) {
-                        self.exhaustedSourceIds.insert(sourceId)
-                    }
-                    SourceHealthStore.shared.recordSuccess(sourceId, responseMs: answer.elapsedMs)
-                } else {
-                    // A failed/timed-out later page: stop paging that source,
-                    // but don't strike its health — page 1 already succeeded.
-                    self.exhaustedSourceIds.insert(sourceId)
-                }
+    /// One round per page, every paged source asked for it at the width the phone allows
+    /// (`SearchDevicePacing`); while the phone is hot, the next round waits for it to cool.
+    /// Ends when no source has more, at `maxSearchPages`, or when the task is cancelled.
+    private static func runLaterPages(query q: String, device: SearchDeviceConditions,
+                                      aggregator: @escaping @MainActor () -> SearchAggregator?) async {
+        while !Task.isCancelled, let round = aggregator()?.nextLaterPageRound() {
+            let pacing = device.current()
+            if pacing.holdsLaterPages {
+                AppLogger.parse("⏱ search.pages.hold page=\(round.page) thermal=\(pacing.thermalState.rawValue)")
+                await device.waitUntilLaterPagesMayRun()
+                continue
+            }
+            guard let fanOut = aggregator()?.fanOut(
+                concurrency: pacing.laterPageConcurrency(configured: aggregator()?.maxConcurrency ?? 1)
+            ) else { return }
+            let started = SourcePerfTrace.now
+            await fanOut.run(query: q, sources: round.sources, request: .page(round.page)) { source, answer in
+                guard let aggregator = aggregator() else { return false }
+                await aggregator.mergeLaterPage(answer, source: source, query: q)
                 return true
             }
-
-            guard let self, !Task.isCancelled else { return }
-            self.updateHasMoreResults()
-            self.requestResultsPublication(force: true, reason: "loadMoreComplete")
-            self.isSearching = false
-            SourceHealthStore.shared.flush()
-            self.logPublicationSummary(reason: "loadMoreComplete")
+            guard !Task.isCancelled, let finished = aggregator() else { return }
+            finished.searchPage = round.page
+            // Through the gate's cadence: fast rounds share a publication, so the list and its
+            // works are rebuilt at most twice a second however quickly the pages come.
+            finished.requestResultsPublication(force: false, reason: "page")
+            SourcePerfTrace.record(
+                "search.page",
+                "page=\(round.page) sources=\(round.sources.count) width=\(fanOut.concurrency) "
+                    + "lowPower=\(pacing.isLowPower) thermal=\(pacing.thermalState.rawValue) rows=\(finished.internalResults.count)",
+                since: started, thresholdMs: 0
+            )
         }
+    }
+
+    /// Merges a source's later page. A page that adds nothing new, or that the source says is
+    /// its last, exhausts the source; a failed or timed-out later page stops paging it without
+    /// striking its health, since its page 1 succeeded.
+    private func mergeLaterPage(_ answer: BookSourceSearchFanOut.Answer, source: BookSource, query q: String) async {
+        let sourceId = source.id
+        guard answer.outcome.answered else {
+            exhaustedSourceIds.insert(sourceId)
+            return
+        }
+        let newlyMerged = await mergeBatch(answer.books, source: source, query: q, generation: nil)
+        // The source's own hasMoreRule verdict wins; without one, a page that contributed
+        // nothing new means exhausted.
+        if answer.hasMore == false || (answer.hasMore != true && newlyMerged == 0) {
+            exhaustedSourceIds.insert(sourceId)
+        }
+        SourceHealthStore.shared.recordSuccess(sourceId, responseMs: answer.elapsedMs)
     }
 
     // MARK: - Pause / Resume / Cancel
@@ -769,13 +802,26 @@ class SearchAggregator: ObservableObject {
         logPublicationSummary(reason: "pause")
     }
 
-    /// Continue a paused search over only the sources that had not finished yet.
+    /// Continue a paused search over only the sources that had not finished yet, then
+    /// 搜索's later pages; paused during those, it goes on from the page it was at.
     /// Auto-pause does not re-trigger here — resuming is an explicit request to
     /// keep going.
     func resume() {
         guard isPaused else { return }
         let pending = allSources.filter { !completedSourceIds.contains($0.id) }
-        runSearch(sources: pending, applyAutoPause: false)
+        guard pending.isEmpty, pagesLaterPages else {
+            runSearch(sources: pending, applyAutoPause: false)
+            return
+        }
+        // Page 1 is in: on with the later pages; with none left, the search just ends.
+        searchTask?.cancel()
+        isPaused = false
+        isSearching = true
+        let q = currentQuery
+        let device = device
+        searchTask = Task { [weak self] in
+            await SearchAggregator.runLaterPagesThenFinish(query: q, device: device) { [weak self] in self }
+        }
     }
 
     func cancel() {
@@ -803,7 +849,6 @@ class SearchAggregator: ObservableObject {
         internalResults = []
         resultsNeedSort = false
         internalProgress = SearchProgress()
-        internalHasMoreResults = false
         deduplicationMap = [:]
         allSources = []
         completedSourceIds = []
@@ -811,8 +856,9 @@ class SearchAggregator: ObservableObject {
         autoPausePolicy = SearchAutoPausePolicy(count: 0)
         coverDecodeSourcesById = [:]
         searchPage = 1
-        successfulSourceIds = []
+        pagedSourceIds = []
         exhaustedSourceIds = []
+        pagesLaterPages = false
         publicationMetrics = ResultPublicationMetrics()
         isSearching = false
         isPaused = false
@@ -894,12 +940,14 @@ class SearchAggregator: ObservableObject {
         results = publishedResults
         publicationRevision &+= 1
         progress = internalProgress
-        hasMoreResults = internalHasMoreResults
         publicationGate.didPublish(at: now)
         publicationMetrics.publications += 1
-        AppLogger.parse(
-            "⏱ search.listPublish rows=\(results.count) reason=\(reason) "
-                + "publications=\(publicationMetrics.publications)"
+        // The sort and the snapshots run on the main actor: timed, since 搜索's later pages
+        // multiply the rows (search 9e).
+        SourcePerfTrace.record(
+            "search.listPublish",
+            "rows=\(results.count) reason=\(reason) publications=\(publicationMetrics.publications)",
+            since: now, thresholdMs: 0
         )
     }
 

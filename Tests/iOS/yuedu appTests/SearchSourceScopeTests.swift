@@ -105,7 +105,6 @@ struct SearchSourceScopeTests {
         #expect(!aggregator.isSearching)
         #expect(!aggregator.isPaused)
         #expect(aggregator.results.isEmpty)
-        #expect(!aggregator.hasMoreResults)
         #expect(aggregator.progress.total == 0)
         #expect(aggregator.progress.completed == 0)
         #expect(aggregator.progress.failed == 0)

@@ -68,10 +68,6 @@ struct IOS17SearchWorkGroup: Equatable {
 struct IOS17SearchResultTableContent: Equatable {
     /// The sources' results where the page is not the tab's root.
     let rows: [IOS17SearchResultTableRow]
-    /// The sources have more pages: the list ends with a spinner that loads them (search 9b).
-    let hasMore: Bool
-    /// The search is idle, so showing the spinner may ask for the next page.
-    var canLoadMore: Bool = false
     /// The tab root's works; set, it replaces `rows`.
     var works: IOS17SearchWorksSection? = nil
 

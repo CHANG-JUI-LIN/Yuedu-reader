@@ -34,11 +34,12 @@ struct BookSourceSearchFanOut {
     var timeout: UInt64
     /// Seconds per JS-driven source (`timeout(for:normal:aggregate:)`).
     var aggregateTimeout: UInt64
+    var fetcher: BookSourceFetcher = .shared
 
     enum Request: Sendable {
         /// Page 1, streamed: books reach `onBatch` as the source's pages arrive.
         case firstPage(onBatch: @Sendable (BookSource, [OnlineBook]) async -> Void)
-        /// A later page (載入更多), fetched whole.
+        /// A later page (search 9e: fetched by itself after page 1), fetched whole.
         case page(Int)
     }
 
@@ -71,6 +72,7 @@ struct BookSourceSearchFanOut {
         guard width > 0 else { return }
         let normal = timeout
         let aggregate = aggregateTimeout
+        let fetcher = fetcher
         await withTaskGroup(of: (Int, Answer).self) { group in
             var next = 0
 
@@ -86,11 +88,12 @@ struct BookSourceSearchFanOut {
                     }
                     switch request {
                     case .firstPage(let onBatch):
-                        return (index, await Self.firstPage(query: query, source: source, timeout: sourceTimeout) { books in
+                        return (index, await Self.firstPage(query: query, source: source, timeout: sourceTimeout, fetcher: fetcher) { books in
                             await onBatch(source, books)
                         })
                     case .page(let page):
-                        return (index, await Self.laterPage(query: query, source: source, page: page, timeout: sourceTimeout))
+                        return (index, await Self.laterPage(query: query, source: source, page: page, timeout: sourceTimeout,
+                                                           fetcher: fetcher))
                     }
                 }
             }
@@ -119,13 +122,14 @@ struct BookSourceSearchFanOut {
         query: String,
         source: BookSource,
         timeout: UInt64,
+        fetcher: BookSourceFetcher,
         onBatch: @escaping @Sendable ([OnlineBook]) async -> Void
     ) async -> Answer {
         let startedAt = ProcessInfo.processInfo.systemUptime
         do {
             return try await withThrowingTaskGroup(of: BookSourceFetcher.SearchStreamingOutcome.self) { group in
                 group.addTask {
-                    try await BookSourceFetcher.shared.searchStreaming(query: query, in: source, onBatch: onBatch)
+                    try await fetcher.searchStreaming(query: query, in: source, onBatch: onBatch)
                 }
                 group.addTask {
                     try await Task.sleep(nanoseconds: timeout * 1_000_000_000)
@@ -148,18 +152,19 @@ struct BookSourceSearchFanOut {
         }
     }
 
-    /// A later page for 載入更多: a plain (non-streaming) search with the same timeout.
+    /// A later page: a plain (non-streaming) search with the same timeout.
     private nonisolated static func laterPage(
         query: String,
         source: BookSource,
         page: Int,
-        timeout: UInt64
+        timeout: UInt64,
+        fetcher: BookSourceFetcher
     ) async -> Answer {
         let startedAt = ProcessInfo.processInfo.systemUptime
         do {
             return try await withThrowingTaskGroup(of: (books: [OnlineBook], hasMore: Bool?).self) { group in
                 group.addTask {
-                    try await BookSourceFetcher.shared.searchPage(query: query, in: source, page: page)
+                    try await fetcher.searchPage(query: query, in: source, page: page)
                 }
                 group.addTask {
                     try await Task.sleep(nanoseconds: timeout * 1_000_000_000)

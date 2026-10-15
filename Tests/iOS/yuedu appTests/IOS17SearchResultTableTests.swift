@@ -128,22 +128,17 @@ struct IOS17SearchResultTableTests {
     @Test("unchanged content does not reload the UIKit table")
     func unchangedContentDoesNotReload() {
         let row = makeRow()
-        let content = IOS17SearchResultTableContent(rows: [row], hasMore: false)
+        let content = IOS17SearchResultTableContent(rows: [row])
 
         #expect(!content.requiresReload(comparedTo: content))
     }
 
-    @Test("row, more-pages and can-load changes reload the UIKit table")
+    @Test("a row change reloads the UIKit table")
     func changedContentReloads() {
-        let original = IOS17SearchResultTableContent(rows: [makeRow()], hasMore: false)
-        let changedRow = IOS17SearchResultTableContent(rows: [makeRow(title: "第二本書")], hasMore: false)
-        let changedMore = IOS17SearchResultTableContent(rows: [makeRow()], hasMore: true)
-        let nowLoadable = IOS17SearchResultTableContent(rows: [makeRow()], hasMore: true, canLoadMore: true)
+        let original = IOS17SearchResultTableContent(rows: [makeRow()])
+        let changedRow = IOS17SearchResultTableContent(rows: [makeRow(title: "第二本書")])
 
         #expect(changedRow.requiresReload(comparedTo: original))
-        #expect(changedMore.requiresReload(comparedTo: original))
-        // A search that ends with the spinner on screen asks again: the reload redisplays it.
-        #expect(nowLoadable.requiresReload(comparedTo: changedMore))
     }
 
     @Test("the works' rows and status lines reload the UIKit table")
@@ -154,7 +149,7 @@ struct IOS17SearchResultTableTests {
             var status = UnifiedSearchStatus()
             status.leading = leading
             return IOS17SearchResultTableContent(
-                rows: [], hasMore: false,
+                rows: [],
                 works: IOS17SearchWorksSection(groups: rows.isEmpty ? [] : [IOS17SearchWorkGroup(kind: .text, title: "書籍", rows: rows)],
                                                status: status))
         }
@@ -164,34 +159,8 @@ struct IOS17SearchResultTableTests {
         #expect(content([], leading: "搜索中…").requiresReload(comparedTo: content([])))
     }
 
-    /// Search 9b: no 載入更多 to tap. The list's last row is a spinner while more pages exist,
-    /// and showing it asks for the next page, once the search is idle.
-    @Test("showing the last row loads the next page by itself, only when it can")
-    @MainActor
-    func lastRowLoadsMore() throws {
-        let controller = IOS17SearchResultTableViewController()
-        var loads = 0
-        func show(canLoadMore: Bool) throws {
-            controller.update(
-                content: IOS17SearchResultTableContent(rows: [makeRow(), makeRow(title: "第二本書", id: UUID())], hasMore: true,
-                                                       canLoadMore: canLoadMore),
-                onSelect: { _ in }, onLoadMore: { loads += 1 }, onSelectWork: { _ in })
-            let table = controller.tableView!
-            let last = IndexPath(row: table.numberOfRows(inSection: 0) - 1, section: 0)
-            #expect(last.row == 2, "the two books, then the spinner")
-            let cell = try #require(table.dataSource?.tableView(table, cellForRowAt: last))
-            #expect(cell.accessibilityLabel == localized("正在載入更多"))
-            #expect(!(controller.tableView(table, shouldHighlightRowAt: last)), "nothing to tap")
-            controller.tableView(table, willDisplay: cell, forRowAt: last)
-        }
-        try show(canLoadMore: false)
-        #expect(loads == 0, "a search still running is not asked again")
-        try show(canLoadMore: true)
-        #expect(loads == 1)
-    }
-
-    /// Search 9c: a section per kind under its header, the status lines and the spinner in
-    /// sections of their own with none.
+    /// Search 9c: a section per kind under its header, the status lines in a section of their
+    /// own with none. The sources' later pages come by themselves (search 9e): no spinner row.
     @Test("the works are in a section per kind, each with its header")
     @MainActor
     func groupSections() throws {
@@ -200,15 +169,15 @@ struct IOS17SearchResultTableTests {
         status.trailing = ["Calibre：無法搜尋（離線）"]
         controller.update(
             content: IOS17SearchResultTableContent(
-                rows: [], hasMore: true,
+                rows: [],
                 works: IOS17SearchWorksSection(groups: [
                     IOS17SearchWorkGroup(kind: .text, title: localized("搜尋分組：書籍"), rows: [makeRow()]),
                     IOS17SearchWorkGroup(kind: .audio, title: localized("搜尋分組：有聲書"),
                                          rows: [makeRow(title: "有聲", id: UUID())]),
                 ], status: status)),
-            onSelect: { _ in }, onLoadMore: {}, onSelectWork: { _ in })
+            onSelect: { _ in }, onSelectWork: { _ in })
         let table = try #require(controller.tableView)
-        #expect(table.numberOfSections == 3, "書籍, 有聲書, then the spinner and the status line")
+        #expect(table.numberOfSections == 3, "書籍, 有聲書, then the status line")
         func header(_ section: Int) -> String? {
             (controller.tableView(table, viewForHeaderInSection: section) as? UITableViewHeaderFooterView)
                 .flatMap { ($0.contentConfiguration as? UIListContentConfiguration)?.text }
@@ -217,9 +186,7 @@ struct IOS17SearchResultTableTests {
         #expect(header(1) == localized("搜尋分組：有聲書"))
         #expect(header(2) == nil)
         #expect(controller.tableView(table, heightForHeaderInSection: 2) == 0)
-        #expect(table.numberOfRows(inSection: 2) == 2)
-        let spinner = try #require(table.dataSource?.tableView(table, cellForRowAt: IndexPath(row: 0, section: 2)))
-        #expect(spinner.accessibilityLabel == localized("正在載入更多"))
+        #expect(table.numberOfRows(inSection: 2) == 1)
     }
 
     @Test("UIKit row maps only bounded search presentation values")
