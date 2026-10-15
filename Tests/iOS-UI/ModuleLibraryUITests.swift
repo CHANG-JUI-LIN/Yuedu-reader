@@ -101,8 +101,9 @@ final class ModuleLibraryUITests: XCTestCase {
     func testAddFromAddressThenRemove() {
         let app = launch()
         let empty = scrolledTo(app.buttons["library.modules.add"].firstMatch, in: app)
-        XCTAssertTrue(empty.waitForExistence(timeout: 10), app.debugDescription)
+        let shown = empty.waitForExistence(timeout: 10)
         attach(app, "modules-empty")
+        XCTAssertTrue(shown, app.debugDescription)
 
         addFixtureModule(app)
 
