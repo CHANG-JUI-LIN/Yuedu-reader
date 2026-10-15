@@ -95,7 +95,7 @@ final class AILiveBookVerificationTests: XCTestCase {
         // coverage persisted for the app's normal Resume action. It is not a full-book scan.
         var budget = AIMemoryBudget(); budget.maximumCalls = min(max(configuration.memoryCalls, 1), 8)
         let memory = AICharacterMemoryService.shared
-        let plan = try memory.prepare(source: source, wholeBook: false, budget: budget)
+        let plan = try await memory.prepare(source: source, wholeBook: false, budget: budget)
         try await memory.start(confirmed: plan, source: source)
         await memory.wait(book: book.id)
         let coverage = try await memory.coverage(job: plan, source: source)
@@ -168,7 +168,7 @@ extension AILiveBookVerificationTests {
         let memory = AICharacterMemoryService.shared
         try await memory.load(source: source)
         var budget = AIMemoryBudget(); budget.maximumCalls = 3
-        let job = try memory.prepare(source: source, wholeBook: false, budget: budget)
+        let job = try await memory.prepare(source: source, wholeBook: false, budget: budget)
         let before = try await memory.coverage(job: job, source: source)
         AIDiagnosticStore.shared.captureNextRequestContent = true
         try await memory.start(confirmed: job, source: source)

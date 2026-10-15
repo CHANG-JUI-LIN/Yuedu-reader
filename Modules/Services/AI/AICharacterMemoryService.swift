@@ -42,7 +42,14 @@ final class AICharacterMemoryService: ObservableObject {
         }
     }
     /// Read-only proposal. No job, model call or credential is written before UI consent.
-    func prepare(source: AIBookContentAdapter, wholeBook: Bool, budget: AIMemoryBudget) throws -> AIMemoryJob {
+    ///
+    /// A book already analysed keeps the unit size it was analysed in: a record is matched by
+    /// its unit's exact range, and new ranges would ask for every unit again.
+    func prepare(source: AIBookContentAdapter, wholeBook: Bool, budget: AIMemoryBudget) async throws -> AIMemoryJob {
+        var budget = budget
+        if let previous = try await store.load(book: source.chunkBookID) {
+            budget.unitCharacters = previous.budget.unitCharacters
+        }
         let (provider, digest, displayName) = try provider()
         var job = try AIMemoryPlanner.plan(source: source, boundary: source.boundary(wholeBook: wholeBook), provider: provider.identifier,
             model: provider.defaultModel, budget: budget, language: .current, configurationDigest: digest)
