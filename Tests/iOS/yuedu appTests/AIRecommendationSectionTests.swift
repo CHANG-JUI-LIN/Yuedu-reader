@@ -74,6 +74,26 @@ struct AIRecommendationSectionTests {
         #expect(section.displayTitle(sourceName: "") == localized("AI 推薦"))
     }
 
+    @Test("each card's 作品詳情 carries its stored reason, whether Open Library matched the work or not")
+    func cardsCarryTheReason() {
+        let cards = AIRecommendationRow.cards(for: Self.list, store: BookStore())
+        #expect(cards.map(\.route?.recommendationReason) == ["同一位作者。", "奇幻。"])
+        #expect(cards.map(\.id) == AIRecommendationProvider.entries(from: Self.list).compactMap { entry -> SourceItemKey? in
+            guard case .item(let record, _, _) = entry else { return nil }
+            return record.key
+        })
+        // Any other row's work carries none, so a reason never follows the reader elsewhere.
+        let other = HomeRowContent(entries: AIRecommendationProvider.entries(from: Self.list), store: BookStore()).cards
+        #expect(other.allSatisfy { $0.route?.recommendationReason == nil })
+    }
+
+    @Test("an empty reason draws no 推薦理由")
+    func emptyReason() {
+        let list = AIRecommendationList(entries: [.init(work: .init(title: "書", author: "作者", reason: "  "))],
+                                        generatedAt: .now, service: "", model: "")
+        #expect(AIRecommendationRow.cards(for: list, store: BookStore()).first?.route?.recommendationReason == nil)
+    }
+
     @Test("with no list, the section still takes room: it offers 產生推薦")
     func neverSettledEmpty() {
         let ai = HomeSectionGroup(section: HomeSection(layout: .row, binding: .aiRecommendations), rows: [], entries: [:])

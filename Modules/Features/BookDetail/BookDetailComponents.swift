@@ -991,6 +991,31 @@ extension BookDetailSectionHeader where Accessory == EmptyView {
 
 // MARK: - Description
 
+/// 「推薦理由」 (AI 推薦 8e): why the reader's AI service suggested the work, marked AI 產生.
+/// The reason is the model's own text, drawn as it is: never looked up as a string key or read
+/// as Markdown.
+struct BookDetailRecommendationSection: View {
+    let reason: String
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: DSSpacing.sm) {
+            BookDetailSectionHeader(title: localized("推薦理由")) {
+                Text(localized("AI 產生"))
+                    .font(DSFont.caption)
+                    .foregroundStyle(DSColor.textSecondary)
+                    .padding(.horizontal, DSSpacing.sm)
+                    .padding(.vertical, DSSpacing.xs)
+                    .background(DSColor.surfaceTertiary, in: Capsule())
+            }
+            Text(verbatim: reason)
+                .font(DSFont.subheadline)
+                .foregroundStyle(DSColor.textPrimary)
+                .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .padding(.horizontal, DSSpacing.lg)
+    }
+}
+
 /// The description, clamped to four lines with Apple's trailing 「更多」.
 ///
 /// Plain intros arrive cleaned by Legado's formatter; `<usehtml>`, `<md>` and

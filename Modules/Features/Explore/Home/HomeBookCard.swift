@@ -38,7 +38,7 @@ struct HomeCardContent: Identifiable {
     private(set) var accessibilityValue: String
     let opening: ItemOpening
     /// 作品詳情's route, the item frozen as the row had it; none for a placeholder.
-    let route: WorkDetailRoute?
+    private(set) var route: WorkDetailRoute?
 
     /// - Parameters:
     ///   - status: the item's copies on this device (`CopyLookup.status(for:)`). Book-source
@@ -81,6 +81,14 @@ struct HomeCardContent: Identifiable {
 
     /// The card in a series' row (同系列): its number in place of the author the series
     /// shares, on screen and to VoiceOver. A volume with no number keeps its author.
+    /// The card of an AI pick: its 作品詳情 shows why it was suggested (AI 推薦 8e).
+    func recommended(because reason: String?) -> HomeCardContent {
+        guard let reason else { return self }
+        var card = self
+        card.route?.recommendationReason = reason
+        return card
+    }
+
     func inSeries(_ number: String?) -> HomeCardContent {
         guard let number else { return self }
         var card = self

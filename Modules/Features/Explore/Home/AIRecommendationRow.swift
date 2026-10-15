@@ -53,7 +53,14 @@ struct AIRecommendationRow: View {
 
     private var cards: [HomeCardContent] {
         guard let list else { return [] }
-        return HomeRowContent(entries: AIRecommendationProvider.entries(from: list), store: shelf).cards
+        return Self.cards(for: list, store: shelf)
+    }
+
+    /// The stored works as cards, each carrying its reason into 作品詳情 (AI 推薦 8e).
+    static func cards(for list: AIRecommendationList, store: BookStore) -> [HomeCardContent] {
+        let reasons = AIRecommendationProvider.reasons(from: list)
+        return HomeRowContent(entries: AIRecommendationProvider.entries(from: list), store: store).cards
+            .map { $0.recommended(because: reasons[$0.id]) }
     }
 
     /// Where the works came from and when (AI 推薦 plan: marked 「AI 產生」).
