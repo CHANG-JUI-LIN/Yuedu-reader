@@ -57,6 +57,7 @@ export async function recordObservation(observation: TriageObservation, eventId:
       count: FieldValue.increment(observation.count),
       appVersions: FieldValue.arrayUnion(observation.appVersion),
       ...(observation.installId !== undefined ? {installIds: FieldValue.arrayUnion(observation.installId)} : {}),
+      ...(observation.threadPath !== undefined ? {threadPath: observation.threadPath} : {}),
       // The last few events only: enough to recognise a redelivery, which comes soon after.
       eventIds: [...eventIds, eventId].slice(-20),
       lastSeenAt: FieldValue.serverTimestamp(),

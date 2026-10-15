@@ -144,6 +144,7 @@ export const onFeedbackThreadCreated = onDocumentCreated(
       severity: triage?.severity ?? null,
       appVersion: `${thread.appVersion ?? ""} (${thread.build ?? ""})`,
       ...(typeof thread.installId === "string" ? {installId: thread.installId} : {}),
+      threadPath: threadRef.path,
     }), event.id);
   }
 );

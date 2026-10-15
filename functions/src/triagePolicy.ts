@@ -46,6 +46,10 @@ export interface TriageObservation {
   sourceRef: string;
   /// Feedback only: the reporter's install, which is also their Crashlytics user id.
   installId?: string;
+  /// Feedback only: the thread's Firestore path, so the daily run can read the whole
+  /// conversation and its attachments. It contains the inbox key, so it is stored on the
+  /// item and nowhere else — `telegramMessage` never reads it.
+  threadPath?: string;
 }
 
 /// The fields of an existing item that a new observation is merged against.
@@ -135,6 +139,7 @@ export function feedbackObservation(input: {
   severity: TriageSeverity | null;
   appVersion: string;
   installId?: string;
+  threadPath: string;
 }): TriageObservation {
   const number = input.number ?? "?";
   return {
@@ -148,6 +153,7 @@ export function feedbackObservation(input: {
     appVersion: input.appVersion,
     sourceRef: `回饋中心 #${number}（npx tsx tools/feedback.ts show ${number}）`,
     ...(input.installId !== undefined ? {installId: input.installId} : {}),
+    threadPath: input.threadPath,
   };
 }
 

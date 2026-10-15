@@ -1,5 +1,14 @@
 {
-  "indexes": [],
+  "indexes": [
+    {
+      "collectionGroup": "triage",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {"fieldPath": "status", "order": "ASCENDING"},
+        {"fieldPath": "lastSeenAt", "order": "DESCENDING"}
+      ]
+    }
+  ],
   "fieldOverrides": [
     {
       "collectionGroup": "threads",

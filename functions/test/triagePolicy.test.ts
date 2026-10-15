@@ -38,11 +38,13 @@ describe("triage policy", () => {
     const observation = feedbackObservation({
       threadId: "0f8e6c1a-1111-2222-3333-444455556666", number: 42, title: "閃退", text: "打開書就閃退",
       severity: null, appVersion: "1.0.1 (210)", installId: "install-1",
+      threadPath: "feedbackInboxes/SECRETINBOXKEY/threads/0f8e6c1a-1111-2222-3333-444455556666",
     });
+    assert.equal(observation.threadPath, "feedbackInboxes/SECRETINBOXKEY/threads/0f8e6c1a-1111-2222-3333-444455556666");
     assert.equal(observation.severity, "normal");
     assert.equal(observation.id, "feedback_0f8e6c1a-1111-2222-3333-444455556666");
     const text = telegramMessage({...observation, severity: "high"});
-    assert.doesNotMatch(text, /feedbackInboxes/);
+    assert.doesNotMatch(text, /feedbackInboxes|SECRETINBOXKEY/);
     assert.match(text, /^🟠 嚴重｜使用者回饋\n#42 閃退\n/);
     assert.match(text, /tools\/feedback\.ts show 42/);
   });

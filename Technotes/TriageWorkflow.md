@@ -32,6 +32,8 @@ Organizer 簽名(每日)┘                        │                   └─�
 - 欄位：`source`、`lastKind`、`title`、`summary`（最新一次的說明）、`sourceRef`（Console 網址或回饋編號；
   **不放 thread 路徑**——路徑含收件匣金鑰，會跟著通知送進 Telegram）、
   `severity`（只升不降）、`status`（new／triaged／fixing／shipped／wontfix；回歸會把 shipped／wontfix 打回 new）、
+  `threadPath`（只有回饋：thread 完整路徑，給每天的 Claude 讀整段對話和截圖；含收件匣金鑰，只存在這裡，通知不讀）、
+  `triageNote`／`triagedAt`（每天的 Claude 寫）、
   `count`（活躍度分數，不是崩潰次數：回報／新 issue 各 +1、暴增加崩潰數、每日摘要加當天事件數，可能重疊）、`appVersions`、`installIds`、`firstSeenAt`／`lastSeenAt`、`eventIds`（最近 20 個，擋重送的事件）。
 - 沒有 rules 條目，跟 `feedbackMeta` 一樣預設全拒，只有 admin 讀寫。
 
@@ -60,13 +62,15 @@ Organizer 簽名(每日)┘                        │                   └─�
 3. Secrets：ASC 金鑰（p8）、Key ID、Issuer ID。金鑰角色是否夠用，**要用實際呼叫確認**
    （有論壇回報部分端點要 Admin）。
 
-### C. Claude Code 每日 /triage
-1. repo 內的 skill `.claude/skills/triage`：讀 `triage` 中 status=new／triaged 的項目、
-   用 Firebase MCP 讀 Crashlytics 事件堆疊、對照程式碼找根因，產出當天報告。
-2. 每項能修的開一張 session 提案卡（不自動開工）；修好提交後把 triage 項目標成 fixing／shipped。
-3. 版本上線後，擬好給回饋使用者的回覆（「已在 x.y.z 修好」），經你確認再用
-   `functions/tools/feedback.ts reply` 送出。
-4. 本機排程：每天早上一次。
+### C. Claude Code 每日 /triage（已完成 2026-10-15）
+1. Skill：`.claude/skills/triage/SKILL.md`。全部走 Firebase MCP（本機沒有 gcloud 憑證）：
+   讀 `triage` 裡 new／triaged 的項目、Crashlytics 過去 24 小時 topIssues（補告警沒涵蓋的）、
+   堆疊與回饋整段對話＋截圖，對照程式碼找根因，產出報告；每項能修的開一張 session 提案卡（不自動開工）；
+   讀過的項目標 `triaged`＋`triageNote`。不改程式、不提交、不部署、不寫 `feedbackInboxes/`。
+2. 排程：Claude 桌面 App 的排程任務 `yuedu-daily-triage`，每天 08:30（本機時間；App 沒開就等下次開啟時跑）。
+3. 修好提交後標 `fixing`，上線後標 `shipped` 並擬回覆；回覆經你逐則確認才用 `functions/tools/feedback.ts reply` 送出
+   （要先 `gcloud auth application-default login`）。
+4. 查詢 `status IN … ORDER BY lastSeenAt DESC` 用的複合索引在 `firestore.indexes.json`。
 
 ## 需要你做的
 
@@ -76,6 +80,7 @@ Organizer 簽名(每日)┘                        │                   └─�
   `firebase functions:secrets:set TELEGRAM_BOT_TOKEN`、`TELEGRAM_CHAT_ID`、`DEEPSEEK_API_KEY`。
   三個都設好才能部署：`onFeedbackThreadCreated` 現在也宣告了 Telegram 兩個 secret。
 - App Store Connect 建 webhook（或給我有權限的 API 金鑰，我用 API 建）。
+- 回覆使用者：裝 gcloud 後跑一次 `gcloud auth application-default login`，`tools/feedback.ts` 才能用。
 - 每次部署前我會先問你；DeepSeek key（`DEEPSEEK_API_KEY`）還沒設，回饋中心也還沒部署。
 - 防濫用（2026-10-15 定）：每個收件匣 24 小時內最多 10 則由 AI 助手回覆（`assistantRepliesPerInboxPerDay`），
   超過的照樣存、照樣進 triage（分級 normal，不發通知），只是不叫 DeepSeek、直接 queued。
