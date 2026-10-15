@@ -2,7 +2,7 @@ import Combine
 import SwiftUI
 import UIKit
 
-/// 設定 → 診斷與回報.
+/// 設定 → 回饋中心 → 診斷紀錄 (設定 → 診斷與回報 until 2026-10-15).
 ///
 /// The device-readable window onto `DiagnosticLog`. Everything the app logs already
 /// went to `os_log`, which needs a Mac and Console.app — so in practice a user who
@@ -205,7 +205,7 @@ struct DiagnosticsView: View {
             placement: .navigationBarDrawer(displayMode: .always),
             prompt: localized("搜尋紀錄")
         )
-        .navigationTitle(localized("診斷與回報"))
+        .navigationTitle(localized("診斷紀錄"))
         .toolbarTitleDisplayMode(.inline)
         .themedAppSurface(for: .settings)
         .toolbar {

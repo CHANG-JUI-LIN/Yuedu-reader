@@ -639,3 +639,5 @@ export const appStoreServerNotifications = onRequest({region}, async (request, r
     response.sendStatus(500);
   }
 });
+
+export {onFeedbackThreadCreated} from "./feedbackTriage.js";

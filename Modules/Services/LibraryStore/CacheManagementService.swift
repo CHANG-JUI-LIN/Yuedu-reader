@@ -38,7 +38,7 @@ enum CacheCategory: String, CaseIterable, Identifiable, Sendable {
         case .ttsAudio: return "TTS 合成的音頻文件快取"
         case .mangaImages: return "漫畫頁面圖片的離線快取"
         case .covers: return "書籍封面圖片的快取"
-        case .diagnostics: return "設定 → 診斷與回報 顯示的日誌與崩潰記錄"
+        case .diagnostics: return "設定 → 回饋中心 → 診斷紀錄 顯示的日誌與崩潰記錄"
         case .remoteBooks: return "線上閱讀暫存；清除時保留正在閱讀的內容、進度與離線副本"
         }
     }

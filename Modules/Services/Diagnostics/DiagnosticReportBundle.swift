@@ -95,6 +95,10 @@ struct DiagnosticReportBundle: Transferable {
     /// device. The banner would go quiet over a report that does not contain them.
     var acknowledgesReport: Bool = true
 
+    /// What the person wrote and the device facts, when the log goes out with a report
+    /// from 回饋與改進 (its 在其他應用程式中開啟). Printed ahead of the log.
+    var preface: String? = nil
+
     static let exportedContentType = UTType.yueduLogFile
 
     static var transferRepresentation: some TransferRepresentation {
@@ -138,6 +142,12 @@ struct DiagnosticReportBundle: Transferable {
         out.append("session=\(session.id.uuidString)  started=\(Self.lineFormatter.string(from: session.startedAt))")
         out.append("exported=\(Self.lineFormatter.string(from: Date()))")
         out.append("")
+
+        if let preface, !preface.isEmpty {
+            out.append("--- report ---")
+            out.append(preface)
+            out.append("")
+        }
 
         let reportable = entries.filter { $0.severity.isReportable }
         out.append("--- summary ---")

@@ -20,6 +20,7 @@ struct SettingsView: View {
     @State private var showAIPaywall = false
     #if DEBUG
     @State private var autoOpenDiagnostics = false
+    @State private var autoOpenFeedbackCenter = false
     #endif
     private let feedbackEmail = "r3212239269@gmail.com"
     private let officialQQGroupID = "1107613783"
@@ -195,13 +196,16 @@ struct SettingsView: View {
 
                     // ── Advanced ──
                     Section(header: Text(localized("進階")).foregroundStyle(DSColor.textSecondary)) {
+                        // 回饋中心 replaced 診斷與回報 (2026-10-15): reports, replies, and the
+                        // diagnostic log viewer as its 診斷紀錄 row.
                         NavigationLink {
-                            DiagnosticsView()
+                            FeedbackCenterView()
                         } label: {
-                            Label(localized("診斷與回報"), systemImage: "stethoscope")
+                            Label(localized("回饋中心"), systemImage: "exclamationmark.bubble")
                                 .foregroundColor(DSColor.textPrimary)
                                 .labelStyle(IconConsistentLabelStyle())
                         }
+                        .accessibilityIdentifier("settings_feedback_center")
                     }
                     .interfaceSectionSurface()
 
@@ -242,16 +246,23 @@ struct SettingsView: View {
                 AggregationSettingsView()
             }
             #if DEBUG
-            // Screenshot/driver hook: `-open-diagnostics` pushes 診斷與回報 straight
-            // from launch, so its appearance can be inspected without driving the tab
-            // bar. Same shape as the `-browser-overlay` launch flags in
-            // `yuedu_appApp.init()`, and compiled out of Release.
+            // Screenshot/driver hooks: `-open-diagnostics` pushes 診斷紀錄 and
+            // `-open-feedback-center` pushes 回饋中心 straight from launch, so their
+            // appearance can be inspected without driving the tab bar. Same shape as the
+            // `-browser-overlay` launch flags in `yuedu_appApp.init()`, and compiled out
+            // of Release.
             .navigationDestination(isPresented: $autoOpenDiagnostics) {
                 DiagnosticsView()
             }
+            .navigationDestination(isPresented: $autoOpenFeedbackCenter) {
+                FeedbackCenterView()
+            }
             .onAppear {
-                if ProcessInfo.processInfo.arguments.contains("-open-diagnostics") {
+                let arguments = ProcessInfo.processInfo.arguments
+                if arguments.contains("-open-diagnostics") {
                     autoOpenDiagnostics = true
+                } else if arguments.contains("-open-feedback-center") {
+                    autoOpenFeedbackCenter = true
                 }
             }
             #endif

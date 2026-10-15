@@ -13,6 +13,8 @@ enum DSColor {
     static let warning = Color.orange
     /// Destructive / delete
     static let destructive = Color.red
+    /// 回饋中心's 需要你補充資訊 badge: a request, set apart from 排隊中's warning orange.
+    static let feedbackNeedsInfo = Color(uiColor: .systemTeal)
 
     // ── Rankings ──
     /// A custom explore page's rank badges for first, second and third place, white
@@ -268,6 +270,18 @@ enum DSLayout {
     /// it when a control's own content is shorter than a finger — a bare menu
     /// label, an icon button — rather than relying on the row's padding.
     static let minimumTapTarget: CGFloat = 44
+    /// 回饋中心: a picked attachment's square in the form and the composer.
+    static let feedbackThumbnailSide: CGFloat = 72
+    /// 回饋中心: an attachment's square inside a message bubble.
+    static let feedbackBubbleAttachmentSide: CGFloat = 88
+    /// 回饋中心: the unread dot before a report's title in 我的回饋.
+    static let feedbackUnreadDot: CGFloat = 8
+    /// 回饋中心: the status badge's fill, the status colour at this opacity.
+    static let feedbackBadgeFillOpacity: Double = 0.15
+    /// 回饋中心: the dark disc behind an attachment's remove button, legible on any picture.
+    static let feedbackRemoveButtonBackdropOpacity: Double = 0.6
+    /// 回饋中心: the screenshot card's picture width (截圖後顯示意見回饋入口).
+    static let feedbackScreenshotCardWidth: CGFloat = 120
     /// Visible width of the tab a tucked-away mini-player leaves on the screen edge. The
     /// tab stays thin so it does not cover text; its hit region is `minimumTapTarget`.
     static let miniPlayerEdgeHandleWidth: CGFloat = 20

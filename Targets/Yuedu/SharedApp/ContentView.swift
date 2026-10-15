@@ -229,10 +229,12 @@ struct ContentView: View {
         }
         .onAppear {
             selectedRootTab = gs.fallbackRootTab(for: selectedRootTab)
+            FeedbackScreenshotPrompt.shared.start()
             #if DEBUG
-            // Pairs with `-open-diagnostics` in `SettingsView`: land on 設定 so the
-            // pushed diagnostics page can be screenshotted straight from launch.
-            if ProcessInfo.processInfo.arguments.contains("-open-diagnostics") {
+            // Pairs with `-open-diagnostics` / `-open-feedback-center` in `SettingsView`:
+            // land on 設定 so the pushed page can be screenshotted straight from launch.
+            let arguments = ProcessInfo.processInfo.arguments
+            if arguments.contains("-open-diagnostics") || arguments.contains("-open-feedback-center") {
                 selectedRootTab = .settings
             }
             #endif

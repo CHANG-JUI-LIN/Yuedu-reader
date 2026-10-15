@@ -1,6 +1,6 @@
 import XCTest
 
-/// Drives 設定 → 診斷與回報 on a real simulator and captures what it looks like.
+/// Drives 設定 → 回饋中心 → 診斷紀錄 on a real simulator and captures what it looks like.
 ///
 /// This exists because the page's appearance is the part unit tests cannot reach:
 /// `themedAppSurface` and `interfaceSectionSurface` resolve against
@@ -16,6 +16,9 @@ final class DiagnosticsPageUITests: XCTestCase {
     @MainActor
     func testDiagnosticsPageRendersAndFollowsAppearance() throws {
         let app = XCUIApplication()
+        // The labels below are English; pin the language so the simulator's own does not matter.
+        app.launchArguments = ["-AppleLanguages", "(en)", "-AppleLocale", "en_US",
+                               "-yd_source_disclaimer_accepted", "YES"]
         app.launch()
 
         // The notification prompt can land on top of the shelf on a fresh install.
@@ -28,15 +31,17 @@ final class DiagnosticsPageUITests: XCTestCase {
         XCTAssertTrue(settingsTab.waitForExistence(timeout: 20), "settings tab should exist")
         settingsTab.tap()
 
-        let entryButton = app.buttons["Diagnostics & Reporting"].firstMatch
-        let entryText = app.staticTexts["Diagnostics & Reporting"].firstMatch
+        let feedbackCenter = app.buttons["settings_feedback_center"].firstMatch
         // SwiftUI does not expose a Form row to XCTest until it is near the
         // viewport, so scroll before asserting that this bottom-row entry exists.
-        for _ in 0..<6 where !entryButton.exists && !entryText.exists {
+        for _ in 0..<8 where !feedbackCenter.exists {
             app.swipeUp()
         }
-        let target = entryButton.exists ? entryButton : entryText
-        XCTAssertTrue(target.waitForExistence(timeout: 5), "the diagnostics row should be reachable")
+        XCTAssertTrue(feedbackCenter.waitForExistence(timeout: 5), "the feedback center row should be reachable")
+        feedbackCenter.tap()
+
+        let target = app.buttons["Diagnostic Log"].firstMatch
+        XCTAssertTrue(target.waitForExistence(timeout: 10), "the diagnostics row should be in 回饋中心")
         target.tap()
 
         let exportControl = app.descendants(matching: .any)["diagnostics_export_button"]

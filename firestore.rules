@@ -67,7 +67,7 @@ service cloud.firestore {
       allow read, update, delete: if false;
     }
 
-    // Diagnostic logs a user chooses to send from 設定 → 診斷與回報
+    // Diagnostic logs a user chooses to send from 設定 → 回饋中心
     // (`DiagnosticReportUploader`). Anonymous create-only, whitelisted fields, bounded
     // sizes; the document id is the report number the user quotes. Nothing is readable
     // from a client — the developer reads them with admin credentials
@@ -87,6 +87,88 @@ service cloud.firestore {
         && request.resource.data.scale is string
         && request.resource.data.scale.size() <= 1000;
       allow read, update, delete: if false;
+    }
+
+    // 回饋中心 (`FeedbackService`). No sign-in: each install keeps a random 43-character
+    // inbox key in iCloud Keychain, and knowing the key is what grants access to the
+    // inbox, as with an unguessable link. Nothing above the inbox is listable and there
+    // is no collection-group rule, so a client cannot enumerate other inboxes.
+    //
+    // The developer side — thread numbers, AI 助手 and developer replies, every status
+    // except the two below — is written with admin credentials (Cloud Functions
+    // `onFeedbackThreadCreated`, `functions/tools/feedback.ts`). A client may only:
+    //   - open a thread together with its first message (status `received`);
+    //   - add its own messages and move the thread summary along with them;
+    //   - mark the thread read, mark it solved (`done`), or answer a `needsInfo`
+    //     request, which puts the thread back in the queue (`queued`).
+    // Keep the field lists in step with `FeedbackFirestoreSchema` in the app;
+    // `FeedbackFirestoreSchemaTests` reads this file to check that.
+    match /feedbackInboxes/{inboxId}/threads/{threadId} {
+      function validInbox() {
+        return inboxId.matches('[A-Za-z0-9_-]{43}');
+      }
+
+      function boundedString(value, limit) {
+        return value is string && value.size() <= limit;
+      }
+
+      allow get, list: if validInbox();
+
+      allow create: if validInbox()
+        && threadId.matches('[0-9a-f-]{36}')
+        && request.resource.data.keys().hasOnly([
+          "kind", "title", "status", "createdAt", "updatedAt", "lastMessageAt",
+          "lastMessagePreview", "lastMessageAuthor", "userLastReadAt", "appVersion", "build",
+          "osVersion", "device", "locale", "installId", "diagnosticReportId", "deviceInfo"
+        ])
+        && request.resource.data.kind in ["bug", "suggestion"]
+        && request.resource.data.status == "received"
+        && request.resource.data.lastMessageAuthor == "user"
+        && request.resource.data.createdAt == request.time
+        && request.resource.data.updatedAt == request.time
+        && request.resource.data.lastMessageAt == request.time
+        && request.resource.data.userLastReadAt == request.time
+        && boundedString(request.resource.data.title, 200)
+        && boundedString(request.resource.data.lastMessagePreview, 300)
+        && boundedString(request.resource.data.diagnosticReportId, 20)
+        && request.resource.data.deviceInfo is map
+        && request.resource.data.deviceInfo.size() <= 20;
+
+      allow update: if validInbox()
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          "userLastReadAt", "status", "updatedAt", "lastMessageAt", "lastMessagePreview",
+          "lastMessageAuthor"
+        ])
+        && (!request.resource.data.diff(resource.data).affectedKeys().hasAny(["status"])
+          || request.resource.data.status == "done"
+          || (resource.data.status == "needsInfo" && request.resource.data.status == "queued"))
+        && (!request.resource.data.diff(resource.data).affectedKeys().hasAny(["lastMessageAuthor"])
+          || request.resource.data.lastMessageAuthor == "user")
+        && (!request.resource.data.diff(resource.data).affectedKeys().hasAny(["lastMessagePreview"])
+          || boundedString(request.resource.data.lastMessagePreview, 300))
+        && (!request.resource.data.diff(resource.data).affectedKeys().hasAny(["userLastReadAt"])
+          || request.resource.data.userLastReadAt == request.time)
+        && (!request.resource.data.diff(resource.data).affectedKeys().hasAny(["updatedAt"])
+          || request.resource.data.updatedAt == request.time)
+        && (!request.resource.data.diff(resource.data).affectedKeys().hasAny(["lastMessageAt"])
+          || request.resource.data.lastMessageAt == request.time);
+
+      allow delete: if false;
+
+      match /messages/{messageId} {
+        allow get, list: if validInbox();
+
+        allow create: if validInbox()
+          && messageId.matches('[0-9a-f-]{36}')
+          && request.resource.data.keys().hasOnly(["author", "text", "attachments", "createdAt"])
+          && request.resource.data.author == "user"
+          && request.resource.data.createdAt == request.time
+          && boundedString(request.resource.data.text, 5000)
+          && request.resource.data.attachments is list
+          && request.resource.data.attachments.size() <= 5;
+
+        allow update, delete: if false;
+      }
     }
   }
 }

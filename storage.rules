@@ -8,5 +8,23 @@ service firebase.storage {
         && fileName == request.auth.uid + ".jpg"
         && request.resource.size < 2 * 1024 * 1024;
     }
+
+    // 回饋中心 attachments (`FeedbackService`): images and videos a user adds to a
+    // report, under the same unguessable inbox key that guards the Firestore threads
+    // (see firestore.rules). Create-only — an upload cannot replace another — with the
+    // limits the app enforces: images ≤ 15 MB, videos ≤ 50 MB.
+    match /feedback/{inboxId}/{threadId}/{fileName} {
+      allow read: if inboxId.matches('[A-Za-z0-9_-]{43}');
+      allow create: if inboxId.matches('[A-Za-z0-9_-]{43}')
+        && threadId.matches('[0-9a-f-]{36}')
+        && resource == null
+        && (
+          (request.resource.contentType.matches('image/.*')
+            && request.resource.size <= 15 * 1024 * 1024)
+          || (request.resource.contentType.matches('video/.*')
+            && request.resource.size <= 50 * 1024 * 1024)
+        );
+      allow update, delete: if false;
+    }
   }
 }
