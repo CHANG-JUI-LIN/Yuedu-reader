@@ -2,7 +2,7 @@
 // alert or a feedback thread becomes a `triage/{id}` item, how a repeat merges into the
 // item it repeats, and when the developer is pinged on Telegram. `triage.ts` does the I/O.
 
-export type TriageSource = "feedback" | "crashlytics";
+export type TriageSource = "feedback" | "crashlytics" | "testflight" | "organizer";
 
 /// critical: the app is unusable or losing data for many people, act today.
 /// high: a crash or a broken main feature. normal: worth a look. low: cosmetic or an idea.
@@ -25,7 +25,10 @@ export type TriageEventKind =
   | "newNonfatal"
   | "regression"
   | "velocity"
-  | "stabilityDigest";
+  | "stabilityDigest"
+  | "testflightCrash"
+  | "testflightFeedback"
+  | "diagnosticSignature";
 
 /// One observation of a problem, before it is merged into the inbox.
 export interface TriageObservation {
@@ -50,6 +53,12 @@ export interface TriageObservation {
   /// conversation and its attachments. It contains the inbox key, so it is stored on the
   /// item and nowhere else — `telegramMessage` never reads it.
   threadPath?: string;
+  /// Long evidence the daily run reads and the ping never carries: a TestFlight crash
+  /// log, an Organizer call stack.
+  detail?: string;
+  /// Storage paths of copies the daily run can open (TestFlight screenshots, whose
+  /// Apple URLs expire).
+  attachmentPaths?: string[];
 }
 
 /// The fields of an existing item that a new observation is merged against.
@@ -97,7 +106,9 @@ interface CrashlyticsIssue {
   appVersion: string;
 }
 
-const crashlyticsSeverity: Record<Exclude<TriageEventKind, "feedback">, TriageSeverity> = {
+type CrashlyticsKind = "newFatal" | "newNonfatal" | "regression" | "velocity" | "stabilityDigest";
+
+const crashlyticsSeverity: Record<CrashlyticsKind, TriageSeverity> = {
   newFatal: "high",
   regression: "high",
   velocity: "critical",
@@ -108,7 +119,7 @@ const crashlyticsSeverity: Record<Exclude<TriageEventKind, "feedback">, TriageSe
 };
 
 export function crashlyticsObservation(input: {
-  kind: Exclude<TriageEventKind, "feedback">;
+  kind: CrashlyticsKind;
   issue: CrashlyticsIssue;
   projectId: string;
   appId: string;
@@ -171,6 +182,9 @@ const kindLabel: Record<TriageEventKind, string> = {
   regression: "Crashlytics 回歸（修好過又出現）",
   velocity: "Crashlytics 崩潰暴增",
   stabilityDigest: "Crashlytics 每日穩定度摘要",
+  testflightCrash: "TestFlight 崩潰回報",
+  testflightFeedback: "TestFlight 回饋",
+  diagnosticSignature: "Organizer 診斷簽名",
 };
 
 /// Telegram's sendMessage caps text at 4096 characters.

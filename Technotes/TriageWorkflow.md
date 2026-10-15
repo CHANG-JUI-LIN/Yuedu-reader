@@ -53,14 +53,21 @@ Organizer 簽名(每日)┘                        │                   └─�
 3. Telegram：第一次到 high／critical、或分級往上升時通知；回歸和暴增每次都通知。純文字（不用 parse mode）。
    通知失敗只記 log，不重試：項目已經在收件匣裡。
 
-### B. Apple
-1. ASC webhook 接收端（HTTPS function），用註冊時設定的 secret 驗簽；收到 TestFlight 回饋事件後，
-   用 ASC API 抓詳情（截圖網址、裝置、崩潰紀錄 `crashLog`）寫 triage。
-   事件型別名稱**尚未查證**，實作前讀 Apple 的 webhook 文件。
-2. 每日排程函式：最新 build 的 `GET /v1/builds/{id}/diagnosticSignatures`，取新出現或權重上升的簽名，
-   再抓 `GET /v1/diagnosticSignatures/{id}/logs` 寫 triage。
-3. Secrets：ASC 金鑰（p8）、Key ID、Issuer ID。金鑰角色是否夠用，**要用實際呼叫確認**
-   （有論壇回報部分端點要 Admin）。
+### B. Apple（程式完成 2026-10-15，未部署）
+`functions/src/appleTriage.ts`＋`appleTriagePolicy.ts`。ASC 的 JWT 和請求走既有的 `AppStoreConnectClient.getJSON`；
+ASC 金鑰的三個 secret 移到 `appStoreConnectSecrets.ts`，TestFlight 邀請和 triage 共用同一份定義。
+1. `appStoreConnectWebhook`（HTTPS，asia-east1）：驗 `x-apple-signature`（`hmacsha256=` + body 的 HMAC-SHA256 hex，
+   密鑰 `APP_STORE_CONNECT_WEBHOOK_SECRET`），收 `betaFeedbackCrashSubmissionCreated`／`betaFeedbackScreenshotSubmissionCreated`
+   （事件名已對 Apple 文件查證；訂閱時勾 `BETA_FEEDBACK_CRASH_SUBMISSION_CREATED`、`BETA_FEEDBACK_SCREENSHOT_SUBMISSION_CREATED`）。
+   收到後用 ASC API 抓留言、裝置、build 版本、崩潰紀錄（`crashLog.logText`，存前 200K 字到 `detail`），
+   截圖複製到 Storage `triage/testflight/<id>/`（Apple 的網址會過期）。每則 submission 一筆：`testflight_<id>`；
+   崩潰 high（發通知）、截圖回饋 normal。不讀測試員 email。其他事件（含「測試」ping）回 200 只記 log；
+   抓取失敗回 500，在 ASC 顯示失敗、可從那裡重送，事件 id 擋重複計數。
+2. `dailyOrganizerDiagnostics`（每天台北 05:00，在 08:30 的 /triage 之前）：最新 3 個 build 的
+   `diagnosticSignatures`（HANGS／DISK_WRITES／LAUNCHES），佔比 ≥ 5% 的每個簽名抓一份 log，
+   存最重的呼叫路徑（▶ 標 App 自己的 frame）。Apple 的簽名 id 每個 build 不同，所以 id 用類型＋簽名文字的雜湊：
+   `organizer_<hash>`，同一個問題跨 build 併成一筆。分級 normal，不發通知。
+3. 金鑰角色是否讀得到 TestFlight 回饋和診斷簽名，部署後用實際呼叫確認（失敗會在函式 log 看到 403）。
 
 ### C. Claude Code 每日 /triage（已完成 2026-10-15）
 1. Skill：`.claude/skills/triage/SKILL.md`。全部走 Firebase MCP（本機沒有 gcloud 憑證）：
@@ -79,7 +86,9 @@ Organizer 簽名(每日)┘                        │                   └─�
   （回 `{"ok":true,"result":[]}` 表示機器人還沒收到任何訊息，傳一句後重新整理）。然後設：
   `firebase functions:secrets:set TELEGRAM_BOT_TOKEN`、`TELEGRAM_CHAT_ID`、`DEEPSEEK_API_KEY`。
   三個都設好才能部署：`onFeedbackThreadCreated` 現在也宣告了 Telegram 兩個 secret。
-- App Store Connect 建 webhook（或給我有權限的 API 金鑰，我用 API 建）。
+- B 階段：自己產生一組密鑰（例如 `openssl rand -hex 32`），`firebase functions:secrets:set APP_STORE_CONNECT_WEBHOOK_SECRET`；
+  部署後在 App Store Connect › 使用者與存取 › 整合 › Webhooks 按 +，填函式網址和同一組密鑰，選 App，
+  勾 TestFlight 回饋（崩潰、截圖）兩個事件，按「測試」確認收得到。
 - 回覆使用者：裝 gcloud 後跑一次 `gcloud auth application-default login`，`tools/feedback.ts` 才能用。
 - 每次部署前我會先問你；DeepSeek key（`DEEPSEEK_API_KEY`）還沒設，回饋中心也還沒部署。
 - 防濫用（2026-10-15 定）：每個收件匣 24 小時內最多 10 則由 AI 助手回覆（`assistantRepliesPerInboxPerDay`），

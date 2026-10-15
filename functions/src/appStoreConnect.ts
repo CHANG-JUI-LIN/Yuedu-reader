@@ -13,7 +13,8 @@ export interface AppStoreConnectCredentials {
 export interface AppStoreConnectClientOptions {
   credentials: AppStoreConnectCredentials;
   appId: string;
-  groupName: string;
+  /** The TestFlight group `invite` adds testers to; only the invite flow needs it. */
+  groupName?: string;
   fetchImpl?: typeof fetch;
 }
 
@@ -56,10 +57,10 @@ function base64Url(data: string | Buffer): string {
 }
 
 /**
- * Thin client for the App Store Connect API, scoped to the TestFlight
- * tester-invite flow: find-or-create the beta tester, find-or-create the
- * beta group, and link the tester to the group. Apple sends the invite email
- * automatically once a group build is in external testing.
+ * Thin client for the App Store Connect API. The TestFlight tester-invite flow:
+ * find-or-create the beta tester, find-or-create the beta group, and link the
+ * tester to the group (Apple sends the invite email automatically once a group
+ * build is in external testing). The triage inbox reads through `getJSON`.
  */
 export class AppStoreConnectClient {
   private readonly fetchImpl: typeof fetch;
@@ -70,9 +71,11 @@ export class AppStoreConnectClient {
 
   /** Idempotent: re-inviting an existing tester/group is a no-op link. */
   async invite(email: string): Promise<AppStoreConnectInviteResult> {
+    const groupName = this.options.groupName;
+    if (groupName === undefined) throw new Error("invite needs a TestFlight group name");
     const existingTesterId = await this.findBetaTesterByEmail(email);
-    const groupId = await this.findBetaGroupByName(this.options.groupName)
-      ?? await this.createBetaGroup(this.options.groupName);
+    const groupId = await this.findBetaGroupByName(groupName)
+      ?? await this.createBetaGroup(groupName);
 
     // Apple requires a betaGroups or builds relationship when creating a
     // tester. Existing testers can be linked after the lookup, but new ones
@@ -147,6 +150,12 @@ export class AppStoreConnectClient {
       method: "POST",
       body: JSON.stringify({data: [{type: "betaGroups", id: groupId}]}),
     });
+  }
+
+  /** A GET whose JSON body the caller types; `path` is relative to /v1. */
+  async getJSON<T>(path: string): Promise<T> {
+    const response = await this.request(path);
+    return await response.json() as T;
   }
 
   private async request(path: string, init: RequestInit = {}): Promise<Response> {

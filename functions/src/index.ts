@@ -21,6 +21,13 @@ import {defineSecret} from "firebase-functions/params";
 
 import {AppStoreConnectClient} from "./appStoreConnect.js";
 import {
+  appAppleId,
+  appStoreIssuerIdSecret,
+  appStoreKeyIdSecret,
+  appStoreKeySecrets,
+  appStorePrivateKeySecret,
+} from "./appStoreConnectSecrets.js";
+import {
   assertBindingOwner,
   assertTransactionCanBind,
   bindingGrantsEntitlement,
@@ -41,7 +48,6 @@ if (getApps().length === 0) {
 
 const region = "asia-east1";
 const bundleId = "com.zhangruilin.yuedureader";
-const appAppleId = 6772972358;
 const db = getFirestore();
 
 const rootPem = readFileSync(resolve(__dirname, "../certs/apple-root-ca.pem"), "utf8");
@@ -105,15 +111,7 @@ interface TestFlightProRequestDocument {
 }
 
 const testFlightGroupNameSecret = defineSecret("APP_STORE_CONNECT_GROUP_NAME");
-const appStoreIssuerIdSecret = defineSecret("APP_STORE_CONNECT_ISSUER_ID");
-const appStoreKeyIdSecret = defineSecret("APP_STORE_CONNECT_KEY_ID");
-const appStorePrivateKeySecret = defineSecret("APP_STORE_CONNECT_PRIVATE_KEY");
-const appStoreConnectSecrets = [
-  appStoreIssuerIdSecret,
-  appStoreKeyIdSecret,
-  appStorePrivateKeySecret,
-  testFlightGroupNameSecret,
-];
+const appStoreConnectSecrets = [...appStoreKeySecrets, testFlightGroupNameSecret];
 // App Store Server API requires an In-App Purchase key, separate from ASC's key.
 const serverIssuerId = defineSecret("APP_STORE_SERVER_ISSUER_ID");
 const serverKeyId = defineSecret("APP_STORE_SERVER_KEY_ID");
@@ -648,3 +646,4 @@ export {
   onCrashlyticsStabilityDigest,
   onCrashlyticsVelocity,
 } from "./triage.js";
+export {appStoreConnectWebhook, dailyOrganizerDiagnostics} from "./appleTriage.js";
