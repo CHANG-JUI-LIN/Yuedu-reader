@@ -33,13 +33,15 @@ struct LibrarySearchAnswer: Identifiable, Equatable, Sendable {
     var id: String { connectionID }
 }
 
-/// Searches every saved OPDS and Calibre connection at once, each against its own timeout
-/// (unified search 4b-2, design §12.2): one library failing marks only its own answer. Asked
-/// on submit, never as you type.
+/// Searches every saved OPDS and Calibre connection, and Project Gutenberg where the public
+/// libraries are offered (search 9b), at once, each against its own timeout (unified search
+/// 4b-2, design §12.2): one library failing marks only its own answer. Asked on submit, never
+/// as you type, which is also Gutenberg's terms (`PublicLibraries.md`).
 ///
 /// A catalog searches what its root feed advertises (OpenSearch). The root is fetched once
 /// per connection for the life of this object, so a second search sends one request per
-/// library, as `OPDSBrowseModel` does after its first load.
+/// library, as `OPDSBrowseModel` does after its first load. Gutenberg's search address is
+/// known without its root, so it is asked for its first page alone.
 @MainActor
 final class LibrarySearch: SearchAnswering {
     static let timeout: Duration = .seconds(20)
@@ -51,12 +53,22 @@ final class LibrarySearch: SearchAnswering {
 
     init(providers: (@MainActor () -> [any OPDSFeedProviding])? = nil, timeout: Duration = LibrarySearch.timeout) {
         self.providers = providers ?? {
-            OPDSCatalogStore.shared.catalogs.compactMap { connection in
-                guard connection.kind != .webDAV, connection.id != PublicLibraryID.gutenberg.rawValue else { return nil }
-                return SourceProviderRegistry.shared.opdsProvider(catalogID: connection.id)
+            Self.libraries(catalogs: OPDSCatalogStore.shared.catalogs, gutenberg: SourceProviderRegistry.shared.gutenberg) {
+                SourceProviderRegistry.shared.opdsProvider(catalogID: $0.id)
             }
         }
         self.timeout = timeout
+    }
+
+    /// The libraries a search asks: the saved OPDS and Calibre connections (never WebDAV, which
+    /// has no search), then Gutenberg where it is offered.
+    static func libraries(catalogs: [OPDSCatalog], gutenberg: GutenbergProvider,
+                          provider: (OPDSCatalog) -> (any OPDSFeedProviding)?) -> [any OPDSFeedProviding] {
+        let saved = catalogs.compactMap { connection -> (any OPDSFeedProviding)? in
+            guard connection.kind != .webDAV, connection.id != PublicLibraryID.gutenberg.rawValue else { return nil }
+            return provider(connection)
+        }
+        return saved + (gutenberg.availability == .available ? [gutenberg] : [])
     }
 
     /// Whether any library would be asked.
@@ -115,6 +127,16 @@ final class LibrarySearch: SearchAnswering {
     /// The search's first page; nil when the library advertises no search.
     private func page(of library: any OPDSFeedProviding, query: String) async throws -> CollectionPage? {
         let id = library.instance.id
+        guard let url = try await searchURL(of: library, query: query) else { return nil }
+        let feed = try await library.feed(url, isSearch: true)
+        return await OPDSProvider.page(from: feed, connectionID: id, record: library.makeRecord, opening: library.makeOpening)
+    }
+
+    /// Where `query` is searched. A library that needs nothing from its root (Gutenberg) says so
+    /// without it; the others search what their root advertised.
+    private func searchURL(of library: any OPDSFeedProviding, query: String) async throws -> URL? {
+        if let direct = try await library.searchURL(query: query, search: nil) { return direct }
+        let id = library.instance.id
         let search: OPDSSearch?
         if let known = advertised[id] {
             search = known
@@ -123,9 +145,8 @@ final class LibrarySearch: SearchAnswering {
             search = try await library.feed(root, isSearch: false).search
             advertised[id] = search
         }
-        guard let url = try await library.searchURL(query: query, search: search) else { return nil }
-        let feed = try await library.feed(url, isSearch: true)
-        return await OPDSProvider.page(from: feed, connectionID: id, record: library.makeRecord, opening: library.makeOpening)
+        guard let search else { return nil }
+        return try await library.searchURL(query: query, search: search)
     }
 
     /// `operation`, or a `SourceFailure` of kind `.timeout` when it takes longer than `limit`.

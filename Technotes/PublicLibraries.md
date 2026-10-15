@@ -1,6 +1,6 @@
 # 探索頁的公有書庫
 
-公有書庫提供 Project Gutenberg 與青空文庫。瀏覽、閱讀、加入書架和下載不依賴 Pro。探索首頁（統一書庫 5c 起）的「精選」欄目來自公有書庫，Gutenberg 與青空文庫的書店頁在「範圍」選單；舊的「公有書庫／書源」切換、首次匯入的 TipKit 提示和「使用舊版探索頁」在 5d-1b 刪除，`explore.mode` 只剩首頁第一次決定預設欄目時讀一次。搜尋在「搜索」分頁：根頁一個搜尋同時搜，結果先列來源配置、再列「公有書庫」區塊（「在 Project Gutenberg 搜尋」＋青空隨輸入比對的作品）；沒有書源時鍵盤的「搜尋」直接問 Gutenberg（等書源清單讀完才算沒有），Gutenberg 只在送出或點那一列時請求。
+公有書庫提供 Project Gutenberg 與青空文庫。瀏覽、閱讀、加入書架和下載不依賴 Pro。探索首頁（統一書庫 5c 起）的「精選」欄目來自公有書庫，Gutenberg 與青空文庫的書店頁在「範圍」選單；舊的「公有書庫／書源」切換、首次匯入的 TipKit 提示和「使用舊版探索頁」在 5d-1b 刪除，`explore.mode` 只剩首頁第一次決定預設欄目時讀一次。搜尋在「搜索」分頁：根頁一個搜尋同時搜，所有結果合成一張作品清單。青空隨輸入比對（本機目錄）；Gutenberg 跟已存的 OPDS／Calibre 書庫一起，在每次按鍵盤的「搜尋」送出時請求第一頁一次，書併進同一張清單（搜尋 9b，2026-10-15 起；取代原本的「在 Project Gutenberg 搜尋」列與沒有書源時才問 Gutenberg 的規則）。打字時不請求，也不往下翻頁。
 
 ## Project Gutenberg
 
@@ -12,7 +12,7 @@
 - 搜尋：`https://www.gutenberg.org/ebooks/search.opds/?query={percent-encoded query}`；`l.zh`、`l.ja`、`l.ko`、`l.en` 是語言篩選。
 - 書籍：feed 提供的 `/ebooks/{id}.opds`，取得網址仍以 feed 為準。
 
-公有書庫首頁採隨 App 附帶的真實書單，包含精選集合、多排橫向書架與經典選讀；不是即時排行，也不顯示虛構評分。探索首頁上的 Gutenberg 欄目（最新、線上書單）在打開探索、首頁出現時全部載入，連捲動才看得到的也一起（Phase 5 計畫 decision 15，取代原本「開啟首頁不請求 Gutenberg」與「載入」按鈕）；App 啟動時不請求。其他時候只在讀者選書、開啟線上分類／作者目錄、送出搜尋或按「載入更多」時才請求對應的一頁；不預抓下一頁、不背景爬取、不讀取仍指向舊 `m.` host 的 OpenSearch description。封面一律是 Gutenberg 自己的 `cache/epub/<編號>/pg<編號>.cover.medium.jpg`，由書號推得（`GutenbergBook.coverURL`），卡片出現時才抓、存進封面快取；首頁卡片、公有書庫書架與格線、輪播卡片、詳情與加入書架後的書都是同一個網址，同一個快取項目。推不出書號的書才用本機產生的書封。一般 OPDS 列表原有的縮圖或封面行為不變。EPUB3 優先於 EPUB，詳情合併同一書籍 feed 的格式並保留官網連結。
+公有書庫首頁採隨 App 附帶的真實書單，包含精選集合、多排橫向書架與經典選讀；不是即時排行，也不顯示虛構評分。探索首頁上的 Gutenberg 欄目（最新、線上書單）在打開探索、首頁出現時全部載入，連捲動才看得到的也一起（Phase 5 計畫 decision 15，取代原本「開啟首頁不請求 Gutenberg」與「載入」按鈕）；App 啟動時不請求。其他時候只在讀者選書、開啟線上分類／作者目錄、送出搜尋或在 Gutenberg 自己的列表按「載入更多」時才請求對應的一頁；不預抓下一頁、不背景爬取、不讀取仍指向舊 `m.` host 的 OpenSearch description。封面一律是 Gutenberg 自己的 `cache/epub/<編號>/pg<編號>.cover.medium.jpg`，由書號推得（`GutenbergBook.coverURL`），卡片出現時才抓、存進封面快取；首頁卡片、公有書庫書架與格線、輪播卡片、詳情與加入書架後的書都是同一個網址，同一個快取項目。推不出書號的書才用本機產生的書封。一般 OPDS 列表原有的縮圖或封面行為不變。EPUB3 優先於 EPUB，詳情合併同一書籍 feed 的格式並保留官網連結。
 
 共享 HTTP client 的 request、session 預設 header 和重新導向均保留 `Yuedu/<version> (iOS; +https://yuedureader.com/support)`。沒有個人 email。參照 [OPDS 使用條款](https://www.gutenberg.org/policy/terms_of_use.html) 與 [機器人政策](https://www.gutenberg.org/policy/robot_access.html)，所有書籍由讀者直接從 Gutenberg 取得，保留原檔授權文字。介面註明其公有領域判斷以美國為準，其他所在地法律可能不同。
 

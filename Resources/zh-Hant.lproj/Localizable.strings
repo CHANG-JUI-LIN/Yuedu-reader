@@ -3531,7 +3531,6 @@
 "編者" = "編者";
 
 
-"在 Project Gutenberg 搜尋「%@」" = "在 Project Gutenberg 搜尋「%@」";
 
 // Explore first-import guide
 
@@ -3984,3 +3983,4 @@
 "推薦理由" = "推薦理由";
 "AI 產生" = "AI 產生";
 "未找到可用來源" = "未找到可用來源";
+"正在載入更多" = "正在載入更多";

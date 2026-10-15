@@ -88,16 +88,14 @@ struct OpenLibrarySearchTests {
         #expect(match.route.opening == .bibliographic)
     }
 
-    @Test("Search with no source: the others answer instead of an alert or Gutenberg")
+    @Test("Search with no source: the others answer instead of an alert")
     func submitPlan() {
-        #expect(SearchSubmitPlan.decide(hasSources: true, sourcesLoaded: true, othersAnswer: true, offersPublicLibraries: true) == .sources)
-        #expect(SearchSubmitPlan.decide(hasSources: false, sourcesLoaded: true, othersAnswer: true, offersPublicLibraries: true) == .othersOnly)
-        #expect(SearchSubmitPlan.decide(hasSources: false, sourcesLoaded: true, othersAnswer: true, offersPublicLibraries: false) == .othersOnly,
-                "in China too: Open Library answers, so no alert")
-        #expect(SearchSubmitPlan.decide(hasSources: false, sourcesLoaded: true, othersAnswer: false, offersPublicLibraries: true) == .gutenberg)
-        #expect(SearchSubmitPlan.decide(hasSources: false, sourcesLoaded: true, othersAnswer: false, offersPublicLibraries: false) == .sources,
+        // Search 9b: Gutenberg is one of the others now (`LibrarySearch`), not a plan of its own.
+        #expect(SearchSubmitPlan.decide(hasSources: true, sourcesLoaded: true, othersAnswer: true) == .sources)
+        #expect(SearchSubmitPlan.decide(hasSources: false, sourcesLoaded: true, othersAnswer: true) == .othersOnly)
+        #expect(SearchSubmitPlan.decide(hasSources: false, sourcesLoaded: true, othersAnswer: false) == .sources,
                 "nothing at all: the search says there is no source")
-        #expect(SearchSubmitPlan.decide(hasSources: false, sourcesLoaded: false, othersAnswer: true, offersPublicLibraries: false) == .waitForSources)
+        #expect(SearchSubmitPlan.decide(hasSources: false, sourcesLoaded: false, othersAnswer: true) == .waitForSources)
     }
 
     @Test("MARC language codes read as the other sources' tags")

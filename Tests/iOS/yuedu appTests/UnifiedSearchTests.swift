@@ -179,10 +179,10 @@ struct UnifiedSearchTests {
         #expect(tableRow.content == row.content)
         #expect(tableRow.shelfCover?.own == .indexedCover(path: "/covers/ol-1.jpg"))
 
-        let empty = IOS17SearchResultTableContent(rows: [], showsLoadMore: false,
-                                                  works: IOS17SearchWorksSection(rows: [], status: .init(), offersGutenberg: false))
-        let filled = IOS17SearchResultTableContent(rows: [], showsLoadMore: false,
-                                                   works: IOS17SearchWorksSection(rows: [tableRow], status: .init(), offersGutenberg: false))
+        let empty = IOS17SearchResultTableContent(rows: [], hasMore: false,
+                                                  works: IOS17SearchWorksSection(rows: [], status: .init()))
+        let filled = IOS17SearchResultTableContent(rows: [], hasMore: false,
+                                                   works: IOS17SearchWorksSection(rows: [tableRow], status: .init()))
         #expect(filled.requiresReload(comparedTo: empty))
         #expect(!filled.requiresReload(comparedTo: filled))
     }

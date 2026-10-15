@@ -7,7 +7,7 @@ import SwiftUI
 /// One part's find, frozen when found: what its row draws and what opening it needs.
 enum UnifiedSearchPayload {
     case shelf(ShelfSearchMatch)
-    /// A saved library's book, or a module's or Open Library's (`ItemOpening.bibliographic`).
+    /// A saved library's book, Gutenberg's, or a module's or Open Library's (`ItemOpening.bibliographic`).
     case library(LibrarySearchMatch)
     /// A 青空文庫 work.
     case publicLibrary(WorkDetailRoute)
@@ -22,7 +22,9 @@ enum UnifiedSearchPayload {
         case .shelf(let match):
             SearchCandidate(route: match.route, kind: .shelf, identifiers: match.identifiers, language: match.language)
         case .library(let match):
-            SearchCandidate(route: match.route, kind: match.route.opening == .bibliographic ? .bibliographic : .library)
+            // Gutenberg answers through the libraries' search (search 9b) and is a public library.
+            SearchCandidate(route: match.route, kind: match.route.opening == .bibliographic ? .bibliographic
+                            : match.connectionID == PublicLibraryID.gutenberg.rawValue ? .publicLibrary : .library)
         case .publicLibrary(let route):
             SearchCandidate(route: route, kind: .publicLibrary)
         case .bookSource(let row):
@@ -349,16 +351,12 @@ struct UnifiedSearchCover: View {
 }
 
 /// The list's rows on iOS 18 and later, inside the page's `List`: the leading status line,
-/// the works, 載入更多, 青空文庫's full list, Gutenberg's search, then the trailing lines.
+/// the works, 青空文庫's full list, the spinner that loads the next page, then the trailing lines.
 @available(iOS 18.0, *)
 struct UnifiedSearchRows: View {
     let model: UnifiedSearchModel
     let status: UnifiedSearchStatus
-    let canLoadMore: Bool
-    let loadMore: () -> Void
-    /// The query Gutenberg is offered for; nil where the public libraries are not.
-    let gutenbergQuery: String?
-    let submitGutenberg: () -> Void
+    let paging: SearchPaging
 
     var body: some View {
         let rows = model.rows
@@ -381,28 +379,9 @@ struct UnifiedSearchRows: View {
             NavigationLink(localized("顯示全部"), value: overflow)
                 .listRowBackground(Color.clear)
         }
-        if canLoadMore {
-            Button(action: loadMore) {
-                Label(localized("載入更多"), systemImage: "arrow.down.circle")
-                    .font(DSFont.subheadline)
-                    .foregroundStyle(DSColor.accent)
-                    .frame(maxWidth: .infinity, minHeight: DSLayout.minimumTapTarget)
-            }
-            .listRowSeparator(.hidden)
-            .listRowBackground(Color.clear)
-        }
-        if let gutenbergQuery {
-            Button(action: submitGutenberg) {
-                Label(String(format: localized("在 Project Gutenberg 搜尋「%@」"), gutenbergQuery), systemImage: "magnifyingglass")
-            }
-            .accessibilityIdentifier("publicLibrary.searchGutenberg")
-            .listRowBackground(Color.clear)
-            .background {
-                if status.leading == nil, rows.isEmpty { Color.clear.rootTabTitleScrollAnchor() }
-            }
-        }
+        SearchLoadMoreRow(paging: paging, shownCount: rows.count)
         ForEach(Array(status.trailing.enumerated()), id: \.offset) { offset, line in
-            statusLine(line, anchors: status.leading == nil && rows.isEmpty && gutenbergQuery == nil && offset == 0)
+            statusLine(line, anchors: status.leading == nil && rows.isEmpty && offset == 0)
         }
     }
 
@@ -431,7 +410,7 @@ struct UnifiedSearchRows: View {
             UnifiedSearchRows(model: model,
                               status: UnifiedSearchStatus(hasRows: true, isSearching: false, isPaused: false,
                                                           othersSearching: true, submittedQuery: "三體", failures: [failure]),
-                              canLoadMore: true, loadMore: {}, gutenbergQuery: "三體", submitGutenberg: {})
+                              paging: SearchPaging(hasMore: true, canLoadMore: false, loadMore: {}))
         }
         .listStyle(.plain)
         .task { await model.update(rows, query: "三體") }
