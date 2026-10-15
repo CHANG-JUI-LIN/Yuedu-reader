@@ -256,6 +256,8 @@ struct BookSearchView: View {
     @StateObject private var scopeStore = SearchSourceScopeStore.shared
     @ObservedObject private var sourceStore = BookSourceStore.shared
     @ObservedObject private var availability = PublicLibraryAvailability.shared
+    /// 聚合設定's 搜尋來源 (search 9d), for 青空文庫, matched as you type here.
+    @ObservedObject private var aggregation = AggregationSettingsStore.shared
     // No `@Environment(\.dismiss)` here: iOS 17 replaces DismissAction over and over
     // while a result's detail is pushed above this page, and every replacement re-runs
     // this body (Technotes/iOS17ReaderNavigationWatchdog.md).
@@ -380,7 +382,9 @@ struct BookSearchView: View {
             .background {
                 UnifiedSearchFeed(query: showsCombinedResults ? trimmedQuery : "", shelf: shelfSearch,
                                   libraries: librarySearch, bibliographic: openLibrarySearch, aggregator: aggregator,
-                                  offersPublicLibraries: offersPublicLibraries, model: unifiedSearch)
+                                  offersPublicLibraries: offersPublicLibraries
+                                      && aggregation.isShownInSearch(SourceInstanceKey(type: .aozora, id: PublicLibraryID.aozora.rawValue)),
+                                  model: unifiedSearch)
             }
         }
         .background(PageBackgroundView(scope: .search).ignoresSafeArea())

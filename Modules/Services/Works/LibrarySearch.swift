@@ -53,7 +53,8 @@ final class LibrarySearch: SearchAnswering {
 
     init(providers: (@MainActor () -> [any OPDSFeedProviding])? = nil, timeout: Duration = LibrarySearch.timeout) {
         self.providers = providers ?? {
-            Self.libraries(catalogs: OPDSCatalogStore.shared.catalogs, gutenberg: SourceProviderRegistry.shared.gutenberg) {
+            Self.libraries(catalogs: OPDSCatalogStore.shared.catalogs, gutenberg: SourceProviderRegistry.shared.gutenberg,
+                           shown: AggregationSettingsStore.shared.isShownInSearch) {
                 SourceProviderRegistry.shared.opdsProvider(catalogID: $0.id)
             }
         }
@@ -61,14 +62,16 @@ final class LibrarySearch: SearchAnswering {
     }
 
     /// The libraries a search asks: the saved OPDS and Calibre connections (never WebDAV, which
-    /// has no search), then Gutenberg where it is offered.
+    /// has no search), then Gutenberg where it is offered; each only while 聚合設定's 搜尋來源
+    /// keeps it checked (`shown`, search 9d).
     static func libraries(catalogs: [OPDSCatalog], gutenberg: GutenbergProvider,
+                          shown: (SourceInstanceKey) -> Bool = { _ in true },
                           provider: (OPDSCatalog) -> (any OPDSFeedProviding)?) -> [any OPDSFeedProviding] {
         let saved = catalogs.compactMap { connection -> (any OPDSFeedProviding)? in
             guard connection.kind != .webDAV, connection.id != PublicLibraryID.gutenberg.rawValue else { return nil }
             return provider(connection)
         }
-        return saved + (gutenberg.availability == .available ? [gutenberg] : [])
+        return (saved + (gutenberg.availability == .available ? [gutenberg] : [])).filter { shown($0.instance) }
     }
 
     /// Whether any library would be asked.

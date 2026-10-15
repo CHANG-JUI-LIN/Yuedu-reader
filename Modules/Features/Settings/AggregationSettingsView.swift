@@ -2,13 +2,12 @@ import SwiftUI
 
 // Unified library 5d-3d: 聚合設定 (Phase 5 plan, decision 21), Emby's aggregation settings
 // mapped onto Yuedu's libraries. Pushed from 設定, and from 探索's ••• (decision 36).
-// Laid out as Emby 4.10's Home Screen page (decision 36): 偏好閱讀語言 and 推薦範圍 (5d-3d) on
-// top, then 書庫順序 (5d-3e), the home's sections (5d-3h), each opening its own options, and
-// 隱藏已讀 (5d-3g) at the bottom. 顯示在最新 (5d-3f) is in 最新's own options.
+// Laid out as Emby's 聚合資料 (search 9d): 數據來源 on top, each purpose with its n/m and its
+// checklist, then 偏好閱讀語言 and 推薦範圍 (5d-3d), 書庫順序 (5d-3e) and 隱藏已讀 (5d-3g).
+// The home's sections (5d-3h) left in 9d: they are 編輯首頁's (maintainer, 2026-10-15).
 
 struct AggregationSettingsView: View {
     @ObservedObject private var store = AggregationSettingsStore.shared
-    @ObservedObject private var pageStore = HomePageStore.shared
     @ObservedObject private var connections = RemoteLibraryConnectionStore.shared
     @ObservedObject private var availability = PublicLibraryAvailability.shared
 
@@ -22,6 +21,7 @@ struct AggregationSettingsView: View {
         let preferences = store.readingLanguages
         let libraries = libraries
         List {
+            AggregationDataSourcesSection()
             languageSection(preferences)
             scopeSection(preferences)
 
@@ -54,8 +54,6 @@ struct AggregationSettingsView: View {
                 }
                 .interfaceSectionSurface()
             }
-
-            homeSections
 
             Section {
                 Toggle(localized("隱藏已讀"), isOn: Binding(get: { store.hidesRead }, set: { store.setHidesRead($0) }))
@@ -141,77 +139,6 @@ struct AggregationSettingsView: View {
                 .dsSectionFooter()
         }
         .interfaceSectionSurface()
-    }
-
-    // MARK: 首頁欄目
-
-    /// The home's sections, as Emby lists its Home Sections on the page: each opens its own
-    /// options, the page 編輯首頁 pushes; drag to reorder.
-    @ViewBuilder
-    private var homeSections: some View {
-        if let page = pageStore.page {
-            let sections = page.editableSections
-            Section {
-                if let configuration = selectedConfiguration {
-                    LabeledContent(localized("首頁配置"), value: configuration.name)
-                        .accessibilityIdentifier("aggregation.homeConfiguration")
-                }
-                ForEach(Array(sections.enumerated()), id: \.element.id) { index, section in
-                    NavigationLink {
-                        HomeSectionPage(sectionID: section.id)
-                    } label: {
-                        // A shown section's row is its name alone: with an empty value,
-                        // LabeledContent left the row's own element unlabelled on iOS 27.
-                        if section.isEnabled {
-                            Text(section.editorTitle())
-                                .foregroundStyle(DSColor.textPrimary)
-                        } else {
-                            LabeledContent(section.editorTitle(), value: localized("已隱藏"))
-                                .foregroundStyle(DSColor.textPrimary)
-                        }
-                    }
-                    .accessibilityActions {
-                        if index > 0 {
-                            Button(localized("上移")) { moveSection(from: index, to: index - 1) }
-                        }
-                        if index < sections.count - 1 {
-                            Button(localized("下移")) { moveSection(from: index, to: index + 2) }
-                        }
-                    }
-                    .accessibilityIdentifier("aggregation.homeSection.\(section.id.uuidString)")
-                }
-                .onMove { source, destination in
-                    pageStore.edit { $0.moveEditable(fromOffsets: source, toOffset: destination) }
-                }
-            } header: {
-                Text(localized("首頁欄目"))
-            } footer: {
-                Text(localized("和探索的編輯首頁是同一份。"))
-                    .dsSectionFooter()
-            }
-            .interfaceSectionSurface()
-        } else {
-            // The home is made the first time 探索 opens (`HomePageStore.pageOrDefaults`), once
-            // it knows whether the reader has book sources.
-            Section {
-            } header: {
-                Text(localized("首頁欄目"))
-            } footer: {
-                Text(localized("打開探索後，首頁欄目會列在這裡。"))
-                    .dsSectionFooter()
-            }
-            .interfaceSectionSurface()
-        }
-    }
-
-    /// The 首頁配置 探索 shows, which these sections are.
-    private var selectedConfiguration: HomeConfigurationListing? {
-        pageStore.configurations.first { $0.id == pageStore.selectedConfiguration }
-    }
-
-    /// 首頁欄目's 上移／下移 for VoiceOver, in `onMove`'s offsets.
-    private func moveSection(from index: Int, to destination: Int) {
-        pageStore.edit { $0.moveEditable(fromOffsets: IndexSet(integer: index), toOffset: destination) }
     }
 
     /// 書庫順序's 上移／下移 for VoiceOver, in `onMove`'s offsets.
