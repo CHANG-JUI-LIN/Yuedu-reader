@@ -1076,12 +1076,21 @@ class ModernParserBridge {
     ) throws -> [OnlineBook] {
         let engine = makeEngine()
         let rule = source.ruleSearch
+        var withoutLink: [String] = []
         let books = RuleListMapping.items(
             engine: engine, content: html, baseURL: baseURL, listRule: rule.bookList,
             fields: RuleListFields(name: rule.name, author: rule.author, bookUrl: rule.bookUrl, coverUrl: rule.coverUrl,
                                    intro: rule.intro, wordCount: rule.wordCount, lastChapter: rule.lastChapter, kind: rule.kind),
-            earlyFilter: earlyFilter
+            earlyFilter: earlyFilter,
+            onMissingLink: { withoutLink.append($0) }
         ).map { OnlineBook($0, source: source) }
+        if !withoutLink.isEmpty {
+            // Why a row a source listed is not in 搜尋, on a device.
+            AppLogger.parse("Search rows without a book link were left out", context: [
+                "source": source.bookSourceName, "count": "\(withoutLink.count)",
+                "first": String(withoutLink[0].prefix(40)),
+            ], level: .notice)
+        }
 
         engine.setContent(html, baseUrl: baseURL)
         return books

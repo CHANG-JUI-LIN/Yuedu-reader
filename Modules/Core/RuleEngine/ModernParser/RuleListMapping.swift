@@ -35,13 +35,18 @@ enum RuleListMapping {
     ///
     /// - Parameter earlyFilter: asked with the name and author before the other fields are
     ///   read (Legado's BookList idea): a strict matcher such as 換源 skips most of the work.
+    /// - Parameter onMissingLink: when given, an item whose link rule finds no link in it is
+    ///   left out and named here. Legado lists it as its page (`bookUrl = baseUrl`), which is
+    ///   how a site's "no results" row (「没有找到包含：…」) became a book in 搜尋 (search 9a). An
+    ///   empty link rule still means the page itself, as Legado has it.
     static func items(
         engine: ModernRuleEngine,
         content: Any,
         baseURL: String,
         listRule: String,
         fields: RuleListFields,
-        earlyFilter: ((_ name: String, _ author: String) -> Bool)? = nil
+        earlyFilter: ((_ name: String, _ author: String) -> Bool)? = nil,
+        onMissingLink: ((_ name: String) -> Void)? = nil
     ) -> [RuleListItem] {
         guard !listRule.isEmpty else { return [] }
         engine.setContent(content, baseUrl: baseURL)
@@ -52,10 +57,20 @@ enum RuleListMapping {
             guard !name.isEmpty else { continue }
             let author = engine.getString(ruleStr: fields.author)
             if let earlyFilter, !earlyFilter(name, author) { continue }
+            let bookUrl: String
+            if let onMissingLink, !fields.bookUrl.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                bookUrl = engine.getOptionalURL(ruleStr: fields.bookUrl)
+                guard !bookUrl.isEmpty else {
+                    onMissingLink(name)
+                    continue
+                }
+            } else {
+                bookUrl = engine.getString(ruleStr: fields.bookUrl, isUrl: true)
+            }
             items.append(RuleListItem(
                 name: name,
                 author: author,
-                bookUrl: engine.getString(ruleStr: fields.bookUrl, isUrl: true),
+                bookUrl: bookUrl,
                 // A cover rule that matches nothing stays empty rather than falling back to
                 // the page's URL (`getOptionalURL`).
                 coverUrl: engine.getOptionalURL(ruleStr: fields.coverUrl),
