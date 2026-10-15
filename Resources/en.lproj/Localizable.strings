@@ -3978,3 +3978,8 @@
 "加到首頁" = "Add to Home";
 "已在首頁" = "On Home";
 "會送出最近讀的 30 本書的書名、作者和分類，以及閱讀類型偏好，只送到這個服務。" = "Sends the titles, authors and categories of the last 30 books you read, and your genre preferences, to this service only.";
+
+/* AI 推薦 8e: 作品詳情 for an AI pick */
+"推薦理由" = "Why It's Recommended";
+"AI 產生" = "AI-generated";
+"未找到可用來源" = "No Available Sources Found";

@@ -39,14 +39,28 @@ final class AIRecommendationProvider: HomeSectionProviding {
     /// otherwise one of its own. The title and author are the ones the AI gave.
     static func entries(from list: AIRecommendationList) -> [CollectionEntry] {
         list.entries.map { entry in
-            let record = entry.openLibrary ?? SourceRecord(
-                key: SourceItemKey(instance: recordInstance, item: entry.id), title: entry.work.title,
-                authors: [entry.work.author], language: nil, contentKind: .text, identifiers: [], copyID: nil,
-                acquisitions: [.viewOnly])
+            let record = record(for: entry)
             let summary = WorkSummary(title: entry.work.title, authors: [entry.work.author],
                                       cover: entry.cover ?? .generated(seed: entry.work.title), blurb: entry.blurb,
                                       language: record.language, contentKind: .text)
             return .item(record, summary, .bibliographic)
         }
+    }
+
+    /// Each work's reason by its record's key (AI 推薦 8e); a blank one is left out.
+    static func reasons(from list: AIRecommendationList) -> [SourceItemKey: String] {
+        list.entries.reduce(into: [:]) { reasons, entry in
+            let reason = entry.work.reason.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !reason.isEmpty else { return }
+            let key = record(for: entry).key
+            if reasons[key] == nil { reasons[key] = reason }
+        }
+    }
+
+    private static func record(for entry: AIRecommendationList.Entry) -> SourceRecord {
+        entry.openLibrary ?? SourceRecord(
+            key: SourceItemKey(instance: recordInstance, item: entry.id), title: entry.work.title,
+            authors: [entry.work.author], language: nil, contentKind: .text, identifiers: [], copyID: nil,
+            acquisitions: [.viewOnly])
     }
 }

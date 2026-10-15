@@ -244,6 +244,9 @@ struct WorkDetailView: View {
                     // own page. Legado's formats are not read here (decision 33).
                     BookDetailIntroSection(text: intro, isExpanded: $introExpanded, readsSourceFormats: false)
                 }
+                if let reason = route.recommendationReason {
+                    BookDetailRecommendationSection(reason: reason)
+                }
                 tableOfContents
                 if let series {
                     BookDetailSeriesSection(series: series, onShowAll: { pushed = .series(series) },
@@ -664,27 +667,22 @@ struct WorkDetailView: View {
     /// 「尋找可用來源」 (7b-2): searches the enabled sources for the work only when tapped; what
     /// it finds joins 來源.
     private var findSourcesItem: BookDetailInfoItem {
-        let added = versions.count - listed.count
-        let value: String
+        let value = finder.state.findSourcesValue(added: versions.count - listed.count, versionsLoaded: versionsLoaded,
+                                                  hasReadable: WorkVersions.primary(in: versions) != nil)
         var detail: String?
         var action: (() -> Void)? = findSources
         switch finder.state {
-        case .idle:
-            value = ""
+        case .idle, .noSources:
+            break
         case .searching:
-            value = localized("搜尋來源配置中…")
             action = nil
         case .done(let more):
-            value = added > 0 ? String(format: localized("找到 %d 個來源"), added) : localized("未找到其他來源配置")
             if more {
                 detail = localized("繼續搜索")
                 action = { finder.resume() }
             }
         case .failed:
-            value = localized("搜索失敗")
             detail = localized("重試")
-        case .noSources:
-            value = localized("沒有可用的來源配置，請先啟用來源配置")
         }
         return BookDetailInfoItem(id: "findSources", label: localized("尋找可用來源"), value: value, detail: detail,
                                   action: action, accessibilityHint: action == nil ? nil : localized("點兩下在已啟用的來源配置中搜尋這部作品"))
@@ -1008,10 +1006,45 @@ private struct WorkDetailActionRow: View {
     }
 }
 
+extension WorkSourceFinder.State {
+    /// 「尋找可用來源」's value. Before a search, a work with no readable version says so
+    /// (AI 推薦 decision 4), once its versions are read: shelf copies arrive after the page opens.
+    func findSourcesValue(added: Int, versionsLoaded: Bool, hasReadable: Bool) -> String {
+        switch self {
+        case .idle:
+            versionsLoaded && !hasReadable ? localized("未找到可用來源") : ""
+        case .searching:
+            localized("搜尋來源配置中…")
+        case .done:
+            added > 0 ? String(format: localized("找到 %d 個來源"), added) : localized("未找到其他來源配置")
+        case .failed:
+            localized("搜索失敗")
+        case .noSources:
+            localized("沒有可用的來源配置，請先啟用來源配置")
+        }
+    }
+}
+
 #Preview("作品詳情") {
     let book = PublicLibraryCollection.chinese.books[0]
     NavigationStack {
         WorkDetailView(route: WorkDetailRoute(.gutenberg(book)))
+    }
+    .environmentObject(BookStore())
+}
+
+#Preview("作品詳情 · AI 推薦") {
+    // An AI pick Open Library did not match: data only, its reason under 推薦理由.
+    let record = SourceRecord(key: SourceItemKey(instance: AIRecommendationProvider.recordInstance, item: "十二國記"),
+                              title: "十二國記", authors: ["小野不由美"], language: nil, contentKind: .text,
+                              identifiers: [], copyID: nil, acquisitions: [.viewOnly])
+    NavigationStack {
+        WorkDetailView(route: WorkDetailRoute(
+            record: record,
+            summary: WorkSummary(title: "十二國記", authors: ["小野不由美"], cover: .generated(seed: "十二國記"),
+                                 blurb: nil, language: nil, contentKind: .text),
+            opening: .bibliographic,
+            recommendationReason: "你最近讀了不少架空奇幻，這部以十二個國家為舞台的群像小說節奏紮實。"))
     }
     .environmentObject(BookStore())
 }
@@ -1032,6 +1065,8 @@ private struct WorkDetailActionRow: View {
     ScrollView {
         BookDetailInfoSection(items: [
             BookDetailInfoItem(id: "idle", label: localized("尋找可用來源"), value: "", action: {}),
+            BookDetailInfoItem(id: "unreadable", label: localized("尋找可用來源"), value: localized("未找到可用來源"),
+                               action: {}),
             BookDetailInfoItem(id: "searching", label: localized("尋找可用來源"), value: localized("搜尋來源配置中…")),
             BookDetailInfoItem(id: "found", label: localized("尋找可用來源"),
                                value: String(format: localized("找到 %d 個來源"), 3), action: {}),

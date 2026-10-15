@@ -10,11 +10,16 @@ struct WorkDetailRoute: Hashable, Sendable {
     let record: SourceRecord
     let summary: WorkSummary
     let opening: ItemOpening
+    /// Why the reader's AI service suggested the work (AI 推薦 8e), shown under 「推薦理由」;
+    /// set only on a work opened from the AI 推薦 row, so it never follows the reader into a
+    /// related work.
+    var recommendationReason: String?
 
-    init(record: SourceRecord, summary: WorkSummary, opening: ItemOpening) {
+    init(record: SourceRecord, summary: WorkSummary, opening: ItemOpening, recommendationReason: String? = nil) {
         self.record = record
         self.summary = summary
         self.opening = opening
+        self.recommendationReason = recommendationReason
     }
 
     init?(_ entry: CollectionEntry) {

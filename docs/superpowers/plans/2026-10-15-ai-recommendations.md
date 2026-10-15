@@ -255,3 +255,27 @@ Each step is a branch, with its tests first.
   - Delete `isLazy: false` once `testOfficialModuleIsListed` passes without it.
 - Eight new strings in all five lproj.
 - **Tests:** `ModuleLibraryUITests.testOfficialModuleIsListed` (new). The whole `ModuleLibraryUITests` class is 6/6 on iOS 27; on iOS 17.5, `testOfficialModuleIsListed` and `testAddFromAddressThenRemove` pass.
+
+### 8e — branch `ai-rec/8e-detail` (2026-10-15)
+
+- **The reason travels with the route.**
+  - `WorkDetailRoute.recommendationReason` is frozen when the card is tapped, as the rest of the route is.
+  - `AIRecommendationRow.cards(for:store:)` sets it from `AIRecommendationProvider.reasons(from:)`.
+  - The reasons are keyed by the record `entries(from:)` builds; both use one `record(for:)`, so the two keys cannot drift.
+  - A blank reason is left out.
+  - Any other row's card carries none, and so do the series and author pushes from 作品詳情: a reason never follows the reader into a related work.
+- **`BookDetailRecommendationSection`:**
+  - It sits under 簡介: 「推薦理由」 with an 「AI 產生」 capsule beside the header.
+  - The reason is drawn with `Text(verbatim:)`. It is the model's text, never a string key and never Markdown.
+- **「尋找可用來源」 before a search:**
+  - The value now comes from `WorkSourceFinder.State.findSourcesValue(added:versionsLoaded:hasReadable:)`.
+  - Before a search, a work with no readable version reads 「未找到可用來源」 (decision 4). This holds for every data-only work, not only AI picks: an Open Library hit from 統一搜尋, or a view-only OPDS item.
+  - It waits for `versionsLoaded`, so a work whose shelf copy arrives after the page opens never flashes it.
+  - A search's outcomes read as before: 「未找到其他來源配置」 stays.
+  - The page's existing 「目前沒有可閱讀的來源」 placeholder is unchanged.
+- **Strings:** 推薦理由, AI 產生 and 未找到可用來源, in all five lproj.
+- **Previews:** 「作品詳情 · AI 推薦」 (new), and 未找到可用來源 added to 「作品詳情 · 尋找可用來源」.
+- **Tests:**
+  - `AIRecommendationSectionTests`: `cardsCarryTheReason` and `emptyReason` (new).
+  - `WorkSourceFinderStatusTests` (new, 2).
+  - With `WorkSourceFinderTests`, `WorkDetailVersionsTests` and `HomeCardTests`: 27/27 on iOS 27. No UI run here: 8f opens an AI pick on both OSes.

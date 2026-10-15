@@ -95,3 +95,30 @@ struct WorkSourceFinderTests {
         #expect(finder.found.isEmpty)
     }
 }
+
+/// AI 推薦 8e, decision 4: a work with no readable version says so beside 「尋找可用來源」.
+@Suite("Work source finder status")
+struct WorkSourceFinderStatusTests {
+    @Test("before a search, nothing readable reads 「未找到可用來源」, once the versions are read")
+    func idle() {
+        let state = WorkSourceFinder.State.idle
+        #expect(state.findSourcesValue(added: 0, versionsLoaded: true, hasReadable: false) == localized("未找到可用來源"))
+        #expect(state.findSourcesValue(added: 0, versionsLoaded: true, hasReadable: true) == "")
+        // Shelf copies arrive after the page opens: no verdict before they are read.
+        #expect(state.findSourcesValue(added: 0, versionsLoaded: false, hasReadable: false) == "")
+    }
+
+    @Test("a search's outcome reads as before")
+    func searched() {
+        #expect(WorkSourceFinder.State.searching.findSourcesValue(added: 0, versionsLoaded: true, hasReadable: false)
+                    == localized("搜尋來源配置中…"))
+        #expect(WorkSourceFinder.State.done(more: false).findSourcesValue(added: 0, versionsLoaded: true, hasReadable: false)
+                    == localized("未找到其他來源配置"))
+        #expect(WorkSourceFinder.State.done(more: true).findSourcesValue(added: 2, versionsLoaded: true, hasReadable: true)
+                    == String(format: localized("找到 %d 個來源"), 2))
+        #expect(WorkSourceFinder.State.failed.findSourcesValue(added: 0, versionsLoaded: true, hasReadable: false)
+                    == localized("搜索失敗"))
+        #expect(WorkSourceFinder.State.noSources.findSourcesValue(added: 0, versionsLoaded: true, hasReadable: false)
+                    == localized("沒有可用的來源配置，請先啟用來源配置"))
+    }
+}
