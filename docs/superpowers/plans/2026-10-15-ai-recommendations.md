@@ -55,7 +55,94 @@ Phase 6 deferred it to this plan (maintainer, 2026-10-14).
 
 ## Steps
 
-(To be written after the AI speed fix, `2026-10-15-ai-speed.md`, lands.)
+Each step is a branch, with its tests first.
+
+### 8a — the request and the answer (pure)
+
+`Modules/Core/AI/AIRecommendation.swift`:
+
+- `Input`:
+  - the 30 most recent shelf books (title, author, category);
+  - the 10 strongest genres, weights rounded;
+  - the answer language.
+- `request(_:)`:
+  - system prompt in the 書架整理 style, with the data marked as data;
+  - asks for 20 works the reader has not read: title as published, author, a one-sentence reason in the answer language;
+  - JSON only: `{"works":[{"title","author","reason"}]}`;
+  - thinking `.high`. It is a judgment, asked for once, and its answer is short.
+- `parse(_:shelf:)`:
+  - strict: one malformed item fails the run;
+  - drops a work matching a shelf book (`WorkMatchKey`, title equal and authors compatible), and repeats;
+  - keeps at most 20.
+- Tests: the request content; parsing; malformed answers; shelf and repeat dropping; the cap.
+
+### 8b — generating and storing
+
+- `AIRecommendationStore`: `Application Support/AIRecommendations/latest.json`.
+  - Holds the works with their resolved cover and blurb, `generatedAt`, the service name and the model.
+  - A `revision` is published.
+- `AIRecommendationService` (`@MainActor`, `.shared`) has one use case, `generate()`:
+  1. Reads the inputs.
+     - Recency: `lastOpenedDate ?? addedDate`.
+     - Category and intro from the cached detail, as `AIBookshelfOrganizerModel.shelfBooks` reads them.
+     - Genres: `ReadingGenreRecorder.shared.profile().weights(at:)`.
+  2. Calls the active service (`AIProviderAssembly.activeService()`).
+  3. Parses the answer.
+  4. Resolves each work through Open Library's search, title and author, confidence B. This happens only when 資料來源 has Open Library checked.
+  5. Saves the result. A failure leaves the stored list as it was.
+- States: idle, generating, failed(message), unavailable(reason).
+- Spans `ai.recommend` and `ai.recommend.resolve`. `AIDiagnostics` feature `aiRecommendations`.
+- Tests:
+  - with a scripted provider and a stubbed lookup: inputs (recency order, 30 cap, genres);
+  - the lookup is skipped when Open Library is unchecked;
+  - a failure keeps the old list;
+  - the store round-trips.
+
+### 8c — the home section
+
+- `HomeSectionBinding.aiRecommendations`, with its own owner and instance key `(.library, "aiRecommendations")`. It does not reuse `.module`; see the survey.
+- `AIRecommendationProvider: HomeSectionProviding`:
+  - `.local` policy, and `inputsKey` is the store's revision;
+  - serves the stored works as `.item(record, summary, .bibliographic)`;
+  - the cover is the resolved one or `.generated(seed:)`.
+- The row has a tap-to-start state. With no stored list, it shows a call-to-action in place of the placeholder:
+  - 「產生推薦」, which runs the use case;
+  - 「需要 Pro」 with 升級;
+  - the service's missing-setup message with a link to AI 設定.
+  - The progress and failure are shown in the row.
+- The row's header subtitle is 「AI 產生 · {service} · {date}」.
+- 「重新產生」 is added to the row's section actions, through a per-binding hook in `HomeSectionActions`.
+- In 選擇內容來源, a 官方模組 group lists 「AI 推薦」.
+- `#Preview`: empty, generating, loaded, Pro-locked.
+- Tests:
+  - the provider serves the store;
+  - its `inputsKey` follows the revision;
+  - `HomeSection` codable round-trip and owner;
+  - registry order (`ProviderManifestTests`).
+
+### 8d — 資源庫 官方模組
+
+- `RuleModuleSection` splits into 官方模組 (AI 推薦, always listed) and 匯入的模組.
+- The empty 「新增模組」 card depends on imported modules only.
+- The official row opens a short page: what it sends, to which service, the last run, 加到首頁 and 重新產生.
+- VoiceOver labels on every control.
+
+### 8e — 作品詳情 for an AI pick
+
+- A work opened from the AI row shows 「推薦理由」, marked AI 產生, from the stored reason.
+- With no readable version, its status reads 「未找到可用來源」 beside 尋找可用來源 (decision 4).
+
+### 8f — acceptance
+
+- A DEBUG-only launch argument `-debug-ai-endpoint <url>` points the active service at a local fixture (`scripts/ai_recommendation_fixture.py`, an OpenAI-compatible canned answer), as `-debug-force-pro` gates Pro.
+- The UI test:
+  1. adds the section;
+  2. taps 產生推薦;
+  3. sees the works;
+  4. opens one: 推薦理由 and 尋找可用來源 are there;
+  5. runs 重新產生.
+- Run on iOS 27 and iOS 17.5.
+- The home and module regressions are run too.
 
 ### Code survey (2026-10-15): what exists and what does not
 
