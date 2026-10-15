@@ -1,4 +1,4 @@
-import {FieldValue, getFirestore} from "firebase-admin/firestore";
+import {FieldValue, Timestamp, getFirestore} from "firebase-admin/firestore";
 import {getStorage} from "firebase-admin/storage";
 import {logger} from "firebase-functions";
 import {defineSecret} from "firebase-functions/params";
@@ -7,11 +7,14 @@ import {onDocumentCreated} from "firebase-functions/v2/firestore";
 import {
   FeedbackKind,
   TriageResult,
+  assistantMayReply,
   messagePreview,
   parseTriage,
   triageSystemPrompt,
   triageUserMessage,
 } from "./feedbackTriagePolicy.js";
+import {recordObservation, triageSecrets} from "./triage.js";
+import {feedbackObservation} from "./triagePolicy.js";
 
 const deepSeekApiKey = defineSecret("DEEPSEEK_API_KEY");
 
@@ -42,14 +45,21 @@ interface AttachmentField {
 ///
 /// The model sees the report's screenshots; recordings it is only told about.
 ///
+/// An inbox past `assistantRepliesPerInboxPerDay` gets no model reply: the thread is moved
+/// to `queued` as when the model is unreachable, and the developer answers it.
+///
 /// When the model cannot be reached (no key, an API error, malformed JSON) the thread
 /// is moved to `queued` without a reply and the failure is logged: the report itself is
 /// safe in Firestore and the developer answers it as usual.
+///
+/// Either way the report also goes into the developer's triage inbox (`triage.ts`), graded
+/// by the model's severity — or `normal` when there is no model answer, or the answer's
+/// severity is malformed (logged; the user's reply is kept either way).
 export const onFeedbackThreadCreated = onDocumentCreated(
   {
     document: "feedbackInboxes/{inboxId}/threads/{threadId}",
     region: "asia-east1",
-    secrets: [deepSeekApiKey],
+    secrets: [deepSeekApiKey, ...triageSecrets],
     timeoutSeconds: 120,
   },
   async (event) => {
@@ -71,21 +81,30 @@ export const onFeedbackThreadCreated = onDocumentCreated(
     }
     const attachments = (first.attachments ?? []) as AttachmentField[];
 
+    const dayAgo = Timestamp.fromMillis(Date.now() - 24 * 60 * 60 * 1000);
+    const threadsInLastDay = (await threadRef.parent.where("createdAt", ">=", dayAgo).count().get()).data().count;
+    const mayReply = assistantMayReply(threadsInLastDay);
+    if (!mayReply) {
+      logger.warn("feedback inbox over the daily assistant limit", {thread: threadRef.path, threadsInLastDay});
+    }
+
     let triage: TriageResult | null = null;
-    try {
-      const images = await loadImages(attachments);
-      triage = await runTriage(images, triageUserMessage({
-        kind: thread.kind as FeedbackKind,
-        text: String(first.text ?? ""),
-        locale: String(thread.locale ?? ""),
-        appVersion: `${thread.appVersion ?? ""} (${thread.build ?? ""})`,
-        osVersion: String(thread.osVersion ?? ""),
-        device: String(thread.device ?? ""),
-        imageCount: images.length,
-        videoCount: attachments.filter((attachment) => attachment.kind === "video").length,
-      }));
-    } catch (error) {
-      logger.error("feedback triage failed", {thread: threadRef.path, error: String(error)});
+    if (mayReply) {
+      try {
+        const images = await loadImages(attachments);
+        triage = await runTriage(images, triageUserMessage({
+          kind: thread.kind as FeedbackKind,
+          text: String(first.text ?? ""),
+          locale: String(thread.locale ?? ""),
+          appVersion: `${thread.appVersion ?? ""} (${thread.build ?? ""})`,
+          osVersion: String(thread.osVersion ?? ""),
+          device: String(thread.device ?? ""),
+          imageCount: images.length,
+          videoCount: attachments.filter((attachment) => attachment.kind === "video").length,
+        }));
+      } catch (error) {
+        logger.error("feedback triage failed", {thread: threadRef.path, error: String(error)});
+      }
     }
 
     await db.runTransaction(async (transaction) => {
@@ -112,6 +131,20 @@ export const onFeedbackThreadCreated = onDocumentCreated(
         updatedAt: FieldValue.serverTimestamp(),
       });
     });
+
+    if (triage !== null && triage.severity === null) {
+      logger.warn("feedback triage returned no valid severity; recording normal", {thread: threadRef.path});
+    }
+    const text = String(first.text ?? "");
+    await recordObservation(feedbackObservation({
+      threadId: threadRef.id,
+      number: (await threadRef.get()).get("number") as number | undefined,
+      title: triage?.title || String(thread.title ?? "") || messagePreview(text),
+      text,
+      severity: triage?.severity ?? null,
+      appVersion: `${thread.appVersion ?? ""} (${thread.build ?? ""})`,
+      ...(typeof thread.installId === "string" ? {installId: thread.installId} : {}),
+    }), event.id);
   }
 );
 

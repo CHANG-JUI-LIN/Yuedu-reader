@@ -2,6 +2,8 @@ import assert from "node:assert/strict";
 import {describe, it} from "node:test";
 
 import {
+  assistantMayReply,
+  assistantRepliesPerInboxPerDay,
   messagePreview,
   parseTriage,
   triageSystemPrompt,
@@ -14,16 +16,26 @@ describe("feedback triage policy", () => {
       title: "海".repeat(60),
       reply: "  已收到你的回報。 ",
       status: "needsInfo",
+      severity: "high",
     }));
     assert.equal(result.reply, "已收到你的回報。");
     assert.equal(result.status, "needsInfo");
+    assert.equal(result.severity, "high");
     assert.equal(Array.from(result.title).length, 40);
   });
 
   it("rejects an empty reply and statuses the client may not see from triage", () => {
-    assert.throws(() => parseTriage(JSON.stringify({title: "x", reply: " ", status: "queued"})));
-    assert.throws(() => parseTriage(JSON.stringify({title: "x", reply: "ok", status: "done"})));
+    assert.throws(() => parseTriage(JSON.stringify({title: "x", reply: " ", status: "queued", severity: "low"})));
+    assert.throws(() => parseTriage(JSON.stringify({title: "x", reply: "ok", status: "done", severity: "low"})));
     assert.throws(() => parseTriage("not json"));
+  });
+
+  it("keeps the reply when the severity is missing or unknown", () => {
+    for (const severity of [undefined, "medium"]) {
+      const result = parseTriage(JSON.stringify({title: "x", reply: "ok", status: "queued", severity}));
+      assert.equal(result.reply, "ok");
+      assert.equal(result.severity, null);
+    }
   });
 
   it("asks DeepSeek's JSON mode for JSON by name", () => {
@@ -39,6 +51,12 @@ describe("feedback triage policy", () => {
     assert.match(message, /2 screenshot\(s\), shown above/);
     assert.match(message, /1 screen recording\(s\), not shown/);
     assert.match(message, /<report>\n閃退\n<\/report>/);
+  });
+
+  it("answers up to the daily limit, counting the new thread", () => {
+    assert.equal(assistantMayReply(1), true);
+    assert.equal(assistantMayReply(assistantRepliesPerInboxPerDay), true);
+    assert.equal(assistantMayReply(assistantRepliesPerInboxPerDay + 1), false);
   });
 
   it("previews the first lines on one line", () => {

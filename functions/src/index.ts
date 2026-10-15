@@ -641,3 +641,10 @@ export const appStoreServerNotifications = onRequest({region}, async (request, r
 });
 
 export {onFeedbackThreadCreated} from "./feedbackTriage.js";
+export {
+  onCrashlyticsNewFatal,
+  onCrashlyticsNewNonfatal,
+  onCrashlyticsRegression,
+  onCrashlyticsStabilityDigest,
+  onCrashlyticsVelocity,
+} from "./triage.js";
