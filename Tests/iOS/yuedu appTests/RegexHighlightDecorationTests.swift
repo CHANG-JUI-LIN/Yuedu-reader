@@ -170,79 +170,77 @@ struct RegexHighlightDecorationTests {
 
     // MARK: - Baseline offset
 
-    /// Online and TXT body text centres itself in its line with `.baselineOffset`, which
-    /// CoreText draws as a raise of every glyph. The box was built on the unraised baseline,
-    /// so every highlight in those books sat low: the gap below the text was the gap above
-    /// it plus twice the raise (online book, 2026-10-15).
-    @Test("a raised baseline raises the highlight box with its glyphs")
-    func baselineOffsetRaisesTheBox() throws {
-        let flat = try RaisedLineSample(raise: 0).measure()
-        let raised = try RaisedLineSample(raise: 8).measure()
+    /// TXT and online body text sits raised in its line by `.baselineOffset`, which CoreText
+    /// draws as a raise of every glyph off the line origin. A box measured from the bare origin
+    /// sat that far below its text: 3.2–4.3pt on every built-in rule (2026-10-15).
+    @Test("the box rises with text drawn on a baseline offset")
+    func baselineOffsetRaisesTheBox() {
+        let sample = RaisedLineSample(raise: 4)
 
-        // The glyphs really are drawn higher — the premise of the fix.
-        #expect(abs((flat.inkTop - raised.inkTop) - 8) <= 1)
-        // The box keeps the same place around them.
-        #expect(abs((raised.inkTop - raised.boxTop) - (flat.inkTop - flat.boxTop)) <= 1)
-        #expect(abs((raised.boxBottom - raised.inkBottom) - (flat.boxBottom - flat.inkBottom)) <= 1)
+        let fragments = RegexHighlightDecorationRenderer.horizontalFragments(
+            line: sample.line,
+            origin: .zero,
+            attributedString: sample.attributed,
+            range: sample.lineRange
+        )
+
+        #expect(fragments.count == 1)
+        #expect(abs((fragments.first?.rect.minY ?? .nan) - (4 + sample.font.descender)) < 0.01)
+        #expect(abs((fragments.first?.rect.maxY ?? .nan) - (4 + sample.font.ascender)) < 0.01)
+    }
+
+    /// `CJKPunctuation` moves a mark with an offset of its own. A highlight that starts on such
+    /// a mark keeps its box on the text the mark sits in.
+    @Test("a mark drawn on its own offset does not move the box")
+    func markOffsetKeepsTheBox() {
+        let sample = RaisedLineSample(raise: 4, leadingMarkRaise: 7)
+
+        let fragments = RegexHighlightDecorationRenderer.horizontalFragments(
+            line: sample.line,
+            origin: .zero,
+            attributedString: sample.attributed,
+            range: sample.lineRange
+        )
+
+        #expect(fragments.count == 1)
+        #expect(abs((fragments.first?.rect.minY ?? .nan) - (4 + sample.font.descender)) < 0.01)
     }
 }
 
-/// One line of quoted CJK on a red highlight, drawn the way `CoreTextHorizontalLineDrawer`
-/// draws it: the decoration and then the glyphs, from one origin.
+/// One line of body text raised by `raise`, with a highlight that starts on a full stop. The
+/// full stop can carry a raise of its own, as the marks `CJKPunctuation` repositions do.
 private struct RaisedLineSample {
-    let raise: CGFloat
+    let font = UIFont.systemFont(ofSize: 18)
+    let attributed: NSAttributedString
+    let lineRange: NSRange
+    let line: CTLine
 
-    /// Rows counted down from the top of the bitmap.
-    struct Rows { let boxTop: Int, boxBottom: Int, inkTop: Int, inkBottom: Int }
-
-    func measure() throws -> Rows {
-        let text = NSMutableAttributedString(string: "“多謝。”", attributes: [
-            .font: UIFont(name: "PingFangSC-Regular", size: 40) ?? UIFont.systemFont(ofSize: 40),
-            .foregroundColor: UIColor.black,
-            .baselineOffset: raise,
-        ])
-        let range = NSRange(location: 0, length: text.length)
-        text.addAttribute(
+    init(raise: CGFloat, leadingMarkRaise: CGFloat? = nil) {
+        let text = "前文。對話文字後文"
+        let mutable = NSMutableAttributedString(
+            string: text,
+            attributes: [.font: font, .baselineOffset: raise]
+        )
+        let nsText = text as NSString
+        let highlight = nsText.range(of: "。對話文字")
+        if let leadingMarkRaise {
+            mutable.addAttribute(
+                .baselineOffset,
+                value: leadingMarkRaise,
+                range: NSRange(location: highlight.location, length: 1)
+            )
+        }
+        mutable.addAttribute(
             RegexHighlightDecoration.attributeKey,
             value: RegexHighlightDecoration(
-                style: ReaderStyleDecorationStyle(backgroundColorHex: 0xFF0000),
+                style: ReaderStyleDecorationStyle(backgroundColorHex: 0x8E1B3A),
                 assetRevision: 0
             ),
-            range: range
+            range: highlight
         )
-        let width = 260, height = 140
-        let context = try #require(CGContext(
-            data: nil, width: width, height: height, bitsPerComponent: 8, bytesPerRow: width * 4,
-            space: CGColorSpaceCreateDeviceRGB(),
-            bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
-        ))
-        context.setFillColor(UIColor.white.cgColor)
-        context.fill(CGRect(x: 0, y: 0, width: width, height: height))
-        let line = CTLineCreateWithAttributedString(text)
-        let origin = CGPoint(x: 10, y: 50)
-        RegexHighlightDecorationRenderer.drawHorizontal(
-            line: line, origin: origin, attributedString: text, range: range, context: context
-        )
-        context.textPosition = origin
-        CTLineDraw(line, context)
-
-        let pixels = try #require(context.data).assumingMemoryBound(to: UInt8.self)
-        var box: [Int] = [], ink: [Int] = []
-        for row in 0..<height {
-            var hasBox = false, hasInk = false
-            for column in 0..<width {
-                let p = pixels + (row * width + column) * 4
-                let (r, g, b) = (Int(p[0]), Int(p[1]), Int(p[2]))
-                if r > 200, g < 80, b < 80 { hasBox = true }
-                if r < 90, g < 90, b < 90 { hasInk = true }
-            }
-            if hasBox { box.append(row) }
-            if hasInk { ink.append(row) }
-        }
-        return Rows(
-            boxTop: try #require(box.first), boxBottom: try #require(box.last),
-            inkTop: try #require(ink.first), inkBottom: try #require(ink.last)
-        )
+        attributed = mutable
+        lineRange = NSRange(location: 0, length: nsText.length)
+        line = CTLineCreateWithAttributedString(mutable)
     }
 }
 

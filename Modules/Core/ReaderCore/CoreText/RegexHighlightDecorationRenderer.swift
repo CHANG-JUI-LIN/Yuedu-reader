@@ -85,31 +85,18 @@ enum RegexHighlightDecorationRenderer {
             guard startOffset.isFinite, endOffset.isFinite,
                   abs(endOffset - startOffset) > 0.25 else { return }
 
-            let ascent: CGFloat
-            let descent: CGFloat
-            if let font = attributedString.attribute(
-                .font,
-                at: highlightedRange.location,
-                effectiveRange: nil
-            ) as? UIFont {
-                ascent = font.ascender
-                descent = -font.descender
-            } else {
-                ascent = lineAscent
-                descent = lineDescent
+            let drawing = dominantDrawing(of: highlightedRange, in: attributedString)
+            var ascent = drawing.font?.ascender ?? lineAscent
+            var descent = drawing.font.map { -$0.descender } ?? lineDescent
+            if drawing.isUpright {
+                // Centred on the column, as CoreText centres the upright glyphs.
+                ascent = (ascent + descent) / 2
+                descent = ascent
             }
-
-            // Online and TXT body text centres itself in its line with `.baselineOffset`, and
-            // CoreText draws that as a raise of the glyphs off `origin`; the box rises with them.
-            let raise = (attributedString.attribute(
-                .baselineOffset,
-                at: highlightedRange.location,
-                effectiveRange: nil
-            ) as? NSNumber).map { CGFloat($0.doubleValue) } ?? 0
 
             let glyphRect = CGRect(
                 x: origin.x + min(startOffset, endOffset),
-                y: origin.y + raise - descent,
+                y: origin.y + drawing.raise - descent,
                 width: abs(endOffset - startOffset),
                 height: max(1, ascent + descent)
             )
@@ -156,6 +143,69 @@ enum RegexHighlightDecorationRenderer {
     private static func clamped(_ index: Int, lowerBound: Int, upperBound: Int) -> Int {
         min(max(index, lowerBound), upperBound)
     }
+
+    /// How CoreText draws most of `range`'s characters: the font whose ascent and descent make
+    /// their glyph box, their raise off the line origin, and whether they stand upright in a
+    /// vertical line, where that box is centred on the column.
+    ///
+    /// A fragment's characters are not all drawn alike, and its first one is the odd one out more
+    /// often than not:
+    /// - TXT, online and legacy-EPUB body text centres itself in its fixed-height line with
+    ///   `.baselineOffset` (`ReaderTypographyCorrection.baselineOffset`), which CoreText draws as a
+    ///   raise of every glyph: about 4pt at 18pt × 1.65. A box measured from the bare line origin
+    ///   sat that far below its text (2026-10-15: 3.2–4.3pt on all five built-in rules, paged and
+    ///   scroll). Marks that `CJKPunctuation` repositions carry an offset of their own.
+    /// - In a vertical column a curly quote lies on its side in the horizontal font, lowered onto
+    ///   the column's centre line (`CJKTypography.centreSideways`), while the text it opens
+    ///   stands upright. Taking the metrics from the opening quote put every “” and ‘’ box of a
+    ///   vertical EPUB 5.5pt to the right of its column (2026-10-15).
+    ///
+    /// Upright text is drawn in CoreText's vertical variant of its font, whose ascent and descent
+    /// are half its vertical advance each: 9 and 9 for PingFang TC at 18pt. A box that thin hugged
+    /// the glyphs and left the quotes on their side across its edge (2026-10-15). The box comes
+    /// from the variant's horizontal version instead, PingFang TC's own 19.08 and 6.12: what the
+    /// same text reports in a horizontal line. Only the browser engine draws upright text through
+    /// here, and it gives CJK text a font made for it (`CJKTypography.applyFonts`). A character
+    /// that font lacks too, such as an extension-B Han, is drawn by the system's fallback, which
+    /// borrows the ascent and descent of the font it stands in for; its horizontal version has
+    /// its own instead.
+    ///
+    /// A tie keeps the earlier drawing.
+    private static func dominantDrawing(
+        of range: NSRange,
+        in attributedString: NSAttributedString
+    ) -> (font: UIFont?, raise: CGFloat, isUpright: Bool) {
+        var runs: [(font: UIFont?, raise: CGFloat, length: Int)] = []
+        attributedString.enumerateAttributes(in: range, options: []) { attributes, run, _ in
+            let font = attributes[.font] as? UIFont
+            let raise = (attributes[.baselineOffset] as? NSNumber).map { CGFloat($0.doubleValue) } ?? 0
+            if let index = runs.firstIndex(where: { $0.font == font && $0.raise == raise }) {
+                runs[index].length += run.length
+            } else {
+                runs.append((font, raise, run.length))
+            }
+        }
+        var dominant: (font: UIFont?, raise: CGFloat, length: Int)?
+        for run in runs where run.length > (dominant?.length ?? 0) {
+            dominant = run
+        }
+        let raise = dominant?.raise ?? 0
+        guard let font = dominant?.font, isVerticalVariant(font) else {
+            return (dominant?.font, raise, false)
+        }
+        return (CTFontCreateCopyWithAttributes(font as CTFont, 0, nil, horizontalOrientation) as UIFont, raise, true)
+    }
+
+    /// Whether `font` is CoreText's vertical variant of a font: what it draws upright text in a
+    /// vertical line with.
+    private static func isVerticalVariant(_ font: UIFont) -> Bool {
+        (CTFontCopyAttribute(font as CTFont, kCTFontOrientationAttribute) as? NSNumber)?.uint32Value
+            == CTFontOrientation.vertical.rawValue
+    }
+
+    private static let horizontalOrientation = CTFontDescriptorCreateWithAttributes(
+        [kCTFontOrientationAttribute: CTFontOrientation.horizontal.rawValue] as CFDictionary
+    )
 
     static func drawVertical(
         frame: CTFrame,

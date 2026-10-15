@@ -2,6 +2,7 @@
 import CoreText
 import Testing
 import UIKit
+import YueduCoreTextTypography
 @testable import yuedu_app
 
 @Suite(.serialized)
@@ -249,6 +250,93 @@ struct BrowserReaderTypographyTests {
         }
         // One box has one leading and one trailing border on every row it covers.
         #expect(try maximumRedRunsPerRow(image) == 2)
+    }
+
+    /// In a vertical column a curly quote lies on its side, in the horizontal font, while the
+    /// text it opens stands upright in CoreText's vertical variant of its font. The box took its
+    /// metrics from the opening quote and sat half a column to the right of its text: 5.5pt on
+    /// every “” and ‘’ of a vertical EPUB. Taken from the upright text's vertical variant, it was
+    /// one em thick — its ascent and descent are half an em each — so it hugged the glyphs and the
+    /// quotes lay across its edge; taken from the CSS font, the system font's 1.19 em, it was
+    /// 3.7pt thinner than the same text's box in a horizontal line, where PingFang TC draws the
+    /// Han at 1.4 em (2026-10-15).
+    @Test func verticalHighlightOpenedBySidewaysQuoteStaysOnItsColumn() async throws {
+        // The quote goes in the second column, clear of the page's right edge, so no box is
+        // clipped; the first column ends above the box's rows, so its ink is not measured.
+        let html = "<p>前。</p><p>他說：“多謝。明天再來。”後</p>"
+        let image = try await renderedGreenHighlight(html: html, writingMode: .verticalRTL, size: size)
+        let box = try extent(of: image) { $0.g > 200 && $0.r < 80 && $0.b < 80 }
+        let ink = try extent(of: image, rows: box.rows) { max($0.r, $0.g, $0.b) < 90 }
+        #expect(box.columns.upperBound < Int(size.width) - 1, "the box must not reach the page edge")
+        let boxCentre = CGFloat(box.columns.lowerBound + box.columns.upperBound) / 2
+        let inkCentre = CGFloat(ink.columns.lowerBound + ink.columns.upperBound) / 2
+        #expect(abs(boxCentre - inkCentre) <= 1, "box \(box.columns) is off the column of its text \(ink.columns)")
+        #expect(box.columns.lowerBound <= ink.columns.lowerBound && ink.columns.upperBound <= box.columns.upperBound,
+                "the text and its quotes \(ink.columns) must lie on the box \(box.columns)")
+
+        // As thick as the same text's box in a horizontal line.
+        let wide = CGSize(width: 480, height: 200)
+        let horizontal = try await renderedGreenHighlight(html: html, writingMode: .horizontal, size: wide)
+        let line = try extent(of: horizontal) { $0.g > 200 && $0.r < 80 && $0.b < 80 }
+        #expect(abs(box.columns.count - line.rows.count) <= 1,
+                "vertical box \(box.columns.count)pt thick, horizontal \(line.rows.count)pt")
+    }
+
+    /// `html` drawn at scale 1 on white, with every curly-quoted span on a pure green box. Laid
+    /// out with a book's CJK typography, as the reader always lays one out
+    /// (`BrowserLayoutPageEngine.makeBrowserConfig`): it decides which fonts draw the Han.
+    private func renderedGreenHighlight(
+        html: String, writingMode: ReaderWritingMode, size: CGSize
+    ) async throws -> UIImage {
+        let style = ReaderStyleRuleStyle(decoration: ReaderStyleDecorationStyle(backgroundColorHex: 0x00FF00))
+        let config = BrowserLayoutConfig(textTransform: BrowserReaderAttributes.transform(
+            configuration: configuration(pattern: "“[^”]*”", style: style), appearance: .light, assetRevision: 0
+        ), writingMode: writingMode, cjkTypographyStyle: .traditional)
+        let document = BrowserLayoutDocument(html: html, cssTexts: [css], config: config)
+        let pages = try await document.renderPages(containerSize: size)
+        let list = DisplayListBuilder.build(for: try #require(pages.first), sourceText: document.lastSourceText)
+
+        let format = UIGraphicsImageRendererFormat()
+        format.scale = 1
+        format.preferredRange = .standard
+        return UIGraphicsImageRenderer(size: size, format: format).image { r in
+            UIColor.white.setFill(); r.fill(CGRect(origin: .zero, size: size))
+            ReaderDisplayListDrawer.draw(list, in: r.cgContext)
+        }
+    }
+
+    private struct Pixel { let r: Int; let g: Int; let b: Int }
+
+    /// The columns and rows holding the pixels that pass `test`, within `rows` when given.
+    private func extent(
+        of image: UIImage, rows: ClosedRange<Int>? = nil, where test: (Pixel) -> Bool
+    ) throws -> (columns: ClosedRange<Int>, rows: ClosedRange<Int>) {
+        let cgImage = try #require(image.cgImage)
+        let width = cgImage.width
+        let height = cgImage.height
+        var bytes = [UInt8](repeating: 0, count: width * height * 4)
+        try bytes.withUnsafeMutableBytes { pointer in
+            let context = try #require(CGContext(
+                data: pointer.baseAddress, width: width, height: height, bitsPerComponent: 8,
+                bytesPerRow: width * 4, space: CGColorSpaceCreateDeviceRGB(),
+                bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+            ))
+            context.draw(cgImage, in: CGRect(x: 0, y: 0, width: width, height: height))
+        }
+        var xs: [Int] = []
+        var ys: [Int] = []
+        for y in rows ?? 0...(height - 1) {
+            for x in 0..<width {
+                let i = (y * width + x) * 4
+                if test(Pixel(r: Int(bytes[i]), g: Int(bytes[i + 1]), b: Int(bytes[i + 2]))) {
+                    xs.append(x)
+                    ys.append(y)
+                }
+            }
+        }
+        let minX = try #require(xs.min()), maxX = try #require(xs.max())
+        let minY = try #require(ys.min()), maxY = try #require(ys.max())
+        return (minX...maxX, minY...maxY)
     }
 
     private func maximumRedRunsPerRow(_ image: UIImage) throws -> Int {
