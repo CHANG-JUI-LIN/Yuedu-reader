@@ -555,7 +555,8 @@ How these fit together:
   - its search answers 搜尋 on submit, and nothing is asked as you type;
   - it appears in 資料來源, checked and last;
   - 移除模組 takes its card away and brings back the empty card. `RuleModuleStoreTests` checks that the folder is deleted.
-- **Deviation, not ticked:** the acceptance said a removed module's home row 「shows the removed state」. What shipped in 6f is that the section has no row, as for a removed connection (`HomeModel.sync` logs it). This goes to the maintainer.
+- **A removed module's home section:** the acceptance said its row 「shows the removed state」. What shipped in 6f is that the section has no row, as for a removed connection (`HomeModel.sync` logs it).
+  - **Maintainer, 2026-10-15: keep it as shipped** (Emby drops a removed library's section). The section stays in 編輯首頁, and its row comes back when the module is installed again.
 - **A module with `@js:`** is refused, with its reason shown, before anything is written: `RuleModuleImportTests.refusals` and `RuleModuleValidatorTests`.
 - **Requests:**
   - A redirect to an undeclared host is refused and never sent, and covers come only from `hosts` (`ModuleProviderTests`).
