@@ -295,6 +295,11 @@ struct OnlineBookView: View {
             if onContinueReading == nil {
                 BookDetailRelatedSection(
                     related: genres.related,
+                    choices: genres.choices,
+                    onChoose: { title in
+                        guard let key = genreLoadKey else { return }
+                        Task { await genres.choose(title, key: key, source: source, tags: tags, book: currentBook) }
+                    },
                     onShowAll: { pushed = .category($0) },
                     onSelect: { pushed = .book($0) },
                     onRetry: {

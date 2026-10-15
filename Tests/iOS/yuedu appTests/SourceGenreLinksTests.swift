@@ -1,3 +1,4 @@
+import Combine
 import Foundation
 import Testing
 @testable import yuedu_app
@@ -53,6 +54,31 @@ struct SourceGenreMatchingTests {
         #expect(SourceGenreMatching.firstCategory(for: ["神豪"], among: items) == nil)
     }
 
+    @Test("a genre the reader picked for the source is read before the book's first genre")
+    func preferenceWins() {
+        let items = [item("都市"), item("系統")]
+        let chosen = SourceGenreMatching.relatedCategory(for: ["都市", "系統"], among: items,
+                                                         preferred: ["系統"], bookPick: nil)
+        #expect(chosen?.title == "系統")
+        // The latest pick leads the list.
+        #expect(SourceGenreMatching.relatedCategory(for: ["都市", "系統"], among: items,
+                                                    preferred: ["都市", "系統"], bookPick: nil)?.title == "都市")
+        // A preference the book's genres do not name does not apply.
+        #expect(SourceGenreMatching.relatedCategory(for: ["都市"], among: items,
+                                                    preferred: ["系統"], bookPick: nil)?.title == "都市")
+    }
+
+    @Test("a category picked for the book wins, and is ignored once the source no longer lists it")
+    func bookPickWins() {
+        let items = [item("都市"), item("玄幻")]
+        #expect(SourceGenreMatching.relatedCategory(for: ["都市"], among: items,
+                                                    preferred: ["都市"], bookPick: "玄 幻")?.title == "玄幻")
+        #expect(SourceGenreMatching.relatedCategory(for: ["都市"], among: items,
+                                                    preferred: [], bookPick: "仙俠")?.title == "都市")
+        #expect(SourceGenreMatching.relatedCategory(for: ["神豪"], among: items,
+                                                    preferred: [], bookPick: nil) == nil)
+    }
+
     @Test("同題材 leaves out the book on the page, by its address or its title, and stops at the limit")
     func relatedExcludesTheBook() {
         let shown = book("斗羅大陸", url: "https://site.test/1")
@@ -85,6 +111,12 @@ private actor PageScript {
 
 private struct PageFailed: Error {}
 
+/// A store of its own per test: picks must not leak between tests or into the app's.
+@MainActor
+private func freshChoiceStore() -> RelatedCategoryChoiceStore {
+    RelatedCategoryChoiceStore(defaults: UserDefaults(suiteName: "test.relatedCategory.\(UUID().uuidString)")!)
+}
+
 private actor CategoryReads {
     private(set) var count = 0
 
@@ -100,13 +132,68 @@ struct SourceGenreLinksTests {
     private let source = BookSource(bookSourceUrl: "https://source.test", bookSourceName: "來源")
 
     private func links(
-        categories: [ModernParserBridge.DiscoverItem], script: PageScript
+        categories: [ModernParserBridge.DiscoverItem], script: PageScript,
+        choices: RelatedCategoryChoiceStore? = nil
     ) -> SourceGenreLinks {
         SourceGenreLinks(
             loadCategories: { _ in categories },
             primeCookies: { _ in },
-            pageLoader: SectionPageLoader { item, page, _ in try await script.fetch(item, page: page) }
+            pageLoader: SectionPageLoader { item, page, _ in try await script.fetch(item, page: page) },
+            choiceStore: choices ?? freshChoiceStore()
         )
+    }
+
+    @Test("the menu lists the genres naming a category, in the book's order, then the source's other categories")
+    func choicesListed() async {
+        let shown = book("斗羅大陸")
+        let model = links(categories: [.init(title: "都市", url: "/city"), .init(title: "玄幻", url: "/xh"),
+                                       .init(title: "系統", url: "/sys")],
+                          script: PageScript(.success([shown, book("鬥破蒼穹")])))
+        await model.load(key: "k", source: source, tags: ["玄幻", "熱血", "都市"], book: shown)
+        #expect(model.choices == RelatedCategoryChoices(matched: ["玄幻", "都市"], others: ["系統"], current: "玄幻"))
+    }
+
+    @Test("picking a category reads its first page and keeps the section shown meanwhile")
+    func chooseSwitches() async {
+        let shown = book("斗羅大陸")
+        let script = PageScript(.success([shown, book("鬥破蒼穹")]))
+        let model = links(categories: [.init(title: "玄幻", url: "/xh"), .init(title: "系統", url: "/sys")],
+                          script: script)
+        await model.load(key: "k", source: source, tags: ["玄幻"], book: shown)
+        var states: [SourceGenreLinks.Related] = []
+        let watch = model.$related.dropFirst().sink { states.append($0) }
+        await model.choose("系統", key: "k", source: source, tags: ["玄幻"], book: shown)
+        watch.cancel()
+        #expect(!states.contains(.hidden))
+        #expect(!states.contains { if case .loading = $0 { true } else { false } })
+        guard case .loaded(let reference, _) = model.related else {
+            Issue.record("expected the picked category, got \(model.related)")
+            return
+        }
+        #expect(reference.title == "系統")
+        #expect(model.choices?.current == "系統")
+        #expect(await script.pages.map(\.url) == ["/xh", "/sys"])
+    }
+
+    @Test("another book of the source follows a picked genre, but not a category picked from 其他分類")
+    func pickReachesOtherBooks() async {
+        let store = freshChoiceStore()
+        let categories: [ModernParserBridge.DiscoverItem] = [.init(title: "玄幻", url: "/xh"), .init(title: "都市", url: "/city"),
+                                                              .init(title: "系統", url: "/sys")]
+        let first = book("斗羅大陸")
+        let model = links(categories: categories, script: PageScript(.success([first, book("鬥破蒼穹")])), choices: store)
+        await model.load(key: "k", source: source, tags: ["玄幻", "都市"], book: first)
+        await model.choose("系統", key: "k", source: source, tags: ["玄幻", "都市"], book: first)
+
+        let second = book("遮天")
+        let other = links(categories: categories, script: PageScript(.success([second, book("完美世界")])), choices: store)
+        await other.load(key: "k2", source: source, tags: ["玄幻", "都市"], book: second)
+        #expect(other.choices?.current == "玄幻")
+
+        await model.choose("都市", key: "k", source: source, tags: ["玄幻", "都市"], book: first)
+        let third = links(categories: categories, script: PageScript(.success([second, book("完美世界")])), choices: store)
+        await third.load(key: "k3", source: source, tags: ["玄幻", "都市"], book: second)
+        #expect(third.choices?.current == "都市")
     }
 
     @Test("同題材 is the first page of the matched category, without the book on the page")
@@ -176,7 +263,8 @@ struct SourceGenreLinksTests {
         let model = SourceGenreLinks(
             loadCategories: { _ in await reads.read([.init(title: "玄幻", url: "/xh")]) },
             primeCookies: { _ in },
-            pageLoader: SectionPageLoader { item, page, _ in try await script.fetch(item, page: page) }
+            pageLoader: SectionPageLoader { item, page, _ in try await script.fetch(item, page: page) },
+            choiceStore: freshChoiceStore()
         )
         await model.load(key: "k", source: source, tags: ["玄幻"], book: shown)
         await model.load(key: "k", source: source, tags: ["玄幻"], book: shown)
@@ -199,5 +287,62 @@ struct SourceGenreLinksTests {
         await model.load(key: "k", source: nil, tags: ["玄幻"], book: book("斗羅大陸"))
         #expect(model.related == .hidden)
         #expect(await model.destination(for: "玄幻", in: nil) == .search("玄幻"))
+    }
+}
+
+@MainActor
+@Suite("Related category choices")
+struct RelatedCategoryChoiceStoreTests {
+    private let source = "https://source.test"
+
+    @Test("a genre pick leads its source's list, once, and leaves other sources alone")
+    func genrePickLeads() {
+        let store = freshChoiceStore()
+        store.record("都市", fromGenres: true, source: source, book: "/a")
+        store.record("系統", fromGenres: true, source: source, book: "/b")
+        store.record("都 市", fromGenres: true, source: source, book: "/c")
+        #expect(store.preferred(source: source) == ["都 市", "系統"])
+        #expect(store.preferred(source: "https://other.test").isEmpty)
+        #expect(store.bookPick(source: source, book: "/a") == nil)
+    }
+
+    @Test("a 其他分類 pick holds for its book only, and a genre pick for that book clears it")
+    func bookPickIsTheBooks() {
+        let store = freshChoiceStore()
+        store.record("玄幻", fromGenres: false, source: source, book: "/a")
+        #expect(store.bookPick(source: source, book: "/a") == "玄幻")
+        #expect(store.bookPick(source: source, book: "/b") == nil)
+        #expect(store.preferred(source: source).isEmpty)
+        store.record("都市", fromGenres: true, source: source, book: "/a")
+        #expect(store.bookPick(source: source, book: "/a") == nil)
+    }
+
+    @Test("picks are kept across launches")
+    func persists() throws {
+        let suite = "test.relatedCategory.\(UUID().uuidString)"
+        let defaults = try #require(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let store = RelatedCategoryChoiceStore(defaults: defaults)
+        store.record("都市", fromGenres: true, source: source, book: "/a")
+        store.record("玄幻", fromGenres: false, source: source, book: "/b")
+        let again = RelatedCategoryChoiceStore(defaults: defaults)
+        #expect(again.preferred(source: source) == ["都市"])
+        #expect(again.bookPick(source: source, book: "/b") == "玄幻")
+    }
+
+    @Test("a source keeps its latest preferences and the store its latest book picks")
+    func capped() {
+        let store = freshChoiceStore()
+        for index in 0..<(RelatedCategoryChoiceStore.preferencesPerSource + 5) {
+            store.record("分類\(index)", fromGenres: true, source: source, book: "/a")
+        }
+        let preferred = store.preferred(source: source)
+        #expect(preferred.count == RelatedCategoryChoiceStore.preferencesPerSource)
+        #expect(preferred.first == "分類\(RelatedCategoryChoiceStore.preferencesPerSource + 4)")
+        for index in 0..<(RelatedCategoryChoiceStore.bookPickLimit + 1) {
+            store.record("玄幻", fromGenres: false, source: source, book: "/\(index)")
+        }
+        #expect(store.bookPick(source: source, book: "/0") == nil)
+        #expect(store.bookPick(source: source, book: "/\(RelatedCategoryChoiceStore.bookPickLimit)") == "玄幻")
     }
 }

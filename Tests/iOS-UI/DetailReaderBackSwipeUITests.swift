@@ -155,6 +155,50 @@ final class DetailReaderBackSwipeUITests: XCTestCase {
         XCTAssertTrue(header.waitForExistence(timeout: 10), app.debugDescription)
     }
 
+    /// 同題材's menu picks another of the source's categories (maintainer, 2026-10-15): the
+    /// fixture source's other category lists only this book, so the section stays and says so;
+    /// picking the book's genre back brings its books back.
+    @MainActor
+    func testRelatedWorksCategoryMenu() throws {
+        continueAfterFailure = false
+        try configureStoreKit()
+        let app = XCUIApplication()
+        app.launchArguments = ["-explore.mode", "sources", "-reset-explore-home", "-reset-reading-settings", "-AppleLanguages", "(en)", "-AppleLocale", "en_US",
+                               "-yd_root_tab_visible_ids", "(explore, settings, search)",
+                               // No pick left from an earlier run.
+                               "-yd_related_category_choice", "()"]
+        app.launch()
+        openDiscoveredBook(app, named: "Navigation Swipe Fixture")
+
+        let menu = app.buttons["detail.related.category"].firstMatch
+        for _ in 0..<8 where !(menu.exists && menu.isHittable) { app.swipeUp() }
+        XCTAssertTrue(menu.waitForExistence(timeout: 15), app.debugDescription)
+        XCTAssertEqual(menu.value as? String, "Related")
+        attachScreenshot(app, named: "同題材 - category menu")
+        menu.tap()
+        let others = app.buttons["Other Categories"].firstMatch
+        XCTAssertTrue(others.waitForExistence(timeout: 5), app.debugDescription)
+        attachScreenshot(app, named: "同題材 - menu open")
+        others.tap()
+        let other = app.buttons["Navigation Test"].firstMatch
+        XCTAssertTrue(other.waitForExistence(timeout: 5), app.debugDescription)
+        other.tap()
+
+        let empty = app.staticTexts["No other books in this category"].firstMatch
+        XCTAssertTrue(empty.waitForExistence(timeout: 15), app.debugDescription)
+        XCTAssertEqual(menu.value as? String, "Navigation Test")
+        attachScreenshot(app, named: "同題材 - other category")
+
+        menu.tap()
+        let genre = app.buttons["Related"].firstMatch
+        XCTAssertTrue(genre.waitForExistence(timeout: 5), app.debugDescription)
+        genre.tap()
+        let card = app.buttons.matching(identifier: "detail.related.book")
+            .matching(NSPredicate(format: "label CONTAINS %@", "Navigation Related Fixture")).firstMatch
+        XCTAssertTrue(card.waitForExistence(timeout: 15), app.debugDescription)
+        XCTAssertEqual(menu.value as? String, "Related")
+    }
+
     /// The audiobook detail page pushes a genre's category too, and comes back to itself: its
     /// dismissal is the stable `presentationMode`, never iOS 17's ever-replaced DismissAction.
     @MainActor

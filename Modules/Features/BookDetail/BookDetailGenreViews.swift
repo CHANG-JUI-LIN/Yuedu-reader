@@ -90,8 +90,11 @@ struct BookDetailRelatedBookDestination: View {
 
 /// 同題材作品: the first page of the source's category one of the book's genres names, as a
 /// shelf of covers. Not shown when no genre names a category (`SourceGenreLinks.Related`).
+/// The menu beside the title picks another category (maintainer, 2026-10-15).
 struct BookDetailRelatedSection: View {
     let related: SourceGenreLinks.Related
+    var choices: RelatedCategoryChoices?
+    var onChoose: (String) -> Void = { _ in }
     let onShowAll: (ExploreCategoryReference) -> Void
     let onSelect: (OnlineBook) -> Void
     let onRetry: () -> Void
@@ -103,7 +106,9 @@ struct BookDetailRelatedSection: View {
                     title: localized("同題材作品"),
                     actionTitle: localized("查看全部"),
                     action: { onShowAll(reference) }
-                )
+                ) {
+                    if let choices, choices.offersChoice { categoryMenu(choices) }
+                }
                 .padding(.horizontal, DSSpacing.lg)
                 content(reference)
             }
@@ -111,18 +116,57 @@ struct BookDetailRelatedSection: View {
     }
 
     /// Only once the books are read (or their read failed, to retry): a header over a
-    /// spinner that could then vanish would move the page under the reader.
+    /// spinner that could then vanish would move the page under the reader. A category the
+    /// reader picked keeps the header with no other book (`SourceGenreLinks.choose`).
     private var reference: ExploreCategoryReference? {
         switch related {
         case .hidden, .loading: return nil
-        case .loaded(let reference, let section): return section.books.isEmpty ? nil : reference
+        case .loaded(let reference, _): return reference
         case .failed(let reference, _): return reference
         }
+    }
+
+    /// The book's genres that name a category, then the source's other categories.
+    private func categoryMenu(_ choices: RelatedCategoryChoices) -> some View {
+        let selection = Binding(get: { choices.current }, set: onChoose)
+        return Menu {
+            Picker(localized("同題材分類"), selection: selection) {
+                ForEach(choices.matched, id: \.self) { Text($0).tag($0) }
+            }
+            .pickerStyle(.inline)
+            if !choices.others.isEmpty {
+                Picker(localized("其他分類"), selection: selection) {
+                    ForEach(choices.others, id: \.self) { Text($0).tag($0) }
+                }
+                .pickerStyle(.menu)
+            }
+        } label: {
+            HStack(spacing: DSSpacing.xxs) {
+                Text(choices.current)
+                    .lineLimit(1)
+                Image(systemName: "chevron.up.chevron.down")
+                    .font(DSFont.caption2.weight(.semibold))
+                    .accessibilityHidden(true)
+            }
+            .font(DSFont.subheadline)
+            .foregroundStyle(DSColor.accent)
+            .frame(minHeight: DSLayout.minimumTapTarget)
+            .contentShape(Rectangle())
+        }
+        .accessibilityLabel(localized("同題材分類"))
+        .accessibilityValue(choices.current)
+        .accessibilityIdentifier("detail.related.category")
     }
 
     @ViewBuilder
     private func content(_ reference: ExploreCategoryReference) -> some View {
         switch related {
+        case .loaded(_, let section) where section.books.isEmpty:
+            Text(localized("這個分類沒有其他作品"))
+                .font(DSFont.subheadline)
+                .foregroundStyle(DSColor.textSecondary)
+                .frame(maxWidth: .infinity, minHeight: DSLayout.discoverShelfCoverHeight)
+                .padding(.horizontal, DSSpacing.lg)
         case .loaded(_, let section):
             shelf(section)
         case .failed:
@@ -175,8 +219,10 @@ struct BookDetailRelatedSection: View {
     section.books = books
     return ScrollView {
         VStack(spacing: DSSpacing.xl) {
-            BookDetailRelatedSection(related: .loaded(reference, section), onShowAll: { _ in },
-                                     onSelect: { _ in }, onRetry: {})
+            BookDetailRelatedSection(related: .loaded(reference, section),
+                                     choices: RelatedCategoryChoices(matched: ["玄幻", "仙俠"], others: ["都市", "歷史"],
+                                                                     current: "玄幻"),
+                                     onShowAll: { _ in }, onSelect: { _ in }, onRetry: {})
             BookDetailRelatedSection(related: .loading(reference), onShowAll: { _ in },
                                      onSelect: { _ in }, onRetry: {})
             BookDetailRelatedSection(related: .failed(reference, "timeout"), onShowAll: { _ in },

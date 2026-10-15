@@ -3878,3 +3878,8 @@
 "版本 %@" = "Version %@";
 "無法加入這個模組" = "Can't Add This Module";
 "還沒有模組" = "No Modules Yet";
+
+/* 同題材作品's category menu (2026-10-15) */
+"同題材分類" = "Category for More in This Genre";
+"其他分類" = "Other Categories";
+"這個分類沒有其他作品" = "No other books in this category";
