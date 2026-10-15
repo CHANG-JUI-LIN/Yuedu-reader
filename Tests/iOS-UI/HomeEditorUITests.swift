@@ -336,6 +336,21 @@ final class HomeEditorUITests: XCTestCase {
         app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@ AND label == %@", "homeEditor.section.", title))
     }
 
+    /// Waits until `element` stops moving: a tap while the page still coasts from a swipe only
+    /// stops the scroll (seen on iOS 27, 2026-10-15: 最新's card was tapped 3 s after a
+    /// `swipeDown()` and its form never opened). The expectation polls about once a second, so
+    /// two equal frames in a row mean the scroll has come to rest.
+    @MainActor
+    private func waitUntilSettled(_ element: XCUIElement, timeout: TimeInterval = 10) {
+        var last = CGRect.null
+        let settled = NSPredicate { _, _ in
+            let frame = element.frame
+            defer { last = frame }
+            return frame == last
+        }
+        wait(for: [XCTNSPredicateExpectation(predicate: settled, object: nil)], timeout: timeout)
+    }
+
     /// Picks `layout`, then 資料來源, in 新增欄目's sheet.
     @MainActor
     private func startSection(_ app: XCUIApplication, layout: String) {
@@ -424,6 +439,8 @@ final class HomeEditorUITests: XCTestCase {
         // 最新's parameters: the category that stands for the book source in it.
         let latest = sectionCards(app, named: "最新").firstMatch
         for _ in 0..<10 where !(latest.exists && latest.isHittable) { app.swipeDown() }
+        waitUntilSettled(latest)
+        XCTAssertTrue(latest.isHittable, app.debugDescription)
         latest.tap()
         let addLatest = app.buttons["homeSection.latest.add"].firstMatch
         // Under 顯示在最新's libraries (decision 36).
