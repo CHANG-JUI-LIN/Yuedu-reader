@@ -9,6 +9,12 @@ import Foundation
 /// Translations are kept per book and target language and never requested twice.
 @MainActor
 final class AIChapterTranslationService: ObservableObject {
+    /// Batches in flight at once (maintainer, 2026-10-15). A translation is as long as its
+    /// source, so its time is spent writing: three 2,000-character batches side by side finish
+    /// a chapter in about a third of the time one after another took, where one larger batch
+    /// would take as long and show nothing until it was done.
+    static let concurrentBatches = 3
+
     static let shared = AIChapterTranslationService()
 
     struct Chapter: Hashable, Sendable {
@@ -145,30 +151,47 @@ final class AIChapterTranslationService: ObservableObject {
         let table = Table(book: chapter.book, language: chapter.language)
         defer { if tasks[chapter.book]?.id == id { tasks[chapter.book] = nil } }
         do {
-            for (index, batch) in batches.enumerated() {
-                try Task.checkCancellation()
-                let request = try AIChapterTranslation.request(batch, bookTitle: bookTitle, language: chapter.language)
-                let trace = AIDiagnosticStore.shared.begin(feature: "chapterTranslation", bookID: chapter.book, origin: origin)
-                trace.event("translationBatch", ["spine": "\(chapter.spine)", "index": "\(index)", "of": "\(batches.count)",
-                                                 "paragraphs": "\(batch.count)", "language": chapter.language.rawValue,
-                                                 "promptVersion": AIChapterTranslation.promptVersion])
-                let raw: LLMRawResponse
-                do {
-                    raw = try await AIDiagnostics.$current.withValue(trace) { try await provider.generate(request, model: nil) }
-                    AIDiagnosticStore.shared.finish(trace)
-                } catch {
-                    AIDiagnosticStore.shared.finish(trace)
-                    throw error
+            // `concurrentBatches` at a time, in the order `pending` gave — what is on screen
+            // first — each saved and shown as it comes back; the first failure stops the run.
+            var waiting = Array(batches.enumerated())[...]
+            var completed = 0
+            try await withThrowingTaskGroup(of: ([AIChapterTranslation.Paragraph], LLMRawResponse).self, returning: Void.self,
+                                            isolation: MainActor.shared) { group in
+                var inFlight = 0
+                while true {
+                    while inFlight < Self.concurrentBatches, let (index, batch) = waiting.popFirst() {
+                        try Task.checkCancellation()
+                        let request = try AIChapterTranslation.request(batch, bookTitle: bookTitle, language: chapter.language)
+                        let trace = AIDiagnosticStore.shared.begin(feature: "chapterTranslation", bookID: chapter.book, origin: origin)
+                        trace.event("translationBatch", ["spine": "\(chapter.spine)", "index": "\(index)", "of": "\(batches.count)",
+                                                         "paragraphs": "\(batch.count)", "language": chapter.language.rawValue,
+                                                         "promptVersion": AIChapterTranslation.promptVersion])
+                        group.addTask {
+                            let raw: LLMRawResponse
+                            do {
+                                raw = try await AIDiagnostics.$current.withValue(trace) { try await provider.generate(request, model: nil) }
+                            } catch {
+                                await AIDiagnosticStore.shared.finish(trace)
+                                throw error
+                            }
+                            await AIDiagnosticStore.shared.finish(trace)
+                            return (batch, raw)
+                        }
+                        inFlight += 1
+                    }
+                    guard inFlight > 0, let (batch, raw) = try await group.next() else { break }
+                    inFlight -= 1
+                    try Task.checkCancellation()
+                    var stored = entries(table)
+                    for (key, translation) in try AIChapterTranslation.parse(raw, batch: batch) {
+                        stored[ReaderTranslationText.storageKey(key)] = translation
+                    }
+                    tables[table] = stored
+                    try await store.save(stored, book: chapter.book, language: chapter.language)
+                    completed += 1
+                    runs[chapter] = completed == batches.count ? .finished : .running(completed: completed, total: batches.count)
+                    updates.send(chapter)
                 }
-                try Task.checkCancellation()
-                var stored = entries(table)
-                for (key, translation) in try AIChapterTranslation.parse(raw, batch: batch) {
-                    stored[ReaderTranslationText.storageKey(key)] = translation
-                }
-                tables[table] = stored
-                try await store.save(stored, book: chapter.book, language: chapter.language)
-                runs[chapter] = index + 1 == batches.count ? .finished : .running(completed: index + 1, total: batches.count)
-                updates.send(chapter)
             }
         } catch is CancellationError {
             if case .running = runs[chapter] { runs[chapter] = nil }

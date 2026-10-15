@@ -105,17 +105,63 @@ struct AIChapterTranslationTests {
         #expect(reopened.translation(book: book, language: .english, paragraph: "第一段。") == nil)
     }
 
+    /// Three batches at a time (maintainer, 2026-10-15): a chapter's 2,000-character batches
+    /// go out together, the one on screen first, instead of one after another.
+    @Test(.timeLimit(.minutes(1))) @MainActor func batchesRunThreeAtATime() async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        #expect(AIChapterTranslation.batchCharacters == 2_000)
+        // Held until three requests have arrived: one at a time would never get past the first.
+        let provider = TranslationProvider(holdFirst: AIChapterTranslationService.concurrentBatches)
+        let service = AIChapterTranslationService(store: AIChapterTranslationStore(directory: directory), provider: provider, origin: .testFixture)
+        let book = UUID()
+        let key = AIChapterTranslationService.Chapter(book: book, spine: 1, language: .english)
+        let paragraphs = (1...8).map { "第\($0)段" + String(repeating: "字", count: 900) + "。" }
+        let text = paragraphs.joined(separator: "\n")
+        let reading = (text as NSString).range(of: paragraphs[6]).location
+        service.translate(key, text: text, readingOffset: reading, bookTitle: nil)
+        await service.wait(book: book)
+        #expect(service.runs[key] == .finished)
+        #expect(await provider.mostInFlight == AIChapterTranslationService.concurrentBatches)
+        #expect(await provider.calls == 4)
+        #expect(await provider.firstParagraphs.first == paragraphs[6])
+        for paragraph in paragraphs {
+            #expect(service.translation(book: book, language: .english, paragraph: paragraph) == "T:" + paragraph)
+        }
+    }
+
     /// Translates every paragraph to "T:" + its text, counting requests.
     private actor TranslationProvider: LLMProviding {
         let identifier = "translation-fixture"
         let defaultModel = "fixture"
         private(set) var calls = 0
+        private(set) var mostInFlight = 0
+        /// Each request's first paragraph, in the order they were sent.
+        private(set) var firstParagraphs: [String] = []
+        private var inFlight = 0
+        private var holdFirst: Int
+        private var held: [CheckedContinuation<Void, Never>] = []
+
+        init(holdFirst: Int = 0) { self.holdFirst = holdFirst }
 
         func generate(_ request: LLMGenerationRequest, model: String?) async throws -> LLMRawResponse {
             calls += 1
+            inFlight += 1
+            mostInFlight = max(mostInFlight, inFlight)
+            defer { inFlight -= 1 }
             let data = try #require(request.messages.last?.content.data(using: .utf8))
             let payload = try JSONSerialization.jsonObject(with: data) as? [String: Any]
             let items = (payload?["paragraphs"] as? [[String: String]]) ?? []
+            firstParagraphs.append(items.first?["text"] ?? "")
+            if holdFirst > 0 {
+                if calls < holdFirst {
+                    await withCheckedContinuation { held.append($0) }
+                } else if calls == holdFirst {
+                    holdFirst = 0
+                    held.forEach { $0.resume() }
+                    held = []
+                }
+            }
             let translations = items.map { ["id": $0["id"] ?? "", "text": "T:" + ($0["text"] ?? "")] }
             let json = try JSONSerialization.data(withJSONObject: ["translations": translations])
             return .init(content: String(decoding: json, as: UTF8.self), provider: identifier, model: defaultModel, finishReason: "stop")
