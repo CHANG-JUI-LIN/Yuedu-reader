@@ -128,4 +128,18 @@ struct FilledMetadataTests {
         store.importedMetadata.waitForPendingWritesForTesting()
         store.metadataFillLedger.record(copyID: book.id, provider: OpenLibrary.key, outcome: .found, inputs: "", at: Date())
     }
+
+    @Test("a rebuild that read the sidecars before the filler saved a cover keeps that cover")
+    func rebuildKeepsLaterSet() {
+        let index = FilledCoverIndex()
+        let early = UUID(), late = UUID()
+        index.set("/old", for: early)
+        let readAt = index.revision
+        index.set("/new", for: late)
+        index.replaceAll([early: "/rebuilt"], readAt: readAt)
+        #expect(index.paths == [early: "/rebuilt", late: "/new"], "the rebuild wins where nothing was set since it read")
+
+        index.replaceAll([:], readAt: index.revision)
+        #expect(index.paths.isEmpty, "a rebuild read after every set replaces them all")
+    }
 }

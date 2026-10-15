@@ -11,6 +11,10 @@ import Observation
 final class FilledCoverIndex {
     /// Absolute paths, under `FilledMetadata.coverDirectory`.
     private(set) var paths: [UUID: String] = [:]
+    /// Counts `set` calls, and the count at each copy's last one: a rebuild that read the
+    /// sidecars before a `set` must not undo it.
+    @ObservationIgnored private(set) var revision = 0
+    @ObservationIgnored private var setAt: [UUID: Int] = [:]
 
     /// The filled cover to draw for `book`, if it has none of its own.
     func path(for book: ReadingBook) -> String? {
@@ -18,11 +22,20 @@ final class FilledCoverIndex {
     }
 
     func set(_ path: String?, for copyID: UUID) {
+        revision += 1
+        setAt[copyID] = revision
         guard paths[copyID] != path else { return }
         paths[copyID] = path
     }
 
-    func replaceAll(_ paths: [UUID: String]) {
+    /// The index rebuilt from the sidecars as they were read from `revision` on: a copy `set`
+    /// since (the filler saved a cover while they were read) keeps what it was set to.
+    func replaceAll(_ paths: [UUID: String], readAt revision: Int) {
+        var paths = paths
+        for (id, at) in setAt where at > revision {
+            paths[id] = self.paths[id]
+        }
+        setAt = setAt.filter { $0.value > revision }
         guard self.paths != paths else { return }
         self.paths = paths
     }
@@ -80,6 +93,7 @@ extension BookStore {
             (book.id, workDecisions.decisions(involving: .copy(book.id)))
         }
         let sidecars = importedMetadata
+        let readAt = filledCovers.revision
         let paths = await Task.detached(priority: .utility) {
             var paths: [UUID: String] = [:]
             let directory = FilledMetadata.coverDirectory
@@ -99,7 +113,7 @@ extension BookStore {
             }
             return paths
         }.value
-        filledCovers.replaceAll(paths)
+        filledCovers.replaceAll(paths, readAt: readAt)
     }
 
     /// 移除 in 書籍資訊: the reader does not want the value the filler gave this field. Recorded

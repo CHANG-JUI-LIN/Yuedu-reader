@@ -3812,7 +3812,9 @@
 
 /* Unified library 3d: the automatic fill's setting */
 "自動補齊書籍資料" = "Fill In Missing Book Details";
-"書名、作者與 ISBN 會送到 Open Library 與你啟用的來源配置，用來補上空白的封面、簡介與分類；只在 Wi-Fi 下進行。" = "Titles, authors and ISBNs are sent to Open Library and your enabled sources to fill in missing covers, descriptions and categories, over Wi-Fi only.";
+"書名、作者與 ISBN 會送到「資料來源」裡勾選的地方，用來補上空白的封面、簡介與分類；只在 Wi-Fi 下進行。" = "Titles, authors and ISBNs are sent to the places checked in Data Source to fill in missing covers, descriptions and categories, on Wi-Fi only.";
+"排在前面的先補，只補還空著的欄位；取消勾選不會刪掉已經補上的資料。" = "Places higher in the list fill first, and only fields that are still empty. Unchecking a place keeps what it already filled.";
+"自動補齊書籍資料開啟時，書架上的書名與作者也會送到這些網站，用來補上空白的簡介與分類；可在「資料來源」取消勾選。" = "While Fill In Missing Book Details is on, the titles and authors of books on your shelf are also sent to these sites to fill in missing descriptions and categories. Uncheck the module in Data Source to stop this.";
 /* Unified search 4b-2: 搜索's saved-libraries section and a library's status line */
 "%@：無法搜尋（%@）" = "%@: Couldn’t search (%@)";
 /* Unified search 4b-3: Open Library in 搜索 */

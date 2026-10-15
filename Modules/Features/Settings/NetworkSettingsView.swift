@@ -57,8 +57,15 @@ struct NetworkSettingsView: View {
                     Toggle(localized("自動補齊書籍資料"), isOn: $settings.autoFillBookMetadata)
                         .accessibilityIdentifier("network.autoFillBookMetadata")
                         .onChange(of: settings.autoFillBookMetadata) { store.metadataFill.conditionsChanged() }
+                    // Phase 6h: which places fill, in what order (Emby's 中繼資料下載器).
+                    NavigationLink {
+                        MetadataFillSourcesView()
+                    } label: {
+                        Text(localized("資料來源"))
+                    }
+                    .accessibilityIdentifier("network.metadataFillSources")
                 } footer: {
-                    Text(localized("書名、作者與 ISBN 會送到 Open Library 與你啟用的來源配置，用來補上空白的封面、簡介與分類；只在 Wi-Fi 下進行。"))
+                    Text(localized("書名、作者與 ISBN 會送到「資料來源」裡勾選的地方，用來補上空白的封面、簡介與分類；只在 Wi-Fi 下進行。"))
                         .dsSectionFooter()
                 }
                 .interfaceSectionSurface()

@@ -252,4 +252,38 @@ final class ModuleLibraryUITests: XCTestCase {
         XCTAssertTrue(row.label.contains("只有資料"), row.label)
         attach(app, "module-search-result")
     }
+
+    /// 6h: an installed module with a search joins 資料來源 at the end, checked, and can be
+    /// unchecked there (Emby's 中繼資料下載器, maintainer 2026-10-15).
+    @MainActor
+    func testModuleInMetadataFillSources() {
+        // A clean order for this run: what an earlier run saved is not read.
+        let app = launch(extra: ["-yd_metadata_fill_order", "()"])
+        addFixtureModule(app)
+
+        app.tabBars.buttons["設定"].firstMatch.tap()
+        let network = app.buttons["網路設定"].firstMatch
+        XCTAssertTrue(network.waitForExistence(timeout: 10), app.debugDescription)
+        for _ in 0..<6 where !network.isHittable { app.swipeUp() }
+        network.tap()
+        let sources = app.buttons["network.metadataFillSources"].firstMatch
+        XCTAssertTrue(sources.waitForExistence(timeout: 5), app.debugDescription)
+        for _ in 0..<6 where !sources.isHittable { app.swipeUp() }
+        sources.tap()
+
+        let openLibrary = app.switches["metadataFill.place.openLibrary"].firstMatch
+        let bookSources = app.switches["metadataFill.place.bookSources"].firstMatch
+        let module = app.switches["metadataFill.place.module:uitest.module"].firstMatch
+        XCTAssertTrue(module.waitForExistence(timeout: 10), app.debugDescription)
+        XCTAssertTrue(openLibrary.exists && bookSources.exists, app.debugDescription)
+        XCTAssertLessThan(openLibrary.frame.minY, bookSources.frame.minY)
+        XCTAssertLessThan(bookSources.frame.minY, module.frame.minY, "a new module joins at the end")
+        XCTAssertEqual(module.value as? String, "1", "checked by default")
+        attach(app, "metadata-fill-sources")
+
+        // The row's element spans its label, which does not toggle a SwiftUI Toggle: tap the switch.
+        let knob = module.switches.firstMatch
+        (knob.exists ? knob : module).coordinate(withNormalizedOffset: CGVector(dx: 0.95, dy: 0.5)).tap()
+        XCTAssertEqual(module.value as? String, "0", app.debugDescription)
+    }
 }

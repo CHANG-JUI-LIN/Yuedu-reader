@@ -218,6 +218,25 @@ How these fit together:
 
 - Whether a module's `metadata` entry may feed Phase 3's automatic filler. That filler would send shelf titles to the module's hosts without the reader acting.
 - The options to ask: never; only when the reader asks for it in a work's page; or automatically with a per-module switch.
+- **Maintainer, 2026-10-15:** none of those three; do it the way Emby does (中繼資料下載器).
+  - Under 自動補齊書籍資料 there is one page listing every place that fills: Open Library, 來源配置, and each installed module. Each has a checkbox and is dragged into priority order; the first fills first.
+  - **A newly installed module is checked by default.**
+- **Plan (6h):**
+  - **No new format field.** A module fills through its `search` entry, the way a 來源配置 fills through its search results. Its list rules already read intro and kind.
+    - The match is level B: the same `WorkMatchKey` title and compatible authors.
+    - Like 來源配置, a module gives only 簡介 and 分類. It never gives a cover, an identifier, the title or the authors.
+  - **`MetadataFillOrder`** (UserDefaults `yd_metadata_fill_order`) is an ordered list of places, each checked or not: `openLibrary`, `bookSources`, `module:<id>`.
+    - Today's order is the default: Open Library, then 來源配置.
+    - A module not yet in the list joins at the end, checked.
+    - A removed module is skipped but kept, so reinstalling it keeps its place and check.
+  - **`ModuleFillProvider: MetadataFillProvider`**, one per checked module that has a search, is keyed by the module's instance, so the ledger asks each copy once per module.
+    - It skips a copy that came from that module, and any copy without a title, an author, or a missing 簡介 or 分類.
+  - **`MetadataFillCoordinator`** builds its providers from the order, checked places only, first first. The runner already fills only empty fields and stops a field once filled, so the list order is the priority.
+    - The coordinator runs again when the order changes or the installed modules change. A newly checked module then asks the shelf.
+  - **UI:**
+    - 設定 → 網路設定 gains a 「資料來源」 row under 自動補齊書籍資料. It leads to a list in edit mode: a toggle per place and drag handles.
+    - The toggle's footer names the list instead of 「Open Library 與你啟用的來源配置」.
+    - The module import sheet says that a module with a search will receive shelf titles and authors for the fill (promised in the question to the maintainer).
 
 ## Acceptance
 
@@ -230,6 +249,7 @@ How these fit together:
   - removing it clears its folder and its row shows the removed state.
 - **A module containing `@js:`** is refused at import with the reason shown, and nothing is written.
 - **Requests:** none go to a host outside `hosts`, and none before the reader acts (home row on screen, or submit).
+  - **One exception, by the maintainer's decision of 2026-10-15 (6h):** the automatic fill asks a module that is checked in 資料來源 (checked by default). It does so only while 自動補齊書籍資料 is on, on Wi-Fi, with Low Power Mode off, as Phase 3's fill does.
 - **Book-source search and explore parsing** unchanged across 6c's extraction (the existing parsing tests).
 - **Checks:** `ruby scripts/check_localizations.rb`; VoiceOver labels checked on the new screens (`docs/design.md` §7).
 
@@ -485,3 +505,42 @@ How these fit together:
   - With `ModuleProviderTests`, `LibrarySearchTests`, `OpenLibrarySearchTests` and `UnifiedSearchTests`: 42/42 on iOS 27.
   - `ModuleLibraryUITests.testModuleAnswersSearch` (iOS 27): add the fixture module, type in 搜尋 (no row as you type), submit, and the module's book appears as a 只有資料 row.
   - The fixture module gained a `search` entry and `s.html`.
+
+### 6h (branch `modules/6h-metadata`)
+
+- **Maintainer, 2026-10-15:** do it as Emby's 中繼資料下載器. A newly installed module is checked by default.
+- **`MetadataFillOrder` / `MetadataFillOrderStore`** (UserDefaults `yd_metadata_fill_order`) hold the places in priority order, each checked or not: Open Library, 來源配置, and each installed module that has a search.
+  - With nothing stored, the order is Phase 3's (Open Library, then 來源配置), so existing readers see no change. A characterization test pins the providers to `[OpenLibrary, allSourcesKey]`.
+  - A module not yet in the list joins at the end, checked.
+  - A removed module is left out of the list, but its stored check is kept, so it comes back the same when the module is reinstalled.
+  - An unreadable stored entry is logged and skipped.
+- **`ModuleFillProvider`** fills through the module's `search`. No new format field.
+  - The match is level B: the same `WorkMatchKey` title and compatible authors.
+  - It gives 簡介 and 分類 only. It never gives a cover, an identifier, the title or the authors.
+  - It is keyed by the module's instance, so the ledger asks each copy once per module.
+  - It skips a copy that came from the module itself, a copy with no author, and a copy where only the cover is missing.
+  - It has its own 20 s timeout, because the filler is sequential and one hanging site would otherwise hold up the rest of the shelf. A refusal or timeout throws, so the ledger asks again after a week, and the span is `metadata.fill.module`.
+  - **One category only.** A module item keeps one category (`WorkSummary.category(fromSourceKind:)`, the one 作品詳情 shows), so a module fills 分類 with that one. A 來源配置 fills up to five.
+- **`MetadataFillCoordinator`** builds its providers from the order: the checked places, first first.
+  - The runner already fills only empty fields, a field once, so **the order is the priority**.
+  - When the order or the installed modules that can fill change, a running pass is **stopped, not left to finish**, and started again. A module that is unchecked or removed is asked nothing more. A test unchecks a module mid-pass.
+  - Before its first pass it awaits `RuleModuleLibrary.loadIfNeeded()`, because nothing else loads the modules when 探索, 資源庫 and 搜索 were never opened.
+- **UI:**
+  - 設定 → 網路設定 → 「資料來源」 (`MetadataFillSourcesView`) is a list always in edit mode, with a toggle and drag handles per place. Each change saves at once.
+  - Every row also has 上移 / 下移 accessibility actions, so VoiceOver and Switch Control can reorder without dragging.
+  - Its footer: 「排在前面的先補，只補還空著的欄位；取消勾選不會刪掉已經補上的資料。」
+  - The 自動補齊書籍資料 footer now names 「資料來源」 instead of 「Open Library 與你啟用的來源配置」. The old key is replaced in all five languages.
+  - The module import sheet adds a second footer line under 會連線的網站 for a module with a search: shelf titles and authors are sent there while the fill is on, and it can be unchecked in 資料來源. This was promised in the question.
+- **Disclosed:**
+  - Reordering affects only fields still empty. Values already filled stay, as do values from a place that is unchecked later. Nothing re-fills.
+  - A newly installed module asks every shelf copy once, one search request each, paced only by its own `rateLimit`, as 來源配置 already do.
+  - The acceptance's 「no request before the reader acts」 now carries this one exception, by the maintainer's decision.
+- **Root cause found on the way (Phase 3):**
+  - `refreshFilledCovers()` reads the sidecars off the main actor and then `replaceAll`s the index. A cover the filler `set` while the sidecars were being read was wiped from the index until the next rebuild.
+  - This made `MetadataFillCoordinatorTests` "a filled cover reaches the shelf's index at once" fail under parallel load, and it can hide a just-filled cover on device.
+  - Fix: `FilledCoverIndex` counts its `set`s, and a rebuild keeps any copy that was `set` after it started reading. Deterministic test: `FilledMetadataTests.rebuildKeepsLaterSet`.
+- **Tests:**
+  - `MetadataFillOrderTests` (9): the built-in order and its providers; resolution; checked-only providers, where a module needs a search; store round trip and a removed module's check; first place wins; module fill, with another author's 三體 giving nothing; refusal and hang; `canLookUp`; unchecking stops the pass.
+  - With `MetadataFillCoordinatorTests`, `MetadataFillRunnerTests`, `MetadataFillLedgerTests`, `ModuleSearchTests` and `FilledMetadataTests`: 44/44 on iOS 27.
+  - `ModuleLibraryUITests.testModuleInMetadataFillSources`: add the fixture module, then 設定 → 網路設定 → 資料來源. The three places are in order, the module is last and checked, and it unchecks. It passes on iOS 27 (41 s) and iOS 17.5 (28 s).
+  - One iOS 27 run stalled at every step on "App animations complete notification not received". The app binary was the one that had just passed, so this was simulator state. After `simctl shutdown all` it passed.
