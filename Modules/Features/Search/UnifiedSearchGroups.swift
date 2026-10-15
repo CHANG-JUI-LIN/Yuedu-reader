@@ -63,6 +63,7 @@ struct SearchKindFilterChip: View {
         .accessibilityLabel(localized("類型"))
         .accessibilityValue(model.kindFilter?.searchGroupTitle ?? localized("全部"))
         .accessibilityIdentifier("search.kindFilter")
+        .searchFilterChipRowHeight()
     }
 }
 
@@ -88,8 +89,13 @@ extension View {
             .buttonBorderShape(.capsule)
             .controlSize(.small)
             .tint(isActive ? DSColor.accent : DSColor.textSecondary)
-            .frame(minHeight: DSLayout.minimumTapTarget)
-            .contentShape(Rectangle())
+    }
+
+    /// The chips' row height. Applied after the chip's accessibility modifiers: on the frame,
+    /// they make a container element around the control, and on iOS 17 activating that
+    /// element (a VoiceOver double tap, an XCUITest tap) never opened 類型's menu (search 9e).
+    func searchFilterChipRowHeight() -> some View {
+        frame(minHeight: DSLayout.minimumTapTarget)
     }
 }
 
@@ -99,6 +105,7 @@ extension View {
         SearchKindFilterChip(model: UnifiedSearchModel(sourceURL: { _ in nil }))
         Button {} label: { SearchFilterChipLabel(title: "全部來源配置") }
             .searchFilterChip(isActive: false)
+            .searchFilterChipRowHeight()
         Spacer()
     }
     .padding(.horizontal, DSSpacing.lg)

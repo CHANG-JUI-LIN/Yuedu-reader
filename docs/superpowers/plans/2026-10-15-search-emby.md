@@ -219,3 +219,29 @@ The maintainer approved 9a–9e as written: the chips are 類型 and 來源配�
     - `ExploreHomeUITests.testShowInLatestOff` now goes through 最新來源;
     - all of `AggregationSettingsUITests`, `testShowInLatestOff` and `ModuleLibraryUITests.testModuleInMetadataFillSources` pass on iOS 27;
     - `testDataSources`, `testShowInLatestOff` and `testModuleInMetadataFillSources` pass on iOS 17.5.
+
+### 9e — branch `search/9e-acceptance` (2026-10-15)
+
+- **9b's scroll-to-load is reversed** (maintainer, mid-acceptance: 「別分頁了，能請求多少就請求多少，但是根據手機性能請求」). Options chosen: 上限 10 頁, 暫停翻頁、降溫自動繼續, 低電量照樣抓完、併發減半.
+  - `SearchAggregator` now asks for the later pages by itself, in rounds, inside the same search task; `isSearching` stays true until the last round. Only sources whose page 1 had results are paged. A source stops when a page adds nothing or fails, and every source stops at page 10.
+  - Only the 搜索 tab pages (`origin == .searchTab`). 換源 and 尋找可用來源 stay at page 1.
+  - The aggregator is held weakly between rounds (static functions with a `[weak self]` getter), so leaving the page ends the search. Pause/resume continue the later pages from where they stopped.
+  - Page publications go through the existing 0.5 s gate, with one forced publication at the end.
+  - Removed as the second path: `loadMore()`, `hasMoreResults`, `SearchLoadMoreRow`/`SearchPaging`, the iOS 17 table's load-more cell and `willDisplay`, the `paging` parameters, and the 「正在載入更多」 string in all five languages.
+- **The phone sets the pace** (`SearchDevicePacing`, `SearchDeviceConditions`):
+  - page 1 runs at 網路設定's 並發數;
+  - later pages run at half that width while `thermalState` is `.fair` or Low Power Mode is on;
+  - at `.serious` or `.critical` they wait on the thermal/power-state notifications (an `AsyncStream` that ends on cancellation) and carry on once the phone has cooled. No sleeps, no polling.
+  - The processor count is not used: every iOS 17 iPhone has six cores.
+  - `⏱ search.page` records page, sources, width, low power, thermal state and rows; `⏱ search.pages.hold` records a wait. `⏱ search.listPublish` now carries milliseconds.
+- **iOS 17: 類型 never opened from VoiceOver.** The chip's accessibility modifiers sat after its `frame`, which made a container element around the `Menu`; activating that element (a VoiceOver double tap, an XCUITest tap) did nothing on iOS 17. The modifiers now come first and the row height after (`searchFilterChipRowHeight()`, also on the 來源配置 capsule).
+- **Measured** (Mac simulator, not a phone: 20 never-ending sources × 10 pages = 4,000 books, scrolling throughout):
+  - `search.listPublish` (main thread) 1→7 ms on iOS 27, ≤7 ms on iOS 17;
+  - `unified.candidates` (main thread) 1→6 ms, 12 ms at 4,025 rows on iOS 27, ≤14 ms on iOS 17;
+  - `unified.resolve` (off the main thread) 12→79 ms;
+  - iOS 17 `nativeTableApply` 4–8 ms. No hang was seen.
+- **Tests:**
+  - New `SearchAutoPagingTests`: the width, the hot hold, pages until a source runs dry, the stop at 10, 換源 at page 1, waiting for the phone to cool, pause/resume while waiting. `IOS17SearchResultTableTests`, `UnifiedSearchTests` and `SearchSourceScopeTests` lose their load-more cases. 41/41 with `BookSourceSearchFanOutTests` on iOS 27.
+  - New `SearchEmbyAcceptanceUITests` over `scripts/search_paging_fixture.py` (localhost:18768; `/reset`, `/log`, and `/heavy/<n>` for measuring): the groups with Gutenberg among them; pages 1–4 asked with no scrolling; 類型 → 有聲書 → 全部; scrolling reaches page 3's last book with nothing more asked; Gutenberg unchecked in 搜尋來源 is not searched.
+  - Regressions, all passing: on iOS 27, both `SearchEmbyAcceptanceUITests`, both `PublicLibrarySearchTabUITests`, `ModuleLibraryUITests.testModuleAnswersSearch` and the four `DetailReaderBackSwipeUITests` search cases (they need `scripts/navigation_swipe_fixture.py` clean, prepare and serve on 18765); on iOS 17.5 the same nine.
+  - On iOS 17.5, `testHeroNamesTheAuthorAndInfoListsTheOthers` was killed once inside the batch and then passed when run alone. At that moment Xcode's StoreKit test server was looping on 「Sending storefront changed notification for Xcode test」, about 19,000 log lines a second from storekitd and ASOctaneSupportXPCService, with both the runner and the app as clients. No StoreKit code was touched here.

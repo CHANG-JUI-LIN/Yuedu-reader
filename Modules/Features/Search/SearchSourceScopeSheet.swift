@@ -13,6 +13,7 @@ struct SearchSourceScopeCapsule: View {
         .searchFilterChip(isActive: isCustom)
         .accessibilityLabel(localized("搜索範圍"))
         .accessibilityValue(title)
+        .searchFilterChipRowHeight()
     }
 }
 
