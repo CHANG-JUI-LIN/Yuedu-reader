@@ -53,6 +53,10 @@ Phase 6 deferred it to this plan (maintainer, 2026-10-14).
 - **Label:** the section's subtitle names its origin and freshness: 「AI 產生 · {service} · {date}」. Each work's 作品詳情 shows its reason under 「推薦理由」, marked AI 產生.
 - **Measured:** a `SourcePerfTrace` span `ai.recommend` covers the model call and `ai.recommend.resolve` covers the Open Library lookups. Both appear in the Release Console.
 
+## Plan review (2026-10-15)
+
+The maintainer approved 8a–8f as written and confirmed the visible ••• in the AI row's header for 「重新產生」.
+
 ## Steps
 
 Each step is a branch, with its tests first.
@@ -111,7 +115,7 @@ Each step is a branch, with its tests first.
   - the service's missing-setup message with a link to AI 設定.
   - The progress and failure are shown in the row.
 - The row's header subtitle is 「AI 產生 · {service} · {date}」.
-- 「重新產生」 sits in a visible ••• in the row's header (decision 3), which also holds the row's existing section actions. The long-press `.contextMenu` keeps the same items; it is not the only way in. (Open until the maintainer confirms; see the review question.)
+- 「重新產生」 sits in a visible ••• in the row's header (decision 3), which also holds the row's existing section actions. The long-press `.contextMenu` keeps the same items; it is not the only way in. (Maintainer, 2026-10-15: confirmed, by option.)
 - The row draws with all five layouts (decision 1): the stored works go through the same `HomeSectionLayout` / `HomeLayoutStyle` path as any row. Only the call-to-action, progress and failure states are layout-independent, drawn in the row's place.
 - In 選擇內容來源, a 官方模組 group lists 「AI 推薦」.
 - `#Preview`: empty, generating, loaded, Pro-locked.
@@ -165,3 +169,11 @@ Each step is a branch, with its tests first.
 - **Bibliographic opening:** `WorkDetailRoute(record:summary:opening: .bibliographic)` leads to 作品詳情, which shows 「只有資料」, 開始閱讀 disabled, and 尋找可用來源 offered.
 
 ## What landed
+
+### 8a — branch `ai-rec/8a-request` (2026-10-15)
+
+- `AIRecommendation` (Core/AI): `Book`, `Input`, `Work`; `request(_:)`; `parse(_:shelf:)`.
+  - The request sends `books` (title, author, category only, at most 30, in the given order) and `genres` (10 strongest, strongest first, weights rounded to 0.01; left out when empty). Thinking `.high`.
+  - The prompt asks for 20 real works by their published titles, an author for each, and a one-sentence reason in the answer language. Data is treated as data.
+  - `parse` is strict: a non-JSON answer, or a work missing its title or author, throws `LLMError.invalidSchema`; a cut-off answer throws `incompleteOutput`. Titles lose wrapping brackets. Works on the shelf, and repeats, are dropped by `WorkMatchKey` (title equal, authors compatible). At most 20 kept. Every work on the shelf gives an empty list, not a failure.
+- Tests: `AIRecommendationTests` 10/10.
