@@ -168,6 +168,45 @@ struct RegexHighlightDecorationTests {
         #expect(abs((fragments.first?.rect.maxX ?? .nan) - sample.lineWidth(of: line)) < 0.5)
     }
 
+    /// A line breaks after a space inside a highlight, as 「【青铜剑 ×1】」 did. The space stays at
+    /// the line's end, where it takes no room on the page, and the box ran on through it, past the
+    /// line's last character (2026-10-15).
+    @Test("a box stops at the line's last character, not at the space the line breaks after")
+    func boxStopsBeforeTrailingSpace() {
+        let first = "前段文字。\n"
+        let text = first + "他得到【青铜剑 ×1】"
+        let attributed = NSMutableAttributedString(
+            string: text,
+            attributes: [.font: UIFont.systemFont(ofSize: 16)]
+        )
+        let nsText = text as NSString
+        attributed.addAttribute(
+            RegexHighlightDecoration.attributeKey,
+            value: RegexHighlightDecoration(
+                style: ReaderStyleDecorationStyle(backgroundColorHex: 0x8E1B3A),
+                assetRevision: 0
+            ),
+            range: nsText.range(of: "【青铜剑 ×1】")
+        )
+        // "他得到【青铜剑 ", drawn as a line rebuilt from its own substring.
+        let lineStart = (first as NSString).length
+        let lineRange = NSRange(location: lineStart, length: nsText.range(of: " ").location + 1 - lineStart)
+        let line = CTLineCreateWithAttributedString(attributed.attributedSubstring(from: lineRange))
+
+        let fragments = RegexHighlightDecorationRenderer.horizontalFragments(
+            line: line,
+            origin: .zero,
+            attributedString: attributed,
+            range: lineRange
+        )
+
+        let lastCharacterEnd = CGFloat(CTLineGetOffsetForStringIndex(line, lineRange.length - 1, nil))
+        let spaceEnd = CGFloat(CTLineGetOffsetForStringIndex(line, lineRange.length, nil))
+        #expect(spaceEnd - lastCharacterEnd > 2, "the space has an advance to leave out")
+        #expect(fragments.count == 1)
+        #expect(abs((fragments.first?.rect.maxX ?? .nan) - lastCharacterEnd) < 0.5)
+    }
+
     // MARK: - Baseline offset
 
     /// TXT and online body text sits raised in its line by `.baselineOffset`, which CoreText

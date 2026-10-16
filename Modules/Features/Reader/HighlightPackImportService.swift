@@ -35,7 +35,7 @@ enum HighlightPackImportService {
             chapterTitleStyle: nil,
             regexHighlights: settings.regexHighlightConfiguration.addingImported(
                 HighlightPackImporter.worn(pack.rules),
-                replacingSamePattern: true
+                replacingSameText: true
             ),
             dialogueBubbleStyle: nil,
             contentName: pack.name ?? fallbackName,

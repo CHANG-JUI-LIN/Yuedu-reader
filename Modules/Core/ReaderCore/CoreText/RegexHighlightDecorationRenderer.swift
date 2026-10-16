@@ -54,6 +54,14 @@ enum RegexHighlightDecorationRenderer {
         let lineLowerBound = lineStringRange.location
         let lineUpperBound = lineStringRange.location + max(0, lineStringRange.length)
         let indexShift = lineLowerBound - boundedRange.location
+        // Where the line's text ends (`contentEnd`), in the line's own indices.
+        let textUpperBound = contentEnd(
+            of: NSIntersectionRange(
+                NSRange(location: boundedRange.location, length: lineUpperBound - lineLowerBound),
+                NSRange(location: 0, length: attributedString.length)
+            ),
+            in: attributedString.string as NSString
+        ) + indexShift
 
         var lineAscent: CGFloat = 0
         var lineDescent: CGFloat = 0
@@ -71,12 +79,12 @@ enum RegexHighlightDecorationRenderer {
             let startIndex = clamped(
                 highlightedRange.location + indexShift,
                 lowerBound: lineLowerBound,
-                upperBound: lineUpperBound
+                upperBound: textUpperBound
             )
             let endIndex = clamped(
                 NSMaxRange(highlightedRange) + indexShift,
                 lowerBound: lineLowerBound,
-                upperBound: lineUpperBound
+                upperBound: textUpperBound
             )
             guard endIndex > startIndex else { return }
 
@@ -170,31 +178,46 @@ enum RegexHighlightDecorationRenderer {
     /// borrows the ascent and descent of the font it stands in for; its horizontal version has
     /// its own instead.
     ///
+    /// The legacy engine lays vertical text out in a vertical CTFrame instead, in horizontal
+    /// fonts: there the characters marked with vertical forms stand upright
+    /// (`CJKTypography.applyOrientation`), and `inVerticalLine` reads that mark.
+    ///
     /// A tie keeps the earlier drawing.
     private static func dominantDrawing(
         of range: NSRange,
-        in attributedString: NSAttributedString
+        in attributedString: NSAttributedString,
+        inVerticalLine: Bool = false
     ) -> (font: UIFont?, raise: CGFloat, isUpright: Bool) {
-        var runs: [(font: UIFont?, raise: CGFloat, length: Int)] = []
+        var runs: [(font: UIFont?, raise: CGFloat, isUpright: Bool, length: Int)] = []
         attributedString.enumerateAttributes(in: range, options: []) { attributes, run, _ in
             let font = attributes[.font] as? UIFont
             let raise = (attributes[.baselineOffset] as? NSNumber).map { CGFloat($0.doubleValue) } ?? 0
-            if let index = runs.firstIndex(where: { $0.font == font && $0.raise == raise }) {
+            let isUpright = font.map(isVerticalVariant) ?? false
+                || inVerticalLine && (attributes[verticalFormsKey] as? NSNumber)?.boolValue == true
+            if let index = runs.firstIndex(where: {
+                $0.font == font && $0.raise == raise && $0.isUpright == isUpright
+            }) {
                 runs[index].length += run.length
             } else {
-                runs.append((font, raise, run.length))
+                runs.append((font, raise, isUpright, run.length))
             }
         }
-        var dominant: (font: UIFont?, raise: CGFloat, length: Int)?
+        var dominant: (font: UIFont?, raise: CGFloat, isUpright: Bool, length: Int)?
         for run in runs where run.length > (dominant?.length ?? 0) {
             dominant = run
         }
-        let raise = dominant?.raise ?? 0
-        guard let font = dominant?.font, isVerticalVariant(font) else {
-            return (dominant?.font, raise, false)
+        guard let dominant else { return (nil, 0, false) }
+        guard let font = dominant.font, isVerticalVariant(font) else {
+            return (dominant.font, dominant.raise, dominant.isUpright)
         }
-        return (CTFontCreateCopyWithAttributes(font as CTFont, 0, nil, horizontalOrientation) as UIFont, raise, true)
+        return (
+            CTFontCreateCopyWithAttributes(font as CTFont, 0, nil, horizontalOrientation) as UIFont,
+            dominant.raise,
+            true
+        )
     }
+
+    private static let verticalFormsKey = NSAttributedString.Key(kCTVerticalFormsAttributeName as String)
 
     /// Whether `font` is CoreText's vertical variant of a font: what it draws upright text in a
     /// vertical line with.
@@ -240,13 +263,13 @@ enum RegexHighlightDecorationRenderer {
                   !suppressedRanges.contains(where: {
                       NSIntersectionRange($0, highlightedRange).length > 0
                   }) else { return }
-            let rects = CoreTextAnnotationRenderer.rects(
-                forRange: highlightedRange,
+            let rects = verticalGlyphRects(
+                of: highlightedRange,
                 lines: lines,
-                lineOrigins: origins,
+                origins: origins,
+                attributedString: attributedString,
                 contentOffset: contentOffset,
-                layoutHeight: layoutHeight,
-                writingMode: writingMode
+                layoutHeight: layoutHeight
             )
             let logicalEdges = RegexHighlightDecorationGeometry.combinedEdges(
                 padding: decoration.style.padding,
@@ -293,6 +316,82 @@ enum RegexHighlightDecorationRenderer {
         }
 
         paint(fragments: fragments, writingMode: writingMode, context: context)
+    }
+
+    /// The glyph box of `range` in each column of a vertical frame, in UIKit coordinates of a
+    /// canvas `layoutHeight` tall: down the column, from its first character to its last one's
+    /// end; across it, the box the same text has in a horizontal line (`dominantDrawing`).
+    ///
+    /// Selection and read-aloud mark the whole column pitch (`CoreTextAnnotationRenderer`). A
+    /// highlight box that wide was the line height thick, 29.7pt at 18pt × 1.65, where the same
+    /// text's box in a horizontal line is its font's 25.2pt: 89px against 76px (2026-10-15).
+    private static func verticalGlyphRects(
+        of range: NSRange,
+        lines: [CTLine],
+        origins: [CGPoint],
+        attributedString: NSAttributedString,
+        contentOffset: CGPoint,
+        layoutHeight: CGFloat
+    ) -> [CGRect] {
+        let string = attributedString.string as NSString
+        var rects: [CGRect] = []
+        for (index, line) in lines.enumerated() where index < origins.count {
+            let lineStringRange = CTLineGetStringRange(line)
+            let lineRange = NSRange(location: lineStringRange.location, length: max(0, lineStringRange.length))
+            let inLine = NSIntersectionRange(lineRange, range)
+            guard inLine.length > 0 else { continue }
+            let end = min(NSMaxRange(inLine), contentEnd(of: lineRange, in: string))
+            guard end > inLine.location else { continue }
+            let drawn = NSRange(location: inLine.location, length: end - inLine.location)
+
+            let startOffset = CGFloat(GlyphBoundary.offset(line, at: drawn.location))
+            let endOffset = CGFloat(GlyphBoundary.offset(line, at: NSMaxRange(drawn)))
+            guard startOffset.isFinite, endOffset.isFinite,
+                  abs(endOffset - startOffset) > 0.25 else { continue }
+
+            var lineAscent: CGFloat = 0
+            var lineDescent: CGFloat = 0
+            _ = CTLineGetTypographicBounds(line, &lineAscent, &lineDescent, nil)
+            let drawing = dominantDrawing(of: drawn, in: attributedString, inVerticalLine: true)
+            let ascent = drawing.font?.ascender ?? lineAscent
+            let descent = drawing.font.map { -$0.descender } ?? lineDescent
+            let baselineX = contentOffset.x + origins[index].x
+            let left: CGFloat
+            let right: CGFloat
+            if drawing.isUpright {
+                // CoreText centres upright glyphs on the baseline, raised with their text
+                // (`CoreTextPaginator.combinedUprightCells`).
+                let centre = baselineX + drawing.raise
+                left = centre - (ascent + descent) / 2
+                right = centre + (ascent + descent) / 2
+            } else {
+                // Text on its side stands on the baseline with its ascent to the right, lowered
+                // onto the column's centre line by an offset of its own (`centreSideways`).
+                left = baselineX + drawing.raise - descent
+                right = baselineX + drawing.raise + ascent
+            }
+            let columnTop = layoutHeight - (contentOffset.y + origins[index].y)
+            rects.append(CGRect(
+                x: left,
+                y: columnTop + min(startOffset, endOffset),
+                width: max(1, right - left),
+                height: abs(endOffset - startOffset)
+            ))
+        }
+        return rects
+    }
+
+    /// Where a line's text ends: before the spaces and line break it ends with, which take up no
+    /// room on the page. A box run on through them stood out past the line's last character,
+    /// beyond the text column on a justified line (2026-10-15: a 【】 breaking after its space).
+    private static func contentEnd(of lineRange: NSRange, in string: NSString) -> Int {
+        var end = NSMaxRange(lineRange)
+        while end > lineRange.location,
+              let scalar = UnicodeScalar(string.character(at: end - 1)),
+              CharacterSet.whitespacesAndNewlines.contains(scalar) {
+            end -= 1
+        }
+        return end
     }
 
     static func paint(

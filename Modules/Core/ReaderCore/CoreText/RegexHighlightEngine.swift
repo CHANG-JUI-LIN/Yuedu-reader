@@ -125,6 +125,16 @@ enum RegexHighlightEngine {
         )
     }
 
+    /// Where `rule` marks `text`, as `evaluate` finds it before the rules cascade. None past the
+    /// match limit, where `evaluate` paints none.
+    static func matchRanges(of rule: RegexHighlightRule, in text: String) throws -> [NSRange] {
+        matches(
+            expression: try compile(rule),
+            in: text as NSString,
+            paragraphLocal: rule.options.contains(.doesNotCrossParagraph)
+        ).ranges
+    }
+
     @discardableResult
     static func apply(
         configuration: RegexHighlightConfiguration,

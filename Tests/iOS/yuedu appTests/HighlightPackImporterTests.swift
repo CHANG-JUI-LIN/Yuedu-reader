@@ -304,12 +304,39 @@ struct HighlightPackImporterTests {
         mine.isEnabled = true
         let base = RegexHighlightConfiguration(isEnabled: true, rules: RegexHighlightRule.builtIns, customRules: [mine])
 
-        let once = base.addingImported(try await imported(), replacingSamePattern: true)
+        let once = base.addingImported(try await imported(), replacingSameText: true)
         #expect(once.customRules.map(\.name) == ["mine", "高透绿"])
         #expect(once.customRules.map(\.isEnabled) == [false, true])
+        // “對話” marks the pack's quotes; the other built-ins mark other text.
+        #expect(once.rules.map(\.isEnabled) == [false, true, true, true, false])
         // Same bytes, same asset: the second import is recognised as the same rule.
-        let twice = once.addingImported(try await imported(), replacingSamePattern: true)
+        let twice = once.addingImported(try await imported(), replacingSameText: true)
         #expect(twice.customRules.map(\.name) == ["mine", "高透绿"])
+    }
+
+    /// 十字架 and 蜘蛛侠 mark “…”, 「…」, 『…』 and "…" with one rule, whose pattern is none of
+    /// the built-ins'. They stayed on and painted their boxes under the pack's frames (2026-10-15).
+    @Test("an imported pack switches off the rules marking the same text, whatever their pattern")
+    func packSwitchesOffRulesMarkingTheSameText() {
+        let pack = RegexHighlightRule.custom(
+            name: "对话高亮 十字架",
+            pattern: "“[^”\\n]+”|「[^」\\n]+」|『[^』\\n]+』|\"[^\"\\n]+\"\\n\\n"
+        )
+        let name = RegexHighlightRule.custom(name: "人名", pattern: "張三")
+        var builtIns = RegexHighlightRule.builtIns
+        for index in builtIns.indices { builtIns[index].isEnabled = true }
+        let base = RegexHighlightConfiguration(isEnabled: true, rules: builtIns, customRules: [name])
+
+        let worn = base.addingImported([pack], replacingSameText: true)
+
+        let isOn = Dictionary(uniqueKeysWithValues: worn.rules.map { ($0.id, $0.isEnabled) })
+        #expect(isOn["builtin.curly-double"] == false)
+        #expect(isOn["builtin.corner"] == false)
+        #expect(isOn["builtin.double-corner"] == false)
+        #expect(isOn["builtin.curly-single"] == true)
+        #expect(isOn["builtin.prompt"] == true)
+        #expect(worn.customRules.map(\.name) == ["人名", "对话高亮 十字架"])
+        #expect(worn.customRules.map(\.isEnabled) == [true, true])
     }
 
     @Test("sharing the rules as a style package keeps the frame and its artwork")

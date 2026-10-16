@@ -361,12 +361,14 @@ extension RegexHighlightConfiguration {
     /// a theme's bound rules over its global ones. A user with highlighting switched off had
     /// no rule showing, so in that case their rules stay off and only the imported ones show.
     ///
-    /// `replacingSamePattern` is a highlight pack's import (decided 2026-10-12): the pack is
-    /// imported to be worn, so an existing rule matching the same text is switched off rather
-    /// than painted under it.
+    /// `replacingSameText` is a highlight pack's import (decided 2026-10-12): the pack is
+    /// imported to be worn, so an existing rule marking the same text is switched off rather
+    /// than painted under it. The same text, not the same pattern (2026-10-15): a pack seldom
+    /// uses the built-ins' patterns — 十字架's one rule marks “…”, 「…」 and 『…』 — and the
+    /// built-ins' boxes were painted under its frames.
     func addingImported(
         _ rules: [RegexHighlightRule],
-        replacingSamePattern: Bool = false
+        replacingSameText: Bool = false
     ) -> RegexHighlightConfiguration {
         var configuration = self
         // Importing the same pack again replaces its rules rather than stacking a second
@@ -381,18 +383,63 @@ extension RegexHighlightConfiguration {
                 configuration.customRules[index].isEnabled = false
             }
         }
-        if replacingSamePattern {
-            let worn = Set(rules.filter(\.isEnabled).map(\.pattern))
-            for index in configuration.rules.indices where worn.contains(configuration.rules[index].pattern) {
+        if replacingSameText {
+            let worn = RegexHighlightImportOverlap(worn: rules.filter(\.isEnabled))
+            for index in configuration.rules.indices where worn.marksSameText(as: configuration.rules[index]) {
                 configuration.rules[index].isEnabled = false
             }
             for index in configuration.customRules.indices
-            where worn.contains(configuration.customRules[index].pattern) {
+            where worn.marksSameText(as: configuration.customRules[index]) {
                 configuration.customRules[index].isEnabled = false
             }
         }
         configuration.customRules += rules
         return configuration.sanitized()
+    }
+}
+
+/// What a highlight pack's worn rules mark, to find the rules already there that mark the same
+/// text. No book is at hand on import, so the rules are tried on `probe`: dialogue and notes
+/// as books set them, which is what such packs are made for.
+struct RegexHighlightImportOverlap {
+    /// One paragraph each.
+    static let probe = [
+        "他問：“你今天怎麼這麼早？”",
+        "她低聲說：‘別出聲。’",
+        "「走吧。」",
+        "『這是誰的書？』",
+        "【系統提示：獲得青銅劍 ×1】",
+        "\"Where are you going?\"",
+        "\"Not yet,\" she said, 'not yet.'",
+        "《紅樓夢》（未完）",
+    ].joined(separator: "\n\n")
+
+    private let patterns: Set<String>
+    private let marks: [NSRange]
+
+    init(worn: [RegexHighlightRule]) {
+        patterns = Set(worn.map(\.pattern))
+        marks = worn.flatMap(Self.marks(of:))
+    }
+
+    /// Whether `rule` is on and marks text a worn rule marks: it has a worn rule's pattern, or
+    /// it marks some of `probe` that one does.
+    func marksSameText(as rule: RegexHighlightRule) -> Bool {
+        guard rule.isEnabled else { return false }
+        if patterns.contains(rule.pattern) { return true }
+        return Self.marks(of: rule).contains { mark in
+            marks.contains { NSIntersectionRange($0, mark).length > 0 }
+        }
+    }
+
+    private static func marks(of rule: RegexHighlightRule) -> [NSRange] {
+        do {
+            return try RegexHighlightEngine.matchRanges(of: rule, in: probe)
+        } catch {
+            // A pattern that does not compile marks no text anywhere.
+            AppLogger.render("highlight import: rule not compiled", error: error, context: ["rule": rule.id])
+            return []
+        }
     }
 }
 
