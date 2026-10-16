@@ -420,7 +420,7 @@ final class BrowserLayoutPageEngine: PageRenderingProvider, LinkNavigationProvid
     private var scrollChapters: [Int: BrowserScrollChapter] = [:]
     private var scrollSizes: [Int: CGSize] = [:]
     private var scrollPreparationIDs: [Int: UUID] = [:]
-    private var scrollPreparations: [Int: Task<BrowserScrollChapter?, Error>] = [:]
+    private var scrollPreparations: [Int: Task<Void, Error>] = [:]
 
     func activatePagedLayout() async {
         usesViewportScrolling = false
@@ -1861,16 +1861,27 @@ final class BrowserLayoutPageEngine: PageRenderingProvider, LinkNavigationProvid
         displayListCacheBytes.removeAll()
     }
 
-    private func withTimeout<T>(nanos: UInt64, _ body: @escaping () async throws -> T) async throws -> T {
-        try await withThrowingTaskGroup(of: T.self) { group in
-            group.addTask { try await body() }
+    /// Fails a session step that took longer than `nanos`.
+    ///
+    /// `BrowserLayoutSession` is main-actor confined and its steps run to completion
+    /// without suspending, so nothing can stop one part-way; what a timeout decides is
+    /// whether the step's result is still used. The step runs here, in this task, and
+    /// only the timer is a child task: its verdict is a Bool, so the step's result (a
+    /// `PageFragments`, which is not Sendable) never crosses a task boundary.
+    private func withTimeout<T>(nanos: UInt64, _ body: () async throws -> T) async throws -> T {
+        try await withThrowingTaskGroup(of: Bool.self) { group in
             group.addTask {
-                try await Task.sleep(nanoseconds: nanos)
-                throw EngineTimeoutError()
+                do {
+                    try await Task.sleep(nanoseconds: nanos)
+                    return true
+                } catch {
+                    return false  // Cancelled: the step finished first.
+                }
             }
-            let first = try await group.next()!
+            let result = try await body()
             group.cancelAll()
-            return first
+            if try await group.next() == true { throw EngineTimeoutError() }
+            return result
         }
     }
 }
@@ -1965,7 +1976,10 @@ extension BrowserLayoutPageEngine {
                            contentSize: CGSize) async throws -> BrowserScrollChapter? {
         if self.settings != settings { updateRenderSettings(settings) }
         if let chapter = scrollChapters[spine], scrollSizes[spine] == contentSize { return chapter }
-        let task: Task<BrowserScrollChapter?, Error>
+        // The preparation installs its own chapter, on the main actor, and its task
+        // reports only completion: a Task's result must be Sendable, and a chapter is
+        // main-actor state. A caller that joins it reads the installed chapter.
+        let task: Task<Void, Error>
         let owner: UUID
         let generation = layoutGeneration
         if let pending = scrollPreparations[spine], scrollSizes[spine] == contentSize,
@@ -1977,17 +1991,21 @@ extension BrowserLayoutPageEngine {
             scrollPreparationIDs[spine] = owner
             scrollSizes[spine] = contentSize
             task = Task { @MainActor in
-                try await self.prepareScrollChapter(at: spine, settings: settings, contentSize: contentSize)
+                let chapter = try await self.prepareScrollChapter(at: spine, settings: settings, contentSize: contentSize)
+                // Superseded preparations install nothing.
+                guard generation == self.layoutGeneration, self.scrollPreparationIDs[spine] == owner else {
+                    throw CancellationError()
+                }
+                self.scrollChapters[spine] = chapter
+                self.scrollPreparations.removeValue(forKey: spine)
             }
             scrollPreparations[spine] = task
         }
         do {
-            let chapter = try await task.value
+            try await task.value
             try Task.checkCancellation()
             guard generation == layoutGeneration, scrollPreparationIDs[spine] == owner else { throw CancellationError() }
-            scrollChapters[spine] = chapter
-            scrollPreparations.removeValue(forKey: spine)
-            return chapter
+            return scrollChapters[spine]
         } catch {
             if scrollPreparationIDs[spine] == owner { scrollPreparations.removeValue(forKey: spine) }
             throw error
