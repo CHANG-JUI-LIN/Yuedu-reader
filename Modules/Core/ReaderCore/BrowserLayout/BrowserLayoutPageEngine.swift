@@ -233,16 +233,6 @@ struct BrowserChapterLayout {
     }
 }
 
-/// Moves a chapter's parse or evaluation out of the detached task that made it.
-/// YueduCoreText keeps them non-Sendable because they hold the chapter's DOM, and asks that
-/// one executor use them at a time. Each task here builds the value, returns it and never
-/// touches it again, and the engine hands it to the next task the same way, so the value is
-/// moved between executors, never shared. Delete this once the package makes them Sendable.
-private struct ChapterHandoff<Value>: @unchecked Sendable {
-    let value: Value
-    init(_ value: Value) { self.value = value }
-}
-
 /// Mutable image map shared between the chapter's prefetch and its layout
 /// session. The session's `imageLoader` is synchronous, but the root
 /// background-image can only be identified AFTER the style tree exists — the
@@ -630,26 +620,22 @@ final class BrowserLayoutPageEngine: PageRenderingProvider, LinkNavigationProvid
         // parsing the chapter a second and third time.
         let writingMode = settings.writingMode
         let parseStart = SourcePerfTrace.now
-        guard let document = await Task.detached(priority: .userInitiated, operation: { () -> ChapterHandoff<BrowserChapterDocument>? in
-            do {
-                return ChapterHandoff(try BrowserChapterDocument(input: input))
-            } catch {
-                AppLogger.parse("Browser admission could not parse the chapter", context: [
-                    "spine": spineIndex, "error": String(describing: error),
-                ])
-                return nil
-            }
-        }).value?.value else {
+        // The package parses and evaluates on the global concurrent executor and hands
+        // each result back as `sending`: nothing else holds it, so it may cross here.
+        let document: BrowserChapterDocument
+        do {
+            document = try await BrowserChapterDocument.parse(input: input)
+        } catch {
+            AppLogger.parse("Browser admission could not parse the chapter", context: [
+                "spine": spineIndex, "error": String(describing: error),
+            ])
             guard isCurrentWork(generation) else { return nil }
             return .legacyEngineFailure(.resourceFailure("chapterParse"))
         }
         guard isCurrentWork(generation) else { return nil }
         let config = makeBrowserConfig(
             html: html, fontScalePolicy: PublicationFontScalePolicy.resolve(bodyInlineStyle: document.bodyInlineStyle))
-        let parsed = ChapterHandoff(document)
-        let evaluation = await Task.detached(priority: .userInitiated) {
-            ChapterHandoff(parsed.value.evaluate(configuration: config, writingMode: writingMode))
-        }.value.value
+        let evaluation = await BrowserChapterDocument.evaluate(document, configuration: config, writingMode: writingMode)
         SourcePerfTrace.record("browser.admission", "spine=\(spineIndex)", since: parseStart, thresholdMs: 0)
         let scan = evaluation.capabilities
         guard isCurrentWork(generation) else { return nil }
@@ -942,15 +928,11 @@ final class BrowserLayoutPageEngine: PageRenderingProvider, LinkNavigationProvid
         }
         let writingMode = settings.writingMode
         let start = SourcePerfTrace.now
-        let document = try await Task.detached(priority: .userInitiated) {
-            ChapterHandoff(try BrowserChapterDocument(input: input))
-        }.value.value
+        let document = try await BrowserChapterDocument.parse(input: input)
         let configuration = makeConfiguration(
             PublicationFontScalePolicy.resolve(bodyInlineStyle: document.bodyInlineStyle))
-        let parsed = ChapterHandoff(document)
-        let evaluation = await Task.detached(priority: .userInitiated) {
-            ChapterHandoff(parsed.value.evaluate(configuration: configuration, writingMode: writingMode))
-        }.value.value
+        let evaluation = await BrowserChapterDocument.evaluate(document, configuration: configuration,
+                                                               writingMode: writingMode)
         SourcePerfTrace.record("browser.evaluation", "spine=\(spineIndex)", since: start, thresholdMs: 0)
         return evaluation
     }
