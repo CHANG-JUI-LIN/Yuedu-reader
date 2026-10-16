@@ -11,7 +11,7 @@ struct ReaderScrollDiagnosticsTests {
         let scroll = UIScrollView()
         controller.view = scroll
         var observer: ReaderScrollFrameDiagnostics? = ReaderScrollFrameDiagnostics(scrollView: scroll)
-        weak var releasedObserver = observer
+        weak let releasedObserver = observer
         window.rootViewController = controller
         window.makeKeyAndVisible()
         controller.view.layoutIfNeeded()

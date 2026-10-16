@@ -680,7 +680,7 @@ final class ReaderViewModel: ObservableObject {
         guard content.range(of: "data:image/svg+xml", options: .caseInsensitive) != nil else { return }
         Task.detached(priority: .utility) { [weak self] in
             guard CommentBubbleSVGRecognizer.containsRecognizedBubble(inChapterHTML: content) else { return }
-            await MainActor.run { self?.hasParagraphReviews = true }
+            await MainActor.run { [weak self] in self?.hasParagraphReviews = true }
         }
     }
 

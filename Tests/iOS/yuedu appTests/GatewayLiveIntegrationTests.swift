@@ -94,7 +94,7 @@ struct GatewayLiveIntegrationTests {
         let uid = registered.uid
 
         // --- Sign-in with the same credentials keeps the UID ---
-        try await provider.signInWithEmail(email: email, password: password)
+        _ = try await provider.signInWithEmail(email: email, password: password)
         #expect(store.user?.uid == uid)
 
         // --- Wrong password is a credential error, not a network error ---
@@ -231,7 +231,7 @@ struct GatewayLiveIntegrationTests {
         }
 
         // --- Account deletion (re-authenticated with the password) ---
-        try await restoredProvider.signInWithEmail(email: email, password: password)
+        _ = try await restoredProvider.signInWithEmail(email: email, password: password)
         try await restoredProvider.deleteAccount(reauth: .password(password))
         #expect(restoredStore.user == nil)
 

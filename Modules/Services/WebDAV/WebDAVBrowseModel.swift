@@ -17,10 +17,10 @@ final class WebDAVBrowseModel: ObservableObject {
 
     /// - Parameter list: replaces the server request, for tests and previews.
     init(route: WebDAVDirectoryRoute, list: ((URL) async throws -> [WebDAVBrowseClient.Entry])? = nil,
-         registry: SourceProviderRegistry = .shared) {
+         registry: SourceProviderRegistry? = nil) {
         self.route = route
         listOverride = list
-        self.registry = registry
+        self.registry = registry ?? .shared
     }
 
     func load() async {

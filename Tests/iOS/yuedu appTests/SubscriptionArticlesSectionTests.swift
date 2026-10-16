@@ -37,7 +37,7 @@ struct SubscriptionArticlesSectionTests {
         var first = RSSSource(name: "甲", url: "https://a.example/feed", sortOrder: 0)
         first.enabled = false
         let second = RSSSource(name: "乙", url: "https://b.example/feed", sortOrder: 1)
-        store.addSourcesReturningAdded([first, second])
+        _ = store.addSourcesReturningAdded([first, second])
         let base = Date(timeIntervalSince1970: 1_800_000_000)
         store.mergeFetchedItems((0..<15).map {
             RSSItem(id: "a\($0)", title: "甲\($0)", link: "https://a.example/\($0)", pubDate: base.addingTimeInterval(Double($0) * 120),
@@ -116,7 +116,7 @@ struct SubscriptionArticlesSectionTests {
         let (store, cleanUp) = try makeStore()
         defer { cleanUp() }
         let kept = RSSSource(name: "留下", url: "https://kept.example/feed", sortOrder: 0)
-        store.addSourcesReturningAdded([kept])
+        _ = store.addSourcesReturningAdded([kept])
         store.seedForTesting()
         #expect(store.sources.contains { $0.url == RSSStore.testSeedFeedURL && !$0.enabled })
         #expect(store.allArticles().filter { !$0.isRead }.count == 2)

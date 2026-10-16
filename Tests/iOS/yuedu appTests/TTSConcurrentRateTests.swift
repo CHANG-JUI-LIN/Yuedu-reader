@@ -37,7 +37,7 @@ struct TTSConcurrentRateTests {
         )
 
         let started = Date()
-        try await Self.withTTSSource(source) {
+        await Self.withTTSSource(source) {
             // What the engine does at the start of a chapter: the current segment plus its
             // preload window, all at once.
             await withTaskGroup(of: Void.self) { group in
@@ -65,7 +65,7 @@ struct TTSConcurrentRateTests {
         )
 
         let started = Date()
-        try await Self.withTTSSource(source) {
+        await Self.withTTSSource(source) {
             await withTaskGroup(of: Void.self) { group in
                 for index in 0..<3 {
                     group.addTask {

@@ -54,8 +54,8 @@ struct ReaderChapterSupplyTests {
         engine.cancelPendingWork()
         await builder.releaseGate(chapter: 1)
 
-        await owner.value
-        await joiner.value
+        _ = await owner.value
+        _ = await joiner.value
 
         // Neither caller was cancelled, so both are still owed a layout.
         #expect(engine.layouts[1] != nil)

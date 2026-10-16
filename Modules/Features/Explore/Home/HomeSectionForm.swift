@@ -166,10 +166,10 @@ struct HomeSectionForm: View {
     /// (`Technotes/iOS17SearchWatchdogPostmortem.md`, guardrail 12).
     @State private var push: HomeSectionFormPush?
 
-    init(editor: HomeSectionEditor, isInSheet: Bool, modules: RuleModuleLibrary = .shared, added: @escaping () -> Void = {}) {
+    init(editor: HomeSectionEditor, isInSheet: Bool, modules: RuleModuleLibrary? = nil, added: @escaping () -> Void = {}) {
         self.editor = editor
         self.isInSheet = isInSheet
-        self.modules = modules
+        self.modules = modules ?? .shared
         self.added = added
         preview = editor.preview
     }
@@ -616,9 +616,9 @@ extension HomeContentOwner {
     /// The name 選擇內容來源 and the form's 資料來源 give it.
     @MainActor
     func name(sources: BookSourceStore, connections: RemoteLibraryConnectionStore,
-              modules: RuleModuleLibrary = .shared) -> String {
+              modules: RuleModuleLibrary? = nil) -> String {
         switch self {
-        case .module(let id): modules.module(id: id)?.module.title ?? id
+        case .module(let id): (modules ?? .shared).module(id: id)?.module.title ?? id
         case .appData: localized("App 資料")
         case .official: localized("官方模組")
         case .connection(let id): connections.connection(id: id)?.name ?? ""

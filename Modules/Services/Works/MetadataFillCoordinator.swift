@@ -38,9 +38,10 @@ final class MetadataFillCoordinator {
     init(store: BookStore,
          makeProviders: (@MainActor () -> [any MetadataFillProvider])? = nil,
          placesChanged: AnyPublisher<Void, Never>? = nil,
-         network: NetworkPathProviding = NetworkPathMonitor.shared,
+         network: (any NetworkPathProviding)? = nil,
          isEnabled: (@MainActor () -> Bool)? = nil,
          isLowPower: (@MainActor () -> Bool)? = nil) {
+        let network = network ?? NetworkPathMonitor.shared
         self.store = store
         self.makeProviders = makeProviders ?? Self.liveProviders
         prepare = makeProviders == nil ? { await RuleModuleLibrary.shared.loadIfNeeded() } : {}

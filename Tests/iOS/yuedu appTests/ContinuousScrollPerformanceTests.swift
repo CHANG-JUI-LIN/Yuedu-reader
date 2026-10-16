@@ -12,7 +12,7 @@ struct ContinuousScrollPerformanceTests {
             calls += 1
             return families == ["missing"] ? nil : UIFont.systemFont(ofSize: size)
         }
-        weak var released = cache
+        weak let released = cache
         let first = cache!.resolve(families: ["A", "B"], weight: 400, italic: false, size: 17)
         for _ in 0..<100 {
             #expect(cache!.resolve(families: ["A", "B"], weight: 400, italic: false, size: 17) === first)

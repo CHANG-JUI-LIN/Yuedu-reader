@@ -180,7 +180,7 @@ struct RemoteEPUBPublicationTests {
         defer { try? FileManager.default.removeItem(at: fixture.url.deletingLastPathComponent()) }
         var session: PublicationSession? = try await PublicationSession.open(sourceURL: fixture.url)
         let id = try #require(session?.id)
-        weak var weakSession = session
+        weak let weakSession = session
         #expect(PublicationSessionRegistry.shared.session(for: id) === session)
         session = nil
         #expect(weakSession == nil)

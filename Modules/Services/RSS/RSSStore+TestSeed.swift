@@ -13,7 +13,7 @@ extension RSSStore {
         if !sources.contains(where: { $0.url == Self.testSeedFeedURL }) {
             var source = RSSSource(name: "首頁訂閱測試", url: Self.testSeedFeedURL, sortOrder: 0)
             source.enabled = false
-            addSourcesReturningAdded([source])
+            _ = addSourcesReturningAdded([source])
         }
         guard let source = sources.first(where: { $0.url == Self.testSeedFeedURL }) else { return }
         let body = String(repeating: "<p>首頁訂閱測試的文章內文，用來確認文章頁打開了。</p>", count: 20)

@@ -93,7 +93,7 @@ actor ReadingGenreRecorder {
     private let now: @Sendable () -> Date
     private var loaded: ReadingGenreProfile?
 
-    init(fileURL: URL, now: @escaping @Sendable () -> Date = Date.init) {
+    init(fileURL: URL, now: @escaping @Sendable () -> Date = { Date() }) {
         self.fileURL = fileURL
         self.now = now
     }

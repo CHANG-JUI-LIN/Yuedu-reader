@@ -264,7 +264,7 @@ actor OfflineDownloadManager: OfflineDownloadManaging {
                 ])
                 continue
             }
-            let requestedIndices = await MainActor.run {
+            let requestedIndices = await MainActor.run { [book] in
                 store.shelfRecord(id: book.id)?.offlineDownloadTask?.requestedIndices
             }
             guard let requestedIndices else { continue }
@@ -310,7 +310,7 @@ actor OfflineDownloadManager: OfflineDownloadManaging {
             // value — reaching into this actor's mutable locals from the @MainActor
             // closure is an error under the Swift 6 language mode.
             let merged = await MainActor.run {
-                [droppedIndices, verifiedIndices, missingIndices] () -> BookOfflineDownloadTask? in
+                [droppedIndices, verifiedIndices, missingIndices, book] () -> BookOfflineDownloadTask? in
                 guard var task = store.shelfRecord(id: book.id)?.offlineDownloadTask
                 else { return nil }
                 task.removeRequestedIndices(droppedIndices)

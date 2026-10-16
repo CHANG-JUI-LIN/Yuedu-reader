@@ -102,7 +102,7 @@ final class WebDAVIndexCoordinator: ObservableObject {
 
     init(
         connections: OPDSCatalogStore = .shared,
-        network: NetworkPathProviding = NetworkPathMonitor.shared,
+        network: (any NetworkPathProviding)? = nil,
         limits: WebDAVIndexLimits = .standard,
         fillLimits: WebDAVFillLimits = .standard,
         coverDirectory: URL = WebDAVIndexCoordinator.defaultCoverDirectory,
@@ -111,7 +111,7 @@ final class WebDAVIndexCoordinator: ObservableObject {
         makeReader: @escaping @MainActor (OPDSCatalog, OPDSCatalogStore) -> PackageReader = WebDAVIndexCoordinator.liveReader
     ) {
         self.connections = connections
-        self.network = network
+        self.network = network ?? NetworkPathMonitor.shared
         self.limits = limits
         self.fillLimits = fillLimits
         self.coverDirectory = coverDirectory
