@@ -1658,6 +1658,17 @@ struct BookSourceRuntimeRoutingTests {
         #expect(!source.shouldUseLegadoRuntimeFetch(for: "https://example.com/search?q={{key}}&page={{page}}"))
     }
 
+    /// The native search path used to parse `url , {…}` itself and serialize a scalar
+    /// `body` into an Objective-C exception; options now always reach the runtime.
+    @Test("JSON options use Legado runtime however the comma is spaced")
+    func spacedJSONOptionsUseRuntime() {
+        let source = BookSource()
+
+        #expect(source.shouldUseLegadoRuntimeFetch(for: "https://example.com/s?q={{key}},{\"method\":\"POST\"}"))
+        #expect(source.shouldUseLegadoRuntimeFetch(for: "https://example.com/s?q={{key}} , {\"method\":\"POST\",\"body\":1}"))
+        #expect(source.shouldUseLegadoRuntimeFetch(for: "https://example.com/s?q={{key}},\n{\"headers\":{\"X-Page\":2}}"))
+    }
+
     @Test("search result regex replacement resolves jsLib templates in the replacement")
     func searchResultRegexReplacementResolvesJSLibTemplates() throws {
         var source = BookSource()

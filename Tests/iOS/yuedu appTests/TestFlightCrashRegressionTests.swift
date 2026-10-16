@@ -40,7 +40,12 @@ struct TestFlightCrashRegressionTests {
         }
     }
 
-    @Test("scalar request bodies serialize without Objective-C exceptions", arguments: ["true", "false", "123", "null", "[1,2]", "{\"a\":1}"])
+    @Test("a null body option sends no body, as in Legado")
+    func nullRequestBody() {
+        #expect(AnalyzeUrl(ruleUrl: "https://example.com/api,{\"method\":\"POST\",\"body\":null}").body == nil)
+    }
+
+    @Test("scalar request bodies serialize without Objective-C exceptions", arguments: ["true", "false", "123", "[1,2]", "{\"a\":1}"])
     func scalarRequestBodies(_ json: String) throws {
         let request = AnalyzeUrl(ruleUrl: "https://example.com/api,{\"method\":\"POST\",\"body\":\(json)}")
         let body = try #require(request.body)

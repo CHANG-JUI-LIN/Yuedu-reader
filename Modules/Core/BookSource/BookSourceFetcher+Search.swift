@@ -185,29 +185,28 @@ extension BookSourceFetcher {
             return BookSourceSearchOutcome(books: filtered)
         }
 
-        let requestSpec = source.renderSearchRequest(query: query, page: page)
+        // A search URL with JSON options went to the runtime above, so this one has none.
+        let request = source.renderSearchURL(query: query, page: page)
         let resolvedUrlStr = RuleEngine.resolveURL(
-            requestSpec.url,
+            request.url,
             base: source.cleanedBookSourceURL
         )
         guard let url = safeURL(string: resolvedUrlStr) else {
             throw FetchError.invalidURL(resolvedUrlStr)
         }
-        let mergedHeaders = source.parsedHeaders.merging(requestSpec.headers) { _, new in new }
+        let headers = source.parsedHeaders
 
         let html: String
         do {
-            if source.needsWebView || requestSpec.useWebView {
-                let jsWait = requestSpec.webViewDelayMs > 0 ? TimeInterval(requestSpec.webViewDelayMs) / 1000.0 : nil
-                let rendered = try await Self.fetchViaWebView(url: url, headers: mergedHeaders, jsWait: jsWait)
+            if source.needsWebView {
+                let rendered = try await Self.fetchViaWebView(url: url, headers: headers)
                 html = await SourceScriptThread.run {
                     self.pipeline.applyLoginCheck(renderedHTML: rendered, url: url, source: source)
                 }
             } else {
                 html = try await fetchStageHTML(
-                    url: url, method: requestSpec.method, body: requestSpec.body,
-                    headers: mergedHeaders, baseURL: source.cleanedBookSourceURL,
-                    bodyCharset: requestSpec.charset,
+                    url: url, method: request.method, body: request.body,
+                    headers: headers, baseURL: source.cleanedBookSourceURL,
                     source: source)
             }
         } catch {

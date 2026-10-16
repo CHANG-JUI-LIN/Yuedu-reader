@@ -854,8 +854,11 @@ extension BookSource {
 
     func shouldUseLegadoRuntimeFetch(for ruleUrl: String? = nil) -> Bool {
         let url = ruleUrl?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        // Options go to the runtime however they are spaced (`url , {…}` too): the native
+        // search path no longer parses them, after its own copy serialized a scalar `body`
+        // into an Objective-C exception that crashed the app.
         return url.hasPrefix("data:")
-            || url.contains(",{")
+            || AnalyzeUrl.hasOptions(url)
             || url.hasPrefix("<js>")
             || url.hasPrefix("@js:")
             || (usesLegadoRuntimeSession && urlContainsRuntimeTemplate(url))

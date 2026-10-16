@@ -457,10 +457,11 @@ class AnalyzeUrl {
 
         if let b = dict["body"] as? String {
             body = b
-        } else if let b = dict["body"] {
+        } else if let b = dict["body"], !(b is NSNull) {
             // Body could be a dict/array — serialize to JSON string
             // Source options also allow JSON scalars. Without fragmentsAllowed,
             // Foundation raises an Objective-C exception that Swift cannot catch.
+            // `null` is no body at all, as in Legado (GSON leaves `UrlOption.body` null).
             if let bData = try? JSONSerialization.data(withJSONObject: b, options: [.fragmentsAllowed]),
                let bStr = String(data: bData, encoding: .utf8) {
                 body = bStr
@@ -536,6 +537,12 @@ class AnalyzeUrl {
         return trimmed
     }
 
+    /// Whether `urlString` carries JSON options: `url,{…}`, with the spaces around the
+    /// comma that Legado's `paramPattern` allows.
+    static func hasOptions(_ urlString: String) -> Bool {
+        paramPattern.firstMatch(in: urlString, range: NSRange(urlString.startIndex..., in: urlString)) != nil
+    }
+
     /// Remove JSON options suffix from a base URL string.
     static func stripOptions(from urlString: String) -> String {
         let nsRange = NSRange(urlString.startIndex..., in: urlString)
@@ -583,8 +590,7 @@ class AnalyzeUrl {
 
     /// Convert GSON-lenient option JSON to strict JSON: strip a leading comma,
     /// fold smart quotes to straight quotes, convert single-quoted strings to
-    /// double-quoted, and quote bare object keys. Mirrors the normalizer used by
-    /// `BookSource.renderSearchRequest` so every URL-option path behaves the same.
+    /// double-quoted, and quote bare object keys.
     static func normalizeLegadoOptionJSON(_ raw: String) -> String {
         var s = raw.trimmingCharacters(in: .whitespacesAndNewlines)
         if s.hasPrefix(",") { s.removeFirst() }
