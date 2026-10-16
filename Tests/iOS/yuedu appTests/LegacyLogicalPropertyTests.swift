@@ -17,9 +17,9 @@ struct LegacyLogicalPropertyTests {
     private static let text = String(repeating: "山", count: 30)
 
     /// The chapter as the legacy builder renders it for `mode`.
-    private static func build(css: String, paragraph: String = "<p>\(text)</p>",
+    private static func build(css: String, paragraph: String? = nil,
                               mode: ReaderWritingMode) async throws -> NSAttributedString {
-        let body = paragraph
+        let body = paragraph ?? "<p>\(text)</p>"
         let entries: [String: Data] = [
             "mimetype": Data("application/epub+zip".utf8),
             "META-INF/container.xml": Data("""

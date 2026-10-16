@@ -95,8 +95,9 @@ struct LiveCalibreWritingTests {
           .enabled(if: ProcessInfo.processInfo.environment["YUEDU_LIVE_CALIBRE_READONLY_USER"] != nil))
     func readOnlyAccount() async throws {
         let environment = ProcessInfo.processInfo.environment
-        let context = try Context(usernameOverride: try #require(environment["YUEDU_LIVE_CALIBRE_READONLY_USER"]),
-                                  passwordOverride: try #require(environment["YUEDU_LIVE_CALIBRE_READONLY_PASSWORD"]))
+        let user: String = try #require(environment["YUEDU_LIVE_CALIBRE_READONLY_USER"])
+        let password: String = try #require(environment["YUEDU_LIVE_CALIBRE_READONLY_PASSWORD"])
+        let context = try Context(usernameOverride: user, passwordOverride: password)
         defer { context.cleanup() }
         let file = context.root.appendingPathComponent("Forbidden-" + UUID().uuidString + ".txt")
         try Data("This upload must be denied.".utf8).write(to: file)

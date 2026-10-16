@@ -249,7 +249,7 @@ struct ModuleProviderTests {
 }
 
 /// Answers by host and path from a table; records every URL asked for.
-final class ModuleStub: URLProtocol, @unchecked Sendable {
+final class ModuleStub: URLProtocol {
     enum Reply {
         case html(String)
         case json(String)

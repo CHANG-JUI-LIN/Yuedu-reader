@@ -8,7 +8,9 @@ struct MetadataFillSourcesView: View {
     @ObservedObject private var modules: RuleModuleLibrary
     @State private var order: MetadataFillOrder
 
-    init(orderStore: MetadataFillOrderStore = .shared, modules: RuleModuleLibrary = .shared) {
+    init(orderStore: MetadataFillOrderStore? = nil, modules: RuleModuleLibrary? = nil) {
+        let orderStore = orderStore ?? .shared
+        let modules = modules ?? .shared
         self.orderStore = orderStore
         self.modules = modules
         _order = State(initialValue: orderStore.order(modules: modules.fillingModules.map(\.id)))

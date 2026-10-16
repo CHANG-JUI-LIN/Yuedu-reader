@@ -142,7 +142,7 @@ struct ViewportRetainedGeometryTests {
             }
             return nil
         }
-        weak var old = firstResource()
+        weak let old = firstResource()
         #expect(old != nil)
         _ = try session.layout(in: CGRect(x: 0, y: 600, width: 320, height: 1800))
         _ = try session.layout(in: CGRect(x: 0, y: 0, width: 320, height: 1800))

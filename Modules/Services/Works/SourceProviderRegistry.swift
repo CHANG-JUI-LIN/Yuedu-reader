@@ -19,12 +19,12 @@ final class SourceProviderRegistry {
 
     init(
         connections: OPDSCatalogStore = .shared,
-        availability: PublicLibraryAvailability = .shared,
-        aozora: AozoraCatalogStore = .shared
+        availability: PublicLibraryAvailability? = nil,
+        aozora: AozoraCatalogStore? = nil
     ) {
         self.connections = connections
-        self.availability = availability
-        self.aozora = aozora
+        self.availability = availability ?? .shared
+        self.aozora = aozora ?? .shared
     }
 
     /// The OPDS-speaking provider of a feed route: the built-in Gutenberg, or a saved OPDS or
@@ -103,8 +103,9 @@ final class SourceProviderRegistry {
     ///     its rows and 為你推薦 share one queue per source across syncs.
     ///   - home: the home 為你推薦 reads its library rows from (7a-4).
     ///   - modules: the installed modules (Phase 6f); callers wait for its first read.
-    func homeProviders(shelf: BookStore, sources: BookSourceStore = .shared, modules: RuleModuleLibrary = .shared,
+    func homeProviders(shelf: BookStore, sources: BookSourceStore = .shared, modules: RuleModuleLibrary? = nil,
                        firstPages: DiscoverFirstPages, home: (any ForYouHomeRows)? = nil) -> [any HomeSectionProviding] {
+        let modules = modules ?? .shared
         firstPages.beginSync()
         var providers: [any HomeSectionProviding] = [ShelfProvider(store: shelf), SubscriptionArticlesProvider()]
         for connection in connections.catalogs {

@@ -1826,7 +1826,7 @@ struct NodeAttributedStringRenderer {
                 ])
             }
         }
-        let image = await MainActor.run {
+        let image = await MainActor.run { [poster] in
             EPUBMediaPlaceholderRenderer.image(
                 for: resolvedMedia,
                 maxWidth: maxWidth,

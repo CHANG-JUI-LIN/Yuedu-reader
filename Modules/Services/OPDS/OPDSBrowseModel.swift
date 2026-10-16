@@ -20,10 +20,10 @@ final class OPDSBrowseModel: ObservableObject {
     private let registry: SourceProviderRegistry
 
     /// - Parameter fetch: replaces the server request, for tests and previews.
-    init(route: OPDSFeedRoute, fetch: ((URL) async throws -> OPDSFeed)? = nil, registry: SourceProviderRegistry = .shared) {
+    init(route: OPDSFeedRoute, fetch: ((URL) async throws -> OPDSFeed)? = nil, registry: SourceProviderRegistry? = nil) {
         self.route = route
         fetchOverride = fetch
-        self.registry = registry
+        self.registry = registry ?? .shared
     }
 
     /// The route's source, resolved at each request (unified library 2a): Gutenberg or a saved

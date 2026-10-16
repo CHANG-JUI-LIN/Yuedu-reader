@@ -121,7 +121,7 @@ struct BrowserViewportHostTests {
         await engine.start(initialChapter: 0, contentWidth: size.width - 24,
                            viewportExtent: size.height, loadAdjacentChapters: false)
         let chapter = try #require(engine.browserChapter(at: 0))
-        let owner = try #require(chapter.layoutOwner)
+        _ = try #require(chapter.layoutOwner)
         let target = try #require(chapter.facts?.anchorOffsets["p80"])
         let controller = CoreTextCollectionScrollViewController(engine: engine, axis: .vertical,
             horizontalInset: 12, verticalInset: 20, backgroundColor: .white)
@@ -270,7 +270,7 @@ struct BrowserViewportHostTests {
                     }
                 }
             }
-            CFRunLoopRunInMode(CFRunLoopMode(rawValue: RunLoop.Mode.tracking.rawValue as CFString), 0, true)
+            serviceTrackingModeOnce()
             let dataSource = try #require(collection.dataSource)
             #expect(dataSource.collectionView(collection, numberOfItemsInSection: 0) == engine.chunks.count,
                     "chapter arrival must publish its outline without waiting for default run-loop mode")
@@ -289,7 +289,7 @@ struct BrowserViewportHostTests {
             // the main queue does not drain inside this main-actor test), then
             // flush tracking mode only, as for the arrival above.
             await engine.browserChapter(at: spine)?.waitForViewportIdle()
-            CFRunLoopRunInMode(CFRunLoopMode(rawValue: RunLoop.Mode.tracking.rawValue as CFString), 0, true)
+            serviceTrackingModeOnce()
             collection.layoutIfNeeded()
             let visible = collection.visibleCells.compactMap { $0 as? BrowserScrollTileCell }
             #expect(visible.contains { $0.currentTile?.chapter.spineIndex == spine
@@ -533,4 +533,11 @@ private final class HeldChapterResource: BrowserLayoutResourceProviding {
     func prefetchImages(forChapter index: Int, html: String, renderWidth: CGFloat) async -> [String: UIImage] { [:] }
     func loadImage(forChapter index: Int, source: String, renderWidth: CGFloat) async -> UIImage? { nil }
     func fontResolver() -> (([String], Int, Bool, CGFloat) -> UIFont?)? { nil }
+}
+
+/// Services the tracking run-loop mode's ready sources once and returns (timeout 0), as a
+/// scroll gesture's mode would. Synchronous so the async tests can call it: it never waits,
+/// which is what `CFRunLoopRunInMode`'s unavailability from async code guards against.
+private func serviceTrackingModeOnce() {
+    CFRunLoopRunInMode(CFRunLoopMode(rawValue: RunLoop.Mode.tracking.rawValue as CFString), 0, true)
 }

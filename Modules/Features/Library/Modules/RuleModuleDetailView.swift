@@ -11,7 +11,8 @@ struct RuleModuleDetailView: View {
     @State private var removalFailure: String?
     @Environment(\.dismiss) private var dismiss
 
-    init(moduleID: String, library: RuleModuleLibrary = .shared) {
+    init(moduleID: String, library: RuleModuleLibrary? = nil) {
+        let library = library ?? .shared
         self.moduleID = moduleID
         self.library = library
         _updates = StateObject(wrappedValue: RuleModuleImportModel(library: library))

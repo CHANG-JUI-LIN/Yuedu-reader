@@ -172,7 +172,7 @@ struct BrowserMediaPronunciationParityTests {
             _ = await releaseIterator.next()
             return AVPlayer()
         }, isActive: { _ in false })
-        weak var releasedCoordinator = coordinator
+        weak let releasedCoordinator = coordinator
         coordinator?.sync([BrowserInlineVideoPlacement(nodeID: 1, media: EPUBMediaAttachment(kind: .video, sourceHref: "pending.mp4"), rect: CGRect(x: 0, y: 0, width: 200, height: 120))])
         #expect(coordinator?.start(nodeID: 1) == true)
         _ = await startIterator.next()

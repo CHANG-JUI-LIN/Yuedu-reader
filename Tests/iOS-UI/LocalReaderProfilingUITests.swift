@@ -26,14 +26,14 @@ final class LocalReaderProfilingUITests: XCTestCase {
     }
 
     @MainActor
-    func testReaderInteractionSession() throws {
+    func testReaderInteractionSession() async throws {
         // Keep interaction captures and commands separate from profiling data.
         directory = URL(fileURLWithPath: "/tmp/yuedu-reader-interaction", isDirectory: true)
-        try testLocalReadingSession()
+        try await testLocalReadingSession()
     }
 
     @MainActor
-    func testLocalReadingSession() throws {
+    func testLocalReadingSession() async throws {
         try XCTSkipUnless(FileManager.default.fileExists(atPath: directory.appendingPathComponent("enabled").path), "Local profiling is opt-in")
         continueAfterFailure = false
         executionTimeAllowance = 3600
@@ -43,7 +43,7 @@ final class LocalReaderProfilingUITests: XCTestCase {
             let session = try SKTestSession(contentsOf: URL(fileURLWithPath: scenario.configurationPath))
             session.disableDialogs = true
             if session.allTransactions().isEmpty {
-                try session.buyProduct(productIdentifier: scenario.productID)
+                _ = try await session.buyProduct(identifier: scenario.productID, options: [])
             }
             storeKitSession = session
         }
@@ -60,7 +60,7 @@ final class LocalReaderProfilingUITests: XCTestCase {
             let expected = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in
                 FileManager.default.fileExists(atPath: file.path)
             }, object: nil)
-            guard XCTWaiter.wait(for: [expected], timeout: 300) == .completed else {
+            guard await XCTWaiter().fulfillment(of: [expected], timeout: 300) == .completed else {
                 XCTFail("No next profiling command received"); return
             }
             let command = try JSONDecoder().decode(Command.self, from: Data(contentsOf: file))

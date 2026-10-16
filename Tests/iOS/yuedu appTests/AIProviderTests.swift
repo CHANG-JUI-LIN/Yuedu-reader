@@ -303,7 +303,7 @@ private extension Result where Success == any LLMProviding, Failure == AIProvide
     }
 }
 
-private final class DeepSeekGenerationFixture: URLProtocol, @unchecked Sendable {
+private final class DeepSeekGenerationFixture: URLProtocol {
     override class func canInit(with request: URLRequest) -> Bool { request.url?.host == "api.deepseek.com" }
     override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
     override func startLoading() {

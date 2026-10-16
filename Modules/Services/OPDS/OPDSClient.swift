@@ -271,7 +271,7 @@ struct OPDSClient {
         do {
             let document = try SwiftSoup.parseBodyFragment(bounded)
             for block in try document.select("p, div, br, li").array() {
-                try block.after(TextNode(paragraphBreak, nil))
+                _ = try block.after(TextNode(paragraphBreak, nil))
             }
             text = try document.text()
         } catch {

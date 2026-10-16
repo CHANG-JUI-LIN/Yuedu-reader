@@ -150,12 +150,12 @@ final class SourceGenreLinks: ObservableObject {
             await BookSourceFetcher.shared.primeDiscoverCookies(in: $0)
         },
         pageLoader: SectionPageLoader = .live,
-        choiceStore: RelatedCategoryChoiceStore = .shared
+        choiceStore: RelatedCategoryChoiceStore? = nil
     ) {
         self.loadCategories = loadCategories
         self.primeCookies = primeCookies
         self.pageLoader = pageLoader
-        self.choiceStore = choiceStore
+        self.choiceStore = choiceStore ?? .shared
     }
 
     /// `source`'s categories, read once for the page. Not cancelled with the page's task: the

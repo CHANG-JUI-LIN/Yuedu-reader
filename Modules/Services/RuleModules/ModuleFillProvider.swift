@@ -12,7 +12,7 @@ final class ModuleFillProvider: MetadataFillProvider {
     /// The fields a search result can give.
     static let fields: Set<MetadataField> = [.intro, .tags]
     /// The filler asks copy after copy: a site that hangs must not hold up the rest.
-    static let timeout: Duration = .seconds(20)
+    nonisolated static let timeout: Duration = .seconds(20)
 
     let key: SourceInstanceKey
     let grade: MetadataMatchGrade = .b

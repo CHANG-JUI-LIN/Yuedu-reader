@@ -36,6 +36,18 @@ struct BookSourceSessionQueueTests {
         return held
     }
 
+    /// Queues a caller for the bridge on its own thread at `priority`, as the reader's
+    /// prefetches do; `done` is left when it has run.
+    private func queueCaller(
+        _ name: String, at priority: TaskPriority, on session: BookSourceSession, log: Log, done: DispatchGroup
+    ) {
+        done.enter()
+        Thread {
+            session.withBridge(priority: priority) { _ in log.append(name) }
+            done.leave()
+        }.start()
+    }
+
     private func waitUntilQueued(_ count: Int, on session: BookSourceSession) async throws {
         let deadline = Date().addingTimeInterval(5)
         while session.queuedCallers < count {
@@ -44,7 +56,7 @@ struct BookSourceSessionQueueTests {
         }
     }
 
-    @Test("a higher-priority caller goes before lower-priority callers that queued earlier")
+    @Test("a higher-priority caller goes before lower-priority callers that queued earlier", .timeLimit(.minutes(1)))
     func priorityBeforeArrival() async throws {
         let session = makeSession()
         let log = Log()
@@ -52,22 +64,15 @@ struct BookSourceSessionQueueTests {
         _ = holdBridge(of: session, log: log, release: release)
 
         let done = DispatchGroup()
-        func queue(_ name: String, at priority: TaskPriority) {
-            done.enter()
-            Thread {
-                session.withBridge(priority: priority) { _ in log.append(name) }
-                done.leave()
-            }.start()
-        }
-        queue("prefetch-1", at: .utility)
+        queueCaller("prefetch-1", at: .utility, on: session, log: log, done: done)
         try await waitUntilQueued(1, on: session)
-        queue("reader", at: .userInitiated)
+        queueCaller("reader", at: .userInitiated, on: session, log: log, done: done)
         try await waitUntilQueued(2, on: session)
-        queue("prefetch-2", at: .utility)
+        queueCaller("prefetch-2", at: .utility, on: session, log: log, done: done)
         try await waitUntilQueued(3, on: session)
 
         release.signal()
-        #expect(done.wait(timeout: .now() + 5) == .success)
+        await withCheckedContinuation { finished in done.notify(queue: .global()) { finished.resume() } }
         #expect(log.values == ["holder", "reader", "prefetch-1", "prefetch-2"])
         #expect(session.queuedCallers == 0)
     }

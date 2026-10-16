@@ -35,7 +35,7 @@ struct BrowserLayoutThreadSafetyTests {
                 let index = (iteration + offset) % keys.count
                 let (families, weight, italic, size) = keys[index]
                 guard let font = resolver.resolve(families: families, weight: weight, italic: italic, size: size) else { continue }
-                seen.withLock { fonts[index, default: []].insert(ObjectIdentifier(font)) }
+                seen.withLock { _ = fonts[index, default: []].insert(ObjectIdentifier(font)) }
             }
         }
         #expect(calls.value == keys.count, "each tuple resolves exactly once, whichever thread asks first")

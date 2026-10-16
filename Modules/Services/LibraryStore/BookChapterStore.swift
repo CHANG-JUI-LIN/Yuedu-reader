@@ -152,7 +152,7 @@ final class BookChapterStore {
                     )
                 }
             }
-            state.withLock { state in
+            state.withLock { [written] state in
                 for (bookID, revision) in written {
                     guard var entry = state.entries[bookID], entry.revision == revision else { continue }
                     entry.isDirty = false

@@ -194,10 +194,10 @@ struct FixedLayoutEPUBRendererTests {
             },
             archiveURL: archiveURL
         )
-        await FixedLayoutEPUBRenderer.shared.purge()
+        FixedLayoutEPUBRenderer.shared.purge()
         defer {
             try? FileManager.default.removeItem(at: archiveURL)
-            Task { await FixedLayoutEPUBRenderer.shared.purge() }
+            Task { FixedLayoutEPUBRenderer.shared.purge() }
         }
         let page = FixedPage(
             id: 0,

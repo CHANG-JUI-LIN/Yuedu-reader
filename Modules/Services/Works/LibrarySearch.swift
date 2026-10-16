@@ -44,7 +44,7 @@ struct LibrarySearchAnswer: Identifiable, Equatable, Sendable {
 /// known without its root, so it is asked for its first page alone.
 @MainActor
 final class LibrarySearch: SearchAnswering {
-    static let timeout: Duration = .seconds(20)
+    nonisolated static let timeout: Duration = .seconds(20)
 
     private let providers: @MainActor () -> [any OPDSFeedProviding]
     private let timeout: Duration

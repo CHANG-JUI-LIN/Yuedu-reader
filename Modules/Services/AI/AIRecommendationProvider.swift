@@ -17,8 +17,8 @@ final class AIRecommendationProvider: HomeSectionProviding {
 
     private let store: AIRecommendationStore
 
-    init(store: AIRecommendationStore = .shared) {
-        self.store = store
+    init(store: AIRecommendationStore? = nil) {
+        self.store = store ?? .shared
     }
 
     var instance: SourceInstanceKey { Self.instanceKey }

@@ -10,11 +10,11 @@ import Foundation
 /// which the ISBN cover limit does not apply to.
 @MainActor
 final class OpenLibrarySearch: SearchAnswering {
-    static let timeout: Duration = .seconds(15)
+    nonisolated static let timeout: Duration = .seconds(15)
     /// Results asked for: one screen of rows.
     static let limit = 20
     /// ISBNs kept per work: a work lists every edition's, hundreds for a classic.
-    static let isbnLimit = 5
+    nonisolated static let isbnLimit = 5
 
     private let fetcher: WebFetcher
     private let pacer: RequestPacer

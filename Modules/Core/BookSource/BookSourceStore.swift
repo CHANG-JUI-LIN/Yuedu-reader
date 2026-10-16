@@ -88,7 +88,7 @@ class BookSourceStore: ObservableObject {
         for (position, source) in library.enumerated() where positions[source.id] == nil {
             positions[source.id] = position
         }
-        index.withLock { $0 = positions }
+        index.withLock { [positions] in $0 = positions }
     }
 
     /// The source with this id, without scanning the library.

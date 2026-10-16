@@ -1390,7 +1390,7 @@ class BookStore: ObservableObject, BookProvider {
         if let groups = derived.groups { return groups }
         let groups = Array(Set(derived.books.compactMap { $0.group.isEmpty ? nil : $0.group })).sorted()
         derived.groups = groups
-        shelfDerivation.withLock { if $0?.revision == derived.revision { $0 = derived } }
+        shelfDerivation.withLock { [derived] in if $0?.revision == derived.revision { $0 = derived } }
         return groups
     }
 
@@ -2161,12 +2161,10 @@ class BookStore: ObservableObject, BookProvider {
         let refreshed = tocPackage.chapters
         await firstPageCommit.value?.value
         @Sendable func detachedPlan(existing: [OnlineChapterRef]?) async -> MergePlan {
-            await Task.detached(priority: .utility) { [chapterStore] in
-                Self.mergePlan(
-                    existing: existing ?? chapterStore.chapters(for: bookId) ?? [], refreshed: refreshed,
-                    originalChapterCount: originalChapterCount, originalLatestTitle: originalLatestTitle
-                )
-            }.value
+            await Self.detachedMergePlan(
+                existing: existing, chapterStore: chapterStore, bookId: bookId, refreshed: refreshed,
+                originalChapterCount: originalChapterCount, originalLatestTitle: originalLatestTitle
+            )
         }
         enum CommitOutcome {
             case gone
@@ -2181,7 +2179,7 @@ class BookStore: ObservableObject, BookProvider {
         var replans = 0
         var result: (updated: ReadingBook, committed: MergePlan)?
         while result == nil {
-            let outcome = await MainActor.run { () -> CommitOutcome in
+            let outcome = await MainActor.run { [prepared, replans] () -> CommitOutcome in
                 guard let idx = records.firstIndex(where: { $0.id == bookId }) else { return .gone }
                 let current = chapterStore.chapters(for: bookId) ?? []
                 let plan: MergePlan
@@ -2328,6 +2326,19 @@ class BookStore: ObservableObject, BookProvider {
 
     /// Everything a table-of-contents refresh decides from the two lists. Normalizes every
     /// title of both several times over; call it off the main thread.
+    /// `mergePlan` on a detached utility task, with the stored list read there too.
+    private static func detachedMergePlan(
+        existing: [OnlineChapterRef]?, chapterStore: BookChapterStore, bookId: UUID, refreshed: [OnlineChapterRef],
+        originalChapterCount: Int, originalLatestTitle: String
+    ) async -> MergePlan {
+        await Task.detached(priority: .utility) {
+            mergePlan(
+                existing: existing ?? chapterStore.chapters(for: bookId) ?? [], refreshed: refreshed,
+                originalChapterCount: originalChapterCount, originalLatestTitle: originalLatestTitle
+            )
+        }.value
+    }
+
     private static func mergePlan(
         existing: [OnlineChapterRef],
         refreshed: [OnlineChapterRef],

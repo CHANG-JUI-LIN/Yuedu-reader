@@ -136,7 +136,7 @@ enum MetadataCompleteness {
 final class MetadataFillRunner {
     /// The fields the filler may write. Title and authors are not among them (design §8.1);
     /// word count and serial status come only from a copy's own source.
-    static let fillable: [MetadataField] = [.cover, .intro, .tags, .series, .language, .publisher]
+    nonisolated static let fillable: [MetadataField] = [.cover, .intro, .tags, .series, .language, .publisher]
 
     struct Report: Equatable {
         var asked = 0

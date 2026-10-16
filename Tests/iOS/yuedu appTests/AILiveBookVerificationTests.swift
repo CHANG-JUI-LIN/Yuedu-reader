@@ -17,7 +17,7 @@ final class AILiveBookVerificationTests: XCTestCase {
         try XCTSkipUnless(FileManager.default.fileExists(atPath: configurationURL.path), "Explicit live verification was not provisioned")
         let configuration = try JSONDecoder().decode(Configuration.self, from: Data(contentsOf: configurationURL))
         try FileManager.default.removeItem(at: configurationURL)
-        try AIAPIKeyStore.save(configuration.apiKey)
+        _ = AIAPIKeyStore.save(configuration.apiKey)
         AIProviderStore.shared.save(.init(endpoint: "https://api.deepseek.com/v1", defaultModel: configuration.model))
         let probe = await AIConnectionTest.run(endpoint: "https://api.deepseek.com/v1", apiKey: configuration.apiKey, model: configuration.model)
         guard case .success = probe else { XCTFail("Live provider probe failed"); return }

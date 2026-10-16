@@ -38,13 +38,13 @@ final class DiscoverFirstPages {
         pageLoader: SectionPageLoader = .live,
         primeCookies: @escaping PrimeCookies = { await BookSourceFetcher.shared.primeDiscoverCookies(in: $0) },
         store: ForYouCandidateStore = .shared,
-        lanes: DiscoverRequestLanes = .shared,
-        now: @escaping @Sendable () -> Date = Date.init
+        lanes: DiscoverRequestLanes? = nil,
+        now: @escaping @Sendable () -> Date = { Date() }
     ) {
         self.pageLoader = pageLoader
         self.primeCookies = primeCookies
         self.store = store
-        self.lanes = lanes
+        self.lanes = lanes ?? .shared
         self.now = now
         answersSince = now()
     }

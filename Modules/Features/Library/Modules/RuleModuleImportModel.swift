@@ -37,9 +37,9 @@ final class RuleModuleImportModel: ObservableObject {
     private let library: RuleModuleLibrary
     private let download: (String) async throws -> (data: Data, url: URL)
 
-    init(library: RuleModuleLibrary = .shared,
+    init(library: RuleModuleLibrary? = nil,
          download: @escaping (String) async throws -> (data: Data, url: URL) = { try await RuleModuleClient.download($0) }) {
-        self.library = library
+        self.library = library ?? .shared
         self.download = download
     }
 

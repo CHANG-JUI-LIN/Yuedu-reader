@@ -73,19 +73,19 @@ final class AIRecommendationService: ObservableObject {
     private let now: () -> Date
     private var task: Task<Void, Never>?
 
-    init(store: AIRecommendationStore = .shared,
+    init(store: AIRecommendationStore? = nil,
          activeService: @escaping @MainActor () -> Result<AIProviderAssembly.ActiveService, AIProviderAssembly.Unavailable> = AIProviderAssembly.activeService,
          resolver: (any AIRecommendationResolving)? = nil,
          lookupEnabled: @escaping @MainActor () -> Bool = AIRecommendationService.openLibraryChecked,
-         genres: @escaping () async -> [String: Double] = { await ReadingGenreRecorder.shared.profile().weights(at: Date()) },
+         genres: (() async -> [String: Double])? = nil,
          language: AIAnswerLanguage = .current,
          origin: AIDiagnostics.Origin = .observed,
          now: @escaping () -> Date = Date.init) {
-        self.store = store
+        self.store = store ?? .shared
         self.activeService = activeService
         self.resolver = resolver ?? OpenLibraryRecommendationResolver()
         self.lookupEnabled = lookupEnabled
-        self.genres = genres
+        self.genres = genres ?? { await ReadingGenreRecorder.shared.profile().weights(at: Date()) }
         self.language = language
         self.origin = origin
         self.now = now

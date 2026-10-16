@@ -337,7 +337,7 @@ struct CoverImagePipelineTests {
         let fixture = try CoverFixture()
         try fixture.store.write(Swatch.png(.red), filename: "c_cover.jpg")
         try fixture.writeDefaultCover(Swatch.png(.blue), named: "c.png")
-        #expect(Thread.isMainThread)
+        MainActor.assertIsolated()
 
         #expect(await fixture.pipeline.image(for: fixture.request("c_cover.jpg", 240)).image != nil)
         let defaultCover = CoverImageRequest(source: .defaultCover(fileName: "c.png"), size: rung(240))

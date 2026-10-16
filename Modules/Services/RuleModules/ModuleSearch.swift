@@ -6,7 +6,7 @@ import Foundation
 /// merged into works with everything else by `SearchWorkResolver`.
 @MainActor
 final class ModuleSearch: SearchAnswering {
-    static let timeout: Duration = .seconds(20)
+    nonisolated static let timeout: Duration = .seconds(20)
 
     private let providers: @MainActor () -> [ModuleProvider]
     private let timeout: Duration
