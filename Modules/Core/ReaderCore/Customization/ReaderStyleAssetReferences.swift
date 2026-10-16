@@ -42,6 +42,29 @@ enum ReaderStyleAssetReferences {
         ordered(configuration.evaluationRules.flatMap(assetIDs(in:)))
     }
 
+    static func assetIDs(in style: ReaderDialogueBubbleStyle) -> [UUID] {
+        ordered(ReaderDialogueBubbleSide.allCases.flatMap { side -> [UUID] in
+            let sideStyle = style.side(side)
+            return [sideStyle.skin?.assetID, sideStyle.avatar?.assetID].compactMap { $0 }
+        })
+    }
+
+    /// Every picture a reading setup shows. iCloud carries the setup as settings that name
+    /// their pictures by ID, so these go along as files (`ICloudSyncManager`).
+    static func assetIDs(in settings: AppearanceThemeReadingSettings) -> [UUID] {
+        var values: [UUID] = []
+        if let chapterTitleStyle = settings.chapterTitleStyle {
+            values += assetIDs(in: chapterTitleStyle)
+        }
+        if let dialogueBubbleStyle = settings.dialogueBubbleStyle {
+            values += assetIDs(in: dialogueBubbleStyle)
+        }
+        if let regexHighlights = settings.regexHighlights {
+            values += assetIDs(in: regexHighlights)
+        }
+        return ordered(values)
+    }
+
     /// De-duplicated but stable: `Set` iteration order changes between runs, and
     /// an export whose manifest reshuffles on every save produces a different
     /// archive for identical settings.

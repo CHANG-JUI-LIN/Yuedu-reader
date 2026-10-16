@@ -47,6 +47,8 @@ struct RegexHighlightRuleEditorView: View {
     @State private var confirmLowContrast = false
     /// The chosen frame image, loaded for 九宮格's slice lines.
     @State private var sliceImage: (id: UUID, image: UIImage)?
+    /// Why that image did not load, for the image it was.
+    @State private var sliceImageFailure: (id: UUID, message: String)?
 
     init(rule: RegexHighlightRule, onSave: @escaping (RegexHighlightRule) throws -> Void) {
         _model = StateObject(wrappedValue: RegexHighlightRuleEditorModel(rule: rule, onSave: onSave))
@@ -259,19 +261,41 @@ struct RegexHighlightRuleEditorView: View {
         Group {
             if let sliceImage, sliceImage.id == assetID {
                 NineSliceGuideEditor(image: sliceImage.image, slices: nineSliceBinding)
+            } else if let sliceImageFailure, sliceImageFailure.id == assetID {
+                Text(sliceImageFailure.message)
+                    .font(DSFont.footnote)
+                    .foregroundStyle(DSColor.textSecondary)
+                    .frame(maxWidth: .infinity, alignment: .leading)
             } else {
                 ProgressView()
                     .frame(maxWidth: .infinity)
             }
         }
-        .task(id: assetID) {
+        // Loaded again whenever the store changes: a picture iCloud brings arrives there.
+        .task(id: SliceImageRequest(assetID: assetID, revision: settings.readerStyleAssetRevision)) {
             do {
                 let image = try await ReaderStyleAssetStore.shared.loadCachedImage(for: assetID)
                 sliceImage = (assetID, image)
+                sliceImageFailure = nil
             } catch {
                 AppLogger.render("nine-slice editor image load failed", error: error, context: ["asset": assetID.uuidString])
+                // It spun forever when the picture had stayed on the device that imported
+                // the rule (2026-10-15).
+                sliceImageFailure = (assetID, Self.sliceImageFailureMessage(error))
             }
         }
+    }
+
+    private struct SliceImageRequest: Equatable {
+        let assetID: UUID
+        let revision: UInt64
+    }
+
+    private static func sliceImageFailureMessage(_ error: Error) -> String {
+        if case .assetNotFound = error as? ReaderStyleAssetStoreError {
+            return localized("這台裝置上還沒有這張圖片。從其他裝置同步來的規則，圖片會隨 iCloud 同步下載。")
+        }
+        return localized("這張圖片無法讀取。")
     }
 
     /// 九宮格 is judged on a short quote and a long one, not on the rule's test text.

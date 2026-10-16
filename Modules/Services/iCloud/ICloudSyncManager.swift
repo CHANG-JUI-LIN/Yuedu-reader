@@ -11,6 +11,8 @@ import UIKit
 struct ICloudSyncPayloadFile: Equatable {
     let recordName: String
     let localURL: URL
+    /// What the file is called where it is shown, when its file name is not that.
+    var name: String? = nil
 }
 
 /// One item inside an iCloud data blob. Unlike the old plain `[T]` blob, this
@@ -147,6 +149,8 @@ final class ICloudSyncManager: ObservableObject {
     /// and would fail to decode a bar layout written into it.
     private static let readerBarLayoutRecordID = "reader_bar_layout"
     private static let readerBackgroundPicturePrefix = "readerbg_"
+    /// The pictures the reading setup shows are file records named `readerstyle_<asset ID>`.
+    private static let readerStylePicturePrefix = "readerstyle_"
 
     // MARK: Merged records
     //
@@ -443,6 +447,28 @@ final class ICloudSyncManager: ObservableObject {
                 }
             )
             changedRemote = changedRemote || readingSettingsMerge.uploaded
+
+            // 3d. The pictures the reading setup shows — 正則高亮's frames, 對話氣泡's skins,
+            //     a chapter title's art — follow as files, as the backgrounds' do in 3b. 3c
+            //     carries only the settings, which name each picture by its ID in the style
+            //     asset store, so a highlight pack imported on one device painted nothing on
+            //     the others and its frame editor spun forever (2026-10-15).
+            let stylePictures = Self.readerStylePictureSync(
+                referencedBy: readingSettingsMerge.values,
+                stored: await ReaderStyleAssetStore.shared.assets()
+            )
+            var uploadedStylePictures = 0
+            for asset in stylePictures.send {
+                let localURL = try await ReaderStyleAssetStore.shared.imageFileURL(for: asset.id)
+                let file = ICloudSyncPayloadFile(
+                    recordName: Self.readerStylePictureRecordName(asset.id),
+                    localURL: localURL,
+                    name: asset.name
+                )
+                if try await uploadBookFileIfNeeded(file) { uploadedStylePictures += 1 }
+            }
+            changedRemote = changedRemote || uploadedStylePictures > 0
+            try await downloadReaderStylePictures(stylePictures.fetch)
 
             // 4. Reader header/footer layout (singleton setting). Same shape as
             //    the bubble selection above: ONE always-present record under a
@@ -987,10 +1013,19 @@ final class ICloudSyncManager: ObservableObject {
             }
         }
         let localBackgrounds = await MainActor.run { GlobalSettings.shared.readerCustomBackgrounds }
+        // The reading setup's pictures, by the setups here and in the cloud.
+        let remoteReadingSettings = try await valuesNamedForDeletion(
+            in: Self.readingSettingsRecordName, as: ReadingSettingSyncRecord.self
+        ) { $0.item }
+        let localReadingSettings = await MainActor.run { GlobalSettings.shared.readingSettingSyncRecords }
+        let stylePictures = Self.readerStylePictureIDs(referencedBy: localReadingSettings + remoteReadingSettings)
         let files = bookFilePayloads(localBooks() + remoteBooks)
             + Self.readerBackgroundPicturePayloads(localBackgrounds + remoteBackgrounds)
         for file in files {
             try await deleteRecordIfExists(CKRecord.ID(recordName: file.recordName))
+        }
+        for id in stylePictures {
+            try await deleteRecordIfExists(CKRecord.ID(recordName: Self.readerStylePictureRecordName(id)))
         }
         for name in Self.mergedRecordNames {
             try await deleteRecordIfExists(fileRecordID(name))
@@ -1001,7 +1036,7 @@ final class ICloudSyncManager: ObservableObject {
         // this device's items anyway, and they hold its deletions, which must not be
         // undone by a device that never saw them.
         UserDefaults.standard.removeObject(forKey: Self.uploadedBookFilesKey)
-        AppLogger.sync("deleteRemoteData: \(files.count) file(s), \(Self.mergedRecordNames.count) blob(s)", level: .notice)
+        AppLogger.sync("deleteRemoteData: \(files.count) file(s), \(stylePictures.count) style picture(s), \(Self.mergedRecordNames.count) blob(s)", level: .notice)
 
         await MainActor.run {
             lastSyncDate = nil
@@ -1303,6 +1338,7 @@ final class ICloudSyncManager: ObservableObject {
             recordID: recordID
         )
         record[Field.filename] = file.localURL.lastPathComponent as NSString
+        if let name = file.name { record[Field.name] = name as NSString }
         record[Field.updatedAt] = Date() as NSDate
         record[Field.asset] = CKAsset(fileURL: file.localURL)
         AppLogger.sync("⟐ diskwrite bookfile UPLOAD \(file.localURL.lastPathComponent): \(size) bytes (marker miss)", level: .notice)
@@ -1359,6 +1395,73 @@ final class ICloudSyncManager: ObservableObject {
             }
         }
         return payloads
+    }
+
+    static func readerStylePictureRecordName(_ id: UUID) -> String {
+        readerStylePicturePrefix + id.uuidString.lowercased()
+    }
+
+    /// Every picture the synced reading setup rows show, once each.
+    static func readerStylePictureIDs(referencedBy records: [ReadingSettingSyncRecord]) -> [UUID] {
+        var seen = Set<UUID>()
+        return records
+            .flatMap { ReaderStyleAssetReferences.assetIDs(in: $0.values) }
+            .filter { seen.insert($0).inserted }
+    }
+
+    /// Of the pictures the reading setup shows, the ones this device sends — those its style
+    /// asset store has — and the ones it fetches: the rest. A picture keeps its content
+    /// under its ID, as the settings know it; one replaced in 素材庫 (same ID, new picture)
+    /// reaches only devices that do not have it yet.
+    static func readerStylePictureSync(
+        referencedBy records: [ReadingSettingSyncRecord],
+        stored: [ReaderStyleAsset]
+    ) -> (send: [ReaderStyleAsset], fetch: [UUID]) {
+        let referenced = readerStylePictureIDs(referencedBy: records)
+        let storedByID = Dictionary(stored.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+        return (
+            send: referenced.compactMap { storedByID[$0] },
+            fetch: referenced.filter { storedByID[$0] == nil }
+        )
+    }
+
+    /// Fetches the pictures the reading setup shows that this device lacks into the style
+    /// asset store, under the IDs the setup names them by; its revision bump redraws the
+    /// reader. One whose device has not sent it yet comes on a later sync.
+    private func downloadReaderStylePictures(_ ids: [UUID]) async throws {
+        guard !ids.isEmpty else { return }
+        AppLogger.sync("restore: \(ids.count) style picture(s) missing locally; fetching", level: .notice)
+        for id in ids {
+            let recordName = Self.readerStylePictureRecordName(id)
+            let record: CKRecord
+            do {
+                record = try await fetchRecord(CKRecord.ID(recordName: recordName))
+            } catch {
+                if isRecordNotFound(error) {
+                    AppLogger.sync("⟐ style picture \(recordName) not in iCloud yet", level: .notice)
+                    continue
+                }
+                throw error
+            }
+            guard let asset = record[Field.asset] as? CKAsset, let assetURL = asset.fileURL else {
+                AppLogger.sync("⟐ style picture \(recordName) has no file", level: .error)
+                continue
+            }
+            // A picture that cannot be stored leaves its rule without it, as before this
+            // sync; the others still arrive.
+            do {
+                let data = try Data(contentsOf: assetURL)
+                let name = (record[Field.name] as? String) ?? id.uuidString
+                try await ReaderStyleAssetStore.shared.importSyncedImage(id: id, data: data, name: name)
+                // Stored re-encoded: noted as sent at its own size, so the next sync does
+                // not send it back.
+                let storedURL = try await ReaderStyleAssetStore.shared.imageFileURL(for: id)
+                let size = try FileManager.default.attributesOfItem(atPath: storedURL.path)[.size] as? NSNumber
+                rememberUploadedBookFileMarker("\(recordName):\(size?.intValue ?? 0)")
+            } catch {
+                AppLogger.sync("⟐ style picture \(recordName) not stored: \(error)", level: .error)
+            }
+        }
     }
 
     /// Fetches each of `files` this device does not have. Returns where those that arrived

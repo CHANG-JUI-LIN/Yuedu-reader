@@ -244,6 +244,47 @@ actor ReaderStyleAssetStore {
         }
     }
 
+    /// Where the picture is stored, for iCloud to upload it as a file.
+    func imageFileURL(for id: UUID) throws -> URL {
+        try ensureStoreIsReadable()
+        guard let asset = storedAssets.first(where: { $0.id == id }) else {
+            throw ReaderStyleAssetStoreError.assetNotFound(id)
+        }
+        return rootURL.appendingPathComponent(asset.fileName, isDirectory: false)
+    }
+
+    /// A picture another device's reading setup shows, arriving through iCloud. The setup
+    /// names it by `id`, so it is stored under that ID, by the path a package's pictures take.
+    func importSyncedImage(id: UUID, data: Data, name: String) async throws {
+        let staging = FileManager.default.temporaryDirectory
+            .appendingPathComponent("reader-style-sync-\(UUID().uuidString)", isDirectory: true)
+        defer {
+            do {
+                try FileManager.default.removeItem(at: staging)
+            } catch {
+                AppLogger.sync("⟐ synced style picture staging not removed: \(error.localizedDescription)", level: .error)
+            }
+        }
+        do {
+            try FileManager.default.createDirectory(at: staging, withIntermediateDirectories: true)
+            try data.write(to: staging.appendingPathComponent(Self.stagingFileName(name), isDirectory: false))
+        } catch {
+            throw ReaderStyleAssetStoreError.writeFailed
+        }
+        try await importValidatedPackageAssets(
+            [ReaderStylePackageAsset(id: id, relativePath: Self.stagingFileName(name),
+                                     sha256: Self.sha256(data), byteCount: data.count)],
+            from: staging
+        )
+    }
+
+    /// The picture's name as a file name: what a package import names a new asset after.
+    private static func stagingFileName(_ name: String) -> String {
+        let trimmed = name.replacingOccurrences(of: "/", with: "_")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty || trimmed.hasPrefix(".") ? "asset" : trimmed
+    }
+
     func cachedImage(for id: UUID) -> UIImage? {
         imageCache.image(for: id)
     }
@@ -295,13 +336,7 @@ actor ReaderStyleAssetStore {
     /// draw pass stays free of file I/O and decoding.
     func prewarmDialogueBubbleAssets(style: ReaderDialogueBubbleStyle) {
         guard style.isEnabled else { return }
-        let assetIDs = Set(
-            ReaderDialogueBubbleSide.allCases.flatMap { side -> [UUID] in
-                let sideStyle = style.side(side)
-                return [sideStyle.skin?.assetID, sideStyle.avatar?.assetID].compactMap { $0 }
-            }
-        )
-        for assetID in assetIDs where imageCache.image(for: assetID) == nil {
+        for assetID in ReaderStyleAssetReferences.assetIDs(in: style) where imageCache.image(for: assetID) == nil {
             do {
                 _ = try loadCachedImage(for: assetID)
             } catch {
