@@ -656,13 +656,19 @@ final class DiscoverViewModel: ObservableObject {
     }
 
     private func pumpSectionQueue() {
-        guard !isPumpingSections, let id = sectionQueue.first else { return }
-        guard let source = selectedSource,
-              let index = sections.firstIndex(where: { $0.id == id }) else {
-            if !sectionQueue.isEmpty { sectionQueue.removeFirst() }
-            pumpSectionQueue()
+        guard !isPumpingSections else { return }
+        // Nothing queued can load once the page's source is gone from the store.
+        guard let source = selectedSource else {
+            sectionQueue.removeAll()
             return
         }
+        // Entries whose category was turned off in 發現頁設定 are dropped all at once.
+        // This used to recurse once per dropped entry, each frame holding a copy of the
+        // source, and a long queue overflowed the main thread's stack (Crashlytics 8f67787a).
+        let shown = Set(sections.map(\.id))
+        sectionQueue.removeFirst(sectionQueue.firstIndex(where: shown.contains) ?? sectionQueue.count)
+        guard let id = sectionQueue.first,
+              let index = sections.firstIndex(where: { $0.id == id }) else { return }
         isPumpingSections = true
         sections[index].phase = .loading
         let raw = sections[index].item.raw
