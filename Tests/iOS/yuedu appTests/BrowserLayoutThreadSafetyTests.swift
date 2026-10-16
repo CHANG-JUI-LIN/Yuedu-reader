@@ -68,7 +68,12 @@ struct BrowserLayoutThreadSafetyTests {
         let session = try await PublicationSession.open(sourceURL: EPUBTestFixtures.makeArchive(entries: entries))
         let adapter = EPUBBrowserLayoutResourceAdapter(session: session)
         let html = try await adapter.chapterHTML(at: 0)
-        _ = await adapter.cssFrontendInput(forChapter: 0, html: html)
+        // Ingestion only collects the faces; the engine registers the ones the
+        // capability scan says the chapter shapes, before it takes the resolver.
+        let input = await adapter.cssFrontendInput(forChapter: 0, html: html)
+        let scan = BrowserLayoutCapabilityScanner.scan(
+            input: input, configuration: BrowserLayoutConfig(renderWidth: 320, renderHeight: 480))
+        await adapter.prepareFonts(requests: scan.fontRequests)
         let tuples: [([String], Int, Bool, CGFloat)] = [
             (["BookSubset", "TimesNewRomanPSMT"], 400, false, 24),
             (["BookSubset"], 700, false, 24),
