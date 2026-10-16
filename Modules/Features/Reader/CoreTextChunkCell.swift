@@ -64,6 +64,11 @@ final class CoreTextChunkDrawView: UIView {
     var chunk: CoreTextChunk?
     private(set) var drawCount = 0
     var rendersContentExternally = false
+    /// How far the view reaches above its chunk. The bounds keep the chunk's top at y = 0,
+    /// so every point converted to or from this view stays in chunk coordinates.
+    var topBleed: CGFloat = 0 {
+        didSet { if topBleed != oldValue { setNeedsLayout() } }
+    }
     /// VoiceOver double-tap on the chapter text — mirrors the sighted centre tap
     /// that opens the reader toolbar.
     var onAccessibilityActivate: (() -> Void)?
@@ -83,10 +88,15 @@ final class CoreTextChunkDrawView: UIView {
 
     required init?(coder: NSCoder) { fatalError() }
 
+    override func layoutSubviews() {
+        super.layoutSubviews()
+        if bounds.origin.y != -topBleed { bounds.origin.y = -topBleed }
+    }
+
     override func draw(_ rect: CGRect) {
         guard !rendersContentExternally, let chunk else { return }
         drawCount += 1
-        Self.draw(chunk, bounds: bounds)
+        Self.draw(chunk, bounds: CGRect(x: 0, y: 0, width: chunk.width, height: chunk.height))
     }
 
     /// Whole-chunk and partition paint on the main thread, using the chunk's own
@@ -231,10 +241,17 @@ final class CoreTextChunkCollectionCell: UICollectionViewCell {
     let drawView = CoreTextChunkDrawView()
     private let playbackOverlay = InteractionOverlayView()
     let overlay = InteractionOverlayView()
+    /// The chunk's rect in the cell. Everything drawn over the text keeps to it; `drawView`
+    /// reaches past it in vertical writing (see `bind`).
+    private let chunkGuide = UILayoutGuide()
     private var leadingConstraint: NSLayoutConstraint!
+    /// Vertical writing's, in place of `leadingConstraint` (see `bind`).
+    private var leftConstraint: NSLayoutConstraint!
     private var topConstraint: NSLayoutConstraint!
     private var widthConstraint: NSLayoutConstraint!
     private var heightConstraint: NSLayoutConstraint!
+    private var drawTopConstraint: NSLayoutConstraint!
+    private var drawBottomConstraint: NSLayoutConstraint!
     var rendersContentExternally = false {
         didSet {
             guard oldValue != rendersContentExternally else { return }
@@ -278,41 +295,55 @@ final class CoreTextChunkCollectionCell: UICollectionViewCell {
         // 標註 overlay 是 `insertSubview(belowSubview: overlay)`，所以圓圈加在最後就會在最上層。
         noteMarkerOverlay.translatesAutoresizingMaskIntoConstraints = false
         contentView.addSubview(noteMarkerOverlay)
+        contentView.addLayoutGuide(chunkGuide)
 
-        leadingConstraint = drawView.leadingAnchor.constraint(equalTo: contentView.leadingAnchor)
-        topConstraint = drawView.topAnchor.constraint(equalTo: contentView.topAnchor)
-        widthConstraint = drawView.widthAnchor.constraint(equalToConstant: 1)
-        heightConstraint = drawView.heightAnchor.constraint(equalToConstant: 1)
+        leadingConstraint = chunkGuide.leadingAnchor.constraint(equalTo: contentView.leadingAnchor)
+        leftConstraint = chunkGuide.leftAnchor.constraint(equalTo: contentView.leftAnchor)
+        topConstraint = chunkGuide.topAnchor.constraint(equalTo: contentView.topAnchor)
+        widthConstraint = chunkGuide.widthAnchor.constraint(equalToConstant: 1)
+        heightConstraint = chunkGuide.heightAnchor.constraint(equalToConstant: 1)
+        drawTopConstraint = drawView.topAnchor.constraint(equalTo: chunkGuide.topAnchor)
+        drawBottomConstraint = drawView.bottomAnchor.constraint(equalTo: chunkGuide.bottomAnchor)
 
         NSLayoutConstraint.activate([
             leadingConstraint,
             topConstraint,
             widthConstraint,
             heightConstraint,
-            playbackOverlay.leadingAnchor.constraint(equalTo: drawView.leadingAnchor),
-            playbackOverlay.trailingAnchor.constraint(equalTo: drawView.trailingAnchor),
-            playbackOverlay.topAnchor.constraint(equalTo: drawView.topAnchor),
-            playbackOverlay.bottomAnchor.constraint(equalTo: drawView.bottomAnchor),
-            overlay.leadingAnchor.constraint(equalTo: drawView.leadingAnchor),
-            overlay.trailingAnchor.constraint(equalTo: drawView.trailingAnchor),
-            overlay.topAnchor.constraint(equalTo: drawView.topAnchor),
-            overlay.bottomAnchor.constraint(equalTo: drawView.bottomAnchor),
-            noteMarkerOverlay.leadingAnchor.constraint(equalTo: drawView.leadingAnchor),
-            noteMarkerOverlay.trailingAnchor.constraint(equalTo: drawView.trailingAnchor),
-            noteMarkerOverlay.topAnchor.constraint(equalTo: drawView.topAnchor),
-            noteMarkerOverlay.bottomAnchor.constraint(equalTo: drawView.bottomAnchor)
+            drawView.leadingAnchor.constraint(equalTo: chunkGuide.leadingAnchor),
+            drawView.trailingAnchor.constraint(equalTo: chunkGuide.trailingAnchor),
+            drawTopConstraint,
+            drawBottomConstraint,
+            playbackOverlay.leadingAnchor.constraint(equalTo: chunkGuide.leadingAnchor),
+            playbackOverlay.trailingAnchor.constraint(equalTo: chunkGuide.trailingAnchor),
+            playbackOverlay.topAnchor.constraint(equalTo: chunkGuide.topAnchor),
+            playbackOverlay.bottomAnchor.constraint(equalTo: chunkGuide.bottomAnchor),
+            overlay.leadingAnchor.constraint(equalTo: chunkGuide.leadingAnchor),
+            overlay.trailingAnchor.constraint(equalTo: chunkGuide.trailingAnchor),
+            overlay.topAnchor.constraint(equalTo: chunkGuide.topAnchor),
+            overlay.bottomAnchor.constraint(equalTo: chunkGuide.bottomAnchor),
+            noteMarkerOverlay.leadingAnchor.constraint(equalTo: chunkGuide.leadingAnchor),
+            noteMarkerOverlay.trailingAnchor.constraint(equalTo: chunkGuide.trailingAnchor),
+            noteMarkerOverlay.topAnchor.constraint(equalTo: chunkGuide.topAnchor),
+            noteMarkerOverlay.bottomAnchor.constraint(equalTo: chunkGuide.bottomAnchor)
         ])
     }
 
     required init?(coder: NSCoder) { fatalError() }
 
+    /// - Parameters:
+    ///   - verticalInset: Where a vertical chunk starts in the cell.
+    ///   - leadingSpacing: The gap above a horizontal chunk. A vertical chunk's gap is whatever
+    ///     width the cell has past the chunk.
+    ///   - bottomInset: What a vertical chunk's cell holds below the chunk.
     func bind(
         chunk: CoreTextChunk,
         axis: CoreTextScrollAxis,
         horizontalInset: CGFloat,
         verticalInset: CGFloat,
         leadingSpacing: CGFloat,
-        viewportSize: CGSize
+        viewportSize: CGSize,
+        bottomInset: CGFloat = 0
     ) {
         let contentChanged = currentChunk !== chunk || axis != .vertical
         let backdropChanged = contentChanged || backdropView.viewportSize != viewportSize
@@ -326,16 +357,35 @@ final class CoreTextChunkCollectionCell: UICollectionViewCell {
 
         switch axis {
         case .vertical:
+            leftConstraint.isActive = false
+            leadingConstraint.isActive = true
             leadingConstraint.constant = horizontalInset
             topConstraint.constant = leadingSpacing
             widthConstraint.constant = chunk.width
             heightConstraint.constant = chunk.height
         case .horizontalRTL:
-            leadingConstraint.constant = leadingSpacing
+            // Against the cell's left edge, as `BrowserScrollTileCell` places a vertical tile at
+            // x = 0: the width the layout gives a chapter's first chunk past its own — the gap
+            // parting it from the chapter before — then stands on its right, ahead of its first
+            // column, without anyone saying so. Placed by `leadingSpacing`, the chapter shown
+            // alone after 下一章 kept the spacing of a first item, none: when the chapter before
+            // arrived, UIKit carried the cell across the insertion without binding it again, and
+            // it drew the chapter a gap's width right of the margin, the title cut off by the
+            // screen's edge (2026-10-16).
+            leadingConstraint.isActive = false
+            leftConstraint.isActive = true
             topConstraint.constant = verticalInset
             widthConstraint.constant = chunk.width
             heightConstraint.constant = chunk.height
         }
+        // Vertical text paints the insets above and below its columns too. A highlight's art
+        // can stand past the end of a column — a quote running on into the next column starts
+        // it with its box — and paged mode draws it in the page margin; a draw view cut to
+        // the chunk cut it off at the column top (2026-10-15).
+        let bleed = axis == .horizontalRTL ? (top: verticalInset, bottom: bottomInset) : (top: 0, bottom: 0)
+        drawTopConstraint.constant = -bleed.top
+        drawBottomConstraint.constant = bleed.bottom
+        drawView.topBleed = bleed.top
 
         setNeedsLayout()
         if backdropChanged { backdropView.setNeedsDisplay() }
@@ -400,8 +450,9 @@ final class CoreTextChunkCollectionCell: UICollectionViewCell {
                 height: chunk.height
             )
         case .horizontalRTL:
+            // Under the chunk, at the cell's left edge (see `bind`).
             backdropView.frame = CGRect(
-                x: boundLeadingSpacing,
+                x: 0,
                 y: 0,
                 width: chunk.width,
                 height: contentView.bounds.height
@@ -544,10 +595,10 @@ final class CoreTextChunkCollectionCell: UICollectionViewCell {
                 overlayView.showsHandles = false
                 contentView.insertSubview(overlayView, belowSubview: overlay)
                 NSLayoutConstraint.activate([
-                    overlayView.leadingAnchor.constraint(equalTo: drawView.leadingAnchor),
-                    overlayView.trailingAnchor.constraint(equalTo: drawView.trailingAnchor),
-                    overlayView.topAnchor.constraint(equalTo: drawView.topAnchor),
-                    overlayView.bottomAnchor.constraint(equalTo: drawView.bottomAnchor),
+                    overlayView.leadingAnchor.constraint(equalTo: chunkGuide.leadingAnchor),
+                    overlayView.trailingAnchor.constraint(equalTo: chunkGuide.trailingAnchor),
+                    overlayView.topAnchor.constraint(equalTo: chunkGuide.topAnchor),
+                    overlayView.bottomAnchor.constraint(equalTo: chunkGuide.bottomAnchor),
                 ])
                 annotationOverlays[key] = overlayView
             }
@@ -605,6 +656,9 @@ final class CoreTextChunkCollectionCell: UICollectionViewCell {
         backdropView.chunk = nil
         backdropView.frame = .zero
         drawView.chunk = nil
+        drawView.topBleed = 0
+        drawTopConstraint.constant = 0
+        drawBottomConstraint.constant = 0
         currentChunk = nil
         overlay.clearSelection()
         playbackOverlay.clearSelection()

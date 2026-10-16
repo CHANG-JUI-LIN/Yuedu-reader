@@ -13,16 +13,14 @@ extension ReaderView {
                 engine: scrollEngine,
                 axis: scrollAxis,
                 horizontalInset: effectivePageMarginH,
+                // Vertical writing scrolls sideways, so its columns simply end short of the
+                // bars, at the insets paged mode lays out to. They were sized from the safe
+                // area alone and started under the header, and ran on under the footer
+                // (2026-10-15).
                 verticalInset: scrollAxis.isHorizontalRTL
-                    ? ReaderLayoutMetrics.topInset(safeTop: effectiveReaderSafeTop)
+                    ? readerBarContentInsets.top
                     : readerConfig.pageMarginV,
-                bottomMargin: scrollAxis.isHorizontalRTL
-                    ? ReaderLayoutMetrics.bottomInset(
-                        safeBottom: 0,
-                        footerBottomPadding: readerConfig.footerBottomPadding,
-                        footerTextGap: readerConfig.footerTextGap
-                      )
-                    : 0,
+                bottomMargin: scrollAxis.isHorizontalRTL ? readerBarContentInsets.bottom : 0,
                 barInsets: scrollAxis.isHorizontalRTL ? .zero : readerScrollBarInsets,
                 autoScrollHandle: autoScrollHandle,
                 backgroundColor: readerScrollBackgroundColor,
@@ -122,8 +120,7 @@ extension ReaderView {
 
     var usesSessionLocalScrollProgress: Bool {
         ReaderProgressSyncPolicy.usesSessionLocalScrollProgress(
-            isScrollMode: effectiveScrollMode,
-            axis: scrollAxis, hasScrollEngine: epubRenderer.scrollEngine != nil
+            isScrollMode: effectiveScrollMode, hasScrollEngine: epubRenderer.scrollEngine != nil
         )
     }
 

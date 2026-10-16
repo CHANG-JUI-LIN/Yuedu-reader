@@ -42,6 +42,31 @@ enum ReaderScrollItem: ScrollFragmentMeasuring {
             return offset <= 0 ? 0 : max(0, t.chapter.documentY(for: offset) - t.documentRect.minY)
         }
     }
+    /// `CoreTextChunk.rightOffset(forCharacterIndex:)` for either engine: how far left of this
+    /// item's right edge the column showing `offset` starts. `nil` puts it at the right edge.
+    ///
+    /// A browser tile is a paint window cut every screen width, not a unit of layout, so only the
+    /// chapter's start belongs at its edge; any other offset's column can stand anywhere in the
+    /// tile, or start in the one before it (a negative distance).
+    func rightOffset(forCharacterIndex offset: Int) -> CGFloat? {
+        switch self {
+        case .legacy(let c): return c.rightOffset(forCharacterIndex: offset)
+        case .browser(let t):
+            guard t.chapter.writingMode.isVertical, offset > 0,
+                  let edge = t.chapter.document.columnRightEdge(forCharOffset: offset) else { return nil }
+            return t.documentRect.maxX - edge
+        }
+    }
+    /// `CoreTextChunk.readingOffset(atHorizontalOffset:)` for either engine: the first character
+    /// of the vertical-writing column at item-local `x`, found by `x` alone.
+    func readingOffset(atHorizontalOffset x: CGFloat) -> Int? {
+        switch self {
+        case .legacy(let c): return c.readingOffset(atHorizontalOffset: x)
+        case .browser(let t):
+            guard t.chapter.writingMode.isVertical else { return nil }
+            return t.chapter.document.columnStart(atDocumentX: x + t.documentRect.minX)
+        }
+    }
     func stringIndex(atLocalPoint point: CGPoint) -> Int? {
         switch self {
         case .legacy(let c): return c.stringIndex(atLocalPoint: point)
@@ -265,4 +290,54 @@ struct BrowserScrollTile {
     let chapter: BrowserScrollChapter
     let documentRect: CGRect
     let charRange: CFRange
+}
+
+extension BrowserScrollDocument {
+    /// Document-space right edge of the vertical-writing column that shows `charOffset`: the
+    /// item holding it, or else the first one after it — `documentY(forCharOffset:)`'s rule,
+    /// along the axis vertical writing advances on. `documentPoint(forCharOffset:)` answers only
+    /// for an offset inside a text item, and a restore must not turn an offset between items
+    /// (a paragraph break) into the start of the tile.
+    func columnRightEdge(forCharOffset charOffset: Int) -> CGFloat? {
+        var after: (location: Int, edge: CGFloat)?
+        for item in displayList.items {
+            guard let (range, rect) = Self.columnGeometry(of: item) else { continue }
+            if NSLocationInRange(charOffset, range) { return rect.maxX }
+            if range.location >= charOffset, range.location < after?.location ?? .max {
+                after = (range.location, rect.maxX)
+            }
+        }
+        return after?.edge
+    }
+
+    /// The first character of the vertical-writing column at document-space `x`, found by `x`
+    /// alone: what `columnRightEdge(forCharOffset:)` puts back at the same edge. The selection
+    /// hit test measures distance in both axes, so a column ending above the viewport's middle
+    /// lost to its full-length neighbour across the margin, and every reopen stepped back a
+    /// column (2026-10-15).
+    func columnStart(atDocumentX x: CGFloat) -> Int? {
+        var best: (distance: CGFloat, location: Int)?
+        for item in displayList.items {
+            guard let (range, rect) = Self.columnGeometry(of: item) else { continue }
+            let distance = max(0, rect.minX - x, x - rect.maxX)
+            let isBetter = best.map {
+                distance < $0.distance || (distance == $0.distance && range.location < $0.location)
+            } ?? true
+            if isBetter { best = (distance, range.location) }
+        }
+        return best?.location
+    }
+
+    /// What a column is made of, with the source it shows: text, and images other than the page's
+    /// background — the items `documentY(forCharOffset:)` counts.
+    private static func columnGeometry(of item: DisplayItem) -> (NSRange, CGRect)? {
+        switch item {
+        case .text(let text) where text.sourceRange.length > 0:
+            return (text.sourceRange, text.rect.rawValue)
+        case .image(let image) where !image.isBackgroundPaint:
+            return (image.sourceRange, image.rect.rawValue)
+        default:
+            return nil
+        }
+    }
 }

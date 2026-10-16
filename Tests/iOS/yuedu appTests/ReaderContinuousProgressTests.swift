@@ -111,20 +111,21 @@ struct ReaderContinuousProgressTests {
         #expect(!state.consumeVisibleChapterChange())
     }
 
+    /// Nor on the writing direction: vertical writing, once left out, overwrote the shelf's
+    /// progress with its chapter number at every exit.
     @Test func publicationScopeDependsOnTheScrollHostNotTheSourceFormat() {
         #expect(ReaderProgressSyncPolicy.usesSessionLocalScrollProgress(
-            isScrollMode: true, axis: .vertical, hasScrollEngine: true))
-        for route in [(false, CoreTextScrollAxis.vertical, true),
-                      (true, .horizontalRTL, true), (true, .vertical, false)] {
+            isScrollMode: true, hasScrollEngine: true))
+        for route in [(false, true), (true, false)] {
             #expect(!ReaderProgressSyncPolicy.usesSessionLocalScrollProgress(
-                isScrollMode: route.0, axis: route.1, hasScrollEngine: route.2))
+                isScrollMode: route.0, hasScrollEngine: route.1))
         }
     }
 
     @Test(arguments: [BookPipelineKind.epub, .txt, .html])
     func everyContinuousSourceUsesSessionProgress(kind: BookPipelineKind) async throws {
         let local = ReaderProgressSyncPolicy.usesSessionLocalScrollProgress(
-            isScrollMode: true, axis: .vertical, hasScrollEngine: true)
+            isScrollMode: true, hasScrollEngine: true)
         let folder = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: folder) }

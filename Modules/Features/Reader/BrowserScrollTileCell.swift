@@ -98,18 +98,31 @@ final class BrowserScrollTileCell: UICollectionViewCell {
 
     /// One point of sampling neighbours prevents scaled images from clamping
     /// interpolation at a backing-store edge. Only the original tile is shown.
-    private var paintBleed: CGFloat {
-        guard let tile = currentTile, tile.chapter.isViewportDriven,
-              tile.chapter.writingMode == .horizontal else { return 0 }
-        return 1
+    private var paintBleed: CGFloat { currentTile.map(Self.paintBleed) ?? 0 }
+
+    private static func paintBleed(of tile: BrowserScrollTile) -> CGFloat {
+        tile.chapter.isViewportDriven && tile.chapter.writingMode == .horizontal ? 1 : 0
     }
 
-    var renderingDocumentRect: CGRect {
-        (currentTile?.documentRect ?? .zero).insetBy(dx: 0, dy: -paintBleed)
+    /// Where the tile paints, in document space: its window, grown by the hidden
+    /// `paintBleed` — and in vertical writing by the reader's top and bottom insets,
+    /// which it shows. A highlight's art can stand past the end of a column (蜘蛛侠's
+    /// head sits on top of the quote) and paged mode draws it in the page margin; a
+    /// tile cut to its window cut the head off at the column top (2026-10-15).
+    private(set) var renderingDocumentRect: CGRect = .zero
+
+    private static func renderingRect(of tile: BrowserScrollTile, topInset: CGFloat, bottomInset: CGFloat) -> CGRect {
+        let window = tile.documentRect
+        guard tile.chapter.writingMode.isVertical else { return window.insetBy(dx: 0, dy: -paintBleed(of: tile)) }
+        return CGRect(x: window.minX, y: window.minY - topInset,
+                      width: window.width, height: window.height + topInset + bottomInset)
     }
 
+    /// A point in the painted view, in the tile's window.
     func tileLocalPoint(fromRenderingPoint point: CGPoint) -> CGPoint {
-        CGPoint(x: point.x, y: point.y - paintBleed)
+        let window = currentTile?.documentRect ?? .zero
+        return CGPoint(x: point.x + renderingDocumentRect.minX - window.minX,
+                       y: point.y + renderingDocumentRect.minY - window.minY)
     }
 
     override init(frame: CGRect) {
@@ -147,18 +160,26 @@ final class BrowserScrollTileCell: UICollectionViewCell {
         } else {
             paintClipView?.isHidden = true
             if interactiveView.superview !== contentView { contentView.addSubview(interactiveView) }
-            interactiveView.frame = frame
+            // A vertical tile also covers the insets it paints; the content view clips the rest.
+            interactiveView.frame = CGRect(
+                x: frame.minX, y: frame.minY + renderingDocumentRect.minY - tile.documentRect.minY,
+                width: frame.width, height: renderingDocumentRect.height
+            )
         }
     }
 
+    /// - Parameters:
+    ///   - verticalInset: Where a vertical tile's window starts in the cell.
+    ///   - bottomInset: What a vertical tile's cell holds below its window.
     func configure(tile: BrowserScrollTile, horizontalInset: CGFloat, leadingSpacing: CGFloat, verticalInset: CGFloat = 0,
-                   rendersContentExternally: Bool = false) {
+                   bottomInset: CGFloat = 0, rendersContentExternally: Bool = false) {
         interactiveView.usesExternalContentSurface = rendersContentExternally
-        let isSameBinding = currentTile.map {
+        let renderingRect = Self.renderingRect(of: tile, topInset: verticalInset, bottomInset: bottomInset)
+        let isSameBinding = (currentTile.map {
             $0.chapter === tile.chapter && $0.documentRect == tile.documentRect
                 && $0.charRange.location == tile.charRange.location
                 && $0.charRange.length == tile.charRange.length
-        } ?? false
+        } ?? false) && renderingRect == renderingDocumentRect
         if currentTile != nil, currentTile?.chapter !== tile.chapter {
             interactiveView.resetContinuousBinding()
         }
@@ -167,6 +188,7 @@ final class BrowserScrollTileCell: UICollectionViewCell {
             interactiveView.cancelLinkPress()
         }
         currentTile = tile
+        renderingDocumentRect = renderingRect
         // UIView records draw commands on main; Core Animation executes the
         // viewport tile's backing-store raster off main. Trace 4 shows glyph
         // raster/PNG decode in CABackingStoreUpdate after draw(_:) has returned.
@@ -278,6 +300,7 @@ final class BrowserScrollTileCell: UICollectionViewCell {
     override func prepareForReuse() {
         super.prepareForReuse()
         currentTile = nil
+        renderingDocumentRect = .zero
         paintClipView?.isHidden = true
         horizontalInset = 0
         leadingSpacing = 0

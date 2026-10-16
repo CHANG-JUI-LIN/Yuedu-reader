@@ -40,12 +40,18 @@ enum CoreTextScrollAxis: Equatable {
         }
     }
 
+    /// Where `scrollToItem` puts an item for its text to start at the reading edge.
+    ///
+    /// `scrollToItem` speaks the collection view's own coordinates, and UIKit draws a
+    /// right-to-left one mirrored, cells mirrored back: an item's right edge on screen, where
+    /// vertical writing starts, is its *left* there. Measured on iOS 17.5, 26.5 and 27
+    /// (2026-10-15); `.right` opened a chapter at 0% on its last columns.
     var initialScrollPosition: UICollectionView.ScrollPosition {
         switch self {
         case .vertical:
             return .top
         case .horizontalRTL:
-            return .right
+            return .left
         }
     }
 }

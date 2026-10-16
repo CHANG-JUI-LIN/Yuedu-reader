@@ -249,6 +249,39 @@ final class CoreTextChunk {
         return nil
     }
 
+    /// Distance from this chunk's right edge to the right edge of the column holding
+    /// `characterIndex`: `topOffset(forCharacterIndex:)` for vertical writing, whose columns run
+    /// right to left along x. The inverse of `readingOffset(atHorizontalOffset:)`.
+    ///
+    /// Without it a vertical restore could only put the reader on a chunk's first column, up to a
+    /// chunk's width — several screens — before where they were (2026-10-15).
+    ///
+    /// - Returns: `nil` for horizontal writing, for an index outside this chunk or on its first
+    ///   character, and for an image-only chunk: all of them belong at the chunk's own right edge.
+    func rightOffset(forCharacterIndex characterIndex: Int) -> CGFloat? {
+        guard writingMode.isVertical,
+              !isImageOnly,
+              characterIndex > charRange.location,
+              characterIndex < charRange.location + charRange.length
+        else { return nil }
+        materializeFrameIfNeeded()
+        guard let frame else { return nil }
+        let lines = CTFrameGetLines(frame) as! [CTLine]
+        guard !lines.isEmpty else { return nil }
+        var origins = [CGPoint](repeating: .zero, count: lines.count)
+        CTFrameGetLineOrigins(frame, CFRangeMake(0, lines.count), &origins)
+
+        for index in lines.indices {
+            // Chapter-relative already, as in `topOffset(forCharacterIndex:)`.
+            let lineRange = CTLineGetStringRange(lines[index])
+            guard characterIndex < lineRange.location + lineRange.length else {
+                continue
+            }
+            return max(0, width - Self.columnSpan(of: lines[index], origin: origins[index]).upperBound)
+        }
+        return nil
+    }
+
     // MARK: - Selection (hit-test / rect calculation)
 
     /// Reading progress is the line at the viewport's leading edge, independent
@@ -281,6 +314,49 @@ final class CoreTextChunk {
             if delta == 0 { break }
         }
         return nearest
+    }
+
+    /// `readingOffset(atVerticalOffset:)` for vertical writing: the column at the viewport's
+    /// leading edge, found by `x` alone. A selection hit test also needs the point inside the
+    /// column's length, so it missed every column that ends above the viewport's centre (「好。」)
+    /// and the reader's progress was saved as the start of a multi-screen chunk.
+    ///
+    /// - Returns: the first character of that column, which `rightOffset(forCharacterIndex:)` puts
+    ///   back at the same edge.
+    func readingOffset(atHorizontalOffset x: CGFloat) -> Int? {
+        guard writingMode.isVertical else { return nil }
+        if isImageOnly { return charRange.location }
+        materializeFrameIfNeeded()
+        guard let frame else { return nil }
+        let lines = CTFrameGetLines(frame) as! [CTLine]
+        guard !lines.isEmpty else { return nil }
+        var origins = [CGPoint](repeating: .zero, count: lines.count)
+        CTFrameGetLineOrigins(frame, CFRangeMake(0, lines.count), &origins)
+        var nearest: Int?
+        var distance = CGFloat.greatestFiniteMagnitude
+        for index in lines.indices {
+            let range = CTLineGetStringRange(lines[index])
+            guard range.length > 0 else { continue }
+            let span = Self.columnSpan(of: lines[index], origin: origins[index])
+            let delta = max(0, span.lowerBound - x, x - span.upperBound)
+            if delta < distance {
+                nearest = range.location
+                distance = delta
+            }
+            if delta == 0 { break }
+        }
+        return nearest
+    }
+
+    /// Where a vertical-writing column lies along x, in chunk-local coordinates: its baseline
+    /// widened by the line's ascent and descent. The one definition that hit testing, saving and
+    /// restoring a position all measure columns by.
+    private static func columnSpan(of line: CTLine, origin: CGPoint) -> ClosedRange<CGFloat> {
+        var ascent: CGFloat = 0, descent: CGFloat = 0
+        _ = CTLineGetTypographicBounds(line, &ascent, &descent, nil)
+        let x1 = origin.x - descent
+        let x2 = origin.x + ascent
+        return min(x1, x2)...max(x1, x2)
     }
 
     /// Converts a UIKit coordinate point within the cell to a chapter-level character index (including the full-chapter index starting from charRange.location)
@@ -345,13 +421,9 @@ final class CoreTextChunk {
         var bestIdx: Int?
         var bestDist: CGFloat = .greatestFiniteMagnitude
         for i in lines.indices {
-            var ascent: CGFloat = 0, descent: CGFloat = 0
-            _ = CTLineGetTypographicBounds(lines[i], &ascent, &descent, nil)
-            let baselineX = origins[i].x
-            let x1 = baselineX - descent
-            let x2 = baselineX + ascent
-            let minX = min(x1, x2)
-            let maxX = max(x1, x2)
+            let span = Self.columnSpan(of: lines[i], origin: origins[i])
+            let minX = span.lowerBound
+            let maxX = span.upperBound
             if point.x >= minX - tapTolerance, point.x <= maxX + tapTolerance {
                 bestIdx = i; bestDist = 0; break
             }

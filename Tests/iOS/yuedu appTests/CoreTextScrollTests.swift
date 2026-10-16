@@ -227,11 +227,12 @@ struct CoreTextScrollTests {
         controller.view.setNeedsLayout()
         controller.view.layoutIfNeeded()
 
-        for _ in 0..<50 where !engine.isReady {
+        // Bounded: a 160-paragraph chapter takes over a second to slice on an iOS 17 simulator,
+        // where a fixed half second ran out before the first chunk existed.
+        for _ in 0..<500 where !engine.isReady || controller.positionForPersistence() == nil {
             try await Task.sleep(nanoseconds: 10_000_000)
+            controller.view.layoutIfNeeded()
         }
-        try await Task.sleep(nanoseconds: 50_000_000)
-        controller.view.layoutIfNeeded()
 
         let collectionView = try #require(Self.firstCollectionView(in: controller.view))
         #expect(engine.isReady)
@@ -241,6 +242,295 @@ struct CoreTextScrollTests {
         #expect(collectionView.contentOffset.x >= minOffsetX - 0.5)
         #expect(collectionView.contentOffset.x <= maxOffsetX + 0.5)
         window.isHidden = true
+    }
+
+    /// What the reader sees, not where the offset is: the test above passed while a TXT chapter
+    /// opened at 0% on its *last* columns (2026-10-15). Both chapter shapes: one chunk wider than
+    /// the screen, as a short TXT chapter is, and several full-width chunks.
+    @Test("horizontal RTL scroll opens on the chapter's first column, and says so",
+          arguments: [false, true])
+    @MainActor
+    func horizontalRTLOpensOnFirstColumn(longChapter: Bool) async throws {
+        let settings = Self.makeRenderSettings(writingMode: .verticalRTL)
+        let engine = CoreTextScrollEngine(
+            builder: StaticScrollTestBuilder(
+                chapters: [longChapter ? Self.longVerticalChapter : Self.shortVerticalChapter]
+            ),
+            renderSettings: settings
+        )
+        let inset: CGFloat = 24
+        let controller = CoreTextCollectionScrollViewController(
+            engine: engine,
+            axis: .horizontalRTL,
+            horizontalInset: inset,
+            verticalInset: 72,
+            backgroundColor: .white
+        )
+        controller.bottomMargin = 32
+        controller.setInitialPosition(chapter: 0, charOffset: 0)
+
+        let scene = try #require(
+            UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first
+        )
+        let window = UIWindow(windowScene: scene)
+        window.frame = CGRect(x: 0, y: 0, width: 402, height: 874)
+        window.rootViewController = controller
+        window.makeKeyAndVisible()
+        defer { window.isHidden = true }
+        controller.view.setNeedsLayout()
+        controller.view.layoutIfNeeded()
+
+        // Bounded: a 160-paragraph chapter takes over a second to slice on an iOS 17 simulator.
+        for _ in 0..<500 where controller.positionForPersistence() == nil {
+            try await Task.sleep(nanoseconds: 10_000_000)
+            controller.view.layoutIfNeeded()
+        }
+        let collectionView = try #require(Self.firstCollectionView(in: controller.view))
+        #expect(collectionView.contentSize.width > collectionView.bounds.width)
+        #expect((engine.chunks.count > 1) == longChapter)
+
+        let chunk = try #require(engine.chunks.first)
+        chunk.materializeFrameIfNeeded()
+        let frame = try #require(chunk.frame)
+        let lines = CTFrameGetLines(frame) as! [CTLine]
+        var origins = [CGPoint](repeating: .zero, count: lines.count)
+        CTFrameGetLineOrigins(frame, CFRangeMake(0, lines.count), &origins)
+        let firstColumn = try #require(origins.first)
+        let cell = try #require(
+            collectionView.cellForItem(at: IndexPath(item: 0, section: 0)) as? CoreTextChunkCollectionCell
+        )
+        let drawn = cell.drawView.convert(CGPoint(x: firstColumn.x, y: chunk.height / 2), to: window)
+        let geometry = "offset=\(collectionView.contentOffset.x) content=\(collectionView.contentSize.width) "
+            + "chunk=\(chunk.width) column=\(firstColumn.x) collection→window x+1=\(collectionView.convert(CGPoint(x: 1, y: 0), to: window).x - collectionView.convert(CGPoint.zero, to: window).x) "
+            + "cell→collection x+1=\(cell.convert(CGPoint(x: 1, y: 0), to: collectionView).x - cell.convert(CGPoint.zero, to: collectionView).x)"
+        // The first column sits against the right-hand margin: on screen, and within a couple
+        // of column widths of where the text begins.
+        #expect(drawn.x <= window.bounds.width - inset, "\(drawn.x) \(geometry)")
+        #expect(drawn.x >= window.bounds.width - inset - 2 * settings.fontSize, "\(drawn.x) \(geometry)")
+
+        // And what gets saved is that column, not the one at the far edge of the screen.
+        let saved = try #require(controller.positionForPersistence())
+        let firstLine = CTLineGetStringRange(lines[0])
+        #expect(saved.charOffset < firstLine.location + firstLine.length, "saved \(saved.charOffset) \(geometry)")
+    }
+
+    /// A later chapter's first chunk carries the gap that parts it from the chapter before, on its
+    /// right — before its text. Opening at that chapter's start steps past the gap.
+    @Test("horizontal RTL restore to a later chapter lands on its first column, past the gap")
+    @MainActor
+    func horizontalRTLRestoreToLaterChapterSkipsTheGap() async throws {
+        let settings = Self.makeRenderSettings(writingMode: .verticalRTL)
+        let engine = CoreTextScrollEngine(
+            builder: StaticScrollTestBuilder(chapters: [Self.shortVerticalChapter, Self.shortVerticalChapter]),
+            renderSettings: settings
+        )
+        let inset: CGFloat = 24
+        let controller = CoreTextCollectionScrollViewController(
+            engine: engine,
+            axis: .horizontalRTL,
+            horizontalInset: inset,
+            verticalInset: 72,
+            backgroundColor: .white
+        )
+        controller.bottomMargin = 32
+        controller.setInitialPosition(chapter: 1, charOffset: 0)
+
+        let scene = try #require(
+            UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first
+        )
+        let window = UIWindow(windowScene: scene)
+        window.frame = CGRect(x: 0, y: 0, width: 402, height: 874)
+        window.rootViewController = controller
+        window.makeKeyAndVisible()
+        defer { window.isHidden = true }
+        controller.view.setNeedsLayout()
+        controller.view.layoutIfNeeded()
+
+        // Until the chapter before has loaded in front — only then is there a gap to step past —
+        // and the restore that follows the insertion has run: it waits for the batch update to
+        // finish, and until then the unchanged offset shows the inserted chapter.
+        for _ in 0..<500 where engine.chapterRanges[0] == nil
+            || controller.positionForPersistence()?.spineIndex != 1 {
+            try await Task.sleep(nanoseconds: 10_000_000)
+            controller.view.layoutIfNeeded()
+        }
+        let collectionView = try #require(Self.firstCollectionView(in: controller.view))
+        try #require(engine.chapterRanges[0] != nil)
+        let row = try #require(engine.chapterRanges[1]?.first)
+        #expect(row > 0)
+
+        let chunk = engine.chunks[row]
+        chunk.materializeFrameIfNeeded()
+        let frame = try #require(chunk.frame)
+        let lines = CTFrameGetLines(frame) as! [CTLine]
+        var origins = [CGPoint](repeating: .zero, count: lines.count)
+        CTFrameGetLineOrigins(frame, CFRangeMake(0, lines.count), &origins)
+        let firstColumn = try #require(origins.first)
+        let cell = try #require(
+            collectionView.cellForItem(at: IndexPath(item: row, section: 0)) as? CoreTextChunkCollectionCell
+        )
+        let drawn = cell.drawView.convert(CGPoint(x: firstColumn.x, y: chunk.height / 2), to: window)
+        let geometry = "offset=\(collectionView.contentOffset.x) row=\(row) chunk=\(chunk.width) column=\(firstColumn.x)"
+        #expect(drawn.x <= window.bounds.width - inset, "\(drawn.x) \(geometry)")
+        #expect(drawn.x >= window.bounds.width - inset - 2 * settings.fontSize, "\(drawn.x) \(geometry)")
+
+        let saved = try #require(controller.positionForPersistence())
+        let firstLine = CTLineGetStringRange(lines[0])
+        #expect(saved.spineIndex == 1, "\(geometry)")
+        #expect(saved.charOffset < firstLine.location + firstLine.length, "saved \(saved.charOffset) \(geometry)")
+    }
+
+    /// 下一章 and the table of contents re-slice at the chapter's start: it is shown alone, and the
+    /// chapters either side of it arrive afterwards, one of them in front of it. UIKit carries the
+    /// cell showing its first chunk across that insertion without binding it again — bound as the
+    /// first item, with no gap ahead of it, it drew the chapter a gap's width right of the margin,
+    /// the title cut off by the screen's edge (2026-10-16).
+    @Test("horizontal RTL jump to the next chapter lands on its first column")
+    @MainActor
+    func horizontalRTLJumpToNextChapterLandsOnItsFirstColumn() async throws {
+        let inset: CGFloat = 24
+        let fontSize = Self.makeRenderSettings(writingMode: .verticalRTL).fontSize
+        // Mid-chapter, as 下一章 is usually pressed: the jump moves the offset, and moving it is
+        // what asks for the chapters either side.
+        let reader = try await Self.openVertical(
+            [Self.longVerticalChapter, Self.longVerticalChapter, Self.longVerticalChapter], at: 1000, inset: inset
+        )
+        defer { reader.window.isHidden = true }
+
+        reader.controller.requestReslice(at: 1)
+        // Bounded: both neighbours slice in the background, over a second each on an iOS 17 simulator.
+        for _ in 0..<1000 where reader.engine.chapterRanges[0] == nil || reader.engine.chapterRanges[2] == nil
+            || reader.controller.positionForPersistence()?.spineIndex != 1 {
+            try await Task.sleep(nanoseconds: 10_000_000)
+            reader.controller.view.layoutIfNeeded()
+        }
+        let row = try #require(reader.engine.chapterRanges[1]?.first)
+        #expect(row > 0)
+        let chunk = try #require(reader.engine.chunks[row].legacyChunk)
+        let first = try #require(try Self.columns(of: chunk).first)
+        let cell = try #require(
+            reader.collectionView.cellForItem(at: IndexPath(item: row, section: 0)) as? CoreTextChunkCollectionCell
+        )
+        let drawn = cell.drawView.convert(CGPoint(x: first.origin.x, y: chunk.height / 2), to: reader.window)
+        let geometry = "offset=\(reader.collectionView.contentOffset.x) row=\(row) "
+            + "drawView=\(cell.drawView.frame) cell=\(cell.bounds.size)"
+        #expect(drawn.x <= reader.window.bounds.width - inset, "\(drawn.x) \(geometry)")
+        #expect(drawn.x >= reader.window.bounds.width - inset - 2 * fontSize, "\(drawn.x) \(geometry)")
+
+        let saved = try #require(reader.controller.positionForPersistence())
+        let firstLine = CTLineGetStringRange(first.line)
+        #expect(saved.spineIndex == 1, "\(geometry)")
+        #expect(saved.charOffset < firstLine.location + firstLine.length, "saved \(saved.charOffset) \(geometry)")
+    }
+
+    /// A book left mid-chapter reopens on the column the reader left, not on the first column of
+    /// the chunk holding it — which put them back up to a chunk's width, the footer still reading
+    /// where they had been (2026-10-15). And saving reads that column back, so leaving and
+    /// reopening goes nowhere: also for a column too short to reach the screen's middle (「好。」),
+    /// which saving used to miss and record as the chunk's start.
+    @Test("horizontal RTL reopens on the column holding the position, and saves that column",
+          arguments: [false, true])
+    @MainActor
+    func horizontalRTLRestoresTheColumnNotTheChunk(shortColumn: Bool) async throws {
+        let chapter = shortColumn ? Self.verticalChapterWithShortColumns : Self.longVerticalChapter
+        let inset: CGFloat = 24
+
+        // A column in the middle of the second chunk: clear of both ends of the chapter, so the
+        // scroll range cannot be what holds it at the margin.
+        let probe = try await Self.openVertical([chapter], at: 0, inset: inset)
+        let chunk = try #require(probe.engine.chunks.count >= 2 ? probe.engine.chunks[1].legacyChunk : nil)
+        try #require(chunk.width / 2 > probe.window.bounds.width, "chunk \(chunk.width)")
+        let lines = try Self.columns(of: chunk)
+        let candidates = lines.indices.filter { (CTLineGetStringRange(lines[$0].line).length <= 5) == shortColumn }
+        let middle = try #require(candidates.min { abs($0 - lines.count / 2) < abs($1 - lines.count / 2) })
+        let target = CTLineGetStringRange(lines[middle].line).location + 1
+        probe.window.isHidden = true
+
+        let reader = try await Self.openVertical([chapter], at: target, inset: inset)
+        defer { reader.window.isHidden = true }
+        let column = try Self.column(holding: target, in: reader)
+        #expect(abs(column.rightEdge - (reader.window.bounds.width - inset)) <= 1,
+                "column \(column) offset=\(reader.collectionView.contentOffset.x)")
+        let saved = try #require(reader.controller.positionForPersistence())
+        #expect(saved == CoreTextReadingPosition(spineIndex: 0, charOffset: column.start), "target \(target)")
+
+        let reopened = try await Self.openVertical([chapter], at: saved.charOffset, inset: inset)
+        defer { reopened.window.isHidden = true }
+        let again = try Self.column(holding: saved.charOffset, in: reopened)
+        #expect(abs(again.rightEdge - (reopened.window.bounds.width - inset)) <= 1, "column \(again)")
+        #expect(reopened.controller.positionForPersistence() == saved)
+    }
+
+    private struct VerticalReader {
+        let controller: CoreTextCollectionScrollViewController
+        let engine: CoreTextScrollEngine
+        let window: UIWindow
+        let collectionView: UICollectionView
+    }
+
+    /// A vertical-writing TXT reader on a phone-sized screen, opened at `charOffset` of the first
+    /// chapter, once its restore has run.
+    @MainActor
+    private static func openVertical(_ chapters: [String], at charOffset: Int, inset: CGFloat) async throws -> VerticalReader {
+        let engine = CoreTextScrollEngine(
+            builder: StaticScrollTestBuilder(chapters: chapters),
+            renderSettings: makeRenderSettings(writingMode: .verticalRTL)
+        )
+        let controller = CoreTextCollectionScrollViewController(
+            engine: engine,
+            axis: .horizontalRTL,
+            horizontalInset: inset,
+            verticalInset: 72,
+            backgroundColor: .white
+        )
+        controller.bottomMargin = 32
+        controller.setInitialPosition(chapter: 0, charOffset: charOffset)
+        let scene = try #require(
+            UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first
+        )
+        let window = UIWindow(windowScene: scene)
+        window.frame = CGRect(x: 0, y: 0, width: 402, height: 874)
+        window.rootViewController = controller
+        window.makeKeyAndVisible()
+        controller.view.setNeedsLayout()
+        controller.view.layoutIfNeeded()
+        // Bounded: a 160-paragraph chapter takes over a second to slice on an iOS 17 simulator.
+        for _ in 0..<500 where !engine.isReady || controller.positionForPersistence() == nil {
+            try await Task.sleep(nanoseconds: 10_000_000)
+            controller.view.layoutIfNeeded()
+        }
+        let collectionView = try #require(firstCollectionView(in: controller.view))
+        return VerticalReader(controller: controller, engine: engine, window: window, collectionView: collectionView)
+    }
+
+    @MainActor
+    private static func columns(of chunk: CoreTextChunk) throws -> [(line: CTLine, origin: CGPoint)] {
+        chunk.materializeFrameIfNeeded()
+        let frame = try #require(chunk.frame)
+        let lines = CTFrameGetLines(frame) as! [CTLine]
+        var origins = [CGPoint](repeating: .zero, count: lines.count)
+        CTFrameGetLineOrigins(frame, CFRangeMake(0, lines.count), &origins)
+        return Array(zip(lines, origins))
+    }
+
+    /// Where the column holding `charOffset` has its right edge on screen, and the character it
+    /// starts with.
+    @MainActor
+    private static func column(holding charOffset: Int, in reader: VerticalReader) throws -> (rightEdge: CGFloat, start: Int) {
+        let row = try #require(reader.engine.chunkIndex(forChapter: 0, charOffset: charOffset))
+        let chunk = try #require(reader.engine.chunks[row].legacyChunk)
+        let column = try #require(try columns(of: chunk).first {
+            let range = CTLineGetStringRange($0.line)
+            return charOffset < range.location + range.length
+        })
+        var ascent: CGFloat = 0, descent: CGFloat = 0
+        _ = CTLineGetTypographicBounds(column.line, &ascent, &descent, nil)
+        let right = max(column.origin.x - descent, column.origin.x + ascent)
+        let cell = try #require(
+            reader.collectionView.cellForItem(at: IndexPath(item: row, section: 0)) as? CoreTextChunkCollectionCell
+        )
+        let drawn = cell.drawView.convert(CGPoint(x: right, y: chunk.height / 2), to: reader.window)
+        return (drawn.x, CTLineGetStringRange(column.line).location)
     }
 
     @Test("collection scroll first load works before window attachment")
@@ -1001,6 +1291,16 @@ struct CoreTextScrollTests {
 
     private static let longVerticalChapter = (0..<160)
         .map { _ in "直排測試文字，應該從右邊開始呈現，並且往左連續前進。" }
+        .joined(separator: "\n")
+
+    /// Every fourth paragraph a column far shorter than the screen is tall.
+    private static let verticalChapterWithShortColumns = (0..<160)
+        .map { $0 % 4 == 2 ? "「好。」" : "直排測試文字，應該從右邊開始呈現，並且往左連續前進。" }
+        .joined(separator: "\n")
+
+    /// One chunk, but two screens wide: the shape of a short TXT chapter.
+    private static let shortVerticalChapter = (0..<10)
+        .map { "第\($0)段，直排從右邊開始。" }
         .joined(separator: "\n")
 
     private static let longTXT = (0..<160)

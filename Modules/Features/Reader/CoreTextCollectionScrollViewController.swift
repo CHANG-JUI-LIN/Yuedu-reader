@@ -1184,7 +1184,8 @@ final class CoreTextCollectionScrollViewController: UIViewController, UIEditMenu
         return true
     }
 
-    /// Puts `charOffset` — not the chunk that contains it — at the top of the viewport.
+    /// Puts `charOffset` — not the chunk that contains it — at the viewport's leading edge: its top,
+    /// or in vertical writing its right margin.
     ///
     /// This is where "switching from paged to scroll runs away" came from. The handover position is
     /// character-granular, but the restore was `scrollToItem(at: .top)`, which can only express
@@ -1219,14 +1220,7 @@ final class CoreTextCollectionScrollViewController: UIViewController, UIEditMenu
         // final offset does not follow it, something moved us after the fact.
         let targetFrame = collectionView.layoutAttributesForItem(at: path)?.frame
 
-        // Horizontal RTL stays on `scrollToItem`. `topOffset(forCharacterIndex:)` deliberately
-        // refuses vertical writing — its lines run along x, so it would answer in the wrong axis —
-        // and this file's mirrored inset arithmetic is unverified. Vertical CJK therefore still
-        // restores to the chunk edge: a known remaining gap, not an oversight.
-        guard scrollAxis == .vertical,
-              let frame = targetFrame,
-              row < engine.chunks.count
-        else {
+        guard let frame = targetFrame, row < engine.chunks.count else {
             collectionView.scrollToItem(
                 at: path,
                 at: scrollAxis.initialScrollPosition,
@@ -1239,6 +1233,34 @@ final class CoreTextCollectionScrollViewController: UIViewController, UIEditMenu
             )
             return true
         }
+        let chunk = engine.chunks[row]
+
+        if scrollAxis == .horizontalRTL {
+            // The column holding `charOffset` goes to the right margin. A chunk's text starts at
+            // its right edge on screen, past the gap that stands before a chapter's first chunk,
+            // and the column stands `withinChunk` left of that. Both edges are taken on screen and
+            // converted, like `readingEdge`: `scrollToItem(at: .right)` aimed at the collection's
+            // own right, which is the screen's left, and opened a chapter at 0% on its last
+            // columns; and with no `withinChunk`, a book left mid-chapter reopened on its chunk's
+            // first column, the footer still reading where the reader had been (2026-10-15).
+            let withinChunk = chunk.rightOffset(forCharacterIndex: charOffset) ?? 0
+            let onScreen = collectionView.convert(frame, to: collectionView.superview)
+            let column = collectionView.convert(
+                CGPoint(x: onScreen.maxX - chapterGap(for: row) - withinChunk, y: onScreen.midY),
+                from: collectionView.superview
+            )
+            setScrollOffset(
+                CGPoint(
+                    x: collectionView.contentOffset.x + column.x - readingEdge(inset: 0).x,
+                    y: collectionView.contentOffset.y
+                ),
+                source: .restore,
+                detail: "row=\(row) off=\(charOffset) chunkStart=\(chunk.charRange.location) "
+                    + "withinChunk=\(String(format: "%.1f", withinChunk)) "
+                    + "frameX=\(String(format: "%.1f", frame.minX))"
+            )
+            return true
+        }
 
         // `nil` from `topOffset` is an answer, not a failure: an image-only chunk, or an offset
         // sitting on the chunk's first character, both belong at the chunk's own top edge.
@@ -1247,7 +1269,6 @@ final class CoreTextCollectionScrollViewController: UIViewController, UIEditMenu
         // `contentOffset` is quantised, measured at 1/6pt on a 3x screen. That is the resolution
         // of the API, not slack in the arithmetic, which `ScrollOffsetEquivalenceTests` pins
         // separately and exactly.
-        let chunk = engine.chunks[row]
         let withinChunk = chunk.topOffset(forCharacterIndex: charOffset) ?? 0
         setScrollOffset(
             CGPoint(
@@ -1511,11 +1532,29 @@ final class CoreTextCollectionScrollViewController: UIViewController, UIEditMenu
             let visibleY = collectionView.contentOffset.y + collectionView.adjustedContentInset.top
             return CGPoint(x: collectionView.bounds.midX, y: max(0, visibleY))
         case .horizontalRTL:
-            // Vertical writing flows right to left, so the leading edge is the right one.
-            let rightX = collectionView.contentOffset.x + collectionView.bounds.width
-                - collectionView.adjustedContentInset.right - 1
-            return CGPoint(x: max(0, rightX), y: collectionView.bounds.midY)
+            // Vertical writing flows right to left, so the leading edge is the right margin *on
+            // screen*. It is placed there and converted (`readingEdge`); reading it off the
+            // collection's own right inset put the anchor on the screen's left margin instead.
+            let edge = readingEdge(inset: 1)
+            return CGPoint(x: max(0, edge.x), y: collectionView.bounds.midY)
         }
+    }
+
+    /// The right margin of the screen, `inset` points into the text, in the collection view's
+    /// coordinates: where vertical writing starts.
+    ///
+    /// Never computed from the collection's own x. UIKit draws a right-to-left collection view
+    /// mirrored, and each cell mirrored back, so its x runs leftwards on screen: its *right* inset
+    /// is the screen's left margin. Measured on iOS 17.5, 26.5 and 27 (2026-10-15), where the code
+    /// that assumed otherwise opened a chapter at 0% on its last columns and saved the column at
+    /// the left of the screen as the reading position. A point placed on screen and converted is
+    /// right whichever way UIKit draws it.
+    private func readingEdge(inset: CGFloat) -> CGPoint {
+        let frame = collectionView.frame
+        return collectionView.convert(
+            CGPoint(x: frame.maxX - horizontalInset - inset, y: frame.midY),
+            from: collectionView.superview
+        )
     }
 
     private func visibleProgressIndexPath() -> IndexPath? {
@@ -1584,9 +1623,11 @@ final class CoreTextCollectionScrollViewController: UIViewController, UIEditMenu
     /// used to clamp to zero and so pushed the reader 16pt down from the top whenever a restore
     /// proposed anything negative — visible in device logs as `proposedY=-167.7 → 0.0`.
     ///
-    /// Horizontal RTL keeps exactly the bounds it already had. Its inset relationship is mirrored
-    /// and unverified here, and changing it on reasoning alone is what this whole effort has been
-    /// paying for.
+    /// Horizontal RTL has the range of any horizontal scroll view, measured rather than reasoned
+    /// (2026-10-15): UIKit mirrors a right-to-left collection view on screen but leaves its
+    /// offsets alone, so a chapter opens at `-contentInset.left`. The range that stood here,
+    /// `-(content - width)...0`, assumed negative offsets; nothing horizontal came through this
+    /// writer until the vertical-writing restore did, which it would have pinned to 0.
     private func clampedScrollOffset(_ proposed: CGPoint) -> CGPoint {
         switch scrollAxis {
         case .vertical:
@@ -1598,8 +1639,13 @@ final class CoreTextCollectionScrollViewController: UIViewController, UIEditMenu
             )
             return CGPoint(x: proposed.x, y: min(max(minY, proposed.y), maxY))
         case .horizontalRTL:
-            let minX = -max(0, collectionView.contentSize.width - collectionView.bounds.width)
-            return CGPoint(x: min(max(minX, proposed.x), 0), y: proposed.y)
+            let minX = -collectionView.adjustedContentInset.left
+            let maxX = max(
+                minX,
+                collectionView.contentSize.width - collectionView.bounds.width
+                    + collectionView.adjustedContentInset.right
+            )
+            return CGPoint(x: min(max(minX, proposed.x), maxX), y: proposed.y)
         }
     }
 
@@ -1770,7 +1816,7 @@ final class CoreTextCollectionScrollViewController: UIViewController, UIEditMenu
                 // same transaction, without invalidating unchanged glyph paint.
                 cell.bind(chunk: chunk, axis: scrollAxis, horizontalInset: horizontalInset,
                           verticalInset: verticalInset, leadingSpacing: chapterGap(for: path.item),
-                          viewportSize: collectionView.bounds.size)
+                          viewportSize: collectionView.bounds.size, bottomInset: bottomMargin)
                 cell.layoutIfNeeded()
                 continue
             }
@@ -1779,6 +1825,7 @@ final class CoreTextCollectionScrollViewController: UIViewController, UIEditMenu
             let previousPaintUpdates = cell.paintUpdateCount
             cell.configure(tile: tile, horizontalInset: horizontalInset,
                            leadingSpacing: chapterGap(for: path.item), verticalInset: verticalInset,
+                           bottomInset: bottomMargin,
                            rendersContentExternally: scrollAxis == .vertical && tile.chapter.isViewportDriven)
             paintUpdates += cell.paintUpdateCount - previousPaintUpdates
             cell.applyAnnotations(textAnnotations)
@@ -1958,6 +2005,7 @@ extension CoreTextCollectionScrollViewController: UICollectionViewDataSource, UI
                 present(preview, animated: true)
             }
             cell.configure(tile: tile, horizontalInset: horizontalInset, leadingSpacing: chapterGap(for: indexPath.item), verticalInset: verticalInset,
+                           bottomInset: bottomMargin,
                            rendersContentExternally: scrollAxis == .vertical && tile.chapter.isViewportDriven)
             return cell
         }
@@ -1978,7 +2026,8 @@ extension CoreTextCollectionScrollViewController: UICollectionViewDataSource, UI
                 horizontalInset: horizontalInset,
                 verticalInset: verticalInset,
                 leadingSpacing: chapterGap(for: indexPath.item),
-                viewportSize: collectionView.bounds.size
+                viewportSize: collectionView.bounds.size,
+                bottomInset: bottomMargin
             )
         }
         return cell
@@ -2024,6 +2073,7 @@ extension CoreTextCollectionScrollViewController: UICollectionViewDataSource, UI
                     || tileCell.currentTile?.documentRect != tile.documentRect
                 tileCell.configure(tile: tile, horizontalInset: horizontalInset,
                                    leadingSpacing: chapterGap(for: indexPath.item), verticalInset: verticalInset,
+                                   bottomInset: bottomMargin,
                            rendersContentExternally: scrollAxis == .vertical && tile.chapter.isViewportDriven)
                 if stale, Self.viewportSignposter.isEnabled {
                     Self.viewportSignposter.emitEvent("viewport.visibleRebind",
@@ -2206,15 +2256,22 @@ extension CoreTextCollectionScrollViewController: UICollectionViewDataSource, UI
            let cell = collectionView.cellForItem(at: index) as? BrowserScrollTileCell,
            index.item < engine.chunks.count {
             let item = engine.chunks[index.item]
-            let local = collectionView.convert(visibleAnchorPoint, to: cell.interactiveView)
-            if let char = item.stringIndex(atLocalPoint: cell.tileLocalPoint(fromRenderingPoint: local)) {
+            let local = cell.tileLocalPoint(
+                fromRenderingPoint: collectionView.convert(visibleAnchorPoint, to: cell.interactiveView)
+            )
+            // Vertical writing reads the column at the leading edge by x alone, as the legacy
+            // branch below does.
+            let offset = scrollAxis == .horizontalRTL
+                ? item.readingOffset(atHorizontalOffset: local.x)
+                : item.stringIndex(atLocalPoint: local)
+            if let char = offset {
                 return CoreTextReadingPosition(spineIndex: item.chapterIndex, charOffset: char)
             }
         }
         if let (_, chunk, localPoint) = hitTestChunk(at: visibleAnchorPoint) {
             let offset = scrollAxis == .vertical
                 ? chunk.readingOffset(atVerticalOffset: localPoint.y)
-                : (chunk.stringIndex(atLocalPoint: localPoint) ?? chunk.charRange.location)
+                : chunk.readingOffset(atHorizontalOffset: localPoint.x)
             guard let char = offset else { return nil }
             return engine.readingPosition(chapter: chunk.chapterIndex, displayOffset: char)
         }
