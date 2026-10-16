@@ -347,4 +347,48 @@ struct BookSourceSelectedImportTests {
         #expect(parsed.count == 1)
         #expect(store.sources.isEmpty, "reviewing a pack must not import it")
     }
+
+    /// Crashlytics 4a7e76ac: a 2.4 GB file aborted the app while it became text.
+    @Test("a file over the import limit is refused before it is read")
+    func oversizedImportIsRefused() {
+        let size = BookSourceStore.maxImportBytes + 1
+        // Zero pages the guard never touches, so the test costs no real memory.
+        let data = Data(count: size)
+        #expect {
+            try BookSourceStore.shared.parseForImport(data: data, fileExtension: "json")
+        } throws: { error in
+            guard case BookSourceStore.ImportError.tooLarge(let bytes) = error else { return false }
+            return bytes == size
+        }
+    }
+
+    @Test("an import file over the limit is refused by its size, unread")
+    func oversizedImportFileIsNotRead() throws {
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent("\(UUID().uuidString).json")
+        #expect(FileManager.default.createFile(atPath: url.path, contents: nil))
+        defer { try? FileManager.default.removeItem(at: url) }
+        // Sparse: the file reports its size without the disk holding it.
+        let handle = try FileHandle(forWritingTo: url)
+        try handle.truncate(atOffset: UInt64(BookSourceStore.maxImportBytes + 1))
+        try handle.close()
+        #expect {
+            try BookSourceStore.importData(contentsOf: url)
+        } throws: { error in
+            guard case BookSourceStore.ImportError.tooLarge(let bytes) = error else { return false }
+            return bytes == BookSourceStore.maxImportBytes + 1
+        }
+    }
+
+    @Test("a pack that is not UTF-8 is refused instead of read as Latin-1")
+    func nonUTF8ImportIsRefused() {
+        // 甲 in GBK: valid Latin-1, so the old fallback imported a garbled name.
+        let data = Data(#"[{"bookSourceName":""#.utf8) + Data([0xBC, 0xD7])
+            + Data(#"","bookSourceUrl":"https://x.example"}]"#.utf8)
+        #expect {
+            try BookSourceStore.shared.parseForImport(data: data, fileExtension: "json")
+        } throws: { error in
+            guard case BookSourceStore.ImportError.notUTF8 = error else { return false }
+            return true
+        }
+    }
 }

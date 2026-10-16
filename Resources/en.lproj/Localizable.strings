@@ -275,6 +275,8 @@
 "無法複製漫畫檔案：" = "Couldn't copy the comic file: ";
 "無法解析伺服器回應" = "Couldn't read the server response.";
 "無法讀取文件" = "Couldn't read the file.";
+"檔案有 %@，超過來源配置檔的上限 %@。" = "The file is %@, over the %@ limit for a sources file.";
+"檔案不是 UTF-8 編碼，無法讀取來源配置。" = "The file isn't UTF-8 text, so its sources can't be read. Save it as UTF-8 and import it again.";
 "無法讀取文件，請確認格式為 TXT / Markdown" = "Couldn't read the file. Make sure it's a TXT or Markdown file.";
 "無法讀取文件，請確認格式為 TXT / Markdown / JSON" = "Couldn't read the file. Make sure it's a TXT, Markdown, or JSON file.";
 "無法送出申請，請檢查網路後再試" = "Couldn't submit your application. Check your internet connection and try again.";

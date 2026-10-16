@@ -160,7 +160,10 @@ final class BookSourceAddFlow: ObservableObject {
             }
             let data: Data
             do {
-                data = try Data(contentsOf: url)
+                data = try BookSourceStore.importData(contentsOf: url)
+            } catch let error as BookSourceStore.ImportError {
+                fail(error.localizedDescription)
+                return
             } catch {
                 AppLogger.error("Book source file could not be read", error: error,
                                 context: ["extension": url.pathExtension])

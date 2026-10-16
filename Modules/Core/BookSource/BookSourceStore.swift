@@ -609,10 +609,27 @@ class BookSourceStore: ObservableObject {
         try importSources(parseForImport(json: json))
     }
 
+    /// The largest import read. A Legado source is 3–6 KB, so this holds about 100,000 of
+    /// them; a larger file is not a source file, and turning one into text aborted the app
+    /// (Crashlytics 4a7e76ac: a 2.4 GB file).
+    static let maxImportBytes = 512 * 1024 * 1024
+
+    /// An import file's bytes, refusing a file over `maxImportBytes` before reading any of
+    /// it. Foundation reads File Provider and iCloud Drive files in full even when asked
+    /// to map them, so the size has to be checked first.
+    static func importData(contentsOf url: URL) throws -> Data {
+        // A file system that reports no size is read; `parseForImport` checks the bytes.
+        if let size = try url.resourceValues(forKeys: [.fileSizeKey]).fileSize, size > maxImportBytes {
+            throw ImportError.tooLarge(size)
+        }
+        return try Data(contentsOf: url, options: .mappedIfSafe)
+    }
+
     /// Parses without writing anything, so the import confirmation list can show what a file
     /// holds before the user commits to it. The importers above are this plus a merge — there
     /// is no second decoder for the preview.
     func parseForImport(data: Data, fileExtension ext: String) throws -> [BookSource] {
+        guard data.count <= Self.maxImportBytes else { throw ImportError.tooLarge(data.count) }
         let lower = ext.lowercased()
         switch lower {
         case "yds":
@@ -620,10 +637,9 @@ class BookSourceStore: ObservableObject {
         case "mrs":
             throw ImportError.encryptedFormat(lower.uppercased())
         default:
-            // .txt, .json, or unknown → try as Legado JSON
-            guard let text = String(data: data, encoding: .utf8)
-                          ?? String(data: data, encoding: .isoLatin1) else {
-                throw ImportError.invalidData
+            // .txt, .json, or unknown → try as Legado JSON, which is UTF-8 as Legado reads it.
+            guard let text = String(data: data, encoding: .utf8) else {
+                throw ImportError.notUTF8
             }
             return try parseForImport(json: text)
         }
@@ -1097,9 +1113,18 @@ class BookSourceStore: ObservableObject {
         case parseError
         case parseErrorDetail(String)
         case encryptedFormat(String)
+        case tooLarge(Int)
+        case notUTF8
 
         var errorDescription: String? {
             switch self {
+            case .tooLarge(let bytes):
+                return String(
+                    format: localized("檔案有 %@，超過來源配置檔的上限 %@。"),
+                    ByteCountFormatter.string(fromByteCount: Int64(bytes), countStyle: .file),
+                    ByteCountFormatter.string(fromByteCount: Int64(BookSourceStore.maxImportBytes), countStyle: .file)
+                )
+            case .notUTF8: return localized("檔案不是 UTF-8 編碼，無法讀取來源配置。")
             case .invalidData: return "Invalid data format"
             case .parseError: return "Unable to parse book source JSON"
             case .parseErrorDetail(let detail):

@@ -402,7 +402,7 @@ final class SharedImportQueueDrainer: ObservableObject {
             customizationRequests.append(.init(data: try Data(contentsOf: url), kind: kind))
             return .init(count: 0, category: .customization)
         case .bookSource(let ext):
-            let data = try Data(contentsOf: url)
+            let data = try BookSourceStore.importData(contentsOf: url)
             return .init(count: try importBookSources(data, fileExtension: ext), category: .bookSource)
         case .rssOPML:
             return .init(count: try importOPMLData(Data(contentsOf: url)), category: .rss)
@@ -582,7 +582,9 @@ enum SharedImportPayloadClassifier {
         }
 
         if ext == "json" || looksLikeJSON(sample) {
-            let data = try Data(contentsOf: fileURL)
+            // Read under the import size limit: no JSON this classifies is legitimately
+            // larger, and reading a 2.4 GB one whole is how an import aborted the app.
+            let data = try BookSourceStore.importData(contentsOf: fileURL)
             return try classify(data: data, fileExtension: ext, suggestedFilename: suggestedFilename)
         }
 
