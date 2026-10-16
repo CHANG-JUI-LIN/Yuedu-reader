@@ -327,5 +327,5 @@ private final class PausedRubyResource: BrowserLayoutResourceProviding {
         return [:]
     }
     func loadImage(forChapter index: Int, source: String, renderWidth: CGFloat) async -> UIImage? { nil }
-    func fontResolver() -> (([String], Int, Bool, CGFloat) -> UIFont?)? { nil }
+    func fontResolver() -> BrowserFontResolver? { nil }
 }

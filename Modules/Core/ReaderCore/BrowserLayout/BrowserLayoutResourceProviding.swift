@@ -2,6 +2,10 @@ import YueduCoreText
 import Foundation
 import UIKit
 
+/// A layout configuration's font resolver. Sendable: continuous layout calls it off the
+/// main actor, and the configuration it goes into moves there with the chapter.
+typealias BrowserFontResolver = @Sendable ([String], Int, Bool, CGFloat) -> UIFont?
+
 /// What the browser-layout engine needs from a book. Implemented by an EPUB
 /// adapter (Core layer); the engine never touches Readium or UI types.
 ///
@@ -40,7 +44,7 @@ protocol BrowserLayoutResourceProviding: AnyObject {
     func loadImage(forChapter index: Int, source: String, renderWidth: CGFloat) async -> UIImage?
     /// Resolves CSS font families (including registered @font-face families)
     /// to a concrete UIFont; nil falls back to UIFont(name:).
-    func fontResolver() -> (([String], Int, Bool, CGFloat) -> UIFont?)?
+    func fontResolver() -> BrowserFontResolver?
     /// The language the publication declares. CJK typography follows the text's own
     /// script and falls back to this only when the text shows none.
     var declaredLanguage: String? { get }

@@ -501,7 +501,7 @@ private final class SuspendedViewportResource: BrowserLayoutResourceProviding {
     func cssFrontendInput(forChapter index: Int, html: String) async -> CSSFrontendInput { .currentCompatibility(html: html, cssTexts: []) }
     func prefetchImages(forChapter index: Int, html: String, renderWidth: CGFloat) async -> [String: UIImage] { [:] }
     func loadImage(forChapter index: Int, source: String, renderWidth: CGFloat) async -> UIImage? { nil }
-    func fontResolver() -> (([String], Int, Bool, CGFloat) -> UIFont?)? { nil }
+    func fontResolver() -> BrowserFontResolver? { nil }
 }
 
 /// Withholds one chapter's HTML, as a slow fetch would, until `release()`.
@@ -532,7 +532,7 @@ private final class HeldChapterResource: BrowserLayoutResourceProviding {
     func prepareFonts(requests: Set<BrowserFontRequest>) async { await base.prepareFonts(requests: requests) }
     func prefetchImages(forChapter index: Int, html: String, renderWidth: CGFloat) async -> [String: UIImage] { [:] }
     func loadImage(forChapter index: Int, source: String, renderWidth: CGFloat) async -> UIImage? { nil }
-    func fontResolver() -> (([String], Int, Bool, CGFloat) -> UIFont?)? { nil }
+    func fontResolver() -> BrowserFontResolver? { nil }
 }
 
 /// Services the tracking run-loop mode's ready sources once and returns (timeout 0), as a

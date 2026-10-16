@@ -35,7 +35,7 @@ final class MockBrowserLayoutResource: BrowserLayoutResourceProviding {
     }
     func prefetchImages(forChapter index: Int, html: String, renderWidth: CGFloat) async -> [String: UIImage] { [:] }
     func loadImage(forChapter index: Int, source: String, renderWidth: CGFloat) async -> UIImage? { nil }
-    func fontResolver() -> (([String], Int, Bool, CGFloat) -> UIFont?)? { nil }
+    func fontResolver() -> BrowserFontResolver? { nil }
     func prepareFonts(requests: Set<BrowserFontRequest>) async {
         preparedFontRequests.append(requests)
     }

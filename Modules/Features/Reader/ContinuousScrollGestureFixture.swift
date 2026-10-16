@@ -114,7 +114,7 @@ struct ContinuousScrollGestureFixture: UIViewControllerRepresentable {
         }
         func prefetchImages(forChapter index: Int, html: String, renderWidth: CGFloat) async -> [String: UIImage] { [:] }
         func loadImage(forChapter index: Int, source: String, renderWidth: CGFloat) async -> UIImage? { nil }
-        func fontResolver() -> (([String], Int, Bool, CGFloat) -> UIFont?)? { nil }
+        func fontResolver() -> BrowserFontResolver? { nil }
         func buildChapter(at index: Int, settings: ReaderRenderSettings, themeTextColor: UIColor,
                           themeBackgroundColor: UIColor) async throws -> AttributedChapterBuildResult {
             if index == 0 && !previousReleased {
