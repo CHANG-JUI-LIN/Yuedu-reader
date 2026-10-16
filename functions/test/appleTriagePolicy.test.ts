@@ -5,6 +5,7 @@ import {
   diagnosticItemId,
   diagnosticObservation,
   maxDetailLength,
+  readEachBuild,
   parseWebhookEvent,
   signaturesWorthRecording,
   summarizeDiagnosticLogs,
@@ -112,5 +113,30 @@ describe("Apple triage policy", () => {
     });
     assert.equal(text, "event: hang\nappVersion: 2.0.7\n\n  root heavy\n▶ ReaderView.layout (ReaderView.swift:42)");
     assert.equal(summarizeDiagnosticLogs({productData: []}), "");
+  });
+
+  it("reads every build even when one fails, then reports the failures", async () => {
+    const read: string[] = [];
+    const failed: string[] = [];
+    await assert.rejects(
+      readEachBuild(
+        ["2.0.7 (127)", "2.0.8 (1)", "2.0.8 (2)"],
+        (build) => build,
+        async (build) => {
+          if (build === "2.0.7 (127)") throw new Error("404 NOT_FOUND");
+          read.push(build);
+        },
+        (build, error) => failed.push(`${build}: ${String(error)}`),
+      ),
+      /1 of 3 builds failed: 2\.0\.7 \(127\)/
+    );
+    assert.deepEqual(read, ["2.0.8 (1)", "2.0.8 (2)"]);
+    assert.deepEqual(failed, ["2.0.7 (127): Error: 404 NOT_FOUND"]);
+  });
+
+  it("finishes quietly when every build reads", async () => {
+    const read: string[] = [];
+    await readEachBuild(["a", "b"], (build) => build, async (build) => { read.push(build); }, () => assert.fail());
+    assert.deepEqual(read, ["a", "b"]);
   });
 });

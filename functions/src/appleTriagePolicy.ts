@@ -116,6 +116,30 @@ export function signaturesWorthRecording(signatures: DiagnosticSignature[]): Dia
     .sort((a, b) => b.weight - a.weight);
 }
 
+/// Reads each build on its own, so one build App Store Connect will not answer for
+/// (2026-10-15: `diagnosticSignatures` 404 on the oldest build) cannot stop the others
+/// being read. Each failure is reported as it happens; the run still fails at the end,
+/// naming every build that did.
+export async function readEachBuild<B>(
+  builds: B[],
+  label: (build: B) => string,
+  read: (build: B) => Promise<void>,
+  onFailure: (label: string, error: unknown) => void,
+): Promise<void> {
+  const failed: string[] = [];
+  for (const build of builds) {
+    try {
+      await read(build);
+    } catch (error) {
+      failed.push(label(build));
+      onFailure(label(build), error);
+    }
+  }
+  if (failed.length > 0) {
+    throw new Error(`Organizer diagnostics: ${failed.length} of ${builds.length} builds failed: ${failed.join(", ")}`);
+  }
+}
+
 const diagnosticLabel: Record<DiagnosticType, string> = {
   HANGS: "卡頓",
   DISK_WRITES: "大量寫入",

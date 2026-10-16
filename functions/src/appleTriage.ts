@@ -20,6 +20,7 @@ import {
   diagnosticInsights,
   diagnosticObservation,
   parseWebhookEvent,
+  readEachBuild,
   signaturesWorthRecording,
   summarizeDiagnosticLogs,
   testFlightKind,
@@ -195,11 +196,14 @@ export const dailyOrganizerDiagnostics = onSchedule(
       `/builds?filter[app]=${appAppleId}&sort=-uploadedDate&limit=${diagnosticBuilds}` +
       "&include=preReleaseVersion&fields[builds]=version,preReleaseVersion&fields[preReleaseVersions]=version"
     );
-    // Oldest first, so the newest build's share is the one an item's summary ends on.
-    for (const build of [...builds.data].reverse()) {
+    const versionOf = (build: Resource<{version?: string}>): string => {
       const preReleaseId = build.relationships?.preReleaseVersion?.data?.id;
       const marketing = builds.included?.find((item) => item.id === preReleaseId)?.attributes?.version;
-      const appVersion = `${typeof marketing === "string" ? marketing : "?"} (${build.attributes?.version ?? "?"})`;
+      return `${typeof marketing === "string" ? marketing : "?"} (${build.attributes?.version ?? "?"})`;
+    };
+    // Oldest first, so the newest build's share is the one an item's summary ends on.
+    await readEachBuild([...builds.data].reverse(), (build) => `${versionOf(build)} ${build.id}`, async (build) => {
+      const appVersion = versionOf(build);
       const signatures = await client.getJSON<SignatureList>(
         `/builds/${build.id}/diagnosticSignatures?fields[diagnosticSignatures]=diagnosticType,signature,weight&limit=200`
       );
@@ -218,6 +222,6 @@ export const dailyOrganizerDiagnostics = onSchedule(
           callStack: summarizeDiagnosticLogs(logs),
         }), `organizer:${build.id}:${day}`);
       }
-    }
+    }, (build, error) => logger.error("Organizer diagnostics: build failed", {build, error: String(error)}));
   }
 );
