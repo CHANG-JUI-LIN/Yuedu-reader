@@ -100,6 +100,30 @@ struct ReaderStackWriteGateTests {
         #expect(second.drain() == .externalTarget)
     }
 
+    /// The host re-delivers an unacknowledged refresh on every update pass, so a write
+    /// placed ahead of it would be overwritten; its acknowledgement re-delivers the target.
+    @Test func visibleRefreshOutranksEveryOtherWrite() {
+        var gate = ReaderStackWriteGate()
+        gate.beginGesture()
+        _ = gate.request(.visibleRefresh)
+        _ = gate.request(.externalTarget)
+        _ = gate.request(.link(page: 2))
+        gate.endGesture()
+        #expect(gate.drain() == .visibleRefresh)
+        #expect(gate.drain() == nil)
+    }
+
+    /// A theme change and a chapter landing re-place the same position the same way.
+    @Test func appearanceAndChapterReadyShareOneSlot() {
+        var gate = ReaderStackWriteGate()
+        gate.beginGesture()
+        _ = gate.request(.chapterReady)
+        _ = gate.request(.appearance)
+        gate.endGesture()
+        #expect(gate.drain() == .appearance)
+        #expect(gate.drain() == nil)
+    }
+
     @Test func repeatedWritesOfOneKindCollapseToTheNewest() {
         var gate = ReaderStackWriteGate()
         gate.beginGesture()

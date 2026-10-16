@@ -1,3 +1,4 @@
+import Combine
 import CoreGraphics
 import Foundation
 import SwiftUI
@@ -551,6 +552,176 @@ struct ReaderRenderRefreshTests {
         )
     }
 
+    /// Crashlytics 86f0a957: "No view controller managing visible view". A refresh that
+    /// lands mid-swipe (a setting synced from iCloud) rewrote the page stack under UIKit's
+    /// scroll. It now waits for the swipe and is applied once the stack is free.
+    @Test("paged host holds a visible refresh until the swipe ends")
+    func pagedHostHoldsVisibleRefreshDuringSwipe() async throws {
+        let renderer = EPUBPageRenderer()
+        renderer.loadTXT(
+            attributedBuilder: MutableReaderRefreshBuilder(body: "Paged host body"),
+            bookIdentifier: UUID().uuidString,
+            renderSize: CGSize(width: 320, height: 480),
+            settings: Self.makeSettings(fontSize: 18)
+        )
+        await waitUntilPagedReady(renderer)
+        let engine = try #require(renderer.engine)
+        let coordinator = CoreTextPageEngineView.Coordinator(
+            engine: engine,
+            pageTurnStyle: .slide,
+            theme: .white,
+            playbackHighlight: nil,
+            isRTL: false,
+            isDoublePageSpread: false,
+            spreadGutter: 0,
+            sessionCoordinator: nil,
+            externalTargetPosition: nil,
+            clearExternalTargetPosition: {},
+            currentPage: .constant(0),
+            onPageChanged: { _, _ in },
+            onTapZone: { _ in },
+            onSwipeUpExit: {}
+        )
+        let pageViewController = UIPageViewController(
+            transitionStyle: .scroll,
+            navigationOrientation: .horizontal
+        )
+        pageViewController.view.frame = CGRect(x: 0, y: 0, width: 320, height: 480)
+        pageViewController.setViewControllers([engine.pageViewController(at: 0)], direction: .forward, animated: false)
+        let showing = try #require(pageViewController.viewControllers?.first)
+
+        coordinator.pageViewController(pageViewController, willTransitionTo: [UIViewController()])
+        var applied: [UInt64] = []
+        coordinator.applyVisibleRefresh(
+            ReaderVisibleRefreshCommit(
+                transactionID: 9,
+                mode: .paged,
+                position: CoreTextReadingPosition(spineIndex: 0, charOffset: 20)
+            ),
+            on: pageViewController
+        ) { transactionID, outcome in
+            if outcome == .applied { applied.append(transactionID) }
+        }
+        #expect(applied.isEmpty)
+        #expect(pageViewController.viewControllers?.first === showing)
+
+        coordinator.pageViewController(
+            pageViewController,
+            didFinishAnimating: true,
+            previousViewControllers: [showing],
+            transitionCompleted: false
+        )
+        try await waitUntil { !applied.isEmpty }
+        #expect(applied == [9])
+        #expect(coordinator.lastAppliedRefreshTransactionID == 9)
+    }
+
+    /// The waiting refresh carries the position from before the swipe; a swipe that
+    /// turned the page must not be undone by it.
+    @Test("a refresh held through a completed swipe keeps the page the swipe landed on")
+    func heldRefreshKeepsLandedPage() async throws {
+        let renderer = EPUBPageRenderer()
+        renderer.loadTXT(
+            attributedBuilder: MutableReaderRefreshBuilder(
+                body: String(repeating: "Paged host body sentence. ", count: 400)
+            ),
+            bookIdentifier: UUID().uuidString,
+            renderSize: CGSize(width: 320, height: 480),
+            settings: Self.makeSettings(fontSize: 18)
+        )
+        await waitUntilPagedReady(renderer)
+        let engine = try #require(renderer.engine)
+        try #require(engine.totalPages > 2)
+        let coordinator = CoreTextPageEngineView.Coordinator(
+            engine: engine,
+            pageTurnStyle: .slide,
+            theme: .white,
+            playbackHighlight: nil,
+            isRTL: false,
+            isDoublePageSpread: false,
+            spreadGutter: 0,
+            sessionCoordinator: nil,
+            externalTargetPosition: nil,
+            clearExternalTargetPosition: {},
+            currentPage: .constant(0),
+            onPageChanged: { _, _ in },
+            onTapZone: { _ in },
+            onSwipeUpExit: {}
+        )
+        let pageViewController = UIPageViewController(
+            transitionStyle: .scroll,
+            navigationOrientation: .horizontal
+        )
+        pageViewController.view.frame = CGRect(x: 0, y: 0, width: 320, height: 480)
+        let showing = engine.pageViewController(at: 0)
+        pageViewController.setViewControllers([showing], direction: .forward, animated: false)
+
+        let landing = engine.pageViewController(at: 1)
+        coordinator.pageViewController(pageViewController, willTransitionTo: [landing])
+        var applied: [UInt64] = []
+        coordinator.applyVisibleRefresh(
+            ReaderVisibleRefreshCommit(
+                transactionID: 4,
+                mode: .paged,
+                position: try #require(engine.readingPosition(forPage: 0))
+            ),
+            on: pageViewController
+        ) { transactionID, outcome in
+            if outcome == .applied { applied.append(transactionID) }
+        }
+        // UIKit's swipe lands on the next page.
+        pageViewController.setViewControllers([landing], direction: .forward, animated: false)
+        coordinator.pageViewController(
+            pageViewController,
+            didFinishAnimating: true,
+            previousViewControllers: [showing],
+            transitionCompleted: true
+        )
+        try await waitUntil { !applied.isEmpty }
+        #expect(applied == [4])
+        #expect((pageViewController.viewControllers?.first as? any PageIndexProviding)?.globalPageIndex == 1)
+    }
+
+    /// The same crash through the theme: a theme synced from iCloud, or the reader's
+    /// dark mode following the system, can change mid-swipe.
+    @Test("paged host redraws a theme change only after the swipe ends")
+    func pagedHostHoldsThemeChangeDuringSwipe() async throws {
+        let renderer = EPUBPageRenderer()
+        renderer.loadTXT(
+            attributedBuilder: MutableReaderRefreshBuilder(body: "Paged host body"),
+            bookIdentifier: UUID().uuidString,
+            renderSize: CGSize(width: 320, height: 480),
+            settings: Self.makeSettings(fontSize: 18)
+        )
+        await waitUntilPagedReady(renderer)
+        let engine = try #require(renderer.engine)
+        let state = PagedHostTheme()
+        let host = UIHostingController(rootView: ThemedPagedHost(state: state, engine: engine))
+        let scene = try #require(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first)
+        let window = UIWindow(windowScene: scene)
+        window.frame = CGRect(x: 0, y: 0, width: 320, height: 480)
+        window.rootViewController = host
+        window.makeKeyAndVisible()
+        defer { window.isHidden = true }
+        try await waitUntil { host.firstDescendant(UIPageViewController.self)?.viewControllers?.first != nil }
+        let pageViewController = try #require(host.firstDescendant(UIPageViewController.self))
+        let coordinator = try #require(pageViewController.delegate as? CoreTextPageEngineView.Coordinator)
+        let showing = try #require(pageViewController.viewControllers?.first)
+
+        coordinator.pageViewController(pageViewController, willTransitionTo: [UIViewController()])
+        state.theme = .night
+        try await waitUntil { coordinator.currentTheme == .night }
+        #expect(pageViewController.viewControllers?.first === showing)
+
+        coordinator.pageViewController(
+            pageViewController,
+            didFinishAnimating: true,
+            previousViewControllers: [showing],
+            transitionCompleted: false
+        )
+        try await waitUntil { pageViewController.viewControllers?.first !== showing }
+    }
+
     private static func makeSettings(
         fontSize: CGFloat,
         theme: String = "sepia",
@@ -734,5 +905,49 @@ private func waitForVisibleCommit(
 private func waitUntilPagedReady(_ renderer: EPUBPageRenderer) async {
     while !renderer.isCoreTextReady {
         await Task.yield()
+    }
+}
+
+/// Polls `condition` while the main queue runs (stack-write replays hop a runloop turn).
+@MainActor
+private func waitUntil(timeout: TimeInterval = 5, _ condition: () -> Bool) async throws {
+    let deadline = Date().addingTimeInterval(timeout)
+    while !condition() {
+        guard Date() < deadline else {
+            Issue.record("Timed out waiting for the paged host")
+            return
+        }
+        try await Task.sleep(nanoseconds: 10_000_000)
+    }
+}
+
+@MainActor
+private final class PagedHostTheme: ObservableObject {
+    @Published var theme: ReaderTheme = .white
+}
+
+/// The paged reader as SwiftUI hosts it, so a theme change reaches
+/// `updateUIViewController` the way it does in the app.
+private struct ThemedPagedHost: View {
+    @ObservedObject var state: PagedHostTheme
+    let engine: any PageRenderingProvider
+
+    var body: some View {
+        CoreTextPageEngineView(
+            engine: engine, pageTurnStyle: .slide, theme: state.theme, playbackHighlight: nil,
+            isRTL: false, isDoublePageSpread: false, spreadGutter: 0,
+            sessionCoordinator: nil, externalTargetVersion: 0, externalTargetPosition: nil,
+            pageTurnCommand: nil, clearExternalTargetPosition: {}, currentPage: .constant(0),
+            onPageChanged: { _, _ in }, onTapZone: { _ in }
+        )
+    }
+}
+
+private extension UIViewController {
+    func firstDescendant<T: UIViewController>(_ type: T.Type) -> T? {
+        for child in children {
+            if let match = (child as? T) ?? child.firstDescendant(type) { return match }
+        }
+        return nil
     }
 }

@@ -7,10 +7,16 @@ import Foundation
 enum ReaderStackWrite: Equatable {
     /// A chapter layout landed; re-place the current reading position against it.
     case chapterReady
+    /// The theme or the spread mode changed; re-place the current reading position
+    /// with pages drawn the new way. Replayed exactly like `chapterReady`.
+    case appearance
     /// A tapped in-content link resolved to a page.
     case link(page: Int)
     /// The Navigator handed down a new destination (TOC jump, restore, TTS anchor).
     case externalTarget
+    /// The renderer committed a re-layout (a setting changed here or arrived through
+    /// iCloud sync) and is waiting for the page showing it to be acknowledged.
+    case visibleRefresh
 }
 
 enum ReaderStackWriteDecision: Equatable {
@@ -111,11 +117,14 @@ struct ReaderStackWriteGate {
     /// exists to prevent.
     ///
     /// When several kinds are owed the highest-priority one wins rather than the
-    /// newest, so the outcome does not depend on callback ordering. `externalTarget`
-    /// outranks the rest because it is the only one carrying a destination the user
-    /// asked for; `chapterReady` merely re-places the position already showing, and
-    /// resolves *through* a pending external target anyway, so dropping it loses
-    /// nothing.
+    /// newest, so the outcome does not depend on callback ordering. `visibleRefresh`
+    /// outranks everything: until it is acknowledged the host re-delivers it on every
+    /// update pass, so anything placed ahead of it would be overwritten by the late
+    /// refresh, and the update pass its acknowledgement triggers re-delivers a pending
+    /// external target. Next comes `externalTarget`, the only other write carrying a
+    /// destination the user asked for; `chapterReady` and `appearance` merely re-place
+    /// the position already showing, and resolve *through* a pending external target
+    /// anyway, so dropping them loses nothing.
     mutating func drain() -> ReaderStackWrite? {
         guard !isBusy else { return nil }
         guard !pendingWrites.isEmpty else { return nil }
@@ -148,6 +157,7 @@ struct ReaderStackWriteGate {
     private mutating func record(_ write: ReaderStackWrite) {
         // One slot per kind: a second chapter-ready owes no more work than the first.
         // A link keeps its newest page, matching "latest intent wins" within the kind.
+        // `chapterReady` and `appearance` share a slot because they replay the same way.
         pendingWrites.removeAll { $0.priority == write.priority }
         pendingWrites.append(write)
     }
@@ -156,9 +166,10 @@ struct ReaderStackWriteGate {
 private extension ReaderStackWrite {
     var priority: Int {
         switch self {
-        case .chapterReady: return 0
+        case .chapterReady, .appearance: return 0
         case .link: return 1
         case .externalTarget: return 2
+        case .visibleRefresh: return 3
         }
     }
 }

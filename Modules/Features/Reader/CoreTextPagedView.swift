@@ -218,8 +218,8 @@ struct CoreTextPageEngineView: UIViewControllerRepresentable {
         }
 
         if spreadModeChanged {
-            _ = context.coordinator.setPage(targetViewController(), on: uiViewController, layoutNow: true)
-            if context.coordinator.externalTargetPosition != nil {
+            if context.coordinator.placeAfterAppearanceChange(targetViewController, on: uiViewController, layoutNow: true),
+               context.coordinator.externalTargetPosition != nil {
                 DispatchQueue.main.async { context.coordinator.clearExternalTargetPosition() }
             }
             return
@@ -230,8 +230,8 @@ struct CoreTextPageEngineView: UIViewControllerRepresentable {
                 textColor: UIColor(theme.textColor),
                 backgroundColor: UIColor(theme.backgroundColor)
             )
-            _ = context.coordinator.setPage(targetViewController(), on: uiViewController)
-            if context.coordinator.externalTargetPosition != nil {
+            if context.coordinator.placeAfterAppearanceChange(targetViewController, on: uiViewController),
+               context.coordinator.externalTargetPosition != nil {
                 DispatchQueue.main.async { context.coordinator.clearExternalTargetPosition() }
             }
             return
@@ -638,7 +638,7 @@ struct CoreTextPageEngineView: UIViewControllerRepresentable {
                 guard let write = self.stackWriteGate.drain() else { return }
                 AppLogger.render("[FlipTrace] stackWrite replay \(write)")
                 switch write {
-                case .chapterReady:
+                case .chapterReady, .appearance:
                     // A deferred write is already owed; the spine that prompted it is not
                     // recorded because the placement is driven by the current position.
                     self.handleChapterReady(nil, on: pageViewController)
@@ -646,6 +646,8 @@ struct CoreTextPageEngineView: UIViewControllerRepresentable {
                     self.applyLinkNavigation(to: page, on: pageViewController)
                 case .externalTarget:
                     self.applyDeferredExternalTarget(on: pageViewController)
+                case .visibleRefresh:
+                    self.applyDeferredVisibleRefresh(on: pageViewController)
                 }
             }
         }
@@ -662,6 +664,38 @@ struct CoreTextPageEngineView: UIViewControllerRepresentable {
             guard !isPlaceholderDisplay(targetVC) else { return }
             let clear = clearExternalTargetPosition
             DispatchQueue.main.async { clear() }
+        }
+
+        /// Applies a refresh that waited for a swipe. The commit's position is where the
+        /// reader was when the refresh was requested; a swipe that landed since is the
+        /// newer intent, and placing the old position would undo the turn.
+        private func applyDeferredVisibleRefresh(on pageViewController: UIPageViewController) {
+            guard let deferred = deferredVisibleRefresh else { return }
+            deferredVisibleRefresh = nil
+            var commit = deferred.commit
+            if let shown = currentCoreTextPosition, shown != deferred.shownWhenDeferred {
+                commit = ReaderVisibleRefreshCommit(
+                    transactionID: commit.transactionID,
+                    mode: commit.mode,
+                    position: shown
+                )
+            }
+            applyVisibleRefresh(commit, on: pageViewController, completion: deferred.completion)
+        }
+
+        /// Re-places the page after the theme or spread mode changed. Mid-swipe the write
+        /// waits for the stack like every other (the same crash as a deferred refresh);
+        /// a pending external target is owed instead when there is one, since that is
+        /// where this placement would have gone. Returns whether the page was placed now.
+        fileprivate func placeAfterAppearanceChange(
+            _ target: () -> UIViewController,
+            on pageViewController: UIPageViewController,
+            layoutNow: Bool = false
+        ) -> Bool {
+            let write: ReaderStackWrite = externalTargetPosition != nil ? .externalTarget : .appearance
+            guard stackWriteGate.request(write) == .performNow else { return false }
+            setPage(target(), on: pageViewController, layoutNow: layoutNow)
+            return true
         }
 
         /// The single non-animated stack writer. Every code path that places a page
@@ -706,6 +740,14 @@ struct CoreTextPageEngineView: UIViewControllerRepresentable {
             }
         }
 
+        /// A refresh that arrived while UIKit owned the stack, with the position showing
+        /// when it first had to wait.
+        private var deferredVisibleRefresh: (
+            commit: ReaderVisibleRefreshCommit,
+            shownWhenDeferred: CoreTextReadingPosition?,
+            completion: (UInt64, ReaderVisibleRefreshOutcome) -> Void
+        )?
+
         func applyVisibleRefresh(
             _ commit: ReaderVisibleRefreshCommit,
             on pageViewController: UIPageViewController,
@@ -714,6 +756,18 @@ struct CoreTextPageEngineView: UIViewControllerRepresentable {
             guard commit.mode == .paged,
                   commit.transactionID != lastAppliedRefreshTransactionID
             else { return }
+            // A setting changed here or synced from iCloud can re-lay out the book in the
+            // middle of a swipe, and writing the stack then is "No view controller managing
+            // visible view" (Crashlytics 86f0a957). The host re-delivers the commit on every
+            // update pass until it is acknowledged, which only refreshes this slot.
+            guard stackWriteGate.request(.visibleRefresh) == .performNow else {
+                deferredVisibleRefresh = (
+                    commit,
+                    deferredVisibleRefresh.map { $0.shownWhenDeferred } ?? currentCoreTextPosition,
+                    completion
+                )
+                return
+            }
 
             let target = displayViewController(for: commit.position)
             guard !isPlaceholderDisplay(target) else {
