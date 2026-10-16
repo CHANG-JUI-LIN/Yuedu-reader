@@ -71,18 +71,19 @@ struct TestFlightCrashRegressionTests {
         let regex = try NSRegularExpression(pattern: "(a)(b)?")
         let content = "a ab abc 😀"
         let expected = regex.stringByReplacingMatches(in: content, range: NSRange(content.startIndex..., in: content), withTemplate: template)
-        #expect(ReplaceRuleEngine.boundedReplacement(regex, template: template, content: content, limit: 1024) == expected)
         let rule = ReplaceRule(name: "capture", pattern: "(a)(b)?", replacement: template)
+        #expect(ReplaceRuleEngine.replacing(rule, in: content, limit: 1024) == expected)
         #expect(ReplaceRuleEngine.apply(rule, to: content) == expected)
     }
 
     @Test("expanding regex output is rejected before allocation")
     func replacementBudget() throws {
-        let regex = try NSRegularExpression(pattern: "(?=.)")
-        #expect(ReplaceRuleEngine.boundedReplacement(regex, template: String(repeating: "x", count: 100), content: "abcdefghij", limit: 100) == nil)
-        let capture = try NSRegularExpression(pattern: "(.*)", options: [])
-        #expect(ReplaceRuleEngine.boundedReplacement(capture, template: "$1$1$1", content: String(repeating: "x", count: 50), limit: 100) == nil)
-        #expect(ReplaceRuleEngine.boundedReplacement(regex, template: "x", content: "ab", limit: 4) == "xaxb")
+        func rule(_ pattern: String, _ template: String) -> ReplaceRule {
+            ReplaceRule(name: "budget", pattern: pattern, replacement: template)
+        }
+        #expect(ReplaceRuleEngine.replacing(rule("(?=.)", String(repeating: "x", count: 100)), in: "abcdefghij", limit: 100) == nil)
+        #expect(ReplaceRuleEngine.replacing(rule("(.*)", "$1$1$1"), in: String(repeating: "x", count: 50), limit: 100) == nil)
+        #expect(ReplaceRuleEngine.replacing(rule("(?=.)", "x"), in: "ab", limit: 4) == "xaxb")
     }
 
     @Test("repeated list values retain separate diffable row identities")

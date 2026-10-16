@@ -71,4 +71,42 @@ struct ReplaceRuleDisplayTimeTests {
         #expect(content.contains("永夜"))
         #expect(!content.contains("長夜"))
     }
+
+    /// Organizer, 2.0.7 (104): a broad rule aborted the app out of memory inside
+    /// `ReplaceRuleEngine`. The display-time path then built every replacement before
+    /// checking the budget, so the allocation it guards against had already happened.
+    @Test("an over-budget rule stops at the match that passes the budget", arguments: [true, false])
+    func overBudgetStopsEarly(regex: Bool) {
+        let text = String(repeating: "a", count: 10_000) as NSString
+        let rule = Self.rule(regex ? "(?=a)" : "a", String(repeating: "x", count: 100), regex: regex)
+        let result = ReplaceRuleEngine.edits(of: rule, in: text, range: NSRange(location: 0, length: text.length), limit: 1_000)
+        guard case .overBudget(let scanned) = result else {
+            Issue.record("expected the rule to be refused, got \(String(describing: result))")
+            return
+        }
+        // Each match adds about 100 units against a 1,000 budget: it must give up near
+        // the tenth match, not after all ten thousand.
+        #expect(scanned <= 11)
+    }
+
+    @Test("both entry points refuse the same over-budget rule and keep the text")
+    func overBudgetKeepsText() {
+        let source = String(repeating: "永夜", count: 20)
+        let rules = [Self.rule("(?=.)", String(repeating: "x", count: 100))]
+        #expect(ReplaceRuleEngine.replacing(rules[0], in: source, limit: 1_000) == nil)
+        let text = Self.attributed(source)
+        // The attributed entry's budget is fixed at 8M units, so use a rule that passes it.
+        let huge = [Self.rule("(?=.)", String(repeating: "x", count: 300_000))]
+        #expect(!ReplaceRuleEngine.apply(huge, to: text, from: 0))
+        #expect(text.string == source)
+        #expect(ReplaceRuleEngine.apply(huge, to: source) == source)
+    }
+
+    @Test("a literal rule obeys the same budget as a regex one")
+    func literalBudget() {
+        let rule = Self.rule("a", "xyz", regex: false)
+        #expect(ReplaceRuleEngine.replacing(rule, in: "aaaa", limit: 12) == "xyzxyzxyzxyz")
+        #expect(ReplaceRuleEngine.replacing(rule, in: "aaaa", limit: 11) == nil)
+    }
 }
+

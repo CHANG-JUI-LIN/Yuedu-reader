@@ -24,30 +24,46 @@ enum ReplaceRuleEngine {
 
     /// Apply a single rule to `content`.
     static func apply(_ rule: ReplaceRule, to content: String) -> String {
-        if rule.isRegex {
-            return applyRegex(pattern: rule.pattern,
-                              replacement: rule.replacement,
-                              to: content)
-        } else {
-            return content.replacingOccurrences(of: rule.pattern, with: rule.replacement)
+        guard !rule.pattern.isEmpty else { return content }
+        return replacing(rule, in: content, limit: outputLimit(for: content.utf16.count)) ?? content
+    }
+
+    /// `content` with `rule` applied, or nil when the rule's output would pass `limit`
+    /// UTF-16 units (logged) or its pattern does not compile (logged by `regex(for:)`).
+    static func replacing(_ rule: ReplaceRule, in content: String, limit: Int) -> String? {
+        let text = content as NSString
+        switch edits(of: rule, in: text, range: NSRange(location: 0, length: text.length), limit: limit) {
+        case nil:
+            return nil
+        case .overBudget:
+            logOverBudget(limit)
+            return nil
+        case .edits(let edits):
+            guard !edits.isEmpty else { return content }
+            let output = NSMutableString(capacity: text.length)
+            var cursor = 0
+            for edit in edits {
+                output.append(text.substring(with: NSRange(location: cursor, length: edit.range.location - cursor)))
+                output.append(edit.text)
+                cursor = NSMaxRange(edit.range)
+            }
+            output.append(text.substring(from: cursor))
+            return output as String
         }
     }
 
     // MARK: - Private
 
-    private static func applyRegex(pattern: String, replacement: String, to content: String) -> String {
-        guard !pattern.isEmpty, let regex = regex(for: pattern) else { return content }
+    /// Reject expansion before allocating it. A zero-width or broad rule can otherwise
+    /// grow a chapter until Foundation aborts the entire process. The chapter is kept as
+    /// it was only when this externally supplied rule would exceed the budget; remove the
+    /// budget only when the pipeline streams its output.
+    private static func outputLimit(for length: Int) -> Int {
+        max(length, 8 * 1024 * 1024)
+    }
 
-        // Reject expansion before allocating it. A zero-width or broad rule can
-        // otherwise grow a chapter until Foundation aborts the entire process.
-        // Keep the original chapter only when this externally supplied rule would
-        // exceed the budget; remove this guard only when the pipeline streams output.
-        let limit = max(content.utf16.count, 8 * 1024 * 1024)
-        guard let output = boundedReplacement(regex, template: replacement, content: content, limit: limit) else {
-            AppLogger.error("Replace rule output exceeds chapter budget", context: ["limit": "\(limit)"])
-            return content
-        }
-        return output
+    private static func logOverBudget(_ limit: Int) {
+        AppLogger.error("Replace rule output exceeds chapter budget", context: ["limit": "\(limit)"])
     }
 
     /// The compiled rule, shared by both entry points so a string and an attributed string
@@ -100,19 +116,18 @@ enum ReplaceRuleEngine {
             let text = attributed.string as NSString
             let lower = min(max(0, start), text.length)
             let range = NSRange(location: lower, length: text.length - lower)
-            let edits = rule.isRegex
-                ? regexEdits(rule, in: text, range: range)
-                : literalEdits(rule, in: text, range: range)
-            guard let edits, !edits.isEmpty else { continue }
-
-            // Same budget as the string path: a zero-width or broad rule must not grow a
-            // chapter until Foundation aborts.
-            let limit = max(text.length, 8 * 1024 * 1024)
-            let grown = edits.reduce(text.length) { $0 - $1.range.length + ($1.text as NSString).length }
-            guard grown <= limit else {
-                AppLogger.error("Replace rule output exceeds chapter budget", context: ["limit": "\(limit)"])
+            let limit = outputLimit(for: text.length)
+            let edits: [Edit]
+            switch Self.edits(of: rule, in: text, range: range, limit: limit) {
+            case nil:
                 continue
+            case .overBudget:
+                logOverBudget(limit)
+                continue
+            case .edits(let found):
+                edits = found
             }
+            guard !edits.isEmpty else { continue }
             for edit in edits.reversed() {
                 attributed.replaceCharacters(in: edit.range, with: edit.text)
             }
@@ -121,44 +136,87 @@ enum ReplaceRuleEngine {
         return changed
     }
 
-    private struct Edit {
+    struct Edit {
         let range: NSRange
         let text: String
     }
 
-    private static func regexEdits(_ rule: ReplaceRule, in text: NSString, range: NSRange) -> [Edit]? {
-        guard let regex = regex(for: rule.pattern) else { return nil }
-        let parts = templateParts(rule.replacement, captureCount: regex.numberOfCaptureGroups)
-        var edits: [Edit] = []
-        regex.enumerateMatches(in: text as String, range: range) { match, _, _ in
-            guard let match else { return }
-            var output = ""
-            for part in parts {
-                switch part {
-                case .literal(let literal):
-                    output += literal
-                case .capture(let group):
-                    guard group < match.numberOfRanges else { continue }
-                    let captured = match.range(at: group)
-                    if captured.location != NSNotFound { output += text.substring(with: captured) }
-                }
-            }
-            edits.append(Edit(range: match.range, text: output))
-        }
-        return edits
+    enum RuleEdits {
+        case edits([Edit])
+        /// The rule's output would pass the budget. Enumeration stopped at the match that
+        /// passed it, after `scanned` matches.
+        case overBudget(scanned: Int)
     }
 
-    private static func literalEdits(_ rule: ReplaceRule, in text: NSString, range: NSRange) -> [Edit] {
+    /// What `rule` does to `range` of `text`: the single place matches turn into
+    /// replacement text, for both entry points. Nil when the pattern does not compile.
+    ///
+    /// The output is counted as it is produced, and enumeration stops at the first match
+    /// that would take it past `limit` UTF-16 units. Output only grows from left to right,
+    /// so the first prefix past the limit is where the whole would be past it too. The
+    /// display-time path used to build every replacement first and check the total after,
+    /// so a broad rule held matches × template in memory before being refused: the
+    /// out-of-memory abort the budget exists to prevent (Organizer, 2.0.7 (104)).
+    static func edits(of rule: ReplaceRule, in text: NSString, range: NSRange, limit: Int) -> RuleEdits? {
         var edits: [Edit] = []
-        var searchRange = range
-        while searchRange.length > 0 {
-            let found = text.range(of: rule.pattern, options: [], range: searchRange)
-            guard found.location != NSNotFound, found.length > 0 else { break }
-            edits.append(Edit(range: found, text: rule.replacement))
-            let next = NSMaxRange(found)
-            searchRange = NSRange(location: next, length: NSMaxRange(range) - next)
+        // Output length minus input length, over the matches accepted so far.
+        var growth = 0
+        var scanned = 0
+        var exceeded = false
+        if rule.isRegex {
+            guard let regex = regex(for: rule.pattern) else { return nil }
+            let parts = templateParts(rule.replacement, captureCount: regex.numberOfCaptureGroups)
+            regex.enumerateMatches(in: text as String, range: range) { match, _, stop in
+                guard let match else { return }
+                scanned += 1
+                // The output so far ends where this match starts.
+                var length = match.range.location + growth
+                var output = ""
+                func append(_ count: Int, _ piece: () -> String) -> Bool {
+                    guard length + count <= limit else { return false }
+                    length += count
+                    output += piece()
+                    return true
+                }
+                var fits = true
+                for part in parts where fits {
+                    switch part {
+                    case .literal(let literal):
+                        fits = append(literal.utf16.count) { literal }
+                    case .capture(let group):
+                        guard group < match.numberOfRanges else { continue }
+                        let captured = match.range(at: group)
+                        guard captured.location != NSNotFound else { continue }
+                        fits = append(captured.length) { text.substring(with: captured) }
+                    }
+                }
+                guard fits else {
+                    exceeded = true
+                    stop.pointee = true
+                    return
+                }
+                growth += output.utf16.count - match.range.length
+                edits.append(Edit(range: match.range, text: output))
+            }
+        } else {
+            let replacementLength = rule.replacement.utf16.count
+            var searchRange = range
+            while searchRange.length > 0 {
+                let found = text.range(of: rule.pattern, options: [], range: searchRange)
+                guard found.location != NSNotFound, found.length > 0 else { break }
+                scanned += 1
+                guard found.location + growth + replacementLength <= limit else {
+                    exceeded = true
+                    break
+                }
+                growth += replacementLength - found.length
+                edits.append(Edit(range: found, text: rule.replacement))
+                let next = NSMaxRange(found)
+                searchRange = NSRange(location: next, length: NSMaxRange(range) - next)
+            }
         }
-        return edits
+        guard !exceeded, text.length + growth <= limit else { return .overBudget(scanned: scanned) }
+        return .edits(edits)
     }
 
     private enum TemplatePart {
@@ -202,42 +260,5 @@ enum ReplaceRuleEngine {
         }
         flush()
         return parts
-    }
-
-    static func boundedReplacement(
-        _ regex: NSRegularExpression, template: String, content: String, limit: Int
-    ) -> String? {
-        guard template.utf16.count <= limit else { return nil }
-        let parts = templateParts(template, captureCount: regex.numberOfCaptureGroups)
-        let source = content as NSString
-        let output = NSMutableString()
-        var cursor = 0
-        var remaining = limit
-        var exceeded = false
-        func appendRange(_ range: NSRange) {
-            guard range.location != NSNotFound else { return }
-            guard range.length <= remaining else { exceeded = true; return }
-            remaining -= range.length
-            output.append(source.substring(with: range))
-        }
-        regex.enumerateMatches(in: content, range: NSRange(location: 0, length: source.length)) { match, _, stop in
-            guard let match else { return }
-            appendRange(NSRange(location: cursor, length: match.range.location - cursor))
-            for part in parts where !exceeded {
-                switch part {
-                case .literal(let text):
-                    guard text.utf16.count <= remaining else { exceeded = true; break }
-                    remaining -= text.utf16.count
-                    output.append(text)
-                case .capture(let group):
-                    if group < match.numberOfRanges { appendRange(match.range(at: group)) }
-                }
-            }
-            cursor = NSMaxRange(match.range)
-            if exceeded { stop.pointee = true }
-        }
-        guard !exceeded else { return nil }
-        appendRange(NSRange(location: cursor, length: source.length - cursor))
-        return exceeded ? nil : output as String
     }
 }
