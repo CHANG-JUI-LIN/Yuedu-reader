@@ -80,14 +80,6 @@ struct ContentView: View {
 
     private var isBoldTextOn: Bool { legibilityWeight == .bold }
 
-    /// Where the tab bar sits: at the bottom on iPhone, and on iPad before iOS 18 or in a
-    /// compact width — `.sidebarAdaptable` puts it at the top of a regular-width iPad.
-    private var isTabBarAtBottom: Bool {
-        guard UIDevice.current.userInterfaceIdiom == .pad else { return true }
-        if #available(iOS 18.0, *) { return horizontalSizeClass == .compact }
-        return true
-    }
-
     /// The global font as drawn: while Bold Text is on, a font with no bold face gives
     /// way to the system font (`GlobalAppTypography.effectivePostScriptName`).
     private var drawnGlobalFont: String? {
@@ -107,15 +99,9 @@ struct ContentView: View {
         GlobalAppTypography.activate(postScriptName: drawnGlobalFont, boldText: isBoldTextOn)
         return tabView
         .environment(\.rootTabBarVisibility, rootTabBar)
-        // The tab bar shows on the selected tab's root page only, where it sits at the
-        // bottom (`RootTabBarVisibility`).
-        .onChange(of: selectedRootTab, initial: true) { _, tab in
-            rootTabBar.setSelectedTab(tab.rawValue)
-            // 外觀主題's 淺色／深色 preview is for 外觀主題; another tab is not previewing.
+        // 外觀主題's 淺色／深色 preview is for 外觀主題; another tab is not previewing.
+        .onChange(of: selectedRootTab, initial: true) { _, _ in
             gs.endAppearanceSlotPreview()
-        }
-        .onChange(of: isTabBarAtBottom, initial: true) { _, atBottom in
-            rootTabBar.setHidesOverCoveredRoot(atBottom)
         }
         // Classic (默認) = the app's original look: no tint override at all.
         .tint(appearanceTheme?.accentColor)
@@ -138,7 +124,6 @@ struct ContentView: View {
             NowPlayingMiniPlayer(placement: .global, minBottomClearance: 90)
         }
         .iPadAdaptiveRootTabStyle()
-        .rootTabBarMinimizeStyle()
         .background {
             ImportedBookPresentation(
                 request: importDrainer.lastOutcome == nil ? importDrainer.readerRequest : nil,
@@ -321,7 +306,6 @@ struct ContentView: View {
                         isProActive: subscriptionStore.hasAccess(.readerThemePacks)
                     ))
                     .background { RootTabBarHider(visibility: rootTabBar) }
-                    .environment(\.rootTabBarTab, tab.rawValue)
                     .tag(tab)
                     .tabItem {
                         rootTabItemLabel(for: tab)
@@ -340,7 +324,6 @@ struct ContentView: View {
                             isProActive: subscriptionStore.hasAccess(.readerThemePacks)
                         ))
                         .background { RootTabBarHider(visibility: rootTabBar) }
-                        .environment(\.rootTabBarTab, tab.rawValue)
                         .tag(tab)
                         .tabItem {
                             rootTabItemLabel(for: tab)

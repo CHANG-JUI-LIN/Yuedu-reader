@@ -13,21 +13,10 @@ import SwiftUI
 /// bar over the reader until the reader's own bars next changed. Every tab now hides it
 /// while any screen asks (`ContentView` puts `RootTabBarHider` behind each tab), so the
 /// order of those updates no longer matters.
-///
-/// A tab bar at the bottom also shows on a tab's root page only: any page over the root
-/// that reaches it — pushed, or presented as a sheet, a full-screen cover or a popover —
-/// hides it; a sheet floating clear of it, or a menu, does not.
-/// `TabRootCoverage` reports which roots are covered; the selected tab's root decides.
 @MainActor
 final class RootTabBarVisibility: ObservableObject {
     @Published private(set) var isTabBarHidden = false
     private var hidingRequests: Set<UUID> = []
-    /// The tabs whose root page has another page over it, by `\.rootTabBarTab`.
-    private var coveredRoots: Set<String> = []
-    private var selectedTab: String?
-    /// Whether a covered root hides the tab bar: where it sits at the bottom. Off where
-    /// iPad's `.sidebarAdaptable` puts it at the top, which keeps the screens' own requests.
-    private var hidesOverCoveredRoot = true
 
     func setRequest(_ id: UUID, hidesTabBar: Bool) {
         if hidesTabBar {
@@ -35,49 +24,13 @@ final class RootTabBarVisibility: ObservableObject {
         } else {
             hidingRequests.remove(id)
         }
-        update()
-    }
-
-    func setCoveredRoots(_ tabs: Set<String>) {
-        guard tabs != coveredRoots else { return }
-        coveredRoots = tabs
-        update()
-    }
-
-    func isRootCovered(_ tab: String) -> Bool {
-        coveredRoots.contains(tab)
-    }
-
-    func setSelectedTab(_ tab: String) {
-        selectedTab = tab
-        update()
-    }
-
-    func setHidesOverCoveredRoot(_ hides: Bool) {
-        hidesOverCoveredRoot = hides
-        update()
-    }
-
-    private func update() {
-        let isSelectedRootCovered = selectedTab.map(coveredRoots.contains) ?? false
-        let hidden = !hidingRequests.isEmpty || (hidesOverCoveredRoot && isSelectedRootCovered)
-        guard hidden != isTabBarHidden else { return }
-        isTabBarHidden = hidden
-        AppLogger.info("⟐ tab bar: \(hidden ? "hidden" : "shown")", context: [
-            "selectedTab": selectedTab ?? "-",
-            "coveredRoots": coveredRoots.sorted().joined(separator: ","),
-            "requests": hidingRequests.count,
-            "hidesOverCoveredRoot": hidesOverCoveredRoot,
-        ])
+        let hidden = !hidingRequests.isEmpty
+        if hidden != isTabBarHidden { isTabBarHidden = hidden }
     }
 }
 
 private struct RootTabBarVisibilityKey: EnvironmentKey {
     static let defaultValue: RootTabBarVisibility? = nil
-}
-
-private struct RootTabBarTabKey: EnvironmentKey {
-    static let defaultValue: String? = nil
 }
 
 extension EnvironmentValues {
@@ -86,13 +39,6 @@ extension EnvironmentValues {
     var rootTabBarVisibility: RootTabBarVisibility? {
         get { self[RootTabBarVisibilityKey.self] }
         set { self[RootTabBarVisibilityKey.self] = newValue }
-    }
-
-    /// The root tab a screen sits in — `ContentView` names each tab's content — for its
-    /// root page to report whether it is covered. Nil outside the app's tabs.
-    var rootTabBarTab: String? {
-        get { self[RootTabBarTabKey.self] }
-        set { self[RootTabBarTabKey.self] = newValue }
     }
 }
 
@@ -148,35 +94,24 @@ extension View {
     }
 }
 
-#Preview("Root tab bar on the tab roots only") {
+#Preview("Root tab bar hidden from every tab") {
     @Previewable @StateObject var visibility = RootTabBarVisibility()
-    @Previewable @State var selectedTab = "one"
-    @Previewable @State var isSelecting = false
-    @Previewable @State var showsSheet = false
-    TabView(selection: $selectedTab) {
+    @Previewable @State var showsDetail = false
+    TabView {
         NavigationStack {
             List {
-                NavigationLink("Pushed page") { Text("Pushed") }
-                Button("Sheet") { showsSheet = true }
-                Toggle("Selecting hides the tab bar", isOn: $isSelecting)
+                Toggle("Detail hides the tab bar", isOn: $showsDetail)
             }
-            .showsRootTabBarOnlyHere()
-            .hidesRootTabBar(isSelecting)
-            .sheet(isPresented: $showsSheet) { Text("Sheet") }
+            .navigationDestination(isPresented: $showsDetail) {
+                Text("Detail").hidesRootTabBar()
+            }
         }
-        .environment(\.rootTabBarTab, "one")
         .background { RootTabBarHider(visibility: visibility) }
-        .tag("one")
         .tabItem { Label("One", systemImage: "1.circle") }
 
-        NavigationStack {
-            Text("Two").showsRootTabBarOnlyHere()
-        }
-        .environment(\.rootTabBarTab, "two")
-        .background { RootTabBarHider(visibility: visibility) }
-        .tag("two")
-        .tabItem { Label("Two", systemImage: "2.circle") }
+        Text("Two")
+            .background { RootTabBarHider(visibility: visibility) }
+            .tabItem { Label("Two", systemImage: "2.circle") }
     }
     .environment(\.rootTabBarVisibility, visibility)
-    .onChange(of: selectedTab, initial: true) { _, tab in visibility.setSelectedTab(tab) }
 }

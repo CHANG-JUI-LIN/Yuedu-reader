@@ -30,8 +30,7 @@ extension View {
     /// version, and the bar's own title is hidden — but still set, because pushed pages'
     /// back buttons read it.
     ///
-    /// Only the tab roots use this; every other page and sheet is `.inline`. That also
-    /// makes it the page a tab bar at the bottom shows on (`showsRootTabBarOnlyHere()`).
+    /// Only the tab roots use this; every other page and sheet is `.inline`.
     func rootTabTitle(_ title: String, onScroll behavior: RootTabBarScrollBehavior) -> some View {
         modifier(RootTabTitleModifier(title: title, behavior: behavior))
     }
@@ -139,7 +138,6 @@ private struct RootTabTitleModifier: ViewModifier {
                 #endif
             }
             .modifier(BarMinimization(minimizes: behavior == .minimizesBar))
-            .showsRootTabBarOnlyHere()
     }
 }
 

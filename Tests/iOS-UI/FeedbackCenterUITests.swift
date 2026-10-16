@@ -1,8 +1,7 @@
 import XCTest
 
-/// 設定 → 回饋中心: each page it opens renders, and none of them keeps the app's tab bar — 我的回饋
-/// has a tab bar of its own for its status groups. Screenshots
-/// of every page land in the result bundle.
+/// 設定 → 回饋中心: each page it opens renders, and 我的回饋's status groups are a tab bar of
+/// its own. Screenshots of every page land in the result bundle.
 ///
 /// Works without the feedback rules deployed: 我的回饋 then shows its error state, and the
 /// assertions here hold for both states.
@@ -33,19 +32,6 @@ final class FeedbackCenterUITests: XCTestCase {
         app.navigationBars.buttons.element(boundBy: 0).tap()
     }
 
-    /// The tab bar shows on tab roots only (`RootTabBarVisibility`); it goes as the push
-    /// starts, so poll briefly rather than read it once mid-transition.
-    private func assertTabBarHidden(_ app: XCUIApplication, on page: String,
-                                    file: StaticString = #filePath, line: UInt = #line) {
-        let settingsTab = app.tabBars.buttons["設定"].firstMatch
-        let deadline = Date().addingTimeInterval(5)
-        while settingsTab.exists && settingsTab.isHittable && Date() < deadline {
-            RunLoop.current.run(until: Date().addingTimeInterval(0.2))
-        }
-        XCTAssertFalse(settingsTab.exists && settingsTab.isHittable,
-                       "the tab bar should not show on \(page)", file: file, line: line)
-    }
-
     @MainActor
     func testFeedbackCenterPages() {
         let app = launch()
@@ -63,14 +49,12 @@ final class FeedbackCenterUITests: XCTestCase {
         XCTAssertTrue(app.switches.containing(
             NSPredicate(format: "label CONTAINS %@", "截圖後顯示意見回饋入口")
         ).firstMatch.exists, "the screenshot-prompt toggle should be on the hub")
-        assertTabBarHidden(app, on: "回饋中心")
         attach(app, "feedback-center")
 
-        // 我的回饋: the status groups are the page's own tab bar, in place of the app's.
+        // 我的回饋: the status groups are the page's own tab bar.
         app.buttons["feedback_center_list"].firstMatch.tap()
         let groupTabs = ["處理中", "排隊中", "待補充", "已完成"].map { app.tabBars.buttons[$0].firstMatch }
         XCTAssertTrue(groupTabs[0].waitForExistence(timeout: 10), app.debugDescription)
-        assertTabBarHidden(app, on: "我的回饋")
         for tab in groupTabs {
             XCTAssertTrue(tab.isHittable, "\(tab.label) should be a reachable tab")
         }
@@ -105,7 +89,6 @@ final class FeedbackCenterUITests: XCTestCase {
         let text = app.descendants(matching: .any)["feedback_compose_text"].firstMatch
         XCTAssertTrue(text.waitForExistence(timeout: 10), app.debugDescription)
         XCTAssertTrue(app.navigationBars["回饋與改進"].exists)
-        assertTabBarHidden(app, on: "回饋與改進")
         XCTAssertTrue(app.staticTexts["反饋數據已準備就緒"].waitForExistence(timeout: 20),
                       "the log should finish preparing")
         attach(app, "feedback-compose")

@@ -3,7 +3,7 @@ import SwiftUI
 /// iOS 26's soft scroll-edge fade (`.scrollEdgeEffectStyle(.soft, for: .all)`).
 /// Earlier systems have no scroll edge effect at all, so this is a no-op there.
 ///
-/// The `#if compiler` guard mirrors `RootTabBarMinimizeStyle`: the iOS 26 API only
+/// The `#if compiler` guard is there because the iOS 26 API only
 /// exists in the Xcode 26 SDK, and the project still has to compile on older toolchains.
 struct SoftScrollEdgeStyle: ViewModifier {
     /// Drops the top edge effect, for a page whose artwork is meant to show under the
