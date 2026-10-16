@@ -29,12 +29,27 @@ struct MetricKitCallStackTests {
         let root = frame("AAAA", 100, 23, "dyld", sub: [middle])
         let data = try tree([["threadAttributed": true, "callStackRootFrames": [root]]])
 
-        let path = try MetricKitCallStack.heaviestPath(fromJSON: data)
+        let path = try MetricKitCallStack.heaviestPath(fromJSON: data, order: .rootIsEntryPoint)
 
         #expect(path.frames.map(\.offsetIntoTextSegment) == [300, 200, 100])
         #expect(path.frames.first?.binaryName == "YueduReader")
         #expect(path.totalSamples == 23)
         #expect(path.threadAttributed)
+    }
+
+    /// A crash's tree is a backtrace whose root is the crashing frame. Reversing it, as
+    /// for sampled trees, put `start` at frame 0: every MetricKit crash then blamed the
+    /// thread entry point and folded into one issue.
+    @Test("a crash backtrace keeps its root, the crashing frame, first")
+    func crashBacktraceStaysLeafFirst() throws {
+        let entry = frame("AAAA", 100, 1, "dyld")
+        let caller = frame("BBBB", 200, 1, "YueduReader", sub: [entry])
+        let crashed = frame("CCCC", 300, 1, "libsystem_kernel.dylib", sub: [caller])
+        let data = try tree([["threadAttributed": true, "callStackRootFrames": [crashed]]])
+
+        let path = try MetricKitCallStack.heaviestPath(fromJSON: data, order: .rootIsLeaf)
+
+        #expect(path.frames.map(\.offsetIntoTextSegment) == [300, 200, 100])
     }
 
     @Test("the attributed thread wins over a busier unattributed one")
@@ -45,7 +60,7 @@ struct MetricKitCallStackTests {
             ["threadAttributed": false, "callStackRootFrames": [busy]],
             ["threadAttributed": true, "callStackRootFrames": [blamed]],
         ])
-        #expect(try MetricKitCallStack.heaviestPath(fromJSON: data).frames.map(\.offsetIntoTextSegment) == [2])
+        #expect(try MetricKitCallStack.heaviestPath(fromJSON: data, order: .rootIsEntryPoint).frames.map(\.offsetIntoTextSegment) == [2])
     }
 
     @Test("a frame in a binary loaded now maps to its address in this process")
@@ -54,7 +69,7 @@ struct MetricKitCallStackTests {
         let uuid = try #require(LoadedImages.uuid(of: header))
         let data = try tree([["threadAttributed": true, "callStackRootFrames": [frame(uuid.lowercased(), 0x1234, 5)]]])
 
-        let path = try MetricKitCallStack.heaviestPath(fromJSON: data)
+        let path = try MetricKitCallStack.heaviestPath(fromJSON: data, order: .rootIsEntryPoint)
 
         #expect(path.frames.first?.loadedAddress == UInt(bitPattern: header) + 0x1234)
     }
@@ -62,7 +77,7 @@ struct MetricKitCallStackTests {
     @Test("a frame from a binary that is not loaded keeps its offset as text")
     func unloadedBinaryFrameHasNoAddress() throws {
         let data = try tree([["callStackRootFrames": [frame("00000000-0000-0000-0000-000000000000", 0xbeef, 1, "OldBuild")]]])
-        let first = try #require(try MetricKitCallStack.heaviestPath(fromJSON: data).frames.first)
+        let first = try #require(try MetricKitCallStack.heaviestPath(fromJSON: data, order: .rootIsEntryPoint).frames.first)
         #expect(first.loadedAddress == nil)
         #expect(first.readable == "OldBuild + 0xbeef")
     }
@@ -70,7 +85,7 @@ struct MetricKitCallStackTests {
     @Test("a tree without stacks is an error, not an empty report")
     func emptyTreeThrows() throws {
         #expect(throws: MetricKitCallStack.ParseError.self) {
-            try MetricKitCallStack.heaviestPath(fromJSON: try tree([]))
+            try MetricKitCallStack.heaviestPath(fromJSON: try tree([]), order: .rootIsEntryPoint)
         }
     }
 }

@@ -49,9 +49,21 @@ struct MetricKitCallStack: Sendable {
         case noCallStacks
     }
 
+    /// Which end of a call stack tree MetricKit puts at its roots. It differs by
+    /// diagnostic, and reading one as the other blames the wrong end of the stack.
+    enum TreeOrder: Sendable {
+        /// Sampled diagnostics (cpu, disk writes, hangs): the root is the thread's entry
+        /// point (`start` → `main` → …) and the samples were taken at the leaves.
+        case rootIsEntryPoint
+        /// A crash's backtrace: the root is the frame that crashed (`__pthread_kill`, a
+        /// malloc trap) and each sub-frame is its caller. Verified against 2.0.7 (127)
+        /// payloads symbolicated with the device's system symbols.
+        case rootIsLeaf
+    }
+
     /// Picks the attributed thread's stack (the one MetricKit blames), else the heaviest
-    /// one, and follows the most-sampled child from root to leaf.
-    static func heaviestPath(fromJSON data: Data) throws -> MetricKitCallStack {
+    /// one, and follows the most-sampled child down from its roots.
+    static func heaviestPath(fromJSON data: Data, order: TreeOrder) throws -> MetricKitCallStack {
         guard let root = try JSONSerialization.jsonObject(with: data) as? [String: Any] else {
             throw ParseError.notAnObject
         }
@@ -71,7 +83,8 @@ struct MetricKitCallStack: Sendable {
             level = (heaviest["subFrames"] as? [[String: Any]]) ?? []
         }
         let images = LoadedImages.current()
-        let resolved = path.reversed().map { frame -> Frame in
+        let leafFirst = order == .rootIsLeaf ? path : Array(path.reversed())
+        let resolved = leafFirst.map { frame -> Frame in
             var frame = frame
             if let base = images.loadAddress(forUUID: frame.binaryUUID) {
                 frame.loadedAddress = base &+ UInt(frame.offsetIntoTextSegment)

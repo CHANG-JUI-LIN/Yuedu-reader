@@ -86,13 +86,19 @@ final class MetricKitDiagnosticReporter: NSObject, MXMetricManagerSubscriber, @u
                 report(
                     kind: "crash",
                     summary: "reason=\(reason) signal=\(signal) excType=\(excType)",
-                    callStack: d.callStackTree, meta: d.metaData
+                    callStack: d.callStackTree, order: .rootIsLeaf, meta: d.metaData
                 )
             }
         }
     }
 
-    private func report(kind: String, summary: String, callStack: MXCallStackTree, meta: MXMetaData) {
+    private func report(
+        kind: String,
+        summary: String,
+        callStack: MXCallStackTree,
+        order: MetricKitCallStack.TreeOrder = .rootIsEntryPoint,
+        meta: MXMetaData
+    ) {
         let treeData = callStack.jsonRepresentation()
         let stackJSON = String(data: treeData, encoding: .utf8) ?? "<unavailable>"
         let metaJSON = String(data: meta.jsonRepresentation(), encoding: .utf8) ?? "{}"
@@ -100,7 +106,7 @@ final class MetricKitDiagnosticReporter: NSObject, MXMetricManagerSubscriber, @u
 
         let path: MetricKitCallStack?
         do {
-            path = try MetricKitCallStack.heaviestPath(fromJSON: treeData)
+            path = try MetricKitCallStack.heaviestPath(fromJSON: treeData, order: order)
         } catch {
             path = nil
             log.error("⟐ MetricKit \(kind, privacy: .public): call stack tree unreadable: \(error.localizedDescription, privacy: .public)")
