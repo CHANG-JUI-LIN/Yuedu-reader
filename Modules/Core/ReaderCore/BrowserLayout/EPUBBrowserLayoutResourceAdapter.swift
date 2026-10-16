@@ -182,7 +182,7 @@ final class EPUBBrowserLayoutResourceAdapter: BrowserLayoutResourceProviding {
         }))
     }
 
-    func fontResolver() -> (([String], Int, Bool, CGFloat) -> UIFont?)? {
+    func fontResolver() -> BrowserFontResolver? {
         // Continuous chapter preparation (including its current paged prerequisite)
         // resolves the same CSS font tuple for many runs/lines. The Sep 19 scroll
         // trace spends most of each 260–280 ms main-thread hang rebuilding those

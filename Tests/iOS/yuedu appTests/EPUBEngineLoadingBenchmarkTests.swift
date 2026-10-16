@@ -261,7 +261,7 @@ private final class TimedResource: BrowserLayoutResourceProviding {
     var chapterCount: Int { base.chapterCount }
     func chapterTitle(at index: Int) -> String { base.chapterTitle(at: index) }
     func chapterSourceHref(at index: Int) -> String? { base.chapterSourceHref(at: index) }
-    func fontResolver() -> (([String], Int, Bool, CGFloat) -> UIFont?)? { base.fontResolver() }
+    func fontResolver() -> BrowserFontResolver? { base.fontResolver() }
     func prepareFonts(requests: Set<BrowserFontRequest>) async {
         let start = SourcePerfTrace.now
         defer { record("fonts", since: start) }
