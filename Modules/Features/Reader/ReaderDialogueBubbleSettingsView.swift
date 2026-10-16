@@ -433,7 +433,7 @@ struct ReaderDialogueBubbleSettingsView: View {
         Binding(
             get: { Color(uiColor: UIColor(readerStyleHex: hex)) },
             set: { newValue in
-                let resolved = newValue.editorRGBHex ?? hex
+                let resolved = newValue.rgbHex ?? hex
                 update { assign(&$0, resolved) }
             }
         )

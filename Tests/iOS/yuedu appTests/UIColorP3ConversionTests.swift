@@ -30,4 +30,16 @@ struct UIColorP3ConversionTests {
         let hex = UIColor(p3Color).rgbHex
         #expect(hex != nil)
     }
+
+    /// The regex highlight editor, the dialogue bubble settings and the chapter title
+    /// inspector each carried their own unclamped copy of this conversion, fed straight
+    /// from ColorPicker. A Display P3 green is about -0.51 red in extended sRGB, and
+    /// `UInt32(negative)` traps — the crash `8c4857f3` fixed for `UIColor.rgbHex` only.
+    @Test("a SwiftUI colour converts through the one clamped path")
+    func swiftUIColorHex() {
+        let green = Color(.displayP3, red: 0, green: 1, blue: 0, opacity: 1)
+        #expect(green.rgbHex == UIColor(green).rgbHex)
+        #expect(green.rgbHex.map { $0 >> 16 } == 0)
+    }
 }
+

@@ -819,7 +819,7 @@ struct RegexHighlightRuleEditorView: View {
     private func colorBinding(hex: UInt32, update: @escaping (UInt32) -> Void) -> Binding<Color> {
         Binding(
             get: { Color(uiColor: UIColor(readerStyleHex: hex)) },
-            set: { update($0.editorRGBHex ?? hex) }
+            set: { update($0.rgbHex ?? hex) }
         )
     }
 
@@ -937,20 +937,6 @@ private extension ReaderStyleImageContentMode {
         case .tile: "平鋪"
         case .stretch: "拉伸"
         }
-    }
-}
-
-/// Shared with 對話氣泡, which fills the same kind of colour rows.
-extension Color {
-    var editorRGBHex: UInt32? {
-        let color = UIColor(self)
-        var red: CGFloat = 0
-        var green: CGFloat = 0
-        var blue: CGFloat = 0
-        guard color.getRed(&red, green: &green, blue: &blue, alpha: nil) else { return nil }
-        return UInt32((red * 255).rounded()) << 16
-            | UInt32((green * 255).rounded()) << 8
-            | UInt32((blue * 255).rounded())
     }
 }
 

@@ -810,6 +810,13 @@ extension UIColor {
     }
 }
 
+extension Color {
+    /// The colour's sRGB hex, through the one clamped conversion above. ColorPicker hands
+    /// back Display P3 colours, so a copy without the clamp traps on the first wide-gamut
+    /// pick.
+    var rgbHex: UInt32? { UIColor(self).rgbHex }
+}
+
 struct AppearanceThemeBackgroundView: View {
     let preset: AppearanceThemePreset?
     let colorScheme: ColorScheme

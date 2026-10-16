@@ -743,19 +743,6 @@ private extension ReaderStyleEdges {
     }
 }
 
-private extension Color {
-    var rgbHex: UInt32? {
-        let uiColor = UIColor(self)
-        var red: CGFloat = 0
-        var green: CGFloat = 0
-        var blue: CGFloat = 0
-        guard uiColor.getRed(&red, green: &green, blue: &blue, alpha: nil) else { return nil }
-        return UInt32((red * 255).rounded()) << 16
-            | UInt32((green * 255).rounded()) << 8
-            | UInt32((blue * 255).rounded())
-    }
-}
-
 #Preview {
     ChapterTitleInspectorView(
         model: ChapterTitleDesignerModel(initial: .default, onSave: { _ in })
