@@ -7,13 +7,17 @@ import SwiftUI
 ///
 /// Laid out by the old 探索 root's 格狀 and 每列欄數, now in this page's •••, as cards the way
 /// the maintainer's reference draws its media servers and modules (2026-10-13). The search
-/// narrows the sources in place, as the old root and Legado's explore page do.
+/// field, at the top of the page, narrows the sources in place, as the old root and Legado's
+/// explore page do.
 ///
-/// One stack, with 探索's destinations: every page here is one 探索 already pushes.
+/// Every page here is one 探索 already pushes, onto the root stack around the tab bar
+/// (`RootNavigation`). The bar is that stack's, so the ••• is `LibraryMoreControl`, which
+/// `ContentView` puts there while 資源庫 is selected; what it adds, this page presents.
 struct LibraryTabRoot: View {
-    @ObservedObject var browser: BrowserState
-    @EnvironmentObject private var store: BookStore
+    let flows: LibraryTabFlows
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    /// The root stack: a reference that never changes (guardrail 13).
+    @Environment(\.rootNavigation) private var navigation
     @ObservedObject private var availability = PublicLibraryAvailability.shared
     @ObservedObject private var connections = RemoteLibraryConnectionStore.shared
     @ObservedObject private var aggregation = AggregationSettingsStore.shared
@@ -22,40 +26,19 @@ struct LibraryTabRoot: View {
     @ObservedObject private var rss = RSSStore.shared
     @ObservedObject private var modules = RuleModuleLibrary.shared
     @AppStorage(ExploreSettings.showsGridKey) private var showsGrid = true
-    @AppStorage(ExploreSettings.gridColumnCountKey) private var gridColumnCount = ExploreGridDensity.default.rawValue
     /// The first-launch card saying what moved here (maintainer's choice, 2026-10-13).
     @AppStorage(Self.noticeDismissedKey) private var noticeDismissed = false
 
-    @State private var path = NavigationPath()
-    @State private var browserEntry: BrowserEntryPresentation?
     @State private var query = ""
+    @FocusState private var searchFocused: Bool
     /// The sources with a discover page, and their groups: worked out when the sources change,
     /// not on every redraw, since a reader may have tens of thousands.
     @State private var exploreSources: [BookSource] = []
     @State private var sourceGroups: [LibrarySourceGroups.Group] = []
     @State private var sourceActionSheet: BookSourceActionSheet?
     @State private var sourcePendingDeletion: BookSource?
-    /// 新增來源配置 from the •••: the same flow as 來源配置管理's 「+」.
-    @StateObject private var addFlow = BookSourceAddFlow()
-    /// 新增模組 (Phase 6e).
-    @StateObject private var moduleFlow = RuleModuleAddFlow()
-    @State private var showsMoreChooser = false
-    @State private var moreSequence = DismissalSequencedPresentation<LibraryMoreAction>()
 
     static let noticeDismissedKey = "library.tabNoticeDismissed"
-
-    private enum LibraryMoreAction: Hashable {
-        case add(BookSourceAddRoute)
-        case addModule(RuleModuleAddRoute)
-        case manageSources
-        case showsGrid(Bool)
-        case columns(Int)
-    }
-
-    private struct BrowserEntryPresentation: Identifiable {
-        let id = UUID()
-        let entry: BrowserEntry
-    }
 
     private var libraries: [LibraryListing] {
         LibraryListing.ordered(connections: connections.connections, librariesAvailable: availability.isAvailable,
@@ -72,7 +55,12 @@ struct LibraryTabRoot: View {
     }
 
     var body: some View {
-        NavigationStack(path: $path) {
+        // The field stays at the top of the page as it scrolls, as the bar's search field did
+        // before the bar became the root stack's (iOS 17–27 alike; maintainer, 2026-10-16).
+        VStack(spacing: 0) {
+            DSSearchBar(placeholder: localized("搜索來源配置"), text: $query, isFocused: $searchFocused)
+                .padding(.horizontal, DSSpacing.lg)
+                .padding(.vertical, DSSpacing.xs)
             ScrollView {
                 VStack(alignment: .leading, spacing: DSSpacing.xl) {
                     if trimmedQuery.isEmpty {
@@ -83,7 +71,7 @@ struct LibraryTabRoot: View {
                         remoteLibrariesSection
                         sourcesSection
                         OfficialModuleSection()
-                        RuleModuleSection(library: modules) { moduleFlow.begin(.address) }
+                        RuleModuleSection(library: modules) { flows.modules.begin(.address) }
                         subscriptionsSection
                     } else if !matchingSources.isEmpty {
                         LibrarySection(localized("來源配置")) { layout in
@@ -93,8 +81,7 @@ struct LibraryTabRoot: View {
                         }
                     }
                 }
-                // The page's full width even when a search finds nothing: while the search is
-                // active the scroll view takes its content's width (the old 探索 root, iOS 27).
+                // The page's full width even when a search finds nothing.
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(.horizontal, DSSpacing.lg)
                 .padding(.vertical, DSSpacing.sm)
@@ -102,144 +89,25 @@ struct LibraryTabRoot: View {
                 .rootTabTitleScrollAnchor()
                 // Not beside `bookSourceAddFlow`: two file importers on one view, and SwiftUI
                 // presents only one of them.
-                .ruleModuleAddFlow(moduleFlow)
+                .ruleModuleAddFlow(flows.modules)
             }
             .overlay {
                 if !trimmedQuery.isEmpty && matchingSources.isEmpty {
                     ContentUnavailableView.search(text: trimmedQuery)
                 }
             }
-            .rootTabSearchScrollEdges()
+            .softScrollEdges()
             .scrollDismissesKeyboard(.immediately)
-            .background(PageBackgroundView(scope: .explore).ignoresSafeArea())
-            .pageBackgroundToolbar(for: .explore)
-            .rootTabTitle(localized("資源庫"), onScroll: .minimizesBar)
-            .toolbar {
-                ToolbarItem(placement: .topBarTrailing) { moreControl }
-            }
-            .searchable(text: $query, placement: .navigationBarDrawer(displayMode: .always),
-                        prompt: localized("搜索來源配置"))
-            .onReceive(sourceStore.sourcesPublisher) { _ in
-                exploreSources = DiscoverViewModel.exploreSources(in: sourceStore)
-                sourceGroups = LibrarySourceGroups.groups(of: exploreSources)
-            }
-            .bookSourceActionSheets(sheet: $sourceActionSheet, pendingDeletion: $sourcePendingDeletion)
-            .bookSourceAddFlow(addFlow)
-            .task { await modules.loadIfNeeded() }
-            .fullScreenCover(item: $browserEntry) { presentation in
-                NavigationStack {
-                    BrowserPage(browser: browser, entry: presentation.entry)
-                }
-                .environmentObject(store)
-            }
-            .exploreRouteDestinations(openBrowser: { browserEntry = BrowserEntryPresentation(entry: $0) })
-            .remoteLibraryDestinations()
-            .publicLibraryDestinations()
         }
-        .environment(\.openPublicLibraryBooks) { selection in
-            if let book = selection.selectedBook { path.append(WorkDetailRoute(book)) }
+        .background(PageBackgroundView(scope: .explore).ignoresSafeArea())
+        .pageBackgroundToolbar(for: .explore)
+        .onReceive(sourceStore.sourcesPublisher) { _ in
+            exploreSources = DiscoverViewModel.exploreSources(in: sourceStore)
+            sourceGroups = LibrarySourceGroups.groups(of: exploreSources)
         }
-        .environment(\.explorePush) { $0.append(to: &path) }
-    }
-
-    // MARK: •••
-
-    /// 資源庫's one ••• (decision 31): 新增來源配置, 管理來源配置, 新增模組 (Phase 6e) and the layout. A native menu from
-    /// iOS 18; on iOS 17 a chooser, since 新增來源配置's sheets would be dropped while the menu
-    /// dismisses (`Technotes/iOS17MenuModalPresentation.md`).
-    @ViewBuilder
-    private var moreControl: some View {
-        if MenuModalPresentationPolicy.requiresDismissalSequencedChooser {
-            Button {
-                moreSequence.cancel()
-                showsMoreChooser = true
-            } label: {
-                Image(systemName: "ellipsis")
-                    .accessibilityHidden(true)
-            }
-            .accessibilityLabel(localized("更多"))
-            .accessibilityIdentifier("library.more")
-            .sheet(isPresented: $showsMoreChooser, onDismiss: {
-                moreSequence.consumeAfterDismissal().map(perform)
-            }) {
-                AdaptiveSheetContainer(maxWidth: DSLayout.readableCompactWidth) {
-                    DismissalSequencedActionChooser(title: localized("更多"), actions: moreChoices,
-                                                    onSelect: { moreSequence.select($0) })
-                }
-            }
-        } else {
-            Menu {
-                Menu {
-                    BookSourceAddMenuItems(flow: addFlow)
-                } label: {
-                    Label(localized("新增來源配置"), systemImage: "plus")
-                }
-                Button {
-                    perform(.manageSources)
-                } label: {
-                    Label(localized("管理來源配置"), systemImage: "slider.horizontal.3")
-                }
-                Menu {
-                    RuleModuleAddMenuItems(flow: moduleFlow)
-                } label: {
-                    Label(localized("新增模組"), systemImage: "puzzlepiece.extension")
-                }
-                Divider()
-                LibraryLayoutMenuItems()
-            } label: {
-                Image(systemName: "ellipsis")
-                    .accessibilityHidden(true)
-            }
-            .accessibilityLabel(localized("更多"))
-            .accessibilityIdentifier("library.more")
-        }
-    }
-
-    /// The chooser's rows: the menu's items, with each layout choice a row of its own and the
-    /// menu's check mark said in words.
-    private var moreChoices: [DismissalSequencedAction<LibraryMoreAction>] {
-        var actions = BookSourceAddRoute.allCases.map { route in
-            DismissalSequencedAction(route: LibraryMoreAction.add(route), title: localized(route.titleKey),
-                                     systemImage: route.systemImage, subtitle: localized("新增來源配置"))
-        }
-        actions.append(DismissalSequencedAction(route: .manageSources, title: localized("管理來源配置"),
-                                                systemImage: "slider.horizontal.3"))
-        actions += RuleModuleAddRoute.allCases.map { route in
-            DismissalSequencedAction(route: LibraryMoreAction.addModule(route), title: localized(route.titleKey),
-                                     systemImage: route.systemImage, subtitle: localized("新增模組"))
-        }
-        for grid in [true, false] {
-            actions.append(DismissalSequencedAction(
-                route: .showsGrid(grid), title: localized(grid ? "格狀" : "列表"),
-                systemImage: grid == showsGrid ? "checkmark" : (grid ? "square.grid.2x2" : "list.bullet"),
-                subtitle: grid == showsGrid ? localized("使用中") : nil))
-        }
-        if showsGrid {
-            for density in ExploreGridDensity.allCases {
-                let isCurrent = density.rawValue == gridColumnCount
-                actions.append(DismissalSequencedAction(
-                    route: .columns(density.rawValue), title: String(format: localized("%d 欄"), density.rawValue),
-                    systemImage: isCurrent ? "checkmark" : "rectangle.split.3x1",
-                    subtitle: isCurrent ? [localized("每列欄數"), localized("使用中")].joined(separator: " · ")
-                        : localized("每列欄數")))
-            }
-        }
-        return actions
-    }
-
-    private func perform(_ action: LibraryMoreAction) {
-        switch action {
-        case .add(let route):
-            addFlow.begin(route)
-        case .addModule(let route):
-            moduleFlow.begin(route)
-        case .manageSources:
-            path.append(ExploreNavigationRoute.sourceManager)
-        case .showsGrid(let grid):
-            showsGrid = grid
-        case .columns(let count):
-            gridColumnCount = count
-        }
+        .bookSourceActionSheets(sheet: $sourceActionSheet, pendingDeletion: $sourcePendingDeletion)
+        .bookSourceAddFlow(flows.sources)
+        .task { await modules.loadIfNeeded() }
     }
 
     // MARK: Sections
@@ -352,7 +220,7 @@ struct LibraryTabRoot: View {
     private func sourceEntry(_ source: BookSource, layout: ExploreEntryLabel.Layout) -> some View {
         LibrarySourceEntry(source: source, layout: layout, sheet: $sourceActionSheet,
                            pendingDeletion: $sourcePendingDeletion) {
-            path.append(ExploreNavigationRoute.searchInSource(sourceURL: source.bookSourceUrl))
+            navigation?.path.append(ExploreNavigationRoute.searchInSource(sourceURL: source.bookSourceUrl))
         }
     }
 
@@ -419,9 +287,136 @@ struct LibraryTabRoot: View {
     }
 }
 
+/// What 資源庫's ••• adds: `ContentView` holds them for the ••• in the root stack's bar
+/// (`LibraryMoreControl`), and the page presents them. Held, not observed: the page's
+/// presentations observe each flow themselves.
+@MainActor
+final class LibraryTabFlows {
+    /// 新增來源配置: the same flow as 來源配置管理's 「+」.
+    let sources = BookSourceAddFlow()
+    /// 新增模組 (Phase 6e).
+    let modules = RuleModuleAddFlow()
+}
+
+/// 資源庫's one ••• (decision 31), in the root stack's bar: 新增來源配置, 管理來源配置, 新增模組
+/// (Phase 6e) and the layout. A native menu from iOS 18; on iOS 17 a chooser, since 新增來源配置's
+/// sheets would be dropped while the menu dismisses (`Technotes/iOS17MenuModalPresentation.md`).
+struct LibraryMoreControl: View {
+    let flows: LibraryTabFlows
+    @AppStorage(ExploreSettings.showsGridKey) private var showsGrid = true
+    @AppStorage(ExploreSettings.gridColumnCountKey) private var gridColumnCount = ExploreGridDensity.default.rawValue
+    @Environment(\.rootNavigation) private var navigation
+    @State private var showsMoreChooser = false
+    @State private var moreSequence = DismissalSequencedPresentation<LibraryMoreAction>()
+
+    private enum LibraryMoreAction: Hashable {
+        case add(BookSourceAddRoute)
+        case addModule(RuleModuleAddRoute)
+        case manageSources
+        case showsGrid(Bool)
+        case columns(Int)
+    }
+
+    var body: some View {
+        if MenuModalPresentationPolicy.requiresDismissalSequencedChooser {
+            Button {
+                moreSequence.cancel()
+                showsMoreChooser = true
+            } label: {
+                Image(systemName: "ellipsis")
+                    .accessibilityHidden(true)
+            }
+            .accessibilityLabel(localized("更多"))
+            .accessibilityIdentifier("library.more")
+            .sheet(isPresented: $showsMoreChooser, onDismiss: {
+                moreSequence.consumeAfterDismissal().map(perform)
+            }) {
+                AdaptiveSheetContainer(maxWidth: DSLayout.readableCompactWidth) {
+                    DismissalSequencedActionChooser(title: localized("更多"), actions: moreChoices,
+                                                    onSelect: { moreSequence.select($0) })
+                }
+            }
+        } else {
+            Menu {
+                Menu {
+                    BookSourceAddMenuItems(flow: flows.sources)
+                } label: {
+                    Label(localized("新增來源配置"), systemImage: "plus")
+                }
+                Button {
+                    perform(.manageSources)
+                } label: {
+                    Label(localized("管理來源配置"), systemImage: "slider.horizontal.3")
+                }
+                Menu {
+                    RuleModuleAddMenuItems(flow: flows.modules)
+                } label: {
+                    Label(localized("新增模組"), systemImage: "puzzlepiece.extension")
+                }
+                Divider()
+                LibraryLayoutMenuItems()
+            } label: {
+                Image(systemName: "ellipsis")
+                    .accessibilityHidden(true)
+            }
+            .accessibilityLabel(localized("更多"))
+            .accessibilityIdentifier("library.more")
+        }
+    }
+
+    /// The chooser's rows: the menu's items, with each layout choice a row of its own and the
+    /// menu's check mark said in words.
+    private var moreChoices: [DismissalSequencedAction<LibraryMoreAction>] {
+        var actions = BookSourceAddRoute.allCases.map { route in
+            DismissalSequencedAction(route: LibraryMoreAction.add(route), title: localized(route.titleKey),
+                                     systemImage: route.systemImage, subtitle: localized("新增來源配置"))
+        }
+        actions.append(DismissalSequencedAction(route: .manageSources, title: localized("管理來源配置"),
+                                                systemImage: "slider.horizontal.3"))
+        actions += RuleModuleAddRoute.allCases.map { route in
+            DismissalSequencedAction(route: LibraryMoreAction.addModule(route), title: localized(route.titleKey),
+                                     systemImage: route.systemImage, subtitle: localized("新增模組"))
+        }
+        for grid in [true, false] {
+            actions.append(DismissalSequencedAction(
+                route: .showsGrid(grid), title: localized(grid ? "格狀" : "列表"),
+                systemImage: grid == showsGrid ? "checkmark" : (grid ? "square.grid.2x2" : "list.bullet"),
+                subtitle: grid == showsGrid ? localized("使用中") : nil))
+        }
+        if showsGrid {
+            for density in ExploreGridDensity.allCases {
+                let isCurrent = density.rawValue == gridColumnCount
+                actions.append(DismissalSequencedAction(
+                    route: .columns(density.rawValue), title: String(format: localized("%d 欄"), density.rawValue),
+                    systemImage: isCurrent ? "checkmark" : "rectangle.split.3x1",
+                    subtitle: isCurrent ? [localized("每列欄數"), localized("使用中")].joined(separator: " · ")
+                        : localized("每列欄數")))
+            }
+        }
+        return actions
+    }
+
+    private func perform(_ action: LibraryMoreAction) {
+        switch action {
+        case .add(let route):
+            flows.sources.begin(route)
+        case .addModule(let route):
+            flows.modules.begin(route)
+        case .manageSources:
+            navigation?.path.append(ExploreNavigationRoute.sourceManager)
+        case .showsGrid(let grid):
+            showsGrid = grid
+        case .columns(let count):
+            gridColumnCount = count
+        }
+    }
+}
+
 #if DEBUG
 #Preview("資源庫") {
-    LibraryTabRoot(browser: BrowserState())
-        .environmentObject(BookStore())
+    NavigationStack {
+        LibraryTabRoot(flows: LibraryTabFlows())
+    }
+    .environmentObject(BookStore())
 }
 #endif

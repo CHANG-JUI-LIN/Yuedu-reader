@@ -15,8 +15,9 @@ enum RootTabItem: String, CaseIterable, Codable, Hashable, Identifiable {
 
     var id: String { rawValue }
 
-    /// The tabs drawn, in order: 書架・探索・資源庫・搜尋・設定 (decision 30).
-    static let tabs: [RootTabItem] = [.bookshelf, .explore, .library, .search, .settings]
+    /// The tabs drawn, in order: 書架・探索・資源庫・設定・搜尋 (decision 30; 搜尋 moved to the far
+    /// right, 2026-10-16). A saved list follows this order (`sanitizedRootTabVisibleIDs`).
+    static let tabs: [RootTabItem] = [.bookshelf, .explore, .library, .settings, .search]
 
     /// Tabs added after readers had saved which tabs they show. A saved list that does not name
     /// one predates it, so the tab is shown; hiding it writes `hiddenMarker` into the list.

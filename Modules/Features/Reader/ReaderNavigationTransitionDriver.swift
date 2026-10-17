@@ -28,8 +28,15 @@ private final class ResumeOnceBox: @unchecked Sendable {
 
 /// Owns the UIKit half of reader navigation: the custom push/pop animator,
 /// the percent-driven interaction controller, and the leading-edge pan. It
-/// attaches to the outer shelf navigation controller before a reader push and
+/// attaches to the root stack's navigation controller before a reader push and
 /// forwards unrelated delegate calls to SwiftUI's original delegate.
+///
+/// The delegate and the edge pan are the driver's only while its reader is on
+/// the stack: `startPush` claims them, and they go back once the reader has left
+/// and the stack is idle (`releaseNavigationIfIdle`). Since 2026-10-16 that stack
+/// carries every pushed page in the app, and holding them from attachment on took
+/// SwiftUI's own pushes over — no push animation, no swipe back on any page
+/// (`LibraryTabUITests.testPushedPageSwipesBack`).
 @MainActor
 final class ReaderNavigationTransitionDriver: NSObject {
     enum PendingOperation {
@@ -40,6 +47,8 @@ final class ReaderNavigationTransitionDriver: NSObject {
     weak var navigationController: UINavigationController?
     private weak var forwardedDelegate: UINavigationControllerDelegate?
     private var edgePan: NavigationBackEdgePanGestureRecognizer?
+    /// The reader `startPush` put on the stack, while it is there.
+    private weak var pushedReader: UIViewController?
     private var interactionController: UIPercentDrivenInteractiveTransition?
     private var pendingOperation: PendingOperation?
     private var isDetailTransitionActive = false
@@ -54,7 +63,7 @@ final class ReaderNavigationTransitionDriver: NSObject {
     /// `finishTransition` / `didShow` / detach path.
     ///
     /// It also covers the in-flight variant: UIKit created our animator, the
-    /// destination's `viewWillAppear` already hid the shelf bars, and then the
+    /// destination's appearance already hid the shelf bars, and then the
     /// transition was never driven to completion (no animator completion, no
     /// `didShow`). Animator creation alone must not disarm the watchdog — if
     /// the timeline is frozen across a full extra window, the animator is
@@ -85,17 +94,12 @@ final class ReaderNavigationTransitionDriver: NSObject {
     var onNavigationTransitionSettled: () -> Void = {}
 
     func attach(to navigationController: UINavigationController) {
-        if self.navigationController === navigationController {
-            installEdgePanIfNeeded(on: navigationController)
-            return
-        }
+        guard self.navigationController !== navigationController else { return }
         if self.navigationController != nil {
             detach()
         }
 
         self.navigationController = navigationController
-        claimNavigationDelegate()
-        installEdgePanIfNeeded(on: navigationController)
         installTransitionInvalidationObserversIfNeeded()
     }
 
@@ -118,6 +122,7 @@ final class ReaderNavigationTransitionDriver: NSObject {
         navigationController = nil
         forwardedDelegate = nil
         edgePan = nil
+        pushedReader = nil
         interactionController = nil
         pendingOperation = nil
         isDetailTransitionActive = false
@@ -148,6 +153,8 @@ final class ReaderNavigationTransitionDriver: NSObject {
         }
 
         claimNavigationDelegate()
+        installEdgePanIfNeeded(on: navigationController)
+        pushedReader = viewController
         expectedFromViewController = navigationController.topViewController
         expectedToViewController = viewController
         pendingOperation = .push
@@ -407,7 +414,32 @@ final class ReaderNavigationTransitionDriver: NSObject {
                 self.activeAnimator == nil
             else { return }
             self.onNavigationTransitionSettled()
+            // After the coordinator's turn: it may have begun the next reader's push.
+            self.releaseNavigationIfIdle()
         }
+    }
+
+    /// Hands the delegate back to SwiftUI and removes the edge pan once the
+    /// reader is off the stack — popped, or taken off by someone else — and
+    /// nothing this driver started is still running.
+    private func releaseNavigationIfIdle() {
+        guard let navigationController,
+              pendingOperation == nil,
+              activeAnimator == nil,
+              !isInteractivePopInFlight,
+              !isDetailTransitionActive
+        else { return }
+        if let pushedReader, navigationController.viewControllers.contains(pushedReader) { return }
+        pushedReader = nil
+        if let edgePan {
+            navigationController.view.removeGestureRecognizer(edgePan)
+            self.edgePan = nil
+            AppLogger.info("⟐ reader-nav edge pan removed")
+        }
+        if navigationController.delegate === self {
+            navigationController.delegate = forwardedDelegate
+        }
+        forwardedDelegate = nil
     }
 
     /// A safety net for a UIKit transaction that changes the stack without

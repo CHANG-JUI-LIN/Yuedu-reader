@@ -12,6 +12,9 @@ import UIKit
 /// `.searchable`, never for the view that applies it.
 struct SearchIdleContent<Hint: View>: View {
     let isQueryEmpty: Bool
+    /// Whether the page's own search field is active, where the field is on the page
+    /// (`DSSearchBar`, the 搜索 tab's root); nil reads `.searchable`'s.
+    let fieldIsActive: Bool?
     let onSearch: (String) -> Void
     let onOpenBook: (ReadingBook) -> Void
     let hint: Hint
@@ -24,18 +27,20 @@ struct SearchIdleContent<Hint: View>: View {
 
     init(
         isQueryEmpty: Bool,
+        fieldIsActive: Bool? = nil,
         onSearch: @escaping (String) -> Void,
         onOpenBook: @escaping (ReadingBook) -> Void,
         @ViewBuilder hint: () -> Hint
     ) {
         self.isQueryEmpty = isQueryEmpty
+        self.fieldIsActive = fieldIsActive
         self.onSearch = onSearch
         self.onOpenBook = onOpenBook
         self.hint = hint()
     }
 
     var body: some View {
-        if isSearching, isQueryEmpty {
+        if fieldIsActive ?? isSearching, isQueryEmpty {
             let books = RecentReadingSelection.entries(
                 shelf: bookStore.books,
                 records: offShelfReads.records,

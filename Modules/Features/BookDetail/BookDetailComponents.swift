@@ -159,7 +159,6 @@ struct BookDetailScaffold<Hero: View, Content: View, Actions: View>: View {
                 .background(PageBackgroundView(scope: .global).ignoresSafeArea())
                 .pageBackgroundToolbar(for: .global)
                 .toolbarTitleDisplayMode(.inline)
-                .hidesRootTabBar()
                 .toolbar {
                     ToolbarItem(placement: .principal) {
                         Text(title)

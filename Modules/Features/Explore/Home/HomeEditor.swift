@@ -39,34 +39,22 @@ extension HomeSection {
 
 // MARK: - The home, being edited
 
-/// The home's sections as cards, hidden ones included, then 新增欄目, the 首頁配置's card and
-/// •••'s.
+/// The home's sections as cards, hidden ones included. What follows them, `HomeEditorEnd`, is
+/// outside the home's lazy stack.
 struct HomeEditingSections<RowContent: View>: View {
     /// `HomePage.editableSections`.
     let sections: [HomeSection]
     /// The home's sections as drawn; a hidden section has none.
     let groups: [HomeSectionGroup]
-    /// The 首頁配置 being edited (5d-4).
-    let configuration: HomeConfigurationListing?
     let rowContent: (HomeSectionGroup) -> RowContent
     let openSettings: (UUID) -> Void
-    /// Renaming or deleting the 首頁配置, asked by the home.
-    let prompt: (HomeConfigurationPrompt) -> Void
-    /// 新增欄目, presented by the home.
-    let addSection: () -> Void
     @ObservedObject private var pageStore = HomePageStore.shared
-    @AppStorage(ExploreSettings.showsBrowserKey) private var showsBrowser = true
 
-    init(sections: [HomeSection], groups: [HomeSectionGroup], configuration: HomeConfigurationListing?,
-         openSettings: @escaping (UUID) -> Void, prompt: @escaping (HomeConfigurationPrompt) -> Void,
-         addSection: @escaping () -> Void,
+    init(sections: [HomeSection], groups: [HomeSectionGroup], openSettings: @escaping (UUID) -> Void,
          @ViewBuilder rowContent: @escaping (HomeSectionGroup) -> RowContent) {
         self.sections = sections
         self.groups = groups
-        self.configuration = configuration
         self.openSettings = openSettings
-        self.prompt = prompt
-        self.addSection = addSection
         self.rowContent = rowContent
     }
 
@@ -74,9 +62,6 @@ struct HomeEditingSections<RowContent: View>: View {
         ForEach(Array(sections.enumerated()), id: \.element.id) { index, section in
             card(section, at: index)
         }
-        addCard
-        if let configuration { configurationCard(configuration) }
-        moreCard
     }
 
     private func card(_ section: HomeSection, at index: Int) -> some View {
@@ -142,6 +127,32 @@ struct HomeEditingSections<RowContent: View>: View {
         guard let from = sections.firstIndex(where: { $0.id == id }), from != target else { return }
         pageStore.edit { $0.moveEditable(fromOffsets: IndexSet(integer: from), toOffset: target > from ? target + 1 : target) }
     }
+}
+
+/// What follows the cards while the home is edited: 新增欄目, the 首頁配置's card, and •••'s
+/// own entries, the browser's switch (settled decision 13).
+///
+/// The home puts it after its lazy stack, not in it. In the stack, once 編輯首頁 swapped the
+/// home's rows for the cards, the stack kept updating the browser's switch — a UIKit view, out
+/// of the window — and the update never ended: the app stopped answering on the iOS 18.6 and
+/// 26.5 simulators (not on iOS 27), with the home in the root stack around the tab bar
+/// (2026-10-16; lldb, `ExploreHomeUITests.testEditingTheHomeSwitchesTheBarButton`). A switch
+/// alone in a lazy stack did not hang, so what else of the home's it takes is not known. It can
+/// go back into the stack once that test passes with it there on every supported version.
+struct HomeEditorEnd: View {
+    /// The 首頁配置 being edited (5d-4).
+    let configuration: HomeConfigurationListing?
+    /// Renaming or deleting the 首頁配置, asked by the home.
+    let prompt: (HomeConfigurationPrompt) -> Void
+    /// 新增欄目, presented by the home.
+    let addSection: () -> Void
+    @AppStorage(ExploreSettings.showsBrowserKey) private var showsBrowser = true
+
+    var body: some View {
+        addCard
+        if let configuration { configurationCard(configuration) }
+        moreCard
+    }
 
     /// 新增欄目 after the last card, where the bar's ＋ is out of reach: at the end of the home
     /// iOS 27's minimized bar hides its buttons.
@@ -189,8 +200,7 @@ struct HomeEditingSections<RowContent: View>: View {
         .padding(.trailing, DSSpacing.lg)
     }
 
-    /// •••'s own entries: the browser's switch (settled decision 13). Titled 更多, the •••'s
-    /// name, since 範圍 left 探索 (decision 36, maintainer, 2026-10-13).
+    /// Titled 更多, the •••'s name, since 範圍 left 探索 (decision 36, maintainer, 2026-10-13).
     private var moreCard: some View {
         VStack(alignment: .leading, spacing: DSSpacing.sm) {
             Text(localized("更多"))
@@ -226,10 +236,12 @@ extension View {
         HomeSection(layout: .row, binding: .related),
     ]
     ScrollView {
-        LazyVStack(alignment: .leading, spacing: DSSpacing.xl) {
-            HomeEditingSections(sections: sections, groups: [],
-                                configuration: HomeConfigurationListing(id: HomeConfigurationID(UUID()), name: "週末"),
-                                openSettings: { _ in }, prompt: { _ in }, addSection: {}) { _ in EmptyView() }
+        VStack(alignment: .leading, spacing: DSSpacing.xl) {
+            LazyVStack(alignment: .leading, spacing: DSSpacing.xl) {
+                HomeEditingSections(sections: sections, groups: [], openSettings: { _ in }) { _ in EmptyView() }
+            }
+            HomeEditorEnd(configuration: HomeConfigurationListing(id: HomeConfigurationID(UUID()), name: "週末"),
+                          prompt: { _ in }, addSection: {})
         }
     }
 }

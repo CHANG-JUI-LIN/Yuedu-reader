@@ -129,6 +129,28 @@ final class ExploreHomeUITests: XCTestCase {
         attach(app, "explore-home-new-install")
     }
 
+    /// 編輯首頁 and 完成 on the default home: the bar's ••• becomes 完成 and comes back. With
+    /// the editor's 瀏覽器 switch in the home's lazy stack, the edit never finished updating the
+    /// home on iOS 18.6 and 26.5 and the app stopped answering (2026-10-16, `HomeEditorMoreCard`).
+    @MainActor
+    func testEditingTheHomeSwitchesTheBarButton() {
+        let app = application()
+        app.launch()
+        openExplore(app)
+        XCTAssertTrue(app.buttons[featuredCard].firstMatch.waitForExistence(timeout: 15), app.debugDescription)
+        let edit = app.buttons["home.edit"].firstMatch
+        for _ in 0..<12 where !(edit.exists && edit.isHittable) { app.swipeUp() }
+        edit.tap()
+        let done = app.buttons["home.editDoneBar"].firstMatch
+        XCTAssertTrue(done.waitForExistence(timeout: 10), app.debugDescription)
+        XCTAssertFalse(app.buttons["explore.more"].exists, app.debugDescription)
+        // Tapped at the end of the home, the editor shows its own end, with 新增欄目.
+        XCTAssertTrue(app.buttons["homeEditor.addSection"].firstMatch.waitForExistence(timeout: 5), app.debugDescription)
+        done.tap()
+        XCTAssertTrue(app.buttons["explore.more"].firstMatch.waitForExistence(timeout: 10), app.debugDescription)
+        XCTAssertTrue(app.buttons["home.edit"].firstMatch.exists, app.debugDescription)
+    }
+
     /// Decision 15: Gutenberg's 最新 loads when 探索 opens, with no 載入 to tap, wherever the
     /// row sits on the page.
     @MainActor

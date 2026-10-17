@@ -10,7 +10,7 @@ import UIKit
 /// into a file they can send.
 ///
 /// Pushed page, so `.inline` title mode (docs/design.md §2.1 — only the tab roots
-/// use `rootTabTitle(_:onScroll:)`).
+/// use `rootTabTitle(_:onScroll:fade:)`).
 struct DiagnosticsView: View {
 
     @StateObject private var model = DiagnosticsViewModel()

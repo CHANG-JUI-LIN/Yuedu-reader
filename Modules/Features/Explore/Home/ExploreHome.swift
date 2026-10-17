@@ -9,8 +9,10 @@ import SwiftUI
 /// catalog entry at the top (decision 20's, removed 2026-10-11 by the maintainer): a reader adds the sections
 /// they want, and a row's 查看全部 opens the rest of what it shows.
 ///
-/// - One stack for everything the home opens (decision 5): Explore's routes, the libraries'
-///   feeds, folders and books, the store's pages, and the store's card carousel over it all.
+/// - Everything the home opens goes on the root stack, around the tab bar (`RootNavigation`):
+///   Explore's routes, the libraries' feeds, folders and books, and the store's pages. The
+///   bar is that stack's, so its ••• is `ExploreMoreControl`, which `ContentView` puts there
+///   while 探索 is selected; `ExploreTabChrome` carries what it asks of the home.
 /// - The page is read once the book-source library is read (`ExploreTabRoot` waits for
 ///   that), and the defaults are saved then, for good (`HomePageStore.pageOrDefaults`).
 /// - Rows are built again when the page (or the 首頁配置 chosen), the sources, the connections or
@@ -19,18 +21,34 @@ import SwiftUI
 /// - Books are searched from the 搜索 tab. The field that narrowed 我的書庫's book sources went
 ///   with it.
 struct ExploreHome: View {
-    @ObservedObject var browser: BrowserState
+    let chrome: ExploreTabChrome
     @EnvironmentObject private var store: BookStore
 
     var body: some View {
         // The store is handed down, not observed: every reading-position save publishes it.
-        ExploreHomeRoot(store: store, browser: browser)
+        ExploreHomeRoot(store: store, chrome: chrome)
+    }
+}
+
+/// 探索's bar, which is the root stack's: `ContentView` draws its buttons while 探索 is
+/// selected (`ExploreMoreControl`, `ExploreEditDoneButton`), and the home does what they ask.
+@MainActor @Observable
+final class ExploreTabChrome {
+    /// 編輯首頁: the sections drawn as cards to show, hide, reorder and open (5d-2).
+    var isEditing = false
+    /// 新增首頁配置's alert, which the home presents.
+    var configurationPrompt: HomeConfigurationPrompt?
+    /// Bumped by ••• → 重新整理; the home refreshes on each.
+    private(set) var refreshRequest = 0
+
+    func requestRefresh() {
+        refreshRequest += 1
     }
 }
 
 private struct ExploreHomeRoot: View {
     let store: BookStore
-    @ObservedObject var browser: BrowserState
+    @Bindable var chrome: ExploreTabChrome
 
     @StateObject private var model: HomeModel
     @ObservedObject private var pageStore = HomePageStore.shared
@@ -43,34 +61,23 @@ private struct ExploreHomeRoot: View {
     /// Its installs, updates and removals change the rows (Phase 6f).
     @ObservedObject private var modules = RuleModuleLibrary.shared
     @AppStorage(ExploreSettings.modeKey) private var storedMode = ExploreMode.publicLibraries.rawValue
-    @AppStorage(ExploreSettings.showsBrowserKey) private var showsBrowser = true
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    /// The root stack: a reference that never changes (guardrail 13).
+    @Environment(\.rootNavigation) private var navigation
 
-    @State private var path = NavigationPath()
     @State private var exploreSources: [BookSource] = []
-    @State private var browserPresentation: BrowserPresentation?
-    @State private var configurationPrompt: HomeConfigurationPrompt?
-    /// 編輯首頁: the sections drawn as cards to show, hide, reorder and open (5d-2).
-    @State private var isEditing = false
     /// 新增欄目's sheet (5d-5).
     @State private var addsSection = false
     /// The section 新增欄目 just added, brought into view: it is at the end of the home.
     @State private var addedSection: UUID?
-    /// iOS 17: ••• is a chooser sheet, and what was picked runs once it is gone
-    /// (Technotes/iOS17MenuModalPresentation.md).
-    @State private var showsMoreChooser = false
-    @State private var moreSequence = DismissalSequencedPresentation<ExploreMoreAction>()
 
-    private struct BrowserPresentation: Identifiable {
-        let id = UUID()
-        let entry: BrowserEntry
-    }
-
-    init(store: BookStore, browser: BrowserState) {
+    init(store: BookStore, chrome: ExploreTabChrome) {
         self.store = store
-        self.browser = browser
+        self.chrome = chrome
         _model = StateObject(wrappedValue: HomeModel.live(shelf: store))
     }
+
+    private var isEditing: Bool { chrome.isEditing }
 
     // MARK: State
 
@@ -113,32 +120,16 @@ private struct ExploreHomeRoot: View {
     // MARK: Body
 
     var body: some View {
-        NavigationStack(path: $path) {
-            home
-            .toolbar { toolbar }
-            .homeConfigurationPrompts($configurationPrompt)
-            // Full screen, as Forward's 選擇模板: the gallery's previews run to the screen's edges.
-            .fullScreenCover(isPresented: $addsSection) {
-                HomeNewSectionSheet(added: { addedSection = $0; addsSection = false }, close: { addsSection = false })
-                    .environmentObject(store)
-            }
-            .fullScreenCover(item: $browserPresentation) { presentation in
-                NavigationStack {
-                    BrowserPage(browser: browser, entry: presentation.entry)
-                }
+        home
+        .homeConfigurationPrompts($chrome.configurationPrompt)
+        // Full screen, as Forward's 選擇模板: the gallery's previews run to the screen's edges.
+        .fullScreenCover(isPresented: $addsSection) {
+            HomeNewSectionSheet(added: { addedSection = $0; addsSection = false }, close: { addsSection = false })
                 .environmentObject(store)
-            }
-            .exploreRouteDestinations(openBrowser: openBrowser)
-            .homeEditDestinations()
-            .remoteLibraryDestinations()
-            .publicLibraryDestinations()
         }
-        // The store's card carousel is off the home for now (Phase 5 plan, decision 27): a store
-        // page's book opens 作品詳情 as the home's cards do. `PublicLibraryBookSheet` stays.
-        .environment(\.openPublicLibraryBooks) { selection in
-            if let book = selection.selectedBook { path.append(WorkDetailRoute(book)) }
+        .onChange(of: chrome.refreshRequest) { _, _ in
+            Task { await refresh() }
         }
-        .environment(\.explorePush) { $0.append(to: &path) }
         .task(id: syncKey) {
             // Saved here, not while drawing: the first read saves the defaults.
             await model.sync(with: pageStore.pageOrDefaults(mode: mode, publicLibrariesAvailable: availability.isAvailable),
@@ -159,17 +150,22 @@ private struct ExploreHomeRoot: View {
     private var home: some View {
         ScrollViewReader { proxy in
         ScrollView {
-            LazyVStack(alignment: .leading, spacing: DSSpacing.xxl) {
-                if isEditing {
-                    HomeEditingSections(sections: pageStore.page?.editableSections ?? [], groups: model.groups(in: nil, languages: aggregation.readingLanguages),
-                                        configuration: selectedConfiguration,
-                                        openSettings: { path.append(HomeEditRoute.section($0)) },
-                                        prompt: { configurationPrompt = $0 },
-                                        addSection: { addsSection = true }) { group in
-                        groupHost(group, model: model, isEditable: true)
+            VStack(alignment: .leading, spacing: DSSpacing.xxl) {
+                LazyVStack(alignment: .leading, spacing: DSSpacing.xxl) {
+                    if isEditing {
+                        HomeEditingSections(sections: pageStore.page?.editableSections ?? [], groups: model.groups(in: nil, languages: aggregation.readingLanguages),
+                                            openSettings: { navigation?.path.append(HomeEditRoute.section($0)) }) { group in
+                            groupHost(group, model: model, isEditable: true)
+                        }
+                    } else {
+                        ForEach(groups) { group in groupHost(group, model: model, isEditable: true).id(group.section.id) }
                     }
-                } else {
-                    ForEach(groups) { group in groupHost(group, model: model, isEditable: true).id(group.section.id) }
+                }
+                // Out of the lazy stack, as its switch must be (`HomeEditorEnd`), and the button
+                // after it.
+                if isEditing {
+                    HomeEditorEnd(configuration: selectedConfiguration, prompt: { chrome.configurationPrompt = $0 },
+                                  addSection: { addsSection = true })
                 }
                 // Over a home with nothing drawn, the button is the empty state's own.
                 if model.isReady, isEditing || !showsNothing {
@@ -215,22 +211,20 @@ private struct ExploreHomeRoot: View {
         .refreshable { await refresh() }
         // Again when a sync changes the rows: a Gutenberg row added while the home shows.
         .task(id: model.rows.map(\.id)) { model.homeAppeared(in: nil) }
-        // On the stack's root, not the stack: coming back from a page the home pushed is coming
-        // back into view too. An article read there reads as read; a book read from 作品詳情
-        // moves in 繼續閱讀.
+        // Coming back from a page the home pushed is coming back into view too. An article read
+        // there reads as read; a book read from 作品詳情 moves in 繼續閱讀.
         .onAppear {
             model.reloadLocal()
         }
         .background(PageBackgroundView(scope: .explore).ignoresSafeArea())
         .pageBackgroundToolbar(for: .explore)
-        .rootTabTitle(localized("探索"), onScroll: .minimizesBar)
         .animation(reduceMotion ? nil : DSAnimation.standard, value: groups.map(\.id))
     }
 
     private func groupHost(_ group: HomeSectionGroup, model: HomeModel, isEditable: Bool) -> some View {
         HomeRowHost(group: group, store: store, aozoraIndex: aozora.catalog, model: model, isEditable: isEditable,
                     push: push,
-                    openSettings: { path.append(HomeEditRoute.section(group.section.id)) })
+                    openSettings: { navigation?.path.append(HomeEditRoute.section(group.section.id)) })
     }
 
     /// Pull to refresh, and ••• → 重新整理.
@@ -254,29 +248,54 @@ private struct ExploreHomeRoot: View {
     }
 
     private func setEditing(_ editing: Bool) {
-        withAnimation(reduceMotion ? nil : DSAnimation.standard) { isEditing = editing }
+        withAnimation(reduceMotion ? nil : DSAnimation.standard) { chrome.isEditing = editing }
     }
 
-    // MARK: Toolbar
+    // MARK: Opening
 
-    @ToolbarContentBuilder
-    private var toolbar: some ToolbarContent {
-        if isEditing {
-            // 新增欄目 is the card at the end of the editor, not a ＋ here too.
-            ToolbarItem(placement: .confirmationAction) {
-                Button(localized("完成")) { setEditing(false) }
-                    .accessibilityIdentifier("home.editDoneBar")
-            }
-        } else {
-            ToolbarItem(placement: .topBarTrailing) { moreControl }
+    private func push(_ push: ExplorePush) {
+        guard let navigation else { return }
+        push.append(to: &navigation.path)
+    }
+}
+
+/// 探索's 完成 while 編輯首頁 is on, in the root stack's bar.
+struct ExploreEditDoneButton: View {
+    let chrome: ExploreTabChrome
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    var body: some View {
+        Button(localized("完成")) {
+            withAnimation(reduceMotion ? nil : DSAnimation.standard) { chrome.isEditing = false }
         }
+        .accessibilityIdentifier("home.editDoneBar")
+    }
+}
+
+/// 探索's one ••• (Phase 5 plan, decisions 30 and 36), in the root stack's bar. A native menu
+/// from iOS 18; on iOS 17 a chooser sheet, since 新增首頁配置's alert and the browser's cover
+/// would be dropped while the menu dismisses.
+struct ExploreMoreControl: View {
+    let chrome: ExploreTabChrome
+    let openBrowser: (BrowserEntry) -> Void
+    @ObservedObject private var pageStore = HomePageStore.shared
+    /// The home is drawn once the source library is read (`ExploreTabRoot`); its ••• waits too.
+    @ObservedObject private var tabModel = ExploreTabModel.shared
+    @AppStorage(ExploreSettings.showsBrowserKey) private var showsBrowser = true
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.rootNavigation) private var navigation
+    /// iOS 17: ••• is a chooser sheet, and what was picked runs once it is gone
+    /// (Technotes/iOS17MenuModalPresentation.md).
+    @State private var showsMoreChooser = false
+    @State private var moreSequence = DismissalSequencedPresentation<ExploreMoreAction>()
+
+    var body: some View {
+        control
+            .disabled(!tabModel.isLoaded)
     }
 
-    /// 探索's one ••• (Phase 5 plan, decisions 30 and 36). A native menu from iOS 18; on iOS 17
-    /// a chooser sheet, since 新增首頁配置's alert and the browser's cover would be dropped while
-    /// the menu dismisses.
     @ViewBuilder
-    private var moreControl: some View {
+    private var control: some View {
         if MenuModalPresentationPolicy.requiresDismissalSequencedChooser {
             Button {
                 moreSequence.cancel()
@@ -331,29 +350,19 @@ private struct ExploreHomeRoot: View {
     private func perform(_ action: ExploreMoreAction) {
         switch action {
         case .editHome:
-            setEditing(true)
+            withAnimation(reduceMotion ? nil : DSAnimation.standard) { chrome.isEditing = true }
         case .selectConfiguration(let id):
             pageStore.select(id)
         case .newConfiguration:
-            configurationPrompt = .create
+            chrome.configurationPrompt = .create
         case .readingLanguages, .aggregatedSources:
             // Both are 聚合設定's (decision 36): the languages are its first section.
-            path.append(ExploreNavigationRoute.aggregationSettings)
+            navigation?.path.append(ExploreNavigationRoute.aggregationSettings)
         case .refresh:
-            Task { await refresh() }
+            chrome.requestRefresh()
         case .browser:
             openBrowser(.resume)
         }
-    }
-
-    // MARK: Opening
-
-    private func push(_ push: ExplorePush) {
-        push.append(to: &path)
-    }
-
-    private func openBrowser(_ entry: BrowserEntry) {
-        browserPresentation = BrowserPresentation(entry: entry)
     }
 }
 
@@ -589,8 +598,10 @@ private struct ExploreMoreMenu: View {
 }
 
 #Preview("Explore home") {
-    ExploreHome(browser: BrowserState())
-        .environmentObject(BookStore())
+    NavigationStack {
+        ExploreHome(chrome: ExploreTabChrome())
+    }
+    .environmentObject(BookStore())
 }
 
 #Preview("•••，iOS 18 起的選單") {

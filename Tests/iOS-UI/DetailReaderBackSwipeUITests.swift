@@ -76,10 +76,20 @@ final class DetailReaderBackSwipeUITests: XCTestCase {
             cards.allElementsBoundByIndex.contains { $0.frame.minY > header.frame.maxY }
         }, object: nil)
         XCTAssertEqual(XCTWaiter.wait(for: [loaded], timeout: 20), .completed, app.debugDescription)
-        let card = cards.allElementsBoundByIndex
-            .filter { $0.frame.minY > header.frame.maxY }
-            .min { $0.frame.minY < $1.frame.minY }
-        card?.tap()
+        func firstCard() -> XCUIElement? {
+            cards.allElementsBoundByIndex
+                .filter { $0.frame.minY > header.frame.maxY }
+                .min { $0.frame.minY < $1.frame.minY }
+        }
+        // XCUITest taps a card's centre and counts a card under the tab bar as hittable. On
+        // iOS 17.5 that centre sat under the 83 pt bar and the tap selected 探索 instead of
+        // opening the book (2026-10-17), so the whole card goes above the bar first.
+        let tabBar = app.tabBars.firstMatch
+        for _ in 0..<3 {
+            guard tabBar.exists, let card = firstCard(), card.frame.maxY > tabBar.frame.minY else { break }
+            app.swipeUp(velocity: .slow)
+        }
+        firstCard()?.tap()
     }
 
     /// The 搜索 tab finds the book across sources, and its result opens the detail. Explore's own
@@ -477,10 +487,17 @@ final class DetailReaderBackSwipeUITests: XCTestCase {
             let progress = app.sliders["阅读进度"]
             XCTAssertTrue(progress.waitForExistence(timeout: 5), app.debugDescription)
             XCTAssertTrue(progress.isHittable, "The search reader's native progress control must be usable")
-            let bottomBar = app.toolbars.firstMatch
-            XCTAssertTrue(bottomBar.exists, app.debugDescription)
-            XCTAssertGreaterThanOrEqual(progress.frame.minY, bottomBar.frame.minY)
-            XCTAssertLessThanOrEqual(progress.frame.maxY, bottomBar.frame.maxY)
+            if #available(iOS 26, *) {
+                // The root stack's bottom bar is a glass capsule with no Toolbar element on
+                // iOS 26 (26.5, 2026-10-17; `RootTabNavigationContractTests`): the control
+                // sits in the bottom tenth of the screen, where the capsule is.
+                XCTAssertGreaterThan(progress.frame.minY, app.frame.height * 0.9, app.debugDescription)
+            } else {
+                let bottomBar = app.toolbars.firstMatch
+                XCTAssertTrue(bottomBar.exists, app.debugDescription)
+                XCTAssertGreaterThanOrEqual(progress.frame.minY, bottomBar.frame.minY)
+                XCTAssertLessThanOrEqual(progress.frame.maxY, bottomBar.frame.maxY)
+            }
             attachScreenshot(app, named: "Search tab manga - native bottom bar - round \(round)")
             if round == 1 {
                 app.buttons["阅读设置"].tap()
@@ -1294,6 +1311,10 @@ final class DetailReaderBackSwipeUITests: XCTestCase {
         book.firstMatch.tap()
         let content = app.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", "Reserved edge navigation")).firstMatch
         XCTAssertTrue(content.waitForExistence(timeout: 30), app.debugDescription)
+        // And stays: the reader fell straight back to the shelf once its card push settled,
+        // while it still held a NavigationStack of its own on the root stack (2026-10-17).
+        XCTAssertFalse(book.firstMatch.waitForExistence(timeout: 3), app.debugDescription)
+        XCTAssertTrue(content.exists, app.debugDescription)
     }
 
     @MainActor

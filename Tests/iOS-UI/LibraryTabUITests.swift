@@ -1,6 +1,6 @@
 import XCTest
 
-/// 資源庫 (Phase 5 plan, decisions 30 and 31; 5h): the tab between 探索 and 搜尋, its card saying
+/// 資源庫 (Phase 5 plan, decisions 30 and 31; 5h): the tab between 探索 and 設定, its card saying
 /// what moved there, and each of its rows opening the page it names.
 final class LibraryTabUITests: XCTestCase {
     override func setUpWithError() throws {
@@ -46,12 +46,31 @@ final class LibraryTabUITests: XCTestCase {
         app.navigationBars.buttons.element(boundBy: 0).tap()
     }
 
+    /// A page pushed over the tab bar goes back with a swipe from the screen's leading edge, as
+    /// every pushed page does. With the stack around the tab bar it only went back with the
+    /// bar's back button (maintainer, 2026-10-16).
+    @MainActor
+    func testPushedPageSwipesBack() {
+        let app = launch()
+        let sources = app.buttons["library.sources"].firstMatch
+        XCTAssertTrue(sources.waitForExistence(timeout: 10), app.debugDescription)
+        sources.tap()
+        let page = app.navigationBars["來源配置管理"]
+        XCTAssertTrue(page.waitForExistence(timeout: 5), app.debugDescription)
+
+        let edge = app.coordinate(withNormalizedOffset: .zero).withOffset(CGVector(dx: 1, dy: app.frame.height * 0.5))
+        edge.press(forDuration: 0.05, thenDragTo: app.coordinate(withNormalizedOffset: CGVector(dx: 0.85, dy: 0.5)))
+
+        XCTAssertTrue(app.tabBars.buttons["資源庫"].firstMatch.waitForExistence(timeout: 5), app.debugDescription)
+        XCTAssertFalse(page.exists, app.debugDescription)
+    }
+
     @MainActor
     func testTabsAndRows() {
         let app = launch()
-        // 書架・探索・資源庫・搜尋・設定, and no RSS tab (decision 30).
+        // 書架・探索・資源庫・設定・搜尋, and no RSS tab (decision 30; 搜尋 last since 2026-10-16).
         let names = app.tabBars.buttons.allElementsBoundByIndex.map(\.label)
-        XCTAssertEqual(names, ["書架", "探索", "資源庫", "搜尋", "設定"])
+        XCTAssertEqual(names, ["書架", "探索", "資源庫", "設定", "搜尋"])
 
         let close = app.buttons["library.noticeClose"].firstMatch
         XCTAssertTrue(close.waitForExistence(timeout: 5), app.debugDescription)
@@ -61,6 +80,11 @@ final class LibraryTabUITests: XCTestCase {
         close.tap()
         XCTAssertFalse(app.staticTexts["所有來源都在這裡"].waitForExistence(timeout: 2))
 
+        // The rows are visited top to bottom, as the page lists them. A row the page has scrolled
+        // past sits under the status bar, where XCUITest still counts it as hittable and does not
+        // scroll it back, so the tap lands on the status bar and opens nothing: 遠端書庫, visited
+        // after 訂閱 and 來源配置, failed that way (2026-10-16).
+
         // A public library opens its own page, titled by its name.
         let gutenberg = app.buttons["library.public.builtin.gutenberg"].firstMatch
         XCTAssertTrue(gutenberg.waitForExistence(timeout: 5), app.debugDescription)
@@ -69,10 +93,10 @@ final class LibraryTabUITests: XCTestCase {
         attach(app, "library-gutenberg")
         back(app)
 
-        let rss = scrolledTo(app.buttons["library.rss"].firstMatch, in: app)
-        XCTAssertTrue(rss.waitForExistence(timeout: 5), app.debugDescription)
-        rss.tap()
-        XCTAssertTrue(app.navigationBars["RSS 訂閱"].waitForExistence(timeout: 5), app.debugDescription)
+        let remote = app.buttons["library.manageRemote"].firstMatch
+        XCTAssertTrue(remote.waitForExistence(timeout: 5), app.debugDescription)
+        remote.tap()
+        XCTAssertTrue(app.navigationBars["遠端書庫"].waitForExistence(timeout: 5), app.debugDescription)
         back(app)
 
         let sources = app.buttons["library.sources"].firstMatch
@@ -81,10 +105,10 @@ final class LibraryTabUITests: XCTestCase {
         XCTAssertTrue(app.navigationBars["來源配置管理"].waitForExistence(timeout: 5), app.debugDescription)
         back(app)
 
-        let remote = app.buttons["library.manageRemote"].firstMatch
-        XCTAssertTrue(remote.waitForExistence(timeout: 5), app.debugDescription)
-        remote.tap()
-        XCTAssertTrue(app.navigationBars["遠端書庫"].waitForExistence(timeout: 5), app.debugDescription)
+        let rss = scrolledTo(app.buttons["library.rss"].firstMatch, in: app)
+        XCTAssertTrue(rss.waitForExistence(timeout: 5), app.debugDescription)
+        rss.tap()
+        XCTAssertTrue(app.navigationBars["RSS 訂閱"].waitForExistence(timeout: 5), app.debugDescription)
         back(app)
 
         // 設定 no longer has them.

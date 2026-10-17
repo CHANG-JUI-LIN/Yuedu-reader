@@ -167,8 +167,39 @@ private extension View {
     }
 }
 
-struct HomeView: View {
+/// A page the shelf pushes onto the root stack (`RootNavigation`), by value: one path for
+/// every page, so back pops one page (postmortem guardrail 11).
+enum BookshelfRoute: Hashable {
+    /// A group opened from its folder on 全部.
+    case folder(String)
+    /// 作品詳情 from a book's •••.
+    case work(WorkDetailRoute)
+    /// AI 整理書架: pushed rather than presented, since a sheet asked for from a menu action
+    /// can be dropped on iOS 17.
+    case organizer
+    /// 書籍資訊 on iOS 17, where it is pushed so its image pickers are first-level
+    /// presentations (`BookInfoEditPresentationPolicy`). The id, not the book: the editor
+    /// reads the live record from the store.
+    case editBook(UUID)
+    /// 搜索書籍 from the empty shelf.
+    case search
+}
+
+/// 書架, and the tab bar it sits in.
+///
+/// The bar is the root stack's, around the tab bar (`RootNavigation`), and only what is
+/// declared outside the tab bar reaches it (`RootTabNavigationContractTests`). The shelf's
+/// buttons and pages read the shelf's own state, so the shelf holds the tab bar — `tabs`
+/// is given the shelf to put in 書架's tab — and declares them around it. Its sheets, alerts
+/// and the reader stay on the shelf itself.
+struct HomeView<Tabs: View>: View {
+    /// 書架 is the selected tab: the bar's buttons are the shelf's only then.
+    let isSelected: Bool
+    /// The tab bar, given the shelf for 書架's tab.
+    let tabs: (AnyView) -> Tabs
     @EnvironmentObject var store: BookStore
+    /// The root stack: a reference that never changes (guardrail 13).
+    @Environment(\.rootNavigation) private var navigation
     @Environment(\.appDependencies) private var appDependencies
     @Environment(\.rootTabBarVisibility) private var rootTabBarVisibility
     @Bindable private var gs = GlobalSettings.shared
@@ -183,19 +214,14 @@ struct HomeView: View {
         DismissalSequencedPresentation<BookshelfImportPresentationRoute>()
     @State private var editingBook: ReadingBook? = nil
     @State private var bookToDelete: ReadingBook? = nil
-    /// 作品詳情 from a book's •••, the shelf's one item destination (iOS 17 guardrail 12,
-    /// `Technotes/iOS17SearchWatchdogPostmortem.md`).
-    @State private var shelfWork: WorkDetailRoute? = nil
     @State private var editMode = EditMode.inactive
     /// The group's page in view on the shelf; `""` is 全部.
     @State private var selectedGroup: String = ""
-    /// The group whose folder was opened from 全部, its page pushed over the shelf.
+    /// The group whose folder page is on screen, pushed over the shelf.
     @State private var openedFolder: String?
     @State private var selectedBookIds: Set<UUID> = []
     @State private var showBulkDeleteAlert = false
     @State private var showAddToGroupSheet = false
-    /// Pushed rather than presented: a sheet asked for from a menu action can be dropped on iOS 17.
-    @State private var showBookshelfOrganizer = false
     @State private var showAIPaywall = false
     @ObservedObject private var subscription = SubscriptionStore.shared
     @AppStorage("bookLayoutIsGrid") private var isGridMode = false
@@ -505,180 +531,159 @@ struct HomeView: View {
     }
 
     var body: some View {
-        NavigationStack {
-            AdaptiveContentContainer(maxWidth: DSLayout.readableShelfWidth) {
-                Group {
-                    if store.books.isEmpty {
-                        EmptyLibraryView(showAdd: $showAddSheet)
-                            .rootTabTitleScrollAnchor()
-                            .transition(reduceMotion ? .opacity : .opacity.combined(with: .scale(scale: 0.98)))
-                    } else {
-                        groupedShelf(pages: shelfPages)
-                            .transition(reduceMotion ? .opacity : .opacity.combined(with: .scale(scale: 0.98)))
+        tabs(AnyView(shelf))
+            .toolbar {
+                if isSelected {
+                    shelfToolbar(addsBooks: true)
+                }
+            }
+            .navigationDestination(for: BookshelfRoute.self) { route in
+                destination(route)
+            }
+    }
+
+    private var shelf: some View {
+        AdaptiveContentContainer(maxWidth: DSLayout.readableShelfWidth) {
+            Group {
+                if store.books.isEmpty {
+                    EmptyLibraryView(showAdd: $showAddSheet)
+                        .rootTabTitleScrollAnchor()
+                        .transition(reduceMotion ? .opacity : .opacity.combined(with: .scale(scale: 0.98)))
+                } else {
+                    groupedShelf(pages: shelfPages)
+                        .transition(reduceMotion ? .opacity : .opacity.combined(with: .scale(scale: 0.98)))
+                }
+            }
+        }
+        .themedAppSurface(for: .bookshelf)
+        .animation(DSAnimation.standard, value: store.books.isEmpty)
+        // In edit mode, hide the app tab bar so the contextual .bottomBar (delete / group / share)
+        // takes its place — the system selection pattern used by Photos / Files.
+        .hidesRootTabBar(editMode == .active)
+        .onChange(of: store.allGroups) { _, groups in
+            // A group whose last book moved out or was deleted has no page left to
+            // show: 全部 takes over. Its folder's page leaves by itself (`folderPage`).
+            if !selectedGroup.isEmpty, !groups.contains(selectedGroup) {
+                selectedGroup = ""
+            }
+        }
+        .onChange(of: openedFolder) { _, folder in
+            // 選取 on a group's page ends with the page.
+            if folder == nil, editMode == .active {
+                editMode = .inactive
+                selectedBookIds = []
+            }
+        }
+        .sheet(isPresented: $showAddToGroupSheet) {
+            AdaptiveSheetContainer(maxWidth: DSLayout.readableNarrowWidth) {
+                BookshelfAddToGroupSheet(groups: groupBookCounts) { group in
+                    addSelection(toGroup: group)
+                }
+            }
+        }
+        .sheet(
+            isPresented: $showLegacyImportChooser,
+            onDismiss: presentLegacyImportAfterChooserDismissal
+        ) {
+            AdaptiveSheetContainer(maxWidth: DSLayout.readableCompactWidth) {
+                DismissalSequencedActionChooser(
+                    title: localized("添加書籍"),
+                    actions: [
+                        DismissalSequencedAction(
+                            route: .local,
+                            title: localized("從本地匯入"),
+                            systemImage: "folder"
+                        ),
+                        DismissalSequencedAction(
+                            route: .calibreWireless,
+                            title: localized("電腦傳書"),
+                            systemImage: "desktopcomputer"
+                        ),
+                    ],
+                    onSelect: { legacyImportSequence.select($0) }
+                )
+            }
+        }
+        .sheet(isPresented: $showAddSheet) {
+            AdaptiveSheetContainer(maxWidth: DSLayout.readableListWidth) {
+                AddBookView()
+                    .id(addSheetSessionID)
+                    .environmentObject(store)
+            }
+        }
+        .onChange(of: showAddSheet) { _, isPresented in
+            if isPresented {
+                addSheetSessionID = UUID()
+            }
+        }
+        .sheet(isPresented: $showCalibreWireless) {
+            AdaptiveSheetContainer(maxWidth: DSLayout.readableListWidth) {
+                NavigationStack {
+                    CalibreWirelessView(store: store, service: appDependencies.calibreWireless)
+                }
+            }
+        }
+        .sheet(isPresented: $showAIPaywall) {
+            PaywallView(highlightedFeature: .aiReading)
+                .environmentObject(subscription)
+        }
+        .sheet(item: $editingBook) { book in
+            AdaptiveSheetContainer(maxWidth: DSLayout.readableCompactWidth) {
+                EditBookSheet(book: book) { newTitle, newAuthor, newGroup, newIntro in
+                    store.updateBook(bookId: book.id, title: newTitle, author: newAuthor)
+                    store.setGroup(newGroup, for: book.id)
+                    store.setCustomIntro(newIntro, for: book.id)
+                }
+                .environmentObject(store)
+            }
+        }
+        .alert(
+            localized("確認刪除"),
+            isPresented: Binding(
+                get: { bookToDelete != nil },
+                set: { if !$0 { bookToDelete = nil } }
+            )
+        ) {
+            Button(localized("刪除"), role: .destructive) {
+                if let b = bookToDelete {
+                    SourceCallBackService.notify(.delBookShelf, book: b)
+                    store.delete(bookId: b.id)
+                }
+            }
+            Button(localized("取消"), role: .cancel) {}
+        } message: {
+            if let b = bookToDelete {
+                Text(String(format: localized("確定要從書架刪除《%@》嗎？"), b.title))
+            }
+        }
+        .alert(localized("確認刪除"), isPresented: $showBulkDeleteAlert) {
+            Button(localized("刪除"), role: .destructive) {
+                let ids = selectedBookIds
+                withAnimation(reduceMotion ? nil : DSAnimation.standard) {
+                    ids.forEach { id in
+                        if let book = store.readingBook(id: id) {
+                            SourceCallBackService.notify(.delBookShelf, book: book)
+                        }
+                        store.delete(bookId: id)
                     }
-                }
-            }
-            .themedAppSurface(for: .bookshelf)
-            .animation(DSAnimation.standard, value: store.books.isEmpty)
-            .rootTabTitle(localized("書架"), onScroll: .fadesTitle)
-            .toolbar { shelfToolbar(addsBooks: true) }
-            // In edit mode, hide the app tab bar so the contextual .bottomBar (delete / group / share)
-            // takes its place — the system selection pattern used by Photos / Files.
-            .hidesRootTabBar(editMode == .active)
-            .onChange(of: store.allGroups) { _, groups in
-                // A group whose last book moved out or was deleted has no page left to
-                // show: 全部 takes over, and its folder's page goes back to the shelf.
-                if !selectedGroup.isEmpty, !groups.contains(selectedGroup) {
-                    selectedGroup = ""
-                }
-                if let openedFolder, !groups.contains(openedFolder) {
-                    self.openedFolder = nil
-                }
-            }
-            .navigationDestination(item: $openedFolder) { group in
-                folderPage(group)
-            }
-            .onChange(of: openedFolder) { _, folder in
-                // 選取 on a group's page ends with the page.
-                if folder == nil, editMode == .active {
-                    editMode = .inactive
                     selectedBookIds = []
                 }
             }
-            .sheet(isPresented: $showAddToGroupSheet) {
-                AdaptiveSheetContainer(maxWidth: DSLayout.readableNarrowWidth) {
-                    BookshelfAddToGroupSheet(groups: groupBookCounts) { group in
-                        addSelection(toGroup: group)
-                    }
+            Button(localized("取消"), role: .cancel) {}
+        } message: {
+            Text(String(format: localized("確定要刪除 %d 本書嗎？"), selectedBookIds.count))
+        }
+        // The probe's responder chain resolves the root stack's UIKit navigation
+        // controller, around the tab bar, before the coordinator directly pushes the
+        // reader onto it.
+        .background {
+            ReaderEdgeSwipeEnabler(navigator: readerCoordinator)
+                .frame(width: 0, height: 0)
+                #if DEBUG
+                .onAppear {
+                    handleDebugOpenBookIfNeeded()
                 }
-            }
-            .sheet(
-                isPresented: $showLegacyImportChooser,
-                onDismiss: presentLegacyImportAfterChooserDismissal
-            ) {
-                AdaptiveSheetContainer(maxWidth: DSLayout.readableCompactWidth) {
-                    DismissalSequencedActionChooser(
-                        title: localized("添加書籍"),
-                        actions: [
-                            DismissalSequencedAction(
-                                route: .local,
-                                title: localized("從本地匯入"),
-                                systemImage: "folder"
-                            ),
-                            DismissalSequencedAction(
-                                route: .calibreWireless,
-                                title: localized("電腦傳書"),
-                                systemImage: "desktopcomputer"
-                            ),
-                        ],
-                        onSelect: { legacyImportSequence.select($0) }
-                    )
-                }
-            }
-            .sheet(isPresented: $showAddSheet) {
-                AdaptiveSheetContainer(maxWidth: DSLayout.readableListWidth) {
-                    AddBookView()
-                        .id(addSheetSessionID)
-                        .environmentObject(store)
-                }
-            }
-            .onChange(of: showAddSheet) { _, isPresented in
-                if isPresented {
-                    addSheetSessionID = UUID()
-                }
-            }
-            .sheet(isPresented: $showCalibreWireless) {
-                AdaptiveSheetContainer(maxWidth: DSLayout.readableListWidth) {
-                    NavigationStack {
-                        CalibreWirelessView(store: store, service: appDependencies.calibreWireless)
-                    }
-                }
-            }
-            .navigationDestination(isPresented: $showBookshelfOrganizer) {
-                AIBookshelfOrganizerView().environmentObject(store)
-            }
-            .sheet(isPresented: $showAIPaywall) {
-                PaywallView(highlightedFeature: .aiReading)
-                    .environmentObject(subscription)
-            }
-            .navigationDestination(item: $shelfWork) { route in
-                // A book-source book's page leaves with the book when it is taken off the shelf.
-                WorkDetailView(route: route, onRemoveFromShelf: { shelfWork = nil })
-                    .environmentObject(store)
-            }
-            // 書籍資訊 owns the cover pickers, so on iOS 17 it is pushed rather
-            // than presented (`BookInfoEditPresentationPolicy`); iOS 18 keeps the
-            // sheet. Two bindings, one screen — the same shape ProfileView uses
-            // for book-source management.
-            .navigationDestination(item: pushedEditingBookId) { bookId in
-                if let book = store.books.first(where: { $0.id == bookId }) {
-                    EditBookSheet(book: book, presentation: .push) { newTitle, newAuthor, newGroup, newIntro in
-                        store.updateBook(bookId: book.id, title: newTitle, author: newAuthor)
-                        store.setGroup(newGroup, for: book.id)
-                        store.setCustomIntro(newIntro, for: book.id)
-                    }
-                    .environmentObject(store)
-                }
-            }
-            .sheet(item: sheetEditingBook) { book in
-                AdaptiveSheetContainer(maxWidth: DSLayout.readableCompactWidth) {
-                    EditBookSheet(book: book) { newTitle, newAuthor, newGroup, newIntro in
-                        store.updateBook(bookId: book.id, title: newTitle, author: newAuthor)
-                        store.setGroup(newGroup, for: book.id)
-                        store.setCustomIntro(newIntro, for: book.id)
-                    }
-                    .environmentObject(store)
-                }
-            }
-            .alert(
-                localized("確認刪除"),
-                isPresented: Binding(
-                    get: { bookToDelete != nil },
-                    set: { if !$0 { bookToDelete = nil } }
-                )
-            ) {
-                Button(localized("刪除"), role: .destructive) {
-                    if let b = bookToDelete {
-                        SourceCallBackService.notify(.delBookShelf, book: b)
-                        store.delete(bookId: b.id)
-                    }
-                }
-                Button(localized("取消"), role: .cancel) {}
-            } message: {
-                if let b = bookToDelete {
-                    Text(String(format: localized("確定要從書架刪除《%@》嗎？"), b.title))
-                }
-            }
-            .alert(localized("確認刪除"), isPresented: $showBulkDeleteAlert) {
-                Button(localized("刪除"), role: .destructive) {
-                    let ids = selectedBookIds
-                    withAnimation(reduceMotion ? nil : DSAnimation.standard) {
-                        ids.forEach { id in
-                            if let book = store.readingBook(id: id) {
-                                SourceCallBackService.notify(.delBookShelf, book: book)
-                            }
-                            store.delete(bookId: id)
-                        }
-                        selectedBookIds = []
-                    }
-                }
-                Button(localized("取消"), role: .cancel) {}
-            } message: {
-                Text(String(format: localized("確定要刪除 %d 本書嗎？"), selectedBookIds.count))
-            }
-            // Keep the probe inside this NavigationStack's root destination.
-            // Its responder chain resolves this shelf's UIKit navigation
-            // controller before the coordinator directly pushes the reader,
-            // rather than guessing among sibling stacks owned by TabView.
-            .background {
-                ReaderEdgeSwipeEnabler(navigator: readerCoordinator)
-                    .frame(width: 0, height: 0)
-                    #if DEBUG
-                    .onAppear {
-                        handleDebugOpenBookIfNeeded()
-                    }
-                    #endif
-            }
+                #endif
         }
         // Audiobooks and the iPad shell retain their original modal presentation.
         .fullScreenCover(
@@ -691,6 +696,31 @@ struct HomeView: View {
                 BookReaderView(bookId: bookId)
                     .environmentObject(store)
             }
+        }
+    }
+
+    @ViewBuilder
+    private func destination(_ route: BookshelfRoute) -> some View {
+        switch route {
+        case .folder(let group):
+            folderPage(group)
+        case .work(let work):
+            // A book-source book's page leaves with the book when it is taken off the shelf.
+            ShelfWorkPage(route: work)
+                .environmentObject(store)
+        case .organizer:
+            AIBookshelfOrganizerView().environmentObject(store)
+        case .editBook(let bookId):
+            if let book = store.books.first(where: { $0.id == bookId }) {
+                EditBookSheet(book: book, presentation: .push) { newTitle, newAuthor, newGroup, newIntro in
+                    store.updateBook(bookId: book.id, title: newTitle, author: newAuthor)
+                    store.setGroup(newGroup, for: book.id)
+                    store.setCustomIntro(newIntro, for: book.id)
+                }
+                .environmentObject(store)
+            }
+        case .search:
+            SearchView()
         }
     }
 
@@ -751,7 +781,7 @@ struct HomeView: View {
             if locked, !MenuModalPresentationPolicy.requiresDismissalSequencedChooser {
                 showAIPaywall = true
             } else {
-                showBookshelfOrganizer = true
+                navigation?.path.append(BookshelfRoute.organizer)
             }
         } label: {
             // Two `Text`s: the second is the menu row's subtitle.
@@ -1006,7 +1036,13 @@ struct HomeView: View {
         .navigationTitle(group)
         .toolbarTitleDisplayMode(.inline)
         .toolbar { shelfToolbar(addsBooks: false) }
-        .hidesRootTabBar(editMode == .active)
+        // The buttons act on this page while it is on screen, and 選取 ends as it leaves.
+        .onAppear { openedFolder = group }
+        .onDisappear {
+            if openedFolder == group { openedFolder = nil }
+        }
+        // A group whose last book moved out or was deleted has no page left to show.
+        .modifier(DismissedWhenGone(isGone: !store.allGroups.contains(group)))
     }
 
     // MARK: - Group Filter Bar
@@ -1071,7 +1107,7 @@ struct HomeView: View {
                             onCoverFrameChange: { frame in
                                 readerGeometryStore.update(frame, for: book.id, onPage: page)
                             },
-                            onEdit: { editingBook = book },
+                            onEdit: { editBook(book) },
                             onDelete: { bookToDelete = book },
                             onShowWork: { showWorkDetail(for: book) }
                         )
@@ -1079,7 +1115,7 @@ struct HomeView: View {
                         .tag(book.id)
                     case .folder(let name, let books):
                         BookshelfFolderRow(name: name, books: books, isSelecting: isSelecting) {
-                            openedFolder = name
+                            navigation?.path.append(BookshelfRoute.folder(name))
                         }
                         .equatable()
                         .moveDisabled(true)
@@ -1154,7 +1190,7 @@ struct HomeView: View {
     }
 
     /// The grid's content, for `ScrollViewReader.scrollTo` to bring back to the top.
-    private static let gridTopAnchorID = "bookshelf-grid-top"
+    private static var gridTopAnchorID: String { "bookshelf-grid-top" }
 
     private func bookGridScrollView(
         entries: [ShelfEntry],
@@ -1187,7 +1223,7 @@ struct HomeView: View {
                             onCoverFrameChange: { frame in
                                 readerGeometryStore.update(frame, for: book.id, onPage: page)
                             },
-                            onEdit: { editingBook = book },
+                            onEdit: { editBook(book) },
                             onDelete: { bookToDelete = book },
                             onShowWork: { showWorkDetail(for: book) }
                         )
@@ -1200,7 +1236,7 @@ struct HomeView: View {
                             coverDisplaySize: coverDisplaySize,
                             isSelecting: isSelecting
                         ) {
-                            openedFolder = name
+                            navigation?.path.append(BookshelfRoute.folder(name))
                         }
                         .equatable()
                     }
@@ -1238,36 +1274,53 @@ struct HomeView: View {
         }
     }
 
-    /// 書籍資訊 as a pushed destination (iOS 17) — nil on iOS 18+. Carries the id
-    /// rather than the book because `navigationDestination(item:)` needs a
-    /// Hashable value, and the editor reads the live record from the store anyway.
-    private var pushedEditingBookId: Binding<UUID?> {
-        Binding(
-            get: {
-                BookInfoEditPresentationPolicy.prefersNavigationDestination
-                    ? editingBook?.id
-                    : nil
-            },
-            set: { if $0 == nil { editingBook = nil } }
-        )
-    }
-
-    /// 書籍資訊 as a sheet (iOS 18+) — nil on iOS 17.
-    private var sheetEditingBook: Binding<ReadingBook?> {
-        Binding(
-            get: {
-                BookInfoEditPresentationPolicy.prefersNavigationDestination
-                    ? nil
-                    : editingBook
-            },
-            set: { if $0 == nil { editingBook = nil } }
-        )
+    /// 書籍資訊: pushed on iOS 17, a sheet (`editingBook`) from iOS 18
+    /// (`BookInfoEditPresentationPolicy`).
+    private func editBook(_ book: ReadingBook) {
+        if BookInfoEditPresentationPolicy.prefersNavigationDestination {
+            navigation?.path.append(BookshelfRoute.editBook(book.id))
+        } else {
+            editingBook = book
+        }
     }
 
     /// 作品詳情 (unified library 5f): the copy as the shelf's own item, as Explore's cards
     /// freeze theirs.
     private func showWorkDetail(for book: ReadingBook) {
-        shelfWork = ShelfProvider(store: store).items([book]).first.flatMap(WorkDetailRoute.init)
+        guard let route = ShelfProvider(store: store).items([book]).first.flatMap(WorkDetailRoute.init) else { return }
+        navigation?.path.append(BookshelfRoute.work(route))
+    }
+}
+
+extension HomeView where Tabs == AnyView {
+    /// The shelf alone, without the tab bar: previews and `ShelfRenderScaleTests`.
+    init() {
+        self.init(isSelected: true) { $0 }
+    }
+}
+
+/// A book's 作品詳情 from its •••, which leaves with the book when it is taken off the shelf.
+private struct ShelfWorkPage: View {
+    let route: WorkDetailRoute
+    @State private var removedFromShelf = false
+
+    var body: some View {
+        WorkDetailView(route: route, onRemoveFromShelf: { removedFromShelf = true })
+            .modifier(DismissedWhenGone(isGone: removedFromShelf))
+    }
+}
+
+/// A pushed page that leaves once what it shows is gone. Pops the page and whatever is above
+/// it. `dismiss` is read here, so only this modifier redraws as iOS 17 replaces it while a
+/// page is pushed above (`Technotes/iOS17ReaderNavigationWatchdog.md`).
+private struct DismissedWhenGone: ViewModifier {
+    let isGone: Bool
+    @Environment(\.dismiss) private var dismiss
+
+    func body(content: Content) -> some View {
+        content.onChange(of: isGone) { _, gone in
+            if gone { dismiss() }
+        }
     }
 }
 
@@ -1745,9 +1798,8 @@ struct EmptyLibraryView: View {
                     .padding(.horizontal, DSSpacing.xxl).padding(.vertical, 14)
                     .background(DSColor.accent).clipShape(Capsule())
             }
-            NavigationLink {
-                SearchView()
-            } label: {
+            // By value, onto the root stack's path with the results it pushes (guardrail 11).
+            NavigationLink(value: BookshelfRoute.search) {
                 Label(localized("搜索書籍"), systemImage: "magnifyingglass")
                     .font(DSFont.subheadline.weight(.medium))
                     .foregroundStyle(DSColor.textPrimary)

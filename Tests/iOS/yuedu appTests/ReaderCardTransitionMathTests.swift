@@ -819,6 +819,41 @@ struct ReaderNavigationTransitionDriverTests {
         #expect(!driver.isReadyForInteractivePop)
     }
 
+    /// The root stack carries every pushed page in the app: a driver that kept the delegate
+    /// and its edge pan from attachment on took SwiftUI's own pushes over — no push
+    /// animation, no swipe back (2026-10-17).
+    @Test("an attached driver owns the delegate and edge pan only while its reader is on the stack")
+    func navigationOwnershipFollowsTheReader() async {
+        let root = UIViewController()
+        let navigationController = UINavigationController(rootViewController: root)
+        let swiftUIDelegate = PassiveNavigationDelegate()
+        navigationController.delegate = swiftUIDelegate
+        func edgePans() -> Int {
+            navigationController.view.gestureRecognizers?.filter { $0 is NavigationBackEdgePanGestureRecognizer }.count ?? 0
+        }
+        let driver = ReaderNavigationTransitionDriver()
+        driver.attach(to: navigationController)
+        defer { driver.detach() }
+
+        #expect(navigationController.delegate === swiftUIDelegate)
+        #expect(edgePans() == 0)
+
+        let reader = UIViewController()
+        #expect(driver.startPush(reader, animated: false))
+        driver.navigationController(navigationController, didShow: reader, animated: false)
+        await Task.yield()
+
+        #expect(navigationController.delegate === driver)
+        #expect(edgePans() == 1)
+
+        #expect(driver.startProgrammaticPop(animated: false))
+        driver.navigationController(navigationController, didShow: root, animated: false)
+        await Task.yield()
+
+        #expect(navigationController.delegate === swiftUIDelegate)
+        #expect(edgePans() == 0)
+    }
+
     @Test("custom reader transition does not mutate UIKit system pop state")
     func systemPopGestureOwnership() {
         let navigationController = UINavigationController(
@@ -836,6 +871,8 @@ struct ReaderNavigationTransitionDriverTests {
         #expect(navigationController.interactivePopGestureRecognizer?.isEnabled == wasEnabled)
     }
 }
+
+private final class PassiveNavigationDelegate: NSObject, UINavigationControllerDelegate {}
 
 @MainActor
 private final class DeferredPushNavigationController: UINavigationController {

@@ -15,9 +15,20 @@ struct ContentView: View {
     @StateObject private var browser = BrowserState()
     @ObservedObject private var importDrainer = SharedImportQueueDrainer.shared
     /// Whether any screen is hiding the tab bar — answered from every tab, not only the
-    /// screen's own (`RootTabBarVisibility`).
+    /// screen's own (`RootTabBarVisibility`). Only 書架's 選取 asks now: every pushed page
+    /// covers the tab bar by itself, being pushed over it (`RootNavigation`).
     @StateObject private var rootTabBar = RootTabBarVisibility()
     @State private var selectedRootTab: RootTabItem = .bookshelf
+    /// The one stack, around the tab bar (maintainer, 2026-10-16).
+    @State private var rootNavigation = RootNavigation()
+    /// Each tab root's title fade, kept while another tab is selected.
+    @State private var titleFades = RootTabTitleFades()
+    /// 探索's bar buttons, and what the home does for them.
+    @State private var exploreChrome = ExploreTabChrome()
+    /// What 資源庫's ••• adds; the page presents the flows.
+    @State private var libraryFlows = LibraryTabFlows()
+    /// The in-app browser, full screen over whichever page opened it.
+    @State private var browserPresentation: BrowserPresentation?
     /// A keyword a book source's discover page handed back via `java.searchBook`.
     /// Presented as a sheet rather than by switching to the 搜尋 tab: that tab is
     /// user-hideable (`gs.visibleRootTabs`), so selecting it would do nothing at all
@@ -31,6 +42,11 @@ struct ContentView: View {
         /// Search only this source (a book label tapped on its detail page, as legado's
         /// `SearchActivity.start(source, kind)`); nil searches every enabled source.
         var sourceURL: String? = nil
+    }
+
+    private struct BrowserPresentation: Identifiable {
+        let id = UUID()
+        let entry: BrowserEntry
     }
 
     private var effectiveColorScheme: ColorScheme {
@@ -97,7 +113,7 @@ struct ContentView: View {
         // it here is side-effect free as far as invalidation goes.
         AppearanceThemePreset.activeAppThemes = resolvedAppThemes
         GlobalAppTypography.activate(postScriptName: drawnGlobalFont, boldText: isBoldTextOn)
-        return tabView
+        return rootStack
         .environment(\.rootTabBarVisibility, rootTabBar)
         // 外觀主題's 淺色／深色 preview is for 外觀主題; another tab is not previewing.
         .onChange(of: selectedRootTab, initial: true) { _, _ in
@@ -123,7 +139,6 @@ struct ContentView: View {
             // No reader toolbar here, so allow dragging down to just above the tab bar.
             NowPlayingMiniPlayer(placement: .global, minBottomClearance: 90)
         }
-        .iPadAdaptiveRootTabStyle()
         .background {
             ImportedBookPresentation(
                 request: importDrainer.lastOutcome == nil ? importDrainer.readerRequest : nil,
@@ -216,11 +231,18 @@ struct ContentView: View {
             selectedRootTab = gs.fallbackRootTab(for: selectedRootTab)
             FeedbackScreenshotPrompt.shared.start()
             #if DEBUG
-            // Pairs with `-open-diagnostics` / `-open-feedback-center` in `SettingsView`:
-            // land on 設定 so the pushed page can be screenshotted straight from launch.
+            // Screenshot/driver hooks: `-open-diagnostics` pushes 診斷紀錄 and
+            // `-open-feedback-center` pushes 回饋中心 over 設定 straight from launch, so their
+            // appearance can be inspected without driving the tab bar. Same shape as the
+            // `-browser-overlay` launch flags in `yuedu_appApp.init()`, and compiled out of
+            // Release.
             let arguments = ProcessInfo.processInfo.arguments
-            if arguments.contains("-open-diagnostics") || arguments.contains("-open-feedback-center") {
+            if arguments.contains("-open-diagnostics") {
                 selectedRootTab = .settings
+                rootNavigation.path.append(DebugLaunchPage.diagnostics)
+            } else if arguments.contains("-open-feedback-center") {
+                selectedRootTab = .settings
+                rootNavigation.path.append(DebugLaunchPage.feedbackCenter)
             }
             #endif
         }
@@ -281,58 +303,126 @@ struct ContentView: View {
         }
     }
 
+    /// The one stack, around the tab bar: every page a tab opens is pushed over the tab bar
+    /// and covers it, and the iPad's sidebar too (maintainer, 2026-10-16). A tab's own
+    /// navigation title, toolbar and destinations do not reach this stack's bar
+    /// (`RootTabNavigationContractTests`), so the selected tab's title and buttons, and every
+    /// page the tabs push, are declared here, outside the tab bar. 書架's are declared by
+    /// `HomeView`, which holds the tab bar for that reason (see `HomeView.tabs`).
+    private var rootStack: some View {
+        @Bindable var navigation = rootNavigation
+        return NavigationStack(path: $navigation.path) {
+            HomeView(isSelected: selectedRootTab == .bookshelf) { shelf in
+                tabView(shelf: shelf)
+                    .iPadAdaptiveRootTabStyle()
+                    .modifier(RootTabBarChrome(tab: selectedRootTab, fade: titleFades.fade(for: selectedRootTab)))
+                    .toolbar { tabToolbar }
+            }
+            .exploreRouteDestinations(openBrowser: openBrowser)
+            .homeEditDestinations()
+            .remoteLibraryDestinations()
+            .publicLibraryDestinations()
+            .searchTabDestinations()
+            #if DEBUG
+            .navigationDestination(for: DebugLaunchPage.self) { page in
+                switch page {
+                case .diagnostics: DiagnosticsView()
+                case .feedbackCenter: FeedbackCenterView()
+                }
+            }
+            #endif
+        }
+        .environment(\.rootNavigation, rootNavigation)
+        .environment(\.explorePush) { [rootNavigation] push in
+            push.append(to: &rootNavigation.path)
+        }
+        // The store's card carousel is off the tabs for now (Phase 5 plan, decision 27): a
+        // public-library book opens 作品詳情 as the home's cards do. `PublicLibraryBookSheet`
+        // stays.
+        .environment(\.openPublicLibraryBooks) { [rootNavigation] selection in
+            if let book = selection.selectedBook { rootNavigation.path.append(WorkDetailRoute(book)) }
+        }
+        .fullScreenCover(item: $browserPresentation) { presentation in
+            NavigationStack {
+                BrowserPage(browser: browser, entry: presentation.entry)
+            }
+            .environmentObject(store)
+        }
+    }
+
+    private func openBrowser(_ entry: BrowserEntry) {
+        browserPresentation = BrowserPresentation(entry: entry)
+    }
+
+    /// The selected tab's buttons. 書架's are `HomeView`'s; 設定 and 搜索 have none.
+    @ToolbarContentBuilder
+    private var tabToolbar: some ToolbarContent {
+        if selectedRootTab == .explore {
+            if exploreChrome.isEditing {
+                // 新增欄目 is the card at the end of the editor, not a ＋ here too.
+                ToolbarItem(placement: .confirmationAction) {
+                    ExploreEditDoneButton(chrome: exploreChrome)
+                }
+            } else {
+                ToolbarItem(placement: .topBarTrailing) {
+                    ExploreMoreControl(chrome: exploreChrome, openBrowser: openBrowser)
+                }
+            }
+        } else if selectedRootTab == .library {
+            ToolbarItem(placement: .topBarTrailing) {
+                LibraryMoreControl(flows: libraryFlows)
+            }
+        }
+    }
+
     /// The root tab bar is driven by `GlobalSettings` so users can hide pages
     /// and customize tab icon assets without changing the feature screens.
     @ViewBuilder
-    private var tabView: some View {
+    private func tabView(shelf: AnyView) -> some View {
         if #available(iOS 18.0, *) {
-            visibleTabsTabView
+            visibleTabsTabView(shelf: shelf)
         } else {
             // iOS 17 invalidates a NavigationStack inside TabView when a sibling
             // tab is removed while that stack is visible. Keep every tab's slot in
             // the hierarchy and use EmptyView for hidden tabs; without `.tabItem`
             // the placeholder reserves the slot without exposing a tab-bar item.
             // Remove this compatibility path when iOS 17 support is dropped.
-            stableSlotsTabView
+            stableSlotsTabView(shelf: shelf)
         }
     }
 
-    private var visibleTabsTabView: some View {
+    private func visibleTabsTabView(shelf: AnyView) -> some View {
         TabView(selection: $selectedRootTab) {
             ForEach(gs.visibleRootTabs) { tab in
-                rootTabContent(for: tab)
-                    .modifier(ThemedSurfaceBackground(
-                        scope: AppearancePageBackgroundScope(rawValue: tab.rawValue) ?? .global,
-                        isProActive: subscriptionStore.hasAccess(.readerThemePacks)
-                    ))
-                    .background { RootTabBarHider(visibility: rootTabBar) }
-                    .tag(tab)
-                    .tabItem {
-                        rootTabItemLabel(for: tab)
-                    }
+                rootTabPage(for: tab, shelf: shelf)
             }
         }
     }
 
-    private var stableSlotsTabView: some View {
+    private func stableSlotsTabView(shelf: AnyView) -> some View {
         TabView(selection: $selectedRootTab) {
             ForEach(RootTabItem.tabs) { tab in
                 if gs.isRootTabVisible(tab) {
-                    rootTabContent(for: tab)
-                        .modifier(ThemedSurfaceBackground(
-                            scope: AppearancePageBackgroundScope(rawValue: tab.rawValue) ?? .global,
-                            isProActive: subscriptionStore.hasAccess(.readerThemePacks)
-                        ))
-                        .background { RootTabBarHider(visibility: rootTabBar) }
-                        .tag(tab)
-                        .tabItem {
-                            rootTabItemLabel(for: tab)
-                        }
-                    } else {
+                    rootTabPage(for: tab, shelf: shelf)
+                } else {
                     EmptyView()
                 }
             }
         }
+    }
+
+    private func rootTabPage(for tab: RootTabItem, shelf: AnyView) -> some View {
+        rootTabContent(for: tab, shelf: shelf)
+            .rootTabTitleFadeSource(titleFades.fade(for: tab), onScroll: tab.barScrollBehavior)
+            .modifier(ThemedSurfaceBackground(
+                scope: AppearancePageBackgroundScope(rawValue: tab.rawValue) ?? .global,
+                isProActive: subscriptionStore.hasAccess(.readerThemePacks)
+            ))
+            .background { RootTabBarHider(visibility: rootTabBar) }
+            .tag(tab)
+            .tabItem {
+                rootTabItemLabel(for: tab)
+            }
     }
 
     private var shouldHideRootTabLabels: Bool {
@@ -344,21 +434,21 @@ struct ContentView: View {
     }
 
     @ViewBuilder
-    private func rootTabContent(for tab: RootTabItem) -> some View {
+    private func rootTabContent(for tab: RootTabItem, shelf: AnyView) -> some View {
         switch tab {
         case .bookshelf:
-            HomeView()
+            shelf
         case .explore:
-            BrowserView(browser: browser)
+            ExploreTabRoot(chrome: exploreChrome)
         case .library:
-            LibraryTabRoot(browser: browser)
+            LibraryTabRoot(flows: libraryFlows)
         case .rss:
             // Not a tab since 5h (`RootTabItem.tabs` leaves it out); its feeds are in 資源庫.
             EmptyView()
         case .settings:
             SettingsView()
         case .search:
-            SearchTabRoot()
+            SearchView(isTabRoot: true)
         }
     }
 
@@ -423,6 +513,50 @@ struct ContentView: View {
         .labelStyle(.iconOnly)
     }
 }
+
+/// The selected tab root's title and bar background, on the tab bar: the bar is the root
+/// stack's, which a tab's page cannot reach (`ContentView.rootStack`).
+private struct RootTabBarChrome: ViewModifier {
+    let tab: RootTabItem
+    let fade: RootTabTitleFade
+
+    func body(content: Content) -> some View {
+        content
+            .rootTabTitle(localized(tab.titleKey), onScroll: tab.barScrollBehavior, fade: fade)
+            .tabRootToolbarBackground(for: tab.barBackgroundScope, paintsSurface: tab.paintsThemedSurface)
+    }
+}
+
+private extension RootTabItem {
+    /// 書架's title fades and its buttons stay; every other tab's bar slides away on iOS 27.
+    var barScrollBehavior: RootTabBarScrollBehavior {
+        self == .bookshelf ? .fadesTitle : .minimizesBar
+    }
+
+    /// The page background the tab's page paints, which its bar shows through.
+    var barBackgroundScope: AppearancePageBackgroundScope {
+        switch self {
+        case .bookshelf: .bookshelf
+        case .explore, .library: .explore
+        case .search: .search
+        case .settings: .settings
+        case .rss: .rss
+        }
+    }
+
+    /// The page wears `themedAppSurface`, whose bar is always clear.
+    var paintsThemedSurface: Bool {
+        self == .bookshelf || self == .settings
+    }
+}
+
+#if DEBUG
+/// A page `-open-diagnostics` or `-open-feedback-center` pushes over 設定 at launch.
+private enum DebugLaunchPage: Hashable {
+    case diagnostics
+    case feedbackCenter
+}
+#endif
 
 /// Retints scrollable Form/List surfaces to the active app theme by hiding the
 /// system background and painting the themed page color behind — plus, when the

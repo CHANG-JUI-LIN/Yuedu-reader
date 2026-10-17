@@ -16,29 +16,42 @@ private typealias BookSearchResultRoute = SearchResultRoute<SearchBook>
 /// snapshot so later `SearchAggregator` publications cannot replace the data
 /// under an active iOS 17 destination.
 
-/// Installs value routing for results where the native SwiftUI list pushes them by
-/// value (iOS 18 and later). The UIKit list iOS 17 uses has no `NavigationLink`, so its
-/// results go through the page's one item-based destination instead
-/// (`SearchPagePush.result`). Delete the iOS 17 branch together with the native iOS 17
-/// table when the deployment target reaches iOS 18.
-private struct SearchResultNavigationModifier<Destination: View>: ViewModifier {
-    let mode: SearchResultNavigationMode
-    let destination: (BookSearchResultRoute) -> Destination
+/// The destinations of a search page pushed from elsewhere, or presented in a sheet's stack:
+/// value routing for results where the native SwiftUI list pushes them by value (iOS 18 and
+/// later), and the page's one item-based destination, through which the UIKit list iOS 17
+/// uses pushes them (`SearchPagePush.result`). Delete the iOS 17 branch together with the
+/// native iOS 17 table when the deployment target reaches iOS 18.
+///
+/// None at the 搜索 tab's root: a tab's page cannot declare destinations for the root stack
+/// around the tab bar (`RootTabNavigationContractTests`). Its works are registered there
+/// (`searchTabDestinations`) and pushed by value onto that stack's path.
+private struct SearchPageDestinations: ViewModifier {
+    let isTabRoot: Bool
+    @Binding var pushed: SearchPagePush?
 
     @ViewBuilder
     func body(content: Content) -> some View {
-        switch mode {
-        case .selectedItem:
+        if isTabRoot {
             content
-        case .valueRoute:
-            content
-                .navigationDestination(
-                    for: BookSearchResultRoute.self,
-                    destination: destination
-                )
-                // The tab root's works (unified search 4c-3).
-                .navigationDestination(for: UnifiedSearchResultRoute.self, destination: UnifiedSearchDestination.init(route:))
+        } else {
+            switch SearchResultNavigationMode.current {
+            case .selectedItem:
+                content
+                    .navigationDestination(item: $pushed, destination: SearchPagePushDestination.init(push:))
+            case .valueRoute:
+                content
+                    .navigationDestination(for: BookSearchResultRoute.self, destination: SearchResultDestination.init(route:))
+                    .navigationDestination(item: $pushed, destination: SearchPagePushDestination.init(push:))
+            }
         }
+    }
+}
+
+extension View {
+    /// The 搜索 tab root's works (unified search 4c-3), registered on the root stack around
+    /// the tab bar, which the tab's page pushes them onto.
+    func searchTabDestinations() -> some View {
+        navigationDestination(for: UnifiedSearchResultRoute.self, destination: UnifiedSearchDestination.init(route:))
     }
 }
 
@@ -56,8 +69,6 @@ private enum SearchPagePush: Hashable {
     /// A search result. Pushed this way on iOS 17 only; later systems push results by
     /// value from the list's `NavigationLink`.
     case result(BookSearchResultRoute)
-    /// A work of the tab root's one list (unified search 4c-3), on iOS 17 likewise.
-    case work(UnifiedSearchResultRoute)
 }
 
 /// Resolves a push without capturing `BookSearchView` or its live `SearchAggregator`
@@ -69,8 +80,6 @@ private struct SearchPagePushDestination: View {
         switch push {
         case .result(let route):
             SearchResultDestination(route: route)
-        case .work(let route):
-            UnifiedSearchDestination(route: route)
         }
     }
 }
@@ -128,17 +137,38 @@ private struct UnifiedSearchDestination: View {
     }
 }
 
-/// 搜索's title: a tab root's at the root of its tab, `.inline` where it is pushed.
+/// 搜索's title, `.inline` where the page is pushed. The tab root's is `ContentView`'s, in
+/// the root stack's bar.
 private struct SearchPageTitle: ViewModifier {
     let isTabRoot: Bool
 
     func body(content: Content) -> some View {
         if isTabRoot {
-            content.rootTabTitle(localized("搜索"), onScroll: .minimizesBar)
+            content
         } else {
             content
                 .navigationTitle(localized("搜索"))
                 .toolbarTitleDisplayMode(.inline)
+        }
+    }
+}
+
+/// A pushed search page's field, in its bar. The tab root's is on the page (`DSSearchBar`):
+/// the bar is the root stack's, and a tab page's `.searchable` does not reach it from iOS 18
+/// (`RootTabNavigationContractTests`).
+private struct PushedSearchField: ViewModifier {
+    let isTabRoot: Bool
+    @Binding var query: String
+
+    func body(content: Content) -> some View {
+        if isTabRoot {
+            content
+        } else {
+            content.searchable(
+                text: $query,
+                placement: .navigationBarDrawer(displayMode: .always),
+                prompt: localized("輸入書名或作者")
+            )
         }
     }
 }
@@ -157,7 +187,7 @@ private struct IOS17SearchResults: View {
     /// The query submitted, while it is still the one in the field.
     var submittedQuery: String? = nil
     let onSelect: (UUID) -> Void
-    /// Pushes a work's 作品詳情 through the page's one item destination.
+    /// Pushes a work's 作品詳情 onto the root stack.
     var openWork: (UnifiedSearchResultRoute) -> Void = { _ in }
     @Environment(\.colorScheme) private var colorScheme
     @Environment(FilledCoverIndex.self) private var filledCovers: FilledCoverIndex?
@@ -220,20 +250,6 @@ private struct ModernUnifiedSearchRows: View {
     }
 }
 
-/// The results' scroll edge: a tab root's under the 搜索 tab's minimizing bar, the app's
-/// soft edge where the page is pushed.
-private struct SearchResultsScrollEdges: ViewModifier {
-    let isTabRoot: Bool
-
-    func body(content: Content) -> some View {
-        if isTabRoot {
-            content.rootTabSearchScrollEdges()
-        } else {
-            content.softScrollEdges()
-        }
-    }
-}
-
 // MARK: - Book Search View
 
 struct BookSearchView: View {
@@ -241,8 +257,9 @@ struct BookSearchView: View {
     /// A scope for this search page only, never saved — Legado's 搜索 on one source
     /// (`searchScope.update(scope, save = false)`). `nil` uses the saved scope.
     var sessionScope: SearchSourceScope?
-    /// The 搜索 tab's own root, which carries a tab root's title; pushed from elsewhere,
-    /// the page is `.inline` like any other.
+    /// The 搜索 tab's own root: its title is the root stack's bar's, its field is on the page,
+    /// its list is the works', and it searches the public libraries. Pushed from elsewhere,
+    /// the page is `.inline` like any other, with its field in its bar.
     var isTabRoot = false
 
     @EnvironmentObject var bookStore: BookStore
@@ -257,9 +274,11 @@ struct BookSearchView: View {
     // this body (Technotes/iOS17ReaderNavigationWatchdog.md).
     @Environment(\.scenePhase) private var scenePhase
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    /// The tab's stack, which 作品詳情 is pushed onto. A reference that never
+    /// The root stack, which the tab root pushes 作品詳情 onto. A reference that never
     /// changes (postmortem guardrail 13).
-    @Environment(\.searchTabNavigation) private var tabNavigation
+    @Environment(\.rootNavigation) private var navigation
+    /// The tab root's field (`DSSearchBar`), active while it has focus.
+    @FocusState private var searchFocused: Bool
 
     @State private var query = ""
     @State private var errorMsg: String? = nil
@@ -302,23 +321,17 @@ struct BookSearchView: View {
         query.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
-    /// Only the tab's root searches the public libraries too: its stack carries the store's
-    /// pages and 作品詳情. Never in China.
+    /// Only the tab's root searches the public libraries too. Never in China.
     private var offersPublicLibraries: Bool {
-        isTabRoot && tabNavigation != nil && availability.isAvailable
+        isTabRoot && availability.isAvailable
     }
 
     /// One search for all (Phase 5 plan decision 17, as amended 2026-10-11; unified search
     /// 4b, 4c-3): one list of works from the shelf, the saved libraries, 青空文庫 where the
     /// public libraries are offered, the sources and Open Library, as soon as there is a
-    /// query. Only the tab's root: its stack carries 作品詳情.
+    /// query. Only the tab's root.
     private var showsCombinedResults: Bool {
-        isAtTabRoot && !trimmedQuery.isEmpty
-    }
-
-    /// The 搜索 tab's root, whose stack carries 作品詳情 and whose list is the works'.
-    private var isAtTabRoot: Bool {
-        isTabRoot && tabNavigation != nil
+        isTabRoot && !trimmedQuery.isEmpty
     }
 
     /// What the sources' part says while it has no result.
@@ -337,10 +350,18 @@ struct BookSearchView: View {
     var body: some View {
         AdaptiveContentContainer(maxWidth: DSLayout.readableExpandedWidth) {
             VStack(spacing: 0) {
+                if isTabRoot {
+                    // At the top of the page as it scrolls, as the bar's search field was before
+                    // the bar became the root stack's (iOS 17–27 alike; maintainer, 2026-10-16).
+                    DSSearchBar(placeholder: localized("輸入書名或作者"), text: $query,
+                                isFocused: $searchFocused, onSubmit: { submit() })
+                        .padding(.horizontal, DSSpacing.lg)
+                        .padding(.vertical, DSSpacing.xs)
+                }
                 // No rule under the scope row: as in Apple Books' search, the content
                 // starts below the controls, and on iOS 26 the list's soft scroll edge
                 // marks where it slides out of view.
-                if isAtTabRoot || !enabledSources.isEmpty {
+                if isTabRoot || !enabledSources.isEmpty {
                     sourceScopeBar
                 }
 
@@ -361,6 +382,7 @@ struct BookSearchView: View {
                     } else {
                         SearchIdleContent(
                             isQueryEmpty: trimmedQuery.isEmpty,
+                            fieldIsActive: isTabRoot ? searchFocused : nil,
                             onSearch: searchAgain,
                             onOpenBook: openRecentBook
                         ) {
@@ -386,25 +408,13 @@ struct BookSearchView: View {
         .modifier(SearchPageTitle(isTabRoot: isTabRoot))
         // Declared here, outside the lazy result containers, so the navigation
         // stack can always see the active destination.
-        .modifier(
-            SearchResultNavigationModifier(
-                mode: .current,
-                destination: SearchResultDestination.init(route:)
-            )
-        )
-        // The page's only item-based destination (see `SearchPagePush`).
-        .navigationDestination(item: $pushed, destination: SearchPagePushDestination.init(push:))
+        .modifier(SearchPageDestinations(isTabRoot: isTabRoot, pushed: $pushed))
         .fullScreenCover(item: $recentReaderRoute) { route in
             BookReaderView(bookId: route.id)
                 .environmentObject(bookStore)
                 .environment(\.readerNavigator, nil)
         }
-        // At the tab root on iOS 27 the field rises to the top as the bar slides away.
-        .searchable(
-            text: $query,
-            placement: .navigationBarDrawer(displayMode: .always),
-            prompt: localized("輸入書名或作者")
-        )
+        .modifier(PushedSearchField(isTabRoot: isTabRoot, query: $query))
         .sheet(isPresented: $showsSourceScopeSheet) {
             SearchSourceScopeSheet(
                 enabledSources: enabledSources,
@@ -480,7 +490,7 @@ struct BookSearchView: View {
     /// same paused state, so the same ring resumes an automatically paused search.
     private var sourceScopeBar: some View {
         HStack(spacing: DSSpacing.sm) {
-            if isAtTabRoot {
+            if isTabRoot {
                 SearchKindFilterChip(model: unifiedSearch)
             }
             if !enabledSources.isEmpty {
@@ -545,7 +555,7 @@ struct BookSearchView: View {
                 sourceRows
             }
         }
-        .modifier(SearchResultsScrollEdges(isTabRoot: isTabRoot))
+        .softScrollEdges()
         .listStyle(.plain)
         .scrollContentBackground(.hidden)
         // Apple Books' result rows carry no disclosure chevron; the whole row opens the book.
@@ -609,7 +619,7 @@ struct BookSearchView: View {
                 }
                 pushed = .result(BookSearchResultRoute(id: id, snapshot: book))
             },
-            openWork: { route in pushed = .work(route) }
+            openWork: { route in navigation?.path.append(route) }
         )
     }
 
@@ -691,9 +701,8 @@ struct BookSearchView: View {
     private func submit() {
         // At the tab's root, the parts that answer on submit are asked first, whatever the
         // sources do.
-        let atRoot = isTabRoot && tabNavigation != nil
         var othersAnswer = false
-        if atRoot, !trimmedQuery.isEmpty {
+        if isTabRoot, !trimmedQuery.isEmpty {
             for part in [librarySearch, openLibrarySearch] where part.isAvailable {
                 part.start(trimmedQuery, store: bookStore)
                 othersAnswer = true

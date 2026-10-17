@@ -2034,8 +2034,8 @@ struct ReaderView: View {
         // page has to shed. `.hidden` is an auto-hide request, so the indicator
         // fades out while reading and still reappears on the next touch — exactly
         // how it behaves in Books. Applied on the same layer as `.statusBarHidden`
-        // because that layer is proven to reach the hosting controller through the
-        // reader's inner NavigationStack.
+        // because that layer is proven to reach the hosting controller, with or
+        // without a NavigationStack of the reader's own (`ReaderNavigationContainer`).
         .persistentSystemOverlays(
             ReaderOverlayPresentationPolicy.hidesHomeIndicator(
                 showsReaderChrome: showBars,
@@ -2057,7 +2057,6 @@ struct ReaderView: View {
         .onChange(of: autoReadIsCoveredBySurface) { _, _ in
             applyAutoReadPause()
         }
-        .hidesRootTabBar()
         .alert(localized("TXT 目錄修復未完成"), isPresented: $showTXTIndexFailure) {
             Button(localized("確定"), role: .cancel) { setReaderChromeVisible(true) }
         } message: {

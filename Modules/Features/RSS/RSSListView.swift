@@ -1013,20 +1013,26 @@ private struct RSSSettingsContentView: View {
     @Binding var isPresented: Bool
 
     var body: some View {
-        SettingsView()
-            .environmentObject(BookStore())
-            .environmentObject(SubscriptionStore.shared)
-            .toolbar {
-                ToolbarItem(placement: .navigationBarTrailing) {
-                    Button {
-                        isPresented = false
-                    } label: {
-                        Label(localized("完成"), systemImage: "checkmark")
-                            .labelStyle(.iconOnly)
+        // 設定 has no stack of its own (it is the root stack's under its tab): this sheet's,
+        // with the title the tab's bar shows.
+        NavigationStack {
+            SettingsView()
+                .environmentObject(BookStore())
+                .environmentObject(SubscriptionStore.shared)
+                .navigationTitle(localized("設定"))
+                .toolbarTitleDisplayMode(.inline)
+                .toolbar {
+                    ToolbarItem(placement: .navigationBarTrailing) {
+                        Button {
+                            isPresented = false
+                        } label: {
+                            Label(localized("完成"), systemImage: "checkmark")
+                                .labelStyle(.iconOnly)
+                        }
+                        .accessibilityLabel(localized("完成"))
                     }
-                    .accessibilityLabel(localized("完成"))
                 }
-            }
+        }
     }
 }
 
