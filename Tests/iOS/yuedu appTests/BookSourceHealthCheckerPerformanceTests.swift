@@ -649,7 +649,8 @@ private actor HealthCheckMixedContentFetcher: BookSourceHealthCheckFetching {
         runtimeVariables: [String: String]?,
         onFirstPageReady: (([OnlineChapterRef]) -> Void)?,
         forceRefresh: Bool,
-        runPreUpdateJs: Bool
+        runPreUpdateJs: Bool,
+        writesCache: Bool
     ) async throws -> TOCPackage {
         var chapters = try await fetchTOC(
             tocUrl: tocUrl,

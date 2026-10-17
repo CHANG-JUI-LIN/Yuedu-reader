@@ -17,22 +17,26 @@ actor WebFetcher {
     nonisolated private let session: URLSession
 
     init(session: URLSession? = nil) {
-        if let session {
-            self.session = session
-        } else {
-            let config = URLSessionConfiguration.default
-            config.timeoutIntervalForRequest = 15
-            config.timeoutIntervalForResource = 30
-            // Matches `LegadoJSBridge.requestSession` (and Legado's own default
-            // threadCount of 16). At 6 the native rule path throttled itself well
-            // below the search fan-out width, so raising search concurrency alone
-            // did nothing — the extra sources just queued on connections.
-            config.httpMaximumConnectionsPerHost = 16
-            config.httpCookieStorage = HTTPCookieStorage.shared
-            config.httpShouldSetCookies = false
-            config.httpCookieAcceptPolicy = .always
-            self.session = URLSession(configuration: config)
-        }
+        self.session = session ?? URLSession(configuration: Self.defaultSessionConfiguration())
+    }
+
+    static func defaultSessionConfiguration() -> URLSessionConfiguration {
+        let config = URLSessionConfiguration.default
+        config.timeoutIntervalForRequest = 15
+        config.timeoutIntervalForResource = 30
+        // Matches `LegadoJSBridge.requestSession` (and Legado's own default
+        // threadCount of 16). At 6 the native rule path throttled itself well
+        // below the search fan-out width, so raising search concurrency alone
+        // did nothing — the extra sources just queued on connections.
+        config.httpMaximumConnectionsPerHost = 16
+        config.httpCookieStorage = HTTPCookieStorage.shared
+        config.httpShouldSetCookies = false
+        config.httpCookieAcceptPolicy = .always
+        // Source pages are parsed once and never read back from a URL cache; backed by
+        // `URLCache.shared`, every cacheable response was a write to its Cache.db (Organizer's
+        // disk-write reports, 2.0.7 (127)).
+        config.urlCache = nil
+        return config
     }
 
     /// `nonisolated` on purpose. Request building and — above all — response decoding

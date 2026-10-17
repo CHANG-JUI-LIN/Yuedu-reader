@@ -502,6 +502,9 @@ struct LegadoHTTPResult {
         let config = URLSessionConfiguration.default
         config.httpMaximumConnectionsPerHost = 16
         config.timeoutIntervalForRequest = 20
+        // No URL cache, as in `WebFetcher.defaultSessionConfiguration`: responses are read
+        // once, and `URLCache.shared` wrote every cacheable one to its Cache.db.
+        config.urlCache = nil
         return URLSession(configuration: config)
     }()
 

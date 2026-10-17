@@ -45,7 +45,8 @@ protocol BookSourceHealthCheckFetching: Sendable {
         runtimeVariables: [String: String]?,
         onFirstPageReady: ((_ chapters: [OnlineChapterRef]) -> Void)?,
         forceRefresh: Bool,
-        runPreUpdateJs: Bool
+        runPreUpdateJs: Bool,
+        writesCache: Bool
     ) async throws -> TOCPackage
     func fetchChapterPackage(
         ref: OnlineChapterRef,
@@ -94,7 +95,8 @@ extension BookSourceHealthCheckFetching {
         runtimeVariables: [String: String]?,
         onFirstPageReady: ((_ chapters: [OnlineChapterRef]) -> Void)?,
         forceRefresh: Bool,
-        runPreUpdateJs: Bool
+        runPreUpdateJs: Bool,
+        writesCache: Bool
     ) async throws -> TOCPackage {
         let chapters = try await fetchTOC(
             tocUrl: tocUrl,
@@ -408,7 +410,8 @@ final class BookSourceHealthChecker: ObservableObject {
     /// placeholder keyword and avoids classifying a working source as broken merely
     /// because it has no results for 「我的」.
     private var preferredSearchKeywords: [UUID: String] = [:]
-    /// Measured response times awaiting a single batched write — see `flushRespondTimes`.
+    /// Measured response times awaiting a single batched write — `applyPolicy` at the end of a
+    /// run, `flushRespondTimes` when it is cancelled.
     private var pendingRespondTimes: [UUID: Int64] = [:]
     private let fetcher: any BookSourceHealthCheckFetching
     /// Where measured response times and the post-run 停用／刪除 policy land.
@@ -515,8 +518,11 @@ final class BookSourceHealthChecker: ObservableObject {
             }
         }
 
-        flushRespondTimes()
-        if !cancelled { applyPolicy() }
+        if cancelled {
+            flushRespondTimes()
+        } else {
+            applyPolicy()
+        }
         isRunning = false
         cancelled = false
         // The run is over: land the final state immediately rather than waiting out
@@ -538,7 +544,8 @@ final class BookSourceHealthChecker: ObservableObject {
 
     // MARK: - Apply Actions
 
-    /// After a full run, disable/delete bad sources and disable slow ones per the chosen policy.
+    /// After a full run, disable/delete bad sources and disable slow ones per the chosen policy,
+    /// landing them together with the measured respond times in one store write.
     private func applyPolicy() {
         var disableIds: Set<UUID> = []
         var deleteIds: Set<UUID> = []
@@ -556,8 +563,12 @@ final class BookSourceHealthChecker: ObservableObject {
         }
 
         let toDisable = disableIds.subtracting(deleteIds)
-        store.setEnabled(ids: toDisable, enabled: false)
-        let deleted = deleteIds.isEmpty ? 0 : store.delete(ids: deleteIds)
+        let deleted = store.applyCheckOutcome(
+            respondTimes: pendingRespondTimes,
+            disable: toDisable,
+            delete: deleteIds
+        )
+        pendingRespondTimes.removeAll(keepingCapacity: true)
 
         var parts: [String] = []
         if !toDisable.isEmpty { parts.append(String(format: localized("已停用 %d"), toDisable.count)) }
@@ -1044,7 +1055,11 @@ final class BookSourceHealthChecker: ObservableObject {
                 runtimeVariables: book.runtimeVariables,
                 onFirstPageReady: nil,
                 forceRefresh: true,
-                runPreUpdateJs: true
+                runPreUpdateJs: true,
+                // The book under test is a search or discovery result, not a shelf book: nothing
+                // reads its TOC back, and a run covers thousands of sources (`probeContent`
+                // likewise clears the chapter it fetched).
+                writesCache: false
             )
             guard var first = package.chapters.first(where: {
                 !$0.shouldRenderAsVolumeSeparator && $0.hasLoadableContentURL

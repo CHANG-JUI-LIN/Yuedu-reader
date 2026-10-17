@@ -92,6 +92,24 @@ extension BookSourceFetcher {
         return package
     }
 
+    /// A fetched table of contents as `saveTOCPackage` would cache it, without caching it.
+    nonisolated func makeTOCPackage(
+        tocUrl: String,
+        source: BookSource,
+        runtimeVariables: [String: String]?,
+        chapters: [OnlineChapterRef]
+    ) -> TOCPackage {
+        TOCPackage(
+            sourceId: source.id,
+            sourceName: source.bookSourceName,
+            tocURL: tocUrl,
+            runtimeVariables: runtimeVariables,
+            chapters: chapters,
+            rawHTMLFilename: nil,
+            savedAt: Date()
+        )
+    }
+
     /// Caches a fetched table of contents, unless it is the one already cached.
     ///
     /// Every launch's "check for new chapters" passes through here for every online book. It
@@ -108,14 +126,8 @@ extension BookSourceFetcher {
         runtimeVariables: [String: String]?,
         chapters: [OnlineChapterRef]
     ) -> TOCPackage {
-        let package = TOCPackage(
-            sourceId: source.id,
-            sourceName: source.bookSourceName,
-            tocURL: tocUrl,
-            runtimeVariables: runtimeVariables,
-            chapters: chapters,
-            rawHTMLFilename: nil,
-            savedAt: Date()
+        let package = makeTOCPackage(
+            tocUrl: tocUrl, source: source, runtimeVariables: runtimeVariables, chapters: chapters
         )
         let manager = FileManager.default
         let path = tocPackagePath(tocUrl: tocUrl, source: source)

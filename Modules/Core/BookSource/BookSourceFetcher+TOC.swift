@@ -57,13 +57,17 @@ extension BookSourceFetcher {
         return hasBadURL ? nil : cached
     }
 
+    /// - Parameter writesCache: `false` when the caller only looks at the table of contents —
+    ///   書源驗證 checks books that are not on the shelf, and caching their TOC wrote a full
+    ///   package per checked source that nothing read back.
     func fetchTOCPackage(
         tocUrl: String,
         source: BookSource,
         runtimeVariables: [String: String]? = nil,
         onFirstPageReady: ((_ chapters: [OnlineChapterRef]) -> Void)? = nil,
         forceRefresh: Bool = false,
-        runPreUpdateJs: Bool = true
+        runPreUpdateJs: Bool = true,
+        writesCache: Bool = true
     ) async throws -> TOCPackage {
         if !forceRefresh, let cached = cachedTOCPackage(tocUrl: tocUrl, source: source) {
             return cached
@@ -138,11 +142,12 @@ extension BookSourceFetcher {
             if !normalized.isEmpty {
                 onFirstPageReady?(normalized)
             }
-            return saveTOCPackage(
+            return finishTOCPackage(
                 tocUrl: tocUrl,
                 source: source,
                 runtimeVariables: parsed.1 ?? effectiveRuntimeVariables,
-                chapters: normalized
+                chapters: normalized,
+                writesCache: writesCache
             )
         }
 
@@ -268,12 +273,25 @@ extension BookSourceFetcher {
             )
         }
         let normalized = normalizedChaptersWithNextURL(chapters)
-        let package = saveTOCPackage(
+        return finishTOCPackage(
             tocUrl: tocUrl,
             source: source,
             runtimeVariables: tocRuntimeVariables,
-            chapters: normalized
+            chapters: normalized,
+            writesCache: writesCache
         )
-        return package
+    }
+
+    /// Both transports end here, so `writesCache` holds for each of them.
+    private func finishTOCPackage(
+        tocUrl: String,
+        source: BookSource,
+        runtimeVariables: [String: String]?,
+        chapters: [OnlineChapterRef],
+        writesCache: Bool
+    ) -> TOCPackage {
+        writesCache
+            ? saveTOCPackage(tocUrl: tocUrl, source: source, runtimeVariables: runtimeVariables, chapters: chapters)
+            : makeTOCPackage(tocUrl: tocUrl, source: source, runtimeVariables: runtimeVariables, chapters: chapters)
     }
 }

@@ -18,10 +18,11 @@ struct RuntimeFetchDecodingTests {
         let host = "gbk-\(UUID().uuidString.prefix(8).lowercased()).example"
         let html = #"<html><head><meta charset="gbk"></head><body><p>第一章 風起</p></body></html>"#
         GBKFixtureProtocol.serve(host: host, body: try #require(html.data(using: Self.gbk)))
-        URLProtocol.registerClass(GBKFixtureProtocol.self)
-        defer { URLProtocol.unregisterClass(GBKFixtureProtocol.self) }
 
-        let bridge = ModernParserBridge(source: BookSource(bookSourceUrl: "https://\(host)", bookSourceName: "gbk fixture"))
+        let bridge = ModernParserBridge(
+            source: BookSource(bookSourceUrl: "https://\(host)", bookSourceName: "gbk fixture"),
+            requestSession: GBKFixtureProtocol.session()
+        )
         let (body, _) = try await bridge.fetch(ruleUrl: "https://\(host)/chapter")
 
         #expect(body.contains("第一章 風起"))
@@ -32,10 +33,11 @@ struct RuntimeFetchDecodingTests {
         let host = "gbk-\(UUID().uuidString.prefix(8).lowercased()).example"
         let html = "<p>第二章 雲湧</p>"
         GBKFixtureProtocol.serve(host: host, body: try #require(html.data(using: Self.gbk)))
-        URLProtocol.registerClass(GBKFixtureProtocol.self)
-        defer { URLProtocol.unregisterClass(GBKFixtureProtocol.self) }
 
-        let bridge = ModernParserBridge(source: BookSource(bookSourceUrl: "https://\(host)", bookSourceName: "gbk fixture"))
+        let bridge = ModernParserBridge(
+            source: BookSource(bookSourceUrl: "https://\(host)", bookSourceName: "gbk fixture"),
+            requestSession: GBKFixtureProtocol.session()
+        )
         let (body, _) = try await bridge.fetch(ruleUrl: #"https://\#(host)/chapter, {"charset":"gbk"}"#)
 
         #expect(body.contains("第二章 雲湧"))
@@ -53,6 +55,14 @@ private final class GBKFixtureProtocol: URLProtocol {
         self.host = host
         self.body = body
         lock.unlock()
+    }
+
+    /// The fetch goes through the bridge's request session, which `URLProtocol.registerClass`
+    /// does not reach: the protocol has to be in the session's configuration.
+    static func session() -> URLSession {
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [GBKFixtureProtocol.self]
+        return URLSession(configuration: configuration)
     }
 
     override class func canInit(with request: URLRequest) -> Bool {

@@ -2482,6 +2482,10 @@ class ModernParserBridge {
         }
 
         let (data, response): (Data, URLResponse)
+        // The source's own request session, like its JS requests: `URLSession.shared` wrote
+        // every cacheable page to `URLCache.shared`'s Cache.db, and capped a host at 6
+        // connections.
+        let requestSession = self.requestSession
         do {
             // Honor the source's `concurrentRate` budget (per-source anti-ban
             // throttle) around the actual network round-trip only.
@@ -2490,7 +2494,7 @@ class ModernParserBridge {
                     of: (Data, URLResponse).self
                 ) { group in
                     group.addTask {
-                        try await URLSession.shared.data(for: request)
+                        try await requestSession.data(for: request)
                     }
                     group.addTask {
                         try await Task.sleep(nanoseconds: 30_000_000_000)

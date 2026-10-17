@@ -299,17 +299,27 @@ class BookSourceStore: ObservableObject {
     @discardableResult
     func delete(ids: Set<UUID>) -> Int {
         guard !ids.isEmpty else { return 0 }
-        let originalCount = sources.count
-        sources.removeAll { ids.contains($0.id) }
-        let removedCount = originalCount - sources.count
+        var updated = sources
+        let removedCount = Self.remove(ids, from: &updated)
         if removedCount > 0 {
-            for id in ids {
-                pinRecords.removeValue(forKey: id)
-            }
-            savePins()
+            sources = updated
+            dropPins(of: ids)
             save()
         }
         return removedCount
+    }
+
+    private static func remove(_ ids: Set<UUID>, from sources: inout [BookSource]) -> Int {
+        let originalCount = sources.count
+        sources.removeAll { ids.contains($0.id) }
+        return originalCount - sources.count
+    }
+
+    private func dropPins(of ids: Set<UUID>) {
+        for id in ids {
+            pinRecords.removeValue(forKey: id)
+        }
+        savePins()
     }
 
     func toggle(id: UUID) {
@@ -448,17 +458,22 @@ class BookSourceStore: ObservableObject {
     func setRespondTimes(_ times: [UUID: Int64]) {
         guard !times.isEmpty else { return }
         var updated = sources
-        var changed = false
-        for idx in updated.indices {
-            guard let ms = times[updated[idx].id], updated[idx].respondTime != ms else {
-                continue
-            }
-            updated[idx].respondTime = ms
-            changed = true
-        }
-        guard changed else { return }
+        guard Self.applyRespondTimes(times, to: &updated) else { return }
         sources = updated
         save()
+    }
+
+    private static func applyRespondTimes(_ times: [UUID: Int64], to sources: inout [BookSource]) -> Bool {
+        guard !times.isEmpty else { return false }
+        var changed = false
+        for idx in sources.indices {
+            guard let ms = times[sources[idx].id], sources[idx].respondTime != ms else {
+                continue
+            }
+            sources[idx].respondTime = ms
+            changed = true
+        }
+        return changed
     }
 
     /// Sets a source's enabled flag to an explicit value (no-op if already set). Used by the
@@ -475,15 +490,45 @@ class BookSourceStore: ObservableObject {
     func setEnabled(ids: Set<UUID>, enabled: Bool) {
         guard !ids.isEmpty else { return }
         var updated = sources
-        var changed = false
-        for idx in updated.indices
-        where ids.contains(updated[idx].id) && updated[idx].enabled != enabled {
-            updated[idx].enabled = enabled
-            changed = true
-        }
-        guard changed else { return }
+        guard Self.applyEnabled(enabled, to: ids, in: &updated) else { return }
         sources = updated
         save()
+    }
+
+    /// The automated form: no `lastUpdateTime` bump (see `setEnabled(id:enabled:)`).
+    private static func applyEnabled(_ enabled: Bool, to ids: Set<UUID>, in sources: inout [BookSource]) -> Bool {
+        guard !ids.isEmpty else { return false }
+        var changed = false
+        for idx in sources.indices
+        where ids.contains(sources[idx].id) && sources[idx].enabled != enabled {
+            sources[idx].enabled = enabled
+            changed = true
+        }
+        return changed
+    }
+
+    /// Everything a finished 書源驗證 run writes back — the measured respond times, the 停用
+    /// of bad or slow sources, the 刪除 of bad ones — as one change and one save. Called one
+    /// after another, `setRespondTimes`, `setEnabled` and `delete` were three saves, and
+    /// coalescing did not fold them into one: the persist queue picks the first snapshot up at
+    /// once, so the later saves queued another whole-library write (≈290 MB of JSON at 50,000
+    /// sources) of their own.
+    ///
+    /// Same contracts as those three: no `lastUpdateTime` bump, and a source in both sets is
+    /// deleted. Returns how many sources were deleted.
+    @discardableResult
+    func applyCheckOutcome(respondTimes: [UUID: Int64], disable: Set<UUID>, delete: Set<UUID>) -> Int {
+        var updated = sources
+        let timed = Self.applyRespondTimes(respondTimes, to: &updated)
+        let disabled = Self.applyEnabled(false, to: disable.subtracting(delete), in: &updated)
+        let removedCount = delete.isEmpty ? 0 : Self.remove(delete, from: &updated)
+        guard timed || disabled || removedCount > 0 else { return 0 }
+        sources = updated
+        if removedCount > 0 {
+            dropPins(of: delete)
+        }
+        save()
+        return removedCount
     }
 
     /// Bulk enable/disable driven by the user (全部啟用／停用, 啟用選中, and the group menu).
