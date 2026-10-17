@@ -40,14 +40,34 @@ struct WorkOffersTests {
         #expect(frozen.book.bookUrl == "https://b.example/book/三体")
     }
 
-    @Test("a title alone never joins: another author, or no author on either side")
+    @Test("a work with an author: another author's book, or one with no author, never joins")
     func titleAlone() {
         let a = source("a"), b = source("b")
         let tapped = route(book("三體", by: "劉慈欣", in: a), in: a)
         #expect(WorkOffers.books(of: tapped, in: [book("三體", by: "王晉康", in: b), book("三體", by: "", in: b)],
                                  sources: sources(a, b)).isEmpty)
-        let anonymous = route(book("三體", by: "", in: a), in: a)
-        #expect(WorkOffers.books(of: anonymous, in: [book("三體", by: "劉慈欣", in: b)], sources: sources(a, b)).isEmpty)
+    }
+
+    @Test("a work with no author: the title's books join when they all name one author (maintainer, 2026-10-17)")
+    func noAuthor() {
+        let a = source("a"), b = source("b"), c = source("c")
+        let anonymous = route(book("斗罗大陆", by: "", in: a), in: a)
+        let agreeing = WorkOffers.books(of: anonymous, in: [book("斗罗大陆", by: "唐家三少", in: b),
+                                                             book("鬥羅大陸", by: "唐家三少 著", in: c)],
+                                        sources: sources(a, b, c))
+        #expect(agreeing.map(\.record.key.instance.id) == [b.bookSourceUrl, c.bookSourceUrl])
+        #expect(WorkOffers.books(of: anonymous, in: [book("斗罗大陆", by: "唐家三少", in: b), book("斗罗大陆", by: "某某", in: c)],
+                                 sources: sources(a, b, c)).isEmpty, "two authors: not guessed")
+        #expect(WorkOffers.books(of: anonymous, in: [book("斗罗大陆", by: "", in: b)], sources: sources(a, b)).isEmpty,
+                "a book naming no author tells nothing")
+        let placeholder = route(book("斗罗大陆", by: "未知作者", in: a), in: a)
+        #expect(WorkOffers.books(of: placeholder, in: [book("斗罗大陆", by: "唐家三少", in: b)], sources: sources(a, b)).count == 1,
+                "「未知作者」 is no author")
+    }
+
+    @Test("an author placeholder is not an author")
+    func placeholders() {
+        #expect(WorkMatchKey.knownAuthors(["未知作者", "Unknown Author", " ", "唐家三少"]) == ["唐家三少"])
     }
 
     @Test("one version per source, its first book; the tapped book is not offered again")
@@ -90,6 +110,8 @@ struct WorkOffersTests {
         #expect(offers.map { $0.record.key } == [SourceRecord.derived(from: work).key])
         #expect(WorkOffers.aozora(of: route(book("三體", by: "王晉康", in: a), in: a), in: index).isEmpty)
         #expect(WorkOffers.aozora(of: try #require(offers.first), in: index).isEmpty)
+        #expect(WorkOffers.aozora(of: route(book("三體", by: "未知作者", in: a), in: a), in: index).map { $0.record.key }
+                == [SourceRecord.derived(from: work).key], "no author: the catalog's one author of the title")
     }
 
     private static func url(_ route: WorkDetailRoute) -> String? {

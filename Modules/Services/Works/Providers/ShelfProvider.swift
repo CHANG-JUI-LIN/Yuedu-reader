@@ -121,7 +121,7 @@ final class ShelfProvider: CollectionBrowsing {
     /// picks for the authors of the page's versions, from the shelf and the WebDAV index,
     /// leaving out the works of those versions.
     func otherWorks(byAuthorsOf versions: [WorkDetailRoute], limit: Int) async -> [CollectionEntry] {
-        let authorKeys = Array(Set(versions.flatMap(\.summary.authors).map(WorkMatchKey.author)))
+        let authorKeys = Array(Set(WorkMatchKey.knownAuthors(versions.flatMap(\.summary.authors)).map(WorkMatchKey.author)))
         guard !authorKeys.isEmpty else { return [] }
         let started = SourcePerfTrace.now
         let index = await store.workIndex.current()

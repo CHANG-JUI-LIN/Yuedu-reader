@@ -73,7 +73,8 @@ struct WorkIndexEntry: Hashable, Codable, Sendable {
         self.identifiers = Set(record.identifiers).union(extraIdentifiers).sorted { $0.sortKey < $1.sortKey }
         self.language = language
         self.titleKey = WorkMatchKey.title(record.title)
-        self.authorKeys = record.authors.map(WorkMatchKey.author).filter { !$0.isEmpty }
+        // 「未知作者」 is no author: the copies that name none are not one author's works.
+        self.authorKeys = WorkMatchKey.knownAuthors(record.authors).map(WorkMatchKey.author).filter { !$0.isEmpty }
         self.seriesKey = series.map(WorkMatchKey.title).flatMap { $0.isEmpty ? nil : $0 }
         self.seriesIndex = seriesKey == nil ? nil : seriesIndex
     }

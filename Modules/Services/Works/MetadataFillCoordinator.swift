@@ -8,7 +8,8 @@ import Foundation
 ///   not expensive or constrained: the rule WebDAV indexing uses), Low Power Mode is off and
 ///   設定 → 網路設定 → 自動補齊書籍資料 is on.
 /// - It starts when the app becomes active, when the shelf has loaded, when a book joins the
-///   shelf, and when an import writes more about a shelf copy (`announcedWrites`); it stops
+///   shelf, when an import writes more about a shelf copy (`announcedWrites`), and when the
+///   book sources there are to ask change (imported, turned on); it stops
 ///   when any condition stops holding. Each copy is asked once per
 ///   provider (`MetadataFillLedger`), so a pass after the first asks only new or changed
 ///   copies.
@@ -33,11 +34,15 @@ final class MetadataFillCoordinator {
     private var knownShelf: Set<UUID> = []
     private var cancellables: Set<AnyCancellable> = []
 
-    /// - Parameter placesChanged: the places to ask changed; by default 資料來源's order or the
-    ///   installed modules that can fill.
+    /// - Parameters:
+    ///   - placesChanged: the places to ask changed; by default 資料來源's order or the
+    ///     installed modules that can fill.
+    ///   - sourcesChanged: the book sources to ask changed; by default the ones
+    ///     `BookSourceFillProvider` would ask. Nothing by default with injected providers.
     init(store: BookStore,
          makeProviders: (@MainActor () -> [any MetadataFillProvider])? = nil,
          placesChanged: AnyPublisher<Void, Never>? = nil,
+         sourcesChanged: AnyPublisher<Void, Never>? = nil,
          network: (any NetworkPathProviding)? = nil,
          isEnabled: (@MainActor () -> Bool)? = nil,
          isLowPower: (@MainActor () -> Bool)? = nil) {
@@ -61,6 +66,9 @@ final class MetadataFillCoordinator {
             .store(in: &cancellables)
         (placesChanged ?? Self.livePlacesChanged)
             .sink { [weak self] in self?.placesChanged() }
+            .store(in: &cancellables)
+        (sourcesChanged ?? (makeProviders == nil ? Self.liveSourcesChanged : Empty().eraseToAnyPublisher()))
+            .sink { [weak self] in self?.sourcesChanged() }
             .store(in: &cancellables)
         NotificationCenter.default.publisher(for: .NSProcessInfoPowerStateDidChange)
             .receive(on: RunLoop.main)
@@ -103,6 +111,23 @@ final class MetadataFillCoordinator {
             .dropFirst()
             .map { _ in () }
         return order.merge(with: modules).eraseToAnyPublisher()
+    }
+
+    /// The sources `BookSourceFillProvider` asks (at most its 40), after the first value.
+    private static var liveSourcesChanged: AnyPublisher<Void, Never> {
+        BookSourceStore.shared.sourcesPublisher
+            // The published value: the publisher sends before the store holds it.
+            .map { BookSourceFillProvider.eligibleSources(in: $0).map(\.id) }
+            .removeDuplicates()
+            .dropFirst()
+            .map { _ in () }
+            .eraseToAnyPublisher()
+    }
+
+    /// A copy no source could be asked about leaves no ledger entry: the pass asks it now. A
+    /// running pass finishes with the providers it has and runs again.
+    private func sourcesChanged() {
+        if mayRun { start() }
     }
 
     private func shelfChanged(_ ids: Set<UUID>) {

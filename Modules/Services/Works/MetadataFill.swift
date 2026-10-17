@@ -55,6 +55,14 @@ protocol MetadataFillProvider: AnyObject {
     /// Throws when the lookup failed (network, server); returns an empty result when the
     /// provider has no record of the copy.
     func lookUp(_ query: MetadataFillQuery) async throws -> MetadataFillResult
+    /// A level-B provider asked for a missing cover all the same. Only the reader's book
+    /// sources (maintainer, 2026-10-17: 「沒封面時補上」): their match is the book the reader
+    /// can read, and the copy has no artwork of its own to be wrong about.
+    var fillsCoverByTitle: Bool { get }
+}
+
+extension MetadataFillProvider {
+    var fillsCoverByTitle: Bool { false }
 }
 
 /// One shelf copy, as the filler sees it.
@@ -194,7 +202,7 @@ final class MetadataFillRunner {
         for provider in providers {
             if Task.isCancelled { break }
             var wanted = missing
-            if provider.grade == .b { wanted.remove(.cover) }
+            if provider.grade == .b, !provider.fillsCoverByTitle { wanted.remove(.cover) }
             guard !wanted.isEmpty else { continue }
             let query = MetadataFillQuery(copyID: copy.copyID, title: copy.title, authors: copy.authors,
                                           identifiers: copy.identifiers, copySource: copy.copySource, missing: wanted,

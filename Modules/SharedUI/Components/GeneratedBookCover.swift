@@ -386,11 +386,7 @@ enum GeneratedBookCoverRenderer {
     /// and `SharedImportQueueDrainer` all set it — so a TXT the user just added
     /// would otherwise get "未知作者" printed down its cover.
     private static func displayableAuthor(_ author: String?) -> String? {
-        guard let trimmed = author?.trimmingCharacters(in: .whitespacesAndNewlines),
-              !trimmed.isEmpty,
-              trimmed != localized("未知作者"),
-              trimmed != "Unknown Author" else { return nil }
-        return trimmed
+        WorkMatchKey.knownAuthors([author ?? ""]).first
     }
 
     // MARK: Layers

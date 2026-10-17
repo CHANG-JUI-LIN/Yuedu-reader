@@ -29,6 +29,10 @@ final class ImportedMetadataStore: @unchecked Sendable {
     /// OPF read again) is how the metadata filler (3d) learns there is more to look up.
     let announcedWrites = PassthroughSubject<UUID, Never>()
 
+    /// Every copy whose sidecar was just written, the filler's writes too, sent on the main
+    /// queue after the write: what a page showing the copy reads again (作品詳情's 簡介).
+    let writes = PassthroughSubject<UUID, Never>()
+
     /// Merges into the copy's sidecar: identifiers are unioned, and a value replaces an earlier
     /// one of the same field from the same place. An Aozora book first records its OPF, then
     /// its catalog work; both survive.
@@ -38,8 +42,10 @@ final class ImportedMetadataStore: @unchecked Sendable {
         guard !metadata.isEmpty else { return }
         queue.async { [self] in
             writeNow(metadata)
-            guard announces else { return }
-            DispatchQueue.main.async { [self] in announcedWrites.send(metadata.copyID) }
+            DispatchQueue.main.async { [self] in
+                writes.send(metadata.copyID)
+                if announces { announcedWrites.send(metadata.copyID) }
+            }
         }
     }
 

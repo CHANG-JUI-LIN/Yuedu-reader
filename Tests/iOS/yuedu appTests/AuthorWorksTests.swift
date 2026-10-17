@@ -55,6 +55,18 @@ struct AuthorWorksTests {
                                        shown: [shown.nodeKey], limit: 20).isEmpty)
     }
 
+    @Test("「未知作者」 is no author: the TXTs that name none are not one author's works")
+    func placeholderAuthor() {
+        let shown = Self.copy("斗罗大陆", "未知作者")
+        let other = Self.copy("AI 推薦測試", "未知作者")
+        let english = Self.copy("Notes", "Unknown Author")
+        #expect(shown.authorKeys.isEmpty)
+        #expect(english.authorKeys.isEmpty)
+        let index = WorkIndex.build(entries: [shown, other, english])
+        #expect(RelatedWorks.byAuthors(in: index, authorKeys: [WorkMatchKey.author("未知作者")], excluding: [shown.nodeKey],
+                                       shown: [shown.nodeKey, other.nodeKey, english.nodeKey], limit: 20).isEmpty)
+    }
+
     private static func aozoraWork(_ id: String, _ title: String, credits: [AozoraWork.Credit]) -> AozoraWork {
         AozoraWork(id: id, title: title, yomi: "", sortYomi: title, subtitle: "", kanaStyle: "", ndc: "",
                    published: "", updated: "", card: "", text: "", textUpdated: "", credits: credits,

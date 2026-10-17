@@ -30,6 +30,28 @@ enum WorkMatchKey {
         return lhs.contains { a in !a.isEmpty && right.contains { b in compatible(a, b) } }
     }
 
+    /// `authors` without the placeholders the importers write for a book that names none
+    /// (「未知作者」, the parsers' "Unknown Author") and without blank ones: what a match may
+    /// compare. A TXT with no 「作者：」 line is stored as 「未知作者」, which is no author.
+    static func knownAuthors(_ authors: [String]) -> [String] {
+        authors.map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty && !authorPlaceholders.contains($0) && $0 != localized("未知作者") }
+    }
+
+    private static let authorPlaceholders: Set<String> = ["未知作者", "Unknown Author"]
+
+    /// Books matched by title alone, for a work that names no author (maintainer, 2026-10-17):
+    /// they are of one work only when each names an author and every two are compatible. Two
+    /// authors are two books of the same title, and neither is guessed.
+    static func nameOneAuthor(_ books: [[String]]) -> Bool {
+        let keys = books.map { $0.map(author).filter { !$0.isEmpty } }
+        guard !keys.isEmpty, keys.allSatisfy({ !$0.isEmpty }) else { return false }
+        for (index, lhs) in keys.enumerated() {
+            for rhs in keys[(index + 1)...] where !authorKeysCompatible(lhs, rhs) { return false }
+        }
+        return true
+    }
+
     static func compatible(_ a: String, _ b: String) -> Bool {
         if a == b { return true }
         if a.count >= 2, b.contains(a) { return true }

@@ -38,6 +38,12 @@ private struct VersionsLoad: Hashable {
     let hasAozoraCatalog: Bool
 }
 
+/// When 作品詳情 reads the shown copy's sidecar: for each copy, and again after a write to it.
+private struct SidecarLoad: Hashable {
+    let copy: UUID?
+    let revision: Int
+}
+
 /// A Gutenberg book's catalog entry, read when its version is shown.
 private enum GutenbergLoad {
     case loading
@@ -108,8 +114,11 @@ struct WorkDetailView: View {
     /// The copy just read without adding, while 「加入書架？」 asks about it.
     @State private var shelvePrompt: ReadingBook?
     @State private var introExpanded = false
-    /// The sidecar values of the shelf copy shown (`shownCopy`), read once per copy.
+    /// The sidecar values of the shelf copy shown (`shownCopy`), read again when it is written.
     @State private var copySidecar: [MetadataValue] = []
+    /// Bumped when the shown copy's sidecar is written: the filler can answer while the page is
+    /// open (an import's copy opened at once, or sources imported since).
+    @State private var sidecarRevision = 0
     /// Library items by version that are not in the version itself: a Gutenberg book's from
     /// its catalog entry, and one edited through 編輯遠端資料 as saved.
     @State private var items: [SourceItemKey: RemoteLibraryItem] = [:]
@@ -171,7 +180,12 @@ struct WorkDetailView: View {
                 await toc.load(copy: tocLoad.flatMap { _ in selected.flatMap(tocCopy(of:)) }, store: store,
                                remoteLibrary: dependencies.remoteLibrary, positions: dependencies.readingPositionStore)
             }
-            .task(id: shownCopy?.id) { copySidecar = shownCopy.map(store.copyIntroValues(of:)) ?? [] }
+            .task(id: SidecarLoad(copy: shownCopy?.id, revision: sidecarRevision)) {
+                copySidecar = shownCopy.map(store.copyIntroValues(of:)) ?? []
+            }
+            .onReceive(store.importedMetadata.writes) { id in
+                if id == shownCopy?.id { sidecarRevision += 1 }
+            }
             .task(id: authorWorksRequest) { await authorWorks.load(authorWorksRequest, store: store) }
             .task(id: seriesLoad) {
                 guard let seriesLoad else {

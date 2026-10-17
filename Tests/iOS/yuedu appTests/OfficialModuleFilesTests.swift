@@ -223,7 +223,7 @@ struct OfficialModuleFilesTests {
         #expect(!OpenLibraryFillProvider().canLookUp(withISBN))
         withISBN.contentKind = .text
         #expect(OpenLibraryFillProvider().canLookUp(withISBN))
-        let sources = BookSourceFillProvider(search: { _, _ in .init(origins: [], answered: 0, queried: 0) }, hasSources: { true })
+        let sources = BookSourceFillProvider(search: { _, _, _ in .init(origins: [], answered: 0, queried: 0) }, hasSources: { true })
         #expect(!sources.canLookUp(comic))
         #expect(sources.canLookUp(query("葬送の", ["山田鐘人"], kind: .text)))
     }

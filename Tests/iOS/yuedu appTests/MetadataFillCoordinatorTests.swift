@@ -94,6 +94,43 @@ struct MetadataFillCoordinatorTests {
         #expect(!coordinator.isRunning, "its own write did not start another pass")
     }
 
+    @Test("book sources imported or turned on set off a pass: a copy that had nothing to ask is asked")
+    func sourcesChanged() async throws {
+        let (store, directory) = try makeStore()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        store.saveReadingBook(book("斗罗大陆"))
+        let provider = CountingProvider()
+        provider.available = false
+        let sources = PassthroughSubject<Void, Never>()
+        let coordinator = MetadataFillCoordinator(store: store, makeProviders: { [provider] },
+                                                  sourcesChanged: sources.eraseToAnyPublisher(),
+                                                  network: StubNetwork(allowed: true), isEnabled: { true }, isLowPower: { false })
+        coordinator.setActive(true)
+        await coordinator.waitUntilIdleForTesting()
+        #expect(provider.titles.isEmpty)
+
+        provider.available = true
+        sources.send()
+        await coordinator.waitUntilIdleForTesting()
+
+        #expect(provider.titles == ["斗罗大陆"])
+    }
+
+    @Test("every sidecar write is told, the filler's too, so an open 作品詳情 reads the filled values")
+    func everyWriteIsTold() async throws {
+        let (store, directory) = try makeStore()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let copy = book("斗罗大陆")
+        store.saveReadingBook(copy)
+        var writes = store.importedMetadata.writes.values.makeAsyncIterator()
+        store.importedMetadata.write(ImportedMetadata(copyID: copy.id, sourceItem: .copy(copy.id), identifiers: [],
+                                                      values: [MetadataValue(field: .intro, value: .text("簡介"), provider: OpenLibrary.key,
+                                                                             sourceItem: nil, fetchedAt: Date())]),
+                                     announces: false)
+        #expect(await writes.next() == copy.id)
+        #expect(store.importedMetadata.read(copyID: copy.id)?.values.first?.value == .text("簡介"), "told after the write")
+    }
+
     @Test("a filled cover reaches the shelf's index at once")
     func coverReachesIndex() async throws {
         let (store, directory) = try makeStore()
@@ -130,6 +167,8 @@ private final class CountingProvider: MetadataFillProvider {
     let answer: [MetadataField: MetadataPayload]
     let needsISBN: Bool
     var titles: [String] = []
+    /// Whether there is anything to ask, as a book source provider with no source.
+    var available = true
 
     init(answer: [MetadataField: MetadataPayload] = [:], needsISBN: Bool = false) {
         self.answer = answer
@@ -137,7 +176,7 @@ private final class CountingProvider: MetadataFillProvider {
     }
 
     func canLookUp(_ query: MetadataFillQuery) -> Bool {
-        !needsISBN || query.identifiers.contains { $0.scheme == .isbn13 }
+        available && (!needsISBN || query.identifiers.contains { $0.scheme == .isbn13 })
     }
 
     func lookUp(_ query: MetadataFillQuery) async throws -> MetadataFillResult {
