@@ -169,19 +169,15 @@ struct ReaderCommentBubbleSettingsView: View {
         let isSelected = settings.commentBubblePresetMode == .custom
             && settings.commentBubbleSelectedCustomStyleID == style.id
 
-        // For bubble.json styles, substitute the literal `${color}` so the picker
-        // preview reflects the actual rendered look (day normal colour for "99").
+        // Resolve the style's colour placeholders the way the reader does, so the
+        // picker preview reflects the actual rendered look (for "99").
         // Legacy SVG previews render unchanged.
-        let previewSVG: String
-        if style.usesColorTemplate {
-            let hex = style.resolvedColorHex(forCount: "99", isNight: false)
-            previewSVG = CommentBubbleSVGRecognizer.materializeColorTemplate(
-                style.svg,
-                colorHex: hex
-            )
-        } else {
-            previewSVG = style.svg
-        }
+        let previewSVG = CommentBubbleSVGRecognizer.materializeTemplateColors(
+            style.svg,
+            style: style,
+            count: "99",
+            themeTextColor: .label
+        )
 
         return styleButton(
             title: title,

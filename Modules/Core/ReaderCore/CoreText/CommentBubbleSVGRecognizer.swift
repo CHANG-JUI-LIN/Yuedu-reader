@@ -11,12 +11,26 @@ struct CommentBubbleSVG {
         case path(d: String, strokeColor: UIColor?, strokeWidth: CGFloat?, fillColor: UIColor?, transform: CGAffineTransform)
         case rect(x: CGFloat, y: CGFloat, width: CGFloat, height: CGFloat, rx: CGFloat, ry: CGFloat, strokeColor: UIColor?, strokeWidth: CGFloat?, fillColor: UIColor?, transform: CGAffineTransform)
         case image(data: Data, rect: CGRect, transform: CGAffineTransform)
-        case text(text: String, x: CGFloat, y: CGFloat, fontSize: CGFloat, fontFamily: String?, fontWeight: String?, anchor: String?, color: UIColor?, transform: CGAffineTransform)
+        case text(text: String, x: CGFloat, y: CGFloat, fontSize: CGFloat, fontFamily: String?, fontWeight: String?, anchor: String?, color: UIColor?, transform: CGAffineTransform, baseline: TextBaseline = .alphabetic)
+    }
+
+    /// `dominant-baseline`: which line of the glyphs sits on the text's `y`. QiReader's
+    /// bubbles centre the count on its anchor with `middle`; the rest give the baseline.
+    enum TextBaseline {
+        case alphabetic
+        /// Half the x-height above the baseline (SVG/CSS `middle`).
+        case middle
+        /// The centre of the ascent–descent box (`central`).
+        case central
     }
     
     let elements: [Element]
     /// `preserveAspectRatio`: how the viewBox sits in the `width`×`height` the SVG declares.
     var viewBoxFit = ViewBoxFit()
+    /// The root `<svg opacity>`, applied to the bubble as a whole. `0` is a bubble drawn
+    /// invisible on purpose: its run still sits at the paragraph's end and opens the
+    /// reviews when tapped.
+    var opacity: CGFloat = 1
 
     /// SVG's default is `xMidYMid meet`: the whole viewBox, scaled uniformly, centred.
     struct ViewBoxFit {
@@ -30,7 +44,7 @@ struct CommentBubbleSVG {
 
     var displayText: String? {
         for element in elements {
-            if case .text(let text, _, _, _, _, _, _, _, _) = element {
+            if case .text(let text, _, _, _, _, _, _, _, _, _) = element {
                 return text
             }
         }
@@ -43,7 +57,7 @@ struct CommentBubbleSVG {
             width: width,
             height: height,
             elements: elements.map { element in
-                guard case let .text(_, x, y, fontSize, fontFamily, fontWeight, anchor, color, transform) = element else {
+                guard case let .text(_, x, y, fontSize, fontFamily, fontWeight, anchor, color, transform, baseline) = element else {
                     return element
                 }
                 return .text(
@@ -55,10 +69,12 @@ struct CommentBubbleSVG {
                     fontWeight: fontWeight,
                     anchor: anchor,
                     color: color,
-                    transform: transform
+                    transform: transform,
+                    baseline: baseline
                 )
             },
-            viewBoxFit: viewBoxFit
+            viewBoxFit: viewBoxFit,
+            opacity: opacity
         )
     }
 }
@@ -70,7 +86,7 @@ extension CommentBubbleSVG.Element {
         case .path(_, _, _, _, let t): return t
         case .rect(_, _, _, _, _, _, _, _, _, let t): return t
         case .image(_, _, let t): return t
-        case .text(_, _, _, _, _, _, _, _, let t): return t
+        case .text(_, _, _, _, _, _, _, _, let t, _): return t
         }
     }
 }
@@ -346,7 +362,7 @@ struct CommentBubbleSVGRecognizer {
             return nil
         }
 
-        guard let parsed = parseSVG(cleaned) else {
+        guard let parsed = parseSVG(cleaned, takesAnyTextAsCountSlot: mode == .userTemplate) else {
             diag("reject:parse-fail", context: ["len": cleaned.count])
             return nil
         }
@@ -494,34 +510,15 @@ struct CommentBubbleSVGRecognizer {
                 customSVG: settings.commentBubbleSelectedCustomStyle?.svg ?? ""
             )
         }
-        // bubble.json-imported styles keep a literal `${color}` placeholder in
-        // their text fill (`fill="${color}"`). The parser can only resolve real
-        // hex/rgb colours, so we substitute the JSON's day/night + normal/emphasis
-        // hex into the raw SVG string *before* recognition. Styles authored in
-        // the legacy SVG editor (no `${color}` token) are untouched.
-        // Only the active template and the two supported replacement tokens affect this
-        // operation. A retained custom artwork cannot change a builtin SVG, and lowercasing
-        // that artwork on every raster miss repeats work unrelated to the active template.
-        if let style = settings.commentBubbleSelectedCustomStyle,
-           ReaderDocumentTrace.measuringSync("bubbleColorTemplateCheck", {
-               // These replacement tokens are ASCII bytes. Bounded UTF-8 search avoids
-               // Unicode normalization/UTF-16 conversion of large base64 image payloads.
-               templateSource.withUTF8 { bytes in
-                   guard let base = bytes.baseAddress else { return false }
-                   return "${color}".withCString { token in
-                       memmem(base, bytes.count, token, 8) != nil
-                   } || "${Color}".withCString { token in
-                       memmem(base, bytes.count, token, 8) != nil
-                   }
-               }
-           }) {
-            let hex = style.resolvedColorHex(
-                forCount: bubbleText,
-                isNight: isNightTheme(themeTextColor: themeTextColor)
-            )
-            templateSource = materializeColorTemplate(
+        // Imported styles keep colour placeholders the parser cannot resolve; see
+        // `materializeTemplateColors`. Only the active template is touched — a retained
+        // custom artwork cannot change a builtin SVG.
+        if let style = settings.commentBubbleSelectedCustomStyle {
+            templateSource = materializeTemplateColors(
                 templateSource,
-                colorHex: hex
+                style: style,
+                count: bubbleText,
+                themeTextColor: themeTextColor
             )
         }
         // The user picked this template explicitly, so it is parsed permissively — an
@@ -539,6 +536,65 @@ struct CommentBubbleSVGRecognizer {
             overallScale: CGFloat(settings.commentBubbleScale),
             textFace: .reader
         )
+    }
+
+    /// Resolves the colour placeholders an imported style carries into concrete hex, before
+    /// recognition (the parser only reads real hex/rgb colours). Shared by the reader and the
+    /// settings preview so both draw the same bubble.
+    ///
+    /// - `${color}` (bubble.json): the style's day/night × normal/emphasis slot.
+    /// - `__TEXT__` (QiReader `commentBubbleStyleData`): the count colour on the outline and
+    ///   the digits. The pack's own colour lands in the slots on import; `AUTO` leaves them
+    ///   empty, which means the reading theme's text colour.
+    ///
+    /// Styles without either token (the legacy SVG editor's) come back untouched.
+    static func materializeTemplateColors(
+        _ svg: String,
+        style: ReaderCommentBubbleCustomStyle,
+        count: String,
+        themeTextColor: UIColor
+    ) -> String {
+        var source = svg
+        let (hasColorToken, hasTextToken) = ReaderDocumentTrace.measuringSync("bubbleColorTemplateCheck") {
+            // These tokens are ASCII bytes. Bounded UTF-8 search avoids Unicode
+            // normalization/UTF-16 conversion of large base64 image payloads.
+            source.withUTF8 { bytes -> (Bool, Bool) in
+                guard let base = bytes.baseAddress else { return (false, false) }
+                func contains(_ token: String) -> Bool {
+                    token.withCString { memmem(base, bytes.count, $0, strlen($0)) != nil }
+                }
+                return (contains("${color}") || contains("${Color}"), contains(qiReaderTextColorToken))
+            }
+        }
+        guard hasColorToken || hasTextToken else { return svg }
+        let isNight = isNightTheme(themeTextColor: themeTextColor)
+        if hasColorToken {
+            source = materializeColorTemplate(
+                source,
+                colorHex: style.resolvedColorHex(forCount: count, isNight: isNight)
+            )
+        }
+        if hasTextToken {
+            let hex = style.slotColorHex(forCount: count, isNight: isNight)
+                ?? hexString(themeTextColor)
+            source = source.replacingOccurrences(of: qiReaderTextColorToken, with: hex)
+        }
+        return source
+    }
+
+    /// QiReader's count-colour placeholder in `backgroundSVGData`.
+    static let qiReaderTextColorToken = "__TEXT__"
+
+    private static func hexString(_ color: UIColor) -> String {
+        var r: CGFloat = 0, g: CGFloat = 0, b: CGFloat = 0, a: CGFloat = 0
+        color.getRed(&r, green: &g, blue: &b, alpha: &a)
+        func byte(_ v: CGFloat) -> Int { Int((min(max(v, 0), 1) * 255).rounded()) }
+        // The reader hands bubbles a translucent text colour (the badge's 55%,
+        // `.secondaryLabel`); CSS's `#RRGGBBAA` keeps that so `AUTO` fades like the rest.
+        guard byte(a) < 255 else {
+            return String(format: "#%02X%02X%02X", byte(r), byte(g), byte(b))
+        }
+        return String(format: "#%02X%02X%02X%02X", byte(r), byte(g), byte(b), byte(a))
     }
 
     /// Substitutes the `${color}` placeholder (case-insensitive) inside an SVG
@@ -595,7 +651,11 @@ struct CommentBubbleSVGRecognizer {
         return count
     }
     
-    private static func parseSVG(_ svg: String) -> CommentBubbleSVG? {
+    /// `takesAnyTextAsCountSlot`: a template the user chose has at most one `<text>`, and that
+    /// is where the count goes whatever it holds — QiReader leaves it empty (山风 packs'
+    /// 兔子) or writes a word such as `TEXT`. Sniffing never does: only a count-formatted
+    /// text is evidence that an unknown source picture is a bubble.
+    private static func parseSVG(_ svg: String, takesAnyTextAsCountSlot: Bool) -> CommentBubbleSVG? {
         // 1. Parse <svg> tag attributes
         guard let svgRange = svg.range(of: "<svg[^>]*>", options: .regularExpression) else { return nil }
         let svgTag = String(svg[svgRange])
@@ -757,7 +817,7 @@ struct CommentBubbleSVGRecognizer {
                     .map { $0.firstMatch(in: text, range: NSRange(location: 0, length: (text as NSString).length)) != nil } ?? false
                 let trimmedText = text.trimmingCharacters(in: .whitespacesAndNewlines)
                 let isPlaceholder = trimmedText == "$displayText" || trimmedText == "${num}"
-                if isCount || isPlaceholder {
+                if isCount || isPlaceholder || takesAnyTextAsCountSlot {
                     let x = parseCoordinate(extractAttribute("x", in: tag), viewBoxSize: viewBox.width)
                     let y = parseCoordinate(extractAttribute("y", in: tag), viewBoxSize: viewBox.height)
                     let fontSize = parseDouble(extractAttribute("font-size", in: tag))
@@ -773,8 +833,12 @@ struct CommentBubbleSVGRecognizer {
                     let elementColor = resolveElementColor(in: tag, inheritedColor: rootColor)
                     let color = resolvePaint("fill", in: tag, inheritedColor: elementColor)
                     let transform = composedTransform(at: tagRange.location, groups: groupSpans)
+                    let baseline = parseTextBaseline(
+                        extractAttribute("dominant-baseline", in: tag)
+                            ?? styleProperty("dominant-baseline", in: tag)
+                    )
 
-                    elements.append(.text(text: text, x: x, y: y + dy, fontSize: resolvedFontSize, fontFamily: fontFamily, fontWeight: fontWeight, anchor: anchor, color: color, transform: transform))
+                    elements.append(.text(text: text, x: x, y: y + dy, fontSize: resolvedFontSize, fontFamily: fontFamily, fontWeight: fontWeight, anchor: anchor, color: color, transform: transform, baseline: baseline))
                 }
             }
         }
@@ -784,10 +848,19 @@ struct CommentBubbleSVGRecognizer {
             width: finalWidth,
             height: finalHeight,
             elements: elements,
-            viewBoxFit: viewBoxFit
+            viewBoxFit: viewBoxFit,
+            opacity: opacityValue("opacity", in: svgTag)
         )
     }
     
+    private static func parseTextBaseline(_ value: String?) -> CommentBubbleSVG.TextBaseline {
+        switch value?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() {
+        case "middle": return .middle
+        case "central": return .central
+        default: return .alphabetic
+        }
+    }
+
     private static func extractAttribute(_ name: String, in tag: String) -> String? {
         // Not `\b`: a hyphen is a word boundary, so `\bopacity` also matched inside
         // `fill-opacity` and `\bwidth` inside `stroke-width`.
@@ -1124,6 +1197,14 @@ struct CommentBubbleSVGRecognizer {
         if cleanHex.count == 3 {
             cleanHex = cleanHex.map { "\($0)\($0)" }.joined()
         }
+        // CSS Color 4 `#RRGGBBAA`.
+        var alpha: CGFloat = 1
+        if cleanHex.count == 8 {
+            var alphaValue: UInt64 = 0
+            guard Scanner(string: String(cleanHex.suffix(2))).scanHexInt64(&alphaValue) else { return nil }
+            alpha = CGFloat(alphaValue) / 255.0
+            cleanHex = String(cleanHex.prefix(6))
+        }
         guard cleanHex.count == 6 else { return nil }
         var rgbValue: UInt64 = 0
         Scanner(string: cleanHex).scanHexInt64(&rgbValue)
@@ -1131,7 +1212,7 @@ struct CommentBubbleSVGRecognizer {
             red: CGFloat((rgbValue & 0xFF0000) >> 16) / 255.0,
             green: CGFloat((rgbValue & 0x00FF00) >> 8) / 255.0,
             blue: CGFloat(rgbValue & 0x0000FF) / 255.0,
-            alpha: 1.0
+            alpha: alpha
         )
     }
 }
@@ -1170,6 +1251,15 @@ extension CommentBubbleSVGRecognizer {
         let rendered = ReaderDocumentTrace.measuringSync("bubbleDraw") {
             renderer.image { rendererContext in
             let context = rendererContext.cgContext
+
+            // Root opacity is group opacity: the bubble composites as one, so overlapping
+            // shapes don't show through each other. Only paid for when it is below 1.
+            let fadesAsGroup = svg.opacity < 1
+            if fadesAsGroup {
+                context.setAlpha(svg.opacity)
+                context.beginTransparencyLayer(auxiliaryInfo: nil)
+            }
+            defer { if fadesAsGroup { context.endTransparencyLayer() } }
 
             context.saveGState()
 
@@ -1258,7 +1348,7 @@ extension CommentBubbleSVGRecognizer {
             // large-viewBox bubbles (墨圈 216×200, 光遇 style0 1224×1224, style3 88×76)
             // → the number vanished. Drawing here, in identity/canvas space, fixes that.
             for element in svg.elements {
-                guard case let .text(text, x, y, fontSize, fontFamily, fontWeight, anchor, color, transform) = element else { continue }
+                guard case let .text(text, x, y, fontSize, fontFamily, fontWeight, anchor, color, transform, baseline) = element else { continue }
                 // The <g> transform maps the anchor point; glyphs themselves stay upright.
                 let vbPos = CGPoint(x: x, y: y).applying(transform)
                 let vbOrg = svg.viewBox.origin
@@ -1293,7 +1383,14 @@ extension CommentBubbleSVGRecognizer {
                 } else if anchor?.lowercased() == "end" {
                     drawX = canvasX - textSize.width
                 }
-                let drawY = canvasY - font.ascender
+                // `canvasY` is the SVG's `y`; find the baseline it implies.
+                let baselineY: CGFloat
+                switch baseline {
+                case .alphabetic: baselineY = canvasY
+                case .middle: baselineY = canvasY + font.xHeight / 2
+                case .central: baselineY = canvasY + (font.ascender + font.descender) / 2
+                }
+                let drawY = baselineY - font.ascender
 
                 (text as NSString).draw(at: CGPoint(x: drawX, y: drawY), withAttributes: textAttrs)
             }

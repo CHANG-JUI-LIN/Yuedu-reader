@@ -512,6 +512,68 @@ struct QiThemeImporterTests {
         #expect(CommentBubbleSVGRecognizer.recognizeUserTemplate(imported.style.svg) != nil)
     }
 
+    /// 山风 packs' 兔子 bubble: an outline stroked with `__TEXT__` and an empty `<text>` that
+    /// QiReader fills with the count.
+    private static let countSlotBubbleSVG = "<svg viewBox='0 0 100 100' width='100' height='100'"
+        + " xmlns='http://www.w3.org/2000/svg'><path d='M10 10 L90 10 L90 90 L10 90 Z'"
+        + " stroke-width='8' stroke='__TEXT__' fill='none'></path><text x='50' y='50'"
+        + " font-size='40' fill='__TEXT__' text-anchor='middle' dominant-baseline='middle'></text></svg>"
+
+    @Test("imports a __TEXT__ bubble: AUTO follows the theme, a hex becomes the count colour")
+    func importsTextTokenBubble() async throws {
+        for (textColorHex, expected) in [("AUTO", nil), ("112233", "#112233")] as [(String, String?)] {
+            let bubble: [String: Any] = [
+                "name": "兔子",
+                "backgroundSVGData": Self.countSlotBubbleSVG,
+                "textColorHex": textColorHex,
+                "fillColorHex": "FF8C00",
+                "showLabel": true,
+            ]
+            let result = try await parsePack(preset: [
+                "fontSize": 20,
+                "commentBubbleStyleData": try Self.base64JSON(bubble),
+            ])
+            let imported = try #require(result.bubble)
+            #expect(imported.style.svg == Self.countSlotBubbleSVG)
+            #expect(imported.style.dayNormalColor == expected)
+            #expect(imported.style.nightEmphasisColor == expected)
+            let template = try #require(CommentBubbleSVGRecognizer.recognizeUserTemplate(
+                CommentBubbleSVGRecognizer.materializeTemplateColors(
+                    imported.style.svg,
+                    style: imported.style,
+                    count: "12",
+                    themeTextColor: .black
+                )
+            ))
+            #expect(template.replacingDisplayText(with: "12").displayText == "12")
+        }
+    }
+
+    @Test("a bubble with its label off drops the empty count slot")
+    func dropsCountSlotWhenLabelIsOff() async throws {
+        let bubble: [String: Any] = [
+            "name": "兔子",
+            "backgroundSVGData": Self.countSlotBubbleSVG,
+            "textColorHex": "AUTO",
+            "showLabel": false,
+        ]
+        let result = try await parsePack(preset: [
+            "fontSize": 20,
+            "commentBubbleStyleData": try Self.base64JSON(bubble),
+        ])
+        let imported = try #require(result.bubble)
+        #expect(!imported.style.svg.contains("<text"))
+        let template = try #require(CommentBubbleSVGRecognizer.recognizeUserTemplate(
+            CommentBubbleSVGRecognizer.materializeTemplateColors(
+                imported.style.svg,
+                style: imported.style,
+                count: "12",
+                themeTextColor: .black
+            )
+        ))
+        #expect(template.displayText == nil)
+    }
+
     // MARK: - Chapter title
 
     @Test("builds layers from the light variant and reports a divergent dark one")

@@ -47,7 +47,7 @@ struct CommentBubbleSVGRecognizerTests {
                 }
             }
             let hasColoredText = bubble.elements.contains { element in
-                guard case let .text(_, _, _, _, _, _, _, color, _) = element else { return false }
+                guard case let .text(_, _, _, _, _, _, _, color, _, _) = element else { return false }
                 return color != nil
             }
 
@@ -350,5 +350,206 @@ struct CommentBubbleRecognitionModeTests {
         let builtin = CommentBubbleSVGRecognizer.builtinBubbleSVG
         #expect(CommentBubbleSVGRecognizer.recognize(src: "", svgContent: builtin) != nil)
         #expect(CommentBubbleSVGRecognizer.recognizeUserTemplate(builtin) != nil)
+    }
+}
+
+/// QiReader's own bubble convention, as exported in `commentBubbleStyleData` (山风 packs'
+/// 兔子): the count slot is an *empty* `<text>` QiReader fills in, `__TEXT__` stands for the
+/// count colour on both the outline and the digits, and the digit is centred on its anchor
+/// with `dominant-baseline="middle"`. Before these were understood the bubble drew no count
+/// — and, with `__TEXT__` unresolvable, no outline either.
+@Suite("QiReader bubble template", .serialized)
+struct QiReaderBubbleTemplateTests {
+    static let qiReaderSVG = """
+    <svg viewBox="0 0 100 100" version="1.1" xmlns="http://www.w3.org/2000/svg" width="100" height="100">\
+    <path d="M10 10 L90 10 L90 90 L10 90 Z" stroke-width="8" stroke="__TEXT__" fill="none"></path>\
+    <text x="50" y="50" font-family="Arial" font-size="40" font-weight="bold" fill="__TEXT__" \
+    text-anchor="middle" dominant-baseline="middle"></text></svg>
+    """
+
+    private static func autoStyle() -> ReaderCommentBubbleCustomStyle {
+        ReaderCommentBubbleCustomStyle(name: "兔子", svg: qiReaderSVG)
+    }
+
+    @Test("a user template's empty <text> is the count slot")
+    func emptyTextIsCountSlot() throws {
+        let materialized = CommentBubbleSVGRecognizer.materializeTemplateColors(
+            Self.qiReaderSVG,
+            style: Self.autoStyle(),
+            count: "12",
+            themeTextColor: .black
+        )
+        let bubble = try #require(CommentBubbleSVGRecognizer.recognizeUserTemplate(materialized))
+        let filled = bubble.replacingDisplayText(with: "12")
+        #expect(filled.displayText == "12")
+    }
+
+    @Test("sniffing still refuses a source image whose only <text> is empty")
+    func sniffingRefusesEmptyText() {
+        // A book-source illustration with an empty text node is not a bubble.
+        let svg = Self.qiReaderSVG.replacingOccurrences(of: "__TEXT__", with: "#000000")
+        #expect(CommentBubbleSVGRecognizer.recognize(src: "", svgContent: svg) == nil)
+    }
+
+    @Test("__TEXT__ follows the reading theme when the pack says AUTO")
+    func textTokenFollowsTheme() {
+        let materialized = CommentBubbleSVGRecognizer.materializeTemplateColors(
+            Self.qiReaderSVG,
+            style: Self.autoStyle(),
+            count: "12",
+            themeTextColor: UIColor(red: 1, green: 0, blue: 0, alpha: 1)
+        )
+        #expect(!materialized.contains("__TEXT__"))
+        #expect(materialized.contains("#FF0000"))
+    }
+
+    @Test("__TEXT__ takes the pack's own colour when it gives one")
+    func textTokenUsesPackColor() {
+        var style = Self.autoStyle()
+        style.dayNormalColor = "#00FF00"
+        style.dayEmphasisColor = "#00FF00"
+        let materialized = CommentBubbleSVGRecognizer.materializeTemplateColors(
+            Self.qiReaderSVG,
+            style: style,
+            count: "12",
+            themeTextColor: .black
+        )
+        #expect(materialized.contains("#00FF00"))
+        #expect(!materialized.contains("__TEXT__"))
+    }
+
+    @Test("draws the outline and a vertically centred count")
+    func drawsOutlineAndCenteredCount() throws {
+        let materialized = CommentBubbleSVGRecognizer.materializeTemplateColors(
+            Self.qiReaderSVG,
+            style: Self.autoStyle(),
+            count: "88",
+            themeTextColor: .black
+        )
+        let bubble = try #require(CommentBubbleSVGRecognizer.recognizeUserTemplate(materialized))
+        let image = CommentBubbleSVGRecognizer.draw(
+            svg: bubble.replacingDisplayText(with: "88"),
+            pointSize: 100,
+            themeTextColor: .black,
+            textFace: .reader
+        )
+        let alpha = try Self.alphaMap(image)
+
+        // The outline: the left edge of the square, halfway down.
+        #expect(alpha.value(atFractionX: 0.10, y: 0.50) > 128)
+
+        // The count: inked rows inside the outline, centred on the anchor (y = 50%).
+        // Drawn with `y` as the baseline instead, the digits sit wholly above the anchor
+        // and their centre lands near 35%.
+        let rows = alpha.inkedRows(insetFraction: 0.2)
+        let top = try #require(rows.first)
+        let bottom = try #require(rows.last)
+        let center = CGFloat(top + bottom) / 2 / CGFloat(alpha.height)
+        #expect(center > 0.42 && center < 0.58, "count centre at \(center)")
+    }
+
+    private struct AlphaMap {
+        let width: Int
+        let height: Int
+        let bytes: [UInt8]
+
+        func value(atFractionX fx: CGFloat, y fy: CGFloat) -> UInt8 {
+            let x = min(width - 1, Int(CGFloat(width) * fx))
+            let y = min(height - 1, Int(CGFloat(height) * fy))
+            return bytes[(y * width + x) * 4 + 3]
+        }
+
+        /// Rows holding opaque pixels strictly inside the outline.
+        func inkedRows(insetFraction: CGFloat) -> [Int] {
+            let lo = Int(CGFloat(width) * insetFraction)
+            let hi = Int(CGFloat(width) * (1 - insetFraction))
+            let loY = Int(CGFloat(height) * insetFraction)
+            let hiY = Int(CGFloat(height) * (1 - insetFraction))
+            return (loY..<hiY).filter { y in
+                (lo..<hi).contains { x in bytes[(y * width + x) * 4 + 3] > 128 }
+            }
+        }
+    }
+
+    private static func alphaMap(_ image: UIImage) throws -> AlphaMap {
+        let cgImage = try #require(image.cgImage)
+        let width = cgImage.width
+        let height = cgImage.height
+        var bytes = [UInt8](repeating: 0, count: width * height * 4)
+        let context = try #require(CGContext(
+            data: &bytes,
+            width: width,
+            height: height,
+            bitsPerComponent: 8,
+            bytesPerRow: width * 4,
+            space: CGColorSpaceCreateDeviceRGB(),
+            bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+        ))
+        context.draw(cgImage, in: CGRect(x: 0, y: 0, width: width, height: height))
+        return AlphaMap(width: width, height: height, bytes: bytes)
+    }
+}
+
+/// A user-reported template: an invisible bubble whose lone `<text>` holds the word `TEXT`.
+/// It must draw as an invisible, still-sized (so still tappable) run — before, the word
+/// disqualified the text node, nothing was left to draw, and the built-in bubble was drawn
+/// in its place.
+@Suite("Invisible bubble template", .serialized)
+struct InvisibleBubbleTemplateTests {
+    static let svg = """
+    <svg opacity="0">
+      <text y="15">
+        TEXT
+      </text>
+    </svg>
+    """
+
+    @Test("is accepted as a user template, with its text as the count slot")
+    func acceptedAsUserTemplate() throws {
+        let bubble = try #require(CommentBubbleSVGRecognizer.recognizeUserTemplate(Self.svg))
+        #expect(bubble.opacity == 0)
+        #expect(bubble.replacingDisplayText(with: "12").displayText == "12")
+        #expect(bubble.replacingDisplayText(with: "12").opacity == 0)
+    }
+
+    @Test("draws a sized, fully transparent run")
+    func drawsInvisible() throws {
+        let bubble = try #require(CommentBubbleSVGRecognizer.recognizeUserTemplate(Self.svg))
+        let image = CommentBubbleSVGRecognizer.draw(
+            svg: bubble.replacingDisplayText(with: "88"),
+            pointSize: 40,
+            themeTextColor: .black,
+            textFace: .reader
+        )
+        #expect(image.size.width > 0 && image.size.height > 0)
+        let cgImage = try #require(image.cgImage)
+        var bytes = [UInt8](repeating: 0, count: cgImage.width * cgImage.height * 4)
+        let context = try #require(CGContext(
+            data: &bytes,
+            width: cgImage.width,
+            height: cgImage.height,
+            bitsPerComponent: 8,
+            bytesPerRow: cgImage.width * 4,
+            space: CGColorSpaceCreateDeviceRGB(),
+            bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+        ))
+        context.draw(cgImage, in: CGRect(x: 0, y: 0, width: cgImage.width, height: cgImage.height))
+        #expect(stride(from: 3, to: bytes.count, by: 4).allSatisfy { bytes[$0] == 0 })
+    }
+
+    @Test("a word in <text> is still no evidence when sniffing a source image")
+    func sniffingRefusesWordText() {
+        #expect(CommentBubbleSVGRecognizer.recognize(src: "", svgContent: Self.svg) == nil)
+    }
+
+    @Test("half opacity fades the whole bubble")
+    func halfOpacityFades() throws {
+        let svg = """
+        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 20 20" opacity="0.5">\
+        <rect x="0" y="0" width="20" height="20" rx="1" ry="1" fill="#000000"/>\
+        <text x="10" y="15" font-size="10" fill="#000000">1</text></svg>
+        """
+        let bubble = try #require(CommentBubbleSVGRecognizer.recognizeUserTemplate(svg))
+        #expect(abs(bubble.opacity - 0.5) < 0.001)
     }
 }

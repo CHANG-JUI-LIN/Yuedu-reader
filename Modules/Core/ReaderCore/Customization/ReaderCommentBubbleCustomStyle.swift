@@ -55,11 +55,17 @@ struct ReaderCommentBubbleCustomStyle: Codable, Equatable, Identifiable {
     /// (`"12"`, `"99+"`, …) and whether the reader is currently in night mode.
     /// Falls back to a neutral gray when the JSON did not specify a slot.
     func resolvedColorHex(forCount count: String, isNight: Bool) -> String {
+        slotColorHex(forCount: count, isNight: isNight) ?? "#808080"
+    }
+
+    /// The slot colour for this count, or nil when the style left that slot empty — for a
+    /// QiReader `__TEXT__` style that means "follow the reading theme" (`AUTO`).
+    func slotColorHex(forCount count: String, isNight: Bool) -> String? {
         let emphasis = Self.isEmphasisCount(count)
         if isNight {
-            return (emphasis ? nightEmphasisColor : nightNormalColor) ?? "#808080"
+            return emphasis ? nightEmphasisColor : nightNormalColor
         }
-        return (emphasis ? dayEmphasisColor : dayNormalColor) ?? "#808080"
+        return emphasis ? dayEmphasisColor : dayNormalColor
     }
 
     /// "Emphasis" is triggered when the displayed count overflows (`99+`, `100+`)

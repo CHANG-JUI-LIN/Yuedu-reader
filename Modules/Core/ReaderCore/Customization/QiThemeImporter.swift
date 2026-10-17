@@ -774,23 +774,37 @@ enum QiThemeImporter {
     ) -> QiThemeImport.BubbleImport? {
         guard let encoded = preset.commentBubbleStyleData,
               let style = try? QiThemeValue.decodeBase64JSON(QiBubbleStyle.self, from: encoded),
-              let svg = style.backgroundSVGData?.trimmingCharacters(in: .whitespacesAndNewlines),
+              var svg = style.backgroundSVGData?.trimmingCharacters(in: .whitespacesAndNewlines),
               !svg.isEmpty else {
             return nil
         }
-        // Only meaningful for templates that actually carry the placeholder; a raster
-        // bubble has no text node to colour.
+        // QiReader writes the count into an empty `<text>`, which the reader takes as the
+        // count slot. With the label switched off that slot must not draw a count.
+        if style.showLabel == false {
+            svg = svg.replacingOccurrences(
+                of: #"<text\b[^>]*>\s*</text>|<text\b[^>]*/>"#,
+                with: "",
+                options: [.regularExpression, .caseInsensitive]
+            )
+        }
+        // Only meaningful for templates that actually carry a placeholder; a raster
+        // bubble has no text node to colour. `__TEXT__` is QiReader's count colour —
+        // `textColorHex`, where `AUTO` (no hex) leaves the slots empty so the reading
+        // theme's text colour is used.
         let usesColorTemplate = svg.contains("${color}") || svg.contains("${Color}")
+        let usesTextToken = svg.contains(CommentBubbleSVGRecognizer.qiReaderTextColorToken)
         let fill = QiThemeValue.hex(style.fillColorHex).map { String(format: "#%06X", $0) }
+        let textColor = QiThemeValue.hex(style.textColorHex).map { String(format: "#%06X", $0) }
+        let slot = usesColorTemplate ? fill : (usesTextToken ? textColor : nil)
 
         let imported = ReaderCommentBubbleCustomStyle(
             name: style.name?.nilIfEmpty ?? localized("自訂 SVG"),
             svg: svg,
             sizeScale: style.svgSizeMultiplier,
-            dayEmphasisColor: usesColorTemplate ? fill : nil,
-            dayNormalColor: usesColorTemplate ? fill : nil,
-            nightEmphasisColor: usesColorTemplate ? fill : nil,
-            nightNormalColor: usesColorTemplate ? fill : nil
+            dayEmphasisColor: slot,
+            dayNormalColor: slot,
+            nightEmphasisColor: slot,
+            nightNormalColor: slot
         )
 
         if style.showLabel == false {
