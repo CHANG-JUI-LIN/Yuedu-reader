@@ -69,7 +69,7 @@ struct OfficialModulesLiveTests {
         let result = try await ModuleFillProvider(provider: provider).lookUp(query)
         print("⟐ live openlibrary: \(result.values.keys.map(\.rawValue).sorted())")
         #expect(result.values[.intro] != nil, "the work's description, from its page")
-        #expect(result.values[.cover] != nil, "the edition's cover, through archive.org's redirects")
+        #expect(result.values[.cover] != nil, "the edition's cover")
     }
 
     @Test("なろう lists, searches and reads a chapter")

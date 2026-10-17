@@ -10,9 +10,8 @@ import XCTest
 /// answers 十二國記 and 鬼吹燈 first, then 球狀閃電 and 銀河英雄傳說.
 ///
 /// A run needs a book the reader has opened: the test imports a text file
-/// (`-auto-import-epub` with an absolute path) and opens it once. Open Library is unchecked in
-/// 資料來源 for the launch (`-yd_metadata_fill_order`, argument domain only), so nothing leaves
-/// the machine.
+/// (`-auto-import-epub` with an absolute path) and opens it once. Without the official modules
+/// there is no Open Library to look the works up in, so nothing leaves the machine.
 final class AIRecommendationUITests: XCTestCase {
     private let title = "AI 推薦測試"
     private let body = "AI 推薦測試正文，用來確認閱讀器打開了這本書。"
@@ -60,7 +59,6 @@ final class AIRecommendationUITests: XCTestCase {
         app.launchArguments = ["-no-official-modules", "-AppleLanguages", "(zh-Hant)", "-AppleLocale", "zh_TW",
                                "-debug-force-pro", "-debug-ai-endpoint", "http://localhost:18767",
                                "-reset-explore-home", "-reset-ai-recommendations",
-                               "-yd_metadata_fill_order", "({ place = openLibrary; enabled = 0; })",
                                "-book-source-store-dir", folder.appendingPathComponent("sources").path,
                                "-auto-import-epub", folder.appendingPathComponent("\(title).txt").path,
                                "-auto-import-title", title, "-yd_page_turn_style", "滑動", "-yd_scroll_mode", "NO",
