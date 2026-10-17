@@ -63,7 +63,7 @@ enum RuleModuleValidator {
         guard !module.modules.isEmpty || module.search != nil || module.lookup != nil else { throw .noEntries }
         guard module.modules.count <= maxEntries else { throw .tooManyEntries(module.modules.count) }
 
-        let hosts = Set(module.hosts.map { $0.lowercased() })
+        let hosts = RuleModuleHosts(module.hosts)
         // The first field a 3.0 app is needed for.
         var format3: String?
         if let attribution = module.attribution {
@@ -85,6 +85,11 @@ enum RuleModuleValidator {
                     throw .unknownValue(field: "localizations.\(language).entries", value: id)
                 }
             }
+        }
+        // A `*.` entry is a domain redirects may follow into: two labels or more, and only as `*.`.
+        for host in module.hosts where RuleModuleHosts.isWildcard(host) {
+            guard RuleModuleHosts.wildcardDomain(host) != nil else { throw .unknownValue(field: "hosts", value: host) }
+            if format3 == nil { format3 = "hosts" }
         }
         var seen: Set<String> = []
         for (index, entry) in module.modules.enumerated() {
@@ -115,7 +120,7 @@ enum RuleModuleValidator {
 
     // MARK: - Entries
 
-    private static func validate(_ entry: RuleModule.Entry, path: String, hosts: Set<String>,
+    private static func validate(_ entry: RuleModule.Entry, path: String, hosts: RuleModuleHosts,
                                  isSearch: Bool, isLookup: Bool = false, format3: inout String?) throws(RuleModuleRejection) {
         func uses3(_ field: String) { if format3 == nil { format3 = field } }
         if let prefixes = entry.isbnPrefixes {
@@ -125,6 +130,11 @@ enum RuleModuleValidator {
             for prefix in prefixes where prefix.isEmpty || prefix.count > 13 || !prefix.allSatisfy({ $0.isASCII && $0.isNumber }) {
                 throw .unknownValue(field: "\(path).isbnPrefixes", value: prefix)
             }
+        }
+        if let length = entry.minKeywordLength {
+            uses3("\(path).minKeywordLength")
+            // Only a search is sent a keyword.
+            guard isSearch, length >= 1 else { throw .unknownValue(field: "\(path).minKeywordLength", value: String(length)) }
         }
         if isLookup {
             // The ISBN is what is asked, and the record's own ISBN is how it is known to be the copy's.
@@ -205,7 +215,7 @@ enum RuleModuleValidator {
 
     /// A record's own page: only a search's or a lookup's records are asked for one (a home
     /// list's rows never are), and it gives a description or tags.
-    private static func validate(_ detail: RuleModule.Detail, of entryPath: String, hosts: Set<String>,
+    private static func validate(_ detail: RuleModule.Detail, of entryPath: String, hosts: RuleModuleHosts,
                                  isRecord: Bool, hasURLRule: Bool) throws(RuleModuleRejection) {
         let path = "\(entryPath).detail"
         guard isRecord else { throw .unknownValue(field: path, value: "detail") }
@@ -276,7 +286,7 @@ enum RuleModuleValidator {
         return filled.range(of: #",\s*\{"#, options: .regularExpression) != nil
     }
 
-    private static func checkHost(_ url: String, field: String, hosts: Set<String>) throws(RuleModuleRejection) {
+    private static func checkHost(_ url: String, field: String, hosts: RuleModuleHosts) throws(RuleModuleRejection) {
         let trimmed = url.trimmingCharacters(in: .whitespaces)
         let lowered = trimmed.lowercased()
         guard lowered.hasPrefix("https://") || lowered.hasPrefix("http://") else { throw .invalidURL(field: field) }
@@ -287,7 +297,7 @@ enum RuleModuleValidator {
         guard let host = URLComponents(string: "http://\(authority)")?.host?.lowercased(), !host.isEmpty else {
             throw .invalidURL(field: field)
         }
-        guard hosts.contains(host) else { throw .hostNotAllowed(field: field, host: host) }
+        guard hosts.allowsRequest(to: host) else { throw .hostNotAllowed(field: field, host: host) }
     }
 
     // MARK: - Helpers

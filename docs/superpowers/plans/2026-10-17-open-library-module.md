@@ -48,12 +48,34 @@ User-Agent; data-only search rows; `hosts` (`openlibrary.org`, `covers.openlibra
 - Search rows no longer carry the `openLibraryWork` identifier (a module item gives only `isbn`). Works still
   merge by ISBN and by title + author, so the loss is a merge with a copy filled by Open Library whose ISBN
   differs from every search row's. Restoring it needs an `identifiers` list rule in the format.
+- The ISBN lookup asks the copy's first ISBN-13 only (the old one asked every ISBN of the copy at once).
 - Subjects with a `:` were dropped; a module drops tags with digits instead. "Fiction: Science fiction" style
   subjects are now kept when they fit 24 characters.
 
+## Found while writing the file (2026-10-17), and decided
+
+Open Library's saved replies showed four more gaps; three were the maintainer's to decide
+(AskUserQuestion, all three recommendations taken):
+
+- **Covers redirect off the hosts.** `covers.openlibrary.org` answers 302 to `archive.org`, which answers
+  302 to a numbered `iaNNNNNN.us.archive.org`. The old provider followed any redirect; a module follows only
+  to its hosts, and a refused cover redirect threw the whole lookup (intro and tags lost, asked again weekly).
+  Decided: **`hosts` may hold `*.example.org`, for redirects only** — a request is still sent only to a host
+  written out. And a cover redirect the hosts refuse is no cover, not a failure of the record.
+- **Title search is new.** With a `search`, the module fills a copy without an ISBN by title and author, as
+  Bangumi and AniList do; the old provider asked by ISBN only. Decided: **as the other modules**.
+- **Short keywords.** Open Library answers 422 to a query under 3 characters (「三体」). Decided: **a search
+  may declare `minKeywordLength`**; a shorter keyword is not sent: no row in 搜索, nothing to fill from.
+- **Several values.** An edition lists its ISBN-10 and -13, a work several authors; the engine joins a
+  list with newlines, which matched nothing. `isbn` and `author` rules may give several values (no decision:
+  it is what the rule reads).
+
 ## Steps (one branch each, tests first, `--no-ff` into main)
 
-- **OL1 `detail`**: validator, `ModuleProvider` (search/lookup items + detail), `ModuleFillProvider`
+- **OL1 `detail`**: merged 556884b6.
+- **OL1b format additions**: `*.` redirect hosts, `minKeywordLength`, several `isbn`/`author` values, a refused
+  cover redirect is no cover; docs + documentation test + `ModuleFormatAdditionsTests`.
+- **OL1 `detail`** (as planned): validator, `ModuleProvider` (search/lookup items + detail), `ModuleFillProvider`
   asks it for a missing field; unit tests with saved replies; docs + documentation test.
 - **OL2 the file**: `Resources/Assets/official-module-openlibrary.json`; `OfficialModuleFilesTests` with
   saved Open Library replies (search, ISBN search, work JSON with both description shapes, cover 404).

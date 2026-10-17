@@ -53,7 +53,7 @@ App 內建的官方模組（`Resources/Assets/official-module-<id>.json`）跟�
 | `site` |  | 網站首頁，顯示在模組頁。 |
 | `version` | ✓ | 數字點分版本（`1.0`、`1.2.10`）。「檢查更新」只接受比已安裝的**更高**的版本。 |
 | `requiredVersion` |  | 能讀這個檔案的最低 App 版本。用到 3.0 欄位（見 §8）時至少要寫 `3.0`。 |
-| `hosts` | ✓ | 模組**唯一**能連線的主機名稱。每個 `request.url` 的主機都必須列在這裡，封面也只從這些主機載入。HTTP 轉址和頁面 `<head>` 裡的 `<meta http-equiv="refresh">`（GET 才跟、只跟一次）也只會跟到這些主機；轉到別的主機時就照原頁讀。 |
+| `hosts` | ✓ | 模組**唯一**能連線的主機名稱。每個 `request.url` 的主機都必須列在這裡，封面也只從這些主機載入。HTTP 轉址和頁面 `<head>` 裡的 `<meta http-equiv="refresh">`（GET 才跟、只跟一次）也只會跟到這些主機；轉到別的主機時就照原頁讀，封面則當作沒有封面。寫成 `*.archive.org` 的項目只放行**轉址**：那個網域本身和它底下所有主機（Open Library 的封面會轉到 `iaNNNNNN.us.archive.org`），`request.url` 不能直接連；至少兩段（`*.org` 會被拒絕）。3.0。 |
 | `rateLimit` |  | 請求頻率，跟來源配置的 `concurrentRate` 同語法：`1/1000` 是每 1000 毫秒 1 次。 |
 | `modules` | ✓ | 清單（§3），可以是空陣列；最多 50 個。 |
 | `search` |  | 搜尋（§3，沒有 `id`），會加進統一搜尋。 |
@@ -82,6 +82,7 @@ App 內建的官方模組（`Resources/Assets/official-module-<id>.json`）跟�
 | `excludeTags` |  | 這個網站的 `tags` 裡不算題材的字（如 `漫画`、`单行本`），使用標籤時排除。3.0。 |
 | `isbnPrefixes` |  | 只用在 `lookup`（§5）。3.0。 |
 | `detail` |  | 只用在 `search` 和 `lookup`：那本書自己的頁面，補清單沒給的簡介或標籤（§5.1）。3.0。 |
+| `minKeywordLength` |  | 只用在 `search`：關鍵字至少幾個字才送出（Open Library 是 `3`）。更短的不送：搜尋時這個模組不出現，補資料時也不用書名查。3.0。 |
 
 ### 3.1 參數 `params[]`
 
@@ -125,7 +126,7 @@ App 內建的官方模組（`Resources/Assets/official-module-<id>.json`）跟�
 |------|------|------|
 | `items` | ✓ | 每一本書。 |
 | `title` | ✓ | 書名。 |
-| `author` |  | 作者。 |
+| `author` |  | 作者。規則讀到好幾個值（例如 JSON 陣列）時是好幾位作者，最多 5 位。 |
 | `cover` |  | 封面網址（只從 `hosts` 載入）。 |
 | `intro` |  | 簡介。 |
 | `url` |  | 書的網址。有 `reading` 時是書的目錄頁。 |
@@ -134,7 +135,7 @@ App 內建的官方模組（`Resources/Assets/official-module-<id>.json`）跟�
 | `aliases` |  | 其他書名（可多個值）。3.0。 |
 | `tags` |  | 題材、標籤（可多個值）。3.0。 |
 | `publisher` |  | 出版社。3.0。 |
-| `isbn` |  | ISBN-10 或 -13；檢查碼不對的會被丟掉。3.0。 |
+| `isbn` |  | ISBN-10 或 -13；檢查碼不對的會被丟掉。可以讀到好幾個值（一個版本的 ISBN-10 和 -13），`lookup` 時任一個跟書架那本相同就算；搜尋結果最多留 5 個。3.0。 |
 | `series` |  | 系列。3.0。 |
 | `contentKind` |  | 讀到 `comic` 時這本是漫畫，其他值照清單的 `contentKind`。3.0。 |
 
@@ -248,7 +249,7 @@ App 內建的官方模組（`Resources/Assets/official-module-<id>.json`）跟�
 否則舊 App 會匯入後讀錯（例如把 JSON 內容百分號編碼送出）：
 
 `attribution`、`localizations`、`lookup`、`reading`、`contentKind`、`excludeTags`、`isbnPrefixes`、`detail`、
-`bodyEncoding`、`page`／`offset` 參數的 `value`，以及 `list` 的 `aliases`、`tags`、`publisher`、`isbn`、`series`、`contentKind`。
+`minKeywordLength`、`hosts` 裡的 `*.` 項目、`bodyEncoding`、`page`／`offset` 參數的 `value`，以及 `list` 的 `aliases`、`tags`、`publisher`、`isbn`、`series`、`contentKind`。
 
 ---
 

@@ -204,15 +204,15 @@ struct ModuleBookTests {
         let item = RuleListItem(name: "無職転生", author: "理不尽な孫の手", bookUrl: Self.bookURL, coverUrl: "", intro: "",
                                 wordCount: "", lastChapter: "", kind: "", isbn: "")
         let instance = ModuleProvider.instanceKey(moduleID: "test.narou")
-        let readable = ModuleProvider.entry(item, of: entry, instance: instance, hasURLRule: true, hosts: [], isReadable: true)
+        let readable = ModuleProvider.entry(item, of: entry, instance: instance, hasURLRule: true, hosts: RuleModuleHosts([]), isReadable: true)
         guard case .item(let record, _, .moduleBook(let book)) = readable else { Issue.record("not a module's book"); return }
         #expect(book == Self.book)
         #expect(record.key == SourceRecord.derived(from: Self.book).key)
         #expect(record.acquisitions == [.readOnline])
 
-        let data = ModuleProvider.entry(item, of: entry, instance: instance, hasURLRule: true, hosts: [])
+        let data = ModuleProvider.entry(item, of: entry, instance: instance, hasURLRule: true, hosts: RuleModuleHosts([]))
         guard case .item(_, _, .bibliographic) = data else { Issue.record("not data"); return }
-        let noURL = ModuleProvider.entry(item, of: entry, instance: instance, hasURLRule: false, hosts: [], isReadable: true)
+        let noURL = ModuleProvider.entry(item, of: entry, instance: instance, hasURLRule: false, hosts: RuleModuleHosts([]), isReadable: true)
         guard case .item(_, _, .bibliographic) = noURL else { Issue.record("an item without a page read as a book"); return }
 
         var withLookup = Self.narou
