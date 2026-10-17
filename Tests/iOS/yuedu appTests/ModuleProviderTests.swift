@@ -328,6 +328,7 @@ final class ModuleStub: URLProtocol {
     enum Reply {
         case html(String)
         case json(String)
+        case image(Data)
         case status(Int)
         case redirect(String)
         /// Never answers: a site that hangs.
@@ -376,6 +377,7 @@ final class ModuleStub: URLProtocol {
         switch reply {
         case .html(let text): finish(200, ["Content-Type": "text/html; charset=utf-8"], Data(text.utf8))
         case .json(let text): finish(200, ["Content-Type": "application/json"], Data(text.utf8))
+        case .image(let data): finish(200, ["Content-Type": "image/png"], data)
         case .status(let code): finish(code, [:], Data())
         case .redirect(let location):
             let response = HTTPURLResponse(url: url, statusCode: 302, httpVersion: "HTTP/1.1", headerFields: ["Location": location])!

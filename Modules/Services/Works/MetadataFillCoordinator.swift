@@ -98,7 +98,7 @@ final class MetadataFillCoordinator {
     private static var livePlacesChanged: AnyPublisher<Void, Never> {
         let order = MetadataFillOrderStore.shared.$stored.dropFirst().map { _ in () }
         let modules = RuleModuleLibrary.shared.$modules
-            .map { $0.map(\.module).filter { $0.search != nil }.map(\.id) }
+            .map { $0.map(\.module).filter(\.canFill).map(\.id) }
             .removeDuplicates()
             .dropFirst()
             .map { _ in () }

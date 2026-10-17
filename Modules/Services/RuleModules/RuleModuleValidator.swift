@@ -60,7 +60,7 @@ enum RuleModuleValidator {
                 throw .requiresNewerApp(required: required, running: appVersion)
             }
         }
-        guard !module.modules.isEmpty || module.search != nil else { throw .noEntries }
+        guard !module.modules.isEmpty || module.search != nil || module.lookup != nil else { throw .noEntries }
         guard module.modules.count <= maxEntries else { throw .tooManyEntries(module.modules.count) }
 
         let hosts = Set(module.hosts.map { $0.lowercased() })
@@ -96,6 +96,10 @@ enum RuleModuleValidator {
             try validate(entry, path: path, hosts: hosts, isSearch: false, format3: &format3)
         }
         if let search = module.search { try validate(search, path: "search", hosts: hosts, isSearch: true, format3: &format3) }
+        if let lookup = module.lookup {
+            if format3 == nil { format3 = "lookup" }
+            try validate(lookup, path: "lookup", hosts: hosts, isSearch: false, isLookup: true, format3: &format3)
+        }
 
         if let field = format3 {
             let declared = module.requiredVersion.flatMap(RuleModuleVersion.init)
@@ -108,8 +112,22 @@ enum RuleModuleValidator {
     // MARK: - Entries
 
     private static func validate(_ entry: RuleModule.Entry, path: String, hosts: Set<String>,
-                                 isSearch: Bool, format3: inout String?) throws(RuleModuleRejection) {
+                                 isSearch: Bool, isLookup: Bool = false, format3: inout String?) throws(RuleModuleRejection) {
         func uses3(_ field: String) { if format3 == nil { format3 = field } }
+        if let prefixes = entry.isbnPrefixes {
+            uses3("\(path).isbnPrefixes")
+            // Only a lookup is asked by ISBN.
+            guard isLookup else { throw .unknownValue(field: "\(path).isbnPrefixes", value: prefixes.joined(separator: ",")) }
+            for prefix in prefixes where prefix.isEmpty || prefix.count > 13 || !prefix.allSatisfy({ $0.isASCII && $0.isNumber }) {
+                throw .unknownValue(field: "\(path).isbnPrefixes", value: prefix)
+            }
+        }
+        if isLookup {
+            // The ISBN is what is asked, and the record's own ISBN is how it is known to be the copy's.
+            let request = entry.request
+            guard (request.url + (request.body ?? "")).contains("{{isbn}}") else { throw .missingField("\(path).request.url {{isbn}}") }
+            try requireText(entry.list.isbn ?? "", "\(path).list.isbn")
+        }
         if let kind = entry.contentKind {
             uses3("\(path).contentKind")
             guard [ContentKind.text, .comic].map(\.rawValue).contains(kind) else {
@@ -120,6 +138,7 @@ enum RuleModuleValidator {
 
         var declared = pagingNames
         if isSearch { declared.insert("keyword") }
+        if isLookup { declared.insert("isbn") }
         for (index, param) in entry.params.enumerated() {
             let field = "\(path).params[\(index)]"
             try requireText(param.name, "\(field).name")
