@@ -589,9 +589,9 @@ struct RSSListView: View {
             isRefreshingAll = false
         }
 
-        await RSSFeedRefreshService.refreshAll(store: store) { completed, total in
+        await RSSFeedRefreshService.refreshAll(store: store, onProgress: { completed, total in
             refreshProgress = RSSRefreshProgress(completed: completed, total: total)
-        }
+        })
     }
 
     private func importLegadoJSON(_ result: Result<[URL], Error>) {
