@@ -1574,6 +1574,30 @@ struct ReaderView: View {
     }
 
     // ── Body ──
+    /// Drops what this reader installed on its own objects once it has left for good (see
+    /// `ReaderTeardownProbe`); until then each callback's capture of the view keeps the whole
+    /// reader alive. Narration still running is handed to `NowPlayingHub`, which keeps it —
+    /// and through its callbacks this reader's state — until it stops.
+    ///
+    /// Captures the objects, never `self`.
+    private var readerTeardownProbe: ReaderTeardownProbe {
+        let tts = ttsCoordinator
+        let autoReader = autoReader
+        let volumeHandler = volumeHandler
+        let pageBars = pageBarsController
+        let renderer = epubRenderer
+        return ReaderTeardownProbe {
+            volumeHandler.onPageTurn = nil
+            autoReader.usesContinuousScroll = { false }
+            autoReader.onAdvancePage = nil
+            autoReader.onScrollByFraction = nil
+            autoReader.onProgressChanged = nil
+            pageBars.releaseContent()
+            renderer.pageBarsProvider = nil
+            NowPlayingHub.shared.holdNarrationPastReader(tts)
+        }
+    }
+
     var body: some View {
         ReaderNavigationContainer {
             buildBody()
@@ -2178,6 +2202,7 @@ struct ReaderView: View {
             backgroundAudioCoordinator.stop()
             setTTSFloatingOverlayVisible(false)
         }
+        .background(readerTeardownProbe)
         .onChanged(of: scenePhase) { phase in
             ttsLog("[TTS][Reader] scenePhase=\(String(describing: phase)) ttsPlaying=\(ttsCoordinator.isPlaying)")
             if phase == .background || phase == .inactive {
@@ -2439,6 +2464,9 @@ struct ReaderView: View {
             followTTSPlaybackHighlight()
         }
         .onReceive(NotificationCenter.default.publisher(for: .ttsFloatingPlayerOpenPanel)) { _ in
+            // The capsule can be showing another book's narration, kept past its reader;
+            // this reader's panel would drive its own idle narrator instead.
+            guard NowPlayingHub.shared.isNarrating(with: ttsCoordinator) else { return }
             showTTSPanel = true
         }
         .onChanged(of: chapterPresentation.visibleChangeRevision) { _ in

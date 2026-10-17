@@ -94,6 +94,13 @@ final class ReaderPageBarsController {
         self.pageContent = pageContent
     }
 
+    /// Drops the closures the reader installed; they capture the reader view, which holds
+    /// this controller. Called when the reader leaves for good (`ReaderTeardownProbe`).
+    func releaseContent() {
+        pageContent = nil
+        onNeedsRedraw = nil
+    }
+
     func bars(forGlobalPage globalPage: Int) -> ReaderPageBars? {
         guard let environment,
               let content = pageContent?(globalPage)

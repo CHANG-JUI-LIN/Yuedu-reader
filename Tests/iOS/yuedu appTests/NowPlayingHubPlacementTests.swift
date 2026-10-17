@@ -41,4 +41,25 @@ struct NowPlayingHubPlacementTests {
         hub.setReaderOverlayVisible(false, owner: second)
         #expect(!hub.readerHostsPlayer)
     }
+
+    /// A closed reader that was not narrating has nothing to keep: its narrator is cut loose
+    /// from the reader so neither keeps the other alive.
+    @Test func closedReaderWithoutNarrationIsNotHeld() {
+        let hub = NowPlayingHub()
+        let coordinator = TTSCoordinator()
+        coordinator.onNextNarrationUnit = { .finished }
+        coordinator.onStop = {}
+        coordinator.onWillResume = {}
+        coordinator.onNextTrackRequested = { true }
+        coordinator.onPreviousTrackRequested = { true }
+
+        hub.holdNarrationPastReader(coordinator)
+
+        #expect(!hub.holdsNarrationPastReader)
+        #expect(coordinator.onNextNarrationUnit == nil)
+        #expect(coordinator.onStop == nil)
+        #expect(coordinator.onWillResume == nil)
+        #expect(coordinator.onNextTrackRequested == nil)
+        #expect(coordinator.onPreviousTrackRequested == nil)
+    }
 }

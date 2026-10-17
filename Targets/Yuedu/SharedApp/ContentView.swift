@@ -637,6 +637,7 @@ struct NowPlayingMiniPlayer: View {
                     .frame(width: trailingButtonWidth, height: 48)
             }
             .accessibilityLabel(localized("停止播放"))
+            .accessibilityIdentifier("now_playing_\(placement.rawValue)_stop")
 
             // Tucks the player into the nearer side; playback keeps going. The arrow points
             // the way it will go, so it flips as the player is dragged across.

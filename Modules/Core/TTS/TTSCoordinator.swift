@@ -130,6 +130,16 @@ final class NowPlayingHub: ObservableObject {
         isPanelPresented = false
     }
 
+    /// Detach a TTS coordinator that stopped and was freed before its detach could run. The
+    /// hub's reference is weak, so it is already nil; a live coordinator is left alone.
+    func detachDeallocatedCoordinator() {
+        guard source == .tts, coordinator == nil else { return }
+        source = .none
+        resetPlaybackFields()
+        isVisible = false
+        isPanelPresented = false
+    }
+
     /// A reader appearing (`true`) or disappearing (`false`); `owner` identifies the reader.
     func setReaderOverlayVisible(_ visible: Bool, owner: UUID) {
         if visible {
@@ -144,6 +154,57 @@ final class NowPlayingHub: ObservableObject {
             isVisible = false
         }
     }
+
+    /// Whether the mini-player's controls drive `coordinator` — so a reader opens its own
+    /// narration panel, not one over another book's narration still playing.
+    func isNarrating(with coordinator: TTSCoordinator) -> Bool {
+        source == .tts && self.coordinator === coordinator
+    }
+
+    // MARK: - Narration that outlives its reader
+
+    /// The narrator of a reader that closed mid-narration, kept so listening goes on while
+    /// the user reads something else.
+    ///
+    /// Narration has no text supply of its own: the next chapter comes from the reader's
+    /// layout engine and chapter fetching, through callbacks that capture the reader. Holding
+    /// the narrator holds that whole reader, deliberately, and for one reader at most — until
+    /// narration stops, ends, or another book starts narrating. Every other closed reader is
+    /// freed. This can go once narration supplies its own chapter text.
+    private var heldNarration: TTSCoordinator?
+    private var heldNarrationCancellable: AnyCancellable?
+
+    /// A reader leaving the view hierarchy for good hands over its narrator: kept while it is
+    /// narrating (playing or paused), cut loose from the reader otherwise.
+    func holdNarrationPastReader(_ coordinator: TTSCoordinator) {
+        guard coordinator.playbackState != .stopped else {
+            coordinator.clearReaderCallbacks()
+            return
+        }
+        if let held = heldNarration, held !== coordinator {
+            // Starting narration stops the narrator it replaces, so this one is already
+            // stopped; stopping it again is a no-op.
+            held.stop(reason: "replaced by another held narration")
+            releaseHeldNarration()
+        }
+        heldNarration = coordinator
+        heldNarrationCancellable = coordinator.$playbackState.sink { [weak self, weak coordinator] state in
+            guard state == .stopped else { return }
+            // `@Published` emits before the value is stored; release once it has settled.
+            Task { @MainActor in
+                guard let self, let coordinator, self.heldNarration === coordinator else { return }
+                self.releaseHeldNarration()
+            }
+        }
+    }
+
+    private func releaseHeldNarration() {
+        heldNarrationCancellable = nil
+        heldNarration?.clearReaderCallbacks()
+        heldNarration = nil
+    }
+
+    var holdsNarrationPastReader: Bool { heldNarration != nil }
 
     /// Stop TTS narration only (used when an audiobook takes over the audio session).
     func stopTTSIfActive() {
@@ -306,6 +367,16 @@ final class TTSCoordinator: ObservableObject {
     var onWillResume: (() -> Void)?
     var onNextTrackRequested: (() -> Bool)?
     var onPreviousTrackRequested: (() -> Bool)?
+
+    /// Drops every callback the reader installed. Each captures the reader view, which holds
+    /// this coordinator: left in place they keep both alive after the reader is gone.
+    func clearReaderCallbacks() {
+        onNextNarrationUnit = nil
+        onStop = nil
+        onWillResume = nil
+        onNextTrackRequested = nil
+        onPreviousTrackRequested = nil
+    }
     // MARK: - Engine
     private let httpEngine = HTTPTTSEngine()
     private let systemEngine = SystemTTSEngine()
@@ -680,9 +751,15 @@ final class TTSCoordinator: ObservableObject {
         totalSegments = 0
         currentSegmentText = ""
         currentSegmentNarrationRange = nil
+        // Weak, because `deinit` stops too and must not hand `self` to a task. By the time the
+        // task runs this coordinator may be gone — a narration held past its reader is let go
+        // on `.stopped`, or this was `deinit` — and the hub still has to drop it.
         Task { @MainActor [weak self] in
-            guard let self else { return }
-            NowPlayingHub.shared.detach(self)
+            if let self {
+                NowPlayingHub.shared.detach(self)
+            } else {
+                NowPlayingHub.shared.detachDeallocatedCoordinator()
+            }
         }
         if ownsSystemMedia {
             setRemoteCommandsEnabled(false)
