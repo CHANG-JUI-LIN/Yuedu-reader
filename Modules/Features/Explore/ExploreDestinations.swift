@@ -73,6 +73,14 @@ private struct ExploreRouteDestinations: ViewModifier {
             ModuleListPage(route: route)
         case .aiRecommendations:
             AIRecommendationModuleView()
+        case .moduleManager:
+            RuleModuleManagerView()
+        case .moduleGroup(let group):
+            RuleModuleGroupView(group: group)
+        case .moduleRepository(let url):
+            RuleModuleRepositoryView(url: url)
+        case .homeModuleReferences:
+            HomeModuleReferencesView()
         }
     }
 

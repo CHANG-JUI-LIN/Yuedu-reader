@@ -110,3 +110,35 @@ M2 is split: LibraryTabRoot, HomeContentSourcePicker, ExploreHome and BookSearch
 - 匯入/模組頁 lists 以 ISBN 查詢; the hosts footer says ISBNs are sent when a module has a lookup.
 - Risk to watch: openBD announced v1's end in 2023 (successor promised) and still answers.
 - Tests: `OfficialModuleFilesTests/openBDLookup`, `openBDBounds`, `lookupRules`, `lookupFills`; module and fill suites 74/74 + format 2/2.
+
+### M5a reading rules (2026-10-17)
+
+- Format 3.0 `reading`: `toc` (items, title, url, `nextPage`, `singleChapter`) and `content` (text, `nextPage`), read by `RuleModuleClient.tableOfContents` / `chapterPackage`; bounds on pages and hosts. A page with no chapter list is one chapter only when `toc.singleChapter` matches.
+- Tests: `ModuleReadingTests` on the なろう fixtures (paging, single chapter, bounds, hosts, ruby kept).
+
+### M5b module books on the shelf (2026-10-17)
+
+- `ReadingBook.module: ModuleBookReference?` (optional, so the sync hash of every other book is unchanged); `chaptersBuiltByRules` replaces `bookSourceId != nil` checks.
+- `ModuleBookReader` (chapters, chapter package) and `ModuleBookShelf` (reading copy off the shelf, 加入書架, one operation per book). Chapter fetch and the update check branch on `module` before the book-source paths. `CopyLookup` indexes module copies; `SourceRecord.derived` keys them `(.module, id)`.
+- **Disclosed:** a sync guard keeps a local `module` when a pre-M5b device syncs the record without it (delete once no pre-M5b build syncs). A module book synced to a device without that module says 找不到這本書的模組 (なろう in CHN). Opening 作品詳情 of a module book makes an off-shelf copy and reads its table of contents, as 青空 does. Launch refresh now asks module sites (rate-limited, cost not measured).
+
+### M5c なろう (2026-10-17)
+
+- `official-module-narou.json`: novel API search (`order=hyoka`) and rows 週間 / 完結済み (`st` offset paging; a paging param's integer `value` is its first position, format 3.0), reading through ncode pages. Hidden in CHN, no R18.
+- Fixed on the way: `RuleEngine.resolveURL` dropped the port of a root-relative link (affects every source on a non-default port); 作品詳情 lists a module book's 目錄.
+- `scripts/narou_reading_fixture.py` (18770) + `NarouReadingUITests`: search → detail → read → shelf.
+
+### Beside the plan: 作品詳情 finds sources on open, no-author TXT fill (2026-10-17)
+
+- Maintainer: 「點進去自動尋找並列出可用來源」. 作品詳情 runs 尋找可用來源 once its versions are read (not with no enabled source, not on a reader's or a book source's page).
+- Maintainer: 「導入斗羅大陸 txt…會自動出現簡介和封面嗎」. 「未知作者」 is no author: title-only matches are taken when they all name one author (filler and versions); the book sources give a missing cover; importing sources starts a fill pass; an open 作品詳情 shows a fill as it lands; `WorkIndex` author keys drop the placeholder (schema 5). `scripts/work_fill_fixture.py` (18771) + `WorkFillUITests`.
+
+### M6 repository and 模組 page (2026-10-17)
+
+- Maintainer: 「模組要做到截圖這樣」 (Rex's module management), update checks 「打開倉庫頁時檢查，點「更新」才換」, 停用 「一鍵全關」 (reverses M2a's no-master-switch), 選擇 「多選後一次安裝／更新」.
+- `RuleModuleRepositoryIndex` (`name`, `modules[{id, title, description, author, version, url}]`, url relative to the index), `RuleModuleRepositoryStore` (`.repositories.json` in the modules folder), shared `RuleModuleRepositoryModel` (load, reload one, keep, unsubscribe, batch install). One subscribe path: 從網址 (or a clipboard URL) holding an index is previewed in the import sheet and kept on ✓; an index from a file or pasted text is refused (no address).
+- An update from a repository records the repository's address for the module as its subscription (`RuleModuleStore.update(from:)`).
+- 停用: `RuleModuleLibrary.modules` leaves out disabled ids, so search, fill, home rows and module reading follow; `installed(id:)` keeps the page and titles. 在資源庫中展示 hides only the 資源庫 card. Both in UserDefaults, cleared when the module is removed.
+- 資源庫 ••• → 管理模組 → 模組 (官方模組 ✓, each repository, 匯入的模組, 首頁欄目引用 with removal across every 首頁配置); 新增模組 on its toolbar goes through 資源庫's one add flow (environment). Module page: 匯出 (ShareLink, `<id>.json`), 停用/啟用, 最低格式版本.
+- Not done from the screenshots: 詳情快取時長 (the format has only per-list `cacheDuration`).
+- `scripts/module_repository_fixture.py` (18772) + `ModuleRepositoryUITests`.

@@ -22,6 +22,8 @@ struct ModuleBook: Hashable, Sendable {
 enum ModuleBookError: LocalizedError, Equatable {
     /// The module was removed, or this storefront does not have it.
     case moduleMissing(String)
+    /// The module is installed but turned off (停用) on the 模組 page.
+    case moduleDisabled(String)
     /// The module has no `reading` rules: its books are data only.
     case notReadable(String)
     /// Its table of contents read no chapter.
@@ -30,6 +32,7 @@ enum ModuleBookError: LocalizedError, Equatable {
     var errorDescription: String? {
         switch self {
         case .moduleMissing: localized("找不到這本書的模組")
+        case .moduleDisabled: localized("這本書的模組已停用，在「模組」頁啟用後才能閱讀")
         case .notReadable: localized("這個模組的書無法閱讀")
         case .noChapters: localized("目錄是空的")
         }
@@ -41,15 +44,19 @@ enum ModuleBookError: LocalizedError, Equatable {
 /// one says so.
 struct ModuleBookReader: Sendable {
     let client: RuleModuleClient
-    let module: @Sendable (String) async -> RuleModule?
+    /// The module in use by id; throws `moduleDisabled` for one turned off.
+    let module: @Sendable (String) async throws -> RuleModule?
 
     static let live = ModuleBookReader(client: RuleModuleClient(), module: { @MainActor id in
-        await RuleModuleLibrary.shared.loadIfNeeded()
-        return RuleModuleLibrary.shared.module(id: id)?.module
+        let library = RuleModuleLibrary.shared
+        await library.loadIfNeeded()
+        if let installed = library.module(id: id) { return installed.module }
+        if library.installed(id: id) != nil { throw ModuleBookError.moduleDisabled(id) }
+        return nil
     })
 
     private func readable(_ reference: ModuleBookReference) async throws -> RuleModule {
-        guard let module = await module(reference.moduleID) else { throw ModuleBookError.moduleMissing(reference.moduleID) }
+        guard let module = try await module(reference.moduleID) else { throw ModuleBookError.moduleMissing(reference.moduleID) }
         guard module.reading != nil else { throw ModuleBookError.notReadable(reference.moduleID) }
         return module
     }

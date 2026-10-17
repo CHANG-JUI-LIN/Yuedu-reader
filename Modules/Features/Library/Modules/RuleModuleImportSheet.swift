@@ -26,18 +26,30 @@ struct RuleModuleImportSheet: View {
                         .accessibilityLabel(localized("關閉"))
                         .accessibilityIdentifier("module.import.close")
                 }
-                if case .preview(let preview) = model.phase {
+                if let commitTitle {
                     ToolbarItem(placement: .confirmationAction) {
                         Button { Task { await model.commit() } } label: { Image(systemName: "checkmark").accessibilityHidden(true) }
-                            .accessibilityLabel(localized(preview.replacing == nil ? "新增模組" : "更新模組"))
+                            .accessibilityLabel(commitTitle)
                             .accessibilityIdentifier("module.import.commit")
                     }
                 }
             }
             .onChange(of: model.phase) { _, phase in
-                if case .done = phase { dismiss() }
+                switch phase {
+                case .done, .subscribed: dismiss()
+                default: break
+                }
             }
             .onAppear { if asksForAddress && model.address.isEmpty { addressFocused = true } }
+        }
+    }
+
+    /// The checkmark's name: what confirming writes.
+    private var commitTitle: String? {
+        switch model.phase {
+        case .preview(let preview): localized(preview.replacing == nil ? "新增模組" : "更新模組")
+        case .repository: localized("訂閱模組倉庫")
+        default: nil
         }
     }
 
@@ -70,7 +82,7 @@ struct RuleModuleImportSheet: View {
     @ViewBuilder
     private var content: some View {
         switch model.phase {
-        case .idle, .done:
+        case .idle, .done, .subscribed:
             EmptyView()
         case .loading:
             Section {
@@ -101,6 +113,26 @@ struct RuleModuleImportSheet: View {
         case .preview(let preview):
             RuleModuleManifestSections(module: preview.module, addedHosts: preview.addedHosts,
                                        newVersion: preview.replacing == nil ? nil : preview.module.version)
+        case .repository(let repository):
+            Section {
+                ForEach(repository.index.modules) { entry in
+                    VStack(alignment: .leading, spacing: DSSpacing.xxs) {
+                        Text(entry.title).foregroundStyle(DSColor.textPrimary)
+                        if let description = entry.description {
+                            Text(description)
+                                .font(DSFont.footnote)
+                                .foregroundStyle(DSColor.textSecondary)
+                        }
+                    }
+                    .accessibilityElement(children: .combine)
+                }
+            } header: {
+                Text(repository.index.name).foregroundStyle(DSColor.textSecondary)
+            } footer: {
+                Text(localized("訂閱後在「模組」頁挑選要安裝的模組；倉庫裡的模組不會自動安裝。")).dsSectionFooter()
+            }
+            .interfaceSectionSurface()
+            .accessibilityIdentifier("module.import.repository")
         }
     }
 }
@@ -119,6 +151,9 @@ struct RuleModuleManifestSections: View {
                 LabeledContent(localized("作者"), value: author)
             }
             LabeledContent(localized("版本"), value: module.version)
+            if let required = nonEmpty(module.requiredVersion) {
+                LabeledContent(localized("最低格式版本"), value: required)
+            }
             if let site = nonEmpty(module.site) {
                 LabeledContent(localized("網站"), value: site)
             }

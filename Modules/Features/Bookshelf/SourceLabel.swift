@@ -4,7 +4,7 @@ import Foundation
 /// (unified library 1a). The mapping is in the Phase 1 plan; 遠端書庫 is the one string it
 /// added (maintainer, 2026-10-10).
 enum SourceLabel {
-    /// `moduleTitle`: an installed module's title by id (`RuleModuleLibrary.module(id:)`).
+    /// `moduleTitle`: an installed module's title by id (`RuleModuleLibrary.installed(id:)`).
     static func text(for book: ReadingBook, record: SourceRecord, moduleTitle: (String) -> String? = { _ in nil }) -> String {
         switch record.key.instance.type {
         case .bookSource:
