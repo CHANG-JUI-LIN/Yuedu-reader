@@ -17,15 +17,21 @@ import Testing
 struct QiThemeRealPackTests {
     /// Simulator tests run with the host filesystem visible, so the packs are read from
     /// where they were downloaded rather than copied into the test bundle.
-    private static func packData(_ name: String) -> Data? {
-        let url = URL(fileURLWithPath: "/Users/zhangruilin/Downloads/\(name).qitheme")
-        guard FileManager.default.fileExists(atPath: url.path) else { return nil }
-        return try? Data(contentsOf: url)
+    private static func packURL(_ name: String) -> URL {
+        URL(fileURLWithPath: "/Users/zhangruilin/Downloads/\(name).qitheme")
     }
 
-    @Test("parses 古风 — icons, backgrounds, covers and a bundled font")
+    private static func hasPack(_ name: String) -> Bool {
+        FileManager.default.fileExists(atPath: packURL(name).path)
+    }
+
+    private static func packData(_ name: String) throws -> Data {
+        try Data(contentsOf: packURL(name))
+    }
+
+    @Test("parses 古风 — icons, backgrounds, covers and a bundled font", .enabled(if: hasPack("古风"), "Needs ~/Downloads/古风.qitheme"))
     func parsesGufeng() async throws {
-        guard let data = Self.packData("古风") else { return }
+        let data = try Self.packData("古风")
         let result = try await QiThemeImporter.parse(data)
 
         #expect(result.name == "古风")
@@ -56,9 +62,9 @@ struct QiThemeRealPackTests {
         #expect(result.layoutConfig == nil)
     }
 
-    @Test("parses 山风-与花同月 — frosted glass and a single cover")
+    @Test("parses 山风-与花同月 — frosted glass and a single cover", .enabled(if: hasPack("山风-与花同月"), "Needs ~/Downloads/山风-与花同月.qitheme"))
     func parsesShanfeng() async throws {
-        guard let data = Self.packData("山风-与花同月") else { return }
+        let data = try Self.packData("山风-与花同月")
         let result = try await QiThemeImporter.parse(data)
 
         #expect(result.name == "山风-与花同月")
@@ -76,9 +82,9 @@ struct QiThemeRealPackTests {
         #expect(global.darkPrimaryHex == 0x231942)
     }
 
-    @Test("parses 自制- 江湖侠客 — the reader preset, chapter title and raster bubble")
+    @Test("parses 自制- 江湖侠客 — the reader preset, chapter title and raster bubble", .enabled(if: hasPack("自制- 江湖侠客"), "Needs ~/Downloads/自制- 江湖侠客.qitheme"))
     func parsesJianghu() async throws {
-        guard let data = Self.packData("自制- 江湖侠客") else { return }
+        let data = try Self.packData("自制- 江湖侠客")
         let result = try await QiThemeImporter.parse(data)
 
         #expect(result.name == "自制- 江湖侠客")
@@ -131,10 +137,10 @@ struct QiThemeRealPackTests {
         #expect(overlay.components.count == 2)
     }
 
-    @Test("parses 山风 - 春水漾 — the whole reading setup, the card colour and the toolbar icons")
+    @Test("parses 山风 - 春水漾 — the whole reading setup, the card colour and the toolbar icons", .enabled(if: hasPack("山风 - 春水漾"), "Needs ~/Downloads/山风 - 春水漾.qitheme"))
     @MainActor
     func parsesChunshuiyang() async throws {
-        guard let data = Self.packData("山风 - 春水漾") else { return }
+        let data = try Self.packData("山风 - 春水漾")
         let result = try await QiThemeImporter.parse(data)
 
         #expect(result.name == "山风 - 春水漾")

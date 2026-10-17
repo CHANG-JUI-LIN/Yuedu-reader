@@ -13,10 +13,12 @@ struct LocalReaderScenarioTests {
         var themePath: String?
     }
 
-    @Test func applyLocalScenario() async throws {
-        let directory = URL(fileURLWithPath: "/tmp/yuedu-reader-profiling", isDirectory: true)
+    nonisolated private static let directoryPath = "/tmp/yuedu-reader-profiling"
+
+    @Test(.enabled(if: FileManager.default.fileExists(atPath: directoryPath + "/scenario.json"), "Write a scenario to /tmp/yuedu-reader-profiling/scenario.json"))
+    func applyLocalScenario() async throws {
+        let directory = URL(fileURLWithPath: Self.directoryPath, isDirectory: true)
         let file = directory.appendingPathComponent("scenario.json")
-        guard FileManager.default.fileExists(atPath: file.path) else { return }
         let scenario = try JSONDecoder().decode(Scenario.self, from: Data(contentsOf: file))
         switch scenario.action {
         case "source":

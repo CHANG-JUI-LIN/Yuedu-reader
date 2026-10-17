@@ -18,13 +18,14 @@ struct CommentBubblePerformanceTests {
         try await runMatrix(customSVG: Self.rasterSVG(), label: "synthetic")
     }
 
-    @Test("real Jianghu artwork supplements the self-contained OFF/ON comparison")
+    nonisolated private static let jianghuPackPath = "/Users/zhangruilin/Downloads/自制- 江湖侠客.qitheme"
+
+    @Test(
+        "real Jianghu artwork supplements the self-contained OFF/ON comparison",
+        .enabled(if: FileManager.default.fileExists(atPath: jianghuPackPath), "Needs ~/Downloads/自制- 江湖侠客.qitheme; the synthetic matrix remains authoritative")
+    )
     func realJianghuMatrix() async throws {
-        let url = URL(fileURLWithPath: "/Users/zhangruilin/Downloads/自制- 江湖侠客.qitheme")
-        guard FileManager.default.fileExists(atPath: url.path) else {
-            print("BUBBLE_PERF realJianghu unavailable; synthetic matrix remains authoritative")
-            return
-        }
+        let url = URL(fileURLWithPath: Self.jianghuPackPath)
         let result = try await QiThemeImporter.parse(Data(contentsOf: url))
         let bubble = try #require(result.bubble)
         try await runMatrix(customSVG: bubble.style.svg, label: "realJianghu")

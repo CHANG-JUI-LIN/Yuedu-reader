@@ -34,7 +34,7 @@ struct CommonSourcesSmokeTests {
     /// Inspect what the obfuscated `buildRequest(...)` returns for sources that use it
     /// in their searchUrl (番茄-明月 / 69-明月) — so we can teach AnalyzeUrl to consume it.
     @Test("inspect buildRequest return shape")
-    func inspectBuildRequest() {
+    func inspectBuildRequest() throws {
         var out = ""
         func log(_ s: String) {
             out += s + "\n"
@@ -45,8 +45,7 @@ struct CommonSourcesSmokeTests {
         let sources = loadSources()
         log("START sources.count=\(sources.count) path=\(Self.jsonPath)")
         guard !sources.isEmpty else {
-            log("⏭️  Skipping inspectBuildRequest: file not found / decode failed")
-            return
+            try Test.cancel("Needs a decodable source list at \(Self.jsonPath) (COMMON_SOURCES_JSON)")
         }
 
         for source in sources where source.searchUrl.contains("buildRequest") {
@@ -102,16 +101,14 @@ struct CommonSourcesSmokeTests {
     }
 
     @Test("live search + discover for every source")
-    func smokeAllSources() async {
+    func smokeAllSources() async throws {
         var out = ""
         func log(_ s: String) { out += s + "\n"; print(s) }
 
         let sources = loadSources()
-        // Manual diagnostic: silently skip when the local JSON isn't present
-        // (e.g. CI / other machines) so the regular test run stays green.
+        // Manual diagnostic: skipped when the local JSON isn't present (e.g. CI / other machines).
         guard !sources.isEmpty else {
-            print("⏭️  Skipping CommonSourcesSmoke: \(Self.jsonPath) not found")
-            return
+            try Test.cancel("Needs a decodable source list at \(Self.jsonPath) (COMMON_SOURCES_JSON)")
         }
         log("========== 常用书源 SMOKE TEST (\(sources.count) sources) ==========")
 
@@ -150,7 +147,7 @@ struct CommonSourcesSmokeTests {
     /// fetch book detail → fetch TOC, logging exactly which step goes empty / throws.
     /// Answers "search works but detail/TOC don't" by isolating the failing stage per source.
     @Test("live search → detail → toc for every source")
-    func smokeDetailAndToc() async {
+    func smokeDetailAndToc() async throws {
         var out = ""
         func log(_ s: String) {
             out += s + "\n"
@@ -165,8 +162,7 @@ struct CommonSourcesSmokeTests {
 
         let sources = loadSources()
         guard !sources.isEmpty else {
-            print("⏭️  Skipping detail smoke: \(Self.jsonPath) not found")
-            return
+            try Test.cancel("Needs a decodable source list at \(Self.jsonPath) (COMMON_SOURCES_JSON)")
         }
         log("========== 常用书源 DETAIL+TOC SMOKE (\(sources.count) sources, query=\(Self.searchKeyword)) ==========")
 

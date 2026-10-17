@@ -1084,10 +1084,13 @@ struct CoreTextScrollTests {
         window.isHidden = true
     }
 
-    @Test("actual Project Hail Mary EPUB builds IR scroll chunks")
+    @Test(
+        "actual Project Hail Mary EPUB builds IR scroll chunks",
+        .enabled(if: fixtureURL(projectHailMaryPath) != nil, "Needs the Project Hail Mary EPUB in Test document/EPUB Format")
+    )
     @MainActor
     func actualProjectHailMaryBuildsIRScrollChunks() async throws {
-        guard let sourceURL = Self.fixtureURL(Self.projectHailMaryPath) else { return }
+        let sourceURL = try #require(Self.fixtureURL(Self.projectHailMaryPath))
         let session = try await PublicationSession.open(sourceURL: sourceURL)
         let chapterIndex = try #require(session.chapterIndex(for: "text/part0005.html"))
         let builder = EPUBAttributedStringBuilder(
@@ -1115,10 +1118,13 @@ struct CoreTextScrollTests {
         Self.expectContinuousChunks(output.chunks, totalLength: result.attributedString.length)
     }
 
-    @Test("actual Hated Courage EPUB keeps title in vertical IR scroll chunks")
+    @Test(
+        "actual Hated Courage EPUB keeps title in vertical IR scroll chunks",
+        .enabled(if: fixtureURL(hatedCouragePath) != nil, "Needs the 被讨厌的勇气 EPUB in Test document/EPUB Format")
+    )
     @MainActor
     func actualHatedCourageKeepsTitleInVerticalIRScrollChunks() async throws {
-        guard let sourceURL = Self.fixtureURL(Self.hatedCouragePath) else { return }
+        let sourceURL = try #require(Self.fixtureURL(Self.hatedCouragePath))
         let session = try await PublicationSession.open(sourceURL: sourceURL)
         let chapterIndex = try #require(session.chapterIndex(for: "text/part0009.html"))
         let settings = Self.makeRenderSettings(writingMode: .verticalRTL)

@@ -111,9 +111,9 @@ struct FanqieSauceSourceTests {
         }
     }
 
-    @Test("provided source buildRequest emits authorization")
+    @Test("provided source buildRequest emits authorization", .enabled(if: FileManager.default.fileExists(atPath: jsonPath), "Needs the 🌙 番茄酱 source JSON (FANQIE_SAUCE_SOURCE_JSON or Test document/RULE)"))
     func buildRequestEmitsAuthorization() throws {
-        guard let source = try loadSource() else { return }
+        let source = try #require(try loadSource())
         let engine = JSCoreEngine()
         engine.bookSource = source
         _ = engine.evaluate(source.jsLib, bindings: ["baseUrl": source.bookSourceUrl])
@@ -136,9 +136,9 @@ struct FanqieSauceSourceTests {
         #expect(engine.lastError == nil)
     }
 
-    @Test("live source completes the basic reading flow")
+    @Test("live source completes the basic reading flow", .enabled(if: runLiveTests, "Set RUN_LIVE_FANQIE_SAUCE_TESTS=1"), .enabled(if: FileManager.default.fileExists(atPath: jsonPath), "Needs the 🌙 番茄酱 source JSON (FANQIE_SAUCE_SOURCE_JSON or Test document/RULE)"))
     func liveBasicReadingFlow() async throws {
-        guard Self.runLiveTests, var source = try loadSource() else { return }
+        var source = try #require(try loadSource())
         let fetcher = BookSourceFetcher.shared
         let searchQuery = "重生医妃一睁眼，全京城排队抢亲"
 
@@ -196,9 +196,9 @@ struct FanqieSauceSourceTests {
         #expect(!package.content.contains("undefined is not an object"))
     }
 
-    @Test("live source loads the first chapter of the reported bookshelf title")
+    @Test("live source loads the first chapter of the reported bookshelf title", .enabled(if: runLiveTests, "Set RUN_LIVE_FANQIE_SAUCE_TESTS=1"), .enabled(if: FileManager.default.fileExists(atPath: jsonPath), "Needs the 🌙 番茄酱 source JSON (FANQIE_SAUCE_SOURCE_JSON or Test document/RULE)"))
     func liveReportedBookshelfChapter() async throws {
-        guard Self.runLiveTests, var source = try loadSource() else { return }
+        var source = try #require(try loadSource())
         let fetcher = BookSourceFetcher.shared
         let searchQuery = "我在修仙界搞内卷"
 

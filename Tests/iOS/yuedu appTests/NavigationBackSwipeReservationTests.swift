@@ -72,8 +72,8 @@ struct NavigationBackSwipeReservationTests {
     }
 
     @Test("refresh reapplies edge-only arbitration and restores an originally disabled alternate pop")
+    @available(iOS 26.0, *)
     func preservesDisabledAlternatePop() throws {
-        guard #available(iOS 26.0, *) else { return }
         let reader = UIViewController()
         let nav = UINavigationController(rootViewController: UIViewController())
         nav.setViewControllers([nav.viewControllers[0], reader], animated: false)

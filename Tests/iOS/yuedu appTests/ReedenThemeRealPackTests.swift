@@ -9,15 +9,21 @@ import Testing
 /// is why `ReedenThemeImporterTests` carries the rules that must never regress.
 @Suite("Reeden real packs", .serialized)
 struct ReedenThemeRealPackTests {
-    private static func packData(_ name: String) -> Data? {
-        let url = URL(fileURLWithPath: "/Users/zhangruilin/Desktop/Test document/主题/\(name).red")
-        guard FileManager.default.fileExists(atPath: url.path) else { return nil }
-        return try? Data(contentsOf: url)
+    private static func packURL(_ name: String) -> URL {
+        URL(fileURLWithPath: "/Users/zhangruilin/Desktop/Test document/主题/\(name).red")
     }
 
-    @Test("薄绿 - 维尼 — reader page, nine covers, dark disabled")
+    private static func hasPack(_ name: String) -> Bool {
+        FileManager.default.fileExists(atPath: packURL(name).path)
+    }
+
+    private static func packData(_ name: String) throws -> Data {
+        try Data(contentsOf: packURL(name))
+    }
+
+    @Test("薄绿 - 维尼 — reader page, nine covers, dark disabled", .enabled(if: hasPack("应用主题 - 薄绿 - 维尼 未加密"), "Needs Test document/主题/应用主题 - 薄绿 - 维尼 未加密.red"))
     func parsesWeini() async throws {
-        guard let data = Self.packData("应用主题 - 薄绿 - 维尼 未加密") else { return }
+        let data = try Self.packData("应用主题 - 薄绿 - 维尼 未加密")
         let result = try await ReedenThemeImporter.parse(data)
 
         #expect(result.name == "薄绿 - 维尼 未加密")
@@ -33,9 +39,9 @@ struct ReedenThemeRealPackTests {
         #expect(result.chapterTitleStyle?.advancedCSSEnabled == true)
     }
 
-    @Test("铭 - 粉色小窝 — SVG tab icons, translucent cards, authored dark palette")
+    @Test("铭 - 粉色小窝 — SVG tab icons, translucent cards, authored dark palette", .enabled(if: hasPack("应用主题 - 铭 - 粉色小窝-未加密"), "Needs Test document/主题/应用主题 - 铭 - 粉色小窝-未加密.red"))
     func parsesPinkNest() async throws {
-        guard let data = Self.packData("应用主题 - 铭 - 粉色小窝-未加密") else { return }
+        let data = try Self.packData("应用主题 - 铭 - 粉色小窝-未加密")
         let result = try await ReedenThemeImporter.parse(data)
 
         // home / bookshelf / feature / settings; notes and statistics have no tab here.
@@ -53,9 +59,9 @@ struct ReedenThemeRealPackTests {
         #expect(result.defaultCovers.count == 1)
     }
 
-    @Test("周一 - 米蓝 — separate dark icons, splash, covers and reading page")
+    @Test("周一 - 米蓝 — separate dark icons, splash, covers and reading page", .enabled(if: hasPack("应用主题 - 周一 - 米蓝（未加密）"), "Needs Test document/主题/应用主题 - 周一 - 米蓝（未加密）.red"))
     func parsesMilan() async throws {
-        guard let data = Self.packData("应用主题 - 周一 - 米蓝（未加密）") else { return }
+        let data = try Self.packData("应用主题 - 周一 - 米蓝（未加密）")
         let result = try await ReedenThemeImporter.parse(data)
 
         #expect(!result.tabIcons.isEmpty)
@@ -67,9 +73,9 @@ struct ReedenThemeRealPackTests {
         #expect(global.darkImage != nil)
     }
 
-    @Test("甜菜小月 - 汀花雨细 — nine-slice card artwork")
+    @Test("甜菜小月 - 汀花雨细 — nine-slice card artwork", .enabled(if: hasPack("应用主题 - 甜菜小月 - 汀花雨细未加密"), "Needs Test document/主题/应用主题 - 甜菜小月 - 汀花雨细未加密.red"))
     func parsesTinghua() async throws {
-        guard let data = Self.packData("应用主题 - 甜菜小月 - 汀花雨细未加密") else { return }
+        let data = try Self.packData("应用主题 - 甜菜小月 - 汀花雨细未加密")
         let result = try await ReedenThemeImporter.parse(data)
 
         let card = try #require(result.cardBackground)
@@ -77,9 +83,9 @@ struct ReedenThemeRealPackTests {
         #expect(result.cardBackgroundImage != nil)
     }
 
-    @Test("山风 - 春水漾 — right-aligned title, uneven margins, no-animation reported")
+    @Test("山风 - 春水漾 — right-aligned title, uneven margins, no-animation reported", .enabled(if: hasPack("应用主题 - 山风 - 春水漾"), "Needs Test document/主题/应用主题 - 山风 - 春水漾.red"))
     func parsesChunshuiyang() async throws {
-        guard let data = Self.packData("应用主题 - 山风 - 春水漾") else { return }
+        let data = try Self.packData("应用主题 - 山风 - 春水漾")
         let result = try await ReedenThemeImporter.parse(data)
 
         #expect(result.chapterTitleStyle?.alignment == .right)
@@ -91,9 +97,9 @@ struct ReedenThemeRealPackTests {
         #expect(result.notes.contains(localized("左右頁邊距不同，本 App 只有單一邊距，已取兩者平均。")))
     }
 
-    @Test("仿b站 is encrypted and says so")
+    @Test("仿b站 is encrypted and says so", .enabled(if: hasPack("应用主题 - aslan&✩jiushidu✩ - 仿b站 (1)"), "Needs Test document/主题/应用主题 - aslan&✩jiushidu✩ - 仿b站 (1).red"))
     func refusesEncrypted() async throws {
-        guard let data = Self.packData("应用主题 - aslan&✩jiushidu✩ - 仿b站 (1)") else { return }
+        let data = try Self.packData("应用主题 - aslan&✩jiushidu✩ - 仿b站 (1)")
         await #expect(throws: QiThemeImportError.encryptedReedenTheme) {
             try await ReedenThemeImporter.parse(data)
         }

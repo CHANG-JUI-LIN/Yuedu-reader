@@ -467,9 +467,11 @@ struct EPUBRenderingTests {
         #expect(page.linkRegions.contains { $0.href == "#d1" && !$0.rect.isEmpty })
     }
 
-    @Test @MainActor func actualHongwuEPUBKeepsBackdropLongTOCLinksAndTableFootnotes() async throws {
-        let sourceURL = URL(fileURLWithPath: "/Users/zhangruilin/Desktop/Test document/EPUB Format/壹▪洪武大帝.epub")
-        guard FileManager.default.fileExists(atPath: sourceURL.path) else { return }
+    private static let hongwuPath = "/Users/zhangruilin/Desktop/Test document/EPUB Format/壹▪洪武大帝.epub"
+
+    @Test(.enabled(if: FileManager.default.fileExists(atPath: hongwuPath), "Needs Test document/EPUB Format/壹▪洪武大帝.epub"))
+    @MainActor func actualHongwuEPUBKeepsBackdropLongTOCLinksAndTableFootnotes() async throws {
+        let sourceURL = URL(fileURLWithPath: Self.hongwuPath)
 
         let session = try await PublicationSession.open(sourceURL: sourceURL)
         let builder = EPUBAttributedStringBuilder(

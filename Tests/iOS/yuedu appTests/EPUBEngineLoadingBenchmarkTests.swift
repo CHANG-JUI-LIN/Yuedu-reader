@@ -43,9 +43,9 @@ struct EPUBEngineLoadingBenchmarkTests {
     private let size = CGSize(width: 390, height: 800)
     private var settings: ReaderRenderSettings { EPUBTestFixtures.renderSettings() }
 
-    @Test func compareProductionLoadingRoutes() async throws {
-        // Ordinary test runs do not require private, machine-local books.
-        guard ProcessInfo.processInfo.environment["YUEDU_LOADING_BENCHMARK"] == "1" else { return }
+    // Ordinary test runs do not require private, machine-local books.
+    @Test(.enabled(if: ProcessInfo.processInfo.environment["YUEDU_LOADING_BENCHMARK"] == "1", "Set YUEDU_LOADING_BENCHMARK=1"))
+    func compareProductionLoadingRoutes() async throws {
         let books = [
             Book(id: "quanzhi-prose", filename: "《全职高手3》作者：蝴蝶蓝.epub", spine: 69),
             Book(id: "guimi-prose", filename: "《诡秘之主4》作者：爱潜水的乌贼.epub", spine: 80),

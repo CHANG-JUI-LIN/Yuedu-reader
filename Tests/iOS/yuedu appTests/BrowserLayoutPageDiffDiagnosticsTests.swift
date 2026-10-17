@@ -13,8 +13,7 @@ struct BrowserLayoutPageDiffDiagnosticsTests {
     func diagnoseQuanzhiPageCountDiff() async throws {
         let path = "/Users/zhangruilin/Desktop/Test document/EPUB Format/《全知读者视角01》sing N song(싱숑)著[Hooshaun制作].epub"
         guard FileManager.default.fileExists(atPath: path) else {
-            print("DIFF: book missing")
-            return
+            try Test.cancel("Needs \(path)")
         }
         let session = try await PublicationSession.open(sourceURL: URL(fileURLWithPath: path))
         let settings = ReaderRenderSettings(

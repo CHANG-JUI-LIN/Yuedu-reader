@@ -12,13 +12,19 @@ struct CoreTextLargeEPUBBenchmarkTests {
         paragraphSpacing: 8
     )
 
-    @Test("160 MiB corpus opens, builds, and paginates")
+    @Test(
+        "160 MiB corpus opens, builds, and paginates",
+        .enabled(if: CoreTextLargeEPUBCorpus.configuredURL(for: CoreTextLargeEPUBCorpus.books[0]) != nil, "Set \(CoreTextLargeEPUBCorpus.books[0].environmentKey) to the corpus file")
+    )
     @MainActor
     func benchmark160MiBBook() async throws {
         try await benchmark(CoreTextLargeEPUBCorpus.books[0])
     }
 
-    @Test("224 MiB corpus opens, builds, and paginates")
+    @Test(
+        "224 MiB corpus opens, builds, and paginates",
+        .enabled(if: CoreTextLargeEPUBCorpus.configuredURL(for: CoreTextLargeEPUBCorpus.books[1]) != nil, "Set \(CoreTextLargeEPUBCorpus.books[1].environmentKey) to the corpus file")
+    )
     @MainActor
     func benchmark224MiBBook() async throws {
         try await benchmark(CoreTextLargeEPUBCorpus.books[1])
@@ -26,9 +32,7 @@ struct CoreTextLargeEPUBBenchmarkTests {
 
     @MainActor
     private func benchmark(_ book: CoreTextLargeEPUBCorpus.Book) async throws {
-        guard let sourceURL = CoreTextLargeEPUBCorpus.configuredURL(for: book) else {
-            return
-        }
+        let sourceURL = try #require(CoreTextLargeEPUBCorpus.configuredURL(for: book))
         guard FileManager.default.fileExists(atPath: sourceURL.path) else {
             Issue.record("Missing configured corpus file for \(book.id)")
             return

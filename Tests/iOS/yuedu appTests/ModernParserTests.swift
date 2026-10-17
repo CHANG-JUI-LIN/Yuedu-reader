@@ -706,7 +706,7 @@ struct JSONDiscoverBridgeRegressionTests {
     @Test("Qidian chapterList JS preserves chapter rows")
     func qidianChapterListPreservesRows() throws {
         guard let path = ProcessInfo.processInfo.environment["YueduQidianBookSourceFixturePath"],
-              !path.isEmpty else { return }
+              !path.isEmpty else { try Test.cancel("Set YueduQidianBookSourceFixturePath to the 起点 source JSON") }
 
         let data = try Data(contentsOf: URL(fileURLWithPath: path))
         var source = try #require(
@@ -1483,12 +1483,12 @@ struct RegexCacheTests {
     }
 
     @Test("firstMatch returns correct result")
-    func firstMatchResult() {
+    func firstMatchResult() throws {
         let cache = RegexCache(capacity: 10)
         let match = cache.firstMatch(in: "abc123def", pattern: "\\d+")
-        #expect(match != nil)
+        let found = try #require(match)
         let nsStr = "abc123def" as NSString
-        #expect(nsStr.substring(with: match!.range) == "123")
+        #expect(nsStr.substring(with: found.range) == "123")
     }
 }
 
@@ -2328,7 +2328,7 @@ struct BookSourceLocalFixtureTests {
         guard let path = env["YueduLocalBookSourceFixturePath"]
                 ?? env["TEST_RUNNER_YueduLocalBookSourceFixturePath"],
               !path.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-        else { return }
+        else { try Test.cancel("Set YueduLocalBookSourceFixturePath to the 光遇 source JSON") }
 
         let data = try Data(contentsOf: URL(fileURLWithPath: path))
         let sources = try JSONDecoder().decode([BookSource].self, from: data)
@@ -2351,7 +2351,7 @@ struct BookSourceLocalFixtureTests {
         guard let path = env["YueduLocalBookSourceFixturePath"]
                 ?? env["TEST_RUNNER_YueduLocalBookSourceFixturePath"],
               !path.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-        else { return }
+        else { try Test.cancel("Set YueduLocalBookSourceFixturePath to the 光遇 source JSON") }
 
         let data = try Data(contentsOf: URL(fileURLWithPath: path))
         let sources = try JSONDecoder().decode([BookSource].self, from: data)
@@ -2398,7 +2398,7 @@ struct QidianSourceRegressionTests {
         guard let path = Self.fixturePath, !path.isEmpty,
               let token = ProcessInfo.processInfo.environment["YueduQidianToken"],
               !token.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-        else { return }
+        else { try Test.cancel("Set YueduQidianBookSourceFixturePath and YueduQidianToken") }
 
         let data = try Data(contentsOf: URL(fileURLWithPath: path))
         let source = try #require(
@@ -2433,7 +2433,7 @@ struct QidianSourceRegressionTests {
         guard let path = Self.fixturePath, !path.isEmpty,
               let token = ProcessInfo.processInfo.environment["YueduQidianToken"],
               !token.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-        else { return }
+        else { try Test.cancel("Set YueduQidianBookSourceFixturePath and YueduQidianToken") }
 
         let data = try Data(contentsOf: URL(fileURLWithPath: path))
         let source = try #require(
@@ -2473,7 +2473,7 @@ struct QidianSourceRegressionTests {
         guard let path = Self.fixturePath, !path.isEmpty,
               let token = ProcessInfo.processInfo.environment["YueduQidianToken"],
               !token.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-        else { return }
+        else { try Test.cancel("Set YueduQidianBookSourceFixturePath and YueduQidianToken") }
 
         let data = try Data(contentsOf: URL(fileURLWithPath: path))
         let source = try #require(
@@ -2558,7 +2558,7 @@ struct QimoSourceRegressionTests {
         guard let fixturePath = environment["YueduQimoBookSourceFixturePath"]
                 ?? environment["TEST_RUNNER_YueduQimoBookSourceFixturePath"],
               !fixturePath.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-        else { return }
+        else { try Test.cancel("Set YueduQimoBookSourceFixturePath to the 柒墨 source JSON") }
 
         let data = try Data(contentsOf: URL(fileURLWithPath: fixturePath))
         let source = try #require(
@@ -2590,7 +2590,7 @@ struct QimoSourceRegressionTests {
                 ?? environment["TEST_RUNNER_YueduQimoToken"],
               !fixturePath.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
               !token.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-        else { return }
+        else { try Test.cancel("Set YueduQimoBookSourceFixturePath and YueduQimoToken") }
 
         let data = try Data(contentsOf: URL(fileURLWithPath: fixturePath))
         let source = try #require(
@@ -2722,21 +2722,19 @@ struct JSCoreEngineTests {
     }
 
     @Test("number return")
-    func numberReturn() {
+    func numberReturn() throws {
         let engine = JSCoreEngine()
-        let result = engine.evaluate("3.14")
-        #expect(result != nil)
-        #expect(result!.contains("3.14"))
+        let result = try #require(engine.evaluate("3.14"))
+        #expect(result.contains("3.14"))
     }
 
     @Test("object return is JSON serialized")
-    func objectReturn() {
+    func objectReturn() throws {
         let engine = JSCoreEngine()
-        let result = engine.evaluate("({a: 1, b: 'hello'})")
-        #expect(result != nil)
+        let result = try #require(engine.evaluate("({a: 1, b: 'hello'})"))
         // Should be a JSON string
-        #expect(result!.contains("\"a\""))
-        #expect(result!.contains("\"b\""))
+        #expect(result.contains("\"a\""))
+        #expect(result.contains("\"b\""))
     }
 
     @Test("result variable binding")
@@ -3323,12 +3321,11 @@ struct JSCoreEngineTests {
     }
 
     @Test("source.getLoginHeader bridges to handler")
-    func sourceGetLoginHeader() {
+    func sourceGetLoginHeader() throws {
         let engine = JSCoreEngine()
         engine.sourceBridge.getLoginHeaderHandler = { "{\"Cookie\":\"a=b\"}" }
-        let result = engine.evaluate("source.getLoginHeader()")
-        #expect(result != nil)
-        #expect(result!.contains("a=b"))
+        let result = try #require(engine.evaluate("source.getLoginHeader()"))
+        #expect(result.contains("a=b"))
     }
 
     @Test("java.importScript returns inline (non-http) text verbatim")
@@ -3473,7 +3470,7 @@ struct LoginStateTests {
 struct LoginErrorTests {
 
     @Test("error descriptions are non-empty")
-    func errorDescriptions() {
+    func errorDescriptions() throws {
         let errors: [LoginError] = [
             .noLoginUrl,
             .invalidLoginUrl("bad"),
@@ -3482,8 +3479,8 @@ struct LoginErrorTests {
             .httpError(401),
         ]
         for error in errors {
-            #expect(error.errorDescription != nil)
-            #expect(!error.errorDescription!.isEmpty)
+            let description = try #require(error.errorDescription)
+            #expect(!description.isEmpty)
         }
     }
 

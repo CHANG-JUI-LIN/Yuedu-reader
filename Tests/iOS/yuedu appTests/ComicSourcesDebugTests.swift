@@ -60,9 +60,9 @@ struct ComicSourcesDebugTests {
 
     /// Step 2: safeURL validation for search URLs
     @Test("search URL validation")
-    func validateSearchURLs() {
+    func validateSearchURLs() throws {
         let sources = loadSources()
-        guard !sources.isEmpty else { return }
+        guard !sources.isEmpty else { try Test.cancel("Needs a decodable comic source list at \(Self.jsonPath)") }
         var out = "========== SEARCH URL VALIDATION ==========\n"
 
         for (i, s) in sources.enumerated() {
@@ -202,9 +202,9 @@ struct ComicSourcesDebugTests {
 
     /// Step 3: Explore URL parsing diagnostic
     @Test("explore URL parsing")
-    func validateExplore() {
+    func validateExplore() throws {
         let sources = loadSources()
-        guard !sources.isEmpty else { return }
+        guard !sources.isEmpty else { try Test.cancel("Needs a decodable comic source list at \(Self.jsonPath)") }
         var out = "========== EXPLORE PARSING ==========\n"
 
         for (i, s) in sources.enumerated() {
@@ -264,7 +264,7 @@ struct ComicSourcesDebugTests {
     /// Step 5: Live discover — categories + first-category book parse per source.
     /// Streams one NSLog line group per source (filter Console by `❖DISC❖`).
     @Test("live discover debug", .timeLimit(.minutes(20)))
-    func debugDiscover() async {
+    func debugDiscover() async throws {
         func log(_ s: String) { print("❖DISC❖ " + s); NSLog("❖DISC❖ %@", s) }
         let fetcher = BookSourceFetcher.shared
         // On a real device the Mac JSON path is unreachable, so use the sources the
@@ -276,8 +276,7 @@ struct ComicSourcesDebugTests {
             $0.enabledExplore && !$0.exploreUrl.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
         }
         guard !sources.isEmpty else {
-            log("no explore-enabled sources (store=\(stored.count), file=\(loadSources().count))")
-            return
+            try Test.cancel("No explore-enabled sources (store=\(stored.count), file=\(loadSources().count))")
         }
         log("==== LIVE DISCOVER DEBUG (\(sources.count) explore sources, store=\(stored.count)) ====")
 
@@ -315,14 +314,14 @@ struct ComicSourcesDebugTests {
 
     /// Step 4: Full pipeline - search, detail, and TOC URL resolution
     @Test("live search to detail to toc debug", .timeLimit(.minutes(15)))
-    func debugPipeline() async {
+    func debugPipeline() async throws {
         let fetcher = BookSourceFetcher.shared
         // Clear caches
         try? FileManager.default.removeItem(at: fetcher.bookInfoCacheDir())
         try? FileManager.default.removeItem(at: fetcher.tocCacheDir())
 
         let sources = loadSources()
-        guard !sources.isEmpty else { return }
+        guard !sources.isEmpty else { try Test.cancel("Needs a decodable comic source list at \(Self.jsonPath)") }
         var out = "========== LIVE PIPELINE DEBUG (query=鬼灭之刃) ==========\n"
 
         for (i, source) in sources.enumerated() {

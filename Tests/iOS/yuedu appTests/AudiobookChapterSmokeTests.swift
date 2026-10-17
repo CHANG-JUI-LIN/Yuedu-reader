@@ -25,7 +25,7 @@ struct AudiobookChapterSmokeTests {
     static let resultPath = "/tmp/yuedu_audio_smoke.txt"
 
     @Test("live 听书 search → detail → toc → chapter content")
-    func smokeAudiobookChapterContent() async {
+    func smokeAudiobookChapterContent() async throws {
         var out = ""
         func log(_ s: String) {
             out += s + "\n"
@@ -36,8 +36,7 @@ struct AudiobookChapterSmokeTests {
         guard let data = FileManager.default.contents(atPath: Self.jsonPath),
               let source = (try? JSONDecoder().decode([BookSource].self, from: data))?.first
         else {
-            print("⏭️  Skipping audiobook smoke: \(Self.jsonPath) not found / decode failed")
-            return
+            try Test.cancel("Needs a decodable 光遇 source JSON at \(Self.jsonPath) (AUDIO_SOURCE_JSON)")
         }
         log("========== 听书 CHAPTER SMOKE (\(source.bookSourceName), query=\(Self.searchKeyword)) ==========")
 
@@ -159,7 +158,7 @@ struct AudiobookChapterSmokeTests {
     /// bridges the live engine uses, but evaluates the script in pieces so the exact
     /// dying expression (and `lastError`) is visible instead of a silent "".
     @Test("debug 听书 content JS stage by stage")
-    func debugAudioContentJS() {
+    func debugAudioContentJS() throws {
         var out = ""
         func log(_ s: String) {
             out += s + "\n"
@@ -170,8 +169,7 @@ struct AudiobookChapterSmokeTests {
         guard let data = FileManager.default.contents(atPath: Self.jsonPath),
               let source = (try? JSONDecoder().decode([BookSource].self, from: data))?.first
         else {
-            print("⏭️  Skipping JS debug: \(Self.jsonPath) not found")
-            return
+            try Test.cancel("Needs a decodable 光遇 source JSON at \(Self.jsonPath) (AUDIO_SOURCE_JSON)")
         }
         log("========== 听书 CONTENT JS DEBUG ==========")
 
@@ -275,7 +273,7 @@ struct AudiobookChapterSmokeTests {
     /// response, isolating which stage eats the audio URL (no network, no rate limit):
     /// content-rule JS result → `$.content` extraction → `resolveContent` sanitize.
     @Test("offline replay: audio URL through rule extraction + resolveContent")
-    func offlineAudioURLReplay() async {
+    func offlineAudioURLReplay() async throws {
         var out = ""
         func log(_ s: String) {
             out += s + "\n"
@@ -286,8 +284,7 @@ struct AudiobookChapterSmokeTests {
         guard let data = FileManager.default.contents(atPath: Self.jsonPath),
               let source = (try? JSONDecoder().decode([BookSource].self, from: data))?.first
         else {
-            print("⏭️  Skipping offline replay: \(Self.jsonPath) not found")
-            return
+            try Test.cancel("Needs a decodable 光遇 source JSON at \(Self.jsonPath) (AUDIO_SOURCE_JSON)")
         }
         log("========== OFFLINE AUDIO REPLAY ==========")
 

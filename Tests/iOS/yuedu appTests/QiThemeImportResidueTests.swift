@@ -8,6 +8,9 @@ import Testing
 @Suite("QiReader pack leaves nothing behind", .serialized)
 @MainActor
 struct QiThemeImportResidueTests {
+    nonisolated private static let chunshuiyangPath = "/Users/zhangruilin/Downloads/山风 - 春水漾.qitheme"
+    nonisolated private static let qimeidiPath = "/Users/zhangruilin/Downloads/山风-凄美地.qitheme"
+
     private static let global = AppearancePageBackgroundScope.global.rawValue
 
     /// The pack's page background belongs to its theme. It used to be written into the
@@ -48,9 +51,9 @@ struct QiThemeImportResidueTests {
 
     /// The report itself, with the pack it was made with: import, choose 默認, and nothing
     /// of the pack's look or reading setup may still be on screen.
-    @Test func chunshuiyangLeavesNothingBehindOnceDefaultIsChosen() async throws {
-        let url = URL(fileURLWithPath: "/Users/zhangruilin/Downloads/山风 - 春水漾.qitheme")
-        guard FileManager.default.fileExists(atPath: url.path) else { return }
+    @Test(.enabled(if: FileManager.default.fileExists(atPath: chunshuiyangPath), "Needs ~/Downloads/山风 - 春水漾.qitheme"))
+    func chunshuiyangLeavesNothingBehindOnceDefaultIsChosen() async throws {
+        let url = URL(fileURLWithPath: Self.chunshuiyangPath)
         let settings = GlobalSettings.shared
         let fixture = Fixture(settings)
         defer { fixture.restore() }
@@ -91,11 +94,13 @@ struct QiThemeImportResidueTests {
     /// The second report, step for step: 默認 → import 春水漾 (隨主題切換) → import 凄美地
     /// (隨主題切換) → 默認. The reading setup has to be the one from before either import,
     /// not the last pack's.
-    @Test func twoPacksImportedToFollowTheirThemesLeaveNothingOnDefault() async throws {
-        let first = URL(fileURLWithPath: "/Users/zhangruilin/Downloads/山风 - 春水漾.qitheme")
-        let second = URL(fileURLWithPath: "/Users/zhangruilin/Downloads/山风-凄美地.qitheme")
-        guard FileManager.default.fileExists(atPath: first.path),
-              FileManager.default.fileExists(atPath: second.path) else { return }
+    @Test(
+        .enabled(if: FileManager.default.fileExists(atPath: chunshuiyangPath), "Needs ~/Downloads/山风 - 春水漾.qitheme"),
+        .enabled(if: FileManager.default.fileExists(atPath: qimeidiPath), "Needs ~/Downloads/山风-凄美地.qitheme")
+    )
+    func twoPacksImportedToFollowTheirThemesLeaveNothingOnDefault() async throws {
+        let first = URL(fileURLWithPath: Self.chunshuiyangPath)
+        let second = URL(fileURLWithPath: Self.qimeidiPath)
         let settings = GlobalSettings.shared
         let fixture = Fixture(settings)
         defer { fixture.restore() }

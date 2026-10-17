@@ -8,7 +8,7 @@ import Testing
 @Suite("Source browser page without HTML", .serialized)
 @MainActor
 struct SourceBrowserPageWithoutHTMLTests {
-    private static let zhiqiuPath = "/Users/zhangruilin/Downloads/164bf06e8a7e90344c06866bfc441735.json"
+    nonisolated private static let zhiqiuPath = "/Users/zhangruilin/Downloads/164bf06e8a7e90344c06866bfc441735.json"
 
     @Test("a null-html showBrowser asks for the URL itself, not an empty page")
     func nullHTMLMeansOpenTheURL() throws {
@@ -24,9 +24,11 @@ struct SourceBrowserPageWithoutHTMLTests {
         #expect(request.html == nil)
     }
 
-    @Test("知秋's 段評 bubble opens the comment page URL")
+    @Test(
+        "知秋's 段評 bubble opens the comment page URL",
+        .enabled(if: FileManager.default.fileExists(atPath: zhiqiuPath), "Needs 知秋's source JSON at \(zhiqiuPath)")
+    )
     func zhiqiuReviewOpensCommentPage() throws {
-        guard FileManager.default.fileExists(atPath: Self.zhiqiuPath) else { return }
         let data = try Data(contentsOf: URL(fileURLWithPath: Self.zhiqiuPath))
         var source = try #require(JSONDecoder().decode([BookSource].self, from: data).first)
         source.id = UUID()

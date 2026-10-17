@@ -7,8 +7,9 @@ import YueduCoreText
 /// inputs so the package can time its own stages on real chapters.
 @MainActor
 struct EPUBFrontendInputDumpTests {
-    @Test func dumpBenchmarkChapterInputs() async throws {
-        guard let dir = ProcessInfo.processInfo.environment["YUEDU_FRONTEND_DUMP_DIR"] else { return }
+    @Test(.enabled(if: ProcessInfo.processInfo.environment["YUEDU_FRONTEND_DUMP_DIR"] != nil, "Set YUEDU_FRONTEND_DUMP_DIR to an output directory"))
+    func dumpBenchmarkChapterInputs() async throws {
+        let dir = try #require(ProcessInfo.processInfo.environment["YUEDU_FRONTEND_DUMP_DIR"])
         let books: [(id: String, filename: String, spine: Int)] = [
             ("quanzhi-prose", "《全职高手3》作者：蝴蝶蓝.epub", 69),
             ("guimi-prose", "《诡秘之主4》作者：爱潜水的乌贼.epub", 80),

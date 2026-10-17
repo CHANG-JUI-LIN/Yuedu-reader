@@ -14,8 +14,15 @@ import UIKit
 @testable import yuedu_app
 
 struct yuedu_appTests {
-    private let testEPUBPath = "/Users/zhangruilin/Library/Mobile Documents/com~apple~CloudDocs/被讨厌的勇气：“自我启发之父”阿德勒的哲学课 = 嫌われる勇気：自己啓発の源流「アドラー」の教え ([日] 岸见一郎，[日] 古贺史健 著；渠海霞 译) (z-library.sk, 1lib.sk, z-lib.sk).epub"
-    private let testBookSourcePath = "/Users/zhangruilin/Library/Mobile Documents/com~apple~CloudDocs/书源(856)-已测试并去重.json"
+    /// Machine-local fixtures, not in the repository. A test that needs one is disabled — and
+    /// reported as skipped with the reason — on a machine that does not have it.
+    private static let epubFixturePath = "/Users/zhangruilin/Library/Mobile Documents/com~apple~CloudDocs/被讨厌的勇气：“自我启发之父”阿德勒的哲学课 = 嫌われる勇気：自己啓発の源流「アドラー」の教え ([日] 岸见一郎，[日] 古贺史健 著；渠海霞 译) (z-library.sk, 1lib.sk, z-lib.sk).epub"
+    private static let bookSourceFixturePath = "/Users/zhangruilin/Library/Mobile Documents/com~apple~CloudDocs/书源(856)-已测试并去重.json"
+    private static let epubFixtureExists = FileManager.default.fileExists(atPath: epubFixturePath)
+    private static let bookSourceFixtureExists = FileManager.default.fileExists(atPath: bookSourceFixturePath)
+
+    private let testEPUBPath = Self.epubFixturePath
+    private let testBookSourcePath = Self.bookSourceFixturePath
 
     private var hasBookSourceFixture: Bool {
         FileManager.default.fileExists(atPath: testBookSourcePath)
@@ -353,8 +360,8 @@ struct yuedu_appTests {
         #expect(legacy.totalPagesInChapter == 1)
     }
 
-    @Test func suduguSourceCanFetchFirstChapterEndToEnd() async throws {
-        guard hasBookSourceFixture else { return }
+    @Test(.enabled(if: bookSourceFixtureExists, "Needs 书源(856)-已测试并去重.json in iCloud Drive"))
+    func suduguSourceCanFetchFirstChapterEndToEnd() async throws {
         let package = try await fetchFirstChapter(
             sourceName: "速读谷",
             keyword: "斗罗大陆",
@@ -364,8 +371,8 @@ struct yuedu_appTests {
         #expect(package.content.contains("巴蜀"))
     }
 
-    @Test func sixtyNineBookBarCanFetchFirstChapterEndToEnd() async throws {
-        guard hasBookSourceFixture else { return }
+    @Test(.enabled(if: bookSourceFixtureExists, "Needs 书源(856)-已测试并去重.json in iCloud Drive"))
+    func sixtyNineBookBarCanFetchFirstChapterEndToEnd() async throws {
         let package = try await fetchFirstChapter(
             sourceName: "69书吧👌",
             keyword: "斗罗大陆",
@@ -374,8 +381,8 @@ struct yuedu_appTests {
         #expect(!package.content.isEmpty)
     }
 
-    @Test func aiKanShuBaCanFetchFirstChapterEndToEnd() async throws {
-        guard hasBookSourceFixture else { return }
+    @Test(.enabled(if: bookSourceFixtureExists, "Needs 书源(856)-已测试并去重.json in iCloud Drive"))
+    func aiKanShuBaCanFetchFirstChapterEndToEnd() async throws {
         let package = try await fetchFirstChapter(
             sourceName: "爱看书吧",
             keyword: "斗罗大陆",
@@ -384,8 +391,8 @@ struct yuedu_appTests {
         #expect(!package.content.isEmpty)
     }
 
-    @Test func tuJiuSanCanFetchFirstChapterEndToEnd() async throws {
-        guard hasBookSourceFixture else { return }
+    @Test(.enabled(if: bookSourceFixtureExists, "Needs 书源(856)-已测试并去重.json in iCloud Drive"))
+    func tuJiuSanCanFetchFirstChapterEndToEnd() async throws {
         let package = try await fetchFirstChapter(
             sourceName: "兔九三🐰",
             keyword: "斗罗大陆",
@@ -1964,8 +1971,8 @@ struct yuedu_appTests {
         #expect(accepted == true)
     }
 
-    @Test @MainActor func refreshOnlineBookMetadataRepairsLegacyShelfEntry() async throws {
-        guard hasBookSourceFixture else { return }
+    @Test(.enabled(if: bookSourceFixtureExists, "Needs 书源(856)-已测试并去重.json in iCloud Drive"))
+    @MainActor func refreshOnlineBookMetadataRepairsLegacyShelfEntry() async throws {
         let source = try loadSource(named: "速读谷")
         let previousSources = BookSourceStore.shared.sources
         BookSourceStore.shared.sources = [source]
@@ -2153,8 +2160,9 @@ struct yuedu_appTests {
         #expect(clamped == 9)
     }
 
-    @Test func coreTextEngineLoadsActualPartPageBackgroundImage() async throws {
-        guard let sourceURL = testEPUBURL else { return }
+    @Test(.enabled(if: epubFixtureExists, "Needs the 被讨厌的勇气 EPUB in iCloud Drive"))
+    func coreTextEngineLoadsActualPartPageBackgroundImage() async throws {
+        let sourceURL = try #require(testEPUBURL)
         #expect(FileManager.default.fileExists(atPath: sourceURL.path))
 
         let session = try await PublicationSession.open(sourceURL: sourceURL)
@@ -2208,8 +2216,9 @@ struct yuedu_appTests {
     }
 
     @MainActor
-    @Test func coreTextEngineRendersActualPart0010BodyText() async throws {
-        guard let sourceURL = testEPUBURL else { return }
+    @Test(.enabled(if: epubFixtureExists, "Needs the 被讨厌的勇气 EPUB in iCloud Drive"))
+    func coreTextEngineRendersActualPart0010BodyText() async throws {
+        let sourceURL = try #require(testEPUBURL)
         #expect(FileManager.default.fileExists(atPath: sourceURL.path))
 
         let session = try await PublicationSession.open(sourceURL: sourceURL)
@@ -2294,8 +2303,9 @@ struct yuedu_appTests {
 
 
     @MainActor
-    @Test func coreTextEngineRendersActualPart0009TitleCardAboveLowerHalf() async throws {
-        guard let sourceURL = testEPUBURL else { return }
+    @Test(.enabled(if: epubFixtureExists, "Needs the 被讨厌的勇气 EPUB in iCloud Drive"))
+    func coreTextEngineRendersActualPart0009TitleCardAboveLowerHalf() async throws {
+        let sourceURL = try #require(testEPUBURL)
         let session = try await PublicationSession.open(sourceURL: sourceURL)
         let storeDir = FileManager.default.temporaryDirectory
             .appendingPathComponent("CoreTextPart0009RenderTest-\(UUID().uuidString)")
@@ -2413,8 +2423,9 @@ struct yuedu_appTests {
     }
 
     @MainActor
-    @Test func coreTextEngineRendersActualPart0009VisibleTitleTextInsideCard() async throws {
-        guard let sourceURL = testEPUBURL else { return }
+    @Test(.enabled(if: epubFixtureExists, "Needs the 被讨厌的勇气 EPUB in iCloud Drive"))
+    func coreTextEngineRendersActualPart0009VisibleTitleTextInsideCard() async throws {
+        let sourceURL = try #require(testEPUBURL)
         let session = try await PublicationSession.open(sourceURL: sourceURL)
         let storeDir = FileManager.default.temporaryDirectory
             .appendingPathComponent("CoreTextPart0009VisibleTitleTest-\(UUID().uuidString)")
@@ -2509,8 +2520,9 @@ struct yuedu_appTests {
         )
     }
 
-    @Test func coreTextEnginePromotesActualPart0009TitleCardTextIntoBlockRenderable() async throws {
-        guard let sourceURL = testEPUBURL else { return }
+    @Test(.enabled(if: epubFixtureExists, "Needs the 被讨厌的勇气 EPUB in iCloud Drive"))
+    func coreTextEnginePromotesActualPart0009TitleCardTextIntoBlockRenderable() async throws {
+        let sourceURL = try #require(testEPUBURL)
         let session = try await PublicationSession.open(sourceURL: sourceURL)
         let storeDir = FileManager.default.temporaryDirectory
             .appendingPathComponent("CoreTextPart0009BlockTextTest-\(UUID().uuidString)")
@@ -2545,8 +2557,9 @@ struct yuedu_appTests {
         #expect(blockText.string.contains("我们的不幸是谁的错？"))
     }
 
-    @Test func coreTextEngineNormalizesActualPart0009BlockTextParagraphGeometry() async throws {
-        guard let sourceURL = testEPUBURL else { return }
+    @Test(.enabled(if: epubFixtureExists, "Needs the 被讨厌的勇气 EPUB in iCloud Drive"))
+    func coreTextEngineNormalizesActualPart0009BlockTextParagraphGeometry() async throws {
+        let sourceURL = try #require(testEPUBURL)
         let session = try await PublicationSession.open(sourceURL: sourceURL)
         let storeDir = FileManager.default.temporaryDirectory
             .appendingPathComponent("CoreTextPart0009BlockTextGeometryTest-\(UUID().uuidString)")
@@ -2589,8 +2602,9 @@ struct yuedu_appTests {
         #expect(paragraphStyle.tailIndent == 0)
     }
 
-    @Test func debugActualPart0009BlockTextMetrics() async throws {
-        guard let sourceURL = testEPUBURL else { return }
+    @Test(.enabled(if: epubFixtureExists, "Needs the 被讨厌的勇气 EPUB in iCloud Drive"))
+    func debugActualPart0009BlockTextMetrics() async throws {
+        let sourceURL = try #require(testEPUBURL)
         let session = try await PublicationSession.open(sourceURL: sourceURL)
         let storeDir = FileManager.default.temporaryDirectory
             .appendingPathComponent("CoreTextPart0009DebugMetrics-\(UUID().uuidString)")
@@ -2634,8 +2648,9 @@ struct yuedu_appTests {
         #expect(!text.string.isEmpty)
     }
 
-    @Test func coreTextEnginePlacesActualPart0009TitleLinesInsideTitleCard() async throws {
-        guard let sourceURL = testEPUBURL else { return }
+    @Test(.enabled(if: epubFixtureExists, "Needs the 被讨厌的勇气 EPUB in iCloud Drive"))
+    func coreTextEnginePlacesActualPart0009TitleLinesInsideTitleCard() async throws {
+        let sourceURL = try #require(testEPUBURL)
         let session = try await PublicationSession.open(sourceURL: sourceURL)
         let storeDir = FileManager.default.temporaryDirectory
             .appendingPathComponent("CoreTextPart0009LinePlacementTest-\(UUID().uuidString)")
@@ -2711,8 +2726,9 @@ struct yuedu_appTests {
         #expect(!overlap.isNull && overlap.height > 20, "Expected title text lines to overlap title card. rect=\(titleRenderable.rect) lines=\(union)")
     }
 
-    @Test func coreTextEngineSnapshotViewControllerRendersActualPart0009Background() async throws {
-        guard let sourceURL = testEPUBURL else { return }
+    @Test(.enabled(if: epubFixtureExists, "Needs the 被讨厌的勇气 EPUB in iCloud Drive"))
+    func coreTextEngineSnapshotViewControllerRendersActualPart0009Background() async throws {
+        let sourceURL = try #require(testEPUBURL)
         let session = try await PublicationSession.open(sourceURL: sourceURL)
         let storeDir = FileManager.default.temporaryDirectory
             .appendingPathComponent("CoreTextPart0009SnapshotTest-\(UUID().uuidString)")
@@ -2775,8 +2791,9 @@ struct yuedu_appTests {
         #expect(foundBlue)
     }
 
-    @Test func coreTextEngineSnapshotViewControllerRendersActualPart0009VisibleTitleTextInsideCard() async throws {
-        guard let sourceURL = testEPUBURL else { return }
+    @Test(.enabled(if: epubFixtureExists, "Needs the 被讨厌的勇气 EPUB in iCloud Drive"))
+    func coreTextEngineSnapshotViewControllerRendersActualPart0009VisibleTitleTextInsideCard() async throws {
+        let sourceURL = try #require(testEPUBURL)
         let session = try await PublicationSession.open(sourceURL: sourceURL)
         let storeDir = FileManager.default.temporaryDirectory
             .appendingPathComponent("CoreTextPart0009SnapshotVisibleTitle-\(UUID().uuidString)")
@@ -2855,8 +2872,9 @@ struct yuedu_appTests {
         #expect(foundBrightGlyphPixel, "Expected bright snapshot title glyph pixels inside the title card rect. fill=\(baseFill) rect=\(titleRenderable.rect)")
     }
 
-    @Test func coreTextPageViewLiveRenderShowsActualPart0009TitleGlyphsInsideCard() async throws {
-        guard let sourceURL = testEPUBURL else { return }
+    @Test(.enabled(if: epubFixtureExists, "Needs the 被讨厌的勇气 EPUB in iCloud Drive"))
+    func coreTextPageViewLiveRenderShowsActualPart0009TitleGlyphsInsideCard() async throws {
+        let sourceURL = try #require(testEPUBURL)
         let session = try await PublicationSession.open(sourceURL: sourceURL)
         let storeDir = FileManager.default.temporaryDirectory
             .appendingPathComponent("CoreTextPart0009LiveRender-\(UUID().uuidString)")
@@ -2938,8 +2956,9 @@ struct yuedu_appTests {
         #expect(foundBrightGlyphPixel, "Expected bright live title glyph pixels inside the title card rect. rect=\(titleRenderable.rect)")
     }
 
-    @Test func coreTextPageViewLiveRenderShowsActualPart0009BlueBackgroundNearTop() async throws {
-        guard let sourceURL = testEPUBURL else { return }
+    @Test(.enabled(if: epubFixtureExists, "Needs the 被讨厌的勇气 EPUB in iCloud Drive"))
+    func coreTextPageViewLiveRenderShowsActualPart0009BlueBackgroundNearTop() async throws {
+        let sourceURL = try #require(testEPUBURL)
         let session = try await PublicationSession.open(sourceURL: sourceURL)
         let storeDir = FileManager.default.temporaryDirectory
             .appendingPathComponent("CoreTextPart0009LiveBackground-\(UUID().uuidString)")
@@ -3009,8 +3028,9 @@ struct yuedu_appTests {
         #expect(foundBlue, "Expected visible blue background pixels near top of live rendered part0009 page")
     }
 
-    @Test func coreTextEnginePlacesActualPart0010BottomDecorationBelowBodyText() async throws {
-        guard let sourceURL = testEPUBURL else { return }
+    @Test(.enabled(if: epubFixtureExists, "Needs the 被讨厌的勇气 EPUB in iCloud Drive"))
+    func coreTextEnginePlacesActualPart0010BottomDecorationBelowBodyText() async throws {
+        let sourceURL = try #require(testEPUBURL)
         let session = try await PublicationSession.open(sourceURL: sourceURL)
         let storeDir = FileManager.default.temporaryDirectory
             .appendingPathComponent("CoreTextPart0010DecorationPlacement-\(UUID().uuidString)")
@@ -3147,8 +3167,9 @@ struct yuedu_appTests {
     }
 
     @MainActor
-    @Test func coreTextPageViewRenderPageKeepsPart0009TitleVisibleWhenBoundsDifferFromLayoutSize() async throws {
-        guard let sourceURL = testEPUBURL else { return }
+    @Test(.enabled(if: epubFixtureExists, "Needs the 被讨厌的勇气 EPUB in iCloud Drive"))
+    func coreTextPageViewRenderPageKeepsPart0009TitleVisibleWhenBoundsDifferFromLayoutSize() async throws {
+        let sourceURL = try #require(testEPUBURL)
         let session = try await PublicationSession.open(sourceURL: sourceURL)
         let storeDir = FileManager.default.temporaryDirectory
             .appendingPathComponent("CoreTextPart0009ScaledRender-\(UUID().uuidString)")
@@ -3234,8 +3255,9 @@ struct yuedu_appTests {
         #expect(foundBrightGlyphPixel, "Expected bright title glyphs after scaling render from layout size \(layout.renderSize) to \(targetBounds.size)")
     }
 
-    @Test func coreTextEngineRendersActualPart0010BottomDecoration() async throws {
-        guard let sourceURL = testEPUBURL else { return }
+    @Test(.enabled(if: epubFixtureExists, "Needs the 被讨厌的勇气 EPUB in iCloud Drive"))
+    func coreTextEngineRendersActualPart0010BottomDecoration() async throws {
+        let sourceURL = try #require(testEPUBURL)
         let session = try await PublicationSession.open(sourceURL: sourceURL)
         let storeDir = FileManager.default.temporaryDirectory
             .appendingPathComponent("CoreTextPart0010RenderDecorTest-\(UUID().uuidString)")
@@ -3300,8 +3322,9 @@ struct yuedu_appTests {
         #expect(foundBottomDecoration)
     }
 
-    @Test func coreTextEngineDoesNotDuplicateActualPart0010BottomDecoration() async throws {
-        guard let sourceURL = testEPUBURL else { return }
+    @Test(.enabled(if: epubFixtureExists, "Needs the 被讨厌的勇气 EPUB in iCloud Drive"))
+    func coreTextEngineDoesNotDuplicateActualPart0010BottomDecoration() async throws {
+        let sourceURL = try #require(testEPUBURL)
         let session = try await PublicationSession.open(sourceURL: sourceURL)
         let storeDir = FileManager.default.temporaryDirectory
             .appendingPathComponent("CoreTextPart0010NoDupDecorTest-\(UUID().uuidString)")

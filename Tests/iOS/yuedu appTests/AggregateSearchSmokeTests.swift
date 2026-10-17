@@ -125,12 +125,11 @@ struct AggregateSearchSmokeTests {
 
     /// End-to-end proof on 光遇: the 默认搜索网站 stored in 更多设置[类型] is what its
     /// searchUrl resolves as `sourcesKey`; only an absent/全部 row means 全局搜索.
-    /// Skips (no failure) when the local 光遇 JSON isn't available.
+    /// Skipped when the local 光遇 JSON isn't available.
     @Test("光遇 search resolves sourcesKey from the configured 默认搜索网站")
-    func guangyuSourcesKeyFollowsConfiguredSite() {
+    func guangyuSourcesKeyFollowsConfiguredSite() throws {
         guard let source = loadFirstSource(Self.guangyuPath) else {
-            print("⏭️  Skipping 光遇 sourcesKey test: \(Self.guangyuPath) not found")
-            return
+            try Test.cancel("Needs a decodable 光遇 source JSON at \(Self.guangyuPath) (GUANGYU_SOURCE_JSON)")
         }
 
         func sourcesKey(for variables: [String: Any]) -> String? {

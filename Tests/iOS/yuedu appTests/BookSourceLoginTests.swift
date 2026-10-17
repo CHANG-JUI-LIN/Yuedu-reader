@@ -55,7 +55,7 @@ struct BookSourceLoginTests {
     }
 
     @Test("光遇聚合書源 loginUrl 被 extractLoginJs 識別為 JS")
-    func loginUrlIsJS() {
+    func loginUrlIsJS() throws {
         let loginUrl = """
         function login(flag) {
             if (flag == undefined) {
@@ -67,8 +67,8 @@ struct BookSourceLoginTests {
         }
         """
         let extracted = LoginManager.shared.extractLoginJs(loginUrl)
-        #expect(extracted != nil)
-        #expect(extracted!.contains("function login(flag)"))
+        let js = try #require(extracted)
+        #expect(js.contains("function login(flag)"))
     }
 
     @Test("https URL 不被 extractLoginJs 視為 JS")
@@ -552,7 +552,7 @@ struct GuangYuLiveBookSourceTests {
         let env = ProcessInfo.processInfo.environment
         guard let fixturePath = env["YueduLocalBookSourceFixturePath"]
                 ?? env["TEST_RUNNER_YueduLocalBookSourceFixturePath"]
-        else { return }
+        else { try Test.cancel("Set YueduLocalBookSourceFixturePath to the 光遇 source JSON") }
 
         let source = try loadGuangYuSource(fixturePath: fixturePath)
         let engine = JSCoreEngine()
@@ -571,7 +571,7 @@ struct GuangYuLiveBookSourceTests {
               let password = env["YueduGuangYuPassword"] ?? env["TEST_RUNNER_YueduGuangYuPassword"],
               !email.isEmpty,
               !password.isEmpty
-        else { return }
+        else { try Test.cancel("Set YueduLocalBookSourceFixturePath, YueduGuangYuEmail and YueduGuangYuPassword") }
 
         let source = try loadGuangYuSource(fixturePath: fixturePath)
         let sourceUrl = source.bookSourceUrl

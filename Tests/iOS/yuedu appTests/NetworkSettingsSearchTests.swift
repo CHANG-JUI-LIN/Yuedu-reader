@@ -4,24 +4,27 @@ import Testing
 
 @Suite("Network settings search", .serialized)
 struct NetworkSettingsSearchTests {
-    @Test("issue 32 source pack decodes into searchable sources")
-    func issue32SourcePackDecodes() throws {
-        let path = "/Users/zhangruilin/Desktop/Test document/RULE/a8adf570-e115-4b99-87e3-ccaf298ae361.json"
-        guard FileManager.default.fileExists(atPath: path) else { return }
+    private static let issue32PackPath = "/Users/zhangruilin/Desktop/Test document/RULE/a8adf570-e115-4b99-87e3-ccaf298ae361.json"
+    private static let large11780PackPath = "/Users/zhangruilin/Desktop/Test document/RULE/11780_51b655a48db62802c20dcb56a8802d4d.json"
 
-        let data = try Data(contentsOf: URL(fileURLWithPath: path))
+    @Test(
+        "issue 32 source pack decodes into searchable sources",
+        .enabled(if: FileManager.default.fileExists(atPath: issue32PackPath), "Needs the issue 32 source pack at \(issue32PackPath)")
+    )
+    func issue32SourcePackDecodes() throws {
+        let data = try Data(contentsOf: URL(fileURLWithPath: Self.issue32PackPath))
         let sources = try JSONDecoder().decode([BookSource].self, from: data)
 
         #expect(sources.count == 459)
         #expect(sources.contains { !$0.searchUrl.isEmpty && !$0.ruleSearch.bookList.isEmpty })
     }
 
-    @Test("large 11780 source pack decodes into enabled searchable sources")
+    @Test(
+        "large 11780 source pack decodes into enabled searchable sources",
+        .enabled(if: FileManager.default.fileExists(atPath: large11780PackPath), "Needs the 11780 source pack at \(large11780PackPath)")
+    )
     func large11780SourcePackDecodes() throws {
-        let path = "/Users/zhangruilin/Desktop/Test document/RULE/11780_51b655a48db62802c20dcb56a8802d4d.json"
-        guard FileManager.default.fileExists(atPath: path) else { return }
-
-        let data = try Data(contentsOf: URL(fileURLWithPath: path))
+        let data = try Data(contentsOf: URL(fileURLWithPath: Self.large11780PackPath))
         let sources = try JSONDecoder().decode([BookSource].self, from: data)
 
         #expect(sources.count == 1607)
