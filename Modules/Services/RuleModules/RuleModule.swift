@@ -16,7 +16,8 @@ struct RuleModule: Codable, Hashable, Sendable {
     var version: String
     /// The lowest app version that reads this file.
     var requiredVersion: String?
-    /// The only hosts its requests may go to.
+    /// The only hosts its requests may go to. A `*.example.org` entry (format 3.0) is a domain a
+    /// redirect may follow into, never a request's own host (`RuleModuleHosts`).
     var hosts: [String]
     /// Legado's `concurrentRate` syntax (`SourceRateLimit`).
     var rateLimit: String?
@@ -106,10 +107,14 @@ struct RuleModule: Codable, Hashable, Sendable {
         var isbnPrefixes: [String]?
         /// On `search` and `lookup`: the record's own page, asked for what its row lacks.
         var detail: Detail?
+        /// On `search`: the fewest characters a keyword is sent with (Open Library refuses one
+        /// under 3, 「三体」). A shorter one is not asked (format 3.0).
+        var minKeywordLength: Int?
 
         init(id: String?, title: String?, description: String? = nil, cacheDuration: Int? = nil,
              params: [Param] = [], request: Request, list: ListRules, contentKind: String? = nil,
-             excludeTags: [String]? = nil, isbnPrefixes: [String]? = nil, detail: Detail? = nil) {
+             excludeTags: [String]? = nil, isbnPrefixes: [String]? = nil, detail: Detail? = nil,
+             minKeywordLength: Int? = nil) {
             self.id = id
             self.title = title
             self.description = description
@@ -121,6 +126,7 @@ struct RuleModule: Codable, Hashable, Sendable {
             self.excludeTags = excludeTags
             self.isbnPrefixes = isbnPrefixes
             self.detail = detail
+            self.minKeywordLength = minKeywordLength
         }
 
         init(from decoder: any Decoder) throws {
@@ -136,6 +142,13 @@ struct RuleModule: Codable, Hashable, Sendable {
             excludeTags = try container.decodeIfPresent([String].self, forKey: .excludeTags)
             isbnPrefixes = try container.decodeIfPresent([String].self, forKey: .isbnPrefixes)
             detail = try container.decodeIfPresent(Detail.self, forKey: .detail)
+            minKeywordLength = try container.decodeIfPresent(Int.self, forKey: .minKeywordLength)
+        }
+
+        /// Whether `keyword` is long enough to be sent (`minKeywordLength`), counted trimmed.
+        nonisolated func takes(keyword: String) -> Bool {
+            let keyword = keyword.trimmingCharacters(in: .whitespacesAndNewlines)
+            return !keyword.isEmpty && keyword.count >= (minKeywordLength ?? 1)
         }
     }
 

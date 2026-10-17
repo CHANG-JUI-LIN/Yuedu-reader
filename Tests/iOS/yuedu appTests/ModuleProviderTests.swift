@@ -317,7 +317,7 @@ struct ModuleProviderTests {
         #expect(comics.contentKind(of: item) == .comic)
 
         let entry = ModuleProvider.entry(item, of: novels, instance: ModuleProvider.instanceKey(moduleID: "m"),
-                                         hasURLRule: false, hosts: [])
+                                         hasURLRule: false, hosts: RuleModuleHosts([]))
         guard case .item(let record, _, _) = entry else { Issue.record("not an item"); return }
         #expect(record.identifiers == Set([ExternalIdentifier.normalized(.isbn13, "9784750320236")!]))
     }

@@ -48,9 +48,9 @@ final class ModuleProvider: CollectionBrowsing, HomeSectionProviding {
     }
 
     /// The first page of the module's search for `keyword` (搜索, Phase 6g); nil when the
-    /// module has no search.
+    /// module has no search, or none for a keyword this short (`minKeywordLength`).
     func search(_ keyword: String) async throws -> CollectionPage? {
-        guard let search = module.search else { return nil }
+        guard let search = module.search, search.takes(keyword: keyword) else { return nil }
         return try await page(of: search, parameters: [:], after: nil, keyword: keyword)
     }
 
@@ -84,9 +84,9 @@ final class ModuleProvider: CollectionBrowsing, HomeSectionProviding {
 
     /// The module's search for `keyword` as its list items, every value whole (a summary is not
     /// cut to a row's blurb): what `ModuleFillProvider` matches and fills from. Nil when the
-    /// module has no search.
+    /// module has no search, or none for a keyword this short.
     func searchItems(_ keyword: String) async throws -> [RuleListItem]? {
-        guard let search = module.search else { return nil }
+        guard let search = module.search, search.takes(keyword: keyword) else { return nil }
         return try await items(of: search, parameters: [:], position: search.firstPosition, keyword: keyword)
     }
 
@@ -121,7 +121,7 @@ final class ModuleProvider: CollectionBrowsing, HomeSectionProviding {
     func searchEntry(_ item: RuleListItem, of entry: RuleModule.Entry? = nil) -> CollectionEntry? {
         guard let list = entry ?? module.search else { return nil }
         return Self.entry(item, of: list, instance: instance, hasURLRule: Self.hasURLRule(list),
-                          hosts: Set(module.hosts.map { $0.lowercased() }), isReadable: isReadable(list))
+                          hosts: RuleModuleHosts(module.hosts), isReadable: isReadable(list))
     }
 
     /// A cover a lookup's record names, from the module's hosts only.
@@ -135,13 +135,24 @@ final class ModuleProvider: CollectionBrowsing, HomeSectionProviding {
         let items = try await items(of: entry, parameters: parameters, position: position, keyword: keyword)
         let instance = instance
         let hasURLRule = Self.hasURLRule(entry)
-        let hosts = Set(module.hosts.map { $0.lowercased() })
+        let hosts = RuleModuleHosts(module.hosts)
         let isReadable = isReadable(entry)
         return CollectionPage(
             entries: items.compactMap {
                 Self.entry($0, of: entry, instance: instance, hasURLRule: hasURLRule, hosts: hosts, isReadable: isReadable)
             },
             next: entry.position(after: position, itemCount: items.count).map { CollectionCursor(value: String($0)) })
+    }
+
+    /// Authors kept per item, and ISBNs (a classic lists hundreds of editions').
+    nonisolated static let authorLimit = 5
+    nonisolated static let isbnLimit = 5
+
+    /// A value a rule read as several, one per line (the engine's join), each once.
+    nonisolated static func values(_ value: String) -> [String] {
+        var seen = Set<String>()
+        return value.components(separatedBy: "\n").map { $0.trimmingCharacters(in: .whitespaces) }
+            .filter { !$0.isEmpty && seen.insert($0).inserted }
     }
 
     /// Its items are books the module reads: never a lookup's record, which is a copy's data.
@@ -174,22 +185,28 @@ final class ModuleProvider: CollectionBrowsing, HomeSectionProviding {
     /// A list item as an entry, bounded and plain as every source's summary is: a book the
     /// module reads when `isReadable`, else data only.
     nonisolated static func entry(_ item: RuleListItem, of entry: RuleModule.Entry, instance: SourceInstanceKey,
-                                  hasURLRule: Bool, hosts: Set<String>, isReadable: Bool = false) -> CollectionEntry? {
+                                  hasURLRule: Bool, hosts: RuleModuleHosts, isReadable: Bool = false) -> CollectionEntry? {
         let title = OPDSClient.plainMetadata(item.name, limit: 200)
         guard !title.isEmpty else { return nil }
-        let author = OPDSClient.plainMetadata(item.author, limit: 100)
-        let authors = author.isEmpty ? [] : [author]
+        // A rule that reads several values (Open Library's `author_name`) gives one per line.
+        let authors = Array(Self.values(item.author).map { OPDSClient.plainMetadata($0, limit: 100) }
+            .filter { !$0.isEmpty }.prefix(Self.authorLimit))
+        let author = authors.joined(separator: ", ")
         let language = item.language.isEmpty ? nil : LanguageTag(item.language)?.identifier
         // Without a url rule every item would read the page's own address.
         let itemID = hasURLRule && !item.bookUrl.isEmpty ? item.bookUrl : "\(title)\u{1F}\(author)"
         let kind = entry.contentKind(of: item)
-        let identifiers = Set([item.isbn.flatMap { ExternalIdentifier.normalized(.isbn13, $0) }].compactMap { $0 })
+        // An edition's ISBN-10 and -13 normalize to one value; a work lists every edition's.
+        let identifiers = Set(Self.values(item.isbn ?? "").lazy.compactMap { ExternalIdentifier.normalized(.isbn13, $0) }
+            .reduce(into: [ExternalIdentifier]()) { kept, isbn in
+                if kept.count < Self.isbnLimit, !kept.contains(isbn) { kept.append(isbn) }
+            })
         let record = SourceRecord(key: SourceItemKey(instance: instance, item: itemID), title: title, authors: authors,
                                   language: language, contentKind: kind, identifiers: identifiers, copyID: nil,
                                   acquisitions: [.viewOnly])
         // A cover is a request too: only from the module's hosts.
         let cover: CoverReference = safeURL(string: item.coverUrl)
-            .flatMap { url in url.host.map { hosts.contains($0.lowercased()) } == true ? url : nil }
+            .flatMap { url in url.host.map { hosts.allowsRequest(to: $0) } == true ? url : nil }
             .map { .remote($0, headers: [:]) } ?? .generated(seed: title)
         let summary = WorkSummary(title: title, authors: authors, cover: cover,
                                   blurb: OPDSClient.plainMetadata(item.intro, limit: WorkSummary.blurbLimit),
@@ -222,7 +239,7 @@ extension RuleModule.Entry {
     /// (Bangumi tags 山田鐘人 and 小学館).
     nonisolated func tags(of item: RuleListItem) -> [String] {
         let named = [item.author, item.publisher ?? "", item.series ?? ""]
-            .flatMap { $0.components(separatedBy: CharacterSet(charactersIn: ",，、/／;；")) }
+            .flatMap { $0.components(separatedBy: CharacterSet(charactersIn: ",，、/／;；\n")) }
         let excluded = Set(((excludeTags ?? []) + named).map(WorkMatchKey.title).filter { !$0.isEmpty })
         let values: [String]
         if let list = item.tags {

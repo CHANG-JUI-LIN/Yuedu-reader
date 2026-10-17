@@ -141,18 +141,15 @@ struct RuleModuleClient: Sendable {
     /// under its `rateLimit`; the reply decoded as text.
     func send(_ address: String, method: String = "GET", body: String? = nil, headers: [String: String],
               charset: String?, in module: RuleModule, followsRefresh: Bool = true) async throws -> (text: String, baseURL: String) {
-        let hosts = Set(module.hosts.map { $0.lowercased() })
-        let allowed: @Sendable (URL) -> Bool = { url in
-            guard let host = url.host?.lowercased(), hosts.contains(host) else { return false }
-            return safeURL(string: url.absoluteString) != nil
-        }
-        guard let url = safeURL(string: address), allowed(url) else {
+        let hosts = RuleModuleHosts(module.hosts)
+        let redirects = Self.redirectGate(hosts)
+        guard let url = safeURL(string: address), let host = url.host, hosts.allowsRequest(to: host) else {
             throw SourceFailure(kind: .invalidAddress, underlying: FetchError.invalidURL(address))
         }
         let charset = charset.flatMap { $0.trimmingCharacters(in: .whitespaces).isEmpty ? nil : $0 }
         let page = try await SourceRateLimit.run(rate: module.rateLimit ?? "", key: "module:\(module.id)") {
             try await fetcher.fetchPage(url: url, method: method, body: body, headers: headers, baseURL: "",
-                                        bodyCharset: charset, redirect: allowed)
+                                        bodyCharset: charset, redirect: redirects)
         }
         let status = page.statusCode
         if (300...399).contains(status) {
@@ -174,7 +171,7 @@ struct RuleModuleClient: Sendable {
         // field's case or the sites stop serving these pages.
         if followsRefresh, method == "GET", let target = Self.metaRefreshTarget(in: text, baseURL: baseURL),
            target.absoluteString != baseURL.absoluteString {
-            guard allowed(target) else {
+            guard redirects(target) else {
                 AppLogger.network("module page refreshes to an address outside its hosts; read as it is",
                                   context: ["module": module.id, "page": baseURL.absoluteString, "target": target.absoluteString])
                 return (text, baseURL.absoluteString)
@@ -213,21 +210,36 @@ struct RuleModuleClient: Sendable {
         return nil
     }
 
+    /// Where a redirect may go: the hosts written out, or a `*.` domain, and a safe address.
+    nonisolated private static func redirectGate(_ hosts: RuleModuleHosts) -> @Sendable (URL) -> Bool {
+        { url in
+            guard let host = url.host, hosts.allowsRedirect(to: host) else { return false }
+            return safeURL(string: url.absoluteString) != nil
+        }
+    }
+
     /// A cover a lookup's record names (format 3.0): from the module's `hosts` only, under its
     /// `rateLimit`. Nil when the site lists a cover it does not serve (404) or that is no image.
     func image(_ address: String, in module: RuleModule) async throws -> Data? {
-        let hosts = Set(module.hosts.map { $0.lowercased() })
-        let allowed: @Sendable (URL) -> Bool = { url in
-            guard let host = url.host?.lowercased(), hosts.contains(host) else { return false }
-            return safeURL(string: url.absoluteString) != nil
-        }
-        guard let url = safeURL(string: address.trimmingCharacters(in: .whitespacesAndNewlines)), allowed(url) else {
+        let hosts = RuleModuleHosts(module.hosts)
+        let redirects = Self.redirectGate(hosts)
+        guard let url = safeURL(string: address.trimmingCharacters(in: .whitespacesAndNewlines)), let host = url.host,
+              hosts.allowsRequest(to: host) else {
             throw SourceFailure(kind: .invalidAddress, underlying: FetchError.invalidURL(address))
         }
         let page = try await SourceRateLimit.run(rate: module.rateLimit ?? "", key: "module:\(module.id)") {
-            try await fetcher.fetchPage(url: url, method: "GET", body: nil, headers: [:], baseURL: "", redirect: allowed)
+            try await fetcher.fetchPage(url: url, method: "GET", body: nil, headers: [:], baseURL: "", redirect: redirects)
         }
         if page.statusCode == 404 { return nil }
+        // A redirect the hosts refuse is a cover this module may not fetch, every time: no cover,
+        // not a failure that would lose the record's other values and ask again each week.
+        if (300...399).contains(page.statusCode) {
+            let location = (page.response as? HTTPURLResponse)?.value(forHTTPHeaderField: "Location") ?? ""
+            AppLogger.network("module cover redirects outside its hosts", context: [
+                "module": module.id, "url": url.absoluteString, "target": location,
+            ])
+            return nil
+        }
         guard (200...299).contains(page.statusCode) else {
             throw SourceFailure(kind: .rejected, status: page.statusCode, underlying: FetchError.httpError(page.statusCode))
         }

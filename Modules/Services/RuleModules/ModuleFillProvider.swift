@@ -66,7 +66,7 @@ final class ModuleFillProvider: MetadataFillProvider {
     private func canSearch(_ query: MetadataFillQuery, missing: Set<MetadataField>) -> Bool {
         guard let search = provider.module.search else { return false }
         return search.listedKinds.contains(query.contentKind)
-            && !query.title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            && search.takes(keyword: query.title)
             && query.authors.contains { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
             && !missing.isDisjoint(with: Self.fields)
     }
@@ -146,9 +146,12 @@ final class ModuleFillProvider: MetadataFillProvider {
         return MetadataFillResult(values: values, sourceItem: record.key)
     }
 
-    /// The record that is the copy's: its own ISBN is the one asked.
+    /// The record that is the copy's: one of its own ISBNs (an edition lists its ISBN-10 and
+    /// -13) is the one asked.
     static func record(in items: [RuleListItem], isbn: String) -> RuleListItem? {
-        items.first { item in item.isbn.flatMap { ExternalIdentifier.normalized(.isbn13, $0)?.value } == isbn }
+        items.first { item in
+            ModuleProvider.values(item.isbn ?? "").contains { ExternalIdentifier.normalized(.isbn13, $0)?.value == isbn }
+        }
     }
 
     /// The record's values, without a cover (which is fetched).
