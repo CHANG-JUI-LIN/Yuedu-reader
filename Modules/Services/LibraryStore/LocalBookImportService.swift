@@ -26,7 +26,7 @@ enum LocalBookImportService {
                let converted = try await AozoraBookImporter.importBook(at: url, title: title, store: store) {
                 book = converted
             } else {
-                book = try await store.importTxt(url: url, title: title)
+                book = try await store.importTxt(url: url, title: title, author: author)
             }
         case "md", "markdown": book = try store.importMarkdown(url: url, title: title, author: author ?? localized("未知作者"))
         case "json":

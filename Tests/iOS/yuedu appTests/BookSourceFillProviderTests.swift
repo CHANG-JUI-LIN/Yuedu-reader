@@ -4,14 +4,15 @@ import Testing
 
 /// Unified library Phase 3b: the reader's book sources fill a local copy's description and
 /// categories (level B: title and author). Maintainer, 2026-10-17: a copy with no cover takes
-/// the match's, and a copy with no author is matched by title when every match names one
-/// author.
+/// the match's, and a copy with no author is matched by title when the matches agree on an
+/// author (most of them, from two sources or more), and is given that author.
 @MainActor
 @Suite("Book source fill provider", .serialized)
 struct BookSourceFillProviderTests {
     private let sourceA = UUID()
     private let sourceB = UUID()
-    private var urls: [UUID: String] { [sourceA: "https://a.example", sourceB: "https://b.example"] }
+    private let sourceC = UUID()
+    private var urls: [UUID: String] { [sourceA: "https://a.example", sourceB: "https://b.example", sourceC: "https://c.example"] }
 
     @Test("only a copy that did not come from a book source, with a title, is looked up; with no author too")
     func whoIsLookedUp() {
@@ -82,6 +83,28 @@ struct BookSourceFillProviderTests {
             ], answered: 2, queried: 2)
         }, sourceURL: { [urls] in urls[$0] }, hasSources: { true })
         #expect(try await disagreeing.lookUp(query(authors: ["Unknown Author"])).values.isEmpty)
+    }
+
+    @Test("with no author, the author most matches name wins: only its books give values, and it names the copy")
+    func majorityAuthor() async throws {
+        let provider = BookSourceFillProvider(search: { [sourceA, sourceB, sourceC] _, _, _ in
+            .init(origins: [
+                origin(sourceC, "https://c.example", intro: "另一本同名書", kind: "都市", author: "某某"),
+                origin(sourceA, "https://a.example", intro: "", kind: "玄幻", author: "飞天鱼 著"),
+                origin(sourceB, "https://b.example", intro: "天地初开", kind: "", author: "飞天鱼",
+                       cover: "https://b.example/c.jpg"),
+            ], answered: 3, queried: 3)
+        }, sourceURL: { [urls] in urls[$0] }, hasSources: { true }, saveCover: { _, _ in "bs-1.jpg" })
+
+        let result = try await provider.lookUp(query(title: "万古神帝", authors: ["未知作者"]))
+
+        #expect(result.values[.intro] == .text("天地初开"))
+        #expect(result.values[.cover] == .text("bs-1.jpg"))
+        #expect(result.place == SourceInstanceKey(type: .bookSource, id: "https://b.example"))
+        #expect(result.author == "飞天鱼")
+
+        let known = try await provider.lookUp(query(title: "万古神帝", authors: ["飞天鱼"]))
+        #expect(known.author == nil, "a copy with an author is not named again")
     }
 
     @Test("a search stops at the first match with everything wanted only when the author is known")
@@ -185,6 +208,47 @@ struct BookSourceFillProviderTests {
         #expect(!wanted.contains(.cover), "another level-B place is not asked for a cover")
         #expect(store.filledValue(.cover, of: book)?.value == .text("bs-2.jpg"))
         #expect(store.filledValue(.intro, of: book)?.value == .text("簡介"))
+    }
+
+    @Test("through the runner, the agreed author is written over 未知作者 only")
+    func authorThroughTheRunner() async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent("FillProvider-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let store = BookStore(metadataFileURL: directory.appendingPathComponent("books_meta.json"))
+        let book = ReadingBook(title: "万古神帝", author: "未知作者", source: "local", contentFilename: "a.txt")
+        store.saveReadingBook(book)
+        let provider = BookSourceFillProvider(search: { [sourceA, sourceB] _, _, _ in
+            .init(origins: [origin(sourceA, "https://a.example", intro: "簡介", kind: "", author: "飞天鱼"),
+                            origin(sourceB, "https://b.example", intro: "", kind: "", author: "飞天鱼")],
+                  answered: 2, queried: 2)
+        }, sourceURL: { [urls] in urls[$0] }, hasSources: { true })
+        let runner = MetadataFillRunner(providers: [provider], ledger: store.metadataFillLedger,
+                                        write: { store.importedMetadata.write($0) },
+                                        nameAuthor: { store.nameUnknownAuthor($1, for: $0) })
+
+        await runner.fill([MetadataFillCandidate(
+            copyID: book.id, title: book.title, authors: [book.author], identifiers: [], copySource: .localLibrary,
+            sidecarSourceItem: .copy(book.id), hasOwnCover: false, values: [], decisions: [])])
+
+        #expect(store.books.first { $0.id == book.id }?.author == "飞天鱼")
+        store.nameUnknownAuthor("某某", for: book.id)
+        #expect(store.books.first { $0.id == book.id }?.author == "飞天鱼", "a named author is never replaced")
+    }
+
+    @Test("a copy naming no author asked under the earlier title-only rule is asked again, once")
+    func titleOnlyRuleChange() {
+        let id = UUID()
+        func candidate(_ author: String) -> MetadataFillCandidate {
+            MetadataFillCandidate(copyID: id, title: "万古神帝", authors: [author], identifiers: [], copySource: .localLibrary,
+                                  sidecarSourceItem: .copy(id), hasOwnCover: false, values: [], decisions: [])
+        }
+        let earlier = MetadataFillLedger.Entry(outcome: .empty, at: Date(), inputs: ["万古神帝", "未知作者", "|"].joined(separator: "\u{1F}"))
+        #expect(earlier.shouldAskAgain(inputs: candidate("未知作者").inputs, now: Date()))
+        let asked = MetadataFillLedger.Entry(outcome: .empty, at: Date(), inputs: candidate("未知作者").inputs)
+        #expect(!asked.shouldAskAgain(inputs: candidate("未知作者").inputs, now: Date()))
+        #expect(candidate("飞天鱼").inputs == ["万古神帝", "飞天鱼", "|"].joined(separator: "\u{1F}"),
+                "a copy with an author is asked as before")
     }
 
     // MARK: - Helpers

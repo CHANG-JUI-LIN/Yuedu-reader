@@ -189,6 +189,23 @@ enum ImportedMetadataCapture {
         return ImportedMetadata(copyID: copy.id, sourceItem: .copy(copy.id), identifiers: unique(identifiers), values: values)
     }
 
+    // MARK: - TXT
+
+    /// What a TXT's own header says beyond title and author: its 文案／内容简介 and 标签 line.
+    /// Nil when it says neither.
+    static func txt(copy: ReadingBook, metadata: TXTBookMetadata, now: Date = Date()) -> ImportedMetadata? {
+        let sourceItem = SourceItemKey.copy(copy.id)
+        var values: [MetadataValue] = []
+        if let intro = text(metadata.intro) {
+            values.append(MetadataValue(field: .intro, value: intro, provider: sourceItem.instance, sourceItem: sourceItem, fetchedAt: now))
+        }
+        if let tags = texts(metadata.tags) {
+            values.append(MetadataValue(field: .tags, value: tags, provider: sourceItem.instance, sourceItem: sourceItem, fetchedAt: now))
+        }
+        guard !values.isEmpty else { return nil }
+        return ImportedMetadata(copyID: copy.id, sourceItem: sourceItem, identifiers: [], values: values)
+    }
+
     /// A Calibre library that sends books over the wireless connection. It has no
     /// `RemoteLibraryConnection`, so its id is Calibre's own library id, marked as wireless.
     static func calibreWirelessInstance(libraryID: String) -> SourceInstanceKey {

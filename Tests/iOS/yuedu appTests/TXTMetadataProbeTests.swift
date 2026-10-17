@@ -100,6 +100,88 @@ struct TXTMetadataProbeTests {
         #expect(quoted.author == nil, "a sentence mentioning a book is no credit line")
     }
 
+    @Test("the four headers of the maintainer's TXT folder: title, author, 文案／内容简介 and 标签, banners skipped")
+    func readsDownloadHeaders() {
+        let wangu = TXTMetadataProbe.infer(from: """
+        　　《万古神帝》作者：飞天鱼
+
+        　　文案：
+        　　天地初开，太古混乱。
+        　　但，皆不可得长生……
+
+        　　标签：重生 玄幻
+
+
+        第一卷 云武王城【上】
+        第1章 八百年后
+        　　简介：这一行是正文。
+        """, fallbackTitle: "万古神帝")
+        #expect(wangu.title == "万古神帝" && wangu.author == "飞天鱼")
+        #expect(wangu.intro == "天地初开，太古混乱。\n但，皆不可得长生……")
+        #expect(wangu.tags == ["重生", "玄幻"])
+
+        let xiuzhen = TXTMetadataProbe.infer(from: """
+        ==========================================================
+        本站发的所有小说都是校对全本-精校的无错TXT小说下载：http://www.freexiaoshuo.com/
+        ==========================================================
+
+
+        修真聊天群 作者：圣骑士的传说
+
+        内容简介：
+        　　某天，宋书航意外加入了一个仙侠中二病资深患者的交流群。
+        　　啊啊啊啊，世界观在一夜间彻底崩碎啦！
+
+
+        番外：《师父的新年礼物》
+        　　黑龙世界，是一个有趣的魔法文明世界。
+        """, fallbackTitle: "修真聊天群")
+        #expect(xiuzhen.title == "修真聊天群" && xiuzhen.author == "圣骑士的传说")
+        #expect(xiuzhen.intro == "某天，宋书航意外加入了一个仙侠中二病资深患者的交流群。\n啊啊啊啊，世界观在一夜间彻底崩碎啦！")
+
+        let shixiong = TXTMetadataProbe.infer(from: """
+        ==========================================================
+        更多精校小说尽在精校吧下载：http://www.jingjiaoba.com
+        ==========================================================
+        我师兄实在太稳健了
+        作者：言归正传
+
+
+        内容简介：
+        　　重生在封神大战之前的上古时代，李长寿成了一个小小的炼气士。
+
+
+        第一章 小小灵娥
+        """, fallbackTitle: "檔名")
+        #expect(shixiong.title == "我师兄实在太稳健了" && shixiong.author == "言归正传")
+        #expect(shixiong.intro == "重生在封神大战之前的上古时代，李长寿成了一个小小的炼气士。")
+
+        let gou = TXTMetadataProbe.infer(from: """
+        苟在武道世界成圣
+        作者：在水中的纸老虎
+        简介：
+        　　简介：
+        　　命格在手，苟道求生！
+
+        第1章 乱世
+        """, fallbackTitle: "檔名")
+        #expect(gou.title == "苟在武道世界成圣" && gou.author == "在水中的纸老虎")
+        #expect(gou.intro == "命格在手，苟道求生！", "the repeated 简介： is the label again")
+        #expect(gou.tags.isEmpty)
+    }
+
+    @Test("a file's name: 《》, edition words and an author in it")
+    func readsFileNames() {
+        #expect(TXTMetadataProbe.fileNameParts("《万古神帝》（精校版全本）作者：飞天鱼") == ("万古神帝", "飞天鱼"))
+        #expect(TXTMetadataProbe.fileNameParts("修真聊天群 作者：圣骑士的传说") == ("修真聊天群", "圣骑士的传说"))
+        #expect(TXTMetadataProbe.fileNameParts("我师兄实在太稳健了【精校版】") == ("我师兄实在太稳健了", nil))
+        #expect(TXTMetadataProbe.fileNameParts("斗罗大陆_全本精校") == ("斗罗大陆", nil))
+        #expect(TXTMetadataProbe.fileNameParts("凡人修仙传(完结)") == ("凡人修仙传", nil))
+        #expect(TXTMetadataProbe.fileNameParts("三体") == ("三体", nil))
+        let named = TXTMetadataProbe.infer(from: "第一章\n只有正文。", fallbackTitle: "《雪中悍刀行》全本 作者：烽火戏诸侯")
+        #expect(named.title == "雪中悍刀行" && named.author == "烽火戏诸侯", "the name is the fallback for both")
+    }
+
     @Test("ignores metadata beyond the bounded sample")
     func ignoresMetadataBeyondSampleBoundary() throws {
         var data = Data(repeating: 0x61, count: TXTMetadataProbe.maximumSampleBytes)
@@ -180,7 +262,7 @@ struct TXTMetadataProbeTests {
     func bookStoreRecoversTXTAuthors() async throws {
         let documents = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
         let credited = "\(UUID().uuidString).txt", typed = "\(UUID().uuidString).txt"
-        let data = try #require("　　《万古神帝》作者：飞天鱼\r\n\r\n第1章 八百年后".data(using: TXTFileReader.gb18030Encoding))
+        let data = try #require("　　《万古神帝》作者：飞天鱼\r\n\r\n　　文案：\r\n　　天地初开，太古混乱。\r\n\r\n　　标签：重生\r\n\r\n第1章 八百年后".data(using: TXTFileReader.gb18030Encoding))
         try data.write(to: documents.appendingPathComponent(credited))
         try data.write(to: documents.appendingPathComponent(typed))
         let metadataURL = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString).appendingPathExtension("json")
@@ -196,10 +278,14 @@ struct TXTMetadataProbeTests {
         let store = BookStore(metadataFileURL: metadataURL)
         store.replaceBooksFromSync([unknown, edited])
 
-        await store.recoverTXTAuthors()
+        await store.rereadTXTHeaders()
 
         #expect(store.books.first { $0.id == unknown.id }?.author == "飞天鱼")
         #expect(store.books.first { $0.id == edited.id }?.author == "我寫的")
+        store.importedMetadata.waitForPendingWritesForTesting()
+        let sidecar = try #require(store.importedMetadata.read(copyID: unknown.id))
+        #expect(sidecar.values.first { $0.field == .intro }?.value == .text("天地初开，太古混乱。"))
+        #expect(sidecar.values.first { $0.field == .tags }?.value == .texts(["重生"]))
     }
 
     @Test("BookStore keeps GB18030 bytes while decoded content remains readable")

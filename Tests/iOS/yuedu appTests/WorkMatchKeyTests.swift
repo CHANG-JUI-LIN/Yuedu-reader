@@ -57,4 +57,24 @@ struct WorkMatchKeyTests {
         #expect(WritingScript(of: "Fantastic Mr Fox") == .latin)
         #expect(WritingScript(of: "1984") == .other)
     }
+
+    @Test("title-only matches agree on the author most of them name, from two places or more")
+    func agreedAuthor() {
+        #expect(WorkMatchKey.agreedAuthor([("a", ["飞天鱼"])])?.name == "飞天鱼", "one book is unanimous")
+        #expect(WorkMatchKey.agreedAuthor([("a", ["飞天鱼"]), ("b", ["飞天鱼 著"])])?.agreeing == [0, 1])
+        #expect(WorkMatchKey.agreedAuthor([("a", ["飞天鱼 著"]), ("b", ["飞天鱼"])])?.name == "飞天鱼",
+                "written as often: the plainest")
+        #expect(WorkMatchKey.agreedAuthor([("a", ["飞天鱼 著"]), ("b", ["飞天鱼 著"]), ("c", ["飞天鱼"])])?.name == "飞天鱼 著",
+                "as most write it")
+        let majority = WorkMatchKey.agreedAuthor([("a", ["某某"]), ("b", ["飞天鱼"]), ("c", ["飞天鱼"])])
+        #expect(majority?.name == "飞天鱼")
+        #expect(majority?.agreeing == [1, 2])
+        #expect(WorkMatchKey.agreedAuthor([("a", ["某某"]), ("b", ["飞天鱼"])]) == nil, "one each: no author")
+        #expect(WorkMatchKey.agreedAuthor([("a", ["某某"]), ("b", ["飞天鱼"]), ("b", ["飞天鱼"])]) == nil,
+                "a majority from one place is that place's word only")
+        #expect(WorkMatchKey.agreedAuthor([("a", ["甲"]), ("b", ["乙乙"]), ("c", ["乙乙"]), ("d", ["丙丙"])]) == nil,
+                "half is not two thirds")
+        #expect(WorkMatchKey.agreedAuthor([("a", [""])]) == nil, "a book naming no author tells nothing")
+        #expect(WorkMatchKey.agreedAuthor([]) == nil)
+    }
 }

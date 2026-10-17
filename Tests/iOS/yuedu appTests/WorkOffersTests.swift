@@ -57,7 +57,14 @@ struct WorkOffersTests {
                                         sources: sources(a, b, c))
         #expect(agreeing.map(\.record.key.instance.id) == [b.bookSourceUrl, c.bookSourceUrl])
         #expect(WorkOffers.books(of: anonymous, in: [book("斗罗大陆", by: "唐家三少", in: b), book("斗罗大陆", by: "某某", in: c)],
-                                 sources: sources(a, b, c)).isEmpty, "two authors: not guessed")
+                                 sources: sources(a, b, c)).isEmpty, "two authors, one each: not guessed")
+        let d = source("d")
+        let majority = WorkOffers.books(of: anonymous, in: [book("斗罗大陆", by: "某某", in: b),
+                                                             book("斗罗大陆", by: "唐家三少", in: c),
+                                                             book("斗罗大陆", by: "唐家三少", in: d)],
+                                        sources: sources(a, b, c, d))
+        #expect(majority.map(\.record.key.instance.id) == [c.bookSourceUrl, d.bookSourceUrl],
+                "two of three name 唐家三少: only theirs are offered")
         #expect(WorkOffers.books(of: anonymous, in: [book("斗罗大陆", by: "", in: b)], sources: sources(a, b)).isEmpty,
                 "a book naming no author tells nothing")
         let placeholder = route(book("斗罗大陆", by: "未知作者", in: a), in: a)

@@ -181,7 +181,8 @@ final class MetadataFillCoordinator {
         await prepare()
         guard !Task.isCancelled else { return }
         let runner = MetadataFillRunner(providers: makeProviders(), ledger: store.metadataFillLedger,
-                                        write: { [store] in Self.write($0, to: store) })
+                                        write: { [store] in Self.write($0, to: store) },
+                                        nameAuthor: { [store] in store.nameUnknownAuthor($1, for: $0) })
         store.metadataFillLedger.keep(only: Set(store.books.map(\.id)))
         let candidates = await candidates()
         guard !Task.isCancelled else { return }

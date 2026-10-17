@@ -13,7 +13,8 @@ import Foundation
 ///
 /// Maintainer, 2026-10-17: a copy with no cover of its own takes the match's (downloaded with
 /// its source's headers, as 封面搜索's pick is), and a copy that names no author (a TXT with
-/// no 「作者：」 line is 「未知作者」) is matched by title when every match names one author.
+/// no 「作者：」 line is 「未知作者」) is matched by title when the matches agree on an author
+/// (`WorkMatchKey.agreedAuthor`), and is given that author.
 @MainActor
 final class BookSourceFillProvider: MetadataFillProvider {
     /// The ledger's key for every source together: a copy is searched once, not once per
@@ -104,13 +105,22 @@ final class BookSourceFillProvider: MetadataFillProvider {
         guard found.answered > 0 || !found.origins.isEmpty else {
             throw LookupError.noSourceAnswered(queried: found.queried)
         }
-        if authors.isEmpty, !found.origins.isEmpty, !WorkMatchKey.nameOneAuthor(found.origins.map { [$0.author] }) {
-            AppLogger.info("metadata.fill.sources title-only matches name more than one author; nothing taken "
-                           + "copy=\(query.copyID.uuidString) matches=\(found.origins.count)")
-            return MetadataFillResult(values: [:])
+        var origins = found.origins
+        var agreedAuthor: String?
+        if authors.isEmpty, !origins.isEmpty {
+            guard let agreed = WorkMatchKey.agreedAuthor(origins.map { ($0.sourceId.uuidString, [$0.author]) }) else {
+                AppLogger.info("metadata.fill.sources title-only matches agree on no author; nothing taken "
+                               + "copy=\(query.copyID.uuidString) matches=\(origins.count)")
+                return MetadataFillResult(values: [:])
+            }
+            origins = agreed.agreeing.map { origins[$0] }
+            agreedAuthor = agreed.name
         }
-        guard let chosen = Self.chosen(from: found.origins, missing: missing) else { return MetadataFillResult(values: [:]) }
+        guard let chosen = Self.chosen(from: origins, missing: missing) else {
+            return MetadataFillResult(values: [:], author: agreedAuthor)
+        }
         var result = Self.result(from: chosen, missing: missing, sourceURL: sourceURL)
+        result.author = agreedAuthor
         let cover = chosen.coverUrl.trimmingCharacters(in: .whitespacesAndNewlines)
         if missing.contains(.cover), !cover.isEmpty, result.place != nil,
            let name = await saveCover(cover, chosen.sourceId) {

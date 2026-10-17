@@ -348,7 +348,7 @@ class BookStore: ObservableObject, BookProvider {
     // MARK: Import TXT File
 
     @MainActor @discardableResult
-    func importTxt(url: URL, title: String? = nil) async throws -> ReadingBook {
+    func importTxt(url: URL, title: String? = nil, author: String? = nil) async throws -> ReadingBook {
         let fallbackTitle = title ?? url.deletingPathExtension().lastPathComponent
         let filename = "\(UUID().uuidString).txt"
         let destination = documentsURL(for: filename)
@@ -411,7 +411,7 @@ class BookStore: ObservableObject, BookProvider {
 
         var book = ReadingBook(
             title: title ?? metadata.title,
-            author: metadata.author ?? "未知作者",
+            author: author ?? metadata.author ?? "未知作者",
             source: "local",
             contentFilename: filename
         )
@@ -420,6 +420,11 @@ class BookStore: ObservableObject, BookProvider {
 
         do {
             try Task.checkCancellation()
+            // The header's 文案 and 标签, beside the copy before it joins the shelf, so the
+            // metadata filler (set off by the shelf change) reads them and asks only for the rest.
+            if let header = ImportedMetadataCapture.txt(copy: importedBook, metadata: metadata) {
+                importedMetadata.write(header)
+            }
             records.insert(importedBook, at: 0)
             saveMeta()
         } catch {
@@ -1371,6 +1376,17 @@ class BookStore: ObservableObject, BookProvider {
             records[idx].author = author.isEmpty ? records[idx].author : author
             saveMeta()
         }
+    }
+
+    /// The author the 來源配置 agreed on for a copy that names none (a TXT with no 「作者：」
+    /// line): written only over 未知作者, never over an author the reader typed.
+    func nameUnknownAuthor(_ author: String, for bookId: UUID) {
+        let name = author.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !name.isEmpty, let idx = records.firstIndex(where: { $0.id == bookId }),
+              WorkMatchKey.knownAuthors([records[idx].author]).isEmpty else { return }
+        records[idx].author = name
+        AppLogger.info("metadata.fill author named from agreeing sources copy=\(bookId.uuidString)")
+        saveMeta()
     }
 
     /// The reader's own description, from 編輯資訊; empty clears it, and the page shows the
@@ -3088,46 +3104,61 @@ class BookStore: ObservableObject, BookProvider {
         if didRepair || chapterStore.hasUnwrittenChanges { saveMetaImmediately() }
         // Phase 3a-2: the covers the filler gave copies with none, for the shelf.
         Task { @MainActor [weak self] in await self?.refreshFilledCovers() }
-        Task { @MainActor [weak self] in await self?.recoverTXTAuthors() }
+        Task { @MainActor [weak self] in await self?.rereadTXTHeaders() }
     }
 
-    /// A TXT imported as 未知作者 before `TXTMetadataProbe` read its credit line
-    /// (`《万古神帝》作者：飞天鱼`, 2026-10-17) gets the author its file names. Only the placeholder
-    /// is replaced: an author the reader typed stays. Each launch reads the first 128 KB of the
-    /// TXT copies still without one.
-    func recoverTXTAuthors() async {
+    /// TXT copies imported before `TXTMetadataProbe` read the header's credit line, 文案 and
+    /// 标签 (2026-10-17) have their file's header read again, once: an author is written only
+    /// over the 未知作者 placeholder (one the reader typed stays), and 文案／标签 go beside the
+    /// copy as an import's do. A copy still 未知作者 is read at every launch (its first 128 KB).
+    func rereadTXTHeaders() async {
         let placeholder = "未知作者"
-        let candidates = records.filter { $0.source == "local" && $0.resolvedPipelineKind == .txt && $0.author == placeholder }
-            .map { (id: $0.id, title: $0.title, url: documentsURL(for: $0.contentFilename)) }
+        let done = Set(UserDefaults.standard.stringArray(forKey: Self.txtHeadersReadKey) ?? [])
+        let candidates = records.filter {
+            $0.source == "local" && $0.resolvedPipelineKind == .txt
+                && ($0.author == placeholder || !done.contains($0.id.uuidString))
+        }.map { (book: $0, url: documentsURL(for: $0.contentFilename)) }
         guard !candidates.isEmpty else { return }
-        let found = await Task.detached(priority: .utility) { () -> [UUID: String] in
-            var authors: [UUID: String] = [:]
+        let read = await Task.detached(priority: .utility) { () -> [UUID: TXTBookMetadata] in
+            var found: [UUID: TXTBookMetadata] = [:]
             for candidate in candidates {
                 do {
-                    if let author = try TXTMetadataProbe.probe(url: candidate.url, fallbackTitle: candidate.title).author {
-                        authors[candidate.id] = author
-                    }
+                    found[candidate.book.id] = try TXTMetadataProbe.probe(url: candidate.url, fallbackTitle: candidate.book.title)
                 } catch {
-                    AppLogger.error("TXT author recovery could not read the file", context: [
-                        "book": candidate.id.uuidString, "error": "\(error)",
+                    AppLogger.error("TXT header could not be read again", context: [
+                        "book": candidate.book.id.uuidString, "error": "\(error)",
                     ], level: .warning)
                 }
             }
-            return authors
+            return found
         }.value
-        guard !found.isEmpty else { return }
         var updated = records
-        var changed = false
+        var named = 0
         for index in updated.indices {
-            guard let author = found[updated[index].id], updated[index].author == placeholder else { continue }
-            updated[index].author = author
-            changed = true
+            guard let header = read[updated[index].id] else { continue }
+            if updated[index].author == placeholder, let author = header.author {
+                updated[index].author = author
+                named += 1
+            }
+            if !done.contains(updated[index].id.uuidString), let captured = ImportedMetadataCapture.txt(copy: updated[index], metadata: header) {
+                // Only what the sidecar has none of: a value filled or typed since stays.
+                let existing = Set(importedMetadata.read(copyID: updated[index].id)?.values.map(\.field) ?? [])
+                let fresh = captured.values.filter { !existing.contains($0.field) }
+                if !fresh.isEmpty {
+                    importedMetadata.write(ImportedMetadata(copyID: captured.copyID, sourceItem: captured.sourceItem,
+                                                            identifiers: [], values: fresh))
+                }
+            }
         }
-        guard changed else { return }
-        records = updated
-        saveMeta()
-        AppLogger.info("TXT author recovery: \(found.count) book(s) named their author")
+        UserDefaults.standard.set(Array(done.union(read.keys.map(\.uuidString))), forKey: Self.txtHeadersReadKey)
+        if named > 0 {
+            records = updated
+            saveMeta()
+        }
+        AppLogger.info("TXT headers read again: \(read.count) book(s), \(named) named their author")
     }
+
+    nonisolated static let txtHeadersReadKey = "yd_txt_headers_read"
 
     /// Whether the shelf is known to be complete: the file decoded, or there is no shelf
     /// file yet. A file that exists but does not decode leaves the shelf empty, and that

@@ -40,16 +40,32 @@ enum WorkMatchKey {
 
     private static let authorPlaceholders: Set<String> = ["未知作者", "Unknown Author"]
 
-    /// Books matched by title alone, for a work that names no author (maintainer, 2026-10-17):
-    /// they are of one work only when each names an author and every two are compatible. Two
-    /// authors are two books of the same title, and neither is guessed.
-    static func nameOneAuthor(_ books: [[String]]) -> Bool {
-        let keys = books.map { $0.map(author).filter { !$0.isEmpty } }
-        guard !keys.isEmpty, keys.allSatisfy({ !$0.isEmpty }) else { return false }
-        for (index, lhs) in keys.enumerated() {
-            for rhs in keys[(index + 1)...] where !authorKeysCompatible(lhs, rhs) { return false }
+    /// Books matched by title alone, for a work that names no author: the author they agree on
+    /// and which of them name that author. Maintainer, 2026-10-17: when every book names one
+    /// author, it is that one; when they differ, the author most of them name wins if at least
+    /// two places (`witness`) name it and they are two thirds of the books or more — an
+    /// aggregator's one stray book of the same title no longer blocks the work. Nil otherwise:
+    /// no author is guessed.
+    static func agreedAuthor(_ books: [(witness: String, authors: [String])]) -> (name: String, agreeing: [Int])? {
+        let keys = books.map { $0.authors.map(author).filter { !$0.isEmpty } }
+        var best: [Int] = []
+        for candidate in keys.indices where !keys[candidate].isEmpty {
+            let agreeing = keys.indices.filter { authorKeysCompatible(keys[candidate], keys[$0]) }
+            if agreeing.count > best.count { best = agreeing }
         }
-        return true
+        guard !best.isEmpty else { return nil }
+        if best.count < keys.count {
+            guard Set(best.map { books[$0].witness }).count >= 2, best.count * 3 >= keys.count * 2 else { return nil }
+        }
+        // The name as most of them write it (刘慈欣 over 劉慈欣 when more write it so), and of
+        // those written as often the shortest: 「飞天鱼」 over 「飞天鱼 著」.
+        let names = best.compactMap { books[$0].authors.lazy.map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }.first { !$0.isEmpty } }
+        let counts = Dictionary(names.map { ($0, 1) }, uniquingKeysWith: +)
+        guard let name = names.min(by: { lhs, rhs in
+            let l = counts[lhs, default: 0], r = counts[rhs, default: 0]
+            return l != r ? l > r : lhs.count < rhs.count
+        }) else { return nil }
+        return (name, best)
     }
 
     static func compatible(_ a: String, _ b: String) -> Bool {

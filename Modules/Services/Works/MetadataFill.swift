@@ -43,6 +43,8 @@ struct MetadataFillResult: Hashable, Sendable {
     /// The place that gave the values, when the provider asks many (each book source is its
     /// own place); nil means the provider itself.
     var place: SourceInstanceKey?
+    /// The author the matches of a title-only lookup agreed on, for a copy that names none.
+    var author: String? = nil
 }
 
 @MainActor
@@ -88,9 +90,15 @@ struct MetadataFillCandidate: Hashable, Sendable {
     /// What the ledger compares: a copy whose title, authors or identifiers changed is a
     /// different question.
     var inputs: String {
-        ([title] + authors + ["|"] + identifiers.map { "\($0.scheme.rawValue):\($0.value)" }.sorted())
+        ([title] + authors + ["|"] + identifiers.map { "\($0.scheme.rawValue):\($0.value)" }.sorted()
+            + (WorkMatchKey.knownAuthors(authors).isEmpty ? [Self.titleOnlyRule] : []))
             .joined(separator: "\u{1F}")
     }
+
+    /// The rule a copy naming no author is matched by: when it changes, such copies are asked
+    /// again once. "agreed-author" is `WorkMatchKey.agreedAuthor` (2026-10-17), which took over
+    /// from all matches naming one author; the copies asked under that rule found nothing.
+    private static let titleOnlyRule = "rule:agreed-author"
 
     /// The fields worth looking for: empty, and with no decision of the reader's on them.
     var missing: Set<MetadataField> {
@@ -164,13 +172,19 @@ final class MetadataFillRunner {
     private let providers: [any MetadataFillProvider]
     private let ledger: MetadataFillLedger
     private let write: @MainActor (ImportedMetadata) -> Void
+    /// Names the author of a copy that names none, from the matches a title-only lookup agreed
+    /// on (`MetadataFillResult.author`).
+    private let nameAuthor: @MainActor (UUID, String) -> Void
     private let now: @MainActor () -> Date
 
     init(providers: [any MetadataFillProvider], ledger: MetadataFillLedger,
-         write: @escaping @MainActor (ImportedMetadata) -> Void, now: @escaping @MainActor () -> Date = Date.init) {
+         write: @escaping @MainActor (ImportedMetadata) -> Void,
+         nameAuthor: @escaping @MainActor (UUID, String) -> Void = { _, _ in },
+         now: @escaping @MainActor () -> Date = Date.init) {
         self.providers = providers
         self.ledger = ledger
         self.write = write
+        self.nameAuthor = nameAuthor
         self.now = now
     }
 
@@ -230,6 +244,9 @@ final class MetadataFillRunner {
                                      sourceItem: result.sourceItem, fetchedAt: at) }
             ledger.record(copyID: copy.copyID, provider: provider.key, outcome: values.isEmpty ? .empty : .found,
                           inputs: copy.inputs, at: at)
+            if let author = result.author, WorkMatchKey.knownAuthors(copy.authors).isEmpty {
+                nameAuthor(copy.copyID, author)
+            }
             guard !values.isEmpty else { continue }
             write(ImportedMetadata(copyID: copy.copyID, sourceItem: copy.sidecarSourceItem,
                                    identifiers: provider.grade == .a ? result.identifiers : [], values: values))
