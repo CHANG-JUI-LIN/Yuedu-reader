@@ -74,3 +74,14 @@ Open question, not blocking: Open Library is the same kind of service as the fou
 - Tags (gap h, **for veto**): a `tags` rule's values are one tag each (AniList's "Slice of Life" is not split), at most 24 characters, no digits, at most 5, minus the entry's `excludeTags` **and minus the item's own author, publisher and series** (Bangumi tags 山田鐘人 and 小学館). Raw top tags were the alternative.
 - `RuleListItem`'s new fields are Optional, so pages cached before them still decode.
 - Tests: `RuleModuleFormatTests/format3`, `ModuleProviderTests/jsonBody`, `bangumi` (the saved Bangumi reply through the real client: body, comic kind, aliases, tags, work URL), `kindsAndISBN`. Module suites 72/72.
+
+### M2a official modules: loading, reserved ids, 資源庫 cards (2026-10-17)
+
+M2 is split: LibraryTabRoot, HomeContentSourcePicker, ExploreHome and BookSearchView carry another session's uncommitted tab-bar work in the main checkout, so moving 古騰堡／青空文庫 into 官方模組 (M2b) waits until that lands.
+
+- `OfficialRuleModules`: bundled `Resources/Assets/official-module-<id>.json`, validated by `RuleModuleValidator` at the running app's version; a file whose id is not reserved or does not match its name is logged and left out. Reserved ids: `bangumi`, `anilist`, `openbd`, `narou`, `rakuten-books`.
+- `RuleModuleLibrary.modules` is now the official modules this storefront has, then the imported ones, so rows, search, fill, a section's form and 選擇內容來源 take them with no change of their own; `imported` feeds 匯入的模組, `official` feeds 官方模組 (cards after AI 推薦, sharing `RuleModuleCard`). なろう is left out in CHN (`OfficialRuleModules.isAvailable`, app policy).
+- **No per-module master switch** (guardrail 2 revised): an official module is turned off where any module is — 搜尋來源 and 資料來源 already list every module with its own check, and rows exist only when added. Its page says so in a footer instead of 訂閱網址／移除模組.
+- An import with a reserved id is refused (`RuleModuleStoreError.reservedID`) in the import sheet and in the store. An official module's page cache lives under the store's hidden `.official/<id>/cache`, which `list()` skips.
+- `-no-official-modules` / `-official-modules-dir <path>` (DEBUG); the four UI test files that send searches launch with the first.
+- Tests: `OfficialRuleModulesTests` (5), and the module suites, 72/72.

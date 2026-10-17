@@ -37,7 +37,7 @@ struct ModuleListPageTests {
     private func makeFixture(installed: Bool = true) async throws -> Fixture {
         let folder = FileManager.default.temporaryDirectory.appendingPathComponent("ModuleListPage-\(UUID().uuidString)")
         let store = RuleModuleStore(directory: folder)
-        let library = RuleModuleLibrary(store: store, appVersion: "2.0.8")
+        let library = RuleModuleLibrary(store: store, appVersion: "2.0.8", officialFiles: { [] })
         if installed { try await library.install(moduleJSON(), from: nil) } else { await library.load() }
         let configuration = URLSessionConfiguration.ephemeral
         configuration.protocolClasses = [ModuleStub.self]

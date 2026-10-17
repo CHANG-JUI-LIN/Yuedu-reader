@@ -38,38 +38,11 @@ struct RuleModuleDetailView: View {
         Form {
             RuleModuleManifestSections(module: installed.module)
 
-            Section {
-                if let url = installed.subscriptionURL {
-                    Text(url.absoluteString)
-                        .foregroundStyle(DSColor.textPrimary)
-                        .textSelection(.enabled)
-                        .accessibilityIdentifier("module.subscription")
-                    Button {
-                        showsUpdate = true
-                        Task { await updates.checkForUpdate(installed) }
-                    } label: {
-                        SettingsRowLabel(localized("檢查更新"), systemImage: "arrow.triangle.2.circlepath", role: .action)
-                    }
-                    .accessibilityIdentifier("module.checkUpdate")
-                }
-            } header: {
-                Text(localized("訂閱網址")).foregroundStyle(DSColor.textSecondary)
-            } footer: {
-                if installed.subscriptionURL == nil {
-                    Text(localized("從檔案或剪貼簿加入的模組沒有訂閱網址，無法檢查更新。")).dsSectionFooter()
-                }
+            if installed.isOfficial {
+                officialSection
+            } else {
+                importedSections(installed)
             }
-            .interfaceSectionSurface()
-
-            Section {
-                Button(role: .destructive) {
-                    confirmsRemoval = true
-                } label: {
-                    SettingsRowLabel(localized("移除模組"), systemImage: "trash", role: .destructive)
-                }
-                .accessibilityIdentifier("module.remove")
-            }
-            .interfaceSectionSurface()
         }
         .softScrollEdges()
         .sheet(isPresented: $showsUpdate) {
@@ -91,6 +64,52 @@ struct RuleModuleDetailView: View {
         }
     }
 
+    /// Bundled with the app (M2): nothing to update or remove, so the page says how to stop using it.
+    private var officialSection: some View {
+        Section {
+            Text(localized("官方模組")).foregroundStyle(DSColor.textPrimary)
+        } footer: {
+            Text(localized("隨閱讀一起更新，不能移除；不想用時，在「搜尋來源」和「資料來源」取消勾選。")).dsSectionFooter()
+        }
+        .interfaceSectionSurface()
+    }
+
+    @ViewBuilder
+    private func importedSections(_ installed: InstalledRuleModule) -> some View {
+        Section {
+            if let url = installed.subscriptionURL {
+                Text(url.absoluteString)
+                    .foregroundStyle(DSColor.textPrimary)
+                    .textSelection(.enabled)
+                    .accessibilityIdentifier("module.subscription")
+                Button {
+                    showsUpdate = true
+                    Task { await updates.checkForUpdate(installed) }
+                } label: {
+                    SettingsRowLabel(localized("檢查更新"), systemImage: "arrow.triangle.2.circlepath", role: .action)
+                }
+                .accessibilityIdentifier("module.checkUpdate")
+            }
+        } header: {
+            Text(localized("訂閱網址")).foregroundStyle(DSColor.textSecondary)
+        } footer: {
+            if installed.subscriptionURL == nil {
+                Text(localized("從檔案或剪貼簿加入的模組沒有訂閱網址，無法檢查更新。")).dsSectionFooter()
+            }
+        }
+        .interfaceSectionSurface()
+
+        Section {
+            Button(role: .destructive) {
+                confirmsRemoval = true
+            } label: {
+                SettingsRowLabel(localized("移除模組"), systemImage: "trash", role: .destructive)
+            }
+            .accessibilityIdentifier("module.remove")
+        }
+        .interfaceSectionSurface()
+    }
+
     private func remove() async {
         do {
             try await library.remove(id: moduleID)
@@ -105,5 +124,11 @@ struct RuleModuleDetailView: View {
 #Preview("A module's page") {
     NavigationStack {
         RuleModuleDetailView(moduleID: "example.newbooks", library: RuleModulePreviewData.library(["新書速報"]))
+    }
+}
+
+#Preview("An official module's page") {
+    NavigationStack {
+        RuleModuleDetailView(moduleID: "bangumi", library: RuleModulePreviewData.officialLibrary())
     }
 }

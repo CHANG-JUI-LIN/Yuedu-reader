@@ -20,7 +20,7 @@ struct RuleModuleImportTests {
 
     private func makeLibrary() -> (RuleModuleLibrary, URL) {
         let folder = FileManager.default.temporaryDirectory.appendingPathComponent("RuleModuleImport-\(UUID().uuidString)")
-        return (RuleModuleLibrary(store: RuleModuleStore(directory: folder), appVersion: "2.0.8"), folder)
+        return (RuleModuleLibrary(store: RuleModuleStore(directory: folder), appVersion: "2.0.8", officialFiles: { [] }), folder)
     }
 
     /// Serves `files` by address; anything else is a 404.

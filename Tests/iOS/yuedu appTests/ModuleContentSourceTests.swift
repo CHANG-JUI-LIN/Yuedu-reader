@@ -38,7 +38,7 @@ struct ModuleContentSourceTests {
 
     private func makeLibrary() -> (RuleModuleLibrary, URL) {
         let folder = FileManager.default.temporaryDirectory.appendingPathComponent("ModuleContentSource-\(UUID().uuidString)")
-        return (RuleModuleLibrary(store: RuleModuleStore(directory: folder), appVersion: "2.0.8"), folder)
+        return (RuleModuleLibrary(store: RuleModuleStore(directory: folder), appVersion: "2.0.8", officialFiles: { [] }), folder)
     }
 
     private func makeStore() -> (HomePageStore, () -> Void) {

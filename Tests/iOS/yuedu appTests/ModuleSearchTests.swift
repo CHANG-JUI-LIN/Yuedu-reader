@@ -39,7 +39,7 @@ struct ModuleSearchTests {
     private func makeFixture() async throws -> Fixture {
         let folder = FileManager.default.temporaryDirectory.appendingPathComponent("ModuleSearch-\(UUID().uuidString)")
         let store = RuleModuleStore(directory: folder)
-        let library = RuleModuleLibrary(store: store, appVersion: "2.0.8")
+        let library = RuleModuleLibrary(store: store, appVersion: "2.0.8", officialFiles: { [] })
         let searching = try await library.install(moduleJSON(id: "m.search", title: "搜尋模組", search: true), from: nil).module
         let plain = try await library.install(moduleJSON(id: "m.plain", title: "清單模組", search: false), from: nil).module
         let configuration = URLSessionConfiguration.ephemeral

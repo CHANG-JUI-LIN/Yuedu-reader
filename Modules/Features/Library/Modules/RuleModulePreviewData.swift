@@ -51,6 +51,23 @@ enum RuleModulePreviewData {
         return library
     }
 
+    /// A library holding one official module, read from a scratch folder as the bundle's are.
+    static func officialLibrary() -> RuleModuleLibrary {
+        let folder = FileManager.default.temporaryDirectory.appendingPathComponent("RuleModulePreview-\(UUID().uuidString)")
+        let official = folder.appendingPathComponent("official", isDirectory: true)
+        do {
+            try FileManager.default.createDirectory(at: official, withIntermediateDirectories: true)
+            try Data(json(id: "bangumi", title: "Bangumi").utf8)
+                .write(to: official.appendingPathComponent("\(OfficialRuleModules.filePrefix)bangumi.json"))
+        } catch {
+            AppLogger.error("Preview official module not written", error: error, level: .warning)
+        }
+        let library = RuleModuleLibrary(store: RuleModuleStore(directory: folder.appendingPathComponent("store")),
+                                        officialFiles: { OfficialRuleModules.files(in: official) }, availability: nil)
+        Task { await library.load() }
+        return library
+    }
+
     static func library(_ titles: [String]) -> RuleModuleLibrary {
         let folder = FileManager.default.temporaryDirectory.appendingPathComponent("RuleModulePreview-\(UUID().uuidString)")
         let store = RuleModuleStore(directory: folder)

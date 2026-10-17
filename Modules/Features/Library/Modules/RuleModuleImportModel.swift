@@ -125,6 +125,9 @@ final class RuleModuleImportModel: ObservableObject {
                 phase = .upToDate(localized("已是最新版本"))
                 return
             }
+        } else if OfficialRuleModules.reservedIDs.contains(module.id) {
+            phase = .failed(RuleModuleStoreError.reservedID(module.id).message)
+            return
         } else if library.module(id: module.id) != nil {
             phase = .failed(RuleModuleStoreError.alreadyInstalled(module.id).message)
             return
