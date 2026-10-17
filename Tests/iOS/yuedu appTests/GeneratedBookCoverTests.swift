@@ -300,7 +300,7 @@ struct GeneratedBookCoverTests {
             #expect(!isBlank(image), "\(scheme) shelf cover rendered blank")
         }
 
-        #expect(BookshelfCoverStyle.snapshot(for: book, colorScheme: .light) != nil,
+        #expect(BookshelfCoverStyle.snapshot(for: book, drawn: .generated, colorScheme: .light) != nil,
                 "the open-book transition would lift an empty card")
     }
 
@@ -327,7 +327,7 @@ struct GeneratedBookCoverTests {
                     CGSize(width: 104, height: 156),
                 ] {
                     let snapshot = try #require(BookshelfCoverStyle.snapshot(
-                        for: book, colorScheme: scheme, sourceSize: size
+                        for: book, drawn: .generated, colorScheme: scheme, sourceSize: size
                     ))
                     #expect(abs(snapshot.size.width - size.width) < 0.1)
                     #expect(abs(snapshot.size.height - size.height) < 0.1)

@@ -30,7 +30,12 @@ struct BookCoverImage: View {
     /// the surfaces 預設封面 covers (書架, and 探索 when enabled) pass a seed.
     var defaultCoverSeed: String?
 
-    @State private var image: UIImage?
+    /// The cover this slot fetched, with the cache key it was fetched for. Held by
+    /// the slot, not just the pipeline's memory: the memory budget evicts covers
+    /// while a long 發現頁 scrolls, and a slot scrolled back into view used to read
+    /// that miss as "no cover", blank its own bitmap and fall back to the generated
+    /// cover until a refetch landed (if the source served it again at all).
+    @State private var loaded: HeldRemoteCover?
     /// The 預設封面 this slot falls back to, once decoded off the main thread.
     @State private var loadedDefaultCover: LoadedDefaultCover?
     @Environment(\.colorScheme) private var colorScheme
@@ -55,8 +60,16 @@ struct BookCoverImage: View {
         self.session = session
         // Cache hits paint on the first layout pass — no placeholder flash and
         // no extra state publish per cell while a list scrolls.
-        _image = State(initialValue: BookCoverLoader.cachedImage(for: coverURL, session: session))
+        let key = BookCoverLoader.cacheKey(for: coverURL, session: session)
+        _loaded = State(initialValue: BookCoverLoader.cachedImage(for: coverURL, session: session)
+            .map { HeldRemoteCover(key: key, image: $0) })
     }
+
+    private var cacheKey: String { BookCoverLoader.cacheKey(for: coverURL, session: session) }
+
+    /// The fetched cover for the address this slot shows now; a slot reused for
+    /// another address never shows the previous one's cover.
+    private var image: UIImage? { loaded?.image(for: cacheKey) }
 
     var body: some View {
         ZStack {
@@ -76,7 +89,7 @@ struct BookCoverImage: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .clipped()
         .task(id: LoadID(
-            cover: BookCoverLoader.cacheKey(for: coverURL, session: session),
+            cover: cacheKey,
             defaultCover: defaultCoverRequest
         )) { await load() }
     }
@@ -129,11 +142,13 @@ struct BookCoverImage: View {
             await loadDefaultCover()
             return
         }
+        let key = cacheKey
         if let cached = BookCoverLoader.cachedImage(for: coverURL, session: session) {
-            if image !== cached { image = cached }
+            if loaded?.image(for: key) !== cached { loaded = HeldRemoteCover(key: key, image: cached) }
             return
         }
-        if image != nil { image = nil }  // avoid showing a reused cell's old cover
+        // Memory let go of its copy; this slot did not. Nothing to fetch.
+        if loaded?.image(for: key) != nil { return }
         // The 預設封面 is the placeholder while the network cover loads and the
         // fallback when it fails. It is a local file, so it is ready first.
         await loadDefaultCover()
@@ -146,8 +161,8 @@ struct BookCoverImage: View {
             sourceHeaders = resolved.headers
         }
         let headers = BookCoverLoader.headers(sourceBaseURL: baseURL, sourceHeaders: sourceHeaders)
-        let loaded = await BookCoverLoader.loadImage(urlString: coverURL, headers: headers, session: session)
-        if !Task.isCancelled { image = loaded }
+        let fetched = await BookCoverLoader.loadImage(urlString: coverURL, headers: headers, session: session)
+        if !Task.isCancelled { loaded = fetched.map { HeldRemoteCover(key: key, image: $0) } }
     }
 
     /// Decodes this slot's 預設封面 off the main thread when memory does not have
@@ -165,6 +180,16 @@ struct BookCoverImage: View {
         if loadedDefaultCover?.request != request || loadedDefaultCover?.image !== decoded {
             loadedDefaultCover = LoadedDefaultCover(request: request, image: decoded)
         }
+    }
+}
+
+/// A fetched remote cover and the cache key (address and session) it belongs to.
+struct HeldRemoteCover {
+    let key: String
+    let image: UIImage
+
+    func image(for key: String) -> UIImage? {
+        self.key == key ? image : nil
     }
 }
 

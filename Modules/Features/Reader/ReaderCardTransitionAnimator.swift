@@ -280,6 +280,11 @@ final class ReaderCardTransitionAnimator: NSObject, UIViewControllerAnimatedTran
             : UIGraphicsImageRenderer(size: image.size).image { _ in
                 image.draw(at: .zero)
             }
+        if normalized.cgImage == nil {
+            // A bitmap-less image (CIImage-backed) would leave the cover transparent
+            // over the reader's paper, which reads as a white cover.
+            AppLogger.info("⟐ reader-nav cover snapshot has no CGImage size=\(image.size)")
+        }
         coverView.layer.contents = normalized.cgImage
         coverView.layer.contentsScale = normalized.scale
         stagedCoverImage = image
@@ -655,7 +660,9 @@ final class ReaderCardTransitionAnimator: NSObject, UIViewControllerAnimatedTran
             // A plain colour card gets its rounding straight from
             // `backgroundColor` + `cornerRadius`, which Core Animation draws
             // without clipping, so this branch never sets `masksToBounds`.
-            coverView.backgroundColor = UIColor(DSColor.surface)
+            // Only a card still on its placeholder lifts no image, so it lifts the
+            // placeholder's colour (`BookshelfCoverArtwork`), not a white card.
+            coverView.backgroundColor = UIColor(DSColor.neutralControlFill)
         }
         // The hinge anchor is fixed for the whole transition, so per-frame
         // layout can set bounds/position directly without anchor migration.

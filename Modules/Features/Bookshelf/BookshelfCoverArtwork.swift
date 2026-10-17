@@ -41,25 +41,33 @@ enum BookshelfCoverStyle {
     /// Bitmap form for the open-book transition, which lifts a picture rather than
     /// a view and so cannot take `artwork(for:)`.
     ///
-    /// Memory only, never the disk: the transition starts from the tap, on the main
-    /// thread. What the card shows is what gets lifted, so a card still showing its
-    /// placeholder lifts a plain card (nil) rather than a cover it has not drawn.
+    /// `drawn` is what the tapped card reported drawing (`bookshelfDrawnCoverObserver`):
+    /// the transition lifts exactly that, never its own guess from the pipeline's
+    /// memory. That guess disagreed with the card whenever the bitmap the card holds
+    /// had been evicted (memory pressure, backgrounding, a large shelf), or a missing
+    /// cover's failure record had expired while the card showed its fallback, and
+    /// both lifted a blank card. A card on its placeholder lifts a plain card (nil),
+    /// as does an open with no card on screen (`drawn` nil, the DEBUG `-open-book` hook).
     /// `snapshotUpgrade` supplies a sharper rendering of the same artwork once ready.
     @MainActor
     static func snapshot(
         for book: ReadingBook,
+        drawn: BookshelfDrawnCover?,
+        catalogImage: UIImage? = nil,
         colorScheme: ColorScheme,
-        filledCover: String? = nil,
         sourceSize: CGSize? = nil
     ) -> UIImage? {
-        switch cachedArtwork(for: .shelf(for: book, colorScheme: colorScheme, filledCover: filledCover)) {
-        case .bitmap(let image, _):
-            return image
-        case .pending:
+        switch drawn {
+        case .bitmap(let image, let source):
+            // The card's own bitmap is sized for the card; a larger decode of the same
+            // file, when memory has one, starts the growth sharper.
+            return CoverImagePipeline.shared.largestCachedImage(for: source) ?? image
+        case .placeholder, nil:
             return nil
         case .catalog(let catalog):
-            // What `BookCoverImage` draws: the catalog cover once fetched, otherwise
-            // its own placeholder, the 預設封面 or the generated cover.
+            // What `BookCoverImage` reported drawing; before its first report, what it
+            // would draw from memory: the catalog cover, the 預設封面, or the generated cover.
+            if let catalogImage { return catalogImage }
             if let cover = book.coverUrl.flatMap({
                 BookCoverLoader.cachedImage(for: $0, session: BookCoverLoader.remoteSession(for: book))
             }) {
@@ -83,14 +91,8 @@ enum BookshelfCoverStyle {
     /// Nil when the card is not drawing a pipeline bitmap: generated covers are
     /// rendered at transition size already, and catalog covers exist at one size only.
     @MainActor
-    static func snapshotUpgrade(
-        for book: ReadingBook,
-        colorScheme: ColorScheme,
-        filledCover: String? = nil
-    ) -> (@MainActor () -> UIImage?)? {
-        guard case .bitmap(_, let source) = cachedArtwork(for: .shelf(for: book, colorScheme: colorScheme, filledCover: filledCover)) else {
-            return nil
-        }
+    static func snapshotUpgrade(for drawn: BookshelfDrawnCover?) -> (@MainActor () -> UIImage?)? {
+        guard case .bitmap(_, let source) = drawn else { return nil }
         let pipeline = CoverImagePipeline.shared
         let request = CoverImageRequest(source: source, size: .largest)
         if pipeline.cachedImage(for: request) == nil {
@@ -153,6 +155,48 @@ enum BookshelfCoverStyle {
             scale: scale
         )
     }
+}
+
+// MARK: - Drawn cover
+
+/// What one shelf cover slot is drawing right now, reported upward through
+/// `bookshelfDrawnCoverObserver` so the open-book transition lifts exactly that
+/// (`BookshelfCoverStyle.snapshot(for:drawn:…)`).
+enum BookshelfDrawnCover: Equatable {
+    /// A decoded file: the bitmap the slot holds, and where it came from, for the
+    /// sharper rendering the transition swaps in.
+    case bitmap(UIImage, CoverImageSource)
+    /// The neutral slot shown while a file is read.
+    case placeholder
+    /// `BookCoverImage` draws it; the image it draws reaches the
+    /// `coverImageObserver`, not this report.
+    case catalog(BookshelfCoverPlan.CatalogFallback)
+    case generated
+
+    /// For logs: the kind alone, never the bitmap's description.
+    var kindName: String {
+        switch self {
+        case .bitmap: "bitmap"
+        case .placeholder: "placeholder"
+        case .catalog: "catalog"
+        case .generated: "generated"
+        }
+    }
+
+    static func == (lhs: BookshelfDrawnCover, rhs: BookshelfDrawnCover) -> Bool {
+        switch (lhs, rhs) {
+        case let (.bitmap(a, sourceA), .bitmap(b, sourceB)): a === b && sourceA == sourceB
+        case (.placeholder, .placeholder), (.generated, .generated): true
+        case let (.catalog(a), .catalog(b)): a == b
+        default: false
+        }
+    }
+}
+
+extension EnvironmentValues {
+    /// Told what each shelf cover slot below draws; nil everywhere but the bookshelf's
+    /// own rows and cells, which hand it to the open-book transition.
+    @Entry var bookshelfDrawnCoverObserver: (@MainActor (BookshelfDrawnCover) -> Void)?
 }
 
 // MARK: - Plan
@@ -268,6 +312,7 @@ struct BookshelfCoverArtwork: View {
 
     @Environment(\.displayScale) private var displayScale
     @Environment(\.coverImagePipeline) private var pipeline
+    @Environment(\.bookshelfDrawnCoverObserver) private var drawnCoverObserver
     @State private var own = CoverSlotState()
     @State private var fallback = CoverSlotState()
     /// Bumped when a file this slot draws changes on disk, to restart its task.
@@ -275,7 +320,11 @@ struct BookshelfCoverArtwork: View {
 
     var body: some View {
         let requests = currentRequests
-        artwork(for: resolvedContent(requests))
+        let content = resolvedContent(requests)
+        artwork(for: content)
+            .onChange(of: content.drawn, initial: true) { _, drawn in
+                drawnCoverObserver?(drawn)
+            }
             .task(id: LoadID(requests: requests, catalog: plan.catalogFallback, generation: reloadGeneration)) {
                 await load(requests)
             }
@@ -293,16 +342,25 @@ struct BookshelfCoverArtwork: View {
     // MARK: Composition
 
     private enum Content {
-        case bitmap(UIImage)
+        case bitmap(UIImage, CoverImageSource)
         case placeholder
         case catalog(BookshelfCoverPlan.CatalogFallback)
         case generated
+
+        var drawn: BookshelfDrawnCover {
+            switch self {
+            case .bitmap(let image, let source): .bitmap(image, source)
+            case .placeholder: .placeholder
+            case .catalog(let catalog): .catalog(catalog)
+            case .generated: .generated
+            }
+        }
     }
 
     @ViewBuilder
     private func artwork(for content: Content) -> some View {
         switch content {
-        case .bitmap(let image):
+        case .bitmap(let image, _):
             Image(uiImage: image)
                 .resizable()
                 .scaledToFill()
@@ -343,19 +401,19 @@ struct BookshelfCoverArtwork: View {
     }
 
     private func resolvedContent(_ requests: Requests) -> Content {
-        if plan.ownCover != nil {
+        if let ownCover = plan.ownCover {
             guard let request = requests.own else { return .placeholder }
             switch phase(of: request, in: own) {
-            case .image(let image): return .bitmap(image)
+            case .image(let image): return .bitmap(image, ownCover)
             case .pending: return .placeholder
             case .unavailable: break
             }
         }
         if let catalog = plan.catalogFallback { return .catalog(catalog) }
-        if plan.defaultCover != nil {
+        if let defaultCover = plan.defaultCover {
             guard let request = requests.fallback else { return .placeholder }
             switch phase(of: request, in: fallback) {
-            case .image(let image): return .bitmap(image)
+            case .image(let image): return .bitmap(image, defaultCover)
             case .pending: return .placeholder
             case .unavailable: break
             }

@@ -144,6 +144,30 @@ private final class BookshelfReaderGeometryStore: ObservableObject {
 /// of a scroll. The frame is read when the book opens; the geometry store gets each value.
 final class BookshelfCoverFrameBox {
     var frame: CGRect = .zero
+    /// What the cover slot reports drawing, for the open-book transition to lift.
+    var drawnCover: BookshelfDrawnCover?
+    /// The image a catalog cover (`BookCoverImage`) reports drawing.
+    var catalogImage: UIImage?
+
+    /// The tapped card's cover, as the open-book transition takes it.
+    func tappedCover() -> BookshelfTappedCover {
+        BookshelfTappedCover(
+            geometry: frame.isEmpty
+                ? nil
+                : ReaderCardGeometry(frame: frame, cornerRadius: BookshelfCoverStyle.cornerRadius),
+            drawnCover: drawnCover,
+            catalogImage: catalogImage
+        )
+    }
+}
+
+/// A tapped shelf card's cover: where it is (nil before it reported a frame) and what
+/// it draws. The radius has to match what the card clipped with, or the card
+/// visibly re-rounds as it lifts off the shelf.
+struct BookshelfTappedCover {
+    var geometry: ReaderCardGeometry?
+    var drawnCover: BookshelfDrawnCover?
+    var catalogImage: UIImage?
 }
 
 /// The bookshelf ＋'s ways of putting a book on the shelf. Browsing a library is Explore's
@@ -156,6 +180,7 @@ private enum BookshelfImportPresentationRoute: Hashable {
 private extension View {
     /// Same frames, at the same moments, as the `GeometryReader` + preference it replaces —
     /// in window coordinates, empty ones ignored — written to `box` instead of to state.
+    /// What the cover draws goes to `box` too, so a tap lifts exactly that.
     func reportBookshelfCoverFrame(into box: BookshelfCoverFrameBox, onChange: ((CGRect) -> Void)?) -> some View {
         onGeometryChange(for: CGRect.self) { proxy in
             proxy.frame(in: .global)
@@ -164,6 +189,8 @@ private extension View {
             box.frame = frame
             onChange?(frame)
         }
+        .environment(\.bookshelfDrawnCoverObserver) { [weak box] drawn in box?.drawnCover = drawn }
+        .environment(\.coverImageObserver) { [weak box] image in box?.catalogImage = image }
     }
 }
 
@@ -287,13 +314,14 @@ struct HomeView<Tabs: View>: View {
               args.indices.contains(idx + 1) else { return }
         let needle = args[idx + 1]
         guard let book = store.books.first(where: { $0.title.contains(needle) }) else { return }
-        openBook(book, from: ShelfPage(pagerGroup: selectedGroup), sourceGeometry: nil)
+        openBook(book, from: ShelfPage(pagerGroup: selectedGroup), tapped: nil)
     }
     #endif
 
     /// `page` is where the book was tapped, and where its card goes back to when it closes:
     /// the reader covers the shelf, so nothing pages it or pops it in between.
-    private func openBook(_ book: ReadingBook, from page: ShelfPage, sourceGeometry: ReaderCardGeometry?) {
+    private func openBook(_ book: ReadingBook, from page: ShelfPage, tapped: BookshelfTappedCover?) {
+        let sourceGeometry = tapped?.geometry
         AppLogger.info("⟐ openBook tap bookID=\(book.id) title=\(book.title) pipelineKind=\(book.resolvedPipelineKind) useCard=\(BookCardNavigationGate.shouldUseCardTransition(for: book)) hasGeometry=\(sourceGeometry != nil)")
         if BookCardNavigationGate.shouldUseCardTransition(for: book) {
             // Re-entrancy guard: once a card open is staged (readerBookID set)
@@ -313,20 +341,20 @@ struct HomeView<Tabs: View>: View {
             let requestToken = UUID()
             pendingReaderOpenToken = requestToken
             AppLogger.info("⟐ openBook staged token=\(requestToken) hasPendingToken=\(pendingReaderOpenToken != nil)")
-            // Same resolver the cards use, so the lifted card carries the very
-            // image the shelf was showing (including a 預設封面).
-            let filledCover = store.filledCovers.path(for: book)
+            // What the tapped card reported drawing, so the lifted card carries the
+            // very image the shelf was showing (including a 預設封面).
             let snapshot = BookshelfCoverStyle.snapshot(
                 for: book,
+                drawn: tapped?.drawnCover,
+                catalogImage: tapped?.catalogImage,
                 colorScheme: colorScheme,
-                filledCover: filledCover,
                 sourceSize: sourceGeometry?.frame.size
                     ?? readerGeometryStore.frame(for: book.id, onPage: page)?.size
             )
             let snapshotUpgrade = snapshot == nil
                 ? nil
-                : BookshelfCoverStyle.snapshotUpgrade(for: book, colorScheme: colorScheme, filledCover: filledCover)
-            AppLogger.info("⟐ openBook snapshot resolved hasSnapshot=\(snapshot != nil)")
+                : BookshelfCoverStyle.snapshotUpgrade(for: tapped?.drawnCover)
+            AppLogger.info("⟐ openBook snapshot resolved hasSnapshot=\(snapshot != nil) drawn=\(tapped?.drawnCover?.kindName ?? "none")")
             Task { @MainActor in
                 AppLogger.info("⟐ openBook begin resolveOpeningDirection bookID=\(book.id)")
                 let direction = await resolveOpeningDirection(for: book)
@@ -1101,8 +1129,8 @@ struct HomeView<Tabs: View>: View {
                             book: book,
                             isEditing: isSelecting,
                             transitionNamespace: bookTransition,
-                            onTap: { sourceGeometry in
-                                openBook(book, from: page, sourceGeometry: sourceGeometry)
+                            onTap: { tapped in
+                                openBook(book, from: page, tapped: tapped)
                             },
                             onCoverFrameChange: { frame in
                                 readerGeometryStore.update(frame, for: book.id, onPage: page)
@@ -1216,8 +1244,8 @@ struct HomeView<Tabs: View>: View {
                             isSelected: selectedBookIds.contains(book.id),
                             selectedCoverScale: selectedCoverScale,
                             transitionNamespace: bookTransition,
-                            onOpen: { sourceGeometry in
-                                openBook(book, from: page, sourceGeometry: sourceGeometry)
+                            onOpen: { tapped in
+                                openBook(book, from: page, tapped: tapped)
                             },
                             onToggleSelection: { toggleSelection(of: book.id) },
                             onCoverFrameChange: { frame in
@@ -1820,7 +1848,7 @@ struct BookRow: View {
     let book: ReadingBook
     var isEditing: Bool = false
     var transitionNamespace: Namespace.ID? = nil
-    let onTap: (ReaderCardGeometry?) -> Void
+    let onTap: (BookshelfTappedCover) -> Void
     var onCoverFrameChange: ((CGRect) -> Void)? = nil
     let onEdit: () -> Void
     let onDelete: () -> Void
@@ -1855,9 +1883,7 @@ struct BookRow: View {
     }
 
     private func openBook() {
-        onTap(coverFrame.frame.isEmpty ? nil : ReaderCardGeometry(
-            frame: coverFrame.frame, cornerRadius: BookshelfCoverStyle.cornerRadius
-        ))
+        onTap(coverFrame.tappedCover())
     }
 
     private var content: some View {
@@ -2044,7 +2070,7 @@ struct BookGridCell: View {
     /// How much a selected cover lifts, from `BookshelfGridSelectionStyle.liftScale`.
     var selectedCoverScale: CGFloat = 1
     var transitionNamespace: Namespace.ID? = nil
-    let onOpen: (ReaderCardGeometry?) -> Void
+    let onOpen: (BookshelfTappedCover) -> Void
     var onToggleSelection: () -> Void = {}
     var onCoverFrameChange: ((CGRect) -> Void)? = nil
     let onEdit: () -> Void
@@ -2054,15 +2080,6 @@ struct BookGridCell: View {
     @State private var coverFrame = BookshelfCoverFrameBox()
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
-
-    /// Cover geometry for the open-book card transition, or nil before the cover
-    /// has reported a frame. The radius has to match what the cell actually
-    /// clipped with, or the card visibly re-rounds as it lifts off the shelf.
-    private var readerCardGeometry: ReaderCardGeometry? {
-        coverFrame.frame.isEmpty
-            ? nil
-            : ReaderCardGeometry(frame: coverFrame.frame, cornerRadius: BookshelfCoverStyle.cornerRadius)
-    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: DSLayout.bookshelfGridCoverTitleSpacing) {
@@ -2172,7 +2189,7 @@ struct BookGridCell: View {
         if isEditing {
             onToggleSelection()
         } else {
-            onOpen(readerCardGeometry)
+            onOpen(coverFrame.tappedCover())
         }
     }
 

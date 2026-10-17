@@ -681,12 +681,14 @@ struct BookshelfCoverArtworkTests {
         _ book: ReadingBook,
         plan: BookshelfCoverPlan,
         pipeline: CoverImagePipeline,
-        size: CGSize
+        size: CGSize,
+        onDrawn: (@MainActor (BookshelfDrawnCover) -> Void)? = nil
     ) throws -> UIImage {
         let renderer = ImageRenderer(
             content: BookshelfCoverArtwork(book: book, plan: plan, displaySize: size)
                 .frame(width: size.width, height: size.height)
                 .environment(\.coverImagePipeline, pipeline)
+                .environment(\.bookshelfDrawnCoverObserver, onDrawn)
                 .environment(\.displayScale, 2)
         )
         renderer.scale = 2
@@ -797,23 +799,83 @@ struct BookshelfCoverArtworkTests {
         #expect(info.catalogFallback == .init(defaultCoverSeed: nil))
     }
 
-    @Test("The transition snapshot of a cover not decoded yet reads nothing")
-    func transitionSnapshotIsMemoryOnly() {
-        let settings = GlobalSettings.shared
-        let forced = settings.useDefaultCoverForAllBooks
-        settings.useDefaultCoverForAllBooks = false
-        defer { settings.useDefaultCoverForAllBooks = forced }
+    @Test("A card on its placeholder lifts a plain card and reads nothing")
+    func transitionSnapshotOfAPlaceholderIsPlain() {
         let filename = "\(UUID().uuidString)_cover.jpg"
         let book = book(coverImagePath: filename)
 
-        #expect(BookshelfCoverStyle.image(for: book, colorScheme: .light) == nil)
         // Like the card, which still shows its placeholder: a plain card, no upgrade.
         #expect(BookshelfCoverStyle.snapshot(
-            for: book, colorScheme: .light, sourceSize: CGSize(width: 45, height: 65)
+            for: book, drawn: .placeholder, colorScheme: .light, sourceSize: CGSize(width: 45, height: 65)
         ) == nil)
-        #expect(BookshelfCoverStyle.snapshotUpgrade(for: book, colorScheme: .light) == nil)
+        #expect(BookshelfCoverStyle.snapshotUpgrade(for: .placeholder) == nil)
+        // No card on screen at all (the DEBUG open hook): plain too.
+        #expect(BookshelfCoverStyle.snapshot(for: book, drawn: nil, colorScheme: .light) == nil)
         // Any read would have found the file missing and remembered it.
         #expect(!CoverImagePipeline.shared.isKnownUnavailable(.bookCover(filename: filename)))
+    }
+
+    @Test("The slot reports the bitmap it draws, and the transition lifts it after memory let it go")
+    func transitionLiftsTheCardsBitmapAfterEviction() async throws {
+        let fixture = try CoverFixture()
+        try fixture.store.write(Swatch.png(.red), filename: "evicted_cover.jpg")
+        let book = book(coverImagePath: "evicted_cover.jpg")
+        let slot = CGSize(width: 45, height: 65)
+        let size = try #require(CoverPixelSize.fitting(pointSize: slot, scale: 2))
+        let source = CoverImageSource.bookCover(filename: "evicted_cover.jpg")
+        _ = await fixture.pipeline.image(for: CoverImageRequest(source: source, size: size))
+        let plan = BookshelfCoverPlan.shelf(for: book, colorScheme: .light, forcesDefaultCover: false)
+
+        var reports: [BookshelfDrawnCover] = []
+        _ = try render(book, plan: plan, pipeline: fixture.pipeline, size: slot) { reports.append($0) }
+        let drawn = try #require(reports.last)
+        guard case .bitmap(let held, let reportedSource) = drawn else {
+            Issue.record("expected a bitmap report, got \(drawn)")
+            return
+        }
+        #expect(reportedSource == source)
+
+        // Memory pressure or backgrounding empties the pipeline; the card keeps its bitmap.
+        fixture.pipeline.purgeMemory()
+        #expect(fixture.pipeline.largestCachedImage(for: source) == nil)
+
+        let lifted = try #require(BookshelfCoverStyle.snapshot(for: book, drawn: drawn, colorScheme: .light))
+        #expect(lifted === held)
+        #expect(Swatch.tone(of: lifted) == "red")
+        #expect(BookshelfCoverStyle.snapshotUpgrade(for: drawn) != nil)
+    }
+
+    @Test("A card showing its generated cover lifts the generated cover, whatever memory says")
+    func transitionLiftsAGeneratedCover() throws {
+        // A missing cover whose failure record has expired looks "not decoded yet" to
+        // the pipeline while the card keeps showing its fallback.
+        let book = book(coverImagePath: "\(UUID().uuidString)_cover.jpg")
+        let lifted = BookshelfCoverStyle.snapshot(
+            for: book, drawn: .generated, colorScheme: .light, sourceSize: CGSize(width: 45, height: 65)
+        )
+        #expect(lifted != nil)
+        #expect(BookshelfCoverStyle.snapshotUpgrade(for: .generated) == nil)
+    }
+
+    @Test("A catalog card lifts the image its cover reported drawing")
+    func transitionLiftsTheCatalogImage() {
+        let book = book(coverImagePath: nil)
+        let reported = Swatch.solid(.blue, width: 60, height: 90)
+        let lifted = BookshelfCoverStyle.snapshot(
+            for: book,
+            drawn: .catalog(.init(defaultCoverSeed: nil)),
+            catalogImage: reported,
+            colorScheme: .light
+        )
+        #expect(lifted === reported)
+    }
+
+    @Test("A remote cover slot keeps its own cover for its address, and only for it")
+    func heldRemoteCoverMatchesItsAddress() {
+        let image = Swatch.solid(.red, width: 60, height: 90)
+        let held = HeldRemoteCover(key: "https://cdn.example/a.jpg", image: image)
+        #expect(held.image(for: "https://cdn.example/a.jpg") === image)
+        #expect(held.image(for: "https://cdn.example/b.jpg") == nil)
     }
 
     @Test("The transition takes a sharper rendering of the same artwork, and nothing else")
