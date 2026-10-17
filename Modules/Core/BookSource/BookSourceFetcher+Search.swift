@@ -186,7 +186,7 @@ extension BookSourceFetcher {
         }
 
         // A search URL with JSON options went to the runtime above, so this one has none.
-        let request = source.renderSearchURL(query: query, page: page)
+        let request = await source.renderSearchURL(query: query, page: page)
         let resolvedUrlStr = RuleEngine.resolveURL(
             request.url,
             base: source.cleanedBookSourceURL

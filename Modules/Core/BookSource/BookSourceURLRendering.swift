@@ -1,11 +1,13 @@
 import Foundation
-import JavaScriptCore
 
 extension BookSource {
     /// Render a search URL that has no JSON options: `{{key}}` `{{page}}` `{{key,GB2312}}`
     /// and the legacy `URL,POST,body`. A URL with options (`URL,{…}`) is the runtime's
     /// (`shouldUseLegadoRuntimeFetch`), which reads them as Legado's AnalyzeUrl does.
-    func renderSearchURL(query: String, page: Int = 1) -> (
+    ///
+    /// Any other `{{…}}` left after those substitutions is source JS, evaluated in the
+    /// source's own session runtime (`evaluateRemainingTemplates`).
+    func renderSearchURL(query: String, page: Int = 1) async -> (
         url: String, method: String, body: String?
     ) {
         let encoded = query.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? query
@@ -22,7 +24,7 @@ extension BookSource {
         }
 
         func applyVars(_ s: String) -> String {
-            var result = s
+            s
                 .replacingOccurrences(of: "{{key,GB2312}}", with: gbkEncoded)
                 .replacingOccurrences(of: "{{key,gb2312}}", with: gbkEncoded)
                 .replacingOccurrences(of: "{{key,GBK}}", with: gbkEncoded)
@@ -32,24 +34,48 @@ extension BookSource {
                 .replacingOccurrences(of: "{key}", with: encoded)
                 .replacingOccurrences(of: "{{page}}", with: pageStr)
                 .replacingOccurrences(of: "{page}", with: pageStr)
-            // Handle remaining {{...}} JavaScript expressions
-            result = BookSource.evaluateRemainingTemplates(result, source: self)
-            return result
         }
 
         let trimmedSearch = searchUrl.trimmingCharacters(in: .whitespacesAndNewlines)
         // Legacy format: URL,POST,bodyTemplate
         let parts = trimmedSearch.components(separatedBy: ",")
-        if parts.count >= 2 && parts[1].trimmingCharacters(in: .whitespaces).uppercased() == "POST"
-        {
-            let urlStr = applyVars(parts[0].trimmingCharacters(in: .whitespacesAndNewlines))
-            let bodyTemplate = parts.count >= 3 ? parts[2...].joined(separator: ",") : ""
-            let body = applyVars(bodyTemplate)
-            return (urlStr, "POST", body.isEmpty ? nil : body)
+        let urlTemplate = applyVars(parts[0].trimmingCharacters(in: .whitespacesAndNewlines))
+        let method: String
+        let bodyTemplate: String?
+        if parts.count >= 2 && parts[1].trimmingCharacters(in: .whitespaces).uppercased() == "POST" {
+            method = "POST"
+            bodyTemplate = applyVars(parts.count >= 3 ? parts[2...].joined(separator: ",") : "")
         } else {
-            let finalURL = applyVars(parts[0].trimmingCharacters(in: .whitespacesAndNewlines))
-            return (finalURL, "GET", nil)
+            method = "GET"
+            bodyTemplate = nil
         }
+
+        guard urlTemplate.contains("{{") || bodyTemplate?.contains("{{") == true else {
+            return (urlTemplate, method, bodyTemplate.flatMap { $0.isEmpty ? nil : $0 })
+        }
+        // Source JS runs on the source-script thread (a script there may block on the
+        // engine's queue), exactly like the runtime's own URL rendering (`prepareFetch`).
+        let source = self
+        let (url, body) = await SourceScriptThread.run {
+            let bridge = BookSourceSession.session(for: source).bridgeForAsyncOperations
+            // AnalyzeUrl's template bindings (`buildJsBindings`), so a template reads the
+            // same names here as on the runtime path. `key` is the raw query, as in Legado.
+            let bindings: [String: Any] = [
+                "baseUrl": source.bookSourceUrl,
+                "page": page,
+                "key": query,
+                "speakText": "",
+                "speakSpeed": 0,
+                "header": source.header,
+            ]
+            let url = Self.evaluateRemainingTemplates(
+                urlTemplate, source: source, bridge: bridge, bindings: bindings)
+            let body = bodyTemplate.map {
+                Self.evaluateRemainingTemplates($0, source: source, bridge: bridge, bindings: bindings)
+            }
+            return (url, body)
+        }
+        return (url, method, body.flatMap { $0.isEmpty ? nil : $0 })
     }
 
     /// Parse header string into Dictionary.
@@ -111,10 +137,16 @@ extension BookSource {
     }
 
     /// Process remaining `{{...}}` JavaScript template expressions in URLs.
-    /// Legado book source URLs often contain `{{cookie.removeCookie(source.key)}}` and similar JS fragments.
-    /// These are typically side-effect operations (cookie clearing, etc.), returning empty strings.
-    /// This method attempts evaluation via JSContext; replaces with empty string on failure.
-    static func evaluateRemainingTemplates(_ input: String, source: BookSource) -> String {
+    /// Legado book source URLs often contain `{{cookie.removeCookie(source.key)}}` and similar JS
+    /// fragments: side effects whose value is empty. Each expression runs in the source's session
+    /// runtime — the one bridge per source, with `jsLib`, `source`, `cookie` and `java` in scope —
+    /// and an expression that yields nothing (undefined, null, or an error) renders as "".
+    private static func evaluateRemainingTemplates(
+        _ input: String,
+        source: BookSource,
+        bridge: ModernParserBridge,
+        bindings: [String: Any]
+    ) -> String {
         guard input.contains("{{") else { return input }
         guard let regex = try? NSRegularExpression(pattern: #"\{\{([\s\S]*?)\}\}"#) else { return input }
         let nsRange = NSRange(input.startIndex..., in: input)
@@ -131,86 +163,16 @@ extension BookSource {
                 output.replaceSubrange(wholeRange, with: "")
                 continue
             }
-            // Try evaluating with JSContext
-            let evaluated = evaluateTemplateExpression(expression, source: source)
-            output.replaceSubrange(wholeRange, with: evaluated)
+            let evaluated = bridge.evaluateSourceScript(expression, bindings: bindings)
+            if evaluated == nil, let error = bridge.lastSourceScriptError {
+                AppLogger.parse("search URL template failed; rendered empty", context: [
+                    "source": source.bookSourceName,
+                    "error": error,
+                ], level: .warning)
+            }
+            output.replaceSubrange(wholeRange, with: evaluated ?? "")
         }
         return output
-    }
-
-    /// Evaluate a single template expression using a persistent, per-source JSContext
-    /// that has the source's jsLib pre-evaluated so that `{{qt}}`, `{{ho}}` etc. resolve.
-    private static var templateContextCache: [String: JSContext] = [:]
-    private static let templateContextLock = NSLock()
-
-    private static func evaluateTemplateExpression(_ expression: String, source: BookSource) -> String {
-        let cacheKey = source.bookSourceUrl
-
-        templateContextLock.lock()
-        let context: JSContext
-        if let cached = templateContextCache[cacheKey] {
-            context = cached
-        } else {
-            context = JSContext()
-            context.exceptionHandler = { _, _ in }
-            templateContextCache[cacheKey] = context
-
-            // Provide source object (Legado compatible)
-            let sourceObj: [String: Any] = [
-                "bookSourceUrl": source.bookSourceUrl,
-                "bookSourceName": source.bookSourceName,
-                "bookSourceGroup": source.bookSourceGroup,
-                "loginUrl": source.loginUrl,
-                "header": source.header,
-            ]
-            context.setObject(sourceObj, forKeyedSubscript: "source" as NSString)
-
-            // Provide source.getKey() method
-            let getKeyBlock: @convention(block) () -> String = { source.bookSourceUrl }
-            context.objectForKeyedSubscript("source")?.setObject(getKeyBlock, forKeyedSubscript: "getKey" as NSString)
-
-            // Provide real cookie bridge so jsLib functions like generateCsrfToken()
-            // can read cookies (e.g. `this.cookie.getCookie(ho)`) during template resolution.
-            let cookieBridge = LegadoCookieBridge()
-            context.setObject(cookieBridge, forKeyedSubscript: "cookie" as NSString)
-
-            // Provide java bridge (basic chainable calls, returns empty string)
-            let javaConnectBlock: @convention(block) (String) -> JSValue? = { _ in
-                guard let chainObj = JSValue(newObjectIn: context) else { return nil }
-                let rawBlock: @convention(block) () -> JSValue? = { [weak chainObj] in chainObj }
-                chainObj.setObject(rawBlock, forKeyedSubscript: "raw" as NSString)
-                let requestBlock: @convention(block) () -> JSValue? = { [weak chainObj] in chainObj }
-                chainObj.setObject(requestBlock, forKeyedSubscript: "request" as NSString)
-                let urlBlock: @convention(block) () -> String = { source.bookSourceUrl }
-                chainObj.setObject(urlBlock, forKeyedSubscript: "url" as NSString)
-                return chainObj
-            }
-            context.setObject(javaConnectBlock, forKeyedSubscript: "java" as NSString)
-            context.objectForKeyedSubscript("java")?.setObject(javaConnectBlock, forKeyedSubscript: "connect" as NSString)
-
-            // Evaluate jsLib so {{qt}}, {{ho}} and jsLib functions are available
-            if !source.jsLib.isEmpty {
-                context.evaluateScript(source.jsLib)
-            }
-        }
-        templateContextLock.unlock()
-
-        // Attempt evaluation
-        let candidates = [
-            expression,
-            "(function(){ return (\(expression)); })()",
-        ]
-        for candidate in candidates {
-            context.exception = nil
-            if let value = context.evaluateScript(candidate), !value.isUndefined, !value.isNull {
-                let result = value.toString() ?? ""
-                if result != "undefined" && result != "null" {
-                    return result
-                }
-            }
-        }
-        // Evaluation failed, return empty string (most cookie/java operations are side effects that don't affect the URL)
-        return ""
     }
 }
 
