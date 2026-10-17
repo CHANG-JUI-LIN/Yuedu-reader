@@ -79,6 +79,27 @@ struct TXTMetadataProbeTests {
         #expect(metadata.author == "余华")
     }
 
+    @Test("reads a web novel's first line, 《書名》作者：某某 (万古神帝.txt, GB18030 with CRLF)")
+    func readsBookTitleAuthorLine() throws {
+        let text = "\u{3000}\u{3000}《万古神帝》作者：飞天鱼\r\n\r\n\u{3000}\u{3000}文案：\r\n\u{3000}\u{3000}天地初开，太古混乱。\r\n"
+        let data = try #require(text.data(using: TXTFileReader.gb18030Encoding))
+        let metadata = try TXTMetadataProbe.probe(url: try writeTemporaryTXT(data), fallbackTitle: "檔名")
+        #expect(metadata.title == "万古神帝")
+        #expect(metadata.author == "飞天鱼")
+
+        for (line, title, author) in [("《斗罗大陆》 作者: 唐家三少", "斗罗大陆", "唐家三少"),
+                                      ("《雪中悍刀行》（作者：烽火戏诸侯）", "雪中悍刀行", "烽火戏诸侯"),
+                                      ("《詭秘之主》著者：愛潛水的烏賊", "詭秘之主", "愛潛水的烏賊")] {
+            let found = TXTMetadataProbe.infer(from: line + "\n第一章 開始", fallbackTitle: "檔名")
+            #expect(found.title == title, "\(line)")
+            #expect(found.author == author, "\(line)")
+        }
+        let labelled = TXTMetadataProbe.infer(from: "《别名》作者：甲\n书名：正名\n作者：乙", fallbackTitle: "檔名")
+        #expect(labelled.title == "正名" && labelled.author == "乙", "explicit 书名／作者 lines still win")
+        let quoted = TXTMetadataProbe.infer(from: "他说：《三体》作者是刘慈欣。\n第一章", fallbackTitle: "檔名")
+        #expect(quoted.author == nil, "a sentence mentioning a book is no credit line")
+    }
+
     @Test("ignores metadata beyond the bounded sample")
     func ignoresMetadataBeyondSampleBoundary() throws {
         var data = Data(repeating: 0x61, count: TXTMetadataProbe.maximumSampleBytes)
@@ -152,6 +173,33 @@ struct TXTMetadataProbeTests {
         #expect(book.contentPipelineKind == .txt)
         #expect(book.contentFilename.hasSuffix(".txt"))
         #expect(try Data(contentsOf: importedURL) == sourceData)
+    }
+
+    @Test("a TXT imported as 未知作者 gets the author its file names; an author the reader typed stays")
+    @MainActor
+    func bookStoreRecoversTXTAuthors() async throws {
+        let documents = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
+        let credited = "\(UUID().uuidString).txt", typed = "\(UUID().uuidString).txt"
+        let data = try #require("　　《万古神帝》作者：飞天鱼\r\n\r\n第1章 八百年后".data(using: TXTFileReader.gb18030Encoding))
+        try data.write(to: documents.appendingPathComponent(credited))
+        try data.write(to: documents.appendingPathComponent(typed))
+        let metadataURL = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString).appendingPathExtension("json")
+        defer {
+            try? FileManager.default.removeItem(at: documents.appendingPathComponent(credited))
+            try? FileManager.default.removeItem(at: documents.appendingPathComponent(typed))
+            try? FileManager.default.removeItem(at: metadataURL)
+        }
+        var unknown = ReadingBook(title: "万古神帝", author: "未知作者", source: "local", contentFilename: credited)
+        unknown.contentPipelineKind = .txt
+        var edited = ReadingBook(title: "万古神帝", author: "我寫的", source: "local", contentFilename: typed)
+        edited.contentPipelineKind = .txt
+        let store = BookStore(metadataFileURL: metadataURL)
+        store.replaceBooksFromSync([unknown, edited])
+
+        await store.recoverTXTAuthors()
+
+        #expect(store.books.first { $0.id == unknown.id }?.author == "飞天鱼")
+        #expect(store.books.first { $0.id == edited.id }?.author == "我寫的")
     }
 
     @Test("BookStore keeps GB18030 bytes while decoded content remains readable")

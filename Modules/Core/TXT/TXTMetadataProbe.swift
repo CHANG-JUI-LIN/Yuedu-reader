@@ -46,10 +46,12 @@ enum TXTMetadataProbe {
             maximumLength: 60
         )
 
+        // A web novel download's first line: 《万古神帝》作者：飞天鱼.
+        let creditLine = bookCreditLine(in: sample)
         let standaloneCredit = standaloneAuthorCredit(in: sample)
-        let inferredTitle = explicitTitle
+        let inferredTitle = explicitTitle ?? creditLine?.title
             ?? standaloneCredit.flatMap { titleBeforeAuthorCredit(lines: $0.lines, authorLineIndex: $0.index) }
-        let inferredAuthor = explicitAuthor ?? standaloneCredit?.author
+        let inferredAuthor = explicitAuthor ?? creditLine?.author ?? standaloneCredit?.author
 
         return TXTBookMetadata(
             title: inferredTitle ?? fallback,
@@ -73,6 +75,22 @@ enum TXTMetadataProbe {
             return candidate
         }
         return nil
+    }
+
+    /// A whole line `《書名》作者：某某`, the author in brackets or not; nil for a sentence that
+    /// only mentions a book.
+    private static func bookCreditLine(in text: String) -> (title: String, author: String)? {
+        guard let regex = try? NSRegularExpression(
+            pattern: #"(?m)^\s*《([^《》\n]{1,80})》\s*[（(]?\s*(?:作者|著者)\s*[：:﹕]\s*([^\n，,。！？（）()]{1,40}?)\s*[）)]?\s*$"#
+        ) else { return nil }
+        let range = NSRange(text.startIndex..., in: text)
+        guard let match = regex.firstMatch(in: text, range: range), match.numberOfRanges > 2,
+              let titleRange = Range(match.range(at: 1), in: text),
+              let authorRange = Range(match.range(at: 2), in: text),
+              let title = cleaned(String(text[titleRange]), maximumLength: 80),
+              let author = cleaned(String(text[authorRange]), maximumLength: 40)
+        else { return nil }
+        return (title, author)
     }
 
     private static func standaloneAuthorCredit(

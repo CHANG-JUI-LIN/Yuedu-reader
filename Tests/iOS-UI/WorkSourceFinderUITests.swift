@@ -1,6 +1,6 @@
 import XCTest
 
-/// 「尋找可用來源」 (Discovery 7b-2): a library work's 作品詳情 searches the enabled sources as
+/// 來源's automatic search (Discovery 7b-2; its own 「尋找可用來源」 row until 2026-10-17): a library work's 作品詳情 searches the enabled sources as
 /// soon as it opens (maintainer, 2026-10-17), and says how the search ended.
 ///
 /// Gutenberg's 熱門 answers from fixtures, so the home has Moby Dick's card without a network.
@@ -60,16 +60,16 @@ final class WorkSourceFinderUITests: XCTestCase {
         XCTAssertTrue(book.waitForExistence(timeout: 20), app.debugDescription)
         book.tap()
 
-        let find = app.descendants(matching: .any)["detail.info.findSources"].firstMatch
+        let find = app.descendants(matching: .any)["detail.info.source"].firstMatch
         XCTAssertTrue(find.waitForExistence(timeout: 10), app.debugDescription)
         for _ in 0..<8 where !find.isHittable { app.swipeUp() }
-        XCTAssertEqual(find.label, "尋找可用來源")
+        XCTAssertEqual(find.label, "來源")
         // Nothing tapped: the page searched on its own.
-        let failed = NSPredicate(format: "value == %@", "搜尋失敗")
+        let failed = NSPredicate(format: "value CONTAINS %@", "搜尋失敗")
         expectation(for: failed, evaluatedWith: find)
         waitForExpectations(timeout: 60)
         attach(app, "find-sources-failed")
-        // 重試 is the row's second line: it can search again.
+        // 重試 is in the row's second line: it can search again.
         XCTAssertTrue(find.isHittable, app.debugDescription)
     }
 }

@@ -31,7 +31,7 @@ final class MetadataFillCoordinator {
     /// Asked to run again while a pass was running: a book joined, or the app came back.
     private var rerun = false
     private var generation = 0
-    private var knownShelf: Set<UUID> = []
+    private var knownShelf: [UUID: String] = [:]
     private var cancellables: Set<AnyCancellable> = []
 
     /// - Parameters:
@@ -57,9 +57,11 @@ final class MetadataFillCoordinator {
             .sink { [weak self] _ in self?.conditionsChanged() }
             .store(in: &cancellables)
         store.shelfPublisher
-            .map { Set($0.map(\.id)) }
+            // What a copy is asked by: a new copy, or a title or author edited (編輯資訊, a TXT
+            // whose author was recovered), is asked again.
+            .map { Dictionary($0.map { ($0.id, $0.title + "\u{1F}" + $0.author) }, uniquingKeysWith: { first, _ in first }) }
             .removeDuplicates()
-            .sink { [weak self] ids in self?.shelfChanged(ids) }
+            .sink { [weak self] shelf in self?.shelfChanged(shelf) }
             .store(in: &cancellables)
         store.importedMetadata.announcedWrites
             .sink { [weak self] id in self?.sidecarWritten(id) }
@@ -130,16 +132,16 @@ final class MetadataFillCoordinator {
         if mayRun { start() }
     }
 
-    private func shelfChanged(_ ids: Set<UUID>) {
-        let added = !ids.subtracting(knownShelf).isEmpty
-        knownShelf = ids
-        if added, mayRun { start() }
+    private func shelfChanged(_ shelf: [UUID: String]) {
+        let askedAgain = shelf.contains { knownShelf[$0.key] != $0.value }
+        knownShelf = shelf
+        if askedAgain, mayRun { start() }
     }
 
     /// An import or re-read wrote more about a shelf copy (an ISBN, a description) after it
     /// joined the shelf.
     private func sidecarWritten(_ id: UUID) {
-        if knownShelf.contains(id), mayRun { start() }
+        if knownShelf[id] != nil, mayRun { start() }
     }
 
     private func start() {

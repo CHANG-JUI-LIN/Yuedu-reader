@@ -200,7 +200,7 @@ struct WorkDetailView: View {
                 // The search ran on its own; say how it ended, as the row now does.
                 switch state {
                 case .done, .failed, .noSources:
-                    UIAccessibility.post(notification: .announcement, argument: findSourcesItem.value)
+                    UIAccessibility.post(notification: .announcement, argument: searchStatus)
                 case .idle, .searching:
                     break
                 }
@@ -653,8 +653,6 @@ struct WorkDetailView: View {
     private var infoItems: [BookDetailInfoItem] {
         guard let version = selected else { return [] }
         var result = [sourceItem(version)]
-        // Not on the page a reader opened: it shows that reader's book only (decision 32).
-        if readerContext == nil { result.append(findSourcesItem) }
         result += contributorItems(version)
         if let item = libraryItem(of: version), let format = selectedFormat(of: version) {
             result.append(BookDetailInfoItem(
@@ -684,38 +682,39 @@ struct WorkDetailView: View {
         return result
     }
 
-    /// 來源: the version shown, switched in place from its menu when the work has others.
+    /// 來源: the version shown, switched in place from its menu when the work has others. The
+    /// work's own page searches the enabled sources on its own (7b-2) — what it finds joins the
+    /// menu, and how the search stands is the row's second line (maintainer, 2026-10-17: one row,
+    /// 「來源」; it is automatic, so no 「尋找可用來源」 of its own). Not on the page a reader opened:
+    /// it shows that reader's book only (decision 32).
     private func sourceItem(_ version: WorkDetailRoute) -> BookDetailInfoItem {
-        guard let choice = versionChoice(version) else {
-            return BookDetailInfoItem(id: "source", label: localized("來源"), value: sourceName(of: version))
+        let choice = versionChoice(version)
+        guard readerContext == nil else {
+            return BookDetailInfoItem(id: "source", label: localized("來源"), value: sourceName(of: version),
+                                      detail: choice == nil ? nil : localized("換源"), choice: choice,
+                                      accessibilityInputLabels: choice == nil ? [] : [localized("換源")])
         }
-        return BookDetailInfoItem(
-            id: "source", label: localized("來源"), value: sourceName(of: version), detail: localized("換源"),
-            choice: choice, accessibilityInputLabels: [localized("換源")])
+        let status = searchStatus
+        let followUp: (title: String, action: () -> Void)? = switch finder.state {
+        case .done(more: true): (localized("繼續搜索"), { finder.resume() })
+        case .failed: (localized("重試"), findSources)
+        case .idle, .searching, .done, .noSources: nil
+        }
+        if var choice {
+            choice.extra = followUp
+            return BookDetailInfoItem(id: "source", label: localized("來源"), value: sourceName(of: version),
+                                      detail: status.isEmpty ? localized("換源") : status, choice: choice,
+                                      accessibilityInputLabels: [localized("換源")], spokenDetail: status.isEmpty ? nil : status)
+        }
+        return BookDetailInfoItem(id: "source", label: localized("來源"), value: sourceName(of: version),
+                                  detail: followUp.map { "\(status) · \($0.title)" } ?? (status.isEmpty ? nil : status),
+                                  action: followUp?.action, spokenDetail: status.isEmpty ? nil : status)
     }
 
-    /// 「尋找可用來源」 (7b-2): searches the enabled sources for the work when the page opens and
-    /// when tapped; what it finds joins 來源.
-    private var findSourcesItem: BookDetailInfoItem {
-        let value = finder.state.findSourcesValue(added: versions.count - listed.count, versionsLoaded: versionsLoaded,
-                                                  hasReadable: WorkVersions.primary(in: versions) != nil)
-        var detail: String?
-        var action: (() -> Void)? = findSources
-        switch finder.state {
-        case .idle, .noSources:
-            break
-        case .searching:
-            action = nil
-        case .done(let more):
-            if more {
-                detail = localized("繼續搜索")
-                action = { finder.resume() }
-            }
-        case .failed:
-            detail = localized("重試")
-        }
-        return BookDetailInfoItem(id: "findSources", label: localized("尋找可用來源"), value: value, detail: detail,
-                                  action: action, accessibilityHint: action == nil ? nil : localized("點兩下在已啟用的來源配置中搜尋這部作品"))
+    /// How the automatic search stands: 「搜尋來源配置中…」, 「找到 2 個來源」, nothing yet.
+    private var searchStatus: String {
+        finder.state.findSourcesValue(added: versions.count - listed.count, versionsLoaded: versionsLoaded,
+                                      hasReadable: WorkVersions.primary(in: versions) != nil)
     }
 
     /// The work's own page searches once its versions are read: not a reader's page, which shows
@@ -1127,20 +1126,23 @@ extension WorkSourceFinder.State {
     .environmentObject(BookStore())
 }
 
-#Preview("作品詳情 · 尋找可用來源") {
-    // The row as 作品資訊 shows it before, during and after its search.
+#Preview("作品詳情 · 來源") {
+    // 來源 as 作品資訊 shows it while the automatic search runs, after it, and when it failed.
+    @Previewable @State var version = "local"
+    let versions = BookDetailInfoChoice(options: [.init(id: "local", title: "本機"), .init(id: "a", title: "書山聚合 · 可閱讀")],
+                                        selection: $version)
     ScrollView {
         BookDetailInfoSection(items: [
-            BookDetailInfoItem(id: "idle", label: localized("尋找可用來源"), value: "", action: {}),
-            BookDetailInfoItem(id: "unreadable", label: localized("尋找可用來源"), value: localized("未找到可用來源"),
-                               action: {}),
-            BookDetailInfoItem(id: "searching", label: localized("尋找可用來源"), value: localized("搜尋來源配置中…")),
-            BookDetailInfoItem(id: "found", label: localized("尋找可用來源"),
-                               value: String(format: localized("找到 %d 個來源"), 3), action: {}),
-            BookDetailInfoItem(id: "paused", label: localized("尋找可用來源"), value: localized("未找到其他來源配置"),
-                               detail: localized("繼續搜索"), action: {}),
-            BookDetailInfoItem(id: "failed", label: localized("尋找可用來源"), value: localized("搜索失敗"),
-                               detail: localized("重試"), action: {}),
+            BookDetailInfoItem(id: "searching", label: localized("來源"), value: "本機", detail: localized("搜尋來源配置中…"),
+                               spokenDetail: localized("搜尋來源配置中…")),
+            BookDetailInfoItem(id: "found", label: localized("來源"), value: "本機",
+                               detail: String(format: localized("找到 %d 個來源"), 1), choice: versions,
+                               spokenDetail: String(format: localized("找到 %d 個來源"), 1)),
+            BookDetailInfoItem(id: "unreadable", label: localized("來源"), value: localized("只有資料"),
+                               detail: localized("未找到可用來源"), spokenDetail: localized("未找到可用來源")),
+            BookDetailInfoItem(id: "failed", label: localized("來源"), value: "本機",
+                               detail: "\(localized("搜索失敗")) · \(localized("重試"))", action: {},
+                               spokenDetail: localized("搜索失敗")),
         ])
     }
 }

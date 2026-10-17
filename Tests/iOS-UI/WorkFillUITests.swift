@@ -81,11 +81,11 @@ final class WorkFillUITests: XCTestCase {
         let log = try fixtureLog()
         XCTAssertTrue(log.contains("/cover.png"), "The match's cover was downloaded: \(log)")
 
-        // 尋找可用來源 ran on its own and found the source's book.
-        let find = app.descendants(matching: .any)["detail.info.findSources"].firstMatch
+        // 來源's automatic search ran on its own and found the source's book.
+        let find = app.descendants(matching: .any)["detail.info.source"].firstMatch
         XCTAssertTrue(find.waitForExistence(timeout: 10), app.debugDescription)
         for _ in 0..<8 where !find.isHittable { app.swipeUp() }
-        expectation(for: NSPredicate(format: "value == %@", "找到 1 個來源"), evaluatedWith: find)
+        expectation(for: NSPredicate(format: "value CONTAINS %@", "找到 1 個來源"), evaluatedWith: find)
         waitForExpectations(timeout: 60)
         attach(app, "work-fill-sources")
 

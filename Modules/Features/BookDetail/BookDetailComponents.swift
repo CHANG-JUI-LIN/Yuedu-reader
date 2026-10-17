@@ -814,8 +814,13 @@ struct BookDetailInfoItem: Identifiable {
     var choice: BookDetailInfoChoice?
     var accessibilityHint: String?
     var accessibilityInputLabels: [String] = []
+    /// A detail line that is news, not a verb (「搜尋來源配置中…」): VoiceOver reads it after
+    /// the value.
+    var spokenDetail: String?
 
     var isInteractive: Bool { action != nil || choice != nil }
+
+    var spokenValue: String { [value, spokenDetail].compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: "，") }
 
     /// The current source, opening 換源. 來源 is what the item is, the source name its
     /// value, switching what activating it does; the visible 「換源」 stays reachable
@@ -842,6 +847,8 @@ struct BookDetailInfoChoice {
 
     let options: [Option]
     let selection: Binding<String>
+    /// One more thing the menu does, under the options (來源's 重試 or 繼續搜索).
+    var extra: (title: String, action: () -> Void)? = nil
 }
 
 /// 作品資訊: the copy's facts as Apple Books lists a book's Information — a titled section
@@ -876,7 +883,7 @@ struct BookDetailInfoSection: View {
             .buttonStyle(.plain)
             .accessibilityElement(children: .ignore)
             .accessibilityLabel(item.label)
-            .accessibilityValue(item.value)
+            .accessibilityValue(item.spokenValue)
             .accessibilityHint(item.accessibilityHint ?? "")
             .accessibilityInputLabels(item.accessibilityInputLabels + [item.label])
             .accessibilityAddTraits(.isButton)
@@ -886,13 +893,17 @@ struct BookDetailInfoSection: View {
                 Picker(item.label, selection: choice.selection) {
                     ForEach(choice.options) { Text($0.title).tag($0.id) }
                 }
+                if let extra = choice.extra {
+                    Divider()
+                    Button(extra.title, action: extra.action)
+                }
             } label: {
                 row(item)
                     .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
             .accessibilityLabel(item.label)
-            .accessibilityValue(item.value)
+            .accessibilityValue(item.spokenValue)
             .accessibilityHint(item.accessibilityHint ?? "")
             .accessibilityInputLabels(item.accessibilityInputLabels + [item.label])
             .accessibilityIdentifier("detail.info.\(item.id)")
@@ -900,7 +911,7 @@ struct BookDetailInfoSection: View {
             row(item)
                 .accessibilityElement(children: .ignore)
                 .accessibilityLabel(item.label)
-                .accessibilityValue(item.value)
+                .accessibilityValue(item.spokenValue)
                 .accessibilityIdentifier("detail.info.\(item.id)")
         }
     }

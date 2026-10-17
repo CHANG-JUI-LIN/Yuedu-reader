@@ -71,6 +71,24 @@ struct MetadataFillCoordinatorTests {
         #expect(provider.titles == ["三體", "球狀閃電"])
     }
 
+    @Test("an author found or typed after the copy was asked asks it again, by the new author")
+    func editedAuthor() async throws {
+        let (store, directory) = try makeStore()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let copy = book("万古神帝")
+        store.saveReadingBook(copy)
+        let provider = CountingProvider()
+        let coordinator = MetadataFillCoordinator(store: store, makeProviders: { [provider] }, network: StubNetwork(allowed: true),
+                                                  isEnabled: { true }, isLowPower: { false })
+        coordinator.setActive(true)
+        await coordinator.waitUntilIdleForTesting()
+
+        store.updateBook(bookId: copy.id, title: copy.title, author: "飞天鱼")
+        await coordinator.waitUntilIdleForTesting()
+
+        #expect(provider.titles == ["万古神帝", "万古神帝"])
+    }
+
     @Test("an ISBN written after the copy joined the shelf sets off another pass; the filler's own writes do not")
     func laterSidecar() async throws {
         let (store, directory) = try makeStore()

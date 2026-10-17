@@ -3088,6 +3088,45 @@ class BookStore: ObservableObject, BookProvider {
         if didRepair || chapterStore.hasUnwrittenChanges { saveMetaImmediately() }
         // Phase 3a-2: the covers the filler gave copies with none, for the shelf.
         Task { @MainActor [weak self] in await self?.refreshFilledCovers() }
+        Task { @MainActor [weak self] in await self?.recoverTXTAuthors() }
+    }
+
+    /// A TXT imported as 未知作者 before `TXTMetadataProbe` read its credit line
+    /// (`《万古神帝》作者：飞天鱼`, 2026-10-17) gets the author its file names. Only the placeholder
+    /// is replaced: an author the reader typed stays. Each launch reads the first 128 KB of the
+    /// TXT copies still without one.
+    func recoverTXTAuthors() async {
+        let placeholder = "未知作者"
+        let candidates = records.filter { $0.source == "local" && $0.resolvedPipelineKind == .txt && $0.author == placeholder }
+            .map { (id: $0.id, title: $0.title, url: documentsURL(for: $0.contentFilename)) }
+        guard !candidates.isEmpty else { return }
+        let found = await Task.detached(priority: .utility) { () -> [UUID: String] in
+            var authors: [UUID: String] = [:]
+            for candidate in candidates {
+                do {
+                    if let author = try TXTMetadataProbe.probe(url: candidate.url, fallbackTitle: candidate.title).author {
+                        authors[candidate.id] = author
+                    }
+                } catch {
+                    AppLogger.error("TXT author recovery could not read the file", context: [
+                        "book": candidate.id.uuidString, "error": "\(error)",
+                    ], level: .warning)
+                }
+            }
+            return authors
+        }.value
+        guard !found.isEmpty else { return }
+        var updated = records
+        var changed = false
+        for index in updated.indices {
+            guard let author = found[updated[index].id], updated[index].author == placeholder else { continue }
+            updated[index].author = author
+            changed = true
+        }
+        guard changed else { return }
+        records = updated
+        saveMeta()
+        AppLogger.info("TXT author recovery: \(found.count) book(s) named their author")
     }
 
     /// Whether the shelf is known to be complete: the file decoded, or there is no shelf

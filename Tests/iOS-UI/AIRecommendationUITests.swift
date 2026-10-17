@@ -1,7 +1,7 @@
 import XCTest
 
 /// AI 推薦 8f: the official module end to end. Its section is added to the home, 產生推薦 asks
-/// the AI service, the works appear, one opens 作品詳情 with its 推薦理由 and 尋找可用來源, and
+/// the AI service, the works appear, one opens 作品詳情 with its 推薦理由 and 來源, and
 /// 重新產生 replaces the list.
 ///
 /// The AI service is a fixture served from outside the simulator before the run, from the repo
@@ -111,7 +111,7 @@ final class AIRecommendationUITests: XCTestCase {
                       "The subtitle names the service.\n\(app.debugDescription)")
         attach(app, "ai-row-works")
 
-        // 4. 作品詳情: 推薦理由, marked AI 產生, and 尋找可用來源 saying nothing is readable.
+        // 4. 作品詳情: 推薦理由, marked AI 產生, and 來源 saying nothing is readable.
         // The row is the home's last: on iOS 17 the opaque tab bar covers the card's centre.
         let tabBar = app.tabBars.firstMatch
         for _ in 0..<4 where first.frame.maxY > tabBar.frame.minY {
@@ -119,15 +119,15 @@ final class AIRecommendationUITests: XCTestCase {
         }
         first.tap()
         let reason = app.staticTexts["你最近讀了不少架空奇幻，這部群像小說節奏紮實。"].firstMatch
-        let find = app.descendants(matching: .any)["detail.info.findSources"].firstMatch
+        let find = app.descendants(matching: .any)["detail.info.source"].firstMatch
         XCTAssertTrue(find.waitForExistence(timeout: 10), app.debugDescription)
         XCTAssertTrue(scrolledTo(reason, in: app).exists, app.debugDescription)
         XCTAssertTrue(app.staticTexts["推薦理由"].firstMatch.exists, app.debugDescription)
         XCTAssertTrue(app.staticTexts["AI 產生"].firstMatch.exists, app.debugDescription)
         attach(app, "ai-work-detail-reason")
         for _ in 0..<8 where !find.isHittable { app.swipeUp() }
-        XCTAssertEqual(find.label, "尋找可用來源")
-        expectation(for: NSPredicate(format: "value == %@", "未找到可用來源"), evaluatedWith: find)
+        XCTAssertEqual(find.label, "來源")
+        expectation(for: NSPredicate(format: "value CONTAINS %@", "未找到可用來源"), evaluatedWith: find)
         waitForExpectations(timeout: 10)
         attach(app, "ai-work-detail-find-sources")
         app.navigationBars.buttons.firstMatch.tap()
