@@ -1,7 +1,7 @@
 import XCTest
 
-/// 「尋找可用來源」 (Discovery 7b-2): a library work's 作品詳情 searches the enabled sources only
-/// when the row is tapped, and says how the search ended.
+/// 「尋找可用來源」 (Discovery 7b-2): a library work's 作品詳情 searches the enabled sources as
+/// soon as it opens (maintainer, 2026-10-17), and says how the search ended.
 ///
 /// Gutenberg's 熱門 answers from fixtures, so the home has Moby Dick's card without a network.
 /// The one book source's host does not exist: every source fails, which the row must call a
@@ -45,7 +45,7 @@ final class WorkSourceFinderUITests: XCTestCase {
     }
 
     @MainActor
-    func testSearchesOnlyWhenTappedAndSaysItFailed() {
+    func testSearchesWhenOpenedAndSaysItFailed() {
         let app = XCUIApplication()
         app.launchArguments = ["-no-official-modules", "-AppleLanguages", "(zh-Hant)", "-AppleLocale", "zh_TW",
                                "-yd_source_disclaimer_accepted", "YES",
@@ -64,10 +64,7 @@ final class WorkSourceFinderUITests: XCTestCase {
         XCTAssertTrue(find.waitForExistence(timeout: 10), app.debugDescription)
         for _ in 0..<8 where !find.isHittable { app.swipeUp() }
         XCTAssertEqual(find.label, "尋找可用來源")
-        XCTAssertEqual(find.value as? String ?? "", "", "Nothing is searched until the row is tapped")
-        attach(app, "find-sources-idle")
-
-        find.tap()
+        // Nothing tapped: the page searched on its own.
         let failed = NSPredicate(format: "value == %@", "搜尋失敗")
         expectation(for: failed, evaluatedWith: find)
         waitForExpectations(timeout: 60)

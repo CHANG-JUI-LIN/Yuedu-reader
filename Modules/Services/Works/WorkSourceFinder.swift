@@ -1,8 +1,9 @@
 import Combine
 import Foundation
 
-/// Discovery 7b-2 (maintainer, 2026-10-13): 作品詳情's 「尋找可用來源」. Only when tapped, it
-/// searches the enabled sources for the work's title, as 換源 does (`SearchAggregator`), and
+/// Discovery 7b-2 (maintainer, 2026-10-13): 作品詳情's 「尋找可用來源」. When the page opens
+/// (maintainer, 2026-10-17: 「點進去自動尋找並列出可用來源」), and again when its row is tapped,
+/// it searches the enabled sources for the work's title, as 換源 does (`SearchAggregator`), and
 /// keeps the books found of the work — its title and a compatible author, one per source
 /// (`WorkOffers.books`). The page lists them among its versions for as long as it is open;
 /// nothing is stored.
@@ -26,6 +27,9 @@ final class WorkSourceFinder: ObservableObject {
     private var work: WorkDetailRoute?
     private var sources: [UUID: BookSource] = [:]
     private var subscriptions: Set<AnyCancellable> = []
+    /// Set once the page's own search started: the page coming back from one it pushed keeps
+    /// what that search found instead of searching again.
+    private var searchedOnOpen = false
 
     init() {
         // The aggregator publishes its results through `objectWillChange` alone; read them once
@@ -48,6 +52,17 @@ final class WorkSourceFinder: ObservableObject {
         found = []
         state = .searching
         aggregator.search(query: work.summary.title, sources: enabled, origin: .changeSource)
+    }
+
+    /// The page's own search, once: none when no source is enabled, so a reader without sources
+    /// is not told to enable them on every page they open (the row's tap still says so).
+    /// Leaving the page ends the search: the aggregator goes with this finder, and its fan-out
+    /// stops at the next answer (`SearchAggregator.runSearch`).
+    func findOnOpen(_ work: WorkDetailRoute, sources: [BookSource]) {
+        guard !searchedOnOpen else { return }
+        searchedOnOpen = true
+        guard sources.contains(where: \.enabled) else { return }
+        find(work, sources: sources)
     }
 
     /// Asks the sources a paused search had not reached.

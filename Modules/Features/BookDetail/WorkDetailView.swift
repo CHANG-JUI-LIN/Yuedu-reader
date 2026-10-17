@@ -91,7 +91,8 @@ struct WorkDetailView: View {
     @StateObject private var actions = RemoteLibraryActionModel()
     @StateObject private var authorWorks = AuthorWorksModel()
     @StateObject private var toc = WorkTableOfContentsModel()
-    /// 「尋找可用來源」 (7b-2): the books its search found of the work join `versions`.
+    /// 「尋找可用來源」 (7b-2): the books its search found of the work join `versions`. It runs on
+    /// its own once the work's page shows (2026-10-17).
     @StateObject private var finder = WorkSourceFinder()
     @State private var showChapterList = false
     /// The chapter picked from 查看全部, opened once its sheet is gone.
@@ -162,6 +163,10 @@ struct WorkDetailView: View {
                 if chosen == nil, let shown = selected, onlineBook(of: shown) != nil { chosen = shown.nodeKey }
             }
             .task(id: selected?.nodeKey) { await prepare(selected) }
+            .task(id: findsOnOpen) {
+                guard findsOnOpen else { return }
+                findSources(onOpen: true)
+            }
             .task(id: tocLoad) {
                 await toc.load(copy: tocLoad.flatMap { _ in selected.flatMap(tocCopy(of:)) }, store: store,
                                remoteLibrary: dependencies.remoteLibrary, positions: dependencies.readingPositionStore)
@@ -675,8 +680,8 @@ struct WorkDetailView: View {
             choice: choice, accessibilityInputLabels: [localized("換源")])
     }
 
-    /// 「尋找可用來源」 (7b-2): searches the enabled sources for the work only when tapped; what
-    /// it finds joins 來源.
+    /// 「尋找可用來源」 (7b-2): searches the enabled sources for the work when the page opens and
+    /// when tapped; what it finds joins 來源.
     private var findSourcesItem: BookDetailInfoItem {
         let value = finder.state.findSourcesValue(added: versions.count - listed.count, versionsLoaded: versionsLoaded,
                                                   hasReadable: WorkVersions.primary(in: versions) != nil)
@@ -699,12 +704,25 @@ struct WorkDetailView: View {
                                   action: action, accessibilityHint: action == nil ? nil : localized("點兩下在已啟用的來源配置中搜尋這部作品"))
     }
 
-    private func findSources() {
+    /// The work's own page searches once its versions are read: not a reader's page, which shows
+    /// that reader's book only, and not a book source's page, whose 換源 searches for itself.
+    private var findsOnOpen: Bool {
+        guard readerContext == nil, versionsLoaded, let selected else { return false }
+        return onlineBook(of: selected) == nil
+    }
+
+    private func findSources() { findSources(onOpen: false) }
+
+    private func findSources(onOpen: Bool) {
         // The page stays on the version shown: with nothing listed readable, the first book found
         // would otherwise become the version shown, and the page its source's.
         if chosen == nil { chosen = selected?.nodeKey }
         finder.setPresentationActive(scenePhase == .active)
-        finder.find(route, sources: BookSourceStore.shared.sources)
+        if onOpen {
+            finder.findOnOpen(route, sources: BookSourceStore.shared.sources)
+        } else {
+            finder.find(route, sources: BookSourceStore.shared.sources)
+        }
     }
 
     /// The work's versions, `version` selected; nil when it is the only one. A book-source
