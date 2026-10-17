@@ -22,6 +22,9 @@ struct RuleModule: Codable, Hashable, Sendable {
     var rateLimit: String?
     var modules: [Entry]
     var search: Entry?
+    /// A book by its ISBN (`{{isbn}}`): the record is the copy's own, so it may also give a
+    /// cover (from `hosts` only), a publisher and a series. Fill only (format 3.0).
+    var lookup: Entry?
     /// The credit the site asks for, shown on the module's page (format 3.0).
     var attribution: Attribution?
     /// Its own words in other languages, by language tag (`en`, `zh-Hans`): the title, the
@@ -64,10 +67,13 @@ struct RuleModule: Codable, Hashable, Sendable {
         /// Tags the `tags` rule reads that are not genres on this site (`漫画`, `单行本`), left
         /// out wherever its tags are used (format 3.0).
         var excludeTags: [String]?
+        /// On `lookup`: the ISBN-13 prefixes the site has (openBD: `9784`). Any other book's ISBN
+        /// never leaves the device (format 3.0).
+        var isbnPrefixes: [String]?
 
         init(id: String?, title: String?, description: String? = nil, cacheDuration: Int? = nil,
              params: [Param] = [], request: Request, list: ListRules, contentKind: String? = nil,
-             excludeTags: [String]? = nil) {
+             excludeTags: [String]? = nil, isbnPrefixes: [String]? = nil) {
             self.id = id
             self.title = title
             self.description = description
@@ -77,6 +83,7 @@ struct RuleModule: Codable, Hashable, Sendable {
             self.list = list
             self.contentKind = contentKind
             self.excludeTags = excludeTags
+            self.isbnPrefixes = isbnPrefixes
         }
 
         init(from decoder: any Decoder) throws {
@@ -90,6 +97,7 @@ struct RuleModule: Codable, Hashable, Sendable {
             list = try container.decode(ListRules.self, forKey: .list)
             contentKind = try container.decodeIfPresent(String.self, forKey: .contentKind)
             excludeTags = try container.decodeIfPresent([String].self, forKey: .excludeTags)
+            isbnPrefixes = try container.decodeIfPresent([String].self, forKey: .isbnPrefixes)
         }
     }
 

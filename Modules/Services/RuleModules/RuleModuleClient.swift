@@ -130,6 +130,31 @@ struct RuleModuleClient: Sendable {
                                      listRule: list.items, fields: list.fields)
     }
 
+    /// A cover a lookup's record names (format 3.0): from the module's `hosts` only, under its
+    /// `rateLimit`. Nil when the site lists a cover it does not serve (404) or that is no image.
+    func image(_ address: String, in module: RuleModule) async throws -> Data? {
+        let hosts = Set(module.hosts.map { $0.lowercased() })
+        let allowed: @Sendable (URL) -> Bool = { url in
+            guard let host = url.host?.lowercased(), hosts.contains(host) else { return false }
+            return safeURL(string: url.absoluteString) != nil
+        }
+        guard let url = safeURL(string: address.trimmingCharacters(in: .whitespacesAndNewlines)), allowed(url) else {
+            throw SourceFailure(kind: .invalidAddress, underlying: FetchError.invalidURL(address))
+        }
+        let page = try await SourceRateLimit.run(rate: module.rateLimit ?? "", key: "module:\(module.id)") {
+            try await fetcher.fetchPage(url: url, method: "GET", body: nil, headers: [:], baseURL: "", redirect: allowed)
+        }
+        if page.statusCode == 404 { return nil }
+        guard (200...299).contains(page.statusCode) else {
+            throw SourceFailure(kind: .rejected, status: page.statusCode, underlying: FetchError.httpError(page.statusCode))
+        }
+        guard BookCoverLoader.decodedCover(from: page.data) != nil else {
+            AppLogger.network("module cover is no image", context: ["module": module.id, "url": url.absoluteString])
+            return nil
+        }
+        return page.data
+    }
+
     /// A module file, for 新增模組 and 檢查更新: through the same `WebFetcher` path as the
     /// module's own requests, `safeURL` on the address and on every redirect (a refused redirect
     /// is never sent). Any host: the module's `hosts` bind its requests, not where it is shared.

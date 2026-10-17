@@ -1,0 +1,50 @@
+{
+  "id": "openbd",
+  "title": "openBD",
+  "description": "版元ドットコム與カーリル的日本書目資料。書架上 ISBN 為 978-4 開頭（日本出版）的書缺封面、簡介或出版社時，會把 ISBN 送到 openBD 查詢。",
+  "author": "閱讀",
+  "site": "https://openbd.jp",
+  "version": "1.0",
+  "requiredVersion": "3.0",
+  "hosts": [
+    "api.openbd.jp",
+    "cover.openbd.jp"
+  ],
+  "rateLimit": "1/1000",
+  "localizations": {
+    "zh-Hans": {
+      "description": "版元ドットコム与カーリル的日本书目资料。书架上 ISBN 为 978-4 开头（日本出版）的书缺封面、简介或出版社时，会把 ISBN 发送到 openBD 查询。"
+    },
+    "en": {
+      "description": "Japanese book records from Hanmoto.com and Calil. For books on your shelf with an ISBN starting 978-4 (published in Japan) that lack a cover, description or publisher, the ISBN is sent to openBD to look them up."
+    },
+    "ja": {
+      "description": "版元ドットコムとカーリルの書誌データ。本棚で ISBN が 978-4 で始まる（日本で出版された）本に表紙・紹介文・出版社がないとき、ISBN を openBD に送って調べます。"
+    },
+    "ko": {
+      "description": "版元ドットコム와 カーリル의 일본 도서 정보. 책장에서 ISBN이 978-4로 시작하는(일본에서 출판된) 책에 표지·소개·출판사가 없으면 ISBN을 openBD로 보내 조회합니다."
+    }
+  },
+  "modules": [],
+  "lookup": {
+    "request": {
+      "url": "https://api.openbd.jp/v1/get?isbn={{isbn}}",
+      "headers": {
+        "User-Agent": "yuedureader/Yuedu (iOS) (+https://yuedureader.com/support)",
+        "Accept": "application/json"
+      }
+    },
+    "isbnPrefixes": [
+      "9784"
+    ],
+    "list": {
+      "items": "$[*]",
+      "title": "$.summary.title",
+      "author": "$.summary.author",
+      "cover": "$.summary.cover",
+      "intro": "$.onix.CollateralDetail.TextContent[?(@.TextType=='03')].Text||$.onix.CollateralDetail.TextContent[?(@.TextType=='02')].Text",
+      "publisher": "$.summary.publisher",
+      "isbn": "$.summary.isbn"
+    }
+  }
+}

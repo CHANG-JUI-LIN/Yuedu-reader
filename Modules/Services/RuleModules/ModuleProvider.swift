@@ -90,11 +90,24 @@ final class ModuleProvider: CollectionBrowsing, HomeSectionProviding {
         return try await items(of: search, parameters: [:], position: search.firstPosition, keyword: keyword)
     }
 
-    /// An item as the entry `searchItems` would list it.
-    func searchEntry(_ item: RuleListItem) -> CollectionEntry? {
-        guard let search = module.search else { return nil }
-        return Self.entry(item, of: search, instance: instance, hasURLRule: Self.hasURLRule(search),
+    /// The module's lookup for `isbn` (an ISBN-13) as its list items; nil when it has none.
+    func lookupItems(isbn: String) async throws -> [RuleListItem]? {
+        guard let lookup = module.lookup else { return nil }
+        var values = lookup.values([:], position: lookup.firstPosition)
+        values["isbn"] = isbn
+        return try await items(of: lookup, values: values)
+    }
+
+    /// An item as the entry `searchItems` (or `lookupItems`, from `entry`) would list it.
+    func searchEntry(_ item: RuleListItem, of entry: RuleModule.Entry? = nil) -> CollectionEntry? {
+        guard let list = entry ?? module.search else { return nil }
+        return Self.entry(item, of: list, instance: instance, hasURLRule: Self.hasURLRule(list),
                           hosts: Set(module.hosts.map { $0.lowercased() }))
+    }
+
+    /// A cover a lookup's record names, from the module's hosts only.
+    func coverImage(_ address: String) async throws -> Data? {
+        try await client.image(address, in: module)
     }
 
     private func page(of entry: RuleModule.Entry, parameters: [String: String],
@@ -115,13 +128,16 @@ final class ModuleProvider: CollectionBrowsing, HomeSectionProviding {
 
     private func items(of entry: RuleModule.Entry, parameters: [String: String], position: Int,
                        keyword: String?) async throws -> [RuleListItem] {
+        try await items(of: entry, values: entry.values(parameters, position: position, keyword: keyword))
+    }
+
+    private func items(of entry: RuleModule.Entry, values: [String: String]) async throws -> [RuleListItem] {
         do {
-            return try await client.page(of: entry, in: module,
-                                         values: entry.values(parameters, position: position, keyword: keyword)).items
+            return try await client.page(of: entry, in: module, values: values).items
         } catch {
             let failure = try SourceFailure.classify(error)
             AppLogger.network("module page failed", error: SourceFailure.loggable(error), context: [
-                "module": module.id, "entry": entry.id ?? "search", "failure": failure.kind.rawValue,
+                "module": module.id, "entry": entry.id ?? (entry == module.lookup ? "lookup" : "search"), "failure": failure.kind.rawValue,
                 "status": failure.status.map(String.init) ?? "",
             ])
             throw failure

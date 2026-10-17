@@ -1,5 +1,6 @@
 import Foundation
 import Testing
+import UIKit
 @testable import yuedu_app
 
 /// Module ecosystem plan, M3: the bundled Bangumi and AniList files, read through the real
@@ -243,7 +244,7 @@ struct OfficialModuleFilesTests {
         #expect(anilist.localized(for: "ja").modules.first?.title == "人気のマンガ")
 
         // Every official file speaks the app's five languages.
-        for module in [bangumi, anilist] {
+        for module in [bangumi, anilist, try official("openbd")] {
             #expect(Set((module.localizations ?? [:]).keys) == ["zh-Hans", "en", "ja", "ko"], "\(module.id)")
             for (language, text) in module.localizations ?? [:] {
                 #expect(text.description?.isEmpty == false, "\(module.id) \(language)")
@@ -282,5 +283,106 @@ struct OfficialModuleFilesTests {
         #expect(throws: RuleModuleRejection.needsRequiredVersion(field: "localizations", minimum: "3.0")) {
             try RuleModuleValidator.validate(file(#"{"en":{"title":"M"}}"#, required: "2.0"), appVersion: "3.0")
         }
+    }
+
+    // MARK: - openBD (M4)
+
+    private func png() -> Data {
+        UIGraphicsImageRenderer(size: CGSize(width: 4, height: 6)).pngData { context in
+            UIColor.systemTeal.setFill()
+            context.fill(CGRect(x: 0, y: 0, width: 4, height: 6))
+        }
+    }
+
+    private func isbnQuery(_ isbn: String, title: String = "バイリンガル", missing: Set<MetadataField> = [.cover, .intro, .publisher])
+        throws -> MetadataFillQuery {
+        MetadataFillQuery(copyID: UUID(), title: title, authors: [], identifiers: [try #require(ExternalIdentifier.normalized(.isbn13, isbn))],
+                          copySource: .localLibrary, missing: missing)
+    }
+
+    @Test("openBD: a Japanese ISBN is looked up; the record that is the copy's gives its cover, description and publisher")
+    func openBDLookup() async throws {
+        let f = makeFixture()
+        let covers = f.folder.appendingPathComponent("covers")
+        defer { try? FileManager.default.removeItem(at: f.folder) }
+        ModuleStub.install(["api.openbd.jp/v1/get": .json(try reply("OpenBD/openbd-get-cover-description.json")),
+                            "cover.openbd.jp/9784750320236.jpg": .image(png())])
+        let filler = ModuleFillProvider(provider: ModuleProvider(module: try official("openbd"), client: f.client), coverDirectory: covers)
+        #expect(filler.grade == .a, "by its ISBN the record is the copy's")
+
+        let query = try isbnQuery("9784750320236")
+        #expect(filler.canLookUp(query))
+        let result = try await filler.lookUp(query)
+        #expect(ModuleStub.urls == ["https://api.openbd.jp/v1/get?isbn=9784750320236", "https://cover.openbd.jp/9784750320236.jpg"])
+        #expect(ModuleStub.userAgents.first == Self.userAgent)
+        #expect(result.values[.publisher] == .text("明石書店"))
+        guard case .text(let intro) = result.values[.intro] else { Issue.record("no intro: \(result.values)"); return }
+        #expect(intro.hasPrefix("自然環境の中で英語を体得した"), "the long description (03), not the table of contents (04)")
+        #expect(result.values[.cover] == .text("module-openbd-9784750320236.jpg"))
+        #expect(FileManager.default.fileExists(atPath: covers.appendingPathComponent("module-openbd-9784750320236.jpg").path))
+        #expect(result.sourceItem?.instance == ModuleProvider.instanceKey(moduleID: "openbd"))
+        #expect(result.identifiers.isEmpty)
+    }
+
+    @Test("openBD: no cover listed, no cover request; a record of another ISBN is not the copy's; other ISBNs never leave")
+    func openBDBounds() async throws {
+        let f = makeFixture()
+        defer { try? FileManager.default.removeItem(at: f.folder) }
+        ModuleStub.install(["api.openbd.jp/v1/get": .json(try reply("OpenBD/openbd-get.json"))])
+        let filler = ModuleFillProvider(provider: ModuleProvider(module: try official("openbd"), client: f.client),
+                                        coverDirectory: f.folder.appendingPathComponent("covers"))
+        let result = try await filler.lookUp(try isbnQuery("9784040729183"))
+        #expect(ModuleStub.urls == ["https://api.openbd.jp/v1/get?isbn=9784040729183"], "its cover is empty: nothing more is asked")
+        #expect(result.values == [.publisher: .text("KADOKAWA")])
+
+        ModuleStub.install(["api.openbd.jp/v1/get": .json(try reply("OpenBD/openbd-get.json"))])
+        #expect(try await filler.lookUp(try isbnQuery("9784750320236")).values.isEmpty, "the reply's record is another book")
+
+        #expect(!filler.canLookUp(try isbnQuery("9787536692930")), "a Chinese ISBN is not openBD's")
+        #expect(!filler.canLookUp(try isbnQuery("9784040729183", missing: [.language])), "nothing it can give is missing")
+        var comic = try isbnQuery("9784040729183")
+        comic.contentKind = .comic
+        #expect(!filler.canLookUp(comic), "its lookup lists books, not comics")
+        #expect(!filler.canLookUp(MetadataFillQuery(copyID: UUID(), title: "三體", authors: ["劉慈欣"], identifiers: [],
+                                                    copySource: .localLibrary, missing: [.intro])), "no search: a title is never sent")
+    }
+
+    @Test("lookup: it asks by {{isbn}}, reads the record's ISBN, takes prefixes of digits, and needs format 3.0")
+    func lookupRules() {
+        func file(_ lookup: String, required: String = "3.0") -> Data {
+            Data("""
+            {"id":"m","title":"模組","version":"1.0","requiredVersion":"\(required)","hosts":["example.com"],"modules":[],
+             "lookup":\(lookup)}
+            """.utf8)
+        }
+        let good = #"{"request":{"url":"https://example.com/isbn/{{isbn}}"},"isbnPrefixes":["9784"],"list":{"items":"$[*]","title":"$.t","isbn":"$.i"}}"#
+        #expect(throws: Never.self) { try RuleModuleValidator.validate(file(good), appVersion: "3.0") }
+        #expect(throws: RuleModuleRejection.missingField("lookup.request.url {{isbn}}")) {
+            try RuleModuleValidator.validate(file(#"{"request":{"url":"https://example.com/isbn"},"list":{"items":"$[*]","title":"$.t","isbn":"$.i"}}"#), appVersion: "3.0")
+        }
+        #expect(throws: RuleModuleRejection.emptyRule(field: "lookup.list.isbn")) {
+            try RuleModuleValidator.validate(file(#"{"request":{"url":"https://example.com/{{isbn}}"},"list":{"items":"$[*]","title":"$.t"}}"#), appVersion: "3.0")
+        }
+        #expect(throws: RuleModuleRejection.unknownValue(field: "lookup.isbnPrefixes", value: "978-4")) {
+            try RuleModuleValidator.validate(file(good.replacingOccurrences(of: "9784", with: "978-4")), appVersion: "3.0")
+        }
+        #expect(throws: RuleModuleRejection.needsRequiredVersion(field: "lookup", minimum: "3.0")) {
+            try RuleModuleValidator.validate(file(good, required: "2.0"), appVersion: "3.0")
+        }
+        let searchWithPrefixes = Data("""
+            {"id":"m","title":"模組","version":"1.0","requiredVersion":"3.0","hosts":["example.com"],"modules":[],
+             "search":{"request":{"url":"https://example.com/s?q={{keyword}}"},"isbnPrefixes":["9784"],"list":{"items":"li","title":"h3"}}}
+            """.utf8)
+        #expect(throws: RuleModuleRejection.unknownValue(field: "search.isbnPrefixes", value: "9784"), "only a lookup is asked by ISBN") {
+            try RuleModuleValidator.validate(searchWithPrefixes, appVersion: "3.0")
+        }
+    }
+
+    @Test("a module with only a lookup is a 資料來源 place")
+    func lookupFills() throws {
+        let openBD = try official("openbd")
+        #expect(openBD.search == nil && openBD.canFill)
+        let order = MetadataFillOrder(entries: [MetadataFillOrder.Entry(place: .module("openbd"), isEnabled: true)])
+        #expect(order.providers(modules: [openBD]).map(\.key) == [ModuleProvider.instanceKey(moduleID: "openbd")])
     }
 }

@@ -124,7 +124,7 @@ extension MetadataFillOrder {
             case .openLibrary: OpenLibraryFillProvider()
             case .bookSources: BookSourceFillProvider()
             case .module(let id):
-                modules.first { $0.id == id && $0.search != nil }
+                modules.first { $0.id == id && $0.canFill }
                     .map { ModuleFillProvider(provider: ModuleProvider(module: $0)) }
             }
         }
@@ -132,8 +132,12 @@ extension MetadataFillOrder {
 }
 
 extension RuleModuleLibrary {
-    /// The installed modules that can fill: those with a search.
+    /// The installed modules that can fill: those with a search or a lookup.
     var fillingModules: [RuleModule] {
-        modules.map(\.module).filter { $0.search != nil }
+        modules.map(\.module).filter(\.canFill)
     }
+}
+
+extension RuleModule {
+    var canFill: Bool { search != nil || lookup != nil }
 }

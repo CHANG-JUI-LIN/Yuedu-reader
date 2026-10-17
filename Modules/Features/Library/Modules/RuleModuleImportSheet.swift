@@ -146,6 +146,9 @@ struct RuleModuleManifestSections: View {
             if let search = module.search {
                 entryRow(title: localized("搜索"), description: search.description)
             }
+            if let lookup = module.lookup {
+                entryRow(title: localized("以 ISBN 查詢"), description: lookup.description)
+            }
         } header: {
             Text(localized("清單")).foregroundStyle(DSColor.textSecondary)
         }
@@ -169,9 +172,17 @@ struct RuleModuleManifestSections: View {
         } footer: {
             VStack(alignment: .leading, spacing: DSSpacing.xs) {
                 Text(localized("模組只會向這些網站送出請求，封面也只從這些網站載入。"))
-                // Phase 6h: a module with a search fills by default (maintainer, 2026-10-15).
-                if module.search != nil {
+                // Phase 6h: a module with a search fills by default (maintainer, 2026-10-15);
+                // one with a lookup is sent ISBNs (M4).
+                switch (module.search != nil, module.lookup != nil) {
+                case (true, false):
                     Text(localized("自動補齊書籍資料開啟時，書架上的書名與作者也會送到這些網站，用來補上空白的簡介與分類；可在「資料來源」取消勾選。"))
+                case (false, true):
+                    Text(localized("自動補齊書籍資料開啟時，書架上的書的 ISBN 也會送到這些網站，用來補上空白的封面、簡介與出版社；可在「資料來源」取消勾選。"))
+                case (true, true):
+                    Text(localized("自動補齊書籍資料開啟時，書架上的書名、作者與 ISBN 也會送到這些網站，用來補上空白的封面、簡介與分類；可在「資料來源」取消勾選。"))
+                case (false, false):
+                    EmptyView()
                 }
             }
             .dsSectionFooter()
@@ -216,6 +227,18 @@ struct RuleModuleManifestSections: View {
             {"id":"example.credit","title":"書籍資料","version":"1.0","requiredVersion":"3.0","hosts":["example.com"],
              "attribution":{"text":"Supported by Example Developers","url":"https://example.com/dev"},
              "search":{"request":{"url":"https://example.com/s?q={{keyword}}"},"list":{"items":"$.items[*]","title":"$.title"}}}
+            """#)
+        }
+}
+
+#Preview("A module that looks up ISBNs") {
+    let model = RuleModuleImportModel(download: { _ in throw URLError(.notConnectedToInternet) })
+    RuleModuleImportSheet(model: model, title: localized("新增模組"))
+        .task {
+            await model.read(clipboard: #"""
+            {"id":"example.isbn","title":"書目資料","version":"1.0","requiredVersion":"3.0","hosts":["api.example.com"],"modules":[],
+             "lookup":{"request":{"url":"https://api.example.com/isbn/{{isbn}}"},"isbnPrefixes":["9784"],
+                       "list":{"items":"$[*]","title":"$.title","isbn":"$.isbn"}}}
             """#)
         }
 }

@@ -101,3 +101,12 @@ M2 is split: LibraryTabRoot, HomeContentSourcePicker, ExploreHome and BookSearch
 - 資源庫: the 公有書庫 group is gone; 官方模組 comes first (where 公有書庫 was) and lists AI 推薦, 古騰堡, 青空文庫, then the bundled modules. The tiles keep `library.public.<id>`, their pages and storefront hiding.
 - 選擇內容來源: 書庫 holds only the reader's connections (and is left out without one); 官方模組 holds AI 推薦's rows, 古騰堡, 青空文庫 and the bundled modules; 模組 the imported ones.
 - `LibraryTabUITests` (grid: AI 推薦 beside 古騰堡, 青空文庫 below; no 公有書庫 header), `HomeEditorUITests/testAddSections`: 3/3.
+
+### M4 lookup + openBD (2026-10-17)
+
+- Format 3.0 `lookup` (an entry asked by `{{isbn}}`, an ISBN-13) with `isbnPrefixes` (digits; only on a lookup). The validator needs `{{isbn}}` in its url or body and a `list.isbn` rule: the record whose own ISBN is the one asked is the copy's. A module may have only a lookup (no rows, no search).
+- `ModuleFillProvider` is level A when its module has a lookup: by ISBN it gives a cover (`RuleModuleClient.image`: the module's hosts only, its `rateLimit`, a 404 or a non-image is no cover; saved as `module-<id>-<isbn>.jpg`), description, tags, publisher and series. Then, for what is still missing, the module's search by title as before (level B values only). **Disclosed:** that second question is the module's own search, asked only for the fields the record did not give; not a retry of the lookup.
+- `official-module-openbd.json`: `api.openbd.jp/v1/get?isbn=`, prefixes `9784`, long description (ONIX 03) before the short (02), publisher; `cover.openbd.jp`; `1/1000`. Series is not read: openBD's `summary.series` is the imprint (カドカワBOOKS).
+- 匯入/模組頁 lists 以 ISBN 查詢; the hosts footer says ISBNs are sent when a module has a lookup.
+- Risk to watch: openBD announced v1's end in 2023 (successor promised) and still answers.
+- Tests: `OfficialModuleFilesTests/openBDLookup`, `openBDBounds`, `lookupRules`, `lookupFills`; module and fill suites 74/74 + format 2/2.
