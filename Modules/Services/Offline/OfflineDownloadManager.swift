@@ -289,7 +289,7 @@ actor OfflineDownloadManager: OfflineDownloadManaging {
                         expectedSourceURL: ref.url,
                         expectedTOCTitle: ref.title,
                         requiresManga: book.contentPipelineKind == .manga,
-                        hasBookSource: book.bookSourceId != nil
+                        hasBookSource: book.chaptersBuiltByRules
                     )
                 }
                 if validation == .complete {
@@ -470,7 +470,7 @@ actor OfflineDownloadManager: OfflineDownloadManaging {
                         expectedSourceURL: ref.url,
                         expectedTOCTitle: ref.title,
                         requiresManga: book.contentPipelineKind == .manga,
-                        hasBookSource: book.bookSourceId != nil
+                        hasBookSource: book.chaptersBuiltByRules
                     )
                 }
                 if validation != .complete {
@@ -527,7 +527,7 @@ actor OfflineDownloadManager: OfflineDownloadManaging {
                     expectedSourceURL: ref.url,
                     expectedTOCTitle: ref.title,
                     requiresManga: book.contentPipelineKind == .manga,
-                    hasBookSource: book.bookSourceId != nil
+                    hasBookSource: book.chaptersBuiltByRules
                 )
                 guard finalValidation == .complete else {
                     throw OfflineDownloadManagerError.invalidPackage

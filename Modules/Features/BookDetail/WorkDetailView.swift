@@ -360,6 +360,8 @@ struct WorkDetailView: View {
             return { book }
         case .aozora(let work):
             return { [dependencies, store] in try await dependencies.aozoraLibrary.readingCopy(work: work, store: store) }
+        case .moduleBook(let book):
+            return { [dependencies, store] in try await dependencies.moduleBooks.readingCopy(book, store: store) }
         case .gutenberg, .opdsEntry, .webDAVFile:
             guard let item = libraryItem(of: version), let format = selectedFormat(of: version), format.isSupported else {
                 return nil
@@ -413,7 +415,7 @@ struct WorkDetailView: View {
             return (gutenbergAuthors[selected.nodeKey] ?? []).mainAuthors.map { author in
                 BookDetailAuthorAction(id: author.id, name: author.displayName, action: { pushed = .author(.gutenberg(author)) })
             }
-        case .copy, .opdsEntry, .webDAVFile, .onlineBook, .bibliographic:
+        case .copy, .opdsEntry, .webDAVFile, .onlineBook, .moduleBook, .bibliographic:
             return []
         }
     }
@@ -433,7 +435,7 @@ struct WorkDetailView: View {
                 BookDetailInfoItem(id: "credit.\(author.id)", label: localized(author.roleKey), value: author.displayName,
                                    action: { pushed = .author(.gutenberg(author)) })
             }
-        case .copy, .opdsEntry, .webDAVFile, .onlineBook, .bibliographic:
+        case .copy, .opdsEntry, .webDAVFile, .onlineBook, .moduleBook, .bibliographic:
             return []
         }
     }
@@ -448,7 +450,7 @@ struct WorkDetailView: View {
         let keys = versions.filter { version in
             switch version.opening {
             case .copy, .opdsEntry, .webDAVFile: true
-            case .gutenberg, .aozora, .onlineBook, .bibliographic: false
+            case .gutenberg, .aozora, .onlineBook, .moduleBook, .bibliographic: false
             }
         }.map(\.nodeKey)
         return keys.isEmpty ? nil : SeriesLoad(versions: keys)
@@ -485,7 +487,7 @@ struct WorkDetailView: View {
             // The versions known: a book 「尋找可用來源」 found is no shelf work, and each one
             // found would read the author's works again.
             return .shelf(versions: listed)
-        case .onlineBook, .bibliographic:
+        case .onlineBook, .moduleBook, .bibliographic:
             return nil
         }
     }
@@ -496,7 +498,7 @@ struct WorkDetailView: View {
         switch version.opening {
         case .onlineBook(let frozen): frozen.book
         case .copy(let id): copy(id).flatMap(OnlineBook.init(shelfCopy:))
-        case .opdsEntry, .webDAVFile, .gutenberg, .aozora, .bibliographic: nil
+        case .opdsEntry, .webDAVFile, .gutenberg, .aozora, .moduleBook, .bibliographic: nil
         }
     }
 
@@ -553,6 +555,10 @@ struct WorkDetailView: View {
             return BookDetailAction(title: localized(hasBeenOpened(version) ? "繼續閱讀" : "開始閱讀"), systemImage: "book",
                                     isEnabled: actions.action == nil,
                                     detail: resumeDetail, action: { read(version) })
+        case .moduleBook:
+            return BookDetailAction(title: localized(hasBeenOpened(version) ? "繼續閱讀" : "開始閱讀"), systemImage: "book",
+                                    isBusy: actions.action == .read, isEnabled: actions.action == nil,
+                                    detail: resumeDetail, action: { read(version) })
         }
     }
 
@@ -583,6 +589,11 @@ struct WorkDetailView: View {
             return BookDetailAction(title: localized("加入書架"), systemImage: "plus",
                                     isBusy: actions.action == .addToShelf, isEnabled: actions.action == nil,
                                     action: { addAozoraToShelf(work) })
+        case .moduleBook(let book):
+            if shelfCopy(of: version) != nil { return added }
+            return BookDetailAction(title: localized("加入書架"), systemImage: "plus",
+                                    isBusy: actions.action == .addToShelf, isEnabled: actions.action == nil,
+                                    action: { addModuleBookToShelf(book) })
         }
     }
 
@@ -774,6 +785,7 @@ struct WorkDetailView: View {
             connections.connection(id: id)?.name ?? id
         case .gutenberg: localized("Project Gutenberg")
         case .aozora: localized("青空文庫")
+        case .moduleBook(let book): moduleTitle(book.reference.moduleID)
         case .onlineBook(let frozen): frozen.book.sourceName
         case .bibliographic: FilledMetadata.providerName(version.record.key.instance)
         }
@@ -789,8 +801,14 @@ struct WorkDetailView: View {
         case .bookSource:
             copy?.bookSourceId.flatMap { BookSourceStore.shared.source(id: $0)?.bookSourceName }
                 .flatMap { $0.isEmpty ? nil : $0 } ?? localized("書架")
-        case .library, .bibliographic, .module: localized("書架")
+        case .module: moduleTitle(key.instance.id)
+        case .library, .bibliographic: localized("書架")
         }
+    }
+
+    /// A module's title, or 模組 once it was removed.
+    private func moduleTitle(_ id: String) -> String {
+        RuleModuleLibrary.shared.module(id: id)?.module.title ?? localized("模組")
     }
 
     private func status(of version: WorkDetailRoute) -> String? {
@@ -820,7 +838,7 @@ struct WorkDetailView: View {
         guard let version = selected else { return nil }
         switch version.opening {
         case .copy(let id): return copy(id)
-        case .aozora: return readCopy(of: version.record.key)
+        case .aozora, .moduleBook: return readCopy(of: version.record.key)
         case .gutenberg: return shelfCopy(of: version) ?? libraryCopy
         case .opdsEntry, .webDAVFile: return libraryCopy
         case .onlineBook, .bibliographic: return nil
@@ -858,7 +876,7 @@ struct WorkDetailView: View {
             return RemoteLibraryBookRoute(entry: entry, connectionID: connectionID).item
         case .webDAVFile(let entry, let connectionID):
             return RemoteLibraryBookRoute(entry: entry, connectionID: connectionID).item
-        case .copy, .gutenberg, .aozora, .onlineBook, .bibliographic:
+        case .copy, .gutenberg, .aozora, .onlineBook, .moduleBook, .bibliographic:
             return nil
         }
     }
@@ -910,7 +928,7 @@ struct WorkDetailView: View {
                 AppLogger.network("Remote library write capabilities failed", error: SourceFailure.loggable(error),
                                   context: ["connection": connectionID])
             }
-        case .copy, .onlineBook, .bibliographic:
+        case .copy, .onlineBook, .moduleBook, .bibliographic:
             break
         }
     }
@@ -953,6 +971,16 @@ struct WorkDetailView: View {
             begin(.read)
         case .opdsEntry, .webDAVFile:
             begin(.read)
+        case .moduleBook(let book):
+            if let copy = readCopy(of: version.record.key) {
+                openCopy(copy.id)
+                return
+            }
+            // Its table of contents is read first: the reader opens a copy that has one.
+            actions.begin(.read) { [dependencies, store] in
+                openCopy(try await dependencies.moduleBooks.readingCopy(book, store: store).id)
+                return nil
+            }
         case .onlineBook, .bibliographic:
             // Read from the source's own page (see `page`); a bibliographic record has nothing
             // to read.
@@ -963,6 +991,13 @@ struct WorkDetailView: View {
     private func addAozoraToShelf(_ work: AozoraWork) {
         actions.begin(.addToShelf) { [dependencies, store] in
             _ = try await dependencies.aozoraLibrary.addToShelf(work: work, store: store)
+            return localized("已加入書架")
+        }
+    }
+
+    private func addModuleBookToShelf(_ book: ModuleBook) {
+        actions.begin(.addToShelf) { [dependencies, store] in
+            _ = try await dependencies.moduleBooks.addToShelf(book, store: store)
             return localized("已加入書架")
         }
     }

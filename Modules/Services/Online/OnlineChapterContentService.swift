@@ -59,7 +59,7 @@ final class OnlineChapterContentService {
         ), cached.state == .cached, !cached.content.isEmpty {
             let invalidArtifacts = OnlineChapterCacheWritePolicy.shouldRefetchStrippedRenderArtifacts(
                 package: cached,
-                hasBookSource: book.bookSourceId != nil
+                hasBookSource: book.chaptersBuiltByRules
             )
             let suspiciousContent = ChapterFetchManager.isSuspiciousChapterContent(cached.content)
             if invalidArtifacts || suspiciousContent {

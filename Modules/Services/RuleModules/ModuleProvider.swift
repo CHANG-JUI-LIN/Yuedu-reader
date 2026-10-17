@@ -102,7 +102,7 @@ final class ModuleProvider: CollectionBrowsing, HomeSectionProviding {
     func searchEntry(_ item: RuleListItem, of entry: RuleModule.Entry? = nil) -> CollectionEntry? {
         guard let list = entry ?? module.search else { return nil }
         return Self.entry(item, of: list, instance: instance, hasURLRule: Self.hasURLRule(list),
-                          hosts: Set(module.hosts.map { $0.lowercased() }))
+                          hosts: Set(module.hosts.map { $0.lowercased() }), isReadable: isReadable(list))
     }
 
     /// A cover a lookup's record names, from the module's hosts only.
@@ -117,9 +117,17 @@ final class ModuleProvider: CollectionBrowsing, HomeSectionProviding {
         let instance = instance
         let hasURLRule = Self.hasURLRule(entry)
         let hosts = Set(module.hosts.map { $0.lowercased() })
+        let isReadable = isReadable(entry)
         return CollectionPage(
-            entries: items.compactMap { Self.entry($0, of: entry, instance: instance, hasURLRule: hasURLRule, hosts: hosts) },
+            entries: items.compactMap {
+                Self.entry($0, of: entry, instance: instance, hasURLRule: hasURLRule, hosts: hosts, isReadable: isReadable)
+            },
             next: entry.position(after: position, itemCount: items.count).map { CollectionCursor(value: String($0)) })
+    }
+
+    /// Its items are books the module reads: never a lookup's record, which is a copy's data.
+    private func isReadable(_ entry: RuleModule.Entry) -> Bool {
+        module.reading != nil && entry != module.lookup
     }
 
     private nonisolated static func hasURLRule(_ entry: RuleModule.Entry) -> Bool {
@@ -144,9 +152,10 @@ final class ModuleProvider: CollectionBrowsing, HomeSectionProviding {
         }
     }
 
-    /// A list item as a data-only entry, bounded and plain as every source's summary is.
+    /// A list item as an entry, bounded and plain as every source's summary is: a book the
+    /// module reads when `isReadable`, else data only.
     nonisolated static func entry(_ item: RuleListItem, of entry: RuleModule.Entry, instance: SourceInstanceKey,
-                                  hasURLRule: Bool, hosts: Set<String>) -> CollectionEntry? {
+                                  hasURLRule: Bool, hosts: Set<String>, isReadable: Bool = false) -> CollectionEntry? {
         let title = OPDSClient.plainMetadata(item.name, limit: 200)
         guard !title.isEmpty else { return nil }
         let author = OPDSClient.plainMetadata(item.author, limit: 100)
@@ -168,7 +177,14 @@ final class ModuleProvider: CollectionBrowsing, HomeSectionProviding {
                                   language: language, contentKind: kind,
                                   category: WorkSummary.category(fromSourceKind: OPDSClient.plainMetadata(item.kind, limit: 200))
                                     ?? entry.tags(of: item).first)
-        return .item(record, summary, .bibliographic)
+        // A book the module reads has a page of its own: the item's url.
+        guard isReadable, hasURLRule, !item.bookUrl.isEmpty else { return .item(record, summary, .bibliographic) }
+        var readable = record
+        readable.acquisitions = [.readOnline]
+        let book = ModuleBook(reference: ModuleBookReference(moduleID: instance.id, bookURL: item.bookUrl), title: title,
+                              author: author, coverURL: { if case .remote(let url, _) = cover { url.absoluteString } else { nil } }(),
+                              contentKind: kind)
+        return .item(readable, summary, .moduleBook(book))
     }
 }
 

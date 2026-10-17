@@ -1476,7 +1476,8 @@ struct EditBookSheet: View {
                             Text(localized("來源"))
                                 .foregroundStyle(DSColor.textPrimary)
                             Spacer()
-                            Text(SourceLabel.text(for: book, record: .derived(from: book, context: .live())))
+                            Text(SourceLabel.text(for: book, record: .derived(from: book, context: .live()),
+                                                 moduleTitle: { RuleModuleLibrary.shared.module(id: $0)?.module.title }))
                                 .foregroundStyle(DSColor.textSecondary)
                         }
                     }

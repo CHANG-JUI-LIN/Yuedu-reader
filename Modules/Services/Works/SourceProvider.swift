@@ -112,6 +112,9 @@ enum ItemOpening: Hashable, Sendable {
     case webDAVFile(WebDAVBrowseClient.Entry, connectionID: String)
     case gutenberg(GutenbergBook)
     case aozora(AozoraWork)
+    /// A book a module reads (format 3.0 `reading`): added to the shelf, or read, through
+    /// `ModuleBookShelf`.
+    case moduleBook(ModuleBook)
     /// A book-source result: `ExploreNavigationRoute.book`.
     case onlineBook(FrozenOnlineBook)
     /// A bibliographic database's record (Open Library, unified search 4b-3): data only, with

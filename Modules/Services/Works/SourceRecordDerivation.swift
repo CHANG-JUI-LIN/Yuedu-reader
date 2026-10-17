@@ -95,6 +95,13 @@ extension SourceRecord {
             return record
         }
 
+        // A module's book: the key of the list item it was added from.
+        if book.isOnline, let reference = book.module {
+            record.key = SourceItemKey(instance: SourceInstanceKey(type: .module, id: reference.moduleID),
+                                       item: reference.bookURL)
+            return record
+        }
+
         if book.isOnline, let sourceID = book.bookSourceId {
             let sourceURL = context.bookSourceURL(sourceID) ?? "missing:\(sourceID.uuidString.lowercased())"
             record.key = SourceItemKey(

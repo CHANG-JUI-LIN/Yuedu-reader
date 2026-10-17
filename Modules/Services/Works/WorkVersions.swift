@@ -57,7 +57,7 @@ struct WorkDetailRoute: Hashable, Sendable {
     /// a library item's does; a book source's own page keeps its copy apart.
     var readsItsCopies: Bool {
         switch opening {
-        case .aozora, .gutenberg, .opdsEntry, .webDAVFile: true
+        case .aozora, .gutenberg, .opdsEntry, .webDAVFile, .moduleBook: true
         case .copy, .onlineBook: false
         // Open Library is never where a copy came from; it only fills one in.
         case .bibliographic: false
@@ -69,7 +69,7 @@ struct WorkDetailRoute: Hashable, Sendable {
     /// with no format the app reads is the one kind that has only its data (design §6).
     var isReadable: Bool {
         switch opening {
-        case .copy, .gutenberg, .aozora, .onlineBook: true
+        case .copy, .gutenberg, .aozora, .onlineBook, .moduleBook: true
         case .opdsEntry, .webDAVFile: record.acquisitions.contains { $0 != .viewOnly }
         case .bibliographic: false
         }

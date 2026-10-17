@@ -102,9 +102,9 @@ enum ExploreItemTarget {
             // Explore's own reader route, as the storefront's cards push it (the shelf's card
             // transition belongs to the shelf's stack).
             self = .push(.reader(PublicLibraryReaderRoute(bookID: id)))
-        case .opdsEntry, .webDAVFile, .bibliographic:
+        case .opdsEntry, .webDAVFile, .bibliographic, .moduleBook:
             // A library item's own page is 作品詳情 since its list page went (decision 28); a
-            // bibliographic record has no other.
+            // bibliographic record and a module's book have no other.
             self = .push(.work(route))
         case .gutenberg(let book):
             self = .publicLibraryBook(.gutenberg(book))
