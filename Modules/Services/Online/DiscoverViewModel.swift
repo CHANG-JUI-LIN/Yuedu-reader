@@ -702,7 +702,10 @@ final class DiscoverViewModel: ObservableObject {
                 }
                 self.sections[idx] = updated
                 if ok {
-                    self.prefetchCovers(loaded, source: source)
+                    self.prefetchCovers(
+                        Array(loaded.prefix(Self.firstScreenCoverCount(for: updated.style))),
+                        source: source
+                    )
                 }
             }
             self.isPumpingSections = false
@@ -743,9 +746,24 @@ final class DiscoverViewModel: ObservableObject {
         isPumpingSections = false
     }
 
+    /// The covers a section draws before the reader swipes it: a chart column's rows, or a
+    /// shelf's first screen (an iPhone shows three or four covers, an iPad up to eight).
+    /// Covers further along load from their own slots when swiped to.
+    nonisolated static func firstScreenCoverCount(for style: DiscoverSectionStyle) -> Int {
+        switch style {
+        case .ranked: ExploreSettings.chartBookCount
+        case .featured: 8
+        }
+    }
+
     /// Warm the cover cache for a freshly loaded section so its cards paint right away
     /// instead of each fetching lazily on appear (covers used to trickle in until you
     /// opened 查看全部 — which warmed the cache as a side effect — and came back).
+    ///
+    /// Only the covers the section shows at first: warming the whole page (20–50 books a
+    /// category) overflowed the cover memory within a few sections, and the covers it
+    /// evicted were the ones already on screen — scrolled back to, they showed the
+    /// generated cover until refetched, behind the prefetch's own downloads.
     private func prefetchCovers(_ books: [OnlineBook], source: BookSource) {
         let headers = BookCoverLoader.headers(
             sourceBaseURL: source.bookSourceUrl,

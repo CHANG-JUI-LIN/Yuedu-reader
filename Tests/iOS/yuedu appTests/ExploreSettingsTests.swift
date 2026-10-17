@@ -14,6 +14,18 @@ struct ExploreSettingsTests {
         #expect(DiscoverViewModel.sectionStyle(for: "月票榜", rankedKeywords: []) == .featured)
     }
 
+    @Test("a section prefetches only the covers it shows before a swipe, not its whole page")
+    func coverPrefetchStaysOnTheFirstScreen() {
+        // A shelf's first screen, iPad included; a chart, its 豎排展示數 (unset: the default).
+        #expect(DiscoverViewModel.firstScreenCoverCount(for: .featured) == 8)
+        let stored = UserDefaults.standard.object(forKey: ExploreSettings.chartBookCountKey)
+        defer { UserDefaults.standard.set(stored, forKey: ExploreSettings.chartBookCountKey) }
+        UserDefaults.standard.removeObject(forKey: ExploreSettings.chartBookCountKey)
+        #expect(DiscoverViewModel.firstScreenCoverCount(for: .ranked) == ExploreSettings.defaultChartBookCount)
+        UserDefaults.standard.set(6, forKey: ExploreSettings.chartBookCountKey)
+        #expect(DiscoverViewModel.firstScreenCoverCount(for: .ranked) == 6)
+    }
+
     @Test("chart keywords are stored one per line, blank lines dropped")
     func keywordsRoundTrip() {
         let keywords = ["榜", "排行", "top"]

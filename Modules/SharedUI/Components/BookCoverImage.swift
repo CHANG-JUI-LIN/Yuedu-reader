@@ -31,10 +31,11 @@ struct BookCoverImage: View {
     var defaultCoverSeed: String?
 
     /// The cover this slot fetched, with the cache key it was fetched for. Held by
-    /// the slot, not just the pipeline's memory: the memory budget evicts covers
-    /// while a long 發現頁 scrolls, and a slot scrolled back into view used to read
-    /// that miss as "no cover", blank its own bitmap and fall back to the generated
-    /// cover until a refetch landed (if the source served it again at all).
+    /// the slot, not just the pipeline's memory, so a slot whose view lives on while
+    /// its task runs again (it reappears) does not read an eviction as "no cover" and
+    /// blank its bitmap until a refetch lands. It does not outlive the view: a lazy
+    /// stack discards rows scrolled far away (seen on iOS 27 with the 發現頁's sections
+    /// and 查看全部's rows), and those come back to whatever the pipeline still has.
     @State private var loaded: HeldRemoteCover?
     /// The 預設封面 this slot falls back to, once decoded off the main thread.
     @State private var loadedDefaultCover: LoadedDefaultCover?

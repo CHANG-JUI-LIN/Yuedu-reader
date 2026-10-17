@@ -65,6 +65,10 @@ enum ExploreSettings {
         raw.split(separator: "\n").map(String.init).filter { !$0.isEmpty }
     }
 
+    static var chartBookCount: Int {
+        UserDefaults.standard.object(forKey: chartBookCountKey) as? Int ?? defaultChartBookCount
+    }
+
     static var preloadCount: Int {
         UserDefaults.standard.object(forKey: preloadCountKey) as? Int ?? defaultPreloadCount
     }
