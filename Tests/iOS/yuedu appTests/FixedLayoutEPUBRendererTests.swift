@@ -14,7 +14,7 @@ struct FixedLayoutEPUBRendererTests {
 
     // MARK: Fixture
 
-    private static func makeFixedLayoutEPUB(
+    static func makeFixedLayoutEPUB(
         pageCount: Int = 3,
         viewport: CGSize = CGSize(width: 600, height: 800),
         pageBody: (Int) -> String = { index in

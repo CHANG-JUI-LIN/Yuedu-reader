@@ -151,7 +151,12 @@ struct ReaderView: View {
     /// it while the body is being evaluated. Seeded with the common home-indicator
     /// inset so the first layout is close before the real value arrives.
     @State var readerSafeAreaBottom: CGFloat = 34
-    @State var readerViewportSize: CGSize = UIScreen.main.bounds.size
+    /// The reader's own window size, as reported by `reportsReaderViewport` — zero until the
+    /// view has been laid out. Not seeded from `UIScreen`: the reader is often not the screen's
+    /// size (a Stage Manager or Split View window), and everything seeded from it — the first
+    /// layout, the spread mode — would be for a window the reader is not in. While it is zero the
+    /// renderer holds the engine start (`EPUBPageRenderer.pendingStartBookId`).
+    @State var readerViewportSize: CGSize = .zero
     @StateObject private var volumeHandler = VolumeKeyHandler()
 
     /// Not private: the footer pill in `ReaderView+Footer` reads its running state.
@@ -819,36 +824,15 @@ struct ReaderView: View {
         )
     }
 
-    /// Recomputes the reader viewport from the foreground window on a device rotation and drives the
-    /// normal relayout path. Needed because SwiftUI doesn't re-evaluate the reader's geometry on
-    /// rotation, so the `.background` GeometryReader preference never fires. The window's two
-    /// dimensions are stable; only their order changes with orientation, and `interfaceOrientation`
-    /// is already correct when this notification fires — so we order them by it (the raw
-    /// `window.bounds` may still report the pre-rotation order at this instant).
-    func applyRotatedViewportIfNeeded() {
-        let scenes = UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
-        guard let scene = scenes.first(where: { $0.activationState == .foregroundActive }) ?? scenes.first,
-              let window = scene.windows.first(where: { $0.isKeyWindow }) ?? scene.windows.first
-        else { return }
-        let bounds = window.bounds.size
-        let longSide = max(bounds.width, bounds.height)
-        let shortSide = min(bounds.width, bounds.height)
-        guard longSide > 1 else { return }
-        let size = scene.interfaceOrientation.isLandscape
-            ? CGSize(width: longSide, height: shortSide)
-            : CGSize(width: shortSide, height: longSide)
-        guard abs(size.width - readerViewportSize.width) > 0.5
-            || abs(size.height - readerViewportSize.height) > 0.5
-        else { return }
-        handleReaderViewportSizeChange(size)
-    }
-
     func handleReaderViewportSizeChange(_ newSize: CGSize) {
         guard newSize.width > 1, newSize.height > 1 else { return }
 
         let previousSize = readerViewportSize
         readerViewportSize = newSize
-        epubRenderer.notifyViewportSize(newSize)
+        // The size `load*` is given: one page, which across a double-page spread is half the
+        // window — and the whole window for a fixed-layout book, which pairs its own pages.
+        let targetRenderSize = readerRenderSize(forViewport: newSize)
+        epubRenderer.notifyViewportSize(usesFixedLayoutRenderer ? newSize : targetRenderSize)
         readerSessionCoordinator?.send(.updateViewport(newSize))
         readerSessionCoordinator?.send(.updateSpreadMode(effectiveReaderSpreadMode))
 
@@ -856,8 +840,6 @@ struct ReaderView: View {
             abs(newSize.width - previousSize.width) > 0.5 ||
             abs(newSize.height - previousSize.height) > 0.5
         guard sizeChanged else { return }
-
-        let targetRenderSize = readerRenderSize(forViewport: newSize)
 
         guard let engine = epubRenderer.engine, engine.renderSize != .zero else {
             if epubRenderer.scrollEngine != nil {
@@ -1614,6 +1596,9 @@ struct ReaderView: View {
                 .toolbarBackground(.hidden, for: .navigationBar, .bottomBar)
         }
         .tint(readerTheme.textColor)
+        // Here, outside the reader's own NavigationStack, so it sees the window and not the
+        // content area under the navigation bar. See `reportsReaderViewport`.
+        .reportsReaderViewport { handleReaderViewportSizeChange($0) }
         .task {
             guard readerSessionCoordinator == nil else { return }
             let fallback = CoreTextReadingPosition(spineIndex: 0, charOffset: 0)
@@ -2008,7 +1993,6 @@ struct ReaderView: View {
                 Color.clear
                     .preference(key: ReaderSafeAreaTopKey.self, value: g.safeAreaInsets.top)
                     .preference(key: ReaderSafeAreaBottomKey.self, value: g.safeAreaInsets.bottom)
-                    .preference(key: ReaderViewportSizeKey.self, value: g.size)
             }
         )
         .onPreferenceChange(ReaderSafeAreaTopKey.self) {
@@ -2018,9 +2002,6 @@ struct ReaderView: View {
             // An event handler is the correct place to consult UIKit; the getter
             // the bars call must not.
             readerSafeAreaBottom = max($0, windowSafeBottom)
-        }
-        .onPreferenceChange(ReaderViewportSizeKey.self) { newSize in
-            handleReaderViewportSizeChange(newSize)
         }
         // Everything the bars show, in one Equatable value: the clock ticking, the
         // battery moving, a theme or style edit, the safe area settling. Any of
@@ -2039,15 +2020,6 @@ struct ReaderView: View {
         .sensoryFeedback(trigger: bookmarkToast?.id) { _, _ in
             guard let toast = bookmarkToast else { return nil }
             return toast.isAdded ? .success : .impact(weight: .light)
-        }
-        // iPad rotation fix: SwiftUI does NOT re-evaluate the reader's geometry on rotation, so the
-        // `.background` GeometryReader / `onPreferenceChange` above never fires and the spread mode
-        // stays frozen (single/double only switches on a fresh reader entry). The device-orientation
-        // notification DOES fire reliably; derive the settled viewport from the window's two
-        // dimensions ordered by the (already-updated) interface orientation, and drive the same
-        // relayout path the in-app single/double toggle uses.
-        .onReceive(NotificationCenter.default.publisher(for: UIDevice.orientationDidChangeNotification)) { _ in
-            applyRotatedViewportIfNeeded()
         }
         .animation(DSAnimation.standard, value: chapters.isEmpty)
         .statusBarHidden(

@@ -156,6 +156,21 @@ final class EPUBPageRenderer: ObservableObject {
                 return .failed(.engineUnavailable(.paged))
             }
 
+            // A refresh that arrives before the view has reported a size finds the engine still
+            // waiting in `pendingStartBookId`: there is nothing to lay out yet, and the deferred
+            // start will do it at the right size with the settings `beginRefreshTransaction` has
+            // already stored. Laying out at zero would shrink the engine to nothing. Not a
+            // fallback — it is the precondition a layout has. Appearance and chapter content
+            // need no size, so they still run.
+            switch request.intent {
+            case .layout, .documentStyle, .modeActivation:
+                guard request.viewportSize.width > 0, request.viewportSize.height > 0 else {
+                    return .completed(.none)
+                }
+            case .appearance, .chapterContent:
+                break
+            }
+
             if let browser = engine as? BrowserLayoutPageEngine {
                 await browser.activatePagedLayout()
                 await browser.preloadChapter(at: request.position.spineIndex)
@@ -378,8 +393,11 @@ final class EPUBPageRenderer: ObservableObject {
     /// Tracks the current global page index (kept in sync by ReaderView / CoreTextPageEngineView).
     var currentEpubPage: Int = 0
 
-    /// Last non-zero viewport size reported by ReaderView via notifyViewportSize().
-    private var lastViewportSize: CGSize = UIScreen.main.bounds.size
+    /// Last non-zero page size reported by ReaderView via notifyViewportSize(). Zero until the
+    /// reader's own view has been laid out: the screen is not a stand-in, because the reader is
+    /// often not the screen's size (a Stage Manager or Split View window), and an engine started
+    /// at the screen's size lays the book out for a window it is not in.
+    private var lastViewportSize: CGSize = .zero
     /// bookId waiting for a valid viewport size before CoreTextPageEngine.start() can run.
     private var pendingStartBookId: String?
 
@@ -419,6 +437,13 @@ final class EPUBPageRenderer: ObservableObject {
         guard session.layoutMode != .prePaginated else {
             let fixedEngine = FixedLayoutPageEngine(session: session, renderSize: effectiveSize)
             self.engine = fixedEngine
+            guard effectiveSize.width > 0 else {
+                // Same deferral as the reflowable path below: `notifyViewportSize` starts it.
+                isCoreTextReady = false
+                pendingStartBookId = bookIdentifier
+                logProgress("load deferred bookId=\(bookIdentifier) reason=invalidRenderSize fixedLayout size=\(renderSize)")
+                return
+            }
             isCoreTextReady = true
             Task {
                 await fixedEngine.start(renderSize: effectiveSize, bookId: bookIdentifier)
@@ -628,8 +653,9 @@ final class EPUBPageRenderer: ObservableObject {
         await contentBuilder?.chapterPlainText(at: index)
     }
 
-    /// Called by ReaderView whenever the viewport size changes.
-    /// Stores the size and starts the CoreText engine if load() was called before layout.
+    /// Called by ReaderView whenever its own window size changes, with the size one page is laid
+    /// out in (half the window across a double-page spread). Stores the size and starts the engine
+    /// if `load*` ran before the view had a size.
     func notifyViewportSize(_ size: CGSize) {
         guard size.width > 0, size.height > 0 else { return }
         lastViewportSize = size
