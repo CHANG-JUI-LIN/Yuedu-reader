@@ -46,6 +46,15 @@ enum StorageLocations {
             .appendingPathComponent("RemoteLibrary", isDirectory: true)
     }
 
+    /// The bytes of covers fetched from the network (探索, 搜尋, a source's 發現頁), one file
+    /// per address, kept by `CoverImagePipeline` so a cover its memory let go of comes back
+    /// from disk instead of the network. Regenerable, so Caches: not backed up, and the
+    /// system may empty it when the device runs out of space.
+    static var networkCoverCache: URL {
+        FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0]
+            .appendingPathComponent("NetworkCovers", isDirectory: true)
+    }
+
     // MARK: - App-internal (Application Support)
 
     /// Root for everything the app maintains itself. Backed up like Documents, but

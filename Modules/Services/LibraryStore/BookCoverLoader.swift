@@ -17,8 +17,9 @@ enum BookCoverLoader {
         "Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 "
         + "(KHTML, like Gecko) Version/18.0 Mobile/15E148 Safari/604.1"
 
-    /// The memory budget (128 MB, costed by decoded bitmap size) and the in-flight
-    /// coalescing live in the pipeline, shared with the covers saved on disk. A fully
+    /// The memory budget (128 MB, costed by decoded bitmap size), the saved copy of
+    /// each downloaded cover behind it and the in-flight coalescing live in the
+    /// pipeline, shared with the covers saved on disk. A fully
     /// populated discover page holds several hundred covers; the budget is sized so
     /// scrolling back doesn't churn through evict → refetch → redecode. Concurrent
     /// loads of one URL coalesce: on 發現頁 the same book (and cover) appears in
@@ -90,12 +91,14 @@ enum BookCoverLoader {
         }
         let key = cacheKey(for: trimmed, session: session)
         if let cached = pipeline.cachedNetworkImage(forKey: key) { return cached }
-        return await pipeline.coalescedNetworkLoad(key: key) {
-            await fetchAndCache(urlString: trimmed, headers: headers, session: session, cacheKey: key)
+        return await pipeline.coalescedNetworkLoad(key: key, decode: { decodedCover(from: $0) }) {
+            await fetchCover(urlString: trimmed, headers: headers, session: session)
         }
     }
 
-    private static func fetchAndCache(urlString: String, headers: [String: String], session: URLSession?, cacheKey: String) async -> UIImage? {
+    /// The cover's bitmap and, for a downloaded one, the bytes it was decoded from
+    /// (after `coverDecodeJs`), which the pipeline saves. Caching is the pipeline's.
+    private static func fetchCover(urlString: String, headers: [String: String], session: URLSession?) async -> FetchedNetworkCover? {
         guard let url = URL(string: urlString) else { return nil }
         if url.scheme == "data" {
             guard urlString.utf8.count <= 2 * 1024 * 1024,
@@ -107,8 +110,7 @@ enum BookCoverLoader {
                 AppLogger.network("Invalid inline cover image")
                 return nil
             }
-            pipeline.storeNetworkImage(image, forKey: cacheKey)
-            return image
+            return FetchedNetworkCover(image: image, bytes: nil)
         }
         var request = URLRequest(url: url)
         for (key, value) in headers { request.setValue(value, forHTTPHeaderField: key) }
@@ -142,9 +144,7 @@ enum BookCoverLoader {
             )
             return nil
         }
-
-        pipeline.storeNetworkImage(image, forKey: cacheKey)
-        return image
+        return FetchedNetworkCover(image: image, bytes: effectiveData)
     }
 
     /// Downsample to the largest size any cover slot renders at, forcing the

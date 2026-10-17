@@ -5,7 +5,8 @@ One source, "Explore Cover Fixture", with CATEGORIES categories of BOOKS_PER_CAT
 Every book has its own solid-colour 480×640 cover — about 1.2 MB decoded, so the 500 covers
 are well past CoverImagePipeline's 128 MB memory budget, which then evicts covers while the
 page scrolls. Stop the server mid-session to check that a cover scrolled back into view is
-still the source's cover (the slot holds it) and not the generated one (a refetch that fails).
+still the source's cover (read back from the pipeline's saved copy in Caches/NetworkCovers)
+and not the generated one (a refetch that fails).
 
 The app must be installed on the selected, booted simulator. Stop the app before
 prepare/clean. Only this fixture source's records are changed.

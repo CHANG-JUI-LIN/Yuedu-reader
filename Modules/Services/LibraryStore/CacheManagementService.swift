@@ -60,14 +60,26 @@ struct CacheStorageRoots: Equatable, Sendable {
     var ttsAudio: URL
     var mangaImages: URL
     var covers: URL
+    /// Network covers saved behind the pipeline's memory. Counted and cleared with
+    /// `covers`: to the user both are 封面圖片快取.
+    var networkCovers: URL
     var diagnostics: URL
     var remoteBooks: URL
 
-    init(chapters: URL, ttsAudio: URL, mangaImages: URL, covers: URL, diagnostics: URL, remoteBooks: URL? = nil) {
+    init(
+        chapters: URL,
+        ttsAudio: URL,
+        mangaImages: URL,
+        covers: URL,
+        diagnostics: URL,
+        remoteBooks: URL? = nil,
+        networkCovers: URL? = nil
+    ) {
         self.chapters = chapters
         self.ttsAudio = ttsAudio
         self.mangaImages = mangaImages
         self.covers = covers
+        self.networkCovers = networkCovers ?? chapters.deletingLastPathComponent().appendingPathComponent("NetworkCovers", isDirectory: true)
         self.diagnostics = diagnostics
         self.remoteBooks = remoteBooks ?? chapters.deletingLastPathComponent().appendingPathComponent("RemoteLibrary", isDirectory: true)
     }
@@ -79,7 +91,8 @@ struct CacheStorageRoots: Equatable, Sendable {
             mangaImages: StorageLocations.mangaCache,
             covers: StorageLocations.covers,
             diagnostics: StorageLocations.diagnostics,
-            remoteBooks: StorageLocations.remoteLibraryCache
+            remoteBooks: StorageLocations.remoteLibraryCache,
+            networkCovers: StorageLocations.networkCoverCache
         )
     }
 
@@ -167,7 +180,7 @@ final class CacheManagementService: @unchecked Sendable {
             chapters: byteCount(in: roots.chapters),
             ttsAudio: byteCount(in: roots.ttsAudio),
             mangaImages: byteCount(in: roots.mangaImages),
-            covers: byteCount(in: roots.covers),
+            covers: byteCount(in: roots.covers) + byteCount(in: roots.networkCovers),
             diagnostics: byteCount(in: roots.diagnostics),
             remoteBooks: byteCount(in: roots.remoteBooks)
         )
@@ -190,7 +203,8 @@ final class CacheManagementService: @unchecked Sendable {
                 // Also when the delete stops partway: whatever did go must not
                 // keep drawing from memory.
                 defer { coverPipeline.invalidateDownloadedBookCovers() }
-                try clearDirectory(roots[category])
+                try clearDirectory(roots.covers)
+                try clearDirectory(roots.networkCovers)
                 return
             }
             try clearDirectory(roots[category])

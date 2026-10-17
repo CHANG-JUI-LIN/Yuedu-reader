@@ -12,6 +12,7 @@ private struct ProbeCounts: Equatable, Sendable {
     var locates = 0
     var reads = 0
     var decodes = 0
+    var writes = 0
     var mainThreadCalls = 0
     var readsByName: [String: Int] = [:]
 }
@@ -81,6 +82,11 @@ private final class CoverIOProbe: Sendable {
             decode: { data, size in
                 self.note { $0.decodes += 1 }
                 return CoverImageDecoder.thumbnail(from: data, filling: size)
+            },
+            networkCovers: root.appendingPathComponent("NetworkCovers", isDirectory: true),
+            write: { data, url in
+                self.note { $0.writes += 1 }
+                try CoverImageIO.live.write(data, url)
             }
         )
     }
@@ -115,7 +121,11 @@ private final class CoverFixture {
     let pipeline: CoverImagePipeline
     let store: BookCoverFileStore
 
-    init(maxConcurrentLoads: Int = 2, failureLifetime: TimeInterval = 30) throws {
+    init(
+        maxConcurrentLoads: Int = 2,
+        failureLifetime: TimeInterval = 30,
+        networkDiskLimit: Int = CoverImagePipeline.networkDiskLimit
+    ) throws {
         root = FileManager.default.temporaryDirectory
             .appendingPathComponent("CoverImagePipelineTests-\(UUID().uuidString)", isDirectory: true)
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
@@ -124,6 +134,7 @@ private final class CoverFixture {
             io: probe.io,
             maxConcurrentLoads: maxConcurrentLoads,
             failureLifetime: failureLifetime,
+            networkDiskLimit: networkDiskLimit,
             now: clock.now,
             logsSummaries: false
         )
@@ -896,5 +907,137 @@ struct BookshelfCoverArtworkTests {
             .bestAvailableSnapshot() === thumbnail)
         #expect(ReaderTransitionSource(bookID: id, snapshot: thumbnail, snapshotUpgrade: { smaller })
             .bestAvailableSnapshot() === thumbnail)
+    }
+}
+
+// MARK: - Saved network covers
+
+/// Stands in for `BookCoverLoader`'s download: counts how often the network is asked.
+private final class NetworkProbe: Sendable {
+    private let fetchCount = OSAllocatedUnfairLock(initialState: 0)
+    var fetches: Int { fetchCount.withLock { $0 } }
+
+    func fetch(_ color: UIColor, savesBytes: Bool = true) -> @Sendable () async -> FetchedNetworkCover? {
+        let bytes = Swatch.png(color)
+        return {
+            self.fetchCount.withLock { $0 += 1 }
+            guard let image = CoverImageDecoder.thumbnail(from: bytes, filling: .standard) else { return nil }
+            return FetchedNetworkCover(image: image, bytes: savesBytes ? bytes : nil)
+        }
+    }
+}
+
+private let decodeSaved: @Sendable (Data) -> UIImage? = {
+    CoverImageDecoder.thumbnail(from: $0, filling: .standard)
+}
+
+@Suite("Saved network covers")
+struct SavedNetworkCoverTests {
+    @Test("A network cover memory let go of comes back from disk, not the network")
+    func evictedCoverComesBackFromDisk() async throws {
+        let fixture = try CoverFixture()
+        let network = NetworkProbe()
+        let key = "https://covers.example/a.png"
+
+        let first = await fixture.pipeline.coalescedNetworkLoad(key: key, decode: decodeSaved, network.fetch(.red))
+        #expect(Swatch.tone(of: try #require(first)) == "red")
+        #expect(fixture.probe.counts.writes == 1)
+
+        fixture.pipeline.purgeMemory()
+        #expect(fixture.pipeline.cachedNetworkImage(forKey: key) == nil)
+        let again = await fixture.pipeline.coalescedNetworkLoad(key: key, decode: decodeSaved, network.fetch(.blue))
+        #expect(Swatch.tone(of: try #require(again)) == "red")
+        #expect(network.fetches == 1)
+        #expect(fixture.pipeline.counters.networkDiskHits == 1)
+        #expect(fixture.pipeline.cachedNetworkImage(forKey: key) != nil)
+
+        // The next launch: a new pipeline over the same directory.
+        let relaunched = CoverImagePipeline(io: fixture.probe.io, logsSummaries: false)
+        let afterLaunch = await relaunched.coalescedNetworkLoad(key: key, decode: decodeSaved, network.fetch(.blue))
+        #expect(Swatch.tone(of: try #require(afterLaunch)) == "red")
+        #expect(network.fetches == 1)
+    }
+
+    @Test("An inline cover is not saved")
+    func inlineCoverIsNotSaved() async throws {
+        let fixture = try CoverFixture()
+        let network = NetworkProbe()
+        let key = "data:image/png;base64,AAAA"
+
+        _ = await fixture.pipeline.coalescedNetworkLoad(key: key, decode: decodeSaved, network.fetch(.red, savesBytes: false))
+        #expect(fixture.probe.counts.writes == 0)
+        fixture.pipeline.purgeMemory()
+        _ = await fixture.pipeline.coalescedNetworkLoad(key: key, decode: decodeSaved, network.fetch(.red, savesBytes: false))
+        #expect(network.fetches == 2)
+        #expect(fixture.pipeline.counters.networkDiskHits == 0)
+    }
+
+    @Test("A saved cover that cannot be decoded is fetched again and saved over")
+    func corruptSavedCoverIsReplaced() async throws {
+        let fixture = try CoverFixture()
+        let network = NetworkProbe()
+        let key = "https://covers.example/corrupt.png"
+        try CoverImageIO.live.write(Data("not an image".utf8), fixture.pipeline.networkCoverLocation(forKey: key))
+
+        let fetched = await fixture.pipeline.coalescedNetworkLoad(key: key, decode: decodeSaved, network.fetch(.red))
+        #expect(Swatch.tone(of: try #require(fetched)) == "red")
+        #expect(network.fetches == 1)
+
+        fixture.pipeline.purgeMemory()
+        _ = await fixture.pipeline.coalescedNetworkLoad(key: key, decode: decodeSaved, network.fetch(.blue))
+        #expect(network.fetches == 1)
+        #expect(fixture.pipeline.counters.networkDiskHits == 1)
+    }
+
+    @Test("Saved network covers over the cap lose the oldest first")
+    func trimRemovesOldestFirst() throws {
+        let fixture = try CoverFixture(networkDiskLimit: 1_000)
+        let pipeline = fixture.pipeline
+        let now = Date()
+        let ages: [(key: String, secondsAgo: TimeInterval)] = [("old", 300), ("middle", 200), ("new", 100)]
+        for entry in ages {
+            let url = pipeline.networkCoverLocation(forKey: entry.key)
+            try CoverImageIO.live.write(Data(repeating: 7, count: 400), url)
+            try FileManager.default.setAttributes(
+                [.modificationDate: now.addingTimeInterval(-entry.secondsAgo)],
+                ofItemAtPath: url.path
+            )
+        }
+
+        pipeline.trimSavedNetworkCovers()
+
+        // 1 200 bytes over a 1 000 cap trims to 800: only the oldest goes.
+        let exists = { (key: String) in
+            FileManager.default.fileExists(atPath: pipeline.networkCoverLocation(forKey: key).path)
+        }
+        #expect(!exists("old"))
+        #expect(exists("middle"))
+        #expect(exists("new"))
+    }
+
+    @Test("快取管理's 封面 counts and clears saved network covers too")
+    func cacheManagementCoversSavedNetworkCovers() async throws {
+        let fixture = try CoverFixture()
+        let network = NetworkProbe()
+        let key = "https://covers.example/clear.png"
+        _ = await fixture.pipeline.coalescedNetworkLoad(key: key, decode: decodeSaved, network.fetch(.red))
+        let saved = fixture.pipeline.networkCoverLocation(forKey: key)
+        #expect(saved.deletingLastPathComponent() == fixture.cacheRoots.networkCovers)
+        let savedBytes = try #require(
+            try FileManager.default.attributesOfItem(atPath: saved.path)[.size] as? Int
+        )
+
+        let service = CacheManagementService(
+            roots: fixture.cacheRoots,
+            diagnosticLog: nil,
+            coverPipeline: fixture.pipeline
+        )
+        #expect(service.snapshot().covers == Int64(savedBytes))
+        try service.clear(.covers)
+
+        #expect(!FileManager.default.fileExists(atPath: saved.path))
+        #expect(service.snapshot().covers == 0)
+        _ = await fixture.pipeline.coalescedNetworkLoad(key: key, decode: decodeSaved, network.fetch(.red))
+        #expect(network.fetches == 2)
     }
 }
