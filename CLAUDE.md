@@ -32,8 +32,8 @@ xcodebuild test -project Yuedu-Reader.xcodeproj -scheme Yuedu-Reader -destinatio
 # Run a single test class (many tests depend on shared state)
 xcodebuild test -project Yuedu-Reader.xcodeproj -scheme Yuedu-Reader -destination "$SIM" -parallel-testing-enabled NO -only-testing:'yuedu appTests/CoreTextWritingModeTests'
 
-# Run a single test method
-xcodebuild test -project Yuedu-Reader.xcodeproj -scheme Yuedu-Reader -destination "$SIM" -parallel-testing-enabled NO -only-testing:'yuedu appTests/CoreTextWritingModeTests/testVerticalRTLPagination'
+# Run a single test method (Swift Testing: the function name with `()`, no `test` prefix)
+xcodebuild test -project Yuedu-Reader.xcodeproj -scheme Yuedu-Reader -destination "$SIM" -parallel-testing-enabled NO -only-testing:'yuedu appTests/CoreTextWritingModeTests/verticalPaginationStoresWritingModeAndVerticalGlyphAttribute()'
 ```
 
 Use `-quiet` to suppress build output, but pair it with `-resultBundlePath` — `-quiet` swallows the failure messages. Tests are in `Tests/iOS/yuedu appTests/`. UI tests in `Tests/iOS-UI/`.
