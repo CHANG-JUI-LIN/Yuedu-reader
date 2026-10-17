@@ -93,22 +93,31 @@ struct RuleModuleClient: Sendable {
     // MARK: - Request
 
     private func fetch(_ entry: RuleModule.Entry, in module: RuleModule, values: [String: String]) async throws -> [RuleListItem] {
+        let request = entry.request
+        let address = Self.fill(request.url, values, encode: true)
+        let bodyEncoding: TemplateEncoding = request.bodyEncoding == RuleModule.BodyEncoding.json.rawValue ? .json : .percent
+        let page = try await send(address, method: (request.method ?? "GET").uppercased(),
+                                  body: request.body.map { Self.fill($0, values, encoding: bodyEncoding) },
+                                  headers: (request.headers ?? [:]).mapValues { Self.fill($0, values, encode: false) },
+                                  charset: request.charset, in: module)
+        let list = entry.list
+        return RuleListMapping.items(engine: ModernRuleEngine(), content: page.text, baseURL: page.baseURL,
+                                     listRule: list.items, fields: list.fields)
+    }
+
+    /// One request of the module's: `safeURL` and its hosts on the address and every redirect,
+    /// under its `rateLimit`; the reply decoded as text.
+    func send(_ address: String, method: String = "GET", body: String? = nil, headers: [String: String],
+              charset: String?, in module: RuleModule) async throws -> (text: String, baseURL: String) {
         let hosts = Set(module.hosts.map { $0.lowercased() })
         let allowed: @Sendable (URL) -> Bool = { url in
             guard let host = url.host?.lowercased(), hosts.contains(host) else { return false }
             return safeURL(string: url.absoluteString) != nil
         }
-        let request = entry.request
-        let address = Self.fill(request.url, values, encode: true)
         guard let url = safeURL(string: address), allowed(url) else {
             throw SourceFailure(kind: .invalidAddress, underlying: FetchError.invalidURL(address))
         }
-        let method = (request.method ?? "GET").uppercased()
-        let bodyEncoding: TemplateEncoding = request.bodyEncoding == RuleModule.BodyEncoding.json.rawValue ? .json : .percent
-        let body = request.body.map { Self.fill($0, values, encoding: bodyEncoding) }
-        let headers = (request.headers ?? [:]).mapValues { Self.fill($0, values, encode: false) }
-        let charset = request.charset.flatMap { $0.trimmingCharacters(in: .whitespaces).isEmpty ? nil : $0 }
-
+        let charset = charset.flatMap { $0.trimmingCharacters(in: .whitespaces).isEmpty ? nil : $0 }
         let page = try await SourceRateLimit.run(rate: module.rateLimit ?? "", key: "module:\(module.id)") {
             try await fetcher.fetchPage(url: url, method: method, body: body, headers: headers, baseURL: "",
                                         bodyCharset: charset, redirect: allowed)
@@ -122,12 +131,10 @@ struct RuleModuleClient: Sendable {
         guard (200...299).contains(status) else {
             throw SourceFailure(kind: .rejected, status: status, underlying: FetchError.httpError(status))
         }
-        guard let text = HTMLResponseDecoder.decode(data: page.data, response: page.response, declaredCharset: charset) else { throw SourceFailure(kind: .parse, underlying: FetchError.encodingError) }
-
-        let list = entry.list
-        let baseURL = page.response.url?.absoluteString ?? url.absoluteString
-        return RuleListMapping.items(engine: ModernRuleEngine(), content: text, baseURL: baseURL,
-                                     listRule: list.items, fields: list.fields)
+        guard let text = HTMLResponseDecoder.decode(data: page.data, response: page.response, declaredCharset: charset) else {
+            throw SourceFailure(kind: .parse, underlying: FetchError.encodingError)
+        }
+        return (text, page.response.url?.absoluteString ?? url.absoluteString)
     }
 
     /// A cover a lookup's record names (format 3.0): from the module's `hosts` only, under its

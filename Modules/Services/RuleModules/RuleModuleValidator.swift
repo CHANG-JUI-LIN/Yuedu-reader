@@ -96,6 +96,10 @@ enum RuleModuleValidator {
             try validate(entry, path: path, hosts: hosts, isSearch: false, format3: &format3)
         }
         if let search = module.search { try validate(search, path: "search", hosts: hosts, isSearch: true, format3: &format3) }
+        if let reading = module.reading {
+            if format3 == nil { format3 = "reading" }
+            try validate(reading)
+        }
         if let lookup = module.lookup {
             if format3 == nil { format3 = "lookup" }
             try validate(lookup, path: "lookup", hosts: hosts, isSearch: false, isLookup: true, format3: &format3)
@@ -258,6 +262,27 @@ enum RuleModuleValidator {
     private static func path(_ keys: [any CodingKey]) -> String {
         keys.reduce(into: "") { result, key in
             if let index = key.intValue { result += "[\(index)]" } else { result += result.isEmpty ? key.stringValue : ".\(key.stringValue)" }
+        }
+    }
+
+    // MARK: - Reading
+
+    private static func validate(_ reading: RuleModule.Reading) throws(RuleModuleRejection) {
+        for (name, value) in (reading.headers ?? [:]).sorted(by: { $0.key < $1.key }) {
+            try checkRule(value, field: "reading.headers.\(name)", declared: [])
+        }
+        let toc = reading.toc
+        try requireText(toc.items, "reading.toc.items")
+        try requireText(toc.title, "reading.toc.title")
+        try requireText(toc.url, "reading.toc.url")
+        try requireText(reading.content.text, "reading.content.text")
+        let rules: [(String, String?)] = [
+            ("toc.items", toc.items), ("toc.title", toc.title), ("toc.url", toc.url), ("toc.nextPage", toc.nextPage),
+            ("toc.singleChapter", toc.singleChapter), ("content.text", reading.content.text),
+            ("content.title", reading.content.title), ("content.nextPage", reading.content.nextPage),
+        ]
+        for case let (name, rule?) in rules {
+            try checkRule(rule, field: "reading.\(name)", declared: [], innerRules: true)
         }
     }
 
