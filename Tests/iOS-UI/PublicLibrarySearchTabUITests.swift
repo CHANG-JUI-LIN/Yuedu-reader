@@ -63,7 +63,7 @@ final class PublicLibrarySearchTabUITests: XCTestCase {
     @MainActor
     func testNoSourcesSearchesThePublicLibraries() {
         let app = XCUIApplication()
-        app.launchArguments = ["-AppleLanguages", "(zh-Hant)", "-AppleLocale", "zh_TW",
+        app.launchArguments = ["-AppleLanguages", "(zh-Hant)", "-AppleLocale", "zh_TW", "-no-official-modules",
                                "-yd_source_disclaimer_accepted", "YES",
                                // Open Library is a live service: off, so nothing leaves the machine.
                                "-yd_search_open_library", "NO",
@@ -121,7 +121,7 @@ final class PublicLibrarySearchTabUITests: XCTestCase {
         try FileManager.default.copyItem(at: entry, to: fixtureDirectory.appendingPathComponent("ebooks_21839.opds.xml"))
 
         let app = XCUIApplication()
-        app.launchArguments = ["-AppleLanguages", "(zh-Hant)", "-AppleLocale", "zh_TW",
+        app.launchArguments = ["-AppleLanguages", "(zh-Hant)", "-AppleLocale", "zh_TW", "-no-official-modules",
                                "-yd_source_disclaimer_accepted", "YES",
                                // Open Library is a live service: off, so nothing leaves the machine.
                                "-yd_search_open_library", "NO",

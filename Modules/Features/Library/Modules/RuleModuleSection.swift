@@ -1,7 +1,14 @@
 import SwiftUI
 
-/// 資源庫's 官方模組 (AI 推薦 plan 8d): the app's own modules, always listed, above 匯入的模組.
+/// 資源庫's 官方模組 (AI 推薦 plan 8d): the app's own modules, always listed, above 匯入的模組:
+/// AI 推薦, then the bundled module files (module ecosystem plan, M2).
 struct OfficialModuleSection: View {
+    @ObservedObject var library: RuleModuleLibrary
+
+    init(library: RuleModuleLibrary? = nil) {
+        self.library = library ?? .shared
+    }
+
     var body: some View {
         LibrarySection(localized("官方模組")) { layout in
             NavigationLink(value: ExploreNavigationRoute.aiRecommendations) {
@@ -12,7 +19,31 @@ struct OfficialModuleSection: View {
             .accessibilityLabel(localized("AI 推薦"))
             .accessibilityValue(localized("依你最近讀的書推薦作品"))
             .accessibilityIdentifier("library.module.official.aiRecommendations")
+            ForEach(library.official, id: \.module.id) { installed in
+                RuleModuleCard(module: installed.module, layout: layout)
+            }
         }
+    }
+}
+
+/// A module's card in 資源庫: its title, description, version and author; opens its page.
+struct RuleModuleCard: View {
+    let module: RuleModule
+    let layout: ExploreEntryLabel.Layout
+
+    var body: some View {
+        let version = String(format: localized("版本 %@"), module.version)
+        let author = module.author.flatMap { $0.trimmingCharacters(in: .whitespaces).isEmpty ? nil : $0 }
+        let detail = [version, author].compactMap { $0 }.joined(separator: " · ")
+        let description = module.description.flatMap { $0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? nil : $0 }
+        NavigationLink(value: ExploreNavigationRoute.module(id: module.id)) {
+            ExploreEntryLabel(title: module.title, artwork: .symbol("puzzlepiece.extension"), layout: layout,
+                              subtitle: description, detail: detail)
+        }
+        .buttonStyle(ExploreTileButtonStyle())
+        .accessibilityLabel(module.title)
+        .accessibilityValue([description, detail].compactMap { $0 }.joined(separator: ", "))
+        .accessibilityIdentifier("library.module.\(module.id)")
     }
 }
 
@@ -37,7 +68,7 @@ struct RuleModuleSection: View {
             if !library.isLoaded {
                 ProgressView()
                     .frame(maxWidth: .infinity, alignment: .leading)
-            } else if library.modules.isEmpty && library.failures.isEmpty {
+            } else if library.imported.isEmpty && library.failures.isEmpty {
                 Button(action: onAdd) {
                     ExploreEntryLabel(title: localized("新增模組"), artwork: .neutral("plus"), layout: layout,
                                       subtitle: localized("還沒有模組"))
@@ -47,8 +78,8 @@ struct RuleModuleSection: View {
                 .accessibilityValue(localized("還沒有模組"))
                 .accessibilityIdentifier("library.modules.add")
             } else {
-                ForEach(library.modules, id: \.module.id) { installed in
-                    card(installed.module, layout: layout)
+                ForEach(library.imported, id: \.module.id) { installed in
+                    RuleModuleCard(module: installed.module, layout: layout)
                 }
                 ForEach(library.failures, id: \.folder) { failure in
                     Button {
@@ -82,21 +113,6 @@ struct RuleModuleSection: View {
         }
     }
 
-    private func card(_ module: RuleModule, layout: ExploreEntryLabel.Layout) -> some View {
-        let version = String(format: localized("版本 %@"), module.version)
-        let author = module.author.flatMap { $0.trimmingCharacters(in: .whitespaces).isEmpty ? nil : $0 }
-        let detail = [version, author].compactMap { $0 }.joined(separator: " · ")
-        let description = module.description.flatMap { $0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? nil : $0 }
-        return NavigationLink(value: ExploreNavigationRoute.module(id: module.id)) {
-            ExploreEntryLabel(title: module.title, artwork: .symbol("puzzlepiece.extension"), layout: layout,
-                              subtitle: description, detail: detail)
-        }
-        .buttonStyle(ExploreTileButtonStyle())
-        .accessibilityLabel(module.title)
-        .accessibilityValue([description, detail].compactMap { $0 }.joined(separator: ", "))
-        .accessibilityIdentifier("library.module.\(module.id)")
-    }
-
     private func remove(_ folder: String) async {
         do {
             try await library.remove(id: folder)
@@ -118,6 +134,15 @@ struct RuleModuleSection: View {
     NavigationStack {
         ScrollView {
             RuleModuleSection(library: RuleModulePreviewData.library(["新書速報", "排行榜"]), onAdd: {})
+                .padding(DSSpacing.lg)
+        }
+    }
+}
+
+#Preview("Official modules") {
+    NavigationStack {
+        ScrollView {
+            OfficialModuleSection(library: RuleModulePreviewData.officialLibrary())
                 .padding(DSSpacing.lg)
         }
     }

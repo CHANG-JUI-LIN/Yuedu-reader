@@ -4,24 +4,46 @@ import Foundation
 /// The installed modules, as the app shows them (Phase 6e): the one owner every screen reads —
 /// 資源庫's 模組, a module's page, the name a module's book shows under. `RuleModuleStore` is
 /// the disk; this is its published copy, read off the main actor and replaced after each write.
+///
+/// The official modules (`OfficialRuleModules`, M2) are read with it and listed first, so every
+/// path that takes the installed modules — rows, search, fill, a section's form — takes them
+/// too. Only 資源庫 tells them apart: 官方模組 and 匯入的模組.
 @MainActor
 final class RuleModuleLibrary: ObservableObject {
     static let shared = RuleModuleLibrary()
 
-    /// Oldest install first.
+    /// The official modules this storefront has, then the imported ones, oldest install first.
     @Published private(set) var modules: [InstalledRuleModule] = []
+    /// The imported ones alone: 匯入的模組.
+    @Published private(set) var imported: [InstalledRuleModule] = []
+    /// The official ones this storefront has: 官方模組.
+    @Published private(set) var official: [InstalledRuleModule] = []
     /// Folders that could not be read: reported, never overwritten (6c).
     @Published private(set) var failures: [RuleModuleStore.Failure] = []
     @Published private(set) var isLoaded = false
 
     let store: RuleModuleStore
     private let appVersion: String
+    private let officialFiles: @Sendable () -> [URL]
+    /// Whether this storefront has the public libraries (`OfficialRuleModules.isAvailable`).
+    private let librariesAvailable: () -> Bool
+    /// Every bundled official module, whatever the storefront.
+    private var bundled: [InstalledRuleModule] = []
+    private var availabilityChange: AnyCancellable?
     /// The newest read wins: a read that finishes after a later one is dropped.
     private var generation = 0
 
-    init(store: RuleModuleStore = RuleModuleStore(), appVersion: String = RuleModuleVersion.app) {
+    init(store: RuleModuleStore = RuleModuleStore(), appVersion: String = RuleModuleVersion.app,
+         officialFiles: @escaping @Sendable () -> [URL] = { OfficialRuleModules.bundledFiles },
+         availability: PublicLibraryAvailability? = .shared) {
         self.store = store
         self.appVersion = appVersion
+        self.officialFiles = officialFiles
+        librariesAvailable = { availability?.isAvailable ?? true }
+        // The storefront is known after launch, and can change.
+        availabilityChange = availability?.$countryCode.dropFirst().sink { [weak self] _ in
+            Task { @MainActor in self?.publish() }
+        }
     }
 
     func module(id: String) -> InstalledRuleModule? {
@@ -40,14 +62,28 @@ final class RuleModuleLibrary: ObservableObject {
         let current = generation
         let store = store
         let appVersion = appVersion
+        let officialFiles = officialFiles
         let started = SourcePerfTrace.now
-        let listing = await Task.detached(priority: .userInitiated) { store.list(appVersion: appVersion) }.value
-        SourcePerfTrace.record("modules.library.load", "modules=\(listing.modules.count) failures=\(listing.failures.count)",
+        let (listing, bundled) = await Task.detached(priority: .userInitiated) {
+            (store.list(appVersion: appVersion), OfficialRuleModules.load(officialFiles(), appVersion: appVersion))
+        }.value
+        SourcePerfTrace.record("modules.library.load",
+                               "modules=\(listing.modules.count) official=\(bundled.count) failures=\(listing.failures.count)",
                                since: started, thresholdMs: 0)
         guard current == generation else { return }
-        modules = listing.modules
+        self.bundled = bundled
+        imported = listing.modules
         failures = listing.failures
+        publish()
         isLoaded = true
+    }
+
+    private func publish() {
+        let available = librariesAvailable()
+        let official = bundled.filter { OfficialRuleModules.isAvailable($0.module.id, librariesAvailable: available) }
+        if self.official != official { self.official = official }
+        let modules = official + imported
+        if self.modules != modules { self.modules = modules }
     }
 
     /// Throws `RuleModuleStoreError`.

@@ -176,7 +176,7 @@ private struct ModuleFixture {
     static func make() async throws -> ModuleFixture {
         let folder = FileManager.default.temporaryDirectory.appendingPathComponent("ModuleFill-\(UUID().uuidString)")
         let store = RuleModuleStore(directory: folder)
-        let library = RuleModuleLibrary(store: store, appVersion: "2.0.8")
+        let library = RuleModuleLibrary(store: store, appVersion: "2.0.8", officialFiles: { [] })
         let searching = try await library.install(json(id: "m.search", search: true), from: nil).module
         let plain = try await library.install(json(id: "m.plain", search: false), from: nil).module
         let configuration = URLSessionConfiguration.ephemeral

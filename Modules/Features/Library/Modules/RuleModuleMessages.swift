@@ -44,6 +44,7 @@ extension RuleModuleStoreError {
         case .notInstalled: localized("找不到這個模組。")
         case .differentModule(_, let offered): String(format: localized("下載到的是另一個模組（%@）。"), offered)
         case .notNewer: localized("已是最新版本")
+        case .reservedID(let id): String(format: localized("「%@」是官方模組的代號，請換一個。"), id)
         }
     }
 }

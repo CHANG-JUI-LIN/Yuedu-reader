@@ -7,6 +7,8 @@ struct InstalledRuleModule: Hashable, Sendable {
     let subscriptionURL: URL?
     let installedAt: Date
     let updatedAt: Date
+    /// Bundled with the app (`OfficialRuleModules`): never removed, updated with the app.
+    var isOfficial = false
 }
 
 enum RuleModuleStoreError: Error, Equatable, Sendable {
@@ -17,6 +19,8 @@ enum RuleModuleStoreError: Error, Equatable, Sendable {
     case differentModule(expected: String, offered: String)
     /// 已是最新版本.
     case notNewer(installed: String, offered: String)
+    /// An official module's id (`OfficialRuleModules.reservedIDs`).
+    case reservedID(String)
 }
 
 /// The installed modules: `Application Support/Modules/<id>/` holds `module.json` (the bytes as
@@ -69,6 +73,7 @@ struct RuleModuleStore: Sendable {
     func install(_ data: Data, from subscriptionURL: URL?, appVersion: String = RuleModuleVersion.app,
                  now: Date = .now) throws -> InstalledRuleModule {
         let module = try validated(data, appVersion: appVersion)
+        guard !OfficialRuleModules.reservedIDs.contains(module.id) else { throw RuleModuleStoreError.reservedID(module.id) }
         let folder = folder(for: module.id)
         // A folder that is there but unreadable is never overwritten: it is reported by `list()`.
         guard !FileManager.default.fileExists(atPath: folder.path) else {
@@ -152,8 +157,14 @@ struct RuleModuleStore: Sendable {
         return try Data(contentsOf: folder(for: id).appendingPathComponent("module.json"))
     }
 
+    /// An official module has no folder of its own: its pages are kept under a hidden one,
+    /// which `list()` skips, so its cache is never read as a module that cannot be opened.
     func cacheDirectory(id: String) -> URL {
-        folder(for: id).appendingPathComponent("cache", isDirectory: true)
+        guard OfficialRuleModules.reservedIDs.contains(id) else {
+            return folder(for: id).appendingPathComponent("cache", isDirectory: true)
+        }
+        return directory.appendingPathComponent(".official", isDirectory: true)
+            .appendingPathComponent(id, isDirectory: true).appendingPathComponent("cache", isDirectory: true)
     }
 
     // MARK: - Helpers
