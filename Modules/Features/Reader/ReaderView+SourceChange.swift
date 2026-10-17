@@ -577,8 +577,9 @@ extension ReaderView {
     }
 
     func setTTSFloatingOverlayVisible(_ visible: Bool) {
+        let owner = nowPlayingHostID
         Task { @MainActor in
-            NowPlayingHub.shared.setReaderOverlayVisible(visible)
+            NowPlayingHub.shared.setReaderOverlayVisible(visible, owner: owner)
         }
     }
 

@@ -171,6 +171,8 @@ struct ReaderView: View {
     /// 自動閱讀's route to the curtain layer, filled in by the paged host.
     @State var autoReadRevealHandle = ReaderAutoReadRevealHandle()
     @StateObject var ttsCoordinator = TTSCoordinator()
+    /// This reader's key in `NowPlayingHub`'s set of readers hosting the mini-player.
+    @State var nowPlayingHostID = UUID()
     @StateObject var mediaOverlayCoordinator = EPUBMediaOverlayPlaybackCoordinator()
     /// Plays an EPUB chapter's authored background soundtrack (controls-less autoplay/loop `<audio>`).
     @State var backgroundAudioCoordinator = EPUBBackgroundAudioCoordinator()

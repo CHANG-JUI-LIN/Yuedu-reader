@@ -38,10 +38,14 @@ enum NowPlayingSource {
 /// or the long-lived `AudiobookPlayer` that keeps playing across every page.
 ///
 /// Two visibility surfaces:
-/// - `isVisible`: the in-reader TTS mini-player (`.reader` placement), gated by the
-///   reader's bar visibility.
+/// - `isVisible`: the in-reader TTS mini-player (`.reader` placement), allowed while a
+///   reader is on screen.
 /// - `showsGlobalBar`: the app-wide audiobook mini-player (`.global` placement),
 ///   shown on any page while an audiobook is loaded.
+///
+/// A reader on screen draws the audiobook in its own `.reader` placement, so the `.global`
+/// one steps aside while one is (`readerHostsPlayer`). 書架 pushes the reader inside its tab,
+/// under the app root's `.global` overlay: without that, both drew — two capsules.
 @MainActor
 final class NowPlayingHub: ObservableObject {
     static let shared = NowPlayingHub()
@@ -64,7 +68,24 @@ final class NowPlayingHub: ObservableObject {
     private weak var coordinator: TTSCoordinator?
     private weak var audiobook: AudiobookPlayer?
     private var audiobookCancellable: AnyCancellable?
-    private var allowsReaderOverlay = false
+    /// The readers on screen, each hosting a `.reader` mini-player. A set, not a flag: the
+    /// next reader can appear before the one it replaces disappears.
+    private var readerOverlayOwners: Set<UUID> = []
+    private var allowsReaderOverlay: Bool { !readerOverlayOwners.isEmpty }
+    /// A reader on screen hosts the mini-player, so the app root's `.global` one stays hidden.
+    @Published private(set) var readerHostsPlayer = false
+
+    /// Whether a mini-player placement draws. Exactly one surface shows audio at a time: the
+    /// reader's while a reader is on screen, the app root's everywhere else.
+    static func showsMiniPlayer(
+        inReader: Bool,
+        readerTTSVisible: Bool,
+        audiobookLoaded: Bool,
+        readerHostsPlayer: Bool
+    ) -> Bool {
+        if inReader { return readerTTSVisible || audiobookLoaded }
+        return audiobookLoaded && !readerHostsPlayer
+    }
 
     var progressText: String {
         guard totalSegments > 0 else { return "" }
@@ -109,8 +130,14 @@ final class NowPlayingHub: ObservableObject {
         isPanelPresented = false
     }
 
-    func setReaderOverlayVisible(_ visible: Bool) {
-        allowsReaderOverlay = visible
+    /// A reader appearing (`true`) or disappearing (`false`); `owner` identifies the reader.
+    func setReaderOverlayVisible(_ visible: Bool, owner: UUID) {
+        if visible {
+            readerOverlayOwners.insert(owner)
+        } else {
+            readerOverlayOwners.remove(owner)
+        }
+        if readerHostsPlayer != allowsReaderOverlay { readerHostsPlayer = allowsReaderOverlay }
         if source == .tts, let coordinator {
             update(from: coordinator)
         } else {
@@ -233,7 +260,6 @@ final class NowPlayingHub: ObservableObject {
         self.playbackState = playbackState
         self.currentSegmentIndex = currentSegmentIndex
         self.totalSegments = totalSegments
-        allowsReaderOverlay = true
         isVisible = playbackState != .stopped
     }
 #endif

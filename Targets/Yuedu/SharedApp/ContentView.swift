@@ -119,7 +119,8 @@ struct ContentView: View {
         .font(DSFont.body)
         .overlay {
             // App-wide audiobook mini-player: controls the long-lived audiobook session
-            // from any tab. Naturally hidden while a full-screen reader/player is presented.
+            // from any tab. A full-screen cover hides it; a reader pushed inside a tab does
+            // not, so it hides itself while a reader hosts its own (`readerHostsPlayer`).
             // No reader toolbar here, so allow dragging down to just above the tab bar.
             NowPlayingMiniPlayer(placement: .global, minBottomClearance: 90)
         }
@@ -544,12 +545,15 @@ struct NowPlayingMiniPlayer: View {
         defaultBottomClearance - dragFloorClearance
     }
 
+    /// In the reader, this book's TTS *or* a background audiobook; at the root, the
+    /// audiobook unless a reader on screen is already showing it.
     private var isVisible: Bool {
-        switch placement {
-        // In the reader, show for this book's TTS *or* a background audiobook.
-        case .reader: return hub.isVisible || hub.showsGlobalBar
-        case .global: return hub.showsGlobalBar
-        }
+        NowPlayingHub.showsMiniPlayer(
+            inReader: placement == .reader,
+            readerTTSVisible: hub.isVisible,
+            audiobookLoaded: hub.showsGlobalBar,
+            readerHostsPlayer: hub.readerHostsPlayer
+        )
     }
 
     var body: some View {
