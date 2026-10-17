@@ -21,6 +21,8 @@ network.** See the end for the exact status split.
 | Delete subscription data | Callable `deleteSubscriptionAccountData` | Yes | No | Same proxy |
 | TestFlight request — `TestFlightApplyView` | Callable `requestTestFlightAccess` | Yes | No | Same proxy |
 | Entitlement drop diagnostics — `SubscriptionStore.reportEntitlementDrop` | Firestore `entitlementDiagnostics` | Fires only on Pro drop | No (best effort) | Left direct; a failed write is already non-fatal |
+| 回饋中心 — `FeedbackService` (send, reply, read, mark read/solved, attachments) | Firestore `feedbackInboxes/{inbox}`, Storage `feedback/{inbox}/…` | Yes (added 2026-10) | No sign-in; mainland users could not send at all | **Always** Gateway `/v1/feedback/*` for every user (one path; 2026-10-17). Live listeners became 30 s polling plus refresh on own write and foreground |
+| Diagnostic log — `DiagnosticReportUploader` (回饋 log, 診斷紀錄 send) | Firestore `diagnosticReports` | Yes | No | **Always** Gateway `/v1/diagnostics/reports` |
 | Firestore **data** sync (books/sources/RSS/positions) | Firestore | **OFF** (`FirestoreSyncManager.dataSyncEnabled = false`) | No | Untouched — iCloud is the source of truth |
 | Crashlytics — `CrashContext`, `MetricKitDiagnosticReporter` | Crashlytics | Yes (non-fatal reporting) | No | Left direct; unreachable crash upload must not block anything |
 | App Check | — | **未確認**：repo 內無客戶端整合、callable 無 `enforceAppCheck`，但專案/服務層 enforcement 無法從 repo 判定 | n/a | 部署前必須在 Console 核對並記錄；不得假設已關閉或已開啟，也不得為此變更 production enforcement；若已啟用則列為部署阻塞 |
@@ -140,3 +142,9 @@ See `gateway/DEPLOYMENT_RUNBOOK.md` for the operational checklist and
 - Set `authRouteMode` to `直連 Firebase` (direct) in the app and/or ship a build
   with `GATEWAY_BASE_URL` empty. The direct path is untouched.
 - Server rollback per `gateway/README.md` (previous container tag).
+- 回饋中心 and diagnostic logs have **no direct path** any more: `authRouteMode`
+  does not affect them, and an empty `GATEWAY_BASE_URL` turns them off
+  (「回報服務目前無法使用。」). Deploy the Gateway's `/v1/feedback` routes before a
+  build that uses them ships, and roll the server back no further than that.
+  Builds before 2026-10-17 still write Firestore directly, so `firestore.rules` /
+  `storage.rules` for `feedbackInboxes` and `feedback/` stay as they are.

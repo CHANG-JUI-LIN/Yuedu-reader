@@ -20,7 +20,7 @@ function testConfig(): GatewayConfig {
     publicBaseUrl: "https://gateway.test",
     trustProxyHops: 1,
     serviceAccountJson: null,
-    rateLimit: {windowMs: 60_000, max: 100, authMax: 10},
+    rateLimit: {windowMs: 60_000, max: 100, authMax: 10, feedbackWriteMax: 10},
     upstreamTimeoutMs: 60,
     bodyLimitBytes: 64 * 1024,
     avatarMaxBytes: 2 * 1024 * 1024,

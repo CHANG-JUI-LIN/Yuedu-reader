@@ -26,6 +26,8 @@ export interface GatewayConfig {
     windowMs: number;
     max: number;
     authMax: number;
+    /** 回饋中心 sends, replies, uploads and diagnostic logs, per address and per inbox. */
+    feedbackWriteMax: number;
   };
   upstreamTimeoutMs: number;
   bodyLimitBytes: number;
@@ -71,6 +73,7 @@ export function loadConfig(): GatewayConfig {
       windowMs: integer("RATE_LIMIT_WINDOW_MS", 60_000),
       max: integer("RATE_LIMIT_MAX", 120),
       authMax: integer("RATE_LIMIT_AUTH_MAX", 20),
+      feedbackWriteMax: integer("RATE_LIMIT_FEEDBACK_WRITE_MAX", 30),
     },
     upstreamTimeoutMs: integer("UPSTREAM_TIMEOUT_MS", 15_000),
     bodyLimitBytes: integer("BODY_LIMIT_BYTES", 64 * 1024),

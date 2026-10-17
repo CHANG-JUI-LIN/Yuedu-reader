@@ -445,7 +445,7 @@ struct FeedbackAttachmentViewer: View {
                 case .image:
                     image = try await FeedbackService.shared.image(for: attachment)
                 case .video:
-                    player = AVPlayer(url: try await FeedbackService.shared.downloadURL(for: attachment))
+                    player = AVPlayer(url: try await FeedbackService.shared.playableFile(for: attachment))
                 }
             } catch {
                 AppLogger.network("Feedback attachment failed to open", error: error)

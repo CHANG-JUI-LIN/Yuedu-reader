@@ -28,6 +28,8 @@ final class GatewayAPIClient {
     static let shared = GatewayAPIClient()
 
     private let session: URLSession
+    /// Uploads and downloads: same stall limit, but a whole transfer may take minutes.
+    private let transferSession: URLSession
     private let baseURLProvider: () -> URL?
 
     init(
@@ -36,12 +38,19 @@ final class GatewayAPIClient {
     ) {
         if let session {
             self.session = session
+            self.transferSession = session
         } else {
             let configuration = URLSessionConfiguration.ephemeral
             configuration.timeoutIntervalForRequest = 20
             configuration.timeoutIntervalForResource = 60
             configuration.waitsForConnectivity = false
             self.session = URLSession(configuration: configuration)
+
+            let transfers = URLSessionConfiguration.ephemeral
+            transfers.timeoutIntervalForRequest = 60
+            transfers.timeoutIntervalForResource = 15 * 60
+            transfers.waitsForConnectivity = false
+            self.transferSession = URLSession(configuration: transfers)
         }
         self.baseURLProvider = baseURLProvider
     }
@@ -66,6 +75,60 @@ final class GatewayAPIClient {
     }
 
     func sendForData(_ request: GatewayRequest, idToken: String? = nil) async throws -> Data {
+        let urlRequest = try urlRequest(for: request, idToken: idToken)
+        let data: Data
+        let response: URLResponse
+        do {
+            (data, response) = try await session.data(for: urlRequest)
+        } catch let error as URLError {
+            throw GatewayAPIError.transport(error)
+        } catch {
+            throw GatewayAPIError.transport(URLError(.unknown))
+        }
+        try Self.check(response, data: data)
+        return data
+    }
+
+    /// Sends a file as the request body, streamed from disk. Uses the transfer
+    /// session: a 50 MB 回饋中心 video from the mainland outlasts the JSON
+    /// session's 60-second resource limit.
+    func upload(_ request: GatewayRequest, fromFile fileURL: URL) async throws -> Data {
+        let urlRequest = try urlRequest(for: request, idToken: nil)
+        let data: Data
+        let response: URLResponse
+        do {
+            (data, response) = try await transferSession.upload(for: urlRequest, fromFile: fileURL)
+        } catch let error as URLError {
+            throw GatewayAPIError.transport(error)
+        } catch {
+            throw GatewayAPIError.transport(URLError(.unknown))
+        }
+        try Self.check(response, data: data)
+        return data
+    }
+
+    /// Downloads a response body to a temporary file the caller owns.
+    func download(_ request: GatewayRequest) async throws -> URL {
+        let urlRequest = try urlRequest(for: request, idToken: nil)
+        let fileURL: URL
+        let response: URLResponse
+        do {
+            (fileURL, response) = try await transferSession.download(for: urlRequest)
+        } catch let error as URLError {
+            throw GatewayAPIError.transport(error)
+        } catch {
+            throw GatewayAPIError.transport(URLError(.unknown))
+        }
+        guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
+            let body = (try? Data(contentsOf: fileURL)) ?? Data()
+            try? FileManager.default.removeItem(at: fileURL)
+            try Self.check(response, data: body)
+            throw GatewayAPIError.invalidResponse
+        }
+        return fileURL
+    }
+
+    private func urlRequest(for request: GatewayRequest, idToken: String?) throws -> URLRequest {
         guard let baseURL = baseURLProvider() else {
             throw GatewayAPIError.notConfigured
         }
@@ -90,24 +153,16 @@ final class GatewayAPIClient {
         if request.authenticated, let idToken {
             urlRequest.setValue("Bearer \(idToken)", forHTTPHeaderField: "Authorization")
         }
+        return urlRequest
+    }
 
-        let data: Data
-        let response: URLResponse
-        do {
-            (data, response) = try await session.data(for: urlRequest)
-        } catch let error as URLError {
-            throw GatewayAPIError.transport(error)
-        } catch {
-            throw GatewayAPIError.transport(URLError(.unknown))
-        }
-
+    private static func check(_ response: URLResponse, data: Data) throws {
         guard let http = response as? HTTPURLResponse else {
             throw GatewayAPIError.invalidResponse
         }
         guard (200..<300).contains(http.statusCode) else {
-            throw Self.classifyFailure(data: data, status: http.statusCode)
+            throw classifyFailure(data: data, status: http.statusCode)
         }
-        return data
     }
 
     /// Classifies a non-2xx response. A structured Gateway error is preserved;

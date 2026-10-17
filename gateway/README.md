@@ -64,6 +64,20 @@ Protected:
 | `DELETE /v1/subscription/account-data` | — | `{deleted:true}` |
 | `POST /v1/subscription/testflight-request` | `{email}` | `{alreadySubmitted,status}` |
 
+回饋中心 (no sign-in; every route takes `Authorization: Inbox <43-char inbox key>`):
+
+| Route | Body | Result |
+| --- | --- | --- |
+| `GET /v1/feedback/threads` | — | `{threads}` (whitelisted fields, ISO dates) |
+| `POST /v1/feedback/threads` | `{threadId,kind,title,preview,text,attachments:[{path,width,height}],appVersion,build,osVersion,device,locale,installId,diagnosticReportId,deviceInfo}` | `201 {threadId}`; thread + first message in one batch |
+| `GET /v1/feedback/threads/:id/messages` | — | `{messages}` oldest first |
+| `POST /v1/feedback/threads/:id/messages` | `{text,preview,attachments}` | `201`; `needsInfo` → `queued` decided server-side |
+| `POST /v1/feedback/threads/:id/resolve` | — | status `done` |
+| `POST /v1/feedback/read` | `{threadIds}` (≤ 200) | `{read}` |
+| `PUT /v1/feedback/threads/:id/attachments?extension=jpg` | image ≤ 15 MB / video ≤ 50 MB, streamed | `201 {path,kind,contentType,bytes}` |
+| `GET /v1/feedback/threads/:id/attachments/:file` | — | the attachment's bytes |
+| `POST /v1/diagnostics/reports` | `{reportId,…,payload(base64 ≤ 900 KB)}` (no inbox needed) | `201 {reportId}` |
+
 `recent auth` means the verified ID token's `auth_time` is within 10 minutes.
 Sensitive routes return `reauth-required` otherwise; the client re-authenticates
 through `/v1/auth/idp` or the email flow and retries.
@@ -82,6 +96,15 @@ through `/v1/auth/idp` or the email flow and retries.
   Console before deploying; if any used API enforces it, deployment is blocked
   until a supported server-side approach exists. Never fabricate tokens or fail
   open, and never change production enforcement for this work.
+- 回饋中心 routes restate `firestore.rules` (`feedbackInboxes`, `diagnosticReports`)
+  and `storage.rules` (`feedback/`) in `src/feedbackPolicy.ts`, because Admin
+  writes bypass them; keep the three in step. The inbox key is accepted only in
+  `Authorization` (Caddy redacts it in access logs), never in a URL or body, and
+  attachments are addressed by thread and file name so their storage path — which
+  contains the key — never appears in a URL. Writes are limited per address and
+  per inbox (`RATE_LIMIT_FEEDBACK_WRITE_MAX`). Uploads stream into Storage
+  create-only; `server.requestTimeout` is 15 minutes for them, while the 20 s
+  headers timeout still bounds idle connections.
 - Passwords, provider credentials, ID/refresh tokens and transaction JWTs are
   never logged, stored or echoed. Logs contain request id, route, status and
   latency only.
@@ -250,13 +273,14 @@ Server environment (`gateway/.env`, never committed):
 | `GOOGLE_APPLICATION_CREDENTIALS` or `FIREBASE_SERVICE_ACCOUNT_JSON` | Mounted service-account JSON / base64 | `/readyz` = ready |
 | `FUNCTIONS_REGION` | `asia-east1` (current callables region) | account-token returns a UUID |
 | `TRUST_PROXY_HOPS` | `1` with the bundled Caddy/Docker topology; `0` if the Node process is exposed directly (do not do that) | forged `X-Forwarded-For` cannot change the rate-limit key |
-| `PORT`, `RATE_LIMIT_*`, `UPSTREAM_TIMEOUT_MS`, `BODY_LIMIT_BYTES`, `AVATAR_MAX_BYTES` | defaults are safe | optional tuning |
+| `PORT`, `RATE_LIMIT_*` (incl. `RATE_LIMIT_FEEDBACK_WRITE_MAX`, default 30/min), `UPSTREAM_TIMEOUT_MS`, `BODY_LIMIT_BYTES`, `AVATAR_MAX_BYTES` | defaults are safe | optional tuning |
 
 Google Cloud / Firebase console:
 
 1. **Service account roles** (minimum): `roles/firebaseauth.admin`,
-   `roles/datastore.user`, and `roles/storage.objectAdmin` scoped to the avatar
-   bucket. Do not grant Owner.
+   `roles/datastore.user`, and `roles/storage.objectAdmin` on the default
+   bucket — 回饋中心 writes `feedback/` there beside `avatars/`, so an IAM
+   condition limited to `avatars/` breaks attachments. Do not grant Owner.
 2. **Firestore**: existing rules stay unchanged. The gateway uses Admin
    credentials and enforces ownership itself.
 3. **Storage**: existing rules stay unchanged.

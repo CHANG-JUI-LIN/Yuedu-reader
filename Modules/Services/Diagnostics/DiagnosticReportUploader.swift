@@ -1,5 +1,3 @@
-import FirebaseCore
-import FirebaseFirestore
 import Foundation
 
 /// Sends the diagnostic log to the developer, at the user's request, and returns a report
@@ -7,11 +5,13 @@ import Foundation
 ///
 /// The export (`DiagnosticReportBundle` through a share sheet) only helps when the person who
 /// hit the problem knows where to send a file, and an App Store user has no TestFlight-style
-/// channel. This writes the same redacted text to Firestore `diagnosticReports/{id}` —
-/// create-only, nothing readable from a client (see `firestore.rules`) — compressed, with the
-/// install's scale and identifiers beside it, and ties it to this install's Crashlytics
-/// reports through the install id (`CrashContext.installID`), so one number leads to the
-/// user's hangs and crashes as well.
+/// channel. This sends the same redacted text through the Gateway to Firestore
+/// `diagnosticReports/{id}` — create-only, nothing readable back (see `firestore.rules` and
+/// `gateway/src/feedbackPolicy.ts`) — compressed, with the install's scale and identifiers
+/// beside it, and ties it to this install's Crashlytics reports through the install id
+/// (`CrashContext.installID`), so one number leads to the user's hangs and crashes as well.
+/// Through the Gateway, like the rest of 回饋中心, because Firestore is unreachable from the
+/// mainland.
 ///
 /// Fetch a report: `python3 scripts/decode_diagnostic_report.py <report-id>` (see the script).
 enum DiagnosticReportUploader {
@@ -23,13 +23,14 @@ enum DiagnosticReportUploader {
     }
 
     enum UploadError: LocalizedError {
-        case firebaseUnavailable
         case compressionFailed(Error)
+        /// The Gateway refused or could not be reached; reads as 回饋中心's two sentences.
+        case relay(GatewayAPIError)
 
         var errorDescription: String? {
             switch self {
-            case .firebaseUnavailable: localized("回報服務目前無法使用。")
             case .compressionFailed: localized("紀錄無法壓縮。")
+            case .relay(let error): FeedbackService.userMessage(for: error)
             }
         }
     }
@@ -41,31 +42,35 @@ enum DiagnosticReportUploader {
     /// Renders, compresses and writes the report. Rendering several thousand lines is real
     /// work, so it runs off the main thread; the caller awaits the result.
     static func upload(_ bundle: DiagnosticReportBundle, note: String) async throws -> Receipt {
-        guard FirebaseApp.app() != nil else { throw UploadError.firebaseUnavailable }
         let reportID = makeReportID()
         let prepared = try await Task.detached(priority: .userInitiated) {
             try preparePayload(bundle, reportID: reportID)
         }.value
 
         let info = Bundle.main.infoDictionary
-        let document: [String: Any] = [
-            "reportId": reportID,
-            "createdAt": FieldValue.serverTimestamp(),
-            "appVersion": info?["CFBundleShortVersionString"] as? String ?? "",
-            "build": info?["CFBundleVersion"] as? String ?? "",
-            "osVersion": ProcessInfo.processInfo.operatingSystemVersionString,
-            "device": deviceModel(),
-            "locale": Locale.current.identifier,
-            "installId": CrashContext.installID,
-            "scale": DiagnosticScale.lastSummary,
-            "note": String(note.trimmingCharacters(in: .whitespacesAndNewlines).prefix(noteLimit)),
-            "payload": prepared.compressed,
-            "payloadBytes": prepared.uncompressedBytes,
-            "payloadEncoding": "deflate-utf8",
-            "keptEntries": prepared.keptEntries,
-            "totalEntries": bundle.entries.count,
-        ]
-        try await Firestore.firestore().collection("diagnosticReports").document(reportID).setData(document)
+        let report = ReportBody(
+            reportId: reportID,
+            appVersion: info?["CFBundleShortVersionString"] as? String ?? "",
+            build: info?["CFBundleVersion"] as? String ?? "",
+            osVersion: ProcessInfo.processInfo.operatingSystemVersionString,
+            device: deviceModel(),
+            locale: Locale.current.identifier,
+            installId: CrashContext.installID,
+            scale: DiagnosticScale.lastSummary,
+            note: String(note.trimmingCharacters(in: .whitespacesAndNewlines).prefix(noteLimit)),
+            payload: prepared.compressed.base64EncodedString(),
+            payloadBytes: prepared.uncompressedBytes,
+            payloadEncoding: "deflate-utf8",
+            keptEntries: prepared.keptEntries,
+            totalEntries: bundle.entries.count
+        )
+        do {
+            try await GatewayAPIClient.shared.sendVoid(
+                try GatewayRequest(method: "POST", path: "/v1/diagnostics/reports").jsonBody(report)
+            )
+        } catch let error as GatewayAPIError {
+            throw UploadError.relay(error)
+        }
 
         if let highest = bundle.entries.map(\.sequence).max() {
             DiagnosticLog.shared.acknowledgeReported(through: highest)
@@ -78,6 +83,24 @@ enum DiagnosticReportUploader {
             keptEntries: prepared.keptEntries,
             totalEntries: bundle.entries.count
         )
+    }
+
+    /// What `POST /v1/diagnostics/reports` takes; the Gateway stores `payload` as Bytes.
+    private struct ReportBody: Encodable {
+        let reportId: String
+        let appVersion: String
+        let build: String
+        let osVersion: String
+        let device: String
+        let locale: String
+        let installId: String
+        let scale: String
+        let note: String
+        let payload: String
+        let payloadBytes: Int
+        let payloadEncoding: String
+        let keptEntries: Int
+        let totalEntries: Int
     }
 
     struct Prepared: Sendable {

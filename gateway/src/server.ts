@@ -12,6 +12,7 @@ import {withTimeout} from "./withTimeout.js";
 import {accountRouter} from "./routes/account.js";
 import {authRouter} from "./routes/auth.js";
 import {avatarRouter} from "./routes/avatar.js";
+import {diagnosticsRouter, feedbackRouter} from "./routes/feedback.js";
 import {healthRouter} from "./routes/health.js";
 import {profileRouter} from "./routes/profile.js";
 import {subscriptionRouter} from "./routes/subscription.js";
@@ -73,6 +74,39 @@ export function createApp(context: GatewayContext): express.Express {
     rateLimitMiddleware(authLimiter, (request) => `auth-refresh|${request.ip ?? "unknown"}`)
   );
 
+  // 回饋中心 writes, limited per address and per inbox: one address can be a
+  // whole carrier NAT on the mainland, and an inbox key costs nothing to invent,
+  // so neither limit is enough alone. Reads (the app polls) count only against
+  // the global limit above.
+  const feedbackWriteLimiter = new RateLimiter(
+    context.config.rateLimit.windowMs,
+    context.config.rateLimit.feedbackWriteMax
+  );
+  const feedbackWrites = (request: Request, response: Response, next: NextFunction): void => {
+    if (request.method === "GET") {
+      next();
+      return;
+    }
+    rateLimitMiddleware(feedbackWriteLimiter, (item) => `feedback-ip|${item.ip ?? "unknown"}`)(
+      request,
+      response,
+      () => {
+        // A diagnostic log names no inbox; it is limited per address only.
+        const inbox = inboxBucket(request);
+        if (inbox === null) {
+          next();
+          return;
+        }
+        rateLimitMiddleware(feedbackWriteLimiter, () => `feedback-inbox|${inbox}`)(request, response, next);
+      }
+    );
+  };
+  app.use("/v1/feedback", feedbackWrites);
+  app.use("/v1/diagnostics", feedbackWrites);
+
+  // A diagnostic log is up to 900 KB of compressed bytes, base64 in JSON. This
+  // parser runs first, so the general 64 KB one below skips the parsed body.
+  app.use("/v1/diagnostics", express.json({limit: DIAGNOSTIC_BODY_LIMIT_BYTES}));
   app.use(express.json({limit: context.config.bodyLimitBytes}));
 
   // Data-plane gate: without a resolved Admin credential every /v1 route would
@@ -97,6 +131,8 @@ export function createApp(context: GatewayContext): express.Express {
   app.use("/v1/profile", profileRouter(context));
   app.use("/v1/avatar", avatarRouter(context));
   app.use("/v1/subscription", subscriptionRouter(context));
+  app.use("/v1/feedback", feedbackRouter(context));
+  app.use("/v1/diagnostics", diagnosticsRouter(context));
 
   // One authenticated probe so clients can tell "the server is up" from
   // "this session is valid" without a data operation.
@@ -131,6 +167,15 @@ export function createApp(context: GatewayContext): express.Express {
   });
 
   return app;
+}
+
+/** 900 KB of payload as base64, plus the report's other fields. */
+const DIAGNOSTIC_BODY_LIMIT_BYTES = 1_300_000;
+
+/** The inbox a feedback write names, for its rate-limit bucket; never logged. */
+function inboxBucket(request: Request): string | null {
+  const match = /^Inbox\s+(\S{1,64})$/.exec((request.header("authorization") ?? "").trim());
+  return match?.[1] ?? null;
 }
 
 export function buildContext(): GatewayContext {
@@ -180,8 +225,11 @@ export function startServer(context: GatewayContext): ReturnType<express.Express
   const server = app.listen(context.config.port, () => {
     logEvent("gateway listening", {port: context.config.port, region: context.config.functionsRegion});
   });
-  // Node's own timeouts bound slow-loris style connections.
-  server.requestTimeout = 30_000;
+  // Node's own timeouts bound slow-loris style connections. The whole-request
+  // bound is long because a 50 MB feedback video from the mainland can take
+  // minutes to arrive; the headers bound stays short and is what stops a
+  // connection that never sends a request.
+  server.requestTimeout = 15 * 60_000;
   server.headersTimeout = 20_000;
   server.keepAliveTimeout = 65_000;
   return server;

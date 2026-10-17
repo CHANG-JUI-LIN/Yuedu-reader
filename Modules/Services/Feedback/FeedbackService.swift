@@ -1,29 +1,27 @@
-import FirebaseCore
-import FirebaseFirestore
-import FirebaseStorage
 import Foundation
 import UIKit
 
 /// 回饋中心's one service: sends reports and replies, uploads their attachments, and
-/// streams the inbox back. Views make one call each; everything that talks to Firebase is
-/// here.
+/// keeps the inbox current. Views make one call each; everything that talks to the
+/// backend is here.
 ///
-/// Storage layout and permissions are described in firestore.rules and storage.rules. The
-/// developer side answers through functions (`onFeedbackThreadCreated`, the AI 助手's
-/// first reply) and functions/tools/feedback.ts.
+/// Every call goes through the Gateway (`gateway/src/routes/feedback.ts`), never straight
+/// to Firestore or Storage: those hosts are unreachable from the mainland, and one path
+/// for everyone is simpler than choosing per network. The Gateway writes the same
+/// `feedbackInboxes/{inbox}` documents and `feedback/{inbox}/…` objects firestore.rules and
+/// storage.rules describe, so the developer side — `onFeedbackThreadCreated`, the AI 助手's
+/// first reply, functions/tools/feedback.ts — is unchanged.
 @MainActor
 final class FeedbackService {
     static let shared = FeedbackService()
 
     enum FeedbackError: LocalizedError {
-        case firebaseUnavailable
         case emptyReport
         case attachmentTooLarge
         case attachmentUnreadable
 
         var errorDescription: String? {
             switch self {
-            case .firebaseUnavailable: localized("回報服務目前無法使用。")
             case .emptyReport: localized("請先描述問題或建議。")
             case .attachmentTooLarge: localized("影片超過 50 MB，請剪短後再試。")
             case .attachmentUnreadable: localized("無法讀取這個附件。")
@@ -31,23 +29,23 @@ final class FeedbackService {
         }
     }
 
-    /// What a failed call says on screen. Firebase's own error text is English and
-    /// technical ("Missing or insufficient permissions."), so its errors read as one of two
-    /// localized sentences; the caller logs the original. Other errors — ours, or the
-    /// system's while preparing an attachment — are already localized and pass through.
+    /// What a failed call says on screen. The Gateway's own error text is English and
+    /// technical, so its errors read as one of two localized sentences; the caller logs
+    /// the original. Other errors — ours, or the system's while preparing an attachment —
+    /// are already localized and pass through.
     nonisolated static func userMessage(for error: Error) -> String {
-        let nsError = error as NSError
-        let unreachable = nsError.domain == NSURLErrorDomain
-            || (nsError.domain == FirestoreErrorDomain && [
-                FirestoreErrorCode.Code.unavailable.rawValue,
-                FirestoreErrorCode.Code.deadlineExceeded.rawValue,
-            ].contains(nsError.code))
-            || (nsError.domain == StorageErrorDomain && nsError.code == StorageErrorCode.retryLimitExceeded.rawValue)
-        if unreachable {
-            return localized("無法連線到回報服務，請檢查網路後再試。")
+        if let error = error as? GatewayAPIError {
+            switch error {
+            case .notConfigured:
+                return localized("回報服務目前無法使用。")
+            case _ where error.isConnectivityFailure:
+                return localized("無法連線到回報服務，請檢查網路後再試。")
+            default:
+                return localized("回報服務暫時出了問題，請稍後再試。")
+            }
         }
-        if nsError.domain == FirestoreErrorDomain || nsError.domain == StorageErrorDomain {
-            return localized("回報服務暫時出了問題，請稍後再試。")
+        if (error as NSError).domain == NSURLErrorDomain {
+            return localized("無法連線到回報服務，請檢查網路後再試。")
         }
         return error.localizedDescription
     }
@@ -59,29 +57,55 @@ final class FeedbackService {
         case sending
     }
 
+    /// How often an open 我的回饋 or conversation asks for news. A screen refresh
+    /// cadence, the Gateway's stand-in for Firestore's live listener — not a wait for
+    /// state to settle. Own writes and returning to the foreground refresh at once.
+    static let refreshInterval: Duration = .seconds(30)
+
+    private let client: GatewayAPIClient
+    private let inboxKey: () -> String
     private let imageCache = NSCache<NSString, UIImage>()
+    /// One wake-up per open stream; poked by own writes and by the app coming back.
+    private var wakeups: [UUID: AsyncStream<Void>.Continuation] = [:]
+    private var foregroundObserver: NSObjectProtocol?
 
-    private init() {}
-
-    private var inbox: DocumentReference {
-        Firestore.firestore()
-            .collection(FeedbackFirestoreSchema.inboxes)
-            .document(FeedbackInbox.key)
+    init(client: GatewayAPIClient = .shared, inboxKey: @escaping () -> String = { FeedbackInbox.key }) {
+        self.client = client
+        self.inboxKey = inboxKey
+        foregroundObserver = NotificationCenter.default.addObserver(
+            forName: UIApplication.willEnterForegroundNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            MainActor.assumeIsolated { self?.refreshOpenStreams() }
+        }
     }
 
-    private func threadRef(_ threadID: String) -> DocumentReference {
-        inbox.collection(FeedbackFirestoreSchema.threads).document(threadID)
+    // MARK: - Requests
+
+    /// The inbox key rides in Authorization, never in a URL: access logs keep URLs, and
+    /// the Gateway's proxy redacts Authorization.
+    private func request(_ method: String, _ path: String, query: [URLQueryItem] = []) -> GatewayRequest {
+        var request = GatewayRequest(method: method, path: "/v1/feedback" + path, query: query)
+        request.headers["Authorization"] = "Inbox \(inboxKey())"
+        return request
     }
 
-    private func requireFirebase() throws {
-        guard FirebaseApp.app() != nil else { throw FeedbackError.firebaseUnavailable }
+    private func json(_ request: GatewayRequest) async throws -> [String: Any] {
+        let data = try await client.sendForData(request)
+        guard let object = try JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+            AppLogger.network("Feedback response is not a JSON object", context: ["path": request.path])
+            throw GatewayAPIError.invalidResponse
+        }
+        return object
     }
 
     // MARK: - Sending
 
-    /// Sends a new report: attachments to Storage, the diagnostic log (when included) to
-    /// `diagnosticReports`, then the thread and its first message in one batch so the
-    /// first-reply function always finds the message. Returns the new thread's id.
+    /// Sends a new report: attachments first, the diagnostic log (when included) to
+    /// `diagnosticReports`, then the thread and its first message, which the Gateway
+    /// writes in one batch so the first-reply function always finds the message.
+    /// Returns the new thread's id.
     func submit(
         kind: FeedbackKind,
         text: String,
@@ -90,7 +114,6 @@ final class FeedbackService {
         deviceInfo: FeedbackDeviceInfo,
         progress: (SubmitStage) -> Void
     ) async throws -> String {
-        try requireFirebase()
         let body = String(text.trimmingCharacters(in: .whitespacesAndNewlines).prefix(FeedbackFirestoreSchema.textLimit))
         guard !body.isEmpty else { throw FeedbackError.emptyReport }
 
@@ -108,108 +131,61 @@ final class FeedbackService {
 
         progress(.sending)
         let info = Bundle.main.infoDictionary
-        let now = FieldValue.serverTimestamp()
-        let thread = threadRef(threadID)
-        let batch = Firestore.firestore().batch()
-        batch.setData([
-            "kind": kind.rawValue,
-            "title": FeedbackFirestoreSchema.provisionalTitle(of: body),
-            "status": FeedbackStatus.received.rawValue,
-            "createdAt": now,
-            "updatedAt": now,
-            "lastMessageAt": now,
-            "lastMessagePreview": FeedbackFirestoreSchema.preview(of: body),
-            "lastMessageAuthor": FeedbackAuthor.user.rawValue,
-            "userLastReadAt": now,
-            "appVersion": info?["CFBundleShortVersionString"] as? String ?? "",
-            "build": info?["CFBundleVersion"] as? String ?? "",
-            "osVersion": "iOS \(UIDevice.current.systemVersion)",
-            "device": deviceInfo.modelIdentifier,
-            "locale": Locale.preferredLanguages.first ?? Locale.current.identifier,
-            "installId": CrashContext.installID,
-            "diagnosticReportId": reportID,
-            "deviceInfo": deviceInfo.fields,
-        ], forDocument: thread)
-        batch.setData(
-            messageFields(text: body, attachments: uploaded),
-            forDocument: thread.collection(FeedbackFirestoreSchema.messages).document(UUID().uuidString.lowercased())
+        let report = NewThreadBody(
+            threadId: threadID,
+            kind: kind.rawValue,
+            title: FeedbackFirestoreSchema.provisionalTitle(of: body),
+            preview: FeedbackFirestoreSchema.preview(of: body),
+            text: body,
+            attachments: uploaded.map(AttachmentBody.init),
+            appVersion: info?["CFBundleShortVersionString"] as? String ?? "",
+            build: info?["CFBundleVersion"] as? String ?? "",
+            osVersion: "iOS \(UIDevice.current.systemVersion)",
+            device: deviceInfo.modelIdentifier,
+            locale: Locale.preferredLanguages.first ?? Locale.current.identifier,
+            installId: CrashContext.installID,
+            diagnosticReportId: reportID,
+            deviceInfo: deviceInfo.fields
         )
-        try await batch.commit()
+        try await client.sendVoid(try request("POST", "/threads").jsonBody(report))
         CrashContext.breadcrumb("feedback \(threadID) sent (\(uploaded.count) attachments, log \(reportID))")
+        refreshOpenStreams()
         return threadID
     }
 
     /// A follow-up in an existing thread. Answering a 待補充 request puts the thread
-    /// back in the queue (the one status change besides 已解決 a client may make).
+    /// back in the queue; the Gateway decides that from the stored status.
     func reply(to thread: FeedbackThread, text: String, attachments: [FeedbackDraftAttachment]) async throws {
-        try requireFirebase()
         let body = String(text.trimmingCharacters(in: .whitespacesAndNewlines).prefix(FeedbackFirestoreSchema.textLimit))
         guard !body.isEmpty || !attachments.isEmpty else { throw FeedbackError.emptyReport }
         let uploaded = try await upload(attachments, threadID: thread.id, progress: { _ in })
-
-        let ref = threadRef(thread.id)
-        let now = FieldValue.serverTimestamp()
-        var update: [String: Any] = [
-            "updatedAt": now,
-            "lastMessageAt": now,
-            "lastMessagePreview": body.isEmpty
-                ? localized("〔附件〕")
-                : FeedbackFirestoreSchema.preview(of: body),
-            "lastMessageAuthor": FeedbackAuthor.user.rawValue,
-            "userLastReadAt": now,
-        ]
-        if thread.status == .needsInfo { update["status"] = FeedbackStatus.queued.rawValue }
-
-        let batch = Firestore.firestore().batch()
-        batch.setData(
-            messageFields(text: body, attachments: uploaded),
-            forDocument: ref.collection(FeedbackFirestoreSchema.messages).document(UUID().uuidString.lowercased())
+        let reply = ReplyBody(
+            text: body,
+            preview: body.isEmpty ? localized("〔附件〕") : FeedbackFirestoreSchema.preview(of: body),
+            attachments: uploaded.map(AttachmentBody.init)
         )
-        batch.updateData(update, forDocument: ref)
-        try await batch.commit()
+        try await client.sendVoid(try request("POST", "/threads/\(thread.id)/messages").jsonBody(reply))
+        refreshOpenStreams()
     }
 
     func markResolved(_ thread: FeedbackThread) async throws {
-        try requireFirebase()
-        try await threadRef(thread.id).updateData([
-            "status": FeedbackStatus.done.rawValue,
-            "updatedAt": FieldValue.serverTimestamp(),
-        ])
+        try await client.sendVoid(try request("POST", "/threads/\(thread.id)/resolve").jsonBody(EmptyBody()))
+        refreshOpenStreams()
     }
 
     func markRead(_ thread: FeedbackThread) async throws {
-        guard thread.isUnread else { return }
-        try requireFirebase()
-        try await threadRef(thread.id).updateData(["userLastReadAt": FieldValue.serverTimestamp()])
+        try await markAllRead([thread])
     }
 
     func markAllRead(_ threads: [FeedbackThread]) async throws {
-        let unread = threads.filter(\.isUnread)
+        let unread = threads.filter(\.isUnread).map(\.id)
         guard !unread.isEmpty else { return }
-        try requireFirebase()
-        let batch = Firestore.firestore().batch()
-        for thread in unread {
-            batch.updateData(["userLastReadAt": FieldValue.serverTimestamp()], forDocument: threadRef(thread.id))
+        // The Gateway takes 200 ids a request.
+        for start in stride(from: 0, to: unread.count, by: 200) {
+            let ids = Array(unread[start..<min(start + 200, unread.count)])
+            try await client.sendVoid(try request("POST", "/read").jsonBody(ReadBody(threadIds: ids)))
         }
-        try await batch.commit()
-    }
-
-    private func messageFields(text: String, attachments: [FeedbackAttachment]) -> [String: Any] {
-        [
-            "author": FeedbackAuthor.user.rawValue,
-            "text": text,
-            "attachments": attachments.map { attachment in
-                [
-                    "path": attachment.path,
-                    "kind": attachment.kind.rawValue,
-                    "contentType": attachment.contentType,
-                    "bytes": attachment.bytes,
-                    "width": attachment.width,
-                    "height": attachment.height,
-                ] as [String: Any]
-            },
-            "createdAt": FieldValue.serverTimestamp(),
-        ]
+        refreshOpenStreams()
     }
 
     private func upload(
@@ -218,18 +194,27 @@ final class FeedbackService {
         progress: (SubmitStage) -> Void
     ) async throws -> [FeedbackAttachment] {
         var uploaded: [FeedbackAttachment] = []
-        let storage = Storage.storage()
         for (index, attachment) in attachments.prefix(FeedbackFirestoreSchema.attachmentLimit).enumerated() {
             progress(.uploadingAttachment(index + 1, of: attachments.count))
-            let path = "feedback/\(FeedbackInbox.key)/\(threadID)/\(UUID().uuidString.lowercased()).\(attachment.fileExtension)"
-            let metadata = StorageMetadata()
-            metadata.contentType = attachment.contentType
-            _ = try await storage.reference(withPath: path).putFileAsync(from: attachment.fileURL, metadata: metadata)
+            var put = request(
+                "PUT",
+                "/threads/\(threadID)/attachments",
+                query: [URLQueryItem(name: "extension", value: attachment.fileExtension.lowercased())]
+            )
+            put.headers["Content-Type"] = attachment.contentType
+            let data = try await client.upload(put, fromFile: attachment.fileURL)
+            let stored: UploadedAttachment
+            do {
+                stored = try JSONDecoder().decode(UploadedAttachment.self, from: data)
+            } catch {
+                AppLogger.network("Feedback upload response did not decode", error: error)
+                throw GatewayAPIError.invalidResponse
+            }
             uploaded.append(FeedbackAttachment(
-                path: path,
-                kind: attachment.kind,
-                contentType: attachment.contentType,
-                bytes: attachment.bytes,
+                path: stored.path,
+                kind: FeedbackAttachment.Kind(rawValue: stored.kind) ?? attachment.kind,
+                contentType: stored.contentType,
+                bytes: stored.bytes,
                 width: Int(attachment.pixelSize.width),
                 height: Int(attachment.pixelSize.height)
             ))
@@ -239,71 +224,181 @@ final class FeedbackService {
 
     // MARK: - Reading
 
-    /// The inbox's threads, live. Ends with an error the view shows when the listener fails.
+    /// The inbox's threads, kept current. Ends with an error the view shows when the
+    /// first load fails.
     func threadUpdates() -> AsyncThrowingStream<[FeedbackThread], Error> {
-        AsyncThrowingStream { continuation in
-            guard FirebaseApp.app() != nil else {
-                continuation.finish(throwing: FeedbackError.firebaseUnavailable)
-                return
+        polling { [self] in
+            let object = try await json(request("GET", "/threads"))
+            let rows = object["threads"] as? [[String: Any]] ?? []
+            return rows.compactMap { row in
+                (row["id"] as? String).flatMap { Self.thread(id: $0, data: row) }
             }
-            let registration = inbox.collection(FeedbackFirestoreSchema.threads)
-                .addSnapshotListener { snapshot, error in
-                    if let error {
-                        AppLogger.network("Feedback threads listener failed", error: error)
-                        continuation.finish(throwing: error)
-                        return
-                    }
-                    guard let snapshot else { return }
-                    continuation.yield(snapshot.documents.compactMap(Self.thread(from:)))
-                }
-            continuation.onTermination = { _ in registration.remove() }
         }
     }
 
-    /// One thread's messages, oldest first, live.
+    /// One thread's messages, oldest first, kept current.
     func messageUpdates(threadID: String) -> AsyncThrowingStream<[FeedbackMessage], Error> {
-        AsyncThrowingStream { continuation in
-            guard FirebaseApp.app() != nil else {
-                continuation.finish(throwing: FeedbackError.firebaseUnavailable)
-                return
+        polling { [self] in
+            let object = try await json(request("GET", "/threads/\(threadID)/messages"))
+            let rows = object["messages"] as? [[String: Any]] ?? []
+            return rows.compactMap { row in
+                (row["id"] as? String).flatMap { Self.message(id: $0, data: row) }
             }
-            let registration = threadRef(threadID).collection(FeedbackFirestoreSchema.messages)
-                .order(by: "createdAt")
-                .addSnapshotListener { snapshot, error in
-                    if let error {
-                        AppLogger.network("Feedback messages listener failed", error: error)
-                        continuation.finish(throwing: error)
-                        return
-                    }
-                    guard let snapshot else { return }
-                    continuation.yield(snapshot.documents.compactMap(Self.message(from:)))
-                }
-            continuation.onTermination = { _ in registration.remove() }
         }
+    }
+
+    /// Loads at once, then again on every wake-up: the refresh interval, an own write,
+    /// or the app returning to the foreground. A failed first load ends the stream with
+    /// the error, as the listener did; a failed refresh after that keeps what is on
+    /// screen and is logged, and the next wake-up tries again.
+    private func polling<Value: Sendable>(
+        _ load: @escaping @MainActor () async throws -> Value
+    ) -> AsyncThrowingStream<Value, Error> {
+        let (stream, continuation) = AsyncThrowingStream<Value, Error>.makeStream()
+        let (signals, wake) = AsyncStream<Void>.makeStream(bufferingPolicy: .bufferingNewest(1))
+        let id = UUID()
+        wakeups[id] = wake
+        wake.yield()
+
+        let ticker = Task {
+            while !Task.isCancelled {
+                do {
+                    try await Task.sleep(for: Self.refreshInterval)
+                } catch {
+                    return
+                }
+                wake.yield()
+            }
+        }
+        let worker = Task { @MainActor in
+            var delivered = false
+            for await _ in signals {
+                do {
+                    continuation.yield(try await load())
+                    delivered = true
+                } catch is CancellationError {
+                    break
+                } catch {
+                    if !delivered {
+                        AppLogger.network("Feedback inbox failed to load", error: error)
+                        continuation.finish(throwing: error)
+                        break
+                    }
+                    AppLogger.network("Feedback refresh failed; keeping the last result", error: error)
+                }
+            }
+        }
+        continuation.onTermination = { [weak self] _ in
+            ticker.cancel()
+            worker.cancel()
+            wake.finish()
+            Task { @MainActor in self?.wakeups[id] = nil }
+        }
+        return stream
+    }
+
+    private func refreshOpenStreams() {
+        for wake in wakeups.values { wake.yield() }
     }
 
     /// An attachment image, from memory after the first load.
     func image(for attachment: FeedbackAttachment) async throws -> UIImage {
         if let cached = imageCache.object(forKey: attachment.path as NSString) { return cached }
-        let data = try await Storage.storage().reference(withPath: attachment.path)
-            .data(maxSize: Int64(FeedbackFirestoreSchema.imageByteLimit))
+        let file = try await client.download(try attachmentRequest(attachment))
+        defer { removeTemporary(file) }
+        let data = try Data(contentsOf: file)
         guard let image = UIImage(data: data) else { throw FeedbackError.attachmentUnreadable }
         imageCache.setObject(image, forKey: attachment.path as NSString)
         return image
     }
 
-    func downloadURL(for attachment: FeedbackAttachment) async throws -> URL {
-        try await Storage.storage().reference(withPath: attachment.path).downloadURL()
+    /// A video attachment as a local file the system player can open: the player cannot
+    /// send the inbox key, so the file comes down through the Gateway first. Kept in the
+    /// caches directory, so opening it again does not download it again.
+    func playableFile(for attachment: FeedbackAttachment) async throws -> URL {
+        let directory = URL.cachesDirectory.appending(path: "FeedbackAttachments", directoryHint: .isDirectory)
+        let destination = directory.appending(path: (attachment.path as NSString).lastPathComponent)
+        if FileManager.default.fileExists(atPath: destination.path) { return destination }
+        let file = try await client.download(try attachmentRequest(attachment))
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        try FileManager.default.moveItem(at: file, to: destination)
+        return destination
+    }
+
+    /// `feedback/{inbox}/{thread}/{file}` is addressed by thread and file alone; the
+    /// Gateway rebuilds the path from the inbox it is given.
+    private func attachmentRequest(_ attachment: FeedbackAttachment) throws -> GatewayRequest {
+        let components = attachment.path.split(separator: "/")
+        guard components.count == 4, components[0] == "feedback" else {
+            AppLogger.parse("Feedback attachment path is not feedback/{inbox}/{thread}/{file}", context: ["path": attachment.path])
+            throw FeedbackError.attachmentUnreadable
+        }
+        return request("GET", "/threads/\(components[2])/attachments/\(components[3])")
+    }
+
+    private func removeTemporary(_ file: URL) {
+        do {
+            try FileManager.default.removeItem(at: file)
+        } catch {
+            AppLogger.error("Feedback download could not be removed", error: error)
+        }
+    }
+
+    // MARK: - Request bodies
+
+    private struct NewThreadBody: Encodable {
+        let threadId: String
+        let kind: String
+        let title: String
+        let preview: String
+        let text: String
+        let attachments: [AttachmentBody]
+        let appVersion: String
+        let build: String
+        let osVersion: String
+        let device: String
+        let locale: String
+        let installId: String
+        let diagnosticReportId: String
+        let deviceInfo: [String: String]
+    }
+
+    private struct ReplyBody: Encodable {
+        let text: String
+        let preview: String
+        let attachments: [AttachmentBody]
+    }
+
+    /// An uploaded attachment cited by a message. Kind, type and size are read back from
+    /// Storage by the Gateway; only the picture's dimensions come from here.
+    private struct AttachmentBody: Encodable {
+        let path: String
+        let width: Int
+        let height: Int
+
+        init(_ attachment: FeedbackAttachment) {
+            path = attachment.path
+            width = attachment.width
+            height = attachment.height
+        }
+    }
+
+    private struct ReadBody: Encodable {
+        let threadIds: [String]
+    }
+
+    private struct EmptyBody: Encodable {}
+
+    private struct UploadedAttachment: Decodable {
+        let path: String
+        let kind: String
+        let contentType: String
+        let bytes: Int
     }
 
     // MARK: - Decoding
 
-    nonisolated static func thread(from document: DocumentSnapshot) -> FeedbackThread? {
-        guard let data = document.data(with: .estimate) else { return nil }
-        return thread(id: document.documentID, data: data)
-    }
-
-    /// Separate from the snapshot so tests can feed it dictionaries.
+    /// From the Gateway's JSON, as dictionaries so tests can feed them directly.
     nonisolated static func thread(id: String, data: [String: Any]) -> FeedbackThread? {
         guard let kind = (data["kind"] as? String).flatMap(FeedbackKind.init(rawValue:)) else {
             AppLogger.parse("Feedback thread has no valid kind", context: ["thread": id])
@@ -323,11 +418,6 @@ final class FeedbackService {
             lastReplyAt: date(data["lastReplyAt"]),
             userLastReadAt: date(data["userLastReadAt"])
         )
-    }
-
-    nonisolated static func message(from document: DocumentSnapshot) -> FeedbackMessage? {
-        guard let data = document.data(with: .estimate) else { return nil }
-        return message(id: document.documentID, data: data)
     }
 
     nonisolated static func message(id: String, data: [String: Any]) -> FeedbackMessage? {
@@ -356,11 +446,18 @@ final class FeedbackService {
         )
     }
 
-    nonisolated private static func date(_ value: Any?) -> Date? {
+    /// The Gateway sends ISO 8601 with milliseconds (`Date.toISOString()`).
+    nonisolated static func date(_ value: Any?) -> Date? {
         switch value {
-        case let timestamp as Timestamp: timestamp.dateValue()
-        case let date as Date: date
-        default: nil
+        case let date as Date: return date
+        case let text as String:
+            do {
+                return try Date.ISO8601FormatStyle(includingFractionalSeconds: true).parse(text)
+            } catch {
+                AppLogger.parse("Feedback date is not ISO 8601", error: error, context: ["value": text])
+                return nil
+            }
+        default: return nil
         }
     }
 }
