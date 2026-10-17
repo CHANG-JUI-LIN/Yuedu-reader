@@ -819,46 +819,25 @@ final class TTSCoordinator: ObservableObject {
             return outcome
         }
         engine.onStop = { [weak self] in
-            let handleStop: @MainActor @Sendable () -> Void = {
-                guard let self else { return }
-                guard !self.isStoppingFromCoordinator else { return }
-                self.finishStopped(reason: "engine finished")
-                self.onStop?()
-            }
-            if Thread.isMainThread {
-                handleStop()
-            } else {
-                DispatchQueue.main.async(execute: handleStop)
-            }
+            guard let self else { return }
+            guard !self.isStoppingFromCoordinator else { return }
+            self.finishStopped(reason: "engine finished")
+            self.onStop?()
         }
         engine.onError = { [weak self] error in
-            let presentError: @MainActor @Sendable () -> Void = {
-                guard let self else { return }
-                if case .chunkUnavailable = error as? TTSPlaybackError {
-                    // The engine retains the failed segment for resume. Keep the panel
-                    // and lock-screen controls in sync with that paused session.
-                    self.pause()
-                }
-                self.errorMessage = String(format: localized("朗讀失敗：%@"), error.localizedDescription)
+            guard let self else { return }
+            if case .chunkUnavailable = error as? TTSPlaybackError {
+                // The engine retains the failed segment for resume. Keep the panel
+                // and lock-screen controls in sync with that paused session.
+                self.pause()
             }
-            if Thread.isMainThread {
-                presentError()
-            } else {
-                DispatchQueue.main.async(execute: presentError)
-            }
+            self.errorMessage = String(format: localized("朗讀失敗：%@"), error.localizedDescription)
         }
         engine.onSegmentSkipped = { [weak self] error in
             // Deliberately NOT `errorMessage`: that one is an alert, and narration is still
             // playing. This surfaces in the panel without interrupting the listener.
-            let publishNotice: @MainActor @Sendable () -> Void = {
-                guard let self else { return }
-                self.playbackNotice = error.localizedDescription
-            }
-            if Thread.isMainThread {
-                publishNotice()
-            } else {
-                DispatchQueue.main.async(execute: publishNotice)
-            }
+            guard let self else { return }
+            self.playbackNotice = error.localizedDescription
         }
         engine.onPlaybackStarted = { [weak self] duration in
             DispatchQueue.main.async {
