@@ -840,7 +840,7 @@ struct WorkDetailView: View {
 
     /// A module's title, or 模組 once it was removed.
     private func moduleTitle(_ id: String) -> String {
-        RuleModuleLibrary.shared.module(id: id)?.module.title ?? localized("模組")
+        RuleModuleLibrary.shared.installed(id: id)?.module.title ?? localized("模組")
     }
 
     private func status(of version: WorkDetailRoute) -> String? {

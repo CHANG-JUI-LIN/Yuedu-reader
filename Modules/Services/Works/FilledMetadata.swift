@@ -60,7 +60,7 @@ enum FilledMetadata {
         case .bibliographic where key.id == OpenLibrary.providerID: "Open Library"
         case .bibliographic where key == AIRecommendationProvider.recordInstance: localized("AI 推薦")
         case .bookSource: sources.sources.first { $0.bookSourceUrl == key.id }?.bookSourceName ?? key.id
-        case .module: RuleModuleLibrary.shared.module(id: key.id)?.module.title ?? key.id
+        case .module: RuleModuleLibrary.shared.installed(id: key.id)?.module.title ?? key.id
         default: key.id
         }
     }

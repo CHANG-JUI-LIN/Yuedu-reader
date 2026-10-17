@@ -101,9 +101,10 @@ struct RuleModuleStore: Sendable {
     }
 
     /// A newer version of an installed module, replacing its file. Its cached pages go with the
-    /// old rules.
+    /// old rules. `subscriptionURL`, when given, is where the update came from — a repository's
+    /// address for the module (M6) — and becomes the address 檢查更新 reads; nil keeps the old one.
     @discardableResult
-    func update(id: String, with data: Data, appVersion: String = RuleModuleVersion.app,
+    func update(id: String, with data: Data, from subscriptionURL: URL? = nil, appVersion: String = RuleModuleVersion.app,
                 now: Date = .now) throws -> InstalledRuleModule {
         let installed = try read(folderNamed: id, appVersion: appVersion)
         let module = try validated(data, appVersion: appVersion)
@@ -113,12 +114,13 @@ struct RuleModuleStore: Sendable {
             throw RuleModuleStoreError.notNewer(installed: installed.module.version, offered: module.version)
         }
         let folder = folder(for: id)
-        let record = InstallRecord(subscriptionURL: installed.subscriptionURL, installedAt: installed.installedAt, updatedAt: now)
+        let subscriptionURL = subscriptionURL ?? installed.subscriptionURL
+        let record = InstallRecord(subscriptionURL: subscriptionURL, installedAt: installed.installedAt, updatedAt: now)
         try data.write(to: folder.appendingPathComponent("module.json"), options: .atomic)
         try JSONEncoder().encode(record).write(to: folder.appendingPathComponent("install.json"), options: .atomic)
         let cache = cacheDirectory(id: id)
         if FileManager.default.fileExists(atPath: cache.path) { try FileManager.default.removeItem(at: cache) }
-        return InstalledRuleModule(module: module, subscriptionURL: installed.subscriptionURL,
+        return InstalledRuleModule(module: module, subscriptionURL: subscriptionURL,
                                    installedAt: installed.installedAt, updatedAt: now)
     }
 
@@ -174,6 +176,11 @@ struct RuleModuleStore: Sendable {
     }
 
     // MARK: - Helpers
+
+    /// The module's file as it was installed: 匯出 on its page (M6).
+    func moduleFile(id: String) -> URL {
+        folder(for: id).appendingPathComponent("module.json")
+    }
 
     private func folder(for id: String) -> URL {
         directory.appendingPathComponent(id, isDirectory: true)

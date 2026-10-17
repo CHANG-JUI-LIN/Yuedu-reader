@@ -53,7 +53,7 @@ struct MetadataFillSourcesView: View {
         switch place {
         case .openLibrary: FilledMetadata.providerName(OpenLibrary.key)
         case .bookSources: localized("來源配置")
-        case .module(let id): modules.module(id: id)?.module.title ?? id
+        case .module(let id): modules.installed(id: id)?.module.title ?? id
         }
     }
 

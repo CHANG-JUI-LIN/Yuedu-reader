@@ -132,3 +132,13 @@ M2 is split: LibraryTabRoot, HomeContentSourcePicker, ExploreHome and BookSearch
 
 - Maintainer: 「點進去自動尋找並列出可用來源」. 作品詳情 runs 尋找可用來源 once its versions are read (not with no enabled source, not on a reader's or a book source's page).
 - Maintainer: 「導入斗羅大陸 txt…會自動出現簡介和封面嗎」. 「未知作者」 is no author: title-only matches are taken when they all name one author (filler and versions); the book sources give a missing cover; importing sources starts a fill pass; an open 作品詳情 shows a fill as it lands; `WorkIndex` author keys drop the placeholder (schema 5). `scripts/work_fill_fixture.py` (18771) + `WorkFillUITests`.
+
+### M6 repository and 模組 page (2026-10-17)
+
+- Maintainer: 「模組要做到截圖這樣」 (Rex's module management), update checks 「打開倉庫頁時檢查，點「更新」才換」, 停用 「一鍵全關」 (reverses M2a's no-master-switch), 選擇 「多選後一次安裝／更新」.
+- `RuleModuleRepositoryIndex` (`name`, `modules[{id, title, description, author, version, url}]`, url relative to the index), `RuleModuleRepositoryStore` (`.repositories.json` in the modules folder), shared `RuleModuleRepositoryModel` (load, reload one, keep, unsubscribe, batch install). One subscribe path: 從網址 (or a clipboard URL) holding an index is previewed in the import sheet and kept on ✓; an index from a file or pasted text is refused (no address).
+- An update from a repository records the repository's address for the module as its subscription (`RuleModuleStore.update(from:)`).
+- 停用: `RuleModuleLibrary.modules` leaves out disabled ids, so search, fill, home rows and module reading follow; `installed(id:)` keeps the page and titles. 在資源庫中展示 hides only the 資源庫 card. Both in UserDefaults, cleared when the module is removed.
+- 資源庫 ••• → 管理模組 → 模組 (官方模組 ✓, each repository, 匯入的模組, 首頁欄目引用 with removal across every 首頁配置); 新增模組 on its toolbar goes through 資源庫's one add flow (environment). Module page: 匯出 (ShareLink, `<id>.json`), 停用/啟用, 最低格式版本.
+- Not done from the screenshots: 詳情快取時長 (the format has only per-list `cacheDuration`).
+- `scripts/module_repository_fixture.py` (18772) + `ModuleRepositoryUITests`.

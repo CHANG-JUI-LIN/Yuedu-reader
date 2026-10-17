@@ -121,7 +121,8 @@ struct HomeContentSourcePicker: View {
                                    isCurrent: owner == .aozora)
                     }
                 }
-                ForEach(modules.official, id: \.module.id) { installed in
+                // A module turned off (停用) offers nothing until it is on again.
+                ForEach(modules.official.filter { modules.isEnabled($0.module.id) }, id: \.module.id) { installed in
                     moduleLink(installed)
                 }
             } header: {
@@ -129,9 +130,10 @@ struct HomeContentSourcePicker: View {
             }
             .interfaceSectionSurface()
 
-            if !modules.imported.isEmpty {
+            let imported = modules.imported.filter { modules.isEnabled($0.module.id) }
+            if !imported.isEmpty {
                 Section {
-                    ForEach(modules.imported, id: \.module.id) { installed in
+                    ForEach(imported, id: \.module.id) { installed in
                         moduleLink(installed)
                     }
                 } header: {

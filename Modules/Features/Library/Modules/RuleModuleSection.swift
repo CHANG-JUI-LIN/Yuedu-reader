@@ -24,7 +24,8 @@ struct OfficialModuleSection<Libraries: View>: View {
             .accessibilityValue(localized("依你最近讀的書推薦作品"))
             .accessibilityIdentifier("library.module.official.aiRecommendations")
             libraries(layout)
-            ForEach(library.official, id: \.module.id) { installed in
+            // 在資源庫中展示 and 停用 (M6) leave a module's card out; 模組 still lists it.
+            ForEach(library.official.filter { library.isShownInLibrary($0.module.id) }, id: \.module.id) { installed in
                 RuleModuleCard(module: installed.module, layout: layout)
             }
         }
@@ -75,11 +76,12 @@ struct RuleModuleSection: View {
         // neither did dropping the loading spinner). A reader imports a handful of modules, so
         // laziness bought nothing here. Delete `isLazy: false` once `testOfficialModuleIsListed`
         // passes without it.
+        let shown = library.imported.filter { library.isShownInLibrary($0.module.id) }
         LibrarySection(localized("匯入的模組"), isLazy: false) { layout in
             if !library.isLoaded {
                 ProgressView()
                     .frame(maxWidth: .infinity, alignment: .leading)
-            } else if library.imported.isEmpty && library.failures.isEmpty {
+            } else if shown.isEmpty && library.failures.isEmpty {
                 Button(action: onAdd) {
                     ExploreEntryLabel(title: localized("新增模組"), artwork: .neutral("plus"), layout: layout,
                                       subtitle: localized("還沒有模組"))
@@ -89,7 +91,7 @@ struct RuleModuleSection: View {
                 .accessibilityValue(localized("還沒有模組"))
                 .accessibilityIdentifier("library.modules.add")
             } else {
-                ForEach(library.imported, id: \.module.id) { installed in
+                ForEach(shown, id: \.module.id) { installed in
                     RuleModuleCard(module: installed.module, layout: layout)
                 }
                 ForEach(library.failures, id: \.folder) { failure in

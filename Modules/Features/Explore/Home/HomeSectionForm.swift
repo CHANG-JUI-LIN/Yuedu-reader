@@ -622,7 +622,7 @@ extension HomeContentOwner {
     func name(sources: BookSourceStore, connections: RemoteLibraryConnectionStore,
               modules: RuleModuleLibrary? = nil) -> String {
         switch self {
-        case .module(let id): (modules ?? .shared).module(id: id)?.module.title ?? id
+        case .module(let id): (modules ?? .shared).installed(id: id)?.module.title ?? id
         case .appData: localized("App 資料")
         case .official: localized("官方模組")
         case .connection(let id): connections.connection(id: id)?.name ?? ""
