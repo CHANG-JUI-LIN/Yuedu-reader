@@ -2480,8 +2480,7 @@ struct ReaderView: View {
                         showTouchZoneEditor = true
                     },
                     onOpenStyleImporter: requestFirstLevelReaderStyleImporter,
-                    onOpenPaywall: ReaderSettingsPresentationPolicy.requiresFirstLevelImporter
-                        ? requestFirstLevelReaderPaywall : nil
+                    onOpenPaywall: readerSettingsPaywallAction
                 )
             }
         }
@@ -2885,6 +2884,12 @@ struct ReaderView: View {
         }
         readerSettingsDeferredPresentation.select(.fontImporter)
         showSettings = false
+    }
+
+    /// Settings' paywall route, taken over by the reader only where it must present first-level.
+    private var readerSettingsPaywallAction: ((PremiumFeature) -> Void)? {
+        let openPaywall: (PremiumFeature) -> Void = requestFirstLevelReaderPaywall
+        return ReaderSettingsPresentationPolicy.requiresFirstLevelImporter ? openPaywall : nil
     }
 
     private func requestFirstLevelReaderPaywall(_ feature: PremiumFeature) {

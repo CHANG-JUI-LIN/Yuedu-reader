@@ -60,7 +60,7 @@ struct PaywallView: View {
                         celebrates: justUnlocked,
                         upgradedFromMonthly: upgradedFromMonthly,
                         highlightedFeature: highlightedFeature,
-                        onUpgrade: presentation == .upgradeFromMonthly && !justUnlocked ? upgradeToLifetime : nil
+                        onUpgrade: memberPageUpgradeAction
                     )
                     // A new page when Pro unlocks, so the thank-you and its celebration
                     // start from the top — also when the member page was already up, as
@@ -116,6 +116,13 @@ struct PaywallView: View {
                 LoginView()
             }
         }
+    }
+
+    /// The member page's lifetime upgrade, offered only to a monthly subscriber who has
+    /// not just unlocked.
+    private var memberPageUpgradeAction: (() -> Void)? {
+        let upgrade: () -> Void = upgradeToLifetime
+        return presentation == .upgradeFromMonthly && !justUnlocked ? upgrade : nil
     }
 
     private var paywallContent: some View {

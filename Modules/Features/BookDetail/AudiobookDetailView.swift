@@ -239,7 +239,7 @@ struct AudiobookDetailView: View {
                     text: intro.text,
                     isExpanded: $introExpanded,
                     baseURL: intro.isSourcesOwn ? currentBook.bookUrl : nil,
-                    onAction: intro.isSourcesOwn ? requestIntroAction : nil,
+                    onAction: introAction(isSourcesOwn: intro.isSourcesOwn),
                     readsSourceFormats: intro.isSourcesOwn
                 )
             }
@@ -486,6 +486,12 @@ struct AudiobookDetailView: View {
             bookStore: bookStore,
             send: { sourceCallBackTap = $0 }
         )
+    }
+
+    /// The intro's link actions, run only for an intro the source wrote itself.
+    private func introAction(isSourcesOwn: Bool) -> ((BookIntroAction) -> Void)? {
+        let action: (BookIntroAction) -> Void = requestIntroAction
+        return isSourcesOwn ? action : nil
     }
 
     private func requestIntroAction(_ action: BookIntroAction) {
