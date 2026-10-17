@@ -114,7 +114,7 @@ struct RuleModuleClient: Sendable {
     /// One request of the module's: `safeURL` and its hosts on the address and every redirect,
     /// under its `rateLimit`; the reply decoded as text.
     func send(_ address: String, method: String = "GET", body: String? = nil, headers: [String: String],
-              charset: String?, in module: RuleModule) async throws -> (text: String, baseURL: String) {
+              charset: String?, in module: RuleModule, followsRefresh: Bool = true) async throws -> (text: String, baseURL: String) {
         let hosts = Set(module.hosts.map { $0.lowercased() })
         let allowed: @Sendable (URL) -> Bool = { url in
             guard let host = url.host?.lowercased(), hosts.contains(host) else { return false }
@@ -140,7 +140,51 @@ struct RuleModuleClient: Sendable {
         guard let text = HTMLResponseDecoder.decode(data: page.data, response: page.response, declaredCharset: charset) else {
             throw SourceFailure(kind: .parse, underlying: FetchError.encodingError)
         }
-        return (text, page.response.url?.absoluteString ?? url.absoluteString)
+        let baseURL = page.response.url ?? url
+        // A soft redirect, followed once, to the module's own hosts. The real case: なろう's API
+        // names a work in upper case (N9669BK) and the site answers that address with a 200
+        // 「リダイレクト中」 page whose meta refresh points at the lower-case one, so every book's
+        // table of contents read empty (2026-10-17). It can go when the format can transform a
+        // field's case or the sites stop serving these pages.
+        if followsRefresh, method == "GET", let target = Self.metaRefreshTarget(in: text, baseURL: baseURL),
+           target.absoluteString != baseURL.absoluteString {
+            guard allowed(target) else {
+                AppLogger.network("module page refreshes to an address outside its hosts; read as it is",
+                                  context: ["module": module.id, "page": baseURL.absoluteString, "target": target.absoluteString])
+                return (text, baseURL.absoluteString)
+            }
+            return try await send(target.absoluteString, method: method, headers: headers, charset: charset,
+                                  in: module, followsRefresh: false)
+        }
+        return (text, baseURL.absoluteString)
+    }
+
+    // Literal patterns: a typo fails the first test that reads a page, not a user's request.
+    nonisolated private static let metaTag = try! NSRegularExpression(pattern: #"<meta\b[^>]*>"#, options: .caseInsensitive)
+    nonisolated private static let metaContent = try! NSRegularExpression(
+        pattern: #"\bcontent\s*=\s*(?:"([^"]*)"|'([^']*)')"#, options: .caseInsensitive)
+    nonisolated private static let refreshURL = try! NSRegularExpression(
+        pattern: #"^\s*\d*(?:\.\d*)?\s*[;,]\s*url\s*=\s*['"]?([^'"]+)"#, options: .caseInsensitive)
+
+    /// The address a page's `<meta http-equiv="refresh" content="N;URL=…">` sends a browser to,
+    /// read before its `<body>`. Nil for a page without one, or one that only reloads itself.
+    nonisolated static func metaRefreshTarget(in html: String, baseURL: URL) -> URL? {
+        let head = html.range(of: "<body", options: .caseInsensitive).map { html[..<$0.lowerBound] } ?? html[...]
+        let tags = Self.metaTag, contentPattern = Self.metaContent, urlPattern = Self.refreshURL
+        let text = String(head)
+        for match in tags.matches(in: text, range: NSRange(text.startIndex..., in: text)) {
+            guard let tagRange = Range(match.range, in: text) else { continue }
+            let tag = String(text[tagRange])
+            guard tag.range(of: #"http-equiv\s*=\s*["']?refresh"#, options: [.regularExpression, .caseInsensitive]) != nil,
+                  let content = contentPattern.firstMatch(in: tag, range: NSRange(tag.startIndex..., in: tag)),
+                  let value = [1, 2].lazy.compactMap({ Range(content.range(at: $0), in: tag) }).first.map({ String(tag[$0]) }),
+                  let address = urlPattern.firstMatch(in: value, range: NSRange(value.startIndex..., in: value)),
+                  let addressRange = Range(address.range(at: 1), in: value)
+            else { continue }
+            let target = value[addressRange].trimmingCharacters(in: .whitespacesAndNewlines)
+            return URL(string: target, relativeTo: baseURL)?.absoluteURL
+        }
+        return nil
     }
 
     /// A cover a lookup's record names (format 3.0): from the module's `hosts` only, under its

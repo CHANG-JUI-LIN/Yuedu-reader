@@ -147,3 +147,9 @@ M2 is split: LibraryTabRoot, HomeContentSourcePicker, ExploreHome and BookSearch
 
 - `docs/modules/README.md` (繁體中文, for module authors): every top-level, entry, param, request, list, reading, attribution and localization field; param types and fixed values; the validator's refusals; format 3.0 fields and `requiredVersion`; the repository index; testing on localhost. Examples point at the bundled official modules.
 - `ModuleFormatDocumentationTests`: walks a module with every part present (Mirror) and the repository index, and fails when a field or a fixed value is not in the document.
+
+### M8 acceptance (2026-10-17)
+
+- `OfficialModulesLiveTests` (off unless `TEST_RUNNER_YUEDU_MODULES_LIVE=1`): every list's first page and the search of Bangumi, AniList and なろう, openBD's lookup, and なろう's table of contents and first chapter. All pass live (なろう 無職転生: 311 chapters).
+- Found live: the なろう API names a work in upper case (`N9669BK`), and the site answers that address with a 200 「リダイレクト中」 page whose meta refresh points at the lower-case one, so every なろう book's 目錄 read empty. Maintainer: 「模組遇到同網站的轉址頁就跟過去」. `RuleModuleClient.send` follows a `<meta http-equiv="refresh">` in the page head once, for GET, only to the module's `hosts`; another host's refresh is logged and the page read as it is. Documented under `hosts` in `docs/modules/README.md`.
+- The M8 change touches no view. The module UI tests last passed in M6; an M8 rerun landed on a new "iPhone Duo" simulator, where 資源庫 is not in a `UITabBar` and `app.tabBars` finds nothing, so it stopped there. `check_localizations.rb` clean.
