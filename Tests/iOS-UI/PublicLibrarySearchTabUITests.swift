@@ -65,8 +65,6 @@ final class PublicLibrarySearchTabUITests: XCTestCase {
         let app = XCUIApplication()
         app.launchArguments = ["-AppleLanguages", "(zh-Hant)", "-AppleLocale", "zh_TW", "-no-official-modules",
                                "-yd_source_disclaimer_accepted", "YES",
-                               // Open Library is a live service: off, so nothing leaves the machine.
-                               "-yd_search_open_library", "NO",
                                "-book-source-store-dir", fixtureDirectory.appendingPathComponent("sources").path]
         app.launchEnvironment["YUEDU_PUBLIC_LIBRARY_FIXTURES"] = fixtureDirectory.path
         app.launch()
@@ -123,8 +121,6 @@ final class PublicLibrarySearchTabUITests: XCTestCase {
         let app = XCUIApplication()
         app.launchArguments = ["-AppleLanguages", "(zh-Hant)", "-AppleLocale", "zh_TW", "-no-official-modules",
                                "-yd_source_disclaimer_accepted", "YES",
-                               // Open Library is a live service: off, so nothing leaves the machine.
-                               "-yd_search_open_library", "NO",
                                "-book-source-store-dir", fixtureDirectory.appendingPathComponent("sources").path]
         app.launchEnvironment["YUEDU_PUBLIC_LIBRARY_FIXTURES"] = fixtureDirectory.path
         app.launch()

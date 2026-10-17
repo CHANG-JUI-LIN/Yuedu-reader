@@ -3,7 +3,7 @@ import Testing
 @testable import yuedu_app
 
 /// Module ecosystem M8: each bundled official module against its real site — its search, the
-/// first page of every list, openBD's lookup and なろう's reading. Off by default; the saved
+/// first page of every list, openBD's and Open Library's lookups and なろう's reading. Off by default; the saved
 /// replies in `OfficialModuleFilesTests` cover the rules. Run with
 /// `TEST_RUNNER_YUEDU_MODULES_LIVE=1` in the environment of `xcodebuild`.
 @MainActor
@@ -56,6 +56,20 @@ struct OfficialModulesLiveTests {
         let items = try #require(try await provider.lookupItems(isbn: "9784750320236"))
         print("⟐ live openbd: \(items.map(\.name))")
         #expect(items.first?.name.isEmpty == false)
+    }
+
+    @Test("Open Library searches, and fills a copy by its ISBN with a cover and a description")
+    func openLibrary() async throws {
+        try await check("openlibrary", keyword: "Fantastic Mr Fox")
+        let (provider, _, folder) = try provider("openlibrary")
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let isbn = try #require(ExternalIdentifier.normalized(.isbn13, "9780140328721"))
+        let query = MetadataFillQuery(copyID: UUID(), title: "Fantastic Mr Fox", authors: ["Roald Dahl"], identifiers: [isbn],
+                                      copySource: .localLibrary, missing: [.cover, .intro, .tags])
+        let result = try await ModuleFillProvider(provider: provider).lookUp(query)
+        print("⟐ live openlibrary: \(result.values.keys.map(\.rawValue).sorted())")
+        #expect(result.values[.intro] != nil, "the work's description, from its page")
+        #expect(result.values[.cover] != nil, "the edition's cover, through archive.org's redirects")
     }
 
     @Test("なろう lists, searches and reads a chapter")

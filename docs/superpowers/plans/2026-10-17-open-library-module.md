@@ -73,14 +73,28 @@ Open Library's saved replies showed four more gaps; three were the maintainer's 
 ## Steps (one branch each, tests first, `--no-ff` into main)
 
 - **OL1 `detail`**: merged 556884b6.
-- **OL1b format additions**: `*.` redirect hosts, `minKeywordLength`, several `isbn`/`author` values, a refused
+- **OL1b format additions** (merged cfeba059): `*.` redirect hosts, `minKeywordLength`, several `isbn`/`author` values, a refused
   cover redirect is no cover; docs + documentation test + `ModuleFormatAdditionsTests`.
 - **OL1 `detail`** (as planned): validator, `ModuleProvider` (search/lookup items + detail), `ModuleFillProvider`
   asks it for a missing field; unit tests with saved replies; docs + documentation test.
-- **OL2 the file**: `Resources/Assets/official-module-openlibrary.json`; `OfficialModuleFilesTests` with
+- **OL2 the file** (merged 095056cc): `Resources/Assets/official-module-openlibrary.json`; `OfficialModuleFilesTests` with
   saved Open Library replies (search, ISBN search, work JSON with both description shapes, cover 404).
-- **OL3 switch-over**: fill order + search switch migration, AI 推薦 resolver on the module, delete
+- **OL3 switch-over** (merged ab3abbd3): fill order + search switch migration, AI 推薦 resolver on the module, delete
   `OpenLibrarySearch`, `OpenLibraryFillProvider`, `OpenLibraryRecommendationResolver`, the 資料來源 row and
   `RequestPacer` if nothing else uses it (grep each type first). Unit tests: migration, AI 推薦 resolver.
 - **OL4 acceptance**: `OfficialModulesLiveTests` gains Open Library (search, ISBN lookup with description);
   the UI tests that launch with `-yd_search_open_library NO` switch to `-no-official-modules`; plan entry.
+
+## Done (2026-10-17)
+
+- OL3: the stored `openLibrary` fill place reads as `module:openlibrary` (same position, same check; the first
+  entry of a place counts); with nothing stored Open Library still comes first. `yd_search_open_library` off
+  unchecks the module in 搜尋來源 once and is removed. AI 推薦 asks the module's search with `"<title> <author>"`
+  and its `detail` for the blurb; 停用 turns its lookups off too. `RequestPacer` had no other user and went.
+- OL4: `OfficialModulesLiveTests.openLibrary` (search, ISBN lookup with cover through archive.org and a
+  description); the UI tests' `-yd_search_open_library` arguments are gone (every one already launched with
+  `-no-official-modules` or its own official folder); 聚合設定 and 資料來源 UI tests no longer look for the
+  Open Library row of its own.
+- Also disclosed: the AI 推薦 query is `q=title author` (it was `title=` and `author=`); Open Library's search
+  rows sort among the libraries, no longer after the sources.
+

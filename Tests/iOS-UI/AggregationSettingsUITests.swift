@@ -181,7 +181,6 @@ final class AggregationSettingsUITests: XCTestCase {
     @MainActor
     func testDataSources() {
         let app = application(fresh: true)
-        app.launchArguments += ["-yd_search_open_library", "YES"]
         app.launch()
         openAggregationSettings(app)
 
@@ -189,10 +188,10 @@ final class AggregationSettingsUITests: XCTestCase {
         XCTAssertTrue(search.waitForExistence(timeout: 5), app.debugDescription)
         XCTAssertTrue(app.buttons["aggregation.dataSources.latest"].exists)
         XCTAssertTrue(app.buttons["aggregation.dataSources.metadata"].exists)
-        // Gutenberg, 青空文庫, Open Library and any module that searches, all checked; spoken as
-        // words, not a fraction.
+        // Gutenberg, 青空文庫 and any module that searches (Open Library is one: not with
+        // -no-official-modules), all checked; spoken as words, not a fraction.
         let total = checkedCount(search).total
-        XCTAssertGreaterThanOrEqual(total, 3, "\(search.value ?? "")")
+        XCTAssertGreaterThanOrEqual(total, 2, "\(search.value ?? "")")
         XCTAssertEqual(checkedCount(search).checked, total, "\(search.value ?? "")")
         XCTAssertFalse(app.staticTexts["首頁欄目"].exists, "the home's sections are 編輯首頁's")
         attach(app, "aggregation-data-sources")
@@ -201,7 +200,6 @@ final class AggregationSettingsUITests: XCTestCase {
         XCTAssertTrue(app.navigationBars["搜尋來源"].waitForExistence(timeout: 5), app.debugDescription)
         let gutenberg = app.switches["aggregation.search.gutenberg.builtin.gutenberg"].firstMatch
         XCTAssertTrue(gutenberg.waitForExistence(timeout: 5), app.debugDescription)
-        XCTAssertTrue(app.switches["aggregation.search.openLibrary"].exists, app.debugDescription)
         XCTAssertEqual(gutenberg.value as? String, "1")
         // The switch sits at the row's trailing end (the row is the element on iOS 17).
         gutenberg.coordinate(withNormalizedOffset: CGVector(dx: 1, dy: 0.5)).withOffset(CGVector(dx: -30, dy: 0)).tap()
