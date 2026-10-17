@@ -130,9 +130,10 @@ final class ExploreHomeUITests: XCTestCase {
     }
 
     /// 編輯首頁 and 完成 on the default home: the bar's ••• becomes 完成 and comes back, and the tab
-    /// bar steps aside while the home is edited (maintainer, 2026-10-17). With the editor's 瀏覽器
-    /// switch in the home's lazy stack, the edit never finished updating the home on iOS 18.6 and
-    /// 26.5 and the app stopped answering (2026-10-16 and 2026-10-17, `HomeEditorEnd`).
+    /// bar steps aside for the editor's ＋ while the home is edited (maintainer, 2026-10-17). Both
+    /// open at the home's end, where 編輯首頁 and 完成 are (2026-10-17): the cards are taller than
+    /// the rows, and the scroll view, left where it was, showed the editor's middle on the way in
+    /// and, past the end of the shorter home, nothing at all on the way out.
     @MainActor
     func testEditingTheHomeSwitchesTheBarButton() {
         let app = application()
@@ -150,8 +151,13 @@ final class ExploreHomeUITests: XCTestCase {
             !tabBar.exists || !tabBar.isHittable
         }, object: nil)
         XCTAssertEqual(XCTWaiter.wait(for: [tabBarGone], timeout: 5), .completed, app.debugDescription)
-        // Tapped at the end of the home, the editor shows its own end, with 新增欄目.
-        XCTAssertTrue(app.buttons["homeEditor.addSection"].firstMatch.waitForExistence(timeout: 5), app.debugDescription)
+        // The editor's end with no scrolling: its 完成 above the ＋, and the bar's 完成 still there.
+        let add = app.buttons["homeEditor.addSection"].firstMatch
+        XCTAssertTrue(add.waitForExistence(timeout: 5), app.debugDescription)
+        let editDone = app.buttons["home.editDone"].firstMatch
+        XCTAssertTrue(showsAtTheEnd(editDone, above: { add.frame.minY }, app), "entering: \(app.debugDescription)")
+        XCTAssertTrue(done.isHittable, app.debugDescription)
+        attach(app, "home-editor-end")
         // A section's settings and the page they push keep it hidden, and so does the way back
         // (maintainer, 2026-10-17): each asks, as a page under another withdraws its request.
         let section = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "homeEditor.section.")).firstMatch
@@ -170,11 +176,32 @@ final class ExploreHomeUITests: XCTestCase {
         app.navigationBars.buttons.element(boundBy: 0).tap()
         XCTAssertTrue(section.waitForExistence(timeout: 5), app.debugDescription)
         XCTAssertFalse(tabBar.exists && tabBar.isHittable, "back to the editor: \(app.debugDescription)")
+        // The bar's 完成, from the editor's top: the home's end, its 編輯首頁 above the tab bar.
         done.tap()
         XCTAssertTrue(app.buttons["explore.more"].firstMatch.waitForExistence(timeout: 10), app.debugDescription)
-        XCTAssertTrue(app.buttons["home.edit"].firstMatch.exists, app.debugDescription)
         XCTAssertTrue(tabBar.waitForExistence(timeout: 5), app.debugDescription)
         XCTAssertTrue(tabBar.isHittable, app.debugDescription)
+        XCTAssertTrue(showsAtTheEnd(edit, above: { tabBar.frame.minY }, app), "the bar's 完成: \(app.debugDescription)")
+        // The editor's own 完成, at its end, does the same.
+        edit.tap()
+        XCTAssertTrue(showsAtTheEnd(editDone, above: { add.frame.minY }, app), "entering again: \(app.debugDescription)")
+        editDone.tap()
+        XCTAssertTrue(showsAtTheEnd(edit, above: { tabBar.frame.minY }, app), "the editor's 完成: \(app.debugDescription)")
+        attach(app, "home-after-editing")
+    }
+
+    /// `element` settles in the lower half of the window, all of it above `bottom` — the ＋'s or
+    /// the tab bar's top. By its frame: an element scrolled under a bar still reads as hittable.
+    @MainActor
+    private func showsAtTheEnd(_ element: XCUIElement, above bottom: @escaping () -> CGFloat,
+                               _ app: XCUIApplication) -> Bool {
+        let window = app.windows.firstMatch
+        let settled = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in
+            guard element.exists else { return false }
+            let frame = element.frame
+            return frame.minY >= window.frame.midY && frame.maxY <= bottom()
+        }, object: nil)
+        return XCTWaiter.wait(for: [settled], timeout: 5) == .completed
     }
 
     /// Decision 15: Gutenberg's 最新 loads when 探索 opens, with no 載入 to tap, wherever the
@@ -279,8 +306,9 @@ final class ExploreHomeUITests: XCTestCase {
     }
 
     /// ••• switches 首頁配置 (unified library 5d-4, under ••• since decision 36) and opens the
-    /// browser (5d-1). A 首頁配置 made from 新增首頁配置 starts from 空白 or 預設; 編輯首頁 deletes
-    /// it. With the browser hidden (編輯首頁, 5d-2), ••• leaves it out.
+    /// browser (5d-1). A 首頁配置 made from 新增首頁配置 starts from 空白 or 預設; ••• deletes it
+    /// (編輯首頁's card did until 2026-10-17). The browser is always there, even for a reader who
+    /// had hidden it before it lost its switch (maintainer, 2026-10-17).
     @MainActor
     func testConfigurationsAndTheBrowser() {
         let app = application()
@@ -304,18 +332,15 @@ final class ExploreHomeUITests: XCTestCase {
         chooseConfiguration(app, name)
         XCTAssertTrue(app.staticTexts["這個首頁配置還沒有欄目"].waitForExistence(timeout: 10), app.debugDescription)
 
-        // 編輯首頁 deletes it, which ends the edit, and 預設 shows again.
-        app.buttons["home.edit"].firstMatch.tap()
-        let delete = app.buttons["homeEditor.deleteConfiguration"].firstMatch
+        // ••• → 首頁配置 deletes it, and 預設 shows again.
+        openConfigurations(app)
+        let delete = item(app, "刪除")
         XCTAssertTrue(delete.waitForExistence(timeout: 5), app.debugDescription)
-        attach(app, "explore-configuration-editing")
+        attach(app, "explore-configuration-own")
         delete.tap()
         XCTAssertTrue(app.staticTexts["刪除「\(name)」？"].waitForExistence(timeout: 5), app.debugDescription)
-        // The dialog's, not the card's of the same name.
-        app.buttons.matching(NSPredicate(format: "label == %@ AND identifier != %@", "刪除",
-                                         "homeEditor.deleteConfiguration")).firstMatch.tap()
+        app.buttons["刪除"].firstMatch.tap()
         XCTAssertTrue(app.buttons[featuredCard].firstMatch.waitForExistence(timeout: 10), app.debugDescription)
-        XCTAssertFalse(app.buttons["home.editDoneBar"].exists, "no longer editing")
         openConfigurations(app)
         XCTAssertTrue(item(app, "空白").waitForExistence(timeout: 5))
         XCTAssertFalse(item(app, name).exists, "deleted from 首頁配置")
@@ -338,16 +363,14 @@ final class ExploreHomeUITests: XCTestCase {
         app.buttons["關閉"].firstMatch.tap()
         XCTAssertTrue(app.buttons[featuredCard].firstMatch.waitForExistence(timeout: 10))
 
-        // Hidden, it is not in •••. 編輯首頁 (5d-2) hides it; here the stored choice.
+        // Hidden before 2026-10-17, with 編輯首頁's switch: there all the same.
         app.terminate()
         let hidden = application(extra: ["-explore.showsBrowser", "NO"])
         hidden.launch()
         openExplore(hidden)
         XCTAssertTrue(hidden.buttons[featuredCard].firstMatch.waitForExistence(timeout: 15))
         openMore(hidden)
-        XCTAssertTrue(item(hidden, "重新整理").waitForExistence(timeout: 5), hidden.debugDescription)
-        XCTAssertFalse(item(hidden, "瀏覽器").exists, "hidden from •••")
-        attach(hidden, "explore-more-no-browser")
+        XCTAssertTrue(item(hidden, "瀏覽器").waitForExistence(timeout: 5), hidden.debugDescription)
     }
 
     /// ••• → 偏好閱讀語言 and ••• → 參與聚合的來源 push 聚合設定, and back is the home (decision
@@ -374,8 +397,8 @@ final class ExploreHomeUITests: XCTestCase {
     }
 
     /// A custom page saved before 5d-4, chosen as the old 首屏頁面, is the 首頁配置 the home opens
-    /// on; its ranking became a section, which 編輯首頁 shows. Its source is not on this device,
-    /// so nothing loads.
+    /// on, the reader's own, which ••• renames; its ranking became a section, which 編輯首頁 shows.
+    /// Its source is not on this device, so nothing loads.
     @MainActor
     func testCustomPageMovesIn() {
         let app = application(extra: ["-seed-custom-explore-page"])
@@ -386,12 +409,16 @@ final class ExploreHomeUITests: XCTestCase {
         XCTAssertTrue(item(app, "週末書單").waitForExistence(timeout: 5), app.debugDescription)
         attach(app, "explore-custom-page-moved-in")
         item(app, "週末書單").tap()
+        openConfigurations(app)
+        let rename = item(app, "重新命名")
+        XCTAssertTrue(rename.waitForExistence(timeout: 5), app.debugDescription)
+        rename.tap()
+        XCTAssertTrue(app.textFields["名稱"].firstMatch.waitForExistence(timeout: 5), app.debugDescription)
+        app.buttons["取消"].firstMatch.tap()
 
         app.buttons["home.edit"].firstMatch.tap()
         XCTAssertTrue(app.buttons["homeEditor.section.5D4C0000-0000-4000-8000-000000000002"].firstMatch
             .waitForExistence(timeout: 5), app.debugDescription)
-        XCTAssertTrue(app.staticTexts["週末書單"].exists)
-        XCTAssertTrue(app.buttons["homeEditor.renameConfiguration"].exists)
         attach(app, "explore-custom-page-editing")
     }
 

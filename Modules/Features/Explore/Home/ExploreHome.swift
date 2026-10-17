@@ -43,7 +43,6 @@ private struct ExploreHomeRoot: View {
     /// Its installs, updates and removals change the rows (Phase 6f).
     @ObservedObject private var modules = RuleModuleLibrary.shared
     @AppStorage(ExploreSettings.modeKey) private var storedMode = ExploreMode.publicLibraries.rawValue
-    @AppStorage(ExploreSettings.showsBrowserKey) private var showsBrowser = true
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     @State private var path = NavigationPath()
@@ -60,6 +59,11 @@ private struct ExploreHomeRoot: View {
     /// (Technotes/iOS17MenuModalPresentation.md).
     @State private var showsMoreChooser = false
     @State private var moreSequence = DismissalSequencedPresentation<ExploreMoreAction>()
+    /// The home's end, 編輯首頁 or 完成, scrolled to as the home is edited and done.
+    private static let endID = "home.end"
+    /// Set as the home is edited or done, until the reader drags the page: the page keeps to
+    /// the other mode's end while that mode lays out.
+    @State private var followsEnd = false
 
     private struct BrowserPresentation: Identifiable {
         let id = UUID()
@@ -116,8 +120,8 @@ private struct ExploreHomeRoot: View {
         NavigationStack(path: $path) {
             home
             .toolbar { toolbar }
-            // 編輯首頁 hides the tab bar while the home is being edited, as 書架's 選取 does
-            // (maintainer, 2026-10-17).
+            // 編輯首頁 hides the tab bar while the home is being edited, as 書架's 選取 does, and
+            // its ＋ takes the bar's place (maintainer, 2026-10-17).
             .hidesRootTabBar(isEditing)
             .homeConfigurationPrompts($configurationPrompt)
             // Full screen, as Forward's 選擇模板: the gallery's previews run to the screen's edges.
@@ -149,8 +153,9 @@ private struct ExploreHomeRoot: View {
         }
         .task { await aozora.load() }
         // 編輯首頁 edits one 首頁配置; deleting it, the one 預設 takes the place of, ends the edit.
+        // Another 首頁配置 picked from ••• opens where the page is, not at its end.
         .onChange(of: pageStore.selectedConfiguration) { _, _ in
-            if isEditing { setEditing(false) }
+            if isEditing { setEditing(false) } else { followsEnd = false }
         }
         .onReceive(sourceStore.sourcesPublisher) { _ in
             exploreSources = DiscoverViewModel.exploreSources(in: sourceStore)
@@ -173,27 +178,40 @@ private struct ExploreHomeRoot: View {
                         ForEach(groups) { group in groupHost(group, model: model, isEditable: true).id(group.section.id) }
                     }
                 }
-                // Out of the lazy stack, as its switch must be (`HomeEditorEnd`), and the button
-                // after it.
-                if isEditing {
-                    HomeEditorEnd(configuration: selectedConfiguration, prompt: { configurationPrompt = $0 },
-                                  addSection: { addsSection = true })
-                }
                 // Over a home with nothing drawn, the button is the empty state's own.
                 if model.isReady, isEditing || !showsNothing {
-                    // At the end of the home (maintainer, 2026-10-11, decision 18).
+                    // At the end of the home (maintainer, 2026-10-11, decision 18). Out of the lazy
+                    // stack, so it is always there to scroll to.
                     Button(localized(isEditing ? "完成" : "編輯首頁")) { setEditing(!isEditing) }
                         .buttonStyle(.bordered)
                         .frame(maxWidth: .infinity)
+                        .id(Self.endID)
                         .accessibilityIdentifier(isEditing ? "home.editDone" : "home.edit")
                 }
             }
             .padding(.vertical, DSSpacing.lg)
             .frame(maxWidth: .infinity, alignment: .leading)
             .rootTabTitleScrollAnchor()
+            // Both ways the home opens at its end, where 編輯首頁 and 完成 are (maintainer,
+            // 2026-10-17). The cards are taller than the rows, and the offset the scroll view
+            // kept showed the editor's middle on the way in and, past the end of the shorter
+            // home, nothing at all on the way out. The other mode lays out over several passes,
+            // its lazy stack measuring the cards it reaches (884, 1505, 1773, 1749 and 1727 points
+            // tall within 100 ms, iOS 27 simulator), so the page follows the end through each,
+            // until the reader drags it. A scroll at the first pass stopped short of the end.
+            .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { _ in
+                if followsEnd { proxy.scrollTo(Self.endID, anchor: .bottom) }
+            }
+            .onScrollDragBegan { followsEnd = false }
+        }
+        // And through the bars that come and go with the editor: the tab bar, back after the
+        // ＋'s bar was gone, covered 編輯首頁 the page had just followed (iOS 18.6 simulator).
+        .onGeometryChange(for: CGFloat.self) { $0.safeAreaInsets.bottom } action: { _ in
+            if followsEnd { proxy.scrollTo(Self.endID, anchor: .bottom) }
         }
         .onChange(of: addedSection) { _, added in
             guard let added else { return }
+            followsEnd = false
             withAnimation(reduceMotion ? nil : DSAnimation.standard) { proxy.scrollTo(added, anchor: .center) }
             addedSection = nil
         }
@@ -231,7 +249,8 @@ private struct ExploreHomeRoot: View {
         }
         .background(PageBackgroundView(scope: .explore).ignoresSafeArea())
         .pageBackgroundToolbar(for: .explore)
-        .rootTabTitle(localized("探索"), onScroll: .minimizesBar)
+        // While the home is edited the bar stays, for its 完成 (maintainer, 2026-10-17).
+        .rootTabTitle(localized("探索"), onScroll: isEditing ? .fadesTitle : .minimizesBar)
         .animation(reduceMotion ? nil : DSAnimation.standard, value: groups.map(\.id))
     }
 
@@ -261,8 +280,11 @@ private struct ExploreHomeRoot: View {
         model.reloadLocal()
     }
 
+    /// Not animated: the cards and the rows differ in height, and the scroll view's content
+    /// size, animated between them, held the page short of the end it followed.
     private func setEditing(_ editing: Bool) {
-        withAnimation(reduceMotion ? nil : DSAnimation.standard) { isEditing = editing }
+        followsEnd = true
+        isEditing = editing
     }
 
     // MARK: Toolbar
@@ -270,10 +292,21 @@ private struct ExploreHomeRoot: View {
     @ToolbarContentBuilder
     private var toolbar: some ToolbarContent {
         if isEditing {
-            // 新增欄目 is the card at the end of the editor, not a ＋ here too.
             ToolbarItem(placement: .confirmationAction) {
                 Button(localized("完成")) { setEditing(false) }
                     .accessibilityIdentifier("home.editDoneBar")
+            }
+            // 新增欄目: a ＋ in the middle, where the tab bar was, as in the maintainer's reference
+            // app (2026-10-17).
+            ToolbarItemGroup(placement: .bottomBar) {
+                Spacer()
+                Button { addsSection = true } label: {
+                    Image(systemName: "plus")
+                        .accessibilityHidden(true)
+                }
+                .accessibilityLabel(localized("新增欄目"))
+                .accessibilityIdentifier("homeEditor.addSection")
+                Spacer()
             }
         } else {
             ToolbarItem(placement: .topBarTrailing) { moreControl }
@@ -306,8 +339,7 @@ private struct ExploreHomeRoot: View {
         } else {
             ExploreMoreMenu(configuration: Binding(get: { pageStore.selectedConfiguration },
                                                    set: { pageStore.select($0) }),
-                            configurations: pageStore.configurations, showsBrowser: showsBrowser,
-                            perform: perform)
+                            configurations: pageStore.configurations, perform: perform)
         }
     }
 
@@ -323,16 +355,23 @@ private struct ExploreHomeRoot: View {
                 // The menu's check mark, said in words: the chooser's rows have no selected state.
                 subtitle: isSelected ? [localized("首頁配置"), localized("使用中")].joined(separator: " · ") : localized("首頁配置"))
         }
+        actions.append(DismissalSequencedAction(route: .newConfiguration, title: localized("新增首頁配置"), systemImage: "plus"))
+        if let current = selectedConfiguration, !current.id.isBuiltIn {
+            let subtitle = [localized("首頁配置"), current.name].joined(separator: " · ")
+            actions += [
+                DismissalSequencedAction(route: .renameConfiguration(current), title: localized("重新命名"),
+                                         systemImage: "pencil", subtitle: subtitle),
+                DismissalSequencedAction(route: .deleteConfiguration(current), title: localized("刪除"),
+                                         systemImage: "trash", isDestructive: true, subtitle: subtitle),
+            ]
+        }
         actions += [
-            DismissalSequencedAction(route: .newConfiguration, title: localized("新增首頁配置"), systemImage: "plus"),
             DismissalSequencedAction(route: .readingLanguages, title: localized("偏好閱讀語言"), systemImage: "globe"),
             DismissalSequencedAction(route: .aggregatedSources, title: localized("參與聚合的來源"),
                                      systemImage: "square.stack.3d.up"),
             DismissalSequencedAction(route: .refresh, title: localized("重新整理"), systemImage: "arrow.clockwise"),
+            DismissalSequencedAction(route: .browser, title: localized("瀏覽器"), systemImage: "safari"),
         ]
-        if showsBrowser {
-            actions.append(DismissalSequencedAction(route: .browser, title: localized("瀏覽器"), systemImage: "safari"))
-        }
         return actions
     }
 
@@ -344,6 +383,10 @@ private struct ExploreHomeRoot: View {
             pageStore.select(id)
         case .newConfiguration:
             configurationPrompt = .create
+        case .renameConfiguration(let configuration):
+            configurationPrompt = .rename(configuration)
+        case .deleteConfiguration(let configuration):
+            configurationPrompt = .delete(configuration)
         case .readingLanguages, .aggregatedSources:
             // Both are 聚合設定's (decision 36): the languages are its first section.
             path.append(ExploreNavigationRoute.aggregationSettings)
@@ -532,20 +575,27 @@ enum ExploreMoreAction: Hashable {
     case editHome
     case selectConfiguration(HomeConfigurationID)
     case newConfiguration
+    /// The reader's own 首頁配置, here since 編輯首頁 dropped its card (maintainer, 2026-10-17).
+    case renameConfiguration(HomeConfigurationListing)
+    case deleteConfiguration(HomeConfigurationListing)
     case readingLanguages
     case aggregatedSources
     case refresh
     case browser
 }
 
-/// 探索's ••• from iOS 18: 編輯首頁, the 首頁配置 submenu (a picker, then 新增首頁配置), the two
-/// entries into 聚合設定, 重新整理, and the browser, which is presented rather than shown in
-/// place (5d-1).
+/// 探索's ••• from iOS 18: 編輯首頁, the 首頁配置 submenu (a picker, then 新增首頁配置, and for the
+/// reader's own 重新命名 and 刪除), the two entries into 聚合設定, 重新整理, and the browser, which
+/// is presented rather than shown in place (5d-1) and always offered (maintainer, 2026-10-17).
 private struct ExploreMoreMenu: View {
     @Binding var configuration: HomeConfigurationID
     let configurations: [HomeConfigurationListing]
-    let showsBrowser: Bool
     let perform: (ExploreMoreAction) -> Void
+
+    /// The reader's own 首頁配置, when it is the one shown: 預設 and 空白 keep their names.
+    private var ownConfiguration: HomeConfigurationListing? {
+        configurations.first { $0.id == configuration && !$0.id.isBuiltIn }
+    }
 
     var body: some View {
         Menu {
@@ -565,6 +615,16 @@ private struct ExploreMoreMenu: View {
                         Label(localized("新增首頁配置"), systemImage: "plus")
                     }
                 }
+                if let own = ownConfiguration {
+                    Section {
+                        Button { perform(.renameConfiguration(own)) } label: {
+                            Label(localized("重新命名"), systemImage: "pencil")
+                        }
+                        Button(role: .destructive) { perform(.deleteConfiguration(own)) } label: {
+                            Label(localized("刪除"), systemImage: "trash")
+                        }
+                    }
+                }
             } label: {
                 Label(localized("首頁配置"), systemImage: "square.stack")
                 Text(configurations.first { $0.id == configuration }?.name ?? "")
@@ -581,10 +641,8 @@ private struct ExploreMoreMenu: View {
                 Button { perform(.refresh) } label: {
                     Label(localized("重新整理"), systemImage: "arrow.clockwise")
                 }
-                if showsBrowser {
-                    Button { perform(.browser) } label: {
-                        Label(localized("瀏覽器"), systemImage: "safari")
-                    }
+                Button { perform(.browser) } label: {
+                    Label(localized("瀏覽器"), systemImage: "safari")
                 }
             }
         } label: {
@@ -610,7 +668,7 @@ private struct ExploreMoreMenu: View {
                     ExploreMoreMenu(configuration: $configuration,
                                     configurations: [.init(id: .defaults, name: localized("預設")),
                                                      .init(id: .blank, name: localized("空白"))],
-                                    showsBrowser: true, perform: { _ in })
+                                    perform: { _ in })
                 }
             }
     }

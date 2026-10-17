@@ -26,6 +26,60 @@ extension View {
     func reportsScrollContentHeight(_ action: @escaping (CGFloat) -> Void) -> some View {
         background(ScrollViewMeasurer(measure: .contentHeight, onChange: action).accessibilityHidden(true))
     }
+
+    /// Calls `action` as the reader starts dragging the scroll view this view sits in — a
+    /// scroll, a fling or a pull to refresh, never a scroll the app or the system makes.
+    /// SwiftUI reports a scroll view's phase only from iOS 18, so this listens to the scroll
+    /// view's own pan recognizer, as an added target that never competes with the scroll.
+    /// Put it inside the scroll content, as `reportsScrollOffset(_:)`.
+    func onScrollDragBegan(_ action: @escaping () -> Void) -> some View {
+        background(ScrollDragObserver(onBegan: action).accessibilityHidden(true))
+    }
+}
+
+private struct ScrollDragObserver: UIViewRepresentable {
+    let onBegan: () -> Void
+
+    func makeUIView(context: Context) -> ObserverView {
+        ObserverView(onBegan: onBegan)
+    }
+
+    func updateUIView(_ view: ObserverView, context: Context) {
+        view.onBegan = onBegan
+    }
+
+    final class ObserverView: UIView {
+        var onBegan: () -> Void
+        private weak var scrollView: UIScrollView?
+
+        init(onBegan: @escaping () -> Void) {
+            self.onBegan = onBegan
+            super.init(frame: .zero)
+            isUserInteractionEnabled = false
+        }
+
+        @available(*, unavailable)
+        required init?(coder: NSCoder) {
+            fatalError("init(coder:) is not supported")
+        }
+
+        override func didMoveToWindow() {
+            super.didMoveToWindow()
+            scrollView?.panGestureRecognizer.removeTarget(self, action: #selector(panned(_:)))
+            scrollView = nil
+            guard window != nil else { return }
+            var ancestor = superview
+            while let view = ancestor, !(view is UIScrollView) {
+                ancestor = view.superview
+            }
+            scrollView = ancestor as? UIScrollView
+            scrollView?.panGestureRecognizer.addTarget(self, action: #selector(panned(_:)))
+        }
+
+        @objc private func panned(_ recognizer: UIPanGestureRecognizer) {
+            if recognizer.state == .began { onBegan() }
+        }
+    }
 }
 
 private struct ScrollViewMeasurer: UIViewRepresentable {

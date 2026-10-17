@@ -77,19 +77,28 @@ final class HomeEditorUITests: XCTestCase {
         for _ in 0..<8 where !edit.isHittable { app.swipeUp() }
         XCTAssertTrue(edit.isHittable, app.debugDescription)
         edit.tap()
-        // At the bottom the minimized bar hides its buttons; 完成 is the home's last button.
+        // 完成 is the home's last button, and the bar's, which stays while the home is edited.
         XCTAssertTrue(app.buttons["home.editDone"].waitForExistence(timeout: 10), app.debugDescription)
-        XCTAssertTrue(app.switches["瀏覽器"].firstMatch.waitForExistence(timeout: 5), "更多's card holds the browser's switch")
-        for _ in 0..<8 { app.swipeDown() }
         XCTAssertTrue(app.buttons["home.editDoneBar"].waitForExistence(timeout: 5), app.debugDescription)
+        XCTAssertFalse(app.switches["瀏覽器"].exists, "the browser has no switch (maintainer, 2026-10-17)")
+        for _ in 0..<8 { app.swipeDown() }
         attach(app, "home-editing")
 
         let mark = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@ AND label == %@",
                                                     "homeEditor.toggle.", listTitle)).firstMatch
         XCTAssertTrue(mark.waitForExistence(timeout: 5), app.debugDescription)
         XCTAssertEqual(mark.value as? String, "顯示")
+        // Clear of the bottom bar, the ＋'s, which takes the taps under it.
+        let add = app.buttons["homeEditor.addSection"].firstMatch
+        let window = app.windows.firstMatch
+        for _ in 0..<4 where mark.frame.maxY > add.frame.minY {
+            window.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.6))
+                .press(forDuration: 0.05, thenDragTo: window.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.35)))
+        }
         mark.tap()
         XCTAssertEqual(mark.value as? String, "已隱藏")
+        // Dragged, the page no longer follows the end: the shorter card stays in view.
+        XCTAssertTrue(window.frame.contains(mark.frame), "stays where it was dragged: \(app.debugDescription)")
         attach(app, "home-editing-hidden")
 
         // The card opens the section's page.

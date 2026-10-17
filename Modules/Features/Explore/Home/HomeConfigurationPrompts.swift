@@ -1,8 +1,8 @@
 import SwiftUI
 
 // Unified library 5d-4: what is asked about a 首頁配置 (Phase 5 plan, decision 22). 新增首頁配置
-// asks for a name and where to start in one alert (「可以問是要從預設調還是空白」); 編輯首頁's
-// 首頁配置 card renames and deletes the reader's own.
+// asks for a name and where to start in one alert (「可以問是要從預設調還是空白」); ••• → 首頁配置
+// renames and deletes the reader's own (編輯首頁's card did until 2026-10-17).
 
 enum HomeConfigurationPrompt: Identifiable {
     case create

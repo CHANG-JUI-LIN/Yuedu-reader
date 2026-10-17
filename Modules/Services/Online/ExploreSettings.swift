@@ -8,9 +8,6 @@ enum ExploreSettings {
     static let modeKey = "explore.mode"
     /// The home's 範圍: 全部, or one source shown in place (`ExploreScope`).
     static let scopeKey = "explore.scope"
-    /// Whether 探索's ••• offers the browser (unified library 5d-1, settled decision 12). On by default;
-    /// 編輯首頁 (5d-2) is where the reader turns it off.
-    static let showsBrowserKey = "explore.showsBrowser"
     /// The deleted 首屏頁面 choice: `source:<url>` or `page:<uuid>`. Read only by
     /// `migrateLegacyLanding` and, for a page, `HomePageStore`.
     static let legacyLandingKey = "explore.landing"
