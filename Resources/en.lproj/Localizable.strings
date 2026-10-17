@@ -4038,7 +4038,6 @@
 "移除 %d 個欄目？" = "Remove %d sections?";
 "第三方模組由作者自行維護，閱讀不審核其內容。加入前請確認來源可信；有問題的模組可以在「回饋與改進」回報。" = "Third-party modules are maintained by their authors, and their content isn't reviewed. Make sure a source is trustworthy before adding it; report a problem module in Feedback & Improvements.";
 "管理引用未安裝模組的首頁欄目" = "Manage home sections that use uninstalled modules";
-"管理模組" = "Manage Modules";
 "訂閱後在「模組」頁挑選要安裝的模組；倉庫裡的模組不會自動安裝。" = "After subscribing, pick modules to install on the Modules page. Nothing in the repository installs on its own.";
 "訂閱模組倉庫" = "Subscribe to Repository";
 "這些欄目的模組已移除，首頁不會顯示它們；重新安裝模組後會再出現。" = "These sections' modules were removed, so the home doesn't show them. They come back if you reinstall the module.";

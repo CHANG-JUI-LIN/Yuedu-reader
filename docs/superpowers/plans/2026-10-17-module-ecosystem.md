@@ -153,3 +153,9 @@ M2 is split: LibraryTabRoot, HomeContentSourcePicker, ExploreHome and BookSearch
 - `OfficialModulesLiveTests` (off unless `TEST_RUNNER_YUEDU_MODULES_LIVE=1`): every list's first page and the search of Bangumi, AniList and なろう, openBD's lookup, and なろう's table of contents and first chapter. All pass live (なろう 無職転生: 311 chapters).
 - Found live: the なろう API names a work in upper case (`N9669BK`), and the site answers that address with a 200 「リダイレクト中」 page whose meta refresh points at the lower-case one, so every なろう book's 目錄 read empty. Maintainer: 「模組遇到同網站的轉址頁就跟過去」. `RuleModuleClient.send` follows a `<meta http-equiv="refresh">` in the page head once, for GET, only to the module's `hosts`; another host's refresh is logged and the page read as it is. Documented under `hosts` in `docs/modules/README.md`.
 - UI on iPhone 18 Pro Max: `ModuleLibraryUITests` (6), `ModuleRepositoryUITests` (資源庫 cards screenshot), `NarouReadingUITests` all pass. The なろう test now counts only its own run's requests: a book an earlier run left on the shelf gets its update check at launch. (A first rerun landed on a new "iPhone Duo" simulator, where 資源庫 is not in a `UITabBar`.) `check_localizations.rb` clean.
+
+### 模組 moves to 設定 (2026-10-17)
+
+- Maintainer: 「模組設定頁在設置好了」, then 「移到設定，資源庫拿掉」. 設定 → 來源配置管理 → 模組 (after 聚合設定); 資源庫's ••• keeps 新增模組 and loses 管理模組 (key removed in 5 languages).
+- 設定's stack has a path and pushes 模組 as `ExploreNavigationRoute.moduleManager`, with `exploreRouteDestinations` for its pages. Opened by `navigationDestination(isPresented:)` instead, 模組 was pushed again over 測試倉庫 when the repository row was tapped (caught by `ModuleRepositoryUITests`).
+- 設定's root holds the one `RuleModuleAddFlow` for 模組's 新增模組 (sheet, file importer, disclaimer).
