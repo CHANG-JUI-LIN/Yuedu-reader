@@ -76,7 +76,8 @@ extension BookSource {
     /// The engine caches this too; the second layer exists because `parsedHeaders`
     /// is read from SwiftUI bodies (cover cells) on the main thread, and reaching
     /// the engine means a `sync` onto its serial JS queue — which may be mid-parse.
-    /// Only the first read per source version pays that.
+    /// Only the first read per source version pays that, and never while a script on
+    /// that queue waits for the reader (`JSCoreEngine.currentSourceHeaders`).
     private nonisolated(unsafe) static var jsHeaderCache: [String: [String: String]] = [:]
     private static let jsHeaderCacheLock = NSLock()
 
@@ -90,8 +91,13 @@ extension BookSource {
         // One bridge per source (BookSourceSession) — never build a throwaway
         // JSContext here, and don't take the session's parse lock: the header
         // script only needs the engine's own serial queue.
-        let headers = BookSourceSession.session(for: source)
-            .bridgeForAsyncOperations.resolvedSourceHeaders()
+        let bridge = BookSourceSession.session(for: source).bridgeForAsyncOperations
+        // nil: the engine's queue is held by a script waiting for the reader, and this read
+        // is on the main thread. Use what the engine last resolved, uncached, so the next
+        // read after the page closes gets the current rule result.
+        guard let headers = bridge.currentSourceHeaders() else {
+            return bridge.lastResolvedSourceHeaders()
+        }
 
         jsHeaderCacheLock.lock()
         if jsHeaderCache.count >= 32 { jsHeaderCache.removeAll(keepingCapacity: true) }

@@ -185,6 +185,17 @@ class ModernParserBridge {
         jsEngine.resolvedSourceHeaders()
     }
 
+    /// `resolvedSourceHeaders`, or nil while a main-thread caller would have to wait on a
+    /// script parked for the reader — see `JSCoreEngine.currentSourceHeaders`.
+    func currentSourceHeaders() -> [String: String]? {
+        jsEngine.currentSourceHeaders()
+    }
+
+    /// The headers the engine last resolved, without touching its queue.
+    func lastResolvedSourceHeaders() -> [String: String] {
+        jsEngine.lastResolvedSourceHeaders()
+    }
+
     /// Resolve authentication after the source's click action has finished, using
     /// the same runtime and header precedence as chapter/JS network requests. One
     /// builder for every page a source opens: `java.startBrowserAwait` uses it too.

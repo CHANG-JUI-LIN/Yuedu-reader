@@ -388,6 +388,11 @@ struct LegadoHTTPResult {
     private var awaitingUserCount = 0
     private let awaitingUserLock = NSLock()
 
+    /// Runs on the script's thread each time a script parks for the reader. The engine
+    /// uses it to release a main-thread caller that would otherwise wait behind the
+    /// parked script for a page only the main thread can show.
+    var awaitingUserDidBegin: (() -> Void)?
+
     /// Blocks this script until `present` reports back, however long the user takes.
     private func waitForUser(_ present: (@escaping (String?) -> Void) -> Void) -> String? {
         let sem = DispatchSemaphore(value: 0)
@@ -395,6 +400,7 @@ struct LegadoHTTPResult {
         awaitingUserLock.lock()
         awaitingUserCount += 1
         awaitingUserLock.unlock()
+        awaitingUserDidBegin?()
         present { value in
             answer = value
             sem.signal()
