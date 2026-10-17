@@ -8,6 +8,12 @@ struct SettingsView: View {
     @Environment(\.colorScheme) private var colorScheme
     @Bindable private var gs = GlobalSettings.shared
     @State private var showAggregationSettings = false
+    /// 模組 and its pages push `ExploreNavigationRoute` values. A page opened by
+    /// `navigationDestination(isPresented:)` on a stack without a path is pushed again on top
+    /// of a value pushed after it (模組 reappeared over 測試倉庫), so 模組 is a value too.
+    @State private var path = NavigationPath()
+    /// 模組's 新增模組 (its toolbar), presented from this root as 資源庫 presented it.
+    @StateObject private var moduleFlow = RuleModuleAddFlow()
     @State private var showDownloadManager = false
     @State private var showReplaceRules = false
     @State private var showBackupSync = false
@@ -59,7 +65,7 @@ struct SettingsView: View {
     }
 
     var body: some View {
-        NavigationStack {
+        NavigationStack(path: $path) {
                 Form {
                     Section {
                         NavigationLink(destination: UserDetailView()) {
@@ -120,6 +126,15 @@ struct SettingsView: View {
                             action: { showAggregationSettings = true }
                         )
                         .accessibilityIdentifier("settings_aggregation")
+
+                        // 模組 (M6), here since the maintainer moved it from 資源庫's •••
+                        // (2026-10-17: 「模組設定頁在設置好了」).
+                        DSSettingsRow(
+                            icon: "puzzlepiece.extension.fill",
+                            title: localized("模組"),
+                            action: { path.append(ExploreNavigationRoute.moduleManager) }
+                        )
+                        .accessibilityIdentifier("settings_modules")
 
                         DSSettingsRow(
                             icon: "arrow.down.circle.fill",
@@ -245,6 +260,10 @@ struct SettingsView: View {
             .navigationDestination(isPresented: $showAggregationSettings) {
                 AggregationSettingsView()
             }
+            // 模組's own pages (官方模組, 匯入的模組, a repository, a module, 首頁欄目引用) push
+            // `ExploreNavigationRoute` values. None of them opens a source's page, the one route
+            // that goes out to the browser, so this stack has no browser to open.
+            .exploreRouteDestinations(openBrowser: { _ in })
             #if DEBUG
             // Screenshot/driver hooks: `-open-diagnostics` pushes 診斷紀錄 and
             // `-open-feedback-center` pushes 回饋中心 straight from launch, so their
@@ -298,7 +317,10 @@ struct SettingsView: View {
             .sheet(isPresented: $showTTSSettings) {
                 TTSSettingsView()
             }
+            // The only file importer on this root (one per view: SwiftUI presents just one).
+            .ruleModuleAddFlow(moduleFlow)
         }
+        .environment(\.ruleModuleAddFlow, moduleFlow)
     }
 
     private var downloadedBooksCount: Int {

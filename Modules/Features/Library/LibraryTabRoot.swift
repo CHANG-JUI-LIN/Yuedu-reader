@@ -48,7 +48,6 @@ struct LibraryTabRoot: View {
         case add(BookSourceAddRoute)
         case addModule(RuleModuleAddRoute)
         case manageSources
-        case manageModules
         case showsGrid(Bool)
         case columns(Int)
     }
@@ -140,12 +139,12 @@ struct LibraryTabRoot: View {
             if let book = selection.selectedBook { path.append(WorkDetailRoute(book)) }
         }
         .environment(\.explorePush) { $0.append(to: &path) }
-        .environment(\.ruleModuleAddFlow, moduleFlow)
     }
 
     // MARK: •••
 
-    /// 資源庫's one ••• (decision 31): 新增來源配置, 管理來源配置, 新增模組 (Phase 6e) and the layout. A native menu from
+    /// 資源庫's one ••• (decision 31): 新增來源配置, 管理來源配置, 新增模組 (Phase 6e) and the layout.
+    /// 模組 is managed in 設定 (maintainer, 2026-10-17). A native menu from
     /// iOS 18; on iOS 17 a chooser, since 新增來源配置's sheets would be dropped while the menu
     /// dismisses (`Technotes/iOS17MenuModalPresentation.md`).
     @ViewBuilder
@@ -185,11 +184,6 @@ struct LibraryTabRoot: View {
                 } label: {
                     Label(localized("新增模組"), systemImage: "puzzlepiece.extension")
                 }
-                Button {
-                    perform(.manageModules)
-                } label: {
-                    Label(localized("管理模組"), systemImage: "square.stack.3d.up")
-                }
                 Divider()
                 LibraryLayoutMenuItems()
             } label: {
@@ -214,8 +208,6 @@ struct LibraryTabRoot: View {
             DismissalSequencedAction(route: LibraryMoreAction.addModule(route), title: localized(route.titleKey),
                                      systemImage: route.systemImage, subtitle: localized("新增模組"))
         }
-        actions.append(DismissalSequencedAction(route: .manageModules, title: localized("管理模組"),
-                                                systemImage: "square.stack.3d.up"))
         for grid in [true, false] {
             actions.append(DismissalSequencedAction(
                 route: .showsGrid(grid), title: localized(grid ? "格狀" : "列表"),
@@ -243,8 +235,6 @@ struct LibraryTabRoot: View {
             moduleFlow.begin(route)
         case .manageSources:
             path.append(ExploreNavigationRoute.sourceManager)
-        case .manageModules:
-            path.append(ExploreNavigationRoute.moduleManager)
         case .showsGrid(let grid):
             showsGrid = grid
         case .columns(let count):

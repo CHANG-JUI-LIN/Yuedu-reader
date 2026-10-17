@@ -26,7 +26,7 @@ enum ExploreNavigationRoute: Hashable {
     case moduleList(ModuleListRoute)
     /// 官方模組's AI 推薦 page (AI 推薦 plan 8d).
     case aiRecommendations
-    /// 模組 (M6), from 資源庫's •••: the repositories, 官方模組, 匯入的模組 and 首頁欄目引用.
+    /// 模組 (M6), from 設定 → 來源配置管理: the repositories, 官方模組, 匯入的模組 and 首頁欄目引用.
     case moduleManager
     /// 官方模組 or 匯入的模組, from 模組.
     case moduleGroup(RuleModuleGroup)

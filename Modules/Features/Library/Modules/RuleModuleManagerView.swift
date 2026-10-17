@@ -6,9 +6,9 @@ enum RuleModuleGroup: Hashable {
 }
 
 extension EnvironmentValues {
-    /// 資源庫's one 新增模組 flow, so a page it pushes adds through it: its sheet and file importer
-    /// are presented from the root, never a second pair from the pushed page (SwiftUI presents
-    /// only one of two file importers on a view).
+    /// 設定's one 新增模組 flow, so 模組, pushed from it, adds through it: its sheet and file
+    /// importer are presented from the root, never a second pair from the pushed page (SwiftUI
+    /// presents only one of two file importers on a view).
     @Entry var ruleModuleAddFlow: RuleModuleAddFlow?
 }
 

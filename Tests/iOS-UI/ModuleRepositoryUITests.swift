@@ -1,8 +1,9 @@
 import XCTest
 
-/// M6 (maintainer, 2026-10-17: 「模組要做到截圖這樣」): 資源庫's ••• → 管理模組 opens 模組, where an
-/// address holding a repository's index is subscribed to; its page lists the modules, 選擇
-/// installs two at once, and 停用 on a module's page takes its card out of 資源庫.
+/// M6 (maintainer, 2026-10-17: 「模組要做到截圖這樣」): 設定 → 模組 (moved out of 資源庫's •••
+/// the same day: 「模組設定頁在設置好了」), where an address holding a repository's index is
+/// subscribed to; its page lists the modules, 選擇 installs two at once, and 停用 on a module's
+/// page takes its card out of 資源庫.
 ///
 /// Needs `python3 -I scripts/module_repository_fixture.py` (port 18772). The app asks
 /// `localhost`: `safeURL` refuses the `127.0.0.1` literal.
@@ -45,14 +46,14 @@ final class ModuleRepositoryUITests: XCTestCase {
         app.launch()
         let tab = app.tabBars.buttons["資源庫"].firstMatch
         XCTAssertTrue(tab.waitForExistence(timeout: 30), app.debugDescription)
-        tab.tap()
+        let settings = app.tabBars.buttons["設定"].firstMatch
+        settings.tap()
 
-        // ••• → 管理模組.
-        let more = app.buttons["library.more"].firstMatch
-        XCTAssertTrue(more.waitForExistence(timeout: 10), app.debugDescription)
-        more.tap()
-        let manage = item(app, "管理模組")
-        XCTAssertTrue(manage.waitForExistence(timeout: 5), app.debugDescription)
+        // 設定 → 來源配置管理 → 模組.
+        let manage = app.buttons["settings_modules"].firstMatch
+        XCTAssertTrue(manage.waitForExistence(timeout: 10), app.debugDescription)
+        for _ in 0..<6 where !manage.isHittable { app.swipeUp(velocity: .slow) }
+        attach(app, "settings-modules-row")
         manage.tap()
         XCTAssertTrue(app.navigationBars["模組"].waitForExistence(timeout: 5), app.debugDescription)
         XCTAssertTrue(app.buttons["modules.official"].exists && app.buttons["modules.imported"].exists
@@ -112,11 +113,21 @@ final class ModuleRepositoryUITests: XCTestCase {
         XCTAssertTrue(app.staticTexts["已停用"].waitForExistence(timeout: 5), app.debugDescription)
         attach(app, "modules-module-disabled")
 
-        // Back to 資源庫 (模組's pages hide the tab bar): 乙模組's card, not 甲模組's.
+        // 資源庫 (模組's pages hide the tab bar): 乙模組's card, not 甲模組's. 資源庫's ••• no
+        // longer manages modules.
         for _ in 0..<4 where !tab.isHittable {
             app.navigationBars.buttons.element(boundBy: 0).tap()
         }
         XCTAssertTrue(tab.waitForExistence(timeout: 5), app.debugDescription)
+        tab.tap()
+        let more = app.buttons["library.more"].firstMatch
+        XCTAssertTrue(more.waitForExistence(timeout: 10), app.debugDescription)
+        more.tap()
+        XCTAssertTrue(item(app, "新增模組").waitForExistence(timeout: 5), app.debugDescription)
+        XCTAssertFalse(item(app, "管理模組").exists, "模組 is managed in 設定 now")
+        attach(app, "library-more")
+        // Closes the menu: a tap beside it, on the large title.
+        app.coordinate(withNormalizedOffset: CGVector(dx: 0.15, dy: 0.08)).tap()
         let beta = scrolledTo(app.buttons["library.module.repo.beta"].firstMatch, in: app)
         XCTAssertTrue(beta.waitForExistence(timeout: 10), app.debugDescription)
         XCTAssertFalse(app.buttons["library.module.repo.alpha"].exists, "a module turned off has no card in 資源庫")
