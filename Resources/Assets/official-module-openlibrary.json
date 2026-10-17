@@ -1,0 +1,94 @@
+{
+  "id": "openlibrary",
+  "title": "Open Library",
+  "description": "Internet Archive 的開放書目資料。搜尋時會把關鍵字送到 Open Library；書架上的書缺封面、簡介或分類時，會把 ISBN 或書名和作者送去查詢。",
+  "author": "閱讀",
+  "site": "https://openlibrary.org",
+  "version": "1.0",
+  "requiredVersion": "3.0",
+  "hosts": [
+    "openlibrary.org",
+    "covers.openlibrary.org",
+    "*.archive.org"
+  ],
+  "rateLimit": "1/1000",
+  "localizations": {
+    "zh-Hans": {
+      "description": "Internet Archive 的开放书目资料。搜索时会把关键字发送到 Open Library；书架上的书缺封面、简介或分类时，会把 ISBN 或书名和作者发送去查询。"
+    },
+    "en": {
+      "description": "Open book records from the Internet Archive. Searches send the keyword to Open Library; for books on your shelf that lack a cover, description or categories, the ISBN, or the title and author, is sent to look them up."
+    },
+    "ja": {
+      "description": "Internet Archive のオープンな書誌データ。検索ではキーワードを Open Library に送ります。本棚の本に表紙・紹介文・分類がないときは、ISBN または書名と著者を送って調べます。"
+    },
+    "ko": {
+      "description": "Internet Archive의 공개 도서 정보. 검색할 때 검색어를 Open Library로 보내고, 책장의 책에 표지·소개·분류가 없으면 ISBN 또는 제목과 저자를 보내 조회합니다."
+    }
+  },
+  "modules": [],
+  "search": {
+    "request": {
+      "url": "https://openlibrary.org/search.json?q={{keyword}}&fields=key,title,author_name,cover_i,language,isbn&limit=20",
+      "headers": {
+        "User-Agent": "yuedureader/Yuedu (iOS) (+https://yuedureader.com/support)",
+        "Accept": "application/json"
+      }
+    },
+    "minKeywordLength": 3,
+    "list": {
+      "items": "$.docs[*]",
+      "title": "$.title",
+      "author": "$.author_name",
+      "cover": "$.cover_i##^(\\d+)$##https://covers.openlibrary.org/b/id/$1-M.jpg",
+      "url": "$.key",
+      "language": "$.language",
+      "isbn": "$.isbn"
+    },
+    "detail": {
+      "request": {
+        "url": "{{url}}.json",
+        "headers": {
+          "User-Agent": "yuedureader/Yuedu (iOS) (+https://yuedureader.com/support)",
+          "Accept": "application/json"
+        }
+      },
+      "intro": "$.description.value||$.description",
+      "tags": "$.subjects[*]"
+    },
+    "excludeTags": [
+      "Open Library Staff Picks"
+    ]
+  },
+  "lookup": {
+    "request": {
+      "url": "https://openlibrary.org/search.json?q=isbn:{{isbn}}&fields=key,title,author_name,subject,editions,editions.key,editions.cover_i,editions.isbn&limit=1",
+      "headers": {
+        "User-Agent": "yuedureader/Yuedu (iOS) (+https://yuedureader.com/support)",
+        "Accept": "application/json"
+      }
+    },
+    "list": {
+      "items": "$.docs[*]",
+      "title": "$.title",
+      "author": "$.author_name",
+      "cover": "$.editions.docs[0].cover_i##^(\\d+)$##https://covers.openlibrary.org/b/id/$1-L.jpg?default=false",
+      "url": "$.key",
+      "isbn": "$.editions.docs[0].isbn",
+      "tags": "$.subject[*]"
+    },
+    "detail": {
+      "request": {
+        "url": "{{url}}.json",
+        "headers": {
+          "User-Agent": "yuedureader/Yuedu (iOS) (+https://yuedureader.com/support)",
+          "Accept": "application/json"
+        }
+      },
+      "intro": "$.description.value||$.description"
+    },
+    "excludeTags": [
+      "Open Library Staff Picks"
+    ]
+  }
+}

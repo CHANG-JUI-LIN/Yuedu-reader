@@ -454,4 +454,101 @@ struct OfficialModuleFilesTests {
             try RuleModuleValidator.validate(file("1", required: "2.0"), appVersion: "3.0")
         }
     }
+
+    // MARK: - Open Library
+
+    @Test("Open Library: its search as this app, twenty works; each author once, a cover by id or none, one language or none")
+    func openLibrarySearch() async throws {
+        let f = makeFixture()
+        defer { try? FileManager.default.removeItem(at: f.folder) }
+        ModuleStub.install(["openlibrary.org/search.json": .json(try reply("OpenLibrary/openlibrary-search.json"))])
+        let provider = ModuleProvider(module: try official("openlibrary"), client: f.client)
+
+        let page = try #require(try await provider.search("the three-body problem"))
+        let url = try #require(ModuleStub.urls.first.flatMap(URLComponents.init(string:)))
+        #expect(url.host == "openlibrary.org" && url.path == "/search.json")
+        #expect(url.queryItems?.first { $0.name == "q" }?.value == "the three-body problem")
+        #expect(url.queryItems?.first { $0.name == "limit" }?.value == "20")
+        #expect(ModuleStub.userAgents == [Self.userAgent], "the app's User-Agent, never the user's email")
+
+        let found = items(page.entries)
+        #expect(found.map(\.summary.title) == ["三体", "Three-Body Problem Series", "The Three Body Problem",
+                                               "The three body problem", "The Three-Body Problem Trilogy"])
+        #expect(found[0].record.key.item == "https://openlibrary.org/works/OL17267881W")
+        #expect(found[0].record.authors == ["刘慈欣", "Vincent Schmitt", "Gwennaël Gaffric", "Marc Simonetti"])
+        #expect(found[0].record.language == nil, "a work in twelve languages is in none of them")
+        #expect(found[2].record.language == "en")
+        #expect(found[0].record.identifiers.contains(ExternalIdentifier.normalized(.isbn13, "1427265836")!))
+        #expect(found[0].record.acquisitions == [.viewOnly], "data only: 只有資料")
+        guard case .remote(let cover, _) = found[0].summary.cover else { Issue.record("no cover: \(found[0].summary.cover)"); return }
+        #expect(cover.absoluteString == "https://covers.openlibrary.org/b/id/9157544-M.jpg")
+        guard case .generated = found[3].summary.cover else { Issue.record("a work without cover_i has no cover address"); return }
+        #expect(found[4].record.authors.isEmpty)
+
+        ModuleStub.install([:])
+        #expect(try await provider.search("三体") == nil, "Open Library refuses a query under 3 characters: not sent")
+        #expect(ModuleStub.urls.isEmpty)
+    }
+
+    private func olRedirects(cover id: String, size: String) -> [String: ModuleStub.Reply] {
+        let padded = String(repeating: "0", count: 10 - id.count) + id
+        let archive = "archive.org/download/\(size.lowercased())_covers_0010/\(size.lowercased())_covers_0010_24.zip/\(padded)-\(size).jpg"
+        return [
+            "covers.openlibrary.org/b/id/\(id)-\(size).jpg": .redirect("https://\(archive)"),
+            archive: .redirect("https://ia801609.us.archive.org/view_archive.php?file=\(padded)-\(size).jpg"),
+            "ia801609.us.archive.org/view_archive.php": .image(png()),
+        ]
+    }
+
+    @Test("Open Library: an ISBN finds the copy's edition; its own cover, through archive.org; an English description is not given to a Chinese book")
+    func openLibraryLookup() async throws {
+        let f = makeFixture()
+        let covers = f.folder.appendingPathComponent("covers")
+        defer { try? FileManager.default.removeItem(at: f.folder) }
+        var replies = olRedirects(cover: "10246665", size: "L")
+        replies["openlibrary.org/search.json"] = .json(try reply("OpenLibrary/openlibrary-isbn.json"))
+        replies["openlibrary.org/works/OL17267881W.json"] = .json(try reply("OpenLibrary/openlibrary-work-typed.json"))
+        ModuleStub.install(replies)
+        let filler = ModuleFillProvider(provider: ModuleProvider(module: try official("openlibrary"), client: f.client),
+                                        coverDirectory: covers)
+        #expect(filler.grade == .a)
+
+        let query = try isbnQuery("9787536692930", title: "三体", missing: [.cover, .intro, .tags])
+        let result = try await filler.lookUp(query)
+        let asked = try #require(ModuleStub.urls.first.flatMap(URLComponents.init(string:)))
+        #expect(asked.queryItems?.first { $0.name == "q" }?.value == "isbn:9787536692930")
+        #expect(result.values[.cover] == .text("module-openlibrary-9787536692930.jpg"), "the edition's cover, by its id")
+        #expect(ModuleStub.urls.contains("https://covers.openlibrary.org/b/id/10246665-L.jpg?default=false"))
+        #expect(result.values[.intro] == nil, "its description is English")
+        #expect(result.values[.tags] == nil, "its subjects are English and Spanish")
+        #expect(ModuleStub.urls.contains("https://openlibrary.org/works/OL17267881W.json"), "the description is the work's page")
+        #expect(ModuleStub.userAgents.first == Self.userAgent)
+        #expect(result.sourceItem?.instance == ModuleProvider.instanceKey(moduleID: "openlibrary"))
+    }
+
+    @Test("Open Library: an English copy found by title and author gets the work's description and subjects; a plain-string description too")
+    func openLibraryTitleFill() async throws {
+        let f = makeFixture()
+        defer { try? FileManager.default.removeItem(at: f.folder) }
+        ModuleStub.install([
+            "openlibrary.org/search.json": .json(try reply("OpenLibrary/openlibrary-search-fox.json")),
+            "openlibrary.org/works/OL45804W.json": .json(try reply("OpenLibrary/openlibrary-work-string.json")),
+        ])
+        let filler = ModuleFillProvider(provider: ModuleProvider(module: try official("openlibrary"), client: f.client))
+        let result = try await filler.lookUp(query("Fantastic Mr Fox", ["Roald Dahl"], kind: .text))
+        guard case .text(let intro) = result.values[.intro] else { Issue.record("no intro: \(result.values)"); return }
+        #expect(intro.hasPrefix("The main character of Fantastic Mr. Fox"))
+        #expect(result.values[.tags] == .texts(["Animals", "Hunger", "Juvenile fiction", "Foxes", "Fiction"]),
+                "short subjects, at most five; Staff Picks is a list, not a genre")
+        #expect(ModuleStub.urls.count == 2, "one search, and the page of the one work that is the copy's")
+        #expect(ModuleStub.urls.last == "https://openlibrary.org/works/OL45804W.json")
+    }
+
+    @Test("Open Library is an official module, listed after openBD")
+    func openLibraryListed() throws {
+        #expect(OfficialRuleModules.ids.firstIndex(of: "openlibrary") == OfficialRuleModules.ids.firstIndex(of: "openbd").map { $0 + 1 })
+        let module = try official("openlibrary")
+        #expect(module.lookup?.isbnPrefixes == nil, "every ISBN: it is a catalogue of the world's books")
+        #expect(module.hosts.contains("*.archive.org"))
+    }
 }
