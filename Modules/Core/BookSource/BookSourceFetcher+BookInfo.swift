@@ -24,11 +24,15 @@ extension BookSourceFetcher {
     ///   1912 real sources have an empty `ruleBookInfo.name` — and legado's `analyzeBookInfo`
     ///   updates the book it was handed rather than building a new one. Passing it here reproduces
     ///   that contract; see `BookInfoPackage.merging(searchResult:canReName:)`.
+    /// - Parameter writesCache: `false` when the caller only looks at the details — 書源驗證
+    ///   checks books that are not on the shelf, and caching them wrote a package per checked
+    ///   source that nothing opened from there.
     func fetchBookInfoPackage(
         url: String,
         source: BookSource,
         runtimeVariables: [String: String]? = nil,
-        knownBook: OnlineBook? = nil
+        knownBook: OnlineBook? = nil,
+        writesCache: Bool = true
     ) async throws -> BookInfoPackage {
         // The merge also applies on a cache hit: a package stored before this contract existed (or
         // stored from a call that had no search result to hand) can carry the same empty fields.
@@ -62,9 +66,10 @@ extension BookSourceFetcher {
                     )
                 }
             }
-            return saveBookInfoPackage(
+            return finishBookInfoPackage(
                 info: info,
-                source: source
+                source: source,
+                writesCache: writesCache
             ).merging(searchResult: knownBook, canReName: canReName)
         }
 
@@ -94,9 +99,10 @@ extension BookSourceFetcher {
                 )
             }
         }
-        let package = saveBookInfoPackage(
+        let package = finishBookInfoPackage(
             info: info,
-            source: source
+            source: source,
+            writesCache: writesCache
         ).merging(searchResult: knownBook, canReName: canReName)
         // #region agent log
         _dbgLog(
@@ -107,5 +113,16 @@ extension BookSourceFetcher {
             ], hyp: "A")
         // #endregion
         return package
+    }
+
+    /// Both transports end here, so `writesCache` holds for each of them.
+    private func finishBookInfoPackage(
+        info: OnlineBook,
+        source: BookSource,
+        writesCache: Bool
+    ) -> BookInfoPackage {
+        writesCache
+            ? saveBookInfoPackage(info: info, source: source)
+            : makeBookInfoPackage(info: info, source: source)
     }
 }

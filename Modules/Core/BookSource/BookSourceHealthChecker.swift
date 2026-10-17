@@ -37,7 +37,8 @@ protocol BookSourceHealthCheckFetching: Sendable {
         url: String,
         source: BookSource,
         runtimeVariables: [String: String]?,
-        knownBook: OnlineBook?
+        knownBook: OnlineBook?,
+        writesCache: Bool
     ) async throws -> BookInfoPackage
     func fetchTOCPackage(
         tocUrl: String,
@@ -63,7 +64,8 @@ extension BookSourceHealthCheckFetching {
         url: String,
         source: BookSource,
         runtimeVariables: [String: String]?,
-        knownBook: OnlineBook?
+        knownBook: OnlineBook?,
+        writesCache: Bool
     ) async throws -> BookInfoPackage {
         let book = try await fetchBookInfo(
             url: url,
@@ -1021,7 +1023,9 @@ final class BookSourceHealthChecker: ObservableObject {
                 url: book.bookUrl,
                 source: source,
                 runtimeVariables: book.runtimeVariables,
-                knownBook: book
+                knownBook: book,
+                // Not a shelf book either — see `probeTOC`.
+                writesCache: false
             )
             var info = package.onlineBook
             let name = info.name.trimmingCharacters(in: .whitespacesAndNewlines)

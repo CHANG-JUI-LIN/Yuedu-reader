@@ -3,7 +3,8 @@ import Testing
 @testable import yuedu_app
 
 /// The disk writes Xcode Organizer attributed to 書源驗證 and to source requests (2.0.7 (127)
-/// disk-write reports). Each test pins one of them.
+/// disk-write reports), and the detail probe's cache write of the same kind. Each test pins
+/// one of them.
 @MainActor
 @Suite(.serialized)
 struct SourceCheckDiskWriteTests {
@@ -47,6 +48,43 @@ struct SourceCheckDiskWriteTests {
         #expect(checker.items.first?.outcome(.toc).status == .pass)
         #expect(!FileManager.default.fileExists(atPath: real.tocPackagePath(tocUrl: tocURL, source: source).path))
         #expect(!FileManager.default.fileExists(atPath: real.tocFingerprintPath(tocUrl: tocURL, source: source).path))
+    }
+
+    // MARK: - Detail probe
+
+    /// Same story for the detail probe: every checked source left a book-info package in the
+    /// cache, for a book nothing would open from there.
+    @Test("the detail probe of an HTTP source leaves no book-info cache behind")
+    func detailProbeOfAnHTTPSourceWritesNoCache() async throws {
+        let host = "detail-\(UUID().uuidString.lowercased()).yuedu.test"
+        let bookURL = "https://\(host)/book"
+        DiskWriteStubURLProtocol.set(.page(Self.detailHTML), for: host)
+        defer { DiskWriteStubURLProtocol.remove(host) }
+        let real = BookSourceFetcher(webFetcher: WebFetcher(session: DiskWriteStubURLProtocol.session()))
+        let source = Self.detailSource(url: "https://\(host)")
+        defer { real.clearTOCAndBookInfoCache(tocUrl: nil, bookURL: bookURL, source: source) }
+
+        let checker = try await Self.runDetailCheck(source: source, bookURL: bookURL, real: real)
+
+        #expect(checker.items.first?.outcome(.detail).status == .pass)
+        #expect(real.loadBookInfoPackageSync(url: bookURL, source: source, maximumAge: nil) == nil)
+    }
+
+    /// The runtime branch saves through its own call site; a `data:` book URL takes it.
+    @Test("the detail probe of a runtime source leaves no book-info cache behind")
+    func detailProbeOfARuntimeSourceWritesNoCache() async throws {
+        let marker = UUID().uuidString
+        let html = Self.detailHTML.replacingOccurrences(of: "</body>", with: "<!-- \(marker) --></body>")
+        let bookURL = "data:text/html;base64," + Data(html.utf8).base64EncodedString()
+        let source = Self.detailSource(url: "https://runtime-\(marker.lowercased()).yuedu.test")
+        let real = BookSourceFetcher(webFetcher: WebFetcher(session: DiskWriteStubURLProtocol.session()))
+        #expect(source.shouldUseLegadoRuntimeFetch(for: bookURL))
+        defer { real.clearTOCAndBookInfoCache(tocUrl: nil, bookURL: bookURL, source: source) }
+
+        let checker = try await Self.runDetailCheck(source: source, bookURL: bookURL, real: real)
+
+        #expect(checker.items.first?.outcome(.detail).status == .pass)
+        #expect(real.loadBookInfoPackageSync(url: bookURL, source: source, maximumAge: nil) == nil)
     }
 
     // MARK: - Library writes at the end of a run
@@ -151,21 +189,51 @@ struct SourceCheckDiskWriteTests {
         try? FileManager.default.removeItem(at: fetcher.tocFingerprintPath(tocUrl: tocURL, source: source))
     }
 
+    private static let detailHTML = """
+    <html><body><h1>驗證用書</h1><p class="author">作者</p></body></html>
+    """
+
+    private static func detailSource(url: String) -> BookSource {
+        var source = BookSource(bookSourceUrl: url, bookSourceName: "詳情快取測試")
+        source.searchUrl = url + "/search?q={{key}}"
+        source.ruleBookInfo.name = "h1@text"
+        source.ruleBookInfo.author = ".author@text"
+        return source
+    }
+
     private static func runTOCCheck(
         source: BookSource,
         tocURL: String,
         real: BookSourceFetcher
     ) async throws -> BookSourceHealthChecker {
+        try await runCheck(source: source, fetcher: TOCForwardingFetcher(real: real, tocURL: tocURL)) {
+            $0.checkContent = false
+        }
+    }
+
+    /// Stops after the detail stage: no TOC, no content.
+    private static func runDetailCheck(
+        source: BookSource,
+        bookURL: String,
+        real: BookSourceFetcher
+    ) async throws -> BookSourceHealthChecker {
+        try await runCheck(source: source, fetcher: DetailForwardingFetcher(real: real, bookURL: bookURL)) {
+            $0.checkCategory = false
+        }
+    }
+
+    private static func runCheck(
+        source: BookSource,
+        fetcher: any BookSourceHealthCheckFetching,
+        policy: (inout BookSourceCheckPolicy) -> Void
+    ) async throws -> BookSourceHealthChecker {
         let directory = FileManager.default.temporaryDirectory
             .appendingPathComponent("SourceCheckDiskWrite-\(UUID().uuidString)")
         let store = BookSourceStore(directory: directory)
         store.replaceSourcesFromSync([source])
-        let checker = BookSourceHealthChecker(
-            fetcher: TOCForwardingFetcher(real: real, tocURL: tocURL),
-            store: store
-        )
+        let checker = BookSourceHealthChecker(fetcher: fetcher, store: store)
         checker.policy.checkDiscovery = false
-        checker.policy.checkContent = false
+        policy(&checker.policy)
         checker.prepare(sources: [source])
         await checker.runAll()
         store.waitForQueuedWrites()
@@ -242,6 +310,82 @@ private actor TOCForwardingFetcher: BookSourceHealthCheckFetching {
             runPreUpdateJs: runPreUpdateJs,
             writesCache: writesCache
         )
+    }
+
+    func fetchChapter(
+        ref: OnlineChapterRef,
+        bookId: UUID,
+        source: BookSource,
+        chapterReferer: String?
+    ) async throws -> String {
+        Issue.record("content is not checked in this run")
+        return ""
+    }
+}
+
+/// Search answers from memory with a book at `bookURL`; its detail goes to a real
+/// `BookSourceFetcher`, with exactly the arguments the checker passed.
+private actor DetailForwardingFetcher: BookSourceHealthCheckFetching {
+    private let real: BookSourceFetcher
+    private let bookURL: String
+
+    init(real: BookSourceFetcher, bookURL: String) {
+        self.real = real
+        self.bookURL = bookURL
+    }
+
+    func search(
+        query: String,
+        in source: BookSource,
+        page: Int,
+        earlyFilter: ((_ name: String, _ author: String) -> Bool)?,
+        onHasMore: ((Bool?) -> Void)?,
+        failureMode: BookSourceSearchFailureMode
+    ) async throws -> [OnlineBook] {
+        [validationBook(url: bookURL, toc: "", source: source)]
+    }
+
+    func discoverItems(page: Int, in source: BookSource) async -> [ModernParserBridge.DiscoverItem] { [] }
+
+    func discoverBooks(
+        from item: ModernParserBridge.DiscoverItem,
+        page: Int,
+        in source: BookSource
+    ) async throws -> [OnlineBook] { [] }
+
+    func fetchBookInfo(
+        url: String,
+        source: BookSource,
+        runtimeVariables: [String: String]?,
+        knownBook: OnlineBook?
+    ) async throws -> OnlineBook {
+        Issue.record("the checker reads the detail through fetchBookInfoPackage")
+        return validationBook(url: url, toc: "", source: source)
+    }
+
+    func fetchBookInfoPackage(
+        url: String,
+        source: BookSource,
+        runtimeVariables: [String: String]?,
+        knownBook: OnlineBook?,
+        writesCache: Bool
+    ) async throws -> BookInfoPackage {
+        try await real.fetchBookInfoPackage(
+            url: url,
+            source: source,
+            runtimeVariables: runtimeVariables,
+            knownBook: knownBook,
+            writesCache: writesCache
+        )
+    }
+
+    func fetchTOC(
+        tocUrl: String,
+        source: BookSource,
+        runtimeVariables: [String: String]?
+    ) async throws -> [OnlineChapterRef] {
+        Issue.record("the TOC is not checked in this run")
+        return []
     }
 
     func fetchChapter(

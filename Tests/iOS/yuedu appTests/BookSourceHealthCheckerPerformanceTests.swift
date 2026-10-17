@@ -615,7 +615,8 @@ private actor HealthCheckMixedContentFetcher: BookSourceHealthCheckFetching {
         url: String,
         source: BookSource,
         runtimeVariables: [String: String]?,
-        knownBook: OnlineBook?
+        knownBook: OnlineBook?,
+        writesCache: Bool
     ) async throws -> BookInfoPackage {
         let info = try await fetchBookInfo(
             url: url,

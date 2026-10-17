@@ -181,7 +181,16 @@ extension BookSourceFetcher {
         let dir = bookInfoCacheDir()
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         // The page's raw HTML used to be written beside it; nothing ever read it.
-        let package = BookInfoPackage(
+        let package = makeBookInfoPackage(info: info, source: source)
+        if let data = try? JSONEncoder().encode(package) {
+            try? data.write(to: bookInfoPackagePath(url: info.bookUrl, source: source), options: .atomic)
+        }
+        return package
+    }
+
+    /// Fetched book info as `saveBookInfoPackage` would cache it, without caching it.
+    nonisolated func makeBookInfoPackage(info: OnlineBook, source: BookSource) -> BookInfoPackage {
+        BookInfoPackage(
             sourceId: source.id,
             sourceName: source.bookSourceName,
             bookURL: info.bookUrl,
@@ -197,10 +206,6 @@ extension BookSourceFetcher {
             rawHTMLFilename: nil,
             savedAt: Date()
         )
-        if let data = try? JSONEncoder().encode(package) {
-            try? data.write(to: bookInfoPackagePath(url: info.bookUrl, source: source), options: .atomic)
-        }
-        return package
     }
 
     // MARK: - Private Helpers
