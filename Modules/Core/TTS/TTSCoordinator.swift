@@ -331,7 +331,13 @@ final class NowPlayingHub: ObservableObject {
 // Unified external interface: ReaderView and TTSPanelView depend only on TTSCoordinator.
 // The underlying layer uses only the HTTP TTS audio player.
 // Manages: sleep timer, MPNowPlayingInfo, AVAudioSession.
-
+//
+// Main-actor isolated: every entry is on main. Views and `NowPlayingHub` call it from main;
+// both engines deliver their callbacks on main (download completions, the chunk player's
+// delegate and the AVSpeechSynthesizer delegate all hop there first); the audio-session
+// notifications are received on main. Lock-screen commands are the one entry iOS does not
+// promise — `performRemoteCommand` hops those explicitly.
+@MainActor
 final class TTSCoordinator: ObservableObject {
 
     // MARK: - Published State (bound to TTSPanelView)
@@ -813,7 +819,7 @@ final class TTSCoordinator: ObservableObject {
             return outcome
         }
         engine.onStop = { [weak self] in
-            let handleStop = {
+            let handleStop: @MainActor @Sendable () -> Void = {
                 guard let self else { return }
                 guard !self.isStoppingFromCoordinator else { return }
                 self.finishStopped(reason: "engine finished")
@@ -826,7 +832,7 @@ final class TTSCoordinator: ObservableObject {
             }
         }
         engine.onError = { [weak self] error in
-            let presentError = {
+            let presentError: @MainActor @Sendable () -> Void = {
                 guard let self else { return }
                 if case .chunkUnavailable = error as? TTSPlaybackError {
                     // The engine retains the failed segment for resume. Keep the panel
@@ -844,7 +850,7 @@ final class TTSCoordinator: ObservableObject {
         engine.onSegmentSkipped = { [weak self] error in
             // Deliberately NOT `errorMessage`: that one is an alert, and narration is still
             // playing. This surfaces in the panel without interrupting the listener.
-            let publishNotice = {
+            let publishNotice: @MainActor @Sendable () -> Void = {
                 guard let self else { return }
                 self.playbackNotice = error.localizedDescription
             }
@@ -963,33 +969,34 @@ final class TTSCoordinator: ObservableObject {
         c.previousTrackCommand.removeTarget(nil)
         c.changePlaybackPositionCommand.removeTarget(nil)
 
-        c.playCommand.addTarget { [weak self] _ in
+        c.playCommand.addTarget { @Sendable [weak self] _ in
             ttsLog("[TTS][Remote] playCommand")
             return self?.performRemoteCommand(requiresActiveSession: true) { $0.resume() } ?? .commandFailed
         }
-        c.pauseCommand.addTarget { [weak self] _ in
+        c.pauseCommand.addTarget { @Sendable [weak self] _ in
             ttsLog("[TTS][Remote] pauseCommand")
             return self?.performRemoteCommand(requiresActiveSession: true) { $0.pause() } ?? .commandFailed
         }
-        c.togglePlayPauseCommand.addTarget { [weak self] _ in
+        c.togglePlayPauseCommand.addTarget { @Sendable [weak self] _ in
             ttsLog("[TTS][Remote] togglePlayPauseCommand")
             return self?.performRemoteCommand(requiresActiveSession: true) { $0.toggle() } ?? .commandFailed
         }
-        c.nextTrackCommand.addTarget { [weak self] _ in
+        c.nextTrackCommand.addTarget { @Sendable [weak self] _ in
             ttsLog("[TTS][Remote] nextTrackCommand")
             return self?.performRemoteCommand(requiresActiveSession: true) { $0.skipForward() } ?? .commandFailed
         }
-        c.previousTrackCommand.addTarget { [weak self] _ in
+        c.previousTrackCommand.addTarget { @Sendable [weak self] _ in
             ttsLog("[TTS][Remote] previousTrackCommand")
             return self?.performRemoteCommand(requiresActiveSession: true) { $0.skipBackward() } ?? .commandFailed
         }
-        c.changePlaybackPositionCommand.addTarget { [weak self] event in
+        c.changePlaybackPositionCommand.addTarget { @Sendable [weak self] event in
             guard let event = event as? MPChangePlaybackPositionCommandEvent else {
                 return .commandFailed
             }
-            ttsLog("[TTS][Remote] changePlaybackPositionCommand position=\(event.positionTime)")
+            let positionTime = event.positionTime
+            ttsLog("[TTS][Remote] changePlaybackPositionCommand position=\(positionTime)")
             return self?.performRemoteCommand(requiresActiveSession: true) {
-                $0.seekToNowPlayingPosition(event.positionTime)
+                $0.seekToNowPlayingPosition(positionTime)
             } ?? .commandFailed
         }
     }
@@ -1113,22 +1120,27 @@ final class TTSCoordinator: ObservableObject {
         audioSessionActive || isPlaying || nowPlayingStartedAt != nil
     }
 
-    private func performRemoteCommand(
+    /// MPRemoteCommandCenter does not say which thread runs a command handler, so the handlers
+    /// are nonisolated and come to main here, synchronously, because the handler has to return
+    /// the command's status. The session check happens on main too, with the state it reads.
+    nonisolated private func performRemoteCommand(
         requiresActiveSession: Bool = false,
-        _ action: @escaping (TTSCoordinator) -> Void
+        _ action: @escaping @MainActor (TTSCoordinator) -> Void
     ) -> MPRemoteCommandHandlerStatus {
-        if requiresActiveSession && !hasActivePlaybackSession {
-            ttsLog("[TTS][Remote] ignored no active playback session")
-            return .noActionableNowPlayingItem
+        let perform: @MainActor () -> MPRemoteCommandHandlerStatus = {
+            if requiresActiveSession && !self.hasActivePlaybackSession {
+                ttsLog("[TTS][Remote] ignored no active playback session")
+                return .noActionableNowPlayingItem
+            }
+            action(self)
+            return .success
         }
         if Thread.isMainThread {
-            action(self)
-        } else {
-            DispatchQueue.main.sync {
-                action(self)
-            }
+            return MainActor.assumeIsolated(perform)
         }
-        return .success
+        return DispatchQueue.main.sync {
+            MainActor.assumeIsolated(perform)
+        }
     }
 
     private func seekToNowPlayingPosition(_ positionTime: TimeInterval) {
@@ -1253,7 +1265,7 @@ final class TTSCoordinator: ObservableObject {
         sleepTimer = Timer.scheduledTimer(
             withTimeInterval: TimeInterval(sleepMinutes * 60),
             repeats: false
-        ) { [weak self] _ in DispatchQueue.main.async { self?.stop(reason: "sleep timer") } }
+        ) { [weak self] _ in DispatchQueue.main.async { [weak self] in self?.stop(reason: "sleep timer") } }
     }
 
     private func cancelSleepTimer() {
@@ -1261,5 +1273,10 @@ final class TTSCoordinator: ObservableObject {
         sleepTimer = nil
     }
 
-    deinit { stop(reason: "coordinator deinit") }
+    /// Stopping touches UIKit and the now-playing center, so it runs on main. Every owner
+    /// releases its last reference there anyway (`@StateObject` in `ReaderView` and
+    /// `TTSSettingsView`, `NowPlayingHub` holds it weakly), so this runs inline; a release
+    /// anywhere else is moved to main rather than racing. Swift 6.4 back-deploys this for
+    /// the main actor (`swift_task_deinitOnExecutorMainActorBackDeploy`), so iOS 17 has it.
+    isolated deinit { stop(reason: "coordinator deinit") }
 }
