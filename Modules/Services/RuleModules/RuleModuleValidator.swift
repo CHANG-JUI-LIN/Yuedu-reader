@@ -28,6 +28,10 @@ enum RuleModuleRejection: Error, Equatable, Sendable {
     /// headers and charset in their own fields.
     case urlOptions(field: String)
     case hostNotAllowed(field: String, host: String)
+    /// A field whose value is one of a fixed set (`contentKind`, `bodyEncoding`).
+    case unknownValue(field: String, value: String)
+    /// The field first read by `minimum`, in a module whose `requiredVersion` is lower or absent.
+    case needsRequiredVersion(field: String, minimum: String)
 }
 
 /// Checks a module file at import, before anything is stored. What it lets through runs on a
@@ -60,6 +64,18 @@ enum RuleModuleValidator {
         guard module.modules.count <= maxEntries else { throw .tooManyEntries(module.modules.count) }
 
         let hosts = Set(module.hosts.map { $0.lowercased() })
+        // The first field a 3.0 app is needed for.
+        var format3: String?
+        if let attribution = module.attribution {
+            format3 = "attribution"
+            try requireText(attribution.text, "attribution.text")
+            if let url = attribution.url {
+                let lowered = url.trimmingCharacters(in: .whitespaces).lowercased()
+                guard lowered.hasPrefix("https://") || lowered.hasPrefix("http://"), safeURL(string: url) != nil else {
+                    throw .invalidURL(field: "attribution.url")
+                }
+            }
+        }
         var seen: Set<String> = []
         for (index, entry) in module.modules.enumerated() {
             let path = "modules[\(index)]"
@@ -67,15 +83,31 @@ enum RuleModuleValidator {
             guard isFileSafe(id) else { throw .invalidID(id) }
             guard seen.insert(id).inserted else { throw .duplicateEntryID(id) }
             try requireText(entry.title ?? "", "\(path).title")
-            try validate(entry, path: path, hosts: hosts, isSearch: false)
+            try validate(entry, path: path, hosts: hosts, isSearch: false, format3: &format3)
         }
-        if let search = module.search { try validate(search, path: "search", hosts: hosts, isSearch: true) }
+        if let search = module.search { try validate(search, path: "search", hosts: hosts, isSearch: true, format3: &format3) }
+
+        if let field = format3 {
+            let declared = module.requiredVersion.flatMap(RuleModuleVersion.init)
+            guard let declared, let minimum = RuleModuleVersion(RuleModuleFormat.version3), declared >= minimum else {
+                throw .needsRequiredVersion(field: field, minimum: RuleModuleFormat.version3)
+            }
+        }
     }
 
     // MARK: - Entries
 
     private static func validate(_ entry: RuleModule.Entry, path: String, hosts: Set<String>,
-                                 isSearch: Bool) throws(RuleModuleRejection) {
+                                 isSearch: Bool, format3: inout String?) throws(RuleModuleRejection) {
+        func uses3(_ field: String) { if format3 == nil { format3 = field } }
+        if let kind = entry.contentKind {
+            uses3("\(path).contentKind")
+            guard [ContentKind.text, .comic].map(\.rawValue).contains(kind) else {
+                throw .unknownValue(field: "\(path).contentKind", value: kind)
+            }
+        }
+        if entry.excludeTags != nil { uses3("\(path).excludeTags") }
+
         var declared = pagingNames
         if isSearch { declared.insert("keyword") }
         for (index, param) in entry.params.enumerated() {
@@ -96,6 +128,12 @@ enum RuleModuleValidator {
         try requireText(request.url, "\(path).request.url")
         try checkRule(request.url, field: "\(path).request.url", declared: declared)
         if let body = request.body { try checkRule(body, field: "\(path).request.body", declared: declared) }
+        if let encoding = request.bodyEncoding {
+            uses3("\(path).request.bodyEncoding")
+            guard RuleModule.BodyEncoding(rawValue: encoding) != nil else {
+                throw .unknownValue(field: "\(path).request.bodyEncoding", value: encoding)
+            }
+        }
         for (name, value) in (request.headers ?? [:]).sorted(by: { $0.key < $1.key }) {
             try checkRule(value, field: "\(path).request.headers.\(name)", declared: declared)
         }
@@ -109,22 +147,31 @@ enum RuleModuleValidator {
             ("items", list.items), ("title", list.title), ("author", list.author), ("cover", list.cover),
             ("intro", list.intro), ("url", list.url), ("kind", list.kind), ("language", list.language),
         ]
-        for case let (name, rule?) in rules {
-            // A list rule fills no parameters: a `{{…}}` there would go to the JS evaluator.
-            try checkRule(rule, field: "\(path).list.\(name)", declared: [])
+        let format3Rules: [(String, String?)] = [
+            ("aliases", list.aliases), ("tags", list.tags), ("publisher", list.publisher), ("isbn", list.isbn),
+            ("series", list.series), ("contentKind", list.contentKind),
+        ]
+        for case let (name, rule?) in rules + format3Rules {
+            // A list rule fills no parameters. Its `{{…}}` may only hold a rule, which the engine
+            // reads in place (`{{$.id}}`, Legado's own); anything else would go to the JS evaluator.
+            try checkRule(rule, field: "\(path).list.\(name)", declared: [], innerRules: true)
         }
+        for case let (name, _?) in format3Rules { uses3("\(path).list.\(name)") }
     }
 
     // MARK: - Rules and templates
 
-    /// No JS, no variables, and every `{{…}}` declared.
-    private static func checkRule(_ rule: String, field: String, declared: Set<String>) throws(RuleModuleRejection) {
+    /// No JS, no variables, and every `{{…}}` declared, or with `innerRules` a rule
+    /// (`SourceRule.looksLikeRule`) that passes the same checks.
+    private static func checkRule(_ rule: String, field: String, declared: Set<String>,
+                                  innerRules: Bool = false) throws(RuleModuleRejection) {
         // The engine's own split decides what is JS, so the validator and the engine never disagree.
         if ModernRuleEngine().splitSourceRule(rule).contains(where: { $0.mode == .js }) { throw .javaScript(field: field) }
         let lowered = rule.lowercased()
         if lowered.contains("@get:") || lowered.contains("@put:") { throw .variables(field: field) }
         for name in templateNames(in: rule) where !declared.contains(name) {
-            throw .undeclaredTemplate(field: field, name: name)
+            guard innerRules, SourceRule.looksLikeRule(name) else { throw .undeclaredTemplate(field: field, name: name) }
+            try checkRule(name, field: field, declared: [])
         }
     }
 

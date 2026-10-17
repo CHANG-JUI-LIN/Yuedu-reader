@@ -13,6 +13,13 @@ struct RuleListFields: Sendable {
     var kind: String
     /// A module's (6d); 來源配置 have no language rule.
     var language: String = ""
+    // A module's (format 3.0); 來源配置 have none of these.
+    var aliases: String = ""
+    var tags: String = ""
+    var publisher: String = ""
+    var isbn: String = ""
+    var series: String = ""
+    var contentKind: String = ""
 }
 
 /// One list item as its rules read it.
@@ -27,6 +34,14 @@ struct RuleListItem: Codable, Equatable, Sendable {
     /// Every value of the kind rule, joined with `,` as Legado's `getStringList` result is.
     var kind: String
     var language: String = ""
+    // A module's (format 3.0), nil without a rule. Optional, so a page cached before they
+    // existed still decodes.
+    var aliases: [String]? = nil
+    var tags: [String]? = nil
+    var publisher: String? = nil
+    var isbn: String? = nil
+    var series: String? = nil
+    var contentKind: String? = nil
 }
 
 enum RuleListMapping {
@@ -81,10 +96,29 @@ enum RuleListMapping {
                 // keeping several categories, this leaves the intermediate `result` a mutable
                 // List for trailing JS such as `result.add(...)`.
                 kind: engine.getStringList(ruleStr: fields.kind).joined(separator: ","),
-                language: fields.language.isEmpty ? "" : engine.getString(ruleStr: fields.language)
+                language: fields.language.isEmpty ? "" : engine.getString(ruleStr: fields.language),
+                aliases: values(engine, fields.aliases),
+                tags: values(engine, fields.tags),
+                publisher: value(engine, fields.publisher),
+                isbn: value(engine, fields.isbn),
+                series: value(engine, fields.series),
+                contentKind: value(engine, fields.contentKind)
             ))
         }
         return items
+    }
+
+    /// Nil without a rule; trimmed, empty values dropped.
+    private static func values(_ engine: ModernRuleEngine, _ rule: String) -> [String]? {
+        guard !rule.isEmpty else { return nil }
+        return engine.getStringList(ruleStr: rule)
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+    }
+
+    private static func value(_ engine: ModernRuleEngine, _ rule: String) -> String? {
+        guard !rule.isEmpty else { return nil }
+        return engine.getString(ruleStr: rule).trimmingCharacters(in: .whitespacesAndNewlines)
     }
 }
 

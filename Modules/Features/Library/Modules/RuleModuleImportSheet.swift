@@ -125,6 +125,14 @@ struct RuleModuleManifestSections: View {
             if let description = nonEmpty(module.description) {
                 Text(description).foregroundStyle(DSColor.textPrimary)
             }
+            // The credit the site's terms ask for (format 3.0), as the site words it.
+            if let attribution = module.attribution, let text = nonEmpty(attribution.text) {
+                if let url = attribution.url.flatMap({ safeURL(string: $0) }) {
+                    Link(text, destination: url)
+                } else {
+                    Text(text).foregroundStyle(DSColor.textSecondary)
+                }
+            }
         } header: {
             Text(newVersion.map { String(format: localized("新版本 %@"), $0) } ?? module.title)
                 .foregroundStyle(DSColor.textSecondary)
@@ -198,4 +206,16 @@ struct RuleModuleManifestSections: View {
     let model = RuleModuleImportModel(download: { _ in throw URLError(.notConnectedToInternet) })
     RuleModuleImportSheet(model: model, title: localized("新增模組"))
         .task { await model.read(clipboard: RuleModulePreviewData.json(id: "example.newbooks", title: "新書速報")) }
+}
+
+#Preview("A module with a credit") {
+    let model = RuleModuleImportModel(download: { _ in throw URLError(.notConnectedToInternet) })
+    RuleModuleImportSheet(model: model, title: localized("新增模組"))
+        .task {
+            await model.read(clipboard: #"""
+            {"id":"example.credit","title":"書籍資料","version":"1.0","requiredVersion":"3.0","hosts":["example.com"],
+             "attribution":{"text":"Supported by Example Developers","url":"https://example.com/dev"},
+             "search":{"request":{"url":"https://example.com/s?q={{keyword}}"},"list":{"items":"$.items[*]","title":"$.title"}}}
+            """#)
+        }
 }

@@ -22,6 +22,15 @@ struct RuleModule: Codable, Hashable, Sendable {
     var rateLimit: String?
     var modules: [Entry]
     var search: Entry?
+    /// The credit the site asks for, shown on the module's page (format 3.0).
+    var attribution: Attribution?
+
+    /// A line naming the site, as its terms word it: 楽天's "Supported by Rakuten Developers".
+    struct Attribution: Codable, Hashable, Sendable {
+        var text: String
+        /// Where the credit links; http(s).
+        var url: String?
+    }
 
     /// One list: a home section, or the module's search.
     struct Entry: Codable, Hashable, Sendable {
@@ -34,9 +43,16 @@ struct RuleModule: Codable, Hashable, Sendable {
         var params: [Param]
         var request: Request
         var list: ListRules
+        /// `text` (absent) or `comic`: what its items are, unless an item's `contentKind` rule
+        /// says `comic` (format 3.0).
+        var contentKind: String?
+        /// Tags the `tags` rule reads that are not genres on this site (`漫画`, `单行本`), left
+        /// out wherever its tags are used (format 3.0).
+        var excludeTags: [String]?
 
         init(id: String?, title: String?, description: String? = nil, cacheDuration: Int? = nil,
-             params: [Param] = [], request: Request, list: ListRules) {
+             params: [Param] = [], request: Request, list: ListRules, contentKind: String? = nil,
+             excludeTags: [String]? = nil) {
             self.id = id
             self.title = title
             self.description = description
@@ -44,6 +60,8 @@ struct RuleModule: Codable, Hashable, Sendable {
             self.params = params
             self.request = request
             self.list = list
+            self.contentKind = contentKind
+            self.excludeTags = excludeTags
         }
 
         init(from decoder: any Decoder) throws {
@@ -55,6 +73,8 @@ struct RuleModule: Codable, Hashable, Sendable {
             params = try container.decodeIfPresent([Param].self, forKey: .params) ?? []
             request = try container.decode(Request.self, forKey: .request)
             list = try container.decode(ListRules.self, forKey: .list)
+            contentKind = try container.decodeIfPresent(String.self, forKey: .contentKind)
+            excludeTags = try container.decodeIfPresent([String].self, forKey: .excludeTags)
         }
     }
 
@@ -124,6 +144,14 @@ struct RuleModule: Codable, Hashable, Sendable {
         var body: String?
         var headers: [String: String]?
         var charset: String?
+        /// How a value goes into `body`: `form` (absent), percent-encoded, or `json`, escaped as
+        /// a JSON string's contents, for a body such as `{"keyword":"{{keyword}}"}` (format 3.0).
+        var bodyEncoding: String?
+    }
+
+    /// `Request.bodyEncoding`'s values.
+    enum BodyEncoding: String, CaseIterable, Sendable {
+        case form, json
     }
 
     /// The rule engine's own syntax: CSS, XPath, JSONPath, Regex, with `||` `&&` `%%` `##`.
@@ -136,14 +164,33 @@ struct RuleModule: Codable, Hashable, Sendable {
         var url: String?
         var kind: String?
         var language: String?
+        /// Other names of the work, several values: its titles in other languages (format 3.0).
+        var aliases: String? = nil
+        /// Its genres and themes, several values (format 3.0).
+        var tags: String? = nil
+        var publisher: String? = nil
+        /// An ISBN-10 or -13; one that fails its check digit is dropped (format 3.0).
+        var isbn: String? = nil
+        var series: String? = nil
+        /// `comic` makes the item a comic; any other value leaves the entry's kind (format 3.0).
+        var contentKind: String? = nil
     }
+}
+
+/// The first app version that reads each field added since Phase 6. A module that uses one
+/// must say so in `requiredVersion`, or an older app would import it and run it wrongly
+/// (a JSON body sent percent-encoded searches for `%E8…`).
+enum RuleModuleFormat {
+    static let version3 = "3.0"
 }
 
 extension RuleModule.ListRules {
     /// The same mapping a 來源配置's search list uses.
     var fields: RuleListFields {
         RuleListFields(name: title, author: author ?? "", bookUrl: url ?? "", coverUrl: cover ?? "",
-                       intro: intro ?? "", wordCount: "", lastChapter: "", kind: kind ?? "", language: language ?? "")
+                       intro: intro ?? "", wordCount: "", lastChapter: "", kind: kind ?? "", language: language ?? "",
+                       aliases: aliases ?? "", tags: tags ?? "", publisher: publisher ?? "", isbn: isbn ?? "",
+                       series: series ?? "", contentKind: contentKind ?? "")
     }
 }
 
