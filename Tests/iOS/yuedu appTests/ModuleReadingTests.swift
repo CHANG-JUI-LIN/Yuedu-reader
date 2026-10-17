@@ -41,6 +41,33 @@ struct ModuleReadingTests {
         return module
     }
 
+    @Test("a site's own redirect page (meta refresh) is followed once, within the module's hosts")
+    func metaRefresh() async throws {
+        let (client, folder) = client()
+        defer { try? FileManager.default.removeItem(at: folder) }
+        // なろう's API names a work N9669BK; its page at that address is 「リダイレクト中」, a 200
+        // whose meta refresh (16 s) points at the lower-case address (saved 2026-10-17).
+        ModuleStub.install(["ncode.syosetu.com/N9669BK": .html(try page("narou-uppercase-redirect.html")),
+                            "ncode.syosetu.com/n9669bk": .html(try page("narou-toc-p3.html"))])
+        let chapters = try await client.tableOfContents(bookURL: "https://ncode.syosetu.com/N9669BK/", title: "無職転生", in: module())
+        #expect(ModuleStub.urls == ["https://ncode.syosetu.com/N9669BK/", "https://ncode.syosetu.com/n9669bk/"])
+        #expect(!chapters.filter { !$0.isVolume }.isEmpty)
+        #expect(chapters.first { !$0.isVolume }?.url.hasPrefix("https://ncode.syosetu.com/n9669bk/") == true)
+
+        // Another site's refresh is not followed: the page is read as it is.
+        ModuleStub.install(["ncode.syosetu.com/N9669BK": .html(#"<html><head><meta http-equiv="refresh" content="0;URL=https://elsewhere.example/n9669bk/"></head><body></body></html>"#)])
+        let elsewhere = try await client.tableOfContents(bookURL: "https://ncode.syosetu.com/N9669BK/", title: "無職転生", in: module())
+        #expect(elsewhere.isEmpty)
+        #expect(ModuleStub.urls == ["https://ncode.syosetu.com/N9669BK/"])
+
+        // A refresh back to where it came from is followed once, not forever.
+        ModuleStub.install(["ncode.syosetu.com/a": .html(#"<meta http-equiv="refresh" content="0; url=/b/">"#),
+                            "ncode.syosetu.com/b": .html(#"<meta http-equiv="refresh" content="0; url=/a/">"#)])
+        let looped = try await client.tableOfContents(bookURL: "https://ncode.syosetu.com/a/", title: "", in: module())
+        #expect(looped.isEmpty)
+        #expect(ModuleStub.urls == ["https://ncode.syosetu.com/a/", "https://ncode.syosetu.com/b/"])
+    }
+
     @Test("a table of contents read page after page, volume headings in place, the module's headers sent")
     func tableOfContents() async throws {
         let (client, folder) = client()
