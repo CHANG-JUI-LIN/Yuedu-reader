@@ -379,6 +379,7 @@ final class ReaderCardTransitionAnimator: NSObject, UIViewControllerAnimatedTran
             for view in animatedViews {
                 view.layer.removeAllAnimations()
             }
+            state.stage.coverShadeLayer.removeAllAnimations()
             applyRuntimeState(
                 progress: resolvedCompleted ? state.endProgress : state.startProgress,
                 state: state
@@ -462,6 +463,10 @@ final class ReaderCardTransitionAnimator: NSObject, UIViewControllerAnimatedTran
         let coverContainer: UIView
         let spineShadowView: UIView
         let coverView: UIView
+        /// Black wash on the cover, deepening as it turns from the light
+        /// (`ReaderBookOpeningPose.coverShadeOpacity`). A sublayer, so it rides
+        /// the cover's hinge transform and inherits its fade.
+        let coverShadeLayer: CALayer
     }
 
     /// Soft gradient shading the paper along the spine while the cover is
@@ -673,11 +678,25 @@ final class ReaderCardTransitionAnimator: NSObject, UIViewControllerAnimatedTran
         coverView.layer.isDoubleSided = false
         coverContainer.addSubview(coverView)
 
+        let coverShadeLayer = CALayer()
+        coverShadeLayer.backgroundColor = UIColor.black.cgColor
+        coverShadeLayer.opacity = 0
+        // Culled with the cover past 90°: culling is per layer, so the shade
+        // would otherwise show its back face after the cover has gone.
+        coverShadeLayer.isDoubleSided = false
+        // A bare sublayer animates implicitly; per-frame layout must not.
+        coverShadeLayer.actions = [
+            "bounds": NSNull(), "position": NSNull(),
+            "cornerRadius": NSNull(), "opacity": NSNull(),
+        ]
+        coverView.layer.addSublayer(coverShadeLayer)
+
         return BookStage(
             shadowView: shadowView,
             coverContainer: coverContainer,
             spineShadowView: spineShadowView,
-            coverView: coverView
+            coverView: coverView,
+            coverShadeLayer: coverShadeLayer
         )
     }
 
@@ -737,6 +756,7 @@ final class ReaderCardTransitionAnimator: NSObject, UIViewControllerAnimatedTran
         var coverContentsRect: CGRect
         var coverTransform: CATransform3D
         var coverAlpha: CGFloat
+        var coverShadeOpacity: Float
     }
 
     private func computeFrameValues(
@@ -776,7 +796,8 @@ final class ReaderCardTransitionAnimator: NSObject, UIViewControllerAnimatedTran
                 coverMasksToBounds: false,
                 coverContentsRect: CGRect(x: 0, y: 0, width: 1, height: 1),
                 coverTransform: CATransform3DIdentity,
-                coverAlpha: 0
+                coverAlpha: 0,
+                coverShadeOpacity: 0
             )
         }
 
@@ -872,7 +893,8 @@ final class ReaderCardTransitionAnimator: NSObject, UIViewControllerAnimatedTran
                 targetSize: visual.frame.size
             ),
             coverTransform: coverTransform,
-            coverAlpha: pose.coverOpacity
+            coverAlpha: pose.coverOpacity,
+            coverShadeOpacity: Float(pose.coverShadeOpacity)
         )
     }
 
@@ -931,6 +953,11 @@ final class ReaderCardTransitionAnimator: NSObject, UIViewControllerAnimatedTran
         stage.coverView.layer.contentsRect = values.coverContentsRect
         stage.coverView.layer.transform = values.coverTransform
         stage.coverView.alpha = values.coverAlpha
+
+        stage.coverShadeLayer.bounds = values.coverBounds
+        stage.coverShadeLayer.position = CGPoint(x: values.coverBounds.midX, y: values.coverBounds.midY)
+        stage.coverShadeLayer.cornerRadius = values.coverCornerRadius
+        stage.coverShadeLayer.opacity = values.coverShadeOpacity
     }
 
     /// Non-interactive push / programmatic pop. Instead of recomputing the
@@ -1195,6 +1222,28 @@ final class ReaderCardTransitionAnimator: NSObject, UIViewControllerAnimatedTran
             "opacity",
             to: coverLayer,
             values: frames.map { NSNumber(value: Double($0.coverAlpha)) }
+        )
+
+        let coverShadeLayer = state.stage.coverShadeLayer
+        addKeyframe(
+            "bounds",
+            to: coverShadeLayer,
+            values: frames.map { NSValue(cgRect: $0.coverBounds) }
+        )
+        addKeyframe(
+            "position",
+            to: coverShadeLayer,
+            values: frames.map { NSValue(cgPoint: CGPoint(x: $0.coverBounds.midX, y: $0.coverBounds.midY)) }
+        )
+        addKeyframe(
+            "cornerRadius",
+            to: coverShadeLayer,
+            values: frames.map { NSNumber(value: Double($0.coverCornerRadius)) }
+        )
+        addKeyframe(
+            "opacity",
+            to: coverShadeLayer,
+            values: frames.map { NSNumber(value: $0.coverShadeOpacity) }
         )
 
         // `clip` is the offscreen-pass budget: how many sampled frames still

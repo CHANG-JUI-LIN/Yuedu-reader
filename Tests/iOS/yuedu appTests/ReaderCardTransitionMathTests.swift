@@ -496,6 +496,27 @@ struct ReaderBookOpeningDirectionTests {
         #expect(abs(open.coverRotationY) > .pi / 2)
         #expect(open.coverOpacity == 0)
     }
+
+    @Test("the cover darkens as it turns from the light, never while flat, and mirrors across directions")
+    func coverShadeFollowsTheHinge() {
+        let closed = ReaderBookOpeningPose.interpolate(progress: 0, direction: .leftSpine)
+        #expect(closed.coverShadeOpacity == 0)
+        // Still flat while the card only lifts and grows.
+        #expect(ReaderBookOpeningPose.interpolate(progress: 0.14, direction: .leftSpine).coverShadeOpacity == 0)
+
+        var previous: CGFloat = 0
+        for step in 15...90 {
+            let shade = ReaderBookOpeningPose.interpolate(progress: CGFloat(step) / 100, direction: .leftSpine)
+                .coverShadeOpacity
+            #expect(shade >= previous)
+            #expect(shade <= ReaderBookOpeningPose.maxCoverShade)
+            previous = shade
+        }
+        let left = ReaderBookOpeningPose.interpolate(progress: 0.55, direction: .leftSpine)
+        let right = ReaderBookOpeningPose.interpolate(progress: 0.55, direction: .rightSpine)
+        #expect(left.coverShadeOpacity > 0)
+        #expect(left.coverShadeOpacity == right.coverShadeOpacity)
+    }
 }
 
 @Suite("BookCardNavigationGate", .serialized)

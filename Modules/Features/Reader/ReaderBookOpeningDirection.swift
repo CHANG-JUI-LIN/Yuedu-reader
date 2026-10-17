@@ -50,6 +50,13 @@ struct ReaderBookOpeningPose: Equatable {
     let coverOpacity: CGFloat
     /// Spine shadow that builds during the unfold and fades at both endpoints.
     let spineShadowOpacity: CGFloat
+    /// Darkening of the front cover as it turns away from the light, so the
+    /// hinge reads as a lit, physical board rather than a flat card.
+    let coverShadeOpacity: CGFloat
+
+    /// Darkest the cover gets, reached at the peak angle. The maintainer
+    /// chose this from the 2026-10-17 storyboard (Figma "開書卡片轉場").
+    static let maxCoverShade: CGFloat = 0.38
 
     /// Peak hinge angle (~108°): just past perpendicular, so the cover stays
     /// visible for most of the motion and back-face culling retires it.
@@ -87,11 +94,17 @@ struct ReaderBookOpeningPose: Equatable {
             spineShadow = 0.35 * sin(.pi * unfold)
         }
 
+        // Lambert-style falloff, 1 − cos θ: none while the cover lies flat,
+        // deepening as it turns edge-on. Past 90° the cover is culled anyway.
+        let angle = maxCoverRotation * unfold
+        let coverShade = unfold <= 0 ? 0 : maxCoverShade * (1 - cos(angle))
+
         return ReaderBookOpeningPose(
             coverAnchorX: anchorX,
-            coverRotationY: rotationSign * maxCoverRotation * unfold,
+            coverRotationY: rotationSign * angle,
             coverOpacity: 1 - coverFade,
-            spineShadowOpacity: spineShadow
+            spineShadowOpacity: spineShadow,
+            coverShadeOpacity: min(coverShade, maxCoverShade)
         )
     }
 }
