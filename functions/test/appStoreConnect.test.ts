@@ -177,6 +177,24 @@ describe("App Store Connect client", () => {
     await assert.rejects(client.revokeAppAccess("member@example.com"), /failed: 503/);
   });
 
+  it("reads a possibly absent resource as undefined on 404 only", async () => {
+    const options = {credentials: testCredentials(), appId: "6772972358", groupName: "beta"};
+    const absent = new AppStoreConnectClient({...options, fetchImpl: mockFetch(() =>
+      jsonResponse({errors: [{status: "404", code: "NOT_FOUND"}]}, 404))});
+    assert.equal(await absent.getJSONIfPresent("/betaFeedbackCrashSubmissions/x/crashLog"), undefined);
+
+    const present = new AppStoreConnectClient({...options, fetchImpl: mockFetch(() =>
+      jsonResponse({data: {attributes: {logText: "Thread 0 Crashed"}}}))});
+    assert.deepEqual(
+      await present.getJSONIfPresent("/betaFeedbackCrashSubmissions/x/crashLog"),
+      {data: {attributes: {logText: "Thread 0 Crashed"}}}
+    );
+
+    const failing = new AppStoreConnectClient({...options, fetchImpl: mockFetch(() =>
+      jsonResponse({errors: []}, 503))});
+    await assert.rejects(failing.getJSONIfPresent("/betaFeedbackCrashSubmissions/x/crashLog"), /failed: 503/);
+  });
+
   it("throws with the API error detail on a failed response", async () => {
     const fetchImpl = mockFetch(() => {
       return jsonResponse({errors: [{detail: "bad request"}]}, 400);

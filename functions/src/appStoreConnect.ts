@@ -158,6 +158,24 @@ export class AppStoreConnectClient {
     return await response.json() as T;
   }
 
+  /**
+   * A GET for a resource that may legitimately not exist: 404 is `undefined`, every other
+   * failure still throws. A TestFlight crash submission's `crashLog` is one — App Store
+   * Connect answers 404 for a submission it holds no log for (AGT4StkW1MHoKzDbZNJd4So,
+   * 2026-10-16: still 404 on redelivery five hours later), and the submission itself is
+   * still worth filing.
+   */
+  async getJSONIfPresent<T>(path: string): Promise<T | undefined> {
+    const response = await this.fetchImpl(`${apiBaseUrl}${path}`, {
+      headers: {"Content-Type": "application/json", ...signedRequestHeaders(this.options.credentials)},
+    });
+    if (response.status === 404) return undefined;
+    if (!response.ok) {
+      throw new Error(`App Store Connect API GET ${path} failed: ${response.status} ${await response.text()}`);
+    }
+    return await response.json() as T;
+  }
+
   private async request(path: string, init: RequestInit = {}): Promise<Response> {
     const response = await this.fetchImpl(`${apiBaseUrl}${path}`, {
       ...init,

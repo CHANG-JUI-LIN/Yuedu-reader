@@ -103,8 +103,8 @@ async function recordTestFlightSubmission(kind: TestFlightKind, submissionId: st
   const buildId = submission.data.relationships?.build?.data?.id;
   const appVersion = buildId !== undefined ? await buildVersion(client, buildId) : "";
   const crashLog = kind === "testflightCrash"
-    ? (await client.getJSON<Document<{logText?: string}>>(`/betaFeedbackCrashSubmissions/${submissionId}/crashLog`))
-      .data.attributes?.logText
+    ? (await client.getJSONIfPresent<Document<{logText?: string}>>(`/betaFeedbackCrashSubmissions/${submissionId}/crashLog`))
+      ?.data.attributes?.logText
     : undefined;
   const screenshotPaths = await copyScreenshots(client, submissionId, submission.data.attributes?.screenshots ?? []);
   await recordObservation(testFlightObservation({
