@@ -95,3 +95,9 @@ M2 is split: LibraryTabRoot, HomeContentSourcePicker, ExploreHome and BookSearch
 - Comics: `MetadataFillQuery`/`Candidate.contentKind`; the coordinator offers comic copies; Open Library and 來源配置 still take text only; a module takes a comic when its search can list one (entry `contentKind` or an item rule).
 - UI tests: every launch passes `-no-official-modules` (guardrail 4); the official modules otherwise fill the fixture shelf from bgm.tv.
 - Tests: `OfficialModuleFilesTests` (both files through the real client from saved replies, the fill rule, kinds, localizations), `MetadataFillOrderTests/moduleFills` (two same works → nothing).
+
+### M2b 古騰堡、青空文庫 into 官方模組 (2026-10-17)
+
+- 資源庫: the 公有書庫 group is gone; 官方模組 comes first (where 公有書庫 was) and lists AI 推薦, 古騰堡, 青空文庫, then the bundled modules. The tiles keep `library.public.<id>`, their pages and storefront hiding.
+- 選擇內容來源: 書庫 holds only the reader's connections (and is left out without one); 官方模組 holds AI 推薦's rows, 古騰堡, 青空文庫 and the bundled modules; 模組 the imported ones.
+- `LibraryTabUITests` (grid: AI 推薦 beside 古騰堡, 青空文庫 below; no 公有書庫 header), `HomeEditorUITests/testAddSections`: 3/3.

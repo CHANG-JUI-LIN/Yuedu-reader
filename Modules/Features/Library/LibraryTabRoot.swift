@@ -79,10 +79,9 @@ struct LibraryTabRoot: View {
                         if !noticeDismissed {
                             notice
                         }
-                        publicLibrariesSection
+                        OfficialModuleSection { layout in publicLibraryTiles(layout) }
                         remoteLibrariesSection
                         sourcesSection
-                        OfficialModuleSection()
                         RuleModuleSection(library: modules) { moduleFlow.begin(.address) }
                         subscriptionsSection
                     } else if !matchingSources.isEmpty {
@@ -244,22 +243,17 @@ struct LibraryTabRoot: View {
 
     // MARK: Sections
 
-    @ViewBuilder
-    private var publicLibrariesSection: some View {
-        let publicLibraries = libraries.filter { $0.key.type == .gutenberg || $0.key.type == .aozora }
-        if !publicLibraries.isEmpty {
-            LibrarySection(localized("公有書庫")) { layout in
-                ForEach(publicLibraries) { library in
-                    NavigationLink(value: ExploreNavigationRoute.library(library.key)) {
-                        ExploreEntryLabel(title: library.name, artwork: .symbol(library.systemImage), layout: layout,
-                                          subtitle: publicLibrarySite(library.key.type),
-                                          detail: publicLibraryCount(library.key.type))
-                    }
-                    .buttonStyle(ExploreTileButtonStyle())
-                    .accessibilityLabel(library.name)
-                    .accessibilityIdentifier("library.public.\(library.key.id)")
-                }
+    /// 古騰堡 and 青空文庫, in 官方模組 (M2b). Their identifiers stay `library.public.<id>`.
+    private func publicLibraryTiles(_ layout: ExploreEntryLabel.Layout) -> some View {
+        ForEach(libraries.filter { $0.key.type == .gutenberg || $0.key.type == .aozora }) { library in
+            NavigationLink(value: ExploreNavigationRoute.library(library.key)) {
+                ExploreEntryLabel(title: library.name, artwork: .symbol(library.systemImage), layout: layout,
+                                  subtitle: publicLibrarySite(library.key.type),
+                                  detail: publicLibraryCount(library.key.type))
             }
+            .buttonStyle(ExploreTileButtonStyle())
+            .accessibilityLabel(library.name)
+            .accessibilityIdentifier("library.public.\(library.key.id)")
         }
     }
 

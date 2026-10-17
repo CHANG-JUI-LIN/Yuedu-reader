@@ -2,11 +2,15 @@ import SwiftUI
 
 /// 資源庫's 官方模組 (AI 推薦 plan 8d): the app's own modules, always listed, above 匯入的模組:
 /// AI 推薦, then the bundled module files (module ecosystem plan, M2).
-struct OfficialModuleSection: View {
+struct OfficialModuleSection<Libraries: View>: View {
     @ObservedObject var library: RuleModuleLibrary
+    /// 古騰堡 and 青空文庫 (M2b, maintainer 2026-10-17: 「公有書庫都算是官方模塊」): their own
+    /// pages, after AI 推薦 and before the bundled modules.
+    private let libraries: (ExploreEntryLabel.Layout) -> Libraries
 
-    init(library: RuleModuleLibrary? = nil) {
+    init(library: RuleModuleLibrary? = nil, @ViewBuilder libraries: @escaping (ExploreEntryLabel.Layout) -> Libraries) {
         self.library = library ?? .shared
+        self.libraries = libraries
     }
 
     var body: some View {
@@ -19,10 +23,17 @@ struct OfficialModuleSection: View {
             .accessibilityLabel(localized("AI 推薦"))
             .accessibilityValue(localized("依你最近讀的書推薦作品"))
             .accessibilityIdentifier("library.module.official.aiRecommendations")
+            libraries(layout)
             ForEach(library.official, id: \.module.id) { installed in
                 RuleModuleCard(module: installed.module, layout: layout)
             }
         }
+    }
+}
+
+extension OfficialModuleSection where Libraries == EmptyView {
+    init(library: RuleModuleLibrary? = nil) {
+        self.init(library: library) { _ in EmptyView() }
     }
 }
 

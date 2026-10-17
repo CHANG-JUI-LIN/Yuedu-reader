@@ -1,7 +1,8 @@
 import SwiftUI
 
 // Unified library 5d-5: 選擇內容來源 (design §13.3; Phase 5 plan, decision 23), grouped as
-// `HomeContentSource.swift` lists: App 資料, 書庫, 來源配置. A source pushes its items: a
+// 資源庫 groups them: App 資料, 書庫 (the reader's connections), 來源配置, 官方模組 (AI 推薦,
+// 古騰堡, 青空文庫, the bundled modules; M2b), 模組 (the imported ones). A source pushes its items: a
 // connection's feeds, Gutenberg's lists and feeds, 青空文庫's indexes, a book source's discover
 // categories. 「目前」 marks the group and source in use; a check mark, the item.
 //
@@ -71,7 +72,7 @@ struct HomeContentSourcePicker: View {
             }
             .interfaceSectionSurface()
 
-            if !feedConnections.isEmpty || availability.isAvailable {
+            if !feedConnections.isEmpty {
                 Section {
                     ForEach(feedConnections) { connection in
                         NavigationLink {
@@ -79,20 +80,6 @@ struct HomeContentSourcePicker: View {
                         } label: {
                             ownerLabel(connection.name, systemImage: SourceKindSymbol.symbol(for: ProviderType(connection.kind)),
                                        isCurrent: owner == .connection(id: connection.id))
-                        }
-                    }
-                    if availability.isAvailable {
-                        NavigationLink {
-                            HomeFeedChoices(source: .gutenberg, current: current, choose: choose)
-                        } label: {
-                            ownerLabel(localized("Project Gutenberg"), systemImage: SourceKindSymbol.symbol(for: .gutenberg),
-                                       isCurrent: owner == .gutenberg)
-                        }
-                        NavigationLink {
-                            HomeAozoraChoices(current: current, choose: choose)
-                        } label: {
-                            ownerLabel(localized("青空文庫"), systemImage: SourceKindSymbol.symbol(for: .aozora),
-                                       isCurrent: owner == .aozora)
                         }
                     }
                 } header: {
@@ -112,6 +99,7 @@ struct HomeContentSourcePicker: View {
             }
             .interfaceSectionSurface()
 
+            // As 資源庫 groups them (M2b): AI 推薦, 古騰堡, 青空文庫, then the bundled modules.
             Section {
                 ForEach(HomeSectionBinding.official, id: \.self) { binding in
                     HomeChoiceRow(title: HomeSection(layout: .row, binding: binding).displayTitle(sourceName: ""),
@@ -119,21 +107,32 @@ struct HomeContentSourcePicker: View {
                         choose(HomeContentChoice(binding: binding))
                     }
                 }
+                if availability.isAvailable {
+                    NavigationLink {
+                        HomeFeedChoices(source: .gutenberg, current: current, choose: choose)
+                    } label: {
+                        ownerLabel(localized("Project Gutenberg"), systemImage: SourceKindSymbol.symbol(for: .gutenberg),
+                                   isCurrent: owner == .gutenberg)
+                    }
+                    NavigationLink {
+                        HomeAozoraChoices(current: current, choose: choose)
+                    } label: {
+                        ownerLabel(localized("青空文庫"), systemImage: SourceKindSymbol.symbol(for: .aozora),
+                                   isCurrent: owner == .aozora)
+                    }
+                }
+                ForEach(modules.official, id: \.module.id) { installed in
+                    moduleLink(installed)
+                }
             } header: {
                 Text(localized("官方模組"))
             }
             .interfaceSectionSurface()
 
-            if !modules.modules.isEmpty {
+            if !modules.imported.isEmpty {
                 Section {
-                    ForEach(modules.modules, id: \.module.id) { installed in
-                        NavigationLink {
-                            HomeModuleChoices(module: installed.module, current: current, choose: choose)
-                        } label: {
-                            ownerLabel(installed.module.title, systemImage: "puzzlepiece.extension",
-                                       isCurrent: owner == .module(id: installed.module.id))
-                        }
-                        .accessibilityIdentifier("homePicker.module.\(installed.module.id)")
+                    ForEach(modules.imported, id: \.module.id) { installed in
+                        moduleLink(installed)
                     }
                 } header: {
                     Text(localized("模組"))
@@ -154,6 +153,16 @@ struct HomeContentSourcePicker: View {
                 }
             }
         }
+    }
+
+    private func moduleLink(_ installed: InstalledRuleModule) -> some View {
+        NavigationLink {
+            HomeModuleChoices(module: installed.module, current: current, choose: choose)
+        } label: {
+            ownerLabel(installed.module.title, systemImage: "puzzlepiece.extension",
+                       isCurrent: owner == .module(id: installed.module.id))
+        }
+        .accessibilityIdentifier("homePicker.module.\(installed.module.id)")
     }
 
     private func ownerLabel(_ name: String, systemImage: String?, isCurrent: Bool) -> some View {
