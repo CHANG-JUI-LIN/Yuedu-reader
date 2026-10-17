@@ -389,9 +389,10 @@ final class WorkIndexService {
 /// `Works/index.json`.
 struct WorkIndexFile: Codable, Hashable, Sendable {
     /// 2: `remoteInputs` (2d). 3: each entry's `seriesKey` (5c-4). 4: each entry's
-    /// `seriesIndex` (5d-6b). A file of an older version is discarded and rebuilt; the index is
-    /// derived.
-    static let currentSchemaVersion = 4
+    /// `seriesIndex` (5d-6b). 5: `authorKeys` without 「未知作者」 (2026-10-17), which an
+    /// unchanged copy's saved entry would otherwise keep. A file of an older version is
+    /// discarded and rebuilt; the index is derived.
+    static let currentSchemaVersion = 5
 
     /// What each copy's entry was built from. A copy whose record and sidecar stamp are the
     /// same next time keeps its entry.

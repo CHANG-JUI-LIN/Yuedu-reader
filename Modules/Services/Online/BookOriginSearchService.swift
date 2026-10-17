@@ -111,7 +111,8 @@ enum BookOriginSearchService {
                             lastChapter: ob.lastChapter,
                             wordCount: ob.wordCount,
                             kind: ob.kind,
-                            runtimeVariables: ob.runtimeVariables
+                            runtimeVariables: ob.runtimeVariables,
+                            author: ob.author
                         )
                     )
                     if shouldStop(emittedCount + batchOrigins.count) {

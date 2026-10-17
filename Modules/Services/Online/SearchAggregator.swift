@@ -15,6 +15,10 @@ struct BookOrigin: Identifiable, Codable, Sendable {
     let wordCount: String
     let kind: String
     let runtimeVariables: [String: String]?
+    /// The author the source's result named. Only the cross-source fan-out sets it
+    /// (`BookOriginSearchService`), for the metadata filler to tell one author from two; it
+    /// is not saved with cached origins.
+    var author: String = ""
 
     // `id` is a fresh UUID per instance and is intentionally excluded so cached
     // origins (換源 results) round-trip without persisting a meaningless identity.
