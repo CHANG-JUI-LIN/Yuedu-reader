@@ -82,18 +82,42 @@ final class ModuleProvider: CollectionBrowsing, HomeSectionProviding {
         module.modules.first { $0.id == id }
     }
 
+    /// The module's search for `keyword` as its list items, every value whole (a summary is not
+    /// cut to a row's blurb): what `ModuleFillProvider` matches and fills from. Nil when the
+    /// module has no search.
+    func searchItems(_ keyword: String) async throws -> [RuleListItem]? {
+        guard let search = module.search else { return nil }
+        return try await items(of: search, parameters: [:], position: search.firstPosition, keyword: keyword)
+    }
+
+    /// An item as the entry `searchItems` would list it.
+    func searchEntry(_ item: RuleListItem) -> CollectionEntry? {
+        guard let search = module.search else { return nil }
+        return Self.entry(item, of: search, instance: instance, hasURLRule: Self.hasURLRule(search),
+                          hosts: Set(module.hosts.map { $0.lowercased() }))
+    }
+
     private func page(of entry: RuleModule.Entry, parameters: [String: String],
                       after cursor: CollectionCursor?, keyword: String? = nil) async throws -> CollectionPage {
         let position = cursor.flatMap { Int($0.value) } ?? entry.firstPosition
+        let items = try await items(of: entry, parameters: parameters, position: position, keyword: keyword)
+        let instance = instance
+        let hasURLRule = Self.hasURLRule(entry)
+        let hosts = Set(module.hosts.map { $0.lowercased() })
+        return CollectionPage(
+            entries: items.compactMap { Self.entry($0, of: entry, instance: instance, hasURLRule: hasURLRule, hosts: hosts) },
+            next: entry.position(after: position, itemCount: items.count).map { CollectionCursor(value: String($0)) })
+    }
+
+    private nonisolated static func hasURLRule(_ entry: RuleModule.Entry) -> Bool {
+        !(entry.list.url ?? "").trimmingCharacters(in: .whitespaces).isEmpty
+    }
+
+    private func items(of entry: RuleModule.Entry, parameters: [String: String], position: Int,
+                       keyword: String?) async throws -> [RuleListItem] {
         do {
-            let page = try await client.page(of: entry, in: module,
-                                             values: entry.values(parameters, position: position, keyword: keyword))
-            let instance = instance
-            let hasURLRule = !(entry.list.url ?? "").trimmingCharacters(in: .whitespaces).isEmpty
-            let hosts = Set(module.hosts.map { $0.lowercased() })
-            return CollectionPage(
-                entries: page.items.compactMap { Self.entry($0, of: entry, instance: instance, hasURLRule: hasURLRule, hosts: hosts) },
-                next: entry.position(after: position, itemCount: page.items.count).map { CollectionCursor(value: String($0)) })
+            return try await client.page(of: entry, in: module,
+                                         values: entry.values(parameters, position: position, keyword: keyword)).items
         } catch {
             let failure = try SourceFailure.classify(error)
             AppLogger.network("module page failed", error: SourceFailure.loggable(error), context: [

@@ -30,7 +30,8 @@ final class OpenLibraryFillProvider: MetadataFillProvider {
     }
 
     func canLookUp(_ query: MetadataFillQuery) -> Bool {
-        query.identifiers.contains { $0.scheme == .isbn13 } && !query.missing.isDisjoint(with: Self.fields)
+        query.contentKind == .text && query.identifiers.contains { $0.scheme == .isbn13 }
+            && !query.missing.isDisjoint(with: Self.fields)
     }
 
     func lookUp(_ query: MetadataFillQuery) async throws -> MetadataFillResult {

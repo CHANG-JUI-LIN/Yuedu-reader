@@ -93,13 +93,18 @@ struct MetadataFillOrderTests {
         let filler = ModuleFillProvider(provider: f.searching)
         let result = try await filler.lookUp(query())
         #expect(result.values[.intro] == .text("地球往事。"))
-        #expect(result.values[.tags] == .texts(["科幻"]), "the item's category, as 作品詳情 shows it: its first")
+        #expect(result.values[.tags] == .texts(["科幻", "長篇"]), "every category the item's kind names")
         #expect(result.values[.cover] == nil && result.identifiers.isEmpty, "level B: no cover, no identifier")
         #expect(result.sourceItem?.instance == ModuleProvider.instanceKey(moduleID: "m.search"))
         #expect(ModuleStub.urls == ["https://example.com/s?k=%E4%B8%89%E9%AB%94"])
 
         ModuleStub.install(["example.com/s": .html(ModuleFixture.html([("三體", "別人", "不是這本", "科幻")]))])
         #expect(try await filler.lookUp(query()).values.isEmpty, "another author's 三體 gives nothing")
+
+        ModuleStub.install(["example.com/s": .html(ModuleFixture.html([
+            ("三體", "劉慈欣", "地球往事。", "科幻"), ("三體", "劉慈欣", "另一個版本。", "科幻"),
+        ]))])
+        #expect(try await filler.lookUp(query()).values.isEmpty, "two results are the same work: which one is unknown, so neither")
     }
 
     @Test("a refusal or a hanging site throws, so the ledger asks again later")

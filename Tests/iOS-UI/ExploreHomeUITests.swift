@@ -36,7 +36,7 @@ final class ExploreHomeUITests: XCTestCase {
     @MainActor
     private func application(reset: Bool = true, extra: [String] = []) -> XCUIApplication {
         let app = XCUIApplication()
-        app.launchArguments = ["-AppleLanguages", "(zh-Hant)", "-AppleLocale", "zh_TW",
+        app.launchArguments = ["-no-official-modules", "-AppleLanguages", "(zh-Hant)", "-AppleLocale", "zh_TW",
                                "-yd_source_disclaimer_accepted", "YES", "-book-source-store-dir", sourceDirectory.path]
         if reset { app.launchArguments += ["-reset-public-library-explore", "-reset-explore-home"] }
         app.launchArguments += extra

@@ -30,7 +30,7 @@ final class ReaderCloseRecentSortUITests: XCTestCase {
     @MainActor
     private func launchShelf(_ layout: [String]) -> XCUIApplication {
         let app = XCUIApplication()
-        app.launchArguments = ["-AppleLanguages", "(en)",
+        app.launchArguments = ["-no-official-modules", "-AppleLanguages", "(en)",
                                "-yd_root_tab_visible_ids", "(bookshelf, settings)",
                                "-bookSortOrder", "recentlyRead",
                                "-yd_appearance_reader_interface", "classic"] + layout

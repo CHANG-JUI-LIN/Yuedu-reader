@@ -7,7 +7,7 @@ final class RemoteLibrarySettingsUITests: XCTestCase {
     @MainActor
     func testAddEditAndDeleteFromSettings() throws {
         let app = XCUIApplication()
-        app.launchArguments += ["-AppleLanguages", "(en)", "-AppleLocale", "en_US"]
+        app.launchArguments += ["-no-official-modules", "-AppleLanguages", "(en)", "-AppleLocale", "en_US"]
         app.launch()
         let notNow = app.buttons["Don’t Allow"]
         if notNow.waitForExistence(timeout: 5) { notNow.tap() }
@@ -63,7 +63,7 @@ final class RemoteLibrarySettingsUITests: XCTestCase {
     @MainActor
     func testExampleCatalogAddsAConnection() throws {
         let app = XCUIApplication()
-        app.launchArguments += ["-AppleLanguages", "(en)", "-AppleLocale", "en_US"]
+        app.launchArguments += ["-no-official-modules", "-AppleLanguages", "(en)", "-AppleLocale", "en_US"]
         app.launch()
         let notNow = app.buttons["Don’t Allow"]
         if notNow.waitForExistence(timeout: 5) { notNow.tap() }
@@ -107,7 +107,7 @@ final class RemoteLibrarySettingsUITests: XCTestCase {
             throw XCTSkip("Set \(key) to a WebDAV server holding t1k/")
         }
         let app = XCUIApplication()
-        app.launchArguments += ["-AppleLanguages", "(en)", "-AppleLocale", "en_US"]
+        app.launchArguments += ["-no-official-modules", "-AppleLanguages", "(en)", "-AppleLocale", "en_US"]
         app.launch()
         let notNow = app.buttons["Don’t Allow"]
         if notNow.waitForExistence(timeout: 5) { notNow.tap() }

@@ -9,6 +9,12 @@ struct InstalledRuleModule: Hashable, Sendable {
     let updatedAt: Date
     /// Bundled with the app (`OfficialRuleModules`): never removed, updated with the app.
     var isOfficial = false
+
+    /// Shown in `language`; the file on disk is as written.
+    func localized(for language: String) -> InstalledRuleModule {
+        InstalledRuleModule(module: module.localized(for: language), subscriptionURL: subscriptionURL,
+                            installedAt: installedAt, updatedAt: updatedAt, isOfficial: isOfficial)
+    }
 }
 
 enum RuleModuleStoreError: Error, Equatable, Sendable {

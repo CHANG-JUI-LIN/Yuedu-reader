@@ -8,7 +8,7 @@ final class EdgeTTSSettingsUITests: XCTestCase {
     @MainActor
     func testBuiltInVoiceSelectionAndNativePicker() throws {
         let app = XCUIApplication()
-        app.launchArguments += ["-AppleLanguages", "(en)", "-AppleLocale", "en_US"]
+        app.launchArguments += ["-no-official-modules", "-AppleLanguages", "(en)", "-AppleLocale", "en_US"]
         seedImportedVoices(app)
         app.launch()
         openSettings(app)

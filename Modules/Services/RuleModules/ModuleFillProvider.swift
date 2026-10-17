@@ -1,10 +1,17 @@
 import Foundation
 
 /// An installed module as a metadata provider (Phase 6h): a shelf copy whose description or
-/// categories are empty is searched for by title through the module's `search`, and a result
-/// whose title and author both match (level B) gives them, as a 來源配置's search result does
-/// (`BookSourceFillProvider`). Nothing else: a same-name book's cover or identifiers are never
-/// taken.
+/// categories are empty is searched for by title through the module's `search`, and the one
+/// result that is the same work (level B) gives them. Nothing else: a same-name book's cover
+/// or identifiers are never taken.
+///
+/// The same work (module ecosystem M3, guardrail 5, **for veto**: it was "the first match"):
+/// - its title or one of its `aliases` is the copy's title (`WorkMatchKey`), its author is
+///   compatible with the copy's, and it is the copy's kind (a comic from a comic);
+/// - exactly one result is; two are a question this cannot answer, and nothing is filled.
+///
+/// A summary in another script is left out (an English one for a Chinese copy), and so is a
+/// Japanese one for a copy whose title has no kana; tags keep the copy title's script.
 ///
 /// Asked in the order 資料來源 lists it, checked by default (maintainer, 2026-10-15).
 @MainActor
@@ -26,9 +33,10 @@ final class ModuleFillProvider: MetadataFillProvider {
     }
 
     /// A copy that came from this module has its values already; a copy without a title and
-    /// an author cannot be matched.
+    /// an author cannot be matched; a comic is asked only of a module whose search lists comics.
     func canLookUp(_ query: MetadataFillQuery) -> Bool {
-        provider.module.search != nil
+        guard let search = provider.module.search else { return false }
+        return search.listedKinds.contains(query.contentKind)
             && query.copySource != key
             && !query.title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
             && query.authors.contains { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
@@ -41,41 +49,82 @@ final class ModuleFillProvider: MetadataFillProvider {
         let started = SourcePerfTrace.now
         let provider = provider
         let title = query.title.trimmingCharacters(in: .whitespacesAndNewlines)
-        let page: CollectionPage?
+        let items: [RuleListItem]
         do {
-            page = try await LibrarySearch.within(timeout) { try await provider.search(title) }
+            items = try await LibrarySearch.within(timeout) { try await provider.searchItems(title) } ?? []
         } catch {
             SourcePerfTrace.record("metadata.fill.module", "module=\(provider.module.id) outcome=failed",
                                    since: started, thresholdMs: 0)
             throw error
         }
-        let result = Self.result(from: page?.entries ?? [], query: query)
-        SourcePerfTrace.record("metadata.fill.module", "module=\(provider.module.id) items=\(page?.entries.count ?? 0) filled=\(result.values.count)",
+        let result = provider.module.search.map {
+            Self.result(from: items, of: $0, query: query, record: { item in
+                guard case .item(let record, _, _) = provider.searchEntry(item) else { return nil }
+                return record.key
+            })
+        } ?? MetadataFillResult(values: [:])
+        SourcePerfTrace.record("metadata.fill.module", "module=\(provider.module.id) items=\(items.count) filled=\(result.values.count)",
                                since: started, thresholdMs: 0)
         return result
     }
 
-    /// The first match with a description gives it, and its categories; without one, the
-    /// first match with categories gives those.
-    static func result(from entries: [CollectionEntry], query: MetadataFillQuery) -> MetadataFillResult {
+    /// The values of the one item that is the copy's work; `record` names it in the sidecar.
+    static func result(from items: [RuleListItem], of entry: RuleModule.Entry, query: MetadataFillQuery,
+                       record: (RuleListItem) -> SourceItemKey?) -> MetadataFillResult {
         let titleKey = WorkMatchKey.title(query.title)
-        let authorKeys = query.authors.map(WorkMatchKey.author)
-        let matches = entries.compactMap { entry -> (record: SourceRecord, intro: String, tags: [String])? in
-            guard case .item(let record, let summary, _) = entry,
-                  !titleKey.isEmpty, WorkMatchKey.title(summary.title) == titleKey,
-                  WorkMatchKey.authorKeysCompatible(authorKeys, summary.authors.map(WorkMatchKey.author)) else { return nil }
-            let intro = (summary.blurb ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
-            // An item keeps one category (`WorkSummary.category(fromSourceKind:)`), the one
-            // 作品詳情 shows for it.
-            return (record, intro, BookSourceFillProvider.tags(from: summary.category ?? ""))
+        guard !titleKey.isEmpty else { return MetadataFillResult(values: [:]) }
+        var seen = Set<String>()
+        let matches = items.filter { item in
+            entry.contentKind(of: item) == query.contentKind
+                && ([item.name] + (item.aliases ?? [])).contains { WorkMatchKey.title($0) == titleKey }
+                && WorkMatchKey.authorsCompatible(query.authors, Self.names(item.author))
+                // One work listed twice is still one.
+                && seen.insert(item.bookUrl.isEmpty ? "\(item.name)\u{1F}\(item.author)" : item.bookUrl).inserted
         }
-        guard let chosen = matches.first(where: { query.missing.contains(.intro) && !$0.intro.isEmpty })
-            ?? matches.first(where: { query.missing.contains(.tags) && !$0.tags.isEmpty }) else {
-            return MetadataFillResult(values: [:])
-        }
+        guard matches.count == 1, let item = matches.first else { return MetadataFillResult(values: [:]) }
+
+        let script = WritingScript(of: query.title)
         var values: [MetadataField: MetadataPayload] = [:]
-        if query.missing.contains(.intro), !chosen.intro.isEmpty { values[.intro] = .text(chosen.intro) }
-        if query.missing.contains(.tags), !chosen.tags.isEmpty { values[.tags] = .texts(chosen.tags) }
-        return MetadataFillResult(values: values, sourceItem: chosen.record.key)
+        if query.missing.contains(.intro) {
+            let intro = OnlineBookDetailPresentationPolicy.sanitizeIntro(item.intro, indentParagraphs: false)
+            if !intro.isEmpty, WritingScript(of: intro) == script,
+               !JapaneseText.isJapanese(intro) || JapaneseText.isJapanese(query.title) {
+                values[.intro] = .text(intro)
+            }
+        }
+        if query.missing.contains(.tags) {
+            let tags = entry.tags(of: item).filter { WritingScript(of: $0) == script }
+            if !tags.isEmpty { values[.tags] = .texts(tags) }
+        }
+        return MetadataFillResult(values: values, sourceItem: values.isEmpty ? nil : record(item))
+    }
+
+    /// An author value naming several people (`山田鐘人、アベツカサ`).
+    private static func names(_ author: String) -> [String] {
+        author.components(separatedBy: CharacterSet(charactersIn: "、,，/／;；\n"))
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+    }
+}
+
+extension RuleModule.Entry {
+    /// The kinds its items can be: the entry's, and comics when an item rule can say so.
+    nonisolated var listedKinds: Set<ContentKind> {
+        var kinds: Set<ContentKind> = [contentKind.flatMap(ContentKind.init(rawValue:)) ?? .text]
+        if !(list.contentKind ?? "").trimmingCharacters(in: .whitespaces).isEmpty { kinds.insert(.comic) }
+        return kinds
+    }
+}
+
+/// Whether a text is Japanese rather than Chinese: kana make up a twentieth of its letters.
+/// `WritingScript` counts both as CJK; this tells a Japanese summary from a Chinese one.
+enum JapaneseText {
+    nonisolated static func isJapanese(_ text: String) -> Bool {
+        var kana = 0, letters = 0
+        for scalar in text.unicodeScalars where scalar.properties.isAlphabetic {
+            letters += 1
+            if (0x3040...0x30FF).contains(scalar.value) { kana += 1 }
+        }
+        return letters > 0 && kana * 20 >= letters
     }
 }

@@ -65,7 +65,7 @@ final class BookshelfGridSelectionUITests: XCTestCase {
     @MainActor
     private func launchShelf(language: String) -> XCUIApplication {
         let app = XCUIApplication()
-        app.launchArguments = ["-AppleLanguages", "(\(language))",
+        app.launchArguments = ["-no-official-modules", "-AppleLanguages", "(\(language))",
                                "-yd_root_tab_visible_ids", "(bookshelf, settings)",
                                "-bookLayoutIsGrid", "YES"]
         app.launch()

@@ -1,0 +1,151 @@
+{
+  "id": "anilist",
+  "title": "AniList",
+  "description": "AniList 的漫畫與輕小說熱門榜和搜尋，資料為英文。書架上缺簡介或分類的書，會把書名送到 AniList 查詢。",
+  "author": "閱讀",
+  "site": "https://anilist.co",
+  "version": "1.0",
+  "requiredVersion": "3.0",
+  "hosts": [
+    "graphql.anilist.co",
+    "s4.anilist.co"
+  ],
+  "rateLimit": "1/2000",
+  "localizations": {
+    "zh-Hans": {
+      "description": "AniList 的漫画与轻小说热门榜和搜索，资料为英文。书架上缺简介或分类的书，会把书名发送到 AniList 查询。",
+      "entries": {
+        "trending-manga": {
+          "title": "热门漫画"
+        },
+        "trending-novels": {
+          "title": "热门轻小说"
+        }
+      }
+    },
+    "en": {
+      "description": "Trending manga and light novels and search from AniList, in English. For books on your shelf without a description or categories, the title is sent to AniList to look them up.",
+      "entries": {
+        "trending-manga": {
+          "title": "Trending Manga"
+        },
+        "trending-novels": {
+          "title": "Trending Light Novels"
+        }
+      }
+    },
+    "ja": {
+      "description": "AniList の人気マンガ・ライトノベルと検索（英語のデータ）。本棚で紹介文やカテゴリがない本は、タイトルを AniList に送って調べます。",
+      "entries": {
+        "trending-manga": {
+          "title": "人気のマンガ"
+        },
+        "trending-novels": {
+          "title": "人気のライトノベル"
+        }
+      }
+    },
+    "ko": {
+      "description": "AniList의 인기 만화·라이트 노벨과 검색(영어 자료). 책장에서 소개나 분류가 없는 책은 제목을 AniList로 보내 조회합니다.",
+      "entries": {
+        "trending-manga": {
+          "title": "인기 만화"
+        },
+        "trending-novels": {
+          "title": "인기 라이트 노벨"
+        }
+      }
+    }
+  },
+  "modules": [
+    {
+      "id": "trending-manga",
+      "title": "熱門漫畫",
+      "cacheDuration": 21600,
+      "params": [
+        {
+          "name": "page",
+          "type": "page"
+        }
+      ],
+      "request": {
+        "url": "https://graphql.anilist.co",
+        "method": "POST",
+        "body": "{\"query\": \"{Page(page:{{page}},perPage:20){media(type:MANGA,format_in:[MANGA,ONE_SHOT],sort:TRENDING_DESC,isAdult:false){id format title{romaji english native} synonyms description genres coverImage{large} staff(perPage:3,sort:RELEVANCE){edges{role node{name{full}}}}}}}\"}",
+        "headers": {
+          "User-Agent": "yuedureader/Yuedu (iOS) (+https://yuedureader.com/support)",
+          "Content-Type": "application/json",
+          "Accept": "application/json"
+        },
+        "bodyEncoding": "json"
+      },
+      "list": {
+        "items": "$.data.Page.media[*]",
+        "title": "$.title.english||$.title.romaji",
+        "author": "$.staff.edges[0].node.name.full",
+        "cover": "$.coverImage.large",
+        "intro": "$.description",
+        "url": "https://anilist.co/manga/{{$.id}}",
+        "aliases": "$.title.native&&$.title.romaji&&$.synonyms[*]",
+        "tags": "$.genres[*]"
+      },
+      "contentKind": "comic"
+    },
+    {
+      "id": "trending-novels",
+      "title": "熱門輕小說",
+      "cacheDuration": 21600,
+      "params": [
+        {
+          "name": "page",
+          "type": "page"
+        }
+      ],
+      "request": {
+        "url": "https://graphql.anilist.co",
+        "method": "POST",
+        "body": "{\"query\": \"{Page(page:{{page}},perPage:20){media(type:MANGA,format_in:[NOVEL],sort:TRENDING_DESC,isAdult:false){id format title{romaji english native} synonyms description genres coverImage{large} staff(perPage:3,sort:RELEVANCE){edges{role node{name{full}}}}}}}\"}",
+        "headers": {
+          "User-Agent": "yuedureader/Yuedu (iOS) (+https://yuedureader.com/support)",
+          "Content-Type": "application/json",
+          "Accept": "application/json"
+        },
+        "bodyEncoding": "json"
+      },
+      "list": {
+        "items": "$.data.Page.media[*]",
+        "title": "$.title.english||$.title.romaji",
+        "author": "$.staff.edges[0].node.name.full",
+        "cover": "$.coverImage.large",
+        "intro": "$.description",
+        "url": "https://anilist.co/manga/{{$.id}}",
+        "aliases": "$.title.native&&$.title.romaji&&$.synonyms[*]",
+        "tags": "$.genres[*]"
+      }
+    }
+  ],
+  "search": {
+    "request": {
+      "url": "https://graphql.anilist.co",
+      "method": "POST",
+      "body": "{\"query\": \"query($s:String){Page(perPage:20){media(search:$s,type:MANGA,isAdult:false){id format title{romaji english native} synonyms description genres coverImage{large} staff(perPage:3,sort:RELEVANCE){edges{role node{name{full}}}}}}}\", \"variables\": {\"s\": \"{{keyword}}\"}}",
+      "headers": {
+        "User-Agent": "yuedureader/Yuedu (iOS) (+https://yuedureader.com/support)",
+        "Content-Type": "application/json",
+        "Accept": "application/json"
+      },
+      "bodyEncoding": "json"
+    },
+    "list": {
+      "items": "$.data.Page.media[*]",
+      "title": "$.title.english||$.title.romaji",
+      "author": "$.staff.edges[0].node.name.full",
+      "cover": "$.coverImage.large",
+      "intro": "$.description",
+      "url": "https://anilist.co/manga/{{$.id}}",
+      "aliases": "$.title.native&&$.title.romaji&&$.synonyms[*]",
+      "tags": "$.genres[*]",
+      "contentKind": "$.format##^(MANGA|ONE_SHOT)$##comic"
+    }
+  }
+}
