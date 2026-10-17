@@ -16,10 +16,21 @@ struct ExploreSettingsTests {
 
     @Test("a section prefetches only the covers it shows before a swipe, not its whole page")
     func coverPrefetchStaysOnTheFirstScreen() {
-        // A shelf's first screen, iPad included; a chart, its 豎排展示數 (unset: the default).
+        let defaults = UserDefaults.standard
+        let storedShelf = defaults.object(forKey: ExploreSettings.shelfBookCountKey)
+        let stored = defaults.object(forKey: ExploreSettings.chartBookCountKey)
+        defer {
+            defaults.set(storedShelf, forKey: ExploreSettings.shelfBookCountKey)
+            defaults.set(stored, forKey: ExploreSettings.chartBookCountKey)
+        }
+        // A shelf's first eight, never past what 橫滑展示數 lets it draw.
+        defaults.removeObject(forKey: ExploreSettings.shelfBookCountKey)
         #expect(DiscoverViewModel.firstScreenCoverCount(for: .featured) == 8)
-        let stored = UserDefaults.standard.object(forKey: ExploreSettings.chartBookCountKey)
-        defer { UserDefaults.standard.set(stored, forKey: ExploreSettings.chartBookCountKey) }
+        defaults.set(6, forKey: ExploreSettings.shelfBookCountKey)
+        #expect(DiscoverViewModel.firstScreenCoverCount(for: .featured) == 6)
+        defaults.set(12, forKey: ExploreSettings.shelfBookCountKey)
+        #expect(DiscoverViewModel.firstScreenCoverCount(for: .featured) == 8)
+        // A chart, its 豎排展示數 (unset: the default).
         UserDefaults.standard.removeObject(forKey: ExploreSettings.chartBookCountKey)
         #expect(DiscoverViewModel.firstScreenCoverCount(for: .ranked) == ExploreSettings.defaultChartBookCount)
         UserDefaults.standard.set(6, forKey: ExploreSettings.chartBookCountKey)

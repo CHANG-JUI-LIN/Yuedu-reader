@@ -747,12 +747,16 @@ final class DiscoverViewModel: ObservableObject {
     }
 
     /// The covers a section draws before the reader swipes it: a chart column's rows, or a
-    /// shelf's first screen (an iPhone shows three or four covers, an iPad up to eight).
-    /// Covers further along load from their own slots when swiped to.
+    /// shelf's first eight — an iPhone's first screen of three or four and the next few —
+    /// and never more than 橫滑展示數 lets the shelf draw. Covers further along, a wide
+    /// iPad's included, load from their own slots when they come into view.
     nonisolated static func firstScreenCoverCount(for style: DiscoverSectionStyle) -> Int {
         switch style {
-        case .ranked: ExploreSettings.chartBookCount
-        case .featured: 8
+        case .ranked:
+            return ExploreSettings.chartBookCount
+        case .featured:
+            let shelf = ExploreSettings.shelfBookCount
+            return shelf > 0 ? min(8, shelf) : 8
         }
     }
 

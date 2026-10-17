@@ -69,6 +69,10 @@ enum ExploreSettings {
         UserDefaults.standard.object(forKey: chartBookCountKey) as? Int ?? defaultChartBookCount
     }
 
+    static var shelfBookCount: Int {
+        UserDefaults.standard.object(forKey: shelfBookCountKey) as? Int ?? defaultShelfBookCount
+    }
+
     static var preloadCount: Int {
         UserDefaults.standard.object(forKey: preloadCountKey) as? Int ?? defaultPreloadCount
     }
