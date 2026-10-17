@@ -88,6 +88,7 @@ final class LibraryTabUITests: XCTestCase {
         // A public library opens its own page, titled by its name.
         let gutenberg = app.buttons["library.public.builtin.gutenberg"].firstMatch
         XCTAssertTrue(gutenberg.waitForExistence(timeout: 5), app.debugDescription)
+        XCTAssertFalse(app.staticTexts["公有書庫"].exists, "no 公有書庫 group: the libraries are 官方模組 (M2b)")
         gutenberg.tap()
         XCTAssertTrue(app.navigationBars["Project Gutenberg"].waitForExistence(timeout: 5), app.debugDescription)
         attach(app, "library-gutenberg")
@@ -123,11 +124,14 @@ final class LibraryTabUITests: XCTestCase {
     @MainActor
     func testGridAndList() {
         let grid = launch(["-explore.showsGrid", "YES", "-explore.gridColumnCount", "2"])
+        // 官方模組 (M2b): AI 推薦, then 古騰堡 beside it, then 青空文庫 on the next row.
+        let recommendations = grid.buttons["library.module.official.aiRecommendations"].firstMatch
         let gutenberg = grid.buttons["library.public.builtin.gutenberg"].firstMatch
         let aozora = grid.buttons["library.public.builtin.aozora"].firstMatch
         XCTAssertTrue(aozora.waitForExistence(timeout: 5), grid.debugDescription)
-        XCTAssertEqual(gutenberg.frame.minY, aozora.frame.minY, accuracy: 1)
-        XCTAssertLessThan(gutenberg.frame.maxX, aozora.frame.minX)
+        XCTAssertEqual(recommendations.frame.minY, gutenberg.frame.minY, accuracy: 1)
+        XCTAssertLessThan(recommendations.frame.maxX, gutenberg.frame.minX)
+        XCTAssertGreaterThan(aozora.frame.minY, gutenberg.frame.maxY - 1)
         attach(grid, "library-grid")
 
         // The page's one menu holds 格狀 and 每列欄數; iOS 17's chooser, 格狀 and each column count.
