@@ -263,9 +263,9 @@ struct RSSListView: View {
             .fileExporter(
                 isPresented: $showOPMLExporter,
                 document: RSSOPMLDocument(sources: store.sources.sorted(by: { $0.sortOrder < $1.sortOrder })),
-                contentType: .xml,
+                contentType: RSSOPMLDocument.exportContentType,
                 defaultFilename: "yuedu-rss.opml"
-            ) { _ in }
+            ) { reportExportResult($0, format: .opml) }
             .fileImporter(
                 isPresented: $showJSONImporter,
                 allowedContentTypes: [.json, .data],
@@ -277,7 +277,7 @@ struct RSSListView: View {
                 document: RSSJSONDocument(sources: store.sources.sorted(by: { $0.sortOrder < $1.sortOrder })),
                 contentType: .json,
                 defaultFilename: "yuedu-rss-legado.json"
-            ) { _ in }
+            ) { reportExportResult($0, format: .legadoJSON) }
             .sheet(isPresented: $showSettings) {
                 RSSSettingsContentView(isPresented: $showSettings)
             }
@@ -614,6 +614,12 @@ struct RSSListView: View {
             importMessage = String(format: localized("Legado JSON 匯入失敗：%@"), error.localizedDescription)
             showImportResult = true
         }
+    }
+
+    private func reportExportResult(_ result: Result<URL, Error>, format: RSSExportReport.Format) {
+        guard let message = RSSExportReport.failureMessage(for: result, format: format) else { return }
+        importMessage = message
+        showImportResult = true
     }
 
     private func importOPML(_ result: Result<[URL], Error>) {
@@ -1306,18 +1312,28 @@ struct RSSJSONDocument: FileDocument {
     static var readableContentTypes: [UTType] { [.json, .data] }
     static var writableContentTypes: [UTType] { [.json] }
 
-    var data: Data
+    /// The export, kept as built. A failure stays a failure until the system asks for the file:
+    /// `fileWrapper` throws it, `.fileExporter` completes with `.failure`, and the screen reports
+    /// it. Turning it into empty `Data` would save a blank file and say nothing.
+    private let exported: Result<Data, Error>
 
-    init(sources: [RSSSource]) {
-        data = (try? LegadoSourceJSONParser.export(sources: sources)) ?? Data()
+    init(
+        sources: [RSSSource],
+        export: ([RSSSource]) throws -> Data = LegadoSourceJSONParser.export(sources:)
+    ) {
+        exported = Result { try export(sources) }
     }
 
+    func exportedData() throws -> Data { try exported.get() }
+
+    // Required by `FileDocument`, but never called: this document is only handed to
+    // `.fileExporter`. JSON is imported through `fileImporter` and `LegadoSourceJSONParser`.
     init(configuration: ReadConfiguration) throws {
-        data = configuration.file.regularFileContents ?? Data()
+        exported = .success(configuration.file.regularFileContents ?? Data())
     }
 
     func fileWrapper(configuration: WriteConfiguration) throws -> FileWrapper {
-        FileWrapper(regularFileWithContents: data)
+        FileWrapper(regularFileWithContents: try exportedData())
     }
 }
 

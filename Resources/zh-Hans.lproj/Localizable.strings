@@ -670,6 +670,7 @@
 "選取 OPML 文件" = "选择 OPML 文件";
 "已匯入 %d 個訂閱源" = "已导入 %d 个订阅源";
 "OPML 匯入失敗：%@" = "无法导入 OPML：%@";
+"OPML 匯出失敗：%@" = "无法导出 OPML：%@";
 "OPML 中沒有找到 RSS 訂閱源" = "OPML 中没有找到 RSS 订阅源";
 "全文" = "全文";
 "正在抓取全文…" = "正在抓取全文…";
@@ -690,6 +691,7 @@
 "匯入 Legado JSON" = "导入 Legado JSON";
 "匯出 Legado JSON" = "导出 Legado JSON";
 "Legado JSON 匯入失敗：%@" = "无法导入 Legado JSON：%@";
+"Legado JSON 匯出失敗：%@" = "无法导出 Legado JSON：%@";
 "無效的 Legado 訂閱源格式" = "无效的 Legado 订阅源格式";
 "規則 %@ 格式無效" = "规则 %@ 格式无效";
 "HTTP 請求失敗" = "HTTP 请求失败";
