@@ -317,6 +317,17 @@ struct ReadingBook: Identifiable, Codable {
     /// for the reason `audioPlayMode` gives.
     var customIntro: String?
 
+    /// Set on a book read through a module (module ecosystem M5b): its chapters are read by
+    /// the module's `reading` rules. Such a book is online with no `bookSourceId`, which
+    /// alone would make it a browser import. Optional and encoded only when present, for the
+    /// reason `audioPlayMode` gives.
+    var module: ModuleBookReference?
+
+    /// Its chapters are built by rules — a 來源配置's or a module's — into the cache's raw and
+    /// normalized HTML (`ChapterFetcher.buildChapterPackage`); a browser import's are plain
+    /// text a page gave.
+    var chaptersBuiltByRules: Bool { bookSourceId != nil || module != nil }
+
     init(
         title: String, author: String = "未知作者",
         source: String = "local", contentFilename: String
@@ -409,6 +420,7 @@ struct ReadingBook: Identifiable, Codable {
         aozora = try c.decodeIfPresent(AozoraBookSource.self, forKey: .aozora)
         continueReadingHiddenAt = try c.decodeIfPresent(Date.self, forKey: .continueReadingHiddenAt)
         customIntro = try c.decodeIfPresent(String.self, forKey: .customIntro)
+        module = try c.decodeIfPresent(ModuleBookReference.self, forKey: .module)
     }
 
     enum CodingKeys: String, CodingKey {
@@ -425,6 +437,7 @@ struct ReadingBook: Identifiable, Codable {
         case aozora
         case continueReadingHiddenAt
         case customIntro
+        case module
     }
 
     /// Read only: where builds before `BookChapterStore` kept the table of contents.

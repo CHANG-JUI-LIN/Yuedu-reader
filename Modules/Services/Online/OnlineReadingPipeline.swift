@@ -89,6 +89,7 @@ actor ChapterFetchManager {
 
     private let bookSourceFetcher: BookSourceFetcher
     private let webViewFetcher: WebViewFetcher
+    private let moduleReader: ModuleBookReader
     private var tasks: [String: Task<ChapterPackage, Error>] = [:]
     private var states: [String: OnlineChapterLoadState] = [:]
     private var priorities: [String: ChapterFetchPriority] = [:]
@@ -106,10 +107,12 @@ actor ChapterFetchManager {
 
     init(
         bookSourceFetcher: BookSourceFetcher = .shared,
-        webViewFetcher: WebViewFetcher
+        webViewFetcher: WebViewFetcher,
+        moduleReader: ModuleBookReader = .live
     ) {
         self.bookSourceFetcher = bookSourceFetcher
         self.webViewFetcher = webViewFetcher
+        self.moduleReader = moduleReader
     }
 
     private func key(bookId: UUID, chapterIndex: Int) -> String {
@@ -163,7 +166,7 @@ actor ChapterFetchManager {
     private func isReusableCachedPackage(_ package: ChapterPackage, for book: ReadingBook) -> Bool {
         OnlineChapterCacheWritePolicy.isReusableCachedPackage(
             package,
-            hasBookSource: book.bookSourceId != nil
+            hasBookSource: book.chaptersBuiltByRules
         )
     }
 
@@ -387,7 +390,20 @@ actor ChapterFetchManager {
             ]
         )
 
+        let moduleReader = moduleReader
         let task = Task(priority: priority.taskPriority) { () throws -> ChapterPackage in
+            // A module's book: online with no source, so before the browser import's branch.
+            if let reference = book.module {
+                let built = try await moduleReader.chapterPackage(bookId: book.id, ref: ref, reference: reference)
+                try bookSourceFetcher.saveChapterPackageToCache(built.package, rawHTML: built.rawHTML,
+                                                                normalizedHTML: built.normalizedHTML)
+                guard let persisted = bookSourceFetcher.loadChapterPackageSync(
+                    bookId: book.id, chapterIndex: ref.index, expectedSourceURL: ref.url, expectedTOCTitle: ref.title
+                ) else {
+                    throw ChapterCacheWriteError.verificationFailed
+                }
+                return persisted
+            }
             if let sourceId = book.bookSourceId {
                 guard
                     let source = await MainActor.run(body: {
@@ -488,7 +504,7 @@ actor ChapterFetchManager {
                 let filename: String
                 if OnlineChapterCacheWritePolicy.shouldReusePersistedRenderArtifacts(
                     package: package,
-                    hasBookSource: book.bookSourceId != nil
+                    hasBookSource: book.chaptersBuiltByRules
                 ) {
                     // BookSourceFetcher already persisted raw/normalized render artifacts.
                     // Re-saving from plain text here would strip HTML-only inline markers
@@ -501,7 +517,7 @@ actor ChapterFetchManager {
                         chapterIndex: chapterIndex,
                         sourceURL: ref.url,
                         tocTitle: ref.title,
-                        storeNormalizedHTML: book.bookSourceId != nil
+                        storeNormalizedHTML: book.chaptersBuiltByRules
                     )
                 }
                 await MainActor.run {

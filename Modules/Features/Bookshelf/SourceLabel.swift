@@ -4,7 +4,8 @@ import Foundation
 /// (unified library 1a). The mapping is in the Phase 1 plan; 遠端書庫 is the one string it
 /// added (maintainer, 2026-10-10).
 enum SourceLabel {
-    static func text(for book: ReadingBook, record: SourceRecord) -> String {
+    /// `moduleTitle`: an installed module's title by id (`RuleModuleLibrary.module(id:)`).
+    static func text(for book: ReadingBook, record: SourceRecord, moduleTitle: (String) -> String? = { _ in nil }) -> String {
         switch record.key.instance.type {
         case .bookSource:
             return localized("網路書籍")
@@ -18,7 +19,10 @@ enum SourceLabel {
             return localized("Project Gutenberg")
         case .aozora:
             return localized("青空文庫")
-        case .library, .bibliographic, .module:
+        case .module:
+            // A module's book: the module, or 模組 once it was removed.
+            return moduleTitle(record.key.instance.id) ?? localized("模組")
+        case .library, .bibliographic:
             if book.aozora != nil { return localized("青空文庫") }
             // A remote copy whose connection was removed: its kind is gone with it.
             if book.remoteSource != nil { return localized("遠端書庫") }

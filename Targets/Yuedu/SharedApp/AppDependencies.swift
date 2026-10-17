@@ -354,6 +354,8 @@ struct AppDependencies {
     var offlineDownloadManager: any OfflineDownloadManaging
     var offlineChapterStore: any OfflineChapterStoring
     var aozoraLibrary: any AozoraLibraryDownloading = MainActor.assumeIsolated { AozoraLibraryDownloadService() }
+    /// A module's book to the shelf, or read without (module ecosystem M5b).
+    var moduleBooks: ModuleBookShelf = MainActor.assumeIsolated { ModuleBookShelf.shared }
     var remoteLibrary: any RemoteLibraryServing = MainActor.assumeIsolated { RemoteLibraryService.shared }
     var remoteLibraryWriting: any RemoteLibraryWriting = MainActor.assumeIsolated { RemoteLibraryWritingService() }
     var calibreProgress = MainActor.assumeIsolated { CalibreProgressService() }

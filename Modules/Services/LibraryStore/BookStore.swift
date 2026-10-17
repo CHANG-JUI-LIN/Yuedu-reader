@@ -1795,6 +1795,29 @@ class BookStore: ObservableObject, BookProvider {
         return book
     }
 
+    // MARK: Add Module Book (read through a module's `reading` rules)
+
+    /// Through `ModuleBookShelf`, which reads the table of contents first.
+    @discardableResult
+    func addModuleBook(_ moduleBook: ModuleBook, chapters: [OnlineChapterRef], isInBookshelf: Bool) -> ReadingBook {
+        let reference = moduleBook.reference
+        var book = ReadingBook(title: moduleBook.title, author: moduleBook.author.isEmpty ? "未知作者" : moduleBook.author,
+                               source: reference.bookURL, contentFilename: "")
+        book.isOnline = true
+        book.isInBookshelf = isInBookshelf
+        book.contentPipelineKind = moduleBook.contentKind == .comic ? .manga : .html
+        book.module = reference
+        book.bookInfoURL = reference.bookURL
+        book.tocURL = reference.bookURL
+        book.onlineChapters = chapters
+        book.applyChapterSummary(from: chapters)
+        if let coverURL = moduleBook.coverURL, !coverURL.isEmpty { book.coverUrl = coverURL }
+        records.insert(book, at: 0)
+        saveMeta()
+        if let coverURL = book.coverUrl { downloadCoverIfNeeded(bookId: book.id, coverUrl: coverURL, sourceId: nil) }
+        return readingBook(id: book.id) ?? book
+    }
+
     // MARK: Update Cached Chapters
 
     func updateCachedChapter(bookId: UUID, chapterIndex: Int, filename: String) {
@@ -1996,6 +2019,7 @@ class BookStore: ObservableObject, BookProvider {
         forceInfoRefresh: Bool = false,
         bookSourceFetcher: any BookSourceFetching = LiveBookSourceFetcher(bookSourceFetcher: BookSourceFetcher.shared),
         offlineChapterStore: any OfflineChapterStoring = OfflineChapterStore(),
+        moduleReader: ModuleBookReader = .live,
         onFirstChaptersReady: (@MainActor (ReadingBook) -> Void)? = nil
     ) async throws -> ReadingBook {
         guard let snapshot = await MainActor.run(body: {
@@ -2015,6 +2039,21 @@ class BookStore: ObservableObject, BookProvider {
             let originalChapters = chapterStore.chapters(for: bookId) ?? []
             return (originalChapters.count, Self.normalizeChapterTitle(originalChapters.last?.title ?? ""))
         }.value
+
+        // A module's book: online with no source, so before the browser import's return. Its
+        // list is the book's page, read again; the merge is a source book's.
+        if let reference = snapshot.module {
+            let refreshed = try await moduleReader.chapters(of: reference, title: snapshot.title)
+            return try await commitRefreshedChapters(
+                refreshed, snapshot: snapshot, originalChapterCount: originalChapterCount,
+                originalLatestTitle: originalLatestTitle, offlineChapterStore: offlineChapterStore
+            ) { index, plan in
+                self.commitRefreshedList(
+                    at: index, plan: plan, sourceID: nil, bookURL: reference.bookURL, tocURL: reference.bookURL,
+                    runtimeVariables: nil, infoPackage: nil
+                )
+            }
+        }
 
         guard let sourceId = snapshot.bookSourceId else {
             return snapshot
@@ -2119,7 +2158,7 @@ class BookStore: ObservableObject, BookProvider {
                     await MainActor.run {
                         guard let idx = self.records.firstIndex(where: { $0.id == bookId }) else { return }
                         let book = self.commitRefreshedList(
-                            at: idx, plan: plan, source: source, bookURL: bookURL, tocURL: progressiveTOCURL,
+                            at: idx, plan: plan, sourceID: source.id, bookURL: bookURL, tocURL: progressiveTOCURL,
                             runtimeVariables: progressiveRuntimeVariables, infoPackage: progressiveInfoPackage
                         )
                         onFirstChaptersReady?(book)
@@ -2138,11 +2177,35 @@ class BookStore: ObservableObject, BookProvider {
         let finalTOCURL = tocURL
         let finalRuntimeVariables = runtimeVariables
         let finalInfoPackage = infoPackage
+        await firstPageCommit.value?.value
+        return try await commitRefreshedChapters(
+            tocPackage.chapters, snapshot: snapshot, originalChapterCount: originalChapterCount,
+            originalLatestTitle: originalLatestTitle, offlineChapterStore: offlineChapterStore
+        ) { index, plan in
+            self.commitRefreshedList(
+                at: index, plan: plan, sourceID: source.id, bookURL: bookURL, tocURL: finalTOCURL,
+                runtimeVariables: finalRuntimeVariables, infoPackage: finalInfoPackage
+            )
+        }
+    }
+
+    /// A refreshed table of contents into the record: planned off the main thread, written
+    /// once by `commit` on the list it was planned from, then reconciled with the offline
+    /// download. Both refreshes, a source's and a module's, end here.
+    private func commitRefreshedChapters(
+        _ refreshed: [OnlineChapterRef],
+        snapshot: ReadingBook,
+        originalChapterCount: Int,
+        originalLatestTitle: String,
+        offlineChapterStore: any OfflineChapterStoring,
+        commit: @escaping @MainActor (Int, MergePlan) -> ReadingBook
+    ) async throws -> ReadingBook {
+        let bookId = snapshot.id
 
         // Returning early here leaves `onlineChapters` — and therefore the reconcile that
         // reads it — completely untouched. See `OnlineTOCCommitPolicy`.
         guard OnlineTOCCommitPolicy.decide(
-            refreshedCount: tocPackage.chapters.count
+            refreshedCount: refreshed.count
         ) == .commit else {
             AppLogger.network("⟐ TOC refresh came back empty, keeping existing chapters", context: [
                 "bookId": bookId.uuidString,
@@ -2158,8 +2221,6 @@ class BookStore: ObservableObject, BookProvider {
         // Detached, and through a static helper: with approachable concurrency this function
         // and any local function of it run on the caller's actor, which for the launch
         // refresh is the main one.
-        let refreshed = tocPackage.chapters
-        await firstPageCommit.value?.value
         @Sendable func detachedPlan(existing: [OnlineChapterRef]?) async -> MergePlan {
             await Self.detachedMergePlan(
                 existing: existing, chapterStore: chapterStore, bookId: bookId, refreshed: refreshed,
@@ -2196,10 +2257,7 @@ class BookStore: ObservableObject, BookProvider {
                         originalChapterCount: originalChapterCount, originalLatestTitle: originalLatestTitle
                     )
                 }
-                let updated = commitRefreshedList(
-                    at: idx, plan: plan, source: source, bookURL: bookURL, tocURL: finalTOCURL,
-                    runtimeVariables: finalRuntimeVariables, infoPackage: finalInfoPackage
-                )
+                let updated = commit(idx, plan)
                 return .committed(updated, plan)
             }
             switch outcome {
@@ -2258,7 +2316,7 @@ class BookStore: ObservableObject, BookProvider {
     private func commitRefreshedList(
         at index: Int,
         plan: MergePlan,
-        source: BookSource,
+        sourceID: UUID?,
         bookURL: String,
         tocURL: String,
         runtimeVariables: [String: String]?,
@@ -2268,7 +2326,7 @@ class BookStore: ObservableObject, BookProvider {
         let tocChanged = normalizedOnlineValue(updated.tocURL) != tocURL
         let runtimeChanged = (updated.runtimeVariables ?? [:]) != (runtimeVariables ?? [:])
 
-        updated.bookSourceId = source.id
+        updated.bookSourceId = sourceID
         updated.bookInfoURL = bookURL
         updated.tocURL = tocURL
         updated.runtimeVariables = runtimeVariables
@@ -2533,6 +2591,15 @@ class BookStore: ObservableObject, BookProvider {
         let shelf = syncedBooks.map { book in
             var merged = book.withoutTableOfContents()
             merged.isInBookshelf = true
+            // A module's book whose record came back from a build before `module` existed:
+            // that build kept every field it knew and dropped this one, and without it the
+            // book reads as a browser import. Only an online book with no source of its own
+            // takes it back, as nothing else could have been that book. Delete once no build
+            // from before module ecosystem M5b (2026-10) syncs.
+            if merged.module == nil, merged.isOnline, merged.bookSourceId == nil,
+               let local = localRecords[book.id]?.module {
+                merged.module = local
+            }
             if let incoming = book.onlineChapters, !incoming.isEmpty, !chapterStore.hasList(for: book.id) {
                 merged.onlineChapters = incoming
                 merged.applyChapterSummary(from: incoming)

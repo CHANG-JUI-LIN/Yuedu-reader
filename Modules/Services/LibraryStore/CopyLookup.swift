@@ -9,7 +9,9 @@ import Foundation
 /// `RemoteLibraryService.book(for:format:store:)`, whose match is per format.
 ///
 /// Book-source copies are left out: their key needs `BookSourceStore`, which waits on the main
-/// thread until the source library is read, and nothing browses them through this lookup.
+/// thread until the source library is read, and nothing browses them through this lookup. A
+/// module's book is online too, but its key is its own (`ReadingBook.module`), and its list
+/// items find their copy here.
 struct CopyLookup {
     private var byKey: [SourceItemKey: [ReadingBook]] = [:]
     private var byRemoteEntry: [RemoteEntry: [ReadingBook]] = [:]
@@ -34,7 +36,7 @@ struct CopyLookup {
             if let remote = book.remoteSource {
                 byRemoteEntry[RemoteEntry(connectionID: remote.connectionID, entryID: remote.entryID), default: []].append(book)
             }
-            guard !book.isOnline else { continue }
+            guard !book.isOnline || book.module != nil else { continue }
             let key = SourceRecord.derived(from: book, context: context).key
             if key != .copy(book.id) { byKey[key, default: []].append(book) }
         }
