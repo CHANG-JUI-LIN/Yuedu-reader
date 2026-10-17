@@ -448,11 +448,26 @@ final class CoreTextCollectionScrollViewController: UIViewController, UIEditMenu
     }
 
     private var pendingAISelection: CoreTextAISelectionRequest?
+    /// Where 重點's colour menu opens once the selection menu it replaces has gone.
+    private var pendingEmphasisSourcePoint: CGPoint?
+    private var isEditMenuVisible = false
+
+    func editMenuInteraction(_ interaction: UIEditMenuInteraction, willPresentMenuFor configuration: UIEditMenuConfiguration,
+                             animator: any UIEditMenuInteractionAnimating) {
+        isEditMenuVisible = true
+    }
 
     func editMenuInteraction(_ interaction: UIEditMenuInteraction, willDismissMenuFor configuration: UIEditMenuConfiguration,
                              animator: any UIEditMenuInteractionAnimating) {
         animator.addCompletion { [weak self] in
-            guard let self, let request = pendingAISelection else { return }
+            guard let self else { return }
+            isEditMenuVisible = false
+            if let sourcePoint = pendingEmphasisSourcePoint {
+                pendingEmphasisSourcePoint = nil
+                presentEmphasisEditMenu(at: sourcePoint)
+                return
+            }
+            guard let request = pendingAISelection else { return }
             pendingAISelection = nil
             clearSelection()
             NotificationCenter.default.post(name: .coreTextAISelectionRequested, object: self, userInfo: ["request": request])
@@ -467,16 +482,23 @@ final class CoreTextCollectionScrollViewController: UIViewController, UIEditMenu
         ))
     }
 
+    /// The colour menu replaces the selection menu once that one has gone: UIKit's dismissal
+    /// completion opens it (`willDismissMenuFor`), not a timed delay.
     private func presentEmphasisEditMenu() {
         let sourcePoint = latestEditMenuSourcePoint ?? CGPoint(x: view.bounds.midX, y: view.bounds.midY)
-        editMenuInteraction.dismissMenu()
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) { [weak self] in
-            guard let self else { return }
-            self.editMenuInteraction.presentEditMenu(with: UIEditMenuConfiguration(
-                identifier: Self.emphasisEditMenuIdentifier,
-                sourcePoint: sourcePoint
-            ))
+        guard isEditMenuVisible else {
+            presentEmphasisEditMenu(at: sourcePoint)
+            return
         }
+        pendingEmphasisSourcePoint = sourcePoint
+        editMenuInteraction.dismissMenu()
+    }
+
+    private func presentEmphasisEditMenu(at sourcePoint: CGPoint) {
+        editMenuInteraction.presentEditMenu(with: UIEditMenuConfiguration(
+            identifier: Self.emphasisEditMenuIdentifier,
+            sourcePoint: sourcePoint
+        ))
     }
 
     private func emphasisColorName(for color: AnnotationColor) -> String {
