@@ -117,7 +117,11 @@ struct ExploreEntryLabel: View {
                 ExploreArtworkView(artwork: artwork, side: artworkSide, size: artworkSize)
                 Spacer(minLength: 0)
                 if let corner {
+                    // Ahead of the spacer, which would otherwise split the width with it: in
+                    // four columns a count of three digits then broke a digit to a line and
+                    // stood its card taller than the row (maintainer, 2026-10-17).
                     ExploreEntryCorner(corner: corner)
+                        .layoutPriority(1)
                 }
             }
             .padding(.bottom, DSSpacing.sm)
@@ -173,6 +177,7 @@ private struct ExploreEntryCorner: View {
             Text(count, format: .number)
                 .font(DSFont.caption.weight(.semibold))
                 .monospacedDigit()
+                .lineLimit(1)
                 .foregroundStyle(DSColor.textSecondary)
                 .padding(.horizontal, DSSpacing.xs)
                 .padding(.vertical, DSSpacing.xxs)
