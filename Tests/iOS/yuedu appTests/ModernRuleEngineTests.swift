@@ -112,7 +112,16 @@ struct ModernRuleEngineTests {
         """)
 
         #expect(elements.count == 2)
-        #expect(String(describing: elements.first ?? "").contains("斗罗大陆"))
+        // Elements are the parsed JSON objects (Legado's JsonPath getList returns the
+        // objects too), so check them the way a book-list parse reads them: each one
+        // becomes the content for its field rules. Their `description` is not a contract —
+        // Foundation prints a dictionary's CJK as `\U6597…`.
+        guard elements.count == 2 else { return }
+        for (element, name) in zip(elements, ["斗罗大陆", "斗罗大陆II"]) {
+            engine.setContent(element)
+            #expect(engine.getString(ruleStr: "$.book_name") == name)
+            #expect(engine.getString(ruleStr: "book_name") == name)
+        }
     }
 
 }
