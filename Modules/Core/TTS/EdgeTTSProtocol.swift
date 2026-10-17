@@ -1,4 +1,3 @@
-import CryptoKit
 import Foundation
 
 enum EdgeTTSError: Error, LocalizedError, Equatable {
@@ -24,7 +23,7 @@ enum EdgeTTSError: Error, LocalizedError, Equatable {
     }
 }
 
-/// Edge Read Aloud wire format, checked against rany2/edge-tts in September 2026.
+/// Edge Read Aloud wire format, checked against rany2/edge-tts in October 2026 (v2 token).
 /// This is an online consumer protocol, not Azure's authenticated REST API.
 enum EdgeTTSProtocol {
     static let trustedClientToken = "6A5AA1D4EAFF4E9FB37E23D68491D6F4"
@@ -33,10 +32,7 @@ enum EdgeTTSProtocol {
     static let maxAudioBytes = 16 * 1024 * 1024
 
     static func securityToken(date: Date) -> String {
-        let seconds = Int64(floor(date.timeIntervalSince1970)) + 11_644_473_600
-        let ticks = (seconds - seconds % 300) * 10_000_000
-        let bytes = SHA256.hash(data: Data("\(ticks)\(trustedClientToken)".utf8))
-        return bytes.map { String(format: "%02X", $0) }.joined()
+        EdgeTTSSecurityToken.token(date: date, trustedClientToken: trustedClientToken)
     }
 
     static func request(date: Date = Date(), connectionID: UUID = UUID()) -> URLRequest {
@@ -48,7 +44,7 @@ enum EdgeTTSProtocol {
             URLQueryItem(name: "TrustedClientToken", value: trustedClientToken),
             URLQueryItem(name: "ConnectionId", value: compactID(connectionID)),
             URLQueryItem(name: "Sec-MS-GEC", value: securityToken(date: date)),
-            URLQueryItem(name: "Sec-MS-GEC-Version", value: "1-" + clientVersion),
+            URLQueryItem(name: "Sec-MS-GEC-Version", value: "2-" + clientVersion),
         ]
         // All URL components are fixed ASCII or internally generated hexadecimal strings.
         var request = URLRequest(url: components.url!, timeoutInterval: 15)

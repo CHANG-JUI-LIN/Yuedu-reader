@@ -7,7 +7,10 @@ import Testing
 struct EdgeTTSTests {
     @Test func handshakeUsesFiveMinuteWindowsAndExpectedDigest() throws {
         let date = Date(timeIntervalSince1970: 1_700_000_000)
-        #expect(EdgeTTSProtocol.securityToken(date: date) == "42301B335578FEFDAE2637DED1ABD614505D432559EC08032B82048483726AFF")
+        // Vectors from rany2/edge-tts `generate_sec_ms_gec_v2` (October 2026).
+        #expect(EdgeTTSProtocol.securityToken(date: date) == "2CD23A2CA0B2595A-F3C846C370E05F9CC83ACC5F995C5F5D87A4D0F14CE8936A0F902E64099E38A2")
+        #expect(EdgeTTSProtocol.securityToken(date: Date(timeIntervalSince1970: 0)) == "52BC7A17B50DFEC9-28C4394775C8751CD2F6859C030C06DB1489ACAB3B3A7651831FC26895177ED6")
+        #expect(EdgeTTSProtocol.securityToken(date: Date(timeIntervalSince1970: 1_792_229_037.9)) == "E9728C49355B0143-B5D8DB4CEFD5633DD7C05EEEEF16B6D2D4E6DC96B340F2C8ECB2CE7F055B143E")
         #expect(EdgeTTSProtocol.securityToken(date: date) == EdgeTTSProtocol.securityToken(date: date.addingTimeInterval(1)))
         #expect(EdgeTTSProtocol.securityToken(date: date) != EdgeTTSProtocol.securityToken(date: date.addingTimeInterval(300)))
         let request = EdgeTTSProtocol.request(date: date)
@@ -16,6 +19,7 @@ struct EdgeTTSTests {
         #expect(url.host == "speech.platform.bing.com")
         let items = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems ?? []
         #expect(items.first { $0.name == "Sec-MS-GEC" }?.value == EdgeTTSProtocol.securityToken(date: date))
+        #expect(items.first { $0.name == "Sec-MS-GEC-Version" }?.value == "2-" + EdgeTTSProtocol.clientVersion)
         #expect(request.value(forHTTPHeaderField: "Cookie")?.hasPrefix("muid=") == true)
     }
 
