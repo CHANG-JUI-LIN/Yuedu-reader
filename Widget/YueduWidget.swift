@@ -33,7 +33,7 @@ struct BookProgressEntry: TimelineEntry {
 struct BookProgressProvider: TimelineProvider {
     func placeholder(in context: Context) -> BookProgressEntry {
         BookProgressEntry(date: Date(), book: BookProgress(
-            title: "示例書名", author: "示例作者", progress: 0.6,
+            title: localized("示例書名"), author: localized("示例作者"), progress: 0.6,
             coverImagePath: nil, lastReadDate: Date()
         ))
     }
@@ -71,6 +71,11 @@ struct BookProgressWidgetView: View {
                     ProgressView(value: book.progress)
                         .tint(.white)
                         .scaleEffect(y: 1.5)
+                    // One localized key for the whole line, so the language decides where
+                    // "ago" goes. It stays a `Text` interpolation, not a String, because the
+                    // `.relative` style keeps counting between timeline reloads. SwiftUI builds
+                    // the table key from this literal, `%lld%% · %@前` — change the literal and
+                    // that key in `Widget/*.lproj/Localizable.strings` together.
                     Text("\(Int(book.progress * 100))% · \(book.lastReadDate, style: .relative)前")
                         .font(.caption2)
                         .foregroundColor(.white.opacity(0.7))

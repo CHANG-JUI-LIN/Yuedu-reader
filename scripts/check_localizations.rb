@@ -21,6 +21,16 @@
 # a key instead (String(format: localized("%d 分鐘"), n)). Variables can't be
 # checked here and are skipped.
 #
+# The widget extension is its own bundle with its own tables (Widget/*.lproj),
+# looked up through its own localized(); its literal keys are checked against
+# Widget/zh-Hant.lproj/Localizable.strings the same way. Literals the system
+# looks up itself are checked too, because a missing key there shows the raw
+# Chinese just as silently: the App Intents title and @Parameter title (in the
+# app and in the widget), and in the widget Text("…"), configurationDisplayName
+# and description. Those literals may interpolate (SwiftUI builds the key from
+# the interpolation, e.g. `%lld%% · %@前`), so an interpolating one can't be
+# checked and is skipped.
+#
 # Usage: scripts/check_localizations.rb [root ...]
 # Tables are read with plutil, so this runs on macOS only.
 
@@ -30,10 +40,12 @@ require "set"
 
 # Keep in step with the paths filters in .github/workflows/localization.yml,
 # or edits to a root's tables never run this check.
-DEFAULT_ROOTS = %w[Resources ShareExtension].freeze
+DEFAULT_ROOTS = %w[Resources ShareExtension Widget].freeze
 # The same goes for these: the workflow runs on edits to their Swift files.
-CODE_SOURCES = %w[Modules Targets].freeze
-CODE_TABLE = "Resources/zh-Hant.lproj/Localizable.strings"
+CODE_CHECKS = [
+  { sources: %w[Modules Targets], table: "Resources/zh-Hant.lproj/Localizable.strings", swiftui: false },
+  { sources: %w[Widget], table: "Widget/zh-Hant.lproj/Localizable.strings", swiftui: true }
+].freeze
 
 def parse_table(path)
   json, stderr, status = Open3.capture3("plutil", "-convert", "json", "-o", "-", path)
@@ -94,6 +106,12 @@ CALL_PREFIX = /(?<![\w.])localized\(\s*/.source
 # localized("key") and localized(condition ? "key" : "key"), spanning lines.
 LITERAL_CALL = /#{CALL_PREFIX}#{SWIFT_LITERAL}\s*[,)]/m
 TERNARY_CALL = /#{CALL_PREFIX}[^"()]*?\?\s*#{SWIFT_LITERAL}\s*:\s*#{SWIFT_LITERAL}\s*[,)]/m
+# Literals the system looks up itself, in every checked folder: the App Intents
+# title (`static var title: LocalizedStringResource = "…"`) and `@Parameter(title: "…")`.
+SYSTEM_LITERAL = /(?:LocalizedStringResource\s*=|@Parameter\(\s*title:)\s*#{SWIFT_LITERAL}/m
+# And the widget's SwiftUI ones: `Text("…")` (not `Text(verbatim:`),
+# `.configurationDisplayName("…")` and `.description("…")`.
+SWIFTUI_LITERAL = /(?:(?<![\w.])Text\(|\.configurationDisplayName\(|\.description\()\s*#{SWIFT_LITERAL}\s*[,)]/m
 SWIFT_ESCAPES = { "n" => "\n", "t" => "\t", "r" => "\r", "0" => "\0" }.freeze
 
 # The key a literal's body spells; the caller rules out interpolation.
@@ -101,14 +119,19 @@ def swift_literal_value(body)
   body.gsub(/\\u\{(\h+)\}|\\(.)/) { $1 ? [$1.hex].pack("U") : SWIFT_ESCAPES.fetch($2, $2) }
 end
 
-# Every literal key the code passes to localized, mapped to "file:line" sites,
-# and the "file:line" sites whose literal interpolates.
-def code_keys(sources)
+# Every literal key the code passes to localized, or that the system looks up
+# itself (SYSTEM_LITERAL, and SWIFTUI_LITERAL when swiftui is set), mapped to
+# "file:line" sites, and the "file:line" sites whose localized() literal
+# interpolates. A system-looked-up literal that interpolates is skipped: the
+# key SwiftUI builds from it can't be read off the source.
+def code_keys(sources, swiftui)
   sites = Hash.new { |hash, key| hash[key] = [] }
   interpolated = []
+  call_patterns = [LITERAL_CALL, TERNARY_CALL]
+  system_patterns = swiftui ? [SYSTEM_LITERAL, SWIFTUI_LITERAL] : [SYSTEM_LITERAL]
   Dir.glob(sources.map { |dir| File.join(dir, "**", "*.swift") }).sort.each do |path|
     text = File.read(path, encoding: "UTF-8")
-    [LITERAL_CALL, TERNARY_CALL].each do |pattern|
+    (call_patterns + system_patterns).each do |pattern|
       text.scan(pattern) do
         match = Regexp.last_match
         line_start = text.rindex("\n", match.begin(0)).to_i
@@ -117,7 +140,7 @@ def code_keys(sources)
         line = text[0...match.begin(0)].count("\n") + 1
         match.captures.compact.each do |body|
           if body.include?("\\(")
-            interpolated << "#{path}:#{line}"
+            interpolated << "#{path}:#{line}" if call_patterns.include?(pattern)
           else
             sites[swift_literal_value(body)] << "#{path}:#{line}"
           end
@@ -130,11 +153,11 @@ end
 
 # Reports each literal key the code uses that the table lacks; returns whether
 # there were none.
-def check_code_keys(sources, table)
+def check_code_keys(sources, table, swiftui)
   strings = parse_table(table)
   return false if strings.nil?
 
-  sites, interpolated = code_keys(sources)
+  sites, interpolated = code_keys(sources, swiftui)
   known = strings.keys.to_set
   missing = sites.reject { |key, _| known.include?(key) }
   unless missing.empty?
@@ -172,6 +195,8 @@ failed = false
   end
 end
 
-failed = true unless check_code_keys(CODE_SOURCES, CODE_TABLE)
+CODE_CHECKS.each do |check|
+  failed = true unless check_code_keys(check[:sources], check[:table], check[:swiftui])
+end
 
 exit 1 if failed

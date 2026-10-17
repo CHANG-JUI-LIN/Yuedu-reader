@@ -7,10 +7,10 @@ import WidgetKit
 /// Laid out like the system's own download activity: cover, one line naming what is being
 /// downloaded, one line of progress, and a single round control on the trailing edge.
 ///
-/// Strings are written in place rather than localized, and colors are system semantic values:
-/// the widget extension syncs only `Widget/`, so it can reach neither `Resources/*.lproj` and
-/// `localized()` nor `DSColor` in `Modules/SharedUI`. The existing `YueduWidget` already does
-/// this (`"閱讀進度"`); following it beats inventing a second convention.
+/// Colors are system semantic values: the widget extension syncs only `Widget/`, so it cannot
+/// reach `DSColor` in `Modules/SharedUI`. For the same reason it cannot reach the app's
+/// `Resources/*.lproj` or `localized()`; its strings live in `Widget/<language>.lproj`, looked
+/// up through `WidgetLocalization.swift`.
 struct DownloadLiveActivityWidget: Widget {
     var body: some WidgetConfiguration {
         ActivityConfiguration(for: DownloadActivityAttributes.self) { context in
@@ -50,20 +50,28 @@ struct DownloadLiveActivityWidget: Widget {
 /// rather than methods so the Lock Screen view and the Dynamic Island phrase things the same
 /// way — they are two presentations of one activity, not two features.
 private func titleLine(_ state: DownloadActivityAttributes.ContentState) -> String {
-    guard let featured = state.books.first else { return "下載已完成" }
-    if state.isPaused { return "已暫停《\(featured.title)》" }
-    return "正在下載《\(featured.title)》"
+    guard let featured = state.books.first else { return localized("下載已完成") }
+    if state.isPaused { return String(format: localized("已暫停《%@》"), featured.title) }
+    return String(format: localized("正在下載《%@》"), featured.title)
 }
 
 /// The progress line: this book, then the queue behind it. Mirrors "852.9 MB of 1.07 GB".
 private func progressLine(_ state: DownloadActivityAttributes.ContentState) -> String {
     guard let featured = state.books.first else { return "" }
-    let own = "第 \(featured.completedChapters) 章，共 \(featured.totalChapters) 章"
-    guard state.books.count > 1 else { return own }
+    guard state.books.count > 1 else {
+        return String(
+            format: localized("第 %1$d 章，共 %2$d 章"),
+            featured.completedChapters, featured.totalChapters
+        )
+    }
     // The queue behind this book. It used to live on its own line under the progress bar;
     // there is no room for that line in a single row, and the count matters more than its
-    // placement did.
-    return "\(own)・另有 \(state.books.count - 1) 本"
+    // placement did. One whole-sentence key per variant rather than the single-book line plus
+    // a suffix: the suffix's position and punctuation differ between languages.
+    return String(
+        format: localized("第 %1$d 章，共 %2$d 章・另有 %3$d 本"),
+        featured.completedChapters, featured.totalChapters, state.books.count - 1
+    )
 }
 
 private func chapterCount(_ state: DownloadActivityAttributes.ContentState) -> String {
@@ -74,10 +82,23 @@ private func chapterCount(_ state: DownloadActivityAttributes.ContentState) -> S
 /// so it never reads a symbol name or a bare fraction; only the button keeps its own label,
 /// because it is the only thing here that can be activated.
 private func spokenSummary(_ state: DownloadActivityAttributes.ContentState) -> String {
-    guard let featured = state.books.first else { return "下載已完成" }
-    let status = state.isPaused ? "下載已暫停" : "正在下載"
-    let queue = state.books.count > 1 ? "，另有 \(state.books.count - 1) 本等待中" : ""
-    return "\(status)：\(featured.title)，已完成 \(featured.completedChapters) 章，共 \(featured.totalChapters) 章\(queue)"
+    guard let featured = state.books.first else { return localized("下載已完成") }
+    let waiting = state.books.count - 1
+    // Four whole sentences (paused or running, with or without a queue) rather than a status,
+    // the progress and a queue clause glued together: word order and punctuation are the
+    // language's to decide, and this sentence is the only thing VoiceOver reads.
+    let format: String
+    switch (state.isPaused, waiting > 0) {
+    case (false, false): format = localized("正在下載：%1$@，已完成 %2$d 章，共 %3$d 章")
+    case (false, true): format = localized("正在下載：%1$@，已完成 %2$d 章，共 %3$d 章，另有 %4$d 本等待中")
+    case (true, false): format = localized("下載已暫停：%1$@，已完成 %2$d 章，共 %3$d 章")
+    case (true, true): format = localized("下載已暫停：%1$@，已完成 %2$d 章，共 %3$d 章，另有 %4$d 本等待中")
+    }
+    // The queue-less sentences have no %4$d; String(format:) ignores a surplus argument.
+    return String(
+        format: format,
+        featured.title, featured.completedChapters, featured.totalChapters, waiting
+    )
 }
 
 // MARK: - Pieces
@@ -143,7 +164,7 @@ private struct PauseButton: View {
         .contentShape(Circle())
         .buttonStyle(.plain)
         .tint(.accentColor)
-        .accessibilityLabel(book.isPaused ? "繼續下載" : "暫停下載")
+        .accessibilityLabel(localized(book.isPaused ? "繼續下載" : "暫停下載"))
     }
 }
 
