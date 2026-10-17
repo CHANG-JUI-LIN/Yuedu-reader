@@ -228,7 +228,7 @@ enum RootTabIconRenderer {
     /// `customIcon` is called from the root view's body, for every tab, on every root render;
     /// it read the file and redrew it each time. The modification date is part of the key, so
     /// an icon replaced under the same name is read again.
-    private static let preparedImages = NSCache<NSString, UIImage>()
+    private static let preparedImages = ConcurrentCache<UIImage>()
 
     private static func preparedImage(at url: URL, pointSize: CGFloat) -> UIImage? {
         let modified: Date
@@ -239,7 +239,7 @@ enum RootTabIconRenderer {
             // A missing file is the ordinary "no custom icon here"; nothing to log.
             return nil
         }
-        let key = "\(url.path)|\(modified.timeIntervalSince1970)|\(pointSize)" as NSString
+        let key = "\(url.path)|\(modified.timeIntervalSince1970)|\(pointSize)"
         if let cached = preparedImages.object(forKey: key) { return cached }
         guard let image = UIImage(contentsOfFile: url.path) else { return nil }
         let prepared = image.rootTabIconPrepared(pointSize: pointSize)

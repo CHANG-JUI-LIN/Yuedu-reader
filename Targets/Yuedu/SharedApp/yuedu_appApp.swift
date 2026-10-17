@@ -153,8 +153,8 @@ struct yuedu_appApp: App {
         #if DEBUG
         // EPUB rollout remains Legacy. The separate Simulator-only interaction
         // hook lives in EPUBPageRenderer; old -browser-mode arguments stay inert.
+        // `-browser-overlay` is read by `BrowserLayoutFeature.showDebugOverlay` itself.
         let args = ProcessInfo.processInfo.arguments
-        if args.contains("-browser-overlay") { BrowserLayoutFeature.showDebugOverlay = true }
         // UI-test automation: `-auto-import-epub <filename>` (relative to
         // Documents) imports the book once at launch (see runAutoImportIfNeeded).
         _ = args.contains("-auto-import-epub")

@@ -4,7 +4,9 @@ import Foundation
 /// Handles rules prefixed with `##` or used in regex mode.
 final class RegexExtractor: RuleExtractor {
 
-    private let cache = RegexCache.shared
+    /// The shared, internally locked cache. Read through rather than stored, so the
+    /// extractor itself carries no state and is `Sendable` like every `RuleExtractor`.
+    private var cache: RegexCache { RegexCache.shared }
 
     func canHandle(rule: String) -> Bool {
         return rule.hasPrefix("##")

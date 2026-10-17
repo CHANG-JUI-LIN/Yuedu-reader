@@ -7,7 +7,7 @@ import UIKit
 /// end of a paragraph. Rendered images are cached by (count, size, color).
 enum ReviewBadgeRenderer {
 
-    private static let cache = NSCache<NSString, UIImage>()
+    private static let cache = ConcurrentCache<UIImage>()
 
     /// Returns a cached bubble image for the given count, sized to the body `pointSize`.
     /// - Parameters:
@@ -89,12 +89,12 @@ enum ReviewBadgeRenderer {
         }
     }
 
-    private static func cacheKey(text: String, pointSize: CGFloat, color: UIColor) -> NSString {
+    private static func cacheKey(text: String, pointSize: CGFloat, color: UIColor) -> String {
         var r: CGFloat = 0, g: CGFloat = 0, b: CGFloat = 0, a: CGFloat = 0
         color.getRed(&r, green: &g, blue: &b, alpha: &a)
         let rgba = String(format: "%.2f-%.2f-%.2f-%.2f", r, g, b, a)
         let fontName = GlobalSettings.shared.selectedReaderFontPostScript ?? "system"
         let isBold = GlobalSettings.shared.readerFontBold ? "bold" : "regular"
-        return "\(text)|\(Int(pointSize.rounded()))|\(rgba)|\(fontName)|\(isBold)" as NSString
+        return "\(text)|\(Int(pointSize.rounded()))|\(rgba)|\(fontName)|\(isBold)"
     }
 }

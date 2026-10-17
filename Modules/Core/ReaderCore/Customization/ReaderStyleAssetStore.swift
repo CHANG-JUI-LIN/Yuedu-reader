@@ -2,6 +2,7 @@ import CryptoKit
 import Foundation
 import ImageIO
 import UIKit
+import os
 
 extension Notification.Name {
     static let readerStyleAssetsDidChange = Notification.Name(
@@ -819,21 +820,20 @@ actor ReaderStyleAssetStore {
     }
 }
 
-final class ReaderStyleAssetImageCache: @unchecked Sendable {
+final class ReaderStyleAssetImageCache: Sendable {
     static let shared = ReaderStyleAssetImageCache()
 
-    private let lock = NSLock()
-    private var images: [UUID: UIImage] = [:]
+    private let images = OSAllocatedUnfairLock(initialState: [UUID: UIImage]())
 
     func image(for id: UUID) -> UIImage? {
-        lock.withLock { images[id] }
+        images.withLock { $0[id] }
     }
 
     func insert(_ image: UIImage, for id: UUID) {
-        lock.withLock { images[id] = image }
+        images.withLock { $0[id] = image }
     }
 
     func remove(_ id: UUID) {
-        _ = lock.withLock { images.removeValue(forKey: id) }
+        _ = images.withLock { $0.removeValue(forKey: id) }
     }
 }

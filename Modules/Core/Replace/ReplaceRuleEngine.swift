@@ -1,4 +1,5 @@
 import Foundation
+import os
 
 /// Applies a list of `ReplaceRule` objects to a string.
 ///
@@ -9,8 +10,7 @@ import Foundation
 enum ReplaceRuleEngine {
 
     // LRU-lite cache keyed by pattern string.
-    private static var regexCache: [String: NSRegularExpression] = [:]
-    private static let lock = NSLock()
+    private static let regexCache = OSAllocatedUnfairLock(initialState: [String: NSRegularExpression]())
 
     /// Apply all `rules` to `content` in order and return the result.
     static func apply(_ rules: [ReplaceRule], to content: String) -> String {
@@ -69,12 +69,9 @@ enum ReplaceRuleEngine {
     /// The compiled rule, shared by both entry points so a string and an attributed string
     /// see exactly the same options (`anchorsMatchLines`).
     private static func regex(for pattern: String) -> NSRegularExpression? {
-        lock.lock()
-        if let cached = regexCache[pattern] {
-            lock.unlock()
+        if let cached = regexCache.withLock({ $0[pattern] }) {
             return cached
         }
-        lock.unlock()
         let compiled: NSRegularExpression
         do {
             compiled = try NSRegularExpression(pattern: pattern, options: [.anchorsMatchLines])
@@ -85,10 +82,10 @@ enum ReplaceRuleEngine {
             ])
             return nil
         }
-        lock.lock()
-        if regexCache.count > 64 { regexCache.removeAll() } // simple eviction
-        regexCache[pattern] = compiled
-        lock.unlock()
+        regexCache.withLock { cache in
+            if cache.count > 64 { cache.removeAll() } // simple eviction
+            cache[pattern] = compiled
+        }
         return compiled
     }
 

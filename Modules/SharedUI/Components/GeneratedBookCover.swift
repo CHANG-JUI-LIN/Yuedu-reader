@@ -314,12 +314,7 @@ enum GeneratedBookCoverRenderer {
         }
     }
 
-    private static let cache: NSCache<NSString, UIImage> = {
-        let cache = NSCache<NSString, UIImage>()
-        cache.countLimit = 96
-        cache.totalCostLimit = 24 * 1024 * 1024
-        return cache
-    }()
+    private static let cache = ConcurrentCache<UIImage>(countLimit: 96, totalCostLimit: 24 * 1024 * 1024)
 
     static func image(
         title: String,
@@ -338,7 +333,7 @@ enum GeneratedBookCoverRenderer {
             title, author ?? "", "\(Int(width))x\(Int(height))",
             colorScheme == .dark ? "d" : "l",
             drawsName ? "1" : "0", drawsAuthor ? "1" : "0", "\(scale)",
-        ].joined(separator: "|") as NSString
+        ].joined(separator: "|")
         if let cached = cache.object(forKey: key) { return cached }
 
         let tone = GeneratedCoverPalette.tone(seed: title, colorScheme: colorScheme)

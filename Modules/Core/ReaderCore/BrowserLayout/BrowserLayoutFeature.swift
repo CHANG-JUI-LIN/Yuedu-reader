@@ -19,7 +19,9 @@ enum EPUBLayoutEngineMode: CustomStringConvertible {
 enum BrowserLayoutFeature {
     static let mode: EPUBLayoutEngineMode = .browserAuto
     #if DEBUG
-    static var showDebugOverlay = false
+    /// The `-browser-overlay` launch argument draws the DEBUG geometry probe. Launch arguments
+    /// are fixed for the life of the process, so this is decided once, on first read.
+    static let showDebugOverlay = ProcessInfo.processInfo.arguments.contains("-browser-overlay")
     #else
     static let showDebugOverlay = false
     #endif

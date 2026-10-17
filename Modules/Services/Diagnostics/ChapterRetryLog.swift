@@ -1,4 +1,5 @@
 import Foundation
+import os
 
 /// Every re-request of a chapter, and why.
 ///
@@ -64,13 +65,16 @@ enum ChapterRetryLog {
         let chapter: Int
     }
 
-    private static let lock = NSLock()
-    private static var history: [Key: [Reason]] = [:]
-    /// Insertion order, for evicting the oldest tracked chapter.
-    private static var order: [Key] = []
-    /// Chapters already reported, so one stuck chapter produces one anomaly rather than
-    /// one per retry after the threshold.
-    private static var escalated: Set<Key> = []
+    private struct State {
+        var history: [Key: [Reason]] = [:]
+        /// Insertion order, for evicting the oldest tracked chapter.
+        var order: [Key] = []
+        /// Chapters already reported, so one stuck chapter produces one anomaly rather than
+        /// one per retry after the threshold.
+        var escalated: Set<Key> = []
+    }
+
+    private static let state = OSAllocatedUnfairLock(initialState: State())
 
     // MARK: - Recording
 
@@ -85,22 +89,22 @@ enum ChapterRetryLog {
     ) {
         let key = Key(bookId: bookId ?? "-", chapter: chapter)
 
-        let (count, reasons, shouldEscalate): (Int, [Reason], Bool) = lock.withLock {
-            var entries = history[key] ?? []
+        let (count, reasons, shouldEscalate): (Int, [Reason], Bool) = state.withLock { state in
+            var entries = state.history[key] ?? []
             if entries.isEmpty {
-                order.append(key)
-                if order.count > trackedChapterLimit, let oldest = order.first {
-                    order.removeFirst()
-                    history.removeValue(forKey: oldest)
-                    escalated.remove(oldest)
+                state.order.append(key)
+                if state.order.count > trackedChapterLimit, let oldest = state.order.first {
+                    state.order.removeFirst()
+                    state.history.removeValue(forKey: oldest)
+                    state.escalated.remove(oldest)
                 }
             }
             entries.append(reason)
             if entries.count > historyLimit { entries.removeFirst(entries.count - historyLimit) }
-            history[key] = entries
+            state.history[key] = entries
 
-            let escalate = entries.count >= escalationThreshold && !escalated.contains(key)
-            if escalate { escalated.insert(key) }
+            let escalate = entries.count >= escalationThreshold && !state.escalated.contains(key)
+            if escalate { state.escalated.insert(key) }
             return (entries.count, entries, escalate)
         }
 
@@ -128,24 +132,25 @@ enum ChapterRetryLog {
     /// eventually report every chapter as looping.
     static func noteSuccess(chapter: Int, bookId: String?) {
         let key = Key(bookId: bookId ?? "-", chapter: chapter)
-        lock.withLock {
-            guard history.removeValue(forKey: key) != nil else { return }
-            order.removeAll { $0 == key }
-            escalated.remove(key)
+        state.withLock { state in
+            guard state.history.removeValue(forKey: key) != nil else { return }
+            state.order.removeAll { $0 == key }
+            state.escalated.remove(key)
         }
     }
 
     /// Retries recorded for a chapter in this session, for tests and for callers that
     /// want to show it.
     static func retryCount(chapter: Int, bookId: String?) -> Int {
-        lock.withLock { history[Key(bookId: bookId ?? "-", chapter: chapter)]?.count ?? 0 }
+        let key = Key(bookId: bookId ?? "-", chapter: chapter)
+        return state.withLock { $0.history[key]?.count ?? 0 }
     }
 
     static func resetForTesting() {
-        lock.withLock {
-            history.removeAll()
-            order.removeAll()
-            escalated.removeAll()
+        state.withLock { state in
+            state.history.removeAll()
+            state.order.removeAll()
+            state.escalated.removeAll()
         }
     }
 }

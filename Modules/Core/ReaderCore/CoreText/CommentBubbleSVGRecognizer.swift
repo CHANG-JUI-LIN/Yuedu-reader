@@ -1,6 +1,7 @@
 import Darwin
 import ImageIO
 import UIKit
+import os
 
 struct CommentBubbleSVG {
     let viewBox: CGRect
@@ -162,25 +163,19 @@ struct CommentBubbleSVGRecognizer {
     // path the same treatment, collapsing hundreds of redraws into one per distinct
     // (count, style, theme, size). Keys carry the full determinant so a hit is never the
     // wrong image, and an all-unique chapter is simply no worse than before this cache.
-    private final class RecognizedBox { let svg: CommentBubbleSVG?; init(_ svg: CommentBubbleSVG?) { self.svg = svg } }
-    private static let recognizeCache: NSCache<NSString, RecognizedBox> = {
-        let cache = NSCache<NSString, RecognizedBox>(); cache.countLimit = 256; return cache
-    }()
-    private static let bubbleImageCache: NSCache<NSString, UIImage> = {
-        let cache = NSCache<NSString, UIImage>(); cache.countLimit = 512; return cache
-    }()
+    private final class RecognizedBox: Sendable { let svg: CommentBubbleSVG?; init(_ svg: CommentBubbleSVG?) { self.svg = svg } }
+    private static let recognizeCache = ConcurrentCache<RecognizedBox>(countLimit: 256)
+    private static let bubbleImageCache = ConcurrentCache<UIImage>(countLimit: 512)
 
     // Cache-hit telemetry so the win is visible on device: filter Console for
     // "⟐ bubble cache" — a 段評 chapter should show draws ≪ hits once counts repeat.
-    private static let bubbleStatLock = NSLock()
-    nonisolated(unsafe) private static var bubbleHitCount = 0
-    nonisolated(unsafe) private static var bubbleDrawCount = 0
+    private static let bubbleStats = OSAllocatedUnfairLock(initialState: (hits: 0, draws: 0))
     private static func noteBubbleCache(hit: Bool) {
-        bubbleStatLock.lock()
-        if hit { bubbleHitCount += 1 } else { bubbleDrawCount += 1 }
-        let hits = bubbleHitCount, draws = bubbleDrawCount
+        let (hits, draws) = bubbleStats.withLock { stats in
+            if hit { stats.hits += 1 } else { stats.draws += 1 }
+            return (stats.hits, stats.draws)
+        }
         let shouldLog = (hits + draws) % 256 == 0
-        bubbleStatLock.unlock()
         if shouldLog {
             AppLogger.render("⟐ bubble cache", context: ["hits": hits, "draws": draws])
         }
@@ -258,8 +253,8 @@ struct CommentBubbleSVGRecognizer {
     /// Length-prefixed so a hash clash also needs equal length, and mode-prefixed so a
     /// strict rejection is never served to the permissive caller (or the reverse). The
     /// identity is the normalized SVG template, not the count-baked source string.
-    private static func recognizeCacheKey(normalizedSVG: String, mode: RecognitionMode) -> NSString {
-        "\(mode.rawValue)#\(normalizedSVG.utf8.count)#\(normalizedSVG.hashValue)" as NSString
+    private static func recognizeCacheKey(normalizedSVG: String, mode: RecognitionMode) -> String {
+        "\(mode.rawValue)#\(normalizedSVG.utf8.count)#\(normalizedSVG.hashValue)"
     }
 
     /// Checks if the given image source or SVG string represents a recognizable simple comment bubble.
@@ -468,7 +463,7 @@ struct CommentBubbleSVGRecognizer {
         themeTextColor: UIColor,
         displayText: String?,
         sourceTextFace: BubbleTextFace
-    ) -> NSString {
+    ) -> String {
         let identity = (svgContent?.isEmpty == false) ? svgContent! : src
         var r: CGFloat = 0, g: CGFloat = 0, b: CGFloat = 0, a: CGFloat = 0
         themeTextColor.getRed(&r, green: &g, blue: &b, alpha: &a)
@@ -484,7 +479,7 @@ struct CommentBubbleSVGRecognizer {
             s.selectedReaderFontPostScript ?? "sys"
         ].joined(separator: "|")
         let textIdentity = displayText.map { "|T\($0)" } ?? ""
-        return "\(identity.utf8.count)#\(identity.hashValue)\(textIdentity)|\(Int(pointSize.rounded()))|\(rgba)|\(sig)" as NSString
+        return "\(identity.utf8.count)#\(identity.hashValue)\(textIdentity)|\(Int(pointSize.rounded()))|\(rgba)|\(sig)"
     }
 
     private static func computeResolvedBubbleImage(

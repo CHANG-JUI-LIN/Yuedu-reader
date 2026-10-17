@@ -18,7 +18,12 @@ import os.log
 /// here; ordinary `.mp3`/`.m4a` links keep the plain `AVURLAsset` fast path.
 final class AudioStreamResourceLoader: NSObject, AVAssetResourceLoaderDelegate {
     private static let schemePrefix = "fqaudio-"
-    private static var associatedKey: UInt8 = 0
+    /// Key that pins a loader to its asset (see `makeAsset`). It is never read back, so it
+    /// only needs an address that is stable and unique in the process: this class object's.
+    /// Derived on each use rather than stored, so there is no global mutable key variable.
+    private static var associatedKey: UnsafeRawPointer {
+        UnsafeRawPointer(Unmanaged.passUnretained(AudioStreamResourceLoader.self as AnyObject).toOpaque())
+    }
 
     private let originURL: URL
     private let headers: [String: String]
@@ -62,7 +67,7 @@ final class AudioStreamResourceLoader: NSObject, AVAssetResourceLoaderDelegate {
         asset.resourceLoader.setDelegate(loader, queue: loader.queue)
         // `setDelegate` holds the delegate weakly; pin the loader's lifetime to the
         // asset so it survives as long as playback needs it.
-        objc_setAssociatedObject(asset, &associatedKey, loader, .OBJC_ASSOCIATION_RETAIN)
+        objc_setAssociatedObject(asset, associatedKey, loader, .OBJC_ASSOCIATION_RETAIN)
         return asset
     }
 

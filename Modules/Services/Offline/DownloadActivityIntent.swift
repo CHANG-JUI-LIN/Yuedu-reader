@@ -16,7 +16,7 @@ import Foundation
 /// running is simply picked up on next launch rather than lost.
 @available(iOS 17.0, *)
 struct ToggleDownloadPauseIntent: LiveActivityIntent {
-    static var title: LocalizedStringResource = "暫停或繼續下載"
+    static let title: LocalizedStringResource = "暫停或繼續下載"
     static var isDiscoverable: Bool { false }
 
     @Parameter(title: "書籍")

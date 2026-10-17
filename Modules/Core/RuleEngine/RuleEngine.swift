@@ -24,12 +24,12 @@ enum RuleEngine {
     // significant CPU spikes during batch chapter parsing (each capture group and
     // each replacement rule calls applyRegex / extractRegexAllInOneMatches).
     // NSCache is thread-safe and auto-evicts entries under memory pressure.
-    private static let regexCache = NSCache<NSString, NSRegularExpression>()
+    private static let regexCache = ConcurrentCache<NSRegularExpression>()
 
     /// Get a compiled NSRegularExpression, preferring the cache.
     /// - Returns: Compiled instance, or nil if the pattern is invalid.
     static func cachedRegex(pattern: String, options: NSRegularExpression.Options = []) -> NSRegularExpression? {
-        let cacheKey = "\(options.rawValue):\(pattern)" as NSString
+        let cacheKey = "\(options.rawValue):\(pattern)"
         if let cached = regexCache.object(forKey: cacheKey) { return cached }
         guard let regex = try? NSRegularExpression(pattern: pattern, options: options) else { return nil }
         regexCache.setObject(regex, forKey: cacheKey)

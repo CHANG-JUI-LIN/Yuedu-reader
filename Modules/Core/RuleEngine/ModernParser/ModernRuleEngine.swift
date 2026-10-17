@@ -1,4 +1,5 @@
 import Foundation
+import os
 
 /// Central rule processing engine ported from Legado's AnalyzeRule.kt.
 /// Orchestrates all extractors and implements the full rule processing pipeline.
@@ -15,32 +16,31 @@ final class ModernRuleEngine {
 
     // MARK: - Global Extractor Registry (Open/Closed Principle)
 
-    private static var _registry: [RuleExtractor] = [
+    private static let registry = OSAllocatedUnfairLock<[RuleExtractor]>(initialState: [
         CssExtractor(),
         XPathExtractor(),
         JsonExtractor(),
         JsoupDefaultExtractor(),
         RegexExtractor(),
         LegacyFallbackExtractor(),
-    ]
-    private static let registryLock = NSLock()
+    ])
 
     static func registerExtractor(_ extractor: RuleExtractor) {
-        registryLock.withLock { _registry.append(extractor) }
+        registry.withLock { $0.append(extractor) }
     }
 
     static func registerExtractor(_ extractor: RuleExtractor, at index: Int) {
-        registryLock.withLock {
-            _registry.insert(extractor, at: min(index, _registry.count))
+        registry.withLock { registry in
+            registry.insert(extractor, at: min(index, registry.count))
         }
     }
 
     static var registeredExtractors: [RuleExtractor] {
-        registryLock.withLock { _registry }
+        registry.withLock { $0 }
     }
 
     static func setExtractors(_ extractors: [RuleExtractor]) {
-        registryLock.withLock { _registry = extractors }
+        registry.withLock { $0 = extractors }
     }
 
     // MARK: - Instance Properties

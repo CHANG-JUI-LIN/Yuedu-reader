@@ -1,5 +1,6 @@
 import YueduCoreText
 import Foundation
+import os
 
 /// Per-chapter index of duokan-style popup footnotes.
 ///
@@ -10,8 +11,8 @@ import Foundation
 /// the chapter tail. This store holds `noteID → text`, populated while a chapter's AST is built
 /// and queried when a footnote link is tapped.
 enum FootnoteStore {
-    private static let lock = NSLock()
-    private static var bySpine: [Int: [String: String]] = [:]
+    /// `spineIndex → noteID → text`. Written from chapter builds, read on footnote taps.
+    private static let bySpine = OSAllocatedUnfairLock(initialState: [Int: [String: String]]())
 
     /// Walks a freshly built chapter body and records every footnote item it finds.
     static func index(body: HTMLAttributedStringBuilder.ElementNode, spineIndex: Int) {
@@ -25,9 +26,7 @@ enum FootnoteStore {
     /// it collects the notes while parsing and publishes them here — same store,
     /// same popup, one convention for both engines.
     static func index(notes: [String: String], spineIndex: Int) {
-        lock.lock()
-        bySpine[spineIndex] = notes.isEmpty ? nil : notes
-        lock.unlock()
+        bySpine.withLock { $0[spineIndex] = notes.isEmpty ? nil : notes }
     }
 
     /// Footnote body text for a tapped href (`#note_1`) within a given spine, or nil if the href
@@ -35,9 +34,7 @@ enum FootnoteStore {
     static func text(spineIndex: Int, href: String) -> String? {
         let id = noteID(fromHref: href)
         guard !id.isEmpty else { return nil }
-        lock.lock()
-        defer { lock.unlock() }
-        return bySpine[spineIndex]?[id]
+        return bySpine.withLock { $0[spineIndex]?[id] }
     }
 
     /// The fragment id of a same-document link (`Text/00.xhtml#note_1` → `note_1`).
