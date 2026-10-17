@@ -76,6 +76,16 @@ enum RuleModuleValidator {
                 }
             }
         }
+        if let localizations = module.localizations {
+            if format3 == nil { format3 = "localizations" }
+            let entryIDs = Set(module.modules.compactMap(\.id))
+            for (language, text) in localizations {
+                guard Self.isLanguageTag(language) else { throw .unknownValue(field: "localizations", value: language) }
+                for id in (text.entries ?? [:]).keys where !entryIDs.contains(id) {
+                    throw .unknownValue(field: "localizations.\(language).entries", value: id)
+                }
+            }
+        }
         var seen: Set<String> = []
         for (index, entry) in module.modules.enumerated() {
             let path = "modules[\(index)]"
@@ -230,6 +240,15 @@ enum RuleModuleValidator {
         keys.reduce(into: "") { result, key in
             if let index = key.intValue { result += "[\(index)]" } else { result += result.isEmpty ? key.stringValue : ".\(key.stringValue)" }
         }
+    }
+
+    /// `en`, `zh-Hant`, `pt-BR`: a language code, then script or region subtags.
+    private static func isLanguageTag(_ tag: String) -> Bool {
+        let parts = tag.split(separator: "-", omittingEmptySubsequences: false)
+        guard let first = parts.first, (2...3).contains(first.count), first.allSatisfy({ $0.isASCII && $0.isLetter }) else {
+            return false
+        }
+        return parts.dropFirst().allSatisfy { (2...8).contains($0.count) && $0.allSatisfy { $0.isASCII && ($0.isLetter || $0.isNumber) } }
     }
 
     private static func requireText(_ text: String, _ field: String) throws(RuleModuleRejection) {

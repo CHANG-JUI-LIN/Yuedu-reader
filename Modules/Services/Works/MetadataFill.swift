@@ -29,6 +29,8 @@ struct MetadataFillQuery: Hashable, Sendable {
     var copySource: SourceInstanceKey
     /// The fields to look for; a provider may ignore the rest.
     var missing: Set<MetadataField>
+    /// A comic is asked only of the places that list comics (module ecosystem M3).
+    var contentKind: ContentKind = .text
 }
 
 /// What a provider found. Empty values mean it had nothing for this copy.
@@ -71,6 +73,7 @@ struct MetadataFillCandidate: Hashable, Sendable {
     var hasOwnCover: Bool
     var values: [MetadataValue]
     var decisions: [WorkDecision]
+    var contentKind: ContentKind = .text
 
     var anchor: SourceItemKey { .copy(copyID) }
 
@@ -194,7 +197,8 @@ final class MetadataFillRunner {
             if provider.grade == .b { wanted.remove(.cover) }
             guard !wanted.isEmpty else { continue }
             let query = MetadataFillQuery(copyID: copy.copyID, title: copy.title, authors: copy.authors,
-                                          identifiers: copy.identifiers, copySource: copy.copySource, missing: wanted)
+                                          identifiers: copy.identifiers, copySource: copy.copySource, missing: wanted,
+                                          contentKind: copy.contentKind)
             guard provider.canLookUp(query) else { continue }
             if let entry = ledger.entry(copyID: copy.copyID, provider: provider.key),
                !entry.shouldAskAgain(inputs: copy.inputs, now: now()) { continue }

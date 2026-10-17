@@ -24,6 +24,21 @@ struct RuleModule: Codable, Hashable, Sendable {
     var search: Entry?
     /// The credit the site asks for, shown on the module's page (format 3.0).
     var attribution: Attribution?
+    /// Its own words in other languages, by language tag (`en`, `zh-Hans`): the title, the
+    /// description and each entry's, shown in the app's language when one matches (format 3.0).
+    var localizations: [String: Localization]?
+
+    struct Localization: Codable, Hashable, Sendable {
+        var title: String?
+        var description: String?
+        /// By entry id.
+        var entries: [String: EntryText]?
+    }
+
+    struct EntryText: Codable, Hashable, Sendable {
+        var title: String?
+        var description: String?
+    }
 
     /// A line naming the site, as its terms word it: 楽天's "Supported by Rakuten Developers".
     struct Attribution: Codable, Hashable, Sendable {
@@ -174,6 +189,40 @@ struct RuleModule: Codable, Hashable, Sendable {
         var series: String? = nil
         /// `comic` makes the item a comic; any other value leaves the entry's kind (format 3.0).
         var contentKind: String? = nil
+    }
+}
+
+extension RuleModule {
+    /// The module in `language` (the app's, `Bundle.main.preferredLocalizations`): the words of
+    /// the localization of the same language and script, where it has them. Without one it is
+    /// as written: `zh-Hans` never stands in for `zh-Hant`, nor `en` for anything.
+    func localized(for language: String) -> RuleModule {
+        guard let localizations, let text = Self.localization(in: localizations, for: language) else { return self }
+        var module = self
+        if let title = text.title?.nonBlank { module.title = title }
+        if let description = text.description?.nonBlank { module.description = description }
+        for (index, entry) in module.modules.enumerated() {
+            guard let id = entry.id, let words = text.entries?[id] else { continue }
+            if let title = words.title?.nonBlank { module.modules[index].title = title }
+            if let description = words.description?.nonBlank { module.modules[index].description = description }
+        }
+        return module
+    }
+
+    private static func localization(in localizations: [String: Localization], for language: String) -> Localization? {
+        if let exact = localizations[language] { return exact }
+        let wanted = Locale.Language(identifier: language).maximalIdentifier
+        let wantedLanguage = Locale.Language(identifier: wanted)
+        return localizations.sorted { $0.key < $1.key }.first { key, _ in
+            let candidate = Locale.Language(identifier: Locale.Language(identifier: key).maximalIdentifier)
+            return candidate.languageCode == wantedLanguage.languageCode && candidate.script == wantedLanguage.script
+        }?.value
+    }
+}
+
+private extension String {
+    var nonBlank: String? {
+        trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? nil : self
     }
 }
 

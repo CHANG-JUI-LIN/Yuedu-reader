@@ -337,17 +337,21 @@ final class ModuleStub: URLProtocol {
     nonisolated(unsafe) private static var replies: [String: Reply] = [:]
     nonisolated(unsafe) private static var requested: [String] = []
     nonisolated(unsafe) private static var sentBodies: [String] = []
+    nonisolated(unsafe) private static var sentAgents: [String] = []
     private static let lock = NSLock()
 
     static var urls: [String] { lock.withLock { requested } }
     /// Each request's body, as UTF-8 (empty without one).
     static var bodies: [String] { lock.withLock { sentBodies } }
+    /// Each request's User-Agent.
+    static var userAgents: [String] { lock.withLock { sentAgents } }
 
     static func install(_ table: [String: Reply]) {
         lock.withLock {
             replies = table
             requested = []
             sentBodies = []
+            sentAgents = []
         }
     }
 
@@ -360,6 +364,7 @@ final class ModuleStub: URLProtocol {
         let reply: Reply? = Self.lock.withLock {
             Self.requested.append(url.absoluteString)
             Self.sentBodies.append(String(decoding: body, as: UTF8.self))
+            Self.sentAgents.append(request.value(forHTTPHeaderField: "User-Agent") ?? "")
             return Self.replies["\(url.host ?? "")\(url.path)"]
         }
         func finish(_ status: Int, _ headers: [String: String], _ body: Data) {

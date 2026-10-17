@@ -24,6 +24,8 @@ final class RuleModuleLibrary: ObservableObject {
 
     let store: RuleModuleStore
     private let appVersion: String
+    /// The language its modules are shown in (`RuleModule.localized(for:)`).
+    private let language: String
     private let officialFiles: @Sendable () -> [URL]
     /// Whether this storefront has the public libraries (`OfficialRuleModules.isAvailable`).
     private let librariesAvailable: () -> Bool
@@ -35,9 +37,11 @@ final class RuleModuleLibrary: ObservableObject {
 
     init(store: RuleModuleStore = RuleModuleStore(), appVersion: String = RuleModuleVersion.app,
          officialFiles: @escaping @Sendable () -> [URL] = { OfficialRuleModules.bundledFiles },
-         availability: PublicLibraryAvailability? = .shared) {
+         availability: PublicLibraryAvailability? = .shared,
+         language: String = Bundle.main.preferredLocalizations.first ?? "en") {
         self.store = store
         self.appVersion = appVersion
+        self.language = language
         self.officialFiles = officialFiles
         librariesAvailable = { availability?.isAvailable ?? true }
         // The storefront is known after launch, and can change.
@@ -63,9 +67,12 @@ final class RuleModuleLibrary: ObservableObject {
         let store = store
         let appVersion = appVersion
         let officialFiles = officialFiles
+        let language = language
         let started = SourcePerfTrace.now
         let (listing, bundled) = await Task.detached(priority: .userInitiated) {
-            (store.list(appVersion: appVersion), OfficialRuleModules.load(officialFiles(), appVersion: appVersion))
+            var listing = store.list(appVersion: appVersion)
+            listing.modules = listing.modules.map { $0.localized(for: language) }
+            return (listing, OfficialRuleModules.load(officialFiles(), appVersion: appVersion).map { $0.localized(for: language) })
         }.value
         SourcePerfTrace.record("modules.library.load",
                                "modules=\(listing.modules.count) official=\(bundled.count) failures=\(listing.failures.count)",

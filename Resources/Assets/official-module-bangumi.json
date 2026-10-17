@@ -1,0 +1,213 @@
+{
+  "id": "bangumi",
+  "title": "Bangumi 番組計劃",
+  "description": "Bangumi（bgm.tv）的漫畫與小說排行和搜尋。書架上缺簡介或分類的書，會把書名送到 Bangumi 查詢。",
+  "author": "閱讀",
+  "site": "https://bgm.tv",
+  "version": "1.0",
+  "requiredVersion": "3.0",
+  "hosts": [
+    "api.bgm.tv",
+    "lain.bgm.tv"
+  ],
+  "rateLimit": "1/1000",
+  "localizations": {
+    "zh-Hans": {
+      "title": "Bangumi 番组计划",
+      "description": "Bangumi（bgm.tv）的漫画与小说排行和搜索。书架上缺简介或分类的书，会把书名发送到 Bangumi 查询。",
+      "entries": {
+        "manga-rank": {
+          "title": "漫画排行"
+        },
+        "novel-rank": {
+          "title": "小说排行"
+        }
+      }
+    },
+    "en": {
+      "title": "Bangumi",
+      "description": "Manga and novel rankings and search from Bangumi (bgm.tv). For books on your shelf without a description or categories, the title is sent to Bangumi to look them up.",
+      "entries": {
+        "manga-rank": {
+          "title": "Top Manga"
+        },
+        "novel-rank": {
+          "title": "Top Novels"
+        }
+      }
+    },
+    "ja": {
+      "title": "Bangumi",
+      "description": "Bangumi（bgm.tv）のマンガ・小説ランキングと検索。本棚で紹介文やカテゴリがない本は、タイトルを Bangumi に送って調べます。",
+      "entries": {
+        "manga-rank": {
+          "title": "マンガランキング"
+        },
+        "novel-rank": {
+          "title": "小説ランキング"
+        }
+      }
+    },
+    "ko": {
+      "title": "Bangumi",
+      "description": "Bangumi(bgm.tv)의 만화·소설 순위와 검색. 책장에서 소개나 분류가 없는 책은 제목을 Bangumi로 보내 조회합니다.",
+      "entries": {
+        "manga-rank": {
+          "title": "만화 순위"
+        },
+        "novel-rank": {
+          "title": "소설 순위"
+        }
+      }
+    }
+  },
+  "modules": [
+    {
+      "id": "manga-rank",
+      "title": "漫畫排行",
+      "cacheDuration": 86400,
+      "params": [
+        {
+          "name": "offset",
+          "type": "offset"
+        }
+      ],
+      "request": {
+        "url": "https://api.bgm.tv/v0/subjects?type=1&cat=1001&series=true&sort=rank&limit=20&offset={{offset}}",
+        "headers": {
+          "User-Agent": "yuedureader/Yuedu (iOS) (+https://yuedureader.com/support)"
+        }
+      },
+      "list": {
+        "items": "$.data[*]",
+        "title": "$.name_cn||$.name",
+        "author": "$.infobox[?(@.key=='原作')].value||$.infobox[?(@.key=='作者')].value",
+        "cover": "$.images.common||$.images.large",
+        "intro": "$.summary",
+        "url": "https://bgm.tv/subject/{{$.id}}",
+        "aliases": "$.name&&$.infobox[?(@.key=='别名')].value[*].v",
+        "tags": "$.tags[*].name",
+        "publisher": "$.infobox[?(@.key=='出版社')].value"
+      },
+      "excludeTags": [
+        "漫画",
+        "单行本",
+        "漫画单行本",
+        "漫画分卷",
+        "コミックス",
+        "小说",
+        "轻小说",
+        "小説",
+        "ライトノベル",
+        "日本",
+        "中国",
+        "韩国",
+        "美国",
+        "原创",
+        "系列",
+        "连载中",
+        "已完结",
+        "完结",
+        "网络小说",
+        "画集"
+      ],
+      "contentKind": "comic"
+    },
+    {
+      "id": "novel-rank",
+      "title": "小說排行",
+      "cacheDuration": 86400,
+      "params": [
+        {
+          "name": "offset",
+          "type": "offset"
+        }
+      ],
+      "request": {
+        "url": "https://api.bgm.tv/v0/subjects?type=1&cat=1002&series=true&sort=rank&limit=20&offset={{offset}}",
+        "headers": {
+          "User-Agent": "yuedureader/Yuedu (iOS) (+https://yuedureader.com/support)"
+        }
+      },
+      "list": {
+        "items": "$.data[*]",
+        "title": "$.name_cn||$.name",
+        "author": "$.infobox[?(@.key=='原作')].value||$.infobox[?(@.key=='作者')].value",
+        "cover": "$.images.common||$.images.large",
+        "intro": "$.summary",
+        "url": "https://bgm.tv/subject/{{$.id}}",
+        "aliases": "$.name&&$.infobox[?(@.key=='别名')].value[*].v",
+        "tags": "$.tags[*].name",
+        "publisher": "$.infobox[?(@.key=='出版社')].value"
+      },
+      "excludeTags": [
+        "漫画",
+        "单行本",
+        "漫画单行本",
+        "漫画分卷",
+        "コミックス",
+        "小说",
+        "轻小说",
+        "小説",
+        "ライトノベル",
+        "日本",
+        "中国",
+        "韩国",
+        "美国",
+        "原创",
+        "系列",
+        "连载中",
+        "已完结",
+        "完结",
+        "网络小说",
+        "画集"
+      ]
+    }
+  ],
+  "search": {
+    "request": {
+      "url": "https://api.bgm.tv/v0/search/subjects?limit=20",
+      "method": "POST",
+      "body": "{\"keyword\":\"{{keyword}}\",\"sort\":\"match\",\"filter\":{\"type\":[1],\"nsfw\":false}}",
+      "headers": {
+        "User-Agent": "yuedureader/Yuedu (iOS) (+https://yuedureader.com/support)",
+        "Content-Type": "application/json"
+      },
+      "bodyEncoding": "json"
+    },
+    "list": {
+      "items": "$.data[*]",
+      "title": "$.name_cn||$.name",
+      "author": "$.infobox[?(@.key=='原作')].value||$.infobox[?(@.key=='作者')].value",
+      "cover": "$.images.common||$.images.large",
+      "intro": "$.summary",
+      "url": "https://bgm.tv/subject/{{$.id}}",
+      "aliases": "$.name&&$.infobox[?(@.key=='别名')].value[*].v",
+      "tags": "$.tags[*].name",
+      "publisher": "$.infobox[?(@.key=='出版社')].value",
+      "contentKind": "$.platform##漫画##comic"
+    },
+    "excludeTags": [
+      "漫画",
+      "单行本",
+      "漫画单行本",
+      "漫画分卷",
+      "コミックス",
+      "小说",
+      "轻小说",
+      "小説",
+      "ライトノベル",
+      "日本",
+      "中国",
+      "韩国",
+      "美国",
+      "原创",
+      "系列",
+      "连载中",
+      "已完结",
+      "完结",
+      "网络小说",
+      "画集"
+    ]
+  }
+}

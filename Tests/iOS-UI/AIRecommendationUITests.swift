@@ -54,7 +54,7 @@ final class AIRecommendationUITests: XCTestCase {
     @MainActor
     func testGenerateOpenAndRegenerate() {
         let app = XCUIApplication()
-        app.launchArguments = ["-AppleLanguages", "(zh-Hant)", "-AppleLocale", "zh_TW",
+        app.launchArguments = ["-no-official-modules", "-AppleLanguages", "(zh-Hant)", "-AppleLocale", "zh_TW",
                                "-debug-force-pro", "-debug-ai-endpoint", "http://localhost:18767",
                                "-reset-explore-home", "-reset-ai-recommendations",
                                "-yd_metadata_fill_order", "({ place = openLibrary; enabled = 0; })",

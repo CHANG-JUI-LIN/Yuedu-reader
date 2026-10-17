@@ -167,7 +167,7 @@ final class ProStatusNavigationUITests: XCTestCase {
     /// or what Pro unlocks.
     private func openProRow(expectsPro: Bool, subtitle: String) -> XCUIApplication {
         let app = XCUIApplication()
-        app.launchArguments += ["-AppleLanguages", "(en)", "-AppleLocale", "en_US"]
+        app.launchArguments += ["-no-official-modules", "-AppleLanguages", "(en)", "-AppleLocale", "en_US"]
         app.launch()
 
         // The notification prompt can land on top of the shelf on a fresh install.

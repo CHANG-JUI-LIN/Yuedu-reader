@@ -15,7 +15,7 @@ final class ContinuousScrollMomentumUITests: XCTestCase {
     private func verifyReverseFlick(usesTXT: Bool) throws {
         continueAfterFailure = false
         let app = XCUIApplication()
-        app.launchArguments = ["-continuous-scroll-gesture-test"]
+        app.launchArguments = ["-no-official-modules", "-continuous-scroll-gesture-test"]
         if usesTXT { app.launchArguments.append("-continuous-scroll-txt-test") }
         app.launch()
         let status = app.staticTexts["viewport_gesture_status"]

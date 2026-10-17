@@ -13,7 +13,7 @@ final class PublicLibraryLiveUITests: XCTestCase {
     @MainActor
     private func launch(pro: Bool) -> XCUIApplication {
         let app = XCUIApplication()
-        app.launchArguments = ["-AppleLanguages", "(zh-Hant)", "-AppleLocale", "zh_TW",
+        app.launchArguments = ["-no-official-modules", "-AppleLanguages", "(zh-Hant)", "-AppleLocale", "zh_TW",
             "-yd_source_disclaimer_accepted", "YES", "-book-source-store-dir", "/tmp/YueduPublicLibraries-manual-empty"]
         if pro { app.launchArguments += ["-debug-force-pro"] }
         app.launchEnvironment["CFNETWORK_DIAGNOSTICS"] = "3"
@@ -122,7 +122,7 @@ final class PublicLibraryLiveUITests: XCTestCase {
     func testAozoraCatalogFromTheWebsite() throws {
         guard enabled("AOZORA_CATALOG_LIVE_UI") else { throw XCTSkip("Explicit live Aozora catalog check") }
         let app = XCUIApplication()
-        app.launchArguments = ["-AppleLanguages", "(zh-Hant)", "-AppleLocale", "zh_TW",
+        app.launchArguments = ["-no-official-modules", "-AppleLanguages", "(zh-Hant)", "-AppleLocale", "zh_TW",
                                "-yd_source_disclaimer_accepted", "YES", "-reset-explore-home"]
         app.launch()
         let tab = app.tabBars.buttons["探索"].firstMatch
@@ -142,7 +142,7 @@ final class PublicLibraryLiveUITests: XCTestCase {
         guard enabled("AOZORA_CATALOG_LIVE_UI") else { throw XCTSkip("Explicit live Aozora catalog check") }
         // 依分類 is a section of 青空文庫's own page, which 資源庫 opens (5h).
         let app = XCUIApplication()
-        app.launchArguments = ["-AppleLanguages", "(zh-Hant)", "-AppleLocale", "zh_TW",
+        app.launchArguments = ["-no-official-modules", "-AppleLanguages", "(zh-Hant)", "-AppleLocale", "zh_TW",
                                "-yd_source_disclaimer_accepted", "YES", "-reset-explore-home"]
         app.launch()
         let tab = app.tabBars.buttons["資源庫"].firstMatch
@@ -190,7 +190,7 @@ final class PublicLibraryLiveUITests: XCTestCase {
     func testAozoraWorkKeepsItsPageAfterReading() throws {
         guard enabled("AOZORA_CATALOG_LIVE_UI") else { throw XCTSkip("Explicit live Aozora catalog check") }
         let app = XCUIApplication()
-        app.launchArguments = ["-AppleLanguages", "(zh-Hant)", "-AppleLocale", "zh_TW",
+        app.launchArguments = ["-no-official-modules", "-AppleLanguages", "(zh-Hant)", "-AppleLocale", "zh_TW",
                                "-yd_source_disclaimer_accepted", "YES", "-reset-explore-home",
                                "-yd_page_turn_style", "滑動", "-yd_scroll_mode", "NO"]
         app.launch()
@@ -267,7 +267,7 @@ final class PublicLibraryLiveUITests: XCTestCase {
     func testAozoraWorkListsItsChapters() throws {
         guard enabled("AOZORA_CATALOG_LIVE_UI") else { throw XCTSkip("Explicit live Aozora catalog check") }
         let app = XCUIApplication()
-        app.launchArguments = ["-AppleLanguages", "(zh-Hant)", "-AppleLocale", "zh_TW",
+        app.launchArguments = ["-no-official-modules", "-AppleLanguages", "(zh-Hant)", "-AppleLocale", "zh_TW",
                                "-yd_source_disclaimer_accepted", "YES", "-reset-explore-home",
                                "-yd_page_turn_style", "滑動", "-yd_scroll_mode", "NO"]
         app.launch()
@@ -308,7 +308,7 @@ final class PublicLibraryLiveUITests: XCTestCase {
     func testGutenbergWorkListsItsChapters() throws {
         guard enabled("PUBLIC_LIBRARY_LIVE_UI") else { throw XCTSkip("Explicit live Gutenberg release check") }
         let app = XCUIApplication()
-        app.launchArguments = ["-AppleLanguages", "(zh-Hant)", "-AppleLocale", "zh_TW",
+        app.launchArguments = ["-no-official-modules", "-AppleLanguages", "(zh-Hant)", "-AppleLocale", "zh_TW",
                                "-yd_source_disclaimer_accepted", "YES", "-reset-explore-home",
                                "-yd_appearance_reader_interface", "classic",
                                "-yd_page_turn_style", "滑動", "-yd_scroll_mode", "NO"]

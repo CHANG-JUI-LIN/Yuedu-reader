@@ -13,7 +13,7 @@ final class AIWordLookupToolbarUITests: XCTestCase {
         var widths: [String: CGFloat] = [:]
         for language in ["zh-Hant", "ja", "en"] {
             let app = XCUIApplication()
-            app.launchArguments = ["-AppleLanguages", "(\(language))",
+            app.launchArguments = ["-no-official-modules", "-AppleLanguages", "(\(language))",
                                    "-ai-chat-design-fixture", "-ai-word-lookup"]
             app.launch()
             let askAI = app.buttons["ai_word_lookup_ask_ai"]

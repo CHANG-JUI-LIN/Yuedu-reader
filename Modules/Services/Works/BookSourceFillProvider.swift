@@ -49,7 +49,7 @@ final class BookSourceFillProvider: MetadataFillProvider {
     /// A copy that came from a book source has its own source's values already (tier 1). With
     /// no source to ask, nothing is asked and nothing recorded, so adding sources later asks.
     func canLookUp(_ query: MetadataFillQuery) -> Bool {
-        query.copySource.type != .bookSource
+        query.contentKind == .text && query.copySource.type != .bookSource
             && !query.title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
             && query.authors.contains { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
             && !query.missing.isDisjoint(with: Self.fields)

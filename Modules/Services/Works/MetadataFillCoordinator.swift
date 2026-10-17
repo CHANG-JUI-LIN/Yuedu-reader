@@ -180,13 +180,13 @@ final class MetadataFillCoordinator {
         var decisions: [WorkDecision]
     }
 
-    /// The shelf's text copies as the filler sees them; sidecars are read off the main thread.
+    /// The shelf's text and comic copies as the filler sees them; sidecars are read off the main thread.
     private func candidates() async -> [MetadataFillCandidate] {
         let books = store.books
         let context = WorkIndexService.liveContext(for: books)
         let inputs = books.compactMap { book -> Input? in
             let record = SourceRecord.derived(from: book, context: context)
-            guard record.contentKind == .text else { return nil }
+            guard record.contentKind == .text || record.contentKind == .comic else { return nil }
             return Input(id: book.id, title: book.title, record: record, hasOwnCover: book.hasOwnCoverArtwork,
                          decisions: store.workDecisions.decisions(involving: .copy(book.id)))
         }
@@ -200,7 +200,8 @@ final class MetadataFillCoordinator {
                     copyID: input.id, title: input.title, authors: input.record.authors,
                     identifiers: identifiers.sorted { ($0.scheme.rawValue, $0.value) < ($1.scheme.rawValue, $1.value) },
                     copySource: input.record.key.instance, sidecarSourceItem: sidecar?.sourceItem ?? input.record.key,
-                    hasOwnCover: input.hasOwnCover, values: sidecar?.values ?? [], decisions: input.decisions)
+                    hasOwnCover: input.hasOwnCover, values: sidecar?.values ?? [], decisions: input.decisions,
+                    contentKind: input.record.contentKind)
             }
         }.value
     }

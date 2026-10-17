@@ -43,7 +43,7 @@ final class ForYouSectionUITests: XCTestCase {
     @MainActor
     private func launchExplore() -> XCUIApplication {
         let app = XCUIApplication()
-        app.launchArguments = ["-AppleLanguages", "(zh-Hant)", "-AppleLocale", "zh_TW",
+        app.launchArguments = ["-no-official-modules", "-AppleLanguages", "(zh-Hant)", "-AppleLocale", "zh_TW",
                                "-yd_source_disclaimer_accepted", "YES",
                                "-book-source-store-dir", directory.appendingPathComponent("sources").path,
                                "-reset-public-library-explore", "-reset-explore-home"]

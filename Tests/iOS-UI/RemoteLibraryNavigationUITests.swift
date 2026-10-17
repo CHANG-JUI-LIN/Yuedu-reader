@@ -9,7 +9,7 @@ final class RemoteLibraryNavigationUITests: XCTestCase {
     @MainActor
     func testAddMenuKeepsTheComputerReceiverWithoutLibraries() throws {
         let app = XCUIApplication()
-        app.launchArguments += ["-AppleLanguages", "(en)", "-AppleLocale", "en_US"]
+        app.launchArguments += ["-no-official-modules", "-AppleLanguages", "(en)", "-AppleLocale", "en_US"]
         app.launch()
         let add = app.buttons["home_add_book"]
         XCTAssertTrue(add.waitForExistence(timeout: 20))

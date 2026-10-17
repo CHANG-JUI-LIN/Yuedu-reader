@@ -17,7 +17,7 @@ final class RecentReadingReaderChromeUITests: XCTestCase {
     @MainActor
     func testRecentReadingReaderTopBarSitsWhereTheShelfPutsIt() throws {
         let app = XCUIApplication()
-        app.launchArguments = ["-AppleLanguages", "(en)", "-AppleLocale", "en_US",
+        app.launchArguments = ["-no-official-modules", "-AppleLanguages", "(en)", "-AppleLocale", "en_US",
                                "-yd_root_tab_visible_ids", "(bookshelf, settings, search)",
                                "-bookSortOrder", "recentlyRead",
                                "-bookLayoutIsGrid", "NO",
