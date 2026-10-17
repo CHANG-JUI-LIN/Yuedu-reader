@@ -180,12 +180,26 @@ extension ReaderView {
                     let settings = self.readerRenderSettings(for: self.activeReaderDisplayMode)
                     self.applyPublicationSession(session, book: book, settings: settings)
                 }
+            } catch is CancellationError {
+                // A remote book's preparation ends this way when its reader closes
+                // (`RemoteLibraryService.release`). Nothing failed, so there is nothing to show.
+                await MainActor.run {
+                    AppLogger.render("EPUB open cancelled")
+                    self.applyDocument(nil)
+                    self.isLoadingPipeline = false
+                    self.isRestoringPosition = false
+                }
             } catch {
                 await MainActor.run {
                     AppLogger.render("Readium parsing failed: \(error)")
                     self.applyDocument(nil)
                     self.isLoadingPipeline = false
                     self.isRestoringPosition = false
+                    guard self.book?.id == book.id else { return }
+                    self.bookOpenFailure = BookOpenFailure(error: error)
+                    // 「無法開啟書籍」 has its own buttons; a toolbar raised while the book was
+                    // still opening would cover them with placeholder progress.
+                    self.setReaderChromeVisible(false)
                 }
             }
         }
@@ -292,6 +306,8 @@ extension ReaderView {
         isLoadingPipeline = true
         txtIndexReady = false
         showTXTIndexFailure = false
+        // 重試 on 「無法開啟書籍」 comes through here, back to the opening state.
+        bookOpenFailure = nil
         isRestoringPosition = true
         refreshInitialRestoreState()
 

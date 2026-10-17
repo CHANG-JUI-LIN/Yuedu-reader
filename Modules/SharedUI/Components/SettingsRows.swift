@@ -83,22 +83,29 @@ struct ThemedLabeledContent: View {
 /// The label of a `ContentUnavailableView` in the theme's text colours: the title as 主文字,
 /// the symbol as 次級文字 — what the view gives them itself, in the system's colours,
 /// which 外觀主題 › 文字顏色 cannot reach. The description goes in 次級文字 at the call site.
+///
+/// A view drawn on the reading background passes the reader's own colours instead: the
+/// app's would vanish on a dark reading theme in light mode.
 struct UnavailableLabel: View {
     let title: String
     let systemImage: String
+    let titleColor: Color?
+    let symbolColor: Color?
 
-    init(_ title: String, systemImage: String) {
+    init(_ title: String, systemImage: String, titleColor: Color? = nil, symbolColor: Color? = nil) {
         self.title = title
         self.systemImage = systemImage
+        self.titleColor = titleColor
+        self.symbolColor = symbolColor
     }
 
     var body: some View {
         Label {
             Text(title)
-                .foregroundStyle(DSColor.textPrimary)
+                .foregroundStyle(titleColor ?? DSColor.textPrimary)
         } icon: {
             Image(systemName: systemImage)
-                .foregroundStyle(DSColor.textSecondary)
+                .foregroundStyle(symbolColor ?? DSColor.textSecondary)
         }
     }
 }

@@ -5,6 +5,8 @@ import UIKit
 extension ReaderView {
 
     // MARK: - Continuous reading (all text sources)
+    /// Mounted only once the book has its engines: before that, `buildBody` shows the
+    /// no-engine surface both modes share.
     @ViewBuilder
     var scrollBody: some View {
         if let scrollEngine = epubRenderer.scrollEngine {
@@ -105,8 +107,6 @@ extension ReaderView {
             .id(ObjectIdentifier(scrollEngine))
             .background(readerSurfaceBackground)
             .ignoresSafeArea()
-        } else {
-            legacyScrollBody
         }
     }
 
@@ -149,81 +149,6 @@ extension ReaderView {
 
     var scrollAxis: CoreTextScrollAxis {
         effectiveWritingMode.isVertical ? .horizontalRTL : .vertical
-    }
-
-    var legacyScrollBody: some View {
-        ScrollViewReader { proxy in
-            ScrollView {
-                LazyVStack(alignment: .leading, spacing: 0) {
-                    ForEach(Array(chapters.enumerated()), id: \.offset) { ci, chapter in
-                        // Chapter title honours the reader's 章節標題樣式 (font /
-                        // weight / visibility) instead of a hardcoded serif bold,
-                        // matching the CoreText paths. The Group keeps the scroll
-                        // anchor alive even when the title itself is hidden —
-                        // `proxy.scrollTo("chapter_\(ci)")` targets this id.
-                        Group {
-                            if readerConfig.chapterTitleStyle.visible {
-                                Text(chapter.title.converted(to: settings.textConversion))
-                                    .font(Font(UserReaderFontResolver.titleFont(
-                                        size: readerConfig.chapterTitleStyle.size,
-                                        weight: readerConfig.chapterTitleStyle.weight,
-                                        postScriptName: readerConfig.chapterTitleStyle.nameFontName()
-                                    )))
-                                    .foregroundColor(readerTheme.textColor)
-                                    .padding(.top, 80)
-                                    .padding(.horizontal, 24)
-                                    .padding(.bottom, 20)
-                            }
-                        }
-                        .id("chapter_\(ci)")
-                        .onAppear { scrollVisibleChapter = ci }
-
-                        if chapter.content.isEmpty && book?.isOnline == true {
-                            VStack(spacing: 16) {
-                                ProgressView()
-                                Text(localized("載入章節中…"))
-                                    .font(DSFont.fixed(size: fontSize - 2, design: .serif))
-                                    .foregroundColor(readerTheme.textColor.opacity(0.6))
-                            }
-                            .frame(maxWidth: .infinity)
-                            .padding(.vertical, 40)
-                            .onAppear { ensureChapterReady(chapterIndex: ci) }
-                        } else {
-                            let cleaned = chapter.content
-                            let paragraphs = cleaned.converted(to: settings.textConversion)
-                                .components(separatedBy: "\n").filter { !$0.isEmpty }
-                            ForEach(Array(paragraphs.enumerated()), id: \.offset) { _, para in
-                                Text(para)
-                                    .font(DSFont.fixed(size: fontSize, design: .serif))
-                                    .foregroundColor(readerTheme.textColor)
-                                    .kerning(readerConfig.letterSpacing)
-                                    .lineSpacing(readerConfig.lineSpacing)
-                                    .frame(maxWidth: .infinity, alignment: .leading)
-                                    .padding(.horizontal, 24)
-                                    .padding(.bottom, readerConfig.paragraphSpacing)
-                            }
-                            Color.clear.frame(height: max(0, 48 - readerConfig.paragraphSpacing)).clipped()
-                        }
-
-                        Divider()
-                            .padding(.horizontal, 24)
-                            .opacity(0.25)
-                    }
-                    Color.clear.frame(height: 80)
-                }
-            }
-            .softScrollEdges()
-            .onAppear {
-                if scrollVisibleChapter > 0 {
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
-                        proxy.scrollTo("chapter_\(scrollVisibleChapter)", anchor: .top)
-                    }
-                }
-            }
-        }
-        .background(readerSurfaceBackground)
-        .contentShape(Rectangle())
-        .onTapGesture { toggleReaderChrome() }
     }
 
     func goToPrevPage() {

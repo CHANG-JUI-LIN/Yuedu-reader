@@ -137,7 +137,7 @@ extension ReaderView {
     func readerBars(visibility: ReaderBarVisibility, drawsFixedBars: Bool) -> some View {
         ReaderPageBarsLayer(
             visibility: visibility,
-            drawsFixedBars: drawsFixedBars,
+            drawsFixedBars: drawsFixedBars && !showsBookOpenFailure,
             headerTopOffset: readerHeaderBarOffset,
             footerBottomOffset: readerFooterBarOffset,
             // Captures `ReaderView`. Its `@State` and `@ObservedObject` read through

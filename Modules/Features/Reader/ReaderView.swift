@@ -305,6 +305,8 @@ struct ReaderView: View {
     @State var isLoadingPipeline = false
     @State var txtIndexReady = false
     @State var showTXTIndexFailure = false
+    /// Set when a local EPUB fails to open; cleared when the next load starts.
+    @State var bookOpenFailure: BookOpenFailure?
     @State private var curlStartupStartedAt: CFAbsoluteTime?
     @State private var hasLoggedCurlInteractiveReady = false
     @State private var hasPerformedInitialLoad = false
@@ -1621,6 +1623,12 @@ struct ReaderView: View {
         chapters.isEmpty || isHoldingContentForOpeningTransition
     }
 
+    /// 「無法開啟書籍」 is on screen. The book has no engine and so nothing to page, scroll
+    /// or report in the bars, whose placeholder lists would only say 1/1 and 0%.
+    var showsBookOpenFailure: Bool {
+        bookOpenFailure != nil && !usesCoreTextEPUB
+    }
+
     /// Slow opens only. The card animation has already started on the loading
     /// chrome — the content-ready ceiling fired — so a first page arriving now
     /// would commit a full layout into the running animation, which is the
@@ -1708,6 +1716,29 @@ struct ReaderView: View {
                 .id(readerPageViewIdentity)
                 .ignoresSafeArea()
                 .transition(.opacity.animation(DSAnimation.standard))
+            } else if !usesCoreTextEPUB {
+                if let bookOpenFailure {
+                    // The page has its own way out, so a tap raises no chrome over it: the
+                    // toolbar, its slider and the contents would only show placeholders.
+                    BookOpenFailureView(
+                        message: bookOpenFailure.message,
+                        titleColor: readerTheme.textColor,
+                        detailColor: readerTheme.textColor.opacity(0.62),
+                        onRetry: { loadContent() },
+                        onClose: { closeReader() }
+                    )
+                    .transition(.opacity.animation(DSAnimation.standard))
+                } else {
+                    // No engine yet, in either mode: a local EPUB still opening. There is
+                    // nothing to page or scroll, so the reader's background and status lines
+                    // show; a tap still raises the chrome, so back and 換源 stay in reach. Paged
+                    // mode once drew nothing here, and every tap went unanswered (2026-10-16). A
+                    // clear colour is no accessibility element of its own, so VoiceOver gets one
+                    // made for it.
+                    Color.clear
+                        .accessibilityElement()
+                        .readerLoadingChromeTap { toggleReaderChrome() }
+                }
             } else if effectiveScrollMode {
                 // scrollBody must stay mounted so the collection host drives the
                 // engine's start()/isReady. Overlay (not replace) the loading state,
@@ -1763,7 +1794,7 @@ struct ReaderView: View {
                 .id(readerPageViewIdentity)
                 .ignoresSafeArea()
                 .transition(.opacity.animation(DSAnimation.standard))
-            } else if usesCoreTextEPUB {
+            } else {
                 VStack {
                     Spacer()
                     ProgressView(localized("載入中…"))

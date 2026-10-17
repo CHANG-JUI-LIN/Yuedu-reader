@@ -461,71 +461,53 @@ extension ReaderView {
         ) else { return }
         guard !isRestoringPosition else { return }
 
-        if effectiveScrollMode {
-            if usesSessionLocalScrollProgress,
-               let session = readerSessionCoordinator,
-               let engine = epubRenderer.engine {
-                // Preserve the actual character position in the library summary;
-                // chapter-only progress would move the summary backwards at exit.
-                session.synchronizeLibraryProgress(to: store, bookId: bookId, forceSave: force) { position in
-                    engine.totalProgress(forSpine: position.spineIndex, charOffset: position.charOffset)
-                }
-                notifySourceSaveRead(isPageTurn: !force)
+        // Only a laid-out book has a position to save. With no engine yet — a local EPUB
+        // still opening, or one that failed to — the chapter and page lists are one-entry
+        // placeholders, and the ratios once written from them replaced the real progress
+        // with 0%, in either mode (2026-10-16).
+        guard let engine = epubRenderer.engine else {
+            AppLogger.render("autoSave skipped reason=noEngine")
+            return
+        }
+
+        // The scroll host is on screen. A fixed-layout book pages whatever the scroll
+        // setting says, as `buildBody` draws it, so it saves below from its page engine.
+        if usesSessionLocalScrollProgress {
+            guard let session = readerSessionCoordinator else {
+                AppLogger.render("autoSave scroll skipped reason=noSession")
                 return
             }
-            AppLogger.render("autoSave scroll visibleChapter=\(scrollVisibleChapter)")
-            store.updatePosition(
-                bookId: bookId,
-                position: Double(scrollVisibleChapter) / Double(max(chapters.count - 1, 1)),
-                forceSave: force
-            )
+            // Preserve the actual character position in the library summary;
+            // chapter-only progress would move the summary backwards at exit.
+            session.synchronizeLibraryProgress(to: store, bookId: bookId, forceSave: force) { position in
+                engine.totalProgress(forSpine: position.spineIndex, charOffset: position.charOffset)
+            }
             notifySourceSaveRead(isPageTurn: !force)
             return
         }
 
-        if let engine = epubRenderer.engine, usesCoreTextEPUB {
-            let total = engine.totalPages
-            guard total > 0 else { return }
-            let candidatePage: Int = {
-                if currentPage == 0, engine.currentPage > 0 {
-                    return engine.currentPage
-                }
-                return currentPage
-            }()
-            guard let resolved = coreTextPositionIfLayoutReady(engine: engine, page: candidatePage) else {
-                AppLogger.render("autoSave coreText skipped page=\(candidatePage) reason=layoutNotReady")
-                return
+        let total = engine.totalPages
+        guard total > 0 else { return }
+        let candidatePage: Int = {
+            if currentPage == 0, engine.currentPage > 0 {
+                return engine.currentPage
             }
-            let spineIndex = resolved.spineIndex
-            let charOffset = resolved.charOffset
-            currentChapterIndex = spineIndex
-            let pct = engine.totalProgress(forSpine: spineIndex, charOffset: charOffset)
-            let normalized = min(1.0, max(0.0, pct))
-            AppLogger.render(
-                "autoSave coreText page=\(candidatePage) spine=\(spineIndex) charOffset=\(charOffset) pct=\(String(format: "%.6f", normalized))"
-            )
-            store.updatePosition(bookId: bookId, position: normalized, forceSave: force)
-            notifySourceSaveRead(isPageTurn: !force)
-        } else if !effectiveScrollMode && !allPages.isEmpty {
-            let page = allPages[min(currentPage, allPages.count - 1)]
-            currentChapterIndex = page.chapterIndex
-            maybeEarlyPrefetchIfNearChapterEnd()
-            let progress = Double(currentPage) / Double(max(allPages.count - 1, 1))
-            let normalized = min(1.0, max(0.0, progress))
-            AppLogger.render(
-                "autoSave paged currentPage=\(currentPage) chapter=\(page.chapterIndex) pageInChapter=\(page.pageInChapter) pct=\(String(format: "%.6f", normalized))"
-            )
-            store.updatePosition(bookId: bookId, position: normalized, forceSave: force)
-            notifySourceSaveRead(isPageTurn: !force)
-        } else {
-            let progress = Double(scrollVisibleChapter) / Double(max(chapters.count - 1, 1))
-            let normalized = min(1.0, max(0.0, progress))
-            AppLogger.render(
-                "autoSave scroll visibleChapter=\(scrollVisibleChapter) pct=\(String(format: "%.6f", normalized))"
-            )
-            store.updatePosition(bookId: bookId, position: normalized, forceSave: force)
-            notifySourceSaveRead(isPageTurn: !force)
+            return currentPage
+        }()
+        guard let resolved = coreTextPositionIfLayoutReady(engine: engine, page: candidatePage) else {
+            AppLogger.render("autoSave coreText skipped page=\(candidatePage) reason=layoutNotReady")
+            return
         }
+        let spineIndex = resolved.spineIndex
+        let charOffset = resolved.charOffset
+        currentChapterIndex = spineIndex
+        let pct = engine.totalProgress(forSpine: spineIndex, charOffset: charOffset)
+        let normalized = min(1.0, max(0.0, pct))
+        AppLogger.render(
+            "autoSave coreText page=\(candidatePage) spine=\(spineIndex) charOffset=\(charOffset) pct=\(String(format: "%.6f", normalized))"
+        )
+        store.updatePosition(bookId: bookId, position: normalized, forceSave: force)
+        notifySourceSaveRead(isPageTurn: !force)
     }
 
     func saveProgress() {

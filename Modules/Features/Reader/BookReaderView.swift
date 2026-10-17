@@ -152,14 +152,7 @@ struct RemoteReaderOpeningView: View {
 
     var body: some View {
         if let error {
-            ContentUnavailableView {
-                UnavailableLabel(localized("無法開啟書籍"), systemImage: "exclamationmark.triangle")
-            } description: {
-                Text(error).foregroundStyle(DSColor.textSecondary)
-            } actions: {
-                Button(localized("重試"), action: onRetry)
-                Button(localized("關閉"), action: onClose)
-            }
+            BookOpenFailureView(message: error, onRetry: onRetry, onClose: onClose)
         } else {
             VStack(spacing: DSSpacing.lg) {
                 ProgressView(localized("正在開啟書籍"))
@@ -172,10 +165,53 @@ struct RemoteReaderOpeningView: View {
     }
 }
 
+/// 「無法開啟書籍」, the one page for a book that cannot be opened: before the format
+/// reader mounts (`RemoteReaderOpeningView`), and inside `ReaderView` when a local EPUB
+/// fails to open. The reader draws it on the reading background, so it passes the
+/// reader's text colours; elsewhere the app's apply.
+struct BookOpenFailureView: View {
+    let message: String
+    var titleColor: Color?
+    var detailColor: Color?
+    var onRetry: () -> Void
+    var onClose: () -> Void
+
+    var body: some View {
+        ContentUnavailableView {
+            UnavailableLabel(
+                localized("無法開啟書籍"),
+                systemImage: "exclamationmark.triangle",
+                titleColor: titleColor,
+                symbolColor: detailColor
+            )
+        } description: {
+            Text(message).foregroundStyle(detailColor ?? DSColor.textSecondary)
+        } actions: {
+            Button(localized("重試"), action: onRetry)
+            Button(localized("關閉"), action: onClose)
+        }
+    }
+}
+
 #Preview("Remote reader loading") {
     RemoteReaderOpeningView(error: nil, onRetry: {}, onClose: {})
 }
 
 #Preview("Remote reader error") {
     RemoteReaderOpeningView(error: localized("認證失敗，請確認帳號和密碼"), onRetry: {}, onClose: {})
+}
+
+#Preview("Local EPUB failure in the reader") {
+    // 黑色 in light mode: the case the reader's own colours are for.
+    let text = ReaderTheme.night.previewTextColor
+    BookOpenFailureView(
+        message: localized("檔案可能已損毀，或不是支援的 EPUB 格式。"),
+        titleColor: text,
+        detailColor: text.opacity(0.62),
+        onRetry: {},
+        onClose: {}
+    )
+    .tint(text)
+    .background(ReaderTheme.night.previewBackgroundColor)
+    .preferredColorScheme(.light)
 }

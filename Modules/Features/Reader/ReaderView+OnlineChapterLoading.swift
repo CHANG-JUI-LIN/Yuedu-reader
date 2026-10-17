@@ -420,28 +420,4 @@ extension ReaderView {
         readerViewModel.prefetchAround(book: b, center: chapterIndex, store: store)
     }
 
-    /// When the user scrolls past the last 25% of the current chapter, trigger next chapter prefetch early.
-    /// This provides more buffer time compared to waiting until the last page.
-    func maybeEarlyPrefetchIfNearChapterEnd() {
-        guard let b = book, b.isOnline,
-              let refs = b.onlineChapters else { return }
-        let chIdx = currentChapterIndex
-        let nextIdx = chIdx + 1
-        guard refs.indices.contains(nextIdx) else { return }
-
-        // Skip if the next chapter is already cached.
-        guard !dependencies.bookSourceFetcher.isChapterCached(
-            bookId: b.id, chapterIndex: nextIdx,
-            expectedSourceURL: nil, expectedTOCTitle: nil) else { return }
-
-        // Check if we're past 75% of the current chapter's pages.
-        let pagesInChapter = allPages.filter { $0.chapterIndex == chIdx }
-        guard !pagesInChapter.isEmpty else { return }
-        let currentPageInChapter = allPages.indices.contains(currentPage)
-            ? allPages[currentPage].pageInChapter : 0
-        guard currentPageInChapter >= (pagesInChapter.count * 3) / 4 else { return }
-
-        readerViewModel.prefetchAround(book: b, center: chIdx, store: store)
-    }
-
 }

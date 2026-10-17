@@ -3990,3 +3990,5 @@
 "按下搜尋時，關鍵字會送到勾選的地方；Open Library 找到的書只有資料。來源配置在搜索頁的「來源配置」選。" = "When you search, your words are sent to the checked places; books found on Open Library have data only. Source configurations are chosen on the search page.";
 "這台裝置上還沒有這張圖片。從其他裝置同步來的規則，圖片會隨 iCloud 同步下載。" = "This image isn't on this device yet. For rules synced from another device, images download with iCloud sync.";
 "這張圖片無法讀取。" = "This image can't be read.";
+"找不到這本書的檔案。" = "The file for this book can't be found.";
+"檔案可能已損毀，或不是支援的 EPUB 格式。" = "The file may be damaged, or isn't a supported EPUB.";
