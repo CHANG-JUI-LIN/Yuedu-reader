@@ -98,6 +98,25 @@ final class ModuleProvider: CollectionBrowsing, HomeSectionProviding {
         return try await items(of: lookup, values: values)
     }
 
+    /// `item` with what its record's page gives (the entry's `detail`) for a field in `wanted`
+    /// it lacks: one request, or none when the entry has no detail or the row already has them.
+    func detailed(_ item: RuleListItem, of entry: RuleModule.Entry, wanting wanted: Set<MetadataField>) async throws -> RuleListItem {
+        guard let detail = entry.detail else { return item }
+        let lacksIntro = wanted.contains(.intro) && detail.intro != nil
+            && item.intro.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        let lacksTags = wanted.contains(.tags) && detail.tags != nil && entry.tags(of: item).isEmpty
+        guard lacksIntro || lacksTags else { return item }
+        do {
+            return try await client.detailed(item, by: detail, in: module)
+        } catch {
+            let failure = try SourceFailure.classify(error)
+            AppLogger.network("module detail failed", error: SourceFailure.loggable(error), context: [
+                "module": module.id, "failure": failure.kind.rawValue, "status": failure.status.map(String.init) ?? "",
+            ])
+            throw failure
+        }
+    }
+
     /// An item as the entry `searchItems` (or `lookupItems`, from `entry`) would list it.
     func searchEntry(_ item: RuleListItem, of entry: RuleModule.Entry? = nil) -> CollectionEntry? {
         guard let list = entry ?? module.search else { return nil }

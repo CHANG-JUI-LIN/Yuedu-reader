@@ -111,10 +111,16 @@ final class ModuleFillProvider: MetadataFillProvider {
                                    since: started, thresholdMs: 0)
             throw error
         }
-        let result = Self.result(from: items, of: entry, query: query, record: { item in
-            guard case .item(let record, _, _) = provider.searchEntry(item) else { return nil }
-            return record.key
-        })
+        // Its page, when the entry has one, for the one result that is the copy's work: never a row it is not.
+        let result: MetadataFillResult
+        if let match = Self.match(in: items, of: entry, query: query) {
+            let item = try await LibrarySearch.within(timeout) { try await provider.detailed(match, of: entry, wanting: query.missing) }
+            let values = Self.values(of: item, entry: entry, query: query)
+            let key: SourceItemKey? = if case .item(let record, _, _) = provider.searchEntry(item) { record.key } else { nil }
+            result = MetadataFillResult(values: values, sourceItem: values.isEmpty ? nil : key)
+        } else {
+            result = MetadataFillResult(values: [:])
+        }
         SourcePerfTrace.record("metadata.fill.module", "module=\(provider.module.id) items=\(items.count) filled=\(result.values.count)",
                                since: started, thresholdMs: 0)
         return result
@@ -123,7 +129,8 @@ final class ModuleFillProvider: MetadataFillProvider {
     private func lookUp(isbn: String, of lookup: RuleModule.Entry, query: MetadataFillQuery) async throws -> MetadataFillResult {
         let provider = provider
         let items = try await LibrarySearch.within(timeout) { try await provider.lookupItems(isbn: isbn) } ?? []
-        guard let item = Self.record(in: items, isbn: isbn) else { return MetadataFillResult(values: [:]) }
+        guard let record = Self.record(in: items, isbn: isbn) else { return MetadataFillResult(values: [:]) }
+        let item = try await LibrarySearch.within(timeout) { try await provider.detailed(record, of: lookup, wanting: query.missing) }
         var values = Self.lookupValues(item, of: lookup, query: query)
         if query.missing.contains(.cover), !item.coverUrl.trimmingCharacters(in: .whitespaces).isEmpty,
            let data = try await LibrarySearch.within(timeout, { try await provider.coverImage(item.coverUrl) }) {
@@ -166,8 +173,15 @@ final class ModuleFillProvider: MetadataFillProvider {
     /// The values of the one item that is the copy's work; `record` names it in the sidecar.
     static func result(from items: [RuleListItem], of entry: RuleModule.Entry, query: MetadataFillQuery,
                        record: (RuleListItem) -> SourceItemKey?) -> MetadataFillResult {
+        guard let item = match(in: items, of: entry, query: query) else { return MetadataFillResult(values: [:]) }
+        let values = values(of: item, entry: entry, query: query)
+        return MetadataFillResult(values: values, sourceItem: values.isEmpty ? nil : record(item))
+    }
+
+    /// The one item that is the copy's work; nil for none, or for two (which one is unknown).
+    static func match(in items: [RuleListItem], of entry: RuleModule.Entry, query: MetadataFillQuery) -> RuleListItem? {
         let titleKey = WorkMatchKey.title(query.title)
-        guard !titleKey.isEmpty else { return MetadataFillResult(values: [:]) }
+        guard !titleKey.isEmpty else { return nil }
         var seen = Set<String>()
         let matches = items.filter { item in
             entry.contentKind(of: item) == query.contentKind
@@ -176,8 +190,11 @@ final class ModuleFillProvider: MetadataFillProvider {
                 // One work listed twice is still one.
                 && seen.insert(item.bookUrl.isEmpty ? "\(item.name)\u{1F}\(item.author)" : item.bookUrl).inserted
         }
-        guard matches.count == 1, let item = matches.first else { return MetadataFillResult(values: [:]) }
+        return matches.count == 1 ? matches.first : nil
+    }
 
+    /// A search result's description and tags, in the copy title's script.
+    static func values(of item: RuleListItem, entry: RuleModule.Entry, query: MetadataFillQuery) -> [MetadataField: MetadataPayload] {
         let script = WritingScript(of: query.title)
         var values: [MetadataField: MetadataPayload] = [:]
         if query.missing.contains(.intro) {
@@ -191,7 +208,7 @@ final class ModuleFillProvider: MetadataFillProvider {
             let tags = entry.tags(of: item).filter { WritingScript(of: $0) == script }
             if !tags.isEmpty { values[.tags] = .texts(tags) }
         }
-        return MetadataFillResult(values: values, sourceItem: values.isEmpty ? nil : record(item))
+        return values
     }
 
     /// An author value naming several people (`山田鐘人、アベツカサ`).

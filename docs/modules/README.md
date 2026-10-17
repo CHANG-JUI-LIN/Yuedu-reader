@@ -81,6 +81,7 @@ App 內建的官方模組（`Resources/Assets/official-module-<id>.json`）跟�
 | `contentKind` |  | `text`（預設）或 `comic`：整個清單是漫畫。3.0。 |
 | `excludeTags` |  | 這個網站的 `tags` 裡不算題材的字（如 `漫画`、`单行本`），使用標籤時排除。3.0。 |
 | `isbnPrefixes` |  | 只用在 `lookup`（§5）。3.0。 |
+| `detail` |  | 只用在 `search` 和 `lookup`：那本書自己的頁面，補清單沒給的簡介或標籤（§5.1）。3.0。 |
 
 ### 3.1 參數 `params[]`
 
@@ -171,6 +172,26 @@ App 內建的官方模組（`Resources/Assets/official-module-<id>.json`）跟�
 可以補的欄位：`cover`、`intro`、`publisher`、`series`、`tags`、`aliases`。模組的 `search` 也會用書名補資料。
 使用者在 設定 → 聚合設定 → 資料來源 取消勾選就不會用它補資料（搜尋在同一頁的「搜尋來源」），或在模組頁按「停用」整個關掉。
 
+### 5.1 書的詳情頁 `detail`
+
+有些網站的搜尋結果沒有簡介，要再開那本書自己的頁面才有（Open Library 的簡介在 `/works/<編號>.json`）。
+`search` 或 `lookup` 可以加 `detail`：
+
+```json
+"detail": {
+  "request": { "url": "{{url}}.json" },
+  "intro": "$.description.value||$.description",
+  "tags": "$.subjects[*]"
+}
+```
+
+- `request` 跟 §3.2 一樣，但只能用 `{{url}}`：那筆結果的 `url`（所以 `list.url` 必填）。
+  放在網址開頭時照原樣代入，放在其他地方會百分號編碼。代入後的網址一樣只能連到 `hosts`。
+- `intro`、`tags`：在詳情頁上直接讀的規則（沒有 `items`），至少要有一個。
+- 只在補資料時、而且只對確定是那本書的那一筆結果請求一次，不會每一列都開；
+  清單已經給了簡介和標籤、或書架那本不缺這兩項時就不請求。
+- 首頁清單（`modules[]`）不能用 `detail`。舊版 App 會忽略它，只是補不到這兩項。
+
 ---
 
 ## 6. 在 App 內讀書 `reading`
@@ -226,7 +247,7 @@ App 內建的官方模組（`Resources/Assets/official-module-<id>.json`）跟�
 下列欄位是格式 3.0 才有的，用到任何一個都要 `"requiredVersion": "3.0"` 以上，
 否則舊 App 會匯入後讀錯（例如把 JSON 內容百分號編碼送出）：
 
-`attribution`、`localizations`、`lookup`、`reading`、`contentKind`、`excludeTags`、`isbnPrefixes`、
+`attribution`、`localizations`、`lookup`、`reading`、`contentKind`、`excludeTags`、`isbnPrefixes`、`detail`、
 `bodyEncoding`、`page`／`offset` 參數的 `value`，以及 `list` 的 `aliases`、`tags`、`publisher`、`isbn`、`series`、`contentKind`。
 
 ---

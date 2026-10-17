@@ -104,10 +104,12 @@ struct RuleModule: Codable, Hashable, Sendable {
         /// On `lookup`: the ISBN-13 prefixes the site has (openBD: `9784`). Any other book's ISBN
         /// never leaves the device (format 3.0).
         var isbnPrefixes: [String]?
+        /// On `search` and `lookup`: the record's own page, asked for what its row lacks.
+        var detail: Detail?
 
         init(id: String?, title: String?, description: String? = nil, cacheDuration: Int? = nil,
              params: [Param] = [], request: Request, list: ListRules, contentKind: String? = nil,
-             excludeTags: [String]? = nil, isbnPrefixes: [String]? = nil) {
+             excludeTags: [String]? = nil, isbnPrefixes: [String]? = nil, detail: Detail? = nil) {
             self.id = id
             self.title = title
             self.description = description
@@ -118,6 +120,7 @@ struct RuleModule: Codable, Hashable, Sendable {
             self.contentKind = contentKind
             self.excludeTags = excludeTags
             self.isbnPrefixes = isbnPrefixes
+            self.detail = detail
         }
 
         init(from decoder: any Decoder) throws {
@@ -132,7 +135,21 @@ struct RuleModule: Codable, Hashable, Sendable {
             contentKind = try container.decodeIfPresent(String.self, forKey: .contentKind)
             excludeTags = try container.decodeIfPresent([String].self, forKey: .excludeTags)
             isbnPrefixes = try container.decodeIfPresent([String].self, forKey: .isbnPrefixes)
+            detail = try container.decodeIfPresent(Detail.self, forKey: .detail)
         }
+    }
+
+    /// A `search` or `lookup` record's own page (Open Library: a work's description is at
+    /// `/works/<id>.json`, not in its search). Asked once, for the record that is the copy's,
+    /// and only for a field the copy still misses that the row did not give. An app that does
+    /// not read it fills less and nothing else.
+    struct Detail: Codable, Hashable, Sendable {
+        /// `{{url}}` is the record's `url`; the address must be on `hosts` once it is filled.
+        var request: Request
+        /// Rules read on the page itself (no `items`).
+        var intro: String?
+        /// Several values.
+        var tags: String?
     }
 
     /// Forward's parameter, by its names and types.
