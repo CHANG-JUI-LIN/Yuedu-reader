@@ -22,6 +22,9 @@ final class AIRecommendationUITests: XCTestCase {
         continueAfterFailure = false
         folder = FileManager.default.temporaryDirectory.appendingPathComponent("AIRecommendation-\(UUID().uuidString)")
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        // No book source: 作品詳情 searches the enabled ones as it opens, and step 4 reads the
+        // row with none to search.
+        try FileManager.default.createDirectory(at: folder.appendingPathComponent("sources"), withIntermediateDirectories: true)
         let text = "第一章 開始\n\n\(body)\n\n" + String(repeating: "\(body)\n", count: 20)
         try Data(text.utf8).write(to: folder.appendingPathComponent("\(title).txt"))
     }
@@ -58,6 +61,7 @@ final class AIRecommendationUITests: XCTestCase {
                                "-debug-force-pro", "-debug-ai-endpoint", "http://localhost:18767",
                                "-reset-explore-home", "-reset-ai-recommendations",
                                "-yd_metadata_fill_order", "({ place = openLibrary; enabled = 0; })",
+                               "-book-source-store-dir", folder.appendingPathComponent("sources").path,
                                "-auto-import-epub", folder.appendingPathComponent("\(title).txt").path,
                                "-auto-import-title", title, "-yd_page_turn_style", "滑動", "-yd_scroll_mode", "NO",
                                "-yd_appearance_reader_interface", "classic"]

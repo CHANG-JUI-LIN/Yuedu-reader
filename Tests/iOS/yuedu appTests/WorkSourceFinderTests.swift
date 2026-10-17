@@ -2,8 +2,9 @@ import Foundation
 import Testing
 @testable import yuedu_app
 
-/// Discovery 7b-2: 「尋找可用來源」 searches the enabled sources for a work only when tapped,
-/// and the books found of it join 作品詳情's 來源 (maintainer, 2026-10-13).
+/// Discovery 7b-2: 「尋找可用來源」 searches the enabled sources for a work, and the books found
+/// of it join 作品詳情's 來源 (maintainer, 2026-10-13). Since 2026-10-17 the page searches on
+/// its own when it opens (maintainer: 「點進去自動尋找並列出可用來源」).
 @Suite("Work source finder")
 @MainActor
 struct WorkSourceFinderTests {
@@ -93,6 +94,26 @@ struct WorkSourceFinderTests {
         finder.find(route(book("三體", by: "劉慈欣", in: a, path: "1"), in: a), sources: [source("off", enabled: false)])
         #expect(finder.state == .noSources)
         #expect(finder.found.isEmpty)
+    }
+
+    @Test("opening the page searches once; with no enabled source it stays quiet")
+    func findOnOpen() {
+        let a = source("a")
+        let work = route(book("三體", by: "劉慈欣", in: a, path: "1"), in: a)
+
+        let quiet = WorkSourceFinder()
+        quiet.findOnOpen(work, sources: [source("off", enabled: false)])
+        #expect(quiet.state == .idle, "no 請先啟用 on every page of someone who reads without sources")
+
+        let finder = WorkSourceFinder()
+        finder.findOnOpen(work, sources: [a])
+        #expect(finder.state == .searching)
+        finder.cancel()
+        finder.findOnOpen(work, sources: [a])
+        #expect(finder.state == .idle, "the page coming back from a pushed page does not search again")
+        finder.find(work, sources: [a])
+        #expect(finder.state == .searching, "the row still searches again when tapped")
+        finder.cancel()
     }
 }
 
