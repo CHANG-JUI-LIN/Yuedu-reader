@@ -109,7 +109,7 @@ enum RuleListMapping {
     }
 
     /// Nil without a rule; trimmed, empty values dropped.
-    private static func values(_ engine: ModernRuleEngine, _ rule: String) -> [String]? {
+    static func values(_ engine: ModernRuleEngine, _ rule: String) -> [String]? {
         guard !rule.isEmpty else { return nil }
         return engine.getStringList(ruleStr: rule)
             .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }

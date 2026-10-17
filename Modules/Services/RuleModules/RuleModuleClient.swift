@@ -111,6 +111,32 @@ struct RuleModuleClient: Sendable {
                                      listRule: list.items, fields: list.fields)
     }
 
+    /// The record's own page, read by `detail` (Open Library's `/works/<id>.json`): the item with
+    /// its empty description and tags given from it. `{{url}}` is the item's `url`, as it is at
+    /// the start of the address, percent-encoded anywhere else.
+    func detailed(_ item: RuleListItem, by detail: RuleModule.Detail, in module: RuleModule) async throws -> RuleListItem {
+        let request = detail.request
+        let values = ["url": item.bookUrl]
+        let leading = request.url.trimmingCharacters(in: .whitespaces).hasPrefix("{{url}}")
+        let bodyEncoding: TemplateEncoding = request.bodyEncoding == RuleModule.BodyEncoding.json.rawValue ? .json : .percent
+        let started = SourcePerfTrace.now
+        let page = try await send(Self.fill(request.url, values, encode: !leading), method: (request.method ?? "GET").uppercased(),
+                                  body: request.body.map { Self.fill($0, values, encoding: bodyEncoding) },
+                                  headers: (request.headers ?? [:]).mapValues { Self.fill($0, values, encode: false) },
+                                  charset: request.charset, in: module)
+        let engine = ModernRuleEngine()
+        engine.setContent(page.text, baseUrl: page.baseURL)
+        var item = item
+        if item.intro.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, let rule = detail.intro, !rule.isEmpty {
+            item.intro = engine.getString(ruleStr: rule)
+        }
+        if (item.tags ?? []).isEmpty, let rule = detail.tags, !rule.isEmpty {
+            item.tags = RuleListMapping.values(engine, rule)
+        }
+        SourcePerfTrace.record("module.detail", "module=\(module.id)", since: started, thresholdMs: 0)
+        return item
+    }
+
     /// One request of the module's: `safeURL` and its hosts on the address and every redirect,
     /// under its `rateLimit`; the reply decoded as text.
     func send(_ address: String, method: String = "GET", body: String? = nil, headers: [String: String],

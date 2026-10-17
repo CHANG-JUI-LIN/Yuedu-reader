@@ -23,7 +23,8 @@ struct ModuleFormatDocumentationTests {
        "list":{"items":"i","title":"t","author":"a","cover":"c","intro":"i","url":"u","kind":"k","language":"l",
                "aliases":"a","tags":"t","publisher":"p","isbn":"i","series":"s","contentKind":"c"},
        "contentKind":"comic","excludeTags":["x"]}],
-     "search":{"request":{"url":"https://example.com/s"},"list":{"items":"i","title":"t"}},
+     "search":{"request":{"url":"https://example.com/s"},"list":{"items":"i","title":"t","url":"u"},
+               "detail":{"request":{"url":"{{url}}.json"},"intro":"i","tags":"t"}},
      "lookup":{"request":{"url":"https://example.com/{{isbn}}"},"list":{"items":"i","title":"t","isbn":"i"},
                "isbnPrefixes":["9784"]},
      "reading":{"headers":{"h":"v"},"charset":"utf-8",
@@ -68,7 +69,8 @@ struct ModuleFormatDocumentationTests {
     func moduleFields() throws {
         let module = try RuleModuleValidator.validate(Data(Self.everything.utf8), appVersion: "3.0")
         let names = Self.fieldNames(of: module)
-        #expect(names.contains("singleChapter") && names.contains("enumOptions") && names.contains("entries"),
+        #expect(names.contains("singleChapter") && names.contains("enumOptions") && names.contains("entries")
+                && names.contains("detail"),
                 "the walk reaches the nested types: \(names.sorted())")
         let document = try documented()
         let missing = names.filter { !document.contains("`\($0)`") }.sorted()

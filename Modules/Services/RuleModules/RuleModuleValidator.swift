@@ -195,6 +195,51 @@ enum RuleModuleValidator {
             try checkRule(rule, field: "\(path).list.\(name)", declared: [], innerRules: true)
         }
         for case let (name, _?) in format3Rules { uses3("\(path).list.\(name)") }
+
+        if let detail = entry.detail {
+            uses3("\(path).detail")
+            try validate(detail, of: path, hosts: hosts, isRecord: isSearch || isLookup,
+                         hasURLRule: !(entry.list.url ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+        }
+    }
+
+    /// A record's own page: only a search's or a lookup's records are asked for one (a home
+    /// list's rows never are), and it gives a description or tags.
+    private static func validate(_ detail: RuleModule.Detail, of entryPath: String, hosts: Set<String>,
+                                 isRecord: Bool, hasURLRule: Bool) throws(RuleModuleRejection) {
+        let path = "\(entryPath).detail"
+        guard isRecord else { throw .unknownValue(field: path, value: "detail") }
+        let request = detail.request
+        let method = (request.method ?? "GET").uppercased()
+        guard method == "GET" || method == "POST" else {
+            throw .unsupportedMethod(field: "\(path).request.method", method: request.method ?? "")
+        }
+        let declared: Set<String> = ["url"]
+        try requireText(request.url, "\(path).request.url")
+        try checkRule(request.url, field: "\(path).request.url", declared: declared)
+        if let body = request.body { try checkRule(body, field: "\(path).request.body", declared: declared) }
+        if let encoding = request.bodyEncoding, RuleModule.BodyEncoding(rawValue: encoding) == nil {
+            throw .unknownValue(field: "\(path).request.bodyEncoding", value: encoding)
+        }
+        for (name, value) in (request.headers ?? [:]).sorted(by: { $0.key < $1.key }) {
+            try checkRule(value, field: "\(path).request.headers.\(name)", declared: declared)
+        }
+        if hasOptionTail(request.url) { throw .urlOptions(field: "\(path).request.url") }
+        // `{{url}}` with no url rule would be the list page's own address.
+        let templates = templateNames(in: request.url + (request.body ?? "") + (request.headers ?? [:]).values.joined())
+        if templates.contains("url"), !hasURLRule { throw .missingField("\(entryPath).list.url") }
+        // `{{url}}…` is the record's own address, read from the module's hosts; `send` refuses it
+        // when it names another. Any other address is checked here.
+        if !request.url.trimmingCharacters(in: .whitespaces).hasPrefix("{{url}}") {
+            try checkHost(request.url, field: "\(path).request.url", hosts: hosts)
+        }
+        let rules = [("intro", detail.intro), ("tags", detail.tags)]
+        guard rules.contains(where: { !($0.1 ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }) else {
+            throw .missingField("\(path).intro")
+        }
+        for case let (name, rule?) in rules {
+            try checkRule(rule, field: "\(path).\(name)", declared: [], innerRules: true)
+        }
     }
 
     // MARK: - Rules and templates
