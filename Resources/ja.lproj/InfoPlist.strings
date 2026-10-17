@@ -8,3 +8,18 @@
 "NSLocalNetworkUsageDescription" = "ローカルネットワーク上のライブラリや音声サービスへの接続と、Calibreから送信された本の受信に使用します。";
 
 "NSPhotoLibraryAddUsageDescription" = "本の表紙と共有用の読書画像を写真ライブラリに保存するために使用します。";
+
+/* Document and file-type names from Info.plist, keyed by the English value as
+   Apple's own apps do: the CFBundleTypeName of CFBundleDocumentTypes, then the
+   UTTypeDescription of each UTImportedTypeDeclarations entry. Shown as the
+   file's kind in the Files app and in Get Info. */
+"Readable documents" = "読める書類";
+"QiReader Theme" = "QiReader外観パック";
+"QiReader Highlight Rules" = "QiReaderハイライトルールパック";
+"Reeden Theme" = "Reedenテーマパック";
+"Book source document" = "ソースファイル";
+"OPML document" = "OPML書類";
+"Markdown document" = "Markdown書類";
+"Comic book archive" = "マンガアーカイブ";
+"FLAC audio" = "FLACオーディオ";
+"MPEG-4 audiobook" = "MPEG-4オーディオブック";

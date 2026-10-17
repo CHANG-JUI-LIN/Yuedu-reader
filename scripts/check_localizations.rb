@@ -31,6 +31,15 @@
 # the interpolation, e.g. `%lld%% · %@前`), so an interpolating one can't be
 # checked and is skipped.
 #
+# Info.plist names its document and file types itself: the CFBundleTypeName of
+# each CFBundleDocumentTypes entry and the UTTypeDescription of each declared
+# type, shown as a file's kind in the Files app. InfoPlist.strings localizes
+# them keyed by that English value (Apple's own apps key them the same way),
+# so agreeing tables say nothing about a type no table names: "Readable
+# documents" and nine type descriptions reached every language in English
+# while the tables agreed. Every such name in a root's Info.plist must be a key
+# of every language's InfoPlist.strings in that root.
+#
 # Usage: scripts/check_localizations.rb [root ...]
 # Tables are read with plutil, so this runs on macOS only.
 
@@ -46,6 +55,9 @@ CODE_CHECKS = [
   { sources: %w[Modules Targets], table: "Resources/zh-Hant.lproj/Localizable.strings", swiftui: false },
   { sources: %w[Widget], table: "Widget/zh-Hant.lproj/Localizable.strings", swiftui: true }
 ].freeze
+# And these: the Info.plist whose type names each root's InfoPlist.strings
+# localizes. The app's sits at the repository root, not in Resources.
+INFO_PLISTS = { "Resources" => "Info.plist", "ShareExtension" => "ShareExtension/Info.plist", "Widget" => "Widget/Info.plist" }.freeze
 
 def parse_table(path)
   json, stderr, status = Open3.capture3("plutil", "-convert", "json", "-o", "-", path)
@@ -178,6 +190,52 @@ def check_code_keys(sources, table, swiftui)
   true
 end
 
+# The document and file-type names an Info.plist shows users, or nil if it
+# can't be read.
+def info_plist_type_names(path)
+  plist = parse_table(path)
+  return nil if plist.nil?
+
+  names = Array(plist["CFBundleDocumentTypes"]).map { |type| type["CFBundleTypeName"] }
+  %w[UTExportedTypeDeclarations UTImportedTypeDeclarations].each do |key|
+    names.concat(Array(plist[key]).map { |type| type["UTTypeDescription"] })
+  end
+  names.compact.uniq
+end
+
+# Reports each type name in root's Info.plist that a language's
+# InfoPlist.strings lacks; returns whether there were none.
+def check_info_plist_names(root, info_plist)
+  names = info_plist_type_names(info_plist)
+  return false if names.nil?
+  return true if names.empty?
+
+  tables = Dir.glob(File.join(root, "*.lproj")).sort.map { |dir| File.join(dir, "InfoPlist.strings") }
+  ok = true
+  tables.each do |table|
+    unless File.exist?(table)
+      warn "#{table}: missing; #{info_plist} names #{names.size} document or file types to localize"
+      ok = false
+      next
+    end
+    strings = parse_table(table)
+    if strings.nil?
+      ok = false
+      next
+    end
+    missing = names - strings.keys
+    next if missing.empty?
+
+    ok = false
+    warn "#{table}: type names from #{info_plist} missing from the table"
+    missing.each { |name| warn "    #{name}" }
+  end
+  return false unless ok
+
+  puts "Localization OK: #{info_plist} names #{names.size} document and file types, all in #{File.join(root, "*.lproj", "InfoPlist.strings")}"
+  true
+end
+
 failed = false
 
 (ARGV.empty? ? DEFAULT_ROOTS : ARGV).each do |root|
@@ -193,6 +251,9 @@ failed = false
     expected = languages.map { |dir| File.join(dir, table) }
     failed = true unless check_table(File.join(root, "*.lproj", table), expected, files)
   end
+
+  info_plist = INFO_PLISTS[root]
+  failed = true if info_plist && !check_info_plist_names(root, info_plist)
 end
 
 CODE_CHECKS.each do |check|
