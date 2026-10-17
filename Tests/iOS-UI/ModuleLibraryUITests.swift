@@ -254,8 +254,8 @@ final class ModuleLibraryUITests: XCTestCase {
     @MainActor
     func testModuleAnswersSearch() {
         let sources = FileManager.default.temporaryDirectory.appendingPathComponent("ModuleSearchUITests-\(UUID().uuidString)")
-        // No source and Open Library off: the module is the only place a submit asks.
-        let app = launch(extra: ["-yd_search_open_library", "NO", "-book-source-store-dir", sources.path])
+        // No source and no official module: the fixture module is the only place a submit asks.
+        let app = launch(extra: ["-book-source-store-dir", sources.path])
         addFixtureModule(app)
 
         app.tabBars.buttons["搜尋"].firstMatch.tap()
@@ -290,12 +290,10 @@ final class ModuleLibraryUITests: XCTestCase {
         for _ in 0..<6 where !sources.isHittable { app.swipeUp() }
         sources.tap()
 
-        let openLibrary = app.switches["metadataFill.place.openLibrary"].firstMatch
         let bookSources = app.switches["metadataFill.place.bookSources"].firstMatch
         let module = app.switches["metadataFill.place.module:uitest.module"].firstMatch
         XCTAssertTrue(module.waitForExistence(timeout: 10), app.debugDescription)
-        XCTAssertTrue(openLibrary.exists && bookSources.exists, app.debugDescription)
-        XCTAssertLessThan(openLibrary.frame.minY, bookSources.frame.minY)
+        XCTAssertTrue(bookSources.exists, app.debugDescription)
         XCTAssertLessThan(bookSources.frame.minY, module.frame.minY, "a new module joins at the end")
         XCTAssertEqual(module.value as? String, "1", "checked by default")
         attach(app, "metadata-fill-sources")

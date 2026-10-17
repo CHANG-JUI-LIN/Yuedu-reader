@@ -124,11 +124,9 @@ final class AggregationSettingsStore: ObservableObject {
 
     /// Until OL3, 搜尋時也查 Open Library was a switch of its own (`yd_search_open_library`, on
     /// unless set). Open Library is a module now: a reader who turned it off has the module
-    /// unchecked in 搜尋來源, once; the old switch is removed. A launch argument's "NO" (the UI
-    /// tests) cannot be removed and unchecks it on every launch.
+    /// unchecked in 搜尋來源, once; the old switch is removed.
     func adoptLegacyOpenLibrarySearch() {
         guard defaults.object(forKey: Self.legacyOpenLibrarySearchKey) != nil else { return }
-        // `bool(forKey:)`: it reads a launch argument's "NO" too, which `as? Bool` does not.
         if !defaults.bool(forKey: Self.legacyOpenLibrarySearchKey) {
             setShownInSearch(false, for: ModuleProvider.instanceKey(moduleID: OfficialRuleModules.openLibraryID))
         }
