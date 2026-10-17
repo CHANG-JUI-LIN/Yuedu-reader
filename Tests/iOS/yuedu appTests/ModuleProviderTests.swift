@@ -366,7 +366,9 @@ final class ModuleStub: URLProtocol {
             Self.requested.append(url.absoluteString)
             Self.sentBodies.append(String(decoding: body, as: UTF8.self))
             Self.sentAgents.append(request.value(forHTTPHeaderField: "User-Agent") ?? "")
-            return Self.replies["\(url.host ?? "")\(url.path)"]
+            // A key with the query answers that page alone (`?p=2`); one without, every query.
+            let page = "\(url.host ?? "")\(url.path)"
+            return url.query.flatMap { Self.replies["\(page)?\($0)"] } ?? Self.replies[page]
         }
         func finish(_ status: Int, _ headers: [String: String], _ body: Data) {
             let response = HTTPURLResponse(url: url, statusCode: status, httpVersion: "HTTP/1.1", headerFields: headers)!

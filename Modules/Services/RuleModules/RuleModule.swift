@@ -25,6 +25,40 @@ struct RuleModule: Codable, Hashable, Sendable {
     /// A book by its ISBN (`{{isbn}}`): the record is the copy's own, so it may also give a
     /// cover (from `hosts` only), a publisher and a series. Fill only (format 3.0).
     var lookup: Entry?
+    /// How its books are read (format 3.0): a list item's `url` is the book's page, which
+    /// holds its table of contents; each chapter's page holds its text. Without it the module's
+    /// books are data only.
+    var reading: Reading?
+
+    struct Reading: Codable, Hashable, Sendable {
+        /// Sent with every page of a book (`User-Agent`). No templates.
+        var headers: [String: String]?
+        var charset: String?
+        var toc: TableOfContents
+        var content: Content
+    }
+
+    /// The book page's chapter list. An item with a title and no url is a volume heading.
+    struct TableOfContents: Codable, Hashable, Sendable {
+        var items: String
+        var title: String
+        var url: String
+        /// The address of the list's next page; the list ends where it is empty, at a page
+        /// already read, or after `RuleModuleClient.maxTOCPages`.
+        var nextPage: String?
+        /// A rule that matches only on a page that is the book's one chapter (なろう's short
+        /// story: `.p-novel__body`). Read before the list: a book is one chapter only when the
+        /// page says so, never because its list came back empty.
+        var singleChapter: String?
+    }
+
+    struct Content: Codable, Hashable, Sendable {
+        /// The chapter's text, HTML kept (`@html`), as a 來源配置's content rule.
+        var text: String
+        var title: String?
+        /// A chapter split over several pages.
+        var nextPage: String?
+    }
     /// The credit the site asks for, shown on the module's page (format 3.0).
     var attribution: Attribution?
     /// Its own words in other languages, by language tag (`en`, `zh-Hans`): the title, the
