@@ -4,18 +4,26 @@ import UIKit
 
 struct MarkdownAttributedStringBuilder: AttributedStringBuilding {
     private let sections: [MarkdownSection]
+    private let replaceRules: [ReplaceRule]
 
-    init(markdown: String, fallbackTitle: String) {
-        let globalRules = ReplaceRuleStore.shared.rules(for: "")
-        let processedMarkdown = globalRules.isEmpty ? markdown : ReplaceRuleEngine.apply(globalRules, to: markdown)
-        self.sections = MarkdownSectionParser.sections(from: processedMarkdown, fallbackTitle: fallbackTitle)
+    /// Replace rules are not applied to `markdown` here: they run on each block's text inside
+    /// `MarkdownRenderableNodeConverter`, so the syntax that delimits blocks is never their
+    /// input. Run over the source, the preset 清除全形空格開頭 (`^[\u3000\s]+`, line-anchored)
+    /// deleted every blank line and joined each section into a single paragraph.
+    init(
+        markdown: String,
+        fallbackTitle: String,
+        replaceRules: [ReplaceRule] = ReplaceRuleStore.shared.rules(for: "")
+    ) {
+        self.sections = MarkdownSectionParser.sections(from: markdown, fallbackTitle: fallbackTitle)
+        self.replaceRules = replaceRules
     }
 
     var chapterCount: Int { sections.count }
 
     var unifiedChapters: [UnifiedChapter] {
         sections.enumerated().map { index, section in
-            let bodyNodes = MarkdownRenderableNodeConverter.convertBody(section.body)
+            let bodyNodes = MarkdownRenderableNodeConverter.convertBody(section.body, rules: replaceRules)
             let paragraphs = MarkdownRenderableNodeConverter.plainParagraphs(from: bodyNodes)
             return UnifiedChapter(
                 index: index,
@@ -55,7 +63,7 @@ struct MarkdownAttributedStringBuilder: AttributedStringBuilding {
 
     func chapterPlainText(at index: Int) async -> String? {
         guard sections.indices.contains(index) else { return nil }
-        let nodes = MarkdownRenderableNodeConverter.convertBody(sections[index].body)
+        let nodes = MarkdownRenderableNodeConverter.convertBody(sections[index].body, rules: replaceRules)
         let text = MarkdownRenderableNodeConverter.plainParagraphs(from: nodes)
             .joined(separator: "\n")
         return text.isEmpty ? nil : text
@@ -72,7 +80,7 @@ struct MarkdownAttributedStringBuilder: AttributedStringBuilding {
             throw AttributedStringBuildingError.chapterOutOfRange(index)
         }
 
-        let nodes = MarkdownRenderableNodeConverter.convert(section: sections[index])
+        let nodes = MarkdownRenderableNodeConverter.convert(section: sections[index], rules: replaceRules)
         let renderer = NodeAttributedStringRenderer(
             config: NodeAttributedStringRenderer.Config(from: settings, textColor: themeTextColor)
         )
@@ -87,7 +95,9 @@ struct MarkdownAttributedStringBuilder: AttributedStringBuilding {
 }
 
 enum MarkdownRenderableNodeConverter {
-    static func convert(section: MarkdownSection) -> [RenderableNode] {
+    /// The section title is not rule input, as in the TXT and online readers: the title drawn
+    /// stays the one the table of contents lists.
+    static func convert(section: MarkdownSection, rules: [ReplaceRule]) -> [RenderableNode] {
         var nodes: [RenderableNode] = []
 
         if !section.title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
@@ -105,11 +115,15 @@ enum MarkdownRenderableNodeConverter {
             )
         }
 
-        nodes.append(contentsOf: convertBody(section.body))
+        nodes.append(contentsOf: convertBody(section.body, rules: rules))
         return nodes
     }
 
-    static func convertBody(_ body: String) -> [RenderableNode] {
+    /// `rules` run on each block's own text after its Markdown markers are recognised: a
+    /// paragraph's or quote's lines (joined by `\n`, so `^`/`$` still anchor at each source
+    /// line), a heading's or list item's text, a code block's lines. Rules that span blocks,
+    /// such as the preset `\n{3,}`, therefore have nothing to match in Markdown.
+    static func convertBody(_ body: String, rules: [ReplaceRule]) -> [RenderableNode] {
         let lines = body
             .replacingOccurrences(of: "\r\n", with: "\n")
             .replacingOccurrences(of: "\r", with: "\n")
@@ -121,8 +135,21 @@ enum MarkdownRenderableNodeConverter {
         var codeLines: [String] = []
         var isInsideCodeFence = false
 
+        func replaced(_ text: String) -> String {
+            rules.isEmpty ? text : ReplaceRuleEngine.apply(rules, to: text)
+        }
+
+        /// Source lines of one block, rules applied, joined into its single line of text.
+        func joinedText(_ lines: [String]) -> String {
+            replaced(lines.joined(separator: "\n"))
+                .components(separatedBy: "\n")
+                .map { $0.trimmingCharacters(in: .whitespaces) }
+                .filter { !$0.isEmpty }
+                .joined(separator: " ")
+        }
+
         func flushParagraph() {
-            let text = paragraphLines.joined(separator: " ").trimmingCharacters(in: .whitespacesAndNewlines)
+            let text = joinedText(paragraphLines)
             if !text.isEmpty {
                 nodes.append(.paragraph(MarkdownInlineParser.parse(text), style: .body))
             }
@@ -130,7 +157,7 @@ enum MarkdownRenderableNodeConverter {
         }
 
         func flushQuote() {
-            let text = quoteLines.joined(separator: " ").trimmingCharacters(in: .whitespacesAndNewlines)
+            let text = joinedText(quoteLines)
             if !text.isEmpty {
                 nodes.append(.blockquote([.paragraph(MarkdownInlineParser.parse(text), style: .body)]))
             }
@@ -138,7 +165,7 @@ enum MarkdownRenderableNodeConverter {
         }
 
         func flushCode() {
-            let text = codeLines.joined(separator: "\n").trimmingCharacters(in: .whitespacesAndNewlines)
+            let text = replaced(codeLines.joined(separator: "\n")).trimmingCharacters(in: .whitespacesAndNewlines)
             if !text.isEmpty {
                 nodes.append(
                     .block(
@@ -186,7 +213,10 @@ enum MarkdownRenderableNodeConverter {
             if let heading = headingContent(from: trimmed) {
                 flushParagraph()
                 flushQuote()
-                nodes.append(.heading(MarkdownInlineParser.parse(heading.text), level: heading.level, style: .none))
+                let text = replaced(heading.text).trimmingCharacters(in: .whitespaces)
+                if !text.isEmpty {
+                    nodes.append(.heading(MarkdownInlineParser.parse(text), level: heading.level, style: .none))
+                }
                 continue
             }
 
@@ -201,13 +231,19 @@ enum MarkdownRenderableNodeConverter {
 
             if let listText = unorderedListContent(from: trimmed) {
                 flushParagraph()
-                nodes.append(.listItem(MarkdownInlineParser.parse(listText), bullet: "•"))
+                let text = replaced(listText).trimmingCharacters(in: .whitespaces)
+                if !text.isEmpty {
+                    nodes.append(.listItem(MarkdownInlineParser.parse(text), bullet: "•"))
+                }
                 continue
             }
 
             if let ordered = orderedListContent(from: trimmed) {
                 flushParagraph()
-                nodes.append(.listItem(MarkdownInlineParser.parse(ordered.text), bullet: ordered.marker))
+                let text = replaced(ordered.text).trimmingCharacters(in: .whitespaces)
+                if !text.isEmpty {
+                    nodes.append(.listItem(MarkdownInlineParser.parse(text), bullet: ordered.marker))
+                }
                 continue
             }
 
