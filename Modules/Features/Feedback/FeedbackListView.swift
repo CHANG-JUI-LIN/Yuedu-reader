@@ -2,8 +2,7 @@ import SwiftUI
 
 /// 回饋中心 › 我的回饋: every report this inbox sent, filtered by status group, newest
 /// first by default. The groups are the tabs of the page's own tab bar — the app's tab bar
-/// shows on tab roots only, so this one has the bottom to itself — and the sort control is
-/// its last tab.
+/// steps aside for it — and the sort control is its last tab.
 struct FeedbackListView: View {
     private enum LoadState: Equatable {
         case loading
@@ -59,6 +58,9 @@ struct FeedbackListView: View {
                         .disabled(!hasUnread)
                 }
             }
+            // The app's tab bar showed under this one (maintainer, 2026-10-17): a page pushed
+            // inside a tab asks for it to be hidden itself.
+            .hidesRootTabBar()
             .confirmationDialog(localized("排序"), isPresented: $showsSortOptions, titleVisibility: .visible) {
                 ForEach(FeedbackSortOrder.allCases) { order in
                     Button(order.title) { sortOrder = order }

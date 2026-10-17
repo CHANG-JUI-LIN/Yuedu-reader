@@ -58,6 +58,12 @@ final class FeedbackCenterUITests: XCTestCase {
         for tab in groupTabs {
             XCTAssertTrue(tab.isHittable, "\(tab.label) should be a reachable tab")
         }
+        // The app's tab bar steps aside for the page's own (maintainer, 2026-10-17).
+        let shelfTab = app.tabBars.buttons["書架"].firstMatch
+        let rootTabBarGone = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in
+            !(shelfTab.exists && shelfTab.isHittable)
+        }, object: nil)
+        XCTAssertEqual(XCTWaiter.wait(for: [rootTabBarGone], timeout: 5), .completed, app.debugDescription)
         groupTabs[2].tap()
         XCTAssertTrue(groupTabs[2].isSelected, "待補充 should become the selected group")
         // Loaded (empty group or rows) or the error state, whichever the backend gives.

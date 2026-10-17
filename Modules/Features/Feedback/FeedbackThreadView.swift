@@ -62,6 +62,8 @@ struct FeedbackThreadView: View {
             }
         }
         .safeAreaInset(edge: .bottom) { composer }
+        // As 我的回饋 under it: the composer has the bottom to itself.
+        .hidesRootTabBar()
         .softScrollEdges()
         .themedAppSurface(for: .settings)
         .navigationTitle(thread.displayTitle)
