@@ -142,3 +142,8 @@ M2 is split: LibraryTabRoot, HomeContentSourcePicker, ExploreHome and BookSearch
 - 資源庫 ••• → 管理模組 → 模組 (官方模組 ✓, each repository, 匯入的模組, 首頁欄目引用 with removal across every 首頁配置); 新增模組 on its toolbar goes through 資源庫's one add flow (environment). Module page: 匯出 (ShareLink, `<id>.json`), 停用/啟用, 最低格式版本.
 - Not done from the screenshots: 詳情快取時長 (the format has only per-list `cacheDuration`).
 - `scripts/module_repository_fixture.py` (18772) + `ModuleRepositoryUITests`.
+
+### M7 docs (2026-10-17)
+
+- `docs/modules/README.md` (繁體中文, for module authors): every top-level, entry, param, request, list, reading, attribution and localization field; param types and fixed values; the validator's refusals; format 3.0 fields and `requiredVersion`; the repository index; testing on localhost. Examples point at the bundled official modules.
+- `ModuleFormatDocumentationTests`: walks a module with every part present (Mirror) and the repository index, and fails when a field or a fixed value is not in the document.
