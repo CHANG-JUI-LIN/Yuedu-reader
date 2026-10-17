@@ -372,7 +372,9 @@ struct BookSearchView: View {
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .background(PageBackgroundView(scope: .search))
+            // No page background here: the full-screen one below paints the page. A second one
+            // inside the safe area drew the theme's picture again, lower, under the bar and the
+            // search field (2026-10-17).
             .background {
                 UnifiedSearchFeed(query: showsCombinedResults ? trimmedQuery : "", shelf: shelfSearch,
                                   libraries: librarySearch, bibliographic: openLibrarySearch, aggregator: aggregator,
