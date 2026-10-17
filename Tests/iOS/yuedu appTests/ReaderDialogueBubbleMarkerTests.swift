@@ -15,6 +15,8 @@ struct ReaderDialogueBubbleMarkerTests {
         let builder = TXTLazyAttributedStringBuilder(text: source, chapterIndexes: [
             TXTChapterIndex(index: 0, title: "", contentRange: NSRange(location: 0, length: (source as NSString).length))
         ])
+        // The engine tells a real builder its column; a builder made by hand has to be told.
+        builder.updateRenderSize(CGSize(width: Self.columnWidth, height: 600))
         var settings = EPUBTestFixtures.renderSettings()
         settings.dialogueBubbleStyle = style()
         settings.dialogueBubbleStyle.left.textHex = textHex
@@ -68,6 +70,7 @@ struct ReaderDialogueBubbleMarkerTests {
         let builder = TXTLazyAttributedStringBuilder(text: body, chapterIndexes: [
             TXTChapterIndex(index: 0, title: "", contentRange: NSRange(location: 0, length: (body as NSString).length))
         ])
+        builder.updateRenderSize(CGSize(width: Self.columnWidth, height: 600))
         var settings = EPUBTestFixtures.renderSettings()
         settings.dialogueBubbleStyle = style()
         let result = try await builder.buildChapter(at: 0, settings: settings,

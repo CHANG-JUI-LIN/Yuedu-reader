@@ -14,7 +14,7 @@ final class FixedPagePagedViewController: UIViewController, FixedPageModeReader,
     weak var container: FixedPageReaderContainer?
 
     private let fixedPageReaderConfiguration: FixedPageReaderConfiguration
-    private let targetWidth: CGFloat
+    private let targetWidth: FixedPageTargetWidth
     private var rawPages: [FixedPage] = []
     private var displayPages: [FixedPage] = []
     private var spreads: [[FixedPage]] = []
@@ -28,7 +28,7 @@ final class FixedPagePagedViewController: UIViewController, FixedPageModeReader,
     private var spreadsGeneration = 0
     private var controlsShown = false
 
-    init(fixedPageReaderConfiguration: FixedPageReaderConfiguration, targetWidth: CGFloat) {
+    init(fixedPageReaderConfiguration: FixedPageReaderConfiguration, targetWidth: FixedPageTargetWidth) {
         self.fixedPageReaderConfiguration = fixedPageReaderConfiguration
         self.targetWidth = targetWidth
         let orientation: UIPageViewController.NavigationOrientation = fixedPageReaderConfiguration.navigationAxis == .vertical
@@ -207,7 +207,7 @@ final class FixedPagePagedViewController: UIViewController, FixedPageModeReader,
             spreadIndex: index,
             pages: spreads[index],
             fixedPageReaderConfiguration: fixedPageReaderConfiguration,
-            targetWidth: targetWidth
+            targetWidth: targetWidth.value
         )
         spread.restoredZoom = spreadZooms[index]
         spread.controlsShown = controlsShown

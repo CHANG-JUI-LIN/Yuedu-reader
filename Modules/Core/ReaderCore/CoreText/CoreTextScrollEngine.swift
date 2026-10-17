@@ -934,7 +934,11 @@ final class CoreTextScrollEngine: ObservableObject, ScrollReaderEngine {
 
         let aspect = image.size.height / max(image.size.width, 1)
         let naturalHeight = contentWidth * aspect
-        let maxHeight = max(UIScreen.main.bounds.height - 80, contentWidth)
+        // A full-page image may be as tall as the reader's own viewport less its 80pt of chrome.
+        // Not the screen's height: in a Stage Manager or Split View window that is taller than
+        // the page the image has to fit. `viewportExtent` is zero only for a caller that never
+        // told the engine, which has no height to cap against.
+        let maxHeight = viewportExtent > 0 ? max(viewportExtent - 80, contentWidth) : naturalHeight
         let height = min(naturalHeight, maxHeight)
         let drawWidth = height < naturalHeight ? height / aspect : contentWidth
         let x = (contentWidth - drawWidth) / 2

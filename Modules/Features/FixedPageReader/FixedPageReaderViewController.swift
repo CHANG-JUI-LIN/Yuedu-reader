@@ -30,7 +30,10 @@ final class FixedPageReaderViewController: UIViewController, FixedPageReaderCont
     private var prefetchTask: Task<Void, Never>?
     private var imagePrefetcher = ImagePrefetcher()
     private var currentPages: [FixedPage] = []
-    private var targetWidth: CGFloat = 0
+    /// Shared with the mode readers, which read it when they load a page or configure a cell.
+    private let targetWidthSource = FixedPageTargetWidth()
+    /// The width page images are decoded for — the view's own width as of its last layout.
+    var targetWidth: CGFloat { targetWidthSource.value }
     /// Single-chapter documents only: the file's own table of contents, used as
     /// in-document jump targets.
     private var documentSections: [FixedPageDocumentSection] = []
@@ -135,6 +138,15 @@ final class FixedPageReaderViewController: UIViewController, FixedPageReaderCont
         isSingleChapterDocumentBook ? 1 : chapters.count
     }
 
+    override func viewDidLayoutSubviews() {
+        super.viewDidLayoutSubviews()
+        // The width follows the view: it is not the width at install time (often zero then), and
+        // not the screen's. Unchanged widths skip the write.
+        if view.bounds.width > 0, view.bounds.width != targetWidthSource.value {
+            targetWidthSource.value = view.bounds.width
+        }
+    }
+
     override func viewWillAppear(_ animated: Bool) {
         super.viewWillAppear(animated)
         backLegacyReaderBars()
@@ -223,15 +235,14 @@ final class FixedPageReaderViewController: UIViewController, FixedPageReaderCont
         reader?.view.removeFromSuperview()
         reader?.removeFromParent()
 
-        targetWidth = view.bounds.width > 0 ? view.bounds.width : UIScreen.main.bounds.width
         let newReader: any FixedPageModeReader = fixedPageReaderConfiguration.layout == .paged
             ? FixedPagePagedViewController(
                 fixedPageReaderConfiguration: fixedPageReaderConfiguration,
-                targetWidth: targetWidth
+                targetWidth: targetWidthSource
             )
             : FixedPageWebtoonViewController(
                 fixedPageReaderConfiguration: fixedPageReaderConfiguration,
-                targetWidth: targetWidth
+                targetWidth: targetWidthSource
             )
         newReader.container = self
         newReader.setControlsShown(state.showControls)

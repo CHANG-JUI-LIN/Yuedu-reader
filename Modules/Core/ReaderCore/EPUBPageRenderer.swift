@@ -558,6 +558,9 @@ final class EPUBPageRenderer: ObservableObject {
         let effectiveSize = renderSize.width > 0 ? renderSize : lastViewportSize
 
         if effectiveSize.width > 0 {
+            // The scroll engine can build a chapter before the page engine's start tells the
+            // builder its column, so the builder is told here too.
+            (attributedBuilder as? RenderSizeAwareAttributedStringBuilding)?.updateRenderSize(effectiveSize)
             let startUptime = ProcessInfo.processInfo.systemUptime
             logProgress("loadTXT start bookId=\(bookIdentifier) renderSize=\(effectiveSize)")
             Task {
@@ -659,9 +662,9 @@ final class EPUBPageRenderer: ObservableObject {
     func notifyViewportSize(_ size: CGSize) {
         guard size.width > 0, size.height > 0 else { return }
         lastViewportSize = size
-        // Update renderSize for EPUB builder created before deferred start
-        epubBuilder?.renderSize = size
-        onlineBuilder?.updateRenderSize(size)
+        // Every builder that composes against the column learns it here, before the deferred
+        // start builds anything (EPUB, online and TXT alike — one path).
+        (contentBuilder as? RenderSizeAwareAttributedStringBuilding)?.updateRenderSize(size)
         guard let bookId = pendingStartBookId, let eng = engine else { return }
         pendingStartBookId = nil
         let startUptime = ProcessInfo.processInfo.systemUptime

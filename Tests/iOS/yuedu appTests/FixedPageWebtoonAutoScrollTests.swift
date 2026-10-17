@@ -34,8 +34,10 @@ struct FixedPageWebtoonAutoScrollTests {
     @MainActor
     func autoScrollStateFollowsReader() {
         let container = AutoScrollContainer()
+        let width = FixedPageTargetWidth()
+        width.value = 820
         let reader = FixedPageWebtoonViewController(
-            fixedPageReaderConfiguration: .recommendedDefault(for: .webtoon), targetWidth: 820
+            fixedPageReaderConfiguration: .recommendedDefault(for: .webtoon), targetWidth: width
         )
         reader.container = container
         reader.toggleAutoScroll()

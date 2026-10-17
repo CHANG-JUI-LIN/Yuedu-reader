@@ -112,9 +112,27 @@ enum ChapterPlainText {
     }
 }
 
+/// A builder that composes anything against the column it is laid out in. The engine (and
+/// `EPUBPageRenderer.notifyViewportSize`) tells it that size, on start and on every resize.
+///
+/// Not class-bound: a value-type builder satisfies it with a `BuilderRenderSize` box that all of
+/// its copies share, since the engine and the document store each hold a copy.
 @MainActor
-protocol RenderSizeAwareAttributedStringBuilding: AnyObject {
+protocol RenderSizeAwareAttributedStringBuilding {
     func updateRenderSize(_ size: CGSize)
+}
+
+/// The render size of one builder, shared by reference between that builder's copies and safe to
+/// read from the background tasks that build chapters while the main actor writes it.
+final class BuilderRenderSize: @unchecked Sendable {
+    private let lock = NSLock()
+    private var size: CGSize = .zero
+
+    /// `.zero` until the engine has told the builder; nothing is built before that in the app.
+    var value: CGSize {
+        get { lock.withLock { size } }
+        set { lock.withLock { size = newValue } }
+    }
 }
 
 extension AttributedStringBuilding {

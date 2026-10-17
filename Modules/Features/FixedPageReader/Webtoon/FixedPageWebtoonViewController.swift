@@ -18,7 +18,7 @@ final class FixedPageWebtoonViewController: UIViewController, FixedPageModeReade
     weak var container: FixedPageReaderContainer?
 
     private let fixedPageReaderConfiguration: FixedPageReaderConfiguration
-    private let targetWidth: CGFloat
+    private let targetWidth: FixedPageTargetWidth
     private var pages: [FixedPage] = []
     private let layout: FixedPageWebtoonLayout
     private lazy var collectionView = UICollectionView(frame: .zero, collectionViewLayout: layout)
@@ -79,7 +79,7 @@ final class FixedPageWebtoonViewController: UIViewController, FixedPageModeReade
     private var isZooming = false
     private var controlsShown = false
 
-    init(fixedPageReaderConfiguration: FixedPageReaderConfiguration, targetWidth: CGFloat) {
+    init(fixedPageReaderConfiguration: FixedPageReaderConfiguration, targetWidth: FixedPageTargetWidth) {
         self.fixedPageReaderConfiguration = fixedPageReaderConfiguration
         self.targetWidth = targetWidth
         self.layout = FixedPageWebtoonLayout(fixedPageReaderConfiguration: fixedPageReaderConfiguration)
@@ -380,7 +380,7 @@ final class FixedPageWebtoonViewController: UIViewController, FixedPageModeReade
         cell.configure(
             page: pages[indexPath.item],
             index: indexPath.item,
-            targetWidth: targetWidth,
+            targetWidth: targetWidth.value,
             cropBorders: fixedPageReaderConfiguration.cropBorders,
             isLiveTextEnabled: fixedPageReaderConfiguration.isLiveTextEnabled
         ) { [weak self] index, ratio in

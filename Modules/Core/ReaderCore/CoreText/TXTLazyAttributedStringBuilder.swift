@@ -8,6 +8,10 @@ struct TXTLazyAttributedStringBuilder: AttributedStringBuilding {
     private let mappedTextFile: TXTMappedTextFile?
     private let mappedChapterIndexes: [TXTMappedChapterIndex]
     private let parsesAozoraMarkup: Bool
+    /// The column this book is laid out in, told by the engine (`RenderSizeAware…`). The chapter
+    /// title and the dialogue bubbles are composed against it, so it is the reader's own window,
+    /// not the screen.
+    private let renderSize = BuilderRenderSize()
 
     init(text: String, chapterIndexes: [TXTChapterIndex], parsesAozoraMarkup: Bool = true) {
         self.text = text
@@ -109,11 +113,14 @@ struct TXTLazyAttributedStringBuilder: AttributedStringBuilding {
         bodyParaStyle.firstLineHeadIndent = settings.fontSize * 2
 
         let attrStr = NSMutableAttributedString()
+        // `.zero` only for a builder nothing has sized (a test building a chapter by hand): the
+        // title takes its 1pt floor and the bubble pass below skips, as it does for any width <= 0.
+        let columnWidth = renderSize.value.width - settings.contentInsets.left - settings.contentInsets.right
         await ChapterTitleAttributedBuilder.append(
             title: chapterTitle,
             style: settings.chapterTitleStyle,
             settings: settings,
-            renderWidth: max(1, UIScreen.main.bounds.width - settings.contentInsets.left - settings.contentInsets.right),
+            renderWidth: max(1, columnWidth),
             themeTextColor: themeTextColor,
             themeBackgroundColor: themeBackgroundColor,
             letterSpacing: settings.letterSpacing,
@@ -172,12 +179,7 @@ struct TXTLazyAttributedStringBuilder: AttributedStringBuilding {
             // Same width the chapter title above is composed against.
             await ReaderDialogueBubbleMarker.apply(
                 style: settings.dialogueBubbleStyle,
-                columnWidth: max(
-                    1,
-                    UIScreen.main.bounds.width
-                        - settings.contentInsets.left
-                        - settings.contentInsets.right
-                ),
+                columnWidth: columnWidth,
                 bodyFontSize: settings.fontSize,
                 writingMode: settings.writingMode,
                 to: attrStr
@@ -223,5 +225,13 @@ struct TXTLazyAttributedStringBuilder: AttributedStringBuilding {
         }
 
         return result
+    }
+}
+
+extension TXTLazyAttributedStringBuilder: RenderSizeAwareAttributedStringBuilding {
+    // Declared in an extension so the main-actor protocol does not make the whole builder
+    // main-actor: chapters are built off it.
+    nonisolated func updateRenderSize(_ size: CGSize) {
+        renderSize.value = size
     }
 }
