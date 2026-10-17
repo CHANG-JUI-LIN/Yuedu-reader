@@ -21,6 +21,26 @@ struct ExploreEntryLabelTests {
         #expect(ExploreSettings.showsGridKey == "explore.showsGrid")
         #expect(ExploreSettings.gridColumnCountKey == "explore.gridColumnCount")
     }
+
+    /// Maintainer's screenshot, 2026-10-17: in four columns 所有來源配置 (471) and 小說 (338)
+    /// stood taller than the cards beside them, their counts broken one digit to a line.
+    @Test("a count never makes its card taller than the cards beside it", arguments: [
+        // A four-column card on a 375pt-wide iPhone, and on a 440pt-wide one.
+        CGFloat(76.75), 93,
+    ])
+    @MainActor
+    func countKeepsTheRowEven(width: CGFloat) {
+        func height(_ corner: ExploreEntryLabel.Corner?) -> CGFloat {
+            let label = ExploreEntryLabel(title: "小說", artwork: .neutral("folder.fill"),
+                                          layout: .grid(.four), corner: corner)
+            return UIHostingController(rootView: label.environment(\.dynamicTypeSize, .large))
+                .sizeThatFits(in: CGSize(width: width, height: .greatestFiniteMagnitude)).height
+        }
+        let plain = height(nil)
+        for count in [9, 471, 12_345] {
+            #expect(height(.count(count)) == plain, "count \(count) at width \(width)")
+        }
+    }
 }
 
 struct LibrarySourceGroupsTests {
