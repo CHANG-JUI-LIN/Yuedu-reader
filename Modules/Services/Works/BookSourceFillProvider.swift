@@ -112,7 +112,7 @@ final class BookSourceFillProvider: MetadataFillProvider {
 
     /// A source's `kind` as categories: split on the separators sources use, without word
     /// counts, dates or anything too long to be a category.
-    static func tags(from kind: String) -> [String] {
+    nonisolated static func tags(from kind: String) -> [String] {
         var seen = Set<String>()
         return kind
             .components(separatedBy: CharacterSet(charactersIn: ",，、/|;；\n\t "))

@@ -246,6 +246,81 @@ struct ModuleProviderTests {
                 == "https://example.com/s?q=%E4%B8%89%E9%AB%94%20%26%20%E5%85%B6%E4%BB%96&p=1")
         #expect(RuleModuleClient.fill("Bearer {{token}}", ["token": "a b"], encode: false) == "Bearer a b")
     }
+
+    @Test("a JSON body gets its values JSON-escaped, never percent-encoded (format 3.0)")
+    func jsonBody() {
+        #expect(RuleModuleClient.fill(#"{"keyword":"{{keyword}}"}"#, ["keyword": "葬送 \"の\" \\ 1\n"], encoding: .json)
+                == #"{"keyword":"葬送 \"の\" \\ 1\n"}"#)
+    }
+
+    private static let fixtures = URL(fileURLWithPath: #filePath).deletingLastPathComponent().appendingPathComponent("Fixtures")
+
+    /// Bangumi's search as its module file asks it (format 3.0): a JSON POST body, comics by
+    /// platform, aliases from the infobox, tags without format words and the work's own names.
+    private func bangumiSearch() -> RuleModule.Entry {
+        RuleModule.Entry(
+            id: nil, title: nil,
+            request: RuleModule.Request(url: "https://api.bgm.tv/v0/search/subjects?limit=10", method: "POST",
+                                        body: #"{"keyword":"{{keyword}}","filter":{"type":[1]}}"#,
+                                        headers: ["Content-Type": "application/json"], bodyEncoding: "json"),
+            list: RuleModule.ListRules(items: "$.data[*]", title: "$.name", author: "$.infobox[?(@.key=='原作')].value",
+                                       cover: "$.images.large", intro: "$.summary", url: "https://bgm.tv/subject/{{$.id}}",
+                                       aliases: "$.name_cn&&$.infobox[?(@.key=='别名')].value[*].v",
+                                       tags: "$.tags[*].name", publisher: "$.infobox[?(@.key=='出版社')].value",
+                                       contentKind: "$.platform##漫画##comic"),
+            excludeTags: ["漫画", "单行本", "漫画单行本", "漫画分卷", "コミックス", "日本", "原创"])
+    }
+
+    @Test("a Bangumi search: a JSON body, comics, aliases and genre tags from its real reply")
+    func bangumi() async throws {
+        let f = makeFixture()
+        defer { try? FileManager.default.removeItem(at: f.folder) }
+        let reply = try String(contentsOf: Self.fixtures.appendingPathComponent("Bangumi/bangumi-search.json"), encoding: .utf8)
+        ModuleStub.install(["api.bgm.tv/v0/search/subjects": .json(reply)])
+        var bangumi = module([], hosts: ["api.bgm.tv", "lain.bgm.tv"])
+        bangumi.search = bangumiSearch()
+        let search = try #require(bangumi.search)
+
+        let page = try await f.client.page(of: search, in: bangumi, values: search.values([:], position: 0, keyword: #"葬送の"フリーレン""#))
+        #expect(ModuleStub.bodies == [#"{"keyword":"葬送の\"フリーレン\"","filter":{"type":[1]}}"#])
+        let work = try #require(page.items.first)
+        #expect(work.name == "葬送のフリーレン")
+        #expect(work.aliases == ["葬送的芙莉莲", "葬送者芙莉莲", "FRIEREN"])
+        #expect(work.publisher == "小学館")
+        #expect(search.contentKind(of: work) == .comic)
+        #expect(search.tags(of: work) == ["旅行", "寿命论", "奇幻", "治愈", "勇者"],
+                "no format words, no year, not the author 山田鐘人 nor the publisher 小学館")
+
+        let entries = try #require(try await ModuleProvider(module: bangumi, client: f.client).search("葬送のフリーレン")).entries
+        #expect(entries.count == 5)
+        guard case .item(let record, let summary, _) = entries[0] else { Issue.record("not an item"); return }
+        #expect(record.key.item == "https://bgm.tv/subject/305429", "the work's page, read in place from its id")
+        #expect(record.contentKind == .comic)
+        #expect(summary.contentKind == .comic)
+        #expect(summary.category == "旅行", "without a kind rule, the first genre tag")
+    }
+
+    @Test("an entry's kind, overridden only by an item that says comic; an ISBN becomes an identifier")
+    func kindsAndISBN() {
+        let novels = RuleModule.Entry(id: "n", title: "n", request: RuleModule.Request(url: "https://example.com/"),
+                                      list: RuleModule.ListRules(items: "a", title: "b"))
+        var item = RuleListItem(name: "書", author: "", bookUrl: "", coverUrl: "", intro: "", wordCount: "", lastChapter: "",
+                                kind: "", isbn: "4-7503-2023-4")
+        #expect(novels.contentKind(of: item) == .text)
+        item.contentKind = "小说"
+        #expect(novels.contentKind(of: item) == .text, "a value other than comic leaves the entry's kind")
+        item.contentKind = "comic"
+        #expect(novels.contentKind(of: item) == .comic)
+        var comics = novels
+        comics.contentKind = "comic"
+        item.contentKind = nil
+        #expect(comics.contentKind(of: item) == .comic)
+
+        let entry = ModuleProvider.entry(item, of: novels, instance: ModuleProvider.instanceKey(moduleID: "m"),
+                                         hasURLRule: false, hosts: [])
+        guard case .item(let record, _, _) = entry else { Issue.record("not an item"); return }
+        #expect(record.identifiers == Set([ExternalIdentifier.normalized(.isbn13, "9784750320236")!]))
+    }
 }
 
 /// Answers by host and path from a table; records every URL asked for.
@@ -261,14 +336,18 @@ final class ModuleStub: URLProtocol {
 
     nonisolated(unsafe) private static var replies: [String: Reply] = [:]
     nonisolated(unsafe) private static var requested: [String] = []
+    nonisolated(unsafe) private static var sentBodies: [String] = []
     private static let lock = NSLock()
 
     static var urls: [String] { lock.withLock { requested } }
+    /// Each request's body, as UTF-8 (empty without one).
+    static var bodies: [String] { lock.withLock { sentBodies } }
 
     static func install(_ table: [String: Reply]) {
         lock.withLock {
             replies = table
             requested = []
+            sentBodies = []
         }
     }
 
@@ -277,8 +356,10 @@ final class ModuleStub: URLProtocol {
 
     override func startLoading() {
         guard let url = request.url else { return }
+        let body = request.httpBody ?? request.httpBodyStream.map(Self.read) ?? Data()
         let reply: Reply? = Self.lock.withLock {
             Self.requested.append(url.absoluteString)
+            Self.sentBodies.append(String(decoding: body, as: UTF8.self))
             return Self.replies["\(url.host ?? "")\(url.path)"]
         }
         func finish(_ status: Int, _ headers: [String: String], _ body: Data) {
@@ -301,4 +382,17 @@ final class ModuleStub: URLProtocol {
     }
 
     override func stopLoading() {}
+
+    private static func read(_ stream: InputStream) -> Data {
+        stream.open()
+        defer { stream.close() }
+        var data = Data()
+        var buffer = [UInt8](repeating: 0, count: 4096)
+        while stream.hasBytesAvailable {
+            let count = stream.read(&buffer, maxLength: buffer.count)
+            guard count > 0 else { break }
+            data.append(buffer, count: count)
+        }
+        return data
+    }
 }

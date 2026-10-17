@@ -419,15 +419,6 @@ private extension SourceRule {
 
     // MARK: Helpers
 
-    /// Return `true` when the expression looks like a structured rule
-    /// (CSS / XPath / JSONPath) rather than JavaScript.
-    static func looksLikeRule(_ expression: String) -> Bool {
-        expression.hasPrefix("@")
-            || expression.hasPrefix("$.")
-            || expression.hasPrefix("$[")
-            || expression.hasPrefix("//")
-    }
-
     /// Split `rule` on `##` while respecting bracket/quote boundaries.
     /// CSS selectors like `@css:div[data-x="##"]` must keep their `##` intact,
     /// and Legado's `###` (OnlyOne regex) suffix must correctly produce the 4th segment.
@@ -476,5 +467,17 @@ private extension SourceRule {
 
         parts.append(current)
         return parts
+    }
+}
+
+extension SourceRule {
+    /// Return `true` when the expression looks like a structured rule
+    /// (CSS / XPath / JSONPath) rather than JavaScript. The module validator lets such a
+    /// `{{…}}` through a list rule for this reason.
+    static func looksLikeRule(_ expression: String) -> Bool {
+        expression.hasPrefix("@")
+            || expression.hasPrefix("$.")
+            || expression.hasPrefix("$[")
+            || expression.hasPrefix("//")
     }
 }

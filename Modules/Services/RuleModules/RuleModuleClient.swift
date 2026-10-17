@@ -104,7 +104,8 @@ struct RuleModuleClient: Sendable {
             throw SourceFailure(kind: .invalidAddress, underlying: FetchError.invalidURL(address))
         }
         let method = (request.method ?? "GET").uppercased()
-        let body = request.body.map { Self.fill($0, values, encode: true) }
+        let bodyEncoding: TemplateEncoding = request.bodyEncoding == RuleModule.BodyEncoding.json.rawValue ? .json : .percent
+        let body = request.body.map { Self.fill($0, values, encoding: bodyEncoding) }
         let headers = (request.headers ?? [:]).mapValues { Self.fill($0, values, encode: false) }
         let charset = request.charset.flatMap { $0.trimmingCharacters(in: .whitespaces).isEmpty ? nil : $0 }
 
@@ -151,9 +152,23 @@ struct RuleModuleClient: Sendable {
         return (page.data, url)
     }
 
+    /// How a value is written into the text that holds its template.
+    enum TemplateEncoding: Sendable {
+        /// As it is: a header.
+        case none
+        /// A URL or a form body.
+        case percent
+        /// Inside a JSON string: quotes, backslashes and control characters escaped.
+        case json
+    }
+
     /// `text` with each `{{name}}` replaced by its value, percent-encoded for a URL or a form
     /// body. The validator let no other template through.
     static func fill(_ text: String, _ values: [String: String], encode: Bool) -> String {
+        fill(text, values, encoding: encode ? .percent : .none)
+    }
+
+    static func fill(_ text: String, _ values: [String: String], encoding: TemplateEncoding) -> String {
         let ns = text as NSString
         var result = ""
         var last = 0
@@ -162,11 +177,33 @@ struct RuleModuleClient: Sendable {
             let token = ns.substring(with: match.range)
             let name = String(token.dropFirst(2).dropLast(2)).trimmingCharacters(in: .whitespaces)
             let value = values[name] ?? ""
-            result += encode ? (value.addingPercentEncoding(withAllowedCharacters: valueAllowed) ?? value) : value
+            switch encoding {
+            case .none: result += value
+            case .percent: result += value.addingPercentEncoding(withAllowedCharacters: valueAllowed) ?? value
+            case .json: result += jsonEscaped(value)
+            }
             last = match.range.location + match.range.length
         }
         result += ns.substring(from: last)
         return result
+    }
+
+    /// `value` as the inside of a JSON string literal.
+    private static func jsonEscaped(_ value: String) -> String {
+        var escaped = ""
+        for scalar in value.unicodeScalars {
+            switch scalar {
+            case "\"": escaped += "\\\""
+            case "\\": escaped += "\\\\"
+            case "\n": escaped += "\\n"
+            case "\r": escaped += "\\r"
+            case "\t": escaped += "\\t"
+            case let control where control.value < 0x20:
+                escaped += String(format: "\\u%04x", control.value)
+            default: escaped.unicodeScalars.append(scalar)
+            }
+        }
+        return escaped
     }
 
     /// A value never adds a query separator of its own.

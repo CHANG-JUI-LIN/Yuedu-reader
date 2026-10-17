@@ -227,6 +227,48 @@ struct RuleModuleValidatorTests {
         #expect(rejection(example { editRequest(&$0, "url", "https://IMG.example.com:8443/new?p={{page}}") }) == nil,
                 "hosts compare without case, and a port is not part of the host")
     }
+
+    @Test("format 3.0 fields: known values, rules like any other, and a requiredVersion that reads them")
+    func format3() {
+        func v3(_ change: @escaping (inout [String: Any]) -> Void) -> Data {
+            example { object in
+                object["requiredVersion"] = "3.0"
+                change(&object)
+            }
+        }
+        #expect(rejection(v3 { editRequest(&$0, "bodyEncoding", "json") }) == nil)
+        #expect(rejection(v3 { editEntry(&$0) { $0["contentKind"] = "comic" } }) == nil)
+        #expect(rejection(v3 { editList(&$0, "tags", ".tag@text") }) == nil)
+        #expect(rejection(v3 { $0["attribution"] = ["text": "Supported by Example", "url": "https://example.com/"] }) == nil)
+
+        #expect(rejection(example { editRequest(&$0, "bodyEncoding", "json") })
+                == .needsRequiredVersion(field: "modules[0].request.bodyEncoding", minimum: "3.0"), "the example asks for 2.0")
+        #expect(rejection(example {
+            $0["requiredVersion"] = nil
+            editList(&$0, "aliases", "h4@text")
+        }) == .needsRequiredVersion(field: "modules[0].list.aliases", minimum: "3.0"))
+        #expect(rejection(example { $0["attribution"] = ["text": "x"] })
+                == .needsRequiredVersion(field: "attribution", minimum: "3.0"))
+
+        #expect(rejection(v3 { editRequest(&$0, "bodyEncoding", "xml") })
+                == .unknownValue(field: "modules[0].request.bodyEncoding", value: "xml"))
+        #expect(rejection(v3 { editEntry(&$0) { $0["contentKind"] = "audio" } })
+                == .unknownValue(field: "modules[0].contentKind", value: "audio"))
+        #expect(rejection(v3 { editList(&$0, "isbn", "@js:'1'") }) == .javaScript(field: "modules[0].list.isbn"))
+        #expect(rejection(v3 { editList(&$0, "series", ".s@text{{page}}") })
+                == .undeclaredTemplate(field: "modules[0].list.series", name: "page"))
+        #expect(rejection(v3 { $0["attribution"] = ["text": " "] }) == .missingField("attribution.text"))
+
+        #expect(rejection(example { editList(&$0, "url", "https://example.com/b/{{$.id}}") }) == nil,
+                "a list rule may read a rule in place, as Legado does")
+        #expect(rejection(example { editList(&$0, "url", "https://example.com/b/{{@css:a@href}}") }) == nil)
+        #expect(rejection(example { editList(&$0, "url", "https://example.com/b/{{java.ajax('x')}}") })
+                == .undeclaredTemplate(field: "modules[0].list.url", name: "java.ajax('x')"))
+        #expect(rejection(example { editList(&$0, "url", "https://example.com/b/{{@js:1}}") })
+                == .javaScript(field: "modules[0].list.url"))
+        #expect(rejection(v3 { $0["attribution"] = ["text": "x", "url": "javascript:alert(1)"] })
+                == .invalidURL(field: "attribution.url"))
+    }
 }
 
 @Suite("Rule module store", .serialized)

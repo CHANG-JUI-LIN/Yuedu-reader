@@ -29,6 +29,9 @@ extension RuleModuleRejection {
         case .invalidURL(let field): String(format: localized("%@ 不是 http 或 https 網址。"), field)
         case .urlOptions(let field): String(format: localized("%@ 帶有網址選項（,{…}）；方法、內容和標頭請寫在各自的欄位。"), field)
         case .hostNotAllowed(let field, let host): String(format: localized("%1$@ 連到 %2$@，但 hosts 沒有列出它。"), field, host)
+        case .unknownValue(let field, let value): String(format: localized("%1$@ 的「%2$@」不是可用的值。"), field, value)
+        case .needsRequiredVersion(let field, let minimum):
+            String(format: localized("用到 %1$@ 的模組，requiredVersion 至少要 %2$@。"), field, minimum)
         }
     }
 }

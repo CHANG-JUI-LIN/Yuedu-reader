@@ -92,7 +92,7 @@ final class ModuleProvider: CollectionBrowsing, HomeSectionProviding {
             let hasURLRule = !(entry.list.url ?? "").trimmingCharacters(in: .whitespaces).isEmpty
             let hosts = Set(module.hosts.map { $0.lowercased() })
             return CollectionPage(
-                entries: page.items.compactMap { Self.entry($0, instance: instance, hasURLRule: hasURLRule, hosts: hosts) },
+                entries: page.items.compactMap { Self.entry($0, of: entry, instance: instance, hasURLRule: hasURLRule, hosts: hosts) },
                 next: entry.position(after: position, itemCount: page.items.count).map { CollectionCursor(value: String($0)) })
         } catch {
             let failure = try SourceFailure.classify(error)
@@ -105,8 +105,8 @@ final class ModuleProvider: CollectionBrowsing, HomeSectionProviding {
     }
 
     /// A list item as a data-only entry, bounded and plain as every source's summary is.
-    nonisolated static func entry(_ item: RuleListItem, instance: SourceInstanceKey, hasURLRule: Bool,
-                                  hosts: Set<String>) -> CollectionEntry? {
+    nonisolated static func entry(_ item: RuleListItem, of entry: RuleModule.Entry, instance: SourceInstanceKey,
+                                  hasURLRule: Bool, hosts: Set<String>) -> CollectionEntry? {
         let title = OPDSClient.plainMetadata(item.name, limit: 200)
         guard !title.isEmpty else { return nil }
         let author = OPDSClient.plainMetadata(item.author, limit: 100)
@@ -114,8 +114,10 @@ final class ModuleProvider: CollectionBrowsing, HomeSectionProviding {
         let language = item.language.isEmpty ? nil : LanguageTag(item.language)?.identifier
         // Without a url rule every item would read the page's own address.
         let itemID = hasURLRule && !item.bookUrl.isEmpty ? item.bookUrl : "\(title)\u{1F}\(author)"
+        let kind = entry.contentKind(of: item)
+        let identifiers = Set([item.isbn.flatMap { ExternalIdentifier.normalized(.isbn13, $0) }].compactMap { $0 })
         let record = SourceRecord(key: SourceItemKey(instance: instance, item: itemID), title: title, authors: authors,
-                                  language: language, contentKind: .text, identifiers: [], copyID: nil,
+                                  language: language, contentKind: kind, identifiers: identifiers, copyID: nil,
                                   acquisitions: [.viewOnly])
         // A cover is a request too: only from the module's hosts.
         let cover: CoverReference = safeURL(string: item.coverUrl)
@@ -123,8 +125,42 @@ final class ModuleProvider: CollectionBrowsing, HomeSectionProviding {
             .map { .remote($0, headers: [:]) } ?? .generated(seed: title)
         let summary = WorkSummary(title: title, authors: authors, cover: cover,
                                   blurb: OPDSClient.plainMetadata(item.intro, limit: WorkSummary.blurbLimit),
-                                  language: language, contentKind: .text,
-                                  category: WorkSummary.category(fromSourceKind: OPDSClient.plainMetadata(item.kind, limit: 200)))
+                                  language: language, contentKind: kind,
+                                  category: WorkSummary.category(fromSourceKind: OPDSClient.plainMetadata(item.kind, limit: 200))
+                                    ?? entry.tags(of: item).first)
         return .item(record, summary, .bibliographic)
     }
+}
+
+extension RuleModule.Entry {
+    /// The item's kind: `comic` when its own rule says so, else the entry's (format 3.0).
+    nonisolated func contentKind(of item: RuleListItem) -> ContentKind {
+        if item.contentKind?.lowercased() == ContentKind.comic.rawValue { return .comic }
+        return contentKind.flatMap(ContentKind.init(rawValue:)) ?? .text
+    }
+
+    /// The item's tags as metadata: the `tags` rule's values (else its `kind`'s, split as a
+    /// 來源配置's categories are), without the entry's `excludeTags`, at most 5. A tag rule's
+    /// value is one tag: AniList's "Slice of Life" is not split.
+    ///
+    /// A tag that is the item's own author, publisher or series names it, not its genre
+    /// (Bangumi tags 山田鐘人 and 小学館).
+    nonisolated func tags(of item: RuleListItem) -> [String] {
+        let named = [item.author, item.publisher ?? "", item.series ?? ""]
+            .flatMap { $0.components(separatedBy: CharacterSet(charactersIn: ",，、/／;；")) }
+        let excluded = Set(((excludeTags ?? []) + named).map(WorkMatchKey.title).filter { !$0.isEmpty })
+        let values: [String]
+        if let list = item.tags {
+            var seen = Set<String>()
+            values = list.map { OPDSClient.plainMetadata($0, limit: 100) }
+                .filter { !$0.isEmpty && $0.count <= Self.tagLengthLimit && !$0.contains(where: \.isNumber) }
+                .filter { seen.insert(WorkMatchKey.title($0)).inserted }
+        } else {
+            values = BookSourceFillProvider.tags(from: OPDSClient.plainMetadata(item.kind, limit: 1_000))
+        }
+        return Array(values.filter { !excluded.contains(WorkMatchKey.title($0)) }.prefix(5))
+    }
+
+    /// Longer than a category: a phrase, not a genre.
+    nonisolated static let tagLengthLimit = 24
 }
