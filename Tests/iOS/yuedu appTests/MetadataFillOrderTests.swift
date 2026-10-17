@@ -12,19 +12,35 @@ struct MetadataFillOrderTests {
 
     @Test("a reader who never opened the list asks what Phase 3 asked, in the same order")
     func builtInOrder() {
-        let order = MetadataFillOrder.resolved(stored: [], modules: [])
-        #expect(order.entries == [Entry(place: .openLibrary, isEnabled: true), Entry(place: .bookSources, isEnabled: true)])
-        #expect(order.providers(modules: []).map(\.key) == [OpenLibrary.key, BookSourceFillProvider.allSourcesKey])
+        let order = MetadataFillOrder.resolved(stored: [], modules: ["m", OfficialRuleModules.openLibraryID])
+        #expect(order.entries == [Entry(place: .module(OfficialRuleModules.openLibraryID), isEnabled: true),
+                                  Entry(place: .bookSources, isEnabled: true), Entry(place: .module("m"), isEnabled: true)],
+                "Open Library, now a module, still comes before 來源配置")
+        #expect(MetadataFillOrder.resolved(stored: [], modules: []).entries == [Entry(place: .bookSources, isEnabled: true)],
+                "with the official modules turned off only 來源配置 is left")
+    }
+
+    @Test("Open Library's stored place and check become the module's; its first entry counts")
+    func openLibraryMigration() throws {
+        let suite = "MetadataFillOrderTests-\(UUID().uuidString)"
+        let defaults = try #require(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        defaults.set([["place": "bookSources", "enabled": "1"], ["place": "openLibrary", "enabled": "0"],
+                      ["place": "module:openlibrary", "enabled": "1"]], forKey: MetadataFillOrderStore.defaultsKey)
+        let order = MetadataFillOrderStore(defaults: defaults).order(modules: [OfficialRuleModules.openLibraryID])
+        #expect(order.entries == [Entry(place: .bookSources, isEnabled: true),
+                                  Entry(place: .module(OfficialRuleModules.openLibraryID), isEnabled: false)],
+                "the reader's order and the unchecked box stand")
     }
 
     @Test("a new module joins at the end, checked; the reader's order and checks stand; a removed module is left out")
     func resolution() {
         let stored = [Entry(place: .module("a"), isEnabled: false), Entry(place: .bookSources, isEnabled: true),
-                      Entry(place: .module("gone"), isEnabled: true), Entry(place: .openLibrary, isEnabled: false),
+                      Entry(place: .module("gone"), isEnabled: true), Entry(place: .module("ol"), isEnabled: false),
                       Entry(place: .bookSources, isEnabled: false)]
-        let order = MetadataFillOrder.resolved(stored: stored, modules: ["a", "b"])
+        let order = MetadataFillOrder.resolved(stored: stored, modules: ["a", "ol", "b"])
         #expect(order.entries == [Entry(place: .module("a"), isEnabled: false), Entry(place: .bookSources, isEnabled: true),
-                                  Entry(place: .openLibrary, isEnabled: false), Entry(place: .module("b"), isEnabled: true)])
+                                  Entry(place: .module("ol"), isEnabled: false), Entry(place: .module("b"), isEnabled: true)])
     }
 
     @Test("only checked places become providers, first first; a module needs a search")
@@ -32,7 +48,7 @@ struct MetadataFillOrderTests {
         let f = try await ModuleFixture.make()
         defer { f.cleanUp() }
         let order = MetadataFillOrder(entries: [Entry(place: .module("m.search"), isEnabled: true),
-                                                Entry(place: .openLibrary, isEnabled: false),
+                                                Entry(place: .module("m.off"), isEnabled: false),
                                                 Entry(place: .module("m.plain"), isEnabled: true),
                                                 Entry(place: .bookSources, isEnabled: true)])
         #expect(order.providers(modules: [f.searching.module, f.plain.module]).map(\.key)
@@ -45,16 +61,17 @@ struct MetadataFillOrderTests {
         let defaults = try #require(UserDefaults(suiteName: suite))
         defer { defaults.removePersistentDomain(forName: suite) }
         let store = MetadataFillOrderStore(defaults: defaults)
-        var order = store.order(modules: ["m"])
+        let ol = OfficialRuleModules.openLibraryID
+        var order = store.order(modules: ["m", ol])
         order.entries[2].isEnabled = false
         order.entries.swapAt(0, 2)
         store.save(order)
-        #expect(MetadataFillOrderStore(defaults: defaults).order(modules: ["m"]) == order, "read back as saved")
+        #expect(MetadataFillOrderStore(defaults: defaults).order(modules: ["m", ol]) == order, "read back as saved")
 
-        let withoutModule = store.order(modules: [])
-        #expect(withoutModule.entries.map(\.place) == [.bookSources, .openLibrary])
+        let withoutModule = store.order(modules: [ol])
+        #expect(withoutModule.entries.map(\.place) == [.bookSources, .module(ol)])
         store.save(withoutModule)
-        #expect(store.order(modules: ["m"]).entries.last == Entry(place: .module("m"), isEnabled: false),
+        #expect(store.order(modules: ["m", ol]).entries.last == Entry(place: .module("m"), isEnabled: false),
                 "unchecked before removal, unchecked after")
 
         defaults.set([["place": "somewhere"], ["enabled": "1"]], forKey: MetadataFillOrderStore.defaultsKey)

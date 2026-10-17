@@ -35,18 +35,33 @@ struct AggregationDataSourcesTests {
         #expect(!old.hidesRead, "the rest of the value still reads")
     }
 
-    @Test("搜尋來源 lists the libraries but WebDAV, then the modules that search; Open Library counts as one")
+    @Test("搜尋來源 lists the libraries but WebDAV, then the modules that search")
     func places() {
         let opds = RemoteLibraryConnection(id: "c1", name: "家裡", url: "https://home.test/opds", kind: .opds)
         let dav = RemoteLibraryConnection(id: "d1", name: "雲端", url: "https://dav.test/", kind: .webDAV)
         let places = SearchSourcePlaces.places(connections: [opds, dav], librariesAvailable: true, order: nil, modules: [])
         #expect(places.map(\.key) == [SourceInstanceKey(type: .opds, id: "c1"), gutenberg, aozora])
-        let count = SearchSourcePlaces.count(places, openLibrary: true, shown: { $0 != gutenberg })
-        #expect(count == DataSourceCount(checked: 3, total: 4))
-        #expect(count.text == "3/4")
-        #expect(SearchSourcePlaces.count(places, openLibrary: false, shown: { _ in true }).checked == 3)
+        let count = SearchSourcePlaces.count(places, shown: { $0 != gutenberg })
+        #expect(count == DataSourceCount(checked: 2, total: 3))
+        #expect(count.text == "2/3")
         #expect(SearchSourcePlaces.places(connections: [], librariesAvailable: false, order: nil, modules: []).isEmpty,
                 "no public library in China")
+    }
+
+    @Test("the old 搜尋時也查 Open Library switch, once: off unchecks the module, on or never set leaves it checked; the switch is gone after")
+    func openLibrarySwitchMigration() throws {
+        let module = ModuleProvider.instanceKey(moduleID: OfficialRuleModules.openLibraryID)
+        for (stored, shown) in [(false as Bool?, false), (true, true), (nil, true)] {
+            let (store, defaults, suite) = freshStore()
+            defer { defaults.removePersistentDomain(forName: suite) }
+            if let stored { defaults.set(stored, forKey: AggregationSettingsStore.legacyOpenLibrarySearchKey) }
+            store.adoptLegacyOpenLibrarySearch()
+            #expect(store.isShownInSearch(module) == shown, "stored \(String(describing: stored))")
+            #expect(defaults.object(forKey: AggregationSettingsStore.legacyOpenLibrarySearchKey) == nil)
+            store.setShownInSearch(true, for: module)
+            store.adoptLegacyOpenLibrarySearch()
+            #expect(store.isShownInSearch(module), "once: checking it again stays")
+        }
     }
 
     @Test("a library unchecked in 搜尋來源 is not asked")

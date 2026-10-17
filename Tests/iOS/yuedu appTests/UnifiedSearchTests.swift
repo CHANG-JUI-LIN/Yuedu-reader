@@ -14,19 +14,20 @@ struct UnifiedSearchTests {
         defer { try? FileManager.default.removeItem(at: folder) }
         let copy = book("三體", "劉慈欣")
         store.saveReadingBook(copy)
-        let shelf = try shelfMatch(copy, store: store, identifiers: [openLibraryWork("OL17267881W")])
-        let openLibrary = try openLibraryMatch("OL17267881W", title: "The Three-Body Problem", author: "Liu Cixin", store: store)
+        let shelf = try shelfMatch(copy, store: store, identifiers: [isbn("9780765382030")])
+        let openLibrary = try openLibraryMatch("OL17267881W", title: "The Three-Body Problem", author: "Liu Cixin",
+                                               isbn: "9780765382030", store: store)
         let source = sourceRow("三体", "刘慈欣", origins: 2)
         let sequel = sourceRow("三體II：黑暗森林", "劉慈欣", origins: 1)
         let model = UnifiedSearchModel(sourceURL: { _ in nil })
 
-        await model.update(UnifiedSearchParts(shelf: [shelf], bibliographic: [openLibrary], sources: [source, sequel]),
+        await model.update(UnifiedSearchParts(shelf: [shelf], libraries: [openLibrary], sources: [source, sequel]),
                            query: "三體")
 
         #expect(model.rows.count == 2)
         let work = try #require(model.rows.first)
         #expect(work.work.availability == .onShelf)
-        #expect(work.members.count == 3, "the shelf copy, the source row and Open Library (by its work id)")
+        #expect(work.members.count == 3, "the shelf copy, the source row and Open Library (by its ISBN)")
         guard case .shelf(let lead) = work.lead else {
             Issue.record("the shelf copy leads its work")
             return
@@ -54,7 +55,7 @@ struct UnifiedSearchTests {
         let (store, folder) = try makeStore()
         defer { try? FileManager.default.removeItem(at: folder) }
         let model = UnifiedSearchModel(sourceURL: { _ in nil })
-        await model.update(UnifiedSearchParts(bibliographic: [try openLibraryMatch("OL2W", title: "球狀閃電", author: "劉慈欣", store: store)]),
+        await model.update(UnifiedSearchParts(libraries: [try openLibraryMatch("OL2W", title: "球狀閃電", author: "劉慈欣", store: store)]),
                            query: "球狀閃電")
         #expect(model.rows.first?.content.detail == localized("只有資料"))
     }
@@ -136,7 +137,7 @@ struct UnifiedSearchTests {
         defer { try? FileManager.default.removeItem(at: folder) }
         let copy = book("三體", "劉慈欣")
         store.saveReadingBook(copy)
-        let work = openLibraryWork("OL17267881W")
+        let work = isbn("9780765382030")
         let record = SourceRecord.derived(from: copy, context: WorkIndexService.liveContext(for: [copy]))
         store.importedMetadata.write(ImportedMetadata(copyID: copy.id, sourceItem: record.key, identifiers: [work], values: []))
         store.importedMetadata.waitForPendingWritesForTesting()
@@ -144,6 +145,15 @@ struct UnifiedSearchTests {
         await model.search("三體", in: store)
         let match = try #require(model.matches.first)
         #expect(match.identifiers.contains(work))
+    }
+
+    @Test("Search with no source: the others answer instead of an alert")
+    func submitPlan() {
+        #expect(SearchSubmitPlan.decide(hasSources: true, sourcesLoaded: true, othersAnswer: true) == .sources)
+        #expect(SearchSubmitPlan.decide(hasSources: false, sourcesLoaded: true, othersAnswer: true) == .othersOnly)
+        #expect(SearchSubmitPlan.decide(hasSources: false, sourcesLoaded: true, othersAnswer: false) == .sources,
+                "nothing at all: the search says there is no source")
+        #expect(SearchSubmitPlan.decide(hasSources: false, sourcesLoaded: false, othersAnswer: true) == .waitForSources)
     }
 
     @Test("status lines: one empty state once every part has answered; failures at the end")
@@ -256,11 +266,18 @@ struct UnifiedSearchTests {
         return ShelfSearchMatch(book: copy, route: try #require(WorkDetailRoute(entry)), identifiers: identifiers)
     }
 
-    private func openLibraryMatch(_ work: String, title: String, author: String, store: BookStore) throws -> LibrarySearchMatch {
-        let doc = OpenLibrarySearch.Response.Doc(key: "/works/\(work)", title: title, author_name: [author])
-        let entry = try #require(OpenLibrarySearch.entry(doc))
-        let model = LibrarySearchModel.openLibrary()
-        model.receiveForPreview(LibrarySearchAnswer(connectionID: OpenLibrary.providerID, name: "Open Library",
+    /// A row of the Open Library module's search, as `ModuleSearch` answers it.
+    private func openLibraryMatch(_ work: String, title: String, author: String, isbn: String? = nil,
+                                  store: BookStore) throws -> LibrarySearchMatch {
+        let files = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent()
+            .deletingLastPathComponent().deletingLastPathComponent().appendingPathComponent("Resources/Assets", isDirectory: true)
+        let loaded = OfficialRuleModules.load(OfficialRuleModules.files(in: files), appVersion: RuleModuleVersion.app)
+        let module = try #require(loaded.first { $0.module.id == OfficialRuleModules.openLibraryID }).module
+        let item = RuleListItem(name: title, author: author, bookUrl: "https://openlibrary.org/works/\(work)", coverUrl: "",
+                                intro: "", wordCount: "", lastChapter: "", kind: "", isbn: isbn)
+        let entry = try #require(ModuleProvider(module: module).searchEntry(item))
+        let model = LibrarySearchModel(searches: [])
+        model.receiveForPreview(LibrarySearchAnswer(connectionID: "module:\(module.id)", name: "Open Library",
                                                     outcome: .results, entries: [entry]), store: store)
         return try #require(model.matches.first)
     }
@@ -273,7 +290,7 @@ struct UnifiedSearchTests {
                    })
     }
 
-    private func openLibraryWork(_ id: String) -> ExternalIdentifier {
-        ExternalIdentifier.normalized(.openLibraryWork, id)!
+    private func isbn(_ value: String) -> ExternalIdentifier {
+        ExternalIdentifier.normalized(.isbn13, value)!
     }
 }

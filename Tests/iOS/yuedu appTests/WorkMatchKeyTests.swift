@@ -49,4 +49,12 @@ struct WorkMatchKeyTests {
         #expect(LanguageTag("12") == nil)
         #expect(LanguageTag("zh-Hant")?.identifier == "zh-Hant")
     }
+
+    @Test("a script is told apart")
+    func scripts() {
+        #expect(WritingScript(of: "三體") == .cjk)
+        #expect(WritingScript(of: "ノルウェイの森") == .cjk)
+        #expect(WritingScript(of: "Fantastic Mr Fox") == .latin)
+        #expect(WritingScript(of: "1984") == .other)
+    }
 }

@@ -9,7 +9,7 @@ struct LibrarySearchMatch: Identifiable {
     let card: HomeCardContent
     let route: WorkDetailRoute
     let connectionID: String
-    /// The row's detail line: the library's or module's name, or 只有資料 for Open Library.
+    /// The row's detail line: the library's or module's name.
     let detail: String
 
     var rowContent: SearchBookListRowContent {
@@ -40,28 +40,15 @@ final class LibrarySearchModel {
     private(set) var isSearching = false
     /// Its parts, asked together; the section searches until the last has answered.
     @ObservationIgnored private let searches: [any SearchAnswering]
-    /// A row's detail line for the answer it came in.
-    @ObservationIgnored private let detail: (LibrarySearchAnswer) -> String
     @ObservationIgnored private var running: Task<Void, Never>?
 
     /// The saved libraries and the modules, each row naming its place.
     init(searches: [any SearchAnswering]? = nil) {
         self.searches = searches ?? [LibrarySearch(), ModuleSearch()]
-        detail = \.name
     }
 
     convenience init(search: any SearchAnswering) {
         self.init(searches: [search])
-    }
-
-    /// Open Library: data only, every row says so.
-    static func openLibrary(_ search: (any SearchAnswering)? = nil) -> LibrarySearchModel {
-        LibrarySearchModel(search: search ?? OpenLibrarySearch(), detail: { _ in localized("只有資料") })
-    }
-
-    private init(search: any SearchAnswering, detail: @escaping (LibrarySearchAnswer) -> String) {
-        searches = [search]
-        self.detail = detail
     }
 
     var isAvailable: Bool { searches.contains { $0.isAvailable } }
@@ -111,7 +98,7 @@ final class LibrarySearchModel {
                 guard let card = HomeCardContent(entry, status: lookup.status(for:), shelfBooks: [:]),
                       let route = card.route else { return nil }
                 return LibrarySearchMatch(card: card, route: route, connectionID: answer.connectionID,
-                                          detail: detail(answer))
+                                          detail: answer.name)
             }
         case .failed(let reason):
             failures.append(LibrarySearchFailure(id: answer.connectionID, name: answer.name, reason: reason))

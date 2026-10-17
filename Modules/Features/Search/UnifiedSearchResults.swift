@@ -110,17 +110,15 @@ struct UnifiedSearchParts {
     var shelf: [ShelfSearchMatch] = []
     var libraries: [LibrarySearchMatch] = []
     var publicLibrary: [WorkDetailRoute] = []
-    var bibliographic: [LibrarySearchMatch] = []
     var sources: [SearchBook] = []
     /// 青空文庫's whole list when more matched than the list takes.
     var publicLibraryOverflow: PublicLibraryRoute? = nil
 
     init(shelf: [ShelfSearchMatch] = [], libraries: [LibrarySearchMatch] = [], publicLibrary: [WorkDetailRoute] = [],
-         bibliographic: [LibrarySearchMatch] = [], sources: [SearchBook] = []) {
+         sources: [SearchBook] = []) {
         self.shelf = shelf
         self.libraries = libraries
         self.publicLibrary = publicLibrary
-        self.bibliographic = bibliographic
         self.sources = sources
     }
 
@@ -128,7 +126,6 @@ struct UnifiedSearchParts {
     var payloads: [UnifiedSearchPayload] {
         shelf.map(UnifiedSearchPayload.shelf) + libraries.map(UnifiedSearchPayload.library)
             + publicLibrary.map(UnifiedSearchPayload.publicLibrary) + sources.map(UnifiedSearchPayload.bookSource)
-            + bibliographic.map(UnifiedSearchPayload.library)
     }
 }
 
@@ -278,7 +275,6 @@ struct UnifiedSearchFeed: View {
     let query: String
     let shelf: ShelfSearchModel
     let libraries: LibrarySearchModel
-    let bibliographic: LibrarySearchModel
     @ObservedObject var aggregator: SearchAggregator
     let offersPublicLibraries: Bool
     let model: UnifiedSearchModel
@@ -294,7 +290,6 @@ struct UnifiedSearchFeed: View {
         let query: String
         let shelf: [ShelfSearchMatch]
         let libraries: [UUID]
-        let bibliographic: [UUID]
         /// 青空文庫's matches for this query, counted; nil until they are found.
         let publicLibrary: Int?
         let sources: Int
@@ -314,7 +309,6 @@ struct UnifiedSearchFeed: View {
 
     private var trigger: Trigger {
         Trigger(query: query, shelf: shelf.matches, libraries: libraries.matches.map(\.id),
-                bibliographic: bibliographic.matches.map(\.id),
                 publicLibrary: publicLibraryAnswer?.works.count, sources: aggregator.publicationRevision)
     }
 
@@ -330,7 +324,7 @@ struct UnifiedSearchFeed: View {
                     return
                 }
                 var parts = UnifiedSearchParts(shelf: shelf.matches, libraries: libraries.matches,
-                                               bibliographic: bibliographic.matches, sources: aggregator.results)
+                                               sources: aggregator.results)
                 if let answer = publicLibraryAnswer {
                     let (matches, index) = (answer.works, answer.index)
                     parts.publicLibrary = matches.prefix(Self.publicLibraryLimit)
