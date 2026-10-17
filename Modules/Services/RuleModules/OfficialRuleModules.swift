@@ -10,7 +10,7 @@ import Foundation
 enum OfficialRuleModules {
     /// Bundled, or planned and reserved so that an import cannot take the id first. Listed in
     /// this order.
-    static let ids = ["bangumi", "anilist", "openbd", "narou", "rakuten-books"]
+    static let ids = ["bangumi", "anilist", "openbd", "openlibrary", "narou", "rakuten-books"]
     static let reservedIDs = Set(ids)
 
     /// `Resources/Assets/official-module-<id>.json`.

@@ -1,0 +1,73 @@
+{
+ "numFound": 69,
+ "start": 0,
+ "numFoundExact": true,
+ "docs": [
+  {
+   "author_name": [
+    "Roald Dahl"
+   ],
+   "cover_i": 6498519,
+   "isbn": [
+    "9789575456108",
+    "9780001006904",
+    "0001031902",
+    "9784566014138"
+   ],
+   "key": "/works/OL45804W",
+   "language": [
+    "jpn",
+    "sco",
+    "ita",
+    "eng",
+    "wel",
+    "heb",
+    "ast",
+    "rus",
+    "fre",
+    "spa",
+    "pol",
+    "dan",
+    "baq",
+    "chi",
+    "ger"
+   ],
+   "title": "Fantastic Mr Fox"
+  },
+  {
+   "author_name": [
+    "Wes Anderson"
+   ],
+   "key": "/works/OL19748534W",
+   "language": [
+    "eng"
+   ],
+   "title": "Fantastic Mr. Fox"
+  },
+  {
+   "author_name": [
+    "Roald Dahl Nominee",
+    "Roald Dahl",
+    "Movie Tie-In"
+   ],
+   "cover_i": 12895064,
+   "key": "/works/OL20097961W",
+   "title": "Fantastic Mr. Fox Movie Picture Book"
+  },
+  {
+   "author_name": [
+    "Wood, David"
+   ],
+   "cover_i": 13717642,
+   "isbn": [
+    "057305133X",
+    "9780573051333"
+   ],
+   "key": "/works/OL19383315W",
+   "language": [
+    "eng"
+   ],
+   "title": "Fantastic Mr Fox"
+  }
+ ]
+}

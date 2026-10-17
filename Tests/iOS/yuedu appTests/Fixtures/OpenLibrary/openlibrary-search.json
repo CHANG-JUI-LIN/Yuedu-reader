@@ -1,0 +1,89 @@
+{
+ "numFound": 293,
+ "start": 0,
+ "numFoundExact": true,
+ "q": "the three-body problem",
+ "docs": [
+  {
+   "author_name": [
+    "刘慈欣",
+    "Vincent Schmitt",
+    "Gwennaël Gaffric",
+    "Marc Simonetti"
+   ],
+   "cover_i": 9157544,
+   "isbn": [
+    "1427265836",
+    "9189516060",
+    "9788466659734"
+   ],
+   "key": "/works/OL17267881W",
+   "language": [
+    "ger",
+    "por",
+    "pol",
+    "est",
+    "ita",
+    "fre",
+    "eng",
+    "chi",
+    "tur",
+    "jpn",
+    "rus",
+    "spa"
+   ],
+   "title": "三体"
+  },
+  {
+   "author_name": [
+    "刘慈欣",
+    "Ken Liu",
+    "Joel Martinsen"
+   ],
+   "cover_i": 14632491,
+   "isbn": [
+    "076539748X",
+    "9780765397485"
+   ],
+   "key": "/works/OL26796577W",
+   "language": [
+    "eng"
+   ],
+   "title": "Three-Body Problem Series"
+  },
+  {
+   "author_name": [
+    "Catherine Shaw"
+   ],
+   "cover_i": 489631,
+   "isbn": [
+    "9780749083472",
+    "0750522895",
+    "9780749011833"
+   ],
+   "key": "/works/OL8462378W",
+   "language": [
+    "eng"
+   ],
+   "title": "The Three Body Problem"
+  },
+  {
+   "author_name": [
+    "C. G. Lemaitre"
+   ],
+   "key": "/works/OL7387258W",
+   "language": [
+    "eng"
+   ],
+   "title": "The three body problem"
+  },
+  {
+   "isbn": [
+    "722916690X",
+    "9787229166908"
+   ],
+   "key": "/works/OL44096465W",
+   "title": "The Three-Body Problem Trilogy"
+  }
+ ]
+}
