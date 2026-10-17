@@ -78,7 +78,13 @@ final class NarouReadingUITests: XCTestCase {
         for _ in 0..<6 where !chapter.exists { app.swipeUp(velocity: .slow) }
         XCTAssertTrue(chapter.waitForExistence(timeout: 30), app.debugDescription)
         XCTAssertTrue(app.staticTexts["小説家になろう"].firstMatch.exists, "its 來源 is the module\n\(app.debugDescription)")
-        XCTAssertEqual(try asked().filter { !$0.hasPrefix("/novelapi") }, ["/\(ncode)/", "/n9669bk/?p=2"])
+        // An earlier run's book stays on this simulator's shelf, and launch asks for its update
+        // (`/N…ZZ/` of that run): only this run's work counts here.
+        let earlierRuns = try NSRegularExpression(pattern: "^/N\\d{4}ZZ/$")
+        XCTAssertEqual(try asked().filter { path in
+            !path.hasPrefix("/novelapi") && (path == "/\(ncode)/"
+                || earlierRuns.firstMatch(in: path, range: NSRange(path.startIndex..., in: path)) == nil)
+        }, ["/\(ncode)/", "/n9669bk/?p=2"])
         attach(app, "narou-detail")
 
         let read = app.buttons.matching(NSPredicate(format: "label BEGINSWITH '開始閱讀'")).firstMatch
