@@ -220,9 +220,10 @@ struct OfficialModuleFilesTests {
 
         var withISBN = comic
         withISBN.identifiers = [try #require(ExternalIdentifier.normalized(.isbn13, "9784091294562"))]
-        #expect(!OpenLibraryFillProvider().canLookUp(withISBN))
+        let openLibrary = ModuleFillProvider(provider: ModuleProvider(module: try official("openlibrary")))
+        #expect(!openLibrary.canLookUp(withISBN))
         withISBN.contentKind = .text
-        #expect(OpenLibraryFillProvider().canLookUp(withISBN))
+        #expect(openLibrary.canLookUp(withISBN))
         let sources = BookSourceFillProvider(search: { _, _, _ in .init(origins: [], answered: 0, queried: 0) }, hasSources: { true })
         #expect(!sources.canLookUp(comic))
         #expect(sources.canLookUp(query("葬送の", ["山田鐘人"], kind: .text)))
@@ -542,6 +543,39 @@ struct OfficialModuleFilesTests {
                 "short subjects, at most five; Staff Picks is a list, not a genre")
         #expect(ModuleStub.urls.count == 2, "one search, and the page of the one work that is the copy's")
         #expect(ModuleStub.urls.last == "https://openlibrary.org/works/OL45804W.json")
+    }
+
+    @Test("AI 推薦 looks a work up through the Open Library module: one search by title and author, the work's page for its blurb; turned off, nothing is asked")
+    func openLibraryRecommendation() async throws {
+        let f = makeFixture()
+        defer { try? FileManager.default.removeItem(at: f.folder) }
+        let suite = "OfficialFiles-\(UUID().uuidString)"
+        let preferences = try #require(UserDefaults(suiteName: suite))
+        defer { preferences.removePersistentDomain(forName: suite) }
+        let files = OfficialRuleModules.files(in: Self.repoFiles)
+        let library = RuleModuleLibrary(store: RuleModuleStore(directory: f.folder.appendingPathComponent("library")),
+                                        appVersion: RuleModuleVersion.app, officialFiles: { files }, availability: nil,
+                                        language: "en", preferences: preferences)
+        ModuleStub.install([
+            "openlibrary.org/search.json": .json(try reply("OpenLibrary/openlibrary-search-fox.json")),
+            "openlibrary.org/works/OL45804W.json": .json(try reply("OpenLibrary/openlibrary-work-string.json")),
+        ])
+        let resolver = ModuleRecommendationResolver(library: library, client: f.client)
+        let work = AIRecommendation.Work(title: "Fantastic Mr Fox", author: "Roald Dahl", reason: "")
+        let found = try #require(try await resolver.match(work))
+        #expect(found.record.key == SourceItemKey(instance: ModuleProvider.instanceKey(moduleID: "openlibrary"),
+                                                  item: "https://openlibrary.org/works/OL45804W"),
+                "the work whose title and author match, not the film's book")
+        #expect(found.cover == .remote(try #require(URL(string: "https://covers.openlibrary.org/b/id/6498519-M.jpg")), headers: [:]))
+        #expect(found.blurb?.hasPrefix("The main character of Fantastic Mr. Fox") == true)
+        #expect(ModuleStub.urls.count == 2)
+        let search = try #require(ModuleStub.urls.first.flatMap { URLComponents(string: $0) })
+        #expect(search.queryItems?.first { $0.name == "q" }?.value == "Fantastic Mr Fox Roald Dahl")
+
+        ModuleStub.install([:])
+        library.setEnabled(false, id: OfficialRuleModules.openLibraryID)
+        #expect(try await resolver.match(work) == nil)
+        #expect(ModuleStub.urls.isEmpty, "停用 turns AI 推薦's lookups off with the rest")
     }
 
     @Test("Open Library is an official module, listed after openBD")

@@ -1748,16 +1748,11 @@ class GlobalSettings {
     var searchCacheDays: Int {
         didSet { UserDefaults.standard.set(searchCacheDays, forKey: "yd_search_cache_days") }
     }
-    /// Unified library 3d: fill empty covers, descriptions and categories from Open Library
-    /// and the enabled book sources (`MetadataFillCoordinator`). On by default (maintainer,
+    /// Unified library 3d: fill empty covers, descriptions and categories from 資料來源's places
+    /// (Open Library and the other modules, the enabled book sources) (`MetadataFillCoordinator`). On by default (maintainer,
     /// 2026-10-14).
     var autoFillBookMetadata: Bool {
         didSet { UserDefaults.standard.set(autoFillBookMetadata, forKey: "yd_auto_fill_book_metadata") }
-    }
-    /// 搜尋時也查 Open Library (unified search 4b-3): 搜索 sends its words to Open Library on
-    /// submit, for books no source carries. On by default (maintainer, 2026-10-14).
-    var searchOpenLibrary: Bool {
-        didSet { UserDefaults.standard.set(searchOpenLibrary, forKey: "yd_search_open_library") }
     }
     /// 換源搜索時順便抓每個候選源的目錄（Legado `changeSourceLoadToc`）。Tapping a source
     /// whose TOC was captured this way switches without a network round trip. Off by default
@@ -2346,10 +2341,6 @@ class GlobalSettings {
             (UserDefaults.standard.object(forKey: "yd_search_cache_days") as? Int) ?? 5
         autoFillBookMetadata =
             (UserDefaults.standard.object(forKey: "yd_auto_fill_book_metadata") as? Bool) ?? true
-        // `bool(forKey:)` once set: it also reads a launch argument's "NO", which `as? Bool`
-        // does not (the UI tests turn Open Library off that way).
-        searchOpenLibrary = UserDefaults.standard.object(forKey: "yd_search_open_library") == nil
-            || UserDefaults.standard.bool(forKey: "yd_search_open_library")
         changeSourceLoadToc =
             (UserDefaults.standard.object(forKey: "yd_change_source_load_toc") as? Bool) ?? false
         iCloudAutoSync =

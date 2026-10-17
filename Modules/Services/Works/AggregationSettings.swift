@@ -19,7 +19,7 @@ struct AggregationSettings: Codable, Equatable, Sendable {
     /// library removed and added again under the same id stays off.
     var hiddenFromLatest: [SourceInstanceKey]?
     /// The libraries and modules 搜尋來源 turns off (search 9d), as `hiddenFromLatest` does for
-    /// 最新. Nil until set. Open Library's switch stays `GlobalSettings.searchOpenLibrary`.
+    /// 最新. Nil until set. Open Library is a module like the others since OL3.
     var hiddenFromSearch: [SourceInstanceKey]?
     /// 隱藏已讀 for the whole home but 繼續閱讀 (`HomeReadFilter`), as Emby's "Hide fully played
     /// content" (decision 36). Nil until the reader sets it: then the two switches before it.
@@ -55,6 +55,7 @@ final class AggregationSettingsStore: ObservableObject {
     static let shared: AggregationSettingsStore = {
         let store = AggregationSettingsStore()
         store.adoptLegacyLatestExcluded(HomePageStore.shared.legacyLatestExcluded)
+        store.adoptLegacyOpenLibrarySearch()
         return store
     }()
 
@@ -120,6 +121,21 @@ final class AggregationSettingsStore: ObservableObject {
             settings.hiddenFromSearch = hidden
         }
     }
+
+    /// Until OL3, 搜尋時也查 Open Library was a switch of its own (`yd_search_open_library`, on
+    /// unless set). Open Library is a module now: a reader who turned it off has the module
+    /// unchecked in 搜尋來源, once; the old switch is removed. A launch argument's "NO" (the UI
+    /// tests) cannot be removed and unchecks it on every launch.
+    func adoptLegacyOpenLibrarySearch() {
+        guard defaults.object(forKey: Self.legacyOpenLibrarySearchKey) != nil else { return }
+        // `bool(forKey:)`: it reads a launch argument's "NO" too, which `as? Bool` does not.
+        if !defaults.bool(forKey: Self.legacyOpenLibrarySearchKey) {
+            setShownInSearch(false, for: ModuleProvider.instanceKey(moduleID: OfficialRuleModules.openLibraryID))
+        }
+        defaults.removeObject(forKey: Self.legacyOpenLibrarySearchKey)
+    }
+
+    nonisolated static let legacyOpenLibrarySearchKey = "yd_search_open_library"
 
     /// 隱藏已讀: on until the reader turns it off. Before it is set, off if either of the two
     /// switches it replaced was (maintainer, 2026-10-13).

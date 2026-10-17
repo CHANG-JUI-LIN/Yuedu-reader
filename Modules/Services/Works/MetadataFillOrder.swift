@@ -7,7 +7,6 @@ import Foundation
 
 /// A place the filler can ask.
 enum MetadataFillPlace: Hashable, Sendable {
-    case openLibrary
     /// Every enabled 來源配置 together (`BookSourceFillProvider`).
     case bookSources
     /// An installed module with a search (`ModuleFillProvider`).
@@ -16,7 +15,6 @@ enum MetadataFillPlace: Hashable, Sendable {
     /// What the order is stored as.
     var storageKey: String {
         switch self {
-        case .openLibrary: "openLibrary"
         case .bookSources: "bookSources"
         case .module(let id): "module:\(id)"
         }
@@ -24,7 +22,9 @@ enum MetadataFillPlace: Hashable, Sendable {
 
     init?(storageKey: String) {
         switch storageKey {
-        case "openLibrary": self = .openLibrary
+        // Open Library became an official module (OL3, 2026-10-17): its stored place and
+        // check are the module's.
+        case "openLibrary": self = .module(OfficialRuleModules.openLibraryID)
         case "bookSources": self = .bookSources
         default:
             guard storageKey.hasPrefix("module:") else { return nil }
@@ -46,21 +46,33 @@ struct MetadataFillOrder: Equatable, Sendable {
 
     var entries: [Entry]
 
-    /// Phase 3's order, what a reader who never opened the list has.
-    static let builtIn: [MetadataFillPlace] = [.openLibrary, .bookSources]
+    /// The place every reader has.
+    static let builtIn: [MetadataFillPlace] = [.bookSources]
+
+    /// Phase 3's order, what a reader who never opened the list has: Open Library first, then
+    /// 來源配置, then the other modules in the library's order.
+    static func defaultOrder(modules: [String]) -> [MetadataFillPlace] {
+        let leading = modules.filter { $0 == OfficialRuleModules.openLibraryID }
+        return leading.map(MetadataFillPlace.module) + builtIn
+            + modules.filter { $0 != OfficialRuleModules.openLibraryID }.map(MetadataFillPlace.module)
+    }
 
     /// The stored order as it applies now: the built-in places and every installed module
-    /// with a search. A place the stored order lacks joins at the end, checked; a module no
-    /// longer installed is left out (its stored entry is kept by `MetadataFillOrderStore`).
+    /// that can fill. A place the stored order lacks joins at the end, checked, in the default
+    /// order; a module no longer installed is left out (its stored entry is kept by
+    /// `MetadataFillOrderStore`).
     ///
-    /// - Parameter modules: the ids of the installed modules that have a search, in the
-    ///   library's order.
+    /// - Parameter modules: the ids of the installed modules that can fill, in the library's
+    ///   order.
     static func resolved(stored: [Entry], modules: [String]) -> MetadataFillOrder {
-        let current = Set(builtIn + modules.map(MetadataFillPlace.module))
+        let places = defaultOrder(modules: modules)
+        let current = Set(places)
         var entries = stored.filter { current.contains($0.place) }
         var seen = Set<MetadataFillPlace>()
+        // The first entry of a place counts: Open Library's old place, read as the module's,
+        // comes before the module's own entry a build between OL2 and OL3 saved.
         entries = entries.filter { seen.insert($0.place).inserted }
-        for place in builtIn + modules.map(MetadataFillPlace.module) where !seen.contains(place) {
+        for place in places where !seen.contains(place) {
             entries.append(Entry(place: place, isEnabled: true))
             seen.insert(place)
         }
@@ -121,7 +133,6 @@ extension MetadataFillOrder {
     func providers(modules: [RuleModule]) -> [any MetadataFillProvider] {
         entries.filter(\.isEnabled).compactMap { entry -> (any MetadataFillProvider)? in
             switch entry.place {
-            case .openLibrary: OpenLibraryFillProvider()
             case .bookSources: BookSourceFillProvider()
             case .module(let id):
                 modules.first { $0.id == id && $0.canFill }

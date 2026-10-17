@@ -42,6 +42,8 @@ final class FilledCoverIndex {
 }
 
 /// Open Library (Phase 3c): its provider key.
+/// Open Library's key before it became an official module (OL3, 2026-10-17): values filled
+/// then keep it as their provenance, named "Open Library". New ones carry the module's key.
 enum OpenLibrary {
     nonisolated static let providerID = "openlibrary"
     nonisolated static let key = SourceInstanceKey(type: .bibliographic, id: providerID)

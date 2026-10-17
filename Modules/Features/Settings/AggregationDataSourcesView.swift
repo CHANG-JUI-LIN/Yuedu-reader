@@ -15,9 +15,9 @@ struct DataSourceCount: Equatable {
 }
 
 /// 搜尋來源's places: the saved OPDS and Calibre libraries, Gutenberg and 青空文庫 where offered
-/// (WebDAV has no search), in 書庫順序, then the installed modules that search. Open Library is
-/// a row of its own (`GlobalSettings.searchOpenLibrary`). 來源配置 are not listed: they keep
-/// their own switch and the search's 來源配置 chip.
+/// (WebDAV has no search), in 書庫順序, then the installed modules that search (Open Library
+/// among them since OL3). 來源配置 are not listed: they keep their own switch and the search's
+/// 來源配置 chip.
 @MainActor
 enum SearchSourcePlaces {
     static func places(connections: [RemoteLibraryConnection], librariesAvailable: Bool, order: [SourceInstanceKey]?,
@@ -30,10 +30,9 @@ enum SearchSourcePlaces {
         return libraries + searching
     }
 
-    /// Checked of the places, Open Library counted as one.
-    static func count(_ places: [LibraryListing], openLibrary: Bool,
-                      shown: (SourceInstanceKey) -> Bool) -> DataSourceCount {
-        DataSourceCount(checked: places.filter { shown($0.key) }.count + (openLibrary ? 1 : 0), total: places.count + 1)
+    /// Checked of the places.
+    static func count(_ places: [LibraryListing], shown: (SourceInstanceKey) -> Bool) -> DataSourceCount {
+        DataSourceCount(checked: places.filter { shown($0.key) }.count, total: places.count)
     }
 }
 
@@ -44,13 +43,12 @@ struct AggregationDataSourcesSection: View {
     @ObservedObject private var availability = PublicLibraryAvailability.shared
     @ObservedObject private var modules = RuleModuleLibrary.shared
     @ObservedObject private var fillOrder = MetadataFillOrderStore.shared
-    @Bindable private var settings = GlobalSettings.shared
 
     private var searchCount: DataSourceCount {
         let places = SearchSourcePlaces.places(connections: connections.catalogs, librariesAvailable: availability.isAvailable,
                                                order: store.settings.libraryOrder,
                                                modules: SourceProviderRegistry.moduleProviders(in: modules))
-        return SearchSourcePlaces.count(places, openLibrary: settings.searchOpenLibrary, shown: store.isShownInSearch)
+        return SearchSourcePlaces.count(places, shown: store.isShownInSearch)
     }
 
     private var latestCount: DataSourceCount {
@@ -95,7 +93,6 @@ struct SearchSourcesView: View {
     @ObservedObject private var connections = RemoteLibraryConnectionStore.shared
     @ObservedObject private var availability = PublicLibraryAvailability.shared
     @ObservedObject private var modules = RuleModuleLibrary.shared
-    @Bindable private var settings = GlobalSettings.shared
 
     var body: some View {
         let places = SearchSourcePlaces.places(connections: connections.catalogs, librariesAvailable: availability.isAvailable,
@@ -110,11 +107,6 @@ struct SearchSourcesView: View {
                     }
                     .accessibilityIdentifier("aggregation.search.\(place.key.type.rawValue).\(place.key.id)")
                 }
-                // Moved from 網路設定 (search 9d); the same stored switch.
-                Toggle(isOn: $settings.searchOpenLibrary) {
-                    SettingsRowLabel(FilledMetadata.providerName(OpenLibrary.key), systemImage: "text.book.closed")
-                }
-                .accessibilityIdentifier("aggregation.search.openLibrary")
             } footer: {
                 Text(localized("按下搜尋時，關鍵字會送到勾選的地方；Open Library 找到的書只有資料。來源配置在搜索頁的「來源配置」選。"))
                     .dsSectionFooter()

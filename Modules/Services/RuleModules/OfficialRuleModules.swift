@@ -12,6 +12,8 @@ enum OfficialRuleModules {
     /// this order.
     static let ids = ["bangumi", "anilist", "openbd", "openlibrary", "narou", "rakuten-books"]
     static let reservedIDs = Set(ids)
+    /// Open Library, which replaced the app's own Open Library search and fill (OL3).
+    nonisolated static let openLibraryID = "openlibrary"
 
     /// `Resources/Assets/official-module-<id>.json`.
     static let filePrefix = "official-module-"

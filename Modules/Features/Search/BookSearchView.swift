@@ -150,7 +150,6 @@ private struct IOS17SearchResults: View {
     /// The tab root's works; `nil` shows the sources' `rows` instead.
     let works: UnifiedSearchModel?
     var libraries: LibrarySearchModel? = nil
-    var bibliographic: LibrarySearchModel? = nil
     let rows: [IOS17SearchResultTableRow]
     var sourcesSearching = false
     var sourcesPaused = false
@@ -179,9 +178,9 @@ private struct IOS17SearchResults: View {
                         status: UnifiedSearchStatus(
                             hasRows: !groups.isEmpty, isSearching: sourcesSearching || works.isResolving,
                             isPaused: sourcesPaused,
-                            othersSearching: (libraries?.isSearching ?? false) || (bibliographic?.isSearching ?? false),
+                            othersSearching: libraries?.isSearching ?? false,
                             submittedQuery: submittedQuery,
-                            failures: (libraries?.failures ?? []) + (bibliographic?.failures ?? []),
+                            failures: libraries?.failures ?? [],
                             filteredOut: works.isFilteredOut)
                     )
                 }
@@ -204,7 +203,6 @@ private struct IOS17SearchResults: View {
 private struct ModernUnifiedSearchRows: View {
     let works: UnifiedSearchModel
     let libraries: LibrarySearchModel
-    let bibliographic: LibrarySearchModel
     let sourcesSearching: Bool
     let sourcesPaused: Bool
     let submittedQuery: String?
@@ -214,8 +212,8 @@ private struct ModernUnifiedSearchRows: View {
             model: works,
             status: UnifiedSearchStatus(
                 hasRows: !works.groups.isEmpty, isSearching: sourcesSearching || works.isResolving,
-                isPaused: sourcesPaused, othersSearching: libraries.isSearching || bibliographic.isSearching,
-                submittedQuery: submittedQuery, failures: libraries.failures + bibliographic.failures,
+                isPaused: sourcesPaused, othersSearching: libraries.isSearching,
+                submittedQuery: submittedQuery, failures: libraries.failures,
                 filteredOut: works.isFilteredOut))
     }
 }
@@ -282,10 +280,8 @@ struct BookSearchView: View {
     /// draw them.
     @State private var shelfSearch = ShelfSearchModel()
     /// The saved OPDS and Calibre libraries' answers (unified search 4b-2) and the modules' (Phase
-    /// 6g), asked on submit.
+    /// 6g; Open Library among them since OL3), asked on submit.
     @State private var librarySearch = LibrarySearchModel()
-    /// Open Library's, asked on submit when 搜尋時也查 Open Library is on (4b-3).
-    @State private var openLibrarySearch = LibrarySearchModel.openLibrary()
     /// Every part's finds merged into one list of works (4c-3); read only by the views that
     /// draw it.
     @State private var unifiedSearch = UnifiedSearchModel()
@@ -377,7 +373,7 @@ struct BookSearchView: View {
             // search field (2026-10-17).
             .background {
                 UnifiedSearchFeed(query: showsCombinedResults ? trimmedQuery : "", shelf: shelfSearch,
-                                  libraries: librarySearch, bibliographic: openLibrarySearch, aggregator: aggregator,
+                                  libraries: librarySearch, aggregator: aggregator,
                                   offersPublicLibraries: offersPublicLibraries
                                       && aggregation.isShownInSearch(SourceInstanceKey(type: .aozora, id: PublicLibraryID.aozora.rawValue)),
                                   model: unifiedSearch)
@@ -436,7 +432,6 @@ struct BookSearchView: View {
                 needsSearchResubmission = false
                 aggregator.cancelAndClear()
                 librarySearch.clear()
-                openLibrarySearch.clear()
                 unifiedSearch.clear()
             }
         }
@@ -540,7 +535,7 @@ struct BookSearchView: View {
         List {
             if showsCombinedResults {
                 ModernUnifiedSearchRows(
-                    works: unifiedSearch, libraries: librarySearch, bibliographic: openLibrarySearch,
+                    works: unifiedSearch, libraries: librarySearch,
                     sourcesSearching: aggregator.isSearching, sourcesPaused: aggregator.isPaused,
                     submittedQuery: shouldShowEmptyResult ? submittedQuery : nil)
             } else {
@@ -594,7 +589,6 @@ struct BookSearchView: View {
         IOS17SearchResults(
             works: showsCombinedResults ? unifiedSearch : nil,
             libraries: librarySearch,
-            bibliographic: openLibrarySearch,
             rows: showsCombinedResults ? [] : aggregator.results.map(IOS17SearchResultTableRow.init(searchBook:)),
             sourcesSearching: aggregator.isSearching,
             sourcesPaused: aggregator.isPaused,
@@ -696,8 +690,8 @@ struct BookSearchView: View {
         let atRoot = isTabRoot && tabNavigation != nil
         var othersAnswer = false
         if atRoot, !trimmedQuery.isEmpty {
-            for part in [librarySearch, openLibrarySearch] where part.isAvailable {
-                part.start(trimmedQuery, store: bookStore)
+            if librarySearch.isAvailable {
+                librarySearch.start(trimmedQuery, store: bookStore)
                 othersAnswer = true
             }
         }

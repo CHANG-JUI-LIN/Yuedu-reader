@@ -51,7 +51,6 @@ struct MetadataFillSourcesView: View {
 
     private func name(of place: MetadataFillPlace) -> String {
         switch place {
-        case .openLibrary: FilledMetadata.providerName(OpenLibrary.key)
         case .bookSources: localized("來源配置")
         case .module(let id): modules.installed(id: id)?.module.title ?? id
         }

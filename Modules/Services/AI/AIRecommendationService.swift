@@ -8,23 +8,46 @@ protocol AIRecommendationResolving {
     func match(_ work: AIRecommendation.Work) async throws -> (record: SourceRecord, cover: CoverReference?, blurb: String?)?
 }
 
-/// Open Library: the search by title and author (B), then the work's description when it is
-/// written in the title's script. Two requests a work, paced at one a second by
-/// `RequestPacer.openLibrary`.
+/// Open Library's official module (OL3): its search for the title and author, the one result
+/// that is the same work as the module fill matches it (title equal, authors compatible), then
+/// that work's page for a description in the title's script. Two requests a work, at the
+/// module's rate. Nil when the module is not installed or turned off, or nothing matches.
 @MainActor
-final class OpenLibraryRecommendationResolver: AIRecommendationResolving {
-    private let search = OpenLibrarySearch()
-    private let fill = OpenLibraryFillProvider()
+final class ModuleRecommendationResolver: AIRecommendationResolving {
+    private let moduleID: String
+    private let library: RuleModuleLibrary
+    private let client: RuleModuleClient
+
+    init(moduleID: String = OfficialRuleModules.openLibraryID, library: RuleModuleLibrary = .shared,
+         client: RuleModuleClient = RuleModuleClient()) {
+        self.moduleID = moduleID
+        self.library = library
+        self.client = client
+    }
 
     func match(_ work: AIRecommendation.Work) async throws -> (record: SourceRecord, cover: CoverReference?, blurb: String?)? {
-        guard let found = try await search.work(title: work.title, author: work.author) else { return nil }
-        let blurb = try await fill.description(workKey: found.record.key.item, script: WritingScript(of: work.title))
-        return (found.record, found.cover, blurb)
+        await library.loadIfNeeded()
+        guard let module = library.modules.first(where: { $0.module.id == moduleID })?.module,
+              let search = module.search else { return nil }
+        let provider = ModuleProvider(module: module, client: client)
+        let query = MetadataFillQuery(copyID: UUID(), title: work.title, authors: [work.author], identifiers: [],
+                                      copySource: provider.instance, missing: [.intro])
+        guard let items = try await provider.searchItems("\(work.title) \(work.author)"),
+              let found = ModuleFillProvider.match(in: items, of: search, query: query) else { return nil }
+        let item = try await provider.detailed(found, of: search, wanting: [.intro])
+        guard case .item(let record, let summary, _) = provider.searchEntry(item) else { return nil }
+        let cover: CoverReference? = if case .generated = summary.cover { nil } else { summary.cover }
+        let blurb: String? = if case .text(let intro) = ModuleFillProvider.values(of: item, entry: search, query: query)[.intro] {
+            intro
+        } else {
+            nil
+        }
+        return (record, cover, blurb)
     }
 }
 
 /// AI 推薦's one use case, 產生推薦 (and 重新產生): read the shelf, ask the reader's AI service,
-/// keep the works, then look each up in Open Library for a cover and description.
+/// keep the works, then look each up in Open Library's module for a cover and description.
 ///
 /// The works are saved as soon as the answer is read, so the home shows them while the
 /// lookups (one a second) go on. A failed run keeps the previous list.
@@ -66,7 +89,7 @@ final class AIRecommendationService: ObservableObject {
 
     private let activeService: @MainActor () -> Result<AIProviderAssembly.ActiveService, AIProviderAssembly.Unavailable>
     private let resolver: any AIRecommendationResolving
-    private let lookupEnabled: @MainActor () -> Bool
+    private let lookupEnabled: @MainActor () async -> Bool
     private let genres: () async -> [String: Double]
     private let language: AIAnswerLanguage
     private let origin: AIDiagnostics.Origin
@@ -76,14 +99,14 @@ final class AIRecommendationService: ObservableObject {
     init(store: AIRecommendationStore? = nil,
          activeService: @escaping @MainActor () -> Result<AIProviderAssembly.ActiveService, AIProviderAssembly.Unavailable> = AIProviderAssembly.activeService,
          resolver: (any AIRecommendationResolving)? = nil,
-         lookupEnabled: @escaping @MainActor () -> Bool = AIRecommendationService.openLibraryChecked,
+         lookupEnabled: @escaping @MainActor () async -> Bool = AIRecommendationService.openLibraryChecked,
          genres: (() async -> [String: Double])? = nil,
          language: AIAnswerLanguage = .current,
          origin: AIDiagnostics.Origin = .observed,
          now: @escaping () -> Date = Date.init) {
         self.store = store ?? .shared
         self.activeService = activeService
-        self.resolver = resolver ?? OpenLibraryRecommendationResolver()
+        self.resolver = resolver ?? ModuleRecommendationResolver()
         self.lookupEnabled = lookupEnabled
         self.genres = genres ?? { await ReadingGenreRecorder.shared.profile().weights(at: Date()) }
         self.language = language
@@ -91,9 +114,13 @@ final class AIRecommendationService: ObservableObject {
         self.now = now
     }
 
-    /// 資料來源 (6h) has Open Library checked.
-    static func openLibraryChecked() -> Bool {
-        MetadataFillOrderStore.shared.order(modules: []).entries.first { $0.place == .openLibrary }?.isEnabled ?? false
+    /// 資料來源 (6h) has Open Library's module checked, and it is installed and not turned off.
+    static func openLibraryChecked() async -> Bool {
+        let library = RuleModuleLibrary.shared
+        await library.loadIfNeeded()
+        let place = MetadataFillPlace.module(OfficialRuleModules.openLibraryID)
+        return MetadataFillOrderStore.shared.order(modules: library.fillingModules.map(\.id)).entries
+            .first { $0.place == place }?.isEnabled ?? false
     }
 
     /// The service a run would use, for the section to say what is missing before it starts.
@@ -138,7 +165,7 @@ final class AIRecommendationService: ObservableObject {
             return
         }
         store.save(list)
-        guard lookupEnabled(), !list.entries.isEmpty else {
+        guard await lookupEnabled(), !list.entries.isEmpty else {
             state = .idle
             return
         }
