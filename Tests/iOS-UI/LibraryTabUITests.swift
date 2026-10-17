@@ -46,9 +46,9 @@ final class LibraryTabUITests: XCTestCase {
         app.navigationBars.buttons.element(boundBy: 0).tap()
     }
 
-    /// A page pushed over the tab bar goes back with a swipe from the screen's leading edge, as
-    /// every pushed page does. With the stack around the tab bar it only went back with the
-    /// bar's back button (maintainer, 2026-10-16).
+    /// A pushed page goes back with a swipe from the screen's leading edge, as every pushed page
+    /// does, and the tab bar it hid comes back. It once went back only with the bar's back
+    /// button, while the card reader's driver held the stack's delegate (maintainer, 2026-10-16).
     @MainActor
     func testPushedPageSwipesBack() {
         let app = launch()

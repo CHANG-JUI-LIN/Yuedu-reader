@@ -74,12 +74,17 @@ struct FixedPageReaderView: View {
     @State private var showTouchZoneEditor = false
 
     var body: some View {
-        // ReaderNavigationContainer decides, as for the flowing reader: a modal reader
-        // brings its own stack; the shelf's card push and a reader pushed from a book
-        // detail join the stack they are on. No card navigator does not mean modal;
-        // the detail's destination must never hold a second NavigationStack
-        // (DetailReaderStackTests).
-        ReaderNavigationContainer { readerContent }
+        // The shelf's card push hosts this reader in a UIKit controller whose bar
+        // carries the toolbar. Every other entry lets ReaderNavigationContainer
+        // decide, as the flowing reader does: a modal reader brings its own stack,
+        // a reader pushed from a book detail joins the detail's. No card navigator
+        // does not mean modal; the detail's destination must never hold a second
+        // NavigationStack (DetailReaderStackTests).
+        if readerNavigator == nil {
+            ReaderNavigationContainer { readerContent }
+        } else {
+            readerContent
+        }
     }
 
     private var readerContent: some View {
@@ -145,6 +150,7 @@ struct FixedPageReaderView: View {
             }
         }
         .animation(DSAnimation.fast, value: state.showControls)
+        .hidesRootTabBar()
         .navigationBarBackButtonHidden(true)
         .toolbarTitleDisplayMode(.inline)
         .toolbar(state.showControls ? .visible : .hidden, for: .navigationBar, .bottomBar)

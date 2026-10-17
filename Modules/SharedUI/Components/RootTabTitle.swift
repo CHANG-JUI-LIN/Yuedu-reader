@@ -11,15 +11,16 @@ enum RootTabBarScrollBehavior {
     /// a fling or a tap on the status bar, brings the title back with it.
     case fadesTitle
     /// The whole bar, title and buttons together, slides away as the page scrolls down and
-    /// comes back as it scrolls up — Apple Music's tabs — 探索, 資源庫, 設定, 搜索. This is
-    /// iOS 27's own bar minimization (`toolbarMinimizationBehavior`). iOS 17–26 have no bar
-    /// minimization: there the title fades as with `fadesTitle`, and the buttons stay — so
-    /// these pages carry the scroll anchor too.
+    /// comes back as it scrolls up; a search field under the bar rises to the top in its
+    /// place — Apple Music's tabs — 探索, RSS, 設定, 搜索. This is iOS 27's own bar
+    /// minimization (`toolbarMinimizationBehavior`). iOS 17–26 have no bar minimization:
+    /// there the title fades as with `fadesTitle`, and the buttons and the search field
+    /// stay — so these pages carry the scroll anchor too.
     case minimizesBar
 }
 
 extension View {
-    /// The title of a tab's root page — 書架, 探索, 資源庫, 設定, 搜索: large and bold at
+    /// The title of a tab's root page — 書架, 探索, RSS 訂閱, 設定, 搜索: large and bold at
     /// the leading end of the navigation bar, on the row with the page's buttons, as
     /// Apple Music heads its tabs; `behavior` says what the bar does as the page scrolls.
     ///
@@ -29,19 +30,9 @@ extension View {
     /// version, and the bar's own title is hidden — but still set, because pushed pages'
     /// back buttons read it.
     ///
-    /// The bar is the root stack's, around the tab bar, and what a tab's page declares never
-    /// reaches it (iOS 26 and 27, `RootTabNavigationContractTests`). So `ContentView` puts this
-    /// on the `TabView`, for the selected tab, with that tab's `fade`; the tab's page carries
-    /// the same fade with `rootTabTitleFadeSource`. Every other page and sheet is `.inline`.
-    func rootTabTitle(_ title: String, onScroll behavior: RootTabBarScrollBehavior,
-                      fade: RootTabTitleFade) -> some View {
-        modifier(RootTabTitleModifier(title: title, behavior: behavior, titleFade: fade))
-    }
-
-    /// A tab root's page, whose scroll anchors move `fade`: the fade its title wears in the
-    /// bar while the tab is selected.
-    func rootTabTitleFadeSource(_ fade: RootTabTitleFade, onScroll behavior: RootTabBarScrollBehavior) -> some View {
-        environment(\.rootTabTitleFade, behavior.titleFade(fade))
+    /// Only the tab roots use this; every other page and sheet is `.inline`.
+    func rootTabTitle(_ title: String, onScroll behavior: RootTabBarScrollBehavior) -> some View {
+        modifier(RootTabTitleModifier(title: title, behavior: behavior))
     }
 
     /// Marks what a tab root scrolls, for its title's fade to follow: put it on a view
@@ -49,6 +40,18 @@ extension View {
     /// page with nothing to scroll puts it on its content too, and the title shows in full.
     func rootTabTitleScrollAnchor() -> some View {
         modifier(RootTabTitleScrollAnchor())
+    }
+
+    /// The scroll edge of a tab root whose minimizing bar carries a search field (探索,
+    /// 搜索), in place of `softScrollEdges()` on its scroll view. From iOS 27, where the bar
+    /// minimizes, it is the system's own edge: soft behind the bar, and nothing under the
+    /// search field once it has risen to the top, as in Apple Music — the app's soft edge
+    /// there blurs the page right under the field. Without a search field the system's edge
+    /// is hard, so those tab roots keep `softScrollEdges()` (all seen on the iOS 27
+    /// simulator). Apple asks apps whose bars minimize to reconsider overriding the edge to
+    /// soft ("Modernize your UIKit app", WWDC26). Before iOS 27 it is the app's soft edge.
+    func rootTabSearchScrollEdges() -> some View {
+        modifier(RootTabSearchScrollEdges())
     }
 }
 
@@ -65,7 +68,7 @@ private var systemMinimizesBar: Bool {
 /// How far a tab root's title has faded. Only the title observes it, so the page does not
 /// redraw as it scrolls.
 @MainActor
-final class RootTabTitleFade: ObservableObject {
+private final class RootTabTitleFade: ObservableObject {
     @Published private(set) var opacity: Double = 1
 
     /// `offset`: how far the page has scrolled from its top, in points.
@@ -73,32 +76,6 @@ final class RootTabTitleFade: ObservableObject {
         let progress = (offset - DSLayout.rootTabTitleFadeStart) / DSLayout.rootTabTitleFadeDistance
         let opacity = Double(min(1, max(0, 1 - progress)))
         if opacity != self.opacity { self.opacity = opacity }
-    }
-}
-
-/// One fade per tab root, kept as long as the tab bar: switching tabs shows each title as
-/// its own page left it.
-@MainActor
-final class RootTabTitleFades {
-    private var fades: [AnyHashable: RootTabTitleFade] = [:]
-
-    func fade(for tab: AnyHashable) -> RootTabTitleFade {
-        if let fade = fades[tab] { return fade }
-        let fade = RootTabTitleFade()
-        fades[tab] = fade
-        return fade
-    }
-}
-
-extension RootTabBarScrollBehavior {
-    /// The fade the title follows, unless the system moves the whole bar: a title fading on
-    /// its own would leave ahead of the buttons it slides away with.
-    @MainActor
-    func titleFade(_ fade: RootTabTitleFade) -> RootTabTitleFade? {
-        switch self {
-        case .fadesTitle: fade
-        case .minimizesBar: systemMinimizesBar ? nil : fade
-        }
     }
 }
 
@@ -128,13 +105,22 @@ private struct RootTabTitleScrollAnchor: ViewModifier {
 private struct RootTabTitleModifier: ViewModifier {
     let title: String
     let behavior: RootTabBarScrollBehavior
-    /// Held, not observed: the title alone redraws as the fade changes.
-    let titleFade: RootTabTitleFade
 
-    private var fade: RootTabTitleFade? { behavior.titleFade(titleFade) }
+    /// Held, not observed: the title alone redraws as the fade changes.
+    @State private var titleFade = RootTabTitleFade()
+
+    /// The fade, unless the system moves the whole bar: a title fading on its own would
+    /// leave ahead of the buttons it slides away with.
+    private var fade: RootTabTitleFade? {
+        switch behavior {
+        case .fadesTitle: titleFade
+        case .minimizesBar: systemMinimizesBar ? nil : titleFade
+        }
+    }
 
     func body(content: Content) -> some View {
         content
+            .environment(\.rootTabTitleFade, fade)
             .navigationTitle(title)
             .toolbarTitleDisplayMode(.inline)
             .modifier(BarTitleHidden())
@@ -171,6 +157,16 @@ private struct BarMinimization: ViewModifier {
         #else
         content
         #endif
+    }
+}
+
+private struct RootTabSearchScrollEdges: ViewModifier {
+    func body(content: Content) -> some View {
+        if systemMinimizesBar {
+            content
+        } else {
+            content.softScrollEdges()
+        }
     }
 }
 
@@ -235,11 +231,9 @@ private struct RootTabTitleText: View {
 }
 
 #Preview("Tab root title") {
-    let fade = RootTabTitleFade()
     NavigationStack {
         List(0..<40, id: \.self) { Text("Row \($0)") }
-            .rootTabTitleFadeSource(fade, onScroll: .minimizesBar)
-            .rootTabTitle("探索", onScroll: .minimizesBar, fade: fade)
+            .rootTabTitle("探索", onScroll: .minimizesBar)
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
                     Button {} label: {

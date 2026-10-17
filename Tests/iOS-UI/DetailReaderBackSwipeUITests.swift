@@ -488,9 +488,9 @@ final class DetailReaderBackSwipeUITests: XCTestCase {
             XCTAssertTrue(progress.waitForExistence(timeout: 5), app.debugDescription)
             XCTAssertTrue(progress.isHittable, "The search reader's native progress control must be usable")
             if #available(iOS 26, *) {
-                // The root stack's bottom bar is a glass capsule with no Toolbar element on
-                // iOS 26 (26.5, 2026-10-17; `RootTabNavigationContractTests`): the control
-                // sits in the bottom tenth of the screen, where the capsule is.
+                // The bottom bar is a glass capsule with no Toolbar element on iOS 26, in the
+                // search tab's own stack as in one around the tab bar (26.5, 2026-10-17): the
+                // control sits in the bottom tenth of the screen, where the capsule is.
                 XCTAssertGreaterThan(progress.frame.minY, app.frame.height * 0.9, app.debugDescription)
             } else {
                 let bottomBar = app.toolbars.firstMatch
@@ -1311,8 +1311,9 @@ final class DetailReaderBackSwipeUITests: XCTestCase {
         book.firstMatch.tap()
         let content = app.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", "Reserved edge navigation")).firstMatch
         XCTAssertTrue(content.waitForExistence(timeout: 30), app.debugDescription)
-        // And stays: the reader fell straight back to the shelf once its card push settled,
-        // while it still held a NavigationStack of its own on the root stack (2026-10-17).
+        // And stays. The reader holds a NavigationStack of its own, and from iOS 18 a stack with
+        // any type-based `navigationDestination(for:)` takes such a UIKit-pushed page off once
+        // its push settles: the reader fell straight back to the shelf (2026-10-17).
         XCTAssertFalse(book.firstMatch.waitForExistence(timeout: 3), app.debugDescription)
         XCTAssertTrue(content.exists, app.debugDescription)
     }

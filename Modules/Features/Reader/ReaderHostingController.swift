@@ -1,16 +1,14 @@
 import SwiftUI
 import UIKit
 
-/// Hosts the SwiftUI reader that 書架's card transition pushes onto the root stack.
-///
-/// The reader is a page of that stack, with no `NavigationStack` of its own
-/// (`ReaderNavigationContainer`), so its SwiftUI toolbar modifiers drive the root
-/// stack's bars: hidden while the reader's controls are away, shown with them, and
-/// back to the page below on a pop. This controller does not touch the navigation
-/// bar — a second owner would fight them (the bar hidden under shown controls after
-/// a detail page popped).
+/// Hosts the migrated SwiftUI reader while owning only the *outer* shelf
+/// navigation chrome. The reader's own inner `NavigationStack` remains
+/// untouched and continues to show its in-reader controls.
 @MainActor
 final class ReaderHostingController: UIHostingController<AnyView> {
+    private weak var outerNavigationController: UINavigationController?
+    private var previousNavigationBarHidden: Bool?
+
     /// The root `UITabBarController` whose tab bar we hide for the duration of the
     /// reader, and its original hidden state to restore on the way out.
     ///
@@ -20,18 +18,15 @@ final class ReaderHostingController: UIHostingController<AnyView> {
     /// `UITabBarController` on iOS 17, so `hidesBottomBarWhenPushed` never finds a
     /// bottom bar to hide — the root tab bar stays overlaid on top of the reader,
     /// visible and tappable. (ReaderView's `.toolbar(.hidden, for: .tabBar)` can't
-    /// help either: the reader's hosting controller starts a SwiftUI tree detached
-    /// from the root TabView.) This manual path only runs on iOS 17 and can
+    /// help either: the reader's inner NavigationStack is detached from the root
+    /// TabView in the SwiftUI tree.) This manual path only runs on iOS 17 and can
     /// be deleted once iOS 17 support is dropped.
     ///
     /// iOS 18+ does not need it, but not because of `hidesBottomBarWhenPushed`:
+    /// SwiftUI's TabView shows and hides the tab bar itself, and the reader's
+    /// `hidesRootTabBar()` hides it from every tab (`RootTabBarVisibility`).
     /// `hidesBottomBarWhenPushed` takes no part there — on the iOS 26.5 simulator,
     /// with SwiftUI's hide taken away, the tab bar stayed over the reader.
-    ///
-    /// Since 2026-10-16 the navigation controller is the root stack's, around the tab
-    /// bar (`RootNavigation`): the reader is pushed over the tab bar controller and
-    /// covers its bar on every version. What this hides is then under the reader;
-    /// delete it once the iOS 17 card tests pass without it.
     private weak var managedTabBarController: UITabBarController?
     private var previousTabBarHidden: Bool?
 
@@ -48,11 +43,16 @@ final class ReaderHostingController: UIHostingController<AnyView> {
 
     override func viewWillAppear(_ animated: Bool) {
         super.viewWillAppear(animated)
+        hideOuterNavigationBar(animated: animated)
         hideRootTabBar()
     }
 
     override func viewDidAppear(_ animated: Bool) {
         super.viewDidAppear(animated)
+        // Backstop for a cancelled interactive pop: UIKit normally calls
+        // `viewWillAppear`, but the settled reader must never retain the
+        // shelf's restored navigation bar if callback ordering changes.
+        hideOuterNavigationBar(animated: false)
         // Also re-run here: on the opening push the window (and thus the root
         // tab bar controller) may not be resolvable until the view is on screen.
         hideRootTabBar()
@@ -66,18 +66,51 @@ final class ReaderHostingController: UIHostingController<AnyView> {
         // navigationController must still hand the tab bar back to the shelf.
         restoreRootTabBar()
 
-        guard navigationController != nil,
-              let coordinator = transitionCoordinator, coordinator.isInteractive else { return }
-        coordinator.notifyWhenInteractionChanges { [weak self] context in
-            guard context.isCancelled, let self,
-                  self.navigationController?.topViewController === self else { return }
+        guard let navigationController else { return }
+
+        // Restore unconditionally before any disappearance. A successful pop
+        // must leave the shelf's original bar state intact; if the reader is
+        // merely covered or an interactive pop cancels, its appear callbacks
+        // and the interaction hooks below hide the outer bar again.
+        restoreOuterNavigationBar(animated: animated)
+
+        guard let coordinator = transitionCoordinator, coordinator.isInteractive else { return }
+        coordinator.notifyWhenInteractionChanges { [weak self, weak navigationController] context in
+            guard context.isCancelled,
+                  let self,
+                  let navigationController,
+                  navigationController.topViewController === self else { return }
+            self.hideOuterNavigationBar(animated: true)
             self.hideRootTabBar()
         }
-        coordinator.animate(alongsideTransition: nil) { [weak self] context in
-            guard context.isCancelled, let self,
-                  self.navigationController?.topViewController === self else { return }
+        coordinator.animate(alongsideTransition: nil) { [weak self, weak navigationController] context in
+            guard context.isCancelled,
+                  let self,
+                  let navigationController,
+                  navigationController.topViewController === self else { return }
+            self.hideOuterNavigationBar(animated: false)
             self.hideRootTabBar()
         }
+    }
+
+    private func hideOuterNavigationBar(animated: Bool) {
+        guard let navigationController else { return }
+        if outerNavigationController !== navigationController {
+            outerNavigationController = navigationController
+            previousNavigationBarHidden = navigationController.isNavigationBarHidden
+        } else if previousNavigationBarHidden == nil {
+            previousNavigationBarHidden = navigationController.isNavigationBarHidden
+        }
+        navigationItem.hidesBackButton = true
+        navigationController.setNavigationBarHidden(true, animated: animated)
+    }
+
+    private func restoreOuterNavigationBar(animated: Bool) {
+        guard let navigationController else { return }
+        navigationController.setNavigationBarHidden(
+            previousNavigationBarHidden ?? false,
+            animated: animated
+        )
     }
 
     // MARK: Root tab bar (iOS 17 only — see `managedTabBarController` doc)

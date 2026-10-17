@@ -17,7 +17,10 @@ extension View {
     func homeEditDestinations() -> some View {
         navigationDestination(for: HomeEditRoute.self) { route in
             switch route {
-            case .section(let id): HomeSectionPage(sectionID: id)
+            // Configuration: no tab bar, as in the editor it opens from (maintainer, 2026-10-17).
+            // Each page it pushes asks again (`HomeSectionForm`): a page under another one
+            // withdraws its request.
+            case .section(let id): HomeSectionPage(sectionID: id).hidesRootTabBar()
             }
         }
     }
@@ -135,8 +138,10 @@ struct HomeEditingSections<RowContent: View>: View {
 /// The home puts it after its lazy stack, not in it. In the stack, once 編輯首頁 swapped the
 /// home's rows for the cards, the stack kept updating the browser's switch — a UIKit view, out
 /// of the window — and the update never ended: the app stopped answering on the iOS 18.6 and
-/// 26.5 simulators (not on iOS 27), with the home in the root stack around the tab bar
-/// (2026-10-16; lldb, `ExploreHomeUITests.testEditingTheHomeSwitchesTheBarButton`). A switch
+/// 26.5 simulators (not on iOS 27), with the home in a stack around the tab bar (2026-10-16;
+/// lldb, `ExploreHomeUITests.testEditingTheHomeSwitchesTheBarButton`), and in 探索's own stack
+/// once the editor was scrolled to its end (26.5, 2026-10-17: `flushTransactions` →
+/// `_updateTraitsIfNeededWithBehavior:` under the lazy stack, at 100% CPU). A switch
 /// alone in a lazy stack did not hang, so what else of the home's it takes is not known. It can
 /// go back into the stack once that test passes with it there on every supported version.
 struct HomeEditorEnd: View {

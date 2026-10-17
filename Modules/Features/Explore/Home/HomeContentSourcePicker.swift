@@ -441,6 +441,8 @@ struct HomeSourceChoices: View {
                 HomeCategoryChoices(source: source,
                                     filterValues: HomeSection.filterValues(in: parameters, sourceURL: url),
                                     current: current, choose: choose)
+                    // Pushed from a section's form, which hides the tab bar (`homeEditDestinations`).
+                    .hidesRootTabBar()
             }
         }
     }

@@ -28,15 +28,15 @@ private final class ResumeOnceBox: @unchecked Sendable {
 
 /// Owns the UIKit half of reader navigation: the custom push/pop animator,
 /// the percent-driven interaction controller, and the leading-edge pan. It
-/// attaches to the root stack's navigation controller before a reader push and
+/// attaches to the outer shelf navigation controller before a reader push and
 /// forwards unrelated delegate calls to SwiftUI's original delegate.
 ///
 /// The delegate and the edge pan are the driver's only while its reader is on
 /// the stack: `startPush` claims them, and they go back once the reader has left
-/// and the stack is idle (`releaseNavigationIfIdle`). Since 2026-10-16 that stack
-/// carries every pushed page in the app, and holding them from attachment on took
-/// SwiftUI's own pushes over — no push animation, no swipe back on any page
-/// (`LibraryTabUITests.testPushedPageSwipesBack`).
+/// and the stack is idle (`releaseNavigationIfIdle`). The same stack carries the
+/// pages SwiftUI pushes, and holding them from attachment on took those pushes
+/// over — no push animation, no swipe back (seen 2026-10-16, while one stack
+/// carried every page in the app).
 @MainActor
 final class ReaderNavigationTransitionDriver: NSObject {
     enum PendingOperation {

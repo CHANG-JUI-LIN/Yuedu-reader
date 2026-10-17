@@ -1,14 +1,13 @@
 import SwiftUI
 import UIKit
 
-/// 設定, the tab's page. It has no stack of its own: its pages are pushed onto the root stack
-/// around the tab bar, and its title is that stack's bar's (`ContentView.rootStack`).
 struct SettingsView: View {
     @EnvironmentObject var store: BookStore
     @EnvironmentObject private var subscriptionStore: SubscriptionStore
     @Environment(\.openURL) private var openURL
     @Environment(\.colorScheme) private var colorScheme
     @Bindable private var gs = GlobalSettings.shared
+    @State private var showAggregationSettings = false
     @State private var showDownloadManager = false
     @State private var showReplaceRules = false
     @State private var showBackupSync = false
@@ -19,6 +18,10 @@ struct SettingsView: View {
     @State private var showNetworkSettings = false
     @State private var showAISettings = false
     @State private var showAIPaywall = false
+    #if DEBUG
+    @State private var autoOpenDiagnostics = false
+    @State private var autoOpenFeedbackCenter = false
+    #endif
     private let feedbackEmail = "r3212239269@gmail.com"
     private let officialQQGroupID = "1107613783"
     private let telegramGroupURL = URL(string: "https://t.me/+ZWmmgMwwJ3JiN2Rl")
@@ -56,222 +59,245 @@ struct SettingsView: View {
     }
 
     var body: some View {
-        Form {
-            Section {
-                NavigationLink(destination: UserDetailView()) {
-                    AccountRowContent()
-                }
-                .accessibilityIdentifier("settings_account_row")
-                // The first row measures the form's scroll for the title's fade.
-                .rootTabTitleScrollAnchor()
-            }
-            .interfaceSectionSurface()
-            // ── App Language ──
-            Section {
-                DSSettingsRow(
-                    icon: "globe",
-                    title: localized("語言"),
-                    action: {
-                        if let url = URL(string: UIApplication.openSettingsURLString) {
-                            openURL(url)
+        NavigationStack {
+                Form {
+                    Section {
+                        NavigationLink(destination: UserDetailView()) {
+                            AccountRowContent()
+                        }
+                        .accessibilityIdentifier("settings_account_row")
+                        // The first row measures the form's scroll for the title's fade.
+                        .rootTabTitleScrollAnchor()
+                    }
+                    .interfaceSectionSurface()
+                    // ── App Language ──
+                    Section {
+                        DSSettingsRow(
+                            icon: "globe",
+                            title: localized("語言"),
+                            action: {
+                                if let url = URL(string: UIApplication.openSettingsURLString) {
+                                    openURL(url)
+                                }
+                            }
+                        )
+                    } header: {
+                        Text(localized("App 語言"))
+                            .foregroundStyle(DSColor.textSecondary)
+                    } footer: {
+                        Text(appLanguageFooter)
+                            .dsSectionFooter()
+                    }
+                    .interfaceSectionSurface()
+
+                    Section(header: Text(localized("外觀")).foregroundStyle(DSColor.textSecondary)) {
+                        NavigationLink {
+                            AppearanceThemeView()
+                        } label: {
+                            HStack {
+                                Label(localized("外觀主題"), systemImage: "paintpalette.fill")
+                                    .foregroundColor(DSColor.textPrimary)
+                                    .labelStyle(IconConsistentLabelStyle())
+                                Spacer(minLength: 12)
+                                Text(appearanceThemeName)
+                                    .font(DSFont.caption)
+                                    .foregroundColor(DSColor.textSecondary)
+                            }
                         }
                     }
-                )
-            } header: {
-                Text(localized("App 語言"))
-                    .foregroundStyle(DSColor.textSecondary)
-            } footer: {
-                Text(appLanguageFooter)
-                    .dsSectionFooter()
-            }
-            .interfaceSectionSurface()
+                    .interfaceSectionSurface()
 
-            Section(header: Text(localized("外觀")).foregroundStyle(DSColor.textSecondary)) {
-                NavigationLink {
-                    AppearanceThemeView()
-                } label: {
-                    HStack {
-                        Label(localized("外觀主題"), systemImage: "paintpalette.fill")
-                            .foregroundColor(DSColor.textPrimary)
-                            .labelStyle(IconConsistentLabelStyle())
-                        Spacer(minLength: 12)
-                        Text(appearanceThemeName)
-                            .font(DSFont.caption)
-                            .foregroundColor(DSColor.textSecondary)
+                    // 書架顯示 (每列欄數, 預設封面) lives in 外觀主題's 介面 since 2026-09-29.
+
+                    // ── Book Source Management ──
+                    // 管理來源配置 and 遠端書庫 are 資源庫's since 5h (Phase 5 plan, decision 30).
+                    Section(header: Text(localized("來源配置管理")).foregroundStyle(DSColor.textSecondary)) {
+                        // 聚合設定 (unified library 5d-3d, decision 21): here only, as Emby's
+                        // aggregation settings sit in its user settings.
+                        DSSettingsRow(
+                            icon: "square.stack.3d.up.fill",
+                            title: localized("聚合設定"),
+                            action: { showAggregationSettings = true }
+                        )
+                        .accessibilityIdentifier("settings_aggregation")
+
+                        DSSettingsRow(
+                            icon: "arrow.down.circle.fill",
+                            title: localized("下載管理"),
+                            detail: String(format: localized("%d 本"), downloadedBooksCount),
+                            action: { showDownloadManager = true }
+                        )
+
+
+                        DSSettingsRow(
+                            icon: "network",
+                            title: localized("網路設定"),
+                            action: { showNetworkSettings = true }
+                        )
                     }
-                }
-            }
-            .interfaceSectionSurface()
+                    .interfaceSectionSurface()
 
-            // 書架顯示 (每列欄數, 預設封面) lives in 外觀主題's 介面 since 2026-09-29.
+                    // ── Reading Tools ──
+                    Section(header: Text(localized("閱讀工具")).foregroundStyle(DSColor.textSecondary)) {
+                        DSSettingsRow(
+                            icon: "waveform",
+                            title: localized("語音朗讀設定"),
+                            action: { showTTSSettings = true }
+                        )
 
-            // ── Book Source Management ──
-            // 管理來源配置 and 遠端書庫 are 資源庫's since 5h (Phase 5 plan, decision 30).
-            Section(header: Text(localized("來源配置管理")).foregroundStyle(DSColor.textSecondary)) {
-                // 聚合設定 (unified library 5d-3d, decision 21): here only, as Emby's
-                // aggregation settings sit in its user settings. A link, so it pushes
-                // onto whichever stack shows this page: the root stack under the tab,
-                // RSS's sheet's own in `RSSSettingsContentView`.
-                NavigationLink {
-                    AggregationSettingsView()
-                } label: {
-                    Label(localized("聚合設定"), systemImage: "square.stack.3d.up.fill")
-                        .foregroundColor(DSColor.textPrimary)
-                        .labelStyle(IconConsistentLabelStyle())
-                }
-                .accessibilityIdentifier("settings_aggregation")
+                        DSSettingsRow(
+                            icon: "sparkles",
+                            // Named for what it is — the reader's panel is also called
+                            // 「AI 助手」, and someone looking for 人物卡 went here first.
+                            title: localized("AI 助手設定"),
+                            detail: isAILocked ? localized("需要 Pro") : aiAssistantDetail,
+                            isLocked: isAILocked,
+                            action: {
+                                if isAILocked { showAIPaywall = true } else { showAISettings = true }
+                            }
+                        )
+                        
+                        DSSettingsRow(
+                            icon: "text.magnifyingglass",
+                            title: localized("替換規則"),
+                            action: { showReplaceRules = true }
+                        )
 
-                DSSettingsRow(
-                    icon: "arrow.down.circle.fill",
-                    title: localized("下載管理"),
-                    detail: String(format: localized("%d 本"), downloadedBooksCount),
-                    action: { showDownloadManager = true }
-                )
-
-
-                DSSettingsRow(
-                    icon: "network",
-                    title: localized("網路設定"),
-                    action: { showNetworkSettings = true }
-                )
-            }
-            .interfaceSectionSurface()
-
-            // ── Reading Tools ──
-            Section(header: Text(localized("閱讀工具")).foregroundStyle(DSColor.textSecondary)) {
-                DSSettingsRow(
-                    icon: "waveform",
-                    title: localized("語音朗讀設定"),
-                    action: { showTTSSettings = true }
-                )
-
-                DSSettingsRow(
-                    icon: "sparkles",
-                    // Named for what it is — the reader's panel is also called
-                    // 「AI 助手」, and someone looking for 人物卡 went here first.
-                    title: localized("AI 助手設定"),
-                    detail: isAILocked ? localized("需要 Pro") : aiAssistantDetail,
-                    isLocked: isAILocked,
-                    action: {
-                        if isAILocked { showAIPaywall = true } else { showAISettings = true }
                     }
-                )
-                
-                DSSettingsRow(
-                    icon: "text.magnifyingglass",
-                    title: localized("替換規則"),
-                    action: { showReplaceRules = true }
-                )
+                    .interfaceSectionSurface()
 
-            }
-            .interfaceSectionSurface()
+                    // ── Data Management ──
+                    Section(header: Text(localized("資料管理")).foregroundStyle(DSColor.textSecondary)) {
+                        DSSettingsRow(
+                            icon: "arrow.triangle.2.circlepath.icloud",
+                            title: localized("備份與同步"),
+                            detail: localized("iCloud、WebDAV"),
+                            action: { showBackupSync = true }
+                        )
 
-            // ── Data Management ──
-            Section(header: Text(localized("資料管理")).foregroundStyle(DSColor.textSecondary)) {
-                DSSettingsRow(
-                    icon: "arrow.triangle.2.circlepath.icloud",
-                    title: localized("備份與同步"),
-                    detail: localized("iCloud、WebDAV"),
-                    action: { showBackupSync = true }
-                )
+                        DSSettingsRow(
+                            icon: "externaldrive.fill",
+                            title: localized("快取管理"),
+                            action: { showCacheManagement = true }
+                        )
 
-                DSSettingsRow(
-                    icon: "externaldrive.fill",
-                    title: localized("快取管理"),
-                    action: { showCacheManagement = true }
-                )
-
-                DSSettingsRow(
-                    icon: "wifi",
-                    title: localized("局域網服務"),
-                    action: { showLanServer = true }
-                )
-                DSSettingsRow(
-                    icon: "arrow.down.doc.fill",
-                    title: localized("Legado 資料遷移"),
-                    action: { showLegadoMigration = true }
-                )
-            }
-            .interfaceSectionSurface()
-
-            // ── Advanced ──
-            Section(header: Text(localized("進階")).foregroundStyle(DSColor.textSecondary)) {
-                // 回饋中心 replaced 診斷與回報 (2026-10-15): reports, replies, and the
-                // diagnostic log viewer as its 診斷紀錄 row.
-                NavigationLink {
-                    FeedbackCenterView()
-                } label: {
-                    Label(localized("回饋中心"), systemImage: "exclamationmark.bubble")
-                        .foregroundColor(DSColor.textPrimary)
-                        .labelStyle(IconConsistentLabelStyle())
-                }
-                .accessibilityIdentifier("settings_feedback_center")
-            }
-            .interfaceSectionSurface()
-
-            // ── About ──
-            Section(header: Text(localized("關於")).foregroundStyle(DSColor.textSecondary)) {
-                NavigationLink {
-                    AboutSupportView(
-                        appVersion: appVersion,
-                        feedbackEmail: feedbackEmail,
-                        officialQQGroupID: officialQQGroupID,
-                        feedbackMailURL: feedbackMailURL,
-                        telegramGroupURL: telegramGroupURL,
-                        privacyPolicyURL: privacyPolicyURL,
-                        userAgreementURL: userAgreementURL,
-                        paidTermsURL: paidTermsURL,
-                        sourceCodeURL: sourceCodeURL
-                    )
-                } label: {
-                    HStack {
-                        Label(localized("關於 Yuedu Reader"), systemImage: "info.circle.fill")
-                            .foregroundColor(DSColor.textPrimary)
-                            .labelStyle(IconConsistentLabelStyle())
-                        Spacer(minLength: 12)
-                        Text(appVersion)
-                            .font(DSFont.caption)
-                            .foregroundColor(DSColor.textSecondary)
+                        DSSettingsRow(
+                            icon: "wifi",
+                            title: localized("局域網服務"),
+                            action: { showLanServer = true }
+                        )
+                        DSSettingsRow(
+                            icon: "arrow.down.doc.fill",
+                            title: localized("Legado 資料遷移"),
+                            action: { showLegadoMigration = true }
+                        )
                     }
+                    .interfaceSectionSurface()
+
+                    // ── Advanced ──
+                    Section(header: Text(localized("進階")).foregroundStyle(DSColor.textSecondary)) {
+                        // 回饋中心 replaced 診斷與回報 (2026-10-15): reports, replies, and the
+                        // diagnostic log viewer as its 診斷紀錄 row.
+                        NavigationLink {
+                            FeedbackCenterView()
+                        } label: {
+                            Label(localized("回饋中心"), systemImage: "exclamationmark.bubble")
+                                .foregroundColor(DSColor.textPrimary)
+                                .labelStyle(IconConsistentLabelStyle())
+                        }
+                        .accessibilityIdentifier("settings_feedback_center")
+                    }
+                    .interfaceSectionSurface()
+
+                    // ── About ──
+                    Section(header: Text(localized("關於")).foregroundStyle(DSColor.textSecondary)) {
+                        NavigationLink {
+                            AboutSupportView(
+                                appVersion: appVersion,
+                                feedbackEmail: feedbackEmail,
+                                officialQQGroupID: officialQQGroupID,
+                                feedbackMailURL: feedbackMailURL,
+                                telegramGroupURL: telegramGroupURL,
+                                privacyPolicyURL: privacyPolicyURL,
+                                userAgreementURL: userAgreementURL,
+                                paidTermsURL: paidTermsURL,
+                                sourceCodeURL: sourceCodeURL
+                            )
+                        } label: {
+                            HStack {
+                                Label(localized("關於 Yuedu Reader"), systemImage: "info.circle.fill")
+                                    .foregroundColor(DSColor.textPrimary)
+                                    .labelStyle(IconConsistentLabelStyle())
+                                Spacer(minLength: 12)
+                                Text(appVersion)
+                                    .font(DSFont.caption)
+                                    .foregroundColor(DSColor.textSecondary)
+                            }
+                        }
+                    }
+                    .interfaceSectionSurface()
+                }
+            .softScrollEdges()
+            .themedAppSurface(for: .settings)
+            .rootTabTitle(localized("設定"), onScroll: .minimizesBar)
+            // Back from 外觀主題: its 淺色／深色 preview ends here.
+            .onAppear { gs.endAppearanceSlotPreview() }
+            .navigationDestination(isPresented: $showAggregationSettings) {
+                AggregationSettingsView()
+            }
+            #if DEBUG
+            // Screenshot/driver hooks: `-open-diagnostics` pushes 診斷紀錄 and
+            // `-open-feedback-center` pushes 回饋中心 straight from launch, so their
+            // appearance can be inspected without driving the tab bar. Same shape as the
+            // `-browser-overlay` launch flags in `yuedu_appApp.init()`, and compiled out
+            // of Release.
+            .navigationDestination(isPresented: $autoOpenDiagnostics) {
+                DiagnosticsView()
+            }
+            .navigationDestination(isPresented: $autoOpenFeedbackCenter) {
+                FeedbackCenterView()
+            }
+            .onAppear {
+                let arguments = ProcessInfo.processInfo.arguments
+                if arguments.contains("-open-diagnostics") {
+                    autoOpenDiagnostics = true
+                } else if arguments.contains("-open-feedback-center") {
+                    autoOpenFeedbackCenter = true
                 }
             }
-            .interfaceSectionSurface()
-        }
-        .softScrollEdges()
-        .themedAppSurface(for: .settings)
-        // Back from 外觀主題: its 淺色／深色 preview ends here.
-        .onAppear { gs.endAppearanceSlotPreview() }
-        .sheet(isPresented: $showDownloadManager) {
-            DownloadManagementView()
-                .environmentObject(store)
-        }
-        .sheet(isPresented: $showNetworkSettings) {
-            NetworkSettingsView()
-        }
-        .sheet(isPresented: $showAISettings) {
-            AISettingsView()
-        }
-        .sheet(isPresented: $showAIPaywall) {
-            PaywallView(highlightedFeature: .aiReading)
-                .environmentObject(subscriptionStore)
-        }
-        .sheet(isPresented: $showReplaceRules) {
-            ReplaceRuleListView()
-        }
-        .sheet(isPresented: $showBackupSync) {
-            BackupSyncView()
-        }
-        .sheet(isPresented: $showCacheManagement) {
-            CacheManagementView()
-        }
-        .sheet(isPresented: $showLanServer) {
-            LanServerView().environmentObject(store)
-        }
-        .sheet(isPresented: $showLegadoMigration) {
-            LegadoMigrationView().environmentObject(store)
-        }
-        .sheet(isPresented: $showTTSSettings) {
-            TTSSettingsView()
+            #endif
+            .sheet(isPresented: $showDownloadManager) {
+                DownloadManagementView()
+                    .environmentObject(store)
+            }
+            .sheet(isPresented: $showNetworkSettings) {
+                NetworkSettingsView()
+            }
+            .sheet(isPresented: $showAISettings) {
+                AISettingsView()
+            }
+            .sheet(isPresented: $showAIPaywall) {
+                PaywallView(highlightedFeature: .aiReading)
+                    .environmentObject(subscriptionStore)
+            }
+            .sheet(isPresented: $showReplaceRules) {
+                ReplaceRuleListView()
+            }
+            .sheet(isPresented: $showBackupSync) {
+                BackupSyncView()
+            }
+            .sheet(isPresented: $showCacheManagement) {
+                CacheManagementView()
+            }
+            .sheet(isPresented: $showLanServer) {
+                LanServerView().environmentObject(store)
+            }
+            .sheet(isPresented: $showLegadoMigration) {
+                LegadoMigrationView().environmentObject(store)
+            }
+            .sheet(isPresented: $showTTSSettings) {
+                TTSSettingsView()
+            }
         }
     }
 
@@ -521,9 +547,7 @@ private struct AboutSupportView: View {
 }
 
 #Preview {
-    NavigationStack {
-        SettingsView()
-    }
-    .environmentObject(BookStore())
-    .environmentObject(SubscriptionStore.shared)
+    SettingsView()
+        .environmentObject(BookStore())
+        .environmentObject(SubscriptionStore.shared)
 }

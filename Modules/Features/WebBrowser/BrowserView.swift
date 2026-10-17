@@ -694,6 +694,21 @@ struct WebViewRepresentable: UIViewRepresentable {
     func updateUIView(_ uiView: WKWebView, context: Context) {}
 }
 
+// MARK: - Explore tab
+
+/// The 探索 tab. It owns the in-app browser's state, so the page a reader left is still
+/// there when they come back to it from 探索's list.
+struct BrowserView: View {
+    @EnvironmentObject var store: BookStore
+    /// ContentView's, which 資源庫 shares.
+    @ObservedObject var browser: BrowserState
+
+    var body: some View {
+        ExploreTabRoot(browser: browser)
+            .environmentObject(store)
+    }
+}
+
 /// Why 探索 opened the browser.
 enum BrowserEntry: Hashable {
     /// The browser as it was left.
@@ -1283,10 +1298,8 @@ struct WebTOCSheet: View {
     }
 }
 
-#Preview("Browser") {
-    NavigationStack {
-        BrowserPage(browser: BrowserState(), entry: .resume)
-    }
-    .environmentObject(BookStore())
-    .environmentObject(SubscriptionStore.shared)
+#Preview("Explore and browser") {
+    BrowserView(browser: BrowserState())
+        .environmentObject(BookStore())
+        .environmentObject(SubscriptionStore.shared)
 }

@@ -263,43 +263,47 @@ struct HomeSectionForm: View {
                 .environmentObject(store)
         }
         .navigationDestination(item: $push) { destination in
-            switch destination {
-            case .picker:
-                picker(isPushed: true)
-            case .latestSources:
-                HomeSourceChoices(current: nil, parameters: draft.parameters) { choice in
-                    pickLatest(choice)
-                    push = nil
-                }
-            case .forYouSources:
-                HomeSourceChoices(current: nil) { choice in
-                    if case .sourceCategories(let references) = choice.binding, let reference = references.first {
-                        editor.addForYouCategory(reference)
-                    }
-                    push = nil
-                }
-            case .latestCategory(let url):
-                if let source = sources.sources.first(where: { $0.bookSourceUrl == url }) {
-                    HomeCategoryChoices(source: source, filterValues: editor.filterValues(forSourceURL: url),
-                                        current: editor.latestCategories.first { $0.sourceURL == url }.map { .sourceCategories([$0]) }) { choice in
+            // Without the tab bar, as the page under it (`homeEditDestinations`).
+            Group {
+                switch destination {
+                case .picker:
+                    picker(isPushed: true)
+                case .latestSources:
+                    HomeSourceChoices(current: nil, parameters: draft.parameters) { choice in
                         pickLatest(choice)
                         push = nil
                     }
-                }
-            case .layouts:
-                HomeLayoutChoicePage(choices: layoutChoices, current: draft.layout, sample: .standard) { style in
-                    editor.setLayout(HomeSectionLayout(style: style, ranked: draft.layout.showsRanks))
-                    push = nil
-                }
-            case .filters(let url):
-                if let source = sources.sources.first(where: { $0.bookSourceUrl == url }) {
-                    HomeCategoryChoices(source: source, filterValues: editor.filterValues(forSourceURL: url),
-                                        current: draft.binding) { choice in
-                        editor.choose(choice.binding, parameters: choice.parameters, itemTitle: choice.itemTitle)
+                case .forYouSources:
+                    HomeSourceChoices(current: nil) { choice in
+                        if case .sourceCategories(let references) = choice.binding, let reference = references.first {
+                            editor.addForYouCategory(reference)
+                        }
                         push = nil
+                    }
+                case .latestCategory(let url):
+                    if let source = sources.sources.first(where: { $0.bookSourceUrl == url }) {
+                        HomeCategoryChoices(source: source, filterValues: editor.filterValues(forSourceURL: url),
+                                            current: editor.latestCategories.first { $0.sourceURL == url }.map { .sourceCategories([$0]) }) { choice in
+                            pickLatest(choice)
+                            push = nil
+                        }
+                    }
+                case .layouts:
+                    HomeLayoutChoicePage(choices: layoutChoices, current: draft.layout, sample: .standard) { style in
+                        editor.setLayout(HomeSectionLayout(style: style, ranked: draft.layout.showsRanks))
+                        push = nil
+                    }
+                case .filters(let url):
+                    if let source = sources.sources.first(where: { $0.bookSourceUrl == url }) {
+                        HomeCategoryChoices(source: source, filterValues: editor.filterValues(forSourceURL: url),
+                                            current: draft.binding) { choice in
+                            editor.choose(choice.binding, parameters: choice.parameters, itemTitle: choice.itemTitle)
+                            push = nil
+                        }
                     }
                 }
             }
+            .hidesRootTabBar()
         }
     }
 

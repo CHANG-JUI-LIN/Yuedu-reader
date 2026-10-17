@@ -840,8 +840,8 @@ struct ReaderNavigationTransitionDriverTests {
         #expect(!driver.isReadyForInteractivePop)
     }
 
-    /// The root stack carries every pushed page in the app: a driver that kept the delegate
-    /// and its edge pan from attachment on took SwiftUI's own pushes over — no push
+    /// The shelf's stack also carries the pages SwiftUI pushes: a driver that kept the
+    /// delegate and its edge pan from attachment on took those pushes over — no push
     /// animation, no swipe back (2026-10-17).
     @Test("an attached driver owns the delegate and edge pan only while its reader is on the stack")
     func navigationOwnershipFollowsTheReader() async {

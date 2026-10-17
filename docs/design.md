@@ -35,7 +35,7 @@
 
 | # | 規則 | 正確 | 錯誤 |
 |---|------|------|------|
-| H1 | title mode：僅主界面根目錄（Tab 根頁）用大標題，一律經 `rootTabTitle(_:onScroll:fade:)`（`ContentView` 掛在 `TabView` 上）；其餘一律 `.inline` | 見 §2 矩陣 | 在 pushed / sheet 用 `rootTabTitle`，或使用 `.automatic` / `.large` / `.inlineLarge` |
+| H1 | title mode：僅主界面根目錄（Tab 根頁）用大標題，一律經 `rootTabTitle(_:onScroll:)`；其餘一律 `.inline` | 見 §2 矩陣 | 在 pushed / sheet 用 `rootTabTitle(_:onScroll:)`，或使用 `.automatic` / `.large` / `.inlineLarge` |
 | H2 | 所有對使用者顯示的文字走 `localized("…")`，且每個 lproj 同步（目前為 zh-Hant、zh-Hans、en、ja、ko，含 `InfoPlist.strings` 的權限提示） | `Text(localized("書架"))` | `Text("Bookshelf")` |
 | H3 | 顏色、字級、間距、圓角、動畫一律用 `DS*` token | `DSColor.textSecondary` | `Color.gray` / 寫死 hex |
 | H4 | 圖示優先 SF Symbols，且與文字字重/字級一致 | `Image(systemName: "trash")` | 自製 PNG icon |
@@ -58,14 +58,14 @@
 
 | 情境 | title mode | 原因 / 注意事項 |
 |------|------------|-----------------|
-| **主界面根目錄**（Tab 根頁） | `rootTabTitle(_:onScroll:fade:)` | 唯一用大標題的層級：導覽列左側的粗體大標題，和右側按鈕同一行，iOS 17 起每個版本都一樣。導覽列是包在 `TabView` 外那個 stack 的，分頁頁面宣告的標題到不了它，所以由 `ContentView` 依選中的分頁掛在 `TabView` 上（§3.1）。 |
+| **主界面根目錄**（Tab 根頁） | `rootTabTitle(_:onScroll:)` | 唯一用大標題的層級：導覽列左側的粗體大標題，和右側按鈕同一行，iOS 17 起每個版本都一樣。 |
 | Pushed detail（導航堆疊內的詳情、設定子頁） | `.inline` | 維持清楚的返回層級，為導覽與動作保留空間。 |
 | Sheet / modal task | `.inline` | 標題精簡，leading / trailing 分別容納取消與完成。 |
 | Reader / immersive surface | `.inline` | 依沉浸狀態與 chrome 顯示需求決定呈現；不使用大標題。 |
 
 **主界面根目錄白名單**：書架 `HomeView`、探索 `ExploreHome`、資源庫 `LibraryTabRoot`、設定 `SettingsView`、搜索 tab 根頁（`SearchView(isTabRoot: true)`；同一頁被推入時仍是 `.inline`）。名單以外的頁面一律 `.inline`。
 
-大標題是主界面根目錄的固定樣式（Apple Music / App Store 式的大型標題、同時保留完整 toolbar），**不是全域預設**：根目錄以外任何層級都禁用。不用系統的 `.inlineLarge`：它在 iOS 17 的 iPhone 上只畫成置中的 `.inline` 小標題（iOS 17.5 模擬器實測），iOS 18 起才是大標題。`rootTabTitle(_:onScroll:fade:)` 改用自己的 `.topBarLeading` toolbar item 畫標題（iOS 26 起關掉它的玻璃底），系統標題藏起來但仍設定，推入頁的返回鍵照樣顯示「‹ 探索」；字級固定在預設大小（系統的列內大標題也不隨字級放大，iOS 27 實測），長按顯示大型內容檢視器，VoiceOver 讀成標題。根頁的 leading item 會排在大標題右邊，加之前要驗證可用寬度與本地化。捲動行為分兩種，都是原生導覽列、原生 toolbar。書架用 `.fadesTitle`：頁面在捲動內容裡放 `rootTabTitleScrollAnchor()`（內容堆疊、格狀、列表第一列，沒得捲的空狀態也放），往下捲 10pt 起標題淡出、再 30pt 完全消失，右側按鈕常駐，不管怎麼回到頂端標題都會回來。探索、資源庫、設定、搜索用 `.minimizesBar`，即 iOS 27 的導覽列縮起（`toolbarMinimizationBehavior(.onScrollDown, for: .navigationBar)`，WWDC26〈Modernize your UIKit app〉）：往下捲，整條導覽列──標題和按鈕一起──滑走；往上捲再回來（Apple Music 的分頁，iOS 27 模擬器實測）。資源庫、搜索的搜尋框在頁面頂端，不跟內容捲走。這幾頁的捲動視圖都用 `softScrollEdges()`：導覽列裡沒有搜尋框時，系統邊緣會變成硬邊（iOS 27 模擬器實測；Apple 也請導覽列會縮起的 app 重新評估 `.soft` 覆寫）。內容不到一屏多時系統不縮起導覽列。iOS 17–26 沒有導覽列縮起：`.minimizesBar` 退回標題淡出，按鈕留在原位，所以這幾頁也放 scroll anchor。每個分頁的淡出各自一份（`RootTabTitleFades`）：頁面用 `rootTabTitleFadeSource` 接上自己的，切分頁時標題照各自離開時的樣子。不要把標題列畫進頁面。搜尋框原本一律是原生 `.searchable`（自製的被使用者否決過）；2026-10-16 改成外層 stack 後，分頁頁面的 `.searchable` 在 iOS 18 起到不了導覽列，使用者選定資源庫、搜索根頁改用頁面頂端的 `DSSearchBar`，push 進去的搜尋頁仍用 `.searchable`。系統標題模式也做不到：`.inlineLarge` 捲動後縮成置中小標題、搜尋框留在原位；`.large` 配常駐搜尋框一開始就是小標題（iOS 27 實測）。不用 UIKit `hidesBarsOnSwipe`：捲回頂端時導覽列不會自己回來（使用者回報），搜尋框也跟著藏起來。
+大標題是主界面根目錄的固定樣式（Apple Music / App Store 式的大型標題、同時保留完整 toolbar），**不是全域預設**：根目錄以外任何層級都禁用。不用系統的 `.inlineLarge`：它在 iOS 17 的 iPhone 上只畫成置中的 `.inline` 小標題（iOS 17.5 模擬器實測），iOS 18 起才是大標題。`rootTabTitle(_:onScroll:)` 改用自己的 `.topBarLeading` toolbar item 畫標題（iOS 26 起關掉它的玻璃底），系統標題藏起來但仍設定，推入頁的返回鍵照樣顯示「‹ 探索」；字級固定在預設大小（系統的列內大標題也不隨字級放大，iOS 27 實測），長按顯示大型內容檢視器，VoiceOver 讀成標題。根頁的 leading item 會排在大標題右邊，加之前要驗證可用寬度與本地化。捲動行為分兩種，都是原生導覽列、原生 toolbar、原生 `.searchable`。書架用 `rootTabTitle(_:onScroll: .fadesTitle)`：頁面在捲動內容裡放 `rootTabTitleScrollAnchor()`（內容堆疊、格狀、列表第一列，沒得捲的空狀態也放），往下捲 10pt 起標題淡出、再 30pt 完全消失，右側按鈕常駐，不管怎麼回到頂端標題都會回來。探索、資源庫、設定、搜索用 `.minimizesBar`，即 iOS 27 的導覽列縮起（`toolbarMinimizationBehavior(.onScrollDown, for: .navigationBar)`，WWDC26〈Modernize your UIKit app〉）：往下捲，整條導覽列──標題和按鈕一起──滑走，`.navigationBarDrawer(displayMode: .always)` 的搜尋框升到狀態列下方；往上捲再回來（Apple Music 的分頁，iOS 27 模擬器實測）。探索、搜索的捲動視圖用 `rootTabSearchScrollEdges()` 取代 `softScrollEdges()`：iOS 27 用系統自己的邊緣，導覽列在時是柔和的，搜尋框升上去後它正下方的內容清楚（Apple Music 也是）；強制 `.soft` 會把那段內容糊掉。資源庫、設定沒有搜尋框，系統邊緣會變成硬邊，所以維持 `softScrollEdges()`（以上都是 iOS 27 模擬器實測；Apple 也請導覽列會縮起的 app 重新評估 `.soft` 覆寫）。內容不到一屏多時系統不縮起導覽列。iOS 17–26 沒有導覽列縮起：`.minimizesBar` 退回標題淡出，按鈕和搜尋框留在原位，所以這幾頁也放 scroll anchor。不要把標題列或搜尋框畫進頁面：自製的搜尋框和按鈕不是原生的（使用者否決）。系統標題模式也做不到：`.inlineLarge` 捲動後縮成置中小標題、搜尋框留在原位；`.large` 配常駐搜尋框一開始就是小標題（iOS 27 實測）。不用 UIKit `hidesBarsOnSwipe`：捲回頂端時導覽列不會自己回來（使用者回報），搜尋框也跟著藏起來。
 
 ### 2.2 Toolbar 動作位置與語意
 
@@ -164,8 +164,8 @@ iPad 是同一個 iOS app 的原生自適應版，不是另一個 app root。共
 - 以實際 window size 自適應，不以裝置名稱推測空間；多工、Stage Manager、Split View 與旋轉都可能改變可用尺寸。
 - 延後切換到 compact 版型，直到目前版型真的無法維持可讀性與操作間距；不要只因單一 size class 或任意 breakpoint 過早縮減資訊。
 - iPhone 維持 compact/portrait 的底部 Tab Bar；iPad regular 使用系統 `TabView.sidebarAdaptable` 或 `NavigationSplitView` 等 HIG 原生容器，不自刻側欄。
-- 只有一個 `NavigationStack`，包在 `TabView` 外面（`ContentView.rootStack`、`RootNavigation`；使用者定 2026-10-16，推翻 2026-10-15 的「一般頁不收」）：所有 push 進去的頁面都蓋在 Tab Bar 上面、跟著頁面一起滑進滑出，iPad 的側欄也一起蓋住；sheet、全螢幕、popover 照常。各分頁不再有自己的 stack，頁面要 push 一律走這個 stack：`NavigationLink`、或對 `\.rootNavigation` 的 path 加值（分頁內宣告的 `navigationDestination` 在 iOS 26 起不會生效）。分頁根頁的標題、按鈕和所有目的地都宣告在 `TabView` 上、依選中的分頁切換（`RootTabNavigationContractTests`）；資源庫、搜索根頁的搜尋框放在頁面頂端（`DSSearchBar`），不用 `.searchable`。`.hidesRootTabBar()` 只剩書架選取模式在用（讓位給底部操作列），其他頁面不要再加。分頁順序是書架・探索・資源庫・設定・搜尋，搜尋在最右（使用者定 2026-10-16，取代決策 30 的「搜尋・設定」）。Tab Bar 也不縮小：不用 iOS 26 的 `tabBarMinimizeBehavior`，永遠完整大小（使用者定 2026-10-15，蘋果沒有建議要縮小）。
-- 開書的卡片閱讀器由 UIKit（`ReaderNavigationTransitionDriver`）推進同一個 stack，它自己**不能再包 `NavigationStack`**：iOS 18 起，這個 stack 只要有型別式 `navigationDestination(for:)`，就會在 push 結束後把「自帶 stack 的 UIKit 頁面」移掉，開書就閃回書架（17.5 不會；2026-10-17，`RootTabNavigationContractTests` 的 18+ 對照組）。`ReaderNavigationContainer` 看到 `readerNavigator` 就不包 stack，閱讀器的 `.toolbar(…, for: .navigationBar/.bottomBar)` 直接控制這個 stack 的導覽列和底部列，`ReaderHostingController` 不另外藏導覽列。driver 只在閱讀器還在 stack 上時接管 delegate 和邊緣返回手勢，閱讀器離開後交還，不然全 App 的 push 動畫和左滑返回都會被它接走。
+- 底部 Tab Bar 照 HIG 常駐：一般 push 進去的頁面、sheet、全螢幕、popover 都不收（使用者定，2026-10-15，推翻 2026-10-03 的「只在分頁根頁顯示」：收起的 Tab Bar 返回時會突然冒出來，SwiftUI `TabView` 沒有讓它跟著頁面一起滑走的做法——UIKit `hidesBottomBarWhenPushed` 被它忽略，iOS 26 實測）。只有這些自己的頁面用 `.hidesRootTabBar()` 收：閱讀器、固定版面閱讀器、RSS 文章、RSS 訂閱列表、作品詳情、個人資料頁、來源配置管理（使用者點名，2026-10-16）、書架選取模式（讓位給底部操作列）、探索的編輯首頁、欄目設定頁和它再推的子頁（使用者點名，2026-10-17；設定頁從長按「設定」進也收，同一頁）。被蓋住的頁面 `onDisappear` 會撤回要求，所以從收起的頁面再推出去的頁面要自己再要求一次，否則 Tab Bar 在下一層冒出來。每個分頁有自己的 `NavigationStack`（2026-10-16 試過一個 stack 包在 `TabView` 外、讓 push 自然蓋住 Tab Bar，2026-10-17 使用者決定改回這個結構：分頁根頁的 `.searchable` 到不了外層導覽列）。分頁順序是書架・探索・資源庫・設定・搜尋，搜尋在最右（使用者定 2026-10-16，取代決策 30 的「搜尋・設定」）。Tab Bar 也不縮小：不用 iOS 26 的 `tabBarMinimizeBehavior`，永遠完整大小（使用者定 2026-10-15，蘋果沒有建議要縮小）。
+- 書架的 stack 只能用 `navigationDestination(item:)`／`(isPresented:)`，**不要加型別式 `navigationDestination(for:)`**：開書的卡片閱讀器由 UIKit（`ReaderNavigationTransitionDriver`）推進這個 stack，頁面裡自帶 `NavigationStack`；iOS 18 起，stack 只要有型別式 destination，就會在 push 結束後把這種頁面移掉，開書直接閃回書架（17.5 不會；2026-10-17 實測，`DetailReaderBackSwipeUITests` 書架開書的測試會抓到）。driver 只在閱讀器還在 stack 上時接管 delegate 和邊緣返回手勢，閱讀器離開後交還，不然書架上 SwiftUI 自己 push 的頁面會沒有動畫、不能左滑返回。
 - iPad 橫豎向與視窗 resize 都要能重排；需要 reader 重分頁時，以 SwiftUI 已量到的 viewport size 作為唯一觸發來源。
 - 寬螢幕設定頁、sheet、清單與 reader overlay 使用 `DSLayout.readable*Width` token 限制行長；不要直接寫 640/760/960 等 magic number。
 - 閱讀器橫向雙頁是 reader 專屬模式：iPad regular + landscape 才自動啟用；切回直向或 iPhone 時回單頁，閱讀位置以 `(spineIndex, charOffset)` 保持。
@@ -189,7 +189,7 @@ iPad 是同一個 iOS app 的原生自適應版，不是另一個 app root。共
 | 長按操作 | `.contextMenu` | 自刻浮層 |
 | 列項滑動操作 | `.swipeActions` | 自刻手勢 |
 | 破壞性確認 | `.confirmationDialog` / `.alert` | 自刻彈窗 |
-| 搜尋 | `.searchable`；分頁根頁用 `DSSearchBar`（§3.1） | 網頁式 search box |
+| 搜尋 | `.searchable` 或既有 `DSSearchBar` | 網頁式 search box |
 | 載入 | `ProgressView` | 自刻 spinner |
 
 設定頁一律 **iOS Settings 風格**（`Form` / `List` `.insetGrouped` 分組 + section header），不要做成網頁表單。
@@ -427,7 +427,7 @@ Text("\(localized("當前速度"))：\(speechRateText)")
 - ❌ 忽略 iOS 導航 / 返回 / Sheet / Tab Bar 慣例。
 - ❌ 寫死顏色/字體/間距（繞過 `DS*` token）。
 - ❌ 寫死字串（繞過 `localized()`）。
-- ❌ 在非主界面根目錄層級使用 `rootTabTitle`；使用 `.inlineLarge`（iOS 17 的 iPhone 只畫成 `.inline`）、`.automatic`、`.large` title mode。
+- ❌ 在非主界面根目錄層級使用 `rootTabTitle(_:onScroll:)`；使用 `.inlineLarge`（iOS 17 的 iPhone 只畫成 `.inline`）、`.automatic`、`.large` title mode。
 - ❌ 用 `ScrollView`+`VStack`/`HStack` 自刻 list / Form row、自刻 toolbar 或按鈕列、自刻 Toggle / Picker / 彈窗（見 §4）。
 - ❌ 互斥選項做成多個獨立 `Toggle`（該用單一選取值的 `Picker` / 單選）；`Toggle` 用內建 label，不要 `.labelsHidden()` + 手刻 HStack。
 - ❌ 過度裝飾卡片：22pt+ 圓角、裝飾性漸層/邊框、自訂 Divider；卡片分層用語意表面色與 `DSRadius`（見 §4.1）。

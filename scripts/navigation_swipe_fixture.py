@@ -171,12 +171,18 @@ def main():
     else:
         directory = support(args.simulator)
         update_records(directory / "book_sources.json", lambda r: r.get("id") not in SOURCE_IDS)
-        books = directory / "books_meta.json"
-        removed = {r.get("id") for r in (json.loads(books.read_text()) if books.exists() else [])
-                   if r.get("bookSourceId") in SOURCE_IDS}
-        update_records(books, lambda r: r.get("bookSourceId") not in SOURCE_IDS)
+        # The shelf, and the books only read (opened from a detail without 加入書架), which
+        # keep their record, and with it their settings, under the same id.
+        removed = set()
+        for name in ("books_meta.json", "books_meta.reading.json"):
+            books = directory / name
+            if not books.exists():
+                continue
+            removed |= {r.get("id") for r in json.loads(books.read_text()) if r.get("bookSourceId") in SOURCE_IDS}
+            update_records(books, lambda r: r.get("bookSourceId") not in SOURCE_IDS)
         # The books' own reader settings (BookReaderSettingsStore): a manga test that failed
-        # between switching to webtoon and back left the fixture book a webtoon.
+        # between switching to webtoon and back left the fixture book a webtoon — the search
+        # tab's manga, only read, until its record went too (2026-10-17).
         settings = directory / "books_meta.reader-settings.json"
         if settings.exists():
             stored = json.loads(settings.read_text())

@@ -482,9 +482,9 @@ final class ReaderNavigationCoordinator: ObservableObject {
         }
     }
 
-    /// A single native detail page may cover the retained reader. It is pushed by
-    /// UIKit, like the reader, never as a SwiftUI destination: SwiftUI reconciling
-    /// its stack can take the UIKit-owned reader off it.
+    /// A single native detail page may cover the retained reader. In particular,
+    /// do not push it through ReaderView's inner SwiftUI NavigationStack: that
+    /// can reconcile the UIKit-owned reader out of its parent stack.
     @discardableResult
     func showDetail(
         _ detail: UIViewController,

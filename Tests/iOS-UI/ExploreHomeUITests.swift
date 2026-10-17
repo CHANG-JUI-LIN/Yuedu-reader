@@ -129,9 +129,10 @@ final class ExploreHomeUITests: XCTestCase {
         attach(app, "explore-home-new-install")
     }
 
-    /// 編輯首頁 and 完成 on the default home: the bar's ••• becomes 完成 and comes back. With
-    /// the editor's 瀏覽器 switch in the home's lazy stack, the edit never finished updating the
-    /// home on iOS 18.6 and 26.5 and the app stopped answering (2026-10-16, `HomeEditorMoreCard`).
+    /// 編輯首頁 and 完成 on the default home: the bar's ••• becomes 完成 and comes back, and the tab
+    /// bar steps aside while the home is edited (maintainer, 2026-10-17). With the editor's 瀏覽器
+    /// switch in the home's lazy stack, the edit never finished updating the home on iOS 18.6 and
+    /// 26.5 and the app stopped answering (2026-10-16 and 2026-10-17, `HomeEditorEnd`).
     @MainActor
     func testEditingTheHomeSwitchesTheBarButton() {
         let app = application()
@@ -144,11 +145,36 @@ final class ExploreHomeUITests: XCTestCase {
         let done = app.buttons["home.editDoneBar"].firstMatch
         XCTAssertTrue(done.waitForExistence(timeout: 10), app.debugDescription)
         XCTAssertFalse(app.buttons["explore.more"].exists, app.debugDescription)
+        let tabBar = app.tabBars.firstMatch
+        let tabBarGone = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in
+            !tabBar.exists || !tabBar.isHittable
+        }, object: nil)
+        XCTAssertEqual(XCTWaiter.wait(for: [tabBarGone], timeout: 5), .completed, app.debugDescription)
         // Tapped at the end of the home, the editor shows its own end, with 新增欄目.
         XCTAssertTrue(app.buttons["homeEditor.addSection"].firstMatch.waitForExistence(timeout: 5), app.debugDescription)
+        // A section's settings and the page they push keep it hidden, and so does the way back
+        // (maintainer, 2026-10-17): each asks, as a page under another withdraws its request.
+        let section = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "homeEditor.section.")).firstMatch
+        for _ in 0..<12 where !(section.exists && section.isHittable) { app.swipeDown() }
+        section.tap()
+        let layout = app.buttons["homeSection.layout"].firstMatch
+        XCTAssertTrue(layout.waitForExistence(timeout: 5), app.debugDescription)
+        XCTAssertFalse(tabBar.exists && tabBar.isHittable, "settings: \(app.debugDescription)")
+        layout.tap()
+        let layoutChoice = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "homeSection.layoutChoice.")).firstMatch
+        XCTAssertTrue(layoutChoice.waitForExistence(timeout: 5), app.debugDescription)
+        XCTAssertFalse(tabBar.exists && tabBar.isHittable, "layouts: \(app.debugDescription)")
+        app.navigationBars.buttons.element(boundBy: 0).tap()
+        XCTAssertTrue(layout.waitForExistence(timeout: 5), app.debugDescription)
+        XCTAssertFalse(tabBar.exists && tabBar.isHittable, "back to settings: \(app.debugDescription)")
+        app.navigationBars.buttons.element(boundBy: 0).tap()
+        XCTAssertTrue(section.waitForExistence(timeout: 5), app.debugDescription)
+        XCTAssertFalse(tabBar.exists && tabBar.isHittable, "back to the editor: \(app.debugDescription)")
         done.tap()
         XCTAssertTrue(app.buttons["explore.more"].firstMatch.waitForExistence(timeout: 10), app.debugDescription)
         XCTAssertTrue(app.buttons["home.edit"].firstMatch.exists, app.debugDescription)
+        XCTAssertTrue(tabBar.waitForExistence(timeout: 5), app.debugDescription)
+        XCTAssertTrue(tabBar.isHittable, app.debugDescription)
     }
 
     /// Decision 15: Gutenberg's 最新 loads when 探索 opens, with no 載入 to tap, wherever the

@@ -2,69 +2,30 @@ import SwiftUI
 
 // MARK: - Design System: Shared Components
 
-/// A tab root's search field, pinned at the top of its page: 資源庫's and 搜索's.
-///
-/// Not the navigation bar's `.searchable`, which these pages had: the bar is the root stack's,
-/// around the tab bar, and from iOS 18 a `.searchable` on the tab bar never reaches it, while
-/// one that only some tabs carry rebuilds every tab as the selection changes
-/// (`RootTabNavigationContractTests`; maintainer's choice, 2026-10-16). Drawn as the system's
-/// field: the magnifier, the clear button while it holds text, and 取消 while it is typed in,
-/// which empties it as the system's does.
+/// Common search bar shared by HomeView and BookSourceListView.
 struct DSSearchBar: View {
     let placeholder: String
     @Binding var text: String
-    var isFocused: FocusState<Bool>.Binding
-    /// The keyboard's Search.
-    var onSubmit: () -> Void = {}
-
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
-
+    
     var body: some View {
         HStack(spacing: DSSpacing.sm) {
-            HStack(spacing: DSSpacing.xs) {
-                Image(systemName: "magnifyingglass")
-                    .foregroundStyle(DSColor.textSecondary)
-                    .accessibilityHidden(true)
-                TextField(placeholder, text: $text)
-                    .focused(isFocused)
-                    .submitLabel(.search)
-                    .onSubmit(onSubmit)
-                    .accessibilityAddTraits(.isSearchField)
-                if !text.isEmpty {
-                    Button {
-                        text = ""
-                    } label: {
-                        Image(systemName: "xmark.circle.fill")
-                            .foregroundStyle(DSColor.textSecondary)
-                            .accessibilityHidden(true)
-                    }
-                    .buttonStyle(.plain)
-                    .accessibilityLabel(localized("清除"))
-                }
-            }
-            .padding(.horizontal, DSSpacing.md)
-            .padding(.vertical, DSSpacing.sm)
-            .background(DSColor.neutralControlFill, in: SearchFieldShape())
-            if isFocused.wrappedValue {
-                Button(localized("取消")) {
+            Image(systemName: "magnifyingglass")
+                .foregroundColor(DSColor.textSecondary)
+            TextField(placeholder, text: $text)
+            if !text.isEmpty {
+                Button {
                     text = ""
-                    isFocused.wrappedValue = false
+                } label: {
+                    Image(systemName: "xmark.circle.fill")
+                        .foregroundColor(DSColor.textSecondary)
                 }
-                .transition(.move(edge: .trailing).combined(with: .opacity))
             }
         }
-        .animation(reduceMotion ? nil : DSAnimation.standard, value: isFocused.wrappedValue)
-    }
-}
-
-/// The system search field's outline: a capsule from iOS 26, a rounded rectangle before.
-private struct SearchFieldShape: Shape {
-    func path(in rect: CGRect) -> Path {
-        if #available(iOS 26.0, *) {
-            Capsule().path(in: rect)
-        } else {
-            RoundedRectangle(cornerRadius: DSRadius.lg).path(in: rect)
-        }
+        .padding(10)
+        .background(DSColor.textSecondary.opacity(0.15))
+        .clipShape(RoundedRectangle(cornerRadius: DSRadius.md))
+        .padding(.horizontal, DSSpacing.lg)
+        .padding(.vertical, DSSpacing.sm)
     }
 }
 
@@ -207,8 +168,6 @@ private struct ThemedAppSurfaceModifier: ViewModifier {
 /// nav-bar region (behind the title and toolbar buttons).
 private struct PageBackgroundToolbarModifier: ViewModifier {
     let scope: AppearancePageBackgroundScope
-    /// The page wears `themedAppSurface`, whose bar is clear whatever the theme.
-    var alwaysHidden = false
     @Bindable private var gs = GlobalSettings.shared
     @ObservedObject private var subscriptionStore = SubscriptionStore.shared
     @Environment(\.colorScheme) private var colorScheme
@@ -217,7 +176,6 @@ private struct PageBackgroundToolbarModifier: ViewModifier {
     @Environment(\.appThemes) private var appThemes
 
     private var hasBackground: Bool {
-        if alwaysHidden { return true }
         if subscriptionStore.hasAccess(.readerThemePacks),
            gs.resolvedPageBackgroundSlice(for: scope, colorScheme: colorScheme) != nil {
             return true
@@ -255,15 +213,6 @@ extension View {
     /// `ZStack`, etc.) so the nav-bar region shows the page background.
     func pageBackgroundToolbar(for scope: AppearancePageBackgroundScope = .global) -> some View {
         modifier(PageBackgroundToolbarModifier(scope: scope))
-    }
-
-    /// The bar background of the selected tab root, which `ContentView` puts on the tab bar:
-    /// the bar is the root stack's, and a tab page's own `themedAppSurface` or
-    /// `pageBackgroundToolbar` does not reach it. `paintsSurface`: the page wears
-    /// `themedAppSurface`. One modifier for every tab, so selecting another never changes the
-    /// tab bar's identity.
-    func tabRootToolbarBackground(for scope: AppearancePageBackgroundScope, paintsSurface: Bool) -> some View {
-        modifier(PageBackgroundToolbarModifier(scope: scope, alwaysHidden: paintsSurface))
     }
 }
 

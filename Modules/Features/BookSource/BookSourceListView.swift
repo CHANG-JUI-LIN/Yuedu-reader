@@ -143,6 +143,9 @@ struct BookSourceListView: View {
             .navigationTitle(localized("來源配置管理"))
             .toolbarTitleDisplayMode(.inline)
             .pageBackgroundToolbar(for: .settings)
+            // Configuration, pushed from 設定 and 資源庫: the tab bar steps aside
+            // (maintainer, 2026-10-16). Everything it opens is a sheet.
+            .hidesRootTabBar()
             .searchable(
                 text: $model.searchText,
                 placement: .navigationBarDrawer(displayMode: .always),
