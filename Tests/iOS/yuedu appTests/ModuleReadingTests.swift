@@ -96,6 +96,17 @@ struct ModuleReadingTests {
         #expect(chapters.count == RuleModuleClient.maxTOCPages)
     }
 
+    @Test("a root-relative link keeps its page's port: a list's next page on a server not on 80 or 443")
+    func rootRelativeKeepsPort() {
+        #expect(RuleEngine.resolveURL("/n9669bk/?p=2", base: "http://localhost:18770/N9669BK/") == "http://localhost:18770/n9669bk/?p=2")
+        #expect(RuleEngine.resolveURL("/c/1", base: "https://example.com/b") == "https://example.com/c/1")
+        #expect(RuleEngine.resolveURL("//cdn.example.com/a.jpg", base: "http://localhost:18770/b") == "http://cdn.example.com/a.jpg",
+                "a scheme-relative link names its own host and port")
+        let next = ModernRuleEngine().setContent(#"<a class="next" href="/b?p=2">次</a>"#, baseUrl: "http://localhost:8080/b")
+            .getOptionalURL(ruleStr: "@css:a.next@href")
+        #expect(next == "http://localhost:8080/b?p=2")
+    }
+
     @Test("a next page on another site is refused, not sent")
     func tocHosts() async throws {
         let (client, folder) = client()

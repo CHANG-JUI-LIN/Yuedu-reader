@@ -15,8 +15,14 @@ extension RuleModule.Entry {
         return nil
     }
 
-    /// Where the first page starts.
-    var firstPosition: Int { paging == .page ? 1 : 0 }
+    /// Where the first page starts: the paging parameter's `value` (format 3.0; なろう counts
+    /// its items from 1), else page 1, offset 0.
+    var firstPosition: Int {
+        if let start = params.first(where: { $0.kind == .page || $0.kind == .offset })?.value.flatMap({ Int($0) }) {
+            return start
+        }
+        return paging == .page ? 1 : 0
+    }
 
     /// Where the page after the one at `position` starts; nil after the last.
     func position(after position: Int, itemCount: Int) -> Int? {

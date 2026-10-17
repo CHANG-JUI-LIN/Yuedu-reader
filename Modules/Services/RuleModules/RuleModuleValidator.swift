@@ -150,6 +150,11 @@ enum RuleModuleValidator {
             if kind == .enumeration, param.enumOptions?.isEmpty ?? true {
                 throw .enumerationWithoutOptions(field: "\(field).enumOptions")
             }
+            if kind == .page || kind == .offset, let start = param.value {
+                // Where the first page starts; an older app starts at 1 or 0 whatever it says.
+                uses3("\(field).value")
+                guard let number = Int(start), number >= 0 else { throw .unknownValue(field: "\(field).value", value: start) }
+            }
             declared.insert(param.name)
         }
 

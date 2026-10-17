@@ -142,7 +142,8 @@ struct RuleModule: Codable, Hashable, Sendable {
         /// A `ParamType` raw value; anything else is rejected by name rather than by decoding.
         var type: String
         var description: String?
-        /// The default. A number in the file reads as its text.
+        /// The default. A number in the file reads as its text. On a `page` or `offset`
+        /// parameter, the first page's position, a whole number (format 3.0).
         var value: String?
         var enumOptions: [Option]?
 

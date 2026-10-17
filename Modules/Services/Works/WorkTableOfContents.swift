@@ -10,11 +10,14 @@ import Foundation
 /// unasked about by 「加入書架？」, which asks only about a copy that was read.
 @MainActor
 enum WorkTableOfContents {
-    /// Whether the copy's reader opens at a chapter: an EPUB's or a TXT's. A PDF, a Markdown
-    /// file, a comic and an audiobook have no chapters to list here.
+    /// Whether the copy's reader opens at a chapter: an EPUB's, a TXT's, a module's book's. A
+    /// PDF, a Markdown file, a comic and an audiobook have no chapters to list here; a 來源配置's
+    /// book lists its own on its own page.
     static func lists(_ book: ReadingBook) -> Bool {
         switch book.resolvedPipelineKind {
         case .epub:
+            return true
+        case .html where book.module != nil:
             return true
         case .txt:
             let ext = (book.contentFilename as NSString).pathExtension.lowercased()
@@ -59,6 +62,9 @@ enum WorkTableOfContents {
             return indexes.enumerated().map { offset, index in
                 OnlineChapterRef(index: offset, title: index.title, url: index.sourceHref)
             }
+        case .html where book.module != nil:
+            // The list the module read when the copy was made, and each update since.
+            return store.chapters(for: book.id)
         case .html, .manga, .fixedPage, .audio:
             return nil
         }
