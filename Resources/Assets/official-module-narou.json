@@ -1,0 +1,142 @@
+{
+  "id": "narou",
+  "title": "小説家になろう",
+  "description": "日本最大的小說投稿網站：搜尋作品、看週排行，並在 App 內逐話閱讀。",
+  "author": "Yuedu",
+  "site": "https://syosetu.com/",
+  "version": "1.0",
+  "requiredVersion": "3.0",
+  "hosts": [
+    "api.syosetu.com",
+    "ncode.syosetu.com"
+  ],
+  "rateLimit": "1/1000",
+  "modules": [
+    {
+      "id": "weekly",
+      "title": "週排行",
+      "cacheDuration": 21600,
+      "params": [
+        {
+          "name": "offset",
+          "type": "offset",
+          "value": 1
+        }
+      ],
+      "request": {
+        "url": "https://api.syosetu.com/novelapi/api/?out=json&of=t-n-w-s-k-nt-e-ga&lim=20&st={{offset}}&order=weeklypoint",
+        "headers": {
+          "User-Agent": "yuedureader/Yuedu (iOS) (+https://yuedureader.com/support)"
+        }
+      },
+      "list": {
+        "items": "$[1:]",
+        "title": "$.title",
+        "author": "$.writer",
+        "intro": "$.story",
+        "url": "https://ncode.syosetu.com/{{$.ncode}}/"
+      }
+    },
+    {
+      "id": "completed",
+      "title": "完結人氣作品",
+      "cacheDuration": 86400,
+      "params": [
+        {
+          "name": "offset",
+          "type": "offset",
+          "value": 1
+        }
+      ],
+      "request": {
+        "url": "https://api.syosetu.com/novelapi/api/?out=json&of=t-n-w-s-k-nt-e-ga&lim=20&st={{offset}}&type=er&order=hyoka",
+        "headers": {
+          "User-Agent": "yuedureader/Yuedu (iOS) (+https://yuedureader.com/support)"
+        }
+      },
+      "list": {
+        "items": "$[1:]",
+        "title": "$.title",
+        "author": "$.writer",
+        "intro": "$.story",
+        "url": "https://ncode.syosetu.com/{{$.ncode}}/"
+      }
+    }
+  ],
+  "search": {
+    "request": {
+      "url": "https://api.syosetu.com/novelapi/api/?out=json&of=t-n-w-s-k-nt-e-ga&lim=20&order=hyoka&word={{keyword}}",
+      "headers": {
+        "User-Agent": "yuedureader/Yuedu (iOS) (+https://yuedureader.com/support)"
+      }
+    },
+    "list": {
+      "items": "$[1:]",
+      "title": "$.title",
+      "author": "$.writer",
+      "intro": "$.story",
+      "url": "https://ncode.syosetu.com/{{$.ncode}}/"
+    }
+  },
+  "reading": {
+    "headers": {
+      "User-Agent": "yuedureader/Yuedu (iOS) (+https://yuedureader.com/support)"
+    },
+    "toc": {
+      "items": "@css:.p-eplist__chapter-title, .p-eplist__sublist",
+      "title": "@css:.p-eplist__subtitle@text||@css:.p-eplist__chapter-title@text",
+      "url": "@css:.p-eplist__subtitle@href",
+      "nextPage": "@css:.c-pager__item--next@href",
+      "singleChapter": "@css:.p-novel__body@text"
+    },
+    "content": {
+      "text": "@css:.js-novel-text@html"
+    }
+  },
+  "localizations": {
+    "zh-Hans": {
+      "description": "日本最大的小说投稿网站：搜索作品、看周排行，并在 App 内逐话阅读。",
+      "entries": {
+        "weekly": {
+          "title": "周排行"
+        },
+        "completed": {
+          "title": "完结人气作品"
+        }
+      }
+    },
+    "en": {
+      "description": "Japan's largest web novel site: search, the weekly ranking, and every episode read in the app.",
+      "entries": {
+        "weekly": {
+          "title": "Weekly ranking"
+        },
+        "completed": {
+          "title": "Popular completed"
+        }
+      }
+    },
+    "ja": {
+      "description": "日本最大級の小説投稿サイト。作品の検索、週間ランキング、アプリ内で一話ずつ読めます。",
+      "entries": {
+        "weekly": {
+          "title": "週間ランキング"
+        },
+        "completed": {
+          "title": "完結済み人気作品"
+        }
+      }
+    },
+    "ko": {
+      "description": "일본 최대의 웹소설 사이트: 작품 검색, 주간 랭킹, 앱에서 한 화씩 읽기.",
+      "entries": {
+        "weekly": {
+          "title": "주간 랭킹"
+        },
+        "completed": {
+          "title": "완결 인기작"
+        }
+      }
+    }
+  }
+}

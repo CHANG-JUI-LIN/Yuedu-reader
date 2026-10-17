@@ -178,6 +178,25 @@ struct ModuleBookTests {
         #expect(decoded.module == Self.book.reference)
     }
 
+    @Test("作品詳情's 目錄 lists a module's book from its stored list; a 來源配置's book lists on its own page")
+    func workTableOfContents() async throws {
+        let setup = setup()
+        defer { try? FileManager.default.removeItem(at: setup.folder) }
+        let chapters = [OnlineChapterRef(index: 0, title: "第１章", url: "", isVolume: true),
+                        OnlineChapterRef(index: 1, title: "プロローグ", url: Self.bookURL + "1/")]
+        let copy = setup.store.addModuleBook(Self.book, chapters: chapters, isInBookshelf: false)
+        let record = try #require(setup.store.readingBooks.first { $0.id == copy.id })
+        #expect(WorkTableOfContents.lists(record))
+        let listed = try await WorkTableOfContents.chapters(of: record, store: setup.store, remoteLibrary: RemoteLibraryService.shared,
+                                                            positions: JSONFileReadingPositionStore())
+        #expect(listed?.map(\.title) == ["第１章", "プロローグ"])
+
+        var sourced = record
+        sourced.module = nil
+        sourced.bookSourceId = UUID()
+        #expect(!WorkTableOfContents.lists(sourced))
+    }
+
     @Test("a reading module's list items open as its books; a lookup's records and a data module's items stay data")
     func openings() {
         let entry = RuleModule.Entry(id: "n", title: "n", request: RuleModule.Request(url: "https://ncode.syosetu.com/"),

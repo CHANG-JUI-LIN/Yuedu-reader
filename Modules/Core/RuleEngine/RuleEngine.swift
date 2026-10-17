@@ -938,8 +938,10 @@ enum RuleEngine {
             return (baseURL.scheme ?? "https") + ":" + urlPart + optionSuffix
         }
         if urlPart.hasPrefix("/") {
-            let host = (baseURL.scheme ?? "https") + "://" + (baseURL.host ?? "")
-            return host + urlPart + optionSuffix
+            // The page's origin, its port included: a site on 8080 links `/c/1` to 8080.
+            let port = baseURL.port.map { ":\($0)" } ?? ""
+            let origin = (baseURL.scheme ?? "https") + "://" + (baseURL.host ?? "") + port
+            return origin + urlPart + optionSuffix
         }
         // Relative path
         if let resolved = URL(string: urlPart, relativeTo: baseURL)?.absoluteString {

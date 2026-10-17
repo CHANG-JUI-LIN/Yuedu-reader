@@ -385,4 +385,73 @@ struct OfficialModuleFilesTests {
         let order = MetadataFillOrder(entries: [MetadataFillOrder.Entry(place: .module("openbd"), isEnabled: true)])
         #expect(order.providers(modules: [openBD]).map(\.key) == [ModuleProvider.instanceKey(moduleID: "openbd")])
     }
+
+
+    // MARK: - なろう
+
+    @Test("なろう: search by keyword as this app, all-ages only; each work's page from its ncode, read in the app")
+    func narouSearch() async throws {
+        let f = makeFixture()
+        defer { try? FileManager.default.removeItem(at: f.folder) }
+        ModuleStub.install(["api.syosetu.com/novelapi/api": .json(try reply("Narou/narou-api-search.json"))])
+        let module = try official("narou")
+        let provider = ModuleProvider(module: module, client: f.client)
+
+        let page = try #require(try await provider.search("無職転生"))
+        let url = try #require(ModuleStub.urls.first.flatMap(URLComponents.init(string:)))
+        #expect(url.host == "api.syosetu.com" && url.path == "/novelapi/api/", "novelapi has no R18 work; novel18api is not a host")
+        #expect(url.queryItems?.first { $0.name == "word" }?.value == "無職転生")
+        #expect(ModuleStub.userAgents == [Self.userAgent])
+        let found = items(page.entries)
+        #expect(found.count == 3, "the count the reply opens with is no work")
+        #expect(found[0].summary.title.hasPrefix("無職転生"))
+        #expect(found[0].record.authors == ["理不尽な孫の手"])
+        #expect(found[0].record.key.item == "https://ncode.syosetu.com/N9669BK/")
+        #expect(found[0].summary.blurb?.isEmpty == false)
+        guard case .item(_, _, .moduleBook(let book)) = page.entries[0] else { Issue.record("not a book the module reads"); return }
+        #expect(book.reference == ModuleBookReference(moduleID: "narou", bookURL: "https://ncode.syosetu.com/N9669BK/"))
+        #expect(module.reading == ModuleReadingTests.narouReading, "the rules the reading tests read なろう's saved pages with")
+        #expect(module.hosts.allSatisfy { !$0.contains("novel18") })
+    }
+
+    @Test("なろう: the weekly ranking counts its works from 1, twenty a page, so no work is listed twice")
+    func narouRanking() async throws {
+        let f = makeFixture()
+        defer { try? FileManager.default.removeItem(at: f.folder) }
+        ModuleStub.install(["api.syosetu.com/novelapi/api": .json(try reply("Narou/narou-api-weekly.json"))])
+        let provider = ModuleProvider(module: try official("narou"), client: f.client)
+
+        let first = try await provider.page(ofList: "weekly", parameters: [:], after: nil)
+        let query = try #require(ModuleStub.urls.first.flatMap(URLComponents.init(string:))?.queryItems)
+        #expect(query.first { $0.name == "order" }?.value == "weeklypoint")
+        #expect(query.first { $0.name == "st" }?.value == "1")
+        #expect(query.first { $0.name == "lim" }?.value == "20")
+        #expect(items(first.entries).count == 5)
+        #expect(first.next == CollectionCursor(value: "6"), "the next page starts after the fifth work, not at it")
+
+        ModuleStub.install(["api.syosetu.com/novelapi/api": .json(try reply("Narou/narou-api-weekly.json"))])
+        _ = try await provider.page(ofList: "completed", parameters: [:], after: nil)
+        let completed = try #require(ModuleStub.urls.first.flatMap(URLComponents.init(string:))?.queryItems)
+        #expect(completed.first { $0.name == "type" }?.value == "er", "finished serials")
+    }
+
+    @Test("a paging parameter's value is where the first page starts: a whole number, format 3.0")
+    func pagingStart() throws {
+        func file(_ value: String, required: String = "3.0") -> Data {
+            Data("""
+            {"id":"m","title":"模組","version":"1.0","requiredVersion":"\(required)","hosts":["example.com"],
+             "modules":[{"id":"new","title":"新書","params":[{"name":"offset","type":"offset","value":\(value)}],
+              "request":{"url":"https://example.com/?st={{offset}}"},"list":{"items":"li","title":"h3"}}]}
+            """.utf8)
+        }
+        let module = try RuleModuleValidator.validate(file("1"), appVersion: "3.0")
+        #expect(module.modules[0].firstPosition == 1)
+        #expect(module.modules[0].position(after: 1, itemCount: 20) == 21)
+        #expect(throws: RuleModuleRejection.unknownValue(field: "modules[0].params[0].value", value: "-1")) {
+            try RuleModuleValidator.validate(file("-1"), appVersion: "3.0")
+        }
+        #expect(throws: RuleModuleRejection.needsRequiredVersion(field: "modules[0].params[0].value", minimum: "3.0")) {
+            try RuleModuleValidator.validate(file("1", required: "2.0"), appVersion: "3.0")
+        }
+    }
 }
