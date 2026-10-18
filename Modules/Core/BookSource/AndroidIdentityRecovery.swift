@@ -83,11 +83,21 @@ enum AndroidIdentityRecovery {
     ///
     /// Only the boolean is cached — a source's JSON runs to hundreds of kilobytes,
     /// so keeping the text would cost megabytes for no gain.
+    ///
+    /// Our own schema contains the token: every encoded source carries the
+    /// `"presentsAndroidIdentity"` key, and "AndroidIdentity" matches `androidid`
+    /// case-insensitively — which made this answer yes for every source, so
+    /// condition 2 never narrowed anything. That key is removed before the scan. It
+    /// is matched with its JSON quotes, so it cannot hit a source's own text: a quote
+    /// inside a string value is encoded as `\"`. `notOfferedWhenSourceNeverAsks`
+    /// guards this.
     private static func requestsAndroidId(_ source: BookSource) -> Bool {
         let key = "\(source.bookSourceUrl)#\(source.lastUpdateTime)"
         if let cached = cacheLock.withLock({ requestsCache[key] }) { return cached }
         let encoded = (try? JSONEncoder().encode(source)) ?? Data()
+        let ownKey = "\"\(BookSource.CodingKeys.presentsAndroidIdentity.stringValue)\""
         let answer = String(decoding: encoded, as: UTF8.self)
+            .replacingOccurrences(of: ownKey, with: "")
             .range(of: "androidid", options: .caseInsensitive) != nil
         cacheLock.withLock {
             // Bounded: one entry per (source, edit), and only sources the user is

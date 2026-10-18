@@ -3,9 +3,12 @@ import Foundation
 import JavaScriptCore
 @testable import yuedu_app
 
-/// With 以 Android 身分回報 off — the correct default — sources that use
+/// With 以 Android 身分回報 turned off — on is the default, off is the per-source
+/// escape hatch (see `BookSource.presentsAndroidIdentity`) — sources that use
 /// `java.androidId()` as a real device key have their requests refused, and the
-/// toggle that fixes it is three screens away in 書源編輯 → 基本.
+/// toggle that fixes it is three screens away in 書源編輯 → 基本. Every source
+/// built here therefore sets the switch explicitly — left at the default, condition 1
+/// alone would answer and the narrowing under test would never run.
 /// `AndroidIdentityRecovery` decides when a failure surface should offer that
 /// toggle, and the point of these tests is the *narrowness* of that offer:
 /// proposing it to a source that only probes for the platform would break the
@@ -43,6 +46,7 @@ struct AndroidIdentityRecoveryTests {
     func notOfferedWhenSourceNeverAsks() {
         var source = BookSource(bookSourceUrl: "https://c.example.com", bookSourceName: "plain")
         source.jsLib = "function id(){ return java.deviceID() }"
+        source.presentsAndroidIdentity = false
         #expect(!AndroidIdentityRecovery.canRepair(source, failureMessage: "缺少设备信息"))
     }
 
@@ -84,6 +88,7 @@ struct AndroidIdentityRecoveryTests {
     func findsCallInRule() {
         var source = BookSource(bookSourceUrl: "https://h.example.com", bookSourceName: "rule")
         source.ruleContent.content = "@js:java.androidId()"
+        source.presentsAndroidIdentity = false
         #expect(AndroidIdentityRecovery.canRepair(source, failureMessage: "缺少设备信息"))
     }
 }
