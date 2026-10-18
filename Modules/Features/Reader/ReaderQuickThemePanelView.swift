@@ -355,7 +355,7 @@ struct ReaderQuickThemePanelView: View {
             }
             readerTheme = background
         } label: {
-            backgroundTile(
+            ReaderQuickPanelBackgroundTile(
                 fill: background.previewBackgroundColor,
                 image: nil,
                 title: background.localizedTitle,
@@ -376,7 +376,7 @@ struct ReaderQuickThemePanelView: View {
         return Button {
             wear(background)
         } label: {
-            backgroundTile(
+            ReaderQuickPanelBackgroundTile(
                 fill: Color(uiColor: AppearanceThemePreset.hex(background.colorHex)),
                 image: background.imageFileName.flatMap(ReaderCustomBackgroundStorageManager.shared.thumbnail(fileName:)),
                 title: background.name,
@@ -438,63 +438,6 @@ struct ReaderQuickThemePanelView: View {
         .accessibilityLabel(localized("自定義"))
     }
 
-    /// One background's tile: its colour or picture, its name, and the selection ring.
-    /// Built-in and saved ones alike carry the name — only the saved ones did at first,
-    /// which left the built-in half of the row unnamed (2026-09-29).
-    private func backgroundTile(
-        fill: Color,
-        image: UIImage?,
-        title: String,
-        titleColor: Color,
-        selected: Bool
-    ) -> some View {
-        ZStack(alignment: .topTrailing) {
-            RoundedRectangle(cornerRadius: DSRadius.xxl, style: .continuous)
-                .fill(fill)
-
-            if let image {
-                Image(uiImage: image)
-                    .resizable()
-                    .scaledToFill()
-                    .frame(maxWidth: .infinity)
-                    .frame(height: DSLayout.readerQuickPanelReadingBackgroundTileHeight)
-                    .clipped()
-                    .accessibilityHidden(true)
-                    .allowsHitTesting(false)
-            }
-
-            Text(title)
-                .font(DSFont.caption)
-                .lineLimit(2)
-                .multilineTextAlignment(.leading)
-                .foregroundStyle(titleColor)
-                .padding(.horizontal, DSSpacing.sm)
-                .padding(.bottom, DSSpacing.sm)
-                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomLeading)
-                .accessibilityHidden(true)
-
-            if selected {
-                Image(systemName: "asterisk")
-                    .font(DSFont.subheadline.weight(.semibold))
-                    .foregroundStyle(titleColor.opacity(0.6))
-                    .padding(.top, DSSpacing.sm)
-                    .padding(.trailing, DSSpacing.md)
-                    .accessibilityHidden(true)
-            }
-        }
-        .frame(height: DSLayout.readerQuickPanelReadingBackgroundTileHeight)
-        .clipShape(RoundedRectangle(cornerRadius: DSRadius.xxl, style: .continuous))
-        .contentShape(RoundedRectangle(cornerRadius: DSRadius.xxl, style: .continuous))
-        .overlay(
-            RoundedRectangle(cornerRadius: DSRadius.xxl, style: .continuous)
-                .stroke(
-                    selected ? DSColor.textPrimary : DSColor.separator,
-                    lineWidth: selected ? 3 : 1
-                )
-        )
-        .shadow(color: DSColor.shadow, radius: 6, y: 1)
-    }
-
     // MARK: - 快捷動作
 
     /// The space the background pager gave back.
@@ -544,6 +487,75 @@ struct ReaderQuickThemePanelView: View {
     }
 
 
+}
+
+/// One background's tile: its colour or picture, its name, and the selection ring.
+/// Built-in and saved ones alike carry the name — only the saved ones did at first,
+/// which left the built-in half of the row unnamed (2026-09-29).
+///
+/// The tile owns its size. Its picture used to be framed by `maxWidth: .infinity`
+/// alone, and a flexible frame never shrinks a child wider than the proposal: a
+/// scaled-to-fill picture whose aspect is wider than the tile's (74×82, so any
+/// landscape picture and even a square one) came back wider than the tile, the
+/// whole `ZStack` grew to match, and the row's `.frame(width:)` only centred the
+/// result. The star badge then sat over the next tile (feedback #12, iPad).
+/// Internal, not private, so a test can measure it.
+struct ReaderQuickPanelBackgroundTile: View {
+    let fill: Color
+    let image: UIImage?
+    let title: String
+    let titleColor: Color
+    let selected: Bool
+
+    private static let width = DSLayout.readerQuickPanelBackgroundTileWidth
+    private static let height = DSLayout.readerQuickPanelReadingBackgroundTileHeight
+
+    var body: some View {
+        ZStack(alignment: .topTrailing) {
+            RoundedRectangle(cornerRadius: DSRadius.xxl, style: .continuous)
+                .fill(fill)
+
+            if let image {
+                Image(uiImage: image)
+                    .resizable()
+                    .scaledToFill()
+                    .frame(width: Self.width, height: Self.height)
+                    .clipped()
+                    .accessibilityHidden(true)
+                    .allowsHitTesting(false)
+            }
+
+            Text(title)
+                .font(DSFont.caption)
+                .lineLimit(2)
+                .multilineTextAlignment(.leading)
+                .foregroundStyle(titleColor)
+                .padding(.horizontal, DSSpacing.sm)
+                .padding(.bottom, DSSpacing.sm)
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomLeading)
+                .accessibilityHidden(true)
+
+            if selected {
+                Image(systemName: "asterisk")
+                    .font(DSFont.subheadline.weight(.semibold))
+                    .foregroundStyle(titleColor.opacity(0.6))
+                    .padding(.top, DSSpacing.sm)
+                    .padding(.trailing, DSSpacing.md)
+                    .accessibilityHidden(true)
+            }
+        }
+        .frame(width: Self.width, height: Self.height)
+        .clipShape(RoundedRectangle(cornerRadius: DSRadius.xxl, style: .continuous))
+        .contentShape(RoundedRectangle(cornerRadius: DSRadius.xxl, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: DSRadius.xxl, style: .continuous)
+                .stroke(
+                    selected ? DSColor.textPrimary : DSColor.separator,
+                    lineWidth: selected ? 3 : 1
+                )
+        )
+        .shadow(color: DSColor.shadow, radius: 6, y: 1)
+    }
 }
 
 /// Full-width quick-panel action button: darkens and gently compresses while
@@ -602,4 +614,30 @@ private struct QuickPanelSegmentButtonStyle: ButtonStyle {
         onStartAutoRead: {},
         onCustomize: {}
     )
+}
+
+/// A selected tile wearing a 16:9 picture between two plain ones: the badge must stay
+/// inside its own tile and the neighbours must not be overlapped (feedback #12).
+#Preview("Background tile, landscape picture") {
+    let landscape = UIGraphicsImageRenderer(size: CGSize(width: 320, height: 180)).image { context in
+        UIColor(DSColor.accent).setFill()
+        context.fill(CGRect(x: 0, y: 0, width: 320, height: 180))
+        UIColor(DSColor.textPrimary).setFill()
+        context.fill(CGRect(x: 0, y: 120, width: 320, height: 60))
+    }
+    return HStack(spacing: DSSpacing.md) {
+        ReaderQuickPanelBackgroundTile(
+            fill: DSColor.neutralControlFill, image: nil, title: "Plain",
+            titleColor: DSColor.textPrimary, selected: false
+        )
+        ReaderQuickPanelBackgroundTile(
+            fill: DSColor.neutralControlFill, image: landscape, title: "Landscape",
+            titleColor: DSColor.textPrimary, selected: true
+        )
+        ReaderQuickPanelBackgroundTile(
+            fill: DSColor.neutralControlFill, image: nil, title: "Plain",
+            titleColor: DSColor.textPrimary, selected: false
+        )
+    }
+    .padding(DSSpacing.xl)
 }
