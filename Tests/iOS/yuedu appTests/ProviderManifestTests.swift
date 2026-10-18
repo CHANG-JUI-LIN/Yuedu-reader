@@ -15,12 +15,15 @@ struct ProviderManifestTests {
         let registry: SourceProviderRegistry
         let shelf: BookStore
         let sources: BookSourceStore
+        /// The home's modules, never `RuleModuleLibrary.shared`: that one reads the simulator's
+        /// imports, its 停用 list and the real storefront, and is empty until the app reads it.
+        let modules: RuleModuleLibrary
         let opds: OPDSCatalog
         let calibre: OPDSCatalog
         let dav: OPDSCatalog
     }
 
-    private func makeFixture() throws -> Fixture {
+    private func makeFixture() async throws -> Fixture {
         let folder = FileManager.default.temporaryDirectory.appendingPathComponent("ProviderManifest-\(UUID().uuidString)")
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
         let connections = OPDSCatalogStore(storageDirectory: folder, importLegacyWebDAV: false)
@@ -42,8 +45,13 @@ struct ProviderManifestTests {
         searchOnly.bookSourceUrl = "https://search.example"
         searchOnly.bookSourceName = "搜尋源"
         sources.replaceSourcesFromSync([explore, searchOnly])
+        // The bundled official modules and nothing imported, as on a fresh install.
+        let modules = RuleModuleLibrary(store: RuleModuleStore(directory: folder.appendingPathComponent("modules")),
+                                        officialFiles: { OfficialRuleModules.bundledFiles }, availability: availability,
+                                        preferences: UserDefaults(suiteName: "manifest-modules-\(UUID().uuidString)")!)
+        await modules.load()
         return Fixture(folder: folder, connections: connections, availability: availability, registry: registry, shelf: shelf,
-                       sources: sources, opds: opds, calibre: calibre, dav: dav)
+                       sources: sources, modules: modules, opds: opds, calibre: calibre, dav: dav)
     }
 
     private func firstPages(_ folder: URL) -> DiscoverFirstPages {
@@ -55,8 +63,8 @@ struct ProviderManifestTests {
     // MARK: - The registry's lists, as they are
 
     @Test("browsable providers: the shelf, connections in their order, then Gutenberg and 青空文庫; the region hides the last two")
-    func browsableOrder() throws {
-        let f = try makeFixture()
+    func browsableOrder() async throws {
+        let f = try await makeFixture()
         defer { try? FileManager.default.removeItem(at: f.folder) }
 
         #expect(f.registry.browsableProviders(shelf: f.shelf).map(\.instance) == [
@@ -74,12 +82,13 @@ struct ProviderManifestTests {
         #expect(f.registry.opdsProvider(catalogID: PublicLibraryID.gutenberg.rawValue) != nil)
     }
 
-    @Test("home providers: the shelf, 訂閱, connections, Gutenberg, 青空文庫, 為你推薦, AI 推薦, then the explore sources")
-    func homeOrder() throws {
-        let f = try makeFixture()
+    @Test("home providers: the shelf, 訂閱, connections, Gutenberg, 青空文庫, the modules, 為你推薦, AI 推薦, then the explore sources; the region hides the public libraries and なろう")
+    func homeOrder() async throws {
+        let f = try await makeFixture()
         defer { try? FileManager.default.removeItem(at: f.folder) }
 
-        let providers = f.registry.homeProviders(shelf: f.shelf, sources: f.sources, firstPages: firstPages(f.folder))
+        let providers = f.registry.homeProviders(shelf: f.shelf, sources: f.sources, modules: f.modules,
+                                                 firstPages: firstPages(f.folder))
         #expect(providers.map(\.instance) == [
             .localLibrary,
             SubscriptionArticlesProvider.instanceKey,
@@ -88,21 +97,32 @@ struct ProviderManifestTests {
             SourceInstanceKey(type: .webDAV, id: f.dav.id),
             SourceInstanceKey(type: .gutenberg, id: PublicLibraryID.gutenberg.rawValue),
             SourceInstanceKey(type: .aozora, id: PublicLibraryID.aozora.rawValue),
+            // The official modules, in `OfficialRuleModules.ids` order, one per bundled
+            // `Resources/Assets/official-module-<id>.json`; imported modules would follow them.
+            ModuleProvider.instanceKey(moduleID: "bangumi"),
+            ModuleProvider.instanceKey(moduleID: "anilist"),
+            ModuleProvider.instanceKey(moduleID: "openbd"),
+            ModuleProvider.instanceKey(moduleID: "openlibrary"),
+            ModuleProvider.instanceKey(moduleID: "narou"),
             ForYouProvider.instanceKey,
             AIRecommendationProvider.instanceKey,
             SourceInstanceKey(type: .bookSource, id: "https://explore.example"),
         ], "a source with no explore rule puts nothing on the home")
         f.availability.receive(countryCode: "CHN")
-        let inChina = f.registry.homeProviders(shelf: f.shelf, sources: f.sources, firstPages: firstPages(f.folder))
+        // The library follows the storefront on its next publish; reading it again publishes now.
+        await f.modules.load()
+        let inChina = f.registry.homeProviders(shelf: f.shelf, sources: f.sources, modules: f.modules,
+                                               firstPages: firstPages(f.folder))
         #expect(!inChina.contains { [.gutenberg, .aozora].contains($0.instance.type) })
-        #expect(inChina.count == providers.count - 2)
+        #expect(!inChina.contains { $0.instance == ModuleProvider.instanceKey(moduleID: "narou") })
+        #expect(inChina.count == providers.count - 3)
     }
 
     // MARK: - Manifests
 
     @Test("each built-in provider's manifest is what it already reports")
     func builtInManifests() async throws {
-        let f = try makeFixture()
+        let f = try await makeFixture()
         defer { try? FileManager.default.removeItem(at: f.folder) }
         let manifests = await f.registry.manifests(shelf: f.shelf)
         func manifest(_ type: ProviderType) throws -> ProviderManifest {
@@ -140,9 +160,10 @@ struct ProviderManifestTests {
 
     @Test("manifests of the providers only the home lists")
     func homeOnlyManifests() async throws {
-        let f = try makeFixture()
+        let f = try await makeFixture()
         defer { try? FileManager.default.removeItem(at: f.folder) }
-        let providers = f.registry.homeProviders(shelf: f.shelf, sources: f.sources, firstPages: firstPages(f.folder))
+        let providers = f.registry.homeProviders(shelf: f.shelf, sources: f.sources, modules: f.modules,
+                                                 firstPages: firstPages(f.folder))
         let subscriptions = try #require(providers.first { $0.instance == SubscriptionArticlesProvider.instanceKey })
         let forYou = try #require(providers.first { $0.instance == ForYouProvider.instanceKey })
 
