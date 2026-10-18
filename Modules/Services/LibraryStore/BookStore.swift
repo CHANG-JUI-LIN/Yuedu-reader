@@ -52,7 +52,8 @@ private final class BookRecordStorage {
     @Published var values: [ReadingBook] = []
 }
 
-class BookStore: ObservableObject, BookProvider {
+@MainActor
+class BookStore: @MainActor ObservableObject, BookProvider {
     let objectWillChange = ObservableObjectPublisher()
     private let recordStorage = BookRecordStorage()
     private var records: [ReadingBook] {
@@ -165,7 +166,7 @@ class BookStore: ObservableObject, BookProvider {
     /// A book's table of contents (legado's `getChapterList`). The shelf's records carry
     /// only its summary (`totalChapterNum`, `latestChapterTitle`). Safe off the main thread:
     /// `chapterStore` has its own lock.
-    func chapters(for bookId: UUID) -> [OnlineChapterRef]? {
+    nonisolated func chapters(for bookId: UUID) -> [OnlineChapterRef]? {
         chapterStore.chapters(for: bookId)
     }
 
@@ -186,7 +187,7 @@ class BookStore: ObservableObject, BookProvider {
         return records[index]
     }
 
-    private var readingMetadataFileURL: URL {
+    nonisolated private var readingMetadataFileURL: URL {
         metadataFileURL.deletingPathExtension().appendingPathExtension("reading.json")
     }
     private var lastPersistedReadingData: Data?
@@ -311,7 +312,7 @@ class BookStore: ObservableObject, BookProvider {
 
     // MARK: Read Book Content
 
-    func content(for book: ReadingBook) -> String {
+    nonisolated func content(for book: ReadingBook) -> String {
         let url = documentsURL(for: book.contentFilename)
         if book.resolvedPipelineKind == .txt {
             return (try? TXTFileReader.readTextFile(url: url)) ?? ""
@@ -319,7 +320,7 @@ class BookStore: ObservableObject, BookProvider {
         return (try? String(contentsOf: url, encoding: .utf8)) ?? ""
     }
 
-    func package(forLocalBook book: ReadingBook) throws -> BookPackage {
+    nonisolated func package(forLocalBook book: ReadingBook) throws -> BookPackage {
         switch book.resolvedPipelineKind {
         case .epub:
             let epubFilename = book.contentFilename.hasSuffix(".epub")
@@ -461,7 +462,7 @@ class BookStore: ObservableObject, BookProvider {
     // MARK: Import Local Manga Archive
 
     @discardableResult
-    func importLocalManga(
+    nonisolated func importLocalManga(
         url: URL,
         title: String? = nil,
         author: String? = nil
@@ -541,7 +542,7 @@ class BookStore: ObservableObject, BookProvider {
     /// document is one chapter (so page numbers stay absolute), and the PDF's own
     /// bookmarks become the reader's table of contents.
     @discardableResult
-    func importLocalPDF(
+    nonisolated func importLocalPDF(
         url: URL,
         title: String? = nil,
         author: String? = nil
@@ -611,7 +612,7 @@ class BookStore: ObservableObject, BookProvider {
     // MARK: Import Local Audiobook
 
     @discardableResult
-    func importLocalAudiobook(
+    nonisolated func importLocalAudiobook(
         url: URL,
         title: String? = nil,
         author: String? = nil
@@ -726,7 +727,7 @@ class BookStore: ObservableObject, BookProvider {
     @discardableResult
     /// - Parameter isInBookshelf: false for a copy made to be read, which joins the shelf only
     ///   when the reader adds it (a 青空文庫 work read from its 作品詳情).
-    func importEpub(url: URL, title: String? = nil, author: String? = nil, requireValidPublication: Bool = false,
+    nonisolated func importEpub(url: URL, title: String? = nil, author: String? = nil, requireValidPublication: Bool = false,
                     isInBookshelf: Bool = true) async throws -> ReadingBook {
         let importStartUptime = ProcessInfo.processInfo.systemUptime
         func importTrace(_ message: String) {
@@ -826,7 +827,7 @@ class BookStore: ObservableObject, BookProvider {
             )
             if let session, session.layoutMode == .prePaginated {
                 book.contentPipelineKind = .fixedPage
-                book.onlineChapters = await FixedLayoutEPUBPageProvider.chapterRefs(from: session)
+                book.onlineChapters = FixedLayoutEPUBPageProvider.chapterRefs(from: session)
                 importTrace(
                     "stage=fixedLayoutDetected pipeline=fixedPage pages=\(session.chapters.count)"
                 )
@@ -1960,7 +1961,7 @@ class BookStore: ObservableObject, BookProvider {
     /// fetched — the reader resolves it up front so it can show progress and stay cancellable,
     /// and passing it here is what stops the switch from fetching the same TOC a second time
     /// (Legado hands the toc to `changeTo(source, book, toc)` for the same reason).
-    func updateOnlineBookSource(
+    nonisolated func updateOnlineBookSource(
         bookId: UUID,
         origin: BookOrigin,
         preparedTOC: TOCPackage? = nil,
@@ -2030,13 +2031,13 @@ class BookStore: ObservableObject, BookProvider {
     }
 
     @discardableResult
-    func refreshOnlineBookMetadata(
+    nonisolated func refreshOnlineBookMetadata(
         bookId: UUID,
         forceInfoRefresh: Bool = false,
         bookSourceFetcher: any BookSourceFetching = LiveBookSourceFetcher(bookSourceFetcher: BookSourceFetcher.shared),
         offlineChapterStore: any OfflineChapterStoring = OfflineChapterStore(),
         moduleReader: ModuleBookReader = .live,
-        onFirstChaptersReady: (@MainActor (ReadingBook) -> Void)? = nil
+        onFirstChaptersReady: (@MainActor @Sendable (ReadingBook) -> Void)? = nil
     ) async throws -> ReadingBook {
         guard let snapshot = await MainActor.run(body: {
             records.first(where: { $0.id == bookId }).flatMap { $0.isOnline ? $0 : nil }
@@ -2208,13 +2209,13 @@ class BookStore: ObservableObject, BookProvider {
     /// A refreshed table of contents into the record: planned off the main thread, written
     /// once by `commit` on the list it was planned from, then reconciled with the offline
     /// download. Both refreshes, a source's and a module's, end here.
-    private func commitRefreshedChapters(
+    nonisolated private func commitRefreshedChapters(
         _ refreshed: [OnlineChapterRef],
         snapshot: ReadingBook,
         originalChapterCount: Int,
         originalLatestTitle: String,
         offlineChapterStore: any OfflineChapterStoring,
-        commit: @escaping @MainActor (Int, MergePlan) -> ReadingBook
+        commit: @escaping @MainActor @Sendable (Int, MergePlan) -> ReadingBook
     ) async throws -> ReadingBook {
         let bookId = snapshot.id
 
@@ -2401,7 +2402,7 @@ class BookStore: ObservableObject, BookProvider {
     /// Everything a table-of-contents refresh decides from the two lists. Normalizes every
     /// title of both several times over; call it off the main thread.
     /// `mergePlan` on a detached utility task, with the stored list read there too.
-    private static func detachedMergePlan(
+    nonisolated private static func detachedMergePlan(
         existing: [OnlineChapterRef]?, chapterStore: BookChapterStore, bookId: UUID, refreshed: [OnlineChapterRef],
         originalChapterCount: Int, originalLatestTitle: String
     ) async -> MergePlan {
@@ -2413,7 +2414,7 @@ class BookStore: ObservableObject, BookProvider {
         }.value
     }
 
-    private static func mergePlan(
+    nonisolated private static func mergePlan(
         existing: [OnlineChapterRef],
         refreshed: [OnlineChapterRef],
         originalChapterCount: Int,
@@ -2439,7 +2440,7 @@ class BookStore: ObservableObject, BookProvider {
     /// Indices present in both lists whose chapter is no longer the same one (different
     /// URL or title), so a cached file under that index belongs to another chapter.
     /// Normalizes every title of both lists; call it off the main thread.
-    private static func changedChapterIdentities(
+    nonisolated private static func changedChapterIdentities(
         oldRefs: [OnlineChapterRef],
         newRefs: [OnlineChapterRef]
     ) -> Set<Int> {
@@ -2521,11 +2522,11 @@ class BookStore: ObservableObject, BookProvider {
 
     /// Book content files stay in Documents: they are the user's own files, and being
     /// visible in the Files app is the point.
-    private func documentsURL(for filename: String) -> URL {
+    nonisolated private func documentsURL(for filename: String) -> URL {
         StorageLocations.bookFile(filename)
     }
 
-    func localEPUBURL(for book: ReadingBook) -> URL {
+    nonisolated func localEPUBURL(for book: ReadingBook) -> URL {
         let epubFilename = book.contentFilename.hasSuffix(".epub")
             ? book.contentFilename
             : book.contentFilename.replacingOccurrences(of: "_epub.json", with: ".epub")
@@ -2534,7 +2535,7 @@ class BookStore: ObservableObject, BookProvider {
 
     /// The on-disk book file to hand to a share sheet (the EPUB/TXT itself), or nil for online books
     /// (no local file) and missing files.
-    func shareableFileURL(for book: ReadingBook) -> URL? {
+    nonisolated func shareableFileURL(for book: ReadingBook) -> URL? {
         guard !book.isOnline, !book.contentFilename.isEmpty else { return nil }
         // EPUB-derived records may store an `_epub.json` sidecar; share the real `.epub`.
         if book.contentFilename.hasSuffix(".epub") || book.contentFilename.hasSuffix("_epub.json") {
@@ -2593,7 +2594,7 @@ class BookStore: ObservableObject, BookProvider {
         fileprivate let readingData: Data
     }
 
-    private static let syncEncodingQueue = DispatchQueue(
+    nonisolated private static let syncEncodingQueue = DispatchQueue(
         label: "com.yuedu.library.sync-metadata", qos: .utility
     )
 
@@ -2632,7 +2633,7 @@ class BookStore: ObservableObject, BookProvider {
                             revision: mutationRevision)
     }
 
-    static func encodeSyncSnapshot(_ snapshot: SyncSnapshot) async throws -> EncodedSyncSnapshot {
+    nonisolated static func encodeSyncSnapshot(_ snapshot: SyncSnapshot) async throws -> EncodedSyncSnapshot {
         try await withCheckedThrowingContinuation { continuation in
             syncEncodingQueue.async {
                 dispatchPrecondition(condition: .notOnQueue(.main))
@@ -2648,7 +2649,7 @@ class BookStore: ObservableObject, BookProvider {
         }
     }
 
-    private static func encodeSyncSnapshotData(_ snapshot: SyncSnapshot) throws -> EncodedSyncSnapshot {
+    nonisolated private static func encodeSyncSnapshotData(_ snapshot: SyncSnapshot) throws -> EncodedSyncSnapshot {
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.sortedKeys]
         return try EncodedSyncSnapshot(snapshot: snapshot,
@@ -2758,7 +2759,7 @@ class BookStore: ObservableObject, BookProvider {
     /// Resumes once every write queued so far has landed, without blocking any thread. For
     /// code that reads the shelf files themselves (WebDAV backup, iCloud file upload): a save
     /// is queued, not finished, when it returns.
-    static func queuedWritesLanded() async {
+    nonisolated static func queuedWritesLanded() async {
         await withCheckedContinuation { continuation in
             persistQueue.async { continuation.resume() }
         }
@@ -2851,7 +2852,7 @@ class BookStore: ObservableObject, BookProvider {
     // foreground) still writes before it returns, on the same queue, so it lands after any
     // background write already in flight. legado writes its books and chapters through Room
     // on its IO dispatcher for the same reason.
-    private static let persistQueue = DispatchQueue(label: "com.yuedu.library.persist", qos: .utility)
+    nonisolated private static let persistQueue = DispatchQueue(label: "com.yuedu.library.persist", qos: .utility)
     /// Order of the writes handed to `persistQueue`; a write's bookkeeping is applied only if
     /// no later write's has been.
     private var persistSequence: UInt64 = 0
@@ -2860,9 +2861,22 @@ class BookStore: ObservableObject, BookProvider {
     /// What the two files last received from this store. Read and written on `persistQueue`
     /// only, so a write sees the one before it even while that one's main-thread bookkeeping
     /// is still queued; the main thread sets it when it reads or writes the files itself.
-    private final class PersistedFiles {
-        var shelfData: Data?
-        var readingData: Data?
+    /// The lock is never contended (every access is on that one serial queue); it is what
+    /// lets the compiler check that the queue's closures may share this object.
+    private final class PersistedFiles: Sendable {
+        private struct Contents {
+            var shelfData: Data?
+            var readingData: Data?
+        }
+        private let contents = OSAllocatedUnfairLock(initialState: Contents())
+        var shelfData: Data? {
+            get { contents.withLock { $0.shelfData } }
+            set { contents.withLock { $0.shelfData = newValue } }
+        }
+        var readingData: Data? {
+            get { contents.withLock { $0.readingData } }
+            set { contents.withLock { $0.readingData = newValue } }
+        }
     }
     private let persistedFiles = PersistedFiles()
 
@@ -2919,7 +2933,7 @@ class BookStore: ObservableObject, BookProvider {
     }
 
     /// Runs on `persistQueue`. Touches no store state beyond `chapterStore`, which has its own lock.
-    private func writeMetadata(_ input: MetadataWriteInput) -> MetadataWritten {
+    nonisolated private func writeMetadata(_ input: MetadataWriteInput) -> MetadataWritten {
         let shelfData: Data?
         let readingData: Data?
         switch input.payload {
@@ -2973,7 +2987,7 @@ class BookStore: ObservableObject, BookProvider {
         return written
     }
 
-    private static func file(_ url: URL, holds data: Data?) -> Bool {
+    nonisolated private static func file(_ url: URL, holds data: Data?) -> Bool {
         guard let data else { return !FileManager.default.fileExists(atPath: url.path) }
         return (try? Data(contentsOf: url)) == data
     }
@@ -3002,7 +3016,7 @@ class BookStore: ObservableObject, BookProvider {
         Self.persistQueue.async { files.readingData = data }
     }
 
-    private static func encodeShelf(_ books: [ReadingBook]) -> Data? {
+    nonisolated private static func encodeShelf(_ books: [ReadingBook]) -> Data? {
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.sortedKeys]
         return try? encoder.encode(books)
@@ -3111,10 +3125,14 @@ class BookStore: ObservableObject, BookProvider {
     /// 标签 (2026-10-17) have their file's header read again, once: an author is written only
     /// over the 未知作者 placeholder (one the reader typed stays), and 文案／标签 go beside the
     /// copy as an import's do. A copy still 未知作者 is read at every launch (its first 128 KB).
-    func rereadTXTHeaders() async {
+    /// The main actor only hands over the shelf (a copy-on-write copy) and, when a header
+    /// named an author, writes it back; the filtering, the files and the sidecars stay off
+    /// it (a 5000-book shelf's filter costs ~5 ms, too much for launch).
+    nonisolated func rereadTXTHeaders() async {
         let placeholder = "未知作者"
         let done = Set(UserDefaults.standard.stringArray(forKey: Self.txtHeadersReadKey) ?? [])
-        let candidates = records.filter {
+        let shelf = await MainActor.run { records }
+        let candidates = shelf.filter {
             $0.source == "local" && $0.resolvedPipelineKind == .txt
                 && ($0.author == placeholder || !done.contains($0.id.uuidString))
         }.map { (book: $0, url: documentsURL(for: $0.contentFilename)) }
@@ -3132,29 +3150,36 @@ class BookStore: ObservableObject, BookProvider {
             }
             return found
         }.value
-        var updated = records
-        var named = 0
-        for index in updated.indices {
-            guard let header = read[updated[index].id] else { continue }
-            if updated[index].author == placeholder, let author = header.author {
+        let authors = read.compactMapValues(\.author)
+        // Written against the shelf as it is now, not the copy read before the files were.
+        let named = authors.isEmpty ? 0 : await MainActor.run { () -> Int in
+            var updated = records
+            var named = 0
+            for index in updated.indices {
+                guard updated[index].author == placeholder, let author = authors[updated[index].id] else { continue }
                 updated[index].author = author
                 named += 1
             }
-            if !done.contains(updated[index].id.uuidString), let captured = ImportedMetadataCapture.txt(copy: updated[index], metadata: header) {
-                // Only what the sidecar has none of: a value filled or typed since stays.
-                let existing = Set(importedMetadata.read(copyID: updated[index].id)?.values.map(\.field) ?? [])
-                let fresh = captured.values.filter { !existing.contains($0.field) }
-                if !fresh.isEmpty {
-                    importedMetadata.write(ImportedMetadata(copyID: captured.copyID, sourceItem: captured.sourceItem,
-                                                            identifiers: [], values: fresh))
-                }
+            if named > 0 {
+                records = updated
+                saveMeta()
+            }
+            return named
+        }
+        for candidate in candidates where !done.contains(candidate.book.id.uuidString) {
+            guard let header = read[candidate.book.id] else { continue }
+            var book = candidate.book
+            if book.author == placeholder, let author = header.author { book.author = author }
+            guard let captured = ImportedMetadataCapture.txt(copy: book, metadata: header) else { continue }
+            // Only what the sidecar has none of: a value filled or typed since stays.
+            let existing = Set(importedMetadata.read(copyID: book.id)?.values.map(\.field) ?? [])
+            let fresh = captured.values.filter { !existing.contains($0.field) }
+            if !fresh.isEmpty {
+                importedMetadata.write(ImportedMetadata(copyID: captured.copyID, sourceItem: captured.sourceItem,
+                                                        identifiers: [], values: fresh))
             }
         }
         UserDefaults.standard.set(Array(done.union(read.keys.map(\.uuidString))), forKey: Self.txtHeadersReadKey)
-        if named > 0 {
-            records = updated
-            saveMeta()
-        }
         AppLogger.info("TXT headers read again: \(read.count) book(s), \(named) named their author")
     }
 
@@ -3293,7 +3318,7 @@ class BookStore: ObservableObject, BookProvider {
     /// Cleans the chapter URLs of lists read from inside a shelf file: replaces URLs
     /// containing HTML markup with sanitized href values. Lists written by `chapterStore`
     /// passed through here on their way out of the shelf, or came from a current parser.
-    private static func sanitizingInlineChapterURLs(_ books: [ReadingBook]) -> [ReadingBook] {
+    nonisolated private static func sanitizingInlineChapterURLs(_ books: [ReadingBook]) -> [ReadingBook] {
         books.map { book in
             guard book.isOnline, var chapters = book.onlineChapters else { return book }
             var bookChanged = false
@@ -3312,11 +3337,11 @@ class BookStore: ObservableObject, BookProvider {
         }
     }
 
-    private static func normalizedOnlineValue(_ value: String?) -> String {
+    nonisolated private static func normalizedOnlineValue(_ value: String?) -> String {
         value?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
     }
 
-    private func normalizedOnlineValue(_ value: String?) -> String {
+    nonisolated private func normalizedOnlineValue(_ value: String?) -> String {
         Self.normalizedOnlineValue(value)
     }
 
@@ -3328,7 +3353,7 @@ class BookStore: ObservableObject, BookProvider {
     ///   then reads the short list as "these chapters are gone". The final commit passes
     ///   false, because by then the refreshed list is the whole thing and a genuine deletion
     ///   upstream should be reflected.
-    private static func mergeOnlineChapters(
+    nonisolated private static func mergeOnlineChapters(
         existing: [OnlineChapterRef],
         refreshed: [OnlineChapterRef],
         preservingExistingTail: Bool = false
@@ -3360,7 +3385,7 @@ class BookStore: ObservableObject, BookProvider {
         return merged
     }
 
-    private static func chapterListChanged(
+    nonisolated private static func chapterListChanged(
         existing: [OnlineChapterRef],
         refreshed: [OnlineChapterRef]
     ) -> Bool {
@@ -3373,7 +3398,7 @@ class BookStore: ObservableObject, BookProvider {
         return false
     }
 
-    private static func normalizeChapterTitle(_ title: String) -> String {
+    nonisolated private static func normalizeChapterTitle(_ title: String) -> String {
         ReaderHTMLUtilities.compactTitle(title)
     }
 }

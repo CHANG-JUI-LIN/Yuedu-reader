@@ -374,7 +374,7 @@ private enum DownloadManagementPreview {
 
     private static let chapterCount = 120
 
-    static let store: BookStore = {
+    @MainActor static let store: BookStore = {
         let store = BookStore(
             metadataFileURL: FileManager.default.temporaryDirectory
                 .appendingPathComponent("download_management_preview_meta.json")

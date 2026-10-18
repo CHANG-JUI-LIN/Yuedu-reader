@@ -18,7 +18,7 @@ import os
 ///
 /// A changed list is written by the next shelf save (`flush`), so a run of chapter-cache
 /// marks costs one write of that one book.
-final class BookChapterStore {
+final class BookChapterStore: Sendable {
     private struct Entry {
         /// `nil`: the book has no list.
         var chapters: [OnlineChapterRef]?

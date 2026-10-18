@@ -2017,7 +2017,7 @@ struct yuedu_appTests {
         BookSourceFetcher.shared.clearAllChapterCache(bookId: stale.id)
     }
 
-    @Test func refreshOnlineBookMetadataPersistsFirstTOCPageBeforeFullFetchCompletes() async throws {
+    @Test @MainActor func refreshOnlineBookMetadataPersistsFirstTOCPageBeforeFullFetchCompletes() async throws {
         let source = BookSource(bookSourceUrl: "https://example.com", bookSourceName: "測試書源")
         let previousSources = BookSourceStore.shared.sources
         BookSourceStore.shared.sources = [source]

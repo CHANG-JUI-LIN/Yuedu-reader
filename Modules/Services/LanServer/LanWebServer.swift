@@ -5,7 +5,8 @@ import Combine
 /// Provides a read-only snapshot of the user's book list.
 /// `LanWebServer` depends only on this protocol, keeping it independent of
 /// the concrete `BookStore` class and its persistence implementation.
-protocol BookProvider {
+@MainActor
+protocol BookProvider: Sendable {
     var books: [ReadingBook] { get }
 }
 
@@ -241,6 +242,16 @@ class LanWebServer: ObservableObject {
 
     // MARK: - Request routing
 
+    /// The shelf belongs to the main actor; requests are handled on the listener's queue,
+    /// which the main thread never waits on, so taking a snapshot there cannot deadlock.
+    private func shelfBooks() -> [ReadingBook] {
+        dispatchPrecondition(condition: .notOnQueue(.main))
+        guard let provider = bookProvider else { return [] }
+        return DispatchQueue.main.sync {
+            MainActor.assumeIsolated { provider.books }
+        }
+    }
+
     private func handleRequest(method: String, path: String, body: Data?) -> (status: Int, contentType: String, body: Data) {
         let jsonType = "application/json; charset=utf-8"
         let encoder = JSONEncoder()
@@ -253,7 +264,7 @@ class LanWebServer: ObservableObject {
 
         // GET / — book list
         if method == "GET" && path == "/" {
-            let books = bookProvider?.books ?? []
+            let books = shelfBooks()
             let dtos = books.map { BookDTO(book: $0) }
             let data = (try? encoder.encode(dtos)) ?? Data("[]".utf8)
             return (200, jsonType, data)
@@ -263,7 +274,7 @@ class LanWebServer: ObservableObject {
         if method == "GET" && path.hasPrefix("/book/") {
             let idStr = String(path.dropFirst("/book/".count))
             if let uuid = UUID(uuidString: idStr),
-               let book = bookProvider?.books.first(where: { $0.id == uuid }) {
+               let book = shelfBooks().first(where: { $0.id == uuid }) {
                 let dto = BookDetailDTO(book: book)
                 let data = (try? encoder.encode(dto)) ?? Data("{}".utf8)
                 return (200, jsonType, data)

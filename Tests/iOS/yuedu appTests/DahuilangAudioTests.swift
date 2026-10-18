@@ -83,6 +83,7 @@ struct DahuilangAudioTests {
     // MARK: - BookStore 建立與升級
 
     @Test("addOnlineBook with 听书 data URL sets pipeline to audio")
+    @MainActor
     func addOnlineBookSetsAudioPipeline() throws {
         let source = BookSource(bookSourceUrl: "https://example.com", bookSourceName: "大灰狼聚合")
         let previousSources = BookSourceStore.shared.sources
@@ -118,6 +119,7 @@ struct DahuilangAudioTests {
     }
 
     @Test("upgradeToAudioIfDetected promotes html book on audio content")
+    @MainActor
     func upgradeToAudioIfDetectedPromotes() throws {
         let metadataURL = FileManager.default.temporaryDirectory
             .appendingPathComponent("books-\(UUID().uuidString).json")
@@ -140,6 +142,7 @@ struct DahuilangAudioTests {
     }
 
     @Test("upgradeToAudioIfDetected does not promote prose content")
+    @MainActor
     func upgradeToAudioIfDetectedRejectsProse() throws {
         let metadataURL = FileManager.default.temporaryDirectory
             .appendingPathComponent("books-\(UUID().uuidString).json")

@@ -421,7 +421,7 @@ private enum ReaderDownloadPreview {
         .completed: makeBook(title: "全職高手", state: .available, completed: chapterCount),
     ]
 
-    static let store: BookStore = {
+    @MainActor static let store: BookStore = {
         let store = BookStore(
             metadataFileURL: FileManager.default.temporaryDirectory
                 .appendingPathComponent("reader_download_preview_meta.json")

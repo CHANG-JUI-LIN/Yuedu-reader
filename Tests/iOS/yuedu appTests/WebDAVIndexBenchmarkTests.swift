@@ -36,6 +36,7 @@ struct WebDAVIndexBenchmarkTests {
             try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
             defer { try? FileManager.default.removeItem(at: folder) }
             let store = BookStore(metadataFileURL: folder.appendingPathComponent("books_meta.json"))
+            let remoteRecords = store.remoteRecords
             let folders = FolderCounter()
             let saves = FolderCounter()
             var limits = WebDAVIndexLimits.standard
@@ -44,7 +45,7 @@ struct WebDAVIndexBenchmarkTests {
             let indexer = WebDAVIndexer(
                 connectionID: name, root: root, limits: limits,
                 list: { url in folders.increment(); return try await client.list(url) },
-                save: { saves.increment(); store.remoteRecords.save($0) },
+                save: { saves.increment(); remoteRecords.save($0) },
                 now: { Date() }
             )
             var start = clock.now

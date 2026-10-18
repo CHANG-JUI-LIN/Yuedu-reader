@@ -50,16 +50,20 @@ enum SourcePerfTrace {
         return try body()
     }
 
-    /// Measure an async span.
+    /// Measure an async span. Runs in the caller's isolation, so `body` stays in the
+    /// caller's region and is never sent to another executor.
     @discardableResult
     static func spanAsync<T>(
         _ stage: String,
         _ detail: @autoclosure () -> String = "",
         thresholdMs: Double = 1,
+        isolation: isolated (any Actor)? = #isolation,
         _ body: () async throws -> T
     ) async rethrows -> T {
         let t0 = ProcessInfo.processInfo.systemUptime
-        defer { record(stage, detail(), since: t0, thresholdMs: thresholdMs) }
+        // An async span suspends rather than blocking whichever thread records it, so it is
+        // never a main-thread stall and leaves no breadcrumb.
+        defer { record(stage, detail(), since: t0, thresholdMs: thresholdMs, mainThreadStallBreadcrumb: false) }
         return try await body()
     }
 
@@ -68,7 +72,8 @@ enum SourcePerfTrace {
         _ stage: String,
         _ detail: String = "",
         since t0: TimeInterval,
-        thresholdMs: Double = 1
+        thresholdMs: Double = 1,
+        mainThreadStallBreadcrumb: Bool = true
     ) {
         let ms = (ProcessInfo.processInfo.systemUptime - t0) * 1000
         guard ms >= thresholdMs else { return }
@@ -76,7 +81,7 @@ enum SourcePerfTrace {
         AppLogger.parse(line)
         // Long enough to be felt on the main thread: also into the Crashlytics log, so the
         // next hang, watchdog or crash report from this session carries it.
-        if ms >= mainThreadBreadcrumbMs, Thread.isMainThread {
+        if mainThreadStallBreadcrumb, ms >= mainThreadBreadcrumbMs, Thread.isMainThread {
             CrashContext.breadcrumb("main \(line)")
         }
     }

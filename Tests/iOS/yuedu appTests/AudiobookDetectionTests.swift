@@ -339,6 +339,7 @@ struct AudiobookDetectionTests {
     }
 
     @Test("book store creates aggregate listening result as audio")
+    @MainActor
     func bookStoreCreatesAggregateListeningResultAsAudio() throws {
         let source = BookSource(bookSourceUrl: "https://example.com", bookSourceName: "聚合")
         let previousSources = BookSourceStore.shared.sources
@@ -366,6 +367,7 @@ struct AudiobookDetectionTests {
     }
 
     @Test("updating aggregate audiobook chapters refreshes runtime state")
+    @MainActor
     func updatingAggregateAudiobookChaptersRefreshesRuntimeState() throws {
         let source = BookSource(bookSourceUrl: "https://example.com", bookSourceName: "聚合")
         let previousSources = BookSourceStore.shared.sources

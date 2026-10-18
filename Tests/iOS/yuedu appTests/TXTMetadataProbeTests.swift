@@ -231,6 +231,7 @@ struct TXTMetadataProbeTests {
     }
 
     @Test("BookStore imports the original TXT and inferred metadata")
+    @MainActor
     func bookStoreImportsOriginalTXTAndMetadata() async throws {
         let sourceData = Data("書名：邊城\n作者：沈從文\n\n第一章\n原始內容保持不變。".utf8)
         let sourceURL = try writeTemporaryTXT(sourceData)
@@ -289,6 +290,7 @@ struct TXTMetadataProbeTests {
     }
 
     @Test("BookStore keeps GB18030 bytes while decoded content remains readable")
+    @MainActor
     func bookStoreKeepsGB18030BytesAndReadableContent() async throws {
         let text = "书名：活着\n作者：余华\n\n第一章\n原始内容保持不变。"
         let sourceData = try #require(text.data(using: TXTFileReader.gb18030Encoding))

@@ -10,6 +10,7 @@ import Testing
 /// twice per chapter.
 @Suite("BookStore publishes once per background change", .serialized)
 struct BookStoreBackgroundPublishTests {
+    @MainActor
     private func makeStore() -> (store: BookStore, directory: URL) {
         let directory = FileManager.default.temporaryDirectory
             .appendingPathComponent("BookStoreBackgroundPublishTests-\(UUID().uuidString)", isDirectory: true)
@@ -51,7 +52,7 @@ struct BookStoreBackgroundPublishTests {
         await MainActor.run { BookSourceStore.shared.sources = [source] }
         defer { Task { @MainActor in BookSourceStore.shared.sources = previousSources } }
 
-        let (store, directory) = makeStore()
+        let (store, directory) = await makeStore()
         defer { try? FileManager.default.removeItem(at: directory) }
         let existing = chapters(3)
         let book = await MainActor.run {
@@ -99,7 +100,7 @@ struct BookStoreBackgroundPublishTests {
         await MainActor.run { BookSourceStore.shared.sources = [source] }
         defer { Task { @MainActor in BookSourceStore.shared.sources = previousSources } }
 
-        let (store, directory) = makeStore()
+        let (store, directory) = await makeStore()
         defer { try? FileManager.default.removeItem(at: directory) }
         let book = await MainActor.run {
             store.addOnlineBook(

@@ -31,7 +31,7 @@ enum FixedLayoutEPUBPageProviderError: LocalizedError {
 
 @MainActor
 enum FixedLayoutEPUBPageProvider {
-    static func chapterRefs(from session: PublicationSession) -> [OnlineChapterRef] {
+    nonisolated static func chapterRefs(from session: PublicationSession) -> [OnlineChapterRef] {
         session.chapters.map { descriptor in
             let title = descriptor.title.trimmingCharacters(in: .whitespacesAndNewlines)
             return OnlineChapterRef(
