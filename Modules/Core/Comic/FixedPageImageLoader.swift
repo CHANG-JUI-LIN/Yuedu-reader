@@ -3,8 +3,9 @@ import Nuke
 
 // MARK: - Fixed page image loading
 //
-// Dispatches fixed-page render sources. Image archive pages use Nuke's shared
-// pipeline; fixed-layout EPUB and PDF pages are rasterized on demand.
+// Dispatches fixed-page render sources. Image pages — remote, downloaded, or an entry of
+// a local comic archive — use Nuke's shared pipeline; fixed-layout EPUB and PDF pages are
+// rasterized on demand.
 
 enum FixedPageImageLoader {
 
@@ -21,17 +22,28 @@ enum FixedPageImageLoader {
 
     /// Build a Nuke request for a page: headered URLRequest + resize-to-width + optional border crop.
     static func request(for page: FixedPage, targetWidth: CGFloat, cropBorders: Bool = false) -> ImageRequest {
-        let resolved = page.localURL ?? URL(string: page.imageURL)
-        var urlRequest = URLRequest(url: resolved ?? URL(fileURLWithPath: "/dev/null"))
-        if page.localURL == nil {
-            for (key, value) in page.headers { urlRequest.setValue(value, forHTTPHeaderField: key) }
-        }
         var processors: [any ImageProcessing] = []
         if cropBorders {
             processors.append(FixedPageCropBordersProcessor())
         }
         if targetWidth > 0 {
             processors.append(ImageProcessors.Resize(width: targetWidth, unit: .points, upscale: false))
+        }
+        if case .archiveImage(let sourceFilename, let entryPath) = page.renderSource {
+            // A local comic page is read out of its archive on demand, one entry, through
+            // the reader's open archive. The shared pipeline has no data cache, so the
+            // decoded page lives only in Nuke's memory cache, under this id.
+            let archiveURL = LocalMangaArchive.archiveURL(for: sourceFilename)
+            return ImageRequest(
+                id: "local-comic:" + sourceFilename + "#" + entryPath,
+                data: { try await LocalMangaArchiveReader.shared.data(entryPath: entryPath, in: archiveURL) },
+                processors: processors
+            )
+        }
+        let resolved = page.localURL ?? URL(string: page.imageURL)
+        var urlRequest = URLRequest(url: resolved ?? URL(fileURLWithPath: "/dev/null"))
+        if page.localURL == nil {
+            for (key, value) in page.headers { urlRequest.setValue(value, forHTTPHeaderField: key) }
         }
         guard let decoder = page.imageDecoder else {
             return ImageRequest(urlRequest: urlRequest, processors: processors)
@@ -92,7 +104,7 @@ enum FixedPageImageLoader {
                 scale: renderScale ?? defaultRenderScale,
                 cropBorders: cropBorders
             )
-        case .image:
+        case .image, .archiveImage:
             do {
                 baseImage = try await ImagePipeline.shared.image(
                     for: request(for: page, targetWidth: targetWidth, cropBorders: cropBorders)
@@ -120,10 +132,14 @@ enum FixedPageImageLoader {
         return image
     }
 
-    /// Where a page's image comes from, for the log: the file name of a downloaded page,
+    /// Where a page's image comes from, for the log: archive and entry name of a local
+    /// comic page, the file name of a downloaded page,
     /// or host and last path component of a remote one — CDN query strings often carry
     /// signed tokens.
     static func diagnosticName(for page: FixedPage) -> String {
+        if case .archiveImage(let sourceFilename, let entryPath) = page.renderSource {
+            return "\(sourceFilename)#\((entryPath as NSString).lastPathComponent)"
+        }
         if let localURL = page.localURL { return localURL.lastPathComponent }
         guard let url = URL(string: page.imageURL) else { return "unparseable-url" }
         return "\(url.host ?? "")/\(url.lastPathComponent)"
@@ -138,7 +154,7 @@ enum FixedPageImageLoader {
         var rasterizedPages: [FixedPage] = []
         for page in pages {
             switch page.renderSource {
-            case .image:
+            case .image, .archiveImage:
                 imageRequests.append(request(for: page, targetWidth: targetWidth, cropBorders: cropBorders))
             case .pdf, .fixedLayoutEPUB:
                 rasterizedPages.append(page)

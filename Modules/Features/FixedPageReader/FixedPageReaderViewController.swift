@@ -425,16 +425,14 @@ final class FixedPageReaderViewController: UIViewController, FixedPageReaderCont
             do {
                 let chapterURL = self.chapters[index].url
                 let archiveFilename = chapterURL.isEmpty ? self.book.contentFilename : chapterURL
+                // Every page is an entry read straight from the archive; nothing is extracted.
+                let pages = try await LocalMangaArchive.pages(archiveFilename: archiveFilename)
+                // The archive opened and listed its pages, so a copy an older build
+                // extracted at import is dead weight: dropped once, off the main thread.
+                let bookId = self.book.id
                 let archiveURL = LocalMangaArchive.archiveURL(for: archiveFilename)
-                var pages = LocalMangaArchive.pagesForExtractedChapter(
-                    bookId: self.book.id,
-                    chapterIndex: index
-                )
-                if pages.isEmpty {
-                    pages = try await LocalMangaArchive.extractPages(
-                        from: archiveURL,
-                        to: LocalMangaArchive.chapterDirectory(bookId: self.book.id, chapterIndex: index)
-                    )
+                Task.detached(priority: .utility) {
+                    await LocalMangaArchive.discardLegacyExtractedPages(bookId: bookId, archiveURL: archiveURL)
                 }
                 guard self.loadToken == token else { return }
                 self.state.isLoading = false
@@ -442,8 +440,13 @@ final class FixedPageReaderViewController: UIViewController, FixedPageReaderCont
                     self.state.errorMessage = localized("未找到圖片")
                     return
                 }
+                let resolvedStart = max(0, min(startPage, pages.count - 1))
+                // Held like an online chapter's, so page moves keep prefetching the
+                // next entries out of the archive ahead of the reader.
+                self.currentPages = pages
                 self.heldChapters.reset(to: index, pageCount: pages.count)
-                self.reader?.setPages(pages, startPage: max(0, min(startPage, pages.count - 1)))
+                self.reader?.setPages(pages, startPage: resolvedStart)
+                self.prefetchCurrentChapterPages(pages: pages, currentPage: resolvedStart)
             } catch {
                 guard self.loadToken == token else { return }
                 self.state.isLoading = false

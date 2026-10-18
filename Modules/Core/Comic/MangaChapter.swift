@@ -2,13 +2,26 @@ import Foundation
 
 // MARK: - Fixed page model
 //
-// A fixed-page chapter can come from image URLs, extracted archive files, or a
-// renderer-backed source such as fixed-layout EPUB or a local PDF.
+// A fixed-page chapter can come from image URLs (remote or downloaded), entries of a
+// local comic archive, or a renderer-backed source such as fixed-layout EPUB or a local PDF.
 
 enum FixedPageRenderSource: Equatable {
     case image
+    /// One image entry of a local comic archive (`.cbz` / `.zip` in Documents), read
+    /// straight from the archive — see `LocalMangaArchiveReader`.
+    case archiveImage(sourceFilename: String, entryPath: String)
     case fixedLayoutEPUB(sourceFilename: String, chapterIndex: Int)
     case pdf(sourceFilename: String, pageIndex: Int)
+
+    /// Whether the page is drawn by our own renderer (PDF, fixed-layout EPUB) and so has
+    /// detail beyond any single render. An image page — remote, downloaded or from an
+    /// archive — is only its own pixels.
+    var isRasterizedOnDemand: Bool {
+        switch self {
+        case .pdf, .fixedLayoutEPUB: return true
+        case .image, .archiveImage: return false
+        }
+    }
 }
 
 struct FixedPage: Identifiable, Equatable {

@@ -174,7 +174,7 @@ final class FixedPagePageViewController: UIViewController {
     /// scale, and go back to the 1x render once zoomed out. An image page has no detail
     /// beyond its own pixels, so it stays put.
     func refineImage(forZoomScale zoomScale: CGFloat) {
-        guard page.renderSource != .image, targetWidth > 0, baseImage != nil else { return }
+        guard page.renderSource.isRasterizedOnDemand, targetWidth > 0, baseImage != nil else { return }
 
         if zoomScale <= 1.05 {
             refineTask?.cancel()

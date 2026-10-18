@@ -473,15 +473,11 @@ class BookStore: @MainActor ObservableObject, BookProvider {
         let filename = "\(uuid).\(ext)"
         let destURL = documentsURL(for: filename)
         var coverFilename: String?
-        var book: ReadingBook?
 
         func cleanupImportedFiles() {
             try? FileManager.default.removeItem(at: destURL)
             if let coverFilename {
                 try? FileManager.default.removeItem(at: StorageLocations.coverFile(coverFilename))
-            }
-            if let book {
-                try? FileManager.default.removeItem(at: LocalMangaArchive.bookDirectory(bookId: book.id))
             }
         }
 
@@ -517,12 +513,7 @@ class BookStore: @MainActor ObservableObject, BookProvider {
                 OnlineChapterRef(index: 0, title: info.chapterTitle, url: filename)
             ]
             imported.coverImagePath = coverFilename
-            book = imported
-
-            _ = try await LocalMangaArchive.extractPages(
-                from: destURL,
-                to: LocalMangaArchive.chapterDirectory(bookId: imported.id, chapterIndex: 0)
-            )
+            // Pages are read straight from the archive copied above; nothing is extracted.
 
             let importedBook = imported
             await MainActor.run {
@@ -1498,11 +1489,8 @@ class BookStore: @MainActor ObservableObject, BookProvider {
                     }
                 }
                 if book.resolvedPipelineKind == .manga || book.resolvedPipelineKind == .fixedPage {
-                    do {
-                        try FileManager.default.removeItem(at: LocalMangaArchive.bookDirectory(bookId: book.id))
-                    } catch {
-                        AppLogger.cache("Failed to remove local manga directory for \(book.id): \(error)")
-                    }
+                    // Pages extracted at import by builds up to 2.0.7, if this book has any.
+                    LocalMangaArchive.removeLegacyExtractedPages(bookId: book.id)
                 }
                 TXTChapterParser.deleteCachedIndexes(bookId: bookId)
                 // Also delete EPUB font resource directory
