@@ -285,7 +285,18 @@ struct WorkDetailView: View {
             guard current == nil, let previous, let id = readCopyID(previous) else { return }
             shelvePrompt = ReaderShelvePrompt.copy(id, in: store)
         }
-        .readerShelvePrompt($shelvePrompt, onAdd: { _ = store.addReadingBookToShelf(id: $0.id) })
+        // A source copy whose work is already on the shelf joins that book (one book per work,
+        // `ShelfWorkService.shelveReadCopy`); every other copy just goes on the shelf.
+        .readerShelvePrompt($shelvePrompt, onAdd: { [store, dependencies] book in
+            Task { @MainActor in
+                do {
+                    _ = try await ShelfWorkService(store: store, dependencies: dependencies).shelveReadCopy(id: book.id)
+                } catch {
+                    AppLogger.error("⟐ shelf: the read copy could not join its work's shelf book", error: error,
+                                    context: ["book": book.id.uuidString])
+                }
+            }
+        })
         .sheet(isPresented: $showChapterList, onDismiss: {
             guard let chapter = pendingChapter else { return }
             pendingChapter = nil

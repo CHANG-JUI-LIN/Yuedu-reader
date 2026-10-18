@@ -600,11 +600,7 @@ class SearchAggregator: ObservableObject {
                 .map { ($0.id, $0) }
         )
 
-        let autoPauseCount = NetworkSearchSettings.effectiveAutoPauseCount(
-            configured: GlobalSettings.shared.searchAutoPauseCount,
-            sourceCount: activeSources.count
-        )
-        autoPausePolicy = SearchAutoPausePolicy(count: autoPauseCount)
+        autoPausePolicy = .configured
 
         searchGeneration += 1
         firstResultTrace = (

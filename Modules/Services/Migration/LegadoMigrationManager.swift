@@ -76,15 +76,24 @@ class LegadoMigrationManager: ObservableObject {
                 }
 
                 if let source = matchedSource, !bookDetailURL.isEmpty {
-                    _ = bookStore.addOnlineBook(
-                        name: title,
-                        author: author,
-                        sourceId: source.id,
-                        bookInfoURL: bookDetailURL,
-                        tocURL: nil,
-                        runtimeVariables: nil,
-                        chapters: []
+                    // One book per work: a work already on the shelf (from any source) is
+                    // skipped rather than added a second time; there is no table of contents
+                    // here to switch the shelf book to.
+                    let added = ShelfWorkService(store: bookStore, dependencies: .live).addWithoutNetwork(
+                        ShelfWorkService.OnlineCopy(
+                            name: title,
+                            author: author,
+                            sourceId: source.id,
+                            bookInfoURL: bookDetailURL,
+                            tocURL: nil,
+                            runtimeVariables: nil,
+                            chapters: []
+                        )
                     )
+                    if added == nil {
+                        appendLog("[SKIP] \(title): already on the bookshelf")
+                        continue
+                    }
                 } else {
                     // Use a stable placeholder URL when no real URL is available so
                     // the book doesn't end up with an empty source string.

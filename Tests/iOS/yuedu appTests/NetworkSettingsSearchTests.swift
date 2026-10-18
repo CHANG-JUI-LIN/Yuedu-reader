@@ -85,20 +85,13 @@ struct NetworkSettingsSearchTests {
         #expect(policy.shouldPause(exactCount: 0, fuzzyCount: 10))
     }
 
-    @Test("large source packs get a safety auto pause when unset")
-    func largeSourcePackSafetyAutoPause() {
-        #expect(NetworkSearchSettings.effectiveAutoPauseCount(
-            configured: 0,
-            sourceCount: NetworkSearchSettings.largeSourcePackThreshold - 1
-        ) == 0)
-        #expect(NetworkSearchSettings.effectiveAutoPauseCount(
-            configured: 0,
-            sourceCount: NetworkSearchSettings.largeSourcePackThreshold
-        ) == NetworkSearchSettings.largeSourcePackAutoPauseCount)
-        #expect(NetworkSearchSettings.effectiveAutoPauseCount(
-            configured: 3,
-            sourceCount: 1607
-        ) == 3)
+    @Test("auto pause 0 never pauses, however many sources there are (feedback #16)")
+    func zeroAutoPauseNeverPauses() {
+        // Until 2026-10-18 a hidden override turned 0 into 10 once 300+ sources were enabled.
+        let policy = SearchAutoPausePolicy(count: 0)
+        #expect(!policy.isEnabled)
+        #expect(!policy.shouldPause(exactCount: 10, fuzzyCount: 50))
+        #expect(!policy.shouldPause(exactCount: 1559, fuzzyCount: 1559))
     }
 
     @Test("runtime template search sources get aggregate timeout budget")
@@ -153,6 +146,116 @@ struct NetworkSettingsSearchTests {
 
         #expect(viewModel.changeSourceOrigins.count == 1)
         #expect(fetcher.searchCallCount == 1)
+    }
+
+    @MainActor
+    @Test("change source with auto pause 0 searches all 500 sources and caches the list as complete")
+    func changeSourceZeroAutoPauseSearchesEverySource() async throws {
+        let previousConcurrency = GlobalSettings.shared.searchConcurrency
+        let previousAutoPauseCount = GlobalSettings.shared.searchAutoPauseCount
+        let previousCacheDays = GlobalSettings.shared.searchCacheDays
+        var book = ReadingBook(title: "Feedback16", author: "Author", contentFilename: "")
+        book.isOnline = true
+        book.bookInfoURL = "https://example.com/current"
+        let bookId = book.id
+        defer {
+            GlobalSettings.shared.searchConcurrency = previousConcurrency
+            GlobalSettings.shared.searchAutoPauseCount = previousAutoPauseCount
+            GlobalSettings.shared.searchCacheDays = previousCacheDays
+            ChangeSourceCache.shared.clear(for: bookId)
+        }
+        GlobalSettings.shared.searchConcurrency = 30
+        GlobalSettings.shared.searchAutoPauseCount = 0
+        GlobalSettings.shared.searchCacheDays = 5
+
+        let sources = (0..<500).map { makeSource(name: "S\($0)", url: "https://feedback16-\($0).test") }
+        let fetcher = CountingBookSourceFetcher()
+        let viewModel = ReaderViewModel(
+            chapterFetcher: NoopChapterFetcher(),
+            bookCoordinator: NoopOnlineBookCoordinator(),
+            bookSourceFetcher: fetcher
+        )
+
+        viewModel.loadOtherOrigins(
+            book: book,
+            currentSourceId: UUID(),
+            enabledSources: sources,
+            store: BookStore(),
+            forceRefresh: true
+        )
+        try await waitUntil(timeout: 60) { !viewModel.changeSourceLoading }
+
+        #expect(fetcher.searchCallCount == 500)
+        #expect(viewModel.changeSourceOrigins.count == 500)
+        let entry = try #require(ChangeSourceCache.shared.entry(for: bookId))
+        #expect(entry.isComplete == true)
+        #expect(entry.origins.count == 500)
+        #expect(ChangeSourceCache.shared.freshEntry(for: bookId, days: 5)?.origins.count == 500)
+    }
+
+    @MainActor
+    @Test("a change source search cut short by auto pause is not cached as the complete list")
+    func pausedChangeSourceIsNotCachedAsComplete() async throws {
+        let previousConcurrency = GlobalSettings.shared.searchConcurrency
+        let previousAutoPauseCount = GlobalSettings.shared.searchAutoPauseCount
+        let previousCacheDays = GlobalSettings.shared.searchCacheDays
+        var book = ReadingBook(title: "Feedback16Paused", author: "Author", contentFilename: "")
+        book.isOnline = true
+        book.bookInfoURL = "https://example.com/current"
+        let bookId = book.id
+        defer {
+            GlobalSettings.shared.searchConcurrency = previousConcurrency
+            GlobalSettings.shared.searchAutoPauseCount = previousAutoPauseCount
+            GlobalSettings.shared.searchCacheDays = previousCacheDays
+            ChangeSourceCache.shared.clear(for: bookId)
+        }
+        GlobalSettings.shared.searchConcurrency = 1
+        GlobalSettings.shared.searchAutoPauseCount = 1
+        GlobalSettings.shared.searchCacheDays = 5
+
+        let sources = (0..<3).map { makeSource(name: "P\($0)", url: "https://feedback16-paused-\($0).test") }
+        let fetcher = CountingBookSourceFetcher()
+        let viewModel = ReaderViewModel(
+            chapterFetcher: NoopChapterFetcher(),
+            bookCoordinator: NoopOnlineBookCoordinator(),
+            bookSourceFetcher: fetcher
+        )
+
+        viewModel.loadOtherOrigins(
+            book: book,
+            currentSourceId: UUID(),
+            enabledSources: sources,
+            store: BookStore(),
+            forceRefresh: true
+        )
+        try await waitUntil { !viewModel.changeSourceLoading }
+
+        #expect(viewModel.changeSourceOrigins.count == 1)
+        let entry = try #require(ChangeSourceCache.shared.entry(for: bookId))
+        #expect(entry.isComplete == false)
+        // Reopening the sheet searches again instead of serving one result as everything.
+        #expect(ChangeSourceCache.shared.freshEntry(for: bookId, days: 5) == nil)
+    }
+
+    @Test("a cache entry written before isComplete existed is not served as fresh")
+    func legacyCacheEntryIsNotFresh() throws {
+        let bookId = UUID()
+        defer { ChangeSourceCache.shared.clear(for: bookId) }
+        let origin = BookOrigin(
+            sourceId: UUID(), sourceName: "Legacy", bookUrl: "https://legacy.test/book",
+            tocUrl: "", coverUrl: "", intro: "", lastChapter: "", wordCount: "", kind: "",
+            runtimeVariables: nil
+        )
+        ChangeSourceCache.shared.store(origins: [origin], for: bookId)
+        #expect(ChangeSourceCache.shared.freshEntry(for: bookId, days: 5) != nil)
+        // The same entry as builds before 2026-10-18 wrote it: no isComplete key.
+        let caches = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0]
+        let url = caches.appendingPathComponent("ChangeSourceCache/\(bookId.uuidString).json")
+        var json = try #require(JSONSerialization.jsonObject(with: Data(contentsOf: url)) as? [String: Any])
+        json.removeValue(forKey: "isComplete")
+        try JSONSerialization.data(withJSONObject: json).write(to: url, options: .atomic)
+        #expect(ChangeSourceCache.shared.entry(for: bookId) != nil)
+        #expect(ChangeSourceCache.shared.freshEntry(for: bookId, days: 5) == nil)
     }
 
     @MainActor

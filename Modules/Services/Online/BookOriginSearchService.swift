@@ -13,6 +13,15 @@ import Foundation
 @MainActor
 enum BookOriginSearchService {
 
+    /// How a fan-out ended. Only `.completed` saw every source: a result cut short by
+    /// `shouldStop` (搜索自動暫停) or by cancellation is partial and must not be cached as
+    /// the book's full origin list (feedback #16: a 10-result pause was reused for 5 days).
+    enum Outcome: Equatable {
+        case completed
+        case stopped
+        case cancelled
+    }
+
     /// Runs the fan-out until every source has answered, `shouldStop` reports that
     /// enough matches are in (搜索自動暫停), or the surrounding task is cancelled.
     ///
@@ -29,6 +38,7 @@ enum BookOriginSearchService {
     ///   - onBatch: one source's matches, already deduped, on the main actor.
     ///   - onSourceAnswered: called for each source that answered within its time, matches
     ///     or not, so a caller can tell "nobody has it" from "nobody answered".
+    @discardableResult
     static func stream(
         title: String,
         author: String,
@@ -41,12 +51,13 @@ enum BookOriginSearchService {
         shouldStop: (Int) -> Bool = { _ in false },
         onSourceAnswered: () -> Void = {},
         onBatch: ([BookOrigin]) -> Void
-    ) async {
+    ) async -> Outcome {
         let queried = sourceFilter.map { filter in sources.filter(filter) } ?? sources
-        guard !queried.isEmpty else { return }
+        guard !queried.isEmpty else { return Task.isCancelled ? .cancelled : .completed }
 
         var seenOriginKeys = Set<String>()
         var emittedCount = 0
+        var stopped = false
         // Folded once: each fold runs ICU transforms (4d).
         let target = SearchWorkKeys(name: title, author: author)
 
@@ -129,12 +140,15 @@ enum BookOriginSearchService {
                     if shouldStop(emittedCount) { shouldPause = true }
                 }
                 if shouldPause {
+                    stopped = true
                     group.cancelAll()
                     break
                 }
                 enqueueNextSource()
             }
         }
+        if stopped { return .stopped }
+        return Task.isCancelled ? .cancelled : .completed
     }
 
     /// One source's search, abandoned after `seconds`. A source that never answers
@@ -156,13 +170,27 @@ enum BookOriginSearchService {
                 // right after their name/author rules run, so the remaining field
                 // rules (cover/intro/kind/wordCount/lastChapter/bookUrl) are never
                 // evaluated — both callers only keep exact same-book candidates.
-                try? await bookSourceFetcher.search(
-                    query: query,
-                    in: source,
-                    earlyFilter: { name, author in
-                        SearchBook.isLikelySameBook(target, SearchWorkKeys(name: name, author: author))
+                do {
+                    return try await bookSourceFetcher.search(
+                        query: query,
+                        in: source,
+                        earlyFilter: { name, author in
+                            SearchBook.isLikelySameBook(target, SearchWorkKeys(name: name, author: author))
+                        }
+                    )
+                } catch {
+                    // A failed source still answers nil (its slot goes to the next source),
+                    // but the reason is logged so a device can tell "failed" from "slow".
+                    // Cancellation is the timeout or the caller stopping, not a failure.
+                    if !(error is CancellationError) && !Task.isCancelled {
+                        AppLogger.network(
+                            "⟐ origin search failed",
+                            error: error,
+                            context: ["source": source.bookSourceName, "url": source.bookSourceUrl]
+                        )
                     }
-                )
+                    return nil
+                }
             }
             group.addTask {
                 try? await Task.sleep(nanoseconds: seconds * 1_000_000_000)

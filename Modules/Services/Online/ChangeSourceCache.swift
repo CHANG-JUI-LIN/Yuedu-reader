@@ -14,6 +14,12 @@ final class ChangeSourceCache {
         var origins: [BookOrigin]
         var failedKeys: [String]
         var timestamp: Date
+        /// True only when every source answered or timed out. A search cut short by
+        /// 自動暫停 is kept (so its failure flags survive) but never served as the book's
+        /// list. Optional so entries written before this field decode as `nil` = not
+        /// known complete: those include the 10-result lists the hidden large-pack pause
+        /// cached for 5 days (feedback #16), which must be searched again once.
+        var isComplete: Bool?
     }
 
     private let queue = DispatchQueue(label: "com.yuedu.changeSourceCache")
@@ -37,16 +43,21 @@ final class ChangeSourceCache {
         }
     }
 
-    /// Cached entry only if it exists and is within `days` (days <= 0 = disabled).
+    /// Cached entry only if it exists, is a complete search, and is within `days`
+    /// (days <= 0 = disabled).
     func freshEntry(for bookId: UUID, days: Int) -> Entry? {
-        guard days > 0, let entry = entry(for: bookId), !entry.origins.isEmpty else { return nil }
+        guard days > 0, let entry = entry(for: bookId), entry.isComplete == true,
+              !entry.origins.isEmpty else { return nil }
         let maxAge = TimeInterval(days) * 86_400
         guard Date().timeIntervalSince(entry.timestamp) < maxAge else { return nil }
         return entry
     }
 
     /// Replace the cached origin list, preserving any still-relevant failure flags.
-    func store(origins: [BookOrigin], for bookId: UUID) {
+    ///
+    /// `isComplete: false` (a paused search) keeps every previous failure flag: an origin
+    /// missing from a partial list may simply not have been reached.
+    func store(origins: [BookOrigin], for bookId: UUID, isComplete: Bool = true) {
         let previousFailed = entry(for: bookId)?.failedKeys ?? []
         // Keep the legacy URL-only key readable so caches written before source
         // identity was added do not silently lose their failure markers.
@@ -56,8 +67,9 @@ final class ChangeSourceCache {
         })
         let entry = Entry(
             origins: origins,
-            failedKeys: previousFailed.filter { validKeys.contains($0) },
-            timestamp: Date()
+            failedKeys: isComplete ? previousFailed.filter { validKeys.contains($0) } : previousFailed,
+            timestamp: Date(),
+            isComplete: isComplete
         )
         write(entry, for: bookId)
     }
@@ -66,7 +78,7 @@ final class ChangeSourceCache {
     func markFailed(originKey: String, for bookId: UUID) {
         guard !originKey.isEmpty else { return }
         var entry = self.entry(for: bookId)
-            ?? Entry(origins: [], failedKeys: [], timestamp: Date())
+            ?? Entry(origins: [], failedKeys: [], timestamp: Date(), isComplete: false)
         if !entry.failedKeys.contains(originKey) {
             entry.failedKeys.append(originKey)
         }

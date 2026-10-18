@@ -123,6 +123,30 @@ struct BookOriginSearchServiceTests {
         #expect(fetcher.queriedSourceURLs == sources.prefix(2).map(\.bookSourceUrl))
     }
 
+    @Test("the outcome says whether every source was asked or the fan-out stopped early")
+    func outcomeTellsCompleteFromStopped() async {
+        let sources = (1...3).map { makeSource("outcome-\($0)") }
+        var script: [String: Result<[OnlineBook], Error>] = [:]
+        for source in sources {
+            script[source.bookSourceUrl] = .success([book("三體", "劉慈欣", in: source)])
+        }
+
+        let stopped = await BookOriginSearchService.stream(
+            title: "三體", author: "劉慈欣", sources: sources, concurrency: 1,
+            fetcher: ScriptedOriginFetcher(script),
+            shouldStop: { $0 >= 1 },
+            onBatch: { _ in }
+        )
+        let completed = await BookOriginSearchService.stream(
+            title: "三體", author: "劉慈欣", sources: sources, concurrency: 1,
+            fetcher: ScriptedOriginFetcher(script),
+            onBatch: { _ in }
+        )
+
+        #expect(stopped == .stopped)
+        #expect(completed == .completed)
+    }
+
     @Test("each source with matches is delivered as one batch")
     func oneBatchPerSource() async {
         let a = makeSource("batch-a")
@@ -172,8 +196,8 @@ struct BookOriginSearchServiceTests {
 
     @Test("a source that throws answers nil, the same as one that times out")
     func thrownErrorLooksLikeATimeout() async {
-        // Current behavior: `searchSourceWithTimeout` discards the error with `try?`, so
-        // 換源 cannot tell a failed source from a slow one (Phase 0 plan, follow-up 1).
+        // The slot goes to the next source either way; since 2026-10-18 the error is logged
+        // (AppLogger.network) instead of being discarded with `try?`.
         let source = makeSource("throws")
         let fetcher = ScriptedOriginFetcher([
             source.bookSourceUrl: .failure(URLError(.badServerResponse)),

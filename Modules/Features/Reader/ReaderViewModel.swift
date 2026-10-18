@@ -336,11 +336,7 @@ final class ReaderViewModel: ObservableObject {
         // sources that share one site URL remain independently switchable.
         let sources = enabledSources
         let concurrency = NetworkSearchSettings.clampedConcurrency(GlobalSettings.shared.searchConcurrency)
-        let autoPauseCount = NetworkSearchSettings.effectiveAutoPauseCount(
-            configured: GlobalSettings.shared.searchAutoPauseCount,
-            sourceCount: sources.count
-        )
-        let autoPausePolicy = SearchAutoPausePolicy(count: autoPauseCount)
+        let autoPausePolicy = SearchAutoPausePolicy.configured
 
         changeSourceSearchTask?.cancel()
         tocWarmTask?.cancel()
@@ -351,7 +347,7 @@ final class ReaderViewModel: ObservableObject {
             // Fan out with a bounded active window (shared with 封面搜索). Results
             // are consumed on the MainActor as they stream in, so the list fills
             // progressively and auto-pause can stop enqueueing untouched sources.
-            await BookOriginSearchService.stream(
+            let outcome = await BookOriginSearchService.stream(
                 title: bookTitle,
                 author: bookAuthor,
                 sources: sources,
@@ -371,8 +367,14 @@ final class ReaderViewModel: ObservableObject {
             // Fastest sources first (respondTime EMA), then persist that order so
             // the cached list reopens pre-sorted and TOC warm-up hits the best ones.
             self.sortChangeSourceOriginsByHealth()
-            // Persist results so reopening the sheet is instant (honors 快取天數).
-            ChangeSourceCache.shared.store(origins: self.changeSourceOrigins, for: bookId)
+            // Persist results so reopening the sheet is instant (honors 快取天數). A list cut
+            // short by 自動暫停 is stored as partial: reopening searches again instead of
+            // serving it as everything the sources have (feedback #16).
+            ChangeSourceCache.shared.store(
+                origins: self.changeSourceOrigins,
+                for: bookId,
+                isComplete: outcome == .completed
+            )
             // Only when 搜索時載入目錄 is on; otherwise a tap fetches its own TOC.
             self.warmSearchTOCCacheIfEnabled()
         }

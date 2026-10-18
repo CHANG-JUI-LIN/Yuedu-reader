@@ -686,7 +686,9 @@ struct AudiobookDetailView: View {
     private func addToShelfOnly() {
         guard !alreadyInShelf, !addingToShelf, !chapters.isEmpty, let source else { return }
         addingToShelf = true
-        let newBook = bookStore.addOnlineBook(
+        // One book per work: an audiobook already on the shelf from another source switches to
+        // this one rather than being added twice (`ShelfWorkService`).
+        let copy = ShelfWorkService.OnlineCopy(
             name: displayName,
             author: displayAuthor == localized("未知作者") ? "" : displayAuthor,
             sourceId: source.id,
@@ -696,11 +698,19 @@ struct AudiobookDetailView: View {
             runtimeVariables: resolvedRuntimeVariables,
             contentKind: .audio,
             chapters: chapters)
-        addedBookId = newBook.id
-        activePlayerBookId = newBook.id
-        alreadyInShelf = true
-        addingToShelf = false
-        SourceCallBackService.notify(.addBookShelf, book: newBook)
+        Task { @MainActor in
+            defer { addingToShelf = false }
+            do {
+                let outcome = try await ShelfWorkService(store: bookStore, dependencies: dependencies).add(copy)
+                addedBookId = outcome.book.id
+                activePlayerBookId = outcome.book.id
+                alreadyInShelf = true
+                if case .alreadyOnShelf = outcome { return }
+                SourceCallBackService.notify(.addBookShelf, book: outcome.book)
+            } catch {
+                loadError = error.localizedDescription
+            }
+        }
     }
 
     private func preparePlayerCoverFallback(bookId: UUID, source: BookSource) {

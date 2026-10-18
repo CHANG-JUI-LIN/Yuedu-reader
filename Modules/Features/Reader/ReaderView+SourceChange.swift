@@ -208,7 +208,6 @@ extension ReaderView {
     /// similarity + chapter-number match, Legado getDurChapter-style) and the
     /// restore target/persisted position are updated to the mapped chapter.
     func switchToOrigin(_ origin: BookOrigin) {
-        let oldRefs = book?.onlineChapters ?? []
         let oldIndex = currentChapterIndex
         let livePosition = readerSessionCoordinator?.state.location.coreTextPosition
         // The fan-out holds the connection pool and the JS bridge, and from this tap onward it
@@ -226,14 +225,18 @@ extension ReaderView {
                     try await readerViewModel.prepareTOCPackage(for: origin)
                 }
                 try Task.checkCancellation()
-                try await SourcePerfTrace.spanAsync(
+                // Rebinds the source and carries the place on screen over to the new list
+                // (`OnlineBookSourceSwitch`, shared with the detail page and 加入書架), and
+                // persists it before loadContent so any restore path that re-reads the
+                // position store already sees the mapped chapter.
+                let mappedPosition = try await SourcePerfTrace.spanAsync(
                     "changeSource.commit", "\(tocPackage.chapters.count)ch"
                 ) {
-                    try await store.updateOnlineBookSource(
+                    try await OnlineBookSourceSwitch(store: store, dependencies: dependencies).commit(
                         bookId: bookId,
                         origin: origin,
-                        preparedTOC: tocPackage,
-                        offlineChapterStore: dependencies.offlineChapterStore
+                        toc: tocPackage,
+                        readingFrom: .init(chapterIndex: oldIndex, position: livePosition)
                     )
                 }
                 try Task.checkCancellation()
@@ -249,40 +252,12 @@ extension ReaderView {
                 // source switch. They belong to the source we just left; drop them.
                 readerViewModel.resetAllChapterStates()
                 chapterConsistencyRecoveryAttempts.removeAll()
-                // The failure budget and any automatic quarantine were earned by the source
-                // we just left. Neither used to be reset by anything short of deleting the
-                // book and adding it again.
-                await dependencies.chapterFetcher.resetFailureBudget(for: bookId)
-                store.clearAutomaticQuarantine(bookId: bookId)
 
-                let newRefs = store.readingBook(id: bookId)?.onlineChapters ?? []
-                var mappedPosition: CoreTextReadingPosition?
-                if !oldRefs.isEmpty, !newRefs.isEmpty {
-                    let mapped = SourcePerfTrace.span("changeSource.align") {
-                        ChapterAlignment.mappedChapterIndex(
-                            oldIndex: oldIndex,
-                            oldTitle: oldRefs.indices.contains(oldIndex) ? oldRefs[oldIndex].title : nil,
-                            oldCount: oldRefs.count,
-                            newTitles: newRefs.map(\.title)
-                        )
-                    }
-                    // Same chapter text in a new source starts at a different
-                    // offset anyway; only a same-index mapping keeps the offset.
-                    let keepOffset = (mapped == oldIndex && livePosition?.spineIndex == oldIndex)
-                        ? max(0, livePosition?.charOffset ?? 0)
-                        : 0
-                    let position = CoreTextReadingPosition(spineIndex: mapped, charOffset: keepOffset)
-                    savedCoreTextRestoreTarget = (mapped, keepOffset)
-                    setCoreTextExternalTarget(position)
-                    currentChapterIndex = mapped
-                    scrollVisibleChapter = mapped
-                    mappedPosition = position
-                }
-                // Persist before loadContent so any restore path that re-reads the
-                // position store already sees the mapped chapter.
                 if let mappedPosition {
-                    let storeKey = book?.id.uuidString ?? bookId.uuidString
-                    await dependencies.readingPositionStore.save(mappedPosition, for: storeKey)
+                    savedCoreTextRestoreTarget = (mappedPosition.spineIndex, mappedPosition.charOffset)
+                    setCoreTextExternalTarget(mappedPosition)
+                    currentChapterIndex = mappedPosition.spineIndex
+                    scrollVisibleChapter = mappedPosition.spineIndex
                 }
                 // Leave the pending state before dismissing: the sheet's dismiss handler
                 // cancels a pending switch, and at this point that switch is this one.

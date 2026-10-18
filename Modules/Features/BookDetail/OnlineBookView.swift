@@ -734,12 +734,10 @@ struct OnlineBookView: View {
                     }
                     guard let (sourceSwitchBookId, origin) = commitContext else { return }
                     do {
-                        try await self.bookStore.updateOnlineBookSource(
-                            bookId: sourceSwitchBookId,
-                            origin: origin,
-                            preparedTOC: tocPackage,
-                            offlineChapterStore: self.dependencies.offlineChapterStore
-                        )
+                        // The reader's 換源 commit: rebinds the source and carries the stored
+                        // place over to the new list (it used to keep the old chapter index).
+                        try await OnlineBookSourceSwitch(store: self.bookStore, dependencies: self.dependencies)
+                            .commit(bookId: sourceSwitchBookId, origin: origin, toc: tocPackage)
                     } catch {
                         await MainActor.run {
                             guard self.isCurrentRequest(requestBook) else { return }
@@ -901,11 +899,14 @@ struct OnlineBookView: View {
         alreadyInShelf = false
     }
 
-    /// Add to shelf without opening the reader.
+    /// Add to shelf without opening the reader. A work already on the shelf from another
+    /// source is not added twice: that book switches to this source (`ShelfWorkService`), and
+    /// this page then shows it as on the shelf and continues it.
     private func addToShelfOnly() {
-        guard !alreadyInShelf, !chapters.isEmpty, let source else { return }
+        guard !alreadyInShelf, !addingToShelf, !chapters.isEmpty, let source else { return }
         addingToShelf = true
-        let newBook = bookStore.addOnlineBook(
+        let requestBook = currentBook
+        let copy = ShelfWorkService.OnlineCopy(
             name: displayName,
             author: displayAuthor == localized("未知作者") ? "" : displayAuthor,
             sourceId: source.id,
@@ -917,10 +918,20 @@ struct OnlineBookView: View {
                 ?? currentBook.runtimeVariables,
             chapters: chapters
         )
-        addedBookId = newBook.id
-        addingToShelf = false
-        alreadyInShelf = true
-        SourceCallBackService.notify(.addBookShelf, book: newBook)
+        Task { @MainActor in
+            defer { addingToShelf = false }
+            do {
+                let outcome = try await ShelfWorkService(store: bookStore, dependencies: dependencies).add(copy)
+                guard isCurrentRequest(requestBook) else { return }
+                addedBookId = outcome.book.id
+                alreadyInShelf = true
+                if case .alreadyOnShelf = outcome { return }
+                SourceCallBackService.notify(.addBookShelf, book: outcome.book)
+            } catch {
+                guard isCurrentRequest(requestBook) else { return }
+                tocError = error.localizedDescription
+            }
+        }
     }
 
     /// Kept once it is on the shelf: its download put it there
@@ -944,13 +955,22 @@ struct OnlineBookView: View {
         }
     }
 
-    /// 加入書架 after reading: the record read joins the shelf, with where it was read to.
+    /// 加入書架 after reading: the record read joins the shelf, with where it was read to. When
+    /// its work is already on the shelf from another source, that book takes this source and
+    /// what was just read instead (`ShelfWorkService.shelveReadCopy`).
     private func keepReadBook(_ book: ReadingBook) {
-        guard let shelved = bookStore.addReadingBookToShelf(id: book.id) else { return }
-        temporaryReaderBookId = nil
-        addedBookId = shelved.id
-        alreadyInShelf = true
-        SourceCallBackService.notify(.addBookShelf, book: shelved)
+        Task { @MainActor in
+            do {
+                guard let shelved = try await ShelfWorkService(store: bookStore, dependencies: dependencies)
+                    .shelveReadCopy(id: book.id) else { return }
+                temporaryReaderBookId = nil
+                addedBookId = shelved.id
+                alreadyInShelf = true
+                SourceCallBackService.notify(.addBookShelf, book: shelved)
+            } catch {
+                tocError = error.localizedDescription
+            }
+        }
     }
 
     private func discardTemporaryReaderBook(_ tempId: UUID) {

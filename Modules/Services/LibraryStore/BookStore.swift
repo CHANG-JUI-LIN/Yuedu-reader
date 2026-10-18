@@ -300,6 +300,13 @@ class BookStore: @MainActor ObservableObject, BookProvider {
         let shelfLoaded = loadMeta()
         let readingRecordsLoaded = loadReadingRecords()
         finishLoadingChapterLists(complete: shelfLoaded && readingRecordsLoaded)
+        // One book per work (feedback #16): the app's own shelf — its file, and the store that
+        // takes its off-shelf records — merges copies of one work once per launch. A store on
+        // any other shelf (every test's) never does.
+        if shelfLoaded && readingRecordsLoaded, metadataFileURL == Self.booksMetaFileURL,
+           offShelfReadRecordsDefaults != nil {
+            ShelfWorkLaunchMerge.schedule(store: self)
+        }
         if let legacyReaderSettingsDefaults {
             readerSettings.migrateLegacyFixedPageReadingModes(
                 from: legacyReaderSettingsDefaults,
@@ -1545,12 +1552,9 @@ class BookStore: @MainActor ObservableObject, BookProvider {
             title: name, author: author, source: bookInfoURL, contentFilename: "")
         book.isOnline = true
         book.isInBookshelf = isInBookshelf
-        let source = BookSourceStore.shared.source(id: sourceId)
-        let inferredKind = contentKind ?? OnlineBookContentInference.infer(
-            sourceType: source?.bookSourceType,
-            runtimeVariables: runtimeVariables,
-            urls: [bookInfoURL, tocURL ?? ""],
-            metadataText: OnlineBookContentInference.sourceRuntimeModeMarkers(for: source)
+        let inferredKind = Self.inferredOnlineContentKind(
+            explicit: contentKind, sourceId: sourceId, runtimeVariables: runtimeVariables,
+            bookInfoURL: bookInfoURL, tocURL: tocURL
         )
         book.contentPipelineKind = inferredKind.pipelineKind
         book.bookSourceId = sourceId

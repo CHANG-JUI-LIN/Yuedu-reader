@@ -1,9 +1,6 @@
 import Foundation
 
 enum NetworkSearchSettings {
-    static let largeSourcePackThreshold = 300
-    static let largeSourcePackAutoPauseCount = 10
-
     static func clampedConcurrency(_ value: Int) -> Int {
         min(30, max(1, value))
     }
@@ -19,18 +16,19 @@ enum NetworkSearchSettings {
     static func clampedDownloadConcurrency(_ value: Int) -> Int {
         min(maximumDownloadConcurrency, max(1, value))
     }
-
-    static func effectiveAutoPauseCount(configured value: Int, sourceCount: Int) -> Int {
-        let configured = max(0, value)
-        guard configured == 0, sourceCount >= largeSourcePackThreshold else {
-            return configured
-        }
-        return largeSourcePackAutoPauseCount
-    }
 }
 
+/// 網路設定 →「自動暫停」. `0` means never pause, whatever the number of sources: the settings
+/// page promises「0不暫停」, and a hidden "10 once you have 300+ sources" override made 換源 stop
+/// after ten results for a shelf of 1559 sources (feedback #16, maintainer 2026-10-18). Heat and
+/// data use are bounded by 並發數 (and 搜索's thermal / low-power `SearchDevicePacing`), not here.
 struct SearchAutoPausePolicy {
     let exactThreshold: Int
+
+    /// The policy the user configured in 網路設定 — the one way every search reads it.
+    static var configured: SearchAutoPausePolicy {
+        SearchAutoPausePolicy(count: GlobalSettings.shared.searchAutoPauseCount)
+    }
 
     init(count: Int) {
         exactThreshold = max(0, count)
