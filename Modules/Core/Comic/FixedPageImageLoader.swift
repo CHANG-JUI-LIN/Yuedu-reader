@@ -33,7 +33,39 @@ enum FixedPageImageLoader {
         if targetWidth > 0 {
             processors.append(ImageProcessors.Resize(width: targetWidth, unit: .points, upscale: false))
         }
-        return ImageRequest(urlRequest: urlRequest, processors: processors)
+        guard let decoder = page.imageDecoder else {
+            return ImageRequest(urlRequest: urlRequest, processors: processors)
+        }
+        // The source's `imageDecode` runs on the bytes before anything decodes them, so the
+        // crop, the resize, the ratio the webtoon sizes its cell by, and Live Text all see the
+        // real picture. Bytes are fetched through the same pipeline (its HTTP cache keeps the
+        // raw download) and decoded on every fetch; only the decoded image is cached, under
+        // a key of its own, so a cache hit can never hand back the scrambled one. A
+        // downloaded page is stored raw, like the network's, and goes through here too.
+        let rawRequest = ImageRequest(urlRequest: urlRequest)
+        let src = page.imageDecodeSrc
+        let pageID = page.id
+        let name = diagnosticName(for: page)
+        return ImageRequest(
+            id: decoder.cacheKeyPrefix + src,
+            data: {
+                let (raw, _) = try await ImagePipeline.shared.data(for: rawRequest)
+                // Nothing to decode; the pipeline reports the empty page itself.
+                guard !raw.isEmpty else { return raw }
+                if let decoded = await decoder.decode(raw, src: src) { return decoded }
+                // The project's decode contract (`SourceImageDecoder`, the text reader's
+                // illustrations): a rule that returns nothing leaves the bytes as downloaded,
+                // so a broken rule shows a wrong-looking page rather than none. Legado's
+                // manga loader fails the page instead.
+                AppLogger.parse(
+                    "Comic page imageDecode returned no bytes; showing the page as downloaded",
+                    context: ["page": pageID, "image": name, "source": decoder.source.bookSourceName],
+                    level: .warning
+                )
+                return raw
+            },
+            processors: processors
+        )
     }
 
     @MainActor
@@ -61,7 +93,23 @@ enum FixedPageImageLoader {
                 cropBorders: cropBorders
             )
         case .image:
-            baseImage = try? await ImagePipeline.shared.image(for: request(for: page, targetWidth: targetWidth, cropBorders: cropBorders))
+            do {
+                baseImage = try await ImagePipeline.shared.image(
+                    for: request(for: page, targetWidth: targetWidth, cropBorders: cropBorders)
+                )
+            } catch {
+                // A reused or scrolled-away cell cancels its load all the time; that is
+                // not a failure. Anything else is, and the page stays blank until it is
+                // displayed again (the webtoon's `willDisplay`, the paged retry button).
+                guard !Task.isCancelled, !(error is CancellationError) else { return nil }
+                AppLogger.network(
+                    "Fixed page image failed to load",
+                    error: error,
+                    context: ["page": page.id, "image": diagnosticName(for: page)],
+                    level: .error
+                )
+                return nil
+            }
         }
 
         guard var image = baseImage else { return nil }
@@ -70,6 +118,15 @@ enum FixedPageImageLoader {
             image = FixedPageSplitProcessor.cropHalf(from: image, side: side)
         }
         return image
+    }
+
+    /// Where a page's image comes from, for the log: the file name of a downloaded page,
+    /// or host and last path component of a remote one — CDN query strings often carry
+    /// signed tokens.
+    static func diagnosticName(for page: FixedPage) -> String {
+        if let localURL = page.localURL { return localURL.lastPathComponent }
+        guard let url = URL(string: page.imageURL) else { return "unparseable-url" }
+        return "\(url.host ?? "")/\(url.lastPathComponent)"
     }
 
     /// Prefetch must ask for the same variant the page will display: the crop flag is

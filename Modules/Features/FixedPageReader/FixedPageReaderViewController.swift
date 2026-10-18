@@ -15,6 +15,9 @@ final class FixedPageReaderViewController: UIViewController, FixedPageReaderCont
     private weak var store: BookStore?
     private let state: FixedPageReaderState
     private let headers: [String: String]
+    /// The source's `ruleContent.imageDecode`, handed to every page it serves; nil for the
+    /// sources without one.
+    private let imageDecoder: FixedPageImageDecoder?
     private let chapters: [OnlineChapterRef]
     private let chapterFetcher: any ChapterFetching
 
@@ -56,6 +59,7 @@ final class FixedPageReaderViewController: UIViewController, FixedPageReaderCont
             BookSourceStore.shared.source(id: id)
         }
         self.source = resolvedSource
+        self.imageDecoder = resolvedSource.flatMap { FixedPageImageDecoder(source: $0) }
         self.headers = BookCoverLoader.headers(
             sourceBaseURL: resolvedSource?.bookSourceUrl,
             sourceHeaders: resolvedSource?.parsedHeaders ?? [:]
@@ -285,7 +289,9 @@ final class FixedPageReaderViewController: UIViewController, FixedPageReaderCont
                     book: self.book, chapterIndex: index, priority: .immediate, store: self.store)
                 guard self.loadToken == token else { return }
                 let localDir = MangaChapterParser.chapterDirectory(bookId: self.book.id, chapterIndex: index)
-                let pages = MangaChapterParser.pages(from: package.content, headers: self.headers, localDir: localDir)
+                let pages = MangaChapterParser.pages(
+                    from: package.content, headers: self.headers, localDir: localDir, imageDecoder: self.imageDecoder
+                )
                 self.state.isLoading = false
                 guard !pages.isEmpty else {
                     self.state.errorMessage = localized("未找到圖片")
@@ -573,7 +579,9 @@ final class FixedPageReaderViewController: UIViewController, FixedPageReaderCont
             let package = try await chapterFetcher.fetchChapter(
                 book: book, chapterIndex: nextIndex, priority: .immediate, store: store)
             let localDir = MangaChapterParser.chapterDirectory(bookId: book.id, chapterIndex: nextIndex)
-            let pages = MangaChapterParser.pages(from: package.content, headers: headers, localDir: localDir)
+            let pages = MangaChapterParser.pages(
+                from: package.content, headers: headers, localDir: localDir, imageDecoder: imageDecoder
+            )
             // Another chapter opened meanwhile: this one belongs to a strip that is gone.
             guard loadToken == token else { return nil }
             if !pages.isEmpty {
@@ -598,7 +606,9 @@ final class FixedPageReaderViewController: UIViewController, FixedPageReaderCont
             let package = try await chapterFetcher.fetchChapter(
                 book: book, chapterIndex: prevIndex, priority: .immediate, store: store)
             let localDir = MangaChapterParser.chapterDirectory(bookId: book.id, chapterIndex: prevIndex)
-            let pages = MangaChapterParser.pages(from: package.content, headers: headers, localDir: localDir)
+            let pages = MangaChapterParser.pages(
+                from: package.content, headers: headers, localDir: localDir, imageDecoder: imageDecoder
+            )
             // Another chapter opened meanwhile: this one belongs to a strip that is gone.
             guard loadToken == token else { return nil }
             if !pages.isEmpty {
@@ -692,7 +702,9 @@ final class FixedPageReaderViewController: UIViewController, FixedPageReaderCont
                 return
             }
             let localDir = MangaChapterParser.chapterDirectory(bookId: book.id, chapterIndex: nextIndex)
-            let pages = MangaChapterParser.pages(from: package.content, headers: headers, localDir: localDir)
+            let pages = MangaChapterParser.pages(
+                from: package.content, headers: headers, localDir: localDir, imageDecoder: imageDecoder
+            )
             let prefetchCount = min(3, pages.count)
             guard prefetchCount > 0 else { return }
             await MainActor.run {

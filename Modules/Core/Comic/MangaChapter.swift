@@ -23,6 +23,16 @@ struct FixedPage: Identifiable, Equatable {
     var localURL: URL?        // non-nil when downloaded for offline reading
     var renderSource: FixedPageRenderSource = .image
     var subPageSide: SubPageSide? = nil
+    /// The source's `ruleContent.imageDecode`, for an online comic whose source scrambles or
+    /// encrypts its images. `FixedPageImageLoader` runs it over every byte it loads for this
+    /// page — downloaded or remote — before decoding the image.
+    var imageDecoder: FixedPageImageDecoder? = nil
+    /// The image's `src` as the chapter wrote it, `url,{options}` included: what Legado hands
+    /// `imageDecode` as `src`. Nil for a page whose src was a bare URL.
+    var originalSrc: String? = nil
+
+    /// The `src` an `imageDecode` script sees.
+    var imageDecodeSrc: String { originalSrc ?? imageURL }
 }
 
 /// A jump target inside a document that is loaded as a single chapter (local PDF,
@@ -41,6 +51,8 @@ enum MangaChapterParser {
     struct ParsedImage: Equatable {
         let url: String
         let headers: [String: String]
+        /// `url,{options}` as written, when the src carried options; nil for a bare URL.
+        var originalSrc: String? = nil
     }
 
     /// Ordered clean image URLs from a fetched chapter's `content`.
@@ -206,8 +218,12 @@ enum MangaChapterParser {
         guard !token.isEmpty else { return nil }
 
         var headers: [String: String] = [:]
+        var options: String?
         if let optionsRange = token.range(of: ",{") {
-            headers = parseHeaders(fromOptions: String(token[token.index(after: optionsRange.lowerBound)...]))
+            let rawOptions = String(token[token.index(after: optionsRange.lowerBound)...])
+            headers = parseHeaders(fromOptions: rawOptions)
+            // Up to the options' closing brace: a multi-attribute tag can leak more after it.
+            options = rawOptions.lastIndex(of: "}").map { String(rawOptions[...$0]) } ?? rawOptions
             token = String(token[..<optionsRange.lowerBound])
         } else if let quote = token.firstIndex(of: "\"") {
             // Over-captured a clean multi-attribute tag (e.g. src="url" alt="x"); keep the url.
@@ -217,7 +233,11 @@ enum MangaChapterParser {
         let url = token.trimmingCharacters(in: .whitespacesAndNewlines)
         let normalized = url.hasPrefix("//") ? "https:" + url : url
         guard isImageURL(normalized) else { return nil }
-        return ParsedImage(url: normalized, headers: headers)
+        return ParsedImage(
+            url: normalized,
+            headers: headers,
+            originalSrc: options.map { normalized + "," + $0 }
+        )
     }
 
     /// Extract `headers` from a Legado options object string like `{"headers":{...}}`,
@@ -237,7 +257,12 @@ enum MangaChapterParser {
 
     /// Build pages, attaching request headers (per-image headers override the source defaults).
     /// Offline files are trusted only when a complete manifest matches the current image list.
-    static func pages(from content: String, headers: [String: String], localDir: URL? = nil) -> [FixedPage] {
+    static func pages(
+        from content: String,
+        headers: [String: String],
+        localDir: URL? = nil,
+        imageDecoder: FixedPageImageDecoder? = nil
+    ) -> [FixedPage] {
         let images = parsedImages(from: content)
 
         var localByIndex: [Int: URL] = [:]
@@ -262,7 +287,9 @@ enum MangaChapterParser {
                 id: index,
                 imageURL: image.url,
                 headers: merged,
-                localURL: localByIndex[index]
+                localURL: localByIndex[index],
+                imageDecoder: imageDecoder,
+                originalSrc: image.originalSrc
             )
         }
     }

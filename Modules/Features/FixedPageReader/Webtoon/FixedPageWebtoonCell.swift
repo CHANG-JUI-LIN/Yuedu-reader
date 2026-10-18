@@ -22,7 +22,11 @@ final class FixedPageWebtoonCell: UICollectionViewCell {
     private var targetWidth: CGFloat = 0
     private var cropBorders = false
     private var isLiveTextEnabled = false
-    private var onRatio: ((Int, CGFloat) -> Void)?
+    /// Reports a loaded image's height/width with the item index and the page it was
+    /// loaded for. The index is the one this cell was configured with, which a prepended
+    /// chapter can make stale before the cell is reconfigured; the page lets the reader
+    /// tell (`FixedPageWebtoonViewController.pageImageDidLoad`).
+    private var onRatio: ((Int, FixedPage, CGFloat) -> Void)?
     /// Whether Live Text's button shows (`FixedPageZoom.showsLiveTextButton`). Kept so an
     /// analysis that lands later honours it.
     private var showsLiveTextButton = false
@@ -30,6 +34,9 @@ final class FixedPageWebtoonCell: UICollectionViewCell {
     override init(frame: CGRect) {
         super.init(frame: frame)
         contentView.backgroundColor = .clear
+        // A page never paints over its neighbours, whatever its image or Live Text's
+        // overlay does inside it.
+        contentView.clipsToBounds = true
         imageView.contentMode = .scaleAspectFit
         imageView.translatesAutoresizingMaskIntoConstraints = false
         contentView.addSubview(imageView)
@@ -63,7 +70,7 @@ final class FixedPageWebtoonCell: UICollectionViewCell {
         targetWidth: CGFloat,
         cropBorders: Bool = false,
         isLiveTextEnabled: Bool = false,
-        onRatio: @escaping (Int, CGFloat) -> Void
+        onRatio: @escaping (Int, FixedPage, CGFloat) -> Void
     ) {
         self.page = page
         self.index = index
@@ -75,6 +82,7 @@ final class FixedPageWebtoonCell: UICollectionViewCell {
 
     func load() {
         guard let page else { return }
+        let index = self.index
         spinner.startAnimating()
         loadTask?.cancel()
         loadTask = Task { [weak self] in
@@ -91,8 +99,8 @@ final class FixedPageWebtoonCell: UICollectionViewCell {
             // UI tests find a strip page by its position once its image is on screen
             // (DetailReaderBackSwipeUITests); cells are reused, so the index is in it.
             // VoiceOver never reads an identifier.
-            self.imageView.accessibilityIdentifier = "webtoon_page_\(self.index)"
-            self.onRatio?(self.index, image.size.height / image.size.width)
+            self.imageView.accessibilityIdentifier = "webtoon_page_\(index)"
+            self.onRatio?(index, page, image.size.height / image.size.width)
             self.analyzeLiveText(for: image)
         }
     }
@@ -126,6 +134,9 @@ final class FixedPageWebtoonCell: UICollectionViewCell {
     func unload() {
         loadTask?.cancel()
         liveTextTask?.cancel()
+        // The analysis belongs to the image going away: kept, a reused cell would pick
+        // out the previous page's text over the next page until its own analysis lands.
+        imageAnalysisInteraction?.analysis = nil
         imageView.image = nil
         imageView.accessibilityIdentifier = nil
         spinner.stopAnimating()

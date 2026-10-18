@@ -19,9 +19,9 @@ final class FixedPageWebtoonViewController: UIViewController, FixedPageModeReade
 
     private let fixedPageReaderConfiguration: FixedPageReaderConfiguration
     private let targetWidth: FixedPageTargetWidth
-    private var pages: [FixedPage] = []
-    private let layout: FixedPageWebtoonLayout
-    private lazy var collectionView = UICollectionView(frame: .zero, collectionViewLayout: layout)
+    private(set) var pages: [FixedPage] = []
+    let layout: FixedPageWebtoonLayout
+    private(set) lazy var collectionView = UICollectionView(frame: .zero, collectionViewLayout: layout)
     private var currentIndex = 0
 
     // Auto-scroll state
@@ -383,13 +383,33 @@ final class FixedPageWebtoonViewController: UIViewController, FixedPageModeReade
             targetWidth: targetWidth.value,
             cropBorders: fixedPageReaderConfiguration.cropBorders,
             isLiveTextEnabled: fixedPageReaderConfiguration.isLiveTextEnabled
-        ) { [weak self] index, ratio in
-            guard let self else { return }
-            self.layout.setRatio(ratio, forItem: index)
-            self.layout.invalidateLayout()
+        ) { [weak self] index, page, ratio in
+            self?.pageImageDidLoad(index: index, page: page, ratio: ratio)
         }
         cell.setShowsLiveTextButton(showsLiveTextButton)
         return cell
+    }
+
+    /// A cell's image arrived: size its item to the image. The cell reports the index it
+    /// was configured with, which is stale when a chapter was prepended while the image
+    /// loaded — that slot now holds another page, and sizing it by this image draws that
+    /// page aspect-fit in the wrong frame. Such a report is dropped; `reloadData` has
+    /// already queued the cell to be configured for its new index, and it reports again.
+    func pageImageDidLoad(index: Int, page: FixedPage, ratio: CGFloat) {
+        guard pages.indices.contains(index), pages[index] == page else { return }
+        layout.setRatio(ratio, forItem: index)
+        layout.invalidateLayout()
+    }
+
+    /// A previous chapter's pages go above the strip. Measured heights move with their
+    /// pages, and the layout keeps the page on screen in place.
+    func insertPagesAbove(_ newPages: [FixedPage]) {
+        guard !newPages.isEmpty else { return }
+        layout.insertItemsAtStart(newPages.count)
+        pages.insert(contentsOf: newPages, at: 0)
+        // The page on screen stays put, now further down the strip.
+        currentIndex += newPages.count
+        collectionView.reloadData()
     }
 
     func collectionView(_ collectionView: UICollectionView, willDisplay cell: UICollectionViewCell, forItemAt indexPath: IndexPath) {
@@ -457,12 +477,8 @@ final class FixedPageWebtoonViewController: UIViewController, FixedPageModeReade
             isLoadingPrevChapter = true
             Task { [weak self] in
                 guard let self else { return }
-                if let prevPages = await self.container?.readerPrependPreviousChapter(), !prevPages.isEmpty {
-                    self.layout.isInsertingCellsAbove = true
-                    self.pages.insert(contentsOf: prevPages, at: 0)
-                    // The page on screen stays put, now further down the strip.
-                    self.currentIndex += prevPages.count
-                    self.collectionView.reloadData()
+                if let prevPages = await self.container?.readerPrependPreviousChapter() {
+                    self.insertPagesAbove(prevPages)
                 }
                 self.isLoadingPrevChapter = false
             }
