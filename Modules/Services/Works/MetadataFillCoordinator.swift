@@ -98,8 +98,9 @@ final class MetadataFillCoordinator {
         if mayRun { start() }
     }
 
-    /// 資料來源's checked places, first first.
-    private static func liveProviders() -> [any MetadataFillProvider] {
+    /// 資料來源's checked places, first first. AI 推薦's missing covers are asked of them too
+    /// (`AIRecommendationService.fillCovers`). The installed modules must have been read.
+    static func liveProviders() -> [any MetadataFillProvider] {
         let modules = RuleModuleLibrary.shared.fillingModules
         return MetadataFillOrderStore.shared.order(modules: modules.map(\.id)).providers(modules: modules)
     }

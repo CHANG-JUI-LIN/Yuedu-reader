@@ -47,7 +47,8 @@ final class ModuleRecommendationResolver: AIRecommendationResolving {
 }
 
 /// AI 推薦's one use case, 產生推薦 (and 重新產生): read the shelf, ask the reader's AI service,
-/// keep the works, then look each up in Open Library's module for a cover and description.
+/// keep the works, then look each up in Open Library's module for a cover and description, and
+/// fill the covers still missing from 資料來源's places (`fillMissingCovers`).
 ///
 /// The works are saved as soon as the answer is read, so the home shows them while the
 /// lookups (one a second) go on. A failed run keeps the previous list.
@@ -90,16 +91,24 @@ final class AIRecommendationService: ObservableObject {
     private let activeService: @MainActor () -> Result<AIProviderAssembly.ActiveService, AIProviderAssembly.Unavailable>
     private let resolver: any AIRecommendationResolving
     private let lookupEnabled: @MainActor () async -> Bool
+    /// 資料來源's checked places, made for each pass (a provider reads the sources once).
+    private let coverProviders: @MainActor () async -> [any MetadataFillProvider]
     private let genres: () async -> [String: Double]
     private let language: AIAnswerLanguage
     private let origin: AIDiagnostics.Origin
     private let now: () -> Date
     private var task: Task<Void, Never>?
+    /// A pass of `fillMissingCovers` is going on.
+    private var fillingCovers = false
+    /// Works whose cover lookup failed this launch (network, no source answered), by
+    /// `coverKey`: asked again after a relaunch, not each time the home shows the row.
+    private var failedCoverLookups: Set<String> = []
 
     init(store: AIRecommendationStore? = nil,
          activeService: @escaping @MainActor () -> Result<AIProviderAssembly.ActiveService, AIProviderAssembly.Unavailable> = AIProviderAssembly.activeService,
          resolver: (any AIRecommendationResolving)? = nil,
          lookupEnabled: @escaping @MainActor () async -> Bool = AIRecommendationService.openLibraryChecked,
+         coverProviders: (@MainActor () async -> [any MetadataFillProvider])? = nil,
          genres: (() async -> [String: Double])? = nil,
          language: AIAnswerLanguage = .current,
          origin: AIDiagnostics.Origin = .observed,
@@ -108,6 +117,12 @@ final class AIRecommendationService: ObservableObject {
         self.activeService = activeService
         self.resolver = resolver ?? ModuleRecommendationResolver()
         self.lookupEnabled = lookupEnabled
+        self.coverProviders = coverProviders ?? {
+            // 資料來源 is the list under 自動補齊書籍資料: with the switch off, nothing is asked.
+            guard GlobalSettings.shared.autoFillBookMetadata else { return [] }
+            await RuleModuleLibrary.shared.loadIfNeeded()
+            return MetadataFillCoordinator.liveProviders()
+        }
         self.genres = genres ?? { await ReadingGenreRecorder.shared.profile().weights(at: Date()) }
         self.language = language
         self.origin = origin
@@ -165,11 +180,12 @@ final class AIRecommendationService: ObservableObject {
             return
         }
         store.save(list)
-        guard await lookupEnabled(), !list.entries.isEmpty else {
-            state = .idle
-            return
+        if !list.entries.isEmpty, await lookupEnabled() {
+            await resolve(list)
         }
-        await resolve(list)
+        // Whether Open Library was asked or not: it is unchecked, or knows no cover of the work
+        // (feedback #10: a Chinese title it does not list).
+        await fillCovers(of: list, reportsProgress: true)
         state = .idle
     }
 
@@ -231,5 +247,102 @@ final class AIRecommendationService: ObservableObject {
         }
         SourcePerfTrace.record("ai.recommend.resolve", "works=\(list.entries.count) matched=\(matched) failed=\(failed)",
                                since: started, thresholdMs: 0)
+    }
+
+    // MARK: Covers
+
+    /// Feedback #10: a work Open Library gave no cover showed the generated one on its card,
+    /// while 作品詳情 found it in the reader's book sources. Each work of the stored list
+    /// without a cover is asked of 資料來源's places, as a shelf copy without artwork is
+    /// (`MetadataFillRunner.wanted`): by title and author only the reader's book sources give
+    /// a cover (`BookSourceFillProvider`). The answer is kept with the work
+    /// (`Entry.coverFill`), so a list saved before is filled once and never asked again.
+    ///
+    /// A run fills its own list; the home's row calls this for a list saved before covers
+    /// were filled. Nothing while a run is going on, or while a pass is.
+    func fillMissingCovers() async {
+        guard !state.isRunning, !fillingCovers, let list = store.list else { return }
+        fillingCovers = true
+        defer { fillingCovers = false }
+        await fillCovers(of: list, reportsProgress: false)
+    }
+
+    private func fillCovers(of list: AIRecommendationList, reportsProgress: Bool) async {
+        // The stored entries, not the run's: Open Library's covers were written to them since.
+        guard let current = store.list, current.generatedAt == list.generatedAt else { return }
+        let missing = current.entries.filter { needsCover($0, of: list) }.map(\.id)
+        guard !missing.isEmpty else { return }
+        let providers = await coverProviders()
+        guard !providers.isEmpty else { return }
+        let started = SourcePerfTrace.now
+        var filled = 0
+        var failed = 0
+        if reportsProgress { state = .resolving(completed: 0, total: missing.count) }
+        for (index, id) in missing.enumerated() {
+            if Task.isCancelled { break }
+            // A list replaced since (重新產生) is no longer this pass's.
+            guard let current = store.list, current.generatedAt == list.generatedAt else { break }
+            if let entry = current.entries.first(where: { $0.id == id }), needsCover(entry, of: list) {
+                switch await cover(of: entry.work, from: providers) {
+                case .answered(let fill):
+                    if case .file(_) = fill { filled += 1 }
+                    store.setCoverFill(fill, for: id, generatedAt: list.generatedAt)
+                case .failed:
+                    failed += 1
+                    failedCoverLookups.insert(Self.coverKey(id, of: list))
+                case .notAsked:
+                    break
+                }
+            }
+            if reportsProgress { state = .resolving(completed: index + 1, total: missing.count) }
+        }
+        SourcePerfTrace.record("ai.recommend.covers", "works=\(missing.count) filled=\(filled) failed=\(failed)",
+                               since: started, thresholdMs: 0)
+    }
+
+    private func needsCover(_ entry: AIRecommendationList.Entry, of list: AIRecommendationList) -> Bool {
+        entry.cover == nil && entry.coverFill == nil && !failedCoverLookups.contains(Self.coverKey(entry.id, of: list))
+    }
+
+    private static func coverKey(_ entryID: String, of list: AIRecommendationList) -> String {
+        "\(list.generatedAt.timeIntervalSince1970)\u{1F}\(entryID)"
+    }
+
+    private enum CoverAnswer {
+        /// Every place that could be asked answered.
+        case answered(AIRecommendationList.CoverFill)
+        /// A place failed (outside the app: network, no source answered) and none gave one.
+        case failed
+        /// No place could be asked (no enabled source yet): nothing is kept, so a source added
+        /// later is asked.
+        case notAsked
+    }
+
+    /// The places in 資料來源's order; the first cover found is the work's.
+    private func cover(of work: AIRecommendation.Work, from providers: [any MetadataFillProvider]) async -> CoverAnswer {
+        var asked = false
+        var failed = false
+        for provider in providers {
+            if Task.isCancelled { return .notAsked }
+            let wanted = MetadataFillRunner.wanted([.cover], of: provider)
+            guard !wanted.isEmpty else { continue }
+            let query = MetadataFillQuery(copyID: UUID(), title: work.title, authors: [work.author], identifiers: [],
+                                          copySource: AIRecommendationProvider.recordInstance, missing: wanted)
+            guard provider.canLookUp(query) else { continue }
+            asked = true
+            do {
+                let result = try await provider.lookUp(query)
+                // A search the row's leaving cut short is no answer: the work is asked again.
+                if Task.isCancelled { return .notAsked }
+                if let name = FilledMetadata.coverFileName(result.values[.cover]) { return .answered(.file(name)) }
+            } catch {
+                failed = true
+                AppLogger.network("AI recommendation cover lookup failed", error: error,
+                                  context: ["title": work.title, "author": work.author,
+                                            "provider": "\(provider.key.type.rawValue):\(provider.key.id)"])
+            }
+        }
+        if failed { return .failed }
+        return asked ? .answered(.notFound) : .notAsked
     }
 }

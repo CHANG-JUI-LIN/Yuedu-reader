@@ -10,16 +10,39 @@ struct AIRecommendationList: Codable, Equatable, Sendable {
         var openLibrary: SourceRecord?
         var cover: CoverReference?
         var blurb: String?
+        /// What 資料來源's places gave a work Open Library left without a cover (feedback #10);
+        /// nil until they answered. Absent from lists saved before it, which are asked then.
+        var coverFill: CoverFill?
 
         /// Unique within a list: `AIRecommendation.parse` drops repeats by title and author.
         var id: String { "\(work.title)\u{1F}\(work.author)" }
 
-        init(work: AIRecommendation.Work, openLibrary: SourceRecord? = nil, cover: CoverReference? = nil, blurb: String? = nil) {
+        init(work: AIRecommendation.Work, openLibrary: SourceRecord? = nil, cover: CoverReference? = nil, blurb: String? = nil,
+             coverFill: CoverFill? = nil) {
             self.work = work
             self.openLibrary = openLibrary
             self.cover = cover
             self.blurb = blurb
+            self.coverFill = coverFill
         }
+
+        /// The cover the card and 作品詳情 draw: Open Library's, else the filled one. The filled
+        /// file's path is made here, as the shelf makes it (`BookStore.refreshFilledCovers`): the
+        /// container's path changes across updates, so only the name is kept. A file `Caches`
+        /// lost draws the generated cover (`HomeFileCover`).
+        var shownCover: CoverReference? {
+            if let cover { return cover }
+            guard case .file(let name) = coverFill else { return nil }
+            return .copyFile(FilledMetadata.coverDirectory.appendingPathComponent(name).path)
+        }
+    }
+
+    /// The answer of the places a missing cover is filled from (`MetadataFillRunner.wanted`).
+    enum CoverFill: Codable, Equatable, Sendable {
+        /// A file name in `FilledMetadata.coverDirectory`.
+        case file(String)
+        /// Every place asked answered, with no cover.
+        case notFound
     }
 
     var entries: [Entry]
@@ -69,6 +92,16 @@ final class AIRecommendationStore: ObservableObject {
         list.entries[index].openLibrary = record
         list.entries[index].cover = cover
         list.entries[index].blurb = blurb
+        save(list)
+    }
+
+    /// The filled cover of one work of the current list, while it still has none: a list
+    /// replaced since, or an Open Library cover that came first, is left as it is.
+    func setCoverFill(_ fill: AIRecommendationList.CoverFill, for entryID: String, generatedAt: Date) {
+        guard var list, list.generatedAt == generatedAt,
+              let index = list.entries.firstIndex(where: { $0.id == entryID }),
+              list.entries[index].cover == nil else { return }
+        list.entries[index].coverFill = fill
         save(list)
     }
 

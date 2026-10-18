@@ -210,13 +210,21 @@ final class MetadataFillRunner {
         return report
     }
 
+    /// What `provider` may be asked of `missing`: a level-B match gives no cover unless it is
+    /// one of the reader's book sources (`fillsCoverByTitle`). The rule AI 推薦's covers are
+    /// filled by too (`AIRecommendationService`).
+    static func wanted(_ missing: Set<MetadataField>, of provider: any MetadataFillProvider) -> Set<MetadataField> {
+        var wanted = missing
+        if provider.grade == .b, !provider.fillsCoverByTitle { wanted.remove(.cover) }
+        return wanted
+    }
+
     private func fill(_ copy: MetadataFillCandidate) async -> (asked: Bool, filled: Bool, failed: Bool) {
         var missing = copy.missing
         var asked = false, filled = false, failed = false
         for provider in providers {
             if Task.isCancelled { break }
-            var wanted = missing
-            if provider.grade == .b, !provider.fillsCoverByTitle { wanted.remove(.cover) }
+            let wanted = Self.wanted(missing, of: provider)
             guard !wanted.isEmpty else { continue }
             let query = MetadataFillQuery(copyID: copy.copyID, title: copy.title, authors: copy.authors,
                                           identifiers: copy.identifiers, copySource: copy.copySource, missing: wanted,

@@ -31,10 +31,12 @@ struct AIRecommendationServiceTests {
     }
 
     private func service(provider: ScriptedProvider, resolver: StubResolver? = nil, lookup: Bool = false,
-                         store: AIRecommendationStore? = nil, genres: [String: Double] = ["科幻": 1, "懸疑": 0.4]) -> AIRecommendationService {
+                         store: AIRecommendationStore? = nil, covers: StubCoverProvider? = nil,
+                         genres: [String: Double] = ["科幻": 1, "懸疑": 0.4]) -> AIRecommendationService {
         AIRecommendationService(store: store ?? AIRecommendationStore(directory: directory),
                                 activeService: { .success(.init(provider: provider, name: "我的服務")) },
-                                resolver: resolver ?? StubResolver(), lookupEnabled: { lookup }, genres: { genres },
+                                resolver: resolver ?? StubResolver(), lookupEnabled: { lookup },
+                                coverProviders: { covers.map { [$0] as [any MetadataFillProvider] } ?? [] }, genres: { genres },
                                 language: .traditionalChinese, origin: .testFixture,
                                 now: { Date(timeIntervalSince1970: 1_900_000_000) })
     }
@@ -165,7 +167,147 @@ struct AIRecommendationServiceTests {
         #expect(reopened.list?.entries.first?.openLibrary == record)
     }
 
+    // MARK: - Covers (feedback #10)
+
+    private static func shownCover(_ list: AIRecommendationList, _ index: Int) -> CoverReference? {
+        guard case .item(_, let summary, _) = AIRecommendationProvider.entries(from: list)[index] else { return nil }
+        return summary.cover
+    }
+
+    private static func filledPath(_ name: String) -> CoverReference {
+        .copyFile(FilledMetadata.coverDirectory.appendingPathComponent(name).path)
+    }
+
+    @Test("a work Open Library matched without a cover takes the one the book sources give")
+    func coverFilledAfterOpenLibrary() async throws {
+        let store = AIRecommendationStore(directory: directory)
+        let resolver = StubResolver()
+        let covers = StubCoverProvider(covers: ["球狀閃電": "bs-ball.jpg"])
+        let subject = service(provider: ScriptedProvider(reply: Self.answer), resolver: resolver, lookup: true,
+                              store: store, covers: covers)
+        subject.generate(shelf: shelf(opened: 2))
+        await subject.wait()
+        let list = try #require(store.list)
+        #expect(list.entries[0].openLibrary?.key.item == "/works/球狀閃電")
+        #expect(list.entries[0].cover == nil)
+        #expect(list.entries[0].coverFill == .file("bs-ball.jpg"))
+        #expect(Self.shownCover(list, 0) == Self.filledPath("bs-ball.jpg"))
+        #expect(list.entries[1].coverFill == .notFound)
+        #expect(Self.shownCover(list, 1) == .generated(seed: "銀河帝國"))
+        #expect(covers.asked == ["球狀閃電", "銀河帝國"])
+        #expect(covers.queries.allSatisfy { $0.missing == [.cover] && $0.authors.count == 1 })
+        #expect(subject.state == .idle)
+    }
+
+    @Test("with Open Library unchecked, the covers are still filled from the book sources")
+    func coverFilledWithoutOpenLibrary() async throws {
+        let store = AIRecommendationStore(directory: directory)
+        let resolver = StubResolver()
+        let covers = StubCoverProvider(covers: ["球狀閃電": "bs-ball.jpg", "銀河帝國": "bs-empire.jpg"])
+        let subject = service(provider: ScriptedProvider(reply: Self.answer), resolver: resolver, lookup: false,
+                              store: store, covers: covers)
+        subject.generate(shelf: shelf(opened: 2))
+        await subject.wait()
+        #expect(resolver.asked.isEmpty)
+        let list = try #require(store.list)
+        #expect(Self.shownCover(list, 0) == Self.filledPath("bs-ball.jpg"))
+        #expect(Self.shownCover(list, 1) == Self.filledPath("bs-empire.jpg"))
+    }
+
+    @Test("a work Open Library gave a cover is not asked of the book sources")
+    func openLibraryCoverKept() async throws {
+        let store = AIRecommendationStore(directory: directory)
+        let resolver = StubResolver()
+        let remote = CoverReference.remote(URL(string: "https://covers.openlibrary.org/b/id/1-L.jpg")!, headers: [:])
+        resolver.covers = ["球狀閃電": remote]
+        let covers = StubCoverProvider(covers: ["球狀閃電": "bs-ball.jpg"])
+        let subject = service(provider: ScriptedProvider(reply: Self.answer), resolver: resolver, lookup: true,
+                              store: store, covers: covers)
+        subject.generate(shelf: shelf(opened: 2))
+        await subject.wait()
+        let list = try #require(store.list)
+        #expect(covers.asked == ["銀河帝國"])
+        #expect(Self.shownCover(list, 0) == remote)
+        #expect(list.entries[0].coverFill == nil)
+    }
+
+    @Test("a list saved before covers were filled is filled once, and kept across a relaunch")
+    func persistedListFilledOnce() async throws {
+        let store = AIRecommendationStore(directory: directory)
+        let old = AIRecommendationList(
+            entries: [.init(work: .init(title: "球狀閃電", author: "劉慈欣", reason: ""), openLibrary: StubResolver.record(for: "球狀閃電")),
+                      .init(work: .init(title: "銀河帝國", author: "艾西莫夫", reason: ""))],
+            generatedAt: Date(timeIntervalSince1970: 1_850_000_000), service: "s", model: "m")
+        store.save(old)
+        let covers = StubCoverProvider(covers: ["球狀閃電": "bs-ball.jpg"])
+        let subject = service(provider: ScriptedProvider(reply: Self.answer), store: store, covers: covers)
+        await subject.fillMissingCovers()
+        #expect(covers.asked == ["球狀閃電", "銀河帝國"])
+        let reopened = AIRecommendationStore(directory: directory)
+        let list = try #require(reopened.list)
+        #expect(list.entries[0].coverFill == .file("bs-ball.jpg"))
+        #expect(list.entries[1].coverFill == .notFound)
+        #expect(Self.shownCover(list, 0) == Self.filledPath("bs-ball.jpg"))
+
+        let relaunched = service(provider: ScriptedProvider(reply: Self.answer), store: reopened, covers: covers)
+        await relaunched.fillMissingCovers()
+        #expect(covers.asked == ["球狀閃電", "銀河帝國"])
+    }
+
+    @Test("a failed cover lookup is kept unanswered: asked again after a relaunch, not on every showing")
+    func failedCoverLookupAskedAgain() async throws {
+        let store = AIRecommendationStore(directory: directory)
+        store.save(AIRecommendationList(entries: [.init(work: .init(title: "球狀閃電", author: "劉慈欣", reason: ""))],
+                                        generatedAt: Date(timeIntervalSince1970: 1_850_000_000), service: "s", model: "m"))
+        let covers = StubCoverProvider(covers: ["球狀閃電": "bs-ball.jpg"])
+        covers.failing = ["球狀閃電"]
+        let subject = service(provider: ScriptedProvider(reply: Self.answer), store: store, covers: covers)
+        await subject.fillMissingCovers()
+        await subject.fillMissingCovers()
+        #expect(covers.asked == ["球狀閃電"])
+        #expect(store.list?.entries[0].coverFill == nil)
+
+        covers.failing = []
+        let relaunched = service(provider: ScriptedProvider(reply: Self.answer), store: store, covers: covers)
+        await relaunched.fillMissingCovers()
+        #expect(covers.asked == ["球狀閃電", "球狀閃電"])
+        #expect(store.list?.entries[0].coverFill == .file("bs-ball.jpg"))
+    }
+
+    @Test("a list saved before coverFill existed still decodes")
+    func legacyListDecodes() throws {
+        let json = #"{"entries":[{"work":{"title":"球狀閃電","author":"劉慈欣","reason":""}}],"generatedAt":0,"service":"s","model":"m"}"#
+        let list = try JSONDecoder().decode(AIRecommendationList.self, from: Data(json.utf8))
+        #expect(list.entries[0].coverFill == nil)
+        #expect(Self.shownCover(list, 0) == .generated(seed: "球狀閃電"))
+    }
+
     // MARK: - Doubles
+
+    /// The reader's book sources as 資料來源 asks them: level B, a cover by title.
+    @MainActor
+    final class StubCoverProvider: MetadataFillProvider {
+        let key = BookSourceFillProvider.allSourcesKey
+        let grade: MetadataMatchGrade = .b
+        let fillsCoverByTitle = true
+        let covers: [String: String]
+        var failing: Set<String> = []
+        private(set) var asked: [String] = []
+        private(set) var queries: [MetadataFillQuery] = []
+
+        init(covers: [String: String]) {
+            self.covers = covers
+        }
+
+        func canLookUp(_ query: MetadataFillQuery) -> Bool { true }
+
+        func lookUp(_ query: MetadataFillQuery) async throws -> MetadataFillResult {
+            asked.append(query.title)
+            queries.append(query)
+            if failing.contains(query.title) { throw BookSourceFillProvider.LookupError.noSourceAnswered(queried: 3) }
+            return MetadataFillResult(values: covers[query.title].map { [.cover: .text($0)] } ?? [:])
+        }
+    }
 
     private final class ScriptedProvider: LLMProviding, @unchecked Sendable {
         let identifier = "scripted"
@@ -189,6 +331,7 @@ struct AIRecommendationServiceTests {
     @MainActor
     final class StubResolver: AIRecommendationResolving {
         var failing: Set<String> = []
+        var covers: [String: CoverReference] = [:]
         private(set) var asked: [String] = []
 
         static func record(for title: String) -> SourceRecord {
@@ -199,7 +342,7 @@ struct AIRecommendationServiceTests {
         func match(_ work: AIRecommendation.Work) async throws -> (record: SourceRecord, cover: CoverReference?, blurb: String?)? {
             asked.append(work.title)
             if failing.contains(work.title) { throw URLError(.timedOut) }
-            return (Self.record(for: work.title), nil, "簡介：\(work.title)")
+            return (Self.record(for: work.title), covers[work.title], "簡介：\(work.title)")
         }
     }
 }

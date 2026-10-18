@@ -70,6 +70,12 @@ struct AIRecommendationRow: View {
                       list.generatedAt.formatted(date: .abbreviated, time: .omitted))
     }
 
+    /// The list whose missing covers are filled once the row shows (feedback #10); none in the
+    /// editor's preview, or without Pro, where no card is drawn.
+    private var coverFillList: Date? {
+        canGenerate && allowsAI ? list?.generatedAt : nil
+    }
+
     private var canRegenerate: Bool {
         canGenerate && allowsAI && list != nil && !service.state.isRunning
     }
@@ -85,6 +91,11 @@ struct AIRecommendationRow: View {
         .sheet(isPresented: $showsPaywall) {
             PaywallView(highlightedFeature: .aiReading)
                 .environmentObject(subscription)
+        }
+        .task(id: coverFillList) {
+            // A list saved before its covers were filled; the service asks each work once.
+            guard coverFillList != nil else { return }
+            await service.fillMissingCovers()
         }
     }
 
@@ -313,6 +324,7 @@ enum AIRecommendationRowPreview {
         let store = AIRecommendationStore(directory: FileManager.default.temporaryDirectory
             .appendingPathComponent("AIRecommendationRowPreview-\(UUID().uuidString)", isDirectory: true))
         if let list { store.save(list) }
-        return AIRecommendationService(store: store, activeService: { .failure(.notConfigured) }, lookupEnabled: { false })
+        return AIRecommendationService(store: store, activeService: { .failure(.notConfigured) }, lookupEnabled: { false },
+                                       coverProviders: { [] })
     }
 }

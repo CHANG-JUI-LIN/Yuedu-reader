@@ -36,12 +36,13 @@ final class AIRecommendationProvider: HomeSectionProviding {
     }
 
     /// Each work as a data-only item that opens 作品詳情: Open Library's record when it matched,
-    /// otherwise one of its own. The title and author are the ones the AI gave.
+    /// otherwise one of its own. The title and author are the ones the AI gave; the cover is
+    /// Open Library's, else the one the reader's book sources gave (`Entry.shownCover`).
     static func entries(from list: AIRecommendationList) -> [CollectionEntry] {
         list.entries.map { entry in
             let record = record(for: entry)
             let summary = WorkSummary(title: entry.work.title, authors: [entry.work.author],
-                                      cover: entry.cover ?? .generated(seed: entry.work.title), blurb: entry.blurb,
+                                      cover: entry.shownCover ?? .generated(seed: entry.work.title), blurb: entry.blurb,
                                       language: record.language, contentKind: .text)
             return .item(record, summary, .bibliographic)
         }
