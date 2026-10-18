@@ -314,7 +314,8 @@ struct LegadoReviewBrowserView: View {
 
 // MARK: - JsBridgeBrowserBridge
 
-final class JsBridgeBrowserBridge: ObservableObject {
+@MainActor
+final class JsBridgeBrowserBridge: @MainActor ObservableObject {
     enum Phase { case loading, committed, finished, failed }
 
     var syncCookiesAndDismiss: ((@escaping (String?) -> Void) -> Void)?

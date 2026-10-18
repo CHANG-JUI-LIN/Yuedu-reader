@@ -1,6 +1,7 @@
 import Foundation
 import Network
 import Combine
+import os
 
 /// Provides a read-only snapshot of the user's book list.
 /// `LanWebServer` depends only on this protocol, keeping it independent of
@@ -10,18 +11,31 @@ protocol BookProvider: Sendable {
     var books: [ReadingBook] { get }
 }
 
-class LanWebServer: ObservableObject {
+@MainActor
+class LanWebServer: @MainActor ObservableObject {
     static let shared = LanWebServer()
 
     @Published var isRunning: Bool = false
     @Published var localIPAddress: String = ""
-    @Published var accessPIN: String = ""
+    @Published var accessPIN: String = "" {
+        didSet { let pin = accessPIN; requestContext.withLock { $0.pin = pin } }
+    }
 
     let port: UInt16 = 1122
 
     /// Set from the view layer. Using a protocol decouples the server from the
     /// concrete BookStore class so neither side needs to know the other's internals.
-    var bookProvider: BookProvider?
+    var bookProvider: BookProvider? {
+        didSet { let provider = bookProvider; requestContext.withLock { $0.bookProvider = provider } }
+    }
+
+    /// What request handling on the listener's queue reads: copies of `accessPIN` and
+    /// `bookProvider`, which belong to the main actor.
+    private struct RequestContext: Sendable {
+        var pin = ""
+        var bookProvider: BookProvider?
+    }
+    private nonisolated let requestContext = OSAllocatedUnfairLock(initialState: RequestContext())
 
     private var listener: NWListener?
     private var cancellables = Set<AnyCancellable>()
@@ -39,7 +53,7 @@ class LanWebServer: ObservableObject {
             self.listener = listener
 
             listener.stateUpdateHandler = { [weak self] state in
-                DispatchQueue.main.async {
+                DispatchQueue.main.async { [weak self] in
                     switch state {
                     case .ready:
                         self?.isRunning = true
@@ -105,7 +119,7 @@ class LanWebServer: ObservableObject {
 
     // MARK: - Connection handling
 
-    private func handleConnection(_ connection: NWConnection) {
+    private nonisolated func handleConnection(_ connection: NWConnection) {
         connection.start(queue: .global(qos: .userInitiated))
         receiveAll(connection: connection) { [weak self] data in
             guard let self, let data, !data.isEmpty else {
@@ -147,10 +161,10 @@ class LanWebServer: ObservableObject {
         }
     }
 
-    private func receiveAll(
+    private nonisolated func receiveAll(
         connection: NWConnection,
         buffer: Data = Data(),
-        completion: @escaping (Data?) -> Void
+        completion: @escaping @Sendable (Data?) -> Void
     ) {
         connection.receive(minimumIncompleteLength: 1, maximumLength: 65536) { [weak self] data, _, isComplete, error in
             guard let self else { completion(nil); return }
@@ -188,7 +202,7 @@ class LanWebServer: ObservableObject {
         }
     }
 
-    private func parseContentLength(from headers: String) -> Int {
+    private nonisolated func parseContentLength(from headers: String) -> Int {
         let lines = headers.lowercased().components(separatedBy: "\r\n")
         for line in lines {
             if line.hasPrefix("content-length:") {
@@ -199,7 +213,8 @@ class LanWebServer: ObservableObject {
         return 0
     }
 
-    private func isAuthorized(queryItems: [URLQueryItem], headers: [String: String]) -> Bool {
+    private nonisolated func isAuthorized(queryItems: [URLQueryItem], headers: [String: String]) -> Bool {
+        let accessPIN = requestContext.withLock { $0.pin }
         // Note: String == is not constant-time. For a 6-digit LAN-only PIN,
         // timing attacks are impractical given typical LAN jitter (>1ms vs nanosecond differences).
         if let pin = queryItems.first(where: { $0.name == "pin" })?.value, pin == accessPIN { return true }
@@ -207,7 +222,7 @@ class LanWebServer: ObservableObject {
         return authHeader == "Bearer \(accessPIN)"
     }
 
-    private func parseHTTPRequest(_ text: String, rawData: Data) -> (method: String, path: String, body: Data?, headers: [String: String], queryItems: [URLQueryItem]) {
+    private nonisolated func parseHTTPRequest(_ text: String, rawData: Data) -> (method: String, path: String, body: Data?, headers: [String: String], queryItems: [URLQueryItem]) {
         let lines = text.components(separatedBy: "\r\n")
         guard let requestLine = lines.first else { return ("GET", "/", nil, [:], []) }
         let parts = requestLine.components(separatedBy: " ")
@@ -244,15 +259,15 @@ class LanWebServer: ObservableObject {
 
     /// The shelf belongs to the main actor; requests are handled on the listener's queue,
     /// which the main thread never waits on, so taking a snapshot there cannot deadlock.
-    private func shelfBooks() -> [ReadingBook] {
+    private nonisolated func shelfBooks() -> [ReadingBook] {
         dispatchPrecondition(condition: .notOnQueue(.main))
-        guard let provider = bookProvider else { return [] }
+        guard let provider = requestContext.withLock({ $0.bookProvider }) else { return [] }
         return DispatchQueue.main.sync {
             MainActor.assumeIsolated { provider.books }
         }
     }
 
-    private func handleRequest(method: String, path: String, body: Data?) -> (status: Int, contentType: String, body: Data) {
+    private nonisolated func handleRequest(method: String, path: String, body: Data?) -> (status: Int, contentType: String, body: Data) {
         let jsonType = "application/json; charset=utf-8"
         let encoder = JSONEncoder()
 

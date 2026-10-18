@@ -177,6 +177,7 @@ final class BrowserScrollChapter {
     /// arrives, the region shows what the current one has (no text where
     /// nothing is laid out yet), which is the chosen trade-off for a scroll
     /// frame that never lays out.
+    @MainActor
     func requestViewport(_ bounds: CGRect, anchorOffset: Int? = nil) {
         guard isViewportDriven else { return }
         // What the chapter will hold once its requests land: the last one's region, or
@@ -193,6 +194,7 @@ final class BrowserScrollChapter {
     }
 
     /// Retires resident lines and their drawing resources; geometry stays.
+    @MainActor
     func discardViewportResources() {
         guard isViewportDriven, retainedLineCount > 0 || inFlight != nil else { return }
         submit(.discard)
@@ -215,6 +217,8 @@ final class BrowserScrollChapter {
         }
     }
 
+    /// On the main actor, like the request state it reads and writes.
+    @MainActor
     private func submit(_ request: Request) {
         guard inFlight == nil else { pending = request; return }
         guard let layoutOwner else { return }

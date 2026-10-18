@@ -45,7 +45,7 @@ final class SystemTTSEngine: NSObject, TTSPlayable, @unchecked Sendable {
     private var isPaused = false
     private var lastRate: Float = 0.5
     private var playbackToken = UUID()
-    private var activeUtterance: AVSpeechUtterance?
+    private var activeUtterance: IdentifiedUtterance?
     private var backgroundTask: UIBackgroundTaskIdentifier = .invalid
     /// `didCancel` does not include an error. Only a preceding media-services-reset notification
     /// authorizes recovery; an unqualified cancellation is treated as a system voice failure so
@@ -359,8 +359,8 @@ final class SystemTTSEngine: NSObject, TTSPlayable, @unchecked Sendable {
         speakChunk(at: finishedIndex + 1, token: playbackToken)
     }
 
-    private func handlePlaybackCancelled(_ utterance: AVSpeechUtterance) {
-        guard utterance === activeUtterance else { return }
+    private func handlePlaybackCancelled(_ utteranceID: UUID?) {
+        guard let utteranceID, utteranceID == activeUtterance?.id else { return }
         guard Self.shouldRecoverFromCancelledUtterance(
             isPlaying: isPlaying,
             isPaused: isPaused,
@@ -589,13 +589,13 @@ final class SystemTTSEngine: NSObject, TTSPlayable, @unchecked Sendable {
         text: String,
         rate: Float,
         pronunciationHints: [TTSPronunciationHint]
-    ) -> AVSpeechUtterance {
+    ) -> IdentifiedUtterance {
         // The language-specific voice is assigned by the playback path after this utterance is
         // built. Keeping construction separate lets pronunciation annotations stay testable.
-        let utterance: AVSpeechUtterance
+        let utterance: IdentifiedUtterance
         let speech = TTSPronunciationSpeechText(text: text, hints: pronunciationHints)
         if speech.ipaHints.isEmpty {
-            utterance = AVSpeechUtterance(string: speech.text)
+            utterance = IdentifiedUtterance(string: speech.text)
         } else {
             let attributed = NSMutableAttributedString(string: speech.text)
             let key = NSAttributedString.Key(rawValue: AVSpeechSynthesisIPANotationAttribute)
@@ -605,7 +605,7 @@ final class SystemTTSEngine: NSObject, TTSPlayable, @unchecked Sendable {
                 guard range.length > 0 else { continue }
                 attributed.addAttribute(key, value: hint.ipa, range: range)
             }
-            utterance = AVSpeechUtterance(attributedString: attributed)
+            utterance = IdentifiedUtterance(attributedString: attributed)
         }
         utterance.rate = utteranceRate(forUIRate: rate)
         return utterance
@@ -659,14 +659,22 @@ final class SystemTTSEngine: NSObject, TTSPlayable, @unchecked Sendable {
     }
 }
 
+/// An utterance with a Sendable identity. The synthesizer reports progress off the main
+/// thread; its delegate passes this id, not the utterance, to the main-thread check of
+/// whether the report is about the utterance still playing.
+final class IdentifiedUtterance: AVSpeechUtterance {
+    let id = UUID()
+}
+
 extension SystemTTSEngine: AVSpeechSynthesizerDelegate {
     func speechSynthesizer(
         _ synthesizer: AVSpeechSynthesizer,
         willSpeakRangeOfSpeechString characterRange: NSRange,
         utterance: AVSpeechUtterance
     ) {
+        let utteranceID = (utterance as? IdentifiedUtterance)?.id
         DispatchQueue.main.async { [weak self] in
-            guard let self, utterance === self.activeUtterance else { return }
+            guard let self, let utteranceID, utteranceID == self.activeUtterance?.id else { return }
             // `characterRange` is relative to this utterance's string; add the utterance's base
             // offset to track how far into the full chunk we've reached.
             self.spokenUTF16Offset = self.utteranceBaseOffset + (self.utteranceSpeechText?.sourceOffset(forSpeechOffset: characterRange.location) ?? characterRange.location)
@@ -674,15 +682,17 @@ extension SystemTTSEngine: AVSpeechSynthesizerDelegate {
     }
 
     func speechSynthesizer(_ synthesizer: AVSpeechSynthesizer, didFinish utterance: AVSpeechUtterance) {
+        let utteranceID = (utterance as? IdentifiedUtterance)?.id
         DispatchQueue.main.async { [weak self] in
-            guard let self, utterance === self.activeUtterance else { return }
+            guard let self, let utteranceID, utteranceID == self.activeUtterance?.id else { return }
             self.handlePlaybackEnded()
         }
     }
 
     func speechSynthesizer(_ synthesizer: AVSpeechSynthesizer, didCancel utterance: AVSpeechUtterance) {
+        let utteranceID = (utterance as? IdentifiedUtterance)?.id
         DispatchQueue.main.async { [weak self] in
-            self?.handlePlaybackCancelled(utterance)
+            self?.handlePlaybackCancelled(utteranceID)
         }
     }
 }

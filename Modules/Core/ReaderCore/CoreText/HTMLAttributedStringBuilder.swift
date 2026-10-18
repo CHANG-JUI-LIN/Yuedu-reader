@@ -514,9 +514,11 @@ final class HTMLAttributedStringBuilder {
         var svgContent: String?
     }
 
-    var imageLoader: ((String) async -> UIImage?)?
-    var cssLoader: ((String) async -> String?)?
-    var mediaURLResolver: ((String) -> String?)?
+    // @Sendable: the loaders are set on the caller's actor and called from `buildStyledAST`
+    // off it, so they must not capture caller-isolated state.
+    var imageLoader: (@Sendable (String) async -> UIImage?)?
+    var cssLoader: (@Sendable (String) async -> String?)?
+    var mediaURLResolver: (@Sendable (String) -> String?)?
     var resolvedFontFamily: ((String) -> String?)?
     var resolvedFont: (([String], Int, Bool, CGFloat) -> UIFont?)?
     /// Set to true after buildStyledAST if CSS writing-mode: vertical-rl is detected on the body element.

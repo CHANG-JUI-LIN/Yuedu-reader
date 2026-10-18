@@ -27,7 +27,11 @@ enum SourceScriptThread {
         let qos = dispatchQoS(for: Task.currentPriority)
         return try await withCheckedThrowingContinuation { continuation in
             queue.async(qos: qos, flags: .enforceQoS) {
-                continuation.resume(with: Result(catching: body))
+                do {
+                    continuation.resume(returning: try body())
+                } catch {
+                    continuation.resume(throwing: error)
+                }
             }
         }
     }

@@ -2380,11 +2380,8 @@ class GlobalSettings {
             guard let self else { return }
             self.readerStyleAssetRevision = max(self.readerStyleAssetRevision, revision)
         }
-        Task { @MainActor [weak self] in
-            let revision = await ReaderStyleAssetStore.shared.revision
-            guard let self else { return }
-            self.readerStyleAssetRevision = max(self.readerStyleAssetRevision, revision)
-        }
+        // The revision the asset store already has is read by `loadInitialReaderStyleAssetRevision`,
+        // which the app calls at launch on the main actor.
 
         // Establishes "a custom theme is selected ⟹ a baseline exists". The selection
         // `didSet` cannot do it, because it never fires for a theme restored from
@@ -3769,9 +3766,10 @@ class GlobalSettings {
         accountDisplayName = trimmed
     }
 
+    @MainActor
     func signOut(
         revokeGoogleAccess: Bool = false,
-        completion: ((Error?) -> Void)? = nil
+        completion: (@MainActor (Error?) -> Void)? = nil
     ) {
         let provider = accountProvider
 
@@ -3782,14 +3780,16 @@ class GlobalSettings {
         }
 
         if revokeGoogleAccess {
-            GIDSignIn.sharedInstance.disconnect { [weak self] error in
-                if error != nil {
+            Task { @MainActor [weak self] in
+                var failure: Error?
+                do {
+                    try await GIDSignIn.sharedInstance.disconnect()
+                } catch {
+                    failure = error
                     GIDSignIn.sharedInstance.signOut()
                 }
-                DispatchQueue.main.async {
-                    self?.clearAccountState()
-                    completion?(error)
-                }
+                self?.clearAccountState()
+                completion?(failure)
             }
             return
         }
@@ -3797,6 +3797,18 @@ class GlobalSettings {
         GIDSignIn.sharedInstance.signOut()
         clearAccountState()
         completion?(nil)
+    }
+
+    /// The asset store's revision as of launch; the notification subscription made in `init`
+    /// reports only later changes. On the main actor so the task that sets it does not send
+    /// `self` out of the nonisolated `init`.
+    @MainActor
+    func loadInitialReaderStyleAssetRevision() {
+        Task { @MainActor [weak self] in
+            let revision = await ReaderStyleAssetStore.shared.revision
+            guard let self else { return }
+            self.readerStyleAssetRevision = max(self.readerStyleAssetRevision, revision)
+        }
     }
 
     func clearAccountState() {

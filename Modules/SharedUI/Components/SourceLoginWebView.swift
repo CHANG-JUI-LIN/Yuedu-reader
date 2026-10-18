@@ -101,7 +101,8 @@ struct SourceLoginWebView: View {
 /// Reference-type bridge that lets the SwiftUI "Done" button trigger the WKWebView's
 /// cookie extraction inside the UIKit Coordinator, and publishes the page-load
 /// progress for the top linear indicator (md3's LinearProgressIndicator).
-final class LoginWebBridge: ObservableObject {
+@MainActor
+final class LoginWebBridge: @MainActor ObservableObject {
     /// Set by the Coordinator after the WKWebView is created.
     /// Calling it triggers a full cookie sync and then invokes `completion`.
     var syncCookiesAndDismiss: ((@escaping () -> Void) -> Void)?

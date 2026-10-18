@@ -94,11 +94,17 @@ final class RSSNotificationManager {
 
     // MARK: - Handle Notification Action
 
-    func handleNotificationResponse(_ response: UNNotificationResponse) {
-        guard let articleID = response.notification.request.content.userInfo["articleID"] as? String else {
+    /// The parts of a `UNNotificationResponse` this needs, read where the response arrives:
+    /// the response itself is not Sendable.
+    nonisolated static func articleAction(from response: UNNotificationResponse) -> (articleID: String?, actionIdentifier: String) {
+        (response.notification.request.content.userInfo["articleID"] as? String, response.actionIdentifier)
+    }
+
+    func handleNotificationAction(articleID: String?, actionIdentifier: String) {
+        guard let articleID else {
             return
         }
-        switch response.actionIdentifier {
+        switch actionIdentifier {
         case Constants.markReadActionIdentifier:
             RSSStore.shared.markRead(articleId: articleID, isRead: true)
         case Constants.markStarredActionIdentifier:
@@ -224,12 +230,14 @@ final class RSSAppNotificationDelegate: NSObject, UIApplicationDelegate, UNUserN
 
     nonisolated func userNotificationCenter(
         _ center: UNUserNotificationCenter,
-        didReceive response: UNNotificationResponse,
-        withCompletionHandler completionHandler: @escaping () -> Void
-    ) {
-        Task { @MainActor in
-            RSSNotificationManager.shared.handleNotificationResponse(response)
-            completionHandler()
+        didReceive response: UNNotificationResponse
+    ) async {
+        let action = RSSNotificationManager.articleAction(from: response)
+        await MainActor.run {
+            RSSNotificationManager.shared.handleNotificationAction(
+                articleID: action.articleID,
+                actionIdentifier: action.actionIdentifier
+            )
         }
     }
 }

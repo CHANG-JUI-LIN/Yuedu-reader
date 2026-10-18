@@ -15,7 +15,7 @@ enum ProviderAvailability: Hashable, Sendable {
 }
 
 @MainActor
-protocol SourceProvider: AnyObject {
+protocol SourceProvider: AnyObject, Sendable {
     var instance: SourceInstanceKey { get }
     var displayName: String { get }
     var availability: ProviderAvailability { get }

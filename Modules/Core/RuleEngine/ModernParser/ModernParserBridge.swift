@@ -1021,7 +1021,7 @@ class ModernParserBridge {
     /// Presents URLs that source JS opens via `java.showBrowser` / `java.startBrowser`.
     /// Reading a 段評 bubble's click action means running the source's JS and seeing where it
     /// wants to send the user, so this has to be reachable from outside the parsing pipeline.
-    var browserPresentHandler: ((SourceBrowserRequest, @escaping (String?) -> Void) -> Void)? {
+    var browserPresentHandler: ((SourceBrowserRequest, @escaping @Sendable (String?) -> Void) -> Void)? {
         get { jsEngine.browserPresentHandler }
         set { jsEngine.browserPresentHandler = newValue }
     }
@@ -1034,7 +1034,7 @@ class ModernParserBridge {
 
     /// `java.toast` / `java.longToast`. A background parse only logs them; a host running a
     /// script the reader started (a 簡介 button) shows them for that evaluation.
-    var toastHandler: ((String) -> Void)? {
+    var toastHandler: (@Sendable (String) -> Void)? {
         get { jsEngine.toastHandler }
         set { jsEngine.toastHandler = newValue }
     }

@@ -7,7 +7,8 @@ import UIKit
 
 /// Intercepts hardware volume buttons and converts them to page-turn commands.
 /// Uses MPVolumeView to hide the system volume HUD + KVO to monitor outputVolume changes.
-final class VolumeKeyHandler: NSObject, ObservableObject {
+@MainActor
+final class VolumeKeyHandler: NSObject, @MainActor ObservableObject {
 
     enum PageDirection { case prev, next }
 
@@ -34,7 +35,7 @@ final class VolumeKeyHandler: NSObject, ObservableObject {
         isEnabled = UserDefaults.standard.bool(forKey: "yd_volume_page")
     }
 
-    deinit { stopListening() }
+    isolated deinit { stopListening() }
 
     // MARK: - Start Listening
 
@@ -61,25 +62,25 @@ final class VolumeKeyHandler: NSObject, ObservableObject {
         }
 
         // KVO monitoring of outputVolume changes
-        observation = audioSession.observe(\.outputVolume, options: [.new]) {
-            [weak self] _, change in
-            guard let self = self, !self.isAdjusting,
-                let newValue = change.newValue
-            else { return }
-
-            let diff = newValue - self.previousVolume
-            if abs(diff) < 0.01 { return }  // Ignore minor floating-point drift
-
-            DispatchQueue.main.async {
-                if diff > 0 {
-                    self.onPageTurn?(.prev)  // Volume+ → previous page
-                } else {
-                    self.onPageTurn?(.next)  // Volume- → next page
-                }
-                // Silently restore volume so consecutive presses continue to trigger
-                self.restoreVolume()
-            }
+        // KVO does not promise the main thread, and the state the change is compared against
+        // (`isAdjusting`, `previousVolume`) is main-actor, so only the new value crosses over.
+        observation = audioSession.observe(\.outputVolume, options: [.new]) { @Sendable [weak self] _, change in
+            guard let newValue = change.newValue else { return }
+            DispatchQueue.main.async { [weak self] in self?.volumeDidChange(to: newValue) }
         }
+    }
+
+    private func volumeDidChange(to newValue: Float) {
+        guard !isAdjusting else { return }
+        let diff = newValue - previousVolume
+        if abs(diff) < 0.01 { return }  // Ignore minor floating-point drift
+        if diff > 0 {
+            onPageTurn?(.prev)  // Volume+ → previous page
+        } else {
+            onPageTurn?(.next)  // Volume- → next page
+        }
+        // Silently restore volume so consecutive presses continue to trigger
+        restoreVolume()
     }
 
     func stopListening() {

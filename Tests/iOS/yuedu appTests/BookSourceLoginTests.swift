@@ -1,4 +1,5 @@
 import Foundation
+import os
 import Testing
 @testable import yuedu_app
 
@@ -684,9 +685,10 @@ struct GuangYuLiveBookSourceTests {
         let engine = JSCoreEngine()
         engine.bookSource = source
         configureRuntime(engine, source: source)
-        var toasts: [String] = []
+        // Toasts arrive on the main queue while the script runs on its own.
+        let toasts = OSAllocatedUnfairLock(initialState: [String]())
         engine.toastHandler = { message in
-            toasts.append(message)
+            toasts.withLock { $0.append(message) }
         }
         engine.browserPresentHandler = { _, completion in
             completion("")
@@ -701,7 +703,7 @@ struct GuangYuLiveBookSourceTests {
             ]
         )
         if let error = engine.lastError {
-            throw TestRuntimeError.js(action: action, error: error, toasts: toasts)
+            throw TestRuntimeError.js(action: action, error: error, toasts: toasts.withLock { $0 })
         }
     }
 

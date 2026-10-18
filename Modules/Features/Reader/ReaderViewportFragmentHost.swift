@@ -18,8 +18,15 @@ final class ReaderViewportFragmentHost: UIView {
         let origin: CGPoint
     }
     private enum FragmentID: Hashable {
-        case browser(BrowserPaintFragment.ID)
+        /// `BrowserPaintFragment.ID`'s fields. The package type is not Sendable, and a `Key`
+        /// rides along with each raster job to the worker and back.
+        case browser(node: Int, sourceOffset: Int, kind: Int, occurrence: Int, part: Int)
         case coreText(Int)
+
+        init(_ id: BrowserPaintFragment.ID) {
+            self = .browser(node: id.node, sourceOffset: id.sourceOffset, kind: id.kind,
+                            occurrence: id.occurrence, part: id.part)
+        }
     }
     private struct Key: Hashable {
         let owner: ObjectIdentifier
@@ -288,7 +295,7 @@ final class ReaderViewportFragmentHost: UIView {
             for fragment in state.fragments {
                 let global = fragment.documentRect.offsetBy(dx: input.origin.x, dy: input.origin.y)
                 guard global.intersects(prepaintWindow) else { continue }
-                let key = Key(owner: owner, fragment: .browser(fragment.id))
+                let key = Key(owner: owner, fragment: FragmentID(fragment.id))
                 place(key, global: global, renderingRect: fragment.renderingRect, in: state.view) { entry in
                     // A moved but otherwise identical display list keeps its bitmap.
                     if entry.surface.configure(fragment, scale: scale, skipBackground: skipBackground) {

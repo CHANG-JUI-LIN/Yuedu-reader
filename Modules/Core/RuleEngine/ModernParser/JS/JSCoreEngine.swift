@@ -93,13 +93,13 @@ class JSCoreEngine {
 
     /// Called when JS invokes `java.startBrowser` / `java.startBrowserAwait`. Unset, pages
     /// open through `LegadoJSBridge.sharedBrowserPresenter`.
-    var browserPresentHandler: ((SourceBrowserRequest, @escaping (String?) -> Void) -> Void)? {
+    var browserPresentHandler: ((SourceBrowserRequest, @escaping @Sendable (String?) -> Void) -> Void)? {
         didSet { bridge.browserPresentHandler = browserPresentHandler }
     }
 
     /// Called when JS invokes `java.getVerificationCode`. Unset, the captcha opens through
     /// `LegadoJSBridge.sharedCaptchaPresenter`.
-    var captchaPresentHandler: ((SourceCaptchaRequest, @escaping (String?) -> Void) -> Void)? {
+    var captchaPresentHandler: ((SourceCaptchaRequest, @escaping @Sendable (String?) -> Void) -> Void)? {
         didSet { bridge.captchaPresentHandler = captchaPresentHandler }
     }
 
@@ -124,7 +124,7 @@ class JSCoreEngine {
     }
 
     /// Called when JS invokes `java.toast` / `java.longToast`.
-    var toastHandler: ((String) -> Void)? {
+    var toastHandler: (@Sendable (String) -> Void)? {
         didSet { bridge.toastHandler = toastHandler }
     }
 

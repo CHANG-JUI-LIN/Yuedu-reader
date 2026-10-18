@@ -306,7 +306,7 @@ final class EPUBStyleResolver {
 
     /// Resolves an HTML img src (possibly relative) to an absolute EPUB path relative to the chapter href.
     /// Absolute URLs of any scheme (http, data, reader-book, …) pass through unchanged.
-    static func resolveImageHref(_ src: String, chapterHref: String) -> String {
+    nonisolated static func resolveImageHref(_ src: String, chapterHref: String) -> String {
         guard !src.isEmpty,
               !src.contains("://"),
               !src.hasPrefix("data:") else { return src }

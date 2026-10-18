@@ -146,10 +146,9 @@ final class EPUBAttributedStringBuilder: @preconcurrency AttributedStringBuildin
             return await self.loadCSS(href: href, chapterHref: chapterHref)
         }
 
-        localBuilder.mediaURLResolver = { [weak self] src in
-            guard let self else { return nil }
+        localBuilder.mediaURLResolver = { [resourceProvider] src in
             let resolved = EPUBStyleResolver.resolveImageHref(src, chapterHref: chapterHref)
-            return self.resourceProvider.resourceURL(for: resolved).absoluteString
+            return resourceProvider.resourceURL(for: resolved).absoluteString
         }
 
         // ── Build NSAttributedString ────────────────────────────────────
@@ -465,7 +464,7 @@ final class EPUBAttributedStringBuilder: @preconcurrency AttributedStringBuildin
         settings: ReaderRenderSettings,
         textColor: UIColor,
         backgroundColor: UIColor
-    ) -> HTMLAttributedStringBuilder.Config {
+    ) -> sending HTMLAttributedStringBuilder.Config {
         let fontSize = settings.fontSize
         let horizontalInsets = settings.contentInsets.left + settings.contentInsets.right
         let effectiveWidth = renderSize.width > 0

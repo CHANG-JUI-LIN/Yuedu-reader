@@ -189,6 +189,7 @@ class BookSourceStore: ObservableObject {
 
     /// Calls `body` on the main thread with the library once it is read — immediately when it
     /// already is. For decisions that must not run on the "not read yet" placeholder.
+    @MainActor
     func whenLoaded(_ body: @escaping ([BookSource]) -> Void) {
         DispatchQueue.main.async { [self] in
             if isLoaded { body(library) } else { loadWaiters.append(body) }
@@ -196,6 +197,7 @@ class BookSourceStore: ObservableObject {
     }
 
     /// Returns once the library file has been read and applied.
+    @MainActor
     func waitUntilLoaded() async {
         await withCheckedContinuation { continuation in
             whenLoaded { _ in continuation.resume() }

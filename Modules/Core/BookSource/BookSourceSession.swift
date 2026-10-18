@@ -1,4 +1,5 @@
 import Foundation
+import os
 
 /// One reusable parsing session per book source (Legado-style lifecycle).
 ///
@@ -64,9 +65,12 @@ final class BookSourceSession {
         let priority: UInt8
     }
 
-    /// Set under `gate`; flipped by the task's cancellation handler while it waits for the bridge.
-    final class WaitCancellation {
-        fileprivate var isCancelled = false
+    /// Flipped under `gate` by the task's cancellation handler while it waits for the bridge.
+    /// Its own lock makes it Sendable: the handler runs concurrently with the waiting parse.
+    final class WaitCancellation: Sendable {
+        private let cancelled = OSAllocatedUnfairLock(initialState: false)
+        fileprivate var isCancelled: Bool { cancelled.withLock { $0 } }
+        fileprivate func cancel() { cancelled.withLock { $0 = true } }
     }
 
     /// Serialized bridge access for synchronous parse calls (the bridge sets
@@ -96,11 +100,11 @@ final class BookSourceSession {
                 defer { self.releaseBridge() }
                 return try body(self.bridge)
             }
-        } onCancel: {
-            self.gate.lock()
-            cancellation.isCancelled = true
-            self.gate.broadcast()
-            self.gate.unlock()
+        } onCancel: { [gate] in
+            gate.lock()
+            cancellation.cancel()
+            gate.broadcast()
+            gate.unlock()
         }
     }
 

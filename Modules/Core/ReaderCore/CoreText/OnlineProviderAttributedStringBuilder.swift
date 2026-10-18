@@ -369,8 +369,11 @@ final class OnlineProviderAttributedStringBuilder: @preconcurrency AttributedStr
         return "chapter/\(index).xhtml"
     }
 
-    private func configureResourceCallbacks(
+    // Nonisolated so the freshly made builder stays disconnected from the main actor and can be
+    // handed to its `@concurrent` build methods; the loaders hop back for `loadImage`/`loadCSS`.
+    private nonisolated func configureResourceCallbacks(
         for builder: HTMLAttributedStringBuilder,
+        resourceProvider: (any BookResourceProvider)?,
         chapterHref: String,
         renderWidth: CGFloat,
         bodyPointSize: CGFloat
@@ -595,6 +598,7 @@ final class OnlineProviderAttributedStringBuilder: @preconcurrency AttributedStr
         let chapterHref = fallbackChapterHref(for: payload.index, payload: payload)
         configureResourceCallbacks(
             for: builder,
+            resourceProvider: resourceProvider,
             chapterHref: chapterHref,
             renderWidth: contentRenderWidth,
             bodyPointSize: settings.fontSize

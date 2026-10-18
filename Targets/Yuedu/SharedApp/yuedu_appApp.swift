@@ -179,6 +179,7 @@ struct yuedu_appApp: App {
         UserFontStorageManager.shared.removeSupersededCopies(keeping: GlobalSettings.shared.userFonts)
         UserFontStorageManager.shared.registerAllOnLaunch()
         GlobalSettings.shared.validateGlobalFontSelection()
+        GlobalSettings.shared.loadInitialReaderStyleAssetRevision()
         // Must run before any source JS does: a source reads its cached device id
         // straight back out of its own key/value store.
         BookSourceRuntimeStateStore.shared.purgeLegacyAndroidIds()

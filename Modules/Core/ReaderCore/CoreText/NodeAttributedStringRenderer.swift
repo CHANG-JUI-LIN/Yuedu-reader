@@ -1698,17 +1698,19 @@ struct NodeAttributedStringRenderer {
         }
 
         let tableImages = await loadTableImages(table)
-        let rasterPages = await MainActor.run {
+        let rasterPages = await MainActor.run { [
+            font = blockCtx.font, textColor = blockCtx.textColor, cjkStyle = blockCtx.cjkTypographyStyle
+        ] in
             HTMLTableRasterizer.renderPages(
                 table: table,
                 maxWidth: maxWidth,
                 maxPageHeight: config.renderHeight,
-                baseFont: blockCtx.font,
-                textColor: blockCtx.textColor,
+                baseFont: font,
+                textColor: textColor,
                 backgroundColor: config.backgroundColor,
                 resolvedFont: config.resolvedFont,
                 imagesBySource: tableImages,
-                cjkTypographyStyle: blockCtx.cjkTypographyStyle
+                cjkTypographyStyle: cjkStyle
             )
         }
         guard !rasterPages.isEmpty else {
@@ -1828,14 +1830,14 @@ struct NodeAttributedStringRenderer {
                 ])
             }
         }
-        let image = await MainActor.run { [poster] in
+        let image = await MainActor.run { [poster, font = blockCtx.font, textColor = blockCtx.textColor] in
             EPUBMediaPlaceholderRenderer.image(
                 for: resolvedMedia,
                 maxWidth: maxWidth,
                 intrinsicSize: intrinsicSize,
                 poster: poster,
-                font: blockCtx.font,
-                textColor: blockCtx.textColor,
+                font: font,
+                textColor: textColor,
                 backgroundColor: config.backgroundColor
             )
         }
@@ -1895,11 +1897,11 @@ struct NodeAttributedStringRenderer {
         } else {
             maxWidth = await ReaderDocumentTrace.measuring("mainActorHop") { await MainActor.run { UIScreen.main.bounds.width } }
         }
-        let image = await MainActor.run {
+        let image = await MainActor.run { [font = blockCtx.font] in
             EPUBMediaPlaceholderRenderer.webEmbedImage(
                 for: embed,
                 maxWidth: maxWidth,
-                font: blockCtx.font
+                font: font
             )
         }
         var cardStyle = style
@@ -1952,13 +1954,13 @@ struct NodeAttributedStringRenderer {
         } else {
             maxWidth = await ReaderDocumentTrace.measuring("mainActorHop") { await MainActor.run { UIScreen.main.bounds.width } }
         }
-        let image = await MainActor.run {
+        let image = await MainActor.run { [font = blockCtx.font, textColor = blockCtx.textColor] in
             EPUBMediaPlaceholderRenderer.interactiveImage(
                 title: localized("Interactive content isn't supported"),
                 detail: title,
                 maxWidth: maxWidth,
-                font: blockCtx.font,
-                textColor: blockCtx.textColor
+                font: font,
+                textColor: textColor
             )
         }
 

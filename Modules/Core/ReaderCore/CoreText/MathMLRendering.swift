@@ -281,7 +281,7 @@ private final class MathMLToLatexJSBridge {
 @MainActor
 enum MathMLImageRenderer {
     /// A rasterised equation plus the metric needed to align it inline with surrounding text.
-    final class Rendered {
+    final class Rendered: Sendable {
         let image: UIImage
         /// Absolute height above/below the math baseline in image points. The bitmap is rendered at
         /// exactly `ascent + descent` tall (no label padding), so these map 1:1 onto the raster.

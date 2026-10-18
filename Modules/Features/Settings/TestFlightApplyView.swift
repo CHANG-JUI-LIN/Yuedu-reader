@@ -287,6 +287,7 @@ struct TestFlightAccessResult {
 /// the active account backend, so the callable protocol and its idempotency
 /// stay server-side on both routes.
 enum TestFlightAccessService {
+    @MainActor
     static func requestAccess(email: String) async throws -> TestFlightAccessResult {
         try await AccountBackendRouter.shared.current.requestTestFlightAccess(email: email)
     }

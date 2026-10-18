@@ -1090,7 +1090,7 @@ final class TTSCoordinator: ObservableObject {
     /// the command's status. The session check happens on main too, with the state it reads.
     nonisolated private func performRemoteCommand(
         requiresActiveSession: Bool = false,
-        _ action: @escaping @MainActor (TTSCoordinator) -> Void
+        _ action: @escaping @MainActor @Sendable (TTSCoordinator) -> Void
     ) -> MPRemoteCommandHandlerStatus {
         let perform: @MainActor () -> MPRemoteCommandHandlerStatus = {
             if requiresActiveSession && !self.hasActivePlaybackSession {

@@ -1,5 +1,6 @@
 import Foundation
 import JavaScriptCore
+import os
 import CryptoKit
 import CommonCrypto
 import UIKit
@@ -307,9 +308,9 @@ struct LegadoHTTPResult {
     ///
     /// Set only where a runtime presents its pages itself (the login menu, 段評 capture);
     /// everywhere else `startBrowser` / `startBrowserAwait` use `sharedBrowserPresenter`.
-    var browserPresentHandler: ((SourceBrowserRequest, @escaping (String?) -> Void) -> Void)?
+    var browserPresentHandler: ((SourceBrowserRequest, @escaping @Sendable (String?) -> Void) -> Void)?
 
-    typealias BrowserPresenter = (SourceBrowserRequest, @escaping (String?) -> Void) -> Void
+    typealias BrowserPresenter = (SourceBrowserRequest, @escaping @Sendable (String?) -> Void) -> Void
 
     /// How any source runtime opens a page — search, a chapter, 書源驗證 — the way Legado's
     /// `SourceVerificationHelp` starts its browser from wherever the script runs. The app
@@ -335,9 +336,9 @@ struct LegadoHTTPResult {
 
     /// Presents the captcha for `java.getVerificationCode`; the completion receives the code
     /// the user entered, nil when they dismissed it. Unset, `sharedCaptchaPresenter` does.
-    var captchaPresentHandler: ((SourceCaptchaRequest, @escaping (String?) -> Void) -> Void)?
+    var captchaPresentHandler: ((SourceCaptchaRequest, @escaping @Sendable (String?) -> Void) -> Void)?
 
-    typealias CaptchaPresenter = (SourceCaptchaRequest, @escaping (String?) -> Void) -> Void
+    typealias CaptchaPresenter = (SourceCaptchaRequest, @escaping @Sendable (String?) -> Void) -> Void
 
     /// Installed at launch next to `sharedBrowserPresenter`.
     static var sharedCaptchaPresenter: CaptchaPresenter? {
@@ -394,22 +395,22 @@ struct LegadoHTTPResult {
     var awaitingUserDidBegin: (() -> Void)?
 
     /// Blocks this script until `present` reports back, however long the user takes.
-    private func waitForUser(_ present: (@escaping (String?) -> Void) -> Void) -> String? {
+    private func waitForUser(_ present: (@escaping @Sendable (String?) -> Void) -> Void) -> String? {
         let sem = DispatchSemaphore(value: 0)
-        var answer: String?
+        let answer = OSAllocatedUnfairLock<String?>(initialState: nil)
         awaitingUserLock.lock()
         awaitingUserCount += 1
         awaitingUserLock.unlock()
         awaitingUserDidBegin?()
         present { value in
-            answer = value
+            answer.withLock { $0 = value }
             sem.signal()
         }
         sem.wait()
         awaitingUserLock.lock()
         awaitingUserCount -= 1
         awaitingUserLock.unlock()
-        return answer
+        return answer.withLock { $0 }
     }
 
     /// Called for source-authored HTML browser pages. Unlike the two-argument browser API,
@@ -418,7 +419,7 @@ struct LegadoHTTPResult {
     var browserPagePresentHandler: ((LegadoBrowserPageRequest) -> Void)?
 
     /// Called when JS invokes `java.toast(msg)` / `java.longToast(msg)`.
-    var toastHandler: ((String) -> Void)?
+    var toastHandler: (@Sendable (String) -> Void)?
 
     /// Called when JS invokes `java.reLoginView()` — the source asks the host to re-render its
     /// custom login menu (e.g. after `changeMenu(tag)` switches `menuTag`). Lets multi-page

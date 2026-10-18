@@ -662,8 +662,9 @@ private struct PublicLibraryExpandingCard<Content: View>: View {
                 .clipShape(UnevenRoundedRectangle(topLeadingRadius: DSRadius.carouselCard, topTrailingRadius: DSRadius.carouselCard))
                 .padding(.horizontal, -margin * progress)
                 // The content's top in the scroll view's own space sits at 0 at rest.
-                .onGeometryChange(for: CGFloat.self) { proxy in
-                    proxy.frame(in: .named(Self.space)).minY
+                // The name, not `Self`: the transform is Sendable and `Self` is generic over `Content`.
+                .onGeometryChange(for: CGFloat.self) { [space = Self.space] proxy in
+                    proxy.frame(in: .named(space)).minY
                 } action: { chrome.offset = -$0 }
                 .background { ScrollPanReleaseObserver(onRelease: released) }
         }
