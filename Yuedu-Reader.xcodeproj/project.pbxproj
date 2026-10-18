@@ -30,9 +30,6 @@
 		46A6AB7B2FCD4ED60071B397 /* FirebaseFunctions in Frameworks */ = {isa = PBXBuildFile; productRef = 46A6AB7A2FCD4ED60071B397 /* FirebaseFunctions */; };
 		46A6AB7D2FCD4ED60071B397 /* FirebaseFunctionsCombine-Community in Frameworks */ = {isa = PBXBuildFile; productRef = 46A6AB7C2FCD4ED60071B397 /* FirebaseFunctionsCombine-Community */; };
 		46A6AB812FCD4ED60071B397 /* FirebaseInstallations in Frameworks */ = {isa = PBXBuildFile; productRef = 46A6AB802FCD4ED60071B397 /* FirebaseInstallations */; };
-		46A6AB832FCD4ED60071B397 /* FirebaseMLModelDownloader in Frameworks */ = {isa = PBXBuildFile; productRef = 46A6AB822FCD4ED60071B397 /* FirebaseMLModelDownloader */; };
-		46A6AB852FCD4ED60071B397 /* FirebaseMessaging in Frameworks */ = {isa = PBXBuildFile; productRef = 46A6AB842FCD4ED60071B397 /* FirebaseMessaging */; };
-		46A6AB872FCD4ED60071B397 /* FirebasePerformance in Frameworks */ = {isa = PBXBuildFile; productRef = 46A6AB862FCD4ED60071B397 /* FirebasePerformance */; };
 		46A6AB892FCD4ED60071B397 /* FirebaseRemoteConfig in Frameworks */ = {isa = PBXBuildFile; productRef = 46A6AB882FCD4ED60071B397 /* FirebaseRemoteConfig */; };
 		46A6AB8B2FCD4ED60071B397 /* FirebaseStorage in Frameworks */ = {isa = PBXBuildFile; productRef = 46A6AB8A2FCD4ED60071B397 /* FirebaseStorage */; };
 		46A6AB8D2FCD4ED60071B397 /* FirebaseStorageCombine-Community in Frameworks */ = {isa = PBXBuildFile; productRef = 46A6AB8C2FCD4ED60071B397 /* FirebaseStorageCombine-Community */; };
@@ -176,7 +173,6 @@
 			files = (
 				8A11B0E32F9A1C7300A1B001 /* ReadiumFuzi in Frameworks */,
 				46A6AB6F2FCD4ED60071B397 /* FirebaseAuthCombine-Community in Frameworks */,
-				46A6AB872FCD4ED60071B397 /* FirebasePerformance in Frameworks */,
 				460274852F710D7500486947 /* ReadiumAdapterLCPSQLite in Frameworks */,
 				46A6AB812FCD4ED60071B397 /* FirebaseInstallations in Frameworks */,
 				46A6AB8B2FCD4ED60071B397 /* FirebaseStorage in Frameworks */,
@@ -201,9 +197,7 @@
 				AAAA1111AAAA1111AAAA0001 /* Nuke in Frameworks */,
 				46A6AB732FCD4ED60071B397 /* FirebaseCrashlytics in Frameworks */,
 				46A6AB692FCD4ED60071B397 /* FirebaseAppCheck in Frameworks */,
-				46A6AB852FCD4ED60071B397 /* FirebaseMessaging in Frameworks */,
 				463C854D2FA4F48E008F9AD7 /* GoogleSignIn in Frameworks */,
-				46A6AB832FCD4ED60071B397 /* FirebaseMLModelDownloader in Frameworks */,
 				6B865095660449D830AF13C4 /* iosMath in Frameworks */,
 				BA0DC69BDD8FFF2AE7B103A0 /* YueduCoreTextTypography in Frameworks */,
 				605CA89FF5C9882A68E236F3 /* YueduCoreText in Frameworks */,
@@ -359,9 +353,6 @@
 				46A6AB7A2FCD4ED60071B397 /* FirebaseFunctions */,
 				46A6AB7C2FCD4ED60071B397 /* FirebaseFunctionsCombine-Community */,
 				46A6AB802FCD4ED60071B397 /* FirebaseInstallations */,
-				46A6AB822FCD4ED60071B397 /* FirebaseMLModelDownloader */,
-				46A6AB842FCD4ED60071B397 /* FirebaseMessaging */,
-				46A6AB862FCD4ED60071B397 /* FirebasePerformance */,
 				46A6AB882FCD4ED60071B397 /* FirebaseRemoteConfig */,
 				46A6AB8A2FCD4ED60071B397 /* FirebaseStorage */,
 				46A6AB8C2FCD4ED60071B397 /* FirebaseStorageCombine-Community */,
@@ -1359,21 +1350,6 @@
 			isa = XCSwiftPackageProductDependency;
 			package = 46A6AB5D2FCD4ED60071B397 /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */;
 			productName = FirebaseInstallations;
-		};
-		46A6AB822FCD4ED60071B397 /* FirebaseMLModelDownloader */ = {
-			isa = XCSwiftPackageProductDependency;
-			package = 46A6AB5D2FCD4ED60071B397 /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */;
-			productName = FirebaseMLModelDownloader;
-		};
-		46A6AB842FCD4ED60071B397 /* FirebaseMessaging */ = {
-			isa = XCSwiftPackageProductDependency;
-			package = 46A6AB5D2FCD4ED60071B397 /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */;
-			productName = FirebaseMessaging;
-		};
-		46A6AB862FCD4ED60071B397 /* FirebasePerformance */ = {
-			isa = XCSwiftPackageProductDependency;
-			package = 46A6AB5D2FCD4ED60071B397 /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */;
-			productName = FirebasePerformance;
 		};
 		46A6AB882FCD4ED60071B397 /* FirebaseRemoteConfig */ = {
 			isa = XCSwiftPackageProductDependency;
