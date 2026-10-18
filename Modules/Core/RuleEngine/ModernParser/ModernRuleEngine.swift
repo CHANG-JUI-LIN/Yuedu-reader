@@ -590,10 +590,12 @@ final class ModernRuleEngine {
               let array = try? JSONSerialization.jsonObject(
                   with: data, options: .fragmentsAllowed) as? [Any]
         else { return value }
-        // Each item must be a JSON *string*, matching the JSONPath element path
-        // (JsonExtractor.extractList → [String]). A raw Swift dict would fail detectJSON
-        // (String-only) when set as content, so every field rule (chapterName/chapterUrl)
-        // would resolve empty even though the element count is correct.
+        // Each object item is re-serialised to JSON text. This was written when JSONPath
+        // elements were JSON strings and detectJSON accepted only strings, so a raw dict set
+        // as content made every field rule (chapterName/chapterUrl) resolve empty. Neither
+        // holds any more: since 28808ca3 JSONPath elements are the parsed objects, and
+        // detectJSON treats a dictionary or array as JSON. The strings still work as content;
+        // returning the objects themselves would match the JSONPath path.
         return array.map { item -> Any in
             if let s = item as? String { return s }
             if JSONSerialization.isValidJSONObject(item),
@@ -1035,14 +1037,42 @@ final class ModernRuleEngine {
 
     // MARK: - Private: Utility
 
-    /// Convert any value to String. Lists are joined with newline.
+    /// Convert any value to String. Lists are joined with newline. A JSON object (JSONPath
+    /// elements are the parsed `JSONSerialization` objects) prints as JSON text, as Legado's
+    /// `JsonObject.toString` does — never as Foundation's plist description, which escapes
+    /// CJK as `\U6597…` so `##` replaces and regex rules on the element could not match.
     static func toString(_ value: Any?) -> String {
         guard let value = value else { return "" }
         if let str = value as? String { return str }
         if let list = value as? [Any] {
             return list.map { toString($0) }.joined(separator: "\n")
         }
+        if value is NSDictionary || value is [String: Any] {
+            return jsonObjectText(value)
+        }
         return "\(value)"
+    }
+
+    private static func jsonObjectText(_ object: Any) -> String {
+        // Fallback to the description: a dictionary holding a non-JSON value (e.g. a Date
+        // handed back by the JS bridge) cannot be serialised — `JSONSerialization` raises an
+        // ObjC exception for it, so it must be checked first. No such value is known to
+        // reach here; if the log never shows this, the branch only guards against a crash.
+        guard JSONSerialization.isValidJSONObject(object) else {
+            AppLogger.parse("⟐ toString: dictionary is not a JSON object", context: [
+                "type": "\(type(of: object))",
+            ])
+            return "\(object)"
+        }
+        do {
+            let data = try JSONSerialization.data(
+                withJSONObject: object, options: [.withoutEscapingSlashes]
+            )
+            return String(decoding: data, as: UTF8.self)
+        } catch {
+            AppLogger.parse("⟐ toString: JSON serialisation failed", error: error)
+            return "\(object)"
+        }
     }
 
     private static func detectJSON(_ content: Any?) -> Bool {

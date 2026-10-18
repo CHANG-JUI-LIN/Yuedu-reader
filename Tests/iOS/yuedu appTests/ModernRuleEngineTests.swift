@@ -124,4 +124,44 @@ struct ModernRuleEngineTests {
         }
     }
 
+    /// A JSONPath element is a parsed `JSONSerialization` object. When a rule needs it as
+    /// text — a `##` replace or a regex — it must read as JSON (Legado prints
+    /// `JsonObject.toString`), not as Foundation's plist description, which escapes CJK as
+    /// `\U6597…` and writes `key = value;`.
+    @Test
+    func jsonObjectElementReplaceSeesJSONText() throws {
+        let engine = ModernRuleEngine()
+        engine.setContent(#"{"data":[{"book_name":"斗罗大陆","url":"https://a/b"}]}"#)
+        let elements = engine.getElements(ruleStr: "$.data")
+        try #require(elements.count == 1)
+
+        engine.setContent(elements[0])
+        let text = engine.getString(ruleStr: "##^##")
+
+        #expect(!text.contains(#"\U"#))
+        #expect(!text.contains(#"\/"#))
+        #expect(text.contains("https://a/b"))
+        let parsed = try #require(
+            try JSONSerialization.jsonObject(with: Data(text.utf8)) as? [String: Any]
+        )
+        #expect(parsed["book_name"] as? String == "斗罗大陆")
+        #expect(parsed["url"] as? String == "https://a/b")
+    }
+
+    @Test
+    func jsonObjectElementRegexMatchesJSONText() throws {
+        let engine = ModernRuleEngine()
+        engine.setContent(#"{"data":[{"book_name":"斗罗大陆","url":"https://a/b"}]}"#)
+        let elements = engine.getElements(ruleStr: "$.data")
+        try #require(elements.count == 1)
+
+        engine.setContent(elements[0])
+        let matches = engine.getElements(ruleStr: #":"book_name":"([^"]+)""#)
+
+        try #require(matches.count == 1)
+        let groups = try #require(matches[0] as? [String?])
+        #expect(groups.count == 2)
+        #expect(groups.last ?? nil == "斗罗大陆")
+    }
+
 }
