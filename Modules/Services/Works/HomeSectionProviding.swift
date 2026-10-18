@@ -92,7 +92,7 @@ extension OPDSProvider: HomeSectionProviding {
                 return try await browse(CollectionLocation(id: newest.absoluteString, title: ""), after: nil)
                     .items(limit: HomeRow.limit)
             }
-            let root = await Self.page(from: feed, connectionID: instance.id, record: makeRecord, opening: makeOpening)
+            let root = await CollectionPage.opds(from: feed, connectionID: instance.id, record: makeRecord, opening: makeOpening)
             let items = root.items(limit: HomeRow.limit)
             if !items.isEmpty { return items }
             guard let first = root.entries.firstLocation else { return [] }

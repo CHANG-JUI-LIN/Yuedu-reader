@@ -42,7 +42,7 @@ struct ReaderCapabilities: OptionSet {
     static let fixedLayout: ReaderCapabilities = [.background, .darkMode]
 }
 
-protocol BookDocument {
+protocol BookDocument: Sendable {
     var metadata: BookMetadata { get }
     var tableOfContents: [UniversalChapter] { get }
     var capabilities: ReaderCapabilities { get }

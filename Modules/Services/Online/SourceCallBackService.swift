@@ -63,7 +63,7 @@ enum SourceCallBackService {
         Task {
             _ = await LegadoReviewActionRunner.shared.runCallBack(
                 event, source: source, book: snapshot, chapter: chapter, result: result,
-                runtimeVariables: variables, presentToast: presentToast
+                runtimeVariables: variables, presentToast: { Self.presentToast($0) }
             )
         }
     }
@@ -102,7 +102,7 @@ enum SourceCallBackService {
             Task {
                 _ = await LegadoReviewActionRunner.shared.runCallBack(
                     event, source: source, book: empty, chapter: nil, result: nil,
-                    runtimeVariables: [:], presentToast: presentToast
+                    runtimeVariables: [:], presentToast: { Self.presentToast($0) }
                 )
             }
         }
@@ -125,7 +125,7 @@ enum SourceCallBackService {
         }
         return await LegadoReviewActionRunner.shared.runCallBack(
             event, source: source, book: book, chapter: chapter, result: result,
-            runtimeVariables: runtimeVariables, presentToast: presentToast
+            runtimeVariables: runtimeVariables, presentToast: { Self.presentToast($0) }
         )
     }
 

@@ -1,4 +1,5 @@
 import Foundation
+import os
 import Testing
 @testable import yuedu_app
 
@@ -105,8 +106,9 @@ private final class ResourceAvailabilityProvider: BookResourceProvider {
     let customScheme = "reader-test"
     let chapters: [BookResourceChapterDescriptor] = []
     let availability: Bool?
-    private(set) var responseCount = 0
-    private(set) var requestedURLs: [URL] = []
+    private let requested = OSAllocatedUnfairLock(initialState: [URL]())
+    var responseCount: Int { requested.withLock { $0.count } }
+    var requestedURLs: [URL] { requested.withLock { $0 } }
 
     init(availability: Bool?) {
         self.availability = availability
@@ -127,8 +129,7 @@ private final class ResourceAvailabilityProvider: BookResourceProvider {
     }
 
     func response(for requestURL: URL) async throws -> PublicationResourceResponse {
-        responseCount += 1
-        requestedURLs.append(requestURL)
+        requested.withLock { $0.append(requestURL) }
         return PublicationResourceResponse(
             data: Data(),
             mimeType: "font/ttf",

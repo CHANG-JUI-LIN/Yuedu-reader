@@ -1,7 +1,7 @@
 import Foundation
 import SwiftUI
 
-protocol WebContentFetching {
+protocol WebContentFetching: Sendable {
     func fetchHTML(
         url: URL,
         method: String,
@@ -126,7 +126,7 @@ extension BookSourceFetching {
 
 /// Protocol for online book download and neighborhood chapter prefetch,
 /// decoupling the reader from the concrete OnlineBookCoordinator implementation.
-protocol OnlineBookCoordinating: AnyObject {
+protocol OnlineBookCoordinating: AnyObject, Sendable {
     func prefetchAround(book: ReadingBook, center: Int, store: BookStore?) async
 }
 

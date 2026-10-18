@@ -57,7 +57,7 @@ enum AttributedStringBuildingError: LocalizedError, Equatable {
     }
 }
 
-protocol AttributedStringBuilding {
+protocol AttributedStringBuilding: Sendable {
     var chapterCount: Int { get }
     /// When true, CoreTextPageEngine skips the O(N) byte-size scan at startup
     /// and initialises sizes to zero. Sizes are filled incrementally via

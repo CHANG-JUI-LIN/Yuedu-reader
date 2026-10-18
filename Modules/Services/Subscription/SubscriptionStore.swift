@@ -745,28 +745,36 @@ final class SubscriptionStore: ObservableObject {
         lastDropReportDate = now
         guard FirebaseApp.app() != nil else { return }
         let info = Bundle.main.infoDictionary
-        var data: [String: Any] = [
-            "storeKit": storeKit,
-            "account": account,
-            "iCloud": iCloud,
-            "ownedProducts": purchasedProductIDs.sorted().joined(separator: ","),
-            "revokedCount": lastRevokedCount,
-            "uid": FirebaseAuthManager.shared.uid ?? "",
-            "appVersion": info?["CFBundleShortVersionString"] as? String ?? "",
-            "build": info?["CFBundleVersion"] as? String ?? "",
-            "createdAt": FieldValue.serverTimestamp()
-        ]
+        let ownedProducts = purchasedProductIDs.sorted().joined(separator: ",")
+        let revokedCount = lastRevokedCount
+        let uid = FirebaseAuthManager.shared.uid ?? ""
+        let appVersion = info?["CFBundleShortVersionString"] as? String ?? ""
+        let build = info?["CFBundleVersion"] as? String ?? ""
         // Storefront (App Store region) is async; fold it in after the read so
         // the report shows whether Apple resolved the entitlement against the
         // user's home region or the VPN exit region.
         Task {
             let storefrontID = await Storefront.current?.id ?? ""
-            data["storefront"] = storefrontID
             // Distinguishes "iCloud signed out, mirror could never help" from
             // "iCloud available and the mirror still had nothing" — the evidence
             // for whether users switch only the App Store account or the whole
             // Apple ID.
-            data["iCloudAccountStatus"] = await self.iCloudMirror.accountStatusDescription()
+            let iCloudAccountStatus = await self.iCloudMirror.accountStatusDescription()
+            // Built here, after the reads, so the dictionary handed to Firestore is a fresh
+            // value rather than a variable this task shares with the code that started it.
+            let data: [String: Any] = [
+                "storeKit": storeKit,
+                "account": account,
+                "iCloud": iCloud,
+                "ownedProducts": ownedProducts,
+                "revokedCount": revokedCount,
+                "uid": uid,
+                "appVersion": appVersion,
+                "build": build,
+                "createdAt": FieldValue.serverTimestamp(),
+                "storefront": storefrontID,
+                "iCloudAccountStatus": iCloudAccountStatus
+            ]
             Self.subscriptionLog.notice("Reporting entitlement drop diagnostic to Firestore")
             do {
                 _ = try await Firestore.firestore()

@@ -29,21 +29,7 @@ extension OPDSFeedProviding {
             throw SourceFailure(kind: .invalidAddress, underlying: OPDSError.invalidURL)
         }
         let feed = try await feed(url, isSearch: false)
-        return await Self.page(from: feed, connectionID: instance.id, record: makeRecord, opening: makeOpening)
-    }
-
-    /// The mapping runs off the main actor: summaries are HTML until `plainMetadata` reads them.
-    nonisolated static func page(from feed: OPDSFeed, connectionID: String, record: @Sendable (OPDSEntry) -> SourceRecord?,
-                                 opening: @Sendable (OPDSEntry) -> ItemOpening) async -> CollectionPage {
-        var entries: [CollectionEntry] = []
-        for entry in feed.entries {
-            if let made = record(entry) {
-                entries.append(.item(made, .opds(entry, record: made, connectionID: connectionID), opening(entry)))
-            } else if let navigation = entry.navigationURL {
-                entries.append(.location(CollectionLocation(id: navigation.absoluteString, title: entry.title)))
-            }
-        }
-        return CollectionPage(entries: entries, next: feed.nextPageURL.map { CollectionCursor(value: $0.absoluteString) })
+        return await CollectionPage.opds(from: feed, connectionID: instance.id, record: makeRecord, opening: makeOpening)
     }
 
     var makeRecord: @Sendable (OPDSEntry) -> SourceRecord? {
@@ -55,6 +41,24 @@ extension OPDSFeedProviding {
     var makeOpening: @Sendable (OPDSEntry) -> ItemOpening {
         let id = instance.id
         return { .opdsEntry($0, connectionID: id) }
+    }
+}
+
+extension CollectionPage {
+    /// An OPDS feed as a page. The mapping runs off the main actor: summaries are HTML until
+    /// `plainMetadata` reads them. Not on `OPDSFeedProviding`: a call through `Self` would send
+    /// the main-actor provider's metatype to it.
+    nonisolated static func opds(from feed: OPDSFeed, connectionID: String, record: @Sendable (OPDSEntry) -> SourceRecord?,
+                                 opening: @Sendable (OPDSEntry) -> ItemOpening) async -> CollectionPage {
+        var entries: [CollectionEntry] = []
+        for entry in feed.entries {
+            if let made = record(entry) {
+                entries.append(.item(made, .opds(entry, record: made, connectionID: connectionID), opening(entry)))
+            } else if let navigation = entry.navigationURL {
+                entries.append(.location(CollectionLocation(id: navigation.absoluteString, title: entry.title)))
+            }
+        }
+        return CollectionPage(entries: entries, next: feed.nextPageURL.map { CollectionCursor(value: $0.absoluteString) })
     }
 }
 

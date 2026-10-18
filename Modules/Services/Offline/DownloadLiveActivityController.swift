@@ -1,4 +1,6 @@
-import ActivityKit
+// Covers `Activity` (sent to its own async `update`/`end`), not Sendable in the iOS 26 SDK.
+// Remove `@preconcurrency` when ActivityKit marks `Activity` Sendable.
+@preconcurrency import ActivityKit
 import Foundation
 
 /// Drives the offline-download Live Activity from the one place download state is written,

@@ -1,5 +1,6 @@
 @testable import YueduCoreText
 import Foundation
+import os
 import Testing
 @testable import yuedu_app
 
@@ -96,7 +97,8 @@ struct BrowserLayoutStylesheetIngestionTests {
 
 private final class IngestionResources: BookResourceProvider {
     let texts: [String: String]
-    var requests: [String] = []
+    private let requestLog = OSAllocatedUnfairLock(initialState: [String]())
+    var requests: [String] { requestLog.withLock { $0 } }
     init(_ texts: [String: String]) { self.texts = texts }
     var customScheme: String { "reader-book" }
     var chapters: [BookResourceChapterDescriptor] { [] }
@@ -106,7 +108,7 @@ private final class IngestionResources: BookResourceProvider {
     func chapterIndex(for href: String) -> Int? { nil }
     func chapterHTML(at index: Int) async throws -> String { "" }
     func response(for url: URL) async throws -> PublicationResourceResponse {
-        requests.append(url.absoluteString)
+        requestLog.withLock { $0.append(url.absoluteString) }
         guard let text = texts[String(url.path.dropFirst())] else { throw URLError(.fileDoesNotExist) }
         return PublicationResourceResponse(data: Data(text.utf8), mimeType: "text/css", textEncodingName: "utf-8")
     }

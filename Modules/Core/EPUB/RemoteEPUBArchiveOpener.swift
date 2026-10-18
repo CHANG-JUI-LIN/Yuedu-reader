@@ -1,5 +1,7 @@
 import Foundation
-import ReadiumShared
+// Covers `Resource`, sent into the `RemoteZIPDataSource` actor and to its own async reads. Readium
+// marks it Sendable from 4.0 (4.0.0-alpha.1); remove `@preconcurrency` when the app moves to Readium 4.
+@preconcurrency import ReadiumShared
 import ReadiumZIPFoundation
 
 /// Uses Readium's archive extension point with bounded remote read-ahead.

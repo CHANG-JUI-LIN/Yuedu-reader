@@ -45,7 +45,6 @@ final class MockBrowserLayoutResource: BrowserLayoutResourceProviding {
 
 /// Plain-text attributed builder so the legacy delegate can paginate without
 /// the full HTML pipeline.
-@MainActor
 final class MockAttributedStringBuilder: AttributedStringBuilding {
     let texts: [String]
 

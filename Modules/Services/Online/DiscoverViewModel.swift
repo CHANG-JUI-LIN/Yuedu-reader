@@ -351,7 +351,7 @@ final class DiscoverViewModel: ObservableObject {
     }
 
     /// A button's tap: runs its script.
-    func runButton(_ action: DiscoverQuickAction, presentToast: @escaping @MainActor (String) -> Void) async {
+    func runButton(_ action: DiscoverQuickAction, presentToast: @escaping @MainActor @Sendable (String) -> Void) async {
         await perform(action, presentToast: presentToast)
     }
 
@@ -359,7 +359,7 @@ final class DiscoverViewModel: ObservableObject {
     func submitText(
         _ text: String,
         for action: DiscoverQuickAction,
-        presentToast: @escaping @MainActor (String) -> Void
+        presentToast: @escaping @MainActor @Sendable (String) -> Void
     ) async {
         guard let source = selectedSource else { return }
         await DiscoverQuickActionRunner.setInfoMapValue(text, forKey: action.title, source: source)
@@ -368,7 +368,7 @@ final class DiscoverViewModel: ObservableObject {
     }
 
     /// A toggle's tap: the next value, stored in `infoMap`, then its script.
-    func cycleToggle(_ action: DiscoverQuickAction, presentToast: @escaping @MainActor (String) -> Void) async {
+    func cycleToggle(_ action: DiscoverQuickAction, presentToast: @escaping @MainActor @Sendable (String) -> Void) async {
         guard let source = selectedSource else { return }
         let next = action.toggleValue(after: action.toggleValue(in: quickActionValues))
         await DiscoverQuickActionRunner.setInfoMapValue(next, forKey: action.title, source: source)
@@ -379,7 +379,7 @@ final class DiscoverViewModel: ObservableObject {
     /// Runs a control's script, then reloads the categories when it called
     /// `java.refreshExplore()` and reads the controls again — a script often changes
     /// what they show.
-    private func perform(_ action: DiscoverQuickAction, presentToast: @escaping @MainActor (String) -> Void) async {
+    private func perform(_ action: DiscoverQuickAction, presentToast: @escaping @MainActor @Sendable (String) -> Void) async {
         guard runningQuickActionID == nil, let source = selectedSource else { return }
         guard let script = action.script else { return }
         runningQuickActionID = action.id

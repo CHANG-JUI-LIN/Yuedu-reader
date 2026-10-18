@@ -511,7 +511,7 @@ extension ReaderView {
         }
         // Resolving the source's headers can run its JS (`@js:` header rules).
         Task {
-            let urlRequest = await SourceScriptThread.run {
+            let urlRequest = await SourceScriptThread.run { @Sendable in
                 source.flatMap {
                     BookSourceSession.session(for: $0).bridgeForAsyncOperations
                         .sourceBrowserRequest(urlString: chapter.url)

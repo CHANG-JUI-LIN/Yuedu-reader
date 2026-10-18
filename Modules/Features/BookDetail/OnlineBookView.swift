@@ -710,7 +710,7 @@ struct OnlineBookView: View {
                 }
             }
 
-            let applyFirstPage: ([OnlineChapterRef]) -> Void = { firstChapters in
+            let applyFirstPage: @Sendable ([OnlineChapterRef]) -> Void = { firstChapters in
                 // First page ready — show immediately, don't wait for multi-page fetch
                 Task { @MainActor in
                     guard self.isCurrentRequest(requestBook) else { return }

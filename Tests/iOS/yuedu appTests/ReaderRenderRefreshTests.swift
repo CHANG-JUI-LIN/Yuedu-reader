@@ -790,7 +790,7 @@ struct ReaderRenderRefreshTests {
 }
 
 @MainActor
-private final class MutableReaderRefreshBuilder: AttributedStringBuilding {
+private final class MutableReaderRefreshBuilder: @preconcurrency AttributedStringBuilding {
     let chapterCount = 1
     var body: String
     private(set) var buildCount = 0

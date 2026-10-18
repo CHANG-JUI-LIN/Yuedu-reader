@@ -117,7 +117,7 @@ struct DiscoverPageSettingsSheet: View {
                 Button(localized("取消"), role: .cancel) {}
                 Button(localized("確定")) {
                     let text = inputDraft
-                    Task { await discover.submitText(text, for: input, presentToast: Self.presentToast) }
+                    Task { await discover.submitText(text, for: input, presentToast: { Self.presentToast($0) }) }
                 }
             }
         }
@@ -175,12 +175,12 @@ struct DiscoverPageSettingsSheet: View {
         return Button {
             switch action.kind {
             case .button:
-                Task { await discover.runButton(action, presentToast: Self.presentToast) }
+                Task { await discover.runButton(action, presentToast: { Self.presentToast($0) }) }
             case .text:
                 inputDraft = value
                 editingInput = action
             case .toggle:
-                Task { await discover.cycleToggle(action, presentToast: Self.presentToast) }
+                Task { await discover.cycleToggle(action, presentToast: { Self.presentToast($0) }) }
             }
         } label: {
             switch action.kind {

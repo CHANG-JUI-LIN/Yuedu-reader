@@ -1,12 +1,11 @@
 import Foundation
 import SwiftSoup
+import os
 
 final class UniversalBookResourceAdapter: BookResourceProvider {
     private let contentProvider: any BookContentProvider
     private let session: URLSession
-    private let lock = NSLock()
-
-    private var chapterPayloadCache: [Int: ChapterContentPayload] = [:]
+    private let chapterPayloadCache = OSAllocatedUnfairLock(initialState: [Int: ChapterContentPayload]())
     private let chapterSourceHrefs: [String?]
 
     let customScheme: String
@@ -79,9 +78,7 @@ final class UniversalBookResourceAdapter: BookResourceProvider {
             }
         }
 
-        let cachedPayloads = lock.withLock {
-            chapterPayloadCache
-        }
+        let cachedPayloads = chapterPayloadCache.withLock { $0 }
 
         for (index, payload) in cachedPayloads where normalizedURLKey(payload.sourceHref) == normalizedTarget {
             return index
@@ -135,17 +132,13 @@ final class UniversalBookResourceAdapter: BookResourceProvider {
     }
 
     private func payloadForChapter(index: Int) async throws -> ChapterContentPayload {
-        let cached = lock.withLock {
-            chapterPayloadCache[index]
-        }
+        let cached = chapterPayloadCache.withLock { $0[index] }
         if let cached = cached {
             return cached
         }
 
         let payload = try await contentProvider.contentForChapter(index: index)
-        lock.withLock {
-            chapterPayloadCache[index] = payload
-        }
+        chapterPayloadCache.withLock { $0[index] = payload }
         return payload
     }
 

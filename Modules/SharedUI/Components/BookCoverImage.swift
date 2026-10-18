@@ -223,7 +223,7 @@ extension BookCoverImage {
         let store = BookSourceStore.shared
         await store.waitUntilLoaded()
         guard let source = store.source(id: id) else { return nil }
-        let headers = await SourceScriptThread.run { source.parsedHeaders }
+        let headers = await SourceScriptThread.run { @Sendable in source.parsedHeaders }
         return (source.bookSourceUrl, headers)
     }
 }

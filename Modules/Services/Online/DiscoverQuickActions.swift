@@ -100,7 +100,7 @@ enum DiscoverQuickActionRunner {
         _ script: String,
         title: String,
         source: BookSource,
-        presentToast: @escaping @MainActor (String) -> Void
+        presentToast: @escaping @MainActor @Sendable (String) -> Void
     ) async -> DiscoverQuickActionOutcome {
         let outcome = await SourceScriptThread.run { () -> DiscoverQuickActionOutcome in
             let bridge = BookSourceSession.session(for: source).bridgeForAsyncOperations

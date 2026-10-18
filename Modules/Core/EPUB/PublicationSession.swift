@@ -1,7 +1,10 @@
 import Foundation
 import UIKit
 import CryptoKit
-import ReadiumShared
+import os
+// Covers `Publication`, held by the Sendable `PublicationSession`. Readium marks it Sendable from
+// 4.0 (4.0.0-alpha.1); remove `@preconcurrency` when the app moves to a Readium 4 release.
+@preconcurrency import ReadiumShared
 import ReadiumStreamer
 
 enum EPUBWritingMode: String, Sendable {
@@ -236,7 +239,7 @@ struct BookResourceChapterDescriptor: Equatable {
     let mediaType: String
 }
 
-protocol BookResourceProvider: AnyObject {
+protocol BookResourceProvider: AnyObject, Sendable {
     var customScheme: String { get }
     var chapters: [BookResourceChapterDescriptor] { get }
     func cssResourceHrefs() -> [String]
@@ -427,7 +430,7 @@ private func getCacheURL(for sourceURL: URL) -> URL {
     return cachesPaths[0].appendingPathComponent("spine_cache_\(bookId).json")
 }
 
-final class PublicationSession {
+final class PublicationSession: Sendable {
     static let scheme = "reader-book"
 
     let id: String
@@ -457,8 +460,7 @@ final class PublicationSession {
     private let obfuscationIdentifier: String?
     private let encryptionAlgorithmsByHref: [String: String]
     private let manifestResourceHrefs: Set<String>
-    private let resourceLock = NSLock()
-    private var transformedResourceCache: [String: Data] = [:]
+    private let transformedResourceCache = OSAllocatedUnfairLock(initialState: [String: Data]())
     private let cacheURL: URL
     private let packageResources: EPUBPackageResources
 
@@ -1172,18 +1174,13 @@ final class PublicationSession {
             return data
         }
 
-        resourceLock.lock()
-        if let cached = transformedResourceCache[href] {
-            resourceLock.unlock()
+        if let cached = transformedResourceCache.withLock({ $0[href] }) {
             return cached
         }
-        resourceLock.unlock()
 
         let transformed = deobfuscate(data: data, algorithm: effectiveAlgorithm) ?? data
 
-        resourceLock.lock()
-        transformedResourceCache[href] = transformed
-        resourceLock.unlock()
+        transformedResourceCache.withLock { $0[href] = transformed }
         return transformed
     }
 

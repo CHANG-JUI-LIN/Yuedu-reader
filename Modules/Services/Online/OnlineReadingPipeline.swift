@@ -1,5 +1,6 @@
 import Foundation
 import SwiftUI
+import os
 
 extension Notification.Name {
     static let onlineChapterCacheDidUpdate = Notification.Name("onlineChapterCacheDidUpdate")
@@ -430,7 +431,7 @@ actor ChapterFetchManager {
                 content = try await fetchBrowserImportedChapter(
                     urlString: ref.url,
                     referer: book.bookInfoURL ?? book.source,
-                    progressHandler: { @MainActor partial in
+                    progressHandler: { @MainActor [ref] partial in
                         Task {
                             guard await selfRef.isTokenValid(taskKey: taskKey, token: myToken) else { return }
                             do {
@@ -717,14 +718,14 @@ actor ChapterFetchManager {
     private func fetchBrowserImportedChapter(
         urlString: String,
         referer: String?,
-        progressHandler: (@MainActor (String) -> Void)? = nil
+        progressHandler: (@MainActor @Sendable (String) -> Void)? = nil
     ) async throws -> String {
         var directFailure: Error?
         do {
             let direct = try await bookSourceFetcher.fetchWebContent(
                 url: urlString,
                 referer: referer,
-                onFirstPageReady: { partial in
+                onFirstPageReady: { @Sendable partial in
                     Task { @MainActor in
                         progressHandler?(partial)
                     }
@@ -792,7 +793,7 @@ actor ChapterFetchManager {
     }
 }
 
-final class OnlineBookCoordinator {
+final class OnlineBookCoordinator: Sendable {
     // MARK: - Injectable Dependencies (defaults to shared singletons, supports test substitution)
 
     let bookSourceFetcher: BookSourceFetcher
@@ -814,17 +815,19 @@ final class OnlineBookCoordinator {
     /// Per-book stable basePath. Avoids regenerating a new UUID directory on each
     /// buildPackage call, which would cause reloadWithUpdatedPackage to detect a
     /// basePath change and trigger a full reload.
-    private var stableBasePaths: [UUID: URL] = [:]
+    private let stableBasePaths = OSAllocatedUnfairLock(initialState: [UUID: URL]())
 
     /// Returns or creates a stable basePath for a book.
     private func stableBasePath(for bookId: UUID) -> URL {
-        if let existing = stableBasePaths[bookId] {
-            return existing
+        stableBasePaths.withLock { paths in
+            if let existing = paths[bookId] {
+                return existing
+            }
+            let path = FileManager.default.temporaryDirectory
+                .appendingPathComponent("online_xhtml_\(bookId.uuidString)")
+            paths[bookId] = path
+            return path
         }
-        let path = FileManager.default.temporaryDirectory
-            .appendingPathComponent("online_xhtml_\(bookId.uuidString)")
-        stableBasePaths[bookId] = path
-        return path
     }
 
     private static func placeholderHTML(title: String, body: String) -> String {

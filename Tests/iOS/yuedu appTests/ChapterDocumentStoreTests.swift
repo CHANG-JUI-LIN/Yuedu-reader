@@ -288,7 +288,7 @@ private struct ChapterDocumentTestBuilder: AttributedStringBuilding {
 }
 
 @MainActor
-private final class MutableChapterDocumentTestBuilder: AttributedStringBuilding {
+private final class MutableChapterDocumentTestBuilder: @preconcurrency AttributedStringBuilding {
     let probe: ChapterDocumentBuildProbe
     let chapterCount = 1
     var body: String

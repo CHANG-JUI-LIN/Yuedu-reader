@@ -1,6 +1,7 @@
 @testable import YueduCoreText
 import Combine
 import Foundation
+import os
 import Testing
 import UIKit
 @testable import yuedu_app
@@ -242,7 +243,7 @@ struct CoreTextScrollOnlineCacheTests {
 
 /// Completion is controlled by a real continuation, including when the consumer is cancelled.
 @MainActor
-private final class SuspendedScrollBuilder: AttributedStringBuilding {
+private final class SuspendedScrollBuilder: @preconcurrency AttributedStringBuilding {
     let chapterCount = 1
     var body = "Obsolete chapter body"
     private var buildCount = 0
@@ -293,7 +294,11 @@ private final class SuspendedScrollBuilder: AttributedStringBuilding {
 
 private final class MutableOnlineLikeBuilder: AttributedStringBuilding {
     let chapterCount: Int
-    var cachedChapters: [Int: String] = [:]
+    private let cache = OSAllocatedUnfairLock(initialState: [Int: String]())
+    var cachedChapters: [Int: String] {
+        get { cache.withLock { $0 } }
+        set { cache.withLock { $0 = newValue } }
+    }
 
     init(chapterCount: Int) {
         self.chapterCount = chapterCount

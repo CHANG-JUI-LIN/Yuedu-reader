@@ -2,7 +2,9 @@ import FirebaseAuth
 import FirebaseCore
 import FirebaseFirestore
 import FirebaseFunctions
-import FirebaseStorage
+// Covers `StorageReference` (sent to its own async `putDataAsync`/`downloadURL`/`delete`). Not
+// Sendable through Firebase 13.0.1; remove `@preconcurrency` when FirebaseStorage marks it Sendable.
+@preconcurrency import FirebaseStorage
 import Foundation
 
 /// Existing direct-to-Firebase implementation. This is the pre-Gateway code

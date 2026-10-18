@@ -131,7 +131,7 @@ struct PublicLibraryStorefrontTests {
         var entry = OPDSEntry(id: "https://www.gutenberg.org/ebooks/1342", title: "Pride and Prejudice")
         entry.summary = "Austen, Jane"
         entry.navigationURL = URL(string: "https://www.gutenberg.org/ebooks/1342.opds")
-        let page = await GutenbergProvider.page(
+        let page = await CollectionPage.opds(
             from: OPDSFeed(entries: [entry]), connectionID: PublicLibraryID.gutenberg.rawValue,
             record: { GutenbergBook(entry: $0).map(SourceRecord.derived(from:)) },
             opening: { .opdsEntry($0, connectionID: PublicLibraryID.gutenberg.rawValue) })

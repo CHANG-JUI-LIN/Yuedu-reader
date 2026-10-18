@@ -1,6 +1,8 @@
 import AuthenticationServices
 import Combine
-import FirebaseAuth
+// Covers `User` (sent to its own async `link`/`delete`/`reauthenticate`). Not Sendable through
+// Firebase 13.0.1; remove `@preconcurrency` when FirebaseAuth marks `User` Sendable.
+@preconcurrency import FirebaseAuth
 import Foundation
 import GoogleSignIn
 import UIKit
@@ -530,7 +532,7 @@ final class FirebaseAuthManager: ObservableObject {
             gatewayConfigured: GatewayConfiguration.isConfigured,
             lastSuccessfulRoute: AuthRouteMemory.lastSuccessfulRoute,
             regionHintIsMainland: AuthRoutePolicy.regionHintIsMainland(),
-            directReachable: { await DirectAuthReachability.probe() }
+            directReachable: { @Sendable in await DirectAuthReachability.probe() }
         )
         AppLogger.network("auth route decision: \(decision.decision)")
         return decision.route

@@ -27,7 +27,7 @@ struct ChapterContentPayload: Equatable {
     let sourceHref: String?
 }
 
-protocol BookContentProvider {
+protocol BookContentProvider: Sendable {
     var totalChapters: Int { get }
     func chapterTitle(at index: Int) -> String
     func contentForChapter(index: Int) async throws -> ChapterContentPayload

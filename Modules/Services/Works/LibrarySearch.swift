@@ -132,7 +132,7 @@ final class LibrarySearch: SearchAnswering {
         let id = library.instance.id
         guard let url = try await searchURL(of: library, query: query) else { return nil }
         let feed = try await library.feed(url, isSearch: true)
-        return await OPDSProvider.page(from: feed, connectionID: id, record: library.makeRecord, opening: library.makeOpening)
+        return await CollectionPage.opds(from: feed, connectionID: id, record: library.makeRecord, opening: library.makeOpening)
     }
 
     /// Where `query` is searched. A library that needs nothing from its root (Gutenberg) says so

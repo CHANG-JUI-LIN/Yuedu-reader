@@ -5,10 +5,10 @@ enum OnlineChapterLoadPolicy: Equatable {
     case fetchIfMissing
 }
 
-final class OnlineChapterContentService {
+final class OnlineChapterContentService: Sendable {
     private let book: ReadingBook
     private let refs: [OnlineChapterRef]
-    private weak var store: BookStore?
+    private weak let store: BookStore?
 
     init(book: ReadingBook, store: BookStore?) {
         self.book = book

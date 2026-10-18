@@ -130,7 +130,6 @@ struct ReaderLiveStyleRefreshTests {
     }
 }
 
-@MainActor
 private struct LiveCommentBadgeBuilder: AttributedStringBuilding {
     let chapterCount = 1
     func chapterTitle(at index: Int) -> String { "" }

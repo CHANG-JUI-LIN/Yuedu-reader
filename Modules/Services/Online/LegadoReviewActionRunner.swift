@@ -247,7 +247,7 @@ extension LegadoReviewActionRunner {
         book: ReaderHTMLUtilities.LegadoSourceActionContext.BookSnapshot,
         runtimeVariables: [String: String],
         source: BookSource,
-        presentToast: @escaping @MainActor (String) -> Void
+        presentToast: @escaping @MainActor @Sendable (String) -> Void
     ) async -> BookIntroActionOutcome {
         let run = await runBookScript(
             action.script,
@@ -289,7 +289,7 @@ extension LegadoReviewActionRunner {
         chapter: ReaderHTMLUtilities.LegadoSourceActionContext.ChapterSnapshot?,
         result: String?,
         runtimeVariables: [String: String],
-        presentToast: @escaping @MainActor (String) -> Void
+        presentToast: @escaping @MainActor @Sendable (String) -> Void
     ) async -> SourceCallBackOutcome {
         guard let script = source.ruleContent.callBackJs, !script.isEmpty else {
             return SourceCallBackOutcome(handled: false, failed: false, page: nil, value: nil)
@@ -342,7 +342,7 @@ extension LegadoReviewActionRunner {
         chapter: ReaderHTMLUtilities.LegadoSourceActionContext.ChapterSnapshot?,
         runtimeVariables: [String: String],
         source: BookSource,
-        presentToast: @escaping @MainActor (String) -> Void
+        presentToast: @escaping @MainActor @Sendable (String) -> Void
     ) async -> (outcome: BookIntroActionOutcome, value: String?) {
         let context = ReaderHTMLUtilities.LegadoSourceActionContext(
             version: ReaderHTMLUtilities.LegadoSourceActionContext.currentVersion,
@@ -361,7 +361,7 @@ extension LegadoReviewActionRunner {
                 isVip: false
             )
         )
-        return await SourceScriptThread.run { () -> (outcome: BookIntroActionOutcome, value: String?) in
+        return await SourceScriptThread.run { @Sendable () -> (outcome: BookIntroActionOutcome, value: String?) in
             let bridge = BookSourceSession.session(for: source).bridgeForAsyncOperations
             let sink = IntroActionSink()
             let previousBrowser = bridge.browserPresentHandler
