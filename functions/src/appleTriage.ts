@@ -204,9 +204,16 @@ export const dailyOrganizerDiagnostics = onSchedule(
     // Oldest first, so the newest build's share is the one an item's summary ends on.
     await readEachBuild([...builds.data].reverse(), (build) => `${versionOf(build)} ${build.id}`, async (build) => {
       const appVersion = versionOf(build);
-      const signatures = await client.getJSON<SignatureList>(
+      // 404 is "Apple holds no diagnostics for this build", not a failure: a build that only
+      // went to TestFlight never gets any (3.0.0 (129) and (130), every day since
+      // 2026-10-16). Counting it as a failed build turned each daily run red.
+      const signatures = await client.getJSONIfPresent<SignatureList>(
         `/builds/${build.id}/diagnosticSignatures?fields[diagnosticSignatures]=diagnosticType,signature,weight&limit=200`
       );
+      if (signatures === undefined) {
+        logger.info("Organizer diagnostics: none for this build", {build: appVersion});
+        return;
+      }
       const worth = signaturesWorthRecording(signatures.data.flatMap((item) => {
         const attributes = item.attributes;
         return attributes === undefined ? [] : [{id: item.id, ...attributes}];

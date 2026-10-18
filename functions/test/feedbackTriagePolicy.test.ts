@@ -43,6 +43,13 @@ describe("feedback triage policy", () => {
     assert.match(triageSystemPrompt, /JSON/);
   });
 
+  it("keeps a Simplified Chinese user in Simplified", () => {
+    // 8 of 12 zh-Hans users got Traditional replies (2026-10-17) when the rule only
+    // forbade switching away from Traditional.
+    assert.match(triageSystemPrompt, /Simplified Chinese gets Simplified Chinese/);
+    assert.match(triageSystemPrompt, /来源配置/);
+  });
+
   it("describes attachments it cannot show", () => {
     const message = triageUserMessage({
       kind: "bug", text: "閃退", locale: "zh-Hant_TW", appVersion: "1.0.1 (200)",
