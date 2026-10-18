@@ -358,6 +358,107 @@ enum ReaderHTMLUtilities {
         return proseCount
     }
 
+    /// Bounds how deeply `root`'s element tree nests, the way Blink caps its parser's DOM depth.
+    ///
+    /// HTML5 tree construction has no depth limit, and source markup that never closes an inline
+    /// element nests one level deeper per paragraph: `第1段<font>…<br><font>…<br>…` puts paragraph
+    /// N under N `<font>`s, and an unclosed `<div>` per paragraph does the same with blocks. Every
+    /// stage after the parse then recurses once per level on a fixed-size thread stack: SwiftSoup's
+    /// `outerHtmlFast` (Crashlytics 66f63f61 — `___chkstk_darwin` under `Element.html()` in the
+    /// chapter fetcher, on a 512KB cooperative-pool thread), and at display time the reader's
+    /// `HTMLStyledASTRenderableNodeConverter` and the AST walks around it on the main thread.
+    /// Bounding the tree once, right after it is parsed, bounds all of them — they only ever see
+    /// this tree or HTML serialized from it.
+    ///
+    /// An element at `maxDepth` whose subtree goes further is rebuilt flat, in document order:
+    /// its own leaf content stays its own, and each descendant's run of leaf content (text, `<br>`,
+    /// `<img>`, any element without element children) is wrapped in a shallow copy of that
+    /// descendant — tag and attributes, no children. A `<div>`-per-paragraph chain therefore stays
+    /// one block per paragraph, and a review anchor keeps its `<img>`. What is lost is only style
+    /// inheritance between levels beyond `maxDepth`, which no real chapter reaches.
+    ///
+    /// Iterative throughout: a recursive walk here would overflow on exactly the input it exists
+    /// for. Returns how many subtrees were flattened.
+    @discardableResult
+    static func limitNestingDepth(in root: Element, maxDepth: Int) throws -> Int {
+        var flattened = 0
+        var pending: [(element: Element, depth: Int)] = [(root, 0)]
+        while let (element, depth) = pending.popLast() {
+            let children = element.children().array()
+            guard depth < maxDepth else {
+                if children.contains(where: { hasElementChild($0) }) {
+                    try flattenSubtree(of: element)
+                    flattened += 1
+                }
+                continue
+            }
+            for child in children {
+                pending.append((child, depth + 1))
+            }
+        }
+        return flattened
+    }
+
+    private static func hasElementChild(_ node: Node) -> Bool {
+        node.getChildNodes().contains { $0 is Element }
+    }
+
+    /// Detaches `element`'s children back-to-front (each removal keeps the remaining siblings'
+    /// cached `siblingIndex` valid — see `promoteBreakSeparatedParagraphs(inContainer:)`) and
+    /// returns them in document order, parentless, so re-appending them is O(1) apiece.
+    private static func detachChildren(of element: Element) throws -> [Node] {
+        let children = element.getChildNodes()
+        for child in children.reversed() {
+            try child.remove()
+        }
+        return children
+    }
+
+    private static func flattenSubtree(of container: Element) throws {
+        var rebuilt: [Node] = []
+        var run: [Node] = []
+        let containerChildren = try detachChildren(of: container)
+        var stack: [(owner: Element, children: [Node], next: Int)] = [(container, containerChildren, 0)]
+
+        func flushRun(into owner: Element) throws {
+            guard !run.isEmpty else { return }
+            if owner === container {
+                rebuilt.append(contentsOf: run)
+            } else {
+                let segment = owner.getAttributes().map {
+                    Element(owner.tag(), owner.getBaseUri(), $0.clone())
+                } ?? Element(owner.tag(), owner.getBaseUri())
+                for node in run {
+                    try segment.appendChild(node)
+                }
+                rebuilt.append(segment)
+            }
+            run.removeAll()
+        }
+
+        while let top = stack.indices.last {
+            let frame = stack[top]
+            guard frame.next < frame.children.count else {
+                try flushRun(into: frame.owner)
+                stack.removeLast()
+                continue
+            }
+            let child = frame.children[frame.next]
+            stack[top].next += 1
+            if let element = child as? Element, hasElementChild(element) {
+                try flushRun(into: frame.owner)
+                let elementChildren = try detachChildren(of: element)
+                stack.append((element, elementChildren, 0))
+            } else {
+                run.append(child)
+            }
+        }
+
+        for node in rebuilt {
+            try container.appendChild(node)
+        }
+    }
+
     private static func hasVisibleContent(_ node: Node) -> Bool {
         if let textNode = node as? TextNode {
             return !textNode.getWholeText().trimmingCharacters(in: .whitespacesAndNewlines).isEmpty

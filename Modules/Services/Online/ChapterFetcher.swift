@@ -35,6 +35,21 @@ struct ChapterBuildResult {
 struct ChapterFetcher {
     static let shared = ChapterFetcher()
 
+    /// How deep an online chapter's body may nest before `buildRenderableNormalizedHTML` flattens
+    /// it (`ReaderHTMLUtilities.limitNestingDepth`). Real chapter markup stays within about a
+    /// dozen levels (`div > table > tr > td > p > span > a > img`); deeper is the unclosed-tag
+    /// pathology behind Crashlytics 66f63f61, not authored structure.
+    ///
+    /// Blink allows 512, but its frames are small. Here the binding consumer is the reader's
+    /// `HTMLStyledASTRenderableNodeConverter`, which recurses once per level holding style values
+    /// by value on the main thread (1MB on device): `ElementNode.asRenderableNode` reserves ~40KB
+    /// per level in a Debug build (otool on the Debug-iphonesimulator object, 2026-10-18), against
+    /// ~464 bytes for SwiftSoup's `outerHtmlFast`. Release frame sizes have not been measured; 32
+    /// is chosen as ~3× real markup depth, not derived from them. A Debug build on a device can
+    /// still overflow the converter near this depth — that is the converter's frame size, not
+    /// something a lower limit here could fix without flattening authored markup.
+    static let maxBodyNestingDepth = 32
+
     func validateResolvedContent(_ content: String) throws {
         if let message = SourceAPIErrorLog.chapterErrorEnvelopeMessage(content) {
             throw FetchError.sourceAPIError(message)
@@ -180,15 +195,61 @@ struct ChapterFetcher {
                 reviewRepair: ParagraphReviewStructureRepair,
                 promotedParagraphs: Int
             ) in
-            guard let document = try? SwiftSoup.parse(slimmedHTML),
-                  let body = document.body()
-            else {
+            let document: Document
+            do {
+                document = try SwiftSoup.parse(slimmedHTML)
+            } catch {
+                AppLogger.parse("⟐ chapterHTML parseFailed", context: [
+                    "title": title,
+                    "error": String(describing: error),
+                ])
+                return ("", nil, ParagraphReviewStructureRepair(), 0)
+            }
+            guard let body = document.body() else {
+                AppLogger.parse("⟐ chapterHTML noBody", context: ["title": title])
+                return ("", nil, ParagraphReviewStructureRepair(), 0)
+            }
+            // First, before anything walks or serializes the tree: source markup that never
+            // closes an inline element nests one level per paragraph, and serializing that
+            // (`body.html()` below) overflowed this cooperative-pool thread's stack — Crashlytics
+            // 66f63f61. The reader's converter recurses per level too, so bounding the tree here
+            // is what keeps every later consumer of this chapter's HTML inside its stack.
+            do {
+                let flattened = try ReaderHTMLUtilities.limitNestingDepth(
+                    in: body,
+                    maxDepth: Self.maxBodyNestingDepth
+                )
+                if flattened > 0 {
+                    AppLogger.parse("⟐ chapterHTML nestingLimited", context: [
+                        "title": title,
+                        "subtrees": flattened,
+                        "maxDepth": Self.maxBodyNestingDepth,
+                    ])
+                }
+            } catch {
+                // Degradation, not a retry: a half-flattened tree may still be too deep to
+                // serialize, so the chapter falls back to the plain-text rendering below, the only
+                // output that cannot overflow. Guards SwiftSoup throwing mid-rebuild (its
+                // `Validate` checks on reparenting), which no input is known to trigger. Delete
+                // together with `limitNestingDepth` if SwiftSoup's serializer and the reader's
+                // converter stop recursing per level.
+                AppLogger.parse("⟐ chapterHTML nestingLimitFailed", context: [
+                    "title": title,
+                    "error": String(describing: error),
+                ])
                 return ("", nil, ParagraphReviewStructureRepair(), 0)
             }
             // `<iframe>` stays: the reader shows it as an inline video (a media file) or a
             // tap-to-load page (user's choice, 2026-10-10). Stripping it here, in the render
             // path, used to delete embedded players from web chapters outright.
-            _ = try? body.select("script,noscript,object,embed").remove()
+            do {
+                try body.select("script,noscript,object,embed").remove()
+            } catch {
+                AppLogger.parse("⟐ chapterHTML scriptStripFailed", context: [
+                    "title": title,
+                    "error": String(describing: error),
+                ])
+            }
             let titleBubble = Self.detachLeadingTitleReviewImage(from: body)
             Self.detachLeadingDuplicateTitle(from: body, title: trimmedTitle)
             // `<br>`-separated prose becomes real paragraphs here, on the parsed tree, so the
@@ -198,8 +259,16 @@ struct ChapterFetcher {
             // ends up inside the paragraph it belongs to.
             let promotedParagraphs = ReaderHTMLUtilities.promoteBreakSeparatedParagraphs(in: body)
             let reviewRepair = Self.reattachStandaloneParagraphReviews(in: body)
-            let html = ((try? body.html()) ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
-            return (html, titleBubble, reviewRepair, promotedParagraphs)
+            do {
+                let html = try body.html().trimmingCharacters(in: .whitespacesAndNewlines)
+                return (html, titleBubble, reviewRepair, promotedParagraphs)
+            } catch {
+                AppLogger.parse("⟐ chapterHTML serializeFailed", context: [
+                    "title": title,
+                    "error": String(describing: error),
+                ])
+                return ("", titleBubble, reviewRepair, promotedParagraphs)
+            }
         }.value
         let bodyHTML = ReaderHTMLUtilities.restoreDataURIPayloads(parsedBody.html, restore: payloadRestore)
         let leadingTitleBubbleHTML = parsedBody.titleBubble.map {
