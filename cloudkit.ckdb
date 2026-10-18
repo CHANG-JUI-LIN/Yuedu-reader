@@ -38,6 +38,7 @@ DEFINE SCHEMA
         "___recordID"   REFERENCE,
         asset           ASSET,
         filename        STRING QUERYABLE SEARCHABLE SORTABLE,
+        name            STRING QUERYABLE SEARCHABLE SORTABLE,
         updatedAt       TIMESTAMP QUERYABLE SORTABLE,
         GRANT WRITE TO "_creator",
         GRANT CREATE TO "_icloud",

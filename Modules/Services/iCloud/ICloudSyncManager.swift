@@ -453,22 +453,36 @@ final class ICloudSyncManager: ObservableObject {
             //     carries only the settings, which name each picture by its ID in the style
             //     asset store, so a highlight pack imported on one device painted nothing on
             //     the others and its frame editor spun forever (2026-10-15).
-            let stylePictures = Self.readerStylePictureSync(
-                referencedBy: readingSettingsMerge.values,
-                stored: await ReaderStyleAssetStore.shared.assets()
-            )
-            var uploadedStylePictures = 0
-            for asset in stylePictures.send {
-                let localURL = try await ReaderStyleAssetStore.shared.imageFileURL(for: asset.id)
-                let file = ICloudSyncPayloadFile(
-                    recordName: Self.readerStylePictureRecordName(asset.id),
-                    localURL: localURL,
-                    name: asset.name
+            //     A failure here is held until the end rather than ending the pass: these
+            //     pictures are decoration, and the shelf and reading progress after them must
+            //     not wait on them. On 2026-10-18 the production schema had no
+            //     `YueduBookFile.name`, every upload here was refused, and no device synced its
+            //     shelf or progress at all. The error still fails the sync and is shown; only
+            //     the steps after it are no longer hostage to it. This stays as long as a
+            //     picture-only step sits ahead of the shelf; moving 3d after step 6 would make
+            //     it unnecessary.
+            var stylePictureError: Error?
+            do {
+                let stylePictures = Self.readerStylePictureSync(
+                    referencedBy: readingSettingsMerge.values,
+                    stored: await ReaderStyleAssetStore.shared.assets()
                 )
-                if try await uploadBookFileIfNeeded(file) { uploadedStylePictures += 1 }
+                var uploadedStylePictures = 0
+                for asset in stylePictures.send {
+                    let localURL = try await ReaderStyleAssetStore.shared.imageFileURL(for: asset.id)
+                    let file = ICloudSyncPayloadFile(
+                        recordName: Self.readerStylePictureRecordName(asset.id),
+                        localURL: localURL,
+                        name: asset.name
+                    )
+                    if try await uploadBookFileIfNeeded(file) { uploadedStylePictures += 1 }
+                }
+                changedRemote = changedRemote || uploadedStylePictures > 0
+                try await downloadReaderStylePictures(stylePictures.fetch)
+            } catch {
+                AppLogger.sync("sync(\(reason)): style pictures failed, continuing with the shelf: \(error.localizedDescription)", level: .error)
+                stylePictureError = error
             }
-            changedRemote = changedRemote || uploadedStylePictures > 0
-            try await downloadReaderStylePictures(stylePictures.fetch)
 
             // 4. Reader header/footer layout (singleton setting). Same shape as
             //    the bubble selection above: ONE always-present record under a
@@ -559,6 +573,9 @@ final class ICloudSyncManager: ObservableObject {
             } else {
                 AppLogger.sync("sync(\(reason)): no remote changes; manifest unchanged", level: .notice)
             }
+            // Everything else went through; the pass still did not, so it is reported as the
+            // failure it is and the last-sync date stays where it was.
+            if let stylePictureError { throw stylePictureError }
             await MainActor.run {
                 lastSyncDate = date
                 statusMessage = localized("iCloud 同步成功")
