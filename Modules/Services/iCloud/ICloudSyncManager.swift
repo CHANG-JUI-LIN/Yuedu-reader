@@ -114,9 +114,10 @@ enum ICloudSignInSyncAction: Equatable {
     case waitForUserChoice
 }
 
+@MainActor
 final class ICloudSyncManager: ObservableObject {
     static let shared = ICloudSyncManager()
-    static let containerIdentifier = "iCloud.com.zhangruilin.yuedureader"
+    nonisolated static let containerIdentifier = "iCloud.com.zhangruilin.yuedureader"
 
     @Published private(set) var isSyncing = false
     @Published private(set) var accountStatus: CKAccountStatus = .couldNotDetermine
@@ -132,25 +133,25 @@ final class ICloudSyncManager: ObservableObject {
     @Published var statusMessage = ""
     @Published var pendingConflict: ICloudSyncConflict?
 
-    private static let lastSyncKey = "icloud_last_sync"
-    private static let deviceIdKey = "icloud_sync_device_id"
-    private static let manifestRecordName = "sync_manifest"
-    private static let manifestRecordType = "YueduSyncManifest"
-    private static let fileRecordType = "YueduSyncFile"
-    private static let bookFileRecordType = "YueduBookFile"
-    private static let uploadedBookFilesKey = "icloud_uploaded_book_files"
+    nonisolated private static let lastSyncKey = "icloud_last_sync"
+    nonisolated private static let deviceIdKey = "icloud_sync_device_id"
+    nonisolated private static let manifestRecordName = "sync_manifest"
+    nonisolated private static let manifestRecordType = "YueduSyncManifest"
+    nonisolated private static let fileRecordType = "YueduSyncFile"
+    nonisolated private static let bookFileRecordType = "YueduBookFile"
+    nonisolated private static let uploadedBookFilesKey = "icloud_uploaded_book_files"
     /// Fixed id of the one item in the bubble-selection record, so two devices merge the
     /// same item instead of appending duplicates. Also that record's name before the split.
-    private static let bubbleSelectionRecordID = "comment_bubble_selection"
-    private static let readerOverlayLayoutRecordID = "reader_overlay_layout"
+    nonisolated private static let bubbleSelectionRecordID = "comment_bubble_selection"
+    nonisolated private static let readerOverlayLayoutRecordID = "reader_overlay_layout"
     /// Fixed id of the one item in the header/footer layout record; also that record's name
     /// before the split. A record of its own rather than a new payload in
     /// `reader_overlay_layout`: a build that predates the bar model still syncs that one,
     /// and would fail to decode a bar layout written into it.
-    private static let readerBarLayoutRecordID = "reader_bar_layout"
-    private static let readerBackgroundPicturePrefix = "readerbg_"
+    nonisolated private static let readerBarLayoutRecordID = "reader_bar_layout"
+    nonisolated private static let readerBackgroundPicturePrefix = "readerbg_"
     /// The pictures the reading setup shows are file records named `readerstyle_<asset ID>`.
-    private static let readerStylePicturePrefix = "readerstyle_"
+    nonisolated private static let readerStylePicturePrefix = "readerstyle_"
 
     // MARK: Merged records
     //
@@ -164,26 +165,26 @@ final class ICloudSyncManager: ObservableObject {
     // it, put an older device's header/footer layout over its own, and kept a book it had
     // let go of twice (reported 2026-10-04). Of the old records, only the books those
     // devices add are still brought over (`adoptBooksAddedByOlderBuilds`).
-    private static let bookSourcesRecordName = "book_sources_v2"
-    private static let replaceRulesRecordName = "replace_rules_v2"
-    private static let bubbleStylesRecordName = "comment_bubble_styles_v2"
-    private static let bubbleSelectionRecordName = "comment_bubble_selection_v2"
+    nonisolated private static let bookSourcesRecordName = "book_sources_v2"
+    nonisolated private static let replaceRulesRecordName = "replace_rules_v2"
+    nonisolated private static let bubbleStylesRecordName = "comment_bubble_styles_v2"
+    nonisolated private static let bubbleSelectionRecordName = "comment_bubble_selection_v2"
     /// The saved reading backgrounds, as one merged blob; their pictures are file records
     /// named `readerbg_<hash of the file name>`.
-    private static let readerBackgroundsRecordName = "reader_backgrounds_v2"
+    nonisolated private static let readerBackgroundsRecordName = "reader_backgrounds_v2"
     /// The reading setup, one item per 排版生效範圍 row as last set on any device.
-    private static let readingSettingsRecordName = "reading_settings_v2"
-    private static let readerBarLayoutRecordName = "reader_bar_layout_v2"
-    private static let booksRecordName = "books_meta_v2"
+    nonisolated private static let readingSettingsRecordName = "reading_settings_v2"
+    nonisolated private static let readerBarLayoutRecordName = "reader_bar_layout_v2"
+    nonisolated private static let booksRecordName = "books_meta_v2"
     /// The shelf as builds from before the split sync it.
-    private static let olderBuildsBooksRecordName = "books_meta"
+    nonisolated private static let olderBuildsBooksRecordName = "books_meta"
 
     /// Every blob `sync()` merges, and every one builds before the split left in the
     /// account, by record name — `deleteRemoteData` removes each, so a new one belongs
     /// here as well. `reader_overlay_layout` is written only by builds from before the bar
     /// layout; `reader_background_choice` only by development builds of 2026-09-29, before
     /// the background joined the rest of the reading setup.
-    private static let mergedRecordNames = [
+    nonisolated private static let mergedRecordNames = [
         bookSourcesRecordName, replaceRulesRecordName, bubbleStylesRecordName,
         bubbleSelectionRecordName, readerBackgroundsRecordName, readingSettingsRecordName,
         readerBarLayoutRecordName, booksRecordName,
@@ -194,20 +195,20 @@ final class ICloudSyncManager: ObservableObject {
 
     // Local merge shadows (per-id updatedAt/hash/deleted) for the auto-merge sync, new with
     // the `_v2` records: the ones before them say what was in step with the old records.
-    private static let shadowBooks = "icloud_books_v2"
-    private static let shadowBookSources = "icloud_bookSources_v2"
-    private static let shadowReplaceRules = "icloud_replaceRules_v2"
-    private static let shadowCommentBubbleStyles = "icloud_commentBubbleStyles_v2"
-    private static let shadowCommentBubbleSelection = "icloud_commentBubbleSelection_v2"
-    private static let shadowReaderBarLayout = "icloud_readerBarLayout_v2"
-    private static let shadowReaderBackgrounds = "icloud_readerBackgrounds_v2"
-    private static let shadowReadingSettings = "icloud_readingSettings_v2"
+    nonisolated private static let shadowBooks = "icloud_books_v2"
+    nonisolated private static let shadowBookSources = "icloud_bookSources_v2"
+    nonisolated private static let shadowReplaceRules = "icloud_replaceRules_v2"
+    nonisolated private static let shadowCommentBubbleStyles = "icloud_commentBubbleStyles_v2"
+    nonisolated private static let shadowCommentBubbleSelection = "icloud_commentBubbleSelection_v2"
+    nonisolated private static let shadowReaderBarLayout = "icloud_readerBarLayout_v2"
+    nonisolated private static let shadowReaderBackgrounds = "icloud_readerBackgrounds_v2"
+    nonisolated private static let shadowReadingSettings = "icloud_readingSettings_v2"
     /// What this device synced through `books_meta` before the split: every book it had
     /// there, and every one it deleted. Only read, to tell a book an older build added from
     /// one this device already knew (`adoptBooksAddedByOlderBuilds`).
-    private static let shadowBooksBeforeSplit = "icloud_books"
+    nonisolated private static let shadowBooksBeforeSplit = "icloud_books"
     /// `books_meta` as last looked through for books older builds added.
-    private static let olderBuildsBooksChangeTagKey = "icloud_older_builds_books_change_tag"
+    nonisolated private static let olderBuildsBooksChangeTagKey = "icloud_older_builds_books_change_tag"
 
     /// Bound at launch so the merge sync can read/write the live bookshelf.
     /// `BookStore` is not a singleton (created in the app entry point).
@@ -227,7 +228,7 @@ final class ICloudSyncManager: ObservableObject {
     private let container: CKContainer
     private let database: CKDatabase
 
-    private static var deviceId: String {
+    nonisolated private static var deviceId: String {
         if let id = UserDefaults.standard.string(forKey: deviceIdKey) { return id }
         let id = UUID().uuidString
         UserDefaults.standard.set(id, forKey: deviceIdKey)
@@ -240,7 +241,7 @@ final class ICloudSyncManager: ObservableObject {
         lastSyncDate = UserDefaults.standard.object(forKey: Self.lastSyncKey) as? Date
     }
 
-    static func signInAction(
+    nonisolated static func signInAction(
         remoteManifest: ICloudSyncManifest?,
         hasLocalData: Bool,
         currentDeviceId: String
@@ -250,7 +251,7 @@ final class ICloudSyncManager: ObservableObject {
         return hasLocalData ? .waitForUserChoice : .restore
     }
 
-    func refreshAccountStatus() async -> CKAccountStatus {
+    nonisolated func refreshAccountStatus() async -> CKAccountStatus {
         let status = await fetchAccountStatus()
         await MainActor.run {
             accountStatus = status
@@ -258,7 +259,7 @@ final class ICloudSyncManager: ObservableObject {
         return status
     }
 
-    func syncAfterSignIn() {
+    nonisolated func syncAfterSignIn() {
         Task {
             do {
                 try await performSignInSync()
@@ -280,19 +281,115 @@ final class ICloudSyncManager: ObservableObject {
     /// Seamless, mergeable iCloud sync. Pulls the cloud copy, merges it with this
     /// device (last-write-wins per item + tombstones, reusing `FirestoreSyncMerge`),
     /// writes the result back locally and to the cloud, then syncs the book files
-    /// (EPUB/cover). Safe to call automatically (launch/background) and manually;
-    /// concurrent calls are coalesced. Unlike the old backup/restore it never
-    /// blindly overwrites either side, so no conflict prompt is needed.
-    func sync(reason: String = "manual") async throws {
+    /// (EPUB/cover). Safe to call automatically (launch/foreground/background) and
+    /// manually; concurrent calls are coalesced (`joinOrStartSync`). Unlike the old
+    /// backup/restore it never blindly overwrites either side, so no conflict prompt
+    /// is needed.
+    ///
+    /// Returns when the passes it joined or started are done, and throws what the last of
+    /// them threw. Cancelling a caller cancels the passes it waits on: the only caller that
+    /// cancels is the trip to the background (`syncOnTheWayToTheBackground`), whose time
+    /// is up for every caller at once.
+    nonisolated func sync(reason: String = "manual") async throws {
         try await ensureAccountAvailable()
-        let alreadyRunning = await MainActor.run { () -> Bool in
-            if isSyncing { return true }
-            isSyncing = true
-            statusMessage = localized("iCloud 同步中…")
-            return false
+        guard let passes = await joinOrStartSync(reason: reason) else { return }
+        try await withTaskCancellationHandler {
+            try await passes.value
+        } onCancel: {
+            passes.cancel()
         }
-        if alreadyRunning { return }
-        defer { Task { @MainActor in self.isSyncing = false } }
+    }
+
+    /// The sync passes now running (`runSyncPasses`); nil when none is.
+    @MainActor private var runningSync: Task<Void, Error>?
+    /// The reason of the last call that arrived while `runningSync` ran. Such a call is
+    /// answered by one more pass after the running one: that pass may already have read
+    /// the shelf before the call's reason to sync existed — a page read during the
+    /// foreground pass, then a trip to the background whose sync returned at once and left
+    /// that page unsent until the next launch.
+    @MainActor private var reasonRequestedDuringSync: String?
+
+    /// The passes a `sync(reason:)` call waits on. Until 2026-10-18 a call that found a sync
+    /// running returned at once — so the background trip's background task (see
+    /// `syncOnTheWayToTheBackground`) would have ended while the pass it found was still
+    /// uploading, and nothing it was meant to send was sent by it. Nil while a backup, a
+    /// restore or the deletion of the cloud data holds `isSyncing`; none of them may overlap
+    /// a sync, and a sync then is skipped as it always was.
+    @MainActor private func joinOrStartSync(reason: String) -> Task<Void, Error>? {
+        if let runningSync {
+            reasonRequestedDuringSync = reason
+            AppLogger.sync("sync(\(reason)): a sync is running; joins it, with one more pass after it", level: .notice)
+            return runningSync
+        }
+        if isSyncing {
+            AppLogger.sync("sync(\(reason)): skipped, another iCloud operation is running", level: .notice)
+            return nil
+        }
+        isSyncing = true
+        statusMessage = localized("iCloud 同步中…")
+        let passes = Task { try await self.runSyncPasses(firstReason: reason) }
+        runningSync = passes
+        return passes
+    }
+
+    /// One pass, then one more for as long as calls arrive during the last. Clears the
+    /// running state in the same main-actor turn that finds no further request, so a call
+    /// either joins these passes or starts new ones — none is dropped in between.
+    nonisolated private func runSyncPasses(firstReason: String) async throws {
+        var reason = firstReason
+        while true {
+            var failure: Error?
+            do {
+                try await performSyncPass(reason: reason)
+            } catch {
+                failure = error
+            }
+            let stopped = Task.isCancelled || failure is CancellationError
+            let next: String? = await MainActor.run {
+                if !stopped, let requested = reasonRequestedDuringSync {
+                    reasonRequestedDuringSync = nil
+                    statusMessage = localized("iCloud 同步中…")
+                    return requested
+                }
+                reasonRequestedDuringSync = nil
+                runningSync = nil
+                isSyncing = false
+                return nil
+            }
+            guard let next else {
+                if let failure { throw failure }
+                return
+            }
+            reason = next
+        }
+    }
+
+    /// The sync a trip to the background starts, held open by a background task.
+    ///
+    /// It ran in a plain task until 2026-10-18 (feedback #6: read to 15% on an iPhone, the
+    /// iPad opened chapter 1). iOS suspends an app seconds after it leaves the screen, and
+    /// the shelf — where reading progress travels — is step 5, after every source, rule and
+    /// setting: with a large source library the pass was suspended before it got there, and
+    /// the progress just read stayed on the device. The background task ends when the sync
+    /// does, or when iOS takes the time back; then the sync is cancelled and stops before
+    /// its next step (`performSyncPass`).
+    @MainActor
+    func syncOnTheWayToTheBackground() {
+        let lease = ICloudSyncBackgroundTimeLease()
+        lease.begin()
+        // Set in the same main-actor turn as `begin()`, so the expiration handler, which iOS
+        // runs on the main thread, always finds it.
+        lease.work = Task {
+            do {
+                try await self.sync(reason: "background")
+            } catch {
+                AppLogger.sync("sync(background) ended: \(error.localizedDescription)", level: .notice)
+            }
+            lease.end()
+        }
+    }
+
+    nonisolated private func performSyncPass(reason: String) async throws {
         CrashContext.setKey("icloud_syncing", true)
         CrashContext.breadcrumb("iCloud sync start: \(reason)")
         defer { CrashContext.setKey("icloud_syncing", false) }
@@ -332,6 +429,11 @@ final class ICloudSyncManager: ObservableObject {
             )
             changedRemote = changedRemote || sourceMerge.uploaded
 
+            // Each step starts only while the pass is wanted: when the background time runs
+            // out (`syncOnTheWayToTheBackground`) it stops between steps, each of which has
+            // committed its shadow only after its values were applied (`shadowToCommit`),
+            // so a stop leaves what a failed upload leaves — the next sync does the rest.
+            try Task.checkCancellation()
             // 2. Replace rules (singleton store).
             let localRules = await MainActor.run { ReplaceRuleStore.shared.rules }
             let ruleMerge = try await mergeType(
@@ -348,6 +450,7 @@ final class ICloudSyncManager: ObservableObject {
             )
             changedRemote = changedRemote || ruleMerge.uploaded
 
+            try Task.checkCancellation()
             // 3. Custom comment-bubble styles + selection (singleton settings).
             //    Styles merge per-item (last-write-wins on their stamped
             //    `updatedAt`); the selection rides as ONE always-present record
@@ -398,6 +501,7 @@ final class ICloudSyncManager: ObservableObject {
             )
             changedRemote = changedRemote || bubbleSelectionMerge.uploaded
 
+            try Task.checkCancellation()
             // 3b. Saved reading backgrounds (singleton settings). Per background,
             //     last-write-wins on their stamped `updatedAt`, like the bubble styles;
             //     the pictures they show follow as files, under the name each background
@@ -428,6 +532,7 @@ final class ICloudSyncManager: ObservableObject {
                 await MainActor.run { GlobalSettings.shared.readerBackgroundPicturesDidArrive() }
             }
 
+            try Task.checkCancellation()
             // 3c. The reading setup: one item per 排版生效範圍 row, last-write-wins on
             //     when the row was set — so a font size set here and a line height set
             //     there both survive. After 3b, so a background it names is in the list.
@@ -448,6 +553,7 @@ final class ICloudSyncManager: ObservableObject {
             )
             changedRemote = changedRemote || readingSettingsMerge.uploaded
 
+            try Task.checkCancellation()
             // 3d. The pictures the reading setup shows — 正則高亮's frames, 對話氣泡's skins,
             //     a chapter title's art — follow as files, as the backgrounds' do in 3b. 3c
             //     carries only the settings, which name each picture by its ID in the style
@@ -484,6 +590,7 @@ final class ICloudSyncManager: ObservableObject {
                 stylePictureError = error
             }
 
+            try Task.checkCancellation()
             // 4. Reader header/footer layout (singleton setting). Same shape as
             //    the bubble selection above: ONE always-present record under a
             //    constant id, whose merge clock advances only on a real user
@@ -517,9 +624,10 @@ final class ICloudSyncManager: ObservableObject {
             )
             changedRemote = changedRemote || barLayoutMerge.uploaded
 
+            try Task.checkCancellation()
             // 5. Bookshelf (bound store). Progress lives in each book's
             //    lastOpenedDate, so newest-wins handles reading-progress merges too.
-            if let store = boundBookStore {
+            if let store = await boundBookStore {
                 // Books added on devices still on a build from before the split. Not on the
                 // way to the background, where an older build's shelf — 100 MB and more with
                 // its tables of contents — has no business being downloaded. The look is
@@ -561,11 +669,13 @@ final class ICloudSyncManager: ObservableObject {
                 changedRemote = changedRemote || bookMerge.uploaded
             }
 
+            try Task.checkCancellation()
             // 6. Binary book files (EPUB/TXT content + cover images).
             let uploadedBookFileCount = try await uploadBookFiles()
             changedRemote = changedRemote || uploadedBookFileCount > 0
             _ = try await downloadMissingBookFiles()
 
+            try Task.checkCancellation()
             // 7. Manifest + timestamp.
             let date = Date()
             if changedRemote {
@@ -582,6 +692,13 @@ final class ICloudSyncManager: ObservableObject {
             }
             AppLogger.sync("sync(\(reason)): done — \(sourceMerge.values.count) sources, \(ruleMerge.values.count) rules, uploadedBookFiles=\(uploadedBookFileCount)", level: .notice)
         } catch {
+            if Task.isCancelled {
+                // Not a failure to show: iOS took the background time back, and the next
+                // sync continues from what this one committed.
+                await MainActor.run { statusMessage = "" }
+                AppLogger.sync("sync(\(reason)): stopped, its background time ran out (\(error.localizedDescription))", level: .notice)
+                throw error
+            }
             await MainActor.run { statusMessage = error.localizedDescription }
             AppLogger.sync("sync(\(reason)) failed: \(error.localizedDescription)", level: .error)
             throw error
@@ -594,7 +711,7 @@ final class ICloudSyncManager: ObservableObject {
     ///
     /// - Parameter applyLocally: puts the merged values in the local store; false when the
     ///   store would not take them — it changed during the round trip.
-    private func mergeType<T: Codable>(
+    nonisolated private func mergeType<T: Codable>(
         recordName: String,
         shadowKey: String,
         local: [T],
@@ -655,7 +772,7 @@ final class ICloudSyncManager: ObservableObject {
     /// the shadow, the unchanged local copy no longer matched it, and the next sync stamped
     /// that stale copy `now`, so it won over the edit. Left out, a remote item is new again
     /// next time, and a remote edit or deletion is newer again, and each is applied then.
-    static func shadowToCommit<T>(
+    nonisolated static func shadowToCommit<T>(
         previous: [String: SyncShadowEntry],
         merge: (values: [T], shadow: [String: SyncShadowEntry], shouldApplyLocally: Bool),
         local: [T],
@@ -689,7 +806,7 @@ final class ICloudSyncManager: ObservableObject {
     /// Delete, with `olderBuildsBooksRecordName`, `shadowBooksBeforeSplit` and
     /// `olderBuildsBooksChangeTagKey`, once no build from before the split writes
     /// `books_meta`.
-    private func adoptBooksAddedByOlderBuilds(into store: BookStore) async throws {
+    nonisolated private func adoptBooksAddedByOlderBuilds(into store: BookStore) async throws {
         let recordID = fileRecordID(Self.olderBuildsBooksRecordName)
         let lastLook = UserDefaults.standard.string(forKey: Self.olderBuildsBooksChangeTagKey)
         guard let changeTag = try await fetchRecordChangeTag(recordID), changeTag != lastLook else { return }
@@ -718,7 +835,7 @@ final class ICloudSyncManager: ObservableObject {
     /// The books in `books_meta`, as builds from before the split sync it, that this device
     /// has never known: live there, with no record here and no entry in either of its merge
     /// shadows — so neither a book it holds nor one it deleted, before the split or since.
-    static func idsAddedByOlderBuilds(
+    nonisolated static func idsAddedByOlderBuilds(
         _ items: [(id: String, deleted: Bool)],
         known: Set<String>
     ) -> Set<String> {
@@ -733,7 +850,7 @@ final class ICloudSyncManager: ObservableObject {
 
     /// Everything `mergeType` decides between the download and the upload, apart
     /// from the network so it can be tested.
-    static func resolveMerge<T>(
+    nonisolated static func resolveMerge<T>(
         local: [T],
         remote: [FirestoreSyncRecord<T>],
         shadow loadedShadow: [String: SyncShadowEntry],
@@ -783,7 +900,7 @@ final class ICloudSyncManager: ObservableObject {
     /// all throw. Until 2026-10-05 each of them came back as an empty blob, and the sync merged
     /// "the cloud has nothing": it uploaded this device's view over the blob, and what only
     /// other devices had was gone from it until they uploaded it again.
-    private func downloadRecords<T: Codable>(
+    nonisolated private func downloadRecords<T: Codable>(
         _ recordName: String, as type: T.Type,
         id: (T) -> String, fallbackUpdatedAt: (T) -> Date
     ) async throws -> CloudSyncDownload<T> {
@@ -808,7 +925,7 @@ final class ICloudSyncManager: ObservableObject {
     /// The records in one downloaded blob: the merge format, or the plain array builds from
     /// before the merge sync backed up, every item of which is live. A blob in neither is
     /// unreadable sync data, not an empty blob (see `downloadRecords`).
-    static func decodeCloudSyncBlob<T: Codable>(
+    nonisolated static func decodeCloudSyncBlob<T: Codable>(
         _ data: Data,
         recordName: String,
         id: (T) -> String,
@@ -838,7 +955,7 @@ final class ICloudSyncManager: ObservableObject {
     }
 
     /// Writes the merged values + tombstones back to the cloud blob.
-    private func uploadRecords<T: Codable>(
+    nonisolated private func uploadRecords<T: Codable>(
         _ recordName: String,
         values: [T],
         shadow: [String: SyncShadowEntry],
@@ -868,7 +985,7 @@ final class ICloudSyncManager: ObservableObject {
     }
 
     /// Uploads in-memory data as the CKAsset for a file record.
-    private func uploadData(_ data: Data, recordName: String) async throws {
+    nonisolated private func uploadData(_ data: Data, recordName: String) async throws {
         let tempURL = FileManager.default.temporaryDirectory
             .appendingPathComponent("yuedu-icloud-\(recordName)-\(UUID().uuidString)")
             .appendingPathExtension("json")
@@ -895,14 +1012,14 @@ final class ICloudSyncManager: ObservableObject {
     /// applied, re-rendering the reader and the shelf behind it mid-scroll
     /// (15/16.trace). Sets need a sorted encoding of their own
     /// (`BookOfflineDownloadTask.encode(to:)`); sorting keys cannot order them.
-    static func stableHash<T: Encodable>(_ value: T) -> String {
+    nonisolated static func stableHash<T: Encodable>(_ value: T) -> String {
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.sortedKeys]
         guard let data = try? encoder.encode(value) else { return UUID().uuidString }
         return stableHash(data)
     }
 
-    private static func collectionFingerprint<T>(
+    nonisolated private static func collectionFingerprint<T>(
         _ values: [T],
         id: (T) -> String,
         hash: (T) -> String
@@ -926,7 +1043,7 @@ final class ICloudSyncManager: ObservableObject {
     /// .updatedAt` against the identical remote stamp, and the pre-edit cloud
     /// copy overwrote the edit on the next launch. Detection time is the honest
     /// clock for "changed since the last sync".
-    static func updatedShadowEntry(
+    nonisolated static func updatedShadowEntry(
         existing: SyncShadowEntry?,
         currentHash: String,
         fallbackUpdatedAt: Date,
@@ -945,7 +1062,7 @@ final class ICloudSyncManager: ObservableObject {
         )
     }
 
-    static func encodeCloudSyncRecords<T: Codable>(_ records: [CloudSyncRecord<T>]) throws -> Data {
+    nonisolated static func encodeCloudSyncRecords<T: Codable>(_ records: [CloudSyncRecord<T>]) throws -> Data {
         let sortedRecords = records.sorted { lhs, rhs in
             if lhs.id != rhs.id { return lhs.id < rhs.id }
             if lhs.deleted != rhs.deleted { return lhs.deleted == false }
@@ -956,22 +1073,22 @@ final class ICloudSyncManager: ObservableObject {
         return try encoder.encode(sortedRecords)
     }
 
-    static func cloudSyncPayloadHash<T: Codable>(_ records: [CloudSyncRecord<T>]) throws -> String {
+    nonisolated static func cloudSyncPayloadHash<T: Codable>(_ records: [CloudSyncRecord<T>]) throws -> String {
         stableHash(try encodeCloudSyncRecords(records))
     }
 
-    static func shouldUploadCloudSyncRecords<T: Codable>(
+    nonisolated static func shouldUploadCloudSyncRecords<T: Codable>(
         _ records: [CloudSyncRecord<T>],
         remotePayloadHash: String?
     ) throws -> Bool {
         try cloudSyncPayloadHash(records) != remotePayloadHash
     }
 
-    private static func stableHash(_ data: Data) -> String {
+    nonisolated private static func stableHash(_ data: Data) -> String {
         SHA256.hash(data: data).map { String($0, radix: 16, uppercase: false) }.map { $0.count == 1 ? "0" + $0 : $0 }.joined()
     }
 
-    func backup() async throws {
+    nonisolated func backup() async throws {
         try await ensureAccountAvailable()
         await setSync(true, message: localized("iCloud 備份中…"))
         defer { Task { @MainActor in self.isSyncing = false } }
@@ -998,7 +1115,7 @@ final class ICloudSyncManager: ObservableObject {
         }
     }
 
-    func restore() async throws {
+    nonisolated func restore() async throws {
         try await performRestore(skipConflictCheck: false)
     }
 
@@ -1010,7 +1127,7 @@ final class ICloudSyncManager: ObservableObject {
     ///
     /// Until 2026-09-29 nothing called this, and it missed the bubble styles, the
     /// header/footer layout and the reading backgrounds.
-    func deleteRemoteData() async throws {
+    nonisolated func deleteRemoteData() async throws {
         try await ensureAccountAvailable()
 
         await setSync(true, message: localized("正在刪除 iCloud 同步資料…"))
@@ -1067,7 +1184,7 @@ final class ICloudSyncManager: ObservableObject {
     /// delete goes on and removes it with the rest: unreadable sync data fails every sync, and
     /// the delete is the way out of it, which that same blob must not block. The files only
     /// it named stay in the account.
-    private func valuesNamedForDeletion<T: Codable>(
+    nonisolated private func valuesNamedForDeletion<T: Codable>(
         in recordName: String,
         as type: T.Type,
         id: (T) -> String
@@ -1087,7 +1204,7 @@ final class ICloudSyncManager: ObservableObject {
         }
     }
 
-    func resolveConflict(keepRemote: Bool) async throws {
+    nonisolated func resolveConflict(keepRemote: Bool) async throws {
         await MainActor.run { pendingConflict = nil }
         if keepRemote {
             try await performRestore(skipConflictCheck: true)
@@ -1114,7 +1231,7 @@ final class ICloudSyncManager: ObservableObject {
         }
     }
 
-    private func performSignInSync() async throws {
+    nonisolated private func performSignInSync() async throws {
         try await ensureAccountAvailable()
         let files = ICloudSyncPayload.defaultFiles()
         let remoteManifest = try await fetchManifestIfExists()
@@ -1136,7 +1253,7 @@ final class ICloudSyncManager: ObservableObject {
         }
     }
 
-    private func performRestore(skipConflictCheck: Bool) async throws {
+    nonisolated private func performRestore(skipConflictCheck: Bool) async throws {
         try await ensureAccountAvailable()
         await setSync(true, message: localized("iCloud 還原中…"))
         defer { Task { @MainActor in self.isSyncing = false } }
@@ -1176,14 +1293,14 @@ final class ICloudSyncManager: ObservableObject {
         }
     }
 
-    private func ensureAccountAvailable() async throws {
+    nonisolated private func ensureAccountAvailable() async throws {
         let status = await refreshAccountStatus()
         guard status == .available else {
             throw ICloudSyncError.accountUnavailable(status)
         }
     }
 
-    private func fetchAccountStatus() async -> CKAccountStatus {
+    nonisolated private func fetchAccountStatus() async -> CKAccountStatus {
         await withCheckedContinuation { continuation in
             container.accountStatus { status, _ in
                 continuation.resume(returning: status)
@@ -1191,7 +1308,7 @@ final class ICloudSyncManager: ObservableObject {
         }
     }
 
-    private func uploadFileIfExists(_ file: ICloudSyncPayloadFile) async throws {
+    nonisolated private func uploadFileIfExists(_ file: ICloudSyncPayloadFile) async throws {
         // The shelf file is written on `BookStore`'s queue; a save that returned may still be
         // queued.
         await BookStore.queuedWritesLanded()
@@ -1216,7 +1333,7 @@ final class ICloudSyncManager: ObservableObject {
         try await saveRecord(record)
     }
 
-    private func downloadFileIfExists(_ file: ICloudSyncPayloadFile) async throws {
+    nonisolated private func downloadFileIfExists(_ file: ICloudSyncPayloadFile) async throws {
         let record: CKRecord
         do {
             record = try await fetchRecord(fileRecordID(file.recordName))
@@ -1262,12 +1379,12 @@ final class ICloudSyncManager: ObservableObject {
     /// downloaded cover (`<id>_cover.jpg`); sync that too, otherwise restored
     /// online books show a blank cover and never re-download it (the cover path
     /// is non-nil, so `downloadCoverIfNeeded` is skipped on the other device).
-    private func dynamicBookFilePayloads() -> [ICloudSyncPayloadFile] {
+    nonisolated private func dynamicBookFilePayloads() -> [ICloudSyncPayloadFile] {
         bookFilePayloads(localBooks())
     }
 
     /// The shelf as stored on this device. Empty before the first book is added.
-    private func localBooks() -> [ReadingBook] {
+    nonisolated private func localBooks() -> [ReadingBook] {
         let url = StorageLocations.booksMetadataFile
         guard FileManager.default.fileExists(atPath: url.path) else { return [] }
         do {
@@ -1279,7 +1396,7 @@ final class ICloudSyncManager: ObservableObject {
     }
 
     /// The content and cover file records `books` name, each once.
-    private func bookFilePayloads(_ books: [ReadingBook]) -> [ICloudSyncPayloadFile] {
+    nonisolated private func bookFilePayloads(_ books: [ReadingBook]) -> [ICloudSyncPayloadFile] {
         var payloads: [ICloudSyncPayloadFile] = []
         var seen = Set<String>()
 
@@ -1305,7 +1422,7 @@ final class ICloudSyncManager: ObservableObject {
     /// and, for a converted Aozora book, the original kept beside it, both only for a
     /// syncable local book; and its cover, for every book. Another device converts its
     /// own copy from the original rather than taking this one's EPUB.
-    static func syncableFiles(for book: ReadingBook) -> [(name: String, url: URL)] {
+    nonisolated static func syncableFiles(for book: ReadingBook) -> [(name: String, url: URL)] {
         var files: [(name: String, url: URL)] = []
         if let content = syncableContentFilename(for: book) {
             files.append((content, StorageLocations.bookFile(content)))
@@ -1319,7 +1436,7 @@ final class ICloudSyncManager: ObservableObject {
         return files
     }
 
-    static func syncableContentFilename(for book: ReadingBook) -> String? {
+    nonisolated static func syncableContentFilename(for book: ReadingBook) -> String? {
         guard book.isInBookshelf else { return nil }
         // Automatic remote caches belong to this device and must never become
         // uploaded book files. Only the explicitly saved offline copy is durable.
@@ -1327,7 +1444,7 @@ final class ICloudSyncManager: ObservableObject {
         return (book.isOnline || book.resolvedPipelineKind == .audio) ? nil : book.contentFilename
     }
 
-    private func uploadBookFiles() async throws -> Int {
+    nonisolated private func uploadBookFiles() async throws -> Int {
         let payloads = dynamicBookFilePayloads()
         guard !payloads.isEmpty else { return 0 }
         await setSync(true, message: localized("正在同步書籍檔案…"))
@@ -1341,7 +1458,7 @@ final class ICloudSyncManager: ObservableObject {
         return uploaded
     }
 
-    private func uploadBookFileIfNeeded(_ file: ICloudSyncPayloadFile) async throws -> Bool {
+    nonisolated private func uploadBookFileIfNeeded(_ file: ICloudSyncPayloadFile) async throws -> Bool {
         guard FileManager.default.fileExists(atPath: file.localURL.path) else { return false }
         // Content files are immutable once imported, so skip anything we already
         // uploaded at the same size.
@@ -1364,7 +1481,7 @@ final class ICloudSyncManager: ObservableObject {
         return true
     }
 
-    private func downloadMissingBookFiles() async throws {
+    nonisolated private func downloadMissingBookFiles() async throws {
         let books = localBooks()
         let fetched = try await downloadMissingFiles(bookFilePayloads(books))
         AppLogger.sync("restore: fetched \(fetched.count) book file(s)", level: .notice)
@@ -1375,16 +1492,16 @@ final class ICloudSyncManager: ObservableObject {
     /// none: its package is read once its file is here (unified library 5d-6b, for 系列下一本's
     /// series numbers; the identifiers and language come with it). Copies that already have
     /// one are left as they are.
-    private func readArrivedPackages(_ fetched: [URL], of books: [ReadingBook]) async {
+    nonisolated private func readArrivedPackages(_ fetched: [URL], of books: [ReadingBook]) async {
         let copies = Self.localEPUBs(arrivedAt: fetched, of: books)
-        guard !copies.isEmpty, let store = boundBookStore else { return }
+        guard !copies.isEmpty, let store = await boundBookStore else { return }
         for copy in copies {
             await ImportedMetadataCapture.captureIfMissing(copy: copy, store: store)
         }
     }
 
     /// The local EPUB copies whose content file is among `fetched`.
-    static func localEPUBs(arrivedAt fetched: [URL], of books: [ReadingBook]) -> [ReadingBook] {
+    nonisolated static func localEPUBs(arrivedAt fetched: [URL], of books: [ReadingBook]) -> [ReadingBook] {
         let arrived = Set(fetched.map(\.standardizedFileURL))
         return books.filter {
             $0.source == "local_epub" && $0.remoteSource == nil
@@ -1394,7 +1511,7 @@ final class ICloudSyncManager: ObservableObject {
 
     /// The pictures the saved reading backgrounds show — synced like the book files, and
     /// named after the file, so a device writes each under the name its background uses.
-    static func readerBackgroundPicturePayloads(
+    nonisolated static func readerBackgroundPicturePayloads(
         _ backgrounds: [ReaderCustomBackground]
     ) -> [ICloudSyncPayloadFile] {
         var seen = Set<String>()
@@ -1414,12 +1531,12 @@ final class ICloudSyncManager: ObservableObject {
         return payloads
     }
 
-    static func readerStylePictureRecordName(_ id: UUID) -> String {
+    nonisolated static func readerStylePictureRecordName(_ id: UUID) -> String {
         readerStylePicturePrefix + id.uuidString.lowercased()
     }
 
     /// Every picture the synced reading setup rows show, once each.
-    static func readerStylePictureIDs(referencedBy records: [ReadingSettingSyncRecord]) -> [UUID] {
+    nonisolated static func readerStylePictureIDs(referencedBy records: [ReadingSettingSyncRecord]) -> [UUID] {
         var seen = Set<UUID>()
         return records
             .flatMap { ReaderStyleAssetReferences.assetIDs(in: $0.values) }
@@ -1430,7 +1547,7 @@ final class ICloudSyncManager: ObservableObject {
     /// asset store has — and the ones it fetches: the rest. A picture keeps its content
     /// under its ID, as the settings know it; one replaced in 素材庫 (same ID, new picture)
     /// reaches only devices that do not have it yet.
-    static func readerStylePictureSync(
+    nonisolated static func readerStylePictureSync(
         referencedBy records: [ReadingSettingSyncRecord],
         stored: [ReaderStyleAsset]
     ) -> (send: [ReaderStyleAsset], fetch: [UUID]) {
@@ -1445,7 +1562,7 @@ final class ICloudSyncManager: ObservableObject {
     /// Fetches the pictures the reading setup shows that this device lacks into the style
     /// asset store, under the IDs the setup names them by; its revision bump redraws the
     /// reader. One whose device has not sent it yet comes on a later sync.
-    private func downloadReaderStylePictures(_ ids: [UUID]) async throws {
+    nonisolated private func downloadReaderStylePictures(_ ids: [UUID]) async throws {
         guard !ids.isEmpty else { return }
         AppLogger.sync("restore: \(ids.count) style picture(s) missing locally; fetching", level: .notice)
         for id in ids {
@@ -1483,7 +1600,7 @@ final class ICloudSyncManager: ObservableObject {
 
     /// Fetches each of `files` this device does not have. Returns where those that arrived
     /// were written.
-    private func downloadMissingFiles(_ files: [ICloudSyncPayloadFile]) async throws -> [URL] {
+    nonisolated private func downloadMissingFiles(_ files: [ICloudSyncPayloadFile]) async throws -> [URL] {
         let missing = files.filter { !FileManager.default.fileExists(atPath: $0.localURL.path) }
         guard !missing.isEmpty else { return [] }
         AppLogger.sync("restore: \(missing.count) file(s) missing locally; fetching", level: .notice)
@@ -1510,21 +1627,21 @@ final class ICloudSyncManager: ObservableObject {
         return fetched
     }
 
-    private var uploadedBookFileMarkers: Set<String> {
+    nonisolated private var uploadedBookFileMarkers: Set<String> {
         Set(UserDefaults.standard.stringArray(forKey: Self.uploadedBookFilesKey) ?? [])
     }
 
-    private func rememberUploadedBookFileMarker(_ marker: String) {
+    nonisolated private func rememberUploadedBookFileMarker(_ marker: String) {
         var markers = uploadedBookFileMarkers
         markers.insert(marker)
         UserDefaults.standard.set(Array(markers), forKey: Self.uploadedBookFilesKey)
     }
 
-    private static func shortHash(_ string: String) -> String {
+    nonisolated private static func shortHash(_ string: String) -> String {
         SHA256.hash(data: Data(string.utf8)).map { String($0, radix: 16, uppercase: false) }.map { $0.count == 1 ? "0" + $0 : $0 }.joined()
     }
 
-    private func saveManifest(_ manifest: ICloudSyncManifest) async throws {
+    nonisolated private func saveManifest(_ manifest: ICloudSyncManifest) async throws {
         let recordID = CKRecord.ID(recordName: Self.manifestRecordName)
         let record = (try? await fetchRecord(recordID)) ?? CKRecord(
             recordType: Self.manifestRecordType,
@@ -1537,7 +1654,7 @@ final class ICloudSyncManager: ObservableObject {
         try await saveRecord(record)
     }
 
-    private func fetchManifestIfExists() async throws -> ICloudSyncManifest? {
+    nonisolated private func fetchManifestIfExists() async throws -> ICloudSyncManifest? {
         do {
             let record = try await fetchRecord(CKRecord.ID(recordName: Self.manifestRecordName))
             return manifest(from: record)
@@ -1547,7 +1664,7 @@ final class ICloudSyncManager: ObservableObject {
         }
     }
 
-    private func manifest(from record: CKRecord) -> ICloudSyncManifest? {
+    nonisolated private func manifest(from record: CKRecord) -> ICloudSyncManifest? {
         guard let deviceId = record[Field.deviceId] as? String,
               let deviceName = record[Field.deviceName] as? String,
               let backupDate = record[Field.backupDate] as? Date
@@ -1563,7 +1680,7 @@ final class ICloudSyncManager: ObservableObject {
         )
     }
 
-    private func fetchRecord(_ recordID: CKRecord.ID) async throws -> CKRecord {
+    nonisolated private func fetchRecord(_ recordID: CKRecord.ID) async throws -> CKRecord {
         try await withCheckedThrowingContinuation { continuation in
             database.fetch(withRecordID: recordID) { record, error in
                 if let error {
@@ -1582,7 +1699,7 @@ final class ICloudSyncManager: ObservableObject {
     /// A record's change tag, without its fields: an empty `desiredKeys` leaves every field
     /// behind, the asset with it, so a blob of any size costs one small round trip. Nil when
     /// there is no such record.
-    private func fetchRecordChangeTag(_ recordID: CKRecord.ID) async throws -> String? {
+    nonisolated private func fetchRecordChangeTag(_ recordID: CKRecord.ID) async throws -> String? {
         try await withCheckedThrowingContinuation { continuation in
             let operation = CKFetchRecordsOperation(recordIDs: [recordID])
             operation.desiredKeys = []
@@ -1610,7 +1727,7 @@ final class ICloudSyncManager: ObservableObject {
         }
     }
 
-    private func deleteRecordIfExists(_ recordID: CKRecord.ID) async throws {
+    nonisolated private func deleteRecordIfExists(_ recordID: CKRecord.ID) async throws {
         do {
             try await deleteRecord(recordID)
         } catch {
@@ -1619,7 +1736,7 @@ final class ICloudSyncManager: ObservableObject {
         }
     }
 
-    private func deleteRecord(_ recordID: CKRecord.ID) async throws {
+    nonisolated private func deleteRecord(_ recordID: CKRecord.ID) async throws {
         try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
             database.delete(withRecordID: recordID) { _, error in
                 if let error {
@@ -1631,7 +1748,7 @@ final class ICloudSyncManager: ObservableObject {
         }
     }
 
-    private func saveRecord(_ record: CKRecord) async throws {
+    nonisolated private func saveRecord(_ record: CKRecord) async throws {
         try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
             database.save(record) { _, error in
                 if let error {
@@ -1643,16 +1760,16 @@ final class ICloudSyncManager: ObservableObject {
         }
     }
 
-    private func fileRecordID(_ name: String) -> CKRecord.ID {
+    nonisolated private func fileRecordID(_ name: String) -> CKRecord.ID {
         CKRecord.ID(recordName: "sync_file_\(name)")
     }
 
-    private func isRecordNotFound(_ error: Error) -> Bool {
+    nonisolated private func isRecordNotFound(_ error: Error) -> Bool {
         guard let ckError = error as? CKError else { return false }
         return ckError.code == .unknownItem || ckError.code == .zoneNotFound
     }
 
-    private func hasLocalSyncableData(files: [ICloudSyncPayloadFile]) -> Bool {
+    nonisolated private func hasLocalSyncableData(files: [ICloudSyncPayloadFile]) -> Bool {
         files.contains { file in
             guard let attributes = try? FileManager.default.attributesOfItem(atPath: file.localURL.path),
                   let size = attributes[.size] as? NSNumber else {
@@ -1662,7 +1779,7 @@ final class ICloudSyncManager: ObservableObject {
         }
     }
 
-    private func makeManifest(date: Date) async -> ICloudSyncManifest {
+    nonisolated private func makeManifest(date: Date) async -> ICloudSyncManifest {
         let deviceName = await MainActor.run { UIDevice.current.name }
         let appVersion = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? ""
         return ICloudSyncManifest(
@@ -1677,5 +1794,35 @@ final class ICloudSyncManager: ObservableObject {
     private func setSync(_ syncing: Bool, message: String) {
         isSyncing = syncing
         statusMessage = message
+    }
+}
+
+/// One `beginBackgroundTask` for `syncOnTheWayToTheBackground`, ended exactly once: by the
+/// sync finishing, or by iOS taking the time back — which also cancels the sync, so it stops
+/// at its next step instead of being suspended in the middle of one.
+@MainActor
+private final class ICloudSyncBackgroundTimeLease {
+    private var identifier: UIBackgroundTaskIdentifier = .invalid
+    var work: Task<Void, Never>?
+
+    func begin() {
+        identifier = UIApplication.shared.beginBackgroundTask(withName: "iCloud sync") { [self] in
+            MainActor.assumeIsolated {
+                AppLogger.sync("sync(background): background time ran out; cancelling it", level: .error)
+                work?.cancel()
+                end()
+            }
+        }
+        if identifier == .invalid {
+            // iOS granted no background time: the sync still runs, as it did before it
+            // had a lease, for as long as the app does.
+            AppLogger.sync("sync(background): no background time granted", level: .notice)
+        }
+    }
+
+    func end() {
+        guard identifier != .invalid else { return }
+        UIApplication.shared.endBackgroundTask(identifier)
+        identifier = .invalid
     }
 }

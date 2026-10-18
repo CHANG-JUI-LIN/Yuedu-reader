@@ -118,4 +118,52 @@ struct ICloudSyncChangeDetectionTests {
         #expect(!result.shouldApplyLocally)
         #expect(result.shadow[book.id.uuidString]?.updatedAt == now)
     }
+
+    /// Feedback #6 asked whether a sync stamps books nobody touched `now`, which would let a
+    /// stale copy beat progress read elsewhere. It does not: an unchanged hash leaves the
+    /// shadow entry, and its stamp, as the last sync left them, however late the sync runs.
+    @Test func anUntouchedBookIsNotStampedNow() {
+        let entry = SyncShadowEntry(updatedAt: synced, hash: "unchanged", deleted: false)
+        let dayLater = synced.addingTimeInterval(86_400)
+        #expect(ICloudSyncManager.updatedShadowEntry(
+            existing: entry, currentHash: "unchanged", fallbackUpdatedAt: synced, now: dayLater
+        ) == nil)
+    }
+
+    /// The order feedback #6 feared: the iPad, only suspended and untouched, syncs on its way
+    /// to the background before the iPhone has uploaded the 15% it read. The iPad's upload
+    /// carries the last sync's stamp, so the iPhone's progress still wins when it uploads, and
+    /// reaches the iPad when it comes back.
+    @Test func anUntouchedCopyUploadedFirstDoesNotBeatProgressReadElsewhere() throws {
+        let book = try localBook()
+        let key = book.id.uuidString
+        let shadowHash = try lastSyncHash(book)
+
+        let iPadLeaves = synced.addingTimeInterval(86_400)
+        let iPad = merge(local: book, remote: try cloudCopy(of: book), shadowHash: shadowHash, now: iPadLeaves)
+        let iPadStamp = try #require(iPad.shadow[key]?.updatedAt)
+        #expect(iPadStamp == synced, "the untouched copy keeps the last sync's stamp")
+        let iPadUpload = try #require(iPad.values.first)
+
+        var read = book
+        read.currentPosition = 0.15
+        read.lastOpenedDate = synced.addingTimeInterval(3_600)
+        let iPhone = ICloudSyncManager.resolveMerge(
+            local: [read],
+            remote: [FirestoreSyncRecord(id: key, value: iPadUpload, updatedAt: iPadStamp, deleted: false)],
+            shadow: [key: SyncShadowEntry(updatedAt: synced, hash: shadowHash, deleted: false)],
+            id: { $0.id.uuidString },
+            hash: hash,
+            fallbackUpdatedAt: { $0.lastOpenedDate ?? $0.addedDate },
+            now: iPadLeaves.addingTimeInterval(60)
+        )
+        #expect(iPhone.values.map(\.currentPosition) == [0.15], "the iPhone keeps what it read")
+        let iPhoneStamp = try #require(iPhone.shadow[key]?.updatedAt)
+        let iPhoneUpload = try #require(iPhone.values.first)
+
+        let iPadBack = merge(local: book, remote: iPhoneUpload, remoteUpdatedAt: iPhoneStamp,
+                             shadowHash: shadowHash, now: iPhoneStamp.addingTimeInterval(60))
+        #expect(iPadBack.values.map(\.currentPosition) == [0.15], "the 15% reaches the iPad")
+        #expect(iPadBack.shouldApplyLocally)
+    }
 }

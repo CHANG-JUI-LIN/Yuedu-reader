@@ -16,6 +16,16 @@ struct yuedu_appApp: App {
     @StateObject private var subscriptionStore = SubscriptionStore.shared
     @StateObject private var bookSourceDeepLinkHandler = BookSourceDeepLinkHandler()
     @Environment(\.scenePhase) private var scenePhase
+    /// Set when the scene reaches the background, consumed by the next `.active`: only a
+    /// return from the background merges with the cloud. `.active` also follows every
+    /// `.inactive` — Control Center, a system alert, the app switcher left open — and none of
+    /// those is a time another device can have moved the reading on.
+    @State private var resumesFromBackground = false
+    /// Set by launch, whose own sync-then-refresh (`syncThenRefreshChapters`) owns the first
+    /// chapter check; consumed by the first `.active`, which would otherwise start the check
+    /// at once — beside the launch sync, while it is still on its way — and take the
+    /// throttle's allowance from the one ordered after it.
+    @State private var launchOwnsChapterRefresh = false
 
     #if DEBUG
     /// UI-test hook: imports the Documents-relative EPUB named by
@@ -267,12 +277,6 @@ struct yuedu_appApp: App {
                     // Before anything runs a source: `java.startBrowser(Await)` opens its page
                     // through this from any script — search, a chapter, 書源驗證.
                     SourceBrowserPresenter.install()
-                    // `.utility`: this walks every online book's table of contents through
-                    // its source's bridge, and a chapter the reader opens meanwhile must
-                    // not wait behind it (`BookSourceSession.withBridge`).
-                    Task(priority: .utility) {
-                        await ChapterUpdater.refreshAll(bookStore: bookStore, auto: true)
-                    }
                     // Prime the WebView cookie mirror before the first source request
                     // needs it, so no fetch pays a cold WebKit round trip.
                     WebViewCookieMirror.shared.start()
@@ -296,10 +300,9 @@ struct yuedu_appApp: App {
                     Task { await WebDAVIndexCoordinator.shared.attach(store: bookStore.remoteRecords) }
                     // Unified library 3d: empty covers and descriptions fill in the foreground, on Wi-Fi.
                     bookStore.metadataFill.setActive(scenePhase == .active)
-                    // Seamless iCloud: merge with the cloud on launch.
-                    if GlobalSettings.shared.iCloudAutoSync {
-                        Task { try? await ICloudSyncManager.shared.sync(reason: "launch") }
-                    }
+                    // Seamless iCloud: merge with the cloud on launch, then look for new chapters.
+                    launchOwnsChapterRefresh = true
+                    syncThenRefreshChapters(syncReason: GlobalSettings.shared.iCloudAutoSync ? "launch" : nil)
                 }
                 .onChange(of: scenePhase) { _, newPhase in
                     MainThreadMonitor.shared.notePhase(String(describing: newPhase))
@@ -310,6 +313,7 @@ struct yuedu_appApp: App {
                     // reliable moment to get buffered log lines onto disk.
                     switch newPhase {
                     case .background:
+                        resumesFromBackground = true
                         DiagnosticLog.shared.noteEnteredBackground()
                         BookSourceStore.shared.flushPendingWrites()
                         DiagnosticScale.publish(bookStore: bookStore, reason: "background")
@@ -330,18 +334,51 @@ struct yuedu_appApp: App {
                             await AppDependencies.live.offlineDownloadManager
                                 .reconcileInterruptedDownloads(store: bookStore)
                         }
-                        // Returning to the foreground also checks online books for
-                        // new chapters (throttled). Cold launch already kicked one
-                        // off in onAppear; the throttle skips the duplicate.
-                        Task(priority: .utility) {
-                            await ChapterUpdater.refreshAll(bookStore: bookStore, auto: true)
+                        // Back from the background, merge with the cloud before the book on
+                        // screen is read on: another device may have moved it on while this
+                        // one was suspended, unaware (feedback #6: read to 15% on an
+                        // iPhone, the iPad that had only been suspended opened chapter 1).
+                        // Returning to the foreground also checks online books for new
+                        // chapters (throttled). Cold launch already kicked one off in
+                        // onAppear, after its sync; the first `.active` leaves it to that.
+                        let syncReason = resumesFromBackground && GlobalSettings.shared.iCloudAutoSync
+                            ? "foreground" : nil
+                        resumesFromBackground = false
+                        let launchRefreshes = launchOwnsChapterRefresh
+                        launchOwnsChapterRefresh = false
+                        if syncReason != nil || !launchRefreshes {
+                            syncThenRefreshChapters(syncReason: syncReason)
                         }
                     }
-                    // Seamless iCloud: push/merge when leaving the app.
+                    // Seamless iCloud: push/merge when leaving the app, in background time.
                     if newPhase == .background, GlobalSettings.shared.iCloudAutoSync {
-                        Task { try? await ICloudSyncManager.shared.sync(reason: "background") }
+                        ICloudSyncManager.shared.syncOnTheWayToTheBackground()
                     }
                 }
+        }
+    }
+
+    /// The iCloud sync named by `syncReason` (none when nil), and the automatic chapter check
+    /// after it — never side by side. The sync applies the shelf it merged only if the shelf
+    /// did not change during the round trip (`BookStore.snapshotForSync`), and the check
+    /// changes every online book it finds new chapters for: run together, it voided the very
+    /// merge that brings another device's reading progress, which then waited for a later
+    /// sync. `metadataFill` changes the shelf in the foreground too and is not ordered here.
+    private func syncThenRefreshChapters(syncReason: String?) {
+        Task {
+            if let syncReason {
+                do {
+                    try await ICloudSyncManager.shared.sync(reason: syncReason)
+                } catch {
+                    AppLogger.sync("sync(\(syncReason)) ended: \(error.localizedDescription)", level: .notice)
+                }
+            }
+            // `.utility`: this walks every online book's table of contents through
+            // its source's bridge, and a chapter the reader opens meanwhile must
+            // not wait behind it (`BookSourceSession.withBridge`).
+            Task(priority: .utility) {
+                await ChapterUpdater.refreshAll(bookStore: bookStore, auto: true)
+            }
         }
     }
 }
