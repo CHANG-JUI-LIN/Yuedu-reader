@@ -207,6 +207,8 @@ final class BrowserScrollChapter {
     }
 
     /// Tests and explicit readiness checks only — never awaited from a scroll callback.
+    /// On the main actor, where `inFlight` and `idleWaiters` are written.
+    @MainActor
     func waitForViewportIdle() async {
         while inFlight != nil {
             await withCheckedContinuation { idleWaiters.append($0) }

@@ -30,7 +30,12 @@ enum ReaderDocumentTrace {
 
     /// Times an awaited leaf into `bucket`. A no-op pass-through when no collector is bound,
     /// so render paths outside a measured chapter build stay uninstrumented rather than crash.
-    static func measuring<T>(_ bucket: String, _ body: () async throws -> T) async rethrows -> T {
+    /// Runs in the caller's isolation, so `body` is never sent to another executor.
+    static func measuring<T>(
+        _ bucket: String,
+        isolation: isolated (any Actor)? = #isolation,
+        _ body: () async throws -> T
+    ) async rethrows -> T {
         guard let renderLeaves else { return try await body() }
         return try await renderLeaves.measuring(bucket, body)
     }
@@ -83,7 +88,11 @@ final class RenderLeafMetrics: @unchecked Sendable {
     /// Nothing is awaited inside the critical section here.
     /// `defer` rather than a straight-line record so a leaf that throws — an unreadable archive
     /// entry, say — still contributes its time instead of vanishing from the breakdown.
-    func measuring<T>(_ bucket: String, _ body: () async throws -> T) async rethrows -> T {
+    func measuring<T>(
+        _ bucket: String,
+        isolation: isolated (any Actor)? = #isolation,
+        _ body: () async throws -> T
+    ) async rethrows -> T {
         let start = SourcePerfTrace.now
         defer { record(bucket, since: start) }
         return try await body()
