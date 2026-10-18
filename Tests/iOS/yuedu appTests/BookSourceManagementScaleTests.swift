@@ -266,6 +266,55 @@ struct BookSourceManagementScaleTests {
     }
 
     @Test(
+        "reading a large library from the main thread and from the background",
+        .enabled(if: enabled, "Set BOOK_SOURCE_SCALE_TESTS=1"),
+        .timeLimit(.minutes(30))
+    )
+    func readLibrary() async throws {
+        let count = Self.counts.max() ?? 50_000
+        let fixture = try ScaleFixture(count: count)
+        defer { fixture.remove() }
+        let store = BookSourceStore(directory: fixture.directory)
+        await store.waitUntilLoaded()
+        let ids = store.sources.suffix(1_000).map(\.id)
+        let reads = 10_000
+        for pass in 0..<3 {
+            let mainSources = measureUs {
+                for _ in 0..<reads { _ = store.sources.count }
+            }
+            let mainLookup = measureUs {
+                for id in ids { _ = store.source(id: id) }
+            }
+            let (backgroundSources, backgroundLookup) = await Task.detached { [ids] in
+                let sources = Self.measureUsNonisolated {
+                    for _ in 0..<reads { _ = store.sources.count }
+                }
+                let lookup = Self.measureUsNonisolated {
+                    for id in ids { _ = store.source(id: id) }
+                }
+                return (sources, lookup)
+            }.value
+            print(
+                "SCALE readLibrary sources=\(count) pass=\(pass) "
+                    + "mainSourcesUsPerRead=\(String(format: "%.3f", mainSources / Double(reads))) "
+                    + "mainLookupUsPerId=\(String(format: "%.3f", mainLookup / Double(ids.count))) "
+                    + "backgroundSourcesUsPerRead=\(String(format: "%.3f", backgroundSources / Double(reads))) "
+                    + "backgroundLookupUsPerId=\(String(format: "%.3f", backgroundLookup / Double(ids.count)))"
+            )
+        }
+    }
+
+    private func measureUs(_ body: () -> Void) -> Double {
+        Self.measureUsNonisolated(body)
+    }
+
+    nonisolated private static func measureUsNonisolated(_ body: () -> Void) -> Double {
+        let startedAt = ProcessInfo.processInfo.systemUptime
+        body()
+        return (ProcessInfo.processInfo.systemUptime - startedAt) * 1_000_000
+    }
+
+    @Test(
         "building bookshelf covers with a large library",
         .enabled(if: enabled, "Set BOOK_SOURCE_SCALE_TESTS=1"),
         .timeLimit(.minutes(30))
@@ -275,8 +324,8 @@ struct BookSourceManagementScaleTests {
         let fixture = try ScaleFixture(count: count)
         defer { fixture.remove() }
         let previous = BookSourceStore.shared.sources
-        BookSourceStore.shared.sources = fixture.store.sources
-        defer { BookSourceStore.shared.sources = previous }
+        BookSourceStore.shared.replaceSources(fixture.store.sources)
+        defer { BookSourceStore.shared.replaceSources(previous) }
         // Books whose sources sit at the end of the list: the worst case of a linear scan.
         let books: [ReadingBook] = fixture.store.sources.suffix(200).map { source in
             var book = ReadingBook(title: "書", author: "作者", contentFilename: "")

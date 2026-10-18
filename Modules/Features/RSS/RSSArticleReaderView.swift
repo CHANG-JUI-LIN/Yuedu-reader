@@ -260,7 +260,7 @@ struct RSSArticleReaderView: View {
     }
 }
 
-private struct RSSArticleWebReaderView: UIViewRepresentable {
+struct RSSArticleWebReaderView: UIViewRepresentable {
     let document: RSSArticleHTMLDocument
     let restoreScrollY: Double
     @Binding var findRequestID: UUID?
@@ -322,7 +322,7 @@ private struct RSSArticleWebReaderView: UIViewRepresentable {
         func webView(
             _ webView: WKWebView,
             decidePolicyFor navigationAction: WKNavigationAction,
-            decisionHandler: @escaping (WKNavigationActionPolicy) -> Void
+            decisionHandler: @escaping @MainActor (WKNavigationActionPolicy) -> Void
         ) {
             guard navigationAction.navigationType == .linkActivated,
                   let url = navigationAction.request.url,

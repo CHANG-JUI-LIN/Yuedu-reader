@@ -49,8 +49,8 @@ struct BookStoreBackgroundPublishTests {
     func refreshPublishesOnce() async throws {
         let source = BookSource(bookSourceUrl: "https://example.com", bookSourceName: "測試書源")
         let previousSources = await MainActor.run { BookSourceStore.shared.sources }
-        await MainActor.run { BookSourceStore.shared.sources = [source] }
-        defer { Task { @MainActor in BookSourceStore.shared.sources = previousSources } }
+        await MainActor.run { BookSourceStore.shared.replaceSources([source]) }
+        defer { Task { @MainActor in BookSourceStore.shared.replaceSources(previousSources) } }
 
         let (store, directory) = await makeStore()
         defer { try? FileManager.default.removeItem(at: directory) }
@@ -97,8 +97,8 @@ struct BookStoreBackgroundPublishTests {
     func reparsedUnchangedListIsNoChange() async throws {
         let source = BookSource(bookSourceUrl: "https://example.com", bookSourceName: "測試書源")
         let previousSources = await MainActor.run { BookSourceStore.shared.sources }
-        await MainActor.run { BookSourceStore.shared.sources = [source] }
-        defer { Task { @MainActor in BookSourceStore.shared.sources = previousSources } }
+        await MainActor.run { BookSourceStore.shared.replaceSources([source]) }
+        defer { Task { @MainActor in BookSourceStore.shared.replaceSources(previousSources) } }
 
         let (store, directory) = await makeStore()
         defer { try? FileManager.default.removeItem(at: directory) }

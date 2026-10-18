@@ -46,8 +46,11 @@ class LegadoMigrationManager: @MainActor ObservableObject {
             return 0
         }
         do {
-            let count = try BookSourceStore.shared.importFromJSON(jsonString)
-            return count
+            // Parsing stays off the main actor; merging into the library is a write, and the
+            // library's writes are main-actor.
+            let store = BookSourceStore.shared
+            let parsed = try store.parseForImport(json: jsonString)
+            return try await store.importSelected(parsed, options: .direct)
         } catch {
             appendLog("[ERROR] Book source import failed: \(error.localizedDescription)")
             return 0

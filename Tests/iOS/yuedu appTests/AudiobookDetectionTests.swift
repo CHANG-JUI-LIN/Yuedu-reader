@@ -343,8 +343,8 @@ struct AudiobookDetectionTests {
     func bookStoreCreatesAggregateListeningResultAsAudio() throws {
         let source = BookSource(bookSourceUrl: "https://example.com", bookSourceName: "聚合")
         let previousSources = BookSourceStore.shared.sources
-        BookSourceStore.shared.sources = [source]
-        defer { BookSourceStore.shared.sources = previousSources }
+        BookSourceStore.shared.replaceSources([source])
+        defer { BookSourceStore.shared.replaceSources(previousSources) }
 
         let metadataURL = FileManager.default.temporaryDirectory
             .appendingPathComponent("books-\(UUID().uuidString).json")
@@ -371,8 +371,8 @@ struct AudiobookDetectionTests {
     func updatingAggregateAudiobookChaptersRefreshesRuntimeState() throws {
         let source = BookSource(bookSourceUrl: "https://example.com", bookSourceName: "聚合")
         let previousSources = BookSourceStore.shared.sources
-        BookSourceStore.shared.sources = [source]
-        defer { BookSourceStore.shared.sources = previousSources }
+        BookSourceStore.shared.replaceSources([source])
+        defer { BookSourceStore.shared.replaceSources(previousSources) }
 
         let metadataURL = FileManager.default.temporaryDirectory
             .appendingPathComponent("books-\(UUID().uuidString).json")

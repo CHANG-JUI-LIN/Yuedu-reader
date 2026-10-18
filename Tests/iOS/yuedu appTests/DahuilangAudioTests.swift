@@ -87,8 +87,8 @@ struct DahuilangAudioTests {
     func addOnlineBookSetsAudioPipeline() throws {
         let source = BookSource(bookSourceUrl: "https://example.com", bookSourceName: "大灰狼聚合")
         let previousSources = BookSourceStore.shared.sources
-        BookSourceStore.shared.sources = [source]
-        defer { BookSourceStore.shared.sources = previousSources }
+        BookSourceStore.shared.replaceSources([source])
+        defer { BookSourceStore.shared.replaceSources(previousSources) }
 
         let metadataURL = FileManager.default.temporaryDirectory
             .appendingPathComponent("books-\(UUID().uuidString).json")

@@ -7,8 +7,8 @@ import Foundation
 /// The artifact is created after page ranges and float notches are finalized.
 /// Extractors and drawing consume this exact frame instead of shaping the same
 /// page again.
-struct PageLayoutArtifact {
+struct PageLayoutArtifact: Sendable {
     let range: CFRange
-    let frame: CTFrame
+    @LayoutShared var frame: CTFrame
     let lineOrigins: [CGPoint]
 }

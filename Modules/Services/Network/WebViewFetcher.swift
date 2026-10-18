@@ -816,7 +816,7 @@ final class WebViewFetcher: NSObject, WKNavigationDelegate {
     func webView(
         _ webView: WKWebView,
         decidePolicyFor navigationResponse: WKNavigationResponse,
-        decisionHandler: @escaping (WKNavigationResponsePolicy) -> Void
+        decisionHandler: @escaping @MainActor (WKNavigationResponsePolicy) -> Void
     ) {
         if let http = navigationResponse.response as? HTTPURLResponse,
             let url = http.url,

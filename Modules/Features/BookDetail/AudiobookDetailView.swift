@@ -789,12 +789,12 @@ struct AudiobookDetailView: View {
 
 extension BookSourceStore {
     /// True when the source backing this id is a dedicated audiobook source.
-    func isAudiobookSource(id: UUID?) -> Bool {
+    nonisolated func isAudiobookSource(id: UUID?) -> Bool {
         guard let id else { return false }
         return sources.first { $0.id == id }?.bookSourceType == 1
     }
 
-    func isAudiobook(_ book: OnlineBook) -> Bool {
+    nonisolated func isAudiobook(_ book: OnlineBook) -> Bool {
         let source = sources.first { $0.id == book.sourceId }
         let kind = book.inferredContentKind(source: source)
         let modes = OnlineBookContentInference.sourceRuntimeModeMarkers(for: source)
@@ -804,7 +804,7 @@ extension BookSourceStore {
         return kind == .audio
     }
 
-    func isAudiobook(_ searchBook: SearchBook) -> Bool {
+    nonisolated func isAudiobook(_ searchBook: SearchBook) -> Bool {
         let kind = searchBook.inferredContentKind(sourceStore: self)
         let origin = searchBook.origins.first
         let source = sources.first { $0.id == origin?.sourceId }
@@ -816,11 +816,11 @@ extension BookSourceStore {
 
     // Quiet variants for list/cover badges — the logging `isAudiobook` methods above are
     // routing diagnostics and must not fire per-cell while a list scrolls.
-    func isAudiobookForBadge(_ book: OnlineBook) -> Bool {
+    nonisolated func isAudiobookForBadge(_ book: OnlineBook) -> Bool {
         book.inferredContentKind(source: sources.first { $0.id == book.sourceId }) == .audio
     }
 
-    func isAudiobookForBadge(_ searchBook: SearchBook) -> Bool {
+    nonisolated func isAudiobookForBadge(_ searchBook: SearchBook) -> Bool {
         searchBook.inferredContentKind(sourceStore: self) == .audio
     }
 }

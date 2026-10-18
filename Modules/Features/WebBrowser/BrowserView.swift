@@ -441,7 +441,7 @@ class BrowserState: NSObject, ObservableObject, WKNavigationDelegate {
         _ webView: WKWebView,
         decidePolicyFor navigationAction: WKNavigationAction,
         preferences: WKWebpagePreferences,
-        decisionHandler: @escaping (WKNavigationActionPolicy, WKWebpagePreferences) -> Void
+        decisionHandler: @escaping @MainActor (WKNavigationActionPolicy, WKWebpagePreferences) -> Void
     ) {
         // Per navigation, so a redirect or a followed link stays in the mode the user chose.
         preferences.preferredContentMode = SourceWebIdentity.contentMode(desktop: usesDesktopSite)

@@ -1,4 +1,5 @@
 import Foundation
+import os
 import Testing
 import UIKit
 @testable import yuedu_app
@@ -20,10 +21,12 @@ struct ContentRevisionPaginationTests {
     @Test("Explicit revision skips fingerprinting for first-page and full pagination")
     @MainActor
     func explicitRevisionSkipsFingerprinting() async {
-        var fingerprintCount = 0
+        let fingerprintCount = OSAllocatedUnfairLock(initialState: 0)
         let paginator = CoreTextPaginator(layoutFingerprintProvider: { _ in
-            fingerprintCount += 1
-            return fingerprintCount
+            fingerprintCount.withLock { count in
+                count += 1
+                return count
+            }
         })
         let attributedString = makeAttributedString()
         let revision = ContentRevision()
@@ -43,15 +46,15 @@ struct ContentRevisionPaginationTests {
             revision: revision
         )
 
-        #expect(fingerprintCount == 0)
+        #expect(fingerprintCount.withLock { $0 } == 0)
     }
 
     @Test("Legacy pagination without revision still fingerprints content")
     @MainActor
     func legacyPaginationStillFingerprintsContent() async {
-        var fingerprintCount = 0
+        let fingerprintCount = OSAllocatedUnfairLock(initialState: 0)
         let paginator = CoreTextPaginator(layoutFingerprintProvider: { _ in
-            fingerprintCount += 1
+            fingerprintCount.withLock { $0 += 1 }
             return 7
         })
         let attributedString = makeAttributedString()
@@ -69,7 +72,7 @@ struct ContentRevisionPaginationTests {
             fontSize: 18
         )
 
-        #expect(fingerprintCount == 2)
+        #expect(fingerprintCount.withLock { $0 } == 2)
     }
 
     @Test("Different explicit revisions prevent stale content cache hits")
@@ -100,12 +103,13 @@ struct ContentRevisionPaginationTests {
     @Test("Legacy fingerprints prevent stale content cache hits")
     @MainActor
     func differentLegacyFingerprintsUseDifferentLayouts() async {
-        var fingerprintCount = 0
+        let fingerprintCount = OSAllocatedUnfairLock(initialState: 0)
         let firstContent = makeAttributedString(text: "legacy first")
         let secondContent = makeAttributedString(text: "legacy second")
+        let firstText = firstContent.string
         let paginator = CoreTextPaginator(layoutFingerprintProvider: { attributedString in
-            fingerprintCount += 1
-            return attributedString.string == firstContent.string ? 101 : 202
+            fingerprintCount.withLock { $0 += 1 }
+            return attributedString.string == firstText ? 101 : 202
         })
 
         _ = await paginator.paginate(
@@ -121,7 +125,7 @@ struct ContentRevisionPaginationTests {
             fontSize: 18
         )
 
-        #expect(fingerprintCount == 2)
+        #expect(fingerprintCount.withLock { $0 } == 2)
         #expect(secondLayout.attributedString.string == secondContent.string)
     }
 

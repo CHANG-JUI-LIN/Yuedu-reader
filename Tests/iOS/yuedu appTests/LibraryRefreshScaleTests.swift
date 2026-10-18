@@ -34,8 +34,8 @@ struct LibraryRefreshScaleTests {
     func refreshCPU() async throws {
         let source = BookSource(bookSourceUrl: "https://example.com", bookSourceName: "規模測試")
         let previousSources = await MainActor.run { BookSourceStore.shared.sources }
-        await MainActor.run { BookSourceStore.shared.sources = [source] }
-        defer { Task { @MainActor in BookSourceStore.shared.sources = previousSources } }
+        await MainActor.run { BookSourceStore.shared.replaceSources([source]) }
+        defer { Task { @MainActor in BookSourceStore.shared.replaceSources(previousSources) } }
         let directory = FileManager.default.temporaryDirectory
             .appendingPathComponent("LibraryRefreshScale-\(UUID().uuidString)", isDirectory: true)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)

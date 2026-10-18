@@ -1,9 +1,10 @@
 import CoreText
+import os
 import UIKit
 import YueduCoreText
 import YueduCoreTextTypography
 
-final class CoreTextPaginator {
+final class CoreTextPaginator: Sendable {
     static func debugVerticalLog(_ message: @autoclosure () -> String, verbose: Bool = false) {
     }
 
@@ -175,10 +176,10 @@ final class CoreTextPaginator {
         }
     }
 
-    struct RenderedInlineAnnotation {
+    struct RenderedInlineAnnotation: Sendable {
         /// Drawing rectangle in UIKit coordinates (origin top-left, Y downward).
         let uiRect: CGRect
-        let attributedString: NSAttributedString
+        @LayoutShared var attributedString: NSAttributedString
     }
 
     /// One 縦中横 cell in a prepared vertical string: its characters and the em they share.
@@ -208,11 +209,11 @@ final class CoreTextPaginator {
 
     // MARK: - ChapterLayout
 
-    struct ChapterLayout {
+    struct ChapterLayout: Sendable {
         let spineIndex: Int
-        let attributedString: NSAttributedString
+        @LayoutShared var attributedString: NSAttributedString
         /// Pre-built CTFramesetter; draw(_ rect:) uses it directly without rebuilding
-        let framesetter: CTFramesetter
+        @LayoutShared var framesetter: CTFramesetter
         /// UTF-16 character range per page (total length == attributedString.length)
         let pageRanges: [CFRange]
         /// Final per-page frames shared by metadata extraction and drawing.
@@ -598,9 +599,8 @@ final class CoreTextPaginator {
         case themeChanged     // Don't clear caches, only redraw
     }
 
-    private let layoutFingerprintProvider: (NSAttributedString) -> Int
-    private var cache: [CacheKey: ChapterLayout] = [:]
-    private let cacheLock = NSLock()
+    private let layoutFingerprintProvider: @Sendable (NSAttributedString) -> Int
+    private let cache = OSAllocatedUnfairLock<[CacheKey: ChapterLayout]>(initialState: [:])
     private enum ContentIdentity: Hashable {
         case revision(ContentRevision)
         case fingerprint(Int)
@@ -623,7 +623,7 @@ final class CoreTextPaginator {
     }
 
     init(
-        layoutFingerprintProvider: @escaping (NSAttributedString) -> Int = CoreTextPaginator.layoutFingerprint(for:)
+        layoutFingerprintProvider: @escaping @Sendable (NSAttributedString) -> Int = { CoreTextPaginator.layoutFingerprint(for: $0) }
     ) {
         self.layoutFingerprintProvider = layoutFingerprintProvider
     }
@@ -804,9 +804,10 @@ final class CoreTextPaginator {
             Self.debugVerticalLog("paginate cacheMiss spine=\(spineIndex) size=\(renderSize) fontSize=\(fontSize) insets=\(contentInsets) attrLen=\(attrStr.length)", verbose: true)
         }
 
+        let sharedAttrStr = LayoutShared(attrStr)
         let layout = await Task.detached(priority: .userInitiated) {
             Self.computeLayout(spineIndex: spineIndex,
-                               attrStr: attrStr,
+                               attrStr: sharedAttrStr.wrappedValue,
                                imagePage: imagePage,
                                pageBackgroundImage: pageBackgroundImage,
                                pageBackgroundColor: pageBackgroundColor,
@@ -903,9 +904,10 @@ final class CoreTextPaginator {
         if let cached {
             return cached
         }
+        let sharedAttrStr = LayoutShared(attrStr)
         return await Task.detached(priority: .userInitiated) {
             Self.computeLayout(spineIndex: spineIndex,
-                               attrStr: attrStr,
+                               attrStr: sharedAttrStr.wrappedValue,
                                imagePage: nil,
                                pageBackgroundImage: pageBackgroundImage,
                                pageBackgroundColor: pageBackgroundColor,
@@ -921,15 +923,11 @@ final class CoreTextPaginator {
     }
 
     private func cachedLayout(for key: CacheKey) -> ChapterLayout? {
-        cacheLock.lock()
-        defer { cacheLock.unlock() }
-        return cache[key]
+        cache.withLock { $0[key] }
     }
 
     private func storeLayout(_ layout: ChapterLayout, for key: CacheKey) {
-        cacheLock.lock()
-        defer { cacheLock.unlock() }
-        cache[key] = layout
+        cache.withLock { $0[key] = layout }
     }
 
     @MainActor
@@ -943,9 +941,7 @@ final class CoreTextPaginator {
     }
 
     private func removeAllCachedLayouts() {
-        cacheLock.lock()
-        defer { cacheLock.unlock() }
-        cache.removeAll()
+        cache.withLock { $0.removeAll() }
     }
 
     // MARK: - Core pagination algorithm (static, runs on any thread)

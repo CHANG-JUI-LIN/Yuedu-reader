@@ -1360,7 +1360,7 @@ final class ICloudSyncManager: ObservableObject {
             if let decoded = try? JSONDecoder().decode([BookSource].self, from: data) {
                 AppLogger.sync("restore: decoded \(decoded.count) book source(s)", level: .notice)
                 await MainActor.run {
-                    BookSourceStore.shared.sources = decoded
+                    BookSourceStore.shared.replaceSources(decoded)
                 }
             } else {
                 AppLogger.sync("restore: book_sources downloaded but FAILED to decode [BookSource]", level: .error)

@@ -210,7 +210,7 @@ struct SourceLoginWebViewRepresentable: UIViewRepresentable {
             _ webView: WKWebView,
             decidePolicyFor navigationAction: WKNavigationAction,
             preferences: WKWebpagePreferences,
-            decisionHandler: @escaping (WKNavigationActionPolicy, WKWebpagePreferences) -> Void
+            decisionHandler: @escaping @MainActor (WKNavigationActionPolicy, WKWebpagePreferences) -> Void
         ) {
             preferences.preferredContentMode =
                 SourceWebIdentity.contentMode(desktop: usesDesktopSite)

@@ -623,7 +623,7 @@ struct JsBridgeBrowserRepresentable: UIViewRepresentable {
         func webView(
             _ webView: WKWebView,
             decidePolicyFor navigationAction: WKNavigationAction,
-            decisionHandler: @escaping (WKNavigationActionPolicy) -> Void
+            decisionHandler: @escaping @MainActor (WKNavigationActionPolicy) -> Void
         ) {
             // Intercept book-source import deep links so WKWebView doesn't try to
             // navigate to them (an unhandled custom scheme fails as "unsupported URL").
@@ -706,7 +706,7 @@ struct JsBridgeBrowserRepresentable: UIViewRepresentable {
 
         func handleSourceJavaPrompt(
             _ payload: String,
-            completion: @escaping (String?) -> Void
+            completion: @escaping @MainActor (String?) -> Void
         ) {
             do {
                 if let configurationJSON = try JsBridgeBrowserRepresentable

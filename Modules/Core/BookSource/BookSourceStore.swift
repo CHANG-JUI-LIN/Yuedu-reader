@@ -38,8 +38,12 @@ struct SourcePinRecord: Codable, Equatable {
 
 // MARK: - Book Source Management (ObservableObject)
 
-class BookSourceStore: ObservableObject {
-    static let shared: BookSourceStore = {
+/// Main-actor owned (the `@Published` library SwiftUI observes, and every write) with a
+/// lock-guarded snapshot that background readers use: parsing, search and sync read the
+/// library from any thread and must not hop to the main actor to do it.
+@MainActor
+class BookSourceStore: @MainActor ObservableObject {
+    nonisolated static let shared: BookSourceStore = {
         #if DEBUG
         // Profiling/UI-test hook: `-book-source-store-dir <path>` points the shared store at a
         // scratch directory, so a 50,000-source fixture never overwrites the simulator's real
@@ -55,7 +59,7 @@ class BookSourceStore: ObservableObject {
     }()
 
     #if DEBUG
-    private static var debugStoreDirectory: URL? {
+    private nonisolated static var debugStoreDirectory: URL? {
         let arguments = ProcessInfo.processInfo.arguments
         guard let index = arguments.firstIndex(of: "-book-source-store-dir"),
               arguments.indices.contains(index + 1) else { return nil }
@@ -66,42 +70,53 @@ class BookSourceStore: ObservableObject {
     /// Monotonic local mutation token used to prevent an in-flight cloud merge from writing an
     /// older snapshot over a deletion (or another user edit) that completed while the network
     /// request was running.
-    private(set) var mutationRevision = 0
+    nonisolated var mutationRevision: Int { snapshot.withLock { $0.mutationRevision } }
 
-    /// The library itself. Read through `sources`, which guarantees it has been loaded.
+    /// What SwiftUI and `sourcesPublisher` observe. Its `didSet` is the library's single
+    /// write point: every change lands in `snapshot` there, in the same main-actor turn.
     @Published private var library: [BookSource] = [] {
         didSet {
-            mutationRevision += 1
-            rebuildIndex()
+            let library = self.library
+            let positions = Self.positions(of: library)
+            snapshot.withLock {
+                $0.library = library
+                $0.positions = positions
+                $0.mutationRevision += 1
+            }
         }
     }
 
-    /// Position of each source in `library`, rebuilt at its single write point (`didSet`).
-    /// Lookups by id used to scan the array — `sources.first { $0.id == id }` — in 40 places,
-    /// some of them per bookshelf cover per render: 200 covers took 3.06 s against 50 000
-    /// sources (Debug simulator). A derived index, not a second copy of the library.
-    private let index = OSAllocatedUnfairLock(initialState: [UUID: Int]())
+    /// The library as every reader sees it, on any thread. It shares `library`'s buffer: a
+    /// copy-on-write handle, not a second copy of 50 000 sources.
+    private struct Snapshot: Sendable {
+        var library: [BookSource] = []
+        /// Position of each source in `library`. Lookups by id used to scan the array —
+        /// `sources.first { $0.id == id }` — in 40 places, some of them per bookshelf cover per
+        /// render: 200 covers took 3.06 s against 50 000 sources (Debug simulator).
+        /// Nil between the file read and its apply on the main thread, which builds it; a
+        /// background lookup in that window scans, as it did before.
+        var positions: [UUID: Int]? = [:]
+        var mutationRevision = 0
+    }
+    private nonisolated let snapshot = OSAllocatedUnfairLock(initialState: Snapshot())
 
-    private func rebuildIndex() {
+    private nonisolated static func positions(of library: [BookSource]) -> [UUID: Int] {
         var positions: [UUID: Int] = [:]
         positions.reserveCapacity(library.count)
         for (position, source) in library.enumerated() where positions[source.id] == nil {
             positions[source.id] = position
         }
-        index.withLock { [positions] in $0 = positions }
+        return positions
     }
 
     /// The source with this id, without scanning the library.
-    func source(id: UUID) -> BookSource? {
-        ensureLoaded()
-        if let snapshot = loadedSnapshot {
-            // A background caller between the read and its apply on the main thread.
-            return snapshot.first { $0.id == id }
-        }
-        let current = library
-        guard let position = index.withLock({ $0[id] }), current.indices.contains(position),
-              current[position].id == id else { return nil }
-        return current[position]
+    nonisolated func source(id: UUID) -> BookSource? {
+        waitForRead()
+        let (library, positions) = snapshot.withLock { ($0.library, $0.positions) }
+        guard let positions else { return library.first { $0.id == id } }
+        guard let position = positions[id], library.indices.contains(position),
+              library[position].id == id else { return nil }
+        return library[position]
     }
 
     /// Every source, in display order.
@@ -113,15 +128,16 @@ class BookSourceStore: ObservableObject {
     /// empty placeholder, so no caller can mistake "not read yet" for "no sources". A wait on
     /// the main thread is a `bookSources.waitOnMain` span, which `MainThreadMonitor` names:
     /// it shows which reader still runs before the read is done. Writing always waits.
-    var sources: [BookSource] {
-        get {
-            ensureLoaded()
-            return loadedSnapshot ?? library
-        }
-        set {
-            ensureLoaded()
-            library = newValue
-        }
+    nonisolated var sources: [BookSource] {
+        waitForRead()
+        return snapshot.withLock { $0.library }
+    }
+
+    /// Replaces the whole library in memory, without saving — what assigning `sources` did
+    /// before reads moved off the main actor.
+    func replaceSources(_ newValue: [BookSource]) {
+        ensureLoaded()
+        library = newValue
     }
 
     /// `$sources`, for subscribers. Emits the placeholder `[]` until the library is read;
@@ -130,49 +146,53 @@ class BookSourceStore: ObservableObject {
 
     // MARK: Loading
 
-    private let loadQueue = DispatchQueue(label: "com.yuedu.bookSourceStore.load", qos: .userInitiated)
-    private let readDone = DispatchGroup()
+    private nonisolated let loadQueue = DispatchQueue(label: "com.yuedu.bookSourceStore.load", qos: .userInitiated)
+    private nonisolated let readDone = DispatchGroup()
     private struct LoadState {
         var read: [BookSource]?
         /// Set once the read result has been assigned to `library` on the main thread.
         var applied = false
     }
-    private let loadState = OSAllocatedUnfairLock(initialState: LoadState())
-    /// Main thread only.
+    private nonisolated let loadState = OSAllocatedUnfairLock(initialState: LoadState())
     private var loadWaiters: [([BookSource]) -> Void] = []
 
-    /// What a background reader gets between the read finishing and the main thread
-    /// applying it: the read result itself. Nil once applied.
-    private var loadedSnapshot: [BookSource]? {
-        loadState.withLock { $0.applied ? nil : $0.read }
-    }
+    nonisolated var isLoaded: Bool { loadState.withLock { $0.applied } }
 
-    var isLoaded: Bool { loadState.withLock { $0.applied } }
-
-    private func startLoading() {
+    /// Reads the file on `loadQueue` and puts the result straight into `snapshot`, so a
+    /// background reader never waits for the main thread; the main thread then publishes it.
+    private nonisolated func startLoading() {
         readDone.enter()
         let url = fileURL
         loadQueue.async { [weak self] in
             let read = Self.readLibrary(at: url)
+            self?.snapshot.withLock {
+                $0.library = read
+                $0.positions = nil
+            }
             self?.loadState.withLock { $0.read = read }
             self?.readDone.leave()
-            DispatchQueue.main.async { self?.applyLoadedLibrary() }
+            DispatchQueue.main.async { [weak self] in self?.applyLoadedLibrary() }
         }
     }
 
-    /// Waits for the read when it has not finished. On the main thread it also applies it,
-    /// so the `@Published` assignment happens there.
-    private func ensureLoaded() {
-        if loadState.withLock({ $0.applied }) { return }
+    /// Waits for the read when it has not finished. A wait on the main thread is a
+    /// `bookSources.waitOnMain` span.
+    private nonisolated func waitForRead() {
+        if loadState.withLock({ $0.read != nil }) { return }
         if Thread.isMainThread {
             SourcePerfTrace.span("bookSources.waitOnMain", thresholdMs: 1) { readDone.wait() }
-            applyLoadedLibrary()
         } else {
             readDone.wait()
         }
     }
 
-    /// Main thread.
+    /// Before a write: the read has landed and been published, so the write cannot be
+    /// overwritten by the read's late apply.
+    private func ensureLoaded() {
+        waitForRead()
+        applyLoadedLibrary()
+    }
+
     private func applyLoadedLibrary() {
         let read: [BookSource]? = loadState.withLock { state in
             guard !state.applied else { return nil }
@@ -207,7 +227,7 @@ class BookSourceStore: ObservableObject {
     /// Reads and dedupes the file; off the main thread. A missing file is an empty library;
     /// an unreadable one is logged and also empty, as before (the next save would replace
     /// it, which is the existing behaviour this change does not alter).
-    private static func readLibrary(at url: URL) -> [BookSource] {
+    private nonisolated static func readLibrary(at url: URL) -> [BookSource] {
         guard FileManager.default.fileExists(atPath: url.path) else { return [] }
         return SourcePerfTrace.span("bookSources.load", "main=\(Thread.isMainThread)", thresholdMs: 1) {
             do {
@@ -226,16 +246,27 @@ class BookSourceStore: ObservableObject {
     /// out of the exported/synced source JSON) so pinning never looks like a content edit:
     /// it must not advance `lastUpdateTime` or churn the sync merge (same contract as the
     /// ordering — array position is the display order, and pins are management state).
-    @Published private(set) var pinRecords: [UUID: SourcePinRecord] = [:]
+    nonisolated var pinRecords: [UUID: SourcePinRecord] { pins.withLock { $0 } }
+    /// Written on the main actor only, each write announced through `objectWillChange` as
+    /// `@Published` did; behind a lock so the nonisolated init can read the file into it.
+    private nonisolated let pins: OSAllocatedUnfairLock<[UUID: SourcePinRecord]>
+
+    private func updatePins(_ body: (inout [UUID: SourcePinRecord]) -> Void) {
+        objectWillChange.send()
+        // Read, change, write back: only the main actor writes, so no write lands in between.
+        var records = pins.withLock { $0 }
+        body(&records)
+        pins.withLock { [records] in $0 = records }
+    }
 
     /// The shared store's file lives under Application Support, not Documents: Documents is
     /// user-visible in the Files app and this is app-internal. `StorageMigration` moves the
     /// legacy file.
-    private let fileURL: URL
-    private let pinsFileURL: URL
+    private nonisolated let fileURL: URL
+    private nonisolated let pinsFileURL: URL
 
     /// A store on its own directory — tests and profiling fixtures, never the user's library.
-    convenience init(directory: URL) {
+    nonisolated convenience init(directory: URL) {
         do {
             try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         } catch {
@@ -247,10 +278,10 @@ class BookSourceStore: ObservableObject {
         )
     }
 
-    private init(fileURL: URL, pinsFileURL: URL) {
+    private nonisolated init(fileURL: URL, pinsFileURL: URL) {
         self.fileURL = fileURL
         self.pinsFileURL = pinsFileURL
-        loadPins()
+        pins = OSAllocatedUnfairLock(initialState: Self.readPins(at: pinsFileURL))
         startLoading()
     }
 
@@ -271,24 +302,28 @@ class BookSourceStore: ObservableObject {
         stamped.lastUpdateTime = Self.currentMillis()
         // New sources appear at the head of the list — but below the whole 置頂 group,
         // or the pin markers would no longer match the head region.
-        if let lastTopPinned = sources.lastIndex(where: { pinRecords[$0.id]?.position == .top }) {
-            sources.insert(stamped, at: lastTopPinned + 1)
+        var updated = sources
+        if let lastTopPinned = updated.lastIndex(where: { pinRecords[$0.id]?.position == .top }) {
+            updated.insert(stamped, at: lastTopPinned + 1)
         } else {
-            sources.insert(stamped, at: 0)
+            updated.insert(stamped, at: 0)
         }
+        replaceSources(updated)
         save()
     }
 
     func update(_ source: BookSource) {
-        if let idx = sources.firstIndex(where: { $0.id == source.id }) {
+        var current = sources
+        if let idx = current.firstIndex(where: { $0.id == source.id }) {
             var updated = source
             // Advance the sync clock so an in-app edit wins the last-write-wins merge and isn't
             // resurrected to the cloud copy on the next sync. Skip when only the clock would move,
             // so re-saving an unchanged source doesn't churn the sync.
-            updated.lastUpdateTime = updated.hasSameContent(as: sources[idx])
-                ? sources[idx].lastUpdateTime
+            updated.lastUpdateTime = updated.hasSameContent(as: current[idx])
+                ? current[idx].lastUpdateTime
                 : Self.currentMillis()
-            sources[idx] = updated
+            current[idx] = updated
+            replaceSources(current)
             save()
         }
     }
@@ -304,7 +339,7 @@ class BookSourceStore: ObservableObject {
         var updated = sources
         let removedCount = Self.remove(ids, from: &updated)
         if removedCount > 0 {
-            sources = updated
+            replaceSources(updated)
             dropPins(of: ids)
             save()
         }
@@ -318,19 +353,21 @@ class BookSourceStore: ObservableObject {
     }
 
     private func dropPins(of ids: Set<UUID>) {
-        for id in ids {
-            pinRecords.removeValue(forKey: id)
+        updatePins { records in
+            for id in ids {
+                records.removeValue(forKey: id)
+            }
         }
         savePins()
     }
 
     func toggle(id: UUID) {
-        if let idx = sources.firstIndex(where: { $0.id == id }) {
-            var source = sources[idx]
-            source.enabled.toggle()
+        var current = sources
+        if let idx = current.firstIndex(where: { $0.id == id }) {
+            current[idx].enabled.toggle()
             // The user's enable/disable must win the iCloud sync merge (advance the clock).
-            source.lastUpdateTime = Self.currentMillis()
-            sources[idx] = source
+            current[idx].lastUpdateTime = Self.currentMillis()
+            replaceSources(current)
             save()
         }
     }
@@ -356,8 +393,8 @@ class BookSourceStore: ObservableObject {
         } else {
             reordered.insert(source, at: 0)
         }
-        sources = reordered
-        pinRecords[id] = SourcePinRecord(position: .top, originalIndex: originalIndex)
+        replaceSources(reordered)
+        updatePins { $0[id] = SourcePinRecord(position: .top, originalIndex: originalIndex) }
         savePins()
         save()
     }
@@ -375,8 +412,8 @@ class BookSourceStore: ObservableObject {
         } else {
             reordered.append(source)
         }
-        sources = reordered
-        pinRecords[id] = SourcePinRecord(position: .bottom, originalIndex: originalIndex)
+        replaceSources(reordered)
+        updatePins { $0[id] = SourcePinRecord(position: .bottom, originalIndex: originalIndex) }
         savePins()
         save()
     }
@@ -388,7 +425,7 @@ class BookSourceStore: ObservableObject {
     func unpin(id: UUID) {
         guard let record = pinRecords[id],
               let idx = sources.firstIndex(where: { $0.id == id }) else { return }
-        pinRecords.removeValue(forKey: id)
+        updatePins { $0.removeValue(forKey: id) }
         var reordered = sources
         let source = reordered.remove(at: idx)
 
@@ -407,13 +444,13 @@ class BookSourceStore: ObservableObject {
         } else {
             reordered.append(source)
         }
-        sources = reordered
+        replaceSources(reordered)
         savePins()
         save()
     }
 
-    func pinRecord(for id: UUID) -> SourcePinRecord? {
-        pinRecords[id]
+    nonisolated func pinRecord(for id: UUID) -> SourcePinRecord? {
+        pins.withLock { $0[id] }
     }
 
     // MARK: Pin Persistence
@@ -424,11 +461,11 @@ class BookSourceStore: ObservableObject {
         }
     }
 
-    private func loadPins() {
-        guard let data = try? Data(contentsOf: pinsFileURL),
+    private nonisolated static func readPins(at url: URL) -> [UUID: SourcePinRecord] {
+        guard let data = try? Data(contentsOf: url),
               let decoded = try? JSONDecoder().decode([UUID: SourcePinRecord].self, from: data)
-        else { return }
-        pinRecords = decoded
+        else { return [:] }
+        return decoded
     }
 
     /// Drops pins whose source no longer exists (deleted locally, deduped by sync, etc.).
@@ -436,8 +473,10 @@ class BookSourceStore: ObservableObject {
         let liveIDs = Set(sources.map(\.id))
         let staleIDs = pinRecords.keys.filter { !liveIDs.contains($0) }
         guard !staleIDs.isEmpty else { return }
-        for id in staleIDs {
-            pinRecords.removeValue(forKey: id)
+        updatePins { records in
+            for id in staleIDs {
+                records.removeValue(forKey: id)
+            }
         }
         savePins()
     }
@@ -461,7 +500,7 @@ class BookSourceStore: ObservableObject {
         guard !times.isEmpty else { return }
         var updated = sources
         guard Self.applyRespondTimes(times, to: &updated) else { return }
-        sources = updated
+        replaceSources(updated)
         save()
     }
 
@@ -493,7 +532,7 @@ class BookSourceStore: ObservableObject {
         guard !ids.isEmpty else { return }
         var updated = sources
         guard Self.applyEnabled(enabled, to: ids, in: &updated) else { return }
-        sources = updated
+        replaceSources(updated)
         save()
     }
 
@@ -525,7 +564,7 @@ class BookSourceStore: ObservableObject {
         let disabled = Self.applyEnabled(false, to: disable.subtracting(delete), in: &updated)
         let removedCount = delete.isEmpty ? 0 : Self.remove(delete, from: &updated)
         guard timed || disabled || removedCount > 0 else { return 0 }
-        sources = updated
+        replaceSources(updated)
         if removedCount > 0 {
             dropPins(of: delete)
         }
@@ -549,7 +588,7 @@ class BookSourceStore: ObservableObject {
             changed = true
         }
         guard changed else { return }
-        sources = updated
+        replaceSources(updated)
         save()
     }
 
@@ -570,7 +609,7 @@ class BookSourceStore: ObservableObject {
             changed = true
         }
         guard changed else { return }
-        sources = updated
+        replaceSources(updated)
         save()
     }
 
@@ -582,7 +621,7 @@ class BookSourceStore: ObservableObject {
     /// `BookSourceRowViews.swift`).
     ///
     /// - Parameter excluded: A group to leave out — the one the sources are moving away from.
-    func groupCounts(excluding excluded: String = "") -> [(name: String, count: Int)] {
+    nonisolated func groupCounts(excluding excluded: String = "") -> [(name: String, count: Int)] {
         var order: [String] = []
         var counts: [String: Int] = [:]
         for source in sources {
@@ -594,7 +633,7 @@ class BookSourceStore: ObservableObject {
         return order.map { (name: $0, count: counts[$0] ?? 0) }
     }
 
-    var enabledSources: [BookSource] {
+    nonisolated var enabledSources: [BookSource] {
         sources.filter { $0.enabled }
     }
 
@@ -615,7 +654,7 @@ class BookSourceStore: ObservableObject {
             changed += 1
         }
         if changed > 0 {
-            sources = updated
+            replaceSources(updated)
             save()
         }
         return changed
@@ -624,7 +663,7 @@ class BookSourceStore: ObservableObject {
     /// The domain used by 按域名分組: the URL host when one exists; for non-URL rules
     /// (`@js:`, relative paths, …) the authority-ish segment after `://`; otherwise
     /// 無域名 (Legado's 无域名 fallback for URLs without a scheme).
-    static func domain(of url: String) -> String {
+    nonisolated static func domain(of url: String) -> String {
         let trimmed = url.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return "" }
         if let host = URLComponents(string: trimmed)?.host, !host.isEmpty {
@@ -659,12 +698,12 @@ class BookSourceStore: ObservableObject {
     /// The largest import read. A Legado source is 3–6 KB, so this holds about 100,000 of
     /// them; a larger file is not a source file, and turning one into text aborted the app
     /// (Crashlytics 4a7e76ac: a 2.4 GB file).
-    static let maxImportBytes = 512 * 1024 * 1024
+    nonisolated static let maxImportBytes = 512 * 1024 * 1024
 
     /// An import file's bytes, refusing a file over `maxImportBytes` before reading any of
     /// it. Foundation reads File Provider and iCloud Drive files in full even when asked
     /// to map them, so the size has to be checked first.
-    static func importData(contentsOf url: URL) throws -> Data {
+    nonisolated static func importData(contentsOf url: URL) throws -> Data {
         // A file system that reports no size is read; `parseForImport` checks the bytes.
         if let size = try url.resourceValues(forKeys: [.fileSizeKey]).fileSize, size > maxImportBytes {
             throw ImportError.tooLarge(size)
@@ -675,7 +714,7 @@ class BookSourceStore: ObservableObject {
     /// Parses without writing anything, so the import confirmation list can show what a file
     /// holds before the user commits to it. The importers above are this plus a merge — there
     /// is no second decoder for the preview.
-    func parseForImport(data: Data, fileExtension ext: String) throws -> [BookSource] {
+    nonisolated func parseForImport(data: Data, fileExtension ext: String) throws -> [BookSource] {
         guard data.count <= Self.maxImportBytes else { throw ImportError.tooLarge(data.count) }
         let lower = ext.lowercased()
         switch lower {
@@ -692,7 +731,7 @@ class BookSourceStore: ObservableObject {
         }
     }
 
-    func parseForImport(json: String) throws -> [BookSource] {
+    nonisolated func parseForImport(json: String) throws -> [BookSource] {
         guard let data = json.data(using: .utf8) else {
             throw ImportError.invalidData
         }
@@ -721,7 +760,7 @@ class BookSourceStore: ObservableObject {
     /// backup format) WITHOUT touching the store. Returns nil when nothing decodes.
     /// Single parse path shared by 本地導入 / 粘貼源 / deep links — importers should
     /// never re-implement their own decoder.
-    static func parseSources(_ json: String) -> [BookSource]? {
+    nonisolated static func parseSources(_ json: String) -> [BookSource]? {
         guard let data = json.data(using: .utf8) else { return nil }
         let decoder = JSONDecoder()
         if let arr = try? decoder.decode([BookSource].self, from: data) {
@@ -755,7 +794,7 @@ class BookSourceStore: ObservableObject {
     /// `lastUpdateTime` per `bookSourceUrl`, for building an import confirmation list's
     /// 新增/更新/已有 states. Built as one map because the alternative — a lookup per
     /// incoming source — is the quadratic scan that made importing a pack crawl.
-    func existingUpdateClocks() -> [String: Int64] {
+    nonisolated func existingUpdateClocks() -> [String: Int64] {
         var clocks: [String: Int64] = .init(minimumCapacity: sources.count)
         for source in sources where !source.bookSourceUrl.isEmpty {
             // Keep the newest when the library somehow holds the same URL twice, so a
@@ -837,14 +876,14 @@ class BookSourceStore: ObservableObject {
                 where: { pinRecords[$0.id]?.position == .bottom }) ?? merged.count
             merged.insert(contentsOf: additions, at: insertionIndex)
         }
-        sources = merged
+        replaceSources(merged)
         save()
         return imported.count
     }
 
     /// Current wall-clock time in milliseconds — the unit `BookSource.lastUpdateTime` (and the
     /// iCloud/Firestore sync last-write-wins merge clock) is expressed in.
-    private static func currentMillis() -> Int64 {
+    private nonisolated static func currentMillis() -> Int64 {
         Int64(Date().timeIntervalSince1970 * 1000)
     }
 
@@ -854,7 +893,7 @@ class BookSourceStore: ObservableObject {
     /// letting the cloud's older copy resurface — read by the user as a version revert / duplicate.
     /// `bookSourceUrl` is the real identity (importSources already dedupes on it), so normalize
     /// merged- and loaded-in source lists the same way, keeping the most recently updated copy.
-    static func dedupedByURL(_ input: [BookSource]) -> [BookSource] {
+    nonisolated static func dedupedByURL(_ input: [BookSource]) -> [BookSource] {
         var indexByURL: [String: Int] = .init(minimumCapacity: input.count)
         var result: [BookSource] = []
         result.reserveCapacity(input.count)
@@ -880,7 +919,7 @@ class BookSourceStore: ObservableObject {
 
     /// .yds is a JSON dictionary keyed by source display name.
     /// Each value uses different field names from Legado; convert to BookSource.
-    private func parseYDS(_ data: Data) throws -> [BookSource] {
+    private nonisolated func parseYDS(_ data: Data) throws -> [BookSource] {
         guard let root = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
             throw ImportError.invalidData
         }
@@ -950,7 +989,7 @@ class BookSourceStore: ObservableObject {
     ///   - A JSON string like `{"url": "/path?$keyWord..."}` → combine with host
     ///   - A `@js:` expression → use as-is
     ///   - A plain URL → use as-is
-    private func ydsResolveUrl(_ raw: Any?, host: String) -> String {
+    private nonisolated func ydsResolveUrl(_ raw: Any?, host: String) -> String {
         guard let raw else { return "" }
         let s: String
         if let str = raw as? String { s = str.trimmingCharacters(in: .whitespacesAndNewlines) }
@@ -975,7 +1014,7 @@ class BookSourceStore: ObservableObject {
     /// 1. `detailUrl` is a template/JSONPath applied to the detail response
     /// 2. `chapterRequestUrl` (@js:) builds the chapter list URL from that
     /// If detailUrl is empty, just return chapterRequestUrl directly.
-    private func ydsComposeTocUrl(detailUrl: String, chapterRequestUrl: String) -> String {
+    private nonisolated func ydsComposeTocUrl(detailUrl: String, chapterRequestUrl: String) -> String {
         let det = detailUrl.trimmingCharacters(in: .whitespacesAndNewlines)
         let chap = chapterRequestUrl.trimmingCharacters(in: .whitespacesAndNewlines)
         // If the chapterRequestUrl is pure @js:, wrap both into a single @js: that:
@@ -991,14 +1030,14 @@ class BookSourceStore: ObservableObject {
 
     // MARK: Export
 
-    func exportToJSON() -> String {
+    nonisolated func exportToJSON() -> String {
         guard let data = try? JSONEncoder().encode(sources),
               let str = String(data: data, encoding: .utf8)
         else { return "[]" }
         return str
     }
 
-    func exportToJSON(ids: [UUID]) -> String {
+    nonisolated func exportToJSON(ids: [UUID]) -> String {
         // Set, not `Array.contains`: 匯出選中／匯出該分組 over a large pack was O(sources × ids).
         let wanted = Set(ids)
         let selected = sources.filter { wanted.contains($0.id) }
@@ -1018,7 +1057,7 @@ class BookSourceStore: ObservableObject {
         }
         // Collapse any cross-device duplicates (same bookSourceUrl, different random id) the merge
         // couldn't unify, so an old cloud copy can't resurface next to a freshly imported one.
-        sources = Self.dedupedByURL(syncedSources)
+        replaceSources(Self.dedupedByURL(syncedSources))
         prunePins()
         save()
         return true
@@ -1028,7 +1067,7 @@ class BookSourceStore: ObservableObject {
     /// overwrites `book_sources.json` so the live UI reflects it without a relaunch.
     func reloadFromDisk() {
         ensureLoaded()
-        sources = Self.readLibrary(at: fileURL)
+        replaceSources(Self.readLibrary(at: fileURL))
         prunePins()
     }
 
@@ -1036,7 +1075,7 @@ class BookSourceStore: ObservableObject {
 
     /// Serialises persistence so writes land in the order they were requested, and so a
     /// burst of `save()` calls cannot overlap on the file.
-    private static let persistQueue = DispatchQueue(
+    private nonisolated static let persistQueue = DispatchQueue(
         label: "com.yuedu.bookSourceStore.persist", qos: .utility
     )
 
@@ -1075,10 +1114,10 @@ class BookSourceStore: ObservableObject {
         }
     }
 
-    private let pendingWrite = PendingSourceWrite()
+    private nonisolated let pendingWrite = PendingSourceWrite()
 
     /// How much encoded JSON is gathered before it goes to the file.
-    private static let libraryWriteChunkBytes = 1 << 20
+    private nonisolated static let libraryWriteChunkBytes = 1 << 20
 
     /// Writes `sources` as the JSON array `JSONEncoder().encode(sources)` produces, one
     /// source at a time, and swaps it in atomically the way `Data.write(options: .atomic)`
@@ -1088,7 +1127,7 @@ class BookSourceStore: ObservableObject {
     /// landed: a 50,000-source save grew the process by 738 MB (100,000: 1.37 GB) — most of
     /// the headroom a 3 GB iPhone leaves the app. Here the extra memory is one chunk of
     /// encoded sources.
-    static func writeLibrary(_ sources: [BookSource], to url: URL) throws {
+    nonisolated static func writeLibrary(_ sources: [BookSource], to url: URL) throws {
         let fileManager = FileManager.default
         let temporaryURL = url.deletingLastPathComponent()
             .appendingPathComponent(".\(url.lastPathComponent).\(UUID().uuidString).tmp")
@@ -1116,7 +1155,7 @@ class BookSourceStore: ObservableObject {
         }
     }
 
-    private static func writeLibraryJSON(_ sources: [BookSource], to handle: FileHandle) throws {
+    private nonisolated static func writeLibraryJSON(_ sources: [BookSource], to handle: FileHandle) throws {
         let encoder = JSONEncoder()
         var chunk = Data()
         chunk.reserveCapacity(libraryWriteChunkBytes)
@@ -1142,13 +1181,13 @@ class BookSourceStore: ObservableObject {
     /// in flight — and book sources are user data, not a cache that can be refetched. It used
     /// to wait on the main thread; a 50 000-source save in flight then held the scene
     /// transition past the background watchdog. A background task holds the app instead.
-    func flushPendingWrites() {
+    nonisolated func flushPendingWrites() {
         let hold = BackgroundTaskHold(name: "bookSources.persist")
         Self.persistQueue.async { hold.release() }
     }
 
     /// Waits on the calling thread for queued writes. Tests only; never from UI code.
-    func waitForQueuedWrites() {
+    nonisolated func waitForQueuedWrites() {
         Self.persistQueue.sync {}
     }
 

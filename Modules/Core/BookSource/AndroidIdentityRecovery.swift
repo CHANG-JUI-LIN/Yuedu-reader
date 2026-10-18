@@ -52,6 +52,7 @@ enum AndroidIdentityRecovery {
     /// a fresh bridge, whose `androidId()` now answers. Callers are still
     /// responsible for discarding any cached *result* the refused request produced.
     @discardableResult
+    @MainActor
     static func enable(_ source: BookSource) -> BookSource {
         var updated = source
         updated.presentsAndroidIdentity = true

@@ -135,8 +135,8 @@ struct TitleOverwriteLockTests {
         defer { try? FileManager.default.removeItem(at: folder) }
         let source = BookSource(bookSourceUrl: "https://title-lock.example", bookSourceName: "測試書源")
         let previousSources = BookSourceStore.shared.sources
-        BookSourceStore.shared.sources = [source]
-        defer { BookSourceStore.shared.sources = previousSources }
+        BookSourceStore.shared.replaceSources([source])
+        defer { BookSourceStore.shared.replaceSources(previousSources) }
         let store = BookStore(metadataFileURL: folder.appendingPathComponent("books_meta.json"))
         let book = store.addOnlineBook(name: "舊書名", author: "舊作者", sourceId: source.id,
                                        bookInfoURL: "https://title-lock.example/book", tocURL: "https://title-lock.example/toc", chapters: [])

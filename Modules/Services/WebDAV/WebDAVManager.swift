@@ -276,7 +276,7 @@ final class WebDAVManager: @MainActor ObservableObject {
         if let sourcesData = try? await get(path: "/yuedu/book_sources.json") {
             try sourcesData.write(to: StorageLocations.bookSourcesFile, options: .atomic)
             if let decoded = try? JSONDecoder().decode([BookSource].self, from: sourcesData) {
-                await MainActor.run { BookSourceStore.shared.sources = decoded }
+                await MainActor.run { BookSourceStore.shared.replaceSources(decoded) }
             }
         }
 

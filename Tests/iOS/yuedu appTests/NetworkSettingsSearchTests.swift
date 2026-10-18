@@ -271,14 +271,14 @@ struct NetworkSettingsSearchTests {
         defer {
             GlobalSettings.shared.changeSourceLoadToc = previousLoadTOC
             GlobalSettings.shared.searchCacheDays = previousCacheDays
-            BookSourceStore.shared.sources = previousSources
+            BookSourceStore.shared.replaceSources(previousSources)
             ChangeSourceCache.shared.clear(for: bookId)
         }
 
         GlobalSettings.shared.changeSourceLoadToc = true
         GlobalSettings.shared.searchCacheDays = 1
         let source = makeSource(name: "Warm", url: "https://example.com/warm")
-        BookSourceStore.shared.sources = [source]
+        BookSourceStore.shared.replaceSources([source])
         let origin = BookOrigin(
             sourceId: source.id,
             sourceName: source.bookSourceName,

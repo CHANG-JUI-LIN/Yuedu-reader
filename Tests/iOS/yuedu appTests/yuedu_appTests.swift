@@ -1975,9 +1975,9 @@ struct yuedu_appTests {
     @MainActor func refreshOnlineBookMetadataRepairsLegacyShelfEntry() async throws {
         let source = try loadSource(named: "速读谷")
         let previousSources = BookSourceStore.shared.sources
-        BookSourceStore.shared.sources = [source]
+        BookSourceStore.shared.replaceSources([source])
         defer {
-            BookSourceStore.shared.sources = previousSources
+            BookSourceStore.shared.replaceSources(previousSources)
         }
 
         let books = try await BookSourceFetcher.shared.search(query: "斗罗大陆", in: source)
@@ -2020,9 +2020,9 @@ struct yuedu_appTests {
     @Test @MainActor func refreshOnlineBookMetadataPersistsFirstTOCPageBeforeFullFetchCompletes() async throws {
         let source = BookSource(bookSourceUrl: "https://example.com", bookSourceName: "測試書源")
         let previousSources = BookSourceStore.shared.sources
-        BookSourceStore.shared.sources = [source]
+        BookSourceStore.shared.replaceSources([source])
         defer {
-            BookSourceStore.shared.sources = previousSources
+            BookSourceStore.shared.replaceSources(previousSources)
         }
 
         let store = BookStore()

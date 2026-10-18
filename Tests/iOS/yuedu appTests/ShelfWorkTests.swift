@@ -308,8 +308,8 @@ struct ShelfWorkTests {
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: directory) }
         let previousSources = BookSourceStore.shared.sources
-        BookSourceStore.shared.sources = [sourceA, sourceB]
-        defer { BookSourceStore.shared.sources = previousSources }
+        BookSourceStore.shared.replaceSources([sourceA, sourceB])
+        defer { BookSourceStore.shared.replaceSources(previousSources) }
 
         let store = BookStore(metadataFileURL: directory.appendingPathComponent("books_meta.json"))
         let positions = InMemoryShelfPositions()

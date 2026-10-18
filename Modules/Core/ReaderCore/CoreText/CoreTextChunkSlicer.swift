@@ -24,6 +24,30 @@ enum CoreTextChunkSlicer {
         let metrics: CoreTextSliceMetrics
     }
 
+    /// `slice` on the global concurrent executor, for the scroll engine's chapter load.
+    /// The chunks are created here and handed to the caller (`sending`), which owns them
+    /// from then on. The string stays shared read-only with the caller (`LayoutShared`).
+    @concurrent
+    static func sliceConcurrently(
+        attributedString: LayoutShared<NSAttributedString>,
+        chapterIndex: Int,
+        contentWidth: CGFloat,
+        writingMode: ReaderWritingMode,
+        pageBackgroundColor: UIColor?,
+        pageBackgroundImage: UIImage?,
+        minimumBackdropExtent: CGFloat
+    ) async -> sending Output {
+        slice(
+            attributedString: attributedString.wrappedValue,
+            chapterIndex: chapterIndex,
+            contentWidth: contentWidth,
+            writingMode: writingMode,
+            pageBackgroundColor: pageBackgroundColor,
+            pageBackgroundImage: pageBackgroundImage,
+            minimumBackdropExtent: minimumBackdropExtent
+        )
+    }
+
     /// - Parameter minimumBackdropExtent: along-scroll size of one viewport. A chapter that
     ///   carries a publication-authored page backdrop image and is shorter than this gets its
     ///   last chunk padded up to it — see `padForBackdrop`. Zero disables the padding.

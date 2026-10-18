@@ -4,6 +4,7 @@ import Testing
 @testable import yuedu_app
 
 @Suite("BookSourceStore", .serialized)
+@MainActor
 struct BookSourceStoreTests {
     @Test("batch delete removes selected sources and keeps the rest ordered")
     func batchDeleteRemovesSelectedSources() {

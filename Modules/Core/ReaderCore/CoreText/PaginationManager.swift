@@ -1,9 +1,9 @@
 import YueduCoreText
 import UIKit
 
-struct PaginationRequest {
+struct PaginationRequest: Sendable {
     let spineIndex: Int
-    let attributedString: NSAttributedString
+    @LayoutShared var attributedString: NSAttributedString
     let imagePage: HTMLAttributedStringBuilder.ImagePage?
     let pageBackgroundImage: UIImage?
     let pageBackgroundColor: UIColor?
@@ -19,7 +19,7 @@ struct PaginationRequest {
     var bottomJustify: Bool = false
 }
 
-struct PaginationResult {
+struct PaginationResult: Sendable {
     let layout: CoreTextPaginator.ChapterLayout
 }
 

@@ -89,7 +89,7 @@ final class LegadoHeadlessWebView: NSObject, WKNavigationDelegate {
     func webView(
         _ webView: WKWebView,
         decidePolicyFor navigationAction: WKNavigationAction,
-        decisionHandler: @escaping (WKNavigationActionPolicy) -> Void
+        decisionHandler: @escaping @MainActor (WKNavigationActionPolicy) -> Void
     ) {
         if case .overrideURL(let pattern) = captureMode,
            let candidate = navigationAction.request.url?.absoluteString,

@@ -5,9 +5,9 @@ import UIKit
 ///
 /// Page and scroll layout consume the same document instance. Layout-specific
 /// preparation stays outside this type because it depends on the viewport.
-struct ChapterDocument {
+struct ChapterDocument: Sendable {
     let spineIndex: Int
-    let attributedString: NSAttributedString
+    @LayoutShared var attributedString: NSAttributedString
     let imagePage: HTMLAttributedStringBuilder.ImagePage?
     let pageBackgroundImage: UIImage?
     let pageBackgroundColor: UIColor?
@@ -22,7 +22,7 @@ struct ChapterDocument {
     init(spineIndex: Int, buildResult: AttributedChapterBuildResult,
          translated: (display: NSAttributedString, layout: ReaderTranslationLayout)? = nil) {
         self.spineIndex = spineIndex
-        attributedString = translated?.display ?? buildResult.attributedString
+        _attributedString = LayoutShared(translated?.display ?? buildResult.attributedString)
         imagePage = buildResult.imagePage
         pageBackgroundImage = buildResult.pageBackgroundImage
         pageBackgroundColor = buildResult.pageBackgroundColor

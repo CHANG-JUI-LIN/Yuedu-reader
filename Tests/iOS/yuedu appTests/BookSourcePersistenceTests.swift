@@ -15,8 +15,8 @@ struct BookSourcePersistenceTests {
         let oldSource = BookSource(bookSourceUrl: "https://old.example", bookSourceName: "舊書源")
         let newSource = BookSource(bookSourceUrl: "https://new.example", bookSourceName: "新書源")
         let previousSources = BookSourceStore.shared.sources
-        BookSourceStore.shared.sources = [oldSource, newSource]
-        defer { BookSourceStore.shared.sources = previousSources }
+        BookSourceStore.shared.replaceSources([oldSource, newSource])
+        defer { BookSourceStore.shared.replaceSources(previousSources) }
 
         var book = ReadingBook(
             title: "換源持久化測試",
@@ -93,8 +93,8 @@ struct BookSourcePersistenceTests {
         let oldSource = BookSource(bookSourceUrl: "https://old.example", bookSourceName: "舊書源")
         let newSource = BookSource(bookSourceUrl: "https://new.example", bookSourceName: "新書源")
         let previousSources = BookSourceStore.shared.sources
-        BookSourceStore.shared.sources = [oldSource, newSource]
-        defer { BookSourceStore.shared.sources = previousSources }
+        BookSourceStore.shared.replaceSources([oldSource, newSource])
+        defer { BookSourceStore.shared.replaceSources(previousSources) }
 
         let oldChapters = [
             OnlineChapterRef(index: 0, title: "第一章", url: "https://old.example/chapter/1")
@@ -169,8 +169,8 @@ struct BookSourcePersistenceTests {
         let firstSource = BookSource(bookSourceUrl: "https://first.example", bookSourceName: "第一書源")
         let secondSource = BookSource(bookSourceUrl: "https://second.example", bookSourceName: "第二書源")
         let previousSources = BookSourceStore.shared.sources
-        BookSourceStore.shared.sources = [firstSource, secondSource]
-        defer { BookSourceStore.shared.sources = previousSources }
+        BookSourceStore.shared.replaceSources([firstSource, secondSource])
+        defer { BookSourceStore.shared.replaceSources(previousSources) }
 
         let sharedBookURL = "https://novel.example/book/42"
         let firstBook = store.addOnlineBook(

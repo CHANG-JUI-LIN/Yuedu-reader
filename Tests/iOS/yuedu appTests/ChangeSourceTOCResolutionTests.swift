@@ -27,8 +27,8 @@ struct ChangeSourceTOCResolutionTests {
     func emptyTocUrlFetchesBookInfoFirst() async throws {
         let source = BookSource(bookSourceUrl: "https://novel.example", bookSourceName: "測試書源")
         let previousSources = BookSourceStore.shared.sources
-        BookSourceStore.shared.sources = [source]
-        defer { BookSourceStore.shared.sources = previousSources }
+        BookSourceStore.shared.replaceSources([source])
+        defer { BookSourceStore.shared.replaceSources(previousSources) }
 
         let fetcher = RecordingChangeSourceFetcher(
             detailTocUrl: "https://novel.example/book/42/toc",
@@ -67,8 +67,8 @@ struct ChangeSourceTOCResolutionTests {
     func presentTocUrlSkipsBookInfo() async throws {
         let source = BookSource(bookSourceUrl: "https://novel.example", bookSourceName: "測試書源")
         let previousSources = BookSourceStore.shared.sources
-        BookSourceStore.shared.sources = [source]
-        defer { BookSourceStore.shared.sources = previousSources }
+        BookSourceStore.shared.replaceSources([source])
+        defer { BookSourceStore.shared.replaceSources(previousSources) }
 
         let fetcher = RecordingChangeSourceFetcher(
             detailTocUrl: "https://novel.example/should-not-be-used",

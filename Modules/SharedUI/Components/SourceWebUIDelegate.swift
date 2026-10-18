@@ -29,7 +29,7 @@ final class SourceWebUIDelegate: NSObject, WKUIDelegate {
     /// pauses only the calling script and this handler completes after the source runtime
     /// finishes its request off the main thread.
     static let sourceBridgePromptName = "__yuedu_source_java_bridge__"
-    var sourceBridgePromptHandler: ((String, @escaping (String?) -> Void) -> Void)?
+    var sourceBridgePromptHandler: ((String, @escaping @MainActor (String?) -> Void) -> Void)?
 
     // MARK: - Popups
 
@@ -55,7 +55,7 @@ final class SourceWebUIDelegate: NSObject, WKUIDelegate {
         _ webView: WKWebView,
         runJavaScriptAlertPanelWithMessage message: String,
         initiatedByFrame frame: WKFrameInfo,
-        completionHandler: @escaping () -> Void
+        completionHandler: @escaping @MainActor () -> Void
     ) {
         // WebKit raises if a completion handler is dropped, so every path calls it
         // exactly once — including the one where we have nowhere to present.
@@ -74,7 +74,7 @@ final class SourceWebUIDelegate: NSObject, WKUIDelegate {
         _ webView: WKWebView,
         runJavaScriptConfirmPanelWithMessage message: String,
         initiatedByFrame frame: WKFrameInfo,
-        completionHandler: @escaping (Bool) -> Void
+        completionHandler: @escaping @MainActor (Bool) -> Void
     ) {
         guard let presenter = Self.presenter(for: webView) else {
             completionHandler(false); return
@@ -95,7 +95,7 @@ final class SourceWebUIDelegate: NSObject, WKUIDelegate {
         runJavaScriptTextInputPanelWithPrompt prompt: String,
         defaultText: String?,
         initiatedByFrame frame: WKFrameInfo,
-        completionHandler: @escaping (String?) -> Void
+        completionHandler: @escaping @MainActor (String?) -> Void
     ) {
         if prompt == Self.sourceBridgePromptName {
             guard let sourceBridgePromptHandler else {

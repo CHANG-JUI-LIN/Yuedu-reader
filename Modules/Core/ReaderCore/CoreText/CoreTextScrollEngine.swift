@@ -678,17 +678,15 @@ final class CoreTextScrollEngine: ObservableObject, ScrollReaderEngine {
             )
             let backdropFloor = viewportExtent
             let sliceStart = CoreTextSliceMetrics.now
-            let output: CoreTextChunkSlicer.Output = await Task.detached(priority: .userInitiated) {
-                CoreTextChunkSlicer.slice(
-                    attributedString: attrStr,
-                    chapterIndex: cIdx,
-                    contentWidth: width,
-                    writingMode: writingMode,
-                    pageBackgroundColor: pageBackgroundColor,
-                    pageBackgroundImage: pageBackgroundImage,
-                    minimumBackdropExtent: backdropFloor
-                )
-            }.value
+            let output = await CoreTextChunkSlicer.sliceConcurrently(
+                attributedString: LayoutShared(attrStr),
+                chapterIndex: cIdx,
+                contentWidth: width,
+                writingMode: writingMode,
+                pageBackgroundColor: pageBackgroundColor,
+                pageBackgroundImage: pageBackgroundImage,
+                minimumBackdropExtent: backdropFloor
+            )
             let sliceSeconds = CoreTextSliceMetrics.now - sliceStart
             ReaderPerfTrace.end(
                 slicingTrace,
