@@ -2404,6 +2404,9 @@ final class CoreTextPageViewController: UIViewController, ReaderBookmarkRibbonHo
             }
         }
     }
+    /// Decides whether this page takes VoiceOver's focus when it appears; set by the
+    /// paged reader's VoiceOver funnel. Without one the page never moves focus.
+    weak var voiceOverFocus: ReaderPageVoiceOverFocus?
     /// VoiceOver-originated reader commands (menu, page turn, TOC) — see
     /// `CoreTextPageView.onAccessibilityAction`.
     var onAccessibilityAction: ((TouchAction) -> Void)? {
@@ -2540,10 +2543,10 @@ final class CoreTextPageViewController: UIViewController, ReaderBookmarkRibbonHo
 
     override func viewDidAppear(_ animated: Bool) {
         super.viewDidAppear(animated)
-        // Move VoiceOver to the page that just became visible; otherwise a page turn
-        // leaves focus on the previous (now offscreen) page and reads nothing.
-        guard UIAccessibility.isVoiceOverRunning else { return }
-        UIAccessibility.post(notification: .screenChanged, argument: pageView)
+        // A turn moves VoiceOver to the page that just became visible; otherwise focus
+        // stays on the previous (now offscreen) page and reads nothing. Whether this
+        // appearance is one is `ReaderPageVoiceOverFocus`'s call, not this page's.
+        voiceOverFocus?.pageDidAppear(pageView, at: coreTextReadingPosition)
     }
 
     private func installImageTapHandler() {
@@ -2856,6 +2859,8 @@ final class PlaceholderPageViewController: UIViewController {
     func rebaseGlobalPageIndex(to index: Int) { globalPageIndex = index }
     /// VoiceOver-originated reader commands — see `configureAccessibility`.
     var onAccessibilityAction: ((TouchAction) -> Void)?
+    /// See `CoreTextPageViewController.voiceOverFocus`.
+    weak var voiceOverFocus: ReaderPageVoiceOverFocus?
 
     private let themeBackgroundColor: UIColor
     private let themeTextColor: UIColor
@@ -2961,8 +2966,7 @@ final class PlaceholderPageViewController: UIViewController {
 
     override func viewDidAppear(_ animated: Bool) {
         super.viewDidAppear(animated)
-        guard UIAccessibility.isVoiceOverRunning else { return }
-        UIAccessibility.post(notification: .screenChanged, argument: view)
+        voiceOverFocus?.pageDidAppear(view, at: coreTextReadingPosition, isPlaceholder: true)
     }
 }
 

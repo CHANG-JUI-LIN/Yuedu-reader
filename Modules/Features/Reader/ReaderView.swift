@@ -1708,6 +1708,7 @@ struct ReaderView: View {
                     pageTurnCommand: pageTurnCommand,
                     clearExternalTargetPosition: {},
                     currentPage: $currentPage,
+                    pageIsCovered: pageIsCoveredBySurface,
                     onPageChanged: { newPage, _ in
                         currentPage = newPage
                     },
@@ -1784,6 +1785,7 @@ struct ReaderView: View {
                     clearExternalTargetPosition: { clearCoreTextExternalTarget() },
                     currentPage: $currentPage,
                     pageBarsRevision: pageBarsRevision,
+                    pageIsCovered: pageIsCoveredBySurface,
                     autoReadRevealPage: autoReadRevealPage,
                     autoReadRevealHandle: autoReadRevealHandle,
                     onPageChanged: { newPage, visiblePosition in

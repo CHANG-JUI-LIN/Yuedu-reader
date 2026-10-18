@@ -74,6 +74,13 @@ extension ReaderView {
     /// 自動閱讀", which is how it was reported here. The panel is a strip along the
     /// bottom; the page above it is still being read, so the reveal keeps moving.
     var autoReadIsCoveredBySurface: Bool {
+        pageIsCoveredBySurface
+    }
+
+    /// The reading menu, or a surface opened from it, is over the page — the one place that
+    /// list lives. 自動閱讀 holds its reveal behind it, and VoiceOver stays on it: a page that
+    /// comes on screen meanwhile does not take focus back (`ReaderPageVoiceOverFocus`).
+    var pageIsCoveredBySurface: Bool {
         showBars || showTOC || showSettings || showQuickThemePanel
     }
 

@@ -905,6 +905,8 @@ final class BrowserLayoutPageViewController: UIViewController,
     var onAccessibilityAction: ((TouchAction) -> Void)? {
         didSet { pageView.onAccessibilityAction = onAccessibilityAction }
     }
+    /// See `CoreTextPageViewController.voiceOverFocus`.
+    weak var voiceOverFocus: ReaderPageVoiceOverFocus?
 
     var accessibilityUsesRTLPageOrder = false {
         didSet { pageView.accessibilityUsesRTLPageOrder = accessibilityUsesRTLPageOrder }
@@ -933,10 +935,10 @@ final class BrowserLayoutPageViewController: UIViewController,
     override func viewDidAppear(_ animated: Bool) {
         super.viewDidAppear(animated)
         syncInlineVideos()
-        // Move VoiceOver to the page that just became visible; otherwise a page
-        // turn leaves focus on the previous (offscreen) page and reads nothing.
-        guard UIAccessibility.isVoiceOverRunning else { return }
-        UIAccessibility.post(notification: .screenChanged, argument: pageView)
+        // A turn moves VoiceOver to the page that just became visible; otherwise focus
+        // stays on the previous (offscreen) page and reads nothing. Whether this
+        // appearance is one is `ReaderPageVoiceOverFocus`'s call, not this page's.
+        voiceOverFocus?.pageDidAppear(pageView, at: coreTextReadingPosition)
     }
     override func viewDidLayoutSubviews() {
         super.viewDidLayoutSubviews()

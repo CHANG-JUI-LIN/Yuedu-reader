@@ -19,6 +19,10 @@ struct CoreTextPageEngineView: UIViewControllerRepresentable {
     /// style edit — without the pagination changing. Pages already on screen were
     /// handed their bars when they were built, so they need telling.
     var pageBarsRevision: UInt = 0
+    /// The reading menu, or a surface opened from it, is over the page
+    /// (`ReaderView.pageIsCoveredBySurface`). VoiceOver is on that surface then, and a
+    /// page coming on screen must not take it back (`ReaderPageVoiceOverFocus`).
+    var pageIsCovered = false
     /// 自動閱讀's curtain: which page is being revealed over the current one.
     /// `nil` when the mode is off. Changes once per page, not once per frame —
     /// the reveal's *position* comes through `autoReadRevealHandle` instead.
@@ -157,6 +161,8 @@ struct CoreTextPageEngineView: UIViewControllerRepresentable {
         defer { context.coordinator.pageTurnTrace.endUpdatePass(updateTrace) }
         context.coordinator.currentEngine = engine
         context.coordinator.sessionCoordinator = sessionCoordinator
+        // Ahead of anything below that places a page: the page's `viewDidAppear` reads it.
+        context.coordinator.voiceOverFocus.isPageCovered = pageIsCovered
         // Refreshed every pass, ahead of the early returns below: these two read
         // live reader state (which page is showing, whether it is bookmarked), so
         // a copy captured once at makeCoordinator time would answer for the page
@@ -399,6 +405,9 @@ struct CoreTextPageEngineView: UIViewControllerRepresentable {
     {
         var currentEngine: any PageRenderingProvider
         let pageTurnStyle: PageTurnStyle
+        /// Whether a page that comes on screen takes VoiceOver's focus; handed to every
+        /// page by `installAccessibilityActions(on:)`.
+        let voiceOverFocus = ReaderPageVoiceOverFocus()
         var currentTheme: ReaderTheme
         var currentPlaybackHighlight: ReaderPlaybackHighlight?
         var sessionCoordinator: ReaderSessionCoordinator?
@@ -1005,15 +1014,18 @@ struct CoreTextPageEngineView: UIViewControllerRepresentable {
             switch viewController {
             case let page as CoreTextPageViewController:
                 page.accessibilityUsesRTLPageOrder = isRTL
+                page.voiceOverFocus = voiceOverFocus
                 page.onAccessibilityAction = { [weak self] action in
                     self?.performAccessibilityAction(action)
                 }
             case let page as BrowserLayoutPageViewController:
                 page.accessibilityUsesRTLPageOrder = isRTL
+                page.voiceOverFocus = voiceOverFocus
                 page.onAccessibilityAction = { [weak self] action in
                     self?.performAccessibilityAction(action)
                 }
             case let placeholder as PlaceholderPageViewController:
+                placeholder.voiceOverFocus = voiceOverFocus
                 placeholder.onAccessibilityAction = { [weak self] action in
                     self?.performAccessibilityAction(action)
                 }
