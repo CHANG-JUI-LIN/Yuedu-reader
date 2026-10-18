@@ -52,7 +52,6 @@ struct TTSActiveSegment: Equatable {
 
 enum TTSPlaybackError: LocalizedError {
     case chunkUnavailable(index: Int, underlying: Error)
-    case chunkSkipped(index: Int, underlying: Error)
     case playbackFailed(index: Int)
     case systemVoiceUnavailable
 
@@ -61,12 +60,6 @@ enum TTSPlaybackError: LocalizedError {
         case let .chunkUnavailable(index, underlying):
             return String(
                 format: localized("第 %d 段語音無法下載：%@"),
-                index + 1,
-                underlying.localizedDescription
-            )
-        case let .chunkSkipped(index, underlying):
-            return String(
-                format: localized("第 %d 段語音無法下載，已跳過：%@"),
                 index + 1,
                 underlying.localizedDescription
             )
@@ -94,10 +87,6 @@ protocol TTSPlayable: AnyObject {
     /// Playback cannot proceed because of this error. The engine may pause at the
     /// current segment for resume, or end the session through `onStop`.
     var onError: ((Error) -> Void)? { get set }
-    /// One segment was given up on, but narration continues with the next one. Reported so a
-    /// provider problem is never invisible, without tearing down a listening session that is
-    /// still producing audio.
-    var onSegmentSkipped: ((Error) -> Void)? { get set }
     var onPlaybackStarted: ((TimeInterval) -> Void)? { get set }
     var onSegmentChanged: ((TTSActiveSegment) -> Void)? { get set }
 

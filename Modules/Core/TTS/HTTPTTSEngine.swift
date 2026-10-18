@@ -22,7 +22,6 @@ final class HTTPTTSEngine: NSObject, TTSPlayable, @unchecked Sendable {
     var onPageFinished: (() -> TTSNextUnitOutcome)?
     var onStop: (() -> Void)?
     var onError: ((Error) -> Void)?
-    var onSegmentSkipped: ((Error) -> Void)?
     var onPlaybackStarted: ((TimeInterval) -> Void)?
     var onSegmentChanged: ((TTSActiveSegment) -> Void)?
     /// Speaker → voice, scoped to the open book by the reader. Empty = single voice.

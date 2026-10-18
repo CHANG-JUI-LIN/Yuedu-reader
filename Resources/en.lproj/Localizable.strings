@@ -361,8 +361,6 @@
 "只防止自動鎖定，按下電源鍵仍可鎖屏並繼續朗讀。" = "This only prevents auto-lock. You can still lock the screen with the side or top button, and reading aloud continues.";
 "朗讀失敗：%@" = "Couldn't read aloud: %@";
 "第 %d 段語音無法下載：%@" = "Couldn't download audio segment %d: %@";
-"第 %d 段語音無法下載，已跳過：%@" = "Skipped audio segment %d because it couldn't be downloaded: %@";
-"關閉提示" = "Dismiss";
 "第 %d 段語音無法播放" = "Couldn't play audio segment %d.";
 "系統語音無法播放，請到設定下載對應語音後重試" = "The system voice can't play. Download the voice in Settings, then try again.";
 "語音朗讀設定" = "Read Aloud";

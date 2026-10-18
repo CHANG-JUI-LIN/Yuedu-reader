@@ -22,10 +22,13 @@ final class HTTPTTSQueueTests: XCTestCase {
         let engine = HTTPTTSEngine(audioProvider: provider)
         defer { engine.stop() }
         var segments: [Int] = []
-        var skipped = false
+        var advancedPastUnit = false
         var stopped = false
         engine.onSegmentChanged = { segments.append($0.index) }
-        engine.onSegmentSkipped = { _ in skipped = true }
+        engine.onPageFinished = {
+            advancedPastUnit = true
+            return .finished
+        }
         engine.onStop = { stopped = true }
         let failed = expectation(description: "Current segment failed")
         engine.onError = { error in
@@ -38,8 +41,10 @@ final class HTTPTTSQueueTests: XCTestCase {
         }
         engine.speak(text: "第一段。\n第二段。\n第三段。", title: "", rate: 0.5)
         await fulfillment(of: [failed], timeout: 5)
+        // Not skipped: playback never reached paragraph 1, never asked for the next unit,
+        // and the session was paused rather than ended.
         XCTAssertFalse(engine.isPlaying)
-        XCTAssertFalse(skipped)
+        XCTAssertFalse(advancedPastUnit)
         XCTAssertFalse(stopped)
         XCTAssertEqual(Set(segments), [0])
 
@@ -50,7 +55,7 @@ final class HTTPTTSQueueTests: XCTestCase {
         let requests = await provider.requests
         XCTAssertEqual(requests.filter { $0 == "第一段。" }.count, 2)
         XCTAssertEqual(Set(segments), [0])
-        XCTAssertFalse(skipped)
+        XCTAssertFalse(advancedPastUnit)
         XCTAssertFalse(stopped)
     }
 

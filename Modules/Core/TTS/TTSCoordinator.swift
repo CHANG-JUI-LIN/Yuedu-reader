@@ -354,9 +354,6 @@ final class TTSCoordinator: ObservableObject {
     /// follow the player's real start callback, not the text/highlight callback.
     @Published private(set) var hasAudiblePlaybackStarted = false
     @Published private(set) var errorMessage: String?
-    /// Something went wrong but narration is still running — a segment the provider could not
-    /// deliver, which playback skipped past. Shown inline in the panel, never as an alert.
-    @Published private(set) var playbackNotice: String?
     @Published var speechRate: Float = 0.5
     @Published var sleepMinutes: Int = 0
     var showsGlobalFloatingPlayer = false
@@ -492,7 +489,6 @@ final class TTSCoordinator: ObservableObject {
             return
         }
         errorMessage = nil
-        playbackNotice = nil
         activeEngine = resolveEngine(for: text)
         ttsLog("[TTS][Coordinator] speak requested engine=\(currentEngine === systemEngine ? "system" : "http") textCount=\(text.count) title=\(title) rate=\(speechRate)")
         guard activateAudioSession() else {
@@ -577,10 +573,6 @@ final class TTSCoordinator: ObservableObject {
 
     func dismissError() {
         errorMessage = nil
-    }
-
-    func dismissPlaybackNotice() {
-        playbackNotice = nil
     }
 
     /// Applies the user preference immediately when it changes while narration is active.
@@ -832,12 +824,6 @@ final class TTSCoordinator: ObservableObject {
                 self.pause()
             }
             self.errorMessage = String(format: localized("朗讀失敗：%@"), error.localizedDescription)
-        }
-        engine.onSegmentSkipped = { [weak self] error in
-            // Deliberately NOT `errorMessage`: that one is an alert, and narration is still
-            // playing. This surfaces in the panel without interrupting the listener.
-            guard let self else { return }
-            self.playbackNotice = error.localizedDescription
         }
         engine.onPlaybackStarted = { [weak self] duration in
             DispatchQueue.main.async {

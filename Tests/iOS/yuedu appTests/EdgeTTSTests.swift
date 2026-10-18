@@ -147,15 +147,29 @@ struct EdgeTTSTests {
         gs.httpTtsUrlTemplate = EdgeTTSVoice.defaultVoice.sourceIdentifier
         let transport = RecordingEdgeTransport(data: Data())
         let engine = HTTPTTSEngine(audioProvider: EdgeTTSAudioProvider(voice: .defaultVoice, transport: transport))
-        var skipped = false
-        engine.onSegmentSkipped = { _ in skipped = true }
-        let failed = await withCheckedContinuation { continuation in
-            engine.onError = { _ in continuation.resume(returning: true) }
+        var advancedPastUnit = false
+        var stopped = false
+        engine.onPageFinished = {
+            advancedPastUnit = true
+            return .finished
+        }
+        engine.onStop = { stopped = true }
+        let retainedIndex: Int? = await withCheckedContinuation { continuation in
+            engine.onError = { error in
+                guard case let .chunkUnavailable(index, _) = error as? TTSPlaybackError else {
+                    continuation.resume(returning: nil)
+                    return
+                }
+                continuation.resume(returning: index)
+            }
             engine.speak(text: "第一段測試。", title: "", rate: 0.5)
         }
-        #expect(failed)
+        // Not skipped: the failed segment is retained for resume, the engine never moved on
+        // to the next unit, and the session was paused rather than ended.
+        #expect(retainedIndex == 0)
         #expect(!engine.isPlaying)
-        #expect(!skipped)
+        #expect(!advancedPastUnit)
+        #expect(!stopped)
         #expect(await transport.sent.count == 1)
         engine.stop()
     }
