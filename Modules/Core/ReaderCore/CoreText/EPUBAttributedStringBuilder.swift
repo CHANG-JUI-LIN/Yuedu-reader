@@ -136,27 +136,6 @@ final class EPUBAttributedStringBuilder: @preconcurrency AttributedStringBuildin
         // ── Create HTML builder and inject callbacks ──────────────────────────────────
         let localBuilder = HTMLAttributedStringBuilder()
 
-        localBuilder.resolvedFont = { [weak self] families, weight, italic, size in
-            UserReaderFontResolver.epubOverride(postScriptName: settings.fontPostScriptName,
-                size: size, weight: weight, italic: italic)
-            ?? self?.styleResolver.resolveRegisteredFont(
-                families: families,
-                weight: weight,
-                italic: italic,
-                size: size
-            )
-        }
-
-        localBuilder.resolvedFontFamily = { [weak self] rawName in
-            guard let self else { return nil }
-            let normalized = rawName
-                .trimmingCharacters(in: .whitespacesAndNewlines)
-                .trimmingCharacters(in: CharacterSet(charactersIn: "'\""))
-                .lowercased()
-            return styleResolver.registeredFontFaces[normalized]?.postScriptName
-                ?? styleResolver.registeredFontFaces[normalized]?.familyName
-        }
-
         localBuilder.imageLoader = { [weak self] src in
             guard let self else { return nil }
             return await self.loadImage(src: src, chapterHref: chapterHref)
@@ -237,6 +216,11 @@ final class EPUBAttributedStringBuilder: @preconcurrency AttributedStringBuildin
         let fontsStart = SourcePerfTrace.now
         let fontRequests = HTMLStyledASTRenderableNodeConverter.referencedFonts(in: ast)
         await styleResolver.registerFontFaces(requests: fontRequests)
+        // The renderer resolves fonts off the main thread, while other chapters keep
+        // registering their faces on the main actor. It reads this snapshot, taken once its own
+        // faces are in, never the resolver's live table.
+        let registeredFonts = styleResolver.registeredFonts
+        let fontOverride = settings.fontPostScriptName
         let afterFonts = SourcePerfTrace.now
 
         let nodes = ReaderPerfTrace.span(
@@ -260,15 +244,10 @@ final class EPUBAttributedStringBuilder: @preconcurrency AttributedStringBuildin
                     1,
                     renderSize.height - settings.contentInsets.top - settings.contentInsets.bottom
                 ),
-                resolvedFont: { [weak self] families, weight, italic, size in
-                    UserReaderFontResolver.epubOverride(postScriptName: settings.fontPostScriptName,
+                resolvedFont: { @Sendable families, weight, italic, size in
+                    UserReaderFontResolver.epubOverride(postScriptName: fontOverride,
                         size: size, weight: weight, italic: italic)
-                    ?? self?.styleResolver.resolveRegisteredFont(
-                        families: families,
-                        weight: weight,
-                        italic: italic,
-                        size: size
-                    )
+                    ?? registeredFonts.resolve(families: families, weight: weight, italic: italic, size: size)
                 },
                 imageLoader: { [weak self] src in
                     guard let self else { return nil }

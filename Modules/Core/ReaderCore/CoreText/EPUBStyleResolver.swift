@@ -212,19 +212,10 @@ final class EPUBStyleResolver {
         await registerFontFaces(requests: requests)
     }
 
-    func resolveRegisteredFont(
-        families: [String],
-        weight: Int,
-        italic: Bool,
-        size: CGFloat
-    ) -> UIFont? {
-        registeredFonts.resolve(families: families, weight: weight, italic: italic, size: size)
-    }
-
-    /// The faces registered so far, as a value any thread may resolve from.
-    /// A chapter laid out off the main thread takes this after its requested
-    /// faces are registered, while other chapters keep
-    /// registering on the main actor without touching what it reads.
+    /// The faces registered so far, as a value any thread may resolve from — the only way
+    /// fonts are resolved. Browser layout and the CoreText renderer both resolve off the main
+    /// thread: a chapter takes this after its requested faces are registered, while other
+    /// chapters keep registering on the main actor without touching what it reads.
     var registeredFonts: RegisteredFonts {
         RegisteredFonts(faces: registeredFontFaces, variants: registeredFontVariants)
     }

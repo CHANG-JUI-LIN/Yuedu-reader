@@ -386,23 +386,6 @@ final class OnlineProviderAttributedStringBuilder: @preconcurrency AttributedStr
             )
         }
         guard let resourceProvider else { return }
-        builder.resolvedFont = { [weak self] families, weight, italic, size in
-            self?.styleResolver?.resolveRegisteredFont(
-                families: families,
-                weight: weight,
-                italic: italic,
-                size: size
-            )
-        }
-        builder.resolvedFontFamily = { [weak self] rawName in
-            guard let self else { return nil }
-            let normalized = rawName
-                .trimmingCharacters(in: .whitespacesAndNewlines)
-                .trimmingCharacters(in: CharacterSet(charactersIn: "'\""))
-                .lowercased()
-            return styleResolver?.registeredFontFaces[normalized]?.postScriptName
-                ?? styleResolver?.registeredFontFaces[normalized]?.familyName
-        }
         builder.mediaURLResolver = { src in
             let resolved = EPUBStyleResolver.resolveImageHref(src, chapterHref: chapterHref)
             return resourceProvider.resourceURL(for: resolved).absoluteString
@@ -650,10 +633,14 @@ final class OnlineProviderAttributedStringBuilder: @preconcurrency AttributedStr
             return (result, 0)
         }
 
+        // The renderer resolves fonts off the main thread while other chapters register theirs
+        // on the main actor, so it reads a snapshot taken once this chapter's faces are in.
+        var registeredFonts: EPUBStyleResolver.RegisteredFonts?
         if let styleResolver {
             await styleResolver.registerFontFaces(
                 requests: HTMLStyledASTRenderableNodeConverter.referencedFonts(in: ast)
             )
+            registeredFonts = styleResolver.registeredFonts
         }
 
         // The CSS inline-whitespace preservation added for EPUB is intentionally not used here.
@@ -697,13 +684,10 @@ final class OnlineProviderAttributedStringBuilder: @preconcurrency AttributedStr
                 textColor: themeTextColor,
                 fontFamily: UserReaderFontResolver.selectedPostScriptName,
                 renderWidth: cfg.renderWidth,
-                resolvedFont: styleResolver == nil ? nil : { [weak self] families, weight, italic, size in
-                    self?.styleResolver?.resolveRegisteredFont(
-                        families: families,
-                        weight: weight,
-                        italic: italic,
-                        size: size
-                    )
+                resolvedFont: registeredFonts.map { fonts in
+                    { @Sendable families, weight, italic, size in
+                        fonts.resolve(families: families, weight: weight, italic: italic, size: size)
+                    }
                 },
                 imageLoader: { [weak self] src in
                     await self?.loadImage(

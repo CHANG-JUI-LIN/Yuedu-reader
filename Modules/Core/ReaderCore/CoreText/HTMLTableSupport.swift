@@ -439,7 +439,7 @@ enum HTMLTableRasterizer {
         baseFont: UIFont,
         textColor: UIColor,
         backgroundColor: UIColor,
-        resolvedFont: (([String], Int, Bool, CGFloat) -> UIFont?)? = nil,
+        resolvedFont: (@Sendable ([String], Int, Bool, CGFloat) -> UIFont?)? = nil,
         imagesBySource: [String: UIImage] = [:],
         cjkTypographyStyle: CJKTypographyStyle? = nil
     ) -> UIImage? {
@@ -464,7 +464,7 @@ enum HTMLTableRasterizer {
         baseFont: UIFont,
         textColor: UIColor,
         backgroundColor _: UIColor,
-        resolvedFont: (([String], Int, Bool, CGFloat) -> UIFont?)? = nil,
+        resolvedFont: (@Sendable ([String], Int, Bool, CGFloat) -> UIFont?)? = nil,
         imagesBySource: [String: UIImage] = [:],
         cjkTypographyStyle: CJKTypographyStyle? = nil
     ) -> [HTMLTableRasterPage] {

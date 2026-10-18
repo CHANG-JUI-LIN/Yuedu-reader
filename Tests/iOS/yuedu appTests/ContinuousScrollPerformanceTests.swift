@@ -55,7 +55,7 @@ struct ContinuousScrollPerformanceTests {
                 var calls = 0
                 let lookup: ([String], Int, Bool, CGFloat) -> UIFont? = { families, weight, italic, size in
                     calls += 1
-                    return resolver.resolveRegisteredFont(families: families, weight: weight, italic: italic, size: size)
+                    return resolver.registeredFonts.resolve(families: families, weight: weight, italic: italic, size: size)
                 }
                 let memo = BrowserDocumentFontResolver(resolve: lookup)
                 let config = BrowserLayoutConfig(renderWidth: 320, renderHeight: 600, rootFontSize: 17,

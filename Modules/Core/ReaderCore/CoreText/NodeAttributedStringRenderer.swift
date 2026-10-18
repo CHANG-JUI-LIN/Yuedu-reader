@@ -49,7 +49,9 @@ struct NodeAttributedStringRenderer {
         /// be split into raster attachments; deriving it from width arbitrarily broke medium
         /// tables into adjacent image fragments on the same page.
         let renderHeight: CGFloat?
-        let resolvedFont: (([String], Int, Bool, CGFloat) -> UIFont?)?
+        /// Called off the main thread, from inside `render`: it must resolve from a value the
+        /// chapter owns (`EPUBStyleResolver.RegisteredFonts`), never main-actor state.
+        let resolvedFont: (@Sendable ([String], Int, Bool, CGFloat) -> UIFont?)?
         let imageLoader: ((String) async -> UIImage?)?
         let mediaURLResolver: ((String) -> String?)?
         /// The chapter's own URL, sent as the `Referer` of an `<iframe>` page the reader loads
@@ -82,7 +84,7 @@ struct NodeAttributedStringRenderer {
             fontFamily: String? = nil,
             renderWidth: CGFloat? = nil,
             renderHeight: CGFloat? = nil,
-            resolvedFont: (([String], Int, Bool, CGFloat) -> UIFont?)? = nil,
+            resolvedFont: (@Sendable ([String], Int, Bool, CGFloat) -> UIFont?)? = nil,
             imageLoader: ((String) async -> UIImage?)? = nil,
             mediaURLResolver: ((String) -> String?)? = nil,
             webEmbedReferer: String? = nil,
