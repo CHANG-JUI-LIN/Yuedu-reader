@@ -22,10 +22,10 @@ private let subscriptionICloudLog = Logger(
 /// Chinese iCloud runs on `*.icloud.com.cn`, while every Firebase endpoint is a
 /// Google domain.
 ///
-/// Isolation matches `ICloudSyncManager`: a plain class whose CloudKit calls are
-/// completion handlers wrapped in continuations. All callers come from
-/// `SubscriptionStore` on the main actor.
-final class SubscriptionICloudMirror {
+/// Sendable: its CloudKit calls are completion handlers wrapped in continuations,
+/// and the one piece of mutable state, `lastWritten`, is behind a lock. All callers
+/// come from `SubscriptionStore` on the main actor.
+final class SubscriptionICloudMirror: Sendable {
     static let shared = SubscriptionICloudMirror()
 
     /// The CloudKit record type. It must be deployed from the Development to the
@@ -57,7 +57,7 @@ final class SubscriptionICloudMirror {
     private let database: CKDatabase
     /// Last value written, so repeated refreshes that re-read the same StoreKit
     /// state don't spend a CloudKit write every time.
-    private var lastWritten: CachedSubscriptionEntitlement?
+    private let lastWritten = OSAllocatedUnfairLock<CachedSubscriptionEntitlement?>(initialState: nil)
 
     private init(
         container: CKContainer = CKContainer(identifier: ICloudSyncManager.containerIdentifier)
@@ -108,7 +108,7 @@ final class SubscriptionICloudMirror {
         signedTransaction: String?
     ) async {
         guard SubscriptionRuntimeEnvironment.isResolved,
-              lastWritten != entitlement,
+              lastWritten.withLock({ $0 }) != entitlement,
               await isAvailable() else { return }
         // Fetch-then-modify, never a bare new record: `CKDatabase.save` defaults
         // to `.ifServerRecordUnchanged`, so a freshly constructed record carries
@@ -124,7 +124,7 @@ final class SubscriptionICloudMirror {
         record[Field.updatedAt] = Date() as NSDate
         do {
             try await saveRecord(record)
-            lastWritten = entitlement
+            lastWritten.withLock { $0 = entitlement }
             subscriptionICloudLog.notice(
                 "iCloud mirror written: isProActive \(entitlement.isProActive, privacy: .public)"
             )

@@ -1,10 +1,10 @@
 import UIKit
+import os
 
-final class FixedLayoutViewportResolver {
+final class FixedLayoutViewportResolver: Sendable {
     let defaultViewport: CGSize?
     private let pageViewports: [Int: CGSize]
-    private var pageCache: [Int: CGSize] = [:]
-    private let lock = NSLock()
+    private let pageCache = OSAllocatedUnfairLock(initialState: [Int: CGSize]())
 
     init(defaultViewport: CGSize?, pageViewports: [Int: CGSize] = [:]) {
         self.defaultViewport = defaultViewport
@@ -15,7 +15,7 @@ final class FixedLayoutViewportResolver {
         for spineIndex: Int,
         resourceProvider: BookResourceProvider
     ) async -> CGSize {
-        if let cached = lock.withLock({ pageCache[spineIndex] }) {
+        if let cached = pageCache.withLock({ $0[spineIndex] }) {
             return cached
         }
 
@@ -27,9 +27,7 @@ final class FixedLayoutViewportResolver {
             result = parsed ?? defaultViewport ?? CGSize(width: 600, height: 800)
         }
 
-        lock.withLock {
-            pageCache[spineIndex] = result
-        }
+        pageCache.withLock { $0[spineIndex] = result }
 
         return result
     }
@@ -39,7 +37,7 @@ final class FixedLayoutViewportResolver {
         resourceProvider: BookResourceProvider
     ) async {
         for i in spineIndices {
-            let isCached = lock.withLock { pageCache[i] != nil }
+            let isCached = pageCache.withLock { $0[i] != nil }
             if isCached { continue }
 
             let result: CGSize
@@ -50,9 +48,7 @@ final class FixedLayoutViewportResolver {
                 result = parsed ?? defaultViewport ?? CGSize(width: 600, height: 800)
             }
 
-            lock.withLock {
-                pageCache[i] = result
-            }
+            pageCache.withLock { $0[i] = result }
         }
     }
 

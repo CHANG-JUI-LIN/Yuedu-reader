@@ -1,7 +1,7 @@
 import Foundation
 import ReadiumShared
 
-protocol RemoteLibraryTransport: HTTPClient {
+protocol RemoteLibraryTransport: HTTPClient, Sendable {
     func data(for request: URLRequest) async throws -> (Data, HTTPURLResponse)
     func download(for request: URLRequest) async throws -> (URL, HTTPURLResponse)
     func upload(for request: URLRequest, fromFile fileURL: URL) async throws -> (Data, HTTPURLResponse)

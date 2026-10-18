@@ -58,6 +58,7 @@ enum BookCoverLoader {
         return result
     }
 
+    @MainActor
     static func remoteSession(for book: ReadingBook, connections: OPDSCatalogStore = .shared) -> URLSession? {
         guard let reference = book.remoteSource,
               let connection = connections.connection(id: reference.connectionID) else { return nil }

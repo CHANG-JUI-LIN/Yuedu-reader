@@ -39,7 +39,7 @@ struct PublicLibraryRegistryTests {
         #expect(PublicLibraryBook.gutenberg(GutenbergBook(id: 24264, title: "紅樓夢", author: "")).coverURL == medium)
     }
 
-    @Test func builtInConnection() throws {
+    @Test @MainActor func builtInConnection() throws {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         defer { if FileManager.default.fileExists(atPath: directory.path) { try? FileManager.default.removeItem(at: directory) } }
         let store = OPDSCatalogStore(storageDirectory: directory, importLegacyWebDAV: false)

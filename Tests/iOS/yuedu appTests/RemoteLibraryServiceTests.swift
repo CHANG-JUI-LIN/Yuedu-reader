@@ -483,7 +483,7 @@ struct RemoteLibraryServiceTests {
     }
 }
 
-private final class ServiceFixtureTransport: RemoteLibraryTransport {
+private final class ServiceFixtureTransport: RemoteLibraryTransport, @unchecked Sendable {
     let data: Data
     let mimeType: String
     var supportsRanges = true

@@ -306,7 +306,7 @@ private func calibreDOM(paragraph: [String: Any]) throws -> Data {
         "tree": ["n": "html", "c": [["n": "head"], ["n": "body", "c": [paragraph]]]]])
 }
 
-private final class CalibreProgressFixtureTransport: RemoteLibraryTransport {
+private final class CalibreProgressFixtureTransport: RemoteLibraryTransport, @unchecked Sendable {
     var document: Data
     var postError: Error?
     var preparing = false

@@ -46,7 +46,8 @@ struct SyncConflict {
 
 // MARK: - WebDAV Manager
 
-final class WebDAVManager: ObservableObject {
+@MainActor
+final class WebDAVManager: @MainActor ObservableObject {
 
     static let shared = WebDAVManager()
 
@@ -79,7 +80,7 @@ final class WebDAVManager: ObservableObject {
     // MARK: Private
 
     /// Unique per-device ID stored in UserDefaults on first generation.
-    private static var deviceId: String {
+    nonisolated private static var deviceId: String {
         let key = "sync_device_id"
         if let id = UserDefaults.standard.string(forKey: key) { return id }
         let id = UUID().uuidString
@@ -99,7 +100,7 @@ final class WebDAVManager: ObservableObject {
     /// `send(_:)` mirrors OkHttp's `retryOnConnectionFailure(true)` (see legado
     /// `HttpHelper.kt`), which is what keeps legado's WebDAV client stable
     /// against the same servers.
-    private static let session: URLSession = {
+    nonisolated private static let session: URLSession = {
         let config = URLSessionConfiguration.default
         config.waitsForConnectivity = true
         config.timeoutIntervalForRequest = 60
@@ -133,7 +134,7 @@ final class WebDAVManager: ObservableObject {
     /// that the session has just reused — the same class of failure OkHttp's
     /// `retryOnConnectionFailure(true)` recovers from. Safe to delete once the
     /// WebDAV server in use stops dropping idle keep-alive connections.
-    private func send(_ request: URLRequest) async throws -> (Data, URLResponse) {
+    nonisolated private func send(_ request: URLRequest) async throws -> (Data, URLResponse) {
         do {
             return try await Self.session.data(for: request)
         } catch {
@@ -143,14 +144,14 @@ final class WebDAVManager: ObservableObject {
         }
     }
 
-    private static func isTransientConnectionError(_ error: Error) -> Bool {
+    nonisolated private static func isTransientConnectionError(_ error: Error) -> Bool {
         guard let urlError = error as? URLError else { return false }
         return urlError.code == .networkConnectionLost || urlError.code == .timedOut
     }
 
     // MARK: - Authentication
 
-    private var authHeader: String {
+    nonisolated private static func authHeader(username: String, password: String) -> String {
         let credentials = "\(username):\(password)"
         let encoded = Data(credentials.utf8).base64EncodedString()
         return "Basic \(encoded)"
@@ -159,7 +160,7 @@ final class WebDAVManager: ObservableObject {
     // MARK: - Public Interface
 
     /// Test WebDAV connection; returns whether successful.
-    func testConnection() async -> Bool {
+    nonisolated func testConnection() async -> Bool {
         do {
             return try await propfind(path: "/")
         } catch {
@@ -173,7 +174,7 @@ final class WebDAVManager: ObservableObject {
     /// - If a file does not exist (not yet generated before first use), silently skip it.
     /// - If a file exists but fails to read (permission error, disk failure), throw an error
     ///   and abort the backup to avoid displaying a false "backup successful" message.
-    func backup() async throws {
+    nonisolated func backup() async throws {
         await setSync(true, message: "備份中…")
         defer { Task { @MainActor in self.isSyncing = false } }
 
@@ -217,14 +218,14 @@ final class WebDAVManager: ObservableObject {
 
     /// Only explicit shelf records and durable metadata leave this device. The
     /// reading-only registry and automatic cache pointers are never backup data.
-    static func bookshelfBackupData(from data: Data) throws -> Data {
+    nonisolated static func bookshelfBackupData(from data: Data) throws -> Data {
         let books = try JSONDecoder().decode([ReadingBook].self, from: data)
         return try JSONEncoder().encode(books.filter(\.isInBookshelf).map { $0.strippedForSync() })
     }
 
     /// If the file at `localURL` exists, read and upload it; skip if the file does not exist.
     /// If the file exists but fails to read, an error is thrown to prevent silently ignoring real failures.
-    private func backupFileIfExists(at localURL: URL, to remotePath: String) async throws {
+    nonisolated private func backupFileIfExists(at localURL: URL, to remotePath: String) async throws {
         guard FileManager.default.fileExists(atPath: localURL.path) else { return }
         let data = try Data(contentsOf: localURL)
         try await put(data: data, path: remotePath)
@@ -233,12 +234,12 @@ final class WebDAVManager: ObservableObject {
     /// Download backup from WebDAV and overwrite local data (includes conflict detection).
     /// If a cross-device conflict is detected, sets `pendingConflict` and returns early;
     /// the UI decides whether to proceed.
-    func restore() async throws {
+    nonisolated func restore() async throws {
         try await performRestore(skipConflictCheck: false)
     }
 
     /// Called after user confirmation: forcefully overwrite local data with the cloud backup.
-    func resolveConflict(keepRemote: Bool) async throws {
+    nonisolated func resolveConflict(keepRemote: Bool) async throws {
         await MainActor.run { pendingConflict = nil }
         if keepRemote {
             try await performRestore(skipConflictCheck: true)
@@ -248,7 +249,7 @@ final class WebDAVManager: ObservableObject {
 
     // MARK: - Private Restore Implementation
 
-    private func performRestore(skipConflictCheck: Bool) async throws {
+    nonisolated private func performRestore(skipConflictCheck: Bool) async throws {
         await setSync(true, message: "還原中…")
         defer { Task { @MainActor in self.isSyncing = false } }
 
@@ -259,7 +260,7 @@ final class WebDAVManager: ObservableObject {
                 let isOtherDevice = remote.deviceId != Self.deviceId
                 // Local has synced before → cloud may be an older backup from another device,
                 // potentially overwriting newer local data.
-                if isOtherDevice, let localSync = lastSyncDate {
+                if isOtherDevice, let localSync = await MainActor.run(body: { self.lastSyncDate }) {
                     await MainActor.run {
                         self.pendingConflict = SyncConflict(remote: remote, localLastSync: localSync)
                         self.statusMessage = "偵測到衝突，請選擇要使用哪個版本"
@@ -307,8 +308,8 @@ final class WebDAVManager: ObservableObject {
     // MARK: - Private HTTP Methods
 
     /// PROPFIND: Check if path exists (HTTP 200 or 207).
-    private func propfind(path: String) async throws -> Bool {
-        var request = try makeRequest(path: path)
+    nonisolated private func propfind(path: String) async throws -> Bool {
+        var request = try await makeRequest(path: path)
         request.httpMethod = "PROPFIND"
         request.setValue("0", forHTTPHeaderField: "Depth")
         request.setValue("application/xml", forHTTPHeaderField: "Content-Type")
@@ -325,8 +326,8 @@ final class WebDAVManager: ObservableObject {
     }
 
     /// MKCOL: Create directory (ignore 405 = already exists).
-    private func mkcol(path: String) async throws {
-        var request = try makeRequest(path: path)
+    nonisolated private func mkcol(path: String) async throws {
+        var request = try await makeRequest(path: path)
         request.httpMethod = "MKCOL"
 
         do {
@@ -345,8 +346,8 @@ final class WebDAVManager: ObservableObject {
     }
 
     /// PUT: Upload data to the specified path.
-    private func put(data: Data, path: String) async throws {
-        var request = try makeRequest(path: path)
+    nonisolated private func put(data: Data, path: String) async throws {
+        var request = try await makeRequest(path: path)
         request.httpMethod = "PUT"
         request.setValue("application/octet-stream", forHTTPHeaderField: "Content-Type")
         request.httpBody = data
@@ -368,8 +369,8 @@ final class WebDAVManager: ObservableObject {
     }
 
     /// GET: Download data from the specified path.
-    private func get(path: String) async throws -> Data {
-        var request = try makeRequest(path: path)
+    nonisolated private func get(path: String) async throws -> Data {
+        var request = try await makeRequest(path: path)
         request.httpMethod = "GET"
 
         do {
@@ -392,13 +393,16 @@ final class WebDAVManager: ObservableObject {
 
     // MARK: - Utilities
 
-    private func makeRequest(path: String) throws -> URLRequest {
+    /// Reads the settings on the main actor that owns them; the request is still built here,
+    /// off the main thread, as before.
+    nonisolated private func makeRequest(path: String) async throws -> URLRequest {
+        let (serverUrl, username, password) = await MainActor.run { (self.serverUrl, self.username, self.password) }
         let base = serverUrl.hasSuffix("/") ? String(serverUrl.dropLast()) : serverUrl
         guard !base.isEmpty, let url = URL(string: base + path) else {
             throw WebDAVError.invalidURL
         }
         var request = URLRequest(url: url, timeoutInterval: 30)
-        request.setValue(authHeader, forHTTPHeaderField: "Authorization")
+        request.setValue(Self.authHeader(username: username, password: password), forHTTPHeaderField: "Authorization")
         return request
     }
 

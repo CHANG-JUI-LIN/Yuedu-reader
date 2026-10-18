@@ -25,7 +25,7 @@ struct RemoteLibraryConnectionTests {
     }
 
     @Test("WebDAV migration copies once and later edits do not change sync settings")
-    func legacyWebDAVCopy() throws {
+    @MainActor func legacyWebDAVCopy() throws {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         let suite = "remote-library-tests-\(UUID().uuidString)"
         let defaults = try #require(UserDefaults(suiteName: suite))
@@ -112,7 +112,7 @@ struct RemoteLibraryConnectionTests {
     }
 
     @Test("shelf cover resolves the same authenticated connection session")
-    func shelfCoverSession() throws {
+    @MainActor func shelfCoverSession() throws {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: directory) }
         let store = OPDSCatalogStore(storageDirectory: directory, importLegacyWebDAV: false)
@@ -128,7 +128,7 @@ struct RemoteLibraryConnectionTests {
     }
 
     @Test("legacy OPDS usernames migrate into Keychain without losing login")
-    func legacyUsernameMigration() throws {
+    @MainActor func legacyUsernameMigration() throws {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: directory) }

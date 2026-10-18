@@ -159,6 +159,7 @@ enum ExplorePush: Hashable {
 enum ExplorePlace {
     /// A source's own page: its discover page, its root feed or folder, or a public library's
     /// front page, which 範圍 shows in place (5d-1; 我的書庫's tiles pushed it before).
+    @MainActor
     static func page(of source: SourceInstanceKey, name: String,
                      connections: RemoteLibraryConnectionStore = .shared) -> ExplorePush? {
         switch source.type {
@@ -183,6 +184,7 @@ enum ExplorePlace {
     }
 
     /// 查看全部: the whole of what a row shows the start of.
+    @MainActor
     static func showAll(_ row: HomeModel.Row, aozoraIndex: AozoraCatalogIndex?,
                         connections: RemoteLibraryConnectionStore = .shared) -> ExplorePush? {
         let gutenbergID = PublicLibraryID.gutenberg.rawValue

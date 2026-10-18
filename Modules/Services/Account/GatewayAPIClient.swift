@@ -24,17 +24,17 @@ struct GatewayRequest {
     }
 }
 
-final class GatewayAPIClient {
+final class GatewayAPIClient: Sendable {
     static let shared = GatewayAPIClient()
 
     private let session: URLSession
     /// Uploads and downloads: same stall limit, but a whole transfer may take minutes.
     private let transferSession: URLSession
-    private let baseURLProvider: () -> URL?
+    private let baseURLProvider: @Sendable () -> URL?
 
     init(
         session: URLSession? = nil,
-        baseURLProvider: @escaping () -> URL? = { GatewayConfiguration.baseURL }
+        baseURLProvider: @escaping @Sendable () -> URL? = { GatewayConfiguration.baseURL }
     ) {
         if let session {
             self.session = session

@@ -43,7 +43,8 @@ struct OPDSCatalog: Codable, Identifiable, Hashable {
 
 /// The existing OPDS file remains the single connection registry. Both username
 /// and password live in Keychain; legacy passwords keep their account identity.
-final class OPDSCatalogStore: ObservableObject {
+@MainActor
+final class OPDSCatalogStore: @MainActor ObservableObject {
     static let shared = OPDSCatalogStore()
     @Published private(set) var catalogs: [OPDSCatalog] = []
     var connections: [RemoteLibraryConnection] { catalogs }
@@ -179,7 +180,7 @@ final class OPDSCatalogStore: ObservableObject {
                            httpClient: httpClient(for: catalog))
     }
 
-    func testConnection(url: URL, kind: RemoteLibraryKind, username: String?, password: String?) async throws {
+    nonisolated func testConnection(url: URL, kind: RemoteLibraryKind, username: String?, password: String?) async throws {
         let http = RemoteLibraryHTTPClient(baseURL: url, username: username, password: password)
         if kind == .webDAV {
             _ = try await WebDAVBrowseClient(serverUrl: url.absoluteString, username: username ?? "", password: password ?? "", httpClient: http).list(url)

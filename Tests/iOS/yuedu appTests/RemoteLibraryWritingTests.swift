@@ -276,7 +276,7 @@ private final class WritingInvalidationRecorder {
     var ids: [UUID] = []
 }
 
-private final class WritingFixtureTransport: RemoteLibraryTransport {
+private final class WritingFixtureTransport: RemoteLibraryTransport, @unchecked Sendable {
     var handler: ((URLRequest) throws -> (Int, Data))?
     var requests: [URLRequest] = []
     var uploadCount = 0

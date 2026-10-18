@@ -516,6 +516,7 @@ struct HomeRowHost: View {
 /// Which sources 範圍 offers, and whether a stored one is still there (design §13.3: 全部, or
 /// any book source, library connection, Gutenberg or Aozora; no public library in China).
 enum ExploreHomeScope {
+    @MainActor
     static func isAvailable(_ key: SourceInstanceKey, sources: [BookSource], connections: RemoteLibraryConnectionStore,
                             librariesAvailable: Bool) -> Bool {
         switch key.type {
@@ -534,6 +535,7 @@ enum ExploreHomeScope {
         }
     }
 
+    @MainActor
     static func name(of key: SourceInstanceKey, sources: [BookSource], connections: RemoteLibraryConnectionStore) -> String {
         switch key.type {
         case .bookSource: sources.first { $0.bookSourceUrl == key.id }?.bookSourceName ?? key.id

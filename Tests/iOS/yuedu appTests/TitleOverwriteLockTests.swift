@@ -1,5 +1,6 @@
 import Foundation
 import ReadiumShared
+import os
 import Testing
 @testable import yuedu_app
 
@@ -222,14 +223,15 @@ private final class WritingContext {
 }
 
 private final class AcceptingTransport: RemoteLibraryTransport {
-    var posts = 0
+    private let postCount = OSAllocatedUnfairLock(initialState: 0)
+    var posts: Int { postCount.withLock { $0 } }
 
     func data(for request: URLRequest) async throws -> (Data, HTTPURLResponse) {
         let body: Data
         let status: Int
         switch request.httpMethod {
         case "POST":
-            posts += 1
+            postCount.withLock { $0 += 1 }
             status = 200
             body = Data(#"{"42":{"title":"New title","authors":["First","Second"]}}"#.utf8)
         case "MOVE":

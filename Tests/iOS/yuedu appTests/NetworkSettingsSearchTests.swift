@@ -1,4 +1,5 @@
 import Foundation
+import os
 import Testing
 @testable import yuedu_app
 
@@ -447,14 +448,9 @@ private actor CancellableTOCFetcher: BookSourceFetching {
 }
 
 private final class CountingBookSourceFetcher: BookSourceFetching {
-    private let lock = NSLock()
-    private var calls = 0
+    private let calls = OSAllocatedUnfairLock(initialState: 0)
 
-    var searchCallCount: Int {
-        lock.lock()
-        defer { lock.unlock() }
-        return calls
-    }
+    var searchCallCount: Int { calls.withLock { $0 } }
 
     func fetchBookInfoPackage(
         url: String,
@@ -488,7 +484,7 @@ private final class CountingBookSourceFetcher: BookSourceFetching {
     func clearAllChapterCache(bookId: UUID) {}
 
     func search(query: String, in source: BookSource) async throws -> [OnlineBook] {
-        lock.withLock { calls += 1 }
+        calls.withLock { $0 += 1 }
         return [
             OnlineBook(
                 name: query,

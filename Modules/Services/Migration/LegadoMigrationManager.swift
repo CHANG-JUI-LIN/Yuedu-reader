@@ -18,7 +18,8 @@ private struct LegadoBook: Codable {
 
 // MARK: - Migration Manager
 
-class LegadoMigrationManager: ObservableObject {
+@MainActor
+class LegadoMigrationManager: @MainActor ObservableObject {
     static let shared = LegadoMigrationManager()
 
     @Published var isImporting: Bool = false
@@ -39,7 +40,7 @@ class LegadoMigrationManager: ObservableObject {
     // delegate straight to BookSourceStore.importFromJSON which handles
     // arrays, single objects, and the backup-wrapper {"bookSources":[...]} format.
 
-    func importBookSources(from data: Data) async -> Int {
+    nonisolated func importBookSources(from data: Data) async -> Int {
         guard let jsonString = String(data: data, encoding: .utf8) else {
             appendLog("[ERROR] Unable to convert data to string")
             return 0
@@ -55,7 +56,7 @@ class LegadoMigrationManager: ObservableObject {
 
     // MARK: - Books
 
-    func importBooks(from data: Data, into bookStore: BookStore) async -> Int {
+    nonisolated func importBooks(from data: Data, into bookStore: BookStore) async -> Int {
         guard let legadoBooks = try? JSONDecoder().decode([LegadoBook].self, from: data) else {
             appendLog("[ERROR] Unable to parse book list")
             return 0
@@ -116,7 +117,7 @@ class LegadoMigrationManager: ObservableObject {
 
     // MARK: - Auto-detect and import
 
-    func importFromJSON(data: Data, bookStore: BookStore) async {
+    nonisolated func importFromJSON(data: Data, bookStore: BookStore) async {
         await MainActor.run {
             isImporting  = true
             progress     = 0
@@ -175,7 +176,7 @@ class LegadoMigrationManager: ObservableObject {
 
     // MARK: - Helpers
 
-    func appendLog(_ message: String) {
+    nonisolated func appendLog(_ message: String) {
         DispatchQueue.main.async {
             self.statusLog.append(message)
             // Keep log bounded to avoid unbounded memory growth.
@@ -187,7 +188,7 @@ class LegadoMigrationManager: ObservableObject {
 
     private enum FormatKind { case bookSources, books, unknown }
 
-    private func detectFormat(data: Data) -> FormatKind {
+    nonisolated private func detectFormat(data: Data) -> FormatKind {
         guard let obj = try? JSONSerialization.jsonObject(with: data) else { return .unknown }
 
         // Single object: check top-level keys.

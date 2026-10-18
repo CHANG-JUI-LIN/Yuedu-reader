@@ -12,7 +12,7 @@ protocol WebContentFetching {
     ) async throws -> String
 }
 
-protocol BookSourceFetching {
+protocol BookSourceFetching: Sendable {
     func fetchBookInfoPackage(
         url: String,
         source: BookSource,
