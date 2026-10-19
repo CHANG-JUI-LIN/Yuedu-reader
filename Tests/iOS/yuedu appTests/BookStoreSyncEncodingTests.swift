@@ -87,6 +87,38 @@ struct BookStoreSyncEncodingTests {
         #expect(reopened.readingBook(id: added.id)?.title == added.title)
     }
 
+    /// Field trace, 3.0.0 (129) on an iPhone 11, a sync on the way to the background:
+    /// `library.chapters.write 178ms bytes=20183991 main=true` inside `sync.apply.books`.
+    /// Applying a merge waited on the main thread for the write queue, and so behind every
+    /// write already queued — the scene's own flush is queued on the same trip — while the
+    /// 10 s scene-update watchdog was counting.
+    @Test func applyingAMergeDoesNotWaitForTheWriteQueue() async throws {
+        let url = try metadataURL()
+        defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
+        let store = BookStore(metadataFileURL: url)
+        let book = ReadingBook(title: "Local", contentFilename: "book.epub")
+        store.saveReadingBook(book)
+        store.waitForQueuedWrites()
+        var remote = book
+        remote.title = "Remote"
+        let snapshot = try #require(store.snapshotForSync([remote], expectedMutationRevision: store.mutationRevision))
+        let prepared = try await BookStore.encodeSyncSnapshot(snapshot)
+
+        // A slow write already on the serial queue, released once the apply has returned.
+        let release = DispatchSemaphore(value: 0)
+        BookStore.persistQueue.async { _ = release.wait(timeout: .now() + 2) }
+        let start = SourcePerfTrace.now
+        #expect(store.applySyncSnapshot(prepared))
+        let mainMs = (SourcePerfTrace.now - start) * 1000
+        release.signal()
+        print("[SyncApply] main thread held \(Int(mainMs)) ms behind a 2000 ms queued write")
+
+        #expect(mainMs < 500, "the main thread waited \(Int(mainMs)) ms for the write queue")
+        #expect(store.readingBook(id: book.id)?.title == "Remote")
+        store.waitForQueuedWrites()
+        #expect(BookStore(metadataFileURL: url).readingBook(id: book.id)?.title == "Remote")
+    }
+
     @Test func largeMetadataEncodingLeavesOnlyApplicationOnMain() async throws {
         let url = try metadataURL()
         defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }

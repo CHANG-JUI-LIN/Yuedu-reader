@@ -398,7 +398,9 @@ final class ICloudSyncManager: ObservableObject {
         do {
             // 1. Book sources (singleton store).
             let (localSources, sourceMutationRevision) = await MainActor.run {
-                (BookSourceStore.shared.sources, BookSourceStore.shared.mutationRevision)
+                SourcePerfTrace.span("sync.read.sources", thresholdMs: 5) {
+                    (BookSourceStore.shared.sources, BookSourceStore.shared.mutationRevision)
+                }
             }
             var changedRemote = false
 
@@ -642,8 +644,12 @@ final class ICloudSyncManager: ObservableObject {
                 // Without the table of contents: each device keeps its own (`BookChapterStore`),
                 // and uploading it made this blob 138 MB for a 110-book shelf, sent on every
                 // trip to the background.
+                // Main-thread hops of a sync are spans: a stall during one names it instead
+                // of "no instrumented span" (the field's background stalls, 3.0.0 (129)).
                 let (localBooks, bookMutationRevision) = await MainActor.run {
-                    (store.books.map { $0.withoutTableOfContents() }, store.mutationRevision)
+                    SourcePerfTrace.span("sync.read.books", thresholdMs: 5) {
+                        (store.books.map { $0.withoutTableOfContents() }, store.mutationRevision)
+                    }
                 }
                 let bookMerge = try await mergeType(
                     recordName: Self.booksRecordName,
@@ -656,7 +662,9 @@ final class ICloudSyncManager: ObservableObject {
                         // Refused while the shelf is not the one merged: a page turn or a
                         // narrated paragraph during the round trip moves it.
                         guard let snapshot = await MainActor.run(body: {
-                            store.snapshotForSync(merged, expectedMutationRevision: bookMutationRevision)
+                            SourcePerfTrace.span("sync.snapshot.books", "count=\(merged.count)", thresholdMs: 5) {
+                                store.snapshotForSync(merged, expectedMutationRevision: bookMutationRevision)
+                            }
                         }) else { return false }
                         let prepared = try await BookStore.encodeSyncSnapshot(snapshot)
                         return await MainActor.run {
@@ -1101,7 +1109,7 @@ final class ICloudSyncManager: ObservableObject {
             try await uploadFileIfExists(file)
         }
 
-        let bookFiles = dynamicBookFilePayloads()
+        let bookFiles = await dynamicBookFilePayloads()
         AppLogger.sync("backup: \(bookFiles.count) book file(s) to consider (content+covers)", level: .notice)
         _ = try await uploadBookFiles()
 
@@ -1153,7 +1161,7 @@ final class ICloudSyncManager: ObservableObject {
         ) { $0.item }
         let localReadingSettings = await MainActor.run { GlobalSettings.shared.readingSettingSyncRecords }
         let stylePictures = Self.readerStylePictureIDs(referencedBy: localReadingSettings + remoteReadingSettings)
-        let files = bookFilePayloads(localBooks() + remoteBooks)
+        let files = bookFilePayloads(await localBooks() + remoteBooks)
             + Self.readerBackgroundPicturePayloads(localBackgrounds + remoteBackgrounds)
         for file in files {
             try await deleteRecordIfExists(CKRecord.ID(recordName: file.recordName))
@@ -1379,12 +1387,15 @@ final class ICloudSyncManager: ObservableObject {
     /// downloaded cover (`<id>_cover.jpg`); sync that too, otherwise restored
     /// online books show a blank cover and never re-download it (the cover path
     /// is non-nil, so `downloadCoverIfNeeded` is skipped on the other device).
-    nonisolated private func dynamicBookFilePayloads() -> [ICloudSyncPayloadFile] {
-        bookFilePayloads(localBooks())
+    nonisolated private func dynamicBookFilePayloads() async -> [ICloudSyncPayloadFile] {
+        bookFilePayloads(await localBooks())
     }
 
     /// The shelf as stored on this device. Empty before the first book is added.
-    nonisolated private func localBooks() -> [ReadingBook] {
+    nonisolated private func localBooks() async -> [ReadingBook] {
+        // The merge a pass has just applied is queued on `BookStore`'s queue, not yet on disk:
+        // read before it lands, the books it brought are left out of the downloads.
+        await BookStore.queuedWritesLanded()
         let url = StorageLocations.booksMetadataFile
         guard FileManager.default.fileExists(atPath: url.path) else { return [] }
         do {
@@ -1445,7 +1456,7 @@ final class ICloudSyncManager: ObservableObject {
     }
 
     nonisolated private func uploadBookFiles() async throws -> Int {
-        let payloads = dynamicBookFilePayloads()
+        let payloads = await dynamicBookFilePayloads()
         guard !payloads.isEmpty else { return 0 }
         await setSync(true, message: localized("正在同步書籍檔案…"))
         var uploaded = 0
@@ -1482,7 +1493,7 @@ final class ICloudSyncManager: ObservableObject {
     }
 
     nonisolated private func downloadMissingBookFiles() async throws {
-        let books = localBooks()
+        let books = await localBooks()
         let fetched = try await downloadMissingFiles(bookFilePayloads(books))
         AppLogger.sync("restore: fetched \(fetched.count) book file(s)", level: .notice)
         await readArrivedPackages(fetched, of: books)

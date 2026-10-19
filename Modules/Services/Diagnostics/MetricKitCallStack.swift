@@ -49,41 +49,45 @@ struct MetricKitCallStack: Sendable {
         case noCallStacks
     }
 
-    /// Which end of a call stack tree MetricKit puts at its roots. It differs by
-    /// diagnostic, and reading one as the other blames the wrong end of the stack.
+    /// Which end of a call stack tree MetricKit usually puts at its roots. It differs by
+    /// diagnostic, and reading one as the other blames the wrong end of the stack — so the
+    /// frames decide when they can (`entryEndRank`), and this only breaks a tie.
     enum TreeOrder: Sendable {
         /// Sampled diagnostics (cpu, disk writes, hangs): the root is the thread's entry
         /// point (`start` → `main` → …) and the samples were taken at the leaves.
         case rootIsEntryPoint
         /// A crash's backtrace: the root is the frame that crashed (`__pthread_kill`, a
         /// malloc trap) and each sub-frame is its caller. Verified against 2.0.7 (127)
-        /// payloads symbolicated with the device's system symbols.
+        /// payloads symbolicated with the device's system symbols. Not every crash: a
+        /// scene-update watchdog kill on iOS 27.2 (3.0.0 (129)) arrived as a sampled tree
+        /// rooted at `start_wqthread`.
         case rootIsLeaf
     }
 
-    /// Picks the attributed thread's stack (the one MetricKit blames), else the heaviest
-    /// one, and follows the most-sampled child down from its roots.
+    /// Picks the attributed thread's stack (the one MetricKit blames), else the main
+    /// thread's, else the heaviest one, and follows the most-sampled child down from its
+    /// roots.
     static func heaviestPath(fromJSON data: Data, order: TreeOrder) throws -> MetricKitCallStack {
         guard let root = try JSONSerialization.jsonObject(with: data) as? [String: Any] else {
             throw ParseError.notAnObject
         }
         let stacks = (root["callStacks"] as? [[String: Any]]) ?? []
-        let candidates: [(attributed: Bool, roots: [[String: Any]], samples: Int)] = stacks.map { stack in
+        let candidates: [(attributed: Bool, path: [Frame], samples: Int)] = stacks.compactMap { stack in
             let roots = (stack["callStackRootFrames"] as? [[String: Any]]) ?? []
-            return (stack["threadAttributed"] as? Bool ?? false, roots, roots.reduce(0) { $0 + sampleCount($1) })
+            guard !roots.isEmpty else { return nil }
+            return (stack["threadAttributed"] as? Bool ?? false, heaviestPath(from: roots), roots.reduce(0) { $0 + sampleCount($1) })
         }
-        guard let chosen = candidates.first(where: { $0.attributed && !$0.roots.isEmpty })
-            ?? candidates.filter({ !$0.roots.isEmpty }).max(by: { $0.samples < $1.samples })
+        // With nothing attributed, the main thread before the busiest: the scene-update
+        // watchdog judges the main thread, and the busiest thread of that iOS 27.2 kill was a
+        // libdispatch worker writing a file.
+        guard let chosen = candidates.first(where: \.attributed)
+            ?? candidates.first(where: { isMainThread($0.path) })
+            ?? candidates.max(by: { $0.samples < $1.samples })
         else { throw ParseError.noCallStacks }
 
-        var path: [Frame] = []
-        var level = chosen.roots
-        while let heaviest = level.max(by: { sampleCount($0) < sampleCount($1) }) {
-            if let frame = frame(from: heaviest) { path.append(frame) }
-            level = (heaviest["subFrames"] as? [[String: Any]]) ?? []
-        }
+        let path = chosen.path
         let images = LoadedImages.current()
-        let leafFirst = order == .rootIsLeaf ? path : Array(path.reversed())
+        let leafFirst = rootIsLeaf(path, hint: order) ? path : Array(path.reversed())
         let resolved = leafFirst.map { frame -> Frame in
             var frame = frame
             if let base = images.loadAddress(forUUID: frame.binaryUUID) {
@@ -92,6 +96,42 @@ struct MetricKitCallStack: Sendable {
             return frame
         }
         return MetricKitCallStack(frames: resolved, totalSamples: chosen.samples, threadAttributed: chosen.attributed)
+    }
+
+    /// Root first, following the most-sampled child at each level.
+    private static func heaviestPath(from roots: [[String: Any]]) -> [Frame] {
+        var path: [Frame] = []
+        var level = roots
+        while let heaviest = level.max(by: { sampleCount($0) < sampleCount($1) }) {
+            if let frame = frame(from: heaviest) { path.append(frame) }
+            level = (heaviest["subFrames"] as? [[String: Any]]) ?? []
+        }
+        return path
+    }
+
+    /// Whether a root-first path starts at the leaf. A thread's outermost frame is `start`
+    /// in dyld (the main thread) or `start_wqthread` / `thread_start` in libsystem_pthread
+    /// (any other), and a leaf is almost never either, so whichever end holds one is the
+    /// entry end. The hint decides only when the frames cannot (no binary names, or both
+    /// ends alike).
+    private static func rootIsLeaf(_ path: [Frame], hint: TreeOrder) -> Bool {
+        guard let first = path.first, let last = path.last else { return hint == .rootIsLeaf }
+        let rootRank = entryEndRank(first), deepestRank = entryEndRank(last)
+        if deepestRank != rootRank { return deepestRank > rootRank }
+        return hint == .rootIsLeaf
+    }
+
+    private static func entryEndRank(_ frame: Frame) -> Int {
+        switch frame.binaryName {
+        case "dyld": 2
+        case "libsystem_pthread.dylib": 1
+        default: 0
+        }
+    }
+
+    /// A main-thread stack ends in dyld's `start`, whichever end MetricKit put first.
+    private static func isMainThread(_ path: [Frame]) -> Bool {
+        path.first?.binaryName == "dyld" || path.last?.binaryName == "dyld"
     }
 
     /// The first frames of the heaviest path, one per line — what a person reads first.

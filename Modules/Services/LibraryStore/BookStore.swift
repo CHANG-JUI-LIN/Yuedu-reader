@@ -2649,9 +2649,21 @@ class BookStore: @MainActor ObservableObject, BookProvider {
             readingData: encoder.encode(snapshot.records.filter { !$0.isInBookshelf }))
     }
 
+    /// Applies a merge encoded off the main thread and queues its write without waiting for
+    /// it. Waiting put the main thread behind every write already queued — the scene's own
+    /// flush is queued on the same trip — with the changed tables of contents flushed first:
+    /// in the field `library.chapters.write 178ms bytes=20183991 main=true` inside
+    /// `sync.apply.books`, during the iCloud sync a trip to the background starts (3.0.0
+    /// (129), iPhone 11), while the 10 s scene-update watchdog was counting. Readers of the
+    /// files wait for the queue (`queuedWritesLanded`, a store opening them).
     @discardableResult
     @MainActor
     func applySyncSnapshot(_ prepared: EncodedSyncSnapshot) -> Bool {
+        applySyncSnapshot(prepared, inBackground: true)
+    }
+
+    @MainActor
+    private func applySyncSnapshot(_ prepared: EncodedSyncSnapshot, inBackground: Bool) -> Bool {
         guard prepared.snapshot.revision == mutationRevision else { return false }
         replaceRecords(prepared.snapshot.records)
         cancelPendingMetadataSave()
@@ -2660,7 +2672,7 @@ class BookStore: @MainActor ObservableObject, BookProvider {
             chapterStore.removeChapters(notIn: bookIDs)
             importedMetadata.remove(notIn: bookIDs)
         }
-        persistMetadata(prepared.shelfData, readingData: prepared.readingData)
+        persistMetadata(prepared.shelfData, readingData: prepared.readingData, inBackground: inBackground)
         readerSettings.removeSettings(notIn: bookIDs)
         return true
     }
@@ -2697,7 +2709,7 @@ class BookStore: @MainActor ObservableObject, BookProvider {
     func replaceBooksFromSync(_ syncedBooks: [ReadingBook], expectedMutationRevision: UInt64? = nil) -> Bool {
         guard let snapshot = snapshotForSync(syncedBooks, expectedMutationRevision: expectedMutationRevision),
               let prepared = try? Self.encodeSyncSnapshotData(snapshot) else { return false }
-        return applySyncSnapshot(prepared)
+        return applySyncSnapshot(prepared, inBackground: false)
     }
 
     private func cancelPendingMetadataSave() {
@@ -2717,8 +2729,10 @@ class BookStore: @MainActor ObservableObject, BookProvider {
     /// in 30 days up to build 2.0.7 (127)).
     private func saveMetaImmediately() {
         cancelPendingMetadataSave()
-        holdAppUntilQueuedWritesLand()
         persistMetadataIfChanged(inBackground: true)
+        // After the write is queued: the hold covers what is queued when it is taken, and
+        // taken first it was released before this write ran.
+        holdAppUntilQueuedWritesLand()
     }
 
     /// Writes a debounced save now. The scene calls this on its way out of the
@@ -2841,10 +2855,11 @@ class BookStore: @MainActor ObservableObject, BookProvider {
     // seconds for as long as either runs — is written in the background: encoding 100 books
     // and a changed 2000-chapter list took 30–120ms on the main thread each time. An
     // immediate save (a source switch, a download's state change, the scene leaving the
-    // foreground) still writes before it returns, on the same queue, so it lands after any
-    // background write already in flight. legado writes its books and chapters through Room
-    // on its IO dispatcher for the same reason.
-    nonisolated private static let persistQueue = DispatchQueue(label: "com.yuedu.library.persist", qos: .utility)
+    // foreground, an iCloud merge) is queued without the debounce, on the same queue, so it
+    // lands after any write already in flight, and holds the app until it has. legado writes
+    // its books and chapters through Room on its IO dispatcher for the same reason.
+    /// Not private so a test can hold the queue and show what the main thread waits for.
+    nonisolated static let persistQueue = DispatchQueue(label: "com.yuedu.library.persist", qos: .utility)
     /// Order of the writes handed to `persistQueue`; a write's bookkeeping is applied only if
     /// no later write's has been.
     private var persistSequence: UInt64 = 0
@@ -2899,15 +2914,16 @@ class BookStore: @MainActor ObservableObject, BookProvider {
         )
     }
 
-    private func persistMetadata(_ data: Data, readingData: Data) {
+    private func persistMetadata(_ data: Data, readingData: Data, inBackground: Bool) {
         persist(
             MetadataWriteInput(
                 payload: .encoded(shelf: data, reading: readingData),
                 writesBlocked: metadataWritesBlocked,
                 records: records
             ),
-            inBackground: false
+            inBackground: inBackground
         )
+        if inBackground { holdAppUntilQueuedWritesLand() }
     }
 
     private func persist(_ input: MetadataWriteInput, inBackground: Bool) {

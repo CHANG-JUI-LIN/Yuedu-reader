@@ -52,6 +52,54 @@ struct MetricKitCallStackTests {
         #expect(path.frames.map(\.offsetIntoTextSegment) == [300, 200, 100])
     }
 
+    /// Field shape, 3.0.0 (129) on iOS 27.2: a scene-update watchdog kill delivered as a
+    /// sampled tree (sample counts 25…53) whose root is `start_wqthread`, not the frame that
+    /// was running. Read as the crash order says, the report put the thread entry point at
+    /// frame 0 and cut the real leaf (`write`) off the end.
+    @Test("a crash tree rooted at the thread entry point is still returned leaf first")
+    func crashTreeRootedAtEntryPointIsReversed() throws {
+        let leaf = frame("CCCC", 300, 25, "libsystem_kernel.dylib")
+        let caller = frame("BBBB", 200, 25, "YueduReader", sub: [leaf])
+        let entry = frame("AAAA", 100, 53, "libsystem_pthread.dylib", sub: [caller])
+        let data = try tree([["threadAttributed": true, "callStackRootFrames": [entry]]])
+
+        let path = try MetricKitCallStack.heaviestPath(fromJSON: data, order: .rootIsLeaf)
+
+        #expect(path.frames.map(\.offsetIntoTextSegment) == [300, 200, 100])
+    }
+
+    /// Field shape, 3.0.0 (129) on iOS 17.0: the watchdog backtrace's root is the leaf
+    /// (`libobjc`) and `dyld` is its deepest frame. A sampled-order hint must not flip it.
+    @Test("a tree whose deepest frame is dyld keeps its root first whatever the hint")
+    func treeEndingInDyldKeepsRootFirst() throws {
+        let entry = frame("AAAA", 100, 1, "dyld")
+        let caller = frame("BBBB", 200, 1, "UIKitCore", sub: [entry])
+        let leaf = frame("CCCC", 300, 1, "libobjc.A.dylib", sub: [caller])
+        let data = try tree([["threadAttributed": true, "callStackRootFrames": [leaf]]])
+
+        let path = try MetricKitCallStack.heaviestPath(fromJSON: data, order: .rootIsEntryPoint)
+
+        #expect(path.frames.map(\.offsetIntoTextSegment) == [300, 200, 100])
+    }
+
+    /// The scene-update watchdog judges the main thread. With no thread attributed, the
+    /// busiest one was a libdispatch worker writing a file, and the report blamed it.
+    @Test("with no thread attributed, the main thread wins over a busier worker")
+    func mainThreadWinsWhenNoneAttributed() throws {
+        let workerLeaf = frame("DDDD", 40, 53, "libsystem_kernel.dylib")
+        let worker = frame("CCCC", 30, 53, "libsystem_pthread.dylib", sub: [workerLeaf])
+        let mainLeaf = frame("BBBB", 20, 9, "SwiftUI")
+        let main = frame("AAAA", 10, 9, "dyld", sub: [mainLeaf])
+        let data = try tree([
+            ["threadAttributed": false, "callStackRootFrames": [worker]],
+            ["threadAttributed": false, "callStackRootFrames": [main]],
+        ])
+
+        let path = try MetricKitCallStack.heaviestPath(fromJSON: data, order: .rootIsLeaf)
+
+        #expect(path.frames.map(\.offsetIntoTextSegment) == [20, 10])
+    }
+
     @Test("the attributed thread wins over a busier unattributed one")
     func attributedThreadWins() throws {
         let busy = frame("AAAA", 1, 90)
