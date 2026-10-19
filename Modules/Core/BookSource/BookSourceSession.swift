@@ -27,13 +27,13 @@ import os
 /// Staleness: the cache key includes the source's `lastUpdateTime`, which the
 /// store bumps on every edit/import — an updated source naturally maps to a
 /// fresh session, no explicit invalidation hooks needed.
-final class BookSourceSession {
+final class BookSourceSession: Sendable {
 
     let source: BookSource
     let host: SourceScriptHost<ModernParserBridge>
-    // 6e-3b1 → 6e-3b2: the same bridge, still reached without the host by the call sites not
-    // yet moved onto it (`bridgeForAsyncOperations`). Removed with the last of them.
-    private let bridge: ModernParserBridge
+    /// The source's `@js:` header rule as its engine last resolved it, readable without the
+    /// host (`BookSource.parsedHeaders`, `resolvedHeaders()`).
+    let headerSnapshot = SourceHeaderSnapshot()
     private let gate = SourceTurnGate()
 
     /// `requestSession` carries a test's URLProtocol; production sessions come from
@@ -43,9 +43,10 @@ final class BookSourceSession {
         // Cheap now: the bridge defers its JSContext until a rule actually runs JS,
         // so the `js.runtimeCreate` span lives on that lazy accessor instead. A
         // pure-CSS source should never emit one.
-        let bridge = ModernParserBridge(source: source, requestSession: requestSession)
-        self.bridge = bridge
-        self.host = SourceScriptHost(bridge, label: source.bookSourceName)
+        self.host = SourceScriptHost(
+            ModernParserBridge(source: source, requestSession: requestSession, headerSnapshot: headerSnapshot),
+            label: source.bookSourceName
+        )
     }
 
     // MARK: - The source's turn
@@ -111,10 +112,44 @@ final class BookSourceSession {
         try await host.fetch(ruleUrl: ruleUrl, key: key, page: page)
     }
 
-    /// Bridge access for the call sites not yet moved onto `host` (6e-3b2). Execution-level
-    /// safety comes from the JS engine's serial queue, matching the pre-session behavior of
-    /// those call sites.
-    var bridgeForAsyncOperations: ModernParserBridge { bridge }
+    // MARK: - Header rule
+
+    /// The `@js:` header rule's result for a caller that cannot wait — a SwiftUI body, a
+    /// cover cell on the main thread. Before the first resolution this is `[:]` and starts
+    /// one on the host; afterwards it is what the engine last resolved, which a resolution
+    /// for a new login state replaces.
+    ///
+    /// Never waits on the host: a script there may be parked on a verification page that only
+    /// the main thread can show (TestFlight AGT4StkW1MHoKzDbZNJd4So, 「69书吧人机验证卡死」).
+    func headerSnapshotStartingResolution() -> [String: String] {
+        let (headers, startsResolution) = headerSnapshot.readClaimingResolution()
+        if startsResolution {
+            Task(priority: .utility) { [self] in
+                _ = await resolveHeadersOnHost()
+                headerSnapshot.finishResolution()
+            }
+        }
+        return headers ?? [:]
+    }
+
+    /// The `@js:` header rule's result for a request about to be sent: what the engine last
+    /// resolved, or — before any resolution — resolved now on the host. A request never goes
+    /// out without the rule's headers because nothing had resolved them yet: 书山聚合 puts
+    /// its required token there and answers `{"error":"访问被拒绝"}` without it.
+    func resolvedHeaders() async -> [String: String] {
+        if let headers = headerSnapshot.headers { return headers }
+        return await resolveHeadersOnHost()
+    }
+
+    private func resolveHeadersOnHost() async -> [String: String] {
+        // The engine publishes what it resolves into `headerSnapshot` itself.
+        let headers = await host.run { $0.resolvedSourceHeaders() }
+        AppLogger.parse("⟐ header.js resolved", context: [
+            "source": source.bookSourceName,
+            "keys": headers.keys.sorted().joined(separator: ",")
+        ])
+        return headers
+    }
 
     // MARK: - Per-source cache
 
@@ -168,6 +203,37 @@ final class BookSourceSession {
         accessClock += 1
         cache[key] = CacheEntry(session: session, lastUsed: accessClock)
         return session
+    }
+}
+
+/// One source's resolved header rule, shared between its engine (which writes every
+/// resolution) and callers off its host (which read it without waiting).
+final class SourceHeaderSnapshot: Sendable {
+    private struct State: Sendable {
+        var headers: [String: String]?
+        var resolving = false
+    }
+
+    private let state = OSAllocatedUnfairLock(initialState: State())
+
+    var headers: [String: String]? { state.withLock { $0.headers } }
+
+    func store(_ headers: [String: String]) {
+        state.withLock { $0.headers = headers }
+    }
+
+    /// The current value, and whether the caller should start the first resolution — true
+    /// once, while nothing has resolved and no resolution is under way.
+    func readClaimingResolution() -> (headers: [String: String]?, startsResolution: Bool) {
+        state.withLock { state in
+            guard state.headers == nil, !state.resolving else { return (state.headers, false) }
+            state.resolving = true
+            return (nil, true)
+        }
+    }
+
+    func finishResolution() {
+        state.withLock { $0.resolving = false }
     }
 }
 

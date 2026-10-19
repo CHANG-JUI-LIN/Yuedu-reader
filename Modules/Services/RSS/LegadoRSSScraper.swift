@@ -42,13 +42,12 @@ enum LegadoRSSScraper {
         }
 
         let entryURL = normalizedRequestURL(entry?.url ?? source.url)
-        let jsEngine = JSCoreEngine()
-        wireNetworkHandler(jsEngine)
+        let host = scriptHost(for: source)
 
-        // The URL and the rules run the source's JS: on `SourceScriptThread`, with only the
-        // network round-trip in between here.
-        let analyzeUrl = await SourceScriptThread.run { [jsEngine] in
-            AnalyzeUrl(
+        // The URL and the rules run the source's JS: on the scrape's script host, with only
+        // the network round-trip in between here.
+        let prepared = await host.run { jsEngine in
+            PreparedRequest(AnalyzeUrl(
                 ruleUrl: entryURL,
                 page: page,
                 sourceHeader: source.header,
@@ -56,11 +55,11 @@ enum LegadoRSSScraper {
                 jsEvaluator: { [weak jsEngine] js, bindings in
                     jsEngine?.evaluateIsolated(js, bindings: bindings)
                 }
-            )
+            ))
         }
 
         let (body, finalURL) = try await fetchBody(
-            analyzeUrl: analyzeUrl,
+            prepared,
             headerJSON: source.header
         )
 
@@ -72,7 +71,7 @@ enum LegadoRSSScraper {
         }
         let articlesRule = listRule
         let reversesArticles = reverse
-        return try await SourceScriptThread.run {
+        return try await host.run { jsEngine in
             try parseArticles(
                 body: body, finalURL: finalURL, listRule: articlesRule,
                 reverse: reversesArticles, source: source, jsEngine: jsEngine
@@ -169,21 +168,20 @@ enum LegadoRSSScraper {
         let contentRule = source.ruleContent?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         guard !contentRule.isEmpty else { return nil }
 
-        let jsEngine = JSCoreEngine()
-        wireNetworkHandler(jsEngine)
+        let host = scriptHost(for: source)
 
-        let analyzeUrl = await SourceScriptThread.run { [jsEngine] in
-            AnalyzeUrl(
+        let prepared = await host.run { jsEngine in
+            PreparedRequest(AnalyzeUrl(
                 ruleUrl: normalizedRequestURL(articleLink),
                 sourceHeader: source.header,
                 baseUrl: source.url,
                 jsEvaluator: { [weak jsEngine] js, bindings in
                     jsEngine?.evaluateIsolated(js, bindings: bindings)
                 }
-            )
+            ))
         }
-        let (body, finalURL) = try await fetchBody(analyzeUrl: analyzeUrl, headerJSON: source.header)
-        return await SourceScriptThread.run {
+        let (body, finalURL) = try await fetchBody(prepared, headerJSON: source.header)
+        return await host.run { jsEngine in
             articleContent(body: body, finalURL: finalURL, contentRule: contentRule, jsEngine: jsEngine)
         }
     }
@@ -210,15 +208,39 @@ enum LegadoRSSScraper {
         return trimmed.isEmpty ? nil : trimmed
     }
 
+    /// One scrape's JS engine, on its own host: the URL, the rules and their
+    /// `java.ajax` requests all run there.
+    private static func scriptHost(for source: RSSSource) -> SourceScriptHost<JSCoreEngine> {
+        let jsEngine = JSCoreEngine()
+        wireNetworkHandler(jsEngine)
+        return SourceScriptHost(jsEngine, label: "rss.\(source.name)")
+    }
+
     // MARK: - Fetch
+
+    /// What the network half needs from an `AnalyzeUrl` — which stays on the script host,
+    /// as its template evaluation calls into the engine. Building the request runs no JS.
+    private struct PreparedRequest: Sendable {
+        let request: URLRequest?
+        let useWebView: Bool
+        let webViewDelayTime: Int
+        let charset: String?
+
+        init(_ analyzeUrl: AnalyzeUrl) {
+            request = analyzeUrl.toURLRequest()
+            useWebView = analyzeUrl.useWebView
+            webViewDelayTime = analyzeUrl.webViewDelayTime
+            charset = analyzeUrl.charset
+        }
+    }
 
     /// Execute the AnalyzeUrl request (or WebView fetch when required) and decode
     /// the response body honoring the rule's charset option.
     private static func fetchBody(
-        analyzeUrl: AnalyzeUrl,
+        _ analyzeUrl: PreparedRequest,
         headerJSON: String?
     ) async throws -> (body: String, finalURL: String) {
-        guard var request = analyzeUrl.toURLRequest(), let originalURL = request.url else {
+        guard var request = analyzeUrl.request, let originalURL = request.url else {
             throw ScraperError.invalidURL
         }
 

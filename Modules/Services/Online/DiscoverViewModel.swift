@@ -769,10 +769,6 @@ final class DiscoverViewModel: ObservableObject {
     /// evicted were the ones already on screen — scrolled back to, they showed the
     /// generated cover until refetched, behind the prefetch's own downloads.
     private func prefetchCovers(_ books: [OnlineBook], source: BookSource) {
-        let headers = BookCoverLoader.headers(
-            sourceBaseURL: source.bookSourceUrl,
-            sourceHeaders: source.parsedHeaders
-        )
         let urls = books
             .map { $0.coverUrl.trimmingCharacters(in: .whitespacesAndNewlines) }
             .filter { !$0.isEmpty && BookCoverLoader.cachedImage(for: $0) == nil }
@@ -781,6 +777,10 @@ final class DiscoverViewModel: ObservableObject {
             CoverDecodeService.shared.registerIfNeeded(coverUrl: url, source: source)
         }
         Task.detached(priority: .utility) {
+            let headers = BookCoverLoader.headers(
+                sourceBaseURL: source.bookSourceUrl,
+                sourceHeaders: await source.resolvedHeaders()
+            )
             // A section can carry dozens of covers; bound the fan-out so warming
             // one section doesn't burst that many simultaneous fetches + decodes
             // while the page is scrolling.

@@ -211,7 +211,9 @@ final class BookSourceFillProvider: MetadataFillProvider {
     /// `bs-<hash of the url>.jpg` in the filled covers' folder.
     static let liveSaveCover: SavingCover = { url, sourceID in
         let source = BookSourceStore.shared.source(id: sourceID)
-        let headers = BookCoverLoader.headers(sourceBaseURL: source?.bookSourceUrl, sourceHeaders: source?.parsedHeaders ?? [:])
+        let headers = BookCoverLoader.headers(
+            sourceBaseURL: source?.bookSourceUrl, sourceHeaders: await source?.resolvedHeaders() ?? [:]
+        )
         CoverDecodeService.shared.registerIfNeeded(coverUrl: url, source: source)
         // `loadImage` logs a request that failed or an image it could not read.
         guard let image = await BookCoverLoader.loadImage(urlString: url, headers: headers) else { return nil }

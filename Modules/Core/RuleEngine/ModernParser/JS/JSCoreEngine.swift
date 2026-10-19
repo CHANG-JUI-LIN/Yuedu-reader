@@ -183,6 +183,9 @@ class JSCoreEngine {
     private var resolvedHeaderLoginInfoRevision: UInt64?
     private let resolvedHeaderCacheLock = NSLock()
     private var isResolvingHeaders = false
+    /// Where every resolution is also published for readers off the source's host (cover
+    /// cells on the main thread read it through `BookSource.parsedHeaders`).
+    var headerSnapshot: SourceHeaderSnapshot?
 
     /// The source's `header` rule resolved to request headers (Legado
     /// `getHeaderMap()`): plain JSON, or a `@js:` / `<js>` rule evaluated here.
@@ -230,6 +233,7 @@ class JSCoreEngine {
             resolvedHeaderCache = headers
             resolvedHeaderLoginInfoRevision = currentRevision
             resolvedHeaderCacheLock.unlock()
+            headerSnapshot?.store(headers)
             return headers
         }
         guard Thread.isMainThread, DispatchQueue.getSpecific(key: jsQueueKey) == nil else {

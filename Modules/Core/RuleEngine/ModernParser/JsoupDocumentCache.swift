@@ -24,10 +24,11 @@ import SwiftSoup
 /// This was a global singleton whose lock covered the entry list but not the
 /// `Document` it handed out, on the reasoning that same-source parses are
 /// serialized by `BookSourceSession` and different sources use different page
-/// strings. Neither holds: `BookSourceSession.bridgeForAsyncOperations` hands out
-/// the bridge *without* the parse lock by design (so a JS-side
-/// `LegadoJsoupBridge.parse` on the JS queue races an extractor on a cooperative
-/// thread), and nothing prevents two flows from parsing byte-identical HTML. It
+/// strings. Neither holds: the session handed out the bridge *without* the parse
+/// lock by design, and even with every bridge call now on the source's host, a
+/// JS-side `LegadoJsoupBridge.parse` runs on the engine's JS queue, a different
+/// thread from an extractor on the host; and nothing prevents two flows from
+/// parsing byte-identical HTML. It
 /// produced shipped crashes: `EXC_BAD_ACCESS` in `Attributes.getIgnoreCaseSlice`,
 /// `Attributes.updateLowercasedKeysCache` and `Element.storeSelectorResult`, with
 /// a double `doDecrementSlow` above them — concurrent release of one object.

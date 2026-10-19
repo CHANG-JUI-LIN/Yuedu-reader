@@ -217,13 +217,12 @@ extension BookCoverImage {
     }
 
     /// The source's base URL and evaluated header rule. Waits for the library read, looks the
-    /// source up by id, and evaluates the rule on `SourceScriptThread` — the thread meant for
-    /// work that may block on a source's JavaScript.
+    /// source up by id, and resolves the rule on the source's host if it has not yet.
     static func resolveSource(_ id: UUID) async -> (baseURL: String, headers: [String: String])? {
         let store = BookSourceStore.shared
         await store.waitUntilLoaded()
         guard let source = store.source(id: id) else { return nil }
-        let headers = await SourceScriptThread.run { @Sendable in source.parsedHeaders }
+        let headers = await source.resolvedHeaders()
         return (source.bookSourceUrl, headers)
     }
 }

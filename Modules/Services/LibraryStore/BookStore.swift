@@ -1633,13 +1633,13 @@ class BookStore: @MainActor ObservableObject, BookProvider {
               book.coverImagePath == nil else { return }
 
         let source = sourceId.flatMap { id in BookSourceStore.shared.source(id: id) }
-        let headers = BookCoverLoader.headers(
-            sourceBaseURL: source?.bookSourceUrl,
-            sourceHeaders: source?.parsedHeaders ?? [:]
-        )
         CoverDecodeService.shared.registerIfNeeded(coverUrl: trimmed, source: source)
         let filename = "\(bookId.uuidString)_cover.jpg"
         Task { [weak self] in
+            let headers = BookCoverLoader.headers(
+                sourceBaseURL: source?.bookSourceUrl,
+                sourceHeaders: await source?.resolvedHeaders() ?? [:]
+            )
             guard let saved = await BookCoverLoader.downloadAndSave(
                 urlString: trimmed, headers: headers, filename: filename
             ) else { return }
@@ -1674,7 +1674,7 @@ class BookStore: @MainActor ObservableObject, BookProvider {
         let source = sourceId.flatMap { id in BookSourceStore.shared.source(id: id) }
         let headers = BookCoverLoader.headers(
             sourceBaseURL: source?.bookSourceUrl,
-            sourceHeaders: source?.parsedHeaders ?? [:]
+            sourceHeaders: await source?.resolvedHeaders() ?? [:]
         )
         CoverDecodeService.shared.registerIfNeeded(coverUrl: trimmed, source: source)
         guard let image = await BookCoverLoader.loadImage(urlString: trimmed, headers: headers) else {

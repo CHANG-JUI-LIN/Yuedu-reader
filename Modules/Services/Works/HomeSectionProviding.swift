@@ -13,8 +13,9 @@ enum SectionLoadPolicy: Hashable, Sendable {
     /// No request: bundled or on-device data.
     case local
     /// One request at a time per source. Book sources: their rules share one runtime, and
-    /// `BookSourceSession` does not serialize discover fetches
-    /// (`BookSourceFetcher+Discover.swift`, `bridgeForAsyncOperations`), so the home does.
+    /// `BookSourceSession` does not serialize discover fetches — they take no turn, only
+    /// their script halves run on the source's host (`BookSourceFetcher+Discover.swift`) —
+    /// so the home does.
     case serialPerSource
     case parallel
     /// As soon as the home is on screen, wherever the row sits on the page, in parallel:

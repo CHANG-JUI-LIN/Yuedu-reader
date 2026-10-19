@@ -53,11 +53,10 @@ extension BookSource {
         guard urlTemplate.contains("{{") || bodyTemplate?.contains("{{") == true else {
             return (urlTemplate, method, bodyTemplate.flatMap { $0.isEmpty ? nil : $0 })
         }
-        // Source JS runs on the source-script thread (a script there may block on the
-        // engine's queue), exactly like the runtime's own URL rendering (`prepareFetch`).
+        // Source JS runs on the source's host, exactly like the runtime's own URL rendering
+        // (`prepareFetch`).
         let source = self
-        let (url, body) = await SourceScriptThread.run {
-            let bridge = BookSourceSession.session(for: source).bridgeForAsyncOperations
+        let (url, body) = await BookSourceSession.session(for: source).host.run { bridge in
             // AnalyzeUrl's template bindings (`buildJsBindings`), so a template reads the
             // same names here as on the runtime path. `key` is the raw query, as in Legado.
             let bindings: [String: Any] = [
@@ -78,62 +77,48 @@ extension BookSource {
         return (url, method, body.flatMap { $0.isEmpty ? nil : $0 })
     }
 
-    /// Parse header string into Dictionary.
+    /// The header rule as a dictionary, for a caller that cannot wait (a SwiftUI body, a
+    /// cover cell). A request about to be sent uses `resolvedHeaders()` instead.
     ///
     /// Legado's `getHeaderMap()` also accepts a `@js:` / `<js>` rule that *builds*
     /// the map; returning `[:]` for those dropped the constant token 书山聚合
     /// requires on every endpoint, so its search/catalog answered
-    /// `{"error":"访问被拒绝"}`. JS rules are evaluated through the source's shared
-    /// session bridge and cached per source version (see `jsHeaderCache`).
+    /// `{"error":"访问被拒绝"}`. A JS rule is evaluated on the source's session host;
+    /// here it reads as what that last resolved — `[:]` until the first resolution, which
+    /// this starts (`BookSourceSession.headerSnapshotStartingResolution`).
     var parsedHeaders: [String: String] {
-        let trimmed = header.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else { return [:] }
-        if let data = trimmed.data(using: .utf8),
-           let dict = try? JSONSerialization.jsonObject(with: data) as? [String: String] {
-            return dict
+        switch headerRule {
+        case .none: return [:]
+        case .dictionary(let headers): return headers
+        case .script: return BookSourceSession.session(for: self).headerSnapshotStartingResolution()
         }
-        guard JSCoreEngine.headerJSScript(trimmed) != nil else { return [:] }
-        return Self.evaluatedJSHeaders(for: self)
     }
 
-    /// Resolved `@js:` header maps keyed by source URL + `lastUpdateTime`, so an
-    /// edited/re-imported source re-evaluates while normal use pays the JS cost once.
-    ///
-    /// The engine caches this too; the second layer exists because `parsedHeaders`
-    /// is read from SwiftUI bodies (cover cells) on the main thread, and reaching
-    /// the engine means a `sync` onto its serial JS queue — which may be mid-parse.
-    /// Only the first read per source version pays that, and never while a script on
-    /// that queue waits for the reader (`JSCoreEngine.currentSourceHeaders`).
-    private nonisolated(unsafe) static var jsHeaderCache: [String: [String: String]] = [:]
-    private static let jsHeaderCacheLock = NSLock()
-
-    private static func evaluatedJSHeaders(for source: BookSource) -> [String: String] {
-        let key = "\(source.bookSourceUrl)#\(source.lastUpdateTime)"
-        jsHeaderCacheLock.lock()
-        let cached = jsHeaderCache[key]
-        jsHeaderCacheLock.unlock()
-        if let cached { return cached }
-
-        // One bridge per source (BookSourceSession) — never build a throwaway
-        // JSContext here, and don't take the session's parse lock: the header
-        // script only needs the engine's own serial queue.
-        let bridge = BookSourceSession.session(for: source).bridgeForAsyncOperations
-        // nil: the engine's queue is held by a script waiting for the reader, and this read
-        // is on the main thread. Use what the engine last resolved, uncached, so the next
-        // read after the page closes gets the current rule result.
-        guard let headers = bridge.currentSourceHeaders() else {
-            return bridge.lastResolvedSourceHeaders()
+    /// The header rule as a dictionary for a request about to be sent: a `@js:` rule that
+    /// has not resolved yet resolves now, on the source's host, instead of the request going
+    /// out without it.
+    func resolvedHeaders() async -> [String: String] {
+        switch headerRule {
+        case .none: return [:]
+        case .dictionary(let headers): return headers
+        case .script: return await BookSourceSession.session(for: self).resolvedHeaders()
         }
+    }
 
-        jsHeaderCacheLock.lock()
-        if jsHeaderCache.count >= 32 { jsHeaderCache.removeAll(keepingCapacity: true) }
-        jsHeaderCache[key] = headers
-        jsHeaderCacheLock.unlock()
-        AppLogger.parse("⟐ header.js resolved", context: [
-            "source": source.bookSourceName,
-            "keys": headers.keys.sorted().joined(separator: ",")
-        ])
-        return headers
+    private enum HeaderRule {
+        case none
+        case dictionary([String: String])
+        case script
+    }
+
+    private var headerRule: HeaderRule {
+        let trimmed = header.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return .none }
+        if let data = trimmed.data(using: .utf8),
+           let dict = try? JSONSerialization.jsonObject(with: data) as? [String: String] {
+            return .dictionary(dict)
+        }
+        return JSCoreEngine.headerJSScript(trimmed) != nil ? .script : .none
     }
 
     /// Process remaining `{{...}}` JavaScript template expressions in URLs.

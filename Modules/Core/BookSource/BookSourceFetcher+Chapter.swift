@@ -102,7 +102,7 @@ extension BookSourceFetcher {
             .isEmpty
         let requiresWebViewTransport = source.needsWebView || hasWebJs
         let useWebView = requiresWebViewTransport || urlWantsWebView
-        let mergedHeaders = source.parsedHeaders.merging(requestSpec.headers) { _, new in new }
+        let mergedHeaders = await source.resolvedHeaders().merging(requestSpec.headers) { _, new in new }
         let effectiveReferer = requestSpec.referer ?? chapterReferer ?? source.bookSourceUrl
         let shouldAttemptHTTPFirst = false
 

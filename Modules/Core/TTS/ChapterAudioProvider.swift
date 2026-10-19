@@ -76,7 +76,7 @@ final class OnlineChapterAudioProvider: ChapterAudioProvider {
             )
         }
 
-        let mergedHeaders = sourceHeaders(for: book)
+        let mergedHeaders = await sourceHeaders(for: book)
             .merging(request.allHTTPHeaderFields ?? [:]) { _, requestValue in requestValue }
 
         return ChapterAudio(
@@ -92,13 +92,13 @@ final class OnlineChapterAudioProvider: ChapterAudioProvider {
         store.clearCachedChapter(bookId: book.id, chapterIndex: chapterIndex)
     }
 
-    private func sourceHeaders(for book: ReadingBook) -> [String: String] {
+    private func sourceHeaders(for book: ReadingBook) async -> [String: String] {
         let source = book.bookSourceId.flatMap { id in
             BookSourceStore.shared.source(id: id)
         }
         return BookCoverLoader.headers(
             sourceBaseURL: source?.bookSourceUrl,
-            sourceHeaders: source?.parsedHeaders ?? [:]
+            sourceHeaders: await source?.resolvedHeaders() ?? [:]
         )
     }
 }

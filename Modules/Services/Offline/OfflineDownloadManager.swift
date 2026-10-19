@@ -807,15 +807,13 @@ actor OfflineDownloadManager: OfflineDownloadManaging {
     /// The header map every image of `book` is fetched with — the source's own, exactly as the
     /// cover loader and the reader build it.
     private func sourceImageHeaders(for book: ReadingBook) async -> [String: String] {
-        await MainActor.run { () -> [String: String] in
-            let source = book.bookSourceId.flatMap { id in
-                BookSourceStore.shared.source(id: id)
-            }
-            return BookCoverLoader.headers(
-                sourceBaseURL: source?.bookSourceUrl,
-                sourceHeaders: source?.parsedHeaders ?? [:]
-            )
+        let source = await MainActor.run {
+            book.bookSourceId.flatMap { id in BookSourceStore.shared.source(id: id) }
         }
+        return BookCoverLoader.headers(
+            sourceBaseURL: source?.bookSourceUrl,
+            sourceHeaders: await source?.resolvedHeaders() ?? [:]
+        )
     }
 
     private func textImageRequest(

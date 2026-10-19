@@ -1,4 +1,5 @@
 import Foundation
+import os
 import Testing
 @testable import yuedu_app
 
@@ -18,10 +19,12 @@ struct StageLoginCheckTests {
                 result;
             }
             """)
-        var refetched: URL?
-        BookSourceSession.session(for: source).bridgeForAsyncOperations.sourceScriptNetworkHandler = { request in
-            refetched = request.url
-            return .bodyOnly(request: request, body: "<p>results</p>")
+        let refetched = OSAllocatedUnfairLock<URL?>(initialState: nil)
+        await BookSourceSession.session(for: source).host.run { bridge in
+            bridge.sourceScriptNetworkHandler = { request in
+                refetched.withLock { $0 = request.url }
+                return .bodyOnly(request: request, body: "<p>results</p>")
+            }
         }
         let url = try #require(URL(string: source.bookSourceUrl + "/search?q=1"))
 
@@ -30,7 +33,7 @@ struct StageLoginCheckTests {
             baseURL: source.bookSourceUrl, source: source)
 
         #expect(html == "<p>results</p>")
-        #expect(refetched?.path == "/verified")
+        #expect(refetched.withLock { $0 }?.path == "/verified")
     }
 
     @Test("a 403 the check leaves alone is still the stage's HTTP error")
@@ -55,10 +58,12 @@ struct StageLoginCheckTests {
         let source = makeSource(loginCheckJs: """
             if (result.code() != 200) { java.connect('https://unexpected.example/'); } else { result; }
             """)
-        var refetched = false
-        BookSourceSession.session(for: source).bridgeForAsyncOperations.sourceScriptNetworkHandler = { request in
-            refetched = true
-            return .bodyOnly(request: request, body: "unexpected")
+        let refetched = OSAllocatedUnfairLock(initialState: false)
+        await BookSourceSession.session(for: source).host.run { bridge in
+            bridge.sourceScriptNetworkHandler = { request in
+                refetched.withLock { $0 = true }
+                return .bodyOnly(request: request, body: "unexpected")
+            }
         }
         let url = try #require(URL(string: source.bookSourceUrl + "/chapter/1"))
 
@@ -67,7 +72,7 @@ struct StageLoginCheckTests {
             baseURL: source.bookSourceUrl, source: source)
 
         #expect(html == "<p>chapter</p>")
-        #expect(!refetched)
+        #expect(!refetched.withLock { $0 })
     }
 
     @Test("without loginCheckJs a 403 is an HTTP error, as before")

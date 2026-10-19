@@ -193,7 +193,7 @@ extension BookSourceFetcher {
         guard let url = safeURL(string: resolvedUrlStr) else {
             throw FetchError.invalidURL(resolvedUrlStr)
         }
-        let headers = source.parsedHeaders
+        let headers = await source.resolvedHeaders()
 
         let html: String
         do {

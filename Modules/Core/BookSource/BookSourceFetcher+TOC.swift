@@ -156,14 +156,15 @@ extension BookSourceFetcher {
         var usedWebView = false
         let baseForReferer = effectiveTOCURL
         let tocNetworkStart = ProcessInfo.processInfo.systemUptime
+        let headers = await source.resolvedHeaders()
         if source.needsWebView {
-            let rendered = try await Self.fetchViaWebView(url: url, headers: source.parsedHeaders)
+            let rendered = try await Self.fetchViaWebView(url: url, headers: headers)
             html = await pipeline.applyLoginCheck(renderedHTML: rendered, url: url, source: source)
             usedWebView = true
         } else {
             html = try await fetchStageHTML(
                 url: url, method: "GET", body: nil,
-                headers: source.parsedHeaders,
+                headers: headers,
                 baseURL: baseForReferer.isEmpty ? source.cleanedBookSourceURL : baseForReferer,
                 source: source)
         }
@@ -230,11 +231,11 @@ extension BookSourceFetcher {
             let nextHTML: String
             if source.needsWebView {
                 nextHTML = try await Self.fetchViaWebView(
-                    url: nextPageURL, headers: source.parsedHeaders)
+                    url: nextPageURL, headers: headers)
             } else {
                 nextHTML = try await fetchHTML(
                     url: nextPageURL, method: "GET", body: nil,
-                    headers: source.parsedHeaders, baseURL: nextBase,
+                    headers: headers, baseURL: nextBase,
                     source: source)
             }
             // One session-serialized call parses chapters AND the next-page URL

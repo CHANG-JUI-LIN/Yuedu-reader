@@ -57,9 +57,8 @@ actor LegadoReviewActionRunner {
         guard target.requiresSourceJS else { return target }
         guard target.sourceURL == source.bookSourceUrl else { throw ResolveError.sourceUnavailable }
         let js = target.sourceJS
-        let captured = await SourceScriptThread.run { () -> BrowserRequestSink.Value? in
-            let session = BookSourceSession.session(for: source)
-            let bridge = session.bridgeForAsyncOperations
+        let captured = await BookSourceSession.session(for: source).host.run {
+            bridge -> BrowserRequestSink.Value? in
             let sink = BrowserRequestSink()
             let previous = bridge.browserPresentHandler
             let previousPage = bridge.browserPagePresentHandler
@@ -137,8 +136,7 @@ actor LegadoReviewActionRunner {
         ) else {
             throw ResolveError.sourceUnavailable
         }
-        let bridge = BookSourceSession.session(for: source).bridgeForAsyncOperations
-        return await SourceScriptThread.run {
+        return await BookSourceSession.session(for: source).host.run { bridge in
             if let actionContext {
                 return bridge.evaluateSourceAction(actionContext.replacingScript(script)) ?? ""
             }
@@ -361,8 +359,8 @@ extension LegadoReviewActionRunner {
                 isVip: false
             )
         )
-        return await SourceScriptThread.run { @Sendable () -> (outcome: BookIntroActionOutcome, value: String?) in
-            let bridge = BookSourceSession.session(for: source).bridgeForAsyncOperations
+        return await BookSourceSession.session(for: source).host.run {
+            bridge -> (outcome: BookIntroActionOutcome, value: String?) in
             let sink = IntroActionSink()
             let previousBrowser = bridge.browserPresentHandler
             let previousPage = bridge.browserPagePresentHandler

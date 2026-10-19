@@ -92,7 +92,7 @@ struct DiscoverQuickActionOutcome {
 }
 
 enum DiscoverQuickActionRunner {
-    /// Runs an explore control's script on the source's script thread, as legado-E's
+    /// Runs an explore control's script on the source's host, as legado-E's
     /// `evalButtonClick` does: the context's `java`, `source`, `cache` and `infoMap`,
     /// toasts shown, `java.startBrowser` opening the browser, `java.refreshExplore()`
     /// reported back.
@@ -102,8 +102,8 @@ enum DiscoverQuickActionRunner {
         source: BookSource,
         presentToast: @escaping @MainActor @Sendable (String) -> Void
     ) async -> DiscoverQuickActionOutcome {
-        let outcome = await SourceScriptThread.run { () -> DiscoverQuickActionOutcome in
-            let bridge = BookSourceSession.session(for: source).bridgeForAsyncOperations
+        let outcome = await BookSourceSession.session(for: source).host.run {
+            bridge -> DiscoverQuickActionOutcome in
             let sink = RefreshSink()
             let previousBrowser = bridge.browserPresentHandler
             let previousToast = bridge.toastHandler
@@ -137,8 +137,7 @@ enum DiscoverQuickActionRunner {
     /// Evaluates a `viewName` script for a control's display name. Legado shows `null`
     /// for an empty result and `err` for a script that throws; so does this.
     static func displayName(_ script: String, source: BookSource) async -> String {
-        await SourceScriptThread.run { () -> String in
-            let bridge = BookSourceSession.session(for: source).bridgeForAsyncOperations
+        await BookSourceSession.session(for: source).host.run { bridge -> String in
             let value = bridge.evaluateExploreKindScript(script)
             if let error = bridge.lastSourceScriptError {
                 AppLogger.parse("⟐ exploreViewName failed", context: [
@@ -153,16 +152,13 @@ enum DiscoverQuickActionRunner {
 
     /// The source's explore `infoMap` as its scripts hold it now.
     static func infoMapValues(source: BookSource) async -> [String: String] {
-        await SourceScriptThread.run {
-            BookSourceSession.session(for: source).bridgeForAsyncOperations.exploreInfoMapValues()
-        }
+        await BookSourceSession.session(for: source).host.run { $0.exploreInfoMapValues() }
     }
 
     /// Stores one `infoMap` entry, as an input or a toggle does.
     static func setInfoMapValue(_ value: String, forKey key: String, source: BookSource) async {
-        await SourceScriptThread.run {
-            BookSourceSession.session(for: source).bridgeForAsyncOperations
-                .setExploreInfoMapValue(value, forKey: key)
+        await BookSourceSession.session(for: source).host.run {
+            $0.setExploreInfoMapValue(value, forKey: key)
         }
     }
 }

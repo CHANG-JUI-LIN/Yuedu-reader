@@ -509,14 +509,16 @@ extension ReaderView {
         let source = book.bookSourceId.flatMap { id in
             BookSourceStore.shared.source(id: id)
         }
-        // Resolving the source's headers can run its JS (`@js:` header rules).
+        // Resolving the source's headers can run its JS (`@js:` header rules), on its host.
+        let chapterURL = chapter.url
         Task {
-            let urlRequest = await SourceScriptThread.run { @Sendable in
-                source.flatMap {
-                    BookSourceSession.session(for: $0).bridgeForAsyncOperations
-                        .sourceBrowserRequest(urlString: chapter.url)
-                } ?? URL(string: chapter.url).map { URLRequest(url: $0) }
+            var urlRequest: URLRequest?
+            if let source {
+                urlRequest = await BookSourceSession.session(for: source).host.run {
+                    $0.sourceBrowserRequest(urlString: chapterURL)
+                }
             }
+            urlRequest = urlRequest ?? URL(string: chapterURL).map { URLRequest(url: $0) }
             let request = SourceBrowserRequest(
                 url: chapter.url, title: chapter.title, urlRequest: urlRequest, awaitsResult: false)
             SourceBrowserPresenter.present(request) { _ in }

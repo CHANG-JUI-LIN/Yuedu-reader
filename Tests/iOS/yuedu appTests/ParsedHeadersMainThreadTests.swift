@@ -1,4 +1,5 @@
 import Foundation
+import os
 import Testing
 @testable import yuedu_app
 
@@ -56,8 +57,84 @@ struct ParsedHeadersMainThreadTests {
         pages.releaseAll()
         #expect(try await stage.value == "<p>page</p>")
         // Once the page is gone the rule resolves against the new login state as before.
-        #expect(BookSourceSession.session(for: source).bridgeForAsyncOperations.resolvedSourceHeaders() == ["X-Source-Token": "abc"])
+        let resolved = await BookSourceSession.session(for: source).host.run { $0.resolvedSourceHeaders() }
+        #expect(resolved == ["X-Source-Token": "abc"])
     }
+}
+
+/// A `@js:` header rule nothing has resolved yet. A read that cannot wait gets `[:]` and
+/// starts the resolution; a request about to be sent waits for it, so the first request a
+/// source sends already carries the rule's headers (书山聚合's token answered
+/// `{"error":"访问被拒绝"}` when it was missing).
+@Suite("Header rules before their first resolution", .serialized)
+struct ColdHeaderRuleTests {
+    static func source() -> BookSource {
+        var source = BookSource(
+            bookSourceUrl: "https://cold-\(UUID().uuidString.prefix(8).lowercased()).example",
+            bookSourceName: "cold header source"
+        )
+        source.header = "@js:JSON.stringify({'X-Source-Token': 'abc'})"
+        source.ruleBookInfo.name = "h1@text"
+        return source
+    }
+
+    @Test("the first request a source sends carries its JS header rule")
+    func firstRequestCarriesResolvedHeaders() async throws {
+        let source = Self.source()
+        HeaderRecordingProtocol.reset()
+        let fetcher = BookSourceFetcher(webFetcher: WebFetcher(session: HeaderRecordingProtocol.session()))
+
+        let book = try await fetcher.fetchBookInfoPackage(
+            url: source.bookSourceUrl + "/book/1", source: source, writesCache: false
+        ).onlineBook
+
+        #expect(book.name == "Cold")
+        #expect(HeaderRecordingProtocol.tokens == ["abc"])
+    }
+
+    @MainActor
+    @Test("a read that cannot wait starts the resolution and sees it once done")
+    func snapshotReadStartsResolution() async throws {
+        let source = Self.source()
+        #expect(source.parsedHeaders == [:], "nothing has resolved the rule yet")
+        // Nothing else resolves it: the read above must have started the resolution.
+        let deadline = Date().addingTimeInterval(5)
+        while source.parsedHeaders.isEmpty {
+            try #require(Date() < deadline, "the read never started a resolution")
+            try await Task.sleep(for: .milliseconds(5))
+        }
+        #expect(source.parsedHeaders == ["X-Source-Token": "abc"])
+    }
+}
+
+private final class HeaderRecordingProtocol: URLProtocol {
+    private static let recorded = OSAllocatedUnfairLock<[String?]>(initialState: [])
+
+    static var tokens: [String?] { recorded.withLock { $0 } }
+    static func reset() { recorded.withLock { $0 = [] } }
+
+    static func session() -> URLSession {
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [HeaderRecordingProtocol.self]
+        return URLSession(configuration: configuration)
+    }
+
+    override class func canInit(with request: URLRequest) -> Bool { true }
+    override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
+
+    override func startLoading() {
+        let token = request.value(forHTTPHeaderField: "X-Source-Token")
+        Self.recorded.withLock { $0.append(token) }
+        let response = HTTPURLResponse(
+            url: request.url!, statusCode: 200, httpVersion: nil,
+            headerFields: ["Content-Type": "text/html; charset=utf-8"]
+        )!
+        client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
+        client?.urlProtocol(self, didLoad: Data("<h1>Cold</h1>".utf8))
+        client?.urlProtocolDidFinishLoading(self)
+    }
+
+    override func stopLoading() {}
 }
 
 private final class ParkedPages: @unchecked Sendable {

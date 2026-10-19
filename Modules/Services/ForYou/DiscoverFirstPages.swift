@@ -87,7 +87,7 @@ final class DiscoverFirstPages {
             if primes { await primeCookies(source) }
             guard let item = category.cardItem else { return [] }
             let section = DiscoverShowcaseSection(item: item, coverBaseURL: source.bookSourceUrl,
-                                                  coverHeaders: source.parsedHeaders)
+                                                  coverHeaders: await source.resolvedHeaders())
             let books = try await pageLoader.books(page: 1, of: section, in: source, after: []).map(\.book)
             await store.write(ForYouCandidates(sourceURL: key.sourceURL, categoryURL: key.categoryURL,
                                                fetchedAt: now(), books: books))

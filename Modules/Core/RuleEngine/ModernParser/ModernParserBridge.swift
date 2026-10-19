@@ -69,6 +69,7 @@ class ModernParserBridge {
         let t0 = ProcessInfo.processInfo.systemUptime
         let engine = JSCoreEngine()
         _jsEngine = engine
+        engine.headerSnapshot = headerSnapshot
         wireJSEngine(engine)
         SourcePerfTrace.record(
             "js.runtimeCreate", sourceRuleData.source.bookSourceName, since: t0
@@ -83,6 +84,8 @@ class ModernParserBridge {
     /// carries its URLProtocol, because only `URLSession.shared` consults
     /// `URLProtocol.registerClass`.
     private let requestSession: URLSession
+    /// The session's published header resolutions (`BookSourceSession.headerSnapshot`).
+    private let headerSnapshot: SourceHeaderSnapshot?
     let sourceRuleData: BookSourceRuleData
     private var runtimeBookScope: RuleData?
     private var runtimeChapterScope: RuleData?
@@ -94,11 +97,16 @@ class ModernParserBridge {
 
     // MARK: - Init
 
-    init(source: BookSource, requestSession: URLSession = LegadoJSBridge.requestSession) {
+    init(
+        source: BookSource,
+        requestSession: URLSession = LegadoJSBridge.requestSession,
+        headerSnapshot: SourceHeaderSnapshot? = nil
+    ) {
         self.sourceRuleData = BookSourceRuleData(source: source)
         self.loginManager = LoginManager.shared
         self.runtimeStateStore = BookSourceRuntimeStateStore.shared
         self.requestSession = requestSession
+        self.headerSnapshot = headerSnapshot
         // No JSContext here on purpose — see `jsEngine`.
     }
 
@@ -183,17 +191,6 @@ class ModernParserBridge {
     /// 书山聚合 put a required constant API token in a JS header rule.
     func resolvedSourceHeaders() -> [String: String] {
         jsEngine.resolvedSourceHeaders()
-    }
-
-    /// `resolvedSourceHeaders`, or nil while a main-thread caller would have to wait on a
-    /// script parked for the reader — see `JSCoreEngine.currentSourceHeaders`.
-    func currentSourceHeaders() -> [String: String]? {
-        jsEngine.currentSourceHeaders()
-    }
-
-    /// The headers the engine last resolved, without touching its queue.
-    func lastResolvedSourceHeaders() -> [String: String] {
-        jsEngine.lastResolvedSourceHeaders()
     }
 
     /// Resolve authentication after the source's click action has finished, using

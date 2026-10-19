@@ -11,11 +11,9 @@ import Foundation
 /// app. The threads here are GCD's, which adds threads when its own are blocked — what
 /// Legado's IO dispatcher gives its source scripts.
 ///
-/// Every synchronous call into source JS from async code goes through `run` — rules, the
-/// fetch-time URL and response scripts, `loginCheckJs`, login menus, 段評 actions, image
-/// decoding, RSS rules and TTS scripts. The one exception is a `@js:` header rule, which
-/// `BookSource.parsedHeaders` evaluates synchronously once per source revision and caches:
-/// none of the 115 such rules in 4,765 real sources reaches a user wait.
+/// A book source's own scripts no longer come here: they run on its `SourceScriptHost`, a GCD
+/// serial queue for the same reason. What still does is source JS outside a session — login
+/// menus, TTS scripts, an RSS category rule, the aggregate search pool's bridges.
 enum SourceScriptThread {
     private static let queue = DispatchQueue(
         label: "com.yuedu.sourceScriptCallers",
@@ -23,7 +21,7 @@ enum SourceScriptThread {
         attributes: .concurrent
     )
 
-    static func run<T>(_ body: @escaping () throws -> T) async throws -> T {
+    static func run<T>(_ body: @escaping @Sendable () throws -> T) async throws -> T {
         let qos = dispatchQoS(for: Task.currentPriority)
         return try await withCheckedThrowingContinuation { continuation in
             queue.async(qos: qos, flags: .enforceQoS) {
@@ -36,7 +34,7 @@ enum SourceScriptThread {
         }
     }
 
-    static func run<T>(_ body: @escaping () -> T) async -> T {
+    static func run<T>(_ body: @escaping @Sendable () -> T) async -> T {
         let qos = dispatchQoS(for: Task.currentPriority)
         return await withCheckedContinuation { continuation in
             queue.async(qos: qos, flags: .enforceQoS) {

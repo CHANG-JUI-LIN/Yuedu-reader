@@ -76,13 +76,14 @@ extension BookSourceFetcher {
         guard let bookURL = safeURL(string: url) else { throw FetchError.invalidURL(url) }
         let networkStart = ProcessInfo.processInfo.systemUptime
         let html: String
+        let headers = await source.resolvedHeaders()
         if source.needsWebView {
-            let rendered = try await Self.fetchViaWebView(url: bookURL, headers: source.parsedHeaders)
+            let rendered = try await Self.fetchViaWebView(url: bookURL, headers: headers)
             html = await pipeline.applyLoginCheck(renderedHTML: rendered, url: bookURL, source: source)
         } else {
             html = try await fetchStageHTML(
                 url: bookURL, method: "GET", body: nil,
-                headers: source.parsedHeaders, baseURL: source.cleanedBookSourceURL,
+                headers: headers, baseURL: source.cleanedBookSourceURL,
                 source: source)
         }
         SourcePerfTrace.record("detail.network", source.bookSourceName, since: networkStart)
