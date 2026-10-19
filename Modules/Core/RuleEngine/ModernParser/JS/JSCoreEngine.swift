@@ -199,9 +199,12 @@ class JSCoreEngine {
     /// main thread waiting on a script parked for the reader (see
     /// `resolveFromMainThread`). Callers that cache what they get must not cache a nil.
     func currentSourceHeaders() -> [String: String]? {
-        // `java.ajaxAll` waits on worker requests while occupying the JS queue.
-        // Those workers still need the already-resolved headers; hopping back to
-        // the occupied queue here deadlocks the batch until its timeout.
+        // `java.ajaxAll` waits on worker requests while occupying the JS queue, and a
+        // worker that reaches here (the AnalyzeUrl handler reads the headers) must be
+        // answered from the cache: hopping onto that queue deadlocks the batch until its
+        // timeout. So `ajaxAll` resolves the headers before it fans out, and `work`
+        // caches every result it resolves — `[:]` for a source with no header rule, or
+        // no source — except the `[:]` a header rule's own request gets on re-entry.
         let loginInfoRevision = currentLoginInfoRevision()
         resolvedHeaderCacheLock.lock()
         let cached = resolvedHeaderCache
@@ -216,10 +219,13 @@ class JSCoreEngine {
             let cachedRevision = resolvedHeaderLoginInfoRevision
             resolvedHeaderCacheLock.unlock()
             if let cached, cachedRevision == currentRevision { return cached }
-            guard !isResolvingHeaders, let header = bookSource?.header else { return [:] }
-            isResolvingHeaders = true
-            let headers = parseHeaders(header)
-            isResolvingHeaders = false
+            guard !isResolvingHeaders else { return [:] }
+            var headers: [String: String] = [:]
+            if let header = bookSource?.header {
+                isResolvingHeaders = true
+                headers = parseHeaders(header)
+                isResolvingHeaders = false
+            }
             resolvedHeaderCacheLock.lock()
             resolvedHeaderCache = headers
             resolvedHeaderLoginInfoRevision = currentRevision

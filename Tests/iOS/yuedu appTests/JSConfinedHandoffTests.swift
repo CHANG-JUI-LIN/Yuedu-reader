@@ -13,9 +13,8 @@ struct JSConfinedHandoffTests {
         var source = BookSource(bookSourceUrl: "ajaxall-handoff-\(UUID().uuidString)", bookSourceName: "ajaxAll")
         source.header = #"{"X-Batch":"handoff"}"#
         engine.bookSource = source
-        // Resolved (and cached) before the batch, as a source's first request does. An unresolved
-        // header rule makes every worker wait on the JS queue the batch occupies — a separate,
-        // pre-existing issue (REPORT-6e1, "Found").
+        // Resolved (and cached) before the batch, as a source's first request does. A rule nothing
+        // has resolved yet is covered by `AjaxAllSourceHeadersTests`.
         #expect(engine.resolvedSourceHeaders()["X-Batch"] == "handoff")
         // Called from ajaxAll's workers, several at once: derive the answer from the request only.
         engine.networkHandler = { request in

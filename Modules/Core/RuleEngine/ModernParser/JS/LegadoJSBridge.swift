@@ -651,6 +651,9 @@ struct LegadoHTTPResult {
         // stragglers keep running while this thread goes back to the script. Unlike every other
         // `JSConfined` hop, up to 16 workers call these handlers at once — as they always have
         // (each used to call `self.performRequestResult`); the handlers must stay thread-safe.
+        // Nothing a worker does may need the JS queue, which this thread holds until the batch
+        // ends: the source headers are resolved here, once, and that also fills the engine's
+        // header cache for the AnalyzeUrl handler, which reads the headers from the worker.
         let context = JSConfined(requestContext)
         for (index, urlStr) in urlArray.enumerated() {
             throttle.wait() // block until a concurrency slot is free
@@ -2214,23 +2217,24 @@ struct LegadoHTTPResult {
         performRequestResult(urlStr).body
     }
 
-    /// What one `java.*` request reads from the bridge. The handlers and the header provider are
-    /// the ones the bridge was configured with; `ajaxAll` captures this so its workers never
-    /// touch the bridge itself.
+    /// What one `java.*` request reads from the bridge. The handlers are the ones the bridge was
+    /// configured with; `ajaxAll` captures this so its workers never touch the bridge itself.
     private struct RequestContext {
         let analyzeUrlHandler: ((String) -> String?)?
         let networkHandler: ((URLRequest) -> LegadoHTTPResult?)?
-        let sourceHeadersProvider: (() -> [String: String])?
+        /// Resolved when the context is built, on the JS thread. Resolving them can evaluate the
+        /// header rule on the engine's JS queue, which `ajaxAll` occupies while its workers run.
+        let sourceHeaders: [String: String]
         let timeoutSeconds: TimeInterval
-
-        var sourceHeaders: [String: String] { sourceHeadersProvider?() ?? [:] }
     }
 
+    /// Built on the JS thread only: every `java.*` request runs there, and `ajaxAll` builds it
+    /// before it fans out.
     private var requestContext: RequestContext {
         RequestContext(
             analyzeUrlHandler: analyzeUrlHandler,
             networkHandler: networkHandler,
-            sourceHeadersProvider: sourceHeadersProvider,
+            sourceHeaders: sourceHeaders,
             timeoutSeconds: requestTimeoutSeconds
         )
     }
