@@ -1725,6 +1725,7 @@ struct CoreTextPageEngineView: UIViewControllerRepresentable {
             // So swap Before↔After for RTL books so the swipe direction matches the reading direction.
             let neighbour = isRTL ? pageForward(from: viewController) : pageBackward(from: viewController)
             pageTurnTrace.endNeighbour(neighbourTrace, neighbour)
+            if neighbour == nil { recordCurlBoundary(asked: "before", from: viewController, on: pvc) }
             return neighbour
         }
 
@@ -1735,7 +1736,45 @@ struct CoreTextPageEngineView: UIViewControllerRepresentable {
             let neighbourTrace = pageTurnTrace.beginNeighbour("after")
             let neighbour = isRTL ? pageBackward(from: viewController) : pageForward(from: viewController)
             pageTurnTrace.endNeighbour(neighbourTrace, neighbour)
+            if neighbour == nil { recordCurlBoundary(asked: "after", from: viewController, on: pvc) }
             return neighbour
+        }
+
+        /// Crashlytics c5efe011 / 658b2c27, "The number of view controllers provided (0) doesn't
+        /// match the number required (2)". UIKit (26.6 through 27.2) checks the curl pair's count
+        /// when its pan asks to begin, then re-derives the direction in the pan's `.began` action
+        /// — velocity first, translation otherwise — and hands this data source's answer to the
+        /// transition without checking it again. A nil at that moment is the crash. It has not
+        /// been reproduced, so every curl nil leaves a breadcrumb saying which boundary it was
+        /// (a real book end, or one the index walk below invented while chapters paginate) and
+        /// what the pan was doing; the next report then names its own cause.
+        private func recordCurlBoundary(
+            asked: String,
+            from viewController: UIViewController,
+            on pvc: UIPageViewController
+        ) {
+            guard usesCurlBackPages else { return }
+            let kind: String
+            let page: Int?
+            if let back = viewController as? PageBackViewController {
+                kind = "back"
+                page = back.logicalPageIndex
+            } else {
+                kind = isPlaceholderDisplay(viewController) ? "placeholder" : "front"
+                page = (viewController as? any PageIndexProviding)?.globalPageIndex
+            }
+            let pan = pvc.gestureRecognizers.lazy.compactMap { $0 as? UIPanGestureRecognizer }.first
+            let panDetail = pan.map { pan in
+                let translation = pan.translation(in: pan.view)
+                let velocity = pan.velocity(in: pan.view)
+                return "\(pan.state.rawValue) tx=\(Int(translation.x)) ty=\(Int(translation.y))"
+                    + " vx=\(Int(velocity.x)) vy=\(Int(velocity.y))"
+            } ?? "none"
+            CrashContext.breadcrumb(
+                "curl no page: asked=\(asked) \(kind) page=\(page.map(String.init) ?? "nil")"
+                + " total=\(currentEngine.totalPages) stackWrite=\(stackWriteTotalPages)"
+                + " rtl=\(isRTL ? 1 : 0) pan=\(panDetail)"
+            )
         }
 
         private func pageBackward(from viewController: UIViewController) -> UIViewController? {
