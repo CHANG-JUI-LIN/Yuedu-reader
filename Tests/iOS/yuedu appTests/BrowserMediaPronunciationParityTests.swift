@@ -214,8 +214,8 @@ struct BrowserMediaPronunciationParityTests {
 
 private final class CapturingRubySpeechProvider: TTSAudioProvider {
     let displayName = "Ruby test"
-    private let record: (String) -> Void
-    init(record: @escaping (String) -> Void) { self.record = record }
+    private let record: @Sendable (String) -> Void
+    init(record: @escaping @Sendable (String) -> Void) { self.record = record }
     func audioData(for text: String, title: String, rate: Float) async throws -> Data {
         record(text)
         throw CancellationError()

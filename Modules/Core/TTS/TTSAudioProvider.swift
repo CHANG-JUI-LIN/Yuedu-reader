@@ -287,7 +287,9 @@ enum TTSAudioPayload {
 
 }
 
-protocol TTSAudioProvider: AnyObject {
+/// `Sendable`: the engine keeps one provider on the main actor and its downloads call it
+/// concurrently, several segments at a time. Providers hold only immutable configuration.
+protocol TTSAudioProvider: AnyObject, Sendable {
     var displayName: String { get }
     func audioData(for text: String, title: String, rate: Float) async throws -> Data
 }

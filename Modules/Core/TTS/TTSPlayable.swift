@@ -74,6 +74,11 @@ enum TTSPlaybackError: LocalizedError {
 /// Unified interface for TTS engines.
 /// TTSCoordinator communicates with the underlying engine through this protocol
 /// without knowledge of the concrete implementation.
+///
+/// Main-actor isolated, like its one caller: the coordinator drives every entry from main, and
+/// each engine brings its own background callbacks (downloads, the chunk player, the speech
+/// synthesizer's delegate) to main before touching playback state.
+@MainActor
 protocol TTSPlayable: AnyObject {
     var isPlaying: Bool { get }
     /// After finishing the current segment, call this closure to get the next text.

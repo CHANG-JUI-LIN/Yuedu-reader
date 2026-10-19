@@ -1,6 +1,8 @@
 import AVFoundation
 import Foundation
 
+/// Called on main: the player hops there before validating the finished schedule.
+@MainActor
 protocol TTSChunkAudioPlayerDelegate: AnyObject {
     func chunkAudioPlayerDidFinishPlaying(_ player: TTSChunkAudioPlayer, successfully flag: Bool)
 }

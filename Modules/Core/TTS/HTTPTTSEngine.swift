@@ -6,12 +6,13 @@ import UIKit
 // MARK: - HTTP TTS Engine (chunked download + preload + rate-shifted chunk playback)
 
 /// URL template supports placeholders: {{text}}, {{title}}, {{speakSpeed}}
-final class HTTPTTSEngine: NSObject, TTSPlayable, @unchecked Sendable {
+@MainActor
+final class HTTPTTSEngine: NSObject, TTSPlayable {
 
     /// Whether a failed download is one the listener is actually waiting to hear, as opposed
     /// to a preload for a segment further ahead (which the normal preload path retries on its
     /// own when playback reaches it).
-    static func shouldStopAfterCurrentChunkFailure(
+    nonisolated static func shouldStopAfterCurrentChunkFailure(
         isCurrentRequest: Bool,
         isPendingPlayback: Bool
     ) -> Bool {
@@ -451,9 +452,9 @@ final class HTTPTTSEngine: NSObject, TTSPlayable, @unchecked Sendable {
                     index: index
                 )
                 guard !Task.isCancelled else { return }
-                DispatchQueue.main.async {
-                    self.handleDownloadedData(data, index: index, token: token, requestID: requestID, priority: priority)
-                }
+                // Back on the main actor: the task inherits it, and only the provider's request
+                // runs elsewhere.
+                self.handleDownloadedData(data, index: index, token: token, requestID: requestID, priority: priority)
             } catch {
                 // Only our own cancellation retires a request silently. A provider can
                 // independently cancel its transport; leaving that entry active forever
@@ -462,9 +463,7 @@ final class HTTPTTSEngine: NSObject, TTSPlayable, @unchecked Sendable {
                     ttsLog("[TTS][HTTPEngine] provider request cancelled index=\(index)")
                     return
                 }
-                DispatchQueue.main.async {
-                    self.handleDownloadFailure(error, index: index, token: token, requestID: requestID, priority: priority)
-                }
+                self.handleDownloadFailure(error, index: index, token: token, requestID: requestID, priority: priority)
             }
         }
 
@@ -827,7 +826,10 @@ final class HTTPTTSEngine: NSObject, TTSPlayable, @unchecked Sendable {
         backgroundTask = .invalid
     }
 
-    deinit {
+    /// Ending the background task and tearing down the audio graph are main-actor work. The
+    /// coordinator owns the engine and is released on main, so this runs inline; Swift 6.4
+    /// back-deploys isolated deinit for the main actor, so iOS 17 has it.
+    isolated deinit {
         playbackToken = UUID()
         resetPlaybackState()
     }

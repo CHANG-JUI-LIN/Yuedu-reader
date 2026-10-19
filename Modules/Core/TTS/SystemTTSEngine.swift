@@ -9,9 +9,10 @@ import UIKit
 /// configured, or when the user explicitly selects the system voice. Mirrors the segment /
 /// skip / seek semantics of `HTTPTTSEngine` so `TTSCoordinator` can drive either engine through
 /// `TTSPlayable` without special-casing.
-final class SystemTTSEngine: NSObject, TTSPlayable, @unchecked Sendable {
+@MainActor
+final class SystemTTSEngine: NSObject, TTSPlayable {
 
-    static func shouldRecoverFromCancelledUtterance(
+    nonisolated static func shouldRecoverFromCancelledUtterance(
         isPlaying: Bool,
         isPaused: Bool,
         hasActiveUtterance: Bool,
@@ -525,7 +526,7 @@ final class SystemTTSEngine: NSObject, TTSPlayable, @unchecked Sendable {
     /// device's English default voice, then lets the user's own choice for that language
     /// win (語音朗讀設定 → 系統語音音色). With no choice stored — or one whose downloaded
     /// voice has since been deleted — this stays exactly the old language default.
-    static func preferredVoice(for text: String) -> AVSpeechSynthesisVoice? {
+    nonisolated static func preferredVoice(for text: String) -> AVSpeechSynthesisVoice? {
         let language = preferredLanguage(for: text)
         if let selected = SystemTTSVoiceCatalog.selectedVoice(forLanguage: language) {
             return selected
@@ -539,7 +540,7 @@ final class SystemTTSEngine: NSObject, TTSPlayable, @unchecked Sendable {
     /// A cast voice that no longer resolves — the user deleted that downloaded voice
     /// since assigning it — falls back to the narrator rather than to silence, because
     /// `speakChunk` treats a missing voice as a playback failure and ends the session.
-    static func preferredVoice(
+    nonisolated static func preferredVoice(
         for text: String,
         speaker: String?,
         roleVoices: [String: String]
@@ -553,7 +554,7 @@ final class SystemTTSEngine: NSObject, TTSPlayable, @unchecked Sendable {
         return preferredVoice(for: text)
     }
 
-    static func preferredLanguage(for text: String) -> String {
+    nonisolated static func preferredLanguage(for text: String) -> String {
         if text.unicodeScalars.contains(where: isHan) {
             return preferredChineseLanguage()
         }
@@ -563,7 +564,7 @@ final class SystemTTSEngine: NSObject, TTSPlayable, @unchecked Sendable {
     /// Picks Traditional vs. Simplified Chinese from the device's language and region
     /// preferences, while the text check above guarantees Chinese gets a Chinese voice even
     /// when the rest of the device is configured in English.
-    private static func preferredChineseLanguage() -> String {
+    nonisolated private static func preferredChineseLanguage() -> String {
         for code in Locale.preferredLanguages {
             let lower = code.lowercased()
             if lower.hasPrefix("zh-hant") || lower.contains("-tw") || lower.contains("-hk") || lower.contains("-mo") {
@@ -576,7 +577,7 @@ final class SystemTTSEngine: NSObject, TTSPlayable, @unchecked Sendable {
         return "zh-CN"
     }
 
-    private static func isHan(_ scalar: Unicode.Scalar) -> Bool {
+    nonisolated private static func isHan(_ scalar: Unicode.Scalar) -> Bool {
         switch scalar.value {
         case 0x4E00...0x9FFF, 0x3400...0x4DBF, 0xF900...0xFAFF, 0x20000...0x2A6DF:
             return true
@@ -585,7 +586,7 @@ final class SystemTTSEngine: NSObject, TTSPlayable, @unchecked Sendable {
         }
     }
 
-    static func makeUtterance(
+    nonisolated static func makeUtterance(
         text: String,
         rate: Float,
         pronunciationHints: [TTSPronunciationHint]
@@ -613,7 +614,7 @@ final class SystemTTSEngine: NSObject, TTSPlayable, @unchecked Sendable {
 
     /// Maps the UI rate (0.5 is "normal") onto an `AVSpeechUtterance` rate centered on the
     /// system default, then clamps to the supported range.
-    static func utteranceRate(forUIRate uiRate: Float) -> Float {
+    nonisolated static func utteranceRate(forUIRate uiRate: Float) -> Float {
         let scaled = AVSpeechUtteranceDefaultSpeechRate * (uiRate / 0.5)
         return max(AVSpeechUtteranceMinimumSpeechRate, min(scaled, AVSpeechUtteranceMaximumSpeechRate))
     }
@@ -624,7 +625,7 @@ final class SystemTTSEngine: NSObject, TTSPlayable, @unchecked Sendable {
     /// the source's `speakSpeed` or through `TTSChunkAudioPlayer`'s time-pitch unit.
     /// Surfacing this rather than saturating silently: see `TTSPanelView`'s rate note.
     /// Deletable only if AVFoundation ever lifts the utterance rate ceiling.
-    static var maxSupportedUIRate: Float {
+    nonisolated static var maxSupportedUIRate: Float {
         0.5 * (AVSpeechUtteranceMaximumSpeechRate / AVSpeechUtteranceDefaultSpeechRate)
     }
 
@@ -653,7 +654,10 @@ final class SystemTTSEngine: NSObject, TTSPlayable, @unchecked Sendable {
         backgroundTask = .invalid
     }
 
-    deinit {
+    /// Ending the background task and stopping the synthesizer are main-actor work. The
+    /// coordinator owns the engine and is released on main, so this runs inline; Swift 6.4
+    /// back-deploys isolated deinit for the main actor, so iOS 17 has it.
+    isolated deinit {
         playbackToken = UUID()
         resetPlaybackState()
     }
@@ -666,8 +670,10 @@ final class IdentifiedUtterance: AVSpeechUtterance {
     let id = UUID()
 }
 
+// The synthesizer calls these off the main thread; each carries only the utterance id and the
+// range to main.
 extension SystemTTSEngine: AVSpeechSynthesizerDelegate {
-    func speechSynthesizer(
+    nonisolated func speechSynthesizer(
         _ synthesizer: AVSpeechSynthesizer,
         willSpeakRangeOfSpeechString characterRange: NSRange,
         utterance: AVSpeechUtterance
@@ -681,7 +687,7 @@ extension SystemTTSEngine: AVSpeechSynthesizerDelegate {
         }
     }
 
-    func speechSynthesizer(_ synthesizer: AVSpeechSynthesizer, didFinish utterance: AVSpeechUtterance) {
+    nonisolated func speechSynthesizer(_ synthesizer: AVSpeechSynthesizer, didFinish utterance: AVSpeechUtterance) {
         let utteranceID = (utterance as? IdentifiedUtterance)?.id
         DispatchQueue.main.async { [weak self] in
             guard let self, let utteranceID, utteranceID == self.activeUtterance?.id else { return }
@@ -689,7 +695,7 @@ extension SystemTTSEngine: AVSpeechSynthesizerDelegate {
         }
     }
 
-    func speechSynthesizer(_ synthesizer: AVSpeechSynthesizer, didCancel utterance: AVSpeechUtterance) {
+    nonisolated func speechSynthesizer(_ synthesizer: AVSpeechSynthesizer, didCancel utterance: AVSpeechUtterance) {
         let utteranceID = (utterance as? IdentifiedUtterance)?.id
         DispatchQueue.main.async { [weak self] in
             self?.handlePlaybackCancelled(utteranceID)
