@@ -30,10 +30,17 @@ import UIKit
 /// left a line drawing its annotation where no single thread ever puts it, for good —
 /// 10 of 160 vertical ruby pages here. A frame per render laid out from the shared
 /// framesetter was not enough: about half of all vertical ruby renders here went wrong.
-/// Text without ruby never failed. Horizontal ruby is
-/// not raced here: one thread drawing the same frame twice already moves the annotation,
-/// so a whole-page bitmap cannot tell a race from that (2026-10-18 investigation note,
-/// side-session-notes `shared-ctframe-concurrency`).
+/// Text without ruby never failed.
+///
+/// Horizontal ruby is raced too. Core Text moves a horizontal ruby annotation on every
+/// `CTLineDraw` once anything has read the run's positions (`CTLineDraw`'s own underline
+/// pass, `CTRunGetPositions` — both happen here), so `CoreTextHorizontalLineDrawer` never
+/// draws a frame line carrying ruby: it draws a line rebuilt from the line's substring
+/// (`CoreTextRubyRedrawTests` pins that). A page therefore draws the same pixels every
+/// time, and the suite requires a single legal bitmap for horizontal pages, so the oracle
+/// cannot quietly widen to admit a shifted annotation. The frame line's queries still
+/// change after a draw or query (140 of 160 horizontal ruby pages, 2026-10-19); the
+/// per-line query legality covers that.
 @Suite("CoreText shared layout concurrency", .serialized)
 @MainActor
 struct CoreTextSharedLayoutConcurrencyTests {
@@ -64,7 +71,7 @@ struct CoreTextSharedLayoutConcurrencyTests {
 
     @Test(
         "background renders racing the main thread's draws and queries of a page match a serial draw",
-        arguments: zip([ReaderWritingMode.horizontal, .verticalRTL, .verticalRTL], [false, false, true])
+        arguments: zip([ReaderWritingMode.horizontal, .horizontal, .verticalRTL, .verticalRTL], [false, true, false, true])
     )
     func backgroundRendersRacingMainThreadMatchSerialDraw(writingMode: ReaderWritingMode, ruby: Bool) async throws {
         var raced = 0
@@ -142,6 +149,11 @@ struct CoreTextSharedLayoutConcurrencyTests {
         #expect(raced >= Self.rounds * 2)
         // The main thread must have been one of the racers, as it is in the reader.
         #expect(mainDraws > 0 && backgroundDraws > 0)
+        // A horizontal page draws the same pixels however often it is drawn or queried (see
+        // the suite header); otherwise `legalImages` would admit a shifted ruby annotation.
+        if writingMode == .horizontal {
+            #expect(serialImageStateChanges == 0, "horizontal pages whose serial redraws differ")
+        }
         print("SHARED_LAYOUT_RACE writingMode=\(writingMode) ruby=\(ruby) pages=\(raced) mainDraws=\(mainDraws) backgroundDraws=\(backgroundDraws) serialQueryStateChanges=\(serialQueryStateChanges) serialImageStateChanges=\(serialImageStateChanges)")
     }
 
