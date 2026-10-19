@@ -442,6 +442,11 @@ class ModernParserBridge {
         }
 
         // ── AnalyzeUrl handler for java.ajax() ──
+        // Runs on the JS thread and builds the request there: AnalyzeUrl evaluates the URL's
+        // templates, `@js` and `js` option, and the source authentication may run the header
+        // rule. `fetch` captures only the finished request and plain values — never the engine
+        // or the AnalyzeUrl — because `java.ajaxAll` runs it on its workers while it holds the
+        // JS queue (`PreparedSourceRequest`).
         engine.analyzeUrlHandler = { [weak self, weak engine] urlStr in
             guard let self, let engine else { return nil }
             let analyzeUrl = AnalyzeUrl(
@@ -454,17 +459,20 @@ class ModernParserBridge {
                 }
             )
 
-            func transformResponse(_ body: String, baseURL: String) -> String? {
+            // Back on the JS thread once the response is in.
+            let bodyJs = analyzeUrl.bodyJs
+            let finish: (PreparedSourceRequest.Response) -> String? = { [weak self] response in
+                guard let self else { return nil }
                 do {
                     return try self.applyResponseBodyScript(
-                        analyzeUrl.bodyJs,
-                        to: body,
-                        baseURL: baseURL
+                        bodyJs,
+                        to: response.body,
+                        baseURL: response.url
                     )
                 } catch {
                     AppLogger.parse("bodyJs response transform failed", context: [
                         "source": sourceName,
-                        "url": String(baseURL.prefix(160)),
+                        "url": String(response.url.prefix(160)),
                         "error": error.localizedDescription
                     ])
                     return nil
@@ -472,165 +480,36 @@ class ModernParserBridge {
             }
 
             if analyzeUrl.isDataUri {
-                return transformResponse(
-                    Self.bodyForDataURI(analyzeUrl),
-                    baseURL: analyzeUrl.evaluatedRuleUrl
+                let response = PreparedSourceRequest.Response(
+                    body: Self.bodyForDataURI(analyzeUrl),
+                    url: analyzeUrl.evaluatedRuleUrl
                 )
+                return PreparedSourceRequest(fetch: { response }, finish: finish)
             }
             guard var request = analyzeUrl.toURLRequest() else { return nil }
             self.applySourceAuthentication(to: &request)
-            // AnalyzeUrl options (for example `url,{"headers":...}`) are still
-            // source-JS network requests. Keep them behind the same injectable
-            // transport boundary as plain `java.ajax`/`java.get`; otherwise fixture
-            // regressions silently escape to the live service and cannot verify the
-            // exact request headers/body produced by the source runtime.
-            if let injectedTransport = engine.networkHandler {
-                let injected = injectedTransport(request)
-                    ?? .bodyOnly(request: request, body: "")
-                self.recordJSNetwork(
-                    url: injected.finalURL.absoluteString,
-                    statusCode: injected.statusCode,
-                    timedOut: false,
-                    body: injected.body
-                )
-                return transformResponse(
-                    injected.body,
-                    baseURL: injected.finalURL.absoluteString
-                )
-            }
-            let reviewSummaryCacheKey = "\(sourceUrl)#\(self.sourceRuleData.source.lastUpdateTime)"
-            let isReviewSummaryRequest = Self.isChapterReviewSummaryRequest(request)
-            var ownsReviewRequest = false
-            if isReviewSummaryRequest, let requestURL = request.url?.absoluteString {
-                switch ReviewSummaryResponseCache.shared.beginRequest(
-                    sourceKey: reviewSummaryCacheKey,
-                    requestURL: requestURL
-                ) {
-                case .cached(let cached):
-                    let cacheLookupStarted = ProcessInfo.processInfo.systemUptime
-                    self.recordJSNetwork(url: requestURL, statusCode: 200, timedOut: false, body: cached)
-                    SourcePerfTrace.record(
-                        "chapter.reviewSummary.cacheHit",
-                        sourceName,
-                        since: cacheLookupStarted,
-                        thresholdMs: 0
-                    )
-                    return transformResponse(cached, baseURL: requestURL)
-                case .inFlight:
-                    let waitStarted = ProcessInfo.processInfo.systemUptime
-                    if let cached = ReviewSummaryResponseCache.shared.waitForRequest(
-                        sourceKey: reviewSummaryCacheKey,
-                        requestURL: requestURL
-                    ) {
-                        self.recordJSNetwork(url: requestURL, statusCode: 200, timedOut: false, body: cached)
-                        SourcePerfTrace.record(
-                            "chapter.reviewSummary.inFlightHit",
-                            sourceName,
-                            since: waitStarted,
-                            thresholdMs: 0
-                        )
-                        return transformResponse(cached, baseURL: requestURL)
-                    }
-                    // The shared request failed or timed out. Issue this call's own request
-                    // instead of handing the source JS a null — sharing a request is an
-                    // optimisation, and it must never make the source worse off than the
-                    // one-request-per-call behaviour it replaced.
-                case .owner:
-                    ownsReviewRequest = true
-                }
-            }
-            struct AjaxResponse: Sendable {
-                var statusCode: Int?
-                var finalURL: String?
-                var error: Error?
-                var body: String?
-            }
-            let declaredCharset = analyzeUrl.charset
-            let pending = BlockingResult<AjaxResponse>()
-            let task = requestSession.dataTask(with: request) { data, response, error in
-                let httpResponse = response as? HTTPURLResponse
-                pending.deliver(AjaxResponse(
-                    statusCode: httpResponse?.statusCode,
-                    finalURL: httpResponse?.url?.absoluteString,
-                    error: error,
-                    // The same decoder as every other response: the `charset` option decides
-                    // when present; otherwise the page's charset is detected, not assumed UTF-8.
-                    body: data.flatMap {
-                        HTMLResponseDecoder.decode(data: $0, response: response, declaredCharset: declaredCharset)
-                    }
-                ))
-            }
-            task.resume()
-            // A response that arrives after the timeout is never read.
-            let response = pending.wait(timeout: .now() + 30)
-            let timedOut = response == nil
-            let result = response?.body
-            let responseStatusCode = response?.statusCode
-            let responseError = response?.error
-            let responseFinalURL = response?.finalURL
-            self.recordJSNetwork(
-                url: request.url?.absoluteString,
-                statusCode: responseStatusCode,
-                timedOut: timedOut,
-                body: result
-            )
-            if self.sourceRuleData.source.bookSourceName.contains("书山聚合") {
-                NSLog(
-                    "❖SHUSHAN TRACE❖ stage=js.ajax path=%@ status=%d timedOut=%@ bodyLen=%d bodyHead=%@",
-                    request.url?.path ?? "nil",
-                    responseStatusCode ?? -1,
-                    timedOut ? "true" : "false",
-                    result?.count ?? -1,
-                    String((result ?? "nil").prefix(180)).replacingOccurrences(of: "\n", with: " ")
-                )
-            }
-            if timedOut {
-                AppLogger.parse("⟐ ajax IN timeout", context: [
-                    "url": request.url?.absoluteString ?? analyzeUrl.url,
-                    "method": analyzeUrl.method
+            // AnalyzeUrl options (for example `url,{"headers":...}`) are still source-JS network
+            // requests, so they go through the same transport as plain `java.ajax`/`java.get`:
+            // `networkHandler` (review-summary cache, request session, failure log), or the one a
+            // test injects. `wireJSEngine` installs it before any source JS can run.
+            guard let transport = engine.networkHandler else {
+                AppLogger.parse("⟐ ajax without a transport", context: [
+                    "source": sourceName,
+                    "url": String((request.url?.absoluteString ?? analyzeUrl.url).prefix(160))
                 ])
-                task.cancel()
-                if ownsReviewRequest, let requestURL = request.url?.absoluteString {
-                    ReviewSummaryResponseCache.shared.finishRequest(
-                        nil,
-                        sourceKey: reviewSummaryCacheKey,
-                        requestURL: requestURL
-                    )
-                }
                 return nil
             }
-            if ownsReviewRequest, let requestURL = request.url?.absoluteString {
-                let usable = responseError == nil
-                    && responseStatusCode.map({ (200..<300).contains($0) }) == true
-                    && result.map(Self.isUsableChapterReviewSummary) == true
-                ReviewSummaryResponseCache.shared.finishRequest(
-                    usable ? result : nil,
-                    sourceKey: reviewSummaryCacheKey,
-                    requestURL: requestURL
+            let fetch = { [request] () -> PreparedSourceRequest.Response? in
+                let result = transport(request) ?? .bodyOnly(request: request, body: "")
+                self.recordJSNetwork(
+                    url: result.finalURL.absoluteString,
+                    statusCode: result.statusCode,
+                    timedOut: false,
+                    body: result.body
                 )
+                return PreparedSourceRequest.Response(body: result.body, url: result.finalURL.absoluteString)
             }
-            // Log failures only — this handler is the 段評 `ajaxAll` path too, and a
-            // body head per call floods the device console. "Failure" includes a 2xx
-            // with a tiny body: these aggregator APIs answer `{"error":"访问被拒绝"}` /
-            // `{"code":1,"message":…}` with HTTP 200, so status alone would miss them,
-            // while real chapter/search payloads are far larger than 300 chars.
-            let bodyLooksLikeErrorEnvelope = (result?.count ?? 0) < 300
-            if responseStatusCode.map({ !(200..<300).contains($0) }) ?? true
-                || bodyLooksLikeErrorEnvelope {
-                AppLogger.parse("⟐ ajax IN failed", context: [
-                    "url": request.url?.absoluteString ?? analyzeUrl.url,
-                    "method": analyzeUrl.method,
-                    "status": responseStatusCode.map(String.init) ?? "error",
-                    "error": responseError?.localizedDescription ?? "-",
-                    "headerKeys": request.allHTTPHeaderFields?.keys.sorted().joined(separator: ",") ?? "-",
-                    "bodyHead": (result ?? "nil").prefix(200).description
-                ])
-            }
-            guard let result else { return nil }
-            return transformResponse(
-                result,
-                baseURL: responseFinalURL ?? request.url?.absoluteString ?? analyzeUrl.url
-            )
+            return PreparedSourceRequest(fetch: fetch, finish: finish)
         }
 
         // setContent handler: JS calls java.setContent(html) → create engine, set content, wire back-refs
@@ -697,8 +576,7 @@ class ModernParserBridge {
                         return LegadoHTTPResult.bodyOnly(request: request, body: cached)
                     }
                     // Shared request failed or timed out — fall through to this call's own
-                    // request rather than returning null to the source JS. See the same
-                    // branch in `analyzeUrlHandler`.
+                    // request rather than returning null to the source JS.
                 case .owner:
                     ownsReviewRequest = true
                 }
@@ -745,10 +623,10 @@ class ModernParserBridge {
                     String((result ?? "nil").prefix(180)).replacingOccurrences(of: "\n", with: " ")
                 )
             }
-            // This is the path a plain `java.ajax(url)` takes — 书山聚合 fetches chapter
-            // *content* here — and the transport error used to be discarded outright, so
-            // a failed chapter left no trace at all. Same failure rule as the AnalyzeUrl
-            // branch: non-2xx, or a 2xx whose body is too short to be real content.
+            // Every `java.*` request takes this path — a plain `java.ajax(url)` (书山聚合 fetches
+            // chapter *content* here) and the AnalyzeUrl handler's `url,{…}` requests — and the
+            // transport error used to be discarded outright, so a failed chapter left no trace
+            // at all. Failure: non-2xx, or a 2xx whose body is too short to be real content.
             if timedOut || transportError != nil
                 || statusCode.map({ !(200..<300).contains($0) }) ?? true
                 || (result?.count ?? 0) < 300 {

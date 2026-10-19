@@ -56,6 +56,26 @@ extension Notification.Name {
     static let bookSourceRequestedSearch = Notification.Name("bookSourceRequestedSearch")
 }
 
+/// A `java.*` request on the AnalyzeUrl route (`url,{…}`, `data:`), split where its JS ends.
+///
+/// `java.ajaxAll` holds the engine's JS queue while its workers run, so nothing a worker does may
+/// reach that queue. The AnalyzeUrl handler builds this on the JS thread, which is where the URL's
+/// own JS runs: `{{…}}` templates, `@js:` / `<js>`, the `js` option, the source headers. `fetch` is
+/// the network alone — `ajaxAll`'s workers call it, several at once — and `finish` runs on the JS
+/// thread again, for the response's `bodyJs`. A single `java.ajax` runs the three in a row there.
+struct PreparedSourceRequest {
+    struct Response: Sendable {
+        let body: String
+        /// Where the response came from; `bodyJs` reads it as `baseUrl`.
+        let url: String
+    }
+
+    /// Network only, on any thread; must never reach the JS queue. `nil` when the request failed.
+    let fetch: () -> Response?
+    /// JS thread only. `nil` when the response's transform failed.
+    let finish: (Response) -> String?
+}
+
 /// Complete response payload captured from the same request that produced the body.
 /// Response-shaped JavaScript APIs retain this metadata; string-shaped APIs consume
 /// only `body` without issuing a second request.
@@ -467,8 +487,9 @@ struct LegadoHTTPResult {
     var requestTimeoutSeconds: TimeInterval = 8
 
     /// AnalyzeUrl-based request handler. When set, `java.ajax()` routes URLs containing `,{json}`
-    /// through AnalyzeUrl rather than treating the entire string as a simple URL.
-    var analyzeUrlHandler: ((String) -> String?)?
+    /// through AnalyzeUrl rather than treating the entire string as a simple URL. Called on the JS
+    /// thread; `nil` when it built no request.
+    var analyzeUrlHandler: ((String) -> PreparedSourceRequest?)?
 
     // MARK: - JS network attribution
     //
@@ -496,9 +517,10 @@ struct LegadoHTTPResult {
     // doesn't trip these 段評 servers, so 16 is a validated (not speculative) concurrency.
     //
     // NOT private: the online reader routes java.* network through ModernParserBridge's
-    // `networkHandler` / `analyzeUrlHandler` (those are always set), so those two handlers must
-    // use THIS pool too — otherwise they fall back to URLSession.shared's 6/host and the 16-wide
-    // ajaxAll just queues behind 6 connections (the reason raising the throttle alone did nothing).
+    // `networkHandler` (always set; its `analyzeUrlHandler` sends through it too), so that
+    // handler must use THIS pool too — otherwise it falls back to URLSession.shared's 6/host and
+    // the 16-wide ajaxAll just queues behind 6 connections (the reason raising the throttle alone
+    // did nothing).
     static let requestSession: URLSession = {
         let config = URLSessionConfiguration.default
         config.httpMaximumConnectionsPerHost = 16
@@ -626,8 +648,9 @@ struct LegadoHTTPResult {
         // bubbles silently never injected (review.php fetched fine, just unused). Wrap each
         // body in LegadoStrResponse so `.body()` works.
         let throttle = DispatchSemaphore(value: 16) // match Legado threadCount (16); paired with requestSession httpMaximumConnectionsPerHost=16
+        // What each worker brought back; `nil` until it does — and, after the timeout, for good.
         let collected = OSAllocatedUnfairLock(
-            initialState: Array<LegadoHTTPResult?>(repeating: nil, count: urlArray.count)
+            initialState: Array<AjaxAllOutcome?>(repeating: nil, count: urlArray.count)
         )
         let group = DispatchGroup()
 
@@ -646,18 +669,35 @@ struct LegadoHTTPResult {
         // `JSConfined` hop, up to 16 workers call these handlers at once — as they always have
         // (each used to call `self.performRequestResult`); the handlers must stay thread-safe.
         // Nothing a worker does may need the JS queue, which this thread holds until the batch
-        // ends: the source headers are resolved here, once, and that also fills the engine's
-        // header cache for the AnalyzeUrl handler, which reads the headers from the worker.
-        let context = JSConfined(requestContext)
+        // ends — a worker that did would wait out the timeout below. So every JS a request runs
+        // runs here: the source headers once, each AnalyzeUrl-route request's own JS as it is
+        // built (`PreparedSourceRequest`), and its `bodyJs` after the batch. The workers get the
+        // network alone.
+        let context = requestContext
+        var routes: [AnalyzeUrlRoute?] = []
+        routes.reserveCapacity(urlArray.count)
+        var buildMs = 0.0
         for (index, urlStr) in urlArray.enumerated() {
+            // Built before its slot is taken, so it overlaps the requests already in flight.
+            let buildStart = Date()
+            let route = Self.analyzeUrlRoute(urlStr, in: context)
+            buildMs += Date().timeIntervalSince(buildStart) * 1000
+            routes.append(route)
+            let job = JSConfined(route.map { AjaxAllJob.analyzeUrl($0.request) } ?? .plain(context))
             throttle.wait() // block until a concurrency slot is free
             group.enter()
             DispatchQueue.global(qos: .utility).async {
                 let itemStart = Date()
-                let response: LegadoHTTPResult? = Self.performRequest(urlStr, in: context.value)
-                let body = response?.body ?? ""
+                let outcome: AjaxAllOutcome
+                switch job.value {
+                case .plain(let context):
+                    outcome = .plain(Self.performPlainRequest(urlStr, in: context))
+                case .analyzeUrl(let request):
+                    outcome = .fetched(request?.fetch())
+                }
+                let body = outcome.body
                 let itemMs = Int(Date().timeIntervalSince(itemStart) * 1000)
-                collected.withLock { $0[index] = response }
+                collected.withLock { $0[index] = outcome }
                 if index < 16 || Self.shouldLogReviewNetwork(urlStr) {
                     AppLogger.parse("⟐ ajaxAll item", context: [
                         "i": index,
@@ -679,13 +719,27 @@ struct LegadoHTTPResult {
         // must finish well within 30s. Never block the JS thread forever.
         let waited = group.wait(timeout: .now() + 30)
         // After a timeout the stragglers are still writing; read one snapshot.
-        let results = collected.withLock { $0 }
+        let outcomes = collected.withLock { $0 }
         let _ms = Int(Date().timeIntervalSince(_start) * 1000)
         // Batch wall time = how long the JS thread was actually blocked (requests ran up to
         // 16-wide over requestSession's 16 connections/host — matches Legado threadCount).
+        // It includes building the AnalyzeUrl-route requests, which overlaps the network.
         recordBlockingNetwork(Date().timeIntervalSince(_start) * 1000)
+        // Back on the JS thread: each AnalyzeUrl-route response's `bodyJs` runs here, in order.
+        // A response that lands after the timeout is never read, so a straggler runs no JS.
+        let finishStart = Date()
+        let results: [LegadoHTTPResult?] = zip(routes, outcomes).map { route, outcome in
+            switch outcome {
+            case nil: return nil
+            case .plain(let result): return result
+            case .fetched(let response): return route?.result(for: response)
+            }
+        }
+        let finishMs = Date().timeIntervalSince(finishStart) * 1000
         AppLogger.parse("⟐ ajaxAll done", context: [
             "ms": _ms,
+            "buildMs": Int(buildMs),
+            "finishMs": Int(finishMs),
             "timedOut": waited == .timedOut,
             "empty": results.filter { ($0?.body ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }.count,
             "lens": results.map { $0?.body.count ?? 0 }
@@ -2214,7 +2268,7 @@ struct LegadoHTTPResult {
     /// What one `java.*` request reads from the bridge. The handlers are the ones the bridge was
     /// configured with; `ajaxAll` captures this so its workers never touch the bridge itself.
     private struct RequestContext {
-        let analyzeUrlHandler: ((String) -> String?)?
+        let analyzeUrlHandler: ((String) -> PreparedSourceRequest?)?
         let networkHandler: ((URLRequest) -> LegadoHTTPResult?)?
         /// Resolved when the context is built, on the JS thread. Resolving them can evaluate the
         /// header rule on the engine's JS queue, which `ajaxAll` occupies while its workers run.
@@ -2237,17 +2291,65 @@ struct LegadoHTTPResult {
         Self.performRequest(urlStr, in: requestContext)
     }
 
+    /// A request bound for the AnalyzeUrl handler, built on the JS thread.
+    private struct AnalyzeUrlRoute {
+        /// `nil` when the handler built no request; the body is then empty.
+        let request: PreparedSourceRequest?
+        /// What the result reports as its request: the URL without its options.
+        let placeholder: URLRequest
+
+        /// JS thread only: `finish` runs the response's `bodyJs`.
+        func result(for response: PreparedSourceRequest.Response?) -> LegadoHTTPResult {
+            .bodyOnly(request: placeholder, body: response.flatMap { request?.finish($0) } ?? "")
+        }
+    }
+
+    /// What an `ajaxAll` worker runs: either half is free of JS.
+    private enum AjaxAllJob {
+        case plain(RequestContext)
+        case analyzeUrl(PreparedSourceRequest?)
+    }
+
+    /// What an `ajaxAll` worker brings back.
+    private enum AjaxAllOutcome: Sendable {
+        case plain(LegadoHTTPResult)
+        /// Not yet finished: `bodyJs` runs on the JS thread after the batch.
+        case fetched(PreparedSourceRequest.Response?)
+
+        var body: String {
+            switch self {
+            case .plain(let result): result.body
+            case .fetched(let response): response?.body ?? ""
+            }
+        }
+    }
+
+    /// JS thread only — building the request runs the URL's JS. `nil` for a plain URL.
+    private static func analyzeUrlRoute(_ urlStr: String, in context: RequestContext) -> AnalyzeUrlRoute? {
+        let trimmedUrl = urlStr.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let prepare = context.analyzeUrlHandler,
+              trimmedUrl.hasPrefix("data:")
+                || trimmedUrl.contains(",{")
+                || trimmedUrl.contains("{\"method\"")
+        else { return nil }
+        let baseURL = URL(string: trimmedUrl.components(separatedBy: ",{").first ?? trimmedUrl)
+            ?? URL(string: "about:blank")!
+        return AnalyzeUrlRoute(request: prepare(urlStr), placeholder: URLRequest(url: baseURL))
+    }
+
+    /// JS thread only.
     private static func performRequest(_ urlStr: String, in context: RequestContext) -> LegadoHTTPResult {
-        // Route through AnalyzeUrl handler if available and URL looks like a Legado URL
+        if let route = analyzeUrlRoute(urlStr, in: context) {
+            return route.result(for: route.request?.fetch())
+        }
+        return performPlainRequest(urlStr, in: context)
+    }
+
+    /// A URL without AnalyzeUrl options runs no JS, so this is safe on any thread.
+    private static func performPlainRequest(_ urlStr: String, in context: RequestContext) -> LegadoHTTPResult {
         let trimmedUrl = urlStr.trimmingCharacters(in: .whitespacesAndNewlines)
         let baseURL = URL(string: trimmedUrl.components(separatedBy: ",{").first ?? trimmedUrl)
             ?? URL(string: "about:blank")!
-        if let analyzeHandler = context.analyzeUrlHandler,
-           trimmedUrl.hasPrefix("data:")
-            || trimmedUrl.contains(",{")
-            || trimmedUrl.contains("{\"method\"") {
-            return .bodyOnly(request: URLRequest(url: baseURL), body: analyzeHandler(urlStr) ?? "")
-        }
 
         // Delegate to external handler if provided
         if let handler = context.networkHandler {

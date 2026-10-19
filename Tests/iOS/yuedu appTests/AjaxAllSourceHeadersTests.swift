@@ -63,11 +63,16 @@ struct AjaxAllSourceHeadersTests {
     func analyzeUrlRouteWithoutHeaderRule(header: String?) {
         let engine = Self.engine(header: header)
         // As `ModernParserBridge.analyzeUrlHandler` does through `applySourceAuthentication`:
-        // it reads the source headers from the worker thread, which only the cache can answer.
+        // it reads the source headers while it builds the request, which `ajaxAll` does on the
+        // JS thread before the request's fetch goes to a worker.
         engine.analyzeUrlHandler = { [weak engine] url in
             guard let headers = engine?.resolvedSourceHeaders() else { return nil }
             let path = url.components(separatedBy: ",{").first ?? url
-            return "\(headers.count):" + (URL(string: path)?.lastPathComponent ?? "?")
+            let response = PreparedSourceRequest.Response(
+                body: "\(headers.count):" + (URL(string: path)?.lastPathComponent ?? "?"),
+                url: path
+            )
+            return PreparedSourceRequest(fetch: { response }, finish: { $0.body })
         }
         let (value, elapsed) = Self.timedAjaxAll(engine, [
             #"https://ajaxall.invalid/a,{"method":"GET"}"#, #"https://ajaxall.invalid/b,{"method":"GET"}"#,

@@ -834,6 +834,8 @@ struct BookSourceFormLoginView: View {
         engine.sourceBridge.evalJSHandler = { js in
             engine.evaluate(js) ?? ""
         }
+        // Built on the JS thread, where the URL's JS runs; `fetch` is the network alone, because
+        // `java.ajaxAll` runs it on its workers while it holds the JS queue.
         engine.analyzeUrlHandler = { urlStr in
             let analyzeUrl = AnalyzeUrl(
                 ruleUrl: urlStr,
@@ -842,14 +844,21 @@ struct BookSourceFormLoginView: View {
                 source: ruleData,
                 jsEvaluator: { js, bindings in engine.evaluate(js, bindings: bindings) }
             )
+            // This sheet never ran a response's `bodyJs`.
+            let finish: (PreparedSourceRequest.Response) -> String? = { $0.body }
             if analyzeUrl.isDataUri {
-                guard let decoded = analyzeUrl.decodeDataUri() else { return "" }
-                if analyzeUrl.type?.isEmpty == false {
-                    return decoded.data.map { String(format: "%02x", $0) }.joined()
+                let body: String
+                if let decoded = analyzeUrl.decodeDataUri() {
+                    body = analyzeUrl.type?.isEmpty == false
+                        ? decoded.data.map { String(format: "%02x", $0) }.joined()
+                        : String(data: decoded.data, encoding: .utf8) ?? ""
+                } else {
+                    body = ""
                 }
-                return String(data: decoded.data, encoding: .utf8) ?? ""
+                let response = PreparedSourceRequest.Response(body: body, url: analyzeUrl.url)
+                return PreparedSourceRequest(fetch: { response }, finish: finish)
             }
-            guard var request = analyzeUrl.toURLRequest() else { return "" }
+            guard var request = analyzeUrl.toURLRequest() else { return nil }
             for (key, value) in engine.resolvedSourceHeaders()
             where request.value(forHTTPHeaderField: key) == nil {
                 request.setValue(value, forHTTPHeaderField: key)
@@ -862,26 +871,29 @@ struct BookSourceFormLoginView: View {
                     request.setValue(jar, forHTTPHeaderField: "Cookie")
                 }
             }
-            let pending = BlockingResult<(statusCode: Int?, body: String)>()
-            URLSession.shared.dataTask(with: request) { data, response, _ in
-                pending.deliver((
-                    statusCode: (response as? HTTPURLResponse)?.statusCode,
-                    body: data.map { String(data: $0, encoding: .utf8) ?? "" } ?? ""
-                ))
-            }.resume()
-            // A response that arrives after the timeout is never read.
-            let response = pending.wait(timeout: .now() + 30)
-            let timedOut = response == nil
-            let body = response?.body ?? ""
-            let statusCode = response?.statusCode
-            // Menu actions are the one place a source's API failure has no other way
-            // to reach the user: the rule JS returns early on a bad reply, so the
-            // button just looks dead. `runButtonJS` reports whatever lands here.
-            SourceAPIErrorLog.shared.record(
-                sourceUrl: sourceUrl, requestUrl: request.url?.absoluteString,
-                statusCode: statusCode, body: body, timedOut: timedOut
-            )
-            return body
+            let fetch = { [request] () -> PreparedSourceRequest.Response? in
+                let pending = BlockingResult<(statusCode: Int?, body: String)>()
+                URLSession.shared.dataTask(with: request) { data, response, _ in
+                    pending.deliver((
+                        statusCode: (response as? HTTPURLResponse)?.statusCode,
+                        body: data.map { String(data: $0, encoding: .utf8) ?? "" } ?? ""
+                    ))
+                }.resume()
+                // A response that arrives after the timeout is never read.
+                let response = pending.wait(timeout: .now() + 30)
+                let timedOut = response == nil
+                let body = response?.body ?? ""
+                let statusCode = response?.statusCode
+                // Menu actions are the one place a source's API failure has no other way
+                // to reach the user: the rule JS returns early on a bad reply, so the
+                // button just looks dead. `runButtonJS` reports whatever lands here.
+                SourceAPIErrorLog.shared.record(
+                    sourceUrl: sourceUrl, requestUrl: request.url?.absoluteString,
+                    statusCode: statusCode, body: body, timedOut: timedOut
+                )
+                return PreparedSourceRequest.Response(body: body, url: request.url?.absoluteString ?? "")
+            }
+            return PreparedSourceRequest(fetch: fetch, finish: finish)
         }
         engine.upLoginDataHandler = { mapValue in
             // `java.upLoginData(map)` from a settings menu (起点/光遇 段评颜色·气泡模版). Merge the

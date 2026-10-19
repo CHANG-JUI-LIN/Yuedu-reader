@@ -62,8 +62,9 @@ class JSCoreEngine {
         didSet { bridge.networkHandler = networkHandler }
     }
 
-    /// Handle AnalyzeUrl parsing for `java.ajax` URLs with ,{json} options.
-    var analyzeUrlHandler: ((String) -> String?)? {
+    /// Handle AnalyzeUrl parsing for `java.ajax` URLs with ,{json} options. Called on the JS
+    /// thread; the request it builds keeps its network apart from its JS (`PreparedSourceRequest`).
+    var analyzeUrlHandler: ((String) -> PreparedSourceRequest?)? {
         didSet { bridge.analyzeUrlHandler = analyzeUrlHandler }
     }
 
@@ -198,12 +199,13 @@ class JSCoreEngine {
     /// Never called on the main thread: the source's host resolves it, and readers that
     /// cannot wait read `headerSnapshot` (`BookSource.parsedHeaders`).
     func resolvedSourceHeaders() -> [String: String] {
-        // `java.ajaxAll` waits on worker requests while occupying the JS queue, and a
-        // worker that reaches here (the AnalyzeUrl handler reads the headers) must be
-        // answered from the cache: hopping onto that queue deadlocks the batch until its
-        // timeout. So `ajaxAll` resolves the headers before it fans out, and `work`
-        // caches every result it resolves — `[:]` for a source with no header rule, or
-        // no source — except the `[:]` a header rule's own request gets on re-entry.
+        // `java.ajaxAll` waits on worker requests while occupying the JS queue, so no worker
+        // may reach here: hopping onto that queue deadlocks the batch until its timeout.
+        // Every request reads its headers on the JS thread instead — `ajaxAll` resolves them
+        // before it fans out, and the AnalyzeUrl handler while it builds each request
+        // (`PreparedSourceRequest`). `work` caches every result it resolves — `[:]` for a
+        // source with no header rule, or no source — except the `[:]` a header rule's own
+        // request gets on re-entry.
         let loginInfoRevision = currentLoginInfoRevision()
         resolvedHeaderCacheLock.lock()
         let cached = resolvedHeaderCache

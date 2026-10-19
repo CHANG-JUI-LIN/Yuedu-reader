@@ -800,28 +800,31 @@ struct GuangYuLiveBookSourceTests {
                 source: ruleData,
                 jsEvaluator: { js, bindings in engine.evaluateIsolated(js, bindings: bindings) }
             )
+            let finish: (PreparedSourceRequest.Response) -> String? = { $0.body }
             if analyzeUrl.isDataUri {
-                guard let decoded = analyzeUrl.decodeDataUri() else { return "" }
-                if analyzeUrl.type?.isEmpty == false {
-                    return decoded.data.map { String(format: "%02x", $0) }.joined()
+                var body = ""
+                if let decoded = analyzeUrl.decodeDataUri() {
+                    body = analyzeUrl.type?.isEmpty == false
+                        ? decoded.data.map { String(format: "%02x", $0) }.joined()
+                        : String(data: decoded.data, encoding: .utf8) ?? ""
                 }
-                return String(data: decoded.data, encoding: .utf8) ?? ""
+                let response = PreparedSourceRequest.Response(body: body, url: analyzeUrl.url)
+                return PreparedSourceRequest(fetch: { response }, finish: finish)
             }
-            guard var request = analyzeUrl.toURLRequest() else { return "" }
+            guard var request = analyzeUrl.toURLRequest() else { return nil }
             for (key, value) in source.parsedHeaders where request.value(forHTTPHeaderField: key) == nil {
                 request.setValue(value, forHTTPHeaderField: key)
             }
             LoginManager.shared.applyLoginHeaders(to: &request, sourceUrl: sourceUrl)
-            let semaphore = DispatchSemaphore(value: 0)
-            var body = ""
-            URLSession.shared.dataTask(with: request) { data, _, _ in
-                if let data {
-                    body = String(data: data, encoding: .utf8) ?? ""
-                }
-                semaphore.signal()
-            }.resume()
-            _ = semaphore.wait(timeout: .now() + 30)
-            return body
+            let fetch = { [request] () -> PreparedSourceRequest.Response? in
+                let pending = BlockingResult<String>()
+                URLSession.shared.dataTask(with: request) { data, _, _ in
+                    pending.deliver(data.map { String(data: $0, encoding: .utf8) ?? "" } ?? "")
+                }.resume()
+                let body = pending.wait(timeout: .now() + 30) ?? ""
+                return PreparedSourceRequest.Response(body: body, url: request.url?.absoluteString ?? "")
+            }
+            return PreparedSourceRequest(fetch: fetch, finish: finish)
         }
 
         if !source.jsLib.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
