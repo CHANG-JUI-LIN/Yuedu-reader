@@ -28,17 +28,18 @@ struct JSEngineCreationReentryTests {
         #expect(await host.run { $0.evaluateSourceScript("tokenAtLoad") } == "abc")
     }
 
-    /// A request with options goes through the bridge's `analyzeUrlHandler`, whose
+    /// Both request forms must reach the bridge's `networkHandler`, and through it this test's
+    /// session. A request with options goes through `analyzeUrlHandler` first, whose
     /// `applySourceAuthentication` reads the headers through `jsEngine`: the path the old lock
-    /// deadlocked on. Keep the `,{…}` options: a plain `java.ajax(url)` made while jsLib loads
-    /// runs before the bridge's `networkHandler` is wired, so it skips the bridge (and this
-    /// test's URLProtocol) and goes to the live network.
+    /// deadlocked on. A plain `java.ajax(url)` used to skip the bridge entirely while jsLib
+    /// loaded — jsLib ran before the handlers were installed — and went to the live network.
     @Test("a top-level jsLib request goes out with the source's headers",
-          .timeLimit(.minutes(1)))
-    func jsLibRequestDuringCreation() async {
+          .timeLimit(.minutes(1)),
+          arguments: ["/load", "/load,{\"method\":\"GET\"}"])
+    func jsLibRequestDuringCreation(path: String) async {
         ReentryProtocol.reset()
         let source = Self.source(
-            jsLib: "var bodyAtLoad = String(java.ajax('https://\(ReentryProtocol.host)/load,{\"method\":\"GET\"}'));"
+            jsLib: "var bodyAtLoad = String(java.ajax('https://\(ReentryProtocol.host)\(path)'));"
         )
         let host = SourceScriptHost(bridgeFor: source, requestSession: ReentryProtocol.session())
 

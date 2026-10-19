@@ -62,8 +62,8 @@ class ModernParserBridge {
     /// always there, and the handlers `wireJSEngine` installs run on other threads (the
     /// engine's JS queue, `ajaxAll` workers) only once the engine exists.
     ///
-    /// Not `lazy` either: the engine is stored before it is wired, because wiring evaluates
-    /// jsLib, and a top-level jsLib call that comes back here (a `java.ajax` reads the
+    /// Not `lazy` either: the engine is stored before it is wired, because wiring ends by
+    /// evaluating jsLib, and a top-level jsLib call that comes back here (a `java.ajax` reads the
     /// source's headers through the bridge) must get this engine — `lazy` would start a
     /// second initialization, and the lock this replaced deadlocked.
     private var jsEngine: JSCoreEngine {
@@ -633,9 +633,6 @@ class ModernParserBridge {
             )
         }
 
-        // Evaluate jsLib if present, cache the hash to avoid re-evaluation
-        evaluateJsLibIfNeeded(on: engine)
-
         // setContent handler: JS calls java.setContent(html) → create engine, set content, wire back-refs
         engine.setContentHandler = { [weak self, weak jsEngine = engine] content, baseUrl in
             guard let self, let jsEngine else { return }
@@ -779,6 +776,12 @@ class ModernParserBridge {
             }
             return responseResult
         }
+
+        // Last, once every handler is in place: jsLib top-level code can already call
+        // `java.ajax` / `java.setContent`, and a request made before `networkHandler` was set
+        // skipped this bridge for `LegadoJSBridge.requestSession` — no injected session, no
+        // `recordJSNetwork`, no review-summary cache. The hash is cached to avoid re-evaluation.
+        evaluateJsLibIfNeeded(on: engine)
     }
 
     private static func isChapterReviewSummaryRequest(_ request: URLRequest) -> Bool {
