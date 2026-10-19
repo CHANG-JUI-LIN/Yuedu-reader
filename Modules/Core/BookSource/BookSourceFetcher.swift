@@ -103,7 +103,7 @@ private func isPrivateIPv6(_ addr: in6_addr) -> Bool {
 ///
 /// Cross-source work must not be actor-serialized: source validation/search fan-out
 /// parses unrelated sources concurrently, matching Legado's worker pool. Mutable JS
-/// context remains protected by `BookSourceSession.withBridge`, which serializes only
+/// context stays on each source's `BookSourceSession` host, which serializes only
 /// calls belonging to the same source.
 final class BookSourceFetcher: @unchecked Sendable {
     /// Debug log for external callers (log pipeline verification)
@@ -203,14 +203,11 @@ final class BookSourceFetcher: @unchecked Sendable {
             )
         }
         let result = LegadoHTTPResult.make(request: page.request, data: page.data, response: page.response)
-        // The response object the script sees is built on the script thread, where it is used.
-        let checked = await SourceScriptThread.run {
-            self.pipeline.applyLoginCheck(to: LegadoStrResponse(result: result), source: source)
+        let checked = await pipeline.applyLoginCheck(to: result, source: source)
+        guard (200...299).contains(checked.code) else {
+            throw FetchError.httpError(checked.code)
         }
-        guard (200...299).contains(checked.code()) else {
-            throw FetchError.httpError(checked.code())
-        }
-        return checked.body()
+        return checked.body
     }
 
 }

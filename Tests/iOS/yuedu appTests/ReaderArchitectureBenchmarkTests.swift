@@ -15,7 +15,7 @@ struct ReaderArchitectureBenchmarkTests {
     }
 
     @Test("Source session first-use and reuse latency on identical HTML")
-    func sourceSessionLatency() throws {
+    func sourceSessionLatency() async throws {
         let pipeline = BookSourceParsingPipeline()
         for fixture in [CoreTextPerformanceFixtures.plain10K, CoreTextPerformanceFixtures.plain100K] {
             for (kind, rule) in [("css", "body@text"), ("js", "@js:result.replace(/<[^>]*>/g, '')")] {
@@ -24,16 +24,16 @@ struct ReaderArchitectureBenchmarkTests {
                                             bookSourceName: "Measurement fixture")
                     source.ruleContent.content = rule
                     let start = ProcessInfo.processInfo.systemUptime
-                    let first = try SourcePerfTrace.span("benchmark.source.first", thresholdMs: 0) {
-                        try pipeline.parseChapterResult(html: fixture.html,
+                    let first = try await SourcePerfTrace.spanAsync("benchmark.source.first", thresholdMs: 0) {
+                        try await pipeline.parseChapterResult(html: fixture.html,
                             baseURL: source.bookSourceUrl, source: source)
                     }
                     #expect(first.content.utf16.count >= fixture.minimumTextCharacters)
                     report("source.\(kind).first", fixture: fixture.id, iteration: iteration,
                            start: start, count: first.content.utf16.count)
                     let warmStart = ProcessInfo.processInfo.systemUptime
-                    let warm = try SourcePerfTrace.span("benchmark.source.reuse", thresholdMs: 0) {
-                        try pipeline.parseChapterResult(html: fixture.html,
+                    let warm = try await SourcePerfTrace.spanAsync("benchmark.source.reuse", thresholdMs: 0) {
+                        try await pipeline.parseChapterResult(html: fixture.html,
                             baseURL: source.bookSourceUrl, source: source)
                     }
                     #expect(warm.content == first.content)

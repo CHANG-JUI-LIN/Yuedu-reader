@@ -51,19 +51,19 @@ enum LegadoImageSourceResolver {
     static func resolveDeferredSources(
         in html: String,
         reviewContext: ReaderHTMLUtilities.LegadoReviewContext?
-    ) -> String {
+    ) async -> String {
         guard html.range(of: deferredSourceMarker) != nil,
               let reviewContext,
               let source = BookSourceStore.shared.sources.first(
                 where: { $0.bookSourceUrl == reviewContext.sourceURL }
               )
         else { return html }
-        return resolveDeferredSources(in: html, session: BookSourceSession.session(for: source))
+        return await resolveDeferredSources(in: html, session: BookSourceSession.session(for: source))
     }
 
     /// Rewrites every deferred `<img>` source in `html` to the URL its `js` option produces.
     /// Returns `html` untouched when the source uses no deferred images (the common case).
-    static func resolveDeferredSources(in html: String, session: BookSourceSession) -> String {
+    static func resolveDeferredSources(in html: String, session: BookSourceSession) async -> String {
         let matches = deferredImages(in: html)
         guard !matches.isEmpty else { return html }
 
@@ -76,7 +76,7 @@ enum LegadoImageSourceResolver {
         // instead. Skip it and a freshly fetched chapter's bubbles are inert until the flag ages out
         // of the LRU cache. Both steps share one critical section because between them the source
         // is in a transient state another parse must not observe.
-        let produced = session.withBridge { bridge -> [String] in
+        let produced = await session.withTurn { bridge -> [String] in
             let values = evaluate(
                 expressions: matches.map(\.js), bridge: bridge, sourceName: sourceName
             )

@@ -15,7 +15,7 @@ struct ShuqiReaderLiveRegressionTests {
         "/Users/zhangruilin/Desktop/Test document/RULE/书旗（同人）.json"
 
     @Test("original TOC arrow-function parameter stays in lexical scope")
-    func originalTOCArrowFunctionParameterStaysInScope() throws {
+    func originalTOCArrowFunctionParameterStaysInScope() async throws {
         let data = try Data(contentsOf: URL(fileURLWithPath: Self.sourcePath))
         var source = try #require(JSONDecoder().decode([BookSource].self, from: data).first)
         source.id = UUID()
@@ -43,7 +43,7 @@ struct ShuqiReaderLiveRegressionTests {
         ])
         let html = try #require(String(data: response, encoding: .utf8))
 
-        let parsed = try BookSourceParsingPipeline().parseTOCResult(
+        let parsed = try await BookSourceParsingPipeline().parseTOCResult(
             html: html,
             baseURL: "https://ocean.shuqireader.com/webapi/bcspub/openapi/book/chapterlist?bookId=8961399",
             source: source
@@ -94,7 +94,7 @@ struct ShuqiReaderLiveRegressionTests {
     }
 
     @Test("TOC list variables stay book-scoped and chapter deltas stay isolated")
-    func tocRuntimeVariablesAreCompactedByScope() throws {
+    func tocRuntimeVariablesAreCompactedByScope() async throws {
         let sharedValue = String(repeating: "book-map-entry;", count: 1_500)
         let sharedLiteral = try #require(jsonStringLiteral(sharedValue))
         var source = BookSource()
@@ -114,7 +114,7 @@ struct ShuqiReaderLiveRegressionTests {
         source.ruleToc.chapterUrl = "url"
         source.ruleContent.content = "@js:java.get('sharedMap') + '|' + java.get('chapterOnly')"
 
-        let result = try BookSourceParsingPipeline().parseTOCResult(
+        let result = try await BookSourceParsingPipeline().parseTOCResult(
             html: "{}",
             baseURL: "https://example.com/catalog",
             source: source

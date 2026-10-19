@@ -19,11 +19,11 @@ struct RuntimeFetchDecodingTests {
         let html = #"<html><head><meta charset="gbk"></head><body><p>第一章 風起</p></body></html>"#
         GBKFixtureProtocol.serve(host: host, body: try #require(html.data(using: Self.gbk)))
 
-        let bridge = ModernParserBridge(
-            source: BookSource(bookSourceUrl: "https://\(host)", bookSourceName: "gbk fixture"),
+        let scriptHost = SourceScriptHost(
+            bridgeFor: BookSource(bookSourceUrl: "https://\(host)", bookSourceName: "gbk fixture"),
             requestSession: GBKFixtureProtocol.session()
         )
-        let (body, _) = try await bridge.fetch(ruleUrl: "https://\(host)/chapter")
+        let (body, _) = try await scriptHost.fetch(ruleUrl: "https://\(host)/chapter")
 
         #expect(body.contains("第一章 風起"))
     }
@@ -34,11 +34,11 @@ struct RuntimeFetchDecodingTests {
         let html = "<p>第二章 雲湧</p>"
         GBKFixtureProtocol.serve(host: host, body: try #require(html.data(using: Self.gbk)))
 
-        let bridge = ModernParserBridge(
-            source: BookSource(bookSourceUrl: "https://\(host)", bookSourceName: "gbk fixture"),
+        let scriptHost = SourceScriptHost(
+            bridgeFor: BookSource(bookSourceUrl: "https://\(host)", bookSourceName: "gbk fixture"),
             requestSession: GBKFixtureProtocol.session()
         )
-        let (body, _) = try await bridge.fetch(ruleUrl: #"https://\#(host)/chapter, {"charset":"gbk"}"#)
+        let (body, _) = try await scriptHost.fetch(ruleUrl: #"https://\#(host)/chapter, {"charset":"gbk"}"#)
 
         #expect(body.contains("第二章 雲湧"))
     }

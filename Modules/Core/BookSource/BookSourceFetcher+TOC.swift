@@ -97,14 +97,12 @@ extension BookSourceFetcher {
            !source.ruleToc.preUpdateJs.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
             let session = BookSourceSession.session(for: source)
             do {
-                let result = try await SourceScriptThread.run {
-                    try session.withBridge { bridge in
-                        try bridge.runTOCPreUpdateJS(
-                            source.ruleToc.preUpdateJs,
-                            tocURL: tocUrl,
-                            runtimeVariables: runtimeVariables
-                        )
-                    }
+                let result = try await session.withTurn { bridge in
+                    try bridge.runTOCPreUpdateJS(
+                        source.ruleToc.preUpdateJs,
+                        tocURL: tocUrl,
+                        runtimeVariables: runtimeVariables
+                    )
                 }
                 effectiveTOCURL = result.tocURL
                 effectiveRuntimeVariables = result.runtimeVariables
@@ -125,7 +123,7 @@ extension BookSourceFetcher {
             let (html, finalUrl) = try await SourcePerfTrace.spanAsync(
                 "toc.network", source.bookSourceName
             ) {
-                try await session.bridgeForAsyncOperations.fetch(ruleUrl: effectiveTOCURL)
+                try await session.fetch(ruleUrl: effectiveTOCURL)
             }
             let parsed = try await session.parse { bridge in
                 try SourcePerfTrace.span("toc.parse", source.bookSourceName) {
@@ -160,9 +158,7 @@ extension BookSourceFetcher {
         let tocNetworkStart = ProcessInfo.processInfo.systemUptime
         if source.needsWebView {
             let rendered = try await Self.fetchViaWebView(url: url, headers: source.parsedHeaders)
-            html = await SourceScriptThread.run {
-                self.pipeline.applyLoginCheck(renderedHTML: rendered, url: url, source: source)
-            }
+            html = await pipeline.applyLoginCheck(renderedHTML: rendered, url: url, source: source)
             usedWebView = true
         } else {
             html = try await fetchStageHTML(
@@ -181,17 +177,13 @@ extension BookSourceFetcher {
                 "htmlPreview": String(html.prefix(150)).replacingOccurrences(of: "\n", with: " "),
             ], hyp: "H2")
         // #endregion
-        let firstPage = try await SourceScriptThread.run { [effectiveRuntimeVariables] in
-            try SourcePerfTrace.span("toc.parse", source.bookSourceName) {
-                try autoreleasepool {
-                    try self.pipeline.parseTOCResult(
-                        html: html,
-                        baseURL: url.absoluteString,
-                        source: source,
-                        runtimeVariables: effectiveRuntimeVariables
-                    )
-                }
-            }
+        let firstPage = try await SourcePerfTrace.spanAsync("toc.parse", source.bookSourceName) {
+            try await self.pipeline.parseTOCResult(
+                html: html,
+                baseURL: url.absoluteString,
+                source: source,
+                runtimeVariables: effectiveRuntimeVariables
+            )
         }
         var chapters = firstPage.chapters
         var tocRuntimeVariables = firstPage.runtimeVariables ?? effectiveRuntimeVariables
@@ -223,14 +215,12 @@ extension BookSourceFetcher {
             onFirstPageReady(firstPageNormalized)
         }
 
-        var nextURL = await SourceScriptThread.run { [effectiveRuntimeVariables] in
-            self.pipeline.extractNextTocURL(
-                html: htmlForNext,
-                baseURL: url.absoluteString,
-                source: source,
-                runtimeVariables: effectiveRuntimeVariables
-            )
-        }
+        var nextURL = await pipeline.extractNextTocURL(
+            html: htmlForNext,
+            baseURL: url.absoluteString,
+            source: source,
+            runtimeVariables: effectiveRuntimeVariables
+        )
         var pageCount = 0
         while !nextURL.isEmpty && pageCount < 20 {
             guard let nextPageURL = URL(string: nextURL) else { break }
@@ -250,16 +240,12 @@ extension BookSourceFetcher {
             // One session-serialized call parses chapters AND the next-page URL
             // from a single DOM (autoreleasepool drains SwiftSoup per page).
             let pageURL = nextURL
-            let pageResult = try await SourceScriptThread.run { [effectiveRuntimeVariables] in
-                try autoreleasepool {
-                    try self.pipeline.parseTOCPage(
-                        html: nextHTML,
-                        baseURL: pageURL,
-                        source: source,
-                        runtimeVariables: effectiveRuntimeVariables
-                    )
-                }
-            }
+            let pageResult = try await pipeline.parseTOCPage(
+                html: nextHTML,
+                baseURL: pageURL,
+                source: source,
+                runtimeVariables: effectiveRuntimeVariables
+            )
             nextURL = pageResult.nextTocURL
             chapters.append(contentsOf: pageResult.chapters)
             if let pageRuntime = pageResult.runtimeVariables {

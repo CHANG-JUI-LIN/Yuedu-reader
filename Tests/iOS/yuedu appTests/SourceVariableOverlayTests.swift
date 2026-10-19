@@ -33,14 +33,14 @@ struct SourceVariableOverlayTests {
         let stored = #"{"頻道":"男","云端配置":"a"}"#
         store.setSourceVariableJSON(stored, for: source.bookSourceUrl)
         defer { store.setSourceVariableJSON(nil, for: source.bookSourceUrl) }
-        let bridge = ModernParserBridge(source: source)
+        let host = SourceScriptHost(bridgeFor: source)
 
-        let overlaid = await bridge.getExploreItems(page: 1, variableOverlay: ["頻道": "女"])
+        let overlaid = await host.getExploreItems(page: 1, variableOverlay: ["頻道": "女"])
         #expect(overlaid.map(\.title) == ["女/女"])
         #expect(overlaid.map(\.url) == ["https://x.test/女"])
         #expect(store.sourceVariableJSON(for: source.bookSourceUrl) == stored, "byte for byte")
 
-        let plain = await bridge.getExploreItems(page: 1)
+        let plain = await host.getExploreItems(page: 1)
         #expect(plain.map(\.title) == ["男/男"], "the next evaluation reads the stored values")
     }
 
@@ -56,7 +56,7 @@ struct SourceVariableOverlayTests {
         store.setSourceVariableJSON(#"{"頻道":"男","云端配置":"a"}"#, for: source.bookSourceUrl)
         defer { store.setSourceVariableJSON(nil, for: source.bookSourceUrl) }
 
-        let items = await ModernParserBridge(source: source).getExploreItems(page: 1, variableOverlay: ["頻道": "女", "排序": "新書"])
+        let items = await SourceScriptHost(bridgeFor: source).getExploreItems(page: 1, variableOverlay: ["頻道": "女", "排序": "新書"])
         #expect(items.map(\.title) == ["女新書"])
         let after = object(store.sourceVariableJSON(for: source.bookSourceUrl))
         #expect(after == ["頻道": "男", "云端配置": "b", "線路": "two"], "排序 stays absent, 頻道 stays 男")
@@ -68,7 +68,7 @@ struct SourceVariableOverlayTests {
         store.setSourceVariableJSON("token-1", for: source.bookSourceUrl)
         defer { store.setSourceVariableJSON(nil, for: source.bookSourceUrl) }
 
-        let items = await ModernParserBridge(source: source).getExploreItems(page: 1, variableOverlay: ["頻道": "女"])
+        let items = await SourceScriptHost(bridgeFor: source).getExploreItems(page: 1, variableOverlay: ["頻道": "女"])
         #expect(items.map(\.title) == ["token-1"])
         #expect(store.sourceVariableJSON(for: source.bookSourceUrl) == "token-1")
     }

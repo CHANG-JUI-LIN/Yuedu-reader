@@ -152,9 +152,7 @@ extension BookSourceFetcher {
                         rendered = try await Self.fetchViaWebView(url: targetURL, headers: requestHeadersSnapshot, jsWait: effectiveWebViewDelay)
                     }
                     guard checksLogin else { return rendered }
-                    return await SourceScriptThread.run {
-                        self.pipeline.applyLoginCheck(renderedHTML: rendered, url: targetURL, source: source)
-                    }
+                    return await self.pipeline.applyLoginCheck(renderedHTML: rendered, url: targetURL, source: source)
                 }
                 if checksLogin {
                     return try await self.fetchStageHTML(
@@ -204,17 +202,15 @@ extension BookSourceFetcher {
                     content: content, title: "", sourceMatched: true, isPay: ref.isPay)
             }
             do {
-                let parsed = try await SourceScriptThread.run {
-                    try SourcePerfTrace.span("chapter.parse", source.bookSourceName) {
-                        try self.pipeline.parseChapterResult(
-                            html: html,
-                            baseURL: baseURL,
-                            source: source,
-                            runtimeVariables: runtimeBox.get(),
-                            chapterRef: ref,
-                            nextChapterURL: ref.runtimeVariables?[Self.nextChapterRuntimeVariableKey]
-                        )
-                    }
+                let parsed = try await SourcePerfTrace.spanAsync("chapter.parse", source.bookSourceName) {
+                    try await self.pipeline.parseChapterResult(
+                        html: html,
+                        baseURL: baseURL,
+                        source: source,
+                        runtimeVariables: runtimeBox.get(),
+                        chapterRef: ref,
+                        nextChapterURL: ref.runtimeVariables?[Self.nextChapterRuntimeVariableKey]
+                    )
                 }
                 if let runtimeVariables = parsed.runtimeVariables, !runtimeVariables.isEmpty {
                     runtimeBox.set(runtimeVariables)
@@ -238,14 +234,12 @@ extension BookSourceFetcher {
             }
         }
         let extractNextPages: @Sendable (String, String) async -> [String] = { [self] html, baseURL in
-            await SourceScriptThread.run {
-                self.pipeline.extractNextContentURLs(
-                    html: html,
-                    baseURL: baseURL,
-                    source: source,
-                    runtimeVariables: runtimeBox.get()
-                )
-            }
+            await self.pipeline.extractNextContentURLs(
+                html: html,
+                baseURL: baseURL,
+                source: source,
+                runtimeVariables: runtimeBox.get()
+            )
         }
 
         let stagedRawHTML = try await SourcePerfTrace.spanAsync(
@@ -306,7 +300,7 @@ extension BookSourceFetcher {
         let (html, finalUrl) = try await SourcePerfTrace.spanAsync(
             "chapter.network", source.bookSourceName
         ) {
-            try await session.bridgeForAsyncOperations.fetch(ruleUrl: ref.url)
+            try await session.fetch(ruleUrl: ref.url)
         }
         let parsed = try await session.parse { bridge in
             try SourcePerfTrace.span("chapter.parse", source.bookSourceName) {

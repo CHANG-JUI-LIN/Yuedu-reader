@@ -1674,12 +1674,17 @@ class ModernParserBridge {
 
     // MARK: - Full pipeline methods (fetch + parse)
 
-    func searchBooks(keyword: String, page: Int = 1) async throws -> [OnlineBook] {
+    // These stages run on the host that owns this bridge (`SourceScriptHost`): their script
+    // work happens there in place, and they suspend only for the network.
+
+    func searchBooks(
+        keyword: String, page: Int = 1, on host: isolated SourceScriptHost<ModernParserBridge>
+    ) async throws -> [OnlineBook] {
         let source = sourceRuleData.source
         guard !source.searchUrl.isEmpty else { return [] }
 
         let (body, finalUrl) = try await fetch(
-            ruleUrl: source.searchUrl, key: keyword, page: page
+            ruleUrl: source.searchUrl, key: keyword, page: page, on: host
         )
         // #region agent log
         if source.bookSourceName.contains("企点") {
@@ -1696,21 +1701,20 @@ class ModernParserBridge {
             "搜索参数": Self.searchParamsPreview(from: finalUrl),
         ], hyp: "S1")
         // #endregion
-        return try await SourceScriptThread.run {
-            try self.parseSearchResults(html: body, baseURL: finalUrl, source: source)
-        }
+        return try parseSearchResults(html: body, baseURL: finalUrl, source: source)
     }
 
     func searchBooksStreaming(
         keyword: String,
         page: Int = 1,
-        onBatch: @escaping @Sendable ([OnlineBook]) async -> Void
+        onBatch: @escaping @Sendable ([OnlineBook]) async -> Void,
+        on host: isolated SourceScriptHost<ModernParserBridge>
     ) async throws -> (books: [OnlineBook], streamed: Bool) {
         let source = sourceRuleData.source
         guard !source.searchUrl.isEmpty else { return ([], false) }
 
         let (body, finalUrl) = try await fetch(
-            ruleUrl: source.searchUrl, key: keyword, page: page
+            ruleUrl: source.searchUrl, key: keyword, page: page, on: host
         )
         // #region agent log
         _dbgLog("聚合/JS 搜尋", data: [
@@ -1729,14 +1733,13 @@ class ModernParserBridge {
                 plan: plan,
                 baseURL: finalUrl,
                 source: source,
-                onBatch: onBatch
+                onBatch: onBatch,
+                on: host
             )
             return (books, true)
         }
 
-        let books = try await SourceScriptThread.run {
-            try self.parseSearchResults(html: body, baseURL: finalUrl, source: source)
-        }
+        let books = try parseSearchResults(html: body, baseURL: finalUrl, source: source)
         return (books, false)
     }
 
@@ -1811,7 +1814,8 @@ class ModernParserBridge {
         plan: AggregateSearchPlan,
         baseURL: String,
         source: BookSource,
-        onBatch: @escaping @Sendable ([OnlineBook]) async -> Void
+        onBatch: @escaping @Sendable ([OnlineBook]) async -> Void,
+        on host: isolated SourceScriptHost<ModernParserBridge>
     ) async -> [OnlineBook] {
         let maxConcurrentSubsources = min(4, plan.sourceKeys.count)
         let pool = AggregateBridgePool(
@@ -1968,29 +1972,24 @@ class ModernParserBridge {
         return String(json.prefix(200))
     }
 
-    func getBookInfo(url: String) async throws -> OnlineBook {
+    func getBookInfo(url: String, on host: isolated SourceScriptHost<ModernParserBridge>) async throws -> OnlineBook {
         let source = sourceRuleData.source
-        let (body, finalUrl) = try await fetch(ruleUrl: url)
-        return try await SourceScriptThread.run {
-            try self.parseBookInfo(html: body, bookUrl: url, baseURL: finalUrl, source: source)
-        }
+        let (body, finalUrl) = try await fetch(ruleUrl: url, on: host)
+        return try parseBookInfo(html: body, bookUrl: url, baseURL: finalUrl, source: source)
     }
 
-    func getChapterList(url: String) async throws -> [OnlineChapterRef] {
+    func getChapterList(
+        url: String, on host: isolated SourceScriptHost<ModernParserBridge>
+    ) async throws -> [OnlineChapterRef] {
         let source = sourceRuleData.source
-        let (body, finalUrl) = try await fetch(ruleUrl: url)
-        return try await SourceScriptThread.run {
-            try self.parseTOC(html: body, baseURL: finalUrl, source: source)
-        }
+        let (body, finalUrl) = try await fetch(ruleUrl: url, on: host)
+        return try parseTOC(html: body, baseURL: finalUrl, source: source)
     }
 
-    func getContent(url: String) async throws -> String {
+    func getContent(url: String, on host: isolated SourceScriptHost<ModernParserBridge>) async throws -> String {
         let source = sourceRuleData.source
-        let (body, finalUrl) = try await fetch(ruleUrl: url)
-        let payload = try await SourceScriptThread.run {
-            try self.parseChapterResult(html: body, baseURL: finalUrl, source: source)
-        }
-        return payload.content
+        let (body, finalUrl) = try await fetch(ruleUrl: url, on: host)
+        return try parseChapterResult(html: body, baseURL: finalUrl, source: source).content
     }
 
     // MARK: - Explore / Discover
@@ -2067,18 +2066,13 @@ class ModernParserBridge {
         }
     }
 
-    /// Evaluate exploreUrl for a book source and return discover items.
-    /// Mirrors Legado's exploreKinds(): JS may produce a rule string, JSON is
-    /// decoded directly, and plain text is split into title::url kinds.
+    /// Evaluate exploreUrl for a book source and return discover items
+    /// (`SourceScriptHost.getExploreItems`). Mirrors Legado's exploreKinds(): JS may produce
+    /// a rule string, JSON is decoded directly, and plain text is split into title::url kinds.
     /// - Parameter variableOverlay: values the explore rule reads in place of the source's
     ///   stored variable, without storing them: an Explore home section's own discover
     ///   filters (unified library 5d-5).
-    func getExploreItems(page: Int = 1, variableOverlay: [String: String] = [:]) async -> [DiscoverItem] {
-        await SourceScriptThread.run { self.exploreItems(page: page, variableOverlay: variableOverlay) }
-    }
-
-    /// `getExploreItems`' body: the explore rule — often JS — evaluated synchronously.
-    private func exploreItems(page: Int, variableOverlay: [String: String]) -> [DiscoverItem] {
+    func exploreItems(page: Int, variableOverlay: [String: String]) -> [DiscoverItem] {
         ensureCloudSettingsIfNeeded()
         let source = sourceRuleData.source
         let rawExploreUrl = source.exploreUrl.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -2441,7 +2435,7 @@ class ModernParserBridge {
     /// `_csrfToken` left over from old browsing is session-rejected by 起点, and a skip-if-present
     /// guard would keep using it → still 0 books. Fetching the source's own search page reissues a
     /// current token (stored in HTTPCookieStorage, auto-sent by URLSession on the ranking request).
-    func primeDiscoverCookiesIfNeeded() async {
+    func primeDiscoverCookiesIfNeeded(on host: isolated SourceScriptHost<ModernParserBridge>) async {
         let source = sourceRuleData.source
         guard source.exploreUrl.contains("_csrfToken") else { return }
         let searchUrl = source.searchUrl.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -2466,7 +2460,7 @@ class ModernParserBridge {
             includingRelatedDomains: true
         )
         do {
-            let (body, finalURL) = try await fetch(ruleUrl: searchUrl, key: "1", page: 1)
+            let (body, finalURL) = try await fetch(ruleUrl: searchUrl, key: "1", page: 1, on: host)
             let after = CookieStore.shared.getKey(url: cookieHost, key: "_csrfToken")
             NSLog(
                 "❖DISC TRACE❖ source=%@ stage=csrf.prime.end tokenAfter=%d bodyLen=%d finalHost=%@",
@@ -2487,15 +2481,14 @@ class ModernParserBridge {
     }
 
     func fetch(
-        ruleUrl: String, key: String? = nil, page: Int? = nil
+        ruleUrl: String, key: String? = nil, page: Int? = nil,
+        on host: isolated SourceScriptHost<ModernParserBridge>
     ) async throws -> (String, String) {
         // Building the request runs source JS (jsLib, cloud settings, `@js:` URLs and
-        // templates) and so does reading the response (`loginCheckJs`, `bodyJs`). Both run on
-        // `SourceScriptThread` — a script there may stop for the reader — and only the
-        // network round-trip happens here.
-        let prepared = try await SourceScriptThread.run {
-            try self.prepareFetch(ruleUrl: ruleUrl, key: key, page: page)
-        }
+        // templates) and so does reading the response (`loginCheckJs`, `bodyJs`). Both run
+        // here on the host — a script may stop for the reader — and only the network
+        // round-trip leaves it.
+        let prepared = try prepareFetch(ruleUrl: ruleUrl, key: key, page: page)
         let analyzeUrl: AnalyzeUrl
         let request: URLRequest
         switch prepared {
@@ -2542,9 +2535,7 @@ class ModernParserBridge {
             throw ModernParserBridgeError.timeout
         }
 
-        return try await SourceScriptThread.run {
-            try self.finishFetch(data: data, response: response, request: request, analyzeUrl: analyzeUrl)
-        }
+        return try finishFetch(data: data, response: response, request: request, analyzeUrl: analyzeUrl)
     }
 
     private enum PreparedFetch {

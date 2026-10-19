@@ -14,15 +14,15 @@ import os
 /// The bridge itself now defers that runtime until a rule actually evaluates JS
 /// (`ModernParserBridge.jsEngine`), so a pure CSS/XPath source costs nothing here.
 ///
-/// Concurrency: parse calls mutate bridge-level context (book/chapter bridges,
-/// runtime variables) before evaluating, so `withBridge` serializes callers —
-/// same-source parses queue, different sources never block each other. The queue
-/// is ordered by the caller's task priority (see `withBridge`), because a 段評
-/// source's content rule holds the bridge for the whole of its own network round
-/// trips: ~2s per chapter on 光遇番茄, measured 2026-10-06. Async operations
-/// (network `fetch`, runtime search) use `bridgeForAsyncOperations` without the
-/// lock, relying on the JS engine's own serial queue exactly as separate bridges
-/// did before.
+/// Concurrency: the bridge lives on the session's `SourceScriptHost`, so everything that
+/// touches it runs there, one job at a time; different sources never block each other.
+/// Parse calls also mutate bridge-level context (book/chapter bridges, runtime variables)
+/// that later calls in the same flow read back, so they first queue for the source's turn
+/// (`parse`, `withTurn`) — ordered by the caller's task priority, because a 段評 source's
+/// content rule holds the turn for the whole of its own network round trips: ~2s per
+/// chapter on 光遇番茄, measured 2026-10-06. A fetch (`fetch`, runtime search, discover)
+/// takes no turn: its script halves run on the host between parses and its network runs
+/// off it, as it ran beside parses before.
 ///
 /// Staleness: the cache key includes the source's `lastUpdateTime`, which the
 /// store bumps on every edit/import — an updated source naturally maps to a
@@ -30,17 +30,25 @@ import os
 final class BookSourceSession {
 
     let source: BookSource
+    let host: SourceScriptHost<ModernParserBridge>
+    // 6e-3b1 → 6e-3b2: the same bridge, still reached without the host by the call sites not
+    // yet moved onto it (`bridgeForAsyncOperations`). Removed with the last of them.
     private let bridge: ModernParserBridge
+    private let gate = SourceTurnGate()
 
-    private init(source: BookSource) {
+    /// `requestSession` carries a test's URLProtocol; production sessions come from
+    /// `session(for:)` with the bridge's default.
+    init(source: BookSource, requestSession: URLSession = LegadoJSBridge.requestSession) {
         self.source = source
         // Cheap now: the bridge defers its JSContext until a rule actually runs JS,
         // so the `js.runtimeCreate` span lives on that lazy accessor instead. A
         // pure-CSS source should never emit one.
-        self.bridge = ModernParserBridge(source: source)
+        let bridge = ModernParserBridge(source: source, requestSession: requestSession)
+        self.bridge = bridge
+        self.host = SourceScriptHost(bridge, label: source.bookSourceName)
     }
 
-    // MARK: - Serialized bridge access
+    // MARK: - The source's turn
     //
     // Waiters are served highest task priority first, FIFO within a priority. With a plain
     // lock the chapter the reader is waiting on took its turn behind every queued prefetch:
@@ -48,110 +56,64 @@ final class BookSourceSession {
     // 段評 source, so a second jump could wait ~8s before its own fetch even started, and a
     // chapter opened right after launch sat behind the shelf's table-of-contents refreshes.
     // The priority is the one the task already carries (`ChapterFetchPriority.taskPriority`,
-    // the shelf refresh's `.utility`), read where the caller is still on its task or, on the
-    // source-script thread, from the QoS `SourceScriptThread` enforced from it.
+    // the shelf refresh's `.utility`).
     //
     // Nothing is preempted or cancelled here — a jump that cancelled its siblings was the
     // main manufacturer of spurious 章節載入失敗 (see `ChapterFetchManager.fetchChapter`).
     // Only a task that was cancelled anyway leaves the queue instead of still running its
     // parse (`parse(_:)`); a holder always finishes.
-    private let gate = NSCondition()
-    private var bridgeInUse = false
-    private var waiting: [Waiter] = []
-    private var nextTicket: UInt64 = 0
 
-    private struct Waiter {
-        let ticket: UInt64
-        let priority: UInt8
+    /// Runs `body` on the host in the source's turn, queued by the calling task's priority,
+    /// and throws `CancellationError` without running it if the task is cancelled before its
+    /// turn — a closed reader's queued prefetches must not each still take the bridge for
+    /// their full parse.
+    func parse<T: Sendable>(_ body: sending (ModernParserBridge) throws -> T) async throws -> T {
+        try await gate.acquireUnlessCancelled(priority: Task.currentPriority)
+        defer { gate.release() }
+        return try await host.run(body)
     }
 
-    /// Flipped under `gate` by the task's cancellation handler while it waits for the bridge.
-    /// Its own lock makes it Sendable: the handler runs concurrently with the waiting parse.
-    final class WaitCancellation: Sendable {
-        private let cancelled = OSAllocatedUnfairLock(initialState: false)
-        fileprivate var isCancelled: Bool { cancelled.withLock { $0 } }
-        fileprivate func cancel() { cancelled.withLock { $0 = true } }
+    /// `parse` for the parsing pipeline's calls, which run once their turn comes even when the
+    /// task was cancelled while waiting: a parse already under way upstream is finished, as it
+    /// always was.
+    func withTurn<T: Sendable>(_ body: sending (ModernParserBridge) throws -> T) async rethrows -> T {
+        await gate.acquire(priority: Task.currentPriority)
+        defer { gate.release() }
+        return try await host.run(body)
     }
 
-    /// Serialized bridge access for synchronous parse calls (the bridge sets
-    /// per-call context before evaluating; two interleaved parses would bleed
-    /// book/chapter state into each other). Queued by `priority`, highest first.
-    func withBridge<T>(
+    /// `withTurn` for a caller on its own thread (not a task), which it blocks until `body`
+    /// has run. Never call it from Swift concurrency: a waiting cooperative thread is one
+    /// fewer for the very hop to the host this waits on.
+    func withBridge<T: Sendable>(
         priority: TaskPriority = Task.currentPriority,
-        _ body: (ModernParserBridge) throws -> T
-    ) rethrows -> T {
-        _ = acquireBridge(priority: priority.rawValue, cancellation: nil)
-        defer { releaseBridge() }
-        return try body(bridge)
-    }
-
-    /// `withBridge` for async callers: runs `body` on the source-script thread, queued by the
-    /// calling task's priority, and throws `CancellationError` without running it if the task is
-    /// cancelled before its turn — a closed reader's queued prefetches must not each still take
-    /// the bridge for their full parse.
-    func parse<T>(_ body: @escaping (ModernParserBridge) throws -> T) async throws -> T {
-        let priority = Task.currentPriority
-        let cancellation = WaitCancellation()
-        return try await withTaskCancellationHandler {
-            try await SourceScriptThread.run {
-                guard self.acquireBridge(priority: priority.rawValue, cancellation: cancellation) else {
-                    throw CancellationError()
-                }
-                defer { self.releaseBridge() }
-                return try body(self.bridge)
-            }
-        } onCancel: { [gate] in
-            gate.lock()
-            cancellation.cancel()
-            gate.broadcast()
-            gate.unlock()
+        _ body: @escaping @Sendable (ModernParserBridge) -> T
+    ) -> T {
+        gate.acquireBlocking(priority: priority)
+        defer { gate.release() }
+        let result = OSAllocatedUnfairLock<T?>(initialState: nil)
+        let done = DispatchSemaphore(value: 0)
+        Task.detached(priority: priority) { [host] in
+            let value = await host.run(body)
+            result.withLock { $0 = value }
+            done.signal()
         }
+        done.wait()
+        // The task stored the value before signalling.
+        return result.withLock { $0 }!
     }
 
-    /// Blocks until the bridge is free and no waiter outranks the caller. Returns false only
-    /// when `cancellation` was flipped first; the caller then owns nothing.
-    private func acquireBridge(priority: UInt8, cancellation: WaitCancellation?) -> Bool {
-        gate.lock()
-        defer { gate.unlock() }
-        let ticket = nextTicket
-        nextTicket += 1
-        waiting.append(Waiter(ticket: ticket, priority: priority))
-        while true {
-            if cancellation?.isCancelled == true {
-                waiting.removeAll { $0.ticket == ticket }
-                gate.broadcast()
-                return false
-            }
-            let outranked = waiting.contains {
-                $0.priority > priority || ($0.priority == priority && $0.ticket < ticket)
-            }
-            if !bridgeInUse, !outranked {
-                waiting.removeAll { $0.ticket == ticket }
-                bridgeInUse = true
-                return true
-            }
-            gate.wait()
-        }
+    /// Callers currently waiting for the source's turn (tests watch the queue form).
+    var queuedCallers: Int { gate.queuedCallers }
+
+    /// A rule URL fetched with the source's runtime: script halves on the host, no turn.
+    func fetch(ruleUrl: String, key: String? = nil, page: Int? = nil) async throws -> (String, String) {
+        try await host.fetch(ruleUrl: ruleUrl, key: key, page: page)
     }
 
-    /// Callers currently waiting for the bridge (tests watch the queue form).
-    var queuedCallers: Int {
-        gate.lock()
-        defer { gate.unlock() }
-        return waiting.count
-    }
-
-    private func releaseBridge() {
-        gate.lock()
-        bridgeInUse = false
-        gate.broadcast()
-        gate.unlock()
-    }
-
-    /// Bridge access for async operations (`fetch(ruleUrl:)`, runtime search…)
-    /// that cannot hold a lock across suspension points. Execution-level safety
-    /// comes from the JS engine's serial queue, matching the pre-session
-    /// behavior of those call sites.
+    /// Bridge access for the call sites not yet moved onto `host` (6e-3b2). Execution-level
+    /// safety comes from the JS engine's serial queue, matching the pre-session behavior of
+    /// those call sites.
     var bridgeForAsyncOperations: ModernParserBridge { bridge }
 
     // MARK: - Per-source cache
@@ -206,5 +168,126 @@ final class BookSourceSession {
         accessClock += 1
         cache[key] = CacheEntry(session: session, lastUsed: accessClock)
         return session
+    }
+}
+
+/// Whose turn it is on one source, and who waits for it: highest task priority first, FIFO
+/// within a priority. A release hands the turn straight to the next waiter.
+final class SourceTurnGate: Sendable {
+    private enum Wake: Sendable {
+        case task(CheckedContinuation<Void, Never>)
+        case cancellableTask(CheckedContinuation<Void, any Error>)
+        case thread(DispatchSemaphore)
+    }
+
+    private struct Waiter: Sendable {
+        let ticket: UInt64
+        let priority: UInt8
+        let wake: Wake
+    }
+
+    private struct State: Sendable {
+        var held = false
+        var waiting: [Waiter] = []
+        var nextTicket: UInt64 = 0
+
+        mutating func takeTicket() -> UInt64 {
+            defer { nextTicket += 1 }
+            return nextTicket
+        }
+    }
+
+    private let state = OSAllocatedUnfairLock(initialState: State())
+
+    /// Suspends until the turn is the caller's.
+    func acquire(priority: TaskPriority) async {
+        let ticket = state.withLock { $0.takeTicket() }
+        await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
+            let granted = state.withLock { state -> Bool in
+                if !state.held {
+                    state.held = true
+                    return true
+                }
+                state.waiting.append(Waiter(ticket: ticket, priority: priority.rawValue, wake: .task(continuation)))
+                return false
+            }
+            if granted { continuation.resume() }
+        }
+    }
+
+    /// Blocks the calling thread until the turn is its own.
+    func acquireBlocking(priority: TaskPriority) {
+        let semaphore = DispatchSemaphore(value: 0)
+        let granted = state.withLock { state -> Bool in
+            if !state.held {
+                state.held = true
+                return true
+            }
+            state.waiting.append(Waiter(
+                ticket: state.takeTicket(), priority: priority.rawValue, wake: .thread(semaphore)
+            ))
+            return false
+        }
+        if !granted { semaphore.wait() }
+    }
+
+    func release() {
+        let next = state.withLock { state -> Wake? in
+            guard let index = state.waiting.indices.max(by: { lhs, rhs in
+                let a = state.waiting[lhs], b = state.waiting[rhs]
+                return a.priority != b.priority ? a.priority < b.priority : a.ticket > b.ticket
+            }) else {
+                state.held = false
+                return nil
+            }
+            // Still held: the turn passes to this waiter without a gap another caller could take.
+            return state.waiting.remove(at: index).wake
+        }
+        switch next {
+        case .task(let continuation)?: continuation.resume()
+        case .cancellableTask(let continuation)?: continuation.resume()
+        case .thread(let semaphore)?: semaphore.signal()
+        case nil: break
+        }
+    }
+
+    var queuedCallers: Int { state.withLock { $0.waiting.count } }
+
+    /// `acquire`, except that a task cancelled before its turn — already, or while waiting —
+    /// leaves the queue at once and throws `CancellationError`, owning nothing.
+    func acquireUnlessCancelled(priority: TaskPriority) async throws {
+        let ticket = state.withLock { $0.takeTicket() }
+        try await withTaskCancellationHandler {
+            try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, any Error>) in
+                enum Outcome { case granted, queued, cancelled }
+                // Checked under the lock, so a cancellation handler that runs later finds this
+                // waiter queued, and one that ran earlier has already set `isCancelled`.
+                let outcome = state.withLock { state -> Outcome in
+                    if Task.isCancelled { return .cancelled }
+                    if !state.held {
+                        state.held = true
+                        return .granted
+                    }
+                    state.waiting.append(Waiter(
+                        ticket: ticket, priority: priority.rawValue, wake: .cancellableTask(continuation)
+                    ))
+                    return .queued
+                }
+                switch outcome {
+                case .granted: continuation.resume()
+                case .cancelled: continuation.resume(throwing: CancellationError())
+                case .queued: break
+                }
+            }
+        } onCancel: {
+            // Only a waiter still queued leaves; one `release` already handed the turn to owns it.
+            let wake = state.withLock { state -> Wake? in
+                guard let index = state.waiting.firstIndex(where: { $0.ticket == ticket }) else { return nil }
+                return state.waiting.remove(at: index).wake
+            }
+            if case .cancellableTask(let continuation)? = wake {
+                continuation.resume(throwing: CancellationError())
+            }
+        }
     }
 }

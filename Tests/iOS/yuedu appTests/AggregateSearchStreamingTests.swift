@@ -52,8 +52,8 @@ struct AggregateSearchStreamingTests {
         }
 
         let recorder = StreamBatchRecorder()
-        let outcome = try await ModernParserBridge(
-            source: source, requestSession: AggregateSearchStreamingURLProtocol.session()
+        let outcome = try await SourceScriptHost(
+            bridgeFor: source, requestSession: AggregateSearchStreamingURLProtocol.session()
         )
             .searchBooksStreaming(keyword: "斗罗", page: 1) { books in
                 await recorder.append(books)
@@ -97,8 +97,8 @@ struct AggregateSearchStreamingTests {
         source.ruleSearch.author = "$.author"
         source.ruleSearch.bookUrl = "$.book_url"
 
-        _ = try await ModernParserBridge(
-            source: source, requestSession: AggregateSearchStreamingURLProtocol.session()
+        _ = try await SourceScriptHost(
+            bridgeFor: source, requestSession: AggregateSearchStreamingURLProtocol.session()
         )
             .searchBooksStreaming(keyword: "m:十日終焉@番茄", page: 1) { _ in }
 

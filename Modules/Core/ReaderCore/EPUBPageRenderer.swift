@@ -584,7 +584,7 @@ final class EPUBPageRenderer: ObservableObject {
         renderSize: CGSize,
         settings: ReaderRenderSettings,
         customScheme: String = "reader-online",
-        imageDecode: (@Sendable (Data, String) -> Data?)? = nil,
+        imageDecode: (@Sendable (Data, String) async -> Data?)? = nil,
         imageHeaders: [String: String] = [:],
         imageCacheDirectory: URL? = nil
     ) {

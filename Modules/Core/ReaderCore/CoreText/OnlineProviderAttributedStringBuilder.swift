@@ -212,7 +212,7 @@ final class OnlineProviderAttributedStringBuilder: @preconcurrency AttributedStr
     private var renderSize: CGSize
     /// Per-source content-image decryptor (Legado `ruleContent.imageDecode`),
     /// applied to downloaded image bytes before decoding. nil for most sources.
-    private let imageDecode: (@Sendable (Data, String) -> Data?)?
+    private let imageDecode: (@Sendable (Data, String) async -> Data?)?
     /// The book source's request headers (UA/Referer/cookies), sent with every remote
     /// chapter image — same map the cover and comic-page loaders already use. Empty for
     /// EPUB/local books, which have no source.
@@ -227,7 +227,7 @@ final class OnlineProviderAttributedStringBuilder: @preconcurrency AttributedStr
         resourceProvider: (any BookResourceProvider)? = nil,
         chapterSourceHrefs: [String?] = [],
         fontRegistrationService: any FontRegistrationServicing = CoreTextFontRegistrationService(),
-        imageDecode: (@Sendable (Data, String) -> Data?)? = nil,
+        imageDecode: (@Sendable (Data, String) async -> Data?)? = nil,
         imageHeaders: [String: String] = [:],
         imageCacheDirectory: URL? = nil
     ) {
@@ -413,7 +413,8 @@ final class OnlineProviderAttributedStringBuilder: @preconcurrency AttributedStr
         // Bytes are stored exactly as the server sent them, so a source's `imageDecode` still has
         // to run. A miss (or an SVG, which decodes to nil here) simply falls through to the fetch.
         if let imageCache, let data = imageCache.data(for: cleaned) {
-            if let image = OnlineImageLoader.decodedImage(from: imageDecode?(data, cleaned) ?? data) {
+            let decoded: Data? = if let imageDecode { await imageDecode(data, cleaned) } else { nil }
+            if let image = OnlineImageLoader.decodedImage(from: decoded ?? data) {
                 return image
             }
         }

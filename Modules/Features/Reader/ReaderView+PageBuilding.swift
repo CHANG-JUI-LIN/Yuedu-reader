@@ -243,12 +243,12 @@ extension ReaderView {
         let bookSource = book.bookSourceId.flatMap { sourceId in
             BookSourceStore.shared.source(id: sourceId)
         }
-        var imageDecode: (@Sendable (Data, String) -> Data?)? = nil
+        var imageDecode: (@Sendable (Data, String) async -> Data?)? = nil
         if let source = bookSource,
            !source.ruleContent.imageDecode.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
             let ruleJs = source.ruleContent.imageDecode
             imageDecode = { data, src in
-                SourceImageDecoder.decode(data, src: src, ruleJs: ruleJs, source: source)
+                await SourceImageDecoder.decode(data, src: src, ruleJs: ruleJs, source: source)
             }
         }
         // In-chapter illustrations belong to the source's own CDN, which gates on the source's

@@ -8,17 +8,17 @@ import os
 /// as a byte array plus `src`, and returns the decoded bytes).
 ///
 /// Decode runs on the source's shared `BookSourceSession` bridge (JS context +
-/// jsLib already warm from detail/TOC/chapter parsing), so the per-image cost
-/// is one JS call, not an engine boot. Decode failures return nil and callers
+/// jsLib already warm from detail/TOC/chapter parsing), in the source's turn on its
+/// host, so the per-image cost is one JS call, not an engine boot. Decode failures return nil and callers
 /// keep the original bytes — a broken rule should degrade to "image looks
 /// wrong", never to "image disappears".
 enum SourceImageDecoder {
 
-    static func decode(_ data: Data, src: String, ruleJs: String, source: BookSource) -> Data? {
+    static func decode(_ data: Data, src: String, ruleJs: String, source: BookSource) async -> Data? {
         guard !data.isEmpty,
               !ruleJs.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
         else { return nil }
-        return BookSourceSession.session(for: source).withBridge { bridge in
+        return await BookSourceSession.session(for: source).withTurn { bridge in
             bridge.decodeImageBytes(data, src: src, ruleJs: ruleJs)
         }
     }
@@ -54,13 +54,13 @@ final class CoverDecodeService: Sendable {
 
     /// Decoded bytes when this URL belongs to a registered decode-enabled
     /// source; nil = not registered or decode failed (caller keeps originals).
-    func decodedIfRegistered(coverUrl: String, data: Data) -> Data? {
+    func decodedIfRegistered(coverUrl: String, data: Data) async -> Data? {
         let sourceId = urlToSourceId.withLock { $0[coverUrl] }
         guard let sourceId,
               let source = BookSourceStore.shared.source(id: sourceId)
         else { return nil }
         let ruleJs = source.coverDecodeJs
         guard !ruleJs.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return nil }
-        return SourceImageDecoder.decode(data, src: coverUrl, ruleJs: ruleJs, source: source)
+        return await SourceImageDecoder.decode(data, src: coverUrl, ruleJs: ruleJs, source: source)
     }
 }

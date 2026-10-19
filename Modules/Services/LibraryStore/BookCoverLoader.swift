@@ -135,9 +135,7 @@ enum BookCoverLoader {
         }
         // Sources with `coverDecodeJs` serve encrypted cover bytes; decode falls
         // back to the raw data so a broken rule degrades, not disappears.
-        let effectiveData = await SourceScriptThread.run {
-            CoverDecodeService.shared.decodedIfRegistered(coverUrl: urlString, data: data)
-        } ?? data
+        let effectiveData = await CoverDecodeService.shared.decodedIfRegistered(coverUrl: urlString, data: data) ?? data
         guard let image = decodedCover(from: effectiveData) else {
             AppLogger.network(
                 "⟐ cover bytes are not an image",

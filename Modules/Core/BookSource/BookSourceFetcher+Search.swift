@@ -163,8 +163,7 @@ extension BookSourceFetcher {
         }
 
         if source.shouldUseLegadoRuntimeFetch(for: source.searchUrl) {
-            var books = try await BookSourceSession.session(for: source)
-                .bridgeForAsyncOperations
+            var books = try await BookSourceSession.session(for: source).host
                 .searchBooks(keyword: query, page: page)
             onHasMore?(nil)
             if let earlyFilter {
@@ -200,9 +199,7 @@ extension BookSourceFetcher {
         do {
             if source.needsWebView {
                 let rendered = try await Self.fetchViaWebView(url: url, headers: headers)
-                html = await SourceScriptThread.run {
-                    self.pipeline.applyLoginCheck(renderedHTML: rendered, url: url, source: source)
-                }
+                html = await pipeline.applyLoginCheck(renderedHTML: rendered, url: url, source: source)
             } else {
                 html = try await fetchStageHTML(
                     url: url, method: request.method, body: request.body,
@@ -221,11 +218,9 @@ extension BookSourceFetcher {
 
         let books: [OnlineBook]
         do {
-            books = try await SourceScriptThread.run {
-                try self.pipeline.parseSearchResults(
-                    html: html, baseURL: url.absoluteString, source: source,
-                    earlyFilter: earlyFilter)
-            }
+            books = try await pipeline.parseSearchResults(
+                html: html, baseURL: url.absoluteString, source: source,
+                earlyFilter: earlyFilter)
         } catch {
             onHasMore?(false)
             let failure = BookSourceSearchFailure.parse(error.localizedDescription)
@@ -237,10 +232,8 @@ extension BookSourceFetcher {
             let hasMoreRule = source.ruleSearch.hasMoreRule
                 .trimmingCharacters(in: .whitespacesAndNewlines)
             if !hasMoreRule.isEmpty {
-                onHasMore(await SourceScriptThread.run {
-                    BookSourceSession.session(for: source).withBridge {
-                        $0.evaluateHasMoreRule(hasMoreRule, html: html)
-                    }
+                onHasMore(await BookSourceSession.session(for: source).withTurn {
+                    $0.evaluateHasMoreRule(hasMoreRule, html: html)
                 })
             } else if books.isEmpty {
                 // Legado's blank-rule fallback: an empty list page means no more.
@@ -316,8 +309,7 @@ extension BookSourceFetcher {
         }
 
         if source.shouldUseLegadoRuntimeFetch(for: source.searchUrl) {
-            let outcome = try await BookSourceSession.session(for: source)
-                .bridgeForAsyncOperations
+            let outcome = try await BookSourceSession.session(for: source).host
                 .searchBooksStreaming(keyword: query, page: 1) { books in
                     let filtered = Self.filterSearchResultsByCheckKeyWord(
                         books, query: query, checkKeyWord: source.ruleSearch.checkKeyWord)

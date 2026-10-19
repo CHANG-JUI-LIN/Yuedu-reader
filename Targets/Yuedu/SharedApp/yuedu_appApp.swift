@@ -379,7 +379,7 @@ struct yuedu_appApp: App {
             }
             // `.utility`: this walks every online book's table of contents through
             // its source's bridge, and a chapter the reader opens meanwhile must
-            // not wait behind it (`BookSourceSession.withBridge`).
+            // not wait behind it (`BookSourceSession`'s turn queue).
             Task(priority: .utility) {
                 await ChapterUpdater.refreshAll(bookStore: bookStore, auto: true)
             }

@@ -43,7 +43,7 @@ enum OnlineImageLoader {
         timeout: TimeInterval = 8,
         headers: [String: String] = [:],
         cachePolicy: URLRequest.CachePolicy = .returnCacheDataElseLoad,
-        decode: (@Sendable (Data, String) -> Data?)? = nil
+        decode: (@Sendable (Data, String) async -> Data?)? = nil
     ) async -> UIImage? {
         let cleaned = cleanImageSource(src)
         guard !cleaned.isEmpty else { return nil }
@@ -92,7 +92,7 @@ enum OnlineImageLoader {
         bodyPointSize: CGFloat = 0,
         headers: [String: String] = [:],
         cachePolicy: URLRequest.CachePolicy,
-        decode: (@Sendable (Data, String) -> Data?)? = nil
+        decode: (@Sendable (Data, String) async -> Data?)? = nil
     ) async -> UIImage? {
         if cleaned.hasPrefix("data:") {
             return await loadDataURIImage(
@@ -162,7 +162,7 @@ enum OnlineImageLoader {
         _ uri: String,
         renderWidth: CGFloat,
         bodyPointSize: CGFloat = 0,
-        decode: (@Sendable (Data, String) -> Data?)? = nil
+        decode: (@Sendable (Data, String) async -> Data?)? = nil
     ) async -> UIImage? {
         guard uri.hasPrefix("data:"), let commaIdx = uri.firstIndex(of: ",") else { return nil }
         let meta = uri[uri.index(uri.startIndex, offsetBy: 5)..<commaIdx].lowercased()
@@ -211,14 +211,13 @@ enum OnlineImageLoader {
         return decodedImage(from: effectiveData)
     }
 
-    /// The source's `imageDecode` script over downloaded bytes, on `SourceScriptThread` like all
-    /// source JS called from async code; the original bytes when there is no decoder or it
-    /// returns nothing.
+    /// The source's `imageDecode` script over downloaded bytes (on the source's host, see
+    /// `SourceImageDecoder`); the original bytes when there is no decoder or it returns nothing.
     private static func sourceDecodedBytes(
-        _ data: Data, src: String, with decode: (@Sendable (Data, String) -> Data?)?
+        _ data: Data, src: String, with decode: (@Sendable (Data, String) async -> Data?)?
     ) async -> Data {
         guard let decode else { return data }
-        return await SourceScriptThread.run { decode(data, src) } ?? data
+        return await decode(data, src) ?? data
     }
 
     /// Fetches a remote image. Falls back to SVG rasterization when the bytes are an SVG document.
@@ -228,7 +227,7 @@ enum OnlineImageLoader {
         bodyPointSize: CGFloat = 0,
         headers: [String: String] = [:],
         cachePolicy: URLRequest.CachePolicy = .returnCacheDataElseLoad,
-        decode: (@Sendable (Data, String) -> Data?)? = nil
+        decode: (@Sendable (Data, String) async -> Data?)? = nil
     ) async -> UIImage? {
         guard let url = URL(string: urlString) else { return nil }
         // CRITICAL: the renderer loads images SEQUENTIALLY (await per node), so a single hung

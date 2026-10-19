@@ -79,13 +79,10 @@ struct ChapterFetcher {
         // Images whose real URL is produced by the source's own JS (Legado `UrlOption.js`) have to
         // be resolved HERE, while the session that just parsed this chapter still holds the
         // per-image state the source set during parsing — see `LegadoImageSourceResolver`.
-        // On `SourceScriptThread` because resolution blocks on the JS engine's serial queue.
-        let raw = await SourceScriptThread.run { [rawHTMLContent, reviewContext] in
-            LegadoImageSourceResolver.resolveDeferredSources(
-                in: rawHTMLContent ?? "",
-                reviewContext: reviewContext
-            )
-        }
+        let raw = await LegadoImageSourceResolver.resolveDeferredSources(
+            in: rawHTMLContent ?? "",
+            reviewContext: reviewContext
+        )
         ReaderHTMLUtilities.logReviewMarkupDiagnostics(
             stage: "deferredImageResolved",
             html: raw,

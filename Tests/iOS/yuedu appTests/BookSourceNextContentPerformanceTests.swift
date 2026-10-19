@@ -15,7 +15,7 @@ struct BookSourceNextContentPerformanceTests {
             return
         }
 
-        DispatchQueue.global().async { probe.extract() }
+        Task { await probe.extract() }
         // Timeout is a deadlock guard, not a scheduled release: the source lock stays
         // held until extraction has had to demonstrate that it does not require it.
         let completedWhileLocked = probe.completed.wait(timeout: .now() + 2) == .success
@@ -28,13 +28,13 @@ struct BookSourceNextContentPerformanceTests {
     }
 
     @Test("a declared next-page rule still resolves its original URLs")
-    func declaredRuleStillUsesParser() {
+    func declaredRuleStillUsesParser() async {
         var source = BookSource(
             bookSourceUrl: "https://next-page-\(UUID().uuidString).example",
             bookSourceName: "Next page fixture"
         )
         source.ruleContent.nextContentUrl = "a.next@href"
-        let urls = BookSourceParsingPipeline().extractNextContentURLs(
+        let urls = await BookSourceParsingPipeline().extractNextContentURLs(
             html: "<a class='next' href='/chapter/2'>Next</a>",
             baseURL: "https://fixture.example/chapter/1",
             source: source
@@ -55,14 +55,14 @@ private final class NextContentSessionProbe: @unchecked Sendable {
     private(set) var result: [String] = []
 
     func holdSession() {
-        BookSourceSession.session(for: source).withBridge { _ in
+        BookSourceSession.session(for: source).withBridge { [acquired, release] _ in
             acquired.signal()
             release.wait()
         }
     }
 
-    func extract() {
-        result = BookSourceParsingPipeline().extractNextContentURLs(
+    func extract() async {
+        result = await BookSourceParsingPipeline().extractNextContentURLs(
             html: "<p>Chapter content</p>",
             baseURL: "https://fixture.example/chapter/1",
             source: source

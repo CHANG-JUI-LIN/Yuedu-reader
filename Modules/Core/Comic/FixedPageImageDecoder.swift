@@ -29,18 +29,14 @@ final class FixedPageImageDecoder: Equatable, Sendable {
         "imageDecode|\(source.bookSourceUrl)#\(source.lastUpdateTime)|"
     }
 
-    /// Runs the rule over `data` on `SourceScriptThread`, through the source's one shared
-    /// bridge (`SourceImageDecoder` → `BookSourceSession.session(for:)`). Nil when the rule
-    /// returned no bytes.
+    /// Runs the rule over `data` through the source's one shared bridge, on its host
+    /// (`SourceImageDecoder` → `BookSourceSession.session(for:)`). Nil when the rule returned
+    /// no bytes.
     func decode(_ data: Data, src: String) async -> Data? {
-        let source = source
-        let ruleJs = ruleJs
-        return await SourceScriptThread.run {
-            // Bytes cross into JS one number each and back the same way, so a megabyte
-            // slice is a real cost; the span shows it per page.
-            SourcePerfTrace.span("comic.imageDecode", "bytes=\(data.count)") {
-                SourceImageDecoder.decode(data, src: src, ruleJs: ruleJs, source: source)
-            }
+        // Bytes cross into JS one number each and back the same way, so a megabyte
+        // slice is a real cost; the span shows it per page.
+        await SourcePerfTrace.spanAsync("comic.imageDecode", "bytes=\(data.count)") {
+            await SourceImageDecoder.decode(data, src: src, ruleJs: ruleJs, source: source)
         }
     }
 

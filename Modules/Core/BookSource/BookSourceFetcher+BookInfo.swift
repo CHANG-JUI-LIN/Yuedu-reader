@@ -53,7 +53,7 @@ extension BookSourceFetcher {
             let (html, finalUrl) = try await SourcePerfTrace.spanAsync(
                 "detail.network", source.bookSourceName
             ) {
-                try await session.bridgeForAsyncOperations.fetch(ruleUrl: url)
+                try await session.fetch(ruleUrl: url)
             }
             let info = try await session.parse { bridge in
                 try SourcePerfTrace.span("detail.parse", source.bookSourceName) {
@@ -78,9 +78,7 @@ extension BookSourceFetcher {
         let html: String
         if source.needsWebView {
             let rendered = try await Self.fetchViaWebView(url: bookURL, headers: source.parsedHeaders)
-            html = await SourceScriptThread.run {
-                self.pipeline.applyLoginCheck(renderedHTML: rendered, url: bookURL, source: source)
-            }
+            html = await pipeline.applyLoginCheck(renderedHTML: rendered, url: bookURL, source: source)
         } else {
             html = try await fetchStageHTML(
                 url: bookURL, method: "GET", body: nil,
@@ -88,16 +86,14 @@ extension BookSourceFetcher {
                 source: source)
         }
         SourcePerfTrace.record("detail.network", source.bookSourceName, since: networkStart)
-        let info = try await SourceScriptThread.run {
-            try SourcePerfTrace.span("detail.parse", source.bookSourceName) {
-                try self.pipeline.parseBookInfo(
-                    html: html,
-                    bookUrl: url,
-                    baseURL: bookURL.absoluteString,
-                    source: source,
-                    runtimeVariables: runtimeVariables
-                )
-            }
+        let info = try await SourcePerfTrace.spanAsync("detail.parse", source.bookSourceName) {
+            try await self.pipeline.parseBookInfo(
+                html: html,
+                bookUrl: url,
+                baseURL: bookURL.absoluteString,
+                source: source,
+                runtimeVariables: runtimeVariables
+            )
         }
         let package = finishBookInfoPackage(
             info: info,

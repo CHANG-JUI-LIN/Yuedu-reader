@@ -153,12 +153,12 @@ struct SourceCheckDiskWriteTests {
         let host = "runtime-\(UUID().uuidString.lowercased()).yuedu.invalid"
         DiskWriteStubURLProtocol.set(.page("<p>runtime page</p>"), for: host)
         defer { DiskWriteStubURLProtocol.remove(host) }
-        let bridge = ModernParserBridge(
-            source: BookSource(bookSourceUrl: "https://\(host)", bookSourceName: "runtime fixture"),
+        let scriptHost = SourceScriptHost(
+            bridgeFor: BookSource(bookSourceUrl: "https://\(host)", bookSourceName: "runtime fixture"),
             requestSession: DiskWriteStubURLProtocol.session()
         )
 
-        let (body, _) = try await bridge.fetch(ruleUrl: "https://\(host)/page")
+        let (body, _) = try await scriptHost.fetch(ruleUrl: "https://\(host)/page")
 
         #expect(body.contains("runtime page"))
         #expect(DiskWriteStubURLProtocol.requestCount(for: host) == 1)

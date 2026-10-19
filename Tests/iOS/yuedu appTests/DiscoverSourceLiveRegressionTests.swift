@@ -42,8 +42,8 @@ struct DiscoverSourceLiveRegressionTests {
             var source = try loadSource(path)
             source.id = UUID()
             source.lastUpdateTime = Int64(Date().timeIntervalSince1970 * 1_000)
-            let bridge = BookSourceSession.session(for: source).bridgeForAsyncOperations
-            let items = await bridge.getExploreItems(page: 1)
+            let host = BookSourceSession.session(for: source).host
+            let items = await host.getExploreItems(page: 1)
             var attempts: [Attempt] = []
 
             for item in items.filter({
@@ -51,12 +51,10 @@ struct DiscoverSourceLiveRegressionTests {
             }).prefix(3) {
                 let rawURL = item.url ?? ""
                 do {
-                    let (html, finalURL) = try await bridge.fetch(ruleUrl: rawURL, page: 1)
-                    let books = bridge.parseExploreResults(
-                        html: html,
-                        baseURL: finalURL,
-                        source: source
-                    )
+                    let (html, finalURL) = try await host.fetch(ruleUrl: rawURL, page: 1)
+                    let (books, jsError) = await host.run {
+                        ($0.parseExploreResults(html: html, baseURL: finalURL, source: source), $0.lastSourceScriptError)
+                    }
                     attempts.append(Attempt(
                         sourceName: source.bookSourceName,
                         itemTitle: item.title ?? "",
@@ -65,7 +63,7 @@ struct DiscoverSourceLiveRegressionTests {
                         responseLength: html.count,
                         responseHead: String(html.prefix(300)).replacingOccurrences(of: "\n", with: " "),
                         bookCount: books.count,
-                        jsError: bridge.lastSourceScriptError,
+                        jsError: jsError,
                         error: nil
                     ))
                 } catch {
@@ -77,7 +75,7 @@ struct DiscoverSourceLiveRegressionTests {
                         responseLength: nil,
                         responseHead: nil,
                         bookCount: 0,
-                        jsError: bridge.lastSourceScriptError,
+                        jsError: await host.run { $0.lastSourceScriptError },
                         error: String(error.localizedDescription.prefix(400))
                     ))
                 }

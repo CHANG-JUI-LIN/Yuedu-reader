@@ -1912,7 +1912,7 @@ struct AnalyzeUrlTests {
         )
         let ruleURL = "data:application/json;base64,\(payload),\(options)"
 
-        let (body, _) = try await ModernParserBridge(source: source).fetch(ruleUrl: ruleURL)
+        let (body, _) = try await SourceScriptHost(bridgeFor: source).fetch(ruleUrl: ruleURL)
         let object = try #require(
             JSONSerialization.jsonObject(with: Data(body.utf8)) as? [String: Any]
         )
@@ -1937,7 +1937,7 @@ struct AnalyzeUrlTests {
         )
 
         do {
-            _ = try await ModernParserBridge(source: source).fetch(
+            _ = try await SourceScriptHost(bridgeFor: source).fetch(
                 ruleUrl: "data:application/json;base64,\(payload),\(options)"
             )
             Issue.record("Expected bodyJs failure")
@@ -1977,7 +1977,7 @@ struct AnalyzeUrlTests {
         )
         source.exploreUrl = "<js>java.ajax(\(jsURLLiteral));</js>"
 
-        let items = await ModernParserBridge(source: source).getExploreItems()
+        let items = await SourceScriptHost(bridgeFor: source).getExploreItems()
 
         #expect(items.map(\.title) == ["榜單"])
         #expect(items.map(\.url) == ["https://example.com/rank"])
@@ -2011,7 +2011,7 @@ struct AnalyzeUrlTests {
         )
         source.exploreUrl = "<js>java.ajax(\(jsURLLiteral));</js>"
 
-        let items = await ModernParserBridge(source: source).getExploreItems()
+        let items = await SourceScriptHost(bridgeFor: source).getExploreItems()
 
         #expect(items.isEmpty)
     }
@@ -2050,7 +2050,7 @@ struct AnalyzeUrlTests {
         var source = BookSource()
         source.bookSourceUrl = "legado-test-\(UUID().uuidString)"
         source.jsLib = "function noop() { return ''; }"
-        let bridge = ModernParserBridge(source: source)
+        let host = SourceScriptHost(bridgeFor: source)
         let ruleUrl = """
         <js>
         let payload = java.base64Encode(JSON.stringify({ key: key, page: page }));
@@ -2058,7 +2058,7 @@ struct AnalyzeUrlTests {
         </js>
         """
 
-        let (body, finalUrl) = try await bridge.fetch(ruleUrl: ruleUrl, key: "needle", page: 3)
+        let (body, finalUrl) = try await host.fetch(ruleUrl: ruleUrl, key: "needle", page: 3)
         let decoded = LegadoJSBridge().hexDecodeToString(body)
 
         #expect(finalUrl.hasPrefix("data:;base64,"))
@@ -2072,7 +2072,7 @@ struct AnalyzeUrlTests {
         source.bookSourceUrl = "legado-variable-test-\(UUID().uuidString)"
         source.jsLib = "function noop() { return ''; }"
         BookSourceRuntimeStateStore.shared.setSourceVariableJSON(nil, for: source.bookSourceUrl)
-        let bridge = ModernParserBridge(source: source)
+        let host = SourceScriptHost(bridgeFor: source)
         let ruleUrl = """
         <js>
         source.setVariable(JSON.stringify({ more: { mode: "novel" }, list: ["a", "b"] }));
@@ -2081,7 +2081,7 @@ struct AnalyzeUrlTests {
         </js>
         """
 
-        let (body, _) = try await bridge.fetch(ruleUrl: ruleUrl)
+        let (body, _) = try await host.fetch(ruleUrl: ruleUrl)
         let decoded = LegadoJSBridge().hexDecodeToString(body)
 
         #expect(decoded.contains("\"more\""))
@@ -2143,7 +2143,7 @@ struct AnalyzeUrlTests {
             LegadoCacheBridge(sourceId: source.bookSourceUrl).delete("gyksconfig")
         }
 
-        let items = await ModernParserBridge(source: source).getExploreItems()
+        let items = await SourceScriptHost(bridgeFor: source).getExploreItems()
         let platform = try #require(items.first)
 
         #expect(platform.chars == ["番茄", "七猫"])
@@ -2270,20 +2270,20 @@ struct AnalyzeUrlTests {
         """
         source.ruleContent.title = "@js:result.title || ''"
 
-        let bridge = ModernParserBridge(source: source)
-        let books = try await bridge.searchBooks(keyword: "Pipeline")
+        let host = SourceScriptHost(bridgeFor: source)
+        let books = try await host.searchBooks(keyword: "Pipeline")
         #expect(books.count == 1)
         #expect(books[0].bookUrl.hasPrefix("data:;base64,"))
 
-        let info = try await bridge.getBookInfo(url: books[0].bookUrl)
+        let info = try await host.getBookInfo(url: books[0].bookUrl)
         #expect(info.name == "Pipeline Book")
         #expect(info.tocUrl.hasPrefix("data:;base64,"))
 
-        let chapters = try await bridge.getChapterList(url: info.tocUrl)
+        let chapters = try await host.getChapterList(url: info.tocUrl)
         #expect(chapters.map(\.title) == ["Chapter 1"])
         #expect(chapters[0].url.hasPrefix("data:;base64,"))
 
-        let content = try await bridge.getContent(url: chapters[0].url)
+        let content = try await host.getContent(url: chapters[0].url)
         #expect(content == "Chapter body from runtime")
 
         let fetcher = BookSourceFetcher.shared
@@ -2367,7 +2367,7 @@ struct BookSourceLocalFixtureTests {
             cache.delete("gyksconfig")
         }
 
-        let items = await ModernParserBridge(source: source).getExploreItems()
+        let items = await SourceScriptHost(bridgeFor: source).getExploreItems()
         let platform = try #require(items.first { $0.title == "平台" })
         let platforms = try #require(platform.chars)
 
@@ -2410,7 +2410,7 @@ struct QidianSourceRegressionTests {
         )
         defer { LoginManager.shared.clearLogin(sourceUrl: source.bookSourceUrl) }
 
-        let items = await ModernParserBridge(source: source).getExploreItems(page: 1)
+        let items = await SourceScriptHost(bridgeFor: source).getExploreItems(page: 1)
 
         #expect(!items.isEmpty)
         #expect(items.contains { ($0.url ?? "").contains("qidian.com") })
@@ -2485,7 +2485,7 @@ struct QidianSourceRegressionTests {
         )
         defer { LoginManager.shared.clearLogin(sourceUrl: source.bookSourceUrl) }
 
-        let items = await ModernParserBridge(source: source).getExploreItems(page: 1)
+        let items = await SourceScriptHost(bridgeFor: source).getExploreItems(page: 1)
         let category = try #require(items.first { item in
             guard let url = item.url else { return false }
             return url.contains("qidian.com")
@@ -2566,7 +2566,7 @@ struct QimoSourceRegressionTests {
                 $0.bookSourceName.contains("柒墨")
             }
         )
-        let items = await ModernParserBridge(source: source).getExploreItems(page: 1)
+        let items = await SourceScriptHost(bridgeFor: source).getExploreItems(page: 1)
         let ranking = try #require(items.first { item in
             guard let url = item.url else { return false }
             return url.contains("m.qidian.com/majax/rank/")
@@ -3873,7 +3873,7 @@ struct ModernParserBridgeExploreTests {
         {"title":"分类","url":"https://example.com/c","style":{"layout_flexBasisPercent":null}}]
         """
 
-        let items = await ModernParserBridge(source: source).getExploreItems()
+        let items = await SourceScriptHost(bridgeFor: source).getExploreItems()
 
         #expect(items.map(\.title) == ["🔥热播榜", "完结", "分类"], "actual=\(items.map(\.title))")
         #expect(items.compactMap(\.url).count == 3, "actual=\(items.compactMap(\.url))")
@@ -3891,7 +3891,7 @@ struct ModernParserBridgeExploreTests {
         {"title":"乙","url":"https://example.com/b","style":"not-an-object"}]
         """
 
-        let items = await ModernParserBridge(source: source).getExploreItems()
+        let items = await SourceScriptHost(bridgeFor: source).getExploreItems()
 
         #expect(items.map(\.title) == ["甲", "乙"], "actual=\(items.map(\.title))")
     }
@@ -3912,7 +3912,7 @@ struct ModernParserBridgeExploreTests {
         全部::/category/0/<,{{page}}.html>
         """
 
-        let items = await ModernParserBridge(source: source).getExploreItems()
+        let items = await SourceScriptHost(bridgeFor: source).getExploreItems()
 
         #expect(items.map(\.title) == ["玄幻·奇幻", "仙侠·武侠", "全部"], "actual=\(items.map(\.title))")
         #expect(items.compactMap(\.url) == [
@@ -3935,7 +3935,7 @@ struct ModernParserBridgeExploreTests {
         <div class="err">something</div>
         """
 
-        let items = await ModernParserBridge(source: source).getExploreItems()
+        let items = await SourceScriptHost(bridgeFor: source).getExploreItems()
 
         #expect(items.map(\.title) == ["玄幻"], "actual=\(items.map(\.title))")
     }
@@ -3977,7 +3977,7 @@ struct ModernParserBridgeExploreTests {
         JSON.stringify(result);
         """
 
-        let items = await ModernParserBridge(source: source).getExploreItems()
+        let items = await SourceScriptHost(bridgeFor: source).getExploreItems()
         let filter = try #require(items.first)
 
         #expect(filter.title == "分类")
@@ -4006,9 +4006,9 @@ struct ModernParserBridgeExploreTests {
             for: source.bookSourceUrl
         )
 
-        let firstItems = await ModernParserBridge(source: source).getExploreItems()
+        let firstItems = await SourceScriptHost(bridgeFor: source).getExploreItems()
         let first = try #require(firstItems.first)
-        let secondItems = await ModernParserBridge(source: source).getExploreItems()
+        let secondItems = await SourceScriptHost(bridgeFor: source).getExploreItems()
         let second = try #require(secondItems.first)
 
         #expect(first.title == token)
@@ -4093,7 +4093,7 @@ struct ModernParserBridgeExploreTests {
         分類二::https://example.com/cat/2
         """
 
-        let items = await ModernParserBridge(source: source).getExploreItems(page: 2)
+        let items = await SourceScriptHost(bridgeFor: source).getExploreItems(page: 2)
 
         #expect(items.map { $0.title ?? "" } == ["分類一", "分組標題", "分類二"])
         #expect(items.map { $0.url } == [
@@ -4114,7 +4114,7 @@ struct ModernParserBridgeExploreTests {
         </js>
         """
 
-        let items = await ModernParserBridge(source: source).getExploreItems()
+        let items = await SourceScriptHost(bridgeFor: source).getExploreItems()
 
         #expect(items.map { $0.title ?? "" } == ["排行榜", "完本"])
         #expect(items.map { $0.url ?? "" } == [
@@ -4130,7 +4130,7 @@ struct ModernParserBridgeExploreTests {
         source.bookSourceName = "JSON Explore"
         source.exploreUrl = #"[{"title":"推薦","url":"https://example.com/recommend","style":{"layout_flexBasisPercent":0.45}}]"#
 
-        let items = await ModernParserBridge(source: source).getExploreItems()
+        let items = await SourceScriptHost(bridgeFor: source).getExploreItems()
 
         #expect(items.count == 1)
         #expect(items.first?.title == "推薦")
