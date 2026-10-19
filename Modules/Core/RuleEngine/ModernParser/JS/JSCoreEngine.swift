@@ -194,14 +194,10 @@ class JSCoreEngine {
     /// calls `jsLib` helpers sees them. Cached because a JS rule would otherwise
     /// re-run for every `java.get`/`java.ajax` (段評 fires hundreds), and guarded
     /// against re-entry because a header rule may itself issue a request.
+    ///
+    /// Never called on the main thread: the source's host resolves it, and readers that
+    /// cannot wait read `headerSnapshot` (`BookSource.parsedHeaders`).
     func resolvedSourceHeaders() -> [String: String] {
-        currentSourceHeaders() ?? lastResolvedSourceHeaders()
-    }
-
-    /// `resolvedSourceHeaders`, or nil when the rule could not be resolved without the
-    /// main thread waiting on a script parked for the reader (see
-    /// `resolveFromMainThread`). Callers that cache what they get must not cache a nil.
-    func currentSourceHeaders() -> [String: String]? {
         // `java.ajaxAll` waits on worker requests while occupying the JS queue, and a
         // worker that reaches here (the AnalyzeUrl handler reads the headers) must be
         // answered from the cache: hopping onto that queue deadlocks the batch until its
@@ -236,65 +232,7 @@ class JSCoreEngine {
             headerSnapshot?.store(headers)
             return headers
         }
-        guard Thread.isMainThread, DispatchQueue.getSpecific(key: jsQueueKey) == nil else {
-            return onJSQueue(work)
-        }
-        return resolveFromMainThread(work)
-    }
-
-    /// The headers this engine last resolved, whatever login state they were resolved for.
-    func lastResolvedSourceHeaders() -> [String: String] {
-        resolvedHeaderCacheLock.lock()
-        defer { resolvedHeaderCacheLock.unlock() }
-        return resolvedHeaderCache ?? [:]
-    }
-
-    /// Main-thread waits for header resolution, woken early when a script parks for the reader.
-    private var mainThreadHeaderWaiters: [DispatchSemaphore] = []
-
-    /// Resolves the header rule for a main-thread caller without waiting on the reader.
-    ///
-    /// `java.startBrowserAwait` and `java.getVerificationCode` hold this engine's queue
-    /// until the reader finishes a page that only the main thread can show, so a main-thread
-    /// `sync` onto the queue while one of them waits never returns — the app froze on a
-    /// verification page until the watchdog killed it (TestFlight AGT4StkW1MHoKzDbZNJd4So,
-    /// 「69书吧人机验证卡死」). `parsedHeaders` is read on the main thread by cover cells and
-    /// the reader's inline images. So this waits only while no script is parked: one that is
-    /// parked already, or parks while we wait (the rule itself, or the script ahead of it on
-    /// the queue), ends the wait with nil. The queued resolution still runs once the reader
-    /// is done and fills the cache for the next read.
-    private func resolveFromMainThread(_ work: @escaping () -> [String: String]) -> [String: String]? {
-        let wake = DispatchSemaphore(value: 0)
-        // Read by this thread only after `wake`, or never once a parked script ends the wait.
-        let result = OSAllocatedUnfairLock<[String: String]?>(initialState: nil)
-        let work = JSConfined(work)
-        resolvedHeaderCacheLock.lock()
-        mainThreadHeaderWaiters.append(wake)
-        resolvedHeaderCacheLock.unlock()
-        defer {
-            resolvedHeaderCacheLock.lock()
-            mainThreadHeaderWaiters.removeAll { $0 === wake }
-            resolvedHeaderCacheLock.unlock()
-        }
-        // Checked after registering, so a script that parks from here on still wakes us.
-        if bridge.isAwaitingUser {
-            safeJsQueue.async { _ = work.value() }
-            return nil
-        }
-        safeJsQueue.async {
-            let headers = work.value()
-            result.withLock { $0 = headers }
-            wake.signal()
-        }
-        wake.wait()
-        return result.withLock { $0 }
-    }
-
-    private func wakeMainThreadHeaderWaiters() {
-        resolvedHeaderCacheLock.lock()
-        let waiters = mainThreadHeaderWaiters
-        resolvedHeaderCacheLock.unlock()
-        waiters.forEach { $0.signal() }
+        return onJSQueue(work)
     }
 
     /// Headers visible to `java.*` requests. Legado's request layer merges the
@@ -357,9 +295,6 @@ class JSCoreEngine {
         }
         bridge.importScriptCacheProvider = { [weak self] in
             self?.cacheBridge
-        }
-        bridge.awaitingUserDidBegin = { [weak self] in
-            self?.wakeMainThreadHeaderWaiters()
         }
     }
 

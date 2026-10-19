@@ -49,8 +49,6 @@ class ModernParserBridge {
         return "configured; \(shape); length=\(trimmed.count)"
     }
 
-    private let jsEngineLock = NSLock()
-    private var _jsEngine: JSCoreEngine?
 
     /// The source's JS runtime, stood up on first actual use.
     ///
@@ -60,11 +58,15 @@ class ModernParserBridge {
     /// bridge used to build the runtime eagerly in `init`, so every source in a
     /// search fan-out paid for a JSContext it never used.
     ///
-    /// Lock-protected rather than `lazy` because `BookSourceSession` hands the same
-    /// bridge to async callers without holding its own lock.
+    /// No lock: the bridge lives on its session's `SourceScriptHost`, so the first access is
+    /// always there, and the handlers `wireJSEngine` installs run on other threads (the
+    /// engine's JS queue, `ajaxAll` workers) only once the engine exists.
+    ///
+    /// Not `lazy` either: the engine is stored before it is wired, because wiring evaluates
+    /// jsLib, and a top-level jsLib call that comes back here (a `java.ajax` reads the
+    /// source's headers through the bridge) must get this engine — `lazy` would start a
+    /// second initialization, and the lock this replaced deadlocked.
     private var jsEngine: JSCoreEngine {
-        jsEngineLock.lock()
-        defer { jsEngineLock.unlock() }
         if let existing = _jsEngine { return existing }
         let t0 = ProcessInfo.processInfo.systemUptime
         let engine = JSCoreEngine()
@@ -76,6 +78,7 @@ class ModernParserBridge {
         )
         return engine
     }
+    private var _jsEngine: JSCoreEngine?
 
     private let loginManager: LoginManager
     private let runtimeStateStore: BookSourceRuntimeStateStore
@@ -295,8 +298,8 @@ class ModernParserBridge {
     // MARK: - Wire JS-only state (source headers, variable storage, network)
 
     /// Installs every `java.*` / `source.*` handler on a freshly created runtime.
-    /// Takes the engine as a parameter rather than reading `self.jsEngine`: it runs
-    /// from inside the lazy accessor, which holds `jsEngineLock`.
+    /// Takes the engine as a parameter rather than reading `self.jsEngine`, so what it
+    /// installs does not depend on being called from inside that accessor.
     private func wireJSEngine(_ engine: JSCoreEngine) {
         engine.bookSource = sourceRuleData.source
         let sourceName = sourceRuleData.source.bookSourceName
@@ -426,15 +429,16 @@ class ModernParserBridge {
         engine.sourceBridge.removeLoginHeaderHandler = {
             LoginManager.shared.clearLogin(sourceUrl: sourceUrl)
         }
-        engine.sourceBridge.getHeaderMapHandler = { [weak self] in
-            var merged = self?.resolvedSourceHeaders() ?? [:]
+        // The handlers below reach the runtime through the engine they are installed on.
+        engine.sourceBridge.getHeaderMapHandler = { [weak engine] in
+            var merged = engine?.resolvedSourceHeaders() ?? [:]
             if let loginHeaders = LoginManager.shared.getLoginHeaderMap(sourceUrl: sourceUrl) {
                 merged.merge(loginHeaders) { _, new in new }
             }
             return merged
         }
-        engine.sourceBridge.evalJSHandler = { [weak self] js in
-            self?.jsEngine.evaluate(js) ?? ""
+        engine.sourceBridge.evalJSHandler = { [weak engine] js in
+            engine?.evaluate(js) ?? ""
         }
 
         // ── AnalyzeUrl handler for java.ajax() ──
@@ -445,8 +449,8 @@ class ModernParserBridge {
                 sourceHeader: self.sourceRuleData.source.header,
                 baseUrl: self.sourceRuleData.source.bookSourceUrl,
                 source: self.sourceRuleData,
-                jsEvaluator: { [weak self] jsCode, bindings in
-                    self?.jsEngine.evaluateIsolated(jsCode, bindings: bindings)
+                jsEvaluator: { [weak engine] jsCode, bindings in
+                    engine?.evaluateIsolated(jsCode, bindings: bindings)
                 }
             )
 
@@ -633,13 +637,13 @@ class ModernParserBridge {
         evaluateJsLibIfNeeded(on: engine)
 
         // setContent handler: JS calls java.setContent(html) → create engine, set content, wire back-refs
-        engine.setContentHandler = { [weak self] content, baseUrl in
-            guard let self else { return }
+        engine.setContentHandler = { [weak self, weak jsEngine = engine] content, baseUrl in
+            guard let self, let jsEngine else { return }
             let engine = ModernRuleEngine()
             engine.source = self.sourceRuleData
-            engine.jsEvaluator = { [weak engine] jsCode, prevResult in
-                guard engine != nil else { return nil }
-                return self.jsEngine.evaluate(
+            engine.jsEvaluator = { [weak engine, weak jsEngine] jsCode, prevResult in
+                guard engine != nil, let jsEngine else { return nil }
+                return jsEngine.evaluate(
                     jsCode,
                     result: prevResult,
                     bindings: [
@@ -649,10 +653,10 @@ class ModernParserBridge {
                 )
             }
             engine.setContent(content, baseUrl: baseUrl ?? "")
-            self.jsEngine.getStringHandler = { ruleStr in engine.getString(ruleStr: ruleStr) }
-            self.jsEngine.getStringListHandler = { ruleStr in engine.getStringList(ruleStr: ruleStr) }
-            self.jsEngine.getElementsHandler = { ruleStr in engine.getElements(ruleStr: ruleStr) }
-            self.jsEngine.getStringWithContentHandler = { ruleStr, content in
+            jsEngine.getStringHandler = { ruleStr in engine.getString(ruleStr: ruleStr) }
+            jsEngine.getStringListHandler = { ruleStr in engine.getStringList(ruleStr: ruleStr) }
+            jsEngine.getElementsHandler = { ruleStr in engine.getElements(ruleStr: ruleStr) }
+            jsEngine.getStringWithContentHandler = { ruleStr, content in
                 engine.setContent(content, baseUrl: baseUrl ?? "")
                 return engine.getString(ruleStr: ruleStr)
             }
@@ -2837,10 +2841,8 @@ class ModernParserBridge {
     /// Evaluate jsLib once per source, caching the hash so we don't re-evaluate
     /// on every request.  jsLib functions (e.g. `BaseUrl()`, `getVariable()`,
     /// `request()`) stay in the shared JSContext scope.
-    /// - Parameter engineOverride: the runtime to evaluate into. `wireJSEngine` must
-    ///   pass its engine explicitly — it runs inside the `jsEngine` lazy accessor
-    ///   while `jsEngineLock` is held, and reading `self.jsEngine` there would
-    ///   re-enter a non-recursive lock. Every other caller leaves it nil.
+    /// - Parameter engineOverride: the runtime to evaluate into. `wireJSEngine` passes
+    ///   its engine explicitly; every other caller leaves it nil.
     private func evaluateJsLibIfNeeded(on engineOverride: JSCoreEngine? = nil) {
         let jsLib = sourceRuleData.source.jsLib
             .trimmingCharacters(in: .whitespacesAndNewlines)
