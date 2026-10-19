@@ -296,7 +296,7 @@ private final class ScriptedOriginFetcher: BookSourceFetching, @unchecked Sendab
     func search(
         query: String,
         in source: BookSource,
-        earlyFilter: ((_ name: String, _ author: String) -> Bool)?
+        earlyFilter: (@Sendable (_ name: String, _ author: String) -> Bool)?
     ) async throws -> [OnlineBook] {
         let books = try await search(query: query, in: source)
         guard let earlyFilter else { return books }

@@ -259,7 +259,7 @@ private actor TOCForwardingFetcher: BookSourceHealthCheckFetching {
         query: String,
         in source: BookSource,
         page: Int,
-        earlyFilter: ((_ name: String, _ author: String) -> Bool)?,
+        earlyFilter: (@Sendable (_ name: String, _ author: String) -> Bool)?,
         onHasMore: ((Bool?) -> Void)?,
         failureMode: BookSourceSearchFailureMode
     ) async throws -> [OnlineBook] {
@@ -338,7 +338,7 @@ private actor DetailForwardingFetcher: BookSourceHealthCheckFetching {
         query: String,
         in source: BookSource,
         page: Int,
-        earlyFilter: ((_ name: String, _ author: String) -> Bool)?,
+        earlyFilter: (@Sendable (_ name: String, _ author: String) -> Bool)?,
         onHasMore: ((Bool?) -> Void)?,
         failureMode: BookSourceSearchFailureMode
     ) async throws -> [OnlineBook] {
@@ -413,7 +413,7 @@ private actor EndOfRunFetcher: BookSourceHealthCheckFetching {
         query: String,
         in source: BookSource,
         page: Int,
-        earlyFilter: ((_ name: String, _ author: String) -> Bool)?,
+        earlyFilter: (@Sendable (_ name: String, _ author: String) -> Bool)?,
         onHasMore: ((Bool?) -> Void)?,
         failureMode: BookSourceSearchFailureMode
     ) async throws -> [OnlineBook] {

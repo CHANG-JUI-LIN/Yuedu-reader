@@ -202,11 +202,10 @@ final class BookSourceFetcher: @unchecked Sendable {
                 bodyCharset: bodyCharset
             )
         }
-        let response = LegadoStrResponse(
-            result: LegadoHTTPResult.make(request: page.request, data: page.data, response: page.response)
-        )
+        let result = LegadoHTTPResult.make(request: page.request, data: page.data, response: page.response)
+        // The response object the script sees is built on the script thread, where it is used.
         let checked = await SourceScriptThread.run {
-            self.pipeline.applyLoginCheck(to: response, source: source)
+            self.pipeline.applyLoginCheck(to: LegadoStrResponse(result: result), source: source)
         }
         guard (200...299).contains(checked.code()) else {
             throw FetchError.httpError(checked.code())

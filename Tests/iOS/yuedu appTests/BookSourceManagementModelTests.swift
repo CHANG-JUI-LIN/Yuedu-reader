@@ -226,7 +226,7 @@ actor ScriptedHealthFetcher: BookSourceHealthCheckFetching {
         query: String,
         in source: BookSource,
         page: Int,
-        earlyFilter: ((_ name: String, _ author: String) -> Bool)?,
+        earlyFilter: (@Sendable (_ name: String, _ author: String) -> Bool)?,
         onHasMore: ((Bool?) -> Void)?,
         failureMode: BookSourceSearchFailureMode
     ) async throws -> [OnlineBook] {

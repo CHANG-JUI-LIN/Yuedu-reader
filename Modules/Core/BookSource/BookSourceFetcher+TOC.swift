@@ -181,7 +181,7 @@ extension BookSourceFetcher {
                 "htmlPreview": String(html.prefix(150)).replacingOccurrences(of: "\n", with: " "),
             ], hyp: "H2")
         // #endregion
-        let firstPage = try await SourceScriptThread.run {
+        let firstPage = try await SourceScriptThread.run { [effectiveRuntimeVariables] in
             try SourcePerfTrace.span("toc.parse", source.bookSourceName) {
                 try autoreleasepool {
                     try self.pipeline.parseTOCResult(
@@ -223,7 +223,7 @@ extension BookSourceFetcher {
             onFirstPageReady(firstPageNormalized)
         }
 
-        var nextURL = await SourceScriptThread.run {
+        var nextURL = await SourceScriptThread.run { [effectiveRuntimeVariables] in
             self.pipeline.extractNextTocURL(
                 html: htmlForNext,
                 baseURL: url.absoluteString,
@@ -250,7 +250,7 @@ extension BookSourceFetcher {
             // One session-serialized call parses chapters AND the next-page URL
             // from a single DOM (autoreleasepool drains SwiftSoup per page).
             let pageURL = nextURL
-            let pageResult = try await SourceScriptThread.run {
+            let pageResult = try await SourceScriptThread.run { [effectiveRuntimeVariables] in
                 try autoreleasepool {
                     try self.pipeline.parseTOCPage(
                         html: nextHTML,

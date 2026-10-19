@@ -128,7 +128,7 @@ extension BookSourceFetcher {
         query: String,
         in source: BookSource,
         page: Int = 1,
-        earlyFilter: ((_ name: String, _ author: String) -> Bool)? = nil,
+        earlyFilter: (@Sendable (_ name: String, _ author: String) -> Bool)? = nil,
         onHasMore: ((Bool?) -> Void)? = nil,
         failureMode: BookSourceSearchFailureMode = .emptyResult
     ) async throws -> [OnlineBook] {
@@ -145,7 +145,7 @@ extension BookSourceFetcher {
         query: String,
         in source: BookSource,
         page: Int = 1,
-        earlyFilter: ((_ name: String, _ author: String) -> Bool)? = nil,
+        earlyFilter: (@Sendable (_ name: String, _ author: String) -> Bool)? = nil,
         onHasMore: ((Bool?) -> Void)? = nil,
         failureMode: BookSourceSearchFailureMode = .emptyResult
     ) async throws -> BookSourceSearchOutcome {

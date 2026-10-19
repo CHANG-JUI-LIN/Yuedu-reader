@@ -419,7 +419,7 @@ private actor HealthCheckTransportFailureFetcher: BookSourceHealthCheckFetching 
         query: String,
         in source: BookSource,
         page: Int,
-        earlyFilter: ((_ name: String, _ author: String) -> Bool)?,
+        earlyFilter: (@Sendable (_ name: String, _ author: String) -> Bool)?,
         onHasMore: ((Bool?) -> Void)?,
         failureMode: BookSourceSearchFailureMode
     ) async throws -> [OnlineBook] {
@@ -481,7 +481,7 @@ private actor HealthCheckKeywordCaptureFetcher: BookSourceHealthCheckFetching {
         query: String,
         in source: BookSource,
         page: Int,
-        earlyFilter: ((_ name: String, _ author: String) -> Bool)?,
+        earlyFilter: (@Sendable (_ name: String, _ author: String) -> Bool)?,
         onHasMore: ((Bool?) -> Void)?,
         failureMode: BookSourceSearchFailureMode
     ) async throws -> [OnlineBook] {
@@ -547,7 +547,7 @@ private actor HealthCheckMixedContentFetcher: BookSourceHealthCheckFetching {
         query: String,
         in source: BookSource,
         page: Int,
-        earlyFilter: ((_ name: String, _ author: String) -> Bool)?,
+        earlyFilter: (@Sendable (_ name: String, _ author: String) -> Bool)?,
         onHasMore: ((Bool?) -> Void)?,
         failureMode: BookSourceSearchFailureMode
     ) async throws -> [OnlineBook] {
@@ -726,7 +726,7 @@ private actor HealthCheckDetailFailureFetcher: BookSourceHealthCheckFetching {
         query: String,
         in source: BookSource,
         page: Int,
-        earlyFilter: ((_ name: String, _ author: String) -> Bool)?,
+        earlyFilter: (@Sendable (_ name: String, _ author: String) -> Bool)?,
         onHasMore: ((Bool?) -> Void)?,
         failureMode: BookSourceSearchFailureMode
     ) async throws -> [OnlineBook] {
@@ -827,7 +827,7 @@ private actor TimedHealthCheckFetcher: BookSourceHealthCheckFetching {
         query: String,
         in source: BookSource,
         page: Int,
-        earlyFilter: ((_ name: String, _ author: String) -> Bool)?,
+        earlyFilter: (@Sendable (_ name: String, _ author: String) -> Bool)?,
         onHasMore: ((Bool?) -> Void)?,
         failureMode: BookSourceSearchFailureMode
     ) async throws -> [OnlineBook] {

@@ -45,9 +45,10 @@ final class BookSourceDebugEngine: ObservableObject {
     let source: BookSource
     private let bridge: ModernParserBridge
 
-    init(source: BookSource) {
+    /// `requestSession` carries a test's URLProtocol; production keeps the bridge's default.
+    init(source: BookSource, requestSession: URLSession = LegadoJSBridge.requestSession) {
         self.source = source
-        self.bridge = ModernParserBridge(source: source)
+        self.bridge = ModernParserBridge(source: source, requestSession: requestSession)
     }
 
     // MARK: - Public Run Methods

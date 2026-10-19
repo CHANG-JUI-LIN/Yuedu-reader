@@ -50,7 +50,7 @@ protocol BookSourceFetching: Sendable {
     func search(
         query: String,
         in source: BookSource,
-        earlyFilter: ((_ name: String, _ author: String) -> Bool)?
+        earlyFilter: (@Sendable (_ name: String, _ author: String) -> Bool)?
     ) async throws -> [OnlineBook]
 
     func loadChapterPackageSync(
@@ -116,7 +116,7 @@ extension BookSourceFetching {
     func search(
         query: String,
         in source: BookSource,
-        earlyFilter: ((_ name: String, _ author: String) -> Bool)?
+        earlyFilter: (@Sendable (_ name: String, _ author: String) -> Bool)?
     ) async throws -> [OnlineBook] {
         let books = try await search(query: query, in: source)
         guard let earlyFilter else { return books }
@@ -263,7 +263,7 @@ struct LiveBookSourceFetcher: BookSourceFetching {
     func search(
         query: String,
         in source: BookSource,
-        earlyFilter: ((_ name: String, _ author: String) -> Bool)?
+        earlyFilter: (@Sendable (_ name: String, _ author: String) -> Bool)?
     ) async throws -> [OnlineBook] {
         // Push the predicate into the parser so rejected items skip most rule
         // evaluations (instead of the protocol default's post-filter).
