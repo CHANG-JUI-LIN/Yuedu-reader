@@ -248,6 +248,35 @@ export function statusAfterReply(current: unknown): string | null {
   return current === "needsInfo" ? "queued" : null;
 }
 
+/** A device that wants 回饋中心 push: its APNs token and which APNs host serves it. */
+export interface PushDeviceRegistration {
+  deviceId: string;
+  token: string;
+  environment: "development" | "production";
+}
+
+const APNS_TOKEN = /^[0-9a-f]{64,200}$/;
+
+/**
+ * `feedbackInboxes/{inbox}/pushDevices/{deviceId}`, read by `onFeedbackThreadUpdated`
+ * (functions/src/feedbackPush.ts). The device id is the app's install id, lowercased, so
+ * one device keeps one entry however often its token changes; an inbox shared over
+ * iCloud Keychain gets one entry per device.
+ */
+export function sanitizePushDevice(deviceId: unknown, body: unknown): PushDeviceRegistration {
+  if (typeof deviceId !== "string" || !DOCUMENT_ID.test(deviceId)) {
+    throw new ApiError("invalid-argument", "Not a valid device id.");
+  }
+  if (!isRecord(body)) throw new ApiError("invalid-argument", "A JSON object is required.");
+  if (typeof body.token !== "string" || !APNS_TOKEN.test(body.token)) {
+    throw new ApiError("invalid-argument", "token must be a hex APNs device token.");
+  }
+  if (body.environment !== "development" && body.environment !== "production") {
+    throw new ApiError("invalid-argument", "environment must be development or production.");
+  }
+  return {deviceId, token: body.token, environment: body.environment};
+}
+
 export function threadIdList(value: unknown): string[] {
   if (!Array.isArray(value) || value.length === 0 || value.length > FEEDBACK_LIMITS.readBatch) {
     throw new ApiError("invalid-argument", `threadIds must list 1 to ${FEEDBACK_LIMITS.readBatch} threads.`);

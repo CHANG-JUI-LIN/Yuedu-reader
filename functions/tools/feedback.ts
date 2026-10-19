@@ -10,6 +10,8 @@
 //
 // <number> is the #25,743 the user sees. A reply appears in the app as the developer's,
 // marks the thread unread for its owner, and moves the summary the list shows.
+// A reply, or a status moved to needsInfo or done, also reaches the owner's devices as a
+// push (functions/src/feedbackPush.ts) — one notification even when both happen at once.
 // Attachments are printed as gs:// paths; `gsutil cp` fetches them.
 
 import {initializeApp} from "firebase-admin/app";

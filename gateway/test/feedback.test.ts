@@ -230,6 +230,10 @@ class FakeDocument {
     await writes.commit();
   }
 
+  async set(data: Data): Promise<void> {
+    this.store.documents.set(this.path, resolve(data));
+  }
+
   async update(data: Data): Promise<void> {
     const writes = new FakeWrites(this.store);
     writes.update(this, data);
@@ -485,6 +489,31 @@ describe("feedback routes", () => {
     assert.notEqual(firestore.documents.get(threadPath)?.userLastReadAt, before);
     assert.equal((await postJSON(base, `/v1/feedback/threads/${THREAD}/resolve`, {})).status, 200);
     assert.equal(firestore.documents.get(threadPath)?.status, "done");
+    // The push trigger tells the user's own resolve apart by this.
+    assert.ok(firestore.documents.get(threadPath)?.userResolvedAt instanceof Date);
+  });
+
+  it("registers a device for push under its install id, replacing its old token", async () => {
+    const {base, firestore} = await start();
+    const device = "0f8fad5b-d9cb-469f-a165-70867728950e";
+    const put = (body: unknown, id = device) => fetch(`${base}/v1/feedback/push-devices/${id}`, {
+      method: "PUT",
+      headers: inboxHeaders({"Content-Type": "application/json"}),
+      body: JSON.stringify(body),
+    });
+    assert.equal((await put({token: "ab".repeat(32), environment: "development"})).status, 204);
+    assert.equal((await put({token: "cd".repeat(32), environment: "production"})).status, 204);
+    const stored = firestore.documents.get(`feedbackInboxes/${INBOX}/pushDevices/${device}`);
+    assert.equal(stored?.token, "cd".repeat(32));
+    assert.equal(stored?.environment, "production");
+
+    assert.equal((await put({token: "not-hex", environment: "production"})).status, 400);
+    assert.equal((await put({token: "ab".repeat(32), environment: "staging"})).status, 400);
+    assert.equal((await put({token: "ab".repeat(32), environment: "production"}, "UPPER-CASE")).status, 400);
+    const anonymous = await fetch(`${base}/v1/feedback/push-devices/${device}`, {
+      method: "PUT", headers: {"Content-Type": "application/json"}, body: "{}",
+    });
+    assert.equal(anonymous.status, 401);
   });
 
   it("refuses an oversized upload before storing anything", async () => {

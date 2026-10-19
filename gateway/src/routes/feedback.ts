@@ -15,6 +15,7 @@ import {
   messagePayload,
   sanitizeDiagnosticReport,
   sanitizeNewThread,
+  sanitizePushDevice,
   sanitizeReply,
   statusAfterReply,
   threadIdList,
@@ -140,8 +141,25 @@ export function feedbackRouter(context: GatewayContext): Router {
     try {
       const inbox = inboxOf(request);
       const threadId = validThreadId(request.params.threadId);
-      await threads(inbox).doc(threadId).update({status: "done", updatedAt: FieldValue.serverTimestamp()});
+      const now = FieldValue.serverTimestamp();
+      // `userResolvedAt` tells `onFeedbackThreadUpdated` the user did this, so they get no push for it.
+      await threads(inbox).doc(threadId).update({status: "done", updatedAt: now, userResolvedAt: now});
       response.json({threadId});
+    } catch (error) {
+      next(firestoreError(error));
+    }
+  });
+
+  // Registers (or refreshes) this device's APNs token for the inbox's push: a reply from
+  // the developer or the AI 助手, or a move to 待補充／已完成 (functions/src/feedbackPush.ts).
+  router.put("/push-devices/:deviceId", async (request, response, next) => {
+    try {
+      const inbox = inboxOf(request);
+      const device = sanitizePushDevice(request.params.deviceId, request.body);
+      await context.firestore.collection("feedbackInboxes").doc(inbox)
+        .collection("pushDevices").doc(device.deviceId)
+        .set({token: device.token, environment: device.environment, updatedAt: FieldValue.serverTimestamp()});
+      response.status(204).end();
     } catch (error) {
       next(firestoreError(error));
     }

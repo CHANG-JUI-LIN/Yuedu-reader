@@ -639,6 +639,7 @@ export const appStoreServerNotifications = onRequest({region}, async (request, r
 });
 
 export {onFeedbackThreadCreated} from "./feedbackTriage.js";
+export {onFeedbackThreadUpdated} from "./feedbackPush.js";
 export {
   onCrashlyticsNewFatal,
   onCrashlyticsNewNonfatal,
