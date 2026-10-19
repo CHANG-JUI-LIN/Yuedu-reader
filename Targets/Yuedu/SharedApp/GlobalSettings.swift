@@ -2,7 +2,6 @@ import YueduCoreText
 import Combine
 import FirebaseAuth
 import Foundation
-import GoogleSignIn
 import SwiftUI
 import UIKit
 
@@ -3764,39 +3763,6 @@ class GlobalSettings {
         guard !trimmed.isEmpty, trimmed != accountDisplayName else { return }
         AccountDisplayNameEdits().save(trimmed, for: accountUserIdentifier)
         accountDisplayName = trimmed
-    }
-
-    @MainActor
-    func signOut(
-        revokeGoogleAccess: Bool = false,
-        completion: (@MainActor (Error?) -> Void)? = nil
-    ) {
-        let provider = accountProvider
-
-        guard provider == "Google" else {
-            clearAccountState()
-            completion?(nil)
-            return
-        }
-
-        if revokeGoogleAccess {
-            Task { @MainActor [weak self] in
-                var failure: Error?
-                do {
-                    try await GIDSignIn.sharedInstance.disconnect()
-                } catch {
-                    failure = error
-                    GIDSignIn.sharedInstance.signOut()
-                }
-                self?.clearAccountState()
-                completion?(failure)
-            }
-            return
-        }
-
-        GIDSignIn.sharedInstance.signOut()
-        clearAccountState()
-        completion?(nil)
     }
 
     /// The asset store's revision as of launch; the notification subscription made in `init`

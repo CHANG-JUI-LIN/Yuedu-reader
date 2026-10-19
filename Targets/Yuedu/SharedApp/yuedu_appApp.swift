@@ -85,6 +85,9 @@ struct yuedu_appApp: App {
         // `AppLogger` call from here on is captured for 設定 → 診斷與回報, and the
         // session record is what tells the next launch whether this one survived.
         DiagnosticLog.shared.beginSession()
+        // Before any source script can ask for it: `java.deviceID()` runs on the JS queue,
+        // and `UIDevice` can only be read here, on main.
+        DeviceIdentity.captureAtLaunch()
         #if DEBUG
         // Isolate first-install / upgrade UI cases without clearing the reader's books.
         if ProcessInfo.processInfo.arguments.contains("-reset-public-library-explore") {

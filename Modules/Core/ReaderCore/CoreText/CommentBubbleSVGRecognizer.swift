@@ -158,9 +158,8 @@ struct CommentBubbleSVGRecognizer {
     // 段評-heavy chapters carry hundreds of paragraph bubbles, and the counts repeat
     // heavily ("0", "1", "99+"…). Producing a bubble is a pure function of (svg, size,
     // theme, settings), yet nothing memoized it: every paragraph re-ran ~15 regex to
-    // parse the SVG and a full @3× draw + per-pixel transparent-trim. ReviewBadgeRenderer
-    // (the <comment>-tag bubble) has always cached by count; these give the SVG-bubble
-    // path the same treatment, collapsing hundreds of redraws into one per distinct
+    // parse the SVG and a full @3× draw + per-pixel transparent-trim. These caches
+    // collapse hundreds of redraws into one per distinct
     // (count, style, theme, size). Keys carry the full determinant so a hit is never the
     // wrong image, and an all-unique chapter is simply no worse than before this cache.
     private final class RecognizedBox: Sendable { let svg: CommentBubbleSVG?; init(_ svg: CommentBubbleSVG?) { self.svg = svg } }

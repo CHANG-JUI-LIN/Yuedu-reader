@@ -84,7 +84,7 @@ struct ContinuousScrollGestureFixture: UIViewControllerRepresentable {
         nonisolated let chapterCount = 2
         private var previousReleased = false
         private var waiting: [CheckedContinuation<Void, Never>] = []
-        private lazy var txtBuilder: TXTLazyAttributedStringBuilder = {
+        private nonisolated let txtBuilder: TXTLazyAttributedStringBuilder = {
             let body = String(repeating: "這是連續捲動的真實手勢測試，前章完成時不能中斷減速或改變正在看的位置。\n", count: 200)
             let file = TXTMappedTextFile(data: Data(("第1章 前章\n" + body + "\n第2章 當前章\n" + body).utf8), encoding: .utf8)
             return TXTLazyAttributedStringBuilder(mappedTextFile: file,
@@ -102,10 +102,14 @@ struct ContinuousScrollGestureFixture: UIViewControllerRepresentable {
         }
         nonisolated func chapterTitle(at index: Int) -> String { "Chapter \(index)" }
         nonisolated func chapterSourceHref(at index: Int) -> String? { "\(index).xhtml" }
-        func chapterHTML(at index: Int) async throws -> String {
+        /// Chapter 0 is held until `releasePreviousChapter()`, so the test can release it mid-gesture.
+        private func waitUntilReleased(_ index: Int) async {
             if index == 0 && !previousReleased {
                 await withCheckedContinuation { waiting.append($0) }
             }
+        }
+        func chapterHTML(at index: Int) async throws -> String {
+            await waitUntilReleased(index)
             return html
         }
         func chapterDataSize(at index: Int) async -> Int { html.utf8.count }
@@ -115,11 +119,11 @@ struct ContinuousScrollGestureFixture: UIViewControllerRepresentable {
         func prefetchImages(forChapter index: Int, html: String, renderWidth: CGFloat) async -> [String: UIImage] { [:] }
         func loadImage(forChapter index: Int, source: String, renderWidth: CGFloat) async -> UIImage? { nil }
         func fontResolver() -> BrowserFontResolver? { nil }
-        func buildChapter(at index: Int, settings: ReaderRenderSettings, themeTextColor: UIColor,
-                          themeBackgroundColor: UIColor) async throws -> AttributedChapterBuildResult {
-            if index == 0 && !previousReleased {
-                await withCheckedContinuation { waiting.append($0) }
-            }
+        // Nonisolated like the protocol requirement, so the non-Sendable build result never has
+        // to cross out of the main actor; only the release wait runs there.
+        nonisolated func buildChapter(at index: Int, settings: ReaderRenderSettings, themeTextColor: UIColor,
+                                      themeBackgroundColor: UIColor) async throws -> AttributedChapterBuildResult {
+            await waitUntilReleased(index)
             return try await txtBuilder.buildChapter(at: index, settings: settings,
                 themeTextColor: themeTextColor, themeBackgroundColor: themeBackgroundColor)
         }

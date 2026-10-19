@@ -1857,9 +1857,10 @@ struct LegadoHTTPResult {
         }
     }
 
-    /// Returns a device identifier. Used by sources like 光遇 for `checkEnv()`.
+    /// Returns a device identifier. Used by sources like 光遇 for `checkEnv()`. The vendor id,
+    /// captured on main at launch (`DeviceIdentity`) — this runs on the JS queue.
     func deviceID() -> String {
-        return UIDevice.current.identifierForVendor?.uuidString ?? "ios-device"
+        DeviceIdentity.vendorID
     }
 
     /// Legado `java.androidId()` — Android's `Settings.Secure.ANDROID_ID`, which is
