@@ -25,6 +25,7 @@ struct FeedbackListView: View {
     @State private var didPickInitialGroup = false
     @State private var markAllError: String?
     @State private var reloadToken = 0
+    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
 
     private func threads(in group: FeedbackStatusGroup) -> [FeedbackThread] {
         threads
@@ -83,6 +84,8 @@ struct FeedbackListView: View {
         TabView(selection: tabSelection) {
             ForEach(FeedbackStatusGroup.allCases) { group in
                 page(for: group)
+                    // The pages keep the real size class; only the bar is made compact.
+                    .environment(\.horizontalSizeClass, horizontalSizeClass)
                     .tabItem { Label(group.title, systemImage: group.systemImage) }
                     .tag(ListTab.group(group))
             }
@@ -91,6 +94,10 @@ struct FeedbackListView: View {
                 .tabItem { Label(localized("排序"), systemImage: "arrow.up.arrow.down") }
                 .tag(ListTab.sort)
         }
+        // iPadOS 18+ draws a regular-width TabView as the floating top bar: titles only, plus
+        // a sidebar button beside the app's own. The groups are this page's filter, so on
+        // iPad too they are the bottom bar with icons, as on iPhone (maintainer, 2026-10-19).
+        .environment(\.horizontalSizeClass, .compact)
     }
 
     @ViewBuilder

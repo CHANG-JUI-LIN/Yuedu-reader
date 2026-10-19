@@ -10,17 +10,26 @@ final class FeedbackCenterUITests: XCTestCase {
         continueAfterFailure = false
     }
 
+    @MainActor
     private func launch() -> XCUIApplication {
         let app = XCUIApplication()
         app.launchArguments = ["-no-official-modules", "-AppleLanguages", "(zh-Hant)", "-AppleLocale", "zh_TW",
                                "-yd_source_disclaimer_accepted", "YES"]
         app.launch()
-        let tab = app.tabBars.buttons["設定"].firstMatch
+        let tab = tabButton(app, "設定")
         XCTAssertTrue(tab.waitForExistence(timeout: 30), app.debugDescription)
         tab.tap()
         return app
     }
 
+    /// A tab, whichever bar draws it: the bottom bar on iPhone, the floating top bar on
+    /// iPad, the side rail on a wide iPhone. Only the first is a `tabBars` element.
+    @MainActor
+    private func tabButton(_ app: XCUIApplication, _ label: String) -> XCUIElement {
+        app.buttons.matching(NSPredicate(format: "label == %@", label)).firstMatch
+    }
+
+    @MainActor
     private func attach(_ app: XCUIApplication, _ name: String) {
         let attachment = XCTAttachment(screenshot: app.screenshot())
         attachment.name = name
@@ -28,6 +37,7 @@ final class FeedbackCenterUITests: XCTestCase {
         add(attachment)
     }
 
+    @MainActor
     private func back(_ app: XCUIApplication) {
         app.navigationBars.buttons.element(boundBy: 0).tap()
     }
@@ -53,13 +63,16 @@ final class FeedbackCenterUITests: XCTestCase {
 
         // 我的回饋: the status groups are the page's own tab bar.
         app.buttons["feedback_center_list"].firstMatch.tap()
-        let groupTabs = ["處理中", "排隊中", "待補充", "已完成"].map { app.tabBars.buttons[$0].firstMatch }
+        let groupTabs = ["處理中", "排隊中", "待補充", "已完成"].map { tabButton(app, $0) }
         XCTAssertTrue(groupTabs[0].waitForExistence(timeout: 10), app.debugDescription)
         for tab in groupTabs {
             XCTAssertTrue(tab.isHittable, "\(tab.label) should be a reachable tab")
         }
+        // A tab bar with icons on every device: iPad's floating top bar shows titles only
+        // (maintainer, 2026-10-19).
+        XCTAssertTrue(app.tabBars.buttons["處理中"].exists, "the groups should be a bottom tab bar, iPad included")
         // The app's tab bar steps aside for the page's own (maintainer, 2026-10-17).
-        let shelfTab = app.tabBars.buttons["書架"].firstMatch
+        let shelfTab = tabButton(app, "書架")
         let rootTabBarGone = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in
             !(shelfTab.exists && shelfTab.isHittable)
         }, object: nil)
@@ -79,7 +92,7 @@ final class FeedbackCenterUITests: XCTestCase {
         attach(app, "feedback-list")
 
         // The sort tab opens the sort choices and leaves the selected group alone.
-        let sortTab = app.tabBars.buttons["排序"].firstMatch
+        let sortTab = tabButton(app, "排序")
         XCTAssertTrue(sortTab.exists, app.debugDescription)
         sortTab.tap()
         let oldestFirst = app.buttons["最早的在前"].firstMatch
