@@ -24,13 +24,28 @@ final class ContinuousScrollMomentumUITests: XCTestCase {
             status.label.hasPrefix("ready")
         }, object: nil)
         XCTAssertEqual(XCTWaiter.wait(for: [ready], timeout: 30), .completed)
+        func statusValues() -> [String: Double] {
+            Dictionary(uniqueKeysWithValues: status.label.split(separator: " ").compactMap { field -> (String, Double)? in
+                let parts = field.split(separator: "=", maxSplits: 1)
+                guard parts.count == 2, let number = Double(parts[1]) else { return nil }
+                return (String(parts[0]), number)
+            })
+        }
         // Finger DOWN moves toward earlier, unmeasured paragraphs. These are
         // real pan/release events; no programmatic contentOffset simulation.
-        for _ in 0..<5 {
+        // A layout lands mid-momentum only when the fling leaves the region the
+        // previous layout covered, and that runway scales with the viewport: on
+        // iPhone Duo's 644 pt window every fling stopped just inside it, so each
+        // layout landed at the next touch-down instead. Fling until a layout has
+        // landed while decelerating (the fixture then releases chapter 0); the
+        // cap still fails a reader whose momentum never meets new geometry.
+        var flicks = 0
+        repeat {
             let start = app.coordinate(withNormalizedOffset: CGVector(dx: 0.65, dy: 0.25))
             let end = app.coordinate(withNormalizedOffset: CGVector(dx: 0.65, dy: 0.8))
             start.press(forDuration: 0.01, thenDragTo: end, withVelocity: .fast, thenHoldForDuration: 0)
-        }
+            flicks += 1
+        } while flicks < 5 || (statusValues()["corrections"] ?? 0) == 0 && flicks < 12
         for direction in [1.0, -1.0, 1.0, -1.0] {
             let start = app.coordinate(withNormalizedOffset: CGVector(dx: 0.65, dy: 0.5))
             let end = app.coordinate(withNormalizedOffset: CGVector(dx: 0.65, dy: 0.5 + direction * 0.06))
@@ -44,12 +59,8 @@ final class ContinuousScrollMomentumUITests: XCTestCase {
             start.press(forDuration: 0.01, thenDragTo: end,
                         withVelocity: XCUIGestureVelocity(rawValue: 450), thenHoldForDuration: 0)
         }
-        let values = Dictionary(uniqueKeysWithValues: status.label.split(separator: " ").compactMap { field -> (String, Double)? in
-            let parts = field.split(separator: "=", maxSplits: 1)
-            guard parts.count == 2, let number = Double(parts[1]) else { return nil }
-            return (String(parts[0]), number)
-        })
-        print("[ViewportMomentum] \(status.label)")
+        let values = statusValues()
+        print("[ViewportMomentum] flicks=\(flicks) \(status.label)")
         XCTAssertGreaterThan(try XCTUnwrap(values["corrections"]), 0)
         XCTAssertGreaterThan(try XCTUnwrap(values["counts"]), 0)
         XCTAssertGreaterThan(try XCTUnwrap(values["insertions"]), 0)
