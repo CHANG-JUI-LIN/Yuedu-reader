@@ -184,13 +184,8 @@ struct RSSSource: Codable, Identifiable {
     /// strips `,{json options}` suffixes and `#comment` fragments Legado allows,
     /// adds a missing scheme, and percent-encodes non-ASCII characters.
     static func normalizedWebURL(from raw: String) -> URL? {
-        var cleaned = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        var cleaned = strippingLegadoURLOptions(raw.trimmingCharacters(in: .whitespacesAndNewlines))
         guard !cleaned.isEmpty else { return nil }
-
-        // Strip Legado URL option suffix: "https://x.com,{'method':'POST'}"
-        if let range = cleaned.range(of: #"\s*,\s*\{"#, options: .regularExpression) {
-            cleaned = String(cleaned[..<range.lowerBound])
-        }
 
         if !cleaned.lowercased().hasPrefix("http://") && !cleaned.lowercased().hasPrefix("https://") {
             // Only treat host-like strings as URLs (e.g. "shuyuan.nyasama.net").
@@ -210,6 +205,13 @@ struct RSSSource: Codable, Identifiable {
             return nil
         }
         return url.upgradedToHTTPS()
+    }
+
+    /// Drops the request-option suffix Legado allows after a URL:
+    /// "https://x.com/a,{'method':'POST'}" → "https://x.com/a".
+    static func strippingLegadoURLOptions(_ raw: String) -> String {
+        guard let range = raw.range(of: #"\s*,\s*\{"#, options: .regularExpression) else { return raw }
+        return String(raw[..<range.lowerBound])
     }
 }
 

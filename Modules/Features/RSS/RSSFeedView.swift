@@ -3,11 +3,13 @@ import SafariServices
 
 // MARK: - SafariView
 
+/// Takes `InAppWebURL`, not `URL`: `SFSafariViewController` raises on any scheme but
+/// http(s), so callers route links through `RSSLinkRoute` first.
 struct SafariView: UIViewControllerRepresentable {
-    let url: URL
+    let url: InAppWebURL
 
     func makeUIViewController(context: Context) -> SFSafariViewController {
-        SFSafariViewController(url: url)
+        SFSafariViewController(url: url.url)
     }
 
     func updateUIViewController(_ uiViewController: SFSafariViewController, context: Context) {}
@@ -183,7 +185,7 @@ struct RSSFeedView: View {
 
     // Legado compatibility state
     @State private var selectedSortEntry: RSSSortEntry?
-    @State private var presentedWebPageURL: URL?
+    @State private var presentedWebPageURL: InAppWebURL?
     @State private var autoOpenedWebPage = false
     /// IDs fetched for the currently selected category; nil = show everything.
     @State private var currentCategoryIDs: Set<String>?
@@ -397,7 +399,7 @@ struct RSSFeedView: View {
     // MARK: - Legado web-page source
 
     @ViewBuilder
-    private func webPageSourceContent(url: URL) -> some View {
+    private func webPageSourceContent(url: InAppWebURL) -> some View {
         VStack(spacing: 14) {
             RSSFaviconView(source: currentSource, size: 48)
 

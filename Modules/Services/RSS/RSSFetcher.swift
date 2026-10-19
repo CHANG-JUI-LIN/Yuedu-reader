@@ -1072,10 +1072,10 @@ final class RSSFetcher: ObservableObject {
     /// Legado sortUrl category tabs resolved for the current source.
     @Published var sortEntries: [RSSSortEntry] = []
     /// Set for Legado singleUrl sources: open this URL directly as a web page.
-    @Published var webPageURL: URL?
+    @Published var webPageURL: InAppWebURL?
     /// Set when fetching/parsing failed but the source looks like a plain web
     /// page — the UI offers an "open as web page" fallback.
-    @Published var webPageFallbackURL: URL?
+    @Published var webPageFallbackURL: InAppWebURL?
 
     func fetchItems(from source: RSSSource, metadata: RSSFeedFetchMetadata? = nil, sortEntry: RSSSortEntry? = nil) async {
         isLoading = true
@@ -1090,7 +1090,7 @@ final class RSSFetcher: ObservableObject {
         // Legado singleUrl semantics: the source IS a web page, not a feed.
         if source.opensAsWebPage {
             items = []
-            if let url = source.webPageURL {
+            if let url = source.webPageURL.flatMap(InAppWebURL.init) {
                 webPageURL = url
             } else {
                 error = localized("RSS URL 無效")
@@ -1177,7 +1177,7 @@ final class RSSFetcher: ObservableObject {
                     // singleUrl sources imported by older app versions): offer to
                     // open it as a web page instead of surfacing an XML error.
                     error = localized("此來源是網頁而非 RSS 訂閱，可直接以網頁開啟。")
-                    webPageFallbackURL = request.url ?? source.webPageURL
+                    webPageFallbackURL = (request.url ?? source.webPageURL).flatMap(InAppWebURL.init)
                     items = []
                     return
                 }
@@ -1282,7 +1282,7 @@ final class RSSFetcher: ObservableObject {
                 self.error = error.localizedDescription
             }
             // Rule scraping failed — at least let the user open the page itself.
-            webPageFallbackURL = source.webPageURL
+            webPageFallbackURL = source.webPageURL.flatMap(InAppWebURL.init)
         }
     }
 }

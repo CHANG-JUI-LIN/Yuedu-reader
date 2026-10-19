@@ -44,7 +44,8 @@ struct RSSListView: View {
     @State private var importMessage = ""
     @State private var showImportResult = false
     @State private var didBackfillSourceMetadata = false
-    @State private var safariURL: URL?
+    @State private var safariURL: InAppWebURL?
+    @Environment(\.openURL) private var openURL
     @State private var sourceToEdit: RSSSource?
     @State private var folderToRename: RSSFolder?
     @State private var sourceForInfo: RSSSource?
@@ -451,9 +452,9 @@ struct RSSListView: View {
                 Label(localized("取得資訊"), systemImage: "info.circle")
             }
 
-            if let homepageURL = source.homepageURL, URL(string: homepageURL) != nil {
+            if let homeRoute = source.homepageLinkRoute, homeRoute != .unopenable {
                 Button {
-                    openURLString(homepageURL)
+                    open(homeRoute)
                 } label: {
                     Label(localized("開啟首頁"), systemImage: "safari")
                 }
@@ -669,9 +670,17 @@ struct RSSListView: View {
         }
     }
 
-    private func openURLString(_ urlString: String) {
-        guard let url = URL(string: urlString) else { return }
-        safariURL = url
+    private func open(_ route: RSSLinkRoute) {
+        switch route {
+        case .inApp(let webURL):
+            safariURL = webURL
+        case .system(let url):
+            openURL(url) { accepted in
+                if !accepted { RSSLinkRoute.logUnhandled(url) }
+            }
+        case .unopenable:
+            break
+        }
     }
 
     private func copyURLString(_ urlString: String) {
@@ -1675,9 +1684,11 @@ private struct RSSSourceInfoSheet: View {
                         Label(localized("複製訂閱 URL"), systemImage: "doc.on.doc")
                     }
 
-                    if let homepageURL = currentSource.homepageURL, let url = URL(string: homepageURL) {
+                    if let url = currentSource.homepageLinkRoute?.url {
                         Button {
-                            UIApplication.shared.open(url)
+                            UIApplication.shared.open(url) { accepted in
+                                if !accepted { RSSLinkRoute.logUnhandled(url) }
+                            }
                         } label: {
                             Label(localized("開啟首頁"), systemImage: "safari")
                         }

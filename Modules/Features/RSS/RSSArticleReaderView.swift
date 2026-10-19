@@ -9,7 +9,8 @@ struct RSSArticleReaderView: View {
     @State private var readerMode: RSSArticleReaderMode = .reader
     @State private var isLoadingFullText = false
     @State private var fullTextError: String?
-    @State private var selectedURL: URL?
+    @State private var selectedURL: InAppWebURL?
+    @Environment(\.openURL) private var openURL
     /// 分享 payload waiting for this page's own share sheet. This view is a
     /// `navigationDestination`, so that sheet is a first-level presentation — the
     /// toolbar `Menu` cannot own the share sheet itself before iOS 18. See
@@ -37,8 +38,8 @@ struct RSSArticleReaderView: View {
                     onScrollYChange: { scrollY in
                         store.updateReaderScrollY(articleId: article.id, scrollY: scrollY)
                     },
-                    onOpenURL: { url in
-                        selectedURL = url
+                    onOpenLink: { route in
+                        open(route)
                     }
                 )
                 .ignoresSafeArea(.container, edges: .bottom)
@@ -70,7 +71,8 @@ struct RSSArticleReaderView: View {
                                 Label(readerModeToggleTitle, systemImage: readerModeToggleIcon)
                             }
 
-                            if let url = URL(string: article.link) {
+                            let articleRoute = linkRoute(for: article)
+                            if let url = articleRoute.url {
                                 MenuShareRow(
                                     label: localized("分享"),
                                     makeExport: {
@@ -84,7 +86,7 @@ struct RSSArticleReaderView: View {
                                 )
 
                                 Button {
-                                    selectedURL = url
+                                    open(articleRoute)
                                 } label: {
                                     Label(localized("原文"), systemImage: "safari")
                                 }
@@ -114,6 +116,25 @@ struct RSSArticleReaderView: View {
         }
         .sheet(item: $selectedURL) { url in
             SafariView(url: url)
+        }
+    }
+
+    /// The article's own link, resolved against its source — feeds and Legado rules
+    /// can store a relative path or a non-web scheme here.
+    private func linkRoute(for article: RSSArticleRecord) -> RSSLinkRoute {
+        RSSLinkRoute.route(article.link, relativeTo: source?.articleLinkBaseURL)
+    }
+
+    private func open(_ route: RSSLinkRoute) {
+        switch route {
+        case .inApp(let webURL):
+            selectedURL = webURL
+        case .system(let url):
+            openURL(url) { accepted in
+                if !accepted { RSSLinkRoute.logUnhandled(url) }
+            }
+        case .unopenable:
+            break
         }
     }
 
@@ -255,7 +276,7 @@ struct RSSArticleReaderView: View {
             sourceFaviconURLs = []
             return
         }
-        let articleURL = article.flatMap { URL(string: $0.link)?.upgradedToHTTPS() }
+        let articleURL = article.flatMap { linkRoute(for: $0).url?.upgradedToHTTPS() }
         sourceFaviconURLs = await RSSFaviconResolver.candidateURLs(for: source, fallbackURL: articleURL)
     }
 }
@@ -265,7 +286,7 @@ struct RSSArticleWebReaderView: UIViewRepresentable {
     let restoreScrollY: Double
     @Binding var findRequestID: UUID?
     let onScrollYChange: (Double) -> Void
-    let onOpenURL: (URL) -> Void
+    let onOpenLink: (RSSLinkRoute) -> Void
 
     func makeCoordinator() -> Coordinator {
         Coordinator(self)
@@ -325,13 +346,19 @@ struct RSSArticleWebReaderView: UIViewRepresentable {
             decisionHandler: @escaping @MainActor (WKNavigationActionPolicy) -> Void
         ) {
             guard navigationAction.navigationType == .linkActivated,
-                  let url = navigationAction.request.url,
-                  ["http", "https"].contains(url.scheme?.lowercased() ?? "") else {
+                  let url = navigationAction.request.url else {
                 decisionHandler(.allow)
                 return
             }
 
-            parent.onOpenURL(url)
+            // Web links open in the Safari sheet and app links (mailto:, tel:) leave
+            // for their app; everything else (in-page script, data:) stays with WebKit.
+            let route = RSSLinkRoute.route(url)
+            guard route != .unopenable else {
+                decisionHandler(.allow)
+                return
+            }
+            parent.onOpenLink(route)
             decisionHandler(.cancel)
         }
 
