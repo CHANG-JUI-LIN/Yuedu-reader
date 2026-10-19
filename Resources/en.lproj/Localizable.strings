@@ -4049,3 +4049,11 @@
 "首頁欄目引用" = "Home Section References";
 "首頁配置：%1$@ · 模組：%2$@" = "Home: %1$@ · Module: %2$@";
 "暫停或繼續下載" = "Pause or Resume Download";
+
+/* 回饋中心 push (functions/src/feedbackPushPolicy.ts): subtitle, and the body when there is no reply text */
+"回饋推播：新回覆" = "New reply";
+"回饋推播：待補充" = "More details needed";
+"回饋推播：已完成" = "Resolved";
+"回饋推播：新回覆內文" = "Tap to read the reply";
+"回饋推播：待補充內文" = "Tap to see what’s needed";
+"回饋推播：已完成內文" = "Tap to see the outcome";

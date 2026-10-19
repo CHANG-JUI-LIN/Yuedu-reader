@@ -224,6 +224,16 @@ final class RSSAppNotificationDelegate: NSObject, UIApplicationDelegate, UNUserN
         ReaderOrientationController.shared.supportedMask(for: UIDevice.current.userInterfaceIdiom)
     }
 
+    // MARK: - Remote notifications (回饋中心)
+
+    func application(_ application: UIApplication, didRegisterForRemoteNotificationsWithDeviceToken deviceToken: Data) {
+        FeedbackPushRegistration.shared.didRegister(deviceToken: deviceToken)
+    }
+
+    func application(_ application: UIApplication, didFailToRegisterForRemoteNotificationsWithError error: Error) {
+        AppLogger.network("APNs registration failed", error: error)
+    }
+
     // MARK: - UNUserNotificationCenterDelegate
 
     nonisolated func userNotificationCenter(
@@ -231,6 +241,10 @@ final class RSSAppNotificationDelegate: NSObject, UIApplicationDelegate, UNUserN
         willPresent notification: UNNotification,
         withCompletionHandler completionHandler: @escaping (UNNotificationPresentationOptions) -> Void
     ) {
+        if notification.request.content.userInfo[FeedbackNotificationPresenter.threadKey] is String {
+            // An open 我的回饋 or conversation shows the news now, not at its next poll.
+            Task { @MainActor in FeedbackService.shared.refreshOpenStreams() }
+        }
         completionHandler([.list, .banner, .badge, .sound])
     }
 
@@ -238,6 +252,10 @@ final class RSSAppNotificationDelegate: NSObject, UIApplicationDelegate, UNUserN
         _ center: UNUserNotificationCenter,
         didReceive response: UNNotificationResponse
     ) async {
+        if let threadID = response.notification.request.content.userInfo[FeedbackNotificationPresenter.threadKey] as? String {
+            await MainActor.run { FeedbackNotificationPresenter.open(threadID: threadID) }
+            return
+        }
         let action = RSSNotificationManager.articleAction(from: response)
         await MainActor.run {
             RSSNotificationManager.shared.handleNotificationAction(

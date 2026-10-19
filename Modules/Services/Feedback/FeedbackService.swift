@@ -150,6 +150,7 @@ final class FeedbackService {
         try await client.sendVoid(try request("POST", "/threads").jsonBody(report))
         CrashContext.breadcrumb("feedback \(threadID) sent (\(uploaded.count) attachments, log \(reportID))")
         refreshOpenStreams()
+        FeedbackPushRegistration.shared.inboxInUse()
         return threadID
     }
 
@@ -230,10 +231,29 @@ final class FeedbackService {
         polling { [self] in
             let object = try await json(request("GET", "/threads"))
             let rows = object["threads"] as? [[String: Any]] ?? []
+            // An inbox shared over iCloud Keychain may have reports this device never sent.
+            if !rows.isEmpty { FeedbackPushRegistration.shared.inboxInUse() }
             return rows.compactMap { row in
                 (row["id"] as? String).flatMap { Self.thread(id: $0, data: row) }
             }
         }
+    }
+
+    /// One thread, read once: what a tapped notification opens.
+    func thread(id: String) async throws -> FeedbackThread? {
+        let object = try await json(request("GET", "/threads"))
+        let rows = object["threads"] as? [[String: Any]] ?? []
+        guard let row = rows.first(where: { $0["id"] as? String == id }) else { return nil }
+        return Self.thread(id: id, data: row)
+    }
+
+    /// Files this device's APNs token under the inbox, keyed by the install id so a new
+    /// token replaces the old one (`FeedbackPushRegistration` decides when).
+    func registerPushDevice(token: String, environment: String) async throws {
+        let deviceID = CrashContext.installID.lowercased()
+        try await client.sendVoid(
+            try request("PUT", "/push-devices/\(deviceID)").jsonBody(PushDeviceBody(token: token, environment: environment))
+        )
     }
 
     /// One thread's messages, oldest first, kept current.
@@ -297,7 +317,8 @@ final class FeedbackService {
         return stream
     }
 
-    private func refreshOpenStreams() {
+    /// Also called when a 回饋中心 notification arrives while the app is open.
+    func refreshOpenStreams() {
         for wake in wakeups.values { wake.yield() }
     }
 
@@ -361,6 +382,11 @@ final class FeedbackService {
         let installId: String
         let diagnosticReportId: String
         let deviceInfo: [String: String]
+    }
+
+    private struct PushDeviceBody: Encodable {
+        let token: String
+        let environment: String
     }
 
     private struct ReplyBody: Encodable {
