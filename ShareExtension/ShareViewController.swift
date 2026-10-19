@@ -23,13 +23,15 @@ final class ShareViewController: UIViewController {
             return
         }
         provider.loadItem(forTypeIdentifier: UTType.url.identifier, options: nil) { [weak self] item, error in
+            // `item` is NSSecureCoding, which is not Sendable: take the URL out before the hop.
+            let url = item as? URL
             DispatchQueue.main.async {
                 guard let self else { return }
                 if let error {
                     self.finish(success: false, message: error.localizedDescription)
                     return
                 }
-                guard let url = item as? URL,
+                guard let url,
                       ["http", "https"].contains(url.scheme?.lowercased() ?? "") else {
                     self.finish(success: false, message: localized("無法讀取分享連結"))
                     return
