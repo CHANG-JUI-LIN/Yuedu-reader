@@ -150,6 +150,7 @@ final class BookshelfCoverFrameBox {
     var catalogImage: UIImage?
 
     /// The tapped card's cover, as the open-book transition takes it.
+    @MainActor
     func tappedCover() -> BookshelfTappedCover {
         BookshelfTappedCover(
             geometry: frame.isEmpty

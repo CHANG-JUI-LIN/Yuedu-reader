@@ -15,6 +15,7 @@ import Foundation
 ///    and no dark one shows the light one in dark mode, dimmed.
 /// 4. **A pack's background named after the pack**, on devices where step 1 named it
 ///    自訂背景 — see `renamePackBackgroundsLeftWithTheDefaultName`.
+@MainActor
 enum ReaderBackgroundMigration {
     static let savedBackgroundsDoneKey = "yd_migrated_reader_saved_backgrounds_v1"
     static let packDarkPagesDoneKey = "yd_migrated_pack_dark_page_backgrounds_v1"

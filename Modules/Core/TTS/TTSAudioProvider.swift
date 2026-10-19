@@ -547,8 +547,10 @@ final class CustomHTTPProvider: TTSAudioProvider {
     }
 
     func audioData(for text: String, title: String, rate: Float) async throws -> Data {
+        // One read: the template, the source and the headers belong to the same voice.
+        let settings = GlobalSettings.snapshot
         if var request = DirectChapterAudioResolver.request(from: text) {
-            for (field, value) in GlobalSettings.shared.httpTtsHeaders {
+            for (field, value) in settings.httpTtsHeaders {
                 if request.value(forHTTPHeaderField: field) == nil {
                     request.setValue(value, forHTTPHeaderField: field)
                 }
@@ -557,8 +559,8 @@ final class CustomHTTPProvider: TTSAudioProvider {
             return try await fetchAudioData(request: request, source: nil)
         }
 
-        let activeSource = overrideSource ?? GlobalSettings.shared.activeTTSSource
-        let template = (overrideSource?.urlTemplate ?? GlobalSettings.shared.httpTtsUrlTemplate)
+        let activeSource = overrideSource ?? settings.activeTTSSource
+        let template = (overrideSource?.urlTemplate ?? settings.httpTtsUrlTemplate)
             .trimmingCharacters(in: .whitespacesAndNewlines)
         ttsLog("[TTS][Provider] template empty=\(template.isEmpty) source=\(activeSource?.name ?? "-") textCount=\(text.count) title=\(title) rate=\(rate)")
         guard !template.isEmpty else {
@@ -587,7 +589,7 @@ final class CustomHTTPProvider: TTSAudioProvider {
 
         // From the same source as the template. Falling back to the globally selected
         // source's headers would send one voice's credentials to another voice's endpoint.
-        for (field, value) in overrideSource?.headers ?? GlobalSettings.shared.httpTtsHeaders {
+        for (field, value) in overrideSource?.headers ?? settings.httpTtsHeaders {
             if request.value(forHTTPHeaderField: field) == nil {
                 request.setValue(value, forHTTPHeaderField: field)
             }

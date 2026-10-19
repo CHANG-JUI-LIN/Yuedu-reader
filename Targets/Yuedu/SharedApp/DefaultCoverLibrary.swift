@@ -130,6 +130,7 @@ final class DefaultCoverStorageManager: Sendable {
 enum DefaultCoverLibrary {
     /// File names for `scheme`, falling back to the light set when the dark set
     /// is empty — the same "set one, get both" rule the launch image uses.
+    @MainActor
     static func fileNames(for scheme: DefaultCoverScheme) -> [String] {
         let settings = GlobalSettings.shared
         let primary = settings.defaultCoverFileNames(for: scheme)
@@ -137,6 +138,7 @@ enum DefaultCoverLibrary {
         return scheme == .dark ? settings.defaultCoverFileNames(for: .light) : []
     }
 
+    @MainActor
     static func hasImages(for colorScheme: ColorScheme) -> Bool {
         !fileNames(for: colorScheme == .dark ? .dark : .light).isEmpty
     }
@@ -145,6 +147,7 @@ enum DefaultCoverLibrary {
     /// maps to, or nil when the user has not added any. Pure: settings and a hash,
     /// no file access. The shelf decides its fallback with this and only loads the
     /// image if it actually gets that far.
+    @MainActor
     static func fileName(seed: String, colorScheme: ColorScheme) -> String? {
         stableFileName(seed: seed, in: fileNames(for: colorScheme == .dark ? .dark : .light))
     }
@@ -152,6 +155,7 @@ enum DefaultCoverLibrary {
     /// The default cover for `seed`, **blocking**, or nil when the library is empty —
     /// in which case the caller falls back to `GeneratedBookCover`, which is always
     /// available. Not for the shelf, which loads through `BookshelfCoverArtwork`.
+    @MainActor
     static func image(seed: String, colorScheme: ColorScheme) -> UIImage? {
         guard let fileName = fileName(seed: seed, colorScheme: colorScheme) else { return nil }
         return image(fileName: fileName)
@@ -172,6 +176,7 @@ enum DefaultCoverLibrary {
 
     /// Memory only: the default cover for `seed` if it is already decoded at `size`.
     /// Nil also while it is still loading, so callers must load it themselves.
+    @MainActor
     static func cachedImage(
         seed: String,
         colorScheme: ColorScheme,

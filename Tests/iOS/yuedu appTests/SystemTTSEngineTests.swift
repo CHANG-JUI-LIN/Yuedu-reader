@@ -128,7 +128,7 @@ struct SystemTTSEngineTests {
 
     // MARK: - Voice selection
 
-    @Test func chineseTextSelectsChineseVoice() {
+    @Test @MainActor func chineseTextSelectsChineseVoice() {
         let text = "今天天氣很好"
 
         #expect(SystemTTSEngine.preferredLanguage(for: text).hasPrefix("zh"))

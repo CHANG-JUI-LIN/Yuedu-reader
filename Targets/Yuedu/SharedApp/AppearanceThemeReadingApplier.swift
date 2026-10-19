@@ -37,14 +37,14 @@ extension GlobalSettings {
     }
 
     /// v2 since the default became 跟隨主題 (2026-09-29).
-    private static let readingScopeKey = "yd_reading_settings_scope_v2"
+    nonisolated private static let readingScopeKey = "yd_reading_settings_scope_v2"
     /// Written for one day while the default was 全域. See `migratedLegacyReadingScope`.
-    private static let legacyReadingScopeKey = "yd_reading_settings_scope"
-    static let globalReadingKey = "yd_reading_settings_global"
-    static let builtInThemeReadingKey = "yd_reading_settings_builtin_themes"
+    nonisolated private static let legacyReadingScopeKey = "yd_reading_settings_scope"
+    nonisolated static let globalReadingKey = "yd_reading_settings_global"
+    nonisolated static let builtInThemeReadingKey = "yd_reading_settings_builtin_themes"
 
     /// Where the scope and the two stores live, for a test that has to put them back.
-    static let readingSettingsStoreKeys = [
+    nonisolated static let readingSettingsStoreKeys = [
         readingScopeKey, legacyReadingScopeKey, globalReadingKey, builtInThemeReadingKey,
     ]
 

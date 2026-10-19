@@ -526,7 +526,7 @@ final class SystemTTSEngine: NSObject, TTSPlayable {
     /// device's English default voice, then lets the user's own choice for that language
     /// win (語音朗讀設定 → 系統語音音色). With no choice stored — or one whose downloaded
     /// voice has since been deleted — this stays exactly the old language default.
-    nonisolated static func preferredVoice(for text: String) -> AVSpeechSynthesisVoice? {
+    static func preferredVoice(for text: String) -> AVSpeechSynthesisVoice? {
         let language = preferredLanguage(for: text)
         if let selected = SystemTTSVoiceCatalog.selectedVoice(forLanguage: language) {
             return selected
@@ -540,7 +540,7 @@ final class SystemTTSEngine: NSObject, TTSPlayable {
     /// A cast voice that no longer resolves — the user deleted that downloaded voice
     /// since assigning it — falls back to the narrator rather than to silence, because
     /// `speakChunk` treats a missing voice as a playback failure and ends the session.
-    nonisolated static func preferredVoice(
+    static func preferredVoice(
         for text: String,
         speaker: String?,
         roleVoices: [String: String]

@@ -26,6 +26,7 @@ struct SearchAutoPausePolicy {
     let exactThreshold: Int
 
     /// The policy the user configured in 網路設定 — the one way every search reads it.
+    @MainActor
     static var configured: SearchAutoPausePolicy {
         SearchAutoPausePolicy(count: GlobalSettings.shared.searchAutoPauseCount)
     }

@@ -10,6 +10,7 @@ import Testing
 /// `hashValue` would reshuffle them on every relaunch (Swift seeds that per
 /// process).
 @Suite("Default cover library", .serialized)
+@MainActor
 struct DefaultCoverLibraryTests {
     private func withLibrary(
         light: [String],

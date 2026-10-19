@@ -11,6 +11,7 @@ struct UserProfile: Codable, Equatable {
     var updatedAt: Date
     var preferences: ReaderPreferences
 
+    @MainActor
     init(
         uid: String,
         displayName: String,
@@ -57,6 +58,7 @@ struct ReaderPreferences: Codable, Equatable {
     /// Per-reading-background 文字顏色 (ReaderTheme raw value → RGB hex).
     var readerTextColorOverrides: [String: UInt32]?
 
+    @MainActor
     static func current(settings: GlobalSettings = .shared) -> ReaderPreferences {
         ReaderPreferences(
             readerFontSize: settings.readerFontSize,

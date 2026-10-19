@@ -133,6 +133,8 @@ struct FeedbackThreadView: View {
                 )
             }
             HStack(alignment: .bottom, spacing: DSSpacing.sm) {
+                // Read here, on main: the picker's label closure is `@Sendable`.
+                let pickerIconFont = DSFont.title3
                 PhotosPicker(
                     selection: $pickerItems,
                     maxSelectionCount: max(1, FeedbackFirestoreSchema.attachmentLimit - draftAttachments.count - preparingCount),
@@ -140,7 +142,7 @@ struct FeedbackThreadView: View {
                     preferredItemEncoding: .compatible
                 ) {
                     Image(systemName: "photo.on.rectangle")
-                        .font(DSFont.title3)
+                        .font(pickerIconFont)
                         .foregroundStyle(DSColor.textPrimary)
                         .frame(minWidth: DSLayout.minimumTapTarget, minHeight: DSLayout.minimumTapTarget)
                 }

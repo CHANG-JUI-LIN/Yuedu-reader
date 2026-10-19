@@ -347,6 +347,7 @@ struct ReaderChromePalette {
     let panelFill: Color
     let panelText: Color
 
+    @MainActor
     init(interface: ReaderChromeInterface, theme: ReaderTheme, settings: GlobalSettings) {
         self.interface = interface
         func picked(_ slot: ReaderChromeSlot) -> Color? {

@@ -135,7 +135,7 @@ struct TTSCoordinatorTests {
         #expect(sources[0].urlTemplate.contains("{{java.encodeURI(java.encodeURI(speakText))}}"))
     }
 
-    @Test func mimoTTSExtractsAudioFromBodyFunctionLoginCheck() async throws {
+    @Test @MainActor func mimoTTSExtractsAudioFromBodyFunctionLoginCheck() async throws {
         let json = """
         [
           {

@@ -6,6 +6,7 @@ import UIKit
 /// resolution order in `ReaderTheme.uiTextColor` — the user's own pick outranks a
 /// bound appearance palette, and clearing it hands the background back to 跟隨主題.
 @Suite("Reader Text Color Override")
+@MainActor
 struct ReaderTextColorOverrideTests {
     private func withCleanOverrides(_ body: () throws -> Void) rethrows {
         let settings = GlobalSettings.shared

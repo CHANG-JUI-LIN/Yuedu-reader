@@ -268,16 +268,16 @@ enum RootTabIconRenderer {
 }
 
 extension GlobalSettings {
-    static let defaultRootTabIconSize = 0.0
+    nonisolated static let defaultRootTabIconSize = 0.0
     static let initialCustomRootTabIconSize = 28.0
 
-    static var defaultRootTabVisibleIDs: [String] {
+    nonisolated static var defaultRootTabVisibleIDs: [String] {
         RootTabItem.tabs.map(\.rawValue)
     }
 
     /// The tabs shown, in `RootTabItem.tabs` order, then the markers of the later tabs hidden.
     /// A tab added later that the list does not name is shown: the list predates it.
-    static func sanitizedRootTabVisibleIDs(_ ids: [String]) -> [String] {
+    nonisolated static func sanitizedRootTabVisibleIDs(_ ids: [String]) -> [String] {
         let requested = Set(ids)
         let hidden = RootTabItem.addedLater.filter { requested.contains($0.hiddenMarker) && !requested.contains($0.rawValue) }
         var visible = RootTabItem.tabs.filter { tab in
@@ -294,7 +294,7 @@ extension GlobalSettings {
     }
 
     /// `ids` with `tab` shown or hidden; a later tab hidden leaves its marker.
-    static func updatedRootTabVisibleIDs(_ ids: [String], setting tab: RootTabItem, visible: Bool) -> [String] {
+    nonisolated static func updatedRootTabVisibleIDs(_ ids: [String], setting tab: RootTabItem, visible: Bool) -> [String] {
         var ids = ids.filter { $0 != tab.rawValue && $0 != tab.hiddenMarker }
         if visible {
             ids.append(tab.rawValue)
@@ -304,7 +304,7 @@ extension GlobalSettings {
         return sanitizedRootTabVisibleIDs(ids)
     }
 
-    static func sanitizedRootTabIconSize(_ value: Double) -> Double {
+    nonisolated static func sanitizedRootTabIconSize(_ value: Double) -> Double {
         guard value > 0.001 else { return defaultRootTabIconSize }
         return Double(RootTabIconRenderer.sanitizedIconSize(CGFloat(value)))
     }

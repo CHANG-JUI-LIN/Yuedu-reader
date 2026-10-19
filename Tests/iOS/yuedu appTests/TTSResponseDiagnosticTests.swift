@@ -11,6 +11,7 @@ import Testing
 /// 診斷與回報 export the user actually sends. So the provider now carries what came back on the
 /// error itself.
 @Suite("TTS response diagnostics")
+@MainActor
 struct TTSResponseDiagnosticTests {
 
     // MARK: - The diagnostic itself

@@ -138,6 +138,7 @@ enum ReaderTheme: String, CaseIterable {
         Color(uiColor: intrinsicUIBackgroundColor)
     }
 
+    @MainActor
     var textColor: Color {
         Color(uiColor: uiTextColor)
     }
@@ -184,6 +185,7 @@ enum ReaderTheme: String, CaseIterable {
     /// own, so the one set for the built-in under it does not apply) → the reader's own
     /// 文字顏色 for this background (an explicit user choice, so it outranks the rest) →
     /// the bound appearance palette → the background's built-in text color.
+    @MainActor
     var uiTextColor: UIColor {
         if let preset = activeAppearancePreset, preset.readerBackgroundID != nil {
             return preset.text
@@ -508,17 +510,18 @@ enum AppearanceColorScheme: String, Equatable {
 /// `typographyRevision` (the global font and Bold Text, which `GlobalAppTypography` draws from
 /// statics) and `readerBackgroundPicturesRevision` (pictures that arrive after the setting
 /// naming them). Themes reach views through the `appThemes` environment value.
+@MainActor
 @Observable
 class GlobalSettings {
     static let shared = GlobalSettings()
-    static let defaultReaderFontSize = 18.0
-    static let defaultReaderLineHeightMultiple = 1.65
-    static let defaultReaderParagraphSpacingMultiplier = 0.8
-    static let defaultReaderPageMarginH = 24.0
-    static let defaultReaderPageMarginV = 16.0
-    static let defaultReaderPageTurnStyle: PageTurnStyle = .slide
-    static let bookshelfGridColumnCountOptions = [2, 3, 4, 5]
-    static let defaultBookshelfGridColumnCount = 3
+    nonisolated static let defaultReaderFontSize = 18.0
+    nonisolated static let defaultReaderLineHeightMultiple = 1.65
+    nonisolated static let defaultReaderParagraphSpacingMultiplier = 0.8
+    nonisolated static let defaultReaderPageMarginH = 24.0
+    nonisolated static let defaultReaderPageMarginV = 16.0
+    nonisolated static let defaultReaderPageTurnStyle: PageTurnStyle = .slide
+    nonisolated static let bookshelfGridColumnCountOptions = [2, 3, 4, 5]
+    nonisolated static let defaultBookshelfGridColumnCount = 3
     private static let bookshelfGridColumnCountKey = "yd_bookshelf_grid_column_count"
 
     // 預設封面 (default cover) — see `DefaultCoverLibrary`.
@@ -533,11 +536,11 @@ class GlobalSettings {
     /// Cover corner radius the bookshelf clips its covers with. The ceiling is
     /// deliberately short of half a cover's width — past that the "rounded
     /// rectangle" is a lozenge and the artwork loses its corners entirely.
-    static let bookshelfCoverCornerRadiusRange: ClosedRange<Double> = 0...24
+    nonisolated static let bookshelfCoverCornerRadiusRange: ClosedRange<Double> = 0...24
     static let defaultBookshelfCoverCornerRadius: Double = 8
     /// "默認" (classic) — the app's original look; also the fallback when a
     /// selected Pro theme becomes unavailable (entitlement lapse / deletion).
-    static let defaultAppearanceThemeID = AppearanceThemePreset.classicID
+    nonisolated static let defaultAppearanceThemeID = AppearanceThemePreset.classicID
     static let defaultAppearanceFollowsSystem = true
     private static let appearanceThemeIDKey = "yd_appearance_theme_id"
     private static let appearanceDarkThemeIDKey = "yd_appearance_dark_theme_id"
@@ -558,7 +561,7 @@ class GlobalSettings {
     /// Key kept at the original `list_sections` spelling: the setting shipped under that
     /// name and renaming the key would silently reset it for anyone who already turned it on.
     private static let interfaceGlassCardsKey = "yd_interface_glass_list_sections"
-    static let customAppearanceThemesKey = "yd_custom_appearance_themes"
+    nonisolated static let customAppearanceThemesKey = "yd_custom_appearance_themes"
     private static let appearancePageBackgroundsKey = "yd_appearance_page_backgrounds"
     private static let appearanceCardBackgroundKey = "yd_appearance_card_background"
     private static let globalFontPostScriptKey = "yd_global_font_postscript"
@@ -598,7 +601,7 @@ class GlobalSettings {
     private static let ttsRoleVoicesKey = "yd_tts_role_voices"
     private static let readerTextColorOverridesKey = "yd_reader_text_color_overrides"
     static let readerCustomBackgroundsKey = "yd_reader_custom_backgrounds"
-    static let readerCustomBackgroundIDKey = "yd_reader_custom_background_id"
+    nonisolated static let readerCustomBackgroundIDKey = "yd_reader_custom_background_id"
     static let readerDarkModeKey = "yd_reader_dark_mode"
     private static let readerOverlayLayoutDataKey = "yd_reader_overlay_layout_data"
     private static let readerOverlayLayoutMigrationVersionKey = "yd_reader_overlay_layout_migration_version"
@@ -629,11 +632,11 @@ class GlobalSettings {
     /// which is where a settings list's cards live — so this stays opt-in, and off
     /// reproduces the original opaque cards exactly.
     static let defaultInterfaceGlassCards = false
-    static let commentBubbleScaleRange: ClosedRange<Double> = 0.5...2.0
-    static let commentBubbleTextScaleRange: ClosedRange<Double> = 0.2...0.8
+    nonisolated static let commentBubbleScaleRange: ClosedRange<Double> = 0.5...2.0
+    nonisolated static let commentBubbleTextScaleRange: ClosedRange<Double> = 0.2...0.8
     static let defaultCommentBubbleScale = 1.0
     static let defaultCommentBubbleTextScale = 0.4
-    static let defaultReaderUnderlineColorHex: UInt32 = 0x8E8E93
+    nonisolated static let defaultReaderUnderlineColorHex: UInt32 = 0x8E8E93
     static let defaultReaderUnderlineStyle: ReaderTextUnderlineStyle = .solid
     /// Line thickness in points. Slider range 0.3...2.0; legacy fixed value was 0.6.
     static let defaultReaderUnderlineThickness: Double = 0.6
@@ -642,7 +645,7 @@ class GlobalSettings {
     static let defaultReaderUnderlineOffset: Double = 3.0
     static let readerUnderlineThicknessRange: ClosedRange<Double> = 0.3...2.0
     static let readerUnderlineOffsetRange: ClosedRange<Double> = 1.0...10.0
-    static let defaultReaderDialogueHighlightColorHex: UInt32 = 0xFF6B3A
+    nonisolated static let defaultReaderDialogueHighlightColorHex: UInt32 = 0xFF6B3A
     /// Default box tint = the shared reference lavender rgb(195,185,225); the gradient-pill
     /// style derives its two translucent stops from this base.
     static let defaultReaderDialogueBoxColorHex: UInt32 = 0xC3B9E1
@@ -654,7 +657,7 @@ class GlobalSettings {
     static let defaultTTSHighlightBoxColorHex: UInt32 = 0xC3B9E1
     static let defaultTTSHighlightBoxStyle: Int = 1                  // gradient pill
 
-    static func uiColor(rgbHex: UInt32) -> UIColor {
+    nonisolated static func uiColor(rgbHex: UInt32) -> UIColor {
         UIColor(
             red: CGFloat((rgbHex >> 16) & 0xFF) / 255,
             green: CGFloat((rgbHex >> 8) & 0xFF) / 255,
@@ -998,30 +1001,35 @@ class GlobalSettings {
         didSet {
             UserDefaults.standard.set(readerTextUnderlineDecorationEnabled, forKey: Self.readerTextUnderlineDecorationKey)
             recordReadingSettingEdit { $0.textUnderline = currentTextUnderlineSettings }
+            publishSnapshot()
         }
     }
     var readerTextUnderlineDecorationColorHex: UInt32 {
         didSet {
             UserDefaults.standard.set(Int(readerTextUnderlineDecorationColorHex), forKey: Self.readerTextUnderlineDecorationColorHexKey)
             recordReadingSettingEdit { $0.textUnderline = currentTextUnderlineSettings }
+            publishSnapshot()
         }
     }
     var readerTextUnderlineStyle: ReaderTextUnderlineStyle {
         didSet {
             UserDefaults.standard.set(readerTextUnderlineStyle.rawValue, forKey: Self.readerTextUnderlineStyleKey)
             recordReadingSettingEdit { $0.textUnderline = currentTextUnderlineSettings }
+            publishSnapshot()
         }
     }
     var readerTextUnderlineThickness: Double {
         didSet {
             UserDefaults.standard.set(readerTextUnderlineThickness, forKey: Self.readerTextUnderlineThicknessKey)
             recordReadingSettingEdit { $0.textUnderline = currentTextUnderlineSettings }
+            publishSnapshot()
         }
     }
     var readerTextUnderlineOffset: Double {
         didSet {
             UserDefaults.standard.set(readerTextUnderlineOffset, forKey: Self.readerTextUnderlineOffsetKey)
             recordReadingSettingEdit { $0.textUnderline = currentTextUnderlineSettings }
+            publishSnapshot()
         }
     }
     /// Tint quoted dialogue (「」『』"" '') in the theme accent color. Applied as a
@@ -1105,23 +1113,27 @@ class GlobalSettings {
         didSet {
             UserDefaults.standard.set(commentBubbleFollowsSourceSVG, forKey: Self.commentBubbleFollowsSourceSVGKey)
             recordReadingSettingEdit { $0.commentBubble = currentCommentBubbleSettings }
+            publishSnapshot()
         }
     }
     var commentBubblePresetMode: ReaderCommentBubblePresetMode {
         didSet {
             UserDefaults.standard.set(commentBubblePresetMode.rawValue, forKey: Self.commentBubblePresetModeKey)
             recordReadingSettingEdit { $0.commentBubble = currentCommentBubbleSettings }
+            publishSnapshot()
         }
     }
     private(set) var commentBubbleCustomStyles: [ReaderCommentBubbleCustomStyle] {
         didSet {
             Self.saveCommentBubbleCustomStyles(commentBubbleCustomStyles)
+            publishSnapshot()
         }
     }
     private(set) var commentBubbleSelectedCustomStyleID: UUID? {
         didSet {
             Self.saveCommentBubbleSelectedCustomStyleID(commentBubbleSelectedCustomStyleID)
             recordReadingSettingEdit { $0.commentBubble = currentCommentBubbleSettings }
+            publishSnapshot()
         }
     }
     /// iCloud merge clock for the bubble *selection* record. Advances ONLY on
@@ -1159,6 +1171,7 @@ class GlobalSettings {
             } else {
                 UserDefaults.standard.set(commentBubbleScale, forKey: Self.commentBubbleScaleKey)
                 recordReadingSettingEdit { $0.commentBubble = currentCommentBubbleSettings }
+                publishSnapshot()
             }
         }
     }
@@ -1510,6 +1523,7 @@ class GlobalSettings {
                 UserDefaults.standard.removeObject(forKey: "yd_reader_font_postscript")
             }
             recordReadingSettingEdit { $0.fontPostScript = selectedReaderFontPostScript ?? "" }
+            publishSnapshot()
         }
     }
 
@@ -1581,7 +1595,7 @@ class GlobalSettings {
     /// `ReaderSettingsView.fontSizeBinding` kept squashing each write back into 12–32, so
     /// the control looked frozen at the old bounds. Add new call sites here, never a
     /// fresh literal.
-    static let readerFontSizeRange: ClosedRange<CGFloat> = 10...40
+    nonisolated static let readerFontSizeRange: ClosedRange<CGFloat> = 10...40
 
     static func clampedReaderFontSize(_ value: CGFloat) -> CGFloat {
         min(readerFontSizeRange.upperBound, max(readerFontSizeRange.lowerBound, value))
@@ -1615,7 +1629,7 @@ class GlobalSettings {
         }
     }
 
-    static func sanitizedBookshelfGridColumnCount(_ value: Int) -> Int {
+    nonisolated static func sanitizedBookshelfGridColumnCount(_ value: Int) -> Int {
         guard let minimum = bookshelfGridColumnCountOptions.min(),
               let maximum = bookshelfGridColumnCountOptions.max() else {
             return defaultBookshelfGridColumnCount
@@ -1690,7 +1704,7 @@ class GlobalSettings {
         }
     }
 
-    static func clampedBookshelfCoverCornerRadius(_ value: Double) -> Double {
+    nonisolated static func clampedBookshelfCoverCornerRadius(_ value: Double) -> Double {
         min(max(value, bookshelfCoverCornerRadiusRange.lowerBound), bookshelfCoverCornerRadiusRange.upperBound)
     }
 
@@ -1745,7 +1759,10 @@ class GlobalSettings {
         }
     }
     var searchCacheDays: Int {
-        didSet { UserDefaults.standard.set(searchCacheDays, forKey: "yd_search_cache_days") }
+        didSet {
+            UserDefaults.standard.set(searchCacheDays, forKey: "yd_search_cache_days")
+            publishSnapshot()
+        }
     }
     /// Unified library 3d: fill empty covers, descriptions and categories from 資料來源's places
     /// (Open Library and the other modules, the enabled book sources) (`MetadataFillCoordinator`). On by default (maintainer,
@@ -1802,13 +1819,22 @@ class GlobalSettings {
     }
 
     var httpTtsUrlTemplate: String {
-        didSet { UserDefaults.standard.set(httpTtsUrlTemplate, forKey: "yd_http_tts_url_template") }
+        didSet {
+            UserDefaults.standard.set(httpTtsUrlTemplate, forKey: "yd_http_tts_url_template")
+            publishSnapshot()
+        }
     }
     var httpTtsHeaders: [String: String] {
-        didSet { Self.saveTTSHeaders(httpTtsHeaders) }
+        didSet {
+            Self.saveTTSHeaders(httpTtsHeaders)
+            publishSnapshot()
+        }
     }
     var importedTTSSources: [ImportedTTSSource] {
-        didSet { Self.saveImportedTTSSources(importedTTSSources) }
+        didSet {
+            Self.saveImportedTTSSources(importedTTSSources)
+            publishSnapshot()
+        }
     }
     /// Force the offline, on-device `AVSpeechSynthesizer` voice even when an HTTP source exists.
     var ttsUseSystemVoice: Bool {
@@ -2387,6 +2413,7 @@ class GlobalSettings {
         // disk — so a theme saved before write-back existed would take the user's
         // first edit with no captured original to hand back on the way out.
         synchronizeAppearanceThemeExtras()
+        publishSnapshot()
     }
 
     func selectCommentBubbleBuiltinStyle() {
@@ -2757,11 +2784,11 @@ class GlobalSettings {
         return defaults.data(forKey: readerBarLayoutDataKey) == data
     }
 
-    static func sanitizedCommentBubbleScale(_ value: Double) -> Double {
+    nonisolated static func sanitizedCommentBubbleScale(_ value: Double) -> Double {
         min(max(value, commentBubbleScaleRange.lowerBound), commentBubbleScaleRange.upperBound)
     }
 
-    static func sanitizedCommentBubbleTextScale(_ value: Double) -> Double {
+    nonisolated static func sanitizedCommentBubbleTextScale(_ value: Double) -> Double {
         min(max(value, commentBubbleTextScaleRange.lowerBound), commentBubbleTextScaleRange.upperBound)
     }
 

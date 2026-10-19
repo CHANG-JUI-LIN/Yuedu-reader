@@ -155,6 +155,7 @@ enum SystemTTSVoiceCatalog {
     /// Returns nil when the stored identifier no longer resolves — a downloaded
     /// voice the user has since deleted — so playback falls back instead of
     /// failing.
+    @MainActor
     static func selectedVoice(forLanguage language: String) -> AVSpeechSynthesisVoice? {
         let overrides = GlobalSettings.shared.ttsSystemVoiceIdentifiers
         guard !overrides.isEmpty else { return nil }
@@ -172,10 +173,12 @@ enum SystemTTSVoiceCatalog {
     }
 
     /// The identifier stored for `language` exactly (used to tick the right row).
+    @MainActor
     static func selectedIdentifier(forLanguage language: String) -> String? {
         GlobalSettings.shared.ttsSystemVoiceIdentifiers[language]
     }
 
+    @MainActor
     static func select(_ voice: AVSpeechSynthesisVoice) {
         var overrides = GlobalSettings.shared.ttsSystemVoiceIdentifiers
         overrides[voice.language] = voice.identifier
@@ -183,12 +186,14 @@ enum SystemTTSVoiceCatalog {
     }
 
     /// Hand a language back to the system default.
+    @MainActor
     static func clearSelection(forLanguage language: String) {
         var overrides = GlobalSettings.shared.ttsSystemVoiceIdentifiers
         overrides.removeValue(forKey: language)
         GlobalSettings.shared.ttsSystemVoiceIdentifiers = overrides
     }
 
+    @MainActor
     static func clearAllSelections() {
         GlobalSettings.shared.ttsSystemVoiceIdentifiers = [:]
     }

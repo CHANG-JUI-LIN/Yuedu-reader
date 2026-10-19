@@ -26,11 +26,17 @@ enum UserReaderFontResolver {
     /// with the reader font without changing line metrics.
     private static let syntheticBoldStrokeWidth = -2.5 as NSNumber
 
+    /// Read from `GlobalSettings.snapshot`, so chapter building can call it off main. A view
+    /// that must redraw when the font changes reads `GlobalSettings.selectedReaderFontPostScript`
+    /// through `postScriptName(_:)` instead.
     static var selectedPostScriptName: String? {
-        guard let postScriptName = GlobalSettings.shared.selectedReaderFontPostScript,
-              !postScriptName.isEmpty
-        else { return nil }
-        return postScriptName
+        postScriptName(GlobalSettings.snapshot.selectedReaderFontPostScript)
+    }
+
+    /// The stored selection as a font name: an empty one means the system font.
+    static func postScriptName(_ selection: String?) -> String? {
+        guard let selection, !selection.isEmpty else { return nil }
+        return selection
     }
 
     static func bodyFont(size: CGFloat, isBold: Bool = false) -> UIFont {

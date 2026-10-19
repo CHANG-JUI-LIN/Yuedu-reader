@@ -12,10 +12,10 @@ struct ReaderTextUnderlineDecoration: Equatable {
     let offset: CGFloat
     let style: ReaderTextUnderlineStyle
 
-    /// Reads the live settings; call where `GlobalSettings` is safe to read.
-    /// `nil` when the decoration is off.
+    /// Reads `GlobalSettings.snapshot`: page prerendering draws off main. `nil` when the
+    /// decoration is off.
     static func current() -> ReaderTextUnderlineDecoration? {
-        let settings = GlobalSettings.shared
+        let settings = GlobalSettings.snapshot
         guard settings.readerTextUnderlineDecorationEnabled else { return nil }
         return ReaderTextUnderlineDecoration(
             color: GlobalSettings.uiColor(rgbHex: settings.readerTextUnderlineDecorationColorHex)

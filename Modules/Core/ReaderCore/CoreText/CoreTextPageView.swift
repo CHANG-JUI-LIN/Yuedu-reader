@@ -15,8 +15,8 @@ typealias PrerenderedPageSource = @MainActor () -> UIImage?
 /// `draw(_:)` paints the page line by line (supporting CJK justified alignment);
 /// `display(_:)` puts it on screen, from a bitmap drawn ahead of time when the
 /// engine has one, otherwise by running `draw(_:)` there and then.
-final class CoreTextPageView: UIView, UIGestureRecognizerDelegate, UIEditMenuInteractionDelegate,
-    AXCustomContentProvider {
+final class CoreTextPageView: UIView, UIGestureRecognizerDelegate, @MainActor UIEditMenuInteractionDelegate,
+    @MainActor AXCustomContentProvider {
 
     /// `AXCustomContentProvider` storage. Carries 頁眉／頁腳 — see
     /// `refreshBarAccessibilityContent`.

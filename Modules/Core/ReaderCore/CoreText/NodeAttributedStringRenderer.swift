@@ -1300,7 +1300,7 @@ struct NodeAttributedStringRenderer: Sendable {
         }
         var style = RenderStyle.none
         style.isTextSizedImage = true
-        let settings = GlobalSettings.shared
+        let settings = GlobalSettings.snapshot
         style.width = textSizedImageWidth(
             style: style,
             font: ctx.font,
@@ -1347,7 +1347,7 @@ struct NodeAttributedStringRenderer: Sendable {
             CommentBubbleSVGRecognizer.diag("textSized:enter recognized=\(recognized != nil)",
                 context: ["srcPrefix": String(src.prefix(48)), "svgContentLen": svgContent?.count ?? -1])
             if let recognized {
-                let settings = GlobalSettings.shared
+                let settings = GlobalSettings.snapshot
                 let image = CommentBubbleSVGRecognizer.resolvedBubbleImage(
                     src: src,
                     svgContent: svgContent,

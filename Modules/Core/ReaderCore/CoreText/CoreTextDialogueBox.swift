@@ -17,11 +17,6 @@ enum CoreTextDialogueBox {
         case gradientPill = 1
     }
 
-    /// The style currently selected in reader settings.
-    static var currentStyle: Style {
-        Style(rawValue: GlobalSettings.shared.readerDialogueBoxStyleRaw) ?? .gradientPill
-    }
-
     /// Fills one dialogue box rect in the current draw context (already in the correct coordinate
     /// space). The rect is the padded glyph box; shape and paint come from `style`.
     static func fill(rect: CGRect, baseColor: UIColor, style: Style, in ctx: CGContext) {

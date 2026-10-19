@@ -400,8 +400,12 @@ struct CommentBubbleSVGRecognizer {
         recognizedBubble: CommentBubbleSVG? = nil,
         sourceTextFace: BubbleTextFace = .declared
     ) -> UIImage? {
+        // One read for the key and the image, so a settings change between them cannot file
+        // an image drawn with the new settings under the old key.
+        let settings = GlobalSettings.snapshot
         let cacheKey = ReaderDocumentTrace.measuringSync("bubbleKey") {
             bubbleImageCacheKey(
+                settings: settings,
                 src: src,
                 svgContent: svgContent,
                 pointSize: pointSize,
@@ -415,6 +419,7 @@ struct CommentBubbleSVGRecognizer {
             return cached
         }
         guard let image = computeResolvedBubbleImage(
+            settings: settings,
             src: src,
             svgContent: svgContent,
             pointSize: pointSize,
@@ -456,6 +461,7 @@ struct CommentBubbleSVGRecognizer {
     /// the draw. Changing any of these mints a new key, so stale settings never surface a
     /// wrong bubble; `L…` folds the selected style's length in to catch in-place SVG edits.
     private static func bubbleImageCacheKey(
+        settings s: GlobalSettingsSnapshot,
         src: String,
         svgContent: String?,
         pointSize: CGFloat,
@@ -467,7 +473,6 @@ struct CommentBubbleSVGRecognizer {
         var r: CGFloat = 0, g: CGFloat = 0, b: CGFloat = 0, a: CGFloat = 0
         themeTextColor.getRed(&r, green: &g, blue: &b, alpha: &a)
         let rgba = String(format: "%.2f-%.2f-%.2f-%.2f", r, g, b, a)
-        let s = GlobalSettings.shared
         let sig = [
             s.commentBubbleFollowsSourceSVG ? "F1" : "F0",
             s.commentBubblePresetMode.rawValue,
@@ -482,6 +487,7 @@ struct CommentBubbleSVGRecognizer {
     }
 
     private static func computeResolvedBubbleImage(
+        settings: GlobalSettingsSnapshot,
         src: String,
         svgContent: String?,
         pointSize: CGFloat,
@@ -492,7 +498,6 @@ struct CommentBubbleSVGRecognizer {
         guard let sourceBubble = sourceBubble ?? recognize(src: src, svgContent: svgContent) else {
             return nil
         }
-        let settings = GlobalSettings.shared
         if settings.commentBubbleFollowsSourceSVG {
             return draw(svg: sourceBubble, pointSize: pointSize, themeTextColor: themeTextColor, textFace: sourceTextFace)
         }

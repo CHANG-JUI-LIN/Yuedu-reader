@@ -223,6 +223,7 @@ struct GatewayAPIErrorTests {
 }
 
 @Suite("Gateway profile payload")
+@MainActor
 struct GatewayProfilePayloadTests {
     @Test("decodes ISO dates and reader preferences")
     func decodesFullProfile() throws {

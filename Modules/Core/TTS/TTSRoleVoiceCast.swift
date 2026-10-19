@@ -63,6 +63,7 @@ enum TTSRoleVoice: Equatable, Hashable {
 
     /// The imported voice source, or `nil` when this character is cast with something else —
     /// or with a source that has since been deleted.
+    @MainActor
     func importedSource(
         in sources: [ImportedTTSSource] = GlobalSettings.shared.importedTTSSources
     ) -> ImportedTTSSource? {
@@ -82,6 +83,7 @@ enum TTSVoiceFamily: Equatable {
     /// the URL — but a reader with a voice pack has several, and those are a cast.
     case bookSource
 
+    @MainActor
     static func active(
         useSystemVoice: Bool = GlobalSettings.shared.ttsUseSystemVoice,
         httpTemplate: String = GlobalSettings.shared.httpTtsUrlTemplate
@@ -101,6 +103,7 @@ enum TTSVoiceFamily: Equatable {
     /// This used to be a flat `self != .bookSource`, which locked the feature away from
     /// every reader using an imported pack even when they had a dozen voices sitting in
     /// the list.
+    @MainActor
     func supportsMultiRole(
         importedSourceCount: Int = GlobalSettings.shared.importedTTSSources.count
     ) -> Bool {
@@ -164,6 +167,7 @@ enum TTSRoleVoiceCast {
     /// made entirely of 微軟線上語音 is worth nothing to the on-device engine: splitting for
     /// it would produce many more utterances that all sound identical. Asking per engine,
     /// rather than just "is the cast non-empty", keeps that cost tied to an audible result.
+    @MainActor
     static func containsSpeakableVoice(
         in cast: [String: String],
         family: TTSVoiceFamily,

@@ -10,6 +10,7 @@ import Testing
 /// throttle already existed for book sources (`SourceRateLimit`), so this wires the TTS provider
 /// into the same one rather than growing a second implementation.
 @Suite("TTS concurrentRate")
+@MainActor
 struct TTSConcurrentRateTests {
 
     @Test("Legado's rate forms parse the way book sources already read them")

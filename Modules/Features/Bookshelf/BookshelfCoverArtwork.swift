@@ -8,6 +8,7 @@ import UIKit
 enum BookshelfCoverStyle {
     /// 外觀主題 → 介面 → 預設封面 → 封面圓角. Read unobserved: `HomeView` observes
     /// `GlobalSettings`, so a change there rebuilds every row with the new value.
+    @MainActor
     static var cornerRadius: CGFloat {
         CGFloat(GlobalSettings.shared.bookshelfCoverCornerRadius)
     }
@@ -31,6 +32,7 @@ enum BookshelfCoverStyle {
     /// The bitmap a card is drawing, from memory only: the largest decoded size of
     /// the artwork the card resolves to. Nil when that is the generated cover, a
     /// catalog cover, or a saved cover that has not been decoded yet. Never reads a file.
+    @MainActor
     static func image(for book: ReadingBook, colorScheme: ColorScheme, filledCover: String? = nil) -> UIImage? {
         guard case .bitmap(let image, _) = cachedArtwork(for: .shelf(for: book, colorScheme: colorScheme, filledCover: filledCover)) else {
             return nil
@@ -232,6 +234,7 @@ struct BookshelfCoverPlan: Equatable {
 
     /// A shelf row or grid cell, and the transition that lifts it.
     /// - `filledCover`: the filler's cover for this book (`FilledCoverIndex.path(for:)`).
+    @MainActor
     static func shelf(
         for book: ReadingBook,
         colorScheme: ColorScheme,

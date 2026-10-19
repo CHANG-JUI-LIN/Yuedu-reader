@@ -196,7 +196,7 @@ extension GlobalSettings {
     }
 
     /// Reads a stored picture back to measure it. Nil when the file is missing or unreadable.
-    static func readerBackgroundPicture(fileName: String) -> ReaderBackgroundPicture? {
+    nonisolated static func readerBackgroundPicture(fileName: String) -> ReaderBackgroundPicture? {
         let url: URL
         do {
             url = try ReaderCustomBackgroundStorageManager.shared.fileURL(fileName: fileName)

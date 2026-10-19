@@ -185,6 +185,7 @@ enum DSColor {
 
 // MARK: - Design System: Font Tokens
 
+@MainActor
 enum DSFont {
     /// Smallest label (11pt)
     static var caption2: Font { GlobalAppTypography.font(.caption2) }

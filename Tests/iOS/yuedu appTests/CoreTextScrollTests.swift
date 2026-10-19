@@ -14,6 +14,7 @@ struct CoreTextScrollTests {
     }
 
     @Test("reader theme UIKit colors are opaque for CoreText")
+    @MainActor
     func readerThemeUIKitColorsAreOpaque() {
         for theme in ReaderTheme.allCases {
             #expect(Self.alpha(of: theme.uiTextColor) == 1)
@@ -32,6 +33,7 @@ struct CoreTextScrollTests {
     }
 
     @Test("night mode overrides custom reader colors and light mode restores them")
+    @MainActor
     func nightModeTemporarilyOverridesCustomReaderColors() {
         let previousPreset = AppearanceThemePreset.activeReaderTheme
         defer { AppearanceThemePreset.activeReaderTheme = previousPreset }

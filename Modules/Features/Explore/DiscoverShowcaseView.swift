@@ -462,6 +462,7 @@ private struct DiscoverChartColumn: View {
 /// which key. Gated on 外觀主題 → 介面 → 預設封面 → 探索頁啟用預設封面, so the
 /// bookshelf can use default covers without the discover page changing.
 enum DiscoverDefaultCoverSeed {
+    @MainActor
     static func seed(for display: DiscoverBookDisplay) -> String? {
         guard GlobalSettings.shared.exploreUsesDefaultCover else { return nil }
         // Book URL first: two books can share a title, and the same book keeps

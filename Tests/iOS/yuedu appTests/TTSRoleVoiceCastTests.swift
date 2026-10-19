@@ -4,6 +4,7 @@ import Testing
 @testable import yuedu_app
 
 @Suite("Multi-role TTS cast")
+@MainActor
 struct TTSRoleVoiceCastTests {
 
     private let bookA = UUID()

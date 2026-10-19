@@ -174,6 +174,7 @@ struct GatewayProfilePayload: Decodable {
         preferences = try? container.decodeIfPresent(ReaderPreferences.self, forKey: .preferences)
     }
 
+    @MainActor
     var userProfile: UserProfile {
         UserProfile(
             uid: uid,

@@ -16,6 +16,7 @@ import Testing
 ///
 /// Shared helpers belong in `jsLib`, which is the field Legado's `HttpTTS` actually has.
 @Suite("TTS source jsLib and login headers")
+@MainActor
 struct TTSSourceJSLibTests {
 
     // MARK: - Parsing

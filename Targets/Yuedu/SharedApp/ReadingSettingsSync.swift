@@ -18,7 +18,7 @@ struct ReadingSettingSyncRecord: Codable, Equatable, Sendable {
 }
 
 extension GlobalSettings {
-    static let readingSettingSyncRecordsKey = "yd_reading_setting_sync_records"
+    nonisolated static let readingSettingSyncRecordsKey = "yd_reading_setting_sync_records"
 
     /// Each row as last set here or brought here from another device, in row order.
     /// A row never set since this sync began has none.

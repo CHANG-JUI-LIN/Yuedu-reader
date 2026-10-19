@@ -15,6 +15,7 @@ enum GlobalAppTypography {
     /// The fonts are drawn from the statics above, which nothing observes; `ContentView`
     /// bumps `GlobalSettings.typographyRevision` when either changes, and every builder here
     /// reads it so a view that sets its own font redraws with the new face or weight.
+    @MainActor
     private static func observeTypography() {
         _ = GlobalSettings.shared.typographyRevision
     }
@@ -167,6 +168,7 @@ enum GlobalAppTypography {
 
     /// - Parameter systemDesign: the design of the system font (serif for New York). It
     ///   applies only while no interface font is chosen; a chosen font draws as itself.
+    @MainActor
     static func font(
         _ style: Style,
         weight: Font.Weight? = nil,
@@ -176,6 +178,7 @@ enum GlobalAppTypography {
         return font(style, postScriptName: activePostScriptName, weight: weight, systemDesign: systemDesign)
     }
 
+    @MainActor
     static func font(
         _ style: Style,
         postScriptName: String?,
@@ -203,6 +206,7 @@ enum GlobalAppTypography {
         return custom.weight(boldTextWeight(requested ?? .regular))
     }
 
+    @MainActor
     static func fixedFont(
         size: CGFloat,
         weight: Font.Weight = .regular,
@@ -234,6 +238,7 @@ enum GlobalAppTypography {
         ).pointSize
     }
 
+    @MainActor
     static func uiFont(
         _ style: Style,
         postScriptName: String?,
@@ -257,6 +262,7 @@ enum GlobalAppTypography {
 
     /// Resolves a semantic UIKit font at its base point size without applying
     /// Dynamic Type. Use only for fixed-height chrome such as tab bar titles.
+    @MainActor
     static func unscaledUIFont(
         _ style: Style,
         postScriptName: String?,

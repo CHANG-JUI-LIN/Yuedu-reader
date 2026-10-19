@@ -51,7 +51,9 @@ extension ReaderView {
             letterSpacing: readerConfig.letterSpacing,
             marginH: effectivePageMarginH,
             writingMode: effectiveWritingMode,
-            fontPostScriptName: UserReaderFontResolver.selectedPostScriptName,
+            // The observed property, not the resolver's snapshot read: `body` compares these
+            // settings in `onChanged`, and only an observed read redraws on a font change.
+            fontPostScriptName: UserReaderFontResolver.postScriptName(settings.selectedReaderFontPostScript),
             isBold: readerConfig.readerFontBold,
             chapterTitleStyle: readerConfig.chapterTitleStyle,
             readerBackgroundImageURL: activeReaderBackgroundImageURL,
