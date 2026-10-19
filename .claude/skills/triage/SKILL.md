@@ -34,11 +34,20 @@ Reply in Traditional Chinese.
    `threadPath`; TestFlight and Organizer items may carry `detail` (a crash log, or the
    heaviest call stack with the app's own frames marked ▶) and `attachmentPaths`
    (Storage copies of TestFlight screenshots).
+   Pass `collection_path` as `triage` — a trailing slash is rejected. The query result is
+   usually too large to read inline; it is saved to a file, so read it with `jq`.
+   **The report covers every open item, not only today's.** Split them:
+   - *To investigate*: `status` `new`, or `triaged` with `lastSeenAt` later than
+     `triagedAt` (new events since the last look). These get steps 4–5 and a full entry.
+   - *Still open*: `triaged` with nothing new. Do not re-investigate; their existing
+     `triageNote` is the entry.
    If the inbox is empty, still do steps 2 and 3.
 
 2. **Catch what the alerts miss.** Alerts fire only for new issues, regressions and spikes.
-   Read `crashlytics_get_report` (`topIssues`, last 24 hours, FATAL; then NON_FATAL) and list
-   any issue with real volume that has no `crashlytics_<issueId>` item. Read the
+   Read `crashlytics_get_report` (`topIssues`, last 24 hours, FATAL; then NON_FATAL) for the
+   day's numbers, then again for the last 30 days, and list every OPEN issue with real
+   volume that has no `crashlytics_<issueId>` item — these stay on the list every day until
+   the issue gets an item or is closed in Crashlytics. Read the
    Crashlytics reports guide through `firebase_read_resources` first, as the tool asks.
 
 3. **Check the pipeline itself.** A failure that is only logged never reaches the inbox.
@@ -56,8 +65,10 @@ Reply in Traditional Chinese.
      `crashlytics_batch_get_events` for one or two stack traces. Note the versions and OS.
      Non-fatals named after MetricKit (hangs, disk writes, CPU) come from
      `MetricKitDiagnosticReporter`; the stack is the hang's main-thread sample.
-   - Feedback: `firestore_query_collection` on `<threadPath>/messages` ordered by
-     `createdAt` for the whole conversation (`author` user/assistant/developer). For
+   - Feedback: `firestore_list_documents` with `parent`
+     `projects/yuedu-readerr/databases/(default)/documents/<threadPath>`, `collectionId`
+     `messages`, `orderBy` `createdAt` for the whole conversation
+     (`firestore_query_collection` rejects a subcollection path) (`author` user/assistant/developer). For
      screenshots, `storage_get_object_download_url` on the attachment `path`, download into
      the scratchpad and look at it. The thread document at `threadPath` has the device,
      locale and `diagnosticReportId`.
@@ -80,23 +91,36 @@ Reply in Traditional Chinese.
 
    ```
    # Triage YYYY-MM-DD
-   新 X 項，舊 Y 項仍未處理；Crashlytics 過去 24 小時：…
+   截至今天共 N 項未處理（今天新增 X、有新事件 Y、其餘 Z 項沒變化）；Crashlytics 過去 24 小時：…
    管線狀態：正常／…
 
-   ## 🔴/🟠/🟡/⚪️ <title>（<source> · <count> · <versions>）
+   ## 今天新增／有新事件
+   ### 🔴/🟠/🟡/⚪️ <title>（<source> · <count> · <versions>）
    證據：…（堆疊關鍵幀／使用者原話一句）
    根因：<file:line> …，或「未定位：缺 …」
    修法：…（範圍、要動的檔案、要跑的測試）
    信心：高／中／低
    回覆草稿（只有回饋）：…
+
+   ## 仍未處理（沒有新事件）
+   - 🔴/🟠/🟡/⚪️ <title>（<source> · <count> · <versions> · 已開 N 天）— <triageNote>
+
+   ## 沒有 triage 項目的 Crashlytics 問題（過去 30 天）
+   - <issue title>（<issueId 前 8 碼> · 事件數／人數 · 版本）— 一句判斷
    ```
+
+   List every open item, most severe first within each section; group items that are the
+   same bug on one line. Nothing is dropped from the report just because it was reported
+   yesterday — an item leaves the list only when its status becomes `fixing`, `shipped` or
+   `wontfix`.
 
    Then list the fixes worth starting, most severe first. When the session can propose
    sessions (`start_session` with `initiation: "own_initiative"`), propose one per fix,
    each with a self-contained brief: the evidence, the root cause, the files, and how to
    prove the fix (a failing test first). Otherwise list them in the report.
 
-7. **Mark what you read.** For each item you reported on, `firestore_update_document` with
+7. **Mark what you read.** For each item you investigated (not the unchanged "still open"
+   ones), `firestore_update_document` with
    `updateMask` `status`, `triageNote`, `triagedAt`: status `triaged` (leave `fixing`,
    `shipped`, `wontfix` alone), a one-line note with the root cause or what is missing,
    and the current time. Never touch the other fields; the functions own them.
