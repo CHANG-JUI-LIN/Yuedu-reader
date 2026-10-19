@@ -63,6 +63,19 @@ struct ReaderPageTurnSmoothnessTests {
         #expect(pixels(of: drawn) == pixels(of: rendered))
     }
 
+    @Test("a prefetch lays its page out with the prerenderer's framesetter, never the layout's")
+    func prefetchUsesThePrerenderersOwnFramesetter() async throws {
+        let engine = try await makeLaidOutEngine()
+        let layout = try #require(engine.layouts[0])
+        #expect(engine.prerenderer.cachedFramesetterIdentity(for: layout.attributedString) == nil)
+        engine.prefetchPageImages(around: 2)
+        await engine.finishPageImagePrefetches()
+        // The layout's framesetter and frames stay the main thread's; drawing them on
+        // the worker as well can misplace ruby for good (CoreTextSharedLayoutConcurrencyTests).
+        let own = try #require(engine.prerenderer.cachedFramesetterIdentity(for: layout.attributedString))
+        #expect(own != ObjectIdentifier(layout.framesetter))
+    }
+
     @Test("a page built before its prefetch landed still shows the prefetched bitmap")
     func pageBuiltBeforeItsPrefetchShowsIt() async throws {
         let engine = try await makeLaidOutEngine()

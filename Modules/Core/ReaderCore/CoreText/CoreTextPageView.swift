@@ -24,10 +24,28 @@ final class CoreTextPageView: UIView, UIGestureRecognizerDelegate, UIEditMenuInt
 
     private static let emphasisEditMenuIdentifier = NSString(string: "CoreTextPageView.emphasis")
 
+    /// Which CTFrame a page render draws.
+    enum FrameSource {
+        /// The layout's page frame: the one the live page draws, hit-tests and
+        /// annotates. Main thread only.
+        case layoutArtifact
+        /// A frame its caller laid out from a framesetter it owns
+        /// (`makePageFrame(layout:pageIndex:framesetter:)`). Renders off the main thread
+        /// use one: Core Text layout objects belong to one thread at a time, and
+        /// that includes every frame laid out from the same framesetter — a ruby line
+        /// drawn while another frame of its framesetter is drawn elsewhere can keep a
+        /// misplaced annotation for good (`CoreTextSharedLayoutConcurrencyTests`).
+        case own(CTFrame)
+    }
+
     nonisolated static func frameForRendering(
         layout: CoreTextPaginator.ChapterLayout,
-        pageIndex: Int
+        pageIndex: Int,
+        source: FrameSource = .layoutArtifact
     ) -> CTFrame {
+        if case .own(let frame) = source {
+            return frame
+        }
         if layout.pageArtifacts.indices.contains(pageIndex) {
             return layout.pageArtifacts[pageIndex].frame
         }
@@ -35,7 +53,17 @@ final class CoreTextPageView: UIView, UIGestureRecognizerDelegate, UIEditMenuInt
         // Compatibility trigger: hand-constructed ChapterLayout values in
         // tests may omit artifacts. Delete this branch when pageArtifacts
         // becomes a required initializer argument for every layout.
-        let range = layout.pageRanges[pageIndex]
+        return makePageFrame(layout: layout, pageIndex: pageIndex, framesetter: layout.framesetter)
+    }
+
+    /// Lays out `pageIndex` of `layout` the way the paginator laid out its artifact
+    /// frame, from `framesetter`. With a framesetter built from `layout.attributedString`
+    /// by `CoreTextFramesetterFactory`, the lines are the artifact's.
+    nonisolated static func makePageFrame(
+        layout: CoreTextPaginator.ChapterLayout,
+        pageIndex: Int,
+        framesetter: CTFramesetter
+    ) -> CTFrame {
         let contentPathRect = CoreTextPaginator.coreTextContentPathRect(
             renderSize: layout.renderSize,
             contentInsets: layout.contentInsets,
@@ -47,8 +75,8 @@ final class CoreTextPageView: UIView, UIGestureRecognizerDelegate, UIEditMenuInt
             floatNotch: layout.pageFloatNotches[pageIndex]
         )
         return CoreTextPaginator.makeFrame(
-            framesetter: layout.framesetter,
-            range: range,
+            framesetter: framesetter,
+            range: layout.pageRanges[pageIndex],
             path: path,
             writingMode: layout.writingMode
         )
@@ -669,12 +697,14 @@ final class CoreTextPageView: UIView, UIGestureRecognizerDelegate, UIEditMenuInt
     ///   drawing the bars here is what makes them turn with the page in every
     ///   animation. A UIKit subview on the page controller would have been visible
     ///   only on the first of those four.
+    /// - Parameter frameSource: `.own` for every render off the main thread.
     nonisolated static func renderPage(
         layout: CoreTextPaginator.ChapterLayout,
         pageIndex: Int,
         in ctx: CGContext,
         bounds: CGRect,
-        bars: ReaderPageBars? = nil
+        bars: ReaderPageBars? = nil,
+        frameSource: FrameSource = .layoutArtifact
     ) {
         guard pageIndex < layout.pageRanges.count else { return }
 
@@ -741,7 +771,7 @@ final class CoreTextPageView: UIView, UIGestureRecognizerDelegate, UIEditMenuInt
             fontSize: layout.fontSize,
             writingMode: layout.writingMode
         )
-        let frame = Self.frameForRendering(layout: layout, pageIndex: pageIndex)
+        let frame = Self.frameForRendering(layout: layout, pageIndex: pageIndex, source: frameSource)
 
         // Collect ranges that will be redrawn by drawBlockRenderableText so drawLines can skip them.
         let suppressedRanges = pageBlockRenderables

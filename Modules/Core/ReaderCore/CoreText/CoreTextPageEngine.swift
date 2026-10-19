@@ -365,6 +365,7 @@ final class CoreTextPageEngine: PageRenderingProvider, LinkNavigationProviding, 
                 )
                 MemoryFootprint.log("warning-before")
                 self?.invalidateSnapshots()
+                self?.prerenderer.purgeCaches()
                 self?._layouts.trim(keeping: 0)
                 self?.cancelPreloadTasks()
                 self?.chapterDocumentStore.invalidateAll()
@@ -1457,7 +1458,8 @@ _layouts.removeAll()
             pageIndex: localPage,
             size: renderSize,
             bgColor: Self.snapshotBackgroundColor(of: layout).cgColor,
-            bars: bars
+            bars: bars,
+            frameSource: .layoutArtifact
         )
         storeSnapshotIfCurrent(image, key: key, spineIndex: spineIndex, localPage: localPage, bars: bars)
         return image
@@ -1500,9 +1502,10 @@ _layouts.removeAll()
         // layout replaced meanwhile fails `storeSnapshotIfCurrent`'s key check.
         pageImagePrefetches[key] = Task {
             let bars = self.pageBars(forGlobalPage: globalPage)
-            let image = await Task.detached(priority: .userInitiated) {
-                Self.renderImage(layout: layout, pageIndex: localPage, size: size, bgColor: bgColor, bars: bars)
-            }.value
+            let image = await self.prerenderer.render(
+                .init(layout: layout, pageIndex: localPage, size: size, backgroundColor: bgColor, bars: bars),
+                priority: .page
+            )
             self.pageImagePrefetches[key] = nil
             let stored = self.storeSnapshotIfCurrent(
                 image, key: key, spineIndex: spineIndex, localPage: localPage, bars: bars
@@ -1522,6 +1525,9 @@ _layouts.removeAll()
     /// Prefetches in flight, so a page requested twice before its render lands is
     /// rendered once.
     private var pageImagePrefetches: [NSString: Task<Void, Never>] = [:]
+    /// Every render off the main thread, with Core Text objects of its own.
+    /// Internal for tests.
+    let prerenderer = CoreTextPagePrerenderer()
     private static let prefetchSignposter = OSSignposter(
         subsystem: Bundle.main.bundleIdentifier ?? "com.zhangruilin.yuedureader",
         category: "ReaderPerformance"
@@ -1619,7 +1625,7 @@ _layouts.removeAll()
     // MARK: - Private helpers
 
     /// Pre-renders the first and last pages of a chapter as UIImages, stored in chapterSnapshots for cross-chapter animation handoff.
-    /// Uses Task.detached to render on a background thread, avoiding main thread blocking.
+    /// Renders on `prerenderer`, after any queued page prefetch, avoiding main thread blocking.
     private func generateSnapshot(for spineIndex: Int) {
         guard let layout = _layouts[spineIndex],
               !layout.pageRanges.isEmpty,
@@ -1634,9 +1640,10 @@ _layouts.removeAll()
         if chapterSnapshots.object(forKey: firstKey) == nil {
             let firstBars = pageBars(forGlobalPage: globalPage(spineIndex: spineIndex, localPage: 0))
             Task {
-                let img = await Task.detached(priority: .userInitiated) {
-                    Self.renderImage(layout: layout, pageIndex: 0, size: size, bgColor: bgCGColor, bars: firstBars)
-                }.value
+                let img = await self.prerenderer.render(
+                    .init(layout: layout, pageIndex: 0, size: size, backgroundColor: bgCGColor, bars: firstBars),
+                    priority: .chapterBoundary
+                )
                 self.storeSnapshotIfCurrent(img, key: firstKey, spineIndex: spineIndex, localPage: 0, bars: firstBars)
             }
         }
@@ -1646,9 +1653,10 @@ _layouts.removeAll()
             if chapterSnapshots.object(forKey: lastKey) == nil {
                 let lastBars = pageBars(forGlobalPage: globalPage(spineIndex: spineIndex, localPage: lastIdx))
                 Task {
-                    let img = await Task.detached(priority: .userInitiated) {
-                        Self.renderImage(layout: layout, pageIndex: lastIdx, size: size, bgColor: bgCGColor, bars: lastBars)
-                    }.value
+                    let img = await self.prerenderer.render(
+                        .init(layout: layout, pageIndex: lastIdx, size: size, backgroundColor: bgCGColor, bars: lastBars),
+                        priority: .chapterBoundary
+                    )
                     self.storeSnapshotIfCurrent(img, key: lastKey, spineIndex: spineIndex, localPage: lastIdx, bars: lastBars)
                 }
             }
@@ -1662,12 +1670,13 @@ _layouts.removeAll()
         return max(width * height * bytesPerPixel, 1)
     }
 
-    private nonisolated static func renderImage(
+    nonisolated static func renderImage(
         layout: CoreTextPaginator.ChapterLayout,
         pageIndex: Int,
         size: CGSize,
         bgColor: CGColor,
-        bars: ReaderPageBars? = nil
+        bars: ReaderPageBars? = nil,
+        frameSource: CoreTextPageView.FrameSource
     ) -> UIImage {
         return UIGraphicsImageRenderer(size: size).image { ctx in
             let c = ctx.cgContext
@@ -1678,7 +1687,8 @@ _layouts.removeAll()
                 pageIndex: pageIndex,
                 in: c,
                 bounds: CGRect(origin: .zero, size: size),
-                bars: bars
+                bars: bars,
+                frameSource: frameSource
             )
         }
     }
