@@ -381,6 +381,21 @@ enum CoreTextHorizontalLineDrawer {
         }
     }
 
+    /// Whether `<ruby>` (a `CTRubyAnnotation`) annotates any character in `range`. Reads the
+    /// string, never the line, so asking leaves the line's Core Text state alone.
+    private static func containsRuby(_ attrStr: NSAttributedString, in range: NSRange) -> Bool {
+        let bounded = NSIntersectionRange(range, NSRange(location: 0, length: attrStr.length))
+        guard bounded.length > 0 else { return false }
+        var found = false
+        attrStr.enumerateAttribute(HTMLAttributedStringBuilder.rubyAnnotationAttribute, in: bounded, options: []) { value, _, stop in
+            if value != nil {
+                found = true
+                stop.pointee = true
+            }
+        }
+        return found
+    }
+
     /// Finds the HR divider attribute anywhere within a line's character range (not just at its
     /// start), returning the first value found. CoreText may place the divider's "\n" at the end
     /// of a line range rather than its location, so a start-only lookup misses it.
@@ -457,9 +472,26 @@ enum CoreTextHorizontalLineDrawer {
         attrStr: NSAttributedString,
         nsString: NSString
     ) -> CTLine {
+        let lineNSRange = NSRange(location: lineStart, length: max(0, lineRange.length))
+
         // Non-justified paragraphs (centered heading, right-aligned, natural): draw CoreText's own
         // line untouched — its origin already encodes the alignment.
-        guard isJustified else { return line }
+        //
+        // Except a line carrying ruby, which is drawn from a line rebuilt from its substring, the
+        // same as a justified line. Core Text bug (iOS 27.1 simulator and macOS 27.2, 2026-10-19):
+        // once anything reads a ruby run's positions — CTLineDraw's own underline pass when the
+        // line carries an underline anywhere, or CTRunGetPositions — every later CTLineDraw of that
+        // line puts the
+        // annotation right of its base by the base's x offset in the line (+18pt for a base at
+        // 18pt). The first draw is right; a page's frame line is drawn again on every bars refresh,
+        // theme change, rotation and curl back page. The state lives in the line's runs, so a
+        // CTLineCreateJustifiedLine copy inherits it; a line built from the string does not.
+        // Delete this branch once `CoreTextRubyRedrawTests` passes without it on the oldest
+        // supported iOS.
+        guard isJustified else {
+            guard containsRuby(attrStr, in: lineNSRange) else { return line }
+            return CTLineCreateWithAttributedString(attrStr.attributedSubstring(from: lineNSRange))
+        }
 
         // Rebuild the line from its own substring instead of reusing `line`. This is the crux of
         // the "声。 / 是！ sprayed across the whole column" regression: with a `.justified` paragraph
@@ -469,7 +501,6 @@ enum CoreTextHorizontalLineDrawer {
         // `guard …, !isParagraphLastLine else { return line }` early-out did exactly this) draws it
         // pre-stretched no matter what we decide below. A line freshly built from the substring is
         // always at its natural width, so WE own the stretching, never the framesetter.
-        let lineNSRange = NSRange(location: lineStart, length: max(0, lineRange.length))
         let substring = attrStr.attributedSubstring(from: lineNSRange)
         // Drop the trailing per-glyph spacing (.kern) on the line's last character.
         // CoreText adds .kern as advance *after* every glyph, so without this the last
