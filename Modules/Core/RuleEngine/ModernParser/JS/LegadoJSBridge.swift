@@ -647,12 +647,17 @@ struct LegadoHTTPResult {
             "sample": urlArray.prefix(6).map { Self.requestPathPreview($0) }
         ])
 
+        // The workers get what a request needs, not the bridge: after the 30 s timeout below the
+        // stragglers keep running while this thread goes back to the script. Unlike every other
+        // `JSConfined` hop, up to 16 workers call these handlers at once — as they always have
+        // (each used to call `self.performRequestResult`); the handlers must stay thread-safe.
+        let context = JSConfined(requestContext)
         for (index, urlStr) in urlArray.enumerated() {
             throttle.wait() // block until a concurrency slot is free
             group.enter()
-            DispatchQueue.global(qos: .utility).async { [weak self] in
+            DispatchQueue.global(qos: .utility).async {
                 let itemStart = Date()
-                let response = self?.performRequestResult(urlStr)
+                let response: LegadoHTTPResult? = Self.performRequest(urlStr, in: context.value)
                 let body = response?.body ?? ""
                 let itemMs = Int(Date().timeIntervalSince(itemStart) * 1000)
                 collected.withLock { $0[index] = response }
@@ -2209,12 +2214,37 @@ struct LegadoHTTPResult {
         performRequestResult(urlStr).body
     }
 
+    /// What one `java.*` request reads from the bridge. The handlers and the header provider are
+    /// the ones the bridge was configured with; `ajaxAll` captures this so its workers never
+    /// touch the bridge itself.
+    private struct RequestContext {
+        let analyzeUrlHandler: ((String) -> String?)?
+        let networkHandler: ((URLRequest) -> LegadoHTTPResult?)?
+        let sourceHeadersProvider: (() -> [String: String])?
+        let timeoutSeconds: TimeInterval
+
+        var sourceHeaders: [String: String] { sourceHeadersProvider?() ?? [:] }
+    }
+
+    private var requestContext: RequestContext {
+        RequestContext(
+            analyzeUrlHandler: analyzeUrlHandler,
+            networkHandler: networkHandler,
+            sourceHeadersProvider: sourceHeadersProvider,
+            timeoutSeconds: requestTimeoutSeconds
+        )
+    }
+
     private func performRequestResult(_ urlStr: String) -> LegadoHTTPResult {
+        Self.performRequest(urlStr, in: requestContext)
+    }
+
+    private static func performRequest(_ urlStr: String, in context: RequestContext) -> LegadoHTTPResult {
         // Route through AnalyzeUrl handler if available and URL looks like a Legado URL
         let trimmedUrl = urlStr.trimmingCharacters(in: .whitespacesAndNewlines)
         let baseURL = URL(string: trimmedUrl.components(separatedBy: ",{").first ?? trimmedUrl)
             ?? URL(string: "about:blank")!
-        if let analyzeHandler = analyzeUrlHandler,
+        if let analyzeHandler = context.analyzeUrlHandler,
            trimmedUrl.hasPrefix("data:")
             || trimmedUrl.contains(",{")
             || trimmedUrl.contains("{\"method\"") {
@@ -2222,7 +2252,7 @@ struct LegadoHTTPResult {
         }
 
         // Delegate to external handler if provided
-        if let handler = networkHandler {
+        if let handler = context.networkHandler {
             guard let url = URL(string: trimmedUrl) else {
                 // Silently returning "" here made the rule's `JSON.parse("")` throw
                 // three retries later with no trace of the real cause. Rule JS builds
@@ -2231,8 +2261,8 @@ struct LegadoHTTPResult {
                 AppLogger.parse("⟐ js net bad URL", context: ["url": String(trimmedUrl.prefix(200))])
                 return .bodyOnly(request: URLRequest(url: baseURL), body: "")
             }
-            var request = URLRequest(url: url, cachePolicy: .reloadIgnoringLocalCacheData, timeoutInterval: requestTimeoutSeconds)
-            sourceHeaders.forEach { request.setValue($1, forHTTPHeaderField: $0) }
+            var request = URLRequest(url: url, cachePolicy: .reloadIgnoringLocalCacheData, timeoutInterval: context.timeoutSeconds)
+            context.sourceHeaders.forEach { request.setValue($1, forHTTPHeaderField: $0) }
             return handler(request) ?? .bodyOnly(request: request, body: "")
         }
 
@@ -2242,7 +2272,7 @@ struct LegadoHTTPResult {
             return .bodyOnly(request: URLRequest(url: baseURL), body: "")
         }
 
-        var request = URLRequest(url: url, cachePolicy: .reloadIgnoringLocalCacheData, timeoutInterval: requestTimeoutSeconds)
+        var request = URLRequest(url: url, cachePolicy: .reloadIgnoringLocalCacheData, timeoutInterval: context.timeoutSeconds)
         request.setValue(
             "Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15",
             forHTTPHeaderField: "User-Agent"
@@ -2250,18 +2280,18 @@ struct LegadoHTTPResult {
         request.setValue("text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8", forHTTPHeaderField: "Accept")
         request.setValue("zh-CN,zh;q=0.9", forHTTPHeaderField: "Accept-Language")
         // Apply book source headers (may override User-Agent)
-        sourceHeaders.forEach { request.setValue($1, forHTTPHeaderField: $0) }
+        context.sourceHeaders.forEach { request.setValue($1, forHTTPHeaderField: $0) }
 
         let pending = BlockingResult<LegadoHTTPResult?>()
 
         // The response goes back to the source as it came — a Cloudflare challenge page
         // included, as in Legado. A source whose site is protected checks the body itself
         // and calls `java.startBrowserAwait`; blanking the page here hid it from that check.
-        let task = Self.requestSession.dataTask(with: request) { [request] data, response, _ in
+        let task = requestSession.dataTask(with: request) { [request] data, response, _ in
             pending.deliver(data.map { LegadoHTTPResult.make(request: request, data: $0, response: response) })
         }
         task.resume()
-        let responseResult = pending.wait(timeout: .now() + requestTimeoutSeconds) ?? nil
+        let responseResult = pending.wait(timeout: .now() + context.timeoutSeconds) ?? nil
         return responseResult ?? .bodyOnly(request: request, body: "")
     }
 

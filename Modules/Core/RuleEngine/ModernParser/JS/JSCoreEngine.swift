@@ -1,5 +1,6 @@
 import Foundation
 import JavaScriptCore
+import os
 
 /// JavaScript execution engine wrapping JavaScriptCore.
 /// Provides Legado-compatible `java.*` bridge functions so book source
@@ -254,7 +255,9 @@ class JSCoreEngine {
     /// is done and fills the cache for the next read.
     private func resolveFromMainThread(_ work: @escaping () -> [String: String]) -> [String: String]? {
         let wake = DispatchSemaphore(value: 0)
-        let result = HeaderResolution()
+        // Read by this thread only after `wake`, or never once a parked script ends the wait.
+        let result = OSAllocatedUnfairLock<[String: String]?>(initialState: nil)
+        let work = JSConfined(work)
         resolvedHeaderCacheLock.lock()
         mainThreadHeaderWaiters.append(wake)
         resolvedHeaderCacheLock.unlock()
@@ -265,15 +268,16 @@ class JSCoreEngine {
         }
         // Checked after registering, so a script that parks from here on still wakes us.
         if bridge.isAwaitingUser {
-            safeJsQueue.async { _ = work() }
+            safeJsQueue.async { _ = work.value() }
             return nil
         }
         safeJsQueue.async {
-            result.set(work())
+            let headers = work.value()
+            result.withLock { $0 = headers }
             wake.signal()
         }
         wake.wait()
-        return result.value
+        return result.withLock { $0 }
     }
 
     private func wakeMainThreadHeaderWaiters() {
@@ -391,16 +395,21 @@ class JSCoreEngine {
             return .completed(work())
         }
 
-        var result: T? = nil
+        // Written on the JS queue, read here after the group says it finished. After a timeout
+        // the late write lands in the lock and is never read.
+        let result = OSAllocatedUnfairLock<JSConfined<T>?>(initialState: nil)
         let group = DispatchGroup()
         let queue = safeJsQueue
+        let work = JSConfined(work)
+        // Only guards against the engine being torn down; the engine itself is unused
+        // because `work` is a self-contained closure.
+        let engine = JSConfined<() -> JSCoreEngine?>({ [weak self] in self })
 
         group.enter()
-        queue.async { [weak self] in
-            // Only guard against the engine being torn down; `self` itself is unused
-            // because `work` is a self-contained closure.
-            guard self != nil else { group.leave(); return }
-            result = work()
+        queue.async {
+            guard engine.value() != nil else { group.leave(); return }
+            let value = JSConfined(work.value())
+            result.withLock { $0 = value }
             group.leave()
         }
 
@@ -416,7 +425,7 @@ class JSCoreEngine {
             return .timedOut
         }
 
-        return .completed(result!)
+        return .completed(result.withLock { $0 }!.value)
     }
 
     // MARK: - JS network attribution
@@ -1662,23 +1671,5 @@ class JSCoreEngine {
         }
 
         return value.toString()
-    }
-}
-
-/// One header resolution's result, handed from the JS queue to a waiting main thread.
-private final class HeaderResolution: @unchecked Sendable {
-    private let lock = NSLock()
-    private var headers: [String: String]?
-
-    func set(_ value: [String: String]) {
-        lock.lock()
-        headers = value
-        lock.unlock()
-    }
-
-    var value: [String: String]? {
-        lock.lock()
-        defer { lock.unlock() }
-        return headers
     }
 }

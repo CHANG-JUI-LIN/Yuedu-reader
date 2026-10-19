@@ -48,29 +48,20 @@ final class JSSandbox {
             return nil
         }
 
-        // Use a heap-allocated box so the background closure and the calling thread
-        // never share a raw mutable variable. The NSLock guarantees a happens-before
-        // edge on both the write (background) and the read (calling thread after wait),
-        // which eliminates the data race that Thread Sanitizer would flag on the
-        // unprotected `var result: JSValue?` pattern.
-        final class ResultBox {
-            let lock = NSLock()
-            var value: JSValue?
-        }
-        let box = ResultBox()
-        let semaphore = DispatchSemaphore(value: 0)
+        // The context is used only on the detached thread until the result is delivered; the
+        // result is read here only after delivery (a late one after a timeout is never read).
+        let context = JSConfined(context)
+        let result = BlockingResult<JSConfined<JSValue?>>()
 
         Thread.detachNewThread {
-            let r = context.evaluateScript(script)
-            box.lock.withLock { box.value = r }
-            semaphore.signal()
+            result.deliver(JSConfined(context.value.evaluateScript(script)))
         }
 
-        if semaphore.wait(timeout: .now() + timeout) == .timedOut {
+        guard let evaluated = result.wait(timeout: .now() + timeout) else {
             logSecurity("Script execution timed out after \(timeout)s")
             return nil
         }
-        return box.lock.withLock { box.value }
+        return evaluated.value
     }
 
     // MARK: - Security Measures
