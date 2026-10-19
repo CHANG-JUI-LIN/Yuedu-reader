@@ -2,8 +2,12 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-	<key>NSPhotoLibraryAddUsageDescription</key>
-	<string>Save book covers and shared reading images to your photo library.</string>
+	<key>BGTaskSchedulerPermittedIdentifiers</key>
+	<array>
+		<string>com.yuedu.rss.feedRefresh</string>
+	</array>
+	<key>CADisableMinimumFrameDurationOnPhone</key>
+	<true/>
 	<key>CFBundleDocumentTypes</key>
 	<array>
 		<dict>
@@ -39,170 +43,6 @@
 			</array>
 		</dict>
 	</array>
-	<key>LSSupportsOpeningDocumentsInPlace</key>
-	<true/>
-	<key>UTImportedTypeDeclarations</key>
-	<array>
-		<dict>
-			<key>UTTypeIdentifier</key>
-			<string>app.yuedu.qitheme</string>
-			<key>UTTypeDescription</key>
-			<string>QiReader Theme</string>
-			<key>UTTypeConformsTo</key>
-			<array><string>public.zip-archive</string></array>
-			<key>UTTypeTagSpecification</key>
-			<dict>
-				<key>public.filename-extension</key>
-				<array><string>qitheme</string></array>
-			</dict>
-		</dict>
-		<dict>
-			<key>UTTypeIdentifier</key>
-			<string>app.yuedu.qihighlight</string>
-			<key>UTTypeDescription</key>
-			<string>QiReader Highlight Rules</string>
-			<key>UTTypeConformsTo</key>
-			<array><string>public.zip-archive</string></array>
-			<key>UTTypeTagSpecification</key>
-			<dict>
-				<key>public.filename-extension</key>
-				<array><string>qihighlight</string></array>
-			</dict>
-		</dict>
-		<dict>
-			<key>UTTypeIdentifier</key>
-			<string>app.yuedu.reeden-theme</string>
-			<key>UTTypeDescription</key>
-			<string>Reeden Theme</string>
-			<key>UTTypeConformsTo</key>
-			<array><string>public.data</string></array>
-			<key>UTTypeTagSpecification</key>
-			<dict>
-				<key>public.filename-extension</key>
-				<array><string>red</string></array>
-			</dict>
-		</dict>
-		<dict>
-			<key>UTTypeIdentifier</key>
-			<string>net.daringfireball.markdown</string>
-			<key>UTTypeDescription</key>
-			<string>Markdown document</string>
-			<key>UTTypeConformsTo</key>
-			<array>
-				<string>public.plain-text</string>
-			</array>
-			<key>UTTypeTagSpecification</key>
-			<dict>
-				<key>public.filename-extension</key>
-				<array>
-					<string>md</string>
-					<string>markdown</string>
-				</array>
-				<key>public.mime-type</key>
-				<string>text/markdown</string>
-			</dict>
-		</dict>
-		<dict>
-			<key>UTTypeIdentifier</key>
-			<string>com.macitbetter.cbz-archive</string>
-			<key>UTTypeDescription</key>
-			<string>Comic book archive</string>
-			<key>UTTypeConformsTo</key>
-			<array>
-				<string>public.zip-archive</string>
-				<string>public.content</string>
-			</array>
-			<key>UTTypeTagSpecification</key>
-			<dict>
-				<key>public.filename-extension</key>
-				<array>
-					<string>cbz</string>
-				</array>
-				<key>public.mime-type</key>
-				<string>application/vnd.comicbook+zip</string>
-			</dict>
-		</dict>
-		<dict>
-			<key>UTTypeIdentifier</key>
-			<string>com.apple.protected-mpeg-4-audio-b</string>
-			<key>UTTypeDescription</key>
-			<string>MPEG-4 audiobook</string>
-			<key>UTTypeConformsTo</key>
-			<array>
-				<string>public.mpeg-4-audio</string>
-			</array>
-			<key>UTTypeTagSpecification</key>
-			<dict>
-				<key>public.filename-extension</key>
-				<array>
-					<string>m4b</string>
-				</array>
-				<key>public.mime-type</key>
-				<string>audio/mp4</string>
-			</dict>
-		</dict>
-		<dict>
-			<key>UTTypeIdentifier</key>
-			<string>org.xiph.flac</string>
-			<key>UTTypeDescription</key>
-			<string>FLAC audio</string>
-			<key>UTTypeConformsTo</key>
-			<array>
-				<string>public.audio</string>
-			</array>
-			<key>UTTypeTagSpecification</key>
-			<dict>
-				<key>public.filename-extension</key>
-				<array>
-					<string>flac</string>
-				</array>
-				<key>public.mime-type</key>
-				<string>audio/flac</string>
-			</dict>
-		</dict>
-		<dict>
-			<key>UTTypeIdentifier</key>
-			<string>org.opml.opml</string>
-			<key>UTTypeDescription</key>
-			<string>OPML document</string>
-			<key>UTTypeConformsTo</key>
-			<array>
-				<string>public.xml</string>
-			</array>
-			<key>UTTypeTagSpecification</key>
-			<dict>
-				<key>public.filename-extension</key>
-				<array>
-					<string>opml</string>
-				</array>
-				<key>public.mime-type</key>
-				<string>text/x-opml</string>
-			</dict>
-		</dict>
-
-		<dict>
-			<key>UTTypeIdentifier</key>
-			<string>app.yuedu.book-source</string>
-			<key>UTTypeDescription</key>
-			<string>Book source document</string>
-			<key>UTTypeConformsTo</key>
-			<array>
-				<string>public.data</string>
-				<string>public.content</string>
-			</array>
-			<key>UTTypeTagSpecification</key>
-			<dict>
-				<key>public.filename-extension</key>
-				<array>
-					<string>yds</string>
-					<string>mrs</string>
-				</array>
-			</dict>
-		</dict>
-
-	</array>
-	<key>CADisableMinimumFrameDurationOnPhone</key>
-	<true/>
 	<key>CFBundleLocalizations</key>
 	<array>
 		<string>zh-Hant</string>
@@ -257,10 +97,6 @@
 	<array>
 		<string>_calibresmartdeviceapp._tcp</string>
 	</array>
-	<key>BGTaskSchedulerPermittedIdentifiers</key>
-	<array>
-		<string>com.yuedu.rss.feedRefresh</string>
-	</array>
 	<key>UIBackgroundModes</key>
 	<array>
 		<string>audio</string>
@@ -303,6 +139,176 @@
 				<key>public.filename-extension</key>
 				<array>
 					<string>txt</string>
+				</array>
+			</dict>
+		</dict>
+	</array>
+	<key>UTImportedTypeDeclarations</key>
+	<array>
+		<dict>
+			<key>UTTypeConformsTo</key>
+			<array>
+				<string>public.zip-archive</string>
+			</array>
+			<key>UTTypeDescription</key>
+			<string>QiReader Theme</string>
+			<key>UTTypeIdentifier</key>
+			<string>app.yuedu.qitheme</string>
+			<key>UTTypeTagSpecification</key>
+			<dict>
+				<key>public.filename-extension</key>
+				<array>
+					<string>qitheme</string>
+				</array>
+			</dict>
+		</dict>
+		<dict>
+			<key>UTTypeConformsTo</key>
+			<array>
+				<string>public.zip-archive</string>
+			</array>
+			<key>UTTypeDescription</key>
+			<string>QiReader Highlight Rules</string>
+			<key>UTTypeIdentifier</key>
+			<string>app.yuedu.qihighlight</string>
+			<key>UTTypeTagSpecification</key>
+			<dict>
+				<key>public.filename-extension</key>
+				<array>
+					<string>qihighlight</string>
+				</array>
+			</dict>
+		</dict>
+		<dict>
+			<key>UTTypeConformsTo</key>
+			<array>
+				<string>public.data</string>
+			</array>
+			<key>UTTypeDescription</key>
+			<string>Reeden Theme</string>
+			<key>UTTypeIdentifier</key>
+			<string>app.yuedu.reeden-theme</string>
+			<key>UTTypeTagSpecification</key>
+			<dict>
+				<key>public.filename-extension</key>
+				<array>
+					<string>red</string>
+				</array>
+			</dict>
+		</dict>
+		<dict>
+			<key>UTTypeConformsTo</key>
+			<array>
+				<string>public.plain-text</string>
+			</array>
+			<key>UTTypeDescription</key>
+			<string>Markdown document</string>
+			<key>UTTypeIdentifier</key>
+			<string>net.daringfireball.markdown</string>
+			<key>UTTypeTagSpecification</key>
+			<dict>
+				<key>public.filename-extension</key>
+				<array>
+					<string>md</string>
+					<string>markdown</string>
+				</array>
+				<key>public.mime-type</key>
+				<string>text/markdown</string>
+			</dict>
+		</dict>
+		<dict>
+			<key>UTTypeConformsTo</key>
+			<array>
+				<string>public.zip-archive</string>
+				<string>public.content</string>
+			</array>
+			<key>UTTypeDescription</key>
+			<string>Comic book archive</string>
+			<key>UTTypeIdentifier</key>
+			<string>com.macitbetter.cbz-archive</string>
+			<key>UTTypeTagSpecification</key>
+			<dict>
+				<key>public.filename-extension</key>
+				<array>
+					<string>cbz</string>
+				</array>
+				<key>public.mime-type</key>
+				<string>application/vnd.comicbook+zip</string>
+			</dict>
+		</dict>
+		<dict>
+			<key>UTTypeConformsTo</key>
+			<array>
+				<string>public.mpeg-4-audio</string>
+			</array>
+			<key>UTTypeDescription</key>
+			<string>MPEG-4 audiobook</string>
+			<key>UTTypeIdentifier</key>
+			<string>com.apple.protected-mpeg-4-audio-b</string>
+			<key>UTTypeTagSpecification</key>
+			<dict>
+				<key>public.filename-extension</key>
+				<array>
+					<string>m4b</string>
+				</array>
+				<key>public.mime-type</key>
+				<string>audio/mp4</string>
+			</dict>
+		</dict>
+		<dict>
+			<key>UTTypeConformsTo</key>
+			<array>
+				<string>public.audio</string>
+			</array>
+			<key>UTTypeDescription</key>
+			<string>FLAC audio</string>
+			<key>UTTypeIdentifier</key>
+			<string>org.xiph.flac</string>
+			<key>UTTypeTagSpecification</key>
+			<dict>
+				<key>public.filename-extension</key>
+				<array>
+					<string>flac</string>
+				</array>
+				<key>public.mime-type</key>
+				<string>audio/flac</string>
+			</dict>
+		</dict>
+		<dict>
+			<key>UTTypeConformsTo</key>
+			<array>
+				<string>public.xml</string>
+			</array>
+			<key>UTTypeDescription</key>
+			<string>OPML document</string>
+			<key>UTTypeIdentifier</key>
+			<string>org.opml.opml</string>
+			<key>UTTypeTagSpecification</key>
+			<dict>
+				<key>public.filename-extension</key>
+				<array>
+					<string>opml</string>
+				</array>
+				<key>public.mime-type</key>
+				<string>text/x-opml</string>
+			</dict>
+		</dict>
+		<dict>
+			<key>UTTypeConformsTo</key>
+			<array>
+				<string>public.data</string>
+				<string>public.content</string>
+			</array>
+			<key>UTTypeDescription</key>
+			<string>Book source document</string>
+			<key>UTTypeIdentifier</key>
+			<string>app.yuedu.book-source</string>
+			<key>UTTypeTagSpecification</key>
+			<dict>
+				<key>public.filename-extension</key>
+				<array>
+					<string>yds</string>
+					<string>mrs</string>
 				</array>
 			</dict>
 		</dict>

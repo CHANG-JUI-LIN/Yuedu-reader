@@ -820,7 +820,9 @@
 				INFOPLIST_KEY_CFBundleDisplayName = "閱讀";
 				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.books";
+				INFOPLIST_KEY_LSSupportsOpeningDocumentsInPlace = YES;
 				INFOPLIST_KEY_NSLocalNetworkUsageDescription = "Connect to local book libraries, receive books from Calibre, and use local speech services.";
+				INFOPLIST_KEY_NSPhotoLibraryAddUsageDescription = "Save book covers and shared reading images to your photo library.";
 				INFOPLIST_KEY_NSSupportsLiveActivities = YES;
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
@@ -883,7 +885,9 @@
 				INFOPLIST_KEY_CFBundleDisplayName = "閱讀";
 				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.books";
+				INFOPLIST_KEY_LSSupportsOpeningDocumentsInPlace = YES;
 				INFOPLIST_KEY_NSLocalNetworkUsageDescription = "Connect to local book libraries, receive books from Calibre, and use local speech services.";
+				INFOPLIST_KEY_NSPhotoLibraryAddUsageDescription = "Save book covers and shared reading images to your photo library.";
 				INFOPLIST_KEY_NSSupportsLiveActivities = YES;
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
