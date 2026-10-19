@@ -211,7 +211,7 @@ enum RegexHighlightDecorationRenderer {
             return (dominant.font, dominant.raise, dominant.isUpright)
         }
         return (
-            CTFontCreateCopyWithAttributes(font as CTFont, 0, nil, horizontalOrientation) as UIFont,
+            CTFontCreateCopyWithAttributes(font as CTFont, 0, nil, horizontalOrientationDescriptor()) as UIFont,
             dominant.raise,
             true
         )
@@ -226,9 +226,13 @@ enum RegexHighlightDecorationRenderer {
             == CTFontOrientation.vertical.rawValue
     }
 
-    private static let horizontalOrientation = CTFontDescriptorCreateWithAttributes(
-        [kCTFontOrientationAttribute: CTFontOrientation.horizontal.rawValue] as CFDictionary
-    )
+    /// Made per call: `CTFontDescriptor` is not `Sendable`, so a shared static would be global
+    /// mutable state. Only a decoration group whose dominant font is a vertical variant gets here.
+    private static func horizontalOrientationDescriptor() -> CTFontDescriptor {
+        CTFontDescriptorCreateWithAttributes(
+            [kCTFontOrientationAttribute: CTFontOrientation.horizontal.rawValue] as CFDictionary
+        )
+    }
 
     static func drawVertical(
         frame: CTFrame,

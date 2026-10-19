@@ -7,7 +7,7 @@ import UIKit
 
 /// UICollectionView-backed CoreText continuous reader.
 /// Horizontal books scroll vertically; vertical-rl books scroll horizontally right-to-left.
-final class CoreTextCollectionScrollViewController: UIViewController, UIEditMenuInteractionDelegate, UIGestureRecognizerDelegate {
+final class CoreTextCollectionScrollViewController: UIViewController, @MainActor UIEditMenuInteractionDelegate, UIGestureRecognizerDelegate {
     private static let emphasisEditMenuIdentifier = NSString(string: "CoreTextCollectionScrollViewController.emphasis")
 
     static let chapterGap: CGFloat = 24

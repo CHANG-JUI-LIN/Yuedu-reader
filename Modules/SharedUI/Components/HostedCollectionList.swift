@@ -16,7 +16,7 @@ import UIKit
 
 /// A request to bring one item into view. `serial` distinguishes repeated requests for the
 /// same item (pin a source, move it, pin it again).
-struct HostedCollectionListScrollRequest<Item: Hashable>: Equatable {
+struct HostedCollectionListScrollRequest<Item: Hashable & Sendable>: Equatable {
     let item: Item
     let serial: Int
 }
@@ -28,7 +28,7 @@ struct HostedCollectionListScrollRequest<Item: Hashable>: Equatable {
 /// - `contentVersion` is bumped by the owner when something a row *shows* changed without
 ///   the row order changing — a selection, a toggle, a validation badge. Only the rows
 ///   on screen are rebuilt.
-struct HostedCollectionList<Item: Hashable, Row: View>: UIViewControllerRepresentable {
+struct HostedCollectionList<Item: Hashable & Sendable, Row: View>: UIViewControllerRepresentable {
     let items: [Item]
     let contentVersion: Int
     var animatesItemChanges = false
@@ -72,10 +72,10 @@ struct HostedCollectionList<Item: Hashable, Row: View>: UIViewControllerRepresen
 }
 
 @MainActor
-final class HostedCollectionListController<Item: Hashable, Row: View>: UIViewController {
+final class HostedCollectionListController<Item: Hashable & Sendable, Row: View>: UIViewController {
     /// A data item can appear more than once; diffable identity belongs to its
     /// occurrence in the list, not to the shared underlying value.
-    private struct RowID: Hashable {
+    private struct RowID: Hashable, Sendable {
         let item: Item
         let occurrence: Int
     }

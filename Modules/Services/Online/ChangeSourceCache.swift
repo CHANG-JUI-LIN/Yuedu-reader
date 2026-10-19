@@ -7,7 +7,7 @@ import Foundation
 ///
 /// Also remembers which origins failed to switch (TOC fetch threw) so the list
 /// can flag them — failure flags survive a re-search of the same book.
-final class ChangeSourceCache {
+final class ChangeSourceCache: Sendable {
     static let shared = ChangeSourceCache()
 
     struct Entry: Codable {
@@ -24,12 +24,14 @@ final class ChangeSourceCache {
 
     private let queue = DispatchQueue(label: "com.yuedu.changeSourceCache")
 
-    private lazy var directory: URL = {
+    private let directory: URL
+
+    private init() {
         let base = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0]
             .appendingPathComponent("ChangeSourceCache", isDirectory: true)
         try? FileManager.default.createDirectory(at: base, withIntermediateDirectories: true)
-        return base
-    }()
+        directory = base
+    }
 
     private func fileURL(for bookId: UUID) -> URL {
         directory.appendingPathComponent("\(bookId.uuidString).json")

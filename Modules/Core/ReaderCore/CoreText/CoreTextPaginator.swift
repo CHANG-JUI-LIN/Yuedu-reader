@@ -131,14 +131,19 @@ final class CoreTextPaginator: Sendable {
     }
 
     struct RenderedBlockRenderable {
-        enum Content: Equatable, @unchecked Sendable {
-            case htmlBlock(attributedText: NSAttributedString?)
+        enum Content: Equatable, Sendable {
+            case htmlBlock(text: LayoutShared<NSAttributedString>?)
             case chapterTitle(ChapterTitleRenderPlan)
+
+            /// The explicit block text, frozen once the block is built (see `LayoutShared`).
+            static func htmlBlock(attributedText: NSAttributedString?) -> Content {
+                .htmlBlock(text: attributedText.map { LayoutShared($0) })
+            }
 
             static func == (lhs: Content, rhs: Content) -> Bool {
                 switch (lhs, rhs) {
                 case let (.htmlBlock(lhsText), .htmlBlock(rhsText)):
-                    switch (lhsText, rhsText) {
+                    switch (lhsText?.object, rhsText?.object) {
                     case (nil, nil): return true
                     case let (lhsText?, rhsText?): return lhsText.isEqual(to: rhsText)
                     default: return false
@@ -159,8 +164,8 @@ final class CoreTextPaginator: Sendable {
         let imageAttachment: RenderedAttachment?
 
         var attributedText: NSAttributedString? {
-            guard case let .htmlBlock(attributedText) = content else { return nil }
-            return attributedText
+            guard case let .htmlBlock(text) = content else { return nil }
+            return text?.object
         }
 
         var chapterTitlePlan: ChapterTitleRenderPlan? {
@@ -170,7 +175,7 @@ final class CoreTextPaginator: Sendable {
 
         var suppressesSourceText: Bool {
             switch content {
-            case let .htmlBlock(attributedText): return attributedText != nil
+            case let .htmlBlock(text): return text != nil
             case .chapterTitle: return true
             }
         }
@@ -464,7 +469,7 @@ final class CoreTextPaginator: Sendable {
                         rect: item.rect,
                         style: style.withBackgroundFillColor(backgroundColor),
                         content: .htmlBlock(
-                            attributedText: recoloredAttributedText ?? sourceText
+                            attributedText: recoloredAttributedText ?? sourceText?.object
                         ),
                         sourceRanges: item.sourceRanges,
                         imageAttachment: item.imageAttachment

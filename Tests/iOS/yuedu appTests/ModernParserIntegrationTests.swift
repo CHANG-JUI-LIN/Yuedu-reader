@@ -731,7 +731,7 @@ struct SourceRuleParsingTests {
 
     @Test("## splits regex pattern from rule")
     func regexSplit() {
-        let rule = SourceRule(ruleStr: "div.content@text##廣告.*##")
+        var rule = SourceRule(ruleStr: "div.content@text##廣告.*##")
         // Before makeUpRule, the ## part is still in rule.rule
         // After makeUpRule it gets split
         rule.makeUpRule(
@@ -745,7 +745,7 @@ struct SourceRuleParsingTests {
 
     @Test("### sets replaceFirst flag")
     func replaceFirstFlag() {
-        let rule = SourceRule(ruleStr: "div@text##pattern##replacement###")
+        var rule = SourceRule(ruleStr: "div@text##pattern##replacement###")
         rule.makeUpRule(
             result: nil,
             getData: { _ in "" },

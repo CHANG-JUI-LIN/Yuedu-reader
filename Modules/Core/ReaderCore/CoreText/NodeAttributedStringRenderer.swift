@@ -15,11 +15,11 @@ import YueduCoreTextTypography
 //   - `.rawHTML` fallback: displays placeholder in Debug, silently ignored in Release
 //   - `.image` enters existing paginator / page view pipeline via RunDelegate placeholder
 
-struct NodeAttributedStringRenderer {
+struct NodeAttributedStringRenderer: Sendable {
 
     // MARK: - Rendering Config
 
-    struct Config {
+    struct Config: Sendable {
         let baseFontSize: CGFloat
         let lineHeightMultiple: CGFloat
         let paragraphSpacing: CGFloat
@@ -52,8 +52,10 @@ struct NodeAttributedStringRenderer {
         /// Called off the main thread, from inside `render`: it must resolve from a value the
         /// chapter owns (`EPUBStyleResolver.RegisteredFonts`), never main-actor state.
         let resolvedFont: (@Sendable ([String], Int, Bool, CGFloat) -> UIFont?)?
-        let imageLoader: ((String) async -> UIImage?)?
-        let mediaURLResolver: ((String) -> String?)?
+        /// Both run on the main actor: the builders that supply them answer from their own
+        /// main-actor state (resource provider, image cache, source headers).
+        let imageLoader: (@MainActor @Sendable (String) async -> UIImage?)?
+        let mediaURLResolver: (@MainActor @Sendable (String) -> String?)?
         /// The chapter's own URL, sent as the `Referer` of an `<iframe>` page the reader loads
         /// (embed players check it, as they do in a browser). nil for EPUB.
         let webEmbedReferer: String?
@@ -85,8 +87,8 @@ struct NodeAttributedStringRenderer {
             renderWidth: CGFloat? = nil,
             renderHeight: CGFloat? = nil,
             resolvedFont: (@Sendable ([String], Int, Bool, CGFloat) -> UIFont?)? = nil,
-            imageLoader: ((String) async -> UIImage?)? = nil,
-            mediaURLResolver: ((String) -> String?)? = nil,
+            imageLoader: (@MainActor @Sendable (String) async -> UIImage?)? = nil,
+            mediaURLResolver: (@MainActor @Sendable (String) -> String?)? = nil,
             webEmbedReferer: String? = nil,
             baseWritingDirection: NSWritingDirection = .natural,
             centerStandaloneImages: Bool = false,
@@ -1699,16 +1701,18 @@ struct NodeAttributedStringRenderer {
 
         let tableImages = await loadTableImages(table)
         let rasterPages = await MainActor.run { [
-            font = blockCtx.font, textColor = blockCtx.textColor, cjkStyle = blockCtx.cjkTypographyStyle
+            font = blockCtx.font, textColor = blockCtx.textColor, cjkStyle = blockCtx.cjkTypographyStyle,
+            renderHeight = config.renderHeight, backgroundColor = config.backgroundColor,
+            resolvedFont = config.resolvedFont
         ] in
             HTMLTableRasterizer.renderPages(
                 table: table,
                 maxWidth: maxWidth,
-                maxPageHeight: config.renderHeight,
+                maxPageHeight: renderHeight,
                 baseFont: font,
                 textColor: textColor,
-                backgroundColor: config.backgroundColor,
-                resolvedFont: config.resolvedFont,
+                backgroundColor: backgroundColor,
+                resolvedFont: resolvedFont,
                 imagesBySource: tableImages,
                 cjkTypographyStyle: cjkStyle
             )
@@ -1805,12 +1809,20 @@ struct NodeAttributedStringRenderer {
         } else {
             maxWidth = await ReaderDocumentTrace.measuring("mainActorHop") { await MainActor.run { UIScreen.main.bounds.width } }
         }
+        var resolvedSourceHref = media.sourceHref
+        var resolvedPosterHref = media.posterHref
+        if let mediaURLResolver = config.mediaURLResolver {
+            resolvedSourceHref = await mediaURLResolver(media.sourceHref) ?? media.sourceHref
+            if let posterHref = media.posterHref {
+                resolvedPosterHref = await mediaURLResolver(posterHref) ?? posterHref
+            }
+        }
         let resolvedMedia = EPUBMediaAttachment(
             kind: media.kind,
-            sourceHref: config.mediaURLResolver?(media.sourceHref) ?? media.sourceHref,
+            sourceHref: resolvedSourceHref,
             mediaType: media.mediaType,
             title: media.title,
-            posterHref: media.posterHref.flatMap { config.mediaURLResolver?($0) ?? $0 }
+            posterHref: resolvedPosterHref
         )
         let intrinsicSize: CGSize? = {
             guard let w = style.width, w > 0 else { return nil }
@@ -1830,7 +1842,10 @@ struct NodeAttributedStringRenderer {
                 ])
             }
         }
-        let image = await MainActor.run { [poster, font = blockCtx.font, textColor = blockCtx.textColor] in
+        let image = await MainActor.run { [
+            poster, font = blockCtx.font, textColor = blockCtx.textColor,
+            backgroundColor = config.backgroundColor
+        ] in
             EPUBMediaPlaceholderRenderer.image(
                 for: resolvedMedia,
                 maxWidth: maxWidth,
@@ -1838,7 +1853,7 @@ struct NodeAttributedStringRenderer {
                 poster: poster,
                 font: font,
                 textColor: textColor,
-                backgroundColor: config.backgroundColor
+                backgroundColor: backgroundColor
             )
         }
 

@@ -457,7 +457,7 @@ struct AIChatComposer: View {
     private var scopeMenu: some View {
         let title = wholeBook ? localized("全書") : localized("已讀")
         return Menu {
-            Picker(localized("閱讀範圍"), selection: Binding(get: { wholeBook }, set: onSetWholeBook)) {
+            Picker(localized("閱讀範圍"), selection: Binding(get: { wholeBook }, set: { onSetWholeBook($0) })) {
                 Label(localized("已讀"), systemImage: "book").tag(false)
                 Label(localized("全書"), systemImage: "books.vertical").tag(true)
             }

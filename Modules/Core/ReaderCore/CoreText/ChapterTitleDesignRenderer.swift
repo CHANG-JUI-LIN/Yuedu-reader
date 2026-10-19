@@ -5,7 +5,7 @@ import UIKit
 
 /// An immutable, fully-resolved snapshot that the paginator can carry without
 /// consulting mutable settings or the asset store while drawing.
-struct ChapterTitleRenderPlan: Equatable, @unchecked Sendable {
+struct ChapterTitleRenderPlan: Equatable, Sendable {
     let accessibilityText: String
     let canvasSize: CGSize
     let layers: [ChapterTitleRenderedLayer]
@@ -48,16 +48,40 @@ enum ChapterTitleCanvasGeometry {
     }
 }
 
-struct ChapterTitleRenderedLayer: Equatable, @unchecked Sendable {
+struct ChapterTitleRenderedLayer: Equatable, Sendable {
     let id: UUID
     let frame: CGRect
     let rotationRadians: CGFloat
-    let attributedText: NSAttributedString?
+    private let sharedAttributedText: LayoutShared<NSAttributedString>?
     let image: UIImage?
     let backgroundImage: UIImage?
     let shape: ChapterTitleRenderedShape?
     let style: ChapterTitleLayerStyle
     let text: String?
+
+    var attributedText: NSAttributedString? { sharedAttributedText?.object }
+
+    init(
+        id: UUID,
+        frame: CGRect,
+        rotationRadians: CGFloat,
+        attributedText: NSAttributedString?,
+        image: UIImage?,
+        backgroundImage: UIImage?,
+        shape: ChapterTitleRenderedShape?,
+        style: ChapterTitleLayerStyle,
+        text: String?
+    ) {
+        self.id = id
+        self.frame = frame
+        self.rotationRadians = rotationRadians
+        sharedAttributedText = attributedText.map { LayoutShared($0) }
+        self.image = image
+        self.backgroundImage = backgroundImage
+        self.shape = shape
+        self.style = style
+        self.text = text
+    }
 
     static func == (lhs: Self, rhs: Self) -> Bool {
         lhs.id == rhs.id

@@ -34,6 +34,10 @@ final class ConcurrentCache<Value: AnyObject & Sendable>: @unchecked Sendable {
         cache.setObject(value, forKey: key as NSString, cost: cost)
     }
 
+    func removeObject(forKey key: String) {
+        cache.removeObject(forKey: key as NSString)
+    }
+
     func removeAllObjects() {
         cache.removeAllObjects()
     }

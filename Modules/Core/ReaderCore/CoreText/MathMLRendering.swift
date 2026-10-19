@@ -210,36 +210,45 @@ private enum MathMLTableLatexConverter {
     }
 }
 
-private final class MathMLToLatexJSBridge {
+private final class MathMLToLatexJSBridge: Sendable {
     static let shared = MathMLToLatexJSBridge()
 
+    private struct State {
+        var context: JSContext?
+        var loadFailed = false
+    }
+
+    /// Every conversion runs its JavaScript on this serial queue, one at a time, as it always
+    /// has. The context lives in `state` so the class can be `Sendable`; the lock is only ever
+    /// taken on `queue`, so it never contends and does not change which thread runs the JS.
     private let queue = DispatchQueue(label: "com.yuedu.mathml-to-latex")
-    private var context: JSContext?
-    private var loadFailed = false
+    private let state = Locked(State())
 
     func convert(_ mathML: String) -> String? {
         queue.sync {
-            guard let context = preparedContext() else { return nil }
-            context.exception = nil
-            let namespace = context.objectForKeyedSubscript("MathMLToLaTeX")
-            let converter = namespace?.objectForKeyedSubscript("MathMLToLaTeX")
-            let value = converter?.invokeMethod("convert", withArguments: [mathML])
-            guard context.exception == nil,
-                  let latex = value?.toString(),
-                  !latex.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-            else { return nil }
-            return latex
+            state.withLock { state in
+                guard let context = Self.preparedContext(&state) else { return nil }
+                context.exception = nil
+                let namespace = context.objectForKeyedSubscript("MathMLToLaTeX")
+                let converter = namespace?.objectForKeyedSubscript("MathMLToLaTeX")
+                let value = converter?.invokeMethod("convert", withArguments: [mathML])
+                guard context.exception == nil,
+                      let latex = value?.toString(),
+                      !latex.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                else { return nil }
+                return latex
+            }
         }
     }
 
-    private func preparedContext() -> JSContext? {
-        if let context {
+    private static func preparedContext(_ state: inout State) -> JSContext? {
+        if let context = state.context {
             return context
         }
-        guard !loadFailed,
+        guard !state.loadFailed,
               let script = loadBundleScript()
         else {
-            loadFailed = true
+            state.loadFailed = true
             return nil
         }
         let newContext = JSContext()
@@ -251,14 +260,14 @@ private final class MathMLToLatexJSBridge {
         guard newContext?.exception == nil,
               newContext?.objectForKeyedSubscript("MathMLToLaTeX").isUndefined == false
         else {
-            loadFailed = true
+            state.loadFailed = true
             return nil
         }
-        context = newContext
+        state.context = newContext
         return newContext
     }
 
-    private func loadBundleScript() -> String? {
+    private static func loadBundleScript() -> String? {
         let bundles = [Bundle.main] + Bundle.allBundles + Bundle.allFrameworks
         for bundle in bundles {
             let url = bundle.url(

@@ -677,7 +677,7 @@ final class BookSourceHealthChecker: ObservableObject {
     /// Individual HTTP, WebView and JS operations retain their own lower-level
     /// bounds. `respondTime` is output metadata used for display/sorting; upstream
     /// Legado does not feed it back as a per-stage timeout.
-    private func withTimeout<T, E: Error & Sendable>(
+    private func withTimeout<T: Sendable, E: Error & Sendable>(
         seconds: TimeInterval,
         throwing error: E,
         _ operation: @escaping @Sendable () async throws -> T

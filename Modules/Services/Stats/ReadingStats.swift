@@ -161,6 +161,7 @@ struct ReadingStatsSessionTracker {
 
 // MARK: - ReadingStatsStore
 
+@MainActor
 class ReadingStatsStore: ObservableObject {
     static let shared = ReadingStatsStore()
 

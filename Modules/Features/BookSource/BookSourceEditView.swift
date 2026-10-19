@@ -399,6 +399,7 @@ struct BookSourceFieldSpec: Identifiable {
 
 /// The full field catalog, matching the field sets of Legado 原版 / MD3 / Sigma's
 /// edit screens. Static stored arrays keep the spec instances (and their ids) stable.
+@MainActor
 private enum FieldCatalog {
     // MARK: 基本 — Legado `sourceEntities`
     static let base: [BookSourceFieldSpec] = [

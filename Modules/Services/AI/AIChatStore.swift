@@ -4,6 +4,8 @@ import Foundation
 ///
 /// A chat the reader paid for should still be there when they reopen the book.
 /// Conversations are ordered by their most recent use; the first one is restored.
+/// Main-actor owned, like the conversation that reads and writes it.
+@MainActor
 final class AIChatStore {
     static let shared = AIChatStore()
 

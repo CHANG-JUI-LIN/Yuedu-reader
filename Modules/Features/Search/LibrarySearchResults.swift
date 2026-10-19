@@ -62,12 +62,13 @@ final class LibrarySearchModel {
             guard let self else { return }
             await withTaskGroup(of: Void.self) { group in
                 for index in available {
-                    group.addTask { @MainActor in
+                    let operation: @MainActor @Sendable () async -> Void = {
                         await self.searches[index].search(query) { answer in
                             guard !Task.isCancelled else { return }
                             self.add(answer, store: store)
                         }
                     }
+                    group.addTask(operation: operation)
                 }
             }
             guard !Task.isCancelled else { return }

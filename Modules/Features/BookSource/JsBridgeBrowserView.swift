@@ -536,7 +536,7 @@ struct JsBridgeBrowserRepresentable: UIViewRepresentable {
 
         // Drive the progress bar from the live load estimate.
         context.coordinator.progressObservation = wv.observe(\.estimatedProgress, options: [.new]) { [weak bridge] web, _ in
-            DispatchQueue.main.async { bridge?.progress = web.estimatedProgress }
+            DispatchQueue.main.async { [bridge] in bridge?.progress = web.estimatedProgress }
         }
 
         context.coordinator.installKeyboardReFocusWorkaround()
@@ -600,14 +600,17 @@ struct JsBridgeBrowserRepresentable: UIViewRepresentable {
                 object: nil,
                 queue: .main
             ) { [weak self] _ in
-                self?.webView?.evaluateJavaScript(
-                    "if (document.activeElement && document.activeElement.blur) { document.activeElement.blur(); }",
-                    completionHandler: nil
-                )
+                // Delivered on `.main` (the queue above).
+                MainActor.assumeIsolated {
+                    self?.webView?.evaluateJavaScript(
+                        "if (document.activeElement && document.activeElement.blur) { document.activeElement.blur(); }",
+                        completionHandler: nil
+                    )
+                }
             }
         }
 
-        deinit {
+        isolated deinit {
             if let keyboardHideObserver {
                 NotificationCenter.default.removeObserver(keyboardHideObserver)
             }

@@ -93,10 +93,11 @@ final class FixedLayoutPageEngine: PageRenderingProvider, FixedLayoutSpreadPairi
         let priority = Set([0, 1].filter { $0 < totalPages })
         await withTaskGroup(of: Void.self) { @MainActor group in
             for i in priority {
-                group.addTask { @MainActor [weak self] in
+                let operation: @MainActor @Sendable () async -> Void = { [weak self] in
                     guard let self else { return }
                     _ = await self.viewportResolver.viewport(for: i, resourceProvider: self.resourceProvider)
                 }
+                group.addTask(operation: operation)
             }
         }
     }

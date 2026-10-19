@@ -1,4 +1,5 @@
 import Foundation
+import os
 
 
 // MARK: - Unified Reading Locator
@@ -212,11 +213,17 @@ extension ReaderLocator {
 
 // MARK: - Progress Storage
 
-final class EPUBProgressStore {
+final class EPUBProgressStore: Sendable {
+    /// The record waiting for its debounce, and which `save` scheduled the debounce that may
+    /// write it: a newer `save` or a flush bumps `generation`, which cancels the older timer.
+    private struct PendingState: Sendable {
+        var record: ReaderLocator?
+        var generation = 0
+    }
+
     private let queue = DispatchQueue(label: "com.yuedu.epub-progress", qos: .utility)
     private let directoryURL: URL
-    private var pendingRecord: ReaderLocator?
-    private var debounceWork: DispatchWorkItem?
+    private let pending = OSAllocatedUnfairLock(initialState: PendingState())
     private let debounceInterval: TimeInterval
 
     init(directoryURL: URL, debounceInterval: TimeInterval = 1.0) {
@@ -229,25 +236,32 @@ final class EPUBProgressStore {
     func save(record: ReaderLocator) {
         queue.async { [weak self] in
             guard let self else { return }
-            self.pendingRecord = record
-            self.debounceWork?.cancel()
-            let work = DispatchWorkItem { [weak self] in
-                guard let self, let record = self.pendingRecord else { return }
-                self.pendingRecord = nil
-                self.write(record: record)
+            let generation = self.pending.withLock { state in
+                state.record = record
+                state.generation += 1
+                return state.generation
             }
-            self.debounceWork = work
-            self.queue.asyncAfter(deadline: .now() + self.debounceInterval, execute: work)
+            self.queue.asyncAfter(deadline: .now() + self.debounceInterval) { [weak self] in
+                guard let self else { return }
+                let due = self.pending.withLock { state -> ReaderLocator? in
+                    guard state.generation == generation, let r = state.record else { return nil }
+                    state.record = nil
+                    return r
+                }
+                if let due { self.write(record: due) }
+            }
         }
     }
 
     func flushSync() {
         queue.sync { [weak self] in
             guard let self else { return }
-            self.debounceWork?.cancel()
-            self.debounceWork = nil
-            if let record = self.pendingRecord {
-                self.pendingRecord = nil
+            let record = self.pending.withLock { state -> ReaderLocator? in
+                state.generation += 1
+                defer { state.record = nil }
+                return state.record
+            }
+            if let record {
                 self.write(record: record)
             }
         }

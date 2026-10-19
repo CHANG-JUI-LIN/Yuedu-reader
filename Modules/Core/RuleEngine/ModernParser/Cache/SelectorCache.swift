@@ -1,7 +1,7 @@
 import Foundation
 
 /// Caches parsed rule components for Legado JSOUP-default syntax.
-final class SelectorCache {
+final class SelectorCache: Sendable {
     static let shared = SelectorCache()
 
     // MARK: - Parsed rule types

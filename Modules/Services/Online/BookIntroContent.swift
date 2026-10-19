@@ -17,10 +17,10 @@ enum BookIntroContent: Equatable, Sendable {
     /// `<useweb>`: a full page, CSS and all.
     case web(String)
 
-    private static let prefixes: [(tag: String, make: (String) -> BookIntroContent)] = [
-        ("usehtml", BookIntroContent.html),
-        ("md", BookIntroContent.markdown),
-        ("useweb", BookIntroContent.web),
+    private static let prefixes: [(tag: String, make: @Sendable (String) -> BookIntroContent)] = [
+        ("usehtml", { .html($0) }),
+        ("md", { .markdown($0) }),
+        ("useweb", { .web($0) }),
     ]
 
     /// Parses an intro that has already been through

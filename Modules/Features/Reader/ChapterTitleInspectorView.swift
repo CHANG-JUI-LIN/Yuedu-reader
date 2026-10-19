@@ -654,7 +654,7 @@ struct ChapterTitleInspectorView: View {
             .accessibilityValue(formatted)
     }
 
-    private func doubleBinding(get: @escaping () -> Double, set: @escaping (Double) -> Void) -> Binding<Double> {
+    private func doubleBinding(get: @escaping @MainActor @Sendable () -> Double, set: @escaping @MainActor @Sendable (Double) -> Void) -> Binding<Double> {
         Binding(get: get, set: set)
     }
 

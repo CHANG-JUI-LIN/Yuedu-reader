@@ -173,7 +173,8 @@ final class ModernRuleEngine {
         }
 
         var result: Any? = content
-        for (idx, sourceRule) in ruleList.enumerated() {
+        for (idx, parsedRule) in ruleList.enumerated() {
+            var sourceRule = parsedRule
             putRule(sourceRule.putMap)
             sourceRule.makeUpRule(
                 result: result,
@@ -235,7 +236,8 @@ final class ModernRuleEngine {
         let t0 = debugObserver != nil ? Date() : Date.distantPast
 
         var result: Any? = content
-        for (idx, sourceRule) in ruleList.enumerated() {
+        for (idx, parsedRule) in ruleList.enumerated() {
+            var sourceRule = parsedRule
             putRule(sourceRule.putMap)
             sourceRule.makeUpRule(
                 result: result,
@@ -309,7 +311,8 @@ final class ModernRuleEngine {
         guard content != nil, !ruleList.isEmpty else { return [] }
 
         result = content
-        for sourceRule in ruleList {
+        for parsedRule in ruleList {
+            var sourceRule = parsedRule
             putRule(sourceRule.putMap)
             sourceRule.makeUpRule(
                 result: result,

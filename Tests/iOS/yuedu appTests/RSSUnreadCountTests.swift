@@ -6,6 +6,7 @@ import Testing
 /// a TTS session triggered once per spoken sentence. Counting unread articles must not copy
 /// and sort every feed's articles to do it.
 @Suite("RSS unread counts", .serialized)
+@MainActor
 struct RSSUnreadCountTests {
     private func temporaryDirectory() throws -> URL {
         let url = FileManager.default.temporaryDirectory.appendingPathComponent("RSSUnread-\(UUID().uuidString)")

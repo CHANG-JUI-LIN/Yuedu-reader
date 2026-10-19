@@ -178,7 +178,7 @@ final class JSRuleEngineRunner: NSObject, WKScriptMessageHandler {
         case .success: break
         }
         return try await withThrowingTaskGroup(of: String.self) { group in
-            group.addTask { @MainActor in
+            let operation: @MainActor @Sendable () async throws -> String = {
                 try await withCheckedThrowingContinuation { (cont: CheckedContinuation<String, Error>) in
                     webView.evaluateJavaScript(js, in: nil, in: .defaultClient) { res in
                         switch res {
@@ -196,6 +196,7 @@ final class JSRuleEngineRunner: NSObject, WKScriptMessageHandler {
                     }
                 }
             }
+            group.addTask(operation: operation)
             group.addTask {
                 try await Task.sleep(nanoseconds: UInt64(timeout * 1_000_000_000))
                 throw NSError(domain: "JSRuleEngineRunner", code: -9, userInfo: [NSLocalizedDescriptionKey: "JS execution timed out"])
@@ -215,7 +216,7 @@ final class JSRuleEngineRunner: NSObject, WKScriptMessageHandler {
         case .success: break
         }
         return try await withThrowingTaskGroup(of: String.self) { group in
-            group.addTask { @MainActor in
+            let operation: @MainActor @Sendable () async throws -> String = {
                 try await withCheckedThrowingContinuation { (cont: CheckedContinuation<String, Error>) in
                     webView.evaluateJavaScript(js, in: nil, in: .defaultClient) { res in
                         switch res {
@@ -227,6 +228,7 @@ final class JSRuleEngineRunner: NSObject, WKScriptMessageHandler {
                     }
                 }
             }
+            group.addTask(operation: operation)
             group.addTask {
                 try await Task.sleep(nanoseconds: UInt64(timeout * 1_000_000_000))
                 throw NSError(domain: "JSRuleEngineRunner", code: -9, userInfo: [NSLocalizedDescriptionKey: "JS execution timed out"])

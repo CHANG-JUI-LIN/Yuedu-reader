@@ -5,6 +5,7 @@
 import Foundation
 import Security
 import JavaScriptCore
+import os
 
 extension Notification.Name {
     /// Posted after a source's stored login information changes. Consumers use
@@ -172,7 +173,7 @@ enum LoginError: LocalizedError {
 ///
 /// Cookie and header data are persisted via UserDefaults keyed by the
 /// source's `bookSourceUrl`.
-final class LoginManager {
+final class LoginManager: Sendable {
 
     static let shared = LoginManager()
 
@@ -182,8 +183,10 @@ final class LoginManager {
     private static let loginInfoPrefix   = "userInfo_"
     private static let suiteName         = "com.yuedu.loginStore"
 
-    /// Dedicated UserDefaults suite so login data is isolated.
-    private let defaults: UserDefaults
+    /// Dedicated UserDefaults suite so login data is isolated. Resolved per use rather than
+    /// stored: `UserDefaults` is not `Sendable`, and the suite is only touched on writes and
+    /// on the legacy-credential fallback, never on the header read path.
+    private var defaults: UserDefaults { UserDefaults(suiteName: LoginManager.suiteName) ?? .standard }
 
     /// In-memory cache of the raw `putLoginHeader` payload keyed by source URL.
     ///
@@ -193,21 +196,24 @@ final class LoginManager {
     /// back through `source.getLoginHeader()` to build `?key=` URLs — it must never
     /// be sent as an HTTP header, because guessing a header name for it overwrites
     /// the constant token the source's own `header` rule sends.
-    private var headerCache: [String: String] = [:]
+    ///
+    /// `loginInfoRevisions` is a monotonically increasing revision for credential-dependent
+    /// JS rules. It is intentionally separate from the credential value so it can invalidate
+    /// request-header caches without exposing the token.
+    private struct State: Sendable {
+        var headerCache: [String: String]
+        var loginInfoRevisions: [String: UInt64] = [:]
+    }
 
-    /// Serial queue for thread-safe access to caches and defaults.
-    private let queue = DispatchQueue(label: "com.yuedu.LoginManager", attributes: .concurrent)
-
-    /// Monotonically increasing revision for credential-dependent JS rules.
-    /// The revision is intentionally separate from the credential value so it
-    /// can invalidate request-header caches without exposing the token.
-    private var loginInfoRevisions: [String: UInt64] = [:]
+    /// Guards the caches. Writes persist inside the lock, as the barrier queue it replaced
+    /// did, so the cache and the stored copy never disagree.
+    private let state: OSAllocatedUnfairLock<State>
 
     // MARK: - Init
 
     private init() {
-        defaults = UserDefaults(suiteName: LoginManager.suiteName) ?? .standard
-        loadAllHeaders()
+        let defaults = UserDefaults(suiteName: LoginManager.suiteName) ?? .standard
+        state = OSAllocatedUnfairLock(initialState: State(headerCache: Self.loadAllHeaders(from: defaults)))
     }
 
     // MARK: - Login Check
@@ -544,11 +550,7 @@ final class LoginManager {
 
     /// Retrieve the raw stored payload (Legado `getLoginHeader()`).
     func getLoginHeader(sourceUrl: String) -> String? {
-        var result: String?
-        queue.sync {
-            result = headerCache[sourceUrl]
-        }
-        return result
+        state.withLock { $0.headerCache[sourceUrl] }
     }
 
     /// Retrieve login headers as a map (Legado `getLoginHeaderMap()`):
@@ -564,11 +566,11 @@ final class LoginManager {
 
     /// Store the raw `putLoginHeader` payload verbatim (Legado semantics).
     func storeLoginHeader(sourceUrl: String, raw: String) {
-        var changed = false
-        queue.sync(flags: .barrier) {
-            changed = headerCache[sourceUrl] != raw
-            headerCache[sourceUrl] = raw
+        let changed = state.withLock { state in
+            let changed = state.headerCache[sourceUrl] != raw
+            state.headerCache[sourceUrl] = raw
             persistHeader(sourceUrl: sourceUrl, raw: raw)
+            return changed
         }
         if changed {
             // Source JS commonly calls `putLoginHeader()` and immediately issues
@@ -588,8 +590,8 @@ final class LoginManager {
 
     /// Remove all login data for a source (Legado `removeLoginHeader`).
     func clearLogin(sourceUrl: String) {
-        queue.sync(flags: .barrier) {
-            headerCache.removeValue(forKey: sourceUrl)
+        state.withLock { state in
+            state.headerCache.removeValue(forKey: sourceUrl)
             defaults.removeObject(
                 forKey: LoginManager.loginHeaderPrefix + sourceUrl
             )
@@ -605,8 +607,8 @@ final class LoginManager {
     /// Removes only the stored login header payload for a source, keeping the
     /// credentials (Legado `source.removeLoginHeader()` — the 删除登录头 menu item).
     func removeLoginHeader(sourceUrl: String) {
-        queue.sync(flags: .barrier) {
-            headerCache.removeValue(forKey: sourceUrl)
+        state.withLock { state in
+            state.headerCache.removeValue(forKey: sourceUrl)
             defaults.removeObject(
                 forKey: LoginManager.loginHeaderPrefix + sourceUrl
             )
@@ -644,13 +646,11 @@ final class LoginManager {
     /// Revision of the credentials used by a source's dynamic header rule.
     /// This is safe to read from request workers and never returns credential data.
     func loginInfoRevision(sourceUrl: String) -> UInt64 {
-        queue.sync { loginInfoRevisions[sourceUrl] ?? 0 }
+        state.withLock { $0.loginInfoRevisions[sourceUrl] ?? 0 }
     }
 
     private func markLoginInfoChanged(sourceUrl: String) {
-        queue.sync(flags: .barrier) {
-            loginInfoRevisions[sourceUrl, default: 0] &+= 1
-        }
+        state.withLock { $0.loginInfoRevisions[sourceUrl, default: 0] &+= 1 }
         NotificationCenter.default.post(
             name: .bookSourceLoginInfoDidChange,
             object: nil,
@@ -693,15 +693,16 @@ final class LoginManager {
         defaults.set(raw, forKey: LoginManager.loginHeaderPrefix + sourceUrl)
     }
 
-    private func loadAllHeaders() {
-        let dict = defaults.dictionaryRepresentation()
-        for (key, value) in dict {
+    private static func loadAllHeaders(from defaults: UserDefaults) -> [String: String] {
+        var headers: [String: String] = [:]
+        for (key, value) in defaults.dictionaryRepresentation() {
             guard key.hasPrefix(LoginManager.loginHeaderPrefix),
                   let raw = value as? String
             else { continue }
             let sourceUrl = String(key.dropFirst(LoginManager.loginHeaderPrefix.count))
-            headerCache[sourceUrl] = raw
+            headers[sourceUrl] = raw
         }
+        return headers
     }
 
     // MARK: - Source Bindings for JS

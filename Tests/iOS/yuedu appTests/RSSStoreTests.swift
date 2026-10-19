@@ -3,6 +3,7 @@ import Testing
 @testable import yuedu_app
 
 @Suite("RSS", .serialized)
+@MainActor
 struct RSSStoreTests {
     @Test("RSS parser produces stable clean article records")
     func parserProducesStableCleanArticleRecords() {

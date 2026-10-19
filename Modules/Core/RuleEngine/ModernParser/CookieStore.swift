@@ -1,4 +1,5 @@
 import Foundation
+import os
 
 /// Persistent, domain-keyed cookie store for Legado book source JS bridge.
 ///
@@ -13,15 +14,14 @@ import Foundation
 /// CookieStore.shared.set(url: "https://example.com", cookie: "session=abc")
 /// CookieStore.shared.remove(url: "https://example.com")
 /// ```
-final class CookieStore {
+final class CookieStore: Sendable {
 
     static let shared = CookieStore()
 
     // MARK: - Storage
 
     /// Domain → raw cookie string (persistent snapshot).
-    private var store: [String: String] = [:]
-    private let lock = NSLock()
+    private let store: OSAllocatedUnfairLock<[String: String]>
     private let fileURL: URL
 
     // MARK: - Init
@@ -29,7 +29,7 @@ final class CookieStore {
     private init() {
         let dir = FileManager.default.urls(for: .libraryDirectory, in: .userDomainMask).first!
         fileURL = dir.appendingPathComponent("legado_cookies.json")
-        load()
+        store = OSAllocatedUnfairLock(initialState: Self.load(from: fileURL))
         replayIntoHTTPCookieStorage()
     }
 
@@ -66,10 +66,7 @@ final class CookieStore {
         }
         // Persistent fallback
         let domain = canonicalDomain(for: url)
-        lock.lock()
-        let persisted = store[domain] ?? ""
-        lock.unlock()
-        return persisted
+        return store.withLock { $0[domain] ?? "" }
     }
 
     /// Stores `cookie` for the host of `url`.
@@ -88,9 +85,7 @@ final class CookieStore {
 
         // Persist: merge with existing value for this domain
         let domain = canonicalDomain(for: url)
-        lock.lock()
-        store[domain] = merge(existing: store[domain], incoming: cookie)
-        lock.unlock()
+        store.withLock { $0[domain] = merge(existing: $0[domain], incoming: cookie) }
         save()
     }
 
@@ -125,9 +120,7 @@ final class CookieStore {
             cookies.forEach { HTTPCookieStorage.shared.deleteCookie($0) }
         }
         let domain = canonicalDomain(for: url)
-        lock.lock()
-        store.removeValue(forKey: domain)
-        lock.unlock()
+        store.withLock { _ = $0.removeValue(forKey: domain) }
         save()
     }
 
@@ -148,7 +141,7 @@ final class CookieStore {
         else { return }
         let normalizedHost = host.lowercased()
 
-        let domainMatches: (String) -> Bool = { rawDomain in
+        let domainMatches: @Sendable (String) -> Bool = { rawDomain in
             let domain = (rawDomain.hasPrefix(".")
                 ? String(rawDomain.dropFirst())
                 : rawDomain).lowercased()
@@ -165,50 +158,46 @@ final class CookieStore {
             HTTPCookieStorage.shared.deleteCookie(cookie)
         }
 
-        lock.lock()
-        for domain in Array(store.keys) where domainMatches(domain) {
-            let remaining = removingCookie(named: key, from: store[domain] ?? "")
-            if remaining.isEmpty {
-                store.removeValue(forKey: domain)
-            } else {
-                store[domain] = remaining
+        store.withLock { store in
+            for domain in Array(store.keys) where domainMatches(domain) {
+                let remaining = removingCookie(named: key, from: store[domain] ?? "")
+                if remaining.isEmpty {
+                    store.removeValue(forKey: domain)
+                } else {
+                    store[domain] = remaining
+                }
             }
         }
-        lock.unlock()
         save()
     }
 
     /// Wipes all persisted cookies and clears HTTPCookieStorage.
     func clearAll() {
         HTTPCookieStorage.shared.removeCookies(since: .distantPast)
-        lock.lock()
-        store.removeAll()
-        lock.unlock()
+        store.withLock { $0.removeAll() }
         save()
     }
 
     // MARK: - Private: Persistence
 
-    private func load() {
+    private static func load(from fileURL: URL) -> [String: String] {
         guard FileManager.default.fileExists(atPath: fileURL.path),
               let data = try? Data(contentsOf: fileURL),
               let decoded = try? JSONDecoder().decode([String: String].self, from: data) else {
-            return
+            return [:]
         }
-        store = decoded
+        return decoded
     }
 
     private func save() {
-        lock.lock()
-        let snapshot = store
-        lock.unlock()
+        let snapshot = store.withLock { $0 }
         guard let data = try? JSONEncoder().encode(snapshot) else { return }
         try? data.write(to: fileURL, options: .atomic)
     }
 
     /// Replay persisted cookies into HTTPCookieStorage on startup.
     private func replayIntoHTTPCookieStorage() {
-        for (domain, cookieStr) in store {
+        for (domain, cookieStr) in store.withLock({ $0 }) {
             let baseURL = URL(string: "https://\(domain)") ?? URL(string: "https://example.com")!
             makeCookies(cookieStr, for: baseURL).forEach {
                 HTTPCookieStorage.shared.setCookie($0)

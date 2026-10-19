@@ -105,15 +105,13 @@ enum RootTabIconStorageError: LocalizedError {
     }
 }
 
-final class RootTabIconStorageManager {
+final class RootTabIconStorageManager: Sendable {
     static let shared = RootTabIconStorageManager()
 
-    private let fileManager: FileManager
+    private var fileManager: FileManager { .default }
     private let allowedExtensions: Set<String> = ["png", "jpg", "jpeg", "webp", "heic", "heif"]
 
-    private init(fileManager: FileManager = .default) {
-        self.fileManager = fileManager
-    }
+    private init() {}
 
     func importIcon(fileURL: URL, tab: RootTabItem, slot: RootTabIconSlot) throws -> RootTabIconAsset {
         let sourceExtension = fileURL.pathExtension.lowercased()
@@ -230,6 +228,7 @@ enum RootTabIconRenderer {
     /// an icon replaced under the same name is read again.
     private static let preparedImages = ConcurrentCache<UIImage>()
 
+    @MainActor
     private static func preparedImage(at url: URL, pointSize: CGFloat) -> UIImage? {
         let modified: Date
         do {
@@ -421,6 +420,7 @@ extension GlobalSettings {
 }
 
 private extension UIImage {
+    @MainActor
     func rootTabIconPrepared(pointSize: CGFloat) -> UIImage {
         guard size.width > 0, size.height > 0 else { return self }
         let ratio = min(pointSize / size.width, pointSize / size.height)

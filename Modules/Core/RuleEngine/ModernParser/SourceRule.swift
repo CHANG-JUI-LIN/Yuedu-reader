@@ -24,7 +24,11 @@ enum RuleMode: Equatable, Sendable {
 /// Each segment carries its execution mode, an optional regex replacement,
 /// `@put` variable directives, and template parameters resolved at execution
 /// time via ``makeUpRule(result:getData:evalJS:analyzeRule:)``.
-final class SourceRule {
+///
+/// A value, unlike Legado's class: `ModernRuleEngine` caches parsed lists, and each evaluation
+/// resolves its own copy, so one evaluation's template result (a `##` tail produced by `{{…}}`)
+/// never carries into the next — Legado's cached objects kept it.
+struct SourceRule: Sendable {
 
     // MARK: Public properties
 
@@ -135,7 +139,7 @@ final class SourceRule {
     ///   - evalJS:      Evaluates `{{jsExpression}}` templates.
     ///   - analyzeRule: Evaluates `{{ruleExpression}}` templates whose text
     ///                  starts with `@`, `$.`, `$[`, or `//`.
-    func makeUpRule(
+    mutating func makeUpRule(
         result: Any?,
         getData: (String) -> String,
         evalJS: (String) -> String?,
@@ -308,7 +312,7 @@ private extension SourceRule {
 
     /// Scan `rule` for `@get:{…}`, `{{…}}`, and `$N` patterns, recording
     /// their positions for later replacement in ``makeUpRule``.
-    func parseTemplateParameters() {
+    mutating func parseTemplateParameters() {
         let nsRule = rule as NSString
         let fullRange = NSRange(location: 0, length: nsRule.length)
         let evalMatches = Self.evalPattern.matches(in: rule, range: fullRange)
@@ -375,7 +379,7 @@ private extension SourceRule {
     /// The `##` separator is intentionally kept in the literal text; it will
     /// be split out later in ``makeUpRule``.  Only the portion **before** the
     /// first `##` is scanned for `$N` patterns (matching Legado behaviour).
-    func splitRegex(_ ruleStr: String) {
+    mutating func splitRegex(_ ruleStr: String) {
         let nsStr = ruleStr as NSString
 
         // Only search for $N in the part before the first ##.

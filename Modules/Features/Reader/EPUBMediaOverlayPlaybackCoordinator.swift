@@ -20,7 +20,7 @@ final class EPUBMediaOverlayPlaybackCoordinator: ObservableObject {
     private var activeOverlay: EPUBMediaOverlay?
     private var activeAudioHref: String?
 
-    deinit {
+    isolated deinit {
         if let timeObserver {
             player?.removeTimeObserver(timeObserver)
         }

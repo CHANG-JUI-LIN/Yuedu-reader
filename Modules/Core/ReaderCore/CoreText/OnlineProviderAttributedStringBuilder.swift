@@ -280,7 +280,7 @@ final class OnlineProviderAttributedStringBuilder: @preconcurrency AttributedStr
             }
             // The cache holds the source's text; rules apply on the way out, here as on
             // screen (`applyReplaceRules`), so AI reads what the reader shows.
-            let rules = ReplaceRuleStore.shared.rules(for: replaceRuleScopeURL)
+            let rules = ReplaceRuleStore.rules(for: replaceRuleScopeURL)
             return .extracted(rules.isEmpty ? text : ReplaceRuleEngine.apply(rules, to: text))
         } catch BookContentProviderError.contentNotCached {
             return .init(text: nil, status: .notDownloaded)
@@ -536,7 +536,7 @@ final class OnlineProviderAttributedStringBuilder: @preconcurrency AttributedStr
             }
         )
 
-        let rules = ReplaceRuleStore.shared.rules(for: replaceRuleScopeURL)
+        let rules = ReplaceRuleStore.rules(for: replaceRuleScopeURL)
         guard !rules.isEmpty else { return result }
 
         return applyReplaceRules(rules, to: result, bodyStart: built.titleBlockLength)

@@ -342,35 +342,29 @@ enum PublicationSessionError: LocalizedError {
     }
 }
 
-final class PublicationSessionRegistry {
+final class PublicationSessionRegistry: Sendable {
     static let shared = PublicationSessionRegistry()
 
-    private final class WeakSession {
-        weak var value: PublicationSession?
+    private final class WeakSession: Sendable {
+        weak let value: PublicationSession?
         init(_ value: PublicationSession) { self.value = value }
     }
 
-    private let lock = NSLock()
-    private var sessions: [String: WeakSession] = [:]
+    private let sessions = OSAllocatedUnfairLock<[String: WeakSession]>(initialState: [:])
 
     private init() {}
 
     func register(_ session: PublicationSession) {
-        lock.lock()
-        sessions[session.id] = WeakSession(session)
-        lock.unlock()
+        let entry = WeakSession(session)
+        sessions.withLock { $0[session.id] = entry }
     }
 
     func unregister(id: String) {
-        lock.lock()
-        sessions.removeValue(forKey: id)
-        lock.unlock()
+        sessions.withLock { _ = $0.removeValue(forKey: id) }
     }
 
     func session(for id: String) -> PublicationSession? {
-        lock.lock()
-        defer { lock.unlock() }
-        return sessions[id]?.value
+        sessions.withLock { $0[id]?.value }
     }
 }
 

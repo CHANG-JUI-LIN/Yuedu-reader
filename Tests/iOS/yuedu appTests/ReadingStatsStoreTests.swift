@@ -25,6 +25,7 @@ struct ReadingStatsStoreTests {
     }
 
     @Test("store loads sessions recorded to an injected file URL")
+    @MainActor
     func storePersistsSessionsToInjectedFileURL() throws {
         let directory = FileManager.default.temporaryDirectory
             .appendingPathComponent(UUID().uuidString, isDirectory: true)

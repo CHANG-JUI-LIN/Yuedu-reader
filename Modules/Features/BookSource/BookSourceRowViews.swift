@@ -586,7 +586,7 @@ private func previewSource(
     return source
 }
 
-private let previewActions = BookSourceRowActions(
+@MainActor private let previewActions = BookSourceRowActions(
     toggleSelection: { _ in }, toggleEnabled: { _ in }, showInfo: { _ in }, test: { _ in },
     edit: { _ in }, copyJSON: { _ in }, export: { _ in }, login: { _ in },
     editVariables: { _ in },
@@ -617,7 +617,7 @@ private let previewActions = BookSourceRowActions(
     .listStyle(.plain)
 }
 
-private let previewGroupActions = BookSourceGroupActions(
+@MainActor private let previewGroupActions = BookSourceGroupActions(
     toggleExpansion: { _ in }, rename: { _ in }, pickMergeTarget: { _ in },
     setEnabled: { _, _ in }, select: { _ in }, copyToPasteboard: { _ in },
     export: { _ in }, delete: { _ in }, resolveSources: { _ in [] })

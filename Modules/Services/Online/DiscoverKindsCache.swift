@@ -10,7 +10,7 @@ import Foundation
 /// JSON, so editing the source's rule or switching a 發現頁 filter naturally maps to
 /// a different entry — no explicit invalidation needed. Pull-to-refresh and the
 /// toolbar refresh button bypass the cache and overwrite it (`forceRefresh`).
-final class DiscoverKindsCache {
+final class DiscoverKindsCache: Sendable {
     static let shared = DiscoverKindsCache()
 
     private struct Entry: Codable {
@@ -20,12 +20,14 @@ final class DiscoverKindsCache {
 
     private let queue = DispatchQueue(label: "com.yuedu.discoverKindsCache")
 
-    private lazy var directory: URL = {
+    private let directory: URL
+
+    private init() {
         let base = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0]
             .appendingPathComponent("DiscoverKindsCache", isDirectory: true)
         try? FileManager.default.createDirectory(at: base, withIntermediateDirectories: true)
-        return base
-    }()
+        directory = base
+    }
 
     private func fileURL(forKey key: String) -> URL {
         directory.appendingPathComponent("\(key).json")

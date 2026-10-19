@@ -497,11 +497,6 @@ class ModernParserBridge {
                     baseURL: injected.finalURL.absoluteString
                 )
             }
-            let sem = DispatchSemaphore(value: 0)
-            var result: String?
-            var responseStatusCode: Int?
-            var responseError: Error?
-            var responseFinalURL: String?
             let reviewSummaryCacheKey = "\(sourceUrl)#\(self.sourceRuleData.source.lastUpdateTime)"
             let isReviewSummaryRequest = Self.isChapterReviewSummaryRequest(request)
             var ownsReviewRequest = false
@@ -543,27 +538,39 @@ class ModernParserBridge {
                     ownsReviewRequest = true
                 }
             }
+            struct AjaxResponse: Sendable {
+                var statusCode: Int?
+                var finalURL: String?
+                var error: Error?
+                var body: String?
+            }
+            let declaredCharset = analyzeUrl.charset
+            let pending = BlockingResult<AjaxResponse>()
             let task = requestSession.dataTask(with: request) { data, response, error in
-                if let httpResponse = response as? HTTPURLResponse {
-                    responseStatusCode = httpResponse.statusCode
-                    responseFinalURL = httpResponse.url?.absoluteString
-                }
-                responseError = error
-                if let data {
+                let httpResponse = response as? HTTPURLResponse
+                pending.deliver(AjaxResponse(
+                    statusCode: httpResponse?.statusCode,
+                    finalURL: httpResponse?.url?.absoluteString,
+                    error: error,
                     // The same decoder as every other response: the `charset` option decides
                     // when present; otherwise the page's charset is detected, not assumed UTF-8.
-                    result = HTMLResponseDecoder.decode(
-                        data: data, response: response, declaredCharset: analyzeUrl.charset
-                    )
-                }
-                sem.signal()
+                    body: data.flatMap {
+                        HTMLResponseDecoder.decode(data: $0, response: response, declaredCharset: declaredCharset)
+                    }
+                ))
             }
             task.resume()
-            let waitResult = sem.wait(timeout: .now() + 30)
+            // A response that arrives after the timeout is never read.
+            let response = pending.wait(timeout: .now() + 30)
+            let timedOut = response == nil
+            let result = response?.body
+            let responseStatusCode = response?.statusCode
+            let responseError = response?.error
+            let responseFinalURL = response?.finalURL
             self.recordJSNetwork(
                 url: request.url?.absoluteString,
                 statusCode: responseStatusCode,
-                timedOut: waitResult == .timedOut,
+                timedOut: timedOut,
                 body: result
             )
             if self.sourceRuleData.source.bookSourceName.contains("书山聚合") {
@@ -571,12 +578,12 @@ class ModernParserBridge {
                     "❖SHUSHAN TRACE❖ stage=js.ajax path=%@ status=%d timedOut=%@ bodyLen=%d bodyHead=%@",
                     request.url?.path ?? "nil",
                     responseStatusCode ?? -1,
-                    waitResult == .timedOut ? "true" : "false",
+                    timedOut ? "true" : "false",
                     result?.count ?? -1,
                     String((result ?? "nil").prefix(180)).replacingOccurrences(of: "\n", with: " ")
                 )
             }
-            if waitResult == .timedOut {
+            if timedOut {
                 AppLogger.parse("⟐ ajax IN timeout", context: [
                     "url": request.url?.absoluteString ?? analyzeUrl.url,
                     "method": analyzeUrl.method
@@ -698,25 +705,32 @@ class ModernParserBridge {
                     ownsReviewRequest = true
                 }
             }
-            let semaphore = DispatchSemaphore(value: 0)
-            var result: String?
-            var statusCode: Int?
-            var responseResult: LegadoHTTPResult?
-            var transportError: Error?
+            struct NetworkResponse: Sendable {
+                var statusCode: Int?
+                var transportError: Error?
+                var responseResult: LegadoHTTPResult
+                var body: String?
+            }
+            let pending = BlockingResult<NetworkResponse>()
             // Pool at 16/host: this handler is ALWAYS set for the online reader, so plain 段評
             // ajaxAll requests land here — URLSession.shared would re-cap them at 6/host (why the
             // ajaxAll throttle raise alone left `⏱ chapter.jsNet` unchanged).
             let task = requestSession.dataTask(with: request) { data, response, error in
-                statusCode = (response as? HTTPURLResponse)?.statusCode
-                transportError = error
-                responseResult = LegadoHTTPResult.make(request: request, data: data, response: response)
-                if let data {
-                    result = LegadoJSBridge.decodeData(data, response: response)
-                }
-                semaphore.signal()
+                pending.deliver(NetworkResponse(
+                    statusCode: (response as? HTTPURLResponse)?.statusCode,
+                    transportError: error,
+                    responseResult: LegadoHTTPResult.make(request: request, data: data, response: response),
+                    body: data.map { LegadoJSBridge.decodeData($0, response: response) }
+                ))
             }
             task.resume()
-            let timedOut = semaphore.wait(timeout: .now() + 30) == .timedOut
+            // A response that arrives after the timeout is never read.
+            let response = pending.wait(timeout: .now() + 30)
+            let timedOut = response == nil
+            let result = response?.body
+            let statusCode = response?.statusCode
+            let transportError = response?.transportError
+            let responseResult = response?.responseResult
             self?.recordJSNetwork(
                 url: request.url?.absoluteString,
                 statusCode: statusCode,

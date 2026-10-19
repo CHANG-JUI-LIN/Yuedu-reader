@@ -410,7 +410,7 @@ struct AIPhase2ConversationTests {
             boundary: source.atReadingPosition(spine: 0, renderedOffset: 5, renderedText: "early").boundary()))
     }
 
-    @Test func legacyPersistenceRemainsReadableAndRetryUpsertsOneSession() {
+    @Test @MainActor func legacyPersistenceRemainsReadableAndRetryUpsertsOneSession() {
         let name = "phase2.\(UUID())"
         let defaults = UserDefaults(suiteName: name)!
         defer { defaults.removePersistentDomain(forName: name) }

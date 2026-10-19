@@ -1,32 +1,53 @@
 import Foundation
 import Combine
+import os
 
 /// Singleton store for user-configurable replace rules.
 ///
 /// Rules are persisted to `Library/replace_rules.json`.  On first launch a set
 /// of useful preset rules is installed.  The store is observable so SwiftUI
 /// views update automatically when rules change.
-final class ReplaceRuleStore: ObservableObject {
+///
+/// Main-actor owned; the content builders read the enabled rules off main through
+/// `rules(for:)`, a lock-guarded snapshot that every change to `rules` refreshes.
+@MainActor
+final class ReplaceRuleStore: @MainActor ObservableObject {
 
     static let shared = ReplaceRuleStore()
 
-    @Published private(set) var rules: [ReplaceRule] = []
+    @Published private(set) var rules: [ReplaceRule] {
+        didSet {
+            let rules = self.rules
+            Self.snapshot.withLock { $0 = rules }
+        }
+    }
 
-    private let fileURL: URL
+    private nonisolated static let fileURL = FileManager.default
+        .urls(for: .libraryDirectory, in: .userDomainMask).first!
+        .appendingPathComponent("replace_rules.json")
+
+    /// The rules as last written, for readers off main. Loaded from disk on first use —
+    /// whichever comes first, a content builder or the store — so neither waits for the other.
+    private nonisolated static let snapshot = OSAllocatedUnfairLock(initialState: initialRules())
 
     /// Marks that the built-in presets have been installed on this install. Without it,
     /// deleting every rule made the next launch treat the store as brand new and put the
     /// presets back, so the rules could not be removed. Cleared with the app, so a real
     /// reinstall still seeds them.
-    private static let presetsInstalledKey = "yd_replace_presets_installed"
+    private nonisolated static let presetsInstalledKey = "yd_replace_presets_installed"
 
     private init() {
-        let dir = FileManager.default.urls(for: .libraryDirectory, in: .userDomainMask).first!
-        fileURL = dir.appendingPathComponent("replace_rules.json")
-        load()
-        if rules.isEmpty, !UserDefaults.standard.bool(forKey: Self.presetsInstalledKey) {
-            installPresets()
+        rules = Self.snapshot.withLock { $0 }
+    }
+
+    private nonisolated static func initialRules() -> [ReplaceRule] {
+        var initial = readRules(at: fileURL) ?? []
+        if initial.isEmpty, !UserDefaults.standard.bool(forKey: presetsInstalledKey) {
+            initial = presetRules()
+            UserDefaults.standard.set(true, forKey: presetsInstalledKey)
+            write(initial, to: fileURL)
         }
+        return initial
     }
 
     // MARK: - CRUD
@@ -63,14 +84,15 @@ final class ReplaceRuleStore: ObservableObject {
 
     // MARK: - Query
 
-    /// Rules that apply to the given book-source URL, sorted by `sortOrder`.
-    func rules(for sourceUrl: String) -> [ReplaceRule] {
-        rules
+    /// Rules that apply to the given book-source URL, sorted by `sortOrder`. Safe from any
+    /// thread: reads the snapshot, not the main-actor `rules`.
+    nonisolated static func rules(for sourceUrl: String) -> [ReplaceRule] {
+        snapshot.withLock { $0 }
             .filter { $0.enabled && Self.scope($0.scope, matches: sourceUrl) }
             .sorted { $0.sortOrder < $1.sortOrder }
     }
 
-    private static func scope(_ scope: String, matches sourceUrl: String) -> Bool {
+    private nonisolated static func scope(_ scope: String, matches sourceUrl: String) -> Bool {
         let trimmed = scope.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty, trimmed != "global", trimmed != "*" else { return true }
         if trimmed == sourceUrl { return true }
@@ -137,18 +159,29 @@ final class ReplaceRuleStore: ObservableObject {
     // MARK: - Persistence
 
     private func load() {
+        guard let loaded = Self.readRules(at: Self.fileURL) else { return }
+        rules = loaded
+    }
+
+    /// The deduplicated rules on disk; nil when there is no readable file. Persists
+    /// immediately when copies were dropped, so the next sync sees the shrunken set and
+    /// tombstones the ids that went away.
+    private nonisolated static func readRules(at fileURL: URL) -> [ReplaceRule]? {
         guard FileManager.default.fileExists(atPath: fileURL.path),
               let data = try? Data(contentsOf: fileURL),
               let decoded = try? JSONDecoder().decode([ReplaceRule].self, from: data) else {
-            return
+            return nil
         }
-        rules = Self.deduplicated(decoded)
-        // Persist immediately when copies were dropped, so the next sync sees the
-        // shrunken set and tombstones the ids that went away.
-        if rules.count != decoded.count { save() }
+        let rules = deduplicated(decoded)
+        if rules.count != decoded.count { write(rules, to: fileURL) }
+        return rules
     }
 
     private func save() {
+        Self.write(rules, to: Self.fileURL)
+    }
+
+    private nonisolated static func write(_ rules: [ReplaceRule], to fileURL: URL) {
         guard let data = try? JSONEncoder().encode(rules) else { return }
         try? data.write(to: fileURL, options: .atomic)
     }
@@ -161,7 +194,7 @@ final class ReplaceRuleStore: ObservableObject {
     /// presets, a reinstall (or a second device) produced five ids the cloud had never
     /// seen, so the merge kept both sets and the list grew by five every time. A stable
     /// id makes those the same record everywhere, and the merge collapses them.
-    private func installPresets() {
+    private nonisolated static func presetRules() -> [ReplaceRule] {
         let presets: [(id: String, name: String, pattern: String, replacement: String)] = [
             ("preset.ad-filter.leading", "廣告文字過濾（首行）", "^\\s*本章節.*?(?=\\n)", ""),
             ("preset.ad-filter.trailing", "廣告文字過濾（尾行）", "(?<=\\n).*?閱讀\\s*$", ""),
@@ -169,18 +202,16 @@ final class ReplaceRuleStore: ObservableObject {
             ("preset.trim-leading-space", "清除全形空格開頭", "^[\\u3000\\s]+", ""),
             ("preset.trim-trailing-space", "清除行末空白", "[\\t ]+$", ""),
         ]
-        for (i, preset) in presets.enumerated() {
-            rules.append(ReplaceRule(
+        return presets.enumerated().map { i, preset in
+            ReplaceRule(
                 id: preset.id,
                 name: preset.name,
                 pattern: preset.pattern,
                 replacement: preset.replacement,
                 isRegex: true,
                 sortOrder: i
-            ))
+            )
         }
-        UserDefaults.standard.set(true, forKey: Self.presetsInstalledKey)
-        save()
     }
 
     /// Collapses rules that would do exactly the same substitution.
@@ -194,7 +225,7 @@ final class ReplaceRuleStore: ObservableObject {
     /// Can be deleted once no install carries duplicates from before the stable-id fix.
     /// Not `private` so `ReplaceRuleDeduplicationTests` can cover it without reaching
     /// through the singleton's private init.
-    static func deduplicated(_ input: [ReplaceRule]) -> [ReplaceRule] {
+    nonisolated static func deduplicated(_ input: [ReplaceRule]) -> [ReplaceRule] {
         var survivorIndexByKey: [String: Int] = [:]
         var output: [ReplaceRule] = []
         for rule in input {

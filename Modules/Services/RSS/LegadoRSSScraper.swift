@@ -320,15 +320,12 @@ enum LegadoRSSScraper {
     /// ModernParserBridge).
     private static func wireNetworkHandler(_ jsEngine: JSCoreEngine) {
         jsEngine.networkHandler = { request in
-            let semaphore = DispatchSemaphore(value: 0)
-            var result: LegadoHTTPResult?
+            let pending = BlockingResult<LegadoHTTPResult>()
             let task = URLSession.shared.dataTask(with: request) { data, response, _ in
-                result = LegadoHTTPResult.make(request: request, data: data, response: response)
-                semaphore.signal()
+                pending.deliver(LegadoHTTPResult.make(request: request, data: data, response: response))
             }
             task.resume()
-            _ = semaphore.wait(timeout: .now() + 30)
-            return result
+            return pending.wait(timeout: .now() + 30)
         }
     }
 

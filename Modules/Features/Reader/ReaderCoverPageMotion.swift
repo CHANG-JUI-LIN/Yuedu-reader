@@ -172,6 +172,7 @@ struct PageViewControllerPagingAdapterDescriptor: Equatable {
     /// back-page render on the main thread for 58 of them (~20ms each), because
     /// `_gestureRecognizerShouldBegin:` asks the data source for the incoming pages,
     /// and in a tap burst that render lands inside the running curl.
+    @MainActor
     func disableBuiltInTapToTurn(on pageViewController: UIPageViewController) {
         guard transitionStyle == .pageCurl else { return }
         for recognizer in pageViewController.gestureRecognizers

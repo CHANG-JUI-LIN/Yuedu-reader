@@ -1,5 +1,6 @@
 import UIKit
 
+@MainActor
 protocol ProgrammaticPageTransitionControlling: AnyObject {
     var viewControllers: [UIViewController]? { get }
 
@@ -22,6 +23,7 @@ extension UIPageViewController: ProgrammaticPageTransitionControlling {
 struct ProgrammaticPageTransitionPerformer {
     let pageTurnStyle: PageTurnStyle
 
+    @MainActor
     func perform(
         on controller: ProgrammaticPageTransitionControlling,
         targetViewController: UIViewController,

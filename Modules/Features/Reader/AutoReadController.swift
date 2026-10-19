@@ -264,7 +264,7 @@ final class AutoReadController: NSObject, ObservableObject {
         return Advance(progress: value, pageTurns: turns)
     }
 
-    deinit {
+    isolated deinit {
         displayLink?.invalidate()
     }
 }

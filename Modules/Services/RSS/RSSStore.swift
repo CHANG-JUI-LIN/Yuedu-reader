@@ -2,6 +2,7 @@ import Foundation
 import Combine
 import SwiftUI
 
+@MainActor
 final class RSSStore: ObservableObject {
     static let shared = RSSStore()
 

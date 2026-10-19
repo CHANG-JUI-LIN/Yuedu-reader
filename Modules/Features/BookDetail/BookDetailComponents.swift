@@ -79,6 +79,7 @@ private struct BookDetailEmbeddingKey: EnvironmentKey {
 /// every frame of the card's scroll — a new `offset`, and a closure that never compares
 /// equal — so every frame changed the environment of the whole detail page under it. Now
 /// only the views that read `offset` (the card, its header) follow the scroll.
+@MainActor
 @Observable
 final class BookDetailCardChrome {
     var offset: CGFloat = 0

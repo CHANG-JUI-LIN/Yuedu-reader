@@ -1,12 +1,37 @@
 import Foundation
 
 /// Thread-safe LRU cache with configurable capacity.
-/// Uses NSLock for synchronization so it can be used in sync contexts.
-final class LRUCache<Key: Hashable, Value> {
+/// The entries live in a `Locked`, so it can be used in sync contexts.
+///
+final class LRUCache<Key: Hashable & Sendable, Value: Sendable>: Sendable {
+    private struct Storage {
+        var cache: [Key: Value] = [:]
+        var order: [Key] = [] // Most recently used at end
+
+        mutating func moveToEnd(_ key: Key) {
+            if let index = order.lastIndex(of: key) {
+                order.remove(at: index)
+            }
+            order.append(key)
+        }
+
+        mutating func insert(_ key: Key, _ value: Value, capacity: Int) {
+            if cache[key] != nil {
+                cache[key] = value
+                moveToEnd(key)
+                return
+            }
+            if capacity > 0 && cache.count >= capacity, !order.isEmpty {
+                let evicted = order.removeFirst()
+                cache.removeValue(forKey: evicted)
+            }
+            cache[key] = value
+            order.append(key)
+        }
+    }
+
     private let capacity: Int
-    private var cache: [Key: Value] = [:]
-    private var order: [Key] = [] // Most recently used at end
-    private let lock = NSLock()
+    private let storage = Locked(Storage())
 
     /// - Parameter capacity: Maximum number of entries. 0 means unlimited (no eviction).
     init(capacity: Int) {
@@ -16,88 +41,47 @@ final class LRUCache<Key: Hashable, Value> {
 
     /// Get value for key, moving it to most-recent position.
     func get(_ key: Key) -> Value? {
-        lock.lock()
-        defer { lock.unlock() }
-
-        guard let value = cache[key] else { return nil }
-        moveToEnd(key)
-        return value
+        storage.withLock { storage in
+            guard let value = storage.cache[key] else { return nil }
+            storage.moveToEnd(key)
+            return value
+        }
     }
 
     /// Insert or update value, evicting LRU entry if at capacity.
     func put(_ key: Key, value: Value) {
-        lock.lock()
-        defer { lock.unlock() }
-
-        if cache[key] != nil {
-            cache[key] = value
-            moveToEnd(key)
-        } else {
-            if capacity > 0 && cache.count >= capacity {
-                evictLRU()
-            }
-            cache[key] = value
-            order.append(key)
-        }
+        storage.withLock { $0.insert(key, value, capacity: capacity) }
     }
 
-    /// Get existing value or create, cache, and return it.
+    /// Get existing value or create, cache, and return it. `create` runs under the lock, so
+    /// it runs once per missing key; it must not use this cache.
     func getOrPut(_ key: Key, create: () -> Value) -> Value {
-        lock.lock()
-        defer { lock.unlock() }
-
-        if let value = cache[key] {
-            moveToEnd(key)
+        storage.withLock { storage in
+            if let value = storage.cache[key] {
+                storage.moveToEnd(key)
+                return value
+            }
+            let value = create()
+            storage.insert(key, value, capacity: capacity)
             return value
         }
-
-        let value = create()
-        if capacity > 0 && cache.count >= capacity {
-            evictLRU()
-        }
-        cache[key] = value
-        order.append(key)
-        return value
     }
 
     /// Remove a specific key.
     func remove(_ key: Key) {
-        lock.lock()
-        defer { lock.unlock() }
-
-        cache.removeValue(forKey: key)
-        order.removeAll { $0 == key }
+        storage.withLock { storage in
+            storage.cache.removeValue(forKey: key)
+            storage.order.removeAll { $0 == key }
+        }
     }
 
     /// Clear all entries.
     func clear() {
-        lock.lock()
-        defer { lock.unlock() }
-
-        cache.removeAll()
-        order.removeAll()
+        storage.withLock { $0 = Storage() }
     }
 
     /// Current number of entries.
     var count: Int {
-        lock.lock()
-        defer { lock.unlock() }
-
-        return cache.count
-    }
-
-    // MARK: - Private helpers (caller must hold lock)
-
-    private func moveToEnd(_ key: Key) {
-        if let index = order.lastIndex(of: key) {
-            order.remove(at: index)
-        }
-        order.append(key)
-    }
-
-    private func evictLRU() {
-        guard !order.isEmpty else { return }
-        let evicted = order.removeFirst()
-        cache.removeValue(forKey: evicted)
+        storage.withLock { $0.cache.count }
     }
 }

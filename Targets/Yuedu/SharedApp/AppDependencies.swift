@@ -346,7 +346,7 @@ struct LiveChapterFetcher: ChapterFetching {
     }
 }
 
-struct AppDependencies {
+struct AppDependencies: Sendable {
     var webContentFetcher: WebContentFetching
     var bookSourceFetcher: BookSourceFetching
     var chapterFetcher: ChapterFetching

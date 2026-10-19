@@ -3,7 +3,7 @@ import UIKit
 import UserNotifications
 import os
 
-final class RSSNotificationManager {
+final class RSSNotificationManager: Sendable {
     static let shared = RSSNotificationManager()
 
     private enum Constants {
@@ -16,15 +16,19 @@ final class RSSNotificationManager {
         static let maxBodyLength = 300
     }
 
-    private var isStarted = false
+    private let isStarted = OSAllocatedUnfairLock(initialState: false)
 
     private init() {}
 
     // MARK: - Start
 
+    @MainActor
     func start(store: RSSStore = .shared) {
-        guard !isStarted else { return }
-        isStarted = true
+        let alreadyStarted = isStarted.withLock { started in
+            defer { started = true }
+            return started
+        }
+        guard !alreadyStarted else { return }
 
         registerCategories()
         UNUserNotificationCenter.current().requestAuthorization(options: [.badge, .sound, .alert]) { granted, _ in
@@ -46,6 +50,7 @@ final class RSSNotificationManager {
     // MARK: - Notify New Articles
 
     /// Send local notifications for new unread articles whose source has notifications enabled.
+    @MainActor
     func notifyNewArticles(_ articles: [RSSArticleRecord], source: RSSSource) {
         guard source.newArticleNotificationsEnabled, !articles.isEmpty else { return }
 
@@ -100,6 +105,7 @@ final class RSSNotificationManager {
         (response.notification.request.content.userInfo["articleID"] as? String, response.actionIdentifier)
     }
 
+    @MainActor
     func handleNotificationAction(articleID: String?, actionIdentifier: String) {
         guard let articleID else {
             return

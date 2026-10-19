@@ -3,7 +3,7 @@ import UIKit
 
 /// Experimental high-speed HTML-to-String engine (SAX-style transpiler).
 /// Avoids DOM tree construction for memory optimization and ~20x speedup.
-final class DirtyHTMLParser {
+final class DirtyHTMLParser: Sendable {
     static let shared = DirtyHTMLParser()
     
     func parse(htmlData data: Data, baseFont: UIFont) -> NSAttributedString {

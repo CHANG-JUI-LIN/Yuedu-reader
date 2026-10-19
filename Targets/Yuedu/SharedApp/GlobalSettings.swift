@@ -3836,16 +3836,14 @@ enum ReaderCustomBackgroundStorageError: Error {
     }
 }
 
-final class ReaderCustomBackgroundStorageManager {
+final class ReaderCustomBackgroundStorageManager: Sendable {
     static let shared = ReaderCustomBackgroundStorageManager()
 
-    private let fileManager: FileManager
+    private var fileManager: FileManager { .default }
     private let allowedExtensions: Set<String> = ["webp", "jpg", "jpeg", "png"]
-    private let thumbnails = NSCache<NSString, UIImage>()
+    private let thumbnails = ConcurrentCache<UIImage>()
 
-    private init(fileManager: FileManager = .default) {
-        self.fileManager = fileManager
-    }
+    private init() {}
 
     func importBackground(fileURL: URL) throws -> String {
         let sourceExtension = fileURL.pathExtension.lowercased()
@@ -3899,7 +3897,7 @@ final class ReaderCustomBackgroundStorageManager {
     /// A small copy for the list's tiles and the editor's preview, cached: the full
     /// picture is for the page itself.
     func thumbnail(fileName: String) -> UIImage? {
-        if let cached = thumbnails.object(forKey: fileName as NSString) { return cached }
+        if let cached = thumbnails.object(forKey: fileName) { return cached }
         guard let url = try? fileURL(fileName: fileName),
               let image = UIImage(contentsOfFile: url.path),
               image.size.width > 0, image.size.height > 0 else {
@@ -3908,12 +3906,12 @@ final class ReaderCustomBackgroundStorageManager {
         let scale = min(1, 360 / max(image.size.width, image.size.height))
         let size = CGSize(width: image.size.width * scale, height: image.size.height * scale)
         let thumbnail = image.preparingThumbnail(of: size) ?? image
-        thumbnails.setObject(thumbnail, forKey: fileName as NSString)
+        thumbnails.setObject(thumbnail, forKey: fileName)
         return thumbnail
     }
 
     func delete(fileName: String) {
-        thumbnails.removeObject(forKey: fileName as NSString)
+        thumbnails.removeObject(forKey: fileName)
         let url: URL
         do {
             url = try fileURL(fileName: fileName)
@@ -3964,15 +3962,13 @@ enum LaunchImageStorageError: Error {
 
 /// Copies imported launch images into Application Support/LaunchImages and hands
 /// back a stable file name persisted in `GlobalSettings`.
-final class LaunchImageStorageManager {
+final class LaunchImageStorageManager: Sendable {
     static let shared = LaunchImageStorageManager()
 
-    private let fileManager: FileManager
+    private var fileManager: FileManager { .default }
     private let allowedExtensions: Set<String> = ["webp", "jpg", "jpeg", "png"]
 
-    private init(fileManager: FileManager = .default) {
-        self.fileManager = fileManager
-    }
+    private init() {}
 
     func importImage(fileURL: URL, scheme: LaunchImageScheme) throws -> String {
         let sourceExtension = fileURL.pathExtension.lowercased()

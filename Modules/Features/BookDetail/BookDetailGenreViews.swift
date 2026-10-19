@@ -128,7 +128,7 @@ struct BookDetailRelatedSection: View {
 
     /// The book's genres that name a category, then the source's other categories.
     private func categoryMenu(_ choices: RelatedCategoryChoices) -> some View {
-        let selection = Binding(get: { choices.current }, set: onChoose)
+        let selection = Binding(get: { choices.current }, set: { onChoose($0) })
         return Menu {
             Picker(localized("同題材分類"), selection: selection) {
                 ForEach(choices.matched, id: \.self) { Text($0).tag($0) }

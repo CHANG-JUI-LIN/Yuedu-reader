@@ -862,17 +862,18 @@ struct BookSourceFormLoginView: View {
                     request.setValue(jar, forHTTPHeaderField: "Cookie")
                 }
             }
-            let semaphore = DispatchSemaphore(value: 0)
-            var body = ""
-            var statusCode: Int?
+            let pending = BlockingResult<(statusCode: Int?, body: String)>()
             URLSession.shared.dataTask(with: request) { data, response, _ in
-                statusCode = (response as? HTTPURLResponse)?.statusCode
-                if let data {
-                    body = String(data: data, encoding: .utf8) ?? ""
-                }
-                semaphore.signal()
+                pending.deliver((
+                    statusCode: (response as? HTTPURLResponse)?.statusCode,
+                    body: data.map { String(data: $0, encoding: .utf8) ?? "" } ?? ""
+                ))
             }.resume()
-            let timedOut = semaphore.wait(timeout: .now() + 30) == .timedOut
+            // A response that arrives after the timeout is never read.
+            let response = pending.wait(timeout: .now() + 30)
+            let timedOut = response == nil
+            let body = response?.body ?? ""
+            let statusCode = response?.statusCode
             // Menu actions are the one place a source's API failure has no other way
             // to reach the user: the rule JS returns early on a bad reply, so the
             // button just looks dead. `runButtonJS` reports whatever lands here.

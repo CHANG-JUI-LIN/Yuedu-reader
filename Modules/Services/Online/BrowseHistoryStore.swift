@@ -17,6 +17,7 @@ struct BrowseHistoryEntry: Identifiable, Codable, Equatable {
 
 /// Lightweight persistent log of web pages visited in the in-app browser.
 /// Backs the 最近瀏覽 (recently browsed) section of the Explore tab.
+@MainActor
 final class BrowseHistoryStore: ObservableObject {
     static let shared = BrowseHistoryStore()
 

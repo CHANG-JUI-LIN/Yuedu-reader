@@ -4,7 +4,7 @@ import ReadiumShared
 import UIKit
 
 @MainActor
-protocol RemoteLibraryServing: AnyObject {
+protocol RemoteLibraryServing: AnyObject, Sendable {
     var failurePublisher: AnyPublisher<RemoteLibraryReadFailure, Never> { get }
     func book(for item: RemoteLibraryItem, format: RemoteLibraryFormat, store: BookStore) -> ReadingBook?
     func readingCopy(item: RemoteLibraryItem, format: RemoteLibraryFormat, store: BookStore) throws -> ReadingBook

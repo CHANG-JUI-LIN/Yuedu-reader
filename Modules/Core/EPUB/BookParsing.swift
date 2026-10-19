@@ -35,7 +35,7 @@ extension ParsedBookDocument {
     }
 }
 
-protocol BookParser {
+protocol BookParser: Sendable {
     func parse(url: URL) async throws -> ParsedBookDocument
 }
 

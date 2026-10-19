@@ -293,7 +293,7 @@ final class DiagnosticLog: @unchecked Sendable {
     /// Writes whatever is buffered. Safe to call from anywhere, including
     /// `willTerminate`, where `wait: true` makes it synchronous.
     func flush(wait: Bool = false) {
-        let work: () -> Void = { [weak self] in self?.drainPending() }
+        let work: @Sendable () -> Void = { [weak self] in self?.drainPending() }
         if wait {
             ioQueue.sync(execute: work)
         } else {

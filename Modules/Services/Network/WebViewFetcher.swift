@@ -205,7 +205,7 @@ final class WebViewFetcher: NSObject, WKNavigationDelegate {
 
         // Use withThrowingTaskGroup for timeout
         return try await withThrowingTaskGroup(of: String.self) { group in
-            group.addTask { @MainActor [weak self] in
+            let operation: @MainActor @Sendable () async throws -> String = { [weak self] in
                 guard let self else { throw WebViewError.deallocated }
 
                 try await self.waitForNavigation(in: webView) {
@@ -226,6 +226,7 @@ final class WebViewFetcher: NSObject, WKNavigationDelegate {
                 }
                 return html
             }
+            group.addTask(operation: operation)
 
             // Timeout task
             group.addTask {
@@ -259,7 +260,7 @@ final class WebViewFetcher: NSObject, WKNavigationDelegate {
         )
 
         return try await withThrowingTaskGroup(of: String.self) { group in
-            group.addTask { @MainActor [weak self] in
+            let operation: @MainActor @Sendable () async throws -> String = { [weak self] in
                 guard let self else { throw WebViewError.deallocated }
                 try await self.waitForNavigation(in: webView) {
                     webView.load(request)
@@ -276,6 +277,7 @@ final class WebViewFetcher: NSObject, WKNavigationDelegate {
                 }
                 return html
             }
+            group.addTask(operation: operation)
             group.addTask {
                 try await Task.sleep(nanoseconds: UInt64(timeout * 1_000_000_000))
                 throw WebViewError.timeout
@@ -340,7 +342,7 @@ final class WebViewFetcher: NSObject, WKNavigationDelegate {
         )
 
         return try await withThrowingTaskGroup(of: String.self) { group in
-            group.addTask { @MainActor [weak self] in
+            let operation: @MainActor @Sendable () async throws -> String = { [weak self] in
                 guard let self else { throw WebViewError.deallocated }
 
                 try await self.waitForNavigation(in: webView) {
@@ -384,6 +386,7 @@ final class WebViewFetcher: NSObject, WKNavigationDelegate {
                 let result = try await webView.evaluateJavaScript(js) as? String ?? ""
                 return result.trimmingCharacters(in: .whitespacesAndNewlines)
             }
+            group.addTask(operation: operation)
 
             group.addTask {
                 try await Task.sleep(nanoseconds: UInt64(timeout * 1_000_000_000))
@@ -503,7 +506,7 @@ final class WebViewFetcher: NSObject, WKNavigationDelegate {
         )
 
         return try await withThrowingTaskGroup(of: String.self) { group in
-            group.addTask { @MainActor [weak self] in
+            let operation: @MainActor @Sendable () async throws -> String = { [weak self] in
                 guard let self else { throw WebViewError.deallocated }
                 try await self.waitForNavigation(in: webView) {
                     webView.load(request)
@@ -519,6 +522,7 @@ final class WebViewFetcher: NSObject, WKNavigationDelegate {
                 let first = try await webView.evaluateJavaScript(Self.contentExtractJS) as? String ?? ""
                 return first.trimmingCharacters(in: .whitespacesAndNewlines)
             }
+            group.addTask(operation: operation)
 
             group.addTask {
                 try await Task.sleep(nanoseconds: UInt64(timeout * 1_000_000_000))
@@ -555,7 +559,7 @@ final class WebViewFetcher: NSObject, WKNavigationDelegate {
         )
 
         return try await withThrowingTaskGroup(of: PageResult.self) { group in
-            group.addTask { @MainActor [weak self] in
+            let operation: @MainActor @Sendable () async throws -> PageResult = { [weak self] in
                 guard let self else { throw WebViewError.deallocated }
                 try await self.waitForNavigation(in: webView) {
                     webView.load(request)
@@ -579,6 +583,7 @@ final class WebViewFetcher: NSObject, WKNavigationDelegate {
                     nextPageURL: nextPage.isEmpty ? nil : nextPage
                 )
             }
+            group.addTask(operation: operation)
 
             group.addTask {
                 try await Task.sleep(nanoseconds: UInt64(timeout * 1_000_000_000))
@@ -646,13 +651,14 @@ final class WebViewFetcher: NSObject, WKNavigationDelegate {
     /// Loads an HTML string into a WebView and waits for completion.
     private func loadHTMLString(_ html: String, baseURL: URL, into webView: WKWebView) async throws {
         try await withThrowingTaskGroup(of: String.self) { group in
-            group.addTask { @MainActor [weak self] in
+            let operation: @MainActor @Sendable () async throws -> String = { [weak self] in
                 guard let self else { throw WebViewError.deallocated }
                 try await self.waitForNavigation(in: webView) {
                     webView.loadHTMLString(html, baseURL: baseURL)
                 }
                 return "loaded"
             }
+            group.addTask(operation: operation)
             group.addTask {
                 try await Task.sleep(nanoseconds: AppConfig.webViewHTMLLoadTimeout * 1_000_000_000)
                 throw WebViewError.timeout

@@ -1,7 +1,7 @@
 import AVFoundation
 import Foundation
 import UniformTypeIdentifiers
-import os.log
+import os
 
 /// AVPlayer refuses to open 番茄畅听-style audiobook URLs. Their path carries no
 /// file extension (e.g. `https://…fqnovelvod.com/…/video/tos/cn/…/?…&mime_type=audio_mpeg`)
@@ -16,7 +16,7 @@ import os.log
 /// proxies the actual byte-range reads to the origin over `URLSession` (forwarding
 /// the source headers). Only extension-less / non-audio-extension URLs are routed
 /// here; ordinary `.mp3`/`.m4a` links keep the plain `AVURLAsset` fast path.
-final class AudioStreamResourceLoader: NSObject, AVAssetResourceLoaderDelegate {
+final class AudioStreamResourceLoader: NSObject, AVAssetResourceLoaderDelegate, Sendable {
     private static let schemePrefix = "fqaudio-"
     /// Key that pins a loader to its asset (see `makeAsset`). It is never read back, so it
     /// only needs an address that is stable and unique in the process: this class object's.
@@ -29,7 +29,7 @@ final class AudioStreamResourceLoader: NSObject, AVAssetResourceLoaderDelegate {
     private let headers: [String: String]
     private let contentUTI: String
     private let queue = DispatchQueue(label: "com.yuedu.audio.resourceloader")
-    private var tasks: [ObjectIdentifier: URLSessionDataTask] = [:]
+    private let tasks = OSAllocatedUnfairLock<[ObjectIdentifier: URLSessionDataTask]>(initialState: [:])
 
     private init(originURL: URL, headers: [String: String], contentUTI: String) {
         self.originURL = originURL
@@ -114,7 +114,7 @@ final class AudioStreamResourceLoader: NSObject, AVAssetResourceLoaderDelegate {
         let key = ObjectIdentifier(loadingRequest)
         let task = URLSession.shared.dataTask(with: request) { [weak self] data, response, error in
             guard let self else { return }
-            self.queue.async { self.tasks[key] = nil }
+            self.tasks.withLock { $0[key] = nil }
 
             if let error {
                 loadingRequest.finishLoading(with: error)
@@ -138,7 +138,7 @@ final class AudioStreamResourceLoader: NSObject, AVAssetResourceLoaderDelegate {
             loadingRequest.finishLoading()
         }
 
-        queue.async { self.tasks[key] = task }
+        tasks.withLock { $0[key] = task }
         task.resume()
         return true
     }
@@ -148,10 +148,7 @@ final class AudioStreamResourceLoader: NSObject, AVAssetResourceLoaderDelegate {
         didCancel loadingRequest: AVAssetResourceLoadingRequest
     ) {
         let key = ObjectIdentifier(loadingRequest)
-        queue.async {
-            self.tasks[key]?.cancel()
-            self.tasks[key] = nil
-        }
+        tasks.withLock { $0.removeValue(forKey: key) }?.cancel()
     }
 
     /// Parse the total resource size from a `Content-Range: bytes a-b/total` header.

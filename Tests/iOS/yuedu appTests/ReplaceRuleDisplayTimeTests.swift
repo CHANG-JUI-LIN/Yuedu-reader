@@ -60,7 +60,7 @@ struct ReplaceRuleDisplayTimeTests {
     }
 
     @Test("the chapter fetcher keeps the source's text; rules wait for display")
-    func fetcherDoesNotBakeRules() async {
+    @MainActor func fetcherDoesNotBakeRules() async {
         let rule = Self.rule("永夜", "長夜", regex: false)
         ReplaceRuleStore.shared.add(rule)
         defer { ReplaceRuleStore.shared.delete(id: rule.id) }

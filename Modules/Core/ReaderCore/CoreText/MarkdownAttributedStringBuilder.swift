@@ -13,7 +13,7 @@ struct MarkdownAttributedStringBuilder: AttributedStringBuilding {
     init(
         markdown: String,
         fallbackTitle: String,
-        replaceRules: [ReplaceRule] = ReplaceRuleStore.shared.rules(for: "")
+        replaceRules: [ReplaceRule] = ReplaceRuleStore.rules(for: "")
     ) {
         self.sections = MarkdownSectionParser.sections(from: markdown, fallbackTitle: fallbackTitle)
         self.replaceRules = replaceRules

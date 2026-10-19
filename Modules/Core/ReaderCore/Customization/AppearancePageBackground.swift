@@ -197,20 +197,17 @@ enum AppearancePageBackgroundImageError: Error {
 /// and hands back stable file names persisted in `GlobalSettings`. Large photos
 /// are downsampled on import so full-screen wallpapers never carry a 4K decode
 /// cost while scrolling.
-final class AppearancePageBackgroundImageStore {
+final class AppearancePageBackgroundImageStore: Sendable {
     static let shared = AppearancePageBackgroundImageStore()
 
     /// Longest-side cap for imported images; covers iPad fullscreen at 2×.
     private static let maxPixelSize: CGFloat = 2200
 
-    private let fileManager: FileManager
+    private var fileManager: FileManager { .default }
     private let allowedExtensions: Set<String> = ["webp", "jpg", "jpeg", "png"]
-    private let imageCache = NSCache<NSString, UIImage>()
+    private let imageCache = ConcurrentCache<UIImage>(countLimit: 12)
 
-    private init(fileManager: FileManager = .default) {
-        self.fileManager = fileManager
-        imageCache.countLimit = 12
-    }
+    private init() {}
 
     /// Import from a file URL (Files app / export payloads).
     func importImage(fileURL: URL) throws -> String {
@@ -236,19 +233,19 @@ final class AppearancePageBackgroundImageStore {
     }
 
     func image(fileName: String) -> UIImage? {
-        if let cached = imageCache.object(forKey: fileName as NSString) {
+        if let cached = imageCache.object(forKey: fileName) {
             return cached
         }
         guard let url = try? fileURL(fileName: fileName),
               let image = UIImage(contentsOfFile: url.path) else {
             return nil
         }
-        imageCache.setObject(image, forKey: fileName as NSString)
+        imageCache.setObject(image, forKey: fileName)
         return image
     }
 
     func delete(fileName: String) {
-        imageCache.removeObject(forKey: fileName as NSString)
+        imageCache.removeObject(forKey: fileName)
         guard let url = try? fileURL(fileName: fileName) else { return }
         try? fileManager.removeItem(at: url)
     }

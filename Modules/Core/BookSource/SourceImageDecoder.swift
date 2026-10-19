@@ -1,4 +1,5 @@
 import Foundation
+import os
 
 // MARK: - Source image decode runner
 
@@ -29,11 +30,10 @@ enum SourceImageDecoder {
 /// `BookCoverLoader` (which only sees a URL) can decrypt bytes after download.
 /// Only decode-enabled sources register; the overwhelming majority of covers
 /// never enter this table.
-final class CoverDecodeService {
+final class CoverDecodeService: Sendable {
     static let shared = CoverDecodeService()
 
-    private let queue = DispatchQueue(label: "com.yuedu.coverDecode")
-    private var urlToSourceId: [String: UUID] = [:]
+    private let urlToSourceId = OSAllocatedUnfairLock<[String: UUID]>(initialState: [:])
     private let capacity = 2000
 
     /// Cheap no-op unless the source actually declares `coverDecodeJs`.
@@ -42,18 +42,20 @@ final class CoverDecodeService {
               !coverUrl.isEmpty,
               !source.coverDecodeJs.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
         else { return }
-        queue.sync {
-            if urlToSourceId.count >= capacity {
-                urlToSourceId.removeAll(keepingCapacity: true)
+        let capacity = capacity
+        let sourceId = source.id
+        urlToSourceId.withLock { table in
+            if table.count >= capacity {
+                table.removeAll(keepingCapacity: true)
             }
-            urlToSourceId[coverUrl] = source.id
+            table[coverUrl] = sourceId
         }
     }
 
     /// Decoded bytes when this URL belongs to a registered decode-enabled
     /// source; nil = not registered or decode failed (caller keeps originals).
     func decodedIfRegistered(coverUrl: String, data: Data) -> Data? {
-        let sourceId = queue.sync { urlToSourceId[coverUrl] }
+        let sourceId = urlToSourceId.withLock { $0[coverUrl] }
         guard let sourceId,
               let source = BookSourceStore.shared.source(id: sourceId)
         else { return nil }

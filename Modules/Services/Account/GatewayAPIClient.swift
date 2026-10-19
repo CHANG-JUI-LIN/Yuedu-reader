@@ -186,7 +186,17 @@ final class GatewayAPIClient: Sendable {
         else {
             return nil
         }
-        let details = errorObject["details"] as? [String: Any] ?? [:]
+        // Scalars only: every reader takes a string or a number out of `details`, and an
+        // error must be `Sendable` to cross the async boundary it is thrown across.
+        let wireDetails = errorObject["details"] as? [String: Any] ?? [:]
+        let details = wireDetails.compactMapValues { value -> (any Sendable)? in
+            switch value {
+            case let string as String: return string
+            case let number as Int: return number
+            case let number as Double: return number
+            default: return nil
+            }
+        }
         return .server(code: code, message: message, status: status, details: details)
     }
 }

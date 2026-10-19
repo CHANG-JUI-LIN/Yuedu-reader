@@ -80,7 +80,7 @@ final class InlineLiveViewHost {
         }
     }
 
-    deinit {
+    isolated deinit {
         if let stopObserver { NotificationCenter.default.removeObserver(stopObserver) }
     }
 

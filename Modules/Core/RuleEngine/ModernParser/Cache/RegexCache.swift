@@ -1,7 +1,7 @@
 import Foundation
 
 /// Caches compiled NSRegularExpression instances to avoid repeated compilation.
-final class RegexCache {
+final class RegexCache: Sendable {
     static let shared = RegexCache()
 
     private let cache: LRUCache<String, NSRegularExpression>

@@ -375,7 +375,7 @@ final class DiagnosticsViewModel: ObservableObject {
         }
     }
 
-    deinit {
+    isolated deinit {
         if let acknowledgementObserver {
             NotificationCenter.default.removeObserver(acknowledgementObserver)
         }

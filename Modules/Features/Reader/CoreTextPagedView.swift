@@ -893,7 +893,7 @@ struct CoreTextPageEngineView: UIViewControllerRepresentable {
             }
         }
 
-        deinit {
+        isolated deinit {
             clearEngineCallbacks()
         }
 

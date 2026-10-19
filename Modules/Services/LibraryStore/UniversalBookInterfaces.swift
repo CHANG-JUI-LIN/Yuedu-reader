@@ -1,18 +1,10 @@
 import Foundation
 import SwiftSoup
 
-#if canImport(PDFKit)
-import PDFKit
-typealias UniversalPDFPage = PDFPage
-#else
-final class UniversalPDFPage {}
-#endif
-
-enum ChapterContent {
+enum ChapterContent: Sendable {
     case text(String)
     case html(String)
     case image(URL)
-    case pdfPage(UniversalPDFPage)
 }
 
 struct BookMetadata {
@@ -22,7 +14,7 @@ struct BookMetadata {
     let coverImagePath: String?
 }
 
-struct UniversalChapter: Identifiable {
+struct UniversalChapter: Identifiable, Sendable {
     let id: String
     let title: String
     let content: ChapterContent
@@ -378,8 +370,6 @@ struct BookDocumentContentProviderAdapter: BookContentProvider {
             )
         case .image(let url):
             throw BookContentProviderError.unsupportedChapterContent("image:\(url.absoluteString)")
-        case .pdfPage:
-            throw BookContentProviderError.unsupportedChapterContent("pdfPage")
         }
     }
 }

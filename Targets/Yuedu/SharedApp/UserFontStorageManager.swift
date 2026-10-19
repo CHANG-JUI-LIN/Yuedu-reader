@@ -27,10 +27,10 @@ enum UserFontStorageError: LocalizedError {
     }
 }
 
-final class UserFontStorageManager {
+final class UserFontStorageManager: Sendable {
     static let shared = UserFontStorageManager()
 
-    private let fileManager: FileManager
+    private var fileManager: FileManager { .default }
 
     private struct FontMetadata {
         let familyName: String
@@ -38,9 +38,7 @@ final class UserFontStorageManager {
         let styleName: String
     }
 
-    private init(fileManager: FileManager = .default) {
-        self.fileManager = fileManager
-    }
+    private init() {}
 
     /// Copies a font into the library. A font in `existingFonts` with the same
     /// PostScript name is the version this one replaces: its file is unregistered and

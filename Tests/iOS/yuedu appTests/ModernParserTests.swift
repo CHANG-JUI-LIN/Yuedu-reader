@@ -852,7 +852,7 @@ struct SourceRuleTests {
 
     @Test("makeUpRule splits ## into regex replacement")
     func makeUpRuleSplitsRegex() {
-        let rule = SourceRule(ruleStr: "div.title@text##pattern##replacement")
+        var rule = SourceRule(ruleStr: "div.title@text##pattern##replacement")
         rule.makeUpRule(
             result: nil,
             getData: { _ in "" },
@@ -866,7 +866,7 @@ struct SourceRuleTests {
 
     @Test("makeUpRule ### sets replaceFirst flag")
     func makeUpRuleReplaceFirst() {
-        let rule = SourceRule(ruleStr: "rule##pat##rep###")
+        var rule = SourceRule(ruleStr: "rule##pat##rep###")
         rule.makeUpRule(
             result: nil,
             getData: { _ in "" },
@@ -880,7 +880,7 @@ struct SourceRuleTests {
 
     @Test("makeUpRule resolves @get:{key} templates")
     func makeUpRuleResolvesGet() {
-        let rule = SourceRule(ruleStr: "url/@get:{host}/path")
+        var rule = SourceRule(ruleStr: "url/@get:{host}/path")
         rule.makeUpRule(
             result: nil,
             getData: { key in key == "host" ? "example.com" : "" },
@@ -898,7 +898,7 @@ struct SourceRuleTests {
 
     @Test("##$## uses the standard end-anchor replacement")
     func dollarHashHashUsesEndAnchorReplacement() {
-        let rule = SourceRule(ruleStr: ".count@em.0@text##$##字")
+        var rule = SourceRule(ruleStr: ".count@em.0@text##$##字")
         rule.makeUpRule(
             result: nil,
             getData: { _ in "" },

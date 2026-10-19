@@ -1,4 +1,5 @@
 import Foundation
+import os
 
 // charOffset is based on NSAttributedString UTF-16 length, aligned with NSRange/CFRange.
 // A single emoji (e.g. 👨‍👩‍👧‍👦) may span 10 units in NSRange. Do not use Swift String.count.
@@ -9,12 +10,18 @@ struct CharOffsetRecord: Codable, Equatable {
     let timestamp: Date
 }
 
-final class CharOffsetStore {
+final class CharOffsetStore: Sendable {
+    /// The record waiting for its debounce, and which `save` scheduled the debounce that may
+    /// write it: a newer `save` or a flush bumps `generation`, which cancels the older timer.
+    private struct PendingState: Sendable {
+        var record: CharOffsetRecord?
+        var generation = 0
+    }
+
     private let queue = DispatchQueue(label: "com.yuedu.charoffset", qos: .utility)
     private let queueKey = DispatchSpecificKey<Void>()
     private let directoryURL: URL
-    private var pending: CharOffsetRecord?
-    private var debounceWork: DispatchWorkItem?
+    private let pending = OSAllocatedUnfairLock(initialState: PendingState())
     private let debounceInterval: TimeInterval
 
     private func log(_ message: String) {
@@ -35,25 +42,27 @@ final class CharOffsetStore {
 
     func save(_ record: CharOffsetRecord) {
         queue.async { [self] in
-            self.pending = record
-            self.debounceWork?.cancel()
-            let work = DispatchWorkItem { [weak self] in
-                guard let self, let r = self.pending else { return }
-                self.pending = nil
-                self.write(r)
+            let generation = self.pending.withLock { state in
+                state.record = record
+                state.generation += 1
+                return state.generation
             }
-            self.debounceWork = work
-            self.queue.asyncAfter(deadline: .now() + self.debounceInterval, execute: work)
+            self.queue.asyncAfter(deadline: .now() + self.debounceInterval) { [weak self] in
+                guard let self else { return }
+                let due = self.pending.withLock { state -> CharOffsetRecord? in
+                    guard state.generation == generation, let r = state.record else { return nil }
+                    state.record = nil
+                    return r
+                }
+                if let due { self.write(due) }
+            }
             self.log("saveQueued bookId=\(record.bookId) spine=\(record.spineIndex) charOffset=\(record.charOffset) debounce=\(self.debounceInterval)")
         }
     }
 
     func flushSync() {
         if DispatchQueue.getSpecific(key: queueKey) != nil {
-            debounceWork?.cancel()
-            debounceWork = nil
-            if let r = pending {
-                pending = nil
+            if let r = takePending() {
                 write(r)
                 log("flushSync(inQueue) wrotePending bookId=\(r.bookId) spine=\(r.spineIndex) charOffset=\(r.charOffset)")
             } else {
@@ -63,10 +72,7 @@ final class CharOffsetStore {
         }
 
         queue.sync {
-            self.debounceWork?.cancel()
-            self.debounceWork = nil
-            if let r = self.pending {
-                self.pending = nil
+            if let r = self.takePending() {
                 self.write(r)
                 self.log("flushSync wrotePending bookId=\(r.bookId) spine=\(r.spineIndex) charOffset=\(r.charOffset)")
             } else {
@@ -75,27 +81,35 @@ final class CharOffsetStore {
         }
     }
 
+    /// Takes the waiting record and cancels its debounce timer.
+    private func takePending() -> CharOffsetRecord? {
+        pending.withLock { state in
+            state.generation += 1
+            defer { state.record = nil }
+            return state.record
+        }
+    }
+
     func load(bookId: String) -> CharOffsetRecord? {
         // Must be called from outside queue to avoid deadlock.
         // Synchronises with queue to ensure any pending flushSync writes are visible.
-        var result: CharOffsetRecord?
-        queue.sync {
+        queue.sync { () -> CharOffsetRecord? in
             let url = self.fileURL(for: bookId)
             guard FileManager.default.fileExists(atPath: url.path),
                   let data = try? Data(contentsOf: url) else {
                 self.log("load miss bookId=\(bookId)")
-                return
+                return nil
             }
             let decoder = JSONDecoder()
             decoder.dateDecodingStrategy = .iso8601
             if let decoded = try? decoder.decode(CharOffsetRecord.self, from: data) {
-                result = decoded
                 self.log("load hit bookId=\(bookId) spine=\(decoded.spineIndex) charOffset=\(decoded.charOffset)")
+                return decoded
             } else {
                 self.log("load decodeFailed bookId=\(bookId)")
+                return nil
             }
         }
-        return result
     }
 
     private func write(_ record: CharOffsetRecord) {

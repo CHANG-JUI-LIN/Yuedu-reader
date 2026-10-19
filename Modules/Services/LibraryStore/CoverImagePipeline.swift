@@ -1016,11 +1016,12 @@ final class CoverImagePipeline: @unchecked Sendable {
     }
 
     private func broadcast(_ invalidation: CoverInvalidation) {
-        let subject = invalidationSubject
         if Thread.isMainThread {
-            subject.send(invalidation)
+            invalidationSubject.send(invalidation)
         } else {
-            DispatchQueue.main.async { subject.send(invalidation) }
+            // The subject is reached through `self`, whose `@unchecked Sendable` already
+            // covers it: a `let` Combine subject, sent to only on the main thread.
+            DispatchQueue.main.async { self.invalidationSubject.send(invalidation) }
         }
     }
 

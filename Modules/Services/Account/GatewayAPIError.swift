@@ -5,8 +5,9 @@ enum GatewayAPIError: Error {
     case notConfigured
     /// The device could not reach the Gateway (DNS, TLS, timeout, offline).
     case transport(URLError)
-    /// The Gateway answered with a structured error.
-    case server(code: String, message: String, status: Int, details: [String: Any])
+    /// The Gateway answered with a structured error. `details` keeps the scalar fields of the
+    /// wire object (`grpcCode`, `grpcStatus`, `pendingToken`, …); see `GatewayAPIClient`.
+    case server(code: String, message: String, status: Int, details: [String: any Sendable])
     /// A 2xx response that did not match the contract.
     case invalidResponse
 
@@ -15,7 +16,7 @@ enum GatewayAPIError: Error {
         return nil
     }
 
-    var details: [String: Any] {
+    var details: [String: any Sendable] {
         if case .server(_, _, _, let details) = self { return details }
         return [:]
     }

@@ -15,7 +15,7 @@ struct HTMLCSSApplyContext {
     let parseEmbeddedColor: (String) -> UIColor?
 }
 
-protocol HTMLCSSPropertyApplier {
+protocol HTMLCSSPropertyApplier: Sendable {
     var key: String { get }
     func apply(
         value: String,
@@ -24,7 +24,7 @@ protocol HTMLCSSPropertyApplier {
     )
 }
 
-final class HTMLCSSPropertyApplierRegistry {
+final class HTMLCSSPropertyApplierRegistry: Sendable {
     private let appliers: [String: any HTMLCSSPropertyApplier]
 
     init(appliers: [any HTMLCSSPropertyApplier]) {

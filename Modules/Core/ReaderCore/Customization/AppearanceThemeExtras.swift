@@ -275,21 +275,18 @@ enum AppearanceCardBackgroundImageError: Error {
 /// Card artwork on disk. A separate store from `AppearancePageBackgrounds` so
 /// resetting page backgrounds cannot delete a card image that a theme still
 /// references, and vice versa.
-final class AppearanceCardBackgroundImageStore {
+final class AppearanceCardBackgroundImageStore: Sendable {
     static let shared = AppearanceCardBackgroundImageStore()
 
     /// Card art is drawn at card size, never full-bleed, so it needs far fewer
     /// pixels than a page background.
     private static let maxPixelSize: CGFloat = 1400
 
-    private let fileManager: FileManager
+    private var fileManager: FileManager { .default }
     private let allowedExtensions: Set<String> = ["webp", "jpg", "jpeg", "png"]
-    private let imageCache = NSCache<NSString, UIImage>()
+    private let imageCache = ConcurrentCache<UIImage>(countLimit: 8)
 
-    private init(fileManager: FileManager = .default) {
-        self.fileManager = fileManager
-        imageCache.countLimit = 8
-    }
+    private init() {}
 
     @discardableResult
     func importImage(data: Data, fallbackExtension: String = "") throws -> String {
@@ -323,12 +320,12 @@ final class AppearanceCardBackgroundImageStore {
     }
 
     func image(fileName: String) -> UIImage? {
-        if let cached = imageCache.object(forKey: fileName as NSString) { return cached }
+        if let cached = imageCache.object(forKey: fileName) { return cached }
         guard let url = try? imagesDirectoryURL().appendingPathComponent(fileName),
               let image = UIImage(contentsOfFile: url.path) else {
             return nil
         }
-        imageCache.setObject(image, forKey: fileName as NSString)
+        imageCache.setObject(image, forKey: fileName)
         return image
     }
 
@@ -338,7 +335,7 @@ final class AppearanceCardBackgroundImageStore {
     }
 
     func delete(fileName: String) {
-        imageCache.removeObject(forKey: fileName as NSString)
+        imageCache.removeObject(forKey: fileName)
         guard let url = try? imagesDirectoryURL().appendingPathComponent(fileName) else { return }
         try? fileManager.removeItem(at: url)
     }

@@ -85,7 +85,7 @@ struct RegexHighlightSettingsView: View {
                 localized("啟用正則高亮"),
                 isOn: Binding(
                     get: { model.configuration.isEnabled },
-                    set: model.setGlobalEnabled
+                    set: { model.setGlobalEnabled($0) }
                 )
             )
         } footer: {

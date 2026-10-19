@@ -1181,7 +1181,7 @@ class BookSourceStore: @MainActor ObservableObject {
     /// in flight — and book sources are user data, not a cache that can be refetched. It used
     /// to wait on the main thread; a 50 000-source save in flight then held the scene
     /// transition past the background watchdog. A background task holds the app instead.
-    nonisolated func flushPendingWrites() {
+    func flushPendingWrites() {
         let hold = BackgroundTaskHold(name: "bookSources.persist")
         Self.persistQueue.async { hold.release() }
     }

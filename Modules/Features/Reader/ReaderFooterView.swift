@@ -60,7 +60,7 @@ final class ClockBatteryModel: ObservableObject {
             .sink { [weak self] _ in self?.refreshBattery() }
     }
 
-    deinit {
+    isolated deinit {
         clockTimer?.invalidate()
     }
 

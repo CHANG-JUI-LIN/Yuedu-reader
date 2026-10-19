@@ -632,8 +632,9 @@ struct LegadoHTTPResult {
         // bubbles silently never injected (review.php fetched fine, just unused). Wrap each
         // body in LegadoStrResponse so `.body()` works.
         let throttle = DispatchSemaphore(value: 16) // match Legado threadCount (16); paired with requestSession httpMaximumConnectionsPerHost=16
-        var results = Array<LegadoHTTPResult?>(repeating: nil, count: urlArray.count)
-        let resultsLock = NSLock()
+        let collected = OSAllocatedUnfairLock(
+            initialState: Array<LegadoHTTPResult?>(repeating: nil, count: urlArray.count)
+        )
         let group = DispatchGroup()
 
         // ⟐ ajaxAll — 段评 review.php is fetched here; log entry/exit + elapsed so a hang
@@ -654,9 +655,7 @@ struct LegadoHTTPResult {
                 let response = self?.performRequestResult(urlStr)
                 let body = response?.body ?? ""
                 let itemMs = Int(Date().timeIntervalSince(itemStart) * 1000)
-                resultsLock.lock()
-                results[index] = response
-                resultsLock.unlock()
+                collected.withLock { $0[index] = response }
                 if index < 16 || Self.shouldLogReviewNetwork(urlStr) {
                     AppLogger.parse("⟐ ajaxAll item", context: [
                         "i": index,
@@ -677,6 +676,8 @@ struct LegadoHTTPResult {
         // Bounded wait: each performRequest is already capped at ~8s, so the whole batch
         // must finish well within 30s. Never block the JS thread forever.
         let waited = group.wait(timeout: .now() + 30)
+        // After a timeout the stragglers are still writing; read one snapshot.
+        let results = collected.withLock { $0 }
         let _ms = Int(Date().timeIntervalSince(_start) * 1000)
         // Batch wall time = how long the JS thread was actually blocked (requests ran up to
         // 16-wide over requestSession's 16 connections/host — matches Legado threadCount).
@@ -2107,14 +2108,13 @@ struct LegadoHTTPResult {
             return handler(request) ?? .bodyOnly(request: request, body: "")
         }
 
-        var responseResult: LegadoHTTPResult?
-        let semaphore = DispatchSemaphore(value: 0)
-        let task = Self.requestSession.dataTask(with: request) { data, response, _ in
-            defer { semaphore.signal() }
-            responseResult = LegadoHTTPResult.make(request: request, data: data, response: response)
+        let pending = BlockingResult<LegadoHTTPResult>()
+        let task = Self.requestSession.dataTask(with: request) { [request] data, response, _ in
+            pending.deliver(LegadoHTTPResult.make(request: request, data: data, response: response))
         }
         task.resume()
-        if semaphore.wait(timeout: .now() + timeoutSeconds) == .timedOut {
+        let responseResult = pending.wait(timeout: .now() + timeoutSeconds)
+        if responseResult == nil {
             task.cancel()
         }
         return responseResult ?? .bodyOnly(request: request, body: "")
@@ -2152,14 +2152,13 @@ struct LegadoHTTPResult {
             return handler(request) ?? .bodyOnly(request: request, body: "")
         }
 
-        var responseResult: LegadoHTTPResult?
-        let semaphore = DispatchSemaphore(value: 0)
-        let task = Self.requestSession.dataTask(with: request) { data, response, _ in
-            defer { semaphore.signal() }
-            responseResult = LegadoHTTPResult.make(request: request, data: data, response: response)
+        let pending = BlockingResult<LegadoHTTPResult>()
+        let task = Self.requestSession.dataTask(with: request) { [request] data, response, _ in
+            pending.deliver(LegadoHTTPResult.make(request: request, data: data, response: response))
         }
         task.resume()
-        if semaphore.wait(timeout: .now() + timeoutSeconds) == .timedOut {
+        let responseResult = pending.wait(timeout: .now() + timeoutSeconds)
+        if responseResult == nil {
             task.cancel()
         }
         return responseResult ?? .bodyOnly(request: request, body: "")
@@ -2196,14 +2195,12 @@ struct LegadoHTTPResult {
             )
         }
 
-        var responseResult: LegadoHTTPResult?
-        let semaphore = DispatchSemaphore(value: 0)
-        let task = Self.requestSession.dataTask(with: request) { data, response, _ in
-            defer { semaphore.signal() }
-            responseResult = LegadoHTTPResult.make(request: request, data: data, response: response)
+        let pending = BlockingResult<LegadoHTTPResult>()
+        let task = Self.requestSession.dataTask(with: request) { [request] data, response, _ in
+            pending.deliver(LegadoHTTPResult.make(request: request, data: data, response: response))
         }
         task.resume()
-        _ = semaphore.wait(timeout: .now() + timeoutSeconds)
+        let responseResult = pending.wait(timeout: .now() + timeoutSeconds)
         return LegadoStrResponse(result: responseResult ?? .bodyOnly(request: request, body: ""))
     }
 
@@ -2254,20 +2251,16 @@ struct LegadoHTTPResult {
         // Apply book source headers (may override User-Agent)
         sourceHeaders.forEach { request.setValue($1, forHTTPHeaderField: $0) }
 
-        var responseResult: LegadoHTTPResult?
-        let semaphore = DispatchSemaphore(value: 0)
+        let pending = BlockingResult<LegadoHTTPResult?>()
 
         // The response goes back to the source as it came — a Cloudflare challenge page
         // included, as in Legado. A source whose site is protected checks the body itself
         // and calls `java.startBrowserAwait`; blanking the page here hid it from that check.
-        let task = Self.requestSession.dataTask(with: request) { data, response, _ in
-            if let data {
-                responseResult = LegadoHTTPResult.make(request: request, data: data, response: response)
-            }
-            semaphore.signal()
+        let task = Self.requestSession.dataTask(with: request) { [request] data, response, _ in
+            pending.deliver(data.map { LegadoHTTPResult.make(request: request, data: $0, response: response) })
         }
         task.resume()
-        _ = semaphore.wait(timeout: .now() + requestTimeoutSeconds)
+        let responseResult = pending.wait(timeout: .now() + requestTimeoutSeconds) ?? nil
         return responseResult ?? .bodyOnly(request: request, body: "")
     }
 

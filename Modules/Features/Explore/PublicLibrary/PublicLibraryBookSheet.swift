@@ -2,10 +2,10 @@ import SwiftUI
 import Combine
 import UIKit
 
-struct PublicLibrarySheetContext {
+struct PublicLibrarySheetContext: Sendable {
     let artworkHeight: CGFloat
-    let openReader: (UUID) -> Void
-    let openAuthor: (PublicLibraryAuthorDestination) -> Void
+    let openReader: @MainActor @Sendable (UUID) -> Void
+    let openAuthor: @MainActor @Sendable (PublicLibraryAuthorDestination) -> Void
 }
 private struct PublicLibrarySheetContextKey: EnvironmentKey {
     static let defaultValue: PublicLibrarySheetContext? = nil
@@ -23,6 +23,7 @@ private struct PublicLibrarySheetContextKey: EnvironmentKey {
 /// tab's first appearance it reports a layout pass with the shelf's covers at 212pt
 /// that never reaches the screen (they are drawn, and found by accessibility, at
 /// 180pt), and never reports the real size after it — measured 2026-10-09.
+@MainActor
 final class PublicLibraryCoverFrames {
     private final class Anchor { weak var view: UIView? }
     private var anchors: [String: Anchor] = [:]
@@ -51,7 +52,7 @@ private struct PublicLibraryCoverFramesKey: EnvironmentKey {
 }
 
 private struct OpenPublicLibraryBooksKey: EnvironmentKey {
-    static let defaultValue: ((PublicLibraryBookSelection) -> Void)? = nil
+    static let defaultValue: (@MainActor @Sendable (PublicLibraryBookSelection) -> Void)? = nil
 }
 
 extension EnvironmentValues {
@@ -72,7 +73,7 @@ extension EnvironmentValues {
     }
 
     /// Opens the store's book carousel over the nearest host.
-    var openPublicLibraryBooks: ((PublicLibraryBookSelection) -> Void)? {
+    var openPublicLibraryBooks: (@MainActor @Sendable (PublicLibraryBookSelection) -> Void)? {
         get { self[OpenPublicLibraryBooksKey.self] }
         set { self[OpenPublicLibraryBooksKey.self] = newValue }
     }

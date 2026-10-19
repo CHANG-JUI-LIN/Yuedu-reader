@@ -1,6 +1,6 @@
 import UIKit
 
-final class EPUBBookService {
+final class EPUBBookService: Sendable {
     static let shared = EPUBBookService()
 
     private init() {}

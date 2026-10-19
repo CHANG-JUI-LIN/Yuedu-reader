@@ -1,7 +1,7 @@
 import CryptoKit
 import Foundation
 
-final class SearchResultCache {
+final class SearchResultCache: Sendable {
     static let shared = SearchResultCache()
 
     struct Entry: Codable {

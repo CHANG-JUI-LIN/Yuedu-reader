@@ -569,7 +569,7 @@ class BrowserState: NSObject, ObservableObject, WKNavigationDelegate {
     /// Enforces a 15-second hard timeout; retries up to 2 times on failure.
     func navigateAndExtract(url: URL, retryCount: Int = 0) async -> String {
         let result = await withTaskGroup(of: String.self) { group in
-            group.addTask { @MainActor in
+            let operation: @MainActor @Sendable () async -> String = {
                 self.webView.load(URLRequest(url: url))
 
                 // Wait for page load (max 12 seconds)
@@ -590,6 +590,7 @@ class BrowserState: NSObject, ObservableObject, WKNavigationDelegate {
 
                 return (try? await self.webView.evaluateJavaScript(contentExtractJS)) as? String ?? ""
             }
+            group.addTask(operation: operation)
             // Timeout task (15 seconds)
             group.addTask {
                 try? await Task.sleep(nanoseconds: 15_000_000_000)

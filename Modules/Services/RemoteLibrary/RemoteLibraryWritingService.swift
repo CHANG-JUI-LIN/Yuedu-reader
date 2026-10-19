@@ -55,7 +55,7 @@ extension Notification.Name {
 }
 
 @MainActor
-protocol RemoteLibraryWriting: AnyObject {
+protocol RemoteLibraryWriting: AnyObject, Sendable {
     func capabilities(connectionID: String, directoryURL: URL?) async throws -> RemoteLibraryWriteCapabilities
     func upload(fileURL: URL, connectionID: String, directoryURL: URL?) async throws -> RemoteLibraryWriteResult
     func updateMetadata(item: RemoteLibraryItem, title: String, authors: [String], readingStore: BookStore?) async throws

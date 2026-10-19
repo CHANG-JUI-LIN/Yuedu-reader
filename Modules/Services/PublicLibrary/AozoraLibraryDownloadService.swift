@@ -1,7 +1,7 @@
 import Foundation
 
 @MainActor
-protocol AozoraLibraryDownloading {
+protocol AozoraLibraryDownloading: Sendable {
     /// 加入書架: the work's copy, made if there is none, on the shelf.
     func addToShelf(work: AozoraWork, store: BookStore) async throws -> ReadingBook
     /// The copy the work is read from: the one there is, on the shelf or not, or a new one

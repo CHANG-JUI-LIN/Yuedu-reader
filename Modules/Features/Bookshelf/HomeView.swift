@@ -2588,7 +2588,7 @@ private func previewOnlineBook(hasUpdate: Bool) -> ReadingBook {
 // `ShelfRenderScaleTests`, 300 books). The closures only route actions back to the shelf, so
 // equality is the book and the cell's value inputs, plus whether 詳情 is offered.
 
-extension BookGridCell: Equatable {
+extension BookGridCell: @MainActor Equatable {
     static func == (lhs: BookGridCell, rhs: BookGridCell) -> Bool {
         lhs.book == rhs.book
             && lhs.isCompactLayout == rhs.isCompactLayout
@@ -2602,7 +2602,7 @@ extension BookGridCell: Equatable {
     }
 }
 
-extension BookRow: Equatable {
+extension BookRow: @MainActor Equatable {
     static func == (lhs: BookRow, rhs: BookRow) -> Bool {
         lhs.book == rhs.book
             && lhs.isEditing == rhs.isEditing
@@ -2612,7 +2612,7 @@ extension BookRow: Equatable {
     }
 }
 
-extension BookshelfFolderGridCell: Equatable {
+extension BookshelfFolderGridCell: @MainActor Equatable {
     static func == (lhs: BookshelfFolderGridCell, rhs: BookshelfFolderGridCell) -> Bool {
         lhs.name == rhs.name
             && lhs.books == rhs.books
@@ -2622,7 +2622,7 @@ extension BookshelfFolderGridCell: Equatable {
     }
 }
 
-extension BookshelfFolderRow: Equatable {
+extension BookshelfFolderRow: @MainActor Equatable {
     static func == (lhs: BookshelfFolderRow, rhs: BookshelfFolderRow) -> Bool {
         lhs.name == rhs.name && lhs.books == rhs.books && lhs.isSelecting == rhs.isSelecting
     }

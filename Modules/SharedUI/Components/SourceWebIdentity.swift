@@ -31,6 +31,7 @@ enum SourceWebIdentity {
     /// Applies a content mode to a live WebView. The caller reloads: the page already on screen
     /// was chosen for the previous identity, but only the caller knows whether it is safe to
     /// throw away (a half-finished sign-in is not).
+    @MainActor
     static func apply(desktop: Bool, to webView: WKWebView) {
         webView.customUserAgent = userAgent(desktop: desktop)
         webView.configuration.defaultWebpagePreferences.preferredContentMode =

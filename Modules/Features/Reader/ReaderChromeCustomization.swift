@@ -233,15 +233,13 @@ enum ReaderChromeIconStorageError: LocalizedError {
 /// app uses. That normalization is the part that must not fork; the container
 /// around it is per-store on purpose (the tab-bar store is keyed by tab + light /
 /// dark slot, this one by reader button).
-final class ReaderChromeIconStorage {
+final class ReaderChromeIconStorage: Sendable {
     static let shared = ReaderChromeIconStorage()
 
-    private let fileManager: FileManager
+    private var fileManager: FileManager { .default }
     private let allowedExtensions: Set<String> = ["png", "jpg", "jpeg", "webp", "heic", "heif"]
 
-    private init(fileManager: FileManager = .default) {
-        self.fileManager = fileManager
-    }
+    private init() {}
 
     func importIcon(fileURL: URL, itemID: String) throws -> ReaderChromeIconAsset {
         let sourceExtension = fileURL.pathExtension.lowercased()

@@ -32,15 +32,13 @@ enum DefaultCoverStorageError: LocalizedError {
 
 /// Files behind 預設封面. Several images per appearance, unlike the launch image's
 /// single slot, because the shelf picks one at random per book.
-final class DefaultCoverStorageManager {
+final class DefaultCoverStorageManager: Sendable {
     static let shared = DefaultCoverStorageManager()
 
-    private let fileManager: FileManager
+    private var fileManager: FileManager { .default }
     private let allowedExtensions: Set<String> = ["webp", "jpg", "jpeg", "png"]
 
-    private init(fileManager: FileManager = .default) {
-        self.fileManager = fileManager
-    }
+    private init() {}
 
     func importImage(fileURL: URL, scheme: DefaultCoverScheme) throws -> String {
         let sourceExtension = fileURL.pathExtension.lowercased()

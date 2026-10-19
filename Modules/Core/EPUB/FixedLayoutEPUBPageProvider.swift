@@ -56,7 +56,7 @@ final class FixedLayoutEPUBRenderer {
     /// One book's opened publication plus the per-document helpers built from it.
     /// The viewport resolver in particular caches each page's declared size, which
     /// is thrown away every time the document is reopened.
-    private final class OpenDocument {
+    private final class OpenDocument: Sendable {
         let sourceURL: URL
         let session: PublicationSession
         let adapter: ReadiumBookResourceAdapter

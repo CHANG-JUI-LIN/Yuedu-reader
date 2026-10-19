@@ -1108,10 +1108,10 @@ protocol BookIngesting {
     func ingest() throws -> BookPackage
 }
 
-final class ReaderFeatureFlags {
+final class ReaderFeatureFlags: Sendable {
     static let shared = ReaderFeatureFlags()
 
-    private let defaults = UserDefaults.standard
+    private var defaults: UserDefaults { .standard }
     private let globalWebKey = "yd_pipeline_global_web"
     private let epubWebKey = "yd_pipeline_epub_web"
     private let txtWebKey = "yd_pipeline_txt_web"
@@ -1166,7 +1166,7 @@ final class ReaderFeatureFlags {
     }
 }
 
-final class ReaderTelemetry {
+final class ReaderTelemetry: Sendable {
     static let shared = ReaderTelemetry()
 
     private init() {}

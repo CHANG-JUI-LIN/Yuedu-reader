@@ -100,6 +100,11 @@ final class WebViewCookieMirror: @unchecked Sendable {
 private final class CookieStoreObserver: NSObject, WKHTTPCookieStoreObserver, @unchecked Sendable {
     private var isInstalled = false
 
+    /// `WebViewCookieMirror.shared` creates this from whichever thread reads it first.
+    nonisolated override init() {
+        super.init()
+    }
+
     @MainActor
     func install() {
         guard !isInstalled else { return }

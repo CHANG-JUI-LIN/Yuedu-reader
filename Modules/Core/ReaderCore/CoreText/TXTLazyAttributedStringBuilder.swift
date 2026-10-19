@@ -177,7 +177,7 @@ struct TXTLazyAttributedStringBuilder: AttributedStringBuilding {
                 style: settings.dialogueBubbleStyle
             )
             // Same width the chapter title above is composed against.
-            await ReaderDialogueBubbleMarker.apply(
+            ReaderDialogueBubbleMarker.apply(
                 style: settings.dialogueBubbleStyle,
                 columnWidth: columnWidth,
                 bodyFontSize: settings.fontSize,
@@ -219,7 +219,7 @@ struct TXTLazyAttributedStringBuilder: AttributedStringBuilding {
         // a selection holds the characters the reader saw, which are the converted ones.
         result = result.converted(to: conversion)
 
-        let globalRules = ReplaceRuleStore.shared.rules(for: "")
+        let globalRules = ReplaceRuleStore.rules(for: "")
         if !globalRules.isEmpty {
             result = ReplaceRuleEngine.apply(globalRules, to: result)
         }
