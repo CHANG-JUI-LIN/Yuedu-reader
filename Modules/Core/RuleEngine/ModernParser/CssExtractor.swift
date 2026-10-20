@@ -91,26 +91,9 @@ struct CssExtractor: RuleExtractor {
         }
     }
 
+    /// Legado reads a CSS rule with `AnalyzeByJSoup.getString`: every value, joined with "\n".
     func extractValue(from content: String, rule: String, baseURL: String) throws -> String {
-        let normalizedRule = normalizeRule(rule)
-        if normalizedRule.contains("@@") {
-            return try extractChainedList(from: content, rule: normalizedRule, baseURL: baseURL).first ?? ""
-        }
-        let (selector, accessor) = splitSelectorAndAccessor(normalizedRule)
-        guard !selector.isEmpty else { return "" }
-
-        let document = try JsoupDocumentCache.current.document(for: content, baseURL: "")
-        let elements = try document.select(selector).array()
-        guard !elements.isEmpty else { return "" }
-
-        // @all: concatenate outerHtml of ALL matches
-        if let acc = accessor, acc.lowercased() == "all" {
-            return elements.compactMap { try? $0.outerHtml() }
-                .joined(separator: "\n")
-        }
-
-        guard let first = elements.first else { return "" }
-        return resolvedValue(from: first, accessor: accessor, baseURL: baseURL) ?? ""
+        try extractList(from: content, rule: rule, baseURL: baseURL).joined(separator: "\n")
     }
 
     private func extractChainedList(from content: String, rule: String, baseURL: String) throws -> [String] {

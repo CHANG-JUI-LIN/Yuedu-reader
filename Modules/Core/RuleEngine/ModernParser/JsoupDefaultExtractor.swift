@@ -95,13 +95,10 @@ struct JsoupDefaultExtractor: RuleExtractor {
         return interleaved
     }
 
+    /// Legado's `AnalyzeByJSoup.getString`: every value, joined with "\n". A link read takes
+    /// `extractValueList(...).first` instead (`getString0`).
     func extractValue(from content: String, rule: String, baseURL: String) throws -> String {
-        guard !rule.isEmpty else { return "" }
-        let doc = try JsoupDocumentCache.current.document(
-            for: content.truncatedForSwiftSoup(), baseURL: baseURL)
-        let results = try getStringList(from: doc, rule: rule, baseURL: baseURL)
-        if results.isEmpty { return "" }
-        return results[0]
+        try extractValueList(from: content, rule: rule, baseURL: baseURL).joined(separator: "\n")
     }
 
     // MARK: - Rule Detection

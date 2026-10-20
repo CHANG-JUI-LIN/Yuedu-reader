@@ -156,10 +156,17 @@ final class ModernRuleEngine {
         mContent: Any? = nil,
         isUrl: Bool = false
     ) -> String {
+        let resultStr = evaluateString(ruleList: ruleList, mContent: mContent, readsLink: isUrl)
+        return isUrl ? (resultStr.isEmpty ? baseUrl : resolveURL(resultStr)) : resultStr
+    }
+
+    /// Legado's `AnalyzeRule.getString` without the `isUrl` page fallback. A default-mode
+    /// (JSoup) rule that matches several values joins them with "\n" — `AnalyzeByJSoup.getString`
+    /// — unless the read is a link, which takes the first one — `getString0`. Legado, MD3 and
+    /// Sigma agree.
+    private func evaluateString(ruleList: [SourceRule], mContent: Any?, readsLink: Bool) -> String {
         let content = mContent ?? self.content
-        guard content != nil, !ruleList.isEmpty else {
-            return isUrl ? baseUrl : ""
-        }
+        guard content != nil, !ruleList.isEmpty else { return "" }
 
         let t0 = debugObserver != nil ? Date() : Date.distantPast
 
@@ -184,7 +191,8 @@ final class ModernRuleEngine {
             )
             guard result != nil else { continue }
             if sourceRule.shouldPerformExtraction {
-                result = applyStringExtraction(sourceRule, result: result, idx: idx)
+                result = applyStringExtraction(
+                    sourceRule, result: result, idx: idx, readsLink: readsLink)
             }
             if result != nil, !sourceRule.replaceRegex.isEmpty {
                 result = applyStringReplace(sourceRule, result: result, idx: idx)
@@ -195,7 +203,7 @@ final class ModernRuleEngine {
         if let obs = debugObserver {
             obs(.finalResult(value: resultStr, elapsedMs: Date().timeIntervalSince(t0) * 1000))
         }
-        return isUrl ? (resultStr.isEmpty ? baseUrl : resolveURL(resultStr)) : resultStr
+        return resultStr
     }
 
     /// A link that exists only when the rule yields one: the rule's text resolved against
@@ -209,7 +217,8 @@ final class ModernRuleEngine {
         guard let ruleStr, !ruleStr.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
             return ""
         }
-        let value = getString(ruleStr: ruleStr)
+        let value = evaluateString(
+            ruleList: splitSourceRuleCached(ruleStr), mContent: nil, readsLink: true)
         return value.isEmpty ? "" : resolveURL(value)
     }
 
@@ -667,7 +676,9 @@ final class ModernRuleEngine {
     // MARK: - Private: Segment Processing
 
     /// Mode-specific extraction step for a single-string pipeline.
-    private func applyStringExtraction(_ sourceRule: SourceRule, result: Any?, idx: Int) -> Any? {
+    private func applyStringExtraction(
+        _ sourceRule: SourceRule, result: Any?, idx: Int, readsLink: Bool
+    ) -> Any? {
         let rule = sourceRule.rule
         // Serializing the content (an Element's outerHtml / a whole page) is
         // expensive; only pay it when a debug observer is actually attached.
@@ -695,47 +706,26 @@ final class ModernRuleEngine {
                 qualifiedRule: qualified, inputPreview: inputPreview
             ))
             let extracted = extractStringWithOperators(
-                content: result!, mode: sourceRule.mode, rule: rule)
+                content: result!, mode: sourceRule.mode, rule: rule, readsLink: readsLink)
             debugObserver?(.afterExtractValue(segmentIndex: idx, result: Self.toString(extracted)))
             return extracted
         }
     }
 
-    /// String-value extraction that honors Legado list operators (`||`/`&&`/`%%`).
-    ///
-    /// `CssExtractor` and `JsonExtractor` already split these internally, but the
-    /// JsoupDefault value path does NOT — so a bare field rule such as
-    /// `tag.a.0@title||class.bcover@title` was handed to the extractor whole, the
-    /// `@`-split mangled the `||` segment, and the field resolved empty (every
-    /// discover/search item skipped for an "empty name"). Split here, but only when
-    /// the rule routes to JsoupDefault, so the other extractors keep owning it.
-    private func extractStringWithOperators(content: Any, mode: RuleMode, rule: String) -> Any? {
+    /// String-value extraction. A default-mode rule — JSoup syntax or a CSS selector, both
+    /// `AnalyzeByJSoup` in Legado — reads the same values as `getStringList`, operators
+    /// (`||`/`&&`/`%%`) included, then joins them with "\n" (`getString`) or, for a link,
+    /// keeps the first (`getString0`). Taking the first value for every field cut a content
+    /// rule such as `class.content@tag.p@text` down to its first paragraph.
+    private func extractStringWithOperators(
+        content: Any, mode: RuleMode, rule: String, readsLink: Bool
+    ) -> Any? {
         let qualified = modeQualifiedRule(mode: mode, rule: rule)
         let extractor = extractors.first { $0.canHandle(rule: qualified) }
-        if extractor is JsoupDefaultExtractor {
-            let (opType, opParts) = RuleSyntaxParser.splitRuleByOperators(rule)
-            let parts = opParts
-                .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
-                .filter { !$0.isEmpty }
-            if parts.count > 1 {
-                switch opType {
-                case "||":
-                    for part in parts {
-                        let value = extractStringViaExtractor(content: content, rule: part)
-                        if let value, !Self.toString(value).isEmpty { return value }
-                    }
-                    return ""
-                case "&&", "%%":
-                    let pieces = parts.compactMap { part -> String? in
-                        let s = extractStringViaExtractor(content: content, rule: part)
-                            .map(Self.toString) ?? ""
-                        return s.isEmpty ? nil : s
-                    }
-                    return pieces.joined(separator: "\n")
-                default:
-                    break
-                }
-            }
+        if extractor is JsoupDefaultExtractor || extractor is CssExtractor {
+            guard let values = extractStringListViaExtractor(content: content, rule: qualified)
+                as? [String] else { return nil }
+            return readsLink ? (values.first ?? "") : values.joined(separator: "\n")
         }
         return extractStringViaExtractor(content: content, rule: qualified)
     }

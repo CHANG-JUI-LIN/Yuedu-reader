@@ -83,7 +83,51 @@ struct RuleEnginePipelineTests {
         let (engine, _) = makeEngine()
         engine.setContent(sampleHTML, baseUrl: "https://example.com")
         let result = engine.getString(ruleStr: "a.title@text")
-        #expect(result == "斗羅大陸")
+        // Legado's `AnalyzeByJSoup.getString` joins every match with "\n".
+        #expect(result == "斗羅大陸\n凡人修仙傳\n盜墓筆記")
+    }
+
+    /// Legado, MD3 and Sigma read a default-mode text field with `AnalyzeByJSoup.getString`,
+    /// which joins every value. Taking the first cut a content rule to its first paragraph.
+    @Test("Default-mode getString joins every value, JSoup syntax and CSS alike",
+          arguments: [
+              "class.content@tag.p@text",
+              "class.content@tag.p@textNodes",
+              ".content@p@text",
+              ".content p@text",
+              "@css:.content p@text",
+          ])
+    func defaultModeGetStringJoinsValues(rule: String) {
+        let (engine, _) = makeEngine()
+        engine.setContent(sampleHTML, baseUrl: "https://example.com")
+        #expect(engine.getString(ruleStr: rule) == "第一段正文\n廣告內容請忽略\n第二段正文")
+    }
+
+    /// `&&`, `||` and `%%` read as `getStringList` does, then join.
+    @Test("Default-mode getString joins operator pieces as getStringList orders them")
+    func defaultModeGetStringOperators() {
+        let (engine, _) = makeEngine()
+        engine.setContent(sampleHTML, baseUrl: "https://example.com")
+        #expect(engine.getString(ruleStr: "class.author@text&&tag.h1@text")
+            == "唐家三少\n忘語\n南派三叔\n頁面標題")
+        #expect(engine.getString(ruleStr: "class.missing@text||class.author@text")
+            == "唐家三少\n忘語\n南派三叔")
+        #expect(engine.getString(ruleStr: "class.title@text%%class.author@text")
+            == "斗羅大陸\n唐家三少\n凡人修仙傳\n忘語\n盜墓筆記\n南派三叔")
+    }
+
+    /// Legado's `isUrl` read is `getString0`: the first value. Covers and other optional
+    /// links keep the first value too — Legado joins those, which only makes a broken URL.
+    @Test("Link reads keep the first value")
+    func linkReadsKeepFirstValue() {
+        let (engine, _) = makeEngine()
+        engine.setContent(sampleHTML, baseUrl: "https://example.com")
+        #expect(engine.getString(ruleStr: "class.title@href", isUrl: true)
+            == "https://example.com/book/1")
+        #expect(engine.getString(ruleStr: "class.title@href&&tag.img@src", isUrl: true)
+            == "https://example.com/book/1")
+        #expect(engine.getOptionalURL(ruleStr: "tag.img@src") == "https://example.com/img/1.jpg")
+        #expect(engine.getOptionalURL(ruleStr: "img.cover@src") == "https://example.com/img/1.jpg")
     }
 
     @Test("CSS selector → attribute extraction")
@@ -978,7 +1022,8 @@ struct BookSourceSimulationTests {
         let result = engine.getString(
             ruleStr: "a.book-name@text@js:result.replace('斗破蒼穹', '鬥破蒼穹')"
         )
-        #expect(result == "鬥破蒼穹")
+        // Both result items match; Legado joins them before the JS runs.
+        #expect(result == "鬥破蒼穹\n武動乾坤")
     }
 
     @Test("Search URL with AnalyzeUrl template and options")
