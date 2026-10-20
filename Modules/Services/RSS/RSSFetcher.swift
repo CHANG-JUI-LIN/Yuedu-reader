@@ -177,6 +177,17 @@ private func resolveURL(_ urlString: String, relativeTo baseURL: String?) -> Str
     return resolved.absoluteString
 }
 
+/// Base for an item's relative article links: the feed's homepage, itself resolved against
+/// the feed URL, else the feed URL — the order `RSSSource.articleLinkBaseURL` uses for links
+/// stored before the parsers resolved them. A channel `<link>` can be missing or relative.
+private func articleLinkBase(homepage: String?, feedURL: String) -> String {
+    let feed = RSSSource.strippingLegadoURLOptions(feedURL.trimmingCharacters(in: .whitespacesAndNewlines))
+    guard let homepage, !homepage.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return feed }
+    let resolved = resolveURL(homepage, relativeTo: feed)
+    let lowered = resolved.lowercased()
+    return lowered.hasPrefix("http://") || lowered.hasPrefix("https://") ? resolved : feed
+}
+
 private func stringIsProbablyURLOrPath(_ s: String) -> Bool {
     if s.contains(" ") { return false }
     if !s.contains("/") { return false }
@@ -348,7 +359,7 @@ private final class RSSXMLParserDelegate: NSObject, XMLParserDelegate {
                 let isPermaLink = objectForCaseInsensitiveKey(currentAttributes, "ispermalink")
                 if isPermaLink == nil || isPermaLink?.lowercased() != "false" {
                     if stringIsProbablyURLOrPath(text) {
-                        currentItem.permalink = resolveURL(text, relativeTo: feedMeta.homepageURL)
+                        currentItem.permalink = text
                     }
                 }
             }
@@ -356,7 +367,7 @@ private final class RSSXMLParserDelegate: NSObject, XMLParserDelegate {
             if !text.isEmpty && !parsingAuthor { currentItem.title = text }
         case "link":
             if currentItem.link == nil && !text.isEmpty {
-                currentItem.link = resolveURL(text, relativeTo: feedMeta.homepageURL)
+                currentItem.link = text
             }
         case "description":
             if currentItem.body == nil && !text.isEmpty { currentItem.body = text }
@@ -405,12 +416,20 @@ private final class RSSXMLParserDelegate: NSObject, XMLParserDelegate {
     private func buildParsedItem() -> ParsedFeedItem? {
         guard let item = currentItem else { return nil }
         let title = item.title ?? ""
-        let link = item.permalink ?? item.link ?? ""
+        let base = articleLinkBase(homepage: feedMeta.homepageURL, feedURL: feedURL)
+        let permalink = item.permalink.map { resolveURL($0, relativeTo: base) }
+        let itemLink = item.link.map { resolveURL($0, relativeTo: base) }
+        let link = permalink ?? itemLink ?? ""
         guard !title.isEmpty || !link.isEmpty else { return nil }
 
+        // A guid-less item is keyed by its link as earlier builds resolved it — against the
+        // channel <link> as written, which may be missing or relative. Read/favorite state
+        // (RSSStore.articleStatuses, synced through Firestore) is keyed by this id, so it
+        // must not follow the better-resolved `url` below (maintainer, 2026-10-20).
+        // `permalink` exists only alongside a guid, so it never reaches this id.
         let uniqueID: String
         if let guid = item.guid, !guid.isEmpty { uniqueID = guid }
-        else if !link.isEmpty { uniqueID = link }
+        else if let rawLink = item.link { uniqueID = resolveURL(rawLink, relativeTo: feedMeta.homepageURL) }
         else { uniqueID = title }
 
         var contentHTML = item.body ?? ""
@@ -421,7 +440,7 @@ private final class RSSXMLParserDelegate: NSObject, XMLParserDelegate {
 
         return ParsedFeedItem(
             uniqueID: uniqueID, feedURL: feedURL,
-            url: item.permalink, externalURL: item.link != item.permalink ? item.link : nil,
+            url: permalink, externalURL: itemLink != permalink ? itemLink : nil,
             title: title.isEmpty ? nil : title, language: nil,
             contentHTML: contentHTML.isEmpty ? nil : contentHTML, contentText: nil,
             summary: itemSummary, imageURL: item.imageURL, bannerImageURL: nil,
@@ -804,7 +823,8 @@ private enum JSONFeedParser {
         let hubs = parseHubs(json)
         let language = json[Key.language] as? String
 
-        let items = Set(itemsArray.compactMap { parseItem($0, feedURL: feedURL) })
+        let linkBase = articleLinkBase(homepage: homePageURL, feedURL: url)
+        let items = Set(itemsArray.compactMap { parseItem($0, feedURL: feedURL, linkBase: linkBase) })
         return ParsedFeedInfo(type: .jsonFeed, title: (json[Key.title] as? String),
                               homePageURL: homePageURL, feedURL: feedURL,
                               language: language, feedDescription: feedDescription,
@@ -840,14 +860,14 @@ private enum JSONFeedParser {
         return hubs.isEmpty ? nil : Set(hubs)
     }
 
-    private static func parseItem(_ item: [String: Any], feedURL: String) -> ParsedFeedItem? {
+    private static func parseItem(_ item: [String: Any], feedURL: String, linkBase: String) -> ParsedFeedItem? {
         guard let uniqueID = parseUniqueID(item) else { return nil }
         let contentHTML = item[Key.contentHTML] as? String
         let contentText = item[Key.contentText] as? String
         if contentHTML == nil && contentText == nil { return nil }
 
-        let url = item[Key.url] as? String
-        let externalURL = item[Key.externalURL] as? String
+        let url = (item[Key.url] as? String).map { resolveURL($0, relativeTo: linkBase) }
+        let externalURL = (item[Key.externalURL] as? String).map { resolveURL($0, relativeTo: linkBase) }
         let title = (item[Key.title] as? String).flatMap { decodeTitleEntities($0, feedURL: feedURL) }
         let language = item[Key.language] as? String
         let summary = item[Key.summary] as? String
@@ -954,7 +974,8 @@ private enum RSSInJSONParser {
         let language = channel["language"] as? String
         let iconURL = (channel["image"] as? [String: Any])?["url"] as? String
 
-        let items = Set(itemsArray.compactMap { parseItem($0, feedURL: url) })
+        let linkBase = articleLinkBase(homepage: homePageURL, feedURL: url)
+        let items = Set(itemsArray.compactMap { parseItem($0, feedURL: url, linkBase: linkBase) })
         return ParsedFeedInfo(type: .rssInJSON, title: title, homePageURL: homePageURL,
                               feedURL: url, language: language,
                               feedDescription: feedDescription, nextURL: nil,
@@ -962,8 +983,8 @@ private enum RSSInJSONParser {
                               expired: false, hubs: nil, items: items)
     }
 
-    private static func parseItem(_ item: [String: Any], feedURL: String) -> ParsedFeedItem? {
-        let externalURL = item["link"] as? String
+    private static func parseItem(_ item: [String: Any], feedURL: String, linkBase: String) -> ParsedFeedItem? {
+        let rawLink = item["link"] as? String
         let title = item["title"] as? String
 
         var contentHTML = item["description"] as? String
@@ -980,13 +1001,16 @@ private enum RSSInJSONParser {
 
         var uniqueID = item["guid"] as? String
         if uniqueID == nil {
-            uniqueID = calculateUniqueID(title: title, externalURL: externalURL,
+            // Hashes the link as written, as earlier builds did: read/favorite state is
+            // keyed by this id, so resolving the link must not change it.
+            uniqueID = calculateUniqueID(title: title, externalURL: rawLink,
                                           datePublished: datePublished, authors: authors,
                                           attachments: attachments, contentHTML: contentHTML,
                                           contentText: contentText)
         }
 
         guard let uniqueID else { return nil }
+        let externalURL = rawLink.map { resolveURL($0, relativeTo: linkBase) }
         return ParsedFeedItem(
             uniqueID: uniqueID, feedURL: feedURL, url: nil, externalURL: externalURL,
             title: title, language: nil,
@@ -1162,7 +1186,7 @@ final class RSSFetcher: ObservableObject {
             }
 
             // Fallback: legacy XML parser + feed discovery
-            let parser = RSSXMLParser(sourceId: source.id)
+            let parser = RSSXMLParser(sourceId: source.id, feedURL: source.url)
             let parsedItems = parser.parse(data: data)
 
             if let parserError = parser.error {
@@ -1291,6 +1315,7 @@ final class RSSFetcher: ObservableObject {
 
 final class RSSXMLParser: NSObject, XMLParserDelegate {
     private let sourceId: String
+    private let feedURL: String
     private var parsedItems: [RSSItem] = []
     private var isAtom = false
     private var insideChannel = false
@@ -1324,7 +1349,10 @@ final class RSSXMLParser: NSObject, XMLParserDelegate {
         }
     }()
 
-    init(sourceId: String) { self.sourceId = sourceId }
+    init(sourceId: String, feedURL: String) {
+        self.sourceId = sourceId
+        self.feedURL = feedURL
+    }
 
     func parse(data: Data) -> [RSSItem] {
         let parser = XMLParser(data: data)
@@ -1424,7 +1452,10 @@ final class RSSXMLParser: NSObject, XMLParserDelegate {
         let author = currentItem["author"].map { RSSContentSanitizer.cleanText($0) } ?? htmlMeta.author
         let rawImage = currentItem["imageURL"].flatMap { $0.isEmpty ? nil : $0 } ?? htmlMeta.imageURL
         let imageURL = rawImage.flatMap { URL(string: $0)?.upgradedToHTTPS().absoluteString }
-        return RSSItem(id: stableID(title: cleanTitle, link: link), title: cleanTitle, link: link,
+        // The id stays the link as written, as earlier builds stored it: read/favorite
+        // state is keyed by it. Only the stored link is resolved.
+        let resolvedLink = resolveURL(link, relativeTo: articleLinkBase(homepage: feedHomepageURL, feedURL: feedURL))
+        return RSSItem(id: stableID(title: cleanTitle, link: link), title: cleanTitle, link: resolvedLink,
                        pubDate: pubDate, description: summary, contentHTML: rawHTML,
                        author: author, imageURL: imageURL, sourceId: sourceId)
     }

@@ -83,7 +83,7 @@ struct FeedIntegrationTests {
                 itemCount = parsed.items.count
                 note = "unified(\(detectedType)) title=\(parsed.title ?? "nil")"
             } else {
-                let legacyParser = RSSXMLParser(sourceId: name)
+                let legacyParser = RSSXMLParser(sourceId: name, feedURL: actualURL)
                 let legacyItems = legacyParser.parse(data: data)
                 if let err = legacyParser.error {
                     note = "FAILED: \(err)"

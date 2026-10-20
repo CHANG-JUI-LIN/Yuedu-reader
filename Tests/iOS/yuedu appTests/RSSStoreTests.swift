@@ -34,7 +34,7 @@ struct RSSStoreTests {
         </rss>
         """
 
-        let parser = RSSXMLParser(sourceId: "source-1")
+        let parser = RSSXMLParser(sourceId: "source-1", feedURL: "https://www.bbc.com/news/rss.xml")
         let items = parser.parse(data: Data(xml.utf8))
 
         #expect(items.count == 1)
@@ -829,7 +829,7 @@ struct RSSStoreTests {
         </rss>
         """
 
-        let item = try #require(RSSXMLParser(sourceId: "nytimes").parse(data: Data(xml.utf8)).first)
+        let item = try #require(RSSXMLParser(sourceId: "nytimes", feedURL: "https://feedx.net/rss/nytimes.xml").parse(data: Data(xml.utf8)).first)
         let article = RSSArticleRecord(item: item)
 
         #expect(article.author == "AARON KROLIK")
