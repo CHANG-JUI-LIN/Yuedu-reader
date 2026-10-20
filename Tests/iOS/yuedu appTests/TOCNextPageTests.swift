@@ -37,6 +37,29 @@ struct TOCNextPageTests {
         }
     }
 
+    /// Legado parses a following page's error response like any page (`newCallStrResponse`
+    /// does not throw on a status): a dead page adds no chapters and the rest stand. Thrown,
+    /// one dead option lost the whole table of contents, its first page included.
+    @Test("a page that answers 404 adds nothing and the other pages stand")
+    func deadPageKeepsTheRest() async throws {
+        let host = Self.host()
+        defer { TOCPageStubURLProtocol.remove(host) }
+        let options = (1...3).map { "<option value=\"/toc?p=\($0)\">\($0)</option>" }.joined()
+        for page in [1, 3] {
+            TOCPageStubURLProtocol.set(
+                Self.page(chapters: ["p\(page)"], extra: "<select>\(options)</select>"),
+                for: "https://\(host)/toc?p=\(page)"
+            )
+        }
+        var source = Self.source(host: host)
+        source.ruleToc.nextTocUrl = "tag.option@value"
+
+        let chapters = try await Self.fetch("https://\(host)/toc?p=1", source: source)
+
+        #expect(chapters.map(\.title) == ["p1", "p3"])
+        #expect(TOCPageStubURLProtocol.requestCount(for: "https://\(host)/toc?p=2") == 1)
+    }
+
     /// Legado's `getStringList` reads the last `@` step as the value — any attribute name.
     /// Ours only read a few names (`href`, `src`, `text`…) and took `value` for a tag to select.
     @Test("a string list reads any attribute named by its last step")

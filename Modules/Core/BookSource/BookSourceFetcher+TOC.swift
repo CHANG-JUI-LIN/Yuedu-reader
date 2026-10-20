@@ -332,6 +332,11 @@ extension BookSourceFetcher {
     /// A page after the first, by the same transport choice as the first: a URL carrying
     /// options or JS goes through the Legado runtime (`AnalyzeUrl`), as every page does in
     /// Legado; any other through WebView when the source asks for it, else plain HTTP.
+    ///
+    /// An HTTP error status is a page like any other here, as in Legado, whose
+    /// `newCallStrResponse` hands back the error body: it parses to no chapters and the other
+    /// pages stand (maintainer, 2026-10-20). The runtime fetch already reads it that way.
+    /// A transport failure still fails the table of contents.
     private func fetchFollowingTOCPage(
         _ pageURL: String,
         source: BookSource
@@ -347,11 +352,24 @@ extension BookSourceFetcher {
         if source.needsWebView {
             return (try await Self.fetchViaWebView(url: url, headers: headers), pageURL)
         }
-        let html = try await fetchHTML(
-            url: url, method: "GET", body: nil,
-            headers: headers, baseURL: pageURL,
-            source: source
-        )
+        let page = try await SourceRateLimit.run(source: source) {
+            try await self.webFetcher.fetchPage(
+                url: url, method: "GET", body: nil,
+                headers: headers, baseURL: pageURL
+            )
+        }
+        if !(200...299).contains(page.statusCode) {
+            AppLogger.network("TOC following page answered an error status", context: [
+                "source": source.bookSourceName,
+                "url": String(pageURL.prefix(120)),
+                "statusCode": page.statusCode,
+            ])
+        }
+        guard let html = HTMLResponseDecoder.decode(
+            data: page.data, response: page.response, declaredCharset: nil
+        ) else {
+            throw FetchError.encodingError
+        }
         return (html, pageURL)
     }
 
