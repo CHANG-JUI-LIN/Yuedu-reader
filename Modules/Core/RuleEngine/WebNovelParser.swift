@@ -104,6 +104,15 @@ enum WebNovelParser {
     }
 
     static func extractContent(html: String, pageURL: String) -> String {
+        // One line per slow page, naming how its text was found: 書源檢查's CPU exceptions
+        // (Crashlytics 084ef85c) were sampled in this call.
+        var foundBy = "parse"
+        return SourcePerfTrace.span("webNovel.content", "bytes=\(html.utf8.count) via=\(foundBy)", thresholdMs: 5) {
+            extractContent(html: html, pageURL: pageURL, foundBy: &foundBy)
+        }
+    }
+
+    private static func extractContent(html: String, pageURL: String, foundBy: inout String) -> String {
         guard let document = try? SwiftSoup.parse(html, pageURL) else { return html.strippedHTML }
 
         _ = try? document.select("script,style,noscript,iframe,header,footer,nav").remove()
@@ -113,29 +122,155 @@ enum WebNovelParser {
             if let element = try? document.select(selector).first(),
                let text = extractedText(from: element),
                text.count >= 120 {
+                foundBy = selector
                 return ChapterFetcher.shared.cleanChapterContent(text)
             }
         }
 
-        var bestText = ""
-        var bestScore = -Double.greatestFiniteMagnitude
         let candidates = (try? document.select("article,section,main,div").array()) ?? []
+        foundBy = "density candidates=\(candidates.count)"
+        if let densest = densestText(among: candidates, in: document), densest.count >= 120 {
+            return ChapterFetcher.shared.cleanChapterContent(densest)
+        }
 
+        foundBy = "body candidates=\(candidates.count)"
+        let fallback = (try? document.body()?.text()) ?? html.strippedHTML
+        return ChapterFetcher.shared.cleanChapterContent(fallback)
+    }
+
+    /// The text of the candidate scoring highest, among those with at least 80 characters.
+    ///
+    /// Each candidate used to walk its own subtree — its paragraphs, all its elements, its
+    /// p/br/li — and join its paragraphs before it was scored, so nested wrappers made the
+    /// scan grow with depth × size: a 28 KB page of 60 wrappers took 381 ms, 56 KB 1.5 s,
+    /// 113 KB 5.8 s (simulator, 2026-10-20). `DensityIndex` walks the page once and only the
+    /// winner's paragraphs are joined; every score, and so the winner, is as before.
+    private static func densestText(among candidates: [Element], in document: Document) -> String? {
+        enum Text {
+            case paragraphs(Range<Int>)
+            case whole(String)
+        }
+        let index = DensityIndex(document)
+        var best: Text?
+        var bestScore = -Double.greatestFiniteMagnitude
         for candidate in candidates {
-            guard let text = extractedText(from: candidate), text.count >= 80 else { continue }
-            let score = densityScore(for: candidate, text: text)
+            guard let subtree = index.subtree(of: candidate) else { continue }
+            let paragraphs = index.paragraphs(in: subtree)
+            let length: Int
+            let punctuation: Int
+            let text: Text
+            if paragraphs.count >= 2 {
+                length = index.joinedLength(of: paragraphs)
+                punctuation = index.punctuation(in: paragraphs)
+                text = .paragraphs(paragraphs)
+            } else {
+                guard let whole = unparagraphedText(of: candidate) else { continue }
+                length = whole.count
+                punctuation = punctuationCount(in: whole)
+                text = .whole(whole)
+            }
+            guard length >= 80 else { continue }
+            let score = densityScore(
+                for: candidate,
+                length: length,
+                punctuation: punctuation,
+                elements: subtree.count,
+                paragraphMarks: index.paragraphMarks(in: subtree)
+            )
             if score > bestScore {
                 bestScore = score
-                bestText = text
+                best = text
+            }
+        }
+        switch best {
+        case .paragraphs(let range): return index.joined(range)
+        case .whole(let text): return text
+        case nil: return nil
+        }
+    }
+
+    /// What the density scan scores, for every element of a page, from one walk of it. An
+    /// element and its descendants are one run of the walk's order, so each of its counts is
+    /// the difference of two running totals.
+    private struct DensityIndex {
+        /// Each element's run of the walk: itself, then its descendants.
+        private var runs: [ObjectIdentifier: Range<Int>] = [:]
+        /// p, br and li elements before each position of the walk.
+        private var marksBefore: [Int] = [0]
+        /// The paragraphs `extractedText` takes — `p` elements with at least 8 characters once
+        /// whitespace is normalized — in page order, with each one's walk position.
+        private var paragraphPositions: [Int] = []
+        private var paragraphTexts: [String] = []
+        private var lengthBefore: [Int] = [0]
+        private var punctuationBefore: [Int] = [0]
+
+        init(_ root: Element) {
+            enum Step {
+                case enter(Element)
+                case leave(Element, start: Int)
+            }
+            var position = 0
+            var steps: [Step] = [.enter(root)]
+            while let step = steps.popLast() {
+                switch step {
+                case .enter(let element):
+                    let tag = element.tagNameNormal()
+                    marksBefore.append(marksBefore[position] + (tag == "p" || tag == "br" || tag == "li" ? 1 : 0))
+                    if tag == "p", let raw = try? element.text() {
+                        let text = WebNovelParser.normalizeWhitespace(raw)
+                        if text.count >= 8 {
+                            paragraphPositions.append(position)
+                            paragraphTexts.append(text)
+                            lengthBefore.append(lengthBefore[lengthBefore.count - 1] + text.count)
+                            punctuationBefore.append(punctuationBefore[punctuationBefore.count - 1] + WebNovelParser.punctuationCount(in: text))
+                        }
+                    }
+                    steps.append(.leave(element, start: position))
+                    position += 1
+                    for child in element.children().array().reversed() {
+                        steps.append(.enter(child))
+                    }
+                case .leave(let element, let start):
+                    runs[ObjectIdentifier(element)] = start..<position
+                }
             }
         }
 
-        if bestText.count >= 120 {
-            return ChapterFetcher.shared.cleanChapterContent(bestText)
+        func subtree(of element: Element) -> Range<Int>? {
+            runs[ObjectIdentifier(element)]
         }
 
-        let fallback = (try? document.body()?.text()) ?? html.strippedHTML
-        return ChapterFetcher.shared.cleanChapterContent(fallback)
+        /// Indices into the paragraphs, of those inside `subtree`.
+        func paragraphs(in subtree: Range<Int>) -> Range<Int> {
+            firstParagraph(atOrAfter: subtree.lowerBound)..<firstParagraph(atOrAfter: subtree.upperBound)
+        }
+
+        /// Characters in the paragraphs joined by line breaks, which never merge with a neighbour.
+        func joinedLength(of paragraphs: Range<Int>) -> Int {
+            lengthBefore[paragraphs.upperBound] - lengthBefore[paragraphs.lowerBound] + paragraphs.count - 1
+        }
+
+        func punctuation(in paragraphs: Range<Int>) -> Int {
+            punctuationBefore[paragraphs.upperBound] - punctuationBefore[paragraphs.lowerBound]
+        }
+
+        func paragraphMarks(in subtree: Range<Int>) -> Int {
+            marksBefore[subtree.upperBound] - marksBefore[subtree.lowerBound]
+        }
+
+        func joined(_ paragraphs: Range<Int>) -> String {
+            paragraphTexts[paragraphs].joined(separator: "\n")
+        }
+
+        private func firstParagraph(atOrAfter position: Int) -> Int {
+            var low = 0
+            var high = paragraphPositions.count
+            while low < high {
+                let middle = (low + high) / 2
+                if paragraphPositions[middle] < position { low = middle + 1 } else { high = middle }
+            }
+            return low
+        }
     }
 
     static func extractNextPageURL(html: String, currentURL: String) -> String {
@@ -186,7 +321,11 @@ enum WebNovelParser {
         if paragraphs.count >= 2 {
             return paragraphs.joined(separator: "\n")
         }
+        return unparagraphedText(of: element)
+    }
 
+    /// An element's text when it has fewer than two paragraphs: its markup with line breaks kept.
+    private static func unparagraphedText(of element: Element) -> String? {
         if let html = try? element.outerHtml() {
             var raw = html
             raw = raw.replacingOccurrences(of: "<br\\s*/?>", with: "\n", options: .regularExpression)
@@ -221,13 +360,24 @@ enum WebNovelParser {
             .trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
-    private static func densityScore(for element: Element, text: String) -> Double {
-        let textLen = Double(text.count)
-        let descendants = Double((try? element.getAllElements().size()) ?? 1)
-        let punctuationCount = Double(text.unicodeScalars.filter {
-            "，。！？；：,.!?;:".unicodeScalars.contains($0)
-        }.count)
-        let paragraphCount = Double((try? element.select("p,br,li").size()) ?? 0)
+    private static let densityPunctuation = Set("，。！？；：,.!?;:".unicodeScalars)
+
+    private static func punctuationCount(in text: String) -> Int {
+        text.unicodeScalars.reduce(0) { densityPunctuation.contains($1) ? $0 + 1 : $0 }
+    }
+
+    /// `elements` counts the element itself with its descendants; `paragraphMarks` its p, br and li.
+    private static func densityScore(
+        for element: Element,
+        length: Int,
+        punctuation: Int,
+        elements: Int,
+        paragraphMarks: Int
+    ) -> Double {
+        let textLen = Double(length)
+        let descendants = Double(elements)
+        let punctuationCount = Double(punctuation)
+        let paragraphCount = Double(paragraphMarks)
 
         let classId = (((try? element.className()) ?? "") + " " + element.id())
             .lowercased()
