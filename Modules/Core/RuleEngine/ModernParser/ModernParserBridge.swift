@@ -1532,14 +1532,15 @@ class ModernParserBridge {
         }
         let title = engine.getString(ruleStr: source.ruleContent.title)
 
-        let sourceRegex = source.ruleContent.sourceRegex
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-        let sourceMatched = sourceRegex.isEmpty || html.range(of: sourceRegex, options: .regularExpression) != nil
-
+        // `sourceRegex` (资源正则) is not matched against the page. Legado uses it only to pick
+        // a resource URL out of a web view's requests (`LegadoHeadlessWebView`); matching the
+        // whole page with it here fed nothing but a log field, and on a long page the
+        // backtracking match was the stack behind a 90-second CPU exception during 書源檢查
+        // (Crashlytics a4c29d35, build 131).
         return ChapterParsePayload(
             content: content,
             title: title,
-            sourceMatched: sourceMatched,
+            sourceMatched: true,
             isPay: false,
             runtimeVariables: dumpRuntimeVariables()
         )
