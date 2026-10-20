@@ -2,6 +2,12 @@ import Foundation
 import CoreGraphics
 import ReadiumZIPFoundation
 
+/// 上邊距 and 下邊距: how far the settings sliders and an imported layout go. 120pt since
+/// 2026-10-20, room for a theme pack's frame below the text (feedback #22); 50pt until then.
+enum ReaderVerticalMargin {
+    static let range: ClosedRange<CGFloat> = 0...120
+}
+
 struct ReaderLayoutPreset {
     let name: String?
     let fontSize: CGFloat?
@@ -221,8 +227,8 @@ private struct LegadoReadConfig: Decodable {
             pageTurnStyle: pageTurnStyle(from: pageAnim),
             scrollMode: pageAnim.map { $0 == 3 },
             readerOverlayLayout: overlayLayout,
-            pageMarginTop: paddingTop.map { sanitized($0, range: 0...50) },
-            pageMarginBottom: paddingBottom.map { sanitized($0, range: 0...50) },
+            pageMarginTop: paddingTop.map { sanitized($0, range: ReaderVerticalMargin.range) },
+            pageMarginBottom: paddingBottom.map { sanitized($0, range: ReaderVerticalMargin.range) },
             readerBarLayout: readerBarLayout
         )
     }

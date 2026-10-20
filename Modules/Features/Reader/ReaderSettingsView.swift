@@ -485,7 +485,7 @@ struct ReaderSettingsView: View {
                     systemImage: "arrow.up.to.line",
                     valueText: String(format: localized("ReaderOverlay.Format.Points"), Int(readerConfig.pageMarginTop)),
                     value: $readerConfig.pageMarginTop,
-                    range: 0...50,
+                    range: ReaderVerticalMargin.range,
                     step: 1
                 )
                 SettingsSliderRow(
@@ -493,7 +493,7 @@ struct ReaderSettingsView: View {
                     systemImage: "arrow.down.to.line",
                     valueText: String(format: localized("ReaderOverlay.Format.Points"), Int(readerConfig.pageMarginBottom)),
                     value: $readerConfig.pageMarginBottom,
-                    range: 0...50,
+                    range: ReaderVerticalMargin.range,
                     step: 1
                 )
             }

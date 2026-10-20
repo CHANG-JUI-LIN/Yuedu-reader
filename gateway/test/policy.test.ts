@@ -53,6 +53,12 @@ describe("sanitizeProfilePatch", () => {
     }
   });
 
+  it("keeps the top and bottom page margins (feedback #25, #22)", () => {
+    const patch = sanitizeProfilePatch({preferences: {pageMarginV: 20, pageMarginTop: 88, pageMarginBottom: 120}});
+    assert.deepEqual(patch.preferences, {pageMarginV: 20, pageMarginTop: 88, pageMarginBottom: 120});
+    assert.throws(() => sanitizeProfilePatch({preferences: {pageMarginTop: "88"}}));
+  });
+
   it("drops unknown preference keys instead of writing them", () => {
     const patch = sanitizeProfilePatch({preferences: {readerFontSize: 18, admin: true}});
     assert.deepEqual(patch.preferences, {readerFontSize: 18});

@@ -100,8 +100,15 @@ struct ReaderPreferences: Codable, Equatable {
         updates.set(\.paragraphSpacingMultiplier, paragraphSpacingMultiplier, field: "paragraphSpacingMultiplier")
         updates.set(\.pageMarginH, pageMarginH, field: "pageMarginH")
         updates.set(\.pageMarginV, pageMarginV, field: "pageMarginV")
-        updates.set(\.pageMarginTop, pageMarginTop ?? pageMarginV, field: "pageMarginTop")
-        updates.set(\.pageMarginBottom, pageMarginBottom ?? pageMarginV, field: "pageMarginBottom")
+        // Absent, as the header fields below: a profile from a build before the split, or one
+        // the account gateway returned before it kept these fields (2026-10-20). Filling them
+        // from 上下邊距 overwrote the reader's own on every sign-in (feedback #25, #22).
+        if let pageMarginTop {
+            updates.set(\.pageMarginTop, pageMarginTop, field: "pageMarginTop")
+        }
+        if let pageMarginBottom {
+            updates.set(\.pageMarginBottom, pageMarginBottom, field: "pageMarginBottom")
+        }
         updates.set(\.footerBottomPadding, footerBottomPadding, field: "footerBottomPadding")
         updates.set(\.footerTextGap, footerTextGap, field: "footerTextGap")
         updates.set(\.pageTurnStyle, PageTurnStyle(rawValue: pageTurnStyle) ?? settings.pageTurnStyle, field: "pageTurnStyle")

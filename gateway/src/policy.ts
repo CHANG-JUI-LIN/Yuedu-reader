@@ -44,6 +44,10 @@ export const PROFILE_PREFERENCE_KEYS = [
   "paragraphSpacingMultiplier",
   "pageMarginH",
   "pageMarginV",
+  // Kept since 2026-10-20: dropping them reset every reader's top and bottom margins to
+  // pageMarginV on sign-in (feedback #25, #22).
+  "pageMarginTop",
+  "pageMarginBottom",
   "footerBottomPadding",
   "footerTextGap",
   "pageTurnStyle",
@@ -64,6 +68,8 @@ const PROFILE_NUMBER_KEYS: ReadonlySet<string> = new Set([
   "paragraphSpacingMultiplier",
   "pageMarginH",
   "pageMarginV",
+  "pageMarginTop",
+  "pageMarginBottom",
   "footerBottomPadding",
   "footerTextGap",
   "readerHeaderTopPadding",
