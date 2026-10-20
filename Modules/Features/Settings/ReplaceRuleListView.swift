@@ -21,7 +21,17 @@ struct ReplaceRuleListView: View {
         DismissalSequencedPresentation<ReplaceRulePresentationRoute>()
     @State private var editingRule: ReplaceRule?
     @State private var importAlert: ReplaceRuleImportAlert?
+    @State private var editMode = EditMode.inactive
+    @State private var selectedRuleIDs = Set<String>()
+    @State private var showBulkDeleteAlert = false
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    private var isSelecting: Bool { editMode == .active }
+
+    private var isAllSelected: Bool {
+        !store.rules.isEmpty && store.rules.allSatisfy { selectedRuleIDs.contains($0.id) }
+    }
 
     var body: some View {
         NavigationStack {
@@ -38,11 +48,18 @@ struct ReplaceRuleListView: View {
                     }
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                 } else {
-                    List {
+                    // Native multi-select, as the bookshelf: binding the selection Set drives the
+                    // system selection circles (and two-finger drag-select) in edit mode.
+                    List(selection: $selectedRuleIDs) {
                         ForEach(store.rules) { rule in
-                            ReplaceRuleRow(rule: rule) {
+                            ReplaceRuleRow(rule: rule, isSelecting: isSelecting) {
                                 editingRule = rule
                             }
+                            .tag(rule.id)
+                            // Selecting shows the selection circles; without this `.onDelete`
+                            // adds its red delete control beside each one. Swipe-to-delete
+                            // outside selection is unaffected.
+                            .deleteDisabled(isSelecting)
                             .interfaceSectionSurface()
                         }
                         .onDelete { offsets in
@@ -60,18 +77,23 @@ struct ReplaceRuleListView: View {
             .navigationTitle(localized("替換規則"))
             .toolbarTitleDisplayMode(.inline)
             .themedAppSurface(for: .settings)
-            .toolbar {
-                ToolbarItem(placement: .topBarLeading) {
-                    addOrImportToolbarControl
-                    .accessibilityLabel(localized("新增或匯入"))
-                }
-                ToolbarItem(placement: .topBarTrailing) {
-                    Button {
-                        dismiss()
-                    } label: {
-                        Image(systemName: "checkmark")
+            .toolbar { toolbar }
+            // Deleting the last rule while selecting swaps the list for the empty state and
+            // hides 編輯; leave selection so the next rule doesn't open in it.
+            .onChange(of: store.rules.isEmpty) { _, isEmpty in
+                if isEmpty { endSelection() }
+            }
+            .alert(localized("確認刪除"), isPresented: $showBulkDeleteAlert) {
+                Button(localized("刪除"), role: .destructive) {
+                    let ids = selectedRuleIDs
+                    withAnimation(reduceMotion ? nil : DSAnimation.standard) {
+                        store.delete(ids: ids)
+                        selectedRuleIDs = []
                     }
                 }
+                Button(localized("取消"), role: .cancel) {}
+            } message: {
+                Text(String(format: localized("確定要刪除 %d 條替換規則嗎？"), selectedRuleIDs.count))
             }
             .sheet(
                 isPresented: $showLegacyActionChooser,
@@ -115,6 +137,76 @@ struct ReplaceRuleListView: View {
                     dismissButton: .default(Text(localized("完成")))
                 )
             }
+            // Outside `.toolbar` so the toolbar's EditButton and the List share one binding.
+            .environment(\.editMode, $editMode)
+        }
+    }
+
+    /// 新增或匯入, 編輯 and done; while selecting, 全選 and done, with delete in a bottom bar —
+    /// the bookshelf's selection layout.
+    @ToolbarContentBuilder
+    private var toolbar: some ToolbarContent {
+        if isSelecting {
+            // Select-all kept as its own pill via the prominent + clear-tint trick so it
+            // doesn't merge with the done button.
+            ToolbarItem(placement: .topBarTrailing) {
+                Button {
+                    selectedRuleIDs = isAllSelected ? [] : Set(store.rules.map(\.id))
+                } label: {
+                    Text(localized(isAllSelected ? "全不選" : "全選"))
+                        .font(DSFont.subheadline.weight(.medium))
+                        .foregroundStyle(DSColor.textPrimary)
+                }
+                .buttonStyle(.borderedProminent)
+                .tint(.clear)
+            }
+            ToolbarItem(placement: .topBarTrailing) {
+                Button {
+                    endSelection()
+                } label: {
+                    Image(systemName: "checkmark")
+                        .font(DSFont.toolbarIcon)
+                }
+                .accessibilityLabel(localized("完成"))
+            }
+            ToolbarItem(placement: .bottomBar) {
+                Button(role: .destructive) {
+                    if !selectedRuleIDs.isEmpty { showBulkDeleteAlert = true }
+                } label: {
+                    Image(systemName: "trash")
+                }
+                .tint(.red)
+                .disabled(selectedRuleIDs.isEmpty)
+                .accessibilityLabel(localized("刪除"))
+            }
+        } else {
+            ToolbarItem(placement: .topBarLeading) {
+                addOrImportToolbarControl
+                .accessibilityLabel(localized("新增或匯入"))
+            }
+            if !store.rules.isEmpty {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button(localized("編輯")) {
+                        withAnimation(reduceMotion ? nil : DSAnimation.standard) {
+                            editMode = .active
+                        }
+                    }
+                }
+            }
+            ToolbarItem(placement: .topBarTrailing) {
+                Button {
+                    dismiss()
+                } label: {
+                    Image(systemName: "checkmark")
+                }
+            }
+        }
+    }
+
+    private func endSelection() {
+        withAnimation(reduceMotion ? nil : DSAnimation.standard) {
+            editMode = .inactive
+            selectedRuleIDs = []
         }
     }
 
@@ -189,6 +281,10 @@ struct ReplaceRuleListView: View {
     }
 }
 
+#Preview {
+    ReplaceRuleListView()
+}
+
 private struct ReplaceRuleImportAlert: Identifiable {
     let id = UUID()
     let title: String
@@ -200,6 +296,7 @@ private struct ReplaceRuleImportAlert: Identifiable {
 private struct ReplaceRuleRow: View {
 
     let rule: ReplaceRule
+    let isSelecting: Bool
     let onTap: () -> Void
     @ObservedObject private var store = ReplaceRuleStore.shared
     @Bindable private var gs = GlobalSettings.shared
@@ -251,7 +348,9 @@ private struct ReplaceRuleRow: View {
             .labelsHidden()
         }
         .contentShape(Rectangle())
-        .onTapGesture { onTap() }
+        // While selecting, a tap belongs to the List's selection, not the editor; the toggle
+        // (a subview) stays live either way.
+        .gesture(TapGesture().onEnded { onTap() }, including: isSelecting ? .subviews : .all)
     }
 }
 

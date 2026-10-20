@@ -68,6 +68,12 @@ final class ReplaceRuleStore: @MainActor ObservableObject {
         save()
     }
 
+    func delete(ids: Set<String>) {
+        guard !ids.isEmpty else { return }
+        rules.removeAll { ids.contains($0.id) }
+        save()
+    }
+
     func move(fromOffsets source: IndexSet, toOffset destination: Int) {
         var copy = rules
         let indices = source.sorted().reversed()

@@ -3238,6 +3238,7 @@
 "%d 本" = "%d books";
 "沒有找到「%@」" = "No Results for “%@”";
 "確定要刪除 %d 本書嗎？" = "Delete %d books?";
+"確定要刪除 %d 條替換規則嗎？" = "Delete %d replace rules?";
 "確定要刪除分組「%1$@」及其中的 %2$d 個來源配置嗎？" = "Delete the group “%1$@” and the %2$d sources in it?";
 "確定要刪除選中的 %d 個來源配置嗎？" = "Delete the %d selected sources?";
 "確定要從書架刪除《%@》嗎？" = "Remove “%@” from your library?";

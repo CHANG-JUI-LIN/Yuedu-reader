@@ -739,6 +739,22 @@
 			<string>Imported %d items.</string>
 		</dict>
 	</dict>
+	<key>確定要刪除 %d 條替換規則嗎？</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>%#@n@</string>
+		<key>n</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringPluralRuleType</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>d</string>
+			<key>one</key>
+			<string>Delete %d replace rule?</string>
+			<key>other</key>
+			<string>Delete %d replace rules?</string>
+		</dict>
+	</dict>
 	<key>確定要刪除 %d 本書嗎？</key>
 	<dict>
 		<key>NSStringLocalizedFormatKey</key>
