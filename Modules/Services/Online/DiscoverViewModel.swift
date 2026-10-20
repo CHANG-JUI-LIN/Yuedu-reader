@@ -407,6 +407,12 @@ final class DiscoverViewModel: ObservableObject {
     /// `show(m, t)`, which writes `t = m` and — for 发现页类型 only — resets the
     /// platform, because each 类型 has its own platform list.
     ///
+    /// The choice also goes into the source's explore `infoMap` under the select's title,
+    /// before the reload, as legado-E and MD3 store every select's choice: a source that
+    /// reads `infoMap['平台']`, or whose select's `default` is a constant, otherwise listed
+    /// the same categories again and snapped the menu back (feedback #29). The returned
+    /// task ends once the reload has begun.
+    ///
     /// The discover page writes exactly the variables the source's filter actions
     /// name (`发现页类型`/`发现页来源`) plus its own per-类型 memory. It must NOT touch
     /// `更多设置`: that dictionary is the source's, holding the 默认搜索网站 the user
@@ -414,14 +420,16 @@ final class DiscoverViewModel: ObservableObject {
     /// 搜索模式 that selects which of those rows search uses. Writing either from
     /// here silently redirects search away from what the user configured — and the
     /// source's own JS keeps 发现页类型 separate from 搜索模式 for exactly that reason.
-    func selectFilter(_ filter: DiscoverFilter, value: String) {
-        guard value != filter.selected, let source = selectedSource else { return }
+    @discardableResult
+    func selectFilter(_ filter: DiscoverFilter, value: String) -> Task<Void, Never>? {
+        guard value != filter.selected, let source = selectedSource else { return nil }
         var dict = currentVariableDict(for: source)
         let moreSettings = (dict["更多设置"] as? [String: Any]) ?? [:]
         let currentMode = discoverMode(from: dict, moreSettings: moreSettings)
 
         dict[filter.paramKey] = value
         rememberFilterKeys([filter.paramKey], for: source)
+        var infoMapChoices = [filter.title: value]
 
         switch filter.paramKey {
         case "发现页类型":
@@ -429,6 +437,10 @@ final class DiscoverViewModel: ObservableObject {
             dict["发现页来源"] = platform
             rememberFilterKeys(["发现页来源"], for: source)
             Self.setDiscoverPlatform(platform, forMode: value, in: &dict)
+            // The platform menu shows its infoMap value first, so it moves with the variable.
+            if let platformFilter = filters.first(where: { $0.paramKey == "发现页来源" }) {
+                infoMapChoices[platformFilter.title] = platform
+            }
         case "发现页来源":
             Self.setDiscoverPlatform(value, forMode: currentMode, in: &dict)
         default:
@@ -439,7 +451,13 @@ final class DiscoverViewModel: ObservableObject {
         if let index = filters.firstIndex(where: { $0.id == filter.id }) {
             filters[index].selected = value
         }
-        reload()
+        let choices = infoMapChoices
+        return Task { [weak self] in
+            for (title, choice) in choices {
+                await DiscoverQuickActionRunner.setInfoMapValue(choice, forKey: title, source: source)
+            }
+            self?.reload()
+        }
     }
 
     // MARK: - Loading
@@ -473,7 +491,9 @@ final class DiscoverViewModel: ObservableObject {
             // rebuild the same category list. The key covers rule + discover
             // variables, so filter changes and source updates fetch fresh.
             if !forceRefresh, let cached = DiscoverKindsCache.shared.items(forKey: cacheKey) {
-                self.applyDiscoverItems(cached)
+                let shown = await Self.selectValues(in: cached, source: source)
+                guard !Task.isCancelled else { return }
+                self.applyDiscoverItems(cached, selectValues: shown)
                 return
             }
 
@@ -507,14 +527,26 @@ final class DiscoverViewModel: ObservableObject {
                     raw, forKey: self.discoverKindsCacheKey(for: source))
             }
 
-            self.applyDiscoverItems(raw)
+            let shown = await Self.selectValues(in: raw, source: source)
+            guard !Task.isCancelled else { return }
+            self.applyDiscoverItems(raw, selectValues: shown)
         }
     }
 
+    /// What the source's explore `infoMap` holds, which its selects show first. Read only
+    /// for a list with a select: it runs on the source's script host.
+    private static func selectValues(
+        in raw: [ModernParserBridge.DiscoverItem],
+        source: BookSource
+    ) async -> [String: String] {
+        guard raw.contains(where: { ($0.type ?? "") == "select" }) else { return [:] }
+        return await DiscoverQuickActionRunner.infoMapValues(source: source)
+    }
+
     /// Shared tail of `reload()` for both the cache-hit and network paths.
-    private func applyDiscoverItems(_ raw: [ModernParserBridge.DiscoverItem]) {
+    private func applyDiscoverItems(_ raw: [ModernParserBridge.DiscoverItem], selectValues: [String: String]) {
         rawItems = raw
-        filters = Self.extractFilters(from: raw)
+        filters = Self.extractFilters(from: raw, values: selectValues)
         // Learn which runtime variables this source's filters target, so a later
         // degraded load can reset exactly those and nothing else.
         if let source = selectedSource, !filters.isEmpty {
@@ -958,7 +990,14 @@ final class DiscoverViewModel: ObservableObject {
     /// Pull the source's `type:"select"` dropdowns out of the exploreUrl result.
     /// The exploreUrl JS encodes the target variable in the action, e.g.
     /// `show(infoMap['平台'],'发现页来源')` → paramKey `发现页来源`.
-    static func extractFilters(from raw: [ModernParserBridge.DiscoverItem]) -> [DiscoverFilter] {
+    ///
+    /// A select shows what `values` (the source's explore `infoMap`) holds under its title,
+    /// as legado-E and MD3 do, then its `default`, then its first option. A stored value the
+    /// select no longer offers is passed over.
+    static func extractFilters(
+        from raw: [ModernParserBridge.DiscoverItem],
+        values: [String: String] = [:]
+    ) -> [DiscoverFilter] {
         raw.compactMap { item in
             guard (item.type ?? "") == "select" else { return nil }
             let title = (item.title ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
@@ -967,8 +1006,9 @@ final class DiscoverViewModel: ObservableObject {
                 .filter { !$0.isEmpty }
             guard !title.isEmpty, !options.isEmpty else { return nil }
             let paramKey = parseParamKey(from: item.action) ?? title
+            let stored = (values[title] ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
             let preferred = (item.default ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
-            let selected = preferred.isEmpty ? (options.first ?? "") : preferred
+            let selected = options.contains(stored) ? stored : preferred.isEmpty ? (options.first ?? "") : preferred
             return DiscoverFilter(title: title, paramKey: paramKey, options: options, selected: selected)
         }
     }
