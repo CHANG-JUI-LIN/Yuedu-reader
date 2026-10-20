@@ -21,6 +21,10 @@ struct OnlineBookDetailDestination: View {
     }
 
     private let entry: Entry
+    /// The shelf copy this page shows, when it shows one. 換源 then rebinds that copy, as the
+    /// reader's own detail does; without it a switch only changed the page, and the page then
+    /// offered 加入書架 for the new source's book (feedback #24).
+    private let shelfCopyId: UUID?
     private let onRemoveFromShelf: (() -> Void)?
     /// On 作品詳情, the work's versions, which 換源 lists first (unified library 5f-3; a search
     /// result's page too, 5f-4c).
@@ -37,11 +41,13 @@ struct OnlineBookDetailDestination: View {
 
     init(
         _ entry: Entry,
+        shelfCopyId: UUID? = nil,
         onRemoveFromShelf: (() -> Void)? = nil,
         textPageReaderNavigator: ReaderNavigationCoordinator? = nil,
         workVersions: BookDetailInfoChoice? = nil
     ) {
         self.entry = entry
+        self.shelfCopyId = shelfCopyId
         self.onRemoveFromShelf = onRemoveFromShelf
         self.workVersions = workVersions
         self.textPageReaderNavigator = textPageReaderNavigator
@@ -78,6 +84,7 @@ struct OnlineBookDetailDestination: View {
                 OnlineBookView(
                     searchBook: searchBook,
                     initialOrigin: switchedOrigin,
+                    sourceSwitchBookId: shelfCopyId,
                     onRemoveFromShelf: onRemoveFromShelf,
                     onSourceKindChange: switchPage,
                     workVersions: workVersions
@@ -98,6 +105,7 @@ struct OnlineBookDetailDestination: View {
             } else {
                 OnlineBookView(
                     book: shown,
+                    sourceSwitchBookId: shelfCopyId,
                     onRemoveFromShelf: onRemoveFromShelf,
                     onSourceKindChange: switchPage,
                     workVersions: workVersions

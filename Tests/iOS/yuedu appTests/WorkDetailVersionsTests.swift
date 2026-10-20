@@ -147,6 +147,16 @@ struct WorkDetailVersionsTests {
         let book = GutenbergBook(id: 24264, title: "三體", author: "劉慈欣")
         #expect(WorkDetailRoute(.gutenberg(book)) == WorkDetailRoute(CollectionEntry.bundledGutenberg(book)))
     }
+
+    /// Feedback #24: 換源 on a shelf copy's page rebinds that copy, so the page needs its id; a
+    /// version found elsewhere has none, and its 換源 only changes the page.
+    @Test("a shelf copy's page rebinds that copy on 換源; a found version's does not")
+    func shelfCopySourceSwitchTarget() {
+        let id = UUID()
+        #expect(copy(id).shelfCopyID == id)
+        #expect(file("三體.epub").shelfCopyID == nil)
+        #expect(WorkDetailRoute(.gutenberg(GutenbergBook(id: 1, title: "三體", author: "劉慈欣"))).shelfCopyID == nil)
+    }
 }
 
 /// The versions read from the shelf and the work index (`ShelfProvider.versions(of:)`).

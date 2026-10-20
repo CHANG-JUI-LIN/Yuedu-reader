@@ -53,6 +53,13 @@ struct WorkDetailRoute: Hashable, Sendable {
     /// The node the work index knows the version by: a copy by its own key.
     var nodeKey: SourceItemKey { record.copyKey ?? record.key }
 
+    /// The shelf copy this version is, whose source 換源 on its page rebinds (feedback #24);
+    /// nil for a version found elsewhere, whose 換源 only changes the page.
+    var shelfCopyID: UUID? {
+        if case .copy(let id) = opening { return id }
+        return nil
+    }
+
     /// Whether this version's page finds the copies taken from it by its key, and reads them:
     /// a library item's does; a book source's own page keeps its copy apart.
     var readsItsCopies: Bool {

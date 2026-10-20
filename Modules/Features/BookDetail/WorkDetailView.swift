@@ -225,6 +225,7 @@ struct WorkDetailView: View {
         } else if let version = selected, let book = onlineBook(of: version) {
             OnlineBookDetailDestination(
                 onlineEntry(of: version, book: book),
+                shelfCopyId: version.shelfCopyID,
                 onRemoveFromShelf: { leftShelf(version) },
                 workVersions: versionChoice(version)
             )
