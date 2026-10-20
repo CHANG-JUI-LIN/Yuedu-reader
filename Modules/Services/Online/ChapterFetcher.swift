@@ -958,33 +958,67 @@ struct ChapterFetcher {
         return localHTMLContent.isEmpty ? html.strippedHTML : localHTMLContent
     }
 
-    private static func extractLocalHTMLContent(html: String, pageURL: String) -> String {
-        let knownSelectors = [
-            "#chaptercontent", "#chapter-content", "#chapterContent",
-            ".chapter-content", ".read-content", "#readcontent",
-            ".txtnav", "#htmlContent", ".BookText", "#BookText",
-            "#content", ".content", "#read_content", ".read_content",
-            ".readArea", ".novel-text", "#novelcontent",
-            "#bookContent", "#articleBody", ".article-body",
-            "#read", ".txt", "#txt", ".article", "#article",
-            ".novel_content", "#novel_content", ".chapter_content",
-            "article",
-        ]
+    /// The longest known content container's text, for a page whose source has no usable
+    /// content rule; the whole page's text when no container holds 80 characters.
+    static func extractLocalHTMLContent(html: String, pageURL: String) -> String {
+        var winner = "none"
+        return SourcePerfTrace.span("chapter.localSelectors", "bytes=\(html.utf8.count) best=\(winner)", thresholdMs: 5) {
+            extractLocalHTMLContent(html: html, pageURL: pageURL, winner: &winner)
+        }
+    }
 
+    static let knownContentSelectors = [
+        "#chaptercontent", "#chapter-content", "#chapterContent",
+        ".chapter-content", ".read-content", "#readcontent",
+        ".txtnav", "#htmlContent", ".BookText", "#BookText",
+        "#content", ".content", "#read_content", ".read_content",
+        ".readArea", ".novel-text", "#novelcontent",
+        "#bookContent", "#articleBody", ".article-body",
+        "#read", ".txt", "#txt", ".article", "#article",
+        ".novel_content", "#novel_content", ".chapter_content",
+        "article",
+    ]
+
+    private static func extractLocalHTMLContent(html: String, pageURL: String, winner: inout String) -> String {
+        // One parse for every selector. Each used to go through
+        // `RuleEngine.extractValue(fromHTML:)`, which parses the whole page again: 29 parses,
+        // 1036 ms for a 51 KB Narou episode and 7.9 s at 16× its body (Debug simulator, 2026-10-20).
+        // Qualified: SwiftSoup exports a `parseHTML` of its own.
+        let document = yuedu_app.parseHTML(html)
         var bestSelector = ""
-        for selector in knownSelectors {
-            let selectorHTML = RuleEngine.extractValue(
-                fromHTML: html, rule: selector + "@html", baseURL: pageURL
-            )
+        for selector in knownContentSelectors {
+            let selectorHTML = knownSelectorHTML(selector, in: document, pageURL: pageURL)
+            // A selector that matches nothing has no text to compare.
+            guard !selectorHTML.isEmpty else { continue }
             let trimmed = Self.stripHtmlToText(selectorHTML).trimmingCharacters(in: .whitespacesAndNewlines)
-            if trimmed.count > bestSelector.count { bestSelector = trimmed }
+            if trimmed.count > bestSelector.count {
+                bestSelector = trimmed
+                winner = selector
+            }
         }
         if bestSelector.count >= 80 {
             return bestSelector
         }
 
+        winner = "page"
         let fallback = Self.stripHtmlToText(html).trimmingCharacters(in: .whitespacesAndNewlines)
         return fallback
+    }
+
+    /// `RuleEngine.extractValue(fromHTML: page, rule: selector + "@html")` on a page already
+    /// parsed with `parseHTML`: the same route (a bare tag name such as `article` is a Legado
+    /// JSOUP Default rule, the rest are CSS), the outer HTML of the first match, and, for a CSS
+    /// rule that matches, the same parse event in the source debugger (a miss logs none there).
+    static func knownSelectorHTML(_ selector: String, in document: HTMLNode, pageURL: String) -> String {
+        let rule = selector + "@html"
+        if RuleEngine.isJsoupDefaultRule(selector) {
+            return RuleEngine.extractValueByJsoupDefault(from: document, rule: rule, baseURL: pageURL)
+        }
+        let value = RuleEngine.extractValue(from: document, rule: rule, baseURL: pageURL)
+        if !value.isEmpty {
+            WebCrawlerDebugger.logParse(rule: rule, matchCount: 1, url: pageURL)
+        }
+        return value
     }
 
     func extractNextPageURL(html: String, currentURL: String, baseURL: String) -> String {
@@ -998,7 +1032,7 @@ struct ChapterFetcher {
         )
     }
 
-    private static func stripHtmlToText(_ html: String) -> String {
+    static func stripHtmlToText(_ html: String) -> String {
         stripHtmlToTextUsingSwiftSoup(html) ?? ""
     }
 
