@@ -1028,6 +1028,12 @@ final class ModernRuleEngine {
 
     // MARK: - Private: URL Resolution
 
+    /// Legado's `NetworkUtils.getAbsoluteURL` (legado-E, MD3 and Sigma agree): absolute and
+    /// data URLs as they are, a `javascript…` link as nothing, anything else joined to the
+    /// page. A link's `,{…}` options are split off before the join and put back after it, as
+    /// Legado's `BookChapter.getAbsoluteURL` does. Java's `URL` leaves them where they are;
+    /// `URL(string:relativeTo:)` percent-encodes them into the path, so a chapter or next page
+    /// written `/p2,{"method":"POST"}` reached AnalyzeUrl without its options.
     private func resolveURL(_ url: String) -> String {
         let trimmed = url.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return "" }
@@ -1037,6 +1043,19 @@ final class ModernRuleEngine {
         {
             return trimmed
         }
+        if trimmed.hasPrefix("javascript") { return "" }
+        let range = NSRange(trimmed.startIndex..., in: trimmed)
+        guard let match = AnalyzeUrl.paramPattern.firstMatch(in: trimmed, range: range),
+              let options = Range(match.range, in: trimmed),
+              options.lowerBound > trimmed.startIndex
+        else {
+            return joinToPage(trimmed)
+        }
+        return joinToPage(String(trimmed[..<options.lowerBound]))
+            + "," + trimmed[options.upperBound...]
+    }
+
+    private func joinToPage(_ trimmed: String) -> String {
         if let redirect = redirectUrl,
            let resolved = URL(string: trimmed, relativeTo: redirect)?
             .absoluteString
