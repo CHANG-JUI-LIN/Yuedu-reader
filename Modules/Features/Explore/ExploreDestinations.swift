@@ -140,6 +140,16 @@ enum ExplorePush: Hashable {
     case publicLibrary(PublicLibraryRoute)
     case article(SubscriptionArticleRoute)
 
+    /// What a home card opens: 作品詳情, where reading starts (decision 27), except a shelf copy
+    /// on 繼續閱讀 or 書架, which goes straight back into its reader as the shelf's own cards do
+    /// (feedback #24; maintainer, 2026-10-20).
+    static func card(_ route: WorkDetailRoute, in binding: HomeSectionBinding) -> ExplorePush {
+        if binding == .continueReading || binding == .bookshelf, let id = route.shelfCopyID {
+            return .reader(PublicLibraryReaderRoute(bookID: id))
+        }
+        return .work(route)
+    }
+
     /// Appends the route itself, so it reaches the destination registered for its type.
     func append(to path: inout NavigationPath) {
         switch self {
@@ -233,7 +243,9 @@ enum ExplorePlace {
                                                         title: row.section.displayTitle(sourceName: row.sourceName),
                                                         parameters: row.section.parameters)))
         // 為你推薦 is mixed from many places; no page lists it whole. AI 推薦's row is its whole list.
-        case .myLibrary, .continueReading, .related, .nextInSeries, .subscriptionArticles, .forYou, .aiRecommendations, .unknown:
+        // 書架's whole list is the 書架 tab, which 探索 cannot switch to.
+        case .myLibrary, .continueReading, .bookshelf, .related, .nextInSeries, .subscriptionArticles, .forYou,
+             .aiRecommendations, .unknown:
             return nil
         }
     }

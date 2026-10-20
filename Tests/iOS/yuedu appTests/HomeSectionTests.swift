@@ -9,7 +9,7 @@ struct HomeSectionTests {
 
     private func allBindings() -> [HomeSectionBinding] {
         [
-            .myLibrary, .continueReading,
+            .myLibrary, .continueReading, .bookshelf,
             .latest,
             .sourceCategories([category]),
             .opdsFeed(connectionID: "c1", url: "https://opds.example/new"),

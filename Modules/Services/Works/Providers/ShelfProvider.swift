@@ -13,13 +13,17 @@ final class ShelfProvider: CollectionBrowsing {
     private let candidates: ForYouCandidateStore
     /// The installed sources, turned on or not.
     private let sources: @MainActor () -> [BookSource]
+    /// The order the 書架 tab sorts by, which 探索's 書架 section follows.
+    private let sortOrder: @MainActor () -> BookSortOrder
 
     init(store: BookStore, webDAVRoots: @escaping @MainActor () -> [String: URL] = ShelfProvider.liveWebDAVRoots,
-         candidates: ForYouCandidateStore = .shared, sources: @escaping @MainActor () -> [BookSource] = { BookSourceStore.shared.sources }) {
+         candidates: ForYouCandidateStore = .shared, sources: @escaping @MainActor () -> [BookSource] = { BookSourceStore.shared.sources },
+         sortOrder: @escaping @MainActor () -> BookSortOrder = { BookSortOrder.saved() }) {
         self.store = store
         self.webDAVRoots = webDAVRoots
         self.candidates = candidates
         self.sources = sources
+        self.sortOrder = sortOrder
     }
 
     static func liveWebDAVRoots() -> [String: URL] {
@@ -85,6 +89,12 @@ final class ShelfProvider: CollectionBrowsing {
     /// those taken out since they were last opened (5d-3c).
     func continueReading(limit: Int) -> [CollectionEntry] {
         items(recentlyOpened(limit: limit))
+    }
+
+    /// 書架 (feedback #24): the shelf's books in the 書架 tab's order, the first `limit`. Books
+    /// only, a group's too: a group's chip would have no page here to open.
+    func bookshelf(limit: Int) -> [CollectionEntry] {
+        items(Array(sortOrder().sorted(store.books).prefix(limit)))
     }
 
     private func recentlyOpened(limit: Int, where included: (ReadingBook) -> Bool = \.isInContinueReading) -> [ReadingBook] {

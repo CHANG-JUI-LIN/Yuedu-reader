@@ -503,11 +503,11 @@ struct HomeRowHost: View {
         return { push(target) }
     }
 
-    /// Every card opens 作品詳情 first, 繼續閱讀's too, as Emby's posters open the item's page
-    /// (Phase 5 plan, decision 27); reading starts from there.
+    /// Every card opens 作品詳情 first, as Emby's posters open the item's page (Phase 5 plan,
+    /// decision 27); a shelf copy on 繼續閱讀 or 書架 opens its reader (`ExplorePush.card`).
     private func open(_ card: HomeCardContent, _ cards: [HomeCardContent]) {
         guard let route = card.route else { return }
-        push(.work(route))
+        push(.card(route, in: group.section.binding))
     }
 }
 

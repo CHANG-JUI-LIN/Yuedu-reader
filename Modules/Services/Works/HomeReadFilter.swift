@@ -19,10 +19,12 @@ struct HomeReadFilter {
         case .latest, .related, .sourceCategories, .opdsFeed, .gutenbergCollection, .gutenbergFeed,
              .gutenbergShelf, .aozoraNew, .forYou, .module, .aiRecommendations:
             return true
-        // 繼續閱讀 is what is being read. 系列下一本 never offers a book read to the end: it
-        // offers the one after it. An article's read state is the RSS tab's. An index's chips
-        // and 我的書庫's tiles are not books, nor are 精選書單's lists.
-        case .continueReading, .nextInSeries, .subscriptionArticles, .aozoraIndex, .gutenbergLists, .myLibrary, .unknown:
+        // 繼續閱讀 is what is being read. 書架 is the shelf, which keeps a book read to the end.
+        // 系列下一本 never offers a book read to the end: it offers the one after it. An
+        // article's read state is the RSS tab's. An index's chips and 我的書庫's tiles are not
+        // books, nor are 精選書單's lists.
+        case .continueReading, .bookshelf, .nextInSeries, .subscriptionArticles, .aozoraIndex, .gutenbergLists, .myLibrary,
+             .unknown:
             return false
         }
     }

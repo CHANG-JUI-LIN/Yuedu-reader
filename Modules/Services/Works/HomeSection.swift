@@ -57,6 +57,10 @@ enum HomeSectionBinding: Hashable, Sendable {
     case myLibrary
     /// 繼續閱讀, across every source.
     case continueReading
+    /// 書架 (feedback #24; maintainer, 2026-10-20): the shelf's books in the 書架 tab's order,
+    /// each opening its reader as the tab's cards do. Not 我的書庫, which drew the places. A
+    /// build before it reads it as `.unknown` and writes it back as it came.
+    case bookshelf
     /// 最新: one row per source that has a 最新 (plan decision 10), except those 聚合設定's
     /// 顯示在最新 turns off (5d-3f, decision 21). Until 5d-3f the section kept its own
     /// `excluded` list; `HomePageStore.legacyLatestExcluded` reads it for the move.
@@ -112,7 +116,7 @@ extension HomeSectionBinding: Codable {
     }
 
     private enum Kind: String {
-        case myLibrary, continueReading, latest, sourceCategories, opdsFeed
+        case myLibrary, continueReading, bookshelf, latest, sourceCategories, opdsFeed
         case gutenbergCollection, gutenbergLists, gutenbergFeed, gutenbergShelf, aozoraNew, aozoraIndex, related, nextInSeries
         case subscriptionArticles, forYou, module, aiRecommendations
     }
@@ -127,6 +131,7 @@ extension HomeSectionBinding: Codable {
         switch kind {
         case .myLibrary: self = .myLibrary
         case .continueReading: self = .continueReading
+        case .bookshelf: self = .bookshelf
         case .latest: self = .latest
         case .sourceCategories:
             self = .sourceCategories(try container.decode([ExploreCategoryReference].self, forKey: .categories))
@@ -161,6 +166,8 @@ extension HomeSectionBinding: Codable {
             try container.encode(Kind.myLibrary.rawValue, forKey: .type)
         case .continueReading:
             try container.encode(Kind.continueReading.rawValue, forKey: .type)
+        case .bookshelf:
+            try container.encode(Kind.bookshelf.rawValue, forKey: .type)
         case .latest:
             try container.encode(Kind.latest.rawValue, forKey: .type)
         case .sourceCategories(let categories):

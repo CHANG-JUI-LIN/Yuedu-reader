@@ -1178,6 +1178,25 @@ final class ReaderTelemetry: Sendable {
 
 enum BookSortOrder: String {
     case manual, recentlyRead, title, author
+
+    /// Where the 書架 tab keeps the order it sorts by.
+    static let storageKey = "bookSortOrder"
+
+    /// The 書架 tab's order, as it last saved it.
+    static func saved(in defaults: UserDefaults = .standard) -> BookSortOrder {
+        defaults.string(forKey: storageKey).flatMap(BookSortOrder.init(rawValue:)) ?? .manual
+    }
+
+    /// `books` in this order: the 書架 tab's, and 探索's 書架 section's (feedback #24). 手動 is
+    /// the order the shelf holds them in.
+    func sorted(_ books: [ReadingBook]) -> [ReadingBook] {
+        switch self {
+        case .manual:       books
+        case .recentlyRead: books.sorted { ($0.lastOpenedDate ?? $0.addedDate) > ($1.lastOpenedDate ?? $1.addedDate) }
+        case .title:        books.sorted { $0.title.localizedCompare($1.title) == .orderedAscending }
+        case .author:       books.sorted { $0.author.localizedCompare($1.author) == .orderedAscending }
+        }
+    }
 }
 
 // MARK: - HTML Utilities

@@ -227,7 +227,7 @@ struct HomeView: View {
     @State private var showAIPaywall = false
     @ObservedObject private var subscription = SubscriptionStore.shared
     @AppStorage("bookLayoutIsGrid") private var isGridMode = false
-    @AppStorage("bookSortOrder") private var sortOrder = BookSortOrder.manual.rawValue
+    @AppStorage(BookSortOrder.storageKey) private var sortOrder = BookSortOrder.manual.rawValue
     @Environment(\.horizontalSizeClass) private var sizeClass
     @Namespace private var bookTransition
     @State private var entriesMemo = ShelfEntriesMemo()
@@ -510,14 +510,7 @@ struct HomeView: View {
         return entriesMemo.sorted(
             base, key: ShelfEntriesMemo.OrderKey(group: group, sortOrder: sortOrder), signature: hasher.finalize()
         ) { books in
-            switch order {
-            case .manual:       return books
-            case .recentlyRead: return books.sorted {
-                ($0.lastOpenedDate ?? $0.addedDate) > ($1.lastOpenedDate ?? $1.addedDate)
-            }
-            case .title:        return books.sorted { $0.title.localizedCompare($1.title) == .orderedAscending }
-            case .author:       return books.sorted { $0.author.localizedCompare($1.author) == .orderedAscending }
-            }
+            order.sorted(books)
         }
     }
 
