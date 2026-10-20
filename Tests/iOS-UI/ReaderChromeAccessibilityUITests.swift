@@ -9,10 +9,16 @@ import XCTest
 /// each the bottom bar's controls must be in the accessibility tree, hittable, and clean in an
 /// accessibility audit scoped to the bar.
 ///
-/// As of 2026-10-18 all four pass on the iOS 27.0 and 27.1 simulators against main: the report
-/// did not reproduce here. XCUITest reads the same accessibility tree VoiceOver does, but it does
-/// not model VoiceOver's modal pruning or its swipe order, so a pass is not proof on a device.
-/// The 書架 route leaves each run's book on the simulator's shelf.
+/// 探索 was added from the maintainer's recording (2026-10-20), where VoiceOver's cursor took the
+/// whole screen over the bottom bar and read the chapter.
+///
+/// These passed on every route while the bug was live, and could not have failed: `isHittable`
+/// is no occlusion test, and XCUITest's tree has an order of its own, not the order VoiceOver's
+/// touch tries elements in. The cause was the back-swipe reservation behind every reader pushed
+/// from a detail page, which put the full-screen page ahead of the bottom bar in that order
+/// (`reservingNavigationBackSwipe`); `NavigationBackSwipeReservationTests` checks that the way
+/// VoiceOver does. What these still check is that each route's bar is in the tree, named, and
+/// clean in an audit. The 書架 route leaves each run's book on the simulator's shelf.
 ///
 /// The book is served from outside the simulator, from the repo root:
 /// `python3 -I scripts/reader_chrome_fixture.py` (port 18771). Its source lives in a scratch
@@ -60,12 +66,12 @@ final class ReaderChromeAccessibilityUITests: XCTestCase {
     }
 
     @MainActor
-    private func launch() -> XCUIApplication {
+    private func launch(extra: [String] = []) -> XCUIApplication {
         let app = XCUIApplication()
         app.launchArguments = ["-no-official-modules", "-AppleLanguages", "(zh-Hant)", "-AppleLocale", "zh_TW",
                                "-yd_source_disclaimer_accepted", "YES",
                                "-book-source-store-dir", directory.path,
-                               "-yd_appearance_reader_interface", "classic"]
+                               "-yd_appearance_reader_interface", "classic"] + extra
         app.launch()
         return app
     }
@@ -78,6 +84,17 @@ final class ReaderChromeAccessibilityUITests: XCTestCase {
         let app = launch()
         try openFromLibrary(app)
         let problems = try bottomBarProblems(app, route: "資源庫")
+        XCTAssertTrue(problems.isEmpty, problems.joined(separator: "\n") + "\n" + app.debugDescription)
+    }
+
+    /// 探索 › a section of the home › the book's page › 立即閱讀: the reader pushed onto 探索's stack
+    /// (the maintainer's recording, 2026-10-20).
+    @MainActor
+    func testExploreReaderBottomBarReachesVoiceOver() throws {
+        let app = launch(extra: ["-explore.mode", "sources", "-reset-explore-home"])
+        openFromExplore(app)
+        tapRead(app)
+        let problems = try bottomBarProblems(app, route: "探索")
         XCTAssertTrue(problems.isEmpty, problems.joined(separator: "\n") + "\n" + app.debugDescription)
     }
 
@@ -171,6 +188,40 @@ final class ReaderChromeAccessibilityUITests: XCTestCase {
         XCTAssertTrue(source.waitForExistence(timeout: 10), app.debugDescription)
         source.tap()
         openBook(app)
+    }
+
+    /// The source's 熱門 added to 探索's home as a row (編輯首頁 › 新增欄目), then the run's book
+    /// from it — the way `DetailReaderBackSwipeUITests` reaches a source's book from 探索.
+    @MainActor
+    private func openFromExplore(_ app: XCUIApplication) {
+        rootTab(app, "探索").tap()
+        XCTAssertTrue(app.buttons["explore.more"].firstMatch.waitForExistence(timeout: 20), app.debugDescription)
+        let edit = app.buttons["home.edit"].firstMatch
+        for _ in 0..<12 where !(edit.exists && edit.isHittable) { app.swipeUp() }
+        XCTAssertTrue(edit.waitForExistence(timeout: 5), app.debugDescription)
+        edit.tap()
+        let add = app.buttons["homeEditor.addSection"].firstMatch
+        XCTAssertTrue(add.waitForExistence(timeout: 5), app.debugDescription)
+        for _ in 0..<8 where !add.isHittable { app.swipeUp() }
+        add.tap()
+        let layout = app.buttons["homeNewSection.layout.row"].firstMatch
+        XCTAssertTrue(layout.waitForExistence(timeout: 5), app.debugDescription)
+        for _ in 0..<4 where !layout.isHittable { app.swipeUp() }
+        layout.tap()
+        for id in ["homeSection.source", "homePicker.bookSources", "homePicker.source.\(Self.sourceName)",
+                   "homePicker.item.熱門", "homeSection.add", "home.editDone"] {
+            let button = app.buttons[id].firstMatch
+            XCTAssertTrue(button.waitForExistence(timeout: 15), "\(id)\n\(app.debugDescription)")
+            button.tap()
+        }
+        let card = app.buttons.matching(NSPredicate(
+            format: "identifier BEGINSWITH 'home.card.bookSource.' AND label BEGINSWITH %@", title)).firstMatch
+        for _ in 0..<12 where !(card.exists && card.isHittable) { app.swipeUp() }
+        XCTAssertTrue(card.waitForExistence(timeout: 20), app.debugDescription)
+        // The whole card above the tab bar: XCUITest counts a card under it as hittable.
+        let tabBar = app.tabBars.firstMatch
+        for _ in 0..<3 where tabBar.exists && card.frame.maxY > tabBar.frame.minY { app.swipeUp(velocity: .slow) }
+        card.tap()
     }
 
     /// From the source's discover page: the run's book, then 立即閱讀 on its page.

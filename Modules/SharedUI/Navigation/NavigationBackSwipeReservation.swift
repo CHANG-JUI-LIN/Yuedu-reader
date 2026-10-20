@@ -4,8 +4,18 @@ import UIKit
 extension View {
     /// Reserves the leading edge for native back navigation, including pages
     /// with hidden navigation chrome. Interior pans and taps remain available.
+    ///
+    /// An overlay, never a background. With a UIKit view in a background of the page, SwiftUI
+    /// reorders the page's accessibility elements by position: a full-screen UIKit view (the
+    /// reader's page) lands between a bar at the top and one at the bottom. VoiceOver's touch
+    /// takes the first element in that order under the finger, so the page took every touch on
+    /// the reader's bottom bar — 目錄, 書籤, 深色, 設置 and the progress slider read the chapter
+    /// instead, on every reader pushed from a detail page, while 書架's reader, which has no
+    /// reservation, worked (feedback #15; the maintainer's recording, 2026-10-20). As an overlay
+    /// the order is the one 書架 has, the page last; `accessibilityHidden` on the reservation
+    /// does not restore it.
     func reservingNavigationBackSwipe() -> some View {
-        background(NavigationBackSwipeReservation().frame(width: 0, height: 0))
+        overlay(NavigationBackSwipeReservation().frame(width: 0, height: 0))
     }
 }
 

@@ -7,9 +7,8 @@ import UIKit
 /// own `viewDidAppear`, and a page also appears when nobody turned anything: a chapter arriving, a
 /// relayout or the placeholder giving way to its page re-place the page the reader is already on.
 /// With the reading menu open, that pulled VoiceOver off the menu the user had just opened and back
-/// onto the page — the top bar, next to the page in swipe order, could still be reached, while the
-/// bottom bar (目錄、書籤、深色、設置、閱讀進度) never could (feedback #15, opened with 立即閱讀,
-/// where the book's chapters are still arriving).
+/// onto the page. (Feedback #15's unreachable bottom bar, first put down to this, had another
+/// cause: see `reservingNavigationBackSwipe`.)
 ///
 /// One instance per paged reader, owned by `CoreTextPageEngineView`'s coordinator, which hands it
 /// to every page through its VoiceOver funnel; the pages report here instead of posting.

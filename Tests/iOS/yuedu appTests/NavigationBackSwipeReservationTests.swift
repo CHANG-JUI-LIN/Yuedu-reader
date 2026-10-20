@@ -1,6 +1,29 @@
+import SwiftUI
 import Testing
 import UIKit
 @testable import yuedu_app
+
+/// The reader's shape: a full-screen UIKit page under SwiftUI bars at the top and the bottom.
+private struct PageUnderBars: View {
+    let page: UIView
+
+    var body: some View {
+        ZStack {
+            HostedPage(page: page).ignoresSafeArea()
+            VStack {
+                Button("退出閱讀") {}
+                Spacer()
+                Button("設定") {}
+            }
+        }
+    }
+}
+
+private struct HostedPage: UIViewRepresentable {
+    let page: UIView
+    func makeUIView(context: Context) -> UIView { page }
+    func updateUIView(_ uiView: UIView, context: Context) {}
+}
 
 @MainActor
 private final class OriginalBackDelegate: NSObject, UIGestureRecognizerDelegate {
@@ -111,6 +134,64 @@ struct NavigationBackSwipeReservationTests {
         b.detach()
         #expect(gesture.delegate === original)
         if let alternatePop { #expect(alternatePop.isEnabled) }
+    }
+
+    /// Feedback #15: with the reservation in a background, VoiceOver's touch on a detail-pushed
+    /// reader's bottom bar landed on the page (see `reservingNavigationBackSwipe`). XCUITest does
+    /// not see this — its tree has its own order, and it called the bar hittable throughout — so
+    /// this reads the hosting view's own accessibility elements.
+    @Test("a reserved page leaves its bottom bar to VoiceOver's touch")
+    func reservationKeepsBottomBarTouchable() async throws {
+        let page = UIView()
+        page.isAccessibilityElement = true
+        page.accessibilityLabel = "正文"
+        // SwiftUI builds no accessibility elements until something reads them — VoiceOver, or
+        // XCUITest's automation. Turned on here as XCUITest does it, and back off after.
+        let accessibility = try #require(dlopen("/usr/lib/libAccessibility.dylib", RTLD_NOW))
+        typealias GetFlag = @convention(c) () -> Bool
+        typealias SetFlag = @convention(c) (Bool) -> Void
+        let automationEnabled = unsafeBitCast(try #require(dlsym(accessibility, "_AXSAutomationEnabled")), to: GetFlag.self)
+        let setAutomationEnabled = unsafeBitCast(try #require(dlsym(accessibility, "_AXSSetAutomationEnabled")), to: SetFlag.self)
+        let wasEnabled = automationEnabled()
+        setAutomationEnabled(true)
+        defer { setAutomationEnabled(wasEnabled) }
+
+        let root = UIHostingController(rootView: NavigationStack(path: .constant([1])) {
+            Color.clear.navigationDestination(for: Int.self) { _ in
+                PageUnderBars(page: page).reservingNavigationBackSwipe()
+            }
+        })
+        let scene = try #require(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first)
+        let window = UIWindow(windowScene: scene)
+        window.rootViewController = root
+        window.makeKeyAndVisible()
+        defer { window.isHidden = true; window.rootViewController = nil }
+
+        // The accessibility elements of the view hosting the page: the page (or the UIKit view
+        // holding it) and the bars' SwiftUI elements. VoiceOver's touch takes the first of them
+        // under the finger (seen in the app with lldb), so 設定 has to come before the page.
+        func hostedElements() -> [NSObject]? {
+            var view = page.superview
+            while let host = view {
+                if let elements = host.accessibilityElements as? [NSObject],
+                   elements.contains(where: { ($0 as? UIView).map(page.isDescendant(of:)) ?? false }),
+                   elements.contains(where: { $0.accessibilityLabel == "設定" }) {
+                    return elements
+                }
+                view = host.superview
+            }
+            return nil
+        }
+        let deadline = ContinuousClock.now + .seconds(5)
+        var found = hostedElements()
+        while found == nil, ContinuousClock.now < deadline {
+            try await Task.sleep(for: .milliseconds(20))
+            found = hostedElements()
+        }
+        let elements = try #require(found, "the pushed page never reached the accessibility tree")
+        let pageIndex = try #require(elements.firstIndex { ($0 as? UIView).map(page.isDescendant(of:)) ?? false })
+        let settings = try #require(elements.first { $0.accessibilityLabel == "設定" })
+        #expect(elements.firstIndex(of: settings)! < pageIndex, "\(elements)")
     }
 
     @Test("root pages do not take over the system recognizer")
