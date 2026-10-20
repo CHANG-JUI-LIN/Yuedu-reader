@@ -50,7 +50,7 @@ struct LiveCalibreIntegrationTests {
         let builder = EPUBAttributedStringBuilder(session: publication, renderSize: CGSize(width: 320, height: 480))
         let chapter = try await builder.buildChapter(at: 0, settings: EPUBTestFixtures.renderSettings(),
             themeTextColor: .black, themeBackgroundColor: .white)
-        let layout = await CoreTextPaginator().paginate(spineIndex: 0, attrStr: chapter.attributedString,
+        let layout = await CoreTextPaginator().paginate(spineIndex: 0, attrStr: LayoutShared(chapter.attributedString).wrappedValue,
             renderSize: CGSize(width: 320, height: 480), fontSize: 17, contentInsets: .zero, writingMode: .horizontal)
         #expect(!layout.pageRanges.isEmpty)
         let bookmark = Bookmark(chapterIndex: 0, chapterTitle: "Calibre", position: CoreTextReadingPosition(spineIndex: 0, charOffset: 4),

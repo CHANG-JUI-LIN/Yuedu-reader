@@ -457,7 +457,9 @@ struct OnlineReaderPipelineUnificationTests {
         )
 
         await #expect(throws: AttributedStringBuildingError.contentNotCached(0)) {
-            try await builder.buildChapter(
+            // Discard the chapter: the macro sends its closure's result, and a built chapter
+            // belongs to the main actor.
+            _ = try await builder.buildChapter(
                 at: 0,
                 settings: Self.settings,
                 themeTextColor: UIColor.label,
@@ -764,7 +766,7 @@ struct OnlineReaderPipelineUnificationTests {
         // Stage 3 — the attachment the tap handler hit-tests still carries the link.
         let layout = await CoreTextPaginator().paginate(
             spineIndex: 0,
-            attrStr: attributed,
+            attrStr: LayoutShared(attributed).wrappedValue,
             renderSize: renderSize,
             fontSize: Self.settings.fontSize,
             paragraphSpacing: Self.settings.paragraphSpacing,

@@ -185,7 +185,7 @@ private actor TurnSmoothnessFixtureBuilder: AttributedStringBuilding {
     private let text = String(repeating: "風穿過山林，江水映著月光，行人仍沿著古道前進。\n", count: 600)
     nonisolated func chapterTitle(at index: Int) -> String { "Fixture" }
     func chapterDataSize(at index: Int) -> Int { text.utf8.count }
-    func buildChapter(at index: Int, settings: ReaderRenderSettings,
+    nonisolated func buildChapter(at index: Int, settings: ReaderRenderSettings,
                       themeTextColor: UIColor, themeBackgroundColor: UIColor) async throws -> AttributedChapterBuildResult {
         AttributedChapterBuildResult(attributedString: NSAttributedString(string: text, attributes: [
             .font: UIFont.systemFont(ofSize: settings.fontSize),

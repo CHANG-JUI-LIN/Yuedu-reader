@@ -12,6 +12,7 @@ import Testing
 /// only ever reads the paged engine. An unmeasured chapter has to be laid out and then
 /// started, not abandoned.
 @Suite("TTS chapter start plan")
+@MainActor
 struct TTSChapterStartPlanTests {
 
     private func plan(

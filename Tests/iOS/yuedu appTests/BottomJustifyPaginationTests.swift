@@ -181,7 +181,7 @@ struct BottomJustifyPaginationTests {
         )
         let layout = await CoreTextPaginator().paginate(
             spineIndex: 0,
-            attrStr: attributed,
+            attrStr: LayoutShared(attributed).wrappedValue,
             renderSize: Self.renderSize,
             fontSize: 18,
             bottomJustify: true,

@@ -88,7 +88,7 @@ enum EPUBTestFixtures {
 
     /// Renders raw HTML through the unified IR pipeline (buildStyledAST → RenderableNode →
     /// NodeAttributedStringRenderer), the same path production uses for every chapter.
-    @MainActor
+    @concurrent
     static func renderIR(
         html: String,
         config: HTMLAttributedStringBuilder.Config,
@@ -312,7 +312,9 @@ extension HTMLAttributedStringBuilder {
         let anchorOffsets: [String: Int]
     }
 
-    @MainActor
+    /// `@concurrent`, like the builder methods it chains: the builder and its config stay in
+    /// one isolation domain for the whole build instead of crossing from the main actor.
+    @concurrent
     func build(html: String, config: Config) async -> IRShimBuildResult {
         guard let ast = await buildStyledAST(html: html, config: config) else {
             return IRShimBuildResult(

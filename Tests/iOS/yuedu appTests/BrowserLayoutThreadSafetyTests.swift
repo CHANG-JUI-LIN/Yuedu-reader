@@ -28,19 +28,19 @@ struct BrowserLayoutThreadSafetyTests {
             built.append(([family], weight, n >= 4, CGFloat(15 + n)))
         }
         let keys = built
-        let seen = NSLock()
-        var fonts: [Int: Set<ObjectIdentifier>] = [:]
+        let seen = Locked<[Int: Set<ObjectIdentifier>]>([:])
         DispatchQueue.concurrentPerform(iterations: 64) { iteration in
             for offset in keys.indices {
                 let index = (iteration + offset) % keys.count
                 let (families, weight, italic, size) = keys[index]
                 guard let font = resolver.resolve(families: families, weight: weight, italic: italic, size: size) else { continue }
-                seen.withLock { _ = fonts[index, default: []].insert(ObjectIdentifier(font)) }
+                seen.withLock { _ = $0[index, default: []].insert(ObjectIdentifier(font)) }
             }
         }
         #expect(calls.value == keys.count, "each tuple resolves exactly once, whichever thread asks first")
         #expect(resolver.resolutionCount == keys.count)
         #expect(resolver.requestCount == 64 * keys.count)
+        let fonts = seen.withLock { $0 }
         #expect(fonts.count == keys.count)
         #expect(fonts.values.allSatisfy { $0.count == 1 }, "every thread gets the one resolved font")
     }

@@ -484,6 +484,7 @@ struct BookSourceLoginTests {
     }
 
     @Test("WebView 載入前可取得同域名登入 cookie")
+    @MainActor
     func browserInitialLoadUsesStoredCookies() throws {
         let url = try #require(URL(string: "https://v1.gyks.cf/user"))
         let cookie = try #require(HTTPCookie(properties: [

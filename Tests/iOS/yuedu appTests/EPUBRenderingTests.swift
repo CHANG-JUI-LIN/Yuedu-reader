@@ -614,7 +614,7 @@ struct EPUBRenderingTests {
 
         let layout = await CoreTextPaginator().paginate(
             spineIndex: 0,
-            attrStr: toc.attributedString,
+            attrStr: LayoutShared(toc.attributedString).wrappedValue,
             anchorOffsets: [:],
             renderSize: CGSize(width: 390, height: 844),
             fontSize: 17,

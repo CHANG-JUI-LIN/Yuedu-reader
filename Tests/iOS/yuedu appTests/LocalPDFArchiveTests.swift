@@ -9,6 +9,7 @@ import UIKit
 /// wrong assumption would break silently — a mis-flattened outline still produces a
 /// table of contents, it just points at the wrong pages.
 @Suite("Local PDF archive")
+@MainActor
 struct LocalPDFArchiveTests {
 
     // MARK: Fixtures

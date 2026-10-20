@@ -215,16 +215,17 @@ struct yuedu_appTests {
     }
 
     private final class StubPaginatedURLProtocol: URLProtocol {
-        static var htmlByURL: [String: String] = [:]
-        static var blockingURL: String?
-        static var beforeRespond: ((String) -> Void)?
-        static var blockSemaphore = DispatchSemaphore(value: 0)
+        struct Stub {
+            var htmlByURL: [String: String] = [:]
+            var blockingURL: String?
+            var blockSemaphore = DispatchSemaphore(value: 0)
+        }
+
+        /// Read by URLSession's loading thread, written by the test.
+        static let stub = Locked(Stub())
 
         static func reset() {
-            htmlByURL = [:]
-            blockingURL = nil
-            beforeRespond = nil
-            blockSemaphore = DispatchSemaphore(value: 0)
+            stub.withLock { $0 = Stub() }
         }
 
         override class func canInit(with request: URLRequest) -> Bool { true }
@@ -232,16 +233,19 @@ struct yuedu_appTests {
 
         override func startLoading() {
             guard let url = request.url?.absoluteString,
-                  let html = Self.htmlByURL[url],
                   let responseURL = request.url else {
                 client?.urlProtocolDidFinishLoading(self)
                 return
             }
-
-            Self.beforeRespond?(url)
-            if url == Self.blockingURL {
-                Self.blockSemaphore.wait()
+            let (html, blocking) = Self.stub.withLock { stub in
+                (stub.htmlByURL[url], url == stub.blockingURL ? stub.blockSemaphore : nil)
             }
+            guard let html else {
+                client?.urlProtocolDidFinishLoading(self)
+                return
+            }
+
+            blocking?.wait()
 
             let response = HTTPURLResponse(
                 url: responseURL,
@@ -931,13 +935,13 @@ struct yuedu_appTests {
 
     @Test func coreTextPaginatorCacheHandlesConcurrentPreloadRequests() async {
         let paginator = CoreTextPaginator()
-        let first = NSAttributedString(string: "第一章\n這是普通 EPUB reflow 測試內容。")
-        let second = NSAttributedString(string: "第二章\n這是另一個同時預載的章節。")
+        let first = LayoutShared(NSAttributedString(string: "第一章\n這是普通 EPUB reflow 測試內容。"))
+        let second = LayoutShared(NSAttributedString(string: "第二章\n這是另一個同時預載的章節。"))
 
         await withTaskGroup(of: Void.self) { group in
             for index in 0..<20 {
                 group.addTask {
-                    let attr = index.isMultiple(of: 2) ? first : second
+                    let attr = (index.isMultiple(of: 2) ? first : second).wrappedValue
                     _ = await paginator.paginate(
                         spineIndex: index % 2,
                         attrStr: attr,
@@ -1147,15 +1151,9 @@ struct yuedu_appTests {
 
     @Test func htmlBuilderDelegatesFontSelectionWithWeightAndItalic() async {
         let builder = HTMLAttributedStringBuilder()
-        var capturedFamilies: [String] = []
-        var capturedWeight = 0
-        var capturedItalic = false
-        var capturedSize: CGFloat = 0
+        let captured = Locked((families: [String](), weight: 0, italic: false, size: CGFloat(0)))
         builder.resolvedFont = { families, weight, italic, size in
-            capturedFamilies = families
-            capturedWeight = weight
-            capturedItalic = italic
-            capturedSize = size
+            captured.withLock { $0 = (families, weight, italic, size) }
             return UIFont(name: "Courier", size: size)
         }
         let config = HTMLAttributedStringBuilder.Config(
@@ -1174,10 +1172,11 @@ struct yuedu_appTests {
         """
         let result = await builder.build(html: html, config: config).attributedString
         let font = result.askedFont(at: 0)
-        #expect(capturedFamilies == ["kai"])
-        #expect(capturedWeight == 700)
-        #expect(capturedItalic == true)
-        #expect(capturedSize == 18)
+        let call = captured.withLock { $0 }
+        #expect(call.families == ["kai"])
+        #expect(call.weight == 700)
+        #expect(call.italic == true)
+        #expect(call.size == 18)
         #expect(font?.fontName.localizedCaseInsensitiveContains("courier") == true)
     }
 
@@ -2094,15 +2093,17 @@ struct yuedu_appTests {
         let firstText = String(repeating: "第一頁內容", count: 80)
         let secondText = String(repeating: "第二頁內容", count: 80)
 
-        StubPaginatedURLProtocol.htmlByURL = [
-            firstURL: """
-            <html><body><article><p>\(firstText)</p><a href="\(secondURL)">下一頁</a></article></body></html>
-            """,
-            secondURL: """
-            <html><body><article><p>\(secondText)</p></article></body></html>
-            """
-        ]
-        StubPaginatedURLProtocol.blockingURL = secondURL
+        StubPaginatedURLProtocol.stub.withLock {
+            $0.htmlByURL = [
+                firstURL: """
+                <html><body><article><p>\(firstText)</p><a href="\(secondURL)">下一頁</a></article></body></html>
+                """,
+                secondURL: """
+                <html><body><article><p>\(secondText)</p></article></body></html>
+                """
+            ]
+            $0.blockingURL = secondURL
+        }
 
         let config = URLSessionConfiguration.ephemeral
         config.protocolClasses = [StubPaginatedURLProtocol.self]
@@ -2110,28 +2111,30 @@ struct yuedu_appTests {
         let webFetcher = WebFetcher(session: session)
         let fetcher = BookSourceFetcher(webFetcher: webFetcher)
 
-        var firstPageContent: String?
+        // Written by the fetch task, read by the polling loop: shared across tasks, so locked.
+        let published = Locked<String?>(nil)
         let task = Task {
             try await fetcher.fetchWebContent(
                 url: firstURL,
                 referer: nil,
                 onFirstPageReady: { partial in
-                    firstPageContent = partial
+                    published.withLock { $0 = partial }
                 }
             )
         }
 
         for _ in 0..<100 {
-            if firstPageContent?.contains("第一頁內容") == true {
+            if published.withLock({ $0 })?.contains("第一頁內容") == true {
                 break
             }
             try? await Task.sleep(nanoseconds: 10_000_000)
         }
 
+        let firstPageContent = published.withLock { $0 }
         #expect(firstPageContent?.contains("第一頁內容") == true)
         #expect(firstPageContent?.contains("第二頁內容") != true)
 
-        StubPaginatedURLProtocol.blockSemaphore.signal()
+        StubPaginatedURLProtocol.stub.withLock { $0.blockSemaphore }.signal()
         let finalContent = try await task.value
         #expect(finalContent.contains("第一頁內容"))
         #expect(finalContent.contains("第二頁內容"))

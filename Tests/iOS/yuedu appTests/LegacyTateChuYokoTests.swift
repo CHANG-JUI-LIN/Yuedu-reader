@@ -10,6 +10,7 @@ import YueduCoreTextTypography
 /// delegate gives them one em of the column, and the page view and the scroll chunks
 /// draw them horizontally in that cell.
 @Suite("Legacy 縦中横", .serialized)
+@MainActor
 struct LegacyTateChuYokoTests {
     private static let fontSize: CGFloat = 18
 

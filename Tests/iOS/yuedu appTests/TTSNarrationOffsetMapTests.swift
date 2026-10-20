@@ -6,6 +6,7 @@ import Testing
 /// page for the spoken text — a search picks the wrong `「嗯。」` as soon as a chapter
 /// has two of them, which per-speaker segmentation makes routine.
 @Suite("TTS narration offset map")
+@MainActor
 struct TTSNarrationOffsetMapTests {
 
     private func map(for source: String) -> (TTSNarrationOffsetMap, String) {

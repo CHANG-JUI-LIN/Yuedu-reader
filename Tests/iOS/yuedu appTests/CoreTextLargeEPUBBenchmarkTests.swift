@@ -82,7 +82,7 @@ struct CoreTextLargeEPUBBenchmarkTests {
         let firstPageStart = ProcessInfo.processInfo.systemUptime
         let firstPage = await paginator.paginateFirstPage(
             spineIndex: chapter.index,
-            attrStr: result.attributedString,
+            attrStr: LayoutShared(result.attributedString).wrappedValue,
             imagePage: result.imagePage,
             pageBackgroundImage: result.pageBackgroundImage,
             pageBackgroundColor: result.pageBackgroundColor,
@@ -100,7 +100,7 @@ struct CoreTextLargeEPUBBenchmarkTests {
         let fullLayoutStart = ProcessInfo.processInfo.systemUptime
         let fullLayout = await paginator.paginate(
             spineIndex: chapter.index,
-            attrStr: result.attributedString,
+            attrStr: LayoutShared(result.attributedString).wrappedValue,
             imagePage: result.imagePage,
             pageBackgroundImage: result.pageBackgroundImage,
             pageBackgroundColor: result.pageBackgroundColor,
@@ -119,7 +119,7 @@ struct CoreTextLargeEPUBBenchmarkTests {
         let warmLayoutStart = ProcessInfo.processInfo.systemUptime
         let warmLayout = await paginator.paginate(
             spineIndex: chapter.index,
-            attrStr: result.attributedString,
+            attrStr: LayoutShared(result.attributedString).wrappedValue,
             imagePage: result.imagePage,
             pageBackgroundImage: result.pageBackgroundImage,
             pageBackgroundColor: result.pageBackgroundColor,

@@ -7,7 +7,7 @@ import UIKit
 @Suite(.serialized)
 @MainActor
 struct ReaderInteractionCorpusTests {
-    private static let corpus = "/Users/zhangruilin/Desktop/Test document/EPUB Format/"
+    private nonisolated static let corpus = "/Users/zhangruilin/Desktop/Test document/EPUB Format/"
 
     @Test(.enabled(if: FileManager.default.fileExists(atPath: corpus + "《全能游戏设计师1》作者：冷陌 & 青衫取醉.epub")))
     func gameDesignerBackgroundChaptersKeepTheirOwnPosition() async throws {
@@ -42,7 +42,7 @@ struct ReaderInteractionCorpusTests {
         let built = try await builder.buildChapter(at: 2, settings: settings, themeTextColor: .black, themeBackgroundColor: .white)
         let note = try #require(FootnoteStore.text(spineIndex: 2, href: "#d2"))
         #expect(note.contains("拖了大半年"))
-        let layout = await CoreTextPaginator().paginate(spineIndex: 2, attrStr: built.attributedString,
+        let layout = await CoreTextPaginator().paginate(spineIndex: 2, attrStr: LayoutShared(built.attributedString).wrappedValue,
             pageBackgroundImage: built.pageBackgroundImage, renderSize: size, fontSize: settings.fontSize)
         var found = false
         for page in layout.pageRanges.indices {

@@ -14,6 +14,7 @@ final class ModuleRepositoryUITests: XCTestCase {
         continueAfterFailure = false
     }
 
+    @MainActor
     private func attach(_ app: XCUIApplication, _ name: String) {
         let attachment = XCTAttachment(screenshot: app.screenshot())
         attachment.name = name
@@ -22,10 +23,12 @@ final class ModuleRepositoryUITests: XCTestCase {
     }
 
     /// An item of an open menu or the iOS 17 chooser, whose row also reads its subtitle.
+    @MainActor
     private func item(_ app: XCUIApplication, _ title: String) -> XCUIElement {
         app.buttons.matching(NSPredicate(format: "label == %@ OR label BEGINSWITH %@", title, title + ",")).firstMatch
     }
 
+    @MainActor
     private func scrolledTo(_ element: XCUIElement, in app: XCUIApplication) -> XCUIElement {
         var swipes = 0
         while !element.exists, swipes < 8 {

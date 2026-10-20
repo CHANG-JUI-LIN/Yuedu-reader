@@ -29,6 +29,7 @@ final class DiscoverDisplaySettingsUITests: XCTestCase {
         try? FileManager.default.removeItem(at: storeDirectory)
     }
 
+    @MainActor
     private func launch() -> XCUIApplication {
         let app = XCUIApplication()
         app.launchArguments = ["-no-official-modules", "-AppleLanguages", "(zh-Hant)", "-AppleLocale", "zh_TW",
@@ -41,6 +42,7 @@ final class DiscoverDisplaySettingsUITests: XCTestCase {
         return app
     }
 
+    @MainActor
     private func attach(_ app: XCUIApplication, _ name: String) {
         let attachment = XCTAttachment(screenshot: app.screenshot())
         attachment.name = name

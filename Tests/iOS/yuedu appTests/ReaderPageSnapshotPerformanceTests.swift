@@ -116,9 +116,10 @@ private actor SnapshotFixtureBuilder: AttributedStringBuilding {
     nonisolated func chapterTitle(at index: Int) -> String { "Fixture" }
     func chapterDataSize(at index: Int) -> Int { text.utf8.count }
     func replaceText(_ value: String) { text = value }
-    func buildChapter(at index: Int, settings: ReaderRenderSettings,
+    nonisolated func buildChapter(at index: Int, settings: ReaderRenderSettings,
                       themeTextColor: UIColor, themeBackgroundColor: UIColor) async throws -> AttributedChapterBuildResult {
-        AttributedChapterBuildResult(attributedString: NSAttributedString(string: text, attributes: [
+        let text = await text
+        return AttributedChapterBuildResult(attributedString: NSAttributedString(string: text, attributes: [
             .font: UIFont.systemFont(ofSize: settings.fontSize),
             .foregroundColor: themeTextColor, .backgroundColor: themeBackgroundColor
         ]), imagePage: nil, pageBackgroundImage: nil, anchorOffsets: [:])

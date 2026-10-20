@@ -223,7 +223,7 @@ struct BrowserLayoutABHarnessTests {
             let paginator = CoreTextPaginator()
             let layout = await paginator.paginate(
                 spineIndex: spine,
-                attrStr: result.attributedString,
+                attrStr: LayoutShared(result.attributedString).wrappedValue,
                 renderSize: renderSize,
                 fontSize: settings.fontSize,
                 paragraphSpacing: settings.paragraphSpacing,

@@ -6,11 +6,11 @@ import UIKit
 @Suite(.serialized)
 @MainActor
 struct BrowserViewportRegressionTests {
-    private static let html = "<body>" + (0..<100).map {
+    private nonisolated static let html = "<body>" + (0..<100).map {
         "<p id='p\($0)' style='margin:80px 0'>\($0) " + String(repeating: "中文 English <b>bold</b> text ", count: 12) + "</p>"
     }.joined() + "</body>"
 
-    private func document() -> HTMLLayoutDocument {
+    private nonisolated func document() -> HTMLLayoutDocument {
         HTMLLayoutDocument(html: Self.html, configuration: BrowserLayoutConfig(renderWidth: 320, renderHeight: 600))
     }
 

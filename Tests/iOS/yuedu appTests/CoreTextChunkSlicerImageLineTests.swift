@@ -13,9 +13,9 @@ import UIKit
 @Suite("Chunk slicer keeps image-only lines", .serialized)
 @MainActor
 struct CoreTextChunkSlicerImageLineTests {
-    static let directory = "/Users/zhangruilin/Desktop/Test document/EPUB Format"
-    static let glossary = directory + "/AI术语词典-第一册.epub"
-    static let theDeal = directory + "/The Deal (Off-Campus, Book 1) (Elle Kennedy) (z-library.sk, 1lib.sk, z-lib.sk).epub"
+    nonisolated static let directory = "/Users/zhangruilin/Desktop/Test document/EPUB Format"
+    nonisolated static let glossary = directory + "/AI术语词典-第一册.epub"
+    nonisolated static let theDeal = directory + "/The Deal (Off-Campus, Book 1) (Elle Kennedy) (z-library.sk, 1lib.sk, z-lib.sk).epub"
 
     static let screen = CGSize(width: 390, height: 800)
 

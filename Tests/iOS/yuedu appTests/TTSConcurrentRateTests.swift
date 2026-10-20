@@ -91,7 +91,7 @@ struct TTSConcurrentRateTests {
         let key = "tts-rate-probe-\(rate)-\(UUID().uuidString)"
         let started = Date()
         for _ in 0..<requests {
-            await SourceRateLimit.run(rate: rate, key: key) {}
+            await SourceRateLimit.run(rate: rate, key: key) { @Sendable in }
         }
         return Date().timeIntervalSince(started)
     }

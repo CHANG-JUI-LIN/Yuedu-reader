@@ -11,14 +11,14 @@ struct RemoteLibraryHTTPTests {
     @Test func feedRequestCountAndErrors() async throws {
         let http = fixtureClient()
         let client = OPDSClient(httpClient: http)
-        var requests = 0
+        let requests = Locked(0)
         LibraryHTTPProtocol.handler = { _ in
-            requests += 1
+            requests.withLock { $0 += 1 }
             return (200, [:], Data("<feed xmlns=\"http://www.w3.org/2005/Atom\"><link rel=\"next\" href=\"?page=2\"/></feed>".utf8))
         }
         let feed = try await client.fetchFeed(base)
         #expect(feed.nextPageURL != nil)
-        #expect(requests == 1)
+        #expect(requests.withLock { $0 } == 1)
         LibraryHTTPProtocol.handler = { _ in (503, [:], Data()) }
         await #expect(throws: OPDSError.self) { try await client.fetchFeed(base) }
         LibraryHTTPProtocol.handler = { _ in throw URLError(.cannotFindHost) }
@@ -242,7 +242,15 @@ struct RemoteLibraryHTTPTests {
 }
 
 private final class LibraryHTTPProtocol: Foundation.URLProtocol {
-    static var handler: ((URLRequest) throws -> (Int, [String: String], Data))?
+    typealias Handler = @Sendable (URLRequest) throws -> (Int, [String: String], Data)
+
+    /// Set by the test, called on URLSession's loading thread.
+    private static let currentHandler = Locked<Handler?>(nil)
+
+    static var handler: Handler? {
+        get { currentHandler.withLock { $0 } }
+        set { currentHandler.withLock { $0 = newValue } }
+    }
     override class func canInit(with request: URLRequest) -> Bool { true }
     override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
     override func startLoading() {

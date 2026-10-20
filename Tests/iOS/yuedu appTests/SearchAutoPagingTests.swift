@@ -112,7 +112,7 @@ struct SearchAutoPagingTests {
 
     /// Returns once the search has ended.
     private func finished(_ aggregator: SearchAggregator) async {
-        _ = await aggregator.$isSearching.values.first { !$0 }
+        for await isSearching in aggregator.$isSearching.values where !isSearching { break }
     }
 }
 

@@ -528,7 +528,7 @@ final class FootprintSampler: @unchecked Sendable {
 /// Every probe fails at the transport, so a source costs one call and the run
 /// exercises bookkeeping and UI rather than the network.
 actor FatalTransportFetcher: BookSourceHealthCheckFetching {
-    func search(
+    nonisolated func search(
         query: String,
         in source: BookSource,
         page: Int,
@@ -575,7 +575,7 @@ actor PassingSourceFetcher: BookSourceHealthCheckFetching {
     private static let intro = String(repeating: "這是一段書籍簡介，描述主角的成長與冒險。", count: 15)
     private static let chapter = String(repeating: "他推開門，看見窗外的雨一直下著，街燈把水窪照得發亮。\n", count: 60)
 
-    func search(
+    nonisolated func search(
         query: String,
         in source: BookSource,
         page: Int,
@@ -618,7 +618,7 @@ actor PassingSourceFetcher: BookSourceHealthCheckFetching {
         chapterReferer: String?
     ) async throws -> String { Self.chapter }
 
-    private func book(url: String, toc: String, source: BookSource) -> OnlineBook {
+    private nonisolated func book(url: String, toc: String, source: BookSource) -> OnlineBook {
         OnlineBook(
             // Unique per book, like a real synopsis — a shared literal would cost nothing to keep.
             name: "驗證用書 \(source.bookSourceName)", author: "作者名",

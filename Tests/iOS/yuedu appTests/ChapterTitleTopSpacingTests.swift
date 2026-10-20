@@ -47,7 +47,7 @@ struct ChapterTitleTopSpacingTests {
     private static func titleTop(in attributed: NSAttributedString) async throws -> CGFloat {
         let layout = await CoreTextPaginator().paginate(
             spineIndex: 0,
-            attrStr: attributed,
+            attrStr: LayoutShared(attributed).wrappedValue,
             renderSize: renderSize,
             fontSize: 18,
             contentInsets: insets

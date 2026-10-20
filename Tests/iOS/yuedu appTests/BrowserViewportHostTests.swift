@@ -460,7 +460,8 @@ struct BrowserViewportHostTests {
         engine.usesViewportScrolling = true
         let size = CGSize(width: 320, height: 600)
         await engine.start(renderSize: size, bookId: "stale")
-        let old = Task { try await engine.makeScrollChapter(at: 0, settings: settings, contentSize: size) }
+        // Only whether it returns is checked; the chapter itself is not Sendable.
+        let old = Task { try await engine.makeScrollChapter(at: 0, settings: settings, contentSize: size) != nil }
         await resource.waitUntilSuspended()
         engine.cancelPendingWork()
         let replacement = try #require(await engine.makeScrollChapter(at: 0, settings: settings, contentSize: size))

@@ -255,7 +255,7 @@ private actor TOCForwardingFetcher: BookSourceHealthCheckFetching {
         self.tocURL = tocURL
     }
 
-    func search(
+    nonisolated func search(
         query: String,
         in source: BookSource,
         page: Int,
@@ -292,7 +292,9 @@ private actor TOCForwardingFetcher: BookSourceHealthCheckFetching {
         return []
     }
 
-    func fetchTOCPackage(
+    /// `@concurrent`, like the fetcher it forwards to: the non-Sendable callback then stays
+    /// in one isolation domain instead of crossing from the caller's.
+    @concurrent nonisolated func fetchTOCPackage(
         tocUrl: String,
         source: BookSource,
         runtimeVariables: [String: String]?,
@@ -334,7 +336,7 @@ private actor DetailForwardingFetcher: BookSourceHealthCheckFetching {
         self.bookURL = bookURL
     }
 
-    func search(
+    nonisolated func search(
         query: String,
         in source: BookSource,
         page: Int,
@@ -409,7 +411,7 @@ private actor EndOfRunFetcher: BookSourceHealthCheckFetching {
         self.brokenURL = brokenURL
     }
 
-    func search(
+    nonisolated func search(
         query: String,
         in source: BookSource,
         page: Int,

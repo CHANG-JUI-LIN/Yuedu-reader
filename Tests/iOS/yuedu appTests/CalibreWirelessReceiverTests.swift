@@ -232,8 +232,8 @@ struct CalibreWirelessReceiverTests {
         #expect(accepted.opcode == 0)
         try await desktop.sendData(Data("incomplete".utf8))
         await desktop.cancel()
-        _ = await service.$state.values.first { state in
-            if case .failed = state { true } else { false }
+        for await state in service.$state.values {
+            if case .failed = state { break }
         }
         #expect(store.books.isEmpty)
         #expect(try CalibreDeviceRegistry.load(from: registryURL).books.isEmpty)

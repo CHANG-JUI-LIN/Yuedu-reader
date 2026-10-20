@@ -9,7 +9,7 @@ import UIKit
 @Suite("Feedback through the Gateway", .serialized)
 @MainActor
 struct FeedbackGatewayTests {
-    private static let inbox = String(repeating: "A", count: 42) + "b"
+    private nonisolated static let inbox = String(repeating: "A", count: 42) + "b"
 
     private func service() -> FeedbackService {
         let configuration = URLSessionConfiguration.ephemeral
@@ -103,8 +103,12 @@ struct FeedbackGatewayTests {
     @Test("a first load that fails ends the stream with the error")
     func firstLoadFailure() async {
         FeedbackGatewayStub.reset { _ in (503, ["error": ["code": "upstream-unavailable", "message": "down"]]) }
-        var iterator = service().threadUpdates().makeAsyncIterator()
-        await #expect(throws: GatewayAPIError.self) { _ = try await iterator.next() }
+        let updates = service().threadUpdates()
+        await #expect(throws: GatewayAPIError.self) {
+            // Made inside: the macro sends its closure, so it cannot mutate an outer iterator.
+            var iterator = updates.makeAsyncIterator()
+            _ = try await iterator.next()
+        }
     }
 
     @Test("an attachment is fetched by thread and file name, not by its storage path")

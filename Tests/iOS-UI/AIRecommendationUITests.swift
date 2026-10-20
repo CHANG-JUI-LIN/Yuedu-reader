@@ -32,6 +32,7 @@ final class AIRecommendationUITests: XCTestCase {
         try FileManager.default.removeItem(at: folder)
     }
 
+    @MainActor
     private func attach(_ app: XCUIApplication, _ name: String) {
         let attachment = XCTAttachment(screenshot: app.screenshot())
         attachment.name = name
@@ -39,6 +40,7 @@ final class AIRecommendationUITests: XCTestCase {
         add(attachment)
     }
 
+    @MainActor
     private func scrolledTo(_ element: XCUIElement, in app: XCUIApplication) -> XCUIElement {
         var swipes = 0
         while !element.exists, swipes < 10 {
@@ -49,6 +51,7 @@ final class AIRecommendationUITests: XCTestCase {
     }
 
     /// An AI pick's card on the home, by the title the fixture gave.
+    @MainActor
     private func card(_ app: XCUIApplication, _ title: String) -> XCUIElement {
         app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH 'home.card.bibliographic.' AND label == %@", title)).firstMatch
     }

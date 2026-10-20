@@ -324,7 +324,10 @@ struct ForYouProviderTests {
         await model.sync(with: HomePage(sections: sections))
         let id = try #require(model.rows.first?.id)
         func loaded() async {
-            _ = await model.$rows.values.first { $0.first.map { if case .loaded = $0.state { true } else { false } } ?? false }
+            for await rows in model.$rows.values
+            where rows.first.map({ if case .loaded = $0.state { true } else { false } }) ?? false {
+                break
+            }
         }
         model.load(id)
         await loaded()

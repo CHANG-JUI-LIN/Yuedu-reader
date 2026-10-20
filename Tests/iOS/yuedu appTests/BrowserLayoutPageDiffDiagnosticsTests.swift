@@ -58,7 +58,7 @@ struct BrowserLayoutPageDiffDiagnosticsTests {
             let legacyResult = try await builder.buildChapter(at: spine, settings: settings, themeTextColor: .black, themeBackgroundColor: .white)
             let paginator = CoreTextPaginator()
             let legacyLayout = await paginator.paginate(
-                spineIndex: spine, attrStr: legacyResult.attributedString,
+                spineIndex: spine, attrStr: LayoutShared(legacyResult.attributedString).wrappedValue,
                 renderSize: renderSize, fontSize: settings.fontSize,
                 paragraphSpacing: settings.paragraphSpacing,
                 letterSpacing: settings.letterSpacing, contentInsets: settings.contentInsets

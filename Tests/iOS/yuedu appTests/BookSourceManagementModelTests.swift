@@ -222,7 +222,11 @@ actor ScriptedHealthFetcher: BookSourceHealthCheckFetching {
         fetchFailures = urls
     }
 
-    func search(
+    private func fetchFails(_ url: String) -> Bool {
+        fetchFailures.contains(url)
+    }
+
+    nonisolated func search(
         query: String,
         in source: BookSource,
         page: Int,
@@ -230,7 +234,7 @@ actor ScriptedHealthFetcher: BookSourceHealthCheckFetching {
         onHasMore: ((Bool?) -> Void)?,
         failureMode: BookSourceSearchFailureMode
     ) async throws -> [OnlineBook] {
-        if fetchFailures.contains(source.bookSourceUrl) { throw URLError(.timedOut) }
+        if await fetchFails(source.bookSourceUrl) { throw URLError(.timedOut) }
         return [book(url: source.bookSourceUrl + "/book", toc: "", source: source)]
     }
 
@@ -268,7 +272,7 @@ actor ScriptedHealthFetcher: BookSourceHealthCheckFetching {
         contentFailures.contains(source.bookSourceUrl) ? "" : "第一章的正文內容，足夠通過驗證。"
     }
 
-    private func book(url: String, toc: String, source: BookSource) -> OnlineBook {
+    private nonisolated func book(url: String, toc: String, source: BookSource) -> OnlineBook {
         OnlineBook(
             name: "驗證用書", author: "作者", intro: "", coverUrl: "", bookUrl: url, tocUrl: toc,
             wordCount: "", lastChapter: "", kind: "", sourceId: source.id,

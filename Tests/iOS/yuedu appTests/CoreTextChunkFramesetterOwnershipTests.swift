@@ -93,7 +93,7 @@ struct CoreTextChunkFramesetterOwnershipTests {
                 #expect(try Self.lineGeometry(chunk) == sliced, "main materialize, offset \(chunk.charRange.location)")
                 #expect(Self.render(chunk) == slicedPixels, "main materialize, offset \(chunk.charRange.location)")
             }
-            let owned = try #require(await warmer.framesetterIdentity(for: text))
+            let owned = try #require(await warmer.framesetterIdentity(for: LayoutShared(text).wrappedValue))
             #expect(owned != ObjectIdentifier(try #require(chunks.first).framesetter))
         }
     }

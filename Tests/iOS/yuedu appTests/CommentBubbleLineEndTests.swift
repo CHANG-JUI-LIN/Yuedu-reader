@@ -66,7 +66,7 @@ struct CommentBubbleLineEndTests {
         let built = try await build(html: html)
         return await CoreTextPaginator().paginate(
             spineIndex: 0,
-            attrStr: built.attributedString,
+            attrStr: LayoutShared(built.attributedString).wrappedValue,
             renderSize: page,
             fontSize: 20,
             contentInsets: insets

@@ -1248,6 +1248,7 @@ struct CoreTextScrollTests {
         }
     }
 
+    @MainActor
     private static func firstCollectionView(in view: UIView) -> UICollectionView? {
         if let collectionView = view as? UICollectionView {
             return collectionView

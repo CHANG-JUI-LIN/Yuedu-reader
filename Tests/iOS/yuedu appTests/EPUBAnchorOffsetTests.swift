@@ -11,7 +11,7 @@ import UIKit
 @MainActor
 struct EPUBAnchorOffsetTests {
 
-    private func config() -> HTMLAttributedStringBuilder.Config {
+    private nonisolated func config() -> HTMLAttributedStringBuilder.Config {
         HTMLAttributedStringBuilder.Config(
             fontSize: 18,
             lineHeightMultiple: 1.4,

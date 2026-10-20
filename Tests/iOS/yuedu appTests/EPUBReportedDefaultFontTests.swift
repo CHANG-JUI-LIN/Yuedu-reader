@@ -9,7 +9,7 @@ import UIKit
 @Suite("Reported EPUB default glyph identity", .serialized)
 @MainActor
 struct EPUBReportedDefaultFontTests {
-    private static let path = "/Users/zhangruilin/Desktop/Test document/EPUB Format/《诡秘之主4》作者：爱潜水的乌贼.epub"
+    private nonisolated static let path = "/Users/zhangruilin/Desktop/Test document/EPUB Format/《诡秘之主4》作者：爱潜水的乌贼.epub"
 
     @Test(.enabled(if: FileManager.default.fileExists(atPath: path)))
     func reportedParagraphUsesItsEmbeddedGlyphs() async throws {

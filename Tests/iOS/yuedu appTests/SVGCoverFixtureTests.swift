@@ -158,7 +158,7 @@ struct SVGCoverFixtureTests {
         }
         print("SPINE0 steps=\(steps)")
         // Now the full session path (the one the engine uses).
-        let hasFirstPage = try await Self.timeout(nanos: 8_000_000_000) {
+        let hasFirstPage = try await Self.timeout(nanos: 8_000_000_000) { @MainActor in
             try await s.layoutNextPage() != nil
         }
         print("SPINE0-SESSION firstPage=\(hasFirstPage) pages=\(s.completedPages.count)")
@@ -184,12 +184,12 @@ struct SVGCoverFixtureTests {
             html: html, cssTexts: [], config: config, imageLoader: { _ in nil }, generation: 1
         )
         // First page must complete within 3s (task-race timeout).
-        let hasFirstPage = try await Self.timeout(nanos: 3_000_000_000) {
+        let hasFirstPage = try await Self.timeout(nanos: 3_000_000_000) { @MainActor in
             try await session.layoutNextPage() != nil
         }
         #expect(hasFirstPage)
         // Finish must complete within 3s too.
-        _ = try await Self.timeout(nanos: 3_000_000_000) {
+        _ = try await Self.timeout(nanos: 3_000_000_000) { @MainActor in
             try await session.finish()
             return true
         }

@@ -112,16 +112,24 @@ struct EPUBChapterFontSnapshotTests {
         let settings = EPUBTestFixtures.renderSettings()
         for _ in 0..<3 {
             let builder = EPUBAttributedStringBuilder(session: session, renderSize: CGSize(width: 320, height: 480))
-            async let long = builder.buildChapter(
-                at: 0, settings: settings, themeTextColor: .black, themeBackgroundColor: .white)
+            // Its own main-actor task, so the long build interleaves with the others'. It hands
+            // back only what is checked: the chapter itself is not Sendable.
+            let long = Task { @MainActor in
+                let chapter = try await builder.buildChapter(
+                    at: 0, settings: settings, themeTextColor: .black, themeBackgroundColor: .white
+                ).attributedString
+                return (length: chapter.length, faces: Self.postScriptNames(in: chapter))
+            }
             var others: [NSAttributedString] = []
             for index in 1...otherChapters {
                 others.append(try await builder.buildChapter(
                     at: index, settings: settings, themeTextColor: .black, themeBackgroundColor: .white
                 ).attributedString)
             }
-            let longChapter = try await long.attributedString
-            for chapter in [longChapter] + others {
+            let longChapter = try await long.value
+            #expect(longChapter.length > 0)
+            #expect(longChapter.faces == ["Ahem"])
+            for chapter in others {
                 #expect(chapter.length > 0)
                 #expect(Self.postScriptNames(in: chapter) == ["Ahem"])
             }

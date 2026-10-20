@@ -391,21 +391,9 @@ private actor ControllableChapterBuilder: AttributedStringBuilding {
         buildingWaiters.removeValue(forKey: chapter)?.forEach { $0.resume() }
     }
 
-    // MARK: AttributedStringBuilding
-
-    nonisolated func chapterTitle(at index: Int) -> String { "Chapter \(index)" }
-    nonisolated func chapterSourceHref(at index: Int) -> String? { "Text/chapter\(index).xhtml" }
-    nonisolated func chapterIndex(for href: String) -> Int? {
-        (0..<chapterCount).first { chapterSourceHref(at: $0) == href }
-    }
-    func chapterDataSize(at index: Int) async -> Int { Self.chapterText.utf8.count }
-
-    func buildChapter(
-        at index: Int,
-        settings: ReaderRenderSettings,
-        themeTextColor: UIColor,
-        themeBackgroundColor: UIColor
-    ) async throws -> AttributedChapterBuildResult {
+    /// The isolated half of a build — bookkeeping, the gate, the scripted failure. Returns the
+    /// body; `buildChapter` makes the attributed result outside, so it never leaves the actor.
+    private func prepareBuild(_ index: Int) async throws -> String {
         buildCounts[index, default: 0] += 1
         markBuilding(index)
 
@@ -418,9 +406,27 @@ private actor ControllableChapterBuilder: AttributedStringBuilding {
             throw AttributedStringBuildingError.contentNotCached(index)
         }
         if Task.isCancelled { cancellationCounts[index, default: 0] += 1 }
+        return replacementBodies[index] ?? Self.chapterText
+    }
 
+    // MARK: AttributedStringBuilding
+
+    nonisolated func chapterTitle(at index: Int) -> String { "Chapter \(index)" }
+    nonisolated func chapterSourceHref(at index: Int) -> String? { "Text/chapter\(index).xhtml" }
+    nonisolated func chapterIndex(for href: String) -> Int? {
+        (0..<chapterCount).first { chapterSourceHref(at: $0) == href }
+    }
+    func chapterDataSize(at index: Int) async -> Int { Self.chapterText.utf8.count }
+
+    nonisolated func buildChapter(
+        at index: Int,
+        settings: ReaderRenderSettings,
+        themeTextColor: UIColor,
+        themeBackgroundColor: UIColor
+    ) async throws -> AttributedChapterBuildResult {
+        let body = try await prepareBuild(index)
         let attributed = NSAttributedString(
-            string: replacementBodies[index] ?? Self.chapterText,
+            string: body,
             attributes: [
                 .font: UIFont.systemFont(ofSize: settings.fontSize),
                 .foregroundColor: themeTextColor,

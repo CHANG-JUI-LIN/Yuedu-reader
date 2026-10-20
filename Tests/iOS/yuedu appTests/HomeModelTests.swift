@@ -79,7 +79,7 @@ private func rows(_ model: HomeModel) -> [HomeModel.Row] {
 
 @MainActor
 private func until(_ model: HomeModel, _ condition: @escaping ([HomeModel.Row]) -> Bool) async {
-    _ = await model.$rows.values.first { rows in condition(rows) }
+    for await rows in model.$rows.values where condition(rows) { break }
 }
 
 private func isLoaded(_ state: HomeModel.RowState) -> Bool {

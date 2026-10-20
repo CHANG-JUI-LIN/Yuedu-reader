@@ -125,7 +125,7 @@ struct OnlineInlineVideoTests {
 
         // The paginator hands the embed to the page as part of the drawn card's attachment.
         let layout = await CoreTextPaginator().paginate(
-            spineIndex: 0, attrStr: built, renderSize: CGSize(width: 400, height: 800),
+            spineIndex: 0, attrStr: LayoutShared(built).wrappedValue, renderSize: CGSize(width: 400, height: 800),
             fontSize: 18, contentInsets: UIEdgeInsets(top: 40, left: 20, bottom: 40, right: 20)
         )
         let attachments = layout.inlineAttachments.values.flatMap { $0 } + layout.blockAttachments.values.flatMap { $0 }

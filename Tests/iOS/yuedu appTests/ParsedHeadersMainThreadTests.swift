@@ -29,7 +29,7 @@ struct ParsedHeadersMainThreadTests {
 
         ParkedSourceProtocol.body = "<p>page</p>"
         let fetcher = BookSourceFetcher(webFetcher: WebFetcher(session: ParkedSourceProtocol.session()))
-        let stage = Task.detached {
+        let stage = Task.detached { [source] in
             try await fetcher.fetchStageHTML(
                 url: URL(string: source.bookSourceUrl + "/search")!,
                 method: "GET", body: nil, headers: [:],

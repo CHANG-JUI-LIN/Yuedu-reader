@@ -119,7 +119,7 @@ struct CoreTextRubyRedrawTests {
         // A new paginator per call, so the layout's frames have never been drawn.
         await CoreTextPaginator().paginate(
             spineIndex: 0,
-            attrStr: text,
+            attrStr: LayoutShared(text).wrappedValue,
             renderSize: renderSize,
             fontSize: 18,
             contentInsets: UIEdgeInsets(top: 24, left: 20, bottom: 24, right: 20),

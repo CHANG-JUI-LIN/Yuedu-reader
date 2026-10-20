@@ -252,14 +252,15 @@ struct AudiobookChapterSmokeTests {
             log("   body=\(request.httpBody.flatMap { String(data: $0, encoding: .utf8) }?.prefix(400) ?? "nil")")
 
             let sem = DispatchSemaphore(value: 0)
-            var responseBody = ""
-            var statusCode = -1
+            let reply = Locked((statusCode: -1, body: ""))
             URLSession.shared.dataTask(with: request) { data, response, error in
-                statusCode = (response as? HTTPURLResponse)?.statusCode ?? -1
-                responseBody = data.flatMap { String(data: $0, encoding: .utf8) } ?? "(error: \(error?.localizedDescription ?? "nil"))"
+                let statusCode = (response as? HTTPURLResponse)?.statusCode ?? -1
+                let body = data.flatMap { String(data: $0, encoding: .utf8) } ?? "(error: \(error?.localizedDescription ?? "nil"))"
+                reply.withLock { $0 = (statusCode, body) }
                 sem.signal()
             }.resume()
             _ = sem.wait(timeout: .now() + 30)
+            let (statusCode, responseBody) = reply.withLock { $0 }
             log("▸ live send → status=\(statusCode) body=\(responseBody.prefix(400))")
         } else {
             log("▸ toURLRequest() returned NIL — AnalyzeUrl rejected the url,{options} form")

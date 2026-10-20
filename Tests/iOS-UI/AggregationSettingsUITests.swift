@@ -169,6 +169,7 @@ final class AggregationSettingsUITests: XCTestCase {
     /// Library (moved from 網路設定), and a switch turned off there counts and lasts. The home's
     /// sections are no longer on the page.
     /// 「已勾選 2 個，共 3 個」 as numbers.
+    @MainActor
     private func checkedCount(_ row: XCUIElement) -> (checked: Int, total: Int) {
         let numbers = (row.value as? String ?? "").split(whereSeparator: { !$0.isNumber }).compactMap { Int($0) }
         guard numbers.count == 2 else {

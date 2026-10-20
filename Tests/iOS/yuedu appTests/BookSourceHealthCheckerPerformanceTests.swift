@@ -415,7 +415,7 @@ private actor AsyncValidationBlocker {
 private actor HealthCheckTransportFailureFetcher: BookSourceHealthCheckFetching {
     private(set) var calls: [String] = []
 
-    func search(
+    nonisolated func search(
         query: String,
         in source: BookSource,
         page: Int,
@@ -423,8 +423,12 @@ private actor HealthCheckTransportFailureFetcher: BookSourceHealthCheckFetching 
         onHasMore: ((Bool?) -> Void)?,
         failureMode: BookSourceSearchFailureMode
     ) async throws -> [OnlineBook] {
-        calls.append("search")
+        await record("search")
         throw URLError(.timedOut)
+    }
+
+    private func record(_ call: String) {
+        calls.append(call)
     }
 
     func discoverItems(
@@ -477,7 +481,11 @@ private actor HealthCheckTransportFailureFetcher: BookSourceHealthCheckFetching 
 private actor HealthCheckKeywordCaptureFetcher: BookSourceHealthCheckFetching {
     private(set) var queries: [String] = []
 
-    func search(
+    private func recordQuery(_ query: String) {
+        queries.append(query)
+    }
+
+    nonisolated func search(
         query: String,
         in source: BookSource,
         page: Int,
@@ -485,7 +493,7 @@ private actor HealthCheckKeywordCaptureFetcher: BookSourceHealthCheckFetching {
         onHasMore: ((Bool?) -> Void)?,
         failureMode: BookSourceSearchFailureMode
     ) async throws -> [OnlineBook] {
-        queries.append(query)
+        await recordQuery(query)
         return [OnlineBook(
             name: query,
             author: "",
@@ -543,7 +551,7 @@ private actor HealthCheckMixedContentFetcher: BookSourceHealthCheckFetching {
         self.chapterContent = chapterContent
     }
 
-    func search(
+    nonisolated func search(
         query: String,
         in source: BookSource,
         page: Int,
@@ -644,7 +652,7 @@ private actor HealthCheckMixedContentFetcher: BookSourceHealthCheckFetching {
         )
     }
 
-    func fetchTOCPackage(
+    nonisolated func fetchTOCPackage(
         tocUrl: String,
         source: BookSource,
         runtimeVariables: [String: String]?,
@@ -695,7 +703,7 @@ private actor HealthCheckMixedContentFetcher: BookSourceHealthCheckFetching {
         )
     }
 
-    private func book(
+    private nonisolated func book(
         name: String,
         url: String,
         tocURL: String = "",
@@ -722,7 +730,11 @@ private actor HealthCheckMixedContentFetcher: BookSourceHealthCheckFetching {
 private actor HealthCheckDetailFailureFetcher: BookSourceHealthCheckFetching {
     private(set) var calls: [String] = []
 
-    func search(
+    private func record(_ call: String) {
+        calls.append(call)
+    }
+
+    nonisolated func search(
         query: String,
         in source: BookSource,
         page: Int,
@@ -730,7 +742,7 @@ private actor HealthCheckDetailFailureFetcher: BookSourceHealthCheckFetching {
         onHasMore: ((Bool?) -> Void)?,
         failureMode: BookSourceSearchFailureMode
     ) async throws -> [OnlineBook] {
-        calls.append("search")
+        await record("search")
         return [OnlineBook(
             name: "result",
             author: "author",
@@ -823,7 +835,7 @@ private actor TimedHealthCheckFetcher: BookSourceHealthCheckFetching {
         Snapshot(maxActive: maxActive, callCounts: callCounts, stageSeconds: stageSeconds)
     }
 
-    func search(
+    nonisolated func search(
         query: String,
         in source: BookSource,
         page: Int,
@@ -831,16 +843,25 @@ private actor TimedHealthCheckFetcher: BookSourceHealthCheckFetching {
         onHasMore: ((Bool?) -> Void)?,
         failureMode: BookSourceSearchFailureMode
     ) async throws -> [OnlineBook] {
-        let start = begin("search")
-        defer { end("search", start) }
-        return try await base.search(
-            query: query,
-            in: source,
-            page: page,
-            earlyFilter: earlyFilter,
-            onHasMore: onHasMore,
-            failureMode: failureMode
-        )
+        let start = await begin("search")
+        do {
+            // The checker never asks for paging, and a non-Sendable callback cannot be
+            // handed to the fetcher from here: record it instead of passing it on.
+            if onHasMore != nil { Issue.record("the checker passed onHasMore") }
+            let books = try await base.search(
+                query: query,
+                in: source,
+                page: page,
+                earlyFilter: earlyFilter,
+                onHasMore: nil,
+                failureMode: failureMode
+            )
+            await end("search", start)
+            return books
+        } catch {
+            await end("search", start)
+            throw error
+        }
     }
 
     func discoverItems(page: Int, in source: BookSource) async -> [ModernParserBridge.DiscoverItem] {

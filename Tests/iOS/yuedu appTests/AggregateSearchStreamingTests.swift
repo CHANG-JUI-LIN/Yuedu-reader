@@ -121,27 +121,24 @@ private actor StreamBatchRecorder {
 }
 
 private final class AggregateSearchStreamingURLProtocol: URLProtocol {
-    private static let lock = NSLock()
-    private static var sources: [String] = []
-    private static var titles: [String] = []
-    private static var tabs: [String] = []
+    private struct Requests {
+        var sources: [String] = []
+        var titles: [String] = []
+        var tabs: [String] = []
+    }
+
+    private static let requests = Locked(Requests())
 
     static var requestedSources: [String] {
-        lock.lock()
-        defer { lock.unlock() }
-        return sources
+        requests.withLock { $0.sources }
     }
 
     static var requestedTitles: [String] {
-        lock.lock()
-        defer { lock.unlock() }
-        return titles
+        requests.withLock { $0.titles }
     }
 
     static var requestedTabs: [String] {
-        lock.lock()
-        defer { lock.unlock() }
-        return tabs
+        requests.withLock { $0.tabs }
     }
 
     /// The sub-source requests are the source's own `java.ajax`, which goes through the
@@ -154,11 +151,7 @@ private final class AggregateSearchStreamingURLProtocol: URLProtocol {
     }
 
     static func reset() {
-        lock.lock()
-        sources.removeAll()
-        titles.removeAll()
-        tabs.removeAll()
-        lock.unlock()
+        requests.withLock { $0 = Requests() }
     }
 
     override class func canInit(with request: URLRequest) -> Bool {
@@ -175,11 +168,11 @@ private final class AggregateSearchStreamingURLProtocol: URLProtocol {
         let title = items.first(where: { $0.name == "title" })?.value ?? ""
         let tab = items.first(where: { $0.name == "tab" })?.value ?? ""
 
-        Self.lock.lock()
-        Self.sources.append(source)
-        Self.titles.append(title)
-        Self.tabs.append(tab)
-        Self.lock.unlock()
+        Self.requests.withLock {
+            $0.sources.append(source)
+            $0.titles.append(title)
+            $0.tabs.append(tab)
+        }
 
         let payload = """
         {

@@ -8,6 +8,7 @@ import Testing
 /// left 手动填 Cookie as the only route. `SourceWebLogin` is the three values that login needs, so
 /// both kinds of source feed one screen.
 @Suite("Source web login")
+@MainActor
 struct SourceWebLoginTests {
 
     // MARK: - Voice sources

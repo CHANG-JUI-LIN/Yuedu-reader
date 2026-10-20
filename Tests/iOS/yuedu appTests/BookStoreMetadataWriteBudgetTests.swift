@@ -59,13 +59,14 @@ struct BookStoreMetadataWriteBudgetTests {
         // An open reader keeps `.ready` chapter states for the files this deletes. Without
         // the announcement nothing tells it, and it renders 資料不一致 over a chapter it
         // could just refetch — the reproducible 下載 → 暫停 → 移除 path.
+        let bookId = book.id
         try await confirmation("cache clear announced") { announced in
             let observer = NotificationCenter.default.addObserver(
                 forName: .onlineChapterCacheDidClear,
                 object: nil,
                 queue: .main
             ) { notification in
-                if notification.userInfo?["bookId"] as? UUID == book.id {
+                if notification.userInfo?["bookId"] as? UUID == bookId {
                     announced()
                 }
             }

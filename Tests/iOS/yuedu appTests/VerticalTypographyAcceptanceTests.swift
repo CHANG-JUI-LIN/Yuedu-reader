@@ -197,7 +197,7 @@ struct VerticalTypographyAcceptanceTests {
             let built = try await builder.buildChapter(at: spine, settings: settings,
                 themeTextColor: .black, themeBackgroundColor: .white)
             let layout = await CoreTextPaginator().paginate(
-                spineIndex: spine, attrStr: built.attributedString, renderSize: pageSize,
+                spineIndex: spine, attrStr: LayoutShared(built.attributedString).wrappedValue, renderSize: pageSize,
                 fontSize: fontSize, contentInsets: UIEdgeInsets(top: 16, left: 16, bottom: 16, right: 16),
                 writingMode: mode)
             let image = UIGraphicsImageRenderer(size: pageSize, format: format).image { context in

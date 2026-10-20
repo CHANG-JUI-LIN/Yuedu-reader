@@ -7,6 +7,7 @@ import Testing
 /// They were never stripped before narration, so they ate into the 300-character chunk
 /// budget and were sent to the provider as literal `%EF%BF%BC`.
 @Suite("TTS narratable text")
+@MainActor
 struct TTSNarratableTextTests {
 
     private func narratable(_ raw: String) -> String {

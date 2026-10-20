@@ -2,7 +2,9 @@
 import CryptoKit
 import Foundation
 import Network
-import ReadiumShared
+// Covers `Resource`, read by two `async let`s at once below. Readium marks it Sendable from
+// 4.0 (4.0.0-alpha.1); remove `@preconcurrency` when the app moves to Readium 4.
+@preconcurrency import ReadiumShared
 import ReadiumZIPFoundation
 import Testing
 import UIKit
@@ -35,7 +37,7 @@ struct RemoteEPUBPublicationTests {
         let builder = EPUBAttributedStringBuilder(session: session, renderSize: CGSize(width: 320, height: 480))
         let chapter = try await builder.buildChapter(at: 0, settings: EPUBTestFixtures.renderSettings(),
             themeTextColor: .black, themeBackgroundColor: .white)
-        let layout = await CoreTextPaginator().paginate(spineIndex: 0, attrStr: chapter.attributedString,
+        let layout = await CoreTextPaginator().paginate(spineIndex: 0, attrStr: LayoutShared(chapter.attributedString).wrappedValue,
             renderSize: CGSize(width: 320, height: 480), fontSize: 17, contentInsets: .zero, writingMode: .horizontal)
         #expect(!layout.pageRanges.isEmpty)
         #expect(chapter.attributedString.string.contains("遠端閱讀正文"))
@@ -74,7 +76,7 @@ struct RemoteEPUBPublicationTests {
         )
         #expect(output.attributedString.string.contains("遠端閱讀正文"))
         let layout = await CoreTextPaginator().paginate(
-            spineIndex: 0, attrStr: output.attributedString,
+            spineIndex: 0, attrStr: LayoutShared(output.attributedString).wrappedValue,
             renderSize: CGSize(width: 320, height: 480), fontSize: 17,
             contentInsets: .zero, writingMode: .horizontal
         )

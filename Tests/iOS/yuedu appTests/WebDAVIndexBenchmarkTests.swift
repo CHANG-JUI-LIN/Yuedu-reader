@@ -1,5 +1,8 @@
 import Foundation
-import ReadiumShared
+// Covers `HTTPRequestConvertible` and the stream callback, forwarded by `CountingHTTPClient`
+// to the real client. Readium marks them Sendable from 4.0 (4.0.0-alpha.1); remove
+// `@preconcurrency` when the app moves to Readium 4.
+@preconcurrency import ReadiumShared
 import Testing
 @testable import yuedu_app
 
@@ -137,7 +140,9 @@ private final class CountingHTTPClient: HTTPClient, @unchecked Sendable {
     var requests: Int { lock.withLock { requestCount } }
     var bytes: Int { lock.withLock { byteCount } }
 
-    func stream(request: any HTTPRequestConvertible, consume: @escaping (Data, Double?) -> HTTPResult<Void>) async -> HTTPResult<HTTPResponse> {
+    /// `@concurrent`, like the Readium client it wraps: the non-Sendable `consume` then stays
+    /// in one isolation domain instead of crossing from the caller's.
+    @concurrent func stream(request: any HTTPRequestConvertible, consume: @escaping (Data, Double?) -> HTTPResult<Void>) async -> HTTPResult<HTTPResponse> {
         lock.withLock { requestCount += 1 }
         return await base.stream(request: request) { [weak self] chunk, progress in
             self?.lock.withLock { self?.byteCount += chunk.count }

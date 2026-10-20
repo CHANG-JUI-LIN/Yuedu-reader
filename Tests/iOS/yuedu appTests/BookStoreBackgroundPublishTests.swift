@@ -61,11 +61,7 @@ struct BookStoreBackgroundPublishTests {
                 tocURL: "https://example.com/toc", runtimeVariables: ["token": "final"], chapters: existing
             )
         }
-        let publications = OSAllocatedUnfairLock(initialState: 0)
-        let subscription = await MainActor.run {
-            store.objectWillChange.sink { publications.withLock { $0 += 1 } }
-        }
-        defer { subscription.cancel() }
+        let publications = await PublicationCounter(store)
 
         func package(_ list: [OnlineChapterRef]) -> TOCPackage {
             TOCPackage(
@@ -78,7 +74,7 @@ struct BookStoreBackgroundPublishTests {
         _ = try await store.refreshOnlineBookMetadata(
             bookId: book.id, bookSourceFetcher: ImmediateTOCFetcher(package: package(existing))
         )
-        #expect(publications.withLock { $0 } == 0)
+        #expect(publications.value == 0)
 
         // A new chapter: the record is replaced once, with the merged list and the badge.
         let refreshed = try await store.refreshOnlineBookMetadata(
@@ -86,7 +82,7 @@ struct BookStoreBackgroundPublishTests {
         )
         #expect(refreshed.onlineChapters?.count == 4)
         #expect(refreshed.hasNewChapterUpdate == true)
-        #expect(publications.withLock { $0 } == 1)
+        #expect(publications.value == 1)
     }
 
     /// A parser builds every `OnlineChapterRef` afresh, each with a new `id`. An unchanged
@@ -109,11 +105,7 @@ struct BookStoreBackgroundPublishTests {
             )
         }
         let storedIDs = await MainActor.run { store.chapters(for: book.id)?.map(\.id) }
-        let publications = OSAllocatedUnfairLock(initialState: 0)
-        let subscription = await MainActor.run {
-            store.objectWillChange.sink { publications.withLock { $0 += 1 } }
-        }
-        defer { subscription.cancel() }
+        let publications = await PublicationCounter(store)
 
         let reparsed = chapters(3)
         #expect(reparsed.map(\.id) != storedIDs)
@@ -125,9 +117,24 @@ struct BookStoreBackgroundPublishTests {
             ))
         )
 
-        #expect(publications.withLock { $0 } == 0)
+        #expect(publications.value == 0)
         #expect(await MainActor.run { store.chapters(for: book.id)?.map(\.id) } == storedIDs)
     }
+}
+
+/// Counts the store's publications for a test that runs off the main actor. It subscribes on
+/// the main actor, where the store lives, and the subscription ends with it.
+@MainActor
+private final class PublicationCounter {
+    private let count = OSAllocatedUnfairLock(initialState: 0)
+    private var subscription: AnyCancellable?
+
+    init(_ store: BookStore) {
+        let count = count
+        subscription = store.objectWillChange.sink { count.withLock { $0 += 1 } }
+    }
+
+    nonisolated var value: Int { count.withLock { $0 } }
 }
 
 /// Answers a table-of-contents refresh with a fixed package in one go, as a single-page

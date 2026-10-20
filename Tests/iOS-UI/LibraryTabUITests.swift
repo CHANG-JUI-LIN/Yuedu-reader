@@ -7,6 +7,7 @@ final class LibraryTabUITests: XCTestCase {
         continueAfterFailure = false
     }
 
+    @MainActor
     private func launch(_ extra: [String] = []) -> XCUIApplication {
         let app = XCUIApplication()
         app.launchArguments = ["-no-official-modules", "-AppleLanguages", "(zh-Hant)", "-AppleLocale", "zh_TW",
@@ -20,6 +21,7 @@ final class LibraryTabUITests: XCTestCase {
         return app
     }
 
+    @MainActor
     private func attach(_ app: XCUIApplication, _ name: String) {
         let attachment = XCTAttachment(screenshot: app.screenshot())
         attachment.name = name
@@ -28,6 +30,7 @@ final class LibraryTabUITests: XCTestCase {
     }
 
     /// A card far down the page: the grid builds its cards only near the screen.
+    @MainActor
     private func scrolledTo(_ element: XCUIElement, in app: XCUIApplication) -> XCUIElement {
         var swipes = 0
         while !element.exists, swipes < 6 {
@@ -38,10 +41,12 @@ final class LibraryTabUITests: XCTestCase {
     }
 
     /// An item of the open •••: the iOS 17 chooser's row also reads its subtitle after the title.
+    @MainActor
     private func item(_ app: XCUIApplication, _ title: String) -> XCUIElement {
         app.buttons.matching(NSPredicate(format: "label == %@ OR label BEGINSWITH %@", title, title + ",")).firstMatch
     }
 
+    @MainActor
     private func back(_ app: XCUIApplication) {
         app.navigationBars.buttons.element(boundBy: 0).tap()
     }

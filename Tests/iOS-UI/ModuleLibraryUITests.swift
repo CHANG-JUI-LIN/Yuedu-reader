@@ -20,6 +20,7 @@ final class ModuleLibraryUITests: XCTestCase {
         continueAfterFailure = false
     }
 
+    @MainActor
     private func launch(disclaimerAccepted: Bool = true, extra: [String] = []) -> XCUIApplication {
         let folder = FileManager.default.temporaryDirectory.appendingPathComponent("ModuleLibraryUITests-\(UUID().uuidString)")
         let app = XCUIApplication()
@@ -36,6 +37,7 @@ final class ModuleLibraryUITests: XCTestCase {
 
     /// 資源庫's •••. On iOS 27 the bar slides away as the page scrolls (`.minimizesBar`), so the
     /// page goes back to its top first.
+    @MainActor
     private func tapMore(_ app: XCUIApplication) {
         let more = app.buttons["library.more"].firstMatch
         var swipes = 0
@@ -46,6 +48,7 @@ final class ModuleLibraryUITests: XCTestCase {
         more.tap()
     }
 
+    @MainActor
     private func attach(_ app: XCUIApplication, _ name: String) {
         let attachment = XCTAttachment(screenshot: app.screenshot())
         attachment.name = name
@@ -53,6 +56,7 @@ final class ModuleLibraryUITests: XCTestCase {
         add(attachment)
     }
 
+    @MainActor
     private func scrolledTo(_ element: XCUIElement, in app: XCUIApplication) -> XCUIElement {
         var swipes = 0
         while !element.exists, swipes < 8 {
@@ -63,6 +67,7 @@ final class ModuleLibraryUITests: XCTestCase {
     }
 
     /// An item of the open •••: the iOS 17 chooser's row also reads its subtitle after the title.
+    @MainActor
     private func item(_ app: XCUIApplication, _ title: String) -> XCUIElement {
         app.buttons.matching(NSPredicate(format: "label == %@ OR label BEGINSWITH %@", title, title + ",")).firstMatch
     }

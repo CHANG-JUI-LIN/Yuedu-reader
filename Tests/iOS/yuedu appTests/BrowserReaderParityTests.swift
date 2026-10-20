@@ -47,7 +47,7 @@ struct BrowserReaderParityTests {
     @Test func readerLineHeightInheritsAndAuthorDeclarationWins() async throws {
         let parsed = await HTMLBuilderDOMParser().parse(
             html: "<html><body><p>Reader spacing</p><p class='authored'>Author spacing</p></body></html>",
-            collectStyles: { _ in [] }, stylesheetCache: nil
+            collectStyles: { @Sendable _ in [] }, stylesheetCache: nil
         )
         let body = try #require(parsed?.body)
         let builder = ComputedStyleTreeBuilder(

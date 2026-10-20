@@ -229,14 +229,32 @@ struct TTSCoordinatorTests {
 }
 
 private final class MimoTTSTestURLProtocol: URLProtocol {
-    static var responseData = Data()
-    static var lastRequest: URLRequest?
-    static var lastRequestBody: Data?
+    private struct Exchange {
+        var responseData = Data()
+        var lastRequest: URLRequest?
+        var lastRequestBody: Data?
+    }
+
+    /// Written by URLSession's loading thread, read by the test.
+    private static let exchange = Locked(Exchange())
+
+    static var responseData: Data {
+        get { exchange.withLock { $0.responseData } }
+        set { exchange.withLock { $0.responseData = newValue } }
+    }
+
+    static var lastRequest: URLRequest? {
+        get { exchange.withLock { $0.lastRequest } }
+        set { exchange.withLock { $0.lastRequest = newValue } }
+    }
+
+    static var lastRequestBody: Data? {
+        get { exchange.withLock { $0.lastRequestBody } }
+        set { exchange.withLock { $0.lastRequestBody = newValue } }
+    }
 
     static func reset() {
-        responseData = Data()
-        lastRequest = nil
-        lastRequestBody = nil
+        exchange.withLock { $0 = Exchange() }
     }
 
     override class func canInit(with request: URLRequest) -> Bool {

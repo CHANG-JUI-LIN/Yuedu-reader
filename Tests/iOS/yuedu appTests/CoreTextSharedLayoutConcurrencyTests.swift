@@ -195,7 +195,7 @@ struct CoreTextSharedLayoutConcurrencyTests {
         // a freshly built layout whose frames nothing has drawn yet.
         await CoreTextPaginator().paginate(
             spineIndex: 0,
-            attrStr: text,
+            attrStr: LayoutShared(text).wrappedValue,
             renderSize: renderSize,
             fontSize: 18,
             contentInsets: UIEdgeInsets(top: 24, left: 20, bottom: 24, right: 20),

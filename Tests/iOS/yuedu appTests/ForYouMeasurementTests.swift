@@ -101,8 +101,9 @@ struct ForYouMeasurementTests {
 
     private func loaded(_ model: HomeModel, _ rows: [HomeModel.Row]) async {
         let ids = Set(rows.map(\.id))
-        _ = await model.$rows.values.first { all in
-            all.filter { ids.contains($0.id) }.allSatisfy { if case .loaded = $0.state { true } else { false } }
+        for await all in model.$rows.values
+        where all.filter({ ids.contains($0.id) }).allSatisfy({ if case .loaded = $0.state { true } else { false } }) {
+            break
         }
     }
 
@@ -153,8 +154,9 @@ struct ForYouMeasurementTests {
         cold.model.reload()
         await loaded(cold.model, cold.model.rows)
         let forYou = try #require(cold.model.rows.first { $0.section.binding == .forYou })
-        _ = await cold.model.$rows.values.first { rows in
-            rows.first { $0.id == forYou.id }.map { if case .loaded = $0.state { true } else { false } } ?? false
+        for await rows in cold.model.$rows.values
+        where rows.first(where: { $0.id == forYou.id }).map({ if case .loaded = $0.state { true } else { false } }) ?? false {
+            break
         }
         log = await counter.log
         report("refresh", log, ms: (SourcePerfTrace.now - started) * 1000)

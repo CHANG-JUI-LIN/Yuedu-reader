@@ -519,8 +519,8 @@ final class HTMLAttributedStringBuilder {
     var imageLoader: (@Sendable (String) async -> UIImage?)?
     var cssLoader: (@Sendable (String) async -> String?)?
     var mediaURLResolver: (@Sendable (String) -> String?)?
-    var resolvedFontFamily: ((String) -> String?)?
-    var resolvedFont: (([String], Int, Bool, CGFloat) -> UIFont?)?
+    var resolvedFontFamily: (@Sendable (String) -> String?)?
+    var resolvedFont: (@Sendable ([String], Int, Bool, CGFloat) -> UIFont?)?
     /// Set to true after buildStyledAST if CSS writing-mode: vertical-rl is detected on the body element.
     var detectedVerticalWritingMode = false
 

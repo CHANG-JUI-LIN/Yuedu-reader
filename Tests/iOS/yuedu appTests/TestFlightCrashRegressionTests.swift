@@ -49,8 +49,10 @@ struct TestFlightCrashRegressionTests {
     func scalarRequestBodies(_ json: String) throws {
         let request = AnalyzeUrl(ruleUrl: "https://example.com/api,{\"method\":\"POST\",\"body\":\(json)}")
         let body = try #require(request.body)
-        let actual = try JSONSerialization.jsonObject(with: Data(body.utf8), options: [.fragmentsAllowed]) as AnyObject
-        let expected = try JSONSerialization.jsonObject(with: Data(json.utf8), options: [.fragmentsAllowed]) as AnyObject
+        // NSObject, not AnyObject: Swift 6.4 crashes in SILGen (useConformance) expanding
+        // #expect around an AnyObject-dispatched isEqual. Every JSON value is an NSObject.
+        let actual = try #require(try JSONSerialization.jsonObject(with: Data(body.utf8), options: [.fragmentsAllowed]) as? NSObject)
+        let expected = try #require(try JSONSerialization.jsonObject(with: Data(json.utf8), options: [.fragmentsAllowed]) as? NSObject)
         #expect(actual.isEqual(expected))
     }
 
