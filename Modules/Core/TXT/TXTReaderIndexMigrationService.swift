@@ -169,7 +169,7 @@ enum TXTReaderIndexMigrationService {
             throw TXTLocationMigration.Failure.missingSourceIdentity
         }
         _ = try TXTLocationMigration(file: preparation.mappedTextFile, oldIndexes: journal.indexes, newIndexes: journal.indexes)
-        try store.commitTXTBookmarks(bookId: journal.bookId, original: journal.originalBookmarks, migrated: journal.bookmarks)
+        try await store.commitTXTBookmarks(bookId: journal.bookId, original: journal.originalBookmarks, migrated: journal.bookmarks)
         if let position = journal.position {
             await positions.save(position, for: journal.bookId.uuidString)
             await positions.flush(for: journal.bookId.uuidString)

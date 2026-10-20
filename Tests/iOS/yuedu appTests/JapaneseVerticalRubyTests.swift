@@ -51,7 +51,7 @@ struct JapaneseVerticalRubyTests {
         store.updateLastOpened(bookId: book.id)
         store.updatePosition(bookId: book.id, position: 0.01, forceSave: true)
         engine.cancelPendingWork()
-        store.reloadFromDisk()
+        await store.reloadFromDisk()
         #expect(store.books.contains { $0.id == book.id && $0.isInBookshelf })
         #expect(FileManager.default.fileExists(atPath: store.localEPUBURL(for: book).path))
 

@@ -294,10 +294,9 @@ final class WebDAVManager: @MainActor ObservableObject {
         // Reload the in-memory stores from the just-restored files so the
         // bookshelf and replace-rule list update live, mirroring the iCloud
         // restore path. Book sources were already reloaded above.
-        await MainActor.run {
-            boundBookStore?.reloadFromDisk()
-            ReplaceRuleStore.shared.reloadFromDisk()
-        }
+        let bookStore = await MainActor.run { boundBookStore }
+        await bookStore?.reloadFromDisk()
+        await MainActor.run { ReplaceRuleStore.shared.reloadFromDisk() }
 
         await MainActor.run {
             self.lastSyncDate = Date()

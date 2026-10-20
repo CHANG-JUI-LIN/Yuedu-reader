@@ -200,7 +200,7 @@ struct BookChapterStorageTests {
     }
 
     @Test("a shelf restored without the summary gets it back from the lists on disk")
-    func restoredShelfRegainsSummaryFromStoredLists() throws {
+    func restoredShelfRegainsSummaryFromStoredLists() async throws {
         let directory = try makeDirectory()
         defer { try? FileManager.default.removeItem(at: directory) }
         let metadataURL = directory.appendingPathComponent("books_meta.json")
@@ -211,7 +211,7 @@ struct BookChapterStorageTests {
         let backup = try #require(store.books.first).strippedForSync()
         try JSONEncoder().encode([backup]).write(to: metadataURL, options: .atomic)
 
-        store.reloadFromDisk()
+        await store.reloadFromDisk()
 
         #expect(store.books.first?.totalChapterNum == 25)
         #expect(BookStore(metadataFileURL: metadataURL).books.first?.totalChapterNum == 25)

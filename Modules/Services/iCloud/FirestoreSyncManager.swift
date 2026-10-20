@@ -104,7 +104,7 @@ final class FirestoreSyncManager: ObservableObject {
     /// remote tombstones can't re-delete it. With data sync off (current default),
     /// it just refreshes the live UI — iCloud stays the single source of truth.
     func adoptRestoredLocalData() async {
-        bookStore?.reloadFromDisk()
+        await bookStore?.reloadFromDisk()
         BookSourceStore.shared.reloadFromDisk()
         ReplaceRuleStore.shared.reloadFromDisk()
         AppLogger.sync("adopt: reloaded local stores from restored files", level: .notice)
@@ -375,7 +375,16 @@ final class FirestoreSyncManager: ObservableObject {
                 hash: { [weak self] in self?.stableHash($0.strippedForSync()) ?? "" },
                 fallbackUpdatedAt: { $0.lastOpenedDate ?? $0.addedDate }
             )
-            store.replaceBooksFromSync(merged, expectedMutationRevision: bookMutationRevision)
+            // The iCloud merge's path: encoded off the main thread, its write queued without
+            // the main thread waiting behind the writes already queued.
+            var applied = false
+            if let snapshot = store.snapshotForSync(merged, expectedMutationRevision: bookMutationRevision) {
+                let prepared = try await BookStore.encodeSyncSnapshot(snapshot)
+                applied = store.applySyncSnapshot(prepared)
+            }
+            if !applied {
+                AppLogger.sync("pull: books changed locally during the merge; keeping them for the next sync", level: .notice)
+            }
         }
 
         if let positions = try await fetchEnvelopes(CoreTextReadingPosition.self, at: userRef.collection("readingPositions")) {

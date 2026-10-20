@@ -83,7 +83,7 @@ struct LocalBookImportServiceTests {
             store.updateLastOpened(bookId: book.id)
             store.updatePosition(bookId: book.id, position: 0.2, forceSave: true)
         }
-        store.reloadFromDisk()
+        await store.reloadFromDisk()
         #expect(Set(store.books.map(\.id)) == ids)
         #expect(store.books.allSatisfy { $0.isInBookshelf && $0.currentPosition == 0.2 })
     }
@@ -106,7 +106,7 @@ struct LocalBookImportServiceTests {
         #expect(!store.replaceBooksFromSync(input, expectedMutationRevision: syncRevision))
         #expect(store.books.contains { $0.id == book.id })
         store.updatePosition(bookId: book.id, position: 0.25, forceSave: true)
-        store.reloadFromDisk()
+        await store.reloadFromDisk()
         #expect(store.books.contains { $0.id == book.id && $0.currentPosition == 0.25 })
         let readRevision = store.mutationRevision
         let oldProgress = store.books

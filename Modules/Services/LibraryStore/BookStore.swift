@@ -295,8 +295,12 @@ class BookStore: @MainActor ObservableObject, BookProvider {
         remoteRecords = RemoteRecordStore(besideShelfFile: metadataFileURL)
         // A store reads the files only after writes already queued to them have landed
         // (the queue is shared by every instance). At launch it is empty; it matters for a
-        // store opened on files another instance has just saved.
-        Self.persistQueue.sync {}
+        // store opened on files another instance has just saved. Waits on the calling (main)
+        // thread; kept because reopening right after a queued merge relies on it, and timed
+        // so a field report shows it if the queue is ever busy here.
+        SourcePerfTrace.span("library.persist.wait", "site=init main=\(Thread.isMainThread)", thresholdMs: 5) {
+            Self.persistQueue.sync {}
+        }
         let shelfLoaded = loadMeta()
         let readingRecordsLoaded = loadReadingRecords()
         finishLoadingChapterLists(complete: shelfLoaded && readingRecordsLoaded)
@@ -2702,8 +2706,9 @@ class BookStore: @MainActor ObservableObject, BookProvider {
         return adopted.count
     }
 
-    /// Synchronous callers retain their immediate durability boundary. Live cloud
-    /// sync uses snapshot → worker encoding → revision-checked application instead.
+    /// Writes on the calling (main) thread, behind every write already queued, so the files
+    /// hold the merge when it returns. Only tests seed shelves with it: both cloud syncs use
+    /// snapshot → worker encoding → revision-checked application (`applySyncSnapshot`).
     @discardableResult
     @MainActor
     func replaceBooksFromSync(_ syncedBooks: [ReadingBook], expectedMutationRevision: UInt64? = nil) -> Bool {
@@ -2774,8 +2779,14 @@ class BookStore: @MainActor ObservableObject, BookProvider {
     /// Reindexing changes the meaning of chapter numbers. Publish bookmark changes
     /// only after their full metadata snapshot is durably written, and reject edits
     /// made while the migration was measuring source/rendered correspondence.
+    ///
+    /// Returns once the write has landed, without holding the main thread behind the writes
+    /// queued before it (it used to wait for them there). The store holds the moved bookmarks
+    /// from the start, so a save made while the write is in flight carries them too: one
+    /// queued behind it with the old bookmarks would put them back on disk after the caller
+    /// has published the new index. A failed write takes them back out.
     @MainActor
-    func commitTXTBookmarks(bookId: UUID, original: [Bookmark], migrated: [Bookmark]) throws {
+    func commitTXTBookmarks(bookId: UUID, original: [Bookmark], migrated: [Bookmark]) async throws {
         guard let index = records.firstIndex(where: { $0.id == bookId }),
               records[index].bookmarks == original || records[index].bookmarks == migrated else {
             throw TXTLocationMigration.Failure.missingSourceIdentity
@@ -2786,20 +2797,41 @@ class BookStore: @MainActor ObservableObject, BookProvider {
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.sortedKeys]
         let data = try encoder.encode(output.filter { $0.isInBookshelf == updated.isInBookshelf })
+        records[index] = updated
+        persistSequence &+= 1
+        let sequence = persistSequence
         // Changed lists become durable with this write, as when they rode inside the shelf.
         // On `persistQueue`, after any background write in flight.
         let files = persistedFiles
-        try Self.persistQueue.sync {
-            chapterStore.flush()
-            try data.write(to: updated.isInBookshelf ? metadataFileURL : readingMetadataFileURL, options: .atomic)
-            if updated.isInBookshelf { files.shelfData = data } else { files.readingData = data }
+        let isShelf = updated.isInBookshelf
+        let url = isShelf ? metadataFileURL : readingMetadataFileURL
+        do {
+            try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, any Error>) in
+                Self.persistQueue.async { [self] in
+                    do {
+                        chapterStore.flush()
+                        try data.write(to: url, options: .atomic)
+                        if isShelf { files.shelfData = data } else { files.readingData = data }
+                        continuation.resume()
+                    } catch {
+                        continuation.resume(throwing: error)
+                    }
+                }
+            }
+        } catch {
+            if let current = records.firstIndex(where: { $0.id == bookId }), records[current].bookmarks == migrated {
+                records[current].bookmarks = original
+                // A save made meanwhile may have written the moved ones.
+                saveMeta()
+            }
+            AppLogger.error("TXT bookmarks moved to the new chapter index could not be saved", error: error)
+            throw error
         }
-        records[index] = updated
-        persistSequence &+= 1
-        lastAppliedPersistSequence = persistSequence
-        if updated.isInBookshelf { markMetadataPersisted(data, records: output, queueKnows: true); syncWidgetData() }
+        // A save queued while this one was in flight has landed after it, with its own bookkeeping.
+        guard sequence > lastAppliedPersistSequence else { return }
+        lastAppliedPersistSequence = sequence
+        if isShelf { markMetadataPersisted(data, records: output, queueKnows: true); syncWidgetData() }
         else { notePersistedReadingData(data, queueKnows: true) }
-
     }
 
     private func persistPositionUpdateIfNeeded(
@@ -3088,12 +3120,17 @@ class BookStore: @MainActor ObservableObject, BookProvider {
 
     /// Re-reads `books_meta.json` into memory. Used after an iCloud restore
     /// overwrites the file so the bookshelf reflects it without a relaunch.
-    func reloadFromDisk() {
+    ///
+    /// Waits for the writes already queued without holding the main thread behind them (it
+    /// used to wait there).
+    func reloadFromDisk() async {
         // Nothing of the shelf being replaced may be written over it: a pending save is
         // dropped, and a write already in flight finishes first (it keeps the restored
         // file, see `writeMetadata`).
         cancelPendingMetadataSave()
-        Self.persistQueue.sync {}
+        await Self.queuedWritesLanded()
+        // A save asked for while waiting would carry the shelf being replaced.
+        cancelPendingMetadataSave()
         let shelfLoaded = loadMeta()
         let readingRecordsLoaded = loadReadingRecords()
         finishLoadingChapterLists(complete: shelfLoaded && readingRecordsLoaded)
@@ -3304,23 +3341,33 @@ class BookStore: @MainActor ObservableObject, BookProvider {
         }
     }
 
+    /// Queues the reading records' write ahead of the shelf save that follows it: a record
+    /// taken off the shelf is in the reading file before the shelf file stops listing it.
+    /// The caller's `saveMetaImmediately()` holds the app until both have landed. It used to
+    /// wait for the write on the main thread, behind every write already queued.
     private func persistReadingRecords() {
+        let data: Data
         do {
             let encoder = JSONEncoder()
             encoder.outputFormatting = [.sortedKeys]
-            let data = try encoder.encode(records.filter { !$0.isInBookshelf })
-            try persistEncodedReadingRecords(data)
-        } catch { AppLogger.error("Remote reading records could not be saved", error: error) }
-    }
-
-    private func persistEncodedReadingRecords(_ data: Data) throws {
+            data = try encoder.encode(records.filter { !$0.isInBookshelf })
+        } catch {
+            AppLogger.error("Remote reading records could not be saved", error: error)
+            return
+        }
         guard data != lastPersistedReadingData else { return }
         let files = persistedFiles
-        try Self.persistQueue.sync {
-            try data.write(to: readingMetadataFileURL, options: .atomic)
-            files.readingData = data
+        let url = readingMetadataFileURL
+        Self.persistQueue.async { [self] in
+            guard data != files.readingData else { return }
+            do {
+                try data.write(to: url, options: .atomic)
+                files.readingData = data
+                DispatchQueue.main.async { self.lastPersistedReadingData = data }
+            } catch {
+                AppLogger.error("Remote reading records could not be saved", error: error)
+            }
         }
-        notePersistedReadingData(data, queueKnows: true)
     }
 
     /// Cleans the chapter URLs of lists read from inside a shelf file: replaces URLs
