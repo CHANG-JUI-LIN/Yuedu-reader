@@ -75,7 +75,7 @@ struct BookSourceParsingPipeline {
         }
     }
 
-    /// One-pass TOC page parse: chapters AND the next-page URL from a single
+    /// One-pass TOC page parse: chapters AND the next-page URLs from a single
     /// DOM build (the split calls used to parse the same HTML twice).
     func parseTOCPage(
         html: String,
@@ -84,7 +84,7 @@ struct BookSourceParsingPipeline {
         runtimeVariables: [String: String]? = nil
     ) async throws -> (
         chapters: [OnlineChapterRef],
-        nextTocURL: String,
+        nextTocURLs: [String],
         runtimeVariables: [String: String]?
     ) {
         try await BookSourceSession.session(for: source).withTurn { bridge in
@@ -93,22 +93,8 @@ struct BookSourceParsingPipeline {
                     html: html, baseURL: baseURL,
                     source: source, runtimeVariables: runtimeVariables
                 )
-                return (page.chapters, page.nextTocURL, bridge.lastTOCRuntimeVariables)
+                return (page.chapters, page.nextTocURLs, bridge.lastTOCRuntimeVariables)
             }
-        }
-    }
-
-    func extractNextTocURL(
-        html: String,
-        baseURL: String,
-        source: BookSource,
-        runtimeVariables: [String: String]? = nil
-    ) async -> String {
-        await BookSourceSession.session(for: source).withTurn { bridge in
-            bridge.extractNextTocURL(
-                html: html, baseURL: baseURL,
-                source: source, runtimeVariables: runtimeVariables
-            )
         }
     }
 

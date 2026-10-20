@@ -275,10 +275,13 @@ final class ModernRuleEngine {
         }
 
         guard isUrl else { return stringList }
+        // A set beside the list: a rule that matched page text instead of links can yield
+        // thousands of lines, and `urlList.contains` made deduplicating them quadratic.
         var urlList: [String] = []
+        var seen: Set<String> = []
         for item in stringList {
             let absoluteURL = resolveURL(item)
-            if !absoluteURL.isEmpty, !urlList.contains(absoluteURL) {
+            if !absoluteURL.isEmpty, seen.insert(absoluteURL).inserted {
                 urlList.append(absoluteURL)
             }
         }
@@ -837,9 +840,20 @@ final class ModernRuleEngine {
             return [contentStr]
         }
         let contentStr = extractorContentString(content, usesJSON: extractor is JsonExtractor)
-        return try? extractor.extractList(
-            from: contentStr, rule: rule, baseURL: baseUrl
-        )
+        do {
+            // A string list reads its last `@` step as a value, as Legado's does; the
+            // extractor's `extractList` also serves `getElements` and cannot tell.
+            if let jsoup = extractor as? JsoupDefaultExtractor {
+                return try jsoup.extractValueList(from: contentStr, rule: rule, baseURL: baseUrl)
+            }
+            return try extractor.extractList(from: contentStr, rule: rule, baseURL: baseUrl)
+        } catch {
+            AppLogger.parse("getStringList extraction failed", context: [
+                "rule": String(rule.prefix(120)),
+                "error": error.localizedDescription
+            ])
+            return nil
+        }
     }
 
     /// Element extraction that honors Legado's list operators (`||`/`&&`/`%%`) BEFORE picking an

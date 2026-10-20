@@ -64,6 +64,37 @@ struct JsoupDefaultExtractor: RuleExtractor {
         }
     }
 
+    /// Legado's `AnalyzeByJSoup.getStringList` (legado, MD3 and Sigma agree): the last `@` step
+    /// is always the value to take — `text`, `html`, … or any attribute name — and `&&`, `||`
+    /// and `%%` join, pick or interleave the pieces. `extractList` also serves `getElements`,
+    /// so it has to guess whether the last step selects or reads, and only a few attribute
+    /// names count as reading: `tag.option@value` (a page-select TOC's next pages) came back
+    /// empty.
+    func extractValueList(from content: String, rule: String, baseURL: String) throws -> [String] {
+        guard !rule.isEmpty else { return [] }
+        let doc = try JsoupDocumentCache.current.document(
+            for: content.truncatedForSwiftSoup(), baseURL: baseURL)
+        let analyzer = RuleAnalyzer(data: rule)
+        let pieces = analyzer.splitRule("&&", "||", "%%")
+        var results: [[String]] = []
+        for piece in pieces {
+            let values = try getStringList(from: doc, rule: piece, baseURL: baseURL)
+            guard !values.isEmpty else { continue }
+            results.append(values)
+            if analyzer.elementsType == "||" { break }
+        }
+        guard analyzer.elementsType == "%%", let first = results.first else {
+            return results.flatMap { $0 }
+        }
+        var interleaved: [String] = []
+        for index in first.indices {
+            for values in results where index < values.count {
+                interleaved.append(values[index])
+            }
+        }
+        return interleaved
+    }
+
     func extractValue(from content: String, rule: String, baseURL: String) throws -> String {
         guard !rule.isEmpty else { return "" }
         let doc = try JsoupDocumentCache.current.document(

@@ -1228,21 +1228,27 @@ class ModernParserBridge {
         return chapters
     }
 
-    func extractNextTocURL(
+    /// `ruleToc.nextTocUrl` as Legado's `BookChapterList.analyzeChapterList` reads it (legado,
+    /// MD3 and Sigma agree): `getStringList(isUrl = true)` — one URL per line, each resolved
+    /// on its own — without the page's own URL. Read with `getString` it joined a page-select
+    /// TOC's options into one URL that matched no page, and handed a rule result tens of MB
+    /// long to `URL(string:relativeTo:)` whole (Crashlytics 4eaef04b, an OOM in its
+    /// percent-encoding).
+    func extractNextTocURLs(
         html: String,
         baseURL: String,
         source: BookSource,
         runtimeVariables: [String: String]? = nil
-    ) -> String {
+    ) -> [String] {
         let rule = source.ruleToc.nextTocUrl
-        guard !rule.isEmpty else { return "" }
+        guard !rule.isEmpty else { return [] }
         loadRuntimeVariables(runtimeVariables)
         let engine = makeEngine()
         engine.setContent(html, baseUrl: baseURL)
-        return engine.getString(ruleStr: rule, isUrl: true)
+        return engine.getStringList(ruleStr: rule, isUrl: true).filter { $0 != baseURL }
     }
 
-    /// One TOC page in a single call: chapters plus the next-page URL. The
+    /// One TOC page in a single call: chapters plus the next-page URLs. The
     /// second rule reuses the page DOM through `JsoupDocumentCache`, so a page
     /// is parsed once instead of once per rule set.
     func parseTOCPage(
@@ -1250,16 +1256,16 @@ class ModernParserBridge {
         baseURL: String,
         source: BookSource,
         runtimeVariables: [String: String]? = nil
-    ) throws -> (chapters: [OnlineChapterRef], nextTocURL: String) {
+    ) throws -> (chapters: [OnlineChapterRef], nextTocURLs: [String]) {
         let chapters = try parseTOC(
             html: html, baseURL: baseURL,
             source: source, runtimeVariables: runtimeVariables
         )
-        let nextTocURL = extractNextTocURL(
+        let nextTocURLs = extractNextTocURLs(
             html: html, baseURL: baseURL,
             source: source, runtimeVariables: runtimeVariables
         )
-        return (chapters, nextTocURL)
+        return (chapters, nextTocURLs)
     }
 
     func parseChapterResult(

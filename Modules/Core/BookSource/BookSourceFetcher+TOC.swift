@@ -116,6 +116,15 @@ extension BookSourceFetcher {
             }
         }
 
+        // Crashlytics 4eaef04b died inside the next-page rule of a source it could not name:
+        // the report's open book was not the one being fetched, and one ran in the background
+        // with no book open. Every fetch that will read that rule says whose it is first.
+        if !source.ruleToc.nextTocUrl.isEmpty {
+            CrashContext.breadcrumb(
+                "toc next-page rule: \(source.bookSourceName) \(String(effectiveTOCURL.prefix(80)))"
+            )
+        }
+
         if source.shouldUseLegadoRuntimeFetch(for: effectiveTOCURL) {
             // Reuse the per-source session's bridge (JS runtime + jsLib) instead
             // of standing up a fresh one for this fetch+parse pair.
@@ -127,24 +136,31 @@ extension BookSourceFetcher {
             }
             let parsed = try await session.parse { bridge in
                 try SourcePerfTrace.span("toc.parse", source.bookSourceName) {
-                    let chapters = try bridge.parseTOC(
+                    let page = try bridge.parseTOCPage(
                         html: html,
                         baseURL: finalUrl,
                         source: source,
                         runtimeVariables: effectiveRuntimeVariables
                     )
-                    return (chapters, bridge.lastTOCRuntimeVariables)
+                    return (page.chapters, page.nextTocURLs, bridge.lastTOCRuntimeVariables)
                 }
             }
-            let normalized = normalizedChaptersWithNextURL(parsed.0)
-            if !normalized.isEmpty {
-                onFirstPageReady?(normalized)
+            if !parsed.0.isEmpty {
+                onFirstPageReady?(normalizedChaptersWithNextURL(parsed.0))
             }
+            let following = try await fetchFollowingTOCPages(
+                parsed.1,
+                firstPageURL: finalUrl,
+                source: source,
+                runtimeVariables: effectiveRuntimeVariables
+            )
             return finishTOCPackage(
                 tocUrl: tocUrl,
                 source: source,
-                runtimeVariables: parsed.1 ?? effectiveRuntimeVariables,
-                chapters: normalized,
+                runtimeVariables: Self.mergedTOCRuntimeVariables(
+                    parsed.2 ?? effectiveRuntimeVariables, following.runtimeVariables
+                ),
+                chapters: normalizedChaptersWithNextURL(parsed.0 + following.chapters),
                 writesCache: writesCache
             )
         }
@@ -179,16 +195,14 @@ extension BookSourceFetcher {
             ], hyp: "H2")
         // #endregion
         let firstPage = try await SourcePerfTrace.spanAsync("toc.parse", source.bookSourceName) {
-            try await self.pipeline.parseTOCResult(
+            try await self.pipeline.parseTOCPage(
                 html: html,
                 baseURL: url.absoluteString,
                 source: source,
                 runtimeVariables: effectiveRuntimeVariables
             )
         }
-        var chapters = firstPage.chapters
-        var tocRuntimeVariables = firstPage.runtimeVariables ?? effectiveRuntimeVariables
-        let htmlForNext = html
+        let chapters = firstPage.chapters
 
         // #region agent log
         _dbgLog(
@@ -216,57 +230,142 @@ extension BookSourceFetcher {
             onFirstPageReady(firstPageNormalized)
         }
 
-        var nextURL = await pipeline.extractNextTocURL(
-            html: htmlForNext,
-            baseURL: url.absoluteString,
+        let following = try await fetchFollowingTOCPages(
+            firstPage.nextTocURLs,
+            firstPageURL: url.absoluteString,
             source: source,
             runtimeVariables: effectiveRuntimeVariables
         )
-        var pageCount = 0
-        while !nextURL.isEmpty && pageCount < 20 {
-            guard let nextPageURL = URL(string: nextURL) else { break }
-            let nextBase = nextURL.isEmpty ? source.bookSourceUrl : nextURL
-            let pageStart = ProcessInfo.processInfo.systemUptime
-            // Network request must be outside autoreleasepool (async cannot be in synchronous closure)
-            let nextHTML: String
-            if source.needsWebView {
-                nextHTML = try await Self.fetchViaWebView(
-                    url: nextPageURL, headers: headers)
-            } else {
-                nextHTML = try await fetchHTML(
-                    url: nextPageURL, method: "GET", body: nil,
-                    headers: headers, baseURL: nextBase,
-                    source: source)
-            }
-            // One session-serialized call parses chapters AND the next-page URL
-            // from a single DOM (autoreleasepool drains SwiftSoup per page).
-            let pageURL = nextURL
-            let pageResult = try await pipeline.parseTOCPage(
-                html: nextHTML,
-                baseURL: pageURL,
-                source: source,
-                runtimeVariables: effectiveRuntimeVariables
-            )
-            nextURL = pageResult.nextTocURL
-            chapters.append(contentsOf: pageResult.chapters)
-            if let pageRuntime = pageResult.runtimeVariables {
-                var merged = tocRuntimeVariables ?? [:]
-                merged.merge(pageRuntime) { _, new in new }
-                tocRuntimeVariables = merged
-            }
-            pageCount += 1
-            SourcePerfTrace.record(
-                "toc.nextPage", "page=\(pageCount) \(source.bookSourceName)", since: pageStart
-            )
-        }
-        let normalized = normalizedChaptersWithNextURL(chapters)
         return finishTOCPackage(
             tocUrl: tocUrl,
             source: source,
-            runtimeVariables: tocRuntimeVariables,
-            chapters: normalized,
+            runtimeVariables: Self.mergedTOCRuntimeVariables(
+                firstPage.runtimeVariables ?? effectiveRuntimeVariables, following.runtimeVariables
+            ),
+            chapters: normalizedChaptersWithNextURL(chapters + following.chapters),
             writesCache: writesCache
         )
+    }
+
+    /// The pages after the first, walked as Legado's `BookChapterList` walks them (legado,
+    /// MD3 and Sigma agree). One next URL: follow page by page, each page's first next URL,
+    /// until a page comes round again — the pages read are the only limit, as there; a cap of
+    /// 20 pages here cut long tables of contents short. Several: a page-select TOC listing
+    /// every page, fetched together and merged in list order, and not asked for next pages.
+    private func fetchFollowingTOCPages(
+        _ nextURLs: [String],
+        firstPageURL: String,
+        source: BookSource,
+        runtimeVariables: [String: String]?
+    ) async throws -> (chapters: [OnlineChapterRef], runtimeVariables: [[String: String]]) {
+        switch nextURLs.count {
+        case 0:
+            return ([], [])
+        case 1:
+            var chapters: [OnlineChapterRef] = []
+            var pageRuntimeVariables: [[String: String]] = []
+            var read: Set<String> = [firstPageURL]
+            var nextURL = nextURLs[0]
+            while !nextURL.isEmpty, read.insert(nextURL).inserted {
+                let pageStart = ProcessInfo.processInfo.systemUptime
+                let page = try await fetchFollowingTOCPage(nextURL, source: source)
+                // Legado parses a followed page against the URL it asked for.
+                let parsed = try await pipeline.parseTOCPage(
+                    html: page.html,
+                    baseURL: nextURL,
+                    source: source,
+                    runtimeVariables: runtimeVariables
+                )
+                chapters.append(contentsOf: parsed.chapters)
+                if let pageRuntime = parsed.runtimeVariables { pageRuntimeVariables.append(pageRuntime) }
+                nextURL = parsed.nextTocURLs.first ?? ""
+                SourcePerfTrace.record(
+                    "toc.nextPage", "page=\(read.count - 1) \(source.bookSourceName)", since: pageStart
+                )
+            }
+            return (chapters, pageRuntimeVariables)
+        default:
+            // Every page is on the source's one host, as with a download, so the fan-out
+            // takes the download ceiling of the same 並發數 knob (Legado: `threadCount`).
+            let width = await MainActor.run {
+                NetworkSearchSettings.clampedDownloadConcurrency(GlobalSettings.shared.searchConcurrency)
+            }
+            let fanOutStart = ProcessInfo.processInfo.systemUptime
+            var pages = [(chapters: [OnlineChapterRef], runtimeVariables: [String: String]?)?](
+                repeating: nil, count: nextURLs.count
+            )
+            try await withThrowingTaskGroup(
+                of: (Int, [OnlineChapterRef], [String: String]?).self
+            ) { group in
+                var nextIndex = 0
+                func addPage() {
+                    let index = nextIndex
+                    let pageURL = nextURLs[index]
+                    nextIndex += 1
+                    group.addTask {
+                        let page = try await self.fetchFollowingTOCPage(pageURL, source: source)
+                        let parsed = try await self.pipeline.parseTOCResult(
+                            html: page.html,
+                            baseURL: page.finalURL,
+                            source: source,
+                            runtimeVariables: runtimeVariables
+                        )
+                        return (index, parsed.chapters, parsed.runtimeVariables)
+                    }
+                }
+                while nextIndex < min(width, nextURLs.count) { addPage() }
+                for try await (index, chapters, pageRuntime) in group {
+                    pages[index] = (chapters, pageRuntime)
+                    if nextIndex < nextURLs.count { addPage() }
+                }
+            }
+            SourcePerfTrace.record(
+                "toc.nextPages", "pages=\(nextURLs.count) \(source.bookSourceName)", since: fanOutStart
+            )
+            return (
+                pages.flatMap { $0?.chapters ?? [] },
+                pages.compactMap { $0?.runtimeVariables }
+            )
+        }
+    }
+
+    /// A page after the first, by the same transport choice as the first: a URL carrying
+    /// options or JS goes through the Legado runtime (`AnalyzeUrl`), as every page does in
+    /// Legado; any other through WebView when the source asks for it, else plain HTTP.
+    private func fetchFollowingTOCPage(
+        _ pageURL: String,
+        source: BookSource
+    ) async throws -> (html: String, finalURL: String) {
+        if source.shouldUseLegadoRuntimeFetch(for: pageURL) {
+            let (html, finalURL) = try await BookSourceSession.session(for: source).fetch(ruleUrl: pageURL)
+            return (html, finalURL)
+        }
+        guard let url = safeURL(string: pageURL) else {
+            throw FetchError.invalidURL(pageURL)
+        }
+        let headers = await source.resolvedHeaders()
+        if source.needsWebView {
+            return (try await Self.fetchViaWebView(url: url, headers: headers), pageURL)
+        }
+        let html = try await fetchHTML(
+            url: url, method: "GET", body: nil,
+            headers: headers, baseURL: pageURL,
+            source: source
+        )
+        return (html, pageURL)
+    }
+
+    /// The first page's runtime variables with each following page's laid over them in order.
+    private static func mergedTOCRuntimeVariables(
+        _ first: [String: String]?,
+        _ following: [[String: String]]
+    ) -> [String: String]? {
+        guard !following.isEmpty else { return first }
+        var merged = first ?? [:]
+        for page in following {
+            merged.merge(page) { _, new in new }
+        }
+        return merged
     }
 
     /// Both transports end here, so `writesCache` holds for each of them.
