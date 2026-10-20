@@ -255,7 +255,9 @@ struct ChapterFetcher {
             // the first flush against the margin. Runs before the review repair so a 段評 bubble
             // ends up inside the paragraph it belongs to.
             let promotedParagraphs = ReaderHTMLUtilities.promoteBreakSeparatedParagraphs(in: body)
-            let reviewRepair = Self.reattachStandaloneParagraphReviews(in: body)
+            let reviewRepair = SourcePerfTrace.span("chapter.reviewRepair") {
+                Self.reattachStandaloneParagraphReviews(in: body)
+            }
             do {
                 let html = try body.html().trimmingCharacters(in: .whitespacesAndNewlines)
                 return (html, titleBubble, reviewRepair, promotedParagraphs)
@@ -403,17 +405,47 @@ struct ChapterFetcher {
         in body: Element
     ) -> ParagraphReviewStructureRepair {
         var result = ParagraphReviewStructureRepair()
-        let anchors = (try? body.select("a.yd-review-image[href]").array()) ?? []
+        // `a.yd-review-image[href]` by tag, then class and attribute: the same elements in the
+        // same document order, but `select` builds SwiftSoup's class index over the whole tree
+        // first, which cost 15× the document's parse (149 ms vs 10 ms for 275 bubbles, Debug).
+        let anchors = ((try? body.getElementsByTag("a").array()) ?? []).filter {
+            $0.hasClass("yd-review-image") && $0.hasAttr("href")
+        }
         let blockTags: Set<String> = [
             "p", "div", "li", "blockquote",
             "h1", "h2", "h3", "h4", "h5", "h6",
             "section", "article",
         ]
 
+        // Every SwiftSoup sibling query below walks the whole parent's child list, and in a
+        // 段評 chapter that parent is <body> with every prose <p> and bubble as its children:
+        // asked once per bubble, the repair was quadratic in the chapter (MetricKit
+        // cpu-exception d32f7c57; 1572 KB of 段評 HTML took 17.9 s in Debug, all of it here).
+        //
+        // The answer is memoised per element. It cannot go stale: the loop only ever moves an
+        // `<a>` (not a block) or removes an empty wrapper block whose block sibling `previous`
+        // stays in the same parent, so no parent gains its first or loses its last block child.
+        var directBlockChild: [ObjectIdentifier: Bool] = [:]
         func hasDirectBlockChild(_ element: Element) -> Bool {
-            element.children().array().contains {
+            let key = ObjectIdentifier(element)
+            if let known = directBlockChild[key] { return known }
+            let found = element.children().array().contains {
                 blockTags.contains($0.tagName().lowercased())
             }
+            directBlockChild[key] = found
+            return found
+        }
+
+        // `Element.previousElementSibling()` rebuilds the parent's element list to find its own
+        // index. `previousSibling()` reads the node's sibling index directly, so walking back over
+        // text and comment nodes reaches the same element without that scan.
+        func previousElementSibling(_ element: Element) -> Element? {
+            var node = element.previousSibling()
+            while let current = node {
+                if let previous = current as? Element { return previous }
+                node = current.previousSibling()
+            }
+            return nil
         }
 
         func trimmedText(_ element: Element) -> String {
@@ -455,7 +487,7 @@ struct ChapterFetcher {
                 continue
             }
 
-            guard let previous = try? candidate.previousElementSibling(),
+            guard let previous = previousElementSibling(candidate),
                   blockTags.contains(previous.tagName().lowercased()),
                   !hasDirectBlockChild(previous),
                   !trimmedText(previous).isEmpty
@@ -616,7 +648,9 @@ struct ChapterFetcher {
             fetchNextPageHTML: fetchNextPageHTML
         )
         let parsed = paginated.payload
-        let content = await resolveContent(parsed: parsed)
+        let content = await SourcePerfTrace.spanAsync("chapter.resolve", "\(parsed.content.utf8.count)B") {
+            await resolveContent(parsed: parsed)
+        }
         guard !content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
             throw FetchError.emptyContent
         }
@@ -624,12 +658,14 @@ struct ChapterFetcher {
         let canonicalTitle = parsed.title.trimmingCharacters(in: .whitespacesAndNewlines)
         let effectiveTitle = canonicalTitle.isEmpty ? tocTitle : canonicalTitle
         let effectiveReviewContext = reviewContext?.withRuntimeVariables(parsed.runtimeVariables)
-        let normalizedHTML = await buildRenderableNormalizedHTML(
-            title: effectiveTitle,
-            plainTextContent: content,
-            rawHTMLContent: parsed.content,
-            reviewContext: effectiveReviewContext
-        )
+        let normalizedHTML = await SourcePerfTrace.spanAsync("chapter.normalizedHTML", "\(parsed.content.utf8.count)B") {
+            await buildRenderableNormalizedHTML(
+                title: effectiveTitle,
+                plainTextContent: content,
+                rawHTMLContent: parsed.content,
+                reviewContext: effectiveReviewContext
+            )
+        }
         let rawHTML = paginated.rawHTMLPages.joined(separator: "\n<!-- staged-page-break -->\n")
         let checksum = SHA256.hash(data: Data(content.utf8)).compactMap {
             String(format: "%02x", $0)
