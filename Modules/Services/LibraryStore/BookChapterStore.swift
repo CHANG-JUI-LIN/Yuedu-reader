@@ -185,7 +185,13 @@ final class BookChapterStore: Sendable {
         }
     }
 
-    /// Returns the bytes written.
+    /// Returns the bytes written: none for a list its file already holds.
+    ///
+    /// `setChapters` compares only with the lists held in memory, `cachedListLimit` of them,
+    /// so a launch refresh over a larger shelf set every other list again unchanged, and each
+    /// was rewritten: 173 books, 1.08 GB within a minute (MetricKit disk-write exception,
+    /// build 129). The file is compared here rather than there: `setChapters` runs on the
+    /// main thread during a refresh, and shelf saves flush on `BookStore.persistQueue`.
     private func write(_ chapters: [OnlineChapterRef]?, for bookID: UUID) throws -> Int {
         let url = fileURL(for: bookID)
         guard let chapters else {
@@ -194,6 +200,7 @@ final class BookChapterStore: Sendable {
             }
             return 0
         }
+        if readFile(for: bookID) == chapters { return 0 }
         try FileManager.default.createDirectory(at: directoryURL, withIntermediateDirectories: true)
         let data = try JSONEncoder().encode(chapters)
         try data.write(to: url, options: .atomic)
