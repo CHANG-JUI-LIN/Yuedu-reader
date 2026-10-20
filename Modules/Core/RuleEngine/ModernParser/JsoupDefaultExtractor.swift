@@ -74,11 +74,18 @@ struct JsoupDefaultExtractor: RuleExtractor {
         guard !rule.isEmpty else { return [] }
         let doc = try JsoupDocumentCache.current.document(
             for: content.truncatedForSwiftSoup(), baseURL: baseURL)
-        let analyzer = RuleAnalyzer(data: rule)
+        // Legado's `SourceRule.isCss`: an `@css:` rule reads every piece as CSS. A rule module
+        // writes the prefix on each alternative instead (narou's TOC title), so a piece's own
+        // prefix counts too; those pieces go to `CssExtractor`, the one CSS reader.
+        let trimmed = rule.trimmingCharacters(in: .whitespacesAndNewlines)
+        let isCss = Self.hasCSSPrefix(trimmed)
+        let analyzer = RuleAnalyzer(data: isCss ? String(trimmed.dropFirst(5)) : trimmed)
         let pieces = analyzer.splitRule("&&", "||", "%%")
         var results: [[String]] = []
         for piece in pieces {
-            let values = try getStringList(from: doc, rule: piece, baseURL: baseURL)
+            let values = isCss || Self.hasCSSPrefix(piece)
+                ? try CssExtractor().extractList(from: content, rule: piece, baseURL: baseURL)
+                : try getStringList(from: doc, rule: piece, baseURL: baseURL)
             guard !values.isEmpty else { continue }
             results.append(values)
             if analyzer.elementsType == "||" { break }
@@ -99,6 +106,10 @@ struct JsoupDefaultExtractor: RuleExtractor {
     /// `extractValueList(...).first` instead (`getString0`).
     func extractValue(from content: String, rule: String, baseURL: String) throws -> String {
         try extractValueList(from: content, rule: rule, baseURL: baseURL).joined(separator: "\n")
+    }
+
+    private static func hasCSSPrefix(_ rule: String) -> Bool {
+        rule.trimmingCharacters(in: .whitespacesAndNewlines).lowercased().hasPrefix("@css:")
     }
 
     // MARK: - Rule Detection

@@ -116,6 +116,19 @@ struct RuleEnginePipelineTests {
             == "斗羅大陸\n唐家三少\n凡人修仙傳\n忘語\n盜墓筆記\n南派三叔")
     }
 
+    /// A rule module writes `@css:` on each alternative (narou's TOC title); Legado writes it
+    /// once, for the whole rule. Both read every piece as CSS.
+    @Test("@css: pieces joined by operators read as CSS")
+    func cssPiecesInOperatorRule() {
+        let (engine, _) = makeEngine()
+        engine.setContent(sampleHTML, baseUrl: "https://example.com")
+        let authors = ["唐家三少", "忘語", "南派三叔"]
+        #expect(engine.getStringList(ruleStr: "@css:.missing@text||@css:.author@text") == authors)
+        #expect(engine.getString(ruleStr: "@css:.missing@text||@css:.author@text")
+            == authors.joined(separator: "\n"))
+        #expect(engine.getStringList(ruleStr: "@css:.missing@text||.item > .author@text") == authors)
+    }
+
     /// Legado's `isUrl` read is `getString0`: the first value. Covers and other optional
     /// links keep the first value too — Legado joins those, which only makes a broken URL.
     @Test("Link reads keep the first value")

@@ -213,6 +213,9 @@ final class ModernRuleEngine {
     /// falls back to the page's own URL. That fallback
     /// suits a link the parse has to follow (a book, its contents); as a cover it made the
     /// app download the page itself as an image — for a search, the search request again.
+    /// Unlike Legado, a rule that matches several links keeps the first, as an `isUrl` read
+    /// does: Legado's `getString` joins them with "\n", which is no URL at all (maintainer
+    /// approved, 2026-10-20).
     func getOptionalURL(ruleStr: String?) -> String {
         guard let ruleStr, !ruleStr.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
             return ""
