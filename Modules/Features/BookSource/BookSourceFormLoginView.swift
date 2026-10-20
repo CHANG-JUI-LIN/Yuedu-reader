@@ -871,12 +871,17 @@ struct BookSourceFormLoginView: View {
                     request.setValue(jar, forHTTPHeaderField: "Cookie")
                 }
             }
+            // The bridge's decoder: the `charset` option decides, and the page's charset is
+            // detected otherwise. This sheet used to read every body as UTF-8, so a GBK reply was "".
+            let charset = analyzeUrl.charset
             let fetch = { [request] () -> PreparedSourceRequest.Response? in
                 let pending = BlockingResult<(statusCode: Int?, body: String)>()
                 URLSession.shared.dataTask(with: request) { data, response, _ in
                     pending.deliver((
                         statusCode: (response as? HTTPURLResponse)?.statusCode,
-                        body: data.map { String(data: $0, encoding: .utf8) ?? "" } ?? ""
+                        body: data.map {
+                            LegadoJSBridge.decodeData($0, response: response, declaredCharset: charset)
+                        } ?? ""
                     ))
                 }.resume()
                 // A response that arrives after the timeout is never read.

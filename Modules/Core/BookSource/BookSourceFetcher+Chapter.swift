@@ -161,17 +161,18 @@ extension BookSourceFetcher {
                         body: body,
                         headers: requestHeadersSnapshot,
                         baseURL: effectiveReferer,
-                        bodyCharset: requestSpec.charset,
+                        charset: requestSpec.charset,
                         source: source
                     )
                 }
+                // A next page carries no options of the first page's: Legado builds its
+                // AnalyzeUrl from the next URL alone, so its charset is detected.
                 return try await self.fetchHTML(
                     url: targetURL,
                     method: method,
                     body: body,
                     headers: requestHeadersSnapshot,
                     baseURL: effectiveReferer,
-                    bodyCharset: requestSpec.charset,
                     source: source
                 )
             }

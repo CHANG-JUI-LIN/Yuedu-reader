@@ -76,6 +76,14 @@ struct PreparedSourceRequest {
     let finish: (Response) -> String?
 }
 
+/// The transport every `java.*` request goes through when a runtime installs one.
+///
+/// `declaredCharset` is the AnalyzeUrl `charset` option (`url,{"charset":"gbk"}`), `nil` for a
+/// request that names none. The transport decodes the body itself, so the option has to reach
+/// it: Legado decodes with it (`AnalyzeUrl.getStrResponse`), and detection alone misreads a
+/// page whose encoding it cannot tell apart, such as Big5 bytes that are also valid GBK.
+typealias SourceScriptTransport = (URLRequest, _ declaredCharset: String?) -> LegadoHTTPResult?
+
 /// Complete response payload captured from the same request that produced the body.
 /// Response-shaped JavaScript APIs retain this metadata; string-shaped APIs consume
 /// only `body` without issuing a second request.
@@ -101,7 +109,9 @@ struct LegadoHTTPResult {
         )
     }
 
-    static func make(request: URLRequest, data: Data?, response: URLResponse?) -> LegadoHTTPResult {
+    static func make(
+        request: URLRequest, data: Data?, response: URLResponse?, declaredCharset: String? = nil
+    ) -> LegadoHTTPResult {
         let http = response as? HTTPURLResponse
         let requestURL = request.url ?? URL(string: "about:blank")!
         let finalURL = response?.url ?? requestURL
@@ -122,7 +132,9 @@ struct LegadoHTTPResult {
             statusMessage: code == 0 ? "" : HTTPURLResponse.localizedString(forStatusCode: code).capitalized,
             headers: headers,
             cookies: cookies,
-            body: data.map { LegadoJSBridge.decodeData($0, response: response) } ?? ""
+            body: data.map {
+                LegadoJSBridge.decodeData($0, response: response, declaredCharset: declaredCharset)
+            } ?? ""
         )
     }
 }
@@ -319,7 +331,7 @@ struct LegadoHTTPResult {
     var putData: ((String, String) -> Void)?
 
     /// Delegate for network requests.
-    var networkHandler: ((URLRequest) -> LegadoHTTPResult?)?
+    var networkHandler: SourceScriptTransport?
 
     /// Presents a page for `java.startBrowser` / `java.startBrowserAwait` (and two-argument
     /// `showBrowser`). The completion receives the page's HTML once the user confirms it, nil
@@ -2162,7 +2174,7 @@ struct LegadoHTTPResult {
         headers.forEach { request.setValue($1, forHTTPHeaderField: $0) }
 
         if let handler = networkHandler {
-            return handler(request) ?? .bodyOnly(request: request, body: "")
+            return handler(request, nil) ?? .bodyOnly(request: request, body: "")
         }
 
         let pending = BlockingResult<LegadoHTTPResult>()
@@ -2206,7 +2218,7 @@ struct LegadoHTTPResult {
         headers.forEach { request.setValue($1, forHTTPHeaderField: $0) }
 
         if let handler = networkHandler {
-            return handler(request) ?? .bodyOnly(request: request, body: "")
+            return handler(request, nil) ?? .bodyOnly(request: request, body: "")
         }
 
         let pending = BlockingResult<LegadoHTTPResult>()
@@ -2248,7 +2260,7 @@ struct LegadoHTTPResult {
 
         if let handler = networkHandler {
             return LegadoStrResponse(
-                result: handler(request) ?? .bodyOnly(request: request, body: "")
+                result: handler(request, nil) ?? .bodyOnly(request: request, body: "")
             )
         }
 
@@ -2269,7 +2281,7 @@ struct LegadoHTTPResult {
     /// configured with; `ajaxAll` captures this so its workers never touch the bridge itself.
     private struct RequestContext {
         let analyzeUrlHandler: ((String) -> PreparedSourceRequest?)?
-        let networkHandler: ((URLRequest) -> LegadoHTTPResult?)?
+        let networkHandler: SourceScriptTransport?
         /// Resolved when the context is built, on the JS thread. Resolving them can evaluate the
         /// header rule on the engine's JS queue, which `ajaxAll` occupies while its workers run.
         let sourceHeaders: [String: String]
@@ -2363,7 +2375,7 @@ struct LegadoHTTPResult {
             }
             var request = URLRequest(url: url, cachePolicy: .reloadIgnoringLocalCacheData, timeoutInterval: context.timeoutSeconds)
             context.sourceHeaders.forEach { request.setValue($1, forHTTPHeaderField: $0) }
-            return handler(request) ?? .bodyOnly(request: request, body: "")
+            return handler(request, nil) ?? .bodyOnly(request: request, body: "")
         }
 
         // Fallback: synchronous URLSession request with charset-aware decoding
@@ -2401,8 +2413,9 @@ struct LegadoHTTPResult {
     /// This used to be a second, weaker implementation: it trusted `textEncodingName` outright and
     /// ended in an `?? String(data:encoding:.isoLatin1)` catch-all — two different ways to turn a
     /// mislabeled UTF-8 body into mojibake, on the path many sources use to fetch chapter text.
-    static func decodeData(_ data: Data, response: URLResponse?) -> String {
-        HTMLResponseDecoder.decode(data: data, response: response) ?? ""
+    /// `declaredCharset` is the AnalyzeUrl `charset` option; it decides when present, as in Legado.
+    static func decodeData(_ data: Data, response: URLResponse?, declaredCharset: String? = nil) -> String {
+        HTMLResponseDecoder.decode(data: data, response: response, declaredCharset: declaredCharset) ?? ""
     }
 
     /// Returns true when the body alone (regardless of HTTP status) looks like a CF page.

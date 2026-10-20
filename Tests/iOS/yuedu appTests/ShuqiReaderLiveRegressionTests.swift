@@ -65,7 +65,7 @@ struct ShuqiReaderLiveRegressionTests {
         LoginManager.shared.clearLogin(sourceUrl: source.bookSourceUrl)
         defer { LoginManager.shared.clearLogin(sourceUrl: source.bookSourceUrl) }
         let bridge = ModernParserBridge(source: source)
-        bridge.sourceScriptNetworkHandler = { request in
+        bridge.sourceScriptNetworkHandler = { request, _ in
             guard request.url?.host == "t.shuqi.com" else { return nil }
             var result = LegadoHTTPResult.bodyOnly(request: request, body: "")
             result = LegadoHTTPResult(
@@ -387,7 +387,7 @@ struct ShuqiReaderLiveRegressionTests {
         )
         let layout = await CoreTextPaginator().paginate(
             spineIndex: 0,
-            attrStr: rendered.attributedString,
+            attrStr: LayoutShared(rendered.attributedString).wrappedValue,
             renderSize: size,
             fontSize: settings.fontSize,
             contentInsets: settings.contentInsets
@@ -579,7 +579,7 @@ struct ShuqiReaderLiveRegressionTests {
         )
         let layout = await CoreTextPaginator().paginate(
             spineIndex: 0,
-            attrStr: rendered.attributedString,
+            attrStr: LayoutShared(rendered.attributedString).wrappedValue,
             renderSize: size,
             fontSize: settings.fontSize,
             contentInsets: settings.contentInsets

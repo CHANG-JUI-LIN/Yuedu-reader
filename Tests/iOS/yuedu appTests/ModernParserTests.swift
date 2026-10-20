@@ -2907,7 +2907,7 @@ struct JSCoreEngineTests {
             completion("<html>challenge page</html>")
         }
         var refetched: URL?
-        engine.networkHandler = { request in
+        engine.networkHandler = { request, _ in
             refetched = request.url
             return .bodyOnly(request: request, body: #"{"books":[]}"#)
         }
@@ -2959,7 +2959,7 @@ struct JSCoreEngineTests {
     func startBrowserAwaitWithHTMLRefetches() {
         let engine = JSCoreEngine()
         engine.browserPresentHandler = { _, completion in completion("<html>page</html>") }
-        engine.networkHandler = { request in
+        engine.networkHandler = { request, _ in
             .bodyOnly(request: request, body: "refetched \(request.url?.path ?? "")")
         }
 
@@ -3143,6 +3143,7 @@ struct JSCoreEngineTests {
     }
 
     @Test("source-authored browser page routes qmRun to the native reply bridge")
+    @MainActor
     func sourceBrowserPageRunBridge() throws {
         let context = try #require(JSContext())
         _ = context.evaluateScript("""
@@ -3163,6 +3164,7 @@ struct JSCoreEngineTests {
     }
 
     @Test("source-authored browser page exposes synchronous java ajax and get")
+    @MainActor
     func sourceBrowserPageSynchronousJavaNetworkBridge() throws {
         let context = try #require(JSContext())
         var calls: [[String: Any]] = []
@@ -3194,6 +3196,7 @@ struct JSCoreEngineTests {
     }
 
     @Test("source browser java request reuses the source runtime transport")
+    @MainActor
     func sourceBrowserJavaRequestUsesSourceRuntime() throws {
         var source = BookSource(
             bookSourceUrl: "source-page-network-\(UUID().uuidString)",
@@ -3202,7 +3205,7 @@ struct JSCoreEngineTests {
         source.header = #"{"X-Source":"source-header"}"#
         let bridge = ModernParserBridge(source: source)
         var capturedRequest: URLRequest?
-        bridge.sourceScriptNetworkHandler = { request in
+        bridge.sourceScriptNetworkHandler = { request, _ in
             capturedRequest = request
             return .bodyOnly(request: request, body: #"{"comments":[1]}"#)
         }
@@ -3217,13 +3220,14 @@ struct JSCoreEngineTests {
     }
 
     @Test("source browser common Java network methods preserve Android return shapes")
+    @MainActor
     func sourceBrowserJavaNetworkMethodShapes() throws {
         let bridge = ModernParserBridge(source: BookSource(
             bookSourceUrl: "source-page-methods-\(UUID().uuidString)",
             bookSourceName: "source page methods fixture"
         ))
         var requests: [URLRequest] = []
-        bridge.sourceScriptNetworkHandler = { request in
+        bridge.sourceScriptNetworkHandler = { request, _ in
             requests.append(request)
             return LegadoHTTPResult(
                 requestURL: request.url!,
@@ -4046,7 +4050,7 @@ struct ModernParserBridgeExploreTests {
 
         let networkStarted = DispatchSemaphore(value: 0)
         let releaseNetwork = DispatchSemaphore(value: 0)
-        engine.networkHandler = { _ in
+        engine.networkHandler = { _, _ in
             networkStarted.signal()
             _ = releaseNetwork.wait(timeout: .now() + 2)
             return LegadoHTTPResult(

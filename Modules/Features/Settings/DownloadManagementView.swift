@@ -453,7 +453,7 @@ private struct PreviewWebContentFetcher: WebContentFetching {
         body: String?,
         headers: [String: String],
         baseURL: String,
-        bodyCharset: String?
+        charset: String?
     ) async throws -> String {
         throw PreviewStubError.unavailable
     }

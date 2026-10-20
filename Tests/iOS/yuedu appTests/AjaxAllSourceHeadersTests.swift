@@ -21,7 +21,7 @@ struct AjaxAllSourceHeadersTests {
             engine.bookSource = source
         }
         // Called from ajaxAll's workers, several at once: derive the answer from the request only.
-        engine.networkHandler = { request in
+        engine.networkHandler = { request, _ in
             let header = request.value(forHTTPHeaderField: "X-Batch") ?? "-"
             return .bodyOnly(request: request, body: header + ":" + (request.url?.lastPathComponent ?? "?"))
         }

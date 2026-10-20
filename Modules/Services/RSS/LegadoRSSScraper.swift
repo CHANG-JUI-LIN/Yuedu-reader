@@ -341,10 +341,12 @@ enum LegadoRSSScraper {
     /// dedicated serial queue, so blocking on a semaphore is safe (same pattern as
     /// ModernParserBridge).
     private static func wireNetworkHandler(_ jsEngine: JSCoreEngine) {
-        jsEngine.networkHandler = { request in
+        jsEngine.networkHandler = { request, declaredCharset in
             let pending = BlockingResult<LegadoHTTPResult>()
             let task = URLSession.shared.dataTask(with: request) { data, response, _ in
-                pending.deliver(LegadoHTTPResult.make(request: request, data: data, response: response))
+                pending.deliver(LegadoHTTPResult.make(
+                    request: request, data: data, response: response, declaredCharset: declaredCharset
+                ))
             }
             task.resume()
             return pending.wait(timeout: .now() + 30)

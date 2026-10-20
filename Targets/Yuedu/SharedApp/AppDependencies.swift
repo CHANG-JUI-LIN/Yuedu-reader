@@ -8,7 +8,7 @@ protocol WebContentFetching: Sendable {
         body: String?,
         headers: [String: String],
         baseURL: String,
-        bodyCharset: String?
+        charset: String?
     ) async throws -> String
 }
 
@@ -181,7 +181,7 @@ struct LiveWebContentFetcher: WebContentFetching {
         body: String?,
         headers: [String: String],
         baseURL: String,
-        bodyCharset: String?
+        charset: String?
     ) async throws -> String {
         try await webFetcher.fetchHTML(
             url: url,
@@ -189,7 +189,7 @@ struct LiveWebContentFetcher: WebContentFetching {
             body: body,
             headers: headers,
             baseURL: baseURL,
-            bodyCharset: bodyCharset
+            charset: charset
         )
     }
 }

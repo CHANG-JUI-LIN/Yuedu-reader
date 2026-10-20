@@ -116,7 +116,7 @@ class ModernParserBridge {
     /// Deterministic fixture injection for source-JS HTTP calls. Production keeps
     /// the handler installed by `wireJSEngine`; tests may replace it without adding
     /// another loader or parser path.
-    var sourceScriptNetworkHandler: ((URLRequest) -> LegadoHTTPResult?)? {
+    var sourceScriptNetworkHandler: SourceScriptTransport? {
         get { jsEngine.networkHandler }
         set { jsEngine.networkHandler = newValue }
     }
@@ -499,8 +499,10 @@ class ModernParserBridge {
                 ])
                 return nil
             }
+            // The `charset` option decides how the body is decoded, as in Legado.
+            let charset = analyzeUrl.charset
             let fetch = { [request] () -> PreparedSourceRequest.Response? in
-                let result = transport(request) ?? .bodyOnly(request: request, body: "")
+                let result = transport(request, charset) ?? .bodyOnly(request: request, body: "")
                 self.recordJSNetwork(
                     url: result.finalURL.absoluteString,
                     statusCode: result.statusCode,
@@ -540,7 +542,7 @@ class ModernParserBridge {
 
         // networkHandler runs on the jsEngine serial queue thread — blocking via
         // semaphore here is intentional and safe (dedicated thread, not the global pool).
-        engine.networkHandler = { [weak self] request in
+        engine.networkHandler = { [weak self] request, declaredCharset in
             let reviewSummaryCacheKey = self.map { "\(sourceUrl)#\($0.sourceRuleData.source.lastUpdateTime)" }
             let isReviewSummaryRequest = Self.isChapterReviewSummaryRequest(request)
             var ownsReviewRequest = false
@@ -592,11 +594,16 @@ class ModernParserBridge {
             // ajaxAll requests land here — URLSession.shared would re-cap them at 6/host (why the
             // ajaxAll throttle raise alone left `⏱ chapter.jsNet` unchanged).
             let task = requestSession.dataTask(with: request) { data, response, error in
+                // Decoded once: the failure log and the review-summary cache read the same text
+                // the source JS gets.
+                let responseResult = LegadoHTTPResult.make(
+                    request: request, data: data, response: response, declaredCharset: declaredCharset
+                )
                 pending.deliver(NetworkResponse(
                     statusCode: (response as? HTTPURLResponse)?.statusCode,
                     transportError: error,
-                    responseResult: LegadoHTTPResult.make(request: request, data: data, response: response),
-                    body: data.map { LegadoJSBridge.decodeData($0, response: response) }
+                    responseResult: responseResult,
+                    body: data == nil ? nil : responseResult.body
                 ))
             }
             task.resume()
@@ -2507,19 +2514,10 @@ class ModernParserBridge {
         // names one, as in Legado, and otherwise the charset is detected from the header, the
         // document and the bytes. This used to assume UTF-8 without the option, which turned
         // every GBK page that did not name its charset into "".
-        let decodedBody = HTMLResponseDecoder.decode(
-            data: data, response: response, declaredCharset: analyzeUrl.charset
-        ) ?? ""
-        let capturedResult = LegadoHTTPResult.make(request: request, data: data, response: response)
-        let sourceResponse = LegadoStrResponse(result: LegadoHTTPResult(
-            requestURL: capturedResult.requestURL,
-            finalURL: capturedResult.finalURL,
-            statusCode: capturedResult.statusCode,
-            statusMessage: capturedResult.statusMessage,
-            headers: capturedResult.headers,
-            cookies: capturedResult.cookies,
-            body: decodedBody
-        ))
+        let capturedResult = LegadoHTTPResult.make(
+            request: request, data: data, response: response, declaredCharset: analyzeUrl.charset
+        )
+        let sourceResponse = LegadoStrResponse(result: capturedResult)
         let checkedResponse = applyLoginCheck(to: sourceResponse)
         let body = checkedResponse.body()
         let finalUrl = checkedResponse.url

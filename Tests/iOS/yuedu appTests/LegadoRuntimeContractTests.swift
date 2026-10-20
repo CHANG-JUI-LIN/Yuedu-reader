@@ -107,7 +107,7 @@ struct LegadoConnectionResponseTests {
     @Test("two argument java.get retains response metadata")
     func javaGetResponse() {
         let engine = JSCoreEngine()
-        engine.networkHandler = { request in
+        engine.networkHandler = { request, _ in
             LegadoHTTPResult(
                 requestURL: request.url!,
                 finalURL: URL(string: "https://example.com/redirected")!,
@@ -133,7 +133,7 @@ struct LegadoConnectionResponseTests {
         var requestCount = 0
         engine.putData = { storage[$0] = $1 }
         engine.getData = { storage[$0] }
-        engine.networkHandler = { request in
+        engine.networkHandler = { request, _ in
             requestCount += 1
             return .bodyOnly(request: request, body: "unexpected")
         }
@@ -145,7 +145,7 @@ struct LegadoConnectionResponseTests {
     func connectAndHeadResponses() {
         let engine = JSCoreEngine()
         var requests: [URLRequest] = []
-        engine.networkHandler = { request in
+        engine.networkHandler = { request, _ in
             requests.append(request)
             return LegadoHTTPResult(
                 requestURL: request.url!, finalURL: request.url!, statusCode: 204,
@@ -274,7 +274,7 @@ struct LegadoJavaInteropRuntimeTests {
         )
         let scriptURL = "https://example.com/\(UUID().uuidString).js"
         var requestCount = 0
-        engine.networkHandler = { request in
+        engine.networkHandler = { request, _ in
             requestCount += 1
             return LegadoHTTPResult(
                 requestURL: request.url!,
@@ -311,7 +311,7 @@ struct LegadoJavaInteropRuntimeTests {
     func okhttpBuilder() {
         let engine = JSCoreEngine()
         var captured: URLRequest?
-        engine.networkHandler = { request in
+        engine.networkHandler = { request, _ in
             captured = request
             return LegadoHTTPResult(
                 requestURL: request.url!, finalURL: request.url!, statusCode: 200,
@@ -457,7 +457,7 @@ struct LegadoFullSourceFixtureTests {
         let source = try loadSource(environmentKey: "SHUQI_SOURCE_JSON", defaultPath: Self.shuqiDefaultPath)
         var requestCount = 0
         let bridge = ModernParserBridge(source: source)
-        bridge.sourceScriptNetworkHandler = { request in
+        bridge.sourceScriptNetworkHandler = { request, _ in
             requestCount += 1
             return LegadoHTTPResult(
                 requestURL: request.url!, finalURL: request.url!, statusCode: 200,
@@ -494,7 +494,7 @@ struct LegadoFullSourceFixtureTests {
         var oceanAuthorization: String?
         var requestedHosts: [String] = []
         let bridge = ModernParserBridge(source: source)
-        bridge.sourceScriptNetworkHandler = { request in
+        bridge.sourceScriptNetworkHandler = { request, _ in
             requestedHosts.append(request.url?.host ?? "<nil>")
             if request.url?.host == "t.shuqi.com" {
                 return LegadoHTTPResult(
@@ -549,6 +549,7 @@ struct LegadoFullSourceFixtureTests {
     }
 
     @Test("provided Tongren source keeps java ajax after four-argument showBrowser preload")
+    @MainActor
     func tongrenSourceBrowserPageJavaBridge() throws {
         let source = try loadSource(
             environmentKey: "TONGREN_SOURCE_JSON",
@@ -685,7 +686,7 @@ struct LegadoParserBridgeContractTests {
         var requestCount = 0
         var capturedHeaders: [String: String] = [:]
         let bridge = ModernParserBridge(source: source)
-        bridge.sourceScriptNetworkHandler = { request in
+        bridge.sourceScriptNetworkHandler = { request, _ in
             requestCount += 1
             capturedHeaders = request.allHTTPHeaderFields ?? [:]
             return .bodyOnly(request: request, body: "fixture-body")
@@ -707,7 +708,7 @@ struct LegadoParserBridgeContractTests {
 
         var capturedHeaders: [String: String] = [:]
         let bridge = ModernParserBridge(source: source)
-        bridge.sourceScriptNetworkHandler = { request in
+        bridge.sourceScriptNetworkHandler = { request, _ in
             capturedHeaders = request.allHTTPHeaderFields ?? [:]
             return .bodyOnly(request: request, body: "fixture-body")
         }

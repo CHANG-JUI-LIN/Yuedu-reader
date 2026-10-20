@@ -58,7 +58,7 @@ class JSCoreEngine {
     }
 
     /// Handle network requests originating from `java.ajax` / `java.connect`.
-    var networkHandler: ((URLRequest) -> LegadoHTTPResult?)? {
+    var networkHandler: SourceScriptTransport? {
         didSet { bridge.networkHandler = networkHandler }
     }
 

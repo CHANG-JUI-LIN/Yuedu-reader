@@ -290,7 +290,7 @@ struct URLImportTab: View {
                     body: nil,
                     headers: [:],
                     baseURL: url.absoluteString,
-                    bodyCharset: nil
+                    charset: nil
                 )
                 let text = WebNovelParser.extractContent(html: html, pageURL: url.absoluteString)
                 let refs = WebNovelParser.parseTOCRefs(html: html, pageURL: url.absoluteString)

@@ -50,24 +50,30 @@ actor WebFetcher {
     /// to solve it. Legado (both Legado-E and MD3) never opens a page on its own: the
     /// source's JS calls `java.startBrowserAwait`, or the reader opens the page from the
     /// reading menu (開啟網頁).
+    ///
+    /// - Parameter charset: the source's `charset` URL option. As in Legado's AnalyzeUrl it is
+    ///   one value for both directions: it encodes the request body and decodes the response.
+    ///   Nil detects the response's charset.
     nonisolated func fetchHTML(
         url: URL,
         method: String,
         body: String?,
         headers: [String: String],
         baseURL: String,
-        bodyCharset: String? = nil
+        charset: String? = nil
     ) async throws -> String {
         let page = try await fetchPage(
             url: url, method: method, body: body,
-            headers: headers, baseURL: baseURL, bodyCharset: bodyCharset
+            headers: headers, baseURL: baseURL, bodyCharset: charset
         )
         do {
             if !(200...299).contains(page.statusCode) {
                 throw nonSuccessStatus(page.statusCode, url: url, latencyMs: page.latencyMs)
             }
 
-            guard let html = HTMLResponseDecoder.decode(data: page.data, response: page.response) else {
+            guard let html = HTMLResponseDecoder.decode(
+                data: page.data, response: page.response, declaredCharset: charset
+            ) else {
                 throw FetchError.encodingError
             }
 

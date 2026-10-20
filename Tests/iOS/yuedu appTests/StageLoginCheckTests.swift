@@ -21,7 +21,7 @@ struct StageLoginCheckTests {
             """)
         let refetched = OSAllocatedUnfairLock<URL?>(initialState: nil)
         await BookSourceSession.session(for: source).host.run { bridge in
-            bridge.sourceScriptNetworkHandler = { request in
+            bridge.sourceScriptNetworkHandler = { request, _ in
                 refetched.withLock { $0 = request.url }
                 return .bodyOnly(request: request, body: "<p>results</p>")
             }
@@ -60,7 +60,7 @@ struct StageLoginCheckTests {
             """)
         let refetched = OSAllocatedUnfairLock(initialState: false)
         await BookSourceSession.session(for: source).host.run { bridge in
-            bridge.sourceScriptNetworkHandler = { request in
+            bridge.sourceScriptNetworkHandler = { request, _ in
                 refetched.withLock { $0 = true }
                 return .bodyOnly(request: request, body: "unexpected")
             }

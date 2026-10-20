@@ -144,10 +144,12 @@ final class BookSourceFetcher: @unchecked Sendable {
 
     /// `source`: when provided, the request honors the source's `concurrentRate`
     /// declaration (per-source concurrency/frequency budget — anti-ban).
+    /// `charset`: the request's `charset` URL option, for the body and the response alike
+    /// (`WebFetcher.fetchHTML`).
     func fetchHTML(
         url: URL, method: String, body: String?,
         headers: [String: String], baseURL: String,
-        bodyCharset: String? = nil,
+        charset: String? = nil,
         source: BookSource? = nil
     ) async throws -> String {
         guard let source else {
@@ -157,7 +159,7 @@ final class BookSourceFetcher: @unchecked Sendable {
                 body: body,
                 headers: headers,
                 baseURL: baseURL,
-                bodyCharset: bodyCharset
+                charset: charset
             )
         }
         return try await SourceRateLimit.run(source: source) {
@@ -167,7 +169,7 @@ final class BookSourceFetcher: @unchecked Sendable {
                 body: body,
                 headers: headers,
                 baseURL: baseURL,
-                bodyCharset: bodyCharset
+                charset: charset
             )
         }
     }
@@ -183,13 +185,13 @@ final class BookSourceFetcher: @unchecked Sendable {
     func fetchStageHTML(
         url: URL, method: String, body: String?,
         headers: [String: String], baseURL: String,
-        bodyCharset: String? = nil,
+        charset: String? = nil,
         source: BookSource
     ) async throws -> String {
         guard source.hasLoginCheckJs else {
             return try await fetchHTML(
                 url: url, method: method, body: body, headers: headers,
-                baseURL: baseURL, bodyCharset: bodyCharset, source: source
+                baseURL: baseURL, charset: charset, source: source
             )
         }
         let page = try await SourceRateLimit.run(source: source) {
@@ -199,10 +201,12 @@ final class BookSourceFetcher: @unchecked Sendable {
                 body: body,
                 headers: headers,
                 baseURL: baseURL,
-                bodyCharset: bodyCharset
+                bodyCharset: charset
             )
         }
-        let result = LegadoHTTPResult.make(request: page.request, data: page.data, response: page.response)
+        let result = LegadoHTTPResult.make(
+            request: page.request, data: page.data, response: page.response, declaredCharset: charset
+        )
         let checked = await pipeline.applyLoginCheck(to: result, source: source)
         guard (200...299).contains(checked.code) else {
             throw FetchError.httpError(checked.code)

@@ -19,7 +19,7 @@ struct AjaxAllWorkerJSTests {
         )
         let bridge = ModernParserBridge(source: source)
         // Called from ajaxAll's workers, several at once: derive the answer from the request only.
-        bridge.sourceScriptNetworkHandler = { request in
+        bridge.sourceScriptNetworkHandler = { request, _ in
             let url = request.url
             let query = url?.query.map { "?" + $0 } ?? ""
             return .bodyOnly(request: request, body: (url?.lastPathComponent ?? "?") + query)
