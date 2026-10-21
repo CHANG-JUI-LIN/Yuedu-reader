@@ -36,7 +36,8 @@ Reply in Traditional Chinese.
    (Storage copies of TestFlight screenshots).
    Pass `collection_path` as `triage` — a trailing slash is rejected. The query result is
    usually too large to read inline; it is saved to a file, so read it with `jq`.
-   **The report covers every open item, not only today's.** Split them:
+   **The report covers every open item, not only today's** — except the ones the
+   maintainer does not want to see (step 6, "Left out of the report"). Split them:
    - *To investigate*: `status` `new`, or `triaged` with `lastSeenAt` later than
      `triagedAt` (new events since the last look). These get steps 4–5 and a full entry.
    - *Still open*: `triaged` with nothing new. Do not re-investigate; their existing
@@ -111,8 +112,23 @@ Reply in Traditional Chinese.
 
    List every open item, most severe first within each section; group items that are the
    same bug on one line. Nothing is dropped from the report just because it was reported
-   yesterday — an item leaves the list only when its status becomes `fixing`, `shipped` or
-   `wontfix`.
+   yesterday — an item leaves the list when its status becomes `fixing`, `shipped` or
+   `wontfix`, or when it falls under "Left out of the report" below.
+
+   **Left out of the report** (maintainer, 2026-10-21: "缺 ips 和具體日誌的別回報給我，修過的
+   也隱藏"). These are still investigated and marked in step 7 — only the report omits them,
+   with no count and no mention:
+   - **No evidence to act on**: the conclusion is 「未定位」 because a crash log (.ips), a stack
+     with the app's own frames, or a diagnostic log / timing is missing. That covers
+     TestFlight crashes without `detail`, Crashlytics/Organizer items whose stack has no app
+     frame, and feedback whose cause needs logs the user cannot send. When a later event
+     brings that evidence, the item comes back. Items blocked on something the user *can*
+     answer (the book, the source, a setting) stay in, with the question in the reply draft.
+   - **Already fixed**: a fix commit exists (the note says 已修 <commit> or HEAD 已修) and the
+     item only waits for a newer build to confirm it.
+   - In the untracked-Crashlytics section: issues whose `lastSeenVersion` is older than the
+     current App Store release (they stopped by themselves), and issues with only system
+     frames.
 
    Then list the fixes worth starting, most severe first. When the session can propose
    sessions (`start_session` with `initiation: "own_initiative"`), propose one per fix,
