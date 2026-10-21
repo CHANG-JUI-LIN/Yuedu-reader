@@ -100,6 +100,14 @@ struct yuedu_appApp: App {
         if ProcessInfo.processInfo.arguments.contains("-reset-reading-settings") {
             for key in GlobalSettings.readingSettingsStoreKeys + [GlobalSettings.readingSettingSyncRecordsKey] {
                 UserDefaults.standard.removeObject(forKey: key)
+                // Only the app's own domain empties. A simulator can also hold the app's keys in
+                // its device-level preferences (`simctl spawn … defaults write` without the
+                // container path), which the app reads beneath its own and cannot write: the
+                // store stays worn and the launch arguments lose. An iPhone 18 Pro Max kept a
+                // paged setup there, and the 上下滑動 tests opened a paged reader (2026-10-21).
+                if UserDefaults.standard.object(forKey: key) != nil {
+                    AppLogger.error("-reset-reading-settings: \(key) is still set by another defaults domain; reading settings will not follow the launch arguments")
+                }
             }
         }
         // 資源庫's first-launch card, shown again.

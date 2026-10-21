@@ -1390,6 +1390,14 @@ final class DetailReaderBackSwipeUITests: XCTestCase {
         read.tap()
         let content = app.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", "Reserved edge navigation")).firstMatch
         XCTAssertTrue(content.waitForExistence(timeout: 30), app.debugDescription)
+        // The mode under test, before any gesture leans on it. 上下滑動's text lives in a
+        // collection view; a page does not. A reading setup the reset cannot clear wins over
+        // `-yd_scroll_mode`: an iPhone 18 Pro Max kept a paged one in its device-level
+        // preferences, and the interior drag below, an upward swipe on a page, was 上滑退出
+        // closing the reader — reported as a swipe that navigated back (2026-10-21).
+        let scrollText = app.collectionViews.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", "Reserved edge navigation")).firstMatch
+        XCTAssertEqual(scrollText.exists, scroll,
+                       "The reader opened \(scroll ? "paged" : "in scroll mode") against -yd_scroll_mode: see -reset-reading-settings in the app log.\n\(app.debugDescription)")
         let originalPage = content.label
         var edge = app.coordinate(withNormalizedOffset: CGVector(dx: 0.02, dy: 0.5))
         if #unavailable(iOS 26) {
