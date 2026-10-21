@@ -93,6 +93,55 @@ struct RSSBackgroundRefreshTests {
         #expect(fixture.store.allArticles().isEmpty)
     }
 
+    /// Crashlytics d88da8b2 (2026-10-19): 189 feeds refreshed hourly wrote 1084 MB a day,
+    /// because every feed's merge rewrote the article file of every feed.
+    @Test("a refresh of many feeds writes the article file once, and not at all when nothing changed")
+    func refreshWritesArticlesOnce() async throws {
+        let fixture = try Fixture()
+        defer { fixture.cleanup() }
+        let ids = ["a", "b", "c"]
+        for id in ids {
+            fixture.store.addSource(RSSSource(id: id, name: id, url: "https://rss.invalid/ok"))
+        }
+        let articles = fixture.store.writeCounts["rss_articles.json", default: 0]
+        let metadata = fixture.store.writeCounts["rss_feed_metadata.json", default: 0]
+
+        #expect(await RSSFeedRefreshService.refreshAll(store: fixture.store, makeFetcher: fixture.makeFetcher, notify: { _, _ in }))
+        #expect(fixture.store.writeCounts["rss_articles.json", default: 0] == articles + 1)
+        #expect(fixture.store.writeCounts["rss_feed_metadata.json", default: 0] == metadata + 1)
+
+        #expect(await RSSFeedRefreshService.refreshAll(store: fixture.store, makeFetcher: fixture.makeFetcher, notify: { _, _ in }))
+        #expect(fixture.store.writeCounts["rss_articles.json", default: 0] == articles + 1)
+        #expect(fixture.store.writeCounts["rss_feed_metadata.json", default: 0] == metadata + 2)
+
+        let reloaded = RSSStore(storageDirectory: fixture.root)
+        for id in ids {
+            #expect(reloaded.articles(for: id).count == 1)
+            #expect(reloaded.feedMetadata(for: id)?.etag == "fixture-v1")
+        }
+    }
+
+    @Test("a refresh cut short by its background task expiring keeps the feeds it merged")
+    func cancelledRefreshKeepsMergedFeeds() async throws {
+        let fixture = try Fixture()
+        defer { fixture.cleanup() }
+        fixture.store.addSource(RSSSource(id: "done", name: "Done", url: "https://rss.invalid/ok"))
+        fixture.store.addSource(RSSSource(id: "wait", name: "Wait", url: "https://rss.invalid/wait"))
+        let (events, continuation) = AsyncStream<String>.makeStream()
+        RSSRefreshHTTPStub.events.withLock { $0 = continuation }
+        let work = Task {
+            await RSSFeedRefreshService.refreshAll(store: fixture.store, makeFetcher: fixture.makeFetcher, notify: { _, _ in })
+        }
+        for await path in events where path == "/wait" { break }
+        work.cancel()
+        #expect(await work.value == false)
+        continuation.finish()
+
+        let reloaded = RSSStore(storageDirectory: fixture.root)
+        #expect(reloaded.articles(for: "done").count == 1)
+        #expect(reloaded.articles(for: "wait").isEmpty)
+    }
+
     @MainActor
     private struct Fixture {
         let root: URL

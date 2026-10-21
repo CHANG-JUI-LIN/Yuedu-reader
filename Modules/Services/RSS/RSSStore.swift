@@ -120,7 +120,7 @@ final class RSSStore: ObservableObject {
 
         if didChange {
             sources[index] = source
-            save()
+            saveRefreshResult(.sources)
         }
     }
 
@@ -239,6 +239,9 @@ final class RSSStore: ObservableObject {
         let mergedRecords = dedupedItems.map { item in
             var record = RSSArticleRecord(item: item, fetchedAt: fetchedAt, status: articleStatuses[item.id])
             if let oldRecord = existingByID[item.id] {
+                // First seen, not last fetched: re-stamping every record made every refresh
+                // look like a change and rewrote the whole article file (below).
+                record.fetchedAt = oldRecord.fetchedAt
                 record.fullText = oldRecord.fullText
                 record.fullTextHTML = oldRecord.fullTextHTML
                 record.fullTextFetchedAt = oldRecord.fullTextFetchedAt
@@ -252,8 +255,10 @@ final class RSSStore: ObservableObject {
             }
             return record
         }
-        cachedArticlesBySource[sourceID] = mergedRecords
-        save()
+        if mergedRecords != existingRecords {
+            cachedArticlesBySource[sourceID] = mergedRecords
+            saveRefreshResult(.articles)
+        }
         guard hadExistingCache else { return [] }
         return mergedRecords.filter { record in
             existingByID[record.id] == nil && !record.isRead
@@ -267,11 +272,12 @@ final class RSSStore: ObservableObject {
             var metadata = feedMetadataBySource[sourceID] ?? RSSFeedFetchMetadata()
             metadata.lastFetchedAt = Date()
             feedMetadataBySource[sourceID] = metadata
-            save()
+            saveRefreshResult(.feedMetadata)
             return []
 
         case .updated(let items, let metadata, let feedInfo):
             feedMetadataBySource[sourceID] = metadata
+            saveRefreshResult(.feedMetadata)
             applyFeedInfo(feedInfo, to: sourceID)
             return mergeFetchedItems(items, for: sourceID)
         }
@@ -521,6 +527,7 @@ final class RSSStore: ObservableObject {
 
         if didChange {
             sources[index] = source
+            saveRefreshResult(.sources)
         }
     }
 
@@ -631,13 +638,62 @@ final class RSSStore: ObservableObject {
         save()
     }
 
-    private func save() {
-        save(sources, to: sourceStorageURL)
-        save(folders, to: folderStorageURL)
-        save(cachedArticlesBySource, to: articleStorageURL)
-        save(articleStatuses, to: statusStorageURL)
-        save(feedMetadataBySource, to: feedMetadataStorageURL)
-        RSSNotificationManager.shared.updateBadge(unreadCount: totalUnreadCount())
+    /// The files `save` writes. Each is one JSON document; the article file holds every
+    /// cached article of every feed and is by far the largest.
+    struct StoredFiles: OptionSet {
+        let rawValue: Int
+        static let sources = StoredFiles(rawValue: 1 << 0)
+        static let folders = StoredFiles(rawValue: 1 << 1)
+        static let articles = StoredFiles(rawValue: 1 << 2)
+        static let statuses = StoredFiles(rawValue: 1 << 3)
+        static let feedMetadata = StoredFiles(rawValue: 1 << 4)
+        static let all: StoredFiles = [.sources, .folders, .articles, .statuses, .feedMetadata]
+    }
+
+    /// Runs one refresh of many feeds and writes what it changed once, at the end.
+    ///
+    /// Each feed's merge used to write all five files, the article file included: 189 feeds
+    /// refreshed hourly in the background wrote 1084 MB a day (Crashlytics d88da8b2,
+    /// MetricKit disk-write-exception, 2026-10-19). The end write also runs when the refresh
+    /// is cancelled — a background task expiring — so nothing merged is lost.
+    func performRefreshBatch<T>(_ body: () async -> T) async -> T {
+        refreshBatchDepth += 1
+        defer {
+            refreshBatchDepth -= 1
+            if refreshBatchDepth == 0, !pendingRefreshFiles.isEmpty {
+                save(pendingRefreshFiles)
+            }
+        }
+        return await body()
+    }
+
+    private var refreshBatchDepth = 0
+    private var pendingRefreshFiles: StoredFiles = []
+    /// Writes of each file since launch, for tests.
+    private(set) var writeCounts: [String: Int] = [:]
+
+    /// A refresh result's write: deferred to the end of a running `performRefreshBatch`.
+    private func saveRefreshResult(_ files: StoredFiles) {
+        if refreshBatchDepth > 0 {
+            pendingRefreshFiles.formUnion(files)
+        } else {
+            save(files)
+        }
+    }
+
+    /// Writes `files` now, together with any refresh result still waiting, so a user's
+    /// change in the middle of a refresh is not written ahead of an older state of a file.
+    private func save(_ files: StoredFiles = .all) {
+        let files = files.union(pendingRefreshFiles)
+        pendingRefreshFiles = []
+        if files.contains(.sources) { save(sources, to: sourceStorageURL) }
+        if files.contains(.folders) { save(folders, to: folderStorageURL) }
+        if files.contains(.articles) { save(cachedArticlesBySource, to: articleStorageURL) }
+        if files.contains(.statuses) { save(articleStatuses, to: statusStorageURL) }
+        if files.contains(.feedMetadata) { save(feedMetadataBySource, to: feedMetadataStorageURL) }
+        if !files.isDisjoint(with: [.articles, .statuses]) {
+            RSSNotificationManager.shared.updateBadge(unreadCount: totalUnreadCount())
+        }
     }
 
     private func load<T: Decodable>(_ type: T.Type, from url: URL) -> T? {
@@ -652,5 +708,6 @@ final class RSSStore: ObservableObject {
         guard let data = try? JSONEncoder().encode(value) else { return }
         try? FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
         try? data.write(to: url, options: .atomic)
+        writeCounts[url.lastPathComponent, default: 0] += 1
     }
 }

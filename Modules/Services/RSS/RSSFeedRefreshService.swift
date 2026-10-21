@@ -13,6 +13,17 @@ enum RSSFeedRefreshService {
         },
         onProgress: @MainActor (Int, Int) -> Void = { _, _ in }
     ) async -> Bool {
+        await store.performRefreshBatch {
+            await refreshEach(store: store, makeFetcher: makeFetcher, notify: notify, onProgress: onProgress)
+        }
+    }
+
+    private static func refreshEach(
+        store: RSSStore,
+        makeFetcher: @MainActor () -> RSSFetcher,
+        notify: @MainActor ([RSSArticleRecord], RSSSource) -> Void,
+        onProgress: @MainActor (Int, Int) -> Void
+    ) async -> Bool {
         let sources = store.sources.filter { $0.enabled && !$0.opensAsWebPage }
         onProgress(0, sources.count)
         var succeeded = true

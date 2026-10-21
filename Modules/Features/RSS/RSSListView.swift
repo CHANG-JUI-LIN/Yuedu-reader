@@ -569,12 +569,14 @@ struct RSSListView: View {
             )
         }
 
-        for source in candidates {
-            let fetcher = RSSFetcher()
-            await fetcher.fetchItems(from: source, metadata: store.feedMetadata(for: source.id))
-            guard let response = fetcher.response else { continue }
-            store.applyResolvedFeedURL(fetcher.resolvedFeedURL, homepageURL: fetcher.resolvedHomepageURL, to: source.id)
-            store.applyFeedResponse(response, for: source.id)
+        await store.performRefreshBatch {
+            for source in candidates {
+                let fetcher = RSSFetcher()
+                await fetcher.fetchItems(from: source, metadata: store.feedMetadata(for: source.id))
+                guard let response = fetcher.response else { continue }
+                store.applyResolvedFeedURL(fetcher.resolvedFeedURL, homepageURL: fetcher.resolvedHomepageURL, to: source.id)
+                store.applyFeedResponse(response, for: source.id)
+            }
         }
     }
 
@@ -656,16 +658,18 @@ struct RSSListView: View {
 
     @MainActor
     private func refreshImportedSources(_ sources: [RSSSource]) async {
-        for source in sources where source.enabled {
-            let fetcher = RSSFetcher()
-            await fetcher.fetchItems(from: source, metadata: nil)
-            guard fetcher.error == nil else { continue }
+        await store.performRefreshBatch {
+            for source in sources where source.enabled {
+                let fetcher = RSSFetcher()
+                await fetcher.fetchItems(from: source, metadata: nil)
+                guard fetcher.error == nil else { continue }
 
-            store.applyResolvedFeedURL(fetcher.resolvedFeedURL, homepageURL: fetcher.resolvedHomepageURL, to: source.id)
-            if let response = fetcher.response {
-                store.applyFeedResponse(response, for: source.id)
-            } else {
-                store.mergeFetchedItems(fetcher.items, for: source.id)
+                store.applyResolvedFeedURL(fetcher.resolvedFeedURL, homepageURL: fetcher.resolvedHomepageURL, to: source.id)
+                if let response = fetcher.response {
+                    store.applyFeedResponse(response, for: source.id)
+                } else {
+                    store.mergeFetchedItems(fetcher.items, for: source.id)
+                }
             }
         }
     }
