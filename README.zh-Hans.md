@@ -5,7 +5,7 @@
 </p>
 
 <p align="center">
-  受 Apple Books 启发的开源 iOS 阅读器。
+  受 Apple Books 启发、源代码公开的 iOS 阅读器。
 </p>
 
 <p align="center">
@@ -25,12 +25,12 @@
     <img src="https://img.shields.io/badge/iOS%20Dev%20Weekly-%23751%20收录-FF6600" alt="获 iOS Dev Weekly #751 收录">
   </a>
   <img src="https://img.shields.io/badge/iOS-17.0%2B-000000?logo=apple&logoColor=white" alt="iOS 17.0+">
-  <img src="https://img.shields.io/badge/许可证-MPL--2.0-blue" alt="MPL 2.0 许可证">
+  <img src="https://img.shields.io/badge/许可证-PolyForm%20Strict%201.0.0-blue" alt="PolyForm Strict 1.0.0 许可证">
 </p>
 
 > 获 [iOS Dev Weekly #751](https://iosdevweekly.com/issues/751) 收录 —— [*From WebView to CoreText: Building a Native EPUB Reader for iOS*](https://chang-jui-lin.github.io/Yuedu-reader/2026/05/20/from-webview-to-coretext/)。
 
-Yuedu 是一个专注于高品质本地与开放阅读体验的开源阅读应用。一个 App 涵盖 EPUB3、漫画、有声书、RSS 与开放目录 —— 全程以 CoreText 原生渲染，无 WebView。
+Yuedu 是一个专注于高品质本地与开放阅读体验、源代码公开的阅读应用。一个 App 涵盖 EPUB3、漫画、有声书、RSS 与开放目录 —— 全程以 CoreText 原生渲染，无 WebView。
 
 ## 功能
 
@@ -69,11 +69,11 @@ cd Yuedu-reader
 open Yuedu-Reader.xcodeproj
 ```
 
-然后选择模拟器（或真机）运行。自行构建的版本需要自己的签名配置与 Bundle Identifier；公开重新分发的分支版本必须使用不同的 App 名称、图标与品牌素材，且不得暗示获得官方背书。
+然后选择模拟器（或真机）运行。自行构建的版本需要自己的签名配置与 Bundle Identifier，且仅限个人非商业使用：许可证不允许分发构建版本或修改后的版本，详见[许可证](#许可证)。
 
 ## App Store 官方版本
 
-源代码保持开源。App Store 版本是由项目作者维护、签名、审核、发布并提供支持的官方版本；购买费用用于支持持续开发与版本维护。
+源代码保持公开。App Store 版本是由项目作者维护、签名、审核、发布并提供支持的官方版本；购买费用用于支持持续开发与版本维护。
 
 ## 文档
 
@@ -94,4 +94,4 @@ open Yuedu-Reader.xcodeproj
 
 ## 许可证
 
-源代码采用 [Mozilla Public License 2.0](LICENSE)。Yuedu／阅读名称、App 图标、Logo、截图及其他品牌素材不包含在 MPL 许可内，详见 [TRADEMARKS.md](TRADEMARKS.md)。许可证切换前发布的版本仍适用其发布时的许可证，详见 [LICENSING.md](LICENSING.md)。
+源代码以 [PolyForm Strict License 1.0.0](LICENSE) 公开：可以阅读，也可以为个人非商业用途自行构建，但不得分发，也不得发布修改后的版本。这不是开源许可证。Yuedu／阅读名称、App 图标、Logo、截图及其他品牌素材不在源代码许可范围内，详见 [TRADEMARKS.md](TRADEMARKS.md)。每次许可证变更前发布的版本仍适用其发布时的许可证（先是 MIT，后为 MPL-2.0），详见 [LICENSING.md](LICENSING.md)。

@@ -25,7 +25,7 @@ Thanks for contributing! Here is how to get started.
 
 ## Licensing of contributions
 
-By submitting a contribution, you agree to license it under the Mozilla Public License 2.0 and confirm that you have the right to do so. Do not submit code, assets, or other material whose license is incompatible with this project. Third-party material must retain its original notices.
+By submitting a contribution, you grant CHANG-JUI-LIN a perpetual, worldwide, non-exclusive, royalty-free, irrevocable license to use, reproduce, modify, sublicense, and distribute it under any terms, including the PolyForm Strict License 1.0.0 and the official App Store build, and confirm that you have the right to do so. You may make changes to the code solely to prepare such a contribution; see [LICENSING.md](LICENSING.md). Do not submit code, assets, or other material whose license is incompatible with this project. Third-party material must retain its original notices.
 
 The official Yuedu names, app icon, logo, screenshots, and other brand assets are not licensed for reuse by publicly redistributed modified builds. See [TRADEMARKS.md](TRADEMARKS.md).
 

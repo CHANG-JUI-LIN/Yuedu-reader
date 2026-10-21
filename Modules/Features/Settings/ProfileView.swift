@@ -431,11 +431,11 @@ private struct AboutSupportView: View {
                 .interfaceSectionSurface()
             }
 
-            Section(header: Text(localized("開放原始碼")).foregroundStyle(DSColor.textSecondary)) {
+            Section(header: Text(localized("原始碼公開")).foregroundStyle(DSColor.textSecondary)) {
                 actionRow(
                     icon: "chevron.left.forwardslash.chevron.right",
-                    title: localized("原始碼與開源授權"),
-                    detail: localized("取得本版本對應原始碼與 MPL-2.0 授權"),
+                    title: localized("原始碼與授權"),
+                    detail: localized("取得本版本對應原始碼與授權條款"),
                     trailingIcon: "arrow.up.right"
                 ) {
                     if let url = sourceCodeURL {
