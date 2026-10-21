@@ -154,8 +154,8 @@ struct HomeConfigurationTests {
 
         let store = folder.store()
         #expect(store.home == nil, "nothing is made before the home first reads it")
-        let defaults = store.pageOrDefaults(mode: .publicLibraries, publicLibrariesAvailable: true)
-        #expect(defaults == HomePageDefaults.page(mode: .publicLibraries, publicLibrariesAvailable: true,
+        let defaults = store.pageOrDefaults(mode: .publicLibraries, publicLibrariesAvailable: true, languages: [])
+        #expect(defaults == HomePageDefaults.page(mode: .publicLibraries, publicLibrariesAvailable: true, languages: [],
                                                   makeID: { UUID() }).withIDs(of: defaults))
         #expect(store.configurations.map(\.name).last == "週末")
         store.select(HomeConfigurationID(weekend.id))
@@ -202,7 +202,7 @@ struct HomeConfigurationTests {
         let folder = try makeFolder()
         defer { folder.cleanup() }
         let store = folder.store()
-        _ = store.pageOrDefaults(mode: .publicLibraries, publicLibrariesAvailable: false)
+        _ = store.pageOrDefaults(mode: .publicLibraries, publicLibrariesAvailable: false, languages: [])
         let defaultIDs = sectionIDs(store)
 
         store.select(.blank)

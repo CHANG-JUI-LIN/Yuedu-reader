@@ -76,7 +76,7 @@ struct HomeLayoutStyleTests {
     @Test("繼續閱讀 starts as 精簡閱讀卡片, 精選書單 as 專題集合; the other defaults as a row")
     func defaults() {
         for mode in ExploreMode.allCases {
-            let page = HomePageDefaults.page(mode: mode, publicLibrariesAvailable: true)
+            let page = HomePageDefaults.page(mode: mode, publicLibrariesAvailable: true, languages: [])
             for section in page.sections {
                 let expected: HomeSectionLayout = switch section.binding {
                 case .continueReading: .compactReadingCard

@@ -277,7 +277,9 @@ enum HomePageDefaults {
     ///   - mode: the effective `explore.mode` (`ExploreMode.effective`); a new install is
     ///     `.publicLibraries`.
     ///   - publicLibrariesAvailable: false in China, where no public-library section is made.
-    static func page(mode: ExploreMode, publicLibrariesAvailable: Bool,
+    ///   - languages: the reader's languages (偏好閱讀語言, base codes, most wanted first), which
+    ///     choose the official modules' lists (`officialModuleLists`).
+    static func page(mode: ExploreMode, publicLibrariesAvailable: Bool, languages: [String],
                      makeID: () -> UUID = UUID.init) -> HomePage {
         // 精簡閱讀卡片 since 5d-3c (Phase 5 plan, decision 20); 大型閱讀卡片 in 5d-3.
         let continueReading = HomeSection(id: makeID(), layout: .compactReadingCard, binding: .continueReading)
@@ -298,12 +300,53 @@ enum HomePageDefaults {
         let featured = publicLibrariesAvailable
             ? [HomeSection(id: makeID(), layout: .collection, binding: .gutenbergLists)]
             : []
+        // The official modules' lists in the reader's languages (maintainer, 2026-10-21: the
+        // defaults made no use of them). A new install's 預設 only, as 古騰堡熱門: a saved
+        // 預設 is the reader's and is not changed. Untitled: each is named by its list in the
+        // app's language (`ModuleProvider.rowName`).
+        let modules = officialModuleLists(languages: languages, publicLibrariesAvailable: publicLibrariesAvailable)
+            .map { HomeSection(id: makeID(), layout: $0.layout, binding: .module(moduleID: $0.moduleID, entryID: $0.entryID)) }
         switch mode {
         case .bookSources:
-            return HomePage(sections: [continueReading, nextInSeries, forYou, latest] + popular + featured)
+            return HomePage(sections: [continueReading, nextInSeries, forYou, latest] + modules + popular + featured)
         case .publicLibraries:
-            return HomePage(sections: [continueReading, nextInSeries, forYou] + popular + featured + [latest])
+            return HomePage(sections: [continueReading, nextInSeries, forYou] + modules + popular + featured + [latest])
         }
+    }
+
+    /// An official module's list on the defaults, with the layout its content suits.
+    struct ModuleList: Equatable {
+        let moduleID: String
+        let entryID: String
+        let layout: HomeSectionLayout
+    }
+
+    /// The official modules' lists for each language, in the languages' order, each list once:
+    /// a ranking as 圖文資訊清單 with its ranks (なろう's has no covers), a list that is not a
+    /// ranking as a row of covers. Chinese reads Bangumi, whose titles are Chinese; Japanese
+    /// なろう, hidden where the public libraries are (`OfficialRuleModules.isAvailable`);
+    /// English AniList. No other language has a list in its own language yet.
+    static func officialModuleLists(languages: [String], publicLibrariesAvailable: Bool) -> [ModuleList] {
+        var lists: [ModuleList] = []
+        for language in languages {
+            let wanted: [ModuleList]
+            switch ReadingLanguage.base(of: language) {
+            case "zh":
+                wanted = [ModuleList(moduleID: "bangumi", entryID: "novel-rank", layout: .rankedList),
+                          ModuleList(moduleID: "bangumi", entryID: "manga-rank", layout: .rankedList)]
+            case "ja":
+                wanted = OfficialRuleModules.isAvailable("narou", librariesAvailable: publicLibrariesAvailable)
+                    ? [ModuleList(moduleID: "narou", entryID: "weekly", layout: .rankedList)]
+                    : []
+            case "en":
+                wanted = [ModuleList(moduleID: "anilist", entryID: "trending-novels", layout: .row),
+                          ModuleList(moduleID: "anilist", entryID: "trending-manga", layout: .row)]
+            default:
+                wanted = []
+            }
+            for list in wanted where !lists.contains(list) { lists.append(list) }
+        }
+        return lists
     }
 }
 

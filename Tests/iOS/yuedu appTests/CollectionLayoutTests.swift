@@ -62,14 +62,14 @@ struct CollectionLayoutTests {
     @Test("A new install's home: one 精選書單 section in place of a row per list; none in China")
     func defaults() {
         for mode in [ExploreMode.publicLibraries, .bookSources] {
-            let page = HomePageDefaults.page(mode: mode, publicLibrariesAvailable: true)
+            let page = HomePageDefaults.page(mode: mode, publicLibrariesAvailable: true, languages: [])
             let lists = page.sections.filter { $0.binding == .gutenbergLists }
             #expect(lists.count == 1)
             #expect(lists.first?.layout == .collection)
             #expect(!page.sections.contains { if case .gutenbergCollection = $0.binding { true } else { false } })
             #expect(lists.first?.displayTitle(sourceName: "") == localized("精選書單"))
         }
-        let china = HomePageDefaults.page(mode: .bookSources, publicLibrariesAvailable: false)
+        let china = HomePageDefaults.page(mode: .bookSources, publicLibrariesAvailable: false, languages: [])
         #expect(!china.sections.contains { $0.binding == .gutenbergLists })
     }
 

@@ -36,11 +36,15 @@ protocol HomeSectionProviding: SourceProvider {
     /// Whether its rows read the home's library rows (為你推薦): such a row loads again when a
     /// library row comes or goes, e.g. 顯示在最新 turned off.
     var readsHomeLibraryRows: Bool { get }
+    /// What a row of `section` is called when the section has no title of its own: the
+    /// source's name, or a module's list's own (`ModuleProvider`).
+    func rowName(for section: HomeSection) -> String
 }
 
 extension HomeSectionProviding {
     func inputsKey(for section: HomeSection) -> String? { nil }
     var readsHomeLibraryRows: Bool { false }
+    func rowName(for section: HomeSection) -> String { displayName }
 }
 
 enum HomeRow {

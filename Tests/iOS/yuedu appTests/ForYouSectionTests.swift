@@ -29,7 +29,7 @@ struct ForYouSectionTests {
     func defaults() {
         for mode in [ExploreMode.bookSources, .publicLibraries] {
             for available in [true, false] {
-                let bindings = HomePageDefaults.page(mode: mode, publicLibrariesAvailable: available).sections.map(\.binding)
+                let bindings = HomePageDefaults.page(mode: mode, publicLibrariesAvailable: available, languages: []).sections.map(\.binding)
                 #expect(Array(bindings.prefix(3)) == [.continueReading, .nextInSeries, .forYou])
             }
         }
@@ -81,7 +81,7 @@ struct ForYouSectionTests {
         let url = scratch("explore_home.json")
         let defaults = suite()
         let store = HomePageStore(fileURL: url, defaults: defaults, insertsForYouOnce: true)
-        _ = store.pageOrDefaults(mode: .publicLibraries, publicLibrariesAvailable: true)
+        _ = store.pageOrDefaults(mode: .publicLibraries, publicLibrariesAvailable: true, languages: [])
         store.edit { $0.sections.removeAll { $0.binding == .forYou } }
         store.waitForPendingWritesForTesting()
         let reopened = HomePageStore(fileURL: url, defaults: defaults, insertsForYouOnce: true)

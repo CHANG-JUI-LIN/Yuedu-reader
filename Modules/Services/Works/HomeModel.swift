@@ -140,7 +140,7 @@ final class HomeModel: ObservableObject {
                 } else {
                     if existing[id] != nil, requested.contains(id) { restarted.append(id) }
                     requested.remove(id)
-                    built.append(Row(id: id, section: section, source: provider.instance, sourceName: provider.displayName,
+                    built.append(Row(id: id, section: section, source: provider.instance, sourceName: provider.rowName(for: section),
                                      policy: policy, state: .idle, inputsKey: inputsKey))
                 }
             }

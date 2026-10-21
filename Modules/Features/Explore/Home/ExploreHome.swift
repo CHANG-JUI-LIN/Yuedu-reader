@@ -148,7 +148,8 @@ private struct ExploreHomeRoot: View {
         .environment(\.explorePush) { $0.append(to: &path) }
         .task(id: syncKey) {
             // Saved here, not while drawing: the first read saves the defaults.
-            await model.sync(with: pageStore.pageOrDefaults(mode: mode, publicLibrariesAvailable: availability.isAvailable),
+            await model.sync(with: pageStore.pageOrDefaults(mode: mode, publicLibrariesAvailable: availability.isAvailable,
+                                                            languages: aggregation.readingLanguages.languages),
                              hiddenFromLatest: Set(aggregation.settings.hiddenFromLatest ?? []))
         }
         .task { await aozora.load() }

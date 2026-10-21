@@ -70,9 +70,10 @@ final class HomePageStore: ObservableObject {
     /// that `mode` cannot tell a reader with sources from a new install, and the wrong order
     /// would be saved for good. The region is taken as it stands: a public-library section
     /// saved before the region is known has no row in China, where its provider is hidden.
-    func pageOrDefaults(mode: ExploreMode, publicLibrariesAvailable: Bool) -> HomePage {
+    func pageOrDefaults(mode: ExploreMode, publicLibrariesAvailable: Bool, languages: [String]) -> HomePage {
         if let page { return page }
-        let defaultPage = HomePageDefaults.page(mode: mode, publicLibrariesAvailable: publicLibrariesAvailable)
+        let defaultPage = HomePageDefaults.page(mode: mode, publicLibrariesAvailable: publicLibrariesAvailable,
+                                                languages: languages)
         // The defaults have 為你推薦 already; it is never inserted again.
         if insertsForYouOnce { defaults.set(true, forKey: Self.forYouInsertedKey) }
         var made = HomeConfigurations(sections: defaultPage.sections)

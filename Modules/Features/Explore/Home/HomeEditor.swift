@@ -31,11 +31,16 @@ extension View {
 extension HomeSection {
     /// The section's name where no row names its source: its card, its page, its confirmation.
     @MainActor
-    func editorTitle(connections: RemoteLibraryConnectionStore = .shared) -> String {
+    func editorTitle(connections: RemoteLibraryConnectionStore = .shared, modules: RuleModuleLibrary = .shared) -> String {
         let sourceName: String
         switch binding {
         case .opdsFeed(let connectionID, _): sourceName = connections.connection(id: connectionID)?.name ?? ""
         case .gutenbergFeed, .gutenbergShelf: sourceName = localized("Project Gutenberg")
+        // An untitled module list (the defaults) by its list's title, as its row reads
+        // (`ModuleProvider.rowName`); by its id once its module is gone.
+        case .module(let moduleID, let entryID):
+            let module = modules.installed(id: moduleID)?.module
+            sourceName = module?.modules.first { $0.id == entryID }?.title ?? module?.title ?? entryID
         default: sourceName = ""
         }
         return displayTitle(sourceName: sourceName)

@@ -88,13 +88,13 @@ struct HomeSectionTests {
     // 為你推薦 after 系列下一本 for everyone since Discovery Phase 7a (maintainer's decision 4).
     @Test("book-source readers start from 繼續閱讀 → 系列下一本 → 為你推薦 → 最新 → 古騰堡熱門 → 精選")
     func bookSourceDefaults() {
-        let page = HomePageDefaults.page(mode: .bookSources, publicLibrariesAvailable: true)
+        let page = HomePageDefaults.page(mode: .bookSources, publicLibrariesAvailable: true, languages: [])
         #expect(kinds(page) == ["continue", "next", "forYou", "latest", "popular"] + featured)
     }
 
     @Test("public-library readers and new installs start from 繼續閱讀 → 系列下一本 → 為你推薦 → 古騰堡熱門 → 精選 → 最新")
     func publicLibraryDefaults() {
-        let page = HomePageDefaults.page(mode: .publicLibraries, publicLibrariesAvailable: true)
+        let page = HomePageDefaults.page(mode: .publicLibraries, publicLibrariesAvailable: true, languages: [])
         #expect(kinds(page) == ["continue", "next", "forYou", "popular"] + featured + ["latest"])
         #expect(!page.sections.contains { if case .gutenbergCollection = $0.binding { true } else { false } })
     }
@@ -114,17 +114,51 @@ struct HomeSectionTests {
     @Test("China gets no public-library section")
     func chinaDefaults() {
         for mode in ExploreMode.allCases {
-            let page = HomePageDefaults.page(mode: mode, publicLibrariesAvailable: false)
+            let page = HomePageDefaults.page(mode: mode, publicLibrariesAvailable: false, languages: [])
             #expect(!kinds(page).contains("featured"))
             #expect(!kinds(page).contains("popular"))
         }
-        let page = HomePageDefaults.page(mode: .bookSources, publicLibrariesAvailable: false)
+        let page = HomePageDefaults.page(mode: .bookSources, publicLibrariesAvailable: false, languages: [])
         #expect(kinds(page) == ["continue", "next", "forYou", "latest"])
+    }
+
+    // The official modules' lists in the reader's languages (maintainer, 2026-10-21).
+    private typealias List = HomePageDefaults.ModuleList
+
+    @Test("each reading language takes its official modules' lists: Chinese Bangumi, Japanese なろう, English AniList")
+    func officialModuleListsByLanguage() {
+        let bangumi = [List(moduleID: "bangumi", entryID: "novel-rank", layout: .rankedList),
+                       List(moduleID: "bangumi", entryID: "manga-rank", layout: .rankedList)]
+        let narou = [List(moduleID: "narou", entryID: "weekly", layout: .rankedList)]
+        let aniList = [List(moduleID: "anilist", entryID: "trending-novels", layout: .row),
+                       List(moduleID: "anilist", entryID: "trending-manga", layout: .row)]
+        #expect(HomePageDefaults.officialModuleLists(languages: ["zh"], publicLibrariesAvailable: true) == bangumi)
+        #expect(HomePageDefaults.officialModuleLists(languages: ["ja"], publicLibrariesAvailable: true) == narou)
+        #expect(HomePageDefaults.officialModuleLists(languages: ["en"], publicLibrariesAvailable: true) == aniList)
+        #expect(HomePageDefaults.officialModuleLists(languages: ["ko"], publicLibrariesAvailable: true).isEmpty)
+        #expect(HomePageDefaults.officialModuleLists(languages: ["ja", "zh-Hant", "zh"], publicLibrariesAvailable: true)
+            == narou + bangumi, "in the languages' order, each list once")
+    }
+
+    @Test("なろう stays off the defaults where the public libraries are hidden")
+    func officialModuleListsInChina() {
+        #expect(HomePageDefaults.officialModuleLists(languages: ["ja"], publicLibrariesAvailable: false).isEmpty)
+        #expect(HomePageDefaults.officialModuleLists(languages: ["zh"], publicLibrariesAvailable: false).count == 2)
+    }
+
+    @Test("the official modules' lists follow 為你推薦 for a new install, 最新 for a book-source reader")
+    func officialModuleListsPlace() {
+        let newInstall = HomePageDefaults.page(mode: .publicLibraries, publicLibrariesAvailable: true, languages: ["zh"])
+        #expect(kinds(newInstall) == ["continue", "next", "forYou", "other", "other", "popular"] + featured + ["latest"])
+        let sources = HomePageDefaults.page(mode: .bookSources, publicLibrariesAvailable: true, languages: ["zh"])
+        #expect(kinds(sources) == ["continue", "next", "forYou", "latest", "other", "other", "popular"] + featured)
+        #expect(newInstall.sections[3].binding == .module(moduleID: "bangumi", entryID: "novel-rank"))
+        #expect(newInstall.sections[3].layout == .rankedList)
     }
 
     @Test("every default section is enabled, untitled and has its own id")
     func defaultSectionShape() {
-        let page = HomePageDefaults.page(mode: .publicLibraries, publicLibrariesAvailable: true)
+        let page = HomePageDefaults.page(mode: .publicLibraries, publicLibrariesAvailable: true, languages: ["zh", "ja", "en"])
         #expect(page.sections.allSatisfy { $0.isEnabled && $0.title.isEmpty && $0.parameters.isEmpty })
         #expect(Set(page.sections.map(\.id)).count == page.sections.count)
         #expect(page.schemaVersion == HomePage.currentSchemaVersion)
@@ -160,7 +194,7 @@ struct HomePageStoreTests {
         let (folder, cleanup) = try makeFolder()
         defer { cleanup() }
         let url = folder.appendingPathComponent("explore_home.json")
-        let page = HomePageDefaults.page(mode: .bookSources, publicLibrariesAvailable: true)
+        let page = HomePageDefaults.page(mode: .bookSources, publicLibrariesAvailable: true, languages: [])
         let store = HomePageStore(fileURL: url)
         store.save(page)
         store.waitForPendingWritesForTesting()
@@ -238,7 +272,7 @@ struct HomePageStoreTests {
         try before.write(to: pagesURL)
 
         let store = HomePageStore(fileURL: folder.appendingPathComponent("explore_home.json"))
-        store.save(HomePageDefaults.page(mode: .publicLibraries, publicLibrariesAvailable: true))
+        store.save(HomePageDefaults.page(mode: .publicLibraries, publicLibrariesAvailable: true, languages: []))
         store.waitForPendingWritesForTesting()
         #expect(try Data(contentsOf: pagesURL) == before)
         #expect(try files(in: folder) == ["custom_explore_pages.json", "explore_home.json"])

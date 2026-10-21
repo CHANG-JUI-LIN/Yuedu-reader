@@ -37,14 +37,14 @@ struct ExploreHomeTests {
 
         let sources = HomePageStore(fileURL: url)
         #expect(sources.page == nil)
-        let saved = sources.pageOrDefaults(mode: .bookSources, publicLibrariesAvailable: true)
+        let saved = sources.pageOrDefaults(mode: .bookSources, publicLibrariesAvailable: true, languages: [])
         // 精選書單, one section of the bundled lists, since 專題集合 (decision 37).
         #expect(bindings(saved) == ["continueReading", "nextInSeries", "forYou", "latest", "popular", "lists"])
         sources.waitForPendingWritesForTesting()
 
         // Read again in another mode: the saved page stands.
         let reopened = HomePageStore(fileURL: url)
-        #expect(reopened.pageOrDefaults(mode: .publicLibraries, publicLibrariesAvailable: true) == saved)
+        #expect(reopened.pageOrDefaults(mode: .publicLibraries, publicLibrariesAvailable: true, languages: []) == saved)
     }
 
     @Test("a new install starts with 繼續閱讀; China gets no public-library section; no default has 我的書庫")
@@ -52,11 +52,11 @@ struct ExploreHomeTests {
         let folder = try temporaryFolder()
         defer { try? FileManager.default.removeItem(at: folder) }
         let newInstall = HomePageStore(fileURL: folder.appendingPathComponent("a.json"))
-        #expect(bindings(newInstall.pageOrDefaults(mode: .publicLibraries, publicLibrariesAvailable: true))
+        #expect(bindings(newInstall.pageOrDefaults(mode: .publicLibraries, publicLibrariesAvailable: true, languages: []))
                 == ["continueReading", "nextInSeries", "forYou", "popular", "lists", "latest"])
 
         let china = HomePageStore(fileURL: folder.appendingPathComponent("b.json"))
-        #expect(bindings(china.pageOrDefaults(mode: .bookSources, publicLibrariesAvailable: false))
+        #expect(bindings(china.pageOrDefaults(mode: .bookSources, publicLibrariesAvailable: false, languages: []))
                 == ["continueReading", "nextInSeries", "forYou", "latest"])
         newInstall.waitForPendingWritesForTesting()
         china.waitForPendingWritesForTesting()

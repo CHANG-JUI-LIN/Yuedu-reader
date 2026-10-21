@@ -55,6 +55,23 @@ struct OfficialModuleFilesTests {
                           missing: [.intro, .tags], contentKind: kind)
     }
 
+    // MARK: - The defaults
+
+    @Test("every list the defaults name is one of its bundled module's, and its row is named by the list")
+    func defaultsNameBundledLists() throws {
+        let lists = HomePageDefaults.officialModuleLists(languages: ["zh", "ja", "en"], publicLibrariesAvailable: true)
+        #expect(Set(lists.map(\.moduleID)) == ["bangumi", "narou", "anilist"])
+        for list in lists {
+            let module = try official(list.moduleID)
+            #expect(module.modules.contains { $0.id == list.entryID }, "\(list.moduleID) has \(list.entryID)")
+        }
+        let aniList = ModuleProvider(module: try official("anilist").localized(for: "en"))
+        let section = HomeSection(layout: .row, binding: .module(moduleID: "anilist", entryID: "trending-manga"))
+        #expect(aniList.rowName(for: section) == "Trending Manga", "the list's title in the app's language")
+        let unknown = HomeSection(layout: .row, binding: .module(moduleID: "anilist", entryID: "gone"))
+        #expect(aniList.rowName(for: unknown) == "AniList", "a list it no longer has keeps the module's name")
+    }
+
     // MARK: - Bangumi
 
     @Test("Bangumi: its search sends a JSON body as this app, and lists the work, its volumes and their kinds")

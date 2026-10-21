@@ -70,6 +70,16 @@ final class ModuleProvider: CollectionBrowsing, HomeSectionProviding {
         module.version
     }
 
+    /// The list's own title, in the app's language: a section the defaults made has none, and
+    /// the home names no source (Phase 5 plan, decision 19).
+    func rowName(for section: HomeSection) -> String {
+        guard case .module(_, let entryID) = section.binding,
+              let title = entry(entryID)?.title?.trimmingCharacters(in: .whitespacesAndNewlines), !title.isEmpty else {
+            return displayName
+        }
+        return title
+    }
+
     func load(_ section: HomeSection) async throws -> [CollectionEntry] {
         guard case .module(let moduleID, let entryID) = section.binding, moduleID == module.id,
               let entry = entry(entryID) else { return [] }

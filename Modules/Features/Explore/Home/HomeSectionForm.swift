@@ -496,7 +496,8 @@ struct HomeSectionForm: View {
     /// 「來源 › 子項目」, as Rex's row reads; 未設定 before 選擇內容來源.
     private var sourceDescription: String {
         guard let binding = draft.binding, let owner = binding.contentOwner else { return localized("未設定") }
-        let item = HomeSection(layout: draft.layout, binding: binding).displayTitle(sourceName: "")
+        // A module's list names itself; an untitled one (the defaults) has no title to fall to.
+        let item = HomeSection(layout: draft.layout, binding: binding).displayTitle(sourceName: moduleEntry?.title ?? "")
         return [owner.name(sources: sources, connections: connections, modules: modules), item.isEmpty ? draft.title : item]
             .filter { !$0.isEmpty }
             .joined(separator: " › ")
