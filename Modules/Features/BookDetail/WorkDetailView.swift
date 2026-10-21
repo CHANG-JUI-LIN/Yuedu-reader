@@ -421,8 +421,8 @@ struct WorkDetailView: View {
             return
         }
         Task {
-            await dependencies.readingPositionStore.save(CoreTextReadingPosition(spineIndex: chapter.index, charOffset: 0),
-                                                         for: bookID.uuidString)
+            await ReadingChapterPlace(store: store, positionStore: dependencies.readingPositionStore)
+                .open(atChapter: chapter.index, bookId: bookID)
             pushed = .reader(bookID, target.fragment == nil ? nil : target)
         }
     }

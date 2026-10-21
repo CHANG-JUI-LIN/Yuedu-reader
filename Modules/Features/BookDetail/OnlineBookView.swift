@@ -421,7 +421,8 @@ struct OnlineBookView: View {
         // Read again when the reader moves the copy on, so coming back shows the new chapter.
         .task(id: shelvedCopy.map { "\($0.id)|\($0.currentPosition)" }) {
             guard let id = shelvedCopy?.id else { resumeChapterIndex = nil; return }
-            resumeChapterIndex = await dependencies.readingPositionStore.load(for: id.uuidString)?.spineIndex
+            resumeChapterIndex = await ReadingChapterPlace(store: bookStore, positionStore: dependencies.readingPositionStore)
+                .resumeChapterIndex(of: id)
         }
         .task(id: genreLoadKey) {
             guard let key = genreLoadKey else { return }
@@ -1043,8 +1044,8 @@ struct OnlineBookView: View {
         Task { @MainActor in
             // Finish persisting a selected chapter before the new reader restores it.
             if let chapterIndex {
-                let position = CoreTextReadingPosition(spineIndex: chapterIndex, charOffset: 0)
-                await dependencies.readingPositionStore.save(position, for: targetBookId.uuidString)
+                await ReadingChapterPlace(store: bookStore, positionStore: dependencies.readingPositionStore)
+                    .open(atChapter: chapterIndex, bookId: targetBookId)
             }
             guard let readingBook = bookStore.readingBook(id: targetBookId) else {
                 openingReader = false

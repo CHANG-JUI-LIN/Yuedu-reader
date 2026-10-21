@@ -134,7 +134,7 @@ struct DahuilangAudioTests {
         )
 
         let audioURL = "https://v5-ex-novelapp.fqnovelvod.com/a?mime_type=audio_mpeg\n"
-        let promoted = store.upgradeToAudioIfDetected(bookId: book.id, content: audioURL)
+        let promoted = store.upgradeToAudioIfDetected(bookId: book.id, content: audioURL, atChapter: 0)
         #expect(promoted)
 
         let updated = try #require(store.books.first(where: { $0.id == book.id }))
@@ -157,7 +157,7 @@ struct DahuilangAudioTests {
         )
 
         let prose = "第一章 江流儿\n长安城外的山道上，一个少年快步前行。"
-        let promoted = store.upgradeToAudioIfDetected(bookId: book.id, content: prose)
+        let promoted = store.upgradeToAudioIfDetected(bookId: book.id, content: prose, atChapter: 0)
         #expect(!promoted)
     }
 

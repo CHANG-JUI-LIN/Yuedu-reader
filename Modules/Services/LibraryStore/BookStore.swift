@@ -1593,12 +1593,20 @@ class BookStore: @MainActor ObservableObject, BookProvider {
     /// (text) even when serving manga, so the only reliable signal is the content
     /// itself. After this flips, `BookReaderView` reactively swaps to the image
     /// reader and the change persists for future opens. Idempotent and cheap.
+    ///
+    /// `chapterIndex` is the chapter whose content was detected — the one the text reader
+    /// was opened at. The image reader restores from `mangaChapterIndex`, not the position
+    /// store, so without it a comic opened from 目錄 at any chapter flipped to its first.
     @discardableResult
-    func upgradeToMangaIfDetected(bookId: UUID, content: String, imageStyle: String? = nil) -> Bool {
+    func upgradeToMangaIfDetected(
+        bookId: UUID, content: String, imageStyle: String? = nil, atChapter chapterIndex: Int
+    ) -> Bool {
         guard let idx = records.firstIndex(where: { $0.id == bookId }) else { return false }
         guard records[idx].isOnline, records[idx].contentPipelineKind != .manga else { return false }
         guard MangaChapterParser.looksLikeMangaContent(content, imageStyle: imageStyle) else { return false }
         records[idx].contentPipelineKind = .manga
+        records[idx].mangaChapterIndex = chapterIndex
+        records[idx].mangaPage = 0
         saveMeta()
         ReaderTelemetry.shared.log(
             "manga_autodetect",
@@ -1612,14 +1620,17 @@ class BookStore: @MainActor ObservableObject, BookProvider {
     /// == 0` (text) even when serving audiobooks, so the content itself is the
     /// only reliable signal. After this flips, `BookReaderView` reactively swaps
     /// to the audio player and the change persists for future opens. Idempotent.
+    /// `chapterIndex` is the chapter whose content was detected, as for comics.
     @discardableResult
-    func upgradeToAudioIfDetected(bookId: UUID, content: String) -> Bool {
+    func upgradeToAudioIfDetected(bookId: UUID, content: String, atChapter chapterIndex: Int) -> Bool {
         guard let idx = records.firstIndex(where: { $0.id == bookId }) else { return false }
         guard records[idx].isOnline,
               records[idx].contentPipelineKind != .manga,
               records[idx].contentPipelineKind != .audio else { return false }
         guard DirectChapterAudioResolver.looksLikeAudioContent(content) else { return false }
         records[idx].contentPipelineKind = .audio
+        records[idx].audioChapterIndex = chapterIndex
+        records[idx].audioTimeSeconds = 0
         saveMeta()
         ReaderTelemetry.shared.log(
             "audio_autodetect",

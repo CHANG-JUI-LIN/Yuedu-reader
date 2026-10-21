@@ -665,8 +665,8 @@ final class ReaderViewModel: ObservableObject {
                 self.recordParagraphReviewsIfPresent(in: package.content)
             }
             if shouldDetectMedia, let store,
-               !store.upgradeToMangaIfDetected(bookId: book.id, content: package.content) {
-                store.upgradeToAudioIfDetected(bookId: book.id, content: package.content)
+               !store.upgradeToMangaIfDetected(bookId: book.id, content: package.content, atChapter: chapterIndex) {
+                store.upgradeToAudioIfDetected(bookId: book.id, content: package.content, atChapter: chapterIndex)
             }
         }
     }
@@ -771,8 +771,8 @@ final class ReaderViewModel: ObservableObject {
                         print("[MangaDetect] ch=\(chapterIndex) len=\(package.content.count) imgURLs=\(imgs.count) looksManga=\(MangaChapterParser.looksLikeMangaContent(package.content)) looksAudio=\(DirectChapterAudioResolver.looksLikeAudioContent(package.content)) audioURL=\(DirectChapterAudioResolver.request(from: package.content)?.url?.absoluteString ?? "nil") head=\(head)")
                     }
                     #endif
-                    if !store.upgradeToMangaIfDetected(bookId: book.id, content: package.content) {
-                        store.upgradeToAudioIfDetected(bookId: book.id, content: package.content)
+                    if !store.upgradeToMangaIfDetected(bookId: book.id, content: package.content, atChapter: chapterIndex) {
+                        store.upgradeToAudioIfDetected(bookId: book.id, content: package.content, atChapter: chapterIndex)
                     }
                 }
                 self.finishFetch(chapterIndex: chapterIndex, token: token, result: result)
