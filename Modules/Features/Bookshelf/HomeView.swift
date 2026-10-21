@@ -932,13 +932,12 @@ struct HomeView: View {
     /// legado's bookshelf pages through its groups; the group bar names the page in view.
     ///
     /// From iOS 26 the group bar is a safe-area bar: it and the navigation bar are one
-    /// surface that the pages scroll on under, with one soft edge behind both. The system
-    /// draws that edge for the pager, the outermost scroll view, so the pager carries
-    /// `softScrollEdges()`; left to the system the edge is hard — a lighter band ending in
-    /// a hairline under the group bar (iOS 27 simulator), the line the bar used to show
-    /// under the navigation bar when it was a scroll view of its own above the shelf.
-    /// Earlier systems draw no edge and no line, so there the bar stays above the pages,
-    /// which stop under it.
+    /// surface that the pages scroll on under. The system draws the scroll edge for the
+    /// pager, the outermost scroll view, and the shelf has none (`hiddenScrollEdges()`): a
+    /// soft edge blurred the covers passing under the bars (maintainer, 2026-10-21), and
+    /// left to the system it is hard — a lighter band ending in a hairline under the group
+    /// bar (iOS 27 simulator), unlike the page background around it. Earlier systems draw
+    /// no edge and no line, so there the bar stays above the pages, which stop under it.
     @ViewBuilder
     private func groupedShelf(pages: [String]) -> some View {
         let showsGroupBar = pages.count > 1
@@ -990,9 +989,9 @@ struct HomeView: View {
         // 全部 alone, with no group yet, does not page at all.
         .scrollBounceBehavior(.basedOnSize, axes: .horizontal)
         // The edge under the bars is drawn for this scroll view, not the pages' own (see
-        // `groupedShelf`). Hiding it here hides theirs too — the setting reaches every
-        // scroll view inside — and the books then show through the bars unblurred.
-        .softScrollEdges()
+        // `groupedShelf`). The pages' list and grid hide theirs too, so none of them puts
+        // an edge back on the covers.
+        .hiddenScrollEdges()
     }
 
     private var pageInView: Binding<String?> {
@@ -1130,7 +1129,7 @@ struct HomeView: View {
                 store.moveBooks(ids: movingIds, before: targetId)
             }
         }
-        .softScrollEdges()
+        .hiddenScrollEdges()
         .listStyle(.plain)
         .environment(\.editMode, $editMode)
         .animation(reduceMotion ? nil : DSAnimation.standard, value: entries.map(\.id))
@@ -1240,7 +1239,7 @@ struct HomeView: View {
             .id(Self.gridTopAnchorID)
         }
         .accessibilityIdentifier(shelfAccessibilityIdentifier(for: page, isInView: isInView, grid: true))
-        .softScrollEdges()
+        .hiddenScrollEdges()
         .animation(reduceMotion ? nil : DSAnimation.standard, value: entries.map(\.id))
         .animation(reduceMotion ? nil : DSAnimation.standard, value: gs.bookshelfGridColumnCount)
         .refreshable {
