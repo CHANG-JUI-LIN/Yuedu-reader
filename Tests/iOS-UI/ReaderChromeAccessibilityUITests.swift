@@ -106,8 +106,11 @@ final class ReaderChromeAccessibilityUITests: XCTestCase {
         let field = app.searchFields.firstMatch
         XCTAssertTrue(field.waitForExistence(timeout: 10), app.debugDescription)
         field.tap()
-        // Latin letters only: typing CJK submits the field (XCUITest).
-        field.typeText("Chrome\n")
+        // The run's own title, not just "Chrome": every earlier run's book on the shelf starts
+        // with "Chrome" too, and at an equal score the list puts shelf works ahead of a
+        // source's, so this run's row fell below the screen, where the lazy list has no cell.
+        // Latin letters and digits only: typing CJK submits the field (XCUITest).
+        field.typeText("\(title)\n")
         let work = app.descendants(matching: .any).matching(NSPredicate(format: "label BEGINSWITH %@", title)).firstMatch
         XCTAssertTrue(work.waitForExistence(timeout: 30), app.debugDescription)
         work.tap()
