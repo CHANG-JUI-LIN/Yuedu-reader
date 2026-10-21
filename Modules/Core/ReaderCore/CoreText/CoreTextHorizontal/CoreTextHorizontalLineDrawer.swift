@@ -115,21 +115,8 @@ enum CoreTextHorizontalLineDrawer {
                 }
             }
 
-            // Determine paragraph-last-line (never justified). CoreText folds the trailing
-            // paragraph break INTO this line's range, so the break sits at lineEnd-1, NOT at
-            // lineEnd. Checking only the char *after* the line misses it, and the paragraph's last
-            // line gets wrongly stretched (spraying huge gaps between its glyphs). Check the line's
-            // own last char as well as the one after it, covering both range conventions.
-            let isParagraphLastLine: Bool
-            if lineEnd >= stringLength {
-                isParagraphLastLine = true
-            } else {
-                let lastInLine = lineEnd > lineStart ? nsString.character(at: lineEnd - 1) : 0
-                let afterLine = nsString.character(at: lineEnd)
-                isParagraphLastLine =
-                    lastInLine == 0x000A || lastInLine == 0x2028 || lastInLine == 0x2029
-                    || afterLine == 0x000A || afterLine == 0x2028 || afterLine == 0x2029
-            }
+            // Determine paragraph-last-line (never justified).
+            let isParagraphLastLine = endsParagraph(lineStart: lineStart, lineEnd: lineEnd, in: nsString)
 
             // Paragraph alignment + right inset. Justification must stretch a line to the
             // paragraph's OWN right edge (tailIndent), not the full column — otherwise justified
@@ -153,7 +140,9 @@ enum CoreTextHorizontalLineDrawer {
                 lineStart: lineStart,
                 lineRange: lineRange,
                 isJustified: isJustified,
-                isParagraphLastLine: isParagraphLastLine,
+                isParagraphLastLine: isParagraphLastLine
+                    || isLeftShortByGluedBubble(lineStart: lineStart, lineEnd: lineEnd, availableWidth: availableWidth,
+                                                attrStr: attrStr, nsString: nsString),
                 availableWidth: availableWidth,
                 attrStr: attrStr,
                 nsString: nsString
@@ -461,6 +450,56 @@ enum CoreTextHorizontalLineDrawer {
     }
 
     // MARK: - CJK justification
+
+    /// Whether the line `lineStart..<lineEnd` is its paragraph's last. CoreText folds the
+    /// trailing paragraph break INTO the line's range, so the break sits at lineEnd-1, NOT at
+    /// lineEnd. Checking only the char *after* the line misses it, and the paragraph's last line
+    /// gets wrongly stretched (spraying huge gaps between its glyphs). Check the line's own last
+    /// char as well as the one after it, covering both range conventions.
+    private static func endsParagraph(lineStart: Int, lineEnd: Int, in nsString: NSString) -> Bool {
+        guard lineEnd < nsString.length else { return true }
+        let lastInLine = lineEnd > lineStart ? nsString.character(at: lineEnd - 1) : 0
+        let afterLine = nsString.character(at: lineEnd)
+        return lastInLine == 0x000A || lastInLine == 0x2028 || lastInLine == 0x2029
+            || afterLine == 0x000A || afterLine == 0x2028 || afterLine == 0x2029
+    }
+
+    /// Whether this line ends early only because a 段評 bubble took the paragraph's tail down.
+    ///
+    /// The bubble is glued to the character before it (`NodeAttributedStringRenderer
+    /// .textSizedImageGlue`), and the marks after that character cannot start a line, so a
+    /// bubble that does not fit brings 「啊……”」 down with it. The line it leaves is short by all
+    /// of that, and justifying it pried 「“爸你能不能有点公德心」 apart across the column
+    /// (feedback #30, 2026-10-20). Such a line is drawn at its natural width, like the
+    /// paragraph's last: its paragraph ends in the glued bubble, and the paragraph's text from
+    /// this line on, without the bubble, would have fit on this line.
+    ///
+    /// Read from the string, not from the frame's next line: a page or a scroll chunk can end
+    /// right after this line, with the tail on the next one.
+    private static func isLeftShortByGluedBubble(
+        lineStart: Int,
+        lineEnd: Int,
+        availableWidth: CGFloat,
+        attrStr: NSAttributedString,
+        nsString: NSString
+    ) -> Bool {
+        // The tail fits in what this line left over, so it is shorter than the line.
+        let window = NSRange(location: lineEnd, length: min(nsString.length - lineEnd, lineEnd - lineStart))
+        guard window.length > 0 else { return false }
+        let bubble = nsString.range(of: NodeAttributedStringRenderer.textSizedImageGlue + "\u{FFFC}",
+                                    options: .backwards, range: window)
+        guard bubble.location != NSNotFound else { return false }
+        let paragraph = nsString.paragraphRange(for: bubble)
+        let afterBubble = NSRange(location: NSMaxRange(bubble), length: NSMaxRange(paragraph) - NSMaxRange(bubble))
+        guard paragraph.location <= lineStart,
+              nsString.substring(with: afterBubble).allSatisfy(\.isWhitespace)
+        else { return false }
+        let text = CTLineCreateWithAttributedString(
+            attrStr.attributedSubstring(from: NSRange(location: lineStart, length: bubble.location - lineStart))
+        )
+        let textWidth = CTLineGetTypographicBounds(text, nil, nil, nil) - CTLineGetTrailingWhitespaceWidth(text)
+        return textWidth <= Double(availableWidth)
+    }
 
     private static func resolveJustifiedLine(
         line: CTLine,
