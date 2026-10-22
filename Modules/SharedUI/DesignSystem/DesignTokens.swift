@@ -734,6 +734,10 @@ enum DSAnimation {
     static let cardCarouselFadeOut = easeOut(duration: 0.15)
     /// Slow expansion
     static let slow = Animation.easeInOut(duration: 0.4)
+    /// 編輯首頁 coming and going: every section on screen morphing into its card and back. A
+    /// strong ease-in-out, for things that move on screen rather than enter it; the built-in
+    /// one is too weak to read as one deliberate move across the whole page.
+    static let homeEditMorph = Animation.timingCurve(0.77, 0, 0.175, 1, duration: 0.4)
     /// The reading menu coming up or going away, and whatever moves with it. One
     /// timing for every way the menu is shown or hidden.
     static let readerChrome = easeOut(duration: 0.2)

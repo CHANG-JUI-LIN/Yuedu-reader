@@ -116,6 +116,147 @@ final class HomeEditorUITests: XCTestCase {
                                                         "home.row.header.", listTitle)).firstMatch.exists)
     }
 
+    /// 編輯首頁 and 完成 hold the page at its end only while the sections morph: a scroll that is
+    /// not a drag — the status bar's here, VoiceOver's alike — then goes where it was sent. And
+    /// from the top, the bar's 完成 and ••• → 編輯首頁 still end at the end.
+    @MainActor
+    func testScrollsThatAreNotADragAfterEditing() {
+        let app = launchExplore()
+        let edit = app.buttons["home.edit"].firstMatch
+        for _ in 0..<8 where !edit.isHittable { app.swipeUp() }
+        XCTAssertTrue(edit.isHittable, app.debugDescription)
+        edit.tap()
+        let done = app.buttons["home.editDone"].firstMatch
+        XCTAssertTrue(done.waitForExistence(timeout: 10), app.debugDescription)
+        XCTAssertTrue(done.isHittable, "the page is at its end: \(app.debugDescription)")
+        tapStatusBar(app)
+        XCTAssertTrue(becomesUnhittable(done), "the status bar took the edited home to its top: \(app.debugDescription)")
+        attach(app, "home-editing-top")
+        XCTAssertFalse(done.isHittable, "and the page stays there: \(app.debugDescription)")
+        // The content's size changing then, as a section's books arriving late would, leaves it
+        // there too: 為你推薦's card, hidden, is its name alone.
+        let mark = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@ AND label == %@",
+                                                    "homeEditor.toggle.", "為你推薦")).firstMatch
+        XCTAssertTrue(mark.waitForExistence(timeout: 5), app.debugDescription)
+        XCTAssertTrue(mark.isHittable, app.debugDescription)
+        mark.tap()
+        XCTAssertEqual(mark.value as? String, "已隱藏")
+        attach(app, "home-editing-top-hidden")
+        XCTAssertFalse(done.isHittable, "a shorter card keeps the page where the status bar took it: \(app.debugDescription)")
+        XCTAssertTrue(app.windows.firstMatch.frame.contains(mark.frame), app.debugDescription)
+        mark.tap()
+        XCTAssertEqual(mark.value as? String, "顯示")
+        XCTAssertFalse(done.isHittable, "and a taller one: \(app.debugDescription)")
+
+        app.buttons["home.editDoneBar"].firstMatch.tap()
+        let editAgain = app.buttons["home.edit"].firstMatch
+        XCTAssertTrue(editAgain.waitForExistence(timeout: 10), app.debugDescription)
+        XCTAssertTrue(editAgain.isHittable, "the page is at its end: \(app.debugDescription)")
+        tapStatusBar(app)
+        XCTAssertTrue(becomesUnhittable(editAgain), "the status bar took the home to its top: \(app.debugDescription)")
+        attach(app, "home-top")
+        XCTAssertFalse(editAgain.isHittable, "and the page stays there: \(app.debugDescription)")
+
+        app.buttons["explore.more"].firstMatch.tap()
+        let menuEdit = app.buttons.matching(NSPredicate(format: "(label == %@ OR label BEGINSWITH %@) AND identifier != %@",
+                                                        "編輯首頁", "編輯首頁,", "home.edit")).firstMatch
+        XCTAssertTrue(menuEdit.waitForExistence(timeout: 5), app.debugDescription)
+        menuEdit.tap()
+        XCTAssertTrue(done.waitForExistence(timeout: 10), app.debugDescription)
+        XCTAssertTrue(becomesHittable(done), "••• → 編輯首頁 from the top: the editor's end: \(app.debugDescription)")
+    }
+
+    /// The status bar's tap, which scrolls the page to its top: at the clock, clear of the island.
+    @MainActor
+    private func tapStatusBar(_ app: XCUIApplication) {
+        app.windows.firstMatch.coordinate(withNormalizedOffset: CGVector(dx: 0.15, dy: 0))
+            .withOffset(CGVector(dx: 0, dy: 15)).tap()
+    }
+
+    @MainActor
+    private func becomesUnhittable(_ element: XCUIElement) -> Bool {
+        let gone = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in !element.isHittable }, object: nil)
+        return XCTWaiter.wait(for: [gone], timeout: 5) == .completed
+    }
+
+    @MainActor
+    private func becomesHittable(_ element: XCUIElement) -> Bool {
+        let shown = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in element.isHittable }, object: nil)
+        return XCTWaiter.wait(for: [shown], timeout: 5) == .completed
+    }
+
+    /// 完成 from an editor much taller than the home: hidden sections are a card each while the
+    /// home is edited and nothing on the home, as on the maintainer's, whose hidden 來源配置
+    /// sections left the home blank after 完成 (2026-10-22): its sections gone, 編輯首頁 alone
+    /// above the bar. The home is drawn again, from the editor's 完成 and from the bar's.
+    @MainActor
+    func testDoneFromATallerEditorShowsTheHome() throws {
+        func section(_ binding: [String: Any], layout: String, enabled: Bool = true) -> [String: Any] {
+            ["binding": binding, "id": UUID().uuidString, "isEnabled": enabled, "layout": layout,
+             "parameters": [String: Any](), "title": ""]
+        }
+        let hidden = (1...10).map { index in
+            section(["type": "sourceCategories", "categories": [[
+                "sourceURL": "http://localhost:9", "title": "Hidden \(index)", "url": "http://localhost:9/\(index)"]]],
+                    layout: "coverGrid", enabled: false)
+        }
+        let sections = [section(["type": "continueReading"], layout: "compactReadingCard"),
+                        section(["type": "gutenbergShelf", "id": "popular"], layout: "row")]
+            + hidden + [section(["type": "gutenbergLists"], layout: "collection")]
+        let home = directory.appendingPathComponent("explore_home.json")
+        try JSONSerialization.data(withJSONObject: ["configurations": [Any](), "schemaVersion": 2, "sections": sections])
+            .write(to: home)
+        let app = launchExplore(["-explore-home-file", home.path])
+        let edit = app.buttons["home.edit"].firstMatch
+        let done = app.buttons["home.editDone"].firstMatch
+        for doneButton in ["home.editDone", "home.editDoneBar"] {
+            for _ in 0..<8 where !edit.isHittable { app.swipeUp() }
+            XCTAssertTrue(edit.isHittable, app.debugDescription)
+            edit.tap()
+            XCTAssertTrue(done.waitForExistence(timeout: 10), app.debugDescription)
+            XCTAssertTrue(becomesHittable(done), "the editor's end: \(app.debugDescription)")
+            app.buttons[doneButton].firstMatch.tap()
+            XCTAssertTrue(becomesHittable(edit), "\(doneButton): the home's end: \(app.debugDescription)")
+            XCTAssertTrue(becomesHittable(app.buttons[listCard].firstMatch),
+                          "\(doneButton): the last section is drawn above 編輯首頁: \(app.debugDescription)")
+            attach(app, "home-after-\(doneButton)")
+            XCTAssertGreaterThan(drawnShare(app, above: edit), 0.05, "\(doneButton): the home is drawn, not its background")
+            XCTAssertFalse(app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "homeEditor.toggle."))
+                .firstMatch.exists, "\(doneButton): no card is left: \(app.debugDescription)")
+        }
+    }
+
+    /// How much of the page between the bar and `edge` is drawn: the share of sampled pixels
+    /// unlike the commonest one. The page's background alone, as the maintainer's home was after
+    /// 完成 (2026-10-22: its sections gone, 編輯首頁 left at the bottom), reads close to 0.
+    @MainActor
+    private func drawnShare(_ app: XCUIApplication, above edge: XCUIElement) -> Double {
+        guard let image = app.screenshot().image.cgImage else { return 0 }
+        let window = app.windows.firstMatch.frame
+        let scale = CGFloat(image.width) / window.width
+        let top = app.navigationBars.firstMatch.frame.maxY + 8
+        let bottom = edge.frame.minY - 8
+        guard bottom - top > 40 else { return 1 }
+        let width = image.width, height = image.height
+        var pixels = [UInt8](repeating: 0, count: width * height * 4)
+        let context = CGContext(data: &pixels, width: width, height: height, bitsPerComponent: 8, bytesPerRow: width * 4,
+                                space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)
+        context?.draw(image, in: CGRect(x: 0, y: 0, width: width, height: height))
+        var counts: [UInt32: Int] = [:]
+        var samples = 0
+        for y in stride(from: top, to: bottom, by: 6) {
+            for x in stride(from: window.minX + 4, to: window.maxX - 4, by: 6) {
+                let index = (Int(y * scale) * width + Int(x * scale)) * 4
+                // To 4 bits a channel: a gradient's neighbours count as one colour.
+                let key = UInt32(pixels[index] >> 4) << 8 | UInt32(pixels[index + 1] >> 4) << 4 | UInt32(pixels[index + 2] >> 4)
+                counts[key, default: 0] += 1
+                samples += 1
+            }
+        }
+        guard samples > 0, let commonest = counts.values.max() else { return 0 }
+        return 1 - Double(commonest) / Double(samples)
+    }
+
     /// 5d-3: 呈現方式, from the same long press, redraws the section: 圖文資訊清單 gives each book
     /// the width of the screen, and 顯示排名 puts its rank first in what VoiceOver reads.
     @MainActor
@@ -447,9 +588,25 @@ final class HomeEditorUITests: XCTestCase {
 
         // 最新's parameters: the category that stands for the book source in it.
         let latest = sectionCards(app, named: "最新").firstMatch
-        for _ in 0..<10 where !(latest.exists && latest.isHittable) { app.swipeDown() }
+        // Wholly between the bars. A card under the navigation bar still counts as hittable and
+        // the tap lands on the bar; under the ＋, it opens 新增欄目. 最新's card is as tall as its
+        // row now, its books in it, and one swipe left it on either side (iOS 27 simulator).
+        let add = app.buttons["homeEditor.addSection"].firstMatch
+        let barBottom = app.navigationBars.firstMatch.frame.maxY
+        func isBetweenTheBars() -> Bool {
+            latest.exists && latest.frame.minY > barBottom && latest.frame.maxY < add.frame.minY
+        }
+        for _ in 0..<10 where !latest.exists { app.swipeDown() }
+        // Dragged as far as it is off, then held: a swipe's momentum, even a slow one's, carried it
+        // past the room between the bars, one way and then the other.
+        let middle = app.windows.firstMatch.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5))
+        for _ in 0..<6 where !isBetweenTheBars() {
+            let shift = max(-300, min(300, barBottom + 24 - latest.frame.minY))
+            middle.press(forDuration: 0.05, thenDragTo: middle.withOffset(CGVector(dx: 0, dy: shift)),
+                         withVelocity: .slow, thenHoldForDuration: 0.3)
+        }
         waitUntilSettled(latest)
-        XCTAssertTrue(latest.isHittable, app.debugDescription)
+        XCTAssertTrue(isBetweenTheBars(), app.debugDescription)
         latest.tap()
         let addLatest = app.buttons["homeSection.latest.add"].firstMatch
         // Under 顯示在最新's libraries (decision 36).

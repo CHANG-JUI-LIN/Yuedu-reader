@@ -130,6 +130,16 @@ struct yuedu_appApp: App {
                 }
             }
         }
+        // A home of the test's own sections, written where `HomePageStore` reads it: after the
+        // reset above, so the two together give exactly this page.
+        if let path = Self.argument(after: "-explore-home-file") {
+            let file = StorageLocations.applicationSupportRoot.appendingPathComponent("explore_home.json")
+            do {
+                try Data(contentsOf: URL(fileURLWithPath: path)).write(to: file, options: .atomic)
+            } catch {
+                AppLogger.error("-explore-home-file: \(path) was not written as the home: \(error)")
+            }
+        }
         // AI 推薦 as before its first run (8f): no stored list, so the row offers 產生推薦.
         if ProcessInfo.processInfo.arguments.contains("-reset-ai-recommendations") {
             do {

@@ -93,11 +93,14 @@ private extension EnvironmentValues {
 private struct RootTabTitleScrollAnchor: ViewModifier {
     @Environment(\.rootTabTitleFade) private var fade
 
+    /// The content keeps its identity as the fade comes and goes — 探索 switches between the
+    /// two behaviors with 編輯首頁 — and only the measurer behind it does: on either side of
+    /// an `if`, the whole page was made again, its sections crossfading instead of morphing.
     func body(content: Content) -> some View {
-        if let fade {
-            content.reportsScrollOffset { fade.update(offset: $0) }
-        } else {
-            content
+        content.background {
+            if let fade {
+                Color.clear.reportsScrollOffset { fade.update(offset: $0) }
+            }
         }
     }
 }

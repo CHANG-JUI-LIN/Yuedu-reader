@@ -35,6 +35,190 @@ extension View {
     func onScrollDragBegan(_ action: @escaping () -> Void) -> some View {
         background(ScrollDragObserver(onBegan: action).accessibilityHidden(true))
     }
+
+    /// While `pins` holds, keeps the scroll view this view sits in at the end of its content:
+    /// through each change of the content's size — frame by frame while SwiftUI animates it,
+    /// which `ScrollViewProxy.scrollTo` and `defaultScrollAnchor(_:for: .sizeChanges)` both
+    /// skip, jumping to the final size's end while the content still has the first one — and
+    /// of `bottomInset`, the safe area left by the bars under the scroll view. While a change
+    /// of `morph` animates, the page travels to the end along the morph's curve, from as far
+    /// from it as it was, and is held on that way through every move of the offset: SwiftUI
+    /// moves it as it lays the animated content out. After that, a move of the offset that
+    /// neither the content nor the bars made — a scroll of any kind: a drag, VoiceOver's, the
+    /// status bar's — takes the page off its end for good: `scrolledAway` is called, and
+    /// nothing more is followed until `pins` is set again. Put it inside the scroll content,
+    /// as `reportsScrollOffset(_:)`.
+    func pinsScrollToEnd(_ pins: Bool, through morph: Bool, bottomInset: CGFloat,
+                         scrolledAway: @escaping () -> Void) -> some View {
+        modifier(ScrollEndPinning(pins: pins, progress: morph ? 1 : 0, target: morph ? 1 : 0, bottomInset: bottomInset,
+                                  scrolledAway: scrolledAway))
+    }
+}
+
+/// `morph` as a number that animates with it, so the pin knows on every frame how far the
+/// morph has come — `progress` on its way to `target` — and that it has ended on the frame it
+/// does. Not `withAnimation`'s completion: the morph's never came, though another animation
+/// started with the same curve beside it completed in 0.65 s (探索's 編輯首頁, iOS 27 simulator).
+private struct ScrollEndPinning: ViewModifier, Animatable {
+    let pins: Bool
+    var progress: Double
+    let target: Double
+    let bottomInset: CGFloat
+    let scrolledAway: () -> Void
+
+    var animatableData: Double {
+        get { progress }
+        set { progress = newValue }
+    }
+
+    func body(content: Content) -> some View {
+        let morphed = pins && progress != target ? 1 - abs(target - progress) : nil
+        return content.background(ScrollEndPin(pins: pins, morphed: morphed, bottomInset: bottomInset,
+                                               scrolledAway: scrolledAway)
+            .accessibilityHidden(true))
+    }
+}
+
+private struct ScrollEndPin: UIViewRepresentable {
+    let pins: Bool
+    /// How much of the morph is done, from 0 to 1, while it runs. Only then is every other move
+    /// of the offset undone: VoiceOver's scrolls, a tap on the status bar and a drop's autoscroll
+    /// are none of them a drag, and held longer the page undid each of them.
+    let morphed: Double?
+    /// Read by nothing here: its change calls `updateUIView`, which pins again. The bars coming
+    /// and going change the scroll view's insets and set neither its size nor its offset.
+    let bottomInset: CGFloat
+    let scrolledAway: () -> Void
+
+    func makeUIView(context: Context) -> PinView {
+        PinView()
+    }
+
+    func updateUIView(_ view: PinView, context: Context) {
+        view.pins = pins
+        view.morphed = morphed
+        view.scrolledAway = scrolledAway
+        view.pin()
+    }
+
+    final class PinView: UIView {
+        var pins = false {
+            didSet { if !pins { hasScrolledAway = false } }
+        }
+        var morphed: Double?
+        var scrolledAway: () -> Void = {}
+        /// A scroll took the page off its end, and the pin lets it be until `pins` is cleared:
+        /// SwiftUI hears of it on the main actor's next turn, and an update before that still
+        /// reads `pins` set.
+        private var hasScrolledAway = false
+        /// What the page was last put at the end of. The offset moving while all of it stays is
+        /// no layout's doing but a scroll's: VoiceOver's or the status bar's are not drags, and
+        /// followed on, a section that changed its size later — its books arriving, or hidden —
+        /// took the page back to its end.
+        private var pinnedLayout: PinnedLayout?
+        /// How far above the end the page was as the morph began. Put at the end at once, a page
+        /// left at the editor's top by the bar's 完成 swapped to its end in one frame and only then
+        /// morphed; from the end itself, this is 0 and the page stays there.
+        private var startDistance: CGFloat?
+        private weak var scrollView: UIScrollView?
+        private var observations: [NSKeyValueObservation] = []
+
+        init() {
+            super.init(frame: .zero)
+            isUserInteractionEnabled = false
+        }
+
+        @available(*, unavailable)
+        required init?(coder: NSCoder) {
+            fatalError("init(coder:) is not supported")
+        }
+
+        override func didMoveToWindow() {
+            super.didMoveToWindow()
+            guard window != nil else { return }
+            var ancestor = superview
+            while let view = ancestor, !(view is UIScrollView) {
+                ancestor = view.superview
+            }
+            let scrollView = ancestor as? UIScrollView
+            guard scrollView !== self.scrollView || observations.isEmpty else { return }
+            self.scrollView = scrollView
+            // Both change on the main thread. The size only when it is another: SwiftUI sets the
+            // same size again on each frame of a scroll, and the page went back to its end as the
+            // status bar took it to its top.
+            observations = scrollView.map { scrollView in
+                [scrollView.observe(\.contentSize, options: [.old, .new]) { [weak self] _, change in
+                    guard change.oldValue != change.newValue else { return }
+                    MainActor.assumeIsolated { self?.pin() }
+                 },
+                 scrollView.observe(\.contentOffset, options: [.new]) { [weak self] _, _ in
+                    MainActor.assumeIsolated { self?.offsetChanged() }
+                 }]
+            } ?? []
+            pin()
+        }
+
+        private func offsetChanged() {
+            guard pins, !hasScrolledAway, let scrollView else { return }
+            // The morph moves it as it lays the content out; the content or the bars changing do.
+            guard morphed == nil, PinnedLayout(scrollView) == pinnedLayout else {
+                pin()
+                return
+            }
+            // Within a point is still the end: SwiftUI puts the offset on an end of its own as it
+            // updates the scroll view, worked out from the size rounded to a whole point — 633 for
+            // 632.33 (iOS 27 simulator, Reduce Motion, 完成), and the page stopped following there.
+            guard abs(scrollView.contentOffset.y - Self.end(of: scrollView)) >= 1 else { return }
+            hasScrolledAway = true
+            // Published on the next turn: a scroll's move can come in the middle of a view update.
+            Task { @MainActor [weak self] in self?.scrolledAway() }
+        }
+
+        func pin() {
+            guard pins, !hasScrolledAway, let scrollView else {
+                startDistance = nil
+                pinnedLayout = nil
+                return
+            }
+            let insets = scrollView.adjustedContentInset
+            let top = -insets.top
+            let end = Self.end(of: scrollView)
+            pinnedLayout = PinnedLayout(scrollView)
+            var offset = end
+            if let morphed {
+                let distance = startDistance ?? max(0, end - scrollView.contentOffset.y)
+                startDistance = distance
+                offset = max(top, end - distance * (1 - morphed))
+            } else {
+                startDistance = nil
+            }
+            // Within half a point: setting the offset calls the offset's observer again.
+            guard abs(scrollView.contentOffset.y - offset) > 0.5 else { return }
+            // Never animated. The tab bar coming back changes the safe area inside UIKit's own
+            // animation, and an offset set there went with it: the page then showed that
+            // animation's offset, not the one set each frame after, and jumped 646 points when
+            // it ended (編輯首頁's 完成, iOS 27 simulator).
+            UIView.performWithoutAnimation { scrollView.contentOffset.y = offset }
+        }
+
+        private static func end(of scrollView: UIScrollView) -> CGFloat {
+            let insets = scrollView.adjustedContentInset
+            return max(-insets.top, scrollView.contentSize.height + insets.bottom - scrollView.bounds.height)
+        }
+    }
+
+    /// Everything the end depends on.
+    private struct PinnedLayout: Equatable {
+        let contentSize: CGSize
+        let insets: UIEdgeInsets
+        let boundsSize: CGSize
+
+        init(_ scrollView: UIScrollView) {
+            contentSize = scrollView.contentSize
+            insets = scrollView.adjustedContentInset
+            boundsSize = scrollView.bounds.size
+        }
+    }
 }
 
 private struct ScrollDragObserver: UIViewRepresentable {

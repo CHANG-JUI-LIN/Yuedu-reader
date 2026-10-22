@@ -51,6 +51,9 @@ private struct ExploreHomeRoot: View {
     @State private var configurationPrompt: HomeConfigurationPrompt?
     /// 編輯首頁: the sections drawn as cards to show, hide, reorder and open (5d-2).
     @State private var isEditing = false
+    /// 編輯首頁's bars, the bar's 完成 and the ＋ where the tab bar was: `isEditing`, but set
+    /// without the morph's animation (`setEditing(_:)`).
+    @State private var showsEditorBars = false
     /// 新增欄目's sheet (5d-5).
     @State private var addsSection = false
     /// The section 新增欄目 just added, brought into view: it is at the end of the home.
@@ -59,11 +62,13 @@ private struct ExploreHomeRoot: View {
     /// (Technotes/iOS17MenuModalPresentation.md).
     @State private var showsMoreChooser = false
     @State private var moreSequence = DismissalSequencedPresentation<ExploreMoreAction>()
-    /// The home's end, 編輯首頁 or 完成, scrolled to as the home is edited and done.
-    private static let endID = "home.end"
     /// Set as the home is edited or done, until the reader drags the page: the page keeps to
-    /// the other mode's end while that mode lays out.
+    /// its end, where 編輯首頁 and 完成 are, while the other mode lays out.
     @State private var followsEnd = false
+    /// The safe area under the page: the tab bar's, or the ＋'s bar while the home is edited.
+    @State private var bottomInset: CGFloat = 0
+    /// The page's width, which each section keeps in its card while the home is edited.
+    @State private var pageWidth: CGFloat = 0
 
     private struct BrowserPresentation: Identifiable {
         let id = UUID()
@@ -89,6 +94,21 @@ private struct ExploreHomeRoot: View {
         return model.groups(in: nil, languages: aggregation.readingLanguages,
                             libraryOrder: aggregation.settings.libraryOrder,
                             readFilter: HomeReadFilter(hides: aggregation.hidesRead, isRead: lookup.isRead))
+    }
+
+    /// The home's sections, each one view in and out of 編輯首頁 (`HomeSectionSlot`): one list
+    /// in both, the sections drawn and every section 編輯首頁 lists, so the morph changes no
+    /// section's place in it, and its cards the home's books, so it changes no row either.
+    private var sectionEntries: [HomeSectionEntry] {
+        let drawn = groups
+        let home = Dictionary(drawn.map { ($0.section.id, $0) }, uniquingKeysWith: { first, _ in first })
+        let editable = pageStore.page?.editableSections.map(\.id) ?? []
+        // The page before its first read saves it: what the home draws.
+        return (pageStore.page?.sections ?? drawn.map(\.section)).compactMap { section in
+            let editableIndex = editable.firstIndex(of: section.id)
+            guard home[section.id] != nil || editableIndex != nil else { return nil }
+            return HomeSectionEntry(section: section, homeGroup: home[section.id], editableIndex: editableIndex)
+        }
     }
 
     /// What the rows are built from; any change builds them again.
@@ -122,7 +142,7 @@ private struct ExploreHomeRoot: View {
             .toolbar { toolbar }
             // 編輯首頁 hides the tab bar while the home is being edited, as 書架's 選取 does, and
             // its ＋ takes the bar's place (maintainer, 2026-10-17).
-            .hidesRootTabBar(isEditing)
+            .hidesRootTabBar(showsEditorBars)
             .homeConfigurationPrompts($configurationPrompt)
             // Full screen, as Forward's 選擇模板: the gallery's previews run to the screen's edges.
             .fullScreenCover(isPresented: $addsSection) {
@@ -168,48 +188,57 @@ private struct ExploreHomeRoot: View {
     private var home: some View {
         ScrollViewReader { proxy in
         ScrollView {
-            VStack(alignment: .leading, spacing: DSSpacing.xxl) {
-                LazyVStack(alignment: .leading, spacing: DSSpacing.xxl) {
-                    if isEditing {
-                        HomeEditingSections(sections: pageStore.page?.editableSections ?? [], groups: model.groups(in: nil, languages: aggregation.readingLanguages),
-                                            openSettings: { path.append(HomeEditRoute.section($0)) }) { group in
+            // Each section has the gap after it (`HomeSectionSlot`), going with it where only the
+            // home or only the editor gives it room.
+            VStack(alignment: .leading, spacing: 0) {
+                LazyVStack(alignment: .leading, spacing: 0) {
+                    let entries = sectionEntries
+                    let editableCount = entries.count(where: { $0.editableIndex != nil })
+                    ForEach(entries) { entry in
+                        HomeSectionSlot(entry: entry, isEditing: isEditing, pageWidth: pageWidth, count: editableCount,
+                                        openSettings: { path.append(HomeEditRoute.section($0)) }) { group in
                             groupHost(group, model: model, isEditable: true)
                         }
-                    } else {
-                        ForEach(groups) { group in groupHost(group, model: model, isEditable: true).id(group.section.id) }
+                        .id(entry.id)
                     }
                 }
                 // Over a home with nothing drawn, the button is the empty state's own.
                 if model.isReady, isEditing || !showsNothing {
                     // At the end of the home (maintainer, 2026-10-11, decision 18). Out of the lazy
                     // stack, so it is always there to scroll to.
-                    Button(localized(isEditing ? "完成" : "編輯首頁")) { setEditing(!isEditing) }
+                    Button { setEditing(!isEditing) } label: { HomeEditButtonTitle(isEditing: isEditing) }
                         .buttonStyle(.bordered)
+                        // One piece moving with the page through the morph. Without it the button just
+                        // tapped moved by its press's animation instead, sinking under the ＋'s bar and
+                        // coming back, and its new title was drawn where it ends up while the page was
+                        // still scrolling there, below its capsule (iOS 27 simulator).
+                        .geometryGroup()
                         .frame(maxWidth: .infinity)
-                        .id(Self.endID)
+                        .accessibilityLabel(localized(isEditing ? "完成" : "編輯首頁"))
                         .accessibilityIdentifier(isEditing ? "home.editDone" : "home.edit")
                 }
             }
             .padding(.vertical, DSSpacing.lg)
             .frame(maxWidth: .infinity, alignment: .leading)
+            .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { pageWidth = $0 }
+            .homeEditMorph(isEditing)
             .rootTabTitleScrollAnchor()
             // Both ways the home opens at its end, where 編輯首頁 and 完成 are (maintainer,
             // 2026-10-17). The cards are taller than the rows, and the offset the scroll view
             // kept showed the editor's middle on the way in and, past the end of the shorter
-            // home, nothing at all on the way out. The other mode lays out over several passes,
-            // its lazy stack measuring the cards it reaches (884, 1505, 1773, 1749 and 1727 points
-            // tall within 100 ms, iOS 27 simulator), so the page follows the end through each,
-            // until the reader drags it. A scroll at the first pass stopped short of the end.
-            .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { _ in
-                if followsEnd { proxy.scrollTo(Self.endID, anchor: .bottom) }
-            }
+            // home, nothing at all on the way out. The page travels to its end with the morph,
+            // frame by frame, from as far above it as it was, then follows it through the passes
+            // the other mode lays out over, its lazy stack measuring the cards it reaches (884,
+            // 1505, 1773, 1749 and 1727 points tall within 100 ms, iOS 27 simulator), until the
+            // reader scrolls it off its end — a drag, or VoiceOver's or the status bar's scroll,
+            // which no section changing its size afterwards takes back. And through the bars
+            // that come and go with the editor: the tab bar, back after the ＋'s bar was gone,
+            // covered 編輯首頁 the page had just followed (iOS 18.6 simulator).
+            .pinsScrollToEnd(followsEnd, through: isEditing, bottomInset: bottomInset) { followsEnd = false }
+            // A drag lets go at once, the morph's hold too.
             .onScrollDragBegan { followsEnd = false }
         }
-        // And through the bars that come and go with the editor: the tab bar, back after the
-        // ＋'s bar was gone, covered 編輯首頁 the page had just followed (iOS 18.6 simulator).
-        .onGeometryChange(for: CGFloat.self) { $0.safeAreaInsets.bottom } action: { _ in
-            if followsEnd { proxy.scrollTo(Self.endID, anchor: .bottom) }
-        }
+        .onGeometryChange(for: CGFloat.self) { $0.safeAreaInsets.bottom } action: { bottomInset = $0 }
         .onChange(of: addedSection) { _, added in
             guard let added else { return }
             followsEnd = false
@@ -281,18 +310,28 @@ private struct ExploreHomeRoot: View {
         model.reloadLocal()
     }
 
-    /// Not animated: the cards and the rows differ in height, and the scroll view's content
-    /// size, animated between them, held the page short of the end it followed.
+    /// The sections morph into their cards and back (`HomeSectionSlot`, maintainer, 2026-10-21),
+    /// the page taken to its end along the way (`pinsScrollToEnd`). Reduce Motion switches at once.
     private func setEditing(_ editing: Bool) {
-        followsEnd = true
-        isEditing = editing
+        // The bars change at the tap, outside the morph. Changed in it, the page drew another
+        // offset than the one it was set to: after 完成 the drawn one stayed some 400 points past
+        // the end the page is pinned to for 0.2 s, blank under 編輯首頁, then jumped, with no
+        // animation on the scroll view's layer (iOS 26.5 simulator; 27 and 17 drew the set one).
+        // Changed outside, the drawn offset is the set one, a frame behind, though the safe area
+        // still eases into the tab bar's there.
+        withAnimation(nil) { showsEditorBars = editing }
+        // In the morph's own update: set before it, the page was put at its end a frame early.
+        withAnimation(reduceMotion ? nil : DSAnimation.homeEditMorph) {
+            followsEnd = true
+            isEditing = editing
+        }
     }
 
     // MARK: Toolbar
 
     @ToolbarContentBuilder
     private var toolbar: some ToolbarContent {
-        if isEditing {
+        if showsEditorBars {
             ToolbarItem(placement: .confirmationAction) {
                 Button(localized("完成")) { setEditing(false) }
                     .accessibilityIdentifier("home.editDoneBar")
@@ -587,6 +626,27 @@ enum ExploreMoreAction: Hashable {
     case browser
 }
 
+/// 編輯首頁 and 完成 crossfading on the button at the home's end, each centred on the capsule
+/// as it narrows or widens to the new title. Changed in place, the outgoing title kept to the
+/// capsule's leading edge and ran out past its trailing one, reading as one word with the other.
+private struct HomeEditButtonTitle: View {
+    let isEditing: Bool
+
+    var body: some View {
+        // The title shown sizes the capsule; both are drawn over it. The button reads its own label.
+        Text(localized(isEditing ? "完成" : "編輯首頁"))
+            .hidden()
+            .overlay {
+                ZStack {
+                    Text(localized("編輯首頁")).opacity(isEditing ? 0 : 1)
+                    Text(localized("完成")).opacity(isEditing ? 1 : 0)
+                }
+                .fixedSize()
+                .accessibilityHidden(true)
+            }
+    }
+}
+
 /// 探索's ••• from iOS 18: 編輯首頁, the 首頁配置 submenu (a picker, then 新增首頁配置, and for the
 /// reader's own 重新命名 and 刪除), the two entries into 聚合設定, 重新整理, and the browser, which
 /// is presented rather than shown in place (5d-1) and always offered (maintainer, 2026-10-17).
@@ -660,6 +720,15 @@ private struct ExploreMoreMenu: View {
 #Preview("Explore home") {
     ExploreHome(browser: BrowserState())
         .environmentObject(BookStore())
+}
+
+#Preview("編輯首頁／完成") {
+    @Previewable @State var isEditing = false
+    Button { withAnimation(DSAnimation.homeEditMorph) { isEditing.toggle() } } label: {
+        HomeEditButtonTitle(isEditing: isEditing)
+    }
+    .buttonStyle(.bordered)
+    .geometryGroup()
 }
 
 #Preview("•••，iOS 18 起的選單") {
