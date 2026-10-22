@@ -122,8 +122,14 @@ Reply in Traditional Chinese.
      with the app's own frames, or a diagnostic log / timing is missing. That covers
      TestFlight crashes without `detail`, Crashlytics/Organizer items whose stack has no app
      frame, and feedback whose cause needs logs the user cannot send. When a later event
-     brings that evidence, the item comes back. Items blocked on something the user *can*
-     answer (the book, the source, a setting) stay in, with the question in the reply draft.
+     brings that evidence, the item comes back.
+   - **Waiting on the user** (maintainer, 2026-10-22): the next step is the user's answer —
+     the book, the source JSON, the file they imported, which control they meant. The
+     question goes in the item's `triageNote`; the item comes back when the thread has a
+     new message.
+   - **Only needs an explanation**: not a bug, nothing to change, the whole action is a
+     reply (e.g. a sandbox purchase not showing in TestFlight). Mark it `wontfix` with the
+     reason in step 7 instead of `triaged`, so it leaves the inbox.
    - **Already fixed**: a fix commit exists (the note says 已修 <commit> or HEAD 已修) and the
      item only waits for a newer build to confirm it.
    - In the untracked-Crashlytics section: issues whose `lastSeenVersion` is older than the
@@ -138,7 +144,8 @@ Reply in Traditional Chinese.
 7. **Mark what you read.** For each item you investigated (not the unchanged "still open"
    ones), `firestore_update_document` with
    `updateMask` `status`, `triageNote`, `triagedAt`: status `triaged` (leave `fixing`,
-   `shipped`, `wontfix` alone), a one-line note with the root cause or what is missing,
+   `shipped`, `wontfix` alone; an item that only needs an explanation gets `wontfix`, see
+   step 6), a one-line note with the root cause or what is missing,
    and the current time. Never touch the other fields; the functions own them.
 
 ## Later in the item's life (when the maintainer asks)
