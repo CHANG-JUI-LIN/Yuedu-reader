@@ -64,7 +64,6 @@ enum CoreTextHorizontalLineDrawer {
             origins = frameOrigins
         }
 
-        let nsString = attrStr.string as NSString
         let stringLength = attrStr.length
 
         // Resolved up front rather than inside the loop: 對話氣泡 has to be
@@ -96,7 +95,6 @@ enum CoreTextHorizontalLineDrawer {
 
             let lineRange = CTLineGetStringRange(line)
             let lineStart = lineRange.location
-            let lineEnd = lineRange.location + lineRange.length
 
             // Skip lines belonging to explicit block renderables (drawn separately)
             if !suppressedRanges.isEmpty {
@@ -115,38 +113,9 @@ enum CoreTextHorizontalLineDrawer {
                 }
             }
 
-            // Determine paragraph-last-line (never justified).
-            let isParagraphLastLine = endsParagraph(lineStart: lineStart, lineEnd: lineEnd, in: nsString)
-
-            // Paragraph alignment + right inset. Justification must stretch a line to the
-            // paragraph's OWN right edge (tailIndent), not the full column — otherwise justified
-            // lines inside padded boxes (`.yj` letter, `.ph` phone frame) poke through the
-            // right border (the box is drawn 8pt inside the text zone those lines stretched to).
-            let paraStyle: NSParagraphStyle? = lineRange.location < stringLength
-                ? attrStr.attribute(.paragraphStyle, at: lineRange.location, effectiveRange: nil) as? NSParagraphStyle
-                : nil
-            let isJustified = paraStyle?.alignment == .justified
-            let tailInset: CGFloat = {
-                guard let tail = paraStyle?.tailIndent, tail < 0 else { return 0 }
-                return -tail
-            }()
-
-            origin.x = max(contentMinX, origin.x)
-            let maxRightX = contentMinX + contentWidth - tailInset
-            let availableWidth = max(1, maxRightX - origin.x)
-
-            let lineToDraw = resolveJustifiedLine(
-                line: line,
-                lineStart: lineStart,
-                lineRange: lineRange,
-                isJustified: isJustified,
-                isParagraphLastLine: isParagraphLastLine
-                    || isLeftShortByGluedBubble(lineStart: lineStart, lineEnd: lineEnd, availableWidth: availableWidth,
-                                                attrStr: attrStr, nsString: nsString),
-                availableWidth: availableWidth,
-                attrStr: attrStr,
-                nsString: nsString
-            )
+            let painted = paintedLine(line, originX: origins[lineIdx].x, contentWidth: contentWidth, attrStr: attrStr)
+            origin.x = contentMinX + painted.x
+            let lineToDraw = painted.line
 
             let boundedLineRange = NSIntersectionRange(
                 NSRange(location: max(0, lineStart), length: max(0, lineRange.length)),
@@ -447,6 +416,112 @@ enum CoreTextHorizontalLineDrawer {
         ctx.strokePath()
         ctx.restoreGState()
         return true
+    }
+
+    // MARK: - Painted geometry
+
+    /// One line of a horizontal frame as `drawLines` paints it.
+    ///
+    /// Everything placed against the glyphs — selection, TTS highlight, highlights and notes,
+    /// hit-testing, inline images — measures this, never the frame's own line. The frame's line
+    /// carries CoreText's justification, which the drawer replaces: it spreads a line
+    /// differently (never around punctuation; 12.5 pt apart on a line of dialogue) and
+    /// leaves some lines unstretched — a paragraph's last, one a 段評 bubble left short, whose
+    /// last character the frame put 79 pt right of where it is drawn (feedback #30, 2026-10-21).
+    struct PaintedLine {
+        /// The line drawn. A line rebuilt from its substring counts its string from 0.
+        let line: CTLine
+        /// Where `line`'s string index 0 sits in the frame's string.
+        let indexBase: Int
+        /// Where `line` is drawn, from the left edge of the content box.
+        let x: CGFloat
+
+        /// The boundary before the character at `index` of the frame's string, from the
+        /// content box's left edge.
+        func offset(at index: Int) -> CGFloat {
+            x + GlyphBoundary.offset(line, at: index - indexBase)
+        }
+
+        /// The index in the frame's string nearest `position`, measured from the content box's
+        /// left edge, or `kCFNotFound`.
+        func index(at position: CGFloat) -> Int {
+            let found = GlyphBoundary.index(line, at: position - x)
+            return found == kCFNotFound ? found : found + indexBase
+        }
+
+        /// The drawn line's advance.
+        var width: CGFloat {
+            CGFloat(CTLineGetTypographicBounds(line, nil, nil, nil))
+        }
+    }
+
+    /// A frame's lines as `drawLines` paints them, each resolved the first time it is asked
+    /// for: a tap measures one line, a selection the few it covers.
+    final class PaintedLines {
+        private let lines: [CTLine]
+        private let originXs: [CGFloat]
+        private let contentWidth: CGFloat
+        private let attributedString: NSAttributedString
+        private var resolved: [Int: PaintedLine] = [:]
+
+        /// `origins` are the frame's line origins, relative to the content box.
+        init(lines: [CTLine], origins: [CGPoint], contentWidth: CGFloat, attributedString: NSAttributedString) {
+            self.lines = lines
+            self.originXs = origins.map(\.x)
+            self.contentWidth = contentWidth
+            self.attributedString = attributedString
+        }
+
+        subscript(index: Int) -> PaintedLine {
+            if let painted = resolved[index] { return painted }
+            let painted = CoreTextHorizontalLineDrawer.paintedLine(
+                lines[index], originX: originXs[index], contentWidth: contentWidth, attrStr: attributedString
+            )
+            resolved[index] = painted
+            return painted
+        }
+    }
+
+    /// The line `drawLines` paints for `line`, whose origin is `originX` from the content box's
+    /// left edge.
+    static func paintedLine(
+        _ line: CTLine,
+        originX: CGFloat,
+        contentWidth: CGFloat,
+        attrStr: NSAttributedString
+    ) -> PaintedLine {
+        let nsString = attrStr.string as NSString
+        let lineRange = CTLineGetStringRange(line)
+        let lineStart = lineRange.location
+        let lineEnd = lineRange.location + lineRange.length
+        let x = max(0, originX)
+
+        // Paragraph alignment + right inset. Justification must stretch a line to the
+        // paragraph's OWN right edge (tailIndent), not the full column — otherwise justified
+        // lines inside padded boxes (`.yj` letter, `.ph` phone frame) poke through the
+        // right border (the box is drawn 8pt inside the text zone those lines stretched to).
+        let paraStyle: NSParagraphStyle? = lineStart >= 0 && lineStart < nsString.length
+            ? attrStr.attribute(.paragraphStyle, at: lineStart, effectiveRange: nil) as? NSParagraphStyle
+            : nil
+        let tailInset: CGFloat = {
+            guard let tail = paraStyle?.tailIndent, tail < 0 else { return 0 }
+            return -tail
+        }()
+        let availableWidth = max(1, contentWidth - tailInset - x)
+
+        let drawn = resolveJustifiedLine(
+            line: line,
+            lineStart: lineStart,
+            lineRange: lineRange,
+            isJustified: paraStyle?.alignment == .justified,
+            isParagraphLastLine: endsParagraph(lineStart: lineStart, lineEnd: lineEnd, in: nsString)
+                || isLeftShortByGluedBubble(lineStart: lineStart, lineEnd: lineEnd, availableWidth: availableWidth,
+                                            attrStr: attrStr, nsString: nsString),
+            availableWidth: availableWidth,
+            attrStr: attrStr,
+            nsString: nsString
+        )
+        return PaintedLine(line: drawn, indexBase: drawn === line ? 0 : lineStart, x: x)
     }
 
     // MARK: - CJK justification

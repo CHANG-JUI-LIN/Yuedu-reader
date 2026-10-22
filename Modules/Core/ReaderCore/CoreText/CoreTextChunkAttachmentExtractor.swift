@@ -96,9 +96,12 @@ enum CoreTextChunkAttachmentExtractor {
                             // CoreTextPaginator.extractImages); adding a pen offset on top of it
                             // double-counted the alignment and misplaced inline images on centered
                             // or right-aligned lines — the chapter title's 章名段评 bubble.
-                            let textAdvance = GlyphBoundary.offset(line, at: runLocation)
+                            // Measured on the line as painted (see CoreTextPaginator.extractImages).
+                            let painted = CoreTextHorizontalLineDrawer.paintedLine(
+                                line, originX: lineOrigin.x, contentWidth: chunkSize.width, attrStr: attributedString
+                            )
                             rect = CGRect(
-                                x: lineOrigin.x + textAdvance + info.paddingLeft,
+                                x: painted.offset(at: runLocation) + info.paddingLeft,
                                 y: uiY,
                                 width: info.drawWidth,
                                 height: info.drawHeight

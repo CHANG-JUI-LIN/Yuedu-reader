@@ -86,6 +86,9 @@ final class CoreTextPageView: UIView, UIGestureRecognizerDelegate, @MainActor UI
         let frame: CTFrame
         let lines: [CTLine]
         let origins: [CGPoint]
+        /// The lines as `drawHorizontalFrame` paints them: where taps, selection and highlights
+        /// meet the glyphs in horizontal text.
+        let painted: CoreTextHorizontalLineDrawer.PaintedLines
         let contentPathRect: CGRect
         let layoutSize: CGSize
         let scaleX: CGFloat
@@ -1839,6 +1842,10 @@ final class CoreTextPageView: UIView, UIGestureRecognizerDelegate, @MainActor UI
             frame: frame,
             lines: lines,
             origins: origins,
+            painted: CoreTextHorizontalLineDrawer.PaintedLines(
+                lines: lines, origins: origins, contentWidth: contentPathRect.width,
+                attributedString: layout.attributedString
+            ),
             contentPathRect: contentPathRect,
             layoutSize: layoutSize,
             scaleX: bounds.width / layoutSize.width,
@@ -1859,17 +1866,13 @@ final class CoreTextPageView: UIView, UIGestureRecognizerDelegate, @MainActor UI
         guard let lineIdx = nearestLineIndex(for: coreY, in: context) else { return nil }
 
         let line = context.lines[lineIdx]
-        let lineOrigin = context.origins[lineIdx]
-        let lineX = context.contentPathRect.minX + lineOrigin.x
+        let painted = context.painted[lineIdx]
+        let lineX = context.contentPathRect.minX + painted.x
 
         // Check horizontal bounds: tap must be within the line's actual typographic width.
         // CTLineGetStringIndexForPosition returns the nearest character even for taps far to the right,
         // which makes blank space trigger links and blocks page-turning.
-        var lineAscent: CGFloat = 0
-        var lineDescent: CGFloat = 0
-        var lineLeading: CGFloat = 0
-        let lineWidth = CGFloat(CTLineGetTypographicBounds(line, &lineAscent, &lineDescent, &lineLeading))
-        let textEndX = lineX + lineWidth
+        let textEndX = lineX + painted.width
         // Allow small fudge for touch precision, but not the entire right margin
         let tapTolerance: CGFloat = 10
         guard canonical.x >= lineX - tapTolerance,
@@ -1879,7 +1882,7 @@ final class CoreTextPageView: UIView, UIGestureRecognizerDelegate, @MainActor UI
         }
 
         let relativeX = canonical.x - lineX
-        let index = GlyphBoundary.index(line, at: max(0, relativeX))
+        let index = painted.index(at: painted.x + max(0, relativeX))
         if index != kCFNotFound {
             return max(0, index)
         }
@@ -2040,6 +2043,7 @@ final class CoreTextPageView: UIView, UIGestureRecognizerDelegate, @MainActor UI
             pageCharRange: pageRange,
             lines: context.lines,
             lineOrigins: context.origins,
+            painted: context.painted,
             contentOffset: CGPoint(x: context.contentPathRect.minX, y: context.contentPathRect.minY),
             layoutHeight: context.layoutSize.height,
             writingMode: context.writingMode
@@ -2090,6 +2094,7 @@ final class CoreTextPageView: UIView, UIGestureRecognizerDelegate, @MainActor UI
             pageCharRange: pageRange,
             lines: context.lines,
             lineOrigins: context.origins,
+            painted: context.painted,
             contentOffset: CGPoint(x: context.contentPathRect.minX, y: context.contentPathRect.minY),
             layoutHeight: context.layoutSize.height,
             writingMode: context.writingMode
@@ -2391,6 +2396,7 @@ final class CoreTextPageView: UIView, UIGestureRecognizerDelegate, @MainActor UI
             forRange: range,
             lines: context.lines,
             lineOrigins: context.origins,
+            painted: context.painted,
             contentOffset: CGPoint(x: context.contentPathRect.minX, y: context.contentPathRect.minY),
             layoutHeight: context.layoutSize.height,
             writingMode: context.writingMode

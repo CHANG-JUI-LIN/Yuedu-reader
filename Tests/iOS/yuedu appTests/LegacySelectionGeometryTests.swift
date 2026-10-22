@@ -15,11 +15,11 @@ struct LegacySelectionGeometryTests {
     private static let size: CGFloat = 20
 
     /// 國？」國國, Traditional: 」 gives up its far side to the fixed ？.
-    private func line(vertical: Bool) -> CTLine {
+    private func line(vertical: Bool) -> (line: CTLine, text: NSAttributedString) {
         let text = NSMutableAttributedString(string: "國？」國國", attributes: [.font: UIFont.systemFont(ofSize: Self.size)])
         CJKTypography.apply(to: text, style: .traditional, vertical: vertical)
         if vertical { CJKTypography.applyOrientation(to: text) }
-        return CTLineCreateWithAttributedString(text)
+        return (CTLineCreateWithAttributedString(text), text)
     }
 
     /// Where each character's glyph starts along the line, from the advances.
@@ -38,12 +38,15 @@ struct LegacySelectionGeometryTests {
 
     @Test("Each character's rect spans its glyph after a squeezed mark", arguments: [false, true])
     func rectsFollowGlyphs(vertical: Bool) {
-        let line = line(vertical: vertical)
+        let (line, text) = line(vertical: vertical)
         let starts = glyphStarts(line)
+        let painted = CoreTextHorizontalLineDrawer.PaintedLines(
+            lines: [line], origins: [.zero], contentWidth: 1000, attributedString: text
+        )
         for index in 0..<5 {
             let rect = CoreTextAnnotationRenderer.rects(
                 forRange: NSRange(location: index, length: 1), lines: [line], lineOrigins: [.zero],
-                layoutHeight: 0, writingMode: vertical ? .verticalRTL : .horizontal
+                painted: painted, layoutHeight: 0, writingMode: vertical ? .verticalRTL : .horizontal
             ).first ?? .null
             let (from, to) = vertical ? (rect.minY, rect.maxY) : (rect.minX, rect.maxX)
             #expect(abs(from - starts[index]) < 0.01 && abs(to - starts[index + 1]) < 0.01,

@@ -2473,10 +2473,13 @@ final class CoreTextPaginator: Sendable {
                                     // CTLineGetPenOffsetForFlush on top double-counted it, which
                                     // pinned a centered chapter title's 章名段评 bubble to the right
                                     // margin and pushed it clean off the page when the title was
-                                    // right-aligned.
-                                    let textAdvance = GlyphBoundary.offset(line, at: runRange.location)
+                                    // right-aligned. Measured on the line as painted, so an image in
+                                    // a justified line sits where the drawer spaced it.
+                                    let painted = CoreTextHorizontalLineDrawer.paintedLine(
+                                        line, originX: lineOrigin.x, contentWidth: contentPathRect.width, attrStr: attrStr
+                                    )
                                     rect = CGRect(
-                                        x: contentPathRect.origin.x + lineOrigin.x + textAdvance + info.paddingLeft,
+                                        x: contentPathRect.origin.x + painted.offset(at: runRange.location) + info.paddingLeft,
                                         y: uiY,
                                         width: info.drawWidth,
                                         height: info.drawHeight

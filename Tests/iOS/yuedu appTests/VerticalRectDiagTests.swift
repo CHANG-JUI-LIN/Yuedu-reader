@@ -61,6 +61,10 @@ struct VerticalRectDiagTests {
             forRange: highlightRange,
             lines: lines,
             lineOrigins: origins,
+            painted: CoreTextHorizontalLineDrawer.PaintedLines(
+                lines: lines, origins: origins, contentWidth: contentPathRect.width,
+                attributedString: layout.attributedString
+            ),
             contentOffset: CGPoint(x: contentPathRect.minX, y: contentPathRect.minY),
             layoutHeight: layout.renderSize.height,
             writingMode: .verticalRTL

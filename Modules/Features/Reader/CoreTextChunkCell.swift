@@ -546,6 +546,9 @@ final class CoreTextChunkCollectionCell: UICollectionViewCell {
             forRange: inter,
             lines: lines,
             lineOrigins: origins,
+            painted: CoreTextHorizontalLineDrawer.PaintedLines(
+                lines: lines, origins: origins, contentWidth: chunk.width, attributedString: chunk.attributedString
+            ),
             contentOffset: .zero,
             layoutHeight: chunk.height,
             writingMode: chunk.writingMode
@@ -569,12 +572,16 @@ final class CoreTextChunkCollectionCell: UICollectionViewCell {
         CTFrameGetLineOrigins(frame, CFRangeMake(0, lines.count), &origins)
 
         let chunkNS = NSRange(location: chunk.charRange.location, length: chunk.charRange.length)
+        let painted = CoreTextHorizontalLineDrawer.PaintedLines(
+            lines: lines, origins: origins, contentWidth: chunk.width, attributedString: chunk.attributedString
+        )
         let layers = CoreTextAnnotationRenderer.render(
             annotations: annotations,
             spineIndex: chunk.chapterIndex,
             pageCharRange: chunkNS,
             lines: lines,
             lineOrigins: origins,
+            painted: painted,
             contentOffset: .zero,
             layoutHeight: chunk.height,
             writingMode: chunk.writingMode
@@ -617,6 +624,7 @@ final class CoreTextChunkCollectionCell: UICollectionViewCell {
             pageCharRange: chunkNS,
             lines: lines,
             lineOrigins: origins,
+            painted: painted,
             contentOffset: .zero,
             layoutHeight: chunk.height,
             writingMode: chunk.writingMode

@@ -391,21 +391,22 @@ final class CoreTextChunk {
             if d < bestDist { bestDist = d; bestIdx = i }
         }
         let line = lines[bestIdx]
-        let lineOrigin = origins[bestIdx]
+        // Measured on the line as painted, where the glyphs are (`PaintedLine`).
+        let painted = CoreTextHorizontalLineDrawer.paintedLine(
+            line, originX: origins[bestIdx].x, contentWidth: width, attrStr: attributedString
+        )
 
         // Check horizontal bounds: tap must be within the line's actual typographic width.
-        var lineAscent: CGFloat = 0, lineDescent: CGFloat = 0, lineLeading: CGFloat = 0
-        let lineWidth = CGFloat(CTLineGetTypographicBounds(line, &lineAscent, &lineDescent, &lineLeading))
-        let textEndX = lineOrigin.x + lineWidth
+        let textEndX = painted.x + painted.width
         let tapTolerance: CGFloat = 10
-        guard point.x >= lineOrigin.x - tapTolerance,
+        guard point.x >= painted.x - tapTolerance,
               point.x <= textEndX + tapTolerance
         else {
             return nil
         }
 
-        let relativeX = point.x - lineOrigin.x
-        let idx = GlyphBoundary.index(line, at: relativeX)
+        let relativeX = point.x - painted.x
+        let idx = painted.index(at: point.x)
         if idx != kCFNotFound { return max(0, idx) }
         let range = CTLineGetStringRange(line)
         guard range.length > 0 else { return nil }

@@ -23,6 +23,7 @@ struct CoreTextAnnotationRenderer {
     ///   - pageCharRange: Character range of this page/chunk (NSRange)
     ///   - lines: CTFrame lines for this page/chunk
     ///   - lineOrigins: CTFrame line origins for this page/chunk
+    ///   - painted: The same lines as the drawer paints them; horizontal rects measure these
     ///   - contentOffset: Content area origin in the CoreText coordinate system (contentPathRect.minX, contentPathRect.minY)
     ///   - layoutHeight: Total layout height, used to flip from CoreText to UIKit coordinates
     ///   - writingMode: Horizontal or vertical
@@ -33,6 +34,7 @@ struct CoreTextAnnotationRenderer {
         pageCharRange: NSRange,
         lines: [CTLine],
         lineOrigins: [CGPoint],
+        painted: CoreTextHorizontalLineDrawer.PaintedLines,
         contentOffset: CGPoint = .zero,
         layoutHeight: CGFloat,
         writingMode: ReaderWritingMode
@@ -63,6 +65,7 @@ struct CoreTextAnnotationRenderer {
                     range: intersection,
                     lines: lines,
                     lineOrigins: lineOrigins,
+                    painted: painted,
                     contentOffset: contentOffset,
                     layoutHeight: layoutHeight
                 )
@@ -96,6 +99,7 @@ struct CoreTextAnnotationRenderer {
         pageCharRange: NSRange,
         lines: [CTLine],
         lineOrigins: [CGPoint],
+        painted: CoreTextHorizontalLineDrawer.PaintedLines,
         contentOffset: CGPoint = .zero,
         layoutHeight: CGFloat,
         writingMode: ReaderWritingMode
@@ -119,6 +123,7 @@ struct CoreTextAnnotationRenderer {
                 forRange: headRange,
                 lines: lines,
                 lineOrigins: lineOrigins,
+                painted: painted,
                 contentOffset: contentOffset,
                 layoutHeight: layoutHeight,
                 writingMode: writingMode
@@ -142,6 +147,7 @@ struct CoreTextAnnotationRenderer {
         forRange range: NSRange,
         lines: [CTLine],
         lineOrigins: [CGPoint],
+        painted: CoreTextHorizontalLineDrawer.PaintedLines,
         contentOffset: CGPoint = .zero,
         layoutHeight: CGFloat,
         writingMode: ReaderWritingMode
@@ -150,15 +156,19 @@ struct CoreTextAnnotationRenderer {
         if writingMode.isVertical {
             return verticalRects(range: range, lines: lines, lineOrigins: lineOrigins, contentOffset: contentOffset, layoutHeight: layoutHeight)
         }
-        return horizontalRects(range: range, lines: lines, lineOrigins: lineOrigins, contentOffset: contentOffset, layoutHeight: layoutHeight)
+        return horizontalRects(range: range, lines: lines, lineOrigins: lineOrigins, painted: painted,
+                               contentOffset: contentOffset, layoutHeight: layoutHeight)
     }
 
     // MARK: - Horizontal rects
 
+    /// Measured on the lines as painted (`CoreTextHorizontalLineDrawer.PaintedLine`), so a rect
+    /// covers the glyphs where they are drawn; heights come from the frame's lines.
     private static func horizontalRects(
         range: NSRange,
         lines: [CTLine],
         lineOrigins: [CGPoint],
+        painted: CoreTextHorizontalLineDrawer.PaintedLines,
         contentOffset: CGPoint,
         layoutHeight: CGFloat
     ) -> [CGRect] {
@@ -171,8 +181,8 @@ struct CoreTextAnnotationRenderer {
             let inter = NSIntersectionRange(lineNS, range)
             guard inter.length > 0 else { continue }
 
-            let startOffset = CGFloat(GlyphBoundary.offset(line, at: inter.location))
-            let endOffset = CGFloat(GlyphBoundary.offset(line, at: inter.location + inter.length))
+            let startOffset = painted[idx].offset(at: inter.location)
+            let endOffset = painted[idx].offset(at: inter.location + inter.length)
 
             var ascent: CGFloat = 0, descent: CGFloat = 0
             _ = CTLineGetTypographicBounds(line, &ascent, &descent, nil)
@@ -184,7 +194,7 @@ struct CoreTextAnnotationRenderer {
 
             let uiY = layoutHeight - lineTop
             rects.append(CGRect(
-                x: contentOffset.x + origin.x + min(startOffset, endOffset),
+                x: contentOffset.x + min(startOffset, endOffset),
                 y: uiY,
                 width: max(1, abs(endOffset - startOffset)),
                 height: lineHeight
