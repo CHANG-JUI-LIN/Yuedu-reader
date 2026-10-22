@@ -221,6 +221,28 @@ struct ModuleProviderTests {
         #expect(ModuleStub.urls.count == 3, "fetched again once the duration has passed")
     }
 
+    @Test("a page another version's rules read is not answered from the cache: an official module's file changes with the app")
+    func cacheFollowsVersion() async throws {
+        let f = makeFixture()
+        defer { try? FileManager.default.removeItem(at: f.folder) }
+        ModuleStub.install(["example.com/new/novel": .html(listHTML)])
+        let old = module([htmlEntry(cache: 3600)])
+        _ = try await ModuleProvider(module: old, client: f.client).load(section())
+        #expect(ModuleStub.urls.count == 1)
+
+        // The app's next build bundles 1.1 under the same id and cache folder, with no update to clear it.
+        var bundled = old
+        bundled.version = "1.1"
+        bundled.modules[0].list.author = nil
+        let provider = ModuleProvider(module: bundled, client: f.client)
+        let entries = try await provider.load(section())
+        #expect(ModuleStub.urls.count == 2, "1.0's page is not 1.1's")
+        guard case .item(_, let summary, _) = entries.first else { Issue.record("not an item"); return }
+        #expect(summary.authors.isEmpty, "read by 1.1's rules")
+        _ = try await provider.load(section())
+        #expect(ModuleStub.urls.count == 2, "1.1's own page is answered from the cache")
+    }
+
     @Test("its manifest, and its binding round-trips")
     func manifestAndBinding() async throws {
         let f = makeFixture()

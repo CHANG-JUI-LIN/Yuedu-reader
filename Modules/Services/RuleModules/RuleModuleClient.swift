@@ -5,6 +5,10 @@ import Foundation
 struct RuleModulePage: Codable, Equatable, Sendable {
     var items: [RuleListItem]
     var fetchedAt: Date
+    /// The module version whose rules read it. A page another version read is never answered
+    /// from the cache: an official module's file changes with the app, and has no `update` to
+    /// clear its pages (a page cached before this was kept has none, and is read once more).
+    var version: String?
 }
 
 extension RuleModule.Entry {
@@ -96,12 +100,14 @@ struct RuleModuleClient: Sendable {
         let entryID = entry.id ?? "search"
         let cacheFile = cacheFile(module: module.id, entry: entryID, values: values)
         let duration = TimeInterval(max(entry.cacheDuration ?? 0, 0))
-        if duration > 0, let cached = cached(cacheFile), now().timeIntervalSince(cached.fetchedAt) < duration {
+        if duration > 0, let cached = cached(cacheFile), cached.version == module.version,
+           now().timeIntervalSince(cached.fetchedAt) < duration {
             return cached
         }
 
         let started = SourcePerfTrace.now
-        let page = RuleModulePage(items: try await fetch(entry, in: module, values: values), fetchedAt: now())
+        let page = RuleModulePage(items: try await fetch(entry, in: module, values: values), fetchedAt: now(),
+                                  version: module.version)
         SourcePerfTrace.record("module.page", "module=\(module.id) entry=\(entryID) items=\(page.items.count)",
                                since: started, thresholdMs: 0)
         if duration > 0 { save(page, to: cacheFile) }

@@ -74,7 +74,7 @@ App 內建的官方模組（`Resources/Assets/official-module-<id>.json`）跟�
 | `id` | 清單 ✓ | 清單代號，同一模組內不能重複；`search` 沒有 `id`。首頁欄目用它記住是哪個清單。 |
 | `title` | 清單 ✓ | 清單名稱。 |
 | `description` |  | 說明。 |
-| `cacheDuration` |  | 秒數：這段時間內同一頁直接用快取，不再請求。 |
+| `cacheDuration` |  | 秒數：這段時間內同一頁直接用快取，不再請求。模組的 `version` 一變，舊版規則抓的快取就不再使用。 |
 | `params` |  | 參數（§3.1）。 |
 | `request` | ✓ | 請求（§3.2）。 |
 | `list` | ✓ | 從回應取出書的規則（§3.3）。 |
