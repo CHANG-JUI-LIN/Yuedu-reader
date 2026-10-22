@@ -1,11 +1,13 @@
 import XCTest
 
-/// Unified library 5f: 作品詳情 opens the reader and takes it back, from both stacks that push
-/// it — the bookshelf's ••• and 探索's 繼續閱讀 card. On iOS 17 a reader opened through the
-/// shelf's card coordinator left the page's navigation bar off screen when it closed.
+/// Unified library 5f: 作品詳情 opens the reader and takes it back, from the bookshelf's ••• and
+/// the reader's own 選單; 探索's 繼續閱讀 card opens the reader itself. On iOS 17 a reader opened
+/// through the shelf's card coordinator left the page's navigation bar off screen when it closed.
 ///
 /// The book is a text file the test writes, imported at launch (`-auto-import-epub` with an
-/// absolute path, DEBUG); the test deletes it from the shelf at the end.
+/// absolute path, DEBUG); the test deletes it from the shelf at the end. Its sources are an empty
+/// `-book-source-store-dir`: the page searches the enabled ones on opening, and another suite's
+/// fixture sources left on the simulator, their server stopped, had its 來源 read 「書架，搜尋失敗」.
 final class WorkDetailUITests: XCTestCase {
     private let title = "作品詳情測試"
     private let body = "作品詳情測試正文，用來確認閱讀器打開了這本書。"
@@ -73,7 +75,8 @@ final class WorkDetailUITests: XCTestCase {
         app.launchArguments = ["-no-official-modules", "-AppleLanguages", "(zh-Hant)", "-AppleLocale", "zh_TW", "-reset-explore-home",
                                "-auto-import-epub", folder.appendingPathComponent("\(title).txt").path,
                                "-auto-import-title", title, "-yd_page_turn_style", "滑動", "-yd_scroll_mode", "NO",
-                               "-yd_appearance_reader_interface", "classic"]
+                               "-yd_appearance_reader_interface", "classic",
+                               "-book-source-store-dir", folder.appendingPathComponent("sources").path]
         app.launch()
         let shelfTab = app.tabBars.buttons["書架"].firstMatch
         XCTAssertTrue(shelfTab.waitForExistence(timeout: 30))
@@ -100,21 +103,17 @@ final class WorkDetailUITests: XCTestCase {
         XCTAssertTrue(shelfBook(app).waitForExistence(timeout: 10))
         XCTAssertTrue(shelfTab.isHittable, "Back from 作品詳情 returns to the shelf")
 
-        // 探索: the book is in 繼續閱讀 now; its card opens 作品詳情 too.
+        // 探索: the book is in 繼續閱讀 now. A shelf copy's card goes straight back into its reader,
+        // as the shelf's own cards do (maintainer, 2026-10-20), not through 作品詳情.
         app.tabBars.buttons["探索"].firstMatch.tap()
         let card = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH 'home.card.library.' AND label BEGINSWITH %@", title)).firstMatch
         XCTAssertTrue(card.waitForExistence(timeout: 15), app.debugDescription)
         card.tap()
-        XCTAssertTrue(versions.waitForExistence(timeout: 10), app.debugDescription)
-        let resume = app.buttons["繼續閱讀"].firstMatch
-        XCTAssertTrue(resume.exists, "The book was opened: 作品詳情 resumes it.\n\(app.debugDescription)")
-        resume.tap()
-        _ = waitForReader(app)
+        let resumed = waitForReader(app)
         screenshot(app, "work-detail-explore-reader")
         leaveReader(app)
-        XCTAssertTrue(versions.waitForExistence(timeout: 10), "The reader closes onto 作品詳情.\n\(app.debugDescription)")
-        app.navigationBars.buttons.firstMatch.tap()
-        XCTAssertTrue(card.waitForExistence(timeout: 10), "Back from 作品詳情 returns to the home")
+        XCTAssertTrue(resumed.waitForNonExistence(timeout: 10), app.debugDescription)
+        XCTAssertTrue(card.waitForExistence(timeout: 10), "The reader closes onto the home.\n\(app.debugDescription)")
 
         // The reader's own 選單 → 作品詳情 (5f-4b): a local book has it too, and 繼續閱讀 there
         // returns to the reader it came from rather than opening a second one.
