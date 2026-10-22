@@ -4,8 +4,8 @@ import SwiftUI
 /// AI 推薦, then the bundled module files (module ecosystem plan, M2).
 struct OfficialModuleSection<Libraries: View>: View {
     @ObservedObject var library: RuleModuleLibrary
-    /// 古騰堡 and 青空文庫 (M2b, maintainer 2026-10-17: 「公有書庫都算是官方模塊」): their own
-    /// pages, after AI 推薦 and before the bundled modules.
+    /// 古騰堡 and 青空文庫 (M2b, maintainer 2026-10-17: 「公有書庫都算是官方模塊」): their cards,
+    /// after AI 推薦 and before the bundled modules.
     private let libraries: (ExploreEntryLabel.Layout) -> Libraries
 
     init(library: RuleModuleLibrary? = nil, @ViewBuilder libraries: @escaping (ExploreEntryLabel.Layout) -> Libraries) {

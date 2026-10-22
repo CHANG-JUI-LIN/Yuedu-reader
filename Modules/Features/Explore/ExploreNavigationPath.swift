@@ -15,7 +15,8 @@ enum ExploreNavigationRoute: Hashable {
     case aggregationSettings
     /// RSS 訂閱, pushed: 資源庫's row and 訂閱的最新文章's 查看全部 (decision 30).
     case subscriptions
-    /// A public library's own page (decision 35), opened from 資源庫 (5h).
+    /// 古騰堡's or 青空文庫's page in 資源庫's 官方模組: what it offers, as a module's page (no
+    /// shelves since 2026-10-22; decision 35's own page went).
     case library(SourceInstanceKey)
     /// 資源庫's sources with a discover page: one group's, or all of them (decision 31).
     case sources(group: String?)

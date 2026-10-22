@@ -3499,9 +3499,7 @@
 
 "正在加入書架" = "Adding to library…";
 
-"正在更新目錄" = "Updating catalog…";
 
-"目錄更新失敗，仍顯示已儲存的目錄。" = "Couldn't update the catalog. Showing the saved catalog.";
 
 "書誌資料：青空文庫（[CC BY 4.0](https://creativecommons.org/licenses/by/4.0/)）" = "Bibliographic data: Aozora Bunko ([CC BY 4.0](https://creativecommons.org/licenses/by/4.0/))";
 
@@ -3539,14 +3537,12 @@
 "小說與文學" = "Fiction & Literature";
 "兒童與青少年" = "Children & Young Adults";
 "思想與歷史" = "Philosophy & History";
-"經典選讀" = "Classic Reads";
 "精選書單" = "Featured Collections";
 "免費" = "Free";
 "全螢幕" = "Full Screen";
 "半螢幕" = "Half Screen";
 "展開為全螢幕" = "Expand to Full Screen";
 "還原為半螢幕" = "Restore to Half Screen";
-"瀏覽所有分類" = "Browse All Categories";
 "無法載入書庫" = "Couldn't Load Library";
 "出版社" = "Publisher";
 
@@ -4005,6 +4001,7 @@
 "用到 %1$@ 的模組，requiredVersion 至少要 %2$@。" = "A module that uses %1$@ needs a requiredVersion of at least %2$@.";
 "「%@」是官方模組的代號，請換一個。" = "“%@” is the ID of an official module. Choose another.";
 "隨閱讀一起更新，不能移除；不想用時，在「搜尋來源」和「資料來源」取消勾選。" = "Updates with the app and can’t be removed. To stop using it, uncheck it in Search Sources and Data Source.";
+"隨閱讀一起更新，不能移除；不想用時，在「搜尋來源」和「最新來源」取消勾選。" = "Updates with the app and can’t be removed. To stop using it, uncheck it in Search Sources and Latest Sources.";
 "自動補齊書籍資料開啟時，書架上的書的 ISBN 也會送到這些網站，用來補上空白的封面、簡介與出版社；可在「資料來源」取消勾選。" = "While Fill In Missing Book Details is on, the ISBNs of books on your shelf are also sent to these sites to fill in missing covers, descriptions and publishers. Uncheck the module in Data Source to stop this.";
 "自動補齊書籍資料開啟時，書架上的書名、作者與 ISBN 也會送到這些網站，用來補上空白的封面、簡介與分類；可在「資料來源」取消勾選。" = "While Fill In Missing Book Details is on, the titles, authors and ISBNs of books on your shelf are also sent to these sites to fill in missing covers, descriptions and categories. Uncheck the module in Data Source to stop this.";
 "以 ISBN 查詢" = "Look Up by ISBN";

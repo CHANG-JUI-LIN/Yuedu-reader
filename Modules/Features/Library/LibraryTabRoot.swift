@@ -1,7 +1,7 @@
 import SwiftUI
 
 /// 資源庫, a tab since Phase 5's 5h (decisions 30 and 31): where every source lives, grouped by
-/// kind. The public libraries open their own pages, a remote library its catalog, and the
+/// kind. 古騰堡 and 青空文庫 open what they offer, a remote library its catalog, and the
 /// source configurations, the remote-library connections and the RSS feeds are managed here,
 /// no longer in 設定 or a tab of their own. 探索 stays the cover wall across them all.
 ///
@@ -244,7 +244,8 @@ struct LibraryTabRoot: View {
 
     // MARK: Sections
 
-    /// 古騰堡 and 青空文庫, in 官方模組 (M2b). Their identifiers stay `library.public.<id>`.
+    /// 古騰堡 and 青空文庫, in 官方模組 (M2b). Their identifiers stay `library.public.<id>`; each
+    /// opens what it offers, as a module's card does, not shelves to browse (2026-10-22).
     private func publicLibraryTiles(_ layout: ExploreEntryLabel.Layout) -> some View {
         ForEach(libraries.filter { $0.key.type == .gutenberg || $0.key.type == .aozora }) { library in
             NavigationLink(value: ExploreNavigationRoute.library(library.key)) {

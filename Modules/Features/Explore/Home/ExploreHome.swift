@@ -5,8 +5,8 @@ import SwiftUI
 /// decision 11). Its one ••• (decision 36, 2026-10-13, which took 範圍 away) holds every other
 /// way in but 首頁配置's (5d-4, decision 22), a button of its own since 2026-10-22: 編輯首頁,
 /// 聚合設定, and the browser (5d-1, settled
-/// decision 12, which took 我的書庫 off the home). A library's own page in the home's layouts
-/// (`LibraryHomePage`, decision 35) is 資源庫's (5h, `LibraryHomePageView`). There is no
+/// decision 12, which took 我的書庫 off the home). 古騰堡 and 青空文庫 have no page of shelves
+/// since 2026-10-22: their lists are rows here, and 資源庫 says what they offer. There is no
 /// catalog entry at the top (decision 20's, removed 2026-10-11 by the maintainer): a reader adds the sections
 /// they want, and a row's 查看全部 opens the rest of what it shows.
 ///

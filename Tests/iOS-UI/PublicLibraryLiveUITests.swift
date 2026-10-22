@@ -18,11 +18,23 @@ final class PublicLibraryLiveUITests: XCTestCase {
         if pro { app.launchArguments += ["-debug-force-pro"] }
         app.launchEnvironment["CFNETWORK_DIAGNOSTICS"] = "3"
         app.launch()
-        let tab = app.tabBars.buttons["探索"].firstMatch
+        // The storefront's search and shelves went with its page (2026-10-22): the libraries'
+        // books are found on 搜尋 and open 作品詳情.
+        let tab = app.tabBars.buttons["搜尋"].firstMatch
         XCTAssertTrue(tab.waitForExistence(timeout: 30))
         tab.tap()
-        XCTAssertTrue(app.buttons["publicLibrary.featured.chinese"].firstMatch.waitForExistence(timeout: 10))
+        XCTAssertTrue(app.searchFields.firstMatch.waitForExistence(timeout: 10))
         return app
+    }
+
+    /// A work of 搜尋's one list, by its title: the row's label starts with it.
+    @MainActor
+    private func searched(_ app: XCUIApplication, _ query: String, title: String) -> XCUIElement {
+        let field = app.searchFields.firstMatch
+        field.tap()
+        // Typing CJK submits the search on its own; the newline covers Latin letters.
+        field.typeText(query + "\n")
+        return app.descendants(matching: .any).matching(NSPredicate(format: "label BEGINSWITH %@", title + "，")).firstMatch
     }
 
     @MainActor
@@ -34,8 +46,6 @@ final class PublicLibraryLiveUITests: XCTestCase {
     }
 
     /// The first of 青空文庫's works on the home: 最新 takes its libraries in turn (LibraryOrderTests).
-    /// 範圍, which opened 青空文庫's own page, left 探索 with decision 36 (2026-10-13); that page
-    /// opens from 資源庫 (5h).
     @MainActor
     private func homeAozoraWork(_ app: XCUIApplication) -> XCUIElement {
         let latest = app.descendants(matching: .any).matching(NSPredicate(format: "label == %@", "最新")).firstMatch
@@ -50,15 +60,11 @@ final class PublicLibraryLiveUITests: XCTestCase {
     func testGutenbergWithoutPro() throws {
         guard enabled("PUBLIC_LIBRARY_LIVE_UI") else { throw XCTSkip("Explicit live Gutenberg release check") }
         let app = launch(pro: false)
-        screenshot(app, "nonpro-home")
-        let query = app.searchFields["搜尋公有書庫"].firstMatch
-        query.tap()
-        query.typeText("The Picture of Dorian Gray\n")
-        let result = app.buttons["publicLibrary.book.gutenberg:https://www.gutenberg.org/ebooks/174.opds"].firstMatch
+        screenshot(app, "nonpro-search-tab")
+        let result = searched(app, "The Picture of Dorian Gray", title: "The Picture of Dorian Gray")
         XCTAssertTrue(result.waitForExistence(timeout: 45), app.debugDescription)
         screenshot(app, "nonpro-search")
         result.tap()
-        XCTAssertTrue(app.buttons["publicLibrary.closeSheet"].firstMatch.waitForExistence(timeout: 45), app.debugDescription)
         let read = app.buttons.matching(NSPredicate(format: "label IN %@", ["開始閱讀", "繼續閱讀"])).firstMatch
         XCTAssertTrue(read.waitForExistence(timeout: 20), app.debugDescription)
         XCTAssertTrue(read.isEnabled)
@@ -71,7 +77,6 @@ final class PublicLibraryLiveUITests: XCTestCase {
         // so a still-running range request cannot be mistaken for reader readiness.
         let footer = app.otherElements["頁尾"].firstMatch
         XCTAssertTrue(footer.waitForExistence(timeout: 90), app.debugDescription)
-        XCTAssertTrue(app.buttons["publicLibrary.closeSheet"].firstMatch.waitForNonExistence(timeout: 10))
         // This edition begins with an image-only cover. Scroll into its text.
         let content = app.collectionViews.staticTexts.matching(NSPredicate(format: "label MATCHES %@", "(?s).{101,}")).firstMatch
         for _ in 0..<4 where !content.exists { app.swipeUp() }
@@ -93,18 +98,10 @@ final class PublicLibraryLiveUITests: XCTestCase {
     func testAozoraFixtureWithImportedThemeAndPro() throws {
         guard enabled("PUBLIC_LIBRARY_THEME_UI") else { throw XCTSkip("Requires the supplied qitheme and catalog fixture") }
         let app = launch(pro: true)
-        screenshot(app, "pro-qitheme-library-home")
-        app.buttons["publicLibrary.categories"].firstMatch.tap()
-        XCTAssertTrue(app.staticTexts["青空文庫"].firstMatch.waitForExistence(timeout: 10))
-        let authors = app.buttons["依作家"].firstMatch
-        XCTAssertTrue(authors.exists)
-        authors.tap()
-        let author = app.collectionViews.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", "架空 一郎")).firstMatch
-        XCTAssertTrue(author.waitForExistence(timeout: 10))
-        screenshot(app, "pro-qitheme-aozora-authors")
-        author.tap()
-        let work = app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", "架空の物語")).firstMatch
-        XCTAssertTrue(work.waitForExistence(timeout: 10))
+        screenshot(app, "pro-qitheme-search-tab")
+        // 分類's 依作家 went with the storefront (2026-10-22); the work is found by 搜尋.
+        let work = searched(app, "架空の物語", title: "架空の物語")
+        XCTAssertTrue(work.waitForExistence(timeout: 30), app.debugDescription)
         work.tap()
         XCTAssertTrue(app.buttons["加入書架"].firstMatch.waitForExistence(timeout: 10))
         // A lazy carousel can expose offscreen children to accessibility. Check
@@ -140,24 +137,18 @@ final class PublicLibraryLiveUITests: XCTestCase {
     @MainActor
     func testAozoraWorkDetailOrder() throws {
         guard enabled("AOZORA_CATALOG_LIVE_UI") else { throw XCTSkip("Explicit live Aozora catalog check") }
-        // 依分類 is a section of 青空文庫's own page, which 資源庫 opens (5h).
+        // 青空文庫's card in 資源庫 opens no shelves since 2026-10-22: the work comes from 搜索.
+        // 羅生門 has an NDC (a newly added work can have none yet, and then no 分類).
         let app = XCUIApplication()
         app.launchArguments = ["-no-official-modules", "-AppleLanguages", "(zh-Hant)", "-AppleLocale", "zh_TW",
                                "-yd_source_disclaimer_accepted", "YES", "-reset-explore-home"]
         app.launch()
-        let tab = app.tabBars.buttons["資源庫"].firstMatch
+        let tab = app.tabBars.buttons["搜尋"].firstMatch
         XCTAssertTrue(tab.waitForExistence(timeout: 30))
         tab.tap()
-        let aozora = app.buttons["library.public.builtin.aozora"].firstMatch
-        XCTAssertTrue(aozora.waitForExistence(timeout: 15), app.debugDescription)
-        aozora.tap()
-        // A work from 依分類's 小說・故事: a newly added work can have no NDC yet, and then no 分類.
-        let byCategory = app.buttons["依分類"].firstMatch
-        XCTAssertTrue(byCategory.waitForExistence(timeout: 90), app.debugDescription)
-        byCategory.tap()
-        XCTAssertTrue(app.staticTexts["小說・故事"].firstMatch.waitForExistence(timeout: 15), app.debugDescription)
-        let work = app.collectionViews.buttons.firstMatch
-        XCTAssertTrue(work.waitForExistence(timeout: 10), app.debugDescription)
+        XCTAssertTrue(app.searchFields.firstMatch.waitForExistence(timeout: 10))
+        let work = searched(app, "羅生門", title: "羅生門")
+        XCTAssertTrue(work.waitForExistence(timeout: 90), app.debugDescription)
         work.tap()
 
         let classification = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "detail.link.classification.")).firstMatch

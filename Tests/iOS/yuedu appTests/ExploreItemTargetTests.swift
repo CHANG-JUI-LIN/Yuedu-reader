@@ -88,7 +88,6 @@ struct ExploreItemTargetTests {
         let index = AozoraCatalogIndex.preview
         #expect(PublicLibraryRoute.collection(id: "chinese") == .collection(id: "chinese"))
         #expect(PublicLibraryRoute.collection(id: "chinese") != .collection(id: "fiction"))
-        #expect(PublicLibraryRoute.categories(index) == .categories(nil))
         let works = index.newWorks
         var other = try #require(works.first)
         other.id = "2"

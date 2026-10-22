@@ -115,10 +115,11 @@ struct ExploreHomeTests {
                                   connections: connections) == .explore(.source(sourceURL: "https://src.test")))
         #expect(ExplorePlace.page(of: SourceInstanceKey(type: .opds, id: opds.id), name: "Feed", connections: connections)
                 == .feed(OPDSFeedRoute(catalogID: opds.id, url: opds.url, title: "Feed")))
-        #expect(ExplorePlace.page(of: SourceInstanceKey(type: .gutenberg, id: PublicLibraryID.gutenberg.rawValue), name: "",
-                                  connections: connections) == .publicLibrary(.gutenbergHome))
-        #expect(ExplorePlace.page(of: SourceInstanceKey(type: .aozora, id: PublicLibraryID.aozora.rawValue), name: "",
-                                  connections: connections) == .publicLibrary(.aozoraHome))
+        // 古騰堡 and 青空文庫 are official modules: their page says what they offer, no shelves.
+        let gutenberg = SourceInstanceKey(type: .gutenberg, id: PublicLibraryID.gutenberg.rawValue)
+        let aozora = SourceInstanceKey(type: .aozora, id: PublicLibraryID.aozora.rawValue)
+        #expect(ExplorePlace.page(of: gutenberg, name: "", connections: connections) == .explore(.library(gutenberg)))
+        #expect(ExplorePlace.page(of: aozora, name: "", connections: connections) == .explore(.library(aozora)))
         #expect(ExplorePlace.page(of: .localLibrary, name: "", connections: connections) == nil)
         #expect(ExplorePlace.page(of: SourceInstanceKey(type: .webDAV, id: "removed"), name: "", connections: connections) == nil)
     }

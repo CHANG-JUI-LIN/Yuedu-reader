@@ -150,21 +150,13 @@ struct PublicLibraryReaderRoute: Hashable {
 /// and Explore's home pushes these on the one stack it shares with every source (unified
 /// library 5c, decision 5). Catalog values are snapshots; equality is by what the page shows.
 enum PublicLibraryRoute: Hashable {
-    case categories(AozoraCatalogIndex?)
     /// A bundled list, by `PublicLibraryCollection.id`.
     case collection(id: String)
     case aozoraWorks(title: String, works: [AozoraWork], index: AozoraCatalogIndex)
     case aozoraCatalog(AozoraBrowseMode, AozoraCatalogIndex)
-    /// Each library's own front page, as 範圍 shows it (5c-3, 5d-1): Gutenberg's lists
-    /// and shelves, and Aozora's 新着 and indexes.
-    case gutenbergHome
-    case aozoraHome
 
     private var key: [String] {
         switch self {
-        case .gutenbergHome: ["gutenbergHome"]
-        case .aozoraHome: ["aozoraHome"]
-        case .categories: ["categories"]
         case .collection(let id): ["collection", id]
         case .aozoraWorks(let title, let works, _): ["aozoraWorks", title] + works.map(\.id)
         case .aozoraCatalog(let mode, _): ["aozoraCatalog", mode.rawValue]
@@ -239,8 +231,6 @@ private struct PublicLibraryDestinations: ViewModifier {
         content
             .navigationDestination(for: PublicLibraryRoute.self) { route in
                 switch route {
-                case .categories(let index):
-                    PublicLibraryCategoriesView(index: index)
                 case .collection(let id):
                     if let collection = PublicLibraryCollection.all.first(where: { $0.id == id }) {
                         PublicLibraryCollectionView(collection: collection)
@@ -249,10 +239,6 @@ private struct PublicLibraryDestinations: ViewModifier {
                     AozoraWorksView(index: index, works: works, title: title)
                 case .aozoraCatalog(let mode, let index):
                     AozoraCatalogView(index: index, mode: mode)
-                case .gutenbergHome:
-                    GutenbergHomePage()
-                case .aozoraHome:
-                    AozoraHomePage()
                 }
             }
             .navigationDestination(for: PublicLibraryReaderRoute.self) { route in

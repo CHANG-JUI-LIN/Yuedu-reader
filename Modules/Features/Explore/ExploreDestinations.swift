@@ -64,7 +64,7 @@ private struct ExploreRouteDestinations: ViewModifier {
         case .subscriptions:
             RSSListView()
         case .library(let key):
-            LibraryHomePageView(key: key)
+            PublicLibraryModuleView(key: key)
         case .sources(let group):
             LibrarySourcesView(group: group)
         case .module(let id):
@@ -164,11 +164,17 @@ enum ExplorePush: Hashable {
     }
 }
 
+extension EnvironmentValues {
+    /// Pushes onto the stack that shows the page: 探索's or 資源庫's, each of which sets it to
+    /// append to its own path.
+    @Entry var explorePush: ((ExplorePush) -> Void)? = nil
+}
+
 /// The pages 範圍, the home's row headers and its chips open: each the page its source already
 /// shows from its own screens (unified library 5c-3). Nil where the source has no such page.
 enum ExplorePlace {
-    /// A source's own page: its discover page, its root feed or folder, or a public library's
-    /// front page, which 範圍 shows in place (5d-1; 我的書庫's tiles pushed it before).
+    /// A source's own page: its discover page, its root feed or folder, or an official module's
+    /// page, 古騰堡's and 青空文庫's among them (no front page of shelves since 2026-10-22).
     @MainActor
     static func page(of source: SourceInstanceKey, name: String,
                      connections: RemoteLibraryConnectionStore = .shared) -> ExplorePush? {
@@ -182,10 +188,8 @@ enum ExplorePlace {
             guard let connection = connections.connection(id: source.id),
                   let root = connections.webDAVClient(for: connection).rootURL else { return nil }
             return .folder(WebDAVDirectoryRoute(connectionID: connection.id, url: root, title: name))
-        case .gutenberg:
-            return .publicLibrary(.gutenbergHome)
-        case .aozora:
-            return .publicLibrary(.aozoraHome)
+        case .gutenberg, .aozora:
+            return .explore(.library(source))
         case .module:
             return .explore(.module(id: source.id))
         case .library, .bibliographic:

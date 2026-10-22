@@ -356,7 +356,6 @@ enum DSLayout {
     /// phone, with the next jacket peeking past the trailing margin.
     static let publicLibraryMargin: CGFloat = 32
     static let publicLibraryMinimumCoverWidth: CGFloat = 148
-    static let publicLibrarySectionSpacing: CGFloat = 48
     static let publicLibraryFeaturedAspect: CGFloat = 1.46
     static let publicLibraryFeaturedRotation: Double = -16
     /// A cover in a row of Explore's home (unified library 5c), 2:3. Between Apple Books'

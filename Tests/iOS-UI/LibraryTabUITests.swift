@@ -90,13 +90,27 @@ final class LibraryTabUITests: XCTestCase {
         // scroll it back, so the tap lands on the status bar and opens nothing: 遠端書庫, visited
         // after 訂閱 and 來源配置, failed that way (2026-10-16).
 
-        // A public library opens its own page, titled by its name.
+        // 古騰堡 and 青空文庫 open what they offer, as an official module's card does: no shelves
+        // to browse (maintainer, 2026-10-22).
         let gutenberg = app.buttons["library.public.builtin.gutenberg"].firstMatch
         XCTAssertTrue(gutenberg.waitForExistence(timeout: 5), app.debugDescription)
         XCTAssertFalse(app.staticTexts["公有書庫"].exists, "no 公有書庫 group: the libraries are 官方模組 (M2b)")
         gutenberg.tap()
         XCTAssertTrue(app.navigationBars["Project Gutenberg"].waitForExistence(timeout: 5), app.debugDescription)
+        XCTAssertTrue(app.staticTexts["www.gutenberg.org"].waitForExistence(timeout: 5), app.debugDescription)
+        XCTAssertFalse(app.buttons["publicLibrary.categories"].exists, "瀏覽所有分類 was the shelves' page")
+        XCTAssertFalse(app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "home.card.")).firstMatch.exists,
+                       "no books on an official module's page")
         attach(app, "library-gutenberg")
+        back(app)
+
+        let aozora = app.buttons["library.public.builtin.aozora"].firstMatch
+        XCTAssertTrue(aozora.waitForExistence(timeout: 5), app.debugDescription)
+        aozora.tap()
+        XCTAssertTrue(app.navigationBars["青空文庫"].waitForExistence(timeout: 5), app.debugDescription)
+        XCTAssertTrue(app.staticTexts["www.aozora.gr.jp"].waitForExistence(timeout: 5), app.debugDescription)
+        XCTAssertFalse(app.buttons["依分類"].exists, "依分類 is a 首頁 list, not a page here")
+        attach(app, "library-aozora")
         back(app)
 
         let remote = app.buttons["library.manageRemote"].firstMatch
