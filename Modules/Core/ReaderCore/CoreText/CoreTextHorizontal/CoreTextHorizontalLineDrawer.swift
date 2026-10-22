@@ -85,7 +85,7 @@ enum CoreTextHorizontalLineDrawer {
 
         // Paint every background before any glyph: a translated image from a
         // later line must not cover text that was already drawn on an earlier line.
-        var preparedLines: [(original: CTLine, drawn: CTLine, origin: CGPoint, range: CFRange)] = []
+        var preparedLines: [(original: CTLine, painted: PaintedLine, origin: CGPoint, range: CFRange)] = []
         preparedLines.reserveCapacity(lines.count)
         for (lineIdx, line) in lines.enumerated() {
             // The continuous viewport owns small, retained paint surfaces.
@@ -129,21 +129,21 @@ enum CoreTextHorizontalLineDrawer {
                 context: ctx
             )
 
-            preparedLines.append((line, lineToDraw, origin, lineRange))
+            preparedLines.append((line, painted, origin, lineRange))
         }
 
         for prepared in preparedLines {
             let line = prepared.original
-            let lineToDraw = prepared.drawn
+            let lineToDraw = prepared.painted.line
             let origin = prepared.origin
             let lineRange = prepared.range
             let lineStart = lineRange.location
 
-            // Inline border "chips" (e.g. page-number badges) are drawn behind the glyphs so the
-            // text sits on top of any fill. Offsets are read from the original (un-justified) line;
-            // chips occur on centered/short lines that are never justified.
+            // Inline border "chips" (a page-number badge, a span with a background or border)
+            // are drawn behind the glyphs so the text sits on top of any fill.
             drawInlineBorderBoxes(
                 line: line,
+                painted: prepared.painted,
                 origin: origin,
                 lineStart: lineStart,
                 lineLength: lineRange.length,
@@ -233,8 +233,11 @@ enum CoreTextHorizontalLineDrawer {
 
     // MARK: - Inline border chip
 
+    /// `line` is the frame's line, which gives the heights; `painted` places the chips along
+    /// the line where its glyphs are drawn, also in a justified line.
     private static func drawInlineBorderBoxes(
         line: CTLine,
+        painted: PaintedLine,
         origin: CGPoint,
         lineStart: Int,
         lineLength: Int,
@@ -268,8 +271,9 @@ enum CoreTextHorizontalLineDrawer {
             guard let style = value as? HTMLAttributedStringBuilder.InlineBorderBoxStyle,
                   range.length > 0 else { return }
 
-            let startOffset = GlyphBoundary.offset(line, at: range.location)
-            let endOffset = GlyphBoundary.offset(line, at: range.location + range.length)
+            // From the drawn line's origin, which `origin` is.
+            let startOffset = painted.offset(at: range.location) - painted.x
+            let endOffset = painted.offset(at: range.location + range.length) - painted.x
             let x0 = origin.x + min(startOffset, endOffset)
             let x1 = origin.x + max(startOffset, endOffset)
             guard x1 > x0 else { return }

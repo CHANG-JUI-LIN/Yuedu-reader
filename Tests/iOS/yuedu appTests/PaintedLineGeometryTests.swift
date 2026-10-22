@@ -116,7 +116,114 @@ struct PaintedLineGeometryTests {
         #expect(perStep(paintedLines) < 8.3)
     }
 
+    /// Pagination places every inline image — a 段評 bubble ends every paragraph of a 起点
+    /// chapter — on the painted line, which rebuilds that line once per image.
+    @Test("placing a chapter's 段評 bubbles on painted lines is a small part of its pagination")
+    func inlineImagePlacementCost() async throws {
+        let sentence = "他停了一下，說：「好，我們走吧。」然後，她笑了笑，輕聲說：「嗯，走吧！」兩人一前一後。"
+        let built = try await build(html: String(repeating: "<p>\(sentence)\(marker)</p>", count: 150))
+        let clock = ContinuousClock()
+        var layout: CoreTextPaginator.ChapterLayout?
+        let pagination = await clock.measure {
+            layout = await CoreTextPaginator().paginate(
+                spineIndex: 0, attrStr: LayoutShared(built.attributedString).wrappedValue,
+                renderSize: page, fontSize: 20, contentInsets: insets
+            )
+        }
+        let chapter = try #require(layout)
+        let contentWidth = CoreTextPaginator.coreTextContentPathRect(
+            renderSize: chapter.renderSize, contentInsets: chapter.contentInsets,
+            fontSize: chapter.fontSize, writingMode: chapter.writingMode
+        ).width
+
+        // Every inline image run of the chapter, with its line.
+        let delegateKey = NSAttributedString.Key(kCTRunDelegateAttributeName as String)
+        var images: [(line: CTLine, originX: CGFloat, location: Int)] = []
+        for artifact in chapter.pageArtifacts {
+            let lines = CTFrameGetLines(artifact.frame) as! [CTLine]
+            for (index, line) in lines.enumerated() {
+                for run in CTLineGetGlyphRuns(line) as! [CTRun] {
+                    let attributes = CTRunGetAttributes(run) as! [NSAttributedString.Key: Any]
+                    guard attributes[delegateKey] != nil else { continue }
+                    images.append((line, artifact.lineOrigins[index].x, CTRunGetStringRange(run).location))
+                }
+            }
+        }
+        try #require(images.count >= 150)
+
+        var sink: CGFloat = 0
+        let frameLines = clock.measure {
+            for image in images {
+                sink += image.originX + GlyphBoundary.offset(image.line, at: image.location)
+            }
+        }
+        let paintedLines = clock.measure {
+            for image in images {
+                sink += CoreTextHorizontalLineDrawer.paintedLine(
+                    image.line, originX: image.originX, contentWidth: contentWidth,
+                    attrStr: chapter.attributedString
+                ).offset(at: image.location)
+            }
+        }
+        print("⏱ PaintedLineGeometry \(images.count) inline images over \(chapter.pageRanges.count) pages: pagination \(Self.milliseconds(pagination)) ms; placing them on frame lines \(Self.milliseconds(frameLines)) ms, on painted lines \(Self.milliseconds(paintedLines)) ms (\(sink))")
+        #expect(Self.milliseconds(paintedLines) - Self.milliseconds(frameLines) < Self.milliseconds(pagination) / 4)
+    }
+
+    /// An inline element with a background or border — a span, a page-number badge — is boxed
+    /// where its glyphs are drawn, in a justified line too.
+    @Test("an inline box in a justified line wraps its glyphs as drawn")
+    func inlineBoxFollowsDrawnGlyphs() async throws {
+        let sentence = "他停了一下，說：「好，我們走吧。」然後，她笑了笑，輕聲說：「嗯，走吧！」兩人一前一後，沿著河堤，慢慢走遠了。"
+        let attributed = try await build(html: "<p>\(sentence)\(sentence)</p>").attributedString
+        let text = attributed.string as NSString
+        let paragraph = text.paragraphRange(for: text.range(of: "沿著河堤"))
+        let path = CGPath(rect: CGRect(x: 0, y: 0, width: width, height: 100_000), transform: nil)
+        let frame = CTFramesetterCreateFrame(CTFramesetterCreateWithAttributedString(attributed), CFRange(), path, nil)
+        let lines = CTFrameGetLines(frame) as! [CTLine]
+        var origins = [CGPoint](repeating: .zero, count: lines.count)
+        CTFrameGetLineOrigins(frame, CFRange(location: 0, length: 0), &origins)
+        let painted = CoreTextHorizontalLineDrawer.PaintedLines(
+            lines: lines, origins: origins, contentWidth: width, attributedString: attributed
+        )
+
+        // The character the frame's own line puts farthest from where it is drawn gets the box.
+        var boxed = (line: 0, character: NSRange(location: NSNotFound, length: 0), drift: CGFloat(0))
+        for index in lines.indices {
+            let cfRange = CTLineGetStringRange(lines[index])
+            let lineRange = NSIntersectionRange(NSRange(location: cfRange.location, length: cfRange.length), paragraph)
+            text.enumerateSubstrings(in: lineRange, options: .byComposedCharacterSequences) { character, range, _, _ in
+                guard character?.allSatisfy(\.isWhitespace) == false else { return }
+                let drift = abs(origins[index].x + GlyphBoundary.offset(lines[index], at: range.location)
+                    - painted[index].offset(at: range.location))
+                if drift > boxed.drift { boxed = (index, range, drift) }
+            }
+        }
+        #expect(boxed.drift > 2, "the frame's line is only \(boxed.drift)pt off; this proves nothing")
+
+        let padding: CGFloat = 2
+        let chip = NSMutableAttributedString(attributedString: attributed)
+        chip.addAttribute(.foregroundColor, value: UIColor.clear, range: NSRange(location: 0, length: chip.length))
+        chip.addAttribute(
+            HTMLAttributedStringBuilder.inlineBorderBoxAttribute,
+            value: HTMLAttributedStringBuilder.InlineBorderBoxStyle(
+                borderColor: .clear, borderWidth: 0, cornerRadius: 0, fillColor: .black,
+                paddingHorizontal: padding, paddingVertical: 0
+            ),
+            range: boxed.character
+        )
+        let drawn = try #require(inkSpan(line: boxed.line, of: chip, path: path))
+        let start = painted[boxed.line].offset(at: boxed.character.location) - padding
+        let end = painted[boxed.line].offset(at: NSMaxRange(boxed.character)) + padding
+        #expect(abs(drawn.lowerBound - start) <= 0.5 && abs(drawn.upperBound - end) <= 0.5,
+                "「\(text.substring(with: boxed.character))」: box drawn \(drawn), glyph \(start)...\(end)")
+        print("⏱ PaintedLineGeometry inline box: frame line \(boxed.drift)pt off, drawn box \(drawn) for \(start)...\(end)")
+    }
+
     // MARK: - Helpers
+
+    private static func milliseconds(_ duration: Duration) -> Double {
+        Double(duration.components.seconds) * 1000 + Double(duration.components.attoseconds) / 1e15
+    }
 
     /// How far the glyph of a character of the paragraph holding `anchor` reaches outside its
     /// rect, at worst: the rect measured on the painted line, and on the frame's own line.
@@ -188,7 +295,13 @@ struct PaintedLineGeometryTests {
         let masked = NSMutableAttributedString(attributedString: attributed)
         masked.addAttribute(.foregroundColor, value: UIColor.clear, range: NSRange(location: 0, length: masked.length))
         masked.addAttribute(.foregroundColor, value: UIColor.black, range: character)
-        let frame = CTFramesetterCreateFrame(CTFramesetterCreateWithAttributedString(masked), CFRange(), path, nil)
+        return inkSpan(line: index, of: masked, path: path)
+    }
+
+    /// Where the drawer paints the ink of line `index` of `attributed`, from the content box's
+    /// left edge.
+    private func inkSpan(line index: Int, of attributed: NSAttributedString, path: CGPath) -> ClosedRange<CGFloat>? {
+        let frame = CTFramesetterCreateFrame(CTFramesetterCreateWithAttributedString(attributed), CFRange(), path, nil)
         let lines = CTFrameGetLines(frame) as! [CTLine]
         var origins = [CGPoint](repeating: .zero, count: lines.count)
         CTFrameGetLineOrigins(frame, CFRange(location: 0, length: 0), &origins)
@@ -198,7 +311,7 @@ struct PaintedLineGeometryTests {
         return Self.inkSpan(in: CGSize(width: width + 16, height: ascent + descent + 2 * pad)) { context in
             CoreTextHorizontalLineDrawer.drawLines(
                 of: frame, contentWidth: width, contentMinX: 0,
-                contentMinY: -(origins[index].y - descent - pad), attrStr: masked,
+                contentMinY: -(origins[index].y - descent - pad), attrStr: attributed,
                 hrDividerKey: HTMLAttributedStringBuilder.hrDividerAttribute,
                 lineIndices: IndexSet(integer: index), underline: nil, in: context
             )
