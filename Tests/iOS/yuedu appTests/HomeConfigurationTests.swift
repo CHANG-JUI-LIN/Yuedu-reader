@@ -233,6 +233,27 @@ struct HomeConfigurationTests {
         #expect(reread.selectedConfiguration == .defaults)
         #expect(sectionIDs(reread) == defaultIDs)
     }
+
+    @Test("首頁配置's 編輯 moves the reader's own among themselves; 預設 and 空白 stay first")
+    func moveOwn() {
+        var home = HomeConfigurations(sections: [])
+        home.setSections([HomeSection(layout: .row, binding: .latest)], of: .blank)
+        let a = home.create(named: "A", from: .blank)
+        let b = home.create(named: "B", from: .blank)
+        let c = home.create(named: "C", from: .blank)
+
+        // `List`'s onMove: A to the end is destination 3, counted before A is taken out.
+        home.moveOwn(fromOffsets: [0], toOffset: 3)
+        #expect(home.listings.map(\.id) == [.defaults, .blank, b, c, a])
+        #expect(home.configurations.first?.id == .blank)
+        home.moveOwn(fromOffsets: [1, 2], toOffset: 0)
+        #expect(home.listings.map(\.name) == [localized("預設"), localized("空白"), "C", "A", "B"])
+        // Offsets past the reader's own change nothing.
+        home.moveOwn(fromOffsets: [5], toOffset: 0)
+        home.moveOwn(fromOffsets: [0], toOffset: 9)
+        #expect(home.listings.map(\.name) == [localized("預設"), localized("空白"), "C", "A", "B"])
+        #expect(home.selectedID == c)
+    }
 }
 
 private extension HomePage {

@@ -145,6 +145,19 @@ struct HomeConfigurations: Codable, Hashable, Sendable {
         configurations[index].name = trimmed
     }
 
+    /// 首頁配置's 編輯: the reader's own in a new order, `offsets` and `destination` counted among
+    /// them alone. 預設 and 空白 stay first, so their order is the one `configurations` keeps.
+    mutating func moveOwn(fromOffsets offsets: IndexSet, toOffset destination: Int) {
+        let own = configurations.filter { !$0.id.isBuiltIn }
+        let valid = offsets.filteredIndexSet { own.indices.contains($0) }
+        guard !valid.isEmpty, (0...own.count).contains(destination) else { return }
+        // `List`'s onMove: the destination is counted before the moved ones are taken out.
+        var reordered = own.indices.filter { !valid.contains($0) }.map { own[$0] }
+        let insertion = destination - valid.count(in: 0..<destination)
+        reordered.insert(contentsOf: valid.map { own[$0] }, at: insertion)
+        configurations = configurations.filter(\.id.isBuiltIn) + reordered
+    }
+
     /// The reader's own only; 預設 is selected in its place.
     mutating func delete(_ id: HomeConfigurationID) {
         guard !id.isBuiltIn else { return }

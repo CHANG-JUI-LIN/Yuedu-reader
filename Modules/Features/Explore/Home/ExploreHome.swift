@@ -3,7 +3,8 @@ import SwiftUI
 /// 探索's root since unified library 5c-3 (design §13.3): the reader's sections, in their order,
 /// across every source — Emby's model under Apple Books' covers (Phase 5 plan, settled
 /// decision 11). Its one ••• (decision 36, 2026-10-13, which took 範圍 away) holds every other
-/// way in: 編輯首頁, the 首頁配置 (5d-4, decision 22), 聚合設定, and the browser (5d-1, settled
+/// way in but 首頁配置's (5d-4, decision 22), a button of its own since 2026-10-22: 編輯首頁,
+/// 聚合設定, and the browser (5d-1, settled
 /// decision 12, which took 我的書庫 off the home). A library's own page in the home's layouts
 /// (`LibraryHomePage`, decision 35) is 資源庫's (5h, `LibraryHomePageView`). There is no
 /// catalog entry at the top (decision 20's, removed 2026-10-11 by the maintainer): a reader adds the sections
@@ -48,7 +49,6 @@ private struct ExploreHomeRoot: View {
     @State private var path = NavigationPath()
     @State private var exploreSources: [BookSource] = []
     @State private var browserPresentation: BrowserPresentation?
-    @State private var configurationPrompt: HomeConfigurationPrompt?
     /// 編輯首頁: the sections drawn as cards to show, hide, reorder and open (5d-2).
     @State private var isEditing = false
     /// 編輯首頁's bars, the bar's 完成 and the ＋ where the tab bar was: `isEditing`, but set
@@ -143,7 +143,6 @@ private struct ExploreHomeRoot: View {
             // 編輯首頁 hides the tab bar while the home is being edited, as 書架's 選取 does, and
             // its ＋ takes the bar's place (maintainer, 2026-10-17).
             .hidesRootTabBar(showsEditorBars)
-            .homeConfigurationPrompts($configurationPrompt)
             // Full screen, as Forward's 選擇模板: the gallery's previews run to the screen's edges.
             .fullScreenCover(isPresented: $addsSection) {
                 HomeNewSectionSheet(added: { addedSection = $0; addsSection = false }, close: { addsSection = false })
@@ -174,7 +173,7 @@ private struct ExploreHomeRoot: View {
         }
         .task { await aozora.load() }
         // 編輯首頁 edits one 首頁配置; deleting it, the one 預設 takes the place of, ends the edit.
-        // Another 首頁配置 picked from ••• opens where the page is, not at its end.
+        // Another 首頁配置 picked on its page opens where the page is, not at its end.
         .onChange(of: pageStore.selectedConfiguration) { _, _ in
             if isEditing { setEditing(false) } else { followsEnd = false }
         }
@@ -349,13 +348,31 @@ private struct ExploreHomeRoot: View {
                 Spacer()
             }
         } else {
+            ToolbarItem(placement: .topBarTrailing) { configurationsButton }
+            // 首頁配置 in its own glass, apart from ••• (maintainer, 2026-10-22).
+            #if compiler(>=6.2)
+            if #available(iOS 26.0, *) {
+                ToolbarSpacer(.fixed, placement: .topBarTrailing)
+            }
+            #endif
             ToolbarItem(placement: .topBarTrailing) { moreControl }
         }
     }
 
+    /// 首頁配置's page, a button of its own since 2026-10-22 (maintainer, after Rex's 管理配置):
+    /// ••• had it as a submenu.
+    private var configurationsButton: some View {
+        Button { path.append(HomeEditRoute.configurations) } label: {
+            Image(systemName: "square.stack")
+                .accessibilityHidden(true)
+        }
+        .accessibilityLabel(localized("首頁配置"))
+        .accessibilityValue(selectedConfiguration?.name ?? "")
+        .accessibilityIdentifier("explore.configurations")
+    }
+
     /// 探索's one ••• (Phase 5 plan, decisions 30 and 36). A native menu from iOS 18; on iOS 17
-    /// a chooser sheet, since 新增首頁配置's alert and the browser's cover would be dropped while
-    /// the menu dismisses.
+    /// a chooser sheet, since the browser's cover would be dropped while the menu dismisses.
     @ViewBuilder
     private var moreControl: some View {
         if MenuModalPresentationPolicy.requiresDismissalSequencedChooser {
@@ -377,56 +394,26 @@ private struct ExploreHomeRoot: View {
                 }
             }
         } else {
-            ExploreMoreMenu(configuration: Binding(get: { pageStore.selectedConfiguration },
-                                                   set: { pageStore.select($0) }),
-                            configurations: pageStore.configurations, perform: perform)
+            ExploreMoreMenu(perform: perform)
         }
     }
 
-    /// The chooser's rows: the menu's items, with each 首頁配置 a row of its own.
+    /// The chooser's rows: the menu's items.
     private var moreChoices: [DismissalSequencedAction<ExploreMoreAction>] {
-        var actions = [DismissalSequencedAction(route: ExploreMoreAction.editHome, title: localized("編輯首頁"),
-                                                systemImage: "pencil")]
-        actions += pageStore.configurations.map { configuration in
-            let isSelected = configuration.id == pageStore.selectedConfiguration
-            return DismissalSequencedAction(
-                route: .selectConfiguration(configuration.id), title: configuration.name,
-                systemImage: isSelected ? "checkmark" : "square.stack",
-                // The menu's check mark, said in words: the chooser's rows have no selected state.
-                subtitle: isSelected ? [localized("首頁配置"), localized("使用中")].joined(separator: " · ") : localized("首頁配置"))
-        }
-        actions.append(DismissalSequencedAction(route: .newConfiguration, title: localized("新增首頁配置"), systemImage: "plus"))
-        if let current = selectedConfiguration, !current.id.isBuiltIn {
-            let subtitle = [localized("首頁配置"), current.name].joined(separator: " · ")
-            actions += [
-                DismissalSequencedAction(route: .renameConfiguration(current), title: localized("重新命名"),
-                                         systemImage: "pencil", subtitle: subtitle),
-                DismissalSequencedAction(route: .deleteConfiguration(current), title: localized("刪除"),
-                                         systemImage: "trash", isDestructive: true, subtitle: subtitle),
-            ]
-        }
-        actions += [
+        [
+            DismissalSequencedAction(route: .editHome, title: localized("編輯首頁"), systemImage: "pencil"),
             DismissalSequencedAction(route: .readingLanguages, title: localized("中繼資料語言偏好推薦"), systemImage: "globe"),
             DismissalSequencedAction(route: .aggregatedSources, title: localized("參與聚合的來源"),
                                      systemImage: "square.stack.3d.up"),
             DismissalSequencedAction(route: .refresh, title: localized("重新整理"), systemImage: "arrow.clockwise"),
             DismissalSequencedAction(route: .browser, title: localized("瀏覽器"), systemImage: "safari"),
         ]
-        return actions
     }
 
     private func perform(_ action: ExploreMoreAction) {
         switch action {
         case .editHome:
             setEditing(true)
-        case .selectConfiguration(let id):
-            pageStore.select(id)
-        case .newConfiguration:
-            configurationPrompt = .create
-        case .renameConfiguration(let configuration):
-            configurationPrompt = .rename(configuration)
-        case .deleteConfiguration(let configuration):
-            configurationPrompt = .delete(configuration)
         case .readingLanguages, .aggregatedSources:
             // Both are 聚合設定's (decision 36): the languages are its first section.
             path.append(ExploreNavigationRoute.aggregationSettings)
@@ -615,11 +602,6 @@ struct LibraryListing: Identifiable, Hashable {
 /// What 探索's ••• does (Phase 5 plan, decisions 30 and 36), from the menu or iOS 17's chooser.
 enum ExploreMoreAction: Hashable {
     case editHome
-    case selectConfiguration(HomeConfigurationID)
-    case newConfiguration
-    /// The reader's own 首頁配置, here since 編輯首頁 dropped its card (maintainer, 2026-10-17).
-    case renameConfiguration(HomeConfigurationListing)
-    case deleteConfiguration(HomeConfigurationListing)
     case readingLanguages
     case aggregatedSources
     case refresh
@@ -647,50 +629,16 @@ private struct HomeEditButtonTitle: View {
     }
 }
 
-/// 探索's ••• from iOS 18: 編輯首頁, the 首頁配置 submenu (a picker, then 新增首頁配置, and for the
-/// reader's own 重新命名 and 刪除), the two entries into 聚合設定, 重新整理, and the browser, which
+/// 探索's ••• from iOS 18: 編輯首頁, the two entries into 聚合設定, 重新整理, and the browser, which
 /// is presented rather than shown in place (5d-1) and always offered (maintainer, 2026-10-17).
+/// 首頁配置 has its own button beside it since 2026-10-22.
 private struct ExploreMoreMenu: View {
-    @Binding var configuration: HomeConfigurationID
-    let configurations: [HomeConfigurationListing]
     let perform: (ExploreMoreAction) -> Void
-
-    /// The reader's own 首頁配置, when it is the one shown: 預設 and 空白 keep their names.
-    private var ownConfiguration: HomeConfigurationListing? {
-        configurations.first { $0.id == configuration && !$0.id.isBuiltIn }
-    }
 
     var body: some View {
         Menu {
             Button { perform(.editHome) } label: {
                 Label(localized("編輯首頁"), systemImage: "pencil")
-            }
-            // A submenu: inline, its check mark would read as a choice of the whole menu. The
-            // current one is the subtitle.
-            Menu {
-                Picker(localized("首頁配置"), selection: $configuration) {
-                    ForEach(configurations) { configuration in
-                        Text(configuration.name).tag(configuration.id)
-                    }
-                }
-                Section {
-                    Button { perform(.newConfiguration) } label: {
-                        Label(localized("新增首頁配置"), systemImage: "plus")
-                    }
-                }
-                if let own = ownConfiguration {
-                    Section {
-                        Button { perform(.renameConfiguration(own)) } label: {
-                            Label(localized("重新命名"), systemImage: "pencil")
-                        }
-                        Button(role: .destructive) { perform(.deleteConfiguration(own)) } label: {
-                            Label(localized("刪除"), systemImage: "trash")
-                        }
-                    }
-                }
-            } label: {
-                Label(localized("首頁配置"), systemImage: "square.stack")
-                Text(configurations.first { $0.id == configuration }?.name ?? "")
             }
             Section {
                 Button { perform(.readingLanguages) } label: {
@@ -732,15 +680,11 @@ private struct ExploreMoreMenu: View {
 }
 
 #Preview("•••，iOS 18 起的選單") {
-    @Previewable @State var configuration = HomeConfigurationID.defaults
     NavigationStack {
-        Text(configuration.rawValue)
+        Text(localized("探索"))
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
-                    ExploreMoreMenu(configuration: $configuration,
-                                    configurations: [.init(id: .defaults, name: localized("預設")),
-                                                     .init(id: .blank, name: localized("空白"))],
-                                    perform: { _ in })
+                    ExploreMoreMenu(perform: { _ in })
                 }
             }
     }

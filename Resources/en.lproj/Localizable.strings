@@ -3605,14 +3605,28 @@
 "新增首頁配置" = "New Home Configuration";
 "加入首頁配置" = "Add to Home Configuration";
 "空白" = "Blank";
-"從預設開始" = "Start from Default";
-"從空白開始" = "Start from Blank";
 "首頁配置裡的欄目會一起刪除。" = "Sections in this home configuration will also be deleted.";
 "這個首頁配置還沒有欄目" = "This Home Configuration Has No Sections";
 "在首頁顯示" = "Show on Home";
 "已隱藏" = "Hidden";
 "上移" = "Move Up";
 "下移" = "Move Down";
+
+/* 2026-10-22: 首頁配置's own page */
+"配置列表" = "Configurations";
+"點一下切換設定；進入編輯模式可調整順序。" = "Tap one to switch to it. Enter Edit mode to change the order.";
+"從設定範本新增" = "New from Template";
+"空白模板" = "Blank Template";
+"沒有欄目，之後自行新增" = "No sections; add your own later";
+"預設配置" = "Default Configuration";
+"從預設的欄目開始" = "Starts with the default sections";
+"內建的完整探索首頁" = "The full built-in Explore home";
+"內建的空白首頁" = "The built-in empty home";
+"點兩下切換到這個首頁配置" = "Double-tap to switch to this home configuration.";
+"加入照片" = "Add Photo";
+"更換照片" = "Change Photo";
+"移除照片" = "Remove Photo";
+"無法加入照片" = "Couldn't Add Photo";
 
 /* Unified library 5d-3: the home's layouts */
 "呈現方式" = "Layout";

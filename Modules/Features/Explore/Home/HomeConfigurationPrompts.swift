@@ -1,26 +1,25 @@
 import SwiftUI
 
-// Unified library 5d-4: what is asked about a 首頁配置 (Phase 5 plan, decision 22). 新增首頁配置
-// asks for a name and where to start in one alert (「可以問是要從預設調還是空白」); ••• → 首頁配置
-// renames and deletes the reader's own (編輯首頁's card did until 2026-10-17).
+// Unified library 5d-4: what is asked about a 首頁配置 (Phase 5 plan, decision 22). Since
+// 2026-10-22 首頁配置's own page asks it: 新增首頁配置 from one of its templates asks only the
+// name (where to start is the template), and deleting one of the reader's own asks first. A
+// name is changed on the configuration's own page.
 
 enum HomeConfigurationPrompt: Identifiable {
-    case create
-    case rename(HomeConfigurationListing)
+    /// From 預設's sections or from none: the template tapped.
+    case create(from: HomeConfigurationID)
     case delete(HomeConfigurationListing)
 
     var id: String {
         switch self {
-        case .create: "create"
-        case .rename(let configuration): "rename|" + configuration.id.rawValue
+        case .create(let start): "create|" + start.rawValue
         case .delete(let configuration): "delete|" + configuration.id.rawValue
         }
     }
 }
 
 extension View {
-    /// The name alert and the delete dialog for `prompt`. One alert serves both names: two on
-    /// one view compete for one presenter.
+    /// 新增首頁配置's name alert and the delete dialog for `prompt`.
     func homeConfigurationPrompts(_ prompt: Binding<HomeConfigurationPrompt?>) -> some View {
         modifier(HomeConfigurationPrompts(prompt: prompt))
     }
@@ -31,11 +30,10 @@ private struct HomeConfigurationPrompts: ViewModifier {
     @ObservedObject private var store = HomePageStore.shared
     @State private var name = ""
 
-    private var naming: HomeConfigurationPrompt? {
-        switch prompt {
-        case .create, .rename: prompt
-        case .delete, nil: nil
-        }
+    /// Where a new one starts, while its name is asked.
+    private var creating: HomeConfigurationID? {
+        if case .create(let start) = prompt { return start }
+        return nil
     }
 
     private var deleting: HomeConfigurationListing? {
@@ -46,20 +44,12 @@ private struct HomeConfigurationPrompts: ViewModifier {
     func body(content: Content) -> some View {
         content
             .alert(
-                naming.map(title) ?? "",
-                isPresented: Binding(get: { naming != nil }, set: { if !$0 { prompt = nil } }),
-                presenting: naming
-            ) { naming in
+                localized("新增首頁配置"),
+                isPresented: Binding(get: { creating != nil }, set: { if !$0 { prompt = nil } }),
+                presenting: creating
+            ) { start in
                 TextField(localized("名稱"), text: $name)
-                switch naming {
-                case .create:
-                    Button(localized("從預設開始")) { store.createConfiguration(named: name, from: .defaults) }
-                    Button(localized("從空白開始")) { store.createConfiguration(named: name, from: .blank) }
-                case .rename(let configuration):
-                    Button(localized("確定")) { store.renameConfiguration(configuration.id, to: name) }
-                case .delete:
-                    EmptyView()
-                }
+                Button(localized("新增")) { store.createConfiguration(named: name, from: start) }
                 Button(localized("取消"), role: .cancel) {}
             }
             .background {
@@ -76,24 +66,13 @@ private struct HomeConfigurationPrompts: ViewModifier {
                 }
             }
             .onChange(of: prompt?.id) { _, _ in
-                switch prompt {
-                case .create: name = ""
-                case .rename(let configuration): name = configuration.name
-                case .delete, nil: break
-                }
+                if creating != nil { name = "" }
             }
-    }
-
-    private func title(_ prompt: HomeConfigurationPrompt) -> String {
-        switch prompt {
-        case .create: localized("新增首頁配置")
-        case .rename, .delete: localized("重新命名")
-        }
     }
 }
 
 #Preview("新增首頁配置") {
-    @Previewable @State var prompt: HomeConfigurationPrompt? = .create
+    @Previewable @State var prompt: HomeConfigurationPrompt? = .create(from: .blank)
     Text(localized("探索"))
         .homeConfigurationPrompts($prompt)
 }

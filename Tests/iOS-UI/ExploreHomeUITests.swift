@@ -1,7 +1,8 @@
 import XCTest
 
-/// Unified library 5c-3 and 5d-1: the Explore home as a new install sees it, its ••• with
-/// 首頁配置 and the browser (decision 36), and the China storefront. Each launch starts
+/// Unified library 5c-3 and 5d-1: the Explore home as a new install sees it, its 首頁配置 page
+/// (its own button since 2026-10-22), its ••• with the browser (decision 36), and the China
+/// storefront. Each launch starts
 /// from no saved home (`-reset-explore-home`) and an empty book-source library of its own.
 /// Gutenberg's feeds answer from fixtures (its rows load with the home since 5d-1c); its
 /// covers still load from gutenberg.org as their cards show.
@@ -73,37 +74,65 @@ final class ExploreHomeUITests: XCTestCase {
         app.buttons.matching(NSPredicate(format: "label == %@ OR label BEGINSWITH %@", title, title + ",")).firstMatch
     }
 
-    /// ••• → 首頁配置 → `name`.
+    /// 首頁配置's own button (maintainer, 2026-10-22): its page.
+    @MainActor
+    private func openConfigurations(_ app: XCUIApplication) {
+        let button = app.buttons["explore.configurations"].firstMatch
+        XCTAssertTrue(button.waitForExistence(timeout: 10), app.debugDescription)
+        button.tap()
+        XCTAssertTrue(app.navigationBars["首頁配置"].waitForExistence(timeout: 5), app.debugDescription)
+    }
+
+    /// Back from 首頁配置's page to the home.
+    @MainActor
+    private func closeConfigurations(_ app: XCUIApplication) {
+        app.navigationBars["首頁配置"].buttons.element(boundBy: 0).tap()
+        XCTAssertTrue(app.buttons["explore.configurations"].firstMatch.waitForExistence(timeout: 5), app.debugDescription)
+    }
+
+    /// `name`'s row on 首頁配置's page: 預設 and 空白 also read their subtitle after it, and in 編輯
+    /// the reader's own read the delete control's 「移除」 before. iOS 27 joins them with 「、」,
+    /// iOS 17 with 「, 」.
+    @MainActor
+    private func configurationRow(_ app: XCUIApplication, _ name: String) -> XCUIElement {
+        let format = "identifier BEGINSWITH %@ AND (label == %@ OR label BEGINSWITH %@ OR label BEGINSWITH %@"
+            + " OR label ENDSWITH %@ OR label ENDSWITH %@)"
+        return app.buttons.matching(NSPredicate(format: format, "homeConfigurations.row.", name, name + "、", name + ", ",
+                                                "、" + name, ", " + name)).firstMatch
+    }
+
+    @MainActor
+    private func waitUntilSelected(_ element: XCUIElement, _ selected: Bool = true) -> Bool {
+        let expectation = XCTNSPredicateExpectation(predicate: NSPredicate(format: "isSelected == %@", NSNumber(value: selected)),
+                                                    object: element)
+        return XCTWaiter().wait(for: [expectation], timeout: 5) == .completed
+    }
+
+    /// 首頁配置 → `name`, back on the home.
     @MainActor
     private func chooseConfiguration(_ app: XCUIApplication, _ name: String) {
         openConfigurations(app)
-        let option = item(app, name)
-        XCTAssertTrue(option.waitForExistence(timeout: 5), app.debugDescription)
-        option.tap()
+        let row = configurationRow(app, name)
+        XCTAssertTrue(row.waitForExistence(timeout: 5), app.debugDescription)
+        row.tap()
+        XCTAssertTrue(waitUntilSelected(row), app.debugDescription)
+        closeConfigurations(app)
     }
 
-    /// ••• → 首頁配置: a submenu from iOS 18, whose label also reads the current one; iOS 17's
-    /// chooser lists them in place.
+    /// 首頁配置 → a template (`blank` or `default`), named `name`, back on the home.
     @MainActor
-    private func openConfigurations(_ app: XCUIApplication) {
-        openMore(app)
-        guard #available(iOS 18, *) else { return }
-        let submenu = app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", "首頁配置")).firstMatch
-        XCTAssertTrue(submenu.waitForExistence(timeout: 5), app.debugDescription)
-        submenu.tap()
-    }
-
-    /// ••• → 首頁配置 → 新增首頁配置, named `name`, from 空白 or 預設.
-    @MainActor
-    private func addConfiguration(_ app: XCUIApplication, _ name: String, from start: String) {
+    private func addConfiguration(_ app: XCUIApplication, _ name: String, template: String) {
         openConfigurations(app)
-        let add = item(app, "新增首頁配置")
-        XCTAssertTrue(add.waitForExistence(timeout: 5), app.debugDescription)
-        add.tap()
+        app.buttons["homeConfigurations.template.\(template)"].firstMatch.tap()
         let field = app.textFields["名稱"].firstMatch
         XCTAssertTrue(field.waitForExistence(timeout: 5), app.debugDescription)
         field.typeText(name)
-        app.buttons[start].firstMatch.tap()
+        app.alerts.buttons["新增"].firstMatch.tap()
+        // The new one is chosen, and the page stays.
+        let row = configurationRow(app, name)
+        XCTAssertTrue(row.waitForExistence(timeout: 5), app.debugDescription)
+        XCTAssertTrue(waitUntilSelected(row), app.debugDescription)
+        closeConfigurations(app)
     }
 
     /// 精選書單's first list, a 專題集合 card (decision 37), so the home is drawn.
@@ -305,10 +334,11 @@ final class ExploreHomeUITests: XCTestCase {
         attach(app, "home-featured-card-menu")
     }
 
-    /// ••• switches 首頁配置 (unified library 5d-4, under ••• since decision 36) and opens the
-    /// browser (5d-1). A 首頁配置 made from 新增首頁配置 starts from 空白 or 預設; ••• deletes it
-    /// (編輯首頁's card did until 2026-10-17). The browser is always there, even for a reader who
-    /// had hidden it before it lost its switch (maintainer, 2026-10-17).
+    /// 首頁配置's own button opens its page (maintainer, 2026-10-22; under ••• from decision 36):
+    /// a tap switches and stays there, its check mark moving; a swipe deletes the reader's own,
+    /// after asking; its templates start from 空白 or 預設. ••• opens the browser (5d-1), always
+    /// there, even for a reader who had hidden it before it lost its switch (maintainer,
+    /// 2026-10-17).
     @MainActor
     func testConfigurationsAndTheBrowser() {
         let app = application()
@@ -318,37 +348,48 @@ final class ExploreHomeUITests: XCTestCase {
 
         // From 空白: nothing on the home but the way to fill it.
         let name = "測試配置\(UUID().uuidString.prefix(4))"
-        addConfiguration(app, name, from: "從空白開始")
+        addConfiguration(app, name, template: "blank")
         XCTAssertTrue(app.staticTexts["這個首頁配置還沒有欄目"].waitForExistence(timeout: 10), app.debugDescription)
         XCTAssertFalse(app.buttons[featuredCard].exists)
         attach(app, "explore-configuration-blank")
 
-        // 首頁配置 lists 預設, 空白 and the new one; 預設 is the home as it was.
+        // The page lists 預設, 空白 and the new one, checked; a tap moves the check and stays.
         openConfigurations(app)
-        XCTAssertTrue(item(app, "空白").waitForExistence(timeout: 5), app.debugDescription)
-        attach(app, "explore-more-configurations")
-        item(app, "預設").tap()
+        let own = configurationRow(app, name)
+        XCTAssertTrue(own.waitForExistence(timeout: 5), app.debugDescription)
+        XCTAssertTrue(own.isSelected)
+        XCTAssertTrue(configurationRow(app, "空白").exists, app.debugDescription)
+        XCTAssertTrue(app.buttons["homeConfigurations.template.default"].exists, app.debugDescription)
+        attach(app, "explore-configurations-page")
+        let defaults = configurationRow(app, "預設")
+        defaults.tap()
+        XCTAssertTrue(waitUntilSelected(defaults), app.debugDescription)
+        XCTAssertFalse(own.isSelected)
+        XCTAssertTrue(app.navigationBars["首頁配置"].exists, "a tap stays on the page")
+        closeConfigurations(app)
         XCTAssertTrue(app.buttons[featuredCard].firstMatch.waitForExistence(timeout: 10), app.debugDescription)
         chooseConfiguration(app, name)
         XCTAssertTrue(app.staticTexts["這個首頁配置還沒有欄目"].waitForExistence(timeout: 10), app.debugDescription)
 
-        // ••• → 首頁配置 deletes it, and 預設 shows again.
+        // Its swipe deletes it, after asking, and 預設 is chosen again.
         openConfigurations(app)
-        let delete = item(app, "刪除")
+        own.swipeLeft()
+        let delete = app.buttons["刪除"].firstMatch
         XCTAssertTrue(delete.waitForExistence(timeout: 5), app.debugDescription)
-        attach(app, "explore-configuration-own")
+        attach(app, "explore-configuration-swipe")
         delete.tap()
         XCTAssertTrue(app.staticTexts["刪除「\(name)」？"].waitForExistence(timeout: 5), app.debugDescription)
-        app.buttons["刪除"].firstMatch.tap()
+        // The dialog's, drawn over the row's.
+        let confirm = app.buttons.matching(NSPredicate(format: "label == %@", "刪除")).allElementsBoundByIndex.last { $0.isHittable }
+        XCTAssertNotNil(confirm, app.debugDescription)
+        confirm?.tap()
+        XCTAssertTrue(own.waitForNonExistence(timeout: 5), app.debugDescription)
+        XCTAssertTrue(waitUntilSelected(defaults), app.debugDescription)
+        closeConfigurations(app)
         XCTAssertTrue(app.buttons[featuredCard].firstMatch.waitForExistence(timeout: 10), app.debugDescription)
-        openConfigurations(app)
-        XCTAssertTrue(item(app, "空白").waitForExistence(timeout: 5))
-        XCTAssertFalse(item(app, name).exists, "deleted from 首頁配置")
 
         // From 預設: its sections.
-        item(app, "預設").tap()
-        XCTAssertTrue(app.buttons[featuredCard].firstMatch.waitForExistence(timeout: 10), app.debugDescription)
-        addConfiguration(app, name, from: "從預設開始")
+        addConfiguration(app, name, template: "default")
         XCTAssertTrue(app.buttons[featuredCard].firstMatch.waitForExistence(timeout: 10), app.debugDescription)
 
         // The browser opens full screen and closes back to the home.
@@ -397,8 +438,8 @@ final class ExploreHomeUITests: XCTestCase {
     }
 
     /// A custom page saved before 5d-4, chosen as the old 首屏頁面, is the 首頁配置 the home opens
-    /// on, the reader's own, which ••• renames; its ranking became a section, which 編輯首頁 shows.
-    /// Its source is not on this device, so nothing loads.
+    /// on, the reader's own, renamed on its page from 首頁配置's 編輯; its ranking became a
+    /// section, which 編輯首頁 shows. Its source is not on this device, so nothing loads.
     @MainActor
     func testCustomPageMovesIn() {
         let app = application(extra: ["-seed-custom-explore-page"])
@@ -406,15 +447,28 @@ final class ExploreHomeUITests: XCTestCase {
         openExplore(app)
         XCTAssertTrue(app.staticTexts["探索還沒有內容"].waitForExistence(timeout: 15), app.debugDescription)
         openConfigurations(app)
-        XCTAssertTrue(item(app, "週末書單").waitForExistence(timeout: 5), app.debugDescription)
+        let moved = configurationRow(app, "週末書單")
+        XCTAssertTrue(moved.waitForExistence(timeout: 5), app.debugDescription)
+        XCTAssertTrue(moved.isSelected, app.debugDescription)
         attach(app, "explore-custom-page-moved-in")
-        item(app, "週末書單").tap()
-        openConfigurations(app)
-        let rename = item(app, "重新命名")
-        XCTAssertTrue(rename.waitForExistence(timeout: 5), app.debugDescription)
-        rename.tap()
-        XCTAssertTrue(app.textFields["名稱"].firstMatch.waitForExistence(timeout: 5), app.debugDescription)
-        app.buttons["取消"].firstMatch.tap()
+
+        // 編輯: a tap opens its photo and name instead of switching.
+        app.navigationBars["首頁配置"].buttons["編輯"].tap()
+        XCTAssertTrue(moved.waitForExistence(timeout: 3), app.debugDescription)
+        moved.tap()
+        let field = app.textFields["homeConfigurationForm.name"].firstMatch
+        XCTAssertTrue(field.waitForExistence(timeout: 5), app.debugDescription)
+        XCTAssertEqual(field.value as? String, "週末書單")
+        XCTAssertTrue(app.buttons["homeConfigurationForm.photo"].firstMatch.exists, app.debugDescription)
+        attach(app, "explore-configuration-form")
+        // Latin: CJK typed by XCUITest can submit on its own.
+        field.tap()
+        field.typeText(" 2")
+        app.navigationBars["週末書單"].buttons.element(boundBy: 0).tap()
+        let renamed = configurationRow(app, "週末書單 2")
+        XCTAssertTrue(renamed.waitForExistence(timeout: 5), app.debugDescription)
+        app.navigationBars["首頁配置"].buttons["完成"].tap()
+        closeConfigurations(app)
 
         app.buttons["home.edit"].firstMatch.tap()
         XCTAssertTrue(app.buttons["homeEditor.section.5D4C0000-0000-4000-8000-000000000002"].firstMatch

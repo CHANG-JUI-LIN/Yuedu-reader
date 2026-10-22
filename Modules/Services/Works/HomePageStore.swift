@@ -36,6 +36,9 @@ final class HomePageStore: ObservableObject {
         (home ?? HomeConfigurations(sections: [])).listings
     }
 
+    /// Each 首頁配置's photo, in a folder beside the file.
+    let photos: HomeConfigurationPhotos
+
     /// Whether saves stay in memory this launch, because the file could not be read or comes
     /// from a newer build.
     private(set) var isReadOnly = false
@@ -60,6 +63,8 @@ final class HomePageStore: ObservableObject {
             ?? fileURL.deletingLastPathComponent().appendingPathComponent("custom_explore_pages.json")
         self.defaults = defaults
         self.insertsForYouOnce = insertsForYouOnce
+        photos = HomeConfigurationPhotos(directory: fileURL.deletingLastPathComponent()
+            .appendingPathComponent("HomeConfigurationPhotos", isDirectory: true))
         load()
     }
 
@@ -122,8 +127,16 @@ final class HomePageStore: ObservableObject {
         change { $0.rename(id, to: name) }
     }
 
+    /// Its photo goes with it.
     func deleteConfiguration(_ id: HomeConfigurationID) {
+        guard !id.isBuiltIn else { return }
         change { $0.delete(id) }
+        photos.removePhoto(for: id)
+    }
+
+    /// 首頁配置's 編輯: the reader's own reordered, counted among themselves.
+    func moveConfigurations(fromOffsets offsets: IndexSet, toOffset destination: Int) {
+        change { $0.moveOwn(fromOffsets: offsets, toOffset: destination) }
     }
 
     /// 加入首頁配置.

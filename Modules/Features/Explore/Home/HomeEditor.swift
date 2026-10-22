@@ -12,10 +12,12 @@ import SwiftUI
 
 enum HomeEditRoute: Hashable {
     case section(UUID)
+    /// 首頁配置's page, from its button on the home (maintainer, 2026-10-22).
+    case configurations
 }
 
 extension View {
-    /// A section's page, in the home's stack.
+    /// A section's page and 首頁配置's, in the home's stack.
     func homeEditDestinations() -> some View {
         navigationDestination(for: HomeEditRoute.self) { route in
             switch route {
@@ -23,6 +25,7 @@ extension View {
             // Each page it pushes asks again (`HomeSectionForm`): a page under another one
             // withdraws its request.
             case .section(let id): HomeSectionPage(sectionID: id).hidesRootTabBar()
+            case .configurations: HomeConfigurationsPage().hidesRootTabBar()
             }
         }
     }

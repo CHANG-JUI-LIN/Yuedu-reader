@@ -154,6 +154,9 @@ enum DSColor {
     /// as Safari draws one. The tile is decorative — the site's name sits under it.
     static let browserMonogramFill = Color(uiColor: .systemGray2)
     static let browserMonogramForeground = Color.white
+    /// A 首頁配置 without a photo: the first letter of its name, white on grey, the same tile.
+    static let homeConfigurationMonogramFill = Color(uiColor: .systemGray2)
+    static let homeConfigurationMonogramForeground = Color.white
 
     /// Ring and check of the selection mark on a shelf cover — white, as Apple Books
     /// draws it, whatever the cover and appearance.
@@ -375,6 +378,10 @@ enum DSLayout {
     static let homeCompactCoverWidth: CGFloat = 100
     /// A cover in 圖文資訊清單, beside its text.
     static let homeListCoverWidth: CGFloat = 60
+    /// A 首頁配置's round photo in 首頁配置's list, as Rex's 管理配置 draws it.
+    static let homeConfigurationRowPhotoSize: CGFloat = 44
+    /// The same photo atop the page that changes it.
+    static let homeConfigurationFormPhotoSize: CGFloat = 96
     /// A layout's preview in 呈現方式 (decision 34): the layout at its real size, as a template
     /// gallery shows it; a layout read downwards shows this many rows.
     static let homeLayoutPreviewRows = 2
