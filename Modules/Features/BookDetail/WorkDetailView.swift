@@ -248,11 +248,6 @@ struct WorkDetailView: View {
         } content: {
             VStack(alignment: .leading, spacing: DSSpacing.xl) {
                 status
-                if versionsLoaded, WorkVersions.primary(in: versions) == nil {
-                    ContentUnavailableView {
-                        UnavailableLabel(localized("目前沒有可閱讀的來源"), systemImage: "book.closed")
-                    }
-                }
                 gutenbergStatus
                 if let selected, let item = libraryItem(of: selected) {
                     libraryActions(selected, item: item)
@@ -362,7 +357,14 @@ struct WorkDetailView: View {
     private var tableOfContents: some View {
         let chapters: [OnlineChapterRef] = if case .loaded(_, let chapters) = toc.state { chapters } else { [] }
         let failure: String? = if case .failed(let message) = toc.state { message } else { nil }
-        if toc.state != .none {
+        if versionsLoaded, WorkVersions.primary(in: versions) == nil {
+            // No version to read, said where its chapters would be (maintainer, 2026-10-22), not
+            // as a placeholder of its own between 開始閱讀 and 簡介.
+            BookDetailChapterSection(
+                title: localized("目錄"), chapters: [], isLoading: false, errorMessage: nil, latestChapter: "",
+                onRetry: {}, onShowAll: {}, emptyText: localized("目前沒有可閱讀的來源")
+            ) { _, _ in EmptyView() }
+        } else if toc.state != .none {
             BookDetailChapterSection(
                 title: localized("目錄"), chapters: chapters, isLoading: toc.state == .loading, errorMessage: failure,
                 latestChapter: "", onRetry: { reloadTOC() }, onShowAll: { showChapterList = true }

@@ -1219,6 +1219,8 @@ struct BookDetailChapterSection<Row: View>: View {
     let latestChapter: String
     let onRetry: () -> Void
     let onShowAll: () -> Void
+    /// Said with no chapter to list; 「目錄為空」 by default.
+    var emptyText: String?
     @ViewBuilder let row: (_ offset: Int, _ chapter: OnlineChapterRef) -> Row
 
     /// Enough to show what the list holds; the rest is one tap away, as Podcasts
@@ -1264,7 +1266,7 @@ struct BookDetailChapterSection<Row: View>: View {
             .frame(maxWidth: .infinity)
             .padding(.vertical, DSSpacing.lg)
         } else if chapters.isEmpty {
-            Text(localized("目錄為空"))
+            Text(emptyText ?? localized("目錄為空"))
                 .font(DSFont.subheadline)
                 .foregroundStyle(DSColor.textSecondary)
                 .frame(maxWidth: .infinity)
@@ -1412,6 +1414,14 @@ extension View {
             EmptyView()
         }
     }
+}
+
+/// 作品詳情 with no version to read: its 目錄 says so (maintainer, 2026-10-22).
+#Preview("詳情頁・目錄・沒有可閱讀的來源") {
+    BookDetailChapterSection(
+        title: localized("目錄"), chapters: [], isLoading: false, errorMessage: nil, latestChapter: "",
+        onRetry: {}, onShowAll: {}, emptyText: localized("目前沒有可閱讀的來源")
+    ) { _, _ in EmptyView() }
 }
 
 /// The design's baseline (maintainer, 2026-10-12): a book with nothing but its title and author —
