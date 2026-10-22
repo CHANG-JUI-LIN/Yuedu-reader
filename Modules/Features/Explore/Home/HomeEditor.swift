@@ -265,16 +265,18 @@ private struct HomeSectionMorph<Mark: View, Surface: View>: ViewModifier {
     }
 }
 
-private extension View {
+extension View {
     /// Hidden from VoiceOver while `hides`, and nothing said otherwise: `accessibilityHidden(false)`
-    /// over a view overrode the `accessibilityHidden(true)` inside it (iOS 27 simulator), so around
-    /// a row it could bring back what the row hides. iOS 17 has only the one that always says.
+    /// over a view overrode the `accessibilityHidden(true)` inside it (iOS 17.5 and 27 simulators),
+    /// so around a row it brought back what the row hides — a symbol read out by its name.
     @ViewBuilder
     func accessibilityHidden(onlyWhen hides: Bool) -> some View {
         if #available(iOS 18, *) {
             accessibilityHidden(true, isEnabled: hides)
         } else {
-            accessibilityHidden(hides)
+            // iOS 17 has only the one that always says. A container between keeps its `false` off
+            // what is inside; a modifier, so the view keeps its identity as `hides` changes.
+            accessibilityElement(children: .contain).accessibilityHidden(hides)
         }
     }
 }
