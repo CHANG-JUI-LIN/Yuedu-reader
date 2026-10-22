@@ -73,7 +73,7 @@ struct LibraryOrderTests {
 
     @Test("settings saved before 書庫順序 still read; the order is saved and read back")
     func store() throws {
-        let saved = try JSONEncoder().encode(["readingLanguages": ReadingLanguagePreferences(languages: ["ja"], scope: .only)])
+        let saved = try JSONEncoder().encode(["readingLanguages": LegacyReadingLanguages(languages: ["ja"], scope: "only")])
         let decoded = try JSONDecoder().decode(AggregationSettings.self, from: saved)
         #expect(decoded.readingLanguages?.languages == ["ja"])
         #expect(decoded.libraryOrder == nil)

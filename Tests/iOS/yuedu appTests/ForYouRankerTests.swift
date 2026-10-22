@@ -29,7 +29,7 @@ struct ForYouRankerTests {
 
     private func rank(_ candidates: [ForYouCandidate], shelf: [ReadingBook] = [], weights: [String: Double] = [:],
                       recent: ForYouRanker.Recent = .init(), shown: Set<String> = [],
-                      languages: ReadingLanguagePreferences = .init(languages: ["zh"], scope: .any),
+                      languages: ReadingLanguagePreferences = .init(language: "zh-Hant"),
                       seed: UInt64 = 1, limit: Int = 12) -> [String] {
         titles(ForYouRanker.rank(candidates: candidates, shelf: ForYouRanker.shelfWorks(shelf), weights: weights,
                                  recent: recent, recentlyShown: shown, languages: languages, seed: seed, limit: limit))
@@ -42,7 +42,7 @@ struct ForYouRankerTests {
                          candidate("三体", author: "刘慈欣", source: 1, position: 0),
                          candidate("球狀閃電", author: "劉慈欣", source: 1, position: 1)],
             shelf: [], weights: [:], recent: .init(), recentlyShown: [],
-            languages: .init(languages: ["zh"], scope: .any), seed: 1, limit: 12)
+            languages: .init(language: "zh-Hant"), seed: 1, limit: 12)
         #expect(titles(result).sorted() == ["三體", "球狀閃電"])
         guard case .item(let record, _, _) = result.first(where: { titles([$0]) == ["三體"] }) else {
             Issue.record("expected the work"); return
@@ -102,13 +102,12 @@ struct ForYouRankerTests {
         #expect(Array(first.prefix(3)) == Array(ranked.prefix(3)), "explored books fill every fourth place")
     }
 
-    @Test("only the preferred languages, when the reader asks for only those")
+    @Test("the language's books first, unknown next, other languages kept last")
     func languages() {
         let candidates = [candidate("英", source: 0, position: 0, language: "en"),
                           candidate("中", source: 1, position: 0, language: "zh"),
                           candidate("未知", source: 2, position: 0)]
-        #expect(rank(candidates, languages: .init(languages: ["zh"], scope: .only)) == ["中", "未知"])
-        #expect(rank(candidates, languages: .init(languages: ["zh"], scope: .prefer)).first == "中")
+        #expect(rank(candidates, languages: .init(language: "zh-Hant")) == ["中", "未知", "英"])
     }
 }
 

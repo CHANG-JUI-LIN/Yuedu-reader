@@ -373,7 +373,7 @@ final class ExploreHomeUITests: XCTestCase {
         XCTAssertTrue(item(hidden, "瀏覽器").waitForExistence(timeout: 5), hidden.debugDescription)
     }
 
-    /// ••• → 偏好閱讀語言 and ••• → 參與聚合的來源 push 聚合設定, and back is the home (decision
+    /// ••• → 中繼資料語言偏好推薦 and ••• → 參與聚合的來源 push 聚合設定, and back is the home (decision
     /// 36); ••• → 重新整理 keeps the home drawn.
     @MainActor
     func testMoreOpensAggregationSettings() {
@@ -381,7 +381,7 @@ final class ExploreHomeUITests: XCTestCase {
         app.launch()
         openExplore(app)
         XCTAssertTrue(app.buttons[featuredCard].firstMatch.waitForExistence(timeout: 15))
-        for entry in ["偏好閱讀語言", "參與聚合的來源"] {
+        for entry in ["中繼資料語言偏好推薦", "參與聚合的來源"] {
             openMore(app)
             let option = item(app, entry)
             XCTAssertTrue(option.waitForExistence(timeout: 5), app.debugDescription)

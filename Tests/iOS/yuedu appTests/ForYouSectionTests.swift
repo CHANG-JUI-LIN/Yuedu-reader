@@ -184,7 +184,7 @@ struct ForYouProviderTests {
             homeSections: { homeSections }, sources: { [source] },
             genres: ReadingGenreRecorder(fileURL: scratch("genres.json")),
             exposure: ForYouExposureStore(fileURL: scratch("shown.json")),
-            languages: { .init(languages: ["zh"], scope: .any) }, now: { now })
+            languages: { .init(language: "zh-Hant") }, now: { now })
         return Fixture(provider: provider, pages: pages, candidates: candidates, requests: requests, home: home, section: forYou)
     }
 
@@ -231,7 +231,7 @@ struct ForYouProviderTests {
             firstPages: f.pages, home: f.home, shelf: BookStore(metadataFileURL: scratch("books_meta.json")),
             candidates: f.candidates, homeSections: { [HomeSection(layout: .row, binding: .sourceCategories([category]))] },
             sources: { [source] }, genres: ReadingGenreRecorder(fileURL: scratch("genres.json")),
-            exposure: ForYouExposureStore(fileURL: scratch("shown.json")), languages: { .init(languages: ["zh"], scope: .any) })
+            exposure: ForYouExposureStore(fileURL: scratch("shown.json")), languages: { .init(language: "zh-Hant") })
         let entries = try await provider.load(f.section)
         #expect(entries.count == 3)
         #expect(await f.requests.log == ["fetch /hot"])
@@ -294,7 +294,7 @@ struct ForYouProviderTests {
             return ForYouProvider(firstPages: pages, home: nil, shelf: shelf, candidates: candidates,
                                   homeSections: { [HomeSection(layout: .row, binding: .sourceCategories(categories))] },
                                   sources: { sources }, genres: genres, exposure: exposure,
-                                  languages: { .init(languages: ["zh"], scope: .any) }, now: { date })
+                                  languages: { .init(language: "zh-Hant") }, now: { date })
         }
         let section = HomeSection(layout: .row, binding: .forYou)
         let first = titles(try await provider(at: day1).load(section))
@@ -319,7 +319,7 @@ struct ForYouProviderTests {
                             candidates: f.candidates, homeSections: { sections }, sources: { [source] },
                             genres: ReadingGenreRecorder(fileURL: scratch("genres.json")),
                             exposure: ForYouExposureStore(fileURL: scratch("shown.json")),
-                            languages: { .init(languages: ["zh"], scope: .any) })]
+                            languages: { .init(language: "zh-Hant") })]
         }, waitForSources: {})
         await model.sync(with: HomePage(sections: sections))
         let id = try #require(model.rows.first?.id)

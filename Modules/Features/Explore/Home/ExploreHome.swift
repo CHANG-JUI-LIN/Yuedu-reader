@@ -367,7 +367,7 @@ private struct ExploreHomeRoot: View {
             ]
         }
         actions += [
-            DismissalSequencedAction(route: .readingLanguages, title: localized("偏好閱讀語言"), systemImage: "globe"),
+            DismissalSequencedAction(route: .readingLanguages, title: localized("中繼資料語言偏好推薦"), systemImage: "globe"),
             DismissalSequencedAction(route: .aggregatedSources, title: localized("參與聚合的來源"),
                                      systemImage: "square.stack.3d.up"),
             DismissalSequencedAction(route: .refresh, title: localized("重新整理"), systemImage: "arrow.clockwise"),
@@ -634,7 +634,7 @@ private struct ExploreMoreMenu: View {
             }
             Section {
                 Button { perform(.readingLanguages) } label: {
-                    Label(localized("偏好閱讀語言"), systemImage: "globe")
+                    Label(localized("中繼資料語言偏好推薦"), systemImage: "globe")
                 }
                 Button { perform(.aggregatedSources) } label: {
                     Label(localized("參與聚合的來源"), systemImage: "square.stack.3d.up")

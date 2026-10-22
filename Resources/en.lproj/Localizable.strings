@@ -3634,16 +3634,10 @@
 
 /* Unified library 5d-3d: 聚合設定 */
 "聚合設定" = "Aggregation";
-"偏好閱讀語言" = "Preferred Reading Languages";
+"中繼資料語言偏好推薦" = "Preferred Metadata Language";
 "參與聚合的來源" = "Aggregated Sources";
-"新增語言" = "Add Language";
-"推薦範圍" = "Recommendations";
-"優先推薦偏好語言" = "Prefer These Languages";
-"只推薦偏好語言" = "Only These Languages";
-"不限制語言" = "Any Language";
-"排在前面的語言優先推薦。" = "Languages higher in the list are recommended first.";
-"沒有標示語言的書（多數來源配置）一律保留，排在偏好語言之後。" = "Books without a language label (from most sources) are always kept, listed after your preferred languages.";
-"第 %d 優先" = "Priority %d";
+"跟隨 App 語言" = "Match App Language";
+"這個語言的書排在前面，其次是沒有標示語言的書（多數來源配置），其他語言的書排在最後。" = "Books in this language come first, then books without a language label (from most sources), then books in other languages.";
 "書庫順序" = "Library Order";
 "第 %d 個" = "Position %d";
 "最新照這個順序；來源配置排在書庫之後，照它們自己的順序。" = "Latest follows this order. Sources come after libraries, in their own order.";

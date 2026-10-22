@@ -1,9 +1,8 @@
 import XCTest
 
 /// Unified library 5d-3d and 5d-3e: 設定 → 聚合設定 (Phase 5 plan, decision 21), laid out as
-/// Emby's Home Screen page since decision 36. 偏好閱讀語言 starts as the interface language; a
-/// language added there leads Gutenberg's categories once moved first, and the choice survives
-/// a relaunch. 書庫順序 orders the libraries' rows. 隱藏已讀, one switch, starts on. 數據來源
+/// Emby's Home Screen page since decision 36. 中繼資料語言偏好推薦 (2026-10-21) is one menu that
+/// starts at 跟隨 App 語言; the language picked there survives a relaunch. 書庫順序 orders the libraries' rows. 隱藏已讀, one switch, starts on. 數據來源
 /// (search 9d) lists each purpose's places with how many are checked.
 final class AggregationSettingsUITests: XCTestCase {
     override func setUpWithError() throws { continueAfterFailure = false }
@@ -45,49 +44,41 @@ final class AggregationSettingsUITests: XCTestCase {
         add(attachment)
     }
 
+    /// What a menu row reads: its title and its choice.
     @MainActor
-    func testReadingLanguages() {
+    private func spoken(_ element: XCUIElement) -> String {
+        [element.label, element.value as? String ?? ""].joined(separator: " ")
+    }
+
+    @MainActor
+    func testMetadataLanguage() {
         let app = application(fresh: true)
         app.launch()
         openAggregationSettings(app)
 
-        let chinese = app.staticTexts["aggregation.language.zh"].firstMatch
-        reveal(chinese, in: app)
-        XCTAssertTrue(chinese.waitForExistence(timeout: 5), "the interface language to start with")
-        XCTAssertEqual(chinese.value as? String, "第 1 優先")
-        let prefer = app.buttons["優先推薦偏好語言"].firstMatch
-        reveal(prefer, in: app)
-        XCTAssertTrue(prefer.isSelected)
-
-        // 新增語言 adds 日本語 last; dragging it above 中文 moves it first.
-        let add = app.buttons["aggregation.addLanguage"].firstMatch
-        reveal(add, in: app)
-        add.tap()
-        let offer = app.buttons["aggregation.offer.ja"].firstMatch
-        XCTAssertTrue(offer.waitForExistence(timeout: 5), app.debugDescription)
-        offer.tap()
-        let japanese = app.staticTexts["aggregation.language.ja"].firstMatch
-        XCTAssertTrue(japanese.waitForExistence(timeout: 5), app.debugDescription)
-        XCTAssertEqual(japanese.value as? String, "第 2 優先")
-        reveal(japanese, in: app)
-        japanese.press(forDuration: 1.0, thenDragTo: chinese)
-        XCTAssertEqual(app.staticTexts["aggregation.language.ja"].firstMatch.value as? String, "第 1 優先")
-
-        let only = app.buttons["只推薦偏好語言"].firstMatch
-        reveal(only, in: app)
-        only.tap()
-        XCTAssertTrue(only.isSelected)
-        attach(app, "aggregation-settings")
+        // One menu, at 跟隨 App 語言 until the reader picks another.
+        let menu = app.descendants(matching: .any)["aggregation.metadataLanguage"].firstMatch
+        reveal(menu, in: app)
+        XCTAssertTrue(menu.waitForExistence(timeout: 5), app.debugDescription)
+        XCTAssertTrue(spoken(menu).contains("跟隨 App 語言"), spoken(menu))
+        menu.tap()
+        XCTAssertTrue(app.buttons["繁體中文"].firstMatch.waitForExistence(timeout: 5), app.debugDescription)
+        XCTAssertTrue(app.buttons["简体中文"].firstMatch.exists, "Chinese in each script")
+        let japanese = app.buttons["日本語"].firstMatch
+        XCTAssertTrue(japanese.exists, app.debugDescription)
+        japanese.tap()
+        XCTAssertTrue(spoken(menu).contains("日本語"), spoken(menu))
+        attach(app, "aggregation-metadata-language")
 
         // Saved: a relaunch without the reset reads it back.
         app.terminate()
         let relaunched = application(fresh: false)
         relaunched.launch()
         openAggregationSettings(relaunched)
-        let rereadOnly = relaunched.buttons["只推薦偏好語言"].firstMatch
-        reveal(rereadOnly, in: relaunched)
-        XCTAssertEqual(relaunched.staticTexts["aggregation.language.ja"].firstMatch.value as? String, "第 1 優先")
-        XCTAssertTrue(rereadOnly.isSelected)
+        let reread = relaunched.descendants(matching: .any)["aggregation.metadataLanguage"].firstMatch
+        reveal(reread, in: relaunched)
+        XCTAssertTrue(reread.waitForExistence(timeout: 5), relaunched.debugDescription)
+        XCTAssertTrue(spoken(reread).contains("日本語"), spoken(reread))
         relaunched.terminate()
         // Leave the simulator as a new install has it, for the Explore tests after this one.
         application(fresh: true).launch()
@@ -137,7 +128,7 @@ final class AggregationSettingsUITests: XCTestCase {
         let app = application(fresh: true)
         app.launch()
         openAggregationSettings(app)
-        let language = app.staticTexts["aggregation.language.zh"].firstMatch
+        let language = app.descendants(matching: .any)["aggregation.metadataLanguage"].firstMatch
         XCTAssertTrue(language.waitForExistence(timeout: 5), app.debugDescription)
         let library = app.descendants(matching: .any)["aggregation.library.gutenberg.builtin.gutenberg"].firstMatch
         reveal(library, in: app)

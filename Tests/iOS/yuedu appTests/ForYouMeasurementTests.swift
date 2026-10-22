@@ -94,7 +94,7 @@ struct ForYouMeasurementTests {
             return rows + [library, ForYouProvider(
                 firstPages: pages, home: home, shelf: shelf, candidates: store,
                 homeSections: { sections }, sources: { sources }, genres: genres, exposure: exposure,
-                languages: { .init(languages: ["zh"], scope: .any) })]
+                languages: { .init(language: "zh-Hant") })]
         }
         return Home(model: model, page: HomePage(sections: sections))
     }
@@ -199,7 +199,7 @@ struct ForYouMeasurementTests {
         time("shelfWorks(2000)") { works = ForYouRanker.shelfWorks(shelf) }
         let shown = Set(candidates.compactMap { ForYouRanker.workKey(of: $0.entry) })
         time("workKey(600)") { _ = candidates.compactMap { ForYouRanker.workKey(of: $0.entry) } }
-        let languages = ReadingLanguagePreferences(languages: ["zh"], scope: .any)
+        let languages = ReadingLanguagePreferences(language: "zh-Hant")
         func rank(shelf: [ForYouRanker.ShelfWork], shown: Set<String>) -> [CollectionEntry] {
             ForYouRanker.rank(candidates: candidates, shelf: shelf, weights: ["玄幻": 1], recent: .init(authors: ["候選作者1"], tags: ["都市"]),
                               recentlyShown: shown, languages: languages, seed: 1, limit: HomeRow.limit)

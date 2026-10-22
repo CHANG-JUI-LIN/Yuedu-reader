@@ -2,15 +2,19 @@ import Combine
 import Foundation
 
 // Unified library 5d-3d: 聚合設定 (Phase 5 plan, decision 21), mapped from the Emby user
-// settings that shape its aggregation: 偏好閱讀語言 and 推薦範圍 (5d-3d), 書庫順序 (5d-3e),
+// settings that shape its aggregation: 中繼資料語言偏好推薦 (2026-10-21; 偏好閱讀語言 and 推薦範圍 in
+// 5d-3d), 書庫順序 (5d-3e),
 // 顯示在最新 (5d-3f, set in the 最新 section's form since decision 36, and in 數據來源's 最新來源
 // since search 9d), 隱藏已讀 (5d-3g, one switch for the whole home since decision 36), and
 // 搜尋來源 (search 9d).
 
 struct AggregationSettings: Codable, Equatable, Sendable {
-    /// Nil until the reader chooses: then `ReadingLanguagePreferences.initial`, which follows
-    /// the interface language.
-    var readingLanguages: ReadingLanguagePreferences?
+    /// 偏好閱讀語言 and 推薦範圍 until 2026-10-21, kept as stored: its first language is the
+    /// choice until the reader picks one in 中繼資料語言偏好推薦.
+    var readingLanguages: LegacyReadingLanguages?
+    /// 中繼資料語言偏好推薦: `MetadataLanguage.followApp` or one of `MetadataLanguage.offered`.
+    /// Nil until the reader picks.
+    var metadataLanguage: String?
     /// 書庫順序 (`LibraryOrder`); nil until the reader orders them. Settings saved before
     /// 5d-3e have no such field and read as nil.
     var libraryOrder: [SourceInstanceKey]?
@@ -30,10 +34,12 @@ struct AggregationSettings: Codable, Equatable, Sendable {
     var hidesReadInLatest: Bool?
     var hidesReadInRelated: Bool?
 
-    init(readingLanguages: ReadingLanguagePreferences? = nil, libraryOrder: [SourceInstanceKey]? = nil,
+    init(readingLanguages: LegacyReadingLanguages? = nil, metadataLanguage: String? = nil,
+         libraryOrder: [SourceInstanceKey]? = nil,
          hiddenFromLatest: [SourceInstanceKey]? = nil, hiddenFromSearch: [SourceInstanceKey]? = nil,
          hidesRead: Bool? = nil, hidesReadInLatest: Bool? = nil, hidesReadInRelated: Bool? = nil) {
         self.readingLanguages = readingLanguages
+        self.metadataLanguage = metadataLanguage
         self.libraryOrder = libraryOrder
         self.hiddenFromLatest = hiddenFromLatest
         self.hiddenFromSearch = hiddenFromSearch
@@ -42,9 +48,16 @@ struct AggregationSettings: Codable, Equatable, Sendable {
         self.hidesReadInRelated = hidesReadInRelated
     }
 
-    /// The languages in effect.
+    /// 中繼資料語言偏好推薦's choice: the reader's, else 偏好閱讀語言's, else 跟隨 App 語言.
+    func metadataLanguageChoice(interfaceLanguage: String?) -> String {
+        metadataLanguage ?? MetadataLanguage.choice(migrating: readingLanguages, interfaceLanguage: interfaceLanguage)
+            ?? MetadataLanguage.followApp
+    }
+
+    /// The language in effect.
     func languages(interfaceLanguage: String?) -> ReadingLanguagePreferences {
-        readingLanguages ?? .initial(interfaceLanguage: interfaceLanguage)
+        let choice = metadataLanguageChoice(interfaceLanguage: interfaceLanguage)
+        return ReadingLanguagePreferences(language: MetadataLanguage.tag(of: choice, interfaceLanguage: interfaceLanguage))
     }
 }
 
@@ -80,14 +93,21 @@ final class AggregationSettingsStore: ObservableObject {
         }
     }
 
-    /// The languages in effect, for the interface language the app runs in.
+    /// The language in effect, for the interface language the app runs in.
     var readingLanguages: ReadingLanguagePreferences {
-        settings.languages(interfaceLanguage: Bundle.main.preferredLocalizations.first)
+        settings.languages(interfaceLanguage: Self.interfaceLanguage)
     }
 
-    func setReadingLanguages(_ preferences: ReadingLanguagePreferences) {
-        edit { $0.readingLanguages = preferences }
+    /// 中繼資料語言偏好推薦's choice, as its menu shows it.
+    var metadataLanguageChoice: String {
+        settings.metadataLanguageChoice(interfaceLanguage: Self.interfaceLanguage)
     }
+
+    func setMetadataLanguage(_ choice: String) {
+        edit { $0.metadataLanguage = choice }
+    }
+
+    private static var interfaceLanguage: String? { Bundle.main.preferredLocalizations.first }
 
     /// 書庫順序: the libraries there are now, in the order the reader gave them.
     func setLibraryOrder(_ keys: [SourceInstanceKey]) {

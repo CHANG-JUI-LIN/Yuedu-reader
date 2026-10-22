@@ -43,7 +43,7 @@ struct CollectionLayoutTests {
         #expect(url.absoluteString.contains("24264"))
     }
 
-    @Test("只推薦偏好語言 leaves out a list with no book in a preferred language; a mixed list stays")
+    @Test("a list goes by its best-placed book's language; none is left out")
     func languages() async throws {
         let entries = try await lists().map(CollectionEntry.collection)
         func ids(_ preferences: ReadingLanguagePreferences) -> [String] {
@@ -53,10 +53,9 @@ struct CollectionLayoutTests {
             }
         }
         // 小說與文學 holds 吶喊.
-        #expect(ids(ReadingLanguagePreferences(languages: ["zh"], scope: .only)) == ["chinese", "fiction", "thought"])
-        #expect(ids(ReadingLanguagePreferences(languages: ["en"], scope: .prefer)) == ["fiction", "children", "chinese", "thought"])
-        #expect(ids(ReadingLanguagePreferences(languages: ["ja"], scope: .only)).isEmpty)
-        #expect(ids(ReadingLanguagePreferences(languages: ["ja"], scope: .any)) == PublicLibraryCollection.all.map(\.id))
+        #expect(Array(ids(ReadingLanguagePreferences(language: "zh-Hant")).prefix(3)) == ["chinese", "fiction", "thought"])
+        #expect(ids(ReadingLanguagePreferences(language: "en")) == ["fiction", "children", "chinese", "thought"])
+        #expect(ids(ReadingLanguagePreferences(language: "ja")) == PublicLibraryCollection.all.map(\.id))
     }
 
     @Test("A new install's home: one 精選書單 section in place of a row per list; none in China")

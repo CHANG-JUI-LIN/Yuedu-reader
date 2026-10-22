@@ -6,9 +6,9 @@ import Foundation
 //   no source gives dates to sort them by.
 // - 範圍 filters the same home: a source's own rows stay, the shelf's rows (繼續閱讀, 相關)
 //   keep that source's copies, and every other row goes. Nothing names a source on the home.
-// - 偏好閱讀語言 (5d-3d, decision 21) orders each section's books, after 最新's turns, and
-//   under 只推薦 leaves out books known to be in another language. 繼續閱讀 keeps its own
-//   order: most recently opened first.
+// - 中繼資料語言偏好推薦 (2026-10-21; 偏好閱讀語言 in 5d-3d, decision 21) orders each section's
+//   books, after 最新's turns, and leaves none out. 繼續閱讀 keeps its own order: most recently
+//   opened first.
 // - 隱藏已讀 (5d-3g) leaves read books out of 最新 and 相關 before anything else.
 // - 書庫順序 (5d-3e) orders a section's rows, so 最新's books take turns in the libraries'
 //   order; the shelf's row stays first and book sources' rows after.

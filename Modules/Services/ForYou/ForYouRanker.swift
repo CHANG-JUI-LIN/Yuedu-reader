@@ -72,14 +72,13 @@ enum ForYouRanker {
         let recentAuthors = recent.authors.map(WorkMatchKey.author)
         let recentTags = Set(ReadingGenreProfile.normalizedTags(recent.tags))
 
-        // 1. Dedupe; the shelf and, under 只推薦, other languages left out. Compared by title
+        // 1. Dedupe; the shelf left out. Compared by title
         // first: folding a title costs ICU transforms (7a-5), so each is folded once.
         let shelfByTitle = Dictionary(grouping: shelf, by: \.title).mapValues { $0.map(\.authors) }
         var keptByTitle: [String: [[String]]] = [:]
         var kept: [Scored] = []
         for candidate in candidates {
             guard case .item(let record, let summary, _) = candidate.entry else { continue }
-            if languages.scope == .only, languages.rank(of: summary.language ?? record.language) == .other { continue }
             let title = WorkMatchKey.title(summary.title)
             let authors = summary.authors.map(WorkMatchKey.author)
             if shelfByTitle[title]?.contains(where: { WorkMatchKey.authorKeysCompatible($0, authors) }) == true { continue }

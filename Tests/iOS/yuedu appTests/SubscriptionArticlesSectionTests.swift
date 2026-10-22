@@ -90,10 +90,10 @@ struct SubscriptionArticlesSectionTests {
         .article(SubscriptionArticle(id: id, title: id, feedName: "", date: .now, imageURL: nil, isRead: false))
     }
 
-    @Test("the articles keep their order under 偏好閱讀語言, and a library's 範圍 leaves the section out")
+    @Test("the articles keep their order under 中繼資料語言偏好推薦, and a library's 範圍 leaves the section out")
     func orderAndScope() {
         let entries = ["3", "2", "1"].map(article)
-        let languages = ReadingLanguagePreferences(languages: ["en"], scope: .only)
+        let languages = ReadingLanguagePreferences(language: "en")
         let groups = HomeScopeFilter.groups([row(entries)], in: nil, languages: languages)
         #expect(groups.count == 1)
         guard case .loaded(let shown) = groups[0].state else { Issue.record("not loaded"); return }

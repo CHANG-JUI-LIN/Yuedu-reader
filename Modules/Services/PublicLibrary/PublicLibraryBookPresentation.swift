@@ -8,7 +8,7 @@ struct GutenbergBook: Identifiable, Hashable {
     let author: String
     let feedURL: URL?
     let entry: OPDSEntry?
-    /// The text's language (`zh`, `en`), for 偏好閱讀語言 (5d-3d): the bundled lists say it per
+    /// The text's language (`zh`, `en`), for 中繼資料語言偏好推薦 (5d-3d): the bundled lists say it per
     /// book, since a list mixes languages; a feed's entry says it when the feed does.
     let language: String?
 
