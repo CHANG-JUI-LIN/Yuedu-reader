@@ -316,6 +316,12 @@ struct HomeReadingCard: View {
                     .foregroundStyle(DSColor.textSecondary)
                     .lineLimit(1)
             }
+            if let series = content.series {
+                Text(series)
+                    .font(DSFont.caption)
+                    .foregroundStyle(DSColor.textSecondary)
+                    .lineLimit(1)
+            }
             if let blurb = content.blurb {
                 Text(blurb)
                     .font(DSFont.footnote)
@@ -402,6 +408,11 @@ struct HomeFeaturedCard: View {
             if !content.author.isEmpty {
                 Text(content.author)
                     .font(DSFont.subheadline)
+                    .lineLimit(1)
+            }
+            if let series = content.series {
+                Text(series)
+                    .font(DSFont.caption)
                     .lineLimit(1)
             }
             if let blurb = content.blurb {
@@ -604,6 +615,12 @@ struct HomeListRow: View {
                         .foregroundStyle(DSColor.textSecondary)
                         .lineLimit(1)
                 }
+                if let series = content.series {
+                    Text(series)
+                        .font(DSFont.caption)
+                        .foregroundStyle(DSColor.textSecondary)
+                        .lineLimit(1)
+                }
                 if let blurb = content.blurb {
                     Text(blurb)
                         .font(DSFont.footnote)
@@ -656,6 +673,27 @@ private func featuredPreviewCards() -> [HomeCardContent] {
         CollectionEntry.bundledGutenberg(PublicLibraryCollection.all[0].books[0]),
     ]
     return entries.compactMap { HomeCardContent($0, status: { _ in nil }, shelfBooks: [:]) }
+}
+
+#Preview("趨勢的系列，在作者下面") {
+    // The same book twice, the second on the shelf; each its own item, as a row's cards are.
+    let cards = [nil, CopyLookup.Status.onShelf].enumerated().compactMap { index, status in
+        let record = SourceRecord(key: SourceItemKey(instance: ModuleProvider.instanceKey(moduleID: "trends"), item: "mistborn-\(index)"),
+                                  title: "Mistborn: The Final Empire", authors: ["Brandon Sanderson"], language: "en",
+                                  contentKind: .text, identifiers: [], copyID: nil, acquisitions: [.viewOnly])
+        let summary = WorkSummary(title: record.title, authors: record.authors, cover: .generated(seed: record.title),
+                                  blurb: "A street thief learns she can burn metals, and joins a crew that means to end an empire.",
+                                  language: "en", contentKind: .text, series: "Mistborn")
+        return HomeCardContent(.item(record, summary, .bibliographic), status: { _ in status }, shelfBooks: [:])
+    }
+    ScrollView {
+        VStack(alignment: .leading, spacing: DSSpacing.xxl) {
+            ForEach(HomeLayoutStyle.allCases) { style in
+                HomeSectionCards(layout: HomeSectionLayout(style: style, ranked: style == .list), cards: cards,
+                                 rowID: style.rawValue, hasShowAll: false, open: { _, _ in })
+            }
+        }
+    }
 }
 
 #Preview("精選，資料齊全與最少") {

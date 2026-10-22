@@ -262,11 +262,20 @@ struct OfficialModuleFilesTests {
         #expect(anilist.localized(for: "ja").modules.first?.title == "人気のマンガ")
 
         // Every official file speaks the app's five languages.
-        for module in [bangumi, anilist, try official("openbd")] {
+        for module in [bangumi, anilist, try official("openbd"), try official("trends")] {
             #expect(Set((module.localizations ?? [:]).keys) == ["zh-Hans", "en", "ja", "ko"], "\(module.id)")
             for (language, text) in module.localizations ?? [:] {
                 #expect(text.description?.isEmpty == false, "\(module.id) \(language)")
                 #expect(Set((text.entries ?? [:]).keys) == Set(module.modules.compactMap(\.id)), "\(module.id) \(language)")
+                // A parameter the reader picks has words too: its title and every option's.
+                for entry in module.modules {
+                    for param in entry.params where param.kind == .enumeration {
+                        let said = text.entries?[entry.id ?? ""]?.params?[param.name]
+                        #expect(said?.title?.isEmpty == false, "\(module.id) \(language) \(param.name)")
+                        #expect(Set((said?.options ?? [:]).keys) == Set((param.enumOptions ?? []).map(\.value)),
+                                "\(module.id) \(language) \(param.name)")
+                    }
+                }
             }
         }
     }
@@ -300,6 +309,26 @@ struct OfficialModuleFilesTests {
         }
         #expect(throws: RuleModuleRejection.needsRequiredVersion(field: "localizations", minimum: "3.0")) {
             try RuleModuleValidator.validate(file(#"{"en":{"title":"M"}}"#, required: "2.0"), appVersion: "3.0")
+        }
+
+        // A parameter's words: only a parameter the list has, only options it has.
+        func picked(_ params: String) -> Data {
+            Data("""
+            {"id":"m","title":"模組","version":"1.0","requiredVersion":"3.0","hosts":["example.com"],
+             "modules":[{"id":"new","title":"新書","request":{"url":"https://example.com/{{area}}"},"list":{"items":"li","title":"h3"},
+                         "params":[{"name":"area","title":"地區","type":"enumeration","enumOptions":[{"title":"日本","value":"ja"}]}]}],
+             "localizations":{"en":{"entries":{"new":{"params":\(params)}}}}}
+            """.utf8)
+        }
+        let module = try? RuleModuleValidator.validate(picked(#"{"area":{"title":"Region","options":{"ja":"Japan"}}}"#), appVersion: "3.0")
+        #expect(module?.localized(for: "en").modules.first?.params.first?.title == "Region")
+        #expect(module?.localized(for: "en").modules.first?.params.first?.enumOptions?.first?.title == "Japan")
+        #expect(module?.localized(for: "ja").modules.first?.params.first?.title == "地區", "no ja words: as written")
+        #expect(throws: RuleModuleRejection.unknownValue(field: "localizations.en.entries.new.params", value: "gone")) {
+            try RuleModuleValidator.validate(picked(#"{"gone":{"title":"G"}}"#), appVersion: "3.0")
+        }
+        #expect(throws: RuleModuleRejection.unknownValue(field: "localizations.en.entries.new.params.area.options", value: "kr")) {
+            try RuleModuleValidator.validate(picked(#"{"area":{"options":{"kr":"Korea"}}}"#), appVersion: "3.0")
         }
     }
 
@@ -593,6 +622,57 @@ struct OfficialModuleFilesTests {
         library.setEnabled(false, id: OfficialRuleModules.openLibraryID)
         #expect(try await resolver.match(work) == nil)
         #expect(ModuleStub.urls.isEmpty, "停用 turns AI 推薦's lookups off with the rest")
+    }
+
+    // MARK: - 趨勢
+
+    @Test("趨勢: each list is the gateway's file for a region, which follows 中繼資料語言偏好推薦 until the reader picks one")
+    func trendsRegion() async throws {
+        let module = try official("trends")
+        #expect(module.modules.compactMap(\.id) == ["today", "month", "year", "completed", "classics"])
+        #expect(module.hosts == ["gateway.yuedureader.com", "upload.wikimedia.org", "thumb.wikimedia.org", "lain.bgm.tv"])
+        let cases: [(language: String, parameters: [String: String], region: String)] = [
+            ("zh-Hant", [:], "zh-Hant"), ("zh-Hans", [:], "zh-Hans"), ("ja", [:], "ja"), ("en-GB", [:], "en"),
+            ("ko", [:], "en"), ("ja", ["region": "zh-Hant"], "zh-Hant"),
+        ]
+        for (language, parameters, region) in cases {
+            let f = makeFixture()
+            defer { try? FileManager.default.removeItem(at: f.folder) }
+            ModuleStub.install(["gateway.yuedureader.com/trends/v1/\(region)/year.json": .json(try reply("Trends/trends-en-year.json"))])
+            let provider = ModuleProvider(module: module, client: f.client, language: { language })
+            let page = try await provider.page(ofList: "year", parameters: parameters, after: nil)
+            #expect(ModuleStub.urls == ["https://gateway.yuedureader.com/trends/v1/\(region)/year.json"], "\(language) \(parameters)")
+            #expect(items(page.entries).count == 2, "\(language) \(parameters)")
+        }
+        let ko = module.localized(for: "ko").modules[0].params[0]
+        #expect(ko.title == "지역")
+        #expect(ko.enumOptions?.map(\.title) == ["중국어(번체)", "중국어(간체)", "일본", "영어"])
+    }
+
+    @Test("趨勢: a work is its title, its authors, its intro, its cover and its article; a folded series names the series")
+    func trendsItems() async throws {
+        let f = makeFixture()
+        defer { try? FileManager.default.removeItem(at: f.folder) }
+        ModuleStub.install(["gateway.yuedureader.com/trends/v1/en/year.json": .json(try reply("Trends/trends-en-year.json"))])
+        let module = try official("trends")
+        let provider = ModuleProvider(module: module, client: f.client, language: { "en" })
+        let found = items(try await provider.page(ofList: "year", parameters: [:], after: nil).entries)
+        #expect(found.map(\.summary.title) == ["Mistborn: The Final Empire", "Good Omens"])
+        #expect(found[1].record.authors == ["Terry Pratchett", "Neil Gaiman"])
+        #expect(found[0].record.key.item == "https://en.wikipedia.org/wiki/Mistborn:_The_Final_Empire")
+        #expect(found[0].summary.blurb?.isEmpty == false)
+        #expect(ModuleStub.userAgents == [Self.userAgent])
+        // Wikipedia's page images come from both of Wikimedia's image hosts.
+        let covers = found.map { item -> String? in
+            if case .remote(let url, _) = item.summary.cover { url.absoluteString } else { nil }
+        }
+        #expect(covers == ["https://upload.wikimedia.org/wikipedia/en/thumb/4/44/Mistborn-cover.jpg/500px-Mistborn-cover.jpg",
+                           "https://thumb.wikimedia.org/wikipedia/en/thumb/a/a1/Good_Omens_cover.jpg/500px-Good_Omens_cover.jpg"])
+        #expect(module.hosts.contains("lain.bgm.tv"), "華語 and 日本 take a matched work's cover from Bangumi")
+
+        let entry = try #require(module.modules.first { $0.id == "year" })
+        let listed = try await f.client.page(of: entry, in: module, values: ["region": "en"]).items
+        #expect(listed.map(\.series) == ["Mistborn", ""], "only a folded series has one")
     }
 
     @Test("Open Library is an official module, listed after openBD")

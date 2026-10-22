@@ -1,0 +1,29 @@
+{
+  "schemaVersion": 1,
+  "region": "en",
+  "list": "year",
+  "generatedAt": "2026-10-22T03:00:00Z",
+  "attribution": "資料：維基百科、維基數據（CC BY-SA 4.0）、Bangumi",
+  "license": "https://creativecommons.org/licenses/by-sa/4.0/",
+  "works": [
+    {
+      "title": "Mistborn: The Final Empire",
+      "author": ["Brandon Sanderson"],
+      "intro": "A fantasy novel, the first of a series in which a street thief learns to burn metals.",
+      "url": "https://en.wikipedia.org/wiki/Mistborn:_The_Final_Empire",
+      "aliases": [],
+      "wikidata": "Q1514034",
+      "series": "Mistborn",
+      "cover": "https://upload.wikimedia.org/wikipedia/en/thumb/4/44/Mistborn-cover.jpg/500px-Mistborn-cover.jpg"
+    },
+    {
+      "title": "Good Omens",
+      "author": ["Terry Pratchett", "Neil Gaiman"],
+      "intro": "A comic novel about an angel and a demon who would rather the world did not end.",
+      "url": "https://en.wikipedia.org/wiki/Good_Omens",
+      "aliases": ["Good Omens: The Nice and Accurate Prophecies of Agnes Nutter, Witch"],
+      "wikidata": "Q1197512",
+      "cover": "https://thumb.wikimedia.org/wikipedia/en/thumb/a/a1/Good_Omens_cover.jpg/500px-Good_Omens_cover.jpg"
+    }
+  ]
+}

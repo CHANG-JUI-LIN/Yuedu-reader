@@ -91,6 +91,30 @@ struct HomeCardTests {
         #expect(none.accessibilityValue == "曹雪芹")
     }
 
+    @Test("a 趨勢 series is named under the author: beside the status on a poster card, and to VoiceOver")
+    func seriesLine() throws {
+        let record = SourceRecord(key: SourceItemKey(instance: ModuleProvider.instanceKey(moduleID: "trends"), item: "m"),
+                                  title: "Mistborn: The Final Empire", authors: ["Brandon Sanderson"], language: "en",
+                                  contentKind: .text, identifiers: [], copyID: nil, acquisitions: [.viewOnly])
+        func card(series: String?, status: CopyLookup.Status?) throws -> HomeCardContent {
+            let summary = WorkSummary(title: record.title, authors: record.authors, cover: nil, blurb: nil, language: "en",
+                                      contentKind: .text, series: series)
+            return try #require(HomeCardContent(.item(record, summary, .bibliographic), status: { _ in status }, shelfBooks: [:]))
+        }
+        let series = try card(series: "Mistborn", status: nil)
+        #expect(series.series == "Mistborn")
+        #expect(series.seriesAndDetail == "Mistborn")
+        #expect(series.accessibilityValue == "Brandon Sanderson, Mistborn")
+        let onShelf = try card(series: "Mistborn", status: .onShelf)
+        #expect(onShelf.seriesAndDetail == "Mistborn・\(localized("已加入書架"))")
+        #expect(onShelf.accessibilityValue == "Brandon Sanderson, Mistborn, \(localized("已加入書架"))")
+        #expect(onShelf.kindAndDetail == "\(localized("書籍"))・Mistborn・\(localized("已加入書架"))")
+
+        let single = try card(series: "  ", status: nil)
+        #expect(single.series == nil, "a blank series is none")
+        #expect(single.seriesAndDetail == nil)
+    }
+
     @Test("a row's places become chips and its items cards, each in order")
     func rowContentSplitsLocations() {
         let book = GutenbergBook(id: 23962, title: "西遊記", author: "吳承恩")

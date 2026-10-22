@@ -1,0 +1,567 @@
+{
+  "id": "trends",
+  "title": "趨勢",
+  "description": "依維基百科瀏覽量排出的熱門小說、完結作品和經典名著，每天更新；地區預設跟隨「中繼資料語言偏好推薦」。",
+  "author": "Yuedu",
+  "site": "https://yuedureader.com/",
+  "version": "1.0",
+  "requiredVersion": "3.0",
+  "hosts": [
+    "gateway.yuedureader.com",
+    "upload.wikimedia.org",
+    "thumb.wikimedia.org",
+    "lain.bgm.tv"
+  ],
+  "attribution": {
+    "text": "Wikipedia, Wikidata (CC BY-SA 4.0), Bangumi. Covers © their respective owners.",
+    "url": "https://creativecommons.org/licenses/by-sa/4.0/"
+  },
+  "modules": [
+    {
+      "id": "today",
+      "title": "今日熱門",
+      "cacheDuration": 21600,
+      "params": [
+        {
+          "name": "region",
+          "title": "地區",
+          "type": "enumeration",
+          "followsLanguage": true,
+          "value": "en",
+          "enumOptions": [
+            {
+              "title": "華語（繁）",
+              "value": "zh-Hant"
+            },
+            {
+              "title": "華語（簡）",
+              "value": "zh-Hans"
+            },
+            {
+              "title": "日本",
+              "value": "ja"
+            },
+            {
+              "title": "英語",
+              "value": "en"
+            }
+          ]
+        }
+      ],
+      "request": {
+        "url": "https://gateway.yuedureader.com/trends/v1/{{region}}/today.json",
+        "headers": {
+          "User-Agent": "yuedureader/Yuedu (iOS) (+https://yuedureader.com/support)"
+        }
+      },
+      "list": {
+        "items": "$.works[*]",
+        "title": "$.title",
+        "author": "$.author",
+        "cover": "$.cover",
+        "intro": "$.intro",
+        "url": "$.url",
+        "aliases": "$.aliases",
+        "series": "$.series"
+      }
+    },
+    {
+      "id": "month",
+      "title": "本月熱門",
+      "cacheDuration": 86400,
+      "params": [
+        {
+          "name": "region",
+          "title": "地區",
+          "type": "enumeration",
+          "followsLanguage": true,
+          "value": "en",
+          "enumOptions": [
+            {
+              "title": "華語（繁）",
+              "value": "zh-Hant"
+            },
+            {
+              "title": "華語（簡）",
+              "value": "zh-Hans"
+            },
+            {
+              "title": "日本",
+              "value": "ja"
+            },
+            {
+              "title": "英語",
+              "value": "en"
+            }
+          ]
+        }
+      ],
+      "request": {
+        "url": "https://gateway.yuedureader.com/trends/v1/{{region}}/month.json",
+        "headers": {
+          "User-Agent": "yuedureader/Yuedu (iOS) (+https://yuedureader.com/support)"
+        }
+      },
+      "list": {
+        "items": "$.works[*]",
+        "title": "$.title",
+        "author": "$.author",
+        "cover": "$.cover",
+        "intro": "$.intro",
+        "url": "$.url",
+        "aliases": "$.aliases",
+        "series": "$.series"
+      }
+    },
+    {
+      "id": "year",
+      "title": "今年熱門",
+      "cacheDuration": 86400,
+      "params": [
+        {
+          "name": "region",
+          "title": "地區",
+          "type": "enumeration",
+          "followsLanguage": true,
+          "value": "en",
+          "enumOptions": [
+            {
+              "title": "華語（繁）",
+              "value": "zh-Hant"
+            },
+            {
+              "title": "華語（簡）",
+              "value": "zh-Hans"
+            },
+            {
+              "title": "日本",
+              "value": "ja"
+            },
+            {
+              "title": "英語",
+              "value": "en"
+            }
+          ]
+        }
+      ],
+      "request": {
+        "url": "https://gateway.yuedureader.com/trends/v1/{{region}}/year.json",
+        "headers": {
+          "User-Agent": "yuedureader/Yuedu (iOS) (+https://yuedureader.com/support)"
+        }
+      },
+      "list": {
+        "items": "$.works[*]",
+        "title": "$.title",
+        "author": "$.author",
+        "cover": "$.cover",
+        "intro": "$.intro",
+        "url": "$.url",
+        "aliases": "$.aliases",
+        "series": "$.series"
+      }
+    },
+    {
+      "id": "completed",
+      "title": "完結推薦",
+      "cacheDuration": 86400,
+      "params": [
+        {
+          "name": "region",
+          "title": "地區",
+          "type": "enumeration",
+          "followsLanguage": true,
+          "value": "en",
+          "enumOptions": [
+            {
+              "title": "華語（繁）",
+              "value": "zh-Hant"
+            },
+            {
+              "title": "華語（簡）",
+              "value": "zh-Hans"
+            },
+            {
+              "title": "日本",
+              "value": "ja"
+            },
+            {
+              "title": "英語",
+              "value": "en"
+            }
+          ]
+        }
+      ],
+      "request": {
+        "url": "https://gateway.yuedureader.com/trends/v1/{{region}}/completed.json",
+        "headers": {
+          "User-Agent": "yuedureader/Yuedu (iOS) (+https://yuedureader.com/support)"
+        }
+      },
+      "list": {
+        "items": "$.works[*]",
+        "title": "$.title",
+        "author": "$.author",
+        "cover": "$.cover",
+        "intro": "$.intro",
+        "url": "$.url",
+        "aliases": "$.aliases",
+        "series": "$.series"
+      }
+    },
+    {
+      "id": "classics",
+      "title": "經典名著",
+      "cacheDuration": 86400,
+      "params": [
+        {
+          "name": "region",
+          "title": "地區",
+          "type": "enumeration",
+          "followsLanguage": true,
+          "value": "en",
+          "enumOptions": [
+            {
+              "title": "華語（繁）",
+              "value": "zh-Hant"
+            },
+            {
+              "title": "華語（簡）",
+              "value": "zh-Hans"
+            },
+            {
+              "title": "日本",
+              "value": "ja"
+            },
+            {
+              "title": "英語",
+              "value": "en"
+            }
+          ]
+        }
+      ],
+      "request": {
+        "url": "https://gateway.yuedureader.com/trends/v1/{{region}}/classics.json",
+        "headers": {
+          "User-Agent": "yuedureader/Yuedu (iOS) (+https://yuedureader.com/support)"
+        }
+      },
+      "list": {
+        "items": "$.works[*]",
+        "title": "$.title",
+        "author": "$.author",
+        "cover": "$.cover",
+        "intro": "$.intro",
+        "url": "$.url",
+        "aliases": "$.aliases",
+        "series": "$.series"
+      }
+    }
+  ],
+  "localizations": {
+    "zh-Hans": {
+      "title": "趋势",
+      "description": "依维基百科浏览量排出的热门小说、完结作品和经典名著，每天更新；地区默认跟随“元数据语言偏好推荐”。",
+      "entries": {
+        "today": {
+          "title": "今日热门",
+          "params": {
+            "region": {
+              "title": "地区",
+              "options": {
+                "zh-Hant": "华语（繁）",
+                "zh-Hans": "华语（简）",
+                "ja": "日本",
+                "en": "英语"
+              }
+            }
+          }
+        },
+        "month": {
+          "title": "本月热门",
+          "params": {
+            "region": {
+              "title": "地区",
+              "options": {
+                "zh-Hant": "华语（繁）",
+                "zh-Hans": "华语（简）",
+                "ja": "日本",
+                "en": "英语"
+              }
+            }
+          }
+        },
+        "year": {
+          "title": "今年热门",
+          "params": {
+            "region": {
+              "title": "地区",
+              "options": {
+                "zh-Hant": "华语（繁）",
+                "zh-Hans": "华语（简）",
+                "ja": "日本",
+                "en": "英语"
+              }
+            }
+          }
+        },
+        "completed": {
+          "title": "完结推荐",
+          "params": {
+            "region": {
+              "title": "地区",
+              "options": {
+                "zh-Hant": "华语（繁）",
+                "zh-Hans": "华语（简）",
+                "ja": "日本",
+                "en": "英语"
+              }
+            }
+          }
+        },
+        "classics": {
+          "title": "经典名著",
+          "params": {
+            "region": {
+              "title": "地区",
+              "options": {
+                "zh-Hant": "华语（繁）",
+                "zh-Hans": "华语（简）",
+                "ja": "日本",
+                "en": "英语"
+              }
+            }
+          }
+        }
+      }
+    },
+    "en": {
+      "title": "Trends",
+      "description": "Popular novels, completed picks and classics ranked by Wikipedia page views, updated daily. The region follows Preferred Metadata Language unless you pick one.",
+      "entries": {
+        "today": {
+          "title": "Popular Today",
+          "params": {
+            "region": {
+              "title": "Region",
+              "options": {
+                "zh-Hant": "Chinese (Traditional)",
+                "zh-Hans": "Chinese (Simplified)",
+                "ja": "Japan",
+                "en": "English"
+              }
+            }
+          }
+        },
+        "month": {
+          "title": "Popular This Month",
+          "params": {
+            "region": {
+              "title": "Region",
+              "options": {
+                "zh-Hant": "Chinese (Traditional)",
+                "zh-Hans": "Chinese (Simplified)",
+                "ja": "Japan",
+                "en": "English"
+              }
+            }
+          }
+        },
+        "year": {
+          "title": "Popular This Year",
+          "params": {
+            "region": {
+              "title": "Region",
+              "options": {
+                "zh-Hant": "Chinese (Traditional)",
+                "zh-Hans": "Chinese (Simplified)",
+                "ja": "Japan",
+                "en": "English"
+              }
+            }
+          }
+        },
+        "completed": {
+          "title": "Completed Picks",
+          "params": {
+            "region": {
+              "title": "Region",
+              "options": {
+                "zh-Hant": "Chinese (Traditional)",
+                "zh-Hans": "Chinese (Simplified)",
+                "ja": "Japan",
+                "en": "English"
+              }
+            }
+          }
+        },
+        "classics": {
+          "title": "Classics",
+          "params": {
+            "region": {
+              "title": "Region",
+              "options": {
+                "zh-Hant": "Chinese (Traditional)",
+                "zh-Hans": "Chinese (Simplified)",
+                "ja": "Japan",
+                "en": "English"
+              }
+            }
+          }
+        }
+      }
+    },
+    "ja": {
+      "title": "トレンド",
+      "description": "ウィキペディアの閲覧数で選んだ人気小説・完結作品・名作。毎日更新。地域は「優先するメタデータ言語」に合わせます。",
+      "entries": {
+        "today": {
+          "title": "今日の人気",
+          "params": {
+            "region": {
+              "title": "地域",
+              "options": {
+                "zh-Hant": "中国語（繁体字）",
+                "zh-Hans": "中国語（簡体字）",
+                "ja": "日本",
+                "en": "英語"
+              }
+            }
+          }
+        },
+        "month": {
+          "title": "今月の人気",
+          "params": {
+            "region": {
+              "title": "地域",
+              "options": {
+                "zh-Hant": "中国語（繁体字）",
+                "zh-Hans": "中国語（簡体字）",
+                "ja": "日本",
+                "en": "英語"
+              }
+            }
+          }
+        },
+        "year": {
+          "title": "今年の人気",
+          "params": {
+            "region": {
+              "title": "地域",
+              "options": {
+                "zh-Hant": "中国語（繁体字）",
+                "zh-Hans": "中国語（簡体字）",
+                "ja": "日本",
+                "en": "英語"
+              }
+            }
+          }
+        },
+        "completed": {
+          "title": "完結作品のおすすめ",
+          "params": {
+            "region": {
+              "title": "地域",
+              "options": {
+                "zh-Hant": "中国語（繁体字）",
+                "zh-Hans": "中国語（簡体字）",
+                "ja": "日本",
+                "en": "英語"
+              }
+            }
+          }
+        },
+        "classics": {
+          "title": "名作",
+          "params": {
+            "region": {
+              "title": "地域",
+              "options": {
+                "zh-Hant": "中国語（繁体字）",
+                "zh-Hans": "中国語（簡体字）",
+                "ja": "日本",
+                "en": "英語"
+              }
+            }
+          }
+        }
+      }
+    },
+    "ko": {
+      "title": "트렌드",
+      "description": "위키백과 조회수로 고른 인기 소설, 완결작, 고전 명작. 매일 업데이트되며, 지역은 ‘선호하는 메타데이터 언어’를 따릅니다.",
+      "entries": {
+        "today": {
+          "title": "오늘의 인기",
+          "params": {
+            "region": {
+              "title": "지역",
+              "options": {
+                "zh-Hant": "중국어(번체)",
+                "zh-Hans": "중국어(간체)",
+                "ja": "일본",
+                "en": "영어"
+              }
+            }
+          }
+        },
+        "month": {
+          "title": "이달의 인기",
+          "params": {
+            "region": {
+              "title": "지역",
+              "options": {
+                "zh-Hant": "중국어(번체)",
+                "zh-Hans": "중국어(간체)",
+                "ja": "일본",
+                "en": "영어"
+              }
+            }
+          }
+        },
+        "year": {
+          "title": "올해의 인기",
+          "params": {
+            "region": {
+              "title": "지역",
+              "options": {
+                "zh-Hant": "중국어(번체)",
+                "zh-Hans": "중국어(간체)",
+                "ja": "일본",
+                "en": "영어"
+              }
+            }
+          }
+        },
+        "completed": {
+          "title": "완결 추천",
+          "params": {
+            "region": {
+              "title": "지역",
+              "options": {
+                "zh-Hant": "중국어(번체)",
+                "zh-Hans": "중국어(간체)",
+                "ja": "일본",
+                "en": "영어"
+              }
+            }
+          }
+        },
+        "classics": {
+          "title": "고전 명작",
+          "params": {
+            "region": {
+              "title": "지역",
+              "options": {
+                "zh-Hant": "중국어(번체)",
+                "zh-Hans": "중국어(간체)",
+                "ja": "일본",
+                "en": "영어"
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

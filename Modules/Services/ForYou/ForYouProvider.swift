@@ -158,10 +158,12 @@ final class ForYouProvider: HomeSectionProviding {
     /// It mixes in the home's library rows (`ForYouHomeRows.settledLibraryEntries`).
     var readsHomeLibraryRows: Bool { true }
 
-    /// The categories it reads: a home whose categories changed loads it again.
+    /// The categories it reads, and 中繼資料語言偏好推薦, whose books it puts first: a home whose
+    /// categories or language changed loads it again.
     func inputsKey(for section: HomeSection) -> String? {
         guard section.binding == .forYou else { return nil }
         return ForYouInputs.categories(on: homeSections(), for: section).map(\.id).joined(separator: "\u{1E}")
+            + "\u{1D}" + languages().language
     }
 
     func load(_ section: HomeSection) async throws -> [CollectionEntry] {

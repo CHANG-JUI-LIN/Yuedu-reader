@@ -516,6 +516,9 @@ struct HomeSectionForm: View {
 
     // MARK: A module's list
 
+    /// The picker's tag for following 中繼資料語言偏好推薦: no option's value.
+    private static let followsLanguageTag = "\u{1F}followsLanguage"
+
     /// The module list the section shows, while its module is installed.
     private var moduleEntry: RuleModule.Entry? {
         guard case .module(let moduleID, let entryID) = draft.binding else { return nil }
@@ -523,15 +526,23 @@ struct HomeSectionForm: View {
     }
 
     /// Its parameters, written to the section by name (Phase 6f): a choice is a `Picker`, a
-    /// count a `Stepper`, typed text is kept once the reader is done with it.
+    /// count a `Stepper`, typed text is kept once the reader is done with it. A choice that
+    /// follows 中繼資料語言偏好推薦 offers that first, and picking it again clears the reader's own.
     private func moduleParameters(_ entry: RuleModule.Entry) -> some View {
         Section {
             ForEach(entry.editableParams, id: \.name) { param in
                 let title = param.title ?? param.name
-                let value = param.currentValue(in: draft.parameters)
+                let value = param.currentValue(in: draft.parameters, language: aggregation.readingLanguages.language)
                 switch param.kind {
                 case .enumeration:
-                    Picker(title, selection: Binding(get: { value }, set: { editor.setParameter(param.name, to: $0) })) {
+                    let follows = param.followsLanguage == true
+                    let selection = follows && draft.parameters[param.name] == nil ? Self.followsLanguageTag : value
+                    Picker(title, selection: Binding(get: { selection }, set: { picked in
+                        editor.setParameter(param.name, to: picked == Self.followsLanguageTag ? nil : picked)
+                    })) {
+                        if follows {
+                            Text(localized("跟隨中繼資料語言偏好推薦")).tag(Self.followsLanguageTag)
+                        }
                         ForEach(param.enumOptions ?? [], id: \.value) { option in
                             Text(option.title).tag(option.value)
                         }

@@ -27,6 +27,8 @@ struct HomeCardContent: Identifiable {
     let blurb: String?
     /// The source's own category, for 精選 (decision 37); none for a shelf copy.
     let category: String?
+    /// The series a 趨勢 item stands for, under the author on every card; none for a shelf copy.
+    let series: String?
     let cover: Cover
     /// The Emby line: 已加入書架, 已下載, or a shelf copy's 新增 or how far it is read.
     let detail: String?
@@ -60,6 +62,7 @@ struct HomeCardContent: Identifiable {
             cover = .shelf(book)
             blurb = nil
             category = nil
+            series = nil
             let read = book.currentPosition
             detail = BookshelfAccessibility.readingStatus(for: book)
             progress = read > 0 && read < 0.99 ? read : nil
@@ -71,12 +74,13 @@ struct HomeCardContent: Identifiable {
         cover = .reference(summary.cover, session: Self.session(for: opening, connections: connections))
         blurb = summary.blurb
         category = summary.category
+        series = summary.series
         let status = status(record.key)
         detail = status?.title
         progress = nil
         accessibilityLabel = summary.title
         // No source, as on screen: the home names none (5d-3b, decision 19).
-        accessibilityValue = [author, status?.title ?? ""].filter { !$0.isEmpty }.joined(separator: ", ")
+        accessibilityValue = [author, series ?? "", status?.title ?? ""].filter { !$0.isEmpty }.joined(separator: ", ")
     }
 
     /// The card in a series' row (同系列): its number in place of the author the series
@@ -113,6 +117,7 @@ struct HomeCardContent: Identifiable {
         author = "Author"
         blurb = "A blurb as long as a source's, over two lines of a card."
         category = "Category"
+        series = nil
         cover = .placeholder
         detail = nil
         kind = .text
@@ -131,6 +136,7 @@ struct HomeCardContent: Identifiable {
         self.author = author
         blurb = nil
         category = nil
+        series = nil
         self.cover = .reference(cover, session: nil)
         detail = nil
         self.kind = kind
@@ -172,14 +178,21 @@ struct HomeCardContent: Identifiable {
         if case .shelf(let book) = cover { book } else { nil }
     }
 
-    /// 精簡閱讀卡片's line: the kind, then the Emby line, as Apple Books' 書籍・12%.
+    /// 精簡閱讀卡片's line: the kind, the series, then the Emby line, as Apple Books' 書籍・12%.
     var kindAndDetail: String {
         let kindName = switch kind {
         case .text: localized("書籍")
         case .comic: localized("漫畫")
         case .audio: localized("有聲書")
         }
-        return [kindName, detail].compactMap { $0 }.joined(separator: "・")
+        return [kindName, series, detail].compactMap { $0 }.joined(separator: "・")
+    }
+
+    /// A poster card's small line: the series, then the Emby line, in the room the line
+    /// already has (maintainer, 2026-10-22: the card does not grow).
+    var seriesAndDetail: String? {
+        let line = [series, detail].compactMap { $0 }.joined(separator: "・")
+        return line.isEmpty ? nil : line
     }
 
     /// The store book a Gutenberg or Aozora card opens in the carousel, whose cover it grows from.
@@ -216,10 +229,10 @@ struct HomeBookCard: View {
                 // text sits at its top, so short text leaves the space below, not between lines.
                 ZStack(alignment: .topLeading) {
                     text(title: "\n", author: " ", detail: " ").hidden()
-                    text(title: content.title, author: content.author, detail: content.detail)
+                    text(title: content.title, author: content.author, detail: content.seriesAndDetail)
                 }
             } else {
-                text(title: content.title, author: content.author, detail: content.detail)
+                text(title: content.title, author: content.author, detail: content.seriesAndDetail)
             }
         }
         // Cards in a row align at the top, as Apple Books' do, whatever each one's text runs to.

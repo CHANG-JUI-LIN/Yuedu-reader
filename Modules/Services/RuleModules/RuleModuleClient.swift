@@ -35,15 +35,16 @@ extension RuleModule.Entry {
     }
 
     /// Every template's value: each parameter's default (an enumeration's first option when
-    /// it has none), the reader's own for this section, then the page's position.
-    func values(_ parameters: [String: String], position: Int, keyword: String? = nil) -> [String: String] {
+    /// it has none, the option in `language` when it follows it), the reader's own for this
+    /// section, then the page's position.
+    func values(_ parameters: [String: String], position: Int, keyword: String? = nil, language: String?) -> [String: String] {
         var values: [String: String] = [:]
         for param in params {
             switch param.kind {
             case .page, .offset:
                 values[param.name] = String(position)
             default:
-                values[param.name] = param.currentValue(in: parameters)
+                values[param.name] = param.currentValue(in: parameters, language: language)
             }
         }
         if let keyword { values["keyword"] = keyword }
@@ -57,9 +58,20 @@ extension RuleModule.Entry {
 }
 
 extension RuleModule.Param {
-    /// The section's own value, else the default, else an enumeration's first option.
-    func currentValue(in parameters: [String: String]) -> String {
-        parameters[name] ?? value ?? enumOptions?.first?.value ?? ""
+    /// The section's own value, else the option in `language` (the reader's 中繼資料語言偏好推薦,
+    /// a `MetadataLanguage` tag) for a parameter that follows it, else the default, else an
+    /// enumeration's first option.
+    func currentValue(in parameters: [String: String], language: String?) -> String {
+        parameters[name] ?? language.flatMap(option(in:))?.value ?? value ?? enumOptions?.first?.value ?? ""
+    }
+
+    /// A `followsLanguage` parameter's option in `language`, else in another script or region of
+    /// it (`zh-Hans` for `zh-Hant`); nil when none is, or the parameter does not follow it.
+    func option(in language: String) -> RuleModule.Option? {
+        guard followsLanguage == true, let options = enumOptions else { return nil }
+        func tag(of option: RuleModule.Option) -> String { option.language ?? option.value }
+        return options.first { tag(of: $0).caseInsensitiveCompare(language) == .orderedSame }
+            ?? options.first { ReadingLanguage.base(of: tag(of: $0)) == ReadingLanguage.base(of: language) }
     }
 }
 

@@ -1,0 +1,12 @@
+[Unit]
+Description=Yuedu trends lists, daily
+
+[Timer]
+# Wikimedia has counted a UTC day by early morning UTC; 04:30 UTC is 12:30 in Hong Kong and
+# Taipei. A day the host was down runs at boot (Persistent).
+OnCalendar=*-*-* 04:30:00 UTC
+RandomizedDelaySec=10min
+Persistent=true
+
+[Install]
+WantedBy=timers.target

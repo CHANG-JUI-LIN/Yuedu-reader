@@ -85,12 +85,67 @@ struct ModuleContentSourceTests {
 
         #expect(entry.editableParams.map(\.name) == ["q", "n", "sort"], "not constant, page or offset")
         let byName = Dictionary(uniqueKeysWithValues: entry.params.map { ($0.name, $0) })
-        #expect(try #require(byName["n"]).currentValue(in: [:]) == "20")
-        #expect(try #require(byName["sort"]).currentValue(in: [:]) == "hot", "an enumeration's first option")
-        #expect(try #require(byName["sort"]).currentValue(in: ["sort": "new"]) == "new")
-        #expect(try #require(byName["q"]).currentValue(in: [:]) == "")
-        #expect(entry.values(["sort": "new"], position: 3) == ["q": "", "n": "20", "site": "tw", "sort": "new", "page": "3"],
+        #expect(try #require(byName["n"]).currentValue(in: [:], language: "ja") == "20")
+        #expect(try #require(byName["sort"]).currentValue(in: [:], language: "ja") == "hot",
+                "an enumeration's first option; one that does not follow the language ignores it")
+        #expect(try #require(byName["sort"]).currentValue(in: ["sort": "new"], language: nil) == "new")
+        #expect(try #require(byName["q"]).currentValue(in: [:], language: nil) == "")
+        #expect(entry.values(["sort": "new"], position: 3, language: nil)
+                == ["q": "", "n": "20", "site": "tw", "sort": "new", "page": "3"],
                 "the request is filled from the same values")
+    }
+
+    @Test("a choice that follows 中繼資料語言偏好推薦 starts on that language's option, else its default")
+    func followsLanguage() {
+        let region = RuleModule.Param(name: "region", type: "enumeration", value: "en", enumOptions: [
+            .init(title: "華語（繁）", value: "zh-Hant"), .init(title: "華語（簡）", value: "zh-Hans"),
+            .init(title: "日本", value: "jp", language: "ja"), .init(title: "英語", value: "en"),
+        ], followsLanguage: true)
+        #expect(region.currentValue(in: [:], language: "zh-Hans") == "zh-Hans")
+        #expect(region.currentValue(in: [:], language: "zh-Hant") == "zh-Hant")
+        #expect(region.currentValue(in: [:], language: "ja") == "jp", "an option's language over its value")
+        #expect(region.currentValue(in: [:], language: "ko") == "en", "no Korean list: the default")
+        #expect(region.currentValue(in: ["region": "jp"], language: "en") == "jp", "the reader's pick stays")
+        #expect(region.currentValue(in: [:], language: nil) == "en")
+
+        let simplifiedOnly = RuleModule.Param(name: "region", type: "enumeration", enumOptions: [
+            .init(title: "English", value: "en"), .init(title: "简体", value: "zh-Hans"),
+        ], followsLanguage: true)
+        #expect(simplifiedOnly.currentValue(in: [:], language: "zh-Hant") == "zh-Hans", "the language in another script")
+        #expect(simplifiedOnly.currentValue(in: [:], language: "fr") == "en", "no default: the first option")
+    }
+
+    @MainActor private final class Language {
+        var tag: String
+        init(_ tag: String) { self.tag = tag }
+    }
+
+    @Test("a row whose 地區 follows 中繼資料語言偏好推薦 loads again when the language changes; a picked 地區 does not")
+    func rowsFollowTheLanguage() async throws {
+        let module = try RuleModuleValidator.validate(Data("""
+        {"id":"m.region","title":"地區模組","version":"1.0","requiredVersion":"3.0","hosts":["example.com"],
+         "modules":[{"id":"top","title":"熱門","request":{"url":"https://example.com/{{region}}.json"},
+                     "list":{"items":"$.works[*]","title":"$.title"},
+                     "params":[{"name":"region","type":"enumeration","followsLanguage":true,"value":"en",
+                                "enumOptions":[{"title":"日本","value":"ja"},{"title":"英語","value":"en"}]}]}]}
+        """.utf8), appVersion: RuleModuleVersion.app)
+        let language = Language("ja")
+        let provider = ModuleProvider(module: module, language: { language.tag })
+        let home = HomeModel(providers: { [provider] }, waitForSources: {})
+        let following = HomeSection(layout: .row, binding: .module(moduleID: "m.region", entryID: "top"))
+        var picked = HomeSection(layout: .row, binding: .module(moduleID: "m.region", entryID: "top"))
+        picked.parameters = ["region": "ja"]
+        let page = HomePage(sections: [following, picked])
+
+        await home.sync(with: page)
+        let before = home.rows.map(\.inputsKey)
+        language.tag = "en"
+        await home.sync(with: page)
+        let after = home.rows.map(\.inputsKey)
+        #expect(home.rows.count == 2)
+        #expect(before[0] != after[0], "the followed 地區 is now 英語's: the row is a new row")
+        #expect(after[0]?.hasSuffix("region=en") == true)
+        #expect(before[1] == after[1], "the reader's own 地區 is not the language's")
     }
 
     @Test("a chosen list titles the section; its parameters are written with it and cleared to the default")
@@ -133,7 +188,8 @@ struct ModuleContentSourceTests {
         let page = HomePage(sections: [HomeSection(layout: .row, binding: .module(moduleID: "m.one", entryID: "new"))])
         await home.sync(with: page)
         #expect(home.rows.map(\.source) == [SourceInstanceKey(type: .module, id: "m.one")])
-        #expect(home.rows.first?.sourceName == "第一模組")
+        // Named by the list, not the module: the home names no source (decision 19, 6f274457).
+        #expect(home.rows.first?.sourceName == "新書")
 
         try await library.remove(id: "m.one")
         await home.sync(with: page)

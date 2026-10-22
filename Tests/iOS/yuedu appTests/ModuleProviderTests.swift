@@ -281,7 +281,7 @@ struct ModuleProviderTests {
         bangumi.search = bangumiSearch()
         let search = try #require(bangumi.search)
 
-        let page = try await f.client.page(of: search, in: bangumi, values: search.values([:], position: 0, keyword: #"葬送の"フリーレン""#))
+        let page = try await f.client.page(of: search, in: bangumi, values: search.values([:], position: 0, keyword: #"葬送の"フリーレン""#, language: nil))
         #expect(ModuleStub.bodies == [#"{"keyword":"葬送の\"フリーレン\"","filter":{"type":[1]}}"#])
         let work = try #require(page.items.first)
         #expect(work.name == "葬送のフリーレン")

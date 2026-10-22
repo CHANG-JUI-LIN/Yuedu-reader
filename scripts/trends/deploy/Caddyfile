@@ -1,0 +1,18 @@
+# /etc/caddy/Caddyfile on the HK host, as live since 趨勢 (2026-10-22). gateway/Caddyfile is the
+# gateway's template for a compose setup and is not what the host runs.
+gateway.yuedureader.com {
+    # 趨勢's lists: /trends/v1/<region>/<list>.json, written daily by yuedu-trends.service.
+    handle_path /trends/* {
+        root * /var/lib/yuedu-trends/public
+        encode zstd gzip
+        header Cache-Control "public, max-age=3600"
+        file_server
+    }
+    handle {
+        reverse_proxy 127.0.0.1:8080 {
+            header_up X-Forwarded-For {remote_host}
+            header_up X-Forwarded-Proto {scheme}
+            header_up X-Real-IP {remote_host}
+        }
+    }
+}

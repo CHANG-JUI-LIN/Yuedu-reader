@@ -156,17 +156,21 @@ struct WorkSummary: Hashable, Sendable {
     var contentKind: ContentKind
     /// The source's own category, when it names one (decision 37: never made up).
     var category: String?
+    /// The series the item stands for: 趨勢 lists a series once, under its first book
+    /// (maintainer, 2026-10-22), and names it under the author.
+    var series: String?
 
     static let titleLimit = 500
     static let authorLimit = 20
     static let authorLengthLimit = 200
     static let blurbLimit = 300
     static let categoryLimit = 40
+    static let seriesLimit = 100
 
     /// `blurb` and `category` must already be plain text; `OPDSClient.plainMetadata` turns HTML
     /// into it.
     init(title: String, authors: [String], cover: CoverReference?, blurb: String?, language: String?, contentKind: ContentKind,
-         category: String? = nil) {
+         category: String? = nil, series: String? = nil) {
         self.title = String(title.prefix(Self.titleLimit))
         self.authors = authors.prefix(Self.authorLimit).map { String($0.prefix(Self.authorLengthLimit)) }
         self.cover = cover
@@ -174,6 +178,8 @@ struct WorkSummary: Hashable, Sendable {
         self.language = language
         self.contentKind = contentKind
         self.category = category.map { String($0.trimmingCharacters(in: .whitespacesAndNewlines).prefix(Self.categoryLimit)) }
+            .flatMap { $0.isEmpty ? nil : $0 }
+        self.series = series.map { String($0.trimmingCharacters(in: .whitespacesAndNewlines).prefix(Self.seriesLimit)) }
             .flatMap { $0.isEmpty ? nil : $0 }
     }
 

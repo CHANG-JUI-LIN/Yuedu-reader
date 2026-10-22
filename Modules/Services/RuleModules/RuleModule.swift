@@ -76,6 +76,15 @@ struct RuleModule: Codable, Hashable, Sendable {
     struct EntryText: Codable, Hashable, Sendable {
         var title: String?
         var description: String?
+        /// By parameter name: what the section form shows for it (趨勢's 地區 and its options).
+        var params: [String: ParamText]?
+    }
+
+    struct ParamText: Codable, Hashable, Sendable {
+        var title: String?
+        var description: String?
+        /// An option's title, by its `value`.
+        var options: [String: String]?
     }
 
     /// A line naming the site, as its terms word it: 楽天's "Supported by Rakuten Developers".
@@ -176,17 +185,21 @@ struct RuleModule: Codable, Hashable, Sendable {
         /// parameter, the first page's position, a whole number (format 3.0).
         var value: String?
         var enumOptions: [Option]?
+        /// An enumeration whose default is the option in the reader's 中繼資料語言偏好推薦 (format
+        /// 3.0): 趨勢's 地區. `value` is the default when no option is in that language.
+        var followsLanguage: Bool?
 
         var kind: ParamType? { ParamType(rawValue: type) }
 
         init(name: String, title: String? = nil, type: String, description: String? = nil, value: String? = nil,
-             enumOptions: [Option]? = nil) {
+             enumOptions: [Option]? = nil, followsLanguage: Bool? = nil) {
             self.name = name
             self.title = title
             self.type = type
             self.description = description
             self.value = value
             self.enumOptions = enumOptions
+            self.followsLanguage = followsLanguage
         }
 
         init(from decoder: any Decoder) throws {
@@ -203,6 +216,7 @@ struct RuleModule: Codable, Hashable, Sendable {
                 value = try container.decodeIfPresent(Double.self, forKey: .value).map { String($0) }
             }
             enumOptions = try container.decodeIfPresent([Option].self, forKey: .enumOptions)
+            followsLanguage = try container.decodeIfPresent(Bool.self, forKey: .followsLanguage)
         }
     }
 
@@ -222,6 +236,9 @@ struct RuleModule: Codable, Hashable, Sendable {
     struct Option: Codable, Hashable, Sendable {
         var title: String
         var value: String
+        /// The language a `followsLanguage` parameter matches it by, a tag (`zh-Hant`, `ja`);
+        /// its `value` when absent (format 3.0).
+        var language: String?
     }
 
     struct Request: Codable, Hashable, Sendable {
@@ -278,6 +295,16 @@ extension RuleModule {
             guard let id = entry.id, let words = text.entries?[id] else { continue }
             if let title = words.title?.nonBlank { module.modules[index].title = title }
             if let description = words.description?.nonBlank { module.modules[index].description = description }
+            for (paramIndex, param) in entry.params.enumerated() {
+                guard let said = words.params?[param.name] else { continue }
+                if let title = said.title?.nonBlank { module.modules[index].params[paramIndex].title = title }
+                if let description = said.description?.nonBlank { module.modules[index].params[paramIndex].description = description }
+                for (optionIndex, option) in (param.enumOptions ?? []).enumerated() {
+                    if let title = said.options?[option.value]?.nonBlank {
+                        module.modules[index].params[paramIndex].enumOptions?[optionIndex].title = title
+                    }
+                }
+            }
         }
         return module
     }

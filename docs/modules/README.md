@@ -93,7 +93,8 @@ App 內建的官方模組（`Resources/Assets/official-module-<id>.json`）跟�
 | `type` | ✓ | 見下表。 |
 | `description` |  | 說明。 |
 | `value` |  | 預設值。數字會讀成文字。`page`／`offset` 參數的 `value` 是**第一頁的位置**（整數，3.0）；不寫時 `page` 從 1、`offset` 從 0 開始。 |
-| `enumOptions` | `enumeration` ✓ | 選項陣列：`{ "title": "顯示名稱", "value": "送出的值" }`。 |
+| `enumOptions` | `enumeration` ✓ | 選項陣列：`{ "title": "顯示名稱", "value": "送出的值" }`。選項可以加 `language`（語言標籤，3.0），見下方「跟隨語言」。 |
+| `followsLanguage` |  | 只用在 `enumeration`：`true` 時，讀者沒選過就用讀者「中繼資料語言偏好推薦」那個語言的選項。3.0。 |
 
 | `type` | 意思 |
 |--------|------|
@@ -103,6 +104,16 @@ App 內建的官方模組（`Resources/Assets/official-module-<id>.json`）跟�
 | `enumeration` | 從 `enumOptions` 選一個。 |
 | `page` | 分頁頁碼，捲到底時自動加一。 |
 | `offset` | 分頁位移，每次加上一頁的筆數。 |
+
+**跟隨語言**：`followsLanguage` 的參數，選項的語言是它的 `language`，沒寫就是 `value`（例如 `zh-Hant`、`en`）。
+App 先找語言完全相同的選項，再找同一語言其他文字或地區的（`zh-Hans` 代替 `zh-Hant`）；都沒有就用 `value`，再沒有就用第一個選項。
+欄目設定的選單第一項是「跟隨中繼資料語言偏好推薦」，讀者選了其他選項後也能選回來。
+
+```json
+{ "name": "region", "title": "地區", "type": "enumeration", "followsLanguage": true, "value": "en",
+  "enumOptions": [{ "title": "華語（繁）", "value": "zh-Hant" }, { "title": "日本", "value": "ja" },
+                  { "title": "英語", "value": "en" }] }
+```
 
 `{{page}}`、`{{offset}}` 不必宣告就能用；`search` 另外可用 `{{keyword}}`，`lookup` 可用 `{{isbn}}`。
 其他 `{{…}}` 都必須是宣告過的參數，否則拒絕。
@@ -240,6 +251,25 @@ App 內建的官方模組（`Resources/Assets/official-module-<id>.json`）跟�
 以及 `entries`（以清單 `id` 為鍵，各自的 `title`、`description`）。App 用相同語言和文字（繁／簡）的那一份，
 沒有就照原文：`zh-Hans` 不會代替 `zh-Hant`，`en` 也不會代替其他語言。`entries` 的鍵必須是存在的清單 `id`。
 
+清單的參數也能翻譯：在該清單底下加 `params`，以參數 `name` 為鍵，值可以有 `title`、`description`，
+以及 `options`（以選項的 `value` 為鍵、翻譯後的選項名為值）。鍵必須是那份清單有的參數和選項；
+沒翻到的照原文。
+
+```json
+"localizations": {
+  "en": {
+    "entries": {
+      "year": {
+        "title": "Popular This Year",
+        "params": {
+          "region": { "title": "Region", "options": { "zh-Hant": "Chinese (Traditional)", "ja": "Japan" } }
+        }
+      }
+    }
+  }
+}
+```
+
 ---
 
 ## 8. 版本
@@ -249,7 +279,7 @@ App 內建的官方模組（`Resources/Assets/official-module-<id>.json`）跟�
 否則舊 App 會匯入後讀錯（例如把 JSON 內容百分號編碼送出）：
 
 `attribution`、`localizations`、`lookup`、`reading`、`contentKind`、`excludeTags`、`isbnPrefixes`、`detail`、
-`minKeywordLength`、`hosts` 裡的 `*.` 項目、`bodyEncoding`、`page`／`offset` 參數的 `value`，以及 `list` 的 `aliases`、`tags`、`publisher`、`isbn`、`series`、`contentKind`。
+`minKeywordLength`、`hosts` 裡的 `*.` 項目、`bodyEncoding`、`page`／`offset` 參數的 `value`、`followsLanguage`、選項的 `language`，以及 `list` 的 `aliases`、`tags`、`publisher`、`isbn`、`series`、`contentKind`。
 
 ---
 

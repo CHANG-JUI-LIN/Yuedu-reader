@@ -104,6 +104,7 @@ struct ProviderManifestTests {
             ModuleProvider.instanceKey(moduleID: "openbd"),
             ModuleProvider.instanceKey(moduleID: "openlibrary"),
             ModuleProvider.instanceKey(moduleID: "narou"),
+            ModuleProvider.instanceKey(moduleID: "trends"),
             ForYouProvider.instanceKey,
             AIRecommendationProvider.instanceKey,
             SourceInstanceKey(type: .bookSource, id: "https://explore.example"),

@@ -7,10 +7,14 @@ import Foundation
 final class ModuleProvider: CollectionBrowsing, HomeSectionProviding {
     let module: RuleModule
     private let client: RuleModuleClient
+    /// The reader's 中繼資料語言偏好推薦, for a parameter that follows it.
+    private let language: @MainActor () -> String
 
-    init(module: RuleModule, client: RuleModuleClient = RuleModuleClient()) {
+    init(module: RuleModule, client: RuleModuleClient = RuleModuleClient(),
+         language: @escaping @MainActor () -> String = { AggregationSettingsStore.shared.readingLanguages.language }) {
         self.module = module
         self.client = client
+        self.language = language
     }
 
     nonisolated static func instanceKey(moduleID: String) -> SourceInstanceKey {
@@ -66,8 +70,13 @@ final class ModuleProvider: CollectionBrowsing, HomeSectionProviding {
 
     /// An update may change a list's rules under the same section: the version makes its row
     /// load again (`HomeModel.sync`).
+    /// Its version, and what each parameter that follows 中繼資料語言偏好推薦 reads now: a new
+    /// language loads the row again, in its own 地區.
     func inputsKey(for section: HomeSection) -> String? {
-        module.version
+        guard case .module(_, let entryID) = section.binding, let entry = entry(entryID) else { return module.version }
+        let followed = entry.params.filter { $0.followsLanguage == true }
+            .map { "\($0.name)=\($0.currentValue(in: section.parameters, language: language()))" }
+        return ([module.version] + followed).joined(separator: "\u{1F}")
     }
 
     /// The list's own title, in the app's language: a section the defaults made has none, and
@@ -103,7 +112,7 @@ final class ModuleProvider: CollectionBrowsing, HomeSectionProviding {
     /// The module's lookup for `isbn` (an ISBN-13) as its list items; nil when it has none.
     func lookupItems(isbn: String) async throws -> [RuleListItem]? {
         guard let lookup = module.lookup else { return nil }
-        var values = lookup.values([:], position: lookup.firstPosition)
+        var values = lookup.values([:], position: lookup.firstPosition, language: language())
         values["isbn"] = isbn
         return try await items(of: lookup, values: values)
     }
@@ -176,7 +185,7 @@ final class ModuleProvider: CollectionBrowsing, HomeSectionProviding {
 
     private func items(of entry: RuleModule.Entry, parameters: [String: String], position: Int,
                        keyword: String?) async throws -> [RuleListItem] {
-        try await items(of: entry, values: entry.values(parameters, position: position, keyword: keyword))
+        try await items(of: entry, values: entry.values(parameters, position: position, keyword: keyword, language: language()))
     }
 
     private func items(of entry: RuleModule.Entry, values: [String: String]) async throws -> [RuleListItem] {
@@ -222,7 +231,8 @@ final class ModuleProvider: CollectionBrowsing, HomeSectionProviding {
                                   blurb: OPDSClient.plainMetadata(item.intro, limit: WorkSummary.blurbLimit),
                                   language: language, contentKind: kind,
                                   category: WorkSummary.category(fromSourceKind: OPDSClient.plainMetadata(item.kind, limit: 200))
-                                    ?? entry.tags(of: item).first)
+                                    ?? entry.tags(of: item).first,
+                                  series: OPDSClient.plainMetadata(item.series ?? "", limit: WorkSummary.seriesLimit))
         // A book the module reads has a page of its own: the item's url.
         guard isReadable, hasURLRule, !item.bookUrl.isEmpty else { return .item(record, summary, .bibliographic) }
         var readable = record

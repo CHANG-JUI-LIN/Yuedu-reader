@@ -3645,6 +3645,7 @@
 /* Unified library 5d-3d: 聚合設定 */
 "聚合設定" = "Aggregation";
 "中繼資料語言偏好推薦" = "Preferred Metadata Language";
+"跟隨中繼資料語言偏好推薦" = "Follow Preferred Metadata Language";
 "參與聚合的來源" = "Aggregated Sources";
 "跟隨 App 語言" = "Match App Language";
 "這個語言的書排在前面，其次是沒有標示語言的書（多數來源配置），其他語言的書排在最後。" = "Books in this language come first, then books without a language label (from most sources), then books in other languages.";

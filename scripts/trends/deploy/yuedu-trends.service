@@ -1,0 +1,32 @@
+# 趨勢's lists, once a day, on the HK host (plan: docs/superpowers/plans/2026-10-21-trends-module.md,
+# T2). Installed by deploy.sh; started by yuedu-trends.timer. The store and the served files live in
+# /var/lib/yuedu-trends; Caddy serves public/ at https://gateway.yuedureader.com/trends/.
+[Unit]
+Description=Yuedu trends lists
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=oneshot
+User=yuedu-trends
+Group=yuedu-trends
+StateDirectory=yuedu-trends
+StateDirectoryMode=0755
+UMask=0022
+ExecStart=/usr/bin/python3 -I /opt/yuedu-trends/build_trends.py --db /var/lib/yuedu-trends/trends.sqlite --output /var/lib/yuedu-trends/public/v1
+# The gateway shares this 2 GB host. The job's window sums and Wikidata batches stay under
+# ~40 MB, but reading 英語's pool from 1890 (24 471 pages) peaked at 236 MB on a Mac (both
+# measured 2026-10-22); the cap keeps a regression from reaching the gateway.
+MemoryMax=450M
+Nice=10
+# Every run asks one pageview request per work, within Wikimedia's 200 a minute (171 a minute):
+# 英語's 23 188 works take about 2 h 15 min a day, and the weekly pool walk about 30 min more.
+TimeoutStartSec=6h
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectKernelTunables=yes
+ProtectControlGroups=yes
+RestrictSUIDSGID=yes

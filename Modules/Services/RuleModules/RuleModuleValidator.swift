@@ -78,11 +78,23 @@ enum RuleModuleValidator {
         }
         if let localizations = module.localizations {
             if format3 == nil { format3 = "localizations" }
-            let entryIDs = Set(module.modules.compactMap(\.id))
+            let entries = Dictionary(module.modules.compactMap { entry in entry.id.map { ($0, entry) } },
+                                     uniquingKeysWith: { first, _ in first })
             for (language, text) in localizations {
                 guard Self.isLanguageTag(language) else { throw .unknownValue(field: "localizations", value: language) }
-                for id in (text.entries ?? [:]).keys where !entryIDs.contains(id) {
-                    throw .unknownValue(field: "localizations.\(language).entries", value: id)
+                for (id, words) in text.entries ?? [:] {
+                    guard let entry = entries[id] else { throw .unknownValue(field: "localizations.\(language).entries", value: id) }
+                    // Each parameter it names is the list's, and each option one of that parameter's.
+                    for (name, said) in words.params ?? [:] {
+                        let field = "localizations.\(language).entries.\(id).params"
+                        guard let param = entry.params.first(where: { $0.name == name }) else {
+                            throw .unknownValue(field: field, value: name)
+                        }
+                        let values = Set((param.enumOptions ?? []).map(\.value))
+                        for value in (said.options ?? [:]).keys where !values.contains(value) {
+                            throw .unknownValue(field: "\(field).\(name).options", value: value)
+                        }
+                    }
                 }
             }
         }
@@ -159,6 +171,16 @@ enum RuleModuleValidator {
             guard let kind = param.kind else { throw .unknownParamType(field: "\(field).type", type: param.type) }
             if kind == .enumeration, param.enumOptions?.isEmpty ?? true {
                 throw .enumerationWithoutOptions(field: "\(field).enumOptions")
+            }
+            if let follows = param.followsLanguage {
+                uses3("\(field).followsLanguage")
+                // Only a choice has an option in a language to follow.
+                guard kind == .enumeration else { throw .unknownValue(field: "\(field).followsLanguage", value: String(follows)) }
+            }
+            for (option, index) in zip(param.enumOptions ?? [], 0...) {
+                guard let language = option.language else { continue }
+                uses3("\(field).enumOptions[\(index)].language")
+                guard isLanguageTag(language) else { throw .unknownValue(field: "\(field).enumOptions[\(index)].language", value: language) }
             }
             if kind == .page || kind == .offset, let start = param.value {
                 // Where the first page starts; an older app starts at 1 or 0 whatever it says.

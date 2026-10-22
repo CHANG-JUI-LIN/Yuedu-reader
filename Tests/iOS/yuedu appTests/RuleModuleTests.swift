@@ -269,6 +269,32 @@ struct RuleModuleValidatorTests {
         #expect(rejection(v3 { $0["attribution"] = ["text": "x", "url": "javascript:alert(1)"] })
                 == .invalidURL(field: "attribution.url"))
     }
+
+    @Test("followsLanguage: an enumeration's, with option languages that are tags, from format 3.0")
+    func followsLanguage() {
+        // The example's first parameter, which its url reads, made to follow the language.
+        func region(_ follows: Any, type: String = "enumeration", language: String = "ja") -> (inout [String: Any]) -> Void {
+            { object in
+                editEntry(&object) {
+                    var params = $0["params"] as! [[String: Any]]
+                    params[0] = ["name": "category", "type": type, "followsLanguage": follows,
+                                 "enumOptions": [["title": "日本", "value": "jp", "language": language],
+                                                 ["title": "英語", "value": "en"]]]
+                    $0["params"] = params
+                }
+            }
+        }
+        func v3(_ change: @escaping (inout [String: Any]) -> Void) -> Data {
+            example { object in
+                object["requiredVersion"] = "3.0"
+                change(&object)
+            }
+        }
+        #expect(rejection(v3(region(true))) == nil)
+        #expect(rejection(example(region(true))) == .needsRequiredVersion(field: "modules[0].params[0].followsLanguage", minimum: "3.0"))
+        #expect(rejection(v3(region(true, type: "input"))) == .unknownValue(field: "modules[0].params[0].followsLanguage", value: "true"))
+        #expect(rejection(v3(region(true, language: "日本語"))) == .unknownValue(field: "modules[0].params[0].enumOptions[0].language", value: "日本語"))
+    }
 }
 
 @Suite("Rule module store", .serialized)
