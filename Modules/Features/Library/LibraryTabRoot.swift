@@ -125,15 +125,18 @@ struct LibraryTabRoot: View {
             .bookSourceActionSheets(sheet: $sourceActionSheet, pendingDeletion: $sourcePendingDeletion)
             .bookSourceAddFlow(addFlow)
             .task { await modules.loadIfNeeded() }
-            .fullScreenCover(item: $browserEntry) { presentation in
-                NavigationStack {
-                    BrowserPage(browser: browser, entry: presentation.entry)
-                }
-                .environmentObject(store)
-            }
             .exploreRouteDestinations(openBrowser: { browserEntry = BrowserEntryPresentation(entry: $0) })
             .remoteLibraryDestinations()
             .publicLibraryDestinations()
+        }
+        // On the stack, not its root, as 探索's covers (`ExploreHomeRoot`): on the root, the
+        // browser's 書籤 sheet closed as it opened, on the iOS 26.5 simulator as on 26.4.1
+        // (`BrowserCoverUITests`).
+        .fullScreenCover(item: $browserEntry) { presentation in
+            NavigationStack {
+                BrowserPage(browser: browser, entry: presentation.entry)
+            }
+            .environmentObject(store)
         }
         .environment(\.openPublicLibraryBooks) { selection in
             if let book = selection.selectedBook { path.append(WorkDetailRoute(book)) }

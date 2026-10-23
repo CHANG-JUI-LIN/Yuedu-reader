@@ -154,24 +154,25 @@ private struct ExploreHomeRoot: View {
             // 編輯首頁 hides the tab bar while the home is being edited, as 書架's 選取 does, and
             // its ＋ takes the bar's place (maintainer, 2026-10-17).
             .hidesRootTabBar(showsEditorBars)
-            .fullScreenCover(item: $browserPresentation) { presentation in
-                NavigationStack {
-                    BrowserPage(browser: browser, entry: presentation.entry)
-                }
-                .environmentObject(store)
-            }
             .exploreRouteDestinations(openBrowser: openBrowser)
             .homeEditDestinations()
             .remoteLibraryDestinations()
             .publicLibraryDestinations()
         }
+        // Both covers on the stack, not its root: on iOS 26.4.x a cover on the root had its content
+        // built again whenever anything was presented over it, 選擇內容來源's sheet or a filter's
+        // menu, and 新增欄目 fell back to the layout gallery (#51; iOS 26.4.1 simulator, not 26.5 or
+        // 18.6). The browser's 書籤 sheet closed as it opened there too (`BrowserCoverUITests`).
         // Full screen, as Forward's 選擇模板: the gallery's previews run to the screen's edges.
-        // On the stack, not its root: on iOS 26.4.x a cover on the root had its content built
-        // again whenever anything was presented over it, 選擇內容來源's sheet or a filter's menu,
-        // and 新增欄目 fell back to the layout gallery (#51; iOS 26.4.1 simulator, not 26.5 or 18.6).
         .fullScreenCover(isPresented: $addsSection) {
             HomeNewSectionSheet(added: { addedSection = $0; addsSection = false }, close: { addsSection = false })
                 .environmentObject(store)
+        }
+        .fullScreenCover(item: $browserPresentation) { presentation in
+            NavigationStack {
+                BrowserPage(browser: browser, entry: presentation.entry)
+            }
+            .environmentObject(store)
         }
         // The store's card carousel is off the home for now (Phase 5 plan, decision 27): a store
         // page's book opens 作品詳情 as the home's cards do. `PublicLibraryBookSheet` stays.
