@@ -35,10 +35,11 @@ final class HomeEditorUITests: XCTestCase {
     private let listsTitle = "精選書單"
     private let listCard = "home.collection.gutenberg.chinese"
 
+    /// `officialModules`: the bundled modules on, as a reader has them.
     @MainActor
-    private func launchExplore(_ extraArguments: [String] = []) -> XCUIApplication {
+    private func launchExplore(_ extraArguments: [String] = [], officialModules: Bool = false) -> XCUIApplication {
         let app = XCUIApplication()
-        app.launchArguments = ["-no-official-modules", "-AppleLanguages", "(zh-Hant)", "-AppleLocale", "zh_TW",
+        app.launchArguments = (officialModules ? [] : ["-no-official-modules"]) + ["-AppleLanguages", "(zh-Hant)", "-AppleLocale", "zh_TW",
                                "-yd_source_disclaimer_accepted", "YES",
                                "-book-source-store-dir", directory.appendingPathComponent("sources").path,
                                "-reset-public-library-explore", "-reset-explore-home"] + extraArguments
@@ -635,6 +636,29 @@ final class HomeEditorUITests: XCTestCase {
         app.buttons.matching(NSPredicate(format: "label == %@ AND identifier != %@", "刪除", "homeSection.delete")).firstMatch.tap()
         XCTAssertTrue(delete.waitForNonExistence(timeout: 10), "the form left")
         XCTAssertTrue(renamed.waitForNonExistence(timeout: 5), app.debugDescription)
+    }
+
+    /// #51/#7 (iOS 26.4): as 資料來源's sheet came up, 新增欄目's form under it went back to the
+    /// layouts, and the sheet went with it: no section could be added. The official modules on,
+    /// as the reader had them. Fails on the iOS 26.4.1 simulator with the cover on the home's
+    /// root, not on 26.5 or 18.6; `testAddSections`'s 頻道 menu, there, too.
+    @MainActor
+    func testPickerKeepsTheNewSectionForm() throws {
+        try writeBookSource()
+        let app = launchExplore(officialModules: true)
+        let edit = app.buttons["home.edit"].firstMatch
+        for _ in 0..<8 where !edit.isHittable { app.swipeUp() }
+        edit.tap()
+
+        startSection(app, layout: "compactReadingCard")
+        attach(app, "home-new-section-picker-over-form")
+        let choice = app.buttons["homePicker.item.書架"].firstMatch
+        XCTAssertTrue(choice.waitForExistence(timeout: 5), app.debugDescription)
+        choice.tap()
+        let source = app.buttons["homeSection.source"].firstMatch
+        XCTAssertTrue(source.waitForExistence(timeout: 5), app.debugDescription)
+        XCTAssertEqual(source.value as? String, "App 資料 › 書架", app.debugDescription)
+        XCTAssertTrue(app.buttons["homeSection.add"].firstMatch.isEnabled, app.debugDescription)
     }
 
     /// 訂閱的最新文章 (5g): App 資料's section of the RSS tab's articles. An article opens the
