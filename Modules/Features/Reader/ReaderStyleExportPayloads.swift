@@ -20,14 +20,14 @@ enum ReaderStyleExportFilename {
     /// Turns a label into a safe `.yuedustyle` filename. Rule and preset names
     /// are user-entered and can arrive from an imported file, so they can carry
     /// path separators and newlines that would produce an unwritable URL.
-    static func make(_ label: String) -> String {
+    static func make(_ label: String, pathExtension: String = "yuedustyle") -> String {
         let invalid = CharacterSet(charactersIn: "/\\:*?\"<>|").union(.newlines)
         let cleaned = label
             .components(separatedBy: invalid)
             .joined(separator: "-")
             .trimmingCharacters(in: .whitespacesAndNewlines)
         let base = cleaned.isEmpty ? "style" : String(cleaned.prefix(60))
-        return "\(base).yuedustyle"
+        return "\(base).\(pathExtension)"
     }
 }
 

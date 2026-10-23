@@ -127,6 +127,8 @@ final class CoreTextChunkDrawView: UIView {
 /// raster worker. It reads only the values it is handed — never `GlobalSettings`,
 /// never a chunk's mutable frame state — so it may run off the main thread.
 /// `ctx` must also be the current UIKit context: image attachments draw through it.
+/// Both paint what sits under a cell, so a template card with glass is left to the cell's
+/// `ReviewCardGlassView` (`ReviewCardGlassDrawing.liveViews`).
 enum CoreTextChunkPainter {
     struct Content {
         let attributedString: NSAttributedString
@@ -157,7 +159,7 @@ enum CoreTextChunkPainter {
         // Image-only chunk (cover / full-page illustration): draw attachments directly.
         if content.isImageOnly {
             for attachment in content.attachments {
-                attachment.image.draw(in: attachment.rect, blendMode: .normal, alpha: attachment.opacity)
+                attachment.draw(glassCards: .liveViews)
             }
             return
         }
@@ -223,13 +225,13 @@ enum CoreTextChunkPainter {
         // Phase 3: Block image attachments (UIKit coordinates)
         for item in content.blockRenderables {
             if let attachment = item.imageAttachment {
-                attachment.image.draw(in: attachment.rect, blendMode: .normal, alpha: attachment.opacity)
+                attachment.draw(glassCards: .liveViews)
             }
         }
 
         // Phase 4: Inline image attachments (UIKit coordinates)
         for attachment in content.attachments {
-            attachment.image.draw(in: attachment.rect, blendMode: .normal, alpha: attachment.opacity)
+            attachment.draw(glassCards: .liveViews)
         }
     }
 }
@@ -239,6 +241,10 @@ final class CoreTextChunkCollectionCell: UICollectionViewCell {
 
     private let backdropView = CoreTextChunkBackdropView()
     let drawView = CoreTextChunkDrawView()
+    /// The chunk's template cards with glass (`ReviewCardGlassView`), in chunk coordinates:
+    /// over the text, under every overlay. The chunk's paint leaves those cards out.
+    private let reviewCardGlassHost = UIView()
+    private var reviewCardGlassViews: [ReviewCardGlassView] = []
     private let playbackOverlay = InteractionOverlayView()
     let overlay = InteractionOverlayView()
     /// The chunk's rect in the cell. Everything drawn over the text keeps to it; `drawView`
@@ -288,8 +294,12 @@ final class CoreTextChunkCollectionCell: UICollectionViewCell {
         playbackOverlay.showsHandles = false
         overlay.fillColor = UIColor.systemYellow.withAlphaComponent(0.30)
         overlay.handleColor = UIColor(red: 0.63, green: 0.40, blue: 0.00, alpha: 1.0)
+        reviewCardGlassHost.translatesAutoresizingMaskIntoConstraints = false
+        reviewCardGlassHost.isUserInteractionEnabled = false
+        reviewCardGlassHost.accessibilityElementsHidden = true
         contentView.addSubview(backdropView)
         contentView.addSubview(drawView)
+        contentView.addSubview(reviewCardGlassHost)
         contentView.addSubview(playbackOverlay)
         contentView.addSubview(overlay)
         // 標註 overlay 是 `insertSubview(belowSubview: overlay)`，所以圓圈加在最後就會在最上層。
@@ -314,6 +324,10 @@ final class CoreTextChunkCollectionCell: UICollectionViewCell {
             drawView.trailingAnchor.constraint(equalTo: chunkGuide.trailingAnchor),
             drawTopConstraint,
             drawBottomConstraint,
+            reviewCardGlassHost.leadingAnchor.constraint(equalTo: chunkGuide.leadingAnchor),
+            reviewCardGlassHost.trailingAnchor.constraint(equalTo: chunkGuide.trailingAnchor),
+            reviewCardGlassHost.topAnchor.constraint(equalTo: chunkGuide.topAnchor),
+            reviewCardGlassHost.bottomAnchor.constraint(equalTo: chunkGuide.bottomAnchor),
             playbackOverlay.leadingAnchor.constraint(equalTo: chunkGuide.leadingAnchor),
             playbackOverlay.trailingAnchor.constraint(equalTo: chunkGuide.trailingAnchor),
             playbackOverlay.topAnchor.constraint(equalTo: chunkGuide.topAnchor),
@@ -393,6 +407,29 @@ final class CoreTextChunkCollectionCell: UICollectionViewCell {
             drawView.setNeedsDisplay()
             overlay.clearSelection()
             refreshAccessibility(for: chunk)
+            syncReviewCardGlass()
+        }
+    }
+
+    /// One `ReviewCardGlassView` per template card with glass in the chunk. Materialization
+    /// fills in a chunk's attachments, and `willDisplay` runs it after `bind`, so the scroll
+    /// controller calls this again then.
+    func syncReviewCardGlass() {
+        let cards = currentChunk.map {
+            ReviewCardGlassView.uniqueGlassCards($0.attachments + $0.blockRenderables.compactMap(\.imageAttachment))
+        } ?? []
+        while reviewCardGlassViews.count > cards.count {
+            reviewCardGlassViews.removeLast().removeFromSuperview()
+        }
+        while reviewCardGlassViews.count < cards.count {
+            let view = ReviewCardGlassView(frame: .zero)
+            reviewCardGlassHost.addSubview(view)
+            reviewCardGlassViews.append(view)
+        }
+        for (view, card) in zip(reviewCardGlassViews, cards) {
+            guard let image = card.reviewCardGlassImage else { continue }
+            view.configure(image: image, opacity: card.opacity)
+            view.frame = card.rect
         }
     }
 
@@ -668,6 +705,7 @@ final class CoreTextChunkCollectionCell: UICollectionViewCell {
         drawTopConstraint.constant = 0
         drawBottomConstraint.constant = 0
         currentChunk = nil
+        syncReviewCardGlass()
         overlay.clearSelection()
         playbackOverlay.clearSelection()
         clearAnnotationOverlays()

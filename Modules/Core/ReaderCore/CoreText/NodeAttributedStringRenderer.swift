@@ -1385,25 +1385,15 @@ struct NodeAttributedStringRenderer: Sendable {
         if let svgContent, !svgContent.isEmpty {
             let screenWidth = await ReaderDocumentTrace.measuring("mainActorHop") { await MainActor.run { UIScreen.main.bounds.width } }
             let resolvedWidth = config.renderWidth ?? screenWidth
-            let drawnSVG = reviewCardSVG(
-                svgContent,
-                style: style,
-                font: ctx.font,
-                columnWidth: resolvedWidth
-            )
-            let targetSize = await ReaderDocumentTrace.measuring("svgSize") {
-                await SVGWebViewRasterizer.shared.resolveSVGSize(
+            let image = await ReaderDocumentTrace.measuring("svgRaster") {
+                await ReviewCardRaster.image(
+                    svg: svgContent,
+                    columnWidth: resolvedWidth,
+                    reader: ReviewCardRaster.Reader(font: ctx.font, textColor: ctx.textColor),
                     styleWidth: style.width,
                     styleHeight: style.height,
-                    svgString: drawnSVG,
-                    renderWidth: resolvedWidth
-                )
-            }
-            let image = await ReaderDocumentTrace.measuring("svgRaster") {
-                await SVGWebViewRasterizer.shared.render(
-                    svgString: drawnSVG,
-                    size: targetSize,
-                    baseURL: nil
+                    isAuthorSized: isAuthorSizedSVG(style),
+                    path: "inline-svg"
                 )
             }
             if image == nil {
@@ -1538,35 +1528,22 @@ struct NodeAttributedStringRenderer: Sendable {
         return placeholder
     }
 
-    /// An inline `<svg>` reshaped by the source review-card rule, or the original.
+    /// Whether the markup sized an inline `<svg>` itself, which `ReviewCardRaster` then draws
+    /// as authored.
     ///
     /// 起点-family 神评论 / 本章说 / 作者说 cards reach the reader two ways: as
     /// `<img src="data:…svg">`, handled in `OnlineImageLoader`, and as an inline
-    /// `<svg>` element, handled here. Only the first consulted
-    /// `ReviewCardSVGMetrics`, so the inline copy of the very same card was still
-    /// drawn at the column's text scale — on an iPad column that is ~35pt card
-    /// text against ~18pt prose. Both paths now ask the same question, or a
-    /// card's size depends on which markup the source happened to emit.
+    /// `<svg>` element, handled here. Both go through `ReviewCardRaster`, or a card's
+    /// size — and whether it wears the reader's template — would depend on which markup
+    /// the source happened to emit.
     ///
     /// Left alone: anything the author sized explicitly, and Legado `style:"text"`
     /// icons, which are re-scaled to the line height afterwards anyway.
-    private func reviewCardSVG(
-        _ svg: String,
-        style: RenderStyle,
-        font: UIFont,
-        columnWidth: CGFloat
-    ) -> String {
-        guard !style.isTextSizedImage,
-              style.width == nil,
-              style.height == nil,
-              style.rawWidthPercent == nil
-        else { return svg }
-        return ReviewCardSVGMetrics.reshapedForColumn(
-            svg: svg,
-            bodyPointSize: font.pointSize,
-            columnWidth: columnWidth,
-            path: "inline-svg"
-        ) ?? svg
+    private func isAuthorSizedSVG(_ style: RenderStyle) -> Bool {
+        style.isTextSizedImage
+            || style.width != nil
+            || style.height != nil
+            || style.rawWidthPercent != nil
     }
 
     private func renderImageOnlyBlock(
@@ -1581,22 +1558,14 @@ struct NodeAttributedStringRenderer: Sendable {
         if let svgContent = payload.svgContent, !svgContent.isEmpty {
             let screenWidth = await ReaderDocumentTrace.measuring("mainActorHop") { await MainActor.run { UIScreen.main.bounds.width } }
             let resolvedWidth = config.renderWidth ?? screenWidth
-            let drawnSVG = reviewCardSVG(
-                svgContent,
-                style: payload.style,
-                font: blockCtx.font,
-                columnWidth: resolvedWidth
-            )
-            let targetSize = await SVGWebViewRasterizer.shared.resolveSVGSize(
+            image = await ReviewCardRaster.image(
+                svg: svgContent,
+                columnWidth: resolvedWidth,
+                reader: ReviewCardRaster.Reader(font: blockCtx.font, textColor: blockCtx.textColor),
                 styleWidth: payload.style.width,
                 styleHeight: payload.style.height,
-                svgString: drawnSVG,
-                renderWidth: resolvedWidth
-            )
-            image = await SVGWebViewRasterizer.shared.render(
-                svgString: drawnSVG,
-                size: targetSize,
-                baseURL: nil
+                isAuthorSized: isAuthorSizedSVG(payload.style),
+                path: "inline-svg"
             )
         } else {
             image = payload.src.isEmpty ? nil : await ReaderDocumentTrace.measuring("imageLoad") {

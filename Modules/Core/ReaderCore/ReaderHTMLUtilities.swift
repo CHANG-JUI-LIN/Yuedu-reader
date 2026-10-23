@@ -1577,7 +1577,12 @@ enum ReaderHTMLUtilities {
             let y = 18 + (index + 1) * lineHeight
             return "<text x=\"12\" y=\"\(y)\" font-size=\"24\" fill=\"#666\">\(xmlEscaped(line))</text>"
         }.joined()
-        let normalizedSVG = "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"\(width)\" height=\"\(height)\" viewBox=\"0 0 \(width) \(height)\">\(textNodes)</svg>"
+        // The card carries no heading, so it names its kind for `ReviewCardContent`.
+        let kindHint = "\(ReviewCardContent.kindHintAttribute)=\"\(ReaderCommentCardKind.hotComment.rawValue)\""
+        // A comment the source cut keeps its full text (`ReviewCardFullText`) through the rebuild.
+        let fullTexts = rootTag.range(of: #"\s\#(ReviewCardFullText.attribute)="[^"]*""#, options: .regularExpression)
+            .map { String(rootTag[$0]) } ?? ""
+        let normalizedSVG = "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"\(width)\" height=\"\(height)\" viewBox=\"0 0 \(width) \(height)\" \(kindHint)\(fullTexts)>\(textNodes)</svg>"
         let normalizedSource = prefix + Data(normalizedSVG.utf8).base64EncodedString()
 
         var normalizedTag = tag

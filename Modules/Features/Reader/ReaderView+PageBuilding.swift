@@ -18,12 +18,19 @@ extension ReaderView {
     }
 
     var readerDocumentStyleFingerprint: ReaderDocumentStyleFingerprint {
-        ReaderDocumentStyleFingerprint(
+        let anyCommentCardTemplateWorn = ReaderCommentCardKind.allCases.contains {
+            settings.wornCommentCardTemplate(for: $0) != nil
+        }
+        return ReaderDocumentStyleFingerprint(
             commentBubbleFollowsSourceSVG: settings.commentBubbleFollowsSourceSVG,
             commentBubblePresetMode: settings.commentBubblePresetMode,
             commentBubbleCustomStyles: settings.commentBubbleCustomStyles,
             commentBubbleSelectedCustomStyleID: settings.commentBubbleSelectedCustomStyleID,
             commentBubbleScale: settings.commentBubbleScale,
+            commentCardChoices: settings.commentCardChoices,
+            commentCardCustomStyles: settings.commentCardCustomStyles,
+            commentCardTextColorHex: anyCommentCardTemplateWorn ? readerTheme.uiTextColor.rgbHex : nil,
+            commentCardAccentHex: anyCommentCardTemplateWorn ? readerTheme.commentCardAccent.rgbHex : nil,
             readerTextUnderlineDecorationEnabled: settings.readerTextUnderlineDecorationEnabled,
             readerTextUnderlineDecorationColorHex: settings.readerTextUnderlineDecorationColorHex,
             readerTextUnderlineStyle: settings.readerTextUnderlineStyle,

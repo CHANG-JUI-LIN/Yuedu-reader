@@ -477,7 +477,15 @@ struct CommentBubbleSVGRecognizer {
             s.commentBubbleFollowsSourceSVG ? "F1" : "F0",
             s.commentBubblePresetMode.rawValue,
             s.commentBubbleSelectedCustomStyleID?.uuidString ?? "-",
-            s.commentBubbleSelectedCustomStyle.map { "L\($0.svg.utf8.count)" } ?? "-",
+            // The whole style, not its length: an edit in place keeps the ID and can keep the
+            // SVG's length (a colour swap), and the colour slots live beside the SVG.
+            s.commentBubbleSelectedCustomStyle.map { style in
+                [style.svg, style.dayNormalColor, style.dayEmphasisColor, style.nightNormalColor, style.nightEmphasisColor]
+                    .map { $0 ?? "-" }
+                    .joined(separator: "/")
+                    .hashValue
+                    .description
+            } ?? "-",
             String(format: "%.2f", s.commentBubbleScale),
             sourceTextFace.rawValue,
             s.selectedReaderFontPostScript ?? "sys"
@@ -584,7 +592,7 @@ struct CommentBubbleSVGRecognizer {
     /// QiReader's count-colour placeholder in `backgroundSVGData`.
     static let qiReaderTextColorToken = "__TEXT__"
 
-    private static func hexString(_ color: UIColor) -> String {
+    static func hexString(_ color: UIColor) -> String {
         var r: CGFloat = 0, g: CGFloat = 0, b: CGFloat = 0, a: CGFloat = 0
         color.getRed(&r, green: &g, blue: &b, alpha: &a)
         func byte(_ v: CGFloat) -> Int { Int((min(max(v, 0), 1) * 255).rounded()) }

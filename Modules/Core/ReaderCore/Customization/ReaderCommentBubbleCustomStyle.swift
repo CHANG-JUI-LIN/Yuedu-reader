@@ -81,7 +81,7 @@ struct ReaderCommentBubbleCustomStyle: Codable, Equatable, Identifiable {
 /// wrapped SVG template with `${num}` / `${color}` placeholders and four
 /// day/night × normal/emphasis text colours). Decoded into a
 /// `ReaderCommentBubbleCustomStyle` for storage.
-struct BubblePackageFile: Decodable {
+struct BubblePackageFile: Codable {
     var name: String?
     var dirName: String?
     var dayEmphasisColor: String?
@@ -117,7 +117,31 @@ struct BubblePackageFile: Decodable {
     }
 }
 
+extension BubblePackageFile {
+    /// The package a custom style exports as — what `makeStyle` reads back, colours and
+    /// size included, which a bare `.svg` cannot carry.
+    init(style: ReaderCommentBubbleCustomStyle) {
+        self.init(
+            name: style.name,
+            dirName: nil,
+            dayEmphasisColor: style.dayEmphasisColor,
+            dayNormalColor: style.dayNormalColor,
+            nightEmphasisColor: style.nightEmphasisColor,
+            nightNormalColor: style.nightNormalColor,
+            sizeScale: style.sizeScale,
+            svgTemplate: style.svg
+        )
+    }
+}
+
 extension ReaderCommentBubbleCustomStyle {
+    /// Whether the style carries anything a bare `.svg` would lose on export.
+    var needsPackageToExport: Bool {
+        usesColorTemplate
+            || [dayEmphasisColor, dayNormalColor, nightEmphasisColor, nightNormalColor].contains { $0 != nil }
+            || sizeScale != nil
+    }
+
     /// Attempts to parse a `bubble.json` package from raw file contents.
     /// Returns nil when the contents are not valid JSON or are missing the
     /// required `svgTemplate` field. (Plain `.svg` content falls through to

@@ -633,6 +633,9 @@ enum DSLayout {
     static let readerBubblePreviewTileWidth: CGFloat = 64
     /// Minimum height of a paragraph-comment bubble preview tile.
     static let readerBubblePreviewHeight: CGFloat = 64
+    /// Width a 本章說 / 作者說 / 神評論 template preview is drawn at in 氣泡設定: a phone
+    /// reading column, so its text keeps the proportion it has in the book.
+    static let readerCommentCardPreviewWidth: CGFloat = 340
     /// Width of a battery SVG preview in the template-management list.
     static let readerBatterySVGPreviewWidth: CGFloat = 72
     /// Height of a battery SVG preview in the template-management list.

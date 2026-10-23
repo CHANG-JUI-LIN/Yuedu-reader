@@ -19,6 +19,10 @@ struct GlobalSettingsSnapshot: Sendable, Equatable {
     /// changes the SVG, and the bubble image cache keys on that.
     var commentBubbleSelectedCustomStyle: ReaderCommentBubbleCustomStyle?
     var commentBubbleScale: Double
+    /// The card templates and which one each kind wears; the templates themselves, not
+    /// only IDs, for the same reason as `commentBubbleSelectedCustomStyle`.
+    var commentCardChoices: ReaderCommentCardChoices
+    var commentCardCustomStyles: [ReaderCommentCardCustomStyle]
     var selectedReaderFontPostScript: String?
 
     var readerTextUnderlineDecorationEnabled: Bool
@@ -57,6 +61,8 @@ extension GlobalSettings {
             commentBubbleSelectedCustomStyleID: commentBubbleSelectedCustomStyleID,
             commentBubbleSelectedCustomStyle: commentBubbleSelectedCustomStyle,
             commentBubbleScale: commentBubbleScale,
+            commentCardChoices: commentCardChoices,
+            commentCardCustomStyles: commentCardCustomStyles,
             selectedReaderFontPostScript: selectedReaderFontPostScript,
             readerTextUnderlineDecorationEnabled: readerTextUnderlineDecorationEnabled,
             readerTextUnderlineDecorationColorHex: readerTextUnderlineDecorationColorHex,
@@ -69,5 +75,16 @@ extension GlobalSettings {
             activeTTSSource: activeTTSSource
         )
         Self.published.withLock { $0 = snapshot }
+    }
+}
+
+extension GlobalSettingsSnapshot {
+    /// The template `kind` wears, or nil when the source's own card is drawn.
+    func wornCommentCardTemplate(for kind: ReaderCommentCardKind) -> ReaderCommentCardStyleLibrary.WornTemplate? {
+        ReaderCommentCardStyleLibrary.wornTemplate(
+            for: kind,
+            choice: commentCardChoices[kind],
+            styles: commentCardCustomStyles
+        )
     }
 }

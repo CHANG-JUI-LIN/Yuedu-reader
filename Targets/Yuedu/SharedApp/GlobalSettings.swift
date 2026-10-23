@@ -211,6 +211,17 @@ enum ReaderTheme: String, CaseIterable {
         return Self.weChatAccent
     }
 
+    /// The fill of 起點's 神評論 tag, white text on it, on this background: red on 白色 and
+    /// 黑色, the background's own hue on 護眼綠 and 棕色 (棕色's is 起點's, read off its
+    /// parchment). A comment card template's `${accent}`.
+    var commentCardAccent: UIColor {
+        switch self {
+        case .white, .night: return UIColor(red: 217 / 255, green: 58 / 255, blue: 53 / 255, alpha: 1)
+        case .green: return UIColor(red: 63 / 255, green: 125 / 255, blue: 76 / 255, alpha: 1)
+        case .sepia: return UIColor(red: 151 / 255, green: 106 / 255, blue: 5 / 255, alpha: 1)
+        }
+    }
+
     var barColor: Color {
         Color(uiColor: uiBarColor)
     }
@@ -574,6 +585,8 @@ class GlobalSettings {
     private static let commentBubbleSelectionSyncClockKey = "yd_comment_bubble_selection_sync_clock"
     private static let commentBubbleScaleKey = "yd_comment_bubble_scale"
     private static let commentBubbleTextScaleKey = "yd_comment_bubble_text_scale"
+    static let commentCardChoicesKey = "yd_comment_card_choices"
+    static let commentCardCustomStylesKey = "yd_comment_card_custom_styles"
     private static let chapterTitleStyleKey = "yd_chapter_title_style_v1"
     private static let chapterTitleCustomPresetsKey = "yd_chapter_title_custom_presets_v1"
     private static let readerTextUnderlineDecorationKey = "yd_reader_text_underline_decoration"
@@ -1189,6 +1202,25 @@ class GlobalSettings {
                 UserDefaults.standard.set(commentBubbleTextScale, forKey: Self.commentBubbleTextScaleKey)
                 recordReadingSettingEdit { $0.commentBubble = currentCommentBubbleSettings }
             }
+        }
+    }
+    /// Which template each kind of source review card wears — 本章說, 作者說, 神評論. Part of
+    /// the 段評氣泡 row of 排版生效範圍, so it syncs and follows themes with the bubble.
+    /// Written through `GlobalSettings+CommentCards.swift`.
+    var commentCardChoices: ReaderCommentCardChoices {
+        didSet {
+            guard commentCardChoices != oldValue else { return }
+            Self.saveCommentCardChoices(commentCardChoices)
+            recordReadingSettingEdit { $0.commentBubble = currentCommentBubbleSettings }
+            publishSnapshot()
+        }
+    }
+    /// The card templates of every kind, in the order they were made. Synced through
+    /// iCloud per template, like the bubble styles.
+    var commentCardCustomStyles: [ReaderCommentCardCustomStyle] {
+        didSet {
+            Self.saveCommentCardCustomStyles(commentCardCustomStyles)
+            publishSnapshot()
         }
     }
     /// The saved reading backgrounds, in the order they were made — see
@@ -2244,6 +2276,8 @@ class GlobalSettings {
             (UserDefaults.standard.object(forKey: Self.commentBubbleTextScaleKey) as? Double)
                 ?? Self.defaultCommentBubbleTextScale
         )
+        commentCardChoices = Self.loadCommentCardChoices()
+        commentCardCustomStyles = Self.loadCommentCardCustomStyles()
         let savedBackgrounds = Self.loadReaderCustomBackgrounds()
         let wornBackgroundID = UserDefaults.standard.string(forKey: Self.readerCustomBackgroundIDKey)
             .flatMap(UUID.init(uuidString:))

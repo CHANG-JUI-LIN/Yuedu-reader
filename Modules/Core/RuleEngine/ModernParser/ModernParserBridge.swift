@@ -155,9 +155,41 @@ class ModernParserBridge {
         set { networkExchange.latest = newValue }
     }
 
+    /// The JSON bodies a chapter's content rule fetched, kept only while that rule runs: where
+    /// `ReviewCardFullText` finds the comments the source cut for its review cards. Locked for
+    /// the same reason as `NetworkExchangeStore` — ajaxAll records concurrently.
+    final class ReviewResponseCapture: Sendable {
+        private let storage = OSAllocatedUnfairLock<[String]?>(initialState: nil)
+        /// A chapter's comment responses are tens of KB; a body this large is chapter text.
+        private static let bodyLimit = 1_000_000
+        private static let countLimit = 64
+
+        func begin() { storage.withLock { $0 = [] } }
+
+        func end() -> [String] {
+            storage.withLock { bodies in
+                defer { bodies = nil }
+                return bodies ?? []
+            }
+        }
+
+        func record(_ body: String) {
+            guard body.utf8.count <= Self.bodyLimit,
+                  let first = body.first(where: { !$0.isWhitespace }), first == "{" || first == "[" else { return }
+            storage.withLock { bodies in
+                guard let count = bodies?.count, count < Self.countLimit else { return }
+                bodies?.append(body)
+            }
+        }
+    }
+    private let reviewResponses = ReviewResponseCapture()
+
     private func recordJSNetwork(
         url: String?, statusCode: Int?, timedOut: Bool, body: String?
     ) {
+        if let body, !timedOut {
+            reviewResponses.record(body)
+        }
         lastJSNetworkExchange = JSNetworkExchange(
             url: String((url ?? "-").prefix(200)),
             status: timedOut ? "timeout" : (statusCode.map(String.init) ?? "error"),
@@ -1430,7 +1462,9 @@ class ModernParserBridge {
         jsEngine.resetJSNetworkMs()
         lastJSNetworkExchange = nil
         let _contentStart = Date()
+        reviewResponses.begin()
         var content = engine.getString(ruleStr: source.ruleContent.content)
+        let contentResponses = reviewResponses.end()
         // Snapshot before restoring the temporary deviceType override: every
         // `jsEngine.evaluate` clears the previous rule error.
         let contentRuleError = jsEngine.lastError
@@ -1473,6 +1507,15 @@ class ModernParserBridge {
                 .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
                 .joined(separator: "\n")
             content = engine.getString(ruleStr: source.ruleContent.replaceRegex, mContent: content)
+        }
+        if !contentResponses.isEmpty {
+            content = SourcePerfTrace.span("chapter.reviewFullText", source.bookSourceName) {
+                ReviewCardFullText.restoringCutComments(
+                    in: content,
+                    responses: contentResponses,
+                    sourceTransform: sourceFaceTransform
+                )
+            }
         }
         let _contentMs = Int(Date().timeIntervalSince(_contentStart) * 1000)
         // Split a slow chapter.parse: 段評 sources fetch per-paragraph review counts from
@@ -1551,6 +1594,57 @@ class ModernParserBridge {
             isPay: false,
             runtimeVariables: dumpRuntimeVariables()
         )
+    }
+
+    /// `texts` through the source's own face-code replacer — the `[fn=19]` → 😂 step every 起点
+    /// source runs on a comment before cutting it for its card (`replaceEmoji`,
+    /// `replaceEmojiCodes`, `_dpFaceTxt`), so a response string reads as the card drew it.
+    /// Sources name it differently, so it is found by what it does: a one-argument function
+    /// whose code handles `fn` codes and that turns `[fn=19]` into something else. Without one,
+    /// the texts come back as they went in.
+    private func sourceFaceTransform(_ texts: [String]) -> [String] {
+        guard let input = try? JSONSerialization.data(withJSONObject: texts),
+              let json = String(data: input, encoding: .utf8) else { return texts }
+        let output = jsEngine.evaluate(
+            """
+            (function () {
+                var texts = JSON.parse(globalThis.__ydReviewTexts);
+                delete globalThis.__ydReviewTexts;
+                var face = null;
+                var names = Object.getOwnPropertyNames(globalThis);
+                for (var i = 0; i < names.length && !face; i++) {
+                    var candidate;
+                    try { candidate = globalThis[names[i]]; } catch (e) { continue; }
+                    if (typeof candidate !== 'function' || candidate.length !== 1) continue;
+                    var code;
+                    try { code = Function.prototype.toString.call(candidate); } catch (e) { continue; }
+                    if (code.length > 4000 || !/\\bfn[=|]/.test(code)) continue;
+                    try {
+                        var probe = candidate.call(globalThis, '[fn=19]');
+                        if (typeof probe === 'string' && probe.indexOf('fn=19') < 0) face = candidate;
+                    } catch (e) {}
+                }
+                if (!face) return JSON.stringify(texts);
+                return JSON.stringify(texts.map(function (text) {
+                    try {
+                        var out = face.call(globalThis, text);
+                        return typeof out === 'string' ? out : text;
+                    } catch (e) { return text; }
+                }));
+            })()
+            """,
+            bindings: ["__ydReviewTexts": json]
+        )
+        guard let output else {
+            AppLogger.parse("⟐ reviewCard faceTransform failed", context: ["error": jsEngine.lastError ?? "nil"])
+            return texts
+        }
+        do {
+            return try JSONSerialization.jsonObject(with: Data(output.utf8)) as? [String] ?? texts
+        } catch {
+            AppLogger.parse("⟐ reviewCard faceTransform unreadable", error: error)
+            return texts
+        }
     }
 
     func extractNextContentURLs(

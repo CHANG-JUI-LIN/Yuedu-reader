@@ -342,7 +342,8 @@ extension GlobalSettings {
             presetMode: commentBubblePresetMode.rawValue,
             customStyleID: commentBubbleSelectedCustomStyleID,
             scale: commentBubbleScale,
-            textScale: commentBubbleTextScale
+            textScale: commentBubbleTextScale,
+            cards: commentCardChoices
         )
     }
 
@@ -462,6 +463,7 @@ extension GlobalSettings {
             assign(\.commentBubbleFollowsSourceSVG, bubble.followsSourceSVG)
             assign(\.commentBubbleScale, bubble.scale)
             assign(\.commentBubbleTextScale, bubble.textScale)
+            assign(\.commentCardChoices, bubble.cards)
             let mode = ReaderCommentBubblePresetMode(rawValue: bubble.presetMode) ?? .builtin
             if commentBubblePresetMode != mode || commentBubbleSelectedCustomStyleID != bubble.customStyleID {
                 applyCommentBubbleChoice(

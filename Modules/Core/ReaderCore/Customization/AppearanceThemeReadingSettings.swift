@@ -42,6 +42,9 @@ struct AppearanceThemeReadingSettings: Codable, Equatable, Sendable {
         var customStyleID: UUID?
         var scale: Double
         var textScale: Double
+        /// Which template each source review card wears. Nil only in setups written
+        /// before card templates, which leave the cards as they are.
+        var cards: ReaderCommentCardChoices? = nil
     }
 
     // MARK: 文字

@@ -169,6 +169,7 @@ final class ICloudSyncManager: ObservableObject {
     nonisolated private static let replaceRulesRecordName = "replace_rules_v2"
     nonisolated private static let bubbleStylesRecordName = "comment_bubble_styles_v2"
     nonisolated private static let bubbleSelectionRecordName = "comment_bubble_selection_v2"
+    nonisolated private static let commentCardStylesRecordName = "comment_card_styles_v2"
     /// The saved reading backgrounds, as one merged blob; their pictures are file records
     /// named `readerbg_<hash of the file name>`.
     nonisolated private static let readerBackgroundsRecordName = "reader_backgrounds_v2"
@@ -186,7 +187,7 @@ final class ICloudSyncManager: ObservableObject {
     /// the background joined the rest of the reading setup.
     nonisolated private static let mergedRecordNames = [
         bookSourcesRecordName, replaceRulesRecordName, bubbleStylesRecordName,
-        bubbleSelectionRecordName, readerBackgroundsRecordName, readingSettingsRecordName,
+        bubbleSelectionRecordName, commentCardStylesRecordName, readerBackgroundsRecordName, readingSettingsRecordName,
         readerBarLayoutRecordName, booksRecordName,
         "book_sources", "replace_rules", "comment_bubble_styles", bubbleSelectionRecordID,
         "reader_backgrounds", "reading_settings", readerBarLayoutRecordID, olderBuildsBooksRecordName,
@@ -200,6 +201,7 @@ final class ICloudSyncManager: ObservableObject {
     nonisolated private static let shadowReplaceRules = "icloud_replaceRules_v2"
     nonisolated private static let shadowCommentBubbleStyles = "icloud_commentBubbleStyles_v2"
     nonisolated private static let shadowCommentBubbleSelection = "icloud_commentBubbleSelection_v2"
+    nonisolated private static let shadowCommentCardStyles = "icloud_commentCardStyles_v2"
     nonisolated private static let shadowReaderBarLayout = "icloud_readerBarLayout_v2"
     nonisolated private static let shadowReaderBackgrounds = "icloud_readerBackgrounds_v2"
     nonisolated private static let shadowReadingSettings = "icloud_readingSettings_v2"
@@ -502,6 +504,22 @@ final class ICloudSyncManager: ObservableObject {
                 }
             )
             changedRemote = changedRemote || bubbleSelectionMerge.uploaded
+            // 3a. Card templates (本章說／作者說／神評論), per template like the bubble
+            //     styles. Which one each kind wears rides the reading setup (3c).
+            let localCardStyles = await MainActor.run { GlobalSettings.shared.commentCardCustomStyles }
+            let cardStyleMerge = try await mergeType(
+                recordName: Self.commentCardStylesRecordName,
+                shadowKey: Self.shadowCommentCardStyles,
+                local: localCardStyles,
+                id: { $0.id.uuidString },
+                hash: { Self.stableHash($0) },
+                fallbackUpdatedAt: { $0.updatedAt ?? .distantPast },
+                applyLocally: { merged in
+                    await MainActor.run { GlobalSettings.shared.applyCommentCardStylesSync(merged) }
+                    return true
+                }
+            )
+            changedRemote = changedRemote || cardStyleMerge.uploaded
 
             try Task.checkCancellation()
             // 3b. Saved reading backgrounds (singleton settings). Per background,

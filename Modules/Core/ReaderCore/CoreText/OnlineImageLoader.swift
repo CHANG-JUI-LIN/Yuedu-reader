@@ -29,7 +29,8 @@ enum OnlineImageLoader {
     /// `decode`: optional per-source byte decryptor (Legado `imageDecode`) run on
     /// downloaded bytes before image decoding; nil result keeps the originals.
     /// `bodyPointSize`: the reader's body text size, used to scale source review cards
-    /// (`ReviewCardSVGMetrics`); 0 keeps the plain column-width sizing.
+    /// (`ReviewCardRaster`); 0 keeps the plain column-width sizing.
+    /// `themeTextColor`: the reading text colour, which a card template's text follows.
     /// `headers`: the book source's request header map (Legado `header`), applied to remote
     /// fetches. Chapter illustrations live on the source's own CDN, and those CDNs gate on the
     /// source's declared User-Agent/Referer just like cover art does — legado downloads them via
@@ -40,6 +41,7 @@ enum OnlineImageLoader {
         src: String,
         renderWidth: CGFloat,
         bodyPointSize: CGFloat = 0,
+        themeTextColor: UIColor? = nil,
         timeout: TimeInterval = 8,
         headers: [String: String] = [:],
         cachePolicy: URLRequest.CachePolicy = .returnCacheDataElseLoad,
@@ -70,6 +72,7 @@ enum OnlineImageLoader {
                 cleaned,
                 renderWidth: renderWidth,
                 bodyPointSize: bodyPointSize,
+                themeTextColor: themeTextColor,
                 headers: effectiveHeaders,
                 cachePolicy: cachePolicy,
                 decode: decode
@@ -90,6 +93,7 @@ enum OnlineImageLoader {
         _ cleaned: String,
         renderWidth: CGFloat,
         bodyPointSize: CGFloat = 0,
+        themeTextColor: UIColor? = nil,
         headers: [String: String] = [:],
         cachePolicy: URLRequest.CachePolicy,
         decode: (@Sendable (Data, String) async -> Data?)? = nil
@@ -99,6 +103,7 @@ enum OnlineImageLoader {
                 cleaned,
                 renderWidth: renderWidth,
                 bodyPointSize: bodyPointSize,
+                themeTextColor: themeTextColor,
                 decode: decode
             )
         }
@@ -107,6 +112,7 @@ enum OnlineImageLoader {
                 cleaned,
                 renderWidth: renderWidth,
                 bodyPointSize: bodyPointSize,
+                themeTextColor: themeTextColor,
                 headers: headers,
                 cachePolicy: cachePolicy,
                 decode: decode
@@ -162,6 +168,7 @@ enum OnlineImageLoader {
         _ uri: String,
         renderWidth: CGFloat,
         bodyPointSize: CGFloat = 0,
+        themeTextColor: UIColor? = nil,
         decode: (@Sendable (Data, String) async -> Data?)? = nil
     ) async -> UIImage? {
         guard uri.hasPrefix("data:"), let commaIdx = uri.firstIndex(of: ",") else { return nil }
@@ -204,6 +211,7 @@ enum OnlineImageLoader {
                 svg,
                 renderWidth: renderWidth,
                 bodyPointSize: bodyPointSize,
+                themeTextColor: themeTextColor,
                 baseURL: nil
             )
         }
@@ -225,6 +233,7 @@ enum OnlineImageLoader {
         _ urlString: String,
         renderWidth: CGFloat,
         bodyPointSize: CGFloat = 0,
+        themeTextColor: UIColor? = nil,
         headers: [String: String] = [:],
         cachePolicy: URLRequest.CachePolicy = .returnCacheDataElseLoad,
         decode: (@Sendable (Data, String) async -> Data?)? = nil
@@ -283,6 +292,7 @@ enum OnlineImageLoader {
                 svg,
                 renderWidth: renderWidth,
                 bodyPointSize: bodyPointSize,
+                themeTextColor: themeTextColor,
                 baseURL: url
             )
         }
@@ -330,26 +340,26 @@ enum OnlineImageLoader {
         _ svg: String,
         renderWidth: CGFloat,
         bodyPointSize: CGFloat,
+        themeTextColor: UIColor?,
         baseURL: URL?
     ) async -> UIImage? {
         let column = renderWidth > 0 ? renderWidth : UIScreen.main.bounds.width
         // A source review card (神评论 / 本章说 / 作者说) draws its prose in viewBox units, so the
-        // width we rasterize at IS its text size. Left alone, the same card reads at ~13pt on an
-        // iPhone and ~35pt in an iPad column. It stays full-width — the card is a banner — and
-        // instead gets a wider canvas, which is what pulls its text back down to the reader's own
-        // body size. Anything that isn't a card is rasterized exactly as before.
-        let drawn = ReviewCardSVGMetrics.reshapedForColumn(
+        // width we rasterize at IS its text size: `ReviewCardRaster` matches it to the reader's
+        // body text (or redraws it from the reader's template). Anything that isn't a card is
+        // rasterized exactly as before.
+        let reader = bodyPointSize > 0
+            ? ReviewCardRaster.Reader(
+                font: UserReaderFontResolver.bodyFont(size: bodyPointSize),
+                textColor: themeTextColor ?? .label
+            )
+            : nil
+        return await ReviewCardRaster.image(
             svg: svg,
-            bodyPointSize: bodyPointSize,
             columnWidth: column,
+            reader: reader,
+            baseURL: baseURL,
             path: "img-data-uri"
-        ) ?? svg
-        let size = SVGWebViewRasterizer.shared.resolveSVGSize(
-            styleWidth: nil,
-            styleHeight: nil,
-            svgString: drawn,
-            renderWidth: column
         )
-        return await SVGWebViewRasterizer.shared.render(svgString: drawn, size: size, baseURL: baseURL)
     }
 }

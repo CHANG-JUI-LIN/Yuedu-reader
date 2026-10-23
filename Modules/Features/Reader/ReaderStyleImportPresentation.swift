@@ -14,8 +14,33 @@ enum ReaderStyleImportRoute: String, Identifiable, Sendable {
     /// The 對話氣泡 page's own 匯入 — accepts the script-based bubble files and
     /// keeps only their settings.
     case dialogueBubble
+    /// 氣泡設定's 段評氣泡 page: a bubble SVG or `bubble.json`.
+    case commentBubble
+    /// 氣泡設定's 本章說 / 作者說 / 神評論 pages: a card template, bare or packaged.
+    case chapterSayCard
+    case authorSayCard
+    case hotCommentCard
 
     var id: String { rawValue }
+
+    /// The 氣泡設定 page this route imports for, or nil for a reading-settings file.
+    var commentStyleTarget: ReaderCommentStyleImporter.Target? {
+        switch self {
+        case .readerSettings, .regexHighlights, .chapterTitleStyle, .dialogueBubble: nil
+        case .commentBubble: .bubble
+        case .chapterSayCard: .card(.chapterSay)
+        case .authorSayCard: .card(.authorSay)
+        case .hotCommentCard: .card(.hotComment)
+        }
+    }
+
+    static func commentCard(_ kind: ReaderCommentCardKind) -> ReaderStyleImportRoute {
+        switch kind {
+        case .chapterSay: .chapterSayCard
+        case .authorSay: .authorSayCard
+        case .hotComment: .hotCommentCard
+        }
+    }
 
     /// MainActor: `ReaderSettingsImportService` is MainActor-isolated, and the
     /// only reader is the `.fileImporter` below, which runs in `body`.
@@ -25,6 +50,8 @@ enum ReaderStyleImportRoute: String, Identifiable, Sendable {
         case .readerSettings: ReaderSettingsImportService.readerSettingsContentTypes
         case .regexHighlights, .chapterTitleStyle, .dialogueBubble:
             ReaderSettingsImportService.styleContentTypes
+        case .commentBubble, .chapterSayCard, .authorSayCard, .hotCommentCard:
+            ReaderCommentStyleImporter.contentTypes
         }
     }
 
@@ -59,6 +86,17 @@ enum ReaderStyleImportRoute: String, Identifiable, Sendable {
                 chapterTitleStyle: nil,
                 regexHighlights: nil,
                 dialogueBubbleStyle: plan.dialogueBubbleStyle,
+                contentName: plan.contentName,
+                notes: plan.notes
+            )
+        case .commentBubble, .chapterSayCard, .authorSayCard, .hotCommentCard:
+            // These files are not reading settings; `ReaderCommentStyleImporter` reads them
+            // and nothing of a reading-settings plan applies.
+            return ReaderSettingsImportPlan(
+                layout: nil,
+                chapterTitleStyle: nil,
+                regexHighlights: nil,
+                dialogueBubbleStyle: nil,
                 contentName: plan.contentName,
                 notes: plan.notes
             )
@@ -140,6 +178,12 @@ private struct ReaderStyleImportPresentationModifier: ViewModifier {
                 guard let url = try result.get().first else { return }
                 let accessing = url.startAccessingSecurityScopedResource()
                 defer { if accessing { url.stopAccessingSecurityScopedResource() } }
+
+                if let target = scope.commentStyleTarget {
+                    let message = try ReaderCommentStyleImporter.importFile(at: url, into: target)
+                    alert = ReaderStyleImportAlert(titleKey: "SVG 匯入成功", message: message)
+                    return
+                }
 
                 let plan = scope.scoped(
                     try await ReaderSettingsImportService.loadReaderSettings(from: url)

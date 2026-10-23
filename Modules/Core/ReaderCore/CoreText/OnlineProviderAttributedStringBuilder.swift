@@ -376,7 +376,8 @@ final class OnlineProviderAttributedStringBuilder: @preconcurrency AttributedStr
         resourceProvider: (any BookResourceProvider)?,
         chapterHref: String,
         renderWidth: CGFloat,
-        bodyPointSize: CGFloat
+        bodyPointSize: CGFloat,
+        themeTextColor: UIColor
     ) {
         // Image loading works without a resource provider: online sources embed illustrations
         // and comment-bubble SVGs as data: URIs and absolute http(s) URLs. Wire it unconditionally.
@@ -385,7 +386,8 @@ final class OnlineProviderAttributedStringBuilder: @preconcurrency AttributedStr
                 src: src,
                 chapterHref: chapterHref,
                 renderWidth: renderWidth,
-                bodyPointSize: bodyPointSize
+                bodyPointSize: bodyPointSize,
+                themeTextColor: themeTextColor
             )
         }
         guard let resourceProvider else { return }
@@ -398,13 +400,14 @@ final class OnlineProviderAttributedStringBuilder: @preconcurrency AttributedStr
         }
     }
 
-    /// `bodyPointSize` is the reader's body text size; the loader uses it to scale source
-    /// review cards (神评论 / 本章说) so their text matches the prose instead of the column.
+    /// `bodyPointSize` and `themeTextColor` are the reader's body text; the loader matches
+    /// source review cards (神评论 / 本章说) to them instead of to the column.
     private func loadImage(
         src: String,
         chapterHref: String,
         renderWidth: CGFloat,
-        bodyPointSize: CGFloat
+        bodyPointSize: CGFloat,
+        themeTextColor: UIColor
     ) async -> UIImage? {
         let cleaned = OnlineImageLoader.cleanImageSource(src)
         guard !cleaned.isEmpty else { return nil }
@@ -425,6 +428,7 @@ final class OnlineProviderAttributedStringBuilder: @preconcurrency AttributedStr
             src: src,
             renderWidth: renderWidth,
             bodyPointSize: bodyPointSize,
+            themeTextColor: themeTextColor,
             headers: imageHeaders,
             decode: imageDecode
         ) {
@@ -602,7 +606,8 @@ final class OnlineProviderAttributedStringBuilder: @preconcurrency AttributedStr
             resourceProvider: resourceProvider,
             chapterHref: chapterHref,
             renderWidth: contentRenderWidth,
-            bodyPointSize: settings.fontSize
+            bodyPointSize: settings.fontSize,
+            themeTextColor: themeTextColor
         )
 
         guard let ast = await builder.buildStyledAST(
@@ -699,7 +704,8 @@ final class OnlineProviderAttributedStringBuilder: @preconcurrency AttributedStr
                         src: src,
                         chapterHref: chapterHref,
                         renderWidth: contentRenderWidth,
-                        bodyPointSize: settings.fontSize
+                        bodyPointSize: settings.fontSize,
+                        themeTextColor: themeTextColor
                     )
                 },
                 mediaURLResolver: { [weak self] src in

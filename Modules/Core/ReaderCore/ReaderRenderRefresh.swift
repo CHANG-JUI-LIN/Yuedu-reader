@@ -64,6 +64,16 @@ struct ReaderDocumentStyleFingerprint: Equatable {
     let commentBubbleCustomStyles: [ReaderCommentBubbleCustomStyle]
     let commentBubbleSelectedCustomStyleID: UUID?
     let commentBubbleScale: Double
+    let commentCardChoices: ReaderCommentCardChoices
+    let commentCardCustomStyles: [ReaderCommentCardCustomStyle]
+    /// The reading text colour while any card wears a template. A template card bakes it,
+    /// and day or night, into its image, which a theme change's recolouring cannot reach;
+    /// nil while every card is the source's own, so a theme change stays a repaint.
+    let commentCardTextColorHex: UInt32?
+    /// The background's card accent (`ReaderTheme.commentCardAccent`) while any card wears a
+    /// template, for the same reason: a reader's own text colour can stay the same across a
+    /// change of background whose accent does not.
+    let commentCardAccentHex: UInt32?
     let readerTextUnderlineDecorationEnabled: Bool
     let readerTextUnderlineDecorationColorHex: UInt32
     let readerTextUnderlineStyle: ReaderTextUnderlineStyle

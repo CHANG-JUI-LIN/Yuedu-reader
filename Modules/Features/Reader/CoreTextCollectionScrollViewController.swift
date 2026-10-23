@@ -2077,6 +2077,7 @@ extension CoreTextCollectionScrollViewController: UICollectionViewDataSource, UI
             engine.chunks[indexPath.item].materializeFrameIfNeeded()
         }
         if let chunkCell = cell as? CoreTextChunkCollectionCell {
+            chunkCell.syncReviewCardGlass()
             if let chapter = selectionChapter {
                 chunkCell.applySelection(chapterIndex: chapter, chapterRange: currentSelectionRange)
             }

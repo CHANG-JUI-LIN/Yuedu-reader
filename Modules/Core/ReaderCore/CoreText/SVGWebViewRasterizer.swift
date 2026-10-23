@@ -103,6 +103,12 @@ final class SVGWebViewRasterizer: NSObject {
     /// watchdog finishes a stuck item with nil and frees the lane so the queue keeps moving.
     private static let itemTimeout: TimeInterval = 7
 
+    /// The tallest a card template grows (`renderCard`), in points. Past it the card is cut
+    /// off; a template clamps its text long before.
+    private static let maximumCardHeight: CGFloat = 1600
+
+    private let fontSchemeHandler = ReviewCardFontSchemeHandler()
+
     /// Workers currently busy. Drives drain telemetry and the "all lanes idle" check.
     private var activeCount = 0
 
@@ -117,6 +123,7 @@ final class SVGWebViewRasterizer: NSObject {
         for _ in 0..<Self.poolSize {
             let config = WKWebViewConfiguration()
             config.suppressesIncrementalRendering = true
+            config.setURLSchemeHandler(fontSchemeHandler, forURLScheme: ReviewCardFonts.scheme)
             let wv = WKWebView(frame: .zero, configuration: config)
             wv.isOpaque = false
             wv.backgroundColor = .clear
@@ -141,7 +148,43 @@ final class SVGWebViewRasterizer: NSObject {
         // viewBox makes the content scale to the rendered size, and is a no-op for any SVG that
         // already declares one — so it never changes a correctly-authored SVG's appearance.
         let svgString = ensureViewBox(in: rawSVG)
-        let key = cacheKey(svgString: svgString, size: size)
+        return await enqueue(
+            svgString: svgString,
+            size: size,
+            baseURL: baseURL,
+            key: cacheKey(svgString: svgString, size: size),
+            growsToContent: false,
+            cardIsNight: false
+        )
+    }
+
+    /// Rasterizes a filled card template (`ReviewCardTemplate`) `width` points wide and as
+    /// tall as its content lays out: each `<foreignObject>` whose HTML outgrows its declared
+    /// height grows to fit, and the card grows with the most it needed.
+    ///
+    /// `isNight` is the theme the card was filled for; its `data-yd-glass` panels take the
+    /// glass's dark or light look from it (`ReviewCardImage.isNight`).
+    func renderCard(svgString: String, width: CGFloat, isNight: Bool) async -> UIImage? {
+        guard width > 0 else { return nil }
+        let size = CGSize(width: width, height: Self.maximumCardHeight)
+        return await enqueue(
+            svgString: svgString,
+            size: size,
+            baseURL: nil,
+            key: cacheKey(svgString: (isNight ? "card-night|" : "card|") + svgString, size: size),
+            growsToContent: true,
+            cardIsNight: isNight
+        )
+    }
+
+    private func enqueue(
+        svgString: String,
+        size: CGSize,
+        baseURL: URL?,
+        key: NSString,
+        growsToContent: Bool,
+        cardIsNight: Bool
+    ) async -> UIImage? {
         if let cached = cache.object(forKey: key) {
             if isDraining { drainCacheHits += 1 }
             return cached
@@ -159,6 +202,8 @@ final class SVGWebViewRasterizer: NSObject {
                     size: size,
                     baseURL: baseURL,
                     cacheKey: key,
+                    growsToContent: growsToContent,
+                    cardIsNight: cardIsNight,
                     continuation: continuation
                 ))
                 dispatchToIdleWorkers()
@@ -392,6 +437,15 @@ final class SVGWebViewRasterizer: NSObject {
         activeCount += 1
         worker.webView.frame = CGRect(origin: .zero, size: item.size)
         let size = item.size
+        // A card template sizes itself (`renderCard`): only the page around it is fixed.
+        let svgSizing = item.growsToContent
+            ? "display: block;"
+            : "width: \(size.width)px; height: \(size.height)px; display: block;"
+        // A card's `data-yd-glass` panels are the system's glass, drawn by the reader behind
+        // this image (`ReviewCardGlassPanel`); the template's own paint for them stays off it.
+        let glassPanelRule = item.growsToContent
+            ? "[data-yd-glass] { background: none !important; border-color: transparent !important; box-shadow: none !important; -webkit-backdrop-filter: none !important; backdrop-filter: none !important; }"
+            : ""
         let html = """
         <!doctype html>
         <html>
@@ -403,10 +457,8 @@ final class SVGWebViewRasterizer: NSObject {
             width: \(size.width)px; height: \(size.height)px;
             background: transparent; overflow: hidden;
         }
-        svg {
-            width: \(size.width)px; height: \(size.height)px;
-            display: block;
-        }
+        svg { \(svgSizing) }
+        \(glassPanelRule)
         </style>
         </head>
         <body>
@@ -479,11 +531,30 @@ final class SVGWebViewRasterizer: NSObject {
         worker.captureID = captureID
         worker.captureTask = Task { @MainActor [weak self, weak worker, weak item] in
             guard let self, let worker, let item else { return }
-            let image = await self.captureSnapshot(
+            var rect = CGRect(origin: .zero, size: item.size)
+            var glassPanels: [ReviewCardGlassPanel] = []
+            if item.growsToContent {
+                let measured = await self.measureCard(webView)
+                guard !Task.isCancelled, !item.finished, worker.captureID == captureID else { return }
+                guard let measured else {
+                    worker.captureTask = nil
+                    worker.captureID = nil
+                    self.finishItem(item, on: worker, image: nil)
+                    return
+                }
+                rect.size.height = min(max(1, measured.height.rounded(.up)), item.size.height)
+                glassPanels = measured.glassPanels
+            }
+            let snapshot = await self.captureSnapshot(
                 webView,
-                rect: CGRect(origin: .zero, size: item.size),
+                rect: rect,
                 retriesLeft: 2
             )
+            let image = glassPanels.isEmpty
+                ? snapshot
+                : snapshot.flatMap {
+                    ReviewCardImage(image: $0, glassPanels: glassPanels, isNight: item.cardIsNight)
+                }
             guard !Task.isCancelled,
                   !item.finished,
                   worker.currentItem === item,
@@ -494,6 +565,64 @@ final class SVGWebViewRasterizer: NSObject {
             worker.captureTask = nil
             worker.captureID = nil
             self.finishItem(item, on: worker, image: image)
+        }
+    }
+
+    /// Grows a card template's `<foreignObject>`s to their HTML and the card with them, once
+    /// its fonts have loaded, and returns the card's height and where its `data-yd-glass`
+    /// panels lie. Nil when the page could not be measured — logged, since the card is then
+    /// missing from the chapter.
+    private func measureCard(_ webView: WKWebView) async -> (height: CGFloat, glassPanels: [ReviewCardGlassPanel])? {
+        let script = """
+        await document.fonts.ready;
+        const svg = document.querySelector('svg');
+        if (!svg) { return { height: -1, panels: [] }; }
+        const declared = svg.height.baseVal.value;
+        let grow = 0;
+        for (const fo of svg.querySelectorAll('foreignObject')) {
+            const box = fo.getBoundingClientRect();
+            let need = 0;
+            for (const child of fo.children) {
+                const r = child.getBoundingClientRect();
+                const marginBottom = parseFloat(getComputedStyle(child).marginBottom) || 0;
+                need = Math.max(need, r.bottom + marginBottom - box.top);
+            }
+            const height = fo.height.baseVal.value;
+            if (need > height) {
+                fo.setAttribute('height', String(Math.ceil(need)));
+                grow = Math.max(grow, need - height);
+            }
+        }
+        const total = Math.ceil(declared + grow);
+        svg.setAttribute('height', String(total));
+        const origin = svg.getBoundingClientRect();
+        const panels = [];
+        for (const el of svg.querySelectorAll('[data-yd-glass]')) {
+            const r = el.getBoundingClientRect();
+            if (r.width <= 0 || r.height <= 0) { continue; }
+            const raw = getComputedStyle(el).borderTopLeftRadius;
+            const value = parseFloat(raw) || 0;
+            const radius = raw.trim().endsWith('%') ? Math.min(r.width, r.height) * value / 100 : value;
+            panels.push([r.left - origin.left, r.top - origin.top, r.width, r.height, radius]);
+        }
+        return { height: total, panels: panels };
+        """
+        do {
+            let result = try await webView.callAsyncJavaScript(script, contentWorld: .defaultClient)
+            guard let dictionary = result as? [String: Any],
+                  let height = (dictionary["height"] as? NSNumber)?.doubleValue, height > 0 else {
+                AppLogger.render("⟐ svgRaster card unmeasured", context: ["result": String(describing: result)])
+                return nil
+            }
+            let panels = (dictionary["panels"] as? [[NSNumber]] ?? []).compactMap { values -> ReviewCardGlassPanel? in
+                guard values.count == 5 else { return nil }
+                let v = values.map { CGFloat($0.doubleValue) }
+                return ReviewCardGlassPanel(rect: CGRect(x: v[0], y: v[1], width: v[2], height: v[3]), cornerRadius: v[4])
+            }
+            return (CGFloat(height), panels)
+        } catch {
+            AppLogger.error("svgRaster card measure failed", error: error)
+            return nil
         }
     }
 
@@ -597,6 +726,10 @@ private final class SVGWorkItem {
     let size: CGSize
     let baseURL: URL?
     let cacheKey: NSString
+    /// A card template that sizes itself (`renderCard`); `size` is then its largest extent.
+    let growsToContent: Bool
+    /// The theme a `renderCard` card was filled for.
+    let cardIsNight: Bool
     let continuation: CheckedContinuation<UIImage?, Never>
     /// Set once the item's continuation has been resumed (by snapshot, failure, or watchdog).
     var finished = false
@@ -607,6 +740,8 @@ private final class SVGWorkItem {
         size: CGSize,
         baseURL: URL?,
         cacheKey: NSString,
+        growsToContent: Bool,
+        cardIsNight: Bool,
         continuation: CheckedContinuation<UIImage?, Never>
     ) {
         self.id = id
@@ -614,6 +749,8 @@ private final class SVGWorkItem {
         self.size = size
         self.baseURL = baseURL
         self.cacheKey = cacheKey
+        self.growsToContent = growsToContent
+        self.cardIsNight = cardIsNight
         self.continuation = continuation
     }
 }

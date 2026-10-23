@@ -98,6 +98,7 @@ final class CoreTextPageView: UIView, UIGestureRecognizerDelegate, @MainActor UI
 
     private var layout: CoreTextPaginator.ChapterLayout?
     private var localPageIndex: Int = 0
+    private var reviewCardGlassViews: [ReviewCardGlassView] = []
     /// Where to find exactly what `draw(_:)` would paint for the configured page
     /// and bars, drawn off the main thread (`CoreTextPageEngine.prefetchPageImages`).
     /// Asked each time the page is displayed, not only when it was built: UIKit
@@ -235,8 +236,33 @@ final class CoreTextPageView: UIView, UIGestureRecognizerDelegate, @MainActor UI
             ? layout.backgroundColor
             : fallbackBackgroundColor
         setNeedsDisplay()
+        syncReviewCardGlass()
         updatePlaybackHighlightOverlay()
         refreshAccessibility()
+    }
+
+    /// One `ReviewCardGlassView` per template card with glass on this page, under every
+    /// overlay; the page bitmap leaves those cards out (`ReviewCardGlassDrawing.liveViews`).
+    private func syncReviewCardGlass() {
+        guard let layout, localPageIndex < layout.pageRanges.count else {
+            reviewCardGlassViews.forEach { $0.removeFromSuperview() }
+            reviewCardGlassViews = []
+            return
+        }
+        let cards = layout.reviewCardGlassAttachments(onPage: localPageIndex)
+        while reviewCardGlassViews.count > cards.count {
+            reviewCardGlassViews.removeLast().removeFromSuperview()
+        }
+        while reviewCardGlassViews.count < cards.count {
+            let view = ReviewCardGlassView(frame: .zero)
+            insertSubview(view, at: 0)
+            reviewCardGlassViews.append(view)
+        }
+        for (view, card) in zip(reviewCardGlassViews, cards) {
+            guard let image = card.reviewCardGlassImage else { continue }
+            view.configure(image: image, opacity: card.opacity)
+            view.frame = viewRect(forRenderRect: card.rect)
+        }
     }
 
     func setPlaybackHighlight(_ highlight: ReaderPlaybackHighlight?) {
@@ -594,6 +620,7 @@ final class CoreTextPageView: UIView, UIGestureRecognizerDelegate, @MainActor UI
         super.layoutSubviews()
         bookmarkRibbonView.frame = ReaderBookmarkRibbon.frame(in: bounds)
         guard bounds != lastOverlayBounds else { return }
+        syncReviewCardGlass()
         lastOverlayBounds = bounds
         updateAnnotationOverlay()
         updatePlaybackHighlightOverlay()
@@ -655,12 +682,17 @@ final class CoreTextPageView: UIView, UIGestureRecognizerDelegate, @MainActor UI
         let scale = contentScaleFactor
         let image: UIImage
         let signpostID = Self.displaySignposter.makeSignpostID()
-        let prerendered = prerenderedPage?()
+        // A prerendered page is also the page's snapshot, glass cards baked in; on screen they
+        // are `reviewCardGlassViews`, so such a page draws itself.
+        let hasGlassCards = !layout.reviewCardGlassAttachments(onPage: localPageIndex).isEmpty
+        let prerendered = hasGlassCards ? nil : prerenderedPage?()
         if let prerendered, prerendered.size == size, prerendered.scale == scale {
             Self.displaySignposter.emitEvent("PageDisplay", id: signpostID, "source=prerendered")
             image = prerendered
         } else {
-            let reason = prerenderedPage == nil ? "noSource" : (prerendered == nil ? "notReady" : "mismatch")
+            let reason = hasGlassCards
+                ? "glassCards"
+                : prerenderedPage == nil ? "noSource" : (prerendered == nil ? "notReady" : "mismatch")
             let interval = Self.displaySignposter.beginInterval(
                 "PageDisplay", id: signpostID,
                 "source=drawn reason=\(reason, privacy: .public) size=\(Int(size.width))x\(Int(size.height))"
@@ -690,7 +722,8 @@ final class CoreTextPageView: UIView, UIGestureRecognizerDelegate, @MainActor UI
             in: ctx,
             bounds: bounds,
             // `bookmarkRibbonView` shows the ribbon here — see `ReaderBookmarkRibbon`.
-            bars: pageBars?.removingBookmarkRibbon()
+            bars: pageBars?.removingBookmarkRibbon(),
+            glassCards: .liveViews
         )
     }
 
@@ -701,13 +734,16 @@ final class CoreTextPageView: UIView, UIGestureRecognizerDelegate, @MainActor UI
     ///   animation. A UIKit subview on the page controller would have been visible
     ///   only on the first of those four.
     /// - Parameter frameSource: `.own` for every render off the main thread.
+    /// - Parameter glassCards: `.liveViews` only for the page on screen, where
+    ///   `reviewCardGlassViews` draw template cards with the system's glass.
     nonisolated static func renderPage(
         layout: CoreTextPaginator.ChapterLayout,
         pageIndex: Int,
         in ctx: CGContext,
         bounds: CGRect,
         bars: ReaderPageBars? = nil,
-        frameSource: FrameSource = .layoutArtifact
+        frameSource: FrameSource = .layoutArtifact,
+        glassCards: ReviewCardGlassDrawing = .baked
     ) {
         guard pageIndex < layout.pageRanges.count else { return }
 
@@ -750,7 +786,7 @@ final class CoreTextPageView: UIView, UIGestureRecognizerDelegate, @MainActor UI
 
         if layout.pageKinds[pageIndex] == .image {
             for attachment in layout.blockAttachments[pageIndex] ?? [] {
-                attachment.image.draw(in: attachment.rect, blendMode: .normal, alpha: attachment.opacity)
+                attachment.draw(glassCards: glassCards)
             }
             return
         }
@@ -832,17 +868,17 @@ final class CoreTextPageView: UIView, UIGestureRecognizerDelegate, @MainActor UI
         }
 
         // 3b. Block attachments (block images without blockRenderStyle)
-        Self.drawAttachments(layout.blockAttachments[pageIndex] ?? [])
+        Self.drawAttachments(layout.blockAttachments[pageIndex] ?? [], glassCards: glassCards)
 
         // 3c. Inline attachments (inline images)
         for attachment in pageInlineImages {
-            attachment.image.draw(in: attachment.rect, blendMode: .normal, alpha: attachment.opacity)
+            attachment.draw(glassCards: glassCards)
         }
 
         // 3d. Block images (decorative images with blockRenderStyle, e.g. watermarks)
         for item in pageBlockRenderables {
             if let attachment = item.imageAttachment {
-                attachment.image.draw(in: attachment.rect, blendMode: .normal, alpha: attachment.opacity)
+                attachment.draw(glassCards: glassCards)
             }
         }
 
@@ -864,9 +900,12 @@ final class CoreTextPageView: UIView, UIGestureRecognizerDelegate, @MainActor UI
 
     }
 
-    nonisolated static func drawAttachments(_ attachments: [CoreTextPaginator.RenderedAttachment]) {
+    nonisolated static func drawAttachments(
+        _ attachments: [CoreTextPaginator.RenderedAttachment],
+        glassCards: ReviewCardGlassDrawing = .baked
+    ) {
         for attachment in attachments {
-            attachment.image.draw(in: attachment.rect, blendMode: .normal, alpha: attachment.opacity)
+            attachment.draw(glassCards: glassCards)
         }
     }
 

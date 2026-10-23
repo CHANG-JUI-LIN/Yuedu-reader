@@ -656,7 +656,7 @@ struct ReaderSettingsView: View {
             if premiumVisibility.showsReaderDecoration {
                 if showsCommentBubbleSettings {
                     NavigationLink {
-                        ReaderCommentBubbleSettingsView()
+                        ReaderCommentBubbleSettingsView(onOpenImporter: requestStyleImporter)
                     } label: {
                         SettingsRowLabel(
                             localized("氣泡設定"),
