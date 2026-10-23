@@ -1049,10 +1049,11 @@ struct BookDetailIntroSection: View {
     var readsSourceFormats = true
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @State private var webContentHeight: CGFloat = 0
+    @State private var webLayout = BookIntroLayout()
     /// Parsed once per intro, never in `body` (guardrail 5).
     @State private var markdown: AttributedString?
-    @ScaledMetric(relativeTo: .subheadline) private var collapsedRichHeight: CGFloat = 88
+    /// About four lines of the intro's text: a rich intro collapses to its last whole line above it.
+    @ScaledMetric(relativeTo: .subheadline) private var collapsedRichLimit: CGFloat = 88
 
     private static let collapsedLineLimit = 4
     /// Roughly four lines of CJK body text at the default text size on a phone.
@@ -1066,8 +1067,12 @@ struct BookDetailIntroSection: View {
             plain.count > Self.collapsedCharacterEstimate
                 || plain.reduce(0) { $1.isNewline ? $0 + 1 : $0 } >= Self.collapsedLineLimit
         case .html, .web:
-            webContentHeight > collapsedRichHeight
+            webLayout.height > collapsedRichHeight + 0.5
         }
+    }
+
+    private var collapsedRichHeight: CGFloat {
+        webLayout.collapsedHeight(limit: collapsedRichLimit)
     }
 
     var body: some View {
@@ -1120,12 +1125,10 @@ struct BookDetailIntroSection: View {
             markup: markup,
             mode: mode,
             baseURL: baseURL.flatMap(URL.init(string:)),
-            contentHeight: $webContentHeight,
+            layout: $webLayout,
             onAction: onAction
         )
-        .frame(height: isExpanded
-            ? max(webContentHeight, 1)
-            : min(max(webContentHeight, 1), collapsedRichHeight))
+        .frame(height: max(isExpanded ? webLayout.height : collapsedRichHeight, 1))
         .clipped()
     }
 
@@ -1444,5 +1447,19 @@ extension View {
         } content: {
             BookDetailInfoSection(items: [.source(name: "示範來源配置") {}])
         }
+    }
+}
+
+/// #57: a source's own CSS spaces its lines apart from ours; collapsed, the intro ends on a whole line.
+#Preview("詳情頁・HTML 簡介收合") {
+    @Previewable @State var isExpanded = false
+    ScrollView {
+        BookDetailIntroSection(
+            text: """
+            <usehtml><h4 style="margin:0 0 10px;font-size:20px;line-height:36px;border-left:4px solid #e33;padding-left:8px">作品簡介</h4>\
+            <p style="margin:0;line-height:30px">標籤：系統+穿越+爽文+癲+單女主+序列收容+克系+群像+輕鬆+日常+腦洞+無敵流+種田+經營+搞笑+熱血</p></usehtml>
+            """,
+            isExpanded: $isExpanded
+        )
     }
 }

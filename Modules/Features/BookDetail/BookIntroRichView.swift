@@ -20,13 +20,13 @@ struct BookIntroWebView: UIViewRepresentable {
     let markup: String
     let mode: Mode
     let baseURL: URL?
-    @Binding var contentHeight: CGFloat
+    @Binding var layout: BookIntroLayout
     /// Runs a button's or image's script; nil leaves them inert.
     var onAction: ((BookIntroAction) -> Void)?
 
     @Environment(\.colorScheme) private var colorScheme
 
-    func makeCoordinator() -> Coordinator { Coordinator(contentHeight: $contentHeight) }
+    func makeCoordinator() -> Coordinator { Coordinator(layout: $layout) }
 
     func makeUIView(context: Context) -> WKWebView {
         let configuration = WKWebViewConfiguration()
@@ -96,12 +96,30 @@ struct BookIntroWebView: UIViewRepresentable {
     @MainActor
     final class Coordinator: NSObject, WKScriptMessageHandler, WKNavigationDelegate {
         static let heightMessage = "yueduIntroHeight"
-        /// Reports the document height now and whenever layout changes it (images
-        /// arriving, fonts loading).
+        /// Reports the document's height and its lines of text (`BookIntroLayout`) now and
+        /// whenever layout changes them (images arriving, fonts loading). Lines are read only
+        /// as deep as `BookIntroLayout.reportedLineDepth`: the intro collapses well above it.
         static let heightScript = """
         (function(){
-          function post(){ window.webkit.messageHandlers.\(heightMessage).postMessage(
-            Math.ceil(document.documentElement.scrollHeight)); }
+          function lines(){
+            var found = [], seen = {}, root = document.body || document.documentElement;
+            var walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT), range = document.createRange();
+            var y = window.scrollY, node;
+            while ((node = walker.nextNode())) {
+              if (!/\\S/.test(node.nodeValue)) { continue; }
+              range.selectNodeContents(node);
+              var rects = range.getClientRects();
+              for (var i = 0; i < rects.length; i++) {
+                var top = rects[i].top + y, bottom = rects[i].bottom + y;
+                if (rects[i].width <= 0 || bottom <= top || top > \(Int(BookIntroLayout.reportedLineDepth))) { continue; }
+                var key = top.toFixed(1) + ':' + bottom.toFixed(1);
+                if (!seen[key]) { seen[key] = true; found.push([top, bottom]); }
+              }
+            }
+            return found;
+          }
+          function post(){ window.webkit.messageHandlers.\(heightMessage).postMessage({
+            height: Math.ceil(document.documentElement.scrollHeight), lines: lines() }); }
           new ResizeObserver(post).observe(document.documentElement);
           window.addEventListener('load', post); post();
         })();
@@ -121,7 +139,7 @@ struct BookIntroWebView: UIViewRepresentable {
         })();
         """
 
-        @Binding var contentHeight: CGFloat
+        @Binding var layout: BookIntroLayout
         var loadedDocument: String?
         var onAction: ((BookIntroAction) -> Void)?
         /// Parsed once per intro rather than on every update.
@@ -136,8 +154,8 @@ struct BookIntroWebView: UIViewRepresentable {
             return parsedFragment
         }
 
-        init(contentHeight: Binding<CGFloat>) {
-            _contentHeight = contentHeight
+        init(layout: Binding<BookIntroLayout>) {
+            _layout = layout
         }
 
         func userContentController(
@@ -146,9 +164,14 @@ struct BookIntroWebView: UIViewRepresentable {
         ) {
             switch message.name {
             case Self.heightMessage:
-                guard let height = (message.body as? NSNumber).map({ CGFloat(truncating: $0) }),
-                      height > 0, abs(height - contentHeight) > 0.5 else { return }
-                contentHeight = height
+                guard let reported = BookIntroLayout(messageBody: message.body) else {
+                    AppLogger.parse("⟐ intro layout message unreadable", context: [
+                        "body": String(describing: message.body).prefix(200).description
+                    ])
+                    return
+                }
+                guard reported.height > 0, reported != layout else { return }
+                layout = reported
             case Self.actionMessage:
                 guard let index = (message.body as? String).flatMap({ Int($0) }),
                       parsedFragment.actions.indices.contains(index) else { return }
@@ -171,6 +194,53 @@ struct BookIntroWebView: UIViewRepresentable {
             await UIApplication.shared.open(url)
             return .cancel
         }
+    }
+}
+
+/// A rich intro's document as laid out: its height, and its lines of text, so it collapses
+/// between two lines rather than through one. A fixed height cut through the second line
+/// wherever the source's own CSS set lines apart from ours (#57).
+struct BookIntroLayout: Equatable {
+    /// How far down the script reads lines; the collapsed intro, four lines at the largest
+    /// accessibility size, ends well above it.
+    static let reportedLineDepth: CGFloat = 1000
+
+    var height: CGFloat = 0
+    /// Each run of text on a line, the top and bottom of its box, in points from the top.
+    var lines: [ClosedRange<CGFloat>] = []
+
+    init(height: CGFloat = 0, lines: [ClosedRange<CGFloat>] = []) {
+        self.height = height
+        self.lines = lines
+    }
+
+    /// What the script posts: `{height, lines: [[top, bottom], …]}`.
+    init?(messageBody: Any) {
+        guard let body = messageBody as? [String: Any],
+              let height = body["height"] as? NSNumber,
+              let lines = body["lines"] as? [[NSNumber]] else { return nil }
+        self.height = CGFloat(truncating: height)
+        self.lines = lines.compactMap { pair in
+            guard pair.count == 2 else { return nil }
+            let top = CGFloat(truncating: pair[0]), bottom = CGFloat(truncating: pair[1])
+            return top < bottom ? top...bottom : nil
+        }
+    }
+
+    /// The tallest height up to `limit` that cuts no line of text: `limit` itself where it
+    /// falls between lines (or through a picture), else the bottom of the last line above it.
+    /// A first line taller than `limit` on its own is shown whole.
+    func collapsedHeight(limit: CGFloat) -> CGFloat {
+        guard height > limit else { return height }
+        // Half a point either way: a line's box ends on fractions of a point.
+        func cutsALine(_ y: CGFloat) -> Bool {
+            lines.contains { $0.lowerBound < y - 0.5 && $0.upperBound > y + 0.5 }
+        }
+        let cuts = [limit] + lines.map(\.upperBound).filter { $0 <= limit }
+        if let cut = cuts.filter({ $0 > 0 && !cutsALine($0) }).max() {
+            return cut
+        }
+        return lines.filter { $0.contains(limit) }.map(\.upperBound).min() ?? limit
     }
 }
 
