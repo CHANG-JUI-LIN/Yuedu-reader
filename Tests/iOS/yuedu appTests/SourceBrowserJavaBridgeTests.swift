@@ -1,3 +1,4 @@
+import Combine
 import Foundation
 import Testing
 import WebKit
@@ -57,6 +58,103 @@ struct SourceBrowserJavaBridgeTests {
         #expect(payload["arguments"] as? [String] == ["https://example.com/comments"])
     }
 
+    /// #21/#54/#55: the loading overlay came off at commit, and a 段評 page whose script waited on
+    /// `java.ajax` showed WebKit's white until it returned. It now stays until the page is drawn.
+    @Test("the loading overlay stays through a page's synchronous java.ajax until it is drawn", .timeLimit(.minutes(1)))
+    func overlayWaitsForFirstPaint() async throws {
+        let bridge = JsBridgeBrowserBridge()
+        let coordinator = JsBridgeBrowserRepresentable.Coordinator()
+        coordinator.bridge = bridge
+        let log = EventLog()
+        let phases = bridge.$phase.sink { phase in
+            switch phase {
+            case .committed: log.events.append("committed")
+            case .painted: log.events.append("painted")
+            case .finished: log.events.append("finished")
+            case .loading, .failed: break
+            }
+        }
+        defer { phases.cancel() }
+
+        let resources = HeldImageSchemeHandler(page: """
+            <html><body><img src="yuedu-test://held.gif"><p id="comments"></p><script>
+            document.getElementById('comments').textContent = window.java.ajax('https://example.com/comments');
+            </script></body></html>
+            """)
+        let configuration = WKWebViewConfiguration()
+        configuration.setURLSchemeHandler(resources, forURLScheme: "yuedu-test")
+        configuration.userContentController.addUserScript(WKUserScript(
+            source: JsBridgeBrowserRepresentable.sourcePageBootstrap(injectedJavaScript: ""),
+            injectionTime: .atDocumentStart,
+            forMainFrameOnly: true
+        ))
+        configuration.userContentController.addScriptMessageHandler(
+            coordinator, contentWorld: .defaultClient,
+            name: JsBridgeBrowserRepresentable.Coordinator.firstPaintMessageName
+        )
+        configuration.userContentController.addUserScript(WKUserScript(
+            source: JsBridgeBrowserRepresentable.Coordinator.firstPaintScript,
+            injectionTime: .atDocumentEnd, forMainFrameOnly: true, in: .defaultClient
+        ))
+        let uiDelegate = SourceWebUIDelegate()
+        uiDelegate.sourceBridgePromptHandler = { _, completion in
+            // A comments request that takes longer than a few frames.
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+                MainActor.assumeIsolated {
+                    log.events.append("ajax")
+                    completion("本段的評論")
+                }
+            }
+        }
+        let webView = WKWebView(frame: CGRect(x: 0, y: 0, width: 320, height: 480), configuration: configuration)
+        webView.uiDelegate = uiDelegate
+        webView.navigationDelegate = coordinator
+
+        // Frames come round only for a web view on screen.
+        let scene = try #require(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first)
+        let window = UIWindow(windowScene: scene)
+        window.rootViewController = UIViewController()
+        window.rootViewController?.view.addSubview(webView)
+        window.makeKeyAndVisible()
+        defer { window.isHidden = true; window.rootViewController = nil }
+
+        webView.load(URLRequest(url: try #require(URL(string: "yuedu-test://page.html"))))
+        // The image holds the load open: the page is drawn before it finishes.
+        for await phase in bridge.$phase.values where phase == .painted || phase == .finished { break }
+        #expect(log.events == ["committed", "ajax", "painted"])
+        #expect(try await webView.evaluateJavaScript("document.getElementById('comments').textContent") as? String == "本段的評論")
+
+        resources.releaseImage()
+        for await phase in bridge.$phase.values where phase == .finished { break }
+        #expect(log.events == ["committed", "ajax", "painted", "finished"])
+    }
+
+    @Test("a first paint counts only for the page that committed")
+    func firstPaintOnlyAfterCommit() async {
+        let bridge = JsBridgeBrowserBridge()
+        let coordinator = JsBridgeBrowserRepresentable.Coordinator()
+        coordinator.bridge = bridge
+        // After the phase changes queued before it.
+        func settle() async {
+            await withCheckedContinuation { continuation in
+                DispatchQueue.main.async { continuation.resume() }
+            }
+        }
+
+        // The last page's paint, posted as the next one started loading.
+        coordinator.setPhase(.loading)
+        coordinator.setPhase(.painted)
+        await settle()
+        #expect(bridge.phase == .loading)
+
+        // A small page that finished before its frames came round.
+        coordinator.setPhase(.committed)
+        coordinator.setPhase(.finished)
+        coordinator.setPhase(.painted)
+        await settle()
+        #expect(bridge.phase == .finished)
+    }
+
     @Test("browser-page upConfig updates the active sheet configuration")
     func browserPageUpConfig() throws {
         let coordinator = JsBridgeBrowserRepresentable.Coordinator()
@@ -72,6 +170,48 @@ struct SourceBrowserJavaBridgeTests {
         let parsed = SourceBrowserPresentationConfiguration(json: json)
         #expect(parsed.heightPercentage == 0.72)
         #expect(parsed.skipCollapsed)
+    }
+}
+
+@MainActor
+private final class EventLog {
+    var events: [String] = []
+}
+
+/// Serves `page` at once and holds every other resource until `releaseImage()`.
+@MainActor
+private final class HeldImageSchemeHandler: NSObject, WKURLSchemeHandler {
+    private let page: String
+    private var held: [any WKURLSchemeTask] = []
+
+    init(page: String) {
+        self.page = page
+    }
+
+    func webView(_ webView: WKWebView, start urlSchemeTask: any WKURLSchemeTask) {
+        guard let url = urlSchemeTask.request.url else { return }
+        guard url.absoluteString.hasSuffix(".html") else {
+            held.append(urlSchemeTask)
+            return
+        }
+        let data = Data(page.utf8)
+        urlSchemeTask.didReceive(URLResponse(url: url, mimeType: "text/html",
+                                             expectedContentLength: data.count, textEncodingName: "utf-8"))
+        urlSchemeTask.didReceive(data)
+        urlSchemeTask.didFinish()
+    }
+
+    func webView(_ webView: WKWebView, stop urlSchemeTask: any WKURLSchemeTask) {
+        held.removeAll { $0 === urlSchemeTask }
+    }
+
+    func releaseImage() {
+        for task in held {
+            guard let url = task.request.url else { continue }
+            task.didReceive(URLResponse(url: url, mimeType: "image/gif", expectedContentLength: 0, textEncodingName: nil))
+            task.didFinish()
+        }
+        held.removeAll()
     }
 }
 

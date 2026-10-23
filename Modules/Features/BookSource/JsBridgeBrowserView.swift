@@ -184,18 +184,21 @@ struct JsBridgeBrowserView: View {
             )
                 .edgesIgnoringSafeArea(hidesToolbar ? .all : [])
 
-            // Full-screen state until the page delivers its first content.
+            // Full-screen state until the page has drawn its first content. Not lifted at
+            // commit: until the page paints, WebKit shows its own white, which is all a 段評
+            // sheet over a dark reader showed while the page's synchronous `java.ajax` ran
+            // (#21, #54, #55).
             switch bridge.phase {
-            case .loading:
+            case .loading, .committed:
                 loadingOverlay
             case .failed:
                 errorOverlay
-            case .committed, .finished:
+            case .painted, .finished:
                 EmptyView()
             }
 
             // Safari-style thin progress bar across the top while loading.
-            if (bridge.phase == .loading || bridge.phase == .committed), bridge.progress < 1 {
+            if bridge.phase != .failed, bridge.phase != .finished, bridge.progress < 1 {
                 ProgressView(value: max(bridge.progress, 0.03))
                     .progressViewStyle(.linear)
                     .tint(DSColor.accent)
@@ -316,7 +319,15 @@ struct LegadoReviewBrowserView: View {
 
 @MainActor
 final class JsBridgeBrowserBridge: @MainActor ObservableObject {
-    enum Phase { case loading, committed, finished, failed }
+    enum Phase {
+        case loading
+        /// The page's document has replaced the last one, but nothing of it is drawn yet.
+        case committed
+        /// The parsed document has been drawn; subresources may still be loading.
+        case painted
+        case finished
+        case failed
+    }
 
     var syncCookiesAndDismiss: ((@escaping (String?) -> Void) -> Void)?
     var reload: (() -> Void)?
@@ -520,6 +531,18 @@ struct JsBridgeBrowserRepresentable: UIViewRepresentable {
                 WKUserScript(source: bootstrap, injectionTime: .atDocumentStart, forMainFrameOnly: true)
             )
         }
+        // In a world of its own, out of the page's reach, as every page here needs it.
+        config.userContentController.addScriptMessageHandler(
+            context.coordinator,
+            contentWorld: .defaultClient,
+            name: Coordinator.firstPaintMessageName
+        )
+        config.userContentController.addUserScript(WKUserScript(
+            source: Coordinator.firstPaintScript,
+            injectionTime: .atDocumentEnd,
+            forMainFrameOnly: true,
+            in: .defaultClient
+        ))
 
         let wv = WKWebView(frame: .zero, configuration: config)
         SourceWebIdentity.apply(desktop: false, to: wv)
@@ -571,11 +594,27 @@ struct JsBridgeBrowserRepresentable: UIViewRepresentable {
             forName: Coordinator.sourceRunMessageName,
             contentWorld: .page
         )
+        uiView.configuration.userContentController.removeScriptMessageHandler(
+            forName: Coordinator.firstPaintMessageName,
+            contentWorld: .defaultClient
+        )
         coordinator.clipboardBridge.remove(from: uiView.configuration.userContentController)
     }
 
     final class Coordinator: NSObject, WKNavigationDelegate, WKScriptMessageHandlerWithReply {
         static let sourceRunMessageName = "yueduSourceRun"
+        static let firstPaintMessageName = "yueduFirstPaint"
+        /// Posts once the parsed document has been drawn. It runs when parsing ends, after the
+        /// page's own scripts, a synchronous `java.ajax` among them; the first frame callback
+        /// comes before the frame that draws the document, the second before the next one, by
+        /// when the first has been drawn.
+        static let firstPaintScript = """
+        requestAnimationFrame(function () {
+            requestAnimationFrame(function () {
+                window.webkit.messageHandlers.\(firstPaintMessageName).postMessage('');
+            });
+        });
+        """
 
         weak var webView: WKWebView?
         weak var bridge: JsBridgeBrowserBridge?
@@ -616,10 +655,14 @@ struct JsBridgeBrowserRepresentable: UIViewRepresentable {
             }
         }
 
-        private func setPhase(_ phase: JsBridgeBrowserBridge.Phase, error: String? = nil) {
+        func setPhase(_ phase: JsBridgeBrowserBridge.Phase, error: String? = nil) {
             DispatchQueue.main.async { [weak self] in
-                self?.bridge?.phase = phase
-                if let error { self?.bridge?.errorText = error }
+                guard let bridge = self?.bridge else { return }
+                // A first paint counts only for the page that committed: not one that finished
+                // before its frames came round, nor the last page's, posted as a new one started.
+                if phase == .painted, bridge.phase != .committed { return }
+                bridge.phase = phase
+                if let error { bridge.errorText = error }
             }
         }
 
@@ -692,6 +735,11 @@ struct JsBridgeBrowserRepresentable: UIViewRepresentable {
             didReceive message: WKScriptMessage,
             replyHandler: @escaping @MainActor (Any?, String?) -> Void
         ) {
+            if message.name == Self.firstPaintMessageName {
+                setPhase(.painted)
+                replyHandler(nil, nil)
+                return
+            }
             guard message.name == Self.sourceRunMessageName,
                   let script = message.body as? String,
                   let sourceRunHandler else {
@@ -763,11 +811,13 @@ struct JsBridgeBrowserRepresentable: UIViewRepresentable {
             setPhase(.committed)
         }
 
+        /// Also what lifts the overlay where no first paint is posted: a document no user script
+        /// runs in (a PDF), or a web view off screen, whose frames never come round.
         func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
             DispatchQueue.main.async { [weak self] in
                 self?.bridge?.progress = 1
-                self?.bridge?.phase = .finished
             }
+            setPhase(.finished)
             syncCookiesAndDismiss(from: webView, completion: nil)
             if finishesWhenChallengeClears {
                 checkCloudflareChallenge(in: webView)
