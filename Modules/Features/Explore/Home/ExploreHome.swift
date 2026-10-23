@@ -91,6 +91,13 @@ private struct ExploreHomeRoot: View {
                               hasImportedSources: tabModel.hasSources, librariesAvailable: availability.isAvailable)
     }
 
+    /// Whom the defaults are for: a new install's 預設, and 預設配置's 首頁配置 (maintainer,
+    /// 2026-10-23).
+    private var defaultsContext: HomePageDefaults.Context {
+        HomePageDefaults.Context(mode: mode, publicLibrariesAvailable: availability.isAvailable,
+                                 languages: aggregation.readingLanguages.languages)
+    }
+
     /// The sections drawn, in the reader's languages' order (聚合設定, 5d-3d).
     private var groups: [HomeSectionGroup] {
         let lookup = store.copyLookup()
@@ -169,10 +176,12 @@ private struct ExploreHomeRoot: View {
             if let book = selection.selectedBook { path.append(WorkDetailRoute(book)) }
         }
         .environment(\.explorePush) { $0.append(to: &path) }
+        .environment(\.homeDefaults, defaultsContext)
         .task(id: syncKey) {
             // Saved here, not while drawing: the first read saves the defaults.
-            await model.sync(with: pageStore.pageOrDefaults(mode: mode, publicLibrariesAvailable: availability.isAvailable,
-                                                            languages: aggregation.readingLanguages.languages),
+            await model.sync(with: pageStore.pageOrDefaults(mode: defaultsContext.mode,
+                                                            publicLibrariesAvailable: defaultsContext.publicLibrariesAvailable,
+                                                            languages: defaultsContext.languages),
                              hiddenFromLatest: Set(aggregation.settings.hiddenFromLatest ?? []))
         }
         .task { await aozora.load() }

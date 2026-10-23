@@ -118,12 +118,20 @@ final class HomePageStore: ObservableObject {
         change { $0.selected = id == .defaults ? nil : id }
     }
 
-    /// 新增首頁配置 from 預設配置: 預設's sections; the new one is selected.
-    func createConfiguration(named name: String) {
+    /// 新增首頁配置 from a template: 空白模板 with no section; 預設配置 with the defaults the app
+    /// keeps for this reader, whatever their 預設 has become (maintainer, 2026-10-23: they emptied
+    /// 預設 and 預設配置 copied it, empty). The new one is selected.
+    func createConfiguration(named name: String, from template: HomeConfigurationTemplate,
+                             defaults context: HomePageDefaults.Context) {
+        let sections = switch template {
+        case .blank: [HomeSection]()
+        case .defaults: HomePageDefaults.page(for: context).sections
+        }
         change { home in
-            let id = home.create(named: name)
-            AppLogger.cache("⟐ 首頁配置 made from 預設", context: [
-                "configuration": id.rawValue, "sections": "\(home.sections(of: id).count)",
+            let id = home.create(named: name, sections: sections)
+            AppLogger.cache("⟐ 首頁配置 made from a template", context: [
+                "configuration": id.rawValue, "template": template.rawValue, "mode": context.mode.rawValue,
+                "sections": "\(sections.count)",
             ])
         }
     }

@@ -273,6 +273,20 @@ struct HomePage: Codable, Hashable, Sendable {
 /// Pure: nothing calls it at launch and nothing writes it until the home first reads it
 /// (Phase 5 plan, 5a step 3), so the defaults can still change without a second migration.
 enum HomePageDefaults {
+    /// Whom the defaults are made for, as the home knows it: `page`'s inputs. 預設配置 makes a
+    /// 首頁配置 from them (maintainer, 2026-10-23: the defaults the app keeps, not the reader's
+    /// 預設, which they may have emptied).
+    struct Context: Equatable, Sendable {
+        let mode: ExploreMode
+        let publicLibrariesAvailable: Bool
+        let languages: [String]
+    }
+
+    static func page(for context: Context, makeID: () -> UUID = UUID.init) -> HomePage {
+        page(mode: context.mode, publicLibrariesAvailable: context.publicLibrariesAvailable, languages: context.languages,
+             makeID: makeID)
+    }
+
     /// - Parameters:
     ///   - mode: the effective `explore.mode` (`ExploreMode.effective`); a new install is
     ///     `.publicLibraries`.

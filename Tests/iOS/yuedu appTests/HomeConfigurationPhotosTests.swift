@@ -86,7 +86,9 @@ struct HomeConfigurationPhotosTests {
         }
         let store = HomePageStore(fileURL: folder.appendingPathComponent("explore_home.json"), defaults: defaults)
         _ = store.pageOrDefaults(mode: .publicLibraries, publicLibrariesAvailable: false, languages: [])
-        store.createConfiguration(named: "週末")
+        store.createConfiguration(named: "週末", from: .blank,
+                                  defaults: HomePageDefaults.Context(mode: .publicLibraries, publicLibrariesAvailable: false,
+                                                                     languages: []))
         let weekend = store.selectedConfiguration
         try await store.photos.setPhoto(png(width: 300, height: 300), for: weekend)
         let file = folder.appendingPathComponent("HomeConfigurationPhotos/\(weekend.rawValue).jpg")

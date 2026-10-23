@@ -136,9 +136,10 @@ final class ExploreHomeUITests: XCTestCase {
 
     /// 首頁配置 → 預設配置, named `name`, back on the home.
     @MainActor
-    private func addConfiguration(_ app: XCUIApplication, _ name: String) {
+    /// - Parameter template: `default` for 預設配置, `blank` for 空白模板.
+    private func addConfiguration(_ app: XCUIApplication, _ name: String, template: String = "default") {
         openConfigurations(app)
-        app.buttons["homeConfigurations.template.default"].firstMatch.tap()
+        app.buttons["homeConfigurations.template.\(template)"].firstMatch.tap()
         let field = app.textFields["名稱"].firstMatch
         XCTAssertTrue(field.waitForExistence(timeout: 5), app.debugDescription)
         field.typeText(name)
@@ -362,21 +363,21 @@ final class ExploreHomeUITests: XCTestCase {
         openExplore(app)
         XCTAssertTrue(app.buttons[featuredCard].firstMatch.waitForExistence(timeout: 15))
 
-        // From 預設配置: 預設's sections.
+        // From 預設配置: the app's defaults.
         let name = "測試配置\(UUID().uuidString.prefix(4))"
         addConfiguration(app, name)
         XCTAssertTrue(app.buttons[featuredCard].firstMatch.waitForExistence(timeout: 10), app.debugDescription)
         XCTAssertFalse(app.staticTexts["這個首頁配置還沒有欄目"].exists, app.debugDescription)
         attach(app, "explore-configuration-from-defaults")
 
-        // The page lists 預設 and the new one, checked, and one template; a tap moves the check
-        // and stays.
+        // The page lists 預設 and the new one, checked, no built-in 空白, and the two templates;
+        // a tap moves the check and stays.
         openConfigurations(app)
         let own = configurationRow(app, name)
         XCTAssertTrue(own.waitForExistence(timeout: 5), app.debugDescription)
         XCTAssertTrue(own.isSelected)
         XCTAssertFalse(app.buttons["homeConfigurations.row.blank"].exists, app.debugDescription)
-        XCTAssertFalse(app.buttons["homeConfigurations.template.blank"].exists, app.debugDescription)
+        XCTAssertTrue(app.buttons["homeConfigurations.template.blank"].exists, app.debugDescription)
         XCTAssertTrue(app.buttons["homeConfigurations.template.default"].exists, app.debugDescription)
         attach(app, "explore-configurations-page")
         let defaults = configurationRow(app, "預設")
@@ -437,6 +438,12 @@ final class ExploreHomeUITests: XCTestCase {
         attach(app, "explore-more-browser")
         app.buttons["關閉"].firstMatch.tap()
         XCTAssertTrue(app.buttons[featuredCard].firstMatch.waitForExistence(timeout: 10))
+
+        // From 空白模板: no section, and the home says so.
+        addConfiguration(app, "空白的", template: "blank")
+        XCTAssertTrue(app.staticTexts["這個首頁配置還沒有欄目"].waitForExistence(timeout: 10), app.debugDescription)
+        XCTAssertFalse(app.buttons[featuredCard].exists, app.debugDescription)
+        attach(app, "explore-configuration-from-blank")
 
         // Hidden before 2026-10-17, with 編輯首頁's switch: there all the same.
         app.terminate()

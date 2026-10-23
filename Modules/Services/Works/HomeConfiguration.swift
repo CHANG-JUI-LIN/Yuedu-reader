@@ -5,8 +5,8 @@ import Foundation
 // - 預設 is the home the reader had before 5d-4, edited since 5d-2 (decision 22), saved as the
 //   file's top-level `sections`, where a build older than 5d-4 still finds it. It moves among
 //   the reader's own (`defaultsIndex`), and is never deleted.
-// - The reader's own: made from 預設配置, which starts from 預設's sections, or migrated from
-//   a custom page (`custom_explore_pages.json`), which keeps its id.
+// - The reader's own: made from a template (`HomeConfigurationTemplate`), or migrated from a
+//   custom page (`custom_explore_pages.json`), which keeps its id.
 // - 空白 was built in until 2026-10-23, when the maintainer took it away (`retireBlank`).
 // Every configuration is edited the same way (編輯首頁, a section name's long press,
 // 聚合設定's 首頁欄目); those edits act on the selected one.
@@ -38,6 +38,14 @@ struct HomeConfiguration: Codable, Hashable, Identifiable, Sendable {
         self.name = name
         self.sections = sections
     }
+}
+
+/// Where a new 首頁配置 starts, from 從設定範本新增: 空白模板 with no section, 預設配置 with the
+/// defaults the app keeps (`HomePageDefaults`), not with the reader's 預設 (maintainer,
+/// 2026-10-23).
+enum HomeConfigurationTemplate: String, Sendable {
+    case blank
+    case defaults = "default"
 }
 
 /// What 首頁配置's page lists: a configuration's id and name.
@@ -140,19 +148,14 @@ struct HomeConfigurations: Codable, Hashable, Sendable {
         }
     }
 
-    /// 新增首頁配置 from 預設配置: 預設's sections, each under a new id so the two never share a
-    /// row, named as the reader typed it, a blank name becoming 首頁配置 and a taken one numbered.
-    /// It goes last and becomes the selected one.
-    mutating func create(named name: String, makeID: () -> UUID = UUID.init) -> HomeConfigurationID {
+    /// 新增首頁配置: `newSections` (its template's), named as the reader typed it, a blank name
+    /// becoming 首頁配置 and a taken one numbered. It goes last and becomes the selected one.
+    mutating func create(named name: String, sections newSections: [HomeSection],
+                         makeID: () -> UUID = UUID.init) -> HomeConfigurationID {
         let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
-        let copied = sections.map { section -> HomeSection in
-            var copy = section
-            copy.id = makeID()
-            return copy
-        }
         let id = HomeConfigurationID(makeID())
         configurations.append(HomeConfiguration(id: id, name: uniqueName(trimmed.isEmpty ? localized("首頁配置") : trimmed),
-                                                sections: copied))
+                                                sections: newSections))
         selected = id
         return id
     }

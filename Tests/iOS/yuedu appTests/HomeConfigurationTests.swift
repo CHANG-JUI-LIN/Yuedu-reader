@@ -182,19 +182,41 @@ struct HomeConfigurationTests {
 
     // MARK: Using them
 
-    @Test("新增首頁配置 from 預設配置 copies 預設's sections under new ids, goes last and is selected")
+    @Test("新增首頁配置 starts from its template's sections, goes last and is selected")
     func create() throws {
         var home = HomeConfigurations(sections: [HomeSection(layout: .row, binding: .continueReading)])
-        let copied = home.create(named: " 晚上 ")
-        #expect(home.selectedID == copied)
-        #expect(home.sections(of: copied).map(\.binding) == [.continueReading])
-        #expect(home.sections(of: copied).map(\.id) != home.sections.map(\.id))
+        let evening = home.create(named: " 晚上 ", sections: [HomeSection(layout: .row, binding: .latest)])
+        #expect(home.selectedID == evening)
+        #expect(home.sections(of: evening).map(\.binding) == [.latest])
+        #expect(home.sections.map(\.binding) == [.continueReading])
 
-        let again = home.create(named: "晚上")
-        #expect(home.sections(of: again).map(\.binding) == [.continueReading])
+        let again = home.create(named: "晚上", sections: [])
+        #expect(home.sections(of: again).isEmpty)
         #expect(home.listings.map(\.name) == [localized("預設"), "晚上", "晚上 2"])
-        let unnamed = home.create(named: "  ")
+        let unnamed = home.create(named: "  ", sections: [])
         #expect(home.listings.first { $0.id == unnamed }?.name == localized("首頁配置"))
+    }
+
+    @Test("預設配置 is the app's defaults even once 預設 is emptied; 空白模板 has no section")
+    func templates() throws {
+        let folder = try makeFolder()
+        defer { folder.cleanup() }
+        let store = folder.store()
+        _ = store.pageOrDefaults(mode: .publicLibraries, publicLibrariesAvailable: true, languages: ["zh"])
+        // The maintainer's case (2026-10-23): every section of 預設 deleted, then 預設配置.
+        store.edit { $0.sections.removeAll() }
+        #expect(store.page?.sections.isEmpty == true)
+
+        let context = HomePageDefaults.Context(mode: .publicLibraries, publicLibrariesAvailable: true, languages: ["zh"])
+        store.createConfiguration(named: "週末", from: .defaults, defaults: context)
+        let made = try #require(store.page?.sections)
+        #expect(made.map(\.binding) == HomePageDefaults.page(for: context).sections.map(\.binding))
+        #expect(made.contains { if case .module = $0.binding { true } else { false } }, "the official modules' lists too")
+        #expect(store.home?.sections(of: .defaults).isEmpty == true, "預設 stays as the reader left it")
+
+        store.createConfiguration(named: "自己排", from: .blank, defaults: context)
+        #expect(store.page?.sections.isEmpty == true)
+        #expect(store.configurations.map(\.name) == [localized("預設"), "週末", "自己排"])
     }
 
     @Test("edits act on the selected configuration; 預設 is not renamed or deleted")
@@ -205,7 +227,9 @@ struct HomeConfigurationTests {
         _ = store.pageOrDefaults(mode: .publicLibraries, publicLibrariesAvailable: false, languages: [])
         let defaultIDs = sectionIDs(store)
 
-        store.createConfiguration(named: "週末")
+        store.createConfiguration(named: "週末", from: .defaults,
+                                  defaults: HomePageDefaults.Context(mode: .publicLibraries, publicLibrariesAvailable: false,
+                                                                     languages: []))
         let weekend = store.selectedConfiguration
         #expect(weekend != .defaults)
         #expect(store.page?.sections.map(\.binding) == store.home?.sections.map(\.binding))
@@ -236,9 +260,9 @@ struct HomeConfigurationTests {
     @Test("首頁配置's 編輯 moves 預設 among the reader's own, and the order is kept")
     func move() throws {
         var home = HomeConfigurations(sections: [])
-        let a = home.create(named: "A")
-        let b = home.create(named: "B")
-        let c = home.create(named: "C")
+        let a = home.create(named: "A", sections: [])
+        let b = home.create(named: "B", sections: [])
+        let c = home.create(named: "C", sections: [])
         #expect(home.listings.map(\.id) == [.defaults, a, b, c])
 
         // `List`'s onMove: 預設 to the end is destination 4, counted before it is taken out.
@@ -254,7 +278,7 @@ struct HomeConfigurationTests {
         #expect(home.listings.map(\.id) == [b, c, a, .defaults])
 
         // A new one goes last; deleting one before 預設 keeps it after the rest.
-        let d = home.create(named: "D")
+        let d = home.create(named: "D", sections: [])
         #expect(home.listings.map(\.id) == [b, c, a, .defaults, d])
         home.delete(b)
         #expect(home.listings.map(\.id) == [c, a, .defaults, d])

@@ -1,18 +1,18 @@
 import SwiftUI
 
 // Unified library 5d-4: what is asked about a 首頁配置 (Phase 5 plan, decision 22). Since
-// 2026-10-22 首頁配置's own page asks it: 新增首頁配置 from its 預設配置 template asks only the
-// name, and deleting one of the reader's own asks first. A name is changed on the
-// configuration's own page.
+// 2026-10-22 首頁配置's own page asks it: 新增首頁配置 from one of its templates asks only the
+// name (where to start is the template), and deleting one of the reader's own asks first. A
+// name is changed on the configuration's own page.
 
 enum HomeConfigurationPrompt: Identifiable {
-    /// 預設配置: from 預設's sections.
-    case create
+    /// From the template tapped.
+    case create(HomeConfigurationTemplate)
     case delete(HomeConfigurationListing)
 
     var id: String {
         switch self {
-        case .create: "create"
+        case .create(let template): "create|" + template.rawValue
         case .delete(let configuration): "delete|" + configuration.id.rawValue
         }
     }
@@ -28,12 +28,13 @@ extension View {
 private struct HomeConfigurationPrompts: ViewModifier {
     @Binding var prompt: HomeConfigurationPrompt?
     @ObservedObject private var store = HomePageStore.shared
+    @Environment(\.homeDefaults) private var homeDefaults
     @State private var name = ""
 
-    /// While a new one's name is asked.
-    private var creating: Bool {
-        if case .create = prompt { return true }
-        return false
+    /// Where a new one starts, while its name is asked.
+    private var creating: HomeConfigurationTemplate? {
+        if case .create(let template) = prompt { return template }
+        return nil
     }
 
     private var deleting: HomeConfigurationListing? {
@@ -45,10 +46,16 @@ private struct HomeConfigurationPrompts: ViewModifier {
         content
             .alert(
                 localized("新增首頁配置"),
-                isPresented: Binding(get: { creating }, set: { if !$0 { prompt = nil } })
-            ) {
+                isPresented: Binding(get: { creating != nil }, set: { if !$0 { prompt = nil } }),
+                presenting: creating
+            ) { template in
                 TextField(localized("名稱"), text: $name)
-                Button(localized("新增")) { store.createConfiguration(named: name) }
+                Button(localized("新增")) {
+                    if let homeDefaults { store.createConfiguration(named: name, from: template, defaults: homeDefaults) }
+                }
+                // The home's stack, the only one that pushes 首頁配置's page, says whom the
+                // defaults are for; a preview has none.
+                .disabled(homeDefaults == nil)
                 Button(localized("取消"), role: .cancel) {}
             }
             .background {
@@ -65,13 +72,21 @@ private struct HomeConfigurationPrompts: ViewModifier {
                 }
             }
             .onChange(of: prompt?.id) { _, _ in
-                if creating { name = "" }
+                if creating != nil { name = "" }
             }
     }
 }
 
 #Preview("新增首頁配置") {
-    @Previewable @State var prompt: HomeConfigurationPrompt? = .create
+    @Previewable @State var prompt: HomeConfigurationPrompt? = .create(.blank)
     Text(localized("探索"))
         .homeConfigurationPrompts($prompt)
+        .environment(\.homeDefaults, HomePageDefaults.Context(mode: .publicLibraries, publicLibrariesAvailable: true,
+                                                              languages: ["zh"]))
+}
+
+extension EnvironmentValues {
+    /// Whom the home's defaults are for, set by the home for the pages it pushes: 預設配置
+    /// makes a 首頁配置 from them.
+    @Entry var homeDefaults: HomePageDefaults.Context? = nil
 }

@@ -3612,6 +3612,8 @@
 "配置列表" = "Configurations";
 "點一下切換設定；進入編輯模式可調整順序。" = "Tap one to switch to it. Enter Edit mode to change the order.";
 "從設定範本新增" = "New from Template";
+"空白模板" = "Blank Template";
+"沒有欄目，之後自行新增" = "No sections; add your own later";
 "預設配置" = "Default Configuration";
 "從預設的欄目開始" = "Starts with the default sections";
 "內建的完整探索首頁" = "The full built-in Explore home";

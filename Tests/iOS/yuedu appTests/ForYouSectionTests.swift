@@ -40,7 +40,9 @@ struct ForYouSectionTests {
         let store = HomePageStore(fileURL: url)
         store.save(HomePage(sections: sections))
         if let configuration {
-            store.createConfiguration(named: configuration)
+            store.createConfiguration(named: configuration, from: .blank,
+                                      defaults: HomePageDefaults.Context(mode: .publicLibraries, publicLibrariesAvailable: false,
+                                                                         languages: []))
         }
         store.waitForPendingWritesForTesting()
         return url
@@ -72,7 +74,7 @@ struct ForYouSectionTests {
         let url = savedHome([HomeSection(layout: .compactReadingCard, binding: .continueReading)], selecting: "我的")
         let store = HomePageStore(fileURL: url, defaults: suite(), insertsForYouOnce: true)
         #expect(store.selectedConfiguration != .defaults)
-        #expect(store.page?.sections.map(\.binding) == [.continueReading, .forYou])
+        #expect(store.page?.sections.map(\.binding) == [.forYou])
         #expect(store.home?.sections(of: .defaults).map(\.binding) == [.continueReading])
     }
 

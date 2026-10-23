@@ -4,7 +4,7 @@ import SwiftUI
 // home, where ••• had a submenu until then. Every 首頁配置 with the photo the reader gave it; a
 // tap switches to it and stays here. 編輯 reorders them all, 預設 among the reader's own
 // (maintainer, 2026-10-23), deletes the reader's own, and opens a configuration's photo and
-// name, as its swipe does. New ones come from 預設配置 under the list.
+// name, as its swipe does. New ones come from the two templates under the list.
 
 struct HomeConfigurationsPage: View {
     @ObservedObject private var store = HomePageStore.shared
@@ -31,7 +31,10 @@ struct HomeConfigurationsPage: View {
                     .dsSectionFooter()
             }
             Section(localized("從設定範本新增")) {
-                defaultsTemplate
+                template(.blank, title: localized("空白模板"), subtitle: localized("沒有欄目，之後自行新增"),
+                         systemImage: "rectangle.dashed")
+                template(.defaults, title: localized("預設配置"), subtitle: localized("從預設的欄目開始"),
+                         systemImage: "square.stack")
             }
         }
         .navigationTitle(localized("首頁配置"))
@@ -111,20 +114,21 @@ struct HomeConfigurationsPage: View {
         id == .defaults ? localized("內建的完整探索首頁") : nil
     }
 
-    /// 預設配置: a new one from 預設's sections, once it is named.
-    private var defaultsTemplate: some View {
-        Button { prompt = .create } label: {
+    /// A new one from `start`, once it is named.
+    private func template(_ start: HomeConfigurationTemplate, title: String, subtitle: String,
+                          systemImage: String) -> some View {
+        Button { prompt = .create(start) } label: {
             HStack(spacing: DSSpacing.md) {
-                Image(systemName: "square.stack")
+                Image(systemName: systemImage)
                     .font(DSFont.title2)
                     .foregroundStyle(DSColor.textPrimary)
                     .frame(width: DSLayout.homeConfigurationRowPhotoSize)
                     .accessibilityHidden(true)
                 VStack(alignment: .leading, spacing: DSSpacing.xxs) {
-                    Text(localized("預設配置"))
+                    Text(title)
                         .font(DSFont.body)
                         .foregroundStyle(DSColor.textPrimary)
-                    Text(localized("從預設的欄目開始"))
+                    Text(subtitle)
                         .font(DSFont.subheadline)
                         .foregroundStyle(DSColor.textSecondary)
                 }
@@ -134,7 +138,7 @@ struct HomeConfigurationsPage: View {
         }
         .buttonStyle(.plain)
         .disabled(editMode.isEditing)
-        .accessibilityIdentifier("homeConfigurations.template.default")
+        .accessibilityIdentifier("homeConfigurations.template.\(start.rawValue)")
     }
 }
 
@@ -267,6 +271,8 @@ struct HomeConfigurationForm: View {
     NavigationStack {
         HomeConfigurationsPage()
     }
+    .environment(\.homeDefaults, HomePageDefaults.Context(mode: .publicLibraries, publicLibrariesAvailable: true,
+                                                          languages: ["zh"]))
 }
 
 #Preview("照片，沒有照片時") {
