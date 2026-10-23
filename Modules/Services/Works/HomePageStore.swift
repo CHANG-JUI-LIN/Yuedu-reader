@@ -31,7 +31,7 @@ final class HomePageStore: ObservableObject {
 
     var selectedConfiguration: HomeConfigurationID { home?.selectedID ?? .defaults }
 
-    /// 範圍's 首頁配置: 預設, 空白, then the reader's own.
+    /// 首頁配置's page: the reader's own, with 預設 where it was moved to.
     var configurations: [HomeConfigurationListing] {
         (home ?? HomeConfigurations(sections: [])).listings
     }
@@ -118,9 +118,14 @@ final class HomePageStore: ObservableObject {
         change { $0.selected = id == .defaults ? nil : id }
     }
 
-    /// 新增首頁配置, from 預設 or 空白; the new one is selected.
-    func createConfiguration(named name: String, from start: HomeConfigurationID) {
-        change { _ = $0.create(named: name, from: start) }
+    /// 新增首頁配置 from 預設配置: 預設's sections; the new one is selected.
+    func createConfiguration(named name: String) {
+        change { home in
+            let id = home.create(named: name)
+            AppLogger.cache("⟐ 首頁配置 made from 預設", context: [
+                "configuration": id.rawValue, "sections": "\(home.sections(of: id).count)",
+            ])
+        }
     }
 
     func renameConfiguration(_ id: HomeConfigurationID, to name: String) {
@@ -134,9 +139,9 @@ final class HomePageStore: ObservableObject {
         photos.removePhoto(for: id)
     }
 
-    /// 首頁配置's 編輯: the reader's own reordered, counted among themselves.
+    /// 首頁配置's 編輯: the list reordered, 預設 among the reader's own.
     func moveConfigurations(fromOffsets offsets: IndexSet, toOffset destination: Int) {
-        change { $0.moveOwn(fromOffsets: offsets, toOffset: destination) }
+        change { $0.move(fromOffsets: offsets, toOffset: destination) }
     }
 
     /// 加入首頁配置.
@@ -195,13 +200,12 @@ final class HomePageStore: ObservableObject {
     static let forYouInsertedKey = "home.forYouInserted"
 
     /// Everyone gets 為你推薦 once (Discovery Phase 7a, maintainer's decision 4): a saved home
-    /// gets it in the 首頁配置 the reader is on (預設 when that is 空白, which the reader keeps
-    /// empty on purpose), after 系列下一本, else 繼續閱讀, else first. Deleting it afterwards
+    /// gets it in the 首頁配置 the reader is on, after 系列下一本, else 繼續閱讀, else first. Deleting it afterwards
     /// sticks. Not on a file this build only reads.
     private func insertForYouOnce(into home: inout HomeConfigurations) {
         guard insertsForYouOnce, !isReadOnly, !defaults.bool(forKey: Self.forYouInsertedKey) else { return }
         defaults.set(true, forKey: Self.forYouInsertedKey)
-        let target = home.selectedID == .blank ? HomeConfigurationID.defaults : home.selectedID
+        let target = home.selectedID
         var sections = home.sections(of: target)
         guard !sections.contains(where: { $0.binding == .forYou }) else { return }
         let after = sections.lastIndex { $0.binding == .nextInSeries } ?? sections.lastIndex { $0.binding == .continueReading }

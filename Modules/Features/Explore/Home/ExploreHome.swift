@@ -83,6 +83,9 @@ private struct ExploreHomeRoot: View {
 
     // MARK: State
 
+    /// The top of the home, where another 首頁配置 opens.
+    private static let top = "home.top"
+
     private var mode: ExploreMode {
         ExploreMode.effective(stored: .storedValue(storedMode, hasImportedSources: tabModel.hasSources),
                               hasImportedSources: tabModel.hasSources, librariesAvailable: availability.isAvailable)
@@ -126,7 +129,7 @@ private struct ExploreHomeRoot: View {
         groups.allSatisfy(\.isSettledEmpty)
     }
 
-    /// The selected 首頁配置 shows no section at all: 空白, or one whose sections are all hidden.
+    /// The selected 首頁配置 shows no section at all: none left, or every one hidden.
     private var hasNoSections: Bool {
         !(pageStore.page?.sections.contains { $0.isEnabled && $0.isEditable } ?? false)
     }
@@ -173,11 +176,6 @@ private struct ExploreHomeRoot: View {
                              hiddenFromLatest: Set(aggregation.settings.hiddenFromLatest ?? []))
         }
         .task { await aozora.load() }
-        // 編輯首頁 edits one 首頁配置; deleting it, the one 預設 takes the place of, ends the edit.
-        // Another 首頁配置 picked on its page opens where the page is, not at its end.
-        .onChange(of: pageStore.selectedConfiguration) { _, _ in
-            if isEditing { setEditing(false) } else { followsEnd = false }
-        }
         .onReceive(sourceStore.sourcesPublisher) { _ in
             exploreSources = DiscoverViewModel.exploreSources(in: sourceStore)
         }
@@ -191,6 +189,7 @@ private struct ExploreHomeRoot: View {
             // Each section has the gap after it (`HomeSectionSlot`), going with it where only the
             // home or only the editor gives it room.
             VStack(alignment: .leading, spacing: 0) {
+                Color.clear.frame(height: 0).id(Self.top)
                 LazyVStack(alignment: .leading, spacing: 0) {
                     let entries = sectionEntries
                     let editableCount = entries.count(where: { $0.editableIndex != nil })
@@ -244,6 +243,20 @@ private struct ExploreHomeRoot: View {
             followsEnd = false
             withAnimation(reduceMotion ? nil : DSAnimation.standard) { proxy.scrollTo(added, anchor: .center) }
             addedSection = nil
+        }
+        // 編輯首頁 edits one 首頁配置; deleting it, the one 預設 takes the place of, ends the edit.
+        // Another 首頁配置 picked on its page is another page, opening at its top. Kept where the
+        // page was, every section's identity changed under an offset deep into the home, and its
+        // lazy stack drew no row at all, at that offset or any scrolled to after, and not after
+        // switching back either: the home stayed blank but for 編輯首頁 (iOS 27 simulator,
+        // 2026-10-23; the maintainer's 「切換完還是空白的」).
+        .onChange(of: pageStore.selectedConfiguration) { _, _ in
+            if isEditing {
+                setEditing(false)
+            } else {
+                followsEnd = false
+                proxy.scrollTo(Self.top, anchor: .top)
+            }
         }
         }
         .overlay {

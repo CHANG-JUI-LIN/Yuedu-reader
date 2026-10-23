@@ -70,7 +70,7 @@ struct HomeConfigurationPhotosTests {
         defer { try? FileManager.default.removeItem(at: folder) }
         let photos = HomeConfigurationPhotos(directory: folder.appendingPathComponent("HomeConfigurationPhotos"))
         await #expect(throws: HomeConfigurationPhotos.PhotoError.self) {
-            try await photos.setPhoto(Data("not an image".utf8), for: .blank)
+            try await photos.setPhoto(Data("not an image".utf8), for: .defaults)
         }
         #expect(photos.images.isEmpty)
     }
@@ -86,7 +86,7 @@ struct HomeConfigurationPhotosTests {
         }
         let store = HomePageStore(fileURL: folder.appendingPathComponent("explore_home.json"), defaults: defaults)
         _ = store.pageOrDefaults(mode: .publicLibraries, publicLibrariesAvailable: false, languages: [])
-        store.createConfiguration(named: "週末", from: .blank)
+        store.createConfiguration(named: "週末")
         let weekend = store.selectedConfiguration
         try await store.photos.setPhoto(png(width: 300, height: 300), for: weekend)
         let file = folder.appendingPathComponent("HomeConfigurationPhotos/\(weekend.rawValue).jpg")

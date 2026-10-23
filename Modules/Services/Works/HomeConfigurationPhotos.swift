@@ -4,8 +4,8 @@ import UIKit
 
 /// The photo the reader picks for a 首頁配置 (maintainer, 2026-10-22, after Rex's 管理配置): one
 /// square JPEG per configuration, `<id>.jpg` in a folder beside `explore_home.json`. Like that
-/// file it stays on this device: neither iCloud nor WebDAV carries the home. 預設 and 空白 can
-/// have one too. Read when 首頁配置's page first asks, then kept.
+/// file it stays on this device: neither iCloud nor WebDAV carries the home. 預設 can have one
+/// too. Read when 首頁配置's page first asks, then kept.
 @MainActor
 final class HomeConfigurationPhotos: ObservableObject {
     enum PhotoError: Error {
@@ -80,7 +80,7 @@ final class HomeConfigurationPhotos: ObservableObject {
     }
 
     private func fileURL(for id: HomeConfigurationID) -> URL {
-        // 預設, 空白 or a UUID: nothing a file name cannot hold.
+        // 預設's `default`, a 空白 kept from before 2026-10-23, or a UUID: nothing a file name cannot hold.
         directory.appendingPathComponent(id.rawValue).appendingPathExtension("jpg")
     }
 

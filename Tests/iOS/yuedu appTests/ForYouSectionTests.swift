@@ -40,7 +40,7 @@ struct ForYouSectionTests {
         let store = HomePageStore(fileURL: url)
         store.save(HomePage(sections: sections))
         if let configuration {
-            store.createConfiguration(named: configuration, from: .defaults)
+            store.createConfiguration(named: configuration)
         }
         store.waitForPendingWritesForTesting()
         return url

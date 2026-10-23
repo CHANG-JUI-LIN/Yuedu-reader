@@ -1,17 +1,18 @@
 import Foundation
 
 // Unified library 5d-4: 首頁配置 (Phase 5 plan, decisions 12 and 22). The home is one of
-// several configurations, switched from 範圍:
+// several configurations, switched on 首頁配置's page:
 // - 預設 is the home the reader had before 5d-4, edited since 5d-2 (decision 22), saved as the
-//   file's top-level `sections`, where a build older than 5d-4 still finds it.
-// - 空白 starts with no section.
-// - The reader's own: made from 新增首頁配置, starting from 預設 or 空白, or migrated from a
-//   custom page (`custom_explore_pages.json`), which keeps its id.
+//   file's top-level `sections`, where a build older than 5d-4 still finds it. It moves among
+//   the reader's own (`defaultsIndex`), and is never deleted.
+// - The reader's own: made from 預設配置, which starts from 預設's sections, or migrated from
+//   a custom page (`custom_explore_pages.json`), which keeps its id.
+// - 空白 was built in until 2026-10-23, when the maintainer took it away (`retireBlank`).
 // Every configuration is edited the same way (編輯首頁, a section name's long press,
 // 聚合設定's 首頁欄目); those edits act on the selected one.
 
-/// Which configuration: 預設, 空白 or one of the reader's own. A string, so a built-in this
-/// build does not know is still kept by id.
+/// Which configuration: 預設 or one of the reader's own. A string, so a built-in this build
+/// does not know is still kept by id.
 struct HomeConfigurationID: RawRepresentable, Codable, Hashable, Sendable {
     let rawValue: String
 
@@ -19,9 +20,10 @@ struct HomeConfigurationID: RawRepresentable, Codable, Hashable, Sendable {
     init(_ id: UUID) { rawValue = id.uuidString }
 
     static let defaults = Self(rawValue: "default")
+    /// The built-in 空白 until 2026-10-23: read from older files only (`retireBlank`).
     static let blank = Self(rawValue: "blank")
 
-    var isBuiltIn: Bool { self == .defaults || self == .blank }
+    var isBuiltIn: Bool { self == .defaults }
 }
 
 /// One configuration other than 預設: its name and sections.
@@ -38,7 +40,7 @@ struct HomeConfiguration: Codable, Hashable, Identifiable, Sendable {
     }
 }
 
-/// What 範圍 lists: a configuration's id and name.
+/// What 首頁配置's page lists: a configuration's id and name.
 struct HomeConfigurationListing: Identifiable, Hashable, Sendable {
     let id: HomeConfigurationID
     let name: String
@@ -48,24 +50,28 @@ struct HomeConfigurationListing: Identifiable, Hashable, Sendable {
 struct HomeConfigurations: Codable, Hashable, Sendable {
     /// 預設's sections. Top level, under the key a build older than 5d-4 reads.
     var sections: [HomeSection]
-    /// 空白 once it has been saved, and the reader's own, in the order they were made.
+    /// The reader's own, in the order 首頁配置's page lists them.
     var configurations: [HomeConfiguration]
     /// Nil is 預設.
     var selected: HomeConfigurationID?
+    /// Where 預設 sits among the reader's own on 首頁配置's page; nil is first. A build older
+    /// than 2026-10-23 lists it first all the same.
+    var defaultsIndex: Int?
     /// Set while `custom_explore_pages.json` could not be read: the pages move in on a later
     /// launch that reads it.
     var customPagesPending: Bool
 
     init(sections: [HomeSection], configurations: [HomeConfiguration] = [], selected: HomeConfigurationID? = nil,
-         customPagesPending: Bool = false) {
+         defaultsIndex: Int? = nil, customPagesPending: Bool = false) {
         self.sections = sections
         self.configurations = configurations
         self.selected = selected
+        self.defaultsIndex = defaultsIndex
         self.customPagesPending = customPagesPending
     }
 
     private enum CodingKeys: String, CodingKey {
-        case schemaVersion, sections, configurations, selected, customPagesPending
+        case schemaVersion, sections, configurations, selected, defaultsIndex, customPagesPending
     }
 
     init(from decoder: Decoder) throws {
@@ -73,7 +79,9 @@ struct HomeConfigurations: Codable, Hashable, Sendable {
         sections = try container.decode([HomeSection].self, forKey: .sections)
         configurations = try container.decodeIfPresent([HomeConfiguration].self, forKey: .configurations) ?? []
         selected = try container.decodeIfPresent(HomeConfigurationID.self, forKey: .selected)
+        defaultsIndex = try container.decodeIfPresent(Int.self, forKey: .defaultsIndex)
         customPagesPending = try container.decodeIfPresent(Bool.self, forKey: .customPagesPending) ?? false
+        retireBlank()
     }
 
     func encode(to encoder: Encoder) throws {
@@ -82,14 +90,28 @@ struct HomeConfigurations: Codable, Hashable, Sendable {
         try container.encode(sections, forKey: .sections)
         try container.encode(configurations, forKey: .configurations)
         try container.encodeIfPresent(selected, forKey: .selected)
+        try container.encodeIfPresent(defaultsIndex, forKey: .defaultsIndex)
         if customPagesPending { try container.encode(true, forKey: .customPagesPending) }
+    }
+
+    /// 空白 is no longer built in (maintainer, 2026-10-23). One the reader filled stays, as
+    /// their own 空白; an empty one goes, and 預設 is shown in its place.
+    mutating func retireBlank() {
+        if let index = configurations.firstIndex(where: { $0.id == .blank }) {
+            if configurations[index].sections.isEmpty {
+                configurations.remove(at: index)
+            } else if configurations[index].name.isEmpty {
+                configurations[index].name = localized("空白")
+            }
+        }
+        if selected == .blank, !configurations.contains(where: { $0.id == .blank }) { selected = nil }
     }
 
     // MARK: Reading
 
     /// The selected configuration's id; one that is gone reads as 預設.
     var selectedID: HomeConfigurationID {
-        guard let selected, selected == .blank || configurations.contains(where: { $0.id == selected }) else {
+        guard let selected, configurations.contains(where: { $0.id == selected }) else {
             return .defaults
         }
         return selected
@@ -100,11 +122,12 @@ struct HomeConfigurations: Codable, Hashable, Sendable {
         return configurations.first { $0.id == id }?.sections ?? []
     }
 
-    /// 預設, 空白, then the reader's own in the order they were made.
+    /// The reader's own in their order, with 預設 where it was moved to.
     var listings: [HomeConfigurationListing] {
-        [HomeConfigurationListing(id: .defaults, name: localized("預設")),
-         HomeConfigurationListing(id: .blank, name: localized("空白"))]
-            + configurations.filter { !$0.id.isBuiltIn }.map { HomeConfigurationListing(id: $0.id, name: $0.name) }
+        var listed = configurations.filter { !$0.id.isBuiltIn }.map { HomeConfigurationListing(id: $0.id, name: $0.name) }
+        listed.insert(HomeConfigurationListing(id: .defaults, name: localized("預設")),
+                      at: min(max(defaultsIndex ?? 0, 0), listed.count))
+        return listed
     }
 
     // MARK: Changing
@@ -114,23 +137,19 @@ struct HomeConfigurations: Codable, Hashable, Sendable {
             sections = newSections
         } else if let index = configurations.firstIndex(where: { $0.id == id }) {
             configurations[index].sections = newSections
-        } else if id == .blank {
-            configurations.insert(HomeConfiguration(id: .blank, sections: newSections), at: 0)
         }
     }
 
-    /// 新增首頁配置: a configuration starting from 預設's sections (each under a new id, so
-    /// the two never share a row) or from none, named as the reader typed it, a blank name
-    /// becoming 首頁配置 and a taken one numbered. It becomes the selected one.
-    mutating func create(named name: String, from start: HomeConfigurationID, makeID: () -> UUID = UUID.init) -> HomeConfigurationID {
+    /// 新增首頁配置 from 預設配置: 預設's sections, each under a new id so the two never share a
+    /// row, named as the reader typed it, a blank name becoming 首頁配置 and a taken one numbered.
+    /// It goes last and becomes the selected one.
+    mutating func create(named name: String, makeID: () -> UUID = UUID.init) -> HomeConfigurationID {
         let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
-        let copied = start == .defaults
-            ? sections.map { section -> HomeSection in
-                var copy = section
-                copy.id = makeID()
-                return copy
-            }
-            : []
+        let copied = sections.map { section -> HomeSection in
+            var copy = section
+            copy.id = makeID()
+            return copy
+        }
         let id = HomeConfigurationID(makeID())
         configurations.append(HomeConfiguration(id: id, name: uniqueName(trimmed.isEmpty ? localized("首頁配置") : trimmed),
                                                 sections: copied))
@@ -145,22 +164,24 @@ struct HomeConfigurations: Codable, Hashable, Sendable {
         configurations[index].name = trimmed
     }
 
-    /// 首頁配置's 編輯: the reader's own in a new order, `offsets` and `destination` counted among
-    /// them alone. 預設 and 空白 stay first, so their order is the one `configurations` keeps.
-    mutating func moveOwn(fromOffsets offsets: IndexSet, toOffset destination: Int) {
-        let own = configurations.filter { !$0.id.isBuiltIn }
-        let valid = offsets.filteredIndexSet { own.indices.contains($0) }
-        guard !valid.isEmpty, (0...own.count).contains(destination) else { return }
+    /// 首頁配置's 編輯: the list in a new order, 預設 among the reader's own (maintainer,
+    /// 2026-10-23); `offsets` and `destination` count `listings`.
+    mutating func move(fromOffsets offsets: IndexSet, toOffset destination: Int) {
+        let listed = listings.map(\.id)
+        let valid = offsets.filteredIndexSet { listed.indices.contains($0) }
+        guard !valid.isEmpty, (0...listed.count).contains(destination) else { return }
         // `List`'s onMove: the destination is counted before the moved ones are taken out.
-        var reordered = own.indices.filter { !valid.contains($0) }.map { own[$0] }
-        let insertion = destination - valid.count(in: 0..<destination)
-        reordered.insert(contentsOf: valid.map { own[$0] }, at: insertion)
-        configurations = configurations.filter(\.id.isBuiltIn) + reordered
+        var order = listed.indices.filter { !valid.contains($0) }.map { listed[$0] }
+        order.insert(contentsOf: valid.map { listed[$0] }, at: destination - valid.count(in: 0..<destination))
+        let own = Dictionary(configurations.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+        configurations = order.compactMap { own[$0] }
+        defaultsIndex = order.firstIndex(of: .defaults).flatMap { $0 == 0 ? nil : $0 }
     }
 
-    /// The reader's own only; 預設 is selected in its place.
+    /// The reader's own only; 預設 is selected in its place, and keeps its place in the list.
     mutating func delete(_ id: HomeConfigurationID) {
-        guard !id.isBuiltIn else { return }
+        guard !id.isBuiltIn, let listed = listings.firstIndex(where: { $0.id == id }) else { return }
+        if let index = defaultsIndex, listed < index { defaultsIndex = index - 1 == 0 ? nil : index - 1 }
         configurations.removeAll { $0.id == id }
         if selected == id { selected = nil }
     }
@@ -178,7 +199,7 @@ struct HomeConfigurations: Codable, Hashable, Sendable {
     }
 
     private func uniqueName(_ base: String) -> String {
-        let taken = Set(configurations.map(\.name) + [localized("預設"), localized("空白")])
+        let taken = Set(configurations.map(\.name) + [localized("預設")])
         guard taken.contains(base) else { return base }
         var number = 2
         while taken.contains("\(base) \(number)") { number += 1 }

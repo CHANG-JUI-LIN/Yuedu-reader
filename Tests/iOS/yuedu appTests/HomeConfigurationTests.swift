@@ -93,7 +93,7 @@ struct HomeConfigurationTests {
 
         let store = folder.store()
         store.waitForPendingWritesForTesting()
-        #expect(store.configurations.map(\.name) == [localized("預設"), localized("空白"), "週末", "榜單"])
+        #expect(store.configurations.map(\.name) == [localized("預設"), "週末", "榜單"])
         #expect(store.selectedConfiguration == HomeConfigurationID(charts.id))
         #expect(store.page?.sections.map(\.layout) == [.rankedList, .rankedList])
         #expect(folder.defaults.string(forKey: ExploreSettings.legacyLandingKey) == nil)
@@ -119,7 +119,7 @@ struct HomeConfigurationTests {
         let store = folder.store()
         store.deleteConfiguration(HomeConfigurationID(weekend.id))
         store.waitForPendingWritesForTesting()
-        #expect(folder.store().configurations.map(\.name) == [localized("預設"), localized("空白")])
+        #expect(folder.store().configurations.map(\.name) == [localized("預設")])
     }
 
     @Test("a pages file that cannot be read moves in on a later launch, and the old 首屏 waits for it")
@@ -133,7 +133,7 @@ struct HomeConfigurationTests {
 
         let first = folder.store()
         first.waitForPendingWritesForTesting()
-        #expect(first.configurations.count == 2)
+        #expect(first.configurations.count == 1)
         #expect(first.page?.sections.map(\.binding) == [.continueReading, .latest], "the home itself still reads")
         #expect(folder.defaults.string(forKey: ExploreSettings.legacyLandingKey) != nil)
 
@@ -175,29 +175,29 @@ struct HomeConfigurationTests {
         try JSONEncoder().encode([page("週末", [])]).write(to: folder.pages)
         let store = folder.store()
         #expect(store.isReadOnly)
-        #expect(store.configurations.count == 2)
+        #expect(store.configurations.count == 1)
         store.waitForPendingWritesForTesting()
         #expect(try Data(contentsOf: folder.home) == Data(json.utf8))
     }
 
     // MARK: Using them
 
-    @Test("新增首頁配置 from 預設 copies its sections under new ids; from 空白 starts empty; either is selected")
+    @Test("新增首頁配置 from 預設配置 copies 預設's sections under new ids, goes last and is selected")
     func create() throws {
         var home = HomeConfigurations(sections: [HomeSection(layout: .row, binding: .continueReading)])
-        let copied = home.create(named: " 晚上 ", from: .defaults)
+        let copied = home.create(named: " 晚上 ")
         #expect(home.selectedID == copied)
         #expect(home.sections(of: copied).map(\.binding) == [.continueReading])
         #expect(home.sections(of: copied).map(\.id) != home.sections.map(\.id))
 
-        let empty = home.create(named: "晚上", from: .blank)
-        #expect(home.sections(of: empty).isEmpty)
-        #expect(home.listings.map(\.name) == [localized("預設"), localized("空白"), "晚上", "晚上 2"])
-        let unnamed = home.create(named: "  ", from: .blank)
+        let again = home.create(named: "晚上")
+        #expect(home.sections(of: again).map(\.binding) == [.continueReading])
+        #expect(home.listings.map(\.name) == [localized("預設"), "晚上", "晚上 2"])
+        let unnamed = home.create(named: "  ")
         #expect(home.listings.first { $0.id == unnamed }?.name == localized("首頁配置"))
     }
 
-    @Test("edits act on the selected configuration; 空白 is saved once edited; built-ins are not renamed or deleted")
+    @Test("edits act on the selected configuration; 預設 is not renamed or deleted")
     func editsSelected() throws {
         let folder = try makeFolder()
         defer { folder.cleanup() }
@@ -205,54 +205,105 @@ struct HomeConfigurationTests {
         _ = store.pageOrDefaults(mode: .publicLibraries, publicLibrariesAvailable: false, languages: [])
         let defaultIDs = sectionIDs(store)
 
-        store.select(.blank)
-        #expect(store.page?.sections == [])
-        store.addCategory(hot, to: .blank)
-        #expect(store.page?.sections.map(\.binding) == [.sourceCategories([hot])])
-        #expect(store.contains(hot, in: .blank))
+        store.createConfiguration(named: "週末")
+        let weekend = store.selectedConfiguration
+        #expect(weekend != .defaults)
+        #expect(store.page?.sections.map(\.binding) == store.home?.sections.map(\.binding))
+        store.addCategory(hot, to: weekend)
+        #expect(store.page?.sections.last?.binding == .sourceCategories([hot]))
+        #expect(store.contains(hot, in: weekend))
         #expect(!store.contains(hot, in: .defaults))
-        store.edit { $0.setLayout(.coverGrid, section: $0.sections[0].id) }
+        store.edit { $0.setLayout(.coverGrid, section: $0.sections[$0.sections.count - 1].id) }
         store.select(.defaults)
         #expect(sectionIDs(store) == defaultIDs)
 
-        store.renameConfiguration(.blank, to: "x")
-        store.deleteConfiguration(.blank)
-        store.createConfiguration(named: "週末", from: .blank)
-        let weekend = store.selectedConfiguration
+        store.renameConfiguration(.defaults, to: "x")
+        store.deleteConfiguration(.defaults)
         store.renameConfiguration(weekend, to: "假日")
+        store.select(weekend)
         store.waitForPendingWritesForTesting()
 
         let reread = folder.store()
-        #expect(reread.configurations.map(\.name) == [localized("預設"), localized("空白"), "假日"])
+        #expect(reread.configurations.map(\.name) == [localized("預設"), "假日"])
         #expect(reread.selectedConfiguration == weekend)
-        reread.select(.blank)
-        #expect(reread.page?.sections.map(\.layout) == [.coverGrid])
+        #expect(reread.page?.sections.last?.layout == .coverGrid)
 
-        reread.select(weekend)
         reread.deleteConfiguration(weekend)
         #expect(reread.selectedConfiguration == .defaults)
         #expect(sectionIDs(reread) == defaultIDs)
     }
 
-    @Test("首頁配置's 編輯 moves the reader's own among themselves; 預設 and 空白 stay first")
-    func moveOwn() {
+    @Test("首頁配置's 編輯 moves 預設 among the reader's own, and the order is kept")
+    func move() throws {
         var home = HomeConfigurations(sections: [])
-        home.setSections([HomeSection(layout: .row, binding: .latest)], of: .blank)
-        let a = home.create(named: "A", from: .blank)
-        let b = home.create(named: "B", from: .blank)
-        let c = home.create(named: "C", from: .blank)
+        let a = home.create(named: "A")
+        let b = home.create(named: "B")
+        let c = home.create(named: "C")
+        #expect(home.listings.map(\.id) == [.defaults, a, b, c])
 
-        // `List`'s onMove: A to the end is destination 3, counted before A is taken out.
-        home.moveOwn(fromOffsets: [0], toOffset: 3)
-        #expect(home.listings.map(\.id) == [.defaults, .blank, b, c, a])
-        #expect(home.configurations.first?.id == .blank)
-        home.moveOwn(fromOffsets: [1, 2], toOffset: 0)
-        #expect(home.listings.map(\.name) == [localized("預設"), localized("空白"), "C", "A", "B"])
-        // Offsets past the reader's own change nothing.
-        home.moveOwn(fromOffsets: [5], toOffset: 0)
-        home.moveOwn(fromOffsets: [0], toOffset: 9)
-        #expect(home.listings.map(\.name) == [localized("預設"), localized("空白"), "C", "A", "B"])
-        #expect(home.selectedID == c)
+        // `List`'s onMove: 預設 to the end is destination 4, counted before it is taken out.
+        home.move(fromOffsets: [0], toOffset: 4)
+        #expect(home.listings.map(\.id) == [a, b, c, .defaults])
+        home.move(fromOffsets: [3], toOffset: 1)
+        #expect(home.listings.map(\.id) == [a, .defaults, b, c])
+        home.move(fromOffsets: [2, 3], toOffset: 0)
+        #expect(home.listings.map(\.id) == [b, c, a, .defaults])
+        // Offsets past the list change nothing.
+        home.move(fromOffsets: [5], toOffset: 0)
+        home.move(fromOffsets: [0], toOffset: 9)
+        #expect(home.listings.map(\.id) == [b, c, a, .defaults])
+
+        // A new one goes last; deleting one before 預設 keeps it after the rest.
+        let d = home.create(named: "D")
+        #expect(home.listings.map(\.id) == [b, c, a, .defaults, d])
+        home.delete(b)
+        #expect(home.listings.map(\.id) == [c, a, .defaults, d])
+        home.delete(d)
+        #expect(home.listings.map(\.id) == [c, a, .defaults])
+
+        let reread = try JSONDecoder().decode(HomeConfigurations.self, from: JSONEncoder().encode(home))
+        #expect(reread.listings.map(\.id) == [c, a, .defaults])
+    }
+
+    // MARK: 空白, built in until 2026-10-23
+
+    private func homeWithBlank(_ blankSections: String) -> String {
+        """
+        {"schemaVersion":2,"sections":[
+          {"id":"6B1C9C7E-6F2B-4C77-9E33-0D7F1B0E8A11","layout":"row","binding":{"type":"continueReading"}}
+        ],"configurations":[{"id":"blank","name":"","sections":[\(blankSections)]}],"selected":"blank"}
+        """
+    }
+
+    @Test("an empty 空白 saved by an older build goes, and 預設 is shown in its place")
+    func emptyBlankGoes() throws {
+        let folder = try makeFolder()
+        defer { folder.cleanup() }
+        try Data(homeWithBlank("").utf8).write(to: folder.home)
+        let store = folder.store()
+        #expect(store.configurations.map(\.id) == [.defaults])
+        #expect(store.selectedConfiguration == .defaults)
+        #expect(store.page?.sections.map(\.binding) == [.continueReading])
+    }
+
+    @Test("a 空白 the reader filled stays, as their own 空白, still shown")
+    func filledBlankStays() throws {
+        let folder = try makeFolder()
+        defer { folder.cleanup() }
+        try Data(homeWithBlank("""
+          {"id":"0C7E2A55-3F7D-4F0E-8B3A-5D2F6C1B9E22","layout":"coverGrid","binding":{"type":"continueReading"}}
+        """).utf8).write(to: folder.home)
+        let store = folder.store()
+        #expect(store.configurations.map(\.name) == [localized("預設"), localized("空白")])
+        #expect(store.selectedConfiguration == .blank)
+        #expect(store.page?.sections.map(\.layout) == [.coverGrid])
+
+        // The reader's own now: renamed and deleted like any other.
+        store.renameConfiguration(.blank, to: "晚上")
+        #expect(store.configurations.map(\.name) == [localized("預設"), "晚上"])
+        store.deleteConfiguration(.blank)
+        #expect(store.configurations.map(\.id) == [.defaults])
+        store.waitForPendingWritesForTesting()
     }
 }
 

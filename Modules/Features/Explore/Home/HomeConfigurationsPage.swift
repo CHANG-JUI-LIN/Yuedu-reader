@@ -2,9 +2,9 @@ import SwiftUI
 
 // 首頁配置's own page (maintainer, 2026-10-22, after Rex's 管理配置), from its button on the
 // home, where ••• had a submenu until then. Every 首頁配置 with the photo the reader gave it; a
-// tap switches to it and stays here. 編輯 reorders and deletes the reader's own — 預設 and 空白
-// keep the top — and opens a configuration's photo and name, as its swipe does. New ones come
-// from the two templates under the list.
+// tap switches to it and stays here. 編輯 reorders them all, 預設 among the reader's own
+// (maintainer, 2026-10-23), deletes the reader's own, and opens a configuration's photo and
+// name, as its swipe does. New ones come from 預設配置 under the list.
 
 struct HomeConfigurationsPage: View {
     @ObservedObject private var store = HomePageStore.shared
@@ -16,15 +16,13 @@ struct HomeConfigurationsPage: View {
 
     var body: some View {
         let listings = store.configurations
-        let own = listings.filter { !$0.id.isBuiltIn }
         List {
             Section {
-                ForEach(listings.filter(\.id.isBuiltIn)) { row($0) }
-                ForEach(own) { row($0) }
+                ForEach(listings) { row($0) }
                     .onMove { store.moveConfigurations(fromOffsets: $0, toOffset: $1) }
                     // 編輯's delete asks first, as the swipe's does: the sections go with it.
                     .onDelete { offsets in
-                        if let first = offsets.first { prompt = .delete(own[first]) }
+                        if let first = offsets.first, !listings[first].id.isBuiltIn { prompt = .delete(listings[first]) }
                     }
             } header: {
                 Text(localized("配置列表"))
@@ -33,10 +31,7 @@ struct HomeConfigurationsPage: View {
                     .dsSectionFooter()
             }
             Section(localized("從設定範本新增")) {
-                template(localized("空白模板"), subtitle: localized("沒有欄目，之後自行新增"),
-                         systemImage: "rectangle.dashed", start: .blank)
-                template(localized("預設配置"), subtitle: localized("從預設的欄目開始"),
-                         systemImage: "square.stack", start: .defaults)
+                defaultsTemplate
             }
         }
         .navigationTitle(localized("首頁配置"))
@@ -95,6 +90,8 @@ struct HomeConfigurationsPage: View {
             }
         }
         .accessibilityIdentifier("homeConfigurations.row.\(configuration.id.rawValue)")
+        // 預設 moves with the rest but is never deleted.
+        .deleteDisabled(configuration.id.isBuiltIn)
         .swipeActions(edge: .trailing, allowsFullSwipe: false) {
             // No destructive role: that takes the row away before the dialog has asked.
             if !configuration.id.isBuiltIn {
@@ -109,28 +106,25 @@ struct HomeConfigurationsPage: View {
         }
     }
 
-    /// 預設 and 空白 say what they are, as Rex's 默認 does; the reader's own are their name.
+    /// 預設 says what it is, as Rex's 默認 does; the reader's own are their name.
     private func subtitle(of id: HomeConfigurationID) -> String? {
-        switch id {
-        case .defaults: localized("內建的完整探索首頁")
-        case .blank: localized("內建的空白首頁")
-        default: nil
-        }
+        id == .defaults ? localized("內建的完整探索首頁") : nil
     }
 
-    private func template(_ title: String, subtitle: String, systemImage: String, start: HomeConfigurationID) -> some View {
-        Button { prompt = .create(from: start) } label: {
+    /// 預設配置: a new one from 預設's sections, once it is named.
+    private var defaultsTemplate: some View {
+        Button { prompt = .create } label: {
             HStack(spacing: DSSpacing.md) {
-                Image(systemName: systemImage)
+                Image(systemName: "square.stack")
                     .font(DSFont.title2)
                     .foregroundStyle(DSColor.textPrimary)
                     .frame(width: DSLayout.homeConfigurationRowPhotoSize)
                     .accessibilityHidden(true)
                 VStack(alignment: .leading, spacing: DSSpacing.xxs) {
-                    Text(title)
+                    Text(localized("預設配置"))
                         .font(DSFont.body)
                         .foregroundStyle(DSColor.textPrimary)
-                    Text(subtitle)
+                    Text(localized("從預設的欄目開始"))
                         .font(DSFont.subheadline)
                         .foregroundStyle(DSColor.textSecondary)
                 }
@@ -140,7 +134,7 @@ struct HomeConfigurationsPage: View {
         }
         .buttonStyle(.plain)
         .disabled(editMode.isEditing)
-        .accessibilityIdentifier("homeConfigurations.template.\(start.rawValue)")
+        .accessibilityIdentifier("homeConfigurations.template.default")
     }
 }
 
