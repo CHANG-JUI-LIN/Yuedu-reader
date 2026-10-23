@@ -29,12 +29,19 @@ final class LibraryTabUITests: XCTestCase {
         add(attachment)
     }
 
-    /// A card far down the page: the grid builds its cards only near the screen.
+    /// A card or row far down the page, scrolled until it sits whole above the tab bar: the grid
+    /// and a module page's form build their rows only near the screen, and a card built below
+    /// the screen or under the tab bar exists without being where a tap lands. A module page is
+    /// a `Form`, a collection view rather than a scroll view: pass it as `container`.
     @MainActor
-    private func scrolledTo(_ element: XCUIElement, in app: XCUIApplication) -> XCUIElement {
+    private func scrolledTo(_ element: XCUIElement, in app: XCUIApplication,
+                            scrolling container: XCUIElement? = nil) -> XCUIElement {
+        let container = container ?? app.scrollViews.firstMatch
+        let tabBar = app.tabBars.firstMatch
+        let bottom = tabBar.exists ? tabBar.frame.minY : app.frame.maxY
         var swipes = 0
-        while !element.exists, swipes < 6 {
-            app.scrollViews.firstMatch.swipeUp(velocity: .slow)
+        while !(element.exists && element.frame.maxY <= bottom), swipes < 6 {
+            container.swipeUp(velocity: .slow)
             swipes += 1
         }
         return element
@@ -97,20 +104,25 @@ final class LibraryTabUITests: XCTestCase {
         XCTAssertFalse(app.staticTexts["公有書庫"].exists, "no 公有書庫 group: the libraries are 官方模組 (M2b)")
         gutenberg.tap()
         XCTAssertTrue(app.navigationBars["Project Gutenberg"].waitForExistence(timeout: 5), app.debugDescription)
-        XCTAssertTrue(app.staticTexts["www.gutenberg.org"].waitForExistence(timeout: 5), app.debugDescription)
         XCTAssertFalse(app.buttons["publicLibrary.categories"].exists, "瀏覽所有分類 was the shelves' page")
         XCTAssertFalse(app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "home.card.")).firstMatch.exists,
                        "no books on an official module's page")
         attach(app, "library-gutenberg")
+        // 會連線的網站 comes after the lists the module offers, below the screen.
+        let gutenbergHost = scrolledTo(app.staticTexts["www.gutenberg.org"].firstMatch, in: app,
+                                       scrolling: app.collectionViews.firstMatch)
+        XCTAssertTrue(gutenbergHost.waitForExistence(timeout: 5), app.debugDescription)
         back(app)
 
         let aozora = app.buttons["library.public.builtin.aozora"].firstMatch
         XCTAssertTrue(aozora.waitForExistence(timeout: 5), app.debugDescription)
         aozora.tap()
         XCTAssertTrue(app.navigationBars["青空文庫"].waitForExistence(timeout: 5), app.debugDescription)
-        XCTAssertTrue(app.staticTexts["www.aozora.gr.jp"].waitForExistence(timeout: 5), app.debugDescription)
         XCTAssertFalse(app.buttons["依分類"].exists, "依分類 is a 首頁 list, not a page here")
         attach(app, "library-aozora")
+        let aozoraHost = scrolledTo(app.staticTexts["www.aozora.gr.jp"].firstMatch, in: app,
+                                    scrolling: app.collectionViews.firstMatch)
+        XCTAssertTrue(aozoraHost.waitForExistence(timeout: 5), app.debugDescription)
         back(app)
 
         let remote = app.buttons["library.manageRemote"].firstMatch
@@ -200,7 +212,8 @@ final class LibraryTabUITests: XCTestCase {
         let all = app.buttons["library.sources.all"].firstMatch
         XCTAssertTrue(all.waitForExistence(timeout: 10), app.debugDescription)
         XCTAssertEqual(all.value as? String, "3 個來源配置")
-        let male = app.buttons["library.group.男频"].firstMatch
+        // 官方模組 and 遠端書庫 come first: the groups' second row is below the screen.
+        let male = scrolledTo(app.buttons["library.group.男频"].firstMatch, in: app)
         XCTAssertTrue(male.exists, app.debugDescription)
         XCTAssertEqual(male.value as? String, "2 個來源配置")
         XCTAssertTrue(app.buttons["library.group.女频"].exists)
