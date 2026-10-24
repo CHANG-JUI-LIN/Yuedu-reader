@@ -1568,6 +1568,8 @@
 
 // Account-linked purchases
 "選擇購買方式" = "구입 방법 선택";
+"TestFlight 版不支援購買" = "TestFlight 버전에서는 구입할 수 없습니다";
+"請到 App Store 版購買。已在 App Store 購買的會員，登入閱讀帳號或開啟 iCloud 後會自動認得。" = "App Store 버전에서 구입하십시오. App Store에서 이미 구입한 회원은 Yuedu 계정으로 로그인하거나 iCloud를 켜면 자동으로 인식됩니다.";
 "登入後購買" = "로그인 후 구입";
 "直接購買" = "로그인 없이 구입";
 "未登入時，會員只會跟隨本次購買使用的 Apple 帳號。登入後購買可綁定 Yuedu 帳號，切換 App Store 帳號後仍可使用。" = "로그인하지 않으면 Pro는 이번 구입에 사용한 Apple 계정에만 연결됩니다. 로그인한 후 구입하면 Yuedu 계정에 연결되어 App Store 계정을 변경해도 계속 사용할 수 있습니다.";

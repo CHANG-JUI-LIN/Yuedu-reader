@@ -107,7 +107,12 @@ final class SubscriptionICloudMirror: Sendable {
         productIDs: Set<String>,
         signedTransaction: String?
     ) async {
+        // `clear()` comes through here too, so this one check keeps a TestFlight
+        // build that cannot buy from both writing and clearing the App Store record.
         guard SubscriptionRuntimeEnvironment.isResolved,
+              SubscriptionICloudMirrorPolicy.mayWrite(
+                  purchaseMode: SubscriptionRuntimeEnvironment.purchaseMode
+              ),
               lastWritten.withLock({ $0 }) != entitlement,
               await isAvailable() else { return }
         // Fetch-then-modify, never a bare new record: `CKDatabase.save` defaults

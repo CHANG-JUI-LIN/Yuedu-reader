@@ -41,6 +41,13 @@ import {
   decideTestFlightProRequest,
   normalizeTestFlightEmail,
 } from "./testflightRequestPolicy.js";
+import {
+  AppStoreVersionsPayload,
+  buildsUnderReview,
+  parseBuildIdentity,
+  reviewBuildKey,
+  reviewStates,
+} from "./reviewBuildPolicy.js";
 
 if (getApps().length === 0) {
   initializeApp();
@@ -192,6 +199,41 @@ async function hasCurrentLifetimePro(uid: string): Promise<boolean> {
 export const verifyTestFlightAccess = onCall({region, secrets: serverSecrets}, async request => {
   const uid = requireUid(request.auth);
   return {allowed: await hasCurrentLifetimePro(uid)};
+});
+
+// One App Store Connect read answers every TestFlight launch for this long. A version
+// sits in WAITING_FOR_REVIEW for hours before a reviewer opens it, so a minute's
+// staleness never reaches App Review.
+const reviewBuildCacheMilliseconds = 60_000;
+let reviewBuildCache: {fetchedAt: number; builds: Set<string>} | undefined;
+
+// No sign-in: a reviewer opens the app signed out. Answers only "is this build the one
+// App Review is looking at"; the client hides purchases on every other Sandbox build.
+export const isBuildUnderReview = onCall({region, secrets: appStoreKeySecrets}, async request => {
+  const identity = parseBuildIdentity(request.data);
+  if (identity === null) throw new HttpsError("invalid-argument", "version and build are required");
+  const now = Date.now();
+  if (reviewBuildCache === undefined || now - reviewBuildCache.fetchedAt >= reviewBuildCacheMilliseconds) {
+    try {
+      const client = new AppStoreConnectClient({
+        credentials: {
+          issuerId: appStoreIssuerIdSecret.value(), keyId: appStoreKeyIdSecret.value(),
+          privateKeyBase64: appStorePrivateKeySecret.value(),
+        },
+        appId: String(appAppleId),
+      });
+      const states = reviewStates.join(",");
+      const payload = await client.getJSON<AppStoreVersionsPayload>(
+        `/apps/${appAppleId}/appStoreVersions?filter[platform]=IOS&filter[appVersionState]=${states}` +
+        "&include=build&fields[appStoreVersions]=versionString,appVersionState,build&fields[builds]=version"
+      );
+      reviewBuildCache = {fetchedAt: now, builds: buildsUnderReview(payload)};
+    } catch (error) {
+      logger.error("App Store review state unavailable", {error});
+      throw new HttpsError("unavailable", "App Store review state unavailable");
+    }
+  }
+  return {underReview: reviewBuildCache.builds.has(reviewBuildKey(identity))};
 });
 
 // Refund processing runs independently of the client and survives ASC outages.

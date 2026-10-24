@@ -55,7 +55,7 @@ final class GatewayAccountBackend: AccountBackend {
 
     func refreshEntitlement(uid: String) async throws -> CachedSubscriptionEntitlement? {
         guard SubscriptionRuntimeEnvironment.isResolved else { return nil }
-        let environment = SubscriptionRuntimeEnvironment.current == .sandbox ? "sandbox" : "production"
+        let environment = SubscriptionRuntimeEnvironment.entitlementEnvironment == .sandbox ? "sandbox" : "production"
         let request = GatewayRequest(
             method: "GET",
             path: "/v1/subscription/entitlement",

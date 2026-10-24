@@ -1,4 +1,5 @@
 import StoreKit
+import os
 
 enum SubscriptionPurchaseAction: Equatable {
     case promptGuest
@@ -189,6 +190,14 @@ enum SubscriptionICloudMirrorPolicy {
         if revokedCount > 0 { return .revoke }
         return .leaveAlone
     }
+
+    /// Whether this build may store or clear the mirror at all. A TestFlight build
+    /// that cannot buy reads the App Store's record; anything it wrote there would
+    /// be a Sandbox state in the App Store slot — the August leak in reverse — and
+    /// a clear would take a paying member's Pro away.
+    static func mayWrite(purchaseMode: SubscriptionPurchaseMode) -> Bool {
+        purchaseMode == .ownEnvironment
+    }
 }
 
 /// The environment this build itself runs in, as reported by Apple's
@@ -225,6 +234,46 @@ enum SubscriptionRuntimeEnvironment {
     /// cache entirely is safe: StoreKit still reports the live entitlement.
     static var isResolved: Bool { current != nil }
 
+    private static let isDebugBuild: Bool = {
+        #if DEBUG
+        return true
+        #else
+        return false
+        #endif
+    }()
+
+    /// Whether App Store Connect lists this build as waiting for or in App Review;
+    /// nil until the backend has answered. Memory-only: a build leaves review, so a
+    /// remembered answer would go stale exactly like `current` once did.
+    private static let reviewAnswer = OSAllocatedUnfairLock<Bool?>(initialState: nil)
+
+    static var buildUnderReview: Bool? { reviewAnswer.withLock { $0 } }
+
+    static func rememberReviewAnswer(_ underReview: Bool) {
+        reviewAnswer.withLock { $0 = underReview }
+    }
+
+    static var purchaseMode: SubscriptionPurchaseMode {
+        SubscriptionPurchaseModePolicy.mode(
+            runningEnvironment: current,
+            isDebugBuild: isDebugBuild,
+            buildUnderReview: buildUnderReview
+        )
+    }
+
+    /// The environment whose entitlement this build reads: its own, except on a
+    /// TestFlight build that cannot buy, which reads the member's App Store Pro.
+    static var entitlementEnvironment: AppStore.Environment? {
+        entitlementEnvironment(for: purchaseMode, runningEnvironment: current)
+    }
+
+    static func entitlementEnvironment(
+        for mode: SubscriptionPurchaseMode,
+        runningEnvironment: AppStore.Environment?
+    ) -> AppStore.Environment? {
+        mode == .testFlightWithoutPurchases ? .production : runningEnvironment
+    }
+
     /// Suffix that keeps each environment's entitlement state in its own storage
     /// slot, for the two stores that outlive the app: the keychain cache and the
     /// CloudKit mirror. Both survive one install replacing another, so a single
@@ -232,17 +281,58 @@ enum SubscriptionRuntimeEnvironment {
     /// Store build put on top of it. Production keeps the bare key so entitlement
     /// state already cached by paying users survives this change.
     static var storageSuffix: String {
-        guard let current, current != .production else { return "" }
-        return ".\(current.rawValue.lowercased())"
+        storageSuffix(for: entitlementEnvironment)
+    }
+
+    static func storageSuffix(for environment: AppStore.Environment?) -> String {
+        guard let environment, environment != .production else { return "" }
+        return ".\(environment.rawValue.lowercased())"
     }
 
     /// Firestore field names on `entitlements/{uid}` for this environment. The
     /// document carries both environments side by side so one account can hold a
     /// TestFlight entitlement and an App Store one independently.
     static var entitlementFieldNames: (isActive: String, expiresAt: String, productIDs: String) {
-        current == .sandbox ?
+        entitlementFieldNames(for: entitlementEnvironment)
+    }
+
+    static func entitlementFieldNames(
+        for environment: AppStore.Environment?
+    ) -> (isActive: String, expiresAt: String, productIDs: String) {
+        environment == .sandbox ?
             ("sandboxIsProActive", "sandboxExpiresAt", "sandboxProductIds") :
             ("isProActive", "expiresAt", "productIds")
+    }
+}
+
+/// Which purchase rules this build runs under.
+///
+/// App Review and TestFlight install the same uploaded binary and both run it in
+/// the Sandbox, where purchases are free, so `AppTransaction` alone cannot tell a
+/// reviewer from a tester. App Store Connect can: `isBuildUnderReview` in Cloud
+/// Functions answers whether this build is the one App Review has open.
+enum SubscriptionPurchaseMode: Equatable {
+    /// Buys, and keeps its entitlement in its own environment: the App Store
+    /// build, a Debug run, and the TestFlight build App Review has open.
+    case ownEnvironment
+    /// Every other TestFlight build. It cannot buy, and its Pro is the member's
+    /// App Store Pro, read from the account and the iCloud mirror. It writes no
+    /// entitlement of its own, so nothing from the Sandbox reaches the App Store
+    /// slots.
+    case testFlightWithoutPurchases
+}
+
+enum SubscriptionPurchaseModePolicy {
+    static func mode(
+        runningEnvironment: AppStore.Environment?,
+        isDebugBuild: Bool,
+        buildUnderReview: Bool?
+    ) -> SubscriptionPurchaseMode {
+        guard !isDebugBuild, runningEnvironment == .sandbox else { return .ownEnvironment }
+        // Unanswered counts as TestFlight: the backend is unreachable from mainland
+        // China without a VPN, and a TestFlight build must not sell there. App
+        // Review reaches it, and a purchase asks before it decides.
+        return buildUnderReview == true ? .ownEnvironment : .testFlightWithoutPurchases
     }
 }
 
@@ -256,13 +346,15 @@ enum SubscriptionEntitlementFilter {
     /// the account one in `entitlements/{uid}`, which is why signing out was what
     /// cleared it.
     ///
-    /// Critically this compares against the *running* environment rather than
-    /// rejecting Sandbox outright. Rejecting it meant a TestFlight build threw
-    /// away the purchase it had just made, so neither the lifetime nor the
-    /// monthly product ever unlocked there.
+    /// It compares against the environment whose entitlement the build reads
+    /// (`SubscriptionRuntimeEnvironment.entitlementEnvironment`). For a build that
+    /// buys, that is its own: a TestFlight build App Review has open must honour
+    /// the Sandbox purchase it just made. For a TestFlight build that cannot buy it
+    /// is Production, so the free Sandbox purchases testers made before purchases
+    /// were closed stop counting.
     static func shouldAccept(
         environment: AppStore.Environment,
-        runningEnvironment: AppStore.Environment?,
+        entitlementEnvironment: AppStore.Environment?,
         isDebugBuild: Bool
     ) -> Bool {
         // A local Xcode run buys either through a StoreKit configuration file
@@ -272,7 +364,7 @@ enum SubscriptionEntitlementFilter {
         // Environment not resolved yet (first launch, `AppTransaction` still in
         // flight): trust StoreKit's own separation rather than discarding a real
         // purchase. The account path stays gated on a resolved environment.
-        guard let runningEnvironment else { return true }
-        return environment == runningEnvironment
+        guard let entitlementEnvironment else { return true }
+        return environment == entitlementEnvironment
     }
 }

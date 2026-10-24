@@ -89,9 +89,57 @@ final class SubscriptionStore: ObservableObject {
     private func acceptsTransaction(_ environment: AppStore.Environment) -> Bool {
         SubscriptionEntitlementFilter.shouldAccept(
             environment: environment,
-            runningEnvironment: SubscriptionRuntimeEnvironment.current,
+            entitlementEnvironment: SubscriptionRuntimeEnvironment.entitlementEnvironment,
             isDebugBuild: Self.isDebugBuild
         )
+    }
+
+    /// Asks whether App Review has this build open; Sandbox Release builds only.
+    /// Returns whether the purchase mode changed. A change moves the entitlement to
+    /// other slots, so what was read from the old ones is dropped and the caller
+    /// must read again.
+    ///
+    /// A failed ask keeps the previous answer: a reviewer whose foreground refresh
+    /// briefly failed must not lose the purchase they could make a moment ago.
+    @discardableResult
+    private func refreshReviewStatus() async -> Bool {
+        guard !Self.isDebugBuild, SubscriptionRuntimeEnvironment.current == .sandbox else { return false }
+        let previousMode = SubscriptionRuntimeEnvironment.purchaseMode
+        guard let underReview = await reviewStatus.isBuildUnderReview() else { return false }
+        SubscriptionRuntimeEnvironment.rememberReviewAnswer(underReview)
+        let mode = SubscriptionRuntimeEnvironment.purchaseMode
+        guard mode != previousMode else { return false }
+        Self.subscriptionLog.notice(
+            "Purchase mode CHANGED; under review \(underReview, privacy: .public); entitlement slots move with it"
+        )
+        accountIsProActive = false
+        accountProductIDs = nil
+        iCloudIsProActive = false
+        recomputeEntitlement()
+        return true
+    }
+
+    /// Asks now when the review answer has not arrived yet, so a reviewer who taps
+    /// Buy or Restore right after launch is not turned away by the launch-time ask
+    /// still being in flight.
+    private func resolveReviewStatusIfUnanswered() async {
+        guard SubscriptionRuntimeEnvironment.purchaseMode == .testFlightWithoutPurchases,
+              SubscriptionRuntimeEnvironment.buildUnderReview == nil else { return }
+        if await refreshReviewStatus() {
+            await readAllEntitlements()
+        }
+    }
+
+    /// Whether this build may sell. A TestFlight build outside App Review cannot:
+    /// its purchases are Sandbox ones, which are free. It shows the TestFlight
+    /// notice instead.
+    func ensurePurchasesAllowed() async -> Bool {
+        await resolveReviewStatusIfUnanswered()
+        guard SubscriptionRuntimeEnvironment.purchaseMode == .ownEnvironment else {
+            isShowingTestFlightPurchaseNotice = true
+            return false
+        }
+        return true
     }
 
     /// The product identifiers configured in App Store Connect and the local
@@ -130,6 +178,9 @@ final class SubscriptionStore: ObservableObject {
     @Published private(set) var isRedeemingOfferCode: Bool = false
     /// Human-readable last error for surfacing in the paywall; nil when clear.
     @Published var lastErrorMessage: String?
+    /// Set when a TestFlight build that cannot buy is asked to; the paywall shows
+    /// the notice and clears it.
+    @Published var isShowingTestFlightPurchaseNotice = false
 
     /// Debug-only entitlement override so gating can be exercised in the
     /// simulator without a StoreKit transaction. No effect in Release builds.
@@ -144,6 +195,7 @@ final class SubscriptionStore: ObservableObject {
     private var productLoadGeneration = 0
     private let accountService = SubscriptionAccountService.shared
     private let iCloudMirror = SubscriptionICloudMirror.shared
+    private let reviewStatus = SubscriptionReviewStatusService()
     /// Throttle for the fire-and-forget drop diagnostic: one report per
     /// process per 5 minutes, so a repeatedly-failing device cannot flood
     /// the diagnostics collection.
@@ -331,11 +383,13 @@ final class SubscriptionStore: ObservableObject {
     /// Returns `true` on a completed, verified purchase.
     @discardableResult
     func purchaseAsGuest(_ product: Product) async -> Bool {
-        await purchase(product, accountToken: nil)
+        guard await ensurePurchasesAllowed() else { return false }
+        return await purchase(product, accountToken: nil)
     }
 
     @discardableResult
     func purchaseForSignedInAccount(_ product: Product) async -> Bool {
+        guard await ensurePurchasesAllowed() else { return false }
         guard accountService.isAuthenticated else {
             lastErrorMessage = localized("請先登入後再綁定會員")
             return false
@@ -423,6 +477,9 @@ final class SubscriptionStore: ObservableObject {
             break
         }
 
+        // A redeemed code is a Sandbox purchase on a TestFlight build, as free as
+        // any other there.
+        guard await ensurePurchasesAllowed() else { return }
         guard let scene else { return }
         isRedeemingOfferCode = true
         lastErrorMessage = nil
@@ -445,6 +502,17 @@ final class SubscriptionStore: ObservableObject {
         isRestoring = true
         lastErrorMessage = nil
         defer { isRestoring = false }
+        await resolveReviewStatusIfUnanswered()
+        if SubscriptionRuntimeEnvironment.purchaseMode == .testFlightWithoutPurchases {
+            // Nothing here can come from StoreKit — this build ignores its Sandbox
+            // transactions and binds none — so restoring is reading the member's
+            // App Store Pro from the account and the iCloud mirror again.
+            await readAllEntitlements()
+            if !isProActive {
+                lastErrorMessage = localized("沒有找到可恢復的訂閱")
+            }
+            return
+        }
         do {
             try await AppStore.sync()
         } catch {
@@ -512,8 +580,14 @@ final class SubscriptionStore: ObservableObject {
 
     /// Call only after Firebase has been configured (app active/auth callbacks).
     func refreshAllEntitlements() async {
-        let expectedUID = FirebaseAuthManager.shared.uid
         await resolveRunningEnvironment()
+        // Before the reads: the answer decides which slots they read.
+        await refreshReviewStatus()
+        await readAllEntitlements()
+    }
+
+    private func readAllEntitlements() async {
+        let expectedUID = FirebaseAuthManager.shared.uid
         seedAccountEntitlementFromCache()
         await refreshEntitlements()
         await refreshICloudEntitlement()

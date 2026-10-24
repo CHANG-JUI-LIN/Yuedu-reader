@@ -112,6 +112,11 @@ struct PaywallView: View {
             } message: {
                 Text(localized("未登入時，會員只會跟隨本次購買使用的 Apple 帳號。登入後購買可綁定 Yuedu 帳號，切換 App Store 帳號後仍可使用。"))
             }
+            .alert(localized("TestFlight 版不支援購買"), isPresented: $store.isShowingTestFlightPurchaseNotice) {
+                Button(localized("好"), role: .cancel) {}
+            } message: {
+                Text(localized("請到 App Store 版購買。已在 App Store 購買的會員，登入閱讀帳號或開啟 iCloud 後會自動認得。"))
+            }
             .sheet(isPresented: $showLogin, onDismiss: purchasePendingProductAfterLogin) {
                 LoginView()
             }
@@ -324,14 +329,19 @@ struct PaywallView: View {
     }
 
     private func beginPurchase(_ product: Product) {
-        switch SubscriptionAccessPolicy.purchaseAction(
-            isAuthenticated: FirebaseAuthManager.shared.isAuthenticated
-        ) {
-        case .promptGuest:
-            pendingProduct = product
-            showGuestPurchaseAlert = true
-        case .purchaseForAccount:
-            Task { await store.purchaseForSignedInAccount(product) }
+        Task {
+            // Before the guest-or-account choice: a TestFlight build that cannot
+            // buy answers with its notice, not with a question it cannot act on.
+            guard await store.ensurePurchasesAllowed() else { return }
+            switch SubscriptionAccessPolicy.purchaseAction(
+                isAuthenticated: FirebaseAuthManager.shared.isAuthenticated
+            ) {
+            case .promptGuest:
+                pendingProduct = product
+                showGuestPurchaseAlert = true
+            case .purchaseForAccount:
+                await store.purchaseForSignedInAccount(product)
+            }
         }
     }
 

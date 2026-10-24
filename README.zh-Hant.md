@@ -18,7 +18,7 @@
   <a href="https://apps.apple.com/app/id6772972358">
     <img src="https://img.shields.io/badge/App%20Store-下載-0D96F6?logo=apple&logoColor=white" alt="從 App Store 下載">
   </a>
-  <a href="https://testflight.apple.com/join/7hvbzYC1">
+  <a href="https://testflight.apple.com/join/K37t7nXp">
     <img src="https://img.shields.io/badge/TestFlight-測試版-0D96F6?logo=apple&logoColor=white" alt="加入 TestFlight 測試">
   </a>
   <a href="https://iosdevweekly.com/issues/751">
