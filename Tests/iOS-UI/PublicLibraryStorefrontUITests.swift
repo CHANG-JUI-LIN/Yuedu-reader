@@ -62,7 +62,7 @@ final class PublicLibraryStorefrontUITests: XCTestCase {
     @MainActor
     private func application(pro: Bool = false) -> XCUIApplication {
         let app = XCUIApplication()
-        app.launchArguments = ["-no-official-modules", "-AppleLanguages", "(zh-Hant)", "-AppleLocale", "zh_TW",
+        app.launchArguments = ["-no-official-modules", "-onboarding.completed", "YES", "-AppleLanguages", "(zh-Hant)", "-AppleLocale", "zh_TW",
             "-yd_source_disclaimer_accepted", "YES", "-book-source-store-dir", fixtureDirectory.appendingPathComponent("sources").path,
             "-reset-public-library-explore", "-reset-explore-home"]
         if pro { app.launchArguments.append("-debug-force-pro") }

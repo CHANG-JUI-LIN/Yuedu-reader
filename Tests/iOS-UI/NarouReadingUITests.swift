@@ -52,7 +52,7 @@ final class NarouReadingUITests: XCTestCase {
     @MainActor
     func testSearchReadAndShelve() throws {
         let app = XCUIApplication()
-        app.launchArguments = ["-AppleLanguages", "(zh-Hant)", "-AppleLocale", "zh_TW",
+        app.launchArguments = ["-onboarding.completed", "YES", "-AppleLanguages", "(zh-Hant)", "-AppleLocale", "zh_TW",
                                "-official-modules-dir", directory.appendingPathComponent("official").path,
                                "-yd_source_disclaimer_accepted", "YES",
                                "-book-source-store-dir", directory.appendingPathComponent("sources").path,

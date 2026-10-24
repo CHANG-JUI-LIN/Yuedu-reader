@@ -68,7 +68,7 @@ final class ReaderChromeAccessibilityUITests: XCTestCase {
     @MainActor
     private func launch(extra: [String] = []) -> XCUIApplication {
         let app = XCUIApplication()
-        app.launchArguments = ["-no-official-modules", "-AppleLanguages", "(zh-Hant)", "-AppleLocale", "zh_TW",
+        app.launchArguments = ["-no-official-modules", "-onboarding.completed", "YES", "-AppleLanguages", "(zh-Hant)", "-AppleLocale", "zh_TW",
                                "-yd_source_disclaimer_accepted", "YES",
                                "-book-source-store-dir", directory.path,
                                "-yd_appearance_reader_interface", "classic"] + extra

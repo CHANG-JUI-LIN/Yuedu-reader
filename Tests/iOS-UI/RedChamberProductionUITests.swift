@@ -30,7 +30,7 @@ final class RedChamberProductionUITests: XCTestCase {
     @MainActor
     func testRedChamberCoverK1PixelPosition() throws {
         let app = XCUIApplication()
-        app.launchArguments = ["-no-official-modules",
+        app.launchArguments = ["-no-official-modules", "-onboarding.completed", "YES",
             "-browser-mode", "browserForced",
             "-browser-overlay",
             "-auto-import-epub", "RedChamber.epub",

@@ -36,7 +36,7 @@ final class ReplaceRuleSelectionUITests: XCTestCase {
     @MainActor
     func testEditSelectsAllAndRowTapSelects() {
         let app = XCUIApplication()
-        app.launchArguments = ["-AppleLanguages", "(zh-Hant)", "-AppleLocale", "zh_TW", "-no-official-modules",
+        app.launchArguments = ["-AppleLanguages", "(zh-Hant)", "-AppleLocale", "zh_TW", "-no-official-modules", "-onboarding.completed", "YES",
                                "-yd_source_disclaimer_accepted", "YES"]
         app.launch()
         openReplaceRules(app)

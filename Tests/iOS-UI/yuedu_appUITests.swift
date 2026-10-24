@@ -43,6 +43,7 @@ final class yuedu_appUITests: XCTestCase {
     @MainActor
     func testOpenFirstBookAndCaptureReaderScreenshot() throws {
         let app = XCUIApplication()
+        app.launchArguments += ["-onboarding.completed", "YES"]
         app.launch()
 
         // 等首頁出現（書架或空書架）

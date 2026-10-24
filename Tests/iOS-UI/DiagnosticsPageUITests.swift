@@ -17,7 +17,7 @@ final class DiagnosticsPageUITests: XCTestCase {
     func testDiagnosticsPageRendersAndFollowsAppearance() throws {
         let app = XCUIApplication()
         // The labels below are English; pin the language so the simulator's own does not matter.
-        app.launchArguments = ["-no-official-modules", "-AppleLanguages", "(en)", "-AppleLocale", "en_US",
+        app.launchArguments = ["-no-official-modules", "-onboarding.completed", "YES", "-AppleLanguages", "(en)", "-AppleLocale", "en_US",
                                "-yd_source_disclaimer_accepted", "YES"]
         app.launch()
 

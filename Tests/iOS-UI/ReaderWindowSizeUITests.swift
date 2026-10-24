@@ -32,7 +32,7 @@ final class ReaderWindowSizeUITests: XCTestCase {
         try text.write(to: book, atomically: true, encoding: .utf8)
 
         let app = XCUIApplication()
-        app.launchArguments = ["-no-official-modules", "-AppleLanguages", "(zh-Hant)",
+        app.launchArguments = ["-no-official-modules", "-onboarding.completed", "YES", "-AppleLanguages", "(zh-Hant)",
                                "-AppleLocale", "zh_TW", "-auto-import-epub", book.path]
         app.launch()
 

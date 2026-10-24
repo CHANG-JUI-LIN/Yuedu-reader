@@ -55,7 +55,7 @@ final class SearchEmbyAcceptanceUITests: XCTestCase {
     @MainActor
     private func launch(fresh: Bool = true) -> XCUIApplication {
         let app = XCUIApplication()
-        app.launchArguments = ["-AppleLanguages", "(zh-Hant)", "-AppleLocale", "zh_TW", "-no-official-modules",
+        app.launchArguments = ["-AppleLanguages", "(zh-Hant)", "-AppleLocale", "zh_TW", "-no-official-modules", "-onboarding.completed", "YES",
                                "-yd_source_disclaimer_accepted", "YES",
                                "-book-source-store-dir", directory.appendingPathComponent("sources").path]
         if fresh { app.launchArguments += ["-reset-explore-home"] }

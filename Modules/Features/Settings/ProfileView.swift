@@ -361,6 +361,7 @@ struct SettingsView: View {
 private struct AboutSupportView: View {
     @EnvironmentObject private var subscriptionStore: SubscriptionStore
     @Environment(\.openURL) private var openURL
+    @Environment(OnboardingState.self) private var onboarding: OnboardingState?
     @Bindable private var gs = GlobalSettings.shared
     @State private var showCopiedQQGroup = false
     let appVersion: String
@@ -408,6 +409,18 @@ private struct AboutSupportView: View {
                     Text(appVersion)
                         .font(DSFont.caption)
                         .foregroundColor(DSColor.textSecondary)
+                }
+
+                if let onboarding {
+                    actionRow(
+                        icon: "hand.wave",
+                        title: localized("新手導覽"),
+                        detail: localized("再看一次 App 介紹和基本操作"),
+                        trailingIcon: "chevron.right"
+                    ) {
+                        withAnimation(DSAnimation.standard) { onboarding.replay() }
+                    }
+                    .accessibilityIdentifier("about.onboarding")
                 }
             }
             .interfaceSectionSurface()
@@ -542,10 +555,13 @@ private struct AboutSupportView: View {
     ) -> some View {
         Button(action: action) {
             HStack(spacing: 12) {
+                // Decorative, as the trailing one: VoiceOver reads the row's title and detail,
+                // not the symbols' names.
                 Image(systemName: icon)
                     .font(DSFont.fixed(size: 18, weight: .medium))
                     .frame(width: 28, height: 28)
                     .foregroundColor(DSColor.textPrimary)
+                    .accessibilityHidden(true)
 
                 VStack(alignment: .leading, spacing: 3) {
                     Text(title)
@@ -561,6 +577,7 @@ private struct AboutSupportView: View {
                 Image(systemName: trailingIcon)
                     .font(DSFont.caption)
                     .foregroundColor(DSColor.textSecondary)
+                    .accessibilityHidden(true)
             }
             .contentShape(Rectangle())
         }

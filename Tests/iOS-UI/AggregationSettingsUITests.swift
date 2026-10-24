@@ -11,7 +11,7 @@ final class AggregationSettingsUITests: XCTestCase {
     @MainActor
     private func application(fresh: Bool) -> XCUIApplication {
         let app = XCUIApplication()
-        app.launchArguments = ["-AppleLanguages", "(zh-Hant)", "-AppleLocale", "zh_TW", "-no-official-modules",
+        app.launchArguments = ["-AppleLanguages", "(zh-Hant)", "-AppleLocale", "zh_TW", "-no-official-modules", "-onboarding.completed", "YES",
                                "-yd_source_disclaimer_accepted", "YES"]
         if fresh { app.launchArguments += ["-reset-explore-home"] }
         return app

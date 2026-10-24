@@ -18,6 +18,8 @@ struct ContentView: View {
     /// screen's own (`RootTabBarVisibility`).
     @StateObject private var rootTabBar = RootTabBarVisibility()
     @State private var selectedRootTab: RootTabItem = .bookshelf
+    /// 新手導覽: up at a device's first launch, and again from 設定 → 關於.
+    @State private var onboarding = OnboardingState()
     /// A keyword a book source's discover page handed back via `java.searchBook`.
     /// Presented as a sheet rather than by switching to the 搜尋 tab: that tab is
     /// user-hideable (`gs.visibleRootTabs`), so selecting it would do nothing at all
@@ -99,6 +101,8 @@ struct ContentView: View {
         GlobalAppTypography.activate(postScriptName: drawnGlobalFont, boldText: isBoldTextOn)
         return tabView
         .environment(\.rootTabBarVisibility, rootTabBar)
+        // For 關於's 新手導覽, and the tabs that open the page a start names.
+        .environment(onboarding)
         // 外觀主題's 淺色／深色 preview is for 外觀主題; another tab is not previewing.
         .onChange(of: selectedRootTab, initial: true) { _, _ in
             gs.endAppearanceSlotPreview()
@@ -229,6 +233,9 @@ struct ContentView: View {
             selectedRootTab = gs.fallbackRootTab(for: selectedRootTab)
         }
         .modifier(AudiobookPlayerPresentation(store: store))
+        // Over the tabs, their overlays and the mini player; under the launch image.
+        .modifier(OnboardingPresentation(state: onboarding, selectedTab: $selectedRootTab,
+                                         tint: appearanceTheme?.accentColor))
         // Cold-launch splash: sits above every tab/overlay and fades out.
         .overlay {
             LaunchImageSplashOverlay()

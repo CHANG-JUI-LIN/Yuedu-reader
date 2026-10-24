@@ -219,6 +219,14 @@ enum DSFont {
     static var serifSectionTitle: Font {
         GlobalAppTypography.font(.title2, weight: .bold, systemDesign: .serif)
     }
+    /// 新手導覽's app name on its welcome page: Large Title in bold, in the system serif.
+    static var onboardingAppName: Font {
+        GlobalAppTypography.font(.largeTitle, weight: .bold, systemDesign: .serif)
+    }
+    /// 新手導覽's page titles: Title in bold, in the system serif.
+    static var onboardingTitle: Font {
+        GlobalAppTypography.font(.title, weight: .bold, systemDesign: .serif)
+    }
 
     /// Existing fixed-size UI typography. Monospaced content intentionally
     /// remains system monospaced even when a global interface font is active.
@@ -692,6 +700,34 @@ enum DSLayout {
     static let interfaceGlowInnerOpacity: Double = 0.3
     /// Height of the 界面效果 live preview card.
     static let interfaceEffectPreviewHeight: CGFloat = 220
+    /// The app icon on 新手導覽's welcome page.
+    static let onboardingAppIconSize: CGFloat = 96
+    /// How far each piece of the welcome page rises as it comes in.
+    static let onboardingEntranceOffset: CGFloat = 8
+    /// A cover in 新手導覽's shelf of books on 探索.
+    static let onboardingCoverWidth: CGFloat = 64
+    static let onboardingCoverHeight: CGFloat = 96
+    /// How much smaller each cover is per step away from the shelf's middle one.
+    static let onboardingCoverDepthScale: CGFloat = 0.08
+    /// The work in front of its versions on 新手導覽's 一部作品，一個頁面.
+    static let onboardingWorkCoverWidth: CGFloat = 80
+    static let onboardingWorkCoverHeight: CGFloat = 120
+    /// How far each version behind it sits up and to the side.
+    static let onboardingWorkVersionStep: CGFloat = 10
+    /// A page in 新手導覽's sketch of horizontal and vertical text.
+    static let onboardingSketchPageWidth: CGFloat = 84
+    static let onboardingSketchPageHeight: CGFloat = 112
+    /// The longest line across, and the longest column down, inside a sketched page.
+    static let onboardingSketchTextExtent: CGFloat = 60
+    static let onboardingSketchColumnExtent: CGFloat = 84
+    /// A sketched line's thickness, and the gap between two of them.
+    static let onboardingSketchLineThickness: CGFloat = 3
+    static let onboardingSketchLineGap: CGFloat = 7
+    /// Sketched text is paler than the page's text color, so it reads as text at a glance.
+    static let onboardingSketchLineOpacity: Double = 0.55
+    static let onboardingSketchBorderWidth: CGFloat = 0.5
+    /// One of 新手導覽's page dots.
+    static let onboardingPageDotSize: CGFloat = 8
 }
 
 // MARK: - Design System: Corner Radius Tokens
@@ -774,6 +810,8 @@ enum DSAnimation {
     static let celebrationRingStagger: TimeInterval = 0.25
     /// Frame spacing of the confetti's own timeline, which stops with the last piece.
     static let celebrationFrameInterval: TimeInterval = 1.0 / 60
+    /// Delay between the pieces of 新手導覽's welcome page coming in, one after another.
+    static let onboardingStagger: TimeInterval = 0.05
 }
 
 // MARK: - View Extensions

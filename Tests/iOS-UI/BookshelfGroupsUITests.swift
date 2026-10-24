@@ -128,7 +128,7 @@ final class BookshelfGroupsUITests: XCTestCase {
             return true
         }
         let app = XCUIApplication()
-        app.launchArguments = ["-no-official-modules", "-yd_root_tab_visible_ids", "(bookshelf, settings)",
+        app.launchArguments = ["-no-official-modules", "-onboarding.completed", "YES", "-yd_root_tab_visible_ids", "(bookshelf, settings)",
                                "-bookLayoutIsGrid", grid ? "YES" : "NO",
                                "-bookSortOrder", "manual"]
         app.launch()

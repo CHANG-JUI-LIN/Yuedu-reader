@@ -63,7 +63,7 @@ final class PublicLibrarySearchTabUITests: XCTestCase {
     @MainActor
     func testNoSourcesSearchesThePublicLibraries() {
         let app = XCUIApplication()
-        app.launchArguments = ["-AppleLanguages", "(zh-Hant)", "-AppleLocale", "zh_TW", "-no-official-modules",
+        app.launchArguments = ["-AppleLanguages", "(zh-Hant)", "-AppleLocale", "zh_TW", "-no-official-modules", "-onboarding.completed", "YES",
                                "-yd_source_disclaimer_accepted", "YES",
                                "-book-source-store-dir", fixtureDirectory.appendingPathComponent("sources").path]
         app.launchEnvironment["YUEDU_PUBLIC_LIBRARY_FIXTURES"] = fixtureDirectory.path
@@ -119,7 +119,7 @@ final class PublicLibrarySearchTabUITests: XCTestCase {
         try FileManager.default.copyItem(at: entry, to: fixtureDirectory.appendingPathComponent("ebooks_21839.opds.xml"))
 
         let app = XCUIApplication()
-        app.launchArguments = ["-AppleLanguages", "(zh-Hant)", "-AppleLocale", "zh_TW", "-no-official-modules",
+        app.launchArguments = ["-AppleLanguages", "(zh-Hant)", "-AppleLocale", "zh_TW", "-no-official-modules", "-onboarding.completed", "YES",
                                "-yd_source_disclaimer_accepted", "YES",
                                "-book-source-store-dir", fixtureDirectory.appendingPathComponent("sources").path]
         app.launchEnvironment["YUEDU_PUBLIC_LIBRARY_FIXTURES"] = fixtureDirectory.path

@@ -51,7 +51,7 @@ final class WorkFillUITests: XCTestCase {
     @MainActor
     func testUnknownAuthorTXTGetsIntroCoverAndSources() throws {
         let app = XCUIApplication()
-        app.launchArguments = ["-no-official-modules", "-AppleLanguages", "(zh-Hant)", "-AppleLocale", "zh_TW",
+        app.launchArguments = ["-no-official-modules", "-onboarding.completed", "YES", "-AppleLanguages", "(zh-Hant)", "-AppleLocale", "zh_TW",
                                "-yd_source_disclaimer_accepted", "YES", "-reset-explore-home",
                                "-book-source-store-dir", folder.appendingPathComponent("sources").path,
                                "-auto-import-epub", folder.appendingPathComponent("\(title).txt").path,

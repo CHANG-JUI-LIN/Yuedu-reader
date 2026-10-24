@@ -41,6 +41,9 @@ struct LibraryTabRoot: View {
     @StateObject private var moduleFlow = RuleModuleAddFlow()
     @State private var showsMoreChooser = false
     @State private var moreSequence = DismissalSequencedPresentation<LibraryMoreAction>()
+    /// 新手導覽's 連接書庫: 遠端書庫's page over the root.
+    @Environment(OnboardingState.self) private var onboarding: OnboardingState?
+    @State private var showsRemoteLibrarySettings = false
 
     static let noticeDismissedKey = "library.tabNoticeDismissed"
 
@@ -128,6 +131,22 @@ struct LibraryTabRoot: View {
             .exploreRouteDestinations(openBrowser: { browserEntry = BrowserEntryPresentation(entry: $0) })
             .remoteLibraryDestinations()
             .publicLibraryDestinations()
+            .navigationDestination(isPresented: $showsRemoteLibrarySettings) {
+                RemoteLibrarySettingsView()
+            }
+            .onChange(of: onboarding?.pendingStart, initial: true) { _, _ in
+                guard let onboarding else { return }
+                // Over the root, whatever a replayed tour left this stack on.
+                if onboarding.take(.connectLibrary) {
+                    path = NavigationPath()
+                    showsRemoteLibrarySettings = true
+                } else if onboarding.take(.addSources) {
+                    showsRemoteLibrarySettings = false
+                    path = NavigationPath()
+                    // As 管理來源配置 in ••• pushes it.
+                    path.append(ExploreNavigationRoute.sourceManager)
+                }
+            }
         }
         // On the stack, not its root, as 探索's covers (`ExploreHomeRoot`): on the root, the
         // browser's 書籤 sheet closed as it opened, on the iOS 26.5 simulator as on 26.4.1

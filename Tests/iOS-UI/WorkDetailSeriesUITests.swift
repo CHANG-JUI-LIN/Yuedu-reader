@@ -31,7 +31,7 @@ final class WorkDetailSeriesUITests: XCTestCase {
     @MainActor
     private func launch(importing title: String) -> XCUIApplication {
         let app = XCUIApplication()
-        app.launchArguments = ["-no-official-modules", "-AppleLanguages", "(zh-Hant)", "-AppleLocale", "zh_TW",
+        app.launchArguments = ["-no-official-modules", "-onboarding.completed", "YES", "-AppleLanguages", "(zh-Hant)", "-AppleLocale", "zh_TW",
                                "-auto-import-epub", file(title).path, "-auto-import-title", title]
         app.launch()
         let shelfTab = app.tabBars.buttons["書架"].firstMatch
@@ -114,7 +114,7 @@ final class WorkDetailSeriesUITests: XCTestCase {
 
         // The books leave the shelf, so the next run starts from the same place.
         app.terminate()
-        app.launchArguments = ["-no-official-modules", "-AppleLanguages", "(zh-Hant)", "-AppleLocale", "zh_TW"]
+        app.launchArguments = ["-no-official-modules", "-onboarding.completed", "YES", "-AppleLanguages", "(zh-Hant)", "-AppleLocale", "zh_TW"]
         app.launch()
         let shelfTab = app.tabBars.buttons["書架"].firstMatch
         XCTAssertTrue(shelfTab.waitForExistence(timeout: 30))

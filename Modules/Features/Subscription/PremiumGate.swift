@@ -18,6 +18,9 @@ struct ProLockBadge: View {
         .background(DSColor.accentLight)
         .foregroundStyle(DSColor.accent)
         .clipShape(Capsule())
+        // One element: on the stack alone, the label reaches the lock and the word alike, and a
+        // row combining them read 需要 Pro twice (`OnboardingVoiceOverTests`).
+        .accessibilityElement(children: .ignore)
         .accessibilityLabel(localized("需要 Pro"))
     }
 }

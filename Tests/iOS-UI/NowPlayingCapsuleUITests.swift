@@ -36,7 +36,7 @@ final class NowPlayingCapsuleUITests: XCTestCase {
 
     @MainActor
     private func launch(_ app: XCUIApplication, importing title: String) {
-        app.launchArguments = ["-no-official-modules", "-AppleLanguages", "(zh-Hant)", "-AppleLocale", "zh_TW",
+        app.launchArguments = ["-no-official-modules", "-onboarding.completed", "YES", "-AppleLanguages", "(zh-Hant)", "-AppleLocale", "zh_TW",
                                "-auto-import-epub", folder.appendingPathComponent("\(title).txt").path,
                                "-auto-import-title", title, "-yd_page_turn_style", "滑動", "-yd_scroll_mode", "NO",
                                // The on-device voice: an online one depends on the network, and a

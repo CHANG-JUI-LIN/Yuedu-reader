@@ -199,6 +199,7 @@ struct HomeView: View {
     @EnvironmentObject var store: BookStore
     @Environment(\.appDependencies) private var appDependencies
     @Environment(\.rootTabBarVisibility) private var rootTabBarVisibility
+    @Environment(OnboardingState.self) private var onboarding: OnboardingState?
     @Bindable private var gs = GlobalSettings.shared
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -608,6 +609,12 @@ struct HomeView: View {
                 if isPresented {
                     addSheetSessionID = UUID()
                 }
+            }
+            // 新手導覽's 匯入文件.
+            .onChange(of: onboarding?.pendingStart, initial: true) { _, _ in
+                guard onboarding?.take(.importFiles) == true else { return }
+                addSheetSessionID = UUID()
+                showAddSheet = true
             }
             .sheet(isPresented: $showCalibreWireless) {
                 AdaptiveSheetContainer(maxWidth: DSLayout.readableListWidth) {

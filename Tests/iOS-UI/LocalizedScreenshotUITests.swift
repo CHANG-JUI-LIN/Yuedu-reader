@@ -43,7 +43,7 @@ final class LocalizedScreenshotUITests: XCTestCase {
     @MainActor
     private func capture(locale: String, region: String, bookTitle: String) throws {
         let app = XCUIApplication()
-        app.launchArguments = ["-no-official-modules", "-AppleLanguages", "(\(locale))", "-AppleLocale", region]
+        app.launchArguments = ["-no-official-modules", "-onboarding.completed", "YES", "-AppleLanguages", "(\(locale))", "-AppleLocale", region]
         app.launch()
 
         // The app restores the last tab it was on, so always start from Library.
@@ -128,7 +128,7 @@ final class LocalizedScreenshotUITests: XCTestCase {
         for (title, shot, advance) in [("Little Nemo in Slumberland", "manga", 0),
                                        ("北斎漫画 一編", "pdf", 6)] {
             let app = XCUIApplication()
-            app.launchArguments = ["-no-official-modules", "-AppleLanguages", "(\(locale))", "-AppleLocale", region]
+            app.launchArguments = ["-no-official-modules", "-onboarding.completed", "YES", "-AppleLanguages", "(\(locale))", "-AppleLocale", region]
             app.launch()
 
             let tabBar = app.tabBars.firstMatch

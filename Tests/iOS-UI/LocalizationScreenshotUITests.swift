@@ -20,7 +20,7 @@ final class LocalizationScreenshotUITests: XCTestCase {
         let languages = [("en", "en_US"), ("ja", "ja_JP"), ("ko", "ko_KR"), ("zh-Hans", "zh_CN"), ("zh-Hant", "zh_TW")]
         for (language, locale) in languages {
             let app = XCUIApplication()
-            app.launchArguments = ["-no-official-modules", "-AppleLanguages", "(\(language))", "-AppleLocale", locale]
+            app.launchArguments = ["-no-official-modules", "-onboarding.completed", "YES", "-AppleLanguages", "(\(language))", "-AppleLocale", locale]
             app.launch()
             let tabs = app.tabBars.firstMatch
             XCTAssertTrue(tabs.waitForExistence(timeout: 30), app.debugDescription)

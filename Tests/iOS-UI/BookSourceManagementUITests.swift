@@ -51,7 +51,7 @@ final class BookSourceManagementUITests: XCTestCase {
             with: Data(contentsOf: URL(fileURLWithPath: library))) as? [Any])?.count ?? 0
 
         let app = XCUIApplication()
-        app.launchArguments = ["-no-official-modules",
+        app.launchArguments = ["-no-official-modules", "-onboarding.completed", "YES",
             "-AppleLanguages", "(zh-Hant)", "-AppleLocale", "zh_TW",
             "-yd_source_disclaimer_accepted", "YES",
             "-yd_booksource_list_grouped", "NO",
@@ -126,7 +126,7 @@ final class BookSourceManagementUITests: XCTestCase {
     @MainActor
     func testValidationOptionsCountTheSourcesOnFirstOpen() throws {
         let app = XCUIApplication()
-        app.launchArguments = ["-no-official-modules",
+        app.launchArguments = ["-no-official-modules", "-onboarding.completed", "YES",
             "-AppleLanguages", "(zh-Hant)", "-AppleLocale", "zh_TW",
             "-yd_source_disclaimer_accepted", "YES",
             "-book-source-store-dir", storeDirectory.path,

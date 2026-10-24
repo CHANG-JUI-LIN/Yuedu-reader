@@ -8,7 +8,7 @@ final class EdgeTTSSettingsUITests: XCTestCase {
     @MainActor
     func testBuiltInVoiceSelectionAndNativePicker() throws {
         let app = XCUIApplication()
-        app.launchArguments += ["-no-official-modules", "-AppleLanguages", "(en)", "-AppleLocale", "en_US"]
+        app.launchArguments += ["-no-official-modules", "-onboarding.completed", "YES", "-AppleLanguages", "(en)", "-AppleLocale", "en_US"]
         seedImportedVoices(app)
         app.launch()
         openSettings(app)
@@ -54,6 +54,7 @@ final class EdgeTTSSettingsUITests: XCTestCase {
     func testTraditionalChineseLargestTextLayout() throws {
         let app = XCUIApplication()
         app.launchArguments += [
+            "-onboarding.completed", "YES",
             "-AppleLanguages", "(zh-Hant)", "-AppleLocale", "zh_TW",
             "-UIPreferredContentSizeCategoryName", "UICTContentSizeCategoryAccessibilityXXXL",
             "-AppleInterfaceStyle", "Dark",

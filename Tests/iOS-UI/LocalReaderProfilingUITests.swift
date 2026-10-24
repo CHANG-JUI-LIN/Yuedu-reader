@@ -48,7 +48,7 @@ final class LocalReaderProfilingUITests: XCTestCase {
             storeKitSession = session
         }
         let app = XCUIApplication()
-        app.launchArguments = ["-no-official-modules", "-AppleLanguages", "(zh-Hant)", "-AppleLocale", "zh_TW"]
+        app.launchArguments = ["-no-official-modules", "-onboarding.completed", "YES", "-AppleLanguages", "(zh-Hant)", "-AppleLocale", "zh_TW"]
         let launchFile = directory.appendingPathComponent("launch.json")
         if FileManager.default.fileExists(atPath: launchFile.path) {
             app.launchArguments += try JSONDecoder().decode([String].self, from: Data(contentsOf: launchFile))
@@ -67,7 +67,7 @@ final class LocalReaderProfilingUITests: XCTestCase {
             switch command.action {
             case "relaunch":
                 app.terminate()
-                app.launchArguments = ["-no-official-modules", "-AppleLanguages", "(zh-Hant)", "-AppleLocale", "zh_TW"] + (command.launchArguments ?? [])
+                app.launchArguments = ["-no-official-modules", "-onboarding.completed", "YES", "-AppleLanguages", "(zh-Hant)", "-AppleLocale", "zh_TW"] + (command.launchArguments ?? [])
                 app.launch()
             case "stop": try capture(app, sequence: sequence); return
             case "snapshot": break
