@@ -94,6 +94,57 @@ struct ReviewCardGlassReaderTests {
         }
     }
 
+    /// Curl back pages, cover-transition and auto-read snapshots draw the card's glass as a
+    /// still stand-in. Like the live glass it must let the page show through: on 起点's beige
+    /// paper it was a white slab (#69).
+    @Test("a baked glass card keeps the page's colour")
+    func bakedGlassKeepsPageColour() throws {
+        let paper = UIColor(red: 216 / 255, green: 196 / 255, blue: 158 / 255, alpha: 1)
+        let cardSize = CGSize(width: 200, height: 100)
+        let clear = UIGraphicsImageRenderer(size: cardSize).image { _ in }
+        let card = try #require(ReviewCardImage(
+            image: clear,
+            glassPanels: [ReviewCardGlassPanel(rect: CGRect(origin: .zero, size: cardSize), cornerRadius: 12)],
+            isNight: false
+        ))
+        let attachment = CoreTextPaginator.RenderedAttachment(
+            rect: CGRect(origin: .zero, size: cardSize),
+            image: card,
+            opacity: 1
+        )
+        // A context of known RGBA layout, set up as UIKit draws (origin top-left).
+        let width = Int(cardSize.width), height = Int(cardSize.height)
+        let context = try #require(CGContext(
+            data: nil,
+            width: width,
+            height: height,
+            bitsPerComponent: 8,
+            bytesPerRow: width * 4,
+            space: CGColorSpaceCreateDeviceRGB(),
+            bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+        ))
+        context.translateBy(x: 0, y: cardSize.height)
+        context.scaleBy(x: 1, y: -1)
+        UIGraphicsPushContext(context)
+        paper.setFill()
+        UIRectFill(CGRect(origin: .zero, size: cardSize))
+        attachment.draw(glassCards: .baked)
+        UIGraphicsPopContext()
+        let bytes = try #require(context.data).assumingMemoryBound(to: UInt8.self)
+        let centre = ((height / 2) * width + width / 2) * 4
+        let red = CGFloat(bytes[centre]) / 255
+        let green = CGFloat(bytes[centre + 1]) / 255
+        let blue = CGFloat(bytes[centre + 2]) / 255
+        let alpha = CGFloat(bytes[centre + 3]) / 255
+        var paperRed: CGFloat = 0, paperGreen: CGFloat = 0, paperBlue: CGFloat = 0
+        paper.getRed(&paperRed, green: &paperGreen, blue: &paperBlue, alpha: nil)
+        #expect(alpha == 1)
+        // Lifted a little, never washed out: the blue channel is where white shows first.
+        #expect(blue - paperBlue < 0.06, "panel \(red) \(green) \(blue) over paper \(paperRed) \(paperGreen) \(paperBlue)")
+        // Lifted, not darkened (a colour-space round trip may cost a step).
+        #expect(red > paperRed - 0.01 && green > paperGreen - 0.01 && blue > paperBlue - 0.01)
+    }
+
     @Test("a worn glass template is live glass on the page and in the scroll chunk")
     func glassCardReachesPageAndChunk() async throws {
         let settings = GlobalSettings.shared

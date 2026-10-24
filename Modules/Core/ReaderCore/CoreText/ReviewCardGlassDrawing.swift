@@ -31,7 +31,10 @@ extension CoreTextPaginator.RenderedAttachment {
         for panel in card.glassPanels {
             let placed = panel.placed(in: rect, imageSize: card.size)
             let path = UIBezierPath(roundedRect: placed.rect, cornerRadius: placed.cornerRadius)
-            UIColor.white.withAlphaComponent(isNight ? 0.1 : 0.5).setFill()
+            // The live glass shows the page through it, barely lifted, with a bright rim: on
+            // a paper page it reads as the paper. A denser fill turned the card a white slab
+            // on every curl back page (#69).
+            UIColor.white.withAlphaComponent(isNight ? 0.06 : 0.1).setFill()
             path.fill()
             UIColor.white.withAlphaComponent(isNight ? 0.18 : 0.8).setStroke()
             path.lineWidth = 0.5
