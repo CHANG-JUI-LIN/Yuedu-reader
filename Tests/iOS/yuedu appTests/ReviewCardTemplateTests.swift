@@ -121,6 +121,28 @@ struct ReviewCardTemplateTests {
         #expect(card.comments == [.init(user: "", likes: "", content: "来抄书")])
     }
 
+    /// 起点 qimo's 热评 pill as its jsLib draws it, around `comment`.
+    private func qimoHotCommentCard(_ comment: String) -> String {
+        """
+        <svg width="1000" height="140" xmlns="http://www.w3.org/2000/svg">\
+        <rect width="100%" height="100%" fill="rgba(255,255,255,0.5)" rx="70"/>\
+        <rect x="32" y="42" width="140" height="56" rx="30" fill="#FF4444"/>\
+        <text x="102" y="84" font-size="32" fill="#FFF" text-anchor="middle" font-weight="bold">热评</text>\
+        <text x="196" y="84" font-size="40" fill="#000" font-weight="bold">\(comment)</text></svg>
+        """
+    }
+
+    @Test(
+        "a 热评 pill's comment stays the comment however much it looks like a count",
+        arguments: ["还只是这一批", "666", "第1", "哈哈2333", "666赞"]
+    )
+    func hotCommentPillNeverReadsAsCount(comment: String) throws {
+        let card = try #require(ReviewCardContent.extract(from: qimoHotCommentCard(comment)))
+        #expect(card.kind == .hotComment)
+        #expect(card.count.isEmpty)
+        #expect(card.comments == [.init(user: "", likes: "", content: comment)])
+    }
+
     @Test("起点's rebuilt dimensionless 神评论 names its kind and keeps its wrapped lines together")
     func readsRebuiltGodReview() throws {
         let reviewText = String(repeating: "評", count: 32)

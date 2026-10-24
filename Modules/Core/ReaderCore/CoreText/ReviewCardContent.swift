@@ -56,9 +56,13 @@ struct ReviewCardContent: Equatable, Sendable {
         }
         guard let kind else { return nil }
 
+        // A heading with nothing under it is a 热评 pill: what shares its row is the comment,
+        // however much it looks like a count (`666`) or a like count (`666赞`).
+        let isPill = headingRow.map { row in !runs.contains { !sameRow($0, row) } } ?? false
+
         var count = ""
         var number = ""
-        if let countIndex = runs.firstIndex(where: { run in
+        if !isPill, let countIndex = runs.firstIndex(where: { run in
             countDigits(in: run.text) != nil && !isMarkedLikeCount(run.text)
                 && (headingRow.map { sameRow(run, $0) } ?? false)
         }) {
@@ -70,7 +74,7 @@ struct ReviewCardContent: Equatable, Sendable {
 
         var comments = kind == .authorSay
             ? authorNote(from: runs)
-            : comments(from: runs, headingRow: headingRow)
+            : comments(from: runs, headingRow: headingRow, isPill: isPill)
         if let fullTexts = fullTexts(in: root) {
             for index in comments.indices {
                 if let full = ReviewCardFullText.fullText(of: comments[index].content, among: fullTexts) {
@@ -138,8 +142,11 @@ struct ReviewCardContent: Equatable, Sendable {
         return headings.first { trimmed.hasPrefix($0.0) }?.1
     }
 
+    /// Counts are written in `0-9`. Not `\d`: the iOS 27 Foundation's
+    /// `String.range(of:options: .regularExpression)` matches it against 一 / 十 / 〇 as well
+    /// (`NSRegularExpression` does not), and read 「还只是这一批」 as a count.
     private static func countDigits(in text: String) -> String? {
-        guard let range = text.range(of: #"\d[\d,.]*\s*[万萬kKwW]?"#, options: .regularExpression) else { return nil }
+        guard let range = text.range(of: #"[0-9][0-9,.]*\s*[万萬kKwW]?"#, options: .regularExpression) else { return nil }
         let digits = String(text[range]).trimmingCharacters(in: .whitespaces)
         // A count run is the number with its words — `12条评论 〉` — not a sentence.
         let rest = text.replacingCharacters(in: range, with: "")
@@ -161,7 +168,7 @@ struct ReviewCardContent: Equatable, Sendable {
         linkLabels.contains(text.trimmingCharacters(in: .whitespacesAndNewlines.union(.punctuationCharacters).union(.symbols)))
     }
 
-    private static func comments(from runs: [TextRun], headingRow: CGFloat?) -> [Comment] {
+    private static func comments(from runs: [TextRun], headingRow: CGFloat?, isPill: Bool) -> [Comment] {
         let rows = rows(of: runs)
         let isHeadingRow: ([TextRun]) -> Bool = { row in headingRow.map { sameRow(row[0], $0) } ?? false }
         // Bold marks a user only where the comments' own lines are not bold: 聚合段评 sets
@@ -173,7 +180,7 @@ struct ReviewCardContent: Equatable, Sendable {
             if isHeadingRow(row) {
                 // A 热评 pill: the comment sits on the heading's own row. So may its like count,
                 // with the comment below (聚合段评's 段卡: 神评论 … 👍 4138).
-                let likesRun = row.last(where: { isMarkedLikeCount($0.text) })
+                let likesRun = isPill ? nil : row.last(where: { isMarkedLikeCount($0.text) })
                 let line = row.filter { $0 != likesRun }
                 comments.append(Comment(
                     user: "",
@@ -262,7 +269,7 @@ struct ReviewCardContent: Equatable, Sendable {
         let stripped = text.trimmingCharacters(in: .whitespacesAndNewlines)
             .replacingOccurrences(of: likeMarks, with: "", options: .regularExpression)
             .trimmingCharacters(in: .whitespaces)
-        return !stripped.isEmpty && stripped.range(of: #"^\d[\d,.]*\s*[万萬kKwW]?$"#, options: .regularExpression) != nil
+        return !stripped.isEmpty && stripped.range(of: #"^[0-9][0-9,.]*\s*[万萬kKwW]?$"#, options: .regularExpression) != nil
     }
 
     /// A like count that says so (`👍 4138`): beside a heading it is the comment's likes, not the
@@ -272,7 +279,7 @@ struct ReviewCardContent: Equatable, Sendable {
     }
 
     private static func likeDigits(_ text: String) -> String {
-        guard let range = text.range(of: #"\d[\d,.]*\s*[万萬kKwW]?"#, options: .regularExpression) else { return "" }
+        guard let range = text.range(of: #"[0-9][0-9,.]*\s*[万萬kKwW]?"#, options: .regularExpression) else { return "" }
         return String(text[range]).trimmingCharacters(in: .whitespaces)
     }
 
