@@ -93,7 +93,10 @@ final class LocalizedScreenshotUITests: XCTestCase {
             Thread.sleep(forTimeInterval: 1.5)
         }
 
-        if back.exists { back.tap() } else { app.buttons["reader_close_button"].tap() }
+        // Putting the sheet away can leave the chrome hidden: bring it back to reach the back button.
+        if !back.waitForExistence(timeout: 2) { app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap() }
+        XCTAssertTrue(back.waitForExistence(timeout: 5), "[\(locale)] reading toolbar should be up to leave the book")
+        back.tap()
         Thread.sleep(forTimeInterval: 2.0)
 
         // Settings is next to last in the default tab order (書架・探索・資源庫・設定・搜尋).

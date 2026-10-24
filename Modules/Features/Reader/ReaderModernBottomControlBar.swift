@@ -1,41 +1,68 @@
 import SwiftUI
 
-/// The 現代 interface's bottom chrome: one floating rounded panel, inset from every
-/// edge, holding the chapter line, the chapter progress slider, and the same four
-/// tools 經典 offers — 目錄 / 書籤 / 深色 / 設置.
+/// The reader's bottom chrome: two floating capsules of one width and one height,
+/// inset from the screen edges.
 ///
-/// It wears the shared 界面效果 surface (`floatingSurface`), which on iOS 26 is the
-/// system's own glass — so it matches the toolbar controls above it without either
-/// being hand-painted, and follows 外觀主題 › 界面效果 like every other floating element.
+/// - The scrubber: ⏮ 上一章 / the book's progress slider / 下一章 ⏭, with the
+///   chapter's page and the whole book's progress under the slider.
+/// - The tools: 目錄 / 深色 / 聽書 / 主題 from `ReaderChromeToolItem` (自定義 can
+///   hide or re-icon them), then 更多, which holds 書籤 and AI 助手 / AI 翻譯.
 ///
-/// The book-scoped actions (刷新 / 換源 / 下載 / 聽書) are deliberately *not* here;
-/// 現代 puts them in `ReaderModernBookCard` behind the cover thumbnail.
+/// Both wear the shared 界面效果 surface (`floatingSurface`), which on iOS 26 is the
+/// system's own glass, so 毛玻璃 / 透明度 / 光暈 reach them like every other floating
+/// element. They are deliberately not the system bottom toolbar: the system sizes that
+/// capsule from the display's corner radius, and the scrubber above it could not be
+/// made to match.
+///
+/// The other book-scoped actions (刷新 / 換源 / 下載 / 來源配置登入 …) are not here; they
+/// live in `ReaderModernBookCard` behind the cover.
 struct ReaderModernBottomControlBar: View {
     /// The built-in background the reader sits on: what the bar's colours are read from.
     let readerTheme: ReaderTheme
     let overlayContentMaxWidth: CGFloat
     let canGoPrevChapter: Bool
     let canGoNextChapter: Bool
-    let chapterTitle: String
-    let chapterPageInfo: String
+    /// The line under the slider — this chapter's page and the whole book's progress.
+    /// Empty while an online chapter is still loading.
+    let progressText: String
     let chapterSliderProgressValue: () -> Double
     let applyChapterSliderProgress: (Double) -> Void
     let chapterTitleForProgress: (Double) -> String
+    let isCurrentPageBookmarked: Bool
     let onPrevChapter: () -> Void
     let onNextChapter: () -> Void
     let onOpenTOC: () -> Void
-    let onOpenBookmarks: () -> Void
+    /// 主題: the quick panel — font size, 翻頁, brightness, backgrounds, 自動閱讀, and
+    /// the way into the full reader settings.
+    let onOpenSettings: () -> Void
+    let onListen: () -> Void
     /// 深色／白天: the reader switches its own dark mode, and the background with it.
     let onToggleDarkMode: () -> Void
-    let onOpenSettings: () -> Void
+    let onOpenBookmarks: () -> Void
+    let onToggleBookmark: () -> Void
+    /// AI 助手 and AI 翻譯 — those that apply to this book and that 自定義 left on — listed
+    /// under 書籤 in 更多.
+    let moreActions: [ReaderSecondaryAction]
 
     @Bindable private var settings = GlobalSettings.shared
 
     @State private var chapterSliderDraft: Double? = nil
+    /// One height for both capsules, growing with the captions they carry.
+    @ScaledMetric(relativeTo: .caption2) private var rowHeight = DSLayout.readerModernBarRowHeight
+    /// iOS 17 only: 更多 is a chooser sheet, and its choice runs from the sheet's real
+    /// `onDismiss` (Technotes/iOS17MenuModalPresentation.md) — 書籤 and the AI panels open
+    /// sheets.
+    @State private var showsLegacyMoreMenu = false
+    @State private var legacyMoreSequence = DismissalSequencedPresentation<MoreRoute>()
 
+    private enum MoreRoute: Hashable {
+        case bookmarks
+        case toggleBookmark
+        case action(ReaderSecondaryAction.ID)
+    }
 
     private var palette: ReaderChromePalette {
-        ReaderChromePalette(interface: .modern, theme: readerTheme, settings: settings)
+        ReaderChromePalette(theme: readerTheme, settings: settings)
     }
 
     /// The reader's own dark mode, which 深色／白天 switches — not whether the background
@@ -54,138 +81,152 @@ struct ReaderModernBottomControlBar: View {
         VStack(spacing: 0) {
             Spacer(minLength: 0)
 
-            VStack(spacing: DSSpacing.sm) {
-                chapterLine
-                progressRow
-                toolRow
+            GlassGroup {
+                VStack(spacing: DSSpacing.sm) {
+                    scrubberRow
+                        .frame(maxWidth: .infinity, minHeight: rowHeight)
+                        .floatingSurface(in: Capsule(), fill: palette.bottomFill)
+                    toolRow
+                        .frame(maxWidth: .infinity, minHeight: rowHeight)
+                        .floatingSurface(in: Capsule(), fill: palette.bottomFill)
+                }
             }
-            .padding(.horizontal, DSSpacing.lg)
-            .padding(.vertical, DSSpacing.md)
-            .floatingSurface(
-                in: RoundedRectangle(cornerRadius: DSRadius.xxl, style: .continuous),
-                fill: palette.bottomFill
-            )
             .overlay(alignment: .top) {
                 if chapterSliderDraft != nil {
                     scrubPreview
                 }
             }
             .frame(maxWidth: overlayContentMaxWidth)
-            .padding(.horizontal, DSSpacing.md)
-            .padding(.bottom, DSSpacing.md)
-            .tint(palette.bottomAccent)
+            .padding(.horizontal, DSSpacing.lg)
+            .padding(.bottom, DSSpacing.xs)
             .animation(DSAnimation.fast, value: chapterSliderDraft == nil)
         }
     }
 
-    private var chapterLine: some View {
-        HStack(spacing: DSSpacing.sm) {
-            Text(chapterTitle)
-                .font(DSFont.footnote)
-                .lineLimit(1)
-            Spacer(minLength: 0)
-            Text(chapterPageInfo)
-                .font(DSFont.footnote.monospacedDigit())
-        }
-        .foregroundStyle(palette.bottomIcon.opacity(0.62))
-        .accessibilityElement(children: .combine)
-    }
+    // MARK: - Scrubber
 
-    private var progressRow: some View {
+    /// Laid out like the fixed-page reader's bar (`FixedPageReaderView.bottomBar`): the
+    /// slider centred on the capsule's middle line, the caption pinned to the bottom
+    /// edge, and the outline ⏮ / ⏭ on the same middle line. Stacking the slider and the
+    /// caption in a VStack centred them as a pair, which left the slider above the
+    /// arrows' line.
+    private var scrubberRow: some View {
         HStack(spacing: DSSpacing.sm) {
-            Button(action: onPrevChapter) {
-                Image(systemName: "chevron.left")
-                    .font(DSFont.fixed(size: 15, weight: .medium))
-                    .foregroundStyle(palette.bottomIcon)
-                    // Explicit, not left to the button style: `.plain` does not reliably
-                    // dim a disabled label, and at a chapter boundary the arrow has to
-                    // read as unavailable.
-                    .opacity(canGoPrevChapter ? 1 : 0.3)
-                    .frame(width: 32, height: 32)
-                    .contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
-            .disabled(!canGoPrevChapter)
-            .accessibilityLabel(localized("上一章"))
-
-            Slider(
-                value: Binding<Double>(
-                    get: { sliderProgress },
-                    set: { chapterSliderDraft = $0 }
-                ),
-                in: 0...1,
-                onEditingChanged: { editing in
-                    if editing {
-                        chapterSliderDraft = chapterSliderProgressValue()
-                    } else if let draft = chapterSliderDraft {
-                        applyChapterSliderProgress(draft)
-                        chapterSliderDraft = nil
-                    }
-                }
+            chapterButton(
+                systemImage: "backward.end",
+                label: localized("上一章"),
+                isEnabled: canGoPrevChapter,
+                action: onPrevChapter
             )
-            .accessibilityLabel(localized("閱讀進度"))
-            .accessibilityValue(progressPercentText)
 
-            Button(action: onNextChapter) {
-                Image(systemName: "chevron.right")
-                    .font(DSFont.fixed(size: 15, weight: .medium))
-                    .foregroundStyle(palette.bottomIcon)
-                    .opacity(canGoNextChapter ? 1 : 0.3)
-                    .frame(width: 32, height: 32)
-                    .contentShape(Rectangle())
+            ZStack {
+                Slider(
+                    value: Binding<Double>(
+                        get: { sliderProgress },
+                        set: { chapterSliderDraft = $0 }
+                    ),
+                    in: 0...1,
+                    onEditingChanged: { editing in
+                        if editing {
+                            chapterSliderDraft = chapterSliderProgressValue()
+                        } else if let draft = chapterSliderDraft {
+                            applyChapterSliderProgress(draft)
+                            chapterSliderDraft = nil
+                        }
+                    }
+                )
+                .tint(palette.bottomIcon)
+                .accessibilityLabel(localized("閱讀進度"))
+                .accessibilityValue(progressPercentText)
+
+                VStack(spacing: 0) {
+                    Spacer(minLength: 0)
+                    Text(progressText)
+                        .font(DSFont.caption2.monospacedDigit())
+                        .foregroundStyle(palette.bottomIcon.opacity(0.62))
+                        .lineLimit(1)
+                        .accessibilityHidden(progressText.isEmpty)
+                }
+                .padding(.bottom, DSSpacing.xs)
             }
-            .buttonStyle(.plain)
-            .disabled(!canGoNextChapter)
-            .accessibilityLabel(localized(canGoNextChapter ? "下一章" : "書末頁"))
+            // A fixed height: the Spacer above the caption is flexible and would
+            // otherwise take the space the bar's own top Spacer leaves above it.
+            .frame(height: rowHeight)
+
+            chapterButton(
+                systemImage: "forward.end",
+                label: localized(canGoNextChapter ? "下一章" : "書末頁"),
+                isEnabled: canGoNextChapter,
+                action: onNextChapter
+            )
         }
+        .padding(.horizontal, DSSpacing.xs)
     }
 
-    /// Same shared list 經典 draws, so hiding 深色 or importing an icon in
-    /// 自定義 applies to whichever interface is on. Order always follows
-    /// `allCases`; persistence only records what is hidden.
+    private func chapterButton(
+        systemImage: String,
+        label: String,
+        isEnabled: Bool,
+        action: @escaping () -> Void
+    ) -> some View {
+        Button(action: action) {
+            Image(systemName: systemImage)
+                .foregroundStyle(palette.bottomIcon)
+                // Explicit, not left to the button style: `.plain` does not reliably
+                // dim a disabled label, and at a chapter boundary the arrow has to
+                // read as unavailable.
+                .opacity(isEnabled ? 1 : 0.3)
+                .frame(width: DSLayout.minimumTapTarget, height: DSLayout.minimumTapTarget)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .disabled(!isEnabled)
+        .accessibilityLabel(label)
+    }
+
+    // MARK: - Tools
+
+    /// Same shared list 自定義 edits, so hiding a tool or importing an icon applies
+    /// here. Order always follows `allCases`; persistence only records what is hidden.
     private var toolRow: some View {
         HStack(spacing: 0) {
             ForEach(settings.visibleReaderChromeToolItems) { item in
                 toolButton(for: item)
             }
+            moreButton
         }
+        .padding(.horizontal, DSSpacing.sm)
     }
 
     @ViewBuilder
     private func toolButton(for item: ReaderChromeToolItem) -> some View {
         switch item {
         case .tableOfContents:
-            toolBtn(item: item, label: localized("目錄"), action: onOpenTOC)
-        case .bookmarks:
-            toolBtn(item: item, label: localized("書籤"), action: onOpenBookmarks)
+            toolButton(item: item, label: localized("目錄"), action: onOpenTOC)
+        case .settings:
+            toolButton(item: item, label: localized("主題"), action: onOpenSettings)
+        case .listen:
+            toolButton(item: item, label: localized("聽書"), action: onListen)
         case .nightMode:
-            toolBtn(
+            toolButton(
                 item: item,
                 label: localized(isDarkMode ? "白天" : "深色"),
                 active: isDarkMode,
                 action: onToggleDarkMode
             )
-        case .settings:
-            toolBtn(item: item, label: localized("設置"), action: onOpenSettings)
         }
     }
 
-    @ViewBuilder
-    private func toolBtn(
+    private func toolButton(
         item: ReaderChromeToolItem,
         label: String,
         active: Bool = false,
         action: @escaping () -> Void
     ) -> some View {
         Button(action: action) {
-            VStack(spacing: 3) {
+            toolLabel(label, active: active) {
                 toolGlyph(for: item, active: active)
-                Text(label)
-                    .font(DSFont.caption2)
-                    .foregroundStyle(active ? palette.bottomAccent : palette.bottomIcon)
             }
-            .frame(maxWidth: .infinity, minHeight: 44)
-            .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
         // Derived from the item, not the label: the label is localized, so a
@@ -195,8 +236,26 @@ struct ReaderModernBottomControlBar: View {
         .accessibilityAddTraits(active ? .isSelected : [])
     }
 
+    private func toolLabel(
+        _ label: String,
+        active: Bool = false,
+        @ViewBuilder glyph: () -> some View
+    ) -> some View {
+        VStack(spacing: DSSpacing.xxs) {
+            glyph()
+                .frame(height: DSLayout.readerModernToolGlyphHeight)
+                .accessibilityHidden(true)
+            Text(label)
+                .font(DSFont.caption2)
+                .lineLimit(1)
+                .foregroundStyle(active ? palette.bottomAccent : palette.bottomIcon)
+        }
+        .frame(maxWidth: .infinity, minHeight: DSLayout.minimumTapTarget)
+        .contentShape(Rectangle())
+    }
+
     /// An imported icon is drawn in its own colours — it is artwork the reader
-    /// chose, not a symbol to tint. Only the fallback SF Symbol takes the palette.
+    /// chose, not a symbol to tint. Only the fallback glyph takes the palette.
     @ViewBuilder
     private func toolGlyph(for item: ReaderChromeToolItem, active: Bool) -> some View {
         if let custom = settings.readerChromeIconImage(for: item) {
@@ -204,7 +263,12 @@ struct ReaderModernBottomControlBar: View {
                 .renderingMode(.original)
                 .resizable()
                 .scaledToFit()
-                .frame(width: 22, height: 22)
+                .frame(width: DSLayout.readerModernToolGlyphHeight, height: DSLayout.readerModernToolGlyphHeight)
+        } else if item == .settings {
+            // 主題 is the serif "Aa" Apple Books uses for its themes button.
+            Text(verbatim: "Aa")
+                .font(GlobalAppTypography.font(.headline, weight: .bold, systemDesign: .serif))
+                .foregroundStyle(palette.bottomIcon)
         } else {
             Image(systemName: item.systemImage(isNight: isDarkMode))
                 .imageScale(.large)
@@ -212,10 +276,122 @@ struct ReaderModernBottomControlBar: View {
         }
     }
 
+    // MARK: - 更多
+
+    private var bookmarkToggleTitle: String {
+        localized(isCurrentPageBookmarked ? "移除書籤" : "加入書籤")
+    }
+
+    private var bookmarkToggleSymbol: String {
+        isCurrentPageBookmarked ? "bookmark.slash" : "bookmark"
+    }
+
+    @ViewBuilder
+    private var moreButton: some View {
+        if MenuModalPresentationPolicy.requiresDismissalSequencedChooser {
+            Button {
+                legacyMoreSequence.cancel()
+                showsLegacyMoreMenu = true
+            } label: {
+                moreLabel
+            }
+            .buttonStyle(.plain)
+            .accessibilityIdentifier("reader_tool_more")
+            .accessibilityLabel(localized("更多"))
+            .sheet(isPresented: $showsLegacyMoreMenu, onDismiss: runLegacyMoreChoice) {
+                AdaptiveSheetContainer(maxWidth: DSLayout.readableCompactWidth) {
+                    DismissalSequencedActionChooser(
+                        title: localized("更多"),
+                        actions: [
+                            DismissalSequencedAction(
+                                route: MoreRoute.bookmarks,
+                                title: localized("書籤"),
+                                systemImage: "list.bullet.rectangle"
+                            ),
+                            DismissalSequencedAction(
+                                route: MoreRoute.toggleBookmark,
+                                title: bookmarkToggleTitle,
+                                systemImage: bookmarkToggleSymbol
+                            ),
+                        ] + moreActions.map { action in
+                            DismissalSequencedAction(
+                                route: MoreRoute.action(action.id),
+                                title: action.label,
+                                systemImage: action.icon,
+                                subtitle: action.isLocked ? localized("需要 Pro") : nil
+                            )
+                        },
+                        onSelect: { legacyMoreSequence.select($0) }
+                    )
+                }
+            }
+        } else {
+            Menu {
+                Button(action: onOpenBookmarks) {
+                    Label(localized("書籤"), systemImage: "list.bullet.rectangle")
+                }
+                Button(action: onToggleBookmark) {
+                    Label(bookmarkToggleTitle, systemImage: bookmarkToggleSymbol)
+                }
+                if !moreActions.isEmpty {
+                    Section {
+                        ForEach(moreActions) { action in
+                            Button(action: action.action) {
+                                Label {
+                                    Text(action.label)
+                                    // Without Pro the tap opens the paywall; the menu says so.
+                                    if action.isLocked {
+                                        Text(localized("需要 Pro"))
+                                    }
+                                } icon: {
+                                    moreActionIcon(action)
+                                }
+                            }
+                            .accessibilityIdentifier("reader_more_\(action.id.rawValue)")
+                        }
+                    }
+                }
+            } label: {
+                moreLabel
+            }
+            .buttonStyle(.plain)
+            .accessibilityIdentifier("reader_tool_more")
+            .accessibilityLabel(localized("更多"))
+        }
+    }
+
+    private var moreLabel: some View {
+        toolLabel(localized("更多")) {
+            Image(systemName: "ellipsis")
+                .imageScale(.large)
+                .foregroundStyle(palette.bottomIcon)
+        }
+    }
+
+    /// The icon 自定義 imported for the action, else its symbol.
+    @ViewBuilder
+    private func moreActionIcon(_ action: ReaderSecondaryAction) -> some View {
+        if let item = ReaderChromeActionItem(action.id),
+           let custom = settings.readerChromeIconImage(for: item) {
+            Image(uiImage: custom)
+        } else {
+            Image(systemName: action.icon)
+        }
+    }
+
+    private func runLegacyMoreChoice() {
+        switch legacyMoreSequence.consumeAfterDismissal() {
+        case .bookmarks: onOpenBookmarks()
+        case .toggleBookmark: onToggleBookmark()
+        case .action(let id): moreActions.first { $0.id == id }?.action()
+        case nil: break
+        }
+    }
+
     /// The bubble that follows the slider while scrubbing, showing where a release
-    /// would land. Same behaviour as the 經典 bar.
+    /// would land.
     private var scrubPreview: some View {
-        VStack(spacing: 4) {
+        VStack(spacing: DSSpacing.xs) {
             Text(progressPercentText)
                 .font(DSFont.subheadline.monospacedDigit())
                 .foregroundStyle(.secondary)
@@ -232,8 +408,26 @@ struct ReaderModernBottomControlBar: View {
     }
 }
 
+/// `GlassEffectContainer` on iOS 26, so the two capsules render as one glass layer.
+/// Before iOS 26 there is no glass to group.
+private struct GlassGroup<Content: View>: View {
+    @ViewBuilder var content: Content
+
+    var body: some View {
+        #if compiler(>=6.2)
+        if #available(iOS 26.0, *) {
+            GlassEffectContainer { content }
+        } else {
+            content
+        }
+        #else
+        content
+        #endif
+    }
+}
+
 #Preview("Modern Bottom Control Bar") {
-    @Previewable @State var theme: ReaderTheme = .sepia
+    @Previewable @State var theme: ReaderTheme = .white
 
     ZStack {
         theme.backgroundColor.ignoresSafeArea()
@@ -245,20 +439,26 @@ struct ReaderModernBottomControlBar: View {
 
         ReaderModernBottomControlBar(
             readerTheme: theme,
-            overlayContentMaxWidth: 640,
+            overlayContentMaxWidth: .infinity,
             canGoPrevChapter: true,
             canGoNextChapter: true,
-            chapterTitle: "第四回 薄命女偏逢薄命郎 葫蘆僧亂判葫蘆案",
-            chapterPageInfo: "7 / 18",
-            chapterSliderProgressValue: { 0.32 },
+            progressText: "12 / 28 頁 · 全書 6%",
+            chapterSliderProgressValue: { 0.43 },
             applyChapterSliderProgress: { _ in },
             chapterTitleForProgress: { _ in "第五回" },
+            isCurrentPageBookmarked: false,
             onPrevChapter: {},
             onNextChapter: {},
             onOpenTOC: {},
-            onOpenBookmarks: {},
+            onOpenSettings: {},
+            onListen: {},
             onToggleDarkMode: {},
-            onOpenSettings: {}
+            onOpenBookmarks: {},
+            onToggleBookmark: {},
+            moreActions: [
+                ReaderSecondaryAction(id: .aiAssistant, icon: "sparkles", label: "AI 助手", isLocked: true, action: {}),
+                ReaderSecondaryAction(id: .translation, icon: "translate", label: "AI 翻譯", isLocked: true, action: {})
+            ]
         )
     }
 }

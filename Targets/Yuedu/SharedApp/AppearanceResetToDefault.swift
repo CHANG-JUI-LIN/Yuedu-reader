@@ -26,10 +26,10 @@ extension GlobalSettings {
         rootTabVisibleIDs = Self.defaultRootTabVisibleIDs
         selectedGlobalFontPostScript = nil
         interfaceGlowIntensity = Self.defaultInterfaceGlowIntensity
+        interfaceGlowColor = nil
         interfaceFrostedGlass = Self.defaultInterfaceFrostedGlass
         interfaceGlassTransparency = Self.defaultInterfaceGlassTransparency
         interfaceGlassCards = Self.defaultInterfaceGlassCards
-        appearanceReaderInterface = .classic
         readerChromeColors = [:]
         readerChromeHiddenIDs = []
         readerChromeIcons = []

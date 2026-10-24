@@ -27,14 +27,6 @@ struct QiThemeImporterTests {
         #expect(QiThemeImporter.pageAnim(forPageMode: nil) == nil)
     }
 
-    @Test("maps QiReader layout templates onto the reader interface")
-    func mapsLayoutTemplates() {
-        #expect(QiThemeImporter.readerInterface(forTemplate: "经典") == .classic)
-        #expect(QiThemeImporter.readerInterface(forTemplate: "經典") == .classic)
-        #expect(QiThemeImporter.readerInterface(forTemplate: "现代") == .modern)
-        #expect(QiThemeImporter.readerInterface(forTemplate: "未知樣式") == nil)
-    }
-
     @Test("maps overlay widget names, and refuses to guess unknown ones")
     func mapsOverlayWidgetNames() {
         #expect(QiThemeImporter.overlayKind(for: "章节名") == .chapterTitle)
@@ -176,7 +168,6 @@ struct QiThemeImporterTests {
         #expect(abs(try #require(result.effects.glassTransparency) - 0.25) < 0.0001)
         #expect(result.bookshelf.forceDefaultCover == true)
         #expect(result.bookshelf.gridColumnCount == 3)
-        #expect(result.readerInterface == .classic)
         #expect(result.defaultCovers.count == 1)
 
         // The eight background fields line up one-for-one with ours.
@@ -305,7 +296,7 @@ struct QiThemeImporterTests {
         #expect(Set(result.readerChromeIcons.map(\.itemID)) == [
             ReaderChromeToolItem.tableOfContents.storageID,
             ReaderChromeToolItem.settings.storageID,
-            ReaderChromeActionItem.playback.storageID,
+            ReaderChromeToolItem.listen.storageID,
         ])
         #expect(result.notes.contains(String(
             format: localized("閱讀工具列的「%@」圖示在本 App 沒有對應的按鈕，已略過。"),
@@ -320,7 +311,7 @@ struct QiThemeImporterTests {
         #expect(QiThemeImporter.readerChromeItemID(for: "settings")
             == ReaderChromeToolItem.settings.storageID)
         #expect(QiThemeImporter.readerChromeItemID(for: "speech")
-            == ReaderChromeActionItem.playback.storageID)
+            == ReaderChromeToolItem.listen.storageID)
         #expect(QiThemeImporter.readerChromeItemID(for: "search") == nil)
     }
 
@@ -397,7 +388,6 @@ struct QiThemeImporterTests {
         #expect(json["paragraphSpacing"] as? Double == 8)
         #expect(json["paddingLeft"] as? Double == 16)
         #expect(json["pageAnim"] as? Int == 0)
-        #expect(result.readerInterface == .classic)
 
         // Absent values must be omitted, not written as null: the layout importer gates on
         // which keys are present, so a null key would make an empty preset look recognized.

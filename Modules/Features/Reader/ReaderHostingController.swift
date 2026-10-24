@@ -1,13 +1,27 @@
 import SwiftUI
 import UIKit
 
-/// Hosts the migrated SwiftUI reader while owning only the *outer* shelf
-/// navigation chrome. The reader's own inner `NavigationStack` remains
-/// untouched and continues to show its in-reader controls.
+/// Hosts the migrated SwiftUI reader on the shelf's navigation controller.
+///
+/// On iOS 27 there is no inner navigation controller: the reader's `NavigationStack` adopts
+/// the shelf's, so the bar this controller hides for the page is the same bar the reader's
+/// `.toolbar` puts 返回 · 書名 · 封面 in. Each appearance therefore sets it to what the
+/// reader's chrome is (`showsReaderChrome`), never to hidden outright: forcing it hidden
+/// when the reader came back from 作品詳情 with its chrome up left the bottom bar on
+/// screen and the top bar gone, and SwiftUI, whose visibility had not changed, never
+/// showed it again — only hiding and re-showing the chrome brought it back. A reader
+/// whose stack built a navigation controller of its own keeps the shelf's bar hidden
+/// (`hasOwnNavigationController`).
 @MainActor
 final class ReaderHostingController: UIHostingController<AnyView> {
     private weak var outerNavigationController: UINavigationController?
     private var previousNavigationBarHidden: Bool?
+
+    /// Whether the reader's chrome is up, reported by the reader through
+    /// `ReaderNavigationCoordinator.readerChromeVisibilityDidChange`. Read only when
+    /// this controller appears; while it is on screen the reader's `.toolbar` drives
+    /// the bar itself.
+    var showsReaderChrome = false
 
     /// The root `UITabBarController` whose tab bar we hide for the duration of the
     /// reader, and its original hidden state to restore on the way out.
@@ -43,7 +57,7 @@ final class ReaderHostingController: UIHostingController<AnyView> {
 
     override func viewWillAppear(_ animated: Bool) {
         super.viewWillAppear(animated)
-        hideOuterNavigationBar(animated: animated)
+        applyReaderNavigationBar(animated: animated)
         hideRootTabBar()
     }
 
@@ -52,7 +66,7 @@ final class ReaderHostingController: UIHostingController<AnyView> {
         // Backstop for a cancelled interactive pop: UIKit normally calls
         // `viewWillAppear`, but the settled reader must never retain the
         // shelf's restored navigation bar if callback ordering changes.
-        hideOuterNavigationBar(animated: false)
+        applyReaderNavigationBar(animated: false)
         // Also re-run here: on the opening push the window (and thus the root
         // tab bar controller) may not be resolvable until the view is on screen.
         hideRootTabBar()
@@ -71,7 +85,7 @@ final class ReaderHostingController: UIHostingController<AnyView> {
         // Restore unconditionally before any disappearance. A successful pop
         // must leave the shelf's original bar state intact; if the reader is
         // merely covered or an interactive pop cancels, its appear callbacks
-        // and the interaction hooks below hide the outer bar again.
+        // and the interaction hooks below set the bar from the reader again.
         restoreOuterNavigationBar(animated: animated)
 
         guard let coordinator = transitionCoordinator, coordinator.isInteractive else { return }
@@ -80,7 +94,7 @@ final class ReaderHostingController: UIHostingController<AnyView> {
                   let self,
                   let navigationController,
                   navigationController.topViewController === self else { return }
-            self.hideOuterNavigationBar(animated: true)
+            self.applyReaderNavigationBar(animated: true)
             self.hideRootTabBar()
         }
         coordinator.animate(alongsideTransition: nil) { [weak self, weak navigationController] context in
@@ -88,12 +102,14 @@ final class ReaderHostingController: UIHostingController<AnyView> {
                   let self,
                   let navigationController,
                   navigationController.topViewController === self else { return }
-            self.hideOuterNavigationBar(animated: false)
+            self.applyReaderNavigationBar(animated: false)
             self.hideRootTabBar()
         }
     }
 
-    private func hideOuterNavigationBar(animated: Bool) {
+    /// Puts away the shelf's bar state and shows the bar exactly when the reader's
+    /// chrome is up.
+    private func applyReaderNavigationBar(animated: Bool) {
         guard let navigationController else { return }
         if outerNavigationController !== navigationController {
             outerNavigationController = navigationController
@@ -102,7 +118,20 @@ final class ReaderHostingController: UIHostingController<AnyView> {
             previousNavigationBarHidden = navigationController.isNavigationBarHidden
         }
         navigationItem.hidesBackButton = true
-        navigationController.setNavigationBarHidden(true, animated: animated)
+        navigationController.setNavigationBarHidden(hasOwnNavigationController || !showsReaderChrome, animated: animated)
+    }
+
+    /// Whether the reader's `NavigationStack` built a navigation controller of its own inside
+    /// this one instead of adopting the shelf's — the detached stack the tab-bar note above
+    /// describes on iOS 17. The reader's bar is then that inner one, and the shelf's would only
+    /// add an empty bar above it, so it stays hidden whatever the chrome is. The inner
+    /// controller has been seen on iOS 17.5 only (iOS 27 adopts the shelf's); this can go
+    /// once no supported version builds one.
+    private var hasOwnNavigationController: Bool {
+        func contains(_ controller: UIViewController) -> Bool {
+            controller.children.contains { $0 is UINavigationController || contains($0) }
+        }
+        return contains(self)
     }
 
     private func restoreOuterNavigationBar(animated: Bool) {

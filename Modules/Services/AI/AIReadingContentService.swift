@@ -67,12 +67,9 @@ enum AIReadingContentService {
     static func citationOffset(_ citation: LLMCitation, source: AIBookContentAdapter,
                                boundary: AIReadingBoundary, renderer: EPUBPageRenderer) async throws -> Int {
         try await citationOffset(citation, source: source, boundary: boundary) { index in
-            guard let engine = renderer.engine else {
-                throw LLMError.providerError(localized("無法載入引用章節。"))
-            }
-            let outcome = await engine.preloadChapter(at: index)
+            let text = await renderer.laidOutChapterText(at: index)
             try Task.checkCancellation()
-            guard outcome.isReady, let text = engine.chapterText(forSpine: index) else {
+            guard let text else {
                 throw LLMError.providerError(localized("無法載入引用章節。"))
             }
             return text

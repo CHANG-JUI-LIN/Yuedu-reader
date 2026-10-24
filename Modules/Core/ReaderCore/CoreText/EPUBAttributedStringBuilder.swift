@@ -96,7 +96,7 @@ final class EPUBAttributedStringBuilder: @preconcurrency AttributedStringBuildin
 
     func chapterPlainText(at index: Int) async -> String? { await localChapterText(at: index).text }
 
-    func localChapterText(at index: Int) async -> AILocalChapterText {
+    func localChapterText(at index: Int, applyingReplaceRules: Bool) async -> AILocalChapterText {
         // Remote publication reads can issue HTTP requests; local AI coverage must never trigger them.
         guard session.sourceURL.isFileURL else { return .init(text: nil, status: .notDownloaded) }
         do {

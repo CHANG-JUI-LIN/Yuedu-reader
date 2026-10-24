@@ -19,8 +19,13 @@ final class ReplaceRuleStore: @MainActor ObservableObject {
         didSet {
             let rules = self.rules
             Self.snapshot.withLock { $0 = rules }
+            revision &+= 1
         }
     }
+
+    /// Bumped by every change to `rules`, so whatever holds text the rules produced
+    /// (全書搜尋's results) can tell that it is stale. Not persisted.
+    private(set) var revision = 0
 
     private nonisolated static let fileURL = FileManager.default
         .urls(for: .libraryDirectory, in: .userDomainMask).first!

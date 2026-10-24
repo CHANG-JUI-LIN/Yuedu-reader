@@ -194,16 +194,27 @@ struct TXTLazyAttributedStringBuilder: AttributedStringBuilding {
         )
     }
 
-    func localChapterText(at index: Int) async -> AILocalChapterText {
-        .extracted(await chapterPlainText(at: index))
+    var appliesReplaceRules: Bool { true }
+
+    func localChapterText(at index: Int, applyingReplaceRules: Bool) async -> AILocalChapterText {
+        .extracted(plainText(at: index, applyingReplaceRules: applyingReplaceRules))
     }
 
     func chapterPlainText(at index: Int) async -> String? {
-        guard let text = chapterText(at: index), !text.isEmpty else { return nil }
+        plainText(at: index, applyingReplaceRules: true)
+    }
+
+    private func plainText(at index: Int, applyingReplaceRules: Bool) -> String? {
+        guard let text = chapterText(at: index, applyingReplaceRules: applyingReplaceRules),
+              !text.isEmpty else { return nil }
         return parsesAozoraMarkup ? AozoraMarkupParser.parse(text).plainText : text
     }
 
-    private func chapterText(at index: Int, conversion: TextConversion = .original) -> String? {
+    private func chapterText(
+        at index: Int,
+        conversion: TextConversion = .original,
+        applyingReplaceRules: Bool = true
+    ) -> String? {
         let rawText: String?
         if mappedChapterIndexes.indices.contains(index), let mappedTextFile {
             rawText = TXTChapterParser.chapterText(mappedTextFile, byteRange: mappedChapterIndexes[index].byteRange)
@@ -219,7 +230,7 @@ struct TXTLazyAttributedStringBuilder: AttributedStringBuilding {
         // a selection holds the characters the reader saw, which are the converted ones.
         result = result.converted(to: conversion)
 
-        let globalRules = ReplaceRuleStore.rules(for: "")
+        let globalRules = applyingReplaceRules ? ReplaceRuleStore.rules(for: "") : []
         if !globalRules.isEmpty {
             result = ReplaceRuleEngine.apply(globalRules, to: result)
         }

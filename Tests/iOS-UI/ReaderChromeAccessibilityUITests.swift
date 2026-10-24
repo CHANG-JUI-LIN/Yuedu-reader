@@ -2,7 +2,8 @@ import XCTest
 
 /// Feedback #15 (iOS 27.2): a VoiceOver user opened an online book from 資源庫, tapped 立即閱讀,
 /// and could not reach anything on the reader's bottom bar — 目錄, 書籤, 深色, 設置 and the
-/// progress slider — while the top bar worked.
+/// progress slider — while the top bar worked. The bar those tests check now holds 目錄, 主題,
+/// 聽書, 深色 and 更多 (書籤 is inside 更多), over the same 閱讀進度 slider.
 ///
 /// The same book is opened from 資源庫 (pushed onto that tab's stack, reached by its list or its
 /// search), from 搜尋 (also a push onto the tab's stack) and from 書架 (the shelf's own reader), and on
@@ -27,8 +28,8 @@ final class ReaderChromeAccessibilityUITests: XCTestCase {
     // `localhost`, not 127.0.0.1: a request to a reserved address is refused (`safeURL`).
     private static let fixture = "http://localhost:18771"
     private static let sourceName = "Chrome Source"
-    private static let toolIDs = ["reader_tool_tableOfContents", "reader_tool_bookmarks",
-                                  "reader_tool_nightMode", "reader_tool_settings"]
+    private static let toolIDs = ["reader_tool_tableOfContents", "reader_tool_nightMode", "reader_tool_listen",
+                                  "reader_tool_settings", "reader_tool_more"]
     private var directory: URL!
     /// This run's book: one no earlier run read, so its page offers 立即閱讀, not 繼續閱讀.
     private let token = String(Int.random(in: 1000...9999))
@@ -65,13 +66,16 @@ final class ReaderChromeAccessibilityUITests: XCTestCase {
         try FileManager.default.removeItem(at: directory)
     }
 
+    /// Under a StoreKit test session: without one, iOS 17.5 puts a system Apple ID sign-in over
+    /// the app on every launch (it reads the Pro entitlement at launch), and the reader is
+    /// never reached.
     @MainActor
-    private func launch(extra: [String] = []) -> XCUIApplication {
+    private func launch(extra: [String] = []) throws -> XCUIApplication {
+        _ = try StoreKitTestSessions.fresh(StoreKitTestSessions.yueduPro())
         let app = XCUIApplication()
         app.launchArguments = ["-no-official-modules", "-onboarding.completed", "YES", "-AppleLanguages", "(zh-Hant)", "-AppleLocale", "zh_TW",
                                "-yd_source_disclaimer_accepted", "YES",
-                               "-book-source-store-dir", directory.path,
-                               "-yd_appearance_reader_interface", "classic"] + extra
+                               "-book-source-store-dir", directory.path] + extra
         app.launch()
         return app
     }
@@ -81,7 +85,7 @@ final class ReaderChromeAccessibilityUITests: XCTestCase {
     /// The reported route: 資源庫 › 所有來源配置 › the source › the book › 立即閱讀.
     @MainActor
     func testLibraryReaderBottomBarReachesVoiceOver() throws {
-        let app = launch()
+        let app = try launch()
         try openFromLibrary(app)
         let problems = try bottomBarProblems(app, route: "資源庫")
         XCTAssertTrue(problems.isEmpty, problems.joined(separator: "\n") + "\n" + app.debugDescription)
@@ -91,7 +95,7 @@ final class ReaderChromeAccessibilityUITests: XCTestCase {
     /// (the maintainer's recording, 2026-10-20).
     @MainActor
     func testExploreReaderBottomBarReachesVoiceOver() throws {
-        let app = launch(extra: ["-explore.mode", "sources", "-reset-explore-home"])
+        let app = try launch(extra: ["-explore.mode", "sources", "-reset-explore-home"])
         openFromExplore(app)
         tapRead(app)
         let problems = try bottomBarProblems(app, route: "探索")
@@ -101,7 +105,7 @@ final class ReaderChromeAccessibilityUITests: XCTestCase {
     /// The book's page from 搜尋: also a reader pushed onto the tab's own stack.
     @MainActor
     func testSearchReaderBottomBarReachesVoiceOver() throws {
-        let app = launch()
+        let app = try launch()
         rootTab(app, "搜尋").tap()
         let field = app.searchFields.firstMatch
         XCTAssertTrue(field.waitForExistence(timeout: 10), app.debugDescription)
@@ -122,7 +126,7 @@ final class ReaderChromeAccessibilityUITests: XCTestCase {
     /// The control: the same book, added to 書架 on leaving, opened from the shelf.
     @MainActor
     func testShelfReaderBottomBarReachesVoiceOver() throws {
-        let app = launch()
+        let app = try launch()
         try openFromLibrary(app)
         try showChrome(app)
         app.buttons["reader_back_button"].tap()
@@ -152,10 +156,110 @@ final class ReaderChromeAccessibilityUITests: XCTestCase {
         XCTAssertTrue(problems.isEmpty, problems.joined(separator: "\n") + "\n" + app.debugDescription)
     }
 
+    /// 書名's long press is 換源 and nothing else, and its tap is still the book card. Holding it
+    /// opened the card (maintainer, 2026-10-24): the capsule's tap recogniser outranked the long
+    /// press and fired on release.
+    @MainActor
+    func testTitleCapsuleLongPressOpensChangeSourceOnly() throws {
+        let app = try launch()
+        try openFromLibrary(app)
+        try showChrome(app)
+        let capsule = app.buttons["reader_title_capsule"].firstMatch
+        XCTAssertTrue(capsule.waitForExistence(timeout: 5), app.debugDescription)
+        capsule.press(forDuration: 1.2)
+        let changeSource = app.staticTexts["目前來源配置"].firstMatch
+        XCTAssertTrue(changeSource.waitForExistence(timeout: 10), app.debugDescription)
+        XCTAssertFalse(app.buttons["reader_book_card_details"].exists, app.debugDescription)
+        app.buttons["關閉"].firstMatch.tap()
+        XCTAssertTrue(changeSource.waitForNonExistence(timeout: 10), app.debugDescription)
+
+        try showChrome(app)
+        capsule.tap()
+        XCTAssertTrue(app.buttons["reader_book_card_details"].firstMatch.waitForExistence(timeout: 5), app.debugDescription)
+        XCTAssertFalse(changeSource.exists, app.debugDescription)
+    }
+
+    /// AI 助手 and AI 翻譯 are in the bottom bar's 更多 — a native menu from iOS 18, a sheet of
+    /// choices on iOS 17 — and no longer on the book card.
+    @MainActor
+    func testMoreHoldsAIActionsAndBookCardDoesNot() throws {
+        let app = try launch()
+        try openFromLibrary(app)
+        let text = app.descendants(matching: .any)
+            .matching(NSPredicate(format: "label CONTAINS %@", "測試閱讀器工具列")).firstMatch
+        XCTAssertTrue(text.waitForExistence(timeout: 60), app.debugDescription)
+        try showChrome(app)
+        let more = app.buttons["reader_tool_more"].firstMatch
+        XCTAssertTrue(more.waitForExistence(timeout: 5), app.debugDescription)
+        more.tap()
+        let assistant = app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", "AI 助手")).firstMatch
+        let translation = app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", "AI 翻譯")).firstMatch
+        XCTAssertTrue(assistant.waitForExistence(timeout: 5), app.debugDescription)
+        XCTAssertTrue(translation.exists, app.debugDescription)
+        let screenshot = XCTAttachment(screenshot: app.screenshot())
+        screenshot.name = "更多"
+        screenshot.lifetime = .keepAlways
+        add(screenshot)
+
+        let cancel = app.buttons["取消"].firstMatch
+        if cancel.exists {
+            cancel.tap()
+        } else {
+            app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.12)).tap()
+        }
+        XCTAssertTrue(assistant.waitForNonExistence(timeout: 5), app.debugDescription)
+        try showChrome(app)
+        app.buttons["reader_title_capsule"].firstMatch.tap()
+        XCTAssertTrue(app.buttons["reader_book_card_details"].firstMatch.waitForExistence(timeout: 5), app.debugDescription)
+        XCTAssertFalse(assistant.exists, app.debugDescription)
+        XCTAssertFalse(translation.exists, app.debugDescription)
+    }
+
+    /// 全書搜尋 from the book card: a hit opens on its page with the bar that steps through
+    /// hits, and ✕ asks whether to go back to where the search began.
+    @MainActor
+    func testBookSearchOpensHitAndAsksOnExit() throws {
+        let app = try launch()
+        try openFromLibrary(app)
+        let text = app.descendants(matching: .any)
+            .matching(NSPredicate(format: "label CONTAINS %@", "測試閱讀器工具列")).firstMatch
+        XCTAssertTrue(text.waitForExistence(timeout: 60), app.debugDescription)
+        try showChrome(app)
+        app.buttons["reader_title_capsule"].firstMatch.tap()
+        let search = app.buttons["搜尋書籍"].firstMatch
+        XCTAssertTrue(search.waitForExistence(timeout: 5), app.debugDescription)
+        search.tap()
+
+        let field = app.searchFields.firstMatch
+        XCTAssertTrue(field.waitForExistence(timeout: 10), app.debugDescription)
+        field.tap()
+        // ASCII: typing CJK into the field submits on its own. Each chapter ends its
+        // paragraphs with （chapter-paragraph）, so this is one paragraph of chapter 1.
+        field.typeText("1-12\n")
+        let hit = app.buttons.matching(NSPredicate(format: "label CONTAINS %@", "1-12")).firstMatch
+        XCTAssertTrue(hit.waitForExistence(timeout: 30), app.debugDescription)
+        hit.tap()
+
+        let end = app.buttons["結束搜尋"].firstMatch
+        XCTAssertTrue(end.waitForExistence(timeout: 15), app.debugDescription)
+        XCTAssertFalse(app.buttons["上一個結果"].firstMatch.isEnabled, app.debugDescription)
+        XCTAssertFalse(app.buttons["下一個結果"].firstMatch.isEnabled, app.debugDescription)
+        let screenshot = XCTAttachment(screenshot: app.screenshot())
+        screenshot.name = "search hit on its page"
+        screenshot.lifetime = .keepAlways
+        add(screenshot)
+
+        end.tap()
+        let goBack = app.buttons["回到原位置"].firstMatch
+        XCTAssertTrue(goBack.waitForExistence(timeout: 5), app.debugDescription)
+        goBack.tap()
+        XCTAssertTrue(end.waitForNonExistence(timeout: 5), app.debugDescription)
+    }
+
     /// 資源庫's own search finds the source by name, as a VoiceOver user is likely to reach it.
     @MainActor
     func testLibrarySearchReaderBottomBarReachesVoiceOver() throws {
-        let app = launch()
+        let app = try launch()
         rootTab(app, "資源庫").tap()
         let field = app.searchFields.firstMatch
         XCTAssertTrue(field.waitForExistence(timeout: 10), app.debugDescription)

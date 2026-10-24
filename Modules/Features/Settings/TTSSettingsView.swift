@@ -8,6 +8,9 @@ private enum TTSImportPresentationRoute: Hashable {
 }
 
 struct TTSSettingsView: View {
+    /// Pushed inside 語音朗讀's own navigation rather than presented as a sheet: no stack
+    /// of its own — one nested in a pushed page never appeared — and no ✕.
+    var isPushed = false
     @Bindable private var gs = GlobalSettings.shared
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @Environment(\.presentationMode) private var presentationMode
@@ -49,93 +52,11 @@ struct TTSSettingsView: View {
     }
 
     var body: some View {
-        NavigationStack {
-            AdaptiveSheetContainer(maxWidth: DSLayout.readableWideWidth) {
-                VStack(spacing: 0) {
-                    sourceList
-
-                    Divider()
-
-                    bottomToolbar
-                }
-            }
-            .background(PageBackgroundView(scope: .settings).ignoresSafeArea())
-            .navigationTitle(localized("語音朗讀設定"))
-            .toolbarTitleDisplayMode(.inline)
-            .pageBackgroundToolbar(for: .settings)
-            .searchable(
-                text: $searchText,
-                placement: .navigationBarDrawer(displayMode: .always),
-                prompt: localized("搜索語音源")
-            )
-            .toolbar {
-                ToolbarItem(placement: .navigationBarLeading) {
-                    Button { dismissSettings() } label: {
-                        Image(systemName: "xmark")
-                    }
-                    .accessibilityLabel(localized("關閉"))
-                }
-                ToolbarItemGroup(placement: .navigationBarTrailing) {
-                    importToolbarControl
-                    .disabled(isImportingSources)
-                }
-            }
-            .sheet(
-                isPresented: $showLegacyImportChooser,
-                onDismiss: presentLegacyImportAfterChooserDismissal
-            ) {
-                AdaptiveSheetContainer(maxWidth: DSLayout.readableCompactWidth) {
-                    DismissalSequencedActionChooser(
-                        title: localized("匯入"),
-                        actions: [
-                            DismissalSequencedAction(
-                                route: .local,
-                                title: localized("本地導入"),
-                                systemImage: "doc.badge.plus"
-                            ),
-                            DismissalSequencedAction(
-                                route: .network,
-                                title: localized("網路導入"),
-                                systemImage: "network"
-                            ),
-                        ],
-                        onSelect: { legacyImportSequence.select($0) }
-                    )
-                }
-            }
-            .sheet(
-                isPresented: $showNetworkImport,
-                onDismiss: presentQueuedSourceReview
-            ) {
-                AdaptiveSheetContainer(maxWidth: DSLayout.readablePanelWidth) {
-                    networkImportSheet
-                }
-            }
-            .sheet(item: $pendingSourceReview) { review in
-                TTSSourceImportReviewHost(
-                    sources: review.sources,
-                    existing: gs.importedTTSSources,
-                    onFinish: { merged, count in
-                        gs.importedTTSSources = merged
-                        pendingSourceReview = nil
-                        sourceImportMessage = String(
-                            format: localized("已匯入 %d 個語音源"), count)
-                    },
-                    onCancel: { pendingSourceReview = nil }
-                )
-            }
-            .alert(
-                localized("語音源設定"),
-                isPresented: Binding(
-                    get: { sourceImportMessage != nil },
-                    set: { isPresented in
-                        if !isPresented { sourceImportMessage = nil }
-                    }
-                )
-            ) {
-                Button(localized("確定"), role: .cancel) {}
-            } message: {
-                Text(sourceImportMessage ?? "")
+        Group {
+            if isPushed {
+                settingsPage
+            } else {
+                NavigationStack { settingsPage }
             }
         }
         .fileImporter(
@@ -161,6 +82,99 @@ struct TTSSettingsView: View {
             .onDisappear {
                 testCoordinator.stop()
             }
+    }
+
+    private var settingsPage: some View {
+        AdaptiveSheetContainer(maxWidth: DSLayout.readableWideWidth) {
+            VStack(spacing: 0) {
+                sourceList
+
+                Divider()
+
+                bottomToolbar
+            }
+        }
+        .background(PageBackgroundView(scope: .settings).ignoresSafeArea())
+        .navigationTitle(localized("語音朗讀設定"))
+        .toolbarTitleDisplayMode(.inline)
+        .pageBackgroundToolbar(for: .settings)
+        .searchable(
+            text: $searchText,
+            placement: .navigationBarDrawer(displayMode: .always),
+            prompt: localized("搜索語音源")
+        )
+        .toolbar {
+            // Pushed, the back button takes its place.
+            if !isPushed {
+                ToolbarItem(placement: .navigationBarLeading) {
+                    Button { dismissSettings() } label: {
+                        Image(systemName: "xmark")
+                    }
+                    .accessibilityLabel(localized("關閉"))
+                }
+            }
+            ToolbarItemGroup(placement: .navigationBarTrailing) {
+                importToolbarControl
+                .disabled(isImportingSources)
+            }
+        }
+        .sheet(
+            isPresented: $showLegacyImportChooser,
+            onDismiss: presentLegacyImportAfterChooserDismissal
+        ) {
+            AdaptiveSheetContainer(maxWidth: DSLayout.readableCompactWidth) {
+                DismissalSequencedActionChooser(
+                    title: localized("匯入"),
+                    actions: [
+                        DismissalSequencedAction(
+                            route: .local,
+                            title: localized("本地導入"),
+                            systemImage: "doc.badge.plus"
+                        ),
+                        DismissalSequencedAction(
+                            route: .network,
+                            title: localized("網路導入"),
+                            systemImage: "network"
+                        ),
+                    ],
+                    onSelect: { legacyImportSequence.select($0) }
+                )
+            }
+        }
+        .sheet(
+            isPresented: $showNetworkImport,
+            onDismiss: presentQueuedSourceReview
+        ) {
+            AdaptiveSheetContainer(maxWidth: DSLayout.readablePanelWidth) {
+                networkImportSheet
+            }
+        }
+        .sheet(item: $pendingSourceReview) { review in
+            TTSSourceImportReviewHost(
+                sources: review.sources,
+                existing: gs.importedTTSSources,
+                onFinish: { merged, count in
+                    gs.importedTTSSources = merged
+                    pendingSourceReview = nil
+                    sourceImportMessage = String(
+                        format: localized("已匯入 %d 個語音源"), count)
+                },
+                onCancel: { pendingSourceReview = nil }
+            )
+        }
+        .alert(
+            localized("語音源設定"),
+            isPresented: Binding(
+                get: { sourceImportMessage != nil },
+                set: { isPresented in
+                    if !isPresented { sourceImportMessage = nil }
+                }
+            )
+        ) {
+            Button(localized("確定"), role: .cancel) {}
+        } message: {
+            Text(sourceImportMessage ?? "")
+        }
     }
 
     // MARK: - Private

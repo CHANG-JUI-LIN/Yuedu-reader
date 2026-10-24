@@ -4,7 +4,7 @@ import UIKit
 /// Content of the popover 現代 hangs off the cover thumbnail in its toolbar: the book's
 /// identity on top (tap it to open the detail page) and the actions underneath —
 /// 搜尋書籍 plus the book-scoped `ReaderView.readerSecondaryActions` list
-/// (刷新 / 換源 / 下載 / 聽書 / AI …) Apple Books renders in its own menu.
+/// (刷新 / 換源 / 下載 / 來源配置登入 …).
 ///
 /// Two levels, not one slab: the identity sits on its own inset surface and the actions
 /// sit directly on the card. The card was a single flat rectangle before, with the whole
@@ -58,6 +58,7 @@ struct ReaderModernBookCard: View {
                 identityContent
             }
             .buttonStyle(.plain)
+            .accessibilityIdentifier("reader_book_card_details")
             .accessibilityLabel(author.isEmpty ? bookTitle : "\(bookTitle), \(author)")
             .accessibilityHint(localized("提示：作品詳情"))
         } else {
@@ -233,8 +234,8 @@ struct ReaderModernBookCard: View {
                                 .accessibilityHidden(true)
                         }
                     }
-                // Two lines rather than a shrunk one: at four across, 「AI Translation」
-                // does not fit on a single line in English and wrapping keeps it legible.
+                // Two lines rather than a shrunk one: at four across, a label such as
+                // 「ソースにサインイン」 does not fit on one line and wrapping keeps it legible.
                 Text(cell.label)
                     .font(DSFont.caption)
                     .lineLimit(2)
@@ -286,10 +287,9 @@ struct ReaderModernBookCard: View {
                 action: {}
             ),
             ReaderSecondaryAction(id: .download, icon: "arrow.down.circle", label: "下載", action: {}),
-            ReaderSecondaryAction(id: .playback, icon: "headphones", label: "聽書", action: {}),
-            ReaderSecondaryAction(id: .aiAssistant, icon: "sparkles", label: "AI 助手", isLocked: true, action: {})
+            ReaderSecondaryAction(id: .sourceLogin, icon: "person.crop.circle", label: "來源配置登入", action: {})
         ],
-        palette: ReaderChromePalette(interface: .modern, theme: .sepia, settings: .shared),
+        palette: ReaderChromePalette(theme: .sepia, settings: .shared),
         availableWidth: 440,
         onOpenSearch: {},
         onOpenDetail: {}

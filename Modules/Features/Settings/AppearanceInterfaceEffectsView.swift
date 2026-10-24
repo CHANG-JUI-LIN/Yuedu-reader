@@ -6,6 +6,7 @@ import SwiftUI
 struct AppearanceInterfaceEffectsView: View {
     @Bindable private var settings = GlobalSettings.shared
     @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
+    @Environment(\.appThemes) private var appThemes
 
     var body: some View {
         Form {
@@ -53,9 +54,19 @@ struct AppearanceInterfaceEffectsView: View {
             // The switches first and the glow after, as the reference the user handed over
             // groups them (2026-09-29).
             Section {
-                glowRow
+                Toggle(isOn: glowEnabled) {
+                    Text(localized("光暈"))
+                        .font(DSFont.body)
+                        .foregroundStyle(DSColor.textPrimary)
+                }
+
+                // Hidden with the glow off, where neither would change anything.
+                if settings.interfaceGlowIntensity > 0 {
+                    glowRow
+                    glowColorRow
+                }
             } footer: {
-                Text(localized("光暈從浮動元素的邊緣向外擴散，顏色跟隨主題色。"))
+                Text(localized("光暈從浮動元素的邊緣向外擴散。沒選顏色時跟隨主題色。"))
                     .dsSectionFooter()
             }
             .interfaceSectionSurface()
@@ -68,6 +79,17 @@ struct AppearanceInterfaceEffectsView: View {
     }
 
     // MARK: - Rows
+
+    /// On and off are the strength itself — 0 is off — so a theme that carries a glow
+    /// switches it on without a second setting to keep in step.
+    private var glowEnabled: Binding<Bool> {
+        Binding(
+            get: { settings.interfaceGlowIntensity > 0 },
+            set: { isOn in
+                settings.interfaceGlowIntensity = isOn ? GlobalSettings.interfaceGlowSwitchOnIntensity : 0
+            }
+        )
+    }
 
     private var glowRow: some View {
         VStack(alignment: .leading, spacing: DSSpacing.sm) {
@@ -82,7 +104,7 @@ struct AppearanceInterfaceEffectsView: View {
             }
             Slider(
                 value: $settings.interfaceGlowIntensity,
-                in: GlobalSettings.interfaceGlowIntensityRange,
+                in: GlobalSettings.interfaceGlowSliderRange,
                 step: 0.05
             )
             // A bare Slider has no name and announces a fraction of its range;
@@ -90,6 +112,34 @@ struct AppearanceInterfaceEffectsView: View {
             .accessibilityLabel(localized("光暈強度"))
             .accessibilityValue(glowValueText)
         }
+    }
+
+    /// Opens on the colour the glow is drawn in right now — the theme's accent until
+    /// one is picked — the same contract as 閱讀界面's colour rows.
+    @ViewBuilder
+    private var glowColorRow: some View {
+        ColorPicker(selection: glowColorBinding, supportsOpacity: false) {
+            Text(localized("光暈顏色"))
+                .font(DSFont.body)
+                .foregroundStyle(DSColor.textPrimary)
+        }
+        if settings.interfaceGlowColor != nil {
+            Button {
+                settings.interfaceGlowColor = nil
+            } label: {
+                Label(localized("跟隨主題色"), systemImage: "arrow.counterclockwise")
+            }
+        }
+    }
+
+    private var glowColorBinding: Binding<Color> {
+        Binding(
+            get: {
+                settings.interfaceGlowColor.map { Color(uiColor: AppearanceThemePreset.hex($0)) }
+                    ?? appThemes.glowAccent
+            },
+            set: { settings.interfaceGlowColor = UIColor($0).rgbHex }
+        )
     }
 
     private var transparencyRow: some View {

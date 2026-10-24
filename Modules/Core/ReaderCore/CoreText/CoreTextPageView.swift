@@ -2355,7 +2355,7 @@ final class CoreTextPageView: UIView, UIGestureRecognizerDelegate, @MainActor UI
 
     private func updatePlaybackHighlightOverlay() {
         let s = GlobalSettings.shared
-        guard s.ttsHighlightEnabled else {
+        guard s.ttsHighlightEnabled || playbackHighlight?.isSearchHit == true else {
             playbackOverlay.clearSelection()
             playbackOverlay.boxStyle = nil
             playbackOverlay.boxColor = nil
@@ -2401,10 +2401,23 @@ final class CoreTextPageView: UIView, UIGestureRecognizerDelegate, @MainActor UI
             return
         }
         let rects = selectionRects(for: found, in: context)
-        Self.applyTTSPlaybackStyle(to: playbackOverlay)
+        Self.applyPlaybackStyle(for: playbackHighlight, to: playbackOverlay)
         playbackOverlay.selectionRects = rects
         playbackOverlay.startHandlePoint = nil
         playbackOverlay.endHandlePoint = nil
+    }
+
+    /// A search hit in its fixed wash, shown whatever 朗讀高亮 is set to; narration in the
+    /// style 朗讀高亮 sets (`applyTTSPlaybackStyle`).
+    static func applyPlaybackStyle(for highlight: ReaderPlaybackHighlight, to overlay: InteractionOverlayView) {
+        guard highlight.isSearchHit else {
+            applyTTSPlaybackStyle(to: overlay)
+            return
+        }
+        overlay.isHidden = false
+        overlay.boxStyle = nil
+        overlay.boxColor = nil
+        overlay.fillColor = UIColor(DSColor.readerSearchHit)
     }
 
     /// Reads the TTS-highlight GlobalSettings and configures an overlay's fill/box style,

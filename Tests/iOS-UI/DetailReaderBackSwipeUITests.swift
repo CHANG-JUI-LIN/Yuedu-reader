@@ -892,7 +892,6 @@ final class DetailReaderBackSwipeUITests: XCTestCase {
         app.launchArguments = ["-no-official-modules", "-onboarding.completed", "YES", "-explore.mode", "sources", "-reset-explore-home", "-reset-reading-settings", "-AppleLanguages", "(en)", "-AppleLocale", "en_US",
                                "-yd_root_tab_visible_ids", "(explore, settings)",
                                "-discover.selectedSourceId", "C5DED179-61D0-49C4-BDB7-93A7B3DAD8F4",
-                               "-yd_appearance_reader_interface", "classic",
                                "-yd_page_turn_style", "滑動", "-yd_scroll_mode", "NO"]
         app.launch()
         openDiscoveredBook(app, named: "Navigation Swipe Fixture")
@@ -941,7 +940,6 @@ final class DetailReaderBackSwipeUITests: XCTestCase {
         app.launchArguments = ["-no-official-modules", "-onboarding.completed", "YES", "-explore.mode", "sources", "-reset-explore-home", "-reset-reading-settings", "-AppleLanguages", "(en)", "-AppleLocale", "en_US",
                                "-yd_root_tab_visible_ids", "(explore, settings)",
                                "-discover.selectedSourceId", "C5DED179-61D0-49C4-BDB7-93A7B3DAD8F4",
-                               "-yd_appearance_reader_interface", "classic",
                                "-yd_page_turn_style", style, "-yd_scroll_mode", scroll ? "YES" : "NO"]
         app.launch()
         openDiscoveredBook(app, named: "Navigation Swipe Fixture")
@@ -977,14 +975,13 @@ final class DetailReaderBackSwipeUITests: XCTestCase {
     }
 
     @MainActor
-    func testClassicReaderControlsFromExploreAreAccessible() throws {
+    func testReaderControlsFromExploreAreAccessible() throws {
         continueAfterFailure = false
         try configureStoreKit()
         let app = XCUIApplication()
         app.launchArguments = ["-no-official-modules", "-onboarding.completed", "YES", "-explore.mode", "sources", "-reset-explore-home", "-reset-reading-settings", "-AppleLanguages", "(en)", "-AppleLocale", "en_US",
                                "-yd_root_tab_visible_ids", "(explore, settings)",
                                "-discover.selectedSourceId", "C5DED179-61D0-49C4-BDB7-93A7B3DAD8F4",
-                               "-yd_appearance_reader_interface", "classic",
                                "-yd_page_turn_style", "滑動", "-yd_scroll_mode", "NO"]
         app.launch()
         openDiscoveredBook(app, named: "Navigation Swipe Fixture")
@@ -996,7 +993,7 @@ final class DetailReaderBackSwipeUITests: XCTestCase {
         app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
         XCTAssertTrue(app.buttons["reader_back_button"].waitForExistence(timeout: 5), app.debugDescription)
         XCTAssertFalse(app.textFields["Search or enter URL"].exists, "The covered browser must leave the accessibility tree")
-        for label in ["Contents", "Settings", "Next Chapter"] {
+        for label in ["Contents", "Theme", "Next Chapter"] {
             let button = app.buttons[label].firstMatch
             XCTAssertTrue(button.exists, app.debugDescription)
             XCTAssertTrue(button.isHittable, app.debugDescription)
@@ -1187,17 +1184,19 @@ final class DetailReaderBackSwipeUITests: XCTestCase {
         XCTAssertTrue(renamed.waitForNonExistence(timeout: 10), app.debugDescription)
     }
 
-    /// The classic reader's 選單 → 作品詳情 (5f-4b, decision 32), which shows the book being read.
+    /// The reader's 作品詳情 (5f-4b, decision 32), which shows the book being read: the cover at
+    /// the top bar's trailing end opens the book card, and the card's identity row opens it.
+    /// The row is labelled with the title and author, and the top bar's title capsule starts
+    /// the same way, so the row is told apart by where it is: the card hangs below the cover.
     @MainActor
     private func openWorkDetailFromReader(_ app: XCUIApplication) {
         app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
-        let menu = app.buttons["Menu"].firstMatch
-        XCTAssertTrue(menu.waitForExistence(timeout: 5), app.debugDescription)
-        menu.tap()
-        let work = app.buttons["Book Details"].firstMatch
-        XCTAssertTrue(work.waitForExistence(timeout: 5), app.debugDescription)
-        XCTAssertEqual(app.buttons.matching(NSPredicate(format: "label == %@", "Book Details")).count, 1, "The reader's detail is 作品詳情.\n\(app.debugDescription)")
-        work.tap()
+        let cover = app.buttons["Book Menu"].firstMatch
+        XCTAssertTrue(cover.waitForExistence(timeout: 5), app.debugDescription)
+        cover.tap()
+        let details = app.buttons["reader_book_card_details"].firstMatch
+        XCTAssertTrue(details.waitForExistence(timeout: 5), app.debugDescription)
+        details.tap()
         XCTAssertTrue(app.descendants(matching: .any)["detail.info.chapters"].firstMatch.waitForExistence(timeout: 15),
                       "作品詳情 shows the source's page of the book being read.\n\(app.debugDescription)")
     }
@@ -1211,7 +1210,7 @@ final class DetailReaderBackSwipeUITests: XCTestCase {
         try configureStoreKit()
         let app = XCUIApplication()
         app.launchArguments = ["-no-official-modules", "-onboarding.completed", "YES", "-explore.mode", "sources", "-reset-explore-home", "-reset-reading-settings", "-AppleLanguages", "(en)", "-AppleLocale", "en_US",
-                               "-yd_root_tab_visible_ids", "(explore, settings)", "-yd_appearance_reader_interface", "classic",
+                               "-yd_root_tab_visible_ids", "(explore, settings)",
                                "-yd_page_turn_style", "滑動", "-yd_scroll_mode", "NO"]
         app.launch()
         openDiscoveredBook(app, named: "Navigation Swipe Fixture")
@@ -1255,7 +1254,7 @@ final class DetailReaderBackSwipeUITests: XCTestCase {
         app.terminate()
         app.launchArguments = ["-no-official-modules", "-onboarding.completed", "YES", "-explore.mode", "sources", "-AppleLanguages", "(en)", "-AppleLocale", "en_US",
                                "-yd_root_tab_visible_ids", "(bookshelf, settings)", "-bookLayoutIsGrid", "NO",
-                               "-yd_appearance_reader_interface", "classic", "-yd_page_turn_style", "滑動", "-yd_scroll_mode", "NO"]
+                               "-yd_page_turn_style", "滑動", "-yd_scroll_mode", "NO"]
         app.launch()
         let cell = app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", "Navigation Swipe Fixture，")).firstMatch
         XCTAssertTrue(cell.waitForExistence(timeout: 15), app.debugDescription)
@@ -1266,10 +1265,14 @@ final class DetailReaderBackSwipeUITests: XCTestCase {
         XCTAssertTrue(resume.waitForExistence(timeout: 10), app.debugDescription)
         resume.tap()
         XCTAssertTrue(content.waitForExistence(timeout: 15), "繼續閱讀 returns to the reader.\n\(app.debugDescription)")
-        // The reader comes back with its controls as they were left: up.
+        // The reader comes back with its controls as they were left: up, the top bar with them.
+        // The reader shares the shelf's navigation bar, and coming back used to hide that bar
+        // under a bottom bar that was still up.
         let back = app.buttons["reader_back_button"].firstMatch
-        if !back.waitForExistence(timeout: 2) { app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap() }
         XCTAssertTrue(back.waitForExistence(timeout: 5), app.debugDescription)
+        attachScreenshot(app, named: "Reader back from work detail - shelf")
+        // One bar: the shelf's must not show above a reader that has a navigation bar of its own.
+        XCTAssertEqual(app.navigationBars.count, 1, app.debugDescription)
         back.tap()
         XCTAssertTrue(cell.waitForExistence(timeout: 10), "Back from the reader is the shelf.\n\(app.debugDescription)")
         XCTAssertTrue(app.tabBars.buttons["Library"].firstMatch.isHittable, app.debugDescription)
@@ -1303,7 +1306,7 @@ final class DetailReaderBackSwipeUITests: XCTestCase {
         app.terminate()
         app.launchArguments = ["-no-official-modules", "-onboarding.completed", "YES", "-explore.mode", "sources", "-reset-explore-home", "-reset-reading-settings", "-AppleLanguages", "(en)", "-AppleLocale", "en_US",
                                "-yd_root_tab_visible_ids", "(bookshelf, settings)",
-                               "-bookLayoutIsGrid", "NO", "-yd_appearance_reader_interface", "classic"]
+                               "-bookLayoutIsGrid", "NO"]
         app.launch()
         let book = app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", "Navigation Swipe Fixture，Regression"))
         XCTAssertTrue(book.firstMatch.waitForExistence(timeout: 15), app.debugDescription)
@@ -1326,8 +1329,7 @@ final class DetailReaderBackSwipeUITests: XCTestCase {
         app.launchArguments = ["-no-official-modules", "-onboarding.completed", "YES", "-explore.mode", "sources", "-reset-explore-home", "-reset-reading-settings", "-AppleLanguages", "(en)", "-AppleLocale", "en_US",
                                "-yd_root_tab_visible_ids", "(explore, settings)",
                                "-discover.selectedSourceId", "C5DED179-61D0-49C4-BDB7-93A7B3DAD8F4",
-                               "-yd_tts_use_system_voice", "YES",
-                               "-yd_appearance_reader_interface", "classic"]
+                               "-yd_tts_use_system_voice", "YES"]
         app.launch()
         openDiscoveredBook(app, named: "Navigation Swipe Fixture")
         let read = app.buttons.matching(NSPredicate(format: "label IN %@", ["Read", "Resume"])).firstMatch
@@ -1336,7 +1338,8 @@ final class DetailReaderBackSwipeUITests: XCTestCase {
         let content = app.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", "Reserved edge navigation")).firstMatch
         XCTAssertTrue(content.waitForExistence(timeout: 30), app.debugDescription)
         app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
-        let listen = app.buttons["Listen"].firstMatch
+        // 聽書 in the bottom bar's tools.
+        let listen = app.buttons["reader_tool_listen"].firstMatch
         XCTAssertTrue(listen.waitForExistence(timeout: 5), app.debugDescription)
         listen.tap()
         let playback = app.buttons["now_playing_reader_play_pause"]
@@ -1348,19 +1351,23 @@ final class DetailReaderBackSwipeUITests: XCTestCase {
             XCTAssertFalse(panelPlayback.exists, "Listening must keep the full TTS panel closed", line: line)
         }
         awaitPlaybackLabel("Pause")
+        // 聽書 puts the menu away; each further 聽書 brings it back first.
+        XCTAssertTrue(listen.waitForNonExistence(timeout: 5), "聽書 puts the menu away.\n\(app.debugDescription)")
         XCTAssertTrue(playback.isHittable, app.debugDescription)
         playback.tap()
         awaitPlaybackLabel("Play")
+        app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
         XCTAssertTrue(listen.waitForExistence(timeout: 5), app.debugDescription)
         listen.tap()
         awaitPlaybackLabel("Pause")
+        app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
         XCTAssertTrue(listen.waitForExistence(timeout: 5), app.debugDescription)
         listen.tap()
         awaitPlaybackLabel("Pause")
         attachScreenshot(app, named: "Listening starts the floating capsule")
         app.buttons["now_playing_reader_open_panel"].tap()
         XCTAssertTrue(panelPlayback.waitForExistence(timeout: 5), "The capsule must still open the full controls on demand.\n\(app.debugDescription)")
-        let roles = app.buttons["Multi-Voice Read Aloud"].firstMatch
+        let roles = app.buttons["tts_panel_role_cast"].firstMatch
         XCTAssertTrue(roles.waitForExistence(timeout: 10), app.debugDescription)
         XCTAssertTrue(roles.isHittable)
         roles.tap()

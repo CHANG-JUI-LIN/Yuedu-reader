@@ -208,11 +208,7 @@ struct AppearanceThemeView: View {
             NavigationLink {
                 AppearanceReaderInterfaceView()
             } label: {
-                SettingsValueLabel(
-                    title: localized("閱讀界面"),
-                    systemImage: "menubar.rectangle",
-                    value: settings.appearanceReaderInterface.localizedTitle
-                )
+                SettingsRowLabel(localized("閱讀界面"), systemImage: "menubar.rectangle")
             }
             // In view without Pro too, locked (2026-09-27).
             rootTabRow
@@ -868,50 +864,49 @@ private struct AppearanceReaderInterfaceView: View {
     /// this page is never on screen for.
     private var previewTheme: ReaderTheme { ReaderTheme.loadPersisted() }
 
-    /// nil for Apple Books, which renders through system toolbars and has no surface
-    /// of its own to recolor — that is exactly when the 自定義 section is absent.
-    private var customizableInterface: ReaderChromeInterface? {
-        ReaderChromeInterface(settings.appearanceReaderInterface)
-    }
-
-    private func palette(for interface: ReaderChromeInterface) -> ReaderChromePalette {
-        ReaderChromePalette(interface: interface, theme: previewTheme, settings: settings)
+    private var palette: ReaderChromePalette {
+        ReaderChromePalette(theme: previewTheme, settings: settings)
     }
 
     var body: some View {
         Form {
             Section {
-                Picker(selection: $settings.appearanceReaderInterface) {
-                    ForEach(AppearanceReaderInterface.allCases) { option in
-                        Text(option.localizedTitle)
-                            .font(DSFont.body)
-                            .tag(option)
-                            .foregroundStyle(DSColor.textPrimary)
-                    }
-                } label: {
-                    Text(localized("閱讀界面"))
-                        .font(DSFont.body)
-                        .foregroundStyle(DSColor.textPrimary)
+                chromePreview
+
+                ForEach(ReaderChromeSlot.allCases) { slot in
+                    colorRow(slot)
                 }
-                .pickerStyle(.inline)
-                // The label repeated the page title one row further down. The section
-                // header carries the name now; VoiceOver still hears it because
-                // `accessibilityLabel` restates it on the control itself.
-                .labelsHidden()
-                .accessibilityLabel(localized("閱讀界面"))
+
+                NavigationLink {
+                    ReaderChromeIconSettingsView()
+                } label: {
+                    HStack {
+                        Text(localized("按鈕圖示"))
+                            .font(DSFont.body)
+                            .foregroundStyle(DSColor.textPrimary)
+                        Spacer(minLength: DSSpacing.md)
+                        Text(iconSummary)
+                            .font(DSFont.body)
+                            .foregroundStyle(DSColor.textSecondary)
+                    }
+                }
+
+                if settings.hasReaderChromeOverride {
+                    Button {
+                        settings.resetReaderChrome()
+                    } label: {
+                        Label(localized("跟隨閱讀主題"), systemImage: "arrow.counterclockwise")
+                    }
+                }
             } header: {
-                Text(localized("閱讀界面"))
+                Text(localized("自定義"))
                     .font(DSFont.headline)
                     .foregroundStyle(DSColor.textPrimary)
             } footer: {
-                Text(localized("選擇閱讀界面的工具列與控制方式。"))
+                Text(localized("頂欄是系統玻璃，只能改圖示顏色；強調色用在開啟中的「深色」和書卡的圖示。未調整的部分跟隨目前的閱讀主題。"))
                     .dsSectionFooter()
             }
             .interfaceSectionSurface()
-
-            if let interface = customizableInterface {
-                customizationSection(for: interface)
-            }
         }
         .softScrollEdges()
         .scrollContentBackground(.hidden)
@@ -920,52 +915,8 @@ private struct AppearanceReaderInterfaceView: View {
         .themedAppSurface(for: .settings)
     }
 
-    /// Only the slots the chosen interface actually paints — 現代's navigation bar is
-    /// system glass with no fill of ours, and only 經典 floats circles over the page.
-    private func customizationSection(for interface: ReaderChromeInterface) -> some View {
-        Section {
-            chromePreview(for: interface)
-
-            ForEach(ReaderChromeSlot.slots(for: interface)) { slot in
-                colorRow(slot, interface: interface)
-            }
-
-            NavigationLink {
-                ReaderChromeIconSettingsView()
-            } label: {
-                HStack {
-                    Text(localized("按鈕圖示"))
-                        .font(DSFont.body)
-                        .foregroundStyle(DSColor.textPrimary)
-                    Spacer(minLength: DSSpacing.md)
-                    Text(iconSummary)
-                        .font(DSFont.body)
-                        .foregroundStyle(DSColor.textSecondary)
-                }
-            }
-
-            if settings.hasReaderChromeOverride(interface: interface) {
-                Button {
-                    settings.resetReaderChrome(interface: interface)
-                } label: {
-                    Label(localized("跟隨閱讀主題"), systemImage: "arrow.counterclockwise")
-                }
-            }
-        } header: {
-            Text(localized("自定義"))
-                .font(DSFont.headline)
-                .foregroundStyle(DSColor.textPrimary)
-        } footer: {
-            Text(localized(interface == .classic
-                ? "頂部是返回／書籤那條，底部是進度條與工具列，中間四顆圓鈕是刷新／換源／下載／聽書。強調色用在進度條和「深色」的選中狀態。未調整的部分跟隨目前的閱讀主題。"
-                : "現代的頂欄是系統玻璃，只能改圖示顏色；底部是浮動面板，書卡是點封面圓圈之後那張。未調整的部分跟隨目前的閱讀主題。"))
-                .dsSectionFooter()
-        }
-        .interfaceSectionSurface()
-    }
-
-    /// 目錄／書籤／深色／設置 and 刷新／換源／下載／聽書 status, so the row says
-    /// something without opening it.
+    /// 目錄／深色／聽書／主題 and the book card's actions, so the row says something
+    /// without opening it.
     private var iconSummary: String {
         let custom = settings.readerChromeIcons.count
         let hidden = settings.readerChromeHiddenIDs.count
@@ -976,8 +927,8 @@ private struct AppearanceReaderInterfaceView: View {
         return parts.formatted(.list(type: .and, width: .narrow))
     }
 
-    private func colorRow(_ slot: ReaderChromeSlot, interface: ReaderChromeInterface) -> some View {
-        ColorPicker(selection: colorBinding(slot, interface: interface), supportsOpacity: false) {
+    private func colorRow(_ slot: ReaderChromeSlot) -> some View {
+        ColorPicker(selection: colorBinding(slot), supportsOpacity: false) {
             Text(localized(slot.titleKey))
                 .font(DSFont.body)
                 .foregroundStyle(DSColor.textPrimary)
@@ -987,131 +938,76 @@ private struct AppearanceReaderInterfaceView: View {
     /// Opens on the colour that is on screen right now rather than a blank swatch,
     /// the same contract as the reader's 文字顏色 picker. Writing one stores an
     /// override; clearing every override is the 跟隨閱讀主題 button, not a colour.
-    private func colorBinding(
-        _ slot: ReaderChromeSlot,
-        interface: ReaderChromeInterface
-    ) -> Binding<Color> {
+    private func colorBinding(_ slot: ReaderChromeSlot) -> Binding<Color> {
         Binding(
-            get: { palette(for: interface).color(for: slot) },
-            set: { settings.setReaderChromeColor(UIColor($0).rgbHex, interface: interface, slot: slot) }
+            get: { palette.color(for: slot) },
+            set: { settings.setReaderChromeColor(UIColor($0).rgbHex, slot: slot) }
         )
     }
 
     /// The real chrome, drawn with the real palette on the real reading background —
     /// the section is about how the reader looks, so swatches would not answer the
-    /// only question anyone has here.
-    @ViewBuilder
-    private func chromePreview(for interface: ReaderChromeInterface) -> some View {
-        let palette = palette(for: interface)
-        VStack(spacing: 0) {
+    /// only question anyone has here. A miniature of the reader: the title capsule and
+    /// cover circle up top, the scrubber and tool capsules floating at the bottom.
+    private var chromePreview: some View {
+        let palette = palette
+        return VStack(spacing: 0) {
             HStack(spacing: DSSpacing.md) {
                 Image(systemName: "chevron.left")
                 Spacer(minLength: 0)
-                if interface == .modern {
-                    Circle()
-                        .fill(palette.panelFill)
-                        .frame(width: 22, height: 22)
-                        .overlay(Circle().stroke(palette.topIcon.opacity(0.25), lineWidth: 0.5))
-                } else {
-                    Image(systemName: "bookmark")
-                    Image(systemName: "line.3.horizontal")
-                }
+                Text(localized("書名"))
+                    .font(DSFont.fixed(size: 11, weight: .medium))
+                    .padding(.horizontal, DSSpacing.lg)
+                    .frame(height: 22)
+                    .overlay(Capsule().stroke(palette.topIcon.opacity(0.25), lineWidth: 0.5))
+                Spacer(minLength: 0)
+                Circle()
+                    .fill(palette.panelFill)
+                    .frame(width: 22, height: 22)
+                    .overlay(Circle().stroke(palette.topIcon.opacity(0.25), lineWidth: 0.5))
             }
             .font(DSFont.fixed(size: 13, weight: .medium))
             .foregroundStyle(palette.topIcon)
             .padding(.horizontal, DSSpacing.md)
             .frame(height: 34)
-            .frame(maxWidth: .infinity)
-            .background(interface == .classic ? palette.topFill : previewTheme.backgroundColor)
 
-            ZStack(alignment: .bottom) {
-                previewTheme.backgroundColor
-                    .frame(height: interface == .classic ? 44 : 24)
+            Spacer(minLength: 24)
 
-                if interface == .classic {
-                    HStack(spacing: 6) {
-                        Spacer(minLength: 0)
-                        ForEach(visiblePreviewActions.filter(\.isClassicCircle), id: \.self) { item in
-                            previewActionGlyph(item, palette: palette)
-                        }
+            VStack(spacing: DSSpacing.xs) {
+                HStack(spacing: DSSpacing.sm) {
+                    Image(systemName: "chevron.left")
+                    HStack(spacing: 0) {
+                        Capsule().fill(palette.bottomIcon).frame(width: 48)
+                        Capsule().fill(palette.bottomIcon.opacity(0.2))
                     }
-                    .padding(.horizontal, DSSpacing.md)
-                    .padding(.bottom, DSSpacing.sm)
+                    .frame(height: 3)
+                    Image(systemName: "chevron.right")
                 }
-            }
+                .font(DSFont.fixed(size: 12, weight: .medium))
+                .foregroundStyle(palette.bottomIcon)
+                .padding(.horizontal, DSSpacing.md)
+                .frame(height: 28)
+                .background(palette.bottomFill, in: Capsule())
 
-            bottomPreview(interface: interface, palette: palette)
+                HStack(spacing: 0) {
+                    ForEach(settings.visibleReaderChromeToolItems) { item in
+                        previewToolGlyph(for: item, palette: palette)
+                    }
+                    Image(systemName: "ellipsis")
+                        .font(DSFont.fixed(size: 14))
+                        .foregroundStyle(palette.bottomIcon)
+                        .frame(maxWidth: .infinity)
+                }
+                .frame(height: 28)
+                .background(palette.bottomFill, in: Capsule())
+            }
+            .padding(DSSpacing.sm)
         }
+        .background(previewTheme.backgroundColor)
         .clipShape(RoundedRectangle(cornerRadius: DSRadius.lg, style: .continuous))
         // One decorative element: VoiceOver gets the values from the rows below,
         // not from a stack of unlabelled symbols.
         .accessibilityHidden(true)
-    }
-
-    @ViewBuilder
-    private func bottomPreview(
-        interface: ReaderChromeInterface,
-        palette: ReaderChromePalette
-    ) -> some View {
-        let bar = VStack(spacing: DSSpacing.sm) {
-            Capsule()
-                .fill(palette.bottomAccent)
-                .frame(height: 3)
-            HStack(spacing: 0) {
-                ForEach(settings.visibleReaderChromeToolItems) { item in
-                    previewToolGlyph(for: item, palette: palette)
-                }
-            }
-        }
-        .padding(.horizontal, DSSpacing.md)
-        .padding(.vertical, DSSpacing.sm)
-
-        switch interface {
-        case .classic:
-            bar
-                .frame(maxWidth: .infinity)
-                .background(palette.bottomFill)
-        case .modern:
-            // 現代's bottom bar floats, inset from every edge, over the page.
-            bar
-                .frame(maxWidth: .infinity)
-                .background(
-                    RoundedRectangle(cornerRadius: DSRadius.lg, style: .continuous)
-                        .fill(palette.bottomFill)
-                )
-                .padding(DSSpacing.sm)
-                .frame(maxWidth: .infinity)
-                .background(previewTheme.backgroundColor)
-        }
-    }
-
-    /// Only the actions that are both applicable in general and switched on — the
-    /// preview should not advertise a button the reader has hidden.
-    private var visiblePreviewActions: [ReaderChromeActionItem] {
-        ReaderChromeActionItem.allCases.filter { settings.isReaderChromeItemVisible($0) }
-    }
-
-    @ViewBuilder
-    private func previewActionGlyph(
-        _ item: ReaderChromeActionItem,
-        palette: ReaderChromePalette
-    ) -> some View {
-        Group {
-            if let image = settings.readerChromeIconImage(for: item) {
-                Image(uiImage: image)
-                    .renderingMode(.original)
-                    .resizable()
-                    .scaledToFit()
-                    .frame(width: 12, height: 12)
-            } else {
-                Image(systemName: item.defaultSystemImage)
-                    .font(DSFont.fixed(size: 11))
-                    .foregroundStyle(palette.circleIcon)
-            }
-        }
-        .frame(width: 24, height: 24)
-        .background(palette.circleFill, in: Circle())
-        .overlay(Circle().stroke(palette.circleBorder, lineWidth: 1))
     }
 
     @ViewBuilder
@@ -1126,10 +1022,16 @@ private struct AppearanceReaderInterfaceView: View {
                     .resizable()
                     .scaledToFit()
                     .frame(width: 16, height: 16)
+            } else if item == .settings {
+                Text(verbatim: "Aa")
+                    .font(DSFont.fixed(size: 13, weight: .bold, design: .serif))
+                    .foregroundStyle(palette.bottomIcon)
             } else {
+                // Same rule as the bar: 深色 takes the accent while night mode is on.
+                let isActive = item == .nightMode && previewTheme == .night
                 Image(systemName: item.systemImage(isNight: previewTheme == .night))
                     .font(DSFont.fixed(size: 14))
-                    .foregroundStyle(palette.bottomIcon)
+                    .foregroundStyle(isActive ? palette.bottomAccent : palette.bottomIcon)
             }
         }
         .frame(maxWidth: .infinity)

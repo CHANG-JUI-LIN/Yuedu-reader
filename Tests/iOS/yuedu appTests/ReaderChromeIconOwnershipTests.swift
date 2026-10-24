@@ -43,12 +43,12 @@ struct ReaderChromeIconOwnershipTests {
         let icon = try settings.importReaderChromeIcon(
             data: try Self.pngData(),
             originalFileName: "only.png",
-            item: ReaderChromeToolItem.bookmarks
+            item: ReaderChromeToolItem.listen
         )
         fixture.created.append(icon)
         #expect(FileManager.default.fileExists(atPath: try Self.path(of: icon)))
 
-        settings.deleteReaderChromeIcon(for: ReaderChromeToolItem.bookmarks)
+        settings.deleteReaderChromeIcon(for: ReaderChromeToolItem.listen)
         #expect(!FileManager.default.fileExists(atPath: try Self.path(of: icon)))
     }
 

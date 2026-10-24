@@ -342,13 +342,6 @@ extension CustomizationImportOverview {
                 detail: extras.bookshelfGridColumnCount.map { String(format: localized("%d 欄"), $0) }
             ))
         }
-        if let raw = extras.readerInterface, let interface = AppearanceReaderInterface(rawValue: raw) {
-            items.append(Item(
-                titleKey: "閱讀界面",
-                systemImage: "menubar.rectangle",
-                detail: interface.localizedTitle
-            ))
-        }
         // Named after the 閱讀界面 › 按鈕圖示 page these land on.
         if let chromeIcons = extras.readerChromeIcons, !chromeIcons.isEmpty {
             items.append(Item(

@@ -351,8 +351,8 @@ private struct ReaderBatterySVGAssetRow: View {
             } label: {
                 Image(systemName: "ellipsis.circle")
                     .frame(
-                        minWidth: DSLayout.readerAppleBooksControlSize,
-                        minHeight: DSLayout.readerAppleBooksControlSize
+                        minWidth: DSLayout.minimumTapTarget,
+                        minHeight: DSLayout.minimumTapTarget
                     )
                     .contentShape(Rectangle())
             }

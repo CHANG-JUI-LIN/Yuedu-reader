@@ -64,8 +64,7 @@ final class AIRecommendationUITests: XCTestCase {
                                "-reset-explore-home", "-reset-ai-recommendations",
                                "-book-source-store-dir", folder.appendingPathComponent("sources").path,
                                "-auto-import-epub", folder.appendingPathComponent("\(title).txt").path,
-                               "-auto-import-title", title, "-yd_page_turn_style", "滑動", "-yd_scroll_mode", "NO",
-                               "-yd_appearance_reader_interface", "classic"]
+                               "-auto-import-title", title, "-yd_page_turn_style", "滑動", "-yd_scroll_mode", "NO"]
         app.launch()
 
         // A book the reader has opened: the run sends the recently read ones.

@@ -44,7 +44,7 @@ struct NodeAttributedStringBuilder: AttributedStringBuilding {
         return chapters[index].plainText.lengthOfBytes(using: .utf8)
     }
 
-    func localChapterText(at index: Int) async -> AILocalChapterText {
+    func localChapterText(at index: Int, applyingReplaceRules: Bool) async -> AILocalChapterText {
         .extracted(await chapterPlainText(at: index))
     }
 

@@ -519,7 +519,7 @@ final class CoreTextChunkCollectionCell: UICollectionViewCell {
 
     func applyPlaybackHighlight(_ highlight: ReaderPlaybackHighlight?) {
         let s = GlobalSettings.shared
-        guard s.ttsHighlightEnabled else {
+        guard s.ttsHighlightEnabled || highlight?.isSearchHit == true else {
             playbackOverlay.clearSelection()
             playbackOverlay.boxStyle = nil
             playbackOverlay.boxColor = nil
@@ -549,7 +549,7 @@ final class CoreTextChunkCollectionCell: UICollectionViewCell {
         }
 
         let rects = renderRects(for: found)
-        CoreTextPageView.applyTTSPlaybackStyle(to: playbackOverlay)
+        CoreTextPageView.applyPlaybackStyle(for: highlight, to: playbackOverlay)
         playbackOverlay.selectionRects = rects
         playbackOverlay.startHandlePoint = nil
         playbackOverlay.endHandlePoint = nil

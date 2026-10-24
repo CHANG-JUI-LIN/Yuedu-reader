@@ -2,9 +2,10 @@ import XCTest
 
 /// 搜索's 最近閱讀 list shows while the search field is active. Pushed onto the search
 /// page's stack from there, the reader kept a navigation bar it had hidden: the active
-/// `UISearchController` puts back the bar it collapsed as the push starts, so the classic
+/// `UISearchController` puts back the bar it collapsed as the push starts, so the reader's
 /// top bar sat a bar's height (54pt) below where the shelf puts it (reported 2026-10-05
-/// with a TXT and an EPUB). 最近閱讀 now opens the book full screen.
+/// with a TXT and an EPUB). 最近閱讀 now opens the book full screen. Checked by where the top
+/// bar's back button (`reader_back_button`) sits on each route.
 ///
 /// Uses the books already on the simulator's shelf, like `ReaderCloseRecentSortUITests`.
 final class RecentReadingReaderChromeUITests: XCTestCase {
@@ -20,8 +21,7 @@ final class RecentReadingReaderChromeUITests: XCTestCase {
         app.launchArguments = ["-no-official-modules", "-onboarding.completed", "YES", "-AppleLanguages", "(en)", "-AppleLocale", "en_US",
                                "-yd_root_tab_visible_ids", "(bookshelf, settings, search)",
                                "-bookSortOrder", "recentlyRead",
-                               "-bookLayoutIsGrid", "NO",
-                               "-yd_appearance_reader_interface", "classic"]
+                               "-bookLayoutIsGrid", "NO"]
         app.launch()
 
         let shelfBook = app.buttons.matching(NSPredicate(

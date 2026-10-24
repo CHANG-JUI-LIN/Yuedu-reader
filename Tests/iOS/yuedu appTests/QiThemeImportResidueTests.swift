@@ -84,7 +84,6 @@ struct QiThemeImportResidueTests {
         #expect(appearanceAfter.glowIntensity == appearanceBefore.glowIntensity)
         #expect(appearanceAfter.bookshelfGridColumnCount == appearanceBefore.bookshelfGridColumnCount)
         #expect(appearanceAfter.bookshelfCoverCornerRadius == appearanceBefore.bookshelfCoverCornerRadius)
-        #expect(appearanceAfter.readerInterface == appearanceBefore.readerInterface)
         #expect(appearanceAfter.cardBackground == appearanceBefore.cardBackground)
         #expect(appearanceAfter.readerChromeIcons == appearanceBefore.readerChromeIcons)
         #expect(appearanceAfter == appearanceBefore)

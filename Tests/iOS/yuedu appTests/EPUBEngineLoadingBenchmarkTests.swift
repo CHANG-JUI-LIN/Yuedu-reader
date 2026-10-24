@@ -241,7 +241,9 @@ private final class TimedBuilder: @preconcurrency AttributedStringBuilding, Rend
     func chapterIndex(for href: String) -> Int? { base.chapterIndex(for: href) }
     func cssResourceHrefs() -> [String] { base.cssResourceHrefs() }
     func chapterPlainText(at index: Int) async -> String? { await base.chapterPlainText(at: index) }
-    func localChapterText(at index: Int) async -> AILocalChapterText { await base.localChapterText(at: index) }
+    func localChapterText(at index: Int, applyingReplaceRules: Bool) async -> AILocalChapterText {
+        await base.localChapterText(at: index, applyingReplaceRules: applyingReplaceRules)
+    }
     func buildChapter(at index: Int, settings: ReaderRenderSettings,
         themeTextColor: UIColor, themeBackgroundColor: UIColor) async throws -> AttributedChapterBuildResult {
         let start = SourcePerfTrace.now

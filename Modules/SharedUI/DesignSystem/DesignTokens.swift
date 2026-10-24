@@ -76,14 +76,6 @@ enum DSColor {
     static let neutralControlFill = Color(uiColor: .systemGray5)
     /// Pressed-state fill layered inside `neutralControlFill` controls (pre-iOS 26 fallback).
     static let neutralControlPressedFill = Color(uiColor: .systemGray3)
-    /// Strong neutral fill used by the emphasized Apple Books reader-menu row.
-    static let neutralControlEmphasizedFill = Color.black
-    /// Foreground drawn on the black emphasized reader control.
-    static let neutralControlEmphasizedForeground = Color.white
-    /// Solid read-progress fill inside the emphasized reader scrubber.
-    static let neutralControlProgressFill = Color.white
-    /// Text drawn over the solid white read-progress fill.
-    static let neutralControlProgressForeground = Color.black
 
     // ── Borders & Separators ──
     /// Thin separator
@@ -146,6 +138,9 @@ enum DSColor {
     static let searchListCoverShadow = Color.black.opacity(0.35)
     /// Selected highlight
     static let highlight = Color.accentColor.opacity(0.15)
+    /// The 全書搜尋 hit washed on the reading page — the browser layout's read-aloud yellow,
+    /// a little stronger, so it reads on white, sepia and black pages alike.
+    static let readerSearchHit = Color(uiColor: .systemYellow).opacity(0.4)
 
     /// Shadow under an app icon shown in the app.
     static let appIconShadow = Color.black.opacity(0.12)
@@ -574,14 +569,15 @@ enum DSLayout {
     /// Starting detent for the reader quick settings sheet, replaced by the
     /// measured content height on the first layout pass.
     static let readerQuickPanelSheetHeight: CGFloat = 420
-    /// Maximum width of the Apple Books-style floating reader controls.
-    static let readerAppleBooksPanelWidth: CGFloat = 252
-    /// Minimum hit target and visible size of Apple Books reader chrome controls.
-    static let readerAppleBooksControlSize: CGFloat = 44
-    /// Width of each action; four actions plus three gaps exactly fill the panel.
-    static let readerAppleBooksActionWidth: CGFloat = 57
-    /// Actions the row shows at once; past this it scrolls.
-    static let readerAppleBooksVisibleActions = 4
+    /// Starting detent for the 語音朗讀 sheet, replaced by the measured content height
+    /// on the first layout pass.
+    static let ttsPanelSheetHeight: CGFloat = 560
+    /// The cover beside the chapter 語音朗讀 is reading, at the 3:4 the generated
+    /// covers are drawn to.
+    static let ttsPanelCoverWidth: CGFloat = 42
+    static let ttsPanelCoverHeight: CGFloat = 56
+    /// 語音朗讀's play / pause: the one large target in its transport row.
+    static let ttsPanelPlayButtonSize: CGFloat = 64
     /// The paywall's picture of a pillar (`PaywallShowcase`).
     static let paywallShowcaseHeight: CGFloat = 150
     /// One reading page in the showcase's fan of themes.
@@ -605,23 +601,28 @@ enum DSLayout {
     static let appIconShadowY: CGFloat = 4
     /// How many pieces one unlock celebration throws.
     static let celebrationConfettiCount = 72
-    /// Height of each compact action below the Apple Books reader menu.
-    static let readerAppleBooksActionHeight: CGFloat = 44
-    /// Height of each Apple Books reader-menu capsule row.
-    static let readerAppleBooksMenuRowHeight: CGFloat = 44
-    /// VoiceOver increment/decrement step for the Apple Books progress scrubber.
-    static let readerAppleBooksProgressAccessibilityStep: Double = 0.01
+    /// Lower bound on the book-title capsule at the top of the reader, so a short title
+    /// (or none while the book loads) still reads as a control rather than a pill-shaped
+    /// dot, and the source line under it has room.
+    static let readerModernTitleMinWidth: CGFloat = 160
     /// Diameter of 現代's cover button in the reader toolbar. The cover fills it
     /// as a circle, so this is the control size, not an inset thumbnail size.
     static let readerModernCoverButtonSize: CGFloat = 34
+    /// How close to a screen edge UIKit lets a popover sit: `popoverLayoutMargins`,
+    /// documented as 10pt along each edge.
+    static let popoverScreenMargin: CGFloat = 10
     /// Width of 現代's book-card popover, from the width of the reader under it.
     /// Popovers size to their content, so the card needs an explicit width or a long
     /// book name stretches it; a *fixed* one was the other failure — 320pt on a 440pt
-    /// phone left a narrow slip hanging off the cover thumbnail. Insetting from the
-    /// reader's own width keeps the proportion on every device, and the cap stops an
-    /// iPad popover from growing into a band across the screen.
+    /// phone left a narrow slip hanging off the cover thumbnail.
+    ///
+    /// Exactly the width a popover may take, so it has nowhere to slide. The card hangs
+    /// off the cover at the trailing edge, and a popover centres on its anchor until it
+    /// meets a margin: 32pt narrower, it was pushed against the right margin and sat
+    /// 10pt from that edge and 22pt from the other. The cap stops an iPad popover from
+    /// growing into a band across the screen.
     static func readerModernBookCardWidth(viewportWidth: CGFloat) -> CGFloat {
-        min(max(viewportWidth - DSSpacing.lg * 2, 280), readableNarrowWidth)
+        min(max(viewportWidth - popoverScreenMargin * 2, 280), readableNarrowWidth)
     }
     /// The cover inside that card, at the 3:4 the generated covers are drawn to.
     static let readerModernBookCardCoverWidth: CGFloat = 72
@@ -631,6 +632,12 @@ enum DSLayout {
     static let readerModernBookCardActionHeight: CGFloat = 66
     /// The symbol inside one of those cells.
     static let readerModernBookCardActionGlyphSize: CGFloat = 26
+    /// The glyph slot above each label in 現代's tool capsule. Fixed so a symbol and the
+    /// 主題 "Aa" text sit on one line and the labels under them line up.
+    static let readerModernToolGlyphHeight: CGFloat = 24
+    /// The height both of 現代's bottom capsules share — the scrubber and the tool row —
+    /// at the default text size. Fits the 44pt arrows plus the caption under the slider.
+    static let readerModernBarRowHeight: CGFloat = 60
     /// Action cells per row before the card's grid wraps to a second row.
     static let readerModernBookCardActionColumns = 4
     /// Width of the quote bar beside the annotated excerpt in the note editor.

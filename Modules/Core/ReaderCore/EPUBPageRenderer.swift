@@ -648,8 +648,24 @@ final class EPUBPageRenderer: ObservableObject {
     ///
     /// See `AttributedStringBuilding.chapterPlainText(at:)` for why this cannot go through
     /// `engine.chapterText(forSpine:)`.
-    func localChapterText(at index: Int) async -> AILocalChapterText {
-        await contentBuilder?.localChapterText(at: index) ?? .init(text: nil, status: .unsupported)
+    func localChapterText(at index: Int, applyingReplaceRules: Bool = true) async -> AILocalChapterText {
+        await contentBuilder?.localChapterText(at: index, applyingReplaceRules: applyingReplaceRules)
+            ?? .init(text: nil, status: .unsupported)
+    }
+
+    /// Whether 替換規則 change what this book shows. See `AttributedStringBuilding.appliesReplaceRules`.
+    var appliesReplaceRules: Bool { contentBuilder?.appliesReplaceRules ?? false }
+
+    /// The chapter as laid out — the text reading positions and highlights count in — laying
+    /// it out first if it is not. Nil when there is no engine or the chapter cannot be laid out.
+    ///
+    /// Locating something found in `localChapterText` (an AI citation, a search hit) on the
+    /// page goes through here: the two texts can differ by a rendered title or whitespace.
+    func laidOutChapterText(at index: Int) async -> String? {
+        guard let engine else { return nil }
+        let outcome = await engine.preloadChapter(at: index)
+        guard outcome.isReady else { return nil }
+        return engine.chapterText(forSpine: index)
     }
 
     func chapterSourceText(at index: Int) async -> String? {

@@ -3,183 +3,55 @@ import UIKit
 
 extension ReaderView {
 
-    @ViewBuilder
+    /// Only the bottom panel is drawn here — the top chrome is a real `.toolbar`
+    /// (`modernToolbarContent`), which on iOS 26 already renders as floating glass
+    /// controls.
+    ///
+    /// The glass follows the *system* appearance, not the reader theme, so a
+    /// night-theme page under a light system would get light chrome. Pin the
+    /// scheme to the theme.
     var readerChrome: some View {
-        switch settings.appearanceReaderInterface {
-        case .classic:
-            topBar
-            bottomBar
-        case .modern:
-            // Only the bottom panel is drawn here — 現代's top chrome is a real
-            // `.toolbar` (`modernToolbarContent`), which on iOS 26 already renders as
-            // the floating glass controls this interface is modelled on.
-            //
-            // The glass follows the *system* appearance, not the reader theme, so a
-            // night-theme page under a light system would get light chrome. Pin the
-            // scheme to the theme — the same thing appleBooksControls does.
-            modernBottomBar
-                .environment(\.colorScheme, readerTheme == .night ? .dark : .light)
-        case .appleBooks:
-            EmptyView()
-        }
+        modernBottomBar
+            .environment(\.colorScheme, readerTheme == .night ? .dark : .light)
     }
 
-    var showsAppleBooksToolbars: Bool {
-        showBars && settings.appearanceReaderInterface == .appleBooks
-    }
+    // MARK: - Top chrome
 
-    var showsAppleBooksBottomToolbar: Bool {
-        showsAppleBooksToolbars && appleBooksActivePanel == nil
-    }
-
-    @ToolbarContentBuilder
-    var appleBooksToolbarContent: some ToolbarContent {
-        if settings.appearanceReaderInterface == .appleBooks {
-            ToolbarItem(placement: .principal) {
-                Text(appleBooksPagesLeftText)
-                    .font(DSFont.subheadline)
-                    .foregroundStyle(readerTheme.textColor.opacity(0.62))
-                    .lineLimit(1)
-            }
-
-
-
-            ToolbarItem(placement: .topBarLeading) {
-                Button {
-                    appleBooksActivePanel = nil
-                    closeReader()
-                } label: {
-                    Label(localized("退出閱讀"), systemImage: "xmark")
-                        .labelStyle(.iconOnly)
-                }
-                .accessibilityIdentifier("reader_close_button")
-                .accessibilityLabel(localized("退出閱讀"))
-            }
-
-            ToolbarItemGroup(placement: .bottomBar) {
-                Spacer()
-
-                Button {
-                    toggleAppleBooksPanel(.menu)
-                } label: {
-                    Label(localized("選單"), systemImage: "list.bullet")
-                        .labelStyle(.iconOnly)
-                }
-                .accessibilityLabel(localized("選單"))
-                .accessibilityHint(localized("點兩下展開閱讀工具"))
-            }
-        }
-    }
-
-
-    // MARK: - Top Bar
-    var topBar: some View {
-        ReaderTopBar(
-            theme: readerTheme,
-            chapterTitle: currentChapterTitle.converted(to: settings.textConversion),
-            // The "顯示標題 / 標題大小 / 上距 / 下距" settings drive the in-content
-            // chapter title (top of the page), NOT this nav bar. The top bar
-            // shows no chapter title — only fixed chrome padding.
-            titleVisible: false,
-            titleSize: 16,
-            titleTopSpacing: 10,
-            titleBottomSpacing: 10,
-            isBookmarked: isCurrentPageBookmarked,
-            overlayMaxWidth: overlayContentMaxWidth,
-            onBack: { closeReader() },
-            onOpenSearch: { showReaderSearch = true },
-            onToggleBookmark: {
-                toggleCurrentPageBookmark()
-            },
-            menuActions: readerSecondaryActions.filter { !(ReaderChromeActionItem($0.id)?.isClassicCircle ?? false) },
-            onOpenBookDetail: book == nil ? nil : {
-                openWorkDetail()
-            }
-        )
-    }
-
-    // MARK: - Bottom Bar
-    var bottomBar: some View {
-        ReaderBottomControlBar(
-            readerTheme: readerTheme,
-            overlayContentMaxWidth: overlayContentMaxWidth,
-            showRefreshButton: !(book?.onlineChapters?.isEmpty ?? true),
-            showChangeSourceButton: book?.isOnline == true && book?.bookSourceId != nil,
-            showDownloadButton: book?.isOnline == true,
-            downloadButtonIcon: downloadButtonIcon,
-            canGoPrevChapter: canGoPrevChapter,
-            canGoNextChapter: canGoNextChapter,
-            chapterPageInfo: chapterPageInfo,
-            totalProgressPercent: totalProgressPercent,
-            chapterSliderProgressValue: { chapterSliderProgressValue() },
-            applyChapterSliderProgress: { applyChapterSliderProgress($0) },
-            chapterTitleForProgress: { chapterTitle(forProgress: $0).converted(to: settings.textConversion) },
-            onPrevChapter: { jumpToChapter(currentChapterIndex - 1) },
-            onNextChapter: { jumpToChapter(currentChapterIndex + 1) },
-            onRefresh: { refreshCurrentChapter() },
-            onOpenChangeSource: { showChangeSourceSheet = true },
-            onDownloadAction: { handleDownloadAction() },
-            onOpenTTS: { handleListeningAction() },
-            onOpenTOC: { showTOC = true },
-            onOpenBookmarks: { showBookmarkList = true },
-            onToggleDarkMode: { toggleReaderDarkMode() },
-            onOpenSettings: { showQuickThemePanel = true }
-        )
-    }
-
-    // MARK: - 現代 Chrome
-
-    var showsModernToolbars: Bool {
-        showBars && settings.appearanceReaderInterface == .modern
-    }
-
-    /// 現代's top chrome: three separate glass controls — 返回 / 書名+作者 / 封面.
-    ///
-    /// Each one needs its own placement. Putting all three in `.topBarLeading` and
-    /// splitting them with `ToolbarSpacer` does not spread them: the leading group is
-    /// width-constrained, so the three ended up crushed together against the left edge
-    /// with the title truncated to one character. Leading / principal / trailing are
-    /// what the bar spreads.
-    ///
-    /// All three are `Button`s on purpose. iOS 26 puts glass behind toolbar *controls*
-    /// only — the title was a plain `Text` before and rendered bare over the page.
-    /// Tapping the title opens the same book card the cover does.
-    /// 現代's own chrome colours. 現代 exposes no `topFill`: its navigation bar is
-    /// the system's glass with the background deliberately hidden, so only the
-    /// symbol colour is ours to set.
+    /// The chrome colours 自定義 can override; see `ReaderChromePalette`.
     var modernPalette: ReaderChromePalette {
-        ReaderChromePalette(interface: .modern, theme: readerTheme, settings: settings)
+        ReaderChromePalette(theme: readerTheme, settings: settings)
     }
 
     /// Three glass islands: 返回 (circle) · 書名 (capsule) · 封面 (circle), each in
     /// its own placement.
     ///
-    /// They are NOT one `ToolbarItemGroup` with `Spacer()`s, even though that is how
-    /// the bookshelf's multi-select bottom bar builds the same shape. That works in
-    /// `.bottomBar`, which hands the group the full width; the navigation bar's
-    /// `.principal` region sizes to its content, so the spacers collapsed and took
-    /// 書名 and 封面 with them — the device showed a bare chevron floating mid-bar
-    /// and nothing else. Verified twice on hardware. Do not merge these back into
-    /// one group.
+    /// Each one needs its own placement. Putting all three in `.topBarLeading` and
+    /// splitting them with `ToolbarSpacer` does not spread them: the leading group is
+    /// width-constrained, so the three ended up crushed together against the left edge
+    /// with the title truncated to one character. Nor are they one `ToolbarItemGroup`
+    /// with `Spacer()`s, even though that is how the bookshelf's multi-select bottom bar
+    /// builds the same shape. That works in `.bottomBar`, which hands the group the full
+    /// width; the navigation bar's `.principal` region sizes to its content, so the
+    /// spacers collapsed and took 書名 and 封面 with them — the device showed a bare
+    /// chevron floating mid-bar and nothing else. Verified twice on hardware. Do not
+    /// merge these back into one group.
     ///
     /// Separate placements are also what centres 書名: `.principal` is the only one
     /// that does, and a flexible `ToolbarSpacer` in the leading group only pushes to
     /// that group's own trailing edge. The catch is that a principal item is the
-    /// bar's title view and never takes the glass by itself, so it asks explicitly
-    /// with `.buttonStyle(.glass)`. `.plain` is the opposite lever — an opt-out —
-    /// which the cover uses so the artwork itself is the circle.
+    /// bar's title view and never takes the glass by itself, so the title capsule
+    /// draws its own (`ReaderTitleCapsuleButtonStyle`). `.plain` is the opposite lever
+    /// — an opt-out — which the cover uses so the artwork itself is the circle.
     @ToolbarContentBuilder
     var modernToolbarContent: some ToolbarContent {
-        if settings.appearanceReaderInterface == .modern {
-            ToolbarItem(placement: .topBarLeading) {
-                modernBackButton
-            }
-            ToolbarItem(placement: .principal) {
-                modernTitleButton
-            }
-            ToolbarItem(placement: .topBarTrailing) {
-                modernCoverButton
-            }
+        ToolbarItem(placement: .topBarLeading) {
+            modernBackButton
+        }
+        ToolbarItem(placement: .principal) {
+            modernTitleButton
+        }
+        ToolbarItem(placement: .topBarTrailing) {
+            modernCoverButton
         }
     }
 
@@ -195,24 +67,46 @@ extension ReaderView {
         .accessibilityLabel(localized("退出閱讀"))
     }
 
-    /// One line, one glass capsule. The author moved into the card: a second line
-    /// makes the capsule tall and breaks the row of equal-height islands.
+    /// 換源 only means something for an online book read from a source — the same
+    /// condition the book card's 換源 action uses.
+    private var canChangeModernSource: Bool {
+        book?.isOnline == true && book?.bookSourceId != nil
+    }
+
+    /// 書名 over where it is read from, in one glass capsule never narrower than
+    /// `readerModernTitleMinWidth`. A tap opens the book card the cover does; a long
+    /// press opens 換源, which the card also offers for anyone who does not know the
+    /// gesture.
     private var modernTitleButton: some View {
         Button {
             showModernBookCard = true
         } label: {
-            Text(modernBookTitle)
-                .font(DSFont.subheadline)
-                .foregroundStyle(modernPalette.topIcon)
-                .lineLimit(1)
+            VStack(spacing: 0) {
+                Text(modernBookTitle)
+                    .font(DSFont.subheadline)
+                    .foregroundStyle(modernPalette.topIcon)
+                Text(modernSourceText)
+                    .font(DSFont.caption2)
+                    .foregroundStyle(modernPalette.topIcon.opacity(0.62))
+            }
+            .lineLimit(1)
+            .frame(minWidth: DSLayout.readerModernTitleMinWidth)
         }
-        .modernToolbarGlass()
+        .buttonStyle(ReaderTitleCapsuleButtonStyle(
+            onLongPress: canChangeModernSource ? { showChangeSourceSheet = true } : nil
+        ))
         .accessibilityLabel(
-            modernBookAuthor.isEmpty
-                ? modernBookTitle
-                : "\(modernBookTitle), \(modernBookAuthor)"
+            [modernBookTitle, modernBookAuthor, modernSourceText]
+                .filter { !$0.isEmpty }
+                .joined(separator: ", ")
         )
         .accessibilityHint(localized("書本選單"))
+        .accessibilityIdentifier("reader_title_capsule")
+        .accessibilityActions {
+            if canChangeModernSource {
+                Button(localized("換源")) { showChangeSourceSheet = true }
+            }
+        }
     }
 
     private var modernCoverButton: some View {
@@ -226,8 +120,9 @@ extension ReaderView {
         // small-square-in-a-circle look this replaces.
         .buttonStyle(.plain)
         .accessibilityLabel(localized("書本選單"))
-        // Arrow on the thumbnail's bottom edge, so the card hangs under the cover it
-        // belongs to rather than covering it.
+        // On the cover, not on 書名: a popover anchored to the bar's principal item ran
+        // off the trailing edge of the screen on iOS 27. Its width is what keeps the
+        // two side margins equal; see `DSLayout.readerModernBookCardWidth`.
         .popover(isPresented: $showModernBookCard, arrowEdge: .bottom) {
             modernBookCard
                 // Keep it a popover on iPhone too — the card belongs to the cover it
@@ -281,17 +176,20 @@ extension ReaderView {
             overlayContentMaxWidth: overlayContentMaxWidth,
             canGoPrevChapter: canGoPrevChapter,
             canGoNextChapter: canGoNextChapter,
-            chapterTitle: currentChapterTitle.converted(to: settings.textConversion),
-            chapterPageInfo: chapterPageInfo,
+            progressText: readerProgressText,
             chapterSliderProgressValue: { chapterSliderProgressValue() },
             applyChapterSliderProgress: { applyChapterSliderProgress($0) },
             chapterTitleForProgress: { chapterTitle(forProgress: $0).converted(to: settings.textConversion) },
+            isCurrentPageBookmarked: isCurrentPageBookmarked,
             onPrevChapter: { jumpToChapter(currentChapterIndex - 1) },
             onNextChapter: { jumpToChapter(currentChapterIndex + 1) },
             onOpenTOC: { showTOC = true },
-            onOpenBookmarks: { showBookmarkList = true },
+            onOpenSettings: { showQuickThemePanel = true },
+            onListen: { handleListeningAction() },
             onToggleDarkMode: { toggleReaderDarkMode() },
-            onOpenSettings: { showQuickThemePanel = true }
+            onOpenBookmarks: { showBookmarkList = true },
+            onToggleBookmark: { toggleCurrentPageBookmark() },
+            moreActions: settings.visibleReaderSecondaryActions(readerMoreActions)
         )
     }
 
@@ -302,15 +200,15 @@ extension ReaderView {
             author: modernBookAuthor,
             formatText: modernFormatText,
             progressText: modernChapterProgressText,
-            // Reversed for the same reason the Apple Books menu reverses it: the list is
-            // built most-specific-first (聽書 … 刷新) and reads better the other way round.
-            // `visibleReaderSecondaryActions` then drops whatever 自定義 switched off —
-            // Apple Books keeps the full list, since none of its chrome is customizable.
+            // Reversed: the list is built most-specific-first (下載 … 刷新) and reads
+            // better the other way round.
+            // `visibleReaderSecondaryActions` then drops whatever 自定義 switched off.
             actions: settings.visibleReaderSecondaryActions(readerSecondaryActions.reversed()).map { action in
                 // Every one of these opens its own sheet, and iOS won't present a modal from
                 // a popover that is still up — nor from one that is still dismissing, which
                 // is why running the action in the same turn as `showModernBookCard = false`
-                // left 聽書 dead: the card slid back into the thumbnail and no panel came up.
+                // left 聽書 (then in the card) dead: the card slid back into the thumbnail and
+                // no panel came up.
                 // Retain the route and let the popover's real dismissal run it.
                 ReaderSecondaryAction(id: action.id, icon: action.icon, label: action.label, isLocked: action.isLocked) {
                     modernBookCardPresentation.select(.secondary(action.id))
@@ -353,6 +251,13 @@ extension ReaderView {
         book?.author.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
     }
 
+    /// The title capsule's second line: the source an online book is read from, or
+    /// 本機 for a book that lives on this device.
+    var modernSourceText: String {
+        guard let book else { return "" }
+        return book.isOnline ? currentSourceName : localized("本機")
+    }
+
     /// The 格式 chip. Online books resolve to `.html` internally, which is true but
     /// meaningless to a reader, so they get 「線上」 instead of "HTML".
     var modernFormatText: String {
@@ -367,47 +272,21 @@ extension ReaderView {
         return "\(min(currentChapterIndex + 1, chapters.count)) / \(chapters.count)"
     }
 
-    /// Reads the book's cover off disk for the 現代 chrome. Same file the TTS
+    /// Reads the book's cover off disk for the top bar's cover button. Same file the TTS
     /// now-playing artwork uses; kept in `modernCoverImage` so neither the top bar nor
     /// the book card decodes it during layout.
     func loadModernCoverImage() {
-        guard settings.appearanceReaderInterface == .modern,
-              let coverPath = book?.coverImagePath else {
+        guard let coverPath = book?.coverImagePath else {
             modernCoverImage = nil
             return
         }
         modernCoverImage = loadTOCStyleCoverImage(filename: coverPath)
     }
 
-    var appleBooksControls: some View {
-        AppleBooksReaderControls(
-            activePanel: $appleBooksActivePanel,
-            progressValue: { chapterSliderProgressValue() },
-            applyProgress: { applyChapterSliderProgress($0) },
-            progressDescription: { chapterTitle(forProgress: $0).converted(to: settings.textConversion) },
-            // AI 助手 is a menu row there; the action row drops what needs Pro the reader
-            // does not have (翻譯) — without Pro, the rows keep AI's one marked entry.
-            secondaryActions: readerSecondaryActions.filter { $0.id != .aiAssistant && !$0.isLocked },
-            aiAssistant: readerSecondaryActions.first { $0.id == .aiAssistant },
-            onOpenTOC: { showTOC = true },
-            onOpenBookmarks: { showBookmarkList = true },
-            onOpenSearch: { showReaderSearch = true },
-            onOpenSettings: { showQuickThemePanel = true },
-            isDarkMode: settings.readerDarkMode,
-            onToggleDarkMode: { toggleReaderDarkMode() }
-        )
-        .environment(\.colorScheme, readerTheme == .night ? .dark : .light)
-    }
-
+    /// The book card's actions. 聽書 is not one of them — it is in the bottom bar — and
+    /// the AI ones are in 更多 (`readerMoreActions`).
     var readerSecondaryActions: [ReaderSecondaryAction] {
-        var actions = [
-            ReaderSecondaryAction(
-                id: .playback,
-                icon: "headphones",
-                label: localized("聽書"),
-                action: { handleListeningAction() }
-            )
-        ]
+        var actions: [ReaderSecondaryAction] = []
 
         if book?.isOnline == true {
             actions.append(
@@ -431,6 +310,18 @@ extension ReaderView {
             )
         }
 
+        if let source = readerSource,
+           !source.loginUrl.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            actions.append(
+                ReaderSecondaryAction(
+                    id: .sourceLogin,
+                    icon: "person.crop.circle",
+                    label: localized("來源配置登入"),
+                    action: { sourceLoginTarget = source }
+                )
+            )
+        }
+
         if currentOnlineChapter != nil {
             actions.append(
                 ReaderSecondaryAction(
@@ -438,33 +329,6 @@ extension ReaderView {
                     icon: "globe",
                     label: localized("開啟網頁"),
                     action: { openCurrentChapterWebPage() }
-                )
-            )
-        }
-
-        // Shown whatever the AI settings are: hiding it when unconfigured would leave a
-        // reader with no way to discover the feature exists. The panel itself explains what
-        // to fill in. Without Pro both are marked and open the paywall.
-        let aiLocked = !readerPremiumVisibility.allowsAI
-        actions.append(
-            ReaderSecondaryAction(
-                id: .aiAssistant,
-                icon: "sparkles",
-                label: localized("AI 助手"),
-                isLocked: aiLocked,
-                action: { openAIAssistant() }
-            )
-        )
-
-        // 整章翻譯 lays translations into reflowed text; a fixed-layout page has none.
-        if !isFixedLayoutEPUB {
-            actions.append(
-                ReaderSecondaryAction(
-                    id: .translation,
-                    icon: "translate",
-                    label: localized("AI 翻譯"),
-                    isLocked: aiLocked,
-                    action: { openTranslationSheet() }
                 )
             )
         }
@@ -487,6 +351,38 @@ extension ReaderView {
                     icon: "arrow.clockwise",
                     label: localized("刷新"),
                     action: { refreshCurrentChapter() }
+                )
+            )
+        }
+
+        return actions
+    }
+
+    /// AI 助手 and AI 翻譯, which 更多 in the bottom bar lists under 書籤.
+    var readerMoreActions: [ReaderSecondaryAction] {
+        // Shown whatever the AI settings are: hiding it when unconfigured would leave a
+        // reader with no way to discover the feature exists. The panel itself explains what
+        // to fill in. Without Pro both are marked and open the paywall.
+        let aiLocked = !readerPremiumVisibility.allowsAI
+        var actions = [
+            ReaderSecondaryAction(
+                id: .aiAssistant,
+                icon: "sparkles",
+                label: localized("AI 助手"),
+                isLocked: aiLocked,
+                action: { openAIAssistant() }
+            )
+        ]
+
+        // 整章翻譯 lays translations into reflowed text; a fixed-layout page has none.
+        if !isFixedLayoutEPUB {
+            actions.append(
+                ReaderSecondaryAction(
+                    id: .translation,
+                    icon: "translate",
+                    label: localized("AI 翻譯"),
+                    isLocked: aiLocked,
+                    action: { openTranslationSheet() }
                 )
             )
         }
@@ -543,15 +439,6 @@ extension ReaderView {
         showTranslationSheet = true
     }
 
-    func toggleAppleBooksPanel(_ target: AppleBooksReaderControlPanel) {
-        withAnimation(DSAnimation.standard) {
-            appleBooksActivePanel = AppleBooksReaderControlPanel.panel(
-                afterTapping: target,
-                current: appleBooksActivePanel
-            )
-        }
-    }
-
     /// The close button. A book not on the shelf is offered to it by the page the reader closes
     /// onto (`readerShelvePrompt`), which a swipe back reaches too.
     func closeReader() {
@@ -604,49 +491,6 @@ extension ReaderView {
         }
     }
 
-    var appleBooksPagesLeftText: String {
-        let left: Int
-        if let engine = epubRenderer.engine, usesCoreTextEPUB {
-            if let pagination = displayedChapterPagination(in: engine) {
-                // displayPageCount: estimated total while the chapter is still
-                // partially paginated, exact once complete.
-                left = max(0, pagination.displayPageCount - pagination.localPageIndex - 1)
-            } else {
-                left = 0
-            }
-        } else if !allPages.isEmpty {
-            let page = allPages[min(currentPage, allPages.count - 1)]
-            let total = allPages.filter { $0.chapterIndex == page.chapterIndex }.count
-            left = max(0, total - page.pageInChapter - 1)
-        } else {
-            left = 0
-        }
-        return String(format: localized("%d pages left in chapter"), left)
-    }
-
-    var readerSearchItems: [ReaderBookSearchItem] {
-        if let engine = epubRenderer.engine, engine.totalPages > 0 {
-            return (0..<engine.totalPages).map { pageIndex in
-                let position = engine.charOffset(forPage: pageIndex)
-                let title = chapters.indices.contains(position.spineIndex)
-                    ? chapters[position.spineIndex].title
-                    : String(format: localized("第 %d 章"), position.spineIndex + 1)
-                return ReaderBookSearchItem(
-                    pageIndex: pageIndex,
-                    chapterTitle: title.converted(to: settings.textConversion),
-                    text: engine.plainText(forPage: pageIndex)
-                )
-            }
-        }
-        return allPages.enumerated().map { index, page in
-            ReaderBookSearchItem(
-                pageIndex: index,
-                chapterTitle: page.chapterTitle.converted(to: settings.textConversion),
-                text: page.content.converted(to: settings.textConversion)
-            )
-        }
-    }
-
     func ttsJumpPromptView(alignment: Alignment) -> some View {
         HStack(spacing: 8) {
             Button {
@@ -680,14 +524,20 @@ extension ReaderView {
     }
 
     var ttsJumpPromptCollapsedBottomPadding: CGFloat {
+        let estimatedPromptHeight: CGFloat = 36
+        return footerBandBottomPadding(forHeight: estimatedPromptHeight)
+    }
+
+    /// The bottom padding that centres a floating control `height` tall on the page's footer
+    /// band, so with the chrome down it covers the band rather than the page's last lines.
+    func footerBandBottomPadding(forHeight height: CGFloat) -> CGFloat {
         let footerBandBottomFromBottom = max(
             0,
             readerConfig.footerBottomPadding
         )
         let footerBandCenterFromBottom = footerBandBottomFromBottom
             + ReaderLayoutMetrics.footerHeight / 2
-        let estimatedPromptHeight: CGFloat = 36
-        return max(8, footerBandCenterFromBottom - estimatedPromptHeight / 2)
+        return max(8, footerBandCenterFromBottom - height / 2)
     }
 
     var ttsJumpPromptMessage: String {
@@ -702,15 +552,70 @@ extension ReaderView {
 
 }
 
-/// Liquid Glass on a `.principal` toolbar item, which the bar treats as its title
-/// view and never grants the treatment to on its own. Before iOS 26 there is no
-/// glass at all, so the control keeps exactly the look it has always had.
+/// The title capsule: a tap is the button's action, a long press is `onLongPress`.
+/// Primitive, so the two cannot both fire — a long-press gesture added to a plain
+/// button would still open the book card on the release that ends it. Same reason as
+/// 外觀's theme tiles.
+///
+/// It draws its own Liquid Glass because a `.principal` toolbar item is the bar's
+/// title view and never gets the treatment on its own. Before iOS 26 there is no
+/// glass at all, so the title keeps the plain look it has always had there.
+private struct ReaderTitleCapsuleButtonStyle: PrimitiveButtonStyle {
+    /// Nil when there is nothing to do on a long press.
+    let onLongPress: (() -> Void)?
+
+    func makeBody(configuration: Configuration) -> some View {
+        ReaderTitleCapsuleButtonBody(configuration: configuration, onLongPress: onLongPress)
+    }
+}
+
+private struct ReaderTitleCapsuleButtonBody: View {
+    let configuration: PrimitiveButtonStyleConfiguration
+    let onLongPress: (() -> Void)?
+
+    var body: some View {
+        let capsule = configuration.label
+            .padding(.horizontal, DSSpacing.lg)
+            .frame(minHeight: DSLayout.minimumTapTarget)
+            .contentShape(Capsule())
+            .titleCapsuleGlass()
+        if let onLongPress {
+            if #available(iOS 18.0, *) {
+                // One gesture with the long press first, so exactly one of the two can win.
+                // `.onTapGesture` plus `.onLongPressGesture` stacked as two modifiers gave the
+                // inner tap precedence: a hold never reached the long press, and lifting the
+                // finger still counted as a tap, so holding the capsule opened the book card.
+                capsule.gesture(
+                    LongPressGesture()
+                        .exclusively(before: TapGesture())
+                        .onEnded { gesture in
+                            switch gesture {
+                            case .first: onLongPress()
+                            case .second: configuration.trigger()
+                            }
+                        }
+                )
+            } else {
+                // iOS 17: the exclusive gesture above never ends in its tap here — on 17.5 a
+                // tap on the capsule reached the app and opened nothing. iOS 17 keeps the two
+                // stacked gestures 外觀's theme tiles use. Delete this branch once the
+                // deployment target is iOS 18.
+                capsule
+                    .onTapGesture { configuration.trigger() }
+                    .onLongPressGesture(minimumDuration: 0.5, perform: onLongPress)
+            }
+        } else {
+            capsule.onTapGesture { configuration.trigger() }
+        }
+    }
+}
+
 private extension View {
     @ViewBuilder
-    func modernToolbarGlass() -> some View {
+    func titleCapsuleGlass() -> some View {
         #if compiler(>=6.2)
         if #available(iOS 26.0, *) {
-            buttonStyle(.glass)
+            glassEffect(.regular.interactive(), in: Capsule())
         } else {
             self
         }

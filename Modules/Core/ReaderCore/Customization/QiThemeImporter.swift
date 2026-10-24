@@ -49,7 +49,7 @@ struct QiThemeImport: Sendable {
     }
 
     struct ReaderChromeIconImport: Sendable {
-        /// The reader button's storage id (`tool.tableOfContents`, `action.playback`…).
+        /// The reader button's storage id (`tool.tableOfContents`, `action.refresh`…).
         var itemID: String
         var image: ImageFile
     }
@@ -99,7 +99,6 @@ struct QiThemeImport: Sendable {
     var font: FontImport?
     var effects = InterfaceEffects()
     var bookshelf = BookshelfSettings()
-    var readerInterface: AppearanceReaderInterface?
     /// legado `readConfig.json` bytes, so the layout half goes through the app's one
     /// layout parser instead of a second one written for QiReader.
     var layoutConfig: Data?
@@ -340,11 +339,6 @@ enum QiThemeImporter {
         result.bookshelf.coverCornerRadius = manifest.coverCornerRadius
         result.bookshelf.forceDefaultCover = manifest.forceDefaultCover
 
-        if let style = manifest.readerBottomToolbarStyle,
-           let interface = AppearanceReaderInterface(rawValue: style) {
-            result.readerInterface = interface
-        }
-
         applyCardBackground(manifest, rootURL: rootURL, into: &result, notes: &notes)
 
         appendUnmappedAppearanceNotes(manifest, to: &notes)
@@ -513,12 +507,12 @@ enum QiThemeImporter {
     /// `ReaderChromeToolItem` / `ReaderChromeActionItem` storage ids — spelled out so
     /// this layer does not reach into the reader's feature code; a test pins them to the
     /// real items. `search` has no button of its own here: in-book search opens from
-    /// the reader's menu, so its icon has nowhere to go.
+    /// the book card, so its icon has nowhere to go.
     static func readerChromeItemID(for qiItem: String) -> String? {
         switch qiItem {
         case "chapterList": return "tool.tableOfContents"
         case "settings": return "tool.settings"
-        case "speech": return "action.playback"
+        case "speech": return "tool.listen"
         default: return nil
         }
     }
@@ -594,23 +588,6 @@ enum QiThemeImporter {
 
         if let package = presetManifest.chapterTitleStylePackage {
             result.chapterTitleStyle = await chapterTitleStyle(from: package, notes: &notes)
-        }
-
-        if let template = preset.layoutTemplateRaw,
-           result.readerInterface == nil,
-           let interface = readerInterface(forTemplate: template) {
-            result.readerInterface = interface
-        }
-    }
-
-    /// QiReader serializes its reading-page enums as Simplified-Chinese display strings.
-    /// Ours are Traditional (`PageTurnStyle`) or English (`AppearanceReaderInterface`), so
-    /// every one of these needs an explicit alias — `init(rawValue:)` would silently fail.
-    static func readerInterface(forTemplate raw: String) -> AppearanceReaderInterface? {
-        switch raw {
-        case "经典", "經典": return .classic
-        case "现代", "現代": return .modern
-        default: return nil
         }
     }
 

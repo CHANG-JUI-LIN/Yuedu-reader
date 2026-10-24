@@ -79,6 +79,7 @@ struct AppearanceThemeWriteBackTests {
         fixture.reset(iconSize: 24, columns: 3)
 
         settings.interfaceGlassCards = true
+        settings.interfaceGlowColor = 0x445566
         settings.readerChromeHiddenIDs = ["progress"]
         settings.readerChromeColors = ["classic.background": 0x102030]
         settings.useDefaultCoverForAllBooks = true
@@ -91,6 +92,7 @@ struct AppearanceThemeWriteBackTests {
             settings.customAppearanceThemes.first { $0.id == saved.id }?.extras
         )
         #expect(extras.glassCards == true)
+        #expect(extras.glowColor == 0x445566)
         #expect(extras.readerChromeHiddenIDs == ["progress"])
         #expect(extras.readerChromeColors?["classic.background"] == 0x102030)
         #expect(extras.forceDefaultCover == true)
@@ -382,6 +384,7 @@ struct AppearanceThemeWriteBackTests {
         private let iconSize: Double
         private let columns: Int
         private let glassCards: Bool
+        private let glowColor: UInt32?
         private let chromeColors: [String: UInt32]
         private let chromeHidden: [String]
         private let forceCover: Bool
@@ -401,6 +404,7 @@ struct AppearanceThemeWriteBackTests {
             iconSize = settings.rootTabIconSize
             columns = settings.bookshelfGridColumnCount
             glassCards = settings.interfaceGlassCards
+            glowColor = settings.interfaceGlowColor
             chromeColors = settings.readerChromeColors
             chromeHidden = settings.readerChromeHiddenIDs
             forceCover = settings.useDefaultCoverForAllBooks
@@ -447,6 +451,7 @@ struct AppearanceThemeWriteBackTests {
             settings.rootTabIconSize = iconSize
             settings.bookshelfGridColumnCount = columns
             settings.interfaceGlassCards = glassCards
+            settings.interfaceGlowColor = glowColor
             settings.readerChromeColors = chromeColors
             settings.readerChromeHiddenIDs = chromeHidden
             settings.useDefaultCoverForAllBooks = forceCover

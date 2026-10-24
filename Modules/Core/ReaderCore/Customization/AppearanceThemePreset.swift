@@ -2,37 +2,6 @@ import Foundation
 import SwiftUI
 import UIKit
 
-enum AppearanceReaderInterface: String, CaseIterable, Identifiable, Codable {
-    case classic
-    case modern
-    case appleBooks
-
-    var id: String { rawValue }
-
-    init?(rawValue: String) {
-        switch rawValue {
-        case "classic":
-            self = .classic
-        case "modern":
-            self = .modern
-        case "appleBooks", "compact", "immersive":
-            self = .appleBooks
-        default:
-            return nil
-        }
-    }
-
-    var titleKey: String {
-        switch self {
-        case .classic: return "經典"
-        case .modern: return "現代"
-        case .appleBooks: return "Apple Books"
-        }
-    }
-
-    var localizedTitle: String { localized(titleKey) }
-}
-
 /// Hand-authored dark-appearance colors for one custom theme. Absent means the
 /// dark version is derived from the light colors, which is what every built-in
 /// theme does and the default for custom ones too.

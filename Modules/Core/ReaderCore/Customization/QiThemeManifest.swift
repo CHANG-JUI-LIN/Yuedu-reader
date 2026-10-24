@@ -70,7 +70,6 @@ struct QiThemeManifest: Decodable, Sendable {
     var bookshelfTagCustomTextColorHex: String?
 
     // Reader chrome
-    var readerBottomToolbarStyle: String?
     /// Keyed by QiReader's toolbar function (`chapterList`, `search`, `settings`,
     /// `speech`), not by position.
     var readerToolbarIcons: [String: QiThemeIcon]?
@@ -189,7 +188,6 @@ struct QiPreset: Decodable, Sendable {
     var textAlignmentRaw: String?
     var verticalJustify: Bool?
     var pageModeRaw: String?
-    var layoutTemplateRaw: String?
 
     var textUnderlineEnabled: Bool?
     var textUnderlineModeRaw: String?

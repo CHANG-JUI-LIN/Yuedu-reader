@@ -356,7 +356,6 @@
 "語速，例如 +0%、+30%、-20%" = "Speaking rate, e.g., +0%, +30%, -20%";
 "語音引擎" = "Voice Engine";
 "語音朗讀" = "Read Aloud";
-"播放行為" = "Playback";
 "朗讀時保持螢幕開啟" = "Keep Screen On While Reading Aloud";
 "只防止自動鎖定，按下電源鍵仍可鎖屏並繼續朗讀。" = "This only prevents auto-lock. You can still lock the screen with the side or top button, and reading aloud continues.";
 "朗讀失敗：%@" = "Couldn't read aloud: %@";
@@ -852,7 +851,6 @@
 "免網路，使用裝置內建語音朗讀" = "Uses the device's built-in voice. No internet connection needed.";
 "語音" = "Voice";
 "自動" = "Automatic";
-"未配置網路語音源，將使用系統離線語音朗讀" = "No online voice engine is set up, so the offline system voice will be used.";
 
 "段評" = "Paragraph Comments";
 "作品相關" = "Extras";
@@ -935,6 +933,7 @@
 "無法複製壓縮檔案：" = "Couldn't copy the archive: ";
 "第 %d 章" = "Chapter %d";
 "第 %d / %d 頁" = "Page %d of %d";
+"%d / %d 頁 · 全書 %d%%" = "%d / %d · %d%% of book";
 "使用帳號同步書庫、進度與偏好" = "Sync your library, progress, and preferences with an account.";
 "帳號模式" = "Account Mode";
 "登入" = "Sign In";
@@ -1120,19 +1119,17 @@
 "深色分頁會以深色主題預覽整個介面，選的是同一批主題的深色版本。" = "The Dark tab previews the entire interface with a dark theme, and you choose from dark versions of the same themes.";
 "跟隨系統關閉時，App 固定使用這裡選的淺色或深色。" = "When Use System Setting is off, the app always uses the light or dark appearance you choose here.";
 "閱讀界面" = "Reader Interface";
-"經典" = "Classic";
 "簡潔" = "Minimal";
 "沉浸" = "Immersive";
-"選擇閱讀界面的工具列與控制方式。" = "Choose the toolbar and control style for the reader.";
 "書卡面板底色" = "Book Card Background";
 "書卡面板文字顏色" = "Book Card Text Color";
 "按鈕圖示" = "Button Icons";
 "底部工具" = "Bottom Toolbar";
 "書籍動作" = "Book Actions";
-"現代的頂欄是系統玻璃，只能改圖示顏色；底部是浮動面板，書卡是點封面圓圈之後那張。未調整的部分跟隨目前的閱讀主題。" = "In Modern, the top bar uses system glass, so only its icon color can be changed. The bottom is a floating panel, and the book card is the panel that opens when you tap the cover circle. Anything you don't change follows the current reading theme.";
-"關掉的按鈕會整個離開工具列。設置固定顯示——它是回到閱讀設定的唯一入口。" = "A button you turn off is removed from the toolbar. Settings always stays because it's the only way back to Reading Settings.";
-"經典把刷新、換源、下載、聽書畫成浮在正文上的圓鈕，AI 助手和 AI 翻譯固定在頂部選單；現代全部放在點封面圓圈之後的書卡裡。原本就不適用這本書的動作仍然不會出現。" = "Classic shows Refresh, Switch Source, Download, and Listen as round buttons floating over the text, and keeps AI Assistant and AI Translate in the top menu. Modern puts them all in the book card that opens when you tap the cover circle. Actions that don't apply to a book still won't appear.";
-"頂部底色" = "Top Bar Background";
+"頂欄是系統玻璃，只能改圖示顏色；強調色用在開啟中的「深色」和書卡的圖示。未調整的部分跟隨目前的閱讀主題。" = "The top bar uses system glass, so only its icon color can be changed. The accent color marks Dark while it's on and the book card's icons. Anything you don't change follows the current reading theme.";
+"關掉的按鈕會整個離開工具列。主題固定顯示——它是回到閱讀設定的唯一入口。" = "A button you turn off is removed from the toolbar. Theme always stays because it's the only way back to Reading Settings.";
+"這些動作都在點封面圓圈之後的書卡裡。原本就不適用這本書的動作仍然不會出現。" = "These actions are in the book card that opens when you tap the cover circle. Actions that don't apply to a book still won't appear.";
+"這些動作在底部工具列的「更多」裡。" = "These actions are under More in the bottom toolbar.";
 "頂部圖示顏色" = "Top Bar Icon Color";
 "底部底色" = "Bottom Bar Background";
 "底部圖示顏色" = "Bottom Bar Icon Color";
@@ -1140,11 +1137,7 @@
 "底部圖示" = "Bottom Icons";
 "已換 %d 個" = "%d replaced";
 "已隱藏 %d 個" = "%d hidden";
-"頂部是返回／書籤那條，底部是進度條與工具列，中間四顆圓鈕是刷新／換源／下載／聽書。強調色用在進度條和「深色」的選中狀態。未調整的部分跟隨目前的閱讀主題。" = "The top is the back and bookmark bar, the bottom is the progress bar and toolbar, and the four round buttons in between are Refresh, Switch Source, Download, and Listen. The accent color is used for the progress bar and the selected Dark button. Anything you don't change follows the current reading theme.";
-"關掉的按鈕會整個離開工具列。設置固定顯示——它是經典介面回到閱讀設定的唯一入口。" = "A button you turn off is removed from the toolbar. Settings always stays because it's the only way back to Reading Settings in the Classic interface.";
 "匯入的圖片會以自己的顏色顯示，不跟著底部圖示顏色變。" = "Imported images keep their own colors and don't follow the bottom bar icon color.";
-"圓形按鈕底色" = "Round Button Background";
-"圓形按鈕圖示顏色" = "Round Button Icon Color";
 "跟隨閱讀主題" = "Use Reading Theme";
 "調整浮在正文上那四顆圓形按鈕（刷新／換源／下載／聽書）的顏色。未調整時跟隨目前的閱讀主題。" = "Changes the color of the four round buttons floating over the text (Refresh, Switch Source, Download, Listen). If you don't change it, they follow the current reading theme.";
 "界面效果" = "Interface Effects";
@@ -1154,7 +1147,9 @@
 "效果預覽" = "Effect Preview";
 "浮動工具列" = "Floating Toolbar";
 "效果套用於底部迷你播放器與閱讀器的浮動工具列、控制欄。" = "Effects apply to the mini player at the bottom and to the reader's floating toolbars and control bars.";
-"光暈從浮動元素的邊緣向外擴散，顏色跟隨主題色。" = "The glow spreads out from the edges of floating elements and uses the theme color.";
+"光暈顏色" = "Glow Color";
+"跟隨主題色" = "Use Theme Color";
+"光暈從浮動元素的邊緣向外擴散。沒選顏色時跟隨主題色。" = "The glow spreads out from the edges of floating elements. Without a chosen color, it uses the theme color.";
 "關閉後，浮動元素改用不透明底色。透明度越低，背後的內容越不透出。" = "When this is off, floating elements use an opaque background. The lower the transparency, the less of the content behind shows through.";
 "系統已開啟「降低透明度」，浮動元素目前一律使用不透明底色。" = "Reduce Transparency is turned on in Settings, so floating elements currently use an opaque background.";
 "分組卡片" = "Grouped Cards";
@@ -1207,7 +1202,6 @@
 "刪除「%@」" = "Delete \"%@\"";
 "刪除後，使用此主題的外觀會回到預設。" = "Anything using this theme will switch back to the default.";
 "自訂應用配色、閱讀配色與頁面背景需開通會員。" = "Customizing app colors, reading colors, and page backgrounds requires Pro.";
-"Apple Books" = "Apple Books";
 "內建氣泡" = "Built-in Bubble";
 "自訂 SVG" = "Custom SVG";
 "閱讀裝飾" = "Reading Decorations";
@@ -1250,7 +1244,6 @@
 "樣式名稱" = "Style Name";
 "自訂樣式" = "Custom Style";
 "SVG 檔案過大，請使用小於 %d KB 的氣泡樣式。" = "This SVG is too large. Use a bubble style smaller than %d KB.";
-"Themes & Settings" = "Themes & Settings";
 "Customize" = "Customize";
 "自定義閱讀背景" = "Custom Reading Background";
 "RGB 調色" = "RGB Color";
@@ -1277,11 +1270,8 @@
 "Fast Fade" = "Fast Fade";
 "Scroll" = "Scroll";
 "Search Book" = "Search Book";
-"Contents · %@" = "Contents · %@";
-"%d pages left in chapter" = "%d pages left in chapter";
 "%1$d of %2$d" = "%1$d of %2$d";
 "搜尋書籍" = "Search Book";
-"輸入關鍵字搜尋目前已載入的章節與頁面。" = "Enter a keyword to search the chapters and pages loaded so far.";
 "無搜尋結果" = "No Results";
 "換個關鍵字再試一次。" = "Try a different keyword.";
 "第 %d 頁" = "Page %d";
@@ -1414,7 +1404,6 @@
 "對話底色框" = "Dialogue Background";
 "為引號內的對話加上底色方塊。" = "Adds a colored box behind dialogue inside quotation marks.";
 "底色框顏色" = "Box Color";
-"高亮" = "Highlight";
 "朗讀高亮" = "Read Aloud Highlight";
 "朗讀時高亮目前正在唸的文字。" = "Highlights the text being read aloud.";
 "朗讀底色框" = "Read Aloud Box";
@@ -1673,7 +1662,6 @@
 "下載" = "Download";
 
 /* Reader interface styles */
-"現代" = "Modern";
 "線上" = "Online";
 "返回書架" = "Back to Library";
 
@@ -1686,7 +1674,6 @@
 "新增來源配置" = "Add Source";
 "點兩下切換來源配置" = "Double-tap to switch sources.";
 "已加入" = "Added";
-"未加入" = "Not Added";
 
 /* Source list ordering (move to top/bottom) */
 "置頂" = "Move to Top";
@@ -3741,8 +3728,10 @@
 "驗證完成：%1$d/%2$d 通過" = "Validation Complete: %1$d/%2$d passed";
 "%d 段落" = "%d segments";
 "%d 分鐘" = "%d minutes";
-"章節進度 %1$d / %2$d" = "Chapter Progress %1$d / %2$d";
-"當前速度：%@" = "Current Speed: %@";
+"段落 %1$d / %2$d" = "Paragraph %1$d of %2$d";
+"朗讀進度" = "Read Aloud Progress";
+"語音源" = "Voice Engine";
+"高亮與螢幕" = "Highlight & Screen";
 "%@ 章" = "%@ chapters";
 "全選(%1$d/%2$d)" = "Select All (%1$d/%2$d)";
 "上次同步 %@" = "Last Synced %@";
@@ -4149,3 +4138,28 @@
 "連上 WebDAV、OPDS 或 Calibre" = "Connect to WebDAV, OPDS or Calibre.";
 "看看首頁幫你排好的書" = "See the books your home has lined up.";
 "從檔案或網址匯入，也能手動新增" = "Import from a file or a URL, or add one by hand.";
+
+/* 全書搜尋 */
+"輸入關鍵字搜尋整本書。" = "Enter a keyword to search the whole book.";
+"正在搜尋…" = "Searching…";
+"已搜尋 %d／%d 章" = "Chapter %d of %d";
+"共 %d 個結果" = "%d results";
+"有 %d 章尚未下載，未搜尋。" = "%d chapters aren't downloaded and weren't searched.";
+"只列出前 %d 個結果。" = "Showing the first %d results.";
+"正規表示式有誤" = "Invalid Regular Expression";
+"檢查表示式的寫法後再試一次。" = "Check the expression and try again.";
+"搜尋已停止" = "Search Stopped";
+"這個正規表示式運算太久，換個寫法再試一次。" = "This regular expression took too long. Try writing it another way.";
+"無法搜尋" = "Can't Search";
+"這本書沒有可以搜尋的文字。" = "This book has no text to search.";
+"套用替換規則" = "Apply Replacement Rules";
+"搜尋選項" = "Search Options";
+"上一個結果" = "Previous Result";
+"下一個結果" = "Next Result";
+"全部結果" = "All Results";
+"結束搜尋" = "End Search";
+"%1$d／%2$d" = "%1$d/%2$d";
+"第 %1$d 個結果，共 %2$d 個" = "Result %1$d of %2$d";
+"回到搜尋前的位置？" = "Go back to where you were before searching?";
+"回到原位置" = "Go Back";
+"留在這裡" = "Stay Here";

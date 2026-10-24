@@ -1,6 +1,7 @@
 import Foundation
 
-/// What the reader wants washed while something is being read aloud.
+/// What the reader wants washed while something is being read aloud, or the 全書搜尋 hit
+/// it jumped to (`isSearchHit`).
 ///
 /// This used to be a bare `String?` that every render path searched for with
 /// `NSString.range(of:)`, which returns the **first** occurrence. That is the wrong one
@@ -22,14 +23,25 @@ struct ReaderPlaybackHighlight: Equatable {
     /// The chapter being read, so a page from a different chapter can ignore the hint
     /// rather than measure distances between unrelated coordinate spaces.
     let chapterIndex: Int?
+    /// A search hit shows whatever 朗讀高亮 is set to, in its own wash: the setting is about
+    /// following narration, and a hit nobody can see is a jump to nowhere.
+    let isSearchHit: Bool
 
-    init?(text: String?, expectedChapterOffset: Int? = nil, chapterIndex: Int? = nil) {
+    init?(text: String?, expectedChapterOffset: Int? = nil, chapterIndex: Int? = nil, isSearchHit: Bool = false) {
         guard let trimmed = text?.trimmingCharacters(in: .whitespacesAndNewlines),
               !trimmed.isEmpty
         else { return nil }
         self.text = trimmed
         self.expectedChapterOffset = expectedChapterOffset
         self.chapterIndex = chapterIndex
+        self.isSearchHit = isSearchHit
+    }
+
+    /// The same highlight with its offset hint moved into another space — a translated
+    /// layout, a page's own text.
+    func withExpectedChapterOffset(_ offset: Int?) -> ReaderPlaybackHighlight {
+        ReaderPlaybackHighlight(text: text, expectedChapterOffset: offset, chapterIndex: chapterIndex,
+                                isSearchHit: isSearchHit) ?? self
     }
 
     /// The chapter-space range to wash, searched inside `searchRange` of `haystack`.

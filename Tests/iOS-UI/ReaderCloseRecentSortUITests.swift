@@ -32,8 +32,7 @@ final class ReaderCloseRecentSortUITests: XCTestCase {
         let app = XCUIApplication()
         app.launchArguments = ["-no-official-modules", "-onboarding.completed", "YES", "-AppleLanguages", "(en)",
                                "-yd_root_tab_visible_ids", "(bookshelf, settings)",
-                               "-bookSortOrder", "recentlyRead",
-                               "-yd_appearance_reader_interface", "classic"] + layout
+                               "-bookSortOrder", "recentlyRead"] + layout
         app.launch()
         return app
     }

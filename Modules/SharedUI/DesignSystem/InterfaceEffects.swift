@@ -11,9 +11,9 @@ import SwiftUI
 ///   untouched (the app's original look); below that an opaque fill fades in over
 ///   the blur, so the slider is continuous and legibility only improves as it
 ///   drops. With the toggle off the surface is that fill alone.
-/// - **光暈強度** — a tinted glow bleeding out of the surface's edge. It layers on
-///   top of whatever drop shadow the caller already has rather than replacing it,
-///   so a floating element keeps its depth at 強度 0.
+/// - **光暈** — a tinted glow bleeding out of the surface's edge, off by default. It
+///   layers on top of whatever drop shadow the caller already has rather than
+///   replacing it, so a floating element keeps its depth with the glow off.
 extension View {
     /// Applies the user's 界面效果 to a floating element.
     ///
@@ -22,8 +22,9 @@ extension View {
     ///   - fill: The solid color behind the blur — what the element looks like with
     ///     毛玻璃 off. Reader chrome passes `readerTheme.barColor`; app chrome
     ///     defaults to `DSColor.surface`.
-    ///   - glowTint: Glow color. Defaults to the active app theme's accent, so the
-    ///     glow follows 外觀主題 without every caller restating it.
+    ///   - glowTint: Glow color. Defaults to the colour picked in 界面效果, else the
+    ///     active app theme's accent, so the glow follows 外觀主題 without every
+    ///     caller restating it.
     func floatingSurface<SurfaceShape: Shape>(
         in shape: SurfaceShape,
         fill: Color = DSColor.surface,
@@ -299,6 +300,18 @@ private struct FrostedGlassBackground<SurfaceShape: Shape>: ViewModifier {
     }
 }
 
+extension ActiveAppThemes {
+    /// The glow's colour when none is picked in 界面效果: the app theme's accent.
+    /// Dynamic like every other themed color, so it follows the appearance at draw time.
+    var glowAccent: Color {
+        guard isActive else { return DSColor.accent }
+        let themes = self
+        return Color(uiColor: UIColor { traits in
+            themes.theme(for: traits.userInterfaceStyle)?.accent ?? .tintColor
+        })
+    }
+}
+
 private struct InterfaceGlowModifier<SurfaceShape: Shape>: ViewModifier {
     let shape: SurfaceShape
     let tint: Color?
@@ -312,15 +325,13 @@ private struct InterfaceGlowModifier<SurfaceShape: Shape>: ViewModifier {
         settings.interfaceGlowIntensity
     }
 
-    /// Dynamic like every other themed color, so the glow follows the appearance at draw
-    /// time instead of whatever palette was current when the global was last written.
+    /// The caller's tint, else the colour picked in 界面效果, else the theme's accent.
     private var resolvedTint: Color {
         if let tint { return tint }
-        let themes = appThemes
-        guard themes.isActive else { return DSColor.accent }
-        return Color(uiColor: UIColor { traits in
-            themes.theme(for: traits.userInterfaceStyle)?.accent ?? .tintColor
-        })
+        if let picked = settings.interfaceGlowColor {
+            return Color(uiColor: AppearanceThemePreset.hex(picked))
+        }
+        return appThemes.glowAccent
     }
 
     func body(content: Content) -> some View {

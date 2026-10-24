@@ -167,10 +167,10 @@ extension GlobalSettings {
         snapshot.frostedGlass = interfaceFrostedGlass
         snapshot.glassTransparency = interfaceGlassTransparency
         snapshot.glowIntensity = interfaceGlowIntensity
+        snapshot.glowColor = interfaceGlowColor
         snapshot.glassCards = interfaceGlassCards
         snapshot.bookshelfGridColumnCount = bookshelfGridColumnCount
         snapshot.bookshelfCoverCornerRadius = bookshelfCoverCornerRadius
-        snapshot.readerInterface = appearanceReaderInterface.rawValue
         snapshot.cardBackground = appearanceCardBackground
         snapshot.pageBackgrounds = appearancePageBackgrounds
         snapshot.readerChromeColors = readerChromeColors
@@ -221,12 +221,12 @@ extension GlobalSettings {
         if let frosted = extras.frostedGlass { interfaceFrostedGlass = frosted }
         if let transparency = extras.glassTransparency { interfaceGlassTransparency = transparency }
         if let glow = extras.glowIntensity { interfaceGlowIntensity = glow }
+        // Unconditional, like `cardBackground`: a theme without a glow colour means its
+        // glow follows its own accent, not whatever colour the last theme picked.
+        interfaceGlowColor = extras.glowColor
         if let cards = extras.glassCards { interfaceGlassCards = cards }
         if let columns = extras.bookshelfGridColumnCount { bookshelfGridColumnCount = columns }
         if let radius = extras.bookshelfCoverCornerRadius { bookshelfCoverCornerRadius = radius }
-        if let raw = extras.readerInterface, let interface = AppearanceReaderInterface(rawValue: raw) {
-            appearanceReaderInterface = interface
-        }
         appearanceCardBackground = extras.cardBackground
         if let backgrounds = extras.pageBackgrounds { appearancePageBackgrounds = backgrounds }
         if let colors = extras.readerChromeColors { readerChromeColors = colors }

@@ -516,6 +516,12 @@ final class ReaderNavigationCoordinator: ObservableObject {
 
     var isShowingDetail: Bool { presentedDetailController != nil }
 
+    /// The reader's chrome went up or down. Its hosting controller sets the shared
+    /// navigation bar from this each time the reader appears again.
+    func readerChromeVisibilityDidChange(_ visible: Bool) {
+        (presentedReaderController as? ReaderHostingController)?.showsReaderChrome = visible
+    }
+
     private func reconcileDetailIfDetached() {
         guard !transitionDriver.isTransitionActive,
               !transitionDriver.hasBlockingSystemTransition,

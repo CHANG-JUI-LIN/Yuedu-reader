@@ -70,7 +70,6 @@ extension ReaderPlaybackHighlight {
     func displayed(in layout: CoreTextPaginator.ChapterLayout) -> ReaderPlaybackHighlight {
         guard layout.translation != nil, chapterIndex == nil || chapterIndex == layout.spineIndex,
               let offset = expectedChapterOffset else { return self }
-        return ReaderPlaybackHighlight(text: text, expectedChapterOffset: layout.displayOffset(forSource: offset),
-                                       chapterIndex: chapterIndex) ?? self
+        return withExpectedChapterOffset(layout.displayOffset(forSource: offset))
     }
 }

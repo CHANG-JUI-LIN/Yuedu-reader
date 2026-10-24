@@ -498,6 +498,9 @@ extension ReaderView {
     }
 
     func handleListeningAction() {
+        // 聽書 from the bar or the book card puts the menu away, leaving the page and
+        // the narration capsule.
+        setReaderChromeVisible(false)
         let chapterIndex = currentChapterIndex
         if isEPUB, epubRenderer.mediaOverlaysByChapter[chapterIndex] != nil {
             activeMediaOverlayChapterIndex = chapterIndex
@@ -1130,7 +1133,7 @@ extension ReaderView {
     var aiSourceIdentity: ReaderAISourceIdentity {
         ReaderAISourceIdentity(bookID: bookId, sourceID: book?.bookSourceId,
                                source: book?.source ?? "",
-                               chapters: activePublicationSession?.readingChapters ?? chapters)
+                               chapters: spineChapters)
     }
 
     var aiCurrentSourceContext: String {

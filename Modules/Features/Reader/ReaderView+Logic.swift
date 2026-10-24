@@ -144,13 +144,21 @@ extension ReaderView {
     }
 
     // MARK: - Logic
+
+    /// The chapters in spine order: what reading positions, `localChapterText` and the
+    /// engines count in. For an EPUB `chapters` is the TOC instead, which can hold several
+    /// anchors in one spine item or leave one out, so its count bounds nothing positional.
+    var spineChapters: [BookChapter] {
+        activePublicationSession?.readingChapters ?? chapters
+    }
+
     func findChapterFirstPage(_ chapterIdx: Int) -> Int? {
         return allPages.firstIndex(where: { $0.chapterIndex == chapterIdx })
     }
 
     func jumpToBookmark(_ bookmark: Bookmark) {
         let position = bookmark.position
-        guard chapters.indices.contains(position.spineIndex) else { return }
+        guard spineChapters.indices.contains(position.spineIndex) else { return }
         if effectiveScrollMode, epubRenderer.scrollEngine != nil {
             currentChapterIndex = position.spineIndex
             scrollVisibleChapter = position.spineIndex
@@ -270,7 +278,7 @@ extension ReaderView {
     }
 
     func jumpToChapter(_ idx: Int, charOffset: Int = 0) {
-        guard chapters.indices.contains(idx) else { return }
+        guard spineChapters.indices.contains(idx) else { return }
         chapterJumpGeneration &+= 1
         if effectiveScrollMode, epubRenderer.scrollEngine != nil {
             let position = CoreTextReadingPosition(spineIndex: idx, charOffset: charOffset)
@@ -319,7 +327,7 @@ extension ReaderView {
                 submitChapterContentRefresh(chapterIndex: idx, update: .available)
             }
             if idx > 0 { Task { await engine.preloadChapter(at: idx - 1) } }
-            if idx < chapters.count - 1 { Task { await engine.preloadChapter(at: idx + 1) } }
+            if idx < spineChapters.count - 1 { Task { await engine.preloadChapter(at: idx + 1) } }
         } else {
             currentChapterIndex = idx
             if let p = findChapterFirstPage(idx) { currentPage = p }

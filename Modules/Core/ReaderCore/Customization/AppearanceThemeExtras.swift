@@ -190,12 +190,11 @@ struct AppearanceThemeExtras: Codable, Hashable, Sendable {
     var frostedGlass: Bool?
     var glassTransparency: Double?
     var glowIntensity: Double?
+    /// 0xRRGGBB; nil follows the theme's accent.
+    var glowColor: UInt32?
 
     var bookshelfGridColumnCount: Int?
     var bookshelfCoverCornerRadius: Double?
-
-    /// `AppearanceReaderInterface` raw value.
-    var readerInterface: String?
 
     var cardBackground: AppearanceCardBackground?
 
@@ -215,9 +214,8 @@ struct AppearanceThemeExtras: Codable, Hashable, Sendable {
     /// switch the glass on everywhere *except* the content cards.
     var glassCards: Bool?
 
-    /// The reading chrome's colour slots, keyed `"<interface>.<slot>"` — the same
-    /// `ReaderChromeInterface`/`ReaderChromeSlot` pair `GlobalSettings` stores, so a
-    /// theme carries 經典 and 現代 separately rather than one merged palette.
+    /// The reading chrome's colour slots, keyed the way `GlobalSettings` stores them
+    /// (`"modern.<slot>"`, a prefix kept from when the reader had several interfaces).
     var readerChromeColors: [String: UInt32]?
     /// `ReaderChromeItem` ids the theme hides.
     var readerChromeHiddenIDs: [String]?
@@ -251,8 +249,8 @@ struct AppearanceThemeExtras: Codable, Hashable, Sendable {
             && forceDefaultCover == nil
             && globalFontPostScript == nil
             && frostedGlass == nil && glassTransparency == nil && glowIntensity == nil
+            && glowColor == nil
             && bookshelfGridColumnCount == nil && bookshelfCoverCornerRadius == nil
-            && readerInterface == nil
             && (cardBackground?.isEmpty ?? true)
             && pageBackgrounds?.isEmpty != false
             && glassCards == nil

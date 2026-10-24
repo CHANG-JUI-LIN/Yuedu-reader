@@ -211,22 +211,6 @@
 			<string>Imported %d sources.</string>
 		</dict>
 	</dict>
-	<key>%d pages left in chapter</key>
-	<dict>
-		<key>NSStringLocalizedFormatKey</key>
-		<string>%#@n@</string>
-		<key>n</key>
-		<dict>
-			<key>NSStringFormatSpecTypeKey</key>
-			<string>NSStringPluralRuleType</string>
-			<key>NSStringFormatValueTypeKey</key>
-			<string>d</string>
-			<key>one</key>
-			<string>%d page left in chapter</string>
-			<key>other</key>
-			<string>%d pages left in chapter</string>
-		</dict>
-	</dict>
 	<key>已匯入 %d 個主題。</key>
 	<dict>
 		<key>NSStringLocalizedFormatKey</key>
@@ -1207,6 +1191,54 @@
 			<string>%d comment</string>
 			<key>other</key>
 			<string>%d comments</string>
+		</dict>
+	</dict>
+	<key>共 %d 個結果</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>%#@n@</string>
+		<key>n</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringPluralRuleType</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>d</string>
+			<key>one</key>
+			<string>%d result</string>
+			<key>other</key>
+			<string>%d results</string>
+		</dict>
+	</dict>
+	<key>有 %d 章尚未下載，未搜尋。</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>%#@n@</string>
+		<key>n</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringPluralRuleType</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>d</string>
+			<key>one</key>
+			<string>%d chapter isn't downloaded and wasn't searched.</string>
+			<key>other</key>
+			<string>%d chapters aren't downloaded and weren't searched.</string>
+		</dict>
+	</dict>
+	<key>只列出前 %d 個結果。</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>%#@n@</string>
+		<key>n</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringPluralRuleType</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>d</string>
+			<key>one</key>
+			<string>Showing the first %d result.</string>
+			<key>other</key>
+			<string>Showing the first %d results.</string>
 		</dict>
 	</dict>
 </dict>

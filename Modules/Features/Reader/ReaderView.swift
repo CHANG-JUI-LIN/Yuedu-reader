@@ -89,7 +89,6 @@ struct ReaderView: View {
     @State var pageTurnCommand: ReaderPageTurnCommand?
     @State var pageTurnVersion: UInt = 0
     @State var showBars = false
-    @State var appleBooksActivePanel: AppleBooksReaderControlPanel?
     @State var showSettings = false
     @State private var readerSettingsDeferredPresentation =
         DismissalSequencedPresentation<ReaderSettingsDeferredPresentationRoute>()
@@ -103,6 +102,13 @@ struct ReaderView: View {
     @State var quickPanelDeferredRoute: ReaderQuickPanelRoute?
     @State var showReaderSearch = false
     @State var readerSearchSelection = ""
+    /// 全書搜尋: the last search and its results while the book is open, and the hit the
+    /// reader is stepping through.
+    @State var bookSearch = ReaderBookSearchSession()
+    /// The hit last jumped to, washed on the page while nothing is being read aloud.
+    @State var searchHitHighlight: ReaderPlaybackHighlight?
+    @State var bookSearchJumpTask: Task<Void, Never>?
+    @State var showBookSearchExitConfirmation = false
     @State var readerTranslationSelection = ""
     @State var showReaderTranslation = false
     @State var showTOC = false
@@ -313,6 +319,8 @@ struct ReaderView: View {
 
     // Source change
     @State var showChangeSourceSheet = false
+    /// The source whose 來源配置登入 the book card opened.
+    @State var sourceLoginTarget: BookSource?
     @State private var replaceRuleDraft: ReplaceRule?
     @State var reviewTarget: ReaderHTMLUtilities.ReviewTarget?
     @State private var coreTextExternalTargetVersion: UInt = 0
@@ -1425,33 +1433,39 @@ struct ReaderView: View {
         syncCoreTextTextAnnotations()
     }
 
-    /// Overall reading progress percentage.
-    var totalProgressPercent: String {
+    /// Where the reader is in the whole book, 0…1.
+    var totalProgressFraction: Double {
         if usesCoreTextEPUB, let engine = epubRenderer.engine {
             let (spine, offset) = displayedCoreTextPosition(in: engine)
-            let pct = engine.totalProgress(forSpine: spine, charOffset: offset) * 100
-            return String(format: "%.2f%%", pct)
+            return engine.totalProgress(forSpine: spine, charOffset: offset)
         }
-        guard !allPages.isEmpty else { return "0.00%" }
-        let pct = Double(currentPage) / Double(max(allPages.count - 1, 1)) * 100
-        return String(format: "%.2f%%", pct)
+        guard !allPages.isEmpty else { return 0 }
+        return Double(currentPage) / Double(max(allPages.count - 1, 1))
     }
 
-    /// Chapter page info.
-    var chapterPageInfo: String {
+    /// This chapter's page and its page count, or nil while there is none to show — an
+    /// online chapter still loading, or a chapter not paginated yet.
+    var chapterPagePosition: (page: Int, count: Int)? {
         if book?.isOnline == true && readerViewModel.chapterState(for: currentChapterIndex) == .loading {
-            return ""
+            return nil
         }
         if let engine = epubRenderer.engine, usesCoreTextEPUB {
-            guard let pagination = displayedChapterPagination(in: engine) else {
-                return ""
-            }
-            return "\(pagination.localPageIndex + 1)/\(pagination.displayPageCount)"
+            guard let pagination = displayedChapterPagination(in: engine) else { return nil }
+            return (pagination.localPageIndex + 1, pagination.displayPageCount)
         }
-        guard !allPages.isEmpty else { return "" }
+        guard !allPages.isEmpty else { return nil }
         let page = allPages[min(currentPage, allPages.count - 1)]
         let total = allPages.filter { $0.chapterIndex == page.chapterIndex }.count
-        return "\(page.pageInChapter + 1)/\(total)"
+        return (page.pageInChapter + 1, total)
+    }
+
+    /// The line under the bottom bar's slider: 「12 / 28 頁 · 全書 6%」.
+    var readerProgressText: String {
+        guard let position = chapterPagePosition else { return "" }
+        return String(
+            format: localized("%d / %d 頁 · 全書 %d%%"),
+            position.page, position.count, Int((totalProgressFraction * 100).rounded(.down))
+        )
     }
 
     /// Current page text (for TTS).
@@ -1468,11 +1482,14 @@ struct ReaderView: View {
     /// Media overlays carry no narration mapping — their text comes from the SMIL clip, not
     /// from a narration unit — so they supply the words alone and the render paths search
     /// for them exactly as they always have.
+    ///
+    /// 全書搜尋's hit shares the slot and gives way to anything playing: the wash follows
+    /// what is being read aloud.
     var activePlaybackHighlight: ReaderPlaybackHighlight? {
         if mediaOverlayCoordinator.playbackState != .stopped {
             return ReaderPlaybackHighlight(text: currentMediaOverlayHighlightText())
         }
-        guard ttsCoordinator.playbackState != .stopped else { return nil }
+        guard ttsCoordinator.playbackState != .stopped else { return searchHitHighlight }
         return ReaderPlaybackHighlight(
             text: ttsCoordinator.currentSegmentText,
             expectedChapterOffset: expectedPlaybackChapterOffset(),
@@ -1576,16 +1593,9 @@ struct ReaderView: View {
         ReaderNavigationContainer {
             buildBody()
                 .navigationBarBackButtonHidden(true)
-                .toolbar {
-                    appleBooksToolbarContent
-                    modernToolbarContent
-                }
-                .toolbar(
-                    showsAppleBooksToolbars || showsModernToolbars ? .visible : .hidden,
-                    for: .navigationBar
-                )
-                .toolbar(showsAppleBooksBottomToolbar ? .visible : .hidden, for: .bottomBar)
-                .toolbarBackground(.hidden, for: .navigationBar, .bottomBar)
+                .toolbar { modernToolbarContent }
+                .toolbar(showBars ? .visible : .hidden, for: .navigationBar)
+                .toolbarBackground(.hidden, for: .navigationBar)
         }
         .tint(readerTheme.textColor)
         // Here, outside the reader's own NavigationStack, so it sees the window and not the
@@ -1603,19 +1613,13 @@ struct ReaderView: View {
             }
             isRestoringPosition = false
         }
-        .task(id: modernCoverSourceID) {
+        .task(id: book?.coverImagePath) {
             // Toolbar chrome, not first-page content — and the toolbar is hidden
             // for the whole opening transition. Decoding the cover here used to
             // commit an image upload straight into the transition's render pass.
             await readerNavigator?.awaitOpeningTransitionEnd()
             loadModernCoverImage()
         }
-    }
-
-    /// Changes when the 現代 chrome needs a different cover — a different file, or the
-    /// interface being switched to (or away from) 現代.
-    private var modernCoverSourceID: String {
-        "\(settings.appearanceReaderInterface.rawValue)|\(book?.coverImagePath ?? "")"
     }
 
     /// The loading spinner stays up either because there is genuinely nothing to
@@ -1909,13 +1913,20 @@ struct ReaderView: View {
                 .zIndex(45)
             }
             if showBars { readerChrome }
-            if showBars,
-               settings.appearanceReaderInterface == .appleBooks,
-               appleBooksActivePanel != nil {
-                appleBooksControls
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    .transition(.opacity)
-                    .zIndex(60)
+            if bookSearch.isNavigating, !showBars {
+                VStack {
+                    Spacer()
+                    // On the footer band, like 聽書's prompt: a hit can sit on the page's
+                    // last lines, and the bar must not cover it.
+                    bookSearchNavigationBar
+                        .padding(.bottom, footerBandBottomPadding(forHeight: DSLayout.minimumTapTarget))
+                }
+                .transition(
+                    accessibilityReduceMotion
+                        ? .opacity
+                        : .move(edge: .bottom).combined(with: .opacity)
+                )
+                .zIndex(21)
             }
             if showTTSJumpPrompt {
                 VStack {
@@ -2039,8 +2050,8 @@ struct ReaderView: View {
         // this at each `showBars = false` site left panels that popped back up the next
         // time the bars were shown.
         .onChange(of: showBars) { _, visible in
+            readerNavigator?.readerChromeVisibilityDidChange(visible)
             guard !visible else { return }
-            appleBooksActivePanel = nil
             showModernBookCard = false
         }
         // The reveal holds while the reading menu or one of the panel's own sheets
@@ -2050,6 +2061,15 @@ struct ReaderView: View {
             applyAutoReadPause()
         }
         .hidesRootTabBar()
+        .confirmationDialog(
+            localized("回到搜尋前的位置？"),
+            isPresented: $showBookSearchExitConfirmation,
+            titleVisibility: .visible
+        ) {
+            Button(localized("回到原位置")) { endBookSearch(returningToOrigin: true) }
+            Button(localized("留在這裡")) { endBookSearch(returningToOrigin: false) }
+            Button(localized("取消"), role: .cancel) {}
+        }
         .alert(localized("TXT 目錄修復未完成"), isPresented: $showTXTIndexFailure) {
             Button(localized("確定"), role: .cancel) { setReaderChromeVisible(true) }
         } message: {
@@ -2509,16 +2529,16 @@ struct ReaderView: View {
                 }
             )
         }
-        .sheet(isPresented: $showReaderSearch, onDismiss: { readerSearchSelection = "" }) {
+        .sheet(isPresented: $showReaderSearch, onDismiss: { bookSearchSheetDidDismiss() }) {
             AdaptiveSheetContainer(maxWidth: DSLayout.readableListWidth) {
                 ReaderBookSearchView(
-                    items: readerSearchItems,
+                    session: bookSearch,
+                    historyKey: bookSearchHistoryKey,
                     initialQuery: readerSearchSelection,
-                    onSelect: { item in
-                        showReaderSearch = false
-                        setReaderChromeVisible(false)
-                        issuePageTurn(to: item.pageIndex)
-                    },
+                    offersReplaceRules: epubRenderer.appliesReplaceRules,
+                    onSearch: { runBookSearch($0) },
+                    onReopen: { refreshBookSearchIfStale() },
+                    onSelect: { openBookSearchHit(at: $0) },
                     onClose: { showReaderSearch = false }
                 )
             }
@@ -2751,6 +2771,9 @@ struct ReaderView: View {
                     currentReaderChapterIndex: currentChapterIndex,
                     activeTTSChapterIndex: ttsChapterIndex,
                     activeChapterTitle: activeTTSChapterTitle,
+                    coverImage: modernCoverImage,
+                    bookTitle: modernBookTitle,
+                    bookAuthor: modernBookAuthor,
                     onPlayPause: { handleTTSPlayPause() },
                     onPreviousChapter: { startAdjacentTTSChapter(delta: -1) },
                     onNextChapter: { startAdjacentTTSChapter(delta: 1) },
@@ -2797,6 +2820,9 @@ struct ReaderView: View {
             AdaptiveSheetContainer(maxWidth: DSLayout.readableExpandedWidth) {
                 changeSourceSheetContent
             }
+        }
+        .sheet(item: $sourceLoginTarget) { source in
+            BookSourceLoginSheet(source: source) { sourceLoginTarget = nil }
         }
         .sheet(item: $replaceRuleDraft) { rule in
             AdaptiveSheetContainer(maxWidth: DSLayout.readableListWidth) {

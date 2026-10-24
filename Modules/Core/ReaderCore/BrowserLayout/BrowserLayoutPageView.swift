@@ -624,13 +624,10 @@ final class BrowserLayoutPageView: UIView, UIGestureRecognizerDelegate, @preconc
         guard page.length > 0 else { return nil }
         // `page` is page-local while the hint is in chapter coordinates, so the hint is
         // rebased into this page's space for the comparison and the winner rebased back.
-        let local = ReaderPlaybackHighlight(
-            text: highlight.text,
-            expectedChapterOffset: highlight.expectedChapterOffset
-                .map { $0 - pageSourceRange.location },
-            chapterIndex: highlight.chapterIndex
+        let local = highlight.withExpectedChapterOffset(
+            highlight.expectedChapterOffset.map { $0 - pageSourceRange.location }
         )
-        guard let found = local?.occurrence(
+        guard let found = local.occurrence(
             in: page,
             searchRange: NSRange(location: 0, length: page.length)
         ) else { return nil }

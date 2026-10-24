@@ -301,7 +301,6 @@ final class PublicLibraryLiveUITests: XCTestCase {
         let app = XCUIApplication()
         app.launchArguments = ["-no-official-modules", "-onboarding.completed", "YES", "-AppleLanguages", "(zh-Hant)", "-AppleLocale", "zh_TW",
                                "-yd_source_disclaimer_accepted", "YES", "-reset-explore-home",
-                               "-yd_appearance_reader_interface", "classic",
                                "-yd_page_turn_style", "滑動", "-yd_scroll_mode", "NO"]
         app.launch()
         let tab = app.tabBars.buttons["探索"].firstMatch
@@ -366,8 +365,8 @@ final class PublicLibraryLiveUITests: XCTestCase {
         entry.tap()
         showReaderControls(app, chapter)
         if landsInsideItsFile {
-            // The controls' 「N/M · x%」: the entry's anchor is past its file's first page.
-            let progress = app.staticTexts.matching(NSPredicate(format: "label MATCHES %@", "^[0-9]+/[0-9]+ .*")).firstMatch
+            // The controls' 「N / M 頁 · 全書 x%」: the entry's anchor is past its file's first page.
+            let progress = app.staticTexts.matching(NSPredicate(format: "label MATCHES %@", "^[0-9]+ / [0-9]+ .*")).firstMatch
             let landed = XCTNSPredicateExpectation(predicate: NSPredicate { object, _ in
                 guard let progress = object as? XCUIElement, progress.exists else { return false }
                 return (Self.chapterPage(progress.label) ?? 0) > 1
@@ -389,9 +388,9 @@ final class PublicLibraryLiveUITests: XCTestCase {
         }
     }
 
-    /// The chapter page in the reader controls' progress, 「N/M  ·  x%」.
+    /// The chapter page in the reader controls' progress, 「N / M 頁 · 全書 x%」.
     private static func chapterPage(_ label: String) -> Int? {
-        guard let range = label.range(of: #"^\d+/"#, options: .regularExpression) else { return nil }
+        guard let range = label.range(of: #"^\d+ /"#, options: .regularExpression) else { return nil }
         return Int(label[range].filter(\.isNumber))
     }
 
@@ -411,7 +410,7 @@ final class PublicLibraryLiveUITests: XCTestCase {
     }
 
     /// Opens 目錄's third entry (the first two are a cover and a frontispiece, whose images a
-    /// tap opens), sets the reader's 翻頁 to `mode` from its 設置 panel, and swipes back to the
+    /// tap opens), sets the reader's 翻頁 to `mode` from its 主題 panel, and swipes back to the
     /// page. Returns the mode the reader had.
     @MainActor
     private func setReaderMode(_ app: XCUIApplication, _ mode: String, offShelf: Bool) -> String? {
@@ -436,7 +435,7 @@ final class PublicLibraryLiveUITests: XCTestCase {
             turn.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5))
                 .press(forDuration: 0.05, thenDragTo: app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.98)))
         }
-        XCTAssertTrue(turn.waitForNonExistence(timeout: 5), "the 設置 panel closes\n\(app.debugDescription)")
+        XCTAssertTrue(turn.waitForNonExistence(timeout: 5), "the 主題 panel closes\n\(app.debugDescription)")
         screenshot(app, "reader-mode-\(mode)")
         let edge = app.coordinate(withNormalizedOffset: .zero).withOffset(CGVector(dx: 1, dy: app.frame.height * 0.5))
         edge.press(forDuration: 0.05, thenDragTo: app.coordinate(withNormalizedOffset: CGVector(dx: 0.85, dy: 0.5)))

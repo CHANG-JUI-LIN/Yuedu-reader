@@ -25,6 +25,11 @@ struct RecentSearchQueries: Equatable {
         }
         return RecentSearchQueries(queries: [trimmed] + others)
     }
+
+    /// The list without the entries at `offsets` — a swipe to delete.
+    func removing(atOffsets offsets: IndexSet) -> RecentSearchQueries {
+        RecentSearchQueries(queries: queries.enumerated().filter { !offsets.contains($0.offset) }.map(\.element))
+    }
 }
 
 extension RecentSearchQueries: RawRepresentable {

@@ -113,7 +113,6 @@ enum QiThemeImportService {
         extras.glowIntensity = theme.effects.glowIntensity
         extras.bookshelfGridColumnCount = theme.bookshelf.gridColumnCount
         extras.bookshelfCoverCornerRadius = theme.bookshelf.coverCornerRadius
-        extras.readerInterface = theme.readerInterface?.rawValue
         extras.cardBackground = storeCardBackground(theme)
 
         var readerFontPostScript: String?

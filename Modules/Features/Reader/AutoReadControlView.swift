@@ -81,8 +81,8 @@ struct AutoReadControlPanel: View {
             actionRow
         }
         .padding(DSSpacing.md)
-        // The 現代 bottom bar's own shape and radius (`ReaderModernBottomControlBar`),
-        // because this stands in that bar's place while the mode runs.
+        // The bottom bar's own 界面效果 surface (`ReaderModernBottomControlBar`), because
+        // this stands in that bar's place while the mode runs.
         .floatingSurface(
             in: RoundedRectangle(cornerRadius: DSRadius.xxl, style: .continuous),
             fill: fill

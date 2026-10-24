@@ -83,14 +83,26 @@ protocol AttributedStringBuilding: Sendable {
     /// indexing five chapters of it and finding two speakers. Returning nil means this
     /// chapter's text is not on the device; the caller skips it rather than fetching.
     func chapterPlainText(at index: Int) async -> String?
-    func localChapterText(at index: Int) async -> AILocalChapterText
+    /// `applyingReplaceRules: false` is the text before 替換規則, for 全書搜尋's switch.
+    /// Builders whose text no rule ever touches (EPUB, Node) return the same either way.
+    func localChapterText(at index: Int, applyingReplaceRules: Bool) async -> AILocalChapterText
+    /// Whether 替換規則 change this book's text on screen, so a search can offer to skip them.
+    var appliesReplaceRules: Bool { get }
 }
 
 extension AttributedStringBuilding {
     /// Default for builders with no source text of their own. The caller then sees only the
     /// laid-out chapters, which is the old behaviour — not silently wrong, just narrow.
     func chapterPlainText(at index: Int) async -> String? { nil }
-    func localChapterText(at index: Int) async -> AILocalChapterText { .init(text: nil, status: .unsupported) }
+    func localChapterText(at index: Int, applyingReplaceRules: Bool) async -> AILocalChapterText {
+        .init(text: nil, status: .unsupported)
+    }
+    var appliesReplaceRules: Bool { false }
+
+    /// The text as the reader shows it, rules applied.
+    func localChapterText(at index: Int) async -> AILocalChapterText {
+        await localChapterText(at: index, applyingReplaceRules: true)
+    }
 }
 
 /// Markup to plain text for whole-book work.

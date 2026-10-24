@@ -98,21 +98,11 @@ extension ReaderView {
 
     /// The colours 自動閱讀's pill and panel paint with.
     ///
-    /// They float at the bottom of the page in every interface, standing where the
-    /// bottom bar stands, so they take that bar's slots — 自定義 reaches them the
-    /// same way it reaches the bar itself. Apple Books has no chrome palette
-    /// (`ReaderChromeInterface.init` returns nil for it) and paints its own controls
-    /// with the design-system default, so the pill follows it there instead of
-    /// inventing a third look. This is the only place that pair is resolved.
+    /// They float at the bottom of the page, standing where the bottom bar stands, so
+    /// they take that bar's slots — 自定義 reaches them the same way it reaches the bar
+    /// itself. This is the only place that pair is resolved.
     var autoReadChrome: (fill: Color, tint: Color, accent: Color) {
-        guard let interface = ReaderChromeInterface(settings.appearanceReaderInterface) else {
-            return (DSColor.surface, DSColor.textPrimary, readerTheme.accentColor)
-        }
-        let palette = ReaderChromePalette(
-            interface: interface,
-            theme: readerTheme,
-            settings: settings
-        )
+        let palette = ReaderChromePalette(theme: readerTheme, settings: settings)
         return (palette.bottomFill, palette.bottomIcon, palette.bottomAccent)
     }
 

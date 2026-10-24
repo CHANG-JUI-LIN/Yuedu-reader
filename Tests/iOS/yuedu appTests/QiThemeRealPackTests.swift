@@ -88,7 +88,6 @@ struct QiThemeRealPackTests {
         let result = try await QiThemeImporter.parse(data)
 
         #expect(result.name == "自制- 江湖侠客")
-        #expect(result.readerInterface == .classic)
         #expect(result.defaultCovers.count == 8)
         #expect(result.launchImage != nil)
 
@@ -162,7 +161,7 @@ struct QiThemeRealPackTests {
         #expect(Set(result.readerChromeIcons.map(\.itemID)) == [
             ReaderChromeToolItem.tableOfContents.storageID,
             ReaderChromeToolItem.settings.storageID,
-            ReaderChromeActionItem.playback.storageID,
+            ReaderChromeToolItem.listen.storageID,
         ])
         #expect(result.notes.contains(String(
             format: localized("閱讀工具列的「%@」圖示在本 App 沒有對應的按鈕，已略過。"),

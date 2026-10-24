@@ -57,13 +57,19 @@ struct MarkdownAttributedStringBuilder: AttributedStringBuilding {
 
     /// Through the node converter rather than the raw body, so `**` and `#` do not end up in
     /// the retrieval index as if they were words.
-    func localChapterText(at index: Int) async -> AILocalChapterText {
-        .extracted(await chapterPlainText(at: index))
+    var appliesReplaceRules: Bool { true }
+
+    func localChapterText(at index: Int, applyingReplaceRules: Bool) async -> AILocalChapterText {
+        .extracted(plainText(at: index, rules: applyingReplaceRules ? replaceRules : []))
     }
 
     func chapterPlainText(at index: Int) async -> String? {
+        plainText(at: index, rules: replaceRules)
+    }
+
+    private func plainText(at index: Int, rules: [ReplaceRule]) -> String? {
         guard sections.indices.contains(index) else { return nil }
-        let nodes = MarkdownRenderableNodeConverter.convertBody(sections[index].body, rules: replaceRules)
+        let nodes = MarkdownRenderableNodeConverter.convertBody(sections[index].body, rules: rules)
         let text = MarkdownRenderableNodeConverter.plainParagraphs(from: nodes)
             .joined(separator: "\n")
         return text.isEmpty ? nil : text

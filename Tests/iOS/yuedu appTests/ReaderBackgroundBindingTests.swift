@@ -730,9 +730,10 @@ struct ReaderBackgroundBindingTests {
         fixture.importedThemes.append(theme.id)
         settings.appearanceThemeID = theme.id
         settings.interfaceGlowIntensity = 0.9
+        settings.interfaceGlowColor = 0x123456
         settings.rootTabHidesLabels = true
         settings.launchImageEnabled = true
-        settings.appearanceReaderInterface = .modern
+        settings.setReaderChromeColor(0x123456, slot: .topIcon)
         var edited = AppearanceThemePreset.classic.customCopy(name: "默認")
         edited.accentHex = 0x00AA00
         settings.appearanceBuiltInThemeColors = [AppearanceThemePreset.classicID: edited]
@@ -743,9 +744,10 @@ struct ReaderBackgroundBindingTests {
         #expect(settings.appearanceThemeID == GlobalSettings.defaultAppearanceThemeID)
         #expect(settings.appearanceDarkThemeID == GlobalSettings.defaultAppearanceThemeID)
         #expect(settings.interfaceGlowIntensity == GlobalSettings.defaultInterfaceGlowIntensity)
+        #expect(settings.interfaceGlowColor == nil)
         #expect(!settings.rootTabHidesLabels)
         #expect(!settings.launchImageEnabled)
-        #expect(settings.appearanceReaderInterface == .classic)
+        #expect(settings.readerChromeColors.isEmpty)
         #expect(settings.appearancePageBackgrounds.isEmpty)
         #expect(settings.customAppearanceThemes.contains { $0.id == theme.id })
         #expect(settings.readerFontSize == fontSize)
@@ -934,9 +936,9 @@ struct ReaderBackgroundBindingTests {
         private let baseline: AppearanceThemeExtras?
         private let pageBackgrounds: [String: AppearancePageBackgroundConfig]
         private let glow: Double
+        private let glowColor: UInt32?
         private let hidesLabels: Bool
         private let launchEnabled: Bool
-        private let interface: AppearanceReaderInterface
         private let followsSystemAppearance: Bool
         private let cardBackground: AppearanceCardBackground?
         private let tabIcons: [RootTabIconAsset]
@@ -977,9 +979,9 @@ struct ReaderBackgroundBindingTests {
             baseline = settings.appearanceExtrasBaseline
             pageBackgrounds = settings.appearancePageBackgrounds
             glow = settings.interfaceGlowIntensity
+            glowColor = settings.interfaceGlowColor
             hidesLabels = settings.rootTabHidesLabels
             launchEnabled = settings.launchImageEnabled
-            interface = settings.appearanceReaderInterface
             followsSystemAppearance = settings.appearanceFollowsSystem
             cardBackground = settings.appearanceCardBackground
             tabIcons = settings.rootTabIconAssets
@@ -1019,9 +1021,9 @@ struct ReaderBackgroundBindingTests {
             settings.customAppearanceThemes = themes
             settings.appearancePageBackgrounds = pageBackgrounds
             settings.interfaceGlowIntensity = glow
+            settings.interfaceGlowColor = glowColor
             settings.rootTabHidesLabels = hidesLabels
             settings.launchImageEnabled = launchEnabled
-            settings.appearanceReaderInterface = interface
             settings.appearanceFollowsSystem = followsSystemAppearance
             settings.appearanceCardBackground = cardBackground
             settings.rootTabIconAssets = tabIcons

@@ -88,9 +88,8 @@ final class CoreTextScrollEngine: ObservableObject, ScrollReaderEngine {
     func displayed(_ highlight: ReaderPlaybackHighlight) -> ReaderPlaybackHighlight {
         guard let chapter = highlight.chapterIndex, let offset = highlight.expectedChapterOffset,
               chapterTranslations[chapter] != nil else { return highlight }
-        return ReaderPlaybackHighlight(text: highlight.text,
-            expectedChapterOffset: displayOffset(for: CoreTextReadingPosition(spineIndex: chapter, charOffset: offset)),
-            chapterIndex: chapter) ?? highlight
+        return highlight.withExpectedChapterOffset(
+            displayOffset(for: CoreTextReadingPosition(spineIndex: chapter, charOffset: offset)))
     }
 
     /// Annotations where the chunks draw them.

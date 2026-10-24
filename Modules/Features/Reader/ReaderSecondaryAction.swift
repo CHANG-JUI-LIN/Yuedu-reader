@@ -1,15 +1,12 @@
 import Foundation
 
 /// A book-scoped action offered by the reader chrome — refresh the chapter, change
-/// source, download, start narration, AI 助手, 翻譯, 開啟網頁. Which ones apply depends on
-/// the book (a local EPUB gets no download), so `ReaderView.readerSecondaryActions` builds
-/// the list once and every interface renders from it: 現代 shows them all in the book card
-/// behind the cover thumbnail; Apple Books makes AI 助手 a row of its pop-up menu and puts
-/// the rest in the action row under it; 經典 floats refresh, change source, download and
-/// narration as circles and keeps the others in its top 三橫線 menu.
+/// source, download, 來源配置登入, AI 助手, 翻譯, 開啟網頁. Which ones apply depends on
+/// the book (a local EPUB gets no download), so `ReaderView` builds the lists once: the
+/// book card behind the cover thumbnail renders `readerSecondaryActions`, and 更多 in the
+/// bottom bar renders `readerMoreActions` (the AI ones).
 struct ReaderSecondaryAction: Identifiable {
     enum ID: String {
-        case playback
         case download
         case changeSource
         case refresh
@@ -20,6 +17,9 @@ struct ReaderSecondaryAction: Identifiable {
         /// `callBackJs` as `clickCustomButton`. Not a chrome customization item: it exists
         /// only for a source that asks for it.
         case sourceCustomButton
+        /// 來源配置登入, for a source that has a login. Not a chrome customization item
+        /// either: like the source's own button, it is there only when the source asks.
+        case sourceLogin
     }
 
     let id: ID
@@ -42,16 +42,16 @@ struct ReaderSecondaryAction: Identifiable {
 /// What the 現代 book-card popover was asked to open.
 ///
 /// Every one of these opens a sheet, and iOS drops a sheet requested while the popover
-/// it came from is still dismissing — 聽書 was the visible casualty: the card slid back
-/// into the cover thumbnail and no TTS panel ever appeared. So the tap records the route
+/// it came from is still dismissing — 聽書, when the card still had it, was the visible
+/// casualty: the card slid back into the cover thumbnail and no TTS panel ever appeared. So the tap records the route
 /// here and `ReaderView` opens it from the popover's real dismissal, never in the same
 /// turn as `showModernBookCard = false`.
 enum ReaderModernBookCardRoute: Hashable {
     case secondary(ReaderSecondaryAction.ID)
     case bookDetail
-    /// 搜尋書籍. Not a `ReaderSecondaryAction`: it is offered by every interface from its
-    /// own chrome (經典's top bar, Apple Books' 選單), so it stays out of the list the
-    /// book-scoped actions share and out of 自定義's show/hide roster.
+    /// 搜尋書籍. Not a `ReaderSecondaryAction`: the card offers it for every book, so it
+    /// stays out of the list the book-scoped actions share and out of 自定義's show/hide
+    /// roster.
     case search
 }
 

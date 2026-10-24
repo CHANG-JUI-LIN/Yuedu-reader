@@ -562,11 +562,11 @@ class GlobalSettings {
     private static let appearanceBindReaderThemeKey = "yd_appearance_bind_reader_theme"
     private static let appearanceBoundLightReaderThemeKey = "yd_appearance_bound_light_reader_theme"
     private static let appearanceBoundDarkReaderThemeKey = "yd_appearance_bound_dark_reader_theme"
-    private static let appearanceReaderInterfaceKey = "yd_appearance_reader_interface"
     static let readerChromeColorsKey = "yd_reader_chrome_colors"
     static let readerChromeHiddenIDsKey = "yd_reader_chrome_hidden_ids"
     static let readerChromeIconsKey = "yd_reader_chrome_icons"
     private static let interfaceGlowIntensityKey = "yd_interface_glow_intensity"
+    private static let interfaceGlowColorKey = "yd_interface_glow_color"
     private static let interfaceFrostedGlassKey = "yd_interface_frosted_glass"
     private static let interfaceGlassTransparencyKey = "yd_interface_glass_transparency"
     /// Key kept at the original `list_sections` spelling: the setting shipped under that
@@ -633,9 +633,15 @@ class GlobalSettings {
     // 界面效果 — see `InterfaceEffects.swift` for what each value paints.
     static let interfaceGlowIntensityRange: ClosedRange<Double> = 0...1
     static let interfaceGlassTransparencyRange: ClosedRange<Double> = 0...1
-    /// A restrained glow out of the box: enough to read as an intentional effect
-    /// on first launch, well short of the neon end of the slider.
-    static let defaultInterfaceGlowIntensity: Double = 0.3
+    /// Off out of the box (maintainer, 2026-10-24): 0 is what the 光暈 switch reads as
+    /// off. Someone who already set a strength keeps it.
+    static let defaultInterfaceGlowIntensity: Double = 0
+    /// Where 光暈 starts when it is switched on: enough to read as an intentional
+    /// effect, well short of the neon end of the slider.
+    static let interfaceGlowSwitchOnIntensity: Double = 0.3
+    /// The strength slider while 光暈 is on. It stops short of 0 so dragging it down
+    /// cannot switch the glow off — and hide the slider — mid-drag; the switch does that.
+    static let interfaceGlowSliderRange: ClosedRange<Double> = 0.05...1
     /// On by default — frosted glass is what every floating element already used
     /// before 界面效果 existed, and 透明度 100% reproduces that look exactly.
     static let defaultInterfaceFrostedGlass = true
@@ -1386,16 +1392,9 @@ class GlobalSettings {
             updateActiveThemeExtras { $0.launchImageDarkFileName = launchImageDarkFileName ?? "" }
         }
     }
-    var appearanceReaderInterface: AppearanceReaderInterface {
-        didSet {
-            UserDefaults.standard.set(appearanceReaderInterface.rawValue, forKey: Self.appearanceReaderInterfaceKey)
-            updateActiveThemeExtras { $0.readerInterface = appearanceReaderInterface.rawValue }
-        }
-    }
+    // MARK: - 閱讀介面自定義
 
-    // MARK: - 閱讀介面自定義（經典／現代）
-
-    /// Hand-picked chrome colours, keyed "<interface>.<slot>" — see
+    /// Hand-picked chrome colours, keyed "modern.<slot>" — see
     /// `ReaderChromePalette`. An absent key means "follow the reading theme",
     /// which is why clearing a slot must remove it rather than store a sentinel.
     var readerChromeColors: [String: UInt32] {
@@ -1439,6 +1438,18 @@ class GlobalSettings {
                 UserDefaults.standard.set(interfaceGlowIntensity, forKey: Self.interfaceGlowIntensityKey)
                 updateActiveThemeExtras { $0.glowIntensity = interfaceGlowIntensity }
             }
+        }
+    }
+    /// The glow's colour as 0xRRGGBB. nil follows the app theme's accent, which is what
+    /// every glow drew before the colour could be picked.
+    var interfaceGlowColor: UInt32? {
+        didSet {
+            if let interfaceGlowColor {
+                UserDefaults.standard.set(Int(interfaceGlowColor), forKey: Self.interfaceGlowColorKey)
+            } else {
+                UserDefaults.standard.removeObject(forKey: Self.interfaceGlowColorKey)
+            }
+            updateActiveThemeExtras { $0.glowColor = interfaceGlowColor }
         }
     }
     /// Whether floating elements blur what is behind them. Off = the solid fill.
@@ -2321,8 +2332,6 @@ class GlobalSettings {
         launchImageEnabled = UserDefaults.standard.bool(forKey: Self.launchImageEnabledKey)
         launchImageLightFileName = UserDefaults.standard.string(forKey: Self.launchImageLightFileNameKey)
         launchImageDarkFileName = UserDefaults.standard.string(forKey: Self.launchImageDarkFileNameKey)
-        let rawReaderInterface = UserDefaults.standard.string(forKey: Self.appearanceReaderInterfaceKey) ?? ""
-        appearanceReaderInterface = AppearanceReaderInterface(rawValue: rawReaderInterface) ?? .classic
         readerChromeColors = Self.loadReaderChromeColors()
         readerChromeHiddenIDs = UserDefaults.standard.stringArray(forKey: Self.readerChromeHiddenIDsKey) ?? []
         readerChromeIcons = Self.loadReaderChromeIcons()
@@ -2330,6 +2339,8 @@ class GlobalSettings {
             (UserDefaults.standard.object(forKey: Self.interfaceGlowIntensityKey) as? Double)
                 ?? Self.defaultInterfaceGlowIntensity
         )
+        interfaceGlowColor = (UserDefaults.standard.object(forKey: Self.interfaceGlowColorKey) as? Int)
+            .map { UInt32(clamping: $0) }
         interfaceFrostedGlass =
             (UserDefaults.standard.object(forKey: Self.interfaceFrostedGlassKey) as? Bool)
             ?? Self.defaultInterfaceFrostedGlass

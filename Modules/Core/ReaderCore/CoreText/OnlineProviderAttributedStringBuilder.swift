@@ -269,7 +269,9 @@ final class OnlineProviderAttributedStringBuilder: @preconcurrency AttributedStr
         (provider as? OnlineBookContentProvider)?.replaceRuleScopeURL ?? ""
     }
 
-    func localChapterText(at index: Int) async -> AILocalChapterText {
+    var appliesReplaceRules: Bool { true }
+
+    func localChapterText(at index: Int, applyingReplaceRules: Bool) async -> AILocalChapterText {
         do {
             // OnlineBookContentProvider uses cacheOnly. No AI-specific network loader.
             let payload = try await provider.contentForChapter(index: index)
@@ -281,7 +283,7 @@ final class OnlineProviderAttributedStringBuilder: @preconcurrency AttributedStr
             }
             // The cache holds the source's text; rules apply on the way out, here as on
             // screen (`applyReplaceRules`), so AI reads what the reader shows.
-            let rules = ReplaceRuleStore.rules(for: replaceRuleScopeURL)
+            let rules = applyingReplaceRules ? ReplaceRuleStore.rules(for: replaceRuleScopeURL) : []
             return .extracted(rules.isEmpty ? text : ReplaceRuleEngine.apply(rules, to: text))
         } catch BookContentProviderError.contentNotCached {
             return .init(text: nil, status: .notDownloaded)

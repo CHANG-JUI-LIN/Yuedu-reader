@@ -77,14 +77,9 @@ final class NowPlayingCapsuleUITests: XCTestCase {
 
     @MainActor
     private func startNarration(_ app: XCUIApplication, in title: String) {
-        // 聽書 sits on the book card the title pill opens.
+        // 聽書 is one of the bottom bar's tools; the book card no longer has one.
         app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
-        let listen = app.buttons["聽書"].firstMatch
-        if !listen.waitForExistence(timeout: 3) {
-            let pill = app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", title)).firstMatch
-            XCTAssertTrue(pill.waitForExistence(timeout: 5), app.debugDescription)
-            pill.tap()
-        }
+        let listen = app.buttons["reader_tool_listen"].firstMatch
         XCTAssertTrue(listen.waitForExistence(timeout: 5), app.debugDescription)
         listen.tap()
         XCTAssertTrue(capsule(app, "play_pause").waitForExistence(timeout: 20), "Narration starts.\n\(app.debugDescription)")

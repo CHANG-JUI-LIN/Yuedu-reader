@@ -4,10 +4,8 @@ import UniformTypeIdentifiers
 /// 外觀 → 閱讀界面 → 自定義 → 按鈕圖示. Which reader buttons are drawn and what
 /// artwork each one uses.
 ///
-/// Both lists are shared by 經典 and 現代 — the reader uses one interface at a
-/// time, and re-importing the same artwork per interface would be busywork. Which
-/// *surface* each list appears on differs: the tools sit in the bottom bar of both,
-/// while the actions are 經典's floating circles and 現代's book card.
+/// The tools are the bottom bar's capsule; the actions are the book card that opens
+/// from the cover circle, and the AI ones the bottom bar's 更多.
 struct ReaderChromeIconSettingsView: View {
     @Bindable private var settings = GlobalSettings.shared
     @State private var importError: ReaderChromeIconImportError?
@@ -17,12 +15,17 @@ struct ReaderChromeIconSettingsView: View {
             section(
                 items: ReaderChromeToolItem.allCases,
                 headerKey: "底部工具",
-                footerKey: "關掉的按鈕會整個離開工具列。設置固定顯示——它是回到閱讀設定的唯一入口。"
+                footerKey: "關掉的按鈕會整個離開工具列。主題固定顯示——它是回到閱讀設定的唯一入口。"
             )
             section(
-                items: ReaderChromeActionItem.allCases,
+                items: ReaderChromeActionItem.allCases.filter { !$0.isInMoreMenu },
                 headerKey: "書籍動作",
-                footerKey: "經典把刷新、換源、下載、聽書畫成浮在正文上的圓鈕，AI 助手和 AI 翻譯固定在頂部選單；現代全部放在點封面圓圈之後的書卡裡。原本就不適用這本書的動作仍然不會出現。"
+                footerKey: "這些動作都在點封面圓圈之後的書卡裡。原本就不適用這本書的動作仍然不會出現。"
+            )
+            section(
+                items: ReaderChromeActionItem.allCases.filter(\.isInMoreMenu),
+                headerKey: "更多",
+                footerKey: "這些動作在底部工具列的「更多」裡。"
             )
         }
         .softScrollEdges()
