@@ -5,17 +5,11 @@ import UIKit
 import YueduCoreText
 
 private enum ReaderSettingsDeferredPresentationRoute {
-    case fontImporter
-    /// 匯入閱讀設定 / 匯入正則高亮 — same first-level-presenter handoff as the font
-    /// importer, because those controls also live inside the settings sheet.
+    /// 匯入字體 / 匯入閱讀設定 / 匯入正則高亮 — the settings sheet's document pickers,
+    /// handed to this first-level presenter because they live inside that sheet.
     case styleImporter(ReaderStyleImportRoute)
     /// A locked control inside settings (匯入字體 without Pro) asked for the paywall.
     case paywall(PremiumFeature)
-}
-
-private struct ReaderFontImportPresentationError: Identifiable {
-    let id = UUID()
-    let message: String
 }
 
 // MARK: - Main Reader View
@@ -99,8 +93,6 @@ struct ReaderView: View {
     @State var showSettings = false
     @State private var readerSettingsDeferredPresentation =
         DismissalSequencedPresentation<ReaderSettingsDeferredPresentationRoute>()
-    @State private var showReaderFontImporter = false
-    @State private var readerFontImportError: ReaderFontImportPresentationError?
     @State private var readerStyleImportRoute: ReaderStyleImportRoute?
     @State var showQuickThemePanel = false
     /// What the quick panel asked to open. iOS drops a sheet requested while the
@@ -2475,7 +2467,6 @@ struct ReaderView: View {
                     isVerticalWritingMode: effectiveWritingMode.isVertical,
                     allowsVerticalWritingMode: (book ?? snapshotBook)?.allowsVerticalWritingMode == true,
                     hasParagraphReviews: currentBookHasParagraphReviews,
-                    onOpenFontImporter: requestFirstLevelReaderFontImporter,
                     onOpenTouchZoneEditor: {
                         guard subscriptionStore.isProActive, !effectiveScrollMode else { return }
                         setReaderChromeVisible(false)
@@ -2823,19 +2814,8 @@ struct ReaderView: View {
         )
         return AnyView(
             mediaPresentationLayers
-                .fileImporter(
-                    isPresented: $showReaderFontImporter,
-                    allowedContentTypes: ReaderSettingsView.fontContentTypes,
-                    allowsMultipleSelection: false,
-                    onCompletion: handleReaderFontImport
-                )
-                .alert(item: $readerFontImportError) { error in
-                    Alert(
-                        title: Text(localized("字體匯入失敗")),
-                        message: Text(error.message),
-                        dismissButton: .default(Text(localized("確定")))
-                    )
-                }
+                // The reader's only `.fileImporter`, fonts included: SwiftUI presents one
+                // of two on a view (feedback #61).
                 .readerStyleImportPresentation(route: $readerStyleImportRoute)
                 .onChanged(of: showChangeSourceSheet) { show in
             if show {
@@ -2879,15 +2859,6 @@ struct ReaderView: View {
         )
     }
 
-    private func requestFirstLevelReaderFontImporter() {
-        guard ReaderSettingsPresentationPolicy.requiresFirstLevelImporter else {
-            showReaderFontImporter = true
-            return
-        }
-        readerSettingsDeferredPresentation.select(.fontImporter)
-        showSettings = false
-    }
-
     /// Settings' paywall route, taken over by the reader only where it must present first-level.
     private var readerSettingsPaywallAction: ((PremiumFeature) -> Void)? {
         let openPaywall: (PremiumFeature) -> Void = requestFirstLevelReaderPaywall
@@ -2925,29 +2896,10 @@ struct ReaderView: View {
             return
         }
         switch route {
-        case .fontImporter:
-            showReaderFontImporter = true
         case .styleImporter(let styleRoute):
             readerStyleImportRoute = styleRoute
         case .paywall(let feature):
             paywallFeature = feature
-        }
-    }
-
-    private func handleReaderFontImport(_ result: Result<[URL], Error>) {
-        do {
-            guard let url = try result.get().first else { return }
-            let shouldStopAccessing = url.startAccessingSecurityScopedResource()
-            defer {
-                if shouldStopAccessing {
-                    url.stopAccessingSecurityScopedResource()
-                }
-            }
-            try settings.importReaderFont(from: url)
-        } catch {
-            readerFontImportError = ReaderFontImportPresentationError(
-                message: error.localizedDescription
-            )
         }
     }
 

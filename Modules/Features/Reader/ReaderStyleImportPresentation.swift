@@ -20,13 +20,17 @@ enum ReaderStyleImportRoute: String, Identifiable, Sendable {
     case chapterSayCard
     case authorSayCard
     case hotCommentCard
+    /// 字體's 匯入字體…: a font file, made the reader's font. It shares this picker because
+    /// SwiftUI presents only one of two `.fileImporter`s on a view: a font importer of its
+    /// own beside this one never opened (feedback #61).
+    case readerFont
 
     var id: String { rawValue }
 
     /// The 氣泡設定 page this route imports for, or nil for a reading-settings file.
     var commentStyleTarget: ReaderCommentStyleImporter.Target? {
         switch self {
-        case .readerSettings, .regexHighlights, .chapterTitleStyle, .dialogueBubble: nil
+        case .readerSettings, .regexHighlights, .chapterTitleStyle, .dialogueBubble, .readerFont: nil
         case .commentBubble: .bubble
         case .chapterSayCard: .card(.chapterSay)
         case .authorSayCard: .card(.authorSay)
@@ -52,7 +56,14 @@ enum ReaderStyleImportRoute: String, Identifiable, Sendable {
             ReaderSettingsImportService.styleContentTypes
         case .commentBubble, .chapterSayCard, .authorSayCard, .hotCommentCard:
             ReaderCommentStyleImporter.contentTypes
+        case .readerFont:
+            [.font, UTType(filenameExtension: "ttf") ?? .data, UTType(filenameExtension: "otf") ?? .data]
         }
+    }
+
+    /// The title of the alert a failed import shows.
+    var failureTitleKey: String {
+        self == .readerFont ? "字體匯入失敗" : "匯入失敗"
     }
 
     /// Narrows a parsed file to what this entry point promised to change. 匯入
@@ -89,9 +100,10 @@ enum ReaderStyleImportRoute: String, Identifiable, Sendable {
                 contentName: plan.contentName,
                 notes: plan.notes
             )
-        case .commentBubble, .chapterSayCard, .authorSayCard, .hotCommentCard:
-            // These files are not reading settings; `ReaderCommentStyleImporter` reads them
-            // and nothing of a reading-settings plan applies.
+        case .commentBubble, .chapterSayCard, .authorSayCard, .hotCommentCard, .readerFont:
+            // These files are not reading settings; `ReaderCommentStyleImporter` and
+            // `GlobalSettings.importReaderFont` read them and nothing of a reading-settings
+            // plan applies.
             return ReaderSettingsImportPlan(
                 layout: nil,
                 chapterTitleStyle: nil,
@@ -116,7 +128,8 @@ extension View {
     ///
     /// Attached by whoever owns the **first-level** presenter: `ReaderView` on
     /// iOS 17, where 閱讀設定 is a presented sheet that iOS 17 can drop a picker
-    /// presentation across, and 閱讀設定 itself on iOS 18+. See
+    /// presentation across, and 閱讀設定 itself on iOS 18+. It is the only
+    /// `.fileImporter` either one attaches: SwiftUI presents one of two on a view. See
     /// `Technotes/iOS17MenuModalPresentation.md`.
     func readerStyleImportPresentation(
         route: Binding<ReaderStyleImportRoute?>,
@@ -179,6 +192,11 @@ private struct ReaderStyleImportPresentationModifier: ViewModifier {
                 let accessing = url.startAccessingSecurityScopedResource()
                 defer { if accessing { url.stopAccessingSecurityScopedResource() } }
 
+                if scope == .readerFont {
+                    // The new font is selected; the 字體 row and the preview show it.
+                    try GlobalSettings.shared.importReaderFont(from: url)
+                    return
+                }
                 if let target = scope.commentStyleTarget {
                     let message = try ReaderCommentStyleImporter.importFile(at: url, into: target)
                     alert = ReaderStyleImportAlert(titleKey: "SVG 匯入成功", message: message)
@@ -209,7 +227,7 @@ private struct ReaderStyleImportPresentationModifier: ViewModifier {
                 )
             } catch {
                 alert = ReaderStyleImportAlert(
-                    titleKey: "匯入失敗",
+                    titleKey: scope.failureTitleKey,
                     message: error.localizedDescription
                 )
             }

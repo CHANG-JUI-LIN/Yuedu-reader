@@ -2,7 +2,6 @@ import YueduCoreText
 import Combine
 import SwiftUI
 import UIKit
-import UniformTypeIdentifiers
 
 struct ReaderSettingsView: View {
     @Binding var fontSize: CGFloat
@@ -19,10 +18,9 @@ struct ReaderSettingsView: View {
     /// TXT and online books, which carry no writing mode of their own: 排版方向 shows.
     var allowsVerticalWritingMode = false
     var hasParagraphReviews = false
-    var onOpenFontImporter: () -> Void
     var onOpenTouchZoneEditor: (() -> Void)?
-    /// Hands a style/layout import to the reader's first-level presenter. Nil in
-    /// contexts that already are one; see `ReaderSettingsPresentationPolicy`.
+    /// Hands an import — a font, a style, a layout — to the reader's first-level presenter.
+    /// Nil in contexts that already are one; see `ReaderSettingsPresentationPolicy`.
     var onOpenStyleImporter: ((ReaderStyleImportRoute) -> Void)?
     /// iOS 17: hands the paywall to the reader's first-level presenter, as the importers
     /// above do — a sheet asked for from inside this sheet can be dropped there. Nil where
@@ -33,9 +31,7 @@ struct ReaderSettingsView: View {
     @Bindable private var settings = GlobalSettings.shared
     @ObservedObject private var subscriptionStore = SubscriptionStore.shared
     @Environment(\.dismiss) private var dismiss
-    @State private var showingFontImporter = false
     @State private var paywallFeature: PremiumFeature?
-    @State private var fontImportError: FontImportError?
     @State private var layoutImportAlert: LayoutImportAlert?
     @State private var showingOverlayResetConfirmation = false
     @State private var showingLayoutResetConfirmation = false
@@ -124,25 +120,11 @@ struct ReaderSettingsView: View {
             }
         }
         .tint(readerTint)
-        .fileImporter(
-            isPresented: $showingFontImporter,
-            allowedContentTypes: Self.fontContentTypes,
-            allowsMultipleSelection: false
-        ) { result in
-            handleFontImport(result)
-        }
         .sheet(item: $paywallFeature) { feature in
             PaywallView(highlightedFeature: feature)
                 .environmentObject(subscriptionStore)
         }
         .readerStyleImportPresentation(route: $styleImportRoute) { _ in }
-        .alert(item: $fontImportError) { error in
-            Alert(
-                title: Text(localized("字體匯入失敗")),
-                message: Text(error.message),
-                dismissButton: .default(Text(localized("確定")))
-            )
-        }
         .alert(item: $layoutImportAlert) { alert in
             Alert(
                 title: Text(localized(alert.titleKey)),
@@ -373,7 +355,7 @@ struct ReaderSettingsView: View {
                     Divider()
                     if premiumVisibility.allowsFontImport {
                         Button {
-                            showingFontImporter = true
+                            requestStyleImporter(.readerFont)
                         } label: {
                             Label(localized("匯入字體..."), systemImage: "plus")
                         }
@@ -412,7 +394,7 @@ struct ReaderSettingsView: View {
                     if locked {
                         requestPaywall(.customFonts)
                     } else {
-                        onOpenFontImporter()
+                        requestStyleImporter(.readerFont)
                     }
                 } label: {
                     Image(systemName: locked ? "lock.fill" : "plus")
@@ -976,31 +958,6 @@ struct ReaderSettingsView: View {
         return settings.userFonts.first { $0.postScriptName == selected }?.displayName ?? selected
     }
 
-    static let fontContentTypes: [UTType] = [
-        .font,
-        UTType(filenameExtension: "ttf") ?? .data,
-        UTType(filenameExtension: "otf") ?? .data,
-    ]
-
-    private func handleFontImport(_ result: Result<[URL], Error>) {
-        do {
-            guard let url = try result.get().first else { return }
-            let shouldStopAccessing = url.startAccessingSecurityScopedResource()
-            defer {
-                if shouldStopAccessing {
-                    url.stopAccessingSecurityScopedResource()
-                }
-            }
-            try settings.importReaderFont(from: url)
-        } catch {
-            fontImportError = FontImportError(message: error.localizedDescription)
-        }
-    }
-}
-
-private struct FontImportError: Identifiable {
-    let id = UUID()
-    let message: String
 }
 
 private struct LayoutImportAlert: Identifiable {
@@ -1015,8 +972,7 @@ private struct LayoutImportAlert: Identifiable {
         theme: .constant(.sepia),
         capabilities: .reflowableText,
         allowsUserSelectedReaderFont: true,
-        allowsVerticalWritingMode: true,
-        onOpenFontImporter: {}
+        allowsVerticalWritingMode: true
     )
 }
 
@@ -1029,7 +985,6 @@ private struct LayoutImportAlert: Identifiable {
             usesReadableWidth: true,
             defaultMargin: ReaderSettingsView.defaultPageMarginH
         ),
-        capabilities: .reflowableText,
-        onOpenFontImporter: {}
+        capabilities: .reflowableText
     )
 }

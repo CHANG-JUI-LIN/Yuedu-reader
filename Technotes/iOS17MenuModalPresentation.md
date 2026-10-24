@@ -64,18 +64,31 @@ is a `NavigationLink` in both variants — internal navigation inside a sheet ne
 crosses a presentation boundary. iOS 18 keeps the sheet.
 
 `ReaderSettingsPresentationPolicy` dismisses reader settings before font
-import on iOS 17. `ReaderView` retains the pending font-import route and opens
+import on iOS 17. `ReaderView` retains the pending import route and opens
 the document picker only from the settings sheet's real `onDismiss` callback,
 so the picker is owned by the reader's first-level presenter. iOS 18 keeps the
 font importer inside reader settings.
 
-The same policy now covers every document picker reader settings owns. 匯入閱讀
-設定, 匯入正則高亮 and 章節標題樣式's 從檔案匯入樣式 all call
+The same policy covers every document picker reader settings owns. 匯入字體,
+匯入閱讀設定, 匯入正則高亮 and 章節標題樣式's 從檔案匯入樣式 all call
 `ReaderSettingsView.requestStyleImporter`, which either sets the local
 `styleImportRoute` (iOS 18+) or hands a `ReaderStyleImportRoute` to `ReaderView`
 via `onOpenStyleImporter` (iOS 17). Either presenter attaches the one
 `readerStyleImportPresentation` modifier, so there is a single picker, a single
 parse route (`ReaderSettingsImportService`), and a single apply.
+
+### One `.fileImporter` per view — on every iOS
+
+SwiftUI presents only one of two `.fileImporter`s attached to the same view; the
+other one's `isPresented` flips and nothing appears. From 2026-08-15 to feedback
+#61 (2026-10, iOS 18.7.8) both reader-settings presenters carried a separate font
+`.fileImporter` beside `readerStyleImportPresentation`, and 匯入字體 opened
+nothing on iOS 17, 18 and 26 alike while 匯入閱讀設定 worked. It looked like this
+note's menu boundary and is not version-gated. Font import is now the
+`.readerFont` route of the shared modifier. Do not attach a second
+`.fileImporter` to a view that already has one: add a route, or attach it to a
+different view, as `RuleModuleAddFlow` does on its inner stack.
+`ReaderFontImportUITests` covers both reader-settings pickers.
 
 `ShareLink` avoids the document-picker path used by `.fileExporter`, but it is
 only presentation-safe when the link itself is a direct page or sheet control.
