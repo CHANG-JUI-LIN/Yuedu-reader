@@ -184,11 +184,6 @@ struct FixedPageReaderView: View {
             )
         }
         .onAppear {
-            // A pushed reader updates recency after its card transition finishes,
-            // so a recently-read shelf does not move the source cover mid-open.
-            if readerNavigator == nil {
-                store.updateLastOpened(bookId: bookId)
-            }
             beginReadingStatsSession()
         }
         .onDisappear {

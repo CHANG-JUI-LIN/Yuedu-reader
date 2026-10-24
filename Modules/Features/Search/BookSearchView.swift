@@ -714,10 +714,9 @@ struct BookSearchView: View {
         submit()
     }
 
-    /// 最近閱讀: back into the book where it was left, moved to the front of 最近閱讀
-    /// as opening it from the shelf does.
+    /// 最近閱讀: back into the book where it was left. Its reader moves it to the front of
+    /// 最近閱讀, as every open does.
     private func openRecentBook(_ book: ReadingBook) {
-        bookStore.updateLastOpened(bookId: book.id)
         recentReaderRoute = DetailReaderRoute(id: book.id)
     }
 }

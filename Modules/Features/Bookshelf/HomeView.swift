@@ -389,6 +389,7 @@ struct HomeView: View {
                             // position while the recently-read sort moves it.
                             geometryStore?.invalidate(bookID: readerBookID)
                         }
+                        // The one open its reader leaves to its presenter (`BookReaderView`).
                         transitionBookStore?.updateLastOpened(bookId: readerBookID)
                         if shouldInvalidateForRecentSort {
                             shelfScrollToTopPage = page
@@ -400,7 +401,6 @@ struct HomeView: View {
         } else {
             AppLogger.info("⟐ openBook MODAL path bookID=\(book.id) (audiobook or non-phone shell)")
             pendingReaderOpenToken = nil
-            store.updateLastOpened(bookId: book.id)
             modalReaderBookId = book.id
         }
     }

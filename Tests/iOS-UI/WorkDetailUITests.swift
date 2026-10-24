@@ -3,6 +3,8 @@ import XCTest
 /// Unified library 5f: 作品詳情 opens the reader and takes it back, from the bookshelf's ••• and
 /// the reader's own 選單; 探索's 繼續閱讀 card opens the reader itself. On iOS 17 a reader opened
 /// through the shelf's card coordinator left the page's navigation bar off screen when it closed.
+/// A book read before and opened again through 作品詳情 goes to the front of 繼續閱讀: that open
+/// once left its date as the first open had stamped it.
 ///
 /// The book is a text file the test writes, imported at launch (`-auto-import-epub` with an
 /// absolute path, DEBUG); the test deletes it from the shelf at the end. Its sources are an empty
@@ -114,6 +116,35 @@ final class WorkDetailUITests: XCTestCase {
         leaveReader(app)
         XCTAssertTrue(resumed.waitForNonExistence(timeout: 10), app.debugDescription)
         XCTAssertTrue(card.waitForExistence(timeout: 10), "The reader closes onto the home.\n\(app.debugDescription)")
+
+        // A book read before, opened again through 作品詳情, is the newest in 繼續閱讀. Taken out
+        // of the row first, it comes back only if that open moved its date past the removal.
+        let more = app.buttons[card.identifier.replacingOccurrences(of: "home.card.", with: "home.card.more.")].firstMatch
+        XCTAssertTrue(more.waitForExistence(timeout: 5), app.debugDescription)
+        more.tap()
+        let remove = app.buttons["從繼續閱讀移除"].firstMatch
+        XCTAssertTrue(remove.waitForExistence(timeout: 5), app.debugDescription)
+        remove.tap()
+        XCTAssertTrue(card.waitForNonExistence(timeout: 10), app.debugDescription)
+        shelfTab.tap()
+        openMenu(app)
+        XCTAssertTrue(menuItem.waitForExistence(timeout: 5), app.debugDescription)
+        menuItem.tap()
+        XCTAssertTrue(versions.waitForExistence(timeout: 10), app.debugDescription)
+        let reread = app.buttons["繼續閱讀"].firstMatch
+        XCTAssertTrue(reread.exists, "A book read before is continued.\n\(app.debugDescription)")
+        reread.tap()
+        let reopened = waitForReader(app)
+        leaveReader(app)
+        XCTAssertTrue(reopened.waitForNonExistence(timeout: 10), app.debugDescription)
+        XCTAssertTrue(versions.waitForExistence(timeout: 10), app.debugDescription)
+        app.navigationBars.buttons.firstMatch.tap()
+        XCTAssertTrue(shelfBook(app).waitForExistence(timeout: 10))
+        app.tabBars.buttons["探索"].firstMatch.tap()
+        XCTAssertTrue(card.waitForExistence(timeout: 15), "Reading it again puts it back in 繼續閱讀.\n\(app.debugDescription)")
+        let newest = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH 'home.card.library.'")).firstMatch
+        XCTAssertEqual(newest.identifier, card.identifier, "It is the first card.\n\(app.debugDescription)")
+        screenshot(app, "work-detail-reread-continue")
 
         // The reader's own 選單 → 作品詳情 (5f-4b): a local book has it too, and 繼續閱讀 there
         // returns to the reader it came from rather than opening a second one.

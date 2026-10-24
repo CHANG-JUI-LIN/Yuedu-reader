@@ -23,6 +23,8 @@ struct BookReaderView: View {
     @State private var retryGeneration = 0
     @State private var holdsCache = false
     @State private var resourceFailureAlert = RemoteReaderFailureAlertState()
+    /// This open has moved the book to the front of 繼續閱讀 and 最近閱讀 (`onAppear`).
+    @State private var stampedOpen = false
 
     private var book: ReadingBook? { store.readingBook(id: bookId) }
 
@@ -98,7 +100,12 @@ struct BookReaderView: View {
                 CrashContext.setKey("current_book_kind", "\(book.resolvedPipelineKind)")
                 CrashContext.setKey("current_book_online", book.isOnline)
                 CrashContext.breadcrumb("open reader: \(book.title) (\(book.resolvedPipelineKind))")
-                if book.lastOpenedDate == nil, readerNavigator == nil {
+                // Every open is the book's newest, from 作品詳情, 探索, 搜索 or a modal alike, and
+                // once: coming back from a page pushed above the reader is not another open.
+                // The shelf's card transition stamps its open itself once the card has landed
+                // (`HomeView.openBook`), so a 最近閱讀 shelf does not move the source cover mid-open.
+                if !stampedOpen, readerNavigator == nil {
+                    stampedOpen = true
                     store.updateLastOpened(bookId: bookId)
                 }
             }
