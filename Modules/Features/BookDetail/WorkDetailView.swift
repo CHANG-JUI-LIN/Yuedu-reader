@@ -98,7 +98,8 @@ struct WorkDetailView: View {
     @StateObject private var authorWorks = AuthorWorksModel()
     @StateObject private var toc = WorkTableOfContentsModel()
     /// 「尋找可用來源」 (7b-2): the books its search found of the work join `versions`. It runs on
-    /// its own once the work's page shows (2026-10-17).
+    /// its own once the work's page shows (2026-10-17); a work with nothing to read takes on the
+    /// first one found (2026-10-24).
     @StateObject private var finder = WorkSourceFinder()
     @State private var showChapterList = false
     /// The chapter picked from 查看全部, opened once its sheet is gone.
@@ -196,6 +197,14 @@ struct WorkDetailView: View {
             }
             .onDisappear { actions.cancelForDisappearance() }
             .onChange(of: scenePhase) { _, phase in finder.setPresentationActive(phase == .active) }
+            .onChange(of: finder.found) { _, found in
+                // Nothing listed reads: the first book found is shown at once, its source's own
+                // page as picking it from 來源 makes it (maintainer, 2026-10-24), not left in 來源's menu.
+                guard let key = WorkSourceFinder.shownOnFinding(listed: listed, found: found, chosen: chosen) else { return }
+                chosen = key
+                // The whole page changed under VoiceOver's cursor.
+                UIAccessibility.post(notification: .screenChanged, argument: nil)
+            }
             .onChange(of: finder.state) { _, state in
                 // The search ran on its own; say how it ended, as the row now does.
                 switch state {
@@ -357,12 +366,15 @@ struct WorkDetailView: View {
     private var tableOfContents: some View {
         let chapters: [OnlineChapterRef] = if case .loaded(_, let chapters) = toc.state { chapters } else { [] }
         let failure: String? = if case .failed(let message) = toc.state { message } else { nil }
-        if versionsLoaded, WorkVersions.primary(in: versions) == nil {
+        if WorkVersions.primary(in: versions) == nil {
             // No version to read, said where its chapters would be (maintainer, 2026-10-22), not
-            // as a placeholder of its own between 開始閱讀 and 簡介.
+            // as a placeholder of its own between 開始閱讀 and 簡介. It loads while the versions
+            // are read and the search may still find one (maintainer, 2026-10-24), which is then
+            // shown in the page's place.
             BookDetailChapterSection(
-                title: localized("目錄"), chapters: [], isLoading: false, errorMessage: nil, latestChapter: "",
-                onRetry: {}, onShowAll: {}, emptyText: localized("目前沒有可閱讀的來源")
+                title: localized("目錄"), chapters: [], isLoading: !versionsLoaded || searchMayFindVersion,
+                errorMessage: nil, latestChapter: "", onRetry: {}, onShowAll: {},
+                emptyText: localized("目前沒有可閱讀的來源")
             ) { _, _ in EmptyView() }
         } else if toc.state != .none {
             BookDetailChapterSection(
@@ -373,6 +385,17 @@ struct WorkDetailView: View {
                                      trailing: .disclosure, action: { openChapter(chapter) })
                     .accessibilityIdentifier("detail.toc.\(offset)")
             }
+        }
+    }
+
+    /// Whether the page's search may still find a version: while it runs, and before it starts,
+    /// which is a moment after the versions are read. Never searching (no source enabled, or a
+    /// reader's page), it finds nothing.
+    private var searchMayFindVersion: Bool {
+        switch finder.state {
+        case .searching: true
+        case .idle: readerContext == nil && BookSourceStore.shared.sources.contains(where: \.enabled)
+        case .done, .failed, .noSources: false
         }
     }
 
@@ -741,9 +764,9 @@ struct WorkDetailView: View {
     private func findSources() { findSources(onOpen: false) }
 
     private func findSources(onOpen: Bool) {
-        // The page stays on the version shown: with nothing listed readable, the first book found
-        // would otherwise become the version shown, and the page its source's.
-        if chosen == nil { chosen = selected?.nodeKey }
+        // A version that reads stays shown, whatever the search finds. With none, the first book
+        // found is shown instead (`WorkSourceFinder.shownOnFinding`, maintainer, 2026-10-24).
+        if chosen == nil, let selected, selected.isReadable { chosen = selected.nodeKey }
         finder.setPresentationActive(scenePhase == .active)
         if onOpen {
             finder.findOnOpen(route, sources: BookSourceStore.shared.sources)

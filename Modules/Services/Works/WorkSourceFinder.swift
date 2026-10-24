@@ -109,6 +109,16 @@ final class WorkSourceFinder: ObservableObject {
         return listed + found.filter { sources.insert($0.record.key.instance).inserted }
     }
 
+    /// The version 作品詳情 takes on as the search finds books (maintainer, 2026-10-24: 「有可用的
+    /// 閱讀來源立馬就先換上」): the first readable one, while nothing listed reads and no version
+    /// was picked. The page is then pinned to it: later answers reorder `found`, and each reorder
+    /// would otherwise remount the source's page under the reader.
+    static func shownOnFinding(listed: [WorkDetailRoute], found: [WorkDetailRoute],
+                               chosen: SourceItemKey?) -> SourceItemKey? {
+        guard chosen == nil, WorkVersions.primary(in: listed) == nil else { return nil }
+        return WorkVersions.primary(in: joined(listed, found: found))?.nodeKey
+    }
+
     /// How a search that stopped ended.
     static func outcome(paused: Bool, progress: SearchAggregator.SearchProgress) -> State {
         if paused { return .done(more: true) }

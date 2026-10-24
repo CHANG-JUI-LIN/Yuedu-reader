@@ -71,6 +71,32 @@ struct WorkSourceFinderTests {
         #expect(WorkSourceFinder.joined(listed, found: []).map(\.nodeKey) == listed.map(\.nodeKey))
     }
 
+    /// A work with only its data, as an AI pick Open Library did not match opens.
+    private func dataOnly(_ title: String, by author: String) -> WorkDetailRoute {
+        let record = SourceRecord(key: SourceItemKey(instance: AIRecommendationProvider.recordInstance, item: title),
+                                  title: title, authors: [author], language: nil, contentKind: .text,
+                                  identifiers: [], copyID: nil, acquisitions: [.viewOnly])
+        return WorkDetailRoute(record: record,
+                               summary: WorkSummary(title: title, authors: [author], cover: .generated(seed: title),
+                                                    blurb: nil, language: nil, contentKind: .text),
+                               opening: .bibliographic)
+    }
+
+    @Test("a work with nothing to read takes on the first book found; one that reads, or a version picked, stays")
+    func shownOnFinding() {
+        let a = source("a"), b = source("b")
+        let data = dataOnly("十二國記", by: "小野不由美")
+        let found = [route(book("十二國記", by: "小野不由美", in: a, path: "1"), in: a),
+                     route(book("十二國記", by: "小野不由美", in: b, path: "1"), in: b)]
+        #expect(WorkSourceFinder.shownOnFinding(listed: [data], found: found, chosen: nil) == found[0].nodeKey)
+        #expect(WorkSourceFinder.shownOnFinding(listed: [data], found: [], chosen: nil) == nil)
+        // Picked from 來源 by hand: the page stays on it.
+        #expect(WorkSourceFinder.shownOnFinding(listed: [data], found: found, chosen: data.nodeKey) == nil)
+        // A Gutenberg book reads: a book source never takes its page.
+        let gutenberg = WorkDetailRoute(.gutenberg(GutenbergBook(id: 2701, title: "Moby Dick", author: "Herman Melville")))
+        #expect(WorkSourceFinder.shownOnFinding(listed: [data, gutenberg], found: found, chosen: nil) == nil)
+    }
+
     @Test("how a search ends: paused with sources left, failed when no source answered, else done")
     func outcome() {
         typealias Progress = SearchAggregator.SearchProgress
