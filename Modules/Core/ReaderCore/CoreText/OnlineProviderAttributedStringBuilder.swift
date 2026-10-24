@@ -1,5 +1,6 @@
 import Foundation
 import UIKit
+import YueduCoreText
 import YueduCoreTextTypography
 
 /// Removes the source-provided title before an advanced-CSS title template is
@@ -542,9 +543,36 @@ final class OnlineProviderAttributedStringBuilder: @preconcurrency AttributedStr
         )
 
         let rules = ReplaceRuleStore.rules(for: replaceRuleScopeURL)
-        guard !rules.isEmpty else { return result }
+        let replaced = rules.isEmpty ? result : applyReplaceRules(rules, to: result, bodyStart: built.titleBlockLength)
+        return fittingReviewBubbles(replaced, settings: settings)
+    }
 
-        return applyReplaceRules(rules, to: result, bodyStart: built.titleBlockLength)
+    /// Squeezes the punctuation of a line whose 段評 bubble would otherwise take its last
+    /// characters down (`ReviewBubbleLineFit`). Last, after replace rules, because it measures
+    /// the text as it will be laid out, in the column it will be laid out in. Vertical text
+    /// keeps CoreText's breaks: its marks stand in a different box.
+    private func fittingReviewBubbles(
+        _ result: AttributedChapterBuildResult,
+        settings: ReaderRenderSettings
+    ) -> AttributedChapterBuildResult {
+        guard !settings.writingMode.isVertical,
+              result.attributedString.string.contains(NodeAttributedStringRenderer.textSizedImageGlue)
+        else { return result }
+        let mutable = NSMutableAttributedString(attributedString: result.attributedString)
+        let columnWidth = max(1, renderSize.width - settings.contentInsets.left - settings.contentInsets.right)
+        let kept = SourcePerfTrace.span("reader.reviewBubbleLineFit", "chars=\(mutable.length)") {
+            ReviewBubbleLineFit.fit(mutable, lineWidth: columnWidth)
+        }
+        guard kept > 0 else { return result }
+
+        return AttributedChapterBuildResult(
+            attributedString: mutable,
+            imagePage: result.imagePage,
+            pageBackgroundImage: result.pageBackgroundImage,
+            pageBackgroundColor: result.pageBackgroundColor,
+            darkPageBackgroundColor: result.darkPageBackgroundColor,
+            anchorOffsets: result.anchorOffsets
+        )
     }
 
     /// The one place an online chapter's replace rules run: at display time, over the

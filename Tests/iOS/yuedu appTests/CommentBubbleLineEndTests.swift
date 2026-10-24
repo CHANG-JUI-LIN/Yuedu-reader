@@ -73,6 +73,78 @@ struct CommentBubbleLineEndTests {
             """)
     }
 
+    /// Feedback #62 and #67 (2026-10-23): 「“你这和尚，是给你师兄送人」 over 「罢。”(9)」, and
+    /// 「迅速解决，稳定Z市的局」 over 「势。(2)」 — the text fit its line, the bubble did not, and
+    /// the glue took the tail down with it. The line's full-width marks give up part of their
+    /// blank instead (`ReviewBubbleLineFit`), so the bubble costs the paragraph no line where
+    /// they have the room, and the squeezed line still ends inside the column.
+    @Test("a bubble's tail stays on its line when the line's marks make room")
+    func squeezedMarksKeepTheTailUp() async throws {
+        let width = page.width - insets.left - insets.right
+        var squeezed = 0
+        for length in 4...40 {
+            let text = "“" + String(repeating: "字", count: length) + "，字，送人罢。”"
+            let plain = try await build(html: "<p>\(text)</p>").attributedString
+            let withBubble = try await build(html: "<p>\(text)\(marker)</p>").attributedString
+            let plainLines = try lines(ofParagraphHolding: "送人罢", in: plain, width: width)
+            let bubbleLines = try lines(ofParagraphHolding: "送人罢", in: withBubble, width: width)
+            #expect(bubbleLines.count == plainLines.count, "\(length) characters: the bubble took the tail to a line of its own")
+            let fullStop = (withBubble.string as NSString).range(of: "罢。”").location + 1
+            if ((withBubble.attribute(.kern, at: fullStop, effectiveRange: nil) as? NSNumber)?.doubleValue ?? 0) < 0 {
+                squeezed += 1
+            }
+
+            let layout = await CoreTextPaginator().paginate(
+                spineIndex: 0, attrStr: LayoutShared(withBubble).wrappedValue,
+                renderSize: page, fontSize: 20, contentInsets: insets
+            )
+            let bubble = try #require(
+                layout.inlineAttachments.values.flatMap { $0 }.first { $0.linkHref?.hasPrefix("ydreview://") == true }
+            )
+            #expect(bubble.rect.maxX <= page.width - insets.right + 0.5, "\(length) characters: the bubble ends at \(bubble.rect.maxX)")
+        }
+        #expect(squeezed > 0, "no length needed the squeeze: the test no longer reaches it")
+    }
+
+    /// Feedback #63 (iOS 17.0): every line holding a bubble stood 5.7pt further from the line
+    /// above than the rest. The bubble's run claimed more ascent than the font's own.
+    @Test("a line with a bubble is as tall as the lines without")
+    func bubbleLineKeepsTheLineHeight() async throws {
+        let width = page.width - insets.left - insets.right
+        let text = String(repeating: "字", count: 50) + "。"
+        let attributed = try await build(html: "<p>\(text)\(marker)</p><p>\(text)</p>").attributedString
+        let framesetter = CTFramesetterCreateWithAttributedString(attributed)
+        let path = CGPath(rect: CGRect(x: 0, y: 0, width: width, height: 100_000), transform: nil)
+        let frame = CTFramesetterCreateFrame(framesetter, CFRange(location: 0, length: 0), path, nil)
+        let lines = CTFrameGetLines(frame) as! [CTLine]
+        var origins = [CGPoint](repeating: .zero, count: lines.count)
+        CTFrameGetLineOrigins(frame, CFRange(location: 0, length: 0), &origins)
+        let bubble = (attributed.string as NSString).range(of: "\u{2060}\u{FFFC}").location + 1
+        let bubbleLine = try #require(lines.firstIndex {
+            let range = CTLineGetStringRange($0)
+            return bubble >= range.location && bubble < range.location + range.length
+        })
+        try #require(bubbleLine > 1)
+        let plainStep = origins[bubbleLine - 2].y - origins[bubbleLine - 1].y
+        let bubbleStep = origins[bubbleLine - 1].y - origins[bubbleLine].y
+        #expect(abs(bubbleStep - plainStep) < 0.5, "the bubble's line sits \(bubbleStep - plainStep)pt lower than the text's")
+    }
+
+    /// The lines of the paragraph holding `anchor`, as a frame `width` wide breaks it.
+    private func lines(ofParagraphHolding anchor: String, in attributed: NSAttributedString, width: CGFloat) throws -> [NSRange] {
+        let text = attributed.string as NSString
+        let anchorRange = text.range(of: anchor)
+        try #require(anchorRange.location != NSNotFound)
+        let paragraph = text.paragraphRange(for: anchorRange)
+        let framesetter = CTFramesetterCreateWithAttributedString(attributed)
+        let path = CGPath(rect: CGRect(x: 0, y: 0, width: width, height: 100_000), transform: nil)
+        let frame = CTFramesetterCreateFrame(framesetter, CFRange(location: 0, length: 0), path, nil)
+        return (CTFrameGetLines(frame) as! [CTLine]).map {
+            let range = CTLineGetStringRange($0)
+            return NSRange(location: range.location, length: range.length)
+        }.filter { NSIntersectionRange($0, paragraph).length > 0 }
+    }
+
     /// Spacing the drawer adds between neighbouring characters of each line of the paragraph
     /// holding `anchor`, except its last line: how far the drawn ink ends beyond the ink of
     /// the line at its natural width, shared by the gaps between its characters.
@@ -165,12 +237,10 @@ struct CommentBubbleLineEndTests {
     }
 
     private func build(html: String) async throws -> AttributedChapterBuildResult {
+        // The page, as the reader passes its viewport: the builder takes the insets off itself.
         let builder = OnlineProviderAttributedStringBuilder(
             provider: SingleChapterProvider(html: html),
-            renderSize: CGSize(
-                width: page.width - insets.left - insets.right,
-                height: page.height - insets.top - insets.bottom
-            )
+            renderSize: page
         )
         return try await builder.buildChapter(
             at: 0,

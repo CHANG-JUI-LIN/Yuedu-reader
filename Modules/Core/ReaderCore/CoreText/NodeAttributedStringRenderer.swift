@@ -2474,6 +2474,18 @@ struct NodeAttributedStringRenderer: Sendable {
         if isVertical {
             ascent = drawWidth / 2
             descent = drawWidth / 2
+        } else if style.isTextSizedImage, displayMode == .inline {
+            // A text-sized image — the 段評 bubble, a `style:"text"` image — claims no more than
+            // the text around it, so its line is as tall as any other and its baseline where
+            // the others' is: the paginator centres it in the line whatever it claims. The
+            // split of `lineHeight` below rose above the font's ascender — PingFang on iOS 17:
+            // 5.7pt more space above every line with a bubble (feedback #63). Nor may it claim
+            // the font's descender: the body's `.baselineOffset` lifts the text, leaving it less
+            // descent than that, and in a fixed-height line a deeper run moves the baseline up
+            // — 1pt on iOS 26.5 with SF and PingFang at 20pt. One taller than the ascender still
+            // claims its height, so it never spills onto the lines around it.
+            ascent = max(font.ascender, drawHeight)
+            descent = 0
         } else if drawHeight > lineHeight {
             ascent = drawHeight
             descent = 0
