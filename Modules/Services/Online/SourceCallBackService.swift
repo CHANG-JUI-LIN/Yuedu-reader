@@ -138,7 +138,7 @@ enum SourceCallBackService {
     // MARK: - legado's own actions when a script does not take a tap
 
     /// legado `SearchActivity.start(keyword)` / `start(source, keyword)`: the app-wide search
-    /// sheet, scoped to one source when `sourceURL` is given.
+    /// page, full screen over the tabs, scoped to one source when `sourceURL` is given.
     static func requestSearch(keyword: String, sourceURL: String? = nil) {
         let trimmed = keyword.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return }

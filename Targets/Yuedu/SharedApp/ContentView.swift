@@ -20,10 +20,11 @@ struct ContentView: View {
     @State private var selectedRootTab: RootTabItem = .explore
     /// 新手導覽: up at a device's first launch, and again from 設定 → 關於.
     @State private var onboarding = OnboardingState()
-    /// A keyword a book source's discover page handed back via `java.searchBook`.
-    /// Presented as a sheet rather than by switching to the 搜尋 tab: that tab is
+    /// A keyword a book source handed back via `java.searchBook`, or a detail page's author,
+    /// title or label (`SourceCallBackService.requestSearch`).
+    /// Presented over the tabs rather than by switching to the 搜尋 tab: that tab is
     /// user-hideable (`gs.visibleRootTabs`), so selecting it would do nothing at all
-    /// for anyone who turned it off — and a fresh sheet also lets `initialQuery` run
+    /// for anyone who turned it off — and a fresh page also lets `initialQuery` run
     /// on appear, which an already-visited tab would not.
     @State private var sourceSearchRequest: SourceSearchRequest?
 
@@ -249,7 +250,13 @@ struct ContentView: View {
                 sourceURL: note.userInfo?["sourceURL"] as? String
             )
         }
-        .sheet(item: $sourceSearchRequest) { request in
+        // Full screen, not a sheet: a result's 作品詳情 pushes its reader onto this stack, as
+        // every detail page pushes its reader onto the stack it is on, and in a sheet the reader
+        // opened inside the card — its top edge some 130 pt down, the page behind showing above
+        // it, and a pull-down could close it (#91, TestFlight 3.0.0 build 140, iOS 26.3).
+        // On the tabs, never on a NavigationStack's root (iOS 26.4 rebuilds such a cover's
+        // content whenever something is presented over it).
+        .fullScreenCover(item: $sourceSearchRequest) { request in
             NavigationStack {
                 SearchView(
                     initialQuery: request.keyword,
@@ -262,6 +269,7 @@ struct ContentView: View {
                             Button { sourceSearchRequest = nil } label: {
                                 Image(systemName: "xmark")
                             }
+                            .accessibilityIdentifier("sourceSearch.close")
                         }
                     }
             }

@@ -370,6 +370,69 @@ final class DetailReaderBackSwipeUITests: XCTestCase {
         }
     }
 
+    /// #91 (TestFlight 3.0.0 build 140, iOS 26.3): 作品詳情 → the author → a work in the app-wide
+    /// search it opens → 立即閱讀. The search was a sheet, and the result's detail pushed its
+    /// reader inside the card: its top edge some 130 pt down, the page behind showing above it.
+    /// The reader must have the whole window, and back out to the 作品詳情 the author was tapped on.
+    @MainActor
+    func testAuthorSearchReaderFillsTheWindow() throws {
+        continueAfterFailure = false
+        try configureStoreKit()
+        let app = XCUIApplication()
+        app.launchArguments = ["-no-official-modules", "-onboarding.completed", "YES", "-explore.mode", "sources", "-reset-explore-home", "-reset-reading-settings", "-AppleLanguages", "(en)", "-AppleLocale", "en_US",
+                               "-yd_root_tab_visible_ids", "(explore, settings, search)",
+                               "-yd_page_turn_style", "滑動", "-yd_scroll_mode", "NO"]
+        app.launch()
+        openDiscoveredBook(app, named: "Navigation Swipe Fixture")
+        let read = app.buttons.matching(NSPredicate(format: "label IN %@", ["Read", "Resume"])).firstMatch
+        XCTAssertTrue(read.waitForExistence(timeout: 15), app.debugDescription)
+
+        // The fixture source does not take the tap, so the author searches the source for them;
+        // its catalog answers any keyword with its one book.
+        let author = app.buttons["publicLibrary.author.source"].firstMatch
+        XCTAssertTrue(author.waitForExistence(timeout: 15), app.debugDescription)
+        author.tap()
+        let search = app.searchFields.firstMatch
+        XCTAssertTrue(search.waitForExistence(timeout: 15), app.debugDescription)
+        // iOS 17 lists results in a UIKit table, later systems in a SwiftUI list.
+        let result = app.descendants(matching: .any)
+            .matching(NSPredicate(format: "label CONTAINS %@ AND (elementType == %d OR elementType == %d)",
+                                  "Navigation Swipe Fixture", XCUIElement.ElementType.cell.rawValue,
+                                  XCUIElement.ElementType.button.rawValue)).firstMatch
+        XCTAssertTrue(result.waitForExistence(timeout: 20), app.debugDescription)
+        attachScreenshot(app, named: "#91 - author search")
+        result.tap()
+
+        XCTAssertTrue(read.waitForExistence(timeout: 15), app.debugDescription)
+        XCTAssertTrue(app.buttons.matching(NSPredicate(format: "label IN %@", ["Add to Library", "Remove"])).firstMatch
+            .waitForExistence(timeout: 15), app.debugDescription)
+        let offShelf = app.buttons["Add to Library"].firstMatch.exists
+        let enabled = XCTNSPredicateExpectation(predicate: NSPredicate(format: "enabled == true"), object: read)
+        XCTAssertEqual(XCTWaiter.wait(for: [enabled], timeout: 15), .completed, app.debugDescription)
+        read.tap()
+        // The page is the reader's one VoiceOver element, and as large as the reader.
+        let page = app.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", "Reserved edge navigation")).firstMatch
+        XCTAssertTrue(page.waitForExistence(timeout: 30), "The reader must finish loading.\n\(app.debugDescription)")
+        attachScreenshot(app, named: "#91 - reader from the author search")
+        XCTAssertEqual(page.frame.minY, app.frame.minY, accuracy: 1,
+                       "The reader's top edge must be the window's: page \(page.frame), window \(app.frame)")
+        XCTAssertEqual(page.frame.height, app.frame.height, accuracy: 1,
+                       "The reader must be as tall as the window: page \(page.frame), window \(app.frame)")
+
+        // Back to the result's detail, to the search, and closed: the 作品詳情 the author was on.
+        let start = app.coordinate(withNormalizedOffset: .zero).withOffset(CGVector(dx: 1, dy: app.frame.height * 0.5))
+        start.press(forDuration: 0.05, thenDragTo: app.coordinate(withNormalizedOffset: CGVector(dx: 0.85, dy: 0.5)))
+        if offShelf { declineShelvePrompt(app, "Don't Add") }
+        XCTAssertTrue(read.waitForExistence(timeout: 8), app.debugDescription)
+        XCTAssertFalse(page.exists, app.debugDescription)
+        app.navigationBars.buttons.firstMatch.tap()
+        XCTAssertTrue(result.waitForExistence(timeout: 8), app.debugDescription)
+        app.buttons["sourceSearch.close"].firstMatch.tap()
+        let closed = XCTNSPredicateExpectation(predicate: NSPredicate(format: "exists == false"), object: search)
+        XCTAssertEqual(XCTWaiter.wait(for: [closed], timeout: 8), .completed, app.debugDescription)
+        XCTAssertTrue(author.waitForExistence(timeout: 8), app.debugDescription)
+    }
+
     @MainActor
     func testDetailMangaReaderLoadsAndReturns() throws {
         try exerciseMangaEntry(fromSearch: false)
