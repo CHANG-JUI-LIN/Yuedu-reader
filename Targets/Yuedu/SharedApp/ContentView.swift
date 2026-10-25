@@ -119,7 +119,9 @@ struct ContentView: View {
             gs.noteAppearanceOnScreen(scheme, in: scenePhase)
         }
         .onChange(of: scenePhase) { _, phase in
-            gs.noteAppearanceOnScreen(effectiveColorScheme, in: phase)
+            SourcePerfTrace.span("content.scene.\(phase)", thresholdMs: 5) {
+                gs.noteAppearanceOnScreen(effectiveColorScheme, in: phase)
+            }
         }
         .font(DSFont.body)
         .overlay {

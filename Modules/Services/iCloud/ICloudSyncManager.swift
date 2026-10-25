@@ -294,7 +294,8 @@ final class ICloudSyncManager: ObservableObject {
     /// is up for every caller at once.
     nonisolated func sync(reason: String = "manual") async throws {
         try await ensureAccountAvailable()
-        guard let passes = await joinOrStartSync(reason: reason) else { return }
+        let passes = await onMain("sync.join") { self.joinOrStartSync(reason: reason) }
+        guard let passes else { return }
         try await withTaskCancellationHandler {
             try await passes.value
         } onCancel: {
@@ -347,7 +348,7 @@ final class ICloudSyncManager: ObservableObject {
                 failure = error
             }
             let stopped = Task.isCancelled || failure is CancellationError
-            let next: String? = await MainActor.run {
+            let next: String? = await onMain("sync.passEnd") {
                 if !stopped, let requested = reasonRequestedDuringSync {
                     reasonRequestedDuringSync = nil
                     statusMessage = localized("iCloud 同步中…")
@@ -389,6 +390,18 @@ final class ICloudSyncManager: ObservableObject {
             }
             lease.end()
         }
+    }
+
+    /// A main-actor hop of a sync pass, timed: a main-thread stall during one names it
+    /// (`MainThreadMonitor`). Until 3.0.0 (140) most of these hops were bare, so a stall
+    /// right after `iCloud sync start` read "no instrumented span" and could not say
+    /// whether the sync was the cause.
+    nonisolated private func onMain<T: Sendable>(
+        _ stage: String,
+        _ detail: String = "",
+        _ body: @MainActor @Sendable () throws -> T
+    ) async rethrows -> T {
+        try await MainActor.run { try SourcePerfTrace.span(stage, detail, thresholdMs: 5) { try body() } }
     }
 
     nonisolated private func performSyncPass(reason: String) async throws {
@@ -439,7 +452,7 @@ final class ICloudSyncManager: ObservableObject {
             // so a stop leaves what a failed upload leaves — the next sync does the rest.
             try Task.checkCancellation()
             // 2. Replace rules (singleton store).
-            let localRules = await MainActor.run { ReplaceRuleStore.shared.rules }
+            let localRules = await onMain("sync.read.rules") { ReplaceRuleStore.shared.rules }
             let ruleMerge = try await mergeType(
                 recordName: Self.replaceRulesRecordName,
                 shadowKey: Self.shadowReplaceRules,
@@ -448,7 +461,7 @@ final class ICloudSyncManager: ObservableObject {
                 hash: { Self.stableHash($0) },
                 fallbackUpdatedAt: { _ in Date.distantPast },
                 applyLocally: { merged in
-                    await MainActor.run { ReplaceRuleStore.shared.replaceRulesFromSync(merged) }
+                    await onMain("sync.apply.rules", "count=\(merged.count)") { ReplaceRuleStore.shared.replaceRulesFromSync(merged) }
                     return true
                 }
             )
@@ -463,7 +476,7 @@ final class ICloudSyncManager: ObservableObject {
             //    local array: an empty array would let mergeType's local-deletion
             //    loop tombstone the constant-id record with `now`, killing a
             //    valid newer selection picked on another device.
-            let (localBubbleStyles, bubbleSelectionClock) = await MainActor.run {
+            let (localBubbleStyles, bubbleSelectionClock) = await onMain("sync.read.bubbleStyles") {
                 let settings = GlobalSettings.shared
                 return (settings.commentBubbleCustomStyles, settings.commentBubbleSelectionSyncClock)
             }
@@ -475,7 +488,7 @@ final class ICloudSyncManager: ObservableObject {
                 hash: { Self.stableHash($0) },
                 fallbackUpdatedAt: { $0.updatedAt ?? .distantPast },
                 applyLocally: { merged in
-                    await MainActor.run { GlobalSettings.shared.applyCommentBubbleSync(styles: merged) }
+                    await onMain("sync.apply.bubbleStyles", "count=\(merged.count)") { GlobalSettings.shared.applyCommentBubbleSync(styles: merged) }
                     return true
                 }
             )
@@ -483,7 +496,7 @@ final class ICloudSyncManager: ObservableObject {
             // Snapshot the selection AFTER applying merged styles: a style
             // removed by sync may clear the local selection (invariant cleanup),
             // which must ride this same pass as the nil value.
-            let localBubbleSelectionID = await MainActor.run {
+            let localBubbleSelectionID = await onMain("sync.read.bubbleSelection") {
                 GlobalSettings.shared.commentBubbleSelectedCustomStyleID
             }
             let bubbleSelection = ReaderCommentBubbleSyncSelection(
@@ -499,14 +512,14 @@ final class ICloudSyncManager: ObservableObject {
                 fallbackUpdatedAt: { $0.modifiedAt ?? .distantPast },
                 applyLocally: { merged in
                     let mergedSelection = merged.first?.selectedCustomStyleID
-                    await MainActor.run { GlobalSettings.shared.applyCommentBubbleSync(selection: mergedSelection) }
+                    await onMain("sync.apply.bubbleSelection") { GlobalSettings.shared.applyCommentBubbleSync(selection: mergedSelection) }
                     return true
                 }
             )
             changedRemote = changedRemote || bubbleSelectionMerge.uploaded
             // 3a. Card templates (本章說／作者說／神評論), per template like the bubble
             //     styles. Which one each kind wears rides the reading setup (3c).
-            let localCardStyles = await MainActor.run { GlobalSettings.shared.commentCardCustomStyles }
+            let localCardStyles = await onMain("sync.read.cardStyles") { GlobalSettings.shared.commentCardCustomStyles }
             let cardStyleMerge = try await mergeType(
                 recordName: Self.commentCardStylesRecordName,
                 shadowKey: Self.shadowCommentCardStyles,
@@ -515,7 +528,7 @@ final class ICloudSyncManager: ObservableObject {
                 hash: { Self.stableHash($0) },
                 fallbackUpdatedAt: { $0.updatedAt ?? .distantPast },
                 applyLocally: { merged in
-                    await MainActor.run { GlobalSettings.shared.applyCommentCardStylesSync(merged) }
+                    await onMain("sync.apply.cardStyles", "count=\(merged.count)") { GlobalSettings.shared.applyCommentCardStylesSync(merged) }
                     return true
                 }
             )
@@ -526,7 +539,7 @@ final class ICloudSyncManager: ObservableObject {
             //     last-write-wins on their stamped `updatedAt`, like the bubble styles;
             //     the pictures they show follow as files, under the name each background
             //     knows them by.
-            let localBackgrounds = await MainActor.run { GlobalSettings.shared.readerCustomBackgrounds }
+            let localBackgrounds = await onMain("sync.read.backgrounds") { GlobalSettings.shared.readerCustomBackgrounds }
             let backgroundMerge = try await mergeType(
                 recordName: Self.readerBackgroundsRecordName,
                 shadowKey: Self.shadowReaderBackgrounds,
@@ -535,7 +548,7 @@ final class ICloudSyncManager: ObservableObject {
                 hash: { Self.stableHash($0) },
                 fallbackUpdatedAt: { $0.updatedAt ?? .distantPast },
                 applyLocally: { merged in
-                    await MainActor.run { GlobalSettings.shared.applyReaderCustomBackgroundsSync(merged) }
+                    await onMain("sync.apply.backgrounds", "count=\(merged.count)") { GlobalSettings.shared.applyReaderCustomBackgroundsSync(merged) }
                     return true
                 }
             )
@@ -549,7 +562,7 @@ final class ICloudSyncManager: ObservableObject {
             if !(try await downloadMissingFiles(backgroundPictures)).isEmpty {
                 // A background already worn gets its picture only now; nothing it names
                 // changed, so the reader has to be told to look again.
-                await MainActor.run { GlobalSettings.shared.readerBackgroundPicturesDidArrive() }
+                await onMain("sync.apply.backgroundPictures") { GlobalSettings.shared.readerBackgroundPicturesDidArrive() }
             }
 
             try Task.checkCancellation()
@@ -558,7 +571,7 @@ final class ICloudSyncManager: ObservableObject {
             //     there both survive. After 3b, so a background it names is in the list.
             //     Each item is the snapshot taken when the row was set: switching themes
             //     changes none of them, and only a new setting reads as a local edit.
-            let localReadingSettings = await MainActor.run { GlobalSettings.shared.readingSettingSyncRecords }
+            let localReadingSettings = await onMain("sync.read.readingSettings") { GlobalSettings.shared.readingSettingSyncRecords }
             let readingSettingsMerge = try await mergeType(
                 recordName: Self.readingSettingsRecordName,
                 shadowKey: Self.shadowReadingSettings,
@@ -567,7 +580,7 @@ final class ICloudSyncManager: ObservableObject {
                 hash: { Self.stableHash($0) },
                 fallbackUpdatedAt: { $0.editedAt },
                 applyLocally: { merged in
-                    await MainActor.run { GlobalSettings.shared.applyReadingSettingsSync(merged) }
+                    await onMain("sync.apply.readingSettings", "count=\(merged.count)") { GlobalSettings.shared.applyReadingSettingsSync(merged) }
                     return true
                 }
             )
@@ -616,7 +629,7 @@ final class ICloudSyncManager: ObservableObject {
             //    constant id, whose merge clock advances only on a real user
             //    edit — never when a sync applies a remote layout, which would
             //    make both devices claim to be newest on every pass.
-            let (localBarLayout, barLayoutClock) = await MainActor.run {
+            let (localBarLayout, barLayoutClock) = await onMain("sync.read.barLayout") {
                 let settings = GlobalSettings.shared
                 return (settings.readerBarLayout, settings.readerBarLayoutSyncClock)
             }
@@ -634,7 +647,7 @@ final class ICloudSyncManager: ObservableObject {
                 fallbackUpdatedAt: { $0.modifiedAt ?? .distantPast },
                 applyLocally: { merged in
                     guard let record = merged.first else { return true }
-                    return await MainActor.run {
+                    return await onMain("sync.apply.barLayout") {
                         GlobalSettings.shared.applyReaderBarLayoutFromSync(
                             record.layout,
                             modifiedAt: record.modifiedAt
@@ -712,7 +725,7 @@ final class ICloudSyncManager: ObservableObject {
             // Everything else went through; the pass still did not, so it is reported as the
             // failure it is and the last-sync date stays where it was.
             if let stylePictureError { throw stylePictureError }
-            await MainActor.run {
+            await onMain("sync.done") {
                 lastSyncDate = date
                 statusMessage = localized("iCloud 同步成功")
             }
@@ -842,7 +855,7 @@ final class ICloudSyncManager: ObservableObject {
         }
         let data = try Data(contentsOf: url)
         let items = try JSONDecoder().decode([CloudSyncRecord<SkippedSyncValue>].self, from: data)
-        let held = await MainActor.run { store.recordIDs }
+        let held = await onMain("sync.read.bookIDs") { store.recordIDs }
         let known = Set(held.map(\.uuidString))
             .union(SyncShadowStore.load(Self.shadowBooksBeforeSplit).keys)
             .union(SyncShadowStore.load(Self.shadowBooks).keys)
@@ -852,7 +865,7 @@ final class ICloudSyncManager: ObservableObject {
             let books = try JSONDecoder().decode([CloudSyncRecord<ReadingBook>].self, from: data)
                 .compactMap { $0.deleted ? nil : $0.value }
                 .filter { added.contains($0.id.uuidString) }
-            adopted = await MainActor.run { store.adoptBooksAddedByOlderBuilds(books) }
+            adopted = await onMain("sync.apply.olderBuildsBooks", "count=\(books.count)") { store.adoptBooksAddedByOlderBuilds(books) }
         }
         UserDefaults.standard.set(record.recordChangeTag ?? changeTag, forKey: Self.olderBuildsBooksChangeTagKey)
         AppLogger.sync("⟐ books from older builds: \(items.count) item(s) in \(Self.olderBuildsBooksRecordName), \(adopted) new here", level: .notice)

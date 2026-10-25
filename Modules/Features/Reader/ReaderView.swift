@@ -2190,30 +2190,34 @@ struct ReaderView: View {
         }
         .background(readerTeardownProbe)
         .onChanged(of: scenePhase) { phase in
-            ttsLog("[TTS][Reader] scenePhase=\(String(describing: phase)) ttsPlaying=\(ttsCoordinator.isPlaying)")
-            if phase == .background || phase == .inactive {
-                ttsCoordinator.refreshNowPlayingForSystemSurfaces()
-                saveProgress()
-                finishReadingStatsSession()
-            }
-            // Only a real move to the background drops pagination. `.inactive` is
-            // transient and the user has not left: a notification banner, a Control
-            // Centre pull, an app-switcher glance, an incoming call. Cancelling there
-            // discarded every laid-out chapter mid-read — a device log showed 18 of 19
-            // generation bumps coming from this path, four of them inside the same four
-            // minutes as 26 page-turn anomalies.
-            if phase == .background {
-                cancelPendingRenderWorkUnlessNarrating()
-            }
-            // Back from the background, the environment's light／dark is the device's
-            // again, and the device may have changed while the app was away.
-            if phase.showsDeviceAppearance {
-                alignReaderModeWithDevice(in: phase)
-                syncActiveThemePreset()
-            }
-            if phase == .active {
-                restoreReaderDisplayStateAfterResume()
-                beginReadingStatsSession()
+            // Named like the app's own `scene.phase.*`: a stall on a phase change says
+            // whether the reader's share of it was the cause.
+            SourcePerfTrace.span("reader.scene.\(phase)", thresholdMs: 5) {
+                ttsLog("[TTS][Reader] scenePhase=\(String(describing: phase)) ttsPlaying=\(ttsCoordinator.isPlaying)")
+                if phase == .background || phase == .inactive {
+                    ttsCoordinator.refreshNowPlayingForSystemSurfaces()
+                    saveProgress()
+                    finishReadingStatsSession()
+                }
+                // Only a real move to the background drops pagination. `.inactive` is
+                // transient and the user has not left: a notification banner, a Control
+                // Centre pull, an app-switcher glance, an incoming call. Cancelling there
+                // discarded every laid-out chapter mid-read — a device log showed 18 of 19
+                // generation bumps coming from this path, four of them inside the same four
+                // minutes as 26 page-turn anomalies.
+                if phase == .background {
+                    cancelPendingRenderWorkUnlessNarrating()
+                }
+                // Back from the background, the environment's light／dark is the device's
+                // again, and the device may have changed while the app was away.
+                if phase.showsDeviceAppearance {
+                    alignReaderModeWithDevice(in: phase)
+                    syncActiveThemePreset()
+                }
+                if phase == .active {
+                    restoreReaderDisplayStateAfterResume()
+                    beginReadingStatsSession()
+                }
             }
         }
         .onReceive(epubRenderer.$scrollEngine) { engine in
@@ -2231,8 +2235,10 @@ struct ReaderView: View {
             // change — the paired bumps a second apart in the device log. Saving
             // progress twice is harmless and worth the belt-and-braces; discarding
             // every layout twice is not.
-            saveProgress()
-            finishReadingStatsSession()
+            SourcePerfTrace.span("reader.willResignActive", thresholdMs: 5) {
+                saveProgress()
+                finishReadingStatsSession()
+            }
         }
         .onChanged(of: settings.readerBrightness) { val in
             if !settings.followSystemBrightness { UIScreen.main.brightness = CGFloat(val) }
