@@ -45,7 +45,7 @@ final class PublicLibraryLiveUITests: XCTestCase {
         add(attachment)
     }
 
-    /// The first of 青空文庫's works on the home: 最新 takes its libraries in turn (LibraryOrderTests).
+    /// The first of 青空文庫's works on the home: 最新 takes its libraries in turn (LibraryKeysTests).
     @MainActor
     private func homeAozoraWork(_ app: XCUIApplication) -> XCUIElement {
         let latest = app.descendants(matching: .any).matching(NSPredicate(format: "label == %@", "最新")).firstMatch

@@ -17,7 +17,7 @@ struct ContentView: View {
     /// Whether any screen is hiding the tab bar — answered from every tab, not only the
     /// screen's own (`RootTabBarVisibility`).
     @StateObject private var rootTabBar = RootTabBarVisibility()
-    @State private var selectedRootTab: RootTabItem = .bookshelf
+    @State private var selectedRootTab: RootTabItem = .explore
     /// 新手導覽: up at a device's first launch, and again from 設定 → 關於.
     @State private var onboarding = OnboardingState()
     /// A keyword a book source's discover page handed back via `java.searchBook`.

@@ -36,6 +36,10 @@ final class RedChamberProductionUITests: XCTestCase {
             "-auto-import-epub", "RedChamber.epub",
         ]
         app.launch()
+        // The app opens on 探索.
+        let shelfTab = app.tabBars.buttons["書架"].firstMatch
+        XCTAssertTrue(shelfTab.waitForExistence(timeout: 25), app.debugDescription)
+        shelfTab.tap()
 
         // Wait for the shelf to appear with the imported book.
         let list = app.tables["home_book_list"]

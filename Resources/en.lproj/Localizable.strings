@@ -3637,9 +3637,6 @@
 "參與聚合的來源" = "Aggregated Sources";
 "跟隨 App 語言" = "Match App Language";
 "這個語言的書排在前面，其次是沒有標示語言的書（多數來源配置），其他語言的書排在最後。" = "Books in this language come first, then books without a language label (from most sources), then books in other languages.";
-"書庫順序" = "Library Order";
-"第 %d 個" = "Position %d";
-"最新照這個順序；來源配置排在書庫之後，照它們自己的順序。" = "Latest follows this order. Sources come after libraries, in their own order.";
 "顯示在最新" = "Show in Latest";
 "每個首頁配置的最新都用這份設定。" = "Latest uses this setting in every home configuration.";
 "隱藏已讀" = "Hide Finished";
@@ -4165,3 +4162,7 @@
 "回到搜尋前的位置？" = "Go back to where you were before searching?";
 "回到原位置" = "Go Back";
 "留在這裡" = "Stay Here";
+
+/* 中繼資料語言偏好推薦: a blurb with nothing in the chosen Chinese script */
+"沒有繁體中文簡介" = "No Traditional Chinese description";
+"沒有簡體中文簡介" = "No Simplified Chinese description";

@@ -31,7 +31,7 @@ final class HomePageStore: ObservableObject {
 
     var selectedConfiguration: HomeConfigurationID { home?.selectedID ?? .defaults }
 
-    /// 首頁配置's page: the reader's own, with 預設 where it was moved to.
+    /// 首頁配置's page: the reader's own, with 預設 where it was moved to unless it was deleted.
     var configurations: [HomeConfigurationListing] {
         (home ?? HomeConfigurations(sections: [])).listings
     }
@@ -140,9 +140,9 @@ final class HomePageStore: ObservableObject {
         change { $0.rename(id, to: name) }
     }
 
-    /// Its photo goes with it.
+    /// Its photo goes with it; the last one left is kept (`HomeConfigurations.delete`).
     func deleteConfiguration(_ id: HomeConfigurationID) {
-        guard !id.isBuiltIn else { return }
+        guard configurations.count > 1, configurations.contains(where: { $0.id == id }) else { return }
         change { $0.delete(id) }
         photos.removePhoto(for: id)
     }

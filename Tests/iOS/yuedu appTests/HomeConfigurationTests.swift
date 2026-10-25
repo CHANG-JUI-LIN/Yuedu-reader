@@ -219,7 +219,7 @@ struct HomeConfigurationTests {
         #expect(store.configurations.map(\.name) == [localized("預設"), "週末", "自己排"])
     }
 
-    @Test("edits act on the selected configuration; 預設 is not renamed or deleted")
+    @Test("edits act on the selected configuration; 預設 is not renamed")
     func editsSelected() throws {
         let folder = try makeFolder()
         defer { folder.cleanup() }
@@ -242,7 +242,6 @@ struct HomeConfigurationTests {
         #expect(sectionIDs(store) == defaultIDs)
 
         store.renameConfiguration(.defaults, to: "x")
-        store.deleteConfiguration(.defaults)
         store.renameConfiguration(weekend, to: "假日")
         store.select(weekend)
         store.waitForPendingWritesForTesting()
@@ -287,6 +286,72 @@ struct HomeConfigurationTests {
 
         let reread = try JSONDecoder().decode(HomeConfigurations.self, from: JSONEncoder().encode(home))
         #expect(reread.listings.map(\.id) == [c, a, .defaults])
+    }
+
+    @Test("預設 is deleted like the reader's own, after which the first is shown; the last one left is kept")
+    func deleteDefaults() throws {
+        let folder = try makeFolder()
+        defer { folder.cleanup() }
+        let store = folder.store()
+        _ = store.pageOrDefaults(mode: .publicLibraries, publicLibrariesAvailable: false, languages: [])
+        // Alone, 預設 stays: the home would have nothing to show.
+        store.deleteConfiguration(.defaults)
+        #expect(store.configurations.map(\.id) == [.defaults])
+
+        let context = HomePageDefaults.Context(mode: .publicLibraries, publicLibrariesAvailable: false, languages: [])
+        store.createConfiguration(named: "週末", from: .blank, defaults: context)
+        let weekend = store.selectedConfiguration
+        store.createConfiguration(named: "晚上", from: .blank, defaults: context)
+        let evening = store.selectedConfiguration
+        store.addCategory(hot, to: evening)
+        store.select(.defaults)
+        store.moveConfigurations(fromOffsets: [0], toOffset: 2)
+        #expect(store.configurations.map(\.id) == [weekend, .defaults, evening])
+
+        // The selected 預設 goes: its sections with it, and the first left is shown.
+        store.deleteConfiguration(.defaults)
+        #expect(store.configurations.map(\.id) == [weekend, evening])
+        #expect(store.selectedConfiguration == weekend)
+        #expect(store.home?.sections.isEmpty == true)
+        #expect(store.home?.selected == weekend, "written out for a build that reads nil as 預設")
+        store.select(evening)
+        store.waitForPendingWritesForTesting()
+
+        let reread = folder.store()
+        #expect(reread.configurations.map(\.name) == ["週末", "晚上"])
+        #expect(reread.selectedConfiguration == evening)
+        #expect(reread.page?.sections.map(\.binding) == [.sourceCategories([hot])])
+
+        // Deleting the one shown shows the first; the last one left is kept.
+        reread.deleteConfiguration(evening)
+        #expect(reread.configurations.map(\.id) == [weekend])
+        #expect(reread.selectedConfiguration == weekend)
+        reread.deleteConfiguration(weekend)
+        #expect(reread.configurations.map(\.id) == [weekend])
+
+        // 預設配置 makes the defaults again, as one of the reader's own.
+        reread.createConfiguration(named: "", from: .defaults, defaults: context)
+        #expect(reread.configurations.map(\.name) == ["週末", localized("首頁配置")])
+        #expect(reread.page?.sections.map(\.binding) == HomePageDefaults.page(for: context).sections.map(\.binding))
+        reread.waitForPendingWritesForTesting()
+    }
+
+    @Test("a 預設 deleted moves no more, and nothing reorders it back in")
+    func moveWithoutDefaults() throws {
+        var home = HomeConfigurations(sections: [])
+        let a = home.create(named: "A", sections: [])
+        let b = home.create(named: "B", sections: [])
+        home.move(fromOffsets: [0], toOffset: 3)
+        home.delete(.defaults)
+        #expect(home.listings.map(\.id) == [a, b])
+        #expect(home.selectedID == b, "B was selected when made")
+        home.move(fromOffsets: [1], toOffset: 0)
+        #expect(home.listings.map(\.id) == [b, a])
+        #expect(home.defaultsIndex == nil)
+
+        let reread = try JSONDecoder().decode(HomeConfigurations.self, from: JSONEncoder().encode(home))
+        #expect(reread.listings.map(\.id) == [b, a])
+        #expect(reread.defaultsDeleted)
     }
 
     // MARK: 空白, built in until 2026-10-23

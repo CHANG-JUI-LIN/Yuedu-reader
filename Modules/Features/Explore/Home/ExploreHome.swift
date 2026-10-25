@@ -102,7 +102,6 @@ private struct ExploreHomeRoot: View {
     private var groups: [HomeSectionGroup] {
         let lookup = store.copyLookup()
         return model.groups(in: nil, languages: aggregation.readingLanguages,
-                            libraryOrder: aggregation.settings.libraryOrder,
                             readFilter: HomeReadFilter(hides: aggregation.hidesRead, isRead: lookup.isRead))
     }
 
@@ -601,7 +600,7 @@ enum ExploreHomeScope {
     }
 }
 
-/// A library as 範圍 and 書庫順序 list it.
+/// A library as 範圍, 顯示在最新 and 搜尋來源 list it.
 struct LibraryListing: Identifiable, Hashable {
     let key: SourceInstanceKey
     let name: String
@@ -609,13 +608,10 @@ struct LibraryListing: Identifiable, Hashable {
 
     var id: SourceInstanceKey { key }
 
-    /// The libraries there are now (saved connections; Gutenberg and 青空文庫 where offered),
-    /// in 書庫順序.
-    static func ordered(connections: [RemoteLibraryConnection], librariesAvailable: Bool,
-                        order: [SourceInstanceKey]?) -> [LibraryListing] {
+    /// The libraries there are now (saved connections; Gutenberg and 青空文庫 where offered).
+    static func available(connections: [RemoteLibraryConnection], librariesAvailable: Bool) -> [LibraryListing] {
         let names = Dictionary(connections.map { ($0.id, $0.name) }, uniquingKeysWith: { first, _ in first })
-        let keys = LibraryOrder.defaultKeys(connections: connections, librariesAvailable: librariesAvailable)
-        return LibraryOrder.arrange(keys, by: order, key: { $0 }).map { key in
+        return LibraryKeys.available(connections: connections, librariesAvailable: librariesAvailable).map { key in
             let name = switch key.type {
             case .gutenberg: localized("Project Gutenberg")
             case .aozora: localized("青空文庫")

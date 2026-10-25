@@ -48,17 +48,20 @@ struct HomeCardContent: Identifiable {
     ///     no status.
     ///   - shelfBooks: the shelf records of this row's `.copy` items, read live so progress
     ///     is current.
+    ///   - display: 中繼資料語言偏好推薦 on the source's text (2026-10-25); the route keeps it as
+    ///     sent. Not on a shelf copy, whose metadata is the reader's.
     @MainActor
     init?(_ entry: CollectionEntry, status: (SourceItemKey) -> CopyLookup.Status?,
-          shelfBooks: [UUID: ReadingBook], connections: RemoteLibraryConnectionStore = .shared) {
+          shelfBooks: [UUID: ReadingBook], connections: RemoteLibraryConnectionStore = .shared,
+          display: MetadataDisplay = .current) {
         guard case .item(let record, let summary, let opening) = entry else { return nil }
         id = record.key
         self.opening = opening
         route = WorkDetailRoute(record: record, summary: summary, opening: opening)
         kind = record.contentKind
-        title = summary.title
-        author = summary.authors.joined(separator: "、")
         if case .copy(let bookID) = opening, let book = shelfBooks[bookID] {
+            title = summary.title
+            author = summary.authors.joined(separator: "、")
             cover = .shelf(book)
             blurb = nil
             category = nil
@@ -71,14 +74,16 @@ struct HomeCardContent: Identifiable {
             accessibilityValue = ""
             return
         }
+        title = display.text(summary.title)
+        author = summary.authors.map(display.text).joined(separator: "、")
         cover = .reference(summary.cover, session: Self.session(for: opening, connections: connections))
-        blurb = summary.blurb
-        category = summary.category
-        series = summary.series
+        blurb = display.blurb(summary.blurb)?.string
+        category = summary.category.map(display.text)
+        series = summary.series.map(display.text)
         let status = status(record.key)
         detail = status?.title
         progress = nil
-        accessibilityLabel = summary.title
+        accessibilityLabel = title
         // No source, as on screen: the home names none (5d-3b, decision 19).
         accessibilityValue = [author, series ?? "", status?.title ?? ""].filter { !$0.isEmpty }.joined(separator: ", ")
     }

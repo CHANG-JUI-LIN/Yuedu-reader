@@ -314,12 +314,12 @@ struct HomeSectionForm: View {
 
     // MARK: 最新
 
-    /// 顯示在最新 (decision 36: Emby 4.10 sets a section's libraries in its own options), in
-    /// 書庫順序. None in China without a connection saved.
+    /// 顯示在最新 (decision 36: Emby 4.10 sets a section's libraries in its own options). None in
+    /// China without a connection saved.
     @ViewBuilder
     private var latestLibraries: some View {
-        let libraries = LibraryListing.ordered(connections: connections.catalogs, librariesAvailable: availability.isAvailable,
-                                               order: aggregation.settings.libraryOrder)
+        let libraries = LibraryListing.available(connections: connections.catalogs,
+                                                 librariesAvailable: availability.isAvailable)
         if !libraries.isEmpty {
             Section {
                 ForEach(libraries) { library in
@@ -577,8 +577,7 @@ struct HomeSectionForm: View {
                                 title: localized("AI 推薦"), canGenerate: false, open: { _, _ in })
         } else if !preview.isReady {
             ProgressView().frame(maxWidth: .infinity)
-        } else if let group = preview.groups(in: nil, languages: aggregation.readingLanguages,
-                                             libraryOrder: aggregation.settings.libraryOrder).first,
+        } else if let group = preview.groups(in: nil, languages: aggregation.readingLanguages).first,
                   !group.isSettledEmpty {
             HomeRowView(group: group, content: content(of: group),
                         load: { for row in group.rows { preview.load(row.id) } },

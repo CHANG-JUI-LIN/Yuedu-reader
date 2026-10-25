@@ -1047,6 +1047,9 @@ struct BookDetailIntroSection: View {
     /// `<md>`, `<useweb>`) are read. Any other text, such as the reader's own or a library's,
     /// is shown as it is (decision 33).
     var readsSourceFormats = true
+    /// Whether `text` says there is no description in the reader's language (沒有繁體中文簡介):
+    /// secondary, as the card draws it.
+    var isUnavailable = false
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var webLayout = BookIntroLayout()
@@ -1106,7 +1109,7 @@ struct BookDetailIntroSection: View {
         case .plain(let plain):
             Text(plain)
                 .font(DSFont.subheadline)
-                .foregroundStyle(DSColor.textPrimary)
+                .foregroundStyle(isUnavailable ? DSColor.textSecondary : DSColor.textPrimary)
                 .lineLimit(isExpanded ? nil : Self.collapsedLineLimit)
         case .markdown(let source):
             Text(markdown ?? AttributedString(source))

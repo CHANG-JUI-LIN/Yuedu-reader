@@ -11,6 +11,10 @@ final class RemoteLibraryNavigationUITests: XCTestCase {
         let app = XCUIApplication()
         app.launchArguments += ["-no-official-modules", "-onboarding.completed", "YES", "-AppleLanguages", "(en)", "-AppleLocale", "en_US"]
         app.launch()
+        // The app opens on 探索; 書架 is "Library" in English.
+        let shelfTab = app.tabBars.buttons["Library"].firstMatch
+        XCTAssertTrue(shelfTab.waitForExistence(timeout: 20), app.debugDescription)
+        shelfTab.tap()
         let add = app.buttons["home_add_book"]
         XCTAssertTrue(add.waitForExistence(timeout: 20))
         XCTAssertEqual(add.label, "Add Book")

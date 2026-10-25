@@ -46,10 +46,10 @@ final class LocalizedScreenshotUITests: XCTestCase {
         app.launchArguments = ["-no-official-modules", "-onboarding.completed", "YES", "-AppleLanguages", "(\(locale))", "-AppleLocale", region]
         app.launch()
 
-        // The app restores the last tab it was on, so always start from Library.
+        // The app opens on 探索; 書架 is the second tab.
         let tabBar = app.tabBars.firstMatch
         XCTAssertTrue(tabBar.waitForExistence(timeout: 30), "[\(locale)] tab bar should appear")
-        tabBar.buttons.element(boundBy: 0).tap()
+        tabBar.buttons.element(boundBy: 1).tap()
 
         // The shelf renders as a table in list mode and a grid in cover mode, so
         // wait on the book row itself rather than on one container's identifier.
@@ -136,7 +136,7 @@ final class LocalizedScreenshotUITests: XCTestCase {
 
             let tabBar = app.tabBars.firstMatch
             XCTAssertTrue(tabBar.waitForExistence(timeout: 30), "[\(locale)] tab bar")
-            tabBar.buttons.element(boundBy: 0).tap()
+            tabBar.buttons.element(boundBy: 1).tap()
 
             let row = app.staticTexts[title]
             XCTAssertTrue(row.waitForExistence(timeout: 30), "[\(locale)] \(title) should be on the shelf")

@@ -15,14 +15,14 @@ struct DataSourceCount: Equatable {
 }
 
 /// 搜尋來源's places: the saved OPDS and Calibre libraries, Gutenberg and 青空文庫 where offered
-/// (WebDAV has no search), in 書庫順序, then the installed modules that search (Open Library
+/// (WebDAV has no search), then the installed modules that search (Open Library
 /// among them since OL3). 來源配置 are not listed: they keep their own switch and the search's
 /// 來源配置 chip.
 @MainActor
 enum SearchSourcePlaces {
-    static func places(connections: [RemoteLibraryConnection], librariesAvailable: Bool, order: [SourceInstanceKey]?,
+    static func places(connections: [RemoteLibraryConnection], librariesAvailable: Bool,
                        modules: [ModuleProvider]) -> [LibraryListing] {
-        let libraries = LibraryListing.ordered(connections: connections, librariesAvailable: librariesAvailable, order: order)
+        let libraries = LibraryListing.available(connections: connections, librariesAvailable: librariesAvailable)
             .filter { $0.key.type != .webDAV }
         let searching = modules.filter { $0.module.search != nil }.map {
             LibraryListing(key: $0.instance, name: $0.module.title, systemImage: "puzzlepiece.extension")
@@ -46,14 +46,13 @@ struct AggregationDataSourcesSection: View {
 
     private var searchCount: DataSourceCount {
         let places = SearchSourcePlaces.places(connections: connections.catalogs, librariesAvailable: availability.isAvailable,
-                                               order: store.settings.libraryOrder,
                                                modules: SourceProviderRegistry.moduleProviders(in: modules))
         return SearchSourcePlaces.count(places, shown: store.isShownInSearch)
     }
 
     private var latestCount: DataSourceCount {
-        let libraries = LibraryListing.ordered(connections: connections.catalogs, librariesAvailable: availability.isAvailable,
-                                               order: store.settings.libraryOrder)
+        let libraries = LibraryListing.available(connections: connections.catalogs,
+                                                 librariesAvailable: availability.isAvailable)
         return DataSourceCount(checked: libraries.filter { store.isShownInLatest($0.key) }.count, total: libraries.count)
     }
 
@@ -96,7 +95,6 @@ struct SearchSourcesView: View {
 
     var body: some View {
         let places = SearchSourcePlaces.places(connections: connections.catalogs, librariesAvailable: availability.isAvailable,
-                                               order: store.settings.libraryOrder,
                                                modules: SourceProviderRegistry.moduleProviders(in: modules))
         List {
             Section {
@@ -128,8 +126,8 @@ struct LatestSourcesView: View {
     @ObservedObject private var availability = PublicLibraryAvailability.shared
 
     var body: some View {
-        let libraries = LibraryListing.ordered(connections: connections.catalogs, librariesAvailable: availability.isAvailable,
-                                               order: store.settings.libraryOrder)
+        let libraries = LibraryListing.available(connections: connections.catalogs,
+                                                 librariesAvailable: availability.isAvailable)
         List {
             if libraries.isEmpty {
                 ContentUnavailableView(localized("沒有書庫"), systemImage: "building.columns")

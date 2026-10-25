@@ -3,7 +3,7 @@ import Foundation
 
 // Unified library 5d-3d: 聚合設定 (Phase 5 plan, decision 21), mapped from the Emby user
 // settings that shape its aggregation: 中繼資料語言偏好推薦 (2026-10-21; 偏好閱讀語言 and 推薦範圍 in
-// 5d-3d), 書庫順序 (5d-3e),
+// 5d-3d), 書庫順序 (5d-3e, taken away 2026-10-25),
 // 顯示在最新 (5d-3f, set in the 最新 section's form since decision 36, and in 數據來源's 最新來源
 // since search 9d), 隱藏已讀 (5d-3g, one switch for the whole home since decision 36), and
 // 搜尋來源 (search 9d).
@@ -15,8 +15,8 @@ struct AggregationSettings: Codable, Equatable, Sendable {
     /// 中繼資料語言偏好推薦: `MetadataLanguage.followApp` or one of `MetadataLanguage.offered`.
     /// Nil until the reader picks.
     var metadataLanguage: String?
-    /// 書庫順序 (`LibraryOrder`); nil until the reader orders them. Settings saved before
-    /// 5d-3e have no such field and read as nil.
+    /// 書庫順序 until 2026-10-25, when the maintainer took it away; read by nothing since, and
+    /// kept as stored for a build before that, which still orders by it.
     var libraryOrder: [SourceInstanceKey]?
     /// The libraries 顯示在最新 turns off: Emby's `LatestItemsExcludes`. Nil until set, by the
     /// reader or by the move of the 最新 section's own list (`adoptLegacyLatestExcluded`). A
@@ -109,11 +109,6 @@ final class AggregationSettingsStore: ObservableObject {
 
     private static var interfaceLanguage: String? { Bundle.main.preferredLocalizations.first }
 
-    /// 書庫順序: the libraries there are now, in the order the reader gave them.
-    func setLibraryOrder(_ keys: [SourceInstanceKey]) {
-        edit { $0.libraryOrder = keys }
-    }
-
     /// 顯示在最新, for one library.
     func isShownInLatest(_ key: SourceInstanceKey) -> Bool {
         !(settings.hiddenFromLatest ?? []).contains(key)
@@ -171,7 +166,7 @@ final class AggregationSettingsStore: ObservableObject {
     /// in the section, which is how it is left out. The home file drops the list the next time
     /// it is saved.
     func adoptLegacyLatestExcluded(_ keys: [SourceInstanceKey]) {
-        let keys = keys.filter(LibraryOrder.isLibrary)
+        let keys = keys.filter(LibraryKeys.isLibrary)
         guard settings.hiddenFromLatest == nil, !keys.isEmpty else { return }
         AppLogger.cache("⟐ 排除的來源 moved to 顯示在最新", context: ["count": "\(keys.count)"])
         edit { $0.hiddenFromLatest = keys }

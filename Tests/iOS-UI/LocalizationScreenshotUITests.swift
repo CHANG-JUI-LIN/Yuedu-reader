@@ -25,6 +25,8 @@ final class LocalizationScreenshotUITests: XCTestCase {
             let tabs = app.tabBars.firstMatch
             XCTAssertTrue(tabs.waitForExistence(timeout: 30), app.debugDescription)
             XCTAssertEqual(tabs.buttons.count, 5, app.debugDescription)
+            // 書架, the second tab: the app opens on 探索.
+            tabs.buttons.element(boundBy: 1).tap()
             screenshot(app, "\(language)-library")
             tabs.buttons.element(boundBy: 3).tap()
             XCTAssertTrue(app.navigationBars.firstMatch.waitForExistence(timeout: 10), app.debugDescription)

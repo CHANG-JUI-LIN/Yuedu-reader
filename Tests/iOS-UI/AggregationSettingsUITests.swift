@@ -2,7 +2,7 @@ import XCTest
 
 /// Unified library 5d-3d and 5d-3e: 設定 → 聚合設定 (Phase 5 plan, decision 21), laid out as
 /// Emby's Home Screen page since decision 36. 中繼資料語言偏好推薦 (2026-10-21) is one menu that
-/// starts at 跟隨 App 語言; the language picked there survives a relaunch. 書庫順序 orders the libraries' rows. 隱藏已讀, one switch, starts on. 數據來源
+/// starts at 跟隨 App 語言; the language picked there survives a relaunch. 書庫順序 is gone (2026-10-25). 隱藏已讀, one switch, starts on. 數據來源
 /// (search 9d) lists each purpose's places with how many are checked.
 final class AggregationSettingsUITests: XCTestCase {
     override func setUpWithError() throws { continueAfterFailure = false }
@@ -90,39 +90,8 @@ final class AggregationSettingsUITests: XCTestCase {
         upper.frame.minY < lower.frame.minY
     }
 
-    @MainActor
-    func testLibraryOrder() {
-        let app = application(fresh: true)
-        app.launch()
-        openAggregationSettings(app)
-
-        // A new install: Gutenberg, then 青空文庫. Dragging 青空文庫 up puts it first.
-        let gutenberg = app.descendants(matching: .any)["aggregation.library.gutenberg.builtin.gutenberg"].firstMatch
-        let aozora = app.descendants(matching: .any)["aggregation.library.aozora.builtin.aozora"].firstMatch
-        XCTAssertTrue(aozora.waitForExistence(timeout: 5), app.debugDescription)
-        XCTAssertTrue(isAbove(gutenberg, aozora))
-        XCTAssertEqual(aozora.value as? String, "第 2 個")
-        aozora.press(forDuration: 1.0, thenDragTo: gutenberg)
-        XCTAssertEqual(aozora.value as? String, "第 1 個")
-        XCTAssertTrue(isAbove(aozora, gutenberg))
-        attach(app, "aggregation-library-order")
-
-        // Saved: a relaunch reads it back. (範圍, which listed the libraries in this order, left
-        // 探索 with decision 36; 最新 takes its libraries in it, LibraryOrderTests.)
-        app.terminate()
-        let relaunched = application(fresh: false)
-        relaunched.launch()
-        openAggregationSettings(relaunched)
-        let rereadAozora = relaunched.descendants(matching: .any)["aggregation.library.aozora.builtin.aozora"].firstMatch
-        XCTAssertTrue(rereadAozora.waitForExistence(timeout: 5), relaunched.debugDescription)
-        XCTAssertEqual(rereadAozora.value as? String, "第 1 個")
-        relaunched.terminate()
-        // Leave the simulator as a new install has it, for the Explore tests after this one.
-        application(fresh: true).launch()
-    }
-
-    /// Decision 36: one 隱藏已讀 for the whole home, at the bottom of the page, under the home's
-    /// sections, which are under 書庫順序 and the languages.
+    /// Decision 36: one 隱藏已讀 for the whole home, at the bottom of the page, under the
+    /// languages; 書庫順序, which was between them, is gone (2026-10-25).
     @MainActor
     func testHideReadSwitch() {
         let app = application(fresh: true)
@@ -130,13 +99,12 @@ final class AggregationSettingsUITests: XCTestCase {
         openAggregationSettings(app)
         let language = app.descendants(matching: .any)["aggregation.metadataLanguage"].firstMatch
         XCTAssertTrue(language.waitForExistence(timeout: 5), app.debugDescription)
-        let library = app.descendants(matching: .any)["aggregation.library.gutenberg.builtin.gutenberg"].firstMatch
-        reveal(library, in: app)
-        XCTAssertTrue(library.exists, app.debugDescription)
         let hideRead = app.switches["aggregation.hideRead"].firstMatch
         reveal(hideRead, in: app)
         XCTAssertTrue(hideRead.waitForExistence(timeout: 5), app.debugDescription)
-        XCTAssertTrue(isAbove(library, hideRead), "隱藏已讀 is last")
+        XCTAssertTrue(isAbove(language, hideRead), "隱藏已讀 is last")
+        XCTAssertFalse(app.staticTexts["書庫順序"].exists, "書庫順序 is gone")
+        XCTAssertFalse(app.descendants(matching: .any)["aggregation.library.gutenberg.builtin.gutenberg"].exists)
         XCTAssertFalse(app.switches["aggregation.hideRead.latest"].exists, "the two switches are one")
         XCTAssertFalse(app.staticTexts["顯示在最新"].exists, "顯示在最新 is in 最新's options")
         XCTAssertEqual(hideRead.value as? String, "1")

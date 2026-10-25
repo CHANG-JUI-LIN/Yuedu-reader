@@ -46,7 +46,10 @@ final class yuedu_appUITests: XCTestCase {
         app.launchArguments += ["-onboarding.completed", "YES"]
         app.launch()
 
-        // 等首頁出現（書架或空書架）
+        // App 開在探索，先切到書架；等首頁出現（書架或空書架）
+        let shelfTab = app.tabBars.buttons["書架"].firstMatch
+        XCTAssertTrue(shelfTab.waitForExistence(timeout: 8), "分頁列應出現")
+        shelfTab.tap()
         let navBar = app.navigationBars.firstMatch
         XCTAssertTrue(navBar.waitForExistence(timeout: 8), "首頁應出現")
 

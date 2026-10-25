@@ -3,8 +3,9 @@ import SwiftUI
 // 首頁配置's own page (maintainer, 2026-10-22, after Rex's 管理配置), from its button on the
 // home, where ••• had a submenu until then. Every 首頁配置 with the photo the reader gave it; a
 // tap switches to it and stays here. 編輯 reorders them all, 預設 among the reader's own
-// (maintainer, 2026-10-23), deletes the reader's own, and opens a configuration's photo and
-// name, as its swipe does. New ones come from the two templates under the list.
+// (maintainer, 2026-10-23), deletes any but the last one left, 預設 too (2026-10-25: 預設配置
+// makes it again), and opens a configuration's photo and name, as its swipe does. New ones
+// come from the two templates under the list.
 
 struct HomeConfigurationsPage: View {
     @ObservedObject private var store = HomePageStore.shared
@@ -18,11 +19,11 @@ struct HomeConfigurationsPage: View {
         let listings = store.configurations
         List {
             Section {
-                ForEach(listings) { row($0) }
+                ForEach(listings) { row($0, deletable: listings.count > 1) }
                     .onMove { store.moveConfigurations(fromOffsets: $0, toOffset: $1) }
                     // 編輯's delete asks first, as the swipe's does: the sections go with it.
                     .onDelete { offsets in
-                        if let first = offsets.first, !listings[first].id.isBuiltIn { prompt = .delete(listings[first]) }
+                        if let first = offsets.first, listings.count > 1 { prompt = .delete(listings[first]) }
                     }
             } header: {
                 Text(localized("配置列表"))
@@ -50,7 +51,8 @@ struct HomeConfigurationsPage: View {
         .onAppear { photos.loadIfNeeded() }
     }
 
-    private func row(_ configuration: HomeConfigurationListing) -> some View {
+    /// - Parameter deletable: false for the last one left, which the home needs.
+    private func row(_ configuration: HomeConfigurationListing, deletable: Bool) -> some View {
         let isSelected = configuration.id == store.selectedConfiguration
         return Button {
             if editMode.isEditing {
@@ -93,11 +95,10 @@ struct HomeConfigurationsPage: View {
             }
         }
         .accessibilityIdentifier("homeConfigurations.row.\(configuration.id.rawValue)")
-        // 預設 moves with the rest but is never deleted.
-        .deleteDisabled(configuration.id.isBuiltIn)
+        .deleteDisabled(!deletable)
         .swipeActions(edge: .trailing, allowsFullSwipe: false) {
             // No destructive role: that takes the row away before the dialog has asked.
-            if !configuration.id.isBuiltIn {
+            if deletable {
                 Button { prompt = .delete(configuration) } label: {
                     Label(localized("刪除"), systemImage: "trash")
                 }

@@ -353,7 +353,8 @@ final class ExploreHomeUITests: XCTestCase {
     /// 首頁配置's own button opens its page (maintainer, 2026-10-22; under ••• from decision 36):
     /// 預設配置 starts from 預設's sections; a tap switches and stays there, its check mark moving;
     /// 編輯 moves 預設 among the reader's own (2026-10-23), which a relaunch keeps; a swipe
-    /// deletes the reader's own, after asking. There is no 空白 since 2026-10-23. ••• opens the
+    /// deletes the reader's own, after asking, and 預設 too while another is left (2026-10-25).
+    /// There is no 空白 since 2026-10-23. ••• opens the
     /// browser (5d-1), always there, even for a reader who had hidden it before it lost its
     /// switch (maintainer, 2026-10-17).
     @MainActor
@@ -444,6 +445,24 @@ final class ExploreHomeUITests: XCTestCase {
         XCTAssertTrue(app.staticTexts["這個首頁配置還沒有欄目"].waitForExistence(timeout: 10), app.debugDescription)
         XCTAssertFalse(app.buttons[featuredCard].exists, app.debugDescription)
         attach(app, "explore-configuration-from-blank")
+
+        // 預設 deletes like the reader's own while another is left (2026-10-25); 預設配置 stays.
+        openConfigurations(app)
+        let builtIn = configurationRow(app, "預設")
+        XCTAssertTrue(builtIn.waitForExistence(timeout: 5), app.debugDescription)
+        builtIn.swipeLeft()
+        let deleteDefaults = app.buttons["刪除"].firstMatch
+        XCTAssertTrue(deleteDefaults.waitForExistence(timeout: 5), app.debugDescription)
+        deleteDefaults.tap()
+        XCTAssertTrue(app.staticTexts["刪除「預設」？"].waitForExistence(timeout: 5), app.debugDescription)
+        let confirmDefaults = app.buttons.matching(NSPredicate(format: "label == %@", "刪除")).allElementsBoundByIndex.last { $0.isHittable }
+        XCTAssertNotNil(confirmDefaults, app.debugDescription)
+        confirmDefaults?.tap()
+        XCTAssertTrue(builtIn.waitForNonExistence(timeout: 5), app.debugDescription)
+        XCTAssertTrue(configurationRow(app, "空白的").isSelected, app.debugDescription)
+        XCTAssertTrue(app.buttons["homeConfigurations.template.default"].exists, app.debugDescription)
+        attach(app, "explore-configuration-defaults-deleted")
+        closeConfigurations(app)
 
         // Hidden before 2026-10-17, with 編輯首頁's switch: there all the same.
         app.terminate()

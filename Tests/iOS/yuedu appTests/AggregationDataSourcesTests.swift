@@ -39,12 +39,12 @@ struct AggregationDataSourcesTests {
     func places() {
         let opds = RemoteLibraryConnection(id: "c1", name: "家裡", url: "https://home.test/opds", kind: .opds)
         let dav = RemoteLibraryConnection(id: "d1", name: "雲端", url: "https://dav.test/", kind: .webDAV)
-        let places = SearchSourcePlaces.places(connections: [opds, dav], librariesAvailable: true, order: nil, modules: [])
+        let places = SearchSourcePlaces.places(connections: [opds, dav], librariesAvailable: true, modules: [])
         #expect(places.map(\.key) == [SourceInstanceKey(type: .opds, id: "c1"), gutenberg, aozora])
         let count = SearchSourcePlaces.count(places, shown: { $0 != gutenberg })
         #expect(count == DataSourceCount(checked: 2, total: 3))
         #expect(count.text == "2/3")
-        #expect(SearchSourcePlaces.places(connections: [], librariesAvailable: false, order: nil, modules: []).isEmpty,
+        #expect(SearchSourcePlaces.places(connections: [], librariesAvailable: false, modules: []).isEmpty,
                 "no public library in China")
     }
 

@@ -94,6 +94,7 @@ struct WorkDetailView: View {
     @Environment(\.scenePhase) private var scenePhase
     @ObservedObject private var connections = RemoteLibraryConnectionStore.shared
     @ObservedObject private var aozora = AozoraCatalogStore.shared
+    @ObservedObject private var aggregation = AggregationSettingsStore.shared
     @StateObject private var actions = RemoteLibraryActionModel()
     @StateObject private var authorWorks = AuthorWorksModel()
     @StateObject private var toc = WorkTableOfContentsModel()
@@ -148,7 +149,19 @@ struct WorkDetailView: View {
     /// The versions 來源 lists: those known, then those 「尋找可用來源」 found.
     private var versions: [WorkDetailRoute] { WorkSourceFinder.joined(listed, found: finder.found) }
     private var selected: WorkDetailRoute? { WorkVersions.selected(in: versions, chosen: chosen) }
-    private var author: String { route.summary.authors.joined(separator: "、") }
+    /// 中繼資料語言偏好推薦 on what the source sent (2026-10-25), as the card had it; a shelf
+    /// copy's metadata is the reader's, as it is. The route keeps the text as sent: a search for a
+    /// source asks with it.
+    private var display: MetadataDisplay? {
+        if case .copy = route.opening { return nil }
+        return MetadataDisplay(language: aggregation.readingLanguages.language)
+    }
+
+    private var title: String { display?.text(route.summary.title) ?? route.summary.title }
+
+    private var author: String {
+        route.summary.authors.map { display?.text($0) ?? $0 }.joined(separator: "、")
+    }
 
     var body: some View {
         page
@@ -249,9 +262,9 @@ struct WorkDetailView: View {
     }
 
     private var workPage: some View {
-        BookDetailScaffold(title: route.summary.title, compactAction: primaryAction) {
+        BookDetailScaffold(title: title, compactAction: primaryAction) {
             BookDetailHero(artworkShape: route.record.contentKind == .audio ? .square : .book,
-                           cover: cover, title: route.summary.title, author: author,
+                           cover: cover, title: title, author: author,
                            meta: "", primary: primaryAction, secondary: secondaryAction,
                            authorActions: authorLinks, links: heroLinks)
         } content: {
@@ -266,7 +279,8 @@ struct WorkDetailView: View {
                 if let intro {
                     // Never a book source's own description: a book-source version draws its
                     // own page. Legado's formats are not read here (decision 33).
-                    BookDetailIntroSection(text: intro, isExpanded: $introExpanded, readsSourceFormats: false)
+                    BookDetailIntroSection(text: intro.string, isExpanded: $introExpanded, readsSourceFormats: false,
+                                           isUnavailable: intro.isUnavailable)
                 }
                 if let reason = route.recommendationReason {
                     BookDetailRecommendationSection(reason: reason)
@@ -584,7 +598,7 @@ struct WorkDetailView: View {
         } else {
             .reference(route.summary.cover, session: HomeCardContent.session(for: route.opening, connections: .shared))
         }
-        return HomeCoverArtwork(cover: content, title: route.summary.title, author: author,
+        return HomeCoverArtwork(cover: content, title: title, author: author,
                                 size: CGSize(width: DSLayout.bookDetailCoverWidth, height: DSLayout.bookDetailCoverHeight))
     }
 
@@ -826,15 +840,16 @@ struct WorkDetailView: View {
     }
 
     /// The description of the version shown (decision 33): a shelf copy's, by `CopyMetadata`
-    /// (the reader's own, its file's, then its library's, the item's newest), else the library
-    /// item's own, else what the card had.
-    private var intro: String? {
+    /// (the reader's own, its file's, then its library's, the item's newest), as it is; else the
+    /// library item's own, else what the card had, in 中繼資料語言偏好推薦's script, or that it
+    /// has none in it (2026-10-25).
+    private var intro: MetadataDisplay.Blurb? {
         let itemText = selected.flatMap(libraryItem(of:))?.summary
         if let copy = shownCopy {
-            return store.copyMetadata(of: copy, sidecar: copySidecar, liveIntro: itemText).intro?.text
+            return store.copyMetadata(of: copy, sidecar: copySidecar, liveIntro: itemText).intro.map { .text($0.text) }
         }
-        let text = itemText ?? route.summary.blurb
-        return text.flatMap { $0.isEmpty ? nil : $0 }
+        let text = (itemText ?? route.summary.blurb).flatMap { $0.isEmpty ? nil : $0 }
+        return MetadataDisplay(language: aggregation.readingLanguages.language).blurb(text)
     }
 
     /// The shelf copy of the version shown: the copy itself, or a library item's copy.

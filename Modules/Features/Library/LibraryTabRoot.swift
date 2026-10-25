@@ -16,7 +16,6 @@ struct LibraryTabRoot: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @ObservedObject private var availability = PublicLibraryAvailability.shared
     @ObservedObject private var connections = RemoteLibraryConnectionStore.shared
-    @ObservedObject private var aggregation = AggregationSettingsStore.shared
     @ObservedObject private var sourceStore = BookSourceStore.shared
     @ObservedObject private var aozora = AozoraCatalogStore.shared
     @ObservedObject private var rss = RSSStore.shared
@@ -61,8 +60,7 @@ struct LibraryTabRoot: View {
     }
 
     private var libraries: [LibraryListing] {
-        LibraryListing.ordered(connections: connections.connections, librariesAvailable: availability.isAvailable,
-                               order: aggregation.settings.libraryOrder)
+        LibraryListing.available(connections: connections.connections, librariesAvailable: availability.isAvailable)
     }
 
     private var trimmedQuery: String {

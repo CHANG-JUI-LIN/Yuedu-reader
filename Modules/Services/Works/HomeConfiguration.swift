@@ -4,7 +4,9 @@ import Foundation
 // several configurations, switched on 首頁配置's page:
 // - 預設 is the home the reader had before 5d-4, edited since 5d-2 (decision 22), saved as the
 //   file's top-level `sections`, where a build older than 5d-4 still finds it. It moves among
-//   the reader's own (`defaultsIndex`), and is never deleted.
+//   the reader's own (`defaultsIndex`), and is deleted like them (maintainer, 2026-10-25):
+//   預設配置 makes the defaults again, as one of the reader's own (`defaultsDeleted`).
+// - The last configuration left is never deleted: the home would have nothing to show.
 // - The reader's own: made from a template (`HomeConfigurationTemplate`), or migrated from a
 //   custom page (`custom_explore_pages.json`), which keeps its id.
 // - 空白 was built in until 2026-10-23, when the maintainer took it away (`retireBlank`).
@@ -65,21 +67,25 @@ struct HomeConfigurations: Codable, Hashable, Sendable {
     /// Where 預設 sits among the reader's own on 首頁配置's page; nil is first. A build older
     /// than 2026-10-23 lists it first all the same.
     var defaultsIndex: Int?
+    /// Whether the reader deleted 預設 (2026-10-25); `sections` is then empty. A build older than
+    /// that lists an empty 預設, but opens `selected`, which is always set once 預設 is gone.
+    var defaultsDeleted: Bool
     /// Set while `custom_explore_pages.json` could not be read: the pages move in on a later
     /// launch that reads it.
     var customPagesPending: Bool
 
     init(sections: [HomeSection], configurations: [HomeConfiguration] = [], selected: HomeConfigurationID? = nil,
-         defaultsIndex: Int? = nil, customPagesPending: Bool = false) {
+         defaultsIndex: Int? = nil, defaultsDeleted: Bool = false, customPagesPending: Bool = false) {
         self.sections = sections
         self.configurations = configurations
         self.selected = selected
         self.defaultsIndex = defaultsIndex
+        self.defaultsDeleted = defaultsDeleted
         self.customPagesPending = customPagesPending
     }
 
     private enum CodingKeys: String, CodingKey {
-        case schemaVersion, sections, configurations, selected, defaultsIndex, customPagesPending
+        case schemaVersion, sections, configurations, selected, defaultsIndex, defaultsDeleted, customPagesPending
     }
 
     init(from decoder: Decoder) throws {
@@ -88,6 +94,7 @@ struct HomeConfigurations: Codable, Hashable, Sendable {
         configurations = try container.decodeIfPresent([HomeConfiguration].self, forKey: .configurations) ?? []
         selected = try container.decodeIfPresent(HomeConfigurationID.self, forKey: .selected)
         defaultsIndex = try container.decodeIfPresent(Int.self, forKey: .defaultsIndex)
+        defaultsDeleted = try container.decodeIfPresent(Bool.self, forKey: .defaultsDeleted) ?? false
         customPagesPending = try container.decodeIfPresent(Bool.self, forKey: .customPagesPending) ?? false
         retireBlank()
     }
@@ -99,11 +106,13 @@ struct HomeConfigurations: Codable, Hashable, Sendable {
         try container.encode(configurations, forKey: .configurations)
         try container.encodeIfPresent(selected, forKey: .selected)
         try container.encodeIfPresent(defaultsIndex, forKey: .defaultsIndex)
+        if defaultsDeleted { try container.encode(true, forKey: .defaultsDeleted) }
         if customPagesPending { try container.encode(true, forKey: .customPagesPending) }
     }
 
     /// 空白 is no longer built in (maintainer, 2026-10-23). One the reader filled stays, as
-    /// their own 空白; an empty one goes, and 預設 is shown in its place.
+    /// their own 空白; an empty one goes, and 預設 (or, once it is deleted, the first) is shown in
+    /// its place.
     mutating func retireBlank() {
         if let index = configurations.firstIndex(where: { $0.id == .blank }) {
             if configurations[index].sections.isEmpty {
@@ -112,15 +121,21 @@ struct HomeConfigurations: Codable, Hashable, Sendable {
                 configurations[index].name = localized("空白")
             }
         }
-        if selected == .blank, !configurations.contains(where: { $0.id == .blank }) { selected = nil }
+        if selected == .blank, !configurations.contains(where: { $0.id == .blank }) { selected = replacement }
+    }
+
+    /// What is shown when the selected one goes: 預設, else the first left.
+    private var replacement: HomeConfigurationID? {
+        defaultsDeleted ? listings.first?.id : nil
     }
 
     // MARK: Reading
 
-    /// The selected configuration's id; one that is gone reads as 預設.
+    /// The selected configuration's id; one that is gone reads as 預設, or once 預設 is deleted,
+    /// as the first.
     var selectedID: HomeConfigurationID {
         guard let selected, configurations.contains(where: { $0.id == selected }) else {
-            return .defaults
+            return replacement ?? .defaults
         }
         return selected
     }
@@ -130,9 +145,10 @@ struct HomeConfigurations: Codable, Hashable, Sendable {
         return configurations.first { $0.id == id }?.sections ?? []
     }
 
-    /// The reader's own in their order, with 預設 where it was moved to.
+    /// The reader's own in their order, with 預設 where it was moved to unless it was deleted.
     var listings: [HomeConfigurationListing] {
         var listed = configurations.filter { !$0.id.isBuiltIn }.map { HomeConfigurationListing(id: $0.id, name: $0.name) }
+        guard !defaultsDeleted else { return listed }
         listed.insert(HomeConfigurationListing(id: .defaults, name: localized("預設")),
                       at: min(max(defaultsIndex ?? 0, 0), listed.count))
         return listed
@@ -181,12 +197,22 @@ struct HomeConfigurations: Codable, Hashable, Sendable {
         defaultsIndex = order.firstIndex(of: .defaults).flatMap { $0 == 0 ? nil : $0 }
     }
 
-    /// The reader's own only; 預設 is selected in its place, and keeps its place in the list.
+    /// Any but the last one left. One of the reader's own: 預設 keeps its place in the list. 預設:
+    /// its sections go, and it is listed no more. The one deleted, if selected, gives way to 預設,
+    /// else to the first left.
     mutating func delete(_ id: HomeConfigurationID) {
-        guard !id.isBuiltIn, let listed = listings.firstIndex(where: { $0.id == id }) else { return }
-        if let index = defaultsIndex, listed < index { defaultsIndex = index - 1 == 0 ? nil : index - 1 }
-        configurations.removeAll { $0.id == id }
-        if selected == id { selected = nil }
+        let listed = listings
+        guard listed.count > 1, let position = listed.firstIndex(where: { $0.id == id }) else { return }
+        let wasSelected = selectedID == id
+        if id == .defaults {
+            defaultsDeleted = true
+            sections = []
+            defaultsIndex = nil
+        } else {
+            if let index = defaultsIndex, position < index { defaultsIndex = index - 1 == 0 ? nil : index - 1 }
+            configurations.removeAll { $0.id == id }
+        }
+        if wasSelected { selected = replacement }
     }
 
     /// 加入首頁配置 on a source's category: a 橫向單排書架 of it at the end.

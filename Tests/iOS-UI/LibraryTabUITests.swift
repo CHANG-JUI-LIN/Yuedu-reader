@@ -80,9 +80,10 @@ final class LibraryTabUITests: XCTestCase {
     @MainActor
     func testTabsAndRows() {
         let app = launch()
-        // 書架・探索・資源庫・設定・搜尋, and no RSS tab (decision 30; 搜尋 last since 2026-10-16).
+        // 探索・書架・資源庫・設定・搜尋, and no RSS tab (decision 30; 搜尋 last since 2026-10-16,
+        // 探索 first since 2026-10-25).
         let names = app.tabBars.buttons.allElementsBoundByIndex.map(\.label)
-        XCTAssertEqual(names, ["書架", "探索", "資源庫", "設定", "搜尋"])
+        XCTAssertEqual(names, ["探索", "書架", "資源庫", "設定", "搜尋"])
 
         let close = app.buttons["library.noticeClose"].firstMatch
         XCTAssertTrue(close.waitForExistence(timeout: 5), app.debugDescription)

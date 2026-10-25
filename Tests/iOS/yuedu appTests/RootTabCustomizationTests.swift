@@ -44,24 +44,24 @@ struct RootTabCustomizationTests {
         ])
     }
 
-    @Test("the tabs are 書架・探索・資源庫・設定・搜尋 (搜尋 last, 2026-10-16); RSS is no longer one (decision 30)")
+    @Test("the tabs are 探索・書架・資源庫・設定・搜尋 (搜尋 last, 2026-10-16; 探索 first, 2026-10-25); RSS is no longer one (decision 30)")
     func tabOrder() {
-        #expect(RootTabItem.tabs == [.bookshelf, .explore, .library, .settings, .search])
+        #expect(RootTabItem.tabs == [.explore, .bookshelf, .library, .settings, .search])
         #expect(GlobalSettings.defaultRootTabVisibleIDs == RootTabItem.tabs.map(\.rawValue))
     }
 
-    @Test("A list saved with 搜尋 before 設定 is drawn in the current order")
+    @Test("A list saved with 書架 before 探索 and 搜尋 before 設定 is drawn in the current order")
     func oldOrderFollowsCurrentOrder() {
         let saved = GlobalSettings.sanitizedRootTabVisibleIDs(["bookshelf", "explore", "library", "search", "settings"])
-        #expect(saved == ["bookshelf", "explore", "library", "settings", "search"])
+        #expect(saved == ["explore", "bookshelf", "library", "settings", "search"])
     }
 
     @Test("A list saved before 資源庫 existed shows it; a shown or hidden RSS tab is dropped")
     func libraryJoinsOldLists() {
         let everything = GlobalSettings.sanitizedRootTabVisibleIDs(["bookshelf", "explore", "rss", "settings", "search"])
-        #expect(everything == ["bookshelf", "explore", "library", "settings", "search"])
+        #expect(everything == ["explore", "bookshelf", "library", "settings", "search"])
         let rssHidden = GlobalSettings.sanitizedRootTabVisibleIDs(["bookshelf", "explore", "settings", "search"])
-        #expect(rssHidden == ["bookshelf", "explore", "library", "settings", "search"])
+        #expect(rssHidden == ["explore", "bookshelf", "library", "settings", "search"])
     }
 
     @Test("Hiding 資源庫 is kept: the list remembers it was hidden, not that it never existed")

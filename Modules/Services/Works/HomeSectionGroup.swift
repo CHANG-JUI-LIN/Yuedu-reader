@@ -10,14 +10,14 @@ import Foundation
 //   books, after 最新's turns, and leaves none out. 繼續閱讀 keeps its own order: most recently
 //   opened first.
 // - 隱藏已讀 (5d-3g) leaves read books out of 最新 and 相關 before anything else.
-// - 書庫順序 (5d-3e) orders a section's rows, so 最新's books take turns in the libraries'
-//   order; the shelf's row stays first and book sources' rows after.
+// - A section's rows keep the model's order, so 最新's books take turns in the libraries' order
+//   (`LibraryKeys`); 書庫順序 (5d-3e), which reordered them, went on 2026-10-25.
 
 /// One section as the home draws it.
 struct HomeSectionGroup: Identifiable, Equatable {
     let section: HomeSection
-    /// The section's rows that 範圍 keeps: the shelf's, the libraries' in 書庫順序, then the
-    /// book sources' in 探索's order.
+    /// The section's rows that 範圍 keeps: the shelf's, the libraries', then the book sources'
+    /// in 探索's order.
     let rows: [HomeModel.Row]
     /// What each row shows under 範圍, by row id; a row not yet loaded has none.
     let entries: [String: [CollectionEntry]]
@@ -73,10 +73,10 @@ struct HomeSectionGroup: Identifiable, Equatable {
 
 extension HomeModel {
     /// The home's groups under 範圍 (`scope` nil is 全部), one per section with a row kept,
-    /// their books in the reader's languages' order and their libraries in 書庫順序.
+    /// their books in the reader's languages' order.
     func groups(in scope: SourceInstanceKey?, languages: ReadingLanguagePreferences? = nil,
-                libraryOrder: [SourceInstanceKey]? = nil, readFilter: HomeReadFilter? = nil) -> [HomeSectionGroup] {
-        HomeScopeFilter.groups(rows, in: scope, languages: languages, libraryOrder: libraryOrder, readFilter: readFilter)
+                readFilter: HomeReadFilter? = nil) -> [HomeSectionGroup] {
+        HomeScopeFilter.groups(rows, in: scope, languages: languages, readFilter: readFilter)
     }
 
     /// The home is on screen: the rows that load with it start now, also those below the
@@ -108,7 +108,6 @@ enum HomeScopeFilter {
 
     static func groups(_ rows: [HomeModel.Row], in scope: SourceInstanceKey?,
                        languages: ReadingLanguagePreferences? = nil,
-                       libraryOrder: [SourceInstanceKey]? = nil,
                        readFilter: HomeReadFilter? = nil) -> [HomeSectionGroup] {
         var order: [UUID] = []
         var sections: [UUID: HomeSection] = [:]
@@ -119,8 +118,7 @@ enum HomeScopeFilter {
             kept[id, default: []].append(row)
         }
         return order.compactMap { id in
-            guard let section = sections[id], let sectionRows = kept[id] else { return nil }
-            let rows = LibraryOrder.arrange(sectionRows, by: libraryOrder, key: \.source)
+            guard let section = sections[id], let rows = kept[id] else { return nil }
             let hidesRead = readFilter.map { $0.hides(in: section.binding) } ?? false
             var entries: [String: [CollectionEntry]] = [:]
             for row in rows {
