@@ -191,6 +191,13 @@ class BookStore: @MainActor ObservableObject, BookProvider {
         metadataFileURL.deletingPathExtension().appendingPathExtension("reading.json")
     }
     private var lastPersistedReadingData: Data?
+    /// Set when the reading-record file could not be read, or did not decode and could not be
+    /// copied aside. The books only read (立即閱讀 copies, remote references taken off the
+    /// shelf) are in no other file; writing would replace them with the few this launch knows.
+    private var readingRecordsWritesBlocked = false
+
+    /// Thrown by a write that must land when `readingRecordsWritesBlocked` keeps it from the file.
+    struct ReadingRecordsUnwritable: Error {}
 
 
     // Legacy UserDefaults key kept only for one-time migration.
@@ -2819,6 +2826,8 @@ class BookStore: @MainActor ObservableObject, BookProvider {
         let isShelf = updated.isInBookshelf
         let url = isShelf ? metadataFileURL : readingMetadataFileURL
         do {
+            // The caller publishes the new chapter index only once these bookmarks are durable.
+            if !isShelf, readingRecordsWritesBlocked { throw ReadingRecordsUnwritable() }
             try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, any Error>) in
                 Self.persistQueue.async { [self] in
                     do {
@@ -2939,6 +2948,7 @@ class BookStore: @MainActor ObservableObject, BookProvider {
         }
         let payload: Payload
         let writesBlocked: Bool
+        let readingWritesBlocked: Bool
         /// The records the shelf data describes, for the position bookkeeping.
         let records: [ReadingBook]
     }
@@ -2953,6 +2963,7 @@ class BookStore: @MainActor ObservableObject, BookProvider {
             MetadataWriteInput(
                 payload: .records(shelf: books, reading: records.filter { !$0.isInBookshelf }),
                 writesBlocked: metadataWritesBlocked,
+                readingWritesBlocked: readingRecordsWritesBlocked,
                 records: records
             ),
             inBackground: inBackground
@@ -2964,6 +2975,7 @@ class BookStore: @MainActor ObservableObject, BookProvider {
             MetadataWriteInput(
                 payload: .encoded(shelf: data, reading: readingData),
                 writesBlocked: metadataWritesBlocked,
+                readingWritesBlocked: readingRecordsWritesBlocked,
                 records: records
             ),
             inBackground: inBackground
@@ -3028,7 +3040,10 @@ class BookStore: @MainActor ObservableObject, BookProvider {
                         }
                     }
                 }
-                if let readingData, readingData != files.readingData {
+                if input.readingWritesBlocked {
+                    // What is on disk is the only copy of the books only read, which this launch could not read.
+                    AppLogger.cache("Reading records are unreadable and were not kept aside; leaving them as they are")
+                } else if let readingData, readingData != files.readingData {
                     try readingData.write(to: readingMetadataFileURL, options: .atomic)
                     files.readingData = readingData
                     written.readingData = readingData
@@ -3267,7 +3282,9 @@ class BookStore: @MainActor ObservableObject, BookProvider {
                         error: error,
                         context: ["file": metadataFileURL.lastPathComponent]
                     )
-                    metadataWritesBlocked = !keptUnreadableMetadataAside(data)
+                    metadataWritesBlocked = !keptUnreadableMetadataAside(
+                        data, of: metadataFileURL, named: "Bookshelf metadata"
+                    )
                     if !metadataWritesBlocked {
                         // The bytes are safe in their copy, so the file may be written over:
                         // the write queue is told what it holds now.
@@ -3303,23 +3320,24 @@ class BookStore: @MainActor ObservableObject, BookProvider {
         return !shelfFileExists
     }
 
-    /// Copies a shelf file that did not decode next to itself, before anything writes over it.
+    /// Copies a file of the library — the shelf, or the reading records — that did not decode
+    /// next to itself, before anything writes over it.
     ///
     /// Named after the file's own modification time, so the next launch recognises the copy it
     /// already made instead of filling the folder with duplicates. Returns whether the bytes
-    /// are safely preserved; when they are not, the shelf is left exactly as it is for this
+    /// are safely preserved; when they are not, the file is left exactly as it is for this
     /// launch — an empty shelf written over the only copy is how a library disappears.
-    private func keptUnreadableMetadataAside(_ data: Data) -> Bool {
-        let modified = try? metadataFileURL
+    private func keptUnreadableMetadataAside(_ data: Data, of fileURL: URL, named name: String) -> Bool {
+        let modified = try? fileURL
             .resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate
         let stamp = Int((modified ?? Date()).timeIntervalSince1970)
-        let backupURL = metadataFileURL
+        let backupURL = fileURL
             .deletingPathExtension()
             .appendingPathExtension("corrupt-\(stamp).json")
         do {
             try data.write(to: backupURL, options: .withoutOverwriting)
             AppLogger.error(
-                "Bookshelf metadata kept aside as \(backupURL.lastPathComponent)",
+                "\(name) kept aside as \(backupURL.lastPathComponent)",
                 context: ["bytes": data.count]
             )
             return true
@@ -3329,7 +3347,7 @@ class BookStore: @MainActor ObservableObject, BookProvider {
                 return true
             }
             AppLogger.error(
-                "Bookshelf metadata could not be kept aside; this launch will not write the shelf",
+                "\(name) could not be kept aside; this launch will not write over it",
                 error: error,
                 context: ["backup": backupURL.lastPathComponent]
             )
@@ -3338,18 +3356,47 @@ class BookStore: @MainActor ObservableObject, BookProvider {
     }
 
     /// Whether every reading-only record is known: the file decoded, or there is none.
+    ///
+    /// A file that exists but does not decode is kept aside before anything writes over it,
+    /// as the shelf is; one whose bytes cannot be read or kept is not written this launch.
+    /// Decided afresh on every load: a restore (`reloadFromDisk`) may bring a readable file.
     @discardableResult
     private func loadReadingRecords() -> Bool {
+        readingRecordsWritesBlocked = false
         guard FileManager.default.fileExists(atPath: readingMetadataFileURL.path) else { return true }
+        let data: Data
         do {
-            let data = try Data(contentsOf: readingMetadataFileURL)
+            data = try Data(contentsOf: readingMetadataFileURL)
+        } catch {
+            // Not even the bytes are in hand, so nothing may be written over them.
+            AppLogger.error(
+                "Remote reading records could not be read",
+                error: error,
+                context: ["file": readingMetadataFileURL.lastPathComponent]
+            )
+            readingRecordsWritesBlocked = true
+            return false
+        }
+        do {
             let decoded = Self.sanitizingInlineChapterURLs(try JSONDecoder().decode([ReadingBook].self, from: data))
             let shelfIDs = Set(records.map(\.id))
             records.append(contentsOf: decoded.filter { !$0.isInBookshelf && !shelfIDs.contains($0.id) })
             notePersistedReadingData(data)
             return true
         } catch {
-            AppLogger.error("Remote reading records could not be loaded", error: error)
+            AppLogger.error(
+                "Remote reading records could not be decoded",
+                error: error,
+                context: ["file": readingMetadataFileURL.lastPathComponent]
+            )
+            readingRecordsWritesBlocked = !keptUnreadableMetadataAside(
+                data, of: readingMetadataFileURL, named: "Remote reading records"
+            )
+            if !readingRecordsWritesBlocked {
+                // The bytes are safe in their copy, so the file may be written over: the
+                // write queue is told what it holds now.
+                notePersistedReadingData(data)
+            }
             return false
         }
     }
@@ -3359,6 +3406,10 @@ class BookStore: @MainActor ObservableObject, BookProvider {
     /// The caller's `saveMetaImmediately()` holds the app until both have landed. It used to
     /// wait for the write on the main thread, behind every write already queued.
     private func persistReadingRecords() {
+        guard !readingRecordsWritesBlocked else {
+            AppLogger.cache("Reading records are unreadable and were not kept aside; leaving them as they are")
+            return
+        }
         let data: Data
         do {
             let encoder = JSONEncoder()
