@@ -1,0 +1,6 @@
+{
+ "title": "S004 根元素的盒子（直排）",
+ "language": "zh-Hant",
+ "vertical": true,
+ "reproduces": "GAPS S004: html { margin: auto 1em; padding: 1em 0; max-height: 28em; font-size: 14pt } in vertical-rl. max-height caps every column at 28em and the auto margins centre it; the hypothesis is that the engine ignores the root element's own box and fills the whole column height."
+}

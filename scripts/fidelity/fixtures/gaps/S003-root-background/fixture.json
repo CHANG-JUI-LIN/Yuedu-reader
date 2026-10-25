@@ -1,0 +1,6 @@
+{
+ "title": "S003 根元素的背景",
+ "language": "zh-Hant",
+ "vertical": false,
+ "reproduces": "GAPS S003: html { background-color: #fff4e7 }. CSS paints the root element's background over the whole canvas, margins included; the hypothesis is that the engine takes the page background from <body> only."
+}

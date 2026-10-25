@@ -68,7 +68,16 @@ python3 scripts/fidelity/fidelity.py compare --run 我的測試 --base baseline-
 
 # 量法自己的測試（不需要 Xcode）
 python3 scripts/fidelity/test_fidelity.py
+
+# 量已知差距的測試書（scripts/fidelity/fixtures/gaps/，每本重現 GAPS.md 的一項）
+# 第一次的結果 gaps-2026-10-25 是在 iPhone 18 Pro Max／iOS 27.0 上量的，要和它比就用同一台
+YUEDU_DEST="$(bash scripts/sim.sh dest "18 Pro Max")" bash scripts/fidelity/measure.sh --corpus corpus-gaps.json --run 我的測試-gaps
+YUEDU_DEST="$(bash scripts/sim.sh dest "18 Pro Max")" bash scripts/fidelity/measure.sh --corpus corpus-gaps.json --run 我的測試-gaps --books s006-table
+python3 scripts/fidelity/fidelity.py compare --run 我的測試-gaps --base gaps-2026-10-25
 ```
+
+- **修一個差距不用再去找書。** 先跑它的測試書看分數和回退原因，修完再跑一次；測試書的分數升到接近 100、回退原因消失，才回頭量那本真書。新發現的差距照同樣的格式加一個資料夾（`fixture.json`＋章節＋樣式表），寫進 GAPS.md。測試書和 16 本的基線分開量，`compare` 也只拿同一個語料的兩次 run 比。
+- **`compare` 要兩次在同一個 iOS 版本上量。** 對照組的快取鍵含 iOS 版本，換了系統就是另一組對照組，`compare` 會判 `FAIL`。不指定 `YUEDU_DEST` 時 `sim.sh` 會挑 iPhone Duo（iOS 27.1）。模擬器或系統換掉之後，用新的那台把測試書重量一次，拿它當新的比較基準。
 
 - `compare` 只比兩次都量到的章節。兩次都走舊引擎的章節每次量會小幅漂移，所以不算進書的分數；改的是舊引擎本身時，要直接看兩次各自的 `report.md`。結束碼 0＝`PASS`，4＝`FAIL` 或 `NO PROGRESS`。
 - 產物都在 `~/Library/Caches/YueduFidelity/runs/<run>/`：`report.md`、`report.json`、並排圖 `index.html`。說到分數一律附 run 編號，才查得到。

@@ -8,7 +8,7 @@
 #
 # Usage:
 #   scripts/fidelity/measure.sh [--run NAME] [--sets dev|holdout|dev,holdout] [--books id,id]
-#                               [--only id:spine,spine]... [--tree DIR] [--markdown FILE]
+#                               [--only id:spine,spine]... [--corpus FILE] [--tree DIR] [--markdown FILE]
 #                               [--tiles N] [--timeout SECONDS] [--require-goal] [--score-only]
 #
 # Environment:
@@ -38,6 +38,7 @@ while [[ $# -gt 0 ]]; do
     --sets) SETS="$2"; shift 2 ;;
     --books) PLAN_ARGS+=(--books "$2"); shift 2 ;;
     --only) PLAN_ARGS+=(--only "$2"); shift 2 ;;
+    --corpus) PLAN_ARGS+=(--corpus "$2"); shift 2 ;;
     --tree) TREE="$(cd "$2" && pwd)" || exit 1; shift 2 ;;
     --markdown) MARKDOWN="$2"; shift 2 ;;
     --tiles) TILES="$2"; shift 2 ;;

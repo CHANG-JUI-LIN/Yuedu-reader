@@ -1,0 +1,6 @@
+{
+ "title": "S008 The dir attribute",
+ "language": "he",
+ "vertical": false,
+ "reproduces": "GAPS S008: <div dir=\"rtl\"> with no text-align. The attribute makes the block right-to-left, so lines start at the right edge and the short paragraphs and the inline image sit on the right; the hypothesis is that the engine lays the block out left-to-right."
+}

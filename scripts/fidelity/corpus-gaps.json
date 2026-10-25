@@ -1,0 +1,6 @@
+{
+ "schema": 1,
+ "note": "Tiny books that each reproduce one known gap (docs/browser-layout/fidelity-loop/GAPS.md), built from the folders under `fixtures`. Measure with `measure.sh --corpus corpus-gaps.json`. They are written for this repo and hold no book content. Kept apart from corpus.json so the 16-book baseline stays comparable.",
+ "fixtures": "fixtures/gaps",
+ "sample": {"dev": 10, "holdout": 6}
+}

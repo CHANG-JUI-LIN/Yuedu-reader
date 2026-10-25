@@ -10,9 +10,11 @@ Run: python3 scripts/fidelity/test_fidelity.py
 
 import json
 import math
+import re
 import sys
 import tempfile
 import unittest
+import zipfile
 from pathlib import Path
 
 sys.dont_write_bytecode = True     # no __pycache__ beside the oracle
@@ -513,6 +515,84 @@ class BreakAgreement(unittest.TestCase):
         self.assertEqual(fidelity.break_score([20, 40, 60], [30, 50, 70]), 0.0)
         self.assertEqual(fidelity.break_score([], [10]), 0.0)
         self.assertEqual(fidelity.break_score([], []), 1.0)
+
+
+FIXTURE_XHTML = ('<?xml version="1.0" encoding="UTF-8"?>\n<html xmlns="http://www.w3.org/1999/xhtml">'
+                 '<head><title>{title}</title></head><body>{body}</body></html>')
+
+
+class Fixtures(unittest.TestCase):
+    """A fixture folder builds into an EPUB named by its content, and a book that
+    changed under the same id is never scored against a reference of the old one."""
+
+    def make_fixture(self, root, *, vertical=False, body="<p>第二章</p>"):
+        folder = Path(root) / "src" / "S900-sample"
+        folder.mkdir(parents=True, exist_ok=True)
+        (folder / "fixture.json").write_text(json.dumps({"title": "Sample", "language": "zh-Hant",
+                                                         "vertical": vertical}), encoding="utf-8")
+        (folder / "a.xhtml").write_text(FIXTURE_XHTML.format(title="一", body="<p>第一章</p>"), encoding="utf-8")
+        (folder / "b.xhtml").write_text(FIXTURE_XHTML.format(title="二", body=body), encoding="utf-8")
+        (folder / "style.css").write_text("p { margin: 0 }", encoding="utf-8")
+        return folder
+
+    def test_epub_has_the_shape_readers_expect(self):
+        for vertical in (False, True):
+            with tempfile.TemporaryDirectory() as root:
+                target = Path(root) / "out"
+                target.mkdir()
+                name = fidelity.build_fixture(self.make_fixture(root, vertical=vertical), target)
+                with zipfile.ZipFile(target / name) as archive:
+                    first = archive.infolist()[0]
+                    self.assertEqual((first.filename, first.compress_type), ("mimetype", zipfile.ZIP_STORED))
+                    self.assertEqual(archive.read("mimetype"), b"application/epub+zip")
+                    self.assertIn(b'full-path="OEBPS/content.opf"', archive.read("META-INF/container.xml"))
+                    opf = archive.read("OEBPS/content.opf").decode("utf-8")
+                    nav = archive.read("OEBPS/nav.xhtml").decode("utf-8")
+                hrefs = dict(re.findall(r'<item id="(r\d+)" href="([^"]+)"', opf))
+                spine = [hrefs[ref] for ref in re.findall(r'<itemref idref="(r\d+)"/>', opf)]
+                self.assertEqual(spine, ["a.xhtml", "b.xhtml"], "chapters are the .xhtml files in name order")
+                self.assertIn('href="a.xhtml">一</a>', nav)
+                self.assertEqual('content="vertical-rl"' in opf, vertical)
+                self.assertEqual('page-progression-direction="rtl"' in opf, vertical)
+
+    def test_an_edited_fixture_gets_a_new_name_and_replaces_the_old_book(self):
+        with tempfile.TemporaryDirectory() as root:
+            folder = self.make_fixture(root)
+            corpus = {"fixtures": str(Path(root) / "src"), "sample": {"dev": 10, "holdout": 6}}
+            out = Path(root) / "out"
+            built = fidelity.build_fixture_corpus(corpus, "gaps", out)
+            first = fidelity.discover_books(built)
+            self.assertEqual([book["id"] for book in first], ["s900-sample"])
+            stamp = Path(first[0]["path"]).stat().st_mtime_ns
+            again = fidelity.discover_books(fidelity.build_fixture_corpus(corpus, "gaps", out))
+            self.assertEqual(again[0]["path"], first[0]["path"])
+            self.assertEqual(Path(again[0]["path"]).stat().st_mtime_ns, stamp, "unchanged fixture is not rewritten")
+            (folder / "b.xhtml").write_text(FIXTURE_XHTML.format(title="二", body="<p>改過</p>"), encoding="utf-8")
+            edited = fidelity.discover_books(fidelity.build_fixture_corpus(corpus, "gaps", out))
+            self.assertEqual([book["id"] for book in edited], ["s900-sample"])
+            self.assertNotEqual(edited[0]["path"], first[0]["path"])
+            self.assertEqual([path.name for path in (out / "fixtures" / "gaps").glob("*.epub")],
+                             [Path(edited[0]["path"]).name], "the old version is removed")
+
+    def test_a_changed_book_drops_its_cached_references(self):
+        with tempfile.TemporaryDirectory() as root:
+            out = Path(root) / "out"
+            epub = Path(root) / "book.epub"
+            book = {"id": "sample", "path": str(epub)}
+            mine = out / "ref" / "key" / "sample" / "0"
+            other = out / "ref" / "key" / "other" / "0"
+            for directory in (mine, other):
+                directory.mkdir(parents=True)
+            with zipfile.ZipFile(epub, "w") as archive:
+                archive.writestr("a.txt", "1")
+            fidelity.extract_book(book, out)
+            fidelity.extract_book(book, out)
+            self.assertTrue(mine.exists(), "a first or unchanged extraction keeps the references")
+            with zipfile.ZipFile(epub, "w") as archive:
+                archive.writestr("a.txt", "changed")
+            fidelity.extract_book(book, out)
+            self.assertFalse(mine.parent.exists())
+            self.assertTrue(other.exists())
 
 
 if __name__ == "__main__":

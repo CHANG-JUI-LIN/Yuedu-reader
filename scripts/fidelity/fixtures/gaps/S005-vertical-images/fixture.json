@@ -1,0 +1,6 @@
+{
+ "title": "S005 直排章節裡的圖",
+ "language": "zh-Hant",
+ "vertical": true,
+ "reproduces": "GAPS S005: in vertical writing, VerticalTextSupport.accepts rejects any img, so the whole chapter falls back to Legacy (reason vertical-writing-mode). Chapter 1 has one-character inline markers (17×17, dozens per chapter in the reported book); chapter 2 has a block image and an image inside an inline-block."
+}

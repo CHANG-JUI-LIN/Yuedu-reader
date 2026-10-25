@@ -1,0 +1,6 @@
+{
+ "title": "S001b 有序清單的編號",
+ "language": "zh-Hant",
+ "vertical": false,
+ "reproduces": "GAPS S001 (the reason the archived fix was not merged): on the Browser engine an <ol> loses its 1–6 markers, which WebKit draws. Markers are generated content, so the oracle sees them only in the paint score."
+}

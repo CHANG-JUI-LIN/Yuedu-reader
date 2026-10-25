@@ -1,0 +1,6 @@
+{
+ "title": "S010 Drop caps",
+ "language": "en",
+ "vertical": false,
+ "reproduces": "GAPS S010: a drop cap set as <span> with float: left; font-size: 3em; line-height: 100% and no width. validateFloats rejects a non-replaced float with width: auto because shrink-to-fit width (CSS 2.1 §10.3.5) is not implemented, so the chapter falls back to Legacy (reason float)."
+}

@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml" lang="en" xml:lang="en">
+<head>
+<meta charset="UTF-8"/>
+<title>Tables</title>
+<link rel="stylesheet" type="text/css" href="style.css"/>
+</head>
+<body>
+<h2>Tables</h2>
+<p>The first table sizes its columns from their content and spans one cell across two columns and another across two rows.</p>
+<table>
+<caption>Rainfall at two stations</caption>
+<thead>
+<tr><th rowspan="2">Month</th><th colspan="2">Rainfall (mm)</th></tr>
+<tr><th>Hill</th><th>Coast</th></tr>
+</thead>
+<tbody>
+<tr><td>January</td><td class="num">112</td><td class="num">64</td></tr>
+<tr><td>February</td><td class="num">98</td><td class="num">71</td></tr>
+<tr><td>March</td><td class="num">143</td><td class="num">88</td></tr>
+<tr><td rowspan="2">Spring average</td><td class="num">118</td><td class="num">74</td></tr>
+<tr><td colspan="2">Coast and hill agree within ten per cent.</td></tr>
+</tbody>
+</table>
+<p>The second table fills the column and divides it into equal parts, whatever its cells hold.</p>
+<table class="fixed">
+<tr><th>Station</th><th>Height</th><th>Opened</th></tr>
+<tr><td>Hill</td><td>412 m</td><td>1908</td></tr>
+<tr><td>Coast</td><td>6 m</td><td>1931, moved inland in 1950</td></tr>
+</table>
+<p>A paragraph after the tables checks the space they leave behind.</p>
+</body>
+</html>

@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml" lang="zh-Hant" xml:lang="zh-Hant">
+<head>
+<meta charset="UTF-8"/>
+<title>深色模式的樣式表</title>
+<link rel="stylesheet" type="text/css" href="style.css"/>
+</head>
+<body>
+<h1>深色模式的樣式表</h1>
+<p>這一章的樣式表只有一個 @media 區塊，而且只在系統切到深色模式時才生效，裡面改的全是顏色，不碰任何尺寸或位置。</p>
+<p>閱讀器量測時固定用淺色，所以這個區塊對版面沒有任何影響：每一行應該和沒有它的時候一模一樣，標題置中，段落之間留一點距離。</p>
+<p>如果引擎看到 @media 就整章交給舊引擎，那麼這一章測的其實是舊引擎；這正是要抓的問題。段落裡也放一個<a href="#end">連結</a>，讓顏色規則有東西可以套用。</p>
+<p>這段文字刻意寫得長一點，讓它在三百多點寬的畫面上折成好幾行，換行位置才有得比較；句子裡有逗號、句號，也有「引號」和（括號），標點的寬度一併算進去。</p>
+<p id="end">本章結束。</p>
+</body>
+</html>

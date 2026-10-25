@@ -1,0 +1,6 @@
+{
+ "title": "S002 Inline box margins",
+ "language": "en",
+ "vertical": false,
+ "reproduces": "GAPS S002: verse lines set as <span>…</span><br/> straight under <body>, with span.lin { margin-left: 5em } and span.num { margin-left: 2em; margin-right: 1em }. WebKit counts an inline box's horizontal margins in inline layout, so each line starts indented and wraps one more time; the hypothesis is that the engine ignores them."
+}

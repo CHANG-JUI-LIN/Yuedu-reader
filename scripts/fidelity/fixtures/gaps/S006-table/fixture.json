@@ -1,0 +1,6 @@
+{
+ "title": "S006 Tables",
+ "language": "en",
+ "vertical": false,
+ "reproduces": "GAPS S006: the Browser engine has no table layout, so any table/tr/td sends the chapter to Legacy (reason table), which draws the whole table as one image whose text the oracle cannot read. Two tables: automatic column widths with colspan and rowspan, and a fixed-layout full-width table."
+}

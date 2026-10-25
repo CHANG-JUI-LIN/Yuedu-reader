@@ -65,8 +65,17 @@ CHAPTER_STEADY = 0.05                          # a chapter within this much of i
 
 # --------------------------------------------------------------------------- corpus
 
-def load_corpus():
-    with open(HERE / "corpus.json", encoding="utf-8") as handle:
+def corpus_path(value):
+    """A corpus file as given on the command line; a bare name is looked up beside
+    this script, so `--corpus corpus-gaps.json` works from any directory."""
+    path = Path(value)
+    if not path.is_absolute() and not path.exists():
+        path = HERE / value
+    return path
+
+
+def load_corpus(path=HERE / "corpus.json"):
+    with open(path, encoding="utf-8") as handle:
         return json.load(handle)
 
 
@@ -116,6 +125,12 @@ def extract_book(book, out):
     marker = root / ".yuedu-fidelity-source"
     if marker.exists() and marker.read_text(encoding="utf-8") == stamp:
         return root
+    if marker.exists():
+        # The book behind this id changed. References are cached by book id and
+        # spine, so one captured from the old file would be scored against the new.
+        for reference in (out / "ref").glob("*"):
+            if (reference / book["id"]).is_dir():
+                shutil.rmtree(reference / book["id"])
     if root.exists():
         shutil.rmtree(root)
     root.mkdir(parents=True)
@@ -135,9 +150,145 @@ def extract_book(book, out):
     return root
 
 
+# A fixture is a folder holding the chapters and resources of a tiny book, plus
+# fixture.json ({"title", "language", "vertical"}). A corpus file naming a
+# `fixtures` folder instead of a `root` is built into one EPUB per fixture.
+FIXTURE_FORMAT = 1                             # bump when a fixture builds into a differently shaped EPUB
+FIXTURE_MEDIA_TYPES = {".xhtml": "application/xhtml+xml", ".css": "text/css", ".png": "image/png",
+                       ".gif": "image/gif", ".jpg": "image/jpeg", ".svg": "image/svg+xml",
+                       ".ttf": "font/ttf", ".otf": "font/otf", ".woff": "font/woff"}
+FIXTURE_DATE = (2020, 1, 1, 0, 0, 0)
+
+
+def fixture_resources(folder):
+    """The files a fixture publishes, keyed by their path inside the book."""
+    files = {}
+    for path in sorted(folder.rglob("*")):
+        relative = path.relative_to(folder).as_posix()
+        if path.is_file() and relative != "fixture.json" and not path.name.startswith("."):
+            if path.suffix.lower() not in FIXTURE_MEDIA_TYPES:
+                raise SystemExit(f"{folder.name}: no media type for {relative}")
+            files[relative] = path.read_bytes()
+    return files
+
+
+def fixture_epub_name(folder):
+    """`<folder>.<content hash>.epub`. The reader caches a book's spine by file
+    name and the oracle caches references by book id, so an edited fixture has to
+    arrive under a new name to be read afresh."""
+    hasher = hashlib.sha256(f"format {FIXTURE_FORMAT}\0".encode())
+    hasher.update((folder / "fixture.json").read_bytes())
+    for name, data in fixture_resources(folder).items():
+        hasher.update(b"\0" + name.encode("utf-8") + b"\0" + data)
+    return f"{folder.name}.{hasher.hexdigest()[:10]}.epub"
+
+
+def fixture_package(folder, meta, chapters, resources):
+    """The OPF. A vertical fixture declares it both ways the reader reads
+    (`primary-writing-mode`, and an rtl spine for a CJK language)."""
+    language = html.escape(meta["language"])
+    vertical = meta.get("vertical", False)
+    lines = ['<?xml version="1.0" encoding="UTF-8"?>',
+             f'<package xmlns="http://www.idpf.org/2007/opf" version="3.0" unique-identifier="uid" xml:lang="{language}">',
+             ' <metadata xmlns:dc="http://purl.org/dc/elements/1.1/">',
+             f'  <dc:identifier id="uid">urn:yuedu-fidelity:{html.escape(folder.name)}</dc:identifier>',
+             f'  <dc:title>{html.escape(meta["title"])}</dc:title>',
+             f'  <dc:language>{language}</dc:language>',
+             '  <meta property="dcterms:modified">2020-01-01T00:00:00Z</meta>']
+    if vertical:
+        lines.append('  <meta name="primary-writing-mode" content="vertical-rl"/>')
+    lines += [' </metadata>', ' <manifest>',
+              '  <item id="nav" href="nav.xhtml" media-type="application/xhtml+xml" properties="nav"/>']
+    ids = {}
+    for number, name in enumerate(resources, start=1):
+        ids[name] = f"r{number}"
+        media_type = FIXTURE_MEDIA_TYPES[Path(name).suffix.lower()]
+        lines.append(f'  <item id="r{number}" href="{html.escape(name)}" media-type="{media_type}"/>')
+    lines += [' </manifest>', ' <spine page-progression-direction="rtl">' if vertical else ' <spine>']
+    lines += [f'  <itemref idref="{ids[name]}"/>' for name in chapters]
+    lines += [' </spine>', '</package>', '']
+    return "\n".join(lines)
+
+
+def fixture_navigation(meta, chapters, resources):
+    links = []
+    for name in chapters:
+        found = re.search(r"<title>(.*?)</title>", resources[name].decode("utf-8"), re.DOTALL)
+        label = found.group(1).strip() if found else name
+        links.append(f'   <li><a href="{html.escape(name)}">{label}</a></li>')
+    language = html.escape(meta["language"])
+    return f"""<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml" xmlns:epub="http://www.idpf.org/2007/ops" lang="{language}" xml:lang="{language}">
+<head><meta charset="UTF-8"/><title>{html.escape(meta["title"])}</title></head>
+<body>
+ <nav epub:type="toc" id="toc">
+  <ol>
+{chr(10).join(links)}
+  </ol>
+ </nav>
+</body>
+</html>
+"""
+
+
+def build_fixture(folder, target):
+    """Packs one fixture folder into `target`, unless an EPUB of the same
+    content is already there. Chapters are its .xhtml files in name order."""
+    name = fixture_epub_name(folder)
+    path = target / name
+    if path.exists():
+        return name
+    with open(folder / "fixture.json", encoding="utf-8") as handle:
+        meta = json.load(handle)
+    resources = fixture_resources(folder)
+    chapters = [entry for entry in resources if entry.endswith(".xhtml")]
+    if not chapters:
+        raise SystemExit(f"{folder.name}: no .xhtml chapter")
+    entries = [("mimetype", b"application/epub+zip"),
+               ("META-INF/container.xml", b'<?xml version="1.0" encoding="UTF-8"?>\n'
+                b'<container version="1.0" xmlns="urn:oasis:names:tc:opendocument:xmlns:container">\n'
+                b' <rootfiles><rootfile full-path="OEBPS/content.opf" media-type="application/oebps-package+xml"/>'
+                b'</rootfiles>\n</container>\n'),
+               ("OEBPS/content.opf", fixture_package(folder, meta, chapters, resources).encode("utf-8")),
+               ("OEBPS/nav.xhtml", fixture_navigation(meta, chapters, resources).encode("utf-8"))]
+    entries += [("OEBPS/" + entry, data) for entry, data in resources.items()]
+    partial = path.with_suffix(".partial")
+    with zipfile.ZipFile(partial, "w") as archive:
+        for entry, data in entries:
+            info = zipfile.ZipInfo(entry, date_time=FIXTURE_DATE)
+            info.compress_type = zipfile.ZIP_STORED if entry == "mimetype" else zipfile.ZIP_DEFLATED
+            info.external_attr = 0o644 << 16
+            archive.writestr(info, data)
+    partial.rename(path)
+    return name
+
+
+def build_fixture_corpus(corpus, name, out):
+    """A corpus of fixture folders as a corpus of books: one EPUB per folder in
+    out/fixtures/<name>/, with the folder's name, lowercased, as the book id.
+    EPUBs of earlier versions of a fixture are removed, so each folder matches
+    exactly one file."""
+    source = HERE / corpus["fixtures"]
+    target = out / "fixtures" / name
+    target.mkdir(parents=True, exist_ok=True)
+    folders = sorted(path for path in source.iterdir() if (path / "fixture.json").is_file())
+    if not folders:
+        raise SystemExit(f"no fixture folder under {source}")
+    built = {build_fixture(folder, target) for folder in folders}
+    for stale in target.glob("*.epub"):
+        if stale.name not in built:
+            stale.unlink()
+    books = [{"id": folder.name.lower(), "match": folder.name + ".", "pinned": []} for folder in folders]
+    return dict(corpus, root=str(target), books=books)
+
+
 def command_plan(args):
-    corpus = load_corpus()
+    path = corpus_path(args.corpus)
+    corpus = load_corpus(path)
     out = Path(args.out)
+    if "fixtures" in corpus:
+        corpus = build_fixture_corpus(corpus, path.stem, out)
     books = discover_books(corpus)
     if not books:
         raise SystemExit(f"no *.epub under {corpus['root']}")
@@ -1323,6 +1474,8 @@ def main():
     plan.add_argument("--books", help="comma-separated book ids (default: the whole corpus)")
     plan.add_argument("--only", action="append", help="book-id:spine,spine — explicit chapters of one book")
     plan.add_argument("--tiles", type=int, default=4, help="side-by-side images kept per chapter and side")
+    plan.add_argument("--corpus", default="corpus.json",
+                      help="corpus file; a bare name is looked up in scripts/fidelity (default: corpus.json)")
     plan.set_defaults(handler=command_plan)
     score = commands.add_parser("score", help="score a captured run")
     score.add_argument("--run", required=True)

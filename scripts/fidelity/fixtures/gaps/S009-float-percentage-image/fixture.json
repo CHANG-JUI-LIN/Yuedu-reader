@@ -1,0 +1,6 @@
+{
+ "title": "S009 浮動容器裡的百分比圖寬",
+ "language": "zh-Hant",
+ "vertical": false,
+ "reproduces": "GAPS S009: <div class=\"ctleft\"> floated left at half the body width, holding <img width=\"85%\">. WebKit makes the image 85% of the float's width; in the reported chapter the engine's image was exactly half that, as if the container's percentage were applied twice."
+}

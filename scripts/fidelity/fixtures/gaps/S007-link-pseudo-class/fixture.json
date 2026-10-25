@@ -1,0 +1,6 @@
+{
+ "title": "S007 The :link pseudo-class",
+ "language": "en",
+ "vertical": false,
+ "reproduces": "GAPS S007: .pcalibre4:link { font-size: 1.2em } on links that also carry .calibre8 { font-size: 1.125em }. An unvisited a[href] matches :link, so WebKit sets them at 1.2em; CSSParser.parseComponent drops every rule with a pseudo-class other than :first-child and :first-of-type, so the engine uses 1.125em."
+}

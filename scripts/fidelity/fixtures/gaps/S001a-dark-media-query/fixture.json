@@ -1,0 +1,6 @@
+{
+ "title": "S001a 深色模式的 @media",
+ "language": "zh-Hant",
+ "vertical": false,
+ "reproduces": "GAPS S001: a stylesheet whose only @media is (prefers-color-scheme: dark), changing colours only. The capability scanner rejects any @media, so the chapter falls back to Legacy (reason media-queries) although nothing in it affects layout."
+}

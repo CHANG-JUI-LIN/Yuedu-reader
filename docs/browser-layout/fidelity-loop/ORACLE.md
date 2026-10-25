@@ -1,6 +1,6 @@
 ---
 title: 渲染相似度的量法（oracle 規格）
-updated: 2026-10-07
+updated: 2026-10-25
 status: 凍結；只有人可以改
 tags: [yuedu, browser-layout, fidelity-loop]
 ---
@@ -110,6 +110,16 @@ img{max-width:100%;height:auto}svg,video{max-width:100%}
 
 平常對著 dev 找問題、改引擎；holdout 只在驗收時量，用來抓「只對看過的章節有效」的修法。章數不到 10 的書全部進 dev。
 
+### 測試書語料
+
+`measure.sh --corpus corpus-gaps.json` 量的不是測試資料夾裡的書，而是 `scripts/fidelity/fixtures/gaps/` 底下的測試書：每個資料夾是一本只有一兩章的小書，各自重現 [GAPS.md](GAPS.md) 裡的一個差距。內容是為這個 repo 寫的，不含任何書的內容，所以進 git。計分、抽章、過關的規則和上面完全一樣；它只是換了一批被量的書，和 16 本的基線分開量、分開比。
+
+- 一個資料夾＝一本書：`fixture.json`（`title`、`language`、`vertical`，以及一句 `reproduces` 說明它重現什麼）＋章節（`.xhtml`，依檔名排序就是章節順序）＋樣式表與圖片。書的 id 是資料夾名稱轉小寫，例如 `s002-inline-margin`。
+- `plan` 把每個資料夾包成 `fixtures/corpus-gaps/<資料夾>.<內容雜湊>.epub`。檔名帶內容雜湊，因為閱讀器依檔名快取章節清單；內容一改就換檔名，舊版本的 EPUB 會被刪掉。
+- 新增或修改測試書不算改量法，不用重新上鎖：plan 永遠由主工作目錄的這份副本產生，被量的程式樹改不到它。
+
+對照組依書的 id 與章節快取。一本書的檔案換了（大小、修改時間或檔名不同），解壓時會把這本書在每個 `ref/<refKey>/` 底下的對照組一起刪掉，下次重新擷取；第一次解壓、或檔案沒變時不動。
+
 ## 兩次量測怎麼比
 
 `fidelity.py compare --run <新> --base <舊>` 只比兩次都量到的章節，章節屬於 dev 還是 holdout 以舊的那次為準。
@@ -160,6 +170,7 @@ img{max-width:100%;height:auto}svg,video{max-width:100%}
 | 路徑 | 內容 | 進 git |
 |---|---|---|
 | `~/Library/Caches/YueduFidelity/corpus/` | 解壓的 EPUB | 否（書的內容） |
+| `~/Library/Caches/YueduFidelity/fixtures/<語料>/` | 測試書包成的 EPUB；原始檔在 `scripts/fidelity/fixtures/` | 否（原始檔才進） |
 | `~/Library/Caches/YueduFidelity/ref/<refKey>/` | WebKit 對照組；`refKey` 含 iOS 版本與量法雜湊，換模擬器系統會重新擷取 | 否 |
 | `~/Library/Caches/YueduFidelity/runs/<run>/` | 我們這邊的擷取、`report.json`、`report.md`、並排圖 `index.html` | 否 |
 | `docs/browser-layout/fidelity-loop/reports/` | 只有數字的報告 | 是 |

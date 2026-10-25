@@ -1,0 +1,9 @@
+body { margin: 0 1em; }
+h1 { font-size: 1.4em; text-align: center; margin: 1em 0; }
+p { margin: 0.6em 0; }
+a { color: #0a5bd6; }
+
+@media (prefers-color-scheme: dark) {
+  body { background-color: #1c1c1e; color: #e5e5ea; }
+  a { color: #64d2ff; }
+}
