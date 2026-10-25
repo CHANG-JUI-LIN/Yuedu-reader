@@ -1,4 +1,5 @@
 @testable import YueduCoreText
+import CoreText
 import Foundation
 import Testing
 import UIKit
@@ -92,6 +93,93 @@ struct ReviewCardPageTapTests {
         #expect(reached.isEmpty, "the review link went elsewhere: \(reached)")
     }
 
+    /// Scroll mode hit-tests through `CoreTextChunk` and snapped the same way. Its content is
+    /// continuous: at the app's default spacing (line height 1.65, paragraphs 0.8em apart, with
+    /// line spacing derived as `GlobalSettings` does) no gap is wider than two tap tolerances,
+    /// so nothing there is out of reach. Opened up — the sliders go to 2.4 and 1.2em — a tap on
+    /// the blank under a 段評 bubble or beside a card opened the review instead of the menu.
+    @Test("in scroll mode, blank space between lines is not the review beside it")
+    func scrollBlankSpaceIsNotTheReview() async throws {
+        let spacings: [(lineHeight: CGFloat, paragraphEm: CGFloat)] = [(1.65, 0.8), (2.0, 1.0), (2.4, 1.2)]
+        var reachable: [String] = []
+        for spacing in spacings {
+            let taps = try await scrollTaps(lineHeight: spacing.lineHeight, paragraphEm: spacing.paragraphEm)
+            if !taps.snapped.isEmpty { reachable.append("\(spacing)") }
+            #expect(taps.claimed.isEmpty, """
+                \(spacing): \(taps.claimed.count) of \(taps.snapped.count) taps on blank space hit a line: \
+                \(taps.claimed.prefix(6))
+                """)
+            #expect(taps.reviewsMissed.isEmpty, "\(spacing): a tap on the review no longer finds it: \(taps.reviewsMissed)")
+        }
+        try #require(!reachable.isEmpty, "no spacing leaves blank space next to a review: the test reaches nothing")
+    }
+
+    /// Taps in one scroll chunk holding prose with 段評 bubbles and a 本章说 card, at the
+    /// given spacing: `snapped` are points clear of every line by more than the tap tolerance
+    /// that the snapping lookup resolved to a review; `claimed` those a tap still resolves;
+    /// `reviewsMissed` bubbles a tap on their middle no longer finds.
+    private func scrollTaps(
+        lineHeight: CGFloat,
+        paragraphEm: CGFloat
+    ) async throws -> (snapped: [CGPoint], claimed: [CGPoint], reviewsMissed: [CGRect]) {
+        let fontSize: CGFloat = 20
+        let bubble = ReaderHTMLUtilities.rewriteReviewComments(
+            #"<comment count="2" onClick="java.startBrowser('https://example.com/r?p=1','段评')"/>"#
+        )
+        let prose = (0..<4).map { "<p>\(String(repeating: "字", count: 40))\($0)。\(bubble)</p>" }.joined()
+        let cleaned = ReaderHTMLUtilities.sanitizeOnlineChapterMarkup(prose + chapterSayCard + prose)
+        let attributed = try await build(
+            html: cleaned,
+            lineHeightMultiple: lineHeight,
+            lineSpacing: (lineHeight - 1) * fontSize,
+            paragraphSpacing: paragraphEm * fontSize
+        )
+        let chunks = CoreTextChunkSlicer.slice(
+            attributedString: LayoutShared(attributed).wrappedValue,
+            chapterIndex: 0,
+            contentWidth: page.width - insets.left - insets.right
+        ).chunks
+        var found: (chunk: CoreTextChunk, reviews: [CoreTextPaginator.RenderedAttachment])?
+        for chunk in chunks where found == nil {
+            chunk.materializeFrameIfNeeded()
+            let reviews = chunk.attachments.filter { $0.linkHref?.hasPrefix("ydreview://") == true }
+            if reviews.contains(where: { $0.rect.width > page.width / 2 }) {
+                found = (chunk, reviews)
+            }
+        }
+        let (chunk, reviews) = try #require(found, "no chunk holds the card")
+        let frame = try #require(chunk.frame)
+
+        // Each line's vertical band, top-down in the chunk, as `stringIndex` measures it.
+        let lines = CTFrameGetLines(frame) as! [CTLine]
+        var origins = [CGPoint](repeating: .zero, count: lines.count)
+        CTFrameGetLineOrigins(frame, CFRange(location: 0, length: 0), &origins)
+        let bands = lines.indices.map { index -> ClosedRange<CGFloat> in
+            var ascent: CGFloat = 0, descent: CGFloat = 0
+            _ = CTLineGetTypographicBounds(lines[index], &ascent, &descent, nil)
+            return (chunk.height - origins[index].y - ascent)...(chunk.height - origins[index].y + descent)
+        }
+        func isReview(_ index: Int?) -> Bool {
+            index.flatMap { HTMLAttributedStringBuilder.linkHref(at: $0, in: chunk.attributedString) }?
+                .hasPrefix("ydreview://") == true
+        }
+
+        // Under each bubble and across the card, the points clear of every line.
+        let xs = reviews.map { $0.rect.width > page.width / 2 ? $0.rect.minX + $0.rect.width * 0.15 : $0.rect.midX }
+        let blank = stride(from: CGFloat(0), through: chunk.height, by: 1).filter { y in
+            bands.allSatisfy { y < $0.lowerBound - 10 || y > $0.upperBound + 10 }
+        }
+        let snapped = xs.flatMap { x in
+            blank.map { CGPoint(x: x, y: $0) }.filter { isReview(chunk.stringIndex(atLocalPoint: $0)) }
+        }
+        let claimed = snapped.filter { chunk.stringIndex(atLocalPoint: $0, snapsToNearestLine: false) != nil }
+        // Bubbles only: a tap on the card meets its rect first (`attachmentLinkTarget`).
+        let missed = reviews.filter { $0.rect.width <= page.width / 2 }.filter {
+            !isReview(chunk.stringIndex(atLocalPoint: CGPoint(x: $0.rect.midX, y: $0.rect.midY), snapsToNearestLine: false))
+        }
+        return (snapped, claimed, missed.map(\.rect))
+    }
+
     // MARK: - Fixture
 
     /// The chapter's prose, then its 本章说 card, with just enough prose that the card no longer
@@ -136,29 +224,39 @@ struct ReviewCardPageTapTests {
     }
 
     private func layout(html: String) async throws -> CoreTextPaginator.ChapterLayout {
+        let attributed = try await build(html: html)
+        return await CoreTextPaginator().paginate(
+            spineIndex: 0,
+            attrStr: LayoutShared(attributed).wrappedValue,
+            renderSize: page,
+            fontSize: 20,
+            contentInsets: insets
+        )
+    }
+
+    private func build(
+        html: String,
+        lineHeightMultiple: CGFloat = 1.6,
+        lineSpacing: CGFloat = 0,
+        paragraphSpacing: CGFloat = 10
+    ) async throws -> NSAttributedString {
         // The page, as the reader passes its viewport: the builder takes the insets off itself.
         let builder = OnlineProviderAttributedStringBuilder(
             provider: ReviewCardChapterProvider(html: html),
             renderSize: page
         )
-        let built = try await builder.buildChapter(
+        return try await builder.buildChapter(
             at: 0,
             settings: ReaderRenderSettings(
                 theme: "test", textColor: .black, backgroundColor: .white,
-                fontSize: 20, lineHeightMultiple: 1.6, lineSpacing: 0, paragraphSpacing: 10,
+                fontSize: 20, lineHeightMultiple: lineHeightMultiple, lineSpacing: lineSpacing,
+                paragraphSpacing: paragraphSpacing,
                 letterSpacing: 0, marginH: insets.left, marginV: insets.bottom, footerHeight: 0,
                 contentInsets: insets, writingMode: .horizontal
             ),
             themeTextColor: .black,
             themeBackgroundColor: .white
-        )
-        return await CoreTextPaginator().paginate(
-            spineIndex: 0,
-            attrStr: LayoutShared(built.attributedString).wrappedValue,
-            renderSize: page,
-            fontSize: 20,
-            contentInsets: insets
-        )
+        ).attributedString
     }
 }
 

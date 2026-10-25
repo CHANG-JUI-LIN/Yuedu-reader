@@ -1347,7 +1347,7 @@ final class CoreTextCollectionScrollViewController: UIViewController, @MainActor
         }
 
         if let (_, chunk, localPoint) = hitTestChunk(at: point),
-           let idx = chunk.stringIndex(atLocalPoint: localPoint),
+           let idx = chunk.stringIndex(atLocalPoint: localPoint, snapsToNearestLine: false),
            let href = HTMLAttributedStringBuilder.linkHref(at: idx, in: chunk.attributedString) {
             if let note = FootnoteStore.text(spineIndex: chunk.chapterIndex, href: href),
                let anchor = footnoteAnchor(at: point) {

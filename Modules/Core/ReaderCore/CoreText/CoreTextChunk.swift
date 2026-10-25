@@ -360,7 +360,14 @@ final class CoreTextChunk {
     }
 
     /// Converts a UIKit coordinate point within the cell to a chapter-level character index (including the full-chapter index starting from charRange.location)
-    func stringIndex(atLocalPoint point: CGPoint) -> Int? {
+    ///
+    /// - Parameter snapsToNearestLine: a long-press selects from the nearest line even in the
+    ///   gap between paragraphs. A tap passes `false`: it counts only on a line it landed on,
+    ///   give or take the same tolerance as the x axis. Snapped, once line and paragraph
+    ///   spacing open the gaps past two tolerances, a tap on the blank under a 段評 bubble
+    ///   opened the review instead of the reader's menu — the paged reader's feedback #86.
+    ///   Vertical text already applies the tolerance to every gesture.
+    func stringIndex(atLocalPoint point: CGPoint, snapsToNearestLine: Bool = true) -> Int? {
         if isImageOnly { return nil }
         materializeFrameIfNeeded()
         guard let frame = frame else { return nil }
@@ -373,6 +380,7 @@ final class CoreTextChunk {
             return verticalStringIndex(point: point, lines: lines, origins: origins)
         }
 
+        let tapTolerance: CGFloat = 10
         let coreY = height - point.y
         var bestIdx = 0
         var bestDist: CGFloat = .greatestFiniteMagnitude
@@ -390,6 +398,7 @@ final class CoreTextChunk {
             let d = coreY < minY ? minY - coreY : coreY - maxY
             if d < bestDist { bestDist = d; bestIdx = i }
         }
+        if !snapsToNearestLine, bestDist > tapTolerance { return nil }
         let line = lines[bestIdx]
         // Measured on the line as painted, where the glyphs are (`PaintedLine`).
         let painted = CoreTextHorizontalLineDrawer.paintedLine(
@@ -398,7 +407,6 @@ final class CoreTextChunk {
 
         // Check horizontal bounds: tap must be within the line's actual typographic width.
         let textEndX = painted.x + painted.width
-        let tapTolerance: CGFloat = 10
         guard point.x >= painted.x - tapTolerance,
               point.x <= textEndX + tapTolerance
         else {
