@@ -126,7 +126,8 @@ struct ContentView: View {
         .font(DSFont.body)
         .overlay {
             // App-wide audiobook mini-player: controls the long-lived audiobook session
-            // from any tab. A full-screen cover hides it; a reader pushed inside a tab does
+            // from any tab, and narration that went on after its book was closed. A
+            // full-screen cover hides it; a reader pushed inside a tab does
             // not, so it hides itself while a reader hosts its own (`readerHostsPlayer`).
             // No reader toolbar here, so allow dragging down to just above the tab bar.
             NowPlayingMiniPlayer(placement: .global, minBottomClearance: 90)
@@ -447,7 +448,8 @@ struct ContentView: View {
 /// user configured a page background (Pro), the per-scope gradient/image layer.
 /// The default palette resolves to the system grouped background, so default users
 /// keep the same appearance while the view structure stays stable across updates.
-/// The app-root full-screen audiobook player, presented from the global now-playing bar.
+/// The app-root full-screen audiobook player, presented from the global now-playing bar —
+/// and, from the same bar, the book a closed reader is still narrating.
 ///
 /// Its own view, observing `NowPlayingHub`, so the root does not: the hub publishes on every
 /// spoken sentence (`currentSegmentIndex`), and the root observing it re-ran `ContentView.body`
@@ -468,6 +470,11 @@ private struct AudiobookPlayerPresentation: ViewModifier {
                         .environmentObject(store)
                 }
             }
+        }
+        // Its reader takes the narration over as it opens (`ReaderView.init`).
+        .fullScreenCover(item: $hub.reopenedNarrationBook) { book in
+            BookReaderView(bookId: book.bookID)
+                .environmentObject(store)
         }
     }
 }
@@ -563,12 +570,13 @@ struct NowPlayingMiniPlayer: View {
     }
 
     /// In the reader, this book's TTS *or* a background audiobook; at the root, the
-    /// audiobook unless a reader on screen is already showing it.
+    /// audiobook or a closed reader's narration, unless a reader on screen is already showing it.
     private var isVisible: Bool {
         NowPlayingHub.showsMiniPlayer(
             inReader: placement == .reader,
             readerTTSVisible: hub.isVisible,
             audiobookLoaded: hub.showsGlobalBar,
+            narrationOutlivesReader: hub.holdsNarrationPastReader,
             readerHostsPlayer: hub.readerHostsPlayer
         )
     }
@@ -618,14 +626,17 @@ struct NowPlayingMiniPlayer: View {
         HStack(spacing: controlSpacing) {
             Button {
                 performTapAction {
-                    hub.openPanel()
+                    switch placement {
+                    case .reader: hub.openPanel()
+                    case .global: hub.openFromAppRoot()
+                    }
                 }
             } label: {
                 leadingArtwork
             }
             .buttonStyle(.plain)
             .accessibilityLabel(nowPlayingLabel)
-            .accessibilityHint(localized("打開播放控制面板"))
+            .accessibilityHint(openHint)
             .accessibilityIdentifier("now_playing_\(placement.rawValue)_open_panel")
 
             Button {
@@ -687,6 +698,14 @@ struct NowPlayingMiniPlayer: View {
     /// name, so VoiceOver read the book title three times over play/pause and stop.
     private var nowPlayingLabel: String {
         hub.title.isEmpty ? localized("語音朗讀") : hub.title
+    }
+
+    /// What tapping the artwork does: at the root, narration reopens its book (see
+    /// `NowPlayingHub.openFromAppRoot`); everywhere else it opens the playback panel.
+    private var openHint: String {
+        placement == .global && hub.source == .tts
+            ? localized("打開這本書到正在朗讀的地方")
+            : localized("打開播放控制面板")
     }
 
     /// The leading 56pt tappable artwork: both TTS and audiobook spin the book cover
@@ -947,5 +966,16 @@ private struct SpinningCoverIcon<Face: View>: View {
         totalSegments: 94
     )
     return NowPlayingMiniPlayer(placement: .reader, barsVisible: false)
+}
+
+#Preview("Shelf mini-player, book closed mid-narration") {
+    NowPlayingHub.shared.configurePreview(
+        title: "第十章 玄雅的赔礼",
+        playbackState: .playing,
+        currentSegmentIndex: 12,
+        totalSegments: 94,
+        holdsNarrationPastReader: true
+    )
+    return NowPlayingMiniPlayer(placement: .global, minBottomClearance: 90)
 }
 #endif

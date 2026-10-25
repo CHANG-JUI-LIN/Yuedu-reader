@@ -41,7 +41,9 @@ enum NowPlayingSource {
 /// - `isVisible`: the in-reader TTS mini-player (`.reader` placement), allowed while a
 ///   reader is on screen.
 /// - `showsGlobalBar`: the app-wide audiobook mini-player (`.global` placement),
-///   shown on any page while an audiobook is loaded.
+///   shown on any page while an audiobook is loaded. The same placement shows narration
+///   whose reader closed mid-narration (`holdsNarrationPastReader`): without it, closing
+///   the book left the narration playing with no control for it on the shelf.
 ///
 /// A reader on screen draws the audiobook in its own `.reader` placement, so the `.global`
 /// one steps aside while one is (`readerHostsPlayer`). 書架 pushes the reader inside its tab,
@@ -64,6 +66,14 @@ final class NowPlayingHub: ObservableObject {
     @Published var isPanelPresented = false
     /// Drives the app-root full-screen audiobook player presentation (tap the global bar).
     @Published var isPresentingAudiobook = false
+    /// The book reopened from the global bar because a closed reader is still narrating it. The
+    /// app root presents its reader full screen, and that reader takes the narration over.
+    @Published var reopenedNarrationBook: ReopenedNarrationBook?
+
+    struct ReopenedNarrationBook: Identifiable {
+        let bookID: UUID
+        var id: UUID { bookID }
+    }
 
     private weak var coordinator: TTSCoordinator?
     private weak var audiobook: AudiobookPlayer?
@@ -77,14 +87,20 @@ final class NowPlayingHub: ObservableObject {
 
     /// Whether a mini-player placement draws. Exactly one surface shows audio at a time: the
     /// reader's while a reader is on screen, the app root's everywhere else.
+    ///
+    /// The root shows narration only once its reader has closed for good, not whenever no
+    /// reader hosts the player: a reader merely covered by a page it pushed stops hosting
+    /// while it is still alive, and tapping the root's bar reopens the book — a second reader
+    /// over the one still narrating.
     static func showsMiniPlayer(
         inReader: Bool,
         readerTTSVisible: Bool,
         audiobookLoaded: Bool,
+        narrationOutlivesReader: Bool,
         readerHostsPlayer: Bool
     ) -> Bool {
         if inReader { return readerTTSVisible || audiobookLoaded }
-        return audiobookLoaded && !readerHostsPlayer
+        return (audiobookLoaded || narrationOutlivesReader) && !readerHostsPlayer
     }
 
     var progressText: String {
@@ -171,8 +187,28 @@ final class NowPlayingHub: ObservableObject {
     /// the narrator holds that whole reader, deliberately, and for one reader at most — until
     /// narration stops, ends, or another book starts narrating. Every other closed reader is
     /// freed. This can go once narration supplies its own chapter text.
-    private var heldNarration: TTSCoordinator?
+    private var heldNarration: TTSCoordinator? {
+        didSet { publishHoldsNarrationPastReaderAfterTeardown() }
+    }
     private var heldNarrationCancellable: AnyCancellable?
+    /// A closed reader's narration is still going: the global bar shows it.
+    ///
+    /// Trails `heldNarration` by one main-actor turn. The hold is taken in
+    /// `ReaderTeardownProbe.dismantleUIView`, while SwiftUI is tearing down the closed reader's
+    /// view graph, whose mini-player observes this hub: publishing to it there traps on a Swift
+    /// exclusivity check inside SwiftUI (`GraphHost.asyncTransaction`, seen on iOS 26.5 closing
+    /// a book mid-narration). The next turn reaches every observer after the teardown returned:
+    /// this moves the publish out of SwiftUI's call stack, it waits for nothing. It can publish
+    /// directly again once the hold is no longer taken inside `dismantleUIView`.
+    @Published private(set) var holdsNarrationPastReader = false
+
+    private func publishHoldsNarrationPastReaderAfterTeardown() {
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            let holds = self.heldNarration != nil
+            if self.holdsNarrationPastReader != holds { self.holdsNarrationPastReader = holds }
+        }
+    }
 
     /// A reader leaving the view hierarchy for good hands over its narrator: kept while it is
     /// narrating (playing or paused), cut loose from the reader otherwise.
@@ -204,7 +240,47 @@ final class NowPlayingHub: ObservableObject {
         heldNarration = nil
     }
 
-    var holdsNarrationPastReader: Bool { heldNarration != nil }
+    /// The narrator a reader opening on `bookID` takes over: the one a closed reader of the
+    /// book left narrating. Taking it over means the narration goes on under the new reader —
+    /// its panel, chapter controls and page-following — instead of that reader starting an
+    /// idle narrator of its own beside it.
+    ///
+    /// Only looks. The reader asks while SwiftUI makes its state, inside a view update, where
+    /// changing what the mini-players observe is not allowed; it claims the narrator with
+    /// `takeOverHeldNarration(_:)` once it appears.
+    func narrationToTakeOver(forBook bookID: UUID) -> TTSCoordinator? {
+        guard let held = heldNarration,
+              held.narrationBookID == bookID,
+              held.playbackState != .stopped
+        else { return nil }
+        return held
+    }
+
+    /// A reader that took the held narrator over has appeared: the narration is its own now.
+    /// The closed reader's callbacks are not cleared — the new reader replaces them next, and
+    /// until then a chapter that ends still gets its next one.
+    @discardableResult
+    func takeOverHeldNarration(_ coordinator: TTSCoordinator) -> Bool {
+        guard heldNarration === coordinator else { return false }
+        heldNarrationCancellable = nil
+        heldNarration = nil
+        return true
+    }
+
+    /// The global bar's artwork. An audiobook opens its full-screen player; narration whose
+    /// reader has closed reopens that book, and its reader takes the narration over.
+    func openFromAppRoot() {
+        switch source {
+        case .tts:
+            guard let bookID = heldNarration?.narrationBookID else {
+                ttsLog("[TTS][Hub] global bar tapped with no held narration to reopen")
+                return
+            }
+            reopenedNarrationBook = ReopenedNarrationBook(bookID: bookID)
+        case .audiobook, .none:
+            openPanel()
+        }
+    }
 
     /// Stop TTS narration only (used when an audiobook takes over the audio session).
     func stopTTSIfActive() {
@@ -314,7 +390,8 @@ final class NowPlayingHub: ObservableObject {
         title: String,
         playbackState: TTSPlaybackState,
         currentSegmentIndex: Int,
-        totalSegments: Int
+        totalSegments: Int,
+        holdsNarrationPastReader: Bool = false
     ) {
         source = .tts
         self.title = title
@@ -322,6 +399,7 @@ final class NowPlayingHub: ObservableObject {
         self.currentSegmentIndex = currentSegmentIndex
         self.totalSegments = totalSegments
         isVisible = playbackState != .stopped
+        self.holdsNarrationPastReader = holdsNarrationPastReader
     }
 #endif
 }
@@ -362,6 +440,22 @@ final class TTSCoordinator: ObservableObject {
     @Published var speechRate: Float = 0.5
     @Published var sleepMinutes: Int = 0
     var showsGlobalFloatingPlayer = false
+
+    // MARK: - Where the narration is (set by ReaderView)
+    //
+    // Kept on the narrator, not in the reader that started it: narration outlives that reader,
+    // and a reader opened on the same book takes the narrator over
+    // (`NowPlayingHub.narrationToTakeOver(forBook:)`), so it has to find these on the narrator.
+
+    /// The book being read aloud.
+    var narrationBookID: UUID?
+    /// Chapter being narrated.
+    @Published var narrationChapterIndex: Int?
+    /// Maps the narration handed to the engine back to `narrationChapterIndex`'s laid-out text.
+    @Published var narrationOffsets: TTSNarrationOffsetMap?
+    /// Chapter the narration is blocked on at a chapter boundary, while the engine holds the
+    /// audio session open.
+    @Published var pendingNarrationChapterIndex: Int?
 
     // MARK: - Callbacks (set by ReaderView)
     /// Asked for the next chapter when the current one finishes. Returning `.waiting` keeps

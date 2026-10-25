@@ -22,6 +22,11 @@ struct ReaderView: View {
         // The book's 整章翻譯 setting is part of the first layout, so a translated book never
         // opens on its untranslated text first.
         _readerTranslation = State(initialValue: ReaderTranslationSettingsStore.presentation(for: bookId))
+        // A reader of this book closed mid-narration and the narration is still going: this
+        // reader takes that narrator over rather than starting one of its own beside it.
+        _ttsCoordinator = StateObject(
+            wrappedValue: NowPlayingHub.shared.narrationToTakeOver(forBook: bookId) ?? TTSCoordinator()
+        )
     }
     @EnvironmentObject var store: BookStore
     @Environment(\.appDependencies) var dependencies
@@ -173,7 +178,7 @@ struct ReaderView: View {
     @State var autoScrollHandle = ReaderAutoScrollHandle()
     /// 自動閱讀's route to the curtain layer, filled in by the paged host.
     @State var autoReadRevealHandle = ReaderAutoReadRevealHandle()
-    @StateObject var ttsCoordinator = TTSCoordinator()
+    @StateObject var ttsCoordinator: TTSCoordinator
     /// This reader's key in `NowPlayingHub`'s set of readers hosting the mini-player.
     @State var nowPlayingHostID = UUID()
     @StateObject var mediaOverlayCoordinator = EPUBMediaOverlayPlaybackCoordinator()
@@ -250,7 +255,15 @@ struct ReaderView: View {
     /// Whether the auto-read controls are showing over the page. Not private: the
     /// footer pill in `ReaderView+Footer` is what opens them.
     @State var showAutoReadPanel = false
-    @State var ttsChapterIndex: Int? = nil
+    // The three below live on the narrator (`TTSCoordinator`), not here: a reader closed
+    // mid-narration hands its narrator on, and the reader opened on the book next takes it
+    // over — which only works if it finds where the narration is on the narrator itself.
+
+    /// Chapter being narrated.
+    var ttsChapterIndex: Int? {
+        get { ttsCoordinator.narrationChapterIndex }
+        nonmutating set { ttsCoordinator.narrationChapterIndex = newValue }
+    }
     /// Maps the narration handed to the engine back to `ttsChapterIndex`'s laid-out text,
     /// so the playback wash can be positioned instead of searched for. Only the reader
     /// knows how the unit was sliced out of the chapter, which is why the engine reports
@@ -259,10 +272,16 @@ struct ReaderView: View {
     /// `nil` when the narration did not come from a CoreText layout — the joined page text
     /// and the raw chapter content have no shared coordinate space with what is on screen,
     /// and highlighting falls back to searching there.
-    @State var ttsNarrationOffsets: TTSNarrationOffsetMap? = nil
+    var ttsNarrationOffsets: TTSNarrationOffsetMap? {
+        get { ttsCoordinator.narrationOffsets }
+        nonmutating set { ttsCoordinator.narrationOffsets = newValue }
+    }
     /// Chapter the narration is blocked on at a chapter boundary, while the engine holds the
     /// audio session open. Non-nil only between `beginWaitingForTTSChapter` and its resolution.
-    @State var ttsPendingChapterIndex: Int? = nil
+    var ttsPendingChapterIndex: Int? {
+        get { ttsCoordinator.pendingNarrationChapterIndex }
+        nonmutating set { ttsCoordinator.pendingNarrationChapterIndex = newValue }
+    }
     /// A start waiting for the paged engine to lay its chapter out (scroll mode lays chapters
     /// out in the scroll engine only). Non-nil only while that layout is in flight; clearing it
     /// cancels the start.
@@ -270,6 +289,9 @@ struct ReaderView: View {
     @State var showTTSJumpPrompt = false
     @State var ttsJumpPromptChapterIndex: Int? = nil
     @State var ttsPlaybackAnchor: CoreTextReadingPosition?
+    /// This reader took narration over from a closed reader of the book: once the opening
+    /// restore lands, it goes to where the narration is (`alignToAdoptedNarration`).
+    @State var alignsToNarrationOnRestore = false
     @State var isAligningReaderToTTSAnchor = false
     @State var showMediaOverlayPanel = false
     @State var activeMediaOverlayChapterIndex: Int? = nil
@@ -1503,7 +1525,7 @@ struct ReaderView: View {
 
     /// Chapter offset of the segment now being spoken, or `nil` when the narration unit
     /// carried no mapping back to the laid-out chapter.
-    private func expectedPlaybackChapterOffset() -> Int? {
+    func expectedPlaybackChapterOffset() -> Int? {
         guard let offsets = ttsNarrationOffsets,
               let narrationRange = ttsCoordinator.currentSegmentNarrationRange
         else { return nil }
@@ -2132,6 +2154,12 @@ struct ReaderView: View {
             bindAutoRead()
             bindPageBarsProvider()
             ttsCoordinator.showsGlobalFloatingPlayer = true
+            ttsCoordinator.narrationBookID = bookId
+            // The narrator this reader took over at its creation is its own from here; the
+            // callbacks below replace the closed reader's.
+            if NowPlayingHub.shared.takeOverHeldNarration(ttsCoordinator) {
+                alignsToNarrationOnRestore = true
+            }
             // Allow the in-reader mini-player the whole time the reader is on screen,
             // independent of the bars — bar visibility only repositions it now.
             setTTSFloatingOverlayVisible(true)
@@ -3079,6 +3107,7 @@ struct ReaderView: View {
                 moveReaderSession(to: position, source: .restored, shouldPersist: false)
                 savedCoreTextRestoreTarget = nil
                 isRestoringPosition = false
+                alignToAdoptedNarration()
                 openAtOpeningTOCTarget(restoredSpine: position.spineIndex)
             }
             return
@@ -3127,6 +3156,7 @@ struct ReaderView: View {
                     self.epubRenderer.updateCurrentPosition(globalPage: resolvedPage, engine: engine)
                     self.savedCoreTextRestoreTarget = nil
                     self.isRestoringPosition = false
+                    self.alignToAdoptedNarration()
                     self.openAtOpeningTOCTarget(restoredSpine: spineIndex)
                 }
                 return

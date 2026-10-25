@@ -35,13 +35,13 @@ final class NowPlayingCapsuleUITests: XCTestCase {
     }
 
     @MainActor
-    private func launch(_ app: XCUIApplication, importing title: String) {
+    private func launch(_ app: XCUIApplication, importing title: String, extraArguments: [String] = []) {
         app.launchArguments = ["-no-official-modules", "-onboarding.completed", "YES", "-AppleLanguages", "(zh-Hant)", "-AppleLocale", "zh_TW",
                                "-auto-import-epub", folder.appendingPathComponent("\(title).txt").path,
                                "-auto-import-title", title, "-yd_page_turn_style", "滑動", "-yd_scroll_mode", "NO",
                                // The on-device voice: an online one depends on the network, and a
                                // failed request pauses narration — not what this test is about.
-                               "-yd_tts_use_system_voice", "YES"]
+                               "-yd_tts_use_system_voice", "YES"] + extraArguments
         app.launch()
         let shelfTab = app.tabBars.buttons["書架"].firstMatch
         XCTAssertTrue(shelfTab.waitForExistence(timeout: 30))
@@ -73,6 +73,12 @@ final class NowPlayingCapsuleUITests: XCTestCase {
     @MainActor
     private func capsule(_ app: XCUIApplication, _ control: String) -> XCUIElement {
         app.buttons["now_playing_reader_\(control)"].firstMatch
+    }
+
+    /// The app root's capsule, drawn on every tab while no reader is on screen.
+    @MainActor
+    private func shelfCapsule(_ app: XCUIApplication, _ control: String) -> XCUIElement {
+        app.buttons["now_playing_global_\(control)"].firstMatch
     }
 
     @MainActor
@@ -112,5 +118,83 @@ final class NowPlayingCapsuleUITests: XCTestCase {
         capsule(app, "stop").tap()
         XCTAssertTrue(playPause.waitForNonExistence(timeout: 10), "✕ ends the narration.\n\(app.debugDescription)")
         leaveReader(app, to: other)
+    }
+
+    /// Feedback #83: closing the book mid-narration kept it being read aloud and took its
+    /// capsule away, so nothing on the shelf could pause or stop it. The shelf shows it now, and
+    /// the capsule's cover reopens the book — whose reader takes the narration over.
+    @MainActor
+    func testClosedBookKeepsItsNarrationOnTheShelf() {
+        let app = XCUIApplication()
+        // The on-device voice's fastest, so the narration gets past the first page while the
+        // book is closed.
+        launch(app, importing: narrated, extraArguments: ["-yd_tts_speech_rate", "1.0"])
+
+        open(app, narrated)
+        startNarration(app, in: narrated)
+        leaveReader(app, to: narrated)
+
+        let playPause = shelfCapsule(app, "play_pause")
+        XCTAssertTrue(playPause.waitForExistence(timeout: 10),
+                      "The closed book's narration has its capsule on the shelf.\n\(app.debugDescription)")
+        XCTAssertEqual(playPause.label, "暫停", "…and is still playing.")
+        let cover = shelfCapsule(app, "open_panel")
+        XCTAssertEqual(cover.label, narrated, "VoiceOver names the book being read aloud.")
+        screenshot(app, "shelf-with-narration")
+
+        playPause.tap()
+        XCTAssertTrue(playPause.wait(for: \.label, toEqual: "播放", timeout: 5), "Paused from the shelf.")
+        playPause.tap()
+        XCTAssertTrue(playPause.wait(for: \.label, toEqual: "暫停", timeout: 5), "Resumed from the shelf.")
+
+        // The book was closed on its first page, which is where its saved position is. Let the
+        // narration read on past it — the shelf shows nothing of where it is, so this waits.
+        _ = XCTWaiter.wait(for: [XCTestExpectation(description: "narration reads past page 1")], timeout: 40)
+        // Reopen it paused: playing narration turns the reader's page to the spoken sentence on
+        // its own, a sentence later, so only paused narration shows where the reader opened.
+        playPause.tap()
+        XCTAssertTrue(playPause.wait(for: \.label, toEqual: "播放", timeout: 5), "Paused before reopening.")
+
+        cover.tap()
+        let content = app.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", body(narrated))).firstMatch
+        XCTAssertTrue(content.waitForExistence(timeout: 30), "The cover reopens the book.\n\(app.debugDescription)")
+        let readerPlayPause = capsule(app, "play_pause")
+        XCTAssertTrue(readerPlayPause.waitForExistence(timeout: 10), app.debugDescription)
+        XCTAssertEqual(readerPlayPause.label, "播放", "Still paused through the reopen.")
+        // The page on screen is one element whose label is its text, and only the first page
+        // starts with the chapter heading (the running header above it is the heading alone).
+        // The reader opens where the narration is, not on the saved first page.
+        let firstPage = app.staticTexts.matching(NSPredicate(
+            format: "label BEGINSWITH %@ AND label CONTAINS %@", "第一章", body(narrated)
+        )).firstMatch
+        let leftFirstPage = XCTNSPredicateExpectation(
+            predicate: NSPredicate(format: "exists == false OR hittable == false"), object: firstPage
+        )
+        XCTAssertEqual(XCTWaiter.wait(for: [leftFirstPage], timeout: 15), .completed,
+                       "The reopened book is on the page being read aloud.\n\(app.debugDescription)")
+        XCTAssertTrue(playPause.waitForNonExistence(timeout: 5), "One capsule: the reader's.\n\(app.debugDescription)")
+        screenshot(app, "reopened-reader")
+
+        readerPlayPause.tap()
+        XCTAssertTrue(readerPlayPause.wait(for: \.label, toEqual: "暫停", timeout: 5), "Resumed in the reopened reader.")
+
+        // The reader took the narration over: its capsule opens its own 語音朗讀 panel, which
+        // it would not for narration it is not driving.
+        capsule(app, "open_panel").tap()
+        let panelPlayPause = app.buttons["tts_panel_play_pause"].firstMatch
+        XCTAssertTrue(panelPlayPause.waitForExistence(timeout: 10),
+                      "The reopened reader drives the narration.\n\(app.debugDescription)")
+        XCTAssertEqual(panelPlayPause.label, "暫停")
+        app.buttons["完成"].firstMatch.tap()
+        XCTAssertTrue(panelPlayPause.waitForNonExistence(timeout: 10), app.debugDescription)
+
+        capsule(app, "stop").tap()
+        XCTAssertTrue(readerPlayPause.waitForNonExistence(timeout: 10), "✕ ends the narration.\n\(app.debugDescription)")
+        let close = app.buttons["reader_back_button"].firstMatch
+        if !close.exists { app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap() }
+        XCTAssertTrue(close.waitForExistence(timeout: 5), app.debugDescription)
+        close.tap()
+        _ = shelfBook(app, narrated)
+        XCTAssertFalse(playPause.waitForExistence(timeout: 3), "Stopped narration leaves no capsule behind.\n\(app.debugDescription)")
     }
 }

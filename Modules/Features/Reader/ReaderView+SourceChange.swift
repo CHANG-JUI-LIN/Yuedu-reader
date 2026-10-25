@@ -438,6 +438,32 @@ extension ReaderView {
         }
     }
 
+    /// This reader took over narration from a closed reader of the book
+    /// (`NowPlayingHub.narrationToTakeOver(forBook:)`) and has restored to where that reader
+    /// was saved, which the narration has since moved on from. Once the opening restore has
+    /// landed: go to the sentence being spoken, and prepare what comes next in this reader's
+    /// own engine — the closed reader's layouts and chapter-load observers left with it, so a
+    /// chapter wait it started is begun again here.
+    func alignToAdoptedNarration() {
+        guard alignsToNarrationOnRestore else { return }
+        alignsToNarrationOnRestore = false
+        guard ttsCoordinator.playbackState != .stopped,
+              let chapterIndex = ttsChapterIndex
+        else { return }
+        ttsLog("[TTS][Reader] took over narration chapter=\(chapterIndex) pending=\(ttsPendingChapterIndex.map(String.init) ?? "nil")")
+        // No offset when the narration has no mapping to the laid-out chapter
+        // (`ttsNarrationOffsets`): the chapter's start, and following the spoken text does the rest.
+        setActiveTTSAnchor(
+            CoreTextReadingPosition(spineIndex: chapterIndex, charOffset: expectedPlaybackChapterOffset() ?? 0),
+            alignReader: true
+        )
+        if let pending = ttsPendingChapterIndex, ttsCoordinator.isWaitingForNextChapter {
+            beginWaitingForTTSChapter(pending)
+        } else {
+            prepareNextTTSChapter(after: chapterIndex)
+        }
+    }
+
     /// Keeps the paged reader on the sentence TTS is currently speaking. Called on
     /// every spoken-segment change. Moves the playback anchor to the spoken text and
     /// turns the page only when that text now sits on a different page. Paged CoreText

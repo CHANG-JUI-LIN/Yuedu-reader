@@ -1661,6 +1661,7 @@
 "暫停" = "Pause";
 "停止播放" = "Stop Playback";
 "打開播放控制面板" = "Opens playback controls.";
+"打開這本書到正在朗讀的地方" = "Opens the book where it is being read aloud.";
 
 /* Reader bottom bar floating actions */
 "刷新" = "Refresh";
