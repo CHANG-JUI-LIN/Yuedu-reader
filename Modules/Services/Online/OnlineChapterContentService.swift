@@ -57,12 +57,14 @@ final class OnlineChapterContentService: Sendable {
             expectedSourceURL: sanitizedURL,
             expectedTOCTitle: ref.title
         ), cached.state == .cached, !cached.content.isEmpty {
+            // Content that looks merged is served like any other: deleting it here, after the
+            // fetch had stored it and reported `.ready`, left the reader on a 載入中 page no
+            // overlay ever replaced (feedback #89).
             let invalidArtifacts = OnlineChapterCacheWritePolicy.shouldRefetchStrippedRenderArtifacts(
                 package: cached,
                 hasBookSource: book.chaptersBuiltByRules
             )
-            let suspiciousContent = ChapterFetchManager.isSuspiciousChapterContent(cached.content)
-            if invalidArtifacts || suspiciousContent {
+            if invalidArtifacts {
                 BookSourceFetcher.shared.clearChapterCache(bookId: book.id, chapterIndex: index)
             } else {
                 return makePayload(package: cached, ref: ref, index: index)

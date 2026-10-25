@@ -44,12 +44,18 @@ enum OnlineChapterCacheWritePolicy {
     /// the offline-download validator must ask the same question. When it did not,
     /// a download could report 完成 for chapters the reader then purged on open,
     /// and the next reconcile pass re-queued the whole book.
+    ///
+    /// What the content looks like is not part of it. Chapters that looked merged
+    /// (`ChapterFetchManager.isSuspiciousChapterContent`) used to be refused here, so
+    /// their caches were deleted and refetched — but the network path stored the
+    /// refetch without asking, the same bytes came back, and the next read refused
+    /// them again. The chapter never loaded on any source (feedback #89). A fetched
+    /// chapter is read as fetched.
     static func isReusableCachedPackage(
         _ package: ChapterPackage,
         hasBookSource: Bool
     ) -> Bool {
         guard package.state == .cached, !package.content.isEmpty else { return false }
-        if ChapterFetchManager.isSuspiciousChapterContent(package.content) { return false }
         if !hasBookSource,
             ChapterFetchManager.isCollapsedBrowserImportedChapterContent(package.content)
         {
@@ -124,40 +130,113 @@ actor ChapterFetchManager {
         generationTokens[taskKey] == token
     }
 
-    /// Determines whether cached chapter content is suspiciously abnormal
-    /// (excessively long, or containing multiple chapter titles).
-    /// Used to reject bad caches where multiple chapters were merged,
-    /// triggering a re-fetch.
+    /// Whether chapter content looks like several chapters merged into one, or runs far longer
+    /// than any one chapter.
+    ///
+    /// A diagnostic and 校驗書源's verdict on a source's content — never a reason to refuse a
+    /// chapter. It used to reject cached chapters to force a refetch, but a refetch from the same
+    /// source returns the same bytes: the refusal deleted the only copy on every open and the
+    /// chapter never loaded (feedback #89, on every source the user tried). See
+    /// `OnlineChapterCacheWritePolicy.isReusableCachedPackage`.
     ///
     /// A previous rule that looked for "chapter complete / to be continued"
     /// markers was removed because some sites (e.g. 69shuba) naturally include
     /// those markers multiple times within a single chapter body (as inter-chapter
     /// ads / pagination hints), causing entire books to get stuck as placeholders.
-    /// Multi-chapter merges always include multiple chapter title headers, which
-    /// the chapterMarkers rule already detects sufficiently.
     // Over this character count, a merge is nearly certain
     private static let suspiciousContentLengthThreshold = 150_000
-    // If the content contains this many "Chapter N / Volume N" headings, treat as multi-chapter merge
+    // This many distinct chapter headings, each opening a chapter of text, mark a multi-chapter merge
     private static let suspiciousChapterHeadingThreshold = 3
+    // A heading is a title: a longer line that opens with 「第N章」 is a sentence about that chapter
+    private static let maxChapterHeadingLineLength = 40
+    // Text a heading must open before the next heading for it to count as a chapter of its own
+    private static let minMergedChapterBodyLength = 500
     private static let chapterHeadingRegex = try! NSRegularExpression(
         pattern: #"第\s*[\d零一二三四五六七八九十百千萬万]+\s*[章回卷節节篇部]"#
+    )
+    private static let chapterHeadingLineRegex = try! NSRegularExpression(
+        pattern: #"^第\s*([\d零一二三四五六七八九十百千萬万]+)\s*([章回卷節节篇部])"#
+    )
+    private static let lineBreakMarkupRegex = try! NSRegularExpression(
+        pattern: #"<br\s*/?>|</?(?:p|div|h[1-6]|li|section|article)\b[^>]*>"#,
+        options: .caseInsensitive
+    )
+    private static let inlineMarkupRegex = try! NSRegularExpression(
+        pattern: #"<[^>]*>|&(?:nbsp|ensp|emsp|#160|#12288);"#,
+        options: .caseInsensitive
     )
 
     static func isSuspiciousChapterContent(_ content: String) -> Bool {
         // Measure prose only: 段評-heavy chapters embed 100s of KB of legitimate base64 SVG bubbles
-        // (a 起点 大热章节 is 260KB+, ~all bubbles). Counting that bulk tripped the merge heuristic →
-        // the cache was rejected → endless re-fetch (chapter never rendered). Exclude the payloads.
+        // (a 起点 大热章节 is 260KB+, ~all bubbles). Counting that bulk flagged them as merges.
         let proseLength = ReaderHTMLUtilities.lengthExcludingBase64Payloads(content)
         if proseLength > suspiciousContentLengthThreshold {
             AppLogger.parse("⟐ suspiciousContent length", context: ["len": content.count, "prose": proseLength, "threshold": suspiciousContentLengthThreshold])
             return true
         }
+        // Every heading line is also a match here, so fewer matches than the threshold rules a
+        // merge out without splitting the chapter into lines.
         let range = NSRange(content.startIndex..., in: content)
-        let headingCount = chapterHeadingRegex.numberOfMatches(in: content, range: range)
-        if headingCount >= suspiciousChapterHeadingThreshold {
-            AppLogger.parse("⟐ suspiciousContent headings", context: ["len": content.count, "headingCount": headingCount, "threshold": suspiciousChapterHeadingThreshold])
+        let mentionCount = chapterHeadingRegex.numberOfMatches(in: content, range: range)
+        guard mentionCount >= suspiciousChapterHeadingThreshold else { return false }
+        let headingCount = mergedChapterHeadingCount(in: content)
+        guard headingCount >= suspiciousChapterHeadingThreshold else { return false }
+        AppLogger.parse("⟐ suspiciousContent headings", context: ["len": content.count, "mentions": mentionCount, "headingCount": headingCount, "threshold": suspiciousChapterHeadingThreshold])
+        return true
+    }
+
+    /// Distinct chapter headings in `content` that each open a chapter's worth of text.
+    ///
+    /// Counts heading lines, not matches. A chapter that cites 「第三章」 in its prose is one
+    /// chapter: #89's ~3,000-character chapter had five such citations, and counting every match
+    /// against a threshold of 3 flagged it on every source. In a merge, each chapter opens with
+    /// its heading on a line of its own and runs a chapter's length before the next. A title that
+    /// every page of one chapter restates, or chapter links listed back to back (最新章節), is not
+    /// a merge.
+    private static func mergedChapterHeadingCount(in content: String) -> Int {
+        var headings = Set<String>()
+        var openHeading: String?
+        var openBodyLength = 0
+        func closeOpenHeading() {
+            if let openHeading, openBodyLength >= minMergedChapterBodyLength {
+                headings.insert(openHeading)
+            }
         }
-        return headingCount >= suspiciousChapterHeadingThreshold
+        for line in chapterLines(content) {
+            if line.count <= maxChapterHeadingLineLength, let heading = chapterHeadingKey(line) {
+                closeOpenHeading()
+                openHeading = heading
+                openBodyLength = 0
+            } else {
+                openBodyLength += line.count
+            }
+        }
+        closeOpenHeading()
+        return headings.count
+    }
+
+    /// The chapter's non-empty lines: HTML paragraph and line breaks become line breaks, other
+    /// markup — 段評 bubbles and their base64 payloads included — is dropped.
+    private static func chapterLines(_ content: String) -> [String] {
+        var text = content
+        if text.contains("<") || text.contains("&") {
+            text = lineBreakMarkupRegex.stringByReplacingMatches(
+                in: text, range: NSRange(text.startIndex..., in: text), withTemplate: "\n")
+            text = inlineMarkupRegex.stringByReplacingMatches(
+                in: text, range: NSRange(text.startIndex..., in: text), withTemplate: "")
+        }
+        return text.components(separatedBy: .newlines)
+            .map { $0.trimmingCharacters(in: .whitespaces) }
+            .filter { !$0.isEmpty }
+    }
+
+    /// 「一百二十章」 for the line 「第一百二十章 舊稿」; nil for a line that does not open with a heading.
+    private static func chapterHeadingKey(_ line: String) -> String? {
+        let ns = line as NSString
+        guard let match = chapterHeadingLineRegex.firstMatch(
+            in: line, range: NSRange(location: 0, length: ns.length))
+        else { return nil }
+        return ns.substring(with: match.range(at: 1)) + ns.substring(with: match.range(at: 2))
     }
 
     static func isCollapsedBrowserImportedChapterContent(_ content: String) -> Bool {
@@ -502,6 +581,14 @@ actor ChapterFetchManager {
             }
 
             if package.state == .cached && !package.content.isEmpty {
+                // Diagnostic only: a chapter that looks merged is cached and shown as fetched
+                // (see `OnlineChapterCacheWritePolicy.isReusableCachedPackage`).
+                if Self.isSuspiciousChapterContent(package.content) {
+                    AppLogger.parse("⟐ chapterFetch content looks merged, shown as fetched", context: [
+                        "index": chapterIndex,
+                        "len": package.content.count,
+                    ])
+                }
                 let filename: String
                 if OnlineChapterCacheWritePolicy.shouldReusePersistedRenderArtifacts(
                     package: package,
