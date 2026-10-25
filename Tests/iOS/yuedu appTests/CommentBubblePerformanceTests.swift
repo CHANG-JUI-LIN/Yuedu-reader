@@ -11,7 +11,7 @@ import UIKit
 @MainActor
 struct CommentBubblePerformanceTests {
     private static let paragraphCount = 120
-    private static let prose = String(repeating: "風穿過山林，江水映著月光，行人仍沿著古道前進。", count: 5)
+    nonisolated private static let prose = String(repeating: "風穿過山林，江水映著月光，行人仍沿著古道前進。", count: 5)
 
     @Test("OFF versus source, builtin, and artwork bubbles preserve prose and review links")
     func offOnMatrix() async throws {
@@ -126,6 +126,131 @@ struct CommentBubblePerformanceTests {
         try Self.verify(output, hasBubbles: true, expectedImageData: expected)
     }
 
+    /// Crashlytics dde5251b: the main thread spent ≥6.4 s tokenizing a bubble's path, every
+    /// character read through `-[NSBigMutableString characterAtIndex:]` under CFStorage's lock.
+    /// This replays a 段評-heavy 起點 chapter — 150 paragraphs, every count different, so every
+    /// bubble misses the image cache and draws — once with native strings and once with the SVG
+    /// arriving as an `NSTextStorage`-backed string (the class in that stack), alone and with
+    /// four more chapters drawing the same bubble on background threads.
+    @Test("起點-shaped chapter: native and NSTextStorage-bridged SVG, alone and contended", .timeLimit(.minutes(5)))
+    func qidianShapedChapter() async throws {
+        let global = GlobalSettings.shared
+        let savedFollow = global.commentBubbleFollowsSourceSVG
+        defer { global.commentBubbleFollowsSourceSVG = savedFollow }
+        // Follow the source, so each bubble draws 起點's own outline path.
+        global.commentBubbleFollowsSourceSVG = true
+
+        let probe = NSTextStorage(string: Self.qidianSVG(count: 1, run: 0)).string
+        print("BUBBLE_PERF qidian bridgedInputClass=\(NSStringFromClass(type(of: probe as NSString))) contiguousUTF8=\(probe.isContiguousUTF8)")
+        try #require(!probe.isContiguousUTF8, "The bridged fixture must reproduce a foreign string")
+
+        for bridged in [false, true] {
+            for contended in [false, true] {
+                let run = Self.nextQidianRun()
+                let label = "input=\(bridged ? "textStorage" : "native") contended=\(contended)"
+                let template = CommentBubbleSVGRecognizer.recognize(
+                    src: "svg:",
+                    svgContent: Self.qidianInput(count: 1, run: run, bridged: bridged)
+                )
+                guard case .path(let d, _, _, _, _)? = template?.elements.first(where: {
+                    if case .path = $0 { return true }; return false
+                }) else {
+                    Issue.record("起點 fixture was not recognized as a bubble (\(label))")
+                    return
+                }
+                print("BUBBLE_PERF qidian \(label) pathClass=\(NSStringFromClass(type(of: d as NSString))) pathContiguousUTF8=\(d.isContiguousUTF8) pathBytes=\(d.utf8.count)")
+
+                let background: [Task<Double, Never>] = contended ? (1...4).map { worker in
+                    let nodes = Self.qidianNodes(run: run, countBase: worker * 1000, bridged: bridged)
+                    return Task.detached {
+                        let renderer = NodeAttributedStringRenderer(config: .init(
+                            from: Self.renderSettings, textColor: .black, renderWidth: 360
+                        ))
+                        let start = SourcePerfTrace.now
+                        _ = await renderer.render(nodes)
+                        return (SourcePerfTrace.now - start) * 1000
+                    }
+                } : []
+
+                let renderer = NodeAttributedStringRenderer(config: .init(
+                    from: Self.renderSettings, textColor: .black, renderWidth: 360
+                ))
+                let metrics = RenderLeafMetrics()
+                let start = SourcePerfTrace.now
+                let output = await ReaderDocumentTrace.$renderLeaves.withValue(metrics) {
+                    await renderer.render(Self.qidianNodes(run: run, countBase: 0, bridged: bridged))
+                }
+                let elapsed = (SourcePerfTrace.now - start) * 1000
+                var backgroundMs: [Double] = []
+                for task in background { backgroundMs.append(await task.value) }
+                print("BUBBLE_PERF qidian \(label) paragraphs=\(Self.qidianParagraphCount) totalMs=\(String(format: "%.1f", elapsed)) backgroundMs=\(backgroundMs.map { String(format: "%.0f", $0) }) \(metrics.logDetail)")
+                try Self.verify(output, hasBubbles: true, paragraphCount: Self.qidianParagraphCount)
+            }
+        }
+    }
+
+    nonisolated private static let qidianParagraphCount = 150
+    private static var qidianRun = 0
+
+    /// A distinct `data-run` per measurement, so no run reuses another's parsed template:
+    /// the bridged runs must parse their own (bridged) input, not hit the native run's cache.
+    private static func nextQidianRun() -> Int {
+        qidianRun += 1
+        return qidianRun
+    }
+
+    nonisolated private static func qidianNodes(run: Int, countBase: Int, bridged: Bool) -> [RenderableNode] {
+        (0..<qidianParagraphCount).map { index in
+            let count = countBase + index + 1
+            var style = RenderStyle.none
+            style.isTextSizedImage = true
+            let image: RenderableNode = bridged
+                ? .image(src: "svg:", alt: String(count), style: style,
+                         svgContent: qidianInput(count: count, run: run, bridged: true))
+                : .image(src: "data:image/svg+xml;base64,"
+                            + Data(qidianSVG(count: count, run: run).utf8).base64EncodedString(),
+                         alt: String(count), style: style)
+            return .paragraph([
+                .text(prose),
+                .anchor(href: href(index), children: [image])
+            ], style: .body)
+        }
+    }
+
+    nonisolated private static func qidianInput(count: Int, run: Int, bridged: Bool) -> String {
+        let svg = qidianSVG(count: count, run: run)
+        return bridged ? NSTextStorage(string: svg).string : svg
+    }
+
+    /// 起點's bubble shape: a 200×150 canvas around a 1300×1280 viewBox, one iconfont outline
+    /// inside a transformed group, the count in a `<text>`.
+    nonisolated private static func qidianSVG(count: Int, run: Int) -> String {
+        "<svg xmlns=\"http://www.w3.org/2000/svg\" data-run=\"\(run)\" width=\"200\" height=\"150\" viewBox=\"0 0 1300 1280\">"
+            + "<g transform=\"rotate(180 650 640) scale(-1 1) translate(-1300 0)\">"
+            + "<path d=\"\(qidianPathData)\" fill=\"#B3B3B3\"/></g>"
+            + "<text x=\"650\" y=\"760\" font-size=\"420\" text-anchor=\"middle\" fill=\"#FFFFFF\">\(count)</text></svg>"
+    }
+
+    /// An iconfont-style outline about as long and number-dense as 起點's (~1.8k characters):
+    /// a speech bubble traced in one-decimal cubic segments, with relative commands for the tail.
+    nonisolated private static let qidianPathData: String = {
+        let cx = 650.0, cy = 640.0, rx = 560.0, ry = 430.0
+        let segments = 48
+        var d = String(format: "M%.1f %.1f", cx + rx, cy)
+        for s in 0..<segments {
+            let a0 = Double(s) / Double(segments) * 2 * .pi
+            let a1 = Double(s + 1) / Double(segments) * 2 * .pi
+            let k = 4.0 / 3.0 * tan((a1 - a0) / 4)
+            d += String(
+                format: "C%.1f %.1f %.1f %.1f %.1f %.1f",
+                cx + rx * cos(a0) - k * rx * sin(a0), cy + ry * sin(a0) + k * ry * cos(a0),
+                cx + rx * cos(a1) + k * rx * sin(a1), cy + ry * sin(a1) - k * ry * cos(a1),
+                cx + rx * cos(a1), cy + ry * sin(a1)
+            )
+        }
+        return d + "M760 1060l-110 160-110-160Z"
+    }()
+
     private func runMatrix(customSVG: String, label: String) async throws {
         let global = GlobalSettings.shared
         let saved = (
@@ -192,12 +317,13 @@ struct CommentBubblePerformanceTests {
         }
     }
 
-    private static func href(_ index: Int) -> String { "ydreview://fixture/\(index)" }
+    nonisolated private static func href(_ index: Int) -> String { "ydreview://fixture/\(index)" }
 
     private static func verify(
         _ output: NSAttributedString,
         hasBubbles: Bool,
-        expectedImageData: Data? = nil
+        expectedImageData: Data? = nil,
+        paragraphCount: Int = paragraphCount
     ) throws {
         #expect(output.string.components(separatedBy: prose).count - 1 == paragraphCount)
         var links: [String] = []
@@ -246,7 +372,7 @@ struct CommentBubblePerformanceTests {
             + data.base64EncodedString() + "' width='90' height='120'/></svg>"
     }
 
-    private static var renderSettings: ReaderRenderSettings {
+    nonisolated private static var renderSettings: ReaderRenderSettings {
         ReaderRenderSettings(theme: "test", textColor: .black, backgroundColor: .white,
                              fontSize: 22, lineHeightMultiple: 1.4, lineSpacing: 0,
                              paragraphSpacing: 6, letterSpacing: 0, marginH: 0, marginV: 0,

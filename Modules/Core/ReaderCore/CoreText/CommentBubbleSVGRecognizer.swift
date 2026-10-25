@@ -180,6 +180,11 @@ struct CommentBubbleSVGRecognizer {
         }
     }
 
+    /// `⏱ commentBubble.recognize` / `commentBubble.draw` report only past this. A bubble
+    /// normally costs well under it, so a line is the anomaly; on the main thread the span
+    /// is also what `MainThreadMonitor` names, whatever its length.
+    private static let perfSpanThresholdMs: Double = 8
+
     /// Returns a stable template identity and the count currently embedded in the SVG.
     ///
     /// 起點把同一個氣泡外形重複內嵌在每一段文字中，唯一變化通常只有 `<text>` 裡的數字。
@@ -204,9 +209,9 @@ struct CommentBubbleSVGRecognizer {
         }
 
         let rawText = ns.substring(with: match.range(at: 1))
-        let displayText = rawText
+        let displayText = native(rawText
             .replacingOccurrences(of: "<[^>]+>", with: "", options: .regularExpression)
-            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .trimmingCharacters(in: .whitespacesAndNewlines))
         let isCount = (try? NSRegularExpression(pattern: #"^[0-9]+[+]?$"#))
             .map {
                 $0.firstMatch(
@@ -218,11 +223,25 @@ struct CommentBubbleSVGRecognizer {
             return (svg, displayText.isEmpty ? nil : displayText)
         }
 
-        let normalized = ns.replacingCharacters(
+        let normalized = native(ns.replacingCharacters(
             in: match.range(at: 1),
             with: "$displayText"
-        )
+        ))
         return (normalized, displayText)
+    }
+
+    /// The same text in native UTF-8 storage. `NSString` hands strings back as lazily bridged
+    /// `NSString`s that keep the source's storage, and Swift reads one whose storage is not UTF-8
+    /// through `characterAtIndex:`. For an `NSBigMutableString` — what `UITextView.text` returns
+    /// (the custom-SVG editor converts at its save), and the class in Crashlytics dde5251b — each read takes
+    /// CFStorage's lock, and a `Substring` of one copies the whole string before `Double(_:)` can
+    /// read it: the path tokenizer read its path once per number, ≥6.4 s of main thread while
+    /// background chapters drew the same bubble. A parsed bubble is cached and drawn from every
+    /// thread, so its strings are made native once, here; a no-op when already contiguous.
+    static func native(_ string: String) -> String {
+        var string = string
+        string.makeContiguousUTF8()
+        return string
     }
 
     /// Which face draws a bubble's count. legado draws a source's SVG with the faces it
@@ -298,8 +317,10 @@ struct CommentBubbleSVGRecognizer {
         svgContent: String?,
         mode: RecognitionMode
     ) -> CommentBubbleSVG? {
-        ReaderDocumentTrace.measuringSync("bubbleRecognize") {
-            recognizeImpl(src: src, svgContent: svgContent, mode: mode)
+        SourcePerfTrace.span("commentBubble.recognize", mode.rawValue, thresholdMs: perfSpanThresholdMs) {
+            ReaderDocumentTrace.measuringSync("bubbleRecognize") {
+                recognizeImpl(src: src, svgContent: svgContent, mode: mode)
+            }
         }
     }
 
@@ -313,7 +334,7 @@ struct CommentBubbleSVGRecognizer {
             return nil
         }
 
-        let cleaned = rawSVG.trimmingCharacters(in: .whitespacesAndNewlines)
+        let cleaned = native(rawSVG.trimmingCharacters(in: .whitespacesAndNewlines))
         let input = normalizedTemplateInput(cleaned)
         let cacheKey = recognizeCacheKey(normalizedSVG: input.template, mode: mode)
         if let box = recognizeCache.object(forKey: cacheKey) {
@@ -626,7 +647,10 @@ struct CommentBubbleSVGRecognizer {
     
     private static func getSVGString(src: String, svgContent: String?) -> String? {
         if let svgContent, !svgContent.isEmpty {
-            return svgContent
+            // Guard: dde5251b's bridged SVG came from a source never pinned down (the SVG editor,
+            // the one producer found, now saves native text; see `native`). Delete once every
+            // `svgContent` and custom-style `svg` producer is shown to hand over native text.
+            return native(svgContent)
         }
         guard src.hasPrefix("data:"), src.lowercased().contains("svg") else { return nil }
         let cleaned = OnlineImageLoader.cleanImageSource(src)
@@ -814,10 +838,10 @@ struct CommentBubbleSVGRecognizer {
                 let tag = tagOnlyRange.map { String(svg[$0]) } ?? ""
                 
                 let rawText = ns.substring(with: match.range(at: 1))
-                let text = rawText
+                let text = native(rawText
                     .replacingOccurrences(of: "<[^>]+>", with: "", options: .regularExpression)
-                    .trimmingCharacters(in: .whitespacesAndNewlines)
-                
+                    .trimmingCharacters(in: .whitespacesAndNewlines))
+
                 // Accept count format (e.g., 99+), or the template placeholders
                 // $displayText (legacy SVG) / ${num} (bubble.json convention).
                 let isCount = (try? NSRegularExpression(pattern: #"^[0-9]+[+]?$"#))
@@ -875,7 +899,7 @@ struct CommentBubbleSVGRecognizer {
         guard let regex = try? NSRegularExpression(pattern: pattern, options: .caseInsensitive) else { return nil }
         let ns = tag as NSString
         guard let match = regex.firstMatch(in: tag, range: NSRange(location: 0, length: ns.length)) else { return nil }
-        return ns.substring(with: match.range(at: 1))
+        return native(ns.substring(with: match.range(at: 1)))
     }
 
     private static func decodeEmbeddedRasterImage(_ href: String) -> Data? {
@@ -1144,7 +1168,7 @@ struct CommentBubbleSVGRecognizer {
         guard let regex = try? NSRegularExpression(pattern: pattern, options: .caseInsensitive) else { return nil }
         let ns = style as NSString
         guard let match = regex.firstMatch(in: style, range: NSRange(location: 0, length: ns.length)) else { return nil }
-        return ns.substring(with: match.range(at: 1)).trimmingCharacters(in: .whitespacesAndNewlines)
+        return native(ns.substring(with: match.range(at: 1)).trimmingCharacters(in: .whitespacesAndNewlines))
     }
 
     /// Parses a colour token, resolving `currentColor` to `inheritedColor`. Used both for an
@@ -1255,7 +1279,11 @@ extension CommentBubbleSVGRecognizer {
         format.scale = 3
         let renderer = UIGraphicsImageRenderer(size: canvasSize, format: format)
         
-        let rendered = ReaderDocumentTrace.measuringSync("bubbleDraw") {
+        let rendered = SourcePerfTrace.span(
+            "commentBubble.draw",
+            "vb=\(Int(vW))x\(Int(vH)) elements=\(svg.elements.count)",
+            thresholdMs: perfSpanThresholdMs
+        ) { ReaderDocumentTrace.measuringSync("bubbleDraw") {
             renderer.image { rendererContext in
             let context = rendererContext.cgContext
 
@@ -1323,7 +1351,9 @@ extension CommentBubbleSVGRecognizer {
                             path.stroke()
                         }
                     } else {
-                        let path = SVGPathParser.parse(d: d)
+                        let path = ReaderDocumentTrace.measuringSync("bubbleDraw.pathParse") {
+                            SVGPathParser.parse(d: d)
+                        }
                         if let fill {
                             fill.setFill()
                             path.fill()
@@ -1403,7 +1433,7 @@ extension CommentBubbleSVGRecognizer {
             }
         }
 
-        }
+        } }
 
         // The whole viewBox, margins included, as legado draws it: the SVG's own space
         // around its shape is what keeps the bubble off the paragraph's last character.
@@ -1467,7 +1497,7 @@ extension CommentBubbleSVGRecognizer {
 
 struct SVGPathParser {
     
-    enum Token {
+    enum Token: Equatable {
         case command(Character)
         case number(CGFloat)
     }
@@ -1499,24 +1529,85 @@ struct SVGPathParser {
         return path
     }
     
-    private static func tokenize(_ d: String) -> [Token] {
-        var tokens: [Token] = []
-        let pattern = #"([MmLlHhVvCcSsQqTtAazZ])|(-?\d*\.?\d+(?:[eE][-+]?\d+)?)"#
-        guard let regex = try? NSRegularExpression(pattern: pattern) else { return [] }
-        let ns = d as NSString
-        let matches = regex.matches(in: d, range: NSRange(location: 0, length: ns.length))
-        for match in matches {
-            if let cmdRange = Range(match.range(at: 1), in: d), !cmdRange.isEmpty {
-                if let char = d[cmdRange].first {
-                    tokens.append(.command(char))
-                }
-            } else if let numRange = Range(match.range(at: 2), in: d), !numRange.isEmpty {
-                if let val = Double(d[numRange]) {
-                    tokens.append(.number(CGFloat(val)))
+    /// Commands and numbers, read straight off the path's UTF-8 bytes. The NSRegularExpression
+    /// this replaced copied every number out as a `Substring` for `Double(_:)`, which on a bridged
+    /// string meant a `characterAtIndex:` per character (Crashlytics dde5251b).
+    ///
+    /// The tokens are the regex's, `([MmLlHhVvCcSsQqTtAazZ])|(-?\d*\.?\d+(?:[eE][-+]?\d+)?)`:
+    /// a number may open with `-` (a `+` is a separator), needs a digit after any point — so
+    /// `1.5.5` is `1.5` `.5` and `1.` is `1` — and takes an exponent only when digits follow
+    /// the `e`. Compact arc flags (`0110`) stay one number, as they always have. Only ASCII
+    /// digits count; any other byte separates.
+    static func tokenize(_ d: String) -> [Token] {
+        var d = d
+        return d.withUTF8 { bytes in
+            var tokens: [Token] = []
+            tokens.reserveCapacity(bytes.count / 4)
+            var index = 0
+            while index < bytes.count {
+                let byte = bytes[index]
+                if isCommand(byte) {
+                    tokens.append(.command(Character(Unicode.Scalar(byte))))
+                    index += 1
+                } else if let end = numberEnd(in: bytes, from: index) {
+                    // A path number fits a small string (≤15 bytes), so no allocation; and
+                    // `Double(_:)` parses exactly the text the regex matched.
+                    let text = String(decoding: UnsafeBufferPointer(rebasing: bytes[index..<end]), as: UTF8.self)
+                    if let value = Double(text) {
+                        tokens.append(.number(CGFloat(value)))
+                    }
+                    index = end
+                } else {
+                    index += 1
                 }
             }
+            return tokens
         }
-        return tokens
+    }
+
+    private static func isCommand(_ byte: UInt8) -> Bool {
+        switch byte {
+        case UInt8(ascii: "M"), UInt8(ascii: "m"), UInt8(ascii: "L"), UInt8(ascii: "l"),
+             UInt8(ascii: "H"), UInt8(ascii: "h"), UInt8(ascii: "V"), UInt8(ascii: "v"),
+             UInt8(ascii: "C"), UInt8(ascii: "c"), UInt8(ascii: "S"), UInt8(ascii: "s"),
+             UInt8(ascii: "Q"), UInt8(ascii: "q"), UInt8(ascii: "T"), UInt8(ascii: "t"),
+             UInt8(ascii: "A"), UInt8(ascii: "a"), UInt8(ascii: "Z"), UInt8(ascii: "z"):
+            return true
+        default:
+            return false
+        }
+    }
+
+    /// Where the number starting at `start` ends, or nil when none starts there.
+    private static func numberEnd(in bytes: UnsafeBufferPointer<UInt8>, from start: Int) -> Int? {
+        func isDigit(_ i: Int) -> Bool {
+            i < bytes.count && bytes[i] >= UInt8(ascii: "0") && bytes[i] <= UInt8(ascii: "9")
+        }
+        var i = start
+        if bytes[i] == UInt8(ascii: "-") { i += 1 }
+        let integerStart = i
+        while isDigit(i) { i += 1 }
+        var end: Int
+        if i < bytes.count, bytes[i] == UInt8(ascii: "."), isDigit(i + 1) {
+            i += 1
+            while isDigit(i) { i += 1 }
+            end = i
+        } else if i > integerStart {
+            end = i
+        } else {
+            return nil
+        }
+        if end < bytes.count, bytes[end] == UInt8(ascii: "e") || bytes[end] == UInt8(ascii: "E") {
+            var exponent = end + 1
+            if exponent < bytes.count, bytes[exponent] == UInt8(ascii: "-") || bytes[exponent] == UInt8(ascii: "+") {
+                exponent += 1
+            }
+            if isDigit(exponent) {
+                while isDigit(exponent) { exponent += 1 }
+                end = exponent
+            }
+        }
+        return end
     }
     
     private static func execute(

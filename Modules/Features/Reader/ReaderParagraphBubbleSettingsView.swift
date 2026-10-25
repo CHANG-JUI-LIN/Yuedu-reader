@@ -395,7 +395,10 @@ struct CommentBubbleStyleEditorView: View {
         return ReaderCommentBubbleCustomStyle(
             id: draft.style?.id ?? UUID(),
             name: trimmedName.isEmpty ? localized("自訂 SVG") : trimmedName,
-            svg: svg.trimmingCharacters(in: .whitespacesAndNewlines),
+            // `TextEditor` hands back `UITextView.text`, an `NSBigMutableString`, and the saved
+            // style stays in `GlobalSettings` as that object until relaunch — read by every
+            // thread that draws a bubble. Stored native instead (Crashlytics dde5251b).
+            svg: CommentBubbleSVGRecognizer.native(svg.trimmingCharacters(in: .whitespacesAndNewlines)),
             updatedAt: draft.style?.updatedAt,
             sizeScale: draft.style?.sizeScale,
             dayEmphasisColor: dayEmphasisColor,

@@ -12,6 +12,7 @@ import Foundation
 ///   coreText.scroll.loadChapter / coreText.scroll.slice / coreText.scroll.placeholderSlice
 ///   coreText.document.buildChapter  (per-phase totals; sub-phases below are nested in it)
 ///   coreText.document.htmlParse / cssCollect / cssParse / astBuild / cssMatch
+///   commentBubble.recognize / commentBubble.draw  (one 段評 bubble's SVG parse / raster)
 ///   cjk.typography.prepare  (the legacy engine's CJK pass over a chapter; the browser
 ///     engine's runs per paragraph and is a YueduCoreText Points of Interest interval)
 ///   reader.open.transition / reader.open.contentGate / reader.open.contentHold
