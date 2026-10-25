@@ -181,6 +181,66 @@ struct BookStoreReaderSettingsTests {
         #expect(defaults.object(forKey: key) as? Int == FixedPageReadingMode.webtoon.rawValue)
     }
 
+    // MARK: - 漫畫預設模式 (feedback #37)
+
+    @Test("a manga never given a mode opens in 漫畫預設模式")
+    @MainActor
+    func unsetMangaOpensInMangaDefault() throws {
+        let (store, directory, _) = try makeStore()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let manga = onlineBook(title: "條漫")
+        store.replaceBooksFromSync([manga])
+
+        #expect(
+            store.fixedPageConfiguration(for: manga, mangaDefault: .webtoon)
+                == FixedPageReadingMode.webtoon.recommendedConfiguration
+        )
+    }
+
+    @Test("a manga's own mode wins over 漫畫預設模式")
+    @MainActor
+    func mangaOwnModeWinsOverMangaDefault() throws {
+        let (store, directory, _) = try makeStore()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let manga = onlineBook(title: "日漫")
+        store.replaceBooksFromSync([manga])
+        let ltr = FixedPageReadingMode.ltr.recommendedConfiguration
+        store.readerSettings.setFixedPageConfiguration(ltr, for: manga.id)
+
+        #expect(store.fixedPageConfiguration(for: manga, mangaDefault: .webtoon) == ltr)
+    }
+
+    @Test("a PDF never given a mode still opens right to left whatever 漫畫預設模式 is")
+    @MainActor
+    func unsetPDFIgnoresMangaDefault() throws {
+        let (store, directory, _) = try makeStore()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        var pdf = ReadingBook(title: "說明書", author: "Author", contentFilename: "manual.pdf")
+        pdf.contentPipelineKind = .fixedPage
+        store.replaceBooksFromSync([pdf])
+
+        #expect(
+            store.fixedPageConfiguration(for: pdf, mangaDefault: .webtoon)
+                == FixedPageReadingMode.rtl.recommendedConfiguration
+        )
+    }
+
+    @Test("the reader takes 漫畫預設模式 from the global settings")
+    @MainActor
+    func readerTakesMangaDefaultFromGlobalSettings() throws {
+        let (store, directory, _) = try makeStore()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let manga = onlineBook(title: "條漫")
+        store.replaceBooksFromSync([manga])
+        let settings = GlobalSettings.shared
+        let original = settings.fixedPageMangaDefaultMode
+        defer { settings.fixedPageMangaDefaultMode = original }
+
+        settings.fixedPageMangaDefaultMode = .webtoon
+
+        #expect(store.fixedPageConfiguration(for: manga) == FixedPageReadingMode.webtoon.recommendedConfiguration)
+    }
+
     // MARK: - Helpers
 
     @MainActor

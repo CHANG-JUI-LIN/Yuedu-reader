@@ -15,6 +15,11 @@ final class FixedPageReaderState: ObservableObject {
     @Published var currentPage: Int = 0
     @Published var totalPages: Int = 0
     @Published var fixedPageReaderConfiguration: FixedPageReaderConfiguration = .recommendedDefault(for: .rtl)
+    /// A manga, so the settings sheet offers 漫畫預設模式 (feedback #37).
+    @Published var isManga: Bool = false
+    /// The book has no reading mode of its own yet: it opened in 漫畫預設模式, and changing
+    /// that default here changes it too.
+    @Published var followsMangaDefault: Bool = false
     @Published var isLoading: Bool = false
     @Published var errorMessage: String?
     /// The book opens on the page, as the flowing reader does. The pages are images
@@ -442,20 +447,30 @@ struct FixedPageReaderSettingsView: View {
                 Section {
                     Picker(localized("閱讀模式"), selection: Binding(
                         get: { configuration.mode },
-                        set: { mode in
-                            var updated = FixedPageReaderConfiguration.recommendedDefault(for: mode)
-                            updated.cropBorders = configuration.cropBorders
-                            updated.isLiveTextEnabled = configuration.isLiveTextEnabled
-                            updated.pageSpreadLayout = configuration.pageSpreadLayout
-                            updated.pageOffset = configuration.pageOffset
-                            updated.splitWideImages = configuration.splitWideImages
-                            updated.pillarbox = configuration.pillarbox
-                            state.onSetConfiguration?(updated)
-                        }
+                        set: { selectMode($0) }
                     )) {
                         ForEach(FixedPageReadingMode.allCases, id: \.rawValue) { mode in
                             Text(mode.localizedName).tag(mode)
                         }
+                    }
+                }
+                if state.isManga {
+                    Section {
+                        Picker(localized("漫畫預設模式"), selection: Binding(
+                            get: { globalSettings.fixedPageMangaDefaultMode },
+                            set: { mode in
+                                globalSettings.fixedPageMangaDefaultMode = mode
+                                // Still in the old default: this book had no mode of its own.
+                                if state.followsMangaDefault { selectMode(mode) }
+                            }
+                        )) {
+                            ForEach(FixedPageReadingMode.allCases, id: \.rawValue) { mode in
+                                Text(mode.localizedName).tag(mode)
+                            }
+                        }
+                    } footer: {
+                        Text(localized("只套用到還沒自己選過閱讀模式的漫畫。"))
+                            .dsSectionFooter()
                     }
                 }
                 Section {
@@ -550,6 +565,18 @@ struct FixedPageReaderSettingsView: View {
         }
     }
 
+    /// Switches this book to `mode`, keeping the toggles it has.
+    private func selectMode(_ mode: FixedPageReadingMode) {
+        var updated = FixedPageReaderConfiguration.recommendedDefault(for: mode)
+        updated.cropBorders = configuration.cropBorders
+        updated.isLiveTextEnabled = configuration.isLiveTextEnabled
+        updated.pageSpreadLayout = configuration.pageSpreadLayout
+        updated.pageOffset = configuration.pageOffset
+        updated.splitWideImages = configuration.splitWideImages
+        updated.pillarbox = configuration.pillarbox
+        state.onSetConfiguration?(updated)
+    }
+
     private func binding<Value>(_ keyPath: WritableKeyPath<FixedPageReaderConfiguration, Value>) -> Binding<Value> {
         Binding(get: { configuration[keyPath: keyPath] }, set: { value in
             var updated = configuration
@@ -642,5 +669,14 @@ struct FixedPageChapterListView: View {
 #Preview("Settings") {
     // Paged by default, so 翻頁區塊編輯 shows — locked unless Pro is active.
     FixedPageReaderSettingsView(state: FixedPageReaderState(), onOpenTouchZoneEditor: {})
+        .environmentObject(SubscriptionStore.shared)
+}
+
+#Preview("Settings — manga") {
+    // A manga offers 漫畫預設模式 under its own reading mode.
+    let state = FixedPageReaderState()
+    state.isManga = true
+    state.followsMangaDefault = true
+    return FixedPageReaderSettingsView(state: state, onOpenTouchZoneEditor: {})
         .environmentObject(SubscriptionStore.shared)
 }

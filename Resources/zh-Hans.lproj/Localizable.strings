@@ -892,6 +892,9 @@
 "從左到右" = "从左到右";
 "直向翻頁" = "纵向翻页";
 "條漫" = "条漫";
+/* Fixed-page reader settings: the reading mode a manga opens in until it has its own (feedback #37) */
+"漫畫預設模式" = "漫画默认模式";
+"只套用到還沒自己選過閱讀模式的漫畫。" = "只适用于还没单独选过阅读模式的漫画。";
 "單頁" = "单页";
 "雙頁" = "双页";
 "自動雙頁" = "自动双页";

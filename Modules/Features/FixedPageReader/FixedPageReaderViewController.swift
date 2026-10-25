@@ -72,7 +72,7 @@ final class FixedPageReaderViewController: UIViewController, FixedPageReaderCont
             self.chapters = book.onlineChapters ?? []
         }
         self.chapterIndex = min(max(0, book.mangaChapterIndex), max(0, self.chapters.count - 1))
-        self.fixedPageReaderConfiguration = store.readerSettings.fixedPageConfiguration(for: book.id)
+        self.fixedPageReaderConfiguration = store.fixedPageConfiguration(for: book)
         super.init(nibName: nil, bundle: nil)
     }
 
@@ -118,6 +118,9 @@ final class FixedPageReaderViewController: UIViewController, FixedPageReaderCont
         DispatchQueue.main.async { [weak self] in
             guard let self else { return }
             self.state.fixedPageReaderConfiguration = self.fixedPageReaderConfiguration
+            self.state.isManga = self.book.resolvedPipelineKind == .manga
+            self.state.followsMangaDefault = self.state.isManga
+                && self.store?.readerSettings.hasFixedPageConfiguration(for: self.book.id) == false
             self.state.chapterListItems = FixedPageChapterListItem.items(from: self.chapters)
             self.state.currentChapterIndex = self.chapterIndex
             self.loadChapter(at: self.chapterIndex, startPage: self.restoredStartPage)
@@ -498,6 +501,7 @@ final class FixedPageReaderViewController: UIViewController, FixedPageReaderCont
         fixedPageReaderConfiguration = newConfiguration
         store?.readerSettings.setFixedPageConfiguration(newConfiguration, for: book.id)
         state.fixedPageReaderConfiguration = newConfiguration
+        state.followsMangaDefault = false
         installReader()
         loadChapter(at: chapterIndex, startPage: page)
     }

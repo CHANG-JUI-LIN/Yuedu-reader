@@ -46,8 +46,15 @@ final class BookReaderSettingsStore {
 
     // MARK: Fixed-page reader
 
-    func fixedPageConfiguration(for bookID: UUID) -> FixedPageReaderConfiguration {
-        settingsByBook[bookID]?.fixedPage ?? FixedPageReadingMode.rtl.recommendedConfiguration
+    /// The book's own configuration, or `unsetMode`'s when it has none. Readers ask
+    /// `BookStore.fixedPageConfiguration(for:)`, which picks `unsetMode` from the book's kind.
+    func fixedPageConfiguration(for bookID: UUID, unsetMode: FixedPageReadingMode = .rtl) -> FixedPageReaderConfiguration {
+        settingsByBook[bookID]?.fixedPage ?? unsetMode.recommendedConfiguration
+    }
+
+    /// Whether the book was given a configuration of its own, rather than opening in a default.
+    func hasFixedPageConfiguration(for bookID: UUID) -> Bool {
+        settingsByBook[bookID]?.fixedPage != nil
     }
 
     func setFixedPageConfiguration(_ configuration: FixedPageReaderConfiguration, for bookID: UUID) {
@@ -227,5 +234,22 @@ final class BookReaderSettingsStore {
             AppLogger.error("本書設定：無法寫入設定檔", error: error)
             return false
         }
+    }
+}
+
+extension BookStore {
+    /// The configuration the fixed-page reader opens `book` with: its own, or, never set,
+    /// the mode its kind opens in — 漫畫預設模式 for a manga (feedback #37), right to left
+    /// for a PDF or a fixed-layout EPUB. The reader and the opening transition both ask here.
+    @MainActor
+    func fixedPageConfiguration(for book: ReadingBook) -> FixedPageReaderConfiguration {
+        fixedPageConfiguration(for: book, mangaDefault: GlobalSettings.shared.fixedPageMangaDefaultMode)
+    }
+
+    func fixedPageConfiguration(for book: ReadingBook, mangaDefault: FixedPageReadingMode) -> FixedPageReaderConfiguration {
+        readerSettings.fixedPageConfiguration(
+            for: book.id,
+            unsetMode: book.resolvedPipelineKind == .manga ? mangaDefault : .rtl
+        )
     }
 }

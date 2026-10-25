@@ -964,6 +964,13 @@ class GlobalSettings {
     var fixedPageDoubleTapToZoom: Bool {
         didSet { UserDefaults.standard.set(fixedPageDoubleTapToZoom, forKey: "yd_fixed_page_double_tap_zoom") }
     }
+    /// 漫畫預設模式: the reading mode a manga opens in until it is given one of its own
+    /// (feedback #37). Right to left by default, as every manga opened before it existed.
+    /// PDFs and fixed-layout EPUBs are not manga and keep right to left
+    /// (`BookStore.fixedPageConfiguration(for:)`).
+    var fixedPageMangaDefaultMode: FixedPageReadingMode {
+        didSet { UserDefaults.standard.set(fixedPageMangaDefaultMode.rawValue, forKey: "yd_fixed_page_manga_default_mode") }
+    }
     /// Webtoon layout of the fixed-page reader: a floating button that starts and pauses
     /// auto-scroll. Off by default, as in Aidoku — most reading never uses it, and it
     /// would otherwise sit over the page the whole time. One setting for every book.
@@ -2144,6 +2151,9 @@ class GlobalSettings {
         fixedPageDoubleTapToZoom = UserDefaults.standard.object(forKey: "yd_fixed_page_double_tap_zoom") == nil
             ? true
             : UserDefaults.standard.bool(forKey: "yd_fixed_page_double_tap_zoom")
+        fixedPageMangaDefaultMode = FixedPageReadingMode(
+            rawValue: UserDefaults.standard.integer(forKey: "yd_fixed_page_manga_default_mode")
+        ) ?? .rtl
         fixedPageAutoScrollButton = UserDefaults.standard.bool(forKey: "yd_fixed_page_auto_scroll_button")
         fixedPageAutoScrollButtonPosition = FixedPageAutoScrollButtonPosition(
             rawValue: UserDefaults.standard.string(forKey: "yd_fixed_page_auto_scroll_button_position") ?? ""
