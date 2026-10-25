@@ -258,7 +258,7 @@ class BookStore: @MainActor ObservableObject, BookProvider {
     /// Phase 3d: when the filler runs. Idle until the app marks it active.
     @MainActor lazy var metadataFill = MetadataFillCoordinator(store: self)
     /// Whether the last load read both the shelf and the reading records. Only then may a
-    /// book missing from `records` be taken as gone, and its list removed.
+    /// book missing from `records` be taken as gone, and its list and settings removed.
     private var recordsLoadedCompletely = false
 
     /// Where a book read and then taken off the shelf leaves its name for 搜索's 最近閱讀
@@ -2686,9 +2686,11 @@ class BookStore: @MainActor ObservableObject, BookProvider {
         if recordsLoadedCompletely {
             chapterStore.removeChapters(notIn: bookIDs)
             importedMetadata.remove(notIn: bookIDs)
+            // Outside this guard it dropped the settings of every book only read whenever the
+            // reading records had not loaded (feedback #74).
+            readerSettings.removeSettings(notIn: bookIDs)
         }
         persistMetadata(prepared.shelfData, readingData: prepared.readingData, inBackground: inBackground)
-        readerSettings.removeSettings(notIn: bookIDs)
         return true
     }
 

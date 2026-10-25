@@ -97,6 +97,35 @@ struct BookStoreReaderSettingsTests {
         #expect(restarted.readerSettings.fixedPageConfiguration(for: kept.id) == configuration)
     }
 
+    @Test("a sync applied before the reading records loaded keeps the settings of books only read")
+    @MainActor
+    func syncOverIncompleteLoadKeepsSettings() throws {
+        let (seeding, directory, metadataURL) = try makeStore()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let shelved = onlineBook(title: "書架上的書")
+        seeding.replaceBooksFromSync([shelved])
+        // 立即閱讀's copy: a record off the shelf, in the reading-record file only.
+        let readOnly = seeding.addOnlineBook(
+            name: "只讀過的漫畫", author: "Author", sourceId: UUID(),
+            bookInfoURL: "https://reader-settings.test/manga", contentKind: .manga,
+            chapters: [], isInBookshelf: false
+        )
+        let configuration = FixedPageReaderConfiguration.everyToggleChanged()
+        seeding.readerSettings.setFixedPageConfiguration(configuration, for: readOnly.id)
+        seeding.flushPendingMetadataSave()
+        seeding.waitForQueuedWrites()
+        let readingRecordsURL = metadataURL.deletingPathExtension().appendingPathExtension("reading.json")
+        try Data("{ not json".utf8).write(to: readingRecordsURL)
+
+        // The reading records did not load, so this store cannot tell that the book is gone.
+        let launched = BookStore(metadataFileURL: metadataURL)
+        launched.replaceBooksFromSync([shelved])
+
+        #expect(launched.readerSettings.fixedPageConfiguration(for: readOnly.id) == configuration)
+        let settingsURL = metadataURL.deletingPathExtension().appendingPathExtension("reader-settings.json")
+        #expect(BookReaderSettingsStore(fileURL: settingsURL).fixedPageConfiguration(for: readOnly.id) == configuration)
+    }
+
     @Test("the app's store moves the legacy reading modes of its books into the settings file")
     @MainActor
     func appStoreMigratesLegacyReadingModes() throws {

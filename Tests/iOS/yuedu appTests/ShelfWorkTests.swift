@@ -126,6 +126,157 @@ struct ShelfWorkTests {
         }
     }
 
+    // MARK: - Reader settings (feedback #74)
+
+    @Test("a read copy set to 條漫 and added to the shelf opens in 條漫 again")
+    func readCopyAddedToShelfKeepsReaderSettings() async throws {
+        try await withFixture { store, _, service in
+            let read = store.addOnlineBook(
+                name: "海賊王", author: "尾田榮一郎", sourceId: sourceB.id,
+                bookInfoURL: "https://shelf-work-b.test/manga", contentKind: .manga,
+                chapters: listB, isInBookshelf: false
+            )
+            store.updateLastOpened(bookId: read.id)
+            let webtoon = FixedPageReadingMode.webtoon.recommendedConfiguration
+            store.readerSettings.setFixedPageConfiguration(webtoon, for: read.id)
+
+            let shelved = try #require(try await service.shelveReadCopy(id: read.id))
+
+            #expect(shelved.isInBookshelf)
+            #expect(store.readerSettings.fixedPageConfiguration(for: shelved.id) == webtoon)
+        }
+    }
+
+    @Test("a read copy set to 條漫 that joins its work's shelf book opens that book in 條漫")
+    func readCopyMergedIntoShelfBookCarriesReaderSettings() async throws {
+        try await withFixture { store, _, service in
+            let shelved = store.addOnlineBook(
+                name: "海賊王", author: "尾田榮一郎", sourceId: sourceA.id,
+                bookInfoURL: "https://shelf-work-a.test/manga", contentKind: .manga, chapters: listA
+            )
+            store.readerSettings.setFixedPageConfiguration(FixedPageReadingMode.ltr.recommendedConfiguration, for: shelved.id)
+            let read = store.addOnlineBook(
+                name: "海賊王", author: "尾田榮一郎", sourceId: sourceB.id,
+                bookInfoURL: "https://shelf-work-b.test/manga", contentKind: .manga,
+                chapters: listB, isInBookshelf: false
+            )
+            store.updateLastOpened(bookId: read.id)
+            // Chosen after the shelf book's own: the latest choice is the one the work keeps.
+            let webtoon = FixedPageReadingMode.webtoon.recommendedConfiguration
+            store.readerSettings.setFixedPageConfiguration(webtoon, for: read.id)
+
+            let joined = try #require(try await service.shelveReadCopy(id: read.id))
+
+            #expect(joined.id == shelved.id)
+            #expect(store.readingBook(id: read.id) == nil)
+            #expect(store.readerSettings.fixedPageConfiguration(for: shelved.id) == webtoon)
+        }
+    }
+
+    @Test("加入書架 on the detail page shelves the copy read earlier and still here, with its 條漫")
+    func addingShelvesTheLeftoverReadCopy() async throws {
+        try await withFixture { store, _, service in
+            // The app ended while its reader was open, or 作品詳情's prompt was declined.
+            let read = store.addOnlineBook(
+                name: "海賊王", author: "尾田榮一郎", sourceId: sourceB.id,
+                bookInfoURL: "https://shelf-work-b.test/manga", contentKind: .manga,
+                chapters: listB, isInBookshelf: false
+            )
+            store.updateLastOpened(bookId: read.id)
+            let webtoon = FixedPageReadingMode.webtoon.recommendedConfiguration
+            store.readerSettings.setFixedPageConfiguration(webtoon, for: read.id)
+
+            let outcome = try await service.add(copyFromB(
+                name: "海賊王", author: "尾田榮一郎", url: "https://shelf-work-b.test/manga"
+            ))
+
+            guard case .added(let book) = outcome else {
+                Issue.record("expected the read copy to join the shelf, got \(outcome)")
+                return
+            }
+            #expect(book.id == read.id)
+            #expect(store.books.map(\.id) == [read.id])
+            #expect(store.readerSettings.fixedPageConfiguration(for: book.id) == webtoon)
+        }
+    }
+
+    @Test("加入書架 of a work on the shelf from another source merges the copy read earlier into it")
+    func addingMergesTheLeftoverReadCopyIntoTheShelfBook() async throws {
+        try await withFixture { store, _, service in
+            let shelved = store.addOnlineBook(
+                name: "海賊王", author: "尾田榮一郎", sourceId: sourceA.id,
+                bookInfoURL: "https://shelf-work-a.test/manga", contentKind: .manga, chapters: listA
+            )
+            let read = store.addOnlineBook(
+                name: "海賊王", author: "尾田榮一郎", sourceId: sourceB.id,
+                bookInfoURL: "https://shelf-work-b.test/manga", contentKind: .manga,
+                chapters: listB, isInBookshelf: false
+            )
+            store.updateLastOpened(bookId: read.id)
+            let webtoon = FixedPageReadingMode.webtoon.recommendedConfiguration
+            store.readerSettings.setFixedPageConfiguration(webtoon, for: read.id)
+
+            let outcome = try await service.add(copyFromB(
+                name: "海賊王", author: "尾田榮一郎", url: "https://shelf-work-b.test/manga"
+            ))
+
+            guard case .switchedSource(let book) = outcome else {
+                Issue.record("expected the shelf book to take this source, got \(outcome)")
+                return
+            }
+            #expect(book.id == shelved.id)
+            #expect(store.readingBook(id: read.id) == nil)
+            #expect(store.readerSettings.fixedPageConfiguration(for: shelved.id) == webtoon)
+        }
+    }
+
+    @Test("launch merge gives the kept copy the merged copy's reader settings when it has none")
+    func launchMergeCarriesReaderSettings() async throws {
+        try await withFixture { store, positions, _ in
+            let older = store.addOnlineBook(
+                name: "海賊王", author: "尾田榮一郎", sourceId: sourceA.id,
+                bookInfoURL: "https://shelf-work-a.test/manga", contentKind: .manga, chapters: listA
+            )
+            let newer = store.addOnlineBook(
+                name: "海賊王", author: "尾田榮一郎", sourceId: sourceB.id,
+                bookInfoURL: "https://shelf-work-b.test/manga", contentKind: .manga, chapters: listB
+            )
+            setLastOpened(store, older.id, Date(timeIntervalSince1970: 1_000))
+            setLastOpened(store, newer.id, Date(timeIntervalSince1970: 2_000))
+            let webtoon = FixedPageReadingMode.webtoon.recommendedConfiguration
+            store.readerSettings.setFixedPageConfiguration(webtoon, for: older.id)
+
+            await ShelfWorkMerger(store: store, positionStore: positions).mergeDuplicates()
+
+            #expect(store.books.map(\.id) == [newer.id])
+            #expect(store.readerSettings.fixedPageConfiguration(for: newer.id) == webtoon)
+        }
+    }
+
+    @Test("launch merge keeps the kept copy's own reader settings when they were changed last")
+    func launchMergeKeepsNewerReaderSettings() async throws {
+        try await withFixture { store, positions, _ in
+            let older = store.addOnlineBook(
+                name: "海賊王", author: "尾田榮一郎", sourceId: sourceA.id,
+                bookInfoURL: "https://shelf-work-a.test/manga", contentKind: .manga, chapters: listA
+            )
+            let newer = store.addOnlineBook(
+                name: "海賊王", author: "尾田榮一郎", sourceId: sourceB.id,
+                bookInfoURL: "https://shelf-work-b.test/manga", contentKind: .manga, chapters: listB
+            )
+            setLastOpened(store, older.id, Date(timeIntervalSince1970: 1_000))
+            setLastOpened(store, newer.id, Date(timeIntervalSince1970: 2_000))
+            store.readerSettings.setFixedPageConfiguration(FixedPageReadingMode.webtoon.recommendedConfiguration, for: older.id)
+            let ltr = FixedPageReadingMode.ltr.recommendedConfiguration
+            store.readerSettings.setFixedPageConfiguration(ltr, for: newer.id)
+
+            await ShelfWorkMerger(store: store, positionStore: positions).mergeDuplicates()
+
+            #expect(store.books.map(\.id) == [newer.id])
+            #expect(store.readerSettings.fixedPageConfiguration(for: newer.id) == ltr)
+        }
+    }
+
     // MARK: - Launch merge
 
     @Test("launch merge keeps the most recently read copy and moves the other's bookmarks")

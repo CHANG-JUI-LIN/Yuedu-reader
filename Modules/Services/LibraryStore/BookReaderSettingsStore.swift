@@ -66,6 +66,24 @@ final class BookReaderSettingsStore {
         save()
     }
 
+    /// Gives `survivorID` the settings of `mergedID` when they are the later choice: the
+    /// survivor has none, or changed its own before. For one copy of a work merged into
+    /// another (`ShelfWorkMerger.absorb`): a manga read from a second source and set to 條漫
+    /// has to open that way as the shelf book it joins (feedback #74). The merged copy's own
+    /// entry goes when its book is deleted.
+    func carrySettings(from mergedID: UUID, to survivorID: UUID) {
+        guard mergedID != survivorID, let carried = settingsByBook[mergedID], !carried.isEmpty else { return }
+        if let own = settingsByBook[survivorID], !own.isEmpty, own.modifiedAt >= carried.modifiedAt { return }
+        // Not an edit: the choice keeps the time the reader made it.
+        settingsByBook[survivorID] = BookReaderSettings(
+            bookID: survivorID, modifiedAt: carried.modifiedAt, fixedPage: carried.fixedPage
+        )
+        AppLogger.cache("本書設定：同一部作品合併，帶過被合併那本的設定", context: [
+            "from": mergedID.uuidString, "to": survivorID.uuidString,
+        ])
+        save()
+    }
+
     /// Drops the settings of every book not in `bookIDs`. Pass only a shelf known to be
     /// complete, never the result of a load that may have failed.
     func removeSettings(notIn bookIDs: Set<UUID>) {

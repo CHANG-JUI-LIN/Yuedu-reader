@@ -124,12 +124,16 @@ enum ShelfWork {
 /// - Group (書架分組), custom cover and custom intro, when the kept copy has none.
 /// - The reading place, only when the merged copy was read more recently (never at launch,
 ///   where the kept copy is the most recent by definition).
+/// - The book's reader settings — reading mode and the fixed-page reader's toggles — when
+///   they are the later choice or the kept copy has none (`BookReaderSettingsStore.carrySettings`).
+///   An online manga has them like any other book: a copy set to 條漫 lost it to the shelf book
+///   it joined (feedback #74).
 ///
 /// What does not move: downloaded chapters (they belong to the other source and go with it),
 /// its 換源 cache, AI summaries / translations / character memory / chats (built from that
-/// source's text), per-book fixed-page settings (online source books have none), 多角色朗讀
-/// casts, work-index decisions anchored to its copy key. Reading statistics are left as they
-/// are: sessions are summed by title, and the delete path never removes them.
+/// source's text), 多角色朗讀 casts, work-index decisions anchored to its copy key. Reading
+/// statistics are left as they are: sessions are summed by title, and the delete path never
+/// removes them.
 @MainActor
 struct ShelfWorkMerger {
     let store: BookStore
@@ -215,6 +219,7 @@ struct ShelfWorkMerger {
            ) {
             await positionStore.save(mapped, for: survivorID.uuidString)
         }
+        store.readerSettings.carrySettings(from: duplicateID, to: survivorID)
         store.delete(bookId: duplicateID)
         return moved
     }
@@ -309,6 +314,19 @@ struct ShelfWorkService {
     func add(_ copy: OnlineCopy) async throws -> Outcome {
         if let existing = store.onlineBook(sourceId: copy.sourceId, bookInfoURL: copy.bookInfoURL) {
             return .alreadyOnShelf(existing)
+        }
+        // This source's copy was read without being added and is still here: the app ended
+        // while its reader was open, or 作品詳情's 「加入書架？」 was declined. It is the book
+        // being added, so it goes on the shelf the way a read copy does, with its reading mode,
+        // place and bookmarks. A new record beside it left all of those behind (feedback #74).
+        if let readCopy = store.onlineBook(sourceId: copy.sourceId, bookInfoURL: copy.bookInfoURL, onShelf: false) {
+            // The page's list is the newer one, as when 立即閱讀 reopens this copy.
+            if !copy.chapters.isEmpty {
+                store.updateOnlineChapters(bookId: readCopy.id, chapters: copy.chapters, runtimeVariables: copy.runtimeVariables)
+            }
+            if let shelved = try await shelveReadCopy(id: readCopy.id) {
+                return shelved.id == readCopy.id ? .added(shelved) : .switchedSource(shelved)
+            }
         }
         let kind = BookStore.inferredOnlineContentKind(
             explicit: copy.contentKind, sourceId: copy.sourceId, runtimeVariables: copy.runtimeVariables,
