@@ -67,6 +67,11 @@ enum CoreTextChunkAttachmentExtractor {
                         let uiY: CGFloat
                         if info.source == "mathml:" {
                             uiY = chunkSize.height - (baselineY - info.descent) - info.drawHeight
+                        } else if info.isTextSized {
+                            let bottom = CoreTextPaginator.textSizedImageBottom(
+                                of: run, in: line, baselineY: baselineY, drawHeight: info.drawHeight
+                            )
+                            uiY = chunkSize.height - bottom - info.drawHeight
                         } else {
                             uiY = chunkSize.height - centeredBottom - info.drawHeight
                         }

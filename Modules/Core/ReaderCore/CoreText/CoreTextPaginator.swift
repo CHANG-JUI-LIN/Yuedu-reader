@@ -2310,6 +2310,40 @@ final class CoreTextPaginator: Sendable {
         }
     }
 
+    /// Where a text-sized image — the 段評 bubble — has its bottom edge on a horizontal line, in
+    /// the line's CoreText coordinates: centred on the face of the text it follows, as CoreText
+    /// draws that text.
+    ///
+    /// Not centred on the line's typographic box. A body line's height is fixed
+    /// (`minimumLineHeight` = `maximumLineHeight`), and how CoreText splits it into ascent and
+    /// descent follows neither the text nor the bubble: at 20pt × 2.2 the box's centre stood
+    /// 1.25pt below the characters, and while a bubble taller than the ascender — 整體大小 ×2 —
+    /// claimed its own height it took the line's descent away and stood 3–5pt above them on the
+    /// iOS 27 simulator (feedback #87: about 7pt on an iPhone; what it claims now is
+    /// `NodeAttributedStringRenderer.textSizedClaim`). The face is the font's ascent and
+    /// descent, raised by the text's `.baselineOffset` as CoreText raises its glyphs
+    /// (`ReaderTypographyCorrection.baselineOffset`), in the font CoreText drew the text in:
+    /// PingFang for the Han characters of an SF body. A bubble that opens its line has no text
+    /// before it and centres on its own font's face, the font it was sized against.
+    static func textSizedImageBottom(of run: CTRun, in line: CTLine, baselineY: CGFloat, drawHeight: CGFloat) -> CGFloat {
+        let delegateKey = NSAttributedString.Key(kCTRunDelegateAttributeName as String)
+        let location = CTRunGetStringRange(run).location
+        let followed = (CTLineGetGlyphRuns(line) as! [CTRun]).last { candidate in
+            let range = CTRunGetStringRange(candidate)
+            let attributes = CTRunGetAttributes(candidate) as! [NSAttributedString.Key: Any]
+            return range.location + range.length <= location
+                && attributes[delegateKey] == nil
+                && CTRunGetTypographicBounds(candidate, CFRangeMake(0, 0), nil, nil, nil) > 0
+        } ?? run
+        let attributes = CTRunGetAttributes(followed) as! [NSAttributedString.Key: Any]
+        let raise = (attributes[.baselineOffset] as? NSNumber).map { CGFloat($0.doubleValue) } ?? 0
+        guard let font = attributes[.font] as? UIFont else {
+            AppLogger.render("textSizedImageBottom: run without a font", context: ["location": location])
+            return baselineY + raise - drawHeight / 2
+        }
+        return baselineY + raise + (font.ascender + font.descender) / 2 - drawHeight / 2
+    }
+
     /// True when `imageRunRange` is the only visible content on its CTLine — every other character on the
     /// line is whitespace (no text, and no second image). Used to decide whether an inline image should be
     /// centered like a figure rather than flushed to its text-flow position. A line carrying a second image
@@ -2401,6 +2435,9 @@ final class CoreTextPaginator: Sendable {
                     let uiY: CGFloat
                     if info.source == "mathml:", info.displayMode == .inline, !isVertical {
                         uiY = renderSize.height - (baselineY - info.descent) - info.drawHeight
+                    } else if info.isTextSized, info.displayMode == .inline, !isVertical {
+                        let bottom = Self.textSizedImageBottom(of: run, in: line, baselineY: baselineY, drawHeight: info.drawHeight)
+                        uiY = renderSize.height - bottom - info.drawHeight
                     } else {
                         uiY = renderSize.height - centeredBottom - info.drawHeight
                     }

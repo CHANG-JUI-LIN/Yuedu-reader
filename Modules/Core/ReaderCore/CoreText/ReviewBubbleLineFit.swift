@@ -13,10 +13,14 @@ import UIKit
 /// for the bubble. When it does not, the line is left as CoreText broke it, and
 /// `CoreTextHorizontalLineDrawer` draws the short line at its natural width.
 ///
+/// It also grows the line of a bubble taller than it (`growLine`), which needs the same line
+/// breaks.
+///
 /// Runs once per chapter build, over the finished string, at the column the chapter is laid out
 /// in: pages and scroll chunks typeset that same string at that same width, so every view of
-/// the chapter breaks the squeezed line the same way. Only `.kern` changes, never the text, so
-/// character offsets — reading positions, highlights, selection — are untouched.
+/// the chapter breaks the squeezed line the same way. Only `.kern` and, over a grown line, its
+/// paragraph style change, never the text, so character offsets — reading positions,
+/// highlights, selection — are untouched.
 enum ReviewBubbleLineFit {
     /// The blank a mark always keeps, in ems, so squeezed marks never touch their neighbours.
     private static let keptBlank: CGFloat = 0.08
@@ -35,22 +39,58 @@ enum ReviewBubbleLineFit {
     ]
 
     /// Squeezes the line before every bubble whose glue took its paragraph's tail down, where
-    /// squeezing makes room. Returns how many bubbles it kept up.
+    /// squeezing makes room, then grows the line of every bubble taller than it. Returns how
+    /// many bubbles it changed anything for.
     @discardableResult
     static func fit(_ string: NSMutableAttributedString, lineWidth: CGFloat) -> Int {
         let text = string.string as NSString
         let marker = NodeAttributedStringRenderer.textSizedImageGlue + "\u{FFFC}"
-        var kept = 0
+        var changed = 0
         var searchFrom = 0
         while searchFrom < text.length {
             let found = text.range(of: marker, range: NSRange(location: searchFrom, length: text.length - searchFrom))
             guard found.location != NSNotFound else { break }
-            if keepUp(bubble: NSMaxRange(found) - 1, in: string, text: text, lineWidth: lineWidth) {
-                kept += 1
+            let bubble = NSMaxRange(found) - 1
+            let keptUp = keepUp(bubble: bubble, in: string, text: text, lineWidth: lineWidth)
+            let grown = growLine(of: bubble, in: string, text: text, lineWidth: lineWidth)
+            if keptUp || grown {
+                changed += 1
             }
             searchFrom = NSMaxRange(found)
         }
-        return kept
+        return changed
+    }
+
+    /// Makes the line of a bubble taller than it as tall as the bubble — that line, and none
+    /// of its paragraph's others. A body line's height is fixed (`minimumLineHeight` =
+    /// `maximumLineHeight`) and CoreText reads a line's paragraph style at its first character,
+    /// so the style raised to the bubble's height over the bubble's line leaves the lines
+    /// before it alone. Raised over the whole paragraph, every one of its lines took the height
+    /// of the font its Han characters fell back to: PingFang's own 28pt in the 25pt lines of a
+    /// 20pt × 1.2 body (iOS 27 simulator, 2026-10-25). The bubble claims its box centred on its
+    /// text's face (`NodeAttributedStringRenderer.textSizedClaim`), so the line grows as much
+    /// above as below: 2pt each there for a 整體大小 ×2 bubble. Runs after the squeeze, on the
+    /// lines it leaves.
+    private static func growLine(of bubble: Int, in string: NSMutableAttributedString, text: NSString, lineWidth: CGFloat) -> Bool {
+        let delegateKey = NSAttributedString.Key(kCTRunDelegateAttributeName as String)
+        guard let delegate = string.attribute(delegateKey, at: bubble, effectiveRange: nil) else { return false }
+        let info = Unmanaged<ImageRunInfo>
+            .fromOpaque(CTRunDelegateGetRefCon(delegate as! CTRunDelegate))
+            .takeUnretainedValue()
+        let paragraph = text.paragraphRange(for: NSRange(location: bubble, length: 1))
+        guard info.image != nil,
+              let paragraphStyle = string.attribute(.paragraphStyle, at: paragraph.location, effectiveRange: nil) as? NSParagraphStyle,
+              paragraphStyle.maximumLineHeight > 0,
+              info.drawHeight > paragraphStyle.maximumLineHeight
+        else { return false }
+        let lines = lineRanges(of: paragraph, in: string, style: paragraphStyle, lineWidth: lineWidth)
+        guard let line = lines.first(where: { NSLocationInRange(bubble, $0) }),
+              let style = string.attribute(.paragraphStyle, at: line.location, effectiveRange: nil) as? NSParagraphStyle
+        else { return false }
+        let grown = style.mutableCopy() as! NSMutableParagraphStyle
+        grown.maximumLineHeight = max(style.maximumLineHeight, ceil(info.drawHeight))
+        string.addAttribute(.paragraphStyle, value: grown, range: line)
+        return true
     }
 
     private static func keepUp(bubble: Int, in string: NSMutableAttributedString, text: NSString, lineWidth: CGFloat) -> Bool {

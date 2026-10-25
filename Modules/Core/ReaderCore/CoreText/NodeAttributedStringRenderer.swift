@@ -2007,6 +2007,43 @@ struct NodeAttributedStringRenderer: Sendable {
         return placeholder * (style.isWideTextImage ? 1.5556 : 1) * min(max(scale, 0.5), 2.0)
     }
 
+    /// What a horizontal text-sized image — the 段評 bubble, a `style:"text"` image — claims of
+    /// its line. The paginator draws it centred on the face of the text it follows, whatever it
+    /// claims (`CoreTextPaginator.textSizedImageBottom`); the claim only decides where the line's
+    /// baseline goes and how tall the line is.
+    ///
+    /// A body line has a fixed height (`minimumLineHeight` = `maximumLineHeight`) that its text
+    /// is centred in by `.baselineOffset`, and CoreText moves the line down its page's baseline
+    /// grid whenever a run reaches above the text's raised top or below its raised bottom: it
+    /// raises a run delegate's ascent by the offset but does not take the offset off its
+    /// descent. Measured on the iOS 27 simulator at 20pt × 1.65 (2026-10-25): 2pt of descent
+    /// left the line where it was and the font's descender moved it 1pt up, as on iOS 26.5;
+    /// 3pt of ascent over the ascender moved it 1pt down, and a 整體大小 ×2 bubble claiming its
+    /// own 29pt moved it 4pt down. So a bubble that fits its line claims no more than its text:
+    /// the font's ascender and no descent. The share of the font's line height other inline
+    /// images claim rose above that ascender — PingFang on iOS 17: 5.7pt more space above every
+    /// line with a bubble (feedback #63).
+    ///
+    /// A bubble taller than its line claims the box it is drawn in — centred on the font's face,
+    /// raised as its text is — and `ReviewBubbleLineFit` lets that one line grow to its height,
+    /// so the line grows evenly above and below rather than the bubble spilling onto the lines
+    /// around it. Both decide "taller" against the paragraph's `maximumLineHeight`.
+    private func textSizedClaim(_ metrics: ImageMetrics, ctx: RenderContext) -> ImageMetrics {
+        let font = ctx.font
+        let lineHeight = ctx.paragraphStyle.maximumLineHeight > 0
+            ? ctx.paragraphStyle.maximumLineHeight
+            : font.ascender - font.descender
+        let fits = metrics.drawHeight <= lineHeight
+        let face = (font.ascender + font.descender) / 2
+        return ImageMetrics(
+            drawWidth: metrics.drawWidth,
+            drawHeight: metrics.drawHeight,
+            totalWidth: metrics.totalWidth,
+            ascent: fits ? font.ascender : face + metrics.drawHeight / 2,
+            descent: fits ? 0 : max(0, metrics.drawHeight / 2 - face - ctx.baselineOffset)
+        )
+    }
+
     private func makeImagePlaceholder(
         image: UIImage?,
         style: RenderStyle,
@@ -2018,7 +2055,7 @@ struct NodeAttributedStringRenderer: Sendable {
         linkRegions: [ImageLinkRegion] = [],
         allowsPreview: Bool = true
     ) async -> NSAttributedString {
-        let metrics: ImageMetrics
+        var metrics: ImageMetrics
         if let precomputedMetrics {
             metrics = precomputedMetrics
         } else {
@@ -2029,6 +2066,9 @@ struct NodeAttributedStringRenderer: Sendable {
                 displayMode: displayMode,
                 availableWidthOverride: availableImageWidth(in: ctx)
             )
+        }
+        if style.isTextSizedImage, displayMode == .inline, !isVertical(style) {
+            metrics = textSizedClaim(metrics, ctx: ctx)
         }
         let placeholder = NSMutableAttributedString(
             attributedString: RunDelegateProvider.makeImagePlaceholder(
@@ -2109,6 +2149,11 @@ struct NodeAttributedStringRenderer: Sendable {
                 .fromOpaque(CTRunDelegateGetRefCon(delegate))
                 .takeUnretainedValue()
             guard info.image != nil else { return }
+            // A horizontal text-sized image — the 段評 bubble — grows its own line only
+            // (`ReviewBubbleLineFit`). Relaxed here, every line of its paragraph took the
+            // height of the font it fell back to: PingFang's own 28pt in the 25pt lines of a
+            // 20pt × 1.2 body (2026-10-25).
+            if info.isTextSized, !config.writingMode.isVertical { return }
 
             let requiredHeight = ceil(info.ascent + info.descent)
             guard requiredHeight > 0 else { return }
@@ -2474,18 +2519,6 @@ struct NodeAttributedStringRenderer: Sendable {
         if isVertical {
             ascent = drawWidth / 2
             descent = drawWidth / 2
-        } else if style.isTextSizedImage, displayMode == .inline {
-            // A text-sized image — the 段評 bubble, a `style:"text"` image — claims no more than
-            // the text around it, so its line is as tall as any other and its baseline where
-            // the others' is: the paginator centres it in the line whatever it claims. The
-            // split of `lineHeight` below rose above the font's ascender — PingFang on iOS 17:
-            // 5.7pt more space above every line with a bubble (feedback #63). Nor may it claim
-            // the font's descender: the body's `.baselineOffset` lifts the text, leaving it less
-            // descent than that, and in a fixed-height line a deeper run moves the baseline up
-            // — 1pt on iOS 26.5 with SF and PingFang at 20pt. One taller than the ascender still
-            // claims its height, so it never spills onto the lines around it.
-            ascent = max(font.ascender, drawHeight)
-            descent = 0
         } else if drawHeight > lineHeight {
             ascent = drawHeight
             descent = 0

@@ -550,9 +550,10 @@ final class OnlineProviderAttributedStringBuilder: @preconcurrency AttributedStr
     }
 
     /// Squeezes the punctuation of a line whose 段評 bubble would otherwise take its last
-    /// characters down (`ReviewBubbleLineFit`). Last, after replace rules, because it measures
-    /// the text as it will be laid out, in the column it will be laid out in. Vertical text
-    /// keeps CoreText's breaks: its marks stand in a different box.
+    /// characters down, and grows the line of a bubble taller than it (`ReviewBubbleLineFit`).
+    /// Last, after replace rules, because it measures the text as it will be laid out, in the
+    /// column it will be laid out in. Vertical text keeps CoreText's breaks: its marks stand in
+    /// a different box.
     private func fittingReviewBubbles(
         _ result: AttributedChapterBuildResult,
         settings: ReaderRenderSettings
@@ -562,10 +563,10 @@ final class OnlineProviderAttributedStringBuilder: @preconcurrency AttributedStr
         else { return result }
         let mutable = NSMutableAttributedString(attributedString: result.attributedString)
         let columnWidth = max(1, renderSize.width - settings.contentInsets.left - settings.contentInsets.right)
-        let kept = SourcePerfTrace.span("reader.reviewBubbleLineFit", "chars=\(mutable.length)") {
+        let changed = SourcePerfTrace.span("reader.reviewBubbleLineFit", "chars=\(mutable.length)") {
             ReviewBubbleLineFit.fit(mutable, lineWidth: columnWidth)
         }
-        guard kept > 0 else { return result }
+        guard changed > 0 else { return result }
 
         return AttributedChapterBuildResult(
             attributedString: mutable,
