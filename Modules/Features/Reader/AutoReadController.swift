@@ -37,7 +37,11 @@ final class AutoReadController: NSObject, ObservableObject {
     /// What 1× used to mean.
     private static let legacyBaseInterval: Double = 4.0
 
-    @Published private(set) var isActive = false
+    /// Also a Crashlytics key, like `tts_playing`: a stall report says whether the pages
+    /// were turning by themselves.
+    @Published private(set) var isActive = false {
+        didSet { CrashContext.setKey("auto_read", isActive) }
+    }
     /// Held, not stopped: the menu is open, or a gesture is in flight. legado
     /// pauses on exactly these and resumes without losing the reveal's position.
     @Published private(set) var isPaused = false
@@ -222,7 +226,10 @@ final class AutoReadController: NSObject, ObservableObject {
         let advance = Self.advance(progress: progress, by: fraction)
         setProgress(advance.progress)
         for _ in 0..<advance.pageTurns {
-            guard onAdvancePage?() == true else {
+            let advanced = SourcePerfTrace.span("reader.autoRead.advance", thresholdMs: 5) {
+                onAdvancePage?() == true
+            }
+            guard advanced else {
                 exit()
                 return
             }

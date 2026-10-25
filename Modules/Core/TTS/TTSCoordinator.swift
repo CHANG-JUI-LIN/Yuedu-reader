@@ -341,7 +341,12 @@ final class NowPlayingHub: ObservableObject {
 final class TTSCoordinator: ObservableObject {
 
     // MARK: - Published State (bound to TTSPanelView)
-    @Published var isPlaying = false
+    /// Also a Crashlytics key: the field's "no instrumented span" stalls repeat every few
+    /// seconds with the reader open, into the background, and nothing said whether a
+    /// narration was playing (MainThreadStall, 3.0.0 (140)).
+    @Published var isPlaying = false {
+        didSet { CrashContext.setKey("tts_playing", isPlaying) }
+    }
     @Published private(set) var playbackState: TTSPlaybackState = .stopped
     @Published private(set) var currentSegmentIndex = 0
     @Published private(set) var totalSegments = 0
@@ -802,7 +807,9 @@ final class TTSCoordinator: ObservableObject {
     private func wireCallbacks(to engine: TTSPlayable) {
         engine.onPageFinished = { [weak self] in
             guard let self, self.isPlaying else { return .finished }
-            let outcome = self.onNextNarrationUnit?() ?? .finished
+            let outcome = SourcePerfTrace.span("tts.nextUnit", thresholdMs: 5) {
+                self.onNextNarrationUnit?() ?? .finished
+            }
             if case .waiting = outcome {
                 // Runs before the engine flips its own waiting flag, so this must not test
                 // `isWaitingForNextUnit` — the outcome we just received IS the signal.
@@ -827,19 +834,25 @@ final class TTSCoordinator: ObservableObject {
         }
         engine.onPlaybackStarted = { [weak self] duration in
             DispatchQueue.main.async {
-                self?.handleEnginePlaybackStarted(duration: duration)
+                SourcePerfTrace.span("tts.playbackStarted", thresholdMs: 5) {
+                    self?.handleEnginePlaybackStarted(duration: duration)
+                }
             }
         }
+        // Every spoken segment lands here on the main thread, a few seconds apart and on
+        // into the background: timed, so a stall during one names it.
         engine.onSegmentChanged = { [weak self] segment in
             DispatchQueue.main.async {
                 guard let self else { return }
-                self.currentSegmentIndex = segment.index
-                self.totalSegments = segment.total
-                self.currentSegmentText = segment.text
-                self.currentSegmentNarrationRange = segment.narrationRange
-                self.syncNowPlayingElapsedToCurrentSegment(restartClock: self.isPlaying)
-                self.updateNowPlaying()
-                self.publishFloatingPlayerState()
+                SourcePerfTrace.span("tts.segment", "index=\(segment.index)/\(segment.total)", thresholdMs: 5) {
+                    self.currentSegmentIndex = segment.index
+                    self.totalSegments = segment.total
+                    self.currentSegmentText = segment.text
+                    self.currentSegmentNarrationRange = segment.narrationRange
+                    self.syncNowPlayingElapsedToCurrentSegment(restartClock: self.isPlaying)
+                    self.updateNowPlaying()
+                    self.publishFloatingPlayerState()
+                }
             }
         }
     }
@@ -1183,8 +1196,12 @@ final class TTSCoordinator: ObservableObject {
         info[MPMediaItemPropertyPlaybackDuration] = max(nowPlayingDuration, 1)
         info[MPNowPlayingInfoPropertyPlaybackRate] = isPlaying ? 1.0 : 0.0
         info[MPNowPlayingInfoPropertyDefaultPlaybackRate] = 1.0
-        MPNowPlayingInfoCenter.default().nowPlayingInfo = info
-        MPNowPlayingInfoCenter.default().playbackState = isPlaying ? .playing : .paused
+        // Carries the artwork to the system on every segment; timed apart from the segment
+        // around it.
+        SourcePerfTrace.span("tts.nowPlaying", thresholdMs: 5) {
+            MPNowPlayingInfoCenter.default().nowPlayingInfo = info
+            MPNowPlayingInfoCenter.default().playbackState = isPlaying ? .playing : .paused
+        }
         ttsLog("[TTS][NowPlaying] update title=\(displayNowPlayingTitle) artist=\(displayNowPlayingArtist) chapter=\(nowPlayingChapterTitle) elapsed=\(info[MPNowPlayingInfoPropertyElapsedPlaybackTime] ?? "?") duration=\(info[MPMediaItemPropertyPlaybackDuration] ?? "?") rate=\(info[MPNowPlayingInfoPropertyPlaybackRate] ?? "?") state=\(isPlaying ? "playing" : "paused")")
     }
 

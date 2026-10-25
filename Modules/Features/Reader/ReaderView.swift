@@ -1012,7 +1012,11 @@ struct ReaderView: View {
         visiblePosition: CoreTextReadingPosition? = nil
     ) {
         DispatchQueue.main.async {
-            handleCoreTextPageChanged(newPage, engine: engine, visiblePosition: visiblePosition)
+            // Every settled page, turned by hand, by 朗讀 or by 自動翻頁: timed, so a stall
+            // during one names it.
+            SourcePerfTrace.span("reader.page.changed", "page=\(newPage)", thresholdMs: 5) {
+                handleCoreTextPageChanged(newPage, engine: engine, visiblePosition: visiblePosition)
+            }
         }
     }
 
@@ -2453,7 +2457,9 @@ struct ReaderView: View {
         }
         .onChanged(of: ttsCoordinator.currentSegmentIndex) { _ in
             // Auto page-turn while listening: follow the spoken sentence.
-            followTTSPlaybackHighlight()
+            SourcePerfTrace.span("reader.tts.follow", thresholdMs: 5) {
+                followTTSPlaybackHighlight()
+            }
         }
         .onReceive(NotificationCenter.default.publisher(for: .ttsFloatingPlayerOpenPanel)) { _ in
             // The capsule can be showing another book's narration, kept past its reader;
