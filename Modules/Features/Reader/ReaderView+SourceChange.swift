@@ -475,6 +475,32 @@ extension ReaderView {
               let engine = epubRenderer.engine, usesCoreTextEPUB
         else { return }
 
+        // The narration was made from this chapter's layout, so the offset map says exactly
+        // where the spoken segment is — the same position the playback wash uses. Searching
+        // the chapter for the spoken words cannot: a sentence that repeats on the page
+        // (「嗯。」 twice, a page of identical lines) resolves to its first occurrence, the
+        // anchor never moves past it, and the page never turns.
+        if ttsNarrationOffsets != nil {
+            guard let chapterIndex = ttsChapterIndex,
+                  chapters.indices.contains(chapterIndex),
+                  engine.chapterText(forSpine: chapterIndex)?.isEmpty == false,
+                  // No segment between units: the coordinator clears the range while a
+                  // chapter switch or wait is in progress.
+                  let offset = expectedPlaybackChapterOffset()
+            else { return }
+            setActiveTTSAnchor(
+                CoreTextReadingPosition(spineIndex: chapterIndex, charOffset: offset),
+                alignReader: true
+            )
+            return
+        }
+
+        // Fallback: narration with no offset map — `narrationForTTSChapter` read the
+        // chapter's pages or its raw content because the chapter had no CoreText layout
+        // when the unit was made (a chapter advance into one not laid out yet). Its offsets
+        // are not the layout's, so the spoken words are searched for, and a repeated line
+        // can still pin the anchor to its first occurrence. Delete this once every
+        // narration unit carries a `sourceOffsets` map.
         let chapterIndex = ttsChapterIndex ?? currentChapterIndex
         guard chapters.indices.contains(chapterIndex),
               let chapterText = engine.chapterText(forSpine: chapterIndex),
@@ -484,9 +510,8 @@ extension ReaderView {
         let text = ttsCoordinator.currentSegmentText.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !text.isEmpty else { return }
 
-        // Locate the spoken sentence inside the chapter string. Search forward from
-        // the current page start so a repeated sentence resolves to the occurrence
-        // actually being read (TTS always moves forward through the chapter).
+        // Search forward from the current page start so a repeated sentence resolves to
+        // an occurrence at or after the page being read.
         let ns = chapterText as NSString
         let pageStart = engine.charOffset(forPage: currentPage)
         let searchStart = pageStart.spineIndex == chapterIndex
