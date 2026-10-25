@@ -63,11 +63,11 @@ final class NowPlayingHub: ObservableObject {
     @Published private(set) var coverImage: UIImage?
     /// Book title, used to render the title-card placeholder disc when there is no cover art.
     @Published private(set) var coverTitle: String = ""
-    @Published var isPanelPresented = false
     /// Drives the app-root full-screen audiobook player presentation (tap the global bar).
     @Published var isPresentingAudiobook = false
     /// The book reopened from the global bar because a closed reader is still narrating it. The
-    /// app root presents its reader full screen, and that reader takes the narration over.
+    /// app root presents its reader full screen, and that reader takes the narration over. A
+    /// reader's bar reopens it over that reader instead (`openFromArtwork()`).
     @Published var reopenedNarrationBook: ReopenedNarrationBook?
 
     struct ReopenedNarrationBook: Identifiable {
@@ -143,7 +143,6 @@ final class NowPlayingHub: ObservableObject {
         source = .none
         resetPlaybackFields()
         isVisible = false
-        isPanelPresented = false
     }
 
     /// Detach a TTS coordinator that stopped and was freed before its detach could run. The
@@ -153,7 +152,6 @@ final class NowPlayingHub: ObservableObject {
         source = .none
         resetPlaybackFields()
         isVisible = false
-        isPanelPresented = false
     }
 
     /// A reader appearing (`true`) or disappearing (`false`); `owner` identifies the reader.
@@ -267,19 +265,25 @@ final class NowPlayingHub: ObservableObject {
         return true
     }
 
-    /// The global bar's artwork. An audiobook opens its full-screen player; narration whose
-    /// reader has closed reopens that book, and its reader takes the narration over.
-    func openFromAppRoot() {
-        switch source {
-        case .tts:
-            guard let bookID = heldNarration?.narrationBookID else {
-                ttsLog("[TTS][Hub] global bar tapped with no held narration to reopen")
-                return
-            }
-            reopenedNarrationBook = ReopenedNarrationBook(bookID: bookID)
-        case .audiobook, .none:
+    /// The mini-player is showing narration whose reader has closed. No reader on screen drives
+    /// it, so there is no playback panel to open for it: its artwork reopens the book instead —
+    /// on the shelf, and in another book's reader. What the artwork does and what VoiceOver's
+    /// hint says both follow this.
+    var artworkReopensNarratedBook: Bool { source == .tts && holdsNarrationPastReader }
+
+    /// The mini-player's artwork. Narration whose reader has closed returns its book, for the
+    /// mini-player's host to present — its reader takes the narration over (`ReaderView.init`).
+    /// Anything else opens its player and returns `nil`.
+    func openFromArtwork() -> ReopenedNarrationBook? {
+        guard artworkReopensNarratedBook else {
             openPanel()
+            return nil
         }
+        guard let bookID = heldNarration?.narrationBookID else {
+            ttsLog("[TTS][Hub] artwork tapped with no held narration to reopen")
+            return nil
+        }
+        return ReopenedNarrationBook(bookID: bookID)
     }
 
     /// Stop TTS narration only (used when an audiobook takes over the audio session).
@@ -341,11 +345,11 @@ final class NowPlayingHub: ObservableObject {
 
     // MARK: - Unified controls (routed by source)
 
-    func openPanel() {
+    private func openPanel() {
         switch source {
         case .tts:
+            // The reader narrating opens its 語音朗讀 panel.
             NotificationCenter.default.post(name: .ttsFloatingPlayerOpenPanel, object: nil)
-            isPanelPresented = true
         case .audiobook:
             isPresentingAudiobook = true
         case .none:

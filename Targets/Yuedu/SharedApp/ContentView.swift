@@ -529,6 +529,12 @@ struct NowPlayingMiniPlayer: View {
     /// they're hidden it may be dragged lower (no toolbar to clear).
     var barsVisible: Bool = true
 
+    /// Presents the book a closed reader is still narrating, reopened from the artwork. A reader
+    /// passes its own and presents the book over itself: it may be presented full screen, and the
+    /// app root cannot present over that. `nil` at the root, which presents it over every tab
+    /// (`NowPlayingHub.reopenedNarrationBook`).
+    var presentNarratedBook: ((NowPlayingHub.ReopenedNarrationBook) -> Void)? = nil
+
     @StateObject private var hub = NowPlayingHub.shared
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var offset = CGSize(width: 0, height: 0)
@@ -626,9 +632,11 @@ struct NowPlayingMiniPlayer: View {
         HStack(spacing: controlSpacing) {
             Button {
                 performTapAction {
-                    switch placement {
-                    case .reader: hub.openPanel()
-                    case .global: hub.openFromAppRoot()
+                    guard let book = hub.openFromArtwork() else { return }
+                    if let presentNarratedBook {
+                        presentNarratedBook(book)
+                    } else {
+                        hub.reopenedNarrationBook = book
                     }
                 }
             } label: {
@@ -700,10 +708,10 @@ struct NowPlayingMiniPlayer: View {
         hub.title.isEmpty ? localized("語音朗讀") : hub.title
     }
 
-    /// What tapping the artwork does: at the root, narration reopens its book (see
-    /// `NowPlayingHub.openFromAppRoot`); everywhere else it opens the playback panel.
+    /// What tapping the artwork does: narration whose reader has closed reopens its book, in
+    /// either placement (`NowPlayingHub.openFromArtwork`); anything else opens its player.
     private var openHint: String {
-        placement == .global && hub.source == .tts
+        hub.artworkReopensNarratedBook
             ? localized("打開這本書到正在朗讀的地方")
             : localized("打開播放控制面板")
     }
@@ -977,5 +985,16 @@ private struct SpinningCoverIcon<Face: View>: View {
         holdsNarrationPastReader: true
     )
     return NowPlayingMiniPlayer(placement: .global, minBottomClearance: 90)
+}
+
+#Preview("Reader mini-player, another book's narration") {
+    NowPlayingHub.shared.configurePreview(
+        title: "第十章 玄雅的赔礼",
+        playbackState: .playing,
+        currentSegmentIndex: 12,
+        totalSegments: 94,
+        holdsNarrationPastReader: true
+    )
+    return NowPlayingMiniPlayer(placement: .reader, barsVisible: false, presentNarratedBook: { _ in })
 }
 #endif

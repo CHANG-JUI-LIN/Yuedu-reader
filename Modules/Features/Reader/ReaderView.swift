@@ -292,6 +292,8 @@ struct ReaderView: View {
     /// This reader took narration over from a closed reader of the book: once the opening
     /// restore lands, it goes to where the narration is (`alignToAdoptedNarration`).
     @State var alignsToNarrationOnRestore = false
+    /// The book whose narration outlived its reader, reopened over this reader from the capsule.
+    @State var reopenedNarrationBook: NowPlayingHub.ReopenedNarrationBook?
     @State var isAligningReaderToTTSAnchor = false
     @State var showMediaOverlayPanel = false
     @State var activeMediaOverlayChapterIndex: Int? = nil
@@ -1971,8 +1973,12 @@ struct ReaderView: View {
             // Always present (even with the reader bars hidden); it self-hides when
             // nothing is playing. `barsVisible` lets it lift above the bottom toolbar
             // when the bars appear, and drop lower while they're hidden.
-            NowPlayingMiniPlayer(placement: .reader, barsVisible: showBars)
-                .zIndex(50)
+            NowPlayingMiniPlayer(
+                placement: .reader,
+                barsVisible: showBars,
+                presentNarratedBook: { reopenedNarrationBook = $0 }
+            )
+            .zIndex(50)
 
             if let toast = bookmarkToast {
                 // A banner at the top, just under the Dynamic Island: the status bar
@@ -2490,8 +2496,8 @@ struct ReaderView: View {
             }
         }
         .onReceive(NotificationCenter.default.publisher(for: .ttsFloatingPlayerOpenPanel)) { _ in
-            // The capsule can be showing another book's narration, kept past its reader;
-            // this reader's panel would drive its own idle narrator instead.
+            // Every reader alive hears it; only the one narrating opens its panel. A reader under
+            // the cover of another book's reader would drive its own idle narrator instead.
             guard NowPlayingHub.shared.isNarrating(with: ttsCoordinator) else { return }
             showTTSPanel = true
         }
@@ -2830,6 +2836,17 @@ struct ReaderView: View {
                 }
                 .task { await gatherAIBookText() }
             }
+        }
+        // Another book's narration on this reader's capsule, reopened from its cover: that
+        // book's reader opens over this one and takes the narration over (`ReaderView.init`);
+        // closing it comes back here.
+        .fullScreenCover(item: $reopenedNarrationBook) { book in
+            BookReaderView(bookId: book.bookID)
+                .environmentObject(store)
+                // A modal reader of its own. This reader's navigator and parent stack are not
+                // its: closing it through them would close this reader instead.
+                .environment(\.readerNavigator, nil)
+                .environment(\.readerUsesParentNavigationStack, false)
         }
         )
         let mediaPresentationLayers = AnyView(

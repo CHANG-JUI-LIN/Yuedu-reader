@@ -2,7 +2,8 @@ import XCTest
 
 /// Narration outlives the reader it was started in: start 聽書 in one book, back out, open
 /// another, and the first book is still being read aloud — its capsule on the second book's
-/// page, stoppable from there. Stopping it ends it for good.
+/// page, stoppable from there, its cover opening the first book over the second. Stopping it
+/// ends it for good.
 ///
 /// The books are text files the test writes, imported at launch (`-auto-import-epub`, DEBUG).
 final class NowPlayingCapsuleUITests: XCTestCase {
@@ -115,9 +116,75 @@ final class NowPlayingCapsuleUITests: XCTestCase {
         XCTAssertEqual(playPause.label, "暫停", "…and still playing, not paused.")
         screenshot(app, "other-book-with-narration")
 
+        // The capsule's cover opens the first book over this one. It used to do nothing here —
+        // only the reader narrating opens a panel, and this one is not — while VoiceOver still
+        // promised the panel (`NowPlayingCapsuleVoiceOverTests` checks the hint now).
+        reopenNarratedBook(app, over: other)
+        // Closing it comes back to the second book, the first still being read aloud, and the
+        // cover opens it again.
+        closeModalReader(app)
+        XCTAssertTrue(page(app, narrated).waitForNonExistence(timeout: 10), "Back on the second book.\n\(app.debugDescription)")
+        XCTAssertTrue(playPause.waitForExistence(timeout: 10), app.debugDescription)
+        XCTAssertEqual(playPause.label, "暫停", "The first book is still being read aloud.")
+        reopenNarratedBook(app, over: other)
+        closeModalReader(app)
+        XCTAssertTrue(page(app, narrated).waitForNonExistence(timeout: 10), app.debugDescription)
+
         capsule(app, "stop").tap()
         XCTAssertTrue(playPause.waitForNonExistence(timeout: 10), "✕ ends the narration.\n\(app.debugDescription)")
         leaveReader(app, to: other)
+    }
+
+    /// A page of `title`'s reader: every page of the test books carries its body text.
+    @MainActor
+    private func page(_ app: XCUIApplication, _ title: String) -> XCUIElement {
+        app.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", body(title))).firstMatch
+    }
+
+    /// The capsule of a reader presented over another reader. XCUITest lists the reader under the
+    /// cover too, and its capsule comes first.
+    @MainActor
+    private func coveringCapsule(_ app: XCUIApplication, _ control: String) -> XCUIElement {
+        app.buttons.matching(identifier: "now_playing_reader_\(control)").element(boundBy: 1)
+    }
+
+    /// Taps the cover of the narrated book's capsule in `title`'s reader: the narrated book opens
+    /// over it, and its reader takes the narration over — its capsule opens its own 語音朗讀 panel.
+    @MainActor
+    private func reopenNarratedBook(_ app: XCUIApplication, over title: String) {
+        let cover = capsule(app, "open_panel")
+        XCTAssertEqual(cover.label, narrated, "VoiceOver names the book being read aloud.")
+        cover.tap()
+        XCTAssertTrue(page(app, narrated).waitForExistence(timeout: 30),
+                      "The cover opens the book being read aloud.\n\(app.debugDescription)")
+        let covered = XCTNSPredicateExpectation(
+            predicate: NSPredicate(format: "exists == false OR hittable == false"), object: page(app, title)
+        )
+        XCTAssertEqual(XCTWaiter.wait(for: [covered], timeout: 10), .completed,
+                       "…over the book that was open.\n\(app.debugDescription)")
+        let playPause = coveringCapsule(app, "play_pause")
+        XCTAssertTrue(playPause.waitForExistence(timeout: 10), app.debugDescription)
+        XCTAssertEqual(playPause.label, "暫停", "Still playing through the reopen.")
+        screenshot(app, "reopened-over-\(title)")
+
+        coveringCapsule(app, "open_panel").tap()
+        let panelPlayPause = app.buttons["tts_panel_play_pause"].firstMatch
+        XCTAssertTrue(panelPlayPause.waitForExistence(timeout: 10),
+                      "The reopened reader drives the narration.\n\(app.debugDescription)")
+        XCTAssertEqual(panelPlayPause.label, "暫停")
+        app.buttons["完成"].firstMatch.tap()
+        XCTAssertTrue(panelPlayPause.waitForNonExistence(timeout: 10), app.debugDescription)
+    }
+
+    /// Closes a reader presented full screen with its 返回 button, showing the bars if need be.
+    /// The reader under it keeps its bars hidden here, so the one 返回 button is the cover's.
+    @MainActor
+    private func closeModalReader(_ app: XCUIApplication) {
+        let close = app.buttons["reader_back_button"].firstMatch
+        if !close.exists { app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap() }
+        XCTAssertTrue(close.waitForExistence(timeout: 5), app.debugDescription)
+        XCTAssertTrue(close.isHittable, "The 返回 button tapped is the cover's.\n\(app.debugDescription)")
+        close.tap()
     }
 
     /// Feedback #83: closing the book mid-narration kept it being read aloud and took its
