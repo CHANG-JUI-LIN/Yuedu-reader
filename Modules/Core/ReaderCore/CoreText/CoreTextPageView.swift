@@ -159,6 +159,9 @@ final class CoreTextPageView: UIView, UIGestureRecognizerDelegate, @MainActor UI
 
     var onInternalLinkTap: ((String) -> Void)?
     var onImageAttachmentTap: ((CoreTextPaginator.RenderedAttachment) -> Void)?
+    /// Tapped text whose link is a 段評 / 本章說 `ydreview://` href. The host presents the same
+    /// review sheet an image badge opens; page navigation cannot resolve these hrefs.
+    var onReviewTap: ((ReaderHTMLUtilities.ReviewTarget) -> Void)?
     /// Tapped a duokan footnote marker: `(note text, marker rect in this view's coords)`. The host
     /// controller anchors an arrow popover to the rect.
     var onFootnoteTap: ((String, CGRect) -> Void)?
@@ -1500,7 +1503,7 @@ final class CoreTextPageView: UIView, UIGestureRecognizerDelegate, @MainActor UI
         }
 
         guard let context = makeInteractionContext(),
-              let index = stringIndex(at: point, in: context)
+              let index = stringIndex(at: point, in: context, snapsToNearestLine: false)
         else {
             return
         }
@@ -1535,6 +1538,14 @@ final class CoreTextPageView: UIView, UIGestureRecognizerDelegate, @MainActor UI
             return
         }
 
+        // A review link reached through its text rather than its badge image: the same sheet
+        // the image branch above opens. Page navigation cannot resolve `ydreview://`; handed
+        // there, the tap only logged `link.tap unresolved` (feedback #86).
+        if let review = ReaderHTMLUtilities.reviewTarget(fromHref: href) {
+            onReviewTap?(review)
+            return
+        }
+
         onInternalLinkTap?(href)
     }
 
@@ -1549,6 +1560,12 @@ final class CoreTextPageView: UIView, UIGestureRecognizerDelegate, @MainActor UI
     /// Test seam for exercising the same tap path used by the gesture recognizer.
     func debugHandleTap(at point: CGPoint) {
         handleTap(at: point)
+    }
+
+    /// Test seam for the gate in front of `debugHandleTap`: `false` is a touch the reader's
+    /// tap zones receive (page turn / menu).
+    func debugShouldHandleTap(at point: CGPoint) -> Bool {
+        shouldHandleTap(at: point)
     }
 
     private func pointInRenderCoordinates(
@@ -1743,7 +1760,7 @@ final class CoreTextPageView: UIView, UIGestureRecognizerDelegate, @MainActor UI
         guard let layout,
               localPageIndex < layout.pageRanges.count,
               let context = makeInteractionContext(),
-              let index = stringIndex(at: point, in: context),
+              let index = stringIndex(at: point, in: context, snapsToNearestLine: false),
               HTMLAttributedStringBuilder.linkHref(at: index, in: layout.attributedString) != nil
         else {
             // Names which precondition failed, because "no link here" and "no layout at
@@ -1753,7 +1770,9 @@ final class CoreTextPageView: UIView, UIGestureRecognizerDelegate, @MainActor UI
             if layout == nil { because = "noLayout" }
             else if localPageIndex >= (layout?.pageRanges.count ?? 0) { because = "pageOutOfRange" }
             else if makeInteractionContext() == nil { because = "noInteractionContext" }
-            else if stringIndex(at: point, in: makeInteractionContext()!) == nil { because = "noCharacterAtPoint" }
+            else if stringIndex(at: point, in: makeInteractionContext()!, snapsToNearestLine: false) == nil {
+                because = "noCharacterAtPoint"
+            }
             else { because = "notALink" }
             return decide(false, because)
         }
@@ -1893,7 +1912,18 @@ final class CoreTextPageView: UIView, UIGestureRecognizerDelegate, @MainActor UI
         )
     }
 
-    private func stringIndex(at point: CGPoint, in context: InteractionContext) -> Int? {
+    /// - Parameter snapsToNearestLine: selection gestures (long-press, dragging a handle) take the
+    ///   nearest line even from a paragraph gap or the blank under the last line, so a handle
+    ///   dragged past the text keeps following it. A tap passes `false`: it counts only on a line
+    ///   it landed on, give or take the same tolerance as the x axis. Snapped, a page holding
+    ///   nothing but a 本章說 card claimed every tap on its blank space as the card's link, and
+    ///   the page never turned (feedback #86). Vertical text already applies the tolerance to
+    ///   every gesture.
+    private func stringIndex(
+        at point: CGPoint,
+        in context: InteractionContext,
+        snapsToNearestLine: Bool = true
+    ) -> Int? {
         let canonical = CGPoint(
             x: (point.x - bounds.minX) / context.scaleX,
             y: (point.y - bounds.minY) / context.scaleY
@@ -1901,8 +1931,14 @@ final class CoreTextPageView: UIView, UIGestureRecognizerDelegate, @MainActor UI
         if context.writingMode.isVertical {
             return verticalStringIndex(atCanonicalPoint: canonical, in: context)
         }
+        // Allow small fudge for touch precision, but not the entire margin
+        let tapTolerance: CGFloat = 10
         let coreY = context.layoutSize.height - canonical.y
-        guard let lineIdx = nearestLineIndex(for: coreY, in: context) else { return nil }
+        guard let lineIdx = nearestLineIndex(
+            for: coreY,
+            in: context,
+            maxDistance: snapsToNearestLine ? .greatestFiniteMagnitude : tapTolerance
+        ) else { return nil }
 
         let line = context.lines[lineIdx]
         let painted = context.painted[lineIdx]
@@ -1912,8 +1948,6 @@ final class CoreTextPageView: UIView, UIGestureRecognizerDelegate, @MainActor UI
         // CTLineGetStringIndexForPosition returns the nearest character even for taps far to the right,
         // which makes blank space trigger links and blocks page-turning.
         let textEndX = lineX + painted.width
-        // Allow small fudge for touch precision, but not the entire right margin
-        let tapTolerance: CGFloat = 10
         guard canonical.x >= lineX - tapTolerance,
               canonical.x <= textEndX + tapTolerance
         else {
@@ -1975,7 +2009,12 @@ final class CoreTextPageView: UIView, UIGestureRecognizerDelegate, @MainActor UI
         return max(0, range.location + range.length - 1)
     }
 
-    private func nearestLineIndex(for coreY: CGFloat, in context: InteractionContext) -> Int? {
+    /// `nil` when even the nearest line is more than `maxDistance` away.
+    private func nearestLineIndex(
+        for coreY: CGFloat,
+        in context: InteractionContext,
+        maxDistance: CGFloat
+    ) -> Int? {
         guard !context.lines.isEmpty else { return nil }
 
         var bestIndex = 0
@@ -2007,6 +2046,7 @@ final class CoreTextPageView: UIView, UIGestureRecognizerDelegate, @MainActor UI
             }
         }
 
+        guard bestDistance <= maxDistance else { return nil }
         return bestIndex
     }
 
@@ -2654,6 +2694,9 @@ final class CoreTextPageViewController: UIViewController, ReaderBookmarkRibbonHo
             } else {
                 self.presentImagePreview(for: attachment)
             }
+        }
+        pageView.onReviewTap = { [weak self] target in
+            self?.presentReviewSheet(target: target)
         }
     }
 
