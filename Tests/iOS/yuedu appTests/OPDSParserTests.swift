@@ -98,6 +98,67 @@ struct OPDSParserTests {
         #expect(book.bestAcquisition?.importExtension == "epub")
     }
 
+    @Test("Talebook's covers: only the legacy opds-spec.org/cover and /thumbnail rels")
+    func talebookLegacyCoverRels() throws {
+        // As Talebook's handlers/opds.py writes an entry.
+        let xml = """
+        <feed xmlns="http://www.w3.org/2005/Atom">
+          <title>Talebook</title>
+          <entry>
+            <title>紅樓夢</title>
+            <author><name>曹雪芹</name></author>
+            <id>urn:uuid:7c3b6f0e-0000-0000-0000-000000000001</id>
+            <link type="application/epub+zip" href="/api/book/1.epub?from=opds" rel="http://opds-spec.org/acquisition"/>
+            <link type="image/jpeg" href="/get/cover/1.jpg" rel="http://opds-spec.org/cover"/>
+            <link type="image/jpeg" href="/get/cover/1.jpg" rel="http://opds-spec.org/thumbnail"/>
+          </entry>
+        </feed>
+        """
+        let feed = try OPDSClient.parseFeed(data: Data(xml.utf8), feedURL: URL(string: "https://nas.example/opds/")!)
+        let book = try #require(feed.entries.first)
+        #expect(book.isBook)
+        #expect(book.coverURL?.absoluteString == "https://nas.example/get/cover/1.jpg")
+        #expect(book.thumbnailURL?.absoluteString == "https://nas.example/get/cover/1.jpg")
+        #expect(book.displayCoverURL?.absoluteString == "https://nas.example/get/cover/1.jpg")
+    }
+
+    @Test("calibre's covers: a spec rel wins over a legacy name in either order")
+    func calibreSpecRelsWin() throws {
+        // The first entry is as calibre's srv/opds.py writes it: the legacy names first, then
+        // the spec rels. The second puts the spec rels first and gives the legacy names other
+        // images, which the last-link-wins rule would have picked.
+        let xml = """
+        <feed xmlns="http://www.w3.org/2005/Atom">
+          <title>calibre</title>
+          <entry>
+            <title>Calibre Book</title>
+            <id>urn:uuid:calibre-1</id>
+            <link type="application/epub+zip" href="/get/epub/1/Calibre_Library" rel="http://opds-spec.org/acquisition"/>
+            <link type="image/jpeg" href="/get/cover/1/Calibre_Library" rel="http://opds-spec.org/cover"/>
+            <link type="image/jpeg" href="/get/thumb/1/Calibre_Library" rel="http://opds-spec.org/thumbnail"/>
+            <link type="image/jpeg" href="/get/cover/1/Calibre_Library" rel="http://opds-spec.org/image"/>
+            <link type="image/jpeg" href="/get/thumb/1/Calibre_Library" rel="http://opds-spec.org/image/thumbnail"/>
+          </entry>
+          <entry>
+            <title>Spec First</title>
+            <id>urn:uuid:spec-first</id>
+            <link type="application/epub+zip" href="/books/2.epub" rel="http://opds-spec.org/acquisition"/>
+            <link type="image/jpeg" href="/spec/2.jpg" rel="http://opds-spec.org/image"/>
+            <link type="image/jpeg" href="/spec/2-thumb.jpg" rel="http://opds-spec.org/image/thumbnail"/>
+            <link type="image/jpeg" href="/legacy/2.jpg" rel="x-stanza-cover-image"/>
+            <link type="image/jpeg" href="/legacy/2-thumb.jpg" rel="x-stanza-cover-image-thumbnail"/>
+          </entry>
+        </feed>
+        """
+        let feed = try OPDSClient.parseFeed(data: Data(xml.utf8), feedURL: URL(string: "http://192.168.1.2:8080/opds")!)
+        let calibre = try #require(feed.entries.first { $0.title == "Calibre Book" })
+        #expect(calibre.coverURL?.absoluteString == "http://192.168.1.2:8080/get/cover/1/Calibre_Library")
+        #expect(calibre.thumbnailURL?.absoluteString == "http://192.168.1.2:8080/get/thumb/1/Calibre_Library")
+        let specFirst = try #require(feed.entries.first { $0.title == "Spec First" })
+        #expect(specFirst.coverURL?.absoluteString == "http://192.168.1.2:8080/spec/2.jpg")
+        #expect(specFirst.thumbnailURL?.absoluteString == "http://192.168.1.2:8080/spec/2-thumb.jpg")
+    }
+
     @Test("PDF acquisition is readable")
     func unsupportedAcquisition() throws {
         let feed = try OPDSClient.parseFeed(data: Data(sample.utf8), feedURL: feedURL)

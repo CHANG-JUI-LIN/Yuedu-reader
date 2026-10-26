@@ -137,10 +137,16 @@ private struct Mapper {
     private func entry(for publication: OPDS2FeedParser.Publication) -> OPDSEntry? {
         let metadata = publication.metadata
         var entry = OPDSEntry(id: "", title: Self.plain(metadata.title?.value ?? "", limit: 512))
+        var legacyCover: URL?
+        var legacyThumbnail: URL?
         for link in publication.links ?? [] where link.templated != true {
             let rels = link.rels
-            if rels.contains(where: { $0.hasSuffix("/image/thumbnail") }) || rels.contains(where: { $0.hasSuffix("/image") }) {
-                applyImage(link, thumbnail: rels.contains { $0.hasSuffix("/image/thumbnail") }, to: &entry)
+            if let image = OPDSImageRelation(rels: rels) {
+                switch (image.role, image.isLegacy) {
+                case (_, false): applyImage(link, thumbnail: image.role == .thumbnail, to: &entry)
+                case (.cover, true): legacyCover = legacyCover ?? imageURL(link)
+                case (.thumbnail, true): legacyThumbnail = legacyThumbnail ?? imageURL(link)
+                }
                 continue
             }
             guard let url = resolve(link.href) else { continue }
@@ -154,6 +160,7 @@ private struct Mapper {
             }
         }
         applyImages(publication.images ?? [], to: &entry)
+        entry.fillLegacyImages(cover: legacyCover, thumbnail: legacyThumbnail)
 
         let authors = metadata.author.filter { !$0.name.isEmpty }
         entry.authorNames = authors.map { Self.plain($0.name, limit: 256) }
@@ -186,8 +193,8 @@ private struct Mapper {
     /// a size, the smallest is the thumbnail.
     private func applyImages(_ images: [OPDS2FeedParser.Link], to entry: inout OPDSEntry) {
         guard !images.isEmpty else { return }
-        let labelledThumbnail = images.first { $0.rels.contains { $0.hasSuffix("/image/thumbnail") } }
-        let labelledCover = images.first { $0.rels.contains { $0.hasSuffix("/image") } }
+        let labelledThumbnail = Self.labelled(.thumbnail, in: images)
+        let labelledCover = Self.labelled(.cover, in: images)
         if labelledCover != nil || labelledThumbnail != nil {
             if let labelledCover { applyImage(labelledCover, thumbnail: false, to: &entry) }
             if let labelledThumbnail { applyImage(labelledThumbnail, thumbnail: true, to: &entry) }
@@ -201,16 +208,25 @@ private struct Mapper {
         }
     }
 
-    private func applyImage(_ link: OPDS2FeedParser.Link, thumbnail: Bool, to entry: inout OPDSEntry) {
-        // Inline raster images are image data, never a navigation URL (as in Atom).
-        let url: URL?
-        if link.href.hasPrefix("data:image/") {
-            url = link.href.utf8.count <= 2 * 1024 * 1024 ? URL(string: link.href) : nil
-        } else {
-            url = resolve(link.href)
+    /// The first image a rel labels `role`, by a spec rel before a legacy name.
+    private static func labelled(_ role: OPDSImageRelation.Role, in images: [OPDS2FeedParser.Link]) -> OPDS2FeedParser.Link? {
+        func labels(_ image: OPDS2FeedParser.Link, legacy: Bool) -> Bool {
+            image.rels.contains { OPDSImageRelation($0).map { $0.role == role && $0.isLegacy == legacy } ?? false }
         }
-        guard let url else { return }
+        return images.first { labels($0, legacy: false) } ?? images.first { labels($0, legacy: true) }
+    }
+
+    private func applyImage(_ link: OPDS2FeedParser.Link, thumbnail: Bool, to entry: inout OPDSEntry) {
+        guard let url = imageURL(link) else { return }
         if thumbnail { entry.thumbnailURL = url } else if entry.coverURL == nil { entry.coverURL = url }
+    }
+
+    private func imageURL(_ link: OPDS2FeedParser.Link) -> URL? {
+        // Inline raster images are image data, never a navigation URL (as in Atom).
+        if link.href.hasPrefix("data:image/") {
+            return link.href.utf8.count <= 2 * 1024 * 1024 ? URL(string: link.href) : nil
+        }
+        return resolve(link.href)
     }
 
     private func resolve(_ href: String) -> URL? {

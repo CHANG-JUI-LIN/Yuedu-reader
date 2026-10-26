@@ -40,6 +40,41 @@ struct OPDSRelatedLink: Hashable {
     let url: URL
 }
 
+/// What an image link's rel makes it, for both feed formats. OPDS names the cover
+/// `…/image` and the thumbnail `…/image/thumbnail`. The legacy names predate the spec and
+/// are still all some servers write: Talebook writes only `http://opds-spec.org/cover` and
+/// `…/thumbnail` (calibre 2.x's `/opds` did too, and calibre 3+ writes them beside the spec
+/// rels); calibre 2.x's `/stanza` feed wrote only Lexcycle Stanza's `x-stanza-…` names.
+/// A legacy name fills its role only when no spec rel does (`OPDSEntry.fillLegacyImages`).
+struct OPDSImageRelation: Equatable {
+    enum Role { case cover, thumbnail }
+    let role: Role
+    let isLegacy: Bool
+
+    init?(_ rel: String) {
+        let rel = rel.lowercased()
+        if rel.hasSuffix("/image/thumbnail") { (role, isLegacy) = (.thumbnail, false) }
+        else if rel.hasSuffix("/image") { (role, isLegacy) = (.cover, false) }
+        else if Self.legacyThumbnails.contains(rel) { (role, isLegacy) = (.thumbnail, true) }
+        else if Self.legacyCovers.contains(rel) { (role, isLegacy) = (.cover, true) }
+        else { return nil }
+    }
+
+    /// One link's role from all of its rels (an OPDS 2 link may carry several): a spec rel
+    /// before any legacy name, and the thumbnail when rels of the same kind disagree.
+    init?(rels: [String]) {
+        let relations = rels.compactMap(OPDSImageRelation.init)
+        guard let relation = relations.first(where: { $0.role == .thumbnail && !$0.isLegacy })
+                ?? relations.first(where: { !$0.isLegacy })
+                ?? relations.first(where: { $0.role == .thumbnail })
+                ?? relations.first else { return nil }
+        self = relation
+    }
+
+    private static let legacyCovers: Set = ["http://opds-spec.org/cover", "x-stanza-cover-image"]
+    private static let legacyThumbnails: Set = ["http://opds-spec.org/thumbnail", "x-stanza-cover-image-thumbnail"]
+}
+
 struct OPDSEntry: Identifiable, Hashable {
     var id: String
     var title: String
@@ -74,6 +109,13 @@ struct OPDSEntry: Identifiable, Hashable {
         acquisitions.filter(\.isSupported).min { $0.preference < $1.preference }
     }
     var displayCoverURL: URL? { thumbnailURL ?? coverURL }
+
+    /// The images an entry's links gave only under legacy rels (`OPDSImageRelation`), once
+    /// its spec rels are all applied: a spec rel wins in whatever order the links came.
+    mutating func fillLegacyImages(cover: URL?, thumbnail: URL?) {
+        if coverURL == nil { coverURL = cover }
+        if thumbnailURL == nil { thumbnailURL = thumbnail }
+    }
 }
 
 enum OPDSSearch: Hashable {
@@ -301,6 +343,9 @@ private final class OPDSFeedParserDelegate: NSObject, XMLParserDelegate {
     /// A navigation entry's newest-additions link, used when the feed has no link of its own.
     private var newestEntryURL: URL?
     private var authors: [String] = []
+    /// The current entry's images under legacy rels, applied when it ends.
+    private var legacyCover: URL?
+    private var legacyThumbnail: URL?
 
     init(feedURL: URL) { self.feedURL = feedURL }
 
@@ -311,7 +356,10 @@ private final class OPDSFeedParserDelegate: NSObject, XMLParserDelegate {
         let base = attributes["xml:base"].flatMap { URL(string: $0, relativeTo: inherited)?.absoluteURL } ?? inherited
         let parent = elements.last?.name
         elements.append((name, "", base))
-        if name == "entry" { current = OPDSEntry(id: "", title: ""); currentIsNewest = false; authors = [] }
+        if name == "entry" {
+            current = OPDSEntry(id: "", title: ""); currentIsNewest = false; authors = []
+            legacyCover = nil; legacyThumbnail = nil
+        }
         if name == "category", parent == "entry", current?.category == nil,
            OPDSEntry.isCategoryScheme(attributes["scheme"]) {
             let named = Self.plain(attributes["label"] ?? attributes["term"] ?? "", limit: 512)
@@ -362,6 +410,7 @@ private final class OPDSFeedParserDelegate: NSObject, XMLParserDelegate {
             if currentIsNewest, entry.isNavigation, newestEntryURL == nil { newestEntryURL = entry.navigationURL }
             entry.author = authors.isEmpty ? nil : authors.joined(separator: ", ")
             entry.authorNames = authors
+            entry.fillLegacyImages(cover: legacyCover, thumbnail: legacyThumbnail)
             if entry.id.isEmpty { entry.id = entry.acquisitions.first?.url.absoluteString ?? entry.navigationURL?.absoluteString ?? "" }
             feed.entries.append(entry)
         default: break
@@ -383,10 +432,11 @@ private final class OPDSFeedParserDelegate: NSObject, XMLParserDelegate {
             feed.searchDescriptionURL = URL(string: href, relativeTo: base)?.absoluteURL
             return
         }
+        let image = current == nil ? nil : OPDSImageRelation(rel)
         // OPDS inline raster thumbnails are image data, never a navigation URL.
-        if current != nil, rel.hasSuffix("/image/thumbnail"), href.hasPrefix("data:image/"),
+        if let image, image.role == .thumbnail, href.hasPrefix("data:image/"),
            href.utf8.count <= 2 * 1024 * 1024, let inline = URL(string: href) {
-            current?.thumbnailURL = inline
+            applyImage(inline, image)
             return
         }
         guard let resolved = URL(string: href, relativeTo: base)?.absoluteURL,
@@ -409,11 +459,21 @@ private final class OPDSFeedParserDelegate: NSObject, XMLParserDelegate {
             }
             if rel.hasPrefix("http://opds-spec.org/acquisition") || rel.hasPrefix("https://opds-spec.org/acquisition") {
                 current?.acquisitions.append(OPDSAcquisition(url: resolved, type: attributes["type"] ?? "", rel: rel, size: attributes["length"].flatMap(Int64.init)))
-            } else if rel.hasSuffix("/image/thumbnail") { current?.thumbnailURL = resolved }
-            else if rel.hasSuffix("/image") { current?.coverURL = resolved }
+            } else if let image { applyImage(resolved, image) }
             else if type.contains("application/atom+xml") || rel == "subsection" || OPDSFeed.isNewestRelation(rel),
                     current?.navigationURL == nil { current?.navigationURL = resolved }
         } else if rel == "next" { feed.nextPageURL = resolved }
+    }
+
+    /// A spec rel sets its role, the last one winning; a legacy name is held for the
+    /// entry's end, the first one winning.
+    private func applyImage(_ url: URL, _ image: OPDSImageRelation) {
+        switch (image.role, image.isLegacy) {
+        case (.cover, false): current?.coverURL = url
+        case (.thumbnail, false): current?.thumbnailURL = url
+        case (.cover, true): if legacyCover == nil { legacyCover = url }
+        case (.thumbnail, true): if legacyThumbnail == nil { legacyThumbnail = url }
+        }
     }
 }
 
