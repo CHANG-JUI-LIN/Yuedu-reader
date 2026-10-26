@@ -435,7 +435,42 @@ struct AutoRefreshThrottle {
     }
 }
 
+/// At most one "check for new chapters" pass at a time.
+///
+/// A pass walks every online book's table of contents a few at a time, so on a large shelf it
+/// outlives the throttle window: on 3.0.0 (140) a 258-book shelf took 25–67 min from start to
+/// end (suspensions included), and every return to the foreground after five minutes started
+/// another pass beside the running one — five at once, each refetching the same lists.
+@MainActor
+final class ChapterRefreshPass {
+    private var running: Task<Void, Never>?
+
+    /// Runs `pass` when none is running and `admit` allows it. While one runs, nothing new
+    /// starts: an automatic check returns at once, the running pass already covers it; a
+    /// pull-to-refresh (`waitForRunning`) waits for that pass, so its spinner lasts until the
+    /// check it asked for is done.
+    func run(
+        waitForRunning: Bool,
+        admit: () -> Bool = { true },
+        _ pass: @escaping @Sendable () async -> Void
+    ) async {
+        if let running {
+            if waitForRunning { await running.value }
+            return
+        }
+        guard admit() else { return }
+        // Detached: the walk stays off the main thread, at the caller's priority (`.utility`
+        // for the automatic check, so a chapter the reader opens is not queued behind it).
+        let task = Task.detached(priority: Task.currentPriority) { await pass() }
+        running = task
+        await task.value
+        running = nil
+    }
+}
+
 enum ChapterUpdater {
+    @MainActor private static let pass = ChapterRefreshPass()
+
     /// Returns true (and records the time) when an automatic refresh is allowed
     /// under the throttle window; false when one ran too recently. Manual
     /// pull-to-refresh bypasses it.
@@ -446,13 +481,14 @@ enum ChapterUpdater {
     /// Scans all online books on the bookshelf and refreshes their table of contents (adds new chapters).
     /// - Parameter auto: `true` for launch / foreground refreshes (throttled by
     ///   `AppConfig.autoRefreshMinInterval`); `false` for explicit pull-to-refresh,
-    ///   which always runs.
-    static func refreshAll(bookStore: BookStore, auto: Bool = false) async {
-        if auto {
-            let allowed = await MainActor.run { consumeAutoRefreshAllowance() }
-            guard allowed else { return }
+    ///   which always runs. Either way only one pass runs at a time (`ChapterRefreshPass`).
+    @MainActor static func refreshAll(bookStore: BookStore, auto: Bool = false) async {
+        await pass.run(waitForRunning: !auto, admit: { !auto || consumeAutoRefreshAllowance() }) {
+            await refreshEveryOnlineBook(bookStore: bookStore, auto: auto)
         }
+    }
 
+    private static func refreshEveryOnlineBook(bookStore: BookStore, auto: Bool) async {
         // Every refreshed book looks its source up on the main thread; wait for the library
         // read here, off it, rather than there.
         await BookSourceStore.shared.waitUntilLoaded()

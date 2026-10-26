@@ -1,4 +1,5 @@
 import Foundation
+import os
 import Testing
 @testable import yuedu_app
 
@@ -68,5 +69,44 @@ struct TOCCacheWriteBudgetTests {
         #expect(AutoRefreshThrottle(defaults: defaults, minimumInterval: 300).consume(now: start.addingTimeInterval(301)))
         // A clock moved back does not block refreshing.
         #expect(AutoRefreshThrottle(defaults: defaults, minimumInterval: 300).consume(now: start))
+    }
+
+    /// 3.0.0 (140): a 258-book pass outlived the 5 min throttle and every foreground started
+    /// another beside it, five at once.
+    @Test("a second check never runs beside the pass already running")
+    @MainActor func onePassAtATime() async {
+        let gate = ChapterRefreshPass()
+        let runs = OSAllocatedUnfairLock(initialState: 0)
+        let firstEnded = OSAllocatedUnfairLock(initialState: false)
+        let (started, startedSignal) = AsyncStream<Void>.makeStream()
+        let (release, releaseSignal) = AsyncStream<Void>.makeStream()
+
+        let first = Task { @MainActor in
+            await gate.run(waitForRunning: false) {
+                runs.withLock { $0 += 1 }
+                startedSignal.yield()
+                for await _ in release { break }
+                firstEnded.withLock { $0 = true }
+            }
+        }
+        for await _ in started { break }
+
+        // An automatic check while it runs: returns without a pass of its own.
+        await gate.run(waitForRunning: false) { runs.withLock { $0 += 1 } }
+        #expect(runs.withLock { $0 } == 1)
+
+        // A pull-to-refresh while it runs: waits for that pass instead of starting one.
+        let manual = Task { @MainActor in
+            await gate.run(waitForRunning: true) { runs.withLock { $0 += 1 } }
+            return firstEnded.withLock { $0 }
+        }
+        releaseSignal.yield()
+        #expect(await manual.value)
+        #expect(runs.withLock { $0 } == 1)
+        await first.value
+
+        // Once it has ended, the next check runs.
+        await gate.run(waitForRunning: false) { runs.withLock { $0 += 1 } }
+        #expect(runs.withLock { $0 } == 2)
     }
 }
