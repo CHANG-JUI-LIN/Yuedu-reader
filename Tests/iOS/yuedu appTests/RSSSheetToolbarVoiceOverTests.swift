@@ -53,9 +53,16 @@ struct RSSSheetToolbarVoiceOverTests {
         try await withAutomation {
             let window = try host(view)
             defer { window.isHidden = true; window.rootViewController = nil }
-            let labels = try await barButtons(in: window, count: expected.count).map { $0.accessibilityLabel ?? "" }
-            #expect(labels == expected)
+            let buttons = try await barButtons(in: window, count: expected.count)
+            expectSpoken(buttons, expected)
         }
+    }
+
+    /// The names, and no selected state: the bare ✓ symbol carried one, so VoiceOver read
+    /// "Selected" for it, and would go on reading it beside a name.
+    private func expectSpoken(_ buttons: [NSObject], _ expected: [String]) {
+        #expect(buttons.map { $0.accessibilityLabel ?? "" } == expected)
+        #expect(buttons.filter { $0.accessibilityTraits.contains(.selected) }.map(\.accessibilityLabel) == [])
     }
 
     /// SwiftUI builds no accessibility elements until something reads them — VoiceOver, or
@@ -146,7 +153,7 @@ struct RSSSheetToolbarVoiceOverTests {
                 let window = try host(RSSOrganizeSheet(store: store))
                 defer { window.isHidden = true; window.rootViewController = nil }
                 let idle = try await barButtons(in: window, count: 2)
-                #expect(idle.map { $0.accessibilityLabel ?? "" } == [localized("編輯"), localized("完成")])
+                expectSpoken(idle, [localized("編輯"), localized("完成")])
 
                 // VoiceOver presses with accessibilityActivate(); a UIKit bar button declines it,
                 // and VoiceOver then taps the button instead.
@@ -161,7 +168,7 @@ struct RSSSheetToolbarVoiceOverTests {
                     try await Task.sleep(for: .milliseconds(20))
                     editing = try await barButtons(in: window, count: 2)
                 }
-                #expect(editing.map { $0.accessibilityLabel ?? "" } == [exitLabel, localized("完成")])
+                expectSpoken(editing, [exitLabel, localized("完成")])
             }
         }
     }
