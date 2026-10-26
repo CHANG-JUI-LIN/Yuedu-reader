@@ -121,7 +121,7 @@ final class AIChapterTranslationService: ObservableObject {
     func translate(_ chapter: Chapter, text: String, readingOffset: Int, bookTitle: String?) {
         if let current = tasks[chapter.book], current.chapter == chapter { return }
         cancel(book: chapter.book)
-        let provider: any LLMProviding
+        let provider: AITracedProvider
         switch service() {
         case let .success(active): provider = AITracedProvider(base: active.provider)
         case let .failure(reason):
@@ -147,12 +147,19 @@ final class AIChapterTranslationService: ObservableObject {
     }
 
     private func run(_ chapter: Chapter, batches: [[AIChapterTranslation.Paragraph]], bookTitle: String?,
-                     provider: any LLMProviding, id: UUID) async {
+                     provider: AITracedProvider, id: UUID) async {
         let table = Table(book: chapter.book, language: chapter.language)
         defer { if tasks[chapter.book]?.id == id { tasks[chapter.book] = nil } }
         do {
-            // `concurrentBatches` at a time, in the order `pending` gave — what is on screen
-            // first — each saved and shown as it comes back; the first failure stops the run.
+            // `concurrentBatches` at a time, handed to the provider in the order `pending`
+            // gave — what is on screen first — each saved and shown as it comes back; the
+            // first failure stops the run.
+            //
+            // The order holds because every batch starts on the main actor, which runs its
+            // jobs first in, first out, and calls `provider.generate` by its own type, which
+            // runs on its caller's actor up to the base provider. A nonisolated child, or a
+            // call through `any LLMProviding`, starts on the global pool, where the three start
+            // side by side and any of them can reach the provider first.
             var waiting = Array(batches.enumerated())[...]
             var completed = 0
             try await withThrowingTaskGroup(of: ([AIChapterTranslation.Paragraph], LLMRawResponse).self, returning: Void.self,
@@ -166,15 +173,11 @@ final class AIChapterTranslationService: ObservableObject {
                         trace.event("translationBatch", ["spine": "\(chapter.spine)", "index": "\(index)", "of": "\(batches.count)",
                                                          "paragraphs": "\(batch.count)", "language": chapter.language.rawValue,
                                                          "promptVersion": AIChapterTranslation.promptVersion])
-                        group.addTask {
-                            let raw: LLMRawResponse
-                            do {
-                                raw = try await AIDiagnostics.$current.withValue(trace) { try await provider.generate(request, model: nil) }
-                            } catch {
-                                await AIDiagnosticStore.shared.finish(trace)
-                                throw error
-                            }
-                            await AIDiagnosticStore.shared.finish(trace)
+                        // `@Sendable` is spelled out: without it Swift 6's region checker rejects
+                        // a main-actor child that awaits ("pattern … does not understand").
+                        group.addTask { @Sendable @MainActor in
+                            defer { AIDiagnosticStore.shared.finish(trace) }
+                            let raw = try await AIDiagnostics.$current.withValue(trace) { try await provider.generate(request, model: nil) }
                             return (batch, raw)
                         }
                         inFlight += 1

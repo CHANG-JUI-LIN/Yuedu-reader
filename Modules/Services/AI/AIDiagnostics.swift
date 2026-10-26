@@ -165,7 +165,10 @@ struct AITracedProvider: LLMProviding {
         }
     }
 
-    func generate(_ request: LLMGenerationRequest, model: String?) async throws -> LLMRawResponse {
+    /// Runs on its caller's actor up to `base.generate`, so requests sent from one actor reach
+    /// an actor-isolated base in the order they were sent (整章翻譯's batches, the one on
+    /// screen first). Called through `any LLMProviding`, it still starts on the global pool.
+    nonisolated(nonsending) func generate(_ request: LLMGenerationRequest, model: String?) async throws -> LLMRawResponse {
         let trace = AIDiagnostics.current
         let start = Date()
         trace?.event("messages", ["roles": request.messages.map { $0.role.rawValue }.joined(separator: ","),
