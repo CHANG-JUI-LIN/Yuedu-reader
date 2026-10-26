@@ -387,7 +387,10 @@ final class HomeEditorUITests: XCTestCase {
         // 專題集合: a list to a page, swiped by.
         for _ in 0..<6 where !list.exists || list.frame.maxY > tabBarTop { app.swipeUp() }
         XCTAssertTrue(list.isHittable, app.debugDescription)
-        XCTAssertLessThan(list.frame.width, app.frame.width * 0.95, "the next page shows past the edge: \(list.frame)")
+        // Measured by the next list: a card's own frame takes in its tilted covers past the
+        // card's rounded edge (about 33pt wider, measured 2026-10-26), which the card clips.
+        XCTAssertEqual(fiction.frame.minY, list.frame.minY, accuracy: 1, "side by side: \(fiction.frame) \(list.frame)")
+        XCTAssertLessThan(fiction.frame.minX, app.frame.width, "the next page shows past the edge: \(fiction.frame)")
         attach(app, "home-collection-cards")
 
         // Swiped, the lists page by; 兒童與青少年 holds two books, so two covers.
