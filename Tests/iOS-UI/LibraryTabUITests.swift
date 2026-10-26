@@ -151,6 +151,21 @@ final class LibraryTabUITests: XCTestCase {
         XCTAssertFalse(app.buttons["管理來源配置"].exists)
     }
 
+    /// RSS 訂閱, the page's last card, as a reader who has closed 所有來源都在這裡 finds it. With
+    /// the card closed its section's lazy grid was an empty, zero-sized node in VoiceOver's tree
+    /// and in XCUITest's, so VoiceOver never reached it and a test could tap it only where it
+    /// was drawn (2026-10-26, iOS 27). `testTabsAndRows` closes the card mid-run and missed it.
+    @MainActor
+    func testSubscriptionsWithTheNoticeClosed() {
+        let app = launch(["-library.tabNoticeDismissed", "YES"])
+        let rss = scrolledTo(app.buttons["library.rss"].firstMatch, in: app)
+        XCTAssertTrue(rss.waitForExistence(timeout: 5), app.debugDescription)
+        XCTAssertEqual(rss.label, "RSS 訂閱")
+        attach(app, "library-subscriptions")
+        rss.tap()
+        XCTAssertTrue(app.navigationBars["RSS 訂閱"].waitForExistence(timeout: 5), app.debugDescription)
+    }
+
     /// Laid out as the old 探索 root was: 格狀 puts two tiles side by side, the list stacks
     /// them as cards, from that page's stored keys.
     @MainActor

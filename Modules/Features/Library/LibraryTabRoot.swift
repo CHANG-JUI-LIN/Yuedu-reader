@@ -350,7 +350,12 @@ struct LibraryTabRoot: View {
     }
 
     private var subscriptionsSection: some View {
-        LibrarySection(localized("訂閱")) { layout in
+        // Eager, not lazy, as 匯入的模組 (`RuleModuleSection`): with 所有來源都在這裡 closed, this
+        // section's lazy grid stayed in the accessibility tree as an empty, zero-sized node once
+        // scrolled to, so VoiceOver never reached RSS 訂閱 (iOS 27.0 iPhone 18 Pro Max,
+        // 2026-10-26; not seen on iOS 26.5 iPhone 17 Pro). One card: laziness bought nothing.
+        // Delete `isLazy: false` once `testSubscriptionsWithTheNoticeClosed` passes without it.
+        LibrarySection(localized("訂閱"), isLazy: false) { layout in
             let unread = rss.totalUnreadCount()
             NavigationLink(value: ExploreNavigationRoute.subscriptions) {
                 // RSS's unread count, which its tab carried (maintainer's choice, 2026-10-13).
