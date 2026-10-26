@@ -45,7 +45,6 @@ struct RSSListView: View {
     @State private var showImportResult = false
     @State private var didBackfillSourceMetadata = false
     @State private var safariURL: InAppWebURL?
-    @Environment(\.openURL) private var openURL
     @State private var sourceToEdit: RSSSource?
     @State private var folderToRename: RSSFolder?
     @State private var sourceForInfo: RSSSource?
@@ -691,12 +690,22 @@ struct RSSListView: View {
         }
     }
 
+    /// A link another app owns opens through `UIApplication`, not the environment's
+    /// `openURL`: on iOS 17 this page must not read `openURL` at all. While it did, opening
+    /// a feed kept the main thread busy for good, on the feed and after coming back from it
+    /// (iOS 17.5 simulator, 2026-10-26): inside one Core Animation commit's SwiftUI layout,
+    /// the page redrew with 「`_openURL` changed」 as its only changed input — about 85
+    /// times a second under UI testing, and launched with none attached it looped the
+    /// same way. Without the read it settles at once. iOS 27.0 never hung there. Not measured, inferred: iOS 17 hands
+    /// a pushed page a new `OpenURLAction` that never equals the last whenever it rebuilds
+    /// the page's environment, and this page's redraw makes it rebuild again. The system's
+    /// own action does the same as this for a URL it does not route in-app.
     private func open(_ route: RSSLinkRoute) {
         switch route {
         case .inApp(let webURL):
             safariURL = webURL
         case .system(let url):
-            openURL(url) { accepted in
+            UIApplication.shared.open(url) { accepted in
                 if !accepted { RSSLinkRoute.logUnhandled(url) }
             }
         case .unopenable:

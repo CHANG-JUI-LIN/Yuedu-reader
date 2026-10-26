@@ -29,15 +29,13 @@ final class RSSHomeSwipeActionsUITests: XCTestCase {
         let feed = feedRow(app)
         XCTAssertTrue(feed.waitForExistence(timeout: 10), app.debugDescription)
         // A tap still opens the feed: the swipe container, iOS 27's, takes the drags, not the
-        // taps. Not checked before it: there is no container, and on iOS 17.5 coming back from
-        // the feed leaves the app busy for over a minute, main's RSSListView alike (2026-10-26).
-        if #available(iOS 27.0, *) {
-            feed.tap()
-            let article = app.buttons.matching(NSPredicate(format: "label CONTAINS %@", "首頁訂閱測試文章一")).firstMatch
-            XCTAssertTrue(article.waitForExistence(timeout: 10), app.debugDescription)
-            app.navigationBars.buttons.element(boundBy: 0).tap()
-            XCTAssertTrue(app.navigationBars["RSS 訂閱"].waitForExistence(timeout: 10), app.debugDescription)
-        }
+        // taps. And the page answers once back from it: on iOS 17.5 it redrew for good there,
+        // while it read the environment's `openURL` (`RSSListView.open(_:)`).
+        feed.tap()
+        let article = app.buttons.matching(NSPredicate(format: "label CONTAINS %@", "首頁訂閱測試文章一")).firstMatch
+        XCTAssertTrue(article.waitForExistence(timeout: 10), app.debugDescription)
+        app.navigationBars.buttons.element(boundBy: 0).tap()
+        XCTAssertTrue(app.navigationBars["RSS 訂閱"].waitForExistence(timeout: 10), app.debugDescription)
 
         // Its trailing actions: 編輯訂閱 presents its sheet, 刪除 asks first.
         reveal(feed, .trailing)
