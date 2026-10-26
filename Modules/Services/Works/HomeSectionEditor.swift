@@ -18,12 +18,17 @@ final class HomeSectionEditor: ObservableObject {
         var layout: HomeSectionLayout
         /// Empty reads the binding's own.
         var title: String
+        /// Empty reads the binding's own, if it has one.
+        var subtitle: String
         var binding: HomeSectionBinding?
         var isEnabled: Bool
         var parameters: [String: String]
 
         var section: HomeSection? {
-            binding.map { HomeSection(id: id, layout: layout, title: title, binding: $0, isEnabled: isEnabled, parameters: parameters) }
+            binding.map {
+                HomeSection(id: id, layout: layout, title: title, subtitle: subtitle, binding: $0, isEnabled: isEnabled,
+                            parameters: parameters)
+            }
         }
     }
 
@@ -41,7 +46,7 @@ final class HomeSectionEditor: ObservableObject {
     /// 新增欄目: `layout` chosen first (Rex's order, decision 23).
     init(newSectionIn store: HomePageStore? = nil, layout: HomeSectionLayout,
          aggregation: AggregationSettingsStore? = nil, preview: HomeModel) {
-        draft = Draft(id: UUID(), layout: layout, title: "", binding: nil, isEnabled: true, parameters: [:])
+        draft = Draft(id: UUID(), layout: layout, title: "", subtitle: "", binding: nil, isEnabled: true, parameters: [:])
         isNew = true
         self.store = store ?? .shared
         self.aggregation = aggregation ?? .shared
@@ -50,8 +55,8 @@ final class HomeSectionEditor: ObservableObject {
 
     init(section: HomeSection, store: HomePageStore? = nil, aggregation: AggregationSettingsStore? = nil,
          preview: HomeModel) {
-        draft = Draft(id: section.id, layout: section.layout, title: section.title, binding: section.binding,
-                      isEnabled: section.isEnabled, parameters: section.parameters)
+        draft = Draft(id: section.id, layout: section.layout, title: section.title, subtitle: section.subtitle,
+                      binding: section.binding, isEnabled: section.isEnabled, parameters: section.parameters)
         isNew = false
         self.store = store ?? .shared
         self.aggregation = aggregation ?? .shared
@@ -75,6 +80,10 @@ final class HomeSectionEditor: ObservableObject {
         change { $0.title = title }
     }
 
+    func setSubtitle(_ subtitle: String) {
+        change { $0.subtitle = subtitle }
+    }
+
     func setEnabled(_ isEnabled: Bool) {
         change { $0.isEnabled = isEnabled }
     }
@@ -92,8 +101,8 @@ final class HomeSectionEditor: ObservableObject {
             $0.binding = binding
             $0.parameters = parameters
             if followsChoice { $0.title = title }
-            // Lists are drawn as 專題集合 and books never are (`HomeLayoutStyle.choices`): a
-            // choice across the two takes the layout that draws it.
+            // Lists are drawn by the layouts of lists and books never are
+            // (`HomeLayoutStyle.choices`): a choice across the two takes the layout that draws it.
             if !HomeLayoutStyle.choices(for: binding).contains($0.layout.style) {
                 $0.layout = binding.listsCollections ? .collection : .row
             }

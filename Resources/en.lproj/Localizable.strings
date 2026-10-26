@@ -4170,3 +4170,19 @@
 /* 中繼資料語言偏好推薦: a blurb with nothing in the chosen Chinese script */
 "沒有繁體中文簡介" = "No Traditional Chinese description";
 "沒有簡體中文簡介" = "No Simplified Chinese description";
+
+/* Apple Books layouts (2026-10-25): the home's new layouts, their sample lists, and a section's line under its name */
+"色帶書架" = "Color Band";
+"大型封面書架" = "Large Covers";
+"一大四小" = "One Large, Four Small";
+"分類卡片" = "Category Cards";
+"拼貼卡片" = "Collage Cards";
+"推理" = "Mystery";
+"冒險" = "Adventure";
+"博物誌" = "Natural History";
+"選填" = "Optional";
+"你讀過的系列，接著讀下一本。" = "The next book in series you've read.";
+"根據你的閱讀紀錄挑選。" = "Picked from your reading history.";
+"書架上同作者、同系列的書。" = "Books on your shelf by the same author or in the same series.";
+"依主題整理的經典名著。" = "Great classics, gathered by theme.";
+"最多人下載的經典。" = "The most downloaded classics.";

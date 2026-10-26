@@ -24,6 +24,8 @@ struct HomeSectionTests {
         let sections = allBindings().map { HomeSection(layout: .row, title: "標題", binding: $0, parameters: ["sort": "new"]) }
             + [HomeSection(layout: .tiles, binding: .myLibrary, isEnabled: false),
                HomeSection(layout: HomeSectionLayout(.waterfall), binding: .sourceCategories([category]))]
+            + [HomeSectionLayout.band, .largeRow, .heroGrid, .rankedRow].map { HomeSection(layout: $0, subtitle: "副標", binding: .latest) }
+            + [HomeSectionLayout.categoryCards, .collageCards].map { HomeSection(layout: $0, binding: .gutenbergLists) }
         let page = HomePage(sections: sections)
         let decoded = try JSONDecoder().decode(HomePage.self, from: JSONEncoder().encode(page))
         #expect(decoded == page)
@@ -51,6 +53,15 @@ struct HomeSectionTests {
         #expect(original == written)
     }
 
+    @Test("a section's own subtitle is kept, and one left empty is not written (schema 3)")
+    func subtitle() throws {
+        let section = HomeSection(layout: .band, title: "本週", subtitle: "編輯挑的漫畫", binding: .latest)
+        #expect(try JSONDecoder().decode(HomeSection.self, from: JSONEncoder().encode(section)).subtitle == "編輯挑的漫畫")
+        let plain = try JSONSerialization.jsonObject(with: JSONEncoder().encode(HomeSection(layout: .row, binding: .latest)))
+        #expect((plain as? [String: Any])?["subtitle"] == nil)
+        #expect(HomePage(sections: [section]).schemaVersion == 3)
+    }
+
     @Test("fields a section leaves out read as their defaults")
     func defaults() throws {
         let json = """
@@ -58,6 +69,7 @@ struct HomeSectionTests {
         """
         let section = try JSONDecoder().decode(HomeSection.self, from: Data(json.utf8))
         #expect(section.title == "")
+        #expect(section.subtitle == "")
         #expect(section.isEnabled)
         #expect(section.parameters.isEmpty)
         #expect(section.binding == .continueReading)
@@ -97,6 +109,9 @@ struct HomeSectionTests {
         let page = HomePageDefaults.page(mode: .publicLibraries, publicLibrariesAvailable: true, languages: [])
         #expect(kinds(page) == ["continue", "next", "forYou", "popular"] + featured + ["latest"])
         #expect(!page.sections.contains { if case .gutenbergCollection = $0.binding { true } else { false } })
+        // After Apple Books' home (2026-10-25): the download ranking ranked, the lists as cards.
+        #expect(page.sections[3].layout == .rankedRow)
+        #expect(page.sections[4].layout == .categoryCards)
     }
 
     @Test("a Gutenberg shelf is kept by id and read on the endpoint this build uses")
@@ -125,19 +140,28 @@ struct HomeSectionTests {
     // The official modules' lists in the reader's languages (maintainer, 2026-10-21).
     private typealias List = HomePageDefaults.ModuleList
 
+    // The maintainer, 2026-10-25, after Apple Books' home: one band, on the first list with
+    // covers; a ranking with covers ranked under them; なろう's, with none, a ranked list.
     @Test("each reading language takes its official modules' lists: Chinese Bangumi, Japanese なろう, English AniList")
     func officialModuleListsByLanguage() {
-        let bangumi = [List(moduleID: "bangumi", entryID: "novel-rank", layout: .rankedList),
-                       List(moduleID: "bangumi", entryID: "manga-rank", layout: .rankedList)]
+        let bangumi = [List(moduleID: "bangumi", entryID: "novel-rank", layout: .band),
+                       List(moduleID: "bangumi", entryID: "manga-rank", layout: .rankedRow)]
         let narou = [List(moduleID: "narou", entryID: "weekly", layout: .rankedList)]
-        let aniList = [List(moduleID: "anilist", entryID: "trending-novels", layout: .row),
-                       List(moduleID: "anilist", entryID: "trending-manga", layout: .row)]
+        let aniList = [List(moduleID: "anilist", entryID: "trending-novels", layout: .band),
+                       List(moduleID: "anilist", entryID: "trending-manga", layout: .heroGrid)]
         #expect(HomePageDefaults.officialModuleLists(languages: ["zh"], publicLibrariesAvailable: true) == bangumi)
         #expect(HomePageDefaults.officialModuleLists(languages: ["ja"], publicLibrariesAvailable: true) == narou)
         #expect(HomePageDefaults.officialModuleLists(languages: ["en"], publicLibrariesAvailable: true) == aniList)
         #expect(HomePageDefaults.officialModuleLists(languages: ["ko"], publicLibrariesAvailable: true).isEmpty)
         #expect(HomePageDefaults.officialModuleLists(languages: ["ja", "zh-Hant", "zh"], publicLibrariesAvailable: true)
-            == narou + bangumi, "in the languages' order, each list once")
+            == narou + bangumi, "in the languages' order, each list once; なろう never takes the band")
+    }
+
+    @Test("the page has one band: a later language's first list is a plain row")
+    func officialModuleListsOneBand() {
+        let lists = HomePageDefaults.officialModuleLists(languages: ["zh", "en"], publicLibrariesAvailable: true)
+        #expect(lists.map(\.layout) == [.band, .rankedRow, .row, .heroGrid])
+        #expect(lists.filter { $0.layout == .band }.count == 1)
     }
 
     @Test("なろう stays off the defaults where the public libraries are hidden")
@@ -153,7 +177,7 @@ struct HomeSectionTests {
         let sources = HomePageDefaults.page(mode: .bookSources, publicLibrariesAvailable: true, languages: ["zh"])
         #expect(kinds(sources) == ["continue", "next", "forYou", "latest", "other", "other", "popular"] + featured)
         #expect(newInstall.sections[3].binding == .module(moduleID: "bangumi", entryID: "novel-rank"))
-        #expect(newInstall.sections[3].layout == .rankedList)
+        #expect(newInstall.sections[3].layout == .band)
     }
 
     @Test("every default section is enabled, untitled and has its own id")

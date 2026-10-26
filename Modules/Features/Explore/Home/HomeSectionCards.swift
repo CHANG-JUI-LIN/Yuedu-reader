@@ -12,6 +12,14 @@ import SwiftUI
 // - 圖文資訊清單: a small cover beside the title, author and blurb; ranked as an option.
 // - 精選 (decisions 30 and 37): as Apple Books' featured, one book to a page on the cover's
 //   colour: a large cover beside the category, title, author, a line of blurb and 查看作品.
+// The maintainer, 2026-10-25, after Apple Books' store and home
+// (`Technotes/AppleBooksHomeLayouts-2026-10-25.md`):
+// - 色帶書架: as Apple Books Japan's manga band, large covers alone under the header, all on
+//   the first cover's colour from edge to edge (`HomeBandGround`).
+// - 大型封面書架: a row of larger covers with their titles, about two to a phone.
+// - 一大四小: as Apple Books' Special Offers, a large cover and four small ones beside it, a
+//   group at a time.
+// - 橫向單排書架 ranked: as Apple Books' charts, each cover's rank beside its title.
 // The grid and the list show a few rows when the section has 查看全部 and everything when it
 // has not, since nothing else would show the rest. A loading section draws the same layout
 // with blank cards, so the page does not jump when the books arrive.
@@ -28,6 +36,9 @@ struct HomeSectionCards: View {
     var bookActions: HomeBookActions?
     /// 呈現方式's gallery: the rows a layout read downwards shows (`HomeLayoutPreview`).
     var previewRows: Int?
+    /// 色帶書架's colour, the first cover's, for the row that draws the band under its header
+    /// as well. Nil draws the band here, under the covers alone (呈現方式's gallery, a preview).
+    var bandCover: Binding<CoverTint.RGB?>?
 
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
@@ -39,13 +50,16 @@ struct HomeSectionCards: View {
     @ScaledMetric(relativeTo: .subheadline) private var compactReadingCoverWidth = DSLayout.homeCompactReadingCardCoverWidth
     @ScaledMetric(relativeTo: .subheadline) private var continueCardWidth = DSLayout.homeContinueCardWidth
     @ScaledMetric(relativeTo: .headline) private var featuredCoverWidth = DSLayout.homeFeaturedCoverWidth
+    @ScaledMetric(relativeTo: .subheadline) private var scaledLargeCoverWidth = DSLayout.homeLargeCoverWidth
     @State private var gridWidth: CGFloat = 0
+    @State private var ownBandCover: CoverTint.RGB?
 
     /// Rows the grid shows, and books the list shows, when 查看全部 has the rest.
     private static let gridRows = 3
     private static let listCount = 5
 
     private var rowCoverWidth: CGFloat { min(scaledRowCoverWidth, DSLayout.homeCardCoverMaxWidth) }
+    private var largeCoverWidth: CGFloat { min(scaledLargeCoverWidth, DSLayout.homeCardCoverMaxWidth) }
     private var style: HomeLayoutStyle { layout.drawnStyle(accessibilityTextSize: dynamicTypeSize.isAccessibilitySize) }
 
     var body: some View {
@@ -53,14 +67,22 @@ struct HomeSectionCards: View {
             switch style {
             case .readingCard: readingCards
             case .compactReadingCard: compactReadingCards
-            case .row: rail
+            case .row: rail(coverWidth: rowCoverWidth, ranked: layout.showsRanks)
             case .multiRow: multiRow
             case .coverGrid: grid
             case .list: list
             case .featured: featured
-            // A section of books is never offered 專題集合 (`HomeLayoutStyle.choices`); a stored
-            // one draws the row every section can take, as an unknown layout does.
-            case .collection: rail
+            case .band:
+                if let bandCover {
+                    band(cover: bandCover)
+                } else {
+                    band(cover: $ownBandCover).modifier(HomeBandGround(cover: ownBandCover))
+                }
+            case .largeRow: rail(coverWidth: largeCoverWidth)
+            case .heroGrid: heroGrid
+            // A section of books is never offered a layout of lists (`HomeLayoutStyle.choices`);
+            // a stored one draws the row every section can take, as an unknown layout does.
+            case .collection, .categoryCards, .collageCards: rail(coverWidth: rowCoverWidth)
             }
         }
         .environment(\.publicLibraryCoverScope, rowID)
@@ -91,14 +113,86 @@ struct HomeSectionCards: View {
         .accessibilityIdentifier("home.card.\(card.id.instance.type.rawValue).\(card.id.item)")
     }
 
-    // MARK: 橫向單排書架
+    // MARK: 橫向單排書架, 大型封面書架
 
-    private var rail: some View {
+    /// One row of covers with their titles; ranked, each rank beside its title.
+    private func rail(coverWidth: CGFloat, ranked: Bool = false) -> some View {
         ScrollView(.horizontal) {
             LazyHStack(alignment: .top, spacing: DSSpacing.md) {
                 // By position: a source can list one item twice.
                 ForEach(cards.indices, id: \.self) { index in
-                    button(index, in: cards) { HomeBookCard(content: cards[index], coverWidth: rowCoverWidth) }
+                    if ranked {
+                        button(index, in: cards, rank: index + 1) {
+                            HomeRankedBookCard(content: cards[index], rank: index + 1, coverWidth: coverWidth)
+                        }
+                    } else {
+                        button(index, in: cards) { HomeBookCard(content: cards[index], coverWidth: coverWidth) }
+                    }
+                }
+            }
+            .scrollTargetLayout()
+        }
+        .modifier(HomeSidewaysScroll())
+    }
+
+    // MARK: 色帶書架
+
+    /// Covers alone, larger than a row's; the first one's colour is the band's.
+    private func band(cover: Binding<CoverTint.RGB?>) -> some View {
+        let size = CGSize(width: DSLayout.homeBandCoverWidth,
+                          height: DSLayout.homeBandCoverWidth / DSLayout.discoverCoverAspectRatio)
+        return ScrollView(.horizontal) {
+            LazyHStack(alignment: .top, spacing: DSSpacing.md) {
+                ForEach(cards.indices, id: \.self) { index in
+                    button(index, in: cards) { HomeCoverCard(content: cards[index], size: size) }
+                        .environment(\.coverImageObserver, index == 0 ? Self.observer(reportingTo: cover) : nil)
+                }
+            }
+            .scrollTargetLayout()
+        }
+        .modifier(HomeSidewaysScroll())
+    }
+
+    /// Takes the average colour of the image a cover draws, off the main thread.
+    private static func observer(reportingTo cover: Binding<CoverTint.RGB?>) -> @MainActor (UIImage) -> Void {
+        { image in
+            Task {
+                let color = await Task.detached(priority: .utility) { CoverTint.average(of: image) }.value
+                if color != cover.wrappedValue { cover.wrappedValue = color }
+            }
+        }
+    }
+
+    // MARK: 一大四小
+
+    /// Groups of five, a group at a time: the first cover large, the next four in two rows as
+    /// tall as it beside it. A last group of fewer leaves its places empty.
+    private var heroGrid: some View {
+        let gap = DSSpacing.sm
+        let large = CGSize(width: DSLayout.homeHeroCoverWidth,
+                           height: DSLayout.homeHeroCoverWidth / DSLayout.discoverCoverAspectRatio)
+        let smallHeight = (large.height - gap) / 2
+        let small = CGSize(width: smallHeight * DSLayout.discoverCoverAspectRatio, height: smallHeight)
+        let groups = stride(from: 0, to: cards.count, by: 5).map { Array($0..<min($0 + 5, cards.count)) }
+        return ScrollView(.horizontal) {
+            LazyHStack(alignment: .top, spacing: DSSpacing.md) {
+                ForEach(groups, id: \.self) { group in
+                    HStack(alignment: .top, spacing: gap) {
+                        button(group[0], in: cards) { HomeCoverCard(content: cards[group[0]], size: large) }
+                        let rest = Array(group.dropFirst())
+                        if !rest.isEmpty {
+                            // Read across, then down, as the covers are drawn.
+                            Grid(alignment: .topLeading, horizontalSpacing: gap, verticalSpacing: gap) {
+                                ForEach(stride(from: 0, to: rest.count, by: 2).map { $0 }, id: \.self) { start in
+                                    GridRow {
+                                        ForEach(rest[start..<min(start + 2, rest.count)], id: \.self) { index in
+                                            button(index, in: cards) { HomeCoverCard(content: cards[index], size: small) }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
                 }
             }
             .scrollTargetLayout()
@@ -273,6 +367,54 @@ struct HomeSidewaysScroll: ViewModifier {
             .scrollTargetBehavior(.viewAligned)
             .scrollIndicators(.hidden)
             .scrollClipDisabled()
+    }
+}
+
+/// A cover alone, for the layouts that draw no text with it (色帶書架, 一大四小); VoiceOver
+/// reads the card's label all the same. A shelf copy part read shows how far along its bottom.
+struct HomeCoverCard: View {
+    let content: HomeCardContent
+    let size: CGSize
+
+    var body: some View {
+        HomeCardCover(cover: content.cover, title: content.title, author: content.author, size: size)
+            .overlay(alignment: .bottom) {
+                if let progress = content.progress { HomeProgressBar(progress: progress) }
+            }
+            .modifier(PublicLibraryCoverAnchor(id: content.publicLibraryBookID))
+            .contentShape(Rectangle())
+    }
+}
+
+/// 色帶書架's band: the first cover's colour from edge to edge, under the section's header and
+/// covers; the placeholder grey until that cover has drawn. Darkened until the header's line,
+/// the cover's hue made light (`line(for:)`), reads at 4.5:1 on it (7:1 with 增加對比), so the
+/// header's white does too, as 精簡閱讀卡片's ground is. Decoration: VoiceOver reads nothing of it.
+/// Inactive, it draws nothing, and the row keeps its identity as the band comes and goes.
+struct HomeBandGround: ViewModifier {
+    let cover: CoverTint.RGB?
+    var isActive = true
+
+    @Environment(\.colorSchemeContrast) private var contrast
+
+    /// The header's line under the section's name.
+    static func line(for cover: CoverTint.RGB?) -> CoverTint.RGB {
+        CoverTint.lightTint(for: cover ?? CoverTint.placeholder)
+    }
+
+    /// Also behind the header on its own, which its long press lifts out of the band.
+    static func ground(for cover: CoverTint.RGB?, contrast: ColorSchemeContrast) -> Color {
+        guard let cover else { return DSColor.coverTintPlaceholder }
+        return CoverTint.background(for: cover, under: line(for: cover),
+                                    minimumContrast: contrast == .increased ? 7 : 4.5).color
+    }
+
+    func body(content: Content) -> some View {
+        content
+            .padding(.vertical, isActive ? DSSpacing.xl : 0)
+            .frame(maxWidth: isActive ? .infinity : nil, alignment: .leading)
+            .background(isActive ? Self.ground(for: cover, contrast: contrast) : .clear)
+            .animation(DSAnimation.standard, value: cover)
     }
 }
 
@@ -642,14 +784,54 @@ struct HomeListRow: View {
     }
 }
 
-#Preview("五種呈現方式") {
+// MARK: - 橫向單排書架, ranked
+
+/// A row's card with its rank, as Apple Books' charts: the cover, then the rank beside the title
+/// and author, in 圖文資訊清單's badge.
+struct HomeRankedBookCard: View {
+    let content: HomeCardContent
+    let rank: Int
+    let coverWidth: CGFloat
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: DSSpacing.xxs) {
+            HomeCardCover(cover: content.cover, title: content.title, author: content.author,
+                          size: CGSize(width: coverWidth, height: coverWidth / DSLayout.discoverCoverAspectRatio))
+                .overlay(alignment: .bottom) {
+                    if let progress = content.progress { HomeProgressBar(progress: progress) }
+                }
+                .modifier(PublicLibraryCoverAnchor(id: content.publicLibraryBookID))
+                .padding(.bottom, DSSpacing.sm)
+            HStack(alignment: .firstTextBaseline, spacing: DSSpacing.sm) {
+                HomeRankBadge(rank: rank)
+                VStack(alignment: .leading, spacing: DSSpacing.xxs) {
+                    Text(content.title)
+                        .font(DSFont.subheadline.weight(.semibold))
+                        .foregroundStyle(DSColor.textPrimary)
+                        .lineLimit(2)
+                    if !content.author.isEmpty {
+                        Text(content.author)
+                            .font(DSFont.footnote)
+                            .foregroundStyle(DSColor.textSecondary)
+                            .lineLimit(1)
+                    }
+                }
+                .multilineTextAlignment(.leading)
+            }
+        }
+        .frame(width: coverWidth, alignment: .topLeading)
+        .contentShape(Rectangle())
+    }
+}
+
+#Preview("每種呈現方式") {
     let cards = (0..<8).map(HomeCardContent.placeholder)
     ScrollView {
         VStack(alignment: .leading, spacing: DSSpacing.xxl) {
             ForEach(HomeLayoutStyle.allCases) { style in
                 VStack(alignment: .leading, spacing: DSSpacing.md) {
                     Text(localized(style.titleKey)).font(DSFont.title2.weight(.bold)).padding(.horizontal, DSSpacing.lg)
-                    HomeSectionCards(layout: HomeSectionLayout(style: style, ranked: style == .list), cards: cards,
+                    HomeSectionCards(layout: HomeSectionLayout(style: style, ranked: style.canShowRanks), cards: cards,
                                      rowID: style.rawValue, hasShowAll: true, open: { _, _ in })
                 }
             }
@@ -689,7 +871,7 @@ private func featuredPreviewCards() -> [HomeCardContent] {
     ScrollView {
         VStack(alignment: .leading, spacing: DSSpacing.xxl) {
             ForEach(HomeLayoutStyle.allCases) { style in
-                HomeSectionCards(layout: HomeSectionLayout(style: style, ranked: style == .list), cards: cards,
+                HomeSectionCards(layout: HomeSectionLayout(style: style, ranked: style.canShowRanks), cards: cards,
                                  rowID: style.rawValue, hasShowAll: false, open: { _, _ in })
             }
         }

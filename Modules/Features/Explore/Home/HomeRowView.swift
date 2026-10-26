@@ -30,6 +30,21 @@ extension HomeSection {
         case .opdsFeed, .gutenbergFeed, .module, .myLibrary, .unknown: return sourceName
         }
     }
+
+    /// The line under the name (maintainer, 2026-10-25, after Apple Books' shelves): the one
+    /// the reader wrote, else what the binding's books are, for the few whose name does not
+    /// say it. Nil draws none. AI 推薦 says where its books came from itself.
+    var displaySubtitle: String? {
+        if !subtitle.isEmpty { return subtitle }
+        switch binding {
+        case .nextInSeries: return localized("你讀過的系列，接著讀下一本。")
+        case .forYou: return localized("根據你的閱讀紀錄挑選。")
+        case .related: return localized("書架上同作者、同系列的書。")
+        case .gutenbergLists: return localized("依主題整理的經典名著。")
+        case .gutenbergShelf(let id) where id == "popular": return localized("最多人下載的經典。")
+        default: return nil
+        }
+    }
 }
 
 /// What a row shows once loaded, resolved against the shelf as it is now.
@@ -114,27 +129,48 @@ struct HomeRowView: View {
     /// A shelf copy's ••• on 精簡閱讀卡片 (5d-3c); none in a fixture.
     var bookActions: HomeBookActions?
 
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    @Environment(\.colorSchemeContrast) private var contrast
+    /// 色帶書架's colour, its first cover's, once that cover has drawn.
+    @State private var bandCover: CoverTint.RGB?
+
     var body: some View {
         Group {
             // A loaded row with nothing in it takes no room.
             if case .loaded = group.state, content?.isEmpty ?? true {
                 EmptyView()
             } else {
-                VStack(alignment: .leading, spacing: DSSpacing.md) {
+                VStack(alignment: .leading, spacing: drawsBand ? DSSpacing.lg : DSSpacing.md) {
                     header
                     stateContent
                 }
+                .modifier(HomeBandGround(cover: bandCover, isActive: drawsBand))
             }
         }
         .task { load() }
+    }
+
+    /// 色帶書架 draws its band while its covers load and once they have; a row that failed, or
+    /// that holds no books (訂閱的最新文章's articles), is drawn without it.
+    private var drawsBand: Bool {
+        guard group.section.layout.drawnStyle(accessibilityTextSize: dynamicTypeSize.isAccessibilitySize) == .band
+        else { return false }
+        switch group.state {
+        case .idle, .loading: return true
+        case .failed: return false
+        case .loaded: return !(content?.cards.isEmpty ?? true)
+        }
     }
 
     // MARK: Header
 
     @ViewBuilder
     private var header: some View {
-        let label = HomeRowTitle(title: group.title, showsChevron: showAll != nil)
+        let label = HomeRowTitle(title: group.title, subtitle: group.section.displaySubtitle, showsChevron: showAll != nil,
+                                 bandLine: drawsBand ? HomeBandGround.line(for: bandCover).color : nil)
             .padding(.horizontal, DSSpacing.lg)
+            // The band's white name on the band's colour when its long press lifts it out.
+            .background(drawsBand ? HomeBandGround.ground(for: bandCover, contrast: contrast) : .clear)
 
         if let showAll {
             Button(action: showAll) { label }
@@ -181,7 +217,7 @@ struct HomeRowView: View {
             if let content {
                 if !content.locations.isEmpty { locationChips(content.locations) }
                 if !content.collections.isEmpty {
-                    HomeCollectionCards(collections: content.collections, open: openCollection)
+                    HomeSectionLists(layout: group.section.layout, collections: content.collections, open: openCollection)
                 }
                 if !content.cards.isEmpty { cards(content.cards) }
                 if !content.articles.isEmpty {
@@ -194,7 +230,7 @@ struct HomeRowView: View {
     /// The section's layout with blank cards, so the page does not jump when the books arrive.
     private var placeholder: some View {
         HomeSectionCards(layout: group.section.layout, cards: (0..<6).map(HomeCardContent.placeholder), rowID: group.id,
-                         hasShowAll: showAll != nil, open: { _, _ in })
+                         hasShowAll: showAll != nil, open: { _, _ in }, bandCover: $bandCover)
             .redacted(reason: .placeholder)
             .scrollDisabled(true)
             .allowsHitTesting(false)
@@ -205,7 +241,7 @@ struct HomeRowView: View {
 
     private func cards(_ cards: [HomeCardContent]) -> some View {
         HomeSectionCards(layout: group.section.layout, cards: cards, rowID: group.id, hasShowAll: showAll != nil, open: open,
-                         bookActions: bookActions)
+                         bookActions: bookActions, bandCover: $bandCover)
     }
 
     private func locationChips(_ locations: [CollectionLocation]) -> some View {
@@ -215,7 +251,7 @@ struct HomeRowView: View {
                     Button(location.title) { openLocation(location) }
                         .buttonStyle(.bordered)
                         .buttonBorderShape(.capsule)
-                        .tint(DSColor.textPrimary)
+                        .tint(drawsBand ? DSColor.textOnFixedFill : DSColor.textPrimary)
                 }
             }
         }
@@ -227,29 +263,33 @@ struct HomeRowView: View {
 // MARK: - Shared by every row
 
 /// A section's name over its row, in the home's title style; a chevron when it leads to
-/// 查看全部, and a line under it when the section says where its books came from (AI 推薦).
+/// 查看全部, and a line under it (`HomeSection.displaySubtitle`, or where AI 推薦's books came
+/// from).
 struct HomeRowTitle: View {
     let title: String
     var subtitle: String? = nil
     var showsChevron = false
+    /// 色帶書架's header, on the cover's colour: the name and chevron white, the line this
+    /// colour (the cover's hue made light, as 精簡閱讀卡片's kind line).
+    var bandLine: Color? = nil
 
     var body: some View {
         VStack(alignment: .leading, spacing: DSSpacing.xxs) {
             HStack(alignment: .firstTextBaseline, spacing: DSSpacing.sm) {
                 Text(title)
                     .font(DSFont.title2.weight(.bold))
-                    .foregroundStyle(DSColor.textPrimary)
+                    .foregroundStyle(bandLine == nil ? DSColor.textPrimary : DSColor.textOnFixedFill)
                 if showsChevron {
                     Image(systemName: "chevron.right")
                         .font(DSFont.title3.weight(.semibold))
-                        .foregroundStyle(DSColor.textTertiary)
+                        .foregroundStyle(bandLine == nil ? DSColor.textTertiary : DSColor.textOnFixedFill)
                         .accessibilityHidden(true)
                 }
             }
             if let subtitle {
                 Text(subtitle)
                     .font(DSFont.footnote)
-                    .foregroundStyle(DSColor.textSecondary)
+                    .foregroundStyle(bandLine ?? DSColor.textSecondary)
             }
         }
         .multilineTextAlignment(.leading)
@@ -265,7 +305,6 @@ struct HomeSectionActionsMenu: View {
     var body: some View {
         let layout = section.layout
         let choices = HomeLayoutStyle.choices(for: section.binding)
-        // A section of lists has 專題集合 alone: nothing to choose.
         if choices.count > 1 {
             Menu {
                 Picker(localized("呈現方式"), selection: Binding(
@@ -275,10 +314,10 @@ struct HomeSectionActionsMenu: View {
                         Label(localized(style.titleKey), systemImage: style.symbol).tag(style)
                     }
                 }
-                if layout.style == .list {
+                if layout.style.canShowRanks {
                     Toggle(localized("顯示排名"), isOn: Binding(
                         get: { layout.showsRanks },
-                        set: { actions.setLayout(HomeSectionLayout(style: .list, ranked: $0)) }))
+                        set: { actions.setLayout(HomeSectionLayout(style: layout.style, ranked: $0)) }))
                 }
             } label: {
                 Label(localized("呈現方式"), systemImage: "rectangle.3.group")

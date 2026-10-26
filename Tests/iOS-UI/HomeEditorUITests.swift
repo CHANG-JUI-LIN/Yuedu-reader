@@ -260,7 +260,8 @@ final class HomeEditorUITests: XCTestCase {
     }
 
     /// 5d-3: 呈現方式, from the same long press, redraws the section: 圖文資訊清單 gives each book
-    /// the width of the screen, and 顯示排名 puts its rank first in what VoiceOver reads.
+    /// the width of the screen, and 顯示排名 puts its rank first in what VoiceOver reads. 熱門
+    /// starts as a ranked row (2026-10-25, after Apple Books' charts), and its ranks go along.
     @MainActor
     func testLongPressChangesTheLayout() throws {
         let app = launchExplore()
@@ -268,6 +269,10 @@ final class HomeEditorUITests: XCTestCase {
                                                       "home.row.header.", listTitle)).firstMatch
         var book = try popularCard(app, under: header)
         XCTAssertLessThan(book.frame.width, app.frame.width / 2, "橫向單排書架 shows several books to a screen")
+        let ranked = NSPredicate(format: "label MATCHES %@", "^[0-9]+, .*")
+        func readsRank(_ label: String) -> Bool { label.range(of: "^[0-9]+, ", options: .regularExpression) != nil }
+        XCTAssertTrue(readsRank(book.label), "a ranked row reads its rank first: \(book.label)")
+        attach(app, "home-section-ranked-row")
 
         header.press(forDuration: 1.0)
         let layouts = app.buttons["呈現方式"].firstMatch
@@ -280,8 +285,8 @@ final class HomeEditorUITests: XCTestCase {
         XCTAssertTrue(book.waitForExistence(timeout: 5))
         book = try popularCard(app, under: header)
         XCTAssertGreaterThan(book.frame.width, app.frame.width * 0.8, app.debugDescription)
-        XCTAssertFalse(book.label.first?.isNumber ?? true, "an unranked list reads no rank")
-        attach(app, "home-section-list")
+        XCTAssertTrue(readsRank(book.label), "the ranks go along: \(book.label)")
+        attach(app, "home-section-ranked-list")
 
         header.press(forDuration: 1.0)
         XCTAssertTrue(layouts.waitForExistence(timeout: 5))
@@ -289,10 +294,9 @@ final class HomeEditorUITests: XCTestCase {
         let ranks = app.switches["顯示排名"].firstMatch.exists ? app.switches["顯示排名"].firstMatch : app.buttons["顯示排名"].firstMatch
         XCTAssertTrue(ranks.waitForExistence(timeout: 5), app.debugDescription)
         ranks.tap()
-        let ranked = NSPredicate(format: "label MATCHES %@", "^[0-9]+, .*")
-        expectation(for: ranked, evaluatedWith: book)
+        expectation(for: NSCompoundPredicate(notPredicateWithSubpredicate: ranked), evaluatedWith: book)
         waitForExpectations(timeout: 5)
-        attach(app, "home-section-ranked-list")
+        attach(app, "home-section-list")
     }
 
     /// Decision 37: 精選 draws one book to a page, the whole card on screen with the next one
@@ -339,8 +343,9 @@ final class HomeEditorUITests: XCTestCase {
         attach(app, "home-section-featured-next")
     }
 
-    /// Decision 37: 精選書單's lists are 專題集合's cards, a list to a page, each read by its name;
-    /// its long press offers no 呈現方式, since lists have one layout.
+    /// 精選書單's lists, each read by its name: 分類卡片 for a new install (2026-10-25, after Apple
+    /// Books' More to Explore), a card as wide as the page and the next one under it. Its long
+    /// press offers the layouts of lists and no other; 專題集合 (decision 37) pages them by.
     @MainActor
     func testListsAreCollectionCards() {
         let app = launchExplore()
@@ -350,8 +355,39 @@ final class HomeEditorUITests: XCTestCase {
         for _ in 0..<6 where !list.exists || list.frame.maxY > tabBarTop { app.swipeUp() }
         XCTAssertTrue(list.isHittable, app.debugDescription)
         XCTAssertEqual(list.label, "中文書籍")
-        XCTAssertGreaterThan(list.frame.width, app.frame.width * 0.6, "a list to a page: \(list.frame)")
-        XCTAssertTrue(app.buttons["home.collection.gutenberg.fiction"].firstMatch.exists, "the next list follows")
+        XCTAssertGreaterThan(list.frame.width, app.frame.width * 0.8, "a card as wide as the page: \(list.frame)")
+        let fiction = app.buttons["home.collection.gutenberg.fiction"].firstMatch
+        XCTAssertTrue(fiction.exists, "the next list follows")
+        XCTAssertGreaterThanOrEqual(fiction.frame.minY, list.frame.maxY, "under it: \(fiction.frame) \(list.frame)")
+        attach(app, "home-category-cards")
+
+        // The header's long press: the three layouts of lists, no layout of books.
+        // The name, then its line (`HomeSection.displaySubtitle`).
+        let listsHeader = app.descendants(matching: .any).matching(NSPredicate(format: "identifier BEGINSWITH %@ AND label BEGINSWITH %@",
+                                                                               "home.row.header.", listsTitle)).firstMatch
+        for _ in 0..<6 where !listsHeader.isHittable {
+            if listsHeader.exists, listsHeader.frame.minY < app.frame.midY { app.swipeDown() } else { app.swipeUp() }
+        }
+        XCTAssertTrue(listsHeader.isHittable, app.debugDescription)
+        XCTAssertEqual(listsHeader.elementType, .staticText, "no page lists the lists alone: no 查看全部")
+        listsHeader.press(forDuration: 1.0)
+        let layouts = app.buttons["呈現方式"].firstMatch
+        XCTAssertTrue(layouts.waitForExistence(timeout: 5), app.debugDescription)
+        layouts.tap()
+        let collection = app.buttons["專題集合"].firstMatch
+        XCTAssertTrue(collection.waitForExistence(timeout: 5), app.debugDescription)
+        XCTAssertTrue(app.buttons["拼貼卡片"].exists, app.debugDescription)
+        XCTAssertFalse(app.buttons["橫向單排書架"].exists, "lists are never drawn as books")
+        attach(app, "home-collection-menu")
+        collection.tap()
+        // The cards move from one layout to the other as the menu closes; mid-move a card is
+        // as wide as the page and not hittable.
+        waitUntilSettled(list)
+
+        // 專題集合: a list to a page, swiped by.
+        for _ in 0..<6 where !list.exists || list.frame.maxY > tabBarTop { app.swipeUp() }
+        XCTAssertTrue(list.isHittable, app.debugDescription)
+        XCTAssertLessThan(list.frame.width, app.frame.width * 0.95, "the next page shows past the edge: \(list.frame)")
         attach(app, "home-collection-cards")
 
         // Swiped, the lists page by; 兒童與青少年 holds two books, so two covers.
@@ -374,19 +410,6 @@ final class HomeEditorUITests: XCTestCase {
         XCTAssertTrue(app.navigationBars["中文書籍"].waitForExistence(timeout: 10), app.debugDescription)
         app.navigationBars.buttons.element(boundBy: 0).tap()
         XCTAssertTrue(list.waitForExistence(timeout: 10), app.debugDescription)
-
-        // No page lists the lists alone, so the name is text, not a 查看全部 button.
-        let header = app.descendants(matching: .any).matching(NSPredicate(format: "identifier BEGINSWITH %@ AND label == %@",
-                                                                          "home.row.header.", listsTitle)).firstMatch
-        for _ in 0..<6 where !header.isHittable {
-            if header.exists, header.frame.minY < app.frame.midY { app.swipeDown() } else { app.swipeUp() }
-        }
-        XCTAssertTrue(header.isHittable, app.debugDescription)
-        XCTAssertEqual(header.elementType, .staticText)
-        header.press(forDuration: 1.0)
-        XCTAssertTrue(app.buttons["隱藏"].firstMatch.waitForExistence(timeout: 5), app.debugDescription)
-        XCTAssertFalse(app.buttons["呈現方式"].exists, "lists have one layout")
-        attach(app, "home-collection-menu")
     }
 
     /// Decision 34: 新增欄目 shows each layout drawn small with real covers, read by its name; the
@@ -611,8 +634,15 @@ final class HomeEditorUITests: XCTestCase {
         XCTAssertTrue(isBetweenTheBars(), app.debugDescription)
         latest.tap()
         let addLatest = app.buttons["homeSection.latest.add"].firstMatch
-        // Under 顯示在最新's libraries (decision 36).
-        for _ in 0..<4 where !(addLatest.exists && addLatest.isHittable) { app.swipeUp() }
+        // Under 顯示在最新's libraries (decision 36), at the screen's foot since 副標題 and
+        // 顯示排名 joined a row's form. Checked once the form is in: mid-push it read as
+        // hittable. A button cut by the screen's edge is hittable too, and a tap on its sliver
+        // lands on the home indicator (iOS 18.6 simulator), so it must be wholly on screen.
+        XCTAssertTrue(app.textFields["homeSection.title"].firstMatch.waitForExistence(timeout: 5), app.debugDescription)
+        let screen = app.windows.firstMatch.frame
+        for _ in 0..<4 where !(addLatest.exists && addLatest.isHittable && screen.contains(addLatest.frame)) {
+            app.swipeUp()
+        }
         XCTAssertTrue(addLatest.waitForExistence(timeout: 5), app.debugDescription)
         addLatest.tap()
         XCTAssertTrue(sourceRow.waitForExistence(timeout: 10), app.debugDescription)

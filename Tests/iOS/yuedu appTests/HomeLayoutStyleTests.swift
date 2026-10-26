@@ -16,10 +16,12 @@ struct HomeLayoutStyleTests {
                 #expect(decoded.layout == layout)
                 #expect(decoded.layout.isKnown)
                 #expect(decoded.layout.style == style)
-                #expect(decoded.layout.showsRanks == (style == .list && ranked))
+                #expect(decoded.layout.showsRanks == (style.canShowRanks && ranked))
             }
         }
         #expect(HomeSectionLayout(style: .row) == .row)
+        #expect(HomeSectionLayout(style: .row, ranked: true) == .rankedRow)
+        #expect(HomeSectionLayout(style: .band, ranked: true) == .band, "ranks are kept only where they are drawn")
     }
 
     @Test("a custom page's seven kinds draw as decision 14 maps them")
@@ -65,26 +67,35 @@ struct HomeLayoutStyleTests {
         #expect(page.sections[1].binding == .related)
     }
 
-    @Test("a section of books is offered every layout but 專題集合; a section of lists only 專題集合")
+    @Test("a section of books is offered every layout of books; a section of lists the layouts of lists")
     func choices() {
         for binding in [HomeSectionBinding.continueReading, .latest, .aiRecommendations] {
-            #expect(HomeLayoutStyle.choices(for: binding) == HomeLayoutStyle.allCases.filter { $0 != .collection })
+            #expect(HomeLayoutStyle.choices(for: binding) == HomeLayoutStyle.allCases.filter { !$0.drawsLists })
         }
-        #expect(HomeLayoutStyle.choices(for: .gutenbergLists) == [.collection])
+        #expect(HomeLayoutStyle.choices(for: .gutenbergLists) == [.collection, .categoryCards, .collageCards])
     }
 
-    @Test("繼續閱讀 starts as 精簡閱讀卡片, 精選書單 as 專題集合; the other defaults as a row")
+    @Test("繼續閱讀 starts as 精簡閱讀卡片, 古騰堡熱門 ranked, 精選書單 as 分類卡片; the other defaults as a row")
     func defaults() {
         for mode in ExploreMode.allCases {
             let page = HomePageDefaults.page(mode: mode, publicLibrariesAvailable: true, languages: [])
             for section in page.sections {
                 let expected: HomeSectionLayout = switch section.binding {
                 case .continueReading: .compactReadingCard
-                case .gutenbergLists: .collection
+                case .gutenbergShelf(id: "popular"): .rankedRow
+                case .gutenbergLists: .categoryCards
                 default: .row
                 }
                 #expect(section.layout == expected)
             }
         }
+    }
+
+    @Test("ranks show on 圖文資訊清單 and 橫向單排書架 alone")
+    func ranks() {
+        #expect(HomeLayoutStyle.allCases.filter(\.canShowRanks) == [.row, .list])
+        #expect(HomeSectionLayout.rankedRow.style == .row)
+        #expect(HomeSectionLayout.rankedRow.showsRanks)
+        #expect(!HomeSectionLayout.row.showsRanks)
     }
 }

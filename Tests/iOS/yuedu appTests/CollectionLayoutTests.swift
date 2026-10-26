@@ -64,7 +64,8 @@ struct CollectionLayoutTests {
             let page = HomePageDefaults.page(mode: mode, publicLibrariesAvailable: true, languages: [])
             let lists = page.sections.filter { $0.binding == .gutenbergLists }
             #expect(lists.count == 1)
-            #expect(lists.first?.layout == .collection)
+            // 分類卡片 since 2026-10-25, after Apple Books' More to Explore.
+            #expect(lists.first?.layout == .categoryCards)
             #expect(!page.sections.contains { if case .gutenbergCollection = $0.binding { true } else { false } })
             #expect(lists.first?.displayTitle(sourceName: "") == localized("精選書單"))
         }
@@ -87,13 +88,23 @@ struct CollectionLayoutTests {
         #expect(HomeSectionBinding.gutenbergLists.contentOwner == .gutenberg)
     }
 
-    @Test("A list section offers 專題集合 alone; a section of books never offers it")
+    @Test("A list section offers the layouts of lists alone; a section of books never offers them")
     func choices() {
-        #expect(HomeLayoutStyle.choices(for: .gutenbergLists) == [.collection])
+        #expect(HomeLayoutStyle.choices(for: .gutenbergLists) == [.collection, .categoryCards, .collageCards])
         for binding: HomeSectionBinding in [.latest, .continueReading, .gutenbergCollection(id: "chinese"), .aozoraNew] {
             let choices = HomeLayoutStyle.choices(for: binding)
-            #expect(!choices.contains(.collection))
+            #expect(!choices.contains { $0.drawsLists })
             #expect(choices.contains(.featured))
+        }
+    }
+
+    @Test("分類卡片 and 拼貼卡片 are written as their own values; a section of books given one draws a row")
+    func listLayoutValues() {
+        for (layout, style) in [(HomeSectionLayout.categoryCards, HomeLayoutStyle.categoryCards), (.collageCards, .collageCards)] {
+            #expect(layout.isKnown)
+            #expect(layout.style == style)
+            #expect(HomeSectionLayout(style: style) == layout)
+            #expect(style.drawsLists)
         }
     }
 

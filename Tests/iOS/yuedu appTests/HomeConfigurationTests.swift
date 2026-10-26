@@ -99,9 +99,9 @@ struct HomeConfigurationTests {
         #expect(folder.defaults.string(forKey: ExploreSettings.legacyLandingKey) == nil)
         #expect(try Data(contentsOf: folder.pages) == pagesData, "the pages file is left for older builds")
 
-        // Written as schema 2, 預設 under the key an older build reads.
+        // Written as this build's schema, 預設 under the key an older build reads.
         let written = try Data(contentsOf: folder.home)
-        #expect(String(decoding: written, as: UTF8.self).contains("\"schemaVersion\":2"))
+        #expect(String(decoding: written, as: UTF8.self).contains("\"schemaVersion\":\(HomePage.currentSchemaVersion)"))
         #expect(try JSONDecoder().decode(HomePage.self, from: written).sections.map(\.binding) == [.continueReading, .latest])
 
         store.select(.defaults)

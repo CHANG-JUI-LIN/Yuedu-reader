@@ -6,8 +6,8 @@ import SwiftUI
 //   puts the section at the end of the 首頁配置 shown, 取消 leaves it as it was.
 // - A section's card in 編輯首頁, and 設定 in its name's long press, push the same form.
 // - On top, a preview: one real page of the section in its layout, loaded as the home loads
-//   it. Then 標題 (empty follows what it shows), 呈現方式, 資料來源 (opens 選擇內容來源), and for
-//   a section on the home, 在首頁顯示 and 刪除.
+//   it. Then 標題 and 副標題 (empty follows what it shows), 呈現方式, 資料來源 (opens 選擇內容來源),
+//   and for a section on the home, 在首頁顯示 and 刪除.
 
 // MARK: - A section on the home
 
@@ -75,10 +75,10 @@ private struct HomeNewSectionFlow: View {
     @State private var showsForm = false
     @ObservedObject private var availability = PublicLibraryAvailability.shared
 
-    /// 專題集合 draws lists, which only Gutenberg's bundled lists offer today: not where the
-    /// public libraries are not offered.
+    /// The layouts of lists (專題集合, 分類卡片, 拼貼卡片) draw lists, which only Gutenberg's
+    /// bundled lists offer today: not where the public libraries are not offered.
     private var styles: [HomeLayoutStyle] {
-        HomeLayoutStyle.allCases.filter { $0 != .collection || availability.isAvailable }
+        HomeLayoutStyle.allCases.filter { !$0.drawsLists || availability.isAvailable }
     }
 
     var body: some View {
@@ -86,7 +86,7 @@ private struct HomeNewSectionFlow: View {
             HomeLayoutGallery(choices: styles, sample: .standard, identifierPrefix: "homeNewSection.layout") { style in
                 let editor = HomeSectionEditor(layout: HomeSectionLayout(style: style), preview: .preview(shelf: store))
                 // The one source of lists, chosen already; 資料來源 can still change it.
-                if style == .collection { editor.choose(.gutenbergLists) }
+                if style.drawsLists { editor.choose(.gutenbergLists) }
                 self.editor = editor
                 showsForm = true
             }
@@ -186,6 +186,11 @@ struct HomeSectionForm: View {
         draft.title.isEmpty ? defaultTitle : draft.title
     }
 
+    /// The line under the name when the reader writes none: the binding's own, if it has one.
+    private var defaultSubtitle: String {
+        draft.binding.flatMap { HomeSection(layout: draft.layout, binding: $0).displaySubtitle } ?? localized("選填")
+    }
+
     /// 選擇內容來源 pushed rather than presented: a sheet already, on iOS 17.
     private var pushesPicker: Bool {
         if #available(iOS 18, *) { return false }
@@ -215,6 +220,12 @@ struct HomeSectionForm: View {
                               prompt: Text(defaultTitle))
                         .multilineTextAlignment(.trailing)
                         .accessibilityIdentifier("homeSection.title")
+                }
+                LabeledContent(localized("副標題")) {
+                    TextField(localized("副標題"), text: Binding(get: { draft.subtitle }, set: { editor.setSubtitle($0) }),
+                              prompt: Text(defaultSubtitle))
+                        .multilineTextAlignment(.trailing)
+                        .accessibilityIdentifier("homeSection.subtitle")
                 }
                 layoutRows
                 sourceRow
@@ -443,7 +454,6 @@ struct HomeSectionForm: View {
 
     @ViewBuilder
     private var layoutRows: some View {
-        // A section of lists has 專題集合 alone: nothing to choose.
         if layoutChoices.count > 1 {
             Button { push = .layouts } label: {
                 LabeledContent(localized("呈現方式")) {
@@ -462,10 +472,10 @@ struct HomeSectionForm: View {
             .accessibilityValue(localized(draft.layout.style.titleKey))
             .accessibilityIdentifier("homeSection.layout")
         }
-        if draft.layout.style == .list {
+        if draft.layout.style.canShowRanks {
             Toggle(localized("顯示排名"), isOn: Binding(
                 get: { draft.layout.showsRanks },
-                set: { editor.setLayout(HomeSectionLayout(style: .list, ranked: $0)) }))
+                set: { editor.setLayout(HomeSectionLayout(style: draft.layout.style, ranked: $0)) }))
         }
     }
 

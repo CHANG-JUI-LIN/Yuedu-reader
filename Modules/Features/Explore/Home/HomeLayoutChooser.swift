@@ -10,6 +10,9 @@ import SwiftUI
 // layouts, and not only Gutenberg's. Painted covers for 精選 and 大型閱讀卡片, comic books for
 // 多行橫向輪播, illustrated and comic magazines for 固定封面網格, Japanese and Chinese first
 // editions for 精簡閱讀卡片 and 圖文資訊清單, and two lists, 漫畫 and 東方經典, for 專題集合.
+// 2026-10-25, with Apple Books' layouts: boldly coloured Japanese and Chinese first editions for
+// 色帶書架, whose band takes the first cover's colour, illustrated children's books for 大型封面書架, dime novels
+// for 一大四小, and two lists each for 分類卡片 (詩歌, 博物誌) and 拼貼卡片 (推理, 冒險).
 
 /// One book a preview is drawn with: its cover, bundled as `layout-sample-<cover>.jpg`, and its
 /// title and author as its edition has them. Every cover is in the public domain worldwide:
@@ -31,10 +34,15 @@ struct HomeLayoutSampleBook: Hashable {
 struct HomeLayoutSample {
     /// Each layout's own cards; a layout with none draws placeholders.
     var cards: [HomeLayoutStyle: [HomeCardContent]]
-    var collections: [CollectionSummary]
+    /// Each layout of lists' own lists.
+    var collections: [HomeLayoutStyle: [CollectionSummary]]
 
     func cards(for style: HomeLayoutStyle) -> [HomeCardContent] {
         cards[style] ?? []
+    }
+
+    func collections(for style: HomeLayoutStyle) -> [CollectionSummary] {
+        collections[style] ?? []
     }
 
     /// Each layout's books, as many as its preview shows on a phone. No book is in two layouts
@@ -96,20 +104,60 @@ struct HomeLayoutSample {
             .init(cover: "pele-mele-1895", title: "Le Pêle-Mêle, n° 1, 1895", work: "Le Pêle-Mêle", author: "", language: "fr"),
             .init(cover: "comic-cuts-1890", title: "Comic Cuts, No. 1, 1890", work: "Comic Cuts", author: "", language: "en"),
         ],
+        .band: [
+            .init(cover: "kuwana-shinju", title: "桑名心中", work: "桑名心中", author: "長田幹彦", language: "ja"),
+            .init(cover: "nihon-otogibanashi", title: "日本お伽噺集", work: "日本児童文庫", author: "巖谷小波", language: "ja"),
+            .init(cover: "tako", title: "凧", work: "凧", author: "竹久夢二", language: "ja"),
+            .init(cover: "menghu-ji", title: "猛虎集", work: "猛虎集", author: "徐志摩", language: "zh"),
+        ],
+        .largeRow: [
+            .init(cover: "princess-and-goblin", title: "The Princess and the Goblin", work: "The Princess and the Goblin", author: "George MacDonald", language: "en"),
+            .init(cover: "bluebeard", title: "Bluebeard", work: "Bluebeard", author: "Walter Crane", language: "en"),
+            .init(cover: "vasilisa", title: "Василиса Прекрасная", work: "Василиса Прекрасная", author: "Иван Билибин", language: "ru"),
+            .init(cover: "peter-pan-kensington", title: "Peter Pan in Kensington Gardens", work: "Peter Pan", author: "J. M. Barrie", language: "en"),
+        ],
+        .heroGrid: [
+            .init(cover: "nick-carter-stories", title: "Nick Carter Stories, No. 120, 1914", work: "Nick Carter Stories", author: "Nicholas Carter", language: "en"),
+            .init(cover: "work-and-win", title: "Work and Win, No. 7, 1899", work: "Work and Win", author: "Hal Standish", language: "en"),
+            .init(cover: "pluck-and-luck", title: "Pluck and Luck, No. 282, 1903", work: "Pluck and Luck", author: "Noname", language: "en"),
+            .init(cover: "tip-top-weekly", title: "Tip Top Weekly, No. 243, 1900", work: "Tip Top Weekly", author: "Burt L. Standish", language: "en"),
+            .init(cover: "my-queen", title: "My Queen, No. 8, 1900", work: "My Queen", author: "Grace Shirley", language: "en"),
+            .init(cover: "varney-the-vampire", title: "Varney the Vampire", work: "Varney the Vampire", author: "James Malcolm Rymer", language: "en"),
+        ],
     ]
 
-    /// 專題集合's sample: two lists of the books no layout has. They open nothing (a preview is not
-    /// touched); `.gutenbergCollection` is only the one case `CollectionOpening` has.
-    static let lists: [(id: String, titleKey: String, books: [HomeLayoutSampleBook])] = [
-        (id: "comics", titleKey: "漫畫", books: [
+    /// Each layout of lists' sample: two lists of the books no layout has. They open nothing (a
+    /// preview is not touched); `.gutenbergCollection` is only the one case `CollectionOpening` has.
+    static let lists: [(style: HomeLayoutStyle, id: String, titleKey: String, books: [HomeLayoutSampleBook])] = [
+        (style: .collection, id: "comics", titleKey: "漫畫", books: [
             .init(cover: "chojugiga", title: "鳥獣人物戯画", work: "鳥獣人物戯画", author: "伝 鳥羽僧正", language: "ja", kind: .comic),
             .init(cover: "hokusai-manga", title: "北斎漫画", work: "北斎漫画", author: "葛飾北斎", language: "ja", kind: .comic),
             .init(cover: "max-und-moritz", title: "Max und Moritz", work: "Max und Moritz", author: "Wilhelm Busch", language: "de", kind: .comic),
         ]),
-        (id: "easternClassics", titleKey: "東方經典", books: [
+        (style: .collection, id: "easternClassics", titleKey: "東方經典", books: [
             .init(cover: "midaregami", title: "みだれ髪", work: "みだれ髪", author: "与謝野晶子", language: "ja"),
             .init(cover: "kokoro", title: "心", work: "心", author: "夏目漱石", language: "ja"),
             .init(cover: "panghuang", title: "彷徨", work: "彷徨", author: "魯迅", language: "zh"),
+        ]),
+        (style: .categoryCards, id: "poetry", titleKey: "詩歌", books: [
+            .init(cover: "songs-of-innocence", title: "Songs of Innocence", work: "Songs of Innocence", author: "William Blake", language: "en"),
+            .init(cover: "goblin-market", title: "Goblin Market and Other Poems", work: "Goblin Market", author: "Christina Rossetti", language: "en"),
+            .init(cover: "leaves-of-grass", title: "Leaves of Grass", work: "Leaves of Grass", author: "Walt Whitman", language: "en"),
+        ]),
+        (style: .categoryCards, id: "naturalHistory", titleKey: "博物誌", books: [
+            .init(cover: "kunstformen-der-natur", title: "Kunstformen der Natur", work: "Kunstformen der Natur", author: "Ernst Haeckel", language: "de"),
+            .init(cover: "british-algae", title: "Photographs of British Algae", work: "Photographs of British Algae", author: "Anna Atkins", language: "en"),
+            .init(cover: "psittacidae", title: "Illustrations of the Family of Psittacidae, or Parrots", work: "Illustrations of the Family of Psittacidae", author: "Edward Lear", language: "en"),
+        ]),
+        (style: .collageCards, id: "mystery", titleKey: "推理", books: [
+            .init(cover: "study-in-scarlet", title: "A Study in Scarlet", work: "Sherlock Holmes", author: "Arthur Conan Doyle", language: "en"),
+            .init(cover: "arsene-lupin", title: "Arsène Lupin, gentleman-cambrioleur", work: "Arsène Lupin", author: "Maurice Leblanc", language: "fr"),
+            .init(cover: "fantomas", title: "Fantômas", work: "Fantômas", author: "Pierre Souvestre, Marcel Allain", language: "fr"),
+        ]),
+        (style: .collageCards, id: "adventure", titleKey: "冒險", books: [
+            .init(cover: "call-of-the-wild", title: "The Call of the Wild", work: "The Call of the Wild", author: "Jack London", language: "en"),
+            .init(cover: "jungle-book", title: "The Jungle Book", work: "The Jungle Book", author: "Rudyard Kipling", language: "en"),
+            .init(cover: "naufrages-du-jonathan", title: "Les Naufragés du « Jonathan »", work: "Voyages extraordinaires", author: "Jules Verne", language: "fr"),
         ]),
     ]
 
@@ -120,15 +168,17 @@ struct HomeLayoutSample {
                 books.map { HomeCardContent(sample: $0.title, author: $0.author, kind: $0.kind,
                                            cover: bundledCover(of: $0)) }
             },
-            collections: lists.map { list in
-                CollectionSummary(id: list.id, title: localized(list.titleKey),
-                                  books: list.books.map { book in
-                                      WorkSummary(title: book.title, authors: book.author.isEmpty ? [] : [book.author],
-                                                  cover: bundledCover(of: book), blurb: nil,
-                                                  language: book.language, contentKind: book.kind)
-                                  },
-                                  languages: list.books.map(\.language),
-                                  opening: .gutenbergCollection(id: list.id))
+            collections: Dictionary(grouping: lists, by: { $0.style }).mapValues { lists in
+                lists.map { list in
+                    CollectionSummary(id: list.id, title: localized(list.titleKey),
+                                      books: list.books.map { book in
+                                          WorkSummary(title: book.title, authors: book.author.isEmpty ? [] : [book.author],
+                                                      cover: bundledCover(of: book), blurb: nil,
+                                                      language: book.language, contentKind: book.kind)
+                                      },
+                                      languages: list.books.map(\.language),
+                                      opening: .gutenbergCollection(id: list.id))
+                }
             })
     }
 
@@ -170,7 +220,7 @@ struct HomeLayoutGallery: View {
         let isCurrent = current?.style == style
         return Button { choose(style) } label: {
             VStack(spacing: DSSpacing.md) {
-                // The current layout as set (圖文資訊清單 with or without ranks).
+                // The current layout as set (圖文資訊清單 and 橫向單排書架 with or without ranks).
                 HomeLayoutPreview(layout: current.flatMap { $0.style == style ? $0 : nil } ?? HomeSectionLayout(style: style),
                                   sample: sample)
                 HStack(spacing: DSSpacing.xs) {
@@ -215,8 +265,8 @@ struct HomeLayoutPreview: View {
 
     @ViewBuilder
     private var content: some View {
-        if layout.style == .collection {
-            HomeCollectionCards(collections: sample.collections, open: { _ in })
+        if layout.style.drawsLists {
+            HomeSectionLists(layout: layout, collections: sample.collections(for: layout.style), open: { _ in })
         } else if sample.cards(for: layout.style).isEmpty {
             HomeSectionCards(layout: layout, cards: (0..<6).map(HomeCardContent.placeholder),
                              rowID: "layoutPreview.\(layout.rawValue)", hasShowAll: false, open: { _, _ in },
@@ -255,7 +305,7 @@ struct HomeLayoutChoicePage: View {
 #Preview("呈現方式，沒有書時") {
     NavigationStack {
         HomeLayoutChoicePage(choices: HomeLayoutStyle.choices(for: .latest), current: .row,
-                             sample: HomeLayoutSample(cards: [:], collections: []), choose: { _ in })
+                             sample: HomeLayoutSample(cards: [:], collections: [:]), choose: { _ in })
     }
 }
 #endif

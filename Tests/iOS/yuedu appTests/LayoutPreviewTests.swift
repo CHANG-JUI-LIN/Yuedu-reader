@@ -8,7 +8,7 @@ import Testing
 @Suite("呈現方式's previews")
 @MainActor
 struct LayoutPreviewTests {
-    private var bookLayouts: [HomeLayoutStyle] { HomeLayoutStyle.allCases.filter { $0 != .collection } }
+    private var bookLayouts: [HomeLayoutStyle] { HomeLayoutStyle.allCases.filter { !$0.drawsLists } }
 
     @Test("Every layout of books has its own sample, in order, each card drawn from its bundled cover")
     func cards() throws {
@@ -43,7 +43,7 @@ struct LayoutPreviewTests {
     @Test("Each layout shows as many books as its preview has room for on a phone")
     func counts() {
         let expected: [HomeLayoutStyle: Int] = [.featured: 3, .readingCard: 3, .compactReadingCard: 3, .list: 3,
-                                                .row: 6, .multiRow: 12, .coverGrid: 12]
+                                                .row: 6, .multiRow: 12, .coverGrid: 12, .band: 4, .largeRow: 4, .heroGrid: 6]
         #expect(HomeLayoutSample.books.mapValues(\.count) == expected)
     }
 
@@ -53,12 +53,15 @@ struct LayoutPreviewTests {
         #expect(HomeLayoutSample.lists.first { $0.id == "comics" }?.books.allSatisfy { $0.kind == .comic } == true)
     }
 
-    @Test("專題集合's sample: 漫畫 and 東方經典, every artwork cover bundled")
+    @Test("Each layout of lists has its own two lists, every artwork cover bundled")
     func lists() {
         let sample = HomeLayoutSample.standard
-        #expect(sample.collections.map(\.id) == ["comics", "easternClassics"])
-        #expect(sample.collections.map(\.title) == [localized("漫畫"), localized("東方經典")])
-        for collection in sample.collections {
+        let expected: [HomeLayoutStyle: [String]] = [.collection: ["漫畫", "東方經典"], .categoryCards: ["詩歌", "博物誌"],
+                                                     .collageCards: ["推理", "冒險"]]
+        for style in HomeLayoutStyle.allCases where style.drawsLists {
+            #expect(sample.collections(for: style).map(\.title) == expected[style]?.map { localized($0) }, "\(style)")
+        }
+        for collection in sample.collections.values.flatMap({ $0 }) {
             #expect(collection.books.count == CollectionSummary.artworkLimit)
             for book in collection.books {
                 guard case .copyFile(let path)? = book.cover else {

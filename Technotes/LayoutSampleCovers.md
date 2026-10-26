@@ -15,7 +15,13 @@ Rule: every cover is in the public domain worldwide.
   which was published before 1931 (70 years from publication has long passed, and the US term
   too).
 
-Cropped to 2:3 and saved at 300×450, quality 74 (48 files, about 1.4 MB).
+Cropped to 2:3 and saved at 300×450, quality 74 (74 files, about 2.3 MB).
+
+2026-10-25, for the layouts taken from Apple Books (`Technotes/AppleBooksHomeLayouts-2026-10-25.md`),
+26 more: 色帶書架, 大型封面書架 and 一大四小, and two lists each for 分類卡片 and 拼貼卡片.
+Upload.wikimedia.org answered 429 for some originals, so files wider than 1920 px were taken
+from Commons' 1920 px thumbnail, and PDF or DjVu pages from Commons' page render (猛虎集 at
+960 px); at 300×450 nothing is lost.
 
 ## Left out on purpose
 
@@ -33,6 +39,28 @@ Cropped to 2:3 and saved at 300×450, quality 74 (48 files, about 1.4 MB).
   which is Buster Brown's dog's book), and a second 夏目漱石 in one layout (鶉籠).
 - Magazines and sheet music where the Eastern layouts want books: 青鞜, 明星, 宵待草 (a セノオ
   楽譜 score).
+
+2026-10-25:
+
+- 杉浦非水 (died 1965): ナカニシヤ's 日本一の画噺, 夢の華, the *Present-Day Japan* cover.
+- CC-licensed scans rather than public-domain ones: *Lost in the Ice* (Pluck and Luck 160),
+  Edmund Dulac's *Fairy-Book*, Hetzel's *Maître Antifer* and *Hatteras* photographs (CC BY-SA,
+  CeCILL); かがみの国のアリス (a CC BY-SA photograph of a 1948 edition, and a second Alice).
+- Magazines and sheet music, not books: セノオ楽譜, コドモノクニ, 婦人グラフ.
+- A second 竹久夢二 or a series: 夢二画集 春／夏／秋／冬, 野に山に, 夢二抒情画選集 (two volumes);
+  どんたく was too dark.
+- ちりめん本 (the Rijksmuseum's Japanese Fairy Tale Series): clear, but pale and stamped by the
+  library. 稻草人 (1923): dull, and its illustrator uncertain.
+- Racial or religious caricature: Larry Lee (Pluck and Luck 886), Pluck and Luck 716 and 266,
+  Secret Service 152, Frank Reade's "Dog-Faced Men", New Nick Carter Weekly 11, 辟邪紀實.
+- A second of one series or author: *A Great Conspiracy* and New Nick Carter Weekly (Nick Carter),
+  *The Lost World* and *The Hound of the Baskervilles* (Doyle), *Le Docteur Ox* (Voyages
+  extraordinaires).
+- Covers that do not crop to 2:3 or are not covers: *The Wonderful Wizard of Oz* (about 0.75,
+  its title cut), *Tanglewood Tales* (a "Digitized by Microsoft" mark), *Le Mystère de la chambre
+  jaune* (only an advert's detail), Merian's *Metamorphosis* (type alone), Kunstformen's plates.
+- Plain cloth: *Tarzan of the Apes* (1914, its designer's dates unknown), *King Solomon's
+  Mines*. *Fame and Fortune* (1921): too small.
 
 ## The covers
 
@@ -86,3 +114,29 @@ Cropped to 2:3 and saved at 300×450, quality 74 (48 files, about 1.4 MB).
 | midaregami | みだれ髪 (1901) | 与謝野晶子; cover 藤島武二 (1867–1943) | 專題集合「東方經典」 | Commons: Akiko Yosano MIDAREGAMI.jpg | PD |
 | kokoro | 心 (1914) | 夏目漱石 (cover by the author) | 專題集合「東方經典」 | Commons: Natsume Sôseki Umschlag "Kokoro".jpg, the case | PD |
 | panghuang | 彷徨 (1926) | 魯迅 (1881–1936); cover 陶元慶 (1893–1929) | 專題集合「東方經典」 | Commons: Panghuang bookcover.jpg | PD |
+| kuwana-shinju | 桑名心中 (1915) | 長田幹彦 (1887–1964); cover 竹久夢二 (1884–1934) | 色帶書架 | Commons: Cover art to "Kuwana Shinjū" by Takehisa Yumeji.jpg | PD |
+| nihon-otogibanashi | 日本お伽噺集 (アルス 日本児童文庫 10, 1927) | 巖谷小波 (1870–1933); cover 小村雪岱 (1887–1940) per Commons, uncredited in the book | 色帶書架 | Commons: Iwaya(1927)-p0000-cover.jpg | PD |
+| tako | 凧 竹久夢二童謡集 (研究社, 1926) | 竹久夢二 (1884–1934); cover uncredited, taken as the author's own; a library label kept in the top corner, since a tighter crop cuts 凧 | 色帶書架 | Commons: NDL1169285 凧 - 竹久夢二童謡集 part1.pdf, p. 1, the left part | PD |
+| menghu-ji | 猛虎集 (1931; the scan is the 1932 second printing) | 徐志摩 (1897–1931); cover 聞一多 (1899–1946) | 色帶書架 | Commons: 猛虎集 (1932再版).pdf, p. 1 | PD |
+| princess-and-goblin | The Princess and the Goblin (McKay, 1920) | George MacDonald (1824–1905); cover Jessie Willcox Smith (1863–1935) | 大型封面書架 | Commons: Cover to The Princess and the Goblin by George MacDonald, illustrated by Jessie Willcox Smith, 1920.jpg | PD |
+| bluebeard | Bluebeard (Walter Crane's Toy Books, new series, Routledge, c. 1873–75) | Walter Crane (1845–1915) | 大型封面書架 | Commons: Bluebeard cover.jpg | PD |
+| vasilisa | Василиса Прекрасная (Bilibin's Сказки, c. 1899–1902) | Иван Билибин (1876–1942) | 大型封面書架 | Commons: Vasilisa the Beautiful (Bilibin) - cover.jpg | PD |
+| peter-pan-kensington | Peter Pan in Kensington Gardens (1906; the scan is a later edition) | J. M. Barrie (1860–1937); Arthur Rackham (1867–1939) | 大型封面書架 | Commons: 068 1906 Cover of Peter Pan in Kensington Gardens (later edition).jpg | PD |
+| nick-carter-stories | Nick Carter Stories No. 120, "An Uncanny Revenge" (Street & Smith, 26 December 1914) | "Nicholas Carter" (house name); cover unsigned | 一大四小 | Commons: Nick Carter Stories -120 (1914-12-26) … (IA nick-carter-stories-120-1914-12-26).pdf, p. 1 | PD |
+| work-and-win | Work and Win No. 7, "Fred Fearnot as Actor" (Frank Tousey, 20 January 1899) | "Hal Standish" (Harvey K. Shackleford, 1861–1906); cover unsigned | 一大四小 | Commons: Work And Win -07 (1899-01-20) (IA work-and-win-07-1899-01-20).pdf, p. 1 | PD |
+| pluck-and-luck | Pluck and Luck No. 282, "Jack Wright and His Electric Sea Ghost" (Frank Tousey, 28 October 1903) | "Noname" (Luis Senarens, 1863–1939); cover unsigned | 一大四小 | Commons: Pluck And Luck -282 (1903-10-28) (IA pluck-and-luck-n-282-1903-10-28).pdf, p. 1 | PD |
+| tip-top-weekly | Tip Top Weekly No. 243, "Frank Merriwell's 'Brassie' Shot" (Street & Smith, 1900) | Burt L. Standish (Gilbert Patten, 1866–1945); cover unsigned | 一大四小 | Commons: Frank Merriwell's Brassie Shot, or, Inza's Difficult Hazard - DPLA - 3b000d4683ad033d1daaa451fa3b43cb (page 1).jpg | PD |
+| my-queen | My Queen No. 8, "Marion Marlowe's Cleverness" (Street & Smith, 1900) | "Grace Shirley" (pseudonym); cover unsigned | 一大四小 | Commons: Marion Marlowe's cleverness, or, Exposing a bold fraud.pdf, p. 1 | PD |
+| varney-the-vampire | Varney the Vampire; or, the Feast of Blood, No. 1 (E. Lloyd, 1845–47) | attributed to James Malcolm Rymer (1814–1884) or Thomas Peckett Prest; wrapper anonymous (Commons: a faithful reprint, its year unknown) | 一大四小 | Commons: Varney the Vampire or the Feast of Blood.jpg | PD |
+| songs-of-innocence | Songs of Innocence (title plate 1789; impression c. 1825) | William Blake (1757–1827), author and printer | 分類卡片「詩歌」 | Commons: Songs of Innocence- Title Page MET DP816576.jpg (the Met 17.10.3) | CC0 |
+| goblin-market | Goblin Market and Other Poems (Macmillan, 1862), title page | Christina Rossetti (1830–1894); design D. G. Rossetti (1828–1882), cut by W. J. Linton (1812–1897) | 分類卡片「詩歌」 | Commons: Goblin Market and Other Poems - Rossetti (1862) - title page.png | PD |
+| leaves-of-grass | Leaves of Grass (1855) | Walt Whitman (1819–1892); binding unsigned | 分類卡片「詩歌」 | Commons: Leaves of Grass (1855) cover.jpg | PD |
+| kunstformen-der-natur | Kunstformen der Natur (1904) | Ernst Haeckel (1834–1919), credited with the cover by Commons | 分類卡片「博物誌」 | Commons: Kunstformen der Natur cover.jpg | PD |
+| british-algae | Photographs of British Algae: Cyanotype Impressions (1843), title page | Anna Atkins (1799–1871) | 分類卡片「博物誌」 | Commons: Title page (NYPL b11861683-419632).jpg | PD |
+| psittacidae | Illustrations of the Family of Psittacidae, or Parrots, Part 1 (1832), folio wrapper | Edward Lear (1812–1888) | 分類卡片「博物誌」 | Commons: Edward Lear - Illustrations of the Family of Psittacidae, Or Parrots, Part 1, Folio Wrapper,Title Page - B1997.7.366 - Yale Center for British Art.jpg | CC0 |
+| study-in-scarlet | A Study in Scarlet, in Beeton's Christmas Annual (1887) | Arthur Conan Doyle (1859–1930); cover artist unknown | 拼貼卡片「推理」 | Commons: "A Study in Scarlet" in Beeton’s Christmas Annual (1887).jpg | PD |
+| arsene-lupin | Arsène Lupin, gentleman-cambrioleur (Pierre Lafitte, 1907) | Maurice Leblanc (1864–1941); cover Henri Goussé (1872–1914, ISABART) | 拼貼卡片「推理」 | Commons: Arsene Lupin 1907 French edition.jpg | PD |
+| fantomas | Fantômas (Fayard, 1911) | Pierre Souvestre (1874–1914), Marcel Allain (1885–1969); cover anonymous on Commons, usually given to Gino Starace (1859–1950) | 拼貼卡片「推理」 | Commons: Fantomas 1911.jpg | PD |
+| call-of-the-wild | The Call of the Wild (Macmillan, 1903) | Jack London (1876–1916); cover decorated by Charles Edward Hooper (1867–1920, Wikidata Q135101543) | 拼貼卡片「冒險」 | Commons: London - The Call of the Wild, 1903.djvu, p. 1 | PD |
+| jungle-book | The Jungle Book (Macmillan, 1894) | Rudyard Kipling (1865–1936); cover John Lockwood Kipling (1837–1911) | 拼貼卡片「冒險」 | Commons: JunglebookCover.jpg, the front board | PD |
+| naufrages-du-jonathan | Les Naufragés du « Jonathan » (Hetzel, 1909) | Jules Verne (1828–1905); cartonnage unsigned | 拼貼卡片「冒險」 | Commons: Hetzel-Naufrages-Jonathan-1909.jpg (PD-old-70-1923) | PD |

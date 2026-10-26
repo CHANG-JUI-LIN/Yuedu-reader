@@ -23,6 +23,10 @@ struct AIRecommendationRow: View {
     @State private var showsPaywall = false
     @State private var showsMoreChooser = false
     @State private var moreSequence = DismissalSequencedPresentation<MoreAction>()
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    @Environment(\.colorSchemeContrast) private var contrast
+    /// 色帶書架's colour, its first cover's, once that cover has drawn.
+    @State private var bandCover: CoverTint.RGB?
 
     /// - Parameter service: the shared one; a preview passes its own, with its own store.
     init(section: HomeSection, title: String, actions: HomeSectionActions? = nil, canGenerate: Bool = true,
@@ -63,11 +67,14 @@ struct AIRecommendationRow: View {
             .map { $0.recommended(because: reasons[$0.id]) }
     }
 
-    /// Where the works came from and when (AI 推薦 plan: marked 「AI 產生」).
+    /// The line the reader wrote, then where the works came from and when (AI 推薦 plan: marked
+    /// 「AI 產生」), which the reader's line never replaces.
     private var subtitle: String? {
-        guard allowsAI, let list else { return nil }
-        return String(format: localized("AI 產生 · %@ · %@"), list.service,
-                      list.generatedAt.formatted(date: .abbreviated, time: .omitted))
+        let generated = allowsAI ? list.map {
+            String(format: localized("AI 產生 · %@ · %@"), $0.service, $0.generatedAt.formatted(date: .abbreviated, time: .omitted))
+        } : nil
+        let lines = [section.subtitle.isEmpty ? nil : section.subtitle, generated].compactMap { $0 }
+        return lines.isEmpty ? nil : lines.joined(separator: "\n")
     }
 
     /// The list whose missing covers are filled once the row shows (feedback #10); none in the
@@ -80,14 +87,24 @@ struct AIRecommendationRow: View {
         canGenerate && allowsAI && list != nil && !service.state.isRunning
     }
 
+    /// 色帶書架 draws its band under the header and the list while the list shows alone; a status
+    /// (產生中, a failure) draws the row without it, so its text keeps the page's colours.
+    private var drawsBand: Bool {
+        guard section.layout.drawnStyle(accessibilityTextSize: dynamicTypeSize.isAccessibilitySize) == .band,
+              allowsAI, !cards.isEmpty, case .idle = service.state else { return false }
+        return true
+    }
+
     var body: some View {
-        VStack(alignment: .leading, spacing: DSSpacing.md) {
+        VStack(alignment: .leading, spacing: drawsBand ? DSSpacing.lg : DSSpacing.md) {
             header
             status
             if allowsAI, !cards.isEmpty {
-                HomeSectionCards(layout: section.layout, cards: cards, rowID: rowID, hasShowAll: false, open: open)
+                HomeSectionCards(layout: section.layout, cards: cards, rowID: rowID, hasShowAll: false, open: open,
+                                 bandCover: $bandCover)
             }
         }
+        .modifier(HomeBandGround(cover: bandCover, isActive: drawsBand))
         .sheet(isPresented: $showsPaywall) {
             PaywallView(highlightedFeature: .aiReading)
                 .environmentObject(subscription)
@@ -107,7 +124,9 @@ struct AIRecommendationRow: View {
 
     private var header: some View {
         HStack(spacing: DSSpacing.sm) {
-            HomeRowTitle(title: title, subtitle: subtitle)
+            HomeRowTitle(title: title, subtitle: subtitle, bandLine: drawsBand ? HomeBandGround.line(for: bandCover).color : nil)
+                // The band's white name on the band's colour when its long press lifts it out.
+                .background(drawsBand ? HomeBandGround.ground(for: bandCover, contrast: contrast) : .clear)
                 .accessibilityElement(children: .combine)
                 .accessibilityAddTraits(.isHeader)
                 .accessibilityIdentifier("home.row.header.\(rowID)")
@@ -139,7 +158,7 @@ struct AIRecommendationRow: View {
     private var moreControl: some View {
         let label = Image(systemName: "ellipsis")
             .font(DSFont.body.weight(.semibold))
-            .foregroundStyle(DSColor.textSecondary)
+            .foregroundStyle(drawsBand ? DSColor.textOnFixedFill : DSColor.textSecondary)
             .frame(width: DSLayout.minimumTapTarget, height: DSLayout.minimumTapTarget)
             .contentShape(Rectangle())
             .accessibilityHidden(true)

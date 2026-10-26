@@ -39,13 +39,31 @@ struct HomeSectionLayout: RawRepresentable, Codable, Hashable, Sendable {
     /// 專題集合 (decisions 30 and 37): a card per list, its name over artwork made of its first
     /// covers. A section of lists only; a build before it keeps the value.
     static let collection = Self(rawValue: "collection")
+    /// The layouts after Apple Books' store and home (maintainer, 2026-10-25;
+    /// `Technotes/AppleBooksHomeLayouts-2026-10-25.md`). A build before them draws a row, or
+    /// 專題集合 for a section of lists, and keeps the value.
+    /// 色帶書架: large covers under the header, all on the first cover's colour, as Apple Books
+    /// Japan's manga band.
+    static let band = Self(rawValue: "band")
+    /// 大型封面書架: about two large covers to a phone, as Apple Books' 新刊&話題作.
+    static let largeRow = Self(rawValue: "largeRow")
+    /// 一大四小: one large cover and four small ones beside it, a group at a time, as Apple
+    /// Books' Special Offers.
+    static let heroGrid = Self(rawValue: "heroGrid")
+    /// 橫向單排書架 with its ranks under the covers, as Apple Books' charts.
+    static let rankedRow = Self(rawValue: "rankedRow")
+    /// 分類卡片: a wide card per list, its name beside its covers, as Apple Books' More to Explore.
+    static let categoryCards = Self(rawValue: "categoryCards")
+    /// 拼貼卡片: a card per list, its covers in a collage over its name, as Apple Books' Top Picks.
+    static let collageCards = Self(rawValue: "collageCards")
 
     /// The custom-page layout this is, if it is one.
     var componentKind: CustomExploreComponent.Kind? { .init(rawValue: rawValue) }
 
     var isKnown: Bool {
         componentKind != nil || [.tiles, .row, .readingCard, .compactReadingCard, .multiRow, .coverGrid, .list, .rankedList,
-                                 .featured, .collection].contains(self)
+                                 .featured, .collection, .band, .largeRow, .heroGrid, .rankedRow, .categoryCards,
+                                 .collageCards].contains(self)
     }
 }
 
@@ -219,6 +237,9 @@ struct HomeSection: Codable, Hashable, Identifiable, Sendable {
     var layout: HomeSectionLayout
     /// The title over the section; empty reads the binding's own.
     var title: String
+    /// The line under the title (maintainer, 2026-10-25, after Apple Books' shelves); empty
+    /// reads the binding's own, which most bindings do not have. Since schema 3.
+    var subtitle: String
     var binding: HomeSectionBinding
     /// A hidden section keeps its place and settings (編輯首頁).
     var isEnabled: Bool
@@ -226,18 +247,19 @@ struct HomeSection: Codable, Hashable, Identifiable, Sendable {
     /// Never written into a source's shared variables.
     var parameters: [String: String]
 
-    init(id: UUID = UUID(), layout: HomeSectionLayout, title: String = "", binding: HomeSectionBinding,
-         isEnabled: Bool = true, parameters: [String: String] = [:]) {
+    init(id: UUID = UUID(), layout: HomeSectionLayout, title: String = "", subtitle: String = "",
+         binding: HomeSectionBinding, isEnabled: Bool = true, parameters: [String: String] = [:]) {
         self.id = id
         self.layout = layout
         self.title = title
+        self.subtitle = subtitle
         self.binding = binding
         self.isEnabled = isEnabled
         self.parameters = parameters
     }
 
     private enum CodingKeys: String, CodingKey {
-        case id, layout, title, binding, isEnabled, parameters
+        case id, layout, title, subtitle, binding, isEnabled, parameters
     }
 
     init(from decoder: Decoder) throws {
@@ -245,18 +267,32 @@ struct HomeSection: Codable, Hashable, Identifiable, Sendable {
         id = try container.decode(UUID.self, forKey: .id)
         layout = try container.decode(HomeSectionLayout.self, forKey: .layout)
         title = try container.decodeIfPresent(String.self, forKey: .title) ?? ""
+        subtitle = try container.decodeIfPresent(String.self, forKey: .subtitle) ?? ""
         binding = try container.decode(HomeSectionBinding.self, forKey: .binding)
         isEnabled = try container.decodeIfPresent(Bool.self, forKey: .isEnabled) ?? true
         parameters = try container.decodeIfPresent([String: String].self, forKey: .parameters) ?? [:]
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(id, forKey: .id)
+        try container.encode(layout, forKey: .layout)
+        try container.encode(title, forKey: .title)
+        // Only one the reader wrote: a section without one is written as before schema 3.
+        if !subtitle.isEmpty { try container.encode(subtitle, forKey: .subtitle) }
+        try container.encode(binding, forKey: .binding)
+        try container.encode(isEnabled, forKey: .isEnabled)
+        try container.encode(parameters, forKey: .parameters)
     }
 }
 
 /// One 首頁配置's sections, in the reader's order. Before 5d-4 this was the whole file; the
 /// file is `HomeConfigurations` now, which keeps 預設's sections under the same key.
 struct HomePage: Codable, Hashable, Sendable {
-    /// `explore_home.json`'s version: 2 since 5d-4's 首頁配置. A build before them reads a file
-    /// of 2 as a newer build's: 預設's sections, without writing.
-    static let currentSchemaVersion = 2
+    /// `explore_home.json`'s version: 2 since 5d-4's 首頁配置, 3 since a section's `subtitle`
+    /// (maintainer, 2026-10-25, knowing a build before it then shows the home without writing).
+    /// A build before them reads a newer file as a newer build's: 預設's sections, without writing.
+    static let currentSchemaVersion = 3
 
     var schemaVersion: Int
     var sections: [HomeSection]
@@ -303,16 +339,18 @@ enum HomePageDefaults {
         // home gets it once (`HomePageStore`).
         let forYou = HomeSection(id: makeID(), layout: .row, binding: .forYou)
         let latest = HomeSection(id: makeID(), layout: .row, binding: .latest)
-        // 古騰堡熱門, Gutenberg's download ranking, before 精選 (decisions 16 and 24). A new
-        // install's 預設 only: a saved 預設 is the reader's and is not changed.
+        // 古騰堡熱門, Gutenberg's download ranking, before 精選 (decisions 16 and 24), ranked
+        // since 2026-10-25 (`officialModuleLists` says why). A new install's 預設 only: a saved
+        // 預設 is the reader's and is not changed.
         let popular = publicLibrariesAvailable
-            ? [HomeSection(id: makeID(), layout: .row, binding: .gutenbergShelf(id: "popular"))]
+            ? [HomeSection(id: makeID(), layout: .rankedRow, binding: .gutenbergShelf(id: "popular"))]
             : []
-        // 精選書單: the bundled lists, a card each (專題集合, decision 37), in place of a row per
-        // list (plan decision 11) since 2026-10-13. A new install's 預設 only: a saved home keeps
-        // its rows.
+        // 精選書單: the bundled lists, a card each, in place of a row per list (plan decision 11)
+        // since 2026-10-13; 分類卡片 since 2026-10-25, as Apple Books' More to Explore lays out
+        // its classics, in place of 專題集合 (decision 37). A new install's 預設 only: a saved
+        // home keeps its layout.
         let featured = publicLibrariesAvailable
-            ? [HomeSection(id: makeID(), layout: .collection, binding: .gutenbergLists)]
+            ? [HomeSection(id: makeID(), layout: .categoryCards, binding: .gutenbergLists)]
             : []
         // The official modules' lists in the reader's languages (maintainer, 2026-10-21: the
         // defaults made no use of them). A new install's 預設 only, as 古騰堡熱門: a saved
@@ -335,32 +373,41 @@ enum HomePageDefaults {
         let layout: HomeSectionLayout
     }
 
-    /// The official modules' lists for each language, in the languages' order, each list once:
-    /// a ranking as 圖文資訊清單 with its ranks (なろう's has no covers), a list that is not a
-    /// ranking as a row of covers. Chinese reads Bangumi, whose titles are Chinese; Japanese
-    /// なろう, hidden where the public libraries are (`OfficialRuleModules.isAvailable`);
-    /// English AniList. No other language has a list in its own language yet.
+    /// The official modules' lists for each language, in the languages' order, each list once.
+    /// Chinese reads Bangumi, whose titles are Chinese; Japanese なろう, hidden where the public
+    /// libraries are (`OfficialRuleModules.isAvailable`); English AniList. No other language has
+    /// a list in its own language yet.
+    ///
+    /// The maintainer, 2026-10-25, after Apple Books' home (`Technotes/AppleBooksHomeLayouts-2026-10-25.md`):
+    /// each list in a rhythm of its own, and one band on the page. The first list with real
+    /// covers is 色帶書架; a ranking with covers is a ranked row, AniList's trending manga 一大四小
+    /// and its trending novels, not a ranking, a row. なろう's ranking has no covers, so it stays
+    /// 圖文資訊清單 with its ranks, and never takes the band.
     static func officialModuleLists(languages: [String], publicLibrariesAvailable: Bool) -> [ModuleList] {
-        var lists: [ModuleList] = []
+        var lists: [(list: ModuleList, hasCovers: Bool)] = []
         for language in languages {
-            let wanted: [ModuleList]
+            let wanted: [(list: ModuleList, hasCovers: Bool)]
             switch ReadingLanguage.base(of: language) {
             case "zh":
-                wanted = [ModuleList(moduleID: "bangumi", entryID: "novel-rank", layout: .rankedList),
-                          ModuleList(moduleID: "bangumi", entryID: "manga-rank", layout: .rankedList)]
+                wanted = [(ModuleList(moduleID: "bangumi", entryID: "novel-rank", layout: .rankedRow), true),
+                          (ModuleList(moduleID: "bangumi", entryID: "manga-rank", layout: .rankedRow), true)]
             case "ja":
                 wanted = OfficialRuleModules.isAvailable("narou", librariesAvailable: publicLibrariesAvailable)
-                    ? [ModuleList(moduleID: "narou", entryID: "weekly", layout: .rankedList)]
+                    ? [(ModuleList(moduleID: "narou", entryID: "weekly", layout: .rankedList), false)]
                     : []
             case "en":
-                wanted = [ModuleList(moduleID: "anilist", entryID: "trending-novels", layout: .row),
-                          ModuleList(moduleID: "anilist", entryID: "trending-manga", layout: .row)]
+                wanted = [(ModuleList(moduleID: "anilist", entryID: "trending-novels", layout: .row), true),
+                          (ModuleList(moduleID: "anilist", entryID: "trending-manga", layout: .heroGrid), true)]
             default:
                 wanted = []
             }
-            for list in wanted where !lists.contains(list) { lists.append(list) }
+            for item in wanted where !lists.contains(where: { $0.list == item.list }) { lists.append(item) }
         }
-        return lists
+        var chosen = lists.map(\.list)
+        if let first = lists.firstIndex(where: \.hasCovers) {
+            chosen[first] = ModuleList(moduleID: chosen[first].moduleID, entryID: chosen[first].entryID, layout: .band)
+        }
+        return chosen
     }
 }
 

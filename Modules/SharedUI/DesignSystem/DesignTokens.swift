@@ -294,6 +294,12 @@ enum DSFont {
     static var serifSectionTitle: Font {
         GlobalAppTypography.font(.title2, weight: .bold, systemDesign: .serif)
     }
+    /// 分類卡片's list name, as Apple Books' More to Explore sets its categories: Title 3 in
+    /// semibold, in the system serif. Chinese and Japanese draw in the system's own face, as
+    /// Apple Books' do.
+    static var serifCardTitle: Font {
+        GlobalAppTypography.font(.title3, weight: .semibold, systemDesign: .serif)
+    }
     /// 新手導覽's app name on its welcome page: Large Title in bold, in the system serif.
     static var onboardingAppName: Font {
         GlobalAppTypography.font(.largeTitle, weight: .bold, systemDesign: .serif)
@@ -492,6 +498,29 @@ enum DSLayout {
     /// 圖文資訊清單's rank badge at the default text size (scaled with Dynamic Type); two-digit
     /// ranks widen it.
     static let homeRankBadgeSize: CGFloat = 24
+    /// The layouts after Apple Books' store and home (maintainer, 2026-10-25;
+    /// `Technotes/AppleBooksHomeLayouts-2026-10-25.md`), all 2:3.
+    /// 色帶書架's covers, alone on the band: about two and a half to a 402pt phone. Not scaled:
+    /// no text goes with them.
+    static let homeBandCoverWidth: CGFloat = 150
+    /// 大型封面書架's covers, with their titles under them: two to a 402pt phone, the third
+    /// peeking past the edge. Scaled with Dynamic Type, at most `homeCardCoverMaxWidth`.
+    static let homeLargeCoverWidth: CGFloat = 170
+    /// 一大四小's large cover. Its four small ones stand in two rows as tall as it, so a group
+    /// is about 330pt wide and the next one peeks past a 402pt phone's edge. Not scaled.
+    static let homeHeroCoverWidth: CGFloat = 160
+    /// 分類卡片: a card's height at the default text size (it grows with its name), and its
+    /// covers fanned at the trailing edge: each this wide, this far past the one before,
+    /// turned this much, and run off the card's bottom by this share of a cover's height.
+    static let homeCategoryCardHeight: CGFloat = 104
+    static let homeCategoryCoverWidth: CGFloat = 64
+    static let homeCategoryCoverStep: CGFloat = 34
+    static let homeCategoryCoverRotation: Double = 6
+    static let homeCategoryCoverOverhang: CGFloat = 0.22
+    /// 拼貼卡片's width, scaled with Dynamic Type up to the most that fits a phone; its
+    /// collage is one large cover and two small ones as tall as it.
+    static let homeCollageCardWidth: CGFloat = 240
+    static let homeCollageCardMaxWidth: CGFloat = 340
     /// Site icon in a bookmark or history row.
     static let browserRowIconSide: CGFloat = 28
     /// A site on the browser's start page — Safari's Favorites: the icon, and the
