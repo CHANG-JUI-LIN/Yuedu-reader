@@ -312,10 +312,13 @@ struct LibraryTabRoot: View {
 
     /// 所有來源配置, then a card for each group (decision 31): never every source on the root.
     ///
-    /// Eager, as 模組 above it: lazy, the grid's second row stayed out of the accessibility tree
-    /// on the iOS 27 simulator once 模組 was one eager section (2026-10-26,
-    /// `testSourcesByGroup`), so VoiceOver never reached the groups after the first. The root
-    /// shows one card per group, a few dozen at most.
+    /// Eager, as 模組 and 訂閱 are: lazy, the grid's rows after the first stayed out of the
+    /// accessibility tree on the iOS 27.0 simulator (iPhone 18 Pro Max), so VoiceOver never
+    /// reached 男频 although it was drawn on screen, and a hit test there landed on a nameless
+    /// node (2026-10-26, `testSourcesByGroup`). It did so before 模組 moved to the top: the
+    /// order did not cause it. Measured on that simulator, eager lays 50 groups out in 63 ms
+    /// against lazy's 24, and 200 in 231 against 26; a later change to the page re-lays 200 in
+    /// 5 ms. Delete `isLazy: false` once `testSourcesByGroup` passes without it.
     private var sourcesSection: some View {
         LibrarySection(localized("來源配置"), isLazy: false) {
             NavigationLink(value: ExploreNavigationRoute.sourceManager) {
