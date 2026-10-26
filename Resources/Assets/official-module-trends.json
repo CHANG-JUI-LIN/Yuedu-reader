@@ -62,7 +62,8 @@
         "intro": "$.intro",
         "url": "$.url",
         "aliases": "$.aliases",
-        "series": "$.series"
+        "series": "$.series",
+        "seriesCovers": "$.seriesCovers"
       }
     },
     {
@@ -110,7 +111,8 @@
         "intro": "$.intro",
         "url": "$.url",
         "aliases": "$.aliases",
-        "series": "$.series"
+        "series": "$.series",
+        "seriesCovers": "$.seriesCovers"
       }
     },
     {
@@ -158,7 +160,8 @@
         "intro": "$.intro",
         "url": "$.url",
         "aliases": "$.aliases",
-        "series": "$.series"
+        "series": "$.series",
+        "seriesCovers": "$.seriesCovers"
       }
     },
     {
@@ -206,7 +209,8 @@
         "intro": "$.intro",
         "url": "$.url",
         "aliases": "$.aliases",
-        "series": "$.series"
+        "series": "$.series",
+        "seriesCovers": "$.seriesCovers"
       }
     },
     {
@@ -254,7 +258,8 @@
         "intro": "$.intro",
         "url": "$.url",
         "aliases": "$.aliases",
-        "series": "$.series"
+        "series": "$.series",
+        "seriesCovers": "$.seriesCovers"
       }
     }
   ],

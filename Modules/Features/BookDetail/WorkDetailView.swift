@@ -265,8 +265,13 @@ struct WorkDetailView: View {
         BookDetailScaffold(title: title, compactAction: primaryAction) {
             BookDetailHero(artworkShape: route.record.contentKind == .audio ? .square : .book,
                            cover: cover, title: title, author: author,
-                           meta: "", primary: primaryAction, secondary: secondaryAction,
-                           authorActions: authorLinks, links: heroLinks)
+                           // The series a list's item stands for (趨勢's), as its card names it: the
+                           // fan behind the cover is silent to VoiceOver. The series link replaces it.
+                           meta: route.summary.series.map { display?.text($0) ?? $0 } ?? "",
+                           primary: primaryAction, secondary: secondaryAction,
+                           authorActions: authorLinks, links: heroLinks,
+                           seriesFan: series.flatMap { SeriesFan($0, store: store) }
+                               ?? SeriesFan(route.summary, session: HomeCardContent.session(for: route.opening, connections: .shared)))
         } content: {
             VStack(alignment: .leading, spacing: DSSpacing.xl) {
                 status

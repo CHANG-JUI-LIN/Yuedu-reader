@@ -615,6 +615,13 @@ enum DSLayout {
     static let bookDetailCoverHeight: CGFloat = 192
     static let bookDetailCoverShadowRadius: CGFloat = 12
     static let bookDetailCoverShadowOffsetY: CGFloat = 6
+    /// 作品詳情's series fan (Apple Books' series header): the volumes behind the hero's cover,
+    /// by how far back they stand, each smaller (a fraction of the cover), further out (its
+    /// centre from the cover's, in cover widths) and tilted further (degrees, from its foot).
+    /// Two a side, the outermost about 155pt from the centre: inside a 320pt-wide screen.
+    static let bookDetailSeriesFanScales: [CGFloat] = [0.84, 0.7]
+    static let bookDetailSeriesFanOffsets: [CGFloat] = [0.4, 0.72]
+    static let bookDetailSeriesFanAngles: [Double] = [4, 8]
     /// The cover's hue washed behind a detail page's hero (`CoverTint.Wash`): faint, and
     /// fading from a third of the hero's height so it melts into the page instead of ending
     /// as a band. A cover less saturated than the minimum gets no wash; the maximum keeps a

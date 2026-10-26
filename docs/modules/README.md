@@ -148,6 +148,7 @@ App 先找語言完全相同的選項，再找同一語言其他文字或地區�
 | `publisher` |  | 出版社。3.0。 |
 | `isbn` |  | ISBN-10 或 -13；檢查碼不對的會被丟掉。可以讀到好幾個值（一個版本的 ISBN-10 和 -13），`lookup` 時任一個跟書架那本相同就算；搜尋結果最多留 5 個。3.0。 |
 | `series` |  | 系列。3.0。 |
+| `seriesCovers` |  | 同系列其他冊的封面網址（可多個值），照系列順序排在這一筆後面：這一筆代表整個系列（趨勢用系列第一冊）。作品詳情把它們扇形疊在封面後面，最多 4 張。只從 `hosts` 載入，沒有 `series` 時不用。3.0。 |
 | `contentKind` |  | 讀到 `comic` 時這本是漫畫，其他值照清單的 `contentKind`。3.0。 |
 
 規則裡的 `{{…}}` 只能放一條規則（例如 `https://ncode.syosetu.com/{{$.ncode}}/`），由規則引擎就地讀出；
@@ -279,7 +280,7 @@ App 先找語言完全相同的選項，再找同一語言其他文字或地區�
 否則舊 App 會匯入後讀錯（例如把 JSON 內容百分號編碼送出）：
 
 `attribution`、`localizations`、`lookup`、`reading`、`contentKind`、`excludeTags`、`isbnPrefixes`、`detail`、
-`minKeywordLength`、`hosts` 裡的 `*.` 項目、`bodyEncoding`、`page`／`offset` 參數的 `value`、`followsLanguage`、選項的 `language`，以及 `list` 的 `aliases`、`tags`、`publisher`、`isbn`、`series`、`contentKind`。
+`minKeywordLength`、`hosts` 裡的 `*.` 項目、`bodyEncoding`、`page`／`offset` 參數的 `value`、`followsLanguage`、選項的 `language`，以及 `list` 的 `aliases`、`tags`、`publisher`、`isbn`、`series`、`seriesCovers`、`contentKind`。
 
 ---
 

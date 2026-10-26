@@ -224,15 +224,19 @@ final class ModuleProvider: CollectionBrowsing, HomeSectionProviding {
                                   language: language, contentKind: kind, identifiers: identifiers, copyID: nil,
                                   acquisitions: [.viewOnly])
         // A cover is a request too: only from the module's hosts.
-        let cover: CoverReference = safeURL(string: item.coverUrl)
-            .flatMap { url in url.host.map { hosts.allowsRequest(to: $0) } == true ? url : nil }
-            .map { .remote($0, headers: [:]) } ?? .generated(seed: title)
+        func allowedCover(_ address: String) -> CoverReference? {
+            safeURL(string: address)
+                .flatMap { url in url.host.map { hosts.allowsRequest(to: $0) } == true ? url : nil }
+                .map { .remote($0, headers: [:]) }
+        }
+        let cover = allowedCover(item.coverUrl) ?? .generated(seed: title)
         let summary = WorkSummary(title: title, authors: authors, cover: cover,
                                   blurb: OPDSClient.plainMetadata(item.intro, limit: WorkSummary.blurbLimit),
                                   language: language, contentKind: kind,
                                   category: WorkSummary.category(fromSourceKind: OPDSClient.plainMetadata(item.kind, limit: 200))
                                     ?? entry.tags(of: item).first,
-                                  series: OPDSClient.plainMetadata(item.series ?? "", limit: WorkSummary.seriesLimit))
+                                  series: OPDSClient.plainMetadata(item.series ?? "", limit: WorkSummary.seriesLimit),
+                                  seriesCovers: Array((item.seriesCovers ?? []).lazy.compactMap(allowedCover).prefix(WorkSummary.seriesCoverLimit)))
         // A book the module reads has a page of its own: the item's url.
         guard isReadable, hasURLRule, !item.bookUrl.isEmpty else { return .item(record, summary, .bibliographic) }
         var readable = record

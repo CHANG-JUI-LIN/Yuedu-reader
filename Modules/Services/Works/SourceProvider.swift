@@ -159,6 +159,9 @@ struct WorkSummary: Hashable, Sendable {
     /// The series the item stands for: 趨勢 lists a series once, under its first book
     /// (maintainer, 2026-10-22), and names it under the author.
     var series: String?
+    /// The covers of `series`' other volumes, in series order after this one, which stands for
+    /// the series: 作品詳情 fans them behind its cover. Only with a series.
+    var seriesCovers: [CoverReference]
 
     static let titleLimit = 500
     static let authorLimit = 20
@@ -166,11 +169,13 @@ struct WorkSummary: Hashable, Sendable {
     static let blurbLimit = 300
     static let categoryLimit = 40
     static let seriesLimit = 100
+    /// 作品詳情's fan shows two volumes a side.
+    static let seriesCoverLimit = 4
 
     /// `blurb` and `category` must already be plain text; `OPDSClient.plainMetadata` turns HTML
     /// into it.
     init(title: String, authors: [String], cover: CoverReference?, blurb: String?, language: String?, contentKind: ContentKind,
-         category: String? = nil, series: String? = nil) {
+         category: String? = nil, series: String? = nil, seriesCovers: [CoverReference] = []) {
         self.title = String(title.prefix(Self.titleLimit))
         self.authors = authors.prefix(Self.authorLimit).map { String($0.prefix(Self.authorLengthLimit)) }
         self.cover = cover
@@ -181,6 +186,7 @@ struct WorkSummary: Hashable, Sendable {
             .flatMap { $0.isEmpty ? nil : $0 }
         self.series = series.map { String($0.trimmingCharacters(in: .whitespacesAndNewlines).prefix(Self.seriesLimit)) }
             .flatMap { $0.isEmpty ? nil : $0 }
+        self.seriesCovers = self.series == nil ? [] : Array(seriesCovers.prefix(Self.seriesCoverLimit))
     }
 
     /// What a book source's `kind` separates its tags with.

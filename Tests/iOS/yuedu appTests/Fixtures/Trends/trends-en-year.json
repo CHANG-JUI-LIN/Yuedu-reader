@@ -14,6 +14,11 @@
       "aliases": [],
       "wikidata": "Q1514034",
       "series": "Mistborn",
+      "seriesCovers": [
+        "https://upload.wikimedia.org/wikipedia/en/thumb/2/2a/The_Well_of_Ascension.jpg/500px-The_Well_of_Ascension.jpg",
+        "https://images.example.com/hero-of-ages.jpg",
+        "https://thumb.wikimedia.org/wikipedia/en/thumb/d/d4/Hero_of_Ages.jpg/500px-Hero_of_Ages.jpg"
+      ],
       "cover": "https://upload.wikimedia.org/wikipedia/en/thumb/4/44/Mistborn-cover.jpg/500px-Mistborn-cover.jpg"
     },
     {

@@ -669,6 +669,12 @@ struct OfficialModuleFilesTests {
         #expect(covers == ["https://upload.wikimedia.org/wikipedia/en/thumb/4/44/Mistborn-cover.jpg/500px-Mistborn-cover.jpg",
                            "https://thumb.wikimedia.org/wikipedia/en/thumb/a/a1/Good_Omens_cover.jpg/500px-Good_Omens_cover.jpg"])
         #expect(module.hosts.contains("lain.bgm.tv"), "華語 and 日本 take a matched work's cover from Bangumi")
+        // A folded series' other books, for 作品詳情's fan: only from the module's hosts.
+        #expect(found[0].summary.seriesCovers.map { cover -> String? in
+            if case .remote(let url, _) = cover { url.absoluteString } else { nil }
+        } == ["https://upload.wikimedia.org/wikipedia/en/thumb/2/2a/The_Well_of_Ascension.jpg/500px-The_Well_of_Ascension.jpg",
+              "https://thumb.wikimedia.org/wikipedia/en/thumb/d/d4/Hero_of_Ages.jpg/500px-Hero_of_Ages.jpg"])
+        #expect(found[1].summary.seriesCovers.isEmpty)
 
         let entry = try #require(module.modules.first { $0.id == "year" })
         let listed = try await f.client.page(of: entry, in: module, values: ["region": "en"]).items

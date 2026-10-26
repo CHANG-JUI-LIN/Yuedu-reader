@@ -19,6 +19,7 @@ struct RuleListFields: Sendable {
     var publisher: String = ""
     var isbn: String = ""
     var series: String = ""
+    var seriesCovers: String = ""
     var contentKind: String = ""
 }
 
@@ -41,6 +42,7 @@ struct RuleListItem: Codable, Equatable, Sendable {
     var publisher: String? = nil
     var isbn: String? = nil
     var series: String? = nil
+    var seriesCovers: [String]? = nil
     var contentKind: String? = nil
 }
 
@@ -102,6 +104,7 @@ enum RuleListMapping {
                 publisher: value(engine, fields.publisher),
                 isbn: value(engine, fields.isbn),
                 series: value(engine, fields.series),
+                seriesCovers: values(engine, fields.seriesCovers),
                 contentKind: value(engine, fields.contentKind)
             ))
         }

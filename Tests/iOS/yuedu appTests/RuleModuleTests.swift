@@ -249,6 +249,12 @@ struct RuleModuleValidatorTests {
         }) == .needsRequiredVersion(field: "modules[0].list.aliases", minimum: "3.0"))
         #expect(rejection(example { $0["attribution"] = ["text": "x"] })
                 == .needsRequiredVersion(field: "attribution", minimum: "3.0"))
+        #expect(rejection(example {
+            $0["requiredVersion"] = nil
+            editList(&$0, "seriesCovers", ".volume img@src")
+        }) == .needsRequiredVersion(field: "modules[0].list.seriesCovers", minimum: "3.0"))
+        #expect(rejection(v3 { editList(&$0, "seriesCovers", ".volume img@src") }) == nil)
+        #expect(rejection(v3 { editList(&$0, "seriesCovers", "@js:'1'") }) == .javaScript(field: "modules[0].list.seriesCovers"))
 
         #expect(rejection(v3 { editRequest(&$0, "bodyEncoding", "xml") })
                 == .unknownValue(field: "modules[0].request.bodyEncoding", value: "xml"))

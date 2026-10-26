@@ -219,7 +219,7 @@ enum RuleModuleValidator {
         ]
         let format3Rules: [(String, String?)] = [
             ("aliases", list.aliases), ("tags", list.tags), ("publisher", list.publisher), ("isbn", list.isbn),
-            ("series", list.series), ("contentKind", list.contentKind),
+            ("series", list.series), ("seriesCovers", list.seriesCovers), ("contentKind", list.contentKind),
         ]
         for case let (name, rule?) in rules + format3Rules {
             // A list rule fills no parameters. Its `{{…}}` may only hold a rule, which the engine

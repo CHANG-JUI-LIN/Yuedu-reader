@@ -277,6 +277,10 @@ struct RuleModule: Codable, Hashable, Sendable {
         /// An ISBN-10 or -13; one that fails its check digit is dropped (format 3.0).
         var isbn: String? = nil
         var series: String? = nil
+        /// The covers of the series' other volumes, several values, in series order after the
+        /// item, which stands for the series (趨勢 lists a series under its first book). 作品詳情
+        /// fans them behind the item's cover; only from `hosts`, as `cover` is (format 3.0).
+        var seriesCovers: String? = nil
         /// `comic` makes the item a comic; any other value leaves the entry's kind (format 3.0).
         var contentKind: String? = nil
     }
@@ -339,7 +343,7 @@ extension RuleModule.ListRules {
         RuleListFields(name: title, author: author ?? "", bookUrl: url ?? "", coverUrl: cover ?? "",
                        intro: intro ?? "", wordCount: "", lastChapter: "", kind: kind ?? "", language: language ?? "",
                        aliases: aliases ?? "", tags: tags ?? "", publisher: publisher ?? "", isbn: isbn ?? "",
-                       series: series ?? "", contentKind: contentKind ?? "")
+                       series: series ?? "", seriesCovers: seriesCovers ?? "", contentKind: contentKind ?? "")
     }
 }
 

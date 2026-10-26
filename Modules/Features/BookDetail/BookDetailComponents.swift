@@ -396,6 +396,9 @@ struct BookDetailHero<Cover: View>: View {
     /// Genres under the title that lead somewhere; replaces `meta` when present. A source
     /// that listens for label taps (`sourceGestures`) keeps them instead.
     var links: [BookDetailLink] = []
+    /// The series' other volumes, fanned behind the cover (`SeriesCoverFan`); nil for a book
+    /// alone. Drawn behind the artwork's frame, so the hero's size never changes with it.
+    var seriesFan: SeriesFan? = nil
 
     @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
     @Environment(\.colorSchemeContrast) private var contrast
@@ -476,6 +479,9 @@ struct BookDetailHero<Cover: View>: View {
                 radius: DSLayout.bookDetailCoverShadowRadius,
                 y: DSLayout.bookDetailCoverShadowOffsetY
             )
+            .background(alignment: .bottom) {
+                if let seriesFan { SeriesCoverFan(fan: seriesFan, size: artworkSize) }
+            }
             // The title below names the book; the artwork would only repeat it.
             .accessibilityHidden(true)
     }
