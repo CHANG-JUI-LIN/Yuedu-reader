@@ -95,6 +95,7 @@ struct RSSListView: View {
                 }
                 .softScrollEdges()
                 .scrollIndicators(.visible)
+                .modifier(RSSHomeSwipeActionsContainer())
             }
             .navigationTitle(localized("RSS 訂閱"))
             .toolbarTitleDisplayMode(.inline)
@@ -419,19 +420,25 @@ struct RSSListView: View {
             }
         }
         .swipeActions(edge: .trailing, allowsFullSwipe: false) {
-            Button(role: .destructive) {
-                deleteTarget = .folder(folder)
-            } label: {
-                Label(localized("刪除"), systemImage: "trash")
-            }
-
-            Button {
-                folderToRename = folder
-            } label: {
-                Label(localized("重新命名"), systemImage: "pencil")
-            }
-            .tint(.orange)
+            folderSwipeActions(folder)
         }
+        .accessibilityActions {
+            if !RSSHomeRowSwipe.opens {
+                folderSwipeActions(folder)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func folderSwipeActions(_ folder: RSSFolder) -> some View {
+        RSSHomeRowAction(title: localized("刪除"), systemImage: "trash", role: .destructive) {
+            deleteTarget = .folder(folder)
+        }
+
+        RSSHomeRowAction(title: localized("重新命名"), systemImage: "pencil") {
+            folderToRename = folder
+        }
+        .tint(.orange)
     }
 
     private func sourceRow(_ source: RSSSource, indent: CGFloat) -> some View {
@@ -495,29 +502,39 @@ struct RSSListView: View {
             }
         }
         .swipeActions(edge: .leading, allowsFullSwipe: false) {
-            if store.unreadCount(for: source.id) > 0 {
-                Button {
-                    store.markAllRead(sourceID: source.id)
-                } label: {
-                    Label(localized("標記全部已讀"), systemImage: "checkmark.circle")
-                }
-                .tint(DSColor.swipeAction)
-            }
+            sourceLeadingSwipeActions(source)
         }
         .swipeActions(edge: .trailing, allowsFullSwipe: false) {
-            Button(role: .destructive) {
-                deleteTarget = .source(source)
-            } label: {
-                Label(localized("刪除"), systemImage: "trash")
-            }
-
-            Button {
-                sourceToEdit = source
-            } label: {
-                Label(localized("編輯訂閱"), systemImage: "pencil")
-            }
-            .tint(.orange)
+            sourceTrailingSwipeActions(source)
         }
+        .accessibilityActions {
+            if !RSSHomeRowSwipe.opens {
+                sourceLeadingSwipeActions(source)
+                sourceTrailingSwipeActions(source)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func sourceLeadingSwipeActions(_ source: RSSSource) -> some View {
+        if store.unreadCount(for: source.id) > 0 {
+            RSSHomeRowAction(title: localized("標記全部已讀"), systemImage: "checkmark.circle") {
+                store.markAllRead(sourceID: source.id)
+            }
+            .tint(DSColor.swipeAction)
+        }
+    }
+
+    @ViewBuilder
+    private func sourceTrailingSwipeActions(_ source: RSSSource) -> some View {
+        RSSHomeRowAction(title: localized("刪除"), systemImage: "trash", role: .destructive) {
+            deleteTarget = .source(source)
+        }
+
+        RSSHomeRowAction(title: localized("編輯訂閱"), systemImage: "pencil") {
+            sourceToEdit = source
+        }
+        .tint(.orange)
     }
 
     private func visibleSources(_ sources: [RSSSource]) -> [RSSSource] {
@@ -900,6 +917,57 @@ private struct RSSHomeSection<Content: View>: View {
                 }
             }
         }
+    }
+}
+
+/// The page is a ScrollView, not a List, and a row's `swipeActions` open outside a List only
+/// in a container marked `swipeActionsContainer()` (iOS 27). The `#if compiler` guard keeps
+/// the iOS 27 API out of older toolchains: Swift 6.4 is the iOS 27 SDK's. `RSSHomeRowSwipe`
+/// says the same of a row and must agree with it.
+private struct RSSHomeSwipeActionsContainer: ViewModifier {
+    func body(content: Content) -> some View {
+        #if compiler(>=6.4)
+        if #available(iOS 27.0, *) {
+            content.swipeActionsContainer()
+        } else {
+            content
+        }
+        #else
+        content
+        #endif
+    }
+}
+
+private enum RSSHomeRowSwipe {
+    /// Whether a row's swipe actions open (`RSSHomeSwipeActionsContainer`). Only then does
+    /// VoiceOver offer them as the row's actions — on iOS 17.5 the rows had no custom actions
+    /// at all, context menu and all — so where they do not open the rows add them as
+    /// accessibility actions, and where they do, not again. Once the app requires iOS 27 the
+    /// accessibility actions can go.
+    static var opens: Bool {
+        #if compiler(>=6.4)
+        if #available(iOS 27.0, *) { return true }
+        #endif
+        return false
+    }
+}
+
+/// A row's swipe action. Revealed in iOS 27's swipe container, a `Label` is read with its
+/// symbol named after it too — 「編輯訂閱、編輯訂閱」 (iOS 27.0 simulator) — so the button
+/// names itself once. A List's swipe buttons read once without it. It can go once the
+/// container reads a `Label` once: `RSSHomeSwipeActionsUITests` finds each revealed button
+/// by its exact label, so it passes without the override then.
+private struct RSSHomeRowAction: View {
+    let title: String
+    let systemImage: String
+    var role: ButtonRole?
+    let action: () -> Void
+
+    var body: some View {
+        Button(role: role, action: action) {
+            Label(title, systemImage: systemImage)
+        }
+        .accessibilityLabel(title)
     }
 }
 
