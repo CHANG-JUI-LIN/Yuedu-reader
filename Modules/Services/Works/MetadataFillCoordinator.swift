@@ -49,7 +49,11 @@ final class MetadataFillCoordinator {
         let network = network ?? NetworkPathMonitor.shared
         self.store = store
         self.makeProviders = makeProviders ?? Self.liveProviders
-        prepare = makeProviders == nil ? { await RuleModuleLibrary.shared.loadIfNeeded() } : {}
+        if makeProviders == nil {
+            prepare = { await RuleModuleLibrary.shared.loadIfNeeded() }
+        } else {
+            prepare = {}
+        }
         self.network = network
         self.isEnabled = isEnabled ?? { GlobalSettings.shared.autoFillBookMetadata }
         self.isLowPower = isLowPower ?? { ProcessInfo.processInfo.isLowPowerModeEnabled }

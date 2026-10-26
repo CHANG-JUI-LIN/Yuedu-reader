@@ -1539,40 +1539,44 @@ final class AudiobookPlayer: NSObject, ObservableObject {
         c.skipBackwardCommand.preferredIntervals = [15]
         c.changePlaybackPositionCommand.isEnabled = true
 
-        c.playCommand.addTarget { [weak self] _ in
+        // `@Sendable` keeps these handlers nonisolated: MPRemoteCommandCenter does not say which
+        // thread runs them, and a main-actor closure traps under Swift 6 when it runs off main.
+        // Each only hands its command to the main actor.
+        c.playCommand.addTarget { @Sendable [weak self] _ in
             Task { @MainActor in self?.play() }
             return .success
         }
-        c.pauseCommand.addTarget { [weak self] _ in
+        c.pauseCommand.addTarget { @Sendable [weak self] _ in
             Task { @MainActor in self?.pause() }
             return .success
         }
-        c.togglePlayPauseCommand.addTarget { [weak self] _ in
+        c.togglePlayPauseCommand.addTarget { @Sendable [weak self] _ in
             Task { @MainActor in self?.togglePlayPause() }
             return .success
         }
-        c.nextTrackCommand.addTarget { [weak self] _ in
+        c.nextTrackCommand.addTarget { @Sendable [weak self] _ in
             Task { @MainActor in self?.nextChapter() }
             return .success
         }
-        c.previousTrackCommand.addTarget { [weak self] _ in
+        c.previousTrackCommand.addTarget { @Sendable [weak self] _ in
             Task { @MainActor in self?.previousChapter() }
             return .success
         }
-        c.skipForwardCommand.addTarget { [weak self] _ in
+        c.skipForwardCommand.addTarget { @Sendable [weak self] _ in
             Task { @MainActor in self?.skipForward() }
             return .success
         }
-        c.skipBackwardCommand.addTarget { [weak self] _ in
+        c.skipBackwardCommand.addTarget { @Sendable [weak self] _ in
             Task { @MainActor in self?.skipBackward() }
             return .success
         }
-        c.changePlaybackPositionCommand.addTarget { [weak self] event in
+        c.changePlaybackPositionCommand.addTarget { @Sendable [weak self] event in
             guard let event = event as? MPChangePlaybackPositionCommandEvent else {
                 return .commandFailed
             }
-            audiobookLog("remote seek t=\(event.positionTime)")
-            Task { @MainActor in self?.seek(to: event.positionTime) }
+            let positionTime = event.positionTime
+            audiobookLog("remote seek t=\(positionTime)")
+            Task { @MainActor in self?.seek(to: positionTime) }
             return .success
         }
     }
@@ -1583,7 +1587,9 @@ final class AudiobookPlayer: NSObject, ObservableObject {
         info[MPMediaItemPropertyArtist] = bookTitle
         info[MPMediaItemPropertyAlbumTitle] = bookTitle
         if let coverImage {
-            info[MPMediaItemPropertyArtwork] = MPMediaItemArtwork(boundsSize: coverImage.size) { _ in coverImage }
+            // MediaPlayer asks for the image on its own queue: a main-actor closure would trap
+            // there under Swift 6.
+            info[MPMediaItemPropertyArtwork] = MPMediaItemArtwork(boundsSize: coverImage.size) { @Sendable _ in coverImage }
         }
         info[MPNowPlayingInfoPropertyMediaType] = MPNowPlayingInfoMediaType.audio.rawValue
         info[MPNowPlayingInfoPropertyElapsedPlaybackTime] = currentTime

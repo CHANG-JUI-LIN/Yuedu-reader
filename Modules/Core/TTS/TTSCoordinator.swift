@@ -1272,7 +1272,9 @@ final class TTSCoordinator: ObservableObject {
 
     private static func makeNowPlayingArtwork(from image: UIImage?) -> MPMediaItemArtwork? {
         guard let image else { return nil }
-        return MPMediaItemArtwork(boundsSize: image.size) { _ in image }
+        // MediaPlayer asks for the image on its own queue: a main-actor closure would trap there
+        // under Swift 6.
+        return MPMediaItemArtwork(boundsSize: image.size) { @Sendable _ in image }
     }
 
     private func updateNowPlaying() {

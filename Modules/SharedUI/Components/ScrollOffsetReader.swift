@@ -66,7 +66,7 @@ private struct ScrollEndPinning: ViewModifier, Animatable {
     let bottomInset: CGFloat
     let scrolledAway: () -> Void
 
-    var animatableData: Double {
+    nonisolated var animatableData: Double {
         get { progress }
         set { progress = newValue }
     }
@@ -213,6 +213,7 @@ private struct ScrollEndPin: UIViewRepresentable {
         let insets: UIEdgeInsets
         let boundsSize: CGSize
 
+        @MainActor
         init(_ scrollView: UIScrollView) {
             contentSize = scrollView.contentSize
             insets = scrollView.adjustedContentInset

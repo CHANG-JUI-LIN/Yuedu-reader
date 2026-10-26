@@ -117,6 +117,7 @@ struct BookSourceLoginTests {
     }
 
     @Test("空白登入欄位不會被當成登入成功")
+    @MainActor
     func blankLoginFieldIsRequired() {
         let fields = LoginManager.shared.parseLoginUi("""
         [{"name":"Token","type":"password"}]
@@ -256,6 +257,7 @@ struct BookSourceLoginTests {
     }
 
     @Test("已儲存的登入資料不會蓋掉神魔小說型動態選單")
+    @MainActor
     func storedLoginInfoDoesNotReplaceDynamicLoginUiOutput() throws {
         let sourceURL = "login-ui-stored-result-\(UUID().uuidString)"
         var source = BookSource(bookSourceUrl: sourceURL, bookSourceName: "Stored result")
@@ -283,6 +285,7 @@ struct BookSourceLoginTests {
     }
 
     @Test("動態 loginUi 會共享 loginUrl 的 JS 上下文")
+    @MainActor
     func dynamicLoginUiSharesLoginUrlContext() throws {
         var source = BookSource(
             bookSourceUrl: "login-ui-context-\(UUID().uuidString)",
@@ -305,6 +308,7 @@ struct BookSourceLoginTests {
     }
 
     @Test("動態 loginUi 的 viewName 在 loginUrl 上下文求值，失敗回退 name")
+    @MainActor
     func dynamicViewNameResolvesInLoginUrlContext() throws {
         var source = BookSource(
             bookSourceUrl: "login-ui-viewname-\(UUID().uuidString)",
@@ -335,6 +339,7 @@ struct BookSourceLoginTests {
     }
 
     @Test("純 JSON loginUi 的動態 viewName 走獨立的 loginUrl 引擎")
+    @MainActor
     func staticLoginUiDynamicViewName() throws {
         var source = BookSource(
             bookSourceUrl: "login-ui-static-viewname-\(UUID().uuidString)",
@@ -503,6 +508,7 @@ struct BookSourceLoginTests {
     }
 
     @Test("包含 fanqienovel 規則的書源顯示番茄登入入口")
+    @MainActor
     func supportsFanqieLoginWhenRulesNeedSessionId() {
         var source = BookSource()
         source.ruleToc.chapterUrl = "<js>java.getCookie('fanqienovel.com', 'sessionid')</js>"

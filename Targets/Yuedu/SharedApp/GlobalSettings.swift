@@ -2451,7 +2451,9 @@ class GlobalSettings {
         readerStyleAssetRevisionCancellable = NotificationCenter.default.publisher(
             for: .readerStyleAssetsDidChange
         )
-        .compactMap { notification in
+        // The asset store is an actor and posts from its own thread; this runs there, before the
+        // hop to main, so it must not be main-actor isolated (a Swift 6 isolation trap).
+        .compactMap { @Sendable notification in
             (notification.userInfo?[ReaderStyleAssetStore.revisionUserInfoKey] as? NSNumber)?
                 .uint64Value
         }

@@ -87,7 +87,7 @@ extension View {
 private struct HomeEditMorph: ViewModifier, Animatable {
     var progress: Double
 
-    var animatableData: Double {
+    nonisolated var animatableData: Double {
         get { progress }
         set { progress = newValue }
     }

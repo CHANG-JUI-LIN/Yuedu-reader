@@ -146,11 +146,13 @@ struct SystemVoicePickerView: View {
         }
         .onAppear(perform: reload)
         // iOS posts this when voices are installed or removed — including the
-        // moment 個人語音 access is granted — so the list is never stale.
+        // moment 個人語音 access is granted — so the list is never stale. It posts
+        // from a background thread, where this main-actor action would trap.
         .onReceive(
             NotificationCenter.default.publisher(
                 for: AVSpeechSynthesizer.availableVoicesDidChangeNotification
             )
+            .receive(on: DispatchQueue.main)
         ) { _ in
             reload()
         }

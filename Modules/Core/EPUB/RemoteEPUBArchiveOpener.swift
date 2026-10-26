@@ -75,6 +75,11 @@ private struct RemoteZIPEntryResource: Resource {
     }
 
     func stream(range: Range<UInt64>?, consume: @escaping (Data) -> Void) async -> ReadResult<Void> {
+        // Readium 3's `Resource.stream` hands over a non-Sendable `consume`; ZIPFoundation's
+        // consumer is `@Sendable`. The archive actor calls it one chunk at a time while this task
+        // awaits, never concurrently, as Readium's own ZIP container does. Remove when the app
+        // moves to Readium 4, whose `consume` is `@Sendable` (4.0.0-alpha.2).
+        nonisolated(unsafe) let consume = consume
         do {
             try Task.checkCancellation()
             if let range {
