@@ -195,6 +195,20 @@ private extension View {
     }
 }
 
+/// Keeps the shelf's reader coordinator alive with the shelf without the shelf observing it.
+///
+/// The coordinator publishes `readerBookID` and `isReaderPresented` in the same main-thread
+/// turn as it pushes the reader onto this shelf's NavigationStack. Observed directly, that
+/// re-rendered the shelf before UIKit had started the push, and on iOS 17 SwiftUI then set the
+/// stack back to its own path — the shelf alone — which UIKit applied as the push ended: the
+/// reader opened and was popped again ("reader controller popped externally"), the first time
+/// a book was opened after launch (iOS 17.5 simulator, 2026-10-26). The shelf's body reads
+/// none of the coordinator's state, so it has nothing to re-render for.
+@MainActor
+private final class ShelfReaderNavigation: ObservableObject {
+    let coordinator = ReaderNavigationCoordinator()
+}
+
 struct HomeView: View {
     @EnvironmentObject var store: BookStore
     @Environment(\.appDependencies) private var appDependencies
@@ -258,7 +272,10 @@ struct HomeView: View {
         return CGSize(width: width, height: width * 3 / 2)
     }
 
-    @StateObject private var readerCoordinator = ReaderNavigationCoordinator()
+    /// Not observed (`ShelfReaderNavigation`): its state is read in actions, never to decide
+    /// what `body` draws.
+    @StateObject private var readerNavigation = ShelfReaderNavigation()
+    private var readerCoordinator: ReaderNavigationCoordinator { readerNavigation.coordinator }
     @StateObject private var readerGeometryStore = BookshelfReaderGeometryStore()
     /// Bumped when the book just opened has moved to the front of 最近閱讀. The shelf then
     /// goes back to its top behind the reader: left scrolled down to where the book was,
