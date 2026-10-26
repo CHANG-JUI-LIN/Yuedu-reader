@@ -30,6 +30,8 @@ ATTRIBUTION = '資料：維基百科、維基數據（CC BY-SA 4.0）、Bangumi'
 LICENSE = 'https://creativecommons.org/licenses/by-sa/4.0/'
 SCHEMA_VERSION = 1
 LIST_LENGTH = 50
+# A series' entry carries its other books' covers for 作品詳情's fan, two a side (app, 2026-10-26).
+SERIES_COVERS = 4
 # A list's works: Wikidata's classes for a written story. A page in a pool's categories whose
 # item is something else (most often the TV series adapted from it) is left out.
 WORK_CLASSES = {
@@ -434,6 +436,14 @@ def series_groups(works):
         head = min(books, key=lambda title: (works[title].get('published') or '~', title))
         groups[head] = (series, titles)
     return groups
+
+
+def series_volumes(head, groups, works):
+    """The other books of the series `head` stands for, in the order they came out (as
+    `series_groups` picks the head); the series' own article is no book."""
+    series, titles = groups[head]
+    books = [title for title in titles if title != head and works[title]['qid'] != series]
+    return sorted(books, key=lambda title: (works[title].get('published') or '~', title))
 
 
 def folded(totals, groups):
@@ -1044,6 +1054,10 @@ def build_region(job, name, region, pool_works, details, done, totals, groups, s
         series = series_names.get(groups[title][0], {}).get(name) if title in groups else None
         if series:
             listed['series'] = series
+            others = [covers[pool_works[other]['qid']] for other in series_volumes(title, groups, pool_works)
+                      if pool_works[other]['qid'] in covers]
+            if others:
+                listed['seriesCovers'] = others[:SERIES_COVERS]
         if work['qid'] in covers:
             listed['cover'] = covers[work['qid']]
         return listed
@@ -1057,7 +1071,8 @@ def build_region(job, name, region, pool_works, details, done, totals, groups, s
         else:
             continue
         intros = job.intros(wiki, titles, region.variant)
-        covers = job.covers(pool, {pool_works[title]['qid']: title for title in titles})
+        books = titles + [other for title in titles if title in groups for other in series_volumes(title, groups, pool_works)]
+        covers = job.covers(pool, {pool_works[title]['qid']: title for title in books})
         lists[list_name] = [entry(title, pool_works[title], intros.get(title, ''), covers) for title in titles]
     return lists
 

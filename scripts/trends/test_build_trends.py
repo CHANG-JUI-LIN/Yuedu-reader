@@ -376,6 +376,44 @@ class SeriesTests(unittest.TestCase):
                          [('Mistborn: The Final Empire', 'Mistborn'), ('Project Hail Mary', None)])
         self.assertEqual([entry['title'] for entry in lists['completed']], ['Project Hail Mary'])
 
+    def test_a_series_entry_carries_its_other_books_covers_in_the_order_they_came_out(self):
+        class Client:
+            def json(self, url, params=None, body=None, headers=None):
+                pages = [{'title': title, 'pageimage': f'{title}.jpg',
+                          'thumbnail': {'source': f'https://upload.wikimedia.org/{title}.jpg?x=1', 'width': 260, 'height': 400}}
+                         for title in params['titles'].split('|')]
+                return {'query': {'pages': pages}}
+        job = builder.Job(Client(), builder.Store(':memory:'), date(2026, 10, 26))
+        groups = builder.series_groups(self.WORKS)
+        self.assertEqual(builder.series_volumes('Mistborn: The Final Empire', groups, self.WORKS),
+                         ['The Well of Ascension', 'Mistborn: Secret History'])
+        totals = builder.folded({window: {'Mistborn: The Final Empire': 3, 'Project Hail Mary': 2} for window in builder.WINDOWS},
+                                groups)
+        lists = builder.build_region(job, 'en', builder.REGIONS['en'], self.WORKS, {}, set(), totals,
+                                     groups, {'Q-mistborn': {'en': 'Mistborn'}})
+        mistborn, alone = lists['year']
+        self.assertEqual(mistborn['cover'], 'https://upload.wikimedia.org/Mistborn: The Final Empire.jpg')
+        self.assertEqual(mistborn['seriesCovers'], ['https://upload.wikimedia.org/The Well of Ascension.jpg',
+                                                    'https://upload.wikimedia.org/Mistborn: Secret History.jpg'])
+        self.assertNotIn('seriesCovers', alone)
+
+    def test_a_series_entry_carries_at_most_four_other_covers(self):
+        works = {f'Book {number}': work(f'Q-{number}', 'Q-long', f'20{10 + number}-01-01T00:00:00Z') for number in range(1, 8)}
+        groups = builder.series_groups(works)
+        self.assertEqual(builder.series_volumes('Book 1', groups, works), [f'Book {number}' for number in range(2, 8)])
+
+        class Client:
+            def json(self, url, params=None, body=None, headers=None):
+                return {'query': {'pages': [{'title': title, 'thumbnail': {'source': f'https://upload.wikimedia.org/{title}.jpg',
+                                                                           'width': 2, 'height': 3}}
+                                            for title in params['titles'].split('|')]}}
+        job = builder.Job(Client(), builder.Store(':memory:'), date(2026, 10, 26))
+        totals = builder.folded({window: {'Book 1': 1} for window in builder.WINDOWS}, groups)
+        lists = builder.build_region(job, 'en', builder.REGIONS['en'], works, {}, set(), totals, groups,
+                                     {'Q-long': {'en': 'Long'}})
+        self.assertEqual(lists['year'][0]['seriesCovers'],
+                         [f'https://upload.wikimedia.org/Book {number}.jpg' for number in range(2, 2 + builder.SERIES_COVERS)])
+
     def test_the_first_publication_is_the_earliest_date(self):
         def date_claim(value):
             return {'mainsnak': {'datavalue': {'value': {'time': value}}}}
