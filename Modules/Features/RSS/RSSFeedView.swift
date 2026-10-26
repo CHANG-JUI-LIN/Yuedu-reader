@@ -20,11 +20,16 @@ struct SafariView: UIViewControllerRepresentable {
 struct RSSSmartFeedView: View {
     let kind: RSSSmartFeedKind
 
-    @StateObject private var store = RSSStore.shared
+    @StateObject private var store: RSSStore
 
     @State private var filter: RSSArticleTimelineFilter = .all
     @State private var searchText = ""
     @State private var selectedArticleID: String?
+
+    init(kind: RSSSmartFeedKind, store: RSSStore = .shared) {
+        self.kind = kind
+        _store = StateObject(wrappedValue: store)
+    }
 
     private let timeFormatter: DateFormatter = {
         let f = DateFormatter()
@@ -141,7 +146,8 @@ struct RSSSmartFeedView: View {
                     }
                     .disabled(unreadCount == 0)
                 } label: {
-                    Image(systemName: "line.3.horizontal.decrease")
+                    Label(localized("篩選"), systemImage: "line.3.horizontal.decrease")
+                        .labelStyle(.iconOnly)
                         .font(DSFont.toolbarIcon)
                 }
                 .foregroundColor(DSColor.textPrimary)
@@ -177,7 +183,7 @@ struct RSSFeedView: View {
     let source: RSSSource
 
     @StateObject private var fetcher = RSSFetcher()
-    @StateObject private var store = RSSStore.shared
+    @StateObject private var store: RSSStore
 
     @State private var filter: RSSArticleTimelineFilter = .all
     @State private var searchText = ""
@@ -189,6 +195,11 @@ struct RSSFeedView: View {
     @State private var autoOpenedWebPage = false
     /// IDs fetched for the currently selected category; nil = show everything.
     @State private var currentCategoryIDs: Set<String>?
+
+    init(source: RSSSource, store: RSSStore = .shared) {
+        self.source = source
+        _store = StateObject(wrappedValue: store)
+    }
 
     private let timeFormatter: DateFormatter = {
         let f = DateFormatter()
@@ -365,7 +376,8 @@ struct RSSFeedView: View {
                     }
                     .disabled(fetcher.isLoading)
                 } label: {
-                    Image(systemName: "line.3.horizontal.decrease")
+                    Label(localized("篩選"), systemImage: "line.3.horizontal.decrease")
+                        .labelStyle(.iconOnly)
                         .font(DSFont.toolbarIcon)
                 }
                 .foregroundColor(DSColor.textPrimary)
@@ -722,6 +734,12 @@ private extension View {
 
 extension URL: @retroactive Identifiable {
     public var id: String { absoluteString }
+}
+
+#Preview("Today") {
+    NavigationStack {
+        RSSSmartFeedView(kind: .today)
+    }
 }
 
 #Preview("BBC RSS") {

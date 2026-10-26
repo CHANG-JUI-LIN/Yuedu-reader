@@ -3,12 +3,13 @@ import Testing
 import UIKit
 @testable import yuedu_app
 
-/// What VoiceOver reads for the ✕ and ✓ in the toolbars of the RSS sheets. Each was a bare
-/// `Image(systemName:)`, so VoiceOver read the symbol, not what the button does. XCUITest lists
-/// elements VoiceOver never reaches, so this reads the window's own accessibility elements.
-@Suite("RSS sheet toolbar VoiceOver labels", .serialized)
+/// What VoiceOver reads for the icon-only buttons in the RSS toolbars: the sheets' ✕ and ✓, the
+/// feeds' filter menu, the article's ⋯. Each was a bare `Image(systemName:)`, so VoiceOver read
+/// the symbol, not what the button does. XCUITest lists elements VoiceOver never reaches, so this
+/// reads the window's own accessibility elements.
+@Suite("RSS toolbar VoiceOver labels", .serialized)
 @MainActor
-struct RSSSheetToolbarVoiceOverTests {
+struct RSSToolbarVoiceOverTests {
     private func host(_ view: some View) throws -> UIWindow {
         let scene = try #require(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first)
         let window = UIWindow(windowScene: scene)
@@ -84,6 +85,57 @@ struct RSSSheetToolbarVoiceOverTests {
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: folder) }
         try await body(RSSStore(storageDirectory: folder))
+    }
+
+    /// A feed with an article already stored, its full text too, so the pages show their
+    /// toolbars without fetching anything.
+    private func seedFeed(in store: RSSStore) throws -> (source: RSSSource, articleID: String) {
+        let source = try #require(store.addSourcesReturningAdded([
+            RSSSource(name: "Example", url: "https://example.invalid/feed.xml")
+        ]).first)
+        let item = RSSItem(id: "article", title: "Article", link: "https://example.invalid/article", pubDate: Date(), sourceId: source.id)
+        store.mergeFetchedItems([item], for: source.id)
+        store.updateFullText(articleId: item.id, text: "Body", html: "<p>Body</p>")
+        return (source, item.id)
+    }
+
+    /// From iOS 26 a feed's search field folds into the system's search button in the bottom bar
+    /// (`RSSFeedSearchBar`), which VoiceOver reaches first.
+    private var feedToolbar: [String] {
+        if #available(iOS 26.0, *) { [localized("搜索"), localized("篩選")] } else { [localized("篩選")] }
+    }
+
+    @Test("今日 feed: filter")
+    func smartFeed() async throws {
+        try await withStore { store in
+            _ = try seedFeed(in: store)
+            try await spokenBarButtons(
+                of: NavigationStack { RSSSmartFeedView(kind: .today, store: store) },
+                expected: feedToolbar
+            )
+        }
+    }
+
+    @Test("a feed: filter")
+    func feed() async throws {
+        try await withStore { store in
+            let (source, _) = try seedFeed(in: store)
+            try await spokenBarButtons(
+                of: NavigationStack { RSSFeedView(source: source, store: store) },
+                expected: feedToolbar
+            )
+        }
+    }
+
+    @Test("an article: favorite, find, more")
+    func article() async throws {
+        try await withStore { store in
+            let (_, articleID) = try seedFeed(in: store)
+            try await spokenBarButtons(
+                of: NavigationStack { RSSArticleReaderView(articleID: articleID, store: store) },
+                expected: [localized("收藏"), localized("搜尋文章"), localized("更多")]
+            )
+        }
     }
 
     @Test("匯入 OPML: close")

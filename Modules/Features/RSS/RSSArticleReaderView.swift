@@ -5,7 +5,7 @@ import WebKit
 struct RSSArticleReaderView: View {
     let articleID: String
 
-    @StateObject private var store = RSSStore.shared
+    @StateObject private var store: RSSStore
     @State private var readerMode: RSSArticleReaderMode = .reader
     @State private var isLoadingFullText = false
     @State private var fullTextError: String?
@@ -18,6 +18,11 @@ struct RSSArticleReaderView: View {
     @State private var pendingShare: PendingShareExport<URL>?
     @State private var findRequestID: UUID?
     @State private var sourceFaviconURLs: [URL] = []
+
+    init(articleID: String, store: RSSStore = .shared) {
+        self.articleID = articleID
+        _store = StateObject(wrappedValue: store)
+    }
 
     private var article: RSSArticleRecord? {
         store.article(id: articleID)
@@ -92,7 +97,8 @@ struct RSSArticleReaderView: View {
                                 }
                             }
                         } label: {
-                            Image(systemName: "ellipsis")
+                            Label(localized("更多"), systemImage: "ellipsis")
+                                .labelStyle(.iconOnly)
                         }
                     }
                 }
