@@ -82,6 +82,8 @@
 			</array>
 		</dict>
 	</array>
+	<key>FirebaseAppDelegateProxyEnabled</key>
+	<false/>
 	<key>GIDClientID</key>
 	<string>540650701012-8q81u29qbeodaa4gmr0sui7rg1gnivhb.apps.googleusercontent.com</string>
 	<key>GatewayBaseURL</key>

@@ -226,6 +226,14 @@ final class RSSAppNotificationDelegate: NSObject, UIApplicationDelegate, UNUserN
 
     // MARK: - Remote notifications (回饋中心)
 
+    // These two arrive only because Info.plist turns `FirebaseAppDelegateProxyEnabled` off.
+    // With it on, FirebaseAuth (started at launch by `FirebaseAuthManager`) has
+    // GoogleUtilities isa-swizzle SwiftUI's AppDelegate, which hands the token on only to an
+    // implementation on that class — and SwiftUI forwards it to this adaptor dynamically,
+    // so neither callback ever came here and no device registered for push (10-19 to 10-25;
+    // `FeedbackPushRegistrationTests` holds it). Nothing here needs the proxy: sign-in is
+    // Apple, Google and email. Phone-number or web OAuth sign-in would need these forwarded
+    // to Auth by hand (`setAPNSToken`, `canHandleNotification`, `canHandle(_:)`).
     func application(_ application: UIApplication, didRegisterForRemoteNotificationsWithDeviceToken deviceToken: Data) {
         FeedbackPushRegistration.shared.didRegister(deviceToken: deviceToken)
     }

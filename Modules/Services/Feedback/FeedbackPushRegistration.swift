@@ -22,7 +22,7 @@ final class FeedbackPushRegistration {
     }
 
     private let defaults: UserDefaults
-    private var token: String?
+    private(set) var token: String?
     private var uploading = false
 
     init(defaults: UserDefaults = .standard) {
