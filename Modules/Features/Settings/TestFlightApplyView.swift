@@ -53,7 +53,7 @@ struct TestFlightApplyView: View {
                     } label: {
                         Group {
                             if isSubmitting {
-                                ProgressView()
+                                ProgressView().tint(DSColor.textOnAccent)
                             } else {
                                 Text(localized("申請加入"))
                                     .font(DSFont.bodyBold)
@@ -62,8 +62,8 @@ struct TestFlightApplyView: View {
                         .frame(maxWidth: .infinity)
                         .frame(minHeight: 44)
                     }
-                    .buttonStyle(.borderedProminent)
-                    .disabled(isSubmitting)
+                    // Working, not disabled, while submitting: see `OnAccentProminentButtonStyle.work`.
+                    .buttonStyle(.onAccentProminent(working: isSubmitting, title: Text(localized("申請加入"))))
                 }
                 .interfaceSectionSurface()
             }

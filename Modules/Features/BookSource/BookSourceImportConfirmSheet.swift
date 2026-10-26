@@ -111,7 +111,7 @@ struct BookSourceImportConfirmSheet: View {
                 Label(localized("確認匯入"), systemImage: "square.and.arrow.down")
                     .frame(maxWidth: .infinity)
             }
-            .buttonStyle(.borderedProminent)
+            .buttonStyle(.onAccentProminent)
             .controlSize(.large)
         }
         .padding(.horizontal, DSSpacing.md)
@@ -156,7 +156,7 @@ struct BookSourceImportConfirmSheet: View {
                 Text(actionTitle)
                     .frame(maxWidth: .infinity)
             }
-            .buttonStyle(.borderedProminent)
+            .buttonStyle(.onAccentProminent)
             .controlSize(.large)
         }
         .padding(.horizontal, DSSpacing.md)

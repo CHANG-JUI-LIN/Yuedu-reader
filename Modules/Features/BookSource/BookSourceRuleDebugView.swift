@@ -82,16 +82,15 @@ struct BookSourceRuleDebugView: View {
                             Task { await runCurrentTab() }
                         } label: {
                             if engine.isRunning {
-                                ProgressView()
+                                ProgressView().tint(DSColor.textOnAccent)
                                     .padding(.horizontal, 12)
                             } else {
                                 Label(localized("執行"), systemImage: "play.fill")
-                                    .foregroundColor(.white)
                                     .padding(.horizontal, 12)
                             }
                         }
-                        .buttonStyle(.borderedProminent)
-                        .disabled(engine.isRunning)
+                        // Working, not disabled, while running: see `OnAccentProminentButtonStyle.work`.
+                        .buttonStyle(.onAccentProminent(working: engine.isRunning, title: Text(localized("執行"))))
                     }
                 }
                 .padding(.horizontal)

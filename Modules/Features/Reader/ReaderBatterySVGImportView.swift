@@ -167,7 +167,7 @@ struct ReaderBatterySVGImportView: View {
                 Button(localized("匯入 SVG")) {
                     showingImporter = true
                 }
-                .buttonStyle(.borderedProminent)
+                .buttonStyle(.onAccentProminent)
             }
         } else {
             ForEach(assets) { asset in

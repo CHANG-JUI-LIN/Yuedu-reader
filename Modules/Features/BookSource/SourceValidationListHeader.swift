@@ -211,7 +211,7 @@ extension View {
         #if compiler(>=6.2)
         if #available(iOS 26.0, *) {
             if selected {
-                buttonStyle(.glassProminent).buttonBorderShape(shape).tint(DSColor.accent)
+                buttonStyle(.onAccentGlassProminent).buttonBorderShape(shape).tint(DSColor.accent)
             } else {
                 buttonStyle(.glass).buttonBorderShape(shape)
             }
@@ -226,7 +226,7 @@ extension View {
     @ViewBuilder
     private func legacySourceFilterButtonStyle(selected: Bool, shape: ButtonBorderShape) -> some View {
         if selected {
-            buttonStyle(.borderedProminent).buttonBorderShape(shape).tint(DSColor.accent)
+            buttonStyle(.onAccentProminent).buttonBorderShape(shape).tint(DSColor.accent)
         } else {
             buttonStyle(.bordered).buttonBorderShape(shape)
         }

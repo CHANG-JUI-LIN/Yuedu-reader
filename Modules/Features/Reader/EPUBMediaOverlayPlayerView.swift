@@ -60,7 +60,7 @@ struct EPUBMediaOverlayPlayerView: View {
                         Label(primaryActionTitle, systemImage: primaryActionIcon)
                             .frame(maxWidth: .infinity)
                     }
-                    .buttonStyle(.borderedProminent)
+                    .buttonStyle(.onAccentProminent)
                 }
             }
             .padding(24)

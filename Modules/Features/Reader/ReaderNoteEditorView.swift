@@ -137,7 +137,7 @@ struct ReaderNoteEditorView: View {
                     .font(DSFont.subheadline)
                     .frame(maxWidth: .infinity, minHeight: DSLayout.minimumTapTarget)
             }
-            .buttonStyle(.borderedProminent)
+            .buttonStyle(.onAccentProminent)
 
             Spacer(minLength: 0)
         }

@@ -249,7 +249,7 @@ struct RSSFeedView: View {
                             Label(localized("以網頁開啟"), systemImage: "safari")
                                 .font(DSFont.subheadline.weight(.semibold))
                         }
-                        .buttonStyle(.borderedProminent)
+                        .buttonStyle(.onAccentProminent)
                         .padding(.top, 4)
                     }
                 }
@@ -418,7 +418,7 @@ struct RSSFeedView: View {
                 Label(localized("開啟網頁"), systemImage: "safari")
                     .font(DSFont.subheadline.weight(.semibold))
             }
-            .buttonStyle(.borderedProminent)
+            .buttonStyle(.onAccentProminent)
         }
         .frame(maxWidth: .infinity, minHeight: 300)
         .listRowBackground(Color.clear)

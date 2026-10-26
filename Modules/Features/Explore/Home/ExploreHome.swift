@@ -284,7 +284,7 @@ private struct ExploreHomeRoot: View {
                 } actions: {
                     if hasNoSections {
                         Button(localized("新增欄目")) { addsSection = true }
-                            .buttonStyle(.borderedProminent)
+                            .buttonStyle(.onAccentProminent)
                             .accessibilityIdentifier("home.addSection")
                     }
                     Button(localized("編輯首頁")) { setEditing(true) }

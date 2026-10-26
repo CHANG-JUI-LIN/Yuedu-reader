@@ -2752,10 +2752,15 @@ struct ReaderView: View {
                 },
                 onClose: { noteEditorRoute = nil }
             )
+            // App UI, so the app's accent rather than the reader's ink (`body`): its prominent
+            // button was filled with the ink, 黑色's D9D9D9 under white text.
+            .tint(DSColor.accent)
         }
         .sheet(item: $paywallFeature) { feature in
             PaywallView(highlightedFeature: feature)
                 .environmentObject(subscriptionStore)
+                // The app's accent, not the reader's ink, as the note editor above.
+                .tint(DSColor.accent)
         }
         .alert(
             localized("刪除筆記"),
@@ -2893,6 +2898,8 @@ struct ReaderView: View {
                     }
                 }
             }
+            // The app's accent, not the reader's ink, as the note editor.
+            .tint(DSColor.accent)
         }
 
         .sheet(isPresented: $showChangeSourceSheet) {

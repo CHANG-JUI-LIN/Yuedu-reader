@@ -210,7 +210,7 @@ struct AIRecommendationRow: View {
         if !allowsAI {
             message(localized("需要 Pro"), systemImage: "lock.fill") {
                 Button(localized("升級")) { showsPaywall = true }
-                    .buttonStyle(.borderedProminent)
+                    .buttonStyle(.onAccentProminent)
                     .accessibilityIdentifier("home.ai.upgrade")
             }
         } else {
@@ -242,7 +242,7 @@ struct AIRecommendationRow: View {
         case .success:
             message(localized("依你最近讀的 30 本書推薦作品；會把書名、作者和分類送到你設定的 AI 服務。"), systemImage: nil) {
                 Button(localized("產生推薦"), action: generate)
-                    .buttonStyle(.borderedProminent)
+                    .buttonStyle(.onAccentProminent)
                     .disabled(!canGenerate)
                     .accessibilityIdentifier("home.ai.generate")
             }

@@ -210,8 +210,9 @@ struct PaywallMemberPage: View {
                 .frame(maxWidth: .infinity)
                 .frame(minHeight: DSLayout.minimumTapTarget)
             }
-            .buttonStyle(.borderedProminent)
-            .disabled(store.isPurchasing || store.product(for: .lifetime) == nil)
+            // Working, not disabled, while purchasing: see `OnAccentProminentButtonStyle.work`.
+            .buttonStyle(.onAccentProminent(working: store.isPurchasing, title: Text(upgradeTitle)))
+            .disabled(store.product(for: .lifetime) == nil)
             .accessibilityIdentifier("pro_status_plan_action")
             // Said before they pay, not only after.
             Text(localized("升級後請記得取消月訂閱，否則會繼續扣款"))
@@ -285,7 +286,7 @@ struct PaywallMemberPage: View {
                 .frame(maxWidth: .infinity)
                 .frame(minHeight: DSLayout.minimumTapTarget)
         }
-        .buttonStyle(.borderedProminent)
+        .buttonStyle(.onAccentProminent)
         .accessibilityIdentifier("pro_celebration_continue")
         .padding(.horizontal, DSSpacing.lg)
         .padding(.vertical, DSSpacing.sm)

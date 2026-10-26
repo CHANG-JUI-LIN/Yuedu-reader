@@ -64,7 +64,7 @@ struct AIBookshelfOrganizerView: View {
                 Text(localized("問書、整章翻譯、查詞與整理書架")).foregroundStyle(DSColor.textSecondary)
             } actions: {
                 Button(localized("升級")) { showsPaywall = true }
-                    .buttonStyle(.borderedProminent)
+                    .buttonStyle(.onAccentProminent)
             }
             .listRowBackground(Color.clear)
         } else {

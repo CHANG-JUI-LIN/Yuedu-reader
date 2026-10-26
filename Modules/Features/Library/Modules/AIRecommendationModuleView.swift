@@ -34,7 +34,7 @@ struct AIRecommendationModuleView: View {
                     Text(localized("依你最近讀的書推薦作品")).foregroundStyle(DSColor.textSecondary)
                 } actions: {
                     Button(localized("升級")) { showsPaywall = true }
-                        .buttonStyle(.borderedProminent)
+                        .buttonStyle(.onAccentProminent)
                 }
                 .listRowBackground(Color.clear)
             }

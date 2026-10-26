@@ -108,7 +108,7 @@ private struct DiscoverEmptyState: View {
                 Button(localized("提供裝置識別碼並重試")) {
                     discover.enableAndroidIdentityAndReload()
                 }
-                .buttonStyle(.borderedProminent)
+                .buttonStyle(.onAccentProminent)
             }
         }
         .frame(maxWidth: .infinity, minHeight: 320)

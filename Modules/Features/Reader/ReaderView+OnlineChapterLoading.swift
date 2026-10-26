@@ -314,17 +314,21 @@ extension ReaderView {
                         .font(DSFont.body.weight(.semibold))
                         .padding(.horizontal, DSSpacing.lg)
                 }
-                .buttonStyle(.borderedProminent)
+                .buttonStyle(.onAccentProminent)
                 // 重試 steps back to secondary here: retrying without the device id
                 // repeats the request the source just refused.
                 retryChapterButton.buttonStyle(.bordered)
             } else {
-                retryChapterButton.buttonStyle(.borderedProminent)
+                retryChapterButton.buttonStyle(.onAccentProminent)
             }
         }
         .padding(DSSpacing.xl)
         .frame(maxWidth: 300)
         .background(.regularMaterial, in: RoundedRectangle(cornerRadius: DSRadius.lg, style: .continuous))
+        // The reader tints its controls with the ink (`ReaderView.body`), so the prominent
+        // button is filled with it; its label is chosen against the accent colour, which has
+        // to be the same ink. 黑色's D9D9D9 took the system's white at 1.42:1.
+        .accentColor(readerTheme.textColor)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .transition(.opacity)
     }

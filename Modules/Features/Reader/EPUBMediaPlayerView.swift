@@ -65,7 +65,7 @@ struct EPUBMediaPlayerView: View {
                         .font(DSFont.headline)
                         .frame(maxWidth: .infinity)
                 }
-                .buttonStyle(.borderedProminent)
+                .buttonStyle(.onAccentProminent)
                 .disabled(player == nil)
             }
             .padding(24)

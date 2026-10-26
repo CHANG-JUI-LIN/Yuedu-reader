@@ -123,6 +123,8 @@ struct ReaderSettingsView: View {
         .sheet(item: $paywallFeature) { feature in
             PaywallView(highlightedFeature: feature)
                 .environmentObject(subscriptionStore)
+                // The app's accent, not the reader's ink these settings are opened over.
+                .tint(DSColor.accent)
         }
         .readerStyleImportPresentation(route: $styleImportRoute) { _ in }
         .alert(item: $layoutImportAlert) { alert in

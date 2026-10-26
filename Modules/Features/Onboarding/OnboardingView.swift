@@ -18,7 +18,10 @@ struct OnboardingPresentation: ViewModifier {
             .overlay {
                 if state.isPresented {
                     OnboardingView(content: tourContent, finish: finish)
+                        // Both, as the root sets them: 繼續 is filled with the tint, and its
+                        // label (`DSColor.textOnAccent`) is chosen against the accent colour.
                         .tint(tint)
+                        .accentColor(tint)
                         .transition(.opacity)
                 }
             }
@@ -224,12 +227,12 @@ private extension View {
     func onboardingPrimaryButtonStyle() -> some View {
         #if compiler(>=6.2)
         if #available(iOS 26.0, *) {
-            buttonStyle(.glassProminent).buttonBorderShape(.capsule).controlSize(.large)
+            buttonStyle(.onAccentGlassProminent).buttonBorderShape(.capsule).controlSize(.large)
         } else {
-            buttonStyle(.borderedProminent).buttonBorderShape(.capsule).controlSize(.large)
+            buttonStyle(.onAccentProminent).buttonBorderShape(.capsule).controlSize(.large)
         }
         #else
-        buttonStyle(.borderedProminent).buttonBorderShape(.capsule).controlSize(.large)
+        buttonStyle(.onAccentProminent).buttonBorderShape(.capsule).controlSize(.large)
         #endif
     }
 }

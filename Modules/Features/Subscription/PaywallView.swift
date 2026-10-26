@@ -309,8 +309,9 @@ struct PaywallView: View {
                 .frame(maxWidth: .infinity)
                 .frame(minHeight: 44)
             }
-            .buttonStyle(.borderedProminent)
-            .disabled(store.isPurchasing || store.product(for: selectedProduct) == nil)
+            // Working, not disabled, while purchasing: see `OnAccentProminentButtonStyle.work`.
+            .buttonStyle(.onAccentProminent(working: store.isPurchasing, title: Text(subscribeButtonTitle)))
+            .disabled(store.product(for: selectedProduct) == nil)
             .accessibilityIdentifier("paywall_purchase_button")
 
             if let error = store.lastErrorMessage {
