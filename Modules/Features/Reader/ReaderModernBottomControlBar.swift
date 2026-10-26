@@ -77,30 +77,30 @@ struct ReaderModernBottomControlBar: View {
         String(format: "%.0f%%", sliderProgress * 100)
     }
 
+    /// Only as tall as the two capsules; whoever shows it pins it to the bottom. The reader
+    /// slides it in and out with `.move(edge: .bottom)`, which moves a view by its own
+    /// height — a full-screen bar was off screen after the first frame and the menu still
+    /// vanished with a cut (feedback #81).
     var body: some View {
-        VStack(spacing: 0) {
-            Spacer(minLength: 0)
-
-            GlassGroup {
-                VStack(spacing: DSSpacing.sm) {
-                    scrubberRow
-                        .frame(maxWidth: .infinity, minHeight: rowHeight)
-                        .floatingSurface(in: Capsule(), fill: palette.bottomFill)
-                    toolRow
-                        .frame(maxWidth: .infinity, minHeight: rowHeight)
-                        .floatingSurface(in: Capsule(), fill: palette.bottomFill)
-                }
+        GlassGroup {
+            VStack(spacing: DSSpacing.sm) {
+                scrubberRow
+                    .frame(maxWidth: .infinity, minHeight: rowHeight)
+                    .floatingSurface(in: Capsule(), fill: palette.bottomFill)
+                toolRow
+                    .frame(maxWidth: .infinity, minHeight: rowHeight)
+                    .floatingSurface(in: Capsule(), fill: palette.bottomFill)
             }
-            .overlay(alignment: .top) {
-                if chapterSliderDraft != nil {
-                    scrubPreview
-                }
-            }
-            .frame(maxWidth: overlayContentMaxWidth)
-            .padding(.horizontal, DSSpacing.lg)
-            .padding(.bottom, DSSpacing.xs)
-            .animation(DSAnimation.fast, value: chapterSliderDraft == nil)
         }
+        .overlay(alignment: .top) {
+            if chapterSliderDraft != nil {
+                scrubPreview
+            }
+        }
+        .frame(maxWidth: overlayContentMaxWidth)
+        .padding(.horizontal, DSSpacing.lg)
+        .padding(.bottom, DSSpacing.xs)
+        .animation(DSAnimation.fast, value: chapterSliderDraft == nil)
     }
 
     // MARK: - Scrubber
@@ -460,5 +460,6 @@ private struct GlassGroup<Content: View>: View {
                 ReaderSecondaryAction(id: .translation, icon: "translate", label: "AI 翻譯", isLocked: true, action: {})
             ]
         )
+        .frame(maxHeight: .infinity, alignment: .bottom)
     }
 }

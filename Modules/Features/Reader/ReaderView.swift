@@ -1624,6 +1624,7 @@ struct ReaderView: View {
                 .toolbar { modernToolbarContent }
                 .toolbar(showBars ? .visible : .hidden, for: .navigationBar)
                 .toolbarBackground(.hidden, for: .navigationBar)
+                .toolbarColorScheme(readerColorScheme, for: .navigationBar)
         }
         .tint(readerTheme.textColor)
         // Here, outside the reader's own NavigationStack, so it sees the window and not the
@@ -1940,7 +1941,23 @@ struct ReaderView: View {
                 )
                 .zIndex(45)
             }
-            if showBars { readerChrome }
+            // The bar comes and goes inside a bottom-aligned stack that stays, so the view that
+            // moves is only the bar's height (see `ReaderModernBottomControlBar.body`) and the
+            // menu slides away instead of vanishing with a cut (feedback #81).
+            VStack(spacing: 0) {
+                Spacer(minLength: 0)
+                if showBars {
+                    readerChrome
+                        .transition(
+                            accessibilityReduceMotion
+                                ? .opacity
+                                : .move(edge: .bottom).combined(with: .opacity)
+                        )
+                }
+            }
+            // Below every overlay here, where it sat by declaration order; explicit so the
+            // order is not left to where this sits in the stack.
+            .zIndex(10)
             if bookSearch.isNavigating, !showBars {
                 VStack {
                     Spacer()

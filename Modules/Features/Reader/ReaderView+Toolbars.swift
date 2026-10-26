@@ -12,7 +12,16 @@ extension ReaderView {
     /// scheme to the theme.
     var readerChrome: some View {
         modernBottomBar
-            .environment(\.colorScheme, readerTheme == .night ? .dark : .light)
+            .environment(\.colorScheme, readerColorScheme)
+    }
+
+    /// The appearance the reading menu's glass is drawn in: the reader theme's, never the
+    /// system's. The bottom bar, the navigation bar and the book card's popover each have to
+    /// be told separately — the bar is UIKit's and the popover is a presentation of its own,
+    /// so neither inherits it from the bottom bar's environment. Pinning only the bottom bar
+    /// put a light book card over a dark bottom bar (feedback #78).
+    var readerColorScheme: ColorScheme {
+        readerTheme == .night ? .dark : .light
     }
 
     // MARK: - Top chrome
@@ -139,11 +148,19 @@ extension ReaderView {
                         in: Rectangle(),
                         fill: modernPalette.panelFill
                     )
+                    // Drawn by the presentation, outside the card's environment: the
+                    // scheme set on the card below never reaches it, and the glass stayed
+                    // light over a night page (feedback #78, checked on iOS 26.5).
+                    .environment(\.colorScheme, readerColorScheme)
                 }
                 // `.popover` has no `onDismiss`, so the card's own disappearance is the
                 // dismissal signal the deferred route waits on. Deliberately a real
                 // lifecycle callback, not a timer.
                 .onDisappear(perform: presentDeferredModernBookCardRoute)
+                // A presentation starts again from the system appearance, so the card's
+                // own system colours would be light over a night page; see
+                // `readerColorScheme`. Its glass is set in `presentationBackground` above.
+                .environment(\.colorScheme, readerColorScheme)
         }
     }
 
