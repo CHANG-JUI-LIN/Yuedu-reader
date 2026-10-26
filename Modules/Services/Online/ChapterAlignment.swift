@@ -8,6 +8,8 @@ import Foundation
 /// 1. Search a window around both the old index and the proportionally scaled
 ///    index (±10) in the new TOC.
 /// 2. First pass: purified-title Jaccard similarity — > 0.96 wins outright.
+///    Unlike Legado, over character bigrams, so titles that differ only in
+///    character order ("標題12" / "標題21") do not count as the same.
 /// 3. Second pass: extract the chapter number ("第一百零三章" → 103, Chinese
 ///    numerals included) and take an exact number match.
 /// 4. Otherwise fall back to the old index clamped into the new TOC.
@@ -101,14 +103,22 @@ enum ChapterAlignment {
         }.map(Character.init))
     }
 
-    /// Character-set Jaccard similarity of two already-purified titles.
+    /// Character-bigram Jaccard similarity of two already-purified titles.
+    /// Legado compares plain character sets, which ignore order: "標題12" and
+    /// "標題21" (or "chapter12" and "chapter21") score 1.0, so pass 1 took
+    /// whichever came first in the window. Bigrams keep order, and the
+    /// boundary marks give a one-character title a bigram of its own.
     static func jaccardSimilarity(_ a: String, _ b: String) -> Double {
-        let setA = Set(a)
-        let setB = Set(b)
-        if setA.isEmpty && setB.isEmpty { return 1 }
-        let unionCount = setA.union(setB).count
-        guard unionCount > 0 else { return 0 }
-        return Double(setA.intersection(setB).count) / Double(unionCount)
+        let setA = bigrams(of: a)
+        let setB = bigrams(of: b)
+        return Double(setA.intersection(setB).count) / Double(setA.union(setB).count)
+    }
+
+    private static func bigrams(of value: String) -> Set<String> {
+        // Purified titles hold only letters, numbers and CJK, so ^ and $
+        // cannot collide with title characters.
+        let characters = Array("^" + value + "$")
+        return Set(zip(characters, characters.dropFirst()).map { String([$0, $1]) })
     }
 
     // MARK: - Chapter number extraction
@@ -117,8 +127,11 @@ enum ChapterAlignment {
         pattern: "第([0-9零〇一二两兩三四五六七八九十百千万萬壹贰貳叁參肆伍陆陸柒捌玖拾佰仟]+)[章节節篇回集话話卷部]"
     )
 
+    // Matched against the normalized title (halfwidth, whitespace removed), so
+    // the separators are written in their normalized form:
+    // `.fullwidthToHalfwidth` turns 、 into ､ (U+FF64) and ，．： into ASCII.
     private static let leadingNumberRegex = try? NSRegularExpression(
-        pattern: "^([0-9零〇一二两兩三四五六七八九十百千万萬]+)[、,，.．:： ]"
+        pattern: "^([0-9零〇一二两兩三四五六七八九十百千万萬]+)[､,.:]"
     )
 
     /// Extracts the chapter's ordinal from its title ("第一百零三章 …" → 103,
