@@ -175,11 +175,17 @@ enum DSColor {
 /// ones wrap. UIKit takes these — never `UIColor(DSColor.x)` for any of them.
 ///
 /// On iOS 17, `UIColor(_:)` does not hand back the `UIColor` a `Color(uiColor:)` holds: it
-/// returns a new colour that resolves the held one in light at standard contrast, whatever
-/// it is asked to resolve in. Every UIKit view given `UIColor(DSColor.x)` drew light — black
-/// text and light surfaces in dark, with Increase Contrast ignored — while SwiftUI drew the
-/// same tokens right (measured 2026-10-26 on iOS 17.5; iOS 18.6 and 27 hand back the colour
-/// itself).
+/// returns a new colour. Resolved away from a SwiftUI-hosted view, that colour asks the held
+/// one for light at standard contrast, whatever it is asked to resolve in. Measured
+/// 2026-10-26 on iOS 17.5; iOS 18.6 and 27 hand back the colour itself.
+/// - Traits built by hand — `UITraitCollection(userInterfaceStyle: .dark)`, or a builder
+///   setting the style and `AppThemesTrait` — reach the held colour as light, standard
+///   contrast. The battery SVG preview resolved `UIColor(DSColor.textPrimary)` this way.
+/// - In a plain UIKit window in dark, with no SwiftUI host, a view given
+///   `UIColor(DSColor.groupedBackground)` drew 242,242,247, and `textPrimary` drew black.
+///
+/// Inside a SwiftUI-hosted view, where SwiftUI's environment travels in the traits, these
+/// tokens have not been measured. The accent there resolves right (below).
 ///
 /// The accent and `highlight` are left out on purpose: UIKit inside a SwiftUI view takes
 /// `UIColor(DSColor.accent)`, which resolves from the environment SwiftUI hands that view —
