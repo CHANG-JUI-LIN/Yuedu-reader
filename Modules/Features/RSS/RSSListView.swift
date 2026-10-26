@@ -1126,7 +1126,7 @@ private struct RSSSettingsContentView: View {
     }
 }
 
-private struct RSSOPMLImportSheet: View {
+struct RSSOPMLImportSheet: View {
     @Binding var isPresented: Bool
     let onFileCompletion: (Result<[URL], Error>) -> Void
     let onDataImport: (Data) -> Void
@@ -1186,7 +1186,8 @@ private struct RSSOPMLImportSheet: View {
                         Button {
                             isPresented = false
                         } label: {
-                            Image(systemName: "xmark")
+                            Label(localized("關閉"), systemImage: "xmark")
+                                .labelStyle(.iconOnly)
                         }
                     }
                 }
@@ -1429,7 +1430,7 @@ struct RSSJSONDocument: FileDocument {
 
 // MARK: - Import Legado JSON URL Sheet
 
-private struct ImportLegadoJSONURLSheet: View {
+struct ImportLegadoJSONURLSheet: View {
     @Binding var isPresented: Bool
     @ObservedObject var store: RSSStore
 
@@ -1459,14 +1460,16 @@ private struct ImportLegadoJSONURLSheet: View {
                     Button {
                         isPresented = false
                     } label: {
-                        Image(systemName: "xmark")
+                        Label(localized("取消"), systemImage: "xmark")
+                            .labelStyle(.iconOnly)
                     }
                 }
                 ToolbarItem(placement: .topBarTrailing) {
                     Button {
                         Task { await importFromURL() }
                     } label: {
-                        Image(systemName: "checkmark")
+                        Label(localized("匯入"), systemImage: "checkmark")
+                            .labelStyle(.iconOnly)
                     }
                     .disabled(urlString.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || isLoading)
                 }
@@ -1516,7 +1519,7 @@ private struct ImportLegadoJSONURLSheet: View {
 
 // MARK: - Add Source Sheet
 
-private struct AddRSSSourceSheet: View {
+struct AddRSSSourceSheet: View {
     private static let rootFolderID = "__rss_root_folder__"
 
     @Binding var isPresented: Bool
@@ -1562,14 +1565,16 @@ private struct AddRSSSourceSheet: View {
                     Button {
                         isPresented = false
                     } label: {
-                        Image(systemName: "xmark")
+                        Label(localized("取消"), systemImage: "xmark")
+                            .labelStyle(.iconOnly)
                     }
                 }
                 ToolbarItem(placement: .topBarTrailing) {
                     Button {
                         Task { await addSource() }
                     } label: {
-                        Image(systemName: "checkmark")
+                        Label(localized("動作：新增"), systemImage: "checkmark")
+                            .labelStyle(.iconOnly)
                     }
                     .disabled(url.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || isLoading)
                 }
@@ -1638,7 +1643,7 @@ private struct AddRSSSourceSheet: View {
     }
 }
 
-private struct AddRSSFolderSheet: View {
+struct AddRSSFolderSheet: View {
     @Binding var isPresented: Bool
     @ObservedObject var store: RSSStore
 
@@ -1661,14 +1666,16 @@ private struct AddRSSFolderSheet: View {
                     Button {
                         isPresented = false
                     } label: {
-                        Image(systemName: "xmark")
+                        Label(localized("取消"), systemImage: "xmark")
+                            .labelStyle(.iconOnly)
                     }
                 }
                 ToolbarItem(placement: .topBarTrailing) {
                     Button {
                         addFolder()
                     } label: {
-                        Image(systemName: "checkmark")
+                        Label(localized("動作：新增"), systemImage: "checkmark")
+                            .labelStyle(.iconOnly)
                     }
                     .disabled(name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                 }
@@ -1682,7 +1689,7 @@ private struct AddRSSFolderSheet: View {
     }
 }
 
-private struct RenameRSSFolderSheet: View {
+struct RenameRSSFolderSheet: View {
     let folder: RSSFolder
     @ObservedObject var store: RSSStore
     @Environment(\.dismiss) private var dismiss
@@ -1712,7 +1719,8 @@ private struct RenameRSSFolderSheet: View {
                     Button {
                         dismiss()
                     } label: {
-                        Image(systemName: "xmark")
+                        Label(localized("取消"), systemImage: "xmark")
+                            .labelStyle(.iconOnly)
                     }
                 }
                 ToolbarItem(placement: .topBarTrailing) {
@@ -1722,7 +1730,8 @@ private struct RenameRSSFolderSheet: View {
                         store.updateFolder(updated)
                         dismiss()
                     } label: {
-                        Image(systemName: "checkmark")
+                        Label(localized("儲存"), systemImage: "checkmark")
+                            .labelStyle(.iconOnly)
                     }
                     .disabled(name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                 }
@@ -1799,4 +1808,24 @@ private struct RSSSourceInfoSheet: View {
 
 #Preview {
     NavigationStack { RSSListView() }
+}
+
+#Preview("Add Source") {
+    AddRSSSourceSheet(isPresented: .constant(true), store: RSSStore.shared, gs: GlobalSettings.shared, folders: [])
+}
+
+#Preview("Add Folder") {
+    AddRSSFolderSheet(isPresented: .constant(true), store: RSSStore.shared)
+}
+
+#Preview("Rename Folder") {
+    RenameRSSFolderSheet(folder: RSSFolder(name: "Tech"), store: RSSStore.shared)
+}
+
+#Preview("Import Legado JSON") {
+    ImportLegadoJSONURLSheet(isPresented: .constant(true), store: RSSStore.shared)
+}
+
+#Preview("Import OPML") {
+    RSSOPMLImportSheet(isPresented: .constant(true), onFileCompletion: { _ in }, onDataImport: { _ in })
 }

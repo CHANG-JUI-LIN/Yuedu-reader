@@ -79,14 +79,16 @@ struct EditRSSSourceSheet: View {
                     Button {
                         dismiss()
                     } label: {
-                        Image(systemName: "xmark")
+                        Label(localized("取消"), systemImage: "xmark")
+                            .labelStyle(.iconOnly)
                     }
                 }
                 ToolbarItem(placement: .topBarTrailing) {
                     Button {
                         Task { await save() }
                     } label: {
-                        Image(systemName: "checkmark")
+                        Label(localized("儲存"), systemImage: "checkmark")
+                            .labelStyle(.iconOnly)
                     }
                     .disabled(!canSave)
                 }
@@ -252,14 +254,19 @@ struct RSSOrganizeSheet: View {
                             editMode = (editMode == .active) ? .inactive : .active
                         }
                     } label: {
-                        Image(systemName: editMode == .active ? "xmark" : "checklist")
+                        Label(
+                            editMode == .active ? localized("退出編輯") : localized("編輯"),
+                            systemImage: editMode == .active ? "xmark" : "checklist"
+                        )
+                        .labelStyle(.iconOnly)
                     }
                 }
                 ToolbarItem(placement: .topBarTrailing) {
                     Button {
                         dismiss()
                     } label: {
-                        Image(systemName: "checkmark")
+                        Label(localized("完成"), systemImage: "checkmark")
+                            .labelStyle(.iconOnly)
                     }
                 }
             }
