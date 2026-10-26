@@ -476,7 +476,10 @@ struct AIChatComposer: View {
             Image(systemName: isBusy ? "stop.circle.fill" : "arrow.up.circle.fill")
                 .font(DSFont.title)
                 .symbolRenderingMode(.palette)
-                .foregroundStyle(DSColor.textOnAccent, isBusy || canSend ? DSColor.accent : DSColor.textDisabled)
+                .foregroundStyle(
+                    isBusy || canSend ? AnyShapeStyle(DSColor.textOnAccent) : AnyShapeStyle(DSColor.textOnFixedFill),
+                    isBusy || canSend ? DSColor.accent : DSColor.textDisabled
+                )
                 .frame(minWidth: DSLayout.minimumTapTarget, minHeight: DSLayout.minimumTapTarget)
         }
         .buttonStyle(.plain)

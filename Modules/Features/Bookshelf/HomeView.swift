@@ -1770,7 +1770,7 @@ struct EmptyLibraryView: View {
                 showAdd = true
             } label: {
                 Label(localized("添加書籍"), systemImage: "plus")
-                    .font(DSFont.headline).foregroundColor(.white)
+                    .font(DSFont.headline).foregroundStyle(DSColor.textOnAccent)
                     .padding(.horizontal, DSSpacing.xxl).padding(.vertical, 14)
                     .background(DSColor.accent).clipShape(Capsule())
             }
@@ -1929,7 +1929,7 @@ struct BookRow: View {
     private var updateBadge: some View {
         Text(localized("更新"))
             .font(DSFont.fixed(size: 11, weight: .bold))
-            .foregroundColor(DSColor.textOnAccent)
+            .foregroundStyle(DSColor.textOnAccent)
             .padding(.horizontal, 7)
             .padding(.vertical, 2)
             .background(DSColor.accent)
@@ -2045,7 +2045,7 @@ struct BookGridCell: View {
                     if book.currentPosition > 0.01 && book.currentPosition < 0.99 {
                         Text("\(Int(book.currentPosition * 100))%")
                             .font(DSFont.fixed(size: 10, weight: .semibold))
-                            .foregroundColor(.white)
+                            .foregroundStyle(DSColor.textOnAccent)
                             .padding(.horizontal, 5)
                             .padding(.vertical, 2)
                             .background(DSColor.accent.opacity(0.85))
@@ -2057,7 +2057,7 @@ struct BookGridCell: View {
                     if book.hasNewChapterUpdate {
                         Text(localized("更新"))
                             .font(DSFont.fixed(size: 10, weight: .bold))
-                            .foregroundColor(DSColor.textOnAccent)
+                            .foregroundStyle(DSColor.textOnAccent)
                             .padding(.horizontal, 5)
                             .padding(.vertical, 2)
                             .background(DSColor.accent)

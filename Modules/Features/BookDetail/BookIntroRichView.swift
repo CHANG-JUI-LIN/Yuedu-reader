@@ -74,8 +74,10 @@ struct BookIntroWebView: UIViewRepresentable {
             $0.userInterfaceStyle = colorScheme == .dark ? .dark : .light
         }
         let textColor = UIColor(DSColor.textPrimary).resolvedColor(with: resolvedTraits).cssHex
-        let linkColor = UIColor(DSColor.accent).resolvedColor(with: resolvedTraits).cssHex
-        let buttonTextColor = UIColor(DSColor.textOnAccent).resolvedColor(with: resolvedTraits).cssHex
+        let accent = UIColor(DSColor.accent).resolvedColor(with: resolvedTraits)
+        let linkColor = accent.cssHex
+        // The buttons are filled with `linkColor`, so their text answers that colour.
+        let buttonTextColor = (DSColor.prefersDarkText(onAccent: accent.rgb) ? UIColor.black : UIColor.white).cssHex
         let fontSize = UIFont.preferredFont(forTextStyle: .subheadline, compatibleWith: traits).pointSize
         return """
         <!doctype html><html><head><meta charset="utf-8">
@@ -245,6 +247,12 @@ struct BookIntroLayout: Equatable {
 }
 
 private extension UIColor {
+    var rgb: CoverTint.RGB {
+        var red: CGFloat = 0, green: CGFloat = 0, blue: CGFloat = 0, alpha: CGFloat = 0
+        getRed(&red, green: &green, blue: &blue, alpha: &alpha)
+        return CoverTint.RGB(red: red, green: green, blue: blue)
+    }
+
     var cssHex: String {
         var red: CGFloat = 0, green: CGFloat = 0, blue: CGFloat = 0, alpha: CGFloat = 0
         getRed(&red, green: &green, blue: &blue, alpha: &alpha)

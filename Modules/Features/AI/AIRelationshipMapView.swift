@@ -144,7 +144,7 @@ struct AIRelationshipMapView: View {
     private func node(_ name: String, emphasized: Bool) -> some View {
         Text(name)
             .font(emphasized ? DSFont.headline : DSFont.subheadline)
-            .foregroundStyle(emphasized ? DSColor.textOnAccent : DSColor.textPrimary)
+            .foregroundStyle(emphasized ? AnyShapeStyle(DSColor.textOnAccent) : AnyShapeStyle(DSColor.textPrimary))
             .lineLimit(1)
             .padding(.horizontal, DSSpacing.md)
             .padding(.vertical, DSSpacing.sm)

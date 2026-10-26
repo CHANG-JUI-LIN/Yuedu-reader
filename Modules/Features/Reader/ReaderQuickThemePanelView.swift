@@ -569,7 +569,7 @@ private struct QuickPanelActionButtonStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
             .font(DSFont.headline)
-            .foregroundStyle(isProminent ? DSColor.textOnAccent : DSColor.textPrimary)
+            .foregroundStyle(isProminent ? AnyShapeStyle(DSColor.textOnAccent) : AnyShapeStyle(DSColor.textPrimary))
             .frame(maxWidth: .infinity, minHeight: DSLayout.readerQuickPanelControlHeight)
             .background(
                 isProminent

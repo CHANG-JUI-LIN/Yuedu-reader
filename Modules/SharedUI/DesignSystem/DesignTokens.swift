@@ -42,8 +42,28 @@ enum DSColor {
     // a theme without text colors paints identically to the old constants.
     /// Primary text (auto-adapts to light/dark mode)
     static var textPrimary: Color { themedText(\.primary, fallback: .label) }
-    /// Text on strong functional fills.
-    static let textOnAccent = Color.white
+    /// Text on an accent fill (`DSColor.accent`): white, or black where the accent is too
+    /// light for white — see `OnAccentTextStyle`.
+    static let textOnAccent = OnAccentTextStyle()
+    /// Text on a strong fill whose colour does not follow the theme's accent: the rank
+    /// badges, the destructive count, a cover's tint, a photo or the dim over one.
+    static let textOnFixedFill = Color.white
+    /// The least contrast white text on an accent fill may have before it turns black:
+    /// WCAG's floor for UI components and large text (user's call, 2026-10-25). Blue and
+    /// violet accents keep white; 琥珀金, 苔原綠's derived dark accent and the near-white
+    /// accents imported packs bring take black (feedback #77).
+    static let onAccentMinimumWhiteContrast = 3.0
+
+    /// Whether text on a fill of `accent` is black rather than white.
+    static func prefersDarkText(onAccent accent: CoverTint.RGB) -> Bool {
+        // Resolved colours can be extended-range; luminance is defined on 0...1.
+        let clamped = CoverTint.RGB(
+            red: min(max(accent.red, 0), 1),
+            green: min(max(accent.green, 0), 1),
+            blue: min(max(accent.blue, 0), 1)
+        )
+        return CoverTint.contrastWithWhite(clamped) < onAccentMinimumWhiteContrast
+    }
     /// 精簡閱讀卡片's ground until its cover's colour is known: dark enough for white text.
     static let coverTintPlaceholder = CoverTint.placeholder.color
     /// Secondary text (captions, subtitles)
@@ -179,6 +199,23 @@ enum DSColor {
     // ── Search Engine Brand Colors ──
     static let brandBaidu = Color(red: 0.1, green: 0.4, blue: 0.9)
     static let brandBing = Color(red: 0.0, green: 0.5, blue: 0.7)
+}
+
+/// `DSColor.textOnAccent`: white on the accent, black once the accent is too light for
+/// white (`DSColor.prefersDarkText(onAccent:)`).
+///
+/// It was `Color.white`, and an imported pack whose dark accent is near white drew the
+/// selected shelf chip white on white (feedback #77, 玉桂狗). The accent is read from the
+/// environment it draws in, the one `Color.accentColor` — and so the fill — resolves
+/// from, never from the theme on its own: a view hosted by UIKit (the screenshot prompt,
+/// a sheet a presenter puts up) has the theme but not its tint and fills with the
+/// system blue, and its text has to answer that blue.
+struct OnAccentTextStyle: ShapeStyle {
+    func resolve(in environment: EnvironmentValues) -> Color.Resolved {
+        let accent = Color.accentColor.resolve(in: environment)
+        let rgb = CoverTint.RGB(red: Double(accent.red), green: Double(accent.green), blue: Double(accent.blue))
+        return (DSColor.prefersDarkText(onAccent: rgb) ? Color.black : Color.white).resolve(in: environment)
+    }
 }
 
 // MARK: - Design System: Font Tokens

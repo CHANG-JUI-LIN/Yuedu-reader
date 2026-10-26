@@ -35,7 +35,7 @@ struct FeedbackCenterView: View {
                         if unreadCount > 0 {
                             Text(unreadCount.formatted())
                                 .font(DSFont.caption.weight(.semibold))
-                                .foregroundStyle(DSColor.textOnAccent)
+                                .foregroundStyle(DSColor.textOnFixedFill)
                                 .padding(.horizontal, DSSpacing.sm)
                                 .padding(.vertical, DSSpacing.xxs)
                                 .background(DSColor.destructive, in: Capsule())

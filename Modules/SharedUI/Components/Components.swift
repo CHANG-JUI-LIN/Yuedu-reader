@@ -238,7 +238,7 @@ struct DSCard<Content: View>: View {
 /// The capsule every chip, filter and quick action in a bar is drawn as. Unselected it
 /// sits on the app's floating surface — glass with 外觀主題 › 界面效果 › 毛玻璃 on, its
 /// fill without — so it matches the controls floating over the page; selected it is the
-/// accent with white text. The label is subheadline at medium weight: a semantic text
+/// accent with `DSColor.textOnAccent` text. The label is subheadline at medium weight: a semantic text
 /// style, so it scales with Dynamic Type and keeps the system's tracking, with the
 /// weight rather than the size setting it apart from body text.
 struct DSCapsuleLabel: View {
@@ -275,7 +275,7 @@ struct DSCapsuleLabel: View {
             if let detail {
                 Text(detail)
                     .fontWeight(.regular)
-                    .foregroundStyle(isSelected ? DSColor.textOnAccent : DSColor.textSecondary)
+                    .foregroundStyle(isSelected ? AnyShapeStyle(DSColor.textOnAccent) : AnyShapeStyle(DSColor.textSecondary))
                     .lineLimit(1)
             }
             if let trailingSystemImage {
@@ -285,7 +285,7 @@ struct DSCapsuleLabel: View {
             }
         }
         .font(DSFont.subheadline.weight(.medium))
-        .foregroundStyle(isSelected ? DSColor.textOnAccent : DSColor.textPrimary)
+        .foregroundStyle(isSelected ? AnyShapeStyle(DSColor.textOnAccent) : AnyShapeStyle(DSColor.textPrimary))
         .padding(.horizontal, fillsWidth ? DSSpacing.sm : DSSpacing.md)
         .padding(.vertical, fillsWidth ? DSSpacing.xs : 0)
         .frame(minWidth: minWidth, maxWidth: fillsWidth ? .infinity : nil, minHeight: DSLayout.capsuleControlHeight)
@@ -316,6 +316,35 @@ struct DSChip: View {
         }
         .buttonStyle(.plain)
         .accessibilityAddTraits(isSelected ? .isSelected : [])
+    }
+}
+
+#Preview("DSChip – 強調色上的文字") {
+    // Accents set the way `ContentView` sets a theme's. F5F5F5 is the near-white dark
+    // accent imported packs bring (feedback #77); 琥珀金 is past the 3:1 floor too.
+    let accents: [(name: String, color: Color?)] = [
+        ("默認", nil),
+        ("海霧藍", Color(red: 0x34 / 255, green: 0x78 / 255, blue: 0xF6 / 255)),
+        ("琥珀金", Color(red: 0xD6 / 255, green: 0x9A / 255, blue: 0x2D / 255)),
+        ("F5F5F5", Color(red: 0xF5 / 255, green: 0xF5 / 255, blue: 0xF5 / 255)),
+    ]
+    HStack(spacing: 0) {
+        ForEach([ColorScheme.light, .dark], id: \.self) { scheme in
+            VStack(alignment: .leading, spacing: DSSpacing.md) {
+                ForEach(accents, id: \.name) { accent in
+                    HStack(spacing: DSSpacing.sm) {
+                        DSChip(title: localized("全部"), isSelected: true) {}
+                        DSChip(title: accent.name, isSelected: false) {}
+                    }
+                    .tint(accent.color)
+                    .accentColor(accent.color)
+                }
+            }
+            .padding()
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .background(DSColor.background)
+            .environment(\.colorScheme, scheme)
+        }
     }
 }
 

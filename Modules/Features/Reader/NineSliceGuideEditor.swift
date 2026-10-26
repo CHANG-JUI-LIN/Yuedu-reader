@@ -31,7 +31,7 @@ struct NineSliceGuideEditor: View {
     }
 
     private static let height: CGFloat = 200
-    private static let contrast = DSColor.textOnAccent.opacity(0.8)
+    private static let contrast = DSColor.textOnFixedFill.opacity(0.8)
     private static let space = "nine-slice-guides"
     /// One step of a VoiceOver swipe.
     private static let adjustmentStep = 0.01

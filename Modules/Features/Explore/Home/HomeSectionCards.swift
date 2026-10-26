@@ -436,12 +436,12 @@ struct HomeFeaturedCard: View {
                 .foregroundStyle(ground)
                 .padding(.horizontal, DSSpacing.lg)
                 .padding(.vertical, DSSpacing.sm)
-                .background(DSColor.textOnAccent, in: Capsule())
+                .background(DSColor.textOnFixedFill, in: Capsule())
                 .accessibilityHidden(true)
                 .padding(.trailing, reservesMenuSpace && !stacksVertically ? DSLayout.minimumTapTarget - DSSpacing.lg : 0)
                 .padding(.bottom, reservesMenuSpace && stacksVertically ? DSLayout.minimumTapTarget - DSSpacing.lg : 0)
         }
-        .foregroundStyle(DSColor.textOnAccent)
+        .foregroundStyle(DSColor.textOnFixedFill)
         .multilineTextAlignment(.leading)
         .frame(maxWidth: .infinity, minHeight: stacksVertically ? nil : coverSize.height, alignment: .topLeading)
     }
@@ -493,7 +493,7 @@ struct HomeCardMenuButton: View {
         } label: {
             Image(systemName: "ellipsis")
                 .font(DSFont.body.weight(.semibold))
-                .foregroundStyle(DSColor.textOnAccent)
+                .foregroundStyle(DSColor.textOnFixedFill)
                 .frame(width: DSLayout.minimumTapTarget, height: DSLayout.minimumTapTarget)
                 .contentShape(Rectangle())
         }
@@ -574,7 +574,7 @@ struct HomeCompactReadingCard: View {
                 .foregroundStyle(line.color)
                 .lineLimit(1)
         }
-        .foregroundStyle(DSColor.textOnAccent)
+        .foregroundStyle(DSColor.textOnFixedFill)
         .multilineTextAlignment(.leading)
         .fixedSize(horizontal: false, vertical: true)
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -731,7 +731,7 @@ struct HomeRankBadge: View {
         Text(rank.formatted())
             .font(DSFont.caption.weight(.bold))
             .monospacedDigit()
-            .foregroundStyle(fill == nil ? DSColor.textSecondary : DSColor.textOnAccent)
+            .foregroundStyle(fill == nil ? DSColor.textSecondary : DSColor.textOnFixedFill)
             .padding(.horizontal, DSSpacing.xs)
             .frame(minWidth: side, minHeight: side)
             .background(

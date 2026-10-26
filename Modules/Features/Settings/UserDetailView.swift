@@ -80,7 +80,7 @@ struct UserDetailView: View {
                             } label: {
                                 Text(localized("登入 / 註冊"))
                                     .font(DSFont.fixed(size: 15, weight: .semibold))
-                                    .foregroundColor(.white)
+                                    .foregroundStyle(DSColor.textOnAccent)
                                     .frame(maxWidth: .infinity)
                                     .padding(.vertical, 12)
                                     .background(DSColor.accent)

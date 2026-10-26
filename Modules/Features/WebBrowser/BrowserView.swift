@@ -1274,7 +1274,7 @@ struct WebTOCSheet: View {
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 14)
                         .background(DSColor.accent)
-                        .foregroundColor(.white)
+                        .foregroundStyle(DSColor.textOnAccent)
                         .clipShape(RoundedRectangle(cornerRadius: 14))
                 }
                 .padding(.horizontal, 16)

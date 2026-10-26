@@ -56,7 +56,7 @@ struct BookSourceCheckOptionsView: View {
                             Text(localized("開始驗證"))
                         }
                         .font(DSFont.bodyBold)
-                        .foregroundColor(.white)
+                        .foregroundStyle(DSColor.textOnAccent)
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, DSSpacing.md)
                         .background(DSColor.accent)

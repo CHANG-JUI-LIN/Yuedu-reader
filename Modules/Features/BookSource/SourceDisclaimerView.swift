@@ -74,7 +74,7 @@ struct SourceDisclaimerView: View {
         } label: {
             Text(localized("繼續"))
                 .font(DSFont.headline)
-                .foregroundColor(DSColor.textOnAccent)
+                .foregroundStyle(DSColor.textOnAccent)
                 .frame(maxWidth: .infinity)
                 .frame(height: 52)
                 .background(DSColor.accent)

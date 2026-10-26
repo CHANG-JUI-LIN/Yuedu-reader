@@ -444,7 +444,7 @@ struct RSSFeedView: View {
                             .background(
                                 Capsule().fill(isSelected ? DSColor.accent : DSColor.neutralControlFill)
                             )
-                            .foregroundColor(isSelected ? DSColor.textOnAccent : DSColor.textPrimary)
+                            .foregroundStyle(isSelected ? AnyShapeStyle(DSColor.textOnAccent) : AnyShapeStyle(DSColor.textPrimary))
                     }
                     .buttonStyle(.plain)
                 }

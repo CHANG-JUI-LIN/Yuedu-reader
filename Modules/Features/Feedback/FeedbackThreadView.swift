@@ -170,7 +170,7 @@ struct FeedbackThreadView: View {
                     .padding(.horizontal, DSSpacing.md)
                     .frame(minHeight: DSLayout.minimumTapTarget)
                     .background(canSend ? DSColor.accent : DSColor.neutralControlFill, in: Capsule())
-                    .foregroundStyle(canSend ? DSColor.textOnAccent : DSColor.textTertiary)
+                    .foregroundStyle(canSend ? AnyShapeStyle(DSColor.textOnAccent) : AnyShapeStyle(DSColor.textTertiary))
                 }
                 .buttonStyle(.plain)
                 .disabled(!canSend)

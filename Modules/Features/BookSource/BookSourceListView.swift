@@ -371,7 +371,7 @@ struct BookSourceListView: View {
                             ProgressView().scaleEffect(0.8)
                             Text(localized("驗證中…"))
                                 .font(DSFont.caption)
-                                .foregroundColor(.white)
+                                .foregroundStyle(DSColor.textOnAccent)
                         }
                         .padding(.horizontal, DSSpacing.lg)
                         .padding(.vertical, DSSpacing.sm)
@@ -837,7 +837,7 @@ struct BookSourceListView: View {
                 addFlow.begin(.local)
             } label: {
                 Label(localized("匯入來源配置 JSON"), systemImage: "square.and.arrow.down")
-                    .font(DSFont.headline).foregroundColor(.white)
+                    .font(DSFont.headline).foregroundStyle(DSColor.textOnAccent)
                     .padding(.horizontal, 28).padding(.vertical, 13)
                     .background(DSColor.accent).clipShape(Capsule())
             }

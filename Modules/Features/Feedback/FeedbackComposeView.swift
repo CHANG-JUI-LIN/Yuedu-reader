@@ -238,7 +238,7 @@ struct FeedbackDraftAttachmentStrip: View {
                 if attachment.kind == .video {
                     Image(systemName: "video.fill")
                         .font(DSFont.caption)
-                        .foregroundStyle(DSColor.textOnAccent)
+                        .foregroundStyle(DSColor.textOnFixedFill)
                         .padding(DSSpacing.xs)
                         .accessibilityHidden(true)
                 }
@@ -249,7 +249,7 @@ struct FeedbackDraftAttachmentStrip: View {
                 } label: {
                     Image(systemName: "xmark.circle.fill")
                         .symbolRenderingMode(.palette)
-                        .foregroundStyle(DSColor.textOnAccent, DSColor.cardCarouselDim.opacity(DSLayout.feedbackRemoveButtonBackdropOpacity))
+                        .foregroundStyle(DSColor.textOnFixedFill, DSColor.cardCarouselDim.opacity(DSLayout.feedbackRemoveButtonBackdropOpacity))
                         .frame(minWidth: DSLayout.minimumTapTarget, minHeight: DSLayout.minimumTapTarget, alignment: .topTrailing)
                         .contentShape(Rectangle())
                 }

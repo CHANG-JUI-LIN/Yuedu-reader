@@ -236,7 +236,7 @@ struct AudiobookCoverBadge: View {
     var body: some View {
         Image(systemName: "headphones")
             .font(DSFont.fixed(size: glyphSize, weight: .bold))
-            .foregroundStyle(.white)
+            .foregroundStyle(DSColor.textOnAccent)
             .padding(glyphSize * 0.5)
             .background(DSColor.accent, in: Circle())
             .overlay(Circle().stroke(Color.white.opacity(0.85), lineWidth: 0.5))
