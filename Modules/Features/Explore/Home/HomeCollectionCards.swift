@@ -80,26 +80,31 @@ struct HomeCollectionCard: View {
     }
 }
 
-extension CollectionOpening {
-    /// The middle of a card's accessibility identifier, `home.collection.<prefix>.<id>`.
-    var identifierPrefix: String {
-        switch self {
-        case .gutenbergCollection: "gutenberg"
+extension CollectionSummary {
+    /// A card's accessibility identifier, `home.collection.<kind>.<key>`. A category's id holds
+    /// its URL; its title names it among its source's.
+    var homeIdentifier: String {
+        switch opening {
+        case .gutenbergCollection: "home.collection.gutenberg.\(id)"
+        case .sourceCategory(let category): "home.collection.sourceCategory.\(category.title)"
         }
     }
+}
 
+extension CollectionOpening {
     /// The session a list's covers load through: Gutenberg's built-in connection's, as the store
-    /// loads them.
+    /// loads them. A book source's covers carry its headers in their reference, as its rows' do.
     @MainActor
     func coverSession(connections: RemoteLibraryConnectionStore) -> URLSession? {
         switch self {
         case .gutenbergCollection: HomeCardContent.gutenbergSession(connections: connections)
+        case .sourceCategory: nil
         }
     }
 }
 
 /// One list's button in every layout of lists: its name is the whole label (the artwork is
-/// hidden), and the UI tests find it by `home.collection.<prefix>.<id>`.
+/// hidden), and the UI tests find it by `CollectionSummary.homeIdentifier`.
 private struct HomeCollectionButton<Card: View>: View {
     let collection: CollectionSummary
     var value: String?
@@ -113,7 +118,7 @@ private struct HomeCollectionButton<Card: View>: View {
             .accessibilityAddTraits(.isButton)
             .accessibilityLabel(collection.title)
             .accessibilityValue(value ?? "")
-            .accessibilityIdentifier("home.collection.\(collection.opening.identifierPrefix).\(collection.id)")
+            .accessibilityIdentifier(collection.homeIdentifier)
     }
 }
 
@@ -322,6 +327,20 @@ struct CollectionCoverArtwork<Cover: View>: View {
                 .environment(\.dynamicTypeSize, .accessibility3)
         }
         .padding(.vertical, DSSpacing.lg)
+    }
+}
+
+#Preview("分類卡片，來源配置的分類") {
+    // A 來源配置's categories, drawn with the bundled lists' covers so the preview needs no network.
+    let lists = PublicLibraryCollection.all.map(CollectionSummary.bundledGutenberg)
+    let categories = zip(["玄幻", "都市", "歷史軍事"], lists).map { title, list in
+        CollectionSummary(id: title, title: title, books: list.books, languages: [],
+                          opening: .sourceCategory(ExploreCategoryReference(sourceURL: "https://preview.example", title: title,
+                                                                            url: "https://preview.example/\(title)")))
+    }
+    ScrollView {
+        HomeCategoryCards(collections: categories, open: { _ in })
+            .padding(.vertical, DSSpacing.lg)
     }
 }
 

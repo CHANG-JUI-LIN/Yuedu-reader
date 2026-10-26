@@ -75,18 +75,19 @@ private struct HomeNewSectionFlow: View {
     @State private var showsForm = false
     @ObservedObject private var availability = PublicLibraryAvailability.shared
 
-    /// The layouts of lists (專題集合, 分類卡片, 拼貼卡片) draw lists, which only Gutenberg's
-    /// bundled lists offer today: not where the public libraries are not offered.
+    /// The layouts of lists (專題集合, 分類卡片, 拼貼卡片) draw Gutenberg's bundled lists, not
+    /// offered where the public libraries are not; 分類卡片 draws a 來源配置's categories too.
     private var styles: [HomeLayoutStyle] {
-        HomeLayoutStyle.allCases.filter { !$0.drawsLists || availability.isAvailable }
+        HomeLayoutStyle.allCases.filter { !$0.drawsLists || $0 == .categoryCards || availability.isAvailable }
     }
 
     var body: some View {
         NavigationStack {
             HomeLayoutGallery(choices: styles, sample: .standard, identifierPrefix: "homeNewSection.layout") { style in
                 let editor = HomeSectionEditor(layout: HomeSectionLayout(style: style), preview: .preview(shelf: store))
-                // The one source of lists, chosen already; 資料來源 can still change it.
-                if style.drawsLists { editor.choose(.gutenbergLists) }
+                // Gutenberg's lists, chosen already where they are offered; 資料來源 can still
+                // change them, to a 來源配置's categories for 分類卡片.
+                if style.drawsLists, availability.isAvailable { editor.choose(.gutenbergLists) }
                 self.editor = editor
                 showsForm = true
             }
@@ -122,6 +123,8 @@ private enum HomeSectionFormPush: Hashable {
     case latestCategory(String)
     /// The section's category, picked again under other filters, by source URL.
     case filters(String)
+    /// 分類卡片's 加入分類: the source's categories to tick, by source URL.
+    case cardCategories(String)
     /// 呈現方式's previews (decision 34).
     case layouts
 }
@@ -239,6 +242,9 @@ struct HomeSectionForm: View {
             if draft.binding == .forYou {
                 forYouCategories
             }
+            if draft.section?.drawsCategoryCards == true {
+                cardCategories
+            }
             if let entry = moduleEntry, !entry.editableParams.isEmpty {
                 moduleParameters(entry)
             }
@@ -310,6 +316,17 @@ struct HomeSectionForm: View {
                                             current: draft.binding) { choice in
                             editor.choose(choice.binding, parameters: choice.parameters, itemTitle: choice.itemTitle)
                             push = nil
+                        }
+                    }
+                // Each tap ticks or unticks a category and stays, until the cards are full.
+                case .cardCategories(let url):
+                    if let source = sources.sources.first(where: { $0.bookSourceUrl == url }) {
+                        HomeCategoryChoices(source: source, filterValues: editor.filterValues(forSourceURL: url),
+                                            current: .sourceCategories(editor.cardCategories),
+                                            canChooseMore: editor.canAddCardCategory) { choice in
+                            guard case .sourceCategories(let references) = choice.binding, let reference = references.first
+                            else { return }
+                            editor.toggleCardCategory(reference, filterValues: choice.filterValues)
                         }
                     }
                 }
@@ -416,11 +433,51 @@ struct HomeSectionForm: View {
         editor.setLatestCategory(reference, filterValues: choice.filterValues, forSourceURL: reference.sourceURL)
     }
 
+    // MARK: 分類卡片
+
+    /// 分類卡片's categories (maintainer, 2026-10-26): a card each, in this order. 加入分類 lists
+    /// the source's categories to tick, up to `HomeSection.categoryCardLimit`; the last one stays.
+    private var cardCategories: some View {
+        let categories = editor.cardCategories
+        return Section {
+            ForEach(categories) { reference in
+                Text(reference.title)
+                    .foregroundStyle(DSColor.textPrimary)
+                    .swipeActions {
+                        if categories.count > 1 {
+                            Button(localized("移除"), role: .destructive) { editor.removeCardCategory(reference) }
+                        }
+                    }
+                    .accessibilityActions {
+                        if categories.count > 1 {
+                            Button(localized("移除")) { editor.removeCardCategory(reference) }
+                        }
+                    }
+                    .accessibilityIdentifier("homeSection.categoryCard.\(reference.title)")
+            }
+            if let url = categories.first?.sourceURL {
+                Button { push = .cardCategories(url) } label: {
+                    Label(localized("加入分類"), systemImage: "plus")
+                }
+                .disabled(!editor.canAddCardCategory)
+                .accessibilityIdentifier("homeSection.categoryCard.add")
+            }
+        } header: {
+            Text(localized("清單：分類"))
+        } footer: {
+            Text(String(format: localized("最多 %d 個分類。"), HomeSection.categoryCardLimit))
+                .dsSectionFooter()
+        }
+        .interfaceSectionSurface()
+    }
+
     // MARK: Filters
 
-    /// The section's book source category, when it was picked under the source's filters.
+    /// The section's book source category, when it was picked under the source's filters. 分類卡片
+    /// lists its categories under them in 加入分類 instead.
     private var filteredCategory: ExploreCategoryReference? {
-        guard case .sourceCategories(let references) = draft.binding, references.count == 1,
+        guard draft.section?.drawsCategoryCards != true,
+              case .sourceCategories(let references) = draft.binding, references.count == 1,
               let reference = references.first,
               !editor.filterValues(forSourceURL: reference.sourceURL).isEmpty else { return nil }
         return reference
@@ -720,4 +777,19 @@ extension HomeContentOwner {
     }
     .environmentObject(BookStore())
     .dynamicTypeSize(.accessibility3)
+}
+
+#Preview("分類卡片的分類") {
+    let categories = ["玄幻", "都市", "仙俠"].map {
+        ExploreCategoryReference(sourceURL: "https://preview.example", title: $0, url: "https://preview.example/\($0)")
+    }
+    return NavigationStack {
+        HomeSectionForm(
+            editor: HomeSectionEditor(
+                section: HomeSection(layout: .categoryCards, binding: .sourceCategories(categories)),
+                store: HomePageStore(fileURL: FileManager.default.temporaryDirectory.appendingPathComponent("preview-home.json")),
+                preview: .preview(shelf: BookStore())),
+            isInSheet: false)
+    }
+    .environmentObject(BookStore())
 }

@@ -84,8 +84,8 @@ enum ForYouInputs {
         var found: [ExploreCategoryReference] = []
         for section in sections where section.isEnabled {
             switch section.binding {
-            case .sourceCategories(let references):
-                found += references
+            case .sourceCategories:
+                found += section.shownCategories
             case .latest:
                 let prefix = HomeSection.latestCategoryKey(sourceURL: "")
                 for key in section.parameters.keys.sorted() where key.hasPrefix(prefix) {

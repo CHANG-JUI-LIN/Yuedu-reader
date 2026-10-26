@@ -188,12 +188,13 @@ private struct HomeChoiceRow: View {
     let title: String
     let isCurrent: Bool
     let action: () -> Void
+    @Environment(\.isEnabled) private var isEnabled
 
     var body: some View {
         Button(action: action) {
             HStack {
                 Text(title)
-                    .foregroundStyle(DSColor.textPrimary)
+                    .foregroundStyle(isEnabled ? DSColor.textPrimary : DSColor.textTertiary)
                 Spacer()
                 if isCurrent {
                     Image(systemName: "checkmark")
@@ -462,23 +463,27 @@ struct HomeSourceChoices: View {
 /// A book source's discover categories, under the group labels it draws, searchable, with the
 /// source's filters above them. A filter changed here lists the categories again under it for
 /// this section only (`SourceCategoryListing`); the source's discover page keeps its own.
+/// 分類卡片's 加入分類 ticks every category it draws.
 struct HomeCategoryChoices: View {
     let current: HomeSectionBinding?
+    /// False once 分類卡片 has all its cards: only a ticked category can be tapped, to untick it.
+    let canChooseMore: Bool
     let choose: (HomeContentChoice) -> Void
     @StateObject private var listing: SourceCategoryListing
     @State private var query = ""
 
     /// - Parameter filterValues: the section's, from when it picked its category here.
     init(source: BookSource, filterValues: [String: String] = [:], current: HomeSectionBinding?,
-         choose: @escaping (HomeContentChoice) -> Void) {
+         canChooseMore: Bool = true, choose: @escaping (HomeContentChoice) -> Void) {
         self.current = current
+        self.canChooseMore = canChooseMore
         self.choose = choose
         _listing = StateObject(wrappedValue: SourceCategoryListing(source: source, filterValues: filterValues))
     }
 
-    private var currentReference: ExploreCategoryReference? {
-        if case .sourceCategories(let references) = current { return references.first }
-        return nil
+    private var currentReferences: [ExploreCategoryReference] {
+        if case .sourceCategories(let references) = current { return references }
+        return []
     }
 
     private var trimmedQuery: String { query.trimmingCharacters(in: .whitespacesAndNewlines) }
@@ -515,13 +520,15 @@ struct HomeCategoryChoices: View {
                 Section {
                     ForEach(group.items, id: \.stableKey) { item in
                         if let reference = listing.reference(for: item) {
-                            HomeChoiceRow(title: item.title, isCurrent: reference == currentReference) {
+                            let isCurrent = currentReferences.contains(reference)
+                            HomeChoiceRow(title: item.title, isCurrent: isCurrent) {
                                 let values = listing.filterValues
                                 choose(HomeContentChoice(
                                     binding: .sourceCategories([reference]),
                                     parameters: HomeSection.filterParameters(values, sourceURL: reference.sourceURL),
                                     filterValues: values))
                             }
+                            .disabled(!isCurrent && !canChooseMore)
                         }
                     }
                 } header: {

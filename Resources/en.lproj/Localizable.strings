@@ -4186,3 +4186,7 @@
 "書架上同作者、同系列的書。" = "Books on your shelf by the same author or in the same series.";
 "依主題整理的經典名著。" = "Great classics, gathered by theme.";
 "最多人下載的經典。" = "The most downloaded classics.";
+
+/* 分類卡片 of a 來源配置's section (2026-10-26): the form's list of the categories it draws, and its limit */
+"清單：分類" = "Categories";
+"最多 %d 個分類。" = "Up to %d categories.";

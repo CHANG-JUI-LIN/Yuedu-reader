@@ -97,6 +97,8 @@ struct CollectionSummary: Hashable, Sendable, Identifiable {
 enum CollectionOpening: Hashable, Sendable {
     /// One of Gutenberg's bundled lists (`PublicLibraryCollection`).
     case gutenbergCollection(id: String)
+    /// A book source's category, a card of a 來源配置's 分類卡片 (`CollectionSummary.sourceCategory`).
+    case sourceCategory(ExploreCategoryReference)
 }
 
 /// What opening an item needs, frozen when the entry is made, so a destination never

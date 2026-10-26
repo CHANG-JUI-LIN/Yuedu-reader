@@ -219,7 +219,9 @@ enum ExplorePlace {
                 // A WebDAV library's newest files are gathered from every folder; no page lists them.
                 return nil
             }
+        // 分類卡片: each card opens its category, the header the source's own page.
         case .sourceCategories(let references):
+            if row.section.drawsCategoryCards { return .explore(.source(sourceURL: row.source.id)) }
             return references.first { $0.sourceURL == row.source.id }.map { .explore(.sourceCategory($0)) }
         case .opdsFeed(let connectionID, let url):
             return .feed(OPDSFeedRoute(catalogID: connectionID, url: url, title: row.section.displayTitle(sourceName: row.sourceName)))
@@ -254,10 +256,12 @@ enum ExplorePlace {
         }
     }
 
-    /// A card of 專題集合: the whole list.
+    /// A card of a layout of lists: the whole list. A category's is the page its row's 查看全部
+    /// opens.
     static func page(of collection: CollectionSummary) -> ExplorePush {
         switch collection.opening {
         case .gutenbergCollection(let id): .publicLibrary(.collection(id: id))
+        case .sourceCategory(let category): .explore(.sourceCategory(category))
         }
     }
 

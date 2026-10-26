@@ -78,9 +78,12 @@ enum HomeLayoutStyle: String, CaseIterable, Identifiable, Sendable {
     }
 
     /// What 呈現方式 offers a section: the layouts of lists for a section of lists, every
-    /// other layout for a section of books. One place, for the long press, the form and 新增欄目.
+    /// other layout for a section of books, and for a 來源配置's categories 分類卡片 too, a card
+    /// per category (`HomeSection.drawsCategoryCards`). One place, for the long press, the form
+    /// and 新增欄目.
     static func choices(for binding: HomeSectionBinding) -> [HomeLayoutStyle] {
-        allCases.filter { $0.drawsLists == binding.listsCollections }
+        if case .sourceCategories = binding { return allCases.filter { !$0.drawsLists || $0 == .categoryCards } }
+        return allCases.filter { $0.drawsLists == binding.listsCollections }
     }
 }
 

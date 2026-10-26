@@ -39,6 +39,8 @@ extension HomeSection {
         switch binding {
         case .opdsFeed(let connectionID, _): sourceName = connections.connection(id: connectionID)?.name ?? ""
         case .gutenbergFeed, .gutenbergShelf: sourceName = localized("Project Gutenberg")
+        // 分類卡片, titled by its source as its row is.
+        case .sourceCategories(let categories): sourceName = categories.first?.source?.bookSourceName ?? ""
         // An untitled module list (the defaults) by its list's title, as its row reads
         // (`ModuleProvider.rowName`); by its id once its module is gone.
         case .module(let moduleID, let entryID):

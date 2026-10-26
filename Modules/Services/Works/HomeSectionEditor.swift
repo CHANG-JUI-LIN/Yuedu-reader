@@ -163,6 +163,42 @@ final class HomeSectionEditor: ObservableObject {
         change { $0.parameters = section.parameters }
     }
 
+    // MARK: 分類卡片's categories
+
+    /// The categories a 來源配置's 分類卡片 draws, a card each, in this order.
+    var cardCategories: [ExploreCategoryReference] {
+        guard let section = draft.section, section.drawsCategoryCards else { return [] }
+        return section.shownCategories
+    }
+
+    var canAddCardCategory: Bool {
+        cardCategories.count < HomeSection.categoryCardLimit
+    }
+
+    /// 加入分類's tap: a category of the section's source goes at the end, with the discover
+    /// filter values it was listed under (`HomeSection.filtersKey`), or comes out. The last one
+    /// stays: without it the section would have no source.
+    func toggleCardCategory(_ reference: ExploreCategoryReference, filterValues: [String: String]) {
+        let categories = cardCategories
+        if categories.contains(reference) {
+            removeCardCategory(reference)
+            return
+        }
+        guard let first = categories.first, first.sourceURL == reference.sourceURL, canAddCardCategory,
+              var section = draft.section else { return }
+        section.setFilterValues(filterValues, forSourceURL: reference.sourceURL)
+        change {
+            $0.binding = .sourceCategories(categories + [reference])
+            $0.parameters = section.parameters
+        }
+    }
+
+    func removeCardCategory(_ reference: ExploreCategoryReference) {
+        let categories = cardCategories
+        guard categories.count > 1, categories.contains(reference) else { return }
+        change { $0.binding = .sourceCategories(categories.filter { $0 != reference }) }
+    }
+
     // MARK: 最新's libraries
 
     /// 顯示在最新, set in 最新's form as Emby 4.10 sets a section's libraries (decision 36). It
