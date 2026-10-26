@@ -172,7 +172,7 @@ enum DSColor {
 }
 
 /// `DSColor`'s tokens that follow the appearance, as the dynamic `UIColor`s the SwiftUI
-/// ones wrap. UIKit takes these — never `UIColor(DSColor.x)`.
+/// ones wrap. UIKit takes these — never `UIColor(DSColor.x)` for any of them.
 ///
 /// On iOS 17, `UIColor(_:)` does not hand back the `UIColor` a `Color(uiColor:)` holds: it
 /// returns a new colour that resolves the held one in light at standard contrast, whatever
@@ -180,6 +180,17 @@ enum DSColor {
 /// text and light surfaces in dark, with Increase Contrast ignored — while SwiftUI drew the
 /// same tokens right (measured 2026-10-26 on iOS 17.5; iOS 18.6 and 27 hand back the colour
 /// itself).
+///
+/// The accent and `highlight` are left out on purpose: UIKit inside a SwiftUI view takes
+/// `UIColor(DSColor.accent)`, which resolves from the environment SwiftUI hands that view —
+/// theme, a screen's own `.accentColor`, dark, Increase Contrast — as its SwiftUI neighbours
+/// do. iOS 17 resolves it from the SwiftUI environment in the view's traits; iOS 27 hands
+/// back `UITintColor`, the view's `tintColor`, which SwiftUI sets. Measured 2026-10-26 in a
+/// dark window on iOS 17.5 and 27: the 簡介 link, the iOS 17 search selection and the 青空
+/// index drew 暮色橙's dark accent and the dark system blue (`UIKitAccentTests`). Only away
+/// from a hosted view — an image renderer, traits built by hand — does it come out the
+/// light system blue on iOS 17 and miss the theme; `UIColor.tintColor` gives the system
+/// accent there.
 enum DSUIColor {
     /// `DSColor.textPrimary`.
     static var textPrimary: UIColor { themedText(\.primary, fallback: .label) }

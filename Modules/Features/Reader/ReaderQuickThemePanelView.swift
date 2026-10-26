@@ -620,7 +620,9 @@ private struct QuickPanelSegmentButtonStyle: ButtonStyle {
 /// inside its own tile and the neighbours must not be overlapped (feedback #12).
 #Preview("Background tile, landscape picture") {
     let landscape = UIGraphicsImageRenderer(size: CGSize(width: 320, height: 180)).image { context in
-        UIColor(DSColor.accent).setFill()
+        // Drawn away from any view, where `UIColor(DSColor.accent)` is iOS 17's light blue
+        // in dark too; `tintColor` resolves to the system accent here (see `DSUIColor`).
+        UIColor.tintColor.setFill()
         context.fill(CGRect(x: 0, y: 0, width: 320, height: 180))
         DSUIColor.textPrimary.setFill()
         context.fill(CGRect(x: 0, y: 120, width: 320, height: 60))

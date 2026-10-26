@@ -254,7 +254,7 @@ private extension AozoraIndexGroup {
     var indexTitle: String { id == "latin" ? "A" : id == "other" ? "#" : id }
 }
 
-private struct AozoraIndexedTable<Row: View>: UIViewRepresentable {
+struct AozoraIndexedTable<Row: View>: UIViewRepresentable {
     let groups: [AozoraIndexGroup]
     let row: (String) -> Row
     let select: (String) -> Void
