@@ -91,7 +91,7 @@ struct RSSSmartFeedView: View {
                                         systemImage: article.isRead ? "envelope.badge" : "envelope.open"
                                     )
                                 }
-                                .tint(DSColor.accent)
+                                .tint(DSColor.swipeAction)
                             }
                         }
                     }
@@ -306,7 +306,7 @@ struct RSSFeedView: View {
                                 systemImage: article.isRead ? "envelope.badge" : "envelope.open"
                             )
                         }
-                        .tint(DSColor.accent)
+                        .tint(DSColor.swipeAction)
                     }
                 }
             }

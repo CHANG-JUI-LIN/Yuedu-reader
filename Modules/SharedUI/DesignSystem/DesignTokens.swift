@@ -15,6 +15,12 @@ enum DSColor {
     static let destructive = Color.red
     /// 回饋中心's 需要你補充資訊 badge: a request, set apart from 排隊中's warning orange.
     static let feedbackNeedsInfo = Color(uiColor: .systemTeal)
+    /// A swipe action's fill, for an action that is not destructive and has no colour of its
+    /// own: the system blue, whatever the theme. The system draws a swipe action's symbol and
+    /// title white and gives no way to change them — `.tint` is its only documented lever — so
+    /// the fill cannot follow the accent: an imported pack's near-white accent put white on
+    /// F5F5F5 at 1.09 (feedback #77; maintainer's call, 2026-10-26).
+    static let swipeAction = Color(uiColor: .systemBlue)
 
     // ── Rankings ──
     /// A custom explore page's rank badges for first, second and third place, white

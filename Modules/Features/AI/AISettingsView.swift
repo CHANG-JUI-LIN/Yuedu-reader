@@ -420,7 +420,7 @@ struct AISettingsView: View {
             }
             if !isDefault {
                 Button(localized("設為預設")) { makeDefault(profile) }
-                    .tint(DSColor.accent)
+                    .tint(DSColor.swipeAction)
             }
         }
     }

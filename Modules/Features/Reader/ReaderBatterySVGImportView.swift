@@ -195,7 +195,7 @@ struct ReaderBatterySVGImportView: View {
                     } label: {
                         Label(localized("重新命名"), systemImage: "pencil")
                     }
-                    .tint(DSColor.accent)
+                    .tint(DSColor.swipeAction)
                 }
             }
         }

@@ -124,7 +124,7 @@ struct ReaderStyleAssetLibraryView: View {
             Button { beginRename(asset) } label: {
                 Label(localized("重新命名"), systemImage: "pencil")
             }
-            .tint(DSColor.accent)
+            .tint(DSColor.swipeAction)
         }
         .contextMenu {
             Button { beginRename(asset) } label: {
