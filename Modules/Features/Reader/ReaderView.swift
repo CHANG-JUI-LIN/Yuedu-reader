@@ -292,8 +292,9 @@ struct ReaderView: View {
     /// This reader took narration over from a closed reader of the book: once the opening
     /// restore lands, it goes to where the narration is (`alignToAdoptedNarration`).
     @State var alignsToNarrationOnRestore = false
-    /// The book whose narration outlived its reader, reopened over this reader from the capsule.
-    @State var reopenedNarrationBook: NowPlayingHub.ReopenedNarrationBook?
+    /// What the capsule's cover opened over this reader: the book whose narration outlived its
+    /// reader, or the audiobook's player.
+    @State var artworkDestination: NowPlayingHub.ArtworkDestination?
     @State var isAligningReaderToTTSAnchor = false
     @State var showMediaOverlayPanel = false
     @State var activeMediaOverlayChapterIndex: Int? = nil
@@ -1626,6 +1627,21 @@ struct ReaderView: View {
                 .toolbarBackground(.hidden, for: .navigationBar)
                 .toolbarColorScheme(readerColorScheme, for: .navigationBar)
         }
+        // What this reader's capsule cover opens, over this reader: another book's narration
+        // reopens that book, whose reader takes the narration over (`ReaderView.init`); an
+        // audiobook opens its player. Closing it comes back here. Not the app root's to present:
+        // this reader may be presented full screen, and presenting from the root closed it.
+        // Outside the reader's own NavigationStack, not on its root: iOS 26.4.x builds a cover on
+        // a stack's root again whenever anything is presented over it (the player's 目錄 or 定時,
+        // here; #51).
+        .fullScreenCover(item: $artworkDestination) { destination in
+            NowPlayingArtworkDestinationView(destination: destination)
+                .environmentObject(store)
+                // Modal, of its own. This reader's navigator and parent stack are not its:
+                // closing a reader through them would close this reader instead.
+                .environment(\.readerNavigator, nil)
+                .environment(\.readerUsesParentNavigationStack, false)
+        }
         .tint(readerTheme.textColor)
         // Here, outside the reader's own NavigationStack, so it sees the window and not the
         // content area under the navigation bar. See `reportsReaderViewport`.
@@ -1993,7 +2009,7 @@ struct ReaderView: View {
             NowPlayingMiniPlayer(
                 placement: .reader,
                 barsVisible: showBars,
-                presentNarratedBook: { reopenedNarrationBook = $0 }
+                presentDestination: { artworkDestination = $0 }
             )
             .zIndex(50)
 
@@ -2853,17 +2869,6 @@ struct ReaderView: View {
                 }
                 .task { await gatherAIBookText() }
             }
-        }
-        // Another book's narration on this reader's capsule, reopened from its cover: that
-        // book's reader opens over this one and takes the narration over (`ReaderView.init`);
-        // closing it comes back here.
-        .fullScreenCover(item: $reopenedNarrationBook) { book in
-            BookReaderView(bookId: book.bookID)
-                .environmentObject(store)
-                // A modal reader of its own. This reader's navigator and parent stack are not
-                // its: closing it through them would close this reader instead.
-                .environment(\.readerNavigator, nil)
-                .environment(\.readerUsesParentNavigationStack, false)
         }
         )
         let mediaPresentationLayers = AnyView(

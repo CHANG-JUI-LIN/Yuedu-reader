@@ -9,6 +9,7 @@ import XCTest
 final class NowPlayingCapsuleUITests: XCTestCase {
     private let narrated = "膠囊測試甲"
     private let other = "膠囊測試乙"
+    private let audiobook = "膠囊測試有聲書"
     private var folder: URL!
 
     private func body(_ title: String) -> String { "\(title)正文，用來確認閱讀器打開了這本書。" }
@@ -36,9 +37,10 @@ final class NowPlayingCapsuleUITests: XCTestCase {
     }
 
     @MainActor
-    private func launch(_ app: XCUIApplication, importing title: String, extraArguments: [String] = []) {
+    private func launch(_ app: XCUIApplication, importing title: String, fileExtension: String = "txt",
+                        extraArguments: [String] = []) {
         app.launchArguments = ["-no-official-modules", "-onboarding.completed", "YES", "-AppleLanguages", "(zh-Hant)", "-AppleLocale", "zh_TW",
-                               "-auto-import-epub", folder.appendingPathComponent("\(title).txt").path,
+                               "-auto-import-epub", folder.appendingPathComponent("\(title).\(fileExtension)").path,
                                "-auto-import-title", title, "-yd_page_turn_style", "滑動", "-yd_scroll_mode", "NO",
                                // The on-device voice: an online one depends on the network, and a
                                // failed request pauses narration — not what this test is about.
@@ -263,5 +265,84 @@ final class NowPlayingCapsuleUITests: XCTestCase {
         close.tap()
         _ = shelfBook(app, narrated)
         XCTAssertFalse(playPause.waitForExistence(timeout: 3), "Stopped narration leaves no capsule behind.\n\(app.debugDescription)")
+    }
+
+    /// An audiobook playing on after its player closed shows on every reader's capsule, and the
+    /// capsule's cover opens its player again — also over a reader presented full screen, as
+    /// 搜索's 最近閱讀 presents one. The app root presented that player, and presenting it from
+    /// there closed a reader presented full screen: 收合 came back to 最近閱讀, the book gone.
+    @MainActor
+    func testAudiobookPlayerOpensOverAFullScreenReader() throws {
+        try silentWAV(seconds: 300).write(to: folder.appendingPathComponent("\(audiobook).wav"))
+        let app = XCUIApplication()
+        let tabs = ["-yd_root_tab_visible_ids", "(bookshelf, settings, search)"]
+        launch(app, importing: other, extraArguments: tabs)
+        // Opened once, so 最近閱讀 lists it.
+        open(app, other)
+        leaveReader(app, to: other)
+        app.terminate()
+        launch(app, importing: audiobook, fileExtension: "wav", extraArguments: tabs)
+
+        // The shelf opens an audiobook in its player, which plays it; 收合 leaves it playing.
+        shelfBook(app, audiobook).tap()
+        let collapse = app.buttons["收合"].firstMatch
+        XCTAssertTrue(collapse.waitForExistence(timeout: 30), "The audiobook's player opens.\n\(app.debugDescription)")
+        collapse.tap()
+        XCTAssertTrue(shelfCapsule(app, "play_pause").waitForExistence(timeout: 10),
+                      "The audiobook plays on with its player closed.\n\(app.debugDescription)")
+
+        // 書架 pushes the reader inside its tab.
+        open(app, other)
+        openAudiobookPlayer(app, over: other)
+        leaveReader(app, to: other)
+
+        // 最近閱讀 presents it full screen.
+        app.tabBars.buttons["搜尋"].firstMatch.tap()
+        let field = app.searchFields.firstMatch
+        XCTAssertTrue(field.waitForExistence(timeout: 10), app.debugDescription)
+        field.tap()
+        let recent = app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", other)).firstMatch
+        XCTAssertTrue(recent.waitForExistence(timeout: 10), app.debugDescription)
+        recent.tap()
+        XCTAssertTrue(page(app, other).waitForExistence(timeout: 30), "最近閱讀 opens the book.\n\(app.debugDescription)")
+        openAudiobookPlayer(app, over: other)
+
+        capsule(app, "stop").tap()
+        XCTAssertTrue(capsule(app, "play_pause").waitForNonExistence(timeout: 10),
+                      "✕ ends the audiobook.\n\(app.debugDescription)")
+        closeModalReader(app)
+        XCTAssertTrue(recent.waitForExistence(timeout: 10), "Back on 最近閱讀.\n\(app.debugDescription)")
+    }
+
+    /// Taps the cover of the audiobook's capsule in `title`'s reader: the audiobook's player
+    /// opens over it, and 收合 comes back to the reader.
+    @MainActor
+    private func openAudiobookPlayer(_ app: XCUIApplication, over title: String) {
+        let cover = capsule(app, "open_panel")
+        XCTAssertTrue(cover.waitForExistence(timeout: 10), "The reader's capsule shows the audiobook.\n\(app.debugDescription)")
+        cover.tap()
+        let collapse = app.buttons["收合"].firstMatch
+        XCTAssertTrue(collapse.waitForExistence(timeout: 10),
+                      "The capsule's cover opens the audiobook's player.\n\(app.debugDescription)")
+        screenshot(app, "audiobook-player-over-\(title)")
+        collapse.tap()
+        XCTAssertTrue(collapse.waitForNonExistence(timeout: 10), app.debugDescription)
+        XCTAssertTrue(page(app, title).waitForExistence(timeout: 10), "Back on the book.\n\(app.debugDescription)")
+        XCTAssertTrue(cover.waitForExistence(timeout: 10), "The audiobook plays on.\n\(app.debugDescription)")
+    }
+
+    /// A 16-bit mono WAV of silence: an audiobook to play, without a sound.
+    private func silentWAV(seconds: Int, sampleRate: Int = 8000) -> Data {
+        let byteCount = UInt32(seconds * sampleRate * 2)
+        var data = Data()
+        func append(_ text: String) { data.append(contentsOf: Array(text.utf8)) }
+        func append<T: FixedWidthInteger>(_ value: T) { withUnsafeBytes(of: value.littleEndian) { data.append(contentsOf: $0) } }
+        append("RIFF"); append(UInt32(36) + byteCount); append("WAVE")
+        // PCM, one channel, 16 bits a sample.
+        append("fmt "); append(UInt32(16)); append(UInt16(1)); append(UInt16(1))
+        append(UInt32(sampleRate)); append(UInt32(sampleRate * 2)); append(UInt16(2)); append(UInt16(16))
+        append("data"); append(byteCount)
+        data.append(Data(count: Int(byteCount)))
+        return data
     }
 }

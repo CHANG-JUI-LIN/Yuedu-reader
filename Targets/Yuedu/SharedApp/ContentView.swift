@@ -460,21 +460,32 @@ private struct AudiobookPlayerPresentation: ViewModifier {
     let store: BookStore
 
     func body(content: Content) -> some View {
-        content.fullScreenCover(isPresented: $hub.isPresentingAudiobook) {
-            if let bookId = hub.audiobookBookId {
-                if store.books.contains(where: { $0.id == bookId }) {
-                    BookReaderView(bookId: bookId)
-                        .environmentObject(store)
-                } else {
-                    AudiobookReaderView(bookId: bookId)
-                        .environmentObject(store)
-                }
-            }
-        }
-        // Its reader takes the narration over as it opens (`ReaderView.init`).
-        .fullScreenCover(item: $hub.reopenedNarrationBook) { book in
-            BookReaderView(bookId: book.bookID)
+        content.fullScreenCover(item: $hub.appRootDestination) { destination in
+            NowPlayingArtworkDestinationView(destination: destination)
                 .environmentObject(store)
+        }
+    }
+}
+
+/// What the now-playing mini-player's artwork opens (`NowPlayingHub.openFromArtwork`), presented
+/// full screen by the mini-player's host: the app root, or the reader the mini-player is in.
+struct NowPlayingArtworkDestinationView: View {
+    let destination: NowPlayingHub.ArtworkDestination
+    @EnvironmentObject private var store: BookStore
+
+    var body: some View {
+        switch destination {
+        case .narratedBook(let bookID):
+            // Its reader takes the narration over as it opens (`ReaderView.init`).
+            BookReaderView(bookId: bookID)
+        case .audiobookPlayer(let bookID):
+            // A 作品詳情 audiobook played without adding it to the shelf has no book for the
+            // reader entry to open: its player is all there is.
+            if store.books.contains(where: { $0.id == bookID }) {
+                BookReaderView(bookId: bookID)
+            } else {
+                AudiobookReaderView(bookId: bookID)
+            }
         }
     }
 }
@@ -529,11 +540,11 @@ struct NowPlayingMiniPlayer: View {
     /// they're hidden it may be dragged lower (no toolbar to clear).
     var barsVisible: Bool = true
 
-    /// Presents the book a closed reader is still narrating, reopened from the artwork. A reader
-    /// passes its own and presents the book over itself: it may be presented full screen, and the
-    /// app root cannot present over that. `nil` at the root, which presents it over every tab
-    /// (`NowPlayingHub.reopenedNarrationBook`).
-    var presentNarratedBook: ((NowPlayingHub.ReopenedNarrationBook) -> Void)? = nil
+    /// Presents what the artwork opens: the book a closed reader is still narrating, or the
+    /// audiobook's player. A reader passes its own and presents it over itself: it may be
+    /// presented full screen, and presenting from the app root closed it. `nil` at the root, which
+    /// presents it over every tab (`NowPlayingHub.appRootDestination`).
+    var presentDestination: ((NowPlayingHub.ArtworkDestination) -> Void)? = nil
 
     @StateObject private var hub = NowPlayingHub.shared
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -632,11 +643,11 @@ struct NowPlayingMiniPlayer: View {
         HStack(spacing: controlSpacing) {
             Button {
                 performTapAction {
-                    guard let book = hub.openFromArtwork() else { return }
-                    if let presentNarratedBook {
-                        presentNarratedBook(book)
+                    guard let destination = hub.openFromArtwork() else { return }
+                    if let presentDestination {
+                        presentDestination(destination)
                     } else {
-                        hub.reopenedNarrationBook = book
+                        hub.appRootDestination = destination
                     }
                 }
             } label: {
@@ -995,6 +1006,11 @@ private struct SpinningCoverIcon<Face: View>: View {
         totalSegments: 94,
         holdsNarrationPastReader: true
     )
-    return NowPlayingMiniPlayer(placement: .reader, barsVisible: false, presentNarratedBook: { _ in })
+    return NowPlayingMiniPlayer(placement: .reader, barsVisible: false, presentDestination: { _ in })
+}
+
+#Preview("Artwork destination, an audiobook off the shelf") {
+    NowPlayingArtworkDestinationView(destination: .audiobookPlayer(UUID()))
+        .environmentObject(BookStore())
 }
 #endif
