@@ -136,8 +136,8 @@ final class ModuleLibraryUITests: XCTestCase {
         attach(app, "modules-removed")
     }
 
-    /// AI 推薦 8d: 官方模組 lists AI 推薦 even with no module imported, and the empty 新增模組
-    /// card still shows under 匯入的模組. Its page names what is sent and offers 產生推薦.
+    /// AI 推薦 8d: 模組 lists AI 推薦 even with no module imported, and the empty 新增模組
+    /// card still shows after the official ones. Its page names what is sent and offers 產生推薦.
     @MainActor
     func testOfficialModuleIsListed() {
         let app = launch(extra: ["-debug-force-pro"])

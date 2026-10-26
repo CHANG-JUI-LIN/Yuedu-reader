@@ -80,10 +80,11 @@ struct LibraryTabRoot: View {
                         if !noticeDismissed {
                             notice
                         }
-                        OfficialModuleSection { layout in publicLibraryTiles(layout) }
+                        RuleModuleSection(library: modules, onAdd: { moduleFlow.begin(.address) }) { layout in
+                            publicLibraryTiles(layout)
+                        }
                         remoteLibrariesSection
                         sourcesSection
-                        RuleModuleSection(library: modules) { moduleFlow.begin(.address) }
                         subscriptionsSection
                     } else if !matchingSources.isEmpty {
                         LibrarySection(localized("來源配置")) { layout in
@@ -264,7 +265,7 @@ struct LibraryTabRoot: View {
 
     // MARK: Sections
 
-    /// 古騰堡 and 青空文庫, in 官方模組 (M2b). Their identifiers stay `library.public.<id>`; each
+    /// 古騰堡 and 青空文庫, in 模組 with the official modules (M2b). Their identifiers stay `library.public.<id>`; each
     /// opens what it offers, as a module's card does, not shelves to browse (2026-10-22).
     private func publicLibraryTiles(_ layout: ExploreEntryLabel.Layout) -> some View {
         ForEach(libraries.filter { $0.key.type == .gutenberg || $0.key.type == .aozora }) { library in
@@ -310,8 +311,13 @@ struct LibraryTabRoot: View {
     }
 
     /// 所有來源配置, then a card for each group (decision 31): never every source on the root.
+    ///
+    /// Eager, as 模組 above it: lazy, the grid's second row stayed out of the accessibility tree
+    /// on the iOS 27 simulator once 模組 was one eager section (2026-10-26,
+    /// `testSourcesByGroup`), so VoiceOver never reached the groups after the first. The root
+    /// shows one card per group, a few dozen at most.
     private var sourcesSection: some View {
-        LibrarySection(localized("來源配置")) {
+        LibrarySection(localized("來源配置"), isLazy: false) {
             NavigationLink(value: ExploreNavigationRoute.sourceManager) {
                 LibrarySectionAccessoryLabel()
             }

@@ -1,20 +1,36 @@
 import SwiftUI
 
-/// 資源庫's 官方模組 (AI 推薦 plan 8d): the app's own modules, always listed, above 匯入的模組:
-/// AI 推薦, then the bundled module files (module ecosystem plan, M2).
-struct OfficialModuleSection<Libraries: View>: View {
+/// 資源庫's 模組, first on the page: the app's own modules, then the ones the reader imported, in
+/// one group (maintainer 2026-10-26: 「官方模組跟匯入的模組匯合在一起，然後就叫模組」). In order:
+/// AI 推薦, 古騰堡 and 青空文庫, the bundled module files, then each imported module and each
+/// folder that could not be read, which can only be removed. 新增模組 is a card of its own while
+/// nothing is imported.
+struct RuleModuleSection<Libraries: View>: View {
     @ObservedObject var library: RuleModuleLibrary
+    /// 新增模組 from the empty card: by address, as the most common way in.
+    let onAdd: () -> Void
     /// 古騰堡 and 青空文庫 (M2b, maintainer 2026-10-17: 「公有書庫都算是官方模塊」): their cards,
     /// after AI 推薦 and before the bundled modules.
     private let libraries: (ExploreEntryLabel.Layout) -> Libraries
+    @State private var pendingRemoval: RuleModuleStore.Failure?
+    @State private var removalFailure: String?
 
-    init(library: RuleModuleLibrary? = nil, @ViewBuilder libraries: @escaping (ExploreEntryLabel.Layout) -> Libraries) {
+    init(library: RuleModuleLibrary? = nil, onAdd: @escaping () -> Void,
+         @ViewBuilder libraries: @escaping (ExploreEntryLabel.Layout) -> Libraries) {
         self.library = library ?? .shared
+        self.onAdd = onAdd
         self.libraries = libraries
     }
 
     var body: some View {
-        LibrarySection(localized("官方模組")) { layout in
+        // Eager, not lazy: when the imported modules were a section of their own below 官方模組,
+        // its lazy grid stayed in the accessibility tree as an empty, zero-sized element on the
+        // iOS 27 simulator, so VoiceOver never reached 新增模組 (2026-10-15). A reader has a
+        // handful of modules, so laziness buys nothing here.
+        // 在資源庫中展示 and 停用 (M6) leave a module's card out; 設定's 模組 still lists it.
+        let official = library.official.filter { library.isShownInLibrary($0.module.id) }
+        let imported = library.imported.filter { library.isShownInLibrary($0.module.id) }
+        LibrarySection(localized("模組"), isLazy: false) { layout in
             NavigationLink(value: ExploreNavigationRoute.aiRecommendations) {
                 ExploreEntryLabel(title: localized("AI 推薦"), artwork: .symbol("sparkles"), layout: layout,
                                   subtitle: localized("依你最近讀的書推薦作品"))
@@ -24,74 +40,11 @@ struct OfficialModuleSection<Libraries: View>: View {
             .accessibilityValue(localized("依你最近讀的書推薦作品"))
             .accessibilityIdentifier("library.module.official.aiRecommendations")
             libraries(layout)
-            // 在資源庫中展示 and 停用 (M6) leave a module's card out; 模組 still lists it.
-            ForEach(library.official.filter { library.isShownInLibrary($0.module.id) }, id: \.module.id) { installed in
-                RuleModuleCard(module: installed.module, layout: layout)
-            }
-        }
-    }
-}
-
-extension OfficialModuleSection where Libraries == EmptyView {
-    init(library: RuleModuleLibrary? = nil) {
-        self.init(library: library) { _ in EmptyView() }
-    }
-}
-
-/// A module's card in 資源庫: its title, description, version and author; opens its page.
-struct RuleModuleCard: View {
-    let module: RuleModule
-    let layout: ExploreEntryLabel.Layout
-
-    var body: some View {
-        let version = String(format: localized("版本 %@"), module.version)
-        let author = module.author.flatMap { $0.trimmingCharacters(in: .whitespaces).isEmpty ? nil : $0 }
-        let detail = [version, author].compactMap { $0 }.joined(separator: " · ")
-        let description = module.description.flatMap { $0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? nil : $0 }
-        NavigationLink(value: ExploreNavigationRoute.module(id: module.id)) {
-            ExploreEntryLabel(title: module.title, artwork: .symbol("puzzlepiece.extension"), layout: layout,
-                              subtitle: description, detail: detail)
-        }
-        .buttonStyle(ExploreTileButtonStyle())
-        .accessibilityLabel(module.title)
-        .accessibilityValue([description, detail].compactMap { $0 }.joined(separator: ", "))
-        .accessibilityIdentifier("library.module.\(module.id)")
-    }
-}
-
-/// 資源庫's 匯入的模組 (Phase 6e): a card per installed module, as the other groups draw theirs,
-/// and a card for each folder that could not be read, which can only be removed. Its 新增模組
-/// card depends on the imported modules alone; 官方模組 is `OfficialModuleSection`.
-struct RuleModuleSection: View {
-    @ObservedObject var library: RuleModuleLibrary
-    /// 新增模組 from the empty card: by address, as the most common way in.
-    let onAdd: () -> Void
-    @State private var pendingRemoval: RuleModuleStore.Failure?
-    @State private var removalFailure: String?
-
-    var body: some View {
-        // Eager, not lazy: with 官方模組 above it, this section's lazy grid stayed in the
-        // accessibility tree as an empty, zero-sized element on the iOS 27 simulator, so
-        // VoiceOver never reached 新增模組 (2026-10-15; making 官方模組 eager did not help, and
-        // neither did dropping the loading spinner). A reader imports a handful of modules, so
-        // laziness bought nothing here. Delete `isLazy: false` once `testOfficialModuleIsListed`
-        // passes without it.
-        let shown = library.imported.filter { library.isShownInLibrary($0.module.id) }
-        LibrarySection(localized("匯入的模組"), isLazy: false) { layout in
             if !library.isLoaded {
                 ProgressView()
                     .frame(maxWidth: .infinity, alignment: .leading)
-            } else if shown.isEmpty && library.failures.isEmpty {
-                Button(action: onAdd) {
-                    ExploreEntryLabel(title: localized("新增模組"), artwork: .neutral("plus"), layout: layout,
-                                      subtitle: localized("還沒有模組"))
-                }
-                .buttonStyle(ExploreTileButtonStyle())
-                .accessibilityLabel(localized("新增模組"))
-                .accessibilityValue(localized("還沒有模組"))
-                .accessibilityIdentifier("library.modules.add")
             } else {
-                ForEach(shown, id: \.module.id) { installed in
+                ForEach(official + imported, id: \.module.id) { installed in
                     RuleModuleCard(module: installed.module, layout: layout)
                 }
                 ForEach(library.failures, id: \.folder) { failure in
@@ -106,6 +59,16 @@ struct RuleModuleSection: View {
                     .accessibilityValue(localized("無法讀取的模組"))
                     .accessibilityHint(localized("移除模組"))
                     .accessibilityIdentifier("library.module.failed.\(failure.folder)")
+                }
+                if imported.isEmpty && library.failures.isEmpty {
+                    Button(action: onAdd) {
+                        ExploreEntryLabel(title: localized("新增模組"), artwork: .neutral("plus"), layout: layout,
+                                          subtitle: localized("還沒有模組"))
+                    }
+                    .buttonStyle(ExploreTileButtonStyle())
+                    .accessibilityLabel(localized("新增模組"))
+                    .accessibilityValue(localized("還沒有模組"))
+                    .accessibilityIdentifier("library.modules.add")
                 }
             }
         }
@@ -136,26 +99,46 @@ struct RuleModuleSection: View {
     }
 }
 
-#Preview("No modules") {
-    ScrollView {
-        RuleModuleSection(library: RuleModulePreviewData.library([]), onAdd: {})
-            .padding(DSSpacing.lg)
+extension RuleModuleSection where Libraries == EmptyView {
+    init(library: RuleModuleLibrary? = nil, onAdd: @escaping () -> Void) {
+        self.init(library: library, onAdd: onAdd) { _ in EmptyView() }
     }
 }
 
-#Preview("Two modules") {
+/// A module's card in 資源庫: its title, description, version and author; opens its page.
+struct RuleModuleCard: View {
+    let module: RuleModule
+    let layout: ExploreEntryLabel.Layout
+
+    var body: some View {
+        let version = String(format: localized("版本 %@"), module.version)
+        let author = module.author.flatMap { $0.trimmingCharacters(in: .whitespaces).isEmpty ? nil : $0 }
+        let detail = [version, author].compactMap { $0 }.joined(separator: " · ")
+        let description = module.description.flatMap { $0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? nil : $0 }
+        NavigationLink(value: ExploreNavigationRoute.module(id: module.id)) {
+            ExploreEntryLabel(title: module.title, artwork: .symbol("puzzlepiece.extension"), layout: layout,
+                              subtitle: description, detail: detail)
+        }
+        .buttonStyle(ExploreTileButtonStyle())
+        .accessibilityLabel(module.title)
+        .accessibilityValue([description, detail].compactMap { $0 }.joined(separator: ", "))
+        .accessibilityIdentifier("library.module.\(module.id)")
+    }
+}
+
+#Preview("Official only") {
     NavigationStack {
         ScrollView {
-            RuleModuleSection(library: RuleModulePreviewData.library(["新書速報", "排行榜"]), onAdd: {})
+            RuleModuleSection(library: RuleModulePreviewData.officialLibrary(), onAdd: {})
                 .padding(DSSpacing.lg)
         }
     }
 }
 
-#Preview("Official modules") {
+#Preview("Two imported") {
     NavigationStack {
         ScrollView {
-            OfficialModuleSection(library: RuleModulePreviewData.officialLibrary())
+            RuleModuleSection(library: RuleModulePreviewData.library(["新書速報", "排行榜"]), onAdd: {})
                 .padding(DSSpacing.lg)
         }
     }

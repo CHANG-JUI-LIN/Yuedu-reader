@@ -171,7 +171,7 @@ final class LibraryTabUITests: XCTestCase {
     @MainActor
     func testGridAndList() {
         let grid = launch(["-explore.showsGrid", "YES", "-explore.gridColumnCount", "2"])
-        // 官方模組 (M2b): AI 推薦, then 古騰堡 beside it, then 青空文庫 on the next row.
+        // 模組 (M2b): AI 推薦, then 古騰堡 beside it, then 青空文庫 on the next row.
         let recommendations = grid.buttons["library.module.official.aiRecommendations"].firstMatch
         let gutenberg = grid.buttons["library.public.builtin.gutenberg"].firstMatch
         let aozora = grid.buttons["library.public.builtin.aozora"].firstMatch
@@ -228,7 +228,7 @@ final class LibraryTabUITests: XCTestCase {
         let all = app.buttons["library.sources.all"].firstMatch
         XCTAssertTrue(all.waitForExistence(timeout: 10), app.debugDescription)
         XCTAssertEqual(all.value as? String, "3 個來源配置")
-        // 官方模組 and 遠端書庫 come first: the groups' second row is below the screen.
+        // 模組 and 遠端書庫 come first: the groups' second row is below the screen.
         let male = scrolledTo(app.buttons["library.group.男频"].firstMatch, in: app)
         XCTAssertTrue(male.exists, app.debugDescription)
         XCTAssertEqual(male.value as? String, "2 個來源配置")
