@@ -472,7 +472,9 @@ struct ShelfWorkTests {
             store: store,
             sourceSwitch: OnlineBookSourceSwitch(
                 store: store, positionStore: positions, offlineChapterStore: offline, chapterFetcher: nil
-            )
+            ),
+            // Every book here is a source's: its list is its own.
+            versions: ShelfVersionSwitch(store: store, positionStore: positions) { $0.onlineChapters }
         )
         try await body(store, positions, service)
         store.flushPendingMetadataSave()

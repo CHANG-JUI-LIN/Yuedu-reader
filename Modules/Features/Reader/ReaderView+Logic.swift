@@ -635,11 +635,13 @@ extension ReaderView {
     }
 
     /// Source change search has been moved to ReaderViewModel.loadOtherOrigins. This method only triggers it and passes required data.
+    /// Every book searches the sources (maintainer 2026-10-26: an imported book changes source
+    /// like any other); only one read from a source has an origin to leave out.
     func loadOtherOrigins(forceRefresh: Bool = false) {
-        guard let b = book, let currentSourceId = b.bookSourceId else { return }
+        guard let b = book else { return }
         readerViewModel.loadOtherOrigins(
             book: b,
-            currentSourceId: currentSourceId,
+            currentSourceId: ShelfWork.isSourceCopy(b) ? b.bookSourceId : nil,
             enabledSources: BookSourceStore.shared.enabledSources,
             store: store,
             forceRefresh: forceRefresh

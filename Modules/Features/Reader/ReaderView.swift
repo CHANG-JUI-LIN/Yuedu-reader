@@ -32,6 +32,8 @@ struct ReaderView: View {
     @Environment(\.appDependencies) var dependencies
     @Environment(\.presentationMode) var presentationMode
     @Environment(\.readerNavigator) var readerNavigator
+    /// 換源 to another version of the work hands the reader over to it (`BookReaderView`).
+    @Environment(\.readerVersionSwitch) var readerVersionSwitch
     @Environment(\.rootTabBarVisibility) var rootTabBarVisibility
     @Environment(\.scenePhase) private var scenePhase
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
@@ -344,6 +346,8 @@ struct ReaderView: View {
 
     // Source change
     @State var showChangeSourceSheet = false
+    /// 換源's 書庫與模組: the work's versions in the libraries and modules.
+    @State var versionFinder = ReaderVersionFinder()
     /// The source whose 來源配置登入 the book card opened.
     @State var sourceLoginTarget: BookSource?
     @State private var replaceRuleDraft: ReplaceRule?
@@ -2932,11 +2936,13 @@ struct ReaderView: View {
                 .onChanged(of: showChangeSourceSheet) { show in
             if show {
                 loadOtherOrigins()
+                versionFinder.start(for: bookId, store: store)
             } else {
                 // Swiping the sheet away is a cancel too — otherwise a switch the user
                 // walked away from would still commit and yank them to another source.
                 readerViewModel.cancelPendingSourceSwitch()
                 readerViewModel.stopChangeSourceSearch()
+                versionFinder.stop()
             }
         }
         .onChanged(of: chapters.isEmpty) { isEmpty in

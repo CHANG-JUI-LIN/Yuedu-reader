@@ -13,6 +13,9 @@ import Foundation
 /// 3. Second pass: extract the chapter number ("第一百零三章" → 103, Chinese
 ///    numerals included) and take an exact number match.
 /// 4. Otherwise fall back to the old index clamped into the new TOC.
+///
+/// As in Legado, the first chapter maps to the first chapter without a search
+/// (`alignedIndex` searches for it too).
 enum ChapterAlignment {
 
     static func mappedChapterIndex(
@@ -22,6 +25,19 @@ enum ChapterAlignment {
         newTitles: [String]
     ) -> Int {
         guard oldIndex > 0 else { return 0 }
+        return alignedIndex(oldIndex: oldIndex, oldTitle: oldTitle, oldCount: oldCount, newTitles: newTitles)
+    }
+
+    /// `mappedChapterIndex`, the first chapter included: versions of a work
+    /// (`VersionPlaceMapping`) open on different front matter — an EPUB's cover
+    /// and title page, a TXT's preface, none for a 來源配置 — so the first entry
+    /// of one is often the second of another.
+    static func alignedIndex(
+        oldIndex: Int,
+        oldTitle: String?,
+        oldCount: Int,
+        newTitles: [String]
+    ) -> Int {
         guard !newTitles.isEmpty else { return max(0, oldIndex) }
 
         let newCount = newTitles.count

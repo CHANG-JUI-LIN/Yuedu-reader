@@ -804,6 +804,10 @@
 "來源配置發現" = "Discover";
 "網頁瀏覽" = "Web";
 "目前來源配置" = "Current Source";
+"目前來源" = "Current Source";
+"這個版本已不在這台裝置上。" = "This version is no longer on this device.";
+"書庫與模組" = "Libraries & Modules";
+"這個版本的格式無法閱讀。" = "This version is in a format that can't be read.";
 "目前發現頁" = "Current Discover Page";
 "切換來源配置" = "Switch Source";
 "切換發現頁" = "Switch Discover Page";

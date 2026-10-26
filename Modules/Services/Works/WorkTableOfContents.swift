@@ -84,7 +84,7 @@ enum WorkTableOfContents {
 
     /// Where the reader opens `chapter`: its spine item (a TXT's chapter), at the entry's anchor
     /// when it has one. A TXT chapter's `url` is its index's number, which has no anchor.
-    static func target(of chapter: OnlineChapterRef) -> ReaderTOCTarget {
+    nonisolated static func target(of chapter: OnlineChapterRef) -> ReaderTOCTarget {
         guard let hash = chapter.url.firstIndex(of: "#") else {
             return ReaderTOCTarget(spineIndex: chapter.index, fragment: nil)
         }

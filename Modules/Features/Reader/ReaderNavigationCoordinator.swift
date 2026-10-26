@@ -459,6 +459,14 @@ final class ReaderNavigationCoordinator: ObservableObject {
         notifyReaderClosed()
     }
 
+    /// 換源 put another version of the work in the reader (`BookReaderView`). The card it opened
+    /// from was the old version's and has left the shelf, so its geometry no longer resolves and
+    /// closing centres the card (`ReaderTransitionSource.resolvedFrame`).
+    func readerDidSwitchVersion(to bookID: UUID) {
+        guard readerBookID != nil else { return }
+        readerBookID = bookID
+    }
+
     /// Pop the directly-owned reader. State is cleared only after UIKit says
     /// the pop committed; a rejected or cancelled pop keeps the same reader.
     func close() {

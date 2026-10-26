@@ -429,22 +429,8 @@ struct WorkDetailView: View {
     /// The copy the version is read from, as 開始閱讀 reads it; nil for a version with none
     /// (a book source's, drawn by its own page) or a format that does not read.
     private func tocCopy(of version: WorkDetailRoute) -> (() async throws -> ReadingBook)? {
-        switch version.opening {
-        case .copy(let id):
-            guard let book = copy(id) else { return nil }
-            return { book }
-        case .aozora(let work):
-            return { [dependencies, store] in try await dependencies.aozoraLibrary.readingCopy(work: work, store: store) }
-        case .moduleBook(let book):
-            return { [dependencies, store] in try await dependencies.moduleBooks.readingCopy(book, store: store) }
-        case .gutenberg, .opdsEntry, .webDAVFile:
-            guard let item = libraryItem(of: version), let format = selectedFormat(of: version), format.isSupported else {
-                return nil
-            }
-            return { [dependencies, store] in try dependencies.remoteLibrary.readingCopy(item: item, format: format, store: store) }
-        case .onlineBook, .bibliographic:
-            return nil
-        }
+        VersionReadingCopy(store: store, dependencies: dependencies)
+            .acquisition(of: version, item: libraryItem(of: version), format: selectedFormat(of: version))
     }
 
     private func reloadTOC() {

@@ -679,7 +679,7 @@ final class ICloudSyncManager: ObservableObject {
                 // of "no instrumented span" (the field's background stalls, 3.0.0 (129)).
                 let (localBooks, bookMutationRevision) = await MainActor.run {
                     SourcePerfTrace.span("sync.read.books", thresholdMs: 5) {
-                        (store.books.map { $0.withoutTableOfContents() }, store.mutationRevision)
+                        (store.syncedBooks.map { $0.withoutTableOfContents() }, store.mutationRevision)
                     }
                 }
                 let bookMerge = try await mergeType(
@@ -1422,17 +1422,23 @@ final class ICloudSyncManager: ObservableObject {
         bookFilePayloads(await localBooks())
     }
 
-    /// The shelf as stored on this device. Empty before the first book is added.
+    /// The books whose files sync, as stored on this device: the shelf, and the versions kept
+    /// beside its books (`BookStore.syncedBooks`). Empty before the first book is added.
     nonisolated private func localBooks() async -> [ReadingBook] {
         // The merge a pass has just applied is queued on `BookStore`'s queue, not yet on disk:
         // read before it lands, the books it brought are left out of the downloads.
         await BookStore.queuedWritesLanded()
         let url = StorageLocations.booksMetadataFile
+        let readingURL = BookStore.readingMetadataFileURL(forShelf: url)
+        return Self.storedBooks(at: url) + Self.storedBooks(at: readingURL).filter { $0.versionOf != nil }
+    }
+
+    nonisolated private static func storedBooks(at url: URL) -> [ReadingBook] {
         guard FileManager.default.fileExists(atPath: url.path) else { return [] }
         do {
             return try JSONDecoder().decode([ReadingBook].self, from: Data(contentsOf: url))
         } catch {
-            AppLogger.sync("books_meta unreadable; its book files are left out: \(error.localizedDescription)", level: .error)
+            AppLogger.sync("\(url.lastPathComponent) unreadable; its book files are left out: \(error.localizedDescription)", level: .error)
             return []
         }
     }
@@ -1479,7 +1485,7 @@ final class ICloudSyncManager: ObservableObject {
     }
 
     nonisolated static func syncableContentFilename(for book: ReadingBook) -> String? {
-        guard book.isInBookshelf else { return nil }
+        guard book.isInBookshelf || book.versionOf != nil else { return nil }
         // Automatic remote caches belong to this device and must never become
         // uploaded book files. Only the explicitly saved offline copy is durable.
         if let remote = book.remoteSource { return remote.offlineFilename }

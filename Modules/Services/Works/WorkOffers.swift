@@ -45,6 +45,18 @@ enum WorkOffers {
         return key.agreeing(found, authors: found.map { ("aozora", $0.summary.authors) })
     }
 
+    /// The tapped work's books among what the saved libraries and the modules found under its
+    /// title (換源, maintainer 2026-10-26), matched as its offers are; each place witnesses the
+    /// author of its own books.
+    static func found(of work: WorkDetailRoute, in found: [WorkDetailRoute]) -> [WorkDetailRoute] {
+        guard let key = Key(work.summary.title, authors: work.summary.authors) else { return [] }
+        let matched = found.filter { route in
+            route.record.key != work.record.key && route.record.contentKind == work.record.contentKind
+                && key.matchesTitle(route.summary.title) && key.matchesAuthors(route.summary.authors)
+        }
+        return key.agreeing(matched, authors: matched.map { ($0.record.key.instance.id, $0.summary.authors) })
+    }
+
     /// A work's title and authors, folded once.
     private struct Key {
         let title: String

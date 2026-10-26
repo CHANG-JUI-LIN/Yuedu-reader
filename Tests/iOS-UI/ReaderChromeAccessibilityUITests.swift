@@ -167,7 +167,7 @@ final class ReaderChromeAccessibilityUITests: XCTestCase {
         let capsule = app.buttons["reader_title_capsule"].firstMatch
         XCTAssertTrue(capsule.waitForExistence(timeout: 5), app.debugDescription)
         capsule.press(forDuration: 1.2)
-        let changeSource = app.staticTexts["目前來源配置"].firstMatch
+        let changeSource = app.staticTexts["目前來源"].firstMatch
         XCTAssertTrue(changeSource.waitForExistence(timeout: 10), app.debugDescription)
         XCTAssertFalse(app.buttons["reader_book_card_details"].exists, app.debugDescription)
         app.buttons["關閉"].firstMatch.tap()

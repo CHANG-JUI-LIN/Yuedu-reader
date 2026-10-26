@@ -12,7 +12,9 @@ enum ReaderShelvePrompt {
     /// imported file joins it), and a copy made ahead of reading was never opened.
     @MainActor
     static func copy(_ id: UUID, in store: BookStore) -> ReadingBook? {
-        guard let book = store.readingBook(id: id), !book.isInBookshelf, book.lastOpenedDate != nil else { return nil }
+        // A version kept beside a shelf book is that work's already; 換源 puts it on the shelf.
+        guard let book = store.readingBook(id: id), !book.isInBookshelf, book.versionOf == nil,
+              book.lastOpenedDate != nil else { return nil }
         return book
     }
 }

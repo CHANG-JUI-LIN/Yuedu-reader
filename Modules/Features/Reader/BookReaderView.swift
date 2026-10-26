@@ -1,10 +1,52 @@
 import SwiftUI
 
-// The single reader entry point prepares remote resources before choosing the
-// existing format-specific reader. Shelf membership never determines readability.
+// The single reader entry point. It reads one copy at a time: 換源 to another version of the
+// work (`ShelfVersionSwitch`) hands its place to that version's reader, in the same place in
+// the navigation.
 struct BookReaderView: View {
     let bookId: UUID
     /// 作品詳情's 目錄 entry the reader opens at (`ReaderView`'s opening restore goes on to it).
+    var openingTOCTarget: ReaderTOCTarget?
+    @Environment(\.readerNavigator) private var readerNavigator
+    /// The version 換源 switched to, and where its reader opens.
+    @State private var switched: SwitchedVersion?
+
+    private struct SwitchedVersion {
+        let id: UUID
+        let opening: ReaderTOCTarget?
+    }
+
+    var body: some View {
+        let id = switched?.id ?? bookId
+        BookReaderContent(bookId: id, openingTOCTarget: switched.map { $0.opening } ?? openingTOCTarget)
+            // Another copy is another reader: its own resources, layout and restore.
+            .id(id)
+            .environment(\.readerVersionSwitch, ReaderVersionSwitchAction { target, opening in
+                switched = SwitchedVersion(id: target, opening: opening)
+                readerNavigator?.readerDidSwitchVersion(to: target)
+            })
+    }
+}
+
+/// 換源 to another version of the work: the reader on screen gives way to the version's own.
+struct ReaderVersionSwitchAction {
+    let perform: @MainActor (UUID, ReaderTOCTarget?) -> Void
+
+    @MainActor
+    func callAsFunction(_ bookID: UUID, opening: ReaderTOCTarget?) {
+        perform(bookID, opening)
+    }
+}
+
+extension EnvironmentValues {
+    /// Set by `BookReaderView`; nil for a reader shown outside it.
+    @Entry var readerVersionSwitch: ReaderVersionSwitchAction? = nil
+}
+
+// Prepares remote resources before choosing the existing format-specific reader. Shelf
+// membership never determines readability.
+private struct BookReaderContent: View {
+    let bookId: UUID
     var openingTOCTarget: ReaderTOCTarget?
     @EnvironmentObject var store: BookStore
     @Environment(\.appDependencies) private var dependencies

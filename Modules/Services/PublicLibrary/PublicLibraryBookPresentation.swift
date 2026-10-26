@@ -287,6 +287,27 @@ enum PublicLibraryFeedTransport {
     }
 }
 
+extension GutenbergBookDetail {
+    /// A Gutenberg book's catalog entry: the one its listing carried, else its own feed's. The
+    /// book page and 換源 read it here (`VersionReadingCopy`).
+    @MainActor
+    static func load(_ book: GutenbergBook,
+                     fetch: (URL) async throws -> OPDSFeed = storefrontFeed) async throws -> GutenbergBookDetail {
+        let feed: OPDSFeed
+        if let entry = book.entry { feed = OPDSFeed(entries: [entry]) }
+        else if let url = book.feedURL { feed = try await fetch(url) }
+        else { throw OPDSError.invalidURL }
+        try Task.checkCancellation()
+        return try GutenbergBookDetail(feed: feed)
+    }
+
+    /// Through `GutenbergProvider`, the storefront's one fetch path (unified library 2a).
+    @MainActor
+    static func storefrontFeed(_ url: URL) async throws -> OPDSFeed {
+        try await SourceProviderRegistry.shared.gutenberg.feed(url, isSearch: false)
+    }
+}
+
 @MainActor
 final class GutenbergBookPageModel: ObservableObject {
     @Published private(set) var detail: GutenbergBookDetail?
@@ -296,9 +317,8 @@ final class GutenbergBookPageModel: ObservableObject {
     private let book: GutenbergBook
     private let fetch: (URL) async throws -> OPDSFeed
 
-    /// The default fetch goes through `GutenbergProvider`, the storefront's one fetch path
-    /// (unified library 2a).
-    init(book: GutenbergBook, fetch: @escaping (URL) async throws -> OPDSFeed = { try await SourceProviderRegistry.shared.gutenberg.feed($0, isSearch: false) }) {
+    /// The default fetch goes through `GutenbergProvider` (`GutenbergBookDetail.storefrontFeed`).
+    init(book: GutenbergBook, fetch: @escaping (URL) async throws -> OPDSFeed = GutenbergBookDetail.storefrontFeed) {
         self.book = book
         self.fetch = fetch
     }
@@ -310,12 +330,7 @@ final class GutenbergBookPageModel: ObservableObject {
         errorMessage = nil
         defer { isLoading = false }
         do {
-            let feed: OPDSFeed
-            if let entry = book.entry { feed = OPDSFeed(entries: [entry]) }
-            else if let url = book.feedURL { feed = try await fetch(url) }
-            else { throw OPDSError.invalidURL }
-            try Task.checkCancellation()
-            detail = try GutenbergBookDetail(feed: feed)
+            detail = try await GutenbergBookDetail.load(book, fetch: fetch)
         } catch {
             if Task.isCancelled { attempted = false; return }
             AppLogger.network("Gutenberg book detail failed", error: SourceFailure.loggable(error), context: ["book": book.id])

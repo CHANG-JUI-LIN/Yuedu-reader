@@ -76,10 +76,11 @@ extension ReaderView {
         .accessibilityLabel(localized("退出閱讀"))
     }
 
-    /// 換源 only means something for an online book read from a source — the same
-    /// condition the book card's 換源 action uses.
-    private var canChangeModernSource: Bool {
-        book?.isOnline == true && book?.bookSourceId != nil
+    /// Every book changes source (maintainer 2026-10-26: 「書架導入的書長按書名膠囊為什麼不能直接
+    /// 換源」): a 來源配置's, a module's, a library's, an imported file. The book card's 換源 uses
+    /// the same condition.
+    var canChangeModernSource: Bool {
+        book != nil
     }
 
     /// 書名 over where it is read from, in one glass capsule never narrower than
@@ -268,11 +269,10 @@ extension ReaderView {
         book?.author.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
     }
 
-    /// The title capsule's second line: the source an online book is read from, or
-    /// 本機 for a book that lives on this device.
+    /// The title capsule's second line: where the book is read from (`BookOriginName`).
     var modernSourceText: String {
         guard let book else { return "" }
-        return book.isOnline ? currentSourceName : localized("本機")
+        return BookOriginName.of(book)
     }
 
     /// The 格式 chip. Online books resolve to `.html` internally, which is true but
@@ -316,7 +316,7 @@ extension ReaderView {
             )
         }
 
-        if book?.isOnline == true, book?.bookSourceId != nil {
+        if canChangeModernSource {
             actions.append(
                 ReaderSecondaryAction(
                     id: .changeSource,

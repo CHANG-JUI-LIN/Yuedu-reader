@@ -8,8 +8,11 @@ import Foundation
 // the shelf book to that source through 換源 (`OnlineBookSourceSwitch`), and the copies already
 // on the shelf are merged once at launch (`ShelfWorkMerger`).
 //
-// Only books read from a 來源配置 are in scope: imported files, remote libraries, Aozora,
-// modules and browser imports keep their own rules.
+// Every origin, since 2026-10-26 (maintainer: 「自己導入的書、來源配置、WebDAV、Calibre、模組⋯
+// 都是相同地位」): an imported file, a library's book, a module's, 青空文庫's and a 來源配置's are
+// versions of the work alike. One is on the shelf; the others are kept beside it
+// (`ReadingBook.versionOf`) for 換源 to switch to (`ShelfVersionSwitch`), each with its own file,
+// place and highlights. A work keeps one 來源配置 copy: two are merged into one, as before.
 
 /// The shelf's "same work" test: the work index's B-level rule (`WorkIndex`, design §7.2) —
 /// equal `WorkMatchKey` titles and compatible named authors — plus the same content kind. Unlike
@@ -63,22 +66,25 @@ enum ShelfWork {
         book.lastOpenedDate ?? book.addedDate
     }
 
-    /// The order in which copies of a work are kept: the most recently read first, ties broken
-    /// by id. The same inputs give the same order on every device, so two devices merging the
-    /// same synced shelf keep the same book.
+    /// The order in which copies of a work are kept: a copy read before one never opened, then
+    /// the most recently read (or added) first, ties broken by id — a file imported today does
+    /// not take the shelf from the copy being read. The same inputs give the same order on
+    /// every device, so two devices merging the same synced shelf keep the same book.
     static func keptFirst(_ lhs: ReadingBook, _ rhs: ReadingBook) -> Bool {
+        if (lhs.lastOpenedDate == nil) != (rhs.lastOpenedDate == nil) { return lhs.lastOpenedDate != nil }
         let l = recency(lhs), r = recency(rhs)
         if l != r { return l > r }
         return lhs.id.uuidString < rhs.id.uuidString
     }
 
-    /// The shelf's source copies grouped by work; only groups of two or more, survivor first.
-    /// Greedy in `keptFirst` order: each copy joins the first group whose survivor is the same
-    /// work and was not split from it, so the result does not depend on the shelf's order.
+    /// The shelf's books grouped by work, whatever they are read from; only groups of two or
+    /// more, survivor first. Greedy in `keptFirst` order: each copy joins the first group whose
+    /// survivor is the same work and was not split from it, so the result does not depend on
+    /// the shelf's order.
     @MainActor
     static func duplicateSets(in books: [ReadingBook], decisions: [WorkDecision]) -> [[ReadingBook]] {
         var groups: [(key: Key, books: [ReadingBook])] = []
-        for book in books.filter({ $0.isInBookshelf && isSourceCopy($0) }).sorted(by: keptFirst) {
+        for book in books.filter(\.isInBookshelf).sorted(by: keptFirst) {
             guard let bookKey = Self.key(of: book) else { continue }
             if let index = groups.firstIndex(where: { group in
                 sameWork(group.key, bookKey) && !keptApart(group.books[0], book, decisions: decisions)
@@ -91,15 +97,16 @@ enum ShelfWork {
         return groups.map(\.books).filter { $0.count > 1 }
     }
 
-    /// The shelf's source copy of the same work as `key`, other than `excluding`.
+    /// The shelf's book of the same work as `key`, whatever it is read from, other than
+    /// `excluding`.
     @MainActor
     static func shelfCopy(of key: Key, candidate: ReadingBook? = nil, in store: BookStore, excluding: UUID? = nil) -> ReadingBook? {
         let decisions = store.workDecisions.decisions
-        // Folds every shelf source copy's title and author (ICU) on the main actor; timed so a
-        // large shelf shows up in the ⏱ lines.
+        // Folds every shelf book's title and author (ICU) on the main actor; timed so a large
+        // shelf shows up in the ⏱ lines.
         return SourcePerfTrace.span("shelf.workMatch", "\(store.books.count) books") {
             store.books
-                .filter { $0.id != excluding && isSourceCopy($0) }
+                .filter { $0.id != excluding }
                 .sorted(by: keptFirst)
                 .first { book in
                     guard let other = Self.key(of: book), sameWork(key, other) else { return false }
@@ -110,8 +117,9 @@ enum ShelfWork {
     }
 }
 
-/// Merges one copy of a work into the copy that is kept. Shared by the launch merge and by
-/// 加入書架 of a copy just read (`ShelfWorkService.shelveReadCopy`).
+/// Merges the copies of a work on the shelf (`mergeDuplicates`): two 來源配置 copies become one
+/// (`absorb`), and every other copy is kept beside the shelf book as a version of it (`keep`).
+/// `absorb` is shared with 加入書架 of a copy just read (`ShelfWorkService.shelveReadCopy`).
 ///
 /// What moves, and how:
 /// - Bookmarks, highlights, underlines and their notes (`ReadingBook.bookmarks`, the only place
@@ -141,14 +149,20 @@ struct ShelfWorkMerger {
 
     struct Report: Equatable {
         var survivor: UUID
+        /// The 來源配置 copies merged into the work's one and deleted.
         var merged: [UUID]
         var movedBookmarks: Int
+        /// The copies kept beside the shelf book as versions of it.
+        var kept: [UUID] = []
     }
 
-    /// Merges every set of shelf copies of one work into its most recently read copy and
-    /// deletes the others through `BookStore.delete(bookId:)` — the path whose removal the
-    /// iCloud merge turns into a tombstone, so another device does not bring them back.
-    /// Offline: the kept copy keeps its own source. Idempotent.
+    /// Merges every set of shelf copies of one work, keeping its most recently read copy on the
+    /// shelf (`ShelfWork.keptFirst`). The work's 來源配置 copies are merged into the most recently
+    /// read of them, the others deleted through `BookStore.delete(bookId:)` — the path whose
+    /// removal the iCloud merge turns into a tombstone, so another device does not bring them
+    /// back. Every other copy, and that source copy when it is not the one on the shelf, is kept
+    /// beside the shelf book (`keep`): nothing of what it is read from is deleted. Offline: the
+    /// kept copy keeps its own source. Idempotent.
     @discardableResult
     func mergeDuplicates() async -> [Report] {
         let books = store.books
@@ -159,20 +173,57 @@ struct ShelfWorkMerger {
         for set in sets {
             let survivor = set[0]
             var report = Report(survivor: survivor.id, merged: [], movedBookmarks: 0)
-            for duplicate in set.dropFirst() {
-                report.movedBookmarks += await absorb(duplicate.id, into: survivor.id)
-                report.merged.append(duplicate.id)
+            let sourceCopies = set.filter(ShelfWork.isSourceCopy)
+            if let sourceCopy = sourceCopies.first {
+                for duplicate in sourceCopies.dropFirst() {
+                    report.movedBookmarks += await absorb(duplicate.id, into: sourceCopy.id)
+                    report.merged.append(duplicate.id)
+                }
+            }
+            for version in set.dropFirst() where !report.merged.contains(version.id) {
+                keep(version.id, beside: survivor.id)
+                report.kept.append(version.id)
             }
             AppLogger.info("⟐ shelf: merged copies of one work", context: [
                 "title": survivor.title,
                 "kept": survivor.id.uuidString,
                 "keptSource": survivor.bookSourceId?.uuidString ?? "",
                 "merged": report.merged.map(\.uuidString).joined(separator: ","),
+                "versions": report.kept.map(\.uuidString).joined(separator: ","),
                 "bookmarks": report.movedBookmarks,
             ])
             reports.append(report)
         }
         return reports
+    }
+
+    /// Keeps shelf copy `versionID` beside shelf book `survivorID` as a version of it, off the
+    /// shelf: its file, place, bookmarks and highlights stay its own, as a version's do
+    /// (`ShelfVersionSwitch`), and 換源 switches to it. What is the shelf's — 書架分組, a custom
+    /// cover and a custom intro — goes to the shelf book when it has none; the versions kept
+    /// beside the copy follow it.
+    func keep(_ versionID: UUID, beside survivorID: UUID) {
+        guard versionID != survivorID,
+              var version = store.shelfRecord(id: versionID),
+              var survivor = store.shelfRecord(id: survivorID) else { return }
+        if survivor.group.isEmpty, !version.group.isEmpty { survivor.group = version.group }
+        if survivor.customIntro == nil, let intro = version.customIntro { survivor.customIntro = intro }
+        if !survivor.hasCustomCover, version.hasCustomCover {
+            // Both point at the cover files: each copy keeps the files it points at until deleted.
+            survivor.customCoverUrl = version.customCoverUrl
+            survivor.coverImagePath = version.coverImagePath
+            survivor.originalCoverImagePath = version.originalCoverImagePath ?? survivor.originalCoverImagePath
+        }
+        version.isInBookshelf = false
+        version.versionOf = survivorID
+        // Each saved as a whole: `saveReadingBook` replaces the record.
+        store.saveReadingBook(survivor)
+        store.saveReadingBook(version)
+        for var kept in store.keptVersions(of: versionID) {
+            kept.onlineChapters = nil
+            kept.versionOf = survivorID
+            store.saveReadingBook(kept)
+        }
     }
 
     /// Moves `duplicateID`'s data onto `survivorID` (see the type's notes), then deletes the
@@ -220,6 +271,12 @@ struct ShelfWorkMerger {
             await positionStore.save(mapped, for: survivorID.uuidString)
         }
         store.readerSettings.carrySettings(from: duplicateID, to: survivorID)
+        // The versions kept beside the merged copy are the kept copy's now: deleting the merged
+        // copy deletes its own (`BookStore.delete`).
+        for var version in store.readingBooks where version.versionOf == duplicateID {
+            version.versionOf = survivorID
+            store.saveReadingBook(version)
+        }
         store.delete(bookId: duplicateID)
         return moved
     }
@@ -295,14 +352,19 @@ struct ShelfWorkService {
 
     let store: BookStore
     let sourceSwitch: OnlineBookSourceSwitch
+    /// For a work on the shelf read from elsewhere — an imported file, a library, a module:
+    /// the copy added takes the shelf, and that book is kept beside it.
+    let versions: ShelfVersionSwitch
 
-    init(store: BookStore, sourceSwitch: OnlineBookSourceSwitch) {
+    init(store: BookStore, sourceSwitch: OnlineBookSourceSwitch, versions: ShelfVersionSwitch) {
         self.store = store
         self.sourceSwitch = sourceSwitch
+        self.versions = versions
     }
 
     init(store: BookStore, dependencies: AppDependencies) {
-        self.init(store: store, sourceSwitch: OnlineBookSourceSwitch(store: store, dependencies: dependencies))
+        self.init(store: store, sourceSwitch: OnlineBookSourceSwitch(store: store, dependencies: dependencies),
+                  versions: ShelfVersionSwitch(store: store, dependencies: dependencies))
     }
 
     private var merger: ShelfWorkMerger {
@@ -310,7 +372,8 @@ struct ShelfWorkService {
     }
 
     /// Adds `copy` to the shelf, unless its work is there: then the shelf book switches to
-    /// `copy`'s source through 換源 and keeps its place (mapped by chapter title).
+    /// `copy`'s source through 換源 and keeps its place (mapped by chapter title). A shelf book
+    /// read from elsewhere is kept beside the work's source copy, which takes the shelf.
     func add(_ copy: OnlineCopy) async throws -> Outcome {
         if let existing = store.onlineBook(sourceId: copy.sourceId, bookInfoURL: copy.bookInfoURL) {
             return .alreadyOnShelf(existing)
@@ -332,6 +395,18 @@ struct ShelfWorkService {
             explicit: copy.contentKind, sourceId: copy.sourceId, runtimeVariables: copy.runtimeVariables,
             bookInfoURL: copy.bookInfoURL, tocURL: copy.tocURL
         )
+        if !copy.chapters.isEmpty,
+           let key = ShelfWork.key(title: copy.name, author: copy.author, kind: ContentKind(kind.pipelineKind)),
+           let existing = ShelfWork.shelfCopy(of: key, in: store), !ShelfWork.isSourceCopy(existing) {
+            let copyID = try await versions.sourceCopy(of: existing.id, origin: Self.origin(of: copy),
+                                                       toc: Self.toc(of: copy), sourceSwitch: sourceSwitch)
+            try await versions.commit(from: existing.id, to: copyID)
+            AppLogger.info("⟐ shelf: work on the shelf from elsewhere, its source copy took the shelf", context: [
+                "title": existing.title, "kept": existing.id.uuidString, "book": copyID.uuidString,
+                "source": copy.sourceId.uuidString,
+            ])
+            return .switchedSource(store.readingBook(id: copyID) ?? existing)
+        }
         if !copy.chapters.isEmpty,
            let key = ShelfWork.key(title: copy.name, author: copy.author, kind: ContentKind(kind.pipelineKind)),
            let existing = ShelfWork.shelfCopy(of: key, in: store) {
@@ -356,14 +431,32 @@ struct ShelfWorkService {
     /// 加入書架 for a copy only read so far (立即閱讀 → the reader closed → 「加入書架？」).
     /// When its work is on the shelf from another source, that shelf book switches to this
     /// copy's source, takes over what was just read (the place, since this copy was read last,
-    /// and its bookmarks), and the read copy is deleted. Otherwise the copy joins the shelf.
+    /// and its bookmarks), and the read copy is deleted. When the work's shelf book is read
+    /// from elsewhere, or the copy is (an imported file, a library's, a module's), the copy takes
+    /// the shelf with its own place and that book is kept beside it. Otherwise the copy joins
+    /// the shelf.
     func shelveReadCopy(id: UUID) async throws -> ReadingBook? {
         guard let copy = store.readingBook(id: id) else { return nil }
-        guard ShelfWork.isSourceCopy(copy), let sourceId = copy.bookSourceId,
-              let chapters = copy.onlineChapters, !chapters.isEmpty,
-              let key = ShelfWork.key(of: copy),
+        guard let key = ShelfWork.key(of: copy),
               let existing = ShelfWork.shelfCopy(of: key, candidate: copy, in: store, excluding: id)
         else {
+            return store.addReadingBookToShelf(id: id)
+        }
+        guard ShelfWork.isSourceCopy(copy), ShelfWork.isSourceCopy(existing) else {
+            try await versions.commit(from: existing.id, to: id, carriesPlace: false)
+            // A work keeps one 來源配置 copy: one kept beside the shelf book is merged into the
+            // source copy now on the shelf.
+            if ShelfWork.isSourceCopy(copy) {
+                for kept in store.keptVersions(of: id) where ShelfWork.isSourceCopy(kept) {
+                    await merger.absorb(kept.id, into: id)
+                }
+            }
+            AppLogger.info("⟐ shelf: read copy took the shelf, the work's book kept beside it", context: [
+                "title": existing.title, "kept": existing.id.uuidString, "readCopy": id.uuidString,
+            ])
+            return store.readingBook(id: id)
+        }
+        guard let sourceId = copy.bookSourceId, let chapters = copy.onlineChapters, !chapters.isEmpty else {
             return store.addReadingBookToShelf(id: id)
         }
         try await switchSource(of: existing.id, to: OnlineCopy(
@@ -388,8 +481,10 @@ struct ShelfWorkService {
             explicit: copy.contentKind, sourceId: copy.sourceId, runtimeVariables: copy.runtimeVariables,
             bookInfoURL: copy.bookInfoURL, tocURL: copy.tocURL
         )
+        // A work on the shelf read from elsewhere takes the book in, and the launch merge keeps
+        // it beside that one (`ShelfWorkMerger`).
         if let key = ShelfWork.key(title: copy.name, author: copy.author, kind: ContentKind(kind.pipelineKind)),
-           let existing = ShelfWork.shelfCopy(of: key, in: store) {
+           let existing = ShelfWork.shelfCopy(of: key, in: store), ShelfWork.isSourceCopy(existing) {
             AppLogger.info("⟐ shelf: import skipped, work already on the shelf", context: [
                 "title": copy.name, "book": existing.id.uuidString,
             ])
@@ -404,20 +499,24 @@ struct ShelfWorkService {
     }
 
     private func switchSource(of bookId: UUID, to copy: OnlineCopy) async throws {
-        let sourceName = BookSourceStore.shared.source(id: copy.sourceId)?.bookSourceName ?? ""
-        let tocURL = copy.tocURL ?? copy.bookInfoURL
-        let origin = BookOrigin(
-            sourceId: copy.sourceId, sourceName: sourceName, bookUrl: copy.bookInfoURL,
-            tocUrl: tocURL, coverUrl: copy.coverUrl, intro: "",
+        try await sourceSwitch.commit(bookId: bookId, origin: Self.origin(of: copy), toc: Self.toc(of: copy))
+    }
+
+    private static func origin(of copy: OnlineCopy) -> BookOrigin {
+        BookOrigin(
+            sourceId: copy.sourceId, sourceName: BookSourceStore.shared.source(id: copy.sourceId)?.bookSourceName ?? "",
+            bookUrl: copy.bookInfoURL, tocUrl: copy.tocURL ?? copy.bookInfoURL, coverUrl: copy.coverUrl, intro: "",
             lastChapter: copy.chapters.last?.title ?? "", wordCount: "", kind: "",
             runtimeVariables: copy.runtimeVariables
         )
-        let toc = TOCPackage(
-            sourceId: copy.sourceId, sourceName: sourceName, tocURL: tocURL,
-            runtimeVariables: copy.runtimeVariables, chapters: copy.chapters,
+    }
+
+    private static func toc(of copy: OnlineCopy) -> TOCPackage {
+        TOCPackage(
+            sourceId: copy.sourceId, sourceName: BookSourceStore.shared.source(id: copy.sourceId)?.bookSourceName ?? "",
+            tocURL: copy.tocURL ?? copy.bookInfoURL, runtimeVariables: copy.runtimeVariables, chapters: copy.chapters,
             rawHTMLFilename: nil, savedAt: Date()
         )
-        try await sourceSwitch.commit(bookId: bookId, origin: origin, toc: toc)
     }
 }
 

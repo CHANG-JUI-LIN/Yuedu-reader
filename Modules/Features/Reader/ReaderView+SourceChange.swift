@@ -8,12 +8,12 @@ extension ReaderView {
     var changeSourceSheetContent: AnyView {
         AnyView(NavigationStack {
             List {
-                // 目前使用中的書源 — always visible with a checkmark so the user knows
-                // which source is active (search results below exclude this one).
-                Section(localized("目前來源配置")) {
+                // Where the book is read from now — a 來源配置, a module, a library, an imported
+                // file — always visible with a checkmark (the lists below leave it out).
+                Section(localized("目前來源")) {
                     HStack {
                         VStack(alignment: .leading, spacing: 2) {
-                            Text(currentSourceName)
+                            Text(currentOriginName)
                                 .foregroundStyle(DSColor.textPrimary)
                             if let last = book?.onlineChapters?.last?.title, !last.isEmpty {
                                 Text(last)
@@ -36,6 +36,39 @@ extension ReaderView {
                 }
                 .interfaceSectionSurface()
 
+                // The versions kept beside the book: what it was read from before 換源, and
+                // the copies merged into it. Each switches back with its own file and place.
+                let kept = store.keptVersions(of: bookId)
+                if !kept.isEmpty {
+                    Section(localized("已知的閱讀來源")) {
+                        ForEach(kept, id: \.id) { version in
+                            Button { switchToVersion(version.id) } label: { changeSourceVersionRow(version) }
+                                .disabled(readerViewModel.isSwitchingSource)
+                        }
+                    }
+                    .interfaceSectionSurface()
+                }
+
+                // The work in the saved libraries, 青空文庫 / Gutenberg and the modules: each a
+                // version like any other, its copy taken on the tap.
+                if !versionFinder.found.isEmpty || versionFinder.isSearching {
+                    Section(localized("書庫與模組")) {
+                        ForEach(versionFinder.found) { version in
+                            Button { switchToLibraryVersion(version.route) } label: { changeSourceLibraryRow(version) }
+                                .disabled(readerViewModel.isSwitchingSource)
+                        }
+                        if versionFinder.isSearching {
+                            HStack(spacing: 8) {
+                                ProgressView()
+                                Text(localized("正在搜尋…"))
+                                    .font(DSFont.footnote)
+                                    .foregroundStyle(DSColor.textSecondary)
+                            }
+                        }
+                    }
+                    .interfaceSectionSurface()
+                }
+
                 // 其他可切換的書源。Results stream in one source at a time, so show them
                 // as soon as the first match arrives instead of blocking on the full
                 // fan-out (459 sources can take minutes).
@@ -45,7 +78,7 @@ extension ReaderView {
                             Button { switchToOrigin(origin) } label: { changeSourceRow(origin) }
                                 // One switch at a time: a second tap would cancel the first
                                 // and restart the wait the user is already sitting through.
-                                .disabled(changeSourcePendingOrigin != nil)
+                                .disabled(readerViewModel.isSwitchingSource)
                         }
                         if changeSourceLoading {
                             HStack(spacing: 8) {
@@ -86,6 +119,7 @@ extension ReaderView {
                 ToolbarItemGroup(placement: .navigationBarLeading) {
                     Button {
                         loadOtherOrigins(forceRefresh: true)
+                        versionFinder.start(for: bookId, store: store)
                     } label: {
                         Image(systemName: "arrow.clockwise")
                     }
@@ -93,10 +127,12 @@ extension ReaderView {
                     .accessibilityLabel(localized("重新搜尋"))
 
                     // Legado-style variable editors: sources' JS reads these
-                    // back (`source.getVariable()` / book variables) on fetch.
-                    Menu {
-                        // Legado offers both only while the book has a source.
-                        if currentChangeSourceBookSource != nil {
+                    // back (`source.getVariable()` / book variables) on fetch. Legado offers
+                    // both only while the book has a source; a book read from elsewhere has
+                    // nothing in the menu. The book's source cannot change while the sheet is
+                    // open (a switch dismisses it), so the item keeps its identity.
+                    if currentChangeSourceBookSource != nil {
+                        Menu {
                             Button {
                                 showSourceVariableEditor = true
                             } label: {
@@ -107,11 +143,11 @@ extension ReaderView {
                             } label: {
                                 Label(localized("設置書籍變量"), systemImage: "character.book.closed")
                             }
+                        } label: {
+                            Image(systemName: "ellipsis.circle")
                         }
-                    } label: {
-                        Image(systemName: "ellipsis.circle")
+                        .accessibilityLabel(localized("更多"))
                     }
-                    .accessibilityLabel(localized("更多"))
                 }
                 ToolbarItem(placement: .navigationBarTrailing) {
                     // Legado's WaitDialog is dismissible and its cancel listener aborts the
@@ -121,7 +157,7 @@ extension ReaderView {
                     // One Button whose title changes, never an if/else pair: branching on the
                     // view itself gives the toolbar item a new identity, and toolbar items
                     // that change identity flicker or drop out entirely.
-                    let isSwitching = changeSourcePendingOrigin != nil
+                    let isSwitching = readerViewModel.isSwitchingSource
                     Button(localized(isSwitching ? "取消" : "關閉")) {
                         if isSwitching {
                             readerViewModel.cancelPendingSourceSwitch()
@@ -198,9 +234,150 @@ extension ReaderView {
         .accessibilityElement(children: .combine)
     }
 
+    /// Where the book is read from now, as the title capsule names it.
+    var currentOriginName: String {
+        book.map(BookOriginName.of) ?? localized("未知來源配置")
+    }
+
+    /// A kept version: where it is read from, and how far it was read.
+    @ViewBuilder
+    func changeSourceVersionRow(_ version: ReadingBook) -> some View {
+        HStack {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(BookOriginName.of(version))
+                    .foregroundStyle(DSColor.textPrimary)
+                Text(BookshelfAccessibility.readingStatus(for: version))
+                    .font(DSFont.caption)
+                    .foregroundStyle(DSColor.textSecondary)
+                    .lineLimit(1)
+            }
+            Spacer()
+            if readerViewModel.changeSourcePendingVersion == .copy(version.id) {
+                HStack(spacing: 6) {
+                    ProgressView()
+                    Text(localized("正在載入目錄…"))
+                        .font(DSFont.caption)
+                        .foregroundStyle(DSColor.textSecondary)
+                }
+            } else {
+                Image(systemName: "chevron.right")
+                    .font(DSFont.caption)
+                    .foregroundStyle(DSColor.textSecondary)
+                    .accessibilityHidden(true)
+            }
+        }
+        .accessibilityElement(children: .combine)
+    }
+
+    /// A version in a library or a module: its place, and the book as that place names it.
+    @ViewBuilder
+    func changeSourceLibraryRow(_ version: ReaderVersionFinder.Found) -> some View {
+        HStack {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(version.place)
+                    .foregroundStyle(DSColor.textPrimary)
+                Text(([version.route.summary.title] + version.route.summary.authors).joined(separator: " · "))
+                    .font(DSFont.caption)
+                    .foregroundStyle(DSColor.textSecondary)
+                    .lineLimit(1)
+            }
+            Spacer()
+            if readerViewModel.changeSourcePendingVersion == version.route.nodeKey {
+                HStack(spacing: 6) {
+                    ProgressView()
+                    Text(localized("正在載入目錄…"))
+                        .font(DSFont.caption)
+                        .foregroundStyle(DSColor.textSecondary)
+                }
+            } else {
+                Image(systemName: "chevron.right")
+                    .font(DSFont.caption)
+                    .foregroundStyle(DSColor.textSecondary)
+                    .accessibilityHidden(true)
+            }
+        }
+        .accessibilityElement(children: .combine)
+    }
+
+    /// The chapter on screen, as a place in the book: an EPUB's spine item, a TXT's or a
+    /// source's chapter.
+    private var changeSourceReadingSpine: Int {
+        readerSessionCoordinator?.state.location.spineIndex ?? currentChapterIndex
+    }
+
+    /// Switches to another version of the work (`ShelfVersionSwitch`): the shelf book becomes
+    /// that copy, this one is kept beside it, and the reader hands over to the copy's own at the
+    /// chapter being read.
+    func switchToVersion(_ versionID: UUID) {
+        let spine = changeSourceReadingSpine
+        readerViewModel.stopChangeSourceSearch()
+        versionFinder.stop()
+        let switchStartedAt = ProcessInfo.processInfo.systemUptime
+        readerViewModel.beginVersionSwitch(to: .copy(versionID)) {
+            do {
+                let opening = try await ShelfVersionSwitch(store: store, dependencies: dependencies)
+                    .commit(from: bookId, to: versionID, readingFrom: spine)
+                handOver(to: versionID, opening: opening, since: switchStartedAt)
+            } catch is CancellationError {
+                // Cancelled before anything was written: the book still reads from here.
+            } catch {
+                AppLogger.error("換源: switching to another version failed", error: error,
+                                context: ["book": bookId.uuidString, "version": versionID.uuidString])
+                readerViewModel.reportChangeSourceError(error.localizedDescription)
+            }
+        }
+    }
+
+    /// Switches to the work in a library or a module: its copy is taken as 開始閱讀 takes it
+    /// (`VersionReadingCopy`) — downloaded, or its chapters listed — and becomes the shelf book.
+    func switchToLibraryVersion(_ version: WorkDetailRoute) {
+        let spine = changeSourceReadingSpine
+        readerViewModel.stopChangeSourceSearch()
+        versionFinder.stop()
+        let switchStartedAt = ProcessInfo.processInfo.systemUptime
+        readerViewModel.beginVersionSwitch(to: version.nodeKey) {
+            do {
+                let copy = try await SourcePerfTrace.spanAsync("changeSource.copy", version.record.key.instance.type.rawValue) {
+                    try await VersionReadingCopy(store: store, dependencies: dependencies).readingCopy(of: version)
+                }
+                try Task.checkCancellation()
+                let opening = try await ShelfVersionSwitch(store: store, dependencies: dependencies)
+                    .commit(from: bookId, to: copy.id, readingFrom: spine)
+                handOver(to: copy.id, opening: opening, since: switchStartedAt)
+            } catch is CancellationError {
+                // Cancelled before the commit: the book still reads from here. A copy already
+                // taken stays off the shelf, read again by the next switch to it.
+            } catch {
+                AppLogger.error("換源: switching to a library version failed", error: error,
+                                context: ["book": bookId.uuidString, "version": version.record.key.item])
+                readerViewModel.reportChangeSourceError(error.localizedDescription)
+            }
+        }
+    }
+
+    /// The shelf book is another copy now: the sheet goes, and the copy's reader takes over.
+    private func handOver(to versionID: UUID, opening: ReaderTOCTarget?, since startedAt: TimeInterval) {
+        // Leave the pending state before dismissing: the sheet's dismiss handler cancels a
+        // pending switch, and at this point that switch is this one.
+        readerViewModel.finishSourceSwitch()
+        showChangeSourceSheet = false
+        SourcePerfTrace.record("changeSource.total", "version", since: startedAt)
+        if let readerVersionSwitch {
+            readerVersionSwitch(versionID, opening: opening)
+        } else {
+            // A reader shown outside `BookReaderView` has no reader to hand over to; the shelf
+            // already reads from the copy, which opens next time.
+            AppLogger.info("換源: version switched with no reader to hand over to", context: ["version": versionID.uuidString])
+        }
+    }
+
     /// Switches the book to the chosen origin. On success dismisses the sheet and
     /// reloads; on failure flags the origin (persisted) and keeps the sheet open so
     /// the user can try another.
+    ///
+    /// A book read from anywhere but a 來源配置 — an imported file, a library, a module — is not
+    /// rebound: the work's 來源配置 copy reads from the origin, and the shelf switches to it as
+    /// to any other version (`switchToSourceVersion`).
     ///
     /// Reading position: the raw chapter index means different things in different
     /// sources (extra 卷 headers, merged 序章 …), so before reloading, the current
@@ -208,6 +385,10 @@ extension ReaderView {
     /// similarity + chapter-number match, Legado getDurChapter-style) and the
     /// restore target/persisted position are updated to the mapped chapter.
     func switchToOrigin(_ origin: BookOrigin) {
+        guard let current = book, ShelfWork.isSourceCopy(current) else {
+            switchToSourceVersion(origin)
+            return
+        }
         let oldIndex = currentChapterIndex
         let livePosition = readerSessionCoordinator?.state.location.coreTextPosition
         // The fan-out holds the connection pool and the JS bridge, and from this tap onward it
@@ -274,6 +455,34 @@ extension ReaderView {
             } catch {
                 readerViewModel.markOriginFailed(
                     bookId: bookId, sourceId: origin.sourceId, bookUrl: origin.bookUrl)
+                readerViewModel.reportChangeSourceError(error.localizedDescription)
+            }
+        }
+    }
+
+    /// 換源 to a 來源配置 for a book read from elsewhere: the work's 來源配置 copy — the one kept
+    /// beside the book, rebound to this origin, or a new one off the shelf — becomes the shelf
+    /// book (`ShelfVersionSwitch.sourceCopy`).
+    private func switchToSourceVersion(_ origin: BookOrigin) {
+        let spine = changeSourceReadingSpine
+        readerViewModel.stopChangeSourceSearch()
+        let switchStartedAt = ProcessInfo.processInfo.systemUptime
+        readerViewModel.beginSourceSwitch(to: origin) {
+            do {
+                let tocPackage = try await SourcePerfTrace.spanAsync("changeSource.toc", origin.sourceName) {
+                    try await readerViewModel.prepareTOCPackage(for: origin)
+                }
+                try Task.checkCancellation()
+                let versions = ShelfVersionSwitch(store: store, dependencies: dependencies)
+                let copyID = try await versions.sourceCopy(of: bookId, origin: origin, toc: tocPackage,
+                                                           sourceSwitch: OnlineBookSourceSwitch(store: store, dependencies: dependencies))
+                let opening = try await versions.commit(from: bookId, to: copyID, readingFrom: spine)
+                readerViewModel.clearOriginFailure(bookId: bookId, sourceId: origin.sourceId, bookUrl: origin.bookUrl)
+                handOver(to: copyID, opening: opening, since: switchStartedAt)
+            } catch is CancellationError {
+                // Nothing was committed and the source is not known to be bad.
+            } catch {
+                readerViewModel.markOriginFailed(bookId: bookId, sourceId: origin.sourceId, bookUrl: origin.bookUrl)
                 readerViewModel.reportChangeSourceError(error.localizedDescription)
             }
         }

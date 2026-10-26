@@ -370,7 +370,7 @@ final class FirestoreSyncManager: ObservableObject {
                 ReadingBook.self,
                 key: "books",
                 collection: userRef.collection("books"),
-                local: store.books,
+                local: store.syncedBooks,
                 id: { $0.id.uuidString },
                 hash: { [weak self] in self?.stableHash($0.strippedForSync()) ?? "" },
                 fallbackUpdatedAt: { $0.lastOpenedDate ?? $0.addedDate }
@@ -486,7 +486,7 @@ final class FirestoreSyncManager: ObservableObject {
 
     private func pushBooks() async throws {
         guard let uid = FirebaseAuthManager.shared.uid, let bookStore else { return }
-        let stripped = bookStore.books.map { $0.strippedForSync() }
+        let stripped = bookStore.syncedBooks.map { $0.strippedForSync() }
         try await pushCollection(
             stripped,
             key: "books",

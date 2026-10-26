@@ -323,6 +323,12 @@ struct ReadingBook: Identifiable, Codable {
     /// reason `audioPlayMode` gives.
     var module: ModuleBookReference?
 
+    /// Set on another version of a shelf book's work, kept off the shelf (換源 between versions,
+    /// maintainer 2026-10-26): the shelf book it belongs to. 換源 lists it and can switch back to
+    /// it; nothing else lists it, and it is never asked about with 「加入書架？」. Optional and
+    /// encoded only when present, for the reason `audioPlayMode` gives.
+    var versionOf: UUID?
+
     /// Its chapters are built by rules — a 來源配置's or a module's — into the cache's raw and
     /// normalized HTML (`ChapterFetcher.buildChapterPackage`); a browser import's are plain
     /// text a page gave.
@@ -421,6 +427,7 @@ struct ReadingBook: Identifiable, Codable {
         continueReadingHiddenAt = try c.decodeIfPresent(Date.self, forKey: .continueReadingHiddenAt)
         customIntro = try c.decodeIfPresent(String.self, forKey: .customIntro)
         module = try c.decodeIfPresent(ModuleBookReference.self, forKey: .module)
+        versionOf = try c.decodeIfPresent(UUID.self, forKey: .versionOf)
     }
 
     enum CodingKeys: String, CodingKey {
@@ -438,6 +445,7 @@ struct ReadingBook: Identifiable, Codable {
         case continueReadingHiddenAt
         case customIntro
         case module
+        case versionOf
     }
 
     /// Read only: where builds before `BookChapterStore` kept the table of contents.

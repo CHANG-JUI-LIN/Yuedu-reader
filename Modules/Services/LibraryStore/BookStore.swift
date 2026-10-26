@@ -148,6 +148,11 @@ class BookStore: @MainActor ObservableObject, BookProvider {
 
     var readingBooks: [ReadingBook] { records }
 
+    /// What the cloud syncs: the shelf, and the versions kept beside its books
+    /// (`ReadingBook.versionOf`, maintainer 2026-10-26: a version switched from on one device
+    /// is there to switch back to on every device). Copies only read stay on this device.
+    var syncedBooks: [ReadingBook] { records.filter { $0.isInBookshelf || $0.versionOf != nil } }
+
     /// The book with its table of contents, which is read from `chapterStore` the first
     /// time it is asked for — legado's `getChapterList(bookUrl)` for the book being opened.
     func readingBook(id: UUID) -> ReadingBook? {
@@ -183,12 +188,20 @@ class BookStore: @MainActor ObservableObject, BookProvider {
     func addReadingBookToShelf(id: UUID) -> ReadingBook? {
         guard let index = records.firstIndex(where: { $0.id == id }) else { return nil }
         records[index].isInBookshelf = true
+        // On the shelf, a copy is no version of another book: the launch merge decides which
+        // of the two stays (`ShelfWorkMerger`).
+        records[index].versionOf = nil
         saveMetaImmediately()
         return records[index]
     }
 
     nonisolated private var readingMetadataFileURL: URL {
-        metadataFileURL.deletingPathExtension().appendingPathExtension("reading.json")
+        Self.readingMetadataFileURL(forShelf: metadataFileURL)
+    }
+
+    /// Where the records of books not on the shelf are kept, beside the shelf's file.
+    nonisolated static func readingMetadataFileURL(forShelf shelfURL: URL) -> URL {
+        shelfURL.deletingPathExtension().appendingPathExtension("reading.json")
     }
     private var lastPersistedReadingData: Data?
     /// Set when the reading-record file could not be read, or did not decode and could not be
@@ -1457,6 +1470,12 @@ class BookStore: @MainActor ObservableObject, BookProvider {
     }
 
     func delete(bookId: UUID) {
+        // The versions kept beside a shelf book (`ShelfVersionSwitch`) are the same work, and only
+        // its 換源 lists them: deleting the book deletes them. A merge relinks them first
+        // (`ShelfWorkMerger.absorb`).
+        for version in records where version.versionOf == bookId {
+            delete(bookId: version.id)
+        }
         Task { @MainActor in
             do { try await AICharacterMemoryService.shared.clear(book: bookId) }
             catch { AppLogger.error("Character memory cleanup failed") }
@@ -2613,15 +2632,20 @@ class BookStore: @MainActor ObservableObject, BookProvider {
     )
 
     @MainActor
-    func snapshotForSync(_ syncedBooks: [ReadingBook], expectedMutationRevision: UInt64? = nil) -> SyncSnapshot? {
+    func snapshotForSync(_ syncedRecords: [ReadingBook], expectedMutationRevision: UInt64? = nil) -> SyncSnapshot? {
         if let expectedMutationRevision, expectedMutationRevision != mutationRevision { return nil }
         // The table of contents is this device's own: `chapterStore` keeps it, and the
         // record's summary is derived from it. A synced copy carries none, except one a build
         // before the store uploaded — an older list, taken only by a device that has none.
         let localRecords = Dictionary(records.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
-        let shelf = syncedBooks.map { book in
+        // A version whose shelf book the merge no longer has — deleted on a build from before
+        // versions synced, which leaves them behind — is a shelf book again: nothing would list
+        // it otherwise.
+        let shelfIDs = Set(syncedRecords.filter { $0.versionOf == nil }.map(\.id))
+        let shelf = syncedRecords.map { book in
             var merged = book.withoutTableOfContents()
-            merged.isInBookshelf = true
+            if let shelfID = merged.versionOf, !shelfIDs.contains(shelfID) { merged.versionOf = nil }
+            merged.isInBookshelf = merged.versionOf == nil
             // A module's book whose record came back from a build before `module` existed:
             // that build kept every field it knew and dropped this one, and without it the
             // book reads as a browser import. Only an online book with no source of its own
@@ -2642,8 +2666,10 @@ class BookStore: @MainActor ObservableObject, BookProvider {
         }.sorted { lhs, rhs in
             (lhs.lastOpenedDate ?? lhs.addedDate) > (rhs.lastOpenedDate ?? rhs.addedDate)
         }
+        // The copies only read stay as they are; a version is the merge's like a shelf book, so
+        // one deleted on another device goes here too.
         let ids = Set(shelf.map(\.id))
-        return SyncSnapshot(records: shelf + records.filter { !$0.isInBookshelf && !ids.contains($0.id) },
+        return SyncSnapshot(records: shelf + records.filter { !$0.isInBookshelf && $0.versionOf == nil && !ids.contains($0.id) },
                             revision: mutationRevision)
     }
 

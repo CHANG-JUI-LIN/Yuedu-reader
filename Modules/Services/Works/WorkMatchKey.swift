@@ -31,14 +31,15 @@ enum WorkMatchKey {
     }
 
     /// `authors` without the placeholders the importers write for a book that names none
-    /// (「未知作者」, the parsers' "Unknown Author") and without blank ones: what a match may
-    /// compare. A TXT with no 「作者：」 line is stored as 「未知作者」, which is no author.
+    /// (「未知作者」, the EPUB importer's 「未知」, the parsers' "Unknown Author") and without
+    /// blank ones: what a match may compare. A TXT with no 「作者：」 line is stored as
+    /// 「未知作者」, an EPUB whose package names none as 「未知」; neither is an author.
     static func knownAuthors(_ authors: [String]) -> [String] {
         authors.map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
             .filter { !$0.isEmpty && !authorPlaceholders.contains($0) && $0 != localized("未知作者") }
     }
 
-    private static let authorPlaceholders: Set<String> = ["未知作者", "Unknown Author"]
+    private static let authorPlaceholders: Set<String> = ["未知作者", "未知", "Unknown Author"]
 
     /// Books matched by title alone, for a work that names no author: the author they agree on
     /// and which of them name that author. Maintainer, 2026-10-17: when every book names one

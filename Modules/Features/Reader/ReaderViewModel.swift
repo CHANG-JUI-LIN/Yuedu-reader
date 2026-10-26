@@ -26,6 +26,9 @@ final class ReaderViewModel: ObservableObject {
     /// "正在載入目錄…" over the row instead of looking frozen — Legado shows a `WaitDialog`
     /// on the same event, and its cancel listener aborts the fetch.
     @Published private(set) var changeSourcePendingOrigin: BookOrigin?
+    /// Non-nil while another version of the work is being switched to (`ShelfVersionSwitch`),
+    /// by its node key: a kept copy's `.copy(id)`. One switch at a time, as with a source.
+    @Published private(set) var changeSourcePendingVersion: SourceItemKey?
 
     private struct InFlightRequest {
         let token: UUID
@@ -299,7 +302,7 @@ final class ReaderViewModel: ObservableObject {
     /// result for this book is reused instead of re-running the full cross-source search.
     func loadOtherOrigins(
         book: ReadingBook,
-        currentSourceId: UUID,
+        currentSourceId: UUID?,
         enabledSources: [BookSource],
         store: BookStore,
         forceRefresh: Bool = false
@@ -327,8 +330,11 @@ final class ReaderViewModel: ObservableObject {
         changeSourceFailedKeys = Set(ChangeSourceCache.shared.entry(for: bookId)?.failedKeys ?? [])
         let bookTitle = book.title
         let bookAuthor = book.author
-        let currentOriginKey = ChangeSourceCache.originKey(
-            sourceId: currentSourceId, bookUrl: book.bookInfoURL)
+        // A book read from elsewhere (an imported file, a library, a module) has no origin among
+        // the sources to leave out.
+        let currentOriginKey = currentSourceId.map {
+            ChangeSourceCache.originKey(sourceId: $0, bookUrl: book.bookInfoURL)
+        }
         // Search ALL enabled sources, including the current one. Aggregation sources
         // expose several "channels" for the same book under a single sourceId, and a
         // user may have only that one source installed — filtering by sourceId would
@@ -504,6 +510,7 @@ final class ReaderViewModel: ObservableObject {
         work: @escaping @MainActor () async -> Void
     ) {
         changeSourceSwitchTask?.cancel()
+        changeSourcePendingVersion = nil
         changeSourcePendingOrigin = origin
         changeSourceSwitchTask = Task { @MainActor [weak self] in
             await work()
@@ -512,9 +519,28 @@ final class ReaderViewModel: ObservableObject {
         }
     }
 
+    /// `beginSourceSwitch` for another version of the work.
+    func beginVersionSwitch(
+        to version: SourceItemKey,
+        work: @escaping @MainActor () async -> Void
+    ) {
+        changeSourceSwitchTask?.cancel()
+        changeSourcePendingOrigin = nil
+        changeSourcePendingVersion = version
+        changeSourceSwitchTask = Task { @MainActor [weak self] in
+            await work()
+            guard !Task.isCancelled else { return }
+            self?.finishSourceSwitch()
+        }
+    }
+
+    /// Whether a source or a version is being switched to.
+    var isSwitchingSource: Bool { changeSourcePendingOrigin != nil || changeSourcePendingVersion != nil }
+
     func finishSourceSwitch() {
         changeSourceSwitchTask = nil
         changeSourcePendingOrigin = nil
+        changeSourcePendingVersion = nil
     }
 
     func cancelPendingSourceSwitch() {
