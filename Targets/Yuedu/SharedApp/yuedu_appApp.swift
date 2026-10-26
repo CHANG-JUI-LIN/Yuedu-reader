@@ -118,7 +118,8 @@ struct yuedu_appApp: App {
         // anything reads `HomePageStore.shared` or `AggregationSettingsStore.shared`.
         if ProcessInfo.processInfo.arguments.contains("-reset-explore-home") {
             for key in [ExploreSettings.scopeKey, AggregationSettingsStore.defaultsKey,
-                        ExploreSettings.legacyLandingKey, HomePageStore.forYouInsertedKey] {
+                        ExploreSettings.legacyLandingKey, HomePageStore.forYouInsertedKey,
+                        HomePageStore.defaultsRhythmKey] {
                 UserDefaults.standard.removeObject(forKey: key)
             }
             for name in ["explore_home.json", "custom_explore_pages.json"] {

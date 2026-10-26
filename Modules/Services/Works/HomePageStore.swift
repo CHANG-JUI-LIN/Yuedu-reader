@@ -16,10 +16,12 @@ import Foundation
 ///   never written over: writing it back would drop what this build cannot name.
 /// - The custom pages move in once (5d-4): when a file older than 5d-4 is read, or when the
 ///   first home is made. `custom_explore_pages.json` is left where it is.
+/// - A 預設 still as the defaults of 2026-10-13 to 2026-10-25 made it takes the 2026-10-25
+///   layouts once (`HomeDefaultsRhythmMigration`).
 @MainActor
 final class HomePageStore: ObservableObject {
     /// The app's home; the editor (5d) changes the same one the home draws.
-    static let shared = HomePageStore(insertsForYouOnce: true)
+    static let shared = HomePageStore(insertsForYouOnce: true, appliesDefaultsRhythmOnce: true)
 
     /// Every configuration; nil until the home is first made.
     @Published private(set) var home: HomeConfigurations?
@@ -54,15 +56,20 @@ final class HomePageStore: ObservableObject {
     /// Whether this store puts 為你推薦 on a saved home once; only the app's own does, so a
     /// test's home is read as it was saved.
     private let insertsForYouOnce: Bool
+    /// Whether this store gives an untouched 預設 the 2026-10-25 layouts once; only the app's own
+    /// does, as `insertsForYouOnce`.
+    private let appliesDefaultsRhythmOnce: Bool
 
     /// - Parameter customPagesURL: the custom pages that move in; beside the home by default.
     init(fileURL: URL = StorageLocations.applicationSupportRoot.appendingPathComponent("explore_home.json"),
-         customPagesURL: URL? = nil, defaults: UserDefaults = .standard, insertsForYouOnce: Bool = false) {
+         customPagesURL: URL? = nil, defaults: UserDefaults = .standard, insertsForYouOnce: Bool = false,
+         appliesDefaultsRhythmOnce: Bool = false) {
         self.fileURL = fileURL
         self.customPagesURL = customPagesURL
             ?? fileURL.deletingLastPathComponent().appendingPathComponent("custom_explore_pages.json")
         self.defaults = defaults
         self.insertsForYouOnce = insertsForYouOnce
+        self.appliesDefaultsRhythmOnce = appliesDefaultsRhythmOnce
         photos = HomeConfigurationPhotos(directory: fileURL.deletingLastPathComponent()
             .appendingPathComponent("HomeConfigurationPhotos", isDirectory: true))
         load()
@@ -81,6 +88,8 @@ final class HomePageStore: ObservableObject {
                                                 languages: languages)
         // The defaults have 為你推薦 already; it is never inserted again.
         if insertsForYouOnce { defaults.set(true, forKey: Self.forYouInsertedKey) }
+        // They have the 2026-10-25 layouts already; a reader who changes them keeps theirs.
+        if appliesDefaultsRhythmOnce, !isReadOnly { defaults.set(true, forKey: Self.defaultsRhythmKey) }
         var made = HomeConfigurations(sections: defaultPage.sections)
         if !isReadOnly { moveCustomPages(into: &made) }
         home = made
@@ -222,6 +231,31 @@ final class HomePageStore: ObservableObject {
         AppLogger.cache("⟐ 為你推薦 put on the saved home", context: ["configuration": target.rawValue])
     }
 
+    // MARK: - The 2026-10-25 layouts
+
+    /// Set once 預設 has been looked at for the 2026-10-25 layouts, or made with them.
+    static let defaultsRhythmKey = "home.defaultsRhythm20261025"
+
+    /// An untouched 預設 takes the 2026-10-25 layouts once (`HomeDefaultsRhythmMigration`), so a
+    /// reader who puts a section back the way it was keeps it. Not on a file this build only
+    /// reads. Returns whether a section changed.
+    @discardableResult
+    private func applyDefaultsRhythmOnce(to home: inout HomeConfigurations) -> Bool {
+        guard appliesDefaultsRhythmOnce, !isReadOnly, !defaults.bool(forKey: Self.defaultsRhythmKey) else { return false }
+        defaults.set(true, forKey: Self.defaultsRhythmKey)
+        guard !home.defaultsDeleted, let outcome = HomeDefaultsRhythmMigration.apply(to: home.sections) else {
+            AppLogger.cache("⟐ 預設 keeps its layouts: not the defaults of 2026-10-13 to 2026-10-25", context: [
+                "sections": "\(home.sections.count)", "defaultsDeleted": "\(home.defaultsDeleted)",
+            ])
+            return false
+        }
+        home.sections = outcome.sections
+        AppLogger.cache("⟐ 預設 takes the 2026-10-25 layouts", context: [
+            "changed": "\(outcome.changed)", "kept": "\(outcome.kept)",
+        ])
+        return outcome.changed > 0
+    }
+
     // MARK: - Custom pages
 
     /// The custom pages as configurations; the 首頁頁面 the reader had chosen, if a page,
@@ -325,6 +359,7 @@ final class HomePageStore: ObservableObject {
                 readLegacyLatestExcluded(data)
                 moveCustomPages(into: &read)
                 insertForYouOnce(into: &read)
+                applyDefaultsRhythmOnce(to: &read)
                 home = read
                 write()
                 return
@@ -332,14 +367,16 @@ final class HomePageStore: ObservableObject {
             read = try JSONDecoder().decode(HomeConfigurations.self, from: data)
             let inserted = insertsForYouOnce && !defaults.bool(forKey: Self.forYouInsertedKey)
             insertForYouOnce(into: &read)
+            // After 為你推薦, so a 預設 from before it is recognised.
+            let restyled = applyDefaultsRhythmOnce(to: &read)
             if read.customPagesPending {
                 moveCustomPages(into: &read)
                 home = read
-                if !read.customPagesPending || inserted { write() }
+                if !read.customPagesPending || inserted || restyled { write() }
                 return
             }
             home = read
-            if inserted { write() }
+            if inserted || restyled { write() }
         } catch {
             AppLogger.cache("⟐ explore home could not be decoded", error: error)
             isReadOnly = !keepAside(data)

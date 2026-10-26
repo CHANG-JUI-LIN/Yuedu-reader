@@ -306,8 +306,9 @@ struct HomePage: Codable, Hashable, Sendable {
 /// The sections a reader starts with (design §13.3, lines 700–704), without 我的書庫 since
 /// unified library 5d-1 (settled decision 12).
 ///
-/// Pure: nothing calls it at launch and nothing writes it until the home first reads it
-/// (Phase 5 plan, 5a step 3), so the defaults can still change without a second migration.
+/// Pure: nothing writes it until the home first reads it (Phase 5 plan, 5a step 3). A saved 預設
+/// is the reader's and keeps the defaults it was made with, except once, for the 2026-10-25
+/// layouts: a 預設 still as the defaults made it takes them (`HomeDefaultsRhythmMigration`).
 enum HomePageDefaults {
     /// Whom the defaults are made for, as the home knows it: `page`'s inputs. 預設配置 makes a
     /// 首頁配置 from them (maintainer, 2026-10-23: the defaults the app keeps, not the reader's
@@ -340,22 +341,22 @@ enum HomePageDefaults {
         let forYou = HomeSection(id: makeID(), layout: .row, binding: .forYou)
         let latest = HomeSection(id: makeID(), layout: .row, binding: .latest)
         // 古騰堡熱門, Gutenberg's download ranking, before 精選 (decisions 16 and 24), ranked
-        // since 2026-10-25 (`officialModuleLists` says why). A new install's 預設 only: a saved
-        // 預設 is the reader's and is not changed.
+        // since 2026-10-25 (`officialModuleLists` says why); a saved 預設 that still has it as a
+        // plain row takes the ranks once (`HomeDefaultsRhythmMigration`).
         let popular = publicLibrariesAvailable
             ? [HomeSection(id: makeID(), layout: .rankedRow, binding: .gutenbergShelf(id: "popular"))]
             : []
         // 精選書單: the bundled lists, a card each, in place of a row per list (plan decision 11)
         // since 2026-10-13; 分類卡片 since 2026-10-25, as Apple Books' More to Explore lays out
-        // its classics, in place of 專題集合 (decision 37). A new install's 預設 only: a saved
-        // home keeps its layout.
+        // its classics, in place of 專題集合 (decision 37); a saved 預設 that still has it as
+        // 專題集合 takes 分類卡片 once (`HomeDefaultsRhythmMigration`).
         let featured = publicLibrariesAvailable
             ? [HomeSection(id: makeID(), layout: .categoryCards, binding: .gutenbergLists)]
             : []
         // The official modules' lists in the reader's languages (maintainer, 2026-10-21: the
-        // defaults made no use of them). A new install's 預設 only, as 古騰堡熱門: a saved
-        // 預設 is the reader's and is not changed. Untitled: each is named by its list in the
-        // app's language (`ModuleProvider.rowName`).
+        // defaults made no use of them). A new install's 預設 only: a saved 預設 is the reader's
+        // and gets none added. Untitled: each is named by its list in the app's language
+        // (`ModuleProvider.rowName`).
         let modules = officialModuleLists(languages: languages, publicLibrariesAvailable: publicLibrariesAvailable)
             .map { HomeSection(id: makeID(), layout: $0.layout, binding: .module(moduleID: $0.moduleID, entryID: $0.entryID)) }
         switch mode {
@@ -383,7 +384,12 @@ enum HomePageDefaults {
     /// covers is 色帶書架; a ranking with covers is a ranked row, AniList's trending manga 一大四小
     /// and its trending novels, not a ranking, a row. なろう's ranking has no covers, so it stays
     /// 圖文資訊清單 with its ranks, and never takes the band.
-    static func officialModuleLists(languages: [String], publicLibrariesAvailable: Bool) -> [ModuleList] {
+    ///
+    /// - Parameter takesBand: which lists may take the band, as their own layout gives them; the
+    ///   first with covers among them does. `HomeDefaultsRhythmMigration` keeps it off a list the
+    ///   reader changed.
+    static func officialModuleLists(languages: [String], publicLibrariesAvailable: Bool,
+                                    takesBand: (ModuleList) -> Bool = { _ in true }) -> [ModuleList] {
         var lists: [(list: ModuleList, hasCovers: Bool)] = []
         for language in languages {
             let wanted: [(list: ModuleList, hasCovers: Bool)]
@@ -404,7 +410,7 @@ enum HomePageDefaults {
             for item in wanted where !lists.contains(where: { $0.list == item.list }) { lists.append(item) }
         }
         var chosen = lists.map(\.list)
-        if let first = lists.firstIndex(where: \.hasCovers) {
+        if let first = lists.firstIndex(where: { $0.hasCovers && takesBand($0.list) }) {
             chosen[first] = ModuleList(moduleID: chosen[first].moduleID, entryID: chosen[first].entryID, layout: .band)
         }
         return chosen
