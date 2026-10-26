@@ -73,7 +73,7 @@ struct BookIntroWebView: UIViewRepresentable {
         let resolvedTraits = traits.modifyingTraits {
             $0.userInterfaceStyle = colorScheme == .dark ? .dark : .light
         }
-        let textColor = UIColor(DSColor.textPrimary).resolvedColor(with: resolvedTraits).cssHex
+        let textColor = DSUIColor.textPrimary.resolvedColor(with: resolvedTraits).cssHex
         let accent = UIColor(DSColor.accent).resolvedColor(with: resolvedTraits)
         let linkColor = accent.cssHex
         // The buttons are filled with `linkColor`, so their text answers that colour.

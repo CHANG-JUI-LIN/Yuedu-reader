@@ -285,7 +285,7 @@ private struct AozoraIndexedTable<Row: View>: UIViewRepresentable {
             let cell = tableView.dequeueReusableCell(withIdentifier: "work") ?? UITableViewCell(style: .default, reuseIdentifier: "work")
             let id = parent.groups[path.section].ids[path.row]
             cell.contentConfiguration = UIHostingConfiguration { parent.row(id) }
-            cell.backgroundColor = UIColor(DSColor.surface)
+            cell.backgroundColor = DSUIColor.surface
             cell.accessoryType = .disclosureIndicator
             return cell
         }

@@ -136,7 +136,7 @@ final class IOS17SearchResultTableViewController: UITableViewController {
         super.viewDidLoad()
 
         tableView.backgroundColor = .clear
-        tableView.separatorColor = UIColor(DSColor.separator)
+        tableView.separatorColor = DSUIColor.separator
         // Separators run from the text to the trailing margin, as the SwiftUI row's do.
         tableView.separatorInset = UIEdgeInsets(
             top: 0,
@@ -230,7 +230,7 @@ final class IOS17SearchResultTableViewController: UITableViewController {
         var configuration = UIListContentConfiguration.plainHeader()
         configuration.text = title
         configuration.textProperties.font = font(.headline)
-        configuration.textProperties.color = UIColor(DSColor.textPrimary)
+        configuration.textProperties.color = DSUIColor.textPrimary
         configuration.directionalLayoutMargins.leading = DSLayout.searchListHorizontalInset
         header.contentConfiguration = configuration
         // One element VoiceOver reads as a heading, as SwiftUI's section header is.
@@ -280,7 +280,7 @@ final class IOS17SearchResultTableViewController: UITableViewController {
             case .notice(let index):
                 var configuration = UIListContentConfiguration.cell()
                 configuration.text = self.statusLines.indices.contains(index) ? self.statusLines[index] : nil
-                configuration.textProperties.color = UIColor(DSColor.textSecondary)
+                configuration.textProperties.color = DSUIColor.textSecondary
                 configuration.textProperties.font = self.font(.subheadline)
                 return self.plainCell(Self.noticeCellIdentifier, configuration: configuration, traits: .staticText)
             }
@@ -391,7 +391,7 @@ private final class IOS17SearchResultTableCell: UITableViewCell {
         }
         let title = NSMutableAttributedString(
             string: content.title,
-            attributes: [.font: titleFont, .foregroundColor: UIColor(DSColor.textPrimary)]
+            attributes: [.font: titleFont, .foregroundColor: DSUIColor.textPrimary]
         )
         if let tag = content.titleTag {
             let mark = SearchTitleTag.mark(
@@ -412,7 +412,7 @@ private final class IOS17SearchResultTableCell: UITableViewCell {
             let tagRun = NSMutableAttributedString(attachment: attachment)
             tagRun.addAttribute(
                 .foregroundColor,
-                value: UIColor(DSColor.textSecondary),
+                value: DSUIColor.textSecondary,
                 range: NSRange(location: 0, length: tagRun.length)
             )
             title.append(tagRun)
@@ -521,9 +521,9 @@ private final class IOS17SearchResultTableCell: UITableViewCell {
     }
 
     private func applyColors() {
-        authorLabel.textColor = UIColor(DSColor.textPrimary)
-        detailLabel.textColor = UIColor(DSColor.textSecondary)
-        coverImageView.backgroundColor = UIColor(DSColor.surfaceTertiary)
+        authorLabel.textColor = DSUIColor.textPrimary
+        detailLabel.textColor = DSUIColor.textSecondary
+        coverImageView.backgroundColor = DSUIColor.surfaceTertiary
         coverContainer.layer.shadowColor = UIColor(DSColor.searchListCoverShadow).cgColor
         // Light/dark flipped under a cell that is still on the generated cover.
         if !showsRemoteCover { applyGeneratedCover() }

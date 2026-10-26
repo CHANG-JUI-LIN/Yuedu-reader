@@ -622,7 +622,7 @@ private struct QuickPanelSegmentButtonStyle: ButtonStyle {
     let landscape = UIGraphicsImageRenderer(size: CGSize(width: 320, height: 180)).image { context in
         UIColor(DSColor.accent).setFill()
         context.fill(CGRect(x: 0, y: 0, width: 320, height: 180))
-        UIColor(DSColor.textPrimary).setFill()
+        DSUIColor.textPrimary.setFill()
         context.fill(CGRect(x: 0, y: 120, width: 320, height: 60))
     }
     return HStack(spacing: DSSpacing.md) {

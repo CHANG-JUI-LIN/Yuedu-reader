@@ -178,7 +178,7 @@ final class ReaderCardTransitionAnimator: NSObject, UIViewControllerAnimatedTran
 
         let backdrop = UIView(frame: container.bounds)
         backdrop.autoresizingMask = [.flexibleWidth, .flexibleHeight]
-        backdrop.backgroundColor = UIColor(DSColor.background)
+        backdrop.backgroundColor = DSUIColor.background
 
         let stage = makeBookStage(
             initialFrame: operation == .push ? closedFrame : fullFrame
@@ -667,7 +667,7 @@ final class ReaderCardTransitionAnimator: NSObject, UIViewControllerAnimatedTran
             // without clipping, so this branch never sets `masksToBounds`.
             // Only a card still on its placeholder lifts no image, so it lifts the
             // placeholder's colour (`BookshelfCoverArtwork`), not a white card.
-            coverView.backgroundColor = UIColor(DSColor.neutralControlFill)
+            coverView.backgroundColor = DSUIColor.neutralControlFill
         }
         // The hinge anchor is fixed for the whole transition, so per-frame
         // layout can set bounds/position directly without anchor migration.

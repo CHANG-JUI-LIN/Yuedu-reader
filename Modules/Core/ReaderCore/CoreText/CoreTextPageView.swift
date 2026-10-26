@@ -2457,7 +2457,7 @@ final class CoreTextPageView: UIView, UIGestureRecognizerDelegate, @MainActor UI
         overlay.isHidden = false
         overlay.boxStyle = nil
         overlay.boxColor = nil
-        overlay.fillColor = UIColor(DSColor.readerSearchHit)
+        overlay.fillColor = DSUIColor.readerSearchHit
     }
 
     /// Reads the TTS-highlight GlobalSettings and configures an overlay's fill/box style,

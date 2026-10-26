@@ -63,7 +63,7 @@ final class BrowserInlineVideoCoordinator {
         guard controllers[placement.nodeID] == nil, let owner else { return }
         let controller = AVPlayerViewController()
         controller.view.frame = placement.rect
-        controller.view.backgroundColor = UIColor(DSColor.background)
+        controller.view.backgroundColor = DSUIColor.background
         controller.videoGravity = .resizeAspect
         controller.allowsPictureInPicturePlayback = true
         owner.addChild(controller)

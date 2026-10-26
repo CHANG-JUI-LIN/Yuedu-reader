@@ -137,16 +137,12 @@ struct AppearanceColorScopeTests {
     func disabledTextIsTertiary() {
         var themed = AppearanceThemePreset.freeSolidPresets[0]
         themed.authoredTextColors = AppearanceThemeTextColors(primary: .red, secondary: .green, tertiary: .blue)
-        let light = UITraitCollection { traits in
-            traits.userInterfaceStyle = .light
-            traits[AppThemesTrait.self] = ActiveAppThemes(light: themed, dark: nil)
-        }
-        #expect(UIColor(DSColor.textDisabled).resolvedColor(with: light).rgbHex == UIColor.blue.rgbHex)
+        let themes = ActiveAppThemes(light: themed, dark: nil)
+        #expect(Self.resolved(DSColor.textDisabled, under: themes, style: .light).rgbHex == UIColor.blue.rgbHex)
 
         for style in [UIUserInterfaceStyle.light, .dark] {
-            let traits = UITraitCollection(userInterfaceStyle: style)
-            let drawn = Self.components(UIColor(DSColor.textDisabled).resolvedColor(with: traits))
-            let system = Self.components(UIColor.tertiaryLabel.resolvedColor(with: traits))
+            let drawn = Self.components(Self.resolved(DSColor.textDisabled, under: ActiveAppThemes(), style: style))
+            let system = Self.components(UIColor.tertiaryLabel.resolvedColor(with: UITraitCollection(userInterfaceStyle: style)))
             #expect(abs(drawn.alpha - system.alpha) < 0.01 && abs(drawn.red - system.red) < 0.01, "\(style.rawValue)")
         }
     }
@@ -203,18 +199,23 @@ struct AppearanceColorScopeTests {
             ("border", DSColor.border, .systemGray4),
         ]
         return tokens.map { name, token, system in
-            (name, components(UIColor(token).resolvedColor(with: traits)), components(system.resolvedColor(with: traits)))
+            (name, components(resolved(token, under: themes, style: style)), components(system.resolvedColor(with: traits)))
         }
     }
 
     /// `token` as drawn in `style`, with `preset` on screen in both appearances.
     static func drawn(_ token: Color, under preset: AppearanceThemePreset, style: UIUserInterfaceStyle) -> UIColor {
-        let themes = ActiveAppThemes(light: preset, dark: preset.palette(for: .dark))
-        let traits = UITraitCollection { traits in
-            traits.userInterfaceStyle = style
-            traits[AppThemesTrait.self] = themes
-        }
-        return UIColor(token).resolvedColor(with: traits)
+        resolved(token, under: ActiveAppThemes(light: preset, dark: preset.palette(for: .dark)), style: style)
+    }
+
+    /// `token` as SwiftUI resolves it where it draws: in `style`, with `themes` on screen.
+    /// Never `UIColor(token).resolvedColor(with:)`, which on iOS 17 resolves in light whatever
+    /// it is asked (`DSUIColor`) and failed every dark check here while views drew right.
+    static func resolved(_ token: Color, under themes: ActiveAppThemes, style: UIUserInterfaceStyle) -> UIColor {
+        var environment = EnvironmentValues()
+        environment.colorScheme = style == .dark ? .dark : .light
+        environment.appThemes = themes
+        return UIColor(cgColor: token.resolve(in: environment).cgColor)
     }
 
     static func components(_ color: UIColor) -> RGBA {

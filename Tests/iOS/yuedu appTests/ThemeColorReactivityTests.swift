@@ -59,7 +59,7 @@ struct ThemeColorReactivityTests {
     func uikitViewFollowsWindowTraits() throws {
         let window = try Self.window()
         let view = UIView(frame: CGRect(x: 0, y: 0, width: 20, height: 20))
-        view.backgroundColor = UIColor(DSColor.textPrimary)
+        view.backgroundColor = DSUIColor.textPrimary
         window.addSubview(view)
         window.isHidden = false
         defer { window.isHidden = true }
@@ -70,6 +70,31 @@ struct ThemeColorReactivityTests {
         window.traitOverrides[AppThemesTrait.self] = Self.themes(text: .blue)
         view.updateTraitsIfNeeded()
         #expect(view.backgroundColor?.resolvedColor(with: view.traitCollection).rgbHex == UIColor.blue.rgbHex)
+    }
+
+    /// A UIKit view in dark draws the dark appearance's colours. Handed
+    /// `UIColor(DSColor.x)`, it drew the light ones on iOS 17, where that conversion
+    /// resolves in light whatever it is asked (measured 2026-10-26, iOS 17.5 — `DSUIColor`).
+    @Test("a UIKit view draws the dark appearance's colours")
+    func uikitViewDrawsDarkColours() throws {
+        let window = try Self.window()
+        window.overrideUserInterfaceStyle = .dark
+        let view = UIView(frame: CGRect(x: 0, y: 0, width: 20, height: 20))
+        window.addSubview(view)
+        window.isHidden = false
+        defer { window.isHidden = true }
+
+        view.backgroundColor = DSUIColor.groupedBackground
+        #expect(Self.color(of: view, at: CGPoint(x: 10, y: 10)) == "rgb(0,0,0)")
+
+        var light = AppearanceThemePreset.freeSolidPresets[0]
+        light.authoredTextColors = AppearanceThemeTextColors(primary: .blue, secondary: .blue, tertiary: .blue)
+        var dark = light
+        dark.authoredTextColors = AppearanceThemeTextColors(primary: .red, secondary: .red, tertiary: .red)
+        window.traitOverrides[AppThemesTrait.self] = ActiveAppThemes(light: light, dark: dark)
+        view.backgroundColor = DSUIColor.textPrimary
+        view.updateTraitsIfNeeded()
+        #expect(Self.color(of: view, at: CGPoint(x: 10, y: 10)) == "red")
     }
 
     // MARK: - Helpers

@@ -425,7 +425,7 @@ private struct ReaderBatterySVGAssetRow: View {
             let source = try await store.source(for: asset.id)
             try Task.checkCancellation()
             let template = try ReaderBatterySVGTemplate(source: source)
-            let rgbaHex = try UIColor(DSColor.textPrimary).rgbaHex(for: colorScheme, themes: appThemes)
+            let rgbaHex = try DSUIColor.textPrimary.rgbaHex(for: colorScheme, themes: appThemes)
             let pixelSize = CGSize(
                 width: DSLayout.readerBatterySVGPreviewWidth * displayScale,
                 height: DSLayout.readerBatterySVGPreviewHeight * displayScale

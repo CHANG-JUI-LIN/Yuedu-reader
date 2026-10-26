@@ -41,7 +41,7 @@ enum DSColor {
     // `Color.primary` is `.label` and `Color.secondary` is `.secondaryLabel`, so
     // a theme without text colors paints identically to the old constants.
     /// Primary text (auto-adapts to light/dark mode)
-    static var textPrimary: Color { themedText(\.primary, fallback: .label) }
+    static var textPrimary: Color { Color(uiColor: DSUIColor.textPrimary) }
     /// Text on an accent fill (`DSColor.accent`): white, or black where the accent is too
     /// light for white — see `OnAccentTextStyle`.
     static let textOnAccent = OnAccentTextStyle()
@@ -67,9 +67,9 @@ enum DSColor {
     /// 精簡閱讀卡片's ground until its cover's colour is known: dark enough for white text.
     static let coverTintPlaceholder = CoverTint.placeholder.color
     /// Secondary text (captions, subtitles)
-    static var textSecondary: Color { themedText(\.secondary, fallback: .secondaryLabel) }
+    static var textSecondary: Color { Color(uiColor: DSUIColor.textSecondary) }
     /// Third-level text (footnotes, metadata) — the level iOS calls `tertiaryLabel`.
-    static var textTertiary: Color { themedText(\.tertiary, fallback: .tertiaryLabel) }
+    static var textTertiary: Color { Color(uiColor: DSUIColor.textTertiary) }
     /// Disabled text — 弱文字, the level iOS gives tertiary content. This was
     /// `Color.secondary` at half opacity: the same 30% of the label colour that
     /// `tertiaryLabel` is, so a theme without text colours draws exactly what it did.
@@ -79,13 +79,13 @@ enum DSColor {
     // When an app appearance theme is active these retint the whole app; with
     // no theme (classic) they resolve to the exact system colors as before.
     /// Page background
-    static var background: Color { themed(\.appPageBackground, fallback: .systemBackground) }
+    static var background: Color { Color(uiColor: DSUIColor.background) }
     /// Group / card background
-    static var surface: Color { themed(\.appCardBackground, fallback: .secondarySystemGroupedBackground) }
+    static var surface: Color { Color(uiColor: DSUIColor.surface) }
     /// Tertiary background (nested groups)
-    static var surfaceTertiary: Color { themed(\.appSecondaryBackground, fallback: .tertiarySystemBackground) }
+    static var surfaceTertiary: Color { Color(uiColor: DSUIColor.surfaceTertiary) }
     /// Grouped content background
-    static var groupedBackground: Color { themed(\.appPageBackground, fallback: .systemGroupedBackground) }
+    static var groupedBackground: Color { Color(uiColor: DSUIColor.groupedBackground) }
     /// The dim over the store behind the public-library card carousel.
     static let cardCarouselDim = Color.black
     /// A carousel card's primary action, white with black text in every card colour
@@ -93,51 +93,15 @@ enum DSColor {
     static let cardPrimaryActionFill = Color.white
     static let cardPrimaryActionLabel = Color.black
     /// Neutral gray fill for controls that must not inherit an appearance-theme tint.
-    static let neutralControlFill = Color(uiColor: .systemGray5)
+    static let neutralControlFill = Color(uiColor: DSUIColor.neutralControlFill)
     /// Pressed-state fill layered inside `neutralControlFill` controls (pre-iOS 26 fallback).
     static let neutralControlPressedFill = Color(uiColor: .systemGray3)
 
     // ── Borders & Separators ──
     /// Thin separator
-    static var separator: Color { themed(\.appSeparator, fallback: .separator) }
+    static var separator: Color { Color(uiColor: DSUIColor.separator) }
     /// Light border
-    static var border: Color { themed(\.appBorder, fallback: .systemGray4) }
-
-    /// Resolves one authored text level as a **dynamic** color, falling back to the
-    /// system label for any appearance whose theme did not author the trio. Kept
-    /// separate from `themed(_:fallback:)` because text colors are optional on the
-    /// preset: a theme opts in, where every theme always has surface colors.
-    private static func themedText(
-        _ keyPath: KeyPath<AppearanceThemeTextColors, UIColor>,
-        fallback: UIColor
-    ) -> Color {
-        Color(uiColor: UIColor { traits in
-            traits[AppThemesTrait.self].theme(for: traits.userInterfaceStyle)?
-                .authoredTextColors?[keyPath: keyPath] ?? fallback.resolvedColor(with: traits)
-        })
-    }
-
-    /// Resolves a themed surface color as a **dynamic** color.
-    ///
-    /// Both the theme and the light or dark palette are read from the trait collection in
-    /// effect when a view actually draws (`AppThemesTrait`), never captured when the
-    /// color is made. Captured, the color depended on when things ran: dark mode could
-    /// paint light-mode surfaces if a screen re-rendered before `ContentView.body` did,
-    /// and a view SwiftUI did not rebuild kept the old theme after a switch.
-    ///
-    /// - Parameter fallback: the system color for an appearance with no theme (classic),
-    ///   or with 默認 whose 背景 is as shipped (`keepsSystemBackgrounds`).
-    private static func themed(
-        _ keyPath: KeyPath<AppearanceThemePreset, UIColor>,
-        fallback: UIColor
-    ) -> Color {
-        Color(uiColor: UIColor { traits in
-            guard let theme = traits[AppThemesTrait.self].theme(for: traits.userInterfaceStyle),
-                  !theme.keepsSystemBackgrounds
-            else { return fallback.resolvedColor(with: traits) }
-            return theme[keyPath: keyPath]
-        })
-    }
+    static var border: Color { Color(uiColor: DSUIColor.border) }
 
     // ── Functional ──
     /// Light label / selected background
@@ -160,7 +124,7 @@ enum DSColor {
     static let highlight = Color.accentColor.opacity(0.15)
     /// The 全書搜尋 hit washed on the reading page — the browser layout's read-aloud yellow,
     /// a little stronger, so it reads on white, sepia and black pages alike.
-    static let readerSearchHit = Color(uiColor: .systemYellow).opacity(0.4)
+    static let readerSearchHit = Color(uiColor: DSUIColor.readerSearchHit)
 
     /// Shadow under an app icon shown in the app.
     static let appIconShadow = Color.black.opacity(0.12)
@@ -199,6 +163,79 @@ enum DSColor {
     // ── Search Engine Brand Colors ──
     static let brandBaidu = Color(red: 0.1, green: 0.4, blue: 0.9)
     static let brandBing = Color(red: 0.0, green: 0.5, blue: 0.7)
+}
+
+/// `DSColor`'s tokens that follow the appearance, as the dynamic `UIColor`s the SwiftUI
+/// ones wrap. UIKit takes these — never `UIColor(DSColor.x)`.
+///
+/// On iOS 17, `UIColor(_:)` does not hand back the `UIColor` a `Color(uiColor:)` holds: it
+/// returns a new colour that resolves the held one in light at standard contrast, whatever
+/// it is asked to resolve in. Every UIKit view given `UIColor(DSColor.x)` drew light — black
+/// text and light surfaces in dark, with Increase Contrast ignored — while SwiftUI drew the
+/// same tokens right (measured 2026-10-26 on iOS 17.5; iOS 18.6 and 27 hand back the colour
+/// itself).
+enum DSUIColor {
+    /// `DSColor.textPrimary`.
+    static var textPrimary: UIColor { themedText(\.primary, fallback: .label) }
+    /// `DSColor.textSecondary`.
+    static var textSecondary: UIColor { themedText(\.secondary, fallback: .secondaryLabel) }
+    /// `DSColor.textTertiary`.
+    static var textTertiary: UIColor { themedText(\.tertiary, fallback: .tertiaryLabel) }
+
+    /// `DSColor.background`.
+    static var background: UIColor { themed(\.appPageBackground, fallback: .systemBackground) }
+    /// `DSColor.surface`.
+    static var surface: UIColor { themed(\.appCardBackground, fallback: .secondarySystemGroupedBackground) }
+    /// `DSColor.surfaceTertiary`.
+    static var surfaceTertiary: UIColor { themed(\.appSecondaryBackground, fallback: .tertiarySystemBackground) }
+    /// `DSColor.groupedBackground`.
+    static var groupedBackground: UIColor { themed(\.appPageBackground, fallback: .systemGroupedBackground) }
+    /// `DSColor.neutralControlFill`.
+    static let neutralControlFill = UIColor.systemGray5
+
+    /// `DSColor.separator`.
+    static var separator: UIColor { themed(\.appSeparator, fallback: .separator) }
+    /// `DSColor.border`.
+    static var border: UIColor { themed(\.appBorder, fallback: .systemGray4) }
+
+    /// `DSColor.readerSearchHit`.
+    static let readerSearchHit = UIColor.systemYellow.withAlphaComponent(0.4)
+
+    /// Resolves one authored text level as a **dynamic** color, falling back to the
+    /// system label for any appearance whose theme did not author the trio. Kept
+    /// separate from `themed(_:fallback:)` because text colors are optional on the
+    /// preset: a theme opts in, where every theme always has surface colors.
+    private static func themedText(
+        _ keyPath: KeyPath<AppearanceThemeTextColors, UIColor>,
+        fallback: UIColor
+    ) -> UIColor {
+        UIColor { traits in
+            traits[AppThemesTrait.self].theme(for: traits.userInterfaceStyle)?
+                .authoredTextColors?[keyPath: keyPath] ?? fallback.resolvedColor(with: traits)
+        }
+    }
+
+    /// Resolves a themed surface color as a **dynamic** color.
+    ///
+    /// Both the theme and the light or dark palette are read from the trait collection in
+    /// effect when a view actually draws (`AppThemesTrait`), never captured when the
+    /// color is made. Captured, the color depended on when things ran: dark mode could
+    /// paint light-mode surfaces if a screen re-rendered before `ContentView.body` did,
+    /// and a view SwiftUI did not rebuild kept the old theme after a switch.
+    ///
+    /// - Parameter fallback: the system color for an appearance with no theme (classic),
+    ///   or with 默認 whose 背景 is as shipped (`keepsSystemBackgrounds`).
+    private static func themed(
+        _ keyPath: KeyPath<AppearanceThemePreset, UIColor>,
+        fallback: UIColor
+    ) -> UIColor {
+        UIColor { traits in
+            guard let theme = traits[AppThemesTrait.self].theme(for: traits.userInterfaceStyle),
+                  !theme.keepsSystemBackgrounds
+            else { return fallback.resolvedColor(with: traits) }
+            return theme[keyPath: keyPath]
+        }
+    }
 }
 
 /// `DSColor.textOnAccent`: white on the accent, black once the accent is too light for
