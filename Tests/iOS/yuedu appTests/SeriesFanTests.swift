@@ -12,16 +12,20 @@ struct SeriesFanTests {
         let cover: CoverReference = generated
             ? .generated(seed: name)
             : .remote(URL(string: "https://example.com/\(name).jpg")!, headers: [:])
-        return SeriesFan.Volume(id: name, cover: .reference(cover, session: nil), title: name, author: "")
+        return SeriesFan.Volume(id: name, cover: .reference(cover, session: nil))
     }
 
     private static func names(_ sides: (leading: [SeriesFan.Volume], trailing: [SeriesFan.Volume])) -> [[String]] {
         [sides.leading.map(\.id), sides.trailing.map(\.id)]
     }
 
-    private static let hasArtwork = { (cover: HomeCardContent.Cover) in
-        cover.hasArtwork(filledCovers: nil, colorScheme: .light)
+    private static let pixels = CoverPixelSize.fitting(pointSize: CGSize(width: 120, height: 180), scale: 2)!
+
+    private static func source(_ cover: HomeCardContent.Cover, forcesDefaultCover: Bool = false) -> SeriesFanArtwork? {
+        cover.artworkSource(pixels: pixels, filledCovers: nil, colorScheme: .light, forcesDefaultCover: forcesDefaultCover)
     }
+
+    private static let hasArtwork = { (volume: SeriesFan.Volume) in source(volume.cover) != nil }
 
     @Test("a middle volume: the two before it lead, the two after it trail, nearest first")
     func middle() {
@@ -56,18 +60,51 @@ struct SeriesFanTests {
         #expect(Self.names(generated.sides(hasArtwork: Self.hasArtwork)) == [[], []])
     }
 
-    @Test("a shelf copy has artwork with a saved or catalog cover, not with a 預設封面 or 強制使用預設封面")
-    func shelfArtwork() {
+    @Test("a shelf copy's artwork is its saved cover, at the page cover's size; a 預設封面 is none")
+    func shelfArtwork() throws {
         var saved = ReadingBook(title: "三體", author: "劉慈欣", contentFilename: "a.epub")
         saved.coverImagePath = "cover.jpg"
         let bare = ReadingBook(title: "黑暗森林", author: "劉慈欣", contentFilename: "b.epub")
-        #expect(HomeCardContent.Cover.shelf(saved).hasArtwork(filledCovers: nil, colorScheme: .light))
-        #expect(!HomeCardContent.Cover.shelf(bare).hasArtwork(filledCovers: nil, colorScheme: .light))
-        #expect(!HomeCardContent.Cover.reference(nil, session: nil).hasArtwork(filledCovers: nil, colorScheme: .light))
-        #expect(HomeCardContent.Cover.reference(.copyFile("/tmp/cover.jpg"), session: nil)
-            .hasArtwork(filledCovers: nil, colorScheme: .light))
-        let plan = BookshelfCoverPlan.shelf(for: saved, colorScheme: .light, forcesDefaultCover: true)
-        #expect(plan.ownCover == nil && plan.catalogFallback == nil, "the rule hasArtwork reads")
+        let file = try #require(Self.source(.shelf(saved))?.file)
+        #expect(file == CoverImageRequest(source: .bookCover(filename: "cover.jpg"), size: Self.pixels))
+        #expect(Self.source(.shelf(bare)) == nil)
+        #expect(Self.source(.reference(nil, session: nil)) == nil)
+        #expect(Self.source(.placeholder) == nil)
+        #expect(Self.source(.reference(.copyFile("/tmp/cover.jpg"), session: nil))?.file
+            == CoverImageRequest(source: .indexedCover(path: "/tmp/cover.jpg"), size: Self.pixels))
+    }
+
+    @Test("強制使用預設封面: no volume's own artwork is drawn, so there is no fan")
+    func forcedDefaultCover() {
+        var saved = ReadingBook(title: "三體", author: "劉慈欣", contentFilename: "a.epub")
+        saved.coverImagePath = "cover.jpg"
+        #expect(Self.source(.shelf(saved), forcesDefaultCover: true) == nil)
+        #expect(Self.source(Self.volume("1").cover, forcesDefaultCover: true) == nil)
+        #expect(Self.source(.reference(.copyFile("/tmp/cover.jpg"), session: nil), forcesDefaultCover: true) == nil)
+    }
+
+    /// A volume whose cover is a bundled sample, or a file that is not there.
+    private static func file(_ name: String, sample: String?) -> SeriesFan.Volume {
+        let path = sample.flatMap { Bundle.main.path(forResource: "layout-sample-\($0)", ofType: "jpg") }
+            ?? "/nonexistent/series-fan-\(name).jpg"
+        return SeriesFan.Volume(id: name, cover: .reference(.copyFile(path), session: nil))
+    }
+
+    @Test("the fan's covers load before it draws; one that cannot be read gives its place to the next")
+    func unreadableSkipped() async {
+        let fan = SeriesFan(volumes: [Self.file("1", sample: "frankenstein"), Self.file("2", sample: nil),
+                                      Self.file("4", sample: "dracula"), Self.file("5", sample: "jane-eyre"),
+                                      Self.file("6", sample: "moby-dick")], position: 2)
+        let artwork = await fan.artwork(pipeline: CoverImagePipeline(logsSummaries: false)) { Self.source($0.cover) }
+        #expect(Set(artwork.keys) == ["1", "4", "5", "6"], "2 was tried and failed; 6 stands in")
+        #expect(Self.names(fan.sides { artwork[$0.id] != nil }) == [["1", "6"], ["4", "5"]])
+    }
+
+    @Test("no volume's cover loads: nothing is drawn")
+    func nothingLoads() async {
+        let fan = SeriesFan(volumes: [Self.file("1", sample: nil), Self.file("3", sample: nil)], position: 1)
+        let artwork = await fan.artwork(pipeline: CoverImagePipeline(logsSummaries: false)) { Self.source($0.cover) }
+        #expect(artwork.isEmpty)
     }
 
     @Test("a series read on this device: the others in order, counted before the page's volume")
@@ -79,8 +116,8 @@ struct SeriesFanTests {
             WorkSeriesShelf.Volume(entry: .aozora(work, index: index), number: Double(offset + 1), isPageWork: offset == 1)
         }
         let fan = try #require(SeriesFan(WorkSeriesShelf(name: "地球往事", number: 2, volumes: volumes), store: BookStore()))
-        #expect(fan.volumes.map(\.title) == [volumes[0], volumes[2]].compactMap {
-            HomeRowContent(entries: [$0.entry], store: BookStore()).cards.first?.title
+        #expect(fan.volumes.map(\.id) == [volumes[0], volumes[2]].compactMap {
+            HomeRowContent(entries: [$0.entry], store: BookStore()).cards.first?.id.sortKey
         })
         #expect(fan.position == 1)
         let elsewhere = volumes.map { WorkSeriesShelf.Volume(entry: $0.entry, number: $0.number, isPageWork: false) }

@@ -154,16 +154,27 @@ struct BookCoverImage: View {
         // fallback when it fails. It is a local file, so it is ready first.
         await loadDefaultCover()
         guard !Task.isCancelled else { return }
+        let fetched = await Self.fetchCover(coverURL: coverURL, sourceBaseURL: sourceBaseURL,
+                                            sourceHeaders: sourceHeaders, sourceID: sourceID, session: session)
+        if !Task.isCancelled { loaded = fetched.map { HeldRemoteCover(key: key, image: $0) } }
+    }
+
+    /// The cover at `coverURL`, from memory or fetched with the headers its CDN needs: the
+    /// source's base URL and header rule when `sourceID` names one (looked up only now), else
+    /// those given. Nil when it fails, or when the task is cancelled. 作品詳情's series fan
+    /// loads its volumes' covers through this too, before it draws any of them.
+    static func fetchCover(coverURL: String, sourceBaseURL: String?, sourceHeaders: [String: String],
+                           sourceID: UUID?, session: URLSession?) async -> UIImage? {
+        if let cached = BookCoverLoader.cachedImage(for: coverURL, session: session) { return cached }
         var baseURL = sourceBaseURL
         var sourceHeaders = sourceHeaders
-        if let sourceID, let resolved = await Self.resolveSource(sourceID) {
-            guard !Task.isCancelled else { return }
+        if let sourceID, let resolved = await resolveSource(sourceID) {
+            guard !Task.isCancelled else { return nil }
             baseURL = resolved.baseURL
             sourceHeaders = resolved.headers
         }
         let headers = BookCoverLoader.headers(sourceBaseURL: baseURL, sourceHeaders: sourceHeaders)
-        let fetched = await BookCoverLoader.loadImage(urlString: coverURL, headers: headers, session: session)
-        if !Task.isCancelled { loaded = fetched.map { HeldRemoteCover(key: key, image: $0) } }
+        return await BookCoverLoader.loadImage(urlString: coverURL, headers: headers, session: session)
     }
 
     /// Decodes this slot's 預設封面 off the main thread when memory does not have
