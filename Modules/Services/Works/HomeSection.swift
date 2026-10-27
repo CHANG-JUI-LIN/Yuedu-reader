@@ -312,8 +312,10 @@ struct HomePage: Codable, Hashable, Sendable {
 /// unified library 5d-1 (settled decision 12).
 ///
 /// Pure: nothing writes it until the home first reads it (Phase 5 plan, 5a step 3). A saved 預設
-/// is the reader's and keeps the defaults it was made with, except once, for the 2026-10-25
-/// layouts: a 預設 still as the defaults made it takes them (`HomeDefaultsRhythmMigration`).
+/// is the reader's and keeps the defaults it was made with, except:
+/// - once, for the 2026-10-25 layouts: a 預設 still as the defaults made it takes them
+///   (`HomeDefaultsRhythmMigration`);
+/// - the official modules' lists, which follow the language (`HomeDefaultsLanguageSwap`).
 enum HomePageDefaults {
     /// Whom the defaults are made for, as the home knows it: `page`'s inputs. 預設配置 makes a
     /// 首頁配置 from them (maintainer, 2026-10-23: the defaults the app keeps, not the reader's
@@ -359,9 +361,9 @@ enum HomePageDefaults {
             ? [HomeSection(id: makeID(), layout: .categoryCards, binding: .gutenbergLists)]
             : []
         // The official modules' lists in the reader's languages (maintainer, 2026-10-21: the
-        // defaults made no use of them). A new install's 預設 only: a saved 預設 is the reader's
-        // and gets none added. Untitled: each is named by its list in the app's language
-        // (`ModuleProvider.rowName`).
+        // defaults made no use of them). A saved 預設 takes the next language's when the language
+        // changes (`HomeDefaultsLanguageSwap`). Untitled: each is named by its list in the app's
+        // language (`ModuleProvider.rowName`).
         let modules = officialModuleLists(languages: languages, publicLibrariesAvailable: publicLibrariesAvailable)
             .map { HomeSection(id: makeID(), layout: $0.layout, binding: .module(moduleID: $0.moduleID, entryID: $0.entryID)) }
         switch mode {
@@ -377,7 +379,12 @@ enum HomePageDefaults {
         let moduleID: String
         let entryID: String
         let layout: HomeSectionLayout
+
+        var binding: HomeSectionBinding { .module(moduleID: moduleID, entryID: entryID) }
     }
+
+    /// The languages `officialModuleLists` has lists for.
+    static let listLanguages = ["zh", "ja", "en"]
 
     /// The official modules' lists for each language, in the languages' order, each list once.
     /// Chinese reads Bangumi, whose titles are Chinese; Japanese なろう, hidden where the public

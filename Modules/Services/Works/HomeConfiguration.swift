@@ -73,6 +73,10 @@ struct HomeConfigurations: Codable, Hashable, Sendable {
     /// Set while `custom_explore_pages.json` could not be read: the pages move in on a later
     /// launch that reads it.
     var customPagesPending: Bool
+    /// Whose official modules' lists 預設 holds (`HomeDefaultsLanguageSwap`): the reading
+    /// languages, base codes, its defaults or its last swap were for. Nil in a file saved before
+    /// 2026-10-27, whose lists say it instead.
+    var defaultsLanguages: [String]?
 
     init(sections: [HomeSection], configurations: [HomeConfiguration] = [], selected: HomeConfigurationID? = nil,
          defaultsIndex: Int? = nil, defaultsDeleted: Bool = false, customPagesPending: Bool = false) {
@@ -86,6 +90,7 @@ struct HomeConfigurations: Codable, Hashable, Sendable {
 
     private enum CodingKeys: String, CodingKey {
         case schemaVersion, sections, configurations, selected, defaultsIndex, defaultsDeleted, customPagesPending
+        case defaultsLanguages
     }
 
     init(from decoder: Decoder) throws {
@@ -96,6 +101,7 @@ struct HomeConfigurations: Codable, Hashable, Sendable {
         defaultsIndex = try container.decodeIfPresent(Int.self, forKey: .defaultsIndex)
         defaultsDeleted = try container.decodeIfPresent(Bool.self, forKey: .defaultsDeleted) ?? false
         customPagesPending = try container.decodeIfPresent(Bool.self, forKey: .customPagesPending) ?? false
+        defaultsLanguages = try container.decodeIfPresent([String].self, forKey: .defaultsLanguages)
         retireBlank()
     }
 
@@ -108,6 +114,7 @@ struct HomeConfigurations: Codable, Hashable, Sendable {
         try container.encodeIfPresent(defaultsIndex, forKey: .defaultsIndex)
         if defaultsDeleted { try container.encode(true, forKey: .defaultsDeleted) }
         if customPagesPending { try container.encode(true, forKey: .customPagesPending) }
+        try container.encodeIfPresent(defaultsLanguages, forKey: .defaultsLanguages)
     }
 
     /// 空白 is no longer built in (maintainer, 2026-10-23). One the reader filled stays, as

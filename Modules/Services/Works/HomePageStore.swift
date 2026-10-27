@@ -18,6 +18,8 @@ import Foundation
 ///   first home is made. `custom_explore_pages.json` is left where it is.
 /// - A 預設 still as the defaults of 2026-10-13 to 2026-10-25 made it takes the 2026-10-25
 ///   layouts once (`HomeDefaultsRhythmMigration`).
+/// - 預設's official modules' lists follow the language, as the home reads it
+///   (`HomeDefaultsLanguageSwap`).
 @MainActor
 final class HomePageStore: ObservableObject {
     /// The app's home; the editor (5d) changes the same one the home draws.
@@ -76,21 +78,30 @@ final class HomePageStore: ObservableObject {
     }
 
     /// The selected configuration, or the defaults for this reader as 預設, saved now so they
-    /// never change under them (5a step 3), with the custom pages moved in beside it.
+    /// never change under them (5a step 3), with the custom pages moved in beside it. Only 預設's
+    /// official modules' lists change after, when `languages` does (`followLanguage`).
     ///
     /// Call it only once the book-source library is read (`ExploreTabModel.isLoaded`): before
     /// that `mode` cannot tell a reader with sources from a new install, and the wrong order
     /// would be saved for good. The region is taken as it stands: a public-library section
     /// saved before the region is known has no row in China, where its provider is hidden.
     func pageOrDefaults(mode: ExploreMode, publicLibrariesAvailable: Bool, languages: [String]) -> HomePage {
-        if let page { return page }
-        let defaultPage = HomePageDefaults.page(mode: mode, publicLibrariesAvailable: publicLibrariesAvailable,
-                                                languages: languages)
+        let context = HomePageDefaults.Context(mode: mode, publicLibrariesAvailable: publicLibrariesAvailable,
+                                               languages: languages)
+        if var home {
+            if followLanguage(in: &home, context: context) {
+                self.home = home
+                write()
+            }
+            return HomePage(sections: home.sections(of: home.selectedID))
+        }
+        let defaultPage = HomePageDefaults.page(for: context)
         // The defaults have 為你推薦 already; it is never inserted again.
         if insertsForYouOnce { defaults.set(true, forKey: Self.forYouInsertedKey) }
         // They have the 2026-10-25 layouts already; a reader who changes them keeps theirs.
         if appliesDefaultsRhythmOnce, !isReadOnly { defaults.set(true, forKey: Self.defaultsRhythmKey) }
         var made = HomeConfigurations(sections: defaultPage.sections)
+        made.defaultsLanguages = languages
         if !isReadOnly { moveCustomPages(into: &made) }
         home = made
         write()
@@ -254,6 +265,33 @@ final class HomePageStore: ObservableObject {
             "changed": "\(outcome.changed)", "kept": "\(outcome.kept)",
         ])
         return outcome.changed > 0
+    }
+
+    // MARK: - The language
+
+    /// 預設's official modules' lists follow the language (`HomeDefaultsLanguageSwap`); the
+    /// reader's own 首頁配置 are theirs. A 預設 saved before 2026-10-27 did not say whose lists it
+    /// holds, so its lists say it: when they include the language's, or there are none, nothing
+    /// changes. Not on a file this build only reads. Returns whether the file changed.
+    private func followLanguage(in home: inout HomeConfigurations, context: HomePageDefaults.Context) -> Bool {
+        guard !isReadOnly, !home.defaultsDeleted, home.defaultsLanguages != context.languages else { return false }
+        let held = home.defaultsLanguages
+            ?? HomeDefaultsLanguageSwap.languages(of: home.sections, publicLibrariesAvailable: context.publicLibrariesAvailable)
+        if home.defaultsLanguages == nil, held.isEmpty || held.contains(where: context.languages.contains) {
+            home.defaultsLanguages = context.languages
+            AppLogger.cache("⟐ 預設's lists taken as the language's", context: [
+                "lists": held.joined(separator: ","), "language": context.languages.joined(separator: ","),
+            ])
+            return true
+        }
+        let outcome = HomeDefaultsLanguageSwap.apply(to: home.sections, from: held, to: context)
+        home.sections = outcome.sections
+        home.defaultsLanguages = context.languages
+        AppLogger.cache("⟐ 預設 follows the language", context: [
+            "from": held.joined(separator: ","), "to": context.languages.joined(separator: ","),
+            "removed": "\(outcome.removed)", "added": "\(outcome.added)",
+        ])
+        return true
     }
 
     // MARK: - Custom pages

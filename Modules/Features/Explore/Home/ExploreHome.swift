@@ -13,7 +13,8 @@ import SwiftUI
 /// - One stack for everything the home opens (decision 5): Explore's routes, the libraries'
 ///   feeds, folders and books, the store's pages, and the store's card carousel over it all.
 /// - The page is read once the book-source library is read (`ExploreTabRoot` waits for
-///   that), and the defaults are saved then, for good (`HomePageStore.pageOrDefaults`).
+///   that), and the defaults are saved then, for good but for 預設's official modules' lists,
+///   which follow the language (`HomePageStore.pageOrDefaults`).
 /// - Rows are built again when the page (or the 首頁配置 chosen), the sources, the connections or
 ///   the region change. Rows read from this device load again when the home comes back into
 ///   view, never on a shelf change: a page turn is one.
