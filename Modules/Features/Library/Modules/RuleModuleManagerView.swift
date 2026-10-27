@@ -19,6 +19,7 @@ struct RuleModuleManagerView: View {
     @ObservedObject var library: RuleModuleLibrary
     @ObservedObject var repositories: RuleModuleRepositoryModel
     @ObservedObject private var home = HomePageStore.shared
+    @ObservedObject private var availability = PublicLibraryAvailability.shared
     @Environment(\.ruleModuleAddFlow) private var addFlow
     /// Once per visit: back from a repository's page, the indexes are not read again.
     @State private var hasLoaded = false
@@ -41,7 +42,8 @@ struct RuleModuleManagerView: View {
                 NavigationLink(value: ExploreNavigationRoute.moduleGroup(.official)) {
                     RuleModuleOriginRow(title: localized("官方模組"), systemImage: "puzzlepiece.extension.fill", isVerified: true,
                                         subtitle: localized("隨閱讀一起提供的模組"), origin: localized("閱讀"),
-                                        count: library.official.count)
+                                        count: AppOfficialModule.available(librariesAvailable: availability.isAvailable).count
+                                            + library.official.count)
                 }
                 .accessibilityIdentifier("modules.official")
 

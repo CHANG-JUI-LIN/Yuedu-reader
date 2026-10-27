@@ -80,8 +80,8 @@ struct LibraryTabRoot: View {
                         if !noticeDismissed {
                             notice
                         }
-                        RuleModuleSection(library: modules, onAdd: { moduleFlow.begin(.address) }) { layout in
-                            publicLibraryTiles(layout)
+                        RuleModuleSection(library: modules, onAdd: { moduleFlow.begin(.address) }) { key, layout in
+                            publicLibraryTile(key, layout: layout)
                         }
                         remoteLibrariesSection
                         sourcesSection
@@ -267,17 +267,16 @@ struct LibraryTabRoot: View {
 
     /// 古騰堡 and 青空文庫, in 模組 with the official modules (M2b). Their identifiers stay `library.public.<id>`; each
     /// opens what it offers, as a module's card does, not shelves to browse (2026-10-22).
-    private func publicLibraryTiles(_ layout: ExploreEntryLabel.Layout) -> some View {
-        ForEach(libraries.filter { $0.key.type == .gutenberg || $0.key.type == .aozora }) { library in
-            NavigationLink(value: ExploreNavigationRoute.library(library.key)) {
-                ExploreEntryLabel(title: library.name, artwork: .symbol(library.systemImage), layout: layout,
-                                  subtitle: publicLibrarySite(library.key.type),
-                                  detail: publicLibraryCount(library.key.type))
-            }
-            .buttonStyle(ExploreTileButtonStyle())
-            .accessibilityLabel(library.name)
-            .accessibilityIdentifier("library.public.\(library.key.id)")
+    /// 古騰堡's or 青空文庫's card among the app's own modules (`AppOfficialModule`).
+    private func publicLibraryTile(_ key: SourceInstanceKey, layout: ExploreEntryLabel.Layout) -> some View {
+        let module = AppOfficialModule.library(key)
+        return NavigationLink(value: module.route) {
+            ExploreEntryLabel(title: module.title, artwork: .symbol(SourceKindSymbol.symbol(for: key.type) ?? "books.vertical"),
+                              layout: layout, subtitle: module.summary, detail: publicLibraryCount(key.type))
         }
+        .buttonStyle(ExploreTileButtonStyle())
+        .accessibilityLabel(module.title)
+        .accessibilityIdentifier("library.public.\(key.id)")
     }
 
     private var remoteLibrariesSection: some View {
@@ -383,15 +382,6 @@ struct LibraryTabRoot: View {
         LibrarySourceEntry(source: source, layout: layout, sheet: $sourceActionSheet,
                            pendingDeletion: $sourcePendingDeletion) {
             path.append(ExploreNavigationRoute.searchInSource(sourceURL: source.bookSourceUrl))
-        }
-    }
-
-    /// The site a public library's books come from.
-    private func publicLibrarySite(_ type: ProviderType) -> String? {
-        switch type {
-        case .gutenberg: "gutenberg.org"
-        case .aozora: "aozora.gr.jp"
-        default: nil
         }
     }
 

@@ -1,10 +1,12 @@
 import SwiftUI
 
 /// 模組's 官方模組 and 匯入的模組: each module with its version and author, a module turned off
-/// said so, and a folder that could not be read, which can only be removed.
+/// said so, and a folder that could not be read, which can only be removed. 官方模組 lists the
+/// app's own first (`AppOfficialModule`), as 資源庫 does, with the app's version: they update with it.
 struct RuleModuleGroupView: View {
     let group: RuleModuleGroup
     @ObservedObject var library: RuleModuleLibrary
+    @ObservedObject private var availability = PublicLibraryAvailability.shared
     @State private var pendingRemoval: RuleModuleStore.Failure?
     @State private var removalFailure: String?
 
@@ -21,15 +23,26 @@ struct RuleModuleGroupView: View {
         group == .imported ? library.failures : []
     }
 
+    private var appModules: [AppOfficialModule] {
+        group == .official ? AppOfficialModule.available(librariesAvailable: availability.isAvailable) : []
+    }
+
     var body: some View {
         Group {
             if !library.isLoaded {
                 ProgressView()
-            } else if modules.isEmpty && failures.isEmpty {
+            } else if appModules.isEmpty && modules.isEmpty && failures.isEmpty {
                 ContentUnavailableView(localized("還沒有模組"), systemImage: "puzzlepiece.extension")
             } else {
                 Form {
                     Section {
+                        ForEach(appModules) { module in
+                            NavigationLink(value: module.route) {
+                                RuleModuleRow(title: module.title, version: RuleModuleVersion.app, description: module.summary,
+                                              author: localized("閱讀"), isOfficial: true)
+                            }
+                            .accessibilityIdentifier("modules.module.\(module.id)")
+                        }
                         ForEach(modules, id: \.module.id) { installed in
                             NavigationLink(value: ExploreNavigationRoute.module(id: installed.module.id)) {
                                 RuleModuleRow(module: installed.module, isEnabled: library.isEnabled(installed.module.id))

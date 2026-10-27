@@ -2,21 +2,21 @@ import SwiftUI
 
 /// 資源庫's 模組, first on the page: the app's own modules, then the ones the reader imported, in
 /// one group (maintainer 2026-10-26: 「官方模組跟匯入的模組匯合在一起，然後就叫模組」). In order:
-/// AI 推薦, 古騰堡 and 青空文庫, the bundled module files, then each imported module and each
-/// folder that could not be read, which can only be removed. 新增模組 is a card of its own while
-/// nothing is imported.
+/// the app's own (`AppOfficialModule`: AI 推薦, 古騰堡 and 青空文庫), the bundled module files, then
+/// each imported module and each folder that could not be read, which can only be removed.
+/// 新增模組 is a card of its own while nothing is imported.
 struct RuleModuleSection<Libraries: View>: View {
     @ObservedObject var library: RuleModuleLibrary
+    @ObservedObject private var availability = PublicLibraryAvailability.shared
     /// 新增模組 from the empty card: by address, as the most common way in.
     let onAdd: () -> Void
-    /// 古騰堡 and 青空文庫 (M2b, maintainer 2026-10-17: 「公有書庫都算是官方模塊」): their cards,
-    /// after AI 推薦 and before the bundled modules.
-    private let libraries: (ExploreEntryLabel.Layout) -> Libraries
+    /// 古騰堡's and 青空文庫's cards, which show what their catalogs hold.
+    private let libraries: (SourceInstanceKey, ExploreEntryLabel.Layout) -> Libraries
     @State private var pendingRemoval: RuleModuleStore.Failure?
     @State private var removalFailure: String?
 
     init(library: RuleModuleLibrary? = nil, onAdd: @escaping () -> Void,
-         @ViewBuilder libraries: @escaping (ExploreEntryLabel.Layout) -> Libraries) {
+         @ViewBuilder libraries: @escaping (SourceInstanceKey, ExploreEntryLabel.Layout) -> Libraries) {
         self.library = library ?? .shared
         self.onAdd = onAdd
         self.libraries = libraries
@@ -31,15 +31,21 @@ struct RuleModuleSection<Libraries: View>: View {
         let official = library.official.filter { library.isShownInLibrary($0.module.id) }
         let imported = library.imported.filter { library.isShownInLibrary($0.module.id) }
         LibrarySection(localized("模組"), isLazy: false) { layout in
-            NavigationLink(value: ExploreNavigationRoute.aiRecommendations) {
-                ExploreEntryLabel(title: localized("AI 推薦"), artwork: .symbol("sparkles"), layout: layout,
-                                  subtitle: localized("依你最近讀的書推薦作品"))
+            ForEach(AppOfficialModule.available(librariesAvailable: availability.isAvailable)) { module in
+                switch module {
+                case .aiRecommendations:
+                    NavigationLink(value: module.route) {
+                        ExploreEntryLabel(title: module.title, artwork: .symbol("sparkles"), layout: layout,
+                                          subtitle: module.summary)
+                    }
+                    .buttonStyle(ExploreTileButtonStyle())
+                    .accessibilityLabel(module.title)
+                    .accessibilityValue(module.summary)
+                    .accessibilityIdentifier("library.module.official.aiRecommendations")
+                case .library(let key):
+                    libraries(key, layout)
+                }
             }
-            .buttonStyle(ExploreTileButtonStyle())
-            .accessibilityLabel(localized("AI 推薦"))
-            .accessibilityValue(localized("依你最近讀的書推薦作品"))
-            .accessibilityIdentifier("library.module.official.aiRecommendations")
-            libraries(layout)
             if !library.isLoaded {
                 ProgressView()
                     .frame(maxWidth: .infinity, alignment: .leading)
@@ -101,7 +107,7 @@ struct RuleModuleSection<Libraries: View>: View {
 
 extension RuleModuleSection where Libraries == EmptyView {
     init(library: RuleModuleLibrary? = nil, onAdd: @escaping () -> Void) {
-        self.init(library: library, onAdd: onAdd) { _ in EmptyView() }
+        self.init(library: library, onAdd: onAdd) { _, _ in EmptyView() }
     }
 }
 

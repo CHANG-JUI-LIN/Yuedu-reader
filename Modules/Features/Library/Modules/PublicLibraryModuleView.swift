@@ -50,11 +50,11 @@ struct PublicLibraryModuleView: View {
     }
 
     private var title: String {
-        key.type == .aozora ? localized("青空文庫") : localized("Project Gutenberg")
+        AppOfficialModule.library(key).title
     }
 
     private var site: String {
-        key.type == .aozora ? "aozora.gr.jp" : "gutenberg.org"
+        AppOfficialModule.library(key).summary
     }
 
     /// The license line its shelves carried.
