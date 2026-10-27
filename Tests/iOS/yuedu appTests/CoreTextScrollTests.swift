@@ -66,7 +66,7 @@ struct CoreTextScrollTests {
         let controller = CoreTextCollectionScrollViewController(
             engine: engine,
             axis: .vertical,
-            horizontalInset: 12,
+            sideInsets: .init(left: 12, right: 12),
             verticalInset: 20,
             backgroundColor: .white
         )
@@ -86,7 +86,7 @@ struct CoreTextScrollTests {
         let controller = CoreTextCollectionScrollViewController(
             engine: engine,
             axis: .horizontalRTL,
-            horizontalInset: 12,
+            sideInsets: .init(left: 12, right: 12),
             verticalInset: 20,
             backgroundColor: .white
         )
@@ -149,7 +149,7 @@ struct CoreTextScrollTests {
         let controller = CoreTextCollectionScrollViewController(
             engine: engine,
             axis: .horizontalRTL,
-            horizontalInset: 24,
+            sideInsets: .init(left: 24, right: 24),
             verticalInset: 60,
             backgroundColor: .white
         )
@@ -193,7 +193,7 @@ struct CoreTextScrollTests {
         let controller = CoreTextCollectionScrollViewController(
             engine: engine,
             axis: .horizontalRTL,
-            horizontalInset: 24,
+            sideInsets: .init(left: 24, right: 24),
             verticalInset: 60,
             backgroundColor: .white
         )
@@ -236,7 +236,7 @@ struct CoreTextScrollTests {
         let controller = CoreTextCollectionScrollViewController(
             engine: engine,
             axis: .horizontalRTL,
-            horizontalInset: 12,
+            sideInsets: .init(left: 12, right: 12),
             verticalInset: 20,
             backgroundColor: .white
         )
@@ -287,7 +287,7 @@ struct CoreTextScrollTests {
         let controller = CoreTextCollectionScrollViewController(
             engine: engine,
             axis: .horizontalRTL,
-            horizontalInset: inset,
+            sideInsets: .init(left: inset, right: inset),
             verticalInset: 72,
             backgroundColor: .white
         )
@@ -353,7 +353,7 @@ struct CoreTextScrollTests {
         let controller = CoreTextCollectionScrollViewController(
             engine: engine,
             axis: .horizontalRTL,
-            horizontalInset: inset,
+            sideInsets: .init(left: inset, right: inset),
             verticalInset: 72,
             backgroundColor: .white
         )
@@ -418,7 +418,8 @@ struct CoreTextScrollTests {
         // Mid-chapter, as 下一章 is usually pressed: the jump moves the offset, and moving it is
         // what asks for the chapters either side.
         let reader = try await Self.openVertical(
-            [Self.longVerticalChapter, Self.longVerticalChapter, Self.longVerticalChapter], at: 1000, inset: inset
+            [Self.longVerticalChapter, Self.longVerticalChapter, Self.longVerticalChapter], at: 1000,
+            sides: .init(left: inset, right: inset)
         )
         defer { reader.window.isHidden = true }
 
@@ -462,7 +463,7 @@ struct CoreTextScrollTests {
 
         // A column in the middle of the second chunk: clear of both ends of the chapter, so the
         // scroll range cannot be what holds it at the margin.
-        let probe = try await Self.openVertical([chapter], at: 0, inset: inset)
+        let probe = try await Self.openVertical([chapter], at: 0, sides: .init(left: inset, right: inset))
         let chunk = try #require(probe.engine.chunks.count >= 2 ? probe.engine.chunks[1].legacyChunk : nil)
         try #require(chunk.width / 2 > probe.window.bounds.width, "chunk \(chunk.width)")
         let lines = try Self.columns(of: chunk)
@@ -471,7 +472,7 @@ struct CoreTextScrollTests {
         let target = CTLineGetStringRange(lines[middle].line).location + 1
         probe.window.isHidden = true
 
-        let reader = try await Self.openVertical([chapter], at: target, inset: inset)
+        let reader = try await Self.openVertical([chapter], at: target, sides: .init(left: inset, right: inset))
         defer { reader.window.isHidden = true }
         let column = try Self.column(holding: target, in: reader)
         #expect(abs(column.rightEdge - (reader.window.bounds.width - inset)) <= 1,
@@ -479,11 +480,84 @@ struct CoreTextScrollTests {
         let saved = try #require(reader.controller.positionForPersistence())
         #expect(saved == CoreTextReadingPosition(spineIndex: 0, charOffset: column.start), "target \(target)")
 
-        let reopened = try await Self.openVertical([chapter], at: saved.charOffset, inset: inset)
+        let reopened = try await Self.openVertical([chapter], at: saved.charOffset, sides: .init(left: inset, right: inset))
         defer { reopened.window.isHidden = true }
         let again = try Self.column(holding: saved.charOffset, in: reopened)
         #expect(abs(again.rightEdge - (reopened.window.bounds.width - inset)) <= 1, "column \(again)")
         #expect(reopened.controller.positionForPersistence() == saved)
+    }
+
+    /// A folded iPhone Duo has its status bar down the right side only, so the two margins
+    /// differ. Vertical writing starts at the right-hand one: at the chapter's start, where the
+    /// collection's own content inset holds it and UIKit mirrors that inset, and when reopening
+    /// mid-chapter, where the reading edge places it.
+    @Test("horizontal RTL lines its columns up on the right-hand margin when the two margins differ")
+    @MainActor
+    func horizontalRTLUsesTheRightHandMarginWhenTheMarginsDiffer() async throws {
+        let sides = ReaderSideInsets(left: 8, right: 70)
+        let fontSize = Self.makeRenderSettings(writingMode: .verticalRTL).fontSize
+
+        let start = try await Self.openVertical([Self.longVerticalChapter], at: 0, sides: sides)
+        let margin = start.window.bounds.width - sides.right
+        let first = try Self.column(holding: 0, in: start)
+        #expect(first.rightEdge <= margin + 1 && first.rightEdge >= margin - 2 * fontSize,
+                "first column \(first) offset=\(start.collectionView.contentOffset.x)")
+        // A column in the middle of the second chunk: clear of both ends of the chapter, so the
+        // scroll range cannot be what holds it at the margin.
+        let chunk = try #require(start.engine.chunks.count >= 2 ? start.engine.chunks[1].legacyChunk : nil)
+        try #require(chunk.width / 2 > start.window.bounds.width, "chunk \(chunk.width)")
+        let lines = try Self.columns(of: chunk)
+        let target = CTLineGetStringRange(lines[lines.count / 2].line).location + 1
+        start.window.isHidden = true
+
+        let reader = try await Self.openVertical([Self.longVerticalChapter], at: target, sides: sides)
+        defer { reader.window.isHidden = true }
+        let column = try Self.column(holding: target, in: reader)
+        #expect(abs(column.rightEdge - margin) <= 1,
+                "column \(column) offset=\(reader.collectionView.contentOffset.x)")
+    }
+
+    /// The same folded iPhone Duo in horizontal writing: the text starts at the left margin and
+    /// fills the width between the two.
+    @Test("vertical scroll lays the text out between two different side margins")
+    @MainActor
+    func verticalScrollLaysOutBetweenDifferentSideMargins() async throws {
+        let engine = CoreTextScrollEngine(
+            builder: StaticScrollTestBuilder(chapters: [Self.longChapter]),
+            renderSettings: Self.makeRenderSettings()
+        )
+        let sides = ReaderSideInsets(left: 8, right: 70)
+        let controller = CoreTextCollectionScrollViewController(
+            engine: engine,
+            axis: .vertical,
+            sideInsets: sides,
+            verticalInset: 20,
+            backgroundColor: .white
+        )
+        controller.setInitialPosition(chapter: 0, charOffset: 0)
+        let scene = try #require(
+            UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first
+        )
+        let window = UIWindow(windowScene: scene)
+        window.frame = CGRect(x: 0, y: 0, width: 466, height: 678)
+        window.rootViewController = controller
+        window.makeKeyAndVisible()
+        defer { window.isHidden = true }
+        controller.view.setNeedsLayout()
+        controller.view.layoutIfNeeded()
+        for _ in 0..<500 where !engine.isReady || controller.positionForPersistence() == nil {
+            try await Task.sleep(nanoseconds: 10_000_000)
+            controller.view.layoutIfNeeded()
+        }
+
+        let collectionView = try #require(Self.firstCollectionView(in: controller.view))
+        let cell = try #require(
+            collectionView.cellForItem(at: IndexPath(item: 0, section: 0)) as? CoreTextChunkCollectionCell
+        )
+        let drawn = cell.drawView.convert(cell.drawView.bounds, to: window)
+        #expect(engine.contentWidth == window.bounds.width - sides.left - sides.right)
+        #expect(abs(drawn.minX - sides.left) <= 0.5, "\(drawn)")
+        #expect(abs(drawn.maxX - (window.bounds.width - sides.right)) <= 0.5, "\(drawn)")
     }
 
     private struct VerticalReader {
@@ -496,7 +570,7 @@ struct CoreTextScrollTests {
     /// A vertical-writing TXT reader on a phone-sized screen, opened at `charOffset` of the first
     /// chapter, once its restore has run.
     @MainActor
-    private static func openVertical(_ chapters: [String], at charOffset: Int, inset: CGFloat) async throws -> VerticalReader {
+    private static func openVertical(_ chapters: [String], at charOffset: Int, sides: ReaderSideInsets) async throws -> VerticalReader {
         let engine = CoreTextScrollEngine(
             builder: StaticScrollTestBuilder(chapters: chapters),
             renderSettings: makeRenderSettings(writingMode: .verticalRTL)
@@ -504,7 +578,7 @@ struct CoreTextScrollTests {
         let controller = CoreTextCollectionScrollViewController(
             engine: engine,
             axis: .horizontalRTL,
-            horizontalInset: inset,
+            sideInsets: sides,
             verticalInset: 72,
             backgroundColor: .white
         )
@@ -568,7 +642,7 @@ struct CoreTextScrollTests {
         let controller = CoreTextCollectionScrollViewController(
             engine: engine,
             axis: .vertical,
-            horizontalInset: 12,
+            sideInsets: .init(left: 12, right: 12),
             verticalInset: 20,
             backgroundColor: .white
         )
@@ -597,7 +671,7 @@ struct CoreTextScrollTests {
         let controller = CoreTextCollectionScrollViewController(
             engine: engine,
             axis: .vertical,
-            horizontalInset: 12,
+            sideInsets: .init(left: 12, right: 12),
             verticalInset: 20,
             backgroundColor: .white
         )
@@ -658,7 +732,7 @@ struct CoreTextScrollTests {
         let controller = CoreTextCollectionScrollViewController(
             engine: engine,
             axis: .vertical,
-            horizontalInset: 12,
+            sideInsets: .init(left: 12, right: 12),
             verticalInset: 20,
             backgroundColor: .white
         )
@@ -1076,7 +1150,7 @@ struct CoreTextScrollTests {
         let controller = CoreTextCollectionScrollViewController(
             engine: engine,
             axis: .vertical,
-            horizontalInset: 12,
+            sideInsets: .init(left: 12, right: 12),
             verticalInset: 20,
             backgroundColor: .white
         )

@@ -911,6 +911,8 @@ struct ReaderRenderSettings: Equatable {
     let lineSpacing: CGFloat
     let paragraphSpacing: CGFloat
     let letterSpacing: CGFloat
+    /// The reader's 左右邊距 as laid out, measured from the window's side safe areas. The page's
+    /// side insets, safe area included, are `contentInsets.left` and `.right`, which can differ.
     let marginH: CGFloat
     let marginV: CGFloat
     let footerHeight: CGFloat

@@ -616,7 +616,9 @@ final class CoreTextPaginator: Sendable {
         let width: CGFloat
         let height: CGFloat
         let fontSize: CGFloat
-        let marginH: CGFloat
+        /// Both sides: they differ wherever the window's side safe areas do (a folded iPhone Duo).
+        let marginLeft: CGFloat
+        let marginRight: CGFloat
         let marginV: CGFloat
         let bottomInset: CGFloat
         let paragraphSpacing: CGFloat
@@ -767,7 +769,8 @@ final class CoreTextPaginator: Sendable {
                            width: renderSize.width,
                            height: renderSize.height,
                            fontSize: fontSize,
-                           marginH: contentInsets.left,
+                           marginLeft: contentInsets.left,
+                           marginRight: contentInsets.right,
                            marginV: contentInsets.top,
                            bottomInset: contentInsets.bottom,
                            paragraphSpacing: paragraphSpacing,
@@ -877,7 +880,8 @@ final class CoreTextPaginator: Sendable {
                            width: renderSize.width,
                            height: renderSize.height,
                            fontSize: fontSize,
-                           marginH: contentInsets.left,
+                           marginLeft: contentInsets.left,
+                           marginRight: contentInsets.right,
                            marginV: contentInsets.top,
                            bottomInset: contentInsets.bottom,
                            paragraphSpacing: paragraphSpacing,

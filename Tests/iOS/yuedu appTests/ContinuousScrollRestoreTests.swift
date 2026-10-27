@@ -39,7 +39,7 @@ struct ContinuousScrollRestoreTests {
         -> (UIWindow, CoreTextCollectionScrollViewController, UICollectionView) {
         let scene = try #require(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first)
         let controller = CoreTextCollectionScrollViewController(engine: engine, axis: .vertical,
-            horizontalInset: 12, verticalInset: 20, backgroundColor: .white)
+            sideInsets: .init(left: 12, right: 12), verticalInset: 20, backgroundColor: .white)
         controller.setInitialPosition(chapter: position.spineIndex, charOffset: position.charOffset)
         let window = UIWindow(windowScene: scene)
         window.frame = scene.coordinateSpace.bounds

@@ -51,7 +51,7 @@ struct EPUBAutoRoutingTests {
         #expect(tile.chapter.document.sourceText.contains("Simple prose paragraph."))
         #expect(scrollEngine.chunkIndex(forChapter: 0, charOffset: 0) == 0)
         let controller = CoreTextCollectionScrollViewController(engine: scrollEngine, axis: .vertical,
-            horizontalInset: 12, verticalInset: 0, backgroundColor: .white)
+            sideInsets: .init(left: 12, right: 12), verticalInset: 0, backgroundColor: .white)
         controller.loadViewIfNeeded()
         controller.view.frame = CGRect(x: 0, y: 0, width: 344, height: 480)
         let window = UIWindow(frame: controller.view.frame)

@@ -32,11 +32,14 @@ struct ReaderPageBarsEnvironment: Equatable {
     var readingDuration: TimeInterval
     var userInterfaceStyle: UIUserInterfaceStyle
     var displayScale: CGFloat
-    /// The window's side safe area (`ReaderView.readerSideSafeArea`): the bars' slots keep this
-    /// far from both sides, like the text, before their own padding.
-    var sideSafeArea: CGFloat = 0
-    /// False in a two-page spread, where the screen-fixed layer draws one pair of
-    /// bars for both pages; the pages then carry only their bookmark ribbon.
+    /// What each bar keeps clear of on each side before its own padding
+    /// (`ReaderView.readerBarSideInsets`). Apart, because each clears only what reaches its
+    /// own height: on a folded iPhone Duo the 頁眉 sits beside the camera and the 頁腳 does not.
+    var headerSideInsets: ReaderSideInsets = .zero
+    var footerSideInsets: ReaderSideInsets = .zero
+    /// False in a two-page spread on a screen that does not fold, where the screen-fixed
+    /// layer draws one pair of bars for both pages; the pages then carry only their
+    /// bookmark ribbon.
     var bakesBarsIntoPages = true
 }
 
@@ -170,7 +173,7 @@ final class ReaderPageBarsController {
             userInterfaceStyle: environment.userInterfaceStyle,
             displayScale: environment.displayScale
         )
-        model.sideSafeArea = environment.sideSafeArea
+        model.sideInsets = bar == .header ? environment.headerSideInsets : environment.footerSideInsets
         return model
     }
 }

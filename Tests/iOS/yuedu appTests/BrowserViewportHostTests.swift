@@ -31,7 +31,7 @@ struct BrowserViewportHostTests {
         let owner = try #require(chapter.layoutOwner)
         let target = try #require(chapter.facts?.anchorOffsets["p80"])
         let controller = CoreTextCollectionScrollViewController(engine: engine, axis: .vertical,
-            horizontalInset: 12, verticalInset: 20, backgroundColor: .white)
+            sideInsets: .init(left: 12, right: 12), verticalInset: 20, backgroundColor: .white)
         controller.setInitialPosition(chapter: 0, charOffset: target)
         let window = UIWindow(windowScene: scene)
         window.frame = scene.coordinateSpace.bounds
@@ -41,7 +41,7 @@ struct BrowserViewportHostTests {
         controller.view.layoutIfNeeded()
         let collection = try #require(controller.view.subviews.compactMap { $0 as? UICollectionView }.first)
         collection.layoutIfNeeded()
-        controller.update(axis: .vertical, horizontal: 12, vertical: 20)
+        controller.update(axis: .vertical, sides: .init(left: 12, right: 12), vertical: 20)
         collection.layoutIfNeeded()
         // The restore target is laid out on its chapter's thread; start from it.
         await engine.waitForViewportIdle()
@@ -76,7 +76,7 @@ struct BrowserViewportHostTests {
                 let delta = direction * 3
                 collection.setContentOffset(CGPoint(x: 0, y: collection.contentOffset.y + delta), animated: false)
                 controller.scrollViewDidScroll(collection)
-                if step % 7 == 0 { controller.update(axis: .vertical, horizontal: 12, vertical: 20) }
+                if step % 7 == 0 { controller.update(axis: .vertical, sides: .init(left: 12, right: 12), vertical: 20) }
                 // A requested layout commits asynchronously; each commit must keep
                 // the visible glyphs where they were.
                 await engine.waitForViewportIdle()
@@ -124,7 +124,7 @@ struct BrowserViewportHostTests {
         _ = try #require(chapter.layoutOwner)
         let target = try #require(chapter.facts?.anchorOffsets["p80"])
         let controller = CoreTextCollectionScrollViewController(engine: engine, axis: .vertical,
-            horizontalInset: 12, verticalInset: 20, backgroundColor: .white)
+            sideInsets: .init(left: 12, right: 12), verticalInset: 20, backgroundColor: .white)
         controller.setInitialPosition(chapter: 0, charOffset: target)
         let window = UIWindow(windowScene: scene)
         window.frame = scene.coordinateSpace.bounds
@@ -134,7 +134,7 @@ struct BrowserViewportHostTests {
         controller.view.layoutIfNeeded()
         let collection = try #require(controller.view.subviews.compactMap { $0 as? UICollectionView }.first)
         collection.layoutIfNeeded()
-        controller.update(axis: .vertical, horizontal: 12, vertical: 20)
+        controller.update(axis: .vertical, sides: .init(left: 12, right: 12), vertical: 20)
         collection.layoutIfNeeded()
         // The restore target is laid out on its chapter's thread; start from it.
         await engine.waitForViewportIdle()
@@ -221,7 +221,7 @@ struct BrowserViewportHostTests {
         await engine.start(initialChapter: 1, contentWidth: size.width - 24,
                            viewportExtent: size.height, loadAdjacentChapters: false)
         let controller = CoreTextCollectionScrollViewController(engine: engine, axis: .vertical,
-            horizontalInset: 12, verticalInset: 20, backgroundColor: .white)
+            sideInsets: .init(left: 12, right: 12), verticalInset: 20, backgroundColor: .white)
         // Begin in the middle, away from both neighbors.
         let initial = try #require(engine.browserChapter(at: 1)?.facts?.anchorOffsets["p30"])
         controller.setInitialPosition(chapter: 1, charOffset: initial)
@@ -324,7 +324,7 @@ struct BrowserViewportHostTests {
         #expect(await initial.diagnostics().shapedLineCount < 120)
         let target = try #require(initialChapter.facts?.anchorOffsets["p60"])
         let controller = CoreTextCollectionScrollViewController(engine: engine, axis: .vertical,
-            horizontalInset: 12, verticalInset: 20, backgroundColor: .white)
+            sideInsets: .init(left: 12, right: 12), verticalInset: 20, backgroundColor: .white)
         controller.setInitialPosition(chapter: 1, charOffset: target)
         let window = UIWindow(windowScene: scene)
         window.frame = scene.coordinateSpace.bounds

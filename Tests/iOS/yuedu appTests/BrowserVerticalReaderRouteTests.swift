@@ -183,7 +183,7 @@ struct BrowserVerticalReaderRouteTests {
         let engine = CoreTextScrollEngine(builder: builder, renderSettings: settings)
         engine.browserAutoEngine = pages
         let controller = CoreTextCollectionScrollViewController(engine: engine, axis: .horizontalRTL,
-            horizontalInset: inset, verticalInset: 72, backgroundColor: .white)
+            sideInsets: .init(left: inset, right: inset), verticalInset: 72, backgroundColor: .white)
         controller.bottomMargin = 32
         controller.setInitialPosition(chapter: 0, charOffset: charOffset)
         let scene = try #require(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first)

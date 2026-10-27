@@ -56,7 +56,7 @@ extension ReaderView {
             lineSpacing: readerConfig.lineSpacing,
             paragraphSpacing: readerConfig.paragraphSpacing,
             letterSpacing: readerConfig.letterSpacing,
-            marginH: effectivePageMarginH,
+            marginH: pageMarginH(for: mode),
             writingMode: effectiveWritingMode,
             // The observed property, not the resolver's snapshot read: `body` compares these
             // settings in `onChanged`, and only an observed read redraws on a font change.
@@ -75,6 +75,7 @@ extension ReaderView {
             bottomJustify: settings.readerBottomJustify
         )
 
+        let sideMargins = pageSideMargins(for: mode)
         let surface: ReaderRenderSurface
         switch mode {
         case .paged:
@@ -86,9 +87,9 @@ extension ReaderView {
             surface = .paged(
                 contentInsets: UIEdgeInsets(
                     top: pagedInsets.top,
-                    left: effectivePageMarginH,
+                    left: sideMargins.left,
                     bottom: pagedInsets.bottom,
-                    right: effectivePageMarginH
+                    right: sideMargins.right
                 ),
                 marginV: systemVerticalPadding,
                 footerHeight: footerOverlayHeight
@@ -98,9 +99,9 @@ extension ReaderView {
             surface = .scroll(
                 contentInsets: UIEdgeInsets(
                     top: scrollInsets.top,
-                    left: effectivePageMarginH,
+                    left: sideMargins.left,
                     bottom: scrollInsets.bottom,
-                    right: effectivePageMarginH
+                    right: sideMargins.right
                 ),
                 marginV: readerConfig.pageMarginV,
                 footerHeight: ReaderLayoutMetrics.footerHeight

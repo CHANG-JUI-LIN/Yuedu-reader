@@ -40,7 +40,7 @@ struct ReaderScrollPresentationTests {
         await engine.start(initialChapter: 1, contentWidth: size.width - 24,
                            viewportExtent: size.height, loadAdjacentChapters: true)
         let controller = CoreTextCollectionScrollViewController(engine: engine, axis: .vertical,
-            horizontalInset: 12, verticalInset: 20, backgroundColor: .white)
+            sideInsets: .init(left: 12, right: 12), verticalInset: 20, backgroundColor: .white)
         controller.setInitialBarInsets(.init(topBand: 60, bottomBand: 50, topMargin: 20, bottomMargin: 20))
         controller.setInitialPosition(chapter: 1, charOffset: 0)
         let window = UIWindow(windowScene: scene)

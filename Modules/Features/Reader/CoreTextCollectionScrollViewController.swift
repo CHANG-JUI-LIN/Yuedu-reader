@@ -15,7 +15,9 @@ final class CoreTextCollectionScrollViewController: UIViewController, @MainActor
 
     private let engine: CoreTextScrollEngine
     private(set) var scrollAxis: CoreTextScrollAxis
-    private var horizontalInset: CGFloat
+    /// The page's left and right margins on screen, safe area included. They differ where the
+    /// window's safe area does: a folded iPhone Duo has its status bar down the right side only.
+    private var sideInsets: ReaderSideInsets
     private var verticalInset: CGFloat
     /// Vertical axis only. The bands come out of the collection view's frame so
     /// the text is genuinely clipped at the bars; the margins are ordinary
@@ -191,13 +193,13 @@ final class CoreTextCollectionScrollViewController: UIViewController, @MainActor
     init(
         engine: CoreTextScrollEngine,
         axis: CoreTextScrollAxis,
-        horizontalInset: CGFloat,
+        sideInsets: ReaderSideInsets,
         verticalInset: CGFloat,
         backgroundColor: UIColor
     ) {
         self.engine = engine
         self.scrollAxis = axis
-        self.horizontalInset = horizontalInset
+        self.sideInsets = sideInsets
         self.verticalInset = verticalInset
 
         let layout: UICollectionViewLayout
@@ -691,7 +693,7 @@ final class CoreTextCollectionScrollViewController: UIViewController, @MainActor
 
     func update(
         axis: CoreTextScrollAxis,
-        horizontal: CGFloat,
+        sides: ReaderSideInsets,
         vertical: CGFloat,
         bottomMargin: CGFloat = 0,
         barInsets: ReaderScrollBarInsets = .zero
@@ -704,7 +706,7 @@ final class CoreTextCollectionScrollViewController: UIViewController, @MainActor
         // Keep the horizontal-RTL path unchanged in this scroll performance fix.
         if axis == .vertical, scrollAxis == .vertical,
            viewportSize == lastBridgeViewportSize,
-           horizontal == horizontalInset, vertical == verticalInset,
+           sides == sideInsets, vertical == verticalInset,
            bottomMargin == self.bottomMargin, barInsets == self.barInsets {
             return
         }
@@ -714,7 +716,7 @@ final class CoreTextCollectionScrollViewController: UIViewController, @MainActor
         let axisChanged = axis != scrollAxis
         scrollAxis = axis
         if axis != .vertical { fragmentHost.reset() }
-        horizontalInset = horizontal
+        sideInsets = sides
         verticalInset = vertical
         self.bottomMargin = bottomMargin
         applyBarInsets(axis == .vertical ? barInsets : .zero)
@@ -925,14 +927,16 @@ final class CoreTextCollectionScrollViewController: UIViewController, @MainActor
                 right: 0
             )
         case .horizontalRTL:
-            return UIEdgeInsets(top: 0, left: horizontalInset, bottom: 0, right: horizontalInset)
+            // UIKit draws a right-to-left collection view mirrored (`readingEdge`), so its own
+            // left inset lands on the screen's right, where the first column stands.
+            return UIEdgeInsets(top: 0, left: sideInsets.right, bottom: 0, right: sideInsets.left)
         }
     }
 
     private var currentContentExtent: CGFloat {
         switch scrollAxis {
         case .vertical:
-            return max(0, view.bounds.width - 2 * horizontalInset)
+            return max(0, view.bounds.width - sideInsets.left - sideInsets.right)
         case .horizontalRTL:
             return max(0, view.bounds.height - verticalInset - bottomMargin)
         }
@@ -943,7 +947,7 @@ final class CoreTextCollectionScrollViewController: UIViewController, @MainActor
         case .vertical:
             return currentContentExtent
         case .horizontalRTL:
-            return max(0, view.bounds.width - 2 * horizontalInset)
+            return max(0, view.bounds.width - sideInsets.left - sideInsets.right)
         }
     }
 
@@ -1581,7 +1585,7 @@ final class CoreTextCollectionScrollViewController: UIViewController, @MainActor
     private func readingEdge(inset: CGFloat) -> CGPoint {
         let frame = collectionView.frame
         return collectionView.convert(
-            CGPoint(x: frame.maxX - horizontalInset - inset, y: frame.midY),
+            CGPoint(x: frame.maxX - sideInsets.right - inset, y: frame.midY),
             from: collectionView.superview
         )
     }
@@ -1843,7 +1847,7 @@ final class CoreTextCollectionScrollViewController: UIViewController, @MainActor
                 // The first retained chapter gains its inter-chapter gap when
                 // its predecessor arrives. Update its local paint origin in the
                 // same transaction, without invalidating unchanged glyph paint.
-                cell.bind(chunk: chunk, axis: scrollAxis, horizontalInset: horizontalInset,
+                cell.bind(chunk: chunk, axis: scrollAxis, horizontalInset: sideInsets.left,
                           verticalInset: verticalInset, leadingSpacing: chapterGap(for: path.item),
                           viewportSize: collectionView.bounds.size, bottomInset: bottomMargin)
                 cell.layoutIfNeeded()
@@ -1852,7 +1856,7 @@ final class CoreTextCollectionScrollViewController: UIViewController, @MainActor
             guard case .browser(let tile) = engine.chunks[path.item],
                   let cell = collectionView.cellForItem(at: path) as? BrowserScrollTileCell else { continue }
             let previousPaintUpdates = cell.paintUpdateCount
-            cell.configure(tile: tile, horizontalInset: horizontalInset,
+            cell.configure(tile: tile, horizontalInset: sideInsets.left,
                            leadingSpacing: chapterGap(for: path.item), verticalInset: verticalInset,
                            bottomInset: bottomMargin,
                            rendersContentExternally: scrollAxis == .vertical && tile.chapter.isViewportDriven)
@@ -1979,14 +1983,14 @@ final class CoreTextCollectionScrollViewController: UIViewController, @MainActor
                   !chapter.writingMode.isVertical, let origin = chapterOrigin(spine),
                   CGRect(x: 0, y: origin, width: collectionView.bounds.width,
                          height: chapter.document.contentHeight).intersects(retained) else { return nil }
-            return .init(chapter: chapter, origin: CGPoint(x: horizontalInset, y: origin), width: engine.contentWidth)
+            return .init(chapter: chapter, origin: CGPoint(x: sideInsets.left, y: origin), width: engine.contentWidth)
         }
         let attributes = collectionView.collectionViewLayout.layoutAttributesForElements(in: retained) ?? []
         let coreText = attributes.compactMap { attr -> ReaderViewportFragmentHost.CoreTextInput? in
             guard engine.chunks.indices.contains(attr.indexPath.item),
                   let chunk = engine.chunks[attr.indexPath.item].legacyChunk,
                   !chunk.writingMode.isVertical else { return nil }
-            return .init(chunk: chunk, origin: CGPoint(x: horizontalInset,
+            return .init(chunk: chunk, origin: CGPoint(x: sideInsets.left,
                 y: attr.frame.minY + chapterGap(for: attr.indexPath.item)))
         }
         fragmentHost.frame = CGRect(origin: .zero, size: collectionView.contentSize)
@@ -2033,7 +2037,7 @@ extension CoreTextCollectionScrollViewController: UICollectionViewDataSource, UI
                 preview.modalPresentationStyle = .fullScreen
                 present(preview, animated: true)
             }
-            cell.configure(tile: tile, horizontalInset: horizontalInset, leadingSpacing: chapterGap(for: indexPath.item), verticalInset: verticalInset,
+            cell.configure(tile: tile, horizontalInset: sideInsets.left, leadingSpacing: chapterGap(for: indexPath.item), verticalInset: verticalInset,
                            bottomInset: bottomMargin,
                            rendersContentExternally: scrollAxis == .vertical && tile.chapter.isViewportDriven)
             return cell
@@ -2052,7 +2056,7 @@ extension CoreTextCollectionScrollViewController: UICollectionViewDataSource, UI
             chunkCell.bind(
                 chunk: chunk,
                 axis: scrollAxis,
-                horizontalInset: horizontalInset,
+                horizontalInset: sideInsets.left,
                 verticalInset: verticalInset,
                 leadingSpacing: chapterGap(for: indexPath.item),
                 viewportSize: collectionView.bounds.size,
@@ -2101,7 +2105,7 @@ extension CoreTextCollectionScrollViewController: UICollectionViewDataSource, UI
                 let stale = tileCell.currentTile?.chapter !== tile.chapter
                     || tileCell.boundRevision != tile.chapter.layoutRevision
                     || tileCell.currentTile?.documentRect != tile.documentRect
-                tileCell.configure(tile: tile, horizontalInset: horizontalInset,
+                tileCell.configure(tile: tile, horizontalInset: sideInsets.left,
                                    leadingSpacing: chapterGap(for: indexPath.item), verticalInset: verticalInset,
                                    bottomInset: bottomMargin,
                            rendersContentExternally: scrollAxis == .vertical && tile.chapter.isViewportDriven)

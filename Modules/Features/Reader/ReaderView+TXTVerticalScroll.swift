@@ -14,7 +14,7 @@ extension ReaderView {
             CoreTextScrollHostView(
                 engine: scrollEngine,
                 axis: scrollAxis,
-                horizontalInset: effectivePageMarginH,
+                sideInsets: effectivePageMargins,
                 // Vertical writing scrolls sideways, so its columns simply end short of the
                 // bars, at the insets paged mode lays out to. They were sized from the safe
                 // area alone and started under the header, and ran on under the footer

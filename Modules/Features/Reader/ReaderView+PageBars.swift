@@ -21,21 +21,27 @@ extension ReaderView {
 
     /// True when the 頁眉／頁腳 text is drawn *into* each page rather than over the screen.
     ///
-    /// Not in a two-page spread: each half drew its own pair, so the screen showed two
-    /// headers and two footers (reported 2026-10-10). The spread is one screen and gets
-    /// one pair, from the fixed layer, spanning both pages — the user's choice; the
-    /// price is that those bars stay put during a turn instead of turning with the
-    /// page. The bookmark ribbon still belongs to its page and stays baked.
+    /// Not in a two-page spread on a screen that does not fold: each half drew its own pair,
+    /// so the screen showed two headers and two footers (reported 2026-10-10). That spread is
+    /// one screen and gets one pair, from the fixed layer, spanning both pages — the user's
+    /// choice; the price is that those bars stay put during a turn instead of turning with
+    /// the page. The bookmark ribbon still belongs to its page and stays baked.
+    ///
+    /// A screen that folds down the middle — an open iPhone Duo — is two pages, as a book is,
+    /// and each page carries its own 章名 and 頁碼, as 微信讀書's do; a bar spanning both would
+    /// run across the fold (maintainer's choice, 2026-10-27).
     var usesPageBakedBars: Bool {
-        pagesCarryBarsChannel && effectiveReaderSpreadMode != .doublePage
+        pagesCarryBarsChannel
+            && (effectiveReaderSpreadMode != .doublePage || readerWindowObstructions.hasVerticalFold)
     }
 
     /// The page the screen-fixed bars describe in a two-page spread: the later page of
     /// the pair in reading order, i.e. the last page the reader has on screen. Spreads
     /// tile global pages (0,1)(2,3)… (`spreadViewController(containingPage:)`); a
-    /// final spread with no second page describes its only page.
+    /// final spread with no second page describes its only page. Nil where the pages
+    /// carry their own bars (`usesPageBakedBars`).
     var spreadBarsGlobalPage: Int? {
-        guard pagesCarryBarsChannel, effectiveReaderSpreadMode == .doublePage,
+        guard pagesCarryBarsChannel, !usesPageBakedBars, effectiveReaderSpreadMode == .doublePage,
               let engine = epubRenderer.engine, engine.totalPages > 0
         else { return nil }
         let pairStart = (max(0, currentPage) / 2) * 2
@@ -71,7 +77,8 @@ extension ReaderView {
             // resolution of a dynamic tip colour.
             userInterfaceStyle: readerTheme == .night ? .dark : .light,
             displayScale: readerDisplayScale,
-            sideSafeArea: readerSideSafeArea,
+            headerSideInsets: readerBarSideInsets(for: .header),
+            footerSideInsets: readerBarSideInsets(for: .footer),
             bakesBarsIntoPages: usesPageBakedBars
         )
     }

@@ -162,9 +162,10 @@ struct ReaderView: View {
     /// layout, the spread mode — would be for a window the reader is not in. While it is zero the
     /// renderer holds the engine start (`EPUBPageRenderer.pendingStartBookId`).
     @State var readerViewportSize: CGSize = .zero
-    /// The window's side safe area, from `reportsReaderSideSafeArea`: the text and the 頁眉／頁腳
-    /// keep this far from both sides (`effectivePageMarginH`). Zero in portrait.
-    @State var readerSideSafeArea: CGFloat = 0
+    /// What the window keeps the reader clear of, from `reportsReaderWindowObstructions`: the text
+    /// and the 頁眉／頁腳 each keep clear of what reaches their own height (`readerTextSideInsets`,
+    /// `readerBarSideInsets`). Nothing in an iPhone's portrait.
+    @State var readerWindowObstructions: ReaderWindowObstructions = .none
     @StateObject private var volumeHandler = VolumeKeyHandler()
 
     /// Not private: the footer pill in `ReaderView+Footer` reads its running state.
@@ -509,15 +510,89 @@ struct ReaderView: View {
         usesReadableReaderWidth ? DSLayout.readableOverlayWidth : .infinity
     }
 
-    /// 左右邊距 is measured from the window's side safe area, so in iPhone landscape the text
-    /// clears the Dynamic Island by the reader's own margin. Both sides take the larger side's
-    /// inset: the island can be on either side, turning the phone over moves it without a
-    /// relayout, and the column stays centred.
+    /// 左右邊距 as laid out: the reader's own margin, measured from what the text keeps clear of
+    /// on each side and the same on both sides. `effectivePageMargins` adds those sides to it.
     var effectivePageMarginH: CGFloat {
-        let sideSafeArea = readerSideSafeArea
-        return sideSafeArea + ReaderReadableWidthPolicy.effectiveMargin(
+        pageMarginH(for: activeReaderDisplayMode)
+    }
+
+    /// The page's two side margins in the current mode. See `pageSideMargins(for:)`.
+    var effectivePageMargins: ReaderSideInsets {
+        pageSideMargins(for: activeReaderDisplayMode)
+    }
+
+    func pageMarginH(for mode: ReaderDisplayMode) -> CGFloat {
+        let sides = readerTextSideInsets(for: mode)
+        return ReaderReadableWidthPolicy.effectiveMargin(
             readerConfig.pageMarginH,
-            pageWidth: max(0, currentReaderRenderSize.width - 2 * sideSafeArea)
+            pageWidth: max(0, currentReaderRenderSize.width - sides.left - sides.right)
+        )
+    }
+
+    /// The page's two side margins: what the text keeps clear of on each side, plus the reader's
+    /// own margin. So in iPhone landscape the text clears the Dynamic Island by the reader's
+    /// margin, and on a folded iPhone Duo, whose status bar runs down the right side only, the
+    /// left side does not pay for it. Taking the larger side's inset on both sides left ~66pt
+    /// unused on that left (2026-10-27). iPhone landscape reports the same inset on both sides,
+    /// so turning the phone over still needs no relayout there.
+    func pageSideMargins(for mode: ReaderDisplayMode) -> ReaderSideInsets {
+        let sides = readerTextSideInsets(for: mode)
+        let margin = pageMarginH(for: mode)
+        return ReaderSideInsets(left: sides.left + margin, right: sides.right + margin)
+    }
+
+    /// What the text keeps clear of on each side in `mode`, before the reader's own margin.
+    ///
+    /// Only what reaches the text's own height: on a folded iPhone Duo the camera housing ends
+    /// above the first line, so the text runs the full width beneath it, as 微信讀書's does, and
+    /// only the 頁眉 beside the camera keeps clear (`readerBarSideInsets`; maintainer's choice,
+    /// 2026-10-27). In a two-page spread on a screen that folds, every page also clears the fold.
+    func readerTextSideInsets(for mode: ReaderDisplayMode) -> ReaderSideInsets {
+        readerSideInsets(across: readerTextBand(for: mode))
+    }
+
+    /// What one bar keeps clear of on each side, before its own padding.
+    func readerBarSideInsets(for bar: ReaderBar) -> ReaderSideInsets {
+        let height = readerViewportSize.height
+        let extents = readerBarExtents
+        switch bar {
+        case .header:
+            let top = readerHeaderBarOffset
+            return readerSideInsets(across: Self.band(top, top + extents.header))
+        case .footer:
+            let bottom = height - readerFooterBarOffset
+            return readerSideInsets(across: Self.band(bottom - extents.footer, bottom))
+        }
+    }
+
+    /// The window's span, top to bottom, that the text runs through in `mode`. Scroll mode
+    /// clips its text at the bars' bands (`readerScrollBarInsets`); vertical writing scrolls
+    /// sideways, so its columns stand where a page's text does.
+    private func readerTextBand(for mode: ReaderDisplayMode) -> ClosedRange<CGFloat> {
+        let height = readerViewportSize.height
+        if mode == .scroll, !effectiveWritingMode.isVertical {
+            let bands = readerScrollBarInsets
+            return Self.band(bands.topBand, height - bands.bottomBand)
+        }
+        let insets = readerBarContentInsets
+        return Self.band(insets.top, height - insets.bottom)
+    }
+
+    /// Before the first layout the window is zero high, and the bottom of a band comes out
+    /// above its top.
+    private static func band(_ top: CGFloat, _ bottom: CGFloat) -> ClosedRange<CGFloat> {
+        top...max(top, bottom)
+    }
+
+    private func readerSideInsets(across band: ClosedRange<CGFloat>) -> ReaderSideInsets {
+        let obstructions = readerWindowObstructions
+        guard isDoublePageSpreadActive, obstructions.hasVerticalFold else {
+            return obstructions.sideInsets(across: band)
+        }
+        return obstructions.spreadPageInsets(
+            across: band,
+            pageWidth: currentReaderRenderSize.width,
+            gutter: readerPagingAdapter.spreadGutter
         )
     }
 
@@ -1681,7 +1756,7 @@ struct ReaderView: View {
         // Here, outside the reader's own NavigationStack, so it sees the window and not the
         // content area under the navigation bar. See `reportsReaderViewport`.
         .reportsReaderViewport { handleReaderViewportSizeChange($0) }
-        .reportsReaderSideSafeArea { readerSideSafeArea = $0 }
+        .reportsReaderWindowObstructions { readerWindowObstructions = $0 }
         .readerWindowProbe(readerWindow)
         .task {
             guard readerSessionCoordinator == nil else { return }

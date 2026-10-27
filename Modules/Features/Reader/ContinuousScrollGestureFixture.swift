@@ -56,7 +56,7 @@ struct ContinuousScrollGestureFixture: UIViewControllerRepresentable {
                 status.text = "fixture failed"; return
             }
             let controller = CoreTextCollectionScrollViewController(engine: engine, axis: .vertical,
-                horizontalInset: 12, verticalInset: 12, backgroundColor: .white)
+                sideInsets: .init(left: 12, right: 12), verticalInset: 12, backgroundColor: .white)
             controller.setInitialPosition(chapter: 1, charOffset: offset)
             if usesTXT {
                 controller.onDeceleratingScroll = { [weak self] in self?.resource.releasePreviousChapter() }

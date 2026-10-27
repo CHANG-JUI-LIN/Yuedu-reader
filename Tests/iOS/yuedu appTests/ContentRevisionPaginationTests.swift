@@ -154,6 +154,36 @@ struct ContentRevisionPaginationTests {
         #expect(firstLayout.framesetter === warmLayout.framesetter)
     }
 
+    /// A window whose side safe areas differ (a folded iPhone Duo's status bar runs down one side)
+    /// can swap its two margins at the same size. The cache once keyed on the left margin alone
+    /// and would hand back pages laid out for the other side.
+    @Test("Swapping the left and right margins at the same size lays the chapter out again")
+    @MainActor
+    func swappedSideMarginsMissCache() async {
+        let paginator = CoreTextPaginator()
+        let attributedString = makeAttributedString()
+        let revision = ContentRevision()
+
+        let firstLayout = await paginator.paginate(
+            spineIndex: 10,
+            attrStr: attributedString,
+            renderSize: CGSize(width: 320, height: 480),
+            fontSize: 18,
+            contentInsets: UIEdgeInsets(top: 0, left: 8, bottom: 0, right: 70),
+            revision: revision
+        )
+        let swappedLayout = await paginator.paginate(
+            spineIndex: 10,
+            attrStr: attributedString,
+            renderSize: CGSize(width: 320, height: 480),
+            fontSize: 18,
+            contentInsets: UIEdgeInsets(top: 0, left: 70, bottom: 0, right: 8),
+            revision: revision
+        )
+
+        #expect(firstLayout.framesetter !== swappedLayout.framesetter)
+    }
+
     private func makeBuildResult(
         revision: ContentRevision = ContentRevision()
     ) -> AttributedChapterBuildResult {

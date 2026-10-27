@@ -125,7 +125,7 @@ struct ContinuousScrollPerformanceTests {
         await engine.start(initialChapter: 1, contentWidth: size.width - 24,
             viewportExtent: size.height, loadAdjacentChapters: true)
         let controller = CoreTextCollectionScrollViewController(engine: engine, axis: .vertical,
-            horizontalInset: 12, verticalInset: 20, backgroundColor: .white)
+            sideInsets: .init(left: 12, right: 12), verticalInset: 20, backgroundColor: .white)
         controller.setInitialPosition(chapter: 1, charOffset: 0)
         let window = UIWindow(windowScene: scene)
         window.frame = scene.coordinateSpace.bounds
@@ -134,7 +134,7 @@ struct ContinuousScrollPerformanceTests {
         defer { window.isHidden = true; window.rootViewController = nil }
         controller.view.layoutIfNeeded()
         let collection = try #require(controller.view.subviews.compactMap { $0 as? UICollectionView }.first)
-        controller.update(axis: .vertical, horizontal: 12, vertical: 20)
+        controller.update(axis: .vertical, sides: .init(left: 12, right: 12), vertical: 20)
         collection.layoutIfNeeded()
         let original = try #require(collection.dataSource)
         let spy = CountingDataSource(original)
@@ -156,7 +156,7 @@ struct ContinuousScrollPerformanceTests {
             try #require(!cells.isEmpty)
             let views = cells.map(\.interactiveView)
             for _ in 0..<10 {
-                controller.update(axis: .vertical, horizontal: 12, vertical: 20)
+                controller.update(axis: .vertical, sides: .init(left: 12, right: 12), vertical: 20)
                 collection.layoutIfNeeded()
             }
             #expect(spy.cellRequests == count, "same geometry must not request replacement cells")
@@ -166,7 +166,7 @@ struct ContinuousScrollPerformanceTests {
         }
         // Actual inset changes must still reach the collection view.
         let insets = ReaderScrollBarInsets(topBand: 20, bottomBand: 30, topMargin: 8, bottomMargin: 10)
-        controller.update(axis: .vertical, horizontal: 12, vertical: 20, barInsets: insets)
+        controller.update(axis: .vertical, sides: .init(left: 12, right: 12), vertical: 20, barInsets: insets)
         controller.view.layoutIfNeeded()
         #expect(collection.contentInset.top == 8)
         #expect(collection.contentInset.bottom == 10)
@@ -175,7 +175,7 @@ struct ContinuousScrollPerformanceTests {
         collection.layoutIfNeeded()
         let beforeResize = spy.cellRequests
         collection.bounds.size.height -= 40
-        controller.update(axis: .vertical, horizontal: 12, vertical: 20, barInsets: insets)
+        controller.update(axis: .vertical, sides: .init(left: 12, right: 12), vertical: 20, barInsets: insets)
         collection.layoutIfNeeded()
         #expect(spy.cellRequests > beforeResize)
         withExtendedLifetime(spy) {}

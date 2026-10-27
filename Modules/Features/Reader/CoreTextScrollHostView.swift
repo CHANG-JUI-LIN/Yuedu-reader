@@ -22,7 +22,8 @@ struct CoreTextScrollHostView: UIViewControllerRepresentable {
 
     @ObservedObject var engine: CoreTextScrollEngine
     let axis: CoreTextScrollAxis
-    let horizontalInset: CGFloat
+    /// The page's left and right margins, safe area included (`ReaderView.effectivePageMargins`).
+    let sideInsets: ReaderSideInsets
     let verticalInset: CGFloat
     let bottomMargin: CGFloat
     /// Vertical axis only: how much of the top and bottom is taken by the two
@@ -47,7 +48,7 @@ struct CoreTextScrollHostView: UIViewControllerRepresentable {
         let vc = CoreTextCollectionScrollViewController(
             engine: engine,
             axis: axis,
-            horizontalInset: horizontalInset,
+            sideInsets: sideInsets,
             verticalInset: verticalInset,
             backgroundColor: backgroundColor
         )
@@ -79,7 +80,7 @@ struct CoreTextScrollHostView: UIViewControllerRepresentable {
         collectionVC.setPlaybackHighlight(playbackHighlight)
         collectionVC.update(
             axis: axis,
-            horizontal: horizontalInset,
+            sides: sideInsets,
             vertical: verticalInset,
             bottomMargin: bottomMargin,
             barInsets: barInsets

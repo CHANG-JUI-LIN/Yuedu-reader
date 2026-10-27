@@ -41,7 +41,7 @@ struct BrowserViewportAsyncLayoutTests {
         let chapter = try #require(engine.browserChapter(at: 0))
         let target = try #require(chapter.facts?.anchorOffsets[anchor])
         let controller = CoreTextCollectionScrollViewController(engine: engine, axis: .vertical,
-            horizontalInset: 12, verticalInset: 20, backgroundColor: .white)
+            sideInsets: .init(left: 12, right: 12), verticalInset: 20, backgroundColor: .white)
         controller.setInitialPosition(chapter: 0, charOffset: target)
         let window = UIWindow(windowScene: scene)
         window.frame = scene.coordinateSpace.bounds
