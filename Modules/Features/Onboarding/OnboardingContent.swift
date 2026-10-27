@@ -61,7 +61,6 @@ struct OnboardingContent: Equatable {
                     ? "打開探索，就有依你的語言排好的排行。各處的書排在同一頁，不分本機或線上。"
                     : "探索是你的首頁，各處的書排在同一頁，不分本機或線上。",
                 rows: [
-                    Row(titleKey: "為你推薦", textKey: "照你最近讀的作者和類型推薦"),
                     Row(titleKey: "最新", textKey: "你連接的書庫一有新書，就會出現在這裡"),
                     Row(titleKey: "編輯首頁", textKey: "在右上角的選單裡排欄目和呈現方式，還能存成好幾套首頁配置"),
                 ]

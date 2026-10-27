@@ -1,7 +1,6 @@
 import Foundation
 
-/// A seeded generator, so a sequence can be replayed exactly: a purchase's burst, 為你推薦's
-/// explored books for a day.
+/// A seeded generator, so a sequence can be replayed exactly: a purchase's burst.
 struct SplitMix64: RandomNumberGenerator {
     private var state: UInt64
 

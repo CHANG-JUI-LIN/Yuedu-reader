@@ -35,7 +35,8 @@ private final class FakeProvider: HomeSectionProviding {
     let policy: (HomeSection) -> SectionLoadPolicy?
     var gates: [Gate] = []
     var failure: (any Error)?
-    var readsHomeLibraryRows = false
+    /// `inputsKey`: what its rows read besides their section, as a module's list reads its version.
+    var inputs: String?
     /// Stands in for the network's answer time (step 6's measurement).
     var latency: Duration?
     private(set) var loads: [UUID] = []
@@ -49,6 +50,8 @@ private final class FakeProvider: HomeSectionProviding {
     }
 
     func loadPolicy(for section: HomeSection) -> SectionLoadPolicy? { policy(section) }
+
+    func inputsKey(for section: HomeSection) -> String? { inputs }
 
     func load(_ section: HomeSection) async throws -> [CollectionEntry] {
         let gate = loads.count < gates.count ? gates[loads.count] : nil
@@ -143,60 +146,27 @@ struct HomeModelTests {
         #expect(a.loads.count == 1)
     }
 
-    @Test("a row that reads the home's library rows loads again when one comes or goes (為你推薦)", .timeLimit(.minutes(1)))
-    func libraryRowsChangeReloadsTheirReader() async throws {
-        let reader = FakeProvider("forYou") { $0.binding == .forYou ? .parallel : nil }
-        reader.readsHomeLibraryRows = true
-        let a = FakeProvider("a") { $0.binding == .latest ? .parallel : nil }
-        let library = FakeProvider("b", type: .opds) { $0.binding == .latest ? .parallel : nil }
-        let home = model([reader, a, library])
-        let page = HomePage(sections: [HomeSection(layout: .row, binding: .forYou), HomeSection(layout: .row, binding: .latest)])
-        await home.sync(with: page)
-        // 為你推薦 waits for the library rows on their way (`settledLibraryEntries`); this
-        // reader is asked after them.
-        for row in rows(home) where row.source != reader.instance { home.load(row.id) }
-        await until(home) { $0.allSatisfy { $0.source == reader.instance || isLoaded($0.state) } }
-        for row in rows(home) where row.source == reader.instance { home.load(row.id) }
-        await until(home) { $0.allSatisfy { isLoaded($0.state) } }
-
-        await home.sync(with: page, hiddenFromLatest: [a.instance])
-        #expect(reader.loads.count == 1, "a book source's row is not one it reads")
-        await home.sync(with: page, hiddenFromLatest: [a.instance, library.instance])
-        await until(home) { $0.allSatisfy { isLoaded($0.state) } }
-        #expect(reader.loads.count == 2)
-        #expect(library.loads.count == 1)
-
-        // It comes back: the reader starts again at once, before the library row's view asks
-        // for it, and once more when the library row has loaded.
-        await home.sync(with: page, hiddenFromLatest: [a.instance])
-        await until(home) { $0.allSatisfy { $0.source != reader.instance || isLoaded($0.state) } }
-        let libraryRow = try #require(rows(home).first { $0.source == library.instance })
-        home.load(libraryRow.id)
-        await until(home) { $0.allSatisfy { isLoaded($0.state) } && reader.loads.count == 4 }
-        #expect(reader.loads.count == 4)
-        #expect(library.loads.count == 2)
-    }
-
     @Test("a row whose inputs change while it loads loads again, and the earlier load's books are dropped", .timeLimit(.minutes(1)))
     func inputsChangeDuringALoad() async throws {
-        let reader = FakeProvider("forYou") { $0.binding == .forYou ? .parallel : nil }
-        reader.readsHomeLibraryRows = true
+        let list = HomeSectionBinding.module(moduleID: "m", entryID: "e")
+        let reader = FakeProvider("m", type: .module) { $0.binding == list ? .parallel : nil }
+        reader.inputs = "1"
         let gate = Gate()
         reader.gates = [gate]
-        let library = FakeProvider("b", type: .opds) { $0.binding == .latest ? .parallel : nil }
-        let home = model([reader, library])
-        let page = HomePage(sections: [HomeSection(layout: .row, binding: .forYou), HomeSection(layout: .row, binding: .latest)])
+        let home = model([reader])
+        let page = HomePage(sections: [HomeSection(layout: .row, binding: list)])
         await home.sync(with: page)
         let readerRow = try #require(rows(home).first { $0.source == reader.instance })
         home.load(readerRow.id)
         await until(home) { $0.first { $0.id == readerRow.id }?.state == .loading }
 
-        // The library goes while the first load is on its way.
-        await home.sync(with: page, hiddenFromLatest: [library.instance])
+        // The module updates while the first load is on its way.
+        reader.inputs = "2"
+        await home.sync(with: page)
         gate.open()
         await until(home) { rows in
             guard case .loaded(let entries)? = rows.first(where: { $0.id == readerRow.id })?.state else { return false }
-            return entries == [.location(CollectionLocation(id: "forYou/2", title: "forYou"))]
+            return entries == [.location(CollectionLocation(id: "m/2", title: "m"))]
         }
         #expect(reader.loads.count == 2)
     }

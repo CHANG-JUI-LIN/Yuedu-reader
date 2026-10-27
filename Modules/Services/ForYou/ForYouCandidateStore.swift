@@ -1,11 +1,9 @@
 import CryptoKit
 import Foundation
 
-/// One book-source category's first page as 為你推薦 last saw it (Discovery Phase 7a-1,
-/// maintainer's decision 2: a local cache, refetched after 12 hours).
+/// One book-source category's first page as the home last fetched it (Discovery Phase 7a-1).
+/// The name is from 為你推薦, deleted 2026-10-27; the cache stayed for 作品詳情's versions.
 struct ForYouCandidates: Codable, Sendable {
-    /// How long a category's books stand before 為你推薦 asks for them again.
-    static let freshness: TimeInterval = 12 * 60 * 60
     /// The most kept per category: a first page, never more.
     static let limit = 40
 
@@ -20,15 +18,12 @@ struct ForYouCandidates: Codable, Sendable {
         self.fetchedAt = fetchedAt
         self.books = Array(books.prefix(Self.limit))
     }
-
-    func isFresh(at now: Date) -> Bool {
-        now.timeIntervalSince(fetchedAt) < Self.freshness
-    }
 }
 
 /// The candidate cache: one file per category under `Caches/ForYou`, regenerable, so it is
-/// not backed up. Written by `DiscoverFirstPages` on every first page it fetches, read by
-/// 為你推薦. An actor, so writes are atomic and in order.
+/// not backed up. Written by `DiscoverFirstPages` on every first page it fetches, read by it
+/// for the home's later asks and by 作品詳情's versions (`savedBooks`). An actor, so writes are
+/// atomic and in order.
 actor ForYouCandidateStore {
     static let shared = ForYouCandidateStore(
         directory: FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0]

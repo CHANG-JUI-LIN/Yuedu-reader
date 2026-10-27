@@ -95,7 +95,7 @@ struct HomeListCardsTests {
 
     @Test("every layout for every source; what is lists alone, the layouts of lists")
     func choices() {
-        for binding: HomeSectionBinding in [.latest, .continueReading, .bookshelf, .forYou, .aiRecommendations, .aozoraNew,
+        for binding: HomeSectionBinding in [.latest, .continueReading, .bookshelf, .related, .aiRecommendations, .aozoraNew,
                                             .gutenbergCollection(id: "chinese"), hot,
                                             .sourceCategories([category("玄幻")]), .opdsFeed(connectionID: "c", url: "/new")] {
             #expect(HomeLayoutStyle.choices(for: binding) == HomeLayoutStyle.allCases, "\(binding)")
@@ -124,7 +124,7 @@ struct HomeListCardsTests {
 
     @Test("cards are written in the oldest form that says them")
     func settingCards() {
-        let section = HomeSection(layout: .collageCards, binding: .forYou)
+        let section = HomeSection(layout: .collageCards, binding: .continueReading)
         let one = section.settingCards([HomeListCard(binding: hot, parameters: ["sort": "hot"])])
         #expect(one.binding == hot && one.parameters == ["sort": "hot"])
 
@@ -154,7 +154,7 @@ struct HomeListCardsTests {
     @Test("a section of lists round-trips, a later build's card kept through an edit")
     func roundTripKeepsUnknown() throws {
         let section = HomeSection(layout: .collageCards, binding: .lists([
-            HomeListCard(binding: hot, parameters: ["sort": "hot"]), HomeListCard(binding: .forYou),
+            HomeListCard(binding: hot, parameters: ["sort": "hot"]), HomeListCard(binding: .continueReading),
         ]))
         let data = try JSONEncoder().encode(section)
         #expect(try JSONDecoder().decode(HomeSection.self, from: data) == section)
@@ -174,7 +174,7 @@ struct HomeListCardsTests {
         guard case .lists(let edited) = editor.draft.binding else {
             Issue.record("expected .lists"); return
         }
-        #expect(Array(edited.map(\.binding).prefix(2)) == [.forYou, hot])
+        #expect(Array(edited.map(\.binding).prefix(2)) == [.continueReading, hot])
         #expect(edited.count == 3)
         let written = try JSONSerialization.jsonObject(with: JSONEncoder().encode(edited[2])) as? [String: Any]
         #expect((written?["binding"] as? [String: Any])?["type"] as? String == "futureList")
@@ -324,14 +324,14 @@ struct HomeListCardsTests {
                                   aozoraIndex: nil) == .explore(.sourceCategory(reference)))
         #expect(ExplorePlace.page(of: card(.aiRecommendations, source: AIRecommendationProvider.instanceKey),
                                   aozoraIndex: nil) == .explore(.aiRecommendations))
-        #expect(ExplorePlace.page(of: card(.forYou, entries: [book("甲")], source: .localLibrary), aozoraIndex: nil)
-                == .list(HomeListRoute(title: "熱門", binding: .forYou, entries: [book("甲")])))
-        #expect(card(.forYou, source: .localLibrary).homeIdentifier == "home.collection.list.熱門")
+        #expect(ExplorePlace.page(of: card(.continueReading, entries: [book("甲")], source: .localLibrary), aozoraIndex: nil)
+                == .list(HomeListRoute(title: "熱門", binding: .continueReading, entries: [book("甲")])))
+        #expect(card(.continueReading, source: .localLibrary).homeIdentifier == "home.collection.list.熱門")
     }
 
     @Test("the header of cards from several sources opens nothing")
     func mixedHeader() {
-        let section = HomeSection(layout: .collection, binding: .lists([HomeListCard(binding: hot), HomeListCard(binding: .forYou)]))
+        let section = HomeSection(layout: .collection, binding: .lists([HomeListCard(binding: hot), HomeListCard(binding: .continueReading)]))
         let rows = [(0, SourceInstanceKey(type: .module, id: "m")), (1, SourceInstanceKey.localLibrary)].map { card, source in
             HomeModel.Row(id: HomeModel.rowID(section: section.id, card: card, source: source), section: section, source: source,
                           sourceName: "", policy: .local, state: .idle)

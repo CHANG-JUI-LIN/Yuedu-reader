@@ -126,8 +126,6 @@ private enum HomeSectionFormPush: Hashable {
     case picker(HomeSectionPickerMode)
     /// 最新's 新增來源配置.
     case latestSources
-    /// 為你推薦's 加入分類: a source, then its category.
-    case forYouSources
     /// The category a book source stands on in 最新, by source URL.
     case latestCategory(String)
     /// The section's category, picked again under other filters, by source URL.
@@ -253,9 +251,6 @@ struct HomeSectionForm: View {
                 latestLibraries
                 latestParameters
             }
-            if draft.binding == .forYou {
-                forYouCategories
-            }
             if drawsLists {
                 listCardsSection
             } else if let entry = moduleEntry, !entry.editableParams.isEmpty {
@@ -301,13 +296,6 @@ struct HomeSectionForm: View {
                 case .latestSources:
                     HomeSourceChoices(current: nil, parameters: draft.parameters) { choice in
                         pickLatest(choice)
-                        push = nil
-                    }
-                case .forYouSources:
-                    HomeSourceChoices(current: nil) { choice in
-                        if case .sourceCategories(let references) = choice.binding, let reference = references.first {
-                            editor.addForYouCategory(reference)
-                        }
                         push = nil
                     }
                 case .latestCategory(let url):
@@ -407,34 +395,6 @@ struct HomeSectionForm: View {
             Text(localized("參數"))
         } footer: {
             Text(localized("來源配置要選一個分類代表它的最新，沒選的不會出現在最新。"))
-                .dsSectionFooter()
-        }
-        .interfaceSectionSurface()
-    }
-
-    // MARK: 為你推薦
-
-    /// 為你推薦's 來源分類 (Discovery Phase 7a-4, maintainer's decision 1): the home's categories
-    /// and its own, each removable; 加入分類 adds one from any source.
-    private var forYouCategories: some View {
-        Section {
-            ForEach(editor.forYouCategories) { reference in
-                let name = HomeContentOwner.bookSource(url: reference.sourceURL).name(sources: sources, connections: connections)
-                LabeledContent(name, value: reference.title)
-                    .swipeActions {
-                        Button(localized("移除"), role: .destructive) { editor.removeForYouCategory(reference) }
-                    }
-                    .accessibilityAction(named: localized("移除")) { editor.removeForYouCategory(reference) }
-                    .accessibilityIdentifier("homeSection.forYou.\(name).\(reference.title)")
-            }
-            Button { push = .forYouSources } label: {
-                Label(localized("加入分類"), systemImage: "plus")
-            }
-            .accessibilityIdentifier("homeSection.forYou.add")
-        } header: {
-            Text(localized("來源分類"))
-        } footer: {
-            Text(localized("首頁上的分類都會列在這裡；移除只影響為你推薦。"))
                 .dsSectionFooter()
         }
         .interfaceSectionSurface()
@@ -994,31 +954,6 @@ extension HomeContentOwner {
             isInSheet: false, modules: RuleModulePreviewData.listsLibrary())
     }
     .environmentObject(BookStore())
-}
-
-#Preview("為你推薦") {
-    NavigationStack {
-        HomeSectionForm(
-            editor: HomeSectionEditor(
-                section: HomeSection(layout: .row, binding: .forYou),
-                store: HomePageStore(fileURL: FileManager.default.temporaryDirectory.appendingPathComponent("preview-home.json")),
-                preview: .preview(shelf: BookStore())),
-            isInSheet: false)
-    }
-    .environmentObject(BookStore())
-}
-
-#Preview("為你推薦，大字") {
-    NavigationStack {
-        HomeSectionForm(
-            editor: HomeSectionEditor(
-                section: HomeSection(layout: .row, binding: .forYou),
-                store: HomePageStore(fileURL: FileManager.default.temporaryDirectory.appendingPathComponent("preview-home.json")),
-                preview: .preview(shelf: BookStore())),
-            isInSheet: false)
-    }
-    .environmentObject(BookStore())
-    .dynamicTypeSize(.accessibility3)
 }
 
 #Preview("分類卡片的分類") {

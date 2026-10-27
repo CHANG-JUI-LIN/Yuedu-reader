@@ -499,7 +499,7 @@ struct HomeBandGround: ViewModifier {
 }
 
 /// The 頂部輪播圖 draws its band: the bar's 探索 and buttons are white only over it, never over
-/// a carousel drawn without one (a failure, no books, 為你推薦 waiting for AI).
+/// a carousel drawn without one (a failure, no books, AI 推薦 not yet generated).
 struct HomeCarouselBandKey: PreferenceKey {
     static var defaultValue: Bool { false }
     static func reduce(value: inout Bool, nextValue: () -> Bool) { value = value || nextValue() }

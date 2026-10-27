@@ -53,7 +53,7 @@ struct AIRecommendationList: Codable, Equatable, Sendable {
 }
 
 /// `Application Support/AIRecommendations/latest.json`: one list, kept on this device only
-/// (like 為你推薦's genre profile, it is not synced).
+/// (like the genre profile, `ReadingGenreRecorder`, it is not synced).
 @MainActor
 final class AIRecommendationStore: ObservableObject {
     nonisolated static let directory = StorageLocations.support.appendingPathComponent("AIRecommendations", isDirectory: true)

@@ -491,7 +491,9 @@ final class ExploreHomeUITests: XCTestCase {
         for _ in 0..<10 where !edit.isHittable { app.swipeUp() }
         XCTAssertTrue(edit.isHittable, app.debugDescription)
         app.swipeDown()
-        let first = app.staticTexts["為你推薦"].firstMatch
+        // The 頂部輪播圖, Bangumi's 小說排行 for a Chinese reader, heads the home.
+        let first = app.descendants(matching: .any).matching(NSPredicate(
+            format: "identifier BEGINSWITH 'home.row.header.' AND label CONTAINS %@", "小說排行")).firstMatch
         addConfiguration(app, "週末")
         XCTAssertTrue(first.waitForExistence(timeout: 10), app.debugDescription)
         attach(app, "explore-configuration-opens-at-top")

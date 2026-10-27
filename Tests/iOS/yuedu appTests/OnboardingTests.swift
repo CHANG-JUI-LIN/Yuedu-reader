@@ -91,7 +91,7 @@ struct OnboardingTests {
         let content = makeContent()
         #expect(content.pages == OnboardingPage.allCases)
         #expect(content.starts == [.explore, .addSources, .connectLibrary, .importFiles])
-        #expect(content.explore?.rows.map(\.titleKey) == ["為你推薦", "最新", "編輯首頁"])
+        #expect(content.explore?.rows.map(\.titleKey) == ["最新", "編輯首頁"])
         #expect(content.works.map(\.titleKey) == ["搜索", "作品詳情", "自動補齊書籍資料", "聚合設定"])
         #expect(content.sources.textKey == "來源配置、模組和遠端書庫都在資源庫，加進來就跟內建的一起用。")
     }

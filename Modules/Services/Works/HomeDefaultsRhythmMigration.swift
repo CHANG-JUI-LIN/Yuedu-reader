@@ -8,8 +8,8 @@ import Foundation
 /// it is recognised by what it holds:
 /// - Its sections, in order, are those `previousDefaults` makes for some mode, region and
 ///   reading languages: the defaults from 2026-10-13 (a338bbea, 精選書單 one section) to
-///   2026-10-25 (c4cd251e). An older 預設, or one with a section added, removed or moved, is
-///   left as it is.
+///   2026-10-25 (c4cd251e), without 為你推薦, which `HomePageStore` takes off first (deleted
+///   2026-10-27). An older 預設, or one with a section added, removed or moved, is left as it is.
 /// - A section still as those defaults made it takes the layout today's defaults give its
 ///   binding. One the reader hid, titled, gave a subtitle or parameters, or drew another way
 ///   keeps what it has.
@@ -87,13 +87,12 @@ enum HomeDefaultsRhythmMigration {
 
     /// `HomePageDefaults.page` from 2026-10-13 to 2026-10-25, frozen so it still recognises
     /// those homes when the defaults change again: 古騰堡熱門 a plain row, 精選書單 專題集合, the
-    /// rankings 圖文資訊清單 with ranks, AniList's lists rows. A 預設 made before 為你推薦 (7a) is
-    /// recognised once `HomePageStore` has put it after 系列下一本.
+    /// rankings 圖文資訊清單 with ranks, AniList's lists rows. Their 為你推薦, after 系列下一本, is
+    /// left out: it was deleted, and taken off the saved homes, on 2026-10-27.
     static func previousDefaults(for context: HomePageDefaults.Context, makeID: () -> UUID = UUID.init) -> [HomeSection] {
         typealias List = HomePageDefaults.ModuleList
         let continueReading = HomeSection(id: makeID(), layout: .compactReadingCard, binding: .continueReading)
         let nextInSeries = HomeSection(id: makeID(), layout: .row, binding: .nextInSeries)
-        let forYou = HomeSection(id: makeID(), layout: .row, binding: .forYou)
         let latest = HomeSection(id: makeID(), layout: .row, binding: .latest)
         let popular = context.publicLibrariesAvailable
             ? [HomeSection(id: makeID(), layout: .row, binding: .gutenbergShelf(id: "popular"))]
@@ -119,9 +118,9 @@ enum HomeDefaultsRhythmMigration {
         }
         switch context.mode {
         case .bookSources:
-            return [continueReading, nextInSeries, forYou, latest] + modules + popular + featured
+            return [continueReading, nextInSeries, latest] + modules + popular + featured
         case .publicLibraries:
-            return [continueReading, nextInSeries, forYou] + modules + popular + featured + [latest]
+            return [continueReading, nextInSeries] + modules + popular + featured + [latest]
         }
     }
 }

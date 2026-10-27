@@ -60,10 +60,6 @@ final class HomeModel: ObservableObject {
     /// Rows a sync changed while they loaded: they start again once that load ends, which
     /// shows nothing (`isCurrent`).
     private var rerun: Set<String> = []
-    /// The last pull to refresh; 為你推薦 asks again for what it read before it.
-    private(set) var refreshedAt: Date?
-    /// 為你推薦's loads waiting for the library rows that load with the home.
-    private var settleWaiters: [CheckedContinuation<Void, Never>] = []
 
     /// - Parameters:
     ///   - providers: the sources now, asked again at each `sync`
@@ -81,26 +77,13 @@ final class HomeModel: ObservableObject {
     /// A home served by the sources now, with one first-page fetcher of its own for as long as
     /// it lives (Discovery Phase 7a-1).
     static func live(shelf: BookStore) -> HomeModel {
-        make(firstPages: DiscoverFirstPages(), waitForSources: {
+        let firstPages = DiscoverFirstPages()
+        return HomeModel(providers: {
+            SourceProviderRegistry.shared.homeProviders(shelf: shelf, firstPages: firstPages)
+        }, waitForSources: {
             await BookSourceStore.shared.waitUntilLoaded()
             await RuleModuleLibrary.shared.loadIfNeeded()
-        }) { firstPages, home in
-            SourceProviderRegistry.shared.homeProviders(shelf: shelf, firstPages: firstPages, home: home)
-        }
-    }
-
-    /// `live`'s wiring with the providers given: `firstPages` serves the home for its life and
-    /// is refreshed by its pull to refresh; 為你推薦 gets the home weakly.
-    static func make(
-        firstPages: DiscoverFirstPages,
-        waitForSources: @escaping () async -> Void,
-        providers: @escaping @MainActor (DiscoverFirstPages, (any ForYouHomeRows)?) -> [any HomeSectionProviding]
-    ) -> HomeModel {
-        let home = WeakHomeModel()
-        let model = HomeModel(providers: { providers(firstPages, home.model) }, waitForSources: waitForSources,
-                              firstPages: firstPages)
-        home.model = model
-        return model
+        }, firstPages: firstPages)
     }
 
     // MARK: - Building
@@ -109,8 +92,8 @@ final class HomeModel: ObservableObject {
     /// - A row whose source and content are unchanged keeps what it loaded, and takes the
     ///   section's new title and layout (呈現方式, 5d-3).
     /// - A row whose content changed under the same id starts again at once if it had been
-    ///   asked for: its view is the same view, so nothing else would ask again. 為你推薦's content
-    ///   includes the home's categories (`inputsKey`) and its library rows (`readsHomeLibraryRows`).
+    ///   asked for: its view is the same view, so nothing else would ask again. A module list's
+    ///   content includes its version and the language it follows (`inputsKey`).
     /// - `hiddenFromLatest`: the libraries 聚合設定's 顯示在最新 turns off (5d-3f). They get
     ///   no 最新 row, so they are not asked for one.
     /// - A section of lists has a row per card (`HomeSection.listCards`), each served as a section
@@ -143,17 +126,12 @@ final class HomeModel: ObservableObject {
                 planned.append((section, load, card, serving))
             }
         }
-        let libraryRows = planned.flatMap { section, _, card, providers in
-            providers.filter { Self.isLibrary($0.instance) }
-                .map { Self.rowID(section: section.id, card: card?.index, source: $0.instance) }
-        }.joined(separator: "\u{1E}")
         for (section, load, card, serving) in planned {
             for provider in serving {
                 guard let policy = provider.loadPolicy(for: load) else { continue }
                 let id = Self.rowID(section: section.id, card: card?.index, source: provider.instance)
                 servedBy[id] = provider
-                var inputsKey = provider.inputsKey(for: load)
-                if provider.readsHomeLibraryRows { inputsKey = (inputsKey ?? "") + "\u{1D}" + libraryRows }
+                let inputsKey = provider.inputsKey(for: load)
                 if var kept = existing[id], kept.loadingSection.loadsSameContent(as: load), kept.policy == policy,
                    kept.inputsKey == inputsKey {
                     kept.section = section
@@ -216,7 +194,6 @@ final class HomeModel: ObservableObject {
 
     /// Pull to refresh: rows already loaded load again.
     func reload() {
-        refreshedAt = Date()
         firstPages?.refresh()
         for row in rows where requested.contains(row.id) && !active.contains(row.id) {
             start(row)
@@ -249,7 +226,6 @@ final class HomeModel: ObservableObject {
         defer {
             active.remove(rowID)
             if rerun.remove(rowID) != nil, let current = row(rowID) { start(current) }
-            resumeSettleWaiters()
         }
         guard let row = row(rowID), let provider = providers[rowID] else { return }
         setState(.loading, of: rowID)
@@ -268,7 +244,6 @@ final class HomeModel: ObservableObject {
                 ])
             }
             setState(.loaded(entries), of: rowID)
-            if Self.isLibrary(row.source) { restartLibraryReaders() }
         } catch is CancellationError {
             setState(.idle, of: rowID)
         } catch {
@@ -286,60 +261,8 @@ final class HomeModel: ObservableObject {
         return current.loadingSection.loadsSameContent(as: row.loadingSection) && current.inputsKey == row.inputsKey
     }
 
-    /// A library row loaded after the rows that read the library rows (為你推薦) had finished,
-    /// e.g. one brought back on the home, whose view asks for it after the sync: they read again.
-    /// One still on its way reads it anyway (`settledLibraryEntries`).
-    private func restartLibraryReaders() {
-        for row in rows where providers[row.id]?.readsHomeLibraryRows == true
-            && requested.contains(row.id) && !active.contains(row.id) {
-            start(row)
-        }
-    }
-
     private func setState(_ state: RowState, of rowID: String) {
         guard let index = rows.firstIndex(where: { $0.id == rowID }) else { return }
         rows[index].state = state
-    }
-}
-
-// MARK: - 為你推薦's library inputs
-
-/// The home a `ForYouProvider` reads its library rows from; held weakly, so a provider never
-/// keeps a closed home alive.
-@MainActor
-final class WeakHomeModel {
-    weak var model: HomeModel?
-}
-
-extension HomeModel: ForYouHomeRows {
-    /// Once no library row loading with the home (`.withHome`) is still on its way: what the
-    /// library rows have loaded, in the home's order. 為你推薦 reads these and never asks a
-    /// library itself (Discovery Phase 7a).
-    func settledLibraryEntries() async -> [ForYouLibraryRow] {
-        while !libraryRowsSettled {
-            await withCheckedContinuation { settleWaiters.append($0) }
-        }
-        return rows.compactMap { row in
-            guard Self.isLibrary(row.source), case .loaded(let entries) = row.state else { return nil }
-            return ForYouLibraryRow(source: row.source, entries: entries)
-        }
-    }
-
-    private static func isLibrary(_ source: SourceInstanceKey) -> Bool {
-        switch source.type {
-        case .opds, .webDAV, .calibre, .gutenberg, .aozora: return true
-        case .library, .bookSource, .bibliographic, .module: return false
-        }
-    }
-
-    private var libraryRowsSettled: Bool {
-        !rows.contains { $0.policy == .withHome && Self.isLibrary($0.source) && active.contains($0.id) }
-    }
-
-    private func resumeSettleWaiters() {
-        guard libraryRowsSettled, !settleWaiters.isEmpty else { return }
-        let waiters = settleWaiters
-        settleWaiters = []
-        waiters.forEach { $0.resume() }
     }
 }

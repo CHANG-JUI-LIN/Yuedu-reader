@@ -254,10 +254,10 @@ enum ExplorePlace {
             return .explore(.moduleList(ModuleListRoute(moduleID: moduleID, entryID: entryID,
                                                         title: row.section.displayTitle(sourceName: row.sourceName),
                                                         parameters: row.section.parameters)))
-        // 為你推薦 is mixed from many places; no page lists it whole. AI 推薦's row is its whole list.
+        // AI 推薦's row is its whole list.
         // 書架's whole list is the 書架 tab, which 探索 cannot switch to. A section of lists has
         // a card per list, each opening its own (`listsPage` is its header's).
-        case .myLibrary, .continueReading, .bookshelf, .related, .nextInSeries, .forYou,
+        case .myLibrary, .continueReading, .bookshelf, .related, .nextInSeries,
              .aiRecommendations, .lists, .unknown:
             return nil
         }

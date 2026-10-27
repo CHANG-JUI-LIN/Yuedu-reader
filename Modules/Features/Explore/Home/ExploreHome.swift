@@ -153,7 +153,7 @@ private struct ExploreHomeRoot: View {
 
     /// What the rows are built from; any change builds them again.
     private var syncKey: [AnyHashable] {
-        // 中繼資料語言偏好推薦: a module's 地區 that follows it, and 為你推薦's order, read it.
+        // 中繼資料語言偏好推薦: a module's 地區 that follows it reads it.
         [pageStore.page, connections.catalogs.map(\.id), exploreSources.map(\.bookSourceUrl), availability.isAvailable,
          aozora.catalog != nil, aggregation.settings.hiddenFromLatest, aggregation.readingLanguages.language,
          modules.modules.map { "\($0.module.id)@\($0.module.version)" }]

@@ -17,7 +17,7 @@ struct HomeReadFilter {
         guard hides else { return false }
         switch binding {
         case .latest, .related, .sourceCategories, .opdsFeed, .gutenbergCollection, .gutenbergFeed,
-             .gutenbergShelf, .aozoraNew, .forYou, .module, .aiRecommendations:
+             .gutenbergShelf, .aozoraNew, .module, .aiRecommendations:
             return true
         // 繼續閱讀 is what is being read. 書架 is the shelf, which keeps a book read to the end.
         // 系列下一本 never offers a book read to the end: it offers the one after it. An

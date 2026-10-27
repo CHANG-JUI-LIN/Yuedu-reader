@@ -132,3 +132,34 @@ actor ReadingGenreRecorder {
         ForYouFile.read(ReadingGenreProfile.self, from: fileURL, label: "reading genres") ?? ReadingGenreProfile()
     }
 }
+
+/// The local JSON files under `Application Support/ForYou` (the reading genres): a missing file
+/// is absent; one that cannot be read or decoded is absent and logged; a failed write is logged.
+enum ForYouFile {
+    static func read<T: Decodable>(_ type: T.Type, from url: URL, label: String) -> T? {
+        let data: Data
+        do {
+            data = try Data(contentsOf: url)
+        } catch CocoaError.fileReadNoSuchFile {
+            return nil
+        } catch {
+            AppLogger.cache("⟐ \(label) unreadable", error: error, context: ["file": url.path])
+            return nil
+        }
+        do {
+            return try JSONDecoder().decode(type, from: data)
+        } catch {
+            AppLogger.cache("⟐ \(label) unreadable", error: error, context: ["file": url.path])
+            return nil
+        }
+    }
+
+    static func write<T: Encodable>(_ value: T, to url: URL, label: String) {
+        do {
+            try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+            try JSONEncoder().encode(value).write(to: url, options: .atomic)
+        } catch {
+            AppLogger.cache("⟐ \(label) could not be saved", error: error, context: ["file": url.path])
+        }
+    }
+}

@@ -20,10 +20,12 @@ import Foundation
 ///   layouts once (`HomeDefaultsRhythmMigration`).
 /// - 預設's official modules' lists follow the language, as the home reads it
 ///   (`HomeDefaultsLanguageSwap`).
+/// - 為你推薦, deleted 2026-10-27, is taken off every 首頁配置 that still has it
+///   (`removeDeletedForYou`).
 @MainActor
 final class HomePageStore: ObservableObject {
     /// The app's home; the editor (5d) changes the same one the home draws.
-    static let shared = HomePageStore(insertsForYouOnce: true, appliesDefaultsRhythmOnce: true)
+    static let shared = HomePageStore(appliesDefaultsRhythmOnce: true)
 
     /// Every configuration; nil until the home is first made.
     @Published private(set) var home: HomeConfigurations?
@@ -57,22 +59,17 @@ final class HomePageStore: ObservableObject {
     private let customPagesURL: URL
     private let defaults: UserDefaults
     private let queue = DispatchQueue(label: "com.yuedu.explore.home")
-    /// Whether this store puts 為你推薦 on a saved home once; only the app's own does, so a
-    /// test's home is read as it was saved.
-    private let insertsForYouOnce: Bool
     /// Whether this store gives an untouched 預設 the 2026-10-25 layouts once; only the app's own
-    /// does, as `insertsForYouOnce`.
+    /// does, so a test's home is read as it was saved.
     private let appliesDefaultsRhythmOnce: Bool
 
     /// - Parameter customPagesURL: the custom pages that move in; beside the home by default.
     init(fileURL: URL = StorageLocations.applicationSupportRoot.appendingPathComponent("explore_home.json"),
-         customPagesURL: URL? = nil, defaults: UserDefaults = .standard, insertsForYouOnce: Bool = false,
-         appliesDefaultsRhythmOnce: Bool = false) {
+         customPagesURL: URL? = nil, defaults: UserDefaults = .standard, appliesDefaultsRhythmOnce: Bool = false) {
         self.fileURL = fileURL
         self.customPagesURL = customPagesURL
             ?? fileURL.deletingLastPathComponent().appendingPathComponent("custom_explore_pages.json")
         self.defaults = defaults
-        self.insertsForYouOnce = insertsForYouOnce
         self.appliesDefaultsRhythmOnce = appliesDefaultsRhythmOnce
         // 首頁配置's form draws its photo at 96pt, three pixels a point.
         photos = HomeConfigurationPhotos(directory: fileURL.deletingLastPathComponent()
@@ -109,8 +106,6 @@ final class HomePageStore: ObservableObject {
             return HomePage(sections: home.sections(of: home.selectedID))
         }
         let defaultPage = HomePageDefaults.page(for: context)
-        // The defaults have 為你推薦 already; it is never inserted again.
-        if insertsForYouOnce { defaults.set(true, forKey: Self.forYouInsertedKey) }
         // They have the 2026-10-25 layouts already; a reader who changes them keeps theirs.
         if appliesDefaultsRhythmOnce, !isReadOnly { defaults.set(true, forKey: Self.defaultsRhythmKey) }
         var made = HomeConfigurations(sections: defaultPage.sections)
@@ -235,24 +230,36 @@ final class HomePageStore: ObservableObject {
     }
     #endif
 
-    // MARK: - 為你推薦
+    // MARK: - 為你推薦, deleted
 
-    /// Set once 為你推薦 has been put on a home: by the defaults, or inserted into a saved one.
-    static let forYouInsertedKey = "home.forYouInserted"
-
-    /// Everyone gets 為你推薦 once (Discovery Phase 7a, maintainer's decision 4): a saved home
-    /// gets it in the 首頁配置 the reader is on, after 系列下一本, else 繼續閱讀, else first. Deleting it afterwards
-    /// sticks. Not on a file this build only reads.
-    private func insertForYouOnce(into home: inout HomeConfigurations) {
-        guard insertsForYouOnce, !isReadOnly, !defaults.bool(forKey: Self.forYouInsertedKey) else { return }
-        defaults.set(true, forKey: Self.forYouInsertedKey)
-        let target = home.selectedID
-        var sections = home.sections(of: target)
-        guard !sections.contains(where: { $0.binding == .forYou }) else { return }
-        let after = sections.lastIndex { $0.binding == .nextInSeries } ?? sections.lastIndex { $0.binding == .continueReading }
-        sections.insert(HomeSection(layout: .row, binding: .forYou), at: after.map { $0 + 1 } ?? 0)
-        home.setSections(sections, of: target)
-        AppLogger.cache("⟐ 為你推薦 put on the saved home", context: ["configuration": target.rawValue])
+    /// Takes 為你推薦 off 預設 and every 首頁配置 (`HomeSectionBinding.isDeletedForYou`; maintainer,
+    /// 2026-10-27): its sections, the 頂部輪播圖 among them, and its cards in a section of lists,
+    /// whose section goes with its last card. On every read, not once: nothing puts it on a home
+    /// any more, so a home without it is left as it is. Returns whether any was taken off.
+    @discardableResult
+    private func removeDeletedForYou(from home: inout HomeConfigurations) -> Bool {
+        var removed = 0
+        func strip(_ sections: inout [HomeSection]) {
+            sections = sections.compactMap { section in
+                if section.binding.isDeletedForYou {
+                    removed += 1
+                    return nil
+                }
+                guard case .lists(let cards) = section.binding else { return section }
+                let kept = cards.filter { !$0.binding.isDeletedForYou }
+                guard kept.count < cards.count else { return section }
+                removed += cards.count - kept.count
+                guard !kept.isEmpty else { return nil }
+                var section = section
+                section.binding = .lists(kept)
+                return section
+            }
+        }
+        strip(&home.sections)
+        for index in home.configurations.indices { strip(&home.configurations[index].sections) }
+        guard removed > 0 else { return false }
+        AppLogger.cache("⟐ 為你推薦 taken off the saved home", context: ["removed": "\(removed)"])
+        return true
     }
 
     // MARK: - The 2026-10-25 layouts
@@ -409,25 +416,24 @@ final class HomePageStore: ObservableObject {
                 read = HomeConfigurations(sections: try JSONDecoder().decode(HomePage.self, from: data).sections)
                 readLegacyLatestExcluded(data)
                 moveCustomPages(into: &read)
-                insertForYouOnce(into: &read)
+                removeDeletedForYou(from: &read)
                 applyDefaultsRhythmOnce(to: &read)
                 home = read
                 write()
                 return
             }
             read = try JSONDecoder().decode(HomeConfigurations.self, from: data)
-            let inserted = insertsForYouOnce && !defaults.bool(forKey: Self.forYouInsertedKey)
-            insertForYouOnce(into: &read)
-            // After 為你推薦, so a 預設 from before it is recognised.
+            // Before the layouts, which recognise a 預設 by its sections without 為你推薦.
+            let removed = removeDeletedForYou(from: &read)
             let restyled = applyDefaultsRhythmOnce(to: &read)
             if read.customPagesPending {
                 moveCustomPages(into: &read)
                 home = read
-                if !read.customPagesPending || inserted || restyled { write() }
+                if !read.customPagesPending || removed || restyled { write() }
                 return
             }
             home = read
-            if inserted || restyled { write() }
+            if removed || restyled { write() }
         } catch {
             AppLogger.cache("⟐ explore home could not be decoded", error: error)
             isReadOnly = !keepAside(data)

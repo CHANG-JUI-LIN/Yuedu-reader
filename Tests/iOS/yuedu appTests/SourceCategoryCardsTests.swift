@@ -163,8 +163,8 @@ struct SourceCategoryCardsTests {
         #expect(await requests.log == ["/玄幻"])
     }
 
-    @Test("switching between a row and 分類卡片 loads again; 為你推薦 mixes only the categories drawn")
-    func reloadAndForYou() {
+    @Test("switching between a row and 分類卡片 loads again")
+    func reload() {
         let references = [category("玄幻"), category("都市")]
         let row = HomeSection(layout: .row, binding: .sourceCategories(references))
         var cards = row
@@ -173,10 +173,6 @@ struct SourceCategoryCardsTests {
         list.layout = .list
         #expect(!row.loadsSameContent(as: cards))
         #expect(row.loadsSameContent(as: list))
-
-        let forYou = HomeSection(layout: .row, binding: .forYou)
-        #expect(ForYouInputs.categories(on: [row], for: forYou) == [references[0]])
-        #expect(ForYouInputs.categories(on: [cards], for: forYou) == references)
     }
 
     @Test("a card opens its category, the header the source's own page; the section is titled by its source")

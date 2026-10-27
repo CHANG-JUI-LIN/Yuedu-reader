@@ -1,20 +1,19 @@
 import Foundation
 
 /// The one place a book-source category's first page is fetched for a home (Discovery Phase
-/// 7a-1): the home's category rows, its 「最新」 rows and 為你推薦 all ask here.
+/// 7a-1): the home's category rows, its 分類卡片 and its 「最新」 rows all ask here.
 ///
 /// - **One request at a time per source.** A source's rules share one JS runtime, and
 ///   `BookSourceSession` does not serialize discover fetches (`SectionLoadPolicy.serialPerSource`),
-///   so a 為你推薦 refresh must never run beside the source's own row.
-/// - **One request per category in flight.** A row and 為你推薦 asking for the same category
-///   together share the request.
+///   so two of a source's rows never fetch side by side.
+/// - **One request per category in flight.** Two rows asking for the same category together
+///   share the request.
 /// - **Cookies primed once per source per sync**, before its first fetch, as the source's own
 ///   page primes once per load (`primeDiscoverCookiesIfNeeded` drops the site's token).
-/// - **Every page is saved** to `ForYouCandidateStore`, so 為你推薦 reads what the rows
-///   already fetched.
+/// - **Every page is saved** to `ForYouCandidateStore`, which 作品詳情's versions read with no
+///   request (7b-1).
 /// - **One request per category in the home's life**, until its pull to refresh: a page saved
-///   since then answers a later ask (Discovery Phase 7a-5). 為你推薦 asks for every stale
-///   category as the home appears; the rows coming into view later read what it fetched.
+///   since then answers a later ask (Discovery Phase 7a-5).
 ///
 /// One per home: `SourceProviderRegistry.homeProviders` hands it to the providers it makes,
 /// and calls `beginSync()` each time it makes them. The queue and the requests on their way

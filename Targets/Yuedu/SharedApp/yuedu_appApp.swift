@@ -7,7 +7,7 @@ struct yuedu_appApp: App {
     @UIApplicationDelegateAdaptor(RSSAppNotificationDelegate.self) private var rssNotificationDelegate
     // The app's own store is the only one that takes over the reading modes older builds
     // kept in UserDefaults, the only one whose removed books leave their names in
-    // 搜索's 最近閱讀, and the only one whose opened books feed 為你推薦's genres.
+    // 搜索's 最近閱讀, and the only one whose opened books feed AI 推薦's genres.
     @StateObject private var bookStore = BookStore(
         legacyReaderSettingsDefaults: .standard,
         offShelfReadRecordsDefaults: .standard,
@@ -118,8 +118,7 @@ struct yuedu_appApp: App {
         // anything reads `HomePageStore.shared` or `AggregationSettingsStore.shared`.
         if ProcessInfo.processInfo.arguments.contains("-reset-explore-home") {
             for key in [ExploreSettings.scopeKey, AggregationSettingsStore.defaultsKey,
-                        ExploreSettings.legacyLandingKey, HomePageStore.forYouInsertedKey,
-                        HomePageStore.defaultsRhythmKey] {
+                        ExploreSettings.legacyLandingKey, HomePageStore.defaultsRhythmKey] {
                 UserDefaults.standard.removeObject(forKey: key)
             }
             for name in ["explore_home.json", "custom_explore_pages.json"] {

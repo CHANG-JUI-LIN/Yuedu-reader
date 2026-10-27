@@ -100,11 +100,10 @@ final class SourceProviderRegistry {
     ///
     /// - Parameters:
     ///   - firstPages: the home's own, kept for as long as the home (Discovery Phase 7a-1), so
-    ///     its rows and 為你推薦 share one queue per source across syncs.
-    ///   - home: the home 為你推薦 reads its library rows from (7a-4).
+    ///     its rows share one queue per source across syncs.
     ///   - modules: the installed modules (Phase 6f); callers wait for its first read.
     func homeProviders(shelf: BookStore, sources: BookSourceStore = .shared, modules: RuleModuleLibrary? = nil,
-                       firstPages: DiscoverFirstPages, home: (any ForYouHomeRows)? = nil) -> [any HomeSectionProviding] {
+                       firstPages: DiscoverFirstPages) -> [any HomeSectionProviding] {
         let modules = modules ?? .shared
         firstPages.beginSync()
         var providers: [any HomeSectionProviding] = [ShelfProvider(store: shelf), SubscriptionArticlesProvider()]
@@ -117,7 +116,6 @@ final class SourceProviderRegistry {
         providers.append(gutenberg)
         providers.append(aozoraProvider)
         providers += Self.moduleProviders(in: modules)
-        providers.append(ForYouProvider(firstPages: firstPages, home: home, shelf: shelf))
         providers.append(AIRecommendationProvider())
         providers += DiscoverViewModel.exploreSources(in: sources).map { BookSourceProvider(source: $0, firstPages: firstPages) }
         return providers.filter { $0.availability != .hiddenInRegion }

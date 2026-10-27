@@ -53,9 +53,8 @@ struct AIRecommendationSectionTests {
     func policy() throws {
         let provider = AIRecommendationProvider(store: try store())
         #expect(provider.loadPolicy(for: HomeSection(layout: .row, binding: .aiRecommendations)) == .local)
-        #expect(provider.loadPolicy(for: HomeSection(layout: .row, binding: .forYou)) == nil)
+        #expect(provider.loadPolicy(for: HomeSection(layout: .row, binding: .related)) == nil)
         #expect(provider.hosts.isEmpty)
-        // `HomeModel.isLibrary` counts only libraries: 為你推薦 must not mix AI picks in.
         #expect(AIRecommendationProvider.instanceKey.type == .library)
     }
 
@@ -69,7 +68,7 @@ struct AIRecommendationSectionTests {
         #expect(HomeSectionBinding.aiRecommendations.contentOwner == .official)
         #expect(HomeSectionBinding.official == [.aiRecommendations])
         #expect(HomeReadFilter(hides: true, isRead: { _ in true }).hides(in: .aiRecommendations))
-        #expect(HomeLayoutStyle.choices(for: .aiRecommendations) == HomeLayoutStyle.choices(for: .forYou))
+        #expect(HomeLayoutStyle.choices(for: .aiRecommendations) == HomeLayoutStyle.choices(for: .related))
         #expect(section.displayTitle(sourceName: "") == localized("AI 推薦"))
     }
 
@@ -98,7 +97,7 @@ struct AIRecommendationSectionTests {
         let ai = HomeSectionGroup(section: HomeSection(layout: .row, binding: .aiRecommendations), rows: [], entries: [:])
         #expect(ai.state == .loaded([]))
         #expect(!ai.isSettledEmpty)
-        let other = HomeSectionGroup(section: HomeSection(layout: .row, binding: .forYou), rows: [], entries: [:])
+        let other = HomeSectionGroup(section: HomeSection(layout: .row, binding: .related), rows: [], entries: [:])
         #expect(other.isSettledEmpty)
     }
 }

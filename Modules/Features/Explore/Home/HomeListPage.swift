@@ -1,7 +1,7 @@
 import SwiftUI
 
-/// A card of a layout of lists whose list has no page of its own (繼續閱讀, 為你推薦, 相關, a 書架
-/// group…; `HomeListCards.swift`): the books the card drew, frozen when it was made, as a grid.
+/// A card of a layout of lists whose list has no page of its own (繼續閱讀, 相關, a 書架 group…;
+/// `HomeListCards.swift`): the books the card drew, frozen when it was made, as a grid.
 /// A book opens what its card on the home opens (`ExplorePush.card`).
 struct HomeListPage: View {
     let route: HomeListRoute
@@ -38,7 +38,7 @@ struct HomeListPage: View {
 
 #Preview("卡片的書") {
     NavigationStack {
-        HomeListPage(route: HomeListRoute(title: "為你推薦", binding: .forYou,
+        HomeListPage(route: HomeListRoute(title: "繼續閱讀", binding: .continueReading,
                                           entries: PublicLibraryCollection.all[0].books.prefix(6).map(CollectionEntry.bundledGutenberg)))
     }
     .environmentObject(BookStore())

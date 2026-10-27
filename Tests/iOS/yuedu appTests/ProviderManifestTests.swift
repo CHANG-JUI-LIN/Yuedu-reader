@@ -82,7 +82,7 @@ struct ProviderManifestTests {
         #expect(f.registry.opdsProvider(catalogID: PublicLibraryID.gutenberg.rawValue) != nil)
     }
 
-    @Test("home providers: the shelf, 訂閱, connections, Gutenberg, 青空文庫, the modules, 為你推薦, AI 推薦, then the explore sources; the region hides the public libraries and なろう")
+    @Test("home providers: the shelf, 訂閱, connections, Gutenberg, 青空文庫, the modules, AI 推薦, then the explore sources; the region hides the public libraries and なろう")
     func homeOrder() async throws {
         let f = try await makeFixture()
         defer { try? FileManager.default.removeItem(at: f.folder) }
@@ -105,7 +105,6 @@ struct ProviderManifestTests {
             ModuleProvider.instanceKey(moduleID: "openlibrary"),
             ModuleProvider.instanceKey(moduleID: "narou"),
             ModuleProvider.instanceKey(moduleID: "trends"),
-            ForYouProvider.instanceKey,
             AIRecommendationProvider.instanceKey,
             SourceInstanceKey(type: .bookSource, id: "https://explore.example"),
         ], "a source with no explore rule puts nothing on the home")
@@ -166,13 +165,9 @@ struct ProviderManifestTests {
         let providers = f.registry.homeProviders(shelf: f.shelf, sources: f.sources, modules: f.modules,
                                                  firstPages: firstPages(f.folder))
         let subscriptions = try #require(providers.first { $0.instance == SubscriptionArticlesProvider.instanceKey })
-        let forYou = try #require(providers.first { $0.instance == ForYouProvider.instanceKey })
 
         let articles = await subscriptions.manifest()
         #expect(articles.capabilities == [.homeSections])
         #expect(articles.hosts.isEmpty, "reads the articles already fetched")
-        let recommended = await forYou.manifest()
-        #expect(recommended.capabilities == [.homeSections])
-        #expect(recommended.hosts.isEmpty, "reads the pages the home already fetched")
     }
 }

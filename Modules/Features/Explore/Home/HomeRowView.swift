@@ -18,7 +18,6 @@ extension HomeSection {
         case .related: return localized("相關")
         case .nextInSeries: return localized("系列下一本")
         case .subscriptionArticles: return localized("訂閱的最新文章")
-        case .forYou: return localized("為你推薦")
         case .aiRecommendations: return localized("AI 推薦")
         // In a layout of lists the cards name their categories: the section is its source's.
         case .sourceCategories(let categories):
@@ -42,7 +41,6 @@ extension HomeSection {
         if !subtitle.isEmpty { return subtitle }
         switch binding {
         case .nextInSeries: return localized("你讀過的系列，接著讀下一本。")
-        case .forYou: return localized("根據你的閱讀紀錄挑選。")
         case .related: return localized("書架上同作者、同系列的書。")
         case .gutenbergLists: return localized("依主題整理的經典名著。")
         case .gutenbergShelf(let id) where id == "popular": return localized("最多人下載的經典。")

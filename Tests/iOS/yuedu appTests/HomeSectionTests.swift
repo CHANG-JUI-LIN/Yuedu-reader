@@ -86,7 +86,6 @@ struct HomeSectionTests {
             case .gutenbergLists: "featured"
             case .gutenbergShelf("popular"): "popular"
             case .nextInSeries: "next"
-            case .forYou: "forYou"
             default: "other"
             }
         }
@@ -97,21 +96,21 @@ struct HomeSectionTests {
     private var featured: [String] { ["featured"] }
 
     // 我的書庫 left the defaults in 5d-1 (settled decision 12): 範圍 holds the libraries.
-    // 為你推薦 after 系列下一本 for everyone since Discovery Phase 7a (maintainer's decision 4).
-    @Test("book-source readers start from 繼續閱讀 → 系列下一本 → 為你推薦 → 最新 → 古騰堡熱門 → 精選")
+    // 為你推薦 was deleted on 2026-10-27 (maintainer): no default has it.
+    @Test("book-source readers start from 繼續閱讀 → 系列下一本 → 最新 → 古騰堡熱門 → 精選")
     func bookSourceDefaults() {
         let page = HomePageDefaults.page(mode: .bookSources, publicLibrariesAvailable: true, languages: [])
-        #expect(kinds(page) == ["continue", "next", "forYou", "latest", "popular"] + featured)
+        #expect(kinds(page) == ["continue", "next", "latest", "popular"] + featured)
     }
 
-    @Test("public-library readers and new installs start from 繼續閱讀 → 系列下一本 → 為你推薦 → 古騰堡熱門 → 精選 → 最新")
+    @Test("public-library readers and new installs start from 繼續閱讀 → 系列下一本 → 古騰堡熱門 → 精選 → 最新")
     func publicLibraryDefaults() {
         let page = HomePageDefaults.page(mode: .publicLibraries, publicLibrariesAvailable: true, languages: [])
-        #expect(kinds(page) == ["continue", "next", "forYou", "popular"] + featured + ["latest"])
+        #expect(kinds(page) == ["continue", "next", "popular"] + featured + ["latest"])
         #expect(!page.sections.contains { if case .gutenbergCollection = $0.binding { true } else { false } })
         // After Apple Books' home (2026-10-25): the download ranking ranked, the lists as cards.
-        #expect(page.sections[3].layout == .rankedRow)
-        #expect(page.sections[4].layout == .categoryCards)
+        #expect(page.sections[2].layout == .rankedRow)
+        #expect(page.sections[3].layout == .categoryCards)
     }
 
     @Test("a Gutenberg shelf is kept by id and read on the endpoint this build uses")
@@ -134,7 +133,7 @@ struct HomeSectionTests {
             #expect(!kinds(page).contains("popular"))
         }
         let page = HomePageDefaults.page(mode: .bookSources, publicLibrariesAvailable: false, languages: [])
-        #expect(kinds(page) == ["continue", "next", "forYou", "latest"])
+        #expect(kinds(page) == ["continue", "next", "latest"])
     }
 
     // The official modules' lists in the reader's languages (maintainer, 2026-10-21).
@@ -170,14 +169,14 @@ struct HomeSectionTests {
         #expect(HomePageDefaults.officialModuleLists(languages: ["zh"], publicLibrariesAvailable: false).count == 2)
     }
 
-    @Test("the official modules' lists follow 為你推薦 for a new install, 最新 for a book-source reader")
+    @Test("the official modules' lists follow 系列下一本 for a new install, 最新 for a book-source reader")
     func officialModuleListsPlace() {
         let newInstall = HomePageDefaults.page(mode: .publicLibraries, publicLibrariesAvailable: true, languages: ["zh"])
-        #expect(kinds(newInstall) == ["continue", "next", "forYou", "other", "other", "popular"] + featured + ["latest"])
+        #expect(kinds(newInstall) == ["continue", "next", "other", "other", "popular"] + featured + ["latest"])
         let sources = HomePageDefaults.page(mode: .bookSources, publicLibrariesAvailable: true, languages: ["zh"])
-        #expect(kinds(sources) == ["continue", "next", "forYou", "latest", "other", "other", "popular"] + featured)
-        #expect(newInstall.sections[3].binding == .module(moduleID: "bangumi", entryID: "novel-rank"))
-        #expect(newInstall.sections[3].layout == .band)
+        #expect(kinds(sources) == ["continue", "next", "latest", "other", "other", "popular"] + featured)
+        #expect(newInstall.sections[2].binding == .module(moduleID: "bangumi", entryID: "novel-rank"))
+        #expect(newInstall.sections[2].layout == .band)
     }
 
     @Test("every default section is enabled, untitled and has its own id")

@@ -8,8 +8,7 @@ import Foundation
 /// flash the placeholder about twenty times while covers arrive).
 @MainActor
 final class AIRecommendationProvider: HomeSectionProviding {
-    /// The section's source. `.library`, like 為你推薦: on-device data, not a library row that
-    /// 為你推薦 would mix in (`HomeModel.isLibrary`).
+    /// The section's source. `.library`: on-device data, not a library row.
     static let instanceKey = SourceInstanceKey(type: .library, id: "aiRecommendations")
     /// The record of a suggestion Open Library did not match: data only, named 「AI 推薦」 in
     /// 作品詳情 (`FilledMetadata.providerName`).

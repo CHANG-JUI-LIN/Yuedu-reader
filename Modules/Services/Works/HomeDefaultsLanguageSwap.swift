@@ -103,8 +103,8 @@ enum HomeDefaultsLanguageSwap {
         return layouts
     }
 
-    /// Where the defaults put the lists: after the sections they put before them (繼續閱讀 to
-    /// 為你推薦, and 最新 where 來源配置 come first), else first.
+    /// Where the defaults put the lists: after the sections they put before them (繼續閱讀 and
+    /// 系列下一本, and 最新 where 來源配置 come first), else first.
     private static func defaultsPlace(in sections: [HomeSection], context: HomePageDefaults.Context) -> Int {
         let before = Set(HomePageDefaults.page(for: context).sections
             .prefix { if case .module = $0.binding { false } else { true } }

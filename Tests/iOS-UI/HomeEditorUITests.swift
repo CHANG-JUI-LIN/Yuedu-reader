@@ -53,8 +53,8 @@ final class HomeEditorUITests: XCTestCase {
         return app
     }
 
-    /// 熱門's own copy of `card`, the first below its header: 為你推薦 (Phase 7a-4), above it,
-    /// can hold the same book.
+    /// 熱門's own copy of `card`, the first below its header: a section above it can hold the
+    /// same book.
     @MainActor
     private func popularCard(_ app: XCUIApplication, under header: XCUIElement) throws -> XCUIElement {
         let top = header.frame.maxY
@@ -64,7 +64,7 @@ final class HomeEditorUITests: XCTestCase {
 
     /// 熱門's card once a new layout has drawn it as `drawn` says: 排行榜 and a layout of books
     /// give the section different rows, so it loads again. A copy bound before the change can
-    /// point at nothing, as 為你推薦, above it, need not hold the book.
+    /// point at nothing, as a section above it need not hold the book.
     @MainActor
     private func popularCard(_ app: XCUIApplication, under header: XCUIElement,
                              once drawn: @escaping (XCUIElement) -> Bool) throws -> XCUIElement {
@@ -151,9 +151,9 @@ final class HomeEditorUITests: XCTestCase {
         attach(app, "home-editing-top")
         XCTAssertFalse(done.isHittable, "and the page stays there: \(app.debugDescription)")
         // The content's size changing then, as a section's books arriving late would, leaves it
-        // there too: 為你推薦's card, hidden, is its name alone.
+        // there too: 系列下一本's card, hidden, is its name alone.
         let mark = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@ AND label == %@",
-                                                    "homeEditor.toggle.", "為你推薦")).firstMatch
+                                                    "homeEditor.toggle.", "系列下一本")).firstMatch
         XCTAssertTrue(mark.waitForExistence(timeout: 5), app.debugDescription)
         XCTAssertTrue(mark.isHittable, app.debugDescription)
         mark.tap()

@@ -655,7 +655,7 @@ struct HomeCategoryChoices: View {
 
 #Preview("選擇輪播數據") {
     NavigationStack {
-        HomeContentSourcePicker(current: .forYou, isPushed: true, title: localized("選擇輪播數據"), choose: { _ in }, cancel: {})
+        HomeContentSourcePicker(current: .continueReading, isPushed: true, title: localized("選擇輪播數據"), choose: { _ in }, cancel: {})
     }
     .environment(\.homePickerOffersBooksOnly, true)
 }

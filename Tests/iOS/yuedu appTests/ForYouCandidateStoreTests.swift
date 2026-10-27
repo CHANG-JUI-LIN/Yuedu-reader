@@ -2,8 +2,8 @@ import Foundation
 import Testing
 @testable import yuedu_app
 
-// Discovery Phase 7a-1: the candidate cache 為你推薦 reads, and the one place a category's
-// first page is fetched (`DiscoverFirstPages`), which the home's rows and 為你推薦 share.
+// Discovery Phase 7a-1: the first-page cache 作品詳情's versions read, and the one place a
+// category's first page is fetched (`DiscoverFirstPages`), which the home's rows share.
 
 private func book(_ name: String, source: UUID = UUID()) -> OnlineBook {
     OnlineBook(name: name, author: "作者", intro: "簡介", coverUrl: "/c/\(name).jpg", bookUrl: "https://src.test/book/\(name)",
@@ -30,14 +30,6 @@ struct ForYouCandidateStoreTests {
         #expect(read.books.first?.runtimeVariables == ["k": "v"])
         #expect(read.fetchedAt == fetched)
         #expect(await store.read(sourceURL: "https://a.test", categoryURL: "/new", sourceID: sourceID) == nil)
-    }
-
-    @Test("a category is fresh for 12 hours")
-    func freshness() {
-        let fetched = Date(timeIntervalSince1970: 1_800_000_000)
-        let candidates = ForYouCandidates(sourceURL: "s", categoryURL: "c", fetchedAt: fetched, books: [])
-        #expect(candidates.isFresh(at: fetched.addingTimeInterval(11 * 3600 + 59 * 60)))
-        #expect(!candidates.isFresh(at: fetched.addingTimeInterval(12 * 3600 + 60)))
     }
 
     @Test("at most the first 40 books are kept")
@@ -215,7 +207,7 @@ struct DiscoverFirstPagesTests {
         let a = source("a")
         await probe.release("a/hot")
         let fetched = try await pages.firstPage(of: category(a, "/hot"), in: a).value
-        // 為你推薦 fetched it as the home appeared; the row asks when it comes into view.
+        // One row fetched it; another of the same category asks when it comes into view.
         #expect(try await pages.firstPage(of: category(a, "/hot"), in: a).value.map(\.name) == fetched.map(\.name))
         #expect(await probe.log == ["prime a", "fetch a/hot"])
 

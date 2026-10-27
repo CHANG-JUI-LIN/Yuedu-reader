@@ -17,7 +17,7 @@ struct HomeModuleReferencesTests {
         let gone = section("不見了", module: "gone.module")
         let elsewhere = section("別的配置", module: "gone.module")
         let mine = HomeConfigurationID(rawValue: "mine")
-        var home = HomeConfigurations(sections: [kept, gone, HomeSection(layout: .row, binding: .forYou)],
+        var home = HomeConfigurations(sections: [kept, gone, HomeSection(layout: .row, binding: .related)],
                                       configurations: [HomeConfiguration(id: mine, name: "我的", sections: [elsewhere])])
 
         let references = home.moduleReferences(installed: ["a.one"])

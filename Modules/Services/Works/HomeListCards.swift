@@ -13,7 +13,7 @@ import Foundation
 //   古騰堡's with the home. 最新 is a card per library, as it is a row per library. A row that gives
 //   lists itself gives a card each: 精選書單's bundled lists, the 書架's groups.
 // - A card's covers are its list's first books and its name the list's own. It opens what the
-//   list's 查看全部 opens, or, for a list with no page of its own (繼續閱讀, 為你推薦, a 書架 group…),
+//   list's 查看全部 opens, or, for a list with no page of its own (繼續閱讀, a 書架 group…),
 //   the books it drew (`HomeListRoute`).
 // - The section shows once every card has loaded, as 分類卡片 did: a card that failed or holds
 //   nothing is left out (the model logs it), and the section fails only when every card did.
@@ -229,8 +229,8 @@ extension CollectionSummary {
     }
 }
 
-/// A card's books, for a list with no page of its own: 繼續閱讀, 為你推薦, 相關, 系列下一本, a 書架
-/// group. What the card drew, frozen in the route.
+/// A card's books, for a list with no page of its own: 繼續閱讀, 相關, 系列下一本, a 書架 group.
+/// What the card drew, frozen in the route.
 struct HomeListRoute: Hashable {
     let title: String
     /// The card's list, so a shelf copy on 繼續閱讀 or 書架 opens its reader as their cards do.

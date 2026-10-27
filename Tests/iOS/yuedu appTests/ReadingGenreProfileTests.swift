@@ -3,7 +3,7 @@ import Testing
 @testable import yuedu_app
 
 // Discovery Phase 7a-2: the genres the reader opens, recorded on the device (maintainer's
-// decision 3), for 為你推薦's genre match.
+// decision 3), for AI 推薦's genre match.
 
 @Suite("Reading genre profile")
 struct ReadingGenreProfileTests {

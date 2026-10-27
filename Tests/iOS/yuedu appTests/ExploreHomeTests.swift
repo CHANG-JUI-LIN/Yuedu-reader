@@ -23,7 +23,6 @@ struct ExploreHomeTests {
             case .gutenbergLists: "lists"
             case .gutenbergShelf("popular"): "popular"
             case .nextInSeries: "nextInSeries"
-            case .forYou: "forYou"
             default: "other"
             }
         }
@@ -39,7 +38,7 @@ struct ExploreHomeTests {
         #expect(sources.page == nil)
         let saved = sources.pageOrDefaults(mode: .bookSources, publicLibrariesAvailable: true, languages: [])
         // 精選書單, one section of the bundled lists, since 專題集合 (decision 37).
-        #expect(bindings(saved) == ["continueReading", "nextInSeries", "forYou", "latest", "popular", "lists"])
+        #expect(bindings(saved) == ["continueReading", "nextInSeries", "latest", "popular", "lists"])
         sources.waitForPendingWritesForTesting()
 
         // Read again in another mode: the saved page stands.
@@ -53,11 +52,11 @@ struct ExploreHomeTests {
         defer { try? FileManager.default.removeItem(at: folder) }
         let newInstall = HomePageStore(fileURL: folder.appendingPathComponent("a.json"))
         #expect(bindings(newInstall.pageOrDefaults(mode: .publicLibraries, publicLibrariesAvailable: true, languages: []))
-                == ["continueReading", "nextInSeries", "forYou", "popular", "lists", "latest"])
+                == ["continueReading", "nextInSeries", "popular", "lists", "latest"])
 
         let china = HomePageStore(fileURL: folder.appendingPathComponent("b.json"))
         #expect(bindings(china.pageOrDefaults(mode: .bookSources, publicLibrariesAvailable: false, languages: []))
-                == ["continueReading", "nextInSeries", "forYou", "latest"])
+                == ["continueReading", "nextInSeries", "latest"])
         newInstall.waitForPendingWritesForTesting()
         china.waitForPendingWritesForTesting()
     }

@@ -5,7 +5,7 @@ import Foundation
 ///
 /// Pages come through the home's `DiscoverFirstPages` (Discovery Phase 7a-1), which primes the
 /// discover cookies once per source per sync, as the source's own page primes them (audit
-/// §12.3), queues the source's fetches one at a time and saves each page for 為你推薦.
+/// §12.3), queues the source's fetches one at a time and saves each page (`ForYouCandidateStore`).
 @MainActor
 final class BookSourceProvider: HomeSectionProviding {
     let source: BookSource
@@ -38,7 +38,7 @@ final class BookSourceProvider: HomeSectionProviding {
     }
 
     /// The first page of the section's category: a row's books, or one card of a section of lists
-    /// (`HomeSection.listCards`, a card per category), each the request 為你推薦 makes too.
+    /// (`HomeSection.listCards`, a card per category), each the request a row of the category makes too.
     func load(_ section: HomeSection) async throws -> [CollectionEntry] {
         guard let category = category(for: section), category.cardItem != nil else { return [] }
         do {

@@ -289,7 +289,7 @@ class BookStore: @MainActor ObservableObject, BookProvider {
     /// (`OffShelfReadRecords`). Nil for a store on any shelf but the app's own, which then
     /// leaves no names behind.
     private let offShelfReadRecordsDefaults: UserDefaults?
-    /// Where opening a book records its genres for 為你推薦 (Discovery Phase 7a-2). Nil for a
+    /// Where opening a book records its genres for AI 推薦 (Discovery Phase 7a-2). Nil for a
     /// store on any shelf but the app's own.
     private let readingGenres: ReadingGenreRecorder?
 

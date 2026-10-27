@@ -8,14 +8,14 @@ import Foundation
 //   The home never lists the source's categories itself.
 // - Each card's covers are its category's first page through the home's `DiscoverFirstPages`
 //   (`BookSourceProvider`): one request per category in the home's life, the one a row of the
-//   category and 為你推薦 make, one at a time per source.
+//   category makes, one at a time per source.
 // - A card opens its category's whole list, as a category row's 查看全部 does; the section's
 //   header opens the source's own page (`ExplorePlace.listsPage`).
 // - A section of one source's categories keeps its `.sourceCategories` binding whatever its
 //   layout, so a build before 分類卡片 draws the first category's books.
 
 extension HomeSection {
-    /// The 來源配置 categories the section draws, which 為你推薦 mixes: each card's in a layout of
+    /// The 來源配置 categories the section draws: each card's in a layout of
     /// lists, the first one's in a layout of books. The others stay for a layout of lists.
     var drawnCategories: [ExploreCategoryReference] {
         if drawsLists {

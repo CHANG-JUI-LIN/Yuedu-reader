@@ -38,7 +38,7 @@ struct HomeDefaultsRhythmMigrationTests {
     @Test("a 預設 of 2026-10-13, before the modules' lists: 熱門 ranked, 精選書單 分類卡片, no band")
     func beforeModuleLists() throws {
         let outcome = try #require(Migration.apply(to: Migration.previousDefaults(for: context([]))))
-        #expect(outcome.sections.map(\.layout) == [.compactReadingCard, .row, .row, .rankedRow, .categoryCards, .row])
+        #expect(outcome.sections.map(\.layout) == [.compactReadingCard, .row, .rankedRow, .categoryCards, .row])
         #expect(outcome.changed == 2)
     }
 
@@ -46,7 +46,7 @@ struct HomeDefaultsRhythmMigrationTests {
     func chinese() throws {
         let outcome = try #require(Migration.apply(to: Migration.previousDefaults(for: context(["zh"]))))
         #expect(outcome.sections.map(\.layout)
-            == [.compactReadingCard, .row, .row, .band, .rankedRow, .rankedRow, .categoryCards, .row])
+            == [.compactReadingCard, .row, .band, .rankedRow, .rankedRow, .categoryCards, .row])
         #expect(outcome.changed == 4)
     }
 
@@ -111,7 +111,7 @@ struct HomeDefaultsRhythmMigrationTests {
         var added = saved
         added.append(HomeSection(layout: .row, binding: .bookshelf))
         var removed = saved
-        removed.removeAll { $0.binding == .forYou }
+        removed.removeAll { $0.binding == .nextInSeries }
         var moved = saved
         moved.swapAt(3, 4)
         for page in [added, removed, moved] { #expect(Migration.apply(to: page) == nil) }
@@ -120,7 +120,7 @@ struct HomeDefaultsRhythmMigrationTests {
     @Test("a 預設 from before 2026-10-13, a row per 書單, is not recognised")
     func beforeOneListSection() {
         let sections = [HomeSection(layout: .compactReadingCard, binding: .continueReading),
-                        HomeSection(layout: .row, binding: .nextInSeries), HomeSection(layout: .row, binding: .forYou),
+                        HomeSection(layout: .row, binding: .nextInSeries),
                         HomeSection(layout: .row, binding: popular),
                         HomeSection(layout: .row, binding: .gutenbergCollection(id: "chinese")),
                         HomeSection(layout: .row, binding: .gutenbergCollection(id: "mystery")),
@@ -209,13 +209,44 @@ struct HomeDefaultsRhythmStoreTests {
         #expect(store.home?.sections(of: .defaults).map(\.layout) == HomePageDefaults.page(for: chinese).sections.map(\.layout))
     }
 
-    @Test("a 預設 from before 為你推薦 is recognised once 為你推薦 is put after 系列下一本")
-    func beforeForYou() {
-        let url = savedHome(Migration.previousDefaults(for: chinese).filter { $0.binding != .forYou })
-        let store = HomePageStore(fileURL: url, defaults: suite(), insertsForYouOnce: true, appliesDefaultsRhythmOnce: true)
+    /// 為你推薦 as the builds before 2026-10-27 wrote it.
+    private var deletedForYou: HomeSection {
+        HomeSection(layout: .row, binding: .unknown(.object(["type": .string("forYou")])))
+    }
+
+    @Test("a 預設 that still has 為你推薦, after 系列下一本, has it taken off and is recognised")
+    func withDeletedForYou() throws {
+        var saved = Migration.previousDefaults(for: chinese)
+        saved.insert(deletedForYou, at: try position(of: .nextInSeries, in: saved) + 1)
+        let url = savedHome(saved)
+        let store = HomePageStore(fileURL: url, defaults: suite(), appliesDefaultsRhythmOnce: true)
+        store.waitForPendingWritesForTesting()
         let today = HomePageDefaults.page(for: chinese).sections
         #expect(store.page?.sections.map(\.binding) == today.map(\.binding))
         #expect(store.page?.sections.map(\.layout) == today.map(\.layout))
+        #expect(HomePageStore(fileURL: url).page == store.page, "the file holds it")
+    }
+
+    @Test("為你推薦, deleted, is taken off 預設 and the reader's own 首頁配置, cards of lists too, and the file is written")
+    func deletedForYouTakenOffEverywhere() throws {
+        let kept = HomeSection(layout: .row, binding: .bookshelf)
+        let card = HomeListCard(binding: .unknown(.object(["type": .string("forYou")])))
+        let hot = HomeListCard(binding: .module(moduleID: "m", entryID: "hot"))
+        let mixed = HomeSection(layout: .collageCards, binding: .lists([card, hot]))
+        let alone = HomeSection(layout: .collageCards, binding: .lists([card]))
+        let own = HomeConfigurationID(rawValue: "own")
+        let url = scratch()
+        try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try JSONEncoder().encode(HomeConfigurations(
+            sections: [deletedForYou, kept],
+            configurations: [HomeConfiguration(id: own, name: "我的", sections: [kept, deletedForYou, mixed, alone])])).write(to: url)
+        let store = HomePageStore(fileURL: url, defaults: suite())
+        store.waitForPendingWritesForTesting()
+        #expect(store.home?.sections(of: .defaults) == [kept])
+        var cardsLeft = mixed
+        cardsLeft.binding = .lists([hot])
+        #expect(store.home?.sections(of: own) == [kept, cardsLeft], "a section of lists keeps its other cards, and goes with its last")
+        #expect(HomePageStore(fileURL: url).home == store.home, "the file holds it")
     }
 
     @Test("a newer build's file is only read, and the one time waits for a build that writes")

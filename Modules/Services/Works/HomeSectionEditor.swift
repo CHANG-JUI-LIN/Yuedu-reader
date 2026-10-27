@@ -139,27 +139,6 @@ final class HomeSectionEditor: ObservableObject {
         HomeSection.filterValues(in: draft.parameters, sourceURL: sourceURL)
     }
 
-    // MARK: 為你推薦's categories
-
-    /// The categories 為你推薦 reads (Discovery Phase 7a-4): the selected 首頁配置's and its own,
-    /// less those left out.
-    var forYouCategories: [ExploreCategoryReference] {
-        guard let section = draft.section, section.binding == .forYou else { return [] }
-        return ForYouInputs.categories(on: store.page?.sections ?? [], for: section)
-    }
-
-    func addForYouCategory(_ reference: ExploreCategoryReference) {
-        guard var section = draft.section, section.binding == .forYou else { return }
-        section.addForYouCategory(reference, homeSections: store.page?.sections ?? [])
-        change { $0.parameters = section.parameters }
-    }
-
-    func removeForYouCategory(_ reference: ExploreCategoryReference) {
-        guard var section = draft.section, section.binding == .forYou else { return }
-        section.removeForYouCategory(reference, homeSections: store.page?.sections ?? [])
-        change { $0.parameters = section.parameters }
-    }
-
     // MARK: A section of lists
 
     /// The cards the section draws in a layout of lists (`HomeSection.listCards`), in this order.
