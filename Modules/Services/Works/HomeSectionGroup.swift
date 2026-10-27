@@ -27,9 +27,13 @@ struct HomeSectionGroup: Identifiable, Equatable {
     var id: String { section.id.uuidString }
 
     /// The section's name. A row of one source titled by that source (a feed, a category
-    /// list with no title) keeps the source's name as its title.
+    /// list with no title) keeps the source's name as its title; a section of lists from one
+    /// source, that source's own name.
     var title: String {
-        section.displayTitle(sourceName: rows.count == 1 ? rows[0].sourceName : "")
+        if section.drawsLists {
+            return section.displayTitle(sourceName: Set(rows.map(\.source)).count == 1 ? rows[0].providerName : "")
+        }
+        return section.displayTitle(sourceName: rows.count == 1 ? rows[0].sourceName : "")
     }
 
     /// The rows' states as one:
@@ -39,6 +43,7 @@ struct HomeSectionGroup: Identifiable, Equatable {
     /// - else it is empty, and takes no room.
     /// A failed row beside one with books is not shown; the model logs its failure.
     var state: HomeModel.RowState {
+        if section.drawsLists { return listsState }
         let alternated = Self.alternate(rows.compactMap { row in
             guard case .loaded = row.state else { return nil }
             return entries[row.id]
@@ -50,6 +55,28 @@ struct HomeSectionGroup: Identifiable, Equatable {
         }
         for row in rows { if case .failed(let message) = row.state { return .failed(message) } }
         return .loaded([])
+    }
+
+    /// A section of lists (`HomeSection.listCards`): loading until every card's row has loaded, so
+    /// the cards come together in their order (as 分類卡片 did); then the cards, a row that loaded
+    /// nothing or failed leaving its card out; failed when every card failed.
+    private var listsState: HomeModel.RowState {
+        if rows.contains(where: { if case .idle = $0.state { true } else if case .loading = $0.state { true } else { false } }) {
+            return .loading
+        }
+        let cards = rows.flatMap { row -> [CollectionEntry] in
+            guard let loaded = entries[row.id] else { return [] }
+            let languages = HomeScopeFilter.keepsOrder(row.loadingSection.binding) ? nil : languages
+            return CollectionSummary.cards(of: row, entries: loaded, languages: languages).map(CollectionEntry.collection)
+        }
+        if !cards.isEmpty { return .loaded(cards) }
+        for row in rows { if case .failed(let message) = row.state { return .failed(message) } }
+        return .loaded([])
+    }
+
+    /// A card for each row, while the section loads.
+    var loadingCards: [CollectionSummary] {
+        rows.map(CollectionSummary.loading)
     }
 
     /// Loaded with nothing in it: the home gives it no room. AI 推薦 is never settled empty:
@@ -119,18 +146,22 @@ enum HomeScopeFilter {
         }
         return order.compactMap { id in
             guard let section = sections[id], let rows = kept[id] else { return nil }
-            let hidesRead = readFilter.map { $0.hides(in: section.binding) } ?? false
             var entries: [String: [CollectionEntry]] = [:]
             for row in rows {
                 guard case .loaded(let loaded) = row.state else { continue }
                 let kept = Self.entries(loaded, of: row, in: scope)
+                // A card of a section of lists hides by its own list.
+                let hidesRead = readFilter.map { $0.hides(in: row.loadingSection.binding) } ?? false
                 entries[row.id] = hidesRead ? kept.filter { !(readFilter?.isRead($0) ?? false) } : kept
             }
-            // 繼續閱讀 and 系列下一本 keep the order the books were opened in; 書架, the 書架 tab's;
-            // 訂閱的最新文章, the newest first.
-            let ordered = [.continueReading, .bookshelf, .nextInSeries, .subscriptionArticles].contains(section.binding)
-                ? nil : languages
-            return HomeSectionGroup(section: section, rows: rows, entries: entries, languages: ordered)
+            return HomeSectionGroup(section: section, rows: rows, entries: entries,
+                                    languages: keepsOrder(section.binding) ? nil : languages)
         }
+    }
+
+    /// 繼續閱讀 and 系列下一本 keep the order the books were opened in; 書架, the 書架 tab's;
+    /// 訂閱的最新文章, the newest first: never 偏好閱讀語言's.
+    static func keepsOrder(_ binding: HomeSectionBinding) -> Bool {
+        [.continueReading, .bookshelf, .nextInSeries, .subscriptionArticles].contains(binding)
     }
 }

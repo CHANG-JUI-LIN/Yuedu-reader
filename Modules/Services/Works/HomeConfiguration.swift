@@ -228,10 +228,7 @@ struct HomeConfigurations: Codable, Hashable, Sendable {
     }
 
     func contains(_ reference: ExploreCategoryReference, in id: HomeConfigurationID) -> Bool {
-        sections(of: id).contains { section in
-            if case .sourceCategories(let references) = section.binding { return references.contains(reference) }
-            return false
-        }
+        sections(of: id).contains { $0.keptCategories.contains(reference) }
     }
 
     private func uniqueName(_ base: String) -> String {

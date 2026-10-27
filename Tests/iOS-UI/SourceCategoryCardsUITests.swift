@@ -2,7 +2,7 @@ import XCTest
 
 /// 分類卡片 of a 來源配置's section (maintainer, 2026-10-26): a card per category the section keeps,
 /// each read by VoiceOver as its category's name, opening that category's whole list; the section
-/// is switched to it from its long press, and its form ticks more categories.
+/// is switched to it from its long press, and its form's 加入清單 adds more (2026-10-27).
 ///
 /// Needs `python3 -I scripts/source_category_cards_fixture.py` (port 18773).
 final class SourceCategoryCardsUITests: XCTestCase {
@@ -132,10 +132,10 @@ final class SourceCategoryCardsUITests: XCTestCase {
         attach(app, "source-category-opened")
     }
 
-    /// A category row switched to 分類卡片 from its long press is one card; its form's 加入分類 ticks
-    /// a second category, and the home draws a card for it.
+    /// A category row switched to 分類卡片 from its long press is one card; its form's 加入清單 opens
+    /// 選擇內容來源, where the source's 全部清單 adds every category it lists, a card each.
     @MainActor
-    func testLongPressChoosesCardsAndTheFormAddsACategory() throws {
+    func testLongPressChoosesCardsAndTheFormAddsAllCategories() throws {
         let app = launchExplore(home: try home([category("玄幻", 1)], layout: "row"))
         let sectionHeader = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH 'home.row.header.' AND label CONTAINS %@",
                                                              "玄幻")).firstMatch
@@ -146,35 +146,45 @@ final class SourceCategoryCardsUITests: XCTestCase {
         layouts.tap()
         let cards = app.buttons["分類卡片"].firstMatch
         XCTAssertTrue(cards.waitForExistence(timeout: 5), app.debugDescription)
-        XCTAssertFalse(app.buttons["拼貼卡片"].exists, "only 分類卡片 of the layouts of lists")
+        XCTAssertTrue(app.buttons["拼貼卡片"].exists, "every layout of lists: \(app.debugDescription)")
         cards.tap()
         XCTAssertTrue(card(app, "玄幻").waitForExistence(timeout: 20), app.debugDescription)
 
         try openSettings(app)
-        let add = app.buttons["homeSection.categoryCard.add"].firstMatch
+        let add = app.buttons["homeSection.lists.add"].firstMatch
         for _ in 0..<4 where !(add.exists && add.isHittable) { app.swipeUp() }
         XCTAssertTrue(add.waitForExistence(timeout: 5), app.debugDescription)
-        XCTAssertTrue(app.descendants(matching: .any)["homeSection.categoryCard.玄幻"].exists, app.debugDescription)
+        let first = app.buttons["homeSection.listCard.0"].firstMatch
+        XCTAssertTrue(first.exists, app.debugDescription)
+        XCTAssertTrue(first.label.contains("玄幻") && first.label.contains(Self.sourceName),
+                      "a card reads its list and where it is from: \(first.label)")
         add.tap()
 
-        let chosen = app.buttons["homePicker.item.玄幻"].firstMatch
-        XCTAssertTrue(chosen.waitForExistence(timeout: 15), app.debugDescription)
-        XCTAssertTrue(chosen.isSelected, "the section's category is ticked")
-        let city = app.buttons["homePicker.item.都市"].firstMatch
-        XCTAssertFalse(city.isSelected)
-        city.tap()
-        XCTAssertTrue(city.waitForExistence(timeout: 5), "the list stays after a tick: \(app.debugDescription)")
-        expectation(for: NSPredicate(format: "isSelected == true"), evaluatedWith: city)
-        waitForExpectations(timeout: 5)
-        attach(app, "source-category-ticked")
+        let sources = app.buttons["homePicker.bookSources"].firstMatch
+        XCTAssertTrue(sources.waitForExistence(timeout: 10), app.debugDescription)
+        sources.tap()
+        let source = app.buttons["homePicker.source.\(Self.sourceName)"].firstMatch
+        XCTAssertTrue(source.waitForExistence(timeout: 10), app.debugDescription)
+        source.tap()
+        let all = app.buttons["homePicker.allLists"].firstMatch
+        XCTAssertTrue(all.waitForExistence(timeout: 15), app.debugDescription)
+        XCTAssertEqual(all.label, "全部清單")
+        attach(app, "source-category-all-lists")
+        all.tap()
 
-        app.navigationBars.buttons.element(boundBy: 0).tap()
-        XCTAssertTrue(app.descendants(matching: .any)["homeSection.categoryCard.都市"].waitForExistence(timeout: 5),
-                      app.debugDescription)
+        // The form's list is lazy: the cards past the screen exist once it scrolls to 加入清單, after them.
+        XCTAssertTrue(first.waitForExistence(timeout: 5), app.debugDescription)
+        for _ in 0..<6 where !(add.exists && add.isHittable) { app.swipeUp() }
+        let last = app.buttons["homeSection.listCard.3"].firstMatch
+        XCTAssertTrue(last.waitForExistence(timeout: 5), "全部清單 adds the other three categories once: \(app.debugDescription)")
+        XCTAssertTrue(last.label.contains("歷史"), last.label)
+        XCTAssertFalse(app.buttons["homeSection.listCard.4"].exists, "玄幻 is not added twice")
         attach(app, "source-category-form")
         app.navigationBars.buttons.element(boundBy: 0).tap()
-        XCTAssertTrue(card(app, "都市").waitForExistence(timeout: 20), app.debugDescription)
+        for title in ["都市", "仙俠", "歷史"] {
+            XCTAssertTrue(card(app, title).waitForExistence(timeout: 20), app.debugDescription)
+        }
         XCTAssertTrue(card(app, "玄幻").exists)
-        attach(app, "source-category-two-cards")
+        attach(app, "source-category-four-cards")
     }
 }

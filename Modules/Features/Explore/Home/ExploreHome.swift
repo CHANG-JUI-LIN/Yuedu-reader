@@ -565,7 +565,8 @@ struct HomeRowHost: View {
 
     @ViewBuilder
     private var row: some View {
-        if group.section.binding == .aiRecommendations {
+        // In a layout of lists, AI 推薦 is a card of its list, opening its page.
+        if group.section.binding == .aiRecommendations, !group.section.drawsLists {
             AIRecommendationRow(section: group.section, title: group.title, actions: actions, open: open)
         } else {
             rowView
@@ -585,7 +586,7 @@ struct HomeRowHost: View {
                         guard let row = group.rows.first else { return }
                         ExplorePlace.page(of: location, in: row, aozoraIndex: aozoraIndex).map(push)
                     },
-                    openCollection: { push(ExplorePlace.page(of: $0)) },
+                    openCollection: { push(ExplorePlace.page(of: $0, aozoraIndex: aozoraIndex)) },
                     openArticle: { push(.article(SubscriptionArticleRoute(articleID: $0.id))) },
                     actions: actions,
                     bookActions: bookActions)
@@ -625,14 +626,12 @@ struct HomeRowHost: View {
     }
 
     /// The page of a section of one source. 最新 across several has none: no one page lists
-    /// them all. 訂閱的最新文章's is RSS 訂閱 (decision 29), pushed since RSS left the tabs (5h).
+    /// them all. A section of lists, its source's page (`ExplorePlace.listsPage`).
     private var showAll: (() -> Void)? {
-        if group.section.binding == .subscriptionArticles {
-            return { push(.explore(.subscriptions)) }
-        }
-        guard group.rows.count == 1,
-              let target = ExplorePlace.showAll(group.rows[0], aozoraIndex: aozoraIndex) else { return nil }
-        return { push(target) }
+        let target = group.section.drawsLists
+            ? ExplorePlace.listsPage(group.rows)
+            : group.rows.count == 1 ? ExplorePlace.showAll(group.rows[0], aozoraIndex: aozoraIndex) : nil
+        return target.map { target in { push(target) } }
     }
 
     /// Every card opens 作品詳情 first, as Emby's posters open the item's page (Phase 5 plan,

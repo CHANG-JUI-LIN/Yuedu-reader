@@ -22,9 +22,9 @@ struct HomeReadFilter {
         // 繼續閱讀 is what is being read. 書架 is the shelf, which keeps a book read to the end.
         // 系列下一本 never offers a book read to the end: it offers the one after it. An
         // article's read state is the RSS tab's. An index's chips and 我的書庫's tiles are not
-        // books, nor are 精選書單's lists.
-        case .continueReading, .bookshelf, .nextInSeries, .subscriptionArticles, .aozoraIndex, .gutenbergLists, .myLibrary,
-             .unknown:
+        // books, nor are 精選書單's lists. A section of lists hides by each card's own list.
+        case .continueReading, .bookshelf, .nextInSeries, .subscriptionArticles, .aozoraIndex, .gutenbergLists, .lists,
+             .myLibrary, .unknown:
             return false
         }
     }

@@ -34,13 +34,13 @@ final class BookSourceProvider: HomeSectionProviding {
     var rateLimit: String? { BookSourceManifest.rateLimit(of: source) }
 
     func loadPolicy(for section: HomeSection) -> SectionLoadPolicy? {
-        categories(for: section).isEmpty ? nil : .serialPerSource
+        category(for: section) == nil ? nil : .serialPerSource
     }
 
+    /// The first page of the section's category: a row's books, or one card of a section of lists
+    /// (`HomeSection.listCards`, a card per category), each the request 為你推薦 makes too.
     func load(_ section: HomeSection) async throws -> [CollectionEntry] {
-        let categories = categories(for: section)
-        if section.drawsCategoryCards { return try await cards(of: categories) }
-        guard let category = categories.first, category.cardItem != nil else { return [] }
+        guard let category = category(for: section), category.cardItem != nil else { return [] }
         do {
             let books = try await firstPages.firstPage(of: category, in: source).value
             return books.prefix(HomeRow.limit).map { entry($0) }
@@ -49,52 +49,16 @@ final class BookSourceProvider: HomeSectionProviding {
         }
     }
 
-    /// The categories a section shows from this source: its own (`HomeSection.shownCategories`),
-    /// or the one picked for 「最新」.
-    private func categories(for section: HomeSection) -> [ExploreCategoryReference] {
+    /// The category a section shows from this source: its own, or the one picked for 「最新」.
+    private func category(for section: HomeSection) -> ExploreCategoryReference? {
         switch section.binding {
-        case .sourceCategories:
-            return section.shownCategories.filter { $0.sourceURL == source.bookSourceUrl }
+        case .sourceCategories(let references):
+            return references.first { $0.sourceURL == source.bookSourceUrl }
         case .latest:
-            return section.latestCategory(forSourceURL: source.bookSourceUrl).map { [$0] } ?? []
+            return section.latestCategory(forSourceURL: source.bookSourceUrl)
         default:
-            return []
+            return nil
         }
-    }
-
-    /// 分類卡片: a card per category, in the section's order, each its first page's first covers.
-    /// The pages are asked for together and come one at a time, each the request a row of the
-    /// category or 為你推薦 makes. A category that fails or holds no book has no card, in the log;
-    /// the section fails only when no card is left and a page failed.
-    private func cards(of categories: [ExploreCategoryReference]) async throws -> [CollectionEntry] {
-        let started = SourcePerfTrace.now
-        let pages = categories.map { category in
-            (category, category.cardItem == nil ? nil : firstPages.firstPage(of: category, in: source))
-        }
-        var cards: [CollectionEntry] = []
-        var failure: Error?
-        for (category, page) in pages {
-            let context = ["source": source.bookSourceUrl, "category": category.title]
-            guard let page else {
-                AppLogger.network("⟐ category card is not a discover category", context: context)
-                continue
-            }
-            do {
-                let books = try await page.value
-                guard !books.isEmpty else {
-                    AppLogger.network("⟐ category card's first page has no book", context: context)
-                    continue
-                }
-                cards.append(.collection(.sourceCategory(category, firstPage: books, source: source)))
-            } catch {
-                AppLogger.network("⟐ category card's first page failed", error: error, context: context)
-                if failure == nil { failure = error }
-            }
-        }
-        SourcePerfTrace.record("home.categoryCards", "categories=\(categories.count) cards=\(cards.count)",
-                               since: started, thresholdMs: 0, mainThreadStallBreadcrumb: false)
-        if cards.isEmpty, let failure { throw try SourceFailure.classify(failure) }
-        return cards
     }
 
     private func entry(_ book: OnlineBook) -> CollectionEntry {

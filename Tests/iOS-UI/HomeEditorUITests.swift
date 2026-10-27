@@ -454,8 +454,7 @@ final class HomeEditorUITests: XCTestCase {
         for _ in 0..<8 where !current.isHittable { app.swipeUp() }
         XCTAssertTrue(current.exists, app.debugDescription)
         XCTAssertTrue(current.isSelected, "the current layout is selected")
-        // No source is chosen yet, so every layout is offered; a section of books leaving out
-        // 專題集合 is `HomeLayoutStyleTests.choices`.
+        // Every layout is offered, a layout of lists to any source (`HomeListCardsTests.choices`).
         let list = app.buttons["homeSection.layoutChoice.list"].firstMatch
         for _ in 0..<8 where !list.isHittable { app.swipeUp() }
         list.tap()

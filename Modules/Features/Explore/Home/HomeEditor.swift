@@ -42,10 +42,15 @@ extension HomeSection {
         // 分類卡片, titled by its source as its row is.
         case .sourceCategories(let categories): sourceName = categories.first?.source?.bookSourceName ?? ""
         // An untitled module list (the defaults) by its list's title, as its row reads
-        // (`ModuleProvider.rowName`); by its id once its module is gone.
+        // (`ModuleProvider.rowName`); by its id once its module is gone. In a layout of lists
+        // the card names the list, and the section is its module's, as on the home.
         case .module(let moduleID, let entryID):
             let module = modules.installed(id: moduleID)?.module
-            sourceName = module?.modules.first { $0.id == entryID }?.title ?? module?.title ?? entryID
+            let list = drawsLists ? nil : module?.modules.first { $0.id == entryID }?.title
+            sourceName = list ?? module?.title ?? entryID
+        // Lists from one source, by the source.
+        case .lists:
+            sourceName = binding.contentOwner?.name(sources: .shared, connections: connections, modules: modules) ?? ""
         default: sourceName = ""
         }
         return displayTitle(sourceName: sourceName)

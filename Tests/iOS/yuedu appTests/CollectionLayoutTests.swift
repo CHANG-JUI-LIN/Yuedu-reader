@@ -88,13 +88,11 @@ struct CollectionLayoutTests {
         #expect(HomeSectionBinding.gutenbergLists.contentOwner == .gutenberg)
     }
 
-    @Test("A list section offers the layouts of lists alone; a section of books never offers them")
+    @Test("A list section offers the layouts of lists alone; a section of books every layout, its list a card")
     func choices() {
         #expect(HomeLayoutStyle.choices(for: .gutenbergLists) == [.collection, .categoryCards, .collageCards])
         for binding: HomeSectionBinding in [.latest, .continueReading, .gutenbergCollection(id: "chinese"), .aozoraNew] {
-            let choices = HomeLayoutStyle.choices(for: binding)
-            #expect(!choices.contains { $0.drawsLists })
-            #expect(choices.contains(.featured))
+            #expect(HomeLayoutStyle.choices(for: binding) == HomeLayoutStyle.allCases)
         }
     }
 

@@ -24,6 +24,9 @@ private struct ExploreRouteDestinations: ViewModifier {
             .navigationDestination(for: SubscriptionArticleRoute.self) { route in
                 RSSArticleReaderView(articleID: route.articleID)
             }
+            .navigationDestination(for: HomeListRoute.self) { route in
+                HomeListPage(route: route)
+            }
     }
 
     @ViewBuilder
@@ -139,6 +142,8 @@ enum ExplorePush: Hashable {
     case folder(WebDAVDirectoryRoute)
     case publicLibrary(PublicLibraryRoute)
     case article(SubscriptionArticleRoute)
+    /// A card's books, for a list with no page of its own (`HomeListRoute`).
+    case list(HomeListRoute)
 
     /// What a home card opens: 作品詳情, where reading starts (decision 27), except a shelf copy
     /// on 繼續閱讀 or 書架, which goes straight back into its reader as the shelf's own cards do
@@ -160,6 +165,7 @@ enum ExplorePush: Hashable {
         case .folder(let route): path.append(route)
         case .publicLibrary(let route): path.append(route)
         case .article(let route): path.append(route)
+        case .list(let route): path.append(route)
         }
     }
 }
@@ -219,9 +225,7 @@ enum ExplorePlace {
                 // A WebDAV library's newest files are gathered from every folder; no page lists them.
                 return nil
             }
-        // 分類卡片: each card opens its category, the header the source's own page.
         case .sourceCategories(let references):
-            if row.section.drawsCategoryCards { return .explore(.source(sourceURL: row.source.id)) }
             return references.first { $0.sourceURL == row.source.id }.map { .explore(.sourceCategory($0)) }
         case .opdsFeed(let connectionID, let url):
             return .feed(OPDSFeedRoute(catalogID: connectionID, url: url, title: row.section.displayTitle(sourceName: row.sourceName)))
@@ -242,26 +246,46 @@ enum ExplorePlace {
         case .aozoraIndex(let kind):
             guard let aozoraIndex, let mode = AozoraBrowseMode(rawValue: kind) else { return nil }
             return .publicLibrary(.aozoraCatalog(mode, aozoraIndex))
-        // 訂閱的最新文章: the rest is RSS 訂閱 (`ExploreNavigationRoute.subscriptions`).
+        // 訂閱的最新文章: the rest is RSS 訂閱 (decision 29), pushed since RSS left the tabs (5h).
+        case .subscriptionArticles:
+            return .explore(.subscriptions)
         // A module list's whole page, page by page, with the section's values (6f-2).
         case .module(let moduleID, let entryID):
             return .explore(.moduleList(ModuleListRoute(moduleID: moduleID, entryID: entryID,
                                                         title: row.section.displayTitle(sourceName: row.sourceName),
                                                         parameters: row.section.parameters)))
         // 為你推薦 is mixed from many places; no page lists it whole. AI 推薦's row is its whole list.
-        // 書架's whole list is the 書架 tab, which 探索 cannot switch to.
-        case .myLibrary, .continueReading, .bookshelf, .related, .nextInSeries, .subscriptionArticles, .forYou,
-             .aiRecommendations, .unknown:
+        // 書架's whole list is the 書架 tab, which 探索 cannot switch to. A section of lists has
+        // a card per list, each opening its own (`listsPage` is its header's).
+        case .myLibrary, .continueReading, .bookshelf, .related, .nextInSeries, .forYou,
+             .aiRecommendations, .lists, .unknown:
             return nil
         }
     }
 
-    /// A card of a layout of lists: the whole list. A category's is the page its row's 查看全部
-    /// opens.
-    static func page(of collection: CollectionSummary) -> ExplorePush {
+    /// A section of lists' 查看全部: the page of the one source its cards are all from, as 分類卡片's
+    /// header opened its 來源配置's (2026-10-26). Cards from several sources have none, nor
+    /// 精選書單's, whose lists no page lists alone.
+    @MainActor
+    static func listsPage(_ rows: [HomeModel.Row], connections: RemoteLibraryConnectionStore = .shared) -> ExplorePush? {
+        guard let row = rows.first, row.section.binding != .gutenbergLists,
+              rows.allSatisfy({ $0.source == row.source }) else { return nil }
+        return page(of: row.source, name: row.providerName, connections: connections)
+    }
+
+    /// A card of a layout of lists: the whole list. A card of a section's lists opens what its
+    /// list's 查看全部 opens; AI 推薦 its page; a list with no page of its own, the books it drew.
+    @MainActor
+    static func page(of collection: CollectionSummary, aozoraIndex: AozoraCatalogIndex?) -> ExplorePush {
         switch collection.opening {
-        case .gutenbergCollection(let id): .publicLibrary(.collection(id: id))
-        case .sourceCategory(let category): .explore(.sourceCategory(category))
+        case .gutenbergCollection(let id):
+            return .publicLibrary(.collection(id: id))
+        case .list(let list):
+            let row = HomeModel.Row(id: collection.id, section: list.section, source: list.source, sourceName: list.sourceName,
+                                    policy: .local, state: .idle)
+            if let page = showAll(row, aozoraIndex: aozoraIndex) { return page }
+            if list.section.binding == .aiRecommendations { return .explore(.aiRecommendations) }
+            return .list(HomeListRoute(title: list.title, binding: list.section.binding, entries: list.entries))
         }
     }
 

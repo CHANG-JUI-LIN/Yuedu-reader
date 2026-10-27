@@ -16,10 +16,10 @@ extension HomeSection {
 
 extension HomeSection {
     /// Whether a row of this section loads what a row of `other` loads: the title and the
-    /// layout change only how it is drawn, except that a 來源配置's 分類卡片 loads a card per
-    /// category where its other layouts load the first one's books.
+    /// layout change only how it is drawn, except that a layout of lists loads lists where a
+    /// layout of books loads books (the 書架's groups, `HomeSection.listCards`).
     func loadsSameContent(as other: HomeSection) -> Bool {
-        parameters == other.parameters && binding == other.binding && drawsCategoryCards == other.drawsCategoryCards
+        parameters == other.parameters && binding == other.binding && drawsLists == other.drawsLists
     }
 }
 

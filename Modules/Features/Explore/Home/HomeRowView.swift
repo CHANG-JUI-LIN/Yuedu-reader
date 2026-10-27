@@ -20,9 +20,11 @@ extension HomeSection {
         case .subscriptionArticles: return localized("訂閱的最新文章")
         case .forYou: return localized("為你推薦")
         case .aiRecommendations: return localized("AI 推薦")
-        // 分類卡片's cards name their categories: the section is its source's.
+        // In a layout of lists the cards name their categories: the section is its source's.
         case .sourceCategories(let categories):
-            return drawsCategoryCards ? sourceName : categories.first?.title ?? sourceName
+            return drawsLists ? sourceName : categories.first?.title ?? sourceName
+        // Lists from one source, by the source; from several, 清單.
+        case .lists: return sourceName.isEmpty ? localized("清單") : sourceName
         case .gutenbergCollection(let id):
             return PublicLibraryCollection.all.first { $0.id == id }.map { localized($0.titleKey) } ?? sourceName
         case .gutenbergLists: return localized("精選書單")
@@ -235,12 +237,11 @@ struct HomeRowView: View {
     }
 
     /// The section's layout with blank cards, so the page does not jump when the books arrive:
-    /// 分類卡片's a card per category, which waits for a page per card.
+    /// a section of lists a card per list, which waits for every card's row.
     private var placeholder: some View {
         Group {
-            if group.section.drawsCategoryCards {
-                HomeSectionLists(layout: group.section.layout,
-                                 collections: group.section.shownCategories.map(CollectionSummary.placeholder), open: { _ in })
+            if group.section.drawsLists {
+                HomeSectionLists(layout: group.section.layout, collections: group.loadingCards, open: { _ in })
             } else {
                 HomeSectionCards(layout: group.section.layout, cards: (0..<6).map(HomeCardContent.placeholder), rowID: group.id,
                                  hasShowAll: showAll != nil, open: { _, _ in }, bandCover: drawsBand ? $bandCover : nil)
@@ -272,17 +273,6 @@ struct HomeRowView: View {
         }
         .contentMargins(.horizontal, DSSpacing.lg, for: .scrollContent)
         .scrollIndicators(.hidden)
-    }
-}
-
-private extension CollectionSummary {
-    /// A category's card while its page loads: its name over three blank covers.
-    static func placeholder(_ category: ExploreCategoryReference) -> CollectionSummary {
-        CollectionSummary(id: category.id, title: category.title,
-                          books: (0..<artworkLimit).map { _ in
-                              WorkSummary(title: "", authors: [], cover: nil, blurb: nil, language: nil, contentKind: .text)
-                          },
-                          languages: [], opening: .sourceCategory(category))
     }
 }
 

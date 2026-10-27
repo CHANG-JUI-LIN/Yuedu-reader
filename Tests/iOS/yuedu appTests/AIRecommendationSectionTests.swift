@@ -70,7 +70,6 @@ struct AIRecommendationSectionTests {
         #expect(HomeSectionBinding.official == [.aiRecommendations])
         #expect(HomeReadFilter(hides: true, isRead: { _ in true }).hides(in: .aiRecommendations))
         #expect(HomeLayoutStyle.choices(for: .aiRecommendations) == HomeLayoutStyle.choices(for: .forYou))
-        #expect(!HomeLayoutStyle.choices(for: .aiRecommendations).contains(.collection))
         #expect(section.displayTitle(sourceName: "") == localized("AI 推薦"))
     }
 

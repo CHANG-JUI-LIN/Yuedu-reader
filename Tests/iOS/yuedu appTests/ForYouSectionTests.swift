@@ -294,7 +294,8 @@ struct ForYouProviderTests {
                                                         fetchedAt: date.addingTimeInterval(-3600), books: books))
             }
             return ForYouProvider(firstPages: pages, home: nil, shelf: shelf, candidates: candidates,
-                                  homeSections: { [HomeSection(layout: .row, binding: .sourceCategories(categories))] },
+                                  // A row per category: a row draws, and 為你推薦 mixes, its first category alone.
+                                  homeSections: { categories.map { HomeSection(layout: .row, binding: .sourceCategories([$0])) } },
                                   sources: { sources }, genres: genres, exposure: exposure,
                                   languages: { .init(language: "zh-Hant") }, now: { date })
         }

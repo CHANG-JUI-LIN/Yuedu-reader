@@ -67,12 +67,14 @@ struct HomeLayoutStyleTests {
         #expect(page.sections[1].binding == .related)
     }
 
-    @Test("a section of books is offered every layout of books; a section of lists the layouts of lists")
+    @Test("a section of books is offered every layout, its list a card in a layout of lists; lists alone the layouts of lists")
     func choices() {
         for binding in [HomeSectionBinding.continueReading, .latest, .aiRecommendations] {
-            #expect(HomeLayoutStyle.choices(for: binding) == HomeLayoutStyle.allCases.filter { !$0.drawsLists })
+            #expect(HomeLayoutStyle.choices(for: binding) == HomeLayoutStyle.allCases)
         }
-        #expect(HomeLayoutStyle.choices(for: .gutenbergLists) == [.collection, .categoryCards, .collageCards, .bannerCards])
+        for binding in [HomeSectionBinding.gutenbergLists, .lists([])] {
+            #expect(HomeLayoutStyle.choices(for: binding) == [.collection, .categoryCards, .collageCards, .bannerCards])
+        }
     }
 
     @Test("色帶書架 is the 頂部輪播圖, no layout to choose: a band saved anywhere else draws as 大型封面書架")

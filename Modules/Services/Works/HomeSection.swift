@@ -124,6 +124,11 @@ enum HomeSectionBinding: Hashable, Sendable {
     /// suggested (`AIRecommendationProvider`), generated only when the reader asks. A build
     /// before it reads it as `.unknown` and writes it back as it came.
     case aiRecommendations
+    /// A section of lists put together in its form (maintainer, 2026-10-27): a card per list,
+    /// from any sources, each with its own parameters (`HomeListCard`). A section of one list, or
+    /// of one 來源配置's categories, keeps the binding it had (`HomeSection.listCards`). A build
+    /// before it reads it as `.unknown` and writes it back as it came.
+    case lists([HomeListCard])
     /// A binding a later build wrote, kept exactly as it was read.
     case unknown(PreservedJSON)
 
@@ -135,13 +140,13 @@ enum HomeSectionBinding: Hashable, Sendable {
 
 extension HomeSectionBinding: Codable {
     private enum CodingKeys: String, CodingKey {
-        case type, categories, connectionID, url, id, kind, moduleID, entryID
+        case type, categories, connectionID, url, id, kind, moduleID, entryID, cards
     }
 
     private enum Kind: String {
         case myLibrary, continueReading, bookshelf, latest, sourceCategories, opdsFeed
         case gutenbergCollection, gutenbergLists, gutenbergFeed, gutenbergShelf, aozoraNew, aozoraIndex, related, nextInSeries
-        case subscriptionArticles, forYou, module, aiRecommendations
+        case subscriptionArticles, forYou, module, aiRecommendations, lists
     }
 
     init(from decoder: Decoder) throws {
@@ -175,6 +180,7 @@ extension HomeSectionBinding: Codable {
         case .module:
             self = .module(moduleID: try container.decode(String.self, forKey: .moduleID),
                            entryID: try container.decode(String.self, forKey: .entryID))
+        case .lists: self = .lists(try container.decode([HomeListCard].self, forKey: .cards))
         }
     }
 
@@ -230,6 +236,9 @@ extension HomeSectionBinding: Codable {
             try container.encode(Kind.module.rawValue, forKey: .type)
             try container.encode(moduleID, forKey: .moduleID)
             try container.encode(entryID, forKey: .entryID)
+        case .lists(let cards):
+            try container.encode(Kind.lists.rawValue, forKey: .type)
+            try container.encode(cards, forKey: .cards)
         case .unknown:
             break
         }

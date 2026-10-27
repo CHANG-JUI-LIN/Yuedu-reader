@@ -80,13 +80,14 @@ final class ModuleProvider: CollectionBrowsing, HomeSectionProviding {
     }
 
     /// The list's own title, in the app's language: a section the defaults made has none, and
-    /// the home names no source (Phase 5 plan, decision 19).
+    /// the home names no source (Phase 5 plan, decision 19). A card of a layout of lists adds the
+    /// options its own values pick (今日熱門 · 日本): two cards of one list differ by them alone.
     func rowName(for section: HomeSection) -> String {
-        guard case .module(_, let entryID) = section.binding,
-              let title = entry(entryID)?.title?.trimmingCharacters(in: .whitespacesAndNewlines), !title.isEmpty else {
+        guard case .module(_, let entryID) = section.binding, let entry = entry(entryID),
+              let title = entry.title?.trimmingCharacters(in: .whitespacesAndNewlines), !title.isEmpty else {
             return displayName
         }
-        return title
+        return section.drawsLists ? entry.cardName(title, parameters: section.parameters) : title
     }
 
     func load(_ section: HomeSection) async throws -> [CollectionEntry] {
@@ -279,4 +280,16 @@ extension RuleModule.Entry {
 
     /// Longer than a category: a phrase, not a genre.
     nonisolated static let tagLengthLimit = 24
+}
+
+extension RuleModule.Entry {
+    /// `title` with the options `parameters` pick by name (今日熱門 · 日本): what tells two cards of
+    /// one list apart, in a layout of lists and in its form.
+    func cardName(_ title: String, parameters: [String: String]) -> String {
+        let picked = editableParams.compactMap { param -> String? in
+            guard param.kind == .enumeration, let value = parameters[param.name] else { return nil }
+            return param.enumOptions?.first { $0.value == value }?.title
+        }
+        return ([title] + picked).joined(separator: " · ")
+    }
 }

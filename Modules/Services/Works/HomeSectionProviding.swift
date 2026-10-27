@@ -65,6 +65,7 @@ extension ShelfProvider: HomeSectionProviding {
     func load(_ section: HomeSection) async throws -> [CollectionEntry] {
         switch section.binding {
         case .continueReading: continueReading(limit: HomeRow.limit)
+        case .bookshelf where section.drawsLists: bookshelfGroups(limit: HomeRow.limit)
         case .bookshelf: bookshelf(limit: HomeRow.limit)
         case .related: await related(limit: HomeRow.limit)
         case .nextInSeries: await nextInSeries(limit: HomeRow.limit)

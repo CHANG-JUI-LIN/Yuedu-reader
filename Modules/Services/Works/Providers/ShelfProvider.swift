@@ -97,6 +97,27 @@ final class ShelfProvider: CollectionBrowsing {
         items(Array(sortOrder().sorted(store.books).prefix(limit)))
     }
 
+    /// 書架 in a layout of lists (maintainer, 2026-10-27): a card per group, as the 書架 tab
+    /// groups it, then one of the books in none (未分組); each its first `limit` books in the tab's
+    /// order. No page lists a group outside the shelf, so a card opens the books it drew.
+    func bookshelfGroups(limit: Int) -> [CollectionEntry] {
+        let sorted = sortOrder().sorted(store.books)
+        let groups = store.allGroups.map { ($0, $0) } + [("", localized("未分組"))]
+        return groups.compactMap { group, title -> CollectionEntry? in
+            let books = sorted.lazy.filter { $0.group == group }.prefix(limit)
+            guard !books.isEmpty else { return nil }
+            let entries = items(Array(books))
+            let summaries = entries.compactMap { entry -> WorkSummary? in
+                if case .item(_, let summary, _) = entry { return summary }
+                return nil
+            }
+            let opening = HomeListOpening(section: HomeSection(layout: .row, binding: .bookshelf), source: instance,
+                                          sourceName: displayName, title: title, entries: entries)
+            return .collection(CollectionSummary(id: "group/\(group)", title: title, books: summaries, languages: [],
+                                                 opening: .list(opening), sourceName: displayName))
+        }
+    }
+
     private func recentlyOpened(limit: Int, where included: (ReadingBook) -> Bool = \.isInContinueReading) -> [ReadingBook] {
         Array(store.books
             .compactMap { book in included(book) ? book.lastOpenedDate.map { (book, $0) } : nil }

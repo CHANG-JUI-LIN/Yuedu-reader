@@ -101,11 +101,8 @@ final class HomeSectionEditor: ObservableObject {
             $0.binding = binding
             $0.parameters = parameters
             if followsChoice { $0.title = title }
-            // Lists are drawn by the layouts of lists and books never are
-            // (`HomeLayoutStyle.choices`): a choice across the two takes the layout that draws it.
-            if !HomeLayoutStyle.choices(for: binding).contains($0.layout.style) {
-                $0.layout = binding.listsCollections ? .collection : .row
-            }
+            // What is lists alone is drawn only by the layouts of lists (`HomeLayoutStyle.choices`).
+            if !HomeLayoutStyle.choices(for: binding).contains($0.layout.style) { $0.layout = .collection }
         }
         if followsChoice { chosenTitle = title }
     }
@@ -163,40 +160,80 @@ final class HomeSectionEditor: ObservableObject {
         change { $0.parameters = section.parameters }
     }
 
-    // MARK: 分類卡片's categories
+    // MARK: A section of lists
 
-    /// The categories a 來源配置's 分類卡片 draws, a card each, in this order.
-    var cardCategories: [ExploreCategoryReference] {
-        guard let section = draft.section, section.drawsCategoryCards else { return [] }
-        return section.shownCategories
+    /// The cards the section draws in a layout of lists (`HomeSection.listCards`), in this order.
+    var listCards: [HomeListCard] {
+        draft.section?.listCards ?? []
     }
 
-    var canAddCardCategory: Bool {
-        cardCategories.count < HomeSection.categoryCardLimit
+    var canAddCard: Bool {
+        listCards.count < HomeSection.listCardLimit
     }
 
-    /// 加入分類's tap: a category of the section's source goes at the end, with the discover
-    /// filter values it was listed under (`HomeSection.filtersKey`), or comes out. The last one
-    /// stays: without it the section would have no source.
-    func toggleCardCategory(_ reference: ExploreCategoryReference, filterValues: [String: String]) {
-        let categories = cardCategories
-        if categories.contains(reference) {
-            removeCardCategory(reference)
-            return
+    /// 加入清單: `cards` after the ones there, each once, up to `HomeSection.listCardLimit`.
+    func addCards(_ cards: [HomeListCard]) {
+        var kept = listCards
+        for card in cards where kept.count < HomeSection.listCardLimit && !kept.contains(card) { kept.append(card) }
+        setCards(kept)
+    }
+
+    /// The last card stays: without it the section would show nothing.
+    func removeCard(at index: Int) {
+        var cards = listCards
+        guard cards.count > 1, cards.indices.contains(index) else { return }
+        cards.remove(at: index)
+        setCards(cards)
+    }
+
+    /// Moves cards as `List.onMove` reports it.
+    func moveCards(fromOffsets source: IndexSet, toOffset destination: Int) {
+        var cards = listCards
+        guard source.allSatisfy(cards.indices.contains), (0...cards.count).contains(destination) else { return }
+        let moving = source.sorted().map { cards[$0] }
+        let insertion = destination - source.filter { $0 < destination }.count
+        for offset in source.sorted(by: >) { cards.remove(at: offset) }
+        cards.insert(contentsOf: moving, at: insertion)
+        setCards(cards)
+    }
+
+    /// A card's own parameter (趨勢's 地區, maintainer 2026-10-27); nil goes back to its list's default.
+    func setCardParameter(at index: Int, _ name: String, to value: String?) {
+        var cards = listCards
+        guard cards.indices.contains(index) else { return }
+        cards[index].parameters[name] = value
+        setCards(cards)
+    }
+
+    /// A card's list picked again: a category under other filters.
+    func replaceCard(at index: Int, with card: HomeListCard) {
+        var cards = listCards
+        guard cards.indices.contains(index), !cards.contains(card) else { return }
+        cards[index] = card
+        setCards(cards)
+    }
+
+    /// The cards written as the section (`HomeSection.settingCards`), and after them those the
+    /// form does not show, kept as they were: a later build's lists, and any past the limit. One
+    /// card of a list that cannot name itself titles the section as 選擇內容來源's choice does;
+    /// more cards take that title back, so the section follows its source.
+    private func setCards(_ cards: [HomeListCard]) {
+        guard !cards.isEmpty else { return }
+        var kept = cards
+        if case .lists(let stored) = draft.binding {
+            kept += stored.filter(\.isDrawable).dropFirst(HomeSection.listCardLimit) + stored.filter { !$0.isDrawable }
         }
-        guard let first = categories.first, first.sourceURL == reference.sourceURL, canAddCardCategory,
-              var section = draft.section else { return }
-        section.setFilterValues(filterValues, forSourceURL: reference.sourceURL)
+        let base = HomeSection(id: draft.id, layout: draft.layout, title: draft.title, subtitle: draft.subtitle,
+                               binding: draft.binding ?? .lists([]), isEnabled: draft.isEnabled, parameters: draft.parameters)
+        let written = base.settingCards(kept)
+        let followsChoice = draft.title.isEmpty || draft.title == chosenTitle
+        let title = cards.count == 1 ? cards[0].title : ""
         change {
-            $0.binding = .sourceCategories(categories + [reference])
-            $0.parameters = section.parameters
+            $0.binding = written.binding
+            $0.parameters = written.parameters
+            if followsChoice { $0.title = title }
         }
-    }
-
-    func removeCardCategory(_ reference: ExploreCategoryReference) {
-        let categories = cardCategories
-        guard categories.count > 1, categories.contains(reference) else { return }
-        change { $0.binding = .sourceCategories(categories.filter { $0 != reference }) }
+        if followsChoice { chosenTitle = title }
     }
 
     // MARK: 最新's libraries

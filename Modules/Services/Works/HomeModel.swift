@@ -32,6 +32,17 @@ final class HomeModel: ObservableObject {
         var state: RowState
         /// `HomeSectionProviding.inputsKey`: what the row read besides its section.
         var inputsKey: String? = nil
+        /// A card of a section of lists (`HomeSection.listCards`) and its place among them; nil
+        /// for a section of books, whose row is the section's.
+        var card: HomeListCard? = nil
+        var cardIndex: Int? = nil
+        /// The source's own name (`SourceProvider.displayName`): a card's source, over it in 大圖卡片.
+        var providerName = ""
+
+        /// What the row loads: its card's list, or its section.
+        var loadingSection: HomeSection {
+            card.map(section.cardSection) ?? section
+        }
     }
 
     @Published private(set) var rows: [Row] = []
@@ -102,6 +113,8 @@ final class HomeModel: ObservableObject {
     ///   includes the home's categories (`inputsKey`) and its library rows (`readsHomeLibraryRows`).
     /// - `hiddenFromLatest`: the libraries 聚合設定's 顯示在最新 turns off (5d-3f). They get
     ///   no 最新 row, so they are not asked for one.
+    /// - A section of lists has a row per card (`HomeSection.listCards`), each served as a section
+    ///   of its list would be: a card of 最新 a row per library.
     func sync(with page: HomePage, hiddenFromLatest: Set<SourceInstanceKey> = []) async {
         await waitForSources()
         let available = makeProviders()
@@ -109,39 +122,49 @@ final class HomeModel: ObservableObject {
         var built: [Row] = []
         var restarted: [String] = []
         var servedBy: [String: any HomeSectionProviding] = [:]
-        var planned: [(section: HomeSection, providers: [any HomeSectionProviding])] = []
+        var planned: [(section: HomeSection, load: HomeSection, card: (index: Int, card: HomeListCard)?,
+                       providers: [any HomeSectionProviding])] = []
         for section in page.sections where section.isEnabled {
             if case .myLibrary = section.binding { continue }
-            let serving: [any HomeSectionProviding]
-            if case .latest = section.binding {
-                serving = available.filter { $0.loadPolicy(for: section) != nil && !hiddenFromLatest.contains($0.instance) }
-            } else {
-                serving = available.first { $0.loadPolicy(for: section) != nil }.map { [$0] } ?? []
+            let loads: [(load: HomeSection, card: (index: Int, card: HomeListCard)?)] = section.drawsLists
+                ? section.listCards.enumerated().map { (section.cardSection($0.element), ($0.offset, $0.element)) }
+                : [(section, nil)]
+            for (load, card) in loads {
+                let serving: [any HomeSectionProviding]
+                if case .latest = load.binding {
+                    serving = available.filter { $0.loadPolicy(for: load) != nil && !hiddenFromLatest.contains($0.instance) }
+                } else {
+                    serving = available.first { $0.loadPolicy(for: load) != nil }.map { [$0] } ?? []
+                }
+                if serving.isEmpty, load.binding.isKnown, !isLatest(load) {
+                    AppLogger.cache("⟐ home section has no source to serve it",
+                                    context: ["section": section.id.uuidString, "card": card.map { String($0.index) } ?? ""])
+                }
+                planned.append((section, load, card, serving))
             }
-            if serving.isEmpty, section.binding.isKnown, !isLatest(section) {
-                AppLogger.cache("⟐ home section has no source to serve it", context: ["section": section.id.uuidString])
-            }
-            planned.append((section, serving))
         }
-        let libraryRows = planned.flatMap { section, providers in
-            providers.filter { Self.isLibrary($0.instance) }.map { Self.rowID(section: section.id, source: $0.instance) }
+        let libraryRows = planned.flatMap { section, _, card, providers in
+            providers.filter { Self.isLibrary($0.instance) }
+                .map { Self.rowID(section: section.id, card: card?.index, source: $0.instance) }
         }.joined(separator: "\u{1E}")
-        for (section, serving) in planned {
+        for (section, load, card, serving) in planned {
             for provider in serving {
-                guard let policy = provider.loadPolicy(for: section) else { continue }
-                let id = Self.rowID(section: section.id, source: provider.instance)
+                guard let policy = provider.loadPolicy(for: load) else { continue }
+                let id = Self.rowID(section: section.id, card: card?.index, source: provider.instance)
                 servedBy[id] = provider
-                var inputsKey = provider.inputsKey(for: section)
+                var inputsKey = provider.inputsKey(for: load)
                 if provider.readsHomeLibraryRows { inputsKey = (inputsKey ?? "") + "\u{1D}" + libraryRows }
-                if var kept = existing[id], kept.section.loadsSameContent(as: section), kept.policy == policy,
+                if var kept = existing[id], kept.loadingSection.loadsSameContent(as: load), kept.policy == policy,
                    kept.inputsKey == inputsKey {
                     kept.section = section
+                    kept.card = card?.card
                     built.append(kept)
                 } else {
                     if existing[id] != nil, requested.contains(id) { restarted.append(id) }
                     requested.remove(id)
-                    built.append(Row(id: id, section: section, source: provider.instance, sourceName: provider.rowName(for: section),
-                                     policy: policy, state: .idle, inputsKey: inputsKey))
+                    built.append(Row(id: id, section: section, source: provider.instance, sourceName: provider.rowName(for: load),
+                                     policy: policy, state: .idle, inputsKey: inputsKey, card: card?.card,
+                                     cardIndex: card?.index, providerName: provider.displayName))
                 }
             }
         }
@@ -164,8 +187,11 @@ final class HomeModel: ObservableObject {
         return false
     }
 
-    static func rowID(section: UUID, source: SourceInstanceKey) -> String {
-        "\(section.uuidString)|\(source.type.rawValue):\(source.id)"
+    /// A card's row is told from its section's other cards by its place: two cards of one source
+    /// (趨勢's 今日 and 本月) are two rows.
+    static func rowID(section: UUID, card: Int? = nil, source: SourceInstanceKey) -> String {
+        let place = card.map { "card\($0)|" } ?? ""
+        return "\(section.uuidString)|\(place)\(source.type.rawValue):\(source.id)"
     }
 
     func row(_ id: String) -> Row? {
@@ -229,11 +255,18 @@ final class HomeModel: ObservableObject {
         setState(.loading, of: rowID)
         let started = SourcePerfTrace.now
         do {
-            let entries = try await provider.load(row.section)
+            let entries = try await provider.load(row.loadingSection)
             SourcePerfTrace.record("home.row", "source=\(row.source.type.rawValue) entries=\(entries.count)",
                                    since: started, thresholdMs: 0)
             // The row may have been removed or changed while this loaded.
             guard isCurrent(row) else { return }
+            if entries.isEmpty, let index = row.cardIndex {
+                // A card with nothing in it is left out of its section (`HomeSectionGroup.state`).
+                AppLogger.network("⟐ home card's list has no book", context: [
+                    "source": "\(row.source.type.rawValue):\(row.source.id)", "section": row.section.id.uuidString,
+                    "card": String(index),
+                ])
+            }
             setState(.loaded(entries), of: rowID)
             if Self.isLibrary(row.source) { restartLibraryReaders() }
         } catch is CancellationError {
@@ -250,7 +283,7 @@ final class HomeModel: ObservableObject {
     /// Whether `row`, as a load began, is still the row: same content, same inputs.
     private func isCurrent(_ row: Row) -> Bool {
         guard let current = self.row(row.id) else { return false }
-        return current.section.loadsSameContent(as: row.section) && current.inputsKey == row.inputsKey
+        return current.loadingSection.loadsSameContent(as: row.loadingSection) && current.inputsKey == row.inputsKey
     }
 
     /// A library row loaded after the rows that read the library rows (為你推薦) had finished,

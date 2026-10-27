@@ -85,34 +85,48 @@ struct HomeCollectionCard: View {
 }
 
 extension CollectionSummary {
-    /// A card's accessibility identifier, `home.collection.<kind>.<key>`. A category's id holds
-    /// its URL; its title names it among its source's.
+    /// A card's accessibility identifier, `home.collection.<kind>.<key>`: a bundled list by its
+    /// id, a category by its title among its source's (its id holds its URL), any other list by
+    /// its name.
     var homeIdentifier: String {
         switch opening {
-        case .gutenbergCollection: "home.collection.gutenberg.\(id)"
-        case .sourceCategory(let category): "home.collection.sourceCategory.\(category.title)"
+        case .gutenbergCollection: return "home.collection.gutenberg.\(id)"
+        case .list(let list):
+            switch list.section.binding {
+            case .sourceCategories(let references): return "home.collection.sourceCategory.\(references.first?.title ?? title)"
+            case .gutenbergCollection(let id): return "home.collection.gutenberg.\(id)"
+            default: return "home.collection.list.\(title)"
+            }
         }
     }
 }
 
 extension CollectionOpening {
-    /// The list's source, as 大圖卡片 names it over the list: Gutenberg, or the 來源配置 the
-    /// category is one of.
+    /// The list's source, as 大圖卡片 names it over the list when the list does not
+    /// (`CollectionSummary.sourceName`).
     @MainActor
     var sourceName: String {
         switch self {
         case .gutenbergCollection: localized("Project Gutenberg")
-        case .sourceCategory(let category): category.source?.bookSourceName ?? ""
+        case .list(let list): list.sourceName
         }
     }
 
-    /// The session a list's covers load through: Gutenberg's built-in connection's, as the store
-    /// loads them. A book source's covers carry its headers in their reference, as its rows' do.
+    /// The session a list's covers load through: a library's connection's, as its rows' covers
+    /// load (Gutenberg's built-in one among them). A book source's and a module's covers carry
+    /// their headers in their reference.
     @MainActor
     func coverSession(connections: RemoteLibraryConnectionStore) -> URLSession? {
         switch self {
-        case .gutenbergCollection: HomeCardContent.gutenbergSession(connections: connections)
-        case .sourceCategory: nil
+        case .gutenbergCollection:
+            return HomeCardContent.gutenbergSession(connections: connections)
+        case .list(let list):
+            switch list.source.type {
+            case .gutenberg: return HomeCardContent.gutenbergSession(connections: connections)
+            case .opds, .calibre, .webDAV:
+                return connections.connection(id: list.source.id).map { connections.httpClient(for: $0).session }
+            case .library, .aozora, .bookSource, .bibliographic, .module: return nil
+            }
         }
     }
 }
@@ -464,9 +478,11 @@ struct CollectionCoverArtwork<Cover: View>: View {
     // A 來源配置's categories, drawn with the bundled lists' covers so the preview needs no network.
     let lists = PublicLibraryCollection.all.map(CollectionSummary.bundledGutenberg)
     let categories = zip(["玄幻", "都市", "歷史軍事"], lists).map { title, list in
-        CollectionSummary(id: title, title: title, books: list.books, languages: [],
-                          opening: .sourceCategory(ExploreCategoryReference(sourceURL: "https://preview.example", title: title,
-                                                                            url: "https://preview.example/\(title)")))
+        let category = ExploreCategoryReference(sourceURL: "https://preview.example", title: title, url: "https://preview.example/\(title)")
+        let opening = HomeListOpening(section: HomeSection(layout: .row, binding: .sourceCategories([category])),
+                                      source: SourceInstanceKey(type: .bookSource, id: category.sourceURL), sourceName: "預覽來源",
+                                      title: title, entries: [])
+        return CollectionSummary(id: title, title: title, books: list.books, languages: [], opening: .list(opening))
     }
     ScrollView {
         HomeCategoryCards(collections: categories, open: { _ in })

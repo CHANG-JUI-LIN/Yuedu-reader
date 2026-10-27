@@ -35,6 +35,9 @@ extension HomeSectionBinding {
         case .sourceCategories(let references): references.first.map { .bookSource(url: $0.sourceURL) }
         case .module(let moduleID, _): .module(id: moduleID)
         case .aiRecommendations: .official
+        // A section of lists from one source is that source's; from several, no one's.
+        case .lists(let cards):
+            Set(cards.map(\.binding.contentOwner)).count == 1 ? cards.first?.binding.contentOwner : nil
         case .myLibrary, .unknown: nil
         }
     }
@@ -55,14 +58,11 @@ extension HomeSectionBinding {
         [.gutenbergLists] + PublicLibraryCollection.all.map { .gutenbergCollection(id: $0.id) }
     }
 
-    /// A section of lists, drawn as 專題集合's cards whatever its stored layout.
-    var listsCollections: Bool { self == .gutenbergLists }
-
     /// What the 頂部輪播圖 can show (maintainer, 2026-10-27): books, for its band of covers. Not
     /// lists, articles, or 青空文庫's indexes, which are places to go.
     var showsBooks: Bool {
         switch self {
-        case .gutenbergLists, .subscriptionArticles, .aozoraIndex: false
+        case .gutenbergLists, .lists, .subscriptionArticles, .aozoraIndex: false
         default: true
         }
     }

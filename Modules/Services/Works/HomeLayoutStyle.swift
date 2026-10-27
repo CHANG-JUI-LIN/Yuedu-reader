@@ -20,8 +20,7 @@ enum HomeLayoutStyle: String, CaseIterable, Identifiable, Sendable {
     case featured
     case largeRow
     case heroGrid
-    /// 專題集合: lists, not books; offered only for a section of lists (`choices(for:)`), as
-    /// are the three after it.
+    /// 專題集合: lists, not books, a card each (`HomeSection.listCards`), as are the three after it.
     case collection
     case categoryCards
     case collageCards
@@ -78,13 +77,12 @@ enum HomeLayoutStyle: String, CaseIterable, Identifiable, Sendable {
         self == .list || self == .row
     }
 
-    /// What 呈現方式 offers a section: the layouts of lists for a section of lists, every
-    /// other layout for a section of books, and for a 來源配置's categories 分類卡片 too, a card
-    /// per category (`HomeSection.drawsCategoryCards`). One place, for the long press, the form
-    /// and 新增欄目.
+    /// What 呈現方式 offers a section: every layout (maintainer, 2026-10-27: every source in every
+    /// layout), a layout of lists drawing a card per list (`HomeSection.listCards`); only the
+    /// layouts of lists for what is lists alone (`HomeSectionBinding.drawsOnlyLists`). One place,
+    /// for the long press, the form and 新增欄目.
     static func choices(for binding: HomeSectionBinding) -> [HomeLayoutStyle] {
-        if case .sourceCategories = binding { return allCases.filter { !$0.drawsLists || $0 == .categoryCards } }
-        return allCases.filter { $0.drawsLists == binding.listsCollections }
+        binding.drawsOnlyLists ? allCases.filter(\.drawsLists) : allCases
     }
 }
 

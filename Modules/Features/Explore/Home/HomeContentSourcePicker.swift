@@ -5,6 +5,9 @@ import SwiftUI
 // 古騰堡, 青空文庫, the bundled modules; M2b), 模組 (the imported ones). A source pushes its items: a
 // connection's feeds, Gutenberg's lists and feeds, 青空文庫's indexes, a book source's discover
 // categories. 「目前」 marks the group and source in use; a check mark, the item.
+// - 加入清單 of a layout of lists (maintainer, 2026-10-27: 「預設全部、可增減」): each source's
+//   items start with 全部清單, every list it offers as a card each, up to
+//   `HomeSection.listCardLimit` with the cards already there.
 //
 // A sheet over the form, or pushed in the form's stack when the form is a sheet already on
 // iOS 17 (`isPushed`), as the design says.
@@ -43,6 +46,8 @@ struct HomeContentSourcePicker: View {
     /// The page's title: the name of the row or button that opened it.
     var title = localized("選擇內容來源")
     let choose: (HomeContentChoice) -> Void
+    /// 全部清單, for 加入清單: nil offers none.
+    var chooseAll: (([HomeContentChoice]) -> Void)?
     let cancel: () -> Void
 
     @Environment(\.homePickerOffersBooksOnly) private var booksOnly
@@ -54,12 +59,14 @@ struct HomeContentSourcePicker: View {
 
     init(current: HomeSectionBinding?, parameters: [String: String] = [:], isPushed: Bool,
          title: String = localized("選擇內容來源"),
-         choose: @escaping (HomeContentChoice) -> Void, cancel: @escaping () -> Void) {
+         choose: @escaping (HomeContentChoice) -> Void, chooseAll: (([HomeContentChoice]) -> Void)? = nil,
+         cancel: @escaping () -> Void) {
         self.current = current
         self.parameters = parameters
         self.isPushed = isPushed
         self.title = title
         self.choose = choose
+        self.chooseAll = chooseAll
         self.cancel = cancel
     }
 
@@ -88,7 +95,8 @@ struct HomeContentSourcePicker: View {
                 Section {
                     ForEach(feedConnections) { connection in
                         NavigationLink {
-                            HomeFeedChoices(source: .connection(connection), current: current, choose: choose)
+                            HomeFeedChoices(source: .connection(connection), current: current, choose: choose,
+                                            chooseAll: chooseAll)
                         } label: {
                             ownerLabel(connection.name, systemImage: SourceKindSymbol.symbol(for: ProviderType(connection.kind)),
                                        isCurrent: owner == .connection(id: connection.id))
@@ -102,7 +110,7 @@ struct HomeContentSourcePicker: View {
 
             Section {
                 NavigationLink {
-                    HomeSourceChoices(current: current, parameters: parameters, choose: choose)
+                    HomeSourceChoices(current: current, parameters: parameters, choose: choose, chooseAll: chooseAll)
                 } label: {
                     ownerLabel(localized("來源配置"), systemImage: "square.grid.2x2.fill",
                                isCurrent: { if case .bookSource = owner { true } else { false } }())
@@ -121,13 +129,13 @@ struct HomeContentSourcePicker: View {
                 }
                 if availability.isAvailable {
                     NavigationLink {
-                        HomeFeedChoices(source: .gutenberg, current: current, choose: choose)
+                        HomeFeedChoices(source: .gutenberg, current: current, choose: choose, chooseAll: chooseAll)
                     } label: {
                         ownerLabel(localized("Project Gutenberg"), systemImage: SourceKindSymbol.symbol(for: .gutenberg),
                                    isCurrent: owner == .gutenberg)
                     }
                     NavigationLink {
-                        HomeAozoraChoices(current: current, choose: choose)
+                        HomeAozoraChoices(current: current, choose: choose, chooseAll: chooseAll)
                     } label: {
                         ownerLabel(localized("青空文庫"), systemImage: SourceKindSymbol.symbol(for: .aozora),
                                    isCurrent: owner == .aozora)
@@ -171,7 +179,7 @@ struct HomeContentSourcePicker: View {
 
     private func moduleLink(_ installed: InstalledRuleModule) -> some View {
         NavigationLink {
-            HomeModuleChoices(module: installed.module, current: current, choose: choose)
+            HomeModuleChoices(module: installed.module, current: current, choose: choose, chooseAll: chooseAll)
         } label: {
             ownerLabel(installed.module.title, systemImage: "puzzlepiece.extension",
                        isCurrent: owner == .module(id: installed.module.id))
@@ -221,6 +229,31 @@ private struct HomeChoiceRow: View {
     }
 }
 
+/// 全部清單: every list the page offers, as 加入清單's cards. Nothing when the page offers none
+/// (yet) or 加入清單 did not open it.
+private struct HomeAllListsRow: View {
+    let choices: [HomeContentChoice]
+    let chooseAll: (([HomeContentChoice]) -> Void)?
+
+    var body: some View {
+        if let chooseAll, !choices.isEmpty {
+            Section {
+                Button { chooseAll(choices) } label: {
+                    Text(localized("全部清單"))
+                        .foregroundStyle(DSColor.textPrimary)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .contentShape(Rectangle())
+                }
+                .accessibilityIdentifier("homePicker.allLists")
+            } footer: {
+                Text(String(format: localized("每個清單一張卡片，最多 %d 張。"), HomeSection.listCardLimit))
+                    .dsSectionFooter()
+            }
+            .interfaceSectionSurface()
+        }
+    }
+}
+
 // MARK: - 書庫
 
 /// A library that speaks OPDS: Gutenberg's bundled lists first (no request), then the feeds its
@@ -240,6 +273,7 @@ private struct HomeFeedChoices: View {
     let source: Source
     let current: HomeSectionBinding?
     let choose: (HomeContentChoice) -> Void
+    var chooseAll: (([HomeContentChoice]) -> Void)?
     @State private var state = LoadState.loading
     @ObservedObject private var aggregation = AggregationSettingsStore.shared
     @Environment(\.homePickerOffersBooksOnly) private var booksOnly
@@ -265,8 +299,26 @@ private struct HomeFeedChoices: View {
         }
     }
 
+    /// 全部清單: Gutenberg's shelves and bundled lists (精選書單 is them all already) before its
+    /// feeds; a library's feeds, or its root when it lists none.
+    private var allLists: [HomeContentChoice] {
+        var choices: [HomeContentChoice] = []
+        if case .gutenberg = source {
+            choices += GutenbergShelf.shelves(languages: aggregation.readingLanguages.languages)
+                .map { HomeContentChoice(binding: .gutenbergShelf(id: $0.id)) }
+            choices += HomeSectionBinding.gutenbergCollections.filter { $0 != .gutenbergLists }
+                .map { HomeContentChoice(binding: $0) }
+        }
+        guard case .loaded(let feeds) = state else { return choices }
+        if feeds.isEmpty, case .connection = source, let root = provider?.rootURL?.absoluteString {
+            return choices + [HomeContentChoice(binding: binding(for: root), itemTitle: name)]
+        }
+        return choices + feeds.map { HomeContentChoice(binding: binding(for: $0.id), itemTitle: $0.title) }
+    }
+
     var body: some View {
         List {
+            HomeAllListsRow(choices: allLists, chooseAll: chooseAll)
             if case .gutenberg = source {
                 // Gutenberg's shelves, as its storefront lists them: 熱門, 最新, the reader's
                 // languages. Kept by id, so they follow the endpoint (5d-6a).
@@ -349,11 +401,13 @@ private struct HomeFeedChoices: View {
 private struct HomeAozoraChoices: View {
     let current: HomeSectionBinding?
     let choose: (HomeContentChoice) -> Void
+    var chooseAll: (([HomeContentChoice]) -> Void)?
 
     @Environment(\.homePickerOffersBooksOnly) private var booksOnly
 
     var body: some View {
         List {
+            HomeAllListsRow(choices: HomeSectionBinding.aozora.map { HomeContentChoice(binding: $0) }, chooseAll: chooseAll)
             Section {
                 ForEach(HomeSectionBinding.aozora.filter { !booksOnly || $0.showsBooks }, id: \.self) { binding in
                     HomeChoiceRow(title: HomeSection(layout: .row, binding: binding).displayTitle(sourceName: ""),
@@ -377,9 +431,11 @@ struct HomeModuleChoices: View {
     let module: RuleModule
     let current: HomeSectionBinding?
     let choose: (HomeContentChoice) -> Void
+    var chooseAll: (([HomeContentChoice]) -> Void)?
 
     var body: some View {
         List {
+            HomeAllListsRow(choices: HomeContentChoice.lists(of: module), chooseAll: chooseAll)
             Section {
                 ForEach(HomeContentChoice.lists(of: module), id: \.binding) { choice in
                     HomeChoiceRow(title: choice.itemTitle, isCurrent: current == choice.binding) {
@@ -408,6 +464,7 @@ struct HomeSourceChoices: View {
     /// The section's parameters, for the filter values each source's categories list under.
     var parameters: [String: String] = [:]
     let choose: (HomeContentChoice) -> Void
+    var chooseAll: (([HomeContentChoice]) -> Void)?
     @ObservedObject private var store = BookSourceStore.shared
     @State private var query = ""
     @State private var opened: String?
@@ -467,7 +524,7 @@ struct HomeSourceChoices: View {
             if let source = store.sources.first(where: { $0.bookSourceUrl == url }) {
                 HomeCategoryChoices(source: source,
                                     filterValues: HomeSection.filterValues(in: parameters, sourceURL: url),
-                                    current: current, choose: choose)
+                                    current: current, choose: choose, chooseAll: chooseAll)
                     // Pushed from a section's form, which hides the tab bar (`homeEditDestinations`).
                     .hidesRootTabBar()
             }
@@ -478,21 +535,20 @@ struct HomeSourceChoices: View {
 /// A book source's discover categories, under the group labels it draws, searchable, with the
 /// source's filters above them. A filter changed here lists the categories again under it for
 /// this section only (`SourceCategoryListing`); the source's discover page keeps its own.
-/// 分類卡片's 加入分類 ticks every category it draws.
+/// 全部清單 gives the categories it lists, under the filters set, as 加入清單's cards.
 struct HomeCategoryChoices: View {
     let current: HomeSectionBinding?
-    /// False once 分類卡片 has all its cards: only a ticked category can be tapped, to untick it.
-    let canChooseMore: Bool
     let choose: (HomeContentChoice) -> Void
+    var chooseAll: (([HomeContentChoice]) -> Void)?
     @StateObject private var listing: SourceCategoryListing
     @State private var query = ""
 
     /// - Parameter filterValues: the section's, from when it picked its category here.
     init(source: BookSource, filterValues: [String: String] = [:], current: HomeSectionBinding?,
-         canChooseMore: Bool = true, choose: @escaping (HomeContentChoice) -> Void) {
+         choose: @escaping (HomeContentChoice) -> Void, chooseAll: (([HomeContentChoice]) -> Void)? = nil) {
         self.current = current
-        self.canChooseMore = canChooseMore
         self.choose = choose
+        self.chooseAll = chooseAll
         _listing = StateObject(wrappedValue: SourceCategoryListing(source: source, filterValues: filterValues))
     }
 
@@ -505,6 +561,20 @@ struct HomeCategoryChoices: View {
 
     private var groups: [DiscoverCategoryGroup] {
         DiscoverCategoryGroup.filtered(listing.groups, matching: trimmedQuery)
+    }
+
+    /// A category as 選擇內容來源 gives it: with the filter values it is listed under.
+    private func choice(_ reference: ExploreCategoryReference) -> HomeContentChoice {
+        let values = listing.filterValues
+        return HomeContentChoice(binding: .sourceCategories([reference]),
+                                 parameters: HomeSection.filterParameters(values, sourceURL: reference.sourceURL),
+                                 filterValues: values)
+    }
+
+    /// 全部清單: the categories listed, as the search narrows them.
+    private var allLists: [HomeContentChoice] {
+        guard listing.state == .loaded else { return [] }
+        return groups.flatMap(\.items).compactMap { listing.reference(for: $0).map(choice) }
     }
 
     var body: some View {
@@ -531,19 +601,14 @@ struct HomeCategoryChoices: View {
                 }
                 .interfaceSectionSurface()
             }
+            HomeAllListsRow(choices: allLists, chooseAll: chooseAll)
             ForEach(groups) { group in
                 Section {
                     ForEach(group.items, id: \.stableKey) { item in
                         if let reference = listing.reference(for: item) {
-                            let isCurrent = currentReferences.contains(reference)
-                            HomeChoiceRow(title: item.title, isCurrent: isCurrent) {
-                                let values = listing.filterValues
-                                choose(HomeContentChoice(
-                                    binding: .sourceCategories([reference]),
-                                    parameters: HomeSection.filterParameters(values, sourceURL: reference.sourceURL),
-                                    filterValues: values))
+                            HomeChoiceRow(title: item.title, isCurrent: currentReferences.contains(reference)) {
+                                choose(choice(reference))
                             }
-                            .disabled(!isCurrent && !canChooseMore)
                         }
                     }
                 } header: {

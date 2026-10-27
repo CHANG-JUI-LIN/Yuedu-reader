@@ -8,6 +8,9 @@ import SwiftUI
 // - On top, a preview: one real page of the section in its layout, loaded as the home loads
 //   it. Then 標題 and 副標題 (empty follows what it shows), 呈現方式, 資料來源 (opens 選擇內容來源),
 //   and for a section on the home, 在首頁顯示 and 刪除.
+// - In a layout of lists (maintainer, 2026-10-27), 清單 in place of 資料來源: the section's
+//   cards, from any sources (`HomeListCards.swift`), each with a page of its own parameters;
+//   加入清單 opens 選擇內容來源, where a source's 全部清單 adds every list it offers.
 
 // MARK: - A section on the home
 
@@ -75,18 +78,14 @@ private struct HomeNewSectionFlow: View {
     @State private var showsForm = false
     @ObservedObject private var availability = PublicLibraryAvailability.shared
 
-    /// The layouts of lists (專題集合, 分類卡片, 拼貼卡片) draw Gutenberg's bundled lists, not
-    /// offered where the public libraries are not; 分類卡片 draws a 來源配置's categories too.
-    private var styles: [HomeLayoutStyle] {
-        HomeLayoutStyle.allCases.filter { !$0.drawsLists || $0 == .categoryCards || availability.isAvailable }
-    }
-
     var body: some View {
         NavigationStack {
-            HomeLayoutGallery(choices: styles, sample: .standard, identifierPrefix: "homeNewSection.layout") { style in
+            // Every layout, whatever the sources: a layout of lists draws any source's lists.
+            HomeLayoutGallery(choices: HomeLayoutStyle.allCases, sample: .standard,
+                              identifierPrefix: "homeNewSection.layout") { style in
                 let editor = HomeSectionEditor(layout: HomeSectionLayout(style: style), preview: .preview(shelf: store))
-                // Gutenberg's lists, chosen already where they are offered; 資料來源 can still
-                // change them, to a 來源配置's categories for 分類卡片.
+                // Gutenberg's lists, chosen already where they are offered; 清單 can still
+                // change them, to any source's.
                 if style.drawsLists, availability.isAvailable { editor.choose(.gutenbergLists) }
                 self.editor = editor
                 showsForm = true
@@ -111,10 +110,20 @@ private struct HomeNewSectionFlow: View {
 
 // MARK: - The form
 
+/// What 選擇內容來源 is opened for.
+private enum HomeSectionPickerMode: Hashable, Identifiable {
+    /// 資料來源: the section's one list.
+    case choose
+    /// 加入清單: cards for a layout of lists.
+    case addLists
+
+    var id: Self { self }
+}
+
 /// What the form pushes.
 private enum HomeSectionFormPush: Hashable {
     /// 選擇內容來源, when the form is a sheet already on iOS 17.
-    case picker
+    case picker(HomeSectionPickerMode)
     /// 最新's 新增來源配置.
     case latestSources
     /// 為你推薦's 加入分類: a source, then its category.
@@ -123,8 +132,8 @@ private enum HomeSectionFormPush: Hashable {
     case latestCategory(String)
     /// The section's category, picked again under other filters, by source URL.
     case filters(String)
-    /// 分類卡片's 加入分類: the source's categories to tick, by source URL.
-    case cardCategories(String)
+    /// A card of a layout of lists, by its place.
+    case listCard(Int)
     /// 呈現方式's previews (decision 34).
     case layouts
 }
@@ -164,7 +173,7 @@ struct HomeSectionForm: View {
     @ObservedObject private var modules: RuleModuleLibrary
     @EnvironmentObject private var store: BookStore
     /// 選擇內容來源 as a sheet.
-    @State private var showsPicker = false
+    @State private var presentedPicker: HomeSectionPickerMode?
     /// The one page the form pushes: one item destination, as on the search page
     /// (`Technotes/iOS17SearchWatchdogPostmortem.md`, guardrail 12).
     @State private var push: HomeSectionFormPush?
@@ -193,6 +202,9 @@ struct HomeSectionForm: View {
     private var defaultSubtitle: String {
         draft.binding.flatMap { HomeSection(layout: draft.layout, binding: $0).displaySubtitle } ?? localized("選填")
     }
+
+    /// A layout of lists: 清單 in place of 資料來源 and its parameters.
+    private var drawsLists: Bool { draft.layout.style.drawsLists }
 
     /// 選擇內容來源 pushed rather than presented: a sheet already, on iOS 17.
     private var pushesPicker: Bool {
@@ -231,8 +243,10 @@ struct HomeSectionForm: View {
                         .accessibilityIdentifier("homeSection.subtitle")
                 }
                 layoutRows
-                sourceRow
-                if let category = filteredCategory { filtersRow(category) }
+                if !drawsLists {
+                    sourceRow
+                    if let category = filteredCategory { filtersRow(category) }
+                }
             }
             .interfaceSectionSurface()
             if draft.binding == .latest {
@@ -242,11 +256,10 @@ struct HomeSectionForm: View {
             if draft.binding == .forYou {
                 forYouCategories
             }
-            if draft.section?.drawsCategoryCards == true {
-                cardCategories
-            }
-            if let entry = moduleEntry, !entry.editableParams.isEmpty {
-                moduleParameters(entry)
+            if drawsLists {
+                listCardsSection
+            } else if let entry = moduleEntry, !entry.editableParams.isEmpty {
+                HomeModuleParameters(entry: entry, values: draft.parameters) { editor.setParameter($0, to: $1) }
             }
             if !editor.isNew {
                 Section {
@@ -275,16 +288,16 @@ struct HomeSectionForm: View {
                 }
             }
         }
-        .sheet(isPresented: $showsPicker) {
-            NavigationStack { picker(isPushed: false) }
+        .sheet(item: $presentedPicker) { mode in
+            NavigationStack { picker(mode, isPushed: false) }
                 .environmentObject(store)
         }
         .navigationDestination(item: $push) { destination in
             // Without the tab bar, as the page under it (`homeEditDestinations`).
             Group {
                 switch destination {
-                case .picker:
-                    picker(isPushed: true)
+                case .picker(let mode):
+                    picker(mode, isPushed: true)
                 case .latestSources:
                     HomeSourceChoices(current: nil, parameters: draft.parameters) { choice in
                         pickLatest(choice)
@@ -318,16 +331,10 @@ struct HomeSectionForm: View {
                             push = nil
                         }
                     }
-                // Each tap ticks or unticks a category and stays, until the cards are full.
-                case .cardCategories(let url):
-                    if let source = sources.sources.first(where: { $0.bookSourceUrl == url }) {
-                        HomeCategoryChoices(source: source, filterValues: editor.filterValues(forSourceURL: url),
-                                            current: .sourceCategories(editor.cardCategories),
-                                            canChooseMore: editor.canAddCardCategory) { choice in
-                            guard case .sourceCategories(let references) = choice.binding, let reference = references.first
-                            else { return }
-                            editor.toggleCardCategory(reference, filterValues: choice.filterValues)
-                        }
+                case .listCard(let index):
+                    HomeListCardPage(editor: editor, index: index, modules: modules) {
+                        push = nil
+                        editor.removeCard(at: index)
                     }
                 }
             }
@@ -336,8 +343,13 @@ struct HomeSectionForm: View {
     }
 
     /// 選擇內容來源: a sheet, or pushed when the form is a sheet already on iOS 17.
-    private func openPicker() {
-        if pushesPicker { push = .picker } else { showsPicker = true }
+    private func openPicker(_ mode: HomeSectionPickerMode) {
+        if pushesPicker { push = .picker(mode) } else { presentedPicker = mode }
+    }
+
+    private func closePicker() {
+        presentedPicker = nil
+        push = nil
     }
 
     // MARK: 最新
@@ -433,50 +445,78 @@ struct HomeSectionForm: View {
         editor.setLatestCategory(reference, filterValues: choice.filterValues, forSourceURL: reference.sourceURL)
     }
 
-    // MARK: 分類卡片
+    // MARK: 清單
 
-    /// 分類卡片's categories (maintainer, 2026-10-26): a card each, in this order. 加入分類 lists
-    /// the source's categories to tick, up to `HomeSection.categoryCardLimit`; the last one stays.
-    private var cardCategories: some View {
-        let categories = editor.cardCategories
+    /// The section's lists in a layout of lists (maintainer, 2026-10-27): a card each, in this
+    /// order, from any sources. A card opens its own page; 加入清單 opens 選擇內容來源, up to
+    /// `HomeSection.listCardLimit`. The last card stays: without it the section shows nothing.
+    private var listCardsSection: some View {
+        let cards = editor.listCards
         return Section {
-            ForEach(categories) { reference in
-                Text(reference.title)
-                    .foregroundStyle(DSColor.textPrimary)
-                    .swipeActions {
-                        if categories.count > 1 {
-                            Button(localized("移除"), role: .destructive) { editor.removeCardCategory(reference) }
-                        }
-                    }
-                    .accessibilityActions {
-                        if categories.count > 1 {
-                            Button(localized("移除")) { editor.removeCardCategory(reference) }
-                        }
-                    }
-                    .accessibilityIdentifier("homeSection.categoryCard.\(reference.title)")
+            ForEach(Array(cards.enumerated()), id: \.element) { index, card in
+                listCardRow(card, at: index, count: cards.count)
             }
-            if let url = categories.first?.sourceURL {
-                Button { push = .cardCategories(url) } label: {
-                    Label(localized("加入分類"), systemImage: "plus")
-                }
-                .disabled(!editor.canAddCardCategory)
-                .accessibilityIdentifier("homeSection.categoryCard.add")
+            .onMove { editor.moveCards(fromOffsets: $0, toOffset: $1) }
+            Button { openPicker(.addLists) } label: {
+                Label(localized("加入清單"), systemImage: "plus")
             }
+            .disabled(!editor.canAddCard)
+            .accessibilityIdentifier("homeSection.lists.add")
         } header: {
-            Text(localized("清單：分類"))
+            Text(localized("清單"))
         } footer: {
-            Text(String(format: localized("最多 %d 個分類。"), HomeSection.categoryCardLimit))
+            Text(String(format: localized("每個清單一張卡片，最多 %d 張，可以混合不同來源。"), HomeSection.listCardLimit))
                 .dsSectionFooter()
         }
         .interfaceSectionSurface()
     }
 
+    private func listCardRow(_ card: HomeListCard, at index: Int, count: Int) -> some View {
+        let source = card.sourceName(sources: sources, connections: connections, modules: modules)
+        return Button { push = .listCard(index) } label: {
+            HStack(spacing: DSSpacing.sm) {
+                VStack(alignment: .leading, spacing: DSSpacing.xxs) {
+                    Text(card.name(modules: modules))
+                        .foregroundStyle(DSColor.textPrimary)
+                    if !source.isEmpty {
+                        Text(source)
+                            .font(DSFont.footnote)
+                            .foregroundStyle(DSColor.textSecondary)
+                    }
+                }
+                Spacer(minLength: DSSpacing.sm)
+                Image(systemName: "chevron.right")
+                    .font(DSFont.footnote.weight(.semibold))
+                    .foregroundStyle(DSColor.textTertiary)
+                    .accessibilityHidden(true)
+            }
+            .contentShape(Rectangle())
+        }
+        .swipeActions {
+            if count > 1 {
+                Button(localized("移除"), role: .destructive) { editor.removeCard(at: index) }
+            }
+        }
+        .accessibilityActions {
+            if index > 0 {
+                Button(localized("上移")) { editor.moveCards(fromOffsets: [index], toOffset: index - 1) }
+            }
+            if index < count - 1 {
+                Button(localized("下移")) { editor.moveCards(fromOffsets: [index], toOffset: index + 2) }
+            }
+            if count > 1 {
+                Button(localized("移除")) { editor.removeCard(at: index) }
+            }
+        }
+        .accessibilityIdentifier("homeSection.listCard.\(index)")
+    }
+
     // MARK: Filters
 
-    /// The section's book source category, when it was picked under the source's filters. 分類卡片
-    /// lists its categories under them in 加入分類 instead.
+    /// The section's book source category, when it was picked under the source's filters. A
+    /// layout of lists sets each card's on its page instead.
     private var filteredCategory: ExploreCategoryReference? {
-        guard draft.section?.drawsCategoryCards != true,
+        guard !drawsLists,
               case .sourceCategories(let references) = draft.binding, references.count == 1,
               let reference = references.first,
               !editor.filterValues(forSourceURL: reference.sourceURL).isEmpty else { return nil }
@@ -541,7 +581,7 @@ struct HomeSectionForm: View {
     }
 
     private var sourceRow: some View {
-        Button { openPicker() } label: {
+        Button { openPicker(.choose) } label: {
             LabeledContent(localized("資料來源")) {
                 HStack(spacing: DSSpacing.xs) {
                     Text(sourceDescription)
@@ -570,68 +610,34 @@ struct HomeSectionForm: View {
             .joined(separator: " › ")
     }
 
-    private func picker(isPushed: Bool) -> some View {
-        HomeContentSourcePicker(current: draft.binding, parameters: draft.parameters, isPushed: isPushed) { choice in
-            editor.choose(choice.binding, parameters: choice.parameters, itemTitle: choice.itemTitle)
-            showsPicker = false
-            push = nil
-        } cancel: {
-            showsPicker = false
-            push = nil
+    @ViewBuilder
+    private func picker(_ mode: HomeSectionPickerMode, isPushed: Bool) -> some View {
+        switch mode {
+        case .choose:
+            HomeContentSourcePicker(current: draft.binding, parameters: draft.parameters, isPushed: isPushed) { choice in
+                editor.choose(choice.binding, parameters: choice.parameters, itemTitle: choice.itemTitle)
+                closePicker()
+            } cancel: {
+                closePicker()
+            }
+        case .addLists:
+            HomeContentSourcePicker(current: nil, isPushed: isPushed, title: localized("加入清單")) { choice in
+                editor.addCards([.picked(choice.binding, parameters: choice.parameters, name: choice.itemTitle)])
+                closePicker()
+            } chooseAll: { choices in
+                editor.addCards(choices.map { .picked($0.binding, parameters: $0.parameters, name: $0.itemTitle) })
+                closePicker()
+            } cancel: {
+                closePicker()
+            }
         }
     }
 
     // MARK: A module's list
 
-    /// The picker's tag for following 中繼資料語言偏好推薦: no option's value.
-    private static let followsLanguageTag = "\u{1F}followsLanguage"
-
     /// The module list the section shows, while its module is installed.
     private var moduleEntry: RuleModule.Entry? {
-        guard case .module(let moduleID, let entryID) = draft.binding else { return nil }
-        return modules.module(id: moduleID)?.module.modules.first { $0.id == entryID }
-    }
-
-    /// Its parameters, written to the section by name (Phase 6f): a choice is a `Picker`, a
-    /// count a `Stepper`, typed text is kept once the reader is done with it. A choice that
-    /// follows 中繼資料語言偏好推薦 offers that first, and picking it again clears the reader's own.
-    private func moduleParameters(_ entry: RuleModule.Entry) -> some View {
-        Section {
-            ForEach(entry.editableParams, id: \.name) { param in
-                let title = param.title ?? param.name
-                let value = param.currentValue(in: draft.parameters, language: aggregation.readingLanguages.language)
-                switch param.kind {
-                case .enumeration:
-                    let follows = param.followsLanguage == true
-                    let selection = follows && draft.parameters[param.name] == nil ? Self.followsLanguageTag : value
-                    Picker(title, selection: Binding(get: { selection }, set: { picked in
-                        editor.setParameter(param.name, to: picked == Self.followsLanguageTag ? nil : picked)
-                    })) {
-                        if follows {
-                            Text(localized("跟隨中繼資料語言偏好推薦")).tag(Self.followsLanguageTag)
-                        }
-                        ForEach(param.enumOptions ?? [], id: \.value) { option in
-                            Text(option.title).tag(option.value)
-                        }
-                    }
-                    .accessibilityIdentifier("homeSection.parameter.\(param.name)")
-                case .count:
-                    let count = Int(value) ?? 1
-                    Stepper(value: Binding(get: { count }, set: { editor.setParameter(param.name, to: String($0)) }),
-                            in: 1...max(100, count)) {
-                        LabeledContent(title, value: String(count))
-                    }
-                    .accessibilityValue(String(count))
-                    .accessibilityIdentifier("homeSection.parameter.\(param.name)")
-                default:
-                    HomeModuleTextParameter(title: title, committed: value) { editor.setParameter(param.name, to: $0) }
-                        .accessibilityIdentifier("homeSection.parameter.\(param.name)")
-                }
-            }
-        } header: {
-            Text(localized("篩選"))
-        }
-        .interfaceSectionSurface()
+        draft.binding.flatMap { modules.entry(of: $0) }
     }
 
     // MARK: Preview
@@ -661,6 +667,175 @@ struct HomeSectionForm: View {
     private func content(of group: HomeSectionGroup) -> HomeRowContent? {
         guard case .loaded(let entries) = group.state else { return nil }
         return HomeRowContent(entries: entries, store: store)
+    }
+}
+
+// MARK: - A card of a layout of lists
+
+/// One card of a section of lists: where its list is from, its own parameters (趨勢's 地區,
+/// maintainer 2026-10-27), a 來源配置's category picked again under other filters, and 移除.
+private struct HomeListCardPage: View {
+    @ObservedObject var editor: HomeSectionEditor
+    let index: Int
+    @ObservedObject var modules: RuleModuleLibrary
+    /// 移除, which leaves the page.
+    let remove: () -> Void
+    @ObservedObject private var sources = BookSourceStore.shared
+    @ObservedObject private var connections = RemoteLibraryConnectionStore.shared
+    @State private var picksCategory = false
+
+    private var card: HomeListCard? {
+        editor.listCards.indices.contains(index) ? editor.listCards[index] : nil
+    }
+
+    private var category: ExploreCategoryReference? {
+        if case .sourceCategories(let references) = card?.binding { return references.first }
+        return nil
+    }
+
+    var body: some View {
+        if let card {
+            Form {
+                Section {
+                    LabeledContent(localized("來源"), value: card.sourceName(sources: sources, connections: connections, modules: modules))
+                    if let category {
+                        Button { picksCategory = true } label: {
+                            LabeledContent(localized("分類")) {
+                                HStack(spacing: DSSpacing.xs) {
+                                    Text(category.title)
+                                        .foregroundStyle(DSColor.textSecondary)
+                                    Image(systemName: "chevron.right")
+                                        .font(DSFont.footnote.weight(.semibold))
+                                        .foregroundStyle(DSColor.textTertiary)
+                                        .accessibilityHidden(true)
+                                }
+                            }
+                            .foregroundStyle(DSColor.textPrimary)
+                        }
+                        .accessibilityLabel(localized("分類"))
+                        .accessibilityValue(category.title)
+                        .accessibilityIdentifier("homeSection.listCard.category")
+                    } else {
+                        LabeledContent(localized("清單"), value: card.name(modules: modules))
+                    }
+                }
+                .interfaceSectionSurface()
+                if let entry = modules.entry(of: card.binding), !entry.editableParams.isEmpty {
+                    HomeModuleParameters(entry: entry, values: card.parameters) {
+                        editor.setCardParameter(at: index, $0, to: $1)
+                    }
+                }
+                Section {
+                    Button(localized("移除"), role: .destructive, action: remove)
+                        .disabled(editor.listCards.count < 2)
+                        .accessibilityIdentifier("homeSection.listCard.remove")
+                }
+                .interfaceSectionSurface()
+            }
+            .navigationTitle(card.name(modules: modules))
+            .toolbarTitleDisplayMode(.inline)
+            .themedAppSurface(for: .explore)
+            .navigationDestination(isPresented: $picksCategory) {
+                if let category, let source = sources.sources.first(where: { $0.bookSourceUrl == category.sourceURL }) {
+                    HomeCategoryChoices(source: source,
+                                        filterValues: HomeSection.filterValues(in: card.parameters, sourceURL: category.sourceURL),
+                                        current: card.binding) { choice in
+                        editor.replaceCard(at: index, with: .picked(choice.binding, parameters: choice.parameters,
+                                                                    name: choice.itemTitle))
+                        picksCategory = false
+                    }
+                    .hidesRootTabBar()
+                }
+            }
+        } else {
+            // Removed: the page empties as it pops.
+            Color.clear.themedAppSurface(for: .explore)
+        }
+    }
+}
+
+extension HomeListCard {
+    /// The card's name in its section's form: its own, else its list's (a module's with the
+    /// options its values pick, as its card on the home reads).
+    @MainActor
+    func name(modules: RuleModuleLibrary) -> String {
+        if !title.isEmpty { return title }
+        var listName = ""
+        if case .module(_, let entryID) = binding, let entry = modules.entry(of: binding) {
+            listName = entry.cardName(entry.title ?? entryID, parameters: parameters)
+        }
+        return HomeSection(layout: .row, binding: binding, parameters: parameters).displayTitle(sourceName: listName)
+    }
+
+    /// Where the card's list is from, as 選擇內容來源 names it.
+    @MainActor
+    func sourceName(sources: BookSourceStore, connections: RemoteLibraryConnectionStore,
+                    modules: RuleModuleLibrary) -> String {
+        binding.contentOwner?.name(sources: sources, connections: connections, modules: modules) ?? ""
+    }
+}
+
+extension RuleModuleLibrary {
+    /// The module list `binding` shows, while its module is installed.
+    func entry(of binding: HomeSectionBinding) -> RuleModule.Entry? {
+        guard case .module(let moduleID, let entryID) = binding else { return nil }
+        return module(id: moduleID)?.module.modules.first { $0.id == entryID }
+    }
+}
+
+// MARK: - A module list's parameters
+
+/// A module list's parameters, written by name (Phase 6f), the section's or a card's: a choice
+/// is a `Picker`, a count a `Stepper`, typed text is kept once the reader is done with it. A
+/// choice that follows 中繼資料語言偏好推薦 offers that first, and picking it again clears the
+/// reader's own.
+private struct HomeModuleParameters: View {
+    let entry: RuleModule.Entry
+    let values: [String: String]
+    /// A value by the parameter's name; nil goes back to the module's default.
+    let set: (String, String?) -> Void
+    @ObservedObject private var aggregation = AggregationSettingsStore.shared
+
+    /// The picker's tag for following 中繼資料語言偏好推薦: no option's value.
+    private static let followsLanguageTag = "\u{1F}followsLanguage"
+
+    var body: some View {
+        Section {
+            ForEach(entry.editableParams, id: \.name) { param in
+                let title = param.title ?? param.name
+                let value = param.currentValue(in: values, language: aggregation.readingLanguages.language)
+                switch param.kind {
+                case .enumeration:
+                    let follows = param.followsLanguage == true
+                    let selection = follows && values[param.name] == nil ? Self.followsLanguageTag : value
+                    Picker(title, selection: Binding(get: { selection }, set: { picked in
+                        set(param.name, picked == Self.followsLanguageTag ? nil : picked)
+                    })) {
+                        if follows {
+                            Text(localized("跟隨中繼資料語言偏好推薦")).tag(Self.followsLanguageTag)
+                        }
+                        ForEach(param.enumOptions ?? [], id: \.value) { option in
+                            Text(option.title).tag(option.value)
+                        }
+                    }
+                    .accessibilityIdentifier("homeSection.parameter.\(param.name)")
+                case .count:
+                    let count = Int(value) ?? 1
+                    Stepper(value: Binding(get: { count }, set: { set(param.name, String($0)) }),
+                            in: 1...max(100, count)) {
+                        LabeledContent(title, value: String(count))
+                    }
+                    .accessibilityValue(String(count))
+                    .accessibilityIdentifier("homeSection.parameter.\(param.name)")
+                default:
+                    HomeModuleTextParameter(title: title, committed: value) { set(param.name, $0) }
+                        .accessibilityIdentifier("homeSection.parameter.\(param.name)")
+                }
+            }
+        } header: {
+            Text(localized("篩選"))
+        }
+        .interfaceSectionSurface()
     }
 }
 
@@ -790,6 +965,27 @@ extension HomeContentOwner {
                 store: HomePageStore(fileURL: FileManager.default.temporaryDirectory.appendingPathComponent("preview-home.json")),
                 preview: .preview(shelf: BookStore())),
             isInSheet: false)
+    }
+    .environmentObject(BookStore())
+}
+
+#Preview("混合來源的清單") {
+    let module = RuleModulePreviewData.module()
+    let cards = [
+        HomeListCard(binding: .module(moduleID: module.id, entryID: "new"), parameters: ["sort": "new"]),
+        HomeListCard(binding: .gutenbergShelf(id: "popular")),
+        HomeListCard(binding: .sourceCategories([
+            ExploreCategoryReference(sourceURL: "https://preview.example", title: "玄幻", url: "https://preview.example/玄幻"),
+        ])),
+        HomeListCard(binding: .continueReading),
+    ]
+    return NavigationStack {
+        HomeSectionForm(
+            editor: HomeSectionEditor(
+                section: HomeSection(layout: .collageCards, binding: .lists(cards)),
+                store: HomePageStore(fileURL: FileManager.default.temporaryDirectory.appendingPathComponent("preview-home.json")),
+                preview: .preview(shelf: BookStore())),
+            isInSheet: false, modules: RuleModulePreviewData.listsLibrary())
     }
     .environmentObject(BookStore())
 }
