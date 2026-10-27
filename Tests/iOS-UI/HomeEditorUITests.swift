@@ -544,6 +544,31 @@ final class HomeEditorUITests: XCTestCase {
         wait(for: [XCTNSPredicateExpectation(predicate: settled, object: nil)], timeout: timeout)
     }
 
+    /// Brings a section's card wholly between the bars and lets it settle. A card under the
+    /// navigation bar still counts as hittable and the tap lands on the bar; under the ＋, it opens
+    /// 新增欄目, and past the screen's foot it lands nowhere. One swipe left a card on either side
+    /// (iOS 27 simulator), and since 編輯首頁 draws every section in one row (2026-10-27) the last
+    /// card stopped under the ＋.
+    @MainActor
+    private func bringBetweenTheBars(_ card: XCUIElement, in app: XCUIApplication) {
+        let add = app.buttons["homeEditor.addSection"].firstMatch
+        let barBottom = app.navigationBars.firstMatch.frame.maxY
+        func isBetweenTheBars() -> Bool {
+            card.exists && card.frame.minY > barBottom && card.frame.maxY < add.frame.minY
+        }
+        for _ in 0..<10 where !card.exists { app.swipeDown() }
+        // Dragged as far as it is off, then held: a swipe's momentum, even a slow one's, carried it
+        // past the room between the bars, one way and then the other.
+        let middle = app.windows.firstMatch.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5))
+        for _ in 0..<6 where !isBetweenTheBars() {
+            let shift = max(-300, min(300, barBottom + 24 - card.frame.minY))
+            middle.press(forDuration: 0.05, thenDragTo: middle.withOffset(CGVector(dx: 0, dy: shift)),
+                         withVelocity: .slow, thenHoldForDuration: 0.3)
+        }
+        waitUntilSettled(card)
+        XCTAssertTrue(isBetweenTheBars(), app.debugDescription)
+    }
+
     /// Picks `layout`, then 資料來源, in 新增欄目's sheet.
     @MainActor
     private func startSection(_ app: XCUIApplication, layout: String) {
@@ -631,25 +656,7 @@ final class HomeEditorUITests: XCTestCase {
 
         // 最新's parameters: the category that stands for the book source in it.
         let latest = sectionCards(app, named: "最新").firstMatch
-        // Wholly between the bars. A card under the navigation bar still counts as hittable and
-        // the tap lands on the bar; under the ＋, it opens 新增欄目. 最新's card is as tall as its
-        // row now, its books in it, and one swipe left it on either side (iOS 27 simulator).
-        let add = app.buttons["homeEditor.addSection"].firstMatch
-        let barBottom = app.navigationBars.firstMatch.frame.maxY
-        func isBetweenTheBars() -> Bool {
-            latest.exists && latest.frame.minY > barBottom && latest.frame.maxY < add.frame.minY
-        }
-        for _ in 0..<10 where !latest.exists { app.swipeDown() }
-        // Dragged as far as it is off, then held: a swipe's momentum, even a slow one's, carried it
-        // past the room between the bars, one way and then the other.
-        let middle = app.windows.firstMatch.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5))
-        for _ in 0..<6 where !isBetweenTheBars() {
-            let shift = max(-300, min(300, barBottom + 24 - latest.frame.minY))
-            middle.press(forDuration: 0.05, thenDragTo: middle.withOffset(CGVector(dx: 0, dy: shift)),
-                         withVelocity: .slow, thenHoldForDuration: 0.3)
-        }
-        waitUntilSettled(latest)
-        XCTAssertTrue(isBetweenTheBars(), app.debugDescription)
+        bringBetweenTheBars(latest, in: app)
         latest.tap()
         let addLatest = app.buttons["homeSection.latest.add"].firstMatch
         // Under 顯示在最新's libraries (decision 36), at the screen's foot since 副標題 joined a
@@ -675,7 +682,7 @@ final class HomeEditorUITests: XCTestCase {
         // 刪除 leaves the form, and the section the home.
         app.navigationBars.buttons.element(boundBy: 0).tap()
         let renamed = sectionCards(app, named: "本週排行").firstMatch
-        for _ in 0..<10 where !(renamed.exists && renamed.isHittable) { app.swipeUp() }
+        bringBetweenTheBars(renamed, in: app)
         renamed.tap()
         let delete = app.buttons["homeSection.delete"].firstMatch
         XCTAssertTrue(delete.waitForExistence(timeout: 5), app.debugDescription)

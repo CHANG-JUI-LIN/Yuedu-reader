@@ -47,6 +47,7 @@ struct HomeSectionCards: View {
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     @Environment(\.publicLibraryCoverFrames) private var coverFrames
+    @Environment(\.homeDrawsSideways) private var drawsSideways
     @ScaledMetric(relativeTo: .subheadline) private var scaledRowCoverWidth = DSLayout.homeCardCoverWidth
     @ScaledMetric(relativeTo: .subheadline) private var compactCoverWidth = DSLayout.homeCompactCoverWidth
     @ScaledMetric(relativeTo: .headline) private var readingCoverWidth = DSLayout.homeReadingCardCoverWidth
@@ -74,20 +75,25 @@ struct HomeSectionCards: View {
     var body: some View {
         Group {
             if let bandCover {
-                if style == .colorBand { fan(cover: bandCover) } else { band(cover: bandCover) }
+                // 編輯首頁 draws 色帶's covers in a row too, on its band (`homeDrawsSideways`).
+                if style == .colorBand, !drawsSideways { fan(cover: bandCover) } else { band(cover: bandCover) }
             } else {
                 switch style {
                 case .readingCard: readingCards
                 case .compactReadingCard: compactReadingCards
                 case .row: rail(coverWidth: rowCoverWidth)
                 case .multiRow: multiRow
-                case .coverGrid: grid
-                case .list: list
+                // 編輯首頁 draws every section sideways (`homeDrawsSideways`): the grid's covers in
+                // one row, the list's rows a page each.
+                case .coverGrid: if drawsSideways { rail(coverWidth: compactCoverWidth) } else { grid }
+                case .list: if drawsSideways { sidewaysList } else { list }
                 case .featured: featured
                 case .largeRow: rail(coverWidth: largeCoverWidth)
                 case .colorBand:
-                    fan(cover: $ownBandCover)
-                        .modifier(HomeBandGround(cover: ownBandCover, isCarousel: false, cutsCovers: true))
+                    Group {
+                        if drawsSideways { band(cover: $ownBandCover) } else { fan(cover: $ownBandCover) }
+                    }
+                    .modifier(HomeBandGround(cover: ownBandCover, isCarousel: false, cutsCovers: !drawsSideways))
                 case .heroGrid: heroGrid
                 // A layout of lists draws its cards (`HomeSectionLists`); a section of books drawn
                 // in one here is a stored value this build cannot read, drawn as a row.
@@ -252,12 +258,7 @@ struct HomeSectionCards: View {
                         HomeReadingCard(content: cards[index], coverWidth: readingCoverWidth,
                                         stacksVertically: dynamicTypeSize.isAccessibilitySize)
                     }
-                    .containerRelativeFrame(.horizontal) { length, _ in
-                        // The next card shows past the edge when there is one.
-                        let peek = cards.count > perScreen ? DSLayout.homeReadingCardPeek + DSSpacing.md : 0
-                        let gaps = DSSpacing.md * CGFloat(perScreen - 1)
-                        return max(0, (length - gaps - peek) / CGFloat(perScreen))
-                    }
+                    .homePageCardWidth(perScreen: perScreen, count: cards.count)
                 }
             }
             .scrollTargetLayout()
@@ -318,11 +319,7 @@ struct HomeSectionCards: View {
                     .overlay(alignment: .bottomTrailing) {
                         if !menu.isEmpty { HomeCardMenuButton(card: card, items: menu) }
                     }
-                    .containerRelativeFrame(.horizontal) { length, _ in
-                        let peek = cards.count > perScreen ? DSLayout.homeReadingCardPeek + DSSpacing.md : 0
-                        let gaps = DSSpacing.md * CGFloat(perScreen - 1)
-                        return max(0, (length - gaps - peek) / CGFloat(perScreen))
-                    }
+                    .homePageCardWidth(perScreen: perScreen, count: cards.count)
                 }
             }
             .scrollTargetLayout()
@@ -397,6 +394,36 @@ struct HomeSectionCards: View {
             }
         }
         .padding(.horizontal, DSSpacing.lg)
+    }
+
+    /// 編輯首頁's: the rows side by side, a page each, the next one showing past the edge.
+    private var sidewaysList: some View {
+        let perScreen = horizontalSizeClass == .regular ? 2 : 1
+        return ScrollView(.horizontal) {
+            LazyHStack(alignment: .top, spacing: DSSpacing.md) {
+                ForEach(cards.indices, id: \.self) { index in
+                    button(index, in: cards) {
+                        HomeListRow(content: cards[index], coverWidth: listCoverWidth,
+                                    stacksVertically: dynamicTypeSize.isAccessibilitySize)
+                    }
+                    .homePageCardWidth(perScreen: perScreen, count: cards.count)
+                }
+            }
+            .scrollTargetLayout()
+        }
+        .modifier(HomeSidewaysScroll())
+    }
+}
+
+extension View {
+    /// A card a page in a sideways row, `perScreen` to a page, the next card showing past the edge
+    /// when there is one.
+    func homePageCardWidth(perScreen: Int, count: Int) -> some View {
+        containerRelativeFrame(.horizontal) { length, _ in
+            let peek = count > perScreen ? DSLayout.homeReadingCardPeek + DSSpacing.md : 0
+            let gaps = DSSpacing.md * CGFloat(perScreen - 1)
+            return max(0, (length - gaps - peek) / CGFloat(perScreen))
+        }
     }
 }
 
@@ -900,6 +927,27 @@ struct HomeChartRow: View {
             }
         }
     }
+}
+
+#Preview("每種呈現方式，在編輯首頁") {
+    let cards = (0..<8).map(HomeCardContent.placeholder)
+    let lists = PublicLibraryCollection.all.map(CollectionSummary.bundledGutenberg)
+    ScrollView {
+        VStack(alignment: .leading, spacing: DSSpacing.xxl) {
+            ForEach(HomeLayoutStyle.allCases) { style in
+                VStack(alignment: .leading, spacing: DSSpacing.md) {
+                    Text(localized(style.titleKey)).font(DSFont.title2.weight(.bold)).padding(.horizontal, DSSpacing.lg)
+                    if style.drawsLists {
+                        HomeSectionLists(layout: HomeSectionLayout(style: style), collections: lists, open: { _ in })
+                    } else {
+                        HomeSectionCards(layout: HomeSectionLayout(style: style), cards: cards,
+                                         rowID: style.rawValue, hasShowAll: true, open: { _, _ in })
+                    }
+                }
+            }
+        }
+    }
+    .environment(\.homeDrawsSideways, true)
 }
 
 #if DEBUG

@@ -80,6 +80,10 @@ struct HomeSectionEntry: Identifiable {
 extension EnvironmentValues {
     /// How far 編輯首頁's morph has come: 0 on the home, 1 in the editor, and every frame between.
     @Entry var homeEditProgress: Double = 0
+    /// Every section one row swiped sideways, as 編輯首頁 draws them (maintainer, 2026-10-27: no
+    /// exceptions — the editor never shows a section whole): 分類卡片, 固定封面網格 and 圖文資訊清單,
+    /// read down the page on the home, and 色帶書架's stack, which does not scroll there.
+    @Entry var homeDrawsSideways = false
 }
 
 extension View {
@@ -139,12 +143,14 @@ struct HomeSectionSlot<RowContent: View>: View {
                                        mark: toggle(title), surface: editingSurface(title)))
     }
 
-    /// The row, the same in its card. A section the home gives no room, hidden or with nothing
-    /// to draw, has its name in its card, so it is not blank.
+    /// The row, the same in its card, drawn sideways where the home reads it down the page
+    /// (`homeDrawsSideways`). A section the home gives no room, hidden or with nothing to draw,
+    /// has its name in its card, so it is not blank.
     @ViewBuilder
     private func content(_ title: String) -> some View {
         if entry.isOnHome, let group = entry.homeGroup {
             rowContent(group)
+                .environment(\.homeDrawsSideways, isEditing)
         } else {
             Text(title)
                 .font(DSFont.title2.weight(.bold))
@@ -173,7 +179,7 @@ struct HomeSectionSlot<RowContent: View>: View {
     private func editingSurface(_ title: String) -> some View {
         let index = entry.editableIndex ?? 0
         return Color.clear
-            .contentShape(RoundedRectangle(cornerRadius: DSRadius.xxl, style: .continuous))
+            .contentShape(HomeSectionFrame())
             .onTapGesture { openSettings(section.id) }
             .draggable(section.id.uuidString) {
                 Text(title).font(DSFont.headline).padding(DSSpacing.md)
@@ -218,7 +224,6 @@ private struct HomeSectionMorph<Mark: View, Surface: View>: ViewModifier {
 
     func body(content: Content) -> some View {
         let edited = CGFloat(progress)
-        let shape = RoundedRectangle(cornerRadius: DSRadius.xxl, style: .continuous)
         let width = pageWidth > 0 ? pageWidth : nil
         // From its room on the home to its room in the editor; whole in both, never a rounding off.
         let presence: CGFloat = switch (isOnHome, isOnEditor) {
@@ -227,7 +232,8 @@ private struct HomeSectionMorph<Mark: View, Surface: View>: ViewModifier {
         case (true, false): 1 - edited
         case (false, true): edited
         }
-        let cardWidth = width.map { $0 - (Self.markWidth + DSSpacing.lg) * edited }
+        // To the screen's trailing edge, which cuts the card and its row (`HomeSectionFrame`).
+        let cardWidth = width.map { $0 - Self.markWidth * edited }
         // Kept, at no height, where it has no room. Left out of the home until the morph, the ten
         // hidden sections joined the lazy stack all at once as it began, and its guess at the rows it
         // had not reached grew by 811 points: the page went after that end and the rows flew off
@@ -244,10 +250,10 @@ private struct HomeSectionMorph<Mark: View, Surface: View>: ViewModifier {
                 .padding(.vertical, DSSpacing.lg * edited)
                 .frame(width: cardWidth, alignment: .leading)
                 .frame(maxWidth: width == nil ? .infinity : nil, alignment: .leading)
-                .background(DSColor.surface.opacity(edited), in: shape)
+                .background(DSColor.homeEditorFrame.opacity(edited), in: HomeSectionFrame())
                 // The sideways rows draw past their bounds (`scrollClipDisabled`): the card cuts
                 // them at its edge; on the home the cut is past the screen's.
-                .clipShape(shape.inset(by: -DSSpacing.xxl * (1 - edited)))
+                .clipShape(HomeSectionFrame(outset: DSSpacing.xxl * (1 - edited)))
                 .overlay {
                     if isEditing { surface.accessibilityHidden(presence < 1) }
                 }
@@ -263,7 +269,6 @@ private struct HomeSectionMorph<Mark: View, Surface: View>: ViewModifier {
                             .accessibilityHidden(!isEditing || presence < 1)
                     }
                 }
-                .padding(.trailing, DSSpacing.lg * edited)
                 // The gap to the next section, going with the section's room.
                 .padding(.bottom, DSSpacing.xxl)
         }
@@ -288,6 +293,22 @@ extension View {
             // what is inside; a modifier, so the view keeps its identity as `hides` changes.
             accessibilityElement(children: .contain).accessibilityHidden(hides)
         }
+    }
+}
+
+/// 編輯首頁's frame round a section, as the maintainer's reference draws it (2026-10-27): a grey
+/// card with its leading corners rounded and its trailing side run off the screen's edge, its
+/// row cut there with it. The section is drawn on the grey as on the home, so its own white
+/// cards stand apart from the frame; a white frame round them read as one white card.
+private struct HomeSectionFrame: Shape {
+    /// Past the rect on every side: the home cuts nothing.
+    var outset: CGFloat = 0
+
+    func path(in rect: CGRect) -> Path {
+        var frame = rect.insetBy(dx: -outset, dy: -outset)
+        // The trailing corners past the screen's edge, where the card ends.
+        frame.size.width += DSRadius.xxl
+        return RoundedRectangle(cornerRadius: DSRadius.xxl, style: .continuous).path(in: frame)
     }
 }
 

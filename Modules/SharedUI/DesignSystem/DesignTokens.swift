@@ -134,6 +134,13 @@ enum DSColor {
     /// A 首頁配置 without a photo: the first letter of its name, white on grey, the same tile.
     static let homeConfigurationMonogramFill = Color(uiColor: .systemGray2)
     static let homeConfigurationMonogramForeground = Color.white
+    /// 編輯首頁's frame round a section, the section drawn on it as on the home: a grey a step
+    /// darker than the page, as the maintainer's reference (2026-10-27), so a white card in the
+    /// section stands apart from it. A system fill, so a theme's page background shows through;
+    /// a darker one in dark mode, where the lighter one is a card's own #1C1C1E.
+    static let homeEditorFrame = Color(uiColor: UIColor { traits in
+        traits.userInterfaceStyle == .dark ? .systemFill : .tertiarySystemFill
+    })
 
     /// Ring and check of the selection mark on a shelf cover — white, as Apple Books
     /// draws it, whatever the cover and appearance.

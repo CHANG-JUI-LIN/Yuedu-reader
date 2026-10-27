@@ -159,6 +159,7 @@ struct HomeRowView: View {
 
     @Environment(\.homeRowIsCarousel) private var isCarousel
     @Environment(\.colorSchemeContrast) private var contrast
+    @Environment(\.homeDrawsSideways) private var drawsSideways
     /// The 頂部輪播圖's colour, its first cover's, once that cover has drawn.
     @State private var bandCover: CoverTint.RGB?
 
@@ -172,9 +173,10 @@ struct HomeRowView: View {
                     header
                     stateContent
                 }
-                // 色帶書架's covers stand on the band's foot; only the 輪播圖 runs under the bars.
+                // 色帶書架's covers stand on the band's foot, but for 編輯首頁's row of them; only the
+                // 輪播圖 runs under the bars.
                 .modifier(HomeBandGround(cover: bandCover, isActive: drawsBand, isCarousel: isCarousel,
-                                         cutsCovers: !isCarousel))
+                                         cutsCovers: !isCarousel && !drawsSideways))
             }
         }
         .task { load() }

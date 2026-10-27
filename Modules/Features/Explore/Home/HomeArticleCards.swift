@@ -14,14 +14,18 @@ struct HomeArticleCards: View {
     let open: (SubscriptionArticle) -> Void
 
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
+    @Environment(\.homeDrawsSideways) private var drawsSideways
     @ScaledMetric(relativeTo: .subheadline) private var cardWidth = DSLayout.homeArticleCardWidth
     @ScaledMetric(relativeTo: .headline) private var thumbnailWidth = DSLayout.homeListCoverWidth
 
     var body: some View {
-        if layout.style == .list {
-            list
-        } else {
+        if layout.style != .list {
             rail
+        } else if drawsSideways {
+            sidewaysList
+        } else {
+            list
         }
     }
 
@@ -67,6 +71,24 @@ struct HomeArticleCards: View {
             }
         }
         .padding(.horizontal, DSSpacing.lg)
+    }
+
+    /// 編輯首頁's (`homeDrawsSideways`): the rows side by side, a page each, as the books' are.
+    private var sidewaysList: some View {
+        let perScreen = horizontalSizeClass == .regular ? 2 : 1
+        return ScrollView(.horizontal) {
+            LazyHStack(alignment: .top, spacing: DSSpacing.md) {
+                ForEach(articles.indices, id: \.self) { index in
+                    button(articles[index]) {
+                        HomeArticleRow(article: articles[index], thumbnailWidth: thumbnailWidth,
+                                       stacksVertically: dynamicTypeSize.isAccessibilitySize)
+                    }
+                    .homePageCardWidth(perScreen: perScreen, count: articles.count)
+                }
+            }
+            .scrollTargetLayout()
+        }
+        .modifier(HomeSidewaysScroll())
     }
 }
 

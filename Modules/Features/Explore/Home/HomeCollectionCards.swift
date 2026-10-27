@@ -56,11 +56,7 @@ struct HomeCollectionCards: View {
                     HomeCollectionButton(collection: collection, open: open) {
                         HomeCollectionCard(collection: collection)
                     }
-                    .containerRelativeFrame(.horizontal) { length, _ in
-                        let peek = collections.count > perScreen ? DSLayout.homeReadingCardPeek + DSSpacing.md : 0
-                        let gaps = DSSpacing.md * CGFloat(perScreen - 1)
-                        return max(0, (length - gaps - peek) / CGFloat(perScreen))
-                    }
+                    .homePageCardWidth(perScreen: perScreen, count: collections.count)
                 }
             }
             .scrollTargetLayout()
@@ -163,24 +159,43 @@ private struct HomeCollectionButton<Card: View>: View {
 
 // MARK: - 分類卡片
 
-/// The lists down the page, a card each; two side by side on a wider screen.
+/// The lists down the page, a card each; two side by side on a wider screen. 編輯首頁 swipes
+/// them sideways, a card a page (`homeDrawsSideways`).
 struct HomeCategoryCards: View {
     let collections: [CollectionSummary]
     let open: (CollectionSummary) -> Void
 
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
+    @Environment(\.homeDrawsSideways) private var drawsSideways
 
     var body: some View {
-        let columns = Array(repeating: GridItem(.flexible(), spacing: DSSpacing.md, alignment: .top),
-                            count: horizontalSizeClass == .regular ? 2 : 1)
-        LazyVGrid(columns: columns, alignment: .leading, spacing: DSSpacing.md) {
-            ForEach(collections) { collection in
-                HomeCollectionButton(collection: collection, open: open) {
-                    HomeCategoryCard(collection: collection)
+        let perScreen = horizontalSizeClass == .regular ? 2 : 1
+        if drawsSideways {
+            ScrollView(.horizontal) {
+                LazyHStack(alignment: .top, spacing: DSSpacing.md) {
+                    ForEach(collections) { collection in
+                        card(collection)
+                            .homePageCardWidth(perScreen: perScreen, count: collections.count)
+                    }
+                }
+                .scrollTargetLayout()
+            }
+            .modifier(HomeSidewaysScroll())
+        } else {
+            let columns = Array(repeating: GridItem(.flexible(), spacing: DSSpacing.md, alignment: .top), count: perScreen)
+            LazyVGrid(columns: columns, alignment: .leading, spacing: DSSpacing.md) {
+                ForEach(collections) { collection in
+                    card(collection)
                 }
             }
+            .padding(.horizontal, DSSpacing.lg)
         }
-        .padding(.horizontal, DSSpacing.lg)
+    }
+
+    private func card(_ collection: CollectionSummary) -> some View {
+        HomeCollectionButton(collection: collection, open: open) {
+            HomeCategoryCard(collection: collection)
+        }
     }
 }
 
