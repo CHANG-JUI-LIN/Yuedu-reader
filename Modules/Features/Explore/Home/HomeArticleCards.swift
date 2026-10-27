@@ -32,6 +32,7 @@ struct HomeArticleCards: View {
     private func button(_ article: SubscriptionArticle, @ViewBuilder label: () -> some View) -> some View {
         Button { open(article) } label: { label() }
             .buttonStyle(ExploreTileButtonStyle())
+            .homeRowControl()
             .accessibilityElement(children: .ignore)
             .accessibilityAddTraits(.isButton)
             .accessibilityLabel(article.title)

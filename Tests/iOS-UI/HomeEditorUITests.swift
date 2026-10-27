@@ -133,6 +133,126 @@ final class HomeEditorUITests: XCTestCase {
                                                         "home.row.header.", listTitle)).firstMatch.exists)
     }
 
+    /// 編輯首頁's rows swipe under the finger, and a tap on one still opens its section's form
+    /// (maintainer, 2026-10-28). 專題集合's lists swiped on in the editor stay swiped on after 完成:
+    /// the row is the same one, and the editor reads its cards as the section's one card.
+    @MainActor
+    func testEditorRowsSwipe() throws {
+        func section(_ binding: [String: Any], layout: String) -> [String: Any] {
+            ["binding": binding, "id": UUID().uuidString, "isEnabled": true, "layout": layout,
+             "parameters": [String: Any](), "title": ""]
+        }
+        let sections = [section(["type": "gutenbergShelf", "id": "popular"], layout: "row"),
+                        section(["type": "gutenbergLists"], layout: "collection")]
+        let home = directory.appendingPathComponent("explore_home.json")
+        try JSONSerialization.data(withJSONObject: ["configurations": [Any](), "schemaVersion": 2, "sections": sections])
+            .write(to: home)
+        let app = launchExplore(["-explore-home-file", home.path])
+        let edit = app.buttons["home.edit"].firstMatch
+        for _ in 0..<8 where !edit.isHittable { app.swipeUp() }
+        let list = app.buttons[listCard].firstMatch
+        XCTAssertTrue(list.isHittable, "the first list, before the editor: \(app.debugDescription)")
+        edit.tap()
+        XCTAssertTrue(app.buttons["home.editDone"].waitForExistence(timeout: 10), app.debugDescription)
+
+        let card = sectionCards(app, named: listsTitle).firstMatch
+        XCTAssertTrue(card.waitForExistence(timeout: 5), app.debugDescription)
+        bringBetweenTheBars(card, in: app)
+        // Found by an accessibility hit test, as VoiceOver's finger finds it, though a finger's
+        // touches go through it to the row.
+        XCTAssertTrue(card.isHittable, app.debugDescription)
+        // The row, under the section's name.
+        let rowY = (card.frame.minY + card.frame.height * 0.7) / app.frame.height
+        for _ in 0..<2 {
+            app.coordinate(withNormalizedOffset: CGVector(dx: 0.85, dy: rowY))
+                .press(forDuration: 0.05, thenDragTo: app.coordinate(withNormalizedOffset: CGVector(dx: 0.15, dy: rowY)))
+        }
+        attach(app, "home-editing-swiped")
+
+        // A tap on a list in the row opens the section's form, not the list.
+        waitUntilSettled(card)
+        app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: rowY)).tap()
+        XCTAssertTrue(app.textFields["homeSection.title"].firstMatch.waitForExistence(timeout: 10), app.debugDescription)
+        app.navigationBars.buttons.element(boundBy: 0).tap()
+        XCTAssertTrue(card.waitForExistence(timeout: 10), app.debugDescription)
+
+        app.buttons["home.editDoneBar"].firstMatch.tap()
+        XCTAssertTrue(becomesHittable(edit), app.debugDescription)
+        // By its middle: asked whether it is hittable, a list off the screen's edge fails the test,
+        // and a card's frame takes in its tilted covers past its edge.
+        let screen = app.windows.firstMatch.frame
+        let shown = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "home.collection.gutenberg."))
+            .allElementsBoundByIndex.filter { screen.contains(CGPoint(x: $0.frame.midX, y: $0.frame.midY)) }
+        XCTAssertFalse(shown.isEmpty, app.debugDescription)
+        XCTAssertFalse(shown.contains { $0.identifier == listCard }, "swiped past the first list: \(app.debugDescription)")
+        attach(app, "home-after-swiped-editor")
+    }
+
+    /// 編輯首頁's long press lifts a section from anything in its card (maintainer, 2026-10-28:
+    /// 「長按照樣拖曳排序」): a cover in its row, which a moving finger still scrolls the page from,
+    /// and a hidden section's name, on the card's grey.
+    @MainActor
+    func testLongPressDragsTheSectionFromItsRowAndItsName() throws {
+        func section(_ binding: [String: Any], layout: String, enabled: Bool = true) -> [String: Any] {
+            ["binding": binding, "id": UUID().uuidString, "isEnabled": enabled, "layout": layout,
+             "parameters": [String: Any](), "title": ""]
+        }
+        // Enough hidden cards that the editor scrolls.
+        let hidden = (1...6).map { index in
+            section(["type": "sourceCategories", "categories": [[
+                "sourceURL": "http://localhost:9", "title": "Hidden \(index)", "url": "http://localhost:9/\(index)"]]],
+                    layout: "coverGrid", enabled: false)
+        }
+        let sections = [section(["type": "gutenbergShelf", "id": "popular"], layout: "row")] + hidden
+            + [section(["type": "gutenbergLists"], layout: "collection")]
+        let home = directory.appendingPathComponent("explore_home.json")
+        try JSONSerialization.data(withJSONObject: ["configurations": [Any](), "schemaVersion": 2, "sections": sections])
+            .write(to: home)
+        let app = launchExplore(["-explore-home-file", home.path])
+        let edit = app.buttons["home.edit"].firstMatch
+        for _ in 0..<8 where !edit.isHittable { app.swipeUp() }
+        edit.tap()
+        XCTAssertTrue(app.buttons["home.editDone"].waitForExistence(timeout: 10), app.debugDescription)
+
+        let popular = sectionCards(app, named: listTitle).firstMatch
+        let firstHidden = sectionCards(app, named: "Hidden 1").firstMatch
+        let secondHidden = sectionCards(app, named: "Hidden 2").firstMatch
+        XCTAssertTrue(popular.waitForExistence(timeout: 5), app.debugDescription)
+        func waitFor(_ order: @escaping () -> Bool) -> Bool {
+            XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in order() }, object: nil)],
+                           timeout: 5) == .completed
+        }
+
+        // A finger that moves from a cover scrolls the page.
+        bringBetweenTheBars(popular, in: app)
+        let top = popular.frame.minY
+        let cover = popular.coordinate(withNormalizedOffset: CGVector(dx: 0.3, dy: 0.7))
+        cover.press(forDuration: 0.05, thenDragTo: cover.withOffset(CGVector(dx: 0, dy: -200)),
+                    withVelocity: .slow, thenHoldForDuration: 0.3)
+        waitUntilSettled(popular)
+        XCTAssertLessThan(popular.frame.minY, top - 100, "the page scrolled from a cover: \(app.debugDescription)")
+
+        // Held, a cover lifts its section, onto the card under it.
+        bringBetweenTheBars(popular, in: app)
+        XCTAssertTrue(firstHidden.isHittable, app.debugDescription)
+        popular.coordinate(withNormalizedOffset: CGVector(dx: 0.3, dy: 0.7))
+            .press(forDuration: 1.0, thenDragTo: firstHidden.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)),
+                   withVelocity: .slow, thenHoldForDuration: 0.5)
+        XCTAssertTrue(waitFor { popular.frame.minY > firstHidden.frame.minY },
+                      "熱門 dropped after Hidden 1: \(app.debugDescription)")
+        attach(app, "home-editing-dragged-from-a-cover")
+
+        // A hidden section's name, onto the card above it.
+        bringBetweenTheBars(popular, in: app)
+        XCTAssertTrue(secondHidden.isHittable, app.debugDescription)
+        secondHidden.coordinate(withNormalizedOffset: CGVector(dx: 0.2, dy: 0.5))
+            .press(forDuration: 1.0, thenDragTo: popular.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)),
+                   withVelocity: .slow, thenHoldForDuration: 0.5)
+        XCTAssertTrue(waitFor { secondHidden.frame.minY < popular.frame.minY },
+                      "Hidden 2 dropped before 熱門: \(app.debugDescription)")
+        attach(app, "home-editing-dragged-from-a-name")
+    }
+
     /// 編輯首頁 and 完成 hold the page at its end only while the sections morph: a scroll that is
     /// not a drag — the status bar's here, VoiceOver's alike — then goes where it was sent. And
     /// from the top, the bar's 完成 and ••• → 編輯首頁 still end at the end.

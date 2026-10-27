@@ -149,6 +149,7 @@ private struct HomeCollectionButton<Card: View>: View {
     var body: some View {
         Button { open(collection) } label: { label() }
             .buttonStyle(ExploreTileButtonStyle())
+            .homeRowControl()
             .accessibilityElement(children: .ignore)
             .accessibilityAddTraits(.isButton)
             .accessibilityLabel(collection.title)

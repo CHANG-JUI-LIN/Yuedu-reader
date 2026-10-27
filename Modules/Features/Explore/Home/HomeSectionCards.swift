@@ -117,6 +117,7 @@ struct HomeSectionCards: View {
             label()
         }
         .buttonStyle(ExploreTileButtonStyle())
+        .homeRowControl()
         .accessibilityElement(children: .ignore)
         .accessibilityAddTraits(.isButton)
         .accessibilityLabel(card.accessibilityLabel)
@@ -726,6 +727,7 @@ struct HomeCardMenuButton: View {
                 .frame(width: DSLayout.minimumTapTarget, height: DSLayout.minimumTapTarget)
                 .contentShape(Rectangle())
         }
+        .homeRowControl()
         .accessibilityLabel(localized("更多"))
         .accessibilityIdentifier("home.card.more.\(card.id.instance.type.rawValue).\(card.id.item)")
     }

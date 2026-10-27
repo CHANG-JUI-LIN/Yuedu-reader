@@ -84,6 +84,52 @@ extension EnvironmentValues {
     /// exceptions — the editor never shows a section whole): 分類卡片, 固定封面網格 and 圖文資訊清單,
     /// read down the page on the home, and 色帶書架's stack, which does not scroll there.
     @Entry var homeDrawsSideways = false
+    /// The section 編輯首頁's long press lifts, wherever it starts in its card; nil on the home.
+    @Entry var homeSectionDrag: HomeSectionDrag? = nil
+}
+
+/// What a long press lifts in 編輯首頁: a section, by its id, with its name under the finger.
+struct HomeSectionDrag: Equatable, Sendable {
+    let id: UUID
+    let title: String
+}
+
+extension View {
+    /// A button, menu or long press in a home row, off in 編輯首頁: there a long press on it drags
+    /// its section (`homeSectionDrag`) and a tap opens the section's form (`HomeSectionEditGestures`),
+    /// while the row still swipes. Each control by itself, not the row: a row off as a whole does
+    /// not scroll either, and a drag laid over the whole row takes its swipe.
+    func homeRowControl() -> some View {
+        modifier(HomeRowControl())
+    }
+
+    /// 編輯首頁's long press, over the view: it lifts the section, which a card it is dropped on
+    /// takes the place of (`HomeSectionEditGestures`). Nothing on the home, which drags nothing;
+    /// only the overlay comes and goes, so the view under it stays the same view.
+    fileprivate func homeSectionDragSource(_ drag: HomeSectionDrag?, in shape: some Shape) -> some View {
+        overlay {
+            if let drag {
+                Color.clear
+                    .contentShape(shape)
+                    .draggable(drag.id.uuidString) {
+                        Text(drag.title).font(DSFont.headline).padding(DSSpacing.md)
+                    }
+                    .accessibilityHidden(true)
+            }
+        }
+    }
+}
+
+private struct HomeRowControl: ViewModifier {
+    /// Only 編輯首頁 has one.
+    @Environment(\.homeSectionDrag) private var drag
+
+    func body(content: Content) -> some View {
+        content
+            .allowsHitTesting(drag == nil)
+            // Inside the row's scroll view, which still takes the finger that moves.
+            .homeSectionDragSource(drag, in: Rectangle())
+    }
 }
 
 extension View {
@@ -137,10 +183,15 @@ struct HomeSectionSlot<RowContent: View>: View {
 
     var body: some View {
         let title = section.editorTitle()
+        let index = entry.editableIndex ?? 0
         content(title)
             .modifier(HomeSectionMorph(isEditing: isEditing, pageWidth: pageWidth, isOnHome: entry.isOnHome,
                                        isOnEditor: entry.editableIndex != nil,
-                                       mark: toggle(title), surface: editingSurface(title)))
+                                       mark: toggle(title), surface: editingSurface(title),
+                                       gestures: HomeSectionEditGestures(
+                                           isEditing: isEditing, open: { openSettings(section.id) },
+                                           drop: { pageStore.moveEditableSection($0, to: index) })))
+            .environment(\.homeSectionDrag, isEditing ? HomeSectionDrag(id: section.id, title: title) : nil)
     }
 
     /// The row, the same in its card, drawn sideways where the home reads it down the page
@@ -156,6 +207,8 @@ struct HomeSectionSlot<RowContent: View>: View {
                 .font(DSFont.title2.weight(.bold))
                 .foregroundStyle(DSColor.textSecondary)
                 .padding(.horizontal, DSSpacing.lg)
+                // The card's grey under it takes the tap and the long press.
+                .allowsHitTesting(false)
         }
     }
 
@@ -174,21 +227,14 @@ struct HomeSectionSlot<RowContent: View>: View {
         .accessibilityIdentifier("homeEditor.toggle.\(section.id.uuidString)")
     }
 
-    /// The card while the home is edited: a tap opens the section's form, a drag reorders. Over
-    /// the row, whose own buttons and scrolling are off meanwhile.
+    /// The card for VoiceOver while the home is edited, over the row: 設定, 上移 and 下移. Not for
+    /// the finger, which swipes the row under it, taps the card (`HomeSectionEditGestures`) and
+    /// drags it from anything in it (`homeSectionDrag`).
     private func editingSurface(_ title: String) -> some View {
         let index = entry.editableIndex ?? 0
         return Color.clear
             .contentShape(HomeSectionFrame())
-            .onTapGesture { openSettings(section.id) }
-            .draggable(section.id.uuidString) {
-                Text(title).font(DSFont.headline).padding(DSSpacing.md)
-            }
-            .dropDestination(for: String.self) { items, _ in
-                guard let dragged = items.first.flatMap(UUID.init(uuidString:)) else { return false }
-                pageStore.moveEditableSection(dragged, to: index)
-                return true
-            }
+            .allowsHitTesting(false)
             .accessibilityElement(children: .ignore)
             .accessibilityLabel(title)
             .accessibilityAddTraits(.isButton)
@@ -204,20 +250,47 @@ struct HomeSectionSlot<RowContent: View>: View {
     }
 }
 
+/// 編輯首頁's tap and drop on a section's card, round its row: a tap anywhere in it opens the
+/// section's form, and a section dragged onto it (`homeSectionDrag`) takes its place. On the card
+/// itself, an ancestor of the row's scroll view, so the row still swipes (maintainer, 2026-10-28:
+/// 「要能用手指左右滑，點一下照樣進欄目表單、長按照樣拖曳排序」); laid over the row, the old surface
+/// took every touch. Masked off on the home, whose rows take their touches as they always did. Not
+/// off by `isEnabled`, which also took the home's section names their long-press menus, and no
+/// `isEnabled` set back under the card returned them (UI tests, iOS 27 simulator); nor by an `if`,
+/// which would make the row another view and lose its carousel's place and the load it ran.
+private struct HomeSectionEditGestures: ViewModifier {
+    let isEditing: Bool
+    let open: () -> Void
+    /// Puts the dragged section where this one is.
+    let drop: (UUID) -> Void
+
+    func body(content: Content) -> some View {
+        content
+            .gesture(TapGesture().onEnded(open), including: isEditing ? .all : .subviews)
+            .dropDestination(for: String.self) { items, _ in
+                guard isEditing, let dragged = items.first.flatMap(UUID.init(uuidString:)) else { return false }
+                drop(dragged)
+                return true
+            }
+    }
+}
+
 /// A section's card as far into 編輯首頁 as the morph has come (`homeEditProgress`): the mark
 /// beside it, its margins, width, fill and clip, and its room on the home, all worked out again on
 /// every frame. Laid out once, at the morph's end, the home's lazy stack chose the rows to draw from
 /// where they would end while the page still showed where they had been; on the way out, a home a
 /// screen shorter than its editor ended above the page's offset, and every row was gone (the
 /// maintainer's device, which stayed blank; iOS 27 simulator with ten hidden sections).
-private struct HomeSectionMorph<Mark: View, Surface: View>: ViewModifier {
+private struct HomeSectionMorph<Mark: View, Surface: View, Gestures: ViewModifier>: ViewModifier {
     let isEditing: Bool
     let pageWidth: CGFloat
     let isOnHome: Bool
     let isOnEditor: Bool
     let mark: Mark
     let surface: Surface
+    let gestures: Gestures
     @Environment(\.homeEditProgress) private var progress
+    @Environment(\.homeSectionDrag) private var drag
 
     /// The mark and the gap after it.
     private static var markWidth: CGFloat { DSLayout.minimumTapTarget + DSSpacing.sm }
@@ -244,16 +317,22 @@ private struct HomeSectionMorph<Mark: View, Surface: View>: ViewModifier {
                 // it at its edge. Laid out in the card's own width, the row shrank — a carousel's
                 // cards, a grid's covers, a synopsis's lines (maintainer, 2026-10-21 and 2026-10-22).
                 .frame(width: width, alignment: .leading)
-                .allowsHitTesting(!isEditing)
                 // In 編輯首頁 the card is one element, the surface over it.
                 .accessibilityHidden(onlyWhen: isEditing || presence < 1)
                 .padding(.vertical, DSSpacing.lg * edited)
                 .frame(width: cardWidth, alignment: .leading)
                 .frame(maxWidth: width == nil ? .infinity : nil, alignment: .leading)
-                .background(DSColor.homeEditorFrame.opacity(edited), in: HomeSectionFrame())
+                .background {
+                    // Where the row draws nothing — its margins, its skeleton, a hidden section's
+                    // name — the long press starts on the grey.
+                    HomeSectionFrame()
+                        .fill(DSColor.homeEditorFrame.opacity(edited))
+                        .homeSectionDragSource(drag, in: HomeSectionFrame())
+                }
                 // The sideways rows draw past their bounds (`scrollClipDisabled`): the card cuts
                 // them at its edge; on the home the cut is past the screen's.
                 .clipShape(HomeSectionFrame(outset: DSSpacing.xxl * (1 - edited)))
+                .modifier(gestures)
                 .overlay {
                     if isEditing { surface.accessibilityHidden(presence < 1) }
                 }

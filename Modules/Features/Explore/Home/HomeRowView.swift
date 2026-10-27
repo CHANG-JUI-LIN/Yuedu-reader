@@ -168,7 +168,7 @@ struct HomeRowView: View {
                 EmptyView()
             } else {
                 VStack(alignment: .leading, spacing: drawsBand ? DSSpacing.lg : DSSpacing.md) {
-                    header
+                    header.homeRowControl()
                     stateContent
                 }
                 // 色帶書架's covers stand on the band's foot, but for 編輯首頁's row of them; only the
@@ -239,6 +239,7 @@ struct HomeRowView: View {
                     .lineLimit(3)
                 Button(localized("重試"), action: request)
                     .buttonStyle(.bordered)
+                    .homeRowControl()
                     .accessibilityIdentifier("home.row.retry.\(group.id)")
             }
             .padding(.horizontal, DSSpacing.lg)
@@ -290,6 +291,7 @@ struct HomeRowView: View {
                         .buttonStyle(.bordered)
                         .buttonBorderShape(.capsule)
                         .tint(drawsBand ? DSColor.textOnFixedFill : DSColor.textPrimary)
+                        .homeRowControl()
                 }
             }
         }

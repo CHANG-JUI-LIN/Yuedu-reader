@@ -74,6 +74,7 @@ struct HomeChartColumns: View {
                     .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
+                .homeRowControl()
                 .accessibilityAddTraits(.isHeader)
                 .accessibilityHint(localized("查看全部"))
                 .accessibilityIdentifier("home.chart.header.\(collection.id)")
@@ -95,6 +96,7 @@ struct HomeChartColumns: View {
                                 stacksVertically: dynamicTypeSize.isAccessibilitySize)
         }
         .buttonStyle(ExploreTileButtonStyle())
+        .homeRowControl()
         .accessibilityElement(children: .ignore)
         .accessibilityAddTraits(.isButton)
         .accessibilityLabel([rank.formatted(), article.title].joined(separator: ", "))
@@ -108,6 +110,7 @@ struct HomeChartColumns: View {
                          stacksVertically: dynamicTypeSize.isAccessibilitySize)
         }
         .buttonStyle(ExploreTileButtonStyle())
+        .homeRowControl()
         .accessibilityElement(children: .ignore)
         .accessibilityAddTraits(.isButton)
         .accessibilityLabel([rank.formatted(), card.accessibilityLabel].joined(separator: ", "))

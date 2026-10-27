@@ -97,8 +97,8 @@ struct AIRecommendationRow: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: drawsBand ? DSSpacing.lg : DSSpacing.md) {
-            header
-            status
+            header.homeRowControl()
+            status.homeRowControl()
             if allowsAI, !cards.isEmpty {
                 HomeSectionCards(layout: section.layout, cards: cards, rowID: rowID, hasShowAll: false, open: open,
                                  bandCover: drawsBand ? $bandCover : nil)
