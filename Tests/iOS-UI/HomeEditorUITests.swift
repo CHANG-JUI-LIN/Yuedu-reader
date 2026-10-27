@@ -762,4 +762,69 @@ final class HomeEditorUITests: XCTestCase {
         XCTAssertTrue(app.navigationBars["RSS 訂閱"].waitForExistence(timeout: 5), app.debugDescription)
         attach(app, "home-subscription-show-all")
     }
+
+    /// 編輯首頁's header (maintainer, 2026-10-27, after an Emby client's editor): 選擇輪播數據 puts a
+    /// list on the 頂部輪播圖, above every section; 關閉輪播圖 takes it away and 開啟輪播圖 brings
+    /// it back; the name opens 首頁配置; the photo says what a tap does.
+    @MainActor
+    func testEditorHeaderSetsTheCarousel() {
+        let app = launchExplore()
+        let edit = app.buttons["home.edit"].firstMatch
+        for _ in 0..<8 where !edit.isHittable { app.swipeUp() }
+        edit.tap()
+        let choose = app.buttons["homeEditor.chooseCarousel"].firstMatch
+        // The header is the top of the page: all the way up, clear of the bar.
+        for _ in 0..<8 { app.swipeDown() }
+        XCTAssertTrue(choose.isHittable, app.debugDescription)
+        XCTAssertEqual(app.buttons["homeEditor.photo"].firstMatch.label, "加入照片")
+        attach(app, "home-editor-header")
+
+        // The name opens 首頁配置.
+        app.buttons["homeEditor.configuration"].firstMatch.tap()
+        XCTAssertTrue(app.navigationBars["首頁配置"].waitForExistence(timeout: 5), app.debugDescription)
+        app.navigationBars.buttons.element(boundBy: 0).tap()
+
+        // 選擇輪播數據: Gutenberg's bundled list.
+        XCTAssertTrue(choose.waitForExistence(timeout: 5), app.debugDescription)
+        choose.tap()
+        XCTAssertTrue(app.navigationBars["選擇輪播數據"].waitForExistence(timeout: 5), app.debugDescription)
+        attach(app, "home-carousel-picker")
+        app.buttons.matching(NSPredicate(format: "label CONTAINS %@", "Project Gutenberg")).firstMatch.tap()
+        let list = app.buttons["homePicker.item.兒童與青少年"].firstMatch
+        XCTAssertTrue(list.waitForExistence(timeout: 5), app.debugDescription)
+        list.tap()
+        let toggle = app.buttons["homeEditor.toggleCarousel"].firstMatch
+        XCTAssertTrue(toggle.waitForExistence(timeout: 5), app.debugDescription)
+        XCTAssertEqual(toggle.label, "關閉輪播圖")
+
+        // The home: the list on the 輪播圖, above 熱門.
+        let carousel = app.descendants(matching: .any).matching(NSPredicate(format: "identifier BEGINSWITH %@ AND label CONTAINS %@",
+                                                        "home.row.header.", "兒童與青少年")).firstMatch
+        let popular = app.descendants(matching: .any).matching(NSPredicate(format: "identifier BEGINSWITH %@ AND label CONTAINS %@",
+                                                       "home.row.header.", listTitle)).firstMatch
+        app.buttons["home.editDoneBar"].firstMatch.tap()
+        for _ in 0..<8 where !carousel.exists { app.swipeDown() }
+        XCTAssertTrue(carousel.waitForExistence(timeout: 10), app.debugDescription)
+        XCTAssertTrue(app.buttons["home.card.gutenberg.11"].firstMatch.waitForExistence(timeout: 10), app.debugDescription)
+        if popular.exists { XCTAssertLessThan(carousel.frame.minY, popular.frame.minY) }
+        attach(app, "home-carousel")
+
+        // 關閉輪播圖, then 開啟輪播圖.
+        for _ in 0..<8 where !edit.isHittable { app.swipeUp() }
+        edit.tap()
+        for _ in 0..<8 { app.swipeDown() }
+        toggle.tap()
+        XCTAssertEqual(toggle.label, "開啟輪播圖")
+        app.buttons["home.editDoneBar"].firstMatch.tap()
+        for _ in 0..<8 { app.swipeDown() }
+        XCTAssertFalse(carousel.waitForExistence(timeout: 3), "a hidden 輪播圖 is not drawn: \(app.debugDescription)")
+        for _ in 0..<8 where !edit.isHittable { app.swipeUp() }
+        edit.tap()
+        for _ in 0..<8 { app.swipeDown() }
+        toggle.tap()
+        XCTAssertEqual(toggle.label, "關閉輪播圖")
+        app.buttons["home.editDoneBar"].firstMatch.tap()
+        for _ in 0..<8 where !carousel.exists { app.swipeDown() }
+        XCTAssertTrue(carousel.waitForExistence(timeout: 10), app.debugDescription)
+    }
 }

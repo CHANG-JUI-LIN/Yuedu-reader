@@ -390,7 +390,7 @@ struct HomeCoverCard: View {
 /// hue made light (`line(for:)`), reads at 4.5:1 on it (7:1 with 增加對比), so the header's white
 /// does too, as 精簡閱讀卡片's ground is, and the bar's 探索 over it. Decoration: VoiceOver
 /// reads nothing of it. Inactive, it draws nothing, and the row keeps its identity as the band
-/// comes and goes.
+/// comes and goes. Whether it draws is reported up (`HomeCarouselBandKey`), for the bar.
 struct HomeBandGround: ViewModifier {
     let cover: CoverTint.RGB?
     var isActive = true
@@ -418,7 +418,15 @@ struct HomeBandGround: ViewModifier {
                     .padding(.top, isActive ? -DSLayout.homeCarouselBleed : 0)
             }
             .animation(DSAnimation.standard, value: cover)
+            .preference(key: HomeCarouselBandKey.self, value: isActive)
     }
+}
+
+/// The 頂部輪播圖 draws its band: the bar's 探索 and buttons are white only over it, never over
+/// a carousel drawn without one (a failure, no books, 為你推薦 waiting for AI).
+struct HomeCarouselBandKey: PreferenceKey {
+    static var defaultValue: Bool { false }
+    static func reduce(value: inout Bool, nextValue: () -> Bool) { value = value || nextValue() }
 }
 
 // MARK: - 大型閱讀卡片

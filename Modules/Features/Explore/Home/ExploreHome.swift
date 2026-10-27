@@ -73,6 +73,8 @@ private struct ExploreHomeRoot: View {
     /// buttons are white on its colour (maintainer, 2026-10-27).
     @State private var carouselHeight: CGFloat = 0
     @State private var barIsOverCarousel = true
+    /// The 輪播圖 draws its band, as its row reports it (`HomeCarouselBandKey`).
+    @State private var carouselDrawsBand = false
     /// 選擇輪播數據, from 編輯首頁's header or the 輪播圖's long press.
     @State private var choosesCarousel = false
 
@@ -124,11 +126,10 @@ private struct ExploreHomeRoot: View {
         return groups.first { $0.section.id == carouselID && !$0.isSettledEmpty }
     }
 
-    /// The bar is over the 輪播圖's band: its colour, not a failure's message on the page's.
+    /// The bar is over the 輪播圖's band: its colour, not the page's under a carousel drawn
+    /// without one.
     private var barIsOverColor: Bool {
-        guard !isEditing, barIsOverCarousel, let carouselGroup else { return false }
-        if case .failed = carouselGroup.state { return false }
-        return true
+        !isEditing && barIsOverCarousel && carouselGroup != nil && carouselDrawsBand
     }
 
     /// The home's sections, each one view in and out of 編輯首頁 (`HomeSectionSlot`): one list
@@ -357,6 +358,7 @@ private struct ExploreHomeRoot: View {
                         push: push, openSettings: { choosesCarousel = true })
                 .environment(\.homeRowIsCarousel, true)
                 .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { carouselHeight = $0 }
+                .onPreferenceChange(HomeCarouselBandKey.self) { carouselDrawsBand = $0 }
                 // Until it has scrolled out from under the bar.
                 .reportsScrollOffset { offset in
                     let isUnder = offset < carouselHeight
