@@ -66,6 +66,55 @@ struct BookStoreShelfRecoveryTests {
         #expect(saved.map(\.title) == ["新書"])
     }
 
+    @Test("TXT bookmarks of a shelf book are not committed over a shelf that could not be kept aside")
+    @MainActor
+    func txtBookmarksAreNotCommittedOverUnreadableShelf() async throws {
+        let directory = try makeDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let metadataURL = directory.appendingPathComponent("books_meta.json")
+        let unreadable = Data("{ not json".utf8)
+        try unreadable.write(to: metadataURL)
+        try Data("an older copy".utf8).write(to: try backupURL(for: metadataURL))
+
+        let store = BookStore(metadataFileURL: metadataURL)
+        let original = [Bookmark(chapterIndex: 3, chapterTitle: "第三章", position: CoreTextReadingPosition(spineIndex: 3, charOffset: 10))]
+        let migrated = [Bookmark(chapterIndex: 5, chapterTitle: "第三章", position: CoreTextReadingPosition(spineIndex: 5, charOffset: 10))]
+        var book = ReadingBook(title: "TXT", contentFilename: "\(UUID().uuidString).txt")
+        book.bookmarks = original
+        store.saveReadingBook(book)
+        store.waitForQueuedWrites()
+
+        // The caller publishes the new chapter index only once the bookmarks are durable.
+        await #expect(throws: (any Error).self) {
+            try await store.commitTXTBookmarks(bookId: book.id, original: original, migrated: migrated)
+        }
+        store.waitForQueuedWrites()
+        #expect(store.readingBook(id: book.id)?.bookmarks == original)
+        #expect(try Data(contentsOf: metadataURL) == unreadable)
+    }
+
+    @Test("a restore that brings a readable shelf lets this launch write the shelf again")
+    @MainActor
+    func reloadingAReadableShelfUnblocksWrites() async throws {
+        let directory = try makeDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let metadataURL = directory.appendingPathComponent("books_meta.json")
+        try Data("{ not json".utf8).write(to: metadataURL)
+        try Data("an older copy".utf8).write(to: try backupURL(for: metadataURL))
+        let store = BookStore(metadataFileURL: metadataURL)
+
+        // An iCloud or WebDAV restore replaces the file, then has the store read it again.
+        let restored = ReadingBook(title: "還原的書", author: "Author", contentFilename: "")
+        try JSONEncoder().encode([restored]).write(to: metadataURL, options: .atomic)
+        await store.reloadFromDisk()
+        #expect(store.books.map(\.title) == ["還原的書"])
+
+        store.replaceBooksFromSync([restored, ReadingBook(title: "新書", author: "Author", contentFilename: "")])
+
+        let saved = try JSONDecoder().decode([ReadingBook].self, from: Data(contentsOf: metadataURL))
+        #expect(Set(saved.map(\.title)) == ["還原的書", "新書"])
+    }
+
     // MARK: - Reading records
     //
     // 只讀過、不在書架上的書（立即閱讀、從書架移除的遠端書庫參照）只記在閱讀記錄檔。
@@ -139,6 +188,31 @@ struct BookStoreShelfRecoveryTests {
         store.waitForQueuedWrites()
         #expect(store.readingBook(id: book.id)?.bookmarks == original)
         #expect(try Data(contentsOf: readingURL) == unreadable)
+    }
+
+    @Test("a restore that brings readable reading records lets this launch write them again")
+    @MainActor
+    func reloadingReadableReadingRecordsUnblocksWrites() async throws {
+        let directory = try makeDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let metadataURL = directory.appendingPathComponent("books_meta.json")
+        let (shelf, _) = try seedUnreadableReadingRecords(metadataURL: metadataURL)
+        let readingURL = readingURL(for: metadataURL)
+        try Data("an older copy".utf8).write(to: try backupURL(for: readingURL))
+        let store = BookStore(metadataFileURL: metadataURL)
+
+        var restored = ReadingBook(title: "還原的閱讀記錄", author: "Author", contentFilename: "")
+        restored.isInBookshelf = false
+        try JSONEncoder().encode([restored]).write(to: readingURL, options: .atomic)
+        await store.reloadFromDisk()
+        #expect(store.readingBook(id: restored.id) != nil)
+
+        // Taking a remote reference off the shelf writes the reading records on their own.
+        store.delete(bookId: shelf.id)
+        store.waitForQueuedWrites()
+
+        let saved = try JSONDecoder().decode([ReadingBook].self, from: Data(contentsOf: readingURL))
+        #expect(Set(saved.map(\.title)) == ["還原的閱讀記錄", "書架上的遠端書"])
     }
 
     @Test("a relaunch recognises the reading-record copy it already made")

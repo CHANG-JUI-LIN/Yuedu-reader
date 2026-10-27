@@ -212,8 +212,9 @@ class BookStore: @MainActor ObservableObject, BookProvider {
     /// shelf) are in no other file; writing would replace them with the few this launch knows.
     private var readingRecordsWritesBlocked = false
 
-    /// Thrown by a write that must land when `readingRecordsWritesBlocked` keeps it from the file.
-    struct ReadingRecordsUnwritable: Error {}
+    /// Thrown by a write that must land when `metadataWritesBlocked` or
+    /// `readingRecordsWritesBlocked` keeps it from its file.
+    struct MetadataFileUnwritable: Error {}
 
 
     // Legacy UserDefaults key kept only for one-time migration.
@@ -2896,7 +2897,7 @@ class BookStore: @MainActor ObservableObject, BookProvider {
         let url = isShelf ? metadataFileURL : readingMetadataFileURL
         do {
             // The caller publishes the new chapter index only once these bookmarks are durable.
-            if !isShelf, readingRecordsWritesBlocked { throw ReadingRecordsUnwritable() }
+            if isShelf ? metadataWritesBlocked : readingRecordsWritesBlocked { throw MetadataFileUnwritable() }
             try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, any Error>) in
                 Self.persistQueue.async { [self] in
                     do {
@@ -3330,8 +3331,12 @@ class BookStore: @MainActor ObservableObject, BookProvider {
     /// Whether the shelf is known to be complete: the file decoded, or there is no shelf
     /// file yet. A file that exists but does not decode leaves the shelf empty, and that
     /// must not be taken to mean the user has no books.
+    ///
+    /// Whether the file may be written is decided afresh on every load: a restore
+    /// (`reloadFromDisk`) may bring a readable file.
     @discardableResult
     private func loadMeta() -> Bool {
+        metadataWritesBlocked = false
         let shelfFileExists = FileManager.default.fileExists(atPath: metadataFileURL.path)
         // Prefer the file-based store.
         if shelfFileExists {
