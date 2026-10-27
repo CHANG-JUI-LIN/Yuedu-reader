@@ -72,7 +72,7 @@ struct LocalizationIdiomTests {
             ("作品詳情", "提示：作品詳情", "Opens Book Details."),
             // 設定's groups: 閱讀 alone is the app's name, 一般 is "Regular" and 資源 "Assets".
             ("一般", "設定分組：一般", "General"),
-            ("資源", "設定分組：資源", "Sources"),
+            ("資源", "設定分組：資源", "Resources"),
             ("閱讀", "設定分組：閱讀", "Reading"),
         ]
         for pair in splits {

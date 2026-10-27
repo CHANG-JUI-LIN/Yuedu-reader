@@ -4180,7 +4180,7 @@
 
 /* 設定's groups (2026-10-27). 一般, 資源 and 閱讀 mean something else under their own keys. */
 "設定分組：一般" = "General";
-"設定分組：資源" = "Sources";
+"設定分組：資源" = "Resources";
 "設定分組：閱讀" = "Reading";
 "設定分組：資料" = "Data";
 "設定分組：支援" = "Support";
