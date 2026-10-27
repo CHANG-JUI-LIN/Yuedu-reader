@@ -63,7 +63,73 @@ final class BookshelfGroupsUITests: XCTestCase {
         attachScreenshot(of: app, named: "Group bar")
     }
 
+    /// Covers passing under the chips made a muddle of both: the chips go once the page
+    /// leaves its top, and are back once it is at its top again.
+    @MainActor
+    func testGroupChipsLeaveWithTheTitle() throws {
+        let app = launchShelf(grid: false)
+        let chips = groupChips(in: app)
+        let shelf = shelf(in: app, grid: false)
+
+        shelf.swipeUp()
+        XCTAssertTrue(chips.firstMatch.waitForNonExistence(timeout: 5), "the chips stay over a scrolled page: \(app.debugDescription)")
+        attachScreenshot(of: app, named: "Scrolled, no chips")
+
+        for _ in 0..<3 where !chips.firstMatch.exists {
+            shelf.swipeDown()
+        }
+        XCTAssertTrue(chips.firstMatch.waitForExistence(timeout: 5), "the chips are not back at the top: \(app.debugDescription)")
+    }
+
     // MARK: - Folders
+
+    /// A folder's ••• holds 重命名分組, which opens on the group's name, and 解散分組, which
+    /// asks first. Both are cancelled here, so the shelf's groups stay as they were; the store's
+    /// tests cover what a rename and an ungroup change.
+    @MainActor
+    func testFolderMenuRenamesAndUngroupsOnlyWhenConfirmed() throws {
+        for isGrid in [false, true] {
+            try assertFolderMenuRenamesAndUngroupsOnlyWhenConfirmed(grid: isGrid)
+        }
+    }
+
+    @MainActor
+    private func assertFolderMenuRenamesAndUngroupsOnlyWhenConfirmed(grid: Bool) throws {
+        let app = launchShelf(grid: grid)
+        _ = groupChips(in: app)
+        let folder = shelf(in: app, grid: grid)
+            .descendants(matching: .any).matching(identifier: "home_group_folder").firstMatch
+        XCTAssertTrue(folder.waitForExistence(timeout: 10), app.debugDescription)
+        let label = folder.label
+        let group = try XCTUnwrap(label.components(separatedBy: "，").first)
+
+        openMenu(of: folder, in: app, grid: grid)
+        app.buttons["Rename Group"].tap()
+        let field = app.alerts.textFields.firstMatch
+        XCTAssertTrue(field.waitForExistence(timeout: 5), app.debugDescription)
+        XCTAssertEqual(field.value as? String, group, "the rename opens on the group's name")
+        field.typeText("X")
+        attachScreenshot(of: app, named: "Renaming \(group)")
+        app.alerts.buttons["Cancel"].tap()
+        XCTAssertTrue(field.waitForNonExistence(timeout: 5))
+        XCTAssertEqual(folder.label, label, "a cancelled rename still renamed \(group)")
+
+        openMenu(of: folder, in: app, grid: grid)
+        app.buttons["Ungroup"].tap()
+        let question = app.staticTexts["Ungroup “\(group)”?"]
+        XCTAssertTrue(question.waitForExistence(timeout: 5), "解散分組 does not ask first: \(app.debugDescription)")
+        attachScreenshot(of: app, named: "Ungroup \(group)?")
+        let cancel = app.buttons["Cancel"]
+        if cancel.exists {
+            cancel.tap()
+        } else {
+            // From iOS 26 the question is a popover over the •••, which a tap outside cancels.
+            app.coordinate(withNormalizedOffset: CGVector(dx: 0.1, dy: 0.5)).tap()
+        }
+        XCTAssertTrue(question.waitForNonExistence(timeout: 5))
+        XCTAssertEqual(folder.label, label, "a cancelled 解散分組 still ungrouped \(group)")
+        app.terminate()
+    }
 
     /// 全部 shows one folder per group — the groups' books are inside them, not beside them.
     @MainActor
@@ -118,6 +184,23 @@ final class BookshelfGroupsUITests: XCTestCase {
     }
 
     // MARK: - Helpers
+
+    /// The folder's ••• is not its own element — VoiceOver has its items as the folder's
+    /// actions — so it is tapped where it sits, at the row's bottom trailing corner.
+    /// In the grid it sits at the end of the count line, under the cover; tapping it must
+    /// open the menu, not the folder.
+    @MainActor
+    private func openMenu(of folder: XCUIElement, in app: XCUIApplication, grid: Bool) {
+        let frame = folder.frame
+        let corner = grid ? CGVector(dx: frame.width - 16, dy: frame.height - 16)
+            : CGVector(dx: frame.width - 22, dy: frame.height - 32)
+        folder.coordinate(withNormalizedOffset: .zero).withOffset(corner).tap()
+        XCTAssertTrue(app.buttons["Rename Group"].waitForExistence(timeout: 5), "no ••• menu: \(app.debugDescription)")
+        XCTAssertFalse(
+            app.descendants(matching: .any)[grid ? "home_folder_grid" : "home_folder_list"].exists,
+            "the ••• opened the folder"
+        )
+    }
 
     @MainActor
     private func launchShelf(grid: Bool) -> XCUIApplication {

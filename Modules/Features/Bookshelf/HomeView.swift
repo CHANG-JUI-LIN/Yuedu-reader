@@ -257,6 +257,11 @@ struct HomeView: View {
     @State private var selectedBookIds: Set<UUID> = []
     @State private var showBulkDeleteAlert = false
     @State private var showAddToGroupSheet = false
+    /// 重命名分組 from a folder's •••: the group, and the name being typed for it. The alert's
+    /// button reads them when it is tapped; closing the alert leaves them be.
+    @State private var showsRenameGroupAlert = false
+    @State private var groupToRename = ""
+    @State private var groupRenameText = ""
     /// Pushed rather than presented: a sheet asked for from a menu action can be dropped on iOS 17.
     @State private var showBookshelfOrganizer = false
     @State private var showAIPaywall = false
@@ -734,6 +739,13 @@ struct HomeView: View {
                     Text(String(format: localized("確定要從書架刪除《%@》嗎？"), b.title))
                 }
             }
+            .alert(localized("重命名分組"), isPresented: $showsRenameGroupAlert) {
+                TextField(localized("分組名稱"), text: $groupRenameText)
+                Button(localized("取消"), role: .cancel) {}
+                Button(localized("確定")) {
+                    store.renameGroup(groupToRename, to: groupRenameText)
+                }
+            }
             .alert(localized("確認刪除"), isPresented: $showBulkDeleteAlert) {
                 Button(localized("刪除"), role: .destructive) {
                     let ids = selectedBookIds
@@ -981,6 +993,13 @@ struct HomeView: View {
         return store.allGroups.map { (name: $0, count: counts[$0] ?? 0) }
     }
 
+    /// 重命名分組 from a folder's •••: the alert opens on the group's name.
+    private func beginRenaming(group: String) {
+        groupToRename = group
+        groupRenameText = group
+        showsRenameGroupAlert = true
+    }
+
     /// Moves the selection into `group` and ends 選取. A name left empty moves nothing.
     private func addSelection(toGroup group: String) {
         guard !group.isEmpty, !selectedBookIds.isEmpty else { return }
@@ -1001,6 +1020,11 @@ struct HomeView: View {
     /// left to the system it is hard — a lighter band ending in a hairline under the group
     /// bar (iOS 27 simulator), unlike the page background around it. Earlier systems draw
     /// no edge and no line, so there the bar stays above the pages, which stop under it.
+    ///
+    /// Covers passing under the chips made a muddle of both (maintainer, 2026-10-27), so
+    /// from iOS 26 the chips go with 書架's title as the page leaves its top and are back
+    /// once it is. Before iOS 26 nothing passes under them, and gone they would leave an
+    /// empty band over the pages, so they stay.
     @ViewBuilder
     private func groupedShelf(pages: [String]) -> some View {
         let showsGroupBar = pages.count > 1
@@ -1010,6 +1034,7 @@ struct HomeView: View {
                 .safeAreaBar(edge: .top, spacing: 0) {
                     if showsGroupBar {
                         groupFilterBar(pages: pages)
+                            .fadesWithRootTabTitle()
                     }
                 }
         } else {
@@ -1162,9 +1187,14 @@ struct HomeView: View {
                         .equatable()
                         .tag(book.id)
                     case .folder(let name, let books):
-                        BookshelfFolderRow(name: name, books: books, isSelecting: isSelecting) {
-                            openedFolder = name
-                        }
+                        BookshelfFolderRow(
+                            name: name,
+                            books: books,
+                            isSelecting: isSelecting,
+                            onOpen: { openedFolder = name },
+                            onRename: { beginRenaming(group: name) },
+                            onDissolve: { store.dissolveGroup(name) }
+                        )
                         .equatable()
                         .moveDisabled(true)
                     }
@@ -1282,10 +1312,11 @@ struct HomeView: View {
                             books: books,
                             isCompactLayout: isCompactFiveColumnGrid,
                             coverDisplaySize: coverDisplaySize,
-                            isSelecting: isSelecting
-                        ) {
-                            openedFolder = name
-                        }
+                            isSelecting: isSelecting,
+                            onOpen: { openedFolder = name },
+                            onRename: { beginRenaming(group: name) },
+                            onDissolve: { store.dissolveGroup(name) }
+                        )
                         .equatable()
                     }
                 }
@@ -2286,46 +2317,59 @@ private enum BookshelfFolderLabel {
 }
 
 /// A group on 全部 in the list: its folder where a book's cover would be, its name, and how
-/// many books it holds. A tap opens the group's page. 選取 takes books only, so the folder
-/// dims and takes no taps while it is on.
+/// many books it holds, with 重命名分組 and 解散分組 in a ••• where a book has its own. A tap
+/// opens the group's page. 選取 takes books only, so the folder dims and takes no taps while
+/// it is on, and its ••• goes as a book's does.
 private struct BookshelfFolderRow: View {
     let name: String
     let books: [ReadingBook]
     var isSelecting = false
     let onOpen: () -> Void
+    var onRename: () -> Void = {}
+    var onDissolve: () -> Void = {}
+    @State private var confirmsDissolving = false
 
     var body: some View {
         VStack(spacing: 0) {
-            Button(action: onOpen) {
-                HStack(alignment: .top, spacing: 12) {
-                    BookshelfFolderCover(books: books, displaySize: BookRow.coverSize)
-                        .frame(width: BookRow.coverSize.width, height: BookRow.coverSize.height)
-                        .clipShape(RoundedRectangle(cornerRadius: BookshelfCoverStyle.cornerRadius))
-                        .shadow(color: .black.opacity(0.08), radius: 15, x: 0, y: 10)
+            HStack(alignment: .top, spacing: 12) {
+                Button(action: onOpen) {
+                    HStack(alignment: .top, spacing: 12) {
+                        BookshelfFolderCover(books: books, displaySize: BookRow.coverSize)
+                            .frame(width: BookRow.coverSize.width, height: BookRow.coverSize.height)
+                            .clipShape(RoundedRectangle(cornerRadius: BookshelfCoverStyle.cornerRadius))
+                            .shadow(color: .black.opacity(0.08), radius: 15, x: 0, y: 10)
 
-                    VStack(alignment: .leading, spacing: 5) {
-                        Text(name)
-                            .font(DSFont.fixed(size: 15, weight: .medium))
-                            .lineLimit(2)
-                            .foregroundStyle(DSColor.textPrimary)
-                        Text(BookshelfFolderLabel.count(books.count))
-                            .font(DSFont.fixed(size: 13))
-                            .foregroundColor(DSColor.textSecondary)
-                            .lineLimit(1)
+                        VStack(alignment: .leading, spacing: 5) {
+                            Text(name)
+                                .font(DSFont.fixed(size: 15, weight: .medium))
+                                .lineLimit(2)
+                                .foregroundStyle(DSColor.textPrimary)
+                            Text(BookshelfFolderLabel.count(books.count))
+                                .font(DSFont.fixed(size: 13))
+                                .foregroundColor(DSColor.textSecondary)
+                                .lineLimit(1)
+                        }
+                        .padding(.top, 2)
+
+                        Spacer(minLength: 0)
                     }
-                    .padding(.top, 2)
-
-                    Spacer(minLength: 0)
-
-                    Image(systemName: "chevron.right")
-                        .font(DSFont.fixed(size: 14, weight: .semibold))
-                        .foregroundStyle(DSColor.textTertiary)
-                        .frame(maxHeight: .infinity)
+                    .contentShape(Rectangle())
                 }
-                .contentShape(Rectangle())
+                .buttonStyle(.plain)
+                .opacity(isSelecting ? DSLayout.bookshelfUnselectedCoverOpacity : 1)
+
+                if !isSelecting {
+                    VStack {
+                        Spacer(minLength: 0)
+                        BookshelfFolderMenu(
+                            iconSize: 16,
+                            onRename: onRename,
+                            onDissolve: { confirmsDissolving = true }
+                        )
+                        .confirmsDissolving(group: name, isPresented: $confirmsDissolving, onDissolve: onDissolve)
+                    }
+                }
             }
-            .buttonStyle(.plain)
-            .opacity(isSelecting ? DSLayout.bookshelfUnselectedCoverOpacity : 1)
             .padding(.vertical, 10)
 
             Rectangle()
@@ -2337,12 +2381,20 @@ private struct BookshelfFolderRow: View {
         .accessibilityLabel(BookshelfFolderLabel.accessibilityLabel(name: name, books: books))
         .accessibilityAddTraits(.isButton)
         .accessibilityAction { onOpen() }
+        // The ••• is not its own element, so its items are the folder's rotor actions.
+        .accessibilityActions {
+            if !isSelecting {
+                Button(localized("重命名分組")) { onRename() }
+                Button(localized("解散分組"), role: .destructive) { confirmsDissolving = true }
+            }
+        }
         .accessibilityIdentifier("home_group_folder")
     }
 }
 
 /// A group on 全部 in the grid: its folder in a book's cover's place, its name in the
-/// title's, and how many books it holds in the author's.
+/// title's, and how many books it holds in the author's, with the group's ••• beside it as
+/// a book has its own.
 private struct BookshelfFolderGridCell: View {
     let name: String
     let books: [ReadingBook]
@@ -2351,40 +2403,108 @@ private struct BookshelfFolderGridCell: View {
     var coverDisplaySize: CGSize = .zero
     var isSelecting = false
     let onOpen: () -> Void
+    var onRename: () -> Void = {}
+    var onDissolve: () -> Void = {}
+    @State private var confirmsDissolving = false
 
     var body: some View {
-        Button(action: onOpen) {
-            VStack(alignment: .leading, spacing: DSLayout.bookshelfGridCoverTitleSpacing) {
+        VStack(alignment: .leading, spacing: DSLayout.bookshelfGridCoverTitleSpacing) {
+            Button(action: onOpen) {
                 Color.clear
                     .aspectRatio(2/3, contentMode: .fit)
                     .overlay(BookshelfFolderCover(books: books, displaySize: coverDisplaySize))
                     .clipShape(RoundedRectangle(cornerRadius: BookshelfCoverStyle.cornerRadius))
                     .shadow(color: .black.opacity(0.18), radius: 4, x: 0, y: 2)
+            }
+            .buttonStyle(.plain)
 
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(name)
-                        .font(DSFont.fixed(size: isCompactLayout ? 12 : 13, weight: .semibold))
-                        .multilineTextAlignment(.leading)
-                        .fixedSize(horizontal: false, vertical: true)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .foregroundStyle(DSColor.textPrimary)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(name)
+                    .font(DSFont.fixed(size: isCompactLayout ? 12 : 13, weight: .semibold))
+                    .multilineTextAlignment(.leading)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .foregroundStyle(DSColor.textPrimary)
+
+                HStack(alignment: .center, spacing: 2) {
                     Text(BookshelfFolderLabel.count(books.count))
                         .font(DSFont.fixed(size: isCompactLayout ? 10 : 11))
                         .foregroundColor(DSColor.textSecondary)
                         .lineLimit(1)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+
+                    BookshelfFolderMenu(
+                        iconSize: isCompactLayout ? 13 : 14,
+                        controlSize: isCompactLayout ? 28 : 32,
+                        onRename: onRename,
+                        onDissolve: { confirmsDissolving = true }
+                    )
+                    .confirmsDissolving(group: name, isPresented: $confirmsDissolving, onDissolve: onDissolve)
+                    // 選取 takes the ••• away, as it does a book's. It keeps its room, so the
+                    // shelf does not reflow on the way in and out.
+                    .opacity(isSelecting ? 0 : 1)
+                    .allowsHitTesting(!isSelecting)
                 }
             }
-            .frame(maxWidth: .infinity, alignment: .leading)
+            // The name and the count open the folder as the cover does; the ••• keeps its taps.
             .contentShape(Rectangle())
+            .onTapGesture(perform: onOpen)
         }
-        .buttonStyle(.plain)
+        .frame(maxWidth: .infinity, alignment: .leading)
         .opacity(isSelecting ? DSLayout.bookshelfUnselectedCoverOpacity : 1)
         .disabled(isSelecting)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(BookshelfFolderLabel.accessibilityLabel(name: name, books: books))
         .accessibilityAddTraits(.isButton)
         .accessibilityAction { onOpen() }
+        .accessibilityActions {
+            if !isSelecting {
+                Button(localized("重命名分組")) { onRename() }
+                Button(localized("解散分組"), role: .destructive) { confirmsDissolving = true }
+            }
+        }
         .accessibilityIdentifier("home_group_folder")
+    }
+}
+
+/// A group's •••: 重命名分組, then 解散分組 last, as 刪除書籍 is last in a book's.
+private struct BookshelfFolderMenu: View {
+    let iconSize: CGFloat
+    var controlSize: CGFloat = 44
+    let onRename: () -> Void
+    /// Asks first: the folder puts `confirmsDissolving(group:isPresented:onDissolve:)` on this menu.
+    let onDissolve: () -> Void
+
+    var body: some View {
+        Menu {
+            Button { onRename() } label: {
+                Label(localized("重命名分組"), systemImage: "pencil")
+            }
+            Button(role: .destructive) { onDissolve() } label: {
+                Label(localized("解散分組"), systemImage: "folder.badge.minus")
+            }
+        } label: {
+            BookshelfOverflowLabel(iconSize: iconSize, controlSize: controlSize)
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(localized("更多"))
+    }
+}
+
+private extension View {
+    /// 解散分組's question, from the group's ••• — on iPad a popover pointing at it. The books
+    /// stay on the shelf, and the question says so.
+    func confirmsDissolving(group: String, isPresented: Binding<Bool>, onDissolve: @escaping () -> Void) -> some View {
+        confirmationDialog(
+            String(format: localized("解散「%@」？"), group),
+            isPresented: isPresented,
+            titleVisibility: .visible
+        ) {
+            Button(localized("解散分組"), role: .destructive, action: onDissolve)
+            Button(localized("取消"), role: .cancel) {}
+        } message: {
+            Text(localized("書會留在書架上，不再屬於任何分組。"))
+        }
     }
 }
 
@@ -2511,14 +2631,24 @@ private struct BookOverflowMenu: View {
                 Label(localized("刪除書籍"), systemImage: "trash")
             }
         } label: {
-            Image(systemName: "ellipsis")
-                .font(DSFont.fixed(size: iconSize, weight: .semibold))
-                .foregroundColor(DSColor.textSecondary)
-                .frame(width: controlSize, height: controlSize)
-                .contentShape(Rectangle())
+            BookshelfOverflowLabel(iconSize: iconSize, controlSize: controlSize)
         }
         .buttonStyle(.plain)
         .accessibilityLabel(localized("更多"))
+    }
+}
+
+/// The ••• of a book's menu and of a group's.
+private struct BookshelfOverflowLabel: View {
+    let iconSize: CGFloat
+    let controlSize: CGFloat
+
+    var body: some View {
+        Image(systemName: "ellipsis")
+            .font(DSFont.fixed(size: iconSize, weight: .semibold))
+            .foregroundColor(DSColor.textSecondary)
+            .frame(width: controlSize, height: controlSize)
+            .contentShape(Rectangle())
     }
 }
 

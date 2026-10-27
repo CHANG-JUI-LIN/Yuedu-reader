@@ -1700,6 +1700,9 @@
 "匯出該分組" = "Export Group";
 "刪除該分組" = "Delete Group";
 "分組名稱" = "Group Name";
+"解散分組" = "Ungroup";
+"解散「%@」？" = "Ungroup “%@”?";
+"書會留在書架上，不再屬於任何分組。" = "The books stay on your shelf, in no group.";
 "新建分組" = "New Group";
 "已展開" = "Expanded";
 "已收合" = "Collapsed";

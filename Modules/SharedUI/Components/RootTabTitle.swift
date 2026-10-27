@@ -53,6 +53,14 @@ extension View {
         modifier(RootTabTitleScrollAnchor())
     }
 
+    /// A bar under a tab root's title that fades with it as the page leaves its top and
+    /// is back only once the page is — 書架's group chips, which the page scrolls under from
+    /// iOS 26. It keeps its room, so nothing under it moves. While VoiceOver runs it stays:
+    /// it is how VoiceOver moves between the pages, which reads only the one in view.
+    func fadesWithRootTabTitle() -> some View {
+        modifier(FadesWithRootTabTitle())
+    }
+
     /// The scroll edge of a tab root whose minimizing bar carries a search field (探索,
     /// 搜索), in place of `softScrollEdges()` on its scroll view. From iOS 27, where the bar
     /// minimizes, it is the system's own edge: soft behind the bar, and nothing under the
@@ -112,6 +120,35 @@ private struct RootTabTitleScrollAnchor: ViewModifier {
             if let fade {
                 Color.clear.reportsScrollOffset { fade.update(offset: $0) }
             }
+        }
+    }
+}
+
+private struct FadesWithRootTabTitle: ViewModifier {
+    @Environment(\.rootTabTitleFade) private var fade
+    @Environment(\.accessibilityVoiceOverEnabled) private var voiceOverEnabled
+
+    func body(content: Content) -> some View {
+        if let fade, !voiceOverEnabled {
+            Fading(content: content, fade: fade)
+        } else {
+            content
+        }
+    }
+
+    /// Observes the fade here, so the page around the bar does not redraw as it scrolls.
+    private struct Fading<Bar: View>: View {
+        let content: Bar
+        @ObservedObject var fade: RootTabTitleFade
+
+        /// Taps go through to the page once the bar is more gone than there.
+        private var isShown: Bool { fade.opacity >= 0.5 }
+
+        var body: some View {
+            content
+                .opacity(fade.opacity)
+                .allowsHitTesting(isShown)
+                .accessibilityHidden(!isShown)
         }
     }
 }

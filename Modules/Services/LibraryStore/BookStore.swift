@@ -1455,6 +1455,24 @@ class BookStore: @MainActor ObservableObject, BookProvider {
         saveMeta()
     }
 
+    /// 重命名分組: every book in `group` moves to `newName`, trimmed. A name another group
+    /// already has merges the two; an empty or unchanged one leaves the shelf as it is.
+    func renameGroup(_ group: String, to newName: String) {
+        let name = newName.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !group.isEmpty, !name.isEmpty, name != group else { return }
+        setGroups(assignments(movingBooksOf: group, to: name))
+    }
+
+    /// 解散分組: the group's books stay on the shelf, in no group.
+    func dissolveGroup(_ group: String) {
+        guard !group.isEmpty else { return }
+        setGroups(assignments(movingBooksOf: group, to: ""))
+    }
+
+    private func assignments(movingBooksOf group: String, to name: String) -> [UUID: String] {
+        Dictionary(records.filter { $0.group == group }.map { ($0.id, name) }, uniquingKeysWith: { first, _ in first })
+    }
+
     // MARK: Delete Book
 
     /// Moves the records with the given `ids` before `targetId`.
