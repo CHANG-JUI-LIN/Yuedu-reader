@@ -131,7 +131,9 @@ struct TXTLazyAttributedStringBuilder: AttributedStringBuilding {
         // Historical v5/v6 builders retain source markup only for proven location
         // migration. Every active reader uses the same Aozora parser and ruby path.
         let nodes = parsesAozoraMarkup ? AozoraMarkupParser.parse(body).nodes : [.text(body)]
-        let renderer = NodeAttributedStringRenderer(config: .init(from: settings, textColor: themeTextColor))
+        let renderer = NodeAttributedStringRenderer(
+            config: .init(from: settings, textColor: themeTextColor, renderWidth: max(0, columnWidth))
+        )
         let renderedBody = await renderer.renderInlineContent(nodes) { paragraphText in
             ReaderHyphenation.tagging(
                 [

@@ -9,12 +9,6 @@ import Nuke
 
 enum FixedPageImageLoader {
 
-    /// Pixels per point for a rasterized page. Native screen scale keeps PDF text
-    /// crisp at 1x; `FixedPagePageViewController` re-renders above this when the
-    /// reader zooms in.
-    @MainActor
-    static var defaultRenderScale: CGFloat { UIScreen.main.scale }
-
     /// Ceiling for a single rasterized page, in pixels of width. A zoomed-in page is
     /// re-rendered rather than upscaled, and without a cap a 5x zoom on a 3x screen
     /// would ask for a ~65 MB bitmap.
@@ -80,11 +74,14 @@ enum FixedPageImageLoader {
         )
     }
 
+    /// `renderScale` is the pixels per point a page rasterized on demand (fixed-layout EPUB,
+    /// PDF) is drawn at: the display scale of the view showing it, so PDF text stays crisp at
+    /// 1x; `FixedPagePageViewController` re-renders above this when the reader zooms in.
     @MainActor
     static func loadImage(
         for page: FixedPage,
         targetWidth: CGFloat,
-        renderScale: CGFloat? = nil,
+        renderScale: CGFloat,
         cropBorders: Bool = false
     ) async -> UIImage? {
         var baseImage: UIImage?
@@ -101,7 +98,7 @@ enum FixedPageImageLoader {
                 fileURL: LocalPDFArchive.archiveURL(for: sourceFilename),
                 pageIndex: pageIndex,
                 targetWidth: targetWidth,
-                scale: renderScale ?? defaultRenderScale,
+                scale: renderScale,
                 cropBorders: cropBorders
             )
         case .image, .archiveImage:
@@ -149,7 +146,15 @@ enum FixedPageImageLoader {
     /// part of both Nuke's processor key and the rasterizer's cache key, so a prefetch
     /// without it warms a render the reader never reads.
     @MainActor
-    static func prefetch(_ pages: [FixedPage], targetWidth: CGFloat, cropBorders: Bool, using prefetcher: ImagePrefetcher) {
+    /// `renderScale` is the one the pages will be loaded at (`loadImage`): it is part of the
+    /// rasterized pages' cache key.
+    static func prefetch(
+        _ pages: [FixedPage],
+        targetWidth: CGFloat,
+        renderScale: CGFloat,
+        cropBorders: Bool,
+        using prefetcher: ImagePrefetcher
+    ) {
         var imageRequests: [ImageRequest] = []
         var rasterizedPages: [FixedPage] = []
         for page in pages {
@@ -171,7 +176,9 @@ enum FixedPageImageLoader {
         // running ahead of the reader shouldn't compete with the visible page.
         Task(priority: .utility) {
             for page in rasterizedPages {
-                _ = await loadImage(for: page, targetWidth: targetWidth, cropBorders: cropBorders)
+                _ = await loadImage(
+                    for: page, targetWidth: targetWidth, renderScale: renderScale, cropBorders: cropBorders
+                )
             }
         }
     }

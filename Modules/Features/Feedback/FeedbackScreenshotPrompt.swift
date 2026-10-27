@@ -19,6 +19,7 @@ final class FeedbackScreenshotPrompt {
 
     private var observer: NSObjectProtocol?
     private var window: UIWindow?
+    private var anchor: FeedbackScreenshotPromptAnchor?
     private var hideTask: Task<Void, Never>?
 
     private init() {}
@@ -52,10 +53,10 @@ final class FeedbackScreenshotPrompt {
         let image = renderer.image { _ in
             keyWindow.drawHierarchy(in: keyWindow.bounds, afterScreenUpdates: false)
         }
-        show(image, in: scene)
+        show(image, in: scene, over: keyWindow)
     }
 
-    private func show(_ image: UIImage, in scene: UIWindowScene) {
+    private func show(_ image: UIImage, in scene: UIWindowScene, over appWindow: UIWindow) {
         hide()
         let host = UIHostingController(rootView: FeedbackScreenshotCapsule(
             onReport: { [weak self] in self?.report(image) },
@@ -63,26 +64,23 @@ final class FeedbackScreenshotPrompt {
         ))
         host.view.backgroundColor = .clear
         // The window covers the capsule and nothing else, so the rest of the screen keeps
-        // taking touches. Sized by SwiftUI, so a larger text size grows it. It sits centred
-        // on the bottom edge of the safe area, over the tab bar on a tab root.
-        let bounds = scene.coordinateSpace.bounds
-        let insets = scene.windows.first?.safeAreaInsets ?? .zero
-        let size = host.sizeThatFits(in: CGSize(
-            width: bounds.width - insets.left - insets.right,
-            height: .greatestFiniteMagnitude
-        ))
+        // taking touches. That also means nothing resizes it with the scene, so it is placed
+        // from the app's window each time that window lays out: on a rotation, an iPhone Duo
+        // folding, a Stage Manager window being dragged.
         let window = UIWindow(windowScene: scene)
-        window.frame = CGRect(
-            x: bounds.midX - size.width / 2,
-            y: bounds.maxY - insets.bottom - size.height,
-            width: size.width,
-            height: size.height
-        )
         window.windowLevel = .alert + 1
         window.traitOverrides[AppThemesTrait.self] = AppearanceThemePreset.activeAppThemes
         window.rootViewController = host
+        let anchor = FeedbackScreenshotPromptAnchor(frame: appWindow.bounds)
+        anchor.onLayout = { [weak window, weak host] anchor in
+            guard let window, let host else { return }
+            Self.place(window, sizedBy: host, in: anchor)
+        }
+        appWindow.insertSubview(anchor, at: 0)
+        Self.place(window, sizedBy: host, in: anchor)
         window.isHidden = false
         self.window = window
+        self.anchor = anchor
         UIAccessibility.post(notification: .announcement, argument: localized("已截圖。可以回報這個畫面的問題。"))
 
         hideTask = Task { [weak self] in
@@ -100,6 +98,28 @@ final class FeedbackScreenshotPrompt {
         hideTask = nil
         window?.isHidden = true
         window = nil
+        anchor?.removeFromSuperview()
+        anchor = nil
+    }
+
+    /// Sized by SwiftUI, so a larger text size grows it; centred on the bottom edge of the
+    /// app window's safe area — over the tab bar on a tab root — and inside its side insets,
+    /// whichever side the Dynamic Island or a sidebar is on.
+    private static func place(
+        _ window: UIWindow,
+        sizedBy host: UIHostingController<FeedbackScreenshotCapsule>,
+        in anchor: UIView
+    ) {
+        guard let scene = anchor.window?.windowScene else { return }
+        let safe = anchor.bounds.inset(by: anchor.safeAreaInsets)
+        let size = host.sizeThatFits(in: CGSize(width: safe.width, height: .greatestFiniteMagnitude))
+        let frame = CGRect(
+            x: safe.midX - size.width / 2,
+            y: safe.maxY - size.height,
+            width: size.width,
+            height: size.height
+        )
+        window.frame = anchor.convert(frame, to: scene.coordinateSpace)
     }
 
     private func report(_ image: UIImage) {
@@ -143,6 +163,31 @@ final class FeedbackComposeHostingController: UIHostingController<AnyView> {}
 
 /// The capsule: an info mark and 問題回報. Tapping anywhere on it reports; it goes away by
 /// itself, or with VoiceOver's escape gesture.
+/// Fills the app's window, behind its content, so the capsule's window — which nothing in the
+/// app contains — hears when the space it sits in changes size or safe area.
+private final class FeedbackScreenshotPromptAnchor: UIView {
+    var onLayout: ((UIView) -> Void)?
+
+    override init(frame: CGRect) {
+        super.init(frame: frame)
+        autoresizingMask = [.flexibleWidth, .flexibleHeight]
+        isUserInteractionEnabled = false
+        accessibilityElementsHidden = true
+    }
+
+    required init?(coder: NSCoder) { fatalError("init(coder:) is not used") }
+
+    override func layoutSubviews() {
+        super.layoutSubviews()
+        onLayout?(self)
+    }
+
+    override func safeAreaInsetsDidChange() {
+        super.safeAreaInsetsDidChange()
+        onLayout?(self)
+    }
+}
+
 private struct FeedbackScreenshotCapsule: View {
     let onReport: () -> Void
     let onClose: () -> Void

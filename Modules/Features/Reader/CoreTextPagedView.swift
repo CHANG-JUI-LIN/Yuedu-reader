@@ -42,8 +42,19 @@ struct CoreTextPageEngineView: UIViewControllerRepresentable {
     var visibleRefreshCommit: ReaderVisibleRefreshCommit?
     var onVisibleRefreshFinished: (UInt64, ReaderVisibleRefreshOutcome) -> Void = { _, _ in }
 
+    /// How the page view controller is built. The spine it picks is fixed for the
+    /// controller's life; `ReaderView.readerPageViewIdentity` builds a new one whenever
+    /// the spread mode or the style changes.
+    private var pagingAdapter: PageViewControllerPagingAdapterDescriptor {
+        PageViewControllerPagingAdapterDescriptor(
+            pageTurnStyle: pageTurnStyle,
+            isDoublePageSpread: isDoublePageSpread,
+            pairsOwnSpreads: engine is FixedLayoutSpreadPairingProviding
+        )
+    }
+
     func makeUIViewController(context: Context) -> UIPageViewController {
-        let adapterDescriptor = PageViewControllerPagingAdapterDescriptor(pageTurnStyle: pageTurnStyle)
+        let adapterDescriptor = context.coordinator.pagingAdapter
         let options: [UIPageViewController.OptionsKey: Any] = [
             .spineLocation: adapterDescriptor.spineLocation(isRTL: isRTL).rawValue
         ]
@@ -52,7 +63,7 @@ struct CoreTextPageEngineView: UIViewControllerRepresentable {
             navigationOrientation: .horizontal,
             options: options
         )
-        pvc.isDoubleSided = adapterDescriptor.isDoubleSided && !isDoublePageSpread
+        pvc.isDoubleSided = adapterDescriptor.isDoubleSided
         // cover / none mode: disable built-in swipe gesture (use custom pan or tap for page turns).
         if adapterDescriptor.disablesBuiltInSwipe {
             pvc.dataSource = nil
@@ -172,9 +183,7 @@ struct CoreTextPageEngineView: UIViewControllerRepresentable {
         context.coordinator.currentPlaybackHighlight = playbackHighlight
         let spreadModeChanged = context.coordinator.isDoublePageSpread != isDoublePageSpread
         context.coordinator.isDoublePageSpread = isDoublePageSpread
-        uiViewController.isDoubleSided = PageViewControllerPagingAdapterDescriptor(
-            pageTurnStyle: pageTurnStyle
-        ).isDoubleSided && !isDoublePageSpread
+        uiViewController.isDoubleSided = pagingAdapter.isDoubleSided
         context.coordinator.externalTargetPosition = externalTargetPosition
         context.coordinator.bindEngineCallbacks(to: engine, pageViewController: uiViewController)
         context.coordinator.applyAutoReadReveal(
@@ -243,7 +252,7 @@ struct CoreTextPageEngineView: UIViewControllerRepresentable {
             return
         }
 
-        guard let visible = uiViewController.viewControllers?.first as? (any PageIndexProviding & UIViewController) else {
+        guard let visible = context.coordinator.readingPage(of: uiViewController) as? (any PageIndexProviding & UIViewController) else {
             // No visible page yet (first layout race): align to the best-known target.
             _ = context.coordinator.setPage(targetViewController(), on: uiViewController)
             return
@@ -373,7 +382,11 @@ struct CoreTextPageEngineView: UIViewControllerRepresentable {
         }
 
         // 3) No command: keep the playback highlight fresh and leave the PVC alone.
-        context.coordinator.applyPlaybackHighlight(to: visible)
+        // Every page on screen: around a mid spine the spoken sentence can be on the
+        // spread's second page.
+        uiViewController.viewControllers?.forEach {
+            context.coordinator.applyPlaybackHighlight(to: $0)
+        }
     }
 
     func makeCoordinator() -> Coordinator {
@@ -420,6 +433,13 @@ struct CoreTextPageEngineView: UIViewControllerRepresentable {
         var onPullDownBookmark: () -> Void
         let isRTL: Bool
         var isDoublePageSpread: Bool
+        /// Decided once, with the spine `makeUIViewController` builds from it: UIKit
+        /// cannot move a page view controller's spine, and every stack written to a mid
+        /// spine must hold two pages.
+        let pagingAdapter: PageViewControllerPagingAdapterDescriptor
+        /// UIKit holds both pages of a spread and turns them one at a time around the
+        /// centre spine (`PageViewControllerPagingAdapterDescriptor.usesMidSpine`).
+        var usesMidSpine: Bool { pagingAdapter.usesMidSpine }
         private(set) var lastAppliedRefreshTransactionID: UInt64 = 0
         let spreadGutter: CGFloat
         let clearExternalTargetPosition: () -> Void
@@ -793,7 +813,85 @@ struct CoreTextPageEngineView: UIViewControllerRepresentable {
 
         fileprivate func viewControllerStack(startingWith viewController: UIViewController) -> [UIViewController] {
             stackWriteTotalPages = currentEngine.totalPages
-            return [viewController]
+            guard usesMidSpine else { return [viewController] }
+            // Display controllers open a spread (`makeDisplayViewController`), so this is
+            // the spread's first page in reading order.
+            let firstPage = (viewController as? any PageIndexProviding)?.globalPageIndex ?? 0
+            return midSpineStack(first: viewController, second: midSpinePartner(of: firstPage))
+        }
+
+        /// A spread's two pages as UIKit lays them out: left first. UIKit does not mirror a
+        /// mid spine for right-to-left content — `semanticContentAttribute` leaves index 0
+        /// on the left (measured 2026-10-27, iOS 27.1) — so an RTL book's earlier page is
+        /// the second one.
+        private func midSpineStack(first: UIViewController, second: UIViewController) -> [UIViewController] {
+            isRTL ? [second, first] : [first, second]
+        }
+
+        /// The page the reader is on. Around a mid spine UIKit holds two, and the reader is
+        /// on the spread's first page in reading order — on the right in an RTL book, where
+        /// it is not `viewControllers.first`. Everything that asks "which page is showing"
+        /// asks here.
+        fileprivate func readingPage(of pageViewController: UIPageViewController) -> UIViewController? {
+            readingPage(in: pageViewController.viewControllers ?? [])
+        }
+
+        private func readingPage(in viewControllers: [UIViewController]) -> UIViewController? {
+            guard usesMidSpine else { return viewControllers.first }
+            return viewControllers
+                .compactMap { $0 as? any PageIndexProviding & UIViewController }
+                .min { $0.globalPageIndex < $1.globalPageIndex }
+        }
+
+        /// The first page of the mid-spine spread holding `page`. Spreads tile the book
+        /// (0,1)(2,3)…, as composed spreads do (`spreadViewController(containingPage:)`).
+        private func midSpineSpreadStart(containing page: Int) -> Int {
+            let totalPages = currentEngine.totalPages
+            let clamped = totalPages > 0 ? max(0, min(page, totalPages - 1)) : 0
+            return (clamped / 2) * 2
+        }
+
+        /// One page, as UIKit turns it around a mid spine. Not `displayViewController(at:)`,
+        /// which opens the spread holding the page.
+        private func midSpinePage(at index: Int) -> UIViewController {
+            let page = installAccessibilityActions(on: currentEngine.pageViewController(at: index))
+            applyPlaybackHighlight(to: page)
+            return page
+        }
+
+        /// The page facing a spread's first page: the next one, or a blank page where the
+        /// book ends on a spread's first page (`ReaderSpreadBlankPageViewController`).
+        private func midSpinePartner(of firstPage: Int) -> UIViewController {
+            let partner = firstPage + 1
+            guard partner < curlNeighbourPageCount else {
+                return ReaderSpreadBlankPageViewController(
+                    facingPage: firstPage,
+                    backgroundColor: UIColor(currentTheme.backgroundColor)
+                )
+            }
+            return midSpinePage(at: partner)
+        }
+
+        /// The data source around a mid spine, one page at a time in reading order: the
+        /// back of the sheet UIKit lifts is the page after the one on its front.
+        private func midSpinePage(after viewController: UIViewController) -> UIViewController? {
+            if viewController is ReaderSpreadBlankPageViewController { return nil }
+            guard let page = (viewController as? any PageIndexProviding)?.globalPageIndex else { return nil }
+            // A spread's first page is always followed — by its partner, blank or not. UIKit
+            // asks for a sheet's two sides in turn, and a nil for the second after a page
+            // for the first is "number required (2)".
+            if page % 2 == 0 { return midSpinePartner(of: page) }
+            guard page + 1 < curlNeighbourPageCount else { return nil }
+            return midSpinePage(at: page + 1)
+        }
+
+        private func midSpinePage(before viewController: UIViewController) -> UIViewController? {
+            if let blank = viewController as? ReaderSpreadBlankPageViewController {
+                return midSpinePage(at: blank.facingPage)
+            }
+            guard let page = (viewController as? any PageIndexProviding)?.globalPageIndex,
+                  page > 0 else { return nil }
+            return midSpinePage(at: page - 1)
         }
 
         private var curlNeighbourPageCount: Int {
@@ -873,6 +971,11 @@ struct CoreTextPageEngineView: UIViewControllerRepresentable {
             self.currentPlaybackHighlight = playbackHighlight
             self.isRTL = isRTL
             self.isDoublePageSpread = isDoublePageSpread
+            self.pagingAdapter = PageViewControllerPagingAdapterDescriptor(
+                pageTurnStyle: pageTurnStyle,
+                isDoublePageSpread: isDoublePageSpread,
+                pairsOwnSpreads: engine is FixedLayoutSpreadPairingProviding
+            )
             self.spreadGutter = spreadGutter
             self.sessionCoordinator = sessionCoordinator
             self.externalTargetPosition = externalTargetPosition
@@ -972,6 +1075,11 @@ struct CoreTextPageEngineView: UIViewControllerRepresentable {
         }
 
         private func makeDisplayViewController(at index: Int) -> UIViewController {
+            // Around a mid spine the spread is its first page; `viewControllerStack`
+            // puts the partner beside it.
+            if usesMidSpine {
+                return currentEngine.pageViewController(at: midSpineSpreadStart(containing: index))
+            }
             guard isDoublePageSpread else {
                 return currentEngine.pageViewController(at: index)
             }
@@ -990,7 +1098,7 @@ struct CoreTextPageEngineView: UIViewControllerRepresentable {
         }
 
         private func makeDisplayViewController(for position: CoreTextReadingPosition) -> UIViewController {
-            guard isDoublePageSpread else {
+            guard isDoublePageSpread || usesMidSpine else {
                 return currentEngine.pageViewController(for: position)
             }
 
@@ -1001,7 +1109,7 @@ struct CoreTextPageEngineView: UIViewControllerRepresentable {
             let page = (currentEngine.pageViewController(for: position) as? any PageIndexProviding)?.globalPageIndex
                 ?? currentEngine.estimatedGlobalPage(for: position)
                 ?? 0
-            return spreadViewController(containingPage: page)
+            return usesMidSpine ? makeDisplayViewController(at: page) : spreadViewController(containingPage: page)
         }
 
         /// Single funnel for VoiceOver wiring: every page the coordinator hands to
@@ -1014,18 +1122,18 @@ struct CoreTextPageEngineView: UIViewControllerRepresentable {
             switch viewController {
             case let page as CoreTextPageViewController:
                 page.accessibilityUsesRTLPageOrder = isRTL
-                page.voiceOverFocus = voiceOverFocus
+                page.voiceOverFocus = pageVoiceOverFocus(for: page.globalPageIndex)
                 page.onAccessibilityAction = { [weak self] action in
                     self?.performAccessibilityAction(action)
                 }
             case let page as BrowserLayoutPageViewController:
                 page.accessibilityUsesRTLPageOrder = isRTL
-                page.voiceOverFocus = voiceOverFocus
+                page.voiceOverFocus = pageVoiceOverFocus(for: page.globalPageIndex)
                 page.onAccessibilityAction = { [weak self] action in
                     self?.performAccessibilityAction(action)
                 }
             case let placeholder as PlaceholderPageViewController:
-                placeholder.voiceOverFocus = voiceOverFocus
+                placeholder.voiceOverFocus = pageVoiceOverFocus(for: placeholder.globalPageIndex)
                 placeholder.onAccessibilityAction = { [weak self] action in
                     self?.performAccessibilityAction(action)
                 }
@@ -1035,6 +1143,15 @@ struct CoreTextPageEngineView: UIViewControllerRepresentable {
                 break
             }
             return viewController
+        }
+
+        /// Around a mid spine both pages of a spread appear together, and whichever appeared
+        /// last would take VoiceOver's focus — the later page in a left-to-right book. Only
+        /// the spread's first page reports, so a turn lands on it; the other page is read by
+        /// swiping on from there.
+        private func pageVoiceOverFocus(for page: Int) -> ReaderPageVoiceOverFocus? {
+            guard usesMidSpine else { return voiceOverFocus }
+            return page % 2 == 0 ? voiceOverFocus : nil
         }
 
         private func performAccessibilityAction(_ action: TouchAction) {
@@ -1203,9 +1320,14 @@ struct CoreTextPageEngineView: UIViewControllerRepresentable {
             if let spineIndex,
                pendingNavigation == nil,
                externalTargetPosition == nil,
-               let visible = pageViewController.viewControllers?.first,
+               let visible = readingPage(of: pageViewController),
                let visiblePosition = committedReadingPosition(of: visible),
-               visiblePosition.spineIndex != spineIndex {
+               visiblePosition.spineIndex != spineIndex,
+               // Around a mid spine the spread's other page is on screen too, and can
+               // be the 載入中 page of the chapter that just landed.
+               !(usesMidSpine && (pageViewController.viewControllers ?? []).contains {
+                   committedReadingPosition(of: $0)?.spineIndex == spineIndex
+               }) {
                 if let page = currentEngine.pageIndex(for: visiblePosition) {
                     handleNavigate(to: page)
                 }
@@ -1237,7 +1359,7 @@ struct CoreTextPageEngineView: UIViewControllerRepresentable {
             NSLog("%@", prepareLine)
 
             var direction: UIPageViewController.NavigationDirection
-            if let first = pageViewController.viewControllers?.first as? (any PageIndexProviding & UIViewController) {
+            if let first = readingPage(of: pageViewController) as? (any PageIndexProviding & UIViewController) {
                 direction = targetPage >= first.globalPageIndex ? .forward : .reverse
             } else {
                 direction = .forward
@@ -1434,7 +1556,12 @@ struct CoreTextPageEngineView: UIViewControllerRepresentable {
             )
             let finishTransition: (UIViewController) -> Void = { shownViewController in
                 self.endRetimableTurn()
-                let resolvedPage = self.syncStablePosition(afterShowing: shownViewController, notifyFallback: true)
+                // The performer hands back `viewControllers.first`, which around an RTL
+                // mid spine is the spread's second page.
+                let landedViewController = self.usesMidSpine
+                    ? self.readingPage(of: pageViewController) ?? shownViewController
+                    : shownViewController
+                let resolvedPage = self.syncStablePosition(afterShowing: landedViewController, notifyFallback: true)
                 self.continueQueuedTransitionIfNeeded(on: pageViewController, showing: resolvedPage ?? targetPage)
                 self.endAnimatedTransition(on: pageViewController)
                 if animated { self.turnFrameRate.end() }
@@ -1753,12 +1880,16 @@ struct CoreTextPageEngineView: UIViewControllerRepresentable {
             from viewController: UIViewController,
             on pvc: UIPageViewController
         ) {
-            guard usesCurlBackPages else { return }
+            // A mid spine also takes its pages in pairs, so its nils are the same family.
+            guard usesCurlBackPages || usesMidSpine else { return }
             let kind: String
             let page: Int?
             if let back = viewController as? PageBackViewController {
                 kind = "back"
                 page = back.logicalPageIndex
+            } else if let blank = viewController as? ReaderSpreadBlankPageViewController {
+                kind = "blank"
+                page = blank.facingPage
             } else {
                 kind = isPlaceholderDisplay(viewController) ? "placeholder" : "front"
                 page = (viewController as? any PageIndexProviding)?.globalPageIndex
@@ -1778,6 +1909,7 @@ struct CoreTextPageEngineView: UIViewControllerRepresentable {
         }
 
         private func pageBackward(from viewController: UIViewController) -> UIViewController? {
+            if usesMidSpine { return midSpinePage(before: viewController) }
             if let backPage = viewController as? PageBackViewController {
                 return neighbourViewController(for: .page(backPage.logicalPageIndex))
             }
@@ -1804,6 +1936,7 @@ struct CoreTextPageEngineView: UIViewControllerRepresentable {
         }
 
         private func pageForward(from viewController: UIViewController) -> UIViewController? {
+            if usesMidSpine { return midSpinePage(after: viewController) }
             if let backPage = viewController as? PageBackViewController {
                 guard backPage.logicalPageIndex + 1 < curlNeighbourPageCount else { return nil }
                 return neighbourViewController(for: .page(backPage.logicalPageIndex + 1))
@@ -1841,14 +1974,17 @@ struct CoreTextPageEngineView: UIViewControllerRepresentable {
             _ pvc: UIPageViewController,
             spineLocationFor orientation: UIInterfaceOrientation
         ) -> UIPageViewController.SpineLocation {
-            // Use right-hand spine for RTL curl animation to match physical book physics.
-            if isRTL && pageTurnStyle == .curl {
-                if let current = pvc.viewControllers?.first {
-                    pvc.setViewControllers(viewControllerStack(startingWith: current), direction: .forward, animated: false)
-                }
-                return .max
+            // The spine is the one the controller was built with, whatever the orientation:
+            // a right-hand spine for an RTL curl, to match a physical book, and the centre
+            // for a spread under 仿真. A window that changes shape enough to change the
+            // spread mode gets a new controller (`ReaderView.readerPageViewIdentity`).
+            // UIKit wants the stack re-set to match the spine it is told.
+            guard pageTurnStyle == .curl else { return .min }
+            let spine = pagingAdapter.spineLocation(isRTL: isRTL)
+            if spine != .min, let current = readingPage(of: pvc) {
+                pvc.setViewControllers(viewControllerStack(startingWith: current), direction: .forward, animated: false)
             }
-            return .min
+            return spine
         }
 
         func pageViewController(
@@ -1857,7 +1993,7 @@ struct CoreTextPageEngineView: UIViewControllerRepresentable {
         ) {
             pageTurnTrace.beginNativeTurn(
                 on: pvc,
-                from: (pvc.viewControllers?.first as? any PageIndexProviding & UIViewController)?.globalPageIndex,
+                from: (readingPage(of: pvc) as? any PageIndexProviding & UIViewController)?.globalPageIndex,
                 ourAnimationRunning: stackWriteGate.isAnimatingTransition
             )
             if !nativeTurnHoldsFrameRate {
@@ -1867,7 +2003,7 @@ struct CoreTextPageEngineView: UIViewControllerRepresentable {
             stackWriteGate.beginGesture()
             // The reader's swipe, not an animation of ours, puts the menu away.
             if !stackWriteGate.isAnimatingTransition { onUserPageTurnBegan() }
-            if let visible = pvc.viewControllers?.first {
+            if let visible = readingPage(of: pvc) {
                 reportStuckPlaceholderIfNeeded(showing: visible)
             }
             // Invariant G1's start line. Recorded here rather than in the data source
@@ -1875,7 +2011,7 @@ struct CoreTextPageEngineView: UIViewControllerRepresentable {
             // makes for pages the reader may never reach, and writing coordinator
             // state from them is what invariant 3 of `Technotes/ReaderPagingContract.md`
             // forbids. `willTransitionTo` is a real transition starting.
-            if let visible = pvc.viewControllers?.first,
+            if let visible = readingPage(of: pvc),
                let start = committedReadingPosition(of: visible) {
                 ReaderPositionSentry.shared.expectGesture(
                     from: start,
@@ -1891,7 +2027,7 @@ struct CoreTextPageEngineView: UIViewControllerRepresentable {
             // this swipe can be re-anchored against a real page rather than replayed as
             // a stale absolute index. Nil while the far side is still paginating — an
             // estimate would make the re-anchoring worse than not doing it.
-            let interactiveTarget = (pendingViewControllers.first as? CoreTextReadingPositionProviding)?
+            let interactiveTarget = (readingPage(in: pendingViewControllers) as? CoreTextReadingPositionProviding)?
                 .coreTextReadingPosition
                 .flatMap { currentEngine.pageIndex(for: $0) }
             sessionCoordinator?.beginInteractivePageTransition(target: interactiveTarget)
@@ -1913,14 +2049,14 @@ struct CoreTextPageEngineView: UIViewControllerRepresentable {
         ) {
             pageTurnTrace.endNativeTurn(
                 completed: completed,
-                landed: (pvc.viewControllers?.first as? any PageIndexProviding & UIViewController)?.globalPageIndex
+                landed: (readingPage(of: pvc) as? any PageIndexProviding & UIViewController)?.globalPageIndex
             )
             if nativeTurnHoldsFrameRate {
                 nativeTurnHoldsFrameRate = false
                 turnFrameRate.end()
             }
             stackWriteGate.endGesture()
-            AppLogger.render("[CurlTrace] didFinish completed=\(completed) visible=\((pvc.viewControllers?.first as? (any PageIndexProviding & UIViewController))?.globalPageIndex ?? -1) binding=\(currentPage)")
+            AppLogger.render("[CurlTrace] didFinish completed=\(completed) visible=\((readingPage(of: pvc) as? (any PageIndexProviding & UIViewController))?.globalPageIndex ?? -1) binding=\(currentPage)")
 
             // Any write owed while UIKit held the stack is replayed on the next
             // runloop turn — never inline here. See `drainStackWrites`.
@@ -1930,7 +2066,7 @@ struct CoreTextPageEngineView: UIViewControllerRepresentable {
                 // The swipe was abandoned and UIKit put the original page back. There
                 // is no landing to judge.
                 ReaderPositionSentry.shared.cancelExpectation()
-                let settledPage = (pvc.viewControllers?.first as? (any PageIndexProviding & UIViewController))?.globalPageIndex
+                let settledPage = (readingPage(of: pvc) as? (any PageIndexProviding & UIViewController))?.globalPageIndex
                     ?? currentPage
                 continueQueuedTransitionIfNeeded(on: pvc, showing: settledPage)
                 return
@@ -1954,7 +2090,7 @@ struct CoreTextPageEngineView: UIViewControllerRepresentable {
             // hops a runloop to avoid. The chapter-boundary snapshot handoff that used
             // to force one is gone: a snapshot only ever existed once the chapter was
             // laid out, so the real page was always available anyway.
-            guard let vc = pvc.viewControllers?.first as? any PageIndexProviding & UIViewController else { return }
+            guard let vc = readingPage(of: pvc) as? any PageIndexProviding & UIViewController else { return }
             AppLogger.render("[FlipTrace] didFinish landing type=\(type(of: vc)) page=\(vc.globalPageIndex)")
             // The turn committed, so this IS navigation intent — unlike the speculative
             // data-source queries that produced the page. Landing on a placeholder parks
@@ -2000,9 +2136,6 @@ struct CoreTextPageEngineView: UIViewControllerRepresentable {
             coverCurrentImageView.autoresizingMask = [.flexibleWidth, .flexibleHeight]
             coverOverlayView.addSubview(coverCurrentImageView)
 
-            let screenCornerRadius = (UIScreen.main.value(forKey: "displayCornerRadius") as? CGFloat) ?? 0
-            let radius = screenCornerRadius > 0 ? screenCornerRadius : 12
-
             // Shadow view: placed below the incoming view, not clipped, allowing shadow overflow.
             coverShadowView.backgroundColor = .clear
             coverShadowView.layer.shadowColor = UIColor.black.cgColor
@@ -2012,7 +2145,6 @@ struct CoreTextPageEngineView: UIViewControllerRepresentable {
 
             coverIncomingImageView.contentMode = .scaleAspectFill
             coverIncomingImageView.clipsToBounds = true
-            coverIncomingImageView.layer.cornerRadius = radius
             coverIncomingImageView.autoresizingMask = [.flexibleWidth, .flexibleHeight]
             coverOverlayView.addSubview(coverIncomingImageView)
 
@@ -2021,6 +2153,15 @@ struct CoreTextPageEngineView: UIViewControllerRepresentable {
             coverDimView.alpha = 0
             coverDimView.autoresizingMask = [.flexibleWidth, .flexibleHeight]
             coverCurrentImageView.addSubview(coverDimView)
+        }
+
+        /// The incoming page's corners follow the corners of the screen the reader's window is
+        /// on, read when the overlay goes up: at setup the page view is not in a window yet.
+        private func showCoverOverlay() {
+            let screenCornerRadius = (coverOverlayView.window?.windowScene?.screen
+                .value(forKey: "displayCornerRadius") as? CGFloat) ?? 0
+            coverIncomingImageView.layer.cornerRadius = screenCornerRadius > 0 ? screenCornerRadius : 12
+            coverOverlayView.isHidden = false
         }
 
         // MARK: - Cover pan gesture
@@ -2064,7 +2205,7 @@ struct CoreTextPageEngineView: UIViewControllerRepresentable {
             }
 
             guard let turnDirection else { return }
-            let visiblePage = (pvc.viewControllers?.first as? (any PageIndexProviding & UIViewController))?.globalPageIndex
+            let visiblePage = (readingPage(of: pvc) as? (any PageIndexProviding & UIViewController))?.globalPageIndex
                 ?? currentPage
             let targetPage: Int?
             switch turnDirection {
@@ -2134,7 +2275,7 @@ struct CoreTextPageEngineView: UIViewControllerRepresentable {
                         coverTargetPage = target
                         coverOverlayView.frame = view.bounds
                         coverCurrentImageView.frame = view.bounds
-                        coverOverlayView.isHidden = false
+                        showCoverOverlay()
                         setupForwardOutgoing(currentPageSnapshot: currentPage, newPage: target, motion: motion, in: view)
                     } else if turnDirection == .backward,
                               let target = previousDisplayPage(before: currentPage) {
@@ -2145,7 +2286,7 @@ struct CoreTextPageEngineView: UIViewControllerRepresentable {
                         coverOverlayView.frame = view.bounds
                         coverCurrentImageView.frame = view.bounds
                         coverCurrentImageView.image = renderSnapshotForDisplayPage(currentPage)
-                        coverOverlayView.isHidden = false
+                        showCoverOverlay()
                         setupIncomingView(for: target, snapshot: targetSnapshot, motion: motion, in: view)
                     }
                     if coverTargetPage != nil { onUserPageTurnBegan() }
@@ -2264,7 +2405,7 @@ struct CoreTextPageEngineView: UIViewControllerRepresentable {
 
             coverOverlayView.frame = view.bounds
             coverCurrentImageView.frame = view.bounds
-            coverOverlayView.isHidden = false
+            showCoverOverlay()
 
             let turnDirection: ReaderCoverTurnDirection = targetPage >= oldPage ? .forward : .backward
             let motion = ReaderCoverPageMotion(direction: turnDirection, isRTL: isRTL)
@@ -2353,7 +2494,7 @@ struct CoreTextPageEngineView: UIViewControllerRepresentable {
             coverOverlayView.frame = view.bounds
             coverCurrentImageView.frame = view.bounds
             coverCurrentImageView.image = renderSnapshotForDisplayPage(page)
-            coverOverlayView.isHidden = false
+            showCoverOverlay()
         }
 
         private func setupForwardOutgoing(
@@ -2583,6 +2724,9 @@ struct CoreTextPageEngineView: UIViewControllerRepresentable {
         /// The page the reader is on — the one `isCurrentPageBookmarked` answers for.
         /// In a spread that is one of the two halves, not the spread.
         private func bookmarkRibbonHost() -> (any ReaderBookmarkRibbonHosting)? {
+            if usesMidSpine {
+                return pullDownPageViewController.flatMap(readingPage(of:)) as? any ReaderBookmarkRibbonHosting
+            }
             for viewController in pullDownPageViewController?.viewControllers ?? [] {
                 if let spread = viewController as? ReaderSpreadPageViewController {
                     let halves = spread.pageViewControllers
@@ -2706,7 +2850,7 @@ struct CoreTextPageEngineView: UIViewControllerRepresentable {
                       GlobalSettings.shared.readerPullDownToBookmark,
                       !isAnimatingTransition, !isPageTransitioning,
                       // A 載入中 page is not a page yet; there is nothing to bookmark.
-                      let visible = pullDownPageViewController?.viewControllers?.first,
+                      let visible = pullDownPageViewController.flatMap(readingPage(of:)),
                       !isPlaceholderDisplay(visible) else { return false }
                 return ReaderPullDownBookmarkMotion.shouldBegin(velocity: pan.velocity(in: view))
             }

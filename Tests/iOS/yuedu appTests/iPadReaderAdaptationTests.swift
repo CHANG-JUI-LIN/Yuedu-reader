@@ -35,51 +35,90 @@ struct iPadReaderAdaptationTests {
         ) == 271)
     }
 
-    @Test("double-column sheets retain native curl and mirror the outer spine", arguments: [false, true])
+    @Test("仿真 spreads turn one page at a time around the centre spine", arguments: [false, true])
     func doubleColumnCurl(isRTL: Bool) async throws {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: directory) }
-        let engine = CoreTextPageEngine(
-            attributedBuilder: MockAttributedStringBuilder(texts: [String(repeating: "iPad reading spread 測試翻頁。\n", count: 300)]),
-            renderSettings: EPUBTestFixtures.renderSettings(),
-            offsetStore: CharOffsetStore(directoryURL: directory)
-        )
-        await engine.start(renderSize: CGSize(width: 500, height: 700), bookId: UUID().uuidString)
-        try #require(engine.totalPages >= 4)
-        let reader = CoreTextPageEngineView(
-            engine: engine, pageTurnStyle: .curl, theme: .white, playbackHighlight: nil,
-            isRTL: isRTL, isDoublePageSpread: true, spreadGutter: DSLayout.readerSpreadGutter,
-            sessionCoordinator: nil, externalTargetVersion: 0, externalTargetPosition: nil,
-            pageTurnCommand: nil, clearExternalTargetPosition: {}, currentPage: .constant(0),
-            onPageChanged: { _, _ in }, onTapZone: { _ in }
-        )
-        let host = UIHostingController(rootView: reader)
-        let window = try show(host, size: CGSize(width: 1028, height: 700))
+        let engine = try await spreadEngine(directory: directory) { $0 >= 6 }
+        let (pvc, window) = try show(spreadReader(engine: engine, isRTL: isRTL, page: 0))
         defer { window.isHidden = true; window.rootViewController = nil }
-        let pvc = try #require(controllers(host).compactMap { $0 as? UIPageViewController }.first)
         #expect(pvc.transitionStyle == .pageCurl)
-        #expect(pvc.spineLocation == (isRTL ? .max : .min))
-        #expect(!pvc.isDoubleSided)
-        let spread = try #require(pvc.viewControllers?.first as? ReaderSpreadPageViewController)
-        #expect(pvc.viewControllers?.count == 1)
-        #expect(spread.pageViewControllers.count == 2)
-        #expect(spread.globalPageIndex == 0)
-        let next = isRTL
-            ? pvc.dataSource?.pageViewController(pvc, viewControllerBefore: spread)
-            : pvc.dataSource?.pageViewController(pvc, viewControllerAfter: spread)
-        let nextSpread = try #require(next as? ReaderSpreadPageViewController)
-        #expect(nextSpread.globalPageIndex == 2)
+        #expect(pvc.spineLocation == .mid)
+        #expect(pvc.isDoubleSided)
+        // UIKit keeps index 0 on the left whatever the content direction, so an RTL book
+        // shows its earlier page second.
+        #expect(pageIndices(pvc.viewControllers) == (isRTL ? [1, 0] : [0, 1]))
+        let left = try #require(pvc.viewControllers?.first)
+        #expect(left.view.convert(left.view.bounds, to: pvc.view).minX == 0)
+
+        // Forward lifts the outer page of the reading side: its back is the next page,
+        // and the page under it the one after.
+        let outer = try #require(isRTL ? pvc.viewControllers?.first : pvc.viewControllers?.last)
+        let back = try #require(forward(from: outer, in: pvc, isRTL: isRTL))
+        let front = try #require(forward(from: back, in: pvc, isRTL: isRTL))
+        #expect(pageIndices([back, front]) == [2, 3])
         let finished = await withCheckedContinuation { continuation in
-            pvc.setViewControllers([nextSpread], direction: isRTL ? .reverse : .forward, animated: true) {
-                continuation.resume(returning: $0)
-            }
+            pvc.setViewControllers(
+                isRTL ? [front, back] : [back, front],
+                direction: isRTL ? .reverse : .forward,
+                animated: true
+            ) { continuation.resume(returning: $0) }
         }
         #expect(finished)
-        #expect((pvc.viewControllers?.first as? ReaderSpreadPageViewController)?.globalPageIndex == 2)
-        let previous = isRTL
-            ? pvc.dataSource?.pageViewController(pvc, viewControllerAfter: nextSpread)
-            : pvc.dataSource?.pageViewController(pvc, viewControllerBefore: nextSpread)
-        #expect((previous as? ReaderSpreadPageViewController)?.globalPageIndex == 0)
+        #expect(pageIndices(pvc.viewControllers) == (isRTL ? [3, 2] : [2, 3]))
+
+        let inner = try #require(isRTL ? pvc.viewControllers?.last : pvc.viewControllers?.first)
+        let previousBack = try #require(backward(from: inner, in: pvc, isRTL: isRTL))
+        let previousFront = try #require(backward(from: previousBack, in: pvc, isRTL: isRTL))
+        #expect(pageIndices([previousBack, previousFront]) == [1, 0])
+        #expect(backward(from: previousFront, in: pvc, isRTL: isRTL) == nil)
+    }
+
+    @Test("a book ending on a spread's first page closes it with a blank page", arguments: [false, true])
+    func midSpineOddEnd(isRTL: Bool) async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let engine = try await spreadEngine(directory: directory) { $0 >= 5 && $0 % 2 == 1 }
+        let last = engine.totalPages - 1
+        let (pvc, window) = try show(spreadReader(engine: engine, isRTL: isRTL, page: last))
+        defer { window.isHidden = true; window.rootViewController = nil }
+        let stack = try #require(pvc.viewControllers)
+        #expect(stack.count == 2)
+        let blank = try #require(stack.compactMap { $0 as? ReaderSpreadBlankPageViewController }.first)
+        #expect(blank.facingPage == last)
+        // The blank is on the far side of the reading order: right in LTR, left in RTL.
+        #expect((isRTL ? stack.first : stack.last) === blank)
+        #expect(pageIndices(stack).compactMap { $0 } == [last])
+        // Nothing turns past it, and turning back starts from the page it faces.
+        #expect(forward(from: blank, in: pvc, isRTL: isRTL) == nil)
+        let lastPage = try #require(isRTL ? stack.last : stack.first)
+        let previousBack = try #require(backward(from: lastPage, in: pvc, isRTL: isRTL))
+        #expect(pageIndices([previousBack]) == [last - 1])
+    }
+
+    @Test("a 載入中 page beside the reading page is swapped in when its chapter lands", arguments: [false, true])
+    func midSpinePartnerChapterLands(isRTL: Bool) async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let engine = try await chapterBoundaryEngine(directory: directory)
+        // The first chapter ends on a spread's first page, so the next chapter's first
+        // page faces it — before that chapter is laid out.
+        let last = try #require(engine.layouts[0]?.pageRanges.count) - 1
+        let (pvc, window) = try show(spreadReader(engine: engine, isRTL: isRTL, page: last))
+        defer { window.isHidden = true; window.rootViewController = nil }
+        #expect(pageIndices(pvc.viewControllers) == (isRTL ? [last + 1, last] : [last, last + 1]))
+        #expect(pvc.viewControllers?.contains { $0 is PlaceholderPageViewController } == true)
+
+        _ = await engine.preloadChapter(at: 1)
+        // The engine's own signal; the coordinator answers it on the next main-queue turn.
+        engine.onChapterReady?(1)
+        await withCheckedContinuation { continuation in
+            DispatchQueue.main.async { continuation.resume() }
+        }
+
+        let stack = try #require(pvc.viewControllers)
+        #expect(!stack.contains { $0 is PlaceholderPageViewController })
+        #expect(pageIndices(stack) == (isRTL ? [last + 1, last] : [last, last + 1]))
     }
 
     @Test("source browser uses a mobile viewport and keeps the bottom submit control reachable", .timeLimit(.minutes(1)))
@@ -172,6 +211,83 @@ struct iPadReaderAdaptationTests {
         host.view.setNeedsLayout()
         host.view.layoutIfNeeded()
         return window
+    }
+
+    /// A CoreText engine whose page count satisfies `accepts`, for spreads that must end
+    /// on a given parity. Page counts are deterministic for a text, so this tries lengths.
+    private func spreadEngine(
+        directory: URL,
+        accepts: (Int) -> Bool
+    ) async throws -> CoreTextPageEngine {
+        for lines in stride(from: 300, through: 360, by: 7) {
+            let engine = CoreTextPageEngine(
+                attributedBuilder: MockAttributedStringBuilder(texts: [String(repeating: "iPad reading spread 測試翻頁。\n", count: lines)]),
+                renderSettings: EPUBTestFixtures.renderSettings(),
+                offsetStore: CharOffsetStore(directoryURL: directory)
+            )
+            await engine.start(renderSize: CGSize(width: 500, height: 700), bookId: UUID().uuidString)
+            if accepts(engine.totalPages) { return engine }
+        }
+        throw SpreadEngineUnavailable()
+    }
+
+    /// Two chapters, the first fully laid out with an odd page count and the second not
+    /// laid out at all, so a spread can straddle the boundary.
+    private func chapterBoundaryEngine(directory: URL) async throws -> CoreTextPageEngine {
+        for lines in stride(from: 300, through: 360, by: 7) {
+            let engine = CoreTextPageEngine(
+                attributedBuilder: MockAttributedStringBuilder(texts: [
+                    String(repeating: "iPad reading spread 測試翻頁。\n", count: lines),
+                    String(repeating: "下一章 next chapter。\n", count: 40),
+                ]),
+                renderSettings: EPUBTestFixtures.renderSettings(),
+                offsetStore: CharOffsetStore(directoryURL: directory)
+            )
+            await engine.start(renderSize: CGSize(width: 500, height: 700), bookId: UUID().uuidString)
+            _ = await engine.preloadChapter(at: 0)
+            if let pages = engine.layouts[0]?.pageRanges.count, pages % 2 == 1, engine.layouts[1] == nil {
+                return engine
+            }
+        }
+        throw SpreadEngineUnavailable()
+    }
+
+    private struct SpreadEngineUnavailable: Error {}
+
+    private func spreadReader(engine: CoreTextPageEngine, isRTL: Bool, page: Int) -> UIHostingController<CoreTextPageEngineView> {
+        UIHostingController(rootView: CoreTextPageEngineView(
+            engine: engine, pageTurnStyle: .curl, theme: .white, playbackHighlight: nil,
+            isRTL: isRTL, isDoublePageSpread: true,
+            spreadGutter: PageViewControllerPagingAdapterDescriptor(pageTurnStyle: .curl).spreadGutter,
+            sessionCoordinator: nil, externalTargetVersion: 0, externalTargetPosition: nil,
+            pageTurnCommand: nil, clearExternalTargetPosition: {}, currentPage: .constant(page),
+            onPageChanged: { _, _ in }, onTapZone: { _ in }
+        ))
+    }
+
+    /// Shows a spread reader in a window two 500pt pages wide, and returns its page view controller.
+    private func show(_ host: UIHostingController<CoreTextPageEngineView>) throws -> (UIPageViewController, UIWindow) {
+        let window = try show(host, size: CGSize(width: 1000, height: 700))
+        let pvc = try #require(controllers(host).compactMap { $0 as? UIPageViewController }.first)
+        return (pvc, window)
+    }
+
+    /// UIKit's data-source call for turning on in reading order: an RTL book reads on
+    /// toward the left, which UIKit calls "before".
+    private func forward(from viewController: UIViewController, in pvc: UIPageViewController, isRTL: Bool) -> UIViewController? {
+        isRTL
+            ? pvc.dataSource?.pageViewController(pvc, viewControllerBefore: viewController)
+            : pvc.dataSource?.pageViewController(pvc, viewControllerAfter: viewController)
+    }
+
+    private func backward(from viewController: UIViewController, in pvc: UIPageViewController, isRTL: Bool) -> UIViewController? {
+        isRTL
+            ? pvc.dataSource?.pageViewController(pvc, viewControllerAfter: viewController)
+            : pvc.dataSource?.pageViewController(pvc, viewControllerBefore: viewController)
+    }
+
+    private func pageIndices(_ viewControllers: [UIViewController]?) -> [Int?] {
+        (viewControllers ?? []).map { ($0 as? any PageIndexProviding)?.globalPageIndex }
     }
 
     private func views(_ view: UIView) -> [UIView] { [view] + view.subviews.flatMap(views) }

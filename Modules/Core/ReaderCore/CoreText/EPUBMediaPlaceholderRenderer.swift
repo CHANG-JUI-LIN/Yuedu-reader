@@ -10,10 +10,13 @@ enum EPUBMediaPlaceholderRenderer {
         poster: UIImage? = nil,
         font: UIFont,
         textColor: UIColor,
-        backgroundColor: UIColor
+        backgroundColor: UIColor,
+        displayScale: CGFloat
     ) -> UIImage {
         guard media.kind == .video else {
-            return audioImage(for: media, maxWidth: maxWidth, font: font, textColor: textColor)
+            return audioImage(
+                for: media, maxWidth: maxWidth, font: font, textColor: textColor, displayScale: displayScale
+            )
         }
         if let poster, poster.size.width > 0, poster.size.height > 0 {
             return videoPosterImage(poster: poster, maxWidth: maxWidth, intrinsicSize: intrinsicSize)
@@ -27,12 +30,13 @@ enum EPUBMediaPlaceholderRenderer {
         detail: String,
         maxWidth: CGFloat,
         font: UIFont,
-        textColor: UIColor
+        textColor: UIColor,
+        displayScale: CGFloat
     ) -> UIImage {
         let width = max(180, min(maxWidth, 520))
         let height: CGFloat = 86
         let format = UIGraphicsImageRendererFormat()
-        format.scale = UIScreen.main.scale
+        format.scale = displayScale
         format.opaque = false
 
         return UIGraphicsImageRenderer(size: CGSize(width: width, height: height), format: format).image { _ in
@@ -42,7 +46,7 @@ enum EPUBMediaPlaceholderRenderer {
 
             textColor.withAlphaComponent(0.24).setStroke()
             let outline = UIBezierPath(roundedRect: bounds.insetBy(dx: 1, dy: 1), cornerRadius: 8)
-            outline.lineWidth = 1 / max(UIScreen.main.scale, 1)
+            outline.lineWidth = 1 / max(displayScale, 1)
             outline.stroke()
 
             let config = UIImage.SymbolConfiguration(pointSize: 28, weight: .regular)
@@ -182,12 +186,13 @@ enum EPUBMediaPlaceholderRenderer {
         for media: EPUBMediaAttachment,
         maxWidth: CGFloat,
         font: UIFont,
-        textColor: UIColor
+        textColor: UIColor,
+        displayScale: CGFloat
     ) -> UIImage {
         let width = max(160, min(maxWidth, 520))
         let height: CGFloat = 72
         let format = UIGraphicsImageRendererFormat()
-        format.scale = UIScreen.main.scale
+        format.scale = displayScale
         format.opaque = false
 
         return UIGraphicsImageRenderer(size: CGSize(width: width, height: height), format: format).image { _ in
@@ -199,7 +204,7 @@ enum EPUBMediaPlaceholderRenderer {
             let stroke = textColor.withAlphaComponent(0.22)
             stroke.setStroke()
             let outline = UIBezierPath(roundedRect: bounds.insetBy(dx: 1, dy: 1), cornerRadius: 12)
-            outline.lineWidth = 1 / max(UIScreen.main.scale, 1)
+            outline.lineWidth = 1 / max(displayScale, 1)
             outline.stroke()
 
             let config = UIImage.SymbolConfiguration(pointSize: 30, weight: .regular)

@@ -63,7 +63,7 @@ final class ReaderScrollLayout: UICollectionViewLayout {
             // `ReaderScrollLayoutTests`, where an unsnapped running sum diverged by 1/scale from
             // the third item onward. Cells landing on whole device pixels is what keeps
             // CoreText-drawn text from rendering blurry.
-            let origin = (cursor * scale).rounded(.toNearestOrAwayFromZero) / scale
+            let origin = Self.snapped(cursor, scale: scale)
             let attributes = UICollectionViewLayoutAttributes(
                 forCellWith: IndexPath(item: item, section: 0)
             )
@@ -86,11 +86,18 @@ final class ReaderScrollLayout: UICollectionViewLayout {
         }
     }
 
-    /// Device pixels per point. `displayScale` is 0 in an unspecified trait environment (a view
-    /// that has never been in a window), which would make snapping divide by zero.
-    private func pixelScale(for collectionView: UICollectionView) -> CGFloat {
+    /// Device pixels per point of the window the reader is in. `displayScale` is 0 in an
+    /// unspecified trait environment (a view that has never been in a window): there is no pixel
+    /// grid to snap to yet, and the scroll view controller lays the items out again when the
+    /// scale arrives (`CoreTextCollectionScrollViewController`, `UITraitDisplayScale`).
+    private func pixelScale(for collectionView: UICollectionView) -> CGFloat? {
         let traitScale = collectionView.traitCollection.displayScale
-        return traitScale > 0 ? traitScale : UIScreen.main.scale
+        return traitScale > 0 ? traitScale : nil
+    }
+
+    private static func snapped(_ origin: CGFloat, scale: CGFloat?) -> CGFloat {
+        guard let scale else { return origin }
+        return (origin * scale).rounded(.toNearestOrAwayFromZero) / scale
     }
 
     override func invalidateLayout(with context: UICollectionViewLayoutInvalidationContext) {
@@ -119,8 +126,7 @@ final class ReaderScrollLayout: UICollectionViewLayout {
 
     func snappedOrigin(_ origin: CGFloat) -> CGFloat {
         guard let collectionView else { return origin }
-        let scale = pixelScale(for: collectionView)
-        return (origin * scale).rounded(.toNearestOrAwayFromZero) / scale
+        return Self.snapped(origin, scale: pixelScale(for: collectionView))
     }
 
     override func layoutAttributesForItem(

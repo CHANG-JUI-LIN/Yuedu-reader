@@ -39,4 +39,16 @@ extension View {
             action(size)
         }
     }
+
+    /// Reports the window's side safe area — the larger of the leading and trailing insets —
+    /// every time it changes. Nonzero in iPhone landscape, where the Dynamic Island takes one
+    /// side, and wherever a window has a bar down one side. Attached beside
+    /// `reportsReaderViewport`, for the same reason: only there are the insets the window's.
+    func reportsReaderSideSafeArea(_ action: @escaping (CGFloat) -> Void) -> some View {
+        onGeometryChange(for: CGFloat.self) { proxy in
+            max(proxy.safeAreaInsets.leading, proxy.safeAreaInsets.trailing)
+        } action: { inset in
+            action(inset)
+        }
+    }
 }

@@ -162,6 +162,9 @@ struct ReaderView: View {
     /// layout, the spread mode — would be for a window the reader is not in. While it is zero the
     /// renderer holds the engine start (`EPUBPageRenderer.pendingStartBookId`).
     @State var readerViewportSize: CGSize = .zero
+    /// The window's side safe area, from `reportsReaderSideSafeArea`: the text and the 頁眉／頁腳
+    /// keep this far from both sides (`effectivePageMarginH`). Zero in portrait.
+    @State var readerSideSafeArea: CGFloat = 0
     @StateObject private var volumeHandler = VolumeKeyHandler()
 
     /// Not private: the footer pill in `ReaderView+Footer` reads its running state.
@@ -191,9 +194,21 @@ struct ReaderView: View {
     @State var activePublicationSession: PublicationSession?
 
     private func syncReaderBrightnessFromSystem() {
-        let current = Double(UIScreen.main.brightness)
+        guard let screen = readerWindow.screen else { return }
+        let current = Double(screen.brightness)
         systemBrightness = current
         settings.readerBrightness = current
+    }
+
+    /// Takes the brightness of the screen the reader opened on, and puts the reader's own
+    /// on it unless it follows the system.
+    private func applyReaderBrightness(on screen: UIScreen) {
+        systemBrightness = Double(screen.brightness)
+        if settings.followSystemBrightness {
+            settings.readerBrightness = systemBrightness
+        } else {
+            screen.brightness = CGFloat(settings.readerBrightness)
+        }
     }
 
     private func restoreReaderDisplayStateAfterResume() {
@@ -369,6 +384,9 @@ struct ReaderView: View {
     var changeSourcePendingOrigin: BookOrigin? { readerViewModel.changeSourcePendingOrigin }
 
     @State private var systemBrightness: Double = 0.5
+    /// The window the reader is in; see `ReaderWindowReference`. Not private:
+    /// `ReaderView+Footer` reads its safe area and asks its scene for orientations.
+    @State var readerWindow = ReaderWindowReference()
 
     var fontSize: CGFloat {
         get { readerConfig.fontSize }
@@ -484,17 +502,22 @@ struct ReaderView: View {
     }
 
     var usesReadableReaderWidth: Bool {
-        horizontalSizeClass == .regular || UIDevice.current.userInterfaceIdiom == .pad
+        horizontalSizeClass == .regular
     }
 
     var overlayContentMaxWidth: CGFloat {
         usesReadableReaderWidth ? DSLayout.readableOverlayWidth : .infinity
     }
 
+    /// 左右邊距 is measured from the window's side safe area, so in iPhone landscape the text
+    /// clears the Dynamic Island by the reader's own margin. Both sides take the larger side's
+    /// inset: the island can be on either side, turning the phone over moves it without a
+    /// relayout, and the column stays centred.
     var effectivePageMarginH: CGFloat {
-        ReaderReadableWidthPolicy.effectiveMargin(
+        let sideSafeArea = readerSideSafeArea
+        return sideSafeArea + ReaderReadableWidthPolicy.effectiveMargin(
             readerConfig.pageMarginH,
-            pageWidth: currentReaderRenderSize.width
+            pageWidth: max(0, currentReaderRenderSize.width - 2 * sideSafeArea)
         )
     }
 
@@ -511,7 +534,6 @@ struct ReaderView: View {
             preferredMode: settings.readerSpreadMode,
             viewportSize: readerViewportSize,
             horizontalSizeClassIsRegular: horizontalSizeClass == .regular,
-            idiom: UIDevice.current.userInterfaceIdiom,
             isScrollMode: effectiveScrollMode,
             fixedLayoutSpread: usesFixedLayoutRenderer ? epubRenderer.fixedLayoutSpread : nil,
             fixedLayoutOrientation: usesFixedLayoutRenderer ? epubRenderer.fixedLayoutOrientation : nil
@@ -544,10 +566,19 @@ struct ReaderView: View {
         return max(0, page - readerPageStep)
     }
 
-    /// A double-column spread turns as one sheet, using the same LTR/RTL outer
-    /// spine as a single page. Keep the user's selected animation in either mode.
+    /// Keep the user's selected animation in either mode. Under 仿真 a spread turns
+    /// around its centre spine; see `readerPagingAdapter`.
     var effectivePageTurnStyle: PageTurnStyle {
         settings.pageTurnStyle
+    }
+
+    /// How the paged reader's page view controller is built for this book and window.
+    var readerPagingAdapter: PageViewControllerPagingAdapterDescriptor {
+        PageViewControllerPagingAdapterDescriptor(
+            pageTurnStyle: effectivePageTurnStyle,
+            isDoublePageSpread: isDoublePageSpreadActive,
+            pairsOwnSpreads: usesFixedLayoutRenderer
+        )
     }
 
     private var readerPageViewIdentity: String {
@@ -567,7 +598,7 @@ struct ReaderView: View {
     private func readerRenderSize(forViewport viewportSize: CGSize) -> CGSize {
         guard effectiveReaderSpreadMode == .doublePage else { return viewportSize }
         return CGSize(
-            width: max(1, (viewportSize.width - DSLayout.readerSpreadGutter) / 2),
+            width: max(1, (viewportSize.width - readerPagingAdapter.spreadGutter) / 2),
             height: max(1, viewportSize.height)
         )
     }
@@ -1569,7 +1600,7 @@ struct ReaderView: View {
     func makeTOCStyleTitleCardArtwork(title: String) -> UIImage? {
         let size = CGSize(width: 512, height: 768)
         let format = UIGraphicsImageRendererFormat()
-        format.scale = UIScreen.main.scale
+        format.scale = readerDisplayScale
 
         let renderer = UIGraphicsImageRenderer(size: size, format: format)
         let displayTitle = title.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -1650,6 +1681,8 @@ struct ReaderView: View {
         // Here, outside the reader's own NavigationStack, so it sees the window and not the
         // content area under the navigation bar. See `reportsReaderViewport`.
         .reportsReaderViewport { handleReaderViewportSizeChange($0) }
+        .reportsReaderSideSafeArea { readerSideSafeArea = $0 }
+        .readerWindowProbe(readerWindow)
         .task {
             guard readerSessionCoordinator == nil else { return }
             let fallback = CoreTextReadingPosition(spineIndex: 0, charOffset: 0)
@@ -1746,7 +1779,7 @@ struct ReaderView: View {
                     playbackHighlight: nil,
                     isRTL: epubRenderer.pageProgressionDirection == .rtl,
                     isDoublePageSpread: isDoublePageSpreadActive,
-                    spreadGutter: DSLayout.readerSpreadGutter,
+                    spreadGutter: readerPagingAdapter.spreadGutter,
                     sessionCoordinator: nil,
                     externalTargetVersion: 0,
                     externalTargetPosition: nil,
@@ -1822,7 +1855,7 @@ struct ReaderView: View {
                     // horizontal RTL bidi scripts (Hebrew, Arabic, …).
                     isRTL: epubRenderer.pageProgressionDirection == .rtl || effectiveWritingMode.isVertical,
                     isDoublePageSpread: isDoublePageSpreadActive,
-                    spreadGutter: DSLayout.readerSpreadGutter,
+                    spreadGutter: readerPagingAdapter.spreadGutter,
                     sessionCoordinator: readerSessionCoordinator,
                     externalTargetVersion: coreTextExternalTargetVersion,
                     externalTargetPosition: readerSessionCoordinator?.externalTargetPosition,
@@ -2181,11 +2214,9 @@ struct ReaderView: View {
             rebuildReaderOverlayLegacyContentIndex()
             beginReadingStatsSession()
             syncCoreTextTextAnnotations()
-            systemBrightness = Double(UIScreen.main.brightness)
-            if settings.followSystemBrightness {
-                settings.readerBrightness = systemBrightness
-            } else {
-                UIScreen.main.brightness = CGFloat(settings.readerBrightness)
+            readerWindow.withWindow { window in
+                guard let screen = window.windowScene?.screen else { return }
+                applyReaderBrightness(on: screen)
             }
             volumeHandler.onPageTurn = { dir in
                 switch dir {
@@ -2239,7 +2270,7 @@ struct ReaderView: View {
             // cancel that used to sit on this line never got the same treatment, so
             // opening any sheet threw away every laid-out chapter in the book.
             if !settings.followSystemBrightness {
-                UIScreen.main.brightness = CGFloat(systemBrightness)
+                readerWindow.screen?.brightness = CGFloat(systemBrightness)
             }
             saveProgress()
             finishReadingStatsSession()
@@ -2316,13 +2347,13 @@ struct ReaderView: View {
             }
         }
         .onChanged(of: settings.readerBrightness) { val in
-            if !settings.followSystemBrightness { UIScreen.main.brightness = CGFloat(val) }
+            if !settings.followSystemBrightness { readerWindow.screen?.brightness = CGFloat(val) }
         }
         .onChanged(of: settings.followSystemBrightness) { follow in
             if follow {
                 syncReaderBrightnessFromSystem()
             } else {
-                UIScreen.main.brightness = CGFloat(settings.readerBrightness)
+                readerWindow.screen?.brightness = CGFloat(settings.readerBrightness)
             }
         }
         .onChanged(of: systemColorScheme) { _ in
@@ -2397,8 +2428,10 @@ struct ReaderView: View {
             syncActiveThemePreset()
         }
         .onReceive(NotificationCenter.default.publisher(for: UIScreen.brightnessDidChangeNotification))
-        { _ in
-            let current = Double(UIScreen.main.brightness)
+        { notification in
+            // Every screen posts this; only the one the reader is on is its business.
+            guard let screen = notification.object as? UIScreen, screen === readerWindow.screen else { return }
+            let current = Double(screen.brightness)
             systemBrightness = current
             if settings.followSystemBrightness {
                 settings.readerBrightness = current
@@ -2516,6 +2549,15 @@ struct ReaderView: View {
                 viewportSize: currentReaderRenderSize
             )
         }
+        .onChanged(of: readerPagingAdapter.spreadGutter) { _ in
+            // 仿真 and the other styles give a spread's pages different widths; a single
+            // page is the window's width either way.
+            guard isDoublePageSpreadActive else { return }
+            submitReaderRefresh(
+                intent: .layout,
+                viewportSize: currentReaderRenderSize
+            )
+        }
         .onChanged(of: book?.bookmarks ?? []) { _ in
             syncCoreTextTextAnnotations()
         }
@@ -2564,6 +2606,9 @@ struct ReaderView: View {
                     readerSafeTop: effectiveReaderSafeTop,
                     readerSafeBottom: effectiveReaderSafeBottom,
                     pageMarginHUpperBound: pageMarginHUpperBound,
+                    readerWindowCanHoldSpread: ReaderSpreadPolicy.windowCanHoldSpread(
+                        viewportSize: readerViewportSize
+                    ),
                     capabilities: readerCapabilities,
                     allowsUserSelectedReaderFont: book?.allowsUserSelectedReaderFont == true,
                     usesPublicationFontDefault: book?.resolvedPipelineKind == .epub,

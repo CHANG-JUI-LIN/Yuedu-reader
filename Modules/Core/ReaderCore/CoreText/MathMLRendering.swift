@@ -318,10 +318,11 @@ enum MathMLImageRenderer {
         fontSize: CGFloat,
         textColor: UIColor,
         displayMode: ImageRunInfo.DisplayMode,
-        maxWidth: CGFloat
+        maxWidth: CGFloat,
+        displayScale: CGFloat
     ) -> Rendered? {
         let mode: MTMathUILabelMode = displayMode == .block ? .display : .text
-        let cacheKey = "\(latex)|\(fontSize)|\(textColor.cacheKey)|\(mode.rawValue)|\(maxWidth)" as NSString
+        let cacheKey = "\(latex)|\(fontSize)|\(textColor.cacheKey)|\(mode.rawValue)|\(maxWidth)|\(displayScale)" as NSString
         if let cached = cache.object(forKey: cacheKey) {
             return cached
         }
@@ -362,7 +363,7 @@ enum MathMLImageRenderer {
 
         let format = UIGraphicsImageRendererFormat()
         format.opaque = false
-        format.scale = UIScreen.main.scale
+        format.scale = displayScale
         let renderer = UIGraphicsImageRenderer(size: imageSize, format: format)
         let image = renderer.image { context in
             let cg = context.cgContext

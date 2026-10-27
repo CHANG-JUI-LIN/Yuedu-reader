@@ -10,6 +10,8 @@ struct ContentView: View {
     /// Bold Text: `.bold` while it is on. The global font needs telling; the system font
     /// follows it by itself.
     @Environment(\.legibilityWeight) private var legibilityWeight
+    /// Pixel density a custom tab icon is redrawn at: the window's, not the main screen's.
+    @Environment(\.displayScale) private var displayScale
     @Bindable private var gs = GlobalSettings.shared
     /// 探索's browser, which 資源庫's pages open too: one browser, left as it was.
     @StateObject private var browser = BrowserState()
@@ -391,6 +393,7 @@ struct ContentView: View {
                     ? gs.rootTabIconSize
                     : GlobalSettings.initialCustomRootTabIconSize
             ),
+            displayScale: displayScale,
             settings: gs
         ) {
             if shouldHideRootTabLabels {
@@ -615,6 +618,13 @@ struct NowPlayingMiniPlayer: View {
             }
         }
         .ignoresSafeArea(.keyboard)
+        // The offset is from a spot measured off the bottom of the space it was dragged in.
+        // A rotation or a resize changes that space, and the player is put back inside it.
+        .onGeometryChange(for: CGSize.self) { proxy in
+            proxy.size
+        } action: { size in
+            offset = clampedOffset(offset, in: size)
+        }
         .animation(DSAnimation.standard, value: isVisible)
         .onChange(of: isVisible) { _, visible in
             if !visible { dockedSide = nil }

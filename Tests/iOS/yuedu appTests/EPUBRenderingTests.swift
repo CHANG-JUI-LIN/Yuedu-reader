@@ -371,7 +371,8 @@ struct EPUBRenderingTests {
             maxWidth: 240,
             baseFont: .systemFont(ofSize: 17),
             textColor: .black,
-            backgroundColor: .white
+            backgroundColor: .white,
+            displayScale: 2
         ))
 
         #expect(!imageContainsVisiblePixel(image))
@@ -407,7 +408,8 @@ struct EPUBRenderingTests {
             baseFont: .systemFont(ofSize: 17),
             textColor: .black,
             backgroundColor: .white,
-            imagesBySource: ["time.png": authoredImage]
+            imagesBySource: ["time.png": authoredImage],
+            displayScale: 2
         ).first?.image)
 
         #expect(imageContainsVisiblePixel(image))
@@ -434,7 +436,8 @@ struct EPUBRenderingTests {
             maxPageHeight: 200,
             baseFont: .systemFont(ofSize: 17),
             textColor: .black,
-            backgroundColor: .white
+            backgroundColor: .white,
+            displayScale: 2
         )
 
         #expect(pages.count > 1)
@@ -460,7 +463,8 @@ struct EPUBRenderingTests {
             maxWidth: 240,
             baseFont: .systemFont(ofSize: 17),
             textColor: .black,
-            backgroundColor: .white
+            backgroundColor: .white,
+            displayScale: 2
         ).first)
 
         #expect(page.linkRegions.contains { $0.href == "chapter.xhtml" && !$0.rect.isEmpty })
@@ -674,7 +678,8 @@ struct EPUBRenderingTests {
             maxPageHeight: 760,
             baseFont: .systemFont(ofSize: 17),
             textColor: .black,
-            backgroundColor: .white
+            backgroundColor: .white,
+            displayScale: 2
         )
         #expect(pages.count == 1)
         #expect(pages.first?.rowRange == 0..<15)

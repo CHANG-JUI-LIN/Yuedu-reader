@@ -67,8 +67,8 @@ struct TestFlightGateWindow: UIViewRepresentable {
                 window.isUserInteractionEnabled = false
                 window.accessibilityElementsHidden = true
                 let hosting = UIHostingController(rootView: TestFlightMembershipGate(state: state))
+                // A window made for the scene fills it and follows it as it resizes.
                 let gate = UIWindow(windowScene: scene)
-                gate.frame = scene.coordinateSpace.bounds
                 gate.windowLevel = .alert
                 gate.rootViewController = hosting
                 gateWindow = gate

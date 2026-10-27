@@ -209,20 +209,22 @@ enum RootTabIconRenderer {
         for tab: RootTabItem,
         colorScheme: ColorScheme,
         pointSize: CGFloat,
+        displayScale: CGFloat,
         settings: GlobalSettings = .shared
     ) -> RootTabRenderedIcon? {
         let size = Self.sanitizedIconSize(pointSize)
         for slot in RootTabIconSlot.preferredSlots(colorScheme: colorScheme) {
             if let asset = settings.rootTabIconAsset(for: tab, slot: slot),
                let url = settings.rootTabIconURL(for: asset),
-               let image = preparedImage(at: url, pointSize: size) {
+               let image = preparedImage(at: url, pointSize: size, displayScale: displayScale) {
                 return RootTabRenderedIcon(image: image, isTemplate: false)
             }
         }
         return nil
     }
 
-    /// Decoded and redrawn icons, by file, its modification date and the size drawn.
+    /// Decoded and redrawn icons, by file, its modification date, the size drawn and the pixel
+    /// density it was drawn at.
     ///
     /// `customIcon` is called from the root view's body, for every tab, on every root render;
     /// it read the file and redrew it each time. The modification date is part of the key, so
@@ -230,7 +232,7 @@ enum RootTabIconRenderer {
     private static let preparedImages = ConcurrentCache<UIImage>()
 
     @MainActor
-    private static func preparedImage(at url: URL, pointSize: CGFloat) -> UIImage? {
+    private static func preparedImage(at url: URL, pointSize: CGFloat, displayScale: CGFloat) -> UIImage? {
         let modified: Date
         do {
             let attributes = try FileManager.default.attributesOfItem(atPath: url.path)
@@ -239,10 +241,10 @@ enum RootTabIconRenderer {
             // A missing file is the ordinary "no custom icon here"; nothing to log.
             return nil
         }
-        let key = "\(url.path)|\(modified.timeIntervalSince1970)|\(pointSize)"
+        let key = "\(url.path)|\(modified.timeIntervalSince1970)|\(pointSize)|\(displayScale)"
         if let cached = preparedImages.object(forKey: key) { return cached }
         guard let image = UIImage(contentsOfFile: url.path) else { return nil }
-        let prepared = image.rootTabIconPrepared(pointSize: pointSize)
+        let prepared = image.rootTabIconPrepared(pointSize: pointSize, displayScale: displayScale)
         preparedImages.setObject(prepared, forKey: key)
         return prepared
     }
@@ -422,7 +424,7 @@ extension GlobalSettings {
 
 private extension UIImage {
     @MainActor
-    func rootTabIconPrepared(pointSize: CGFloat) -> UIImage {
+    func rootTabIconPrepared(pointSize: CGFloat, displayScale: CGFloat) -> UIImage {
         guard size.width > 0, size.height > 0 else { return self }
         let ratio = min(pointSize / size.width, pointSize / size.height)
         let drawSize = CGSize(width: size.width * ratio, height: size.height * ratio)
@@ -431,7 +433,7 @@ private extension UIImage {
             y: (pointSize - drawSize.height) / 2
         )
         let format = UIGraphicsImageRendererFormat()
-        format.scale = UIScreen.main.scale
+        format.scale = displayScale
         format.opaque = false
         let renderer = UIGraphicsImageRenderer(size: CGSize(width: pointSize, height: pointSize), format: format)
         return renderer.image { _ in

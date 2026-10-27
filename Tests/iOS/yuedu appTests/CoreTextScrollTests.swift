@@ -94,6 +94,29 @@ struct CoreTextScrollTests {
         #expect(controller.scrollAxis == .horizontalRTL)
     }
 
+    @Test("a theme change swaps the colors and keeps every other render setting")
+    @MainActor
+    func themeChangeKeepsNonColorRenderSettings() {
+        var settings = Self.makeRenderSettings()
+        settings.dialogueBubbleStyle.isEnabled.toggle()
+        settings.textConversion = .toTraditional
+        settings.translation = ReaderTranslationPresentation(mode: .bilingual)
+        settings.bookID = UUID()
+        settings.bottomJustify = true
+        settings.displayScale = 3
+        let engine = CoreTextScrollEngine(
+            builder: StaticScrollTestBuilder(chapters: ["主題切換"]),
+            renderSettings: settings
+        )
+
+        engine.applyThemeChange(textColor: .white, backgroundColor: .black)
+
+        var expected = settings
+        expected.textColor = .white
+        expected.backgroundColor = .black
+        #expect(engine.renderSettings == expected)
+    }
+
     @Test("reused chunk cell immediately discards its previous rendered contents")
     @MainActor
     func reusedChunkCellDiscardsPreviousRenderedContents() throws {

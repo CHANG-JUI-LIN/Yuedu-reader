@@ -20,6 +20,8 @@ struct ReaderRenderSettingsSnapshotInput {
     let readerStyleAppearance: ReaderStyleAppearance
     let readerStyleAssetRevision: UInt64
     let dialogueBubbleStyle: ReaderDialogueBubbleStyle
+    /// The reader's window's pixel density (`@Environment(\.displayScale)`).
+    let displayScale: CGFloat
     var textConversion: TextConversion = .original
     var translation: ReaderTranslationPresentation = .off
     var bookID: UUID? = nil
@@ -79,7 +81,8 @@ enum ReaderRenderSettingsSnapshotBuilder {
             translation: input.translation,
             bookID: input.bookID,
             // A scroll column has no page bottom to reach.
-            bottomJustify: isPaged && input.bottomJustify
+            bottomJustify: isPaged && input.bottomJustify,
+            displayScale: input.displayScale
         )
     }
 }

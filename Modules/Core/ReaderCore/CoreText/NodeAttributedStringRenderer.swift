@@ -44,7 +44,10 @@ struct NodeAttributedStringRenderer: Sendable {
         let chapterTitleFontPostScript: String?
         let chapterTitleWeight: ChapterTitleWeight
         let fontFamily: String?
-        let renderWidth: CGFloat?
+        /// The column the chapter lays out in, from the builder's render size: images, tables and
+        /// bubbles size to it. Required — the window the reader is in is the only width there is;
+        /// the screen's width is another window's on an iPad, a resized iPhone Duo, or landscape.
+        let renderWidth: CGFloat
         /// Available reader content height. EPUB tables use this real page budget when they must
         /// be split into raster attachments; deriving it from width arbitrarily broke medium
         /// tables into adjacent image fragments on the same page.
@@ -77,6 +80,9 @@ struct NodeAttributedStringRenderer: Sendable {
         /// The language the publication declares; it decides CJK typography only when
         /// the text itself shows no script.
         let declaredLanguage: String?
+        /// Pixel density the tables, formulas and media placeholders are drawn at: the reader's
+        /// window's (`ReaderRenderSettings.displayScale`).
+        let displayScale: CGFloat
 
         init(
             from settings: ReaderRenderSettings,
@@ -84,7 +90,7 @@ struct NodeAttributedStringRenderer: Sendable {
             baseFontSize: CGFloat? = nil,
             paragraphSpacing: CGFloat? = nil,
             fontFamily: String? = nil,
-            renderWidth: CGFloat? = nil,
+            renderWidth: CGFloat,
             renderHeight: CGFloat? = nil,
             resolvedFont: (@Sendable ([String], Int, Bool, CGFloat) -> UIFont?)? = nil,
             imageLoader: (@MainActor @Sendable (String) async -> UIImage?)? = nil,
@@ -108,6 +114,7 @@ struct NodeAttributedStringRenderer: Sendable {
             self.textConversion = textConversion ?? settings.textConversion
             self.bookID = settings.bookID
             self.declaredLanguage = declaredLanguage
+            self.displayScale = settings.displayScale
             // EPUB <h1> path: size/spacing/visibility always apply. Font and
             // weight apply only when the user explicitly picked a title font
             // (跟隨閱讀字體 off) — otherwise the publisher's own heading CSS wins,
@@ -281,7 +288,8 @@ struct NodeAttributedStringRenderer: Sendable {
     /// paragraph's alignment and indents, and re-running any typography pass
     /// afterwards would overwrite them.
     private func applyDialogueBubblesIfNeeded(to processed: NSMutableAttributedString) async {
-        guard config.dialogueBubbleStyle.isEnabled, let width = config.renderWidth else {
+        let width = config.renderWidth
+        guard config.dialogueBubbleStyle.isEnabled, width > 0 else {
             return
         }
         await ReaderStyleAssetStore.shared.prewarmDialogueBubbleAssets(
@@ -645,7 +653,7 @@ struct NodeAttributedStringRenderer: Sendable {
         if let side = style.floatSide,
            !isHeading,
            !isVertical(style),
-           config.renderWidth != nil {
+           config.renderWidth > 0 {
             return await renderFloatBubble(children: children, style: style, side: side, ctx: ctx)
         }
 
@@ -1075,8 +1083,8 @@ struct NodeAttributedStringRenderer: Sendable {
         // box (after inherited padding/margins), not the full render width — centering against
         // renderWidth and then ALSO adding the inherited insets would double-count them.
         let widthInset: CGFloat
-        if style.isHorizontallyCentered, let blockWidth = style.width, blockWidth > 0,
-           let renderWidth = config.renderWidth {
+        if style.isHorizontallyCentered, let blockWidth = style.width, blockWidth > 0 {
+            let renderWidth = config.renderWidth
             let contentBoxWidth = max(blockWidth, renderWidth - structuralLeft - structuralRight)
             widthInset = max(0, (contentBoxWidth - blockWidth) / 2)
         } else {
@@ -1104,7 +1112,7 @@ struct NodeAttributedStringRenderer: Sendable {
             // extent is the page's height in vertical writing, where lines run top to bottom.
             var tailInset = rightInset
             if let maxInlineSize = style.maxInlineSize,
-               let inlineExtent = isVertical(style) ? config.renderHeight : config.renderWidth {
+               let inlineExtent = isVertical(style) ? config.renderHeight : Optional(config.renderWidth) {
                 tailInset = max(tailInset, inlineExtent - leftInset - maxInlineSize)
             }
             para.tailIndent = tailInset > 0 ? -tailInset : 0
@@ -1383,8 +1391,7 @@ struct NodeAttributedStringRenderer: Sendable {
         }
 
         if let svgContent, !svgContent.isEmpty {
-            let screenWidth = await ReaderDocumentTrace.measuring("mainActorHop") { await MainActor.run { UIScreen.main.bounds.width } }
-            let resolvedWidth = config.renderWidth ?? screenWidth
+            let resolvedWidth = config.renderWidth
             let image = await ReaderDocumentTrace.measuring("svgRaster") {
                 await ReviewCardRaster.image(
                     svg: svgContent,
@@ -1482,13 +1489,14 @@ struct NodeAttributedStringRenderer: Sendable {
     ) async -> NSAttributedString {
         let mathCtx = applyInlineStyle(style, to: ctx)
         let runMode: ImageRunInfo.DisplayMode = displayMode == .block ? .block : .inline
-        let maxWidth = max(1, config.renderWidth ?? 320)
+        let maxWidth = max(1, config.renderWidth)
         let rendered = await MathMLImageRenderer.render(
             latex: latex,
             fontSize: mathCtx.font.pointSize,
             textColor: mathCtx.textColor,
             displayMode: runMode,
-            maxWidth: maxWidth
+            maxWidth: maxWidth,
+            displayScale: config.displayScale
         )
         guard let rendered else {
             var attrs = mathCtx.baseAttributes
@@ -1556,8 +1564,7 @@ struct NodeAttributedStringRenderer: Sendable {
         let blockCtx = applyBlockStyle(blockStyle, to: ctx, isHeading: isHeading, headingLevel: headingLevel)
         let image: UIImage?
         if let svgContent = payload.svgContent, !svgContent.isEmpty {
-            let screenWidth = await ReaderDocumentTrace.measuring("mainActorHop") { await MainActor.run { UIScreen.main.bounds.width } }
-            let resolvedWidth = config.renderWidth ?? screenWidth
+            let resolvedWidth = config.renderWidth
             image = await ReviewCardRaster.image(
                 svg: svgContent,
                 columnWidth: resolvedWidth,
@@ -1659,20 +1666,13 @@ struct NodeAttributedStringRenderer: Sendable {
         // `width: 90%` + `margin: auto` centering insets). Generating at the full page width and
         // letting the image metrics squeeze it into the paragraph scaled the whole bitmap down
         // (~0.9x here) — smaller, blurry cell text versus the tap-to-open original ("被压缩").
-        let maxWidth: CGFloat
-        if let available = availableImageWidth(in: blockCtx) {
-            maxWidth = available
-        } else if let renderWidth = config.renderWidth {
-            maxWidth = renderWidth
-        } else {
-            maxWidth = await ReaderDocumentTrace.measuring("mainActorHop") { await MainActor.run { UIScreen.main.bounds.width } }
-        }
+        let maxWidth = availableImageWidth(in: blockCtx)
 
         let tableImages = await loadTableImages(table)
         let rasterPages = await MainActor.run { [
             font = blockCtx.font, textColor = blockCtx.textColor, cjkStyle = blockCtx.cjkTypographyStyle,
             renderHeight = config.renderHeight, backgroundColor = config.backgroundColor,
-            resolvedFont = config.resolvedFont
+            resolvedFont = config.resolvedFont, displayScale = config.displayScale
         ] in
             HTMLTableRasterizer.renderPages(
                 table: table,
@@ -1683,7 +1683,8 @@ struct NodeAttributedStringRenderer: Sendable {
                 backgroundColor: backgroundColor,
                 resolvedFont: resolvedFont,
                 imagesBySource: tableImages,
-                cjkTypographyStyle: cjkStyle
+                cjkTypographyStyle: cjkStyle,
+                displayScale: displayScale
             )
         }
         guard !rasterPages.isEmpty else {
@@ -1772,12 +1773,7 @@ struct NodeAttributedStringRenderer: Sendable {
         ctx: RenderContext
     ) async -> NSAttributedString {
         let blockCtx = applyBlockStyle(style, to: ctx, isHeading: false)
-        let maxWidth: CGFloat
-        if let renderWidth = config.renderWidth {
-            maxWidth = renderWidth
-        } else {
-            maxWidth = await ReaderDocumentTrace.measuring("mainActorHop") { await MainActor.run { UIScreen.main.bounds.width } }
-        }
+        let maxWidth = config.renderWidth
         var resolvedSourceHref = media.sourceHref
         var resolvedPosterHref = media.posterHref
         if let mediaURLResolver = config.mediaURLResolver {
@@ -1813,7 +1809,7 @@ struct NodeAttributedStringRenderer: Sendable {
         }
         let image = await MainActor.run { [
             poster, font = blockCtx.font, textColor = blockCtx.textColor,
-            backgroundColor = config.backgroundColor
+            backgroundColor = config.backgroundColor, displayScale = config.displayScale
         ] in
             EPUBMediaPlaceholderRenderer.image(
                 for: resolvedMedia,
@@ -1822,7 +1818,8 @@ struct NodeAttributedStringRenderer: Sendable {
                 poster: poster,
                 font: font,
                 textColor: textColor,
-                backgroundColor: backgroundColor
+                backgroundColor: backgroundColor,
+                displayScale: displayScale
             )
         }
 
@@ -1875,12 +1872,7 @@ struct NodeAttributedStringRenderer: Sendable {
             referer: embed.referer ?? config.webEmbedReferer, aspectRatio: embed.aspectRatio
         )
         let blockCtx = applyBlockStyle(style, to: ctx, isHeading: false)
-        let maxWidth: CGFloat
-        if let renderWidth = config.renderWidth {
-            maxWidth = renderWidth
-        } else {
-            maxWidth = await ReaderDocumentTrace.measuring("mainActorHop") { await MainActor.run { UIScreen.main.bounds.width } }
-        }
+        let maxWidth = config.renderWidth
         let image = await MainActor.run { [font = blockCtx.font] in
             EPUBMediaPlaceholderRenderer.webEmbedImage(
                 for: embed,
@@ -1932,19 +1924,17 @@ struct NodeAttributedStringRenderer: Sendable {
         ctx: RenderContext
     ) async -> NSAttributedString {
         let blockCtx = applyBlockStyle(style, to: ctx, isHeading: false)
-        let maxWidth: CGFloat
-        if let renderWidth = config.renderWidth {
-            maxWidth = renderWidth
-        } else {
-            maxWidth = await ReaderDocumentTrace.measuring("mainActorHop") { await MainActor.run { UIScreen.main.bounds.width } }
-        }
-        let image = await MainActor.run { [font = blockCtx.font, textColor = blockCtx.textColor] in
+        let maxWidth = config.renderWidth
+        let image = await MainActor.run { [
+            font = blockCtx.font, textColor = blockCtx.textColor, displayScale = config.displayScale
+        ] in
             EPUBMediaPlaceholderRenderer.interactiveImage(
                 title: localized("Interactive content isn't supported"),
                 detail: title,
                 maxWidth: maxWidth,
                 font: font,
-                textColor: textColor
+                textColor: textColor,
+                displayScale: displayScale
             )
         }
 
@@ -2337,7 +2327,7 @@ struct NodeAttributedStringRenderer: Sendable {
         imageAlt: String?,
         ctx: RenderContext
     ) -> NSAttributedString {
-        let renderWidth = max(1, config.renderWidth ?? 320)
+        let renderWidth = max(1, config.renderWidth)
         var drawWidth: CGFloat
         if let pct = style.rawWidthPercent {
             drawWidth = renderWidth * pct / 100.0
@@ -2442,8 +2432,8 @@ struct NodeAttributedStringRenderer: Sendable {
         return String(normalized.prefix(limit))
     }
 
-    private func availableImageWidth(in ctx: RenderContext) -> CGFloat? {
-        guard let renderWidth = config.renderWidth else { return nil }
+    private func availableImageWidth(in ctx: RenderContext) -> CGFloat {
+        let renderWidth = config.renderWidth
         let paragraph = ctx.paragraphStyle
         let leftInset = max(0, min(paragraph.headIndent, paragraph.firstLineHeadIndent))
         let rightInset = paragraph.tailIndent < 0 ? -paragraph.tailIndent : 0
@@ -2457,8 +2447,7 @@ struct NodeAttributedStringRenderer: Sendable {
         displayMode: ImageRunInfo.DisplayMode = .inline,
         availableWidthOverride: CGFloat? = nil
     ) async -> ImageMetrics {
-        let screenWidth = await ReaderDocumentTrace.measuring("mainActorHop") { await MainActor.run { UIScreen.main.bounds.width } }
-        let baseWidth = availableWidthOverride ?? config.renderWidth ?? screenWidth
+        let baseWidth = availableWidthOverride ?? config.renderWidth
         let availableWidth = max(1, baseWidth - style.paddingLeft - style.paddingRight)
         let maxDrawHeight = max(1, baseWidth * 1.5)
         let isVertical = self.isVertical(style)
@@ -2926,7 +2915,7 @@ struct NodeAttributedStringRenderer: Sendable {
         side: RenderFloatSide,
         ctx: RenderContext
     ) async -> NSAttributedString {
-        let renderWidth = max(1, config.renderWidth ?? 320)
+        let renderWidth = max(1, config.renderWidth)
         let availableWidth = max(1, renderWidth - ctx.inheritedBlockMarginLeft - ctx.inheritedBlockMarginRight)
         let padLeft = style.paddingLeft
         let padRight = style.paddingRight

@@ -25,7 +25,8 @@ struct Phase2BStaleLegacyReproTests {
             maxPageHeight: 200,
             baseFont: .systemFont(ofSize: 17),
             textColor: .black,
-            backgroundColor: .white
+            backgroundColor: .white,
+            displayScale: 2
         )
         // Root cause: `HTMLTableSupport.renderPages` defaults maxPageHeight to
         // .greatestFiniteMagnitude → every row lands on ONE page. The test

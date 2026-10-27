@@ -94,6 +94,13 @@ final class FixedPagePageViewController: UIViewController {
             retryButton.centerYAnchor.constraint(equalTo: view.centerYAnchor),
         ])
 
+        // A page drawn on demand is a bitmap at the display scale it was loaded for; on a
+        // screen of another scale it is drawn again.
+        registerForTraitChanges([UITraitDisplayScale.self]) { (self: Self, _) in
+            guard self.page.renderSource.isRasterizedOnDemand else { return }
+            self.load()
+        }
+
         load()
     }
 
@@ -124,11 +131,13 @@ final class FixedPagePageViewController: UIViewController {
         retryButton.isHidden = true
         spinner.startAnimating()
         loadTask?.cancel()
+        let renderScale = traitCollection.displayScale
         loadTask = Task { [weak self] in
             guard let self else { return }
             let image = await FixedPageImageLoader.loadImage(
                 for: page,
                 targetWidth: targetWidth,
+                renderScale: renderScale,
                 cropBorders: fixedPageReaderConfiguration.cropBorders
             )
             if Task.isCancelled { return }
@@ -185,7 +194,9 @@ final class FixedPagePageViewController: UIViewController {
             return
         }
 
-        let renderScale = FixedPageImageLoader.defaultRenderScale
+        let renderScale = traitCollection.displayScale
+        // No pixel grid yet (a page that has never been in a window): nothing to refine against.
+        guard renderScale > 0 else { return }
         let maxPointWidth = FixedPageImageLoader.maxRasterPixelWidth / renderScale
         let desiredWidth = min(targetWidth * zoomScale, maxPointWidth)
         guard desiredWidth > targetWidth * renderedWidthMultiple * 1.2 else { return }

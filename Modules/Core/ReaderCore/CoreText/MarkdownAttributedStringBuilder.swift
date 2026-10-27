@@ -5,6 +5,9 @@ import UIKit
 struct MarkdownAttributedStringBuilder: AttributedStringBuilding {
     private let sections: [MarkdownSection]
     private let replaceRules: [ReplaceRule]
+    /// The column this book is laid out in, told by the engine (`RenderSizeAware…`): the
+    /// renderer sizes everything that is not text against it.
+    private let renderSize = BuilderRenderSize()
 
     /// Replace rules are not applied to `markdown` here: they run on each block's text inside
     /// `MarkdownRenderableNodeConverter`, so the syntax that delimits blocks is never their
@@ -87,8 +90,13 @@ struct MarkdownAttributedStringBuilder: AttributedStringBuilding {
         }
 
         let nodes = MarkdownRenderableNodeConverter.convert(section: sections[index], rules: replaceRules)
+        let size = renderSize.value
         let renderer = NodeAttributedStringRenderer(
-            config: NodeAttributedStringRenderer.Config(from: settings, textColor: themeTextColor)
+            config: NodeAttributedStringRenderer.Config(
+                from: settings,
+                textColor: themeTextColor,
+                renderWidth: max(0, size.width - settings.contentInsets.left - settings.contentInsets.right)
+            )
         )
 
         return AttributedChapterBuildResult(
@@ -97,6 +105,14 @@ struct MarkdownAttributedStringBuilder: AttributedStringBuilding {
             pageBackgroundImage: nil,
             anchorOffsets: [:]
         )
+    }
+}
+
+extension MarkdownAttributedStringBuilder: RenderSizeAwareAttributedStringBuilding {
+    // Declared in an extension so the main-actor protocol does not make the whole builder
+    // main-actor: chapters are built off it.
+    nonisolated func updateRenderSize(_ size: CGSize) {
+        renderSize.value = size
     }
 }
 

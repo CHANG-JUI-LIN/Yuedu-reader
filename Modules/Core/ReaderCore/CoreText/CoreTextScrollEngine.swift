@@ -384,29 +384,14 @@ final class CoreTextScrollEngine: ObservableObject, ScrollReaderEngine {
         chapterDocumentStore.invalidateAll()
     }
 
+    /// Only the colors change. The settings are copied rather than rebuilt field by field: the
+    /// rebuild listed its fields by hand and silently dropped the five added after it (dialogue
+    /// bubbles, 繁簡轉換, translation, the book, bottom justify).
     func applyThemeChange(textColor: UIColor, backgroundColor: UIColor) {
-        renderSettings = ReaderRenderSettings(
-            theme: renderSettings.theme,
-            textColor: textColor,
-            backgroundColor: backgroundColor,
-            fontSize: renderSettings.fontSize,
-            lineHeightMultiple: renderSettings.lineHeightMultiple,
-            lineSpacing: renderSettings.lineSpacing,
-            paragraphSpacing: renderSettings.paragraphSpacing,
-            letterSpacing: renderSettings.letterSpacing,
-            marginH: renderSettings.marginH,
-            marginV: renderSettings.marginV,
-            footerHeight: renderSettings.footerHeight,
-            contentInsets: renderSettings.contentInsets,
-            writingMode: renderSettings.writingMode,
-            fontPostScriptName: renderSettings.fontPostScriptName,
-            isBold: renderSettings.isBold,
-            chapterTitleStyle: renderSettings.chapterTitleStyle,
-            readerBackgroundImageURL: renderSettings.readerBackgroundImageURL,
-            regexHighlightConfiguration: renderSettings.regexHighlightConfiguration,
-            readerStyleAppearance: renderSettings.readerStyleAppearance,
-            readerStyleAssetRevision: renderSettings.readerStyleAssetRevision
-        )
+        var settings = renderSettings
+        settings.textColor = textColor
+        settings.backgroundColor = backgroundColor
+        renderSettings = settings
     }
 
     func setTextAnnotations(_ annotations: [CoreTextTextAnnotation]) {

@@ -132,10 +132,25 @@ struct PageViewControllerPagingAdapterDescriptor: Equatable {
     let usesCoverOverlay: Bool
     let usesInstantPan: Bool
     let isDoubleSided: Bool
+    /// Whether a two-page spread under this style turns around the centre spine, as a
+    /// book does: UIKit holds both pages (`.mid`) and lifts one at a time, the back of
+    /// each being the page that follows it. True for 仿真 whether or not a spread is
+    /// showing right now, so the spread's page width does not change with the window.
+    ///
+    /// A fixed-layout book keeps the composed sheet (`ReaderSpreadPageViewController`)
+    /// turning on the outer spine: its `page-spread-center` pages span the whole spread,
+    /// and one side of a spine cannot hold them (maintainer, 2026-10-27).
+    let spreadTurnsAroundMidSpine: Bool
+    /// A spread is showing and turns around the centre spine.
+    let usesMidSpine: Bool
 
-    init(pageTurnStyle: PageTurnStyle) {
+    init(pageTurnStyle: PageTurnStyle, isDoublePageSpread: Bool = false, pairsOwnSpreads: Bool = false) {
         style = ReaderPagingStyle(pageTurnStyle: pageTurnStyle)
-        isDoubleSided = pageTurnStyle == .curl
+        spreadTurnsAroundMidSpine = pageTurnStyle == .curl && !pairsOwnSpreads
+        usesMidSpine = spreadTurnsAroundMidSpine && isDoublePageSpread
+        // The composed sheet has nothing to show on its back; a mid spine is two-sided by
+        // definition, and UIKit requires it.
+        isDoubleSided = pageTurnStyle == .curl && (!isDoublePageSpread || usesMidSpine)
         switch pageTurnStyle {
         case .curl:
             transitionStyle = .pageCurl
@@ -160,8 +175,17 @@ struct PageViewControllerPagingAdapterDescriptor: Equatable {
         }
     }
 
+    /// The strip between a spread's two pages. None around a mid spine: UIKit gives each
+    /// page exactly half the view, and a page laid out narrower than that would be drawn
+    /// stretched (`CoreTextPageView` scales its frame to its bounds). Each page's own
+    /// 左右邊距 frames the spine instead — on iPhone Duo, the fold (maintainer, 2026-10-27).
+    var spreadGutter: CGFloat {
+        spreadTurnsAroundMidSpine ? 0 : DSLayout.readerSpreadGutter
+    }
+
     func spineLocation(isRTL: Bool) -> UIPageViewController.SpineLocation {
-        isRTL && (style == .curl || style == .cover) ? .max : .min
+        if usesMidSpine { return .mid }
+        return isRTL && (style == .curl || style == .cover) ? .max : .min
     }
 
     /// Switches off the tap-to-turn recognizer UIKit gives a page-curl controller.

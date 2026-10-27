@@ -120,7 +120,8 @@ struct ReaderRenderSettingsSnapshotTests {
             regexHighlightConfiguration: .disabled,
             readerStyleAppearance: .dark,
             readerStyleAssetRevision: 7,
-            dialogueBubbleStyle: .default
+            dialogueBubbleStyle: .default,
+            displayScale: 3
         )
     }
 }

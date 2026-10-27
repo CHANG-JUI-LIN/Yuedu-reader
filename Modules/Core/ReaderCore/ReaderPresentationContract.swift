@@ -149,13 +149,17 @@ enum ReaderSpreadMode: String, CaseIterable, Codable, Equatable, Hashable {
 }
 
 enum ReaderSpreadPolicy {
-    static let minimumDoublePageWindowWidth: CGFloat = 960
+    /// The smallest window two pages share, asked of the window and never of the device:
+    /// an unfolded iPhone Duo (about 951×669pt) holds a spread, a large iPhone on its side
+    /// (956×440) is too short for one, and an iPad window holds one when it is big enough
+    /// (maintainer, 2026-10-27).
+    static let minimumDoublePageWindowWidth: CGFloat = 900
+    static let minimumDoublePageWindowHeight: CGFloat = 600
 
     static func effectiveMode(
         preferredMode: ReaderSpreadMode,
         viewportSize: CGSize,
         horizontalSizeClassIsRegular: Bool,
-        idiom: UIUserInterfaceIdiom,
         isScrollMode: Bool,
         fixedLayoutSpread: FixedLayoutSpread? = nil,
         fixedLayoutOrientation: FixedLayoutOrientation? = nil
@@ -163,8 +167,7 @@ enum ReaderSpreadPolicy {
         guard preferredMode.normalizedForUserSelection == .doublePage,
               canUseDoublePageWindow(
                 viewportSize: viewportSize,
-                horizontalSizeClassIsRegular: horizontalSizeClassIsRegular,
-                idiom: idiom
+                horizontalSizeClassIsRegular: horizontalSizeClassIsRegular
               ),
               !isScrollMode
         else {
@@ -186,13 +189,20 @@ enum ReaderSpreadPolicy {
 
     static func canUseDoublePageWindow(
         viewportSize: CGSize,
-        horizontalSizeClassIsRegular: Bool,
-        idiom: UIUserInterfaceIdiom
+        horizontalSizeClassIsRegular: Bool
     ) -> Bool {
-        idiom == .pad &&
-            horizontalSizeClassIsRegular &&
+        horizontalSizeClassIsRegular &&
             viewportSize.width > viewportSize.height &&
-            viewportSize.width >= minimumDoublePageWindowWidth
+            viewportSize.width >= minimumDoublePageWindowWidth &&
+            viewportSize.height >= minimumDoublePageWindowHeight
+    }
+
+    /// Whether this window, turned on its side, holds a spread. 頁面顯示 is offered when it
+    /// does, so it can be chosen on an iPad held upright and on an unfolded iPhone Duo,
+    /// and is never offered where it could not take effect.
+    static func windowCanHoldSpread(viewportSize: CGSize) -> Bool {
+        max(viewportSize.width, viewportSize.height) >= minimumDoublePageWindowWidth &&
+            min(viewportSize.width, viewportSize.height) >= minimumDoublePageWindowHeight
     }
 
     private static func fixedLayoutAllowsDoublePageSpread(

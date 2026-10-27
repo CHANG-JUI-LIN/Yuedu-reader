@@ -209,13 +209,13 @@ struct FixedLayoutEPUBRendererTests {
 
         let clock = ContinuousClock()
         let fullStart = clock.now
-        let full = try #require(await FixedPageImageLoader.loadImage(for: page, targetWidth: 320, cropBorders: false))
+        let full = try #require(await FixedPageImageLoader.loadImage(for: page, targetWidth: 320, renderScale: 1, cropBorders: false))
         let fullElapsed = clock.now - fullStart
         let cropStart = clock.now
-        let cropped = try #require(await FixedPageImageLoader.loadImage(for: page, targetWidth: 320, cropBorders: true))
+        let cropped = try #require(await FixedPageImageLoader.loadImage(for: page, targetWidth: 320, renderScale: 1, cropBorders: true))
         let cropElapsed = clock.now - cropStart
         let zoomStart = clock.now
-        let zoomed = try #require(await FixedPageImageLoader.loadImage(for: page, targetWidth: 960, cropBorders: true))
+        let zoomed = try #require(await FixedPageImageLoader.loadImage(for: page, targetWidth: 960, renderScale: 1, cropBorders: true))
         let zoomElapsed = clock.now - zoomStart
         print("⏱ fixedLayoutEPUB render full=\(fullElapsed) cropFirst=\(cropElapsed) cropZoomed=\(zoomElapsed)")
 

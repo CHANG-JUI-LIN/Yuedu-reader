@@ -5,6 +5,7 @@ import UIKit
 struct ChapterTitleDesignerCanvas: View {
     @ObservedObject var model: ChapterTitleDesignerModel
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.displayScale) private var displayScale
     @State private var renderPlan: ChapterTitleRenderPlan?
     @State private var renderError: Error?
     @State private var guides: [ReaderOverlayGuide] = []
@@ -108,13 +109,13 @@ struct ChapterTitleDesignerCanvas: View {
             case .vertical(let x):
                 Rectangle()
                     .fill(DSColor.accent)
-                    .frame(width: 1 / UIScreen.main.scale, height: canvasSize.height)
+                    .frame(width: 1 / displayScale, height: canvasSize.height)
                     .position(x: CGFloat(x), y: canvasSize.height / 2)
                     .accessibilityHidden(true)
             case .horizontal(let y):
                 Rectangle()
                     .fill(DSColor.accent)
-                    .frame(width: canvasSize.width, height: 1 / UIScreen.main.scale)
+                    .frame(width: canvasSize.width, height: 1 / displayScale)
                     .position(x: canvasSize.width / 2, y: CGFloat(y))
                     .accessibilityHidden(true)
             }

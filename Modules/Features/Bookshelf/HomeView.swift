@@ -162,6 +162,26 @@ final class BookshelfCoverFrameBox {
     }
 }
 
+/// The shelf grid's measurements: its own width, and the width it would have in portrait — the
+/// window's narrower side — which the chosen column count is for.
+struct ShelfGridGeometry: Equatable {
+    var width: CGFloat = 0
+    var portraitWidth: CGFloat = 0
+
+    init() {}
+
+    /// From the grid's scroll view. Its size plus its safe-area insets is the window (the
+    /// insets are the bars and the screen's edges), whose narrower side is portrait's width.
+    init(proxy: GeometryProxy) {
+        let insets = proxy.safeAreaInsets
+        width = proxy.size.width
+        portraitWidth = min(
+            proxy.size.width + insets.leading + insets.trailing,
+            proxy.size.height + insets.top + insets.bottom
+        )
+    }
+}
+
 /// A tapped shelf card's cover: where it is (nil before it reported a frame) and what
 /// it draws. The radius has to match what the card clipped with, or the card
 /// visibly re-rounds as it lifts off the shelf.
@@ -258,17 +278,33 @@ struct HomeView: View {
     private var gridColumns: [GridItem] {
         Array(
             repeating: GridItem(.flexible(), spacing: gridColumnSpacing, alignment: .top),
-            count: gs.bookshelfGridColumnCount
+            count: gridColumnCount
         )
+    }
+    /// The chosen column count is the count across the window's narrower side — the grid as it
+    /// is in portrait. A wider window (iPhone landscape, an unfolded iPhone Duo, iPad landscape)
+    /// keeps that cover width and fits as many more columns as there is room for, instead of
+    /// covers taller than the screen.
+    private var gridColumnCount: Int {
+        let chosen = max(gs.bookshelfGridColumnCount, 1)
+        let portraitWidth = gridGeometry.portraitWidth
+        guard portraitWidth > 0, gridGeometry.width > portraitWidth else { return chosen }
+        let coverWidth = gridCellWidth(containerWidth: portraitWidth, columns: chosen)
+        guard coverWidth > 0 else { return chosen }
+        let room = gridGeometry.width - gridHorizontalInset * 2 + gridColumnSpacing
+        return max(chosen, Int(room / (coverWidth + gridColumnSpacing)))
+    }
+    /// One flexible column's share of `containerWidth` after the insets and the gaps.
+    private func gridCellWidth(containerWidth: CGFloat, columns: Int) -> CGFloat {
+        let count = CGFloat(max(columns, 1))
+        return (containerWidth - gridHorizontalInset * 2 - gridColumnSpacing * (count - 1)) / count
     }
     /// A grid cell's cover frame: the flexible columns' share of the width left after
     /// the insets and the gaps between columns, at the cell's 2:3. `.zero` before the
     /// first layout, which leaves covers on their placeholder until it is known.
     private var gridCoverDisplaySize: CGSize {
-        let columns = CGFloat(max(gs.bookshelfGridColumnCount, 1))
-        let available = gridContainerWidth - gridHorizontalInset * 2 - gridColumnSpacing * (columns - 1)
-        guard available > 0 else { return .zero }
-        let width = available / columns
+        let width = gridCellWidth(containerWidth: gridGeometry.width, columns: gridColumnCount)
+        guard width > 0 else { return .zero }
         return CGSize(width: width, height: width * 3 / 2)
     }
 
@@ -284,9 +320,9 @@ struct HomeView: View {
     @State private var shelfScrollToTopRequest = 0
     /// The page the book was opened from, which the request takes back to its top.
     @State private var shelfScrollToTopPage = ShelfPage.all
-    /// The grid scroll view's width, measured once per size change (not per cell, not
-    /// per scroll), so every cell knows how large to decode its cover.
-    @State private var gridContainerWidth: CGFloat = 0
+    /// The grid scroll view's width and the window's narrower side, measured once per size change
+    /// (not per cell, not per scroll), so every cell knows how large to decode its cover.
+    @State private var gridGeometry = ShelfGridGeometry()
     @State private var pendingReaderOpenToken: UUID?
 
     /// Audiobooks and the iPad shell retain their modal reader presentation.
@@ -315,8 +351,11 @@ struct HomeView: View {
     /// the reader covers the shelf, so nothing pages it or pops it in between.
     private func openBook(_ book: ReadingBook, from page: ShelfPage, tapped: BookshelfTappedCover?) {
         let sourceGeometry = tapped?.geometry
-        AppLogger.info("⟐ openBook tap bookID=\(book.id) title=\(book.title) pipelineKind=\(book.resolvedPipelineKind) useCard=\(BookCardNavigationGate.shouldUseCardTransition(for: book)) hasGeometry=\(sourceGeometry != nil)")
-        if BookCardNavigationGate.shouldUseCardTransition(for: book) {
+        let usesCardTransition = BookCardNavigationGate.shouldUseCardTransition(
+            for: book, isRegularWidth: sizeClass == .regular
+        )
+        AppLogger.info("⟐ openBook tap bookID=\(book.id) title=\(book.title) pipelineKind=\(book.resolvedPipelineKind) useCard=\(usesCardTransition) hasGeometry=\(sourceGeometry != nil)")
+        if usesCardTransition {
             // Re-entrancy guard: once a card open is staged (readerBookID set)
             // or the reader is already on screen, ignore further shelf taps.
             // An impatient double-tap otherwise fired a second open *after*
@@ -1269,10 +1308,10 @@ struct HomeView: View {
         .refreshable {
             await ChapterUpdater.refreshAll(bookStore: store)
         }
-        .onGeometryChange(for: CGFloat.self) { proxy in
-            proxy.size.width
-        } action: { width in
-            gridContainerWidth = width
+        .onGeometryChange(for: ShelfGridGeometry.self) { proxy in
+            ShelfGridGeometry(proxy: proxy)
+        } action: { geometry in
+            gridGeometry = geometry
         }
     }
 

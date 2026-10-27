@@ -15,6 +15,9 @@ struct AudiobookReaderView: View {
 
     @EnvironmentObject var store: BookStore
     @Environment(\.dismiss) private var dismiss
+    /// Compact in iPhone landscape: the player is laid out side by side there, since cover,
+    /// title and controls stacked are taller than the window.
+    @Environment(\.verticalSizeClass) private var verticalSizeClass
     @StateObject private var player = AudiobookPlayer.shared
 
     @State private var sliderValue: Double = 0
@@ -34,21 +37,24 @@ struct AudiobookReaderView: View {
 
             VStack(spacing: 0) {
                 topBar
-                Spacer(minLength: DSSpacing.lg)
-                coverArt
-                Spacer(minLength: DSSpacing.lg)
-                titleBlock
-                    .padding(.horizontal, DSSpacing.xl)
-                if let message = player.error {
-                    errorBlock(message)
+                if verticalSizeClass == .compact {
+                    HStack(spacing: DSSpacing.lg) {
+                        coverArt
+                            .padding(.leading, DSSpacing.xl)
+                        VStack(spacing: 0) {
+                            Spacer(minLength: 0)
+                            controls(spacing: DSSpacing.md)
+                            Spacer(minLength: 0)
+                        }
+                    }
+                    .padding(.bottom, DSSpacing.md)
+                } else {
+                    Spacer(minLength: DSSpacing.lg)
+                    coverArt
+                    Spacer(minLength: DSSpacing.lg)
+                    controls(spacing: DSSpacing.xl)
+                        .padding(.bottom, DSSpacing.xl)
                 }
-                progressSection
-                    .padding(.top, DSSpacing.lg)
-                transportRow
-                    .padding(.top, DSSpacing.xl)
-                bottomRow
-                    .padding(.top, DSSpacing.xl)
-                    .padding(.bottom, DSSpacing.xl)
             }
         }
         // Dark styling for THIS page only. `.preferredColorScheme(.dark)` applies to the
@@ -198,6 +204,24 @@ struct AudiobookReaderView: View {
     }
 
     // MARK: Cover
+
+    /// Title, progress and the two rows of buttons, one under the other: below the cover in
+    /// portrait, beside it in landscape.
+    private func controls(spacing: CGFloat) -> some View {
+        VStack(spacing: 0) {
+            titleBlock
+                .padding(.horizontal, DSSpacing.xl)
+            if let message = player.error {
+                errorBlock(message)
+            }
+            progressSection
+                .padding(.top, DSSpacing.lg)
+            transportRow
+                .padding(.top, spacing)
+            bottomRow
+                .padding(.top, spacing)
+        }
+    }
 
     private var coverArt: some View {
         Group {
@@ -658,6 +682,11 @@ private extension AudiobookPlayMode {
 
 #if DEBUG
 #Preview {
+    AudiobookReaderView(bookId: UUID())
+        .environmentObject(BookStore())
+}
+
+#Preview("橫向", traits: .landscapeLeft) {
     AudiobookReaderView(bookId: UUID())
         .environmentObject(BookStore())
 }

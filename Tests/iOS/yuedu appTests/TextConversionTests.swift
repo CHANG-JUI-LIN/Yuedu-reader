@@ -100,7 +100,7 @@ struct TextConversionTests {
         var settings = Self.settings()
         settings.textConversion = .toTraditional
         let renderer = NodeAttributedStringRenderer(
-            config: NodeAttributedStringRenderer.Config(from: settings, textColor: .black)
+            config: NodeAttributedStringRenderer.Config(from: settings, textColor: .black, renderWidth: 320)
         )
 
         let rendered = await renderer.render([.paragraph([.text("学习国语")], style: .body)])

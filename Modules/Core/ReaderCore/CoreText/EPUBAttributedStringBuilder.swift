@@ -467,9 +467,9 @@ final class EPUBAttributedStringBuilder: @preconcurrency AttributedStringBuildin
     ) -> sending HTMLAttributedStringBuilder.Config {
         let fontSize = settings.fontSize
         let horizontalInsets = settings.contentInsets.left + settings.contentInsets.right
-        let effectiveWidth = renderSize.width > 0
-            ? renderSize.width
-            : UIScreen.main.bounds.width
+        // The engine sizes the builder before it builds anything (`renderSize`), to the reader's
+        // window — which is not the screen's size on an iPad, an iPhone Duo or in landscape.
+        let effectiveWidth = renderSize.width
         return HTMLAttributedStringBuilder.Config(
             fontSize: fontSize,
             lineHeightMultiple: settings.lineHeightMultiple,

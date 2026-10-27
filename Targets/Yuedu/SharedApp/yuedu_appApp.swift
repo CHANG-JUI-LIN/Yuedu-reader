@@ -342,8 +342,17 @@ struct yuedu_appApp: App {
                         case .background:
                             resumesFromBackground = true
                             DiagnosticLog.shared.noteEnteredBackground()
+                            // Book-source persistence moved off the main thread to stop iCloud
+                            // sync blowing the scene-update watchdog; the cost is that a save
+                            // issued moments ago may still be in flight. This is the last
+                            // reliable moment to let it land.
                             BookSourceStore.shared.flushPendingWrites()
                             DiagnosticScale.publish(bookStore: bookStore, reason: "background")
+                            // Here, not in the app delegate: in a scene-based app UIKit never
+                            // calls `applicationDidEnterBackground`, so the badge and the next
+                            // RSS refresh were only ever set at launch.
+                            RSSNotificationManager.shared.updateBadge(unreadCount: RSSStore.shared.totalUnreadCount())
+                            RSSBackgroundRefresh.shared.schedule()
                         case .active: DiagnosticLog.shared.noteBecameActive()
                         default: break
                         }

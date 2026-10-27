@@ -441,7 +441,8 @@ enum HTMLTableRasterizer {
         backgroundColor: UIColor,
         resolvedFont: (@Sendable ([String], Int, Bool, CGFloat) -> UIFont?)? = nil,
         imagesBySource: [String: UIImage] = [:],
-        cjkTypographyStyle: CJKTypographyStyle? = nil
+        cjkTypographyStyle: CJKTypographyStyle? = nil,
+        displayScale: CGFloat
     ) -> UIImage? {
         renderPages(
             table: table,
@@ -452,7 +453,8 @@ enum HTMLTableRasterizer {
             backgroundColor: backgroundColor,
             resolvedFont: resolvedFont,
             imagesBySource: imagesBySource,
-            cjkTypographyStyle: cjkTypographyStyle
+            cjkTypographyStyle: cjkTypographyStyle,
+            displayScale: displayScale
         ).first?.image
     }
 
@@ -466,7 +468,8 @@ enum HTMLTableRasterizer {
         backgroundColor _: UIColor,
         resolvedFont: (@Sendable ([String], Int, Bool, CGFloat) -> UIFont?)? = nil,
         imagesBySource: [String: UIImage] = [:],
-        cjkTypographyStyle: CJKTypographyStyle? = nil
+        cjkTypographyStyle: CJKTypographyStyle? = nil,
+        displayScale: CGFloat
     ) -> [HTMLTableRasterPage] {
         let columns = max(1, table.columnCount)
         guard columns > 0, !table.rows.isEmpty else { return [] }
@@ -862,7 +865,7 @@ enum HTMLTableRasterizer {
         ])
 
         let format = UIGraphicsImageRendererFormat()
-        format.scale = UIScreen.main.scale
+        format.scale = displayScale
         format.opaque = false
         return rowRanges.map { rowRange in
             let pageCaptionHeight = rowRange.lowerBound == 0 ? captionHeight : 0

@@ -275,10 +275,10 @@ struct ReaderQuickThemePanelView: View {
             Slider(
                 value: Binding(
                     get: { CGFloat(settings.readerBrightness) },
+                    // `ReaderView` puts it on the screen the reader is on.
                     set: { value in
                         settings.followSystemBrightness = false
                         settings.readerBrightness = Double(value)
-                        UIScreen.main.brightness = value
                     }
                 ),
                 in: 0.05...1.0

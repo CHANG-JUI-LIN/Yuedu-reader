@@ -904,8 +904,8 @@ typealias RenderPackage = BookPackage
 
 struct ReaderRenderSettings: Equatable {
     let theme: String
-    let textColor: UIColor
-    let backgroundColor: UIColor
+    var textColor: UIColor
+    var backgroundColor: UIColor
     let fontSize: CGFloat
     let lineHeightMultiple: CGFloat
     let lineSpacing: CGFloat
@@ -953,6 +953,11 @@ struct ReaderRenderSettings: Equatable {
     /// 底部對齊: spread each filled page's leftover space over its lines so the last line
     /// sits on the content bottom. Paged surface only; the scroll surface always carries false.
     var bottomJustify: Bool = false
+    /// Pixels per point of the window the reader is in: tables, formulas and media placeholders
+    /// are drawn into bitmaps at this density, so moving to a screen of another density re-runs
+    /// layout. The reader passes its own (`ReaderRenderSettingsSnapshotInput.displayScale`);
+    /// the default only serves tests and previews that lay a chapter out with no window.
+    var displayScale: CGFloat = 1
 }
 
 enum TOCLayoutMode {

@@ -343,7 +343,9 @@ enum OnlineImageLoader {
         themeTextColor: UIColor?,
         baseURL: URL?
     ) async -> UIImage? {
-        let column = renderWidth > 0 ? renderWidth : UIScreen.main.bounds.width
+        // Every caller passes the column it lays out in (at least 1pt); the screen's width is not
+        // the reader's on an iPad, an iPhone Duo or in landscape.
+        let column = max(1, renderWidth)
         // A source review card (神评论 / 本章说 / 作者说) draws its prose in viewBox units, so the
         // width we rasterize at IS its text size: `ReviewCardRaster` matches it to the reader's
         // body text (or redraws it from the reader's template). Anything that isn't a card is

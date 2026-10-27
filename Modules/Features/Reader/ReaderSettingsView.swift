@@ -11,6 +11,9 @@ struct ReaderSettingsView: View {
     /// 左右邊距's maximum for the page the reader is showing — wider on iPad, where it
     /// reaches the narrow column iPad used to force (`ReaderReadableWidthPolicy`).
     var pageMarginHUpperBound: CGFloat = ReaderReadableWidthPolicy.compactUpperBound
+    /// The reader's window, not this sheet's, can show a spread when turned on its side
+    /// (`ReaderSpreadPolicy.windowCanHoldSpread`): 頁面顯示 is offered only then.
+    var readerWindowCanHoldSpread = false
     var capabilities: ReaderCapabilities = .reflowableText
     var allowsUserSelectedReaderFont = false
     var usesPublicationFontDefault = false
@@ -46,7 +49,7 @@ struct ReaderSettingsView: View {
     private var supportsLineHeight: Bool { capabilities.contains(.lineHeight) }
     private var supportsSpacing: Bool { capabilities.contains(.spacing) }
     private var supportsPageDisplay: Bool {
-        UIDevice.current.userInterfaceIdiom == .pad && supportsLineHeight && !settings.scrollMode
+        readerWindowCanHoldSpread && supportsLineHeight && !settings.scrollMode
     }
 
     private var readerTint: Color {
@@ -155,16 +158,6 @@ struct ReaderSettingsView: View {
             Button(localized("取消"), role: .cancel) {}
         } message: {
             Text(localized("行距、字距、段距與頁面邊距會回到預設值。"))
-        }
-        .onAppear {
-            if settings.followSystemBrightness {
-                syncBrightnessFromSystem()
-            }
-        }
-        .onReceive(NotificationCenter.default.publisher(for: UIScreen.brightnessDidChangeNotification)) { _ in
-            if settings.followSystemBrightness {
-                syncBrightnessFromSystem()
-            }
         }
     }
 
@@ -794,34 +787,15 @@ struct ReaderSettingsView: View {
         .interfaceSectionSurface()
     }
 
+    // The reader that presents this panel owns the screen: it puts these two settings on the
+    // screen it is on, and keeps the slider following the system while that is on
+    // (`ReaderView`'s `followSystemBrightness` and `readerBrightness` handlers).
     private var followSystemBrightnessBinding: Binding<Bool> {
-        Binding(
-            get: { settings.followSystemBrightness },
-            set: { follow in
-                settings.followSystemBrightness = follow
-                if follow {
-                    syncBrightnessFromSystem()
-                } else {
-                    UIScreen.main.brightness = CGFloat(settings.readerBrightness)
-                }
-            }
-        )
+        $settings.followSystemBrightness
     }
 
     private var readerBrightnessBinding: Binding<Double> {
-        Binding(
-            get: { settings.readerBrightness },
-            set: { value in
-                settings.readerBrightness = value
-                if !settings.followSystemBrightness {
-                    UIScreen.main.brightness = CGFloat(value)
-                }
-            }
-        )
-    }
-
-    private func syncBrightnessFromSystem() {
-        settings.readerBrightness = Double(UIScreen.main.brightness)
+        $settings.readerBrightness
     }
 
     // MARK: - 閱讀設定備份
@@ -987,6 +961,7 @@ private struct LayoutImportAlert: Identifiable {
             usesReadableWidth: true,
             defaultMargin: ReaderSettingsView.defaultPageMarginH
         ),
+        readerWindowCanHoldSpread: true,
         capabilities: .reflowableText
     )
 }

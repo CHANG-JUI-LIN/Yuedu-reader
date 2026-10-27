@@ -84,7 +84,7 @@ struct LocalMangaArchiveTests {
         // deflated entries alike.
         var widths: [Int] = []
         for page in pages {
-            let image = await FixedPageImageLoader.loadImage(for: page, targetWidth: 0)
+            let image = await FixedPageImageLoader.loadImage(for: page, targetWidth: 0, renderScale: 1)
             widths.append(image?.cgImage?.width ?? 0)
         }
         #expect(widths == [10, 20, 30])

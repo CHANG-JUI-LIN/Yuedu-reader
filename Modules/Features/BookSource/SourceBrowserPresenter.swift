@@ -121,9 +121,9 @@ enum SourceBrowserPresenter {
                     onDismiss: finish
                 )
             )
-            // Phone-oriented login pages need the full iPad viewport; a nested form sheet
-            // can clip the submit controls below its fixed height.
-            if topVC.traitCollection.userInterfaceIdiom == .pad {
+            // Phone-oriented login pages need the whole of a wide window (iPad, an unfolded
+            // iPhone Duo); a nested form sheet can clip the submit controls below its fixed height.
+            if topVC.traitCollection.horizontalSizeClass == .regular {
                 hostVC.modalPresentationStyle = .fullScreen
             }
         case .captcha(let request):

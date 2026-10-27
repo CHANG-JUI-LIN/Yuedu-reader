@@ -204,24 +204,12 @@ final class RSSAppNotificationDelegate: NSObject, UIApplicationDelegate, UNUserN
         return true
     }
 
-    func applicationDidEnterBackground(_ application: UIApplication) {
-        // Also handled by the scenePhase observer in `yuedu_appApp`; both fire, and
-        // the write is idempotent. Keeping this one means the flush still happens if
-        // the SwiftUI scene is torn down before its observer runs.
-        DiagnosticLog.shared.noteEnteredBackground()
-        // Book-source persistence moved off the main thread to stop iCloud sync
-        // blowing the scene-update watchdog; the cost is that a save issued moments
-        // ago may still be in flight. This is the last reliable moment to let it land.
-        BookSourceStore.shared.flushPendingWrites()
-        RSSNotificationManager.shared.updateBadge(unreadCount: RSSStore.shared.totalUnreadCount())
-        RSSBackgroundRefresh.shared.schedule()
-    }
-
     func application(
         _ application: UIApplication,
         supportedInterfaceOrientationsFor window: UIWindow?
     ) -> UIInterfaceOrientationMask {
-        ReaderOrientationController.shared.supportedMask(for: UIDevice.current.userInterfaceIdiom)
+        // The idiom of the window asking; without one, the iPhone mask, which iPad's contains.
+        ReaderOrientationController.shared.supportedMask(for: window?.traitCollection.userInterfaceIdiom ?? .phone)
     }
 
     // MARK: - Remote notifications (回饋中心)

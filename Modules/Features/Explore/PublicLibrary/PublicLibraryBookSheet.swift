@@ -520,7 +520,10 @@ private struct PublicLibraryCarouselLayout {
     let size: CGSize
     /// The screen's top-leading corner, in global (window) coordinates.
     let origin: CGPoint
-    let margin = DSSpacing.lg
+    /// A card's distance from the screen's sides. The cards are drawn across the screen, so in
+    /// iPhone landscape it also clears the side the Dynamic Island is on (both sides alike:
+    /// the cards are centred).
+    let margin: CGFloat
     let spacing = DSSpacing.xs
     /// Where a resting card's top sits.
     let cardTop: CGFloat
@@ -536,6 +539,7 @@ private struct PublicLibraryCarouselLayout {
         origin = CGPoint(x: frame.minX - insets.leading, y: frame.minY - insets.top)
         cardTop = insets.top + DSLayout.cardCarouselTopGap
         bottomInset = insets.bottom
+        margin = DSSpacing.lg + max(insets.leading, insets.trailing)
     }
 }
 

@@ -32,6 +32,9 @@ struct ReaderPageBarsEnvironment: Equatable {
     var readingDuration: TimeInterval
     var userInterfaceStyle: UIUserInterfaceStyle
     var displayScale: CGFloat
+    /// The window's side safe area (`ReaderView.readerSideSafeArea`): the bars' slots keep this
+    /// far from both sides, like the text, before their own padding.
+    var sideSafeArea: CGFloat = 0
     /// False in a two-page spread, where the screen-fixed layer draws one pair of
     /// bars for both pages; the pages then carry only their bookmark ribbon.
     var bakesBarsIntoPages = true
@@ -155,7 +158,7 @@ final class ReaderPageBarsController {
         snapshot: ReaderOverlayContentSnapshot,
         environment: ReaderPageBarsEnvironment
     ) -> ReaderBarRenderModel {
-        builder.model(
+        var model = builder.model(
             for: bar,
             layout: environment.layout,
             content: snapshot,
@@ -167,5 +170,7 @@ final class ReaderPageBarsController {
             userInterfaceStyle: environment.userInterfaceStyle,
             displayScale: environment.displayScale
         )
+        model.sideSafeArea = environment.sideSafeArea
+        return model
     }
 }

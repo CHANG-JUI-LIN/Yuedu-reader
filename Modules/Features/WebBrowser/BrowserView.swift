@@ -761,7 +761,7 @@ struct BrowserPage: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     private var browserContentMaxWidth: CGFloat {
-        (horizontalSizeClass == .regular || UIDevice.current.userInterfaceIdiom == .pad) ? 980 : .infinity
+        horizontalSizeClass == .regular ? 980 : .infinity
     }
 
     /// ‹ on a page's first screen went back to the bookmarks, as Safari's back goes from a

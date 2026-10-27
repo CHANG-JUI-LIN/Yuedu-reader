@@ -38,6 +38,8 @@ struct ReaderBarRenderModel: Equatable {
 
     var leftPadding: CGFloat? = nil
     var rightPadding: CGFloat? = nil
+    /// The window's side safe area, cleared on both sides before the padding.
+    var sideSafeArea: CGFloat = 0
     var showsComponentSeparators = true
 
     var isEmpty: Bool { slots.allSatisfy(\.isEmpty) }
@@ -106,8 +108,8 @@ enum ReaderBarRenderer {
             model.color.cgColor.alpha * CGFloat(max(0, min(1, model.opacity)))
         )
 
-        let left = model.leftPadding ?? model.horizontalPadding
-        let right = model.rightPadding ?? model.horizontalPadding
+        let left = model.sideSafeArea + (model.leftPadding ?? model.horizontalPadding)
+        let right = model.sideSafeArea + (model.rightPadding ?? model.horizontalPadding)
         let insetRect = CGRect(x: rect.minX + left, y: rect.minY,
                                width: max(0, rect.width - left - right), height: rect.height)
         var rowRect = insetRect

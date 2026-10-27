@@ -71,6 +71,7 @@ extension ReaderView {
             // resolution of a dynamic tip colour.
             userInterfaceStyle: readerTheme == .night ? .dark : .light,
             displayScale: readerDisplayScale,
+            sideSafeArea: readerSideSafeArea,
             bakesBarsIntoPages: usesPageBakedBars
         )
     }

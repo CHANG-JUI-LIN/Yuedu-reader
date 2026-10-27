@@ -41,6 +41,37 @@ struct ReaderPresentationContractTests {
         #expect(none.usesInstantPan)
     }
 
+    @Test("a 仿真 spread turns around the centre spine; a fixed-layout one keeps the outer spine")
+    func curlSpreadUsesMidSpine() {
+        for isRTL in [false, true] {
+            let spread = PageViewControllerPagingAdapterDescriptor(pageTurnStyle: .curl, isDoublePageSpread: true)
+            #expect(spread.usesMidSpine)
+            #expect(spread.isDoubleSided)
+            #expect(spread.spineLocation(isRTL: isRTL) == .mid)
+            #expect(spread.spreadGutter == 0)
+
+            let fixedLayout = PageViewControllerPagingAdapterDescriptor(
+                pageTurnStyle: .curl, isDoublePageSpread: true, pairsOwnSpreads: true
+            )
+            #expect(!fixedLayout.usesMidSpine)
+            #expect(!fixedLayout.isDoubleSided)
+            #expect(fixedLayout.spineLocation(isRTL: isRTL) == (isRTL ? .max : .min))
+            #expect(fixedLayout.spreadGutter == DSLayout.readerSpreadGutter)
+        }
+
+        // The page width does not depend on whether a spread is showing yet, so turning a
+        // window into a spread does not lay the book out twice.
+        let single = PageViewControllerPagingAdapterDescriptor(pageTurnStyle: .curl)
+        #expect(!single.usesMidSpine)
+        #expect(single.spreadGutter == 0)
+
+        for style in [PageTurnStyle.slide, .cover, .none] {
+            let spread = PageViewControllerPagingAdapterDescriptor(pageTurnStyle: style, isDoublePageSpread: true)
+            #expect(!spread.usesMidSpine)
+            #expect(spread.spreadGutter == DSLayout.readerSpreadGutter)
+        }
+    }
+
     @Test("cover motion mirrors gesture and offscreen edge for RTL")
     func coverMotionMirrorsGestureAndOffscreenEdgeForRTL() {
         let width: CGFloat = 320
@@ -149,74 +180,51 @@ struct ReaderPresentationContractTests {
 
     @Test("reader orientation controller keeps app default narrow and maps FXL orientation")
     func readerOrientationControllerMapsFixedLayoutOrientation() {
-        #expect(ReaderOrientationController.defaultMask(for: .phone) == .portrait)
+        #expect(ReaderOrientationController.defaultMask(for: .phone) == .allButUpsideDown)
         #expect(ReaderOrientationController.defaultMask(for: .pad) == .all)
         #expect(ReaderOrientationController.mask(for: .auto) == nil)
         #expect(ReaderOrientationController.mask(for: .portrait) == .portrait)
         #expect(ReaderOrientationController.mask(for: .landscape) == .landscape)
     }
 
-    @Test("spread policy only allows double page in wide iPad landscape windows")
-    func spreadPolicyOnlyAllowsDoublePageInWideIPadLandscapeWindows() {
-        let fullLandscape = CGSize(width: 1024, height: 768)
-        let portrait = CGSize(width: 768, height: 1024)
-        let smallLandscapeWindow = CGSize(width: 900, height: 700)
+    @Test("spread policy asks the window, not the device: iPad landscape and an unfolded iPhone Duo")
+    func spreadPolicyAsksTheWindow() {
+        func mode(
+            _ size: CGSize,
+            regular: Bool = true,
+            preferred: ReaderSpreadMode = .doublePage
+        ) -> ReaderSpreadMode {
+            ReaderSpreadPolicy.effectiveMode(
+                preferredMode: preferred,
+                viewportSize: size,
+                horizontalSizeClassIsRegular: regular,
+                isScrollMode: false
+            )
+        }
+        let iPadLandscape = CGSize(width: 1024, height: 768)
+        let iPadPortrait = CGSize(width: 768, height: 1024)
+        let duoUnfolded = CGSize(width: 951, height: 669)
+        let duoFolded = CGSize(width: 466, height: 678)
+        let largeIPhoneOnItsSide = CGSize(width: 956, height: 440)
+        let smallLandscapeWindow = CGSize(width: 860, height: 640)
 
-        #expect(ReaderSpreadPolicy.effectiveMode(
-            preferredMode: .doublePage,
-            viewportSize: fullLandscape,
-            horizontalSizeClassIsRegular: true,
-            idiom: .pad,
-            isScrollMode: false
-        ) == .doublePage)
+        #expect(mode(iPadLandscape) == .doublePage)
+        #expect(mode(duoUnfolded) == .doublePage)
+        #expect(mode(iPadLandscape, preferred: .singlePage) == .singlePage)
+        #expect(mode(iPadLandscape, preferred: .auto) == .singlePage)
+        #expect(mode(iPadPortrait) == .singlePage)
+        #expect(mode(duoFolded, regular: false) == .singlePage)
+        #expect(mode(largeIPhoneOnItsSide) == .singlePage)
+        #expect(mode(smallLandscapeWindow) == .singlePage)
+        #expect(mode(iPadLandscape, regular: false) == .singlePage)
 
-        #expect(ReaderSpreadPolicy.effectiveMode(
-            preferredMode: .singlePage,
-            viewportSize: fullLandscape,
-            horizontalSizeClassIsRegular: true,
-            idiom: .pad,
-            isScrollMode: false
-        ) == .singlePage)
-
-        #expect(ReaderSpreadPolicy.effectiveMode(
-            preferredMode: .doublePage,
-            viewportSize: portrait,
-            horizontalSizeClassIsRegular: true,
-            idiom: .pad,
-            isScrollMode: false
-        ) == .singlePage)
-
-        #expect(ReaderSpreadPolicy.effectiveMode(
-            preferredMode: .doublePage,
-            viewportSize: smallLandscapeWindow,
-            horizontalSizeClassIsRegular: true,
-            idiom: .pad,
-            isScrollMode: false
-        ) == .singlePage)
-
-        #expect(ReaderSpreadPolicy.effectiveMode(
-            preferredMode: .doublePage,
-            viewportSize: fullLandscape,
-            horizontalSizeClassIsRegular: false,
-            idiom: .pad,
-            isScrollMode: false
-        ) == .singlePage)
-
-        #expect(ReaderSpreadPolicy.effectiveMode(
-            preferredMode: .auto,
-            viewportSize: fullLandscape,
-            horizontalSizeClassIsRegular: true,
-            idiom: .pad,
-            isScrollMode: false
-        ) == .singlePage)
-
-        #expect(ReaderSpreadPolicy.effectiveMode(
-            preferredMode: .doublePage,
-            viewportSize: fullLandscape,
-            horizontalSizeClassIsRegular: true,
-            idiom: .phone,
-            isScrollMode: false
-        ) == .singlePage)
+        // 頁面顯示 is offered wherever turning the window on its side gives a spread.
+        #expect(ReaderSpreadPolicy.windowCanHoldSpread(viewportSize: iPadPortrait))
+        #expect(ReaderSpreadPolicy.windowCanHoldSpread(viewportSize: duoUnfolded))
+        #expect(ReaderSpreadPolicy.windowCanHoldSpread(viewportSize: CGSize(width: 669, height: 951)))
+        #expect(!ReaderSpreadPolicy.windowCanHoldSpread(viewportSize: duoFolded))
+        #expect(!ReaderSpreadPolicy.windowCanHoldSpread(viewportSize: largeIPhoneOnItsSide))
+        #expect(!ReaderSpreadPolicy.windowCanHoldSpread(viewportSize: CGSize(width: 440, height: 956)))
     }
 
     @Test("curl virtual indices mirror when RTL uses a right-hand spine")

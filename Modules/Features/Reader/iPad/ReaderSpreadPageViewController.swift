@@ -129,3 +129,37 @@ final class ReaderSpreadPageViewController: UIViewController, PageIndexProviding
         child.didMove(toParent: self)
     }
 }
+
+/// The empty half of a book's last spread when that spread has only its first page.
+///
+/// Under 仿真 a spread turns around its centre spine and UIKit holds both halves: it
+/// takes the stack in pairs, and asks the data source for pages in pairs, raising for
+/// half a pair ("The number of view controllers provided (1) doesn't match the number
+/// required (2)"). A book with an odd page count therefore ends on this page, the way a
+/// printed book's last leaf is blank on the back.
+///
+/// Deliberately not `PageIndexProviding`: it is no page of the book, so nothing may read
+/// a reading position or a page number off it.
+@MainActor
+final class ReaderSpreadBlankPageViewController: UIViewController {
+    /// The book's last page, which this one faces.
+    let facingPage: Int
+    private let backgroundUIColor: UIColor
+
+    init(facingPage: Int, backgroundColor: UIColor) {
+        self.facingPage = facingPage
+        self.backgroundUIColor = backgroundColor
+        super.init(nibName: nil, bundle: nil)
+    }
+
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
+
+    override func viewDidLoad() {
+        super.viewDidLoad()
+        view.backgroundColor = backgroundUIColor
+        // Nothing to read; VoiceOver stays on the page it faces.
+        view.accessibilityElementsHidden = true
+    }
+}

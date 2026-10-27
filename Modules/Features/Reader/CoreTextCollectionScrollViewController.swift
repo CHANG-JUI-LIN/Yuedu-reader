@@ -261,6 +261,13 @@ final class CoreTextCollectionScrollViewController: UIViewController, @MainActor
             }
         }
 
+        // `ReaderScrollLayout` snaps every item to the window's pixel grid, which a view that has
+        // not reached a window yet does not have, and which changes with the display the window
+        // is on.
+        registerForTraitChanges([UITraitDisplayScale.self]) { (self: Self, _) in
+            self.collectionView.collectionViewLayout.invalidateLayout()
+        }
+
         collectionView.dataSource = self
         collectionView.delegate = self
         collectionView.showsVerticalScrollIndicator = false

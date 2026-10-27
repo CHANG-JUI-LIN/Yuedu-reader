@@ -94,7 +94,7 @@ struct FixedPageWebtoonLayoutTests {
         let failing = Self.missingFilePage(named: "FixedPageImageLoader-fails-\(UUID().uuidString).jpg")
         let failingName = try #require(failing.localURL?.lastPathComponent)
         let before = Set(DiagnosticLog.shared.snapshot().map(\.id))
-        let image = await FixedPageImageLoader.loadImage(for: failing, targetWidth: 100)
+        let image = await FixedPageImageLoader.loadImage(for: failing, targetWidth: 100, renderScale: 1)
         #expect(image == nil)
         let added = DiagnosticLog.shared.snapshot()
             .filter { !before.contains($0.id) && $0.message.contains(failingName) }
@@ -103,7 +103,7 @@ struct FixedPageWebtoonLayoutTests {
 
         let cancelled = Self.missingFilePage(named: "FixedPageImageLoader-cancelled-\(UUID().uuidString).jpg")
         let cancelledName = try #require(cancelled.localURL?.lastPathComponent)
-        let task = Task { await FixedPageImageLoader.loadImage(for: cancelled, targetWidth: 100) }
+        let task = Task { await FixedPageImageLoader.loadImage(for: cancelled, targetWidth: 100, renderScale: 1) }
         task.cancel()
         let cancelledImage = await task.value
         #expect(cancelledImage == nil)

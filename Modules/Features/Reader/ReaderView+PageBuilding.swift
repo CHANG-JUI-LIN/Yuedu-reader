@@ -68,6 +68,7 @@ extension ReaderView {
             readerStyleAppearance: activeReaderStyleAppearance,
             readerStyleAssetRevision: settings.readerStyleAssetRevision,
             dialogueBubbleStyle: settings.dialogueBubbleStyle,
+            displayScale: readerDisplayScale,
             textConversion: settings.textConversion,
             translation: effectiveReaderTranslation,
             bookID: bookId,

@@ -11,7 +11,8 @@ struct MathMLBaselineTests {
             fontSize: 24,
             textColor: .black,
             displayMode: .inline,
-            maxWidth: 320
+            maxWidth: 320,
+            displayScale: 3
         ))
         let bounds = try #require(Self.inkBounds(in: rendered.image))
         let height = CGFloat(rendered.image.cgImage?.height ?? 0)
@@ -75,7 +76,8 @@ struct MathMLBaselineTests {
             fontSize: 24,
             textColor: .black,
             displayMode: .inline,
-            maxWidth: 320
+            maxWidth: 320,
+            displayScale: 3
         ))
         let imageHeight = CGFloat(rendered.image.cgImage?.height ?? 0)
         let descent = rendered.descentFraction * imageHeight

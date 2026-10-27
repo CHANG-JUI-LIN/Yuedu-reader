@@ -148,24 +148,10 @@ extension ReaderView {
         )
     }
 
+    /// The top safe area of the reader's own window — not the key window's, which can be
+    /// another window on another screen.
     var windowSafeTop: CGFloat {
-        (UIApplication.shared.connectedScenes
-            .compactMap { $0 as? UIWindowScene }
-            .flatMap { $0.windows }
-            .first { $0.isKeyWindow }?
-            .safeAreaInsets.top) ?? readerSafeAreaTop
-    }
-
-    var keyWindowScene: UIWindowScene? {
-        UIApplication.shared.connectedScenes
-            .compactMap { $0 as? UIWindowScene }
-            .first { scene in
-                scene.activationState == .foregroundActive &&
-                    scene.windows.contains(where: \.isKeyWindow)
-            }
-            ?? UIApplication.shared.connectedScenes
-                .compactMap { $0 as? UIWindowScene }
-                .first { $0.windows.contains(where: \.isKeyWindow) }
+        readerWindow.window?.safeAreaInsets.top ?? readerSafeAreaTop
     }
 
     func updateFixedLayoutOrientationPreference() {
@@ -182,22 +168,18 @@ extension ReaderView {
 
         guard activeFixedLayoutOrientationRequest != orientation else { return }
         activeFixedLayoutOrientationRequest = orientation
-        ReaderOrientationController.shared.request(orientation, in: keyWindowScene)
+        ReaderOrientationController.shared.request(orientation, in: readerWindow.windowScene)
     }
 
     func restoreFixedLayoutOrientationPreference() {
         guard activeFixedLayoutOrientationRequest != nil else { return }
         activeFixedLayoutOrientationRequest = nil
-        ReaderOrientationController.shared.restoreDefault(in: keyWindowScene)
+        ReaderOrientationController.shared.restoreDefault(in: readerWindow.windowScene)
     }
 
-    /// Returns the key window's bottom safe area inset (used for manual compensation in full-screen reading).
+    /// The reader's own window's bottom safe area inset (used for manual compensation in full-screen reading).
     var windowSafeBottom: CGFloat {
-        (UIApplication.shared.connectedScenes
-            .compactMap { $0 as? UIWindowScene }
-            .flatMap { $0.windows }
-            .first { $0.isKeyWindow }?
-            .safeAreaInsets.bottom) ?? 0
+        readerWindow.window?.safeAreaInsets.bottom ?? 0
     }
 
     /// Reads only tracked state — never `windowSafeTop`. Every caller of this runs during

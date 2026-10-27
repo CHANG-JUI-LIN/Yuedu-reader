@@ -22,6 +22,7 @@ struct ProgrammaticPageTransitionPerformerTests {
 
     private final class FakePageContainer: ProgrammaticPageTransitionControlling {
         var viewControllers: [UIViewController]?
+        var spineLocation: UIPageViewController.SpineLocation = .min
         var animatedCalls = 0
         var nonAnimatedCalls = 0
 
@@ -247,5 +248,29 @@ struct ProgrammaticPageTransitionPerformerTests {
         #expect(container.viewControllers?.count == 1)
         #expect(container.viewControllers?.first === target)
         #expect(settledViewController === target)
+    }
+
+    @Test("a mid spine keeps both pages of the spread, animated or not")
+    func midSpineKeepsBothPages() {
+        let performer = ProgrammaticPageTransitionPerformer(pageTurnStyle: .curl)
+        let container = FakePageContainer()
+        container.spineLocation = .mid
+        let target = IndexedViewController(index: 2)
+        let partner = IndexedViewController(index: 3)
+
+        for animated in [false, true] {
+            performer.perform(
+                on: container,
+                targetViewController: target,
+                targetViewControllers: [target, partner],
+                direction: .forward,
+                animated: animated
+            ) { _ in }
+
+            #expect(container.viewControllers?.count == 2)
+            #expect(container.viewControllers?.last === partner)
+        }
+        #expect(container.animatedCalls == 1)
+        #expect(container.nonAnimatedCalls == 1)
     }
 }

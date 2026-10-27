@@ -3,6 +3,7 @@ import UIKit
 @MainActor
 protocol ProgrammaticPageTransitionControlling: AnyObject {
     var viewControllers: [UIViewController]? { get }
+    var spineLocation: UIPageViewController.SpineLocation { get }
 
     func setViewControllers(
         _ viewControllers: [UIViewController]?,
@@ -33,7 +34,10 @@ struct ProgrammaticPageTransitionPerformer {
         completion: @escaping (UIViewController) -> Void
     ) {
         let targetStack: [UIViewController]
-        if pageTurnStyle == .curl, !animated {
+        // An edge spine's back page only exists for the turn; placed without one, the
+        // front goes alone. A mid spine's two pages are both fronts and always go
+        // together — UIKit raises for one.
+        if pageTurnStyle == .curl, !animated, controller.spineLocation != .mid {
             targetStack = [targetViewController]
         } else {
             targetStack = targetViewControllers ?? [targetViewController]

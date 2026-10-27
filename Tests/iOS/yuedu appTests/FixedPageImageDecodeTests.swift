@@ -29,17 +29,17 @@ struct FixedPageImageDecodeTests {
         decoded.imageDecoder = decoder
 
         // Without the rule the bytes are no image at all.
-        let undecoded = await FixedPageImageLoader.loadImage(for: raw, targetWidth: 0)
+        let undecoded = await FixedPageImageLoader.loadImage(for: raw, targetWidth: 0, renderScale: 1)
         #expect(undecoded == nil)
 
-        let firstLoad = await FixedPageImageLoader.loadImage(for: decoded, targetWidth: 0)
+        let firstLoad = await FixedPageImageLoader.loadImage(for: decoded, targetWidth: 0, renderScale: 1)
         let first = try #require(firstLoad)
         #expect(first.cgImage?.width == 5)
         #expect(first.cgImage?.height == 9)
 
         // The file is gone: the second load is the cache's, and the cache holds the decoded image.
         try FileManager.default.removeItem(at: url)
-        let secondLoad = await FixedPageImageLoader.loadImage(for: decoded, targetWidth: 0)
+        let secondLoad = await FixedPageImageLoader.loadImage(for: decoded, targetWidth: 0, renderScale: 1)
         let second = try #require(secondLoad)
         #expect(second.cgImage?.width == 5)
         #expect(second.cgImage?.height == 9)
@@ -61,11 +61,11 @@ struct FixedPageImageDecodeTests {
         var decoded = raw
         decoded.imageDecoder = try #require(FixedPageImageDecoder(source: source))
 
-        let rawLoad = await FixedPageImageLoader.loadImage(for: raw, targetWidth: 0)
+        let rawLoad = await FixedPageImageLoader.loadImage(for: raw, targetWidth: 0, renderScale: 1)
         let rawImage = try #require(rawLoad)
         #expect(rawImage.cgImage?.width == 5)
 
-        let decodedLoad = await FixedPageImageLoader.loadImage(for: decoded, targetWidth: 0)
+        let decodedLoad = await FixedPageImageLoader.loadImage(for: decoded, targetWidth: 0, renderScale: 1)
         let decodedImage = try #require(decodedLoad)
         #expect(decodedImage.cgImage?.width == 7)
         #expect(decodedImage.cgImage?.height == 3)
@@ -88,7 +88,7 @@ struct FixedPageImageDecodeTests {
         page.imageDecoder = try #require(FixedPageImageDecoder(source: source))
 
         let before = Set(DiagnosticLog.shared.snapshot().map(\.id))
-        let load = await FixedPageImageLoader.loadImage(for: page, targetWidth: 0)
+        let load = await FixedPageImageLoader.loadImage(for: page, targetWidth: 0, renderScale: 1)
         let image = try #require(load)
         #expect(image.cgImage?.width == width)
         // The rule's own output, not the downloaded bytes it falls back to on a timeout.

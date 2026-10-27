@@ -11,6 +11,8 @@ import UIKit
 struct NodeAttributedStringBuilder: AttributedStringBuilding {
 
     private let chapters: [UnifiedChapter]
+    /// The column this book is laid out in, told by the engine (`RenderSizeAware…`).
+    private let renderSize = BuilderRenderSize()
 
     init(chapters: [UnifiedChapter]) {
         self.chapters = chapters
@@ -72,10 +74,12 @@ struct NodeAttributedStringBuilder: AttributedStringBuilding {
         let nodes = TXTRenderableNodeConverter.convert(chapter: chapter, firstLineIndent: settings.fontSize * 2)
 
         // 2. [RenderableNode] → NSAttributedString
+        let size = renderSize.value
         let rendererConfig = NodeAttributedStringRenderer.Config(
             from: settings,
             textColor: themeTextColor,
-            fontFamily: UserReaderFontResolver.selectedPostScriptName
+            fontFamily: UserReaderFontResolver.selectedPostScriptName,
+            renderWidth: max(0, size.width - settings.contentInsets.left - settings.contentInsets.right)
         )
         let renderer = NodeAttributedStringRenderer(config: rendererConfig)
         let rendered = await renderer.render(nodes)
@@ -97,6 +101,14 @@ struct NodeAttributedStringBuilder: AttributedStringBuilding {
         return (components.string ?? raw).lowercased()
     }
 
+}
+
+extension NodeAttributedStringBuilder: RenderSizeAwareAttributedStringBuilding {
+    // Declared in an extension so the main-actor protocol does not make the whole builder
+    // main-actor: chapters are built off it.
+    nonisolated func updateRenderSize(_ size: CGSize) {
+        renderSize.value = size
+    }
 }
 
 // MARK: - TXTRenderableNodeConverter

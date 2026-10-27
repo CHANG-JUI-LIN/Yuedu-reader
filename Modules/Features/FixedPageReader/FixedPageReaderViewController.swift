@@ -684,6 +684,7 @@ final class FixedPageReaderViewController: UIViewController, FixedPageReaderCont
         FixedPageImageLoader.prefetch(
             Array(pages[start..<end]),
             targetWidth: targetWidth,
+            renderScale: traitCollection.displayScale,
             cropBorders: fixedPageReaderConfiguration.cropBorders,
             using: imagePrefetcher)
     }
@@ -718,6 +719,7 @@ final class FixedPageReaderViewController: UIViewController, FixedPageReaderCont
                 FixedPageImageLoader.prefetch(
                     Array(pages.prefix(prefetchCount)),
                     targetWidth: self.targetWidth,
+                    renderScale: self.traitCollection.displayScale,
                     cropBorders: self.fixedPageReaderConfiguration.cropBorders,
                     using: self.imagePrefetcher)
             }

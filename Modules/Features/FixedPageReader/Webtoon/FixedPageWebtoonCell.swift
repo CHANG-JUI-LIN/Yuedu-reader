@@ -60,6 +60,13 @@ final class FixedPageWebtoonCell: UICollectionViewCell {
             spinner.centerXAnchor.constraint(equalTo: contentView.centerXAnchor),
             spinner.centerYAnchor.constraint(equalTo: contentView.centerYAnchor),
         ])
+
+        // A page drawn on demand is a bitmap at the display scale it was loaded for; on a
+        // screen of another scale it is drawn again.
+        registerForTraitChanges([UITraitDisplayScale.self]) { (self: Self, _) in
+            guard self.page?.renderSource.isRasterizedOnDemand == true else { return }
+            self.load()
+        }
     }
 
     required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
@@ -85,11 +92,13 @@ final class FixedPageWebtoonCell: UICollectionViewCell {
         let index = self.index
         spinner.startAnimating()
         loadTask?.cancel()
+        let renderScale = traitCollection.displayScale
         loadTask = Task { [weak self] in
             guard let self else { return }
             let image = await FixedPageImageLoader.loadImage(
                 for: page,
                 targetWidth: targetWidth,
+                renderScale: renderScale,
                 cropBorders: cropBorders
             )
             if Task.isCancelled { return }

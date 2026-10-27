@@ -523,27 +523,27 @@ struct ReaderBookOpeningDirectionTests {
 struct BookCardNavigationGateTests {
     @Test("text/epub/html kinds are eligible for the card push path")
     func eligibleKinds() {
-        #expect(BookCardNavigationGate.shouldUseCardTransition(for: Self.make(kind: .epub), idiom: .phone))
-        #expect(BookCardNavigationGate.shouldUseCardTransition(for: Self.make(kind: .txt), idiom: .phone))
-        #expect(BookCardNavigationGate.shouldUseCardTransition(for: Self.make(kind: .html), idiom: .phone))
+        #expect(BookCardNavigationGate.shouldUseCardTransition(for: Self.make(kind: .epub), isRegularWidth: false))
+        #expect(BookCardNavigationGate.shouldUseCardTransition(for: Self.make(kind: .txt), isRegularWidth: false))
+        #expect(BookCardNavigationGate.shouldUseCardTransition(for: Self.make(kind: .html), isRegularWidth: false))
     }
 
     @Test("fixed-page and manga shelf books use the existing card push path",
           arguments: [BookPipelineKind.manga, .fixedPage])
     func fixedPageKindsUseCardTransition(kind: BookPipelineKind) {
-        #expect(BookCardNavigationGate.shouldUseCardTransition(for: Self.make(kind: kind), idiom: .phone))
+        #expect(BookCardNavigationGate.shouldUseCardTransition(for: Self.make(kind: kind), isRegularWidth: false))
     }
 
     @Test("audiobooks stay on the modal path")
     func ineligibleKinds() {
-        #expect(!BookCardNavigationGate.shouldUseCardTransition(for: Self.make(kind: .audio), idiom: .phone))
+        #expect(!BookCardNavigationGate.shouldUseCardTransition(for: Self.make(kind: .audio), isRegularWidth: false))
     }
 
-    @Test("iPad keeps the existing modal reader presentation")
+    @Test("a regular-width window (iPad, an unfolded iPhone Duo) keeps the modal reader presentation")
     func iPadStaysModal() {
         #expect(!BookCardNavigationGate.shouldUseCardTransition(
             for: Self.make(kind: .epub),
-            idiom: .pad
+            isRegularWidth: true
         ))
     }
 

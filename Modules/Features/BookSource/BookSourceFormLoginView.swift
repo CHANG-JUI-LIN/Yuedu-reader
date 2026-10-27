@@ -23,6 +23,10 @@ struct BookSourceFormLoginView: View {
     // as Legado so the first render never presents an empty form as if it were ready.
     @State private var isLoading = true
     @State private var showFanqieLogin = false
+    /// Decided when the login opens, from the window's width then: folding or resizing the
+    /// window mid-login must not swap a sheet for a cover and drop the page being filled in.
+    @State private var fanqieLoginFullScreen = false
+    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     @State private var showLog = false
     @State private var canRetryLoginUi = false
     /// What a menu button's run reported when the source itself said nothing.
@@ -61,6 +65,7 @@ struct BookSourceFormLoginView: View {
 
                     if Self.supportsFanqieLogin(source: source) {
                         Button {
+                            fanqieLoginFullScreen = horizontalSizeClass == .regular
                             showFanqieLogin = true
                         } label: {
                             Label(localized("番茄登入"), systemImage: "network")
@@ -176,7 +181,7 @@ struct BookSourceFormLoginView: View {
 
     private func fanqiePresentationBinding(fullScreen: Bool) -> Binding<Bool> {
         Binding(
-            get: { showFanqieLogin && (UIDevice.current.userInterfaceIdiom == .pad) == fullScreen },
+            get: { showFanqieLogin && fanqieLoginFullScreen == fullScreen },
             set: { showFanqieLogin = $0 }
         )
     }
