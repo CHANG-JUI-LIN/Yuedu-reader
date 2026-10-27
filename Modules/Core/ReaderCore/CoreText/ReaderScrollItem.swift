@@ -67,6 +67,16 @@ enum ReaderScrollItem: ScrollFragmentMeasuring {
             return t.chapter.document.columnStart(atDocumentX: x + t.documentRect.minX)
         }
     }
+    /// `CoreTextChunk.readingOffset(atVerticalOffset:)` for either engine: the first character
+    /// of the line at item-local `y`, found by `y` alone.
+    func readingOffset(atVerticalOffset y: CGFloat) -> Int? {
+        switch self {
+        case .legacy(let c): return c.readingOffset(atVerticalOffset: y)
+        case .browser(let t):
+            guard !t.chapter.writingMode.isVertical else { return nil }
+            return t.chapter.sourceOffset(at: y + t.documentRect.minY)
+        }
+    }
     func stringIndex(atLocalPoint point: CGPoint) -> Int? {
         switch self {
         case .legacy(let c): return c.stringIndex(atLocalPoint: point)

@@ -2293,11 +2293,14 @@ extension CoreTextCollectionScrollViewController: UICollectionViewDataSource, UI
             let local = cell.tileLocalPoint(
                 fromRenderingPoint: collectionView.convert(visibleAnchorPoint, to: cell.interactiveView)
             )
-            // Vertical writing reads the column at the leading edge by x alone, as the legacy
-            // branch below does.
+            // The line (or, in vertical writing, the column) at the leading edge, by y (or x)
+            // alone, as the legacy branch below does. A hit test at the anchor's x saved the
+            // character in the middle of that line, and where the anchor fell in a paragraph's
+            // margin, the nearest character was the previous paragraph's: each save then
+            // restored a line higher (2026-10-27).
             let offset = scrollAxis == .horizontalRTL
                 ? item.readingOffset(atHorizontalOffset: local.x)
-                : item.stringIndex(atLocalPoint: local)
+                : item.readingOffset(atVerticalOffset: local.y)
             if let char = offset {
                 return CoreTextReadingPosition(spineIndex: item.chapterIndex, charOffset: char)
             }

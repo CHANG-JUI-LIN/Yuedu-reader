@@ -73,7 +73,9 @@ struct BrowserViewportAsyncLayoutTests {
         let target = try #require(m.chapter.facts?.anchorOffsets["p120"])
         let position = try #require(m.controller.positionForPersistence())
         #expect(position.spineIndex == 0)
-        #expect(abs(position.charOffset - target) < 40, "restored near \(target), got \(position.charOffset)")
+        // The line at the viewport top is saved by its start, which is the paragraph's: never a
+        // character found at the viewport's x, which was half a line on, or the paragraph above.
+        #expect(position.charOffset == target, "restored at \(target), saved \(position.charOffset)")
         #expect(visibleCellsHaveText(m))
         let row = try #require(m.engine.chunkIndex(forChapter: 0, charOffset: target))
         let frame = try #require(m.collection.layoutAttributesForItem(at: IndexPath(item: row, section: 0))?.frame)

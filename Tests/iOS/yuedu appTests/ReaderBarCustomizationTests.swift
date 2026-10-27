@@ -139,8 +139,10 @@ struct ReaderBarCustomizationTests {
         object.removeValue(forKey: "pageMarginBottom")
         let legacy = try JSONDecoder().decode(ReaderPreferences.self, from: JSONSerialization.data(withJSONObject: object))
         legacy.apply()
-        #expect(ReaderConfig.shared.pageMarginTop == CGFloat(legacy.pageMarginV))
-        #expect(ReaderConfig.shared.pageMarginBottom == CGFloat(legacy.pageMarginV))
+        // Preferences from before the two margins keep this device's (feedback #25): filling
+        // them from `pageMarginV` turned a reader's 下邊距 back into 上下邊距 on every sign-in.
+        #expect(ReaderConfig.shared.pageMarginTop == 17)
+        #expect(ReaderConfig.shared.pageMarginBottom == 39)
     }
 
     @MainActor private func model(_ layout: ReaderBarLayout, bar: ReaderBar, page: Int) -> ReaderBarRenderModel {
