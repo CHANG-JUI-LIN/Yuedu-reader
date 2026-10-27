@@ -240,7 +240,8 @@ struct WorkDetailView: View {
                            onRemoveFromShelf: readerContext.removedFromShelf,
                            onContinueReading: { chapterIndex in
                                readerContext.continueReading(chapterIndex.map { ReaderTOCTarget(spineIndex: $0, fragment: nil) })
-                           })
+                           },
+                           seriesFan: seriesFan)
                 .environmentObject(store)
                 // The reader's own navigator, unlike the other branch: its detail returns to it.
                 .id(version.nodeKey)
@@ -249,7 +250,8 @@ struct WorkDetailView: View {
                 onlineEntry(of: version, book: book),
                 shelfCopyId: version.shelfCopyID,
                 onRemoveFromShelf: { leftShelf(version) },
-                workVersions: versionChoice(version)
+                workVersions: versionChoice(version),
+                seriesFan: seriesFan
             )
             .environmentObject(store)
             // Never the shelf's card coordinator: closing a reader onto a pushed page through
@@ -261,6 +263,14 @@ struct WorkDetailView: View {
         }
     }
 
+    /// The series fanned behind the cover: the shelf's and libraries' volumes (同系列), else
+    /// those the list's item gave (趨勢's). Every page 作品詳情 shows draws it, a book source's
+    /// too: a 趨勢 work is shown as the first source found, as soon as one is.
+    private var seriesFan: SeriesFan? {
+        series.flatMap { SeriesFan($0, store: store) }
+            ?? SeriesFan(route.summary, session: HomeCardContent.session(for: route.opening, connections: .shared))
+    }
+
     private var workPage: some View {
         BookDetailScaffold(title: title, compactAction: primaryAction) {
             BookDetailHero(artworkShape: route.record.contentKind == .audio ? .square : .book,
@@ -269,9 +279,7 @@ struct WorkDetailView: View {
                            // fan behind the cover is silent to VoiceOver. The series link replaces it.
                            meta: route.summary.series.map { display?.text($0) ?? $0 } ?? "",
                            primary: primaryAction, secondary: secondaryAction,
-                           authorActions: authorLinks, links: heroLinks,
-                           seriesFan: series.flatMap { SeriesFan($0, store: store) }
-                               ?? SeriesFan(route.summary, session: HomeCardContent.session(for: route.opening, connections: .shared)))
+                           authorActions: authorLinks, links: heroLinks, seriesFan: seriesFan)
         } content: {
             VStack(alignment: .leading, spacing: DSSpacing.xl) {
                 status

@@ -34,6 +34,9 @@ struct OnlineBookView: View {
     /// On 作品詳情, the work's versions: 換源 lists the others first, and picking one switches
     /// the page to it (unified library 5f-3). `nil` elsewhere.
     private let workVersions: BookDetailInfoChoice?
+    /// On 作品詳情, the work's series fanned behind the cover, as the work's own page draws it
+    /// (`SeriesCoverFan`). `nil` elsewhere.
+    private let seriesFan: SeriesFan?
 
     @State private var currentBook: OnlineBook
     @EnvironmentObject var bookStore: BookStore
@@ -91,7 +94,8 @@ struct OnlineBookView: View {
         onRemoveFromShelf: (() -> Void)? = nil,
         onContinueReading: ((Int?) -> Void)? = nil,
         onSourceKindChange: ((BookOrigin) -> Void)? = nil,
-        workVersions: BookDetailInfoChoice? = nil
+        workVersions: BookDetailInfoChoice? = nil,
+        seriesFan: SeriesFan? = nil
     ) {
         self.searchBook = nil
         self.sourceSwitchBookId = sourceSwitchBookId
@@ -99,6 +103,7 @@ struct OnlineBookView: View {
         self.onContinueReading = onContinueReading
         self.onSourceKindChange = onSourceKindChange
         self.workVersions = workVersions
+        self.seriesFan = seriesFan
         _currentBook = State(
             initialValue: OnlineBookDetailPresentationPolicy.sanitized(book)
         )
@@ -113,7 +118,8 @@ struct OnlineBookView: View {
         onRemoveFromShelf: (() -> Void)? = nil,
         onContinueReading: ((Int?) -> Void)? = nil,
         onSourceKindChange: ((BookOrigin) -> Void)? = nil,
-        workVersions: BookDetailInfoChoice? = nil
+        workVersions: BookDetailInfoChoice? = nil,
+        seriesFan: SeriesFan? = nil
     ) {
         self.searchBook = searchBook
         self.sourceSwitchBookId = sourceSwitchBookId
@@ -121,6 +127,7 @@ struct OnlineBookView: View {
         self.onContinueReading = onContinueReading
         self.onSourceKindChange = onSourceKindChange
         self.workVersions = workVersions
+        self.seriesFan = seriesFan
         if let origin = initialOrigin ?? searchBook.origins.first {
             _currentBook = State(initialValue: OnlineBook(detailOrigin: origin, in: searchBook))
         } else {
@@ -264,7 +271,8 @@ struct OnlineBookView: View {
                 secondary: shelfAction,
                 authorActions: sourceCallBacks == nil ? sourceLinks.authorActions(shown.author) : [],
                 sourceGestures: sourceCallBacks?.gestures,
-                links: linksGenres ? sourceLinks.links(for: tags) : []
+                links: linksGenres ? sourceLinks.links(for: tags) : [],
+                seriesFan: seriesFan
             )
         } content: {
             if let intro = shown.intro {
@@ -1095,6 +1103,19 @@ struct OnlineBookView: View {
                                         selection: .constant("source"))
     return NavigationStack {
         OnlineBookView(book: sample, workVersions: versions)
+            .environmentObject(BookStore())
+    }
+}
+
+#Preview("作品詳情的書源版本，系列扇形") {
+    let sample = OnlineBook(
+        name: "Frankenstein", author: "Mary Shelley", intro: "", coverUrl: "",
+        bookUrl: "https://example.com/book/1", tocUrl: "https://example.com/book/1/toc",
+        wordCount: "", lastChapter: "", kind: "", sourceId: UUID(), sourceName: "晴天小說"
+    )
+    // A 趨勢 work shown as the first source found: the work's fan stays behind the cover.
+    return NavigationStack {
+        OnlineBookView(book: sample, seriesFan: SeriesFan.preview.fan)
             .environmentObject(BookStore())
     }
 }

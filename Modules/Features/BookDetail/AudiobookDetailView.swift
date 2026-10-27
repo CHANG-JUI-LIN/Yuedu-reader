@@ -30,6 +30,9 @@ struct AudiobookDetailView: View {
     /// On 作品詳情, the work's versions: 換源 lists the others first, and picking one switches
     /// the page to it (unified library 5f-3). `nil` elsewhere.
     private let workVersions: BookDetailInfoChoice?
+    /// On 作品詳情, the work's series fanned behind the cover, as the work's own page draws it
+    /// (`SeriesCoverFan`). `nil` elsewhere.
+    private let seriesFan: SeriesFan?
 
     @State private var currentBook: OnlineBook
     @State private var pushed: AudiobookDetailPush?
@@ -80,12 +83,14 @@ struct AudiobookDetailView: View {
         book: OnlineBook,
         onRemoveFromShelf: (() -> Void)? = nil,
         onSourceKindChange: ((BookOrigin) -> Void)? = nil,
-        workVersions: BookDetailInfoChoice? = nil
+        workVersions: BookDetailInfoChoice? = nil,
+        seriesFan: SeriesFan? = nil
     ) {
         self.searchBook = nil
         self.onRemoveFromShelf = onRemoveFromShelf
         self.onSourceKindChange = onSourceKindChange
         self.workVersions = workVersions
+        self.seriesFan = seriesFan
         _currentBook = State(
             initialValue: OnlineBookDetailPresentationPolicy.sanitized(book)
         )
@@ -98,12 +103,14 @@ struct AudiobookDetailView: View {
         initialOrigin: BookOrigin? = nil,
         onRemoveFromShelf: (() -> Void)? = nil,
         onSourceKindChange: ((BookOrigin) -> Void)? = nil,
-        workVersions: BookDetailInfoChoice? = nil
+        workVersions: BookDetailInfoChoice? = nil,
+        seriesFan: SeriesFan? = nil
     ) {
         self.searchBook = searchBook
         self.onRemoveFromShelf = onRemoveFromShelf
         self.onSourceKindChange = onSourceKindChange
         self.workVersions = workVersions
+        self.seriesFan = seriesFan
         if let origin = initialOrigin
             ?? searchBook.preferredOrigin(for: .audio)
             ?? searchBook.origins.first {
@@ -231,7 +238,8 @@ struct AudiobookDetailView: View {
                 secondary: shelfAction,
                 authorActions: sourceCallBacks == nil ? sourceLinks.authorActions(shown.author) : [],
                 sourceGestures: sourceCallBacks?.gestures,
-                links: sourceCallBacks == nil ? sourceLinks.links(for: tags) : []
+                links: sourceCallBacks == nil ? sourceLinks.links(for: tags) : [],
+                seriesFan: seriesFan
             )
         } content: {
             if let intro = shown.intro {

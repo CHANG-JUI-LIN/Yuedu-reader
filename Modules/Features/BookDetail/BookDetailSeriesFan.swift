@@ -243,8 +243,9 @@ private struct SeriesFanCover: View {
 }
 
 #if DEBUG
-private extension SeriesFan {
-    /// Five bundled public-domain covers: the page's is the second.
+extension SeriesFan {
+    /// Five bundled public-domain covers: the page's is the second. The source page's preview
+    /// draws it too.
     static var preview: (own: HomeCardContent.Cover, fan: SeriesFan) {
         let covers = ["frankenstein", "dracula", "dorian-gray", "jane-eyre", "moby-dick"].map { name in
             HomeCardContent.Cover.reference(Bundle.main.path(forResource: "layout-sample-\(name)", ofType: "jpg").map(CoverReference.copyFile),
