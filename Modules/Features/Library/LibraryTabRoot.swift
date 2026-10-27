@@ -35,19 +35,11 @@ struct LibraryTabRoot: View {
     @State private var sourceGroups: [LibrarySourceGroups.Group] = []
     @State private var sourceActionSheet: BookSourceActionSheet?
     @State private var sourcePendingDeletion: BookSource?
-    @State private var showsMoreChooser = false
-    @State private var moreSequence = DismissalSequencedPresentation<LibraryMoreAction>()
     /// 新手導覽's 連接書庫: 遠端書庫's page over the root.
     @Environment(OnboardingState.self) private var onboarding: OnboardingState?
     @State private var showsRemoteLibrarySettings = false
 
     static let noticeDismissedKey = "library.tabNoticeDismissed"
-
-    private enum LibraryMoreAction: Hashable {
-        case manageSources
-        case showsGrid(Bool)
-        case columns(Int)
-    }
 
     private struct BrowserEntryPresentation: Identifiable {
         let id = UUID()
@@ -156,81 +148,25 @@ struct LibraryTabRoot: View {
     // MARK: •••
 
     /// 資源庫's one ••• (decision 31): 管理來源配置 and the layout. 新增來源配置 and 新增模組 left it
-    /// for 設定 (maintainer, 2026-10-27), as 模組 had (2026-10-17). A native menu from iOS 18; on
-    /// iOS 17 a chooser, kept from when the menu opened 新增來源配置's sheets, which iOS 17 drops
-    /// while a menu dismisses (`Technotes/iOS17MenuModalPresentation.md`). Nothing it holds now
-    /// presents a modal, so the chooser can go once a native menu is checked on iOS 17.
-    @ViewBuilder
+    /// for 設定 (maintainer, 2026-10-27), as 模組 had (2026-10-17). A native menu on every iOS:
+    /// iOS 17 had a chooser instead while the menu opened 新增來源配置's sheets, which iOS 17 drops
+    /// while a menu dismisses (`Technotes/iOS17MenuModalPresentation.md`); a push and the layout
+    /// present nothing, so the maintainer had the chooser go (2026-10-27).
     private var moreControl: some View {
-        if MenuModalPresentationPolicy.requiresDismissalSequencedChooser {
+        Menu {
             Button {
-                moreSequence.cancel()
-                showsMoreChooser = true
+                path.append(ExploreNavigationRoute.sourceManager)
             } label: {
-                Image(systemName: "ellipsis")
-                    .accessibilityHidden(true)
+                Label(localized("管理來源配置"), systemImage: "slider.horizontal.3")
             }
-            .accessibilityLabel(localized("更多"))
-            .accessibilityIdentifier("library.more")
-            .sheet(isPresented: $showsMoreChooser, onDismiss: {
-                moreSequence.consumeAfterDismissal().map(perform)
-            }) {
-                AdaptiveSheetContainer(maxWidth: DSLayout.readableCompactWidth) {
-                    DismissalSequencedActionChooser(title: localized("更多"), actions: moreChoices,
-                                                    onSelect: { moreSequence.select($0) })
-                }
-            }
-        } else {
-            Menu {
-                Button {
-                    perform(.manageSources)
-                } label: {
-                    Label(localized("管理來源配置"), systemImage: "slider.horizontal.3")
-                }
-                Divider()
-                LibraryLayoutMenuItems()
-            } label: {
-                Image(systemName: "ellipsis")
-                    .accessibilityHidden(true)
-            }
-            .accessibilityLabel(localized("更多"))
-            .accessibilityIdentifier("library.more")
+            Divider()
+            LibraryLayoutMenuItems()
+        } label: {
+            Image(systemName: "ellipsis")
+                .accessibilityHidden(true)
         }
-    }
-
-    /// The chooser's rows: the menu's items, with each layout choice a row of its own and the
-    /// menu's check mark said in words.
-    private var moreChoices: [DismissalSequencedAction<LibraryMoreAction>] {
-        var actions = [DismissalSequencedAction(route: LibraryMoreAction.manageSources, title: localized("管理來源配置"),
-                                                systemImage: "slider.horizontal.3")]
-        for grid in [true, false] {
-            actions.append(DismissalSequencedAction(
-                route: .showsGrid(grid), title: localized(grid ? "格狀" : "列表"),
-                systemImage: grid == showsGrid ? "checkmark" : (grid ? "square.grid.2x2" : "list.bullet"),
-                subtitle: grid == showsGrid ? localized("使用中") : nil))
-        }
-        if showsGrid {
-            for density in ExploreGridDensity.allCases {
-                let isCurrent = density.rawValue == gridColumnCount
-                actions.append(DismissalSequencedAction(
-                    route: .columns(density.rawValue), title: String(format: localized("%d 欄"), density.rawValue),
-                    systemImage: isCurrent ? "checkmark" : "rectangle.split.3x1",
-                    subtitle: isCurrent ? [localized("每列欄數"), localized("使用中")].joined(separator: " · ")
-                        : localized("每列欄數")))
-            }
-        }
-        return actions
-    }
-
-    private func perform(_ action: LibraryMoreAction) {
-        switch action {
-        case .manageSources:
-            path.append(ExploreNavigationRoute.sourceManager)
-        case .showsGrid(let grid):
-            showsGrid = grid
-        case .columns(let count):
-            gridColumnCount = count
-        }
+        .accessibilityLabel(localized("更多"))
+        .accessibilityIdentifier("library.more")
     }
 
     // MARK: Sections
@@ -273,7 +209,9 @@ struct LibraryTabRoot: View {
         }
     }
 
-    /// 所有來源配置, then a card for each group (decision 31): never every source on the root.
+    /// 所有來源配置, then a card for each group (decision 31): never every source on the root. Nothing
+    /// while no source has a discover page: adding one is 設定's, and the card that led to
+    /// 來源配置管理 went with 遠端書庫's (maintainer, 2026-10-27).
     ///
     /// Eager, as 模組 and 訂閱 are: lazy, the grid's rows after the first stayed out of the
     /// accessibility tree on the iOS 27.0 simulator (iPhone 18 Pro Max), so VoiceOver never
@@ -282,23 +220,16 @@ struct LibraryTabRoot: View {
     /// order did not cause it. Measured on that simulator, eager lays 50 groups out in 63 ms
     /// against lazy's 24, and 200 in 231 against 26; a later change to the page re-lays 200 in
     /// 5 ms. Delete `isLazy: false` once `testSourcesByGroup` passes without it.
+    @ViewBuilder
     private var sourcesSection: some View {
-        LibrarySection(localized("來源配置"), isLazy: false) {
-            NavigationLink(value: ExploreNavigationRoute.sourceManager) {
-                LibrarySectionAccessoryLabel()
-            }
-            .accessibilityLabel(localized("管理來源配置"))
-            .accessibilityIdentifier("library.sources")
-        } content: { layout in
-            if exploreSources.isEmpty {
+        if !exploreSources.isEmpty {
+            LibrarySection(localized("來源配置"), isLazy: false) {
                 NavigationLink(value: ExploreNavigationRoute.sourceManager) {
-                    ExploreEntryLabel(title: localized("管理來源配置"), artwork: .neutral("plus"), layout: layout,
-                                      subtitle: localized("還沒有支援發現的來源配置"))
+                    LibrarySectionAccessoryLabel()
                 }
-                .buttonStyle(ExploreTileButtonStyle())
                 .accessibilityLabel(localized("管理來源配置"))
-                .accessibilityIdentifier("library.sources.add")
-            } else {
+                .accessibilityIdentifier("library.sources")
+            } content: { layout in
                 NavigationLink(value: ExploreNavigationRoute.sources(group: nil)) {
                     ExploreEntryLabel(title: localized("所有來源配置"), artwork: .source, layout: layout,
                                       corner: .count(exploreSources.count))
@@ -369,14 +300,15 @@ struct LibraryTabRoot: View {
         }
     }
 
-    /// What moved here, until the reader closes it.
+    /// Where sources are, until the reader closes it: listed here, added in 設定 (maintainer,
+    /// 2026-10-27). It first said what had moved here from 設定 and the RSS tab.
     private var notice: some View {
         HStack(alignment: .top, spacing: DSSpacing.md) {
             VStack(alignment: .leading, spacing: DSSpacing.xs) {
                 Text(localized("所有來源都在這裡"))
                     .font(DSFont.headline)
                     .foregroundStyle(DSColor.textPrimary)
-                Text(localized("來源配置、遠端書庫和 RSS 訂閱從設定和 RSS 分頁搬到了資源庫。"))
+                Text(localized("這裡列出你已有的來源；要新增來源配置、模組或遠端書庫，請到設定。"))
                     .font(DSFont.subheadline)
                     .foregroundStyle(DSColor.textSecondary)
             }

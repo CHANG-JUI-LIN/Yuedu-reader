@@ -1,14 +1,45 @@
+import StoreKitTest
 import XCTest
 
 /// 資源庫 (Phase 5 plan, decisions 30 and 31; 5h): the tab between 探索 and 設定, its card saying
-/// what moved there, and each of its rows opening the page it names.
+/// sources are listed here and added in 設定, and each of its rows opening the page it names.
 final class LibraryTabUITests: XCTestCase {
+    /// iOS 17.5 asks for an Apple ID as the app reads StoreKit, over every page, unless a test
+    /// session answers it (`StoreKitTestSessions`): the ••• is checked there too.
+    private var storeKitSession: SKTestSession?
+
     override func setUpWithError() throws {
         continueAfterFailure = false
     }
 
+    /// A source library in a scratch directory, for `-book-source-store-dir`: the simulator's own
+    /// sources are never touched, and 來源配置 shows only once one has a discover page. Each entry
+    /// is a name and its group; `discovers` gives each a discover page.
+    private func sourceDirectory(_ entries: [(name: String, group: String)], discovers: Bool = true) throws -> URL {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("LibraryTabUITests-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let sources: [[String: Any]] = entries.enumerated().map { index, entry in
+            var source: [String: Any] = [
+                "bookSourceName": entry.name,
+                "bookSourceGroup": entry.group,
+                "bookSourceUrl": "https://library-ui-test-\(index).example",
+                "enabled": true,
+            ]
+            if discovers {
+                source["exploreUrl"] = "熱門::https://library-ui-test-\(index).example/hot"
+                source["enabledExplore"] = true
+            }
+            return source
+        }
+        try JSONSerialization.data(withJSONObject: sources)
+            .write(to: directory.appendingPathComponent("book_sources.json"))
+        return directory
+    }
+
     @MainActor
-    private func launch(_ extra: [String] = []) -> XCUIApplication {
+    private func launch(_ extra: [String] = []) throws -> XCUIApplication {
+        storeKitSession = try StoreKitTestSessions.fresh(StoreKitTestSessions.yueduPro())
         let app = XCUIApplication()
         app.launchArguments = ["-no-official-modules", "-onboarding.completed", "YES", "-AppleLanguages", "(zh-Hant)", "-AppleLocale", "zh_TW",
                                "-yd_source_disclaimer_accepted", "YES",
@@ -47,7 +78,8 @@ final class LibraryTabUITests: XCTestCase {
         return element
     }
 
-    /// An item of the open •••: the iOS 17 chooser's row also reads its subtitle after the title.
+    /// An item of an open menu, or a row of an iOS 17 chooser (來源配置管理's 「+」), which also reads
+    /// its subtitle after the title.
     @MainActor
     private func item(_ app: XCUIApplication, _ title: String) -> XCUIElement {
         app.buttons.matching(NSPredicate(format: "label == %@ OR label BEGINSWITH %@", title, title + ",")).firstMatch
@@ -62,11 +94,14 @@ final class LibraryTabUITests: XCTestCase {
     /// does, and the tab bar it hid comes back. It once went back only with the bar's back
     /// button, while the card reader's driver held the stack's delegate (maintainer, 2026-10-16).
     @MainActor
-    func testPushedPageSwipesBack() {
-        let app = launch()
-        let sources = app.buttons["library.sources"].firstMatch
-        XCTAssertTrue(sources.waitForExistence(timeout: 10), app.debugDescription)
-        sources.tap()
+    func testPushedPageSwipesBack() throws {
+        let app = try launch()
+        let more = app.buttons["library.more"].firstMatch
+        XCTAssertTrue(more.waitForExistence(timeout: 10), app.debugDescription)
+        more.tap()
+        let manage = item(app, "管理來源配置")
+        XCTAssertTrue(manage.waitForExistence(timeout: 5), app.debugDescription)
+        manage.tap()
         let page = app.navigationBars["來源配置管理"]
         XCTAssertTrue(page.waitForExistence(timeout: 5), app.debugDescription)
 
@@ -78,8 +113,10 @@ final class LibraryTabUITests: XCTestCase {
     }
 
     @MainActor
-    func testTabsAndRows() {
-        let app = launch()
+    func testTabsAndRows() throws {
+        let directory = try sourceDirectory([("介面測試來源", "測試")])
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let app = try launch(["-book-source-store-dir", directory.path])
         // 探索・書架・資源庫・設定・搜尋, and no RSS tab (decision 30; 搜尋 last since 2026-10-16,
         // 探索 first since 2026-10-25).
         let names = app.tabBars.buttons.allElementsBoundByIndex.map(\.label)
@@ -158,8 +195,8 @@ final class LibraryTabUITests: XCTestCase {
     /// and in XCUITest's, so VoiceOver never reached it and a test could tap it only where it
     /// was drawn (2026-10-26, iOS 27). `testTabsAndRows` closes the card mid-run and missed it.
     @MainActor
-    func testSubscriptionsWithTheNoticeClosed() {
-        let app = launch(["-library.tabNoticeDismissed", "YES"])
+    func testSubscriptionsWithTheNoticeClosed() throws {
+        let app = try launch(["-library.tabNoticeDismissed", "YES"])
         let rss = scrolledTo(app.buttons["library.rss"].firstMatch, in: app)
         XCTAssertTrue(rss.waitForExistence(timeout: 5), app.debugDescription)
         XCTAssertEqual(rss.label, "RSS 訂閱")
@@ -171,8 +208,8 @@ final class LibraryTabUITests: XCTestCase {
     /// Laid out as the old 探索 root was: 格狀 puts two tiles side by side, the list stacks
     /// them as cards, from that page's stored keys.
     @MainActor
-    func testGridAndList() {
-        let grid = launch(["-explore.showsGrid", "YES", "-explore.gridColumnCount", "2"])
+    func testGridAndList() throws {
+        let grid = try launch(["-explore.showsGrid", "YES", "-explore.gridColumnCount", "2"])
         // 模組 (M2b): AI 推薦, then 古騰堡 beside it, then 青空文庫 on the next row.
         let recommendations = grid.buttons["library.module.official.aiRecommendations"].firstMatch
         let gutenberg = grid.buttons["library.public.builtin.gutenberg"].firstMatch
@@ -183,17 +220,13 @@ final class LibraryTabUITests: XCTestCase {
         XCTAssertGreaterThan(aozora.frame.minY, gutenberg.frame.maxY - 1)
         attach(grid, "library-grid")
 
-        // The page's one menu holds 格狀 and 每列欄數; iOS 17's chooser, 格狀 and each column count.
+        // The page's one menu holds 格狀 and 每列欄數, a native menu on iOS 17 too.
         grid.buttons["library.more"].firstMatch.tap()
         XCTAssertTrue(item(grid, "格狀").waitForExistence(timeout: 5), grid.debugDescription)
-        if #available(iOS 18, *) {
-            XCTAssertTrue(grid.buttons["每列欄數"].firstMatch.exists, grid.debugDescription)
-        } else {
-            XCTAssertTrue(item(grid, "3 欄").exists, grid.debugDescription)
-        }
+        XCTAssertTrue(grid.buttons["每列欄數"].firstMatch.exists, grid.debugDescription)
         grid.terminate()
 
-        let list = launch(["-explore.showsGrid", "NO"])
+        let list = try launch(["-explore.showsGrid", "NO"])
         let listGutenberg = list.buttons["library.public.builtin.gutenberg"].firstMatch
         let listAozora = list.buttons["library.public.builtin.aozora"].firstMatch
         XCTAssertTrue(listAozora.waitForExistence(timeout: 5), list.debugDescription)
@@ -207,25 +240,10 @@ final class LibraryTabUITests: XCTestCase {
     /// fixture in a scratch directory, so the simulator's own sources are never touched.
     @MainActor
     func testSourcesByGroup() throws {
-        let directory = FileManager.default.temporaryDirectory
-            .appendingPathComponent("LibraryTabUITests-\(UUID().uuidString)", isDirectory: true)
-        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let directory = try sourceDirectory([("男频書源甲", "男频"), ("男频書源乙", "男频"), ("女频書源", "女频")])
         defer { try? FileManager.default.removeItem(at: directory) }
-        let sources: [[String: Any]] = [("男频書源甲", "男频"), ("男频書源乙", "男频"), ("女频書源", "女频")].enumerated()
-            .map { index, entry in
-                [
-                    "bookSourceName": entry.0,
-                    "bookSourceGroup": entry.1,
-                    "bookSourceUrl": "https://library-ui-test-\(index).example",
-                    "exploreUrl": "熱門::https://library-ui-test-\(index).example/hot",
-                    "enabled": true,
-                    "enabledExplore": true,
-                ]
-            }
-        try JSONSerialization.data(withJSONObject: sources)
-            .write(to: directory.appendingPathComponent("book_sources.json"))
 
-        let app = launch(["-book-source-store-dir", directory.path,
+        let app = try launch(["-book-source-store-dir", directory.path,
                           "-explore.showsGrid", "YES", "-explore.gridColumnCount", "2"])
         let all = app.buttons["library.sources.all"].firstMatch
         XCTAssertTrue(all.waitForExistence(timeout: 10), app.debugDescription)
@@ -256,11 +274,28 @@ final class LibraryTabUITests: XCTestCase {
         XCTAssertFalse(app.buttons["library.sources.all"].exists)
     }
 
-    /// The ••• (decision 31): 管理來源配置 and the layout. 新增來源配置 and 新增模組 left it for 設定
-    /// (maintainer, 2026-10-27). On iOS 17 its items are rows of a chooser.
+    /// 來源配置 with no source that has a discover page: no section, not a card that leads to
+    /// 來源配置管理 (maintainer, 2026-10-27). The ••• still manages them.
     @MainActor
-    func testMoreMenu() {
-        let app = launch()
+    func testSourcesWithoutDiscoverHaveNoSection() throws {
+        let directory = try sourceDirectory([("沒有發現頁的來源", "測試")], discovers: false)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let app = try launch(["-book-source-store-dir", directory.path])
+        // The page is drawn once 模組 is: AI 推薦 is always there.
+        let modules = app.buttons["library.module.official.aiRecommendations"].firstMatch
+        XCTAssertTrue(modules.waitForExistence(timeout: 10), app.debugDescription)
+        XCTAssertTrue(scrolledTo(app.buttons["library.rss"].firstMatch, in: app).exists, app.debugDescription)
+        XCTAssertFalse(app.buttons["library.sources"].exists, app.debugDescription)
+        XCTAssertFalse(app.buttons["library.sources.all"].exists, app.debugDescription)
+        XCTAssertFalse(app.staticTexts["來源配置"].exists, app.debugDescription)
+        attach(app, "library-no-sources")
+    }
+
+    /// The ••• (decision 31): 管理來源配置 and the layout, a native menu on iOS 17 too. 新增來源配置
+    /// and 新增模組 left it for 設定 (maintainer, 2026-10-27).
+    @MainActor
+    func testMoreMenu() throws {
+        let app = try launch()
         let more = app.buttons["library.more"].firstMatch
         XCTAssertTrue(more.waitForExistence(timeout: 5), app.debugDescription)
         more.tap()

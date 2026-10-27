@@ -101,7 +101,9 @@ final class OnboardingUITests: XCTestCase {
         let back = app.navigationBars["來源配置管理"].buttons["資源庫"]
         XCTAssertTrue(back.waitForExistence(timeout: 5), app.debugDescription)
         back.tap()
-        XCTAssertTrue(app.buttons["library.sources"].firstMatch.waitForExistence(timeout: 5), app.debugDescription)
+        // AI 推薦's card: 資源庫 always shows it, whatever sources the device has.
+        XCTAssertTrue(app.buttons["library.module.official.aiRecommendations"].firstMatch.waitForExistence(timeout: 5),
+                      app.debugDescription)
         let library = app.tabBars.buttons["資源庫"].firstMatch
         XCTAssertTrue(library.waitForExistence(timeout: 5), app.debugDescription)
         XCTAssertTrue(library.isSelected)
@@ -115,8 +117,8 @@ final class OnboardingUITests: XCTestCase {
         let library = app.tabBars.buttons["資源庫"].firstMatch
         XCTAssertTrue(library.waitForExistence(timeout: 30))
         library.tap()
-        let manageSources = app.buttons["library.sources"].firstMatch
-        XCTAssertTrue(manageSources.waitForExistence(timeout: 10), app.debugDescription)
+        let root = app.buttons["library.module.official.aiRecommendations"].firstMatch
+        XCTAssertTrue(root.waitForExistence(timeout: 10), app.debugDescription)
 
         _ = replayFromAbout(app)
         turnToTheStarts(app).tap()
@@ -125,7 +127,7 @@ final class OnboardingUITests: XCTestCase {
         XCTAssertTrue(app.navigationBars["遠端書庫"].exists)
 
         app.navigationBars.buttons.element(boundBy: 0).tap()
-        XCTAssertTrue(manageSources.waitForExistence(timeout: 5), app.debugDescription)
+        XCTAssertTrue(root.waitForExistence(timeout: 5), app.debugDescription)
         XCTAssertTrue(library.isSelected)
     }
 

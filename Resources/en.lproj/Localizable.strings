@@ -3760,9 +3760,7 @@
 /* 資源庫 tab (Phase 5, 5h) */
 "資源庫" = "Sources";
 "所有來源都在這裡" = "Every Source Is Here";
-"來源配置、遠端書庫和 RSS 訂閱從設定和 RSS 分頁搬到了資源庫。" = "Sources, remote libraries and subscriptions moved here from Settings and the Subscriptions tab.";
 "所有來源配置" = "All Sources";
-"還沒有支援發現的來源配置" = "No sources with Discover yet";
 "沒有來源配置" = "No Sources";
 "%d 個訂閱源" = "%d feeds";
 "雜誌" = "Magazine";
@@ -4184,3 +4182,4 @@
 "設定分組：閱讀" = "Reading";
 "設定分組：資料" = "Data";
 "設定分組：支援" = "Support";
+"這裡列出你已有的來源；要新增來源配置、模組或遠端書庫，請到設定。" = "Everything you've added is listed here. To add a source, a module or a remote library, go to Settings.";

@@ -61,12 +61,12 @@ final class BookSourceManagementUITests: XCTestCase {
         for label in ["不允許", "Don’t Allow"] where app.buttons[label].waitForExistence(timeout: 3) {
             app.buttons[label].tap()
         }
-        // 管理來源配置 is 資源庫's since 5h (Phase 5 plan, decision 30).
-        let libraryTab = app.tabBars.buttons["資源庫"].firstMatch
-        XCTAssertTrue(libraryTab.waitForExistence(timeout: 60), "資源庫 tab should exist")
-        libraryTab.tap()
-        let manageRow = app.buttons["library.sources"].firstMatch
-        for _ in 0..<6 where !manageRow.exists {
+        // 設定 → 資源 → 來源配置管理 (maintainer, 2026-10-27: every way to add a source is in 設定).
+        let settingsTab = app.tabBars.buttons["設定"].firstMatch
+        XCTAssertTrue(settingsTab.waitForExistence(timeout: 60), "設定 tab should exist")
+        settingsTab.tap()
+        let manageRow = app.buttons["settings_sources"].firstMatch
+        for _ in 0..<6 where !manageRow.isHittable {
             app.swipeUp()
         }
         XCTAssertTrue(manageRow.waitForExistence(timeout: 5))
@@ -138,12 +138,12 @@ final class BookSourceManagementUITests: XCTestCase {
             app.buttons[label].tap()
         }
 
-        let libraryTab = app.tabBars.buttons["資源庫"].firstMatch
-        XCTAssertTrue(libraryTab.waitForExistence(timeout: 20), "資源庫 tab should exist")
-        libraryTab.tap()
+        let settingsTab = app.tabBars.buttons["設定"].firstMatch
+        XCTAssertTrue(settingsTab.waitForExistence(timeout: 20), "設定 tab should exist")
+        settingsTab.tap()
 
-        let manageRow = app.buttons["library.sources"].firstMatch
-        for _ in 0..<6 where !manageRow.exists {
+        let manageRow = app.buttons["settings_sources"].firstMatch
+        for _ in 0..<6 where !manageRow.isHittable {
             app.swipeUp()
         }
         XCTAssertTrue(manageRow.waitForExistence(timeout: 5), "管理書源 should be reachable")
