@@ -27,14 +27,12 @@ enum ExploreNavigationRoute: Hashable {
     case moduleList(ModuleListRoute)
     /// 官方模組's AI 推薦 page (AI 推薦 plan 8d).
     case aiRecommendations
-    /// 模組 (M6), from 設定 → 來源配置管理: the repositories, 官方模組, 匯入的模組 and 首頁欄目引用.
+    /// 模組 (M6), from 設定 → 資源: 官方模組, the repositories and 匯入的模組.
     case moduleManager
     /// 官方模組 or 匯入的模組, from 模組.
     case moduleGroup(RuleModuleGroup)
     /// A subscribed repository's page, by its address.
     case moduleRepository(URL)
-    /// 首頁欄目引用: home sections whose module is not installed.
-    case homeModuleReferences
 
     static func == (lhs: Self, rhs: Self) -> Bool {
         switch (lhs, rhs) {
@@ -48,7 +46,7 @@ enum ExploreNavigationRoute: Hashable {
             return lhsURL == rhsURL
         case (.sourceManager, .sourceManager), (.aggregationSettings, .aggregationSettings),
              (.subscriptions, .subscriptions), (.aiRecommendations, .aiRecommendations),
-             (.moduleManager, .moduleManager), (.homeModuleReferences, .homeModuleReferences):
+             (.moduleManager, .moduleManager):
             return true
         case (.moduleGroup(let lhsGroup), .moduleGroup(let rhsGroup)):
             return lhsGroup == rhsGroup
@@ -109,8 +107,6 @@ enum ExploreNavigationRoute: Hashable {
         case .moduleRepository(let url):
             hasher.combine(17)
             hasher.combine(url)
-        case .homeModuleReferences:
-            hasher.combine(18)
         }
     }
 }

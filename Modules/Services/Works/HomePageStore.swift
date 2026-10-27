@@ -189,11 +189,6 @@ final class HomePageStore: ObservableObject {
         home?.contains(reference, in: id) ?? false
     }
 
-    /// The 模組 page's 首頁欄目引用 (M6): sections removed from every 首頁配置 at once.
-    func removeSections(_ ids: Set<UUID>) {
-        change { $0.removeSections(ids) }
-    }
-
     private func change(_ body: (inout HomeConfigurations) -> Void) {
         guard var home else { return }
         body(&home)

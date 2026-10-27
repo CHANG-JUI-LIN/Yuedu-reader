@@ -82,8 +82,6 @@ private struct ExploreRouteDestinations: ViewModifier {
             RuleModuleGroupView(group: group)
         case .moduleRepository(let url):
             RuleModuleRepositoryView(url: url)
-        case .homeModuleReferences:
-            HomeModuleReferencesView()
         }
     }
 

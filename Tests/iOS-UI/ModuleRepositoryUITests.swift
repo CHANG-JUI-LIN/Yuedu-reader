@@ -52,15 +52,14 @@ final class ModuleRepositoryUITests: XCTestCase {
         let settings = app.tabBars.buttons["設定"].firstMatch
         settings.tap()
 
-        // 設定 → 來源配置管理 → 模組.
+        // 設定 → 資源 → 模組.
         let manage = app.buttons["settings_modules"].firstMatch
         XCTAssertTrue(manage.waitForExistence(timeout: 10), app.debugDescription)
         for _ in 0..<6 where !manage.isHittable { app.swipeUp(velocity: .slow) }
         attach(app, "settings-modules-row")
         manage.tap()
         XCTAssertTrue(app.navigationBars["模組"].waitForExistence(timeout: 5), app.debugDescription)
-        XCTAssertTrue(app.buttons["modules.official"].exists && app.buttons["modules.imported"].exists
-                      && app.buttons["modules.homeReferences"].exists, app.debugDescription)
+        XCTAssertTrue(app.buttons["modules.official"].exists && app.buttons["modules.imported"].exists, app.debugDescription)
         attach(app, "modules-manager-empty")
 
         // 新增模組 → 從網址 → the index → 訂閱模組倉庫.
@@ -116,8 +115,8 @@ final class ModuleRepositoryUITests: XCTestCase {
         XCTAssertTrue(app.staticTexts["已停用"].waitForExistence(timeout: 5), app.debugDescription)
         attach(app, "modules-module-disabled")
 
-        // 資源庫 (模組's pages hide the tab bar): 乙模組's card, not 甲模組's. 資源庫's ••• no
-        // longer manages modules.
+        // 資源庫 (模組's pages hide the tab bar): 乙模組's card, not 甲模組's. 資源庫's ••• neither
+        // adds nor manages modules: 設定 does.
         for _ in 0..<4 where !tab.isHittable {
             app.navigationBars.buttons.element(boundBy: 0).tap()
         }
@@ -126,7 +125,8 @@ final class ModuleRepositoryUITests: XCTestCase {
         let more = app.buttons["library.more"].firstMatch
         XCTAssertTrue(more.waitForExistence(timeout: 10), app.debugDescription)
         more.tap()
-        XCTAssertTrue(item(app, "新增模組").waitForExistence(timeout: 5), app.debugDescription)
+        XCTAssertTrue(item(app, "管理來源配置").waitForExistence(timeout: 5), app.debugDescription)
+        XCTAssertFalse(item(app, "新增模組").exists, "模組 is added in 設定 now")
         XCTAssertFalse(item(app, "管理模組").exists, "模組 is managed in 設定 now")
         attach(app, "library-more")
         // Closes the menu: a tap beside it, on the large title.

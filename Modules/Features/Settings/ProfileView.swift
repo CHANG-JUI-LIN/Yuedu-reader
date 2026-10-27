@@ -7,12 +7,11 @@ struct SettingsView: View {
     @Environment(\.openURL) private var openURL
     @Environment(\.colorScheme) private var colorScheme
     @Bindable private var gs = GlobalSettings.shared
-    @State private var showAggregationSettings = false
-    /// 模組 and its pages push `ExploreNavigationRoute` values. A page opened by
-    /// `navigationDestination(isPresented:)` on a stack without a path is pushed again on top
-    /// of a value pushed after it (模組 reappeared over 測試倉庫), so 模組 is a value too.
+    /// 來源配置管理, 模組 and its pages, and 聚合設定 push `ExploreNavigationRoute` values. A page
+    /// opened by `navigationDestination(isPresented:)` on a stack without a path is pushed again on
+    /// top of a value pushed after it (模組 reappeared over 測試倉庫), so each is a value.
     @State private var path = NavigationPath()
-    /// 模組's 新增模組 (its toolbar), presented from this root as 資源庫 presented it.
+    /// 模組's 新增模組 (its toolbar), presented from this root: the one place a module is added.
     @StateObject private var moduleFlow = RuleModuleAddFlow()
     @State private var showDownloadManager = false
     @State private var showReplaceRules = false
@@ -75,27 +74,12 @@ struct SettingsView: View {
                         .rootTabTitleScrollAnchor()
                     }
                     .interfaceSectionSurface()
-                    // ── App Language ──
-                    Section {
-                        DSSettingsRow(
-                            icon: "globe",
-                            title: localized("語言"),
-                            action: {
-                                if let url = URL(string: UIApplication.openSettingsURLString) {
-                                    openURL(url)
-                                }
-                            }
-                        )
-                    } header: {
-                        Text(localized("App 語言"))
-                            .foregroundStyle(DSColor.textSecondary)
-                    } footer: {
-                        Text(appLanguageFooter)
-                            .dsSectionFooter()
-                    }
-                    .interfaceSectionSurface()
 
-                    Section(header: Text(localized("外觀")).foregroundStyle(DSColor.textSecondary)) {
+                    // Grouped by what each is for (maintainer, 2026-10-27): 一般, 資源, 閱讀, 資料, 支援.
+
+                    // ── 一般 ──
+                    // 書架顯示 (每列欄數, 預設封面) lives in 外觀主題's 介面 since 2026-09-29.
+                    Section {
                         NavigationLink {
                             AppearanceThemeView()
                         } label: {
@@ -109,22 +93,36 @@ struct SettingsView: View {
                                     .foregroundColor(DSColor.textSecondary)
                             }
                         }
+
+                        DSSettingsRow(
+                            icon: "globe",
+                            title: localized("語言"),
+                            action: {
+                                if let url = URL(string: UIApplication.openSettingsURLString) {
+                                    openURL(url)
+                                }
+                            }
+                        )
+                    } header: {
+                        Text(localized("設定分組：一般"))
+                            .foregroundStyle(DSColor.textSecondary)
+                    } footer: {
+                        Text(appLanguageFooter)
+                            .dsSectionFooter()
                     }
                     .interfaceSectionSurface()
 
-                    // 書架顯示 (每列欄數, 預設封面) lives in 外觀主題's 介面 since 2026-09-29.
-
-                    // ── Book Source Management ──
-                    // 管理來源配置 and 遠端書庫 are 資源庫's since 5h (Phase 5 plan, decision 30).
-                    Section(header: Text(localized("來源配置管理")).foregroundStyle(DSColor.textSecondary)) {
-                        // 聚合設定 (unified library 5d-3d, decision 21): here only, as Emby's
-                        // aggregation settings sit in its user settings.
+                    // ── 資源 ──
+                    // Where every source is added (maintainer, 2026-10-27: 「把添加資源的入口都放在設置頁」):
+                    // each kind's page, whose toolbar adds one. 資源庫 lists what is there. RSS 訂閱
+                    // stays in 資源庫, a page to read rather than a setting (the maintainer's choice).
+                    Section {
                         DSSettingsRow(
-                            icon: "square.stack.3d.up.fill",
-                            title: localized("聚合設定"),
-                            action: { showAggregationSettings = true }
+                            icon: "books.vertical.fill",
+                            title: localized("來源配置管理"),
+                            action: { path.append(ExploreNavigationRoute.sourceManager) }
                         )
-                        .accessibilityIdentifier("settings_aggregation")
+                        .accessibilityIdentifier("settings_sources")
 
                         // 模組 (M6), here since the maintainer moved it from 資源庫's •••
                         // (2026-10-17: 「模組設定頁在設置好了」).
@@ -135,24 +133,37 @@ struct SettingsView: View {
                         )
                         .accessibilityIdentifier("settings_modules")
 
-                        DSSettingsRow(
-                            icon: "arrow.down.circle.fill",
-                            title: localized("下載管理"),
-                            detail: String(format: localized("%d 本"), downloadedBooksCount),
-                            action: { showDownloadManager = true }
-                        )
+                        NavigationLink {
+                            RemoteLibrarySettingsView()
+                        } label: {
+                            Label(localized("遠端書庫"), systemImage: "server.rack")
+                                .foregroundColor(DSColor.textPrimary)
+                                .labelStyle(IconConsistentLabelStyle())
+                        }
+                        .accessibilityIdentifier("settings_remote_libraries")
 
+                        // 聚合設定 (unified library 5d-3d, decision 21): here only, as Emby's
+                        // aggregation settings sit in its user settings.
+                        DSSettingsRow(
+                            icon: "square.stack.3d.up.fill",
+                            title: localized("聚合設定"),
+                            action: { path.append(ExploreNavigationRoute.aggregationSettings) }
+                        )
+                        .accessibilityIdentifier("settings_aggregation")
 
                         DSSettingsRow(
                             icon: "network",
                             title: localized("網路設定"),
                             action: { showNetworkSettings = true }
                         )
+                    } header: {
+                        Text(localized("設定分組：資源"))
+                            .foregroundStyle(DSColor.textSecondary)
                     }
                     .interfaceSectionSurface()
 
-                    // ── Reading Tools ──
-                    Section(header: Text(localized("閱讀工具")).foregroundStyle(DSColor.textSecondary)) {
+                    // ── 閱讀 ──
+                    Section {
                         DSSettingsRow(
                             icon: "waveform",
                             title: localized("語音朗讀設定"),
@@ -170,23 +181,32 @@ struct SettingsView: View {
                                 if isAILocked { showAIPaywall = true } else { showAISettings = true }
                             }
                         )
-                        
+
                         DSSettingsRow(
                             icon: "text.magnifyingglass",
                             title: localized("替換規則"),
                             action: { showReplaceRules = true }
                         )
-
+                    } header: {
+                        Text(localized("設定分組：閱讀"))
+                            .foregroundStyle(DSColor.textSecondary)
                     }
                     .interfaceSectionSurface()
 
-                    // ── Data Management ──
-                    Section(header: Text(localized("資料管理")).foregroundStyle(DSColor.textSecondary)) {
+                    // ── 資料 ──
+                    Section {
                         DSSettingsRow(
                             icon: "arrow.triangle.2.circlepath.icloud",
                             title: localized("備份與同步"),
                             detail: localized("iCloud、WebDAV"),
                             action: { showBackupSync = true }
+                        )
+
+                        DSSettingsRow(
+                            icon: "arrow.down.circle.fill",
+                            title: localized("下載管理"),
+                            detail: String(format: localized("%d 本"), downloadedBooksCount),
+                            action: { showDownloadManager = true }
                         )
 
                         DSSettingsRow(
@@ -200,11 +220,14 @@ struct SettingsView: View {
                             title: localized("局域網服務"),
                             action: { showLanServer = true }
                         )
+                    } header: {
+                        Text(localized("設定分組：資料"))
+                            .foregroundStyle(DSColor.textSecondary)
                     }
                     .interfaceSectionSurface()
 
-                    // ── Advanced ──
-                    Section(header: Text(localized("進階")).foregroundStyle(DSColor.textSecondary)) {
+                    // ── 支援 ──
+                    Section {
                         // 回饋中心 replaced 診斷與回報 (2026-10-15): reports, replies, and the
                         // diagnostic log viewer as its 診斷紀錄 row.
                         NavigationLink {
@@ -215,11 +238,7 @@ struct SettingsView: View {
                                 .labelStyle(IconConsistentLabelStyle())
                         }
                         .accessibilityIdentifier("settings_feedback_center")
-                    }
-                    .interfaceSectionSurface()
 
-                    // ── About ──
-                    Section(header: Text(localized("關於")).foregroundStyle(DSColor.textSecondary)) {
                         NavigationLink {
                             AboutSupportView(
                                 appVersion: appVersion,
@@ -243,6 +262,9 @@ struct SettingsView: View {
                                     .foregroundColor(DSColor.textSecondary)
                             }
                         }
+                    } header: {
+                        Text(localized("設定分組：支援"))
+                            .foregroundStyle(DSColor.textSecondary)
                     }
                     .interfaceSectionSurface()
                 }
@@ -251,12 +273,9 @@ struct SettingsView: View {
             .rootTabTitle(localized("設定"), onScroll: .minimizesBar)
             // Back from 外觀主題: its 淺色／深色 preview ends here.
             .onAppear { gs.endAppearanceSlotPreview() }
-            .navigationDestination(isPresented: $showAggregationSettings) {
-                AggregationSettingsView()
-            }
-            // 模組's own pages (官方模組, 匯入的模組, a repository, a module, 首頁欄目引用) push
-            // `ExploreNavigationRoute` values. None of them opens a source's page, the one route
-            // that goes out to the browser, so this stack has no browser to open.
+            // 來源配置管理, 模組 and 聚合設定 are `ExploreNavigationRoute` values, as are 模組's own
+            // pages (官方模組, 匯入的模組, a repository, a module). None of them opens a source's
+            // page, the one route that goes out to the browser, so this stack has no browser to open.
             .exploreRouteDestinations(openBrowser: { _ in })
             #if DEBUG
             // Screenshot/driver hooks: `-open-diagnostics` pushes 診斷紀錄 and

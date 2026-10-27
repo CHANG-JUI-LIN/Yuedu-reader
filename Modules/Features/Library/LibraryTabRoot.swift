@@ -2,8 +2,9 @@ import SwiftUI
 
 /// 資源庫, a tab since Phase 5's 5h (decisions 30 and 31): where every source lives, grouped by
 /// kind. 古騰堡 and 青空文庫 open what they offer, a remote library its catalog, and the
-/// source configurations, the remote-library connections and the RSS feeds are managed here,
-/// no longer in 設定 or a tab of their own. 探索 stays the cover wall across them all.
+/// source configurations and the RSS feeds are managed here. Adding a 來源配置, a module or a
+/// remote library is 設定's (maintainer, 2026-10-27: 「把添加資源的入口都放在設置頁」): this page
+/// lists what is there. 探索 stays the cover wall across them all.
 ///
 /// Laid out by the old 探索 root's 格狀 and 每列欄數, now in this page's •••, as cards the way
 /// the maintainer's reference draws its media servers and modules (2026-10-13). The search
@@ -34,10 +35,6 @@ struct LibraryTabRoot: View {
     @State private var sourceGroups: [LibrarySourceGroups.Group] = []
     @State private var sourceActionSheet: BookSourceActionSheet?
     @State private var sourcePendingDeletion: BookSource?
-    /// 新增來源配置 from the •••: the same flow as 來源配置管理's 「+」.
-    @StateObject private var addFlow = BookSourceAddFlow()
-    /// 新增模組 (Phase 6e).
-    @StateObject private var moduleFlow = RuleModuleAddFlow()
     @State private var showsMoreChooser = false
     @State private var moreSequence = DismissalSequencedPresentation<LibraryMoreAction>()
     /// 新手導覽's 連接書庫: 遠端書庫's page over the root.
@@ -47,8 +44,6 @@ struct LibraryTabRoot: View {
     static let noticeDismissedKey = "library.tabNoticeDismissed"
 
     private enum LibraryMoreAction: Hashable {
-        case add(BookSourceAddRoute)
-        case addModule(RuleModuleAddRoute)
         case manageSources
         case showsGrid(Bool)
         case columns(Int)
@@ -80,7 +75,7 @@ struct LibraryTabRoot: View {
                         if !noticeDismissed {
                             notice
                         }
-                        RuleModuleSection(library: modules, onAdd: { moduleFlow.begin(.address) }) { key, layout in
+                        RuleModuleSection(library: modules) { key, layout in
                             publicLibraryTile(key, layout: layout)
                         }
                         remoteLibrariesSection
@@ -101,9 +96,6 @@ struct LibraryTabRoot: View {
                 .padding(.vertical, DSSpacing.sm)
                 .animation(reduceMotion ? nil : DSAnimation.standard, value: showsGrid)
                 .rootTabTitleScrollAnchor()
-                // Not beside `bookSourceAddFlow`: two file importers on one view, and SwiftUI
-                // presents only one of them.
-                .ruleModuleAddFlow(moduleFlow)
             }
             .overlay {
                 if !trimmedQuery.isEmpty && matchingSources.isEmpty {
@@ -125,7 +117,6 @@ struct LibraryTabRoot: View {
                 sourceGroups = LibrarySourceGroups.groups(of: exploreSources)
             }
             .bookSourceActionSheets(sheet: $sourceActionSheet, pendingDeletion: $sourcePendingDeletion)
-            .bookSourceAddFlow(addFlow)
             .task { await modules.loadIfNeeded() }
             .exploreRouteDestinations(openBrowser: { browserEntry = BrowserEntryPresentation(entry: $0) })
             .remoteLibraryDestinations()
@@ -164,10 +155,11 @@ struct LibraryTabRoot: View {
 
     // MARK: •••
 
-    /// 資源庫's one ••• (decision 31): 新增來源配置, 管理來源配置, 新增模組 (Phase 6e) and the layout.
-    /// 模組 is managed in 設定 (maintainer, 2026-10-17). A native menu from
-    /// iOS 18; on iOS 17 a chooser, since 新增來源配置's sheets would be dropped while the menu
-    /// dismisses (`Technotes/iOS17MenuModalPresentation.md`).
+    /// 資源庫's one ••• (decision 31): 管理來源配置 and the layout. 新增來源配置 and 新增模組 left it
+    /// for 設定 (maintainer, 2026-10-27), as 模組 had (2026-10-17). A native menu from iOS 18; on
+    /// iOS 17 a chooser, kept from when the menu opened 新增來源配置's sheets, which iOS 17 drops
+    /// while a menu dismisses (`Technotes/iOS17MenuModalPresentation.md`). Nothing it holds now
+    /// presents a modal, so the chooser can go once a native menu is checked on iOS 17.
     @ViewBuilder
     private var moreControl: some View {
         if MenuModalPresentationPolicy.requiresDismissalSequencedChooser {
@@ -190,20 +182,10 @@ struct LibraryTabRoot: View {
             }
         } else {
             Menu {
-                Menu {
-                    BookSourceAddMenuItems(flow: addFlow)
-                } label: {
-                    Label(localized("新增來源配置"), systemImage: "plus")
-                }
                 Button {
                     perform(.manageSources)
                 } label: {
                     Label(localized("管理來源配置"), systemImage: "slider.horizontal.3")
-                }
-                Menu {
-                    RuleModuleAddMenuItems(flow: moduleFlow)
-                } label: {
-                    Label(localized("新增模組"), systemImage: "puzzlepiece.extension")
                 }
                 Divider()
                 LibraryLayoutMenuItems()
@@ -219,16 +201,8 @@ struct LibraryTabRoot: View {
     /// The chooser's rows: the menu's items, with each layout choice a row of its own and the
     /// menu's check mark said in words.
     private var moreChoices: [DismissalSequencedAction<LibraryMoreAction>] {
-        var actions = BookSourceAddRoute.allCases.map { route in
-            DismissalSequencedAction(route: LibraryMoreAction.add(route), title: localized(route.titleKey),
-                                     systemImage: route.systemImage, subtitle: localized("新增來源配置"))
-        }
-        actions.append(DismissalSequencedAction(route: .manageSources, title: localized("管理來源配置"),
-                                                systemImage: "slider.horizontal.3"))
-        actions += RuleModuleAddRoute.allCases.map { route in
-            DismissalSequencedAction(route: LibraryMoreAction.addModule(route), title: localized(route.titleKey),
-                                     systemImage: route.systemImage, subtitle: localized("新增模組"))
-        }
+        var actions = [DismissalSequencedAction(route: LibraryMoreAction.manageSources, title: localized("管理來源配置"),
+                                                systemImage: "slider.horizontal.3")]
         for grid in [true, false] {
             actions.append(DismissalSequencedAction(
                 route: .showsGrid(grid), title: localized(grid ? "格狀" : "列表"),
@@ -250,10 +224,6 @@ struct LibraryTabRoot: View {
 
     private func perform(_ action: LibraryMoreAction) {
         switch action {
-        case .add(let route):
-            addFlow.begin(route)
-        case .addModule(let route):
-            moduleFlow.begin(route)
         case .manageSources:
             path.append(ExploreNavigationRoute.sourceManager)
         case .showsGrid(let grid):
@@ -279,32 +249,26 @@ struct LibraryTabRoot: View {
         .accessibilityIdentifier("library.public.\(key.id)")
     }
 
+    /// The remote libraries connected, and nothing while there are none: connecting one is 設定's
+    /// 遠端書庫 (maintainer, 2026-10-27), so an empty section here would only be its title.
+    @ViewBuilder
     private var remoteLibrariesSection: some View {
         let remoteLibraries = libraries.filter { $0.key.type != .gutenberg && $0.key.type != .aozora }
-        return LibrarySection(localized("遠端書庫")) {
-            NavigationLink {
-                RemoteLibrarySettingsView()
-            } label: {
-                LibrarySectionAccessoryLabel()
-            }
-            .accessibilityLabel(localized("管理遠端書庫"))
-            .accessibilityIdentifier("library.manageRemote")
-        } content: { layout in
-            ForEach(remoteLibraries) { library in
-                remoteLibraryLink(library, layout: layout)
-                    .accessibilityLabel(library.name)
-                    .accessibilityIdentifier("library.remote.\(library.key.id)")
-            }
-            if remoteLibraries.isEmpty {
-                // Nothing connected: the card is how to connect one.
+        if !remoteLibraries.isEmpty {
+            LibrarySection(localized("遠端書庫")) {
                 NavigationLink {
                     RemoteLibrarySettingsView()
                 } label: {
-                    ExploreEntryLabel(title: localized("管理遠端書庫"), artwork: .neutral("plus"), layout: layout)
+                    LibrarySectionAccessoryLabel()
                 }
-                .buttonStyle(ExploreTileButtonStyle())
                 .accessibilityLabel(localized("管理遠端書庫"))
-                .accessibilityIdentifier("library.remote.add")
+                .accessibilityIdentifier("library.manageRemote")
+            } content: { layout in
+                ForEach(remoteLibraries) { library in
+                    remoteLibraryLink(library, layout: layout)
+                        .accessibilityLabel(library.name)
+                        .accessibilityIdentifier("library.remote.\(library.key.id)")
+                }
             }
         }
     }

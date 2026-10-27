@@ -13,12 +13,13 @@ extension EnvironmentValues {
 }
 
 /// 模組 (M6, maintainer 2026-10-17: 「模組要做到截圖這樣」): where every module comes from — 官方模組,
-/// each subscribed repository, 匯入的模組 — and the home sections left pointing at a module no
-/// longer installed. 新增模組 is its toolbar's: an address may hold a module or a repository.
+/// each subscribed repository, 匯入的模組. 新增模組 is its toolbar's, the one way to add a module
+/// since 資源庫 lost its own (maintainer, 2026-10-27): an address may hold a module or a repository.
+/// 首頁欄目引用, the home sections left pointing at a module no longer installed, was a row here
+/// until the maintainer had it deleted the same day.
 struct RuleModuleManagerView: View {
     @ObservedObject var library: RuleModuleLibrary
     @ObservedObject var repositories: RuleModuleRepositoryModel
-    @ObservedObject private var home = HomePageStore.shared
     @ObservedObject private var availability = PublicLibraryAvailability.shared
     @Environment(\.ruleModuleAddFlow) private var addFlow
     /// Once per visit: back from a repository's page, the indexes are not read again.
@@ -30,10 +31,6 @@ struct RuleModuleManagerView: View {
     init(library: RuleModuleLibrary? = nil, repositories: RuleModuleRepositoryModel? = nil) {
         self.library = library ?? .shared
         self.repositories = repositories ?? .shared
-    }
-
-    private var referenceCount: Int {
-        home.home?.moduleReferences(installed: Set(library.installed.map(\.module.id))).count ?? 0
     }
 
     var body: some View {
@@ -65,12 +62,6 @@ struct RuleModuleManagerView: View {
                                         count: library.imported.count + library.failures.count)
                 }
                 .accessibilityIdentifier("modules.imported")
-
-                NavigationLink(value: ExploreNavigationRoute.homeModuleReferences) {
-                    RuleModuleOriginRow(title: localized("首頁欄目引用"), systemImage: "rectangle.stack",
-                                        subtitle: localized("管理引用未安裝模組的首頁欄目"), origin: nil, count: referenceCount)
-                }
-                .accessibilityIdentifier("modules.homeReferences")
             } footer: {
                 Text(localized("第三方模組由作者自行維護，閱讀不審核其內容。加入前請確認來源可信；有問題的模組可以在「回饋與改進」回報。"))
                     .dsSectionFooter()

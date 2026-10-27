@@ -35,19 +35,6 @@ final class ModuleLibraryUITests: XCTestCase {
         return app
     }
 
-    /// 資源庫's •••. On iOS 27 the bar slides away as the page scrolls (`.minimizesBar`), so the
-    /// page goes back to its top first.
-    @MainActor
-    private func tapMore(_ app: XCUIApplication) {
-        let more = app.buttons["library.more"].firstMatch
-        var swipes = 0
-        while !more.isHittable, swipes < 8 {
-            app.scrollViews.firstMatch.swipeDown(velocity: .fast)
-            swipes += 1
-        }
-        more.tap()
-    }
-
     @MainActor
     private func attach(_ app: XCUIApplication, _ name: String) {
         let attachment = XCTAttachment(screenshot: app.screenshot())
@@ -72,16 +59,18 @@ final class ModuleLibraryUITests: XCTestCase {
         app.buttons.matching(NSPredicate(format: "label == %@ OR label BEGINSWITH %@", title, title + ",")).firstMatch
     }
 
-    /// ••• → 新增模組 → 從網址 → the fixture → ✓, from 資源庫.
+    /// 設定 → 模組 → 新增模組 → 從網址 → the fixture → ✓, then back on 資源庫: adding a module is
+    /// 設定's (maintainer, 2026-10-27).
     @MainActor
     private func addFixtureModule(_ app: XCUIApplication) {
-        // ••• → 新增模組 → 從網址; on iOS 17 a chooser row, opened once the chooser has gone.
-        tapMore(app)
-        if #available(iOS 18, *) {
-            let add = app.buttons["新增模組"].firstMatch
-            XCTAssertTrue(add.waitForExistence(timeout: 5), app.debugDescription)
-            add.tap()
-        }
+        app.tabBars.buttons["設定"].firstMatch.tap()
+        let manage = app.buttons["settings_modules"].firstMatch
+        XCTAssertTrue(manage.waitForExistence(timeout: 10), app.debugDescription)
+        for _ in 0..<6 where !manage.isHittable { app.swipeUp(velocity: .slow) }
+        manage.tap()
+        XCTAssertTrue(app.navigationBars["模組"].waitForExistence(timeout: 5), app.debugDescription)
+        // 新增模組 → 從網址; on iOS 17 a chooser row, opened once the chooser has gone.
+        app.buttons["modules.add"].firstMatch.tap()
         let address = item(app, "從網址")
         XCTAssertTrue(address.waitForExistence(timeout: 5), app.debugDescription)
         XCTAssertTrue(item(app, "從檔案").exists && item(app, "從剪貼簿").exists, app.debugDescription)
@@ -100,15 +89,23 @@ final class ModuleLibraryUITests: XCTestCase {
         attach(app, "modules-import-preview")
         commit.tap()
         XCTAssertFalse(commit.waitForExistence(timeout: 3), "the sheet closes once the module is added")
+
+        // Back to 資源庫: 模組 hides the tab bar.
+        app.navigationBars["模組"].buttons.element(boundBy: 0).tap()
+        let library = app.tabBars.buttons["資源庫"].firstMatch
+        XCTAssertTrue(library.waitForExistence(timeout: 5), app.debugDescription)
+        library.tap()
     }
 
     @MainActor
     func testAddFromAddressThenRemove() {
         let app = launch()
-        let empty = scrolledTo(app.buttons["library.modules.add"].firstMatch, in: app)
-        let shown = empty.waitForExistence(timeout: 10)
+        // 模組 holds the official ones alone: no card to add one (設定 adds them).
+        let official = scrolledTo(app.buttons["library.module.official.aiRecommendations"].firstMatch, in: app)
+        XCTAssertTrue(official.waitForExistence(timeout: 10), app.debugDescription)
+        XCTAssertFalse(app.buttons["library.module.uitest.module"].exists, app.debugDescription)
+        XCTAssertFalse(app.buttons["library.modules.add"].exists, app.debugDescription)
         attach(app, "modules-empty")
-        XCTAssertTrue(shown, app.debugDescription)
 
         addFixtureModule(app)
 
@@ -131,18 +128,15 @@ final class ModuleLibraryUITests: XCTestCase {
         confirm.tap()
 
         XCTAssertFalse(app.navigationBars["測試模組"].waitForExistence(timeout: 3), app.debugDescription)
-        XCTAssertTrue(scrolledTo(app.buttons["library.modules.add"].firstMatch, in: app).waitForExistence(timeout: 10),
-                      app.debugDescription)
+        XCTAssertTrue(app.buttons["library.module.uitest.module"].waitForNonExistence(timeout: 10), app.debugDescription)
         attach(app, "modules-removed")
     }
 
-    /// AI 推薦 8d: 模組 lists AI 推薦 even with no module imported, and the empty 新增模組
-    /// card still shows after the official ones. Its page names what is sent and offers 產生推薦.
+    /// AI 推薦 8d: 模組 lists AI 推薦 even with no module imported. Its page names what is sent and
+    /// offers 產生推薦.
     @MainActor
     func testOfficialModuleIsListed() {
         let app = launch(extra: ["-debug-force-pro"])
-        XCTAssertTrue(scrolledTo(app.buttons["library.modules.add"].firstMatch, in: app).waitForExistence(timeout: 10),
-                      "an official module does not hide the empty 新增模組 card\n\(app.debugDescription)")
         let official = scrolledTo(app.buttons["library.module.official.aiRecommendations"].firstMatch, in: app)
         XCTAssertTrue(official.waitForExistence(timeout: 10), app.debugDescription)
         XCTAssertEqual(official.label, "AI 推薦")

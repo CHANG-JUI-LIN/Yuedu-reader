@@ -35,7 +35,8 @@ private enum BookSourceFileImportRoute: Hashable {
     case document
 }
 
-/// 新增來源配置, one flow for 來源配置管理's 「+」 and 資源庫's ••• (Phase 5 plan, decision 31; 5h-4).
+/// 新增來源配置, 來源配置管理's 「+」 (Phase 5 plan, decision 31; 5h-4). 資源庫's ••• opened it too
+/// until 設定 became the one place to add a source (maintainer, 2026-10-27).
 /// Moved out of `BookSourceListView` unchanged: every route parses, then waits on the
 /// confirmation list, and nothing is written until the reader confirms.
 ///
@@ -85,8 +86,9 @@ final class BookSourceAddFlow: ObservableObject {
 
     // MARK: Opening
 
-    /// Opens a route. 來源配置管理 asks for the source disclaimer as it opens; 資源庫 does not,
-    /// so a reader who has not accepted it sees it first, and the route follows its dismissal.
+    /// Opens a route. 來源配置管理 asks for the source disclaimer as it opens, and 資源庫's •••,
+    /// which also opened routes until 2026-10-27, did not: a reader who has not accepted it sees it
+    /// first, and the route follows its dismissal.
     func begin(_ route: BookSourceAddRoute) {
         guard let route = disclaimer.pass(route) else { return }
         switch route {

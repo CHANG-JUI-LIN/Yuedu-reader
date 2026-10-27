@@ -4,21 +4,18 @@ import SwiftUI
 /// one group (maintainer 2026-10-26: 「官方模組跟匯入的模組匯合在一起，然後就叫模組」). In order:
 /// the app's own (`AppOfficialModule`: AI 推薦, 古騰堡 and 青空文庫), the bundled module files, then
 /// each imported module and each folder that could not be read, which can only be removed.
-/// 新增模組 is a card of its own while nothing is imported.
+/// 新增模組 is 設定's (模組's toolbar; maintainer 2026-10-27: 資源庫 lists, 設定 adds).
 struct RuleModuleSection<Libraries: View>: View {
     @ObservedObject var library: RuleModuleLibrary
     @ObservedObject private var availability = PublicLibraryAvailability.shared
-    /// 新增模組 from the empty card: by address, as the most common way in.
-    let onAdd: () -> Void
     /// 古騰堡's and 青空文庫's cards, which show what their catalogs hold.
     private let libraries: (SourceInstanceKey, ExploreEntryLabel.Layout) -> Libraries
     @State private var pendingRemoval: RuleModuleStore.Failure?
     @State private var removalFailure: String?
 
-    init(library: RuleModuleLibrary? = nil, onAdd: @escaping () -> Void,
+    init(library: RuleModuleLibrary? = nil,
          @ViewBuilder libraries: @escaping (SourceInstanceKey, ExploreEntryLabel.Layout) -> Libraries) {
         self.library = library ?? .shared
-        self.onAdd = onAdd
         self.libraries = libraries
     }
 
@@ -66,16 +63,6 @@ struct RuleModuleSection<Libraries: View>: View {
                     .accessibilityHint(localized("移除模組"))
                     .accessibilityIdentifier("library.module.failed.\(failure.folder)")
                 }
-                if imported.isEmpty && library.failures.isEmpty {
-                    Button(action: onAdd) {
-                        ExploreEntryLabel(title: localized("新增模組"), artwork: .neutral("plus"), layout: layout,
-                                          subtitle: localized("還沒有模組"))
-                    }
-                    .buttonStyle(ExploreTileButtonStyle())
-                    .accessibilityLabel(localized("新增模組"))
-                    .accessibilityValue(localized("還沒有模組"))
-                    .accessibilityIdentifier("library.modules.add")
-                }
             }
         }
         .confirmationDialog(pendingRemoval.map { String(format: localized("移除「%@」？"), $0.folder) } ?? "",
@@ -106,8 +93,8 @@ struct RuleModuleSection<Libraries: View>: View {
 }
 
 extension RuleModuleSection where Libraries == EmptyView {
-    init(library: RuleModuleLibrary? = nil, onAdd: @escaping () -> Void) {
-        self.init(library: library, onAdd: onAdd) { _, _ in EmptyView() }
+    init(library: RuleModuleLibrary? = nil) {
+        self.init(library: library) { _, _ in EmptyView() }
     }
 }
 
@@ -135,7 +122,7 @@ struct RuleModuleCard: View {
 #Preview("Official only") {
     NavigationStack {
         ScrollView {
-            RuleModuleSection(library: RuleModulePreviewData.officialLibrary(), onAdd: {})
+            RuleModuleSection(library: RuleModulePreviewData.officialLibrary())
                 .padding(DSSpacing.lg)
         }
     }
@@ -144,7 +131,7 @@ struct RuleModuleCard: View {
 #Preview("Two imported") {
     NavigationStack {
         ScrollView {
-            RuleModuleSection(library: RuleModulePreviewData.library(["新書速報", "排行榜"]), onAdd: {})
+            RuleModuleSection(library: RuleModulePreviewData.library(["新書速報", "排行榜"]))
                 .padding(DSSpacing.lg)
         }
     }

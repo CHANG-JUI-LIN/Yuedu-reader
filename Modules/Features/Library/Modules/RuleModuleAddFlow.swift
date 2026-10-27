@@ -23,9 +23,10 @@ enum RuleModuleAddRoute: CaseIterable, Hashable {
     }
 }
 
-/// 新增模組, from 資源庫's ••• or its empty card. The source disclaimer comes first, as for a
-/// 來源配置 (`SourceDisclaimerGate`). The file picker is presented from the page itself, never
-/// from a sheet: on iOS 17 a sheet cannot present it (`BookSourceImportPresentationPolicy`).
+/// 新增模組, from 設定's 模組 (its toolbar; 資源庫's ••• and empty card until 2026-10-27). The
+/// source disclaimer comes first, as for a 來源配置 (`SourceDisclaimerGate`). The file picker is
+/// presented from the page itself, never from a sheet: on iOS 17 a sheet cannot present it
+/// (`BookSourceImportPresentationPolicy`).
 @MainActor
 final class RuleModuleAddFlow: ObservableObject {
     @Published var showsSheet = false

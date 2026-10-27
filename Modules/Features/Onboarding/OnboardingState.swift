@@ -86,7 +86,7 @@ enum OnboardingStart: String, CaseIterable, Identifiable {
     var titleKey: String {
         switch self {
         case .explore: return "去探索找書"
-        // 資源庫's ••• item, by its name.
+        // What 來源配置管理's 「＋」 is called, as 設定 adds one (2026-10-27).
         case .addSources: return "新增來源配置"
         case .connectLibrary: return "連接書庫"
         // 添加書籍's own tab, by its name.

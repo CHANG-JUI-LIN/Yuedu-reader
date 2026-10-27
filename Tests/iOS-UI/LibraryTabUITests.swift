@@ -126,12 +126,6 @@ final class LibraryTabUITests: XCTestCase {
         XCTAssertTrue(aozoraHost.waitForExistence(timeout: 5), app.debugDescription)
         back(app)
 
-        let remote = app.buttons["library.manageRemote"].firstMatch
-        XCTAssertTrue(remote.waitForExistence(timeout: 5), app.debugDescription)
-        remote.tap()
-        XCTAssertTrue(app.navigationBars["遠端書庫"].waitForExistence(timeout: 5), app.debugDescription)
-        back(app)
-
         let sources = app.buttons["library.sources"].firstMatch
         XCTAssertTrue(sources.waitForExistence(timeout: 5), app.debugDescription)
         sources.tap()
@@ -144,11 +138,19 @@ final class LibraryTabUITests: XCTestCase {
         XCTAssertTrue(app.navigationBars["RSS 訂閱"].waitForExistence(timeout: 5), app.debugDescription)
         back(app)
 
-        // 設定 no longer has them.
+        // Adding a source is 設定's (maintainer, 2026-10-27): 來源配置管理 and 遠端書庫 are its
+        // rows, beside 模組. 遠端書庫 is no card here while nothing is connected.
         app.tabBars.buttons["設定"].firstMatch.tap()
-        XCTAssertTrue(app.navigationBars.firstMatch.waitForExistence(timeout: 5))
-        XCTAssertFalse(app.buttons["settings_remote_libraries"].exists)
-        XCTAssertFalse(app.buttons["管理來源配置"].exists)
+        let remote = app.buttons["settings_remote_libraries"].firstMatch
+        XCTAssertTrue(remote.waitForExistence(timeout: 5), app.debugDescription)
+        XCTAssertTrue(app.buttons["settings_sources"].exists && app.buttons["settings_modules"].exists,
+                      app.debugDescription)
+        attach(app, "settings-sources")
+        remote.tap()
+        XCTAssertTrue(app.navigationBars["遠端書庫"].waitForExistence(timeout: 5), app.debugDescription)
+        back(app)
+        app.buttons["settings_sources"].firstMatch.tap()
+        XCTAssertTrue(app.navigationBars["來源配置管理"].waitForExistence(timeout: 5), app.debugDescription)
     }
 
     /// RSS 訂閱, the page's last card, as a reader who has closed 所有來源都在這裡 finds it. With
@@ -254,34 +256,19 @@ final class LibraryTabUITests: XCTestCase {
         XCTAssertFalse(app.buttons["library.sources.all"].exists)
     }
 
-    /// The ••• (decision 31): 新增來源配置 opens the same import as 來源配置管理's 「+」, and
-    /// 管理來源配置 pushes 來源配置管理. On iOS 17 both are rows of a chooser.
+    /// The ••• (decision 31): 管理來源配置 and the layout. 新增來源配置 and 新增模組 left it for 設定
+    /// (maintainer, 2026-10-27). On iOS 17 its items are rows of a chooser.
     @MainActor
     func testMoreMenu() {
         let app = launch()
         let more = app.buttons["library.more"].firstMatch
         XCTAssertTrue(more.waitForExistence(timeout: 5), app.debugDescription)
         more.tap()
-        if #available(iOS 18, *) {
-            let add = app.buttons["新增來源配置"].firstMatch
-            XCTAssertTrue(add.waitForExistence(timeout: 5), app.debugDescription)
-            XCTAssertTrue(app.buttons["管理來源配置"].firstMatch.exists, app.debugDescription)
-            attach(app, "library-more-menu")
-            add.tap()
-        }
-        let network = item(app, "網路匯入")
-        XCTAssertTrue(network.waitForExistence(timeout: 5), app.debugDescription)
-        XCTAssertTrue(item(app, "手動新增").exists && item(app, "本機匯入").exists, app.debugDescription)
-        attach(app, "library-more-add")
-        network.tap()
-        XCTAssertTrue(app.navigationBars["網路匯入"].waitForExistence(timeout: 5), app.debugDescription)
-        attach(app, "library-more-network-import")
-        app.navigationBars["網路匯入"].buttons["關閉"].tap()
-        XCTAssertFalse(app.navigationBars["網路匯入"].waitForExistence(timeout: 2), app.debugDescription)
-
-        more.tap()
         let manage = item(app, "管理來源配置")
         XCTAssertTrue(manage.waitForExistence(timeout: 5), app.debugDescription)
+        XCTAssertFalse(item(app, "新增來源配置").exists || item(app, "手動新增").exists, app.debugDescription)
+        XCTAssertFalse(item(app, "新增模組").exists || item(app, "從網址").exists, app.debugDescription)
+        attach(app, "library-more-menu")
         manage.tap()
         XCTAssertTrue(app.navigationBars["來源配置管理"].waitForExistence(timeout: 5), app.debugDescription)
 

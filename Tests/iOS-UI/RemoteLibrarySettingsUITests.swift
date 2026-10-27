@@ -12,13 +12,14 @@ final class RemoteLibrarySettingsUITests: XCTestCase {
         let notNow = app.buttons["Don’t Allow"]
         if notNow.waitForExistence(timeout: 5) { notNow.tap() }
 
-        // 遠端書庫 is managed from 資源庫 since 5h (Phase 5 plan, decision 31).
-        let libraryTab = app.tabBars.buttons["Sources"].firstMatch
-        XCTAssertTrue(libraryTab.waitForExistence(timeout: 20))
-        libraryTab.tap()
-        let row = app.buttons["library.manageRemote"].firstMatch
-        for _ in 0..<4 where !row.exists { app.swipeUp() }
-        XCTAssertTrue(row.waitForExistence(timeout: 5), "管理遠端書庫 sits in 資源庫")
+        // 遠端書庫 is 設定's again (maintainer, 2026-10-27: every way to add a source is there);
+        // 資源庫 lists only the libraries connected.
+        let settingsTab = app.tabBars.buttons["Settings"].firstMatch
+        XCTAssertTrue(settingsTab.waitForExistence(timeout: 20))
+        settingsTab.tap()
+        let row = app.buttons["settings_remote_libraries"].firstMatch
+        for _ in 0..<4 where !row.isHittable { app.swipeUp() }
+        XCTAssertTrue(row.waitForExistence(timeout: 5), "遠端書庫 sits in 設定")
         row.tap()
         XCTAssertTrue(app.navigationBars["Remote Library"].waitForExistence(timeout: 8))
 
@@ -67,12 +68,13 @@ final class RemoteLibrarySettingsUITests: XCTestCase {
         app.launch()
         let notNow = app.buttons["Don’t Allow"]
         if notNow.waitForExistence(timeout: 5) { notNow.tap() }
-        // 遠端書庫 is managed from 資源庫 since 5h (Phase 5 plan, decision 31).
-        let libraryTab = app.tabBars.buttons["Sources"].firstMatch
-        XCTAssertTrue(libraryTab.waitForExistence(timeout: 20))
-        libraryTab.tap()
-        let row = app.buttons["library.manageRemote"].firstMatch
-        for _ in 0..<4 where !row.exists { app.swipeUp() }
+        // 遠端書庫 is 設定's again (maintainer, 2026-10-27: every way to add a source is there);
+        // 資源庫 lists only the libraries connected.
+        let settingsTab = app.tabBars.buttons["Settings"].firstMatch
+        XCTAssertTrue(settingsTab.waitForExistence(timeout: 20))
+        settingsTab.tap()
+        let row = app.buttons["settings_remote_libraries"].firstMatch
+        for _ in 0..<4 where !row.isHittable { app.swipeUp() }
         row.tap()
         XCTAssertTrue(app.navigationBars["Remote Library"].waitForExistence(timeout: 8))
 
@@ -111,12 +113,13 @@ final class RemoteLibrarySettingsUITests: XCTestCase {
         app.launch()
         let notNow = app.buttons["Don’t Allow"]
         if notNow.waitForExistence(timeout: 5) { notNow.tap() }
-        // 遠端書庫 is managed from 資源庫 since 5h (Phase 5 plan, decision 31).
-        let libraryTab = app.tabBars.buttons["Sources"].firstMatch
-        XCTAssertTrue(libraryTab.waitForExistence(timeout: 20))
-        libraryTab.tap()
-        let row = app.buttons["library.manageRemote"].firstMatch
-        for _ in 0..<4 where !row.exists { app.swipeUp() }
+        // 遠端書庫 is 設定's again (maintainer, 2026-10-27: every way to add a source is there);
+        // 資源庫 lists only the libraries connected.
+        let settingsTab = app.tabBars.buttons["Settings"].firstMatch
+        XCTAssertTrue(settingsTab.waitForExistence(timeout: 20))
+        settingsTab.tap()
+        let row = app.buttons["settings_remote_libraries"].firstMatch
+        for _ in 0..<4 where !row.isHittable { app.swipeUp() }
         row.tap()
 
         let addRow = app.buttons["remote_library_add_webDAV"].firstMatch
