@@ -517,7 +517,7 @@ enum DSLayout {
     static let homeRankBadgeSize: CGFloat = 24
     /// The layouts after Apple Books' store and home (maintainer, 2026-10-25;
     /// `Technotes/AppleBooksHomeLayouts-2026-10-25.md`), all 2:3.
-    /// 色帶書架's covers, alone on the band: about two and a half to a 402pt phone. Not scaled:
+    /// The 頂部輪播圖's covers, alone on the band: about two and a half to a 402pt phone. Not scaled:
     /// no text goes with them.
     static let homeBandCoverWidth: CGFloat = 150
     /// 大型封面書架's covers, with their titles under them: two to a 402pt phone, the third
@@ -538,6 +538,20 @@ enum DSLayout {
     /// collage is one large cover and two small ones as tall as it.
     static let homeCollageCardWidth: CGFloat = 240
     static let homeCollageCardMaxWidth: CGFloat = 340
+    /// The 頂部輪播圖 (maintainer, 2026-10-27): its colour runs this far above its top, behind
+    /// the bars and the status bar, and past them when the page is pulled down to refresh.
+    static let homeCarouselBleed: CGFloat = 1000
+    /// 大圖卡片 (maintainer, 2026-10-27), as Apple Books Japan's エディターのおすすめ: a card a
+    /// page, this wide for its height, its covers this share of its height, each next one
+    /// this share of a cover's width along and turned this much more.
+    static let homeBannerAspect: CGFloat = 1.6
+    static let homeBannerCoverHeightShare: CGFloat = 0.72
+    static let homeBannerCoverStep: CGFloat = 0.62
+    static let homeBannerCoverRotation: Double = 5
+    /// 編輯首頁's header (maintainer, 2026-10-27, after an Emby client's editor): the 首頁配置's
+    /// round photo, with its camera badge this big at its bottom trailing edge.
+    static let homeEditorPhotoSize: CGFloat = 72
+    static let homeEditorPhotoBadgeSize: CGFloat = 26
     /// Site icon in a bookmark or history row.
     static let browserRowIconSide: CGFloat = 28
     /// A site on the browser's start page — Safari's Favorites: the icon, and the

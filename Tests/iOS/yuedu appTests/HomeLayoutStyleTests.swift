@@ -21,7 +21,7 @@ struct HomeLayoutStyleTests {
         }
         #expect(HomeSectionLayout(style: .row) == .row)
         #expect(HomeSectionLayout(style: .row, ranked: true) == .rankedRow)
-        #expect(HomeSectionLayout(style: .band, ranked: true) == .band, "ranks are kept only where they are drawn")
+        #expect(HomeSectionLayout(style: .largeRow, ranked: true) == .largeRow, "ranks are kept only where they are drawn")
     }
 
     @Test("a custom page's seven kinds draw as decision 14 maps them")
@@ -72,7 +72,17 @@ struct HomeLayoutStyleTests {
         for binding in [HomeSectionBinding.continueReading, .latest, .aiRecommendations] {
             #expect(HomeLayoutStyle.choices(for: binding) == HomeLayoutStyle.allCases.filter { !$0.drawsLists })
         }
-        #expect(HomeLayoutStyle.choices(for: .gutenbergLists) == [.collection, .categoryCards, .collageCards])
+        #expect(HomeLayoutStyle.choices(for: .gutenbergLists) == [.collection, .categoryCards, .collageCards, .bannerCards])
+    }
+
+    @Test("色帶書架 is the 頂部輪播圖, no layout to choose: a band saved anywhere else draws as 大型封面書架")
+    func bandIsTheCarousel() {
+        #expect(HomeSectionLayout.band.isKnown)
+        #expect(HomeSectionLayout.band.style == .largeRow)
+        for binding in [HomeSectionBinding.latest, .gutenbergLists, .sourceCategories([])] {
+            #expect(!HomeLayoutStyle.choices(for: binding).contains { HomeSectionLayout(style: $0) == .band })
+        }
+        #expect(HomeSectionLayout(style: .bannerCards) == .bannerCards)
     }
 
     @Test("繼續閱讀 starts as 精簡閱讀卡片, 古騰堡熱門 ranked, 精選書單 as 分類卡片; the other defaults as a row")

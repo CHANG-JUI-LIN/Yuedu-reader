@@ -37,20 +37,36 @@ struct HomeDesignFixture: View {
 private struct HomeDesignFixturePage: View {
     let store: BookStore
 
+    private let groups = HomeScopeFilter.groups(HomeDesignFixtureData.rows, in: nil)
+
+    /// The first band, drawn at the top as the home draws its 頂部輪播圖; the other draws as
+    /// 大型封面書架.
+    private var carousel: HomeSectionGroup? { groups.first { $0.section.layout == .band } }
+
     var body: some View {
         ScrollView {
-            LazyVStack(alignment: .leading, spacing: DSSpacing.xxl) {
-                ForEach(HomeScopeFilter.groups(HomeDesignFixtureData.rows, in: nil)) { group in
-                    HomeRowView(group: group, content: HomeDesignFixtureData.content(for: group, store: store),
-                                load: {}, request: {}, showAll: group.state.isSettled ? {} : nil,
-                                open: { _, _ in }, openLocation: { _ in },
-                                // The ••• shows; its items do nothing to the made-up copies.
-                                bookActions: HomeBookActions(removeFromContinueReading: { _ in }, markFinished: { _ in }))
+            VStack(spacing: 0) {
+                if let carousel {
+                    row(carousel)
+                        .environment(\.homeRowIsCarousel, true)
                 }
+                LazyVStack(alignment: .leading, spacing: DSSpacing.xxl) {
+                    ForEach(groups.filter { $0.id != carousel?.id }) { group in
+                        row(group)
+                    }
+                }
+                .padding(.vertical, DSSpacing.lg)
             }
-            .padding(.vertical, DSSpacing.lg)
         }
         .themedAppSurface(for: .explore)
+    }
+
+    private func row(_ group: HomeSectionGroup) -> some View {
+        HomeRowView(group: group, content: HomeDesignFixtureData.content(for: group, store: store),
+                    load: {}, request: {}, showAll: group.state.isSettled ? {} : nil,
+                    open: { _, _ in }, openLocation: { _ in },
+                    // The ••• shows; its items do nothing to the made-up copies.
+                    bookActions: HomeBookActions(removeFromContinueReading: { _ in }, markFinished: { _ in }))
     }
 }
 
@@ -115,8 +131,9 @@ enum HomeDesignFixtureData {
                 name: localized("Project Gutenberg"), policy: .local, state: .loaded(collection)),
             row(.gutenbergCollection(id: chinese.id), layout: .coverGrid, source: gutenberg,
                 name: localized("Project Gutenberg"), policy: .local, state: .loading),
-            // After Apple Books' store and home (2026-10-25): the band loaded and loading, the
-            // other new layouts of books, and the two new layouts of lists.
+            // After Apple Books' store and home (2026-10-25): the band loaded, drawn at the top
+            // as the 頂部輪播圖 (2026-10-27), and loading, drawn as 大型封面書架 as any band after
+            // the first is; the other new layouts of books, and the three new layouts of lists.
             row(.gutenbergCollection(id: chinese.id), layout: .band, source: gutenberg,
                 name: localized("Project Gutenberg"), policy: .local, state: .loaded(collection)),
             row(.gutenbergCollection(id: chinese.id), layout: .band, source: gutenberg,
@@ -130,6 +147,8 @@ enum HomeDesignFixtureData {
             row(.gutenbergLists, layout: .categoryCards, source: gutenberg, name: localized("Project Gutenberg"),
                 policy: .local, state: .loaded(PublicLibraryCollection.all.map { .collection(.bundledGutenberg($0)) })),
             row(.gutenbergLists, layout: .collageCards, source: gutenberg, name: localized("Project Gutenberg"),
+                policy: .local, state: .loaded(PublicLibraryCollection.all.map { .collection(.bundledGutenberg($0)) })),
+            row(.gutenbergLists, layout: .bannerCards, source: gutenberg, name: localized("Project Gutenberg"),
                 policy: .local, state: .loaded(PublicLibraryCollection.all.map { .collection(.bundledGutenberg($0)) })),
             row(.aozoraIndex(kind: AozoraBrowseMode.authors.rawValue), source: aozora, name: localized("青空文庫"),
                 policy: .local, state: .loaded(authors)),

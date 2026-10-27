@@ -9,6 +9,9 @@ import SwiftUI
 //   covers fanned at the trailing edge and cut off by the card's.
 // - 拼貼卡片: as Top Picks, a card per list swiped sideways, its first cover large and the next
 //   two small beside it, over its name and how many books it holds.
+// The maintainer, 2026-10-27, after Apple Books Japan's store (§9 of the same note):
+// - 大圖卡片: as エディターのおすすめ, a wide card a page under the list's source and name, the
+//   list's covers fanned on the first one's colour, the next card showing past the edge.
 
 /// A section's lists in its layout. A section of lists given a layout of books (a custom page's,
 /// a later build's) draws 專題集合, the layout every section of lists can take.
@@ -21,6 +24,7 @@ struct HomeSectionLists: View {
         switch layout.style {
         case .categoryCards: HomeCategoryCards(collections: collections, open: open)
         case .collageCards: HomeCollageCards(collections: collections, open: open)
+        case .bannerCards: HomeBannerCards(collections: collections, open: open)
         default: HomeCollectionCards(collections: collections, open: open)
         }
     }
@@ -92,6 +96,16 @@ extension CollectionSummary {
 }
 
 extension CollectionOpening {
+    /// The list's source, as 大圖卡片 names it over the list: Gutenberg, or the 來源配置 the
+    /// category is one of.
+    @MainActor
+    var sourceName: String {
+        switch self {
+        case .gutenbergCollection: localized("Project Gutenberg")
+        case .sourceCategory(let category): category.source?.bookSourceName ?? ""
+        }
+    }
+
     /// The session a list's covers load through: Gutenberg's built-in connection's, as the store
     /// loads them. A book source's covers carry its headers in their reference, as its rows' do.
     @MainActor
@@ -291,6 +305,122 @@ struct HomeCollageCard: View {
     }
 }
 
+// MARK: - 大圖卡片
+
+/// The lists a card to a page, the next one showing past the edge; two to a page on a wider
+/// screen, as 專題集合 pages them.
+struct HomeBannerCards: View {
+    let collections: [CollectionSummary]
+    let open: (CollectionSummary) -> Void
+
+    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
+
+    var body: some View {
+        let perScreen = horizontalSizeClass == .regular ? 2 : 1
+        ScrollView(.horizontal) {
+            LazyHStack(alignment: .top, spacing: DSSpacing.md) {
+                ForEach(collections) { collection in
+                    HomeCollectionButton(collection: collection, value: collection.sourceName ?? collection.opening.sourceName,
+                                         open: open) {
+                        HomeBannerCard(collection: collection)
+                    }
+                    .containerRelativeFrame(.horizontal) { length, _ in
+                        let peek = collections.count > perScreen ? DSLayout.homeReadingCardPeek + DSSpacing.md : 0
+                        let gaps = DSSpacing.md * CGFloat(perScreen - 1)
+                        return max(0, (length - gaps - peek) / CGFloat(perScreen))
+                    }
+                }
+            }
+            .scrollTargetLayout()
+        }
+        .modifier(HomeSidewaysScroll())
+    }
+}
+
+/// One list as エディターのおすすめ draws a pick: its source small and its name large over a wide
+/// card, the card the list's covers fanned on the first one's colour, the placeholder grey until
+/// that cover has drawn. The name keeps two lines, so cards side by side line up.
+struct HomeBannerCard: View {
+    let collection: CollectionSummary
+    var connections: RemoteLibraryConnectionStore = .shared
+
+    /// The first cover's average colour, once it has drawn.
+    @State private var coverColor: CoverTint.RGB?
+
+    /// The cover's colour as it is: nothing is written on it.
+    private var ground: Color {
+        coverColor?.color ?? DSColor.coverTintPlaceholder
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: DSSpacing.sm) {
+            VStack(alignment: .leading, spacing: DSSpacing.xxs) {
+                Text(collection.sourceName ?? collection.opening.sourceName)
+                    .font(DSFont.caption.weight(.semibold))
+                    .foregroundStyle(DSColor.textSecondary)
+                    .lineLimit(1)
+                Text(collection.title)
+                    .font(DSFont.title3.weight(.bold))
+                    .foregroundStyle(DSColor.textPrimary)
+                    .lineLimit(2, reservesSpace: true)
+            }
+            .multilineTextAlignment(.leading)
+            artwork
+        }
+    }
+
+    private var artwork: some View {
+        let shape = RoundedRectangle(cornerRadius: DSRadius.lg, style: .continuous)
+        return Color.clear
+            .aspectRatio(DSLayout.homeBannerAspect, contentMode: .fit)
+            .overlay { GeometryReader { proxy in covers(in: proxy.size) } }
+            .background(ground)
+            .clipShape(shape)
+            .shadow(color: DSColor.shadow, radius: DSLayout.exploreCardShadowRadius, y: DSLayout.exploreCardShadowY)
+            .contentShape(shape)
+            .animation(DSAnimation.standard, value: coverColor)
+            .accessibilityHidden(true)
+    }
+
+    /// The first cover in the middle and in front, the next ones beside and behind it, each
+    /// turned a little away from it.
+    private func covers(in size: CGSize) -> some View {
+        let height = size.height * DSLayout.homeBannerCoverHeightShare
+        let coverSize = CGSize(width: height * DSLayout.discoverCoverAspectRatio, height: height)
+        let session = collection.opening.coverSession(connections: connections)
+        return ZStack {
+            ForEach(collection.books.indices, id: \.self) { index in
+                cover(index, size: coverSize, session: session)
+            }
+        }
+        .frame(width: size.width, height: size.height)
+    }
+
+    /// 0 in the middle, then 1 to the trailing side and -1 to the leading one.
+    private static let places: [CGFloat] = [0, 1, -1]
+
+    private func cover(_ index: Int, size: CGSize, session: URLSession?) -> some View {
+        let book = collection.books[index]
+        let place = Self.places[index % Self.places.count]
+        return HomeCardCover(cover: .reference(book.cover, session: session), title: book.title,
+                             author: book.authors.joined(separator: "、"), size: size)
+            .environment(\.coverImageObserver, index == 0 ? reportFirstCover : nil)
+            .rotationEffect(.degrees(DSLayout.homeBannerCoverRotation * Double(place)))
+            .offset(x: size.width * DSLayout.homeBannerCoverStep * place)
+            .zIndex(-Double(abs(place)))
+    }
+
+    /// The first cover's image, averaged off the main actor into the card's colour.
+    private var reportFirstCover: @MainActor (UIImage) -> Void {
+        { [coverColor = $coverColor] image in
+            Task {
+                let color = await Task.detached(priority: .utility) { CoverTint.average(of: image) }.value
+                if color != coverColor.wrappedValue { coverColor.wrappedValue = color }
+            }
+        }
+    }
+}
+
 /// A list's artwork: its first covers side by side, tilted, on a plain ground. The public-library
 /// storefront's 精選書單 drew it first; the home's 專題集合 (decision 37) draws it with the home's covers.
 /// `cover` draws one cover in the size given, a third of the artwork's width by its height.
@@ -341,6 +471,19 @@ struct CollectionCoverArtwork<Cover: View>: View {
     ScrollView {
         HomeCategoryCards(collections: categories, open: { _ in })
             .padding(.vertical, DSSpacing.lg)
+    }
+}
+
+#Preview("大圖卡片，古騰堡精選書單") {
+    let lists = PublicLibraryCollection.all.map(CollectionSummary.bundledGutenberg)
+    ScrollView {
+        VStack(alignment: .leading, spacing: DSSpacing.xxl) {
+            HomeBannerCards(collections: lists, open: { _ in })
+            // 兒童與青少年 holds two books: a fan of two.
+            HomeBannerCards(collections: [lists[2]], open: { _ in })
+                .environment(\.dynamicTypeSize, .accessibility3)
+        }
+        .padding(.vertical, DSSpacing.lg)
     }
 }
 

@@ -49,6 +49,12 @@ extension HomeSection {
     }
 }
 
+extension EnvironmentValues {
+    /// The row is the home's 頂部輪播圖 (maintainer, 2026-10-27): its section's books on the band
+    /// at the top of the page, and its long press its own (選擇輪播數據, 關閉輪播圖).
+    @Entry var homeRowIsCarousel = false
+}
+
 /// What a row shows once loaded, resolved against the shelf as it is now.
 struct HomeRowContent {
     var cards: [HomeCardContent]
@@ -131,9 +137,9 @@ struct HomeRowView: View {
     /// A shelf copy's ••• on 精簡閱讀卡片 (5d-3c); none in a fixture.
     var bookActions: HomeBookActions?
 
-    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    @Environment(\.homeRowIsCarousel) private var isCarousel
     @Environment(\.colorSchemeContrast) private var contrast
-    /// 色帶書架's colour, its first cover's, once that cover has drawn.
+    /// The 頂部輪播圖's colour, its first cover's, once that cover has drawn.
     @State private var bandCover: CoverTint.RGB?
 
     var body: some View {
@@ -152,11 +158,10 @@ struct HomeRowView: View {
         .task { load() }
     }
 
-    /// 色帶書架 draws its band while its covers load and once they have; a row that failed, or
-    /// that holds no books (訂閱的最新文章's articles), is drawn without it.
+    /// The 頂部輪播圖 draws its band while its covers load and once they have; one that failed,
+    /// or that holds no books (訂閱的最新文章's articles), is drawn without it.
     private var drawsBand: Bool {
-        guard group.section.layout.drawnStyle(accessibilityTextSize: dynamicTypeSize.isAccessibilitySize) == .band
-        else { return false }
+        guard isCarousel else { return false }
         switch group.state {
         case .idle, .loading: return true
         case .failed: return false
@@ -238,7 +243,7 @@ struct HomeRowView: View {
                                  collections: group.section.shownCategories.map(CollectionSummary.placeholder), open: { _ in })
             } else {
                 HomeSectionCards(layout: group.section.layout, cards: (0..<6).map(HomeCardContent.placeholder), rowID: group.id,
-                                 hasShowAll: showAll != nil, open: { _, _ in }, bandCover: $bandCover)
+                                 hasShowAll: showAll != nil, open: { _, _ in }, bandCover: drawsBand ? $bandCover : nil)
             }
         }
         .redacted(reason: .placeholder)
@@ -251,7 +256,7 @@ struct HomeRowView: View {
 
     private func cards(_ cards: [HomeCardContent]) -> some View {
         HomeSectionCards(layout: group.section.layout, cards: cards, rowID: group.id, hasShowAll: showAll != nil, open: open,
-                         bookActions: bookActions, bandCover: $bandCover)
+                         bookActions: bookActions, bandCover: drawsBand ? $bandCover : nil)
     }
 
     private func locationChips(_ locations: [CollectionLocation]) -> some View {
@@ -290,7 +295,7 @@ struct HomeRowTitle: View {
     let title: String
     var subtitle: String? = nil
     var showsChevron = false
-    /// 色帶書架's header, on the cover's colour: the name and chevron white, the line this
+    /// The 頂部輪播圖's header, on the cover's colour: the name and chevron white, the line this
     /// colour (the cover's hue made light, as 精簡閱讀卡片's kind line).
     var bandLine: Color? = nil
 
@@ -323,7 +328,21 @@ struct HomeSectionActionsMenu: View {
     let section: HomeSection
     let actions: HomeSectionActions
 
+    @Environment(\.homeRowIsCarousel) private var isCarousel
+
     var body: some View {
+        if isCarousel {
+            // The 輪播圖's own, as 編輯首頁's header has them: its layout is the band, and
+            // closing it keeps what it shows.
+            Button(localized("選擇輪播數據"), systemImage: "rectangle.stack", action: actions.openSettings)
+            Button(localized("關閉輪播圖"), systemImage: "eye.slash", action: actions.hide)
+        } else {
+            sectionActions
+        }
+    }
+
+    @ViewBuilder
+    private var sectionActions: some View {
         let layout = section.layout
         let choices = HomeLayoutStyle.choices(for: section.binding)
         if choices.count > 1 {

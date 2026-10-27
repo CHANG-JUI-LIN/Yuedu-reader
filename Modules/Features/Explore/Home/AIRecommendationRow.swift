@@ -23,9 +23,9 @@ struct AIRecommendationRow: View {
     @State private var showsPaywall = false
     @State private var showsMoreChooser = false
     @State private var moreSequence = DismissalSequencedPresentation<MoreAction>()
-    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    @Environment(\.homeRowIsCarousel) private var isCarousel
     @Environment(\.colorSchemeContrast) private var contrast
-    /// 色帶書架's colour, its first cover's, once that cover has drawn.
+    /// The 頂部輪播圖's colour, its first cover's, once that cover has drawn.
     @State private var bandCover: CoverTint.RGB?
 
     /// - Parameter service: the shared one; a preview passes its own, with its own store.
@@ -87,11 +87,11 @@ struct AIRecommendationRow: View {
         canGenerate && allowsAI && list != nil && !service.state.isRunning
     }
 
-    /// 色帶書架 draws its band under the header and the list while the list shows alone; a status
-    /// (產生中, a failure) draws the row without it, so its text keeps the page's colours.
+    /// As the 頂部輪播圖 it draws its band under the header and the list while the list shows
+    /// alone; a status (產生中, a failure) draws the row without it, so its text keeps the page's
+    /// colours.
     private var drawsBand: Bool {
-        guard section.layout.drawnStyle(accessibilityTextSize: dynamicTypeSize.isAccessibilitySize) == .band,
-              allowsAI, !cards.isEmpty, case .idle = service.state else { return false }
+        guard isCarousel, allowsAI, !cards.isEmpty, case .idle = service.state else { return false }
         return true
     }
 
@@ -101,7 +101,7 @@ struct AIRecommendationRow: View {
             status
             if allowsAI, !cards.isEmpty {
                 HomeSectionCards(layout: section.layout, cards: cards, rowID: rowID, hasShowAll: false, open: open,
-                                 bandCover: $bandCover)
+                                 bandCover: drawsBand ? $bandCover : nil)
             }
         }
         .modifier(HomeBandGround(cover: bandCover, isActive: drawsBand))

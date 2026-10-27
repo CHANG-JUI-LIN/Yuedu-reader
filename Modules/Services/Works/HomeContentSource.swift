@@ -57,6 +57,15 @@ extension HomeSectionBinding {
 
     /// A section of lists, drawn as 專題集合's cards whatever its stored layout.
     var listsCollections: Bool { self == .gutenbergLists }
+
+    /// What the 頂部輪播圖 can show (maintainer, 2026-10-27): books, for its band of covers. Not
+    /// lists, articles, or 青空文庫's indexes, which are places to go.
+    var showsBooks: Bool {
+        switch self {
+        case .gutenbergLists, .subscriptionArticles, .aozoraIndex: false
+        default: true
+        }
+    }
 }
 
 extension HomeSection {

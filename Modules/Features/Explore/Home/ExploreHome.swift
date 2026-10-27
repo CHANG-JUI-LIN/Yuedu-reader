@@ -69,6 +69,12 @@ private struct ExploreHomeRoot: View {
     @State private var bottomInset: CGFloat = 0
     /// The page's width, which each section keeps in its card while the home is edited.
     @State private var pageWidth: CGFloat = 0
+    /// The 頂部輪播圖's height, and whether it is still under the bar: the bar's 探索 and
+    /// buttons are white on its colour (maintainer, 2026-10-27).
+    @State private var carouselHeight: CGFloat = 0
+    @State private var barIsOverCarousel = true
+    /// 選擇輪播數據, from 編輯首頁's header or the 輪播圖's long press.
+    @State private var choosesCarousel = false
 
     private struct BrowserPresentation: Identifiable {
         let id = UUID()
@@ -105,15 +111,38 @@ private struct ExploreHomeRoot: View {
                             readFilter: HomeReadFilter(hides: aggregation.hidesRead, isRead: lookup.isRead))
     }
 
+    /// The 頂部輪播圖's section: the page's first band (`HomePage.carouselSection`); before the
+    /// page's first read saves it, the first the home draws.
+    private var carouselID: UUID? {
+        pageStore.page.map { $0.carouselSection?.id }
+            ?? groups.lazy.map(\.section).first { $0.layout == .band && $0.isEditable }?.id
+    }
+
+    /// The 頂部輪播圖 as the home draws it: nil while it is hidden or has nothing to show.
+    private var carouselGroup: HomeSectionGroup? {
+        guard let carouselID else { return nil }
+        return groups.first { $0.section.id == carouselID && !$0.isSettledEmpty }
+    }
+
+    /// The bar is over the 輪播圖's band: its colour, not a failure's message on the page's.
+    private var barIsOverColor: Bool {
+        guard !isEditing, barIsOverCarousel, let carouselGroup else { return false }
+        if case .failed = carouselGroup.state { return false }
+        return true
+    }
+
     /// The home's sections, each one view in and out of 編輯首頁 (`HomeSectionSlot`): one list
     /// in both, the sections drawn and every section 編輯首頁 lists, so the morph changes no
-    /// section's place in it, and its cards the home's books, so it changes no row either.
+    /// section's place in it, and its cards the home's books, so it changes no row either. The
+    /// 頂部輪播圖 is none of them: it is drawn above them, and 編輯首頁's header sets it.
     private var sectionEntries: [HomeSectionEntry] {
         let drawn = groups
         let home = Dictionary(drawn.map { ($0.section.id, $0) }, uniquingKeysWith: { first, _ in first })
         let editable = pageStore.page?.editableSections.map(\.id) ?? []
+        let carousel = carouselID
         // The page before its first read saves it: what the home draws.
         return (pageStore.page?.sections ?? drawn.map(\.section)).compactMap { section in
+            guard section.id != carousel else { return nil }
             let editableIndex = editable.firstIndex(of: section.id)
             guard home[section.id] != nil || editableIndex != nil else { return nil }
             return HomeSectionEntry(section: section, homeGroup: home[section.id], editableIndex: editableIndex)
@@ -202,34 +231,37 @@ private struct ExploreHomeRoot: View {
             // home or only the editor gives it room.
             VStack(alignment: .leading, spacing: 0) {
                 Color.clear.frame(height: 0).id(Self.top)
-                LazyVStack(alignment: .leading, spacing: 0) {
-                    let entries = sectionEntries
-                    let editableCount = entries.count(where: { $0.editableIndex != nil })
-                    ForEach(entries) { entry in
-                        HomeSectionSlot(entry: entry, isEditing: isEditing, pageWidth: pageWidth, count: editableCount,
-                                        openSettings: { path.append(HomeEditRoute.section($0)) }) { group in
-                            groupHost(group, model: model, isEditable: true)
+                top
+                VStack(alignment: .leading, spacing: 0) {
+                    LazyVStack(alignment: .leading, spacing: 0) {
+                        let entries = sectionEntries
+                        let editableCount = entries.count(where: { $0.editableIndex != nil })
+                        ForEach(entries) { entry in
+                            HomeSectionSlot(entry: entry, isEditing: isEditing, pageWidth: pageWidth, count: editableCount,
+                                            openSettings: { path.append(HomeEditRoute.section($0)) }) { group in
+                                groupHost(group, model: model, isEditable: true)
+                            }
+                            .id(entry.id)
                         }
-                        .id(entry.id)
+                    }
+                    // Over a home with nothing drawn, the button is the empty state's own.
+                    if model.isReady, isEditing || !showsNothing {
+                        // At the end of the home (maintainer, 2026-10-11, decision 18). Out of the lazy
+                        // stack, so it is always there to scroll to.
+                        Button { setEditing(!isEditing) } label: { HomeEditButtonTitle(isEditing: isEditing) }
+                            .buttonStyle(.bordered)
+                            // One piece moving with the page through the morph. Without it the button just
+                            // tapped moved by its press's animation instead, sinking under the ＋'s bar and
+                            // coming back, and its new title was drawn where it ends up while the page was
+                            // still scrolling there, below its capsule (iOS 27 simulator).
+                            .geometryGroup()
+                            .frame(maxWidth: .infinity)
+                            .accessibilityLabel(localized(isEditing ? "完成" : "編輯首頁"))
+                            .accessibilityIdentifier(isEditing ? "home.editDone" : "home.edit")
                     }
                 }
-                // Over a home with nothing drawn, the button is the empty state's own.
-                if model.isReady, isEditing || !showsNothing {
-                    // At the end of the home (maintainer, 2026-10-11, decision 18). Out of the lazy
-                    // stack, so it is always there to scroll to.
-                    Button { setEditing(!isEditing) } label: { HomeEditButtonTitle(isEditing: isEditing) }
-                        .buttonStyle(.bordered)
-                        // One piece moving with the page through the morph. Without it the button just
-                        // tapped moved by its press's animation instead, sinking under the ＋'s bar and
-                        // coming back, and its new title was drawn where it ends up while the page was
-                        // still scrolling there, below its capsule (iOS 27 simulator).
-                        .geometryGroup()
-                        .frame(maxWidth: .infinity)
-                        .accessibilityLabel(localized(isEditing ? "完成" : "編輯首頁"))
-                        .accessibilityIdentifier(isEditing ? "home.editDone" : "home.edit")
-                }
+                .padding(.vertical, DSSpacing.lg)
             }
-            .padding(.vertical, DSSpacing.lg)
             .frame(maxWidth: .infinity, alignment: .leading)
             .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { pageWidth = $0 }
             .homeEditMorph(isEditing)
@@ -305,8 +337,52 @@ private struct ExploreHomeRoot: View {
         .background(PageBackgroundView(scope: .explore).ignoresSafeArea())
         .pageBackgroundToolbar(for: .explore)
         // While the home is edited the bar stays, for its 完成 (maintainer, 2026-10-17).
-        .rootTabTitle(localized("探索"), onScroll: isEditing ? .fadesTitle : .minimizesBar)
+        .rootTabTitle(localized("探索"), onScroll: isEditing ? .fadesTitle : .minimizesBar, overColor: barIsOverColor)
+        .navigationDestination(isPresented: $choosesCarousel) { carouselPicker }
         .animation(reduceMotion ? nil : DSAnimation.standard, value: groups.map(\.id))
+    }
+
+    // MARK: 頂部輪播圖
+
+    /// The 頂部輪播圖 at the top of the home, from edge to edge, its colour up behind the bars
+    /// (maintainer, 2026-10-27); 編輯首頁's header in its place while the home is edited.
+    @ViewBuilder
+    private var top: some View {
+        if isEditing {
+            HomeEditorHeader(openConfigurations: { path.append(HomeEditRoute.configurations) },
+                             chooseCarousel: { choosesCarousel = true })
+                .transition(.opacity)
+        } else if let carouselGroup {
+            HomeRowHost(group: carouselGroup, store: store, aozoraIndex: aozora.catalog, model: model, isEditable: true,
+                        push: push, openSettings: { choosesCarousel = true })
+                .environment(\.homeRowIsCarousel, true)
+                .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { carouselHeight = $0 }
+                // Until it has scrolled out from under the bar.
+                .reportsScrollOffset { offset in
+                    let isUnder = offset < carouselHeight
+                    if isUnder != barIsOverCarousel { barIsOverCarousel = isUnder }
+                }
+                .transition(.opacity)
+        }
+    }
+
+    /// 選擇內容來源 for the 輪播圖: what draws books, its chosen item checked. A choice shows it.
+    private var carouselPicker: some View {
+        let carousel = pageStore.page?.carouselSection
+        return HomeContentSourcePicker(current: carousel?.binding, parameters: carousel?.parameters ?? [:], isPushed: true,
+                                       title: localized("選擇輪播數據")) { choice in
+            // Named by its binding, or by the item where the binding cannot name itself, as
+            // 新增欄目 names a section (`HomeSectionEditor.choose`).
+            let ownName = HomeSection(layout: .band, binding: choice.binding).displayTitle(sourceName: "")
+            pageStore.edit {
+                $0.setCarousel(choice.binding, parameters: choice.parameters, title: ownName.isEmpty ? choice.itemTitle : "")
+            }
+            choosesCarousel = false
+        } cancel: {
+            choosesCarousel = false
+        }
+        .environment(\.homePickerOffersBooksOnly, true)
+        .hidesRootTabBar()
     }
 
     private func groupHost(_ group: HomeSectionGroup, model: HomeModel, isEditable: Bool) -> some View {
@@ -374,14 +450,14 @@ private struct ExploreHomeRoot: View {
                 Spacer()
             }
         } else {
-            ToolbarItem(placement: .topBarTrailing) { configurationsButton }
+            ToolbarItem(placement: .topBarTrailing) { configurationsButton.rootTabBarButton(overColor: barIsOverColor) }
             // 首頁配置 in its own glass, apart from ••• (maintainer, 2026-10-22).
             #if compiler(>=6.2)
             if #available(iOS 26.0, *) {
                 ToolbarSpacer(.fixed, placement: .topBarTrailing)
             }
             #endif
-            ToolbarItem(placement: .topBarTrailing) { moreControl }
+            ToolbarItem(placement: .topBarTrailing) { moreControl.rootTabBarButton(overColor: barIsOverColor) }
         }
     }
 

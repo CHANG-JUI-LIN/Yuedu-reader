@@ -170,59 +170,27 @@ struct HomeConfigurationPhoto: View {
     }
 }
 
-/// A 首頁配置's photo, from 相簿 or 檔案, and for the reader's own its name.
-struct HomeConfigurationForm: View {
+/// Changes a 首頁配置's photo, from 相簿 or 檔案, and removes it once it has one: the one way
+/// it is changed, from its form and from 編輯首頁's header. `label` is what the reader taps.
+struct HomeConfigurationPhotoPicker<Label: View>: View {
     let configurationID: HomeConfigurationID
-    @ObservedObject private var store = HomePageStore.shared
+    @ViewBuilder let label: () -> Label
     @ObservedObject private var photos = HomePageStore.shared.photos
-    @State private var name = ""
     @State private var photoFailure: String?
 
-    private var listing: HomeConfigurationListing? {
-        store.configurations.first { $0.id == configurationID }
-    }
-
-    private var photo: UIImage? { photos.images[configurationID] }
-
     var body: some View {
-        Form {
-            Section {
-                VStack(spacing: DSSpacing.md) {
-                    HomeConfigurationPhoto(name: listing?.name ?? "", image: photo,
-                                           size: DSLayout.homeConfigurationFormPhotoSize)
-                    ImageSourcePickerButton(
-                        accessibilityTitle: localized(photo == nil ? "加入照片" : "更換照片"),
-                        extraActions: photo == nil ? [] : [
-                            ImageSourcePickerAction(title: localized("移除照片"), systemImage: "trash", isDestructive: true) {
-                                photos.removePhoto(for: configurationID)
-                            },
-                        ],
-                        onPick: pick
-                    ) {
-                        Text(localized(photo == nil ? "加入照片" : "更換照片"))
-                            .font(DSFont.body)
-                    }
-                    .accessibilityIdentifier("homeConfigurationForm.photo")
-                }
-                .frame(maxWidth: .infinity)
-            }
-            if !configurationID.isBuiltIn {
-                Section(localized("名稱")) {
-                    TextField(localized("名稱"), text: $name)
-                        .submitLabel(.done)
-                        .onSubmit(saveName)
-                        .accessibilityIdentifier("homeConfigurationForm.name")
-                }
-            }
-        }
-        .navigationTitle(listing?.name ?? "")
-        .toolbarTitleDisplayMode(.inline)
-        .onAppear {
-            name = listing?.name ?? ""
-            photos.loadIfNeeded()
-        }
-        // Back saves the name too: there is no 完成 on a pushed page.
-        .onDisappear(perform: saveName)
+        let hasPhoto = photos.images[configurationID] != nil
+        ImageSourcePickerButton(
+            accessibilityTitle: localized(hasPhoto ? "更換照片" : "加入照片"),
+            extraActions: hasPhoto ? [
+                ImageSourcePickerAction(title: localized("移除照片"), systemImage: "trash", isDestructive: true) {
+                    photos.removePhoto(for: configurationID)
+                },
+            ] : [],
+            onPick: pick,
+            label: label
+        )
+        .onAppear { photos.loadIfNeeded() }
         .alert(
             localized("無法加入照片"),
             isPresented: Binding(get: { photoFailure != nil }, set: { if !$0 { photoFailure = nil } })
@@ -231,12 +199,6 @@ struct HomeConfigurationForm: View {
         } message: {
             Text(photoFailure ?? "")
         }
-    }
-
-    /// A blank name, or the one it has, changes nothing (`HomeConfigurations.rename`).
-    private func saveName() {
-        guard !configurationID.isBuiltIn, name != listing?.name else { return }
-        store.renameConfiguration(configurationID, to: name)
     }
 
     private func pick(_ result: Result<PickedImageSource, PickedImageError>) {
@@ -265,6 +227,59 @@ struct HomeConfigurationForm: View {
                 photoFailure = localized("無法讀取圖片。")
             }
         }
+    }
+}
+
+/// A 首頁配置's photo, from 相簿 or 檔案, and for the reader's own its name.
+struct HomeConfigurationForm: View {
+    let configurationID: HomeConfigurationID
+    @ObservedObject private var store = HomePageStore.shared
+    @ObservedObject private var photos = HomePageStore.shared.photos
+    @State private var name = ""
+
+    private var listing: HomeConfigurationListing? {
+        store.configurations.first { $0.id == configurationID }
+    }
+
+    private var photo: UIImage? { photos.images[configurationID] }
+
+    var body: some View {
+        Form {
+            Section {
+                VStack(spacing: DSSpacing.md) {
+                    HomeConfigurationPhoto(name: listing?.name ?? "", image: photo,
+                                           size: DSLayout.homeConfigurationFormPhotoSize)
+                    HomeConfigurationPhotoPicker(configurationID: configurationID) {
+                        Text(localized(photo == nil ? "加入照片" : "更換照片"))
+                            .font(DSFont.body)
+                    }
+                    .accessibilityIdentifier("homeConfigurationForm.photo")
+                }
+                .frame(maxWidth: .infinity)
+            }
+            if !configurationID.isBuiltIn {
+                Section(localized("名稱")) {
+                    TextField(localized("名稱"), text: $name)
+                        .submitLabel(.done)
+                        .onSubmit(saveName)
+                        .accessibilityIdentifier("homeConfigurationForm.name")
+                }
+            }
+        }
+        .navigationTitle(listing?.name ?? "")
+        .toolbarTitleDisplayMode(.inline)
+        .onAppear {
+            name = listing?.name ?? ""
+            photos.loadIfNeeded()
+        }
+        // Back saves the name too: there is no 完成 on a pushed page.
+        .onDisappear(perform: saveName)
+    }
+
+    /// A blank name, or the one it has, changes nothing (`HomeConfigurations.rename`).
+    private func saveName() {
+        guard !configurationID.isBuiltIn, name != listing?.name else { return }
+        store.renameConfiguration(configurationID, to: name)
     }
 }
 

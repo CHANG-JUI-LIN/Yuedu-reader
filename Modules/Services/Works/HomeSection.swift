@@ -43,7 +43,9 @@ struct HomeSectionLayout: RawRepresentable, Codable, Hashable, Sendable {
     /// `Technotes/AppleBooksHomeLayouts-2026-10-25.md`). A build before them draws a row, or
     /// 專題集合 for a section of lists, and keeps the value.
     /// 色帶書架: large covers under the header, all on the first cover's colour, as Apple Books
-    /// Japan's manga band.
+    /// Japan's manga band. Since 2026-10-27 the home's 頂部輪播圖 (`HomePage.carouselSection`),
+    /// no longer a layout 呈現方式 offers: the page's first band is drawn at the top, from edge
+    /// to edge under the bars, and any other is drawn as 大型封面書架.
     static let band = Self(rawValue: "band")
     /// 大型封面書架: about two large covers to a phone, as Apple Books' 新刊&話題作.
     static let largeRow = Self(rawValue: "largeRow")
@@ -56,6 +58,9 @@ struct HomeSectionLayout: RawRepresentable, Codable, Hashable, Sendable {
     static let categoryCards = Self(rawValue: "categoryCards")
     /// 拼貼卡片: a card per list, its covers in a collage over its name, as Apple Books' Top Picks.
     static let collageCards = Self(rawValue: "collageCards")
+    /// 大圖卡片 (maintainer, 2026-10-27): a wide card per list under its source and name, the
+    /// list's covers on the first one's colour, as Apple Books Japan's エディターのおすすめ.
+    static let bannerCards = Self(rawValue: "bannerCards")
 
     /// The custom-page layout this is, if it is one.
     var componentKind: CustomExploreComponent.Kind? { .init(rawValue: rawValue) }
@@ -63,7 +68,7 @@ struct HomeSectionLayout: RawRepresentable, Codable, Hashable, Sendable {
     var isKnown: Bool {
         componentKind != nil || [.tiles, .row, .readingCard, .compactReadingCard, .multiRow, .coverGrid, .list, .rankedList,
                                  .featured, .collection, .band, .largeRow, .heroGrid, .rankedRow, .categoryCards,
-                                 .collageCards].contains(self)
+                                 .collageCards, .bannerCards].contains(self)
     }
 }
 
@@ -381,7 +386,8 @@ enum HomePageDefaults {
     ///
     /// The maintainer, 2026-10-25, after Apple Books' home (`Technotes/AppleBooksHomeLayouts-2026-10-25.md`):
     /// each list in a rhythm of its own, and one band on the page. The first list with real
-    /// covers is 色帶書架; a ranking with covers is a ranked row, AniList's trending manga 一大四小
+    /// covers takes the band, since 2026-10-27 the home's 頂部輪播圖 (`HomePage.carouselSection`);
+    /// a ranking with covers is a ranked row, AniList's trending manga 一大四小
     /// and its trending novels, not a ranking, a row. なろう's ranking has no covers, so it stays
     /// 圖文資訊清單 with its ranks, and never takes the band.
     ///

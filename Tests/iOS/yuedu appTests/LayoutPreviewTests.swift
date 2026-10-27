@@ -43,7 +43,7 @@ struct LayoutPreviewTests {
     @Test("Each layout shows as many books as its preview has room for on a phone")
     func counts() {
         let expected: [HomeLayoutStyle: Int] = [.featured: 3, .readingCard: 3, .compactReadingCard: 3, .list: 3,
-                                                .row: 6, .multiRow: 12, .coverGrid: 12, .band: 4, .largeRow: 4, .heroGrid: 6]
+                                                .row: 6, .multiRow: 12, .coverGrid: 12, .largeRow: 4, .heroGrid: 6]
         #expect(HomeLayoutSample.books.mapValues(\.count) == expected)
     }
 
@@ -57,7 +57,7 @@ struct LayoutPreviewTests {
     func lists() {
         let sample = HomeLayoutSample.standard
         let expected: [HomeLayoutStyle: [String]] = [.collection: ["漫畫", "東方經典"], .categoryCards: ["詩歌", "博物誌"],
-                                                     .collageCards: ["推理", "冒險"]]
+                                                     .collageCards: ["推理", "冒險"], .bannerCards: ["日本裝幀", "新文學"]]
         for style in HomeLayoutStyle.allCases where style.drawsLists {
             #expect(sample.collections(for: style).map(\.title) == expected[style]?.map { localized($0) }, "\(style)")
         }

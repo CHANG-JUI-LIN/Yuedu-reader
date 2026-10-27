@@ -61,4 +61,72 @@ struct HomePageEditingTests {
         let reread = HomePageStore(fileURL: url)
         #expect(reread.page?.sections.first?.isEnabled == false)
     }
+
+    // The maintainer, 2026-10-27: 色帶書架 is the 頂部輪播圖, set from 編輯首頁's header.
+
+    @Test("the page's first band is the 輪播圖, hidden or not, and the editor's list leaves it out")
+    func carouselIsTheFirstBand() {
+        let band = HomeSection(layout: .band, binding: .latest)
+        let laterBand = HomeSection(layout: .band, binding: .related)
+        var page = HomePage(sections: [reading, band, laterBand])
+        #expect(page.carouselSection?.id == band.id)
+        #expect(page.editableSections.map(\.id) == [reading.id, laterBand.id])
+        page.setEnabled(false, section: band.id)
+        #expect(page.carouselSection?.id == band.id, "a hidden 輪播圖 is still the 輪播圖")
+        #expect(HomePage(sections: [reading, latest]).carouselSection == nil)
+    }
+
+    @Test("reordering the listed sections leaves the 輪播圖 where it stands")
+    func moveSkipsTheCarousel() {
+        let band = HomeSection(layout: .band, binding: .latest)
+        var page = HomePage(sections: [reading, band, related])
+        page.moveEditable(fromOffsets: IndexSet(integer: 1), toOffset: 0)
+        #expect(page.sections.map(\.id) == [related.id, band.id, reading.id])
+    }
+
+    @Test("選擇輪播數據 changes what the 輪播圖 shows, and shows it; a page without one gets one first")
+    func chooseCarousel() throws {
+        var band = HomeSection(layout: .band, title: "舊名", subtitle: "舊副標", binding: .latest)
+        band.isEnabled = false
+        var page = HomePage(sections: [reading, band])
+        page.setCarousel(.gutenbergCollection(id: "poetry"), parameters: ["sort": "new"])
+        let carousel = try #require(page.carouselSection)
+        #expect(carousel.id == band.id)
+        #expect(carousel.binding == .gutenbergCollection(id: "poetry"))
+        #expect(carousel.parameters == ["sort": "new"])
+        #expect(carousel.title.isEmpty && carousel.subtitle.isEmpty, "the 輪播圖 takes the list's own name")
+        #expect(carousel.isEnabled)
+        #expect(page.sections.count == 2)
+
+        var plain = HomePage(sections: [reading, latest])
+        plain.setCarousel(.related, title: "猜你喜歡")
+        #expect(plain.sections.count == 3)
+        #expect(plain.sections.first?.layout == .band)
+        #expect(plain.sections.first?.binding == .related)
+        #expect(plain.sections.first?.title == "猜你喜歡")
+        #expect(plain.carouselSection?.id == plain.sections.first?.id)
+    }
+
+    @Test("關閉輪播圖 hides it and keeps what it shows; 開啟輪播圖 shows it again")
+    func toggleCarousel() {
+        let band = HomeSection(layout: .band, binding: .latest)
+        var page = HomePage(sections: [reading, band])
+        page.setCarouselShown(false)
+        #expect(page.carouselSection?.isEnabled == false)
+        #expect(page.carouselSection?.binding == .latest)
+        page.setCarouselShown(true)
+        #expect(page.carouselSection?.isEnabled == true)
+        var plain = HomePage(sections: [reading])
+        plain.setCarouselShown(false)
+        #expect(plain.sections == [reading], "a page without a 輪播圖 is left alone")
+    }
+
+    @Test("選擇輪播數據 offers only what shows books: no list of lists, articles or author index")
+    func carouselOffersBooks() {
+        #expect(HomeSectionBinding.latest.showsBooks)
+        #expect(HomeSectionBinding.gutenbergCollection(id: "poetry").showsBooks)
+        #expect(!HomeSectionBinding.gutenbergLists.showsBooks)
+        #expect(!HomeSectionBinding.subscriptionArticles.showsBooks)
+        #expect(!HomeSectionBinding.aozoraIndex(kind: AozoraBrowseMode.authors.rawValue).showsBooks)
+    }
 }

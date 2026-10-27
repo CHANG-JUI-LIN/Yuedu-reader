@@ -23,6 +23,12 @@ Upload.wikimedia.org answered 429 for some originals, so files wider than 1920 p
 from Commons' 1920 px thumbnail, and PDF or DjVu pages from Commons' page render (猛虎集 at
 960 px); at 300×450 nothing is lost.
 
+2026-10-27: the colour band became the home's 頂部輪播圖 and left 呈現方式, so its four covers
+went to 大圖卡片's two lists, 日本裝幀 and 新文學, with two more: 吶喊 and 紅燭. Left out for them:
+墳's Commons image (a design sketch with notes), 烏合叢書's (a sketch, and the series 彷徨 is in),
+野草 (孫福熙, died 1962), later 紅燭 reprints (pale or relabelled), and セノオ楽譜 and
+コドモノクニ again (not books).
+
 ## Left out on purpose
 
 - Standard Ebooks' *The Count of Monte Cristo*: its painting is Mead Schaeffer's, 1928; he died
@@ -114,10 +120,12 @@ from Commons' 1920 px thumbnail, and PDF or DjVu pages from Commons' page render
 | midaregami | みだれ髪 (1901) | 与謝野晶子; cover 藤島武二 (1867–1943) | 專題集合「東方經典」 | Commons: Akiko Yosano MIDAREGAMI.jpg | PD |
 | kokoro | 心 (1914) | 夏目漱石 (cover by the author) | 專題集合「東方經典」 | Commons: Natsume Sôseki Umschlag "Kokoro".jpg, the case | PD |
 | panghuang | 彷徨 (1926) | 魯迅 (1881–1936); cover 陶元慶 (1893–1929) | 專題集合「東方經典」 | Commons: Panghuang bookcover.jpg | PD |
-| kuwana-shinju | 桑名心中 (1915) | 長田幹彦 (1887–1964); cover 竹久夢二 (1884–1934) | 色帶書架 | Commons: Cover art to "Kuwana Shinjū" by Takehisa Yumeji.jpg | PD |
-| nihon-otogibanashi | 日本お伽噺集 (アルス 日本児童文庫 10, 1927) | 巖谷小波 (1870–1933); cover 小村雪岱 (1887–1940) per Commons, uncredited in the book | 色帶書架 | Commons: Iwaya(1927)-p0000-cover.jpg | PD |
-| tako | 凧 竹久夢二童謡集 (研究社, 1926) | 竹久夢二 (1884–1934); cover uncredited, taken as the author's own; a library label kept in the top corner, since a tighter crop cuts 凧 | 色帶書架 | Commons: NDL1169285 凧 - 竹久夢二童謡集 part1.pdf, p. 1, the left part | PD |
-| menghu-ji | 猛虎集 (1931; the scan is the 1932 second printing) | 徐志摩 (1897–1931); cover 聞一多 (1899–1946) | 色帶書架 | Commons: 猛虎集 (1932再版).pdf, p. 1 | PD |
+| kuwana-shinju | 桑名心中 (1915) | 長田幹彦 (1887–1964); cover 竹久夢二 (1884–1934) | 大圖卡片「日本裝幀」 | Commons: Cover art to "Kuwana Shinjū" by Takehisa Yumeji.jpg | PD |
+| nihon-otogibanashi | 日本お伽噺集 (アルス 日本児童文庫 10, 1927) | 巖谷小波 (1870–1933); cover 小村雪岱 (1887–1940) per Commons, uncredited in the book | 大圖卡片「日本裝幀」 | Commons: Iwaya(1927)-p0000-cover.jpg | PD |
+| tako | 凧 竹久夢二童謡集 (研究社, 1926) | 竹久夢二 (1884–1934); cover uncredited, taken as the author's own; a library label kept in the top corner, since a tighter crop cuts 凧 | 大圖卡片「日本裝幀」 | Commons: NDL1169285 凧 - 竹久夢二童謡集 part1.pdf, p. 1, the left part | PD |
+| menghu-ji | 猛虎集 (1931; the scan is the 1932 second printing) | 徐志摩 (1897–1931); cover 聞一多 (1899–1946) | 大圖卡片「新文學」 | Commons: 猛虎集 (1932再版).pdf, p. 1 | PD |
+| nahan | 吶喊 (1923; the scan is a later printing, 魯迅先生紀念委員會 ed.) | 魯迅 (1881–1936), cover by the author | 大圖卡片「新文學」 | Commons: SSID-11378933 吶喊.pdf, p. 1 | PD |
+| hongzhu | 紅燭 (泰東圖書局, 1923) | 聞一多 (1899–1946); cover unknown on Commons | 大圖卡片「新文學」 | Commons: 聞一多《紅燭》.jpg, inside its blue border: a publisher's watermark sits on the bottom edge | PD |
 | princess-and-goblin | The Princess and the Goblin (McKay, 1920) | George MacDonald (1824–1905); cover Jessie Willcox Smith (1863–1935) | 大型封面書架 | Commons: Cover to The Princess and the Goblin by George MacDonald, illustrated by Jessie Willcox Smith, 1920.jpg | PD |
 | bluebeard | Bluebeard (Walter Crane's Toy Books, new series, Routledge, c. 1873–75) | Walter Crane (1845–1915) | 大型封面書架 | Commons: Bluebeard cover.jpg | PD |
 | vasilisa | Василиса Прекрасная (Bilibin's Сказки, c. 1899–1902) | Иван Билибин (1876–1942) | 大型封面書架 | Commons: Vasilisa the Beautiful (Bilibin) - cover.jpg | PD |

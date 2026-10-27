@@ -4176,14 +4176,19 @@
 "沒有簡體中文簡介" = "No Simplified Chinese description";
 
 /* Apple Books layouts (2026-10-25): the home's new layouts, their sample lists, and a section's line under its name */
-"色帶書架" = "Color Band";
 "大型封面書架" = "Large Covers";
 "一大四小" = "One Large, Four Small";
 "分類卡片" = "Category Cards";
 "拼貼卡片" = "Collage Cards";
+"大圖卡片" = "Banner Cards";
+"選擇輪播數據" = "Choose Carousel Content";
+"關閉輪播圖" = "Turn Off Carousel";
+"開啟輪播圖" = "Turn On Carousel";
 "推理" = "Mystery";
 "冒險" = "Adventure";
 "博物誌" = "Natural History";
+"日本裝幀" = "Japanese Book Design";
+"新文學" = "New Literature";
 "選填" = "Optional";
 "你讀過的系列，接著讀下一本。" = "The next book in series you've read.";
 "根據你的閱讀紀錄挑選。" = "Picked from your reading history.";

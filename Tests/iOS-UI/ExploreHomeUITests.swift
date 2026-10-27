@@ -330,10 +330,13 @@ final class ExploreHomeUITests: XCTestCase {
         let mores = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH 'home.card.more.'"))
         XCTAssertTrue(mores.firstMatch.waitForExistence(timeout: 20), app.debugDescription)
         let cards = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH 'home.card.' AND NOT identifier BEGINSWITH 'home.card.more.'"))
-        // 精選's card is the tall one; its ••• sits inside it.
+        // 精選's card is the tall one; its ••• sits inside it. On screen: the 頂部輪播圖 above the
+        // rows (2026-10-27) leaves the card cut off by the screen's bottom edge at first.
         func featuredMore() -> XCUIElement? {
             let tall = cards.allElementsBoundByIndex.filter { $0.frame.height > 200 && $0.frame.width > app.frame.width * 0.6 }
-            return mores.allElementsBoundByIndex.first { more in tall.contains { $0.frame.contains(more.frame) } }
+            return mores.allElementsBoundByIndex.first { more in
+                app.frame.contains(more.frame) && tall.contains { $0.frame.contains(more.frame) }
+            }
         }
         var more = featuredMore()
         for _ in 0..<4 where more == nil {

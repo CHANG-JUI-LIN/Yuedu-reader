@@ -9,6 +9,12 @@ import SwiftUI
 // A sheet over the form, or pushed in the form's stack when the form is a sheet already on
 // iOS 17 (`isPushed`), as the design says.
 
+extension EnvironmentValues {
+    /// 選擇輪播數據 (maintainer, 2026-10-27): the picker offers only what draws books
+    /// (`HomeSectionBinding.showsBooks`), for the 頂部輪播圖's band of covers.
+    @Entry var homePickerOffersBooksOnly = false
+}
+
 /// What 選擇內容來源 gives the form.
 struct HomeContentChoice: Equatable {
     let binding: HomeSectionBinding
@@ -34,8 +40,12 @@ struct HomeContentSourcePicker: View {
     /// The section's parameters: a book source's categories list under its filter values.
     let parameters: [String: String]
     let isPushed: Bool
+    /// The page's title: the name of the row or button that opened it.
+    var title = localized("選擇內容來源")
     let choose: (HomeContentChoice) -> Void
     let cancel: () -> Void
+
+    @Environment(\.homePickerOffersBooksOnly) private var booksOnly
 
     @ObservedObject private var connections = RemoteLibraryConnectionStore.shared
     @ObservedObject private var availability = PublicLibraryAvailability.shared
@@ -43,10 +53,12 @@ struct HomeContentSourcePicker: View {
     @ObservedObject private var modules = RuleModuleLibrary.shared
 
     init(current: HomeSectionBinding?, parameters: [String: String] = [:], isPushed: Bool,
+         title: String = localized("選擇內容來源"),
          choose: @escaping (HomeContentChoice) -> Void, cancel: @escaping () -> Void) {
         self.current = current
         self.parameters = parameters
         self.isPushed = isPushed
+        self.title = title
         self.choose = choose
         self.cancel = cancel
     }
@@ -61,7 +73,7 @@ struct HomeContentSourcePicker: View {
     var body: some View {
         List {
             Section {
-                ForEach(HomeSectionBinding.appData, id: \.self) { binding in
+                ForEach(HomeSectionBinding.appData.filter { !booksOnly || $0.showsBooks }, id: \.self) { binding in
                     HomeChoiceRow(title: HomeSection(layout: .row, binding: binding).displayTitle(sourceName: ""),
                                   isCurrent: current == binding) {
                         choose(HomeContentChoice(binding: binding))
@@ -142,7 +154,7 @@ struct HomeContentSourcePicker: View {
                 .interfaceSectionSurface()
             }
         }
-        .navigationTitle(localized("選擇內容來源"))
+        .navigationTitle(title)
         .toolbarTitleDisplayMode(.inline)
         .themedAppSurface(for: .explore)
         .task { await modules.loadIfNeeded() }
@@ -230,6 +242,7 @@ private struct HomeFeedChoices: View {
     let choose: (HomeContentChoice) -> Void
     @State private var state = LoadState.loading
     @ObservedObject private var aggregation = AggregationSettingsStore.shared
+    @Environment(\.homePickerOffersBooksOnly) private var booksOnly
 
     private var name: String {
         switch source {
@@ -267,7 +280,7 @@ private struct HomeFeedChoices: View {
                 }
                 .interfaceSectionSurface()
                 Section {
-                    ForEach(HomeSectionBinding.gutenbergCollections, id: \.self) { binding in
+                    ForEach(HomeSectionBinding.gutenbergCollections.filter { !booksOnly || $0.showsBooks }, id: \.self) { binding in
                         HomeChoiceRow(title: HomeSection(layout: .row, binding: binding).displayTitle(sourceName: ""),
                                       isCurrent: current == binding) {
                             choose(HomeContentChoice(binding: binding))
@@ -337,10 +350,12 @@ private struct HomeAozoraChoices: View {
     let current: HomeSectionBinding?
     let choose: (HomeContentChoice) -> Void
 
+    @Environment(\.homePickerOffersBooksOnly) private var booksOnly
+
     var body: some View {
         List {
             Section {
-                ForEach(HomeSectionBinding.aozora, id: \.self) { binding in
+                ForEach(HomeSectionBinding.aozora.filter { !booksOnly || $0.showsBooks }, id: \.self) { binding in
                     HomeChoiceRow(title: HomeSection(layout: .row, binding: binding).displayTitle(sourceName: ""),
                                   isCurrent: current == binding) {
                         choose(HomeContentChoice(binding: binding))
@@ -571,4 +586,11 @@ struct HomeCategoryChoices: View {
     NavigationStack {
         HomeContentSourcePicker(current: .continueReading, isPushed: false, choose: { _ in }, cancel: {})
     }
+}
+
+#Preview("選擇輪播數據") {
+    NavigationStack {
+        HomeContentSourcePicker(current: .forYou, isPushed: true, title: localized("選擇輪播數據"), choose: { _ in }, cancel: {})
+    }
+    .environment(\.homePickerOffersBooksOnly, true)
 }

@@ -6,7 +6,8 @@ import Foundation
 // or a later build wrote; the app decides what is drawn from it.
 // The maintainer, 2026-10-25, after Apple Books' store and home: 色帶書架, 大型封面書架 and
 // 一大四小 for books, ranks on 橫向單排書架 too, and 分類卡片 and 拼貼卡片 for lists
-// (`Technotes/AppleBooksHomeLayouts-2026-10-25.md`).
+// (`Technotes/AppleBooksHomeLayouts-2026-10-25.md`). 2026-10-27: 色帶書架 became the home's
+// 頂部輪播圖, not a layout to choose, and 大圖卡片 joined the layouts of lists.
 
 /// One of the layouts.
 enum HomeLayoutStyle: String, CaseIterable, Identifiable, Sendable {
@@ -17,14 +18,14 @@ enum HomeLayoutStyle: String, CaseIterable, Identifiable, Sendable {
     case coverGrid
     case list
     case featured
-    case band
     case largeRow
     case heroGrid
     /// 專題集合: lists, not books; offered only for a section of lists (`choices(for:)`), as
-    /// are the two after it.
+    /// are the three after it.
     case collection
     case categoryCards
     case collageCards
+    case bannerCards
 
     var id: String { rawValue }
 
@@ -37,12 +38,12 @@ enum HomeLayoutStyle: String, CaseIterable, Identifiable, Sendable {
         case .coverGrid: "固定封面網格"
         case .list: "圖文資訊清單"
         case .featured: "精選"
-        case .band: "色帶書架"
         case .largeRow: "大型封面書架"
         case .heroGrid: "一大四小"
         case .collection: "專題集合"
         case .categoryCards: "分類卡片"
         case .collageCards: "拼貼卡片"
+        case .bannerCards: "大圖卡片"
         }
     }
 
@@ -55,19 +56,19 @@ enum HomeLayoutStyle: String, CaseIterable, Identifiable, Sendable {
         case .coverGrid: "square.grid.3x3"
         case .list: "list.bullet.rectangle"
         case .featured: "rectangle.on.rectangle.angled"
-        case .band: "rectangle.inset.filled"
         case .largeRow: "rectangle.split.2x1"
         case .heroGrid: "square.grid.2x2"
         case .collection: "square.stack"
         case .categoryCards: "rectangle.grid.1x2"
         case .collageCards: "rectangle.on.rectangle"
+        case .bannerCards: "rectangle.inset.filled"
         }
     }
 
-    /// A layout of lists, each card a list: 專題集合, 分類卡片 and 拼貼卡片.
+    /// A layout of lists, each card a list: 專題集合, 分類卡片, 拼貼卡片 and 大圖卡片.
     var drawsLists: Bool {
         switch self {
-        case .collection, .categoryCards, .collageCards: true
+        case .collection, .categoryCards, .collageCards, .bannerCards: true
         default: false
         }
     }
@@ -100,12 +101,14 @@ extension HomeSectionLayout {
         case .list, .rankedList: return .list
         case .featured: return .featured
         case .collection: return .collection
-        case .band: return .band
-        case .largeRow: return .largeRow
+        // The page's first band is its 頂部輪播圖, drawn by the home itself; another is drawn
+        // as the row of large covers it was closest to.
+        case .band, .largeRow: return .largeRow
         case .heroGrid: return .heroGrid
         case .rankedRow: return .row
         case .categoryCards: return .categoryCards
         case .collageCards: return .collageCards
+        case .bannerCards: return .bannerCards
         default: break
         }
         switch componentKind {
@@ -138,12 +141,12 @@ extension HomeSectionLayout {
         case .coverGrid: self = .coverGrid
         case .list: self = ranked ? .rankedList : .list
         case .featured: self = .featured
-        case .band: self = .band
         case .largeRow: self = .largeRow
         case .heroGrid: self = .heroGrid
         case .collection: self = .collection
         case .categoryCards: self = .categoryCards
         case .collageCards: self = .collageCards
+        case .bannerCards: self = .bannerCards
         }
     }
 

@@ -81,9 +81,14 @@ struct CollectionSummary: Hashable, Sendable, Identifiable {
     /// Every language the list's books are in, so 偏好閱讀語言 can place the list.
     let languages: [String]
     let opening: CollectionOpening
+    /// The source 大圖卡片 names over the list; nil names it by where the list opens
+    /// (`CollectionOpening.sourceName`). 呈現方式's sample lists name where their covers are from.
+    let sourceName: String?
 
-    init(id: String, title: String, books: [WorkSummary], languages: [String], opening: CollectionOpening) {
+    init(id: String, title: String, books: [WorkSummary], languages: [String], opening: CollectionOpening,
+         sourceName: String? = nil) {
         self.id = id
+        self.sourceName = sourceName
         self.title = title
         self.books = Array(books.prefix(Self.artworkLimit))
         bookCount = books.count

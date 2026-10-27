@@ -15,7 +15,8 @@ import SwiftUI
 // The maintainer, 2026-10-25, after Apple Books' store and home
 // (`Technotes/AppleBooksHomeLayouts-2026-10-25.md`):
 // - 色帶書架: as Apple Books Japan's manga band, large covers alone under the header, all on
-//   the first cover's colour from edge to edge (`HomeBandGround`).
+//   the first cover's colour from edge to edge (`HomeBandGround`). Since 2026-10-27 the
+//   home's 頂部輪播圖 only, drawn when the row gives the band's colour (`bandCover`).
 // - 大型封面書架: a row of larger covers with their titles, about two to a phone.
 // - 一大四小: as Apple Books' Special Offers, a large cover and four small ones beside it, a
 //   group at a time.
@@ -36,8 +37,8 @@ struct HomeSectionCards: View {
     var bookActions: HomeBookActions?
     /// 呈現方式's gallery: the rows a layout read downwards shows (`HomeLayoutPreview`).
     var previewRows: Int?
-    /// 色帶書架's colour, the first cover's, for the row that draws the band under its header
-    /// as well. Nil draws the band here, under the covers alone (呈現方式's gallery, a preview).
+    /// The 頂部輪播圖's colour, the first cover's: given, the cards are its band's large covers
+    /// alone, whatever the layout, and the first one reports its colour here.
     var bandCover: Binding<CoverTint.RGB?>?
 
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
@@ -52,7 +53,6 @@ struct HomeSectionCards: View {
     @ScaledMetric(relativeTo: .headline) private var featuredCoverWidth = DSLayout.homeFeaturedCoverWidth
     @ScaledMetric(relativeTo: .subheadline) private var scaledLargeCoverWidth = DSLayout.homeLargeCoverWidth
     @State private var gridWidth: CGFloat = 0
-    @State private var ownBandCover: CoverTint.RGB?
 
     /// Rows the grid shows, and books the list shows, when 查看全部 has the rest.
     private static let gridRows = 3
@@ -64,25 +64,23 @@ struct HomeSectionCards: View {
 
     var body: some View {
         Group {
-            switch style {
-            case .readingCard: readingCards
-            case .compactReadingCard: compactReadingCards
-            case .row: rail(coverWidth: rowCoverWidth, ranked: layout.showsRanks)
-            case .multiRow: multiRow
-            case .coverGrid: grid
-            case .list: list
-            case .featured: featured
-            case .band:
-                if let bandCover {
-                    band(cover: bandCover)
-                } else {
-                    band(cover: $ownBandCover).modifier(HomeBandGround(cover: ownBandCover))
+            if let bandCover {
+                band(cover: bandCover)
+            } else {
+                switch style {
+                case .readingCard: readingCards
+                case .compactReadingCard: compactReadingCards
+                case .row: rail(coverWidth: rowCoverWidth, ranked: layout.showsRanks)
+                case .multiRow: multiRow
+                case .coverGrid: grid
+                case .list: list
+                case .featured: featured
+                case .largeRow: rail(coverWidth: largeCoverWidth)
+                case .heroGrid: heroGrid
+                // A section of books is never offered a layout of lists (`HomeLayoutStyle.choices`);
+                // a stored one draws the row every section can take, as an unknown layout does.
+                case .collection, .categoryCards, .collageCards, .bannerCards: rail(coverWidth: rowCoverWidth)
                 }
-            case .largeRow: rail(coverWidth: largeCoverWidth)
-            case .heroGrid: heroGrid
-            // A section of books is never offered a layout of lists (`HomeLayoutStyle.choices`);
-            // a stored one draws the row every section can take, as an unknown layout does.
-            case .collection, .categoryCards, .collageCards: rail(coverWidth: rowCoverWidth)
             }
         }
         .environment(\.publicLibraryCoverScope, rowID)
@@ -135,7 +133,7 @@ struct HomeSectionCards: View {
         .modifier(HomeSidewaysScroll())
     }
 
-    // MARK: 色帶書架
+    // MARK: 頂部輪播圖
 
     /// Covers alone, larger than a row's; the first one's colour is the band's.
     private func band(cover: Binding<CoverTint.RGB?>) -> some View {
@@ -370,7 +368,7 @@ struct HomeSidewaysScroll: ViewModifier {
     }
 }
 
-/// A cover alone, for the layouts that draw no text with it (色帶書架, 一大四小); VoiceOver
+/// A cover alone, for the layouts that draw no text with it (頂部輪播圖, 一大四小); VoiceOver
 /// reads the card's label all the same. A shelf copy part read shows how far along its bottom.
 struct HomeCoverCard: View {
     let content: HomeCardContent
@@ -386,11 +384,13 @@ struct HomeCoverCard: View {
     }
 }
 
-/// 色帶書架's band: the first cover's colour from edge to edge, under the section's header and
-/// covers; the placeholder grey until that cover has drawn. Darkened until the header's line,
-/// the cover's hue made light (`line(for:)`), reads at 4.5:1 on it (7:1 with 增加對比), so the
-/// header's white does too, as 精簡閱讀卡片's ground is. Decoration: VoiceOver reads nothing of it.
-/// Inactive, it draws nothing, and the row keeps its identity as the band comes and goes.
+/// The 頂部輪播圖's band: the first cover's colour from edge to edge, under the section's header
+/// and covers, and up behind the bars and the status bar (`DSLayout.homeCarouselBleed`); the
+/// placeholder grey until that cover has drawn. Darkened until the header's line, the cover's
+/// hue made light (`line(for:)`), reads at 4.5:1 on it (7:1 with 增加對比), so the header's white
+/// does too, as 精簡閱讀卡片's ground is, and the bar's 探索 over it. Decoration: VoiceOver
+/// reads nothing of it. Inactive, it draws nothing, and the row keeps its identity as the band
+/// comes and goes.
 struct HomeBandGround: ViewModifier {
     let cover: CoverTint.RGB?
     var isActive = true
@@ -413,7 +413,10 @@ struct HomeBandGround: ViewModifier {
         content
             .padding(.vertical, isActive ? DSSpacing.xl : 0)
             .frame(maxWidth: isActive ? .infinity : nil, alignment: .leading)
-            .background(isActive ? Self.ground(for: cover, contrast: contrast) : .clear)
+            .background {
+                (isActive ? Self.ground(for: cover, contrast: contrast) : .clear)
+                    .padding(.top, isActive ? -DSLayout.homeCarouselBleed : 0)
+            }
             .animation(DSAnimation.standard, value: cover)
     }
 }
