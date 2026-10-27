@@ -43,7 +43,8 @@ struct LayoutPreviewTests {
     @Test("Each layout shows as many books as its preview has room for on a phone")
     func counts() {
         let expected: [HomeLayoutStyle: Int] = [.featured: 3, .readingCard: 3, .compactReadingCard: 3, .list: 3,
-                                                .row: 6, .multiRow: 12, .coverGrid: 12, .largeRow: 4, .heroGrid: 6]
+                                                .row: 6, .multiRow: 12, .coverGrid: 12, .largeRow: 4, .colorBand: 4,
+                                                .heroGrid: 6]
         #expect(HomeLayoutSample.books.mapValues(\.count) == expected)
     }
 
@@ -57,12 +58,28 @@ struct LayoutPreviewTests {
     func lists() {
         let sample = HomeLayoutSample.standard
         let expected: [HomeLayoutStyle: [String]] = [.collection: ["漫畫", "東方經典"], .categoryCards: ["詩歌", "博物誌"],
-                                                     .collageCards: ["推理", "冒險"], .bannerCards: ["日本裝幀", "新文學"]]
+                                                     .collageCards: ["推理", "冒險"], .bannerCards: ["奇幻", "歷史"],
+                                                     .chart: ["小說", "詩集"]]
         for style in HomeLayoutStyle.allCases where style.drawsLists {
             #expect(sample.collections(for: style).map(\.title) == expected[style]?.map { localized($0) }, "\(style)")
         }
+        for (style, collections) in sample.collections {
+            for collection in collections {
+                // 拼貼卡片 draws five covers; 大圖卡片 none, its face drawn from the name; the others three.
+                let drawn = switch style {
+                case .collageCards: CollectionSummary.collageLimit
+                case .bannerCards: 0
+                default: CollectionSummary.artworkLimit
+                }
+                #expect(collection.books.count == drawn, "\(collection.title)")
+            }
+        }
+        // 排行榜's columns draw each list's books as its places.
+        for collection in sample.collections(for: .chart) {
+            #expect(sample.listContents[collection.id]?.cards.map(\.title) == collection.books.map(\.title))
+            #expect((sample.listContents[collection.id]?.cards.count ?? 0) == HomeChartColumns.places)
+        }
         for collection in sample.collections.values.flatMap({ $0 }) {
-            #expect(collection.books.count == CollectionSummary.artworkLimit)
             for book in collection.books {
                 guard case .copyFile(let path)? = book.cover else {
                     Issue.record("\(book.title) has no bundled cover")

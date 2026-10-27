@@ -24,13 +24,13 @@ struct CollectionLayoutTests {
         }
     }
 
-    @Test("Gutenberg's lists, each with its first three books in order, opening the whole list")
+    @Test("Gutenberg's lists, each with its first five books in order, opening the whole list")
     func gutenbergLists() async throws {
         let summaries = try await lists()
         #expect(summaries.map(\.id) == PublicLibraryCollection.all.map(\.id))
         for (summary, collection) in zip(summaries, PublicLibraryCollection.all) {
             #expect(summary.title == localized(collection.titleKey))
-            #expect(summary.books.map(\.title) == collection.books.prefix(CollectionSummary.artworkLimit).map(\.title))
+            #expect(summary.books.map(\.title) == collection.books.prefix(CollectionSummary.collageLimit).map(\.title))
             #expect(summary.bookCount == collection.books.count)
             #expect(summary.opening == .gutenbergCollection(id: collection.id))
         }
@@ -90,7 +90,7 @@ struct CollectionLayoutTests {
 
     @Test("A list section offers the layouts of lists alone; a section of books every layout, its list a card")
     func choices() {
-        #expect(HomeLayoutStyle.choices(for: .gutenbergLists) == [.collection, .categoryCards, .collageCards])
+        #expect(HomeLayoutStyle.choices(for: .gutenbergLists) == [.collection, .categoryCards, .collageCards, .bannerCards, .chart])
         for binding: HomeSectionBinding in [.latest, .continueReading, .gutenbergCollection(id: "chinese"), .aozoraNew] {
             #expect(HomeLayoutStyle.choices(for: binding) == HomeLayoutStyle.allCases)
         }

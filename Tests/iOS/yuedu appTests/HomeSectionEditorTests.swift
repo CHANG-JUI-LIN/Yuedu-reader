@@ -59,8 +59,8 @@ struct HomeSectionEditorTests {
         store.edit { $0.replaceSection(latest) }
         let editor = HomeSectionEditor(section: latest, store: store, preview: preview())
 
-        editor.setLayout(HomeSectionLayout(style: .list, ranked: true))
-        #expect(store.page?.sections[1].layout == .rankedList)
+        editor.setLayout(HomeSectionLayout(style: .chart))
+        #expect(store.page?.sections[1].layout == .rankedRow)
         editor.setEnabled(false)
         #expect(store.page?.sections[1].isEnabled == false)
         #expect(editor.previewPage?.sections.first?.isEnabled == true, "the preview shows a hidden section")

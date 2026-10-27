@@ -22,14 +22,6 @@ enum DSColor {
     /// F5F5F5 at 1.09 (feedback #77; maintainer's call, 2026-10-26).
     static let swipeAction = Color(uiColor: .systemBlue)
 
-    // ── Rankings ──
-    /// A custom explore page's rank badges for first, second and third place, white
-    /// numerals on them; later places sit on `neutralControlFill`. The number is the cue,
-    /// the colour only marks the top three.
-    static let rankFirst = Color(uiColor: .systemRed)
-    static let rankSecond = Color(uiColor: .systemTeal)
-    static let rankThird = Color(uiColor: .systemOrange)
-
     // ── Custom explore layouts ──
     /// Each layout's hue on its tile in 新增元件, one per layout.
     static let layoutFeaturedCards = Color(uiColor: .systemBlue)
@@ -164,6 +156,25 @@ enum DSColor {
         [Color(red: 0.1, green: 0.4, blue: 0.2), Color(red: 0.3, green: 0.7, blue: 0.4)],
         [Color(red: 0.4, green: 0.0, blue: 0.5), Color(red: 0.7, green: 0.2, blue: 0.6)],
         [Color(red: 0.1, green: 0.1, blue: 0.15), Color(red: 0.3, green: 0.3, blue: 0.5)],
+    ]
+
+    /// Under a 大圖卡片's white name on the reader's photo: the photo darkened towards the card's
+    /// foot, so the name reads on any picture. Fixed, in dark mode too.
+    static let photoNameScrim = Color.black.opacity(0.55)
+
+    /// 分類卡's designed faces (maintainer, 2026-10-27: 「根據分類作默認的圖片設計」), after Apple
+    /// Books' category cards: a ground, and the drawing on it in a light tint of the ground's hue.
+    /// Every ground holds the card's white name at 5.8:1 or more. Fixed, in dark mode too, as a
+    /// cover is. Rose, coral, plum, indigo, slate, teal, forest, amber.
+    static let categoryArtPalette: [(ground: Color, art: Color)] = [
+        (Color(red: 0xA2 / 255, green: 0x3B / 255, blue: 0x72 / 255), Color(red: 0xF2 / 255, green: 0xA7 / 255, blue: 0xCF / 255)),
+        (Color(red: 0xB2 / 255, green: 0x3A / 255, blue: 0x48 / 255), Color(red: 0xF4 / 255, green: 0xA3 / 255, blue: 0xA8 / 255)),
+        (Color(red: 0x7B / 255, green: 0x3F / 255, blue: 0x8C / 255), Color(red: 0xD9 / 255, green: 0xB8 / 255, blue: 0xE3 / 255)),
+        (Color(red: 0x3F / 255, green: 0x4C / 255, blue: 0x9A / 255), Color(red: 0xA9 / 255, green: 0xB6 / 255, blue: 0xF2 / 255)),
+        (Color(red: 0x2E / 255, green: 0x5E / 255, blue: 0x8C / 255), Color(red: 0x9C / 255, green: 0xC7 / 255, blue: 0xEE / 255)),
+        (Color(red: 0x1F / 255, green: 0x6F / 255, blue: 0x6B / 255), Color(red: 0x8F / 255, green: 0xD3 / 255, blue: 0xCB / 255)),
+        (Color(red: 0x2F / 255, green: 0x6B / 255, blue: 0x3A / 255), Color(red: 0xA6 / 255, green: 0xD9 / 255, blue: 0xA0 / 255)),
+        (Color(red: 0x8A / 255, green: 0x4B / 255, blue: 0x12 / 255), Color(red: 0xF2 / 255, green: 0xB8 / 255, blue: 0x72 / 255)),
     ]
 
     // ── Search Engine Brand Colors ──
@@ -316,6 +327,11 @@ enum DSFont {
     /// Apple Books' do.
     static var serifCardTitle: Font {
         GlobalAppTypography.font(.title3, weight: .semibold, systemDesign: .serif)
+    }
+    /// A ranking's place, as Apple Books' Top Charts numbers its books (maintainer, 2026-10-27,
+    /// 1:1): Title in regular, in the system serif.
+    static var serifChartRank: Font {
+        GlobalAppTypography.font(.title, weight: .regular, systemDesign: .serif)
     }
     /// 新手導覽's app name on its welcome page: Large Title in bold, in the system serif.
     static var onboardingAppName: Font {
@@ -512,9 +528,6 @@ enum DSLayout {
     static let homeArticleImageAspectRatio: CGFloat = 16.0 / 9.0
     /// The dot an unread article carries, as the RSS tab's rows mark one.
     static let homeArticleUnreadDot: CGFloat = 8
-    /// 圖文資訊清單's rank badge at the default text size (scaled with Dynamic Type); two-digit
-    /// ranks widen it.
-    static let homeRankBadgeSize: CGFloat = 24
     /// The layouts after Apple Books' store and home (maintainer, 2026-10-25;
     /// `Technotes/AppleBooksHomeLayouts-2026-10-25.md`), all 2:3.
     /// The 頂部輪播圖's covers, alone on the band: about two and a half to a 402pt phone. Not scaled:
@@ -523,9 +536,25 @@ enum DSLayout {
     /// 大型封面書架's covers, with their titles under them: two to a 402pt phone, the third
     /// peeking past the edge. Scaled with Dynamic Type, at most `homeCardCoverMaxWidth`.
     static let homeLargeCoverWidth: CGFloat = 170
-    /// 一大四小's large cover. Its four small ones stand in two rows as tall as it, so a group
-    /// is about 330pt wide and the next one peeks past a 402pt phone's edge. Not scaled.
-    static let homeHeroCoverWidth: CGFloat = 160
+    /// 色帶 (maintainer, 2026-10-27, as Apple Books' Audiobooks We Love): this many covers in a
+    /// stack, the first this share of the band's width inside its margins, each next one this
+    /// much smaller and this share of a cover further along; this share of their height shows
+    /// above the band's foot.
+    static let homeFanCount = 4
+    static let homeFanCoverShare: CGFloat = 0.42
+    static let homeFanScale: CGFloat = 0.94
+    static let homeFanStep: CGFloat = 0.38
+    static let homeFanVisibleShare: CGFloat = 0.6
+    /// 排行榜's covers, as Apple Books' Top Charts draws them beside each place (52pt on a 440pt
+    /// phone). Scaled with Dynamic Type.
+    static let homeChartCoverWidth: CGFloat = 52
+    /// A layout a card or a group to a page (一大四小, 大圖卡片): the next one shows this much
+    /// past it, as Apple Books' Customer Favorites and More to Explore have it.
+    static let homePagePeek: CGFloat = 16
+    /// 一大四小 (maintainer, 2026-10-27: 1:1 with Apple Books' Customer Favorites): the large cover
+    /// this many times as wide as a small one (180pt and 82pt on a 440pt phone), every gap
+    /// `DSSpacing.lg`. Not scaled.
+    static let homeHeroLargeToSmall: CGFloat = 180.0 / 82.0
     /// 分類卡片: a card's height at the default text size (it grows with its name), and its
     /// covers fanned at the trailing edge: each this wide, this far past the one before,
     /// turned this much, and run off the card's bottom by this share of a cover's height.
@@ -534,20 +563,29 @@ enum DSLayout {
     static let homeCategoryCoverStep: CGFloat = 34
     static let homeCategoryCoverRotation: Double = 6
     static let homeCategoryCoverOverhang: CGFloat = 0.22
-    /// 拼貼卡片's width, scaled with Dynamic Type up to the most that fits a phone; its
-    /// collage is one large cover and two small ones as tall as it.
-    static let homeCollageCardWidth: CGFloat = 240
+    /// 拼貼卡片 (maintainer, 2026-10-27: 1:1 with Apple Books' Top Picks, measured on a 440pt
+    /// phone): a card this wide (scaled with Dynamic Type up to the most that fits a phone) and
+    /// at least this wide for its height; its large cover this share of the card's width, its
+    /// small ones this share of the large one's, in two rows beside it, the second column cut by
+    /// the card's edge.
+    static let homeCollageCardWidth: CGFloat = 278
     static let homeCollageCardMaxWidth: CGFloat = 340
+    static let homeCollageCardAspect: CGFloat = 0.75
+    static let homeCollageLargeShare: CGFloat = 146.0 / 278.0
+    static let homeCollageSmallToLarge: CGFloat = 67.0 / 146.0
     /// The 頂部輪播圖 (maintainer, 2026-10-27): its colour runs this far above its top, behind
     /// the bars and the status bar, and past them when the page is pulled down to refresh.
     static let homeCarouselBleed: CGFloat = 1000
-    /// 大圖卡片 (maintainer, 2026-10-27), as Apple Books Japan's エディターのおすすめ: a card a
-    /// page, this wide for its height, its covers this share of its height, each next one
-    /// this share of a cover's width along and turned this much more.
-    static let homeBannerAspect: CGFloat = 1.6
-    static let homeBannerCoverHeightShare: CGFloat = 0.72
-    static let homeBannerCoverStep: CGFloat = 0.62
-    static let homeBannerCoverRotation: Double = 5
+    /// 大圖卡片, a 分類卡 (maintainer, 2026-10-27), as Apple Books' More to Explore: a card a page
+    /// (1126 × 618 there); its designed face's drawing this share of the card's height tall,
+    /// centred here and turned this much, where Romance's heart is.
+    static let homeBannerAspect: CGFloat = 1126.0 / 618.0
+    static let homeCategoryArtGlyphShare: CGFloat = 0.62
+    static let homeCategoryArtCenter = UnitPoint(x: 0.71, y: 0.48)
+    static let homeCategoryArtRotation: Double = -10
+    /// A section of lists' form (maintainer, 2026-10-27: 「添加多個的預覽介面也要是橫向
+    /// scrollview，最後來個加號」): each card this wide, side by side, then ＋.
+    static let homeListCardTileWidth: CGFloat = 168
     /// 編輯首頁's header (maintainer, 2026-10-27, after an Emby client's editor): the 首頁配置's
     /// round photo, with its camera badge this big at its bottom trailing edge.
     static let homeEditorPhotoSize: CGFloat = 72

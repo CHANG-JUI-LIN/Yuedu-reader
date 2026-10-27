@@ -202,6 +202,7 @@ final class HomeSectionEditor: ObservableObject {
         var cards = listCards
         guard cards.indices.contains(index) else { return }
         cards[index].parameters[name] = value
+        moveCardPhoto(from: listCards[index], to: cards[index])
         setCards(cards)
     }
 
@@ -210,7 +211,23 @@ final class HomeSectionEditor: ObservableObject {
         var cards = listCards
         guard cards.indices.contains(index), !cards.contains(card) else { return }
         cards[index] = card
+        moveCardPhoto(from: listCards[index], to: card)
         setCards(cards)
+    }
+
+    /// 大圖卡片's photos, the home's.
+    var cardPhotos: HomeListCardPhotos { store.cardPhotos }
+
+    /// The photo `card` has in this section (`HomeListCardPhotoID`).
+    func photoID(of card: HomeListCard) -> HomeListCardPhotoID? {
+        HomeListCardPhotoID(section: draft.id, binding: card.binding, parameters: card.parameters)
+    }
+
+    /// A card named anew keeps its photo. One removed loses it when the store next reads the
+    /// home (`HomePageStore.init`).
+    private func moveCardPhoto(from old: HomeListCard, to new: HomeListCard) {
+        guard let from = photoID(of: old), let to = photoID(of: new) else { return }
+        store.cardPhotos.movePhoto(from: from, to: to)
     }
 
     /// The cards written as the section (`HomeSection.settingCards`), and after them those the

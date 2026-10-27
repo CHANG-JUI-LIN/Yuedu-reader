@@ -170,21 +170,22 @@ struct HomeConfigurationPhoto: View {
     }
 }
 
-/// Changes a 首頁配置's photo, from 相簿 or 檔案, and removes it once it has one: the one way
-/// it is changed, from its form and from 編輯首頁's header. `label` is what the reader taps.
-struct HomeConfigurationPhotoPicker<Label: View>: View {
-    let configurationID: HomeConfigurationID
+/// Changes a photo of the home's, from 相簿 or 檔案, and removes it once it has one: the one
+/// way a 首頁配置's is changed, from its form and from 編輯首頁's header, and a 大圖卡片 card's,
+/// from its section's form. `label` is what the reader taps.
+struct HomePhotoPicker<ID: RawRepresentable & Hashable & Sendable, Label: View>: View where ID.RawValue == String {
+    @ObservedObject var photos: HomePhotoFolder<ID>
+    let id: ID
     @ViewBuilder let label: () -> Label
-    @ObservedObject private var photos = HomePageStore.shared.photos
     @State private var photoFailure: String?
 
     var body: some View {
-        let hasPhoto = photos.images[configurationID] != nil
+        let hasPhoto = photos.images[id] != nil
         ImageSourcePickerButton(
             accessibilityTitle: localized(hasPhoto ? "更換照片" : "加入照片"),
             extraActions: hasPhoto ? [
                 ImageSourcePickerAction(title: localized("移除照片"), systemImage: "trash", isDestructive: true) {
-                    photos.removePhoto(for: configurationID)
+                    photos.removePhoto(for: id)
                 },
             ] : [],
             onPick: pick,
@@ -210,20 +211,20 @@ struct HomeConfigurationPhotoPicker<Label: View>: View {
             do {
                 data = try Data(contentsOf: url)
             } catch {
-                AppLogger.cache("⟐ 首頁配置 photo file could not be read", error: error, context: ["file": url.lastPathComponent])
+                AppLogger.cache("⟐ home photo file could not be read", error: error, context: ["file": url.lastPathComponent])
                 photoFailure = localized("無法讀取圖片。")
                 return
             }
         case .failure(let error):
-            AppLogger.cache("⟐ 首頁配置 photo could not be picked", error: error)
+            AppLogger.cache("⟐ home photo could not be picked", error: error)
             photoFailure = localized(error.messageKey)
             return
         }
         Task {
             do {
-                try await photos.setPhoto(data, for: configurationID)
+                try await photos.setPhoto(data, for: id)
             } catch {
-                AppLogger.cache("⟐ 首頁配置 photo not saved", error: error, context: ["configuration": configurationID.rawValue])
+                AppLogger.cache("⟐ home photo not saved", error: error, context: ["photo": id.rawValue])
                 photoFailure = localized("無法讀取圖片。")
             }
         }
@@ -249,7 +250,7 @@ struct HomeConfigurationForm: View {
                 VStack(spacing: DSSpacing.md) {
                     HomeConfigurationPhoto(name: listing?.name ?? "", image: photo,
                                            size: DSLayout.homeConfigurationFormPhotoSize)
-                    HomeConfigurationPhotoPicker(configurationID: configurationID) {
+                    HomePhotoPicker(photos: photos, id: configurationID) {
                         Text(localized(photo == nil ? "加入照片" : "更換照片"))
                             .font(DSFont.body)
                     }

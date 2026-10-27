@@ -4,8 +4,9 @@ import SwiftUI
 // An article is not a book (design §13.8), so it has no cover, no author and no progress: the
 // book layouts would show a 2:3 jacket and 書籍・ for it. Two looks instead, by the family the
 // section's 呈現方式 belongs to:
-// - 圖文資訊清單 (ranked or not): rows as the RSS tab's, the picture at the trailing end;
+// - 圖文資訊清單: rows as the RSS tab's, the picture at the trailing end;
 // - every sideways or grid layout: one row of landscape cards that swipes sideways.
+// In 排行榜, a layout of lists, they are a column's places (`HomeChartArticleRow`).
 
 struct HomeArticleCards: View {
     let layout: HomeSectionLayout
@@ -58,9 +59,8 @@ struct HomeArticleCards: View {
     private var list: some View {
         VStack(alignment: .leading, spacing: 0) {
             ForEach(articles.indices, id: \.self) { index in
-                let rank = layout.showsRanks ? index + 1 : nil
                 button(articles[index]) {
-                    HomeArticleRow(article: articles[index], rank: rank, thumbnailWidth: thumbnailWidth,
+                    HomeArticleRow(article: articles[index], thumbnailWidth: thumbnailWidth,
                                    stacksVertically: dynamicTypeSize.isAccessibilitySize)
                 }
                 if index < articles.count - 1 { Divider() }
@@ -162,7 +162,6 @@ struct HomeArticleCard: View {
 /// One row of 圖文資訊清單: the title, the feed and when, the picture at the trailing end.
 struct HomeArticleRow: View {
     let article: SubscriptionArticle
-    let rank: Int?
     let thumbnailWidth: CGFloat
     var stacksVertically = false
 
@@ -172,10 +171,6 @@ struct HomeArticleRow: View {
             : AnyLayout(HStackLayout(alignment: .top, spacing: DSSpacing.md))
         layout {
             VStack(alignment: .leading, spacing: DSSpacing.xxs) {
-                if let rank {
-                    HomeRankBadge(rank: rank)
-                        .padding(.bottom, DSSpacing.xxs)
-                }
                 Text(article.title)
                     .font(DSFont.subheadline.weight(.semibold))
                     .foregroundStyle(DSColor.textPrimary)
@@ -201,6 +196,51 @@ struct HomeArticleRow: View {
     }
 }
 
+/// One place of 排行榜 for an article, as `HomeChartRow` is for a book: its picture where a
+/// book's cover is, the place, and the title over the feed and when.
+struct HomeChartArticleRow: View {
+    let article: SubscriptionArticle
+    let rank: Int
+    let thumbnailWidth: CGFloat
+    let stacksVertically: Bool
+
+    var body: some View {
+        let layout = stacksVertically
+            ? AnyLayout(VStackLayout(alignment: .leading, spacing: DSSpacing.sm))
+            : AnyLayout(HStackLayout(alignment: .center, spacing: DSSpacing.lg))
+        layout {
+            if article.imageURL != nil {
+                HomeArticleImage(url: article.imageURL)
+                    .frame(width: thumbnailWidth, height: thumbnailWidth)
+                    .clipShape(RoundedRectangle(cornerRadius: DSRadius.sm, style: .continuous))
+            }
+            HStack(alignment: .center, spacing: DSSpacing.lg) {
+                Text(rank.formatted())
+                    .font(DSFont.serifChartRank)
+                    .foregroundStyle(DSColor.textPrimary)
+                    .monospacedDigit()
+                VStack(alignment: .leading, spacing: DSSpacing.xxs) {
+                    Text(article.title)
+                        .font(DSFont.headline)
+                        .foregroundStyle(DSColor.textPrimary)
+                        .lineLimit(2)
+                    HStack(spacing: DSSpacing.xs) {
+                        if !article.isRead { HomeArticleUnreadDot() }
+                        Text(article.feedAndDate)
+                            .font(DSFont.body)
+                            .foregroundStyle(DSColor.textSecondary)
+                            .lineLimit(1)
+                    }
+                }
+                .multilineTextAlignment(.leading)
+            }
+        }
+        .padding(.vertical, DSSpacing.lg)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .contentShape(Rectangle())
+    }
+}
+
 #Preview("訂閱的最新文章") {
     let articles = [
         SubscriptionArticle(id: "1", title: "一篇很長的文章標題，長到要換行才放得下，看看三行怎麼排", feedName: "少數派",
@@ -213,7 +253,12 @@ struct HomeArticleRow: View {
     ScrollView {
         VStack(alignment: .leading, spacing: DSSpacing.xxl) {
             HomeArticleCards(layout: .row, articles: articles, open: { _ in })
-            HomeArticleCards(layout: .rankedList, articles: articles, open: { _ in })
+            HomeArticleCards(layout: .list, articles: articles, open: { _ in })
+            ForEach(articles.indices, id: \.self) { index in
+                HomeChartArticleRow(article: articles[index], rank: index + 1, thumbnailWidth: DSLayout.homeChartCoverWidth,
+                                    stacksVertically: false)
+                    .padding(.horizontal, DSSpacing.lg)
+            }
         }
     }
 }

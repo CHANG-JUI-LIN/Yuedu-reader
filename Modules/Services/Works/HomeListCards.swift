@@ -179,9 +179,12 @@ extension CollectionSummary {
     /// indexes), which have none. A row with neither has no card.
     static func cards(of row: HomeModel.Row, entries: [CollectionEntry],
                       languages: ReadingLanguagePreferences?) -> [CollectionSummary] {
+        // The reader's photo for the card, on every list it gives.
+        let photo = row.card.flatMap { HomeListCardPhotoID(section: row.section.id, binding: $0.binding, parameters: $0.parameters) }
         let lists = (languages?.arrange(entries) ?? entries).compactMap { entry -> CollectionSummary? in
-            if case .collection(let list) = entry { return list }
-            return nil
+            guard case .collection(var list) = entry else { return nil }
+            list.photoID = photo
+            return list
         }
         if !lists.isEmpty { return lists }
         var books: [WorkSummary] = []
@@ -208,8 +211,10 @@ extension CollectionSummary {
         let opening = HomeListOpening(section: HomeSection(id: list.id, layout: .row, binding: list.binding, parameters: list.parameters),
                                       source: row.source, sourceName: row.sourceName, title: title,
                                       entries: Array(entries.prefix(HomeRow.limit)))
-        return [CollectionSummary(id: row.id, title: title, books: books, languages: bookLanguages, opening: .list(opening),
-                                  sourceName: row.providerName)]
+        var card = CollectionSummary(id: row.id, title: title, books: books, languages: bookLanguages, opening: .list(opening),
+                                     sourceName: row.providerName)
+        card.photoID = photo
+        return [card]
     }
 
     /// A card while its row loads: its name over blank covers.

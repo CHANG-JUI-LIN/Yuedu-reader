@@ -125,20 +125,21 @@ enum HomeDesignFixtureData {
                 policy: .local, state: .loaded(collection)),
             row(.gutenbergCollection(id: chinese.id), layout: .multiRow, source: gutenberg,
                 name: localized("Project Gutenberg"), policy: .local, state: .loaded(collection)),
-            row(.gutenbergCollection(id: chinese.id), layout: .rankedList, source: gutenberg,
-                name: localized("Project Gutenberg"), policy: .local, state: .loaded(collection)),
             row(.gutenbergCollection(id: chinese.id), layout: .coverGrid, source: gutenberg,
                 name: localized("Project Gutenberg"), policy: .local, state: .loaded(collection)),
             row(.gutenbergCollection(id: chinese.id), layout: .coverGrid, source: gutenberg,
                 name: localized("Project Gutenberg"), policy: .local, state: .loading),
             // After Apple Books' store and home (2026-10-25): the band loaded, drawn at the top
             // as the 頂部輪播圖 (2026-10-27), and loading, drawn as 大型封面書架 as any band after
-            // the first is; the other new layouts of books, and the three new layouts of lists.
+            // the first is; the other new layouts of books, among them 色帶書架 (2026-10-27), and
+            // the layouts of lists, 排行榜 among them, written as a ranked row is.
             row(.gutenbergCollection(id: chinese.id), layout: .band, source: gutenberg,
                 name: localized("Project Gutenberg"), policy: .local, state: .loaded(collection)),
             row(.gutenbergCollection(id: chinese.id), layout: .band, source: gutenberg,
                 name: localized("Project Gutenberg"), policy: .local, state: .loading),
             row(.gutenbergCollection(id: chinese.id), layout: .largeRow, source: gutenberg,
+                name: localized("Project Gutenberg"), policy: .local, state: .loaded(collection)),
+            row(.gutenbergCollection(id: chinese.id), layout: .colorBand, source: gutenberg,
                 name: localized("Project Gutenberg"), policy: .local, state: .loaded(collection)),
             row(.gutenbergCollection(id: chinese.id), layout: .heroGrid, source: gutenberg,
                 name: localized("Project Gutenberg"), policy: .local, state: .loaded(collection)),
@@ -174,9 +175,18 @@ enum HomeDesignFixtureData {
             return nil
         }
         let onShelf = keys.first, downloaded = keys.dropFirst(2).first
-        return HomeRowContent(entries: entries, status: { key in
+        let status: (SourceItemKey) -> CopyLookup.Status? = { key in
             key == onShelf ? .onShelf : key == downloaded ? .downloaded : nil
-        }, shelfBooks: [:])
+        }
+        var content = HomeRowContent(entries: entries, status: status, shelfBooks: [:])
+        // 排行榜's columns, each its list's books (`HomeRowContent.lists`).
+        if group.section.layout.style == .chart {
+            content.lists = Dictionary(entries.compactMap { entry -> (String, HomeRowContent)? in
+                guard case .collection(let list) = entry else { return nil }
+                return (list.id, HomeRowContent(entries: list.bookEntries, status: status, shelfBooks: [:]))
+            }, uniquingKeysWith: { first, _ in first })
+        }
+        return content
     }
 }
 

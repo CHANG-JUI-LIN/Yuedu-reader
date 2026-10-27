@@ -42,6 +42,8 @@ final class HomePageStore: ObservableObject {
 
     /// Each 首頁配置's photo, in a folder beside the file.
     let photos: HomeConfigurationPhotos
+    /// 大圖卡片's cards' photos, in another.
+    let cardPhotos: HomeListCardPhotos
 
     /// Whether saves stay in memory this launch, because the file could not be read or comes
     /// from a newer build.
@@ -72,9 +74,20 @@ final class HomePageStore: ObservableObject {
         self.defaults = defaults
         self.insertsForYouOnce = insertsForYouOnce
         self.appliesDefaultsRhythmOnce = appliesDefaultsRhythmOnce
+        // 首頁配置's form draws its photo at 96pt, three pixels a point.
         photos = HomeConfigurationPhotos(directory: fileURL.deletingLastPathComponent()
-            .appendingPathComponent("HomeConfigurationPhotos", isDirectory: true))
+            .appendingPathComponent("HomeConfigurationPhotos", isDirectory: true),
+            pixelSize: CGSize(width: 288, height: 288))
+        // A 大圖卡片 card is about 400pt across on a phone, three pixels a point.
+        cardPhotos = HomeListCardPhotos(directory: fileURL.deletingLastPathComponent()
+            .appendingPathComponent("HomeListCardPhotos", isDirectory: true),
+            pixelSize: CGSize(width: 1200, height: (1200 / DSLayout.homeBannerAspect).rounded()))
         load()
+        // A card's photo goes with its card, its section or its 首頁配置, gone since the last
+        // launch, or with a 新增欄目 left with 取消; never from a home this build only reads.
+        if let home, !isReadOnly {
+            cardPhotos.removePhotos(keeping: HomeListCardPhotoID.all(in: home))
+        }
     }
 
     /// The selected configuration, or the defaults for this reader as 預設, saved now so they

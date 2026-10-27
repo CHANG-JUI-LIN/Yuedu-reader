@@ -9,33 +9,27 @@ struct HomeLayoutStyleTests {
     @Test("each layout is written as its own value and read back as itself")
     func roundTrip() throws {
         for style in HomeLayoutStyle.allCases {
-            for ranked in [false, true] {
-                let layout = HomeSectionLayout(style: style, ranked: ranked)
-                let section = HomeSection(layout: layout, binding: .related)
-                let decoded = try JSONDecoder().decode(HomeSection.self, from: JSONEncoder().encode(section))
-                #expect(decoded.layout == layout)
-                #expect(decoded.layout.isKnown)
-                #expect(decoded.layout.style == style)
-                #expect(decoded.layout.showsRanks == (style.canShowRanks && ranked))
-            }
+            let layout = HomeSectionLayout(style: style)
+            let section = HomeSection(layout: layout, binding: .related)
+            let decoded = try JSONDecoder().decode(HomeSection.self, from: JSONEncoder().encode(section))
+            #expect(decoded.layout == layout)
+            #expect(decoded.layout.isKnown)
+            #expect(decoded.layout.style == style)
         }
         #expect(HomeSectionLayout(style: .row) == .row)
-        #expect(HomeSectionLayout(style: .row, ranked: true) == .rankedRow)
-        #expect(HomeSectionLayout(style: .largeRow, ranked: true) == .largeRow, "ranks are kept only where they are drawn")
+        #expect(HomeSectionLayout(style: .list) == .list)
     }
 
-    @Test("a custom page's seven kinds draw as decision 14 maps them")
+    @Test("a custom page's seven kinds draw as decision 14 maps them, its rankings as 排行榜")
     func customPageKinds() {
-        let expected: [CustomExploreComponent.Kind: (HomeLayoutStyle, Bool)] = [
-            .featuredCards: (.row, false), .carousel: (.row, false), .grid: (.multiRow, false),
-            .ranking: (.list, true), .pagedRanking: (.list, true), .multiCategoryRanking: (.list, true),
-            .waterfall: (.coverGrid, false),
+        let expected: [CustomExploreComponent.Kind: HomeLayoutStyle] = [
+            .featuredCards: .row, .carousel: .row, .grid: .multiRow,
+            .ranking: .chart, .pagedRanking: .chart, .multiCategoryRanking: .chart,
+            .waterfall: .coverGrid,
         ]
         #expect(Set(expected.keys) == Set(CustomExploreComponent.Kind.allCases))
-        for (kind, (style, ranked)) in expected {
-            let layout = HomeSectionLayout(kind)
-            #expect(layout.style == style, "\(kind)")
-            #expect(layout.showsRanks == ranked, "\(kind)")
+        for (kind, style) in expected {
+            #expect(HomeSectionLayout(kind).style == style, "\(kind)")
         }
     }
 
@@ -73,7 +67,7 @@ struct HomeLayoutStyleTests {
             #expect(HomeLayoutStyle.choices(for: binding) == HomeLayoutStyle.allCases)
         }
         for binding in [HomeSectionBinding.gutenbergLists, .lists([])] {
-            #expect(HomeLayoutStyle.choices(for: binding) == [.collection, .categoryCards, .collageCards, .bannerCards])
+            #expect(HomeLayoutStyle.choices(for: binding) == [.collection, .categoryCards, .collageCards, .bannerCards, .chart])
         }
     }
 
@@ -85,6 +79,16 @@ struct HomeLayoutStyleTests {
             #expect(!HomeLayoutStyle.choices(for: binding).contains { HomeSectionLayout(style: $0) == .band })
         }
         #expect(HomeSectionLayout(style: .bannerCards) == .bannerCards)
+    }
+
+    @Test("色帶書架 is a layout of its own, never the 頂部輪播圖's band; a build before it draws a row")
+    func colorBand() {
+        #expect(HomeSectionLayout(style: .colorBand) == .colorBand)
+        #expect(HomeSectionLayout(style: .colorBand) != .band)
+        #expect(HomeSectionLayout.colorBand.style == .colorBand)
+        #expect(!HomeLayoutStyle.colorBand.drawsLists)
+        #expect(HomeLayoutStyle.choices(for: .latest).contains(.colorBand))
+        #expect(!HomeLayoutStyle.choices(for: .gutenbergLists).contains(.colorBand))
     }
 
     @Test("繼續閱讀 starts as 精簡閱讀卡片, 古騰堡熱門 ranked, 精選書單 as 分類卡片; the other defaults as a row")
@@ -103,11 +107,13 @@ struct HomeLayoutStyleTests {
         }
     }
 
-    @Test("ranks show on 圖文資訊清單 and 橫向單排書架 alone")
-    func ranks() {
-        #expect(HomeLayoutStyle.allCases.filter(\.canShowRanks) == [.row, .list])
-        #expect(HomeSectionLayout.rankedRow.style == .row)
-        #expect(HomeSectionLayout.rankedRow.showsRanks)
-        #expect(!HomeSectionLayout.row.showsRanks)
+    @Test("排行榜 replaced 顯示排名: both ranked values read as it, and it is written as the ranked row a build before it draws")
+    func chart() {
+        #expect(HomeSectionLayout.rankedRow.style == .chart)
+        #expect(HomeSectionLayout.rankedList.style == .chart)
+        #expect(HomeSectionLayout(style: .chart) == .rankedRow)
+        #expect(HomeLayoutStyle.chart.drawsLists, "one ranking is one card, as one list is")
+        #expect(HomeSectionLayout.row.style == .row)
+        #expect(HomeSectionLayout.list.style == .list)
     }
 }

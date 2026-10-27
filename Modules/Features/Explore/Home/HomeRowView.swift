@@ -66,8 +66,17 @@ struct HomeRowContent {
     var articles: [SubscriptionArticle] = []
     /// 專題集合's lists (decision 37), a card each.
     var collections: [CollectionSummary] = []
+    /// Each list's own books, by the list's id, for 排行榜's columns (`CollectionSummary.bookEntries`);
+    /// made only when asked for.
+    var lists: [String: HomeRowContent] = [:]
 
     var isEmpty: Bool { cards.isEmpty && locations.isEmpty && articles.isEmpty && collections.isEmpty }
+
+    /// Books alone: 呈現方式's samples.
+    init(cards: [HomeCardContent]) {
+        self.cards = cards
+        locations = []
+    }
 
     @MainActor
     init(entries: [CollectionEntry], status: (SourceItemKey) -> CopyLookup.Status?, shelfBooks: [UUID: ReadingBook]) {
@@ -93,9 +102,15 @@ struct HomeRowContent {
     }
 
     /// One pass over the shelf, for the copies this row shows.
+    /// - Parameter withLists: each list's own books too (`lists`), for 排行榜.
     @MainActor
-    init(entries: [CollectionEntry], store: BookStore) {
-        let wanted = Set(entries.compactMap { entry -> UUID? in
+    init(entries: [CollectionEntry], store: BookStore, withLists: Bool = false) {
+        let lists = withLists ? entries.compactMap { entry -> CollectionSummary? in
+            if case .collection(let list) = entry { return list }
+            return nil
+        } : []
+        let listEntries = lists.map { ($0.id, $0.bookEntries) }
+        let wanted = Set((entries + listEntries.flatMap(\.1)).compactMap { entry -> UUID? in
             if case .item(_, _, .copy(let id)) = entry { return id }
             return nil
         })
@@ -103,6 +118,9 @@ struct HomeRowContent {
             store.books.lazy.filter { wanted.contains($0.id) }.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
         let lookup = store.copyLookup()
         self.init(entries: entries, status: lookup.status(for:), shelfBooks: shelfBooks)
+        self.lists = Dictionary(listEntries.map { id, entries in
+            (id, HomeRowContent(entries: entries, status: lookup.status(for:), shelfBooks: shelfBooks))
+        }, uniquingKeysWith: { first, _ in first })
     }
 }
 
@@ -154,16 +172,18 @@ struct HomeRowView: View {
                     header
                     stateContent
                 }
-                .modifier(HomeBandGround(cover: bandCover, isActive: drawsBand))
+                // 色帶書架's covers stand on the band's foot; only the 輪播圖 runs under the bars.
+                .modifier(HomeBandGround(cover: bandCover, isActive: drawsBand, isCarousel: isCarousel,
+                                         cutsCovers: !isCarousel))
             }
         }
         .task { load() }
     }
 
-    /// The 頂部輪播圖 draws its band while its covers load and once they have; one that failed,
-    /// or that holds no books (訂閱的最新文章's articles), is drawn without it.
+    /// The 頂部輪播圖, and 色帶書架, draw their band while their covers load and once they have;
+    /// one that failed, or that holds no books (訂閱的最新文章's articles), is drawn without it.
     private var drawsBand: Bool {
-        guard isCarousel else { return false }
+        guard isCarousel || group.section.layout.style == .colorBand else { return false }
         switch group.state {
         case .idle, .loading: return true
         case .failed: return false
@@ -226,7 +246,8 @@ struct HomeRowView: View {
             if let content {
                 if !content.locations.isEmpty { locationChips(content.locations) }
                 if !content.collections.isEmpty {
-                    HomeSectionLists(layout: group.section.layout, collections: content.collections, open: openCollection)
+                    HomeSectionLists(layout: group.section.layout, collections: content.collections, contents: content.lists,
+                                     open: openCollection, openBook: open, openArticle: openArticle)
                 }
                 if !content.cards.isEmpty { cards(content.cards) }
                 if !content.articles.isEmpty {
@@ -247,10 +268,11 @@ struct HomeRowView: View {
                                  hasShowAll: showAll != nil, open: { _, _ in }, bandCover: drawsBand ? $bandCover : nil)
             }
         }
+        // A skeleton, as a browser's or Apple Books' page loads: grey bars and blocks where the
+        // text and covers will be, no spinner (maintainer, 2026-10-27).
         .redacted(reason: .placeholder)
         .scrollDisabled(true)
         .allowsHitTesting(false)
-        .overlay { ProgressView() }
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(localized("載入中…"))
     }
@@ -339,15 +361,10 @@ struct HomeSectionActionsMenu: View {
             Menu {
                 Picker(localized("呈現方式"), selection: Binding(
                     get: { layout.style },
-                    set: { actions.setLayout(HomeSectionLayout(style: $0, ranked: layout.showsRanks)) })) {
+                    set: { actions.setLayout(HomeSectionLayout(style: $0)) })) {
                     ForEach(choices) { style in
                         Label(localized(style.titleKey), systemImage: style.symbol).tag(style)
                     }
-                }
-                if layout.style.canShowRanks {
-                    Toggle(localized("顯示排名"), isOn: Binding(
-                        get: { layout.showsRanks },
-                        set: { actions.setLayout(HomeSectionLayout(style: layout.style, ranked: $0)) }))
                 }
             } label: {
                 Label(localized("呈現方式"), systemImage: "rectangle.3.group")

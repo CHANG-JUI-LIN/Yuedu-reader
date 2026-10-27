@@ -15,7 +15,7 @@ Rule: every cover is in the public domain worldwide.
   which was published before 1931 (70 years from publication has long passed, and the US term
   too).
 
-Cropped to 2:3 and saved at 300×450, quality 74 (74 files, about 2.3 MB).
+Cropped to 2:3 and saved at 300×450, quality 74 (74 files, about 2.3 MB, at first).
 
 2026-10-25, for the layouts taken from Apple Books (`Technotes/AppleBooksHomeLayouts-2026-10-25.md`),
 26 more: 色帶書架, 大型封面書架 and 一大四小, and two lists each for 分類卡片 and 拼貼卡片.
@@ -28,6 +28,30 @@ went to 大圖卡片's two lists, 日本裝幀 and 新文學, with two more: 吶
 墳's Commons image (a design sketch with notes), 烏合叢書's (a sketch, and the series 彷徨 is in),
 野草 (孫福熙, died 1962), later 紅燭 reprints (pale or relabelled), and セノオ楽譜 and
 コドモノクニ again (not books).
+
+2026-10-27, later: 拼貼卡片 follows Apple Books Japan's ピックアップ, five covers to a card, so
+推理 and 冒險 took two more each: *Le Mystère de la chambre jaune* and *The Leavenworth Case*,
+*King Solomon's Mines* and Wyeth's *Robinson Crusoe*. Left out: *The Circular Staircase* (a 230 px image that looks redrawn),
+*Tarzan of the Apes* (Fred J. Arting's dates unknown), an undated *Swiss Family Robinson* whose
+cover artist is not given, *Kidnapped* (too dark at this size), *The Prisoner of Zenda* and
+海底軍艦 (their scans open on a library page), and *The Lost World* (a second Conan Doyle in one
+layout).
+
+2026-10-27, evening: 大圖卡片 became a category card with no covers (a face designed from the
+list's name), so its six went elsewhere: 桑名心中, 日本お伽噺集, 凧 and 猛虎集 to the new 色帶書架
+(Audiobooks We Love's stack), 吶喊 and 紅燭 to 排行榜's two lists, 小說 and 詩集, with four more:
+- 沉淪 (郁達夫, died 1945), 泰東圖書局's 1930 twelfth printing; the cover is unsigned and the
+  printing before 1931 (`File:NLC511-023031404012682-30123 沉淪 創作小說.pdf`, page 1).
+- 羅生門 (芥川龍之介, died 1927), 阿蘭陀書房 1917; the title slip is 菅虎雄's (died 1943), the rest
+  plain cloth (`File:Rashomon (cover).jpg`, the bottom's bare cloth cut).
+- 春と修羅 (宮沢賢治, died 1933), 関根書店 1924: the thistle cloth of the book itself, unsigned and
+  before 1931, which carries no title. Not its case: its lettering may be 尾山篤二郎's (died 1963).
+- 月に吠える (萩原朔太郎, died 1942), アルス's 1922 reprint, the case's front: unsigned and before
+  1931. The 1917 jacket (恩地孝四郎 and 田中恭吉, both died before 1956) has no title on its
+  front, and 詩集 would have had two covers without one.
+Left out: 朝花夕拾 (a second 魯迅 in one list, and essays), 沉淪's 1947 天下書店 edition (unsigned,
+after 1931) and its 1927 printing (faded), and the NDL scans of 羅生門, 春と修羅 and 月に吠える
+(rebound in black, or library labels on the cover).
 
 ## Left out on purpose
 
@@ -148,3 +172,7 @@ went to 大圖卡片's two lists, 日本裝幀 and 新文學, with two more: 吶
 | call-of-the-wild | The Call of the Wild (Macmillan, 1903) | Jack London (1876–1916); cover decorated by Charles Edward Hooper (1867–1920, Wikidata Q135101543) | 拼貼卡片「冒險」 | Commons: London - The Call of the Wild, 1903.djvu, p. 1 | PD |
 | jungle-book | The Jungle Book (Macmillan, 1894) | Rudyard Kipling (1865–1936); cover John Lockwood Kipling (1837–1911) | 拼貼卡片「冒險」 | Commons: JunglebookCover.jpg, the front board | PD |
 | naufrages-du-jonathan | Les Naufragés du « Jonathan » (Hetzel, 1909) | Jules Verne (1828–1905); cartonnage unsigned | 拼貼卡片「冒險」 | Commons: Hetzel-Naufrages-Jonathan-1909.jpg (PD-old-70-1923) | PD |
+| mystere-chambre-jaune | Le Mystère de la chambre jaune (Pierre Lafitte, 1908) | Gaston Leroux (1868–1927); cover Henri Delaspre (1871–1949) | 拼貼卡片「推理」 | Commons: Le Mystère de la chambre jaune (couverture).JPG, trimmed 5 px a side | PD |
+| leavenworth-case | The Leavenworth Case (Putnam's Knickerbocker Novels, 1878) | Anna Katharine Green (1846–1935); cover unknown | 拼貼卡片「推理」 | Commons: The Leavenworth Case.png | PD |
+| king-solomons-mines | King Solomon's Mines (Cassell, 1887) | H. Rider Haggard (1856–1925); cover unknown | 拼貼卡片「冒險」 | Commons: Front cover King Solomon's Mines 1887.jpg, 960 px thumbnail, the spine cut off | PD |
+| robinson-crusoe | Robinson Crusoe (Cosmopolitan, 1920) | Daniel Defoe (1660–1731); painting N. C. Wyeth (1882–1945) | 拼貼卡片「冒險」 | Commons: Robinson Crusoe Wyeth 1920.jpg, 960 px thumbnail | PD |

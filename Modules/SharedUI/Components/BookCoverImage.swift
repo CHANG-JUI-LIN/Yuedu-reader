@@ -2,7 +2,9 @@ import SwiftUI
 
 /// Remote book cover with the headers source CDNs need, falling back to the
 /// user's 預設封面 library and then to `GeneratedBookCover` when there's no cover
-/// (or it fails to load).
+/// (or it fails to load). While it loads, the slot is a grey skeleton (maintainer,
+/// 2026-10-27: 「要加載封面都可以改成骨架屏佔位」), not a cover that would read as
+/// this book's and then change.
 ///
 /// Fills whatever frame the caller gives it (`scaledToFill`, clipped). Apply the
 /// frame + `clipShape` outside:
@@ -37,6 +39,9 @@ struct BookCoverImage: View {
     /// stack discards rows scrolled far away (seen on iOS 27 with the 發現頁's sections
     /// and 查看全部's rows), and those come back to whatever the pipeline still has.
     @State private var loaded: HeldRemoteCover?
+    /// The cache key whose fetch came back with nothing: the slot shows its fallback, not
+    /// the skeleton. A cancelled fetch is not a failure.
+    @State private var failedKey: String?
     /// The 預設封面 this slot falls back to, once decoded off the main thread.
     @State private var loadedDefaultCover: LoadedDefaultCover?
     @Environment(\.colorScheme) private var colorScheme
@@ -72,12 +77,21 @@ struct BookCoverImage: View {
     /// another address never shows the previous one's cover.
     private var image: UIImage? { loaded?.image(for: cacheKey) }
 
+    /// Fetching the cover: an address, not forced to the 預設封面, nothing fetched for it yet and
+    /// no failure. An empty address goes straight to the fallback.
+    private var isLoading: Bool {
+        !forcesDefaultCover && !coverURL.isEmpty && image == nil && failedKey != cacheKey
+    }
+
     var body: some View {
         ZStack {
             if let image, !forcesDefaultCover {
                 Image(uiImage: image)
                     .resizable()
                     .scaledToFill()
+            } else if isLoading {
+                Rectangle()
+                    .fill(DSColor.neutralControlFill)
             } else if let defaultCover = resolvedDefaultCover {
                 Image(uiImage: defaultCover)
                     .resizable()
@@ -86,7 +100,8 @@ struct BookCoverImage: View {
                 GeneratedBookCover(title: title, author: author)
             }
         }
-        .reportsCoverImage(image.flatMap { forcesDefaultCover ? nil : $0 } ?? resolvedDefaultCover)
+        // Nothing while the skeleton shows: a colour taken from it would be the grey's.
+        .reportsCoverImage(image.flatMap { forcesDefaultCover ? nil : $0 } ?? (isLoading ? nil : resolvedDefaultCover))
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .clipped()
         .task(id: LoadID(
@@ -150,13 +165,15 @@ struct BookCoverImage: View {
         }
         // Memory let go of its copy; this slot did not. Nothing to fetch.
         if loaded?.image(for: key) != nil { return }
-        // The 預設封面 is the placeholder while the network cover loads and the
-        // fallback when it fails. It is a local file, so it is ready first.
+        // The 預設封面 is the fallback when the network cover fails, decoded first so a
+        // failure lands on it, not on the generated cover. The skeleton shows meanwhile.
         await loadDefaultCover()
         guard !Task.isCancelled else { return }
         let fetched = await Self.fetchCover(coverURL: coverURL, sourceBaseURL: sourceBaseURL,
                                             sourceHeaders: sourceHeaders, sourceID: sourceID, session: session)
-        if !Task.isCancelled { loaded = fetched.map { HeldRemoteCover(key: key, image: $0) } }
+        guard !Task.isCancelled else { return }
+        loaded = fetched.map { HeldRemoteCover(key: key, image: $0) }
+        if fetched == nil { failedKey = key }
     }
 
     /// The cover at `coverURL`, from memory or fetched with the headers its CDN needs: the

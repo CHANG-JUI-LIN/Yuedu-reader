@@ -259,43 +259,46 @@ final class HomeEditorUITests: XCTestCase {
         return 1 - Double(commonest) / Double(samples)
     }
 
-    /// 5d-3: 呈現方式, from the same long press, redraws the section: 圖文資訊清單 gives each book
-    /// the width of the screen, and 顯示排名 puts its rank first in what VoiceOver reads. 熱門
-    /// starts as a ranked row (2026-10-25, after Apple Books' charts), and its ranks go along.
+    /// 5d-3: 呈現方式, from the same long press, redraws the section: 橫向單排書架 shows several
+    /// books to a screen, 圖文資訊清單 gives each the width of the screen. 熱門 starts ranked
+    /// (2026-10-25, after Apple Books' charts), which is 排行榜 since 2026-10-27 (it replaced
+    /// 顯示排名): one ranking takes the page, each place read with its rank first; the other
+    /// layouts read none.
     @MainActor
     func testLongPressChangesTheLayout() throws {
         let app = launchExplore()
         let header = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@ AND label CONTAINS %@",
                                                       "home.row.header.", listTitle)).firstMatch
         var book = try popularCard(app, under: header)
-        XCTAssertLessThan(book.frame.width, app.frame.width / 2, "橫向單排書架 shows several books to a screen")
-        let ranked = NSPredicate(format: "label MATCHES %@", "^[0-9]+, .*")
         func readsRank(_ label: String) -> Bool { label.range(of: "^[0-9]+, ", options: .regularExpression) != nil }
-        XCTAssertTrue(readsRank(book.label), "a ranked row reads its rank first: \(book.label)")
-        attach(app, "home-section-ranked-row")
+        XCTAssertTrue(readsRank(book.label), "排行榜 reads its rank first: \(book.label)")
+        XCTAssertGreaterThan(book.frame.width, app.frame.width * 0.8, "one ranking takes the page: \(book.frame)")
+        attach(app, "home-section-chart")
 
         header.press(forDuration: 1.0)
         let layouts = app.buttons["呈現方式"].firstMatch
         XCTAssertTrue(layouts.waitForExistence(timeout: 5), app.debugDescription)
         layouts.tap()
-        let list = app.buttons["圖文資訊清單"].firstMatch
-        XCTAssertTrue(list.waitForExistence(timeout: 5), app.debugDescription)
+        let row = app.buttons["橫向單排書架"].firstMatch
+        XCTAssertTrue(row.waitForExistence(timeout: 5), app.debugDescription)
         attach(app, "home-section-layouts")
-        list.tap()
+        row.tap()
         XCTAssertTrue(book.waitForExistence(timeout: 5))
         book = try popularCard(app, under: header)
-        XCTAssertGreaterThan(book.frame.width, app.frame.width * 0.8, app.debugDescription)
-        XCTAssertTrue(readsRank(book.label), "the ranks go along: \(book.label)")
-        attach(app, "home-section-ranked-list")
+        XCTAssertLessThan(book.frame.width, app.frame.width / 2, "橫向單排書架 shows several books to a screen")
+        XCTAssertFalse(readsRank(book.label), "no rank outside 排行榜: \(book.label)")
+        attach(app, "home-section-row")
 
         header.press(forDuration: 1.0)
         XCTAssertTrue(layouts.waitForExistence(timeout: 5))
         layouts.tap()
-        let ranks = app.switches["顯示排名"].firstMatch.exists ? app.switches["顯示排名"].firstMatch : app.buttons["顯示排名"].firstMatch
-        XCTAssertTrue(ranks.waitForExistence(timeout: 5), app.debugDescription)
-        ranks.tap()
-        expectation(for: NSCompoundPredicate(notPredicateWithSubpredicate: ranked), evaluatedWith: book)
-        waitForExpectations(timeout: 5)
+        let list = app.buttons["圖文資訊清單"].firstMatch
+        XCTAssertTrue(list.waitForExistence(timeout: 5), app.debugDescription)
+        list.tap()
+        XCTAssertTrue(book.waitForExistence(timeout: 5))
+        book = try popularCard(app, under: header)
+        XCTAssertGreaterThan(book.frame.width, app.frame.width * 0.8, app.debugDescription)
+        XCTAssertFalse(readsRank(book.label), "no rank outside 排行榜: \(book.label)")
         attach(app, "home-section-list")
     }
 
@@ -636,8 +639,8 @@ final class HomeEditorUITests: XCTestCase {
         XCTAssertTrue(isBetweenTheBars(), app.debugDescription)
         latest.tap()
         let addLatest = app.buttons["homeSection.latest.add"].firstMatch
-        // Under 顯示在最新's libraries (decision 36), at the screen's foot since 副標題 and
-        // 顯示排名 joined a row's form. Checked once the form is in: mid-push it read as
+        // Under 顯示在最新's libraries (decision 36), at the screen's foot since 副標題 joined a
+        // row's form. Checked once the form is in: mid-push it read as
         // hittable. A button cut by the screen's edge is hittable too, and a tap on its sliver
         // lands on the home indicator (iOS 18.6 simulator), so it must be wholly on screen.
         XCTAssertTrue(app.textFields["homeSection.title"].firstMatch.waitForExistence(timeout: 5), app.debugDescription)

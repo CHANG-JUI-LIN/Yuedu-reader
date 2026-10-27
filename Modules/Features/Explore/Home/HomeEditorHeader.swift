@@ -2,7 +2,7 @@ import SwiftUI
 
 // The maintainer, 2026-10-27, after an Emby client's home editor: 編輯首頁 opens on the
 // 首頁配置 it edits, in the 頂部輪播圖's place. Its photo, with a camera badge, changes the
-// photo (`HomeConfigurationPhotoPicker`, the form's own); its name pushes 首頁配置's page, where
+// photo (`HomePhotoPicker`, the form's own); its name pushes 首頁配置's page, where
 // it is switched, added and renamed; 選擇輪播數據 pushes 選擇內容來源 for the 輪播圖 alone; and
 // 關閉輪播圖 hides it, keeping what it shows, or 開啟輪播圖 shows it again.
 
@@ -25,7 +25,7 @@ struct HomeEditorHeader: View {
 
     var body: some View {
         VStack(spacing: DSSpacing.md) {
-            HomeConfigurationPhotoPicker(configurationID: configurationID) {
+            HomePhotoPicker(photos: photos, id: configurationID) {
                 HomeConfigurationPhoto(name: name, image: photos.images[configurationID], size: DSLayout.homeEditorPhotoSize)
                     .overlay(alignment: .bottomTrailing) {
                         Image(systemName: "camera.fill")

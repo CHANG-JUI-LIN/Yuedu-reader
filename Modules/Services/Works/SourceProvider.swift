@@ -68,14 +68,17 @@ enum CollectionEntry: Hashable, Sendable {
 }
 
 /// A list a source offers whole, for 專題集合 (decision 37): its name, the first books its
-/// artwork is made of, and the list it opens. Bounded when made: at most three books.
+/// artwork is made of, and the list it opens. Bounded when made: at most five books.
 struct CollectionSummary: Hashable, Sendable, Identifiable {
-    /// The artwork shows the first three covers, as the storefront's 精選書單 does.
+    /// 專題集合, 分類卡片 and 大圖卡片 show the first three covers, as the storefront's 精選書單 does.
     static let artworkLimit = 3
+    /// 拼貼卡片 shows five, as Apple Books Japan's ピックアップ does (maintainer, 2026-10-27): as
+    /// many as a summary keeps.
+    static let collageLimit = 5
 
     let id: String
     let title: String
-    /// The first books, in the list's order, at most `artworkLimit`.
+    /// The first books, in the list's order, at most `collageLimit`.
     let books: [WorkSummary]
     let bookCount: Int
     /// Every language the list's books are in, so 偏好閱讀語言 can place the list.
@@ -84,17 +87,25 @@ struct CollectionSummary: Hashable, Sendable, Identifiable {
     /// The source 大圖卡片 names over the list; nil names it by where the list opens
     /// (`CollectionOpening.sourceName`). 呈現方式's sample lists name where their covers are from.
     let sourceName: String?
+    /// The photo the reader gave the card that drew it, for 大圖卡片 (`HomeListCardPhotos`); nil
+    /// for a list no card of a section drew.
+    var photoID: HomeListCardPhotoID?
 
     init(id: String, title: String, books: [WorkSummary], languages: [String], opening: CollectionOpening,
          sourceName: String? = nil) {
         self.id = id
         self.sourceName = sourceName
         self.title = title
-        self.books = Array(books.prefix(Self.artworkLimit))
+        self.books = Array(books.prefix(Self.collageLimit))
         bookCount = books.count
         var seen = Set<String>()
         self.languages = languages.filter { !$0.isEmpty && seen.insert($0).inserted }
         self.opening = opening
+    }
+
+    /// The books the three-cover layouts show.
+    var artworkBooks: [WorkSummary] {
+        Array(books.prefix(Self.artworkLimit))
     }
 }
 

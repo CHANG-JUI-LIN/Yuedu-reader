@@ -297,21 +297,31 @@ struct PublicLibraryCoverAnchor: ViewModifier {
 
 /// A home cover, from whichever view already draws that kind: the shelf's artwork for a
 /// copy, `BookCoverImage` for an address, the cover pipeline for a file the app keeps, and
-/// `GeneratedBookCover` when there is none.
+/// `GeneratedBookCover` when there is none. In a loading row (redacted as a placeholder) a
+/// grey block, whatever the card holds, as the row's text is grey bars: the skeleton.
 struct HomeCardCover: View {
     let cover: HomeCardContent.Cover
     let title: String
     let author: String
     let size: CGSize
 
+    @Environment(\.redactionReasons) private var redactionReasons
+
     var body: some View {
         let shape = RoundedRectangle(cornerRadius: DSRadius.searchListCover, style: .continuous)
-        HomeCoverArtwork(cover: cover, title: title, author: author, size: size)
-            .frame(width: size.width, height: size.height)
-            .clipShape(shape)
-            .shadow(color: DSColor.searchListCoverShadow, radius: DSLayout.searchListCoverShadowRadius,
-                    y: DSLayout.searchListCoverShadowY)
-            .accessibilityHidden(true)
+        Group {
+            if redactionReasons.contains(.placeholder) {
+                shape.fill(DSColor.neutralControlFill)
+                    .frame(width: size.width, height: size.height)
+            } else {
+                HomeCoverArtwork(cover: cover, title: title, author: author, size: size)
+                    .frame(width: size.width, height: size.height)
+                    .clipShape(shape)
+                    .shadow(color: DSColor.searchListCoverShadow, radius: DSLayout.searchListCoverShadowRadius,
+                            y: DSLayout.searchListCoverShadowY)
+            }
+        }
+        .accessibilityHidden(true)
     }
 }
 
@@ -343,7 +353,8 @@ struct HomeCoverArtwork: View {
 }
 
 /// A cover file another store keeps (the WebDAV index's), read off the main thread by the
-/// cover pipeline; the generated cover stands in until it is read, and when it cannot be.
+/// cover pipeline: a skeleton while it is read, as a remote cover has, and the generated cover
+/// when it cannot be.
 private struct HomeFileCover: View {
     let path: String
     let title: String
@@ -352,6 +363,8 @@ private struct HomeFileCover: View {
     @Environment(\.displayScale) private var displayScale
     @Environment(\.coverImagePipeline) private var pipeline
     @State private var image: UIImage?
+    /// The request that was read and gave no image.
+    @State private var failed: CoverImageRequest?
 
     private var request: CoverImageRequest? {
         CoverPixelSize.fitting(pointSize: size, scale: displayScale)
@@ -362,13 +375,18 @@ private struct HomeFileCover: View {
         Group {
             if let image = image ?? request.flatMap(pipeline.cachedImage(for:)) {
                 Image(uiImage: image).resizable().scaledToFill().reportsCoverImage(image)
+            } else if let request, failed != request {
+                Rectangle().fill(DSColor.neutralControlFill)
             } else {
                 GeneratedBookCover(title: title, author: author)
             }
         }
         .task(id: request) {
             guard let request, pipeline.cachedImage(for: request) == nil else { return }
-            image = await pipeline.image(for: request).image
+            let read = await pipeline.image(for: request).image
+            guard !Task.isCancelled else { return }
+            image = read
+            if read == nil { failed = request }
         }
     }
 }

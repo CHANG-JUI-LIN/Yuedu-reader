@@ -3625,7 +3625,6 @@
 "多行橫向輪播" = "Multi-Row Carousel";
 "固定封面網格" = "Cover Grid";
 "圖文資訊清單" = "Detailed List";
-"顯示排名" = "Show Rankings";
 
 /* Unified library 5d-3b: the full catalogs from the top of the home */
 
@@ -4172,14 +4171,17 @@
 "分類卡片" = "Category Cards";
 "拼貼卡片" = "Collage Cards";
 "大圖卡片" = "Banner Cards";
+"色帶書架" = "Color Band";
+"排行榜" = "Top Charts";
 "選擇輪播數據" = "Choose Carousel Content";
 "關閉輪播圖" = "Turn Off Carousel";
 "開啟輪播圖" = "Turn On Carousel";
 "推理" = "Mystery";
 "冒險" = "Adventure";
 "博物誌" = "Natural History";
-"日本裝幀" = "Japanese Book Design";
-"新文學" = "New Literature";
+"奇幻" = "Fantasy";
+"歷史" = "History";
+"詩集" = "Poetry";
 "選填" = "Optional";
 "你讀過的系列，接著讀下一本。" = "The next book in series you've read.";
 "根據你的閱讀紀錄挑選。" = "Picked from your reading history.";

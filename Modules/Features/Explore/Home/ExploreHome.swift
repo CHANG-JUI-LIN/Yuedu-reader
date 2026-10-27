@@ -607,7 +607,7 @@ struct HomeRowHost: View {
 
     private var content: HomeRowContent? {
         guard case .loaded(let entries) = group.state else { return nil }
-        return HomeRowContent(entries: entries, store: store)
+        return HomeRowContent(entries: entries, store: store, withLists: group.section.layout.style == .chart)
     }
 
     /// A shelf copy's ••• (5d-3c). The shelf's rows load again at once, so the card leaves
@@ -625,13 +625,9 @@ struct HomeRowHost: View {
             })
     }
 
-    /// The page of a section of one source. 最新 across several has none: no one page lists
-    /// them all. A section of lists, its source's page (`ExplorePlace.listsPage`).
+    /// The section's page (`ExplorePlace.sectionPage`).
     private var showAll: (() -> Void)? {
-        let target = group.section.drawsLists
-            ? ExplorePlace.listsPage(group.rows)
-            : group.rows.count == 1 ? ExplorePlace.showAll(group.rows[0], aozoraIndex: aozoraIndex) : nil
-        return target.map { target in { push(target) } }
+        ExplorePlace.sectionPage(group, aozoraIndex: aozoraIndex).map { target in { push(target) } }
     }
 
     /// Every card opens 作品詳情 first, as Emby's posters open the item's page (Phase 5 plan,

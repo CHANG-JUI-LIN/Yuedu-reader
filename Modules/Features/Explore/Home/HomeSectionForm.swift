@@ -320,7 +320,7 @@ struct HomeSectionForm: View {
                     }
                 case .layouts:
                     HomeLayoutChoicePage(choices: layoutChoices, current: draft.layout, sample: .standard) { style in
-                        editor.setLayout(HomeSectionLayout(style: style, ranked: draft.layout.showsRanks))
+                        editor.setLayout(HomeSectionLayout(style: style))
                         push = nil
                     }
                 case .filters(let url):
@@ -332,7 +332,7 @@ struct HomeSectionForm: View {
                         }
                     }
                 case .listCard(let index):
-                    HomeListCardPage(editor: editor, index: index, modules: modules) {
+                    HomeListCardPage(editor: editor, index: index, modules: modules, photos: editor.cardPhotos) {
                         push = nil
                         editor.removeCard(at: index)
                     }
@@ -448,20 +448,27 @@ struct HomeSectionForm: View {
     // MARK: 清單
 
     /// The section's lists in a layout of lists (maintainer, 2026-10-27): a card each, in this
-    /// order, from any sources. A card opens its own page; 加入清單 opens 選擇內容來源, up to
+    /// order, from any sources, side by side and then ＋ (「添加多個的預覽介面也要是橫向
+    /// scrollview，最後來個加號」). A card shows its face as 大圖卡片 draws it and opens its own
+    /// page, where 大圖卡片's takes a photo; ＋ opens 選擇內容來源, up to
     /// `HomeSection.listCardLimit`. The last card stays: without it the section shows nothing.
     private var listCardsSection: some View {
         let cards = editor.listCards
         return Section {
-            ForEach(Array(cards.enumerated()), id: \.element) { index, card in
-                listCardRow(card, at: index, count: cards.count)
+            ScrollView(.horizontal) {
+                HStack(alignment: .top, spacing: DSSpacing.md) {
+                    ForEach(Array(cards.enumerated()), id: \.element) { index, card in
+                        listCardTile(card, at: index, count: cards.count)
+                    }
+                    addListTile
+                }
+                .padding(.horizontal, DSSpacing.lg)
+                .padding(.vertical, DSSpacing.md)
             }
-            .onMove { editor.moveCards(fromOffsets: $0, toOffset: $1) }
-            Button { openPicker(.addLists) } label: {
-                Label(localized("加入清單"), systemImage: "plus")
-            }
-            .disabled(!editor.canAddCard)
-            .accessibilityIdentifier("homeSection.lists.add")
+            .scrollIndicators(.hidden)
+            // Each tile its own button, not the row's.
+            .buttonStyle(.plain)
+            .listRowInsets(EdgeInsets())
         } header: {
             Text(localized("清單"))
         } footer: {
@@ -471,44 +478,77 @@ struct HomeSectionForm: View {
         .interfaceSectionSurface()
     }
 
-    private func listCardRow(_ card: HomeListCard, at index: Int, count: Int) -> some View {
+    private func listCardTile(_ card: HomeListCard, at index: Int, count: Int) -> some View {
+        let name = card.name(modules: modules)
         let source = card.sourceName(sources: sources, connections: connections, modules: modules)
+        // Only 大圖卡片 draws a card's photo.
+        let photoID = draft.layout.style == .bannerCards ? editor.photoID(of: card) : nil
         return Button { push = .listCard(index) } label: {
-            HStack(spacing: DSSpacing.sm) {
-                VStack(alignment: .leading, spacing: DSSpacing.xxs) {
-                    Text(card.name(modules: modules))
-                        .foregroundStyle(DSColor.textPrimary)
-                    if !source.isEmpty {
-                        Text(source)
-                            .font(DSFont.footnote)
-                            .foregroundStyle(DSColor.textSecondary)
-                    }
+            VStack(alignment: .leading, spacing: DSSpacing.xs) {
+                HomeBannerCard(title: name, photoID: photoID, photos: editor.cardPhotos, isThumbnail: true)
+                if !source.isEmpty {
+                    Text(source)
+                        .font(DSFont.footnote)
+                        .foregroundStyle(DSColor.textSecondary)
+                        .lineLimit(2)
                 }
-                Spacer(minLength: DSSpacing.sm)
-                Image(systemName: "chevron.right")
-                    .font(DSFont.footnote.weight(.semibold))
-                    .foregroundStyle(DSColor.textTertiary)
-                    .accessibilityHidden(true)
             }
+            .frame(width: DSLayout.homeListCardTileWidth, alignment: .leading)
             .contentShape(Rectangle())
         }
-        .swipeActions {
-            if count > 1 {
-                Button(localized("移除"), role: .destructive) { editor.removeCard(at: index) }
-            }
-        }
-        .accessibilityActions {
+        .contextMenu {
             if index > 0 {
-                Button(localized("上移")) { editor.moveCards(fromOffsets: [index], toOffset: index - 1) }
+                Button(localized("向前移動"), systemImage: "arrow.backward") {
+                    editor.moveCards(fromOffsets: [index], toOffset: index - 1)
+                }
             }
             if index < count - 1 {
-                Button(localized("下移")) { editor.moveCards(fromOffsets: [index], toOffset: index + 2) }
+                Button(localized("向後移動"), systemImage: "arrow.forward") {
+                    editor.moveCards(fromOffsets: [index], toOffset: index + 2)
+                }
+            }
+            if count > 1 {
+                Button(localized("移除"), systemImage: "trash", role: .destructive) { editor.removeCard(at: index) }
+            }
+        }
+        // Its list, then where it is from, as the rows before it read.
+        .accessibilityLabel(source.isEmpty ? name : [name, source].joined(separator: ", "))
+        .accessibilityActions {
+            if index > 0 {
+                Button(localized("向前移動")) { editor.moveCards(fromOffsets: [index], toOffset: index - 1) }
+            }
+            if index < count - 1 {
+                Button(localized("向後移動")) { editor.moveCards(fromOffsets: [index], toOffset: index + 2) }
             }
             if count > 1 {
                 Button(localized("移除")) { editor.removeCard(at: index) }
             }
         }
         .accessibilityIdentifier("homeSection.listCard.\(index)")
+    }
+
+    /// ＋ at the end of the cards: 加入清單.
+    private var addListTile: some View {
+        Button { openPicker(.addLists) } label: {
+            VStack(alignment: .leading, spacing: DSSpacing.xs) {
+                RoundedRectangle(cornerRadius: DSRadius.lg, style: .continuous)
+                    .fill(DSColor.neutralControlFill)
+                    .aspectRatio(DSLayout.homeBannerAspect, contentMode: .fit)
+                    .overlay {
+                        Image(systemName: "plus")
+                            .font(DSFont.title2.weight(.semibold))
+                            .foregroundStyle(editor.canAddCard ? DSColor.accent : DSColor.textTertiary)
+                    }
+                Text(localized("加入清單"))
+                    .font(DSFont.footnote)
+                    .foregroundStyle(DSColor.textSecondary)
+            }
+            .frame(width: DSLayout.homeListCardTileWidth, alignment: .leading)
+            .contentShape(Rectangle())
+        }
+        .disabled(!editor.canAddCard)
+        .accessibilityLabel(localized("加入清單"))
+        .accessibilityIdentifier("homeSection.lists.add")
     }
 
     // MARK: Filters
@@ -568,11 +608,6 @@ struct HomeSectionForm: View {
             .accessibilityLabel(localized("呈現方式"))
             .accessibilityValue(localized(draft.layout.style.titleKey))
             .accessibilityIdentifier("homeSection.layout")
-        }
-        if draft.layout.style.canShowRanks {
-            Toggle(localized("顯示排名"), isOn: Binding(
-                get: { draft.layout.showsRanks },
-                set: { editor.setLayout(HomeSectionLayout(style: draft.layout.style, ranked: $0)) }))
         }
     }
 
@@ -666,18 +701,20 @@ struct HomeSectionForm: View {
 
     private func content(of group: HomeSectionGroup) -> HomeRowContent? {
         guard case .loaded(let entries) = group.state else { return nil }
-        return HomeRowContent(entries: entries, store: store)
+        return HomeRowContent(entries: entries, store: store, withLists: group.section.layout.style == .chart)
     }
 }
 
 // MARK: - A card of a layout of lists
 
-/// One card of a section of lists: where its list is from, its own parameters (趨勢's 地區,
-/// maintainer 2026-10-27), a 來源配置's category picked again under other filters, and 移除.
+/// One card of a section of lists: 大圖卡片's photo (「分類卡的圖片可以自定義」), where its list is
+/// from, its own parameters (趨勢's 地區, maintainer 2026-10-27), a 來源配置's category picked
+/// again under other filters, and 移除.
 private struct HomeListCardPage: View {
     @ObservedObject var editor: HomeSectionEditor
     let index: Int
     @ObservedObject var modules: RuleModuleLibrary
+    @ObservedObject var photos: HomeListCardPhotos
     /// 移除, which leaves the page.
     let remove: () -> Void
     @ObservedObject private var sources = BookSourceStore.shared
@@ -696,6 +733,21 @@ private struct HomeListCardPage: View {
     var body: some View {
         if let card {
             Form {
+                if editor.draft.layout.style == .bannerCards, let photoID = editor.photoID(of: card) {
+                    Section {
+                        VStack(spacing: DSSpacing.md) {
+                            HomeBannerCard(title: card.name(modules: modules), photoID: photoID, photos: photos, isThumbnail: false)
+                                .accessibilityHidden(true)
+                            HomePhotoPicker(photos: photos, id: photoID) {
+                                Text(localized(photos.images[photoID] == nil ? "加入照片" : "更換照片"))
+                                    .font(DSFont.body)
+                            }
+                            .accessibilityIdentifier("homeSection.listCard.photo")
+                        }
+                        .frame(maxWidth: .infinity)
+                    }
+                    .interfaceSectionSurface()
+                }
                 Section {
                     LabeledContent(localized("來源"), value: card.sourceName(sources: sources, connections: connections, modules: modules))
                     if let category {
@@ -896,6 +948,21 @@ extension HomeContentOwner {
         HomeSectionForm(
             editor: HomeSectionEditor(
                 section: HomeSection(layout: .row, binding: .gutenbergCollection(id: PublicLibraryCollection.chinese.id)),
+                store: HomePageStore(fileURL: FileManager.default.temporaryDirectory.appendingPathComponent("preview-home.json")),
+                preview: .preview(shelf: BookStore())),
+            isInSheet: false)
+    }
+    .environmentObject(BookStore())
+}
+
+#Preview("大圖卡片的清單") {
+    NavigationStack {
+        HomeSectionForm(
+            editor: HomeSectionEditor(
+                section: HomeSection(layout: .bannerCards, binding: .lists([
+                    HomeListCard(binding: .gutenbergCollection(id: PublicLibraryCollection.chinese.id)),
+                    HomeListCard(binding: .gutenbergShelf(id: "popular")),
+                ])),
                 store: HomePageStore(fileURL: FileManager.default.temporaryDirectory.appendingPathComponent("preview-home.json")),
                 preview: .preview(shelf: BookStore())),
             isInSheet: false)

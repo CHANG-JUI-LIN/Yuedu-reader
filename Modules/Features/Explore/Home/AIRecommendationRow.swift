@@ -215,7 +215,7 @@ struct AIRecommendationRow: View {
     private func perform(_ action: MoreAction) {
         switch action {
         case .regenerate: generate()
-        case .layout(let style): actions?.setLayout(HomeSectionLayout(style: style, ranked: section.layout.showsRanks))
+        case .layout(let style): actions?.setLayout(HomeSectionLayout(style: style))
         case .hide: actions?.hide()
         case .settings: actions?.openSettings()
         case .delete: actions?.delete()
@@ -319,7 +319,7 @@ struct AIRecommendationRow: View {
         ScrollView {
             VStack(spacing: DSSpacing.xxl) {
                 ForEach(HomeLayoutStyle.choices(for: .aiRecommendations)) { style in
-                    AIRecommendationRow(section: HomeSection(layout: HomeSectionLayout(style: style, ranked: false),
+                    AIRecommendationRow(section: HomeSection(layout: HomeSectionLayout(style: style),
                                                              binding: .aiRecommendations),
                                         title: localized(style.titleKey),
                                         service: AIRecommendationRowPreview.service(list: AIRecommendationRowPreview.list),

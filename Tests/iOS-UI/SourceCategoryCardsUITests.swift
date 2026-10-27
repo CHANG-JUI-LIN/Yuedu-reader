@@ -172,9 +172,8 @@ final class SourceCategoryCardsUITests: XCTestCase {
         attach(app, "source-category-all-lists")
         all.tap()
 
-        // The form's list is lazy: the cards past the screen exist once it scrolls to 加入清單, after them.
+        // The cards side by side, then 加入清單 (2026-10-27): every card is there with the first.
         XCTAssertTrue(first.waitForExistence(timeout: 5), app.debugDescription)
-        for _ in 0..<6 where !(add.exists && add.isHittable) { app.swipeUp() }
         let last = app.buttons["homeSection.listCard.3"].firstMatch
         XCTAssertTrue(last.waitForExistence(timeout: 5), "全部清單 adds the other three categories once: \(app.debugDescription)")
         XCTAssertTrue(last.label.contains("歷史"), last.label)

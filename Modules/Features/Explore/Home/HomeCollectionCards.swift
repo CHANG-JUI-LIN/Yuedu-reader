@@ -7,24 +7,34 @@ import SwiftUI
 // The maintainer, 2026-10-25, after Apple Books' home (`Technotes/AppleBooksHomeLayouts-2026-10-25.md`):
 // - 分類卡片: as More to Explore, a wide card per list down the page, its name beside its
 //   covers fanned at the trailing edge and cut off by the card's.
-// - 拼貼卡片: as Top Picks, a card per list swiped sideways, its first cover large and the next
-//   two small beside it, over its name and how many books it holds.
-// The maintainer, 2026-10-27, after Apple Books Japan's store (§9 of the same note):
-// - 大圖卡片: as エディターのおすすめ, a wide card a page under the list's source and name, the
-//   list's covers fanned on the first one's colour, the next card showing past the edge.
+// - 拼貼卡片: as Top Picks and Apple Books Japan's ピックアップ (2026-10-27, 1:1), a card per list
+//   swiped sideways, its first cover large and the next four small in two columns beside it,
+//   the second cut off by the card's edge, over its name and how many books it holds.
+// - 大圖卡片 (2026-10-27): a 分類卡 as More to Explore's Romance, a wide card a page, the list's
+//   name on a face designed from it (`HomeCategoryArt`) or the reader's photo; no covers.
+// - 排行榜 (2026-10-27): Top Charts' columns, a ranking each (`HomeChartColumns`).
 
 /// A section's lists in its layout. A section of lists given a layout of books (a custom page's,
 /// a later build's) draws 專題集合, the layout every section of lists can take.
 struct HomeSectionLists: View {
     let layout: HomeSectionLayout
     let collections: [CollectionSummary]
+    /// Each list's books by its id, which 排行榜 draws (`HomeRowContent.lists`).
+    var contents: [String: HomeRowContent] = [:]
     let open: (CollectionSummary) -> Void
+    /// A book of 排行榜 was tapped, with its column's books.
+    var openBook: (HomeCardContent, [HomeCardContent]) -> Void = { _, _ in }
+    /// An article of 排行榜 was tapped.
+    var openArticle: (SubscriptionArticle) -> Void = { _ in }
 
     var body: some View {
         switch layout.style {
         case .categoryCards: HomeCategoryCards(collections: collections, open: open)
         case .collageCards: HomeCollageCards(collections: collections, open: open)
         case .bannerCards: HomeBannerCards(collections: collections, open: open)
+        case .chart:
+            HomeChartColumns(collections: collections, contents: contents, openColumn: open, open: openBook,
+                             openArticle: openArticle)
         default: HomeCollectionCards(collections: collections, open: open)
         }
     }
@@ -72,8 +82,9 @@ struct HomeCollectionCard: View {
                 .foregroundStyle(DSColor.textPrimary)
                 .multilineTextAlignment(.leading)
                 .lineLimit(2)
-            CollectionCoverArtwork(count: collection.books.count) { index, slot in
-                let book = collection.books[index]
+            let books = collection.artworkBooks
+            CollectionCoverArtwork(count: books.count) { index, slot in
+                let book = books[index]
                 // A 2:3 cover as wide as its third of the artwork, as the storefront's covers fit.
                 HomeCardCover(cover: .reference(book.cover, session: collection.opening.coverSession(connections: connections)),
                               title: book.title, author: book.authors.joined(separator: "、"),
@@ -188,7 +199,7 @@ struct HomeCategoryCard: View {
     /// The width the fanned covers take inside the card.
     private var coversWidth: CGFloat {
         let overhang = coverSize.width * DSLayout.homeCategoryCoverOverhang
-        return coverSize.width + DSLayout.homeCategoryCoverStep * CGFloat(max(0, collection.books.count - 1)) - overhang
+        return coverSize.width + DSLayout.homeCategoryCoverStep * CGFloat(max(0, collection.artworkBooks.count - 1)) - overhang
     }
 
     var body: some View {
@@ -210,7 +221,7 @@ struct HomeCategoryCard: View {
     /// The first cover in front at the leading end, each next one behind it and further along,
     /// turned a little more, the whole fan run off the card's bottom and trailing edges.
     private var covers: some View {
-        let books = collection.books
+        let books = collection.artworkBooks
         let session = collection.opening.coverSession(connections: connections)
         return ZStack(alignment: .bottomLeading) {
             ForEach(books.indices, id: \.self) { index in
@@ -242,7 +253,8 @@ struct HomeCollageCards: View {
     var body: some View {
         let width = min(scaledWidth, DSLayout.homeCollageCardMaxWidth)
         ScrollView(.horizontal) {
-            LazyHStack(alignment: .top, spacing: DSSpacing.md) {
+            // Top Picks' cards stand this far apart.
+            LazyHStack(alignment: .top, spacing: DSSpacing.lg) {
                 ForEach(collections) { collection in
                     HomeCollectionButton(collection: collection, value: HomeCollageCard.countText(collection), open: open) {
                         HomeCollageCard(collection: collection, width: width)
@@ -255,9 +267,10 @@ struct HomeCollageCards: View {
     }
 }
 
-/// One list as Top Picks draws it: the first cover large and the next two small, in a column as
-/// tall as it, then the list's name (two lines kept, so cards side by side line up) and how many
-/// books it holds.
+/// One list as Apple Books' Top Picks draws it (maintainer, 2026-10-27: 1:1; Apple Books Japan's
+/// ピックアップ is the same card): a white card at least 3:4, the first cover large and the next
+/// four small in two rows beside it, all standing on one line, the second column cut by the
+/// card's trailing edge; the list's name and how many books it holds at its foot.
 struct HomeCollageCard: View {
     let collection: CollectionSummary
     let width: CGFloat
@@ -268,61 +281,66 @@ struct HomeCollageCard: View {
     }
 
     var body: some View {
-        let shape = RoundedRectangle(cornerRadius: DSRadius.lg, style: .continuous)
-        VStack(alignment: .leading, spacing: DSSpacing.md) {
-            collage(width: width - DSSpacing.md * 2)
+        let shape = RoundedRectangle(cornerRadius: DSRadius.xxl, style: .continuous)
+        VStack(alignment: .leading, spacing: 0) {
+            collage
+            Spacer(minLength: DSSpacing.xl)
             VStack(alignment: .leading, spacing: DSSpacing.xxs) {
                 Text(collection.title)
                     .font(DSFont.headline)
                     .foregroundStyle(DSColor.textPrimary)
-                    .lineLimit(2, reservesSpace: true)
                 Text(Self.countText(collection))
-                    .font(DSFont.subheadline)
+                    .font(DSFont.body)
                     .foregroundStyle(DSColor.textSecondary)
-                    .lineLimit(1)
             }
+            .lineLimit(1)
             .multilineTextAlignment(.leading)
+            .padding(.trailing, DSSpacing.lg)
         }
-        .padding(DSSpacing.md)
+        .padding(.leading, DSSpacing.lg)
+        .padding(.top, DSSpacing.xxl)
+        .padding(.bottom, DSSpacing.xl)
         .frame(width: width, alignment: .topLeading)
+        .frame(minHeight: width / DSLayout.homeCollageCardAspect, alignment: .top)
+        .clipShape(shape)
         .interfaceCardSurface(in: shape)
         .shadow(color: DSColor.shadow, radius: DSLayout.exploreCardShadowRadius, y: DSLayout.exploreCardShadowY)
         .contentShape(shape)
     }
 
-    /// `width` holds the large cover, a gap and the small ones' column: with every cover 2:3 and
-    /// the two small ones and the gap between them as tall as the large one, the large one is
-    /// (width − ⅔ gap) / 1.5 wide.
-    private func collage(width: CGFloat) -> some View {
-        let gap = DSSpacing.xs
+    /// Book 1 large; 2 and 3 the first column of small ones, 4 and 5 the one the edge cuts. Drawn
+    /// from the leading padding to the card's edge.
+    private var collage: some View {
         let aspect = DSLayout.discoverCoverAspectRatio
-        let largeWidth = (width - gap * 2 / 3) / 1.5
+        let largeWidth = width * DSLayout.homeCollageLargeShare
         let large = CGSize(width: largeWidth, height: largeWidth / aspect)
-        let smallHeight = (large.height - gap) / 2
-        let small = CGSize(width: smallHeight * aspect, height: smallHeight)
+        let smallWidth = largeWidth * DSLayout.homeCollageSmallToLarge
+        let small = CGSize(width: smallWidth, height: smallWidth / aspect)
         let books = collection.books
         let session = collection.opening.coverSession(connections: connections)
-        return HStack(alignment: .top, spacing: gap) {
-            ForEach(books.indices.prefix(1), id: \.self) { index in
-                HomeCardCover(cover: .reference(books[index].cover, session: session), title: books[index].title,
-                              author: books[index].authors.joined(separator: "、"), size: large)
-            }
-            VStack(spacing: gap) {
-                ForEach(books.indices.dropFirst().prefix(2), id: \.self) { index in
-                    HomeCardCover(cover: .reference(books[index].cover, session: session), title: books[index].title,
-                                  author: books[index].authors.joined(separator: "、"), size: small)
+        let columns = [Array(books.indices.dropFirst().prefix(2)), Array(books.indices.dropFirst(3).prefix(2))]
+        return HStack(alignment: .bottom, spacing: DSSpacing.md) {
+            ForEach(books.indices.prefix(1), id: \.self) { cover(books[$0], size: large, session: session) }
+            ForEach(columns.indices, id: \.self) { column in
+                VStack(spacing: DSSpacing.sm) {
+                    ForEach(columns[column], id: \.self) { cover(books[$0], size: small, session: session) }
                 }
             }
         }
-        .frame(width: width, height: large.height, alignment: .topLeading)
+        .frame(width: width - DSSpacing.lg, height: large.height, alignment: .bottomLeading)
         .accessibilityHidden(true)
+    }
+
+    private func cover(_ book: WorkSummary, size: CGSize, session: URLSession?) -> some View {
+        HomeCardCover(cover: .reference(book.cover, session: session), title: book.title,
+                      author: book.authors.joined(separator: "、"), size: size)
     }
 }
 
 // MARK: - 大圖卡片
 
-/// The lists a card to a page, the next one showing past the edge; two to a page on a wider
-/// screen, as 專題集合 pages them.
+/// The lists as 分類卡, a card to a page and the next one peeking (`DSLayout.homePagePeek`), as
+/// Apple Books' More to Explore pages them; two to a page on a wider screen.
 struct HomeBannerCards: View {
     let collections: [CollectionSummary]
     let open: (CollectionSummary) -> Void
@@ -332,15 +350,15 @@ struct HomeBannerCards: View {
     var body: some View {
         let perScreen = horizontalSizeClass == .regular ? 2 : 1
         ScrollView(.horizontal) {
-            LazyHStack(alignment: .top, spacing: DSSpacing.md) {
+            LazyHStack(alignment: .top, spacing: DSSpacing.lg) {
                 ForEach(collections) { collection in
                     HomeCollectionButton(collection: collection, value: collection.sourceName ?? collection.opening.sourceName,
                                          open: open) {
                         HomeBannerCard(collection: collection)
                     }
                     .containerRelativeFrame(.horizontal) { length, _ in
-                        let peek = collections.count > perScreen ? DSLayout.homeReadingCardPeek + DSSpacing.md : 0
-                        let gaps = DSSpacing.md * CGFloat(perScreen - 1)
+                        let peek = collections.count > perScreen ? DSSpacing.lg + DSLayout.homePagePeek : 0
+                        let gaps = DSSpacing.lg * CGFloat(perScreen - 1)
                         return max(0, (length - gaps - peek) / CGFloat(perScreen))
                     }
                 }
@@ -351,87 +369,68 @@ struct HomeBannerCards: View {
     }
 }
 
-/// One list as エディターのおすすめ draws a pick: its source small and its name large over a wide
-/// card, the card the list's covers fanned on the first one's colour, the placeholder grey until
-/// that cover has drawn. The name keeps two lines, so cards side by side line up.
+/// One list as a 分類卡 (maintainer, 2026-10-27: 「大圖卡片…可以拿來當分類卡」「不需要真實封面」), as
+/// Apple Books' More to Explore draws Romance: the list's name in white at the foot of a wide
+/// card, the card the reader's photo for it (「分類卡的圖片可以自定義」), darkened under the name,
+/// or else its designed face (`HomeCategoryArt`). A name too long for the card at a large text
+/// size makes the card taller. A thumbnail, as its section's form shows each card, is the same
+/// face in small.
 struct HomeBannerCard: View {
-    let collection: CollectionSummary
-    var connections: RemoteLibraryConnectionStore = .shared
+    let title: String
+    let photoID: HomeListCardPhotoID?
+    var isThumbnail = false
+    @ObservedObject var photos: HomeListCardPhotos = HomePageStore.shared.cardPhotos
 
-    /// The first cover's average colour, once it has drawn.
-    @State private var coverColor: CoverTint.RGB?
+    @Environment(\.redactionReasons) private var redactionReasons
 
-    /// The cover's colour as it is: nothing is written on it.
-    private var ground: Color {
-        coverColor?.color ?? DSColor.coverTintPlaceholder
+    init(collection: CollectionSummary) {
+        title = collection.title
+        photoID = collection.photoID
+    }
+
+    init(title: String, photoID: HomeListCardPhotoID?, photos: HomeListCardPhotos, isThumbnail: Bool) {
+        self.title = title
+        self.photoID = photoID
+        self.photos = photos
+        self.isThumbnail = isThumbnail
+    }
+
+    private var photo: UIImage? {
+        guard !redactionReasons.contains(.placeholder), let photoID else { return nil }
+        return photos.images[photoID]
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: DSSpacing.sm) {
-            VStack(alignment: .leading, spacing: DSSpacing.xxs) {
-                Text(collection.sourceName ?? collection.opening.sourceName)
-                    .font(DSFont.caption.weight(.semibold))
-                    .foregroundStyle(DSColor.textSecondary)
-                    .lineLimit(1)
-                Text(collection.title)
-                    .font(DSFont.title3.weight(.bold))
-                    .foregroundStyle(DSColor.textPrimary)
-                    .lineLimit(2, reservesSpace: true)
-            }
-            .multilineTextAlignment(.leading)
-            artwork
+        let shape = RoundedRectangle(cornerRadius: isThumbnail ? DSRadius.lg : DSRadius.xxl, style: .continuous)
+        ZStack(alignment: .bottomLeading) {
+            Color.clear.aspectRatio(DSLayout.homeBannerAspect, contentMode: .fit)
+            Text(title)
+                .font(isThumbnail ? DSFont.headline : DSFont.largeTitle.weight(.semibold))
+                .foregroundStyle(DSColor.textOnFixedFill)
+                .lineLimit(isThumbnail ? 2 : 3)
+                .multilineTextAlignment(.leading)
+                .padding(.leading, isThumbnail ? DSSpacing.md : DSSpacing.xxl)
+                .padding(.trailing, isThumbnail ? DSSpacing.sm : DSSpacing.lg)
+                .padding(.vertical, isThumbnail ? DSSpacing.sm : DSSpacing.xl)
         }
-    }
-
-    private var artwork: some View {
-        let shape = RoundedRectangle(cornerRadius: DSRadius.lg, style: .continuous)
-        return Color.clear
-            .aspectRatio(DSLayout.homeBannerAspect, contentMode: .fit)
-            .overlay { GeometryReader { proxy in covers(in: proxy.size) } }
-            .background(ground)
-            .clipShape(shape)
-            .shadow(color: DSColor.shadow, radius: DSLayout.exploreCardShadowRadius, y: DSLayout.exploreCardShadowY)
-            .contentShape(shape)
-            .animation(DSAnimation.standard, value: coverColor)
-            .accessibilityHidden(true)
-    }
-
-    /// The first cover in the middle and in front, the next ones beside and behind it, each
-    /// turned a little away from it.
-    private func covers(in size: CGSize) -> some View {
-        let height = size.height * DSLayout.homeBannerCoverHeightShare
-        let coverSize = CGSize(width: height * DSLayout.discoverCoverAspectRatio, height: height)
-        let session = collection.opening.coverSession(connections: connections)
-        return ZStack {
-            ForEach(collection.books.indices, id: \.self) { index in
-                cover(index, size: coverSize, session: session)
+        .background {
+            if let photo {
+                Image(uiImage: photo)
+                    .resizable()
+                    .scaledToFill()
+                    .overlay {
+                        LinearGradient(colors: [.clear, DSColor.photoNameScrim], startPoint: .center, endPoint: .bottom)
+                    }
+                    .accessibilityHidden(true)
+            } else {
+                HomeCategoryArt(name: title)
             }
         }
-        .frame(width: size.width, height: size.height)
-    }
-
-    /// 0 in the middle, then 1 to the trailing side and -1 to the leading one.
-    private static let places: [CGFloat] = [0, 1, -1]
-
-    private func cover(_ index: Int, size: CGSize, session: URLSession?) -> some View {
-        let book = collection.books[index]
-        let place = Self.places[index % Self.places.count]
-        return HomeCardCover(cover: .reference(book.cover, session: session), title: book.title,
-                             author: book.authors.joined(separator: "、"), size: size)
-            .environment(\.coverImageObserver, index == 0 ? reportFirstCover : nil)
-            .rotationEffect(.degrees(DSLayout.homeBannerCoverRotation * Double(place)))
-            .offset(x: size.width * DSLayout.homeBannerCoverStep * place)
-            .zIndex(-Double(abs(place)))
-    }
-
-    /// The first cover's image, averaged off the main actor into the card's colour.
-    private var reportFirstCover: @MainActor (UIImage) -> Void {
-        { [coverColor = $coverColor] image in
-            Task {
-                let color = await Task.detached(priority: .utility) { CoverTint.average(of: image) }.value
-                if color != coverColor.wrappedValue { coverColor.wrappedValue = color }
-            }
-        }
+        .clipShape(shape)
+        .shadow(color: isThumbnail ? .clear : DSColor.shadow, radius: DSLayout.exploreCardShadowRadius,
+                y: DSLayout.exploreCardShadowY)
+        .contentShape(shape)
+        .onAppear { photos.loadIfNeeded() }
     }
 }
 

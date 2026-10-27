@@ -117,11 +117,13 @@ struct HomeModelTests {
         home.load(rows(home)[0].id)
         await until(home) { $0.first.map { isLoaded($0.state) } ?? false }
 
-        section.layout = .rankedList
+        // A layout of books to another; 排行榜 (what `.rankedList` reads as since 2026-10-27) is a
+        // layout of lists, whose rows are its cards'.
+        section.layout = .list
         section.title = "排行"
         await home.sync(with: HomePage(sections: [section]))
         #expect(isLoaded(rows(home)[0].state))
-        #expect(rows(home)[0].section.layout == .rankedList)
+        #expect(rows(home)[0].section.layout == .list)
         #expect(a.loads.count == 1)
     }
 

@@ -29,8 +29,9 @@ struct HomeSectionLayout: RawRepresentable, Codable, Hashable, Sendable {
     static let multiRow = Self(rawValue: "multiRow")
     /// 固定封面網格 (5d-3).
     static let coverGrid = Self(rawValue: "coverGrid")
-    /// 圖文資訊清單 (5d-3), and the same with ranks: two values, so a rank needs no field of
-    /// its own, which would raise `HomePage.currentSchemaVersion`.
+    /// 圖文資訊清單 (5d-3), and the same with ranks: two values, so a rank needed no field of
+    /// its own, which would have raised `HomePage.currentSchemaVersion`. Since 2026-10-27 the
+    /// ranked one is read as 排行榜 (`HomeLayoutStyle.chart`), and no longer written.
     static let list = Self(rawValue: "list")
     static let rankedList = Self(rawValue: "rankedList")
     /// 精選 (decisions 30 and 37): one book to a page, a large cover beside its title, author,
@@ -52,14 +53,19 @@ struct HomeSectionLayout: RawRepresentable, Codable, Hashable, Sendable {
     /// 一大四小: one large cover and four small ones beside it, a group at a time, as Apple
     /// Books' Special Offers.
     static let heroGrid = Self(rawValue: "heroGrid")
-    /// 橫向單排書架 with its ranks under the covers, as Apple Books' charts.
+    /// 橫向單排書架 with its ranks under the covers, as Apple Books' charts. Since 2026-10-27
+    /// 排行榜 (`HomeLayoutStyle.chart`), written so that a build before it draws its ranking ranked.
     static let rankedRow = Self(rawValue: "rankedRow")
+    /// 色帶書架 (maintainer, 2026-10-27, after Apple Books' Audiobooks We Love): the section on its
+    /// first cover's colour from edge to edge, its first covers stacked and cut by the band's
+    /// foot. Not `band`, which the page's first is its 頂部輪播圖. A build before it draws a row.
+    static let colorBand = Self(rawValue: "colorBand")
     /// 分類卡片: a wide card per list, its name beside its covers, as Apple Books' More to Explore.
     static let categoryCards = Self(rawValue: "categoryCards")
     /// 拼貼卡片: a card per list, its covers in a collage over its name, as Apple Books' Top Picks.
     static let collageCards = Self(rawValue: "collageCards")
-    /// 大圖卡片 (maintainer, 2026-10-27): a wide card per list under its source and name, the
-    /// list's covers on the first one's colour, as Apple Books Japan's エディターのおすすめ.
+    /// 大圖卡片 (maintainer, 2026-10-27): a wide card per list, a category card as Apple Books'
+    /// More to Explore: its name on a face designed from it, or on the reader's photo; no covers.
     static let bannerCards = Self(rawValue: "bannerCards")
 
     /// The custom-page layout this is, if it is one.
@@ -68,7 +74,7 @@ struct HomeSectionLayout: RawRepresentable, Codable, Hashable, Sendable {
     var isKnown: Bool {
         componentKind != nil || [.tiles, .row, .readingCard, .compactReadingCard, .multiRow, .coverGrid, .list, .rankedList,
                                  .featured, .collection, .band, .largeRow, .heroGrid, .rankedRow, .categoryCards,
-                                 .collageCards, .bannerCards].contains(self)
+                                 .collageCards, .bannerCards, .colorBand].contains(self)
     }
 }
 

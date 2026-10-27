@@ -263,6 +263,19 @@ enum ExplorePlace {
         }
     }
 
+    /// What a section's header opens: the page of a section of one source; 最新 across several
+    /// has none, no one page listing them all. A section of lists, its source's page
+    /// (`listsPage`), except 排行榜 of one ranking, which is that ranking: its header names it
+    /// and its column has no header of its own (`HomeChartColumns`).
+    @MainActor
+    static func sectionPage(_ group: HomeSectionGroup, aozoraIndex: AozoraCatalogIndex?) -> ExplorePush? {
+        let rows = group.rows
+        let oneRanking = group.section.layout.style == .chart && rows.count == 1 && !rows[0].section.binding.drawsOnlyLists
+            && rows[0].section.binding != .bookshelf
+        if group.section.drawsLists, !oneRanking { return listsPage(rows) }
+        return rows.count == 1 ? showAll(rows[0], aozoraIndex: aozoraIndex) : nil
+    }
+
     /// A section of lists' 查看全部: the page of the one source its cards are all from, as 分類卡片's
     /// header opened its 來源配置's (2026-10-26). Cards from several sources have none, nor
     /// 精選書單's, whose lists no page lists alone.
