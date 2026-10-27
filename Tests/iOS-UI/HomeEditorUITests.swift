@@ -62,6 +62,17 @@ final class HomeEditorUITests: XCTestCase {
             .filter { $0.frame.minY >= top }.min { $0.frame.minY < $1.frame.minY }, app.debugDescription)
     }
 
+    /// 熱門's card once a new layout has drawn it as `drawn` says: 排行榜 and a layout of books
+    /// give the section different rows, so it loads again. A copy bound before the change can
+    /// point at nothing, as 為你推薦, above it, need not hold the book.
+    @MainActor
+    private func popularCard(_ app: XCUIApplication, under header: XCUIElement,
+                             once drawn: @escaping (XCUIElement) -> Bool) throws -> XCUIElement {
+        let redrawn = NSPredicate { _, _ in (try? self.popularCard(app, under: header)).map(drawn) ?? false }
+        _ = XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: redrawn, object: nil)], timeout: 10)
+        return try popularCard(app, under: header)
+    }
+
     @MainActor
     private func attach(_ app: XCUIApplication, _ name: String) {
         let attachment = XCTAttachment(screenshot: app.screenshot())
@@ -107,6 +118,10 @@ final class HomeEditorUITests: XCTestCase {
         app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@ AND label == %@",
                                          "homeEditor.section.", listTitle)).firstMatch.tap()
         let shown = app.switches["在首頁顯示"].firstMatch
+        // Past the screen's foot, under the section's 清單: 熱門 is 排行榜, a layout of lists, since
+        // 2026-10-27. The form makes its rows as they scroll in.
+        XCTAssertTrue(app.textFields["homeSection.title"].firstMatch.waitForExistence(timeout: 10), app.debugDescription)
+        for _ in 0..<4 where !shown.exists { app.swipeUp() }
         XCTAssertTrue(shown.waitForExistence(timeout: 10), app.debugDescription)
         XCTAssertEqual(shown.value as? String, "0")
         app.navigationBars.buttons.element(boundBy: 0).tap()
@@ -283,8 +298,7 @@ final class HomeEditorUITests: XCTestCase {
         XCTAssertTrue(row.waitForExistence(timeout: 5), app.debugDescription)
         attach(app, "home-section-layouts")
         row.tap()
-        XCTAssertTrue(book.waitForExistence(timeout: 5))
-        book = try popularCard(app, under: header)
+        book = try popularCard(app, under: header) { $0.frame.width < app.frame.width / 2 }
         XCTAssertLessThan(book.frame.width, app.frame.width / 2, "橫向單排書架 shows several books to a screen")
         XCTAssertFalse(readsRank(book.label), "no rank outside 排行榜: \(book.label)")
         attach(app, "home-section-row")
@@ -295,8 +309,7 @@ final class HomeEditorUITests: XCTestCase {
         let list = app.buttons["圖文資訊清單"].firstMatch
         XCTAssertTrue(list.waitForExistence(timeout: 5), app.debugDescription)
         list.tap()
-        XCTAssertTrue(book.waitForExistence(timeout: 5))
-        book = try popularCard(app, under: header)
+        book = try popularCard(app, under: header) { $0.frame.width > app.frame.width * 0.8 }
         XCTAssertGreaterThan(book.frame.width, app.frame.width * 0.8, app.debugDescription)
         XCTAssertFalse(readsRank(book.label), "no rank outside 排行榜: \(book.label)")
         attach(app, "home-section-list")
