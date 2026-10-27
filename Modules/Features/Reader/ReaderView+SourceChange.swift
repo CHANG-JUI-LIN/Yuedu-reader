@@ -426,25 +426,11 @@ extension ReaderView {
                 readerViewModel.clearOriginFailure(
                     bookId: bookId, sourceId: origin.sourceId, bookUrl: origin.bookUrl)
 
-                // The new source's chapter list is already live in `store`, so every cache
-                // lookup from here on asks about *its* chapters. The load states still
-                // describe the old source's, and a stale `.ready` there is read as
-                // "ready but nothing on disk" — the 資料不一致 overlay users hit on every
-                // source switch. They belong to the source we just left; drop them.
-                readerViewModel.resetAllChapterStates()
-                chapterConsistencyRecoveryAttempts.removeAll()
-
-                if let mappedPosition {
-                    savedCoreTextRestoreTarget = (mappedPosition.spineIndex, mappedPosition.charOffset)
-                    setCoreTextExternalTarget(mappedPosition)
-                    currentChapterIndex = mappedPosition.spineIndex
-                    scrollVisibleChapter = mappedPosition.spineIndex
-                }
                 // Leave the pending state before dismissing: the sheet's dismiss handler
                 // cancels a pending switch, and at this point that switch is this one.
                 readerViewModel.finishSourceSwitch()
                 showChangeSourceSheet = false
-                SourcePerfTrace.span("changeSource.loadContent") { loadContent() }
+                SourcePerfTrace.span("changeSource.loadContent") { reopenOnStoredChapterList(at: mappedPosition) }
                 // Whole-tap total, so the stage spans above can be read as a share of what
                 // the user actually waited through.
                 SourcePerfTrace.record(
@@ -458,6 +444,58 @@ extension ReaderView {
                 readerViewModel.reportChangeSourceError(error.localizedDescription)
             }
         }
+    }
+
+    /// Reopens the book on the chapter list now in `store`, at `position` in that list. The
+    /// engine pages the list it was opened with, so a list that changed under it — 換源, or a
+    /// refresh that moved chapters (`followChapterRenumbering`) — takes a reopen, not a patch.
+    func reopenOnStoredChapterList(at position: CoreTextReadingPosition?) {
+        // The new chapter list is already live in `store`, so every cache lookup from here on
+        // asks about *its* chapters. The load states still describe the old list's, and a
+        // stale `.ready` there is read as "ready but nothing on disk" — the 資料不一致 overlay
+        // users hit on every source switch. They belong to the list we just left; drop them.
+        readerViewModel.resetAllChapterStates()
+        chapterConsistencyRecoveryAttempts.removeAll()
+
+        if let position {
+            savedCoreTextRestoreTarget = (position.spineIndex, position.charOffset)
+            setCoreTextExternalTarget(position)
+            currentChapterIndex = position.spineIndex
+            scrollVisibleChapter = position.spineIndex
+        }
+        loadContent()
+    }
+
+    /// A table-of-contents refresh moved chapters to other indices while this book was open
+    /// (feedback #95: one entry inserted ahead of 第97章, and the reader went on paging the old
+    /// list while every index around it meant the chapter before). The store has moved the
+    /// stored place and the bookmarks; the place on screen is moved here, the same way.
+    func followChapterRenumbering(_ renumbering: ChapterRenumbering) {
+        guard renumbering.bookId == bookId, let refs = book?.onlineChapters else { return }
+        let live = readerSessionCoordinator?.state.location.coreTextPosition
+            ?? CoreTextReadingPosition(spineIndex: currentChapterIndex, charOffset: 0)
+        let moved = renumbering.position(for: live)
+        guard moved != live, chapters.indices.contains(live.spineIndex), refs.indices.contains(moved.spineIndex) else {
+            return
+        }
+        // Only a reader still on the list the refresh replaced: one opened on the new list
+        // already shows the chapter at its index, and moving it again would skip ahead.
+        let showing = chapters[live.spineIndex]
+        let target = refs[moved.spineIndex]
+        let sameChapter = !showing.href.isEmpty
+            ? showing.href == target.sanitizedContentURL
+            : showing.title == target.title
+        guard sameChapter else { return }
+        AppLogger.render("⟐ reader follows moved chapters", context: [
+            "bookId": bookId.uuidString,
+            "from": live.spineIndex,
+            "to": moved.spineIndex,
+        ])
+        // Now, not after the save: the refresh that sent this goes on to ask for the current
+        // chapter (`revalidateTOCOnceForFailures`), and that must already mean the new index.
+        // The store has saved a mapped place before announcing; this one is the exact one.
+        reopenOnStoredChapterList(at: moved)
+        Task { await dependencies.readingPositionStore.save(moved, for: bookId.uuidString) }
     }
 
     /// 換源 to a 來源配置 for a book read from elsewhere: the work's 來源配置 copy — the one kept

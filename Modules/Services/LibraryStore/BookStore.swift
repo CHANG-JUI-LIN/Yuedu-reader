@@ -56,6 +56,9 @@ private final class BookRecordStorage {
 class BookStore: @MainActor ObservableObject, BookProvider {
     let objectWillChange = ObservableObjectPublisher()
     private let recordStorage = BookRecordStorage()
+    /// Every refresh that moved chapters to other indices. An event, not state: the full-screen
+    /// reader does not observe the store, so it takes this with `onReceive`.
+    let chapterRenumberings = PassthroughSubject<ChapterRenumbering, Never>()
     private var records: [ReadingBook] {
         get { recordStorage.values }
         set { replaceRecords(newValue) }
@@ -2069,6 +2072,7 @@ class BookStore: @MainActor ObservableObject, BookProvider {
         forceInfoRefresh: Bool = false,
         bookSourceFetcher: any BookSourceFetching = LiveBookSourceFetcher(bookSourceFetcher: BookSourceFetcher.shared),
         offlineChapterStore: any OfflineChapterStoring = OfflineChapterStore(),
+        positionStore: any ReadingPositionStore = JSONFileReadingPositionStore(),
         moduleReader: ModuleBookReader = .live,
         onFirstChaptersReady: (@MainActor @Sendable (ReadingBook) -> Void)? = nil
     ) async throws -> ReadingBook {
@@ -2096,7 +2100,8 @@ class BookStore: @MainActor ObservableObject, BookProvider {
             let refreshed = try await moduleReader.chapters(of: reference, title: snapshot.title)
             return try await commitRefreshedChapters(
                 refreshed, snapshot: snapshot, originalChapterCount: originalChapterCount,
-                originalLatestTitle: originalLatestTitle, offlineChapterStore: offlineChapterStore
+                originalLatestTitle: originalLatestTitle, offlineChapterStore: offlineChapterStore,
+                positionStore: positionStore
             ) { index, plan in
                 self.commitRefreshedList(
                     at: index, plan: plan, sourceID: nil, bookURL: reference.bookURL, tocURL: reference.bookURL,
@@ -2190,7 +2195,7 @@ class BookStore: @MainActor ObservableObject, BookProvider {
                     // Merging and comparing 2000-chapter lists normalizes every title; done
                     // here, off the main thread, and the record is replaced once below.
                     let existingChapters = self.chapterStore.chapters(for: bookId) ?? []
-                    let mergedChapters = Self.mergeOnlineChapters(
+                    let (mergedChapters, moves) = Self.mergeOnlineChapters(
                         existing: existingChapters,
                         refreshed: firstChapters,
                         preservingExistingTail: true
@@ -2203,7 +2208,10 @@ class BookStore: @MainActor ObservableObject, BookProvider {
                         chaptersChanged: Self.chapterListChanged(existing: existingChapters, refreshed: firstChapters),
                         listChanged: mergedChapters != existingChapters,
                         gainedChapters: false,
-                        staleIndices: []
+                        staleIndices: [],
+                        // The runtime fetch hands the whole list over as this first page, so
+                        // this commit is usually the one that moves chapters.
+                        moves: moves
                     )
                     await MainActor.run {
                         guard let idx = self.records.firstIndex(where: { $0.id == bookId }) else { return }
@@ -2213,6 +2221,7 @@ class BookStore: @MainActor ObservableObject, BookProvider {
                         )
                         onFirstChaptersReady?(book)
                     }
+                    await self.carryReadingPlace(bookId: bookId, moves: moves, positionStore: positionStore)
                 })
             },
             // Always hit the network here: this is the "check for new chapters"
@@ -2230,7 +2239,8 @@ class BookStore: @MainActor ObservableObject, BookProvider {
         await firstPageCommit.value?.value
         return try await commitRefreshedChapters(
             tocPackage.chapters, snapshot: snapshot, originalChapterCount: originalChapterCount,
-            originalLatestTitle: originalLatestTitle, offlineChapterStore: offlineChapterStore
+            originalLatestTitle: originalLatestTitle, offlineChapterStore: offlineChapterStore,
+            positionStore: positionStore
         ) { index, plan in
             self.commitRefreshedList(
                 at: index, plan: plan, sourceID: source.id, bookURL: bookURL, tocURL: finalTOCURL,
@@ -2248,6 +2258,7 @@ class BookStore: @MainActor ObservableObject, BookProvider {
         originalChapterCount: Int,
         originalLatestTitle: String,
         offlineChapterStore: any OfflineChapterStoring,
+        positionStore: any ReadingPositionStore,
         commit: @escaping @MainActor @Sendable (Int, MergePlan) -> ReadingBook
     ) async throws -> ReadingBook {
         let bookId = snapshot.id
@@ -2328,6 +2339,7 @@ class BookStore: @MainActor ObservableObject, BookProvider {
         let oldRefs = committed.existing
         let newRefs = committed.merged
         let staleIndices = committed.staleIndices
+        await carryReadingPlace(bookId: bookId, moves: committed.moves, positionStore: positionStore)
 
         do {
             try await offlineChapterStore.reconcileBook(
@@ -2381,6 +2393,11 @@ class BookStore: @MainActor ObservableObject, BookProvider {
         updated.tocURL = tocURL
         updated.runtimeVariables = runtimeVariables
         updated.onlineChapters = plan.merged
+        // In the same record write as the list, so no save ever pairs the new list with
+        // bookmarks that still name the old indices.
+        if !plan.moves.isEmpty {
+            ChapterRenumbering(bookId: updated.id, moves: plan.moves).applyToRecordPlaces(&updated)
+        }
 
         if let infoPackage {
             let resolvedName = normalizedOnlineValue(infoPackage.name)
@@ -2423,6 +2440,29 @@ class BookStore: @MainActor ObservableObject, BookProvider {
         return readingBook(id: updated.id) ?? records[index]
     }
 
+    /// The text readers' place lives in the position store, not on the record
+    /// (`ReadingChapterPlace`), so it moves here, after the list it is read against has landed.
+    /// An open reader holds its own place against the list it opened with; it answers
+    /// `chapterRenumberings` by moving that place the same way and reloading.
+    nonisolated private func carryReadingPlace(
+        bookId: UUID, moves: [Int: Int], positionStore: any ReadingPositionStore
+    ) async {
+        guard !moves.isEmpty else { return }
+        let renumbering = ChapterRenumbering(bookId: bookId, moves: moves)
+        let key = bookId.uuidString
+        let stored = await positionStore.load(for: key)
+        if let stored, moves[stored.spineIndex] != nil {
+            await positionStore.save(renumbering.position(for: stored), for: key)
+        }
+        AppLogger.cache("⟐ TOC refresh moved chapters", context: [
+            "bookId": key,
+            "moved": moves.count,
+            "storedSpine": stored?.spineIndex ?? -1,
+            "carriedTo": stored.map { renumbering.position(for: $0).spineIndex } ?? -1,
+        ])
+        await MainActor.run { chapterRenumberings.send(renumbering) }
+    }
+
     private struct MergePlan {
         let existing: [OnlineChapterRef]
         let merged: [OnlineChapterRef]
@@ -2430,6 +2470,8 @@ class BookStore: @MainActor ObservableObject, BookProvider {
         let listChanged: Bool
         let gainedChapters: Bool
         let staleIndices: Set<Int>
+        /// `mergeOnlineChapters`' old index → new index of every chapter that moved.
+        let moves: [Int: Int]
     }
 
     /// Everything a table-of-contents refresh decides from the two lists. Normalizes every
@@ -2453,7 +2495,7 @@ class BookStore: @MainActor ObservableObject, BookProvider {
         originalChapterCount: Int,
         originalLatestTitle: String
     ) -> MergePlan {
-        let merged = mergeOnlineChapters(existing: existing, refreshed: refreshed)
+        let (merged, moves) = mergeOnlineChapters(existing: existing, refreshed: refreshed)
         // Surface newly-arrived chapters on the bookshelf. Only flag when the
         // book already had chapters (avoids marking a first-time population)
         // and the latest chapter moved on — more chapters, or a new tail title.
@@ -2466,7 +2508,8 @@ class BookStore: @MainActor ObservableObject, BookProvider {
             chaptersChanged: chapterListChanged(existing: existing, refreshed: refreshed),
             listChanged: merged != existing,
             gainedChapters: gained,
-            staleIndices: changedChapterIdentities(oldRefs: existing, newRefs: merged)
+            staleIndices: changedChapterIdentities(oldRefs: existing, newRefs: merged),
+            moves: moves
         )
     }
 
@@ -3498,22 +3541,62 @@ class BookStore: @MainActor ObservableObject, BookProvider {
     ///   then reads the short list as "these chapters are gone". The final commit passes
     ///   false, because by then the refreshed list is the whole thing and a genuine deletion
     ///   upstream should be reflected.
+    ///
+    /// A stored chapter is the same chapter in the refreshed list when it has the same URL, or
+    /// — for a site that moved its chapter URLs — when it sits at the same index under the same
+    /// title. Until 2026-10-27 it was matched by index alone, so a source that inserted one
+    /// entry ahead of the reader (a 作品相关 notice, a new 卷 header) handed every later
+    /// chapter its predecessor's identity while the reading place and bookmarks stayed on the
+    /// old index: the book reopened one chapter back (feedback #95).
+    /// - Returns: the merged list, and `moves`: old index → new index of every matched chapter
+    ///   whose index changed (`ChapterRenumbering`).
     nonisolated private static func mergeOnlineChapters(
         existing: [OnlineChapterRef],
         refreshed: [OnlineChapterRef],
         preservingExistingTail: Bool = false
-    ) -> [OnlineChapterRef] {
-        let existingByIndex = Dictionary(uniqueKeysWithValues: existing.map { ($0.index, $0) })
-        var merged = refreshed.map { chapter in
+    ) -> (chapters: [OnlineChapterRef], moves: [Int: Int]) {
+        // Sources repeat URLs and 卷 headers have none, so a URL names a queue of stored
+        // chapters, each claimed at most once: no two refreshed chapters share an `id`.
+        var existingByURL: [String: [OnlineChapterRef]] = [:]
+        for chapter in existing {
+            let url = normalizedOnlineValue(chapter.url)
+            guard !url.isEmpty else { continue }
+            existingByURL[url, default: []].append(chapter)
+        }
+        let existingByIndex = Dictionary(existing.map { ($0.index, $0) }, uniquingKeysWith: { first, _ in first })
+        var claimed: Set<Int> = []
+        var matches: [OnlineChapterRef?] = Array(repeating: nil, count: refreshed.count)
+        for (position, chapter) in refreshed.enumerated() {
+            let url = normalizedOnlineValue(chapter.url)
+            guard !url.isEmpty, let candidates = existingByURL[url] else { continue }
+            // A repeated URL is claimed in list order, so its chapters keep their order.
+            if let match = candidates.first(where: { !claimed.contains($0.index) }) {
+                claimed.insert(match.index)
+                matches[position] = match
+            }
+        }
+        for (position, chapter) in refreshed.enumerated() where matches[position] == nil {
+            guard let current = existingByIndex[chapter.index], !claimed.contains(current.index),
+                  normalizeChapterTitle(current.title) == normalizeChapterTitle(chapter.title) else { continue }
+            claimed.insert(current.index)
+            matches[position] = current
+        }
+
+        var moves: [Int: Int] = [:]
+        var merged = refreshed.enumerated().map { position, chapter in
             var merged = chapter
-            guard let current = existingByIndex[chapter.index] else {
+            guard let current = matches[position] else {
                 return merged
             }
             // A parser gives every ref a fresh `id`, and the synthesized `==` compares it:
             // without carrying the stored one over, an unchanged list never compared equal,
             // so every launch refresh replaced every record and rewrote every list on disk.
             merged.id = current.id
-            if normalizedOnlineValue(current.url) == normalizedOnlineValue(chapter.url) {
+            if current.index != chapter.index {
+                moves[current.index] = chapter.index
+            } else if normalizedOnlineValue(current.url) == normalizedOnlineValue(chapter.url) {
+                // Cached files are named by index (`OfflineChapterStore`), so they stay with
+                // the index: a moved chapter is fetched again under its new one.
                 merged.cachedFilename = current.cachedFilename
             }
             if (merged.runtimeVariables == nil || merged.runtimeVariables?.isEmpty == true),
@@ -3527,7 +3610,7 @@ class BookStore: @MainActor ObservableObject, BookProvider {
         if preservingExistingTail, existing.count > merged.count {
             merged.append(contentsOf: existing[merged.count...])
         }
-        return merged
+        return (merged, moves)
     }
 
     nonisolated private static func chapterListChanged(

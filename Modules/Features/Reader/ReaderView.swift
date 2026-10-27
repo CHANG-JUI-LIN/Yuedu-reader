@@ -2408,6 +2408,9 @@ struct ReaderView: View {
         .onReceive(scrollChaptersInserted) { _ in
             resolvePendingScrollTOCEntry()
         }
+        .onReceive(store.chapterRenumberings) { renumbering in
+            followChapterRenumbering(renumbering)
+        }
         .onReceive(
             NotificationCenter.default.publisher(for: UIApplication.willResignActiveNotification)
         ) { _ in
@@ -3214,7 +3217,8 @@ struct ReaderView: View {
                     bookId: currentBook.id,
                     forceInfoRefresh: true,
                     bookSourceFetcher: dependencies.bookSourceFetcher,
-                    offlineChapterStore: dependencies.offlineChapterStore
+                    offlineChapterStore: dependencies.offlineChapterStore,
+                    positionStore: dependencies.readingPositionStore
                 )
             }
         } else {
@@ -3225,6 +3229,7 @@ struct ReaderView: View {
                     forceInfoRefresh: true,
                     bookSourceFetcher: dependencies.bookSourceFetcher,
                     offlineChapterStore: dependencies.offlineChapterStore,
+                    positionStore: dependencies.readingPositionStore,
                     onFirstChaptersReady: { repairedBook in
                         guard repairedBook.id == currentBook.id, self.chapters.isEmpty else { return }
                         self.loadContent()

@@ -100,7 +100,8 @@ extension ReaderView {
                     bookId: bookId,
                     forceInfoRefresh: true,
                     bookSourceFetcher: dependencies.bookSourceFetcher,
-                    offlineChapterStore: dependencies.offlineChapterStore
+                    offlineChapterStore: dependencies.offlineChapterStore,
+                    positionStore: dependencies.readingPositionStore
                 )
             } catch {
                 AppLogger.network("⟐ TOC revalidation failed", error: error, context: [

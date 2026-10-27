@@ -547,7 +547,8 @@ enum ChapterUpdater {
                 bookId: book.id,
                 forceInfoRefresh: needInfoRefresh,
                 bookSourceFetcher: AppDependencies.live.bookSourceFetcher,
-                offlineChapterStore: AppDependencies.live.offlineChapterStore
+                offlineChapterStore: AppDependencies.live.offlineChapterStore,
+                positionStore: AppDependencies.live.readingPositionStore
             )
         } catch {
             AppLogger.network(
