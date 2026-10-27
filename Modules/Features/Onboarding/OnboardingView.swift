@@ -133,6 +133,13 @@ struct OnboardingView: View {
         .scrollTargetBehavior(.paging)
         .scrollPosition(id: $page, anchor: .center)
         .scrollIndicators(.hidden)
+        // A scroll view draws its content on into a side safe area, and a page is only as
+        // wide as the safe area: on a folded iPhone Duo the next page showed down the
+        // camera's side, and in iPhone landscape both neighbours showed by the island
+        // (2026-10-27). Cut at the safe area, the page in view is all there is; the strip
+        // shows the tour's background.
+        .frame(maxWidth: .infinity)
+        .clipped()
     }
 
     @ViewBuilder
