@@ -19,7 +19,6 @@ struct SettingsView: View {
     @State private var showBackupSync = false
     @State private var showCacheManagement = false
     @State private var showLanServer = false
-    @State private var showLegadoMigration = false
     @State private var showTTSSettings = false
     @State private var showNetworkSettings = false
     @State private var showAISettings = false
@@ -201,11 +200,6 @@ struct SettingsView: View {
                             title: localized("局域網服務"),
                             action: { showLanServer = true }
                         )
-                        DSSettingsRow(
-                            icon: "arrow.down.doc.fill",
-                            title: localized("Legado 資料遷移"),
-                            action: { showLegadoMigration = true }
-                        )
                     }
                     .interfaceSectionSurface()
 
@@ -310,9 +304,6 @@ struct SettingsView: View {
             }
             .sheet(isPresented: $showLanServer) {
                 LanServerView().environmentObject(store)
-            }
-            .sheet(isPresented: $showLegadoMigration) {
-                LegadoMigrationView().environmentObject(store)
             }
             .sheet(isPresented: $showTTSSettings) {
                 TTSSettingsView()

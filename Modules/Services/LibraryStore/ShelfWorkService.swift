@@ -471,33 +471,6 @@ struct ShelfWorkService {
         return store.readingBook(id: existing.id)
     }
 
-    /// For importers that have no table of contents in hand (Legado backup): adds the book
-    /// unless its work is already on the shelf, in which case it is skipped — switching would
-    /// need a network fetch per book, and the shelf copy already is the work.
-    @discardableResult
-    func addWithoutNetwork(_ copy: OnlineCopy) -> ReadingBook? {
-        if store.onlineBook(sourceId: copy.sourceId, bookInfoURL: copy.bookInfoURL) != nil { return nil }
-        let kind = BookStore.inferredOnlineContentKind(
-            explicit: copy.contentKind, sourceId: copy.sourceId, runtimeVariables: copy.runtimeVariables,
-            bookInfoURL: copy.bookInfoURL, tocURL: copy.tocURL
-        )
-        // A work on the shelf read from elsewhere takes the book in, and the launch merge keeps
-        // it beside that one (`ShelfWorkMerger`).
-        if let key = ShelfWork.key(title: copy.name, author: copy.author, kind: ContentKind(kind.pipelineKind)),
-           let existing = ShelfWork.shelfCopy(of: key, in: store), ShelfWork.isSourceCopy(existing) {
-            AppLogger.info("⟐ shelf: import skipped, work already on the shelf", context: [
-                "title": copy.name, "book": existing.id.uuidString,
-            ])
-            return nil
-        }
-        return store.addOnlineBook(
-            name: copy.name, author: copy.author, sourceId: copy.sourceId,
-            bookInfoURL: copy.bookInfoURL, tocURL: copy.tocURL, coverUrl: copy.coverUrl,
-            runtimeVariables: copy.runtimeVariables, contentKind: copy.contentKind,
-            chapters: copy.chapters
-        )
-    }
-
     private func switchSource(of bookId: UUID, to copy: OnlineCopy) async throws {
         try await sourceSwitch.commit(bookId: bookId, origin: Self.origin(of: copy), toc: Self.toc(of: copy))
     }

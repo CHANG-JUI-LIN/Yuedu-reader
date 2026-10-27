@@ -2,7 +2,6 @@
 "CSS 選擇器示例：ul.book-list li\\n屬性提取：a@href、img@src" = "CSS selector example: ul.book-list li\\nAttribute extraction: a@href, img@src";
 "Cookie 驗證登入" = "Sign In with Cookie";
 "HTTP TTS URL 模板" = "HTTP TTS URL Template";
-"Legado 資料遷移" = "Legado Migration";
 "RSS 網址" = "RSS URL";
 "RSS 訂閱" = "Subscriptions";
 "TXT、EPUB、Web、來源配置" = "TXT, EPUB, Web, Sources";
@@ -178,7 +177,6 @@
 "搜索關鍵字" = "Keyword";
 "操作" = "Actions";
 "操作失敗" = "Couldn't Complete Action";
-"支援從 Legado（閱讀）Android 應用匯入：" = "You can import these from the Legado Android app:";
 "支援格式" = "Supported Formats";
 "支援格式：TXT / Markdown / EPUB" = "Supported formats: TXT / Markdown / EPUB";
 "支援格式：TXT / Markdown / JSON / EPUB" = "Supported formats: TXT / Markdown / JSON / EPUB";
@@ -208,7 +206,6 @@
 "書架列表" = "Library List";
 "書架還是空的" = "Your Library Is Empty";
 "來源配置" = "Source";
-"來源配置 JSON（來源配置備份 / 分享檔）" = "Source JSON (source backup or shared file)";
 "來源配置分組" = "Source Group";
 "來源配置列表" = "Source List";
 "來源配置名稱" = "Source Name";
@@ -223,7 +220,6 @@
 "來源配置調試" = "Debug Source";
 "來源配置除錯大師" = "Source Debugger";
 "默認分組" = "Default Group";
-"書籍 JSON（書架備份檔）" = "Books JSON (library backup file)";
 "書籍 URL" = "Book URL";
 "書籍列表" = "Book List";
 "書籍詳情" = "Book Details";
@@ -241,7 +237,6 @@
 "最新章節" = "Latest Chapter";
 "服務狀態" = "Server Status";
 "未分組" = "Ungrouped";
-"未匯入任何資料" = "No Data Imported";
 "未命名來源配置" = "Untitled Source";
 "未命名規則" = "Untitled Rule";
 "未找到可匯入的替換規則" = "No replacement rules were found to import.";
@@ -323,7 +318,6 @@
 "簡↔繁轉換離線完成，永久生效" = "Simplified–Traditional Chinese conversion runs offline and applies permanently.";
 "簡介" = "Description";
 "約每" = "About every";
-"結果" = "Results";
 "網址" = "URL";
 "網址匯入" = "Import from URL";
 "網址或搜尋" = "Search or enter URL";
@@ -346,7 +340,6 @@
 "複製 JSON" = "Copy JSON";
 "規則名稱" = "Rule Name";
 "解析段落" = "Parse Paragraphs";
-"記錄" = "Log";
 "設定" = "Settings";
 "設定不完整" = "Incomplete Settings";
 "設置" = "Settings";
@@ -363,13 +356,11 @@
 "第 %d 段語音無法播放" = "Couldn't play audio segment %d.";
 "系統語音無法播放，請到設定下載對應語音後重試" = "The system voice can't play. Download the voice in Settings, then try again.";
 "語音朗讀設定" = "Read Aloud";
-"說明" = "About";
 "調試規則" = "Debug Rules";
 "請先在來源配置管理中新增並啟用來源配置" = "Add and enable a source in Sources first.";
 "請在下方完成登入。登入成功後點「完成」，Cookie 將自動儲存供來源配置使用。" = "Sign in below, then tap Done. The cookie is saved automatically for this source to use.";
 "請填入登入資訊" = "Enter your sign-in information.";
 "請填寫伺服器網址" = "Enter the server URL.";
-"請從 Legado → 備份與恢復 中匯出對應 JSON 檔案後選擇匯入。" = "Export the JSON file you need from Legado > Backup & Restore, then choose it here to import.";
 "讀取中..." = "Loading…";
 "貼上 Legado 格式的來源配置 JSON（支援單個 {} 或陣列 []），或選取 .json 文件。" = "Paste Legado-format source JSON (a single {} object or an [] array), or choose a .json file.";
 "資料已成功備份至雲端" = "Your data was backed up to the cloud.";
@@ -397,7 +388,6 @@
 "進階" = "Advanced";
 "運行中" = "Running";
 "選取失敗：" = "Couldn't choose the file: ";
-"選擇 JSON 檔案" = "Choose JSON File…";
 "選擇來源" = "Choose Source";
 "還原成功" = "Restore Complete";
 "重新下載" = "Download Again";
@@ -3230,8 +3220,6 @@
 "播放 %@" = "Play %@";
 "新增分組「%@」" = "New Group “%@”";
 "暫跳 %d" = "%d skipped";
-"來源配置：%d 個" = "Sources: %d";
-"書籍：%d 本" = "Books: %d";
 "%d 本" = "%d books";
 "沒有找到「%@」" = "No Results for “%@”";
 "確定要刪除 %d 本書嗎？" = "Delete %d books?";

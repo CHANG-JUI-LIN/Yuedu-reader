@@ -8,9 +8,7 @@ import Foundation
 ///
 /// Every manual import route (本地導入 / 網路導入 / 粘貼源 / WebView / Share Extension /
 /// deep link) hands its payload here and presents the same sheet, so "what does importing
-/// do" is answered in one place instead of once per entry point. A whole-pack restore
-/// (`LegadoMigrationManager`) deliberately stays on the direct `importFromData` path — there
-/// is nothing to review when the user asked to restore a backup wholesale.
+/// do" is answered in one place instead of once per entry point.
 @MainActor
 final class BookSourceImportCoordinator: ObservableObject {
 
