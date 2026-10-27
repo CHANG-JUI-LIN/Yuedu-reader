@@ -145,11 +145,19 @@ struct ListSeriesFanTests {
         #expect([sides.leading.map(\.id), sides.trailing.map(\.id)] == [["2", "3"], ["0", "1"]])
     }
 
-    @Test("no series, or no other covers: no fan")
+    @Test("an item that is the whole series fans the covers it was given, naming no series")
+    func wholeSeries() throws {
+        let summary = WorkSummary(title: "薬屋のひとりごと", authors: ["日向夏"], cover: Self.cover("1"), blurb: nil, language: "ja",
+                                  contentKind: .text, seriesCovers: ["2", "3"].map(Self.cover))
+        #expect(summary.series == nil, "its title is the series' name")
+        let fan = try #require(SeriesFan(summary, session: nil))
+        #expect(fan.position == 0)
+        #expect(fan.volumes.map(\.id) == ["0", "1"])
+    }
+
+    @Test("no other covers: no fan")
     func noFan() {
-        let alone = WorkSummary(title: "Good Omens", authors: [], cover: nil, blurb: nil, language: nil, contentKind: .text,
-                                seriesCovers: [Self.cover("2")])
-        #expect(alone.seriesCovers.isEmpty, "covers of a series need the series")
+        let alone = WorkSummary(title: "Good Omens", authors: [], cover: nil, blurb: nil, language: nil, contentKind: .text)
         #expect(SeriesFan(alone, session: nil) == nil)
         let bare = WorkSummary(title: "Mistborn", authors: [], cover: nil, blurb: nil, language: nil, contentKind: .text,
                                series: "Mistborn")

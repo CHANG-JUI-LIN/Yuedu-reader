@@ -161,8 +161,10 @@ struct WorkSummary: Hashable, Sendable {
     /// The series the item stands for: 趨勢 lists a series once, under its first book
     /// (maintainer, 2026-10-22), and names it under the author.
     var series: String?
-    /// The covers of `series`' other volumes, in series order after this one, which stands for
-    /// the series: 作品詳情 fans them behind its cover. Only with a series.
+    /// The covers of the series' other volumes, in series order after this one, which stands for
+    /// the series: 作品詳情 fans them behind its cover. An item that is the whole series gives
+    /// them without a `series` (趨勢's 華語 and 日本 works, maintainer 2026-10-27): its title is
+    /// the series' name, which the author line would only repeat.
     var seriesCovers: [CoverReference]
 
     static let titleLimit = 500
@@ -188,7 +190,7 @@ struct WorkSummary: Hashable, Sendable {
             .flatMap { $0.isEmpty ? nil : $0 }
         self.series = series.map { String($0.trimmingCharacters(in: .whitespacesAndNewlines).prefix(Self.seriesLimit)) }
             .flatMap { $0.isEmpty ? nil : $0 }
-        self.seriesCovers = self.series == nil ? [] : Array(seriesCovers.prefix(Self.seriesCoverLimit))
+        self.seriesCovers = Array(seriesCovers.prefix(Self.seriesCoverLimit))
     }
 
     /// What a book source's `kind` separates its tags with.

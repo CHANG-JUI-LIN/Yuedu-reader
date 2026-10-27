@@ -371,7 +371,7 @@ class SeriesTests(unittest.TestCase):
         totals = builder.folded({window: {'Mistborn: The Final Empire': 3, 'Project Hail Mary': 2} for window in builder.WINDOWS},
                                 groups)
         lists = builder.build_region(job, 'en', builder.REGIONS['en'], self.WORKS, {}, {'Project Hail Mary'}, totals,
-                                     groups, {'Q-mistborn': {'en': 'Mistborn'}})
+                                     groups, {'Q-mistborn': {'en': 'Mistborn'}}, {})
         self.assertEqual([(entry['title'], entry.get('series')) for entry in lists['year']],
                          [('Mistborn: The Final Empire', 'Mistborn'), ('Project Hail Mary', None)])
         self.assertEqual([entry['title'] for entry in lists['completed']], ['Project Hail Mary'])
@@ -390,7 +390,7 @@ class SeriesTests(unittest.TestCase):
         totals = builder.folded({window: {'Mistborn: The Final Empire': 3, 'Project Hail Mary': 2} for window in builder.WINDOWS},
                                 groups)
         lists = builder.build_region(job, 'en', builder.REGIONS['en'], self.WORKS, {}, set(), totals,
-                                     groups, {'Q-mistborn': {'en': 'Mistborn'}})
+                                     groups, {'Q-mistborn': {'en': 'Mistborn'}}, {})
         mistborn, alone = lists['year']
         self.assertEqual(mistborn['cover'], 'https://upload.wikimedia.org/Mistborn: The Final Empire.jpg')
         self.assertEqual(mistborn['seriesCovers'], ['https://upload.wikimedia.org/The Well of Ascension.jpg',
@@ -410,7 +410,7 @@ class SeriesTests(unittest.TestCase):
         job = builder.Job(Client(), builder.Store(':memory:'), date(2026, 10, 26))
         totals = builder.folded({window: {'Book 1': 1} for window in builder.WINDOWS}, groups)
         lists = builder.build_region(job, 'en', builder.REGIONS['en'], works, {}, set(), totals, groups,
-                                     {'Q-long': {'en': 'Long'}})
+                                     {'Q-long': {'en': 'Long'}}, {})
         self.assertEqual(lists['year'][0]['seriesCovers'],
                          [f'https://upload.wikimedia.org/Book {number}.jpg' for number in range(2, 2 + builder.SERIES_COVERS)])
 
@@ -421,6 +421,84 @@ class SeriesTests(unittest.TestCase):
                                       {'mainsnak': {'snaktype': 'somevalue'}}]}}
         self.assertEqual(builder.first_published(entity), '2006-07-17T00:00:00Z')
         self.assertIsNone(builder.first_published({}))
+
+
+class VolumeTests(unittest.TestCase):
+    """華語's and 日本's articles are each a whole series: its volumes are Bangumi's 单行本."""
+
+    @staticmethod
+    def related(subject):
+        def volume(id, name, cover=True):
+            return {'id': id, 'name': name, 'relation': '单行本', 'type': 1,
+                    'images': {'common': f'https://lain.bgm.tv/r/400/pic/cover/l/{subject}-{name}.jpg' if cover else ''}}
+        return [{'id': 217552, 'name': '薬屋のひとりごと', 'relation': '书籍', 'type': 1,
+                 'images': {'common': 'https://lain.bgm.tv/r/400/pic/cover/l/novel.jpg'}},
+                volume(301, '0'), volume(305, '0-II'), volume(101, '1'), volume(102, '2', cover=False),
+                volume(103, '3'), volume(104, '4'), volume(106, '5'), volume(107, '6'),
+                {'id': 400, 'name': '薬屋のひとりごと', 'relation': '动画', 'type': 2,
+                 'images': {'common': 'https://lain.bgm.tv/r/400/pic/cover/l/anime.jpg'}}]
+
+    class BangumiClient:
+        def __init__(self):
+            self.asked = []
+
+        def json(self, url, params=None, body=None, headers=None):
+            subject = int(url.split('/')[-2])
+            self.asked.append(subject)
+            if subject == 9:
+                raise HTTPError(url, 404, 'Not Found', {}, None)
+            return VolumeTests.related(subject)
+
+    def test_the_volumes_are_the_单行本_with_a_cover_in_bangumis_order(self):
+        self.assertEqual([cover.rsplit('/', 1)[1] for cover in builder.bangumi_volumes(self.related(156126))],
+                         ['156126-0.jpg', '156126-0-II.jpg', '156126-1.jpg', '156126-3.jpg', '156126-4.jpg',
+                          '156126-5.jpg', '156126-6.jpg'], 'not by id, and a volume without a cover is left out')
+
+    def test_a_matched_work_fans_its_volumes_after_the_first_asked_once_a_week(self):
+        client = self.BangumiClient()
+        store = builder.Store(':memory:')
+        store.set_finished('Q-yakuya', 156126, False, 'now')
+        store.set_finished('Q-removed', 9, True, 'now')
+        store.set_finished('Q-unmatched', None, False, 'now')
+        job = builder.Job(client, store, date(2026, 10, 27))
+        qids = ['Q-yakuya', 'Q-removed', 'Q-unmatched', 'Q-never-asked']
+        covers = job.volume_covers(qids)
+        self.assertEqual(list(covers), ['Q-yakuya'])
+        self.assertEqual([cover.rsplit('/', 1)[1] for cover in covers['Q-yakuya']],
+                         ['156126-0-II.jpg', '156126-1.jpg', '156126-3.jpg', '156126-4.jpg', '156126-5.jpg', '156126-6.jpg'],
+                         "the first is the work's own cover")
+        self.assertEqual(client.asked, [156126, 9], 'a removed subject has no volumes; an unmatched work is not asked')
+        self.assertEqual(job.volume_covers(qids), covers)
+        self.assertEqual(client.asked, [156126, 9], 'kept a week')
+        store.set_volumes(156126, [], (datetime.now(timezone.utc) - timedelta(days=8)).isoformat())
+        self.assertEqual(job.volume_covers(['Q-yakuya']), {'Q-yakuya': covers['Q-yakuya']})
+        self.assertEqual(client.asked, [156126, 9, 156126], 'asked again after a week')
+
+    def test_a_whole_series_entry_carries_its_volumes_and_names_no_series(self):
+        class Client:
+            def json(self, url, params=None, body=None, headers=None):
+                return {'query': {'pages': []}}
+        job = builder.Job(Client(), builder.Store(':memory:'), date(2026, 10, 27))
+        works = {'薬屋のひとりごと': work('Q-yakuya'), '異世界食堂': work('Q-shokudo')}
+        totals = {window: {'薬屋のひとりごと': 3, '異世界食堂': 2} for window in builder.WINDOWS}
+        volumes = {'Q-yakuya': [f'https://lain.bgm.tv/r/400/pic/cover/l/{number}.jpg' for number in range(2, 8)]}
+        lists = builder.build_region(job, 'ja', builder.REGIONS['ja'], works, {}, set(), totals, {}, {}, volumes)
+        yakuya, shokudo = lists['year']
+        self.assertEqual(yakuya['seriesCovers'], volumes['Q-yakuya'][:builder.SERIES_COVERS])
+        self.assertNotIn('series', yakuya, 'its title is the series')
+        self.assertNotIn('seriesCovers', shokudo)
+
+    def test_a_store_from_before_volumes_gains_them(self):
+        with tempfile.TemporaryDirectory() as folder:
+            path = Path(folder) / 'trends.sqlite'
+            old = sqlite3.connect(path)
+            old.executescript(builder.SCHEMA.replace(
+                'create table if not exists volumes (subject integer primary key, covers text, checked text);', ''))
+            old.close()
+            store = builder.Store(path)
+            self.assertIsNone(store.volumes(156126))
+            store.set_volumes(156126, ['a.jpg'], 'now')
+            self.assertEqual(store.volumes(156126), (['a.jpg'], 'now'))
 
 
 class ConvertingClient:

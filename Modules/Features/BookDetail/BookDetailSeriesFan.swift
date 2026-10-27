@@ -7,7 +7,7 @@ import SwiftUI
 // `seriesCovers`). Real artwork only: a volume whose cover would be a 預設封面 or generated, or
 // whose artwork does not load, is skipped, and with none left the hero keeps its single cover.
 // The fan is decoration; the hero names the series once, by its series link or a list's series
-// name.
+// name, or by its title for a list's item that is the whole series.
 
 /// The other volumes of the page's series, before the fan picks from them.
 struct SeriesFan {
@@ -85,10 +85,11 @@ extension SeriesFan {
 }
 
 extension SeriesFan {
-    /// A list's item that stands for a series (趨勢's, under its first book): the other
-    /// volumes' covers the list gave, after the page's own. Nil without them.
+    /// A list's item that stands for a series (趨勢's English series, under its first book) or
+    /// is one (趨勢's 華語 and 日本 works, which name no series): the other volumes' covers the
+    /// list gave, after the page's own. Nil without them.
     init?(_ summary: WorkSummary, session: URLSession?) {
-        guard summary.series != nil, !summary.seriesCovers.isEmpty else { return nil }
+        guard !summary.seriesCovers.isEmpty else { return nil }
         self.init(volumes: summary.seriesCovers.enumerated().map { offset, cover in
             Volume(id: "\(offset)", cover: .reference(cover, session: session))
         }, position: 0)
