@@ -305,7 +305,7 @@ struct DiagnosticsView: View {
         } description: {
             Text(model.entries.isEmpty
                  ? localized("目前沒有任何診斷紀錄。繼續使用 app，有狀況時就會出現在這裡。")
-                 : localized("換一個篩選條件或搜尋字詞試試。")).foregroundStyle(DSColor.textSecondary)
+                 : localized("換一個篩選條件或搜尋字詞試試。")).font(DSFont.unavailableDescription).foregroundStyle(DSColor.textSecondary)
         }
     }
 }

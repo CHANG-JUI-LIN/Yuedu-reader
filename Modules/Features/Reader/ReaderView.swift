@@ -2995,7 +2995,7 @@ struct ReaderView: View {
                     ContentUnavailableView {
                         UnavailableLabel(localized("媒體旁白"), systemImage: "waveform")
                     } description: {
-                        Text(localized("目前章節沒有媒體旁白")).foregroundStyle(DSColor.textSecondary)
+                        Text(localized("目前章節沒有媒體旁白")).font(DSFont.unavailableDescription).foregroundStyle(DSColor.textSecondary)
                     }
                 }
             }

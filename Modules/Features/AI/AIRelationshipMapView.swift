@@ -82,7 +82,7 @@ struct AIRelationshipMapView: View {
                 ContentUnavailableView {
                     UnavailableLabel(localized("還沒有人物關係"), systemImage: "point.3.connected.trianglepath.dotted")
                 } description: {
-                    Text(localized("先用「整理已讀人物」建立人物記錄，關係就會畫在這裡。")).foregroundStyle(DSColor.textSecondary)
+                    Text(localized("先用「整理已讀人物」建立人物記錄，關係就會畫在這裡。")).font(DSFont.unavailableDescription).foregroundStyle(DSColor.textSecondary)
                 } actions: {
                     NavigationLink(localized("整理已讀人物")) {
                         AICharacterMemoryView(adapter: adapter, onOpenCitation: onOpenCitation)

@@ -99,7 +99,7 @@ private struct DiscoverEmptyState: View {
             Text(
                 discover.sourceNotice
                     ?? localized("此來源配置未回傳發現內容，可下拉重新整理或切換來源配置")
-            ).foregroundStyle(DSColor.textSecondary)
+            ).font(DSFont.unavailableDescription).foregroundStyle(DSColor.textSecondary)
         } actions: {
             // The source asked for a device id and got none. The toggle that fixes
             // it lives in 書源編輯 → 基本, which nobody looking at an empty 發現頁

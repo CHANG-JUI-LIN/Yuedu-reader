@@ -303,7 +303,7 @@ struct BookOpenFailureView: View {
                 symbolColor: detailColor
             )
         } description: {
-            Text(message).foregroundStyle(detailColor ?? DSColor.textSecondary)
+            Text(message).font(DSFont.unavailableDescription).foregroundStyle(detailColor ?? DSColor.textSecondary)
         } actions: {
             Button(localized("重試"), action: onRetry)
             Button(localized("關閉"), action: onClose)

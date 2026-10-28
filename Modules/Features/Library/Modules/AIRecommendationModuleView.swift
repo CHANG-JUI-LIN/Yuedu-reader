@@ -31,7 +31,7 @@ struct AIRecommendationModuleView: View {
                 ContentUnavailableView {
                     UnavailableLabel(localized("需要 Pro"), systemImage: "lock.fill")
                 } description: {
-                    Text(localized("依你最近讀的書推薦作品")).foregroundStyle(DSColor.textSecondary)
+                    Text(localized("依你最近讀的書推薦作品")).font(DSFont.unavailableDescription).foregroundStyle(DSColor.textSecondary)
                 } actions: {
                     Button(localized("升級")) { showsPaywall = true }
                         .buttonStyle(.onAccentProminent)

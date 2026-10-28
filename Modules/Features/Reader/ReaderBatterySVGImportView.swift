@@ -162,7 +162,7 @@ struct ReaderBatterySVGImportView: View {
             ContentUnavailableView {
                 UnavailableLabel(localized("尚無電量 SVG 模板"), systemImage: "battery.100")
             } description: {
-                Text(localized("匯入 SVG 模板後，可用於閱讀頁的電量元件。")).foregroundStyle(DSColor.textSecondary)
+                Text(localized("匯入 SVG 模板後，可用於閱讀頁的電量元件。")).font(DSFont.unavailableDescription).foregroundStyle(DSColor.textSecondary)
             } actions: {
                 Button(localized("匯入 SVG")) {
                     showingImporter = true

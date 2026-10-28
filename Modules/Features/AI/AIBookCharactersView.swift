@@ -53,7 +53,7 @@ struct AIBookCharactersView: View {
                 ContentUnavailableView {
                     UnavailableLabel(localized("尚無人物資料"), systemImage: "person.2")
                 } description: {
-                    Text(localized("整理已讀內容，查看人物與原文依據。")).foregroundStyle(DSColor.textSecondary)
+                    Text(localized("整理已讀內容，查看人物與原文依據。")).font(DSFont.unavailableDescription).foregroundStyle(DSColor.textSecondary)
                 }
                     .listRowBackground(Color.clear)
             }

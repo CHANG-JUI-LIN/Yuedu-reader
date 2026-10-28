@@ -132,7 +132,7 @@ struct BookSourceDebugView: View {
         } description: {
             Text(debugger.isRecording
                  ? localized("錄製中。回到來源配置做一次搜索或開啟章節，請求就會出現在這裡。")
-                 : localized("先打開上面的錄製開關，再回到來源配置操作一次。")).foregroundStyle(DSColor.textSecondary)
+                 : localized("先打開上面的錄製開關，再回到來源配置操作一次。")).font(DSFont.unavailableDescription).foregroundStyle(DSColor.textSecondary)
         }
     }
 

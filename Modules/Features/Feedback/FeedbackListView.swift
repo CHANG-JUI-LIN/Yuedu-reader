@@ -111,7 +111,7 @@ struct FeedbackListView: View {
                 ContentUnavailableView {
                     UnavailableLabel(localized("無法載入回饋"), systemImage: "wifi.exclamationmark")
                 } description: {
-                    Text(message).foregroundStyle(DSColor.textSecondary)
+                    Text(message).font(DSFont.unavailableDescription).foregroundStyle(DSColor.textSecondary)
                 } actions: {
                     Button(localized("重試")) {
                         loadState = .loading

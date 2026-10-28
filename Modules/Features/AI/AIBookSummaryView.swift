@@ -74,7 +74,7 @@ struct AIBookSummaryView: View {
                 ContentUnavailableView {
                     UnavailableLabel(localized("還沒有全書摘要"), systemImage: "text.book.closed")
                 } description: {
-                    Text(localized("依已讀章節逐章整理，再彙整成分卷與全書摘要。")).foregroundStyle(DSColor.textSecondary)
+                    Text(localized("依已讀章節逐章整理，再彙整成分卷與全書摘要。")).font(DSFont.unavailableDescription).foregroundStyle(DSColor.textSecondary)
                 }
             }
         } header: {

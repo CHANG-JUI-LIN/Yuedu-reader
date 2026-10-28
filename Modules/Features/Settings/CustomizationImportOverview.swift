@@ -466,7 +466,7 @@ struct CustomizationImportOverviewView: View {
             ContentUnavailableView {
                 UnavailableLabel(localized("匯入失敗"), systemImage: "exclamationmark.triangle")
             } description: {
-                Text(message).foregroundStyle(DSColor.textSecondary)
+                Text(message).font(DSFont.unavailableDescription).foregroundStyle(DSColor.textSecondary)
             }
             .background(DSColor.groupedBackground)
         case .finished(let overview) where overview.isEmpty && overview.notes.isEmpty:

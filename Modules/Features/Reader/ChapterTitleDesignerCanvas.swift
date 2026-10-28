@@ -33,7 +33,7 @@ struct ChapterTitleDesignerCanvas: View {
                     ContentUnavailableView {
                         UnavailableLabel(localized("預覽失敗"), systemImage: "exclamationmark.triangle")
                     } description: {
-                        Text(renderError.localizedDescription).foregroundStyle(DSColor.textSecondary)
+                        Text(renderError.localizedDescription).font(DSFont.unavailableDescription).foregroundStyle(DSColor.textSecondary)
                     }
                 } else {
                     ProgressView(localized("正在產生預覽"))

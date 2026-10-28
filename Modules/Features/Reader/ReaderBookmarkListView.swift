@@ -178,13 +178,13 @@ struct BookmarkListSection: View {
                 ContentUnavailableView {
                     UnavailableLabel(localized("沒有書籤"), systemImage: "bookmark")
                 } description: {
-                    Text(localized("在想記住的那一頁向下滑動，或點一下右上角的書籤按鈕。")).foregroundStyle(DSColor.textSecondary)
+                    Text(localized("在想記住的那一頁向下滑動，或點一下右上角的書籤按鈕。")).font(DSFont.unavailableDescription).foregroundStyle(DSColor.textSecondary)
                 }
             } else {
                 ContentUnavailableView {
                     UnavailableLabel(localized("沒有重點"), systemImage: "highlighter")
                 } description: {
-                    Text(localized("在閱讀時選取文字，加入底線或螢光筆即可在此查看。")).foregroundStyle(DSColor.textSecondary)
+                    Text(localized("在閱讀時選取文字，加入底線或螢光筆即可在此查看。")).font(DSFont.unavailableDescription).foregroundStyle(DSColor.textSecondary)
                 }
             }
         } else {

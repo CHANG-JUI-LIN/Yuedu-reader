@@ -134,7 +134,7 @@ struct AICharacterListView: View {
             ContentUnavailableView {
                 UnavailableLabel(localized("還沒有人物卡"), systemImage: "person.text.rectangle")
             } description: {
-                Text(localized("整理之後，多角色朗讀也會用這裡的別名，把同一個人的不同稱呼歸成同一個聲音。")).foregroundStyle(DSColor.textSecondary)
+                Text(localized("整理之後，多角色朗讀也會用這裡的別名，把同一個人的不同稱呼歸成同一個聲音。")).font(DSFont.unavailableDescription).foregroundStyle(DSColor.textSecondary)
             }
         }
         .listRowBackground(Color.clear)

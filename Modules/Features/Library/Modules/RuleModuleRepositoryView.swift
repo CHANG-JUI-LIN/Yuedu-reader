@@ -78,7 +78,7 @@ struct RuleModuleRepositoryView: View {
             ContentUnavailableView {
                 UnavailableLabel(localized("載入失敗"), systemImage: "wifi.exclamationmark")
             } description: {
-                Text(message)
+                Text(message).font(DSFont.unavailableDescription)
             } actions: {
                 Button(localized("重試")) { Task { await repositories.reload(url) } }
                 Button(localized("取消訂閱"), role: .destructive) { confirmsUnsubscription = true }

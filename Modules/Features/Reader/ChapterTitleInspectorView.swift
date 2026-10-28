@@ -26,7 +26,7 @@ struct ChapterTitleInspectorView: View {
                 ContentUnavailableView {
                     UnavailableLabel(localized("未選擇元素"), systemImage: "square.dashed")
                 } description: {
-                    Text(localized("在畫布或元素列表選擇一個圖層。")).foregroundStyle(DSColor.textSecondary)
+                    Text(localized("在畫布或元素列表選擇一個圖層。")).font(DSFont.unavailableDescription).foregroundStyle(DSColor.textSecondary)
                 }
             }
         }

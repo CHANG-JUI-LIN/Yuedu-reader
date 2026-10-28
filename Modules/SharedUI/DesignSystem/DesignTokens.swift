@@ -324,9 +324,23 @@ enum DSFont {
     static var title: Font { GlobalAppTypography.font(.title) }
     /// Large title (34pt)
     static var largeTitle: Font { GlobalAppTypography.font(.largeTitle) }
-    /// A `ContentUnavailableView` title: Title 3 in bold, the style the view gives it
-    /// (measured 2026-10-28: Title 2 draws larger; the view applies its own weight on top).
-    static var unavailableTitle: Font { GlobalAppTypography.font(.title3, weight: .bold) }
+    /// A `ContentUnavailableView` title, in the style the view gives it itself, which it
+    /// draws over the app's font. Measured 2026-10-28 (`GlobalAppTypographyTests`): Title 2
+    /// through iOS 26, Title 3 on iOS 27. The view applies its own weight on top.
+    static var unavailableTitle: Font {
+        if #available(iOS 27, *) {
+            return GlobalAppTypography.font(.title3, weight: .bold)
+        }
+        return GlobalAppTypography.font(.title2, weight: .bold)
+    }
+    /// A `ContentUnavailableView` description, in the style the view gives it: Subheadline
+    /// through iOS 26, Title 3 on iOS 27 (measured as above).
+    static var unavailableDescription: Font {
+        if #available(iOS 27, *) {
+            return GlobalAppTypography.font(.title3)
+        }
+        return GlobalAppTypography.font(.subheadline)
+    }
     /// A section title the way Apple Books heads its sections: Title 2 in bold, set in
     /// the system serif (New York). A chosen interface font draws it like any other style.
     static var serifSectionTitle: Font {

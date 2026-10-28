@@ -25,7 +25,7 @@ struct ChapterTitleLayerListView: View {
                     ContentUnavailableView {
                         UnavailableLabel(localized("尚無元素"), systemImage: "square.dashed")
                     } description: {
-                        Text(localized("加入章節數、章節名、文字、線條、色塊或圖片。")).foregroundStyle(DSColor.textSecondary)
+                        Text(localized("加入章節數、章節名、文字、線條、色塊或圖片。")).font(DSFont.unavailableDescription).foregroundStyle(DSColor.textSecondary)
                     }
                 } else {
                     ForEach(model.draft.layers) { layer in

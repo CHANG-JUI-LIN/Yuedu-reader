@@ -132,7 +132,7 @@ struct PublicLibraryFeedView: View {
                 if let error = model.loadError {
                     ContentUnavailableView {
                         UnavailableLabel(localized("無法載入書庫"), systemImage: "wifi.exclamationmark")
-                    } description: { Text(error) } actions: {
+                    } description: { Text(error).font(DSFont.unavailableDescription) } actions: {
                         Button(localized("重試")) {
                             request = Task {
                                 if model.failedWhileLoadingMore { await model.loadMore() }

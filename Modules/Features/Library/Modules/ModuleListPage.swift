@@ -47,7 +47,7 @@ struct ModuleListPage: View {
             ContentUnavailableView {
                 UnavailableLabel(localized("載入失敗"), systemImage: "wifi.exclamationmark")
             } description: {
-                Text(message)
+                Text(message).font(DSFont.unavailableDescription)
             } actions: {
                 Button(localized("重試")) { Task { await model.load() } }
             }

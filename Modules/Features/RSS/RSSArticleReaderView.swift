@@ -113,7 +113,7 @@ struct RSSArticleReaderView: View {
                 ContentUnavailableView {
                     UnavailableLabel(localized("目前沒有文章"), systemImage: "newspaper")
                 } description: {
-                    Text(localized("重新載入")).foregroundStyle(DSColor.textSecondary)
+                    Text(localized("重新載入")).font(DSFont.unavailableDescription).foregroundStyle(DSColor.textSecondary)
                 }
             }
         }

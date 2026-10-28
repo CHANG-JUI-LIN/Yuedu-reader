@@ -461,7 +461,7 @@ struct BookSearchView: View {
         ContentUnavailableView {
             UnavailableLabel(localized("已暫停"), systemImage: "pause.circle")
         } description: {
-            Text(localized("點擊繼續搜索剩餘來源配置"))
+            Text(localized("點擊繼續搜索剩餘來源配置")).font(DSFont.unavailableDescription)
                 .foregroundStyle(DSColor.textSecondary)
         }
     }
@@ -625,7 +625,7 @@ struct BookSearchView: View {
                 systemImage: "magnifyingglass"
             )
         } description: {
-            Text(localized("嘗試換個關鍵字，或切換來源配置"))
+            Text(localized("嘗試換個關鍵字，或切換來源配置")).font(DSFont.unavailableDescription)
                 .foregroundStyle(DSColor.textSecondary)
         }
     }
@@ -636,7 +636,7 @@ struct BookSearchView: View {
             ContentUnavailableView {
                 UnavailableLabel(localized("尚未設置來源配置"), systemImage: "exclamationmark.triangle")
             } description: {
-                Text(localized("請先在來源配置管理中新增並啟用來源配置"))
+                Text(localized("請先在來源配置管理中新增並啟用來源配置")).font(DSFont.unavailableDescription)
                     .foregroundStyle(DSColor.textSecondary)
             }
         } else {

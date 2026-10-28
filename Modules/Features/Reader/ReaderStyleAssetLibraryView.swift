@@ -42,7 +42,7 @@ struct ReaderStyleAssetLibraryView: View {
                 ContentUnavailableView {
                     UnavailableLabel(localized("尚無素材"), systemImage: "photo.on.rectangle.angled")
                 } description: {
-                    Text(localized("從相簿或檔案加入圖片，之後可供所有閱讀樣式重用。")).foregroundStyle(DSColor.textSecondary)
+                    Text(localized("從相簿或檔案加入圖片，之後可供所有閱讀樣式重用。")).font(DSFont.unavailableDescription).foregroundStyle(DSColor.textSecondary)
                 }
             } else {
                 ForEach(assets) { asset in

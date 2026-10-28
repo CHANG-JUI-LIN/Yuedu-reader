@@ -45,7 +45,7 @@ struct AIAssistantPanelView: View {
                     ContentUnavailableView {
                         UnavailableLabel(localized("尚未設定 AI 服務"), systemImage: "sparkles")
                     } description: {
-                        Text(settingsError ?? localized("填入自己的 API 服務，即可開始閱讀問答。")).foregroundStyle(DSColor.textSecondary)
+                        Text(settingsError ?? localized("填入自己的 API 服務，即可開始閱讀問答。")).font(DSFont.unavailableDescription).foregroundStyle(DSColor.textSecondary)
                     } actions: {
                         Button(localized("前往設定")) { openScreen(.settings) }
                     }
@@ -160,7 +160,7 @@ struct AIAssistantPanelView: View {
             ContentUnavailableView {
                 UnavailableLabel(localized("一起讀懂這本書"), systemImage: "sparkles")
             } description: {
-                Text(localized("選取原文來解釋或翻譯，也可以直接提問。")).foregroundStyle(DSColor.textSecondary)
+                Text(localized("選取原文來解釋或翻譯，也可以直接提問。")).font(DSFont.unavailableDescription).foregroundStyle(DSColor.textSecondary)
             }
                 .accessibilityIdentifier("ai.chat.transcript")
         } else {

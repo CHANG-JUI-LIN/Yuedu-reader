@@ -81,7 +81,7 @@ struct ReaderBookSearchView: View {
                 ContentUnavailableView {
                     UnavailableLabel(localized("無搜尋結果"), systemImage: "doc.text.magnifyingglass")
                 } description: {
-                    Text(noResultsDescription).foregroundStyle(DSColor.textSecondary)
+                    Text(noResultsDescription).font(DSFont.unavailableDescription).foregroundStyle(DSColor.textSecondary)
                 }
             case .idle, .searching, .finished:
                 results
@@ -95,7 +95,7 @@ struct ReaderBookSearchView: View {
             ContentUnavailableView {
                 UnavailableLabel(localized("搜尋書籍"), systemImage: "magnifyingglass")
             } description: {
-                Text(localized("輸入關鍵字搜尋整本書。")).foregroundStyle(DSColor.textSecondary)
+                Text(localized("輸入關鍵字搜尋整本書。")).font(DSFont.unavailableDescription).foregroundStyle(DSColor.textSecondary)
             }
         } else {
             List {
@@ -207,7 +207,7 @@ struct ReaderBookSearchView: View {
         return ContentUnavailableView {
             UnavailableLabel(title, systemImage: "exclamationmark.magnifyingglass")
         } description: {
-            Text(message).foregroundStyle(DSColor.textSecondary)
+            Text(message).font(DSFont.unavailableDescription).foregroundStyle(DSColor.textSecondary)
         }
     }
 

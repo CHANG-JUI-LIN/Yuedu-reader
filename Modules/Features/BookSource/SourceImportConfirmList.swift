@@ -64,7 +64,7 @@ struct SourceImportConfirmList<Source: ImportableSource, ExtraOptions: View>: Vi
             ContentUnavailableView {
                 UnavailableLabel(localized("沒有可匯入的內容"), systemImage: "tray")
             } description: {
-                Text(localized("這個檔案裡沒有可以解析的來源。")).foregroundStyle(DSColor.textSecondary)
+                Text(localized("這個檔案裡沒有可以解析的來源。")).font(DSFont.unavailableDescription).foregroundStyle(DSColor.textSecondary)
             }
             .themedAppSurface(for: .settings)
         } else {

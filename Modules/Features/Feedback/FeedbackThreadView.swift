@@ -39,7 +39,7 @@ struct FeedbackThreadView: View {
                         ContentUnavailableView {
                             UnavailableLabel(localized("無法載入對話"), systemImage: "wifi.exclamationmark")
                         } description: {
-                            Text(loadError).foregroundStyle(DSColor.textSecondary)
+                            Text(loadError).font(DSFont.unavailableDescription).foregroundStyle(DSColor.textSecondary)
                         }
                     }
                     ForEach(messages) { message in
@@ -426,7 +426,7 @@ struct FeedbackAttachmentViewer: View {
                     ContentUnavailableView {
                         UnavailableLabel(localized("無法載入附件"), systemImage: "exclamationmark.triangle")
                     } description: {
-                        Text(error).foregroundStyle(DSColor.textSecondary)
+                        Text(error).font(DSFont.unavailableDescription).foregroundStyle(DSColor.textSecondary)
                     }
                 } else {
                     ProgressView()

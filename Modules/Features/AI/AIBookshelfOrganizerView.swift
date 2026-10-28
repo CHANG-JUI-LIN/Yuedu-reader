@@ -61,7 +61,7 @@ struct AIBookshelfOrganizerView: View {
             ContentUnavailableView {
                 UnavailableLabel(localized("需要 Pro"), systemImage: "lock.fill")
             } description: {
-                Text(localized("問書、整章翻譯、查詞與整理書架")).foregroundStyle(DSColor.textSecondary)
+                Text(localized("問書、整章翻譯、查詞與整理書架")).font(DSFont.unavailableDescription).foregroundStyle(DSColor.textSecondary)
             } actions: {
                 Button(localized("升級")) { showsPaywall = true }
                     .buttonStyle(.onAccentProminent)
@@ -159,7 +159,7 @@ struct AIBookshelfOrganizerView: View {
                 ContentUnavailableView {
                     UnavailableLabel(localized("不需要移動"), systemImage: "checkmark.circle")
                 } description: {
-                    Text(localized("每本書都已在建議的分組裡，或 AI 沒有把握。")).foregroundStyle(DSColor.textSecondary)
+                    Text(localized("每本書都已在建議的分組裡，或 AI 沒有把握。")).font(DSFont.unavailableDescription).foregroundStyle(DSColor.textSecondary)
                 }
                     .listRowBackground(Color.clear)
             } else {

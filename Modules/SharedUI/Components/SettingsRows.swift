@@ -85,8 +85,9 @@ struct ThemedLabeledContent: View {
 /// which 外觀主題 › 文字顏色 cannot reach. The description goes in 次級文字 at the call site.
 ///
 /// The title also takes the global font itself: the view sets its own system font on its
-/// label, over the app's (feedback #41). Title 3 in bold is the style it sets — with no
-/// custom font the two draw identically (`GlobalAppTypographyTests`).
+/// label, over the app's (feedback #41). `DSFont.unavailableTitle` is the style it sets —
+/// with no custom font the two draw identically (`GlobalAppTypographyTests`). The same goes
+/// for the description, which each call site sets in `DSFont.unavailableDescription`.
 ///
 /// A view drawn on the reading background passes the reader's own colours instead: the
 /// app's would vanish on a dark reading theme in light mode.
@@ -204,6 +205,6 @@ struct SettingsLockedRow: View {
     ContentUnavailableView {
         UnavailableLabel("此分組暫無意見回報", systemImage: "tray")
     } description: {
-        Text("說明文字").foregroundStyle(DSColor.textSecondary)
+        Text("說明文字").font(DSFont.unavailableDescription).foregroundStyle(DSColor.textSecondary)
     }
 }
