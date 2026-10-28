@@ -370,8 +370,8 @@ struct ReaderTOCView: View {
                 Text(chapter.title)
                     .font(
                         chapter.level == 0
-                        ? .system(size: 14, weight: .semibold)
-                        : .system(size: 12, weight: .regular)
+                        ? DSFont.fixed(size: 14, weight: .semibold)
+                        : DSFont.fixed(size: 12, weight: .regular)
                     )
                     .foregroundStyle(DSColor.textPrimary)
                     .lineLimit(2)

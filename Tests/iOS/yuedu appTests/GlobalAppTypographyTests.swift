@@ -1,4 +1,5 @@
 import Foundation
+import SwiftUI
 import Testing
 import UIKit
 @testable import yuedu_app
@@ -80,5 +81,42 @@ struct GlobalAppTypographyTests {
 
         #expect(font.fontName == info.postScriptName)
         #expect(abs(font.pointSize - 11) < 0.01)
+    }
+
+    /// Feedback #41: `ContentUnavailableView` sets its own system font on its label, so
+    /// `UnavailableLabel` sets the global one on the title. With no custom font it must draw
+    /// exactly as the view's own title did; with one, the title must change.
+    @Test("unavailable title matches the system title and follows a custom font")
+    func unavailableTitleFollowsGlobalFont() throws {
+        func render(_ title: some View) throws -> Data {
+            let renderer = ImageRenderer(
+                content: ContentUnavailableView { title }
+                    .frame(width: 320, height: 240)
+            )
+            renderer.scale = 2
+            return try #require(renderer.uiImage?.pngData())
+        }
+        let plain = Label("此分組暫無意見回報", systemImage: "tray")
+        let saved = GlobalAppTypography.activePostScriptName
+        defer { GlobalAppTypography.activePostScriptName = saved }
+
+        GlobalAppTypography.activePostScriptName = nil
+        #expect(try render(plain) == render(Label {
+            Text("此分組暫無意見回報").font(DSFont.unavailableTitle)
+        } icon: {
+            Image(systemName: "tray")
+        }))
+
+        let fixtureURL = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .appendingPathComponent("Fixtures/Ahem.ttf")
+        let info = try UserFontStorageManager.shared.importFont(fileURL: fixtureURL)
+        defer { UserFontStorageManager.shared.delete(info) }
+        GlobalAppTypography.activePostScriptName = info.postScriptName
+        #expect(try render(plain) != render(Label {
+            Text("此分組暫無意見回報").font(DSFont.unavailableTitle)
+        } icon: {
+            Image(systemName: "tray")
+        }))
     }
 }

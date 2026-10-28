@@ -66,7 +66,8 @@ struct FootnotePopoverContent: View {
 
     /// Measures the note so the popover can size itself (UIKit popovers need a preferredContentSize).
     static func preferredSize(text: String, maxWidth: CGFloat) -> CGSize {
-        let font = UIFont.preferredFont(forTextStyle: .callout)
+        // The same face the note is drawn in (`DSFont.callout`), or a custom font measures short.
+        let font = GlobalAppTypography.uiFont(.callout, postScriptName: GlobalAppTypography.activePostScriptName)
         let textWidth = maxWidth - contentInset * 2
         let bounds = (text as NSString).boundingRect(
             with: CGSize(width: textWidth, height: .greatestFiniteMagnitude),

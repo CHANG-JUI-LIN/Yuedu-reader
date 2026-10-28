@@ -2811,7 +2811,10 @@ struct CoreTextPageEngineView: UIViewControllerRepresentable {
             let label = pullDownHintLabel
             if label.superview !== view {
                 label.removeFromSuperview()
-                label.font = UIFont.preferredFont(forTextStyle: .footnote)
+                label.font = GlobalAppTypography.uiFont(
+                    .footnote,
+                    postScriptName: GlobalAppTypography.activePostScriptName
+                )
                 label.adjustsFontForContentSizeCategory = true
                 label.textAlignment = .center
                 label.isUserInteractionEnabled = false
