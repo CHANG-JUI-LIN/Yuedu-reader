@@ -787,8 +787,13 @@ struct BookSourceFormLoginView: View {
         engine.sourceBridge.getVariableHandler = {
             runtimeStore.sourceVariableJSON(for: sourceUrl) ?? ""
         }
+        // Every script here runs because the user pressed something in the login sheet
+        // (登录, a loginUi button, the menu's own evaluation), so a variable it writes is a
+        // user change: 漫蛙's `login()` stores the chosen domain in `custom`, and an open
+        // 发现页 has to reload with it — the reload `doLogin` triggers by storing the login
+        // info runs before `login()` and still sees the default, blocked domain.
         engine.sourceBridge.setVariableHandler = { jsonString in
-            runtimeStore.setSourceVariableJSON(jsonString, for: sourceUrl)
+            runtimeStore.setUserSourceVariableJSON(jsonString, for: sourceUrl)
         }
         engine.sourceBridge.getKeyValueHandler = { key in
             runtimeStore.sourceValue(for: sourceUrl, key: key)

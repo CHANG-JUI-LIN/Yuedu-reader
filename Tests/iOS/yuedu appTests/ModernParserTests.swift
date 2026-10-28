@@ -4467,6 +4467,44 @@ struct SourceVariableRuntimeStateTests {
         #expect(notifications.values == [sourceURL])
     }
 
+    /// Feedback #73 (漫蛙): `login()` writes the user's domain with `source.setVariable`.
+    /// The 发现页 reload that storing the login info triggers runs before `login()`, so
+    /// the open page only picks up the new domain if this write announces itself.
+    @Test("login-sheet setVariable notifies the open discover page")
+    func loginSheetVariableWriteNotifies() async throws {
+        let sourceURL = "login-variable-notification-\(UUID().uuidString)"
+        let store = BookSourceRuntimeStateStore.shared
+        store.setSourceVariableJSON(nil, for: sourceURL)
+        defer { store.setSourceVariableJSON(nil, for: sourceURL) }
+        let source = try JSONDecoder().decode(
+            BookSource.self,
+            from: JSONSerialization.data(withJSONObject: [
+                "bookSourceName": "漫蛙",
+                "bookSourceUrl": sourceURL,
+            ])
+        )
+
+        let notifications = NotificationRecorder()
+        let observer = NotificationCenter.default.addObserver(
+            forName: .bookSourceUserVariableDidChange,
+            object: nil,
+            queue: nil
+        ) { notification in
+            if let changedURL = notification.userInfo?["sourceURL"] as? String {
+                notifications.append(changedURL)
+            }
+        }
+        defer { NotificationCenter.default.removeObserver(observer) }
+
+        let engine = BookSourceFormLoginView.makeLoginEngine(source: source)
+        let write = #"source.setVariable(JSON.stringify({custom: "https://manwark.cc"}))"#
+        _ = engine.evaluate(write)
+        _ = engine.evaluate(write)
+
+        #expect(notifications.values == [sourceURL])
+        #expect(store.sourceVariables(for: sourceURL)["custom"] as? String == "https://manwark.cc")
+    }
+
     @Test("source-variable diagnostics expose shape but never secret values")
     func sourceVariableDiagnosticRedaction() {
         let plainSecret = "private-token-value"

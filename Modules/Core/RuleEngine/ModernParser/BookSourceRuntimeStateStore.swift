@@ -2,12 +2,13 @@ import CryptoKit
 import Foundation
 
 extension Notification.Name {
-    /// Posted only after a user-facing source-variable editor saves a change.
+    /// Posted only after a user action changes a source variable: an editor save,
+    /// or a login-sheet script (登录 / loginUi buttons) calling `source.setVariable`.
     ///
     /// Rule JS also calls `source.setVariable(...)` while discover/content is
     /// running. Broadcasting those internal writes would cancel and restart the
     /// same discover evaluation indefinitely, so runtime bridges continue to use
-    /// `setSourceVariableJSON` while editors use `setUserSourceVariableJSON`.
+    /// `setSourceVariableJSON` while user-driven paths use `setUserSourceVariableJSON`.
     static let bookSourceUserVariableDidChange = Notification.Name(
         "bookSourceUserVariableDidChange"
     )
