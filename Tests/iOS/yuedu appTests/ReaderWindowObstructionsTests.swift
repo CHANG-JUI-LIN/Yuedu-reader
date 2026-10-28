@@ -132,6 +132,22 @@ struct ReaderWindowObstructionsTests {
         #expect(Self.same(latest.folds, folds), "reported \(latest.folds), window \(folds)")
     }
 
+    /// A reader pushed into a tab: the tab keeps its tab bar's side after the reader hides the
+    /// bar (an open iPhone Duo in landscape, 84pt on the right). The container's inset stands
+    /// in for it here; the reader still keeps clear of only what the window does.
+    @Test(.timeLimit(.minutes(1))) @MainActor
+    func reporterKeepsToTheWindowNotItsContainer() async throws {
+        let host = try ObstructionsHost(containerRightInset: 84)
+        defer { host.tearDown() }
+        let reported = await host.firstReport()
+        host.layout()
+        let latest = host.latest ?? reported
+
+        let safeArea = host.window.safeAreaInsets
+        #expect(host.hostedSafeArea.right == safeArea.right + 84, "the container's inset reaches the reader's view")
+        #expect(latest.sideSafeArea == ReaderSideInsets(left: safeArea.left, right: safeArea.right))
+    }
+
     private static func same(_ a: [CGRect], _ b: [CGRect]) -> Bool {
         guard a.count == b.count else { return false }
         return b.allSatisfy { rect in
@@ -143,25 +159,32 @@ struct ReaderWindowObstructionsTests {
     }
 }
 
-/// A reader-shaped root in a real window of the test host's scene, with the modifier
-/// `ReaderView` carries.
+/// A reader-shaped root in a real window of the test host's scene, with the modifiers
+/// `ReaderView` carries. `containerRightInset` is what a container adds to the reader's safe
+/// area on the right, as a tab does for its hidden tab bar.
 @MainActor
 private final class ObstructionsHost {
     let window: UIWindow
     private let controller: UIHostingController<AnyView>
+    private let readerWindow: ReaderWindowReference
     private(set) var latest: ReaderWindowObstructions?
     private var waiter: ((ReaderWindowObstructions) -> Void)?
 
-    init() throws {
+    var hostedSafeArea: UIEdgeInsets { controller.view.safeAreaInsets }
+
+    init(containerRightInset: CGFloat = 0) throws {
         guard let scene = UIApplication.shared.connectedScenes
             .compactMap({ $0 as? UIWindowScene }).first
         else { throw HostError.noScene }
         window = UIWindow(windowScene: scene)
         window.frame = scene.coordinateSpace.bounds
+        let reference = ReaderWindowReference()
+        readerWindow = reference
         var sink: ((ReaderWindowObstructions) -> Void)?
         controller = UIHostingController(rootView: AnyView(
-            Color.clear.reportsReaderWindowObstructions { sink?($0) }
+            Color.clear.reportsReaderWindowObstructions(in: reference) { sink?($0) }
         ))
+        controller.additionalSafeAreaInsets = UIEdgeInsets(top: 0, left: 0, bottom: 0, right: containerRightInset)
         sink = { [weak self] in self?.record($0) }
         window.rootViewController = controller
         window.makeKeyAndVisible()

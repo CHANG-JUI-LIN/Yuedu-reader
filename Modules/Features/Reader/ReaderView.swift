@@ -1756,8 +1756,8 @@ struct ReaderView: View {
         // Here, outside the reader's own NavigationStack, so it sees the window and not the
         // content area under the navigation bar. See `reportsReaderViewport`.
         .reportsReaderViewport { handleReaderViewportSizeChange($0) }
-        .reportsReaderWindowObstructions { readerWindowObstructions = $0 }
-        .readerWindowProbe(readerWindow)
+        // Also keeps `readerWindow` pointed at the reader's window.
+        .reportsReaderWindowObstructions(in: readerWindow) { readerWindowObstructions = $0 }
         .task {
             guard readerSessionCoordinator == nil else { return }
             let fallback = CoreTextReadingPosition(spineIndex: 0, charOffset: 0)

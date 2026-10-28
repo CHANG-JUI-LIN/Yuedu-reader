@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 
 /// What "the reader's viewport" means: the whole window the reader is shown in, safe areas
 /// included. That is the quantity `UIScreen.main.bounds` used to stand in for, the page and
@@ -43,10 +44,13 @@ extension View {
     /// Reports what the window keeps the reader clear of — its side safe areas, and on iOS 27.1
     /// what covers or folds the screen — every time it changes. Attached beside
     /// `reportsReaderViewport`, for the same reason: only there are the insets the window's.
+    /// The side safe areas are the reader's window's own; the reporter keeps `window` pointed at
+    /// that window (`readerWindowProbe`), for the reader's other uses of it too.
     func reportsReaderWindowObstructions(
+        in window: ReaderWindowReference,
         _ action: @escaping (ReaderWindowObstructions) -> Void
     ) -> some View {
-        modifier(ReaderWindowObstructionsReporter(action: action))
+        modifier(ReaderWindowObstructionsReporter(window: window, action: action))
     }
 }
 
@@ -136,38 +140,97 @@ struct ReaderWindowObstructions: Equatable {
 
 private struct ReaderWindowObstructionsReporter: ViewModifier {
     @Environment(\.layoutDirection) private var layoutDirection
+    let window: ReaderWindowReference
     let action: (ReaderWindowObstructions) -> Void
+    @State private var held = HeldObstructions()
+
+    /// What SwiftUI last reported, kept while the reader's window is not known yet.
+    @MainActor
+    private final class HeldObstructions {
+        var latest: ReaderWindowObstructions?
+        var awaitsWindow = false
+    }
 
     func body(content: Content) -> some View {
         let isRightToLeft = layoutDirection == .rightToLeft
-        content.onGeometryChange(for: ReaderWindowObstructions.self) { proxy in
-            let insets = proxy.safeAreaInsets
-            let window = ReaderViewportMetrics.windowSize(containerSize: proxy.size, safeAreaInsets: insets)
-            var obstructions = ReaderWindowObstructions(
-                windowWidth: window.width,
-                windowHeight: window.height,
-                sideSafeArea: isRightToLeft
-                    ? ReaderSideInsets(left: insets.trailing, right: insets.leading)
-                    : ReaderSideInsets(left: insets.leading, right: insets.trailing)
-            )
-            if #available(iOS 27.1, *) {
-                // In the proxy's own space, which starts where the safe area does; the
-                // reader's surfaces draw from the window's corner.
-                let origin = proxy.frame(in: .global).origin
-                let toWindow = { (region: ReservedRegion) in
-                    region.frame.offsetBy(dx: origin.x, dy: origin.y)
+        content
+            .readerWindowProbe(window)
+            .onGeometryChange(for: ReaderWindowObstructions.self) { proxy in
+                let insets = proxy.safeAreaInsets
+                let window = ReaderViewportMetrics.windowSize(containerSize: proxy.size, safeAreaInsets: insets)
+                var obstructions = ReaderWindowObstructions(
+                    windowWidth: window.width,
+                    windowHeight: window.height,
+                    sideSafeArea: isRightToLeft
+                        ? ReaderSideInsets(left: insets.trailing, right: insets.leading)
+                        : ReaderSideInsets(left: insets.leading, right: insets.trailing)
+                )
+                if #available(iOS 27.1, *) {
+                    // In the proxy's own space, which starts where the safe area does; the
+                    // reader's surfaces draw from the window's corner.
+                    let origin = proxy.frame(in: .global).origin
+                    let toWindow = { (region: ReservedRegion) in
+                        region.frame.offsetBy(dx: origin.x, dy: origin.y)
+                    }
+                    obstructions.occlusions = proxy
+                        .reservedRegions(kind: .occlusion, layoutDirectionBehavior: .fixed)
+                        .map(toWindow)
+                    // Inactive too: the fold is there whether or not the device is bent at it.
+                    obstructions.folds = proxy
+                        .reservedRegions(kind: .division, options: .includeInactive, layoutDirectionBehavior: .fixed)
+                        .map(toWindow)
                 }
-                obstructions.occlusions = proxy
-                    .reservedRegions(kind: .occlusion, layoutDirectionBehavior: .fixed)
-                    .map(toWindow)
-                // Inactive too: the fold is there whether or not the device is bent at it.
-                obstructions.folds = proxy
-                    .reservedRegions(kind: .division, options: .includeInactive, layoutDirectionBehavior: .fixed)
-                    .map(toWindow)
+                return obstructions
+            } action: { obstructions in
+                report(obstructions)
             }
-            return obstructions
-        } action: { obstructions in
-            action(obstructions)
+    }
+
+    /// Reports `obstructions` with the window's own side safe areas. A reader laid out in its
+    /// window before the probe beside it has joined it — the first layout of one pushed inside a
+    /// tab — waits for the probe instead of reporting SwiftUI's (the test host reported 168pt on
+    /// the right, its window's 84pt and its container's 84pt). The probe joins from inside a
+    /// SwiftUI update, where the reader's state must not change, so the report goes out on the
+    /// main actor once that update is over, with whatever SwiftUI reported last.
+    private func report(_ obstructions: ReaderWindowObstructions) {
+        held.latest = obstructions
+        if let readerWindow = window.window {
+            action(Self.withSides(of: readerWindow, obstructions))
+            return
         }
+        guard !held.awaitsWindow else { return }
+        held.awaitsWindow = true
+        let held = held
+        let action = action
+        window.withWindow { readerWindow in
+            Task { @MainActor in
+                held.awaitsWindow = false
+                guard let latest = held.latest else { return }
+                action(Self.withSides(of: readerWindow, latest))
+            }
+        }
+    }
+
+    /// The window's own side safe areas, in place of the ones SwiftUI hands the reader, which
+    /// include whatever the reader's container reserves. A tab keeps reserving its tab bar's side
+    /// after the reader has hidden it: on an open iPhone Duo held in landscape the root tab bar
+    /// stands down the right side, and with it hidden the tab still reported 84pt there where
+    /// the window reported none, so both pages of a spread kept 84pt clear on their right — the
+    /// page by the fold as much as the page by the edge (iOS 27.1 simulator, 2026-10-27;
+    /// `isTabBarHidden` was true, and a forced layout kept the 84pt). The reader covers its
+    /// window, so the window's are the safe areas there are.
+    ///
+    /// Asked in the handler, never in the measuring closure: a SwiftUI update must not consult
+    /// UIKit's window geometry (`ReaderView.effectiveReaderSafeTop`). A change in the window's
+    /// own inset that a container's wider inset hides changes nothing SwiftUI reports, so it
+    /// arrives with the next change that does.
+    private static func withSides(
+        of readerWindow: UIWindow,
+        _ obstructions: ReaderWindowObstructions
+    ) -> ReaderWindowObstructions {
+        let insets = readerWindow.safeAreaInsets
+        var obstructions = obstructions
+        obstructions.sideSafeArea = ReaderSideInsets(left: insets.left, right: insets.right)
+        return obstructions
     }
 }
