@@ -83,6 +83,10 @@ struct NodeAttributedStringRenderer: Sendable {
         /// Pixel density the tables, formulas and media placeholders are drawn at: the reader's
         /// window's (`ReaderRenderSettings.displayScale`).
         let displayScale: CGFloat
+        /// 套用書本間距. Off, the stylesheet's `line-height` and vertical margins on text blocks
+        /// are dropped before rendering, so the reader's 行距／段距 apply everywhere in the
+        /// chapter. Only the EPUB builder passes the setting; every other format keeps true.
+        let honorsBookSpacing: Bool
 
         init(
             from settings: ReaderRenderSettings,
@@ -99,7 +103,8 @@ struct NodeAttributedStringRenderer: Sendable {
             baseWritingDirection: NSWritingDirection = .natural,
             centerStandaloneImages: Bool = false,
             textConversion: TextConversion? = nil,
-            declaredLanguage: String? = nil
+            declaredLanguage: String? = nil,
+            honorsBookSpacing: Bool = true
         ) {
             self.baseFontSize = baseFontSize ?? settings.fontSize
             self.lineHeightMultiple = settings.lineHeightMultiple
@@ -115,6 +120,7 @@ struct NodeAttributedStringRenderer: Sendable {
             self.bookID = settings.bookID
             self.declaredLanguage = declaredLanguage
             self.displayScale = settings.displayScale
+            self.honorsBookSpacing = honorsBookSpacing
             // EPUB <h1> path: size/spacing/visibility always apply. Font and
             // weight apply only when the user explicitly picked a title font
             // (跟隨閱讀字體 off) — otherwise the publisher's own heading CSS wins,
@@ -144,6 +150,53 @@ struct NodeAttributedStringRenderer: Sendable {
 
     let config: Config
 
+    // MARK: - Book Spacing
+
+    /// 套用書本間距 off: strips the stylesheet's line height and vertical margins from every
+    /// text block, so each falls back to the reader's own 行距／段距 exactly as an unstyled
+    /// paragraph does. Done once on the tree, ahead of the walk, so every later pass —
+    /// margin collapse, container insets — sees the reader's spacing. Padding and borders
+    /// stay: they draw the book's boxes, not the space between paragraphs. Media keep
+    /// their margins, which place the picture rather than space the text.
+    static func withoutBookSpacing(_ node: RenderableNode) -> RenderableNode {
+        func strip(_ style: RenderStyle) -> RenderStyle {
+            var style = style
+            style.lineHeightMultiplier = 1.0
+            style.paragraphSpacingBefore = 0
+            style.paragraphSpacingAfter = 0
+            style.hasExplicitVerticalMargins = false
+            return style
+        }
+        func children(_ nodes: [RenderableNode]) -> [RenderableNode] {
+            nodes.map(withoutBookSpacing)
+        }
+        switch node {
+        case let .paragraph(nodes, style):
+            return .paragraph(children(nodes), style: strip(style))
+        case let .heading(nodes, level, style):
+            return .heading(children(nodes), level: level, style: strip(style))
+        case let .blockquote(nodes):
+            return .blockquote(children(nodes))
+        case let .listItem(nodes, bullet):
+            return .listItem(children(nodes), bullet: bullet)
+        case let .block(tag, nodes, style):
+            return .block(tag: tag, children: children(nodes), style: strip(style))
+        case let .inline(tag, nodes, style):
+            return .inline(tag: tag, children: children(nodes), style: strip(style))
+        case let .anchor(href, nodes):
+            return .anchor(href: href, children: children(nodes))
+        case let .ruby(base, text, style):
+            return .ruby(base: children(base), text: text, style: strip(style))
+        case let .anchorTarget(id, child):
+            return .anchorTarget(id: id, child: withoutBookSpacing(child))
+        case let .unsupportedInteractive(type, title, nodes, style):
+            return .unsupportedInteractive(type: type, title: title, children: children(nodes), style: style)
+        case .horizontalRule, .text, .lineBreak, .image, .mathML, .table, .media, .webEmbed,
+             .commentBadge, .pageBreak, .rawHTML:
+            return node
+        }
+    }
+
     // MARK: - Entry Point
 
     /// Converts a set of top-level nodes into a pageable NSAttributedString.
@@ -153,6 +206,7 @@ struct NodeAttributedStringRenderer: Sendable {
     /// chapter's build time, and its cost is in awaited services rather than the tree walk.
     func render(_ nodes: [RenderableNode]) async -> NSAttributedString {
         let renderStart = SourcePerfTrace.now
+        let nodes = config.honorsBookSpacing ? nodes : nodes.map(Self.withoutBookSpacing)
         // Reuse an already-bound collector rather than shadowing it, so an outer scope (a test,
         // or a nested render) still sees the leaves this call performed.
         let leaves = ReaderDocumentTrace.renderLeaves ?? RenderLeafMetrics()

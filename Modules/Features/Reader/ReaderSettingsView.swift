@@ -48,6 +48,9 @@ struct ReaderSettingsView: View {
     private var supportsUserFont: Bool { supportsFontSize && allowsUserSelectedReaderFont }
     private var supportsLineHeight: Bool { capabilities.contains(.lineHeight) }
     private var supportsSpacing: Bool { capabilities.contains(.spacing) }
+    /// 套用書本間距 is for EPUB, the one format whose stylesheet sets its own spacing —
+    /// the same books that default to the publication's font.
+    private var showsBookSpacingToggle: Bool { supportsSpacing && usesPublicationFontDefault }
     private var supportsPageDisplay: Bool {
         readerWindowCanHoldSpread && supportsLineHeight && !settings.scrollMode
     }
@@ -421,6 +424,12 @@ struct ReaderSettingsView: View {
                 }
             }
 
+            if showsBookSpacingToggle {
+                Toggle(isOn: $settings.readerUsesBookSpacing) {
+                    SettingsRowLabel(localized("套用書本間距"), systemImage: "text.book.closed")
+                }
+            }
+
             if supportsSpacing {
                 SettingsSliderRow(
                     title: localized(ReadingSettingsScopeItem.lineSpacing.titleKey),
@@ -492,9 +501,14 @@ struct ReaderSettingsView: View {
             Text(localized("排版"))
                 .foregroundStyle(DSColor.textSecondary)
         } footer: {
-            if supportsLineHeight, !settings.scrollMode {
+            if showsBookSpacingToggle || (supportsLineHeight && !settings.scrollMode) {
                 VStack(alignment: .leading, spacing: DSSpacing.xs) {
-                    Text(localized("上下邊距同時是頁首頁尾的容身空間，改動不會移動頁首頁尾本身。"))
+                    if showsBookSpacingToggle {
+                        Text(localized("ReaderSettings.BookSpacing.Footer"))
+                    }
+                    if supportsLineHeight, !settings.scrollMode {
+                        Text(localized("上下邊距同時是頁首頁尾的容身空間，改動不會移動頁首頁尾本身。"))
+                    }
                     if showsBottomJustify {
                         Text(localized("底部對齊：開啟後每頁文字會自動調整行間距以填滿頁面，使底部對齊整齊。"))
                     }
@@ -524,7 +538,8 @@ struct ReaderSettingsView: View {
                 || abs(readerConfig.pageMarginBottom - defaultPageMarginV) > 0.001
         )
         let bottomJustify = showsBottomJustify && !settings.readerBottomJustify
-        return spacing || margins || bottomJustify
+        let bookSpacing = showsBookSpacingToggle && !settings.readerUsesBookSpacing
+        return spacing || margins || bottomJustify || bookSpacing
     }
 
     /// The bars' own space is computed from their height, so there is no separate
@@ -543,6 +558,9 @@ struct ReaderSettingsView: View {
         }
         if showsBottomJustify {
             settings.readerBottomJustify = true
+        }
+        if showsBookSpacingToggle {
+            settings.readerUsesBookSpacing = true
         }
     }
 
@@ -949,6 +967,15 @@ private struct LayoutImportAlert: Identifiable {
         capabilities: .reflowableText,
         allowsUserSelectedReaderFont: true,
         allowsVerticalWritingMode: true
+    )
+}
+
+#Preview("EPUB・套用書本間距") {
+    ReaderSettingsView(
+        fontSize: .constant(18),
+        theme: .constant(.sepia),
+        capabilities: EPUBBookDocument.supportedCapabilities,
+        usesPublicationFontDefault: true
     )
 }
 

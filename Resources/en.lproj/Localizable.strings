@@ -4183,3 +4183,5 @@
 "設定分組：資料" = "Data";
 "設定分組：支援" = "Support";
 "這裡列出你已有的來源；要新增來源配置、模組或遠端書庫，請到設定。" = "Everything you've added is listed here. To add a source, a module or a remote library, go to Settings.";
+"套用書本間距" = "Use Book Spacing";
+"ReaderSettings.BookSpacing.Footer" = "When off, line and paragraph spacing always use the settings above instead of the book's own layout.";

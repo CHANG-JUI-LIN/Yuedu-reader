@@ -220,10 +220,10 @@ struct TXTBookDocument: BookDocument {
 struct EPUBBookDocument: BookDocument {
     let metadata: BookMetadata
     let tableOfContents: [UniversalChapter]
-    // .spacing is temporarily disabled: line/paragraph/letter spacing is not yet
-    // fully supported for EPUB due to CSS priority conflicts.
-    // Will be re-enabled after HTMLAttributedStringBuilder applies user overrides.
-    let capabilities: ReaderCapabilities = [.fontSize, .lineHeight, .background, .darkMode]
+    /// 行距／段距 reach an EPUB through 套用書本間距: on, they fill in where the
+    /// stylesheet sets nothing; off, they replace its spacing.
+    static let supportedCapabilities: ReaderCapabilities = .reflowableText
+    let capabilities: ReaderCapabilities = Self.supportedCapabilities
 
     private let session: PublicationSession
 

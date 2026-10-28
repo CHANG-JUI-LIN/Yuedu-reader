@@ -258,7 +258,8 @@ final class EPUBAttributedStringBuilder: @preconcurrency AttributedStringBuildin
                     return self.resourceProvider.resourceURL(for: resolved).absoluteString
                 },
                 baseWritingDirection: config.baseWritingDirection,
-                declaredLanguage: session.language
+                declaredLanguage: session.language,
+                honorsBookSpacing: settings.usesBookSpacing
             )
         )
         if localBuilder.detectedVerticalWritingMode {

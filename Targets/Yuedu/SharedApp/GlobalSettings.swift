@@ -789,6 +789,15 @@ class GlobalSettings {
             recordReadingSettingEdit { $0.bottomJustify = readerBottomJustify }
         }
     }
+    /// 套用書本間距: whether an EPUB's own stylesheet spacing (line height, paragraph
+    /// margins) wins over 行距／段距. On by default, so a book keeps the look its
+    /// publisher set until the reader turns it off. Global, not part of a theme: it is
+    /// about the book's format, not the reader's look. Part of `ReaderRenderSettings`.
+    var readerUsesBookSpacing: Bool {
+        didSet {
+            UserDefaults.standard.set(readerUsesBookSpacing, forKey: "yd_reader_uses_book_spacing")
+        }
+    }
     var pageMarginV: Double {
         didSet {
             UserDefaults.standard.set(pageMarginV, forKey: "yd_page_margin_v")
@@ -2009,6 +2018,7 @@ class GlobalSettings {
         pageMarginBottom = (UserDefaults.standard.object(forKey: "yd_page_margin_bottom") as? Double)
             ?? loadedPageMarginV
         readerBottomJustify = (UserDefaults.standard.object(forKey: "yd_reader_bottom_justify") as? Bool) ?? true
+        readerUsesBookSpacing = (UserDefaults.standard.object(forKey: "yd_reader_uses_book_spacing") as? Bool) ?? true
         readerTextColorOverrides =
             (UserDefaults.standard.dictionary(forKey: Self.readerTextColorOverridesKey) as? [String: Int])?
                 .mapValues { UInt32(clamping: $0) } ?? [:]

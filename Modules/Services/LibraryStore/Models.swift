@@ -955,6 +955,10 @@ struct ReaderRenderSettings: Equatable {
     /// 底部對齊: spread each filled page's leftover space over its lines so the last line
     /// sits on the content bottom. Paged surface only; the scroll surface always carries false.
     var bottomJustify: Bool = false
+    /// 套用書本間距: an EPUB's stylesheet line height and paragraph margins win over the
+    /// reader's 行距／段距 (on), or are dropped so the reader's apply everywhere (off).
+    /// Read by the EPUB builder alone; baked into paragraph styles, so a change re-runs layout.
+    var usesBookSpacing: Bool = true
     /// Pixels per point of the window the reader is in: tables, formulas and media placeholders
     /// are drawn into bitmaps at this density, so moving to a screen of another density re-runs
     /// layout. The reader passes its own (`ReaderRenderSettingsSnapshotInput.displayScale`);

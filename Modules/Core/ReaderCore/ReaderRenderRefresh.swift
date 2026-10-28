@@ -174,6 +174,8 @@ extension ReaderRenderSettings {
             || translation != old.translation
             // 底部對齊 moves line origins, which pagination stores in each page.
             || bottomJustify != old.bottomJustify
+            // 套用書本間距 decides each paragraph's line height and spacing while the string is built.
+            || usesBookSpacing != old.usesBookSpacing
             || regexRefresh == .relayout
 
         if layoutChanged { return .layout }

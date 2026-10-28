@@ -72,7 +72,8 @@ extension ReaderView {
             textConversion: settings.textConversion,
             translation: effectiveReaderTranslation,
             bookID: bookId,
-            bottomJustify: settings.readerBottomJustify
+            bottomJustify: settings.readerBottomJustify,
+            usesBookSpacing: settings.readerUsesBookSpacing
         )
 
         let sideMargins = pageSideMargins(for: mode)
