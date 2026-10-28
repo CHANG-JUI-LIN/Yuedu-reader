@@ -235,7 +235,9 @@ struct ContentView: View {
             }
             #endif
         }
-        .onChange(of: gs.rootTabVisibleIDs) { _, _ in
+        .onChange(of: gs.rootTabVisibleIDs) { _, ids in
+            // On iOS 17 a new tab set rebuilds every tab (`tabView`).
+            CrashContext.breadcrumb("root tabs \(ids.joined(separator: ","))")
             selectedRootTab = gs.fallbackRootTab(for: selectedRootTab)
         }
         .modifier(AudiobookPlayerPresentation(store: store))
@@ -309,12 +311,18 @@ struct ContentView: View {
         if #available(iOS 18.0, *) {
             visibleTabsTabView
         } else {
-            // iOS 17 invalidates a NavigationStack inside TabView when a sibling
-            // tab is removed while that stack is visible. Keep every tab's slot in
-            // the hierarchy and use EmptyView for hidden tabs; without `.tabItem`
-            // the placeholder reserves the slot without exposing a tab-bar item.
-            // Remove this compatibility path when iOS 17 support is dropped.
-            stableSlotsTabView
+            // iOS 17's TabView keys each tab by its position, so showing or hiding a tab
+            // rebuilds every tab after it — and a rebuilt NavigationStack gets a second
+            // navigation controller while its root still belongs to the first. iOS 17.5
+            // leaves that tab blank; iOS 17.0 lays one navigation item out in two bars and
+            // throws "Layout requested for visible navigation bar … top item belongs to a
+            // different navigation bar" (Crashlytics fe741015, on 書架, which sits after 探索).
+            // A new identity per tab set replaces every tab together with the one
+            // navigation controller that hosts its stack. Placeholders for hidden tabs
+            // (`EmptyView`) did not help: they take no position. Remove this when iOS 17
+            // support is dropped.
+            visibleTabsTabView
+                .id(gs.visibleRootTabs)
         }
     }
 
@@ -331,27 +339,6 @@ struct ContentView: View {
                     .tabItem {
                         rootTabItemLabel(for: tab)
                     }
-            }
-        }
-    }
-
-    private var stableSlotsTabView: some View {
-        TabView(selection: $selectedRootTab) {
-            ForEach(RootTabItem.tabs) { tab in
-                if gs.isRootTabVisible(tab) {
-                    rootTabContent(for: tab)
-                        .modifier(ThemedSurfaceBackground(
-                            scope: AppearancePageBackgroundScope(rawValue: tab.rawValue) ?? .global,
-                            isProActive: subscriptionStore.hasAccess(.readerThemePacks)
-                        ))
-                        .background { RootTabBarHider(visibility: rootTabBar) }
-                        .tag(tab)
-                        .tabItem {
-                            rootTabItemLabel(for: tab)
-                        }
-                    } else {
-                    EmptyView()
-                }
             }
         }
     }
