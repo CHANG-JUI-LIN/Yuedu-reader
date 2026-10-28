@@ -39,12 +39,22 @@ final class ReaderBookSearchSession {
         let conversion: TextConversion
     }
 
-    /// One chapter's run of hits, for the results list's sections.
+    /// One chapter's run of hits, for the results list's sections. Carries the hits
+    /// themselves: the list can still lay out rows from sections it read before a new search
+    /// or a clear emptied `hits`, and reading `hits` by a stored index then traps
+    /// (TestFlight 3.0.0 (140) "搜索后app闪退").
     struct ChapterSection: Identifiable, Equatable {
         let chapterIndex: Int
         let title: String
-        var hitIndices: Range<Int>
+        let rows: [Row]
         var id: Int { chapterIndex }
+    }
+
+    /// A hit and where it sits in `hits`, which `select(_:from:)` takes.
+    struct Row: Identifiable, Equatable {
+        let index: Int
+        let hit: ReaderBookSearchHit
+        var id: Int { index }
     }
 
     /// The results list stops here. A one-character search in a long novel matches hundreds
@@ -289,7 +299,8 @@ final class ReaderBookSearchSession {
             var end = index + 1
             while end < hits.count, hits[end].chapterIndex == chapter { end += 1 }
             let title = chapterTitles.indices.contains(chapter) ? chapterTitles[chapter] : ""
-            sections.append(ChapterSection(chapterIndex: chapter, title: title, hitIndices: index..<end))
+            let rows = (index..<end).map { Row(index: $0, hit: hits[$0]) }
+            sections.append(ChapterSection(chapterIndex: chapter, title: title, rows: rows))
             index = end
         }
     }

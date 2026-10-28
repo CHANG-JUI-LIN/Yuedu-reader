@@ -140,8 +140,8 @@ struct ReaderBookSearchView: View {
             }
             ForEach(session.sections) { section in
                 Section {
-                    ForEach(section.hitIndices, id: \.self) { index in
-                        hitRow(session.hits[index], index: index)
+                    ForEach(section.rows) { row in
+                        hitRow(row.hit, index: row.index)
                     }
                 } header: {
                     Text(section.title)
@@ -282,6 +282,28 @@ struct ReaderBookSearchView: View {
         historyKey: "preview_reader_search_history",
         offersReplaceRules: true,
         onSearch: { _ in },
+        onReopen: {},
+        onSelect: { _ in },
+        onClose: {}
+    )
+}
+
+#Preview("Results") {
+    let session = ReaderBookSearchSession()
+    let chapters = ["風起了，風停了，天色漸暗。", "沒有那個字。", "又起風了，吹過山崗。"]
+    return ReaderBookSearchView(
+        session: session,
+        historyKey: "preview_reader_search_history",
+        initialQuery: "風",
+        offersReplaceRules: false,
+        onSearch: { query in
+            session.search(
+                query,
+                chapterTitles: ["第一章", "第二章", "第三章"],
+                signature: .init(source: ReaderAISourceIdentity(bookID: UUID(), sourceID: nil, source: "preview", chapters: []),
+                                 conversion: .original, rulesRevision: 0)
+            ) { index, _ in .init(text: chapters[index], status: .available) }
+        },
         onReopen: {},
         onSelect: { _ in },
         onClose: {}

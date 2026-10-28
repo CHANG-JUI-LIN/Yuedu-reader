@@ -198,9 +198,34 @@ struct ReaderBookSearchTests {
         #expect(session.phase == .finished)
         #expect(session.hits.map(\.chapterIndex) == [0, 0, 3])
         #expect(session.sections.map(\.title) == ["一", "四"])
-        #expect(session.sections.map(\.hitIndices) == [0..<2, 2..<3])
+        #expect(session.sections.map { $0.rows.map(\.index) } == [[0, 1], [2]])
+        #expect(session.sections.flatMap(\.rows).map(\.hit) == session.hits)
         #expect(session.notDownloadedChapterCount == 1)
         #expect(session.searchedChapterCount == 4)
+    }
+
+    /// TestFlight 3.0.0 (140) "搜索后app闪退": the results list still lays out rows from the
+    /// sections it last read while a new search or the field's clear button empties the hits.
+    @Test("rows from sections read before a new search still resolve after it")
+    func sessionSectionsOutliveNewSearch() async throws {
+        let session = ReaderBookSearchSession()
+        let first = try #require(session.search("風", chapterTitles: ["一", "二"], signature: signature()) { index, _ in
+            .init(text: ["風起了，風停了。", "又起風了。"][index], status: .available)
+        })
+        await first.value
+        let shown = session.sections
+        let hits = session.hits
+
+        session.clear()
+        let second = try #require(session.search("停", chapterTitles: ["一", "二"], signature: signature()) { index, _ in
+            .init(text: ["風起了，風停了。", "又起風了。"][index], status: .available)
+        })
+        await second.value
+
+        #expect(session.hits.count == 1)
+        let rows = shown.flatMap(\.rows)
+        #expect(rows.map(\.hit) == hits)
+        #expect(rows.map(\.index) == Array(hits.indices))
     }
 
     @Test("the replace-rule switch reaches the chapter loader")
