@@ -23,12 +23,16 @@ struct CopyMetadata: Hashable {
         /// the page read Legado's formats in it and run its actions (decision 33); any other
         /// description is plain text.
         var isSourcesOwn: Bool
+        /// `text` says the filled description has nothing in the reader's script (沒有繁體中文簡介).
+        var isUnavailable = false
     }
 
     /// - `sidecar`: the copy's sidecar values (`BookStore.copyIntroValues(of:)`).
     /// - `liveIntro`: the description the page's source just gave, if it is a source's page.
+    /// - `display`: 中繼資料語言偏好推薦, for a description filled from another place.
     static func resolve(copy book: ReadingBook, record: SourceRecord, decisions: [WorkDecision],
-                        sidecar: [MetadataValue] = [], liveIntro: String? = nil, now: Date = Date()) -> CopyMetadata {
+                        sidecar: [MetadataValue] = [], liveIntro: String? = nil, display: MetadataDisplay? = nil,
+                        now: Date = Date()) -> CopyMetadata {
         let anchor = record.copyKey ?? record.key
         func resolved(_ field: MetadataField, copyValue: MetadataPayload) -> String? {
             let value = MetadataResolver.resolve(field, anchor: anchor, copySource: record.key.instance,
@@ -46,12 +50,13 @@ struct CopyMetadata: Hashable {
             title: resolved(.title, copyValue: .text(book.title)),
             author: resolved(.authors, copyValue: .texts(record.authors)),
             intro: intro(of: book, anchor: anchor, copySource: record.key.instance, sourceItem: record.key,
-                         decisions: decisions, sidecar: sidecar, liveIntro: liveIntro, now: now)
+                         decisions: decisions, sidecar: sidecar, liveIntro: liveIntro, display: display, now: now)
         )
     }
 
     private static func intro(of book: ReadingBook, anchor: SourceItemKey, copySource: SourceInstanceKey, sourceItem: SourceItemKey,
-                              decisions: [WorkDecision], sidecar: [MetadataValue], liveIntro: String?, now: Date) -> Intro? {
+                              decisions: [WorkDecision], sidecar: [MetadataValue], liveIntro: String?,
+                              display: MetadataDisplay?, now: Date) -> Intro? {
         if let own = book.customIntro?.trimmingCharacters(in: .whitespacesAndNewlines), !own.isEmpty {
             return Intro(text: own, isEdited: true, isSourcesOwn: false)
         }
@@ -66,6 +71,13 @@ struct CopyMetadata: Hashable {
               case .text(let text) = resolved.value else { return nil }
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return nil }
+        // Filled from a place that is neither the copy's file nor where it came from (the filler
+        // never asks that place): what a source says, in the reader's script as on any source's
+        // page (2026-10-25). The copy's own description stays as it is.
+        if let display, case .provider(let place, _, _) = resolved.provenance, place != .localLibrary, place != copySource,
+           let blurb = display.blurb(trimmed) {
+            return Intro(text: blurb.string, isEdited: false, isSourcesOwn: false, isUnavailable: blurb.isUnavailable)
+        }
         let isLive = live != nil && resolved.provenance == .provider(copySource, sourceItem: sourceItem, fetchedAt: now)
         return Intro(text: trimmed, isEdited: false, isSourcesOwn: isLive && copySource.type == .bookSource)
     }
@@ -75,10 +87,11 @@ extension BookStore {
     /// `CopyMetadata` for a shelf copy, with the record and decisions the work index uses.
     /// `sidecar` comes from `copyIntroValues(of:)`, read once by the page, not on every render.
     @MainActor
-    func copyMetadata(of book: ReadingBook, sidecar: [MetadataValue] = [], liveIntro: String? = nil) -> CopyMetadata {
+    func copyMetadata(of book: ReadingBook, sidecar: [MetadataValue] = [], liveIntro: String? = nil,
+                      display: MetadataDisplay) -> CopyMetadata {
         let record = SourceRecord.derived(from: book, context: WorkIndexService.liveContext(for: [book]))
         return .resolve(copy: book, record: record, decisions: workDecisions.decisions(involving: record.copyKey ?? record.key),
-                        sidecar: sidecar, liveIntro: liveIntro)
+                        sidecar: sidecar, liveIntro: liveIntro, display: display)
     }
 
     /// A copy's sidecar values for `copyMetadata(of:sidecar:liveIntro:)`. Reads a file.

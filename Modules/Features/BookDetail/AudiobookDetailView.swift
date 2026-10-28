@@ -183,7 +183,8 @@ struct AudiobookDetailView: View {
     /// `displayName`, `displayAuthor` and `displayIntro` stay the source's, for its scripts
     /// and for what a shelf add writes.
     private var shownMetadata: (name: String, author: String, intro: CopyMetadata.Intro?) {
-        guard let copy = shelvedCopy.map({ bookStore.copyMetadata(of: $0, sidecar: copySidecar, liveIntro: displayIntro) }) else {
+        guard let copy = shelvedCopy.map({ bookStore.copyMetadata(of: $0, sidecar: copySidecar, liveIntro: displayIntro,
+                                                                   display: .current) }) else {
             let intro = displayIntro.isEmpty ? nil : CopyMetadata.Intro(text: displayIntro, isEdited: false, isSourcesOwn: true)
             return (displayName, displayAuthor, intro)
         }
@@ -248,7 +249,8 @@ struct AudiobookDetailView: View {
                     isExpanded: $introExpanded,
                     baseURL: intro.isSourcesOwn ? currentBook.bookUrl : nil,
                     onAction: introAction(isSourcesOwn: intro.isSourcesOwn),
-                    readsSourceFormats: intro.isSourcesOwn
+                    readsSourceFormats: intro.isSourcesOwn,
+                    isUnavailable: intro.isUnavailable
                 )
             }
             BookDetailChapterSection(

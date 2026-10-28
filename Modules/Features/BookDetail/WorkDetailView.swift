@@ -150,12 +150,14 @@ struct WorkDetailView: View {
     private var versions: [WorkDetailRoute] { WorkSourceFinder.joined(listed, found: finder.found) }
     private var selected: WorkDetailRoute? { WorkVersions.selected(in: versions, chosen: chosen) }
     /// 中繼資料語言偏好推薦 on what the source sent (2026-10-25), as the card had it; a shelf
-    /// copy's metadata is the reader's, as it is. The route keeps the text as sent: a search for a
-    /// source asks with it.
+    /// copy's title and author are the reader's, as they are. The route keeps the text as sent: a
+    /// search for a source asks with it.
     private var display: MetadataDisplay? {
         if case .copy = route.opening { return nil }
-        return MetadataDisplay(language: aggregation.readingLanguages.language)
+        return readingDisplay
     }
+
+    private var readingDisplay: MetadataDisplay { MetadataDisplay(language: aggregation.readingLanguages.language) }
 
     private var title: String { display?.text(route.summary.title) ?? route.summary.title }
 
@@ -839,16 +841,17 @@ struct WorkDetailView: View {
     }
 
     /// The description of the version shown (decision 33): a shelf copy's, by `CopyMetadata`
-    /// (the reader's own, its file's, then its library's, the item's newest), as it is; else the
-    /// library item's own, else what the card had, in 中繼資料語言偏好推薦's script, or that it
-    /// has none in it (2026-10-25).
+    /// (the reader's own, its file's, then its library's, the item's newest, as they are; one
+    /// filled from another place in 中繼資料語言偏好推薦's script); else the library item's own,
+    /// else what the card had, in that script, or that it has none in it (2026-10-25).
     private var intro: MetadataDisplay.Blurb? {
         let itemText = selected.flatMap(libraryItem(of:))?.summary
         if let copy = shownCopy {
-            return store.copyMetadata(of: copy, sidecar: copySidecar, liveIntro: itemText).intro.map { .text($0.text) }
+            return store.copyMetadata(of: copy, sidecar: copySidecar, liveIntro: itemText, display: readingDisplay).intro
+                .map { $0.isUnavailable ? .unavailable($0.text) : .text($0.text) }
         }
         let text = (itemText ?? route.summary.blurb).flatMap { $0.isEmpty ? nil : $0 }
-        return MetadataDisplay(language: aggregation.readingLanguages.language).blurb(text)
+        return readingDisplay.blurb(text)
     }
 
     /// The shelf copy of the version shown: the copy itself, or a library item's copy.

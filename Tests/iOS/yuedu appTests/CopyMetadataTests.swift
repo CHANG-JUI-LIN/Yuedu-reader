@@ -84,6 +84,81 @@ struct CopyMetadataTests {
         #expect(intro(onlineBook(), live: "  ") == nil)
     }
 
+    // MARK: A filled description in 中繼資料語言偏好推薦's script (2026-10-28)
+
+    private let bangumi = SourceInstanceKey(type: .module, id: "bangumi")
+    /// Bangumi's summary of 紅樓夢 (subject 123224) as the filler stored it, in 简体.
+    private let bangumiSummary = "《红楼梦》，中国古典四大名著之首，清代作家曹雪芹创作的章回体长篇小说。早期仅有前八十回抄本流传，原名《石头记》。"
+
+    private func filled(_ text: String) -> MetadataValue {
+        MetadataValue(field: .intro, value: .text(text), provider: bangumi,
+                      sourceItem: SourceItemKey(instance: bangumi, item: "https://bgm.tv/subject/123224"),
+                      fetchedAt: Date(timeIntervalSinceReferenceDate: 0))
+    }
+
+    /// An EPUB with no `<dc:description>`, as imported: its own file gave the description nothing.
+    private func localEPUB(title: String = "紅樓夢") -> ReadingBook {
+        ReadingBook(title: title, author: "曹雪芹", source: "local", contentFilename: "hongloumeng.epub")
+    }
+
+    private func intro(_ book: ReadingBook, sidecar: [MetadataValue], live: String? = nil, language: String?) -> CopyMetadata.Intro? {
+        CopyMetadata.resolve(copy: book, record: SourceRecord.derived(from: book, context: sourceContext), decisions: [],
+                             sidecar: sidecar, liveIntro: live, display: language.map(MetadataDisplay.init(language:))).intro
+    }
+
+    /// The whole description, 書名號 and all, as the work's page shows a source's.
+    @Test func aFilledDescriptionIsInTheReadersScript() throws {
+        let traditional = try #require(intro(localEPUB(), sidecar: [filled(bangumiSummary)], language: "zh-Hant"))
+        #expect(traditional.text == "《紅樓夢》，中國古典四大名著之首，清代作家曹雪芹創作的章回體長篇小說。早期僅有前八十回抄本流傳，原名《石頭記》。")
+        #expect(!traditional.isEdited)
+        #expect(!traditional.isSourcesOwn)
+        #expect(!traditional.isUnavailable)
+
+        let simplified = try #require(intro(localEPUB(), sidecar: [filled("《紅樓夢》，中國古典四大名著之首，清代作家曹雪芹創作的章回體長篇小說。")],
+                                            language: "zh-Hans"))
+        #expect(simplified.text == "《红楼梦》，中国古典四大名著之首，清代作家曹雪芹创作的章回体长篇小说。")
+    }
+
+    @Test func aFilledDescriptionInAnotherLanguageIsAsSent() {
+        #expect(intro(localEPUB(), sidecar: [filled(bangumiSummary)], language: "en")?.text == bangumiSummary)
+        #expect(intro(localEPUB(), sidecar: [filled(bangumiSummary)], language: nil)?.text == bangumiSummary)
+    }
+
+    @Test func theReadersOwnDescriptionIsNotConverted() throws {
+        var book = localEPUB()
+        book.customIntro = "读者自己写的简介"
+        let shown = try #require(intro(book, sidecar: [filled(bangumiSummary)], language: "zh-Hant"))
+        #expect(shown.text == "读者自己写的简介")
+        #expect(shown.isEdited)
+    }
+
+    @Test func theCopysOwnFileIsNotConverted() throws {
+        let own = MetadataValue(field: .intro, value: .text("档案里的简介"), provider: .localLibrary, sourceItem: nil,
+                                fetchedAt: Date(timeIntervalSinceReferenceDate: 0))
+        #expect(intro(localEPUB(), sidecar: [own, filled(bangumiSummary)], language: "zh-Hant")?.text == "档案里的简介")
+    }
+
+    /// The source a copy came from is the copy's own, live or stored; its markup is read as sent.
+    @Test func theCopysSourceIsNotConverted() throws {
+        let book = onlineBook()
+        let record = SourceRecord.derived(from: book, context: sourceContext)
+        let stored = MetadataValue(field: .intro, value: .text("书源存的简介"), provider: record.key.instance, sourceItem: record.key,
+                                   fetchedAt: Date(timeIntervalSinceReferenceDate: 0))
+        #expect(intro(book, sidecar: [stored, filled(bangumiSummary)], language: "zh-Hant")?.text == "书源存的简介")
+        let live = try #require(intro(book, sidecar: [filled(bangumiSummary)], live: "<md>书源刚给的</md>", language: "zh-Hant"))
+        #expect(live.text == "<md>书源刚给的</md>")
+        #expect(live.isSourcesOwn)
+    }
+
+    /// A Japanese description filled for a Japanese title says there is none in Chinese, as a
+    /// source's card and page do.
+    @Test func aFilledJapaneseDescriptionIsUnavailableInChinese() throws {
+        let shown = try #require(intro(localEPUB(title: "こころ"), sidecar: [filled("「先生」と私の物語です。鎌倉の海で出会った二人の交流を描く。")],
+                                       language: "zh-Hant"))
+        #expect(shown.isUnavailable)
+        #expect(shown.text == localized("沒有繁體中文簡介"))
+    }
+
     @Test func aBookNeverEditedEncodesWithoutTheField() throws {
         var book = ReadingBook(title: "書", author: "", contentFilename: "a.txt")
         #expect(!String(decoding: try JSONEncoder().encode(book), as: UTF8.self).contains("customIntro"))

@@ -89,13 +89,29 @@ struct FilledMetadataTests {
         store.saveReadingBook(book)
         writeFilled(store, book, .intro, .text("資料庫的簡介"))
 
-        #expect(store.copyMetadata(of: book, sidecar: store.copyIntroValues(of: book)).intro?.text == "資料庫的簡介")
+        let display = MetadataDisplay(language: "zh-Hant")
+        #expect(store.copyMetadata(of: book, sidecar: store.copyIntroValues(of: book), display: display).intro?.text == "資料庫的簡介")
         #expect(store.filledValue(.intro, of: book)?.provider == OpenLibrary.key)
 
         store.removeFilledValue(.intro, of: book.id)
 
-        #expect(store.copyMetadata(of: book, sidecar: store.copyIntroValues(of: book)).intro == nil)
+        #expect(store.copyMetadata(of: book, sidecar: store.copyIntroValues(of: book), display: display).intro == nil)
         #expect(store.filledValue(.intro, of: book) == nil)
+    }
+
+    /// The sidecar keeps what the place sent; the detail page shows it in 中繼資料語言偏好推薦's script.
+    @Test("a filled description is shown in the reader's script, and stored as sent")
+    func filledIntroFollowsReadingLanguage() throws {
+        let (store, directory) = try makeStore()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let book = ReadingBook(title: "三體", author: "劉慈欣", source: "local", contentFilename: "a.epub")
+        store.saveReadingBook(book)
+        writeFilled(store, book, .intro, .text("资料库的简介"))
+
+        let sidecar = store.copyIntroValues(of: book)
+        #expect(store.copyMetadata(of: book, sidecar: sidecar, display: MetadataDisplay(language: "zh-Hant")).intro?.text == "資料庫的簡介")
+        #expect(store.copyMetadata(of: book, sidecar: sidecar, display: MetadataDisplay(language: "zh-Hans")).intro?.text == "资料库的简介")
+        #expect(store.filledValue(.intro, of: book)?.value == .text("资料库的简介"))
     }
 
     @Test("a value the import read is not offered for removal")

@@ -8,7 +8,9 @@ import Foundation
 //   source sent, since a book source searched in the other script finds nothing.
 // - Other languages are shown as sent: nothing tells an English blurb from a French one, and
 //   leaving it out would leave a reader with none.
-// - A shelf copy's own metadata is the reader's, and is not changed.
+// - A shelf copy's own metadata is the reader's, and is not changed: what the reader wrote, its
+//   file's, and the library or source it came from. A description filled from another place
+//   is what that source says, and is shown in the reader's script (`CopyMetadata`).
 
 struct MetadataDisplay: Equatable, Sendable {
     /// The `MetadataLanguage` tag in effect (`ReadingLanguagePreferences.language`).
