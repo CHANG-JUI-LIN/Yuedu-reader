@@ -1107,6 +1107,8 @@ struct OnlineBookView: View {
     }
 }
 
+// `SeriesFan.preview` exists in Debug only; a Release archive must not see this preview.
+#if DEBUG
 #Preview("作品詳情的書源版本，系列扇形") {
     let sample = OnlineBook(
         name: "Frankenstein", author: "Mary Shelley", intro: "", coverUrl: "",
@@ -1119,3 +1121,4 @@ struct OnlineBookView: View {
             .environmentObject(BookStore())
     }
 }
+#endif
