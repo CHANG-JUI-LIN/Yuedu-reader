@@ -254,6 +254,17 @@ struct ReaderLayoutPresetImporterTests {
         #expect(preset.readerOverlayLayout == nil)
     }
 
+    @Test("keeps a large type size up to the reader's 60pt ceiling")
+    @MainActor
+    func keepsLargeTypeSizeUpToCeiling() throws {
+        let large = try ReaderLayoutPresetImporter.decode(data: Data(#"{ "textSize": 60 }"#.utf8))
+        let oversized = try ReaderLayoutPresetImporter.decode(data: Data(#"{ "textSize": 90 }"#.utf8))
+
+        #expect(large.fontSize == 60)
+        #expect(oversized.fontSize == 60)
+        #expect(GlobalSettings.clampedReaderFontSize(61) == 60)
+    }
+
     /// Every field decodes with `decodeIfPresent`, so an unrelated JSON object
     /// used to decode "successfully" into an all-defaults preset — and applying
     /// it silently reset the reader's type size to 18pt.

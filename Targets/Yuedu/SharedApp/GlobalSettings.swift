@@ -1654,7 +1654,10 @@ class GlobalSettings {
     /// `ReaderSettingsView.fontSizeBinding` kept squashing each write back into 12–32, so
     /// the control looked frozen at the old bounds. Add new call sites here, never a
     /// fresh literal.
-    nonisolated static let readerFontSizeRange: ClosedRange<CGFloat> = 10...40
+    ///
+    /// The ceiling is 60 so low-vision readers can go past iOS's largest accessibility body
+    /// size (about 53 pt); the smallest iPhone still fits about five CJK characters a line.
+    nonisolated static let readerFontSizeRange: ClosedRange<CGFloat> = 10...60
 
     static func clampedReaderFontSize(_ value: CGFloat) -> CGFloat {
         min(readerFontSizeRange.upperBound, max(readerFontSizeRange.lowerBound, value))
