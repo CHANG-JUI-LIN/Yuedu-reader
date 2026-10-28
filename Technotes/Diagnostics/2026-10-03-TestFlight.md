@@ -115,29 +115,29 @@ Xcode 27.0 (27A266a)、Swift 6.4、iPhone 18 Pro Max／iOS 27.0 Simulator。所�
 
 **判定：系統 bug，未解，App 端不修。** 與第 18 列（SDFStyle.distanceRange）、第 48 列（glass RingShadow）同屬系統 glass trap，但是不同的程式位置。依本檔規則不移除、不改 glass 元件。
 
-- **分類**：Crashlytics `16030314022e66d79b4814fdda8f3ad9`（7 筆，4 個安裝）與 `a90eda328d5515906af06607f47906c7`（3 筆，3 個安裝），共 10 筆致命 EXC_BREAKPOINT，堆疊相同。`bf6cfa75…` 是 build 136 同一次崩潰的 MetricKit 副本。App 版本 2.0.6 (100) 到 3.0.0 (140)。前者的標題 `-[DLCAFilter temporarilySuppressingKVO:]` 是 Crashlytics 拿最近的匯出符號 +16964 硬湊出來的；真正的 `temporarilySuppressingKVO:` 只有 80 bytes（存旗標、呼叫 block、還原），裡面沒有 trap。
+- **分類**：Crashlytics `16030314022e66d79b4814fdda8f3ad9`（7 筆，4 個安裝）與 `a90eda328d5515906af06607f47906c7`（3 筆，3 個安裝），共 10 筆致命 EXC_BREAKPOINT，堆疊相同。`bf6cfa75…`（2 筆）標題與 build 136 相符，判為同一崩潰的 MetricKit 副本（未逐筆核對）。App 版本 2.0.6 (100) 到 3.0.0 (140)。前者的標題 `-[DLCAFilter temporarilySuppressingKVO:]` 是 Crashlytics 拿最近的匯出符號 +16964 硬湊出來的；真正的 `temporarilySuppressingKVO:` 只有 80 bytes（存旗標、呼叫 block、還原），裡面沒有 trap。
 - **系統版本**：iOS 27.0.0（24A437）、27.0.1，以及一筆 27.2.0（build 129，10-17 的 27.2 預覽版）。「27.1 起已修好」的說法不成立：27.1／27.2 的使用者本來就少（Crashlytics 全 App 報表 10-15～10-29：約 22 人，27.0.x 約 380 人），沒看到不等於修好，而且 27.2 也崩了。
 - **堆疊**：display link → `ViewGraphRootValueUpdater.render` → AttributeGraph 更新 → `GlassEffectResolvedMaterial.value.getter` → `MaterialProviderBox.resolveLayers(in:)` → DesignLibrary 內 5 層 → trap，全程沒有 App 幀。9 筆在 `com.apple.SwiftUI.AsyncRenderer`（`renderAsync` → `updateOutputsAsync`，經 `AGGraphWithMainThreadHandler`），1 筆（38b18017）在主執行緒的同步 render。27.0 的 DesignLibrary 位移是 0x3cde0 ← 0x3779c ← 0x38774 ← 0x23694 ← 0x282c0。
 - **無法符號化**：DesignLibrary 是剝除過本地符號的私有框架。27.0 模擬器 runtime 和本機 27.2 DeviceSupport（24B115／24B119，UUID `1BA16405-1C14-34C1-BCE7-5260FDB90637`）都沒有函式名稱。27.2 那筆的 trap 位移 0x3c394，在正式 27.2 二進位裡是 `ldr` 而不是 `brk`，代表那台裝置跑的是另一個預覽 build，對不上。
-- **場景**：10 筆中有 9 筆，breadcrumb 在崩潰前有 `open reader` 且之後沒有 `close reader`；45e2d51e 的 log 被截斷，無法判斷。9 筆是線上 html 書，1 筆是本機 EPUB（8d57c35a，27.0.1）。8d57c35a 在 `open reader` 後不到 1 秒就崩潰，正好落在 0.62 秒的開書卡片轉場內。那時工具列是隱藏的，迷你播放器也不可能已經出現。注意 `current_book` 這個 custom key 關書時不會清除（`BookReaderView.swift:141` 只有設定），所以不能單憑它認定崩潰當下閱讀器開著，要看 breadcrumb。
+- **場景**：10 筆中有 9 筆，breadcrumb 在崩潰前有 `open reader` 且之後沒有 `close reader`；45e2d51e 的 log 被截斷，無法判斷。9 筆是線上 html 書，1 筆是本機 EPUB（8d57c35a，27.0.1）。8d57c35a 在 `open reader` 後不到 1 秒就崩潰，正好落在 0.62 秒的開書卡片轉場內。那時工具列是隱藏的，迷你播放器也不可能已經出現，所以當下被解析的 glass 不是閱讀器自己的；究竟是哪一個沒有找到，可能是底下的書架／探索頁，或系統元件的 glass。這筆不能拿來替 App 開脫，只說明觸發點不限於閱讀器的工具列或迷你播放器。注意 `current_book` 這個 custom key 關書時不會清除（`BookReaderView.swift:141` 只有設定），所以不能單憑它認定崩潰當下閱讀器開著，要看 breadcrumb。
 - **App 端可疑條件逐一排除**（依現行程式碼；build 100 當時的版面沒有逐一比對）：
-  - 閱讀器的 glass 都是標準 API、固定 `Capsule()` 形狀：底欄是 `GlassEffectContainer` 內兩個 `.glassEffect(.regular, in: Capsule())`，標題膠囊是 `.regular.interactive()`，另有迷你播放器、拖曳進度預覽。沒有任何 glass 參數由進度或計時器驅動。
+  - 閱讀器的 glass 都是標準 API、形狀固定：底欄是 `GlassEffectContainer` 內兩個 `.glassEffect(.regular, in: Capsule())`，標題膠囊是 `.regular.interactive()`；迷你播放器、拖曳進度預覽、書內搜尋列、自動閱讀藥丸都是 `Capsule()`；自動閱讀面板是固定圓角矩形；迷你播放器收起後的邊緣把手是依停靠側固定圓角的 `UnevenRoundedRectangle`；TTS 面板的完成鈕用系統 `.buttonStyle(.glass)`；評論卡預覽每張卡的圓角固定。沒有任何 glass 參數或形狀由進度或計時器驅動，自動閱讀的計時器只更新膠囊裡的內容。
   - 迷你播放器的 `TimelineView(.animation)` 只旋轉膠囊裡面的封面，不改 glass 的參數或形狀。
   - 卡片轉場只對 UIKit layer 做 transform 縮放，SwiftUI 的 bounds 一直是全螢幕（`ReaderCardTransitionAnimator.swift` 約 820–830 行），所以不會把退化的幾何尺寸餵給 glass。
   - 開書時 `showBars == false`，導覽列是 `.hidden`（`ReaderView.swift:1710`），底欄沒有插入，閱讀器本身沒有掛任何 SwiftUI glass。
 - **模擬器量測**（iOS 27.0 模擬器、Debug build、本機假 EPUB；用 lldb 在 `GlassEffectResolvedMaterial.value.getter` 下自動繼續斷點，計算命中次數）：
   - 工具列隱藏、閒置數分鐘：0 次。
-  - 工具列顯示一次：9 次（一次性）。
-  - 工具列顯示後閒置三段：0 次。
+  - 工具列由隱藏到顯示的那段（約 2 分鐘，模擬器點擊延遲，可能不只切換一次）：9 次。
+  - 顯示後閒置約十幾秒：0 次。
 
-  結論是 glass 材質只在轉場時集中重算，沒有任何 App 視圖在閒置時逐幀重算。
+  在量到的這兩個狀態裡，glass 材質只在工具列轉場時重算，閒置時不會逐幀重算。斷點命中會讓整個程序停住，所以 9 次分不出是逐元件還是逐幀的重算。
 
   限制：
   - lldb 的 thread spec 沒有過濾命中計數，分不出 AsyncRenderer 和主執行緒。
-  - 聽書迷你播放器、背景與前景切換這兩個狀態沒有量到：主機負載 150–490 時，模擬器輸入和 lldb resume 一再逾時，`sample` 光符號化就超過 26 分鐘。
+  - 聽書迷你播放器、自動閱讀、背景與前景切換都沒有量到：主機負載 150–490 時，模擬器輸入和 lldb resume 一再逾時，`sample` 光符號化就超過 26 分鐘。
 - **重開條件**：拿到 Apple 符號化的 DesignLibrary 幀（例如回報 Feedback Assistant 後由 Apple 回覆）、能指出 App 端畫面或幾何的 sysdiagnose，或能穩定重現。下一步是附上這兩個 issue 的堆疊提交 Feedback。
 - **同時段的其他問題不是同一個根因**：
-  - 38b18017 那串「main thread blocked ~2 s · no instrumented span」，在崩潰前約 3.5 分鐘的 `close reader` 就停了；另外 9 筆沒有卡頓串。卡頓由另一個 session 處理。
+  - 38b18017 那串「main thread blocked ~2 s · no instrumented span」，在崩潰前約 3.5 分鐘的 `close reader` 就停了；另外 9 筆沒有卡頓串。卡頓另案追查。
   - d547adf7 的 MetricKit 1073 MB 寫盤（`BookStore` → `Data.write`）發生在崩潰前 15 分鐘，是另一條背景執行緒，另案處理。
 
 ## 未解項目的下一步
