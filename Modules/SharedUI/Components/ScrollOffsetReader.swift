@@ -120,6 +120,8 @@ private struct ScrollEndPin: UIViewRepresentable {
         /// left at the editor's top by the bar's 完成 swapped to its end in one frame and only then
         /// morphed; from the end itself, this is 0 and the page stays there.
         private var startDistance: CGFloat?
+        /// The passes over the content in this frame of the morph (`MorphFrame`).
+        private var morphFrame: MorphFrame?
         private weak var scrollView: UIScrollView?
         private var observations: [NSKeyValueObservation] = []
 
@@ -177,20 +179,26 @@ private struct ScrollEndPin: UIViewRepresentable {
         func pin() {
             guard pins, !hasScrolledAway, let scrollView else {
                 startDistance = nil
+                morphFrame = nil
                 pinnedLayout = nil
                 return
             }
             let insets = scrollView.adjustedContentInset
             let top = -insets.top
-            let end = Self.end(of: scrollView)
+            var end = Self.end(of: scrollView)
             pinnedLayout = PinnedLayout(scrollView)
             var offset = end
             if let morphed {
                 let distance = startDistance ?? max(0, end - scrollView.contentOffset.y)
                 startDistance = distance
+                if morphFrame?.morphed != morphed { morphFrame = MorphFrame(morphed: morphed) }
+                guard let measuredEnd = morphFrame?.end(afterPass: scrollView.contentSize.height, end: end,
+                                                        offset: scrollView.contentOffset.y) else { return }
+                end = measuredEnd
                 offset = max(top, end - distance * (1 - morphed))
             } else {
                 startDistance = nil
+                morphFrame = nil
             }
             // Within half a point: setting the offset calls the offset's observer again.
             guard abs(scrollView.contentOffset.y - offset) > 0.5 else { return }
@@ -204,6 +212,41 @@ private struct ScrollEndPin: UIViewRepresentable {
         private static func end(of scrollView: UIScrollView) -> CGFloat {
             let insets = scrollView.adjustedContentInset
             return max(-insets.top, scrollView.contentSize.height + insets.bottom - scrollView.bounds.height)
+        }
+    }
+
+    /// One frame of the morph's passes over the content, which tells the content's end from a lazy
+    /// stack's guess at it. A guard: off the screen, a lazy stack's last rows are guessed at the
+    /// height of those on it, and the page, sent each pass to where the morph had it from that
+    /// end, drew the rows at their own height, so the end moved back, and sent back, put them off
+    /// the screen again — in one frame without end: the app hung at full CPU (iOS 27 simulator,
+    /// 2026-10-28: 探索's 完成 from the editor's top, six hidden sections last, its lazy stack 1888
+    /// and 1117 points tall by turns; and its 編輯首頁 on a home that ends on the screen, 1292 and 716).
+    /// So a height that comes back after another settles the frame on the end of a pass that had
+    /// the last rows on the screen. Delete it when the morph stops following the content's size,
+    /// or when a lazy stack stops guessing at the rows it has not drawn.
+    private struct MorphFrame {
+        let morphed: Double
+        private var passes: [(height: CGFloat, end: CGFloat, isAtEnd: Bool)] = []
+        private var isSettled = false
+
+        init(morphed: Double) {
+            self.morphed = morphed
+        }
+
+        /// The end to travel to after a pass that laid the content out `height` tall, its end at
+        /// `end` with the page at `offset`; nil once the frame has settled, and the page stays.
+        mutating func end(afterPass height: CGFloat, end: CGFloat, offset: CGFloat) -> CGFloat? {
+            guard !isSettled else { return nil }
+            let pass = (height: height, end: end, isAtEnd: offset >= end - 0.5)
+            // Again and again at one height is the offset's observer, not a cycle.
+            let comesBack = passes.last.map { abs($0.height - height) > 0.5 } == true
+                && passes.dropLast().contains { abs($0.height - height) <= 0.5 }
+            passes.append(pass)
+            guard comesBack else { return end }
+            isSettled = true
+            let measured = passes.filter { $0.isAtEnd }
+            return (measured.isEmpty ? passes : measured).map { $0.end }.min() ?? end
         }
     }
 

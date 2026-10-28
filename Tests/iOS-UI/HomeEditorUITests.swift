@@ -363,6 +363,43 @@ final class HomeEditorUITests: XCTestCase {
         }
     }
 
+    /// 編輯首頁 on a home that ends on the screen, its hidden sections last: the app hung at the
+    /// morph's start, at full CPU (2026-10-28). Each way, from the editor's end and, by the bar's
+    /// 完成, from its top.
+    @MainActor
+    func testEditingAShortHomeWithHiddenSectionsLastDoesNotHang() throws {
+        func section(_ binding: [String: Any], layout: String, enabled: Bool = true) -> [String: Any] {
+            ["binding": binding, "id": UUID().uuidString, "isEnabled": enabled, "layout": layout,
+             "parameters": [String: Any](), "title": ""]
+        }
+        let hidden = (1...6).map { index in
+            section(["type": "sourceCategories", "categories": [[
+                "sourceURL": "http://localhost:9", "title": "Hidden \(index)", "url": "http://localhost:9/\(index)"]]],
+                    layout: "coverGrid", enabled: false)
+        }
+        let sections = [section(["type": "gutenbergShelf", "id": "popular"], layout: "row"),
+                        section(["type": "gutenbergLists"], layout: "collection")] + hidden
+        let home = directory.appendingPathComponent("explore_home.json")
+        try JSONSerialization.data(withJSONObject: ["configurations": [Any](), "schemaVersion": 2, "sections": sections])
+            .write(to: home)
+        let app = launchExplore(["-explore-home-file", home.path])
+        let edit = app.buttons["home.edit"].firstMatch
+        let done = app.buttons["home.editDone"].firstMatch
+        for doneButton in ["home.editDone", "home.editDoneBar"] {
+            for _ in 0..<8 where !edit.isHittable { app.swipeUp() }
+            XCTAssertTrue(edit.isHittable, app.debugDescription)
+            edit.tap()
+            XCTAssertTrue(done.waitForExistence(timeout: 10), app.debugDescription)
+            XCTAssertTrue(becomesHittable(done), "the editor's end: \(app.debugDescription)")
+            if doneButton == "home.editDoneBar" {
+                tapStatusBar(app)
+                XCTAssertTrue(becomesUnhittable(done), "the editor's top: \(app.debugDescription)")
+            }
+            app.buttons[doneButton].firstMatch.tap()
+            XCTAssertTrue(becomesHittable(edit), "\(doneButton): the home's end: \(app.debugDescription)")
+        }
+    }
+
     /// How much of the page between the bar and `edge` is drawn: the share of sampled pixels
     /// unlike the commonest one. The page's background alone, as the maintainer's home was after
     /// 完成 (2026-10-22: its sections gone, 編輯首頁 left at the bottom), reads close to 0.
