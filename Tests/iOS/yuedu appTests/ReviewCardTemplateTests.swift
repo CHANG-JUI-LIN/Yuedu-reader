@@ -494,4 +494,45 @@ struct ReviewCardTemplateTests {
         let songti = try #require(UIFont(name: "PingFangSC-Regular", size: 18))
         #expect(ReviewCardFonts.css(for: songti).fontFace.isEmpty)
     }
+
+    @Test(
+        "the built-in 玻璃 cards are in the reader's own font when one is picked, else the system font",
+        arguments: ReaderCommentCardKind.allCases
+    )
+    func builtinCardFollowsTheReadingFont(kind: ReaderCommentCardKind) throws {
+        let source = ReviewCardTemplate.builtinSource(for: kind)
+        // The card's family comes from the root alone: no built-in stylesheet names one.
+        let declared = source.components(separatedBy: "font-family:").dropFirst()
+            .map { $0.prefix(while: { $0 != ";" }).trimmingCharacters(in: .whitespaces) }
+        #expect(declared.allSatisfy { $0 == "inherit" })
+
+        let template = try ReviewCardTemplate(source: source)
+        let card = ReviewCardContent.sample(for: kind)
+        func filled(_ font: UIFont) -> String {
+            let reader = ReviewCardRaster.Reader(font: font, textColor: .black)
+            let appearance = ReviewCardRaster.appearance(for: reader, theme: .white)
+            return template.filled(with: card, appearance: appearance, width: 360, colorHex: "#333333")
+        }
+        #expect(filled(UIFont.systemFont(ofSize: 18)).contains("font-family:-apple-system, sans-serif;"))
+        let picked = try #require(UIFont(name: "Courier", size: 18))
+        // The style attribute writes the family's quotes as `&quot;`.
+        #expect(filled(picked).contains("font-family:&quot;Courier&quot;, -apple-system, sans-serif;"))
+    }
+
+    @Test("the built-in 本章說 is drawn in the reader's own font, not the system's")
+    @MainActor
+    func builtinCardDrawsInTheReadingFont() async throws {
+        let template = try ReviewCardTemplate(source: ReviewCardTemplate.builtinSource(for: .chapterSay))
+        let card = try #require(ReviewCardContent.extract(from: qidianTwoCommentCard))
+        func image(_ font: UIFont) async throws -> Data {
+            let reader = ReviewCardRaster.Reader(font: font, textColor: .black)
+            let appearance = ReviewCardRaster.appearance(for: reader, theme: .white)
+            let svg = template.filled(with: card, appearance: appearance, width: 360, colorHex: "#333333")
+            let drawn = try #require(await SVGWebViewRasterizer.shared.renderCard(svgString: svg, width: 360, isNight: false))
+            return try #require(drawn.pngData())
+        }
+        let system = try await image(UIFont.systemFont(ofSize: 18))
+        let courier = try await image(try #require(UIFont(name: "Courier", size: 18)))
+        #expect(system != courier)
+    }
 }

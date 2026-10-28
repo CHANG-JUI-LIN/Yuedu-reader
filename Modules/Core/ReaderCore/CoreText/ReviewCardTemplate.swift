@@ -111,8 +111,11 @@ struct ReviewCardTemplate: Sendable {
 
     /// Layout only: the panel behind it is the system's glass, so nothing here paints one.
     ///
-    /// 起點 sets its cards apart from the prose, in the system font at fixed sizes whatever the
-    /// reading font and size. The sizes are measured off 起點 on an iPhone 16 Pro Max
+    /// 起點 sets its cards apart from the prose, at fixed sizes whatever the reading size. The
+    /// family is the reading font's: the card inherits the root's `font-family` (`dress`), which
+    /// is the system font (`-apple-system`) until the reader picks a font of their own — a
+    /// card among 仓耳楷体 prose is in 仓耳楷体 (maintainer, 2026-10-28, feedback #42).
+    /// The sizes are measured off 起點 on an iPhone 16 Pro Max
     /// (2026-10-21): its 本章說 has a 15pt title, 14pt names and comments (two lines at most),
     /// likes in a 22pt capsule, 10pt corners and 16pt insets. Sizes here are in `px` (a point)
     /// for that reason; 作家說, which 起點 sizes with the reading text, overrides them in `em`,
@@ -123,7 +126,7 @@ struct ReviewCardTemplate: Sendable {
     /// leaves ends short, and the clamp's `…` comes before the card is full.
     private static let cardStyle = """
     .card { box-sizing: border-box; margin: 6px 0; padding: 14px 16px 16px;
-      border-radius: 10px; color: ${color}; font-family: -apple-system, sans-serif;
+      border-radius: 10px; color: ${color}; font-family: inherit;
       font-size: 14px; line-height: 1.53; }
     .head { display: flex; justify-content: space-between; align-items: baseline; }
     .title { font-size: 15px; font-weight: 500; }
