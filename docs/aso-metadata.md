@@ -1,6 +1,6 @@
 # App Store 文案（3.0.0，依地區重寫）
 
-限制：名稱 30、副標題 30、關鍵字 100（逗號分隔、不加空格）、宣傳文字 170、描述 4000。
+限制：名稱 30、副標題 30、關鍵字 100（逗號分隔、不加空格）、宣傳文字 170、描述 4000、此版本的新增內容 4000。
 關鍵字欄位只放名稱／副標題**沒有出現過**的詞（Apple 會自動組合，重複是浪費）；不放其他公司的商標名（古騰堡、青空文庫等只寫在描述裡）。
 描述不參與搜尋排名，只影響轉換，前 3 行最重要。
 
@@ -50,6 +50,57 @@
 本 App 不內建、不推薦、也不散布任何受版權保護的內容來源。使用者需自行確認匯入的檔案、網站、訂閱、帳號與來源規則符合相關法律、著作權要求與網站條款。
 
 Terms of Use (EULA): https://www.apple.com/legal/internet-services/itunes/dev/stdeula/
+```
+
+此版本的新增內容（1172 / 4000）：
+```
+閱讀 3.0 是一次大改版：書不再分散在各個來源裡，而是以「作品」為中心，集中在同一個地方探索、搜尋和管理。
+
+【全新分頁】
+・分頁改成：探索、書架、資源庫、設定、搜尋，打開 App 先到探索
+・新增「資源庫」分頁：模組、來源配置、遠端書庫（WebDAV／OPDS／Calibre）、訂閱都列在這裡；新增來源統一在「設定 → 資源」
+
+【探索】
+・探索首頁可以自己編排：新增、刪除、調整欄目順序；頂部輪播圖、排行榜、分類卡片、拼貼卡片等多種呈現方式，每種都有即時預覽
+・新增「AI 推薦」，附推薦理由
+・新增「趨勢」：依維基百科瀏覽量排出的熱門小說、完結作品和經典名著，每天更新
+・新增「繼續閱讀」卡片、精選、專題集合、系列下一本、書架
+・首頁配置有自己的按鈕和管理頁，每組首頁可以設照片
+
+【作品詳情】
+・每本書都有一頁「作品詳情」：簡介、目錄、同系列、同題材作品、作品資訊
+・開啟時自動找出你已啟用的來源裡有哪些能讀這本書
+・同系列的其他封面在主視覺後方展開
+
+【搜尋】
+・一次搜尋書架、來源配置、遠端書庫（OPDS／Calibre）、公有書庫和 Open Library，結果合併成作品清單
+・依類型分組篩選，結果會自動載入到底
+
+【模組】
+・新的模組系統：古騰堡、青空文庫、Open Library、小説家になろう、Bangumi、AniList、openBD、趨勢都是官方模組
+・可以匯入第三方模組，也能從模組加書上書架、直接閱讀
+・自動補齊書籍資料：缺封面、簡介、分類時，從模組和 Open Library 自動補上
+
+【閱讀】
+・全新閱讀介面：底部兩個浮動膠囊，進度、目錄、深色、聽書、主題一手可及
+・全書搜尋：搜尋整本書的每一章，支援正則表達式
+・新的語音朗讀面板；關掉書後朗讀繼續，從書架的膠囊回到朗讀處
+・EPUB 可以調整行距與段距，也能選擇是否套用書本自己的間距
+・匯入的書也能換源：檔案、來源配置、遠端書庫、模組都是同一部作品的版本
+・頁面底部對齊，文字填滿整頁
+・線上章節裡的影片和網頁可以直接在章節內播放
+・修正 ruby 注音重畫時位置跑掉、直排捲動跳位、iPad 邊距等排版問題
+・匯入主題包與高亮包，可以編輯九宮格框
+・段評、本章說、作者說、神評論卡片有內建「玻璃」樣式，也可以自訂範本
+
+【其他】
+・支援 iPhone 橫向與 iPhone Duo：整個 App 跟著自己的視窗排版，仿真翻頁雙頁從中間書脊翻
+・第一次打開時有新手導覽，最後一步直接帶你去找書、加來源或匯入檔案；可以在「設定 → 關於」重看
+・新的「回饋中心」：可以雙向回覆、收到回覆時通知，附截圖回報問題
+・替換規則可以多選一次刪除
+・AI 摘要、翻譯、人物分析速度大幅提升
+・Widget 與即時動態支援五種語言
+・大量效能與穩定性改進
 ```
 
 截圖標語：
@@ -105,6 +156,57 @@ Terms of Use (EULA): https://www.apple.com/legal/internet-services/itunes/dev/st
 Terms of Use (EULA): https://www.apple.com/legal/internet-services/itunes/dev/stdeula/
 ```
 
+此版本的新增内容（1175 / 4000）：
+```
+阅读 3.0 是一次大改版：书不再分散在各个来源里，而是以“作品”为中心，集中在同一个地方探索、搜索和管理。
+
+【全新标签页】
+・标签页改为：探索、书架、资源库、设置、搜索，打开 App 先到探索
+・新增“资源库”标签页：模块、来源配置、远程书库（WebDAV／OPDS／Calibre）、订阅都列在这里；新增来源统一在“设置 → 资源”
+
+【探索】
+・探索首页可以自己编排：添加、删除、调整栏目顺序；顶部轮播图、排行榜、分类卡片、拼贴卡片等多种呈现方式，每种都有实时预览
+・新增“AI 推荐”，附推荐理由
+・新增“趋势”：按维基百科浏览量排出的热门小说、完结作品和经典名著，每天更新
+・新增“继续阅读”卡片、精选、专题集合、系列下一本、书架
+・首页配置有自己的按钮和管理页，每组首页可以设置照片
+
+【作品详情】
+・每本书都有一页“作品详情”：简介、目录、同系列、同题材作品、作品信息
+・打开时自动找出你已启用的来源里有哪些能读这本书
+・同系列的其他封面在主视觉后方展开
+
+【搜索】
+・一次搜索书架、来源配置、远程书库（OPDS／Calibre）、公有书库和 Open Library，结果合并成作品列表
+・按类型分组筛选，结果会自动加载到底
+
+【模块】
+・新的模块系统：古腾堡、青空文库、Open Library、小説家になろう、Bangumi、AniList、openBD、趋势都是官方模块
+・可以导入第三方模块，也能从模块把书加入书架、直接阅读
+・自动补齐书籍资料：缺封面、简介、分类时，从模块和 Open Library 自动补上
+
+【阅读】
+・全新阅读界面：底部两个浮动胶囊，进度、目录、深色、听书、主题一手可及
+・全书搜索：搜索整本书的每一章，支持正则表达式
+・新的语音朗读面板；关掉书后朗读继续，从书架的胶囊回到朗读处
+・EPUB 可以调整行距与段距，也能选择是否套用书本自己的间距
+・导入的书也能换源：文件、来源配置、远程书库、模块都是同一部作品的版本
+・页面底部对齐，文字填满整页
+・在线章节里的视频和网页可以直接在章节内播放
+・修正 ruby 注音重画时位置偏移、竖排滚动跳位、iPad 边距等排版问题
+・导入主题包与高亮包，可以编辑九宫格框
+・段评、本章说、作者说、神评论卡片有内置“玻璃”样式，也可以自定义模板
+
+【其他】
+・支持 iPhone 横屏与 iPhone Duo：整个 App 跟着自己的窗口排版，仿真翻页双页从中间书脊翻
+・第一次打开时有新手引导，最后一步直接带你去找书、添加来源或导入文件；可以在“设置 → 关于”重看
+・新的“反馈中心”：可以双向回复、收到回复时通知，附截图反馈问题
+・替换规则可以多选一次删除
+・AI 摘要、翻译、人物分析速度大幅提升
+・小组件与实时活动支持五种语言
+・大量性能与稳定性改进
+```
+
 截图标语：
 | # | 画面 | 标题 | 副标 |
 |---|---|---|---|
@@ -156,6 +258,57 @@ MADE FOR LONG READS
 This app does not include, recommend, host, or distribute copyrighted content sources. Users are responsible for making sure imported files, websites, feeds, accounts, and source rules comply with applicable laws, copyright requirements, and website terms.
 
 Terms of Use (EULA): https://www.apple.com/legal/internet-services/itunes/dev/stdeula/
+```
+
+What's New (3273 / 4000):
+```
+Yuedu 3.0 is a major redesign: your books no longer live apart in separate sources. Everything is organised around the book itself, so you explore, search and manage it all in one place.
+
+NEW TABS
+・The tabs are now Explore, Library, Sources, Settings and Search, and the app opens on Explore
+・The new Sources tab lists your modules, sources, remote libraries (WebDAV, OPDS, Calibre) and subscriptions; adding a new one is always done in Settings
+
+EXPLORE
+・Arrange your Explore home: add, remove and reorder sections, with layouts such as a top carousel, top charts, category cards and collage cards, each with a live preview
+・New AI Picks, with the reason for every pick
+・New Trends: popular novels, completed series and classics ranked by Wikipedia page views, updated daily
+・New Resume card, Featured, Collections, Next in Series and Library sections
+・Home Configurations get their own button and page, and each home can have its own photo
+
+BOOK DETAILS
+・Every book has a Book Details page: synopsis, contents, series, related books and information
+・Finds which of your enabled sources can read the book as soon as it opens
+・The other covers in a series fan out behind the main artwork
+
+SEARCH
+・Search your library, sources, OPDS and Calibre remote libraries, public libraries and Open Library at once, with results merged by book
+・Filter by kind; results keep loading to the end on their own
+
+MODULES
+・A new module system: Project Gutenberg, Aozora Bunko, Open Library, 小説家になろう, Bangumi, AniList, openBD and Trends are official modules
+・Import third-party modules, add their books to your library, or read them straight away
+・Missing covers, descriptions and categories fill themselves in from modules and Open Library
+
+READING
+・A new reader: two floating capsules at the bottom keep progress, contents, dark mode, Listen and themes within reach
+・Full-book search across every chapter, with regular expressions
+・A new read-aloud panel; listening continues after you close the book, and the capsule on your library takes you back
+・EPUB line and paragraph spacing can be adjusted, with Use Book Spacing to keep the book's own
+・Switch the source of an imported book too: files, sources, remote libraries and modules are all versions of the same book
+・Align to Bottom fills every page to its last line
+・Videos and web pages inside online chapters play right in the chapter
+・Fixes for ruby annotations shifting on redraw, jumps in vertical scrolling, iPad margins and more
+・Import theme packs and highlight packs, with editable nine-slice frames
+・Paragraph Comments, Chapter Comments, Author's Notes and Top Comments come with a built-in Glass style, or your own templates
+
+AND MORE
+・iPhone landscape and iPhone Duo: the whole app lays itself out to its own window, and Curl turns two-page spreads from the spine in the middle
+・A first-launch App Tour ends by taking you straight to finding books, adding a source or importing files; replay it from Settings → About Yuedu Reader
+・A new Feedback Center with two-way replies, reply notifications and screenshots
+・Select several replacement rules and delete them at once
+・AI summaries, translation and character analysis are much faster
+・Widgets and Live Activities in five languages
+・Many performance and stability improvements
 ```
 
 Screenshot captions:
@@ -211,6 +364,57 @@ Yuedu 3.0 は大幅なリニューアルです。本はもうソースごとに�
 Terms of Use (EULA): https://www.apple.com/legal/internet-services/itunes/dev/stdeula/
 ```
 
+このバージョンの新機能（1622 / 4000）：
+```
+Yuedu 3.0 は大幅なリニューアルです。本はもうソースごとにばらばらではありません。「作品」を中心に、見つける・検索・管理をひとつの場所で。
+
+【新しいタブ】
+・タブは「見つける」「本棚」「ソース」「設定」「検索」になり、起動すると「見つける」が開きます
+・新しい「ソース」タブに、モジュール、ソース、リモートライブラリ（WebDAV／OPDS／Calibre）、フィードをまとめて表示。追加はすべて「設定」から
+
+【見つける】
+・ホームを自由に編集：セクションの追加・削除・並べ替え。トップカルーセル、ランキング、カテゴリーカード、コラージュカードなど、どの表示方法もその場でプレビュー
+・「AIのおすすめ」を追加。おすすめの理由つき
+・「トレンド」を追加：Wikipedia の閲覧数をもとにした人気小説、完結作品、古典名作。毎日更新
+・「続きを読む」カード、注目、特集コレクション、シリーズの次の本、本棚を追加
+・ホーム構成に専用のボタンと管理ページ。ホームごとに写真を設定できます
+
+【作品詳細】
+・どの本にも「作品詳細」ページ：あらすじ、目次、シリーズ、関連作品、作品情報
+・開いたとき、有効にしているソースのうちどれで読めるかを自動で探します
+・同じシリーズのほかの表紙が、メインビジュアルの後ろに広がります
+
+【検索】
+・本棚、ソース、OPDS／Calibre のリモートライブラリ、パブリックドメインライブラリ、Open Library をまとめて一度に検索。結果は作品ごとにまとめて表示
+・種類ごとに絞り込み。結果は最後まで自動で読み込みます
+
+【モジュール】
+・新しいモジュールシステム：Project Gutenberg、青空文庫、Open Library、小説家になろう、Bangumi、AniList、openBD、トレンドが公式モジュールに
+・サードパーティのモジュールを取り込み、本棚に追加したり、そのまま読んだりできます
+・表紙・あらすじ・カテゴリーが足りないときは、モジュールと Open Library から自動で補完
+
+【読書】
+・新しいリーダー：下部の2つのフローティングカプセルから、進捗、目次、ダークモード、読み上げ、テーマにすぐ手が届きます
+・全文検索：すべての章を検索。正規表現にも対応
+・新しい読み上げパネル。本を閉じても読み上げは続き、本棚のカプセルから戻れます
+・EPUB の行間と段落の間隔を調整可能。「書籍の行間を使用」で本の指定どおりにも
+・取り込んだ本もソースを切り替え可能：ファイル、ソース、リモートライブラリ、モジュールは同じ作品のバージョンです
+・「下端揃え」で本文をページの最後の行まで揃えます
+・オンラインの章に含まれる動画やWebページを、章の中でそのまま再生
+・ルビの再描画時のずれ、縦書きスクロールの飛び、iPad の余白など組版の問題を修正
+・テーマパックとハイライトパックの取り込みに対応。9スライスの枠も編集できます
+・段落コメント、本章の感想、作者の言葉、神コメントのカードに内蔵の「ガラス」スタイル。テンプレートの自作も可能
+
+【その他】
+・iPhone の横向きと iPhone Duo に対応：アプリ全体が自分のウインドウに合わせてレイアウトされ、カールの見開きは中央の綴じ目からめくれます
+・初回起動時にアプリの紹介。最後のステップから本探し、ソースの追加、ファイルの取り込みへ直接進めます。「設定 → Yuedu Readerについて」からもう一度見られます
+・新しい「フィードバックセンター」：双方向で返信でき、返信が届くと通知。スクリーンショットを添えて報告できます
+・置換ルールを複数選んでまとめて削除
+・AI の要約、翻訳、人物分析が大幅に高速化
+・ウィジェットとライブアクティビティが5言語に対応
+・パフォーマンスと安定性を多数改善
+```
+
 スクリーンショットの見出し：
 | # | 画面 | 見出し | サブ |
 |---|---|---|---|
@@ -262,6 +466,57 @@ Yuedu 3.0은 대규모 업데이트입니다. 이제 책이 소스마다 흩어�
 본 앱은 저작권이 있는 콘텐츠 출처를 내장, 추천, 호스팅 또는 배포하지 않습니다. 가져오는 파일, 웹사이트, 피드, 계정, 규칙이 관련 법률, 저작권 및 각 사이트의 이용 약관을 준수하는지는 사용자가 직접 확인해야 합니다.
 
 Terms of Use (EULA): https://www.apple.com/legal/internet-services/itunes/dev/stdeula/
+```
+
+이 버전의 새로운 기능（1815 / 4000）：
+```
+Yuedu 3.0은 대규모 업데이트입니다. 이제 책이 소스마다 흩어져 있지 않습니다. ‘작품’을 중심으로 탐색, 검색, 관리를 한곳에서 할 수 있습니다.
+
+[새로운 탭]
+・탭이 탐색, 서재, 소스, 설정, 검색으로 바뀌었고, 앱을 열면 탐색부터 보입니다
+・새 ‘소스’ 탭에 모듈, 소스, 원격 라이브러리(WebDAV, OPDS, Calibre), 구독을 모아 표시합니다. 새로 추가하는 것은 모두 ‘설정’에서 합니다
+
+[탐색]
+・탐색 홈을 직접 구성: 섹션을 추가, 삭제, 정렬하고 상단 캐러셀, 인기 차트, 카테고리 카드, 콜라주 카드 등 표시 방식을 바로 미리 볼 수 있습니다
+・‘AI 추천’ 추가, 추천 이유도 함께 보여 줍니다
+・‘트렌드’ 추가: 위키백과 조회수를 기준으로 한 인기 소설, 완결 작품, 고전 명작을 매일 업데이트합니다
+・‘이어 읽기’ 카드, 추천, 컬렉션, 시리즈 다음 권, 서재 섹션 추가
+・홈 구성에 전용 버튼과 관리 페이지가 생겼고, 홈마다 사진을 설정할 수 있습니다
+
+[작품 정보]
+・모든 책에 ‘작품 정보’ 페이지: 줄거리, 목차, 같은 시리즈, 관련 작품, 작품 정보
+・열 때 사용 중인 소스 가운데 이 책을 읽을 수 있는 곳을 자동으로 찾습니다
+・같은 시리즈의 다른 표지가 메인 이미지 뒤로 펼쳐집니다
+
+[검색]
+・서재, 소스, OPDS·Calibre 원격 라이브러리, 퍼블릭 도메인 라이브러리, Open Library를 한 번에 검색하고 결과를 작품별로 합쳐 보여 줍니다
+・종류별로 필터링하고, 결과는 끝까지 자동으로 불러옵니다
+
+[모듈]
+・새 모듈 시스템: Project Gutenberg, 아오조라 문고, Open Library, 小説家になろう, Bangumi, AniList, openBD, 트렌드가 공식 모듈입니다
+・서드파티 모듈을 가져와 책을 서재에 추가하거나 바로 읽을 수 있습니다
+・표지, 소개, 카테고리가 없으면 모듈과 Open Library에서 자동으로 채웁니다
+
+[읽기]
+・새로운 리더: 하단의 플로팅 캡슐 두 개로 진행률, 목차, 다크 모드, 듣기, 테마를 바로 쓸 수 있습니다
+・전체 검색: 책의 모든 장을 검색하고 정규 표현식도 지원합니다
+・새 낭독 패널: 책을 닫아도 낭독이 이어지고, 서재의 캡슐을 눌러 돌아갈 수 있습니다
+・EPUB 줄 간격과 문단 간격을 조절하고, ‘책 간격 사용’으로 책 자체의 간격을 따를 수도 있습니다
+・가져온 책도 소스 전환 가능: 파일, 소스, 원격 라이브러리, 모듈이 모두 같은 작품의 버전입니다
+・‘아래쪽 맞춤’으로 본문이 페이지 마지막 줄까지 채워집니다
+・온라인 챕터 안의 동영상과 웹 페이지를 챕터에서 바로 재생합니다
+・루비 문자가 다시 그릴 때 어긋나는 문제, 세로쓰기 스크롤이 튀는 문제, iPad 여백 등 조판 문제를 수정했습니다
+・테마 팩과 하이라이트 팩을 가져오고, 9분할 테두리를 편집할 수 있습니다
+・문단 댓글, 이번 장 댓글, 작가의 말, 베스트 댓글 카드에 기본 ‘글래스’ 스타일이 있고, 템플릿을 직접 만들 수도 있습니다
+
+[기타]
+・iPhone 가로 모드와 iPhone Duo 지원: 앱 전체가 자기 창 크기에 맞춰 배치되고, 말아 넘기기 양면 보기는 가운데 책등에서 넘어갑니다
+・처음 실행할 때 앱 둘러보기가 나오며, 마지막 단계에서 바로 책 찾기, 소스 추가, 파일 가져오기로 이동합니다. ‘설정 → Yuedu Reader에 관하여’에서 다시 볼 수 있습니다
+・새 ‘피드백 센터’: 양방향 답장, 답장 알림, 스크린샷 첨부를 지원합니다
+・대치 규칙을 여러 개 선택해 한 번에 삭제
+・AI 요약, 번역, 인물 분석 속도가 크게 빨라졌습니다
+・위젯과 실시간 현황이 5개 언어를 지원합니다
+・성능과 안정성을 크게 개선했습니다
 ```
 
 스크린샷 문구：
