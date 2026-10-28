@@ -133,18 +133,20 @@ struct PublicLibraryFeedView: View {
                     ContentUnavailableView {
                         UnavailableLabel(localized("無法載入書庫"), systemImage: "wifi.exclamationmark")
                     } description: { Text(error).font(DSFont.unavailableDescription) } actions: {
-                        Button(localized("重試")) {
-                            request = Task {
-                                if model.failedWhileLoadingMore { await model.loadMore() }
-                                else { await model.load(query: query) }
-                            }
-                        }.disabled(model.isLoading || model.isLoadingMore)
+                        UnavailableActions {
+                            Button(localized("重試")) {
+                                request = Task {
+                                    if model.failedWhileLoadingMore { await model.loadMore() }
+                                    else { await model.load(query: query) }
+                                }
+                            }.disabled(model.isLoading || model.isLoadingMore)
+                        }
                     }
                 } else if model.isLoading {
                     ProgressView(localized("正在載入書庫"))
                         .frame(maxWidth: .infinity).padding(.vertical, DSSpacing.xxl)
                 } else if model.didLoad && model.entries.isEmpty {
-                    ContentUnavailableView(localized("此目錄沒有內容"), systemImage: "books.vertical")
+                    ContentUnavailableView { UnavailableLabel(localized("此目錄沒有內容"), systemImage: "books.vertical") }
                 }
                 if model.nextPageURL != nil {
                     Button { request = Task { await model.loadMore() } } label: {

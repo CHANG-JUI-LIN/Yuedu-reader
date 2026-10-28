@@ -42,19 +42,21 @@ struct ModuleListPage: View {
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, DSSpacing.xxl)
         case .missing:
-            ContentUnavailableView(localized("找不到這個模組。"), systemImage: "puzzlepiece.extension")
+            ContentUnavailableView { UnavailableLabel(localized("找不到這個模組。"), systemImage: "puzzlepiece.extension") }
         case .failed(let message):
             ContentUnavailableView {
                 UnavailableLabel(localized("載入失敗"), systemImage: "wifi.exclamationmark")
             } description: {
                 Text(message).font(DSFont.unavailableDescription)
             } actions: {
-                Button(localized("重試")) { Task { await model.load() } }
+                UnavailableActions {
+                    Button(localized("重試")) { Task { await model.load() } }
+                }
             }
         case .loaded:
             let cards = cards
             if cards.isEmpty {
-                ContentUnavailableView(localized("此目錄沒有內容"), systemImage: "books.vertical")
+                ContentUnavailableView { UnavailableLabel(localized("此目錄沒有內容"), systemImage: "books.vertical") }
             } else {
                 HomeSectionCards(layout: HomeSectionLayout(style: .coverGrid), cards: cards,
                                  rowID: "module.list.\(route.moduleID).\(route.entryID)", hasShowAll: false) { card, _ in

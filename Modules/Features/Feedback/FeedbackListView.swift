@@ -113,9 +113,11 @@ struct FeedbackListView: View {
                 } description: {
                     Text(message).font(DSFont.unavailableDescription).foregroundStyle(DSColor.textSecondary)
                 } actions: {
-                    Button(localized("重試")) {
-                        loadState = .loading
-                        reloadToken += 1
+                    UnavailableActions {
+                        Button(localized("重試")) {
+                            loadState = .loading
+                            reloadToken += 1
+                        }
                     }
                 }
             case .loaded:

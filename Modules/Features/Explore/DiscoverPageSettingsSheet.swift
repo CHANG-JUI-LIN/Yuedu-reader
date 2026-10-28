@@ -74,7 +74,7 @@ struct DiscoverPageSettingsSheet: View {
                         }
                     }
                 } else if !trimmedQuery.isEmpty && visibleGroups.isEmpty {
-                    ContentUnavailableView.search(text: trimmedQuery)
+                    UnavailableSearchView(text: trimmedQuery)
                 }
             }
             .softScrollEdges()

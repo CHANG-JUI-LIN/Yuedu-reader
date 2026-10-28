@@ -130,7 +130,7 @@ struct LatestSourcesView: View {
                                                  librariesAvailable: availability.isAvailable)
         List {
             if libraries.isEmpty {
-                ContentUnavailableView(localized("沒有書庫"), systemImage: "building.columns")
+                ContentUnavailableView { UnavailableLabel(localized("沒有書庫"), systemImage: "building.columns") }
                     .listRowBackground(Color.clear)
             } else {
                 Section {

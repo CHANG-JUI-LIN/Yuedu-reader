@@ -63,8 +63,10 @@ struct AIBookshelfOrganizerView: View {
             } description: {
                 Text(localized("問書、整章翻譯、查詞與整理書架")).font(DSFont.unavailableDescription).foregroundStyle(DSColor.textSecondary)
             } actions: {
-                Button(localized("升級")) { showsPaywall = true }
-                    .buttonStyle(.onAccentProminent)
+                UnavailableActions {
+                    Button(localized("升級")) { showsPaywall = true }
+                        .buttonStyle(.onAccentProminent)
+                }
             }
             .listRowBackground(Color.clear)
         } else {

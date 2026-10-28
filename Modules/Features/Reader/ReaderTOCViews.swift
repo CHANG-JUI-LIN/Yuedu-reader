@@ -314,7 +314,7 @@ struct ReaderTOCView: View {
     }
 
     private var noMatchesView: some View {
-        ContentUnavailableView.search(text: searchText)
+        UnavailableSearchView(text: searchText)
     }
 
     private func pageNumber(for chapter: BookChapter) -> Int {

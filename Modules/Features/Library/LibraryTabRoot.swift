@@ -91,7 +91,7 @@ struct LibraryTabRoot: View {
             }
             .overlay {
                 if !trimmedQuery.isEmpty && matchingSources.isEmpty {
-                    ContentUnavailableView.search(text: trimmedQuery)
+                    UnavailableSearchView(text: trimmedQuery)
                 }
             }
             .rootTabSearchScrollEdges()

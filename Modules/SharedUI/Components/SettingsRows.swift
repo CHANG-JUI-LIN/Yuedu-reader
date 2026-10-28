@@ -116,6 +116,39 @@ struct UnavailableLabel: View {
     }
 }
 
+/// The actions of a `ContentUnavailableView` in the global font: the view sets its own
+/// system font on them as on its title (feedback #41).
+struct UnavailableActions<Content: View>: View {
+    let content: Content
+
+    init(@ViewBuilder content: () -> Content) {
+        self.content = content()
+    }
+
+    var body: some View {
+        content.font(DSFont.unavailableAction)
+    }
+}
+
+/// `ContentUnavailableView.search(text:)` in the global font and the theme's text colours:
+/// the system's draws every word in its own font, which no modifier reaches.
+struct UnavailableSearchView: View {
+    let text: String
+
+    var body: some View {
+        ContentUnavailableView {
+            UnavailableLabel(
+                text.isEmpty ? localized("搜索無結果") : String(format: localized("沒有「%@」的結果"), text),
+                systemImage: "magnifyingglass"
+            )
+        } description: {
+            Text(localized("請檢查拼字或嘗試新的搜尋。"))
+                .font(DSFont.unavailableDescription)
+                .foregroundStyle(DSColor.textSecondary)
+        }
+    }
+}
+
 /// A value adjusted by dragging: title and value on one line, the slider under them.
 struct SettingsSliderRow<Value: BinaryFloatingPoint>: View where Value.Stride: BinaryFloatingPoint {
     let title: String
@@ -206,5 +239,13 @@ struct SettingsLockedRow: View {
         UnavailableLabel("此分組暫無意見回報", systemImage: "tray")
     } description: {
         Text("說明文字").font(DSFont.unavailableDescription).foregroundStyle(DSColor.textSecondary)
+    } actions: {
+        UnavailableActions {
+            Button("重試") {}
+        }
     }
+}
+
+#Preview("搜尋無結果") {
+    UnavailableSearchView(text: "三體")
 }

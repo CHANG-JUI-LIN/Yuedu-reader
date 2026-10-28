@@ -164,10 +164,12 @@ struct ReaderBatterySVGImportView: View {
             } description: {
                 Text(localized("匯入 SVG 模板後，可用於閱讀頁的電量元件。")).font(DSFont.unavailableDescription).foregroundStyle(DSColor.textSecondary)
             } actions: {
-                Button(localized("匯入 SVG")) {
-                    showingImporter = true
+                UnavailableActions {
+                    Button(localized("匯入 SVG")) {
+                        showingImporter = true
+                    }
+                    .buttonStyle(.onAccentProminent)
                 }
-                .buttonStyle(.onAccentProminent)
             }
         } else {
             ForEach(assets) { asset in

@@ -19,7 +19,7 @@ struct HomeListPage: View {
             // (`ModuleListPage`). The grid itself is lazy.
             VStack(spacing: DSSpacing.lg) {
                 if cards.isEmpty {
-                    ContentUnavailableView(localized("此目錄沒有內容"), systemImage: "books.vertical")
+                    ContentUnavailableView { UnavailableLabel(localized("此目錄沒有內容"), systemImage: "books.vertical") }
                 } else {
                     HomeSectionCards(layout: HomeSectionLayout(style: .coverGrid), cards: cards,
                                      rowID: "home.list.\(route.title)", hasShowAll: false) { card, _ in

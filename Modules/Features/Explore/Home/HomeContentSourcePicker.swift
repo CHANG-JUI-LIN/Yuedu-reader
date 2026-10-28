@@ -511,7 +511,7 @@ struct HomeSourceChoices: View {
                         UnavailableLabel(localized("沒有可用的來源配置，請先啟用來源配置"), systemImage: "puzzlepiece.extension")
                     }
                 } else {
-                    ContentUnavailableView.search(text: query)
+                    UnavailableSearchView(text: query)
                 }
             }
         }
@@ -628,7 +628,7 @@ struct HomeCategoryChoices: View {
                     }
                 }
             case .loaded:
-                if !trimmedQuery.isEmpty, groups.isEmpty { ContentUnavailableView.search(text: trimmedQuery) }
+                if !trimmedQuery.isEmpty, groups.isEmpty { UnavailableSearchView(text: trimmedQuery) }
             }
         }
         .searchable(text: $query, placement: .navigationBarDrawer(displayMode: .always),

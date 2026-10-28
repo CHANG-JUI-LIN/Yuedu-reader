@@ -101,14 +101,16 @@ private struct DiscoverEmptyState: View {
                     ?? localized("此來源配置未回傳發現內容，可下拉重新整理或切換來源配置")
             ).font(DSFont.unavailableDescription).foregroundStyle(DSColor.textSecondary)
         } actions: {
-            // The source asked for a device id and got none. The toggle that fixes
-            // it lives in 書源編輯 → 基本, which nobody looking at an empty 發現頁
-            // will find — so offer it here. See `AndroidIdentityRecovery`.
-            if discover.androidIdentityRepairSource != nil {
-                Button(localized("提供裝置識別碼並重試")) {
-                    discover.enableAndroidIdentityAndReload()
+            UnavailableActions {
+                // The source asked for a device id and got none. The toggle that fixes
+                // it lives in 書源編輯 → 基本, which nobody looking at an empty 發現頁
+                // will find — so offer it here. See `AndroidIdentityRecovery`.
+                if discover.androidIdentityRepairSource != nil {
+                    Button(localized("提供裝置識別碼並重試")) {
+                        discover.enableAndroidIdentityAndReload()
+                    }
+                    .buttonStyle(.onAccentProminent)
                 }
-                .buttonStyle(.onAccentProminent)
             }
         }
         .frame(maxWidth: .infinity, minHeight: 320)

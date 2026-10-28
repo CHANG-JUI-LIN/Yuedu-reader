@@ -316,14 +316,16 @@ private struct ExploreHomeRoot: View {
                         UnavailableLabel(localized("探索還沒有內容"), systemImage: "rectangle.stack")
                     }
                 } actions: {
-                    if hasNoSections {
-                        Button(localized("新增欄目")) { addsSection = true }
-                            .buttonStyle(.onAccentProminent)
-                            .accessibilityIdentifier("home.addSection")
+                    UnavailableActions {
+                        if hasNoSections {
+                            Button(localized("新增欄目")) { addsSection = true }
+                                .buttonStyle(.onAccentProminent)
+                                .accessibilityIdentifier("home.addSection")
+                        }
+                        Button(localized("編輯首頁")) { setEditing(true) }
+                            .buttonStyle(.bordered)
+                            .accessibilityIdentifier("home.edit")
                     }
-                    Button(localized("編輯首頁")) { setEditing(true) }
-                        .buttonStyle(.bordered)
-                        .accessibilityIdentifier("home.edit")
                 }
             }
         }

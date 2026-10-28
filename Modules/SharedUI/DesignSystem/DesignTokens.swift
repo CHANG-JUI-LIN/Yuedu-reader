@@ -341,6 +341,9 @@ enum DSFont {
         }
         return GlobalAppTypography.font(.subheadline)
     }
+    /// A `ContentUnavailableView` action's label: Subheadline, on iOS 17 through 27
+    /// (measured as above).
+    static var unavailableAction: Font { GlobalAppTypography.font(.subheadline) }
     /// A section title the way Apple Books heads its sections: Title 2 in bold, set in
     /// the system serif (New York). A chosen interface font draws it like any other style.
     static var serifSectionTitle: Font {

@@ -112,7 +112,7 @@ struct SearchSourceScopeSheet: View {
                 }
                 .listRowBackground(Color.clear)
             } else if filteredSources.isEmpty {
-                ContentUnavailableView.search(text: sourceQuery)
+                UnavailableSearchView(text: sourceQuery)
                     .listRowBackground(Color.clear)
             } else {
                 ForEach(filteredSources) { source in

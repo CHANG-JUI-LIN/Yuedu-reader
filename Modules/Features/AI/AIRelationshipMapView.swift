@@ -84,10 +84,12 @@ struct AIRelationshipMapView: View {
                 } description: {
                     Text(localized("先用「整理已讀人物」建立人物記錄，關係就會畫在這裡。")).font(DSFont.unavailableDescription).foregroundStyle(DSColor.textSecondary)
                 } actions: {
-                    NavigationLink(localized("整理已讀人物")) {
-                        AICharacterMemoryView(adapter: adapter, onOpenCitation: onOpenCitation)
+                    UnavailableActions {
+                        NavigationLink(localized("整理已讀人物")) {
+                            AICharacterMemoryView(adapter: adapter, onOpenCitation: onOpenCitation)
+                        }
+                        .buttonStyle(.bordered)
                     }
-                    .buttonStyle(.bordered)
                 }
                 .listRowBackground(Color.clear)
             }

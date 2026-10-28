@@ -39,7 +39,7 @@ struct RuleModuleRepositoryView: View {
             if let repository {
                 content(repository)
             } else {
-                ContentUnavailableView(localized("找不到這個模組倉庫。"), systemImage: "shippingbox")
+                ContentUnavailableView { UnavailableLabel(localized("找不到這個模組倉庫。"), systemImage: "shippingbox") }
             }
         }
         .navigationTitle(repository?.subscription.name ?? localized("模組倉庫"))
@@ -80,8 +80,10 @@ struct RuleModuleRepositoryView: View {
             } description: {
                 Text(message).font(DSFont.unavailableDescription)
             } actions: {
-                Button(localized("重試")) { Task { await repositories.reload(url) } }
-                Button(localized("取消訂閱"), role: .destructive) { confirmsUnsubscription = true }
+                UnavailableActions {
+                    Button(localized("重試")) { Task { await repositories.reload(url) } }
+                    Button(localized("取消訂閱"), role: .destructive) { confirmsUnsubscription = true }
+                }
             }
         case .loaded(let index):
             list(index)

@@ -228,7 +228,7 @@ struct LibrarySourcesView: View {
         }
         .overlay {
             if sources.isEmpty {
-                ContentUnavailableView(localized("沒有來源配置"), systemImage: "square.grid.2x2")
+                ContentUnavailableView { UnavailableLabel(localized("沒有來源配置"), systemImage: "square.grid.2x2") }
             }
         }
         .background(PageBackgroundView(scope: .explore).ignoresSafeArea())

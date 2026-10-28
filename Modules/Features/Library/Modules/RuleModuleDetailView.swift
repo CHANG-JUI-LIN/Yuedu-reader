@@ -28,7 +28,7 @@ struct RuleModuleDetailView: View {
             if let installed = library.installed(id: moduleID) {
                 page(installed)
             } else if library.isLoaded {
-                ContentUnavailableView(localized("找不到這個模組。"), systemImage: "puzzlepiece.extension")
+                ContentUnavailableView { UnavailableLabel(localized("找不到這個模組。"), systemImage: "puzzlepiece.extension") }
             } else {
                 ProgressView()
             }

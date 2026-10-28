@@ -83,14 +83,15 @@ struct GlobalAppTypographyTests {
         #expect(abs(font.pointSize - 11) < 0.01)
     }
 
-    /// Feedback #41: `ContentUnavailableView` sets its own system fonts on its title and
-    /// description, so `UnavailableLabel` and the call sites set the global ones. With no
+    /// Feedback #41: `ContentUnavailableView` sets its own system fonts on its title,
+    /// description and actions, so `UnavailableLabel`, the call sites and
+    /// `UnavailableActions` set the global ones. With no
     /// custom font they must draw exactly as the view's own did — the styles differ by OS
     /// version, so run this on the oldest and newest supported runtimes — and with one, they
     /// must change.
-    @Test("unavailable title and description match the system's and follow a custom font")
+    @Test("unavailable title, description and actions match the system's and follow a custom font")
     func unavailableTextFollowsGlobalFont() throws {
-        func render(title: Font?, description: Font?) throws -> Data {
+        func render(title: Font?, description: Font?, action: Font? = nil) throws -> Data {
             let renderer = ImageRenderer(
                 content: ContentUnavailableView {
                     Label {
@@ -109,6 +110,17 @@ struct GlobalAppTypographyTests {
                     } else {
                         Text("換一個篩選條件或搜尋字詞試試。")
                     }
+                } actions: {
+                    if let action {
+                        Group {
+                            Button("重試") {}
+                            Button("編輯首頁") {}.buttonStyle(.bordered)
+                        }
+                        .font(action)
+                    } else {
+                        Button("重試") {}
+                        Button("編輯首頁") {}.buttonStyle(.bordered)
+                    }
                 }
                 .frame(width: 320, height: 300)
             )
@@ -122,6 +134,7 @@ struct GlobalAppTypographyTests {
         let plain = try render(title: nil, description: nil)
         #expect(try render(title: DSFont.unavailableTitle, description: nil) == plain)
         #expect(try render(title: nil, description: DSFont.unavailableDescription) == plain)
+        #expect(try render(title: nil, description: nil, action: DSFont.unavailableAction) == plain)
 
         let fixtureURL = URL(fileURLWithPath: #filePath)
             .deletingLastPathComponent()
@@ -131,5 +144,6 @@ struct GlobalAppTypographyTests {
         GlobalAppTypography.activePostScriptName = info.postScriptName
         #expect(try render(title: DSFont.unavailableTitle, description: nil) != plain)
         #expect(try render(title: nil, description: DSFont.unavailableDescription) != plain)
+        #expect(try render(title: nil, description: nil, action: DSFont.unavailableAction) != plain)
     }
 }

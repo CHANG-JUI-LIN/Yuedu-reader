@@ -59,7 +59,7 @@ struct AozoraCatalogView: View {
                     }
                 }
                 .overlay {
-                    if groups.isEmpty { ContentUnavailableView(localized("此目錄沒有內容"), systemImage: "books.vertical") }
+                    if groups.isEmpty { ContentUnavailableView { UnavailableLabel(localized("此目錄沒有內容"), systemImage: "books.vertical") } }
                 }
                 .navigationTitle(localized(mode.titleKey))
                 .toolbarTitleDisplayMode(.inline)
@@ -79,7 +79,7 @@ struct AozoraWorksView: View {
             PublicLibraryBooksGrid(books: works.map { .aozora($0, index) }) { openBooks?($0) }
         }
         .overlay {
-            if works.isEmpty { ContentUnavailableView(localized("此目錄沒有內容"), systemImage: "books.vertical") }
+            if works.isEmpty { ContentUnavailableView { UnavailableLabel(localized("此目錄沒有內容"), systemImage: "books.vertical") } }
         }
         .navigationTitle(title)
         .toolbarTitleDisplayMode(.inline)

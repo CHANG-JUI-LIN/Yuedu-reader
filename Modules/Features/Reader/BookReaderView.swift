@@ -305,8 +305,10 @@ struct BookOpenFailureView: View {
         } description: {
             Text(message).font(DSFont.unavailableDescription).foregroundStyle(detailColor ?? DSColor.textSecondary)
         } actions: {
-            Button(localized("重試"), action: onRetry)
-            Button(localized("關閉"), action: onClose)
+            UnavailableActions {
+                Button(localized("重試"), action: onRetry)
+                Button(localized("關閉"), action: onClose)
+            }
         }
     }
 }

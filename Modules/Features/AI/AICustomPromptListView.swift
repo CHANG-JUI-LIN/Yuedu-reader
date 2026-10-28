@@ -17,7 +17,9 @@ struct AICustomPromptListView: View {
                 } description: {
                     Text(localized("常用的問法存成提示詞，就會出現在 AI 對話的快捷按鈕裡。")).font(DSFont.unavailableDescription).foregroundStyle(DSColor.textSecondary)
                 } actions: {
-                    Button(localized("新增提示詞")) { editing = .init(title: "", instruction: "") }
+                    UnavailableActions {
+                        Button(localized("新增提示詞")) { editing = .init(title: "", instruction: "") }
+                    }
                 }
                 .listRowBackground(Color.clear)
             } else {

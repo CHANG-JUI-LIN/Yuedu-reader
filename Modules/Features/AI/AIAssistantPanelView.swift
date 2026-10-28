@@ -47,7 +47,9 @@ struct AIAssistantPanelView: View {
                     } description: {
                         Text(settingsError ?? localized("填入自己的 API 服務，即可開始閱讀問答。")).font(DSFont.unavailableDescription).foregroundStyle(DSColor.textSecondary)
                     } actions: {
-                        Button(localized("前往設定")) { openScreen(.settings) }
+                        UnavailableActions {
+                            Button(localized("前往設定")) { openScreen(.settings) }
+                        }
                     }
                 } else {
                     transcript

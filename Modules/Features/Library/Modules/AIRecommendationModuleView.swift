@@ -33,8 +33,10 @@ struct AIRecommendationModuleView: View {
                 } description: {
                     Text(localized("依你最近讀的書推薦作品")).font(DSFont.unavailableDescription).foregroundStyle(DSColor.textSecondary)
                 } actions: {
-                    Button(localized("升級")) { showsPaywall = true }
-                        .buttonStyle(.onAccentProminent)
+                    UnavailableActions {
+                        Button(localized("升級")) { showsPaywall = true }
+                            .buttonStyle(.onAccentProminent)
+                    }
                 }
                 .listRowBackground(Color.clear)
             }

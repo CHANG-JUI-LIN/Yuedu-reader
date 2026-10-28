@@ -32,7 +32,7 @@ struct RuleModuleGroupView: View {
             if !library.isLoaded {
                 ProgressView()
             } else if appModules.isEmpty && modules.isEmpty && failures.isEmpty {
-                ContentUnavailableView(localized("還沒有模組"), systemImage: "puzzlepiece.extension")
+                ContentUnavailableView { UnavailableLabel(localized("還沒有模組"), systemImage: "puzzlepiece.extension") }
             } else {
                 Form {
                     Section {
