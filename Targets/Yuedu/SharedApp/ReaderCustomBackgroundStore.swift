@@ -66,6 +66,19 @@ extension GlobalSettings {
         }
     }
 
+    /// The picture the reader draws its page on: the saved background it wears, when that
+    /// has a picture on this device. The reader and a book still opening before it
+    /// (`ReaderPreparingView`) both read it here.
+    func readerBackgroundImageURL(wearing resolution: ReaderBackgroundResolution) -> URL? {
+        guard let background = resolution.customBackground,
+              let url = readerBackgroundImageURL(for: background),
+              FileManager.default.fileExists(atPath: url.path)
+        else {
+            return nil
+        }
+        return url
+    }
+
     /// The palette a saved background paints the reader with. A dark one is marked as a
     /// dark palette, which is what lets it paint 黑色 and nothing else.
     func readerBackgroundPreset(for background: ReaderCustomBackground) -> AppearanceThemePreset {

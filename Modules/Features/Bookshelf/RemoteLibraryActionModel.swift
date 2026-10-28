@@ -23,7 +23,7 @@ final class RemoteLibraryActionModel: ObservableObject {
     private var task: Task<Void, Never>?
 
     /// Starts `action` unless one is running. A read records the copy and hands it to
-    /// `onRead` at once: the reader downloads and prepares it under its own 正在開啟書籍
+    /// `onRead` at once: the reader downloads and prepares it under its own 載入中…
     /// (`BookReaderView`), so the page never shows that wait itself.
     func begin(_ action: Action, item: RemoteLibraryItem, format: RemoteLibraryFormat,
                service: any RemoteLibraryServing, store: BookStore, onRead: @escaping (UUID) -> Void) {

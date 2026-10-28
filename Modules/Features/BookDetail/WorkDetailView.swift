@@ -4,7 +4,7 @@ import SwiftUI
 private enum WorkDetailPush: Hashable {
     /// A copy's reader; at a 目錄 entry's anchor when one was picked.
     case reader(UUID, ReaderTOCTarget? = nil)
-    /// A 青空文庫 work not on the shelf yet: the reader imports it under its own 正在開啟書籍.
+    /// A 青空文庫 work not on the shelf yet: the reader imports it under its own 載入中….
     case aozoraReader(AozoraWork)
     /// 編輯遠端資料, for the version shown.
     case editor

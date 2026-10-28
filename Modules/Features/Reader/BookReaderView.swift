@@ -73,13 +73,13 @@ private struct BookReaderContent: View {
     var body: some View {
         Group {
             if book?.remoteSource != nil && !remoteReady {
-                RemoteReaderOpeningView(
+                ReaderPreparingView(
                     error: remoteError,
                     onRetry: { retryGeneration += 1 },
                     onClose: closeReader
                 )
             } else if book?.aozora != nil && !aozoraReady {
-                RemoteReaderOpeningView(error: nil, onRetry: {}, onClose: closeReader)
+                ReaderPreparingView(error: nil, onRetry: {}, onClose: closeReader)
             } else if isAudiobook {
                 AudiobookReaderView(bookId: bookId)
             } else if shouldUseFixedPageReader {
@@ -191,31 +191,100 @@ private struct BookReaderContent: View {
     private var isAudiobook: Bool { book?.resolvedPipelineKind == .audio }
 }
 
-/// Preparation happens before the format reader installs its toolbar. These
-/// actions stay visible even when the caller hides the navigation back button.
-/// `AozoraReaderEntry` shows it too, while a 青空文庫 work is imported.
-struct RemoteReaderOpeningView: View {
+/// A book being readied before its reader can open — a library's copy downloading, a 青空文庫
+/// work imported (`AozoraReaderEntry`) or brought up to this build's converter: the reader's
+/// own 載入中…, full screen on the surface the reader opens on. Until 2026-10-27 this was a
+/// page of its own, 正在開啟書籍 and 取消 on the app's background, and a reader pushed in a tab
+/// showed it under the tab bar and the status bar (maintainer: 「統一都是加載中」).
+struct ReaderPreparingView: View {
     let error: String?
     var onRetry: () -> Void
     var onClose: () -> Void
+    @Bindable private var settings = GlobalSettings.shared
+    @ObservedObject private var readerConfig = ReaderConfig.shared
 
     var body: some View {
-        if let error {
-            BookOpenFailureView(message: error, onRetry: onRetry, onClose: onClose)
-        } else {
-            VStack(spacing: DSSpacing.lg) {
-                ProgressView(localized("正在開啟書籍"))
-                Button(localized("取消"), action: onClose)
-                    .buttonStyle(.bordered)
+        // What the reader puts on as it opens (`ReaderView.syncActiveThemePreset`).
+        let resolution = settings.readerBackgroundResolution(mode: settings.readerMode, wornTheme: readerConfig.theme)
+        ReaderPreparingSurface(
+            theme: resolution.theme,
+            imageURL: settings.readerBackgroundImageURL(wearing: resolution),
+            backIcon: ReaderChromePalette(theme: resolution.theme, settings: settings).topIcon,
+            error: error,
+            onRetry: onRetry,
+            onClose: onClose
+        )
+    }
+}
+
+/// `ReaderPreparingView` on a given surface. As on the reader's loading page, a tap raises the
+/// reading menu with the status bar; before there is a book to show, its menu is 退出閱讀.
+private struct ReaderPreparingSurface: View {
+    let theme: ReaderTheme
+    let imageURL: URL?
+    let backIcon: Color
+    let error: String?
+    var onRetry: () -> Void
+    var onClose: () -> Void
+    @State private var showsChrome = false
+
+    /// A failure page has its own way out, so a tap raises nothing over it, as in the reader.
+    private var chromeIsShown: Bool { showsChrome && error == nil }
+
+    var body: some View {
+        // The reader's own stack, where it has one: shown full screen or by the shelf's card,
+        // with no stack above it to put 退出閱讀 in.
+        ReaderNavigationContainer {
+            ZStack {
+                ReaderSurfaceBackground(theme: theme, imageURL: imageURL)
+                if let error {
+                    BookOpenFailureView(
+                        message: error,
+                        titleColor: theme.textColor,
+                        detailColor: theme.textColor.opacity(0.62),
+                        onRetry: onRetry,
+                        onClose: onClose
+                    )
+                } else {
+                    ProgressView(localized("載入中…"))
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                        .readerLoadingChromeTap {
+                            withAnimation(DSAnimation.readerChrome) { showsChrome.toggle() }
+                        }
+                }
             }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .padding(DSSpacing.lg)
+            .navigationBarBackButtonHidden(true)
+            .toolbar {
+                ToolbarItem(placement: .topBarLeading) {
+                    Button(action: onClose) {
+                        Label(localized("退出閱讀"), systemImage: "chevron.left")
+                            .labelStyle(.iconOnly)
+                            .foregroundStyle(backIcon)
+                    }
+                    .accessibilityIdentifier("reader_back_button")
+                    .accessibilityLabel(localized("退出閱讀"))
+                }
+            }
+            .toolbar(chromeIsShown ? .visible : .hidden, for: .navigationBar)
+            .toolbarBackground(.hidden, for: .navigationBar)
+            .toolbarColorScheme(theme == .night ? .dark : .light, for: .navigationBar)
+            // Inside the stack, where the reader applies them too: that layer reaches the
+            // hosting controller through the stack.
+            .statusBarHidden(
+                ReaderOverlayPresentationPolicy.hidesStatusBar(showsReaderChrome: chromeIsShown, isEditing: false)
+            )
+            .persistentSystemOverlays(
+                ReaderOverlayPresentationPolicy.hidesHomeIndicator(showsReaderChrome: chromeIsShown, isEditing: false)
+                    ? .hidden : .automatic
+            )
+            .hidesRootTabBar()
         }
+        .tint(theme.textColor)
     }
 }
 
 /// 「無法開啟書籍」, the one page for a book that cannot be opened: before the format
-/// reader mounts (`RemoteReaderOpeningView`), and inside `ReaderView` when a local EPUB
+/// reader mounts (`ReaderPreparingView`), and inside `ReaderView` when a local EPUB
 /// fails to open. The reader draws it on the reading background, so it passes the
 /// reader's text colours; elsewhere the app's apply.
 struct BookOpenFailureView: View {
@@ -242,12 +311,19 @@ struct BookOpenFailureView: View {
     }
 }
 
-#Preview("Remote reader loading") {
-    RemoteReaderOpeningView(error: nil, onRetry: {}, onClose: {})
+#Preview("Preparing · reader's surface") {
+    ReaderPreparingView(error: nil, onRetry: {}, onClose: {})
 }
 
-#Preview("Remote reader error") {
-    RemoteReaderOpeningView(error: localized("認證失敗，請確認帳號和密碼"), onRetry: {}, onClose: {})
+#Preview("Preparing · 黑色") {
+    ReaderPreparingSurface(
+        theme: .night, imageURL: nil, backIcon: ReaderTheme.night.previewTextColor,
+        error: nil, onRetry: {}, onClose: {}
+    )
+}
+
+#Preview("Preparing · error") {
+    ReaderPreparingView(error: localized("認證失敗，請確認帳號和密碼"), onRetry: {}, onClose: {})
 }
 
 #Preview("Local EPUB failure in the reader") {

@@ -403,13 +403,7 @@ struct ReaderView: View {
     /// behind an opaque CoreText page. The same URL is passed into render settings
     /// so every paged canvas draws it beneath the text.
     var activeReaderBackgroundImageURL: URL? {
-        guard let background = readerBackgroundResolution.customBackground,
-              let url = settings.readerBackgroundImageURL(for: background),
-              FileManager.default.fileExists(atPath: url.path)
-        else {
-            return nil
-        }
-        return url
+        settings.readerBackgroundImageURL(wearing: readerBackgroundResolution)
     }
 
     /// The background on screen, for the reader's mode and its own pick.
@@ -417,32 +411,12 @@ struct ReaderView: View {
         settings.readerBackgroundResolution(mode: settings.readerMode, wornTheme: readerTheme)
     }
 
-    private var activeReaderBackgroundImage: UIImage? {
-        guard let url = activeReaderBackgroundImageURL else { return nil }
-        return UIImage(contentsOfFile: url.path)
-    }
-
     var readerScrollBackgroundColor: UIColor {
         activeReaderBackgroundImageURL == nil ? readerTheme.uiBackgroundColor : .clear
     }
 
-    @ViewBuilder
     var readerSurfaceBackground: some View {
-        // Keep decorative pixels out of layout measurement. A tall image used
-        // as a ZStack child reports its aspect-sized height and pushes reader
-        // chrome beyond both viewport edges; an overlay inherits the color's
-        // already-constrained reader surface instead.
-        readerTheme.backgroundColor
-            .overlay {
-                if let image = activeReaderBackgroundImage {
-                    Image(uiImage: image)
-                        .resizable()
-                        .scaledToFill()
-                }
-            }
-            .clipped()
-            .ignoresSafeArea()
-            .accessibilityHidden(true)
+        ReaderSurfaceBackground(theme: readerTheme, imageURL: activeReaderBackgroundImageURL)
     }
 
     /// The device's appearance, handed to the reader's mode as the reader opens, as the

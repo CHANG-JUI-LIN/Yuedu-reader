@@ -4,7 +4,7 @@ import Testing
 @testable import yuedu_app
 
 /// 開始閱讀 on a library item's detail page opens the reader at once; the reader downloads and
-/// prepares the copy under its own 正在開啟書籍 (`BookReaderView`). Until 2026-10-12 the page
+/// prepares the copy under its own 載入中… (`BookReaderView`). Until 2026-10-12 the page
 /// waited on that preparation itself, showing 正在開啟書籍 and 取消 under the hero.
 @MainActor
 @Suite("Remote library read action", .serialized)
