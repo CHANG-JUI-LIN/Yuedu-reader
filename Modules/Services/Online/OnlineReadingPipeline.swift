@@ -66,10 +66,6 @@ enum OnlineChapterCacheWritePolicy {
             hasBookSource: hasBookSource
         )
     }
-
-    static func contentFilename(chapterIndex: Int) -> String {
-        "\(chapterIndex).txt"
-    }
 }
 
 enum ChapterFetchPriority: Int {
@@ -503,7 +499,6 @@ actor ChapterFetchManager {
             }
 
             let bsf = bookSourceFetcher
-            let capturedStore = store
             let selfRef = self
             let content: String
             do {
@@ -514,7 +509,7 @@ actor ChapterFetchManager {
                         Task {
                             guard await selfRef.isTokenValid(taskKey: taskKey, token: myToken) else { return }
                             do {
-                                let filename = try bsf.saveToCache(
+                                try bsf.saveToCache(
                                     content: partial,
                                     bookId: bookId,
                                     chapterIndex: chapterIndex,
@@ -523,11 +518,6 @@ actor ChapterFetchManager {
                                     storeNormalizedHTML: false
                                 )
                                 await MainActor.run {
-                                    capturedStore?.updateCachedChapter(
-                                        bookId: bookId,
-                                        chapterIndex: chapterIndex,
-                                        filename: filename
-                                    )
                                     NotificationCenter.default.post(
                                         name: .onlineChapterCacheDidUpdate,
                                         object: nil,
@@ -589,17 +579,20 @@ actor ChapterFetchManager {
                         "len": package.content.count,
                     ])
                 }
-                let filename: String
-                if OnlineChapterCacheWritePolicy.shouldReusePersistedRenderArtifacts(
+                // BookSourceFetcher already persisted raw/normalized render artifacts when the
+                // policy says to reuse them. Re-saving from plain text here would strip
+                // HTML-only inline markers such as paragraph-review badges.
+                //
+                // The cached file is all a cached chapter is: `isChapterCached` and every load
+                // read the file. Each chapter used to be marked in the book's table of contents
+                // as well (`cachedFilename`), which nothing decides by, and each mark wrote the
+                // whole list again — 385 KB for a 2000-chapter book, per chapter read, preloaded
+                // or downloaded (3.0.0 (136) MetricKit disk-write exception, 1073 MB in a day).
+                if !OnlineChapterCacheWritePolicy.shouldReusePersistedRenderArtifacts(
                     package: package,
                     hasBookSource: book.chaptersBuiltByRules
                 ) {
-                    // BookSourceFetcher already persisted raw/normalized render artifacts.
-                    // Re-saving from plain text here would strip HTML-only inline markers
-                    // such as paragraph-review badges.
-                    filename = OnlineChapterCacheWritePolicy.contentFilename(chapterIndex: chapterIndex)
-                } else {
-                    filename = try bookSourceFetcher.saveToCache(
+                    try bookSourceFetcher.saveToCache(
                         content: package.content,
                         bookId: book.id,
                         chapterIndex: chapterIndex,
@@ -607,10 +600,6 @@ actor ChapterFetchManager {
                         tocTitle: ref.title,
                         storeNormalizedHTML: book.chaptersBuiltByRules
                     )
-                }
-                await MainActor.run {
-                    store?.updateCachedChapter(
-                        bookId: book.id, chapterIndex: chapterIndex, filename: filename)
                 }
                 states[taskKey] = .cached
                 // Success: reset failure counter

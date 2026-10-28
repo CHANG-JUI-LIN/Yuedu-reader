@@ -24,27 +24,6 @@ struct BookStoreBackgroundPublishTests {
         }
     }
 
-    @Test("marking a chapter cached does not publish the store")
-    @MainActor
-    func cacheMarkDoesNotPublish() async throws {
-        let (store, directory) = makeStore()
-        defer { try? FileManager.default.removeItem(at: directory) }
-        let book = store.addOnlineBook(
-            name: "書", author: "作者", sourceId: UUID(), bookInfoURL: "https://example.com/book",
-            tocURL: "https://example.com/toc", runtimeVariables: nil, chapters: chapters(5)
-        )
-        let publications = OSAllocatedUnfairLock(initialState: 0)
-        let subscription = store.objectWillChange.sink { publications.withLock { $0 += 1 } }
-        defer { subscription.cancel() }
-
-        store.updateCachedChapter(bookId: book.id, chapterIndex: 2, filename: "2.html")
-        store.updateCachedChapter(bookId: book.id, chapterIndex: 2, filename: "2.html")
-
-        #expect(publications.withLock { $0 } == 0)
-        #expect(store.chapters(for: book.id)?[2].cachedFilename == "2.html")
-        #expect(store.readingBook(id: book.id)?.onlineChapters?[2].cachedFilename == "2.html")
-    }
-
     @Test("a table-of-contents refresh replaces the record once, and not at all when nothing changed")
     func refreshPublishesOnce() async throws {
         let source = BookSource(bookSourceUrl: "https://example.com", bookSourceName: "測試書源")

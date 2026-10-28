@@ -734,7 +734,11 @@ struct OnlineChapterRef: Identifiable, Codable, Equatable {
     var isVolume: Bool = false
     var isVip: Bool = false
     var isPay: Bool = false
-    var cachedFilename: String? = nil  // nil means not yet fetched
+    /// Set by builds up to 3.0.0 (136) whenever a chapter was cached; nothing sets it now,
+    /// and nothing decides by it — the cached file is the record (`isChapterCached`). Lists
+    /// saved before still carry it, and the refresh carries it over, so no list is written
+    /// again just to drop it.
+    var cachedFilename: String? = nil
     var runtimeVariables: [String: String]? = nil
     var audioStartSeconds: Double? = nil
     var audioDurationSeconds: Double? = nil

@@ -597,7 +597,6 @@ struct ParagraphReviewMarkerTests {
             package: packageWithReviewHTML,
             hasBookSource: true
         ))
-        #expect(OnlineChapterCacheWritePolicy.contentFilename(chapterIndex: 4) == "4.txt")
         #expect(!OnlineChapterCacheWritePolicy.shouldReusePersistedRenderArtifacts(
             package: packageWithReviewHTML,
             hasBookSource: false

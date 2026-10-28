@@ -112,11 +112,21 @@ struct ModuleBookTests {
         let manager = ChapterFetchManager(webViewFetcher: WebViewFetcher.shared, moduleReader: setup.reader)
 
         let book = try #require(setup.store.readingBook(id: copy.id))
+        setup.store.flushPendingMetadataSave()
+        setup.store.waitForQueuedWrites()
+        let list = setup.folder.appendingPathComponent("books_meta.chapters/\(copy.id.uuidString).json")
+        let listBefore = try FileManager.default.attributesOfItem(atPath: list.path)[.systemFileNumber] as? Int
         let package = try await manager.fetchChapter(book: book, chapterIndex: 0, priority: .immediate, store: setup.store)
         #expect(package.content.contains("俺は34歳住所不定無職。"))
         #expect(package.normalizedHTMLFilename != nil && package.rawHTMLFilename != nil, "the reader draws the module's HTML")
         #expect(ModuleStub.urls == [chapterURL])
         #expect(ModuleStub.userAgents.allSatisfy { $0.hasPrefix("yuedureader/") })
+        // Marking the chapter in its list wrote the whole list again, per chapter read or
+        // downloaded: 1073 MB in a day on a 12 MB-of-lists shelf (MetricKit, 3.0.0 (136)).
+        setup.store.flushPendingMetadataSave()
+        setup.store.waitForQueuedWrites()
+        #expect(try FileManager.default.attributesOfItem(atPath: list.path)[.systemFileNumber] as? Int == listBefore,
+                "a cached chapter is its file: the table of contents is not written again for it")
 
         let again = try await manager.fetchChapter(book: book, chapterIndex: 0, priority: .immediate, store: setup.store)
         #expect(again.contentChecksum == package.contentChecksum)

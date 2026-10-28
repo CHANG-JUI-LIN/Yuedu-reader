@@ -1890,22 +1890,7 @@ class BookStore: @MainActor ObservableObject, BookProvider {
         return readingBook(id: book.id) ?? book
     }
 
-    // MARK: Update Cached Chapters
-
-    func updateCachedChapter(bookId: UUID, chapterIndex: Int, filename: String) {
-        guard records.contains(where: { $0.id == bookId }),
-            var chapters = chapterStore.chapters(for: bookId),
-            let ci = chapters.firstIndex(where: { $0.index == chapterIndex }),
-            chapters[ci].cachedFilename != filename
-        else { return }
-        chapters[ci].cachedFilename = filename
-        // The list changes, the record does not: a cache mark is not a shelf change, and
-        // going through `records` published the whole store to every view on it once per
-        // chapter a download fetched. legado's `BookHelp.saveContent` writes the file and
-        // touches no book row either. The list is written by the next shelf save.
-        chapterStore.setChapters(chapters, for: bookId)
-        saveMeta()
-    }
+    // MARK: Cached Chapter Marks
 
     func clearCachedChapter(bookId: UUID, chapterIndex: Int) {
         guard let idx = records.firstIndex(where: { $0.id == bookId }),

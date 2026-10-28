@@ -46,29 +46,6 @@ struct BookChapterStorageTests {
         #expect(saved.first { $0.id == first.id }?.currentPosition == 0.5)
     }
 
-    @Test("marking one chapter cached rewrites only that book's table of contents")
-    func cachedChapterMarkRewritesOnlyItsBook() throws {
-        let directory = try makeDirectory()
-        defer { try? FileManager.default.removeItem(at: directory) }
-        let metadataURL = directory.appendingPathComponent("books_meta.json")
-        let store = BookStore(metadataFileURL: metadataURL)
-        let read = onlineBook(title: "正在聽", chapterCount: 40)
-        let other = onlineBook(title: "沒動", chapterCount: 40)
-        store.replaceBooksFromSync([read, other])
-        let readBefore = try fileNumber(of: chapterFile(for: read.id, metadataURL: metadataURL))
-        let otherBefore = try fileNumber(of: chapterFile(for: other.id, metadataURL: metadataURL))
-
-        // 聽書每念完一章就會標記快取；離開前景時寫下。
-        store.updateCachedChapter(bookId: read.id, chapterIndex: 7, filename: "chapter-7.html")
-        store.flushPendingMetadataSave()
-        store.waitForQueuedWrites()
-
-        #expect(try fileNumber(of: chapterFile(for: read.id, metadataURL: metadataURL)) != readBefore)
-        #expect(try fileNumber(of: chapterFile(for: other.id, metadataURL: metadataURL)) == otherBefore)
-        let reopened = BookStore(metadataFileURL: metadataURL)
-        #expect(reopened.readingBook(id: read.id)?.onlineChapters?[7].cachedFilename == "chapter-7.html")
-    }
-
     @Test("a shelf saved with its tables of contents inside opens complete and moves them out")
     func inlineShelfOpensCompleteAndMovesListsOut() throws {
         let directory = try makeDirectory()
@@ -260,7 +237,7 @@ struct BookChapterStorageTests {
 
         var flushes: [Double] = []
         for chapter in 0..<3 {
-            store.updateCachedChapter(bookId: target, chapterIndex: chapter, filename: "chapter-\(chapter).html")
+            store.updatePosition(bookId: target, position: Double(chapter + 1) / 100)
             t0 = SourcePerfTrace.now
             store.flushPendingMetadataSave()
             flushes.append(milliseconds(since: t0))
