@@ -36,4 +36,34 @@ struct MainThreadMonitorTests {
         SourcePerfTrace.span("test.balanced", thresholdMs: 60_000) {}
         #expect(MainThreadActivity.snapshot() == before)
     }
+
+    @Test("a blocking wait is named only when the main thread is the one waiting")
+    @MainActor
+    func mainThreadWaitIsNamedOnMain() async {
+        let onMain = SourcePerfTrace.mainThreadWait("test.wait") { MainThreadActivity.snapshot() }
+        #expect(onMain.last == "test.wait")
+        let offMain = await Task.detached {
+            SourcePerfTrace.mainThreadWait("test.wait") { MainThreadActivity.snapshot() }
+        }.value
+        #expect(!offMain.contains("test.wait"))
+    }
+
+    @Test("a main thread blocked on a JS bridge's result is inside wait.blockingResult")
+    @MainActor
+    func blockingResultWaitIsNamed() {
+        let result = BlockingResult<Bool>()
+        // The callback answers once it sees the main thread waiting. A blocked main thread
+        // cannot signal that it got there; the activity stack, which is what the monitor
+        // reads, is the only thing that shows it, so the callback checks it (≤5 s).
+        let callback = Thread {
+            var seen = false
+            for _ in 0..<5_000 where !seen {
+                seen = MainThreadActivity.snapshot().last == "wait.blockingResult"
+                if !seen { Thread.sleep(forTimeInterval: 0.001) }
+            }
+            result.deliver(seen)
+        }
+        callback.start()
+        #expect(result.wait(timeout: .now() + 10) == true)
+    }
 }

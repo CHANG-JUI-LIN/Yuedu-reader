@@ -73,7 +73,11 @@ enum RegexSanitizer {
         }
         worker.qualityOfService = Thread.current.qualityOfService
         worker.start()
-        if sema.wait(timeout: .now() + seconds) == .timedOut {
+        var timedOut = false
+        SourcePerfTrace.mainThreadWait("wait.regex", "timeout=\(seconds)s timedOut=\(timedOut)") {
+            timedOut = sema.wait(timeout: .now() + seconds) == .timedOut
+        }
+        if timedOut {
             return fallback
         }
         return box.value ?? fallback

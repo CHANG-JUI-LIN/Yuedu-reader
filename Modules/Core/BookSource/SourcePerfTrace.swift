@@ -17,6 +17,10 @@ import Foundation
 ///     engine's runs per paragraph and is a YueduCoreText Points of Interest interval)
 ///   reader.open.transition / reader.open.contentGate / reader.open.contentHold
 ///   reader.open.deferredPreload
+///   reader.page.neighbour / willTransition / didFinish / display  (a paged-mode turn's
+///     main-thread steps; logged only past 50ms, named by `MainThreadMonitor` at any length)
+///   wait.jsQueue / wait.blockingResult / wait.regex / wait.reviewSummary  (a blocking wait
+///     on the main thread only — `mainThreadWait`)
 ///   search.presentation.runtimeMarkers / kindInference / coverURL / introSanitize / mainMerge
 ///   search.presentation.coverURL.rejected
 ///   search.listPublish / search.listPublish.summary
@@ -49,6 +53,21 @@ enum SourcePerfTrace {
             record(stage, detail(), since: t0, thresholdMs: thresholdMs)
         }
         return try body()
+    }
+
+    /// A blocking wait (`wait.*`), measured only when the main thread is the one waiting.
+    /// Off the main thread these waits are the design — a JS queue, a regex worker — and
+    /// timing them would only add log lines; on the main thread one is a stall, and a wait
+    /// that runs out its timeout lasts a round number of seconds, the shape the reader's
+    /// recurring "no instrumented span" stalls have (Crashlytics 6f607251, install 26DCAAAC).
+    @discardableResult
+    static func mainThreadWait<T>(
+        _ stage: String,
+        _ detail: @autoclosure () -> String = "",
+        _ body: () throws -> T
+    ) rethrows -> T {
+        guard Thread.isMainThread else { return try body() }
+        return try span(stage, detail(), thresholdMs: 5, body)
     }
 
     /// Measure an async span. Runs in the caller's isolation, so `body` stays in the

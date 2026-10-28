@@ -106,7 +106,10 @@ final class ReviewSummaryResponseCache: @unchecked Sendable {
         let group = inFlight[key]?.group
         lock.unlock()
         guard let group else { return value(sourceKey: sourceKey, requestURL: requestURL) }
-        guard group.wait(timeout: .now() + timeout) == .success else { return nil }
+        let outcome = SourcePerfTrace.mainThreadWait("wait.reviewSummary", "timeout=\(Int(timeout))s") {
+            group.wait(timeout: .now() + timeout)
+        }
+        guard outcome == .success else { return nil }
         return value(sourceKey: sourceKey, requestURL: requestURL)
     }
 

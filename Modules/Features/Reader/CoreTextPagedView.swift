@@ -1850,7 +1850,9 @@ struct CoreTextPageEngineView: UIViewControllerRepresentable {
             let neighbourTrace = pageTurnTrace.beginNeighbour("before")
             // RTL: swipe left-to-right = "before" in physical gesture, but should go to NEXT page.
             // So swap Before↔After for RTL books so the swipe direction matches the reading direction.
-            let neighbour = isRTL ? pageForward(from: viewController) : pageBackward(from: viewController)
+            let neighbour = SourcePerfTrace.span("reader.page.neighbour", "before", thresholdMs: 50) {
+                isRTL ? pageForward(from: viewController) : pageBackward(from: viewController)
+            }
             pageTurnTrace.endNeighbour(neighbourTrace, neighbour)
             if neighbour == nil { recordCurlBoundary(asked: "before", from: viewController, on: pvc) }
             return neighbour
@@ -1861,7 +1863,9 @@ struct CoreTextPageEngineView: UIViewControllerRepresentable {
             viewControllerAfter viewController: UIViewController
         ) -> UIViewController? {
             let neighbourTrace = pageTurnTrace.beginNeighbour("after")
-            let neighbour = isRTL ? pageBackward(from: viewController) : pageForward(from: viewController)
+            let neighbour = SourcePerfTrace.span("reader.page.neighbour", "after", thresholdMs: 50) {
+                isRTL ? pageBackward(from: viewController) : pageForward(from: viewController)
+            }
             pageTurnTrace.endNeighbour(neighbourTrace, neighbour)
             if neighbour == nil { recordCurlBoundary(asked: "after", from: viewController, on: pvc) }
             return neighbour
@@ -1991,6 +1995,18 @@ struct CoreTextPageEngineView: UIViewControllerRepresentable {
             _ pvc: UIPageViewController,
             willTransitionTo pendingViewControllers: [UIViewController]
         ) {
+            // A paged-mode turn's main-thread steps are spans, so a stall in one is named:
+            // the reader's recurring stalls (Crashlytics 6f607251, install 26DCAAAC) come every
+            // 5–7 s, on that reader's page-turn rhythm, and said "no instrumented span".
+            SourcePerfTrace.span("reader.page.willTransition", thresholdMs: 50) {
+                nativeTurnWillTransition(pvc, to: pendingViewControllers)
+            }
+        }
+
+        private func nativeTurnWillTransition(
+            _ pvc: UIPageViewController,
+            to pendingViewControllers: [UIViewController]
+        ) {
             pageTurnTrace.beginNativeTurn(
                 on: pvc,
                 from: (readingPage(of: pvc) as? any PageIndexProviding & UIViewController)?.globalPageIndex,
@@ -2047,6 +2063,12 @@ struct CoreTextPageEngineView: UIViewControllerRepresentable {
             previousViewControllers: [UIViewController],
             transitionCompleted completed: Bool
         ) {
+            SourcePerfTrace.span("reader.page.didFinish", "completed=\(completed)", thresholdMs: 50) {
+                nativeTurnDidFinish(pvc, completed: completed)
+            }
+        }
+
+        private func nativeTurnDidFinish(_ pvc: UIPageViewController, completed: Bool) {
             pageTurnTrace.endNativeTurn(
                 completed: completed,
                 landed: (readingPage(of: pvc) as? any PageIndexProviding & UIViewController)?.globalPageIndex

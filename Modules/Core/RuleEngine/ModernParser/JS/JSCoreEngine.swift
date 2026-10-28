@@ -326,7 +326,7 @@ class JSCoreEngine {
         if DispatchQueue.getSpecific(key: jsQueueKey) != nil {
             return work() // already on the JS queue — run inline
         }
-        return safeJsQueue.sync { work() }
+        return SourcePerfTrace.mainThreadWait("wait.jsQueue") { safeJsQueue.sync { work() } }
     }
 
     /// Like `onJSQueue` but with a timeout. Returns `.timedOut` when the JS
@@ -366,11 +366,16 @@ class JSCoreEngine {
         // engine under it threw away the script's state and its result. The sheet always
         // ends (`BrowserAwaitBox`) — but it is shown on the main thread, so a caller blocking
         // the main thread here keeps the timeout: waiting on would leave it unable to appear.
-        while group.wait(timeout: .now() + Self.jsTimeout) == .timedOut {
-            if bridge.isAwaitingUser, !Thread.isMainThread { continue }
-            resetEngine()
-            return .timedOut
+        var timedOut = false
+        SourcePerfTrace.mainThreadWait("wait.jsQueue", "timeout=\(Int(Self.jsTimeout))s timedOut=\(timedOut)") {
+            while group.wait(timeout: .now() + Self.jsTimeout) == .timedOut {
+                if bridge.isAwaitingUser, !Thread.isMainThread { continue }
+                resetEngine()
+                timedOut = true
+                return
+            }
         }
+        if timedOut { return .timedOut }
 
         return .completed(result.withLock { $0 }!.value)
     }

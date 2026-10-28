@@ -676,6 +676,10 @@ final class CoreTextPageView: UIView, UIGestureRecognizerDelegate, @MainActor UI
     /// `override` only because Swift mirrors `CALayerDelegate` onto `UIView`; UIKit
     /// does not implement `displayLayer:`, so there is no `super` to call.
     override func display(_ layer: CALayer) {
+        SourcePerfTrace.span("reader.page.display", thresholdMs: 50) { displayPage(on: layer) }
+    }
+
+    private func displayPage(on layer: CALayer) {
         let size = bounds.size
         guard let layout, localPageIndex < layout.pageRanges.count,
               size.width > 0, size.height > 0 else {

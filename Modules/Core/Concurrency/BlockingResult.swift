@@ -23,13 +23,21 @@ final class BlockingResult<Value: Sendable>: Sendable {
 
     /// The delivered value, or nil when `timeout` passes first.
     func wait(timeout: DispatchTime) -> Value? {
-        guard semaphore.wait(timeout: timeout) == .success else { return nil }
-        return value.withLock { $0 }
+        var timedOut = false
+        return SourcePerfTrace.mainThreadWait("wait.blockingResult", "timedOut=\(timedOut)") {
+            guard semaphore.wait(timeout: timeout) == .success else {
+                timedOut = true
+                return nil
+            }
+            return value.withLock { $0 }
+        }
     }
 
     /// The delivered value, waiting as long as it takes.
     func wait() -> Value {
-        semaphore.wait()
+        SourcePerfTrace.mainThreadWait("wait.blockingResult", "timeout=none") {
+            semaphore.wait()
+        }
         // `deliver` stores before it signals, so the value is present here.
         return value.withLock { $0 }!
     }
