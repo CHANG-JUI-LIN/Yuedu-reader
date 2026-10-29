@@ -153,20 +153,27 @@ final class ModuleProvider: CollectionBrowsing, HomeSectionProviding {
                       after cursor: CollectionCursor?, keyword: String? = nil) async throws -> CollectionPage {
         let position = cursor.flatMap { Int($0.value) } ?? entry.firstPosition
         let items = try await items(of: entry, parameters: parameters, position: position, keyword: keyword)
-        let instance = instance
-        let hasURLRule = Self.hasURLRule(entry)
-        let hosts = RuleModuleHosts(module.hosts)
-        let isReadable = isReadable(entry)
-        // On the main actor, and 70 to 90 ms a list of 20 on an iOS 26.5 simulator: a span, so a
-        // main-thread stall during it is named.
-        let entries = SourcePerfTrace.span("module.entries", "module=\(module.id) items=\(items.count)", thresholdMs: 16) {
+        let entries = await Self.entries(items, of: entry, moduleID: module.id, instance: instance,
+                                         hasURLRule: Self.hasURLRule(entry), hosts: RuleModuleHosts(module.hosts),
+                                         isReadable: isReadable(entry))
+        return CollectionPage(
+            entries: entries,
+            next: entry.position(after: position, itemCount: items.count).map { CollectionCursor(value: String($0)) })
+    }
+
+    /// A list's items as entries, on the global concurrent executor. On the main actor this was 75
+    /// to 90 ms a Bangumi list of 20 on an iOS 26.5 simulator, holding the Explore home's rows while
+    /// they landed; most of it is `tags(of:)` folding each tag with `WorkMatchKey`'s Traditional →
+    /// Simplified transform.
+    @concurrent
+    private static func entries(_ items: [RuleListItem], of entry: RuleModule.Entry, moduleID: String,
+                                instance: SourceInstanceKey, hasURLRule: Bool, hosts: RuleModuleHosts,
+                                isReadable: Bool) async -> [CollectionEntry] {
+        SourcePerfTrace.span("module.entries", "module=\(moduleID) items=\(items.count)", thresholdMs: 16) {
             items.compactMap {
                 Self.entry($0, of: entry, instance: instance, hasURLRule: hasURLRule, hosts: hosts, isReadable: isReadable)
             }
         }
-        return CollectionPage(
-            entries: entries,
-            next: entry.position(after: position, itemCount: items.count).map { CollectionCursor(value: String($0)) })
     }
 
     /// Authors kept per item, and ISBNs (a classic lists hundreds of editions').

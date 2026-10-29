@@ -28,7 +28,9 @@ import Foundation
 ///   search.iOS17.nativeTableApply
 ///   home.sync / home.groups / home.rowContent  (the 探索 home's main-thread parts: building its
 ///     rows, its sections, a section's cards)
-///   module.entries  (a module list's items made into entries, on the main actor)
+///   module.entries  (a module list's items made into entries, off the main actor; wall clock:
+///     lists landing together wait on ICU's transliterator lock in `WorkMatchKey`, so it reads
+///     more than the work)
 ///   home.row  (a row's load, wall clock across its await: it includes time spent waiting for a
 ///     busy main thread, so it is not main-thread work even when its line says `main`)
 ///
