@@ -31,7 +31,9 @@ Organizer 簽名(每日)┘                        │                   └─�
   跨來源的「這則回饋＝那個崩潰」不在雲端猜，留給每天的 Claude Code 對照 `installIds`。
 - 欄位：`source`、`lastKind`、`title`、`summary`（最新一次的說明）、`sourceRef`（Console 網址或回饋編號；
   **不放 thread 路徑**——路徑含收件匣金鑰，會跟著通知送進 Telegram）、
-  `severity`（只升不降）、`status`（new／triaged／fixing／shipped／wontfix；回歸會把 shipped／wontfix 打回 new）、
+  `severity`（只升不降）、`status`（new／triaged／fixing／fixed／shipped／wontfix，像 GitHub issue：fixing＝修復 session 已接手、
+  fixed＝已提交未發版、shipped＝已發版；回歸會把 shipped／wontfix 打回 new）、`assignedTo`／`assignedAt`（接手的修復 session）、
+  `fixCommits`（修好的提交，跟提交訊息裡的 `Triage: <docId>` trailer 對應）、
   `threadPath`（只有回饋：thread 完整路徑，給每天的 Claude 讀整段對話和截圖；含收件匣金鑰，只存在這裡，通知不讀）、
   `triageNote`／`triagedAt`（每天的 Claude 寫）、
   `count`（活躍度分數，不是崩潰次數：回報／新 issue 各 +1、暴增加崩潰數、每日摘要加當天事件數，可能重疊）、`appVersions`、`installIds`、`firstSeenAt`／`lastSeenAt`、`eventIds`（最近 20 個，擋重送的事件）。
@@ -75,7 +77,10 @@ ASC 金鑰的三個 secret 移到 `appStoreConnectSecrets.ts`，TestFlight 邀�
    堆疊與回饋整段對話＋截圖，對照程式碼找根因，產出報告；每項能修的開一張 session 提案卡（不自動開工）；
    讀過的項目標 `triaged`＋`triageNote`。不改程式、不提交、不部署、不寫 `feedbackInboxes/`。
 2. 排程：Claude 桌面 App 的排程任務 `yuedu-daily-triage`，每天 08:30（本機時間；App 沒開就等下次開啟時跑）。
-3. 修好提交後標 `fixing`，上線後標 `shipped` 並擬回覆；回覆經你逐則確認才用 `functions/tools/feedback.ts reply` 送出
+3. 像 GitHub issue（2026-10-29 起）：修復卡片的 session 第一步把項目標 `fixing`（`assignedTo`／`assignedAt`）；
+   提交訊息帶 `Triage: <docId>` trailer（回饋另在標題結尾帶 `(FB-N)`；不用 `(#N)`，那是 GitHub PR 編號、會跟回饋編號撞號），提交後標 `fixed`＋`fixCommits`；
+   每天的 /triage 先掃 git log 的 trailer 補標漏掉的 `fixed`，並列出認領超過 3 天沒提交的項目。
+   發版時用 trailer 列出這一版修了什麼、標 `shipped` 並擬回覆；回覆經你逐則確認才用 `functions/tools/feedback.ts reply` 送出
    （要先 `gcloud auth application-default login`）。
 4. 查詢 `status IN … ORDER BY lastSeenAt DESC` 用的複合索引在 `firestore.indexes.json`。
 
