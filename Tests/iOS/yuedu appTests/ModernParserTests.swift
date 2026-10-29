@@ -4185,6 +4185,26 @@ struct ModernParserBridgeExploreTests {
         #expect(books.map(\.bookUrl) == ["https://example.com/book/1"])
     }
 
+    @Test("each explore row keeps its own java.put, out of the source's stored state")
+    func exploreRowsKeepTheirOwnPuts() {
+        var source = BookSource()
+        source.bookSourceUrl = "https://explore-put-\(UUID().uuidString).example"
+        source.bookSourceName = "explore put fixture"
+        source.ruleExplore.bookList = "$.list[*]"
+        source.ruleExplore.name = "$.name"
+        source.ruleExplore.bookUrl = "$.url@js:java.put('bid', String(java.getString('$.id'))); result"
+        let store = BookSourceRuntimeStateStore.shared
+        defer { UserDefaults.standard.removePersistentDomain(forName: store.suiteName(for: source.bookSourceUrl)) }
+
+        let books = ModernParserBridge(source: source).parseExploreResults(
+            html: #"{"list":[{"id":"e1","name":"甲","url":"https://explore-put.example/e1"},{"id":"e2","name":"乙","url":"https://explore-put.example/e2"}]}"#,
+            baseURL: "https://explore-put.example/rank", source: source
+        )
+
+        #expect(books.map { $0.runtimeVariables?["bid"] } == ["e1", "e2"])
+        #expect(store.sourceValue(for: source.bookSourceUrl, key: "bid") == nil)
+    }
+
     @Test("browser script discover URL stays an action")
     func browserScriptDiscoverURLStaysAction() async throws {
         let raw = ModernParserBridge.DiscoverItem(

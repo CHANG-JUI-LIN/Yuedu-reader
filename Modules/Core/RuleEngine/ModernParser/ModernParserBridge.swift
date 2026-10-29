@@ -394,6 +394,8 @@ class ModernParserBridge {
                 bookScope.putVariable(key: key, value: value)
                 return
             }
+            // No row, book or chapter in scope — jsLib, `loginCheckJs`, a source's own
+            // scripts: Legado's `source.put`, which the source keeps.
             self.sourceRuleData.putVariable(key: key, value: value)
             self.runtimeStateStore.setSourceValue(
                 value,
@@ -1023,7 +1025,7 @@ class ModernParserBridge {
         let engine = makeEngine()
         let rule = source.ruleSearch
         var withoutLink: [String] = []
-        let books = RuleListMapping.items(
+        let books = listItems(
             engine: engine, content: html, baseURL: baseURL, listRule: rule.bookList,
             fields: RuleListFields(name: rule.name, author: rule.author, bookUrl: rule.bookUrl, coverUrl: rule.coverUrl,
                                    intro: rule.intro, wordCount: rule.wordCount, lastChapter: rule.lastChapter, kind: rule.kind),
@@ -1055,7 +1057,15 @@ class ModernParserBridge {
             jsEngine.bookBridge.bookUrl = bookUrl
         }
         jsEngine.setChapterBridge(LegadoChapterBridge())
+        // Legado's `BookInfo.analyzeBookInfo` runs these rules against the book, so a `@put` or
+        // `java.put` here is the book's: it comes back in the result's `runtimeVariables`, not
+        // in the source's stored state.
+        let bookScope = RuleData()
+        runtimeBookScope = bookScope
+        runtimeChapterScope = nil
+        defer { runtimeBookScope = nil }
         let engine = makeEngine()
+        engine.book = bookScope
         engine.setContent(html, baseUrl: baseURL)
 
         // Execute init script if present (Legado ruleBookInfo.init)
@@ -2323,7 +2333,7 @@ class ModernParserBridge {
         // <img>, like zymk's `class.item@h3`) leaves the cover empty, which is what the
         // cover-broaden retry below looks for.
         func parseBooks(listVariant: String) -> [OnlineBook] {
-            RuleListMapping.items(engine: engine, content: html, baseURL: baseURL, listRule: listVariant, fields: fields)
+            listItems(engine: engine, content: html, baseURL: baseURL, listRule: listVariant, fields: fields)
                 .map { OnlineBook($0, source: source) }
         }
 
@@ -2374,6 +2384,45 @@ class ModernParserBridge {
             return discoverItemsAsBooks(html: html, source: source)
         }
         return books
+    }
+
+    /// A search or explore list read the way Legado's `BookList.analyzeBookList` scopes it: the
+    /// list rule against the page's own `RuleData` (`WebBook`'s), each item against its own
+    /// `SearchBook`, which starts from the page's variables. A `@put` or `java.put` lands there
+    /// and travels with that book as its `runtimeVariables`. Stored as source state, a per-row
+    /// put rewrote the source's preferences once per result (Crashlytics afe8e4bd, 3.0.0) and
+    /// left the next stage reading whichever row ran last.
+    private func listItems(
+        engine: ModernRuleEngine,
+        content: Any,
+        baseURL: String,
+        listRule: String,
+        fields: RuleListFields,
+        earlyFilter: ((_ name: String, _ author: String) -> Bool)? = nil,
+        onMissingLink: ((_ name: String) -> Void)? = nil
+    ) -> [RuleListItem] {
+        let listScope = RuleData()
+        runtimeChapterScope = nil
+        runtimeBookScope = listScope
+        engine.chapter = nil
+        engine.book = nil
+        engine.ruleData = listScope
+        defer {
+            runtimeBookScope = nil
+            engine.book = nil
+            engine.ruleData = nil
+        }
+        return RuleListMapping.items(
+            engine: engine, content: content, baseURL: baseURL, listRule: listRule, fields: fields,
+            earlyFilter: earlyFilter, onMissingLink: onMissingLink,
+            itemScope: { [self] in
+                let itemScope = RuleData()
+                itemScope.variableMap = listScope.variableMap
+                runtimeBookScope = itemScope
+                engine.book = itemScope
+                return itemScope
+            }
+        )
     }
 
     /// Last-resort discover parse: decode the payload as a JSON list of `{title,url}`
@@ -2838,6 +2887,17 @@ class ModernParserBridge {
 
         let newHash = jsLib.md5Hash
         guard newHash != evaluatedJsLibHash else { return }
+
+        // jsLib is the source's own script whichever stage first needs it — the runtime is
+        // built lazily, so that can be a search row's or a TOC's first `@js:`. A top-level
+        // `java.put` in it is the source's, not that row's or book's.
+        let scopes = (book: runtimeBookScope, chapter: runtimeChapterScope)
+        runtimeBookScope = nil
+        runtimeChapterScope = nil
+        defer {
+            runtimeBookScope = scopes.book
+            runtimeChapterScope = scopes.chapter
+        }
 
         _ = engine.withExecutionStage("jsLib") {
             engine.evaluate(jsLib)

@@ -723,4 +723,109 @@ struct LegadoParserBridgeContractTests {
         #expect(capturedHeaders["X-Source"] == "source-value")
         #expect(capturedHeaders["Authorization"] == "Bearer fixture")
     }
+
+    // MARK: - Where a put lands (Crashlytics afe8e4bd855dd39d55423aab8a7a721b)
+
+    /// Legado (legado-E, MD3 and Sigma agree) puts `chapter ?: book ?: ruleData ?: source`, and
+    /// a search item's `book` is its own `SearchBook`, which starts from the list's variables.
+    private static func putScopeSource() -> BookSource {
+        var source = BookSource(
+            bookSourceUrl: "https://put-scope-\(UUID().uuidString).example",
+            bookSourceName: "put scope fixture"
+        )
+        source.ruleSearch.bookList = "$.data[*]@put:{q:$.q}"
+        source.ruleSearch.name = "$.name"
+        source.ruleSearch.author = "$.author@put:{aid:$.aid}"
+        source.ruleSearch.bookUrl = "$.url@js:java.put('bid', String(java.getString('$.id'))); result"
+        return source
+    }
+
+    private static let putSearchPage = """
+    {"q":"關鍵字","data":[\
+    {"id":"a1","aid":"x1","name":"甲","author":"作者甲","url":"https://put-scope.example/book/a1"},\
+    {"id":"b2","aid":"x2","name":"乙","author":"作者乙","url":"https://put-scope.example/book/b2"},\
+    {"id":"c3","aid":"x3","name":"丙","author":"作者丙","url":"https://put-scope.example/book/c3"}]}
+    """
+
+    private static func removeSourceState(_ source: BookSource) {
+        UserDefaults.standard.removePersistentDomain(
+            forName: BookSourceRuntimeStateStore.shared.suiteName(for: source.bookSourceUrl)
+        )
+    }
+
+    @Test("each search row keeps its own put, from java.put and @put alike")
+    func searchRowsKeepTheirOwnPuts() throws {
+        let source = Self.putScopeSource()
+        defer { Self.removeSourceState(source) }
+        let bridge = ModernParserBridge(source: source)
+
+        let books = try bridge.parseSearchResults(
+            html: Self.putSearchPage, baseURL: "https://put-scope.example/search", source: source
+        )
+
+        #expect(books.map { $0.runtimeVariables?["bid"] } == ["a1", "b2", "c3"])
+        #expect(books.map { $0.runtimeVariables?["aid"] } == ["x1", "x2", "x3"])
+        #expect(books.map { $0.runtimeVariables?["q"] } == ["關鍵字", "關鍵字", "關鍵字"])
+        #expect(BookSourceRuntimeStateStore.shared.sourceValue(for: source.bookSourceUrl, key: "bid") == nil)
+        #expect(bridge.sourceRuleData.variableMap["bid"] == nil)
+        #expect(bridge.sourceRuleData.variableMap["aid"] == nil)
+    }
+
+    /// The first row, parsed before two others: a detail page read whichever row ran last.
+    @Test("a searched book reads its own row's put in detail, TOC and content")
+    func laterStagesReadTheirOwnRowsPut() throws {
+        var source = Self.putScopeSource()
+        source.ruleBookInfo.name = "@js:java.get('bid')"
+        source.ruleBookInfo.intro = "@js:java.put('detailToken', 'd-' + java.get('bid')); 'intro'"
+        source.ruleToc.chapterList = "$.chapters[*]"
+        source.ruleToc.chapterName = "@js:java.get('bid') + '/' + java.get('detailToken')"
+        source.ruleToc.chapterUrl = "$.url"
+        source.ruleContent.content = "@js:java.get('bid') + '/' + java.get('detailToken')"
+        defer { Self.removeSourceState(source) }
+        let bridge = ModernParserBridge(source: source)
+        let books = try bridge.parseSearchResults(
+            html: Self.putSearchPage, baseURL: "https://put-scope.example/search", source: source
+        )
+        let first = try #require(books.first)
+
+        let info = try bridge.parseBookInfo(
+            html: "{}", bookUrl: first.bookUrl, baseURL: first.bookUrl,
+            source: source, runtimeVariables: first.runtimeVariables
+        )
+        #expect(info.name == "a1")
+        #expect(info.runtimeVariables?["detailToken"] == "d-a1")
+        #expect(BookSourceRuntimeStateStore.shared.sourceValue(for: source.bookSourceUrl, key: "detailToken") == nil)
+
+        let chapters = try bridge.parseTOC(
+            html: #"{"chapters":[{"url":"https://put-scope.example/chapter/1"}]}"#,
+            baseURL: "https://put-scope.example/toc/a1", source: source, runtimeVariables: info.runtimeVariables
+        )
+        #expect(chapters.map(\.title) == ["a1/d-a1"])
+
+        let chapter = try #require(chapters.first)
+        let content = try bridge.parseChapterResult(
+            html: "{}", baseURL: chapter.url, source: source,
+            runtimeVariables: info.runtimeVariables, chapterRef: chapter
+        )
+        #expect(content.content == "a1/d-a1")
+    }
+
+    /// The runtime is built on first use, here inside the first row's `@js:`, and jsLib loads then.
+    @Test("a put with no row or book in scope is still the source's")
+    func sourceLevelPutsStayWithTheSource() throws {
+        var source = Self.putScopeSource()
+        source.jsLib = "java.put('libKey', 'lib');"
+        defer { Self.removeSourceState(source) }
+        let bridge = ModernParserBridge(source: source)
+
+        let books = try bridge.parseSearchResults(
+            html: Self.putSearchPage, baseURL: "https://put-scope.example/search", source: source
+        )
+        _ = bridge.evaluateSourceScript("java.put('scriptKey', 'script')")
+
+        let store = BookSourceRuntimeStateStore.shared
+        #expect(store.sourceValue(for: source.bookSourceUrl, key: "libKey") == "lib")
+        #expect(store.sourceValue(for: source.bookSourceUrl, key: "scriptKey") == "script")
+        #expect(books.allSatisfy { $0.runtimeVariables?["libKey"] == nil })
+    }
 }

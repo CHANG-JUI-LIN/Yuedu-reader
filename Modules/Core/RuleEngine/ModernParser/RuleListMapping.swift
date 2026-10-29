@@ -44,6 +44,10 @@ struct RuleListItem: Codable, Equatable, Sendable {
     var series: String? = nil
     var seriesCovers: [String]? = nil
     var contentKind: String? = nil
+    /// What the item's rules put (`@put`, `java.put`) on top of the list's own puts: Legado's
+    /// `SearchBook.variable`, which travels with the book into its detail, TOC and content.
+    /// Nil when nothing was put, or when the caller gave no item scope.
+    var runtimeVariables: [String: String]? = nil
 }
 
 enum RuleListMapping {
@@ -56,6 +60,9 @@ enum RuleListMapping {
     ///   left out and named here. Legado lists it as its page (`bookUrl = baseUrl`), which is
     ///   how a site's "no results" row (「没有找到包含：…」) became a book in 搜尋 (search 9a). An
     ///   empty link rule still means the page itself, as Legado has it.
+    /// - Parameter itemScope: called before each item's rules run; the scope it returns is
+    ///   where that item's puts land, and its variables become the item's `runtimeVariables`
+    ///   (Legado's `analyzeRule.setRuleData(searchBook)` in `BookList.getSearchItem`).
     static func items(
         engine: ModernRuleEngine,
         content: Any,
@@ -63,12 +70,14 @@ enum RuleListMapping {
         listRule: String,
         fields: RuleListFields,
         earlyFilter: ((_ name: String, _ author: String) -> Bool)? = nil,
-        onMissingLink: ((_ name: String) -> Void)? = nil
+        onMissingLink: ((_ name: String) -> Void)? = nil,
+        itemScope: (() -> RuleDataInterface)? = nil
     ) -> [RuleListItem] {
         guard !listRule.isEmpty else { return [] }
         engine.setContent(content, baseUrl: baseURL)
         var items: [RuleListItem] = []
         for element in engine.getElements(ruleStr: listRule) {
+            let scope = itemScope?()
             engine.setContent(element, baseUrl: baseURL)
             let name = engine.getString(ruleStr: fields.name)
             guard !name.isEmpty else { continue }
@@ -105,7 +114,8 @@ enum RuleListMapping {
                 isbn: value(engine, fields.isbn),
                 series: value(engine, fields.series),
                 seriesCovers: values(engine, fields.seriesCovers),
-                contentKind: value(engine, fields.contentKind)
+                contentKind: value(engine, fields.contentKind),
+                runtimeVariables: scope.flatMap { $0.variableMap.isEmpty ? nil : $0.variableMap }
             ))
         }
         return items
@@ -131,6 +141,6 @@ extension OnlineBook {
     init(_ item: RuleListItem, source: BookSource) {
         self.init(name: item.name, author: item.author, intro: item.intro, coverUrl: item.coverUrl, bookUrl: item.bookUrl,
                   tocUrl: "", wordCount: item.wordCount, lastChapter: item.lastChapter, kind: item.kind,
-                  sourceId: source.id, sourceName: source.bookSourceName)
+                  sourceId: source.id, sourceName: source.bookSourceName, runtimeVariables: item.runtimeVariables)
     }
 }

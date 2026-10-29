@@ -16,8 +16,9 @@ import Testing
 ///
 /// The writer: a search rule's `java.put` runs once per result row and stored the row's id in
 /// the one suite every source shared — 40,091 B per search page with 86 sources' state in it.
-/// A rule's `@put` never reaches that store, and an unchanged refresh or reading on writes no
-/// preferences at all.
+/// Each source then got a suite of its own (96f37317), and a row's put now stays with the row as
+/// Legado's `SearchBook.variable` does, so a search page writes no preferences — nor do an
+/// unchanged refresh or reading on.
 ///
 /// The simulator flushes on its own schedule, so the file's inode is no signal; each
 /// measurement compares a suite's contents before and after, and a changed suite counts its
@@ -120,10 +121,11 @@ struct UserDefaultsDiskWriteTests {
     // MARK: - Tests
 
     /// The writer behind the 4.3 GB: each row's id stored through a script's `java.put`.
-    /// Before 2026-10-29 every page rewrote all 86 sources' state (40,091 B); now only the
-    /// searching source's own small plist changes.
-    @Test("a search page whose rule calls java.put rewrites only its own source's state")
-    func scriptedPutSearchRewritesOnlyItsOwnSource() async throws {
+    /// Before 2026-10-29 every page rewrote all 86 sources' state (40,091 B); 96f37317 cut that
+    /// to the searching source's own plist, and now that the put belongs to its row, a page
+    /// writes no preferences at all.
+    @Test("a search page whose rule calls java.put writes no preferences")
+    func scriptedPutSearchWritesNothing() async throws {
         let seeded = Self.seedSourceState()
         var source = Self.searchSource()
         source.ruleSearch.bookUrl = "$.url@js:java.put('bid', String(java.getString('$.id'))); result"
@@ -134,14 +136,16 @@ struct UserDefaultsDiskWriteTests {
 
         let bridge = ModernParserBridge(source: source)
         for page in 0..<5 {
+            var books: [OnlineBook] = []
             let written = try await Self.measure("search.jsPutPage", suites: suites) {
-                _ = try bridge.parseSearchResults(
+                books = try bridge.parseSearchResults(
                     html: Self.searchPage(page), baseURL: "https://example.com/search?p=\(page)", source: source
                 )
             }
-            #expect(Set(written.keys) == [ownSuite])
-            #expect(written.values.reduce(0, +) < 1024)
+            #expect(written.isEmpty)
+            #expect(books.map { $0.runtimeVariables?["bid"] } == (0..<20).map { "\(page * 100 + $0)" })
         }
+        #expect(store.sourceValue(for: source.bookSourceUrl, key: "bid") == nil)
     }
 
     @Test("a search page whose rule uses @put, searched again, writes nothing")
