@@ -301,7 +301,7 @@ extension BookSourceFetcher {
         let (html, finalUrl) = try await SourcePerfTrace.spanAsync(
             "chapter.network", source.bookSourceName
         ) {
-            try await session.fetch(ruleUrl: ref.url)
+            try await session.fetch(ruleUrl: ref.url, runtimeVariables: ref.runtimeVariables)
         }
         let parsed = try await session.parse { bridge in
             try SourcePerfTrace.span("chapter.parse", source.bookSourceName) {

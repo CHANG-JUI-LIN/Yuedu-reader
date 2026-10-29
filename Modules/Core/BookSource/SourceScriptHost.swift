@@ -45,8 +45,12 @@ extension SourceScriptHost where Resident == ModernParserBridge {
         )
     }
 
-    func fetch(ruleUrl: String, key: String? = nil, page: Int? = nil) async throws -> (String, String) {
-        try await resident.fetch(ruleUrl: ruleUrl, key: key, page: page, on: self)
+    func fetch(
+        ruleUrl: String, key: String? = nil, page: Int? = nil, runtimeVariables: [String: String]? = nil
+    ) async throws -> (String, String) {
+        try await resident.fetch(
+            ruleUrl: ruleUrl, key: key, page: page, runtimeVariables: runtimeVariables, on: self
+        )
     }
 
     func searchBooks(keyword: String, page: Int = 1) async throws -> [OnlineBook] {

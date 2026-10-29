@@ -2521,13 +2521,16 @@ class ModernParserBridge {
 
     func fetch(
         ruleUrl: String, key: String? = nil, page: Int? = nil,
+        runtimeVariables: [String: String]? = nil,
         on host: isolated SourceScriptHost<ModernParserBridge>
     ) async throws -> (String, String) {
         // Building the request runs source JS (jsLib, cloud settings, `@js:` URLs and
         // templates) and so does reading the response (`loginCheckJs`, `bodyJs`). Both run
         // here on the host — a script may stop for the reader — and only the network
         // round-trip leaves it.
-        let prepared = try prepareFetch(ruleUrl: ruleUrl, key: key, page: page)
+        let prepared = try prepareFetch(
+            ruleUrl: ruleUrl, key: key, page: page, runtimeVariables: runtimeVariables
+        )
         let analyzeUrl: AnalyzeUrl
         let request: URLRequest
         switch prepared {
@@ -2584,7 +2587,13 @@ class ModernParserBridge {
     }
 
     /// `fetch`'s script half before the network: the rule URL resolved into a request.
-    private func prepareFetch(ruleUrl: String, key: String?, page: Int?) throws -> PreparedFetch {
+    private func prepareFetch(
+        ruleUrl: String, key: String?, page: Int?, runtimeVariables: [String: String]?
+    ) throws -> PreparedFetch {
+        // A book's request is built against its variables, as Legado's `AnalyzeUrl(ruleData =
+        // book)` builds it: a detail, TOC or content URL can read back what the book's search
+        // row put (`{{java.get('bid')}}`, `@get:{bid}`) before that stage's own rules run.
+        loadRuntimeVariables(runtimeVariables)
         // The rule URL itself can be `@js:` calling into jsLib — a 發現頁 item's url is
         // literally `@js:getApiUrl('/novel/novels', {…})`. jsLib is evaluated when the
         // bridge is built, but a JS timeout resets the engine and only the paths that ask

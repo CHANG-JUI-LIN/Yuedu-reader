@@ -810,6 +810,27 @@ struct LegadoParserBridgeContractTests {
         #expect(content.content == "a1/d-a1")
     }
 
+    /// A book's request goes out before its stage's rules load anything; the last row searched
+    /// is not the one opened.
+    @Test("a searched book's own put reaches the requests of its later stages")
+    func requestStagesReadTheirOwnRowsPut() async throws {
+        let source = Self.putScopeSource()
+        defer { Self.removeSourceState(source) }
+        let host = SourceScriptHost(bridgeFor: source)
+        let books = try await host.run {
+            try $0.parseSearchResults(
+                html: Self.putSearchPage, baseURL: "https://put-scope.example/search", source: source
+            )
+        }
+        let first = try #require(books.first)
+
+        let (body, _) = try await host.fetch(
+            ruleUrl: "data:;base64,{{java.base64Encode(java.get('bid'))}}",
+            runtimeVariables: first.runtimeVariables
+        )
+        #expect(body == "a1")
+    }
+
     /// The runtime is built on first use, here inside the first row's `@js:`, and jsLib loads then.
     @Test("a put with no row or book in scope is still the source's")
     func sourceLevelPutsStayWithTheSource() throws {

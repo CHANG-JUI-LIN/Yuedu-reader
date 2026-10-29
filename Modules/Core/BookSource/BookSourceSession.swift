@@ -108,8 +108,11 @@ final class BookSourceSession: Sendable {
     var queuedCallers: Int { gate.queuedCallers }
 
     /// A rule URL fetched with the source's runtime: script halves on the host, no turn.
-    func fetch(ruleUrl: String, key: String? = nil, page: Int? = nil) async throws -> (String, String) {
-        try await host.fetch(ruleUrl: ruleUrl, key: key, page: page)
+    /// `runtimeVariables` are the book's, for a request of a book's own stage.
+    func fetch(
+        ruleUrl: String, key: String? = nil, page: Int? = nil, runtimeVariables: [String: String]? = nil
+    ) async throws -> (String, String) {
+        try await host.fetch(ruleUrl: ruleUrl, key: key, page: page, runtimeVariables: runtimeVariables)
     }
 
     // MARK: - Header rule

@@ -132,7 +132,7 @@ extension BookSourceFetcher {
             let (html, finalUrl) = try await SourcePerfTrace.spanAsync(
                 "toc.network", source.bookSourceName
             ) {
-                try await session.fetch(ruleUrl: effectiveTOCURL)
+                try await session.fetch(ruleUrl: effectiveTOCURL, runtimeVariables: effectiveRuntimeVariables)
             }
             let parsed = try await session.parse { bridge in
                 try SourcePerfTrace.span("toc.parse", source.bookSourceName) {
@@ -268,7 +268,7 @@ extension BookSourceFetcher {
             var nextURL = nextURLs[0]
             while !nextURL.isEmpty, read.insert(nextURL).inserted {
                 let pageStart = ProcessInfo.processInfo.systemUptime
-                let page = try await fetchFollowingTOCPage(nextURL, source: source)
+                let page = try await fetchFollowingTOCPage(nextURL, source: source, runtimeVariables: runtimeVariables)
                 // Legado parses a followed page against the URL it asked for.
                 let parsed = try await pipeline.parseTOCPage(
                     html: page.html,
@@ -303,7 +303,9 @@ extension BookSourceFetcher {
                     let pageURL = nextURLs[index]
                     nextIndex += 1
                     group.addTask {
-                        let page = try await self.fetchFollowingTOCPage(pageURL, source: source)
+                        let page = try await self.fetchFollowingTOCPage(
+                            pageURL, source: source, runtimeVariables: runtimeVariables
+                        )
                         let parsed = try await self.pipeline.parseTOCResult(
                             html: page.html,
                             baseURL: page.finalURL,
@@ -339,10 +341,12 @@ extension BookSourceFetcher {
     /// A transport failure still fails the table of contents.
     private func fetchFollowingTOCPage(
         _ pageURL: String,
-        source: BookSource
+        source: BookSource,
+        runtimeVariables: [String: String]?
     ) async throws -> (html: String, finalURL: String) {
         if source.shouldUseLegadoRuntimeFetch(for: pageURL) {
-            let (html, finalURL) = try await BookSourceSession.session(for: source).fetch(ruleUrl: pageURL)
+            let (html, finalURL) = try await BookSourceSession.session(for: source)
+                .fetch(ruleUrl: pageURL, runtimeVariables: runtimeVariables)
             return (html, finalURL)
         }
         guard let url = safeURL(string: pageURL) else {
