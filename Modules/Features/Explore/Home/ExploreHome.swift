@@ -107,11 +107,14 @@ private struct ExploreHomeRoot: View {
                                  languages: aggregation.readingLanguages.languages)
     }
 
-    /// The sections drawn, in the reader's languages' order (聚合設定, 5d-3d).
+    /// The sections drawn, in the reader's languages' order (聚合設定, 5d-3d). Built again on each
+    /// read, several per body: a span, so a main-thread stall during it is named.
     private var groups: [HomeSectionGroup] {
-        let lookup = store.copyLookup()
-        return model.groups(in: nil, languages: aggregation.readingLanguages,
-                            readFilter: HomeReadFilter(hides: aggregation.hidesRead, isRead: lookup.isRead))
+        SourcePerfTrace.span("home.groups", "rows=\(model.rows.count)", thresholdMs: 16) {
+            let lookup = store.copyLookup()
+            return model.groups(in: nil, languages: aggregation.readingLanguages,
+                                readFilter: HomeReadFilter(hides: aggregation.hidesRead, isRead: lookup.isRead))
+        }
     }
 
     /// The 頂部輪播圖's section: the page's first band (`HomePage.carouselSection`); before the
@@ -607,9 +610,13 @@ struct HomeRowHost: View {
             delete: { confirmsDelete = true })
     }
 
+    /// Every card made again, its text in the reader's script, whenever the section draws: a span,
+    /// so a main-thread stall during it is named.
     private var content: HomeRowContent? {
         guard case .loaded(let entries) = group.state else { return nil }
-        return HomeRowContent(entries: entries, store: store, withLists: group.section.layout.style == .chart)
+        return SourcePerfTrace.span("home.rowContent", "entries=\(entries.count)", thresholdMs: 16) {
+            HomeRowContent(entries: entries, store: store, withLists: group.section.layout.style == .chart)
+        }
     }
 
     /// A shelf copy's ••• (5d-3c). The shelf's rows load again at once, so the card leaves

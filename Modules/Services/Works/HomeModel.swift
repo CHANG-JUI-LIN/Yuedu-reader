@@ -100,6 +100,16 @@ final class HomeModel: ObservableObject {
     ///   of its list would be: a card of 最新 a row per library.
     func sync(with page: HomePage, hiddenFromLatest: Set<SourceInstanceKey> = []) async {
         await waitForSources()
+        // Timed on the main thread, where a stall during it is named: every sync makes a provider
+        // for each explore source, and a library can hold thousands (16883 at install 0DCE3CDE).
+        var offered = 0
+        SourcePerfTrace.span("home.sync", "providers=\(offered) rows=\(rows.count)", thresholdMs: 16) {
+            offered = build(page, hiddenFromLatest: hiddenFromLatest)
+        }
+    }
+
+    /// `sync` once the library is read; returns how many providers were offered.
+    private func build(_ page: HomePage, hiddenFromLatest: Set<SourceInstanceKey>) -> Int {
         let available = makeProviders()
         let existing = Dictionary(rows.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
         var built: [Row] = []
@@ -158,6 +168,7 @@ final class HomeModel: ObservableObject {
                 load(id)
             }
         }
+        return available.count
     }
 
     private func isLatest(_ section: HomeSection) -> Bool {

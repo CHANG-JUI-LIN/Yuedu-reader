@@ -157,10 +157,15 @@ final class ModuleProvider: CollectionBrowsing, HomeSectionProviding {
         let hasURLRule = Self.hasURLRule(entry)
         let hosts = RuleModuleHosts(module.hosts)
         let isReadable = isReadable(entry)
-        return CollectionPage(
-            entries: items.compactMap {
+        // On the main actor, and 70 to 90 ms a list of 20 on an iOS 26.5 simulator: a span, so a
+        // main-thread stall during it is named.
+        let entries = SourcePerfTrace.span("module.entries", "module=\(module.id) items=\(items.count)", thresholdMs: 16) {
+            items.compactMap {
                 Self.entry($0, of: entry, instance: instance, hasURLRule: hasURLRule, hosts: hosts, isReadable: isReadable)
-            },
+            }
+        }
+        return CollectionPage(
+            entries: entries,
             next: entry.position(after: position, itemCount: items.count).map { CollectionCursor(value: String($0)) })
     }
 
