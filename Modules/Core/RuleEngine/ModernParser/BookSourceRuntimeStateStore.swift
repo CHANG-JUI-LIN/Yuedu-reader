@@ -19,33 +19,60 @@ extension Notification.Name {
 /// Source variables are intentionally kept outside `BookSource`: imported rule
 /// JSON remains immutable, while settings changed by `source.setVariable(...)`
 /// survive search/detail/toc/content sessions and app relaunches.
+///
+/// Each source keeps its state in a `UserDefaults` suite of its own. Source scripts write
+/// here at request rate — a search rule's `java.put` runs once per result row, and a
+/// background metadata pass searches dozens of sources per book — and CFPrefs writes a
+/// suite's whole plist again for each change. While every source shared one suite, a single
+/// changed id cost the state of all of them: about 40 KB per search page with 86 sources
+/// (3.0.0 (140): a 4.3 GB disk-write exception, Crashlytics afe8e4bd855dd39d55423aab8a7a721b;
+/// measured in `UserDefaultsDiskWriteTests`).
+///
 /// All mutable `UserDefaults` access is serialized by `queue`; the remaining
 /// stored properties are immutable after initialization. This makes the shared
 /// instance safe to call from the detached search-presentation worker.
 final class BookSourceRuntimeStateStore: @unchecked Sendable {
     static let shared = BookSourceRuntimeStateStore()
 
-    private let defaults: UserDefaults
-    private let queue = DispatchQueue(label: "com.yuedu.bookSourceRuntimeState")
+    private static let variableKey = "sourceVariableJSON"
+    private static let keyValuesKey = "sourceKeyValues"
 
-    private init() {
-        defaults = UserDefaults(suiteName: "com.yuedu.bookSourceRuntimeState") ?? .standard
+    /// The one suite every source shared until 2026-10-29, emptied into the per-source suites
+    /// on first use; each source's suite is this name followed by its digest.
+    private let sharedSuiteName: String
+    private let queue = DispatchQueue(label: "com.yuedu.bookSourceRuntimeState")
+    /// Suites already opened, by suite name. Touched only on `queue`.
+    private var suites: [String: UserDefaults] = [:]
+
+    /// `sharedSuiteName` is a test's own; the app uses the default.
+    init(sharedSuiteName: String = "com.yuedu.bookSourceRuntimeState") {
+        self.sharedSuiteName = sharedSuiteName
+        queue.sync { moveSharedSuiteIntoSourceSuites() }
+    }
+
+    /// The suite holding one source's state.
+    func suiteName(for sourceUrl: String) -> String {
+        let digest = SHA256.hash(data: Data(sourceUrl.utf8))
+            .map { String(format: "%02x", $0) }
+            .joined()
+        return "\(sharedSuiteName).\(digest)"
     }
 
     func sourceVariableJSON(for sourceUrl: String) -> String? {
         queue.sync {
-            defaults.string(forKey: key(sourceUrl: sourceUrl, suffix: "sourceVariableJSON"))
+            defaults(for: sourceUrl).string(forKey: Self.variableKey)
         }
     }
 
     func setSourceVariableJSON(_ json: String?, for sourceUrl: String) {
         queue.sync {
-            let storageKey = key(sourceUrl: sourceUrl, suffix: "sourceVariableJSON")
+            let defaults = defaults(for: sourceUrl)
             guard let json, !json.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
-                defaults.removeObject(forKey: storageKey)
+                defaults.removeObject(forKey: Self.variableKey)
                 return
             }
-            defaults.set(json, forKey: storageKey)
+            guard defaults.string(forKey: Self.variableKey) != json else { return }
+            defaults.set(json, forKey: Self.variableKey)
         }
     }
 
@@ -79,23 +106,63 @@ final class BookSourceRuntimeStateStore: @unchecked Sendable {
 
     func sourceValue(for sourceUrl: String, key entryKey: String) -> String? {
         queue.sync {
-            let values = defaults.dictionary(
-                forKey: key(sourceUrl: sourceUrl, suffix: "sourceKeyValues")
-            ) as? [String: String]
+            let values = defaults(for: sourceUrl).dictionary(forKey: Self.keyValuesKey) as? [String: String]
             return values?[entryKey]
         }
     }
 
     func setSourceValue(_ value: String, for sourceUrl: String, key entryKey: String) {
         queue.sync {
-            let storageKey = key(sourceUrl: sourceUrl, suffix: "sourceKeyValues")
-            var values = defaults.dictionary(forKey: storageKey) as? [String: String] ?? [:]
+            let defaults = defaults(for: sourceUrl)
+            var values = defaults.dictionary(forKey: Self.keyValuesKey) as? [String: String] ?? [:]
+            guard values[entryKey] != value else { return }
             values[entryKey] = value
-            defaults.set(values, forKey: storageKey)
+            defaults.set(values, forKey: Self.keyValuesKey)
         }
     }
 
-    /// One-shot cleanup of device ids this app wrote wrongly.
+    /// Opens (once) the suite holding `sourceUrl`'s state. Call on `queue`.
+    private func defaults(for sourceUrl: String) -> UserDefaults {
+        defaults(suiteName: suiteName(for: sourceUrl))
+    }
+
+    private func defaults(suiteName: String) -> UserDefaults {
+        if let defaults = suites[suiteName] { return defaults }
+        guard let defaults = UserDefaults(suiteName: suiteName) else {
+            // `UserDefaults(suiteName:)` is nil only for the app's own bundle id or
+            // NSGlobalDomain, which a `com.yuedu.…` name never is.
+            preconditionFailure("UserDefaults refused suite \(suiteName)")
+        }
+        suites[suiteName] = defaults
+        return defaults
+    }
+
+    /// Moves what earlier builds kept in the one shared suite —
+    /// `bookSourceRuntime.<sha256 of the source URL>.<field>` — into each source's own suite,
+    /// then empties the shared suite. Runs on every first use; once moved there is nothing
+    /// left to read. Delete with `purgeLegacyAndroidIds` once no install can still carry the
+    /// shared suite.
+    private func moveSharedSuiteIntoSourceSuites() {
+        guard let shared = UserDefaults(suiteName: sharedSuiteName) else { return }
+        let entries = shared.dictionaryRepresentation().filter { $0.key.hasPrefix("bookSourceRuntime.") }
+        guard !entries.isEmpty else { return }
+        let didPurge = shared.bool(forKey: "bookSourceRuntime.didPurgeLegacyAndroidIds")
+        var moved = 0
+        for (storageKey, value) in entries {
+            let parts = storageKey.split(separator: ".")
+            guard parts.count == 3, parts[0] == "bookSourceRuntime", parts[1].count == 64 else { continue }
+            var value = value
+            if !didPurge, parts[2] == Self.keyValuesKey, let entries = value as? [String: String] {
+                value = purgeLegacyAndroidIds(entries)
+            }
+            defaults(suiteName: "\(sharedSuiteName).\(parts[1])").set(value, forKey: String(parts[2]))
+            moved += 1
+        }
+        UserDefaults.standard.removePersistentDomain(forName: sharedSuiteName)
+        AppLogger.parse("⟐ source runtime state moved to per-source suites", context: ["entries": "\(moved)"])
+    }
+
+    /// Drops device ids this app wrote wrongly from a source's key/value store.
     ///
     /// `java.androidId()` used to return `identifierForVendor` — a 36-char uppercase
     /// UUID — where Android hands out 16 lowercase hex characters. Sources cache it in
@@ -103,38 +170,20 @@ final class BookSourceRuntimeStateStore: @unchecked Sendable {
     /// back before ever calling us again, so fixing `androidId()` alone would never
     /// reach a device that had already run the source once. Drops only entries whose
     /// key names a device id AND whose value is exactly that old shape — a source's own
-    /// settings are never touched.
+    /// settings are never touched. Runs while the shared suite is moved, before any source
+    /// JS can read it.
     ///
     /// Delete this (and `LegadoJSBridge.isLegacyVendorUUIDAndroidId`) once no install
     /// can still be carrying a pre-fix value.
-    func purgeLegacyAndroidIds() {
-        let flag = "bookSourceRuntime.didPurgeLegacyAndroidIds"
-        queue.sync {
-            guard !defaults.bool(forKey: flag) else { return }
-            defer { defaults.set(true, forKey: flag) }
-            for (storageKey, value) in defaults.dictionaryRepresentation()
-            where storageKey.hasPrefix("bookSourceRuntime.")
-                && storageKey.hasSuffix(".sourceKeyValues") {
-                guard var entries = value as? [String: String] else { continue }
-                let stale = entries.filter { entry in
-                    entry.key.lowercased().contains("androidid")
-                        && LegadoJSBridge.isLegacyVendorUUIDAndroidId(entry.value)
-                }
-                guard !stale.isEmpty else { continue }
-                stale.keys.forEach { entries.removeValue(forKey: $0) }
-                defaults.set(entries, forKey: storageKey)
-                AppLogger.parse("⟐ purged legacy androidId", context: [
-                    "keys": stale.keys.sorted().joined(separator: ",")
-                ])
-            }
+    private func purgeLegacyAndroidIds(_ entries: [String: String]) -> [String: String] {
+        let stale = entries.filter { entry in
+            entry.key.lowercased().contains("androidid")
+                && LegadoJSBridge.isLegacyVendorUUIDAndroidId(entry.value)
         }
-    }
-
-    private func key(sourceUrl: String, suffix: String) -> String {
-        let data = Data(sourceUrl.utf8)
-        let digest = SHA256.hash(data: data)
-            .map { String(format: "%02x", $0) }
-            .joined()
-        return "bookSourceRuntime.\(digest).\(suffix)"
+        guard !stale.isEmpty else { return entries }
+        AppLogger.parse("⟐ purged legacy androidId", context: [
+            "keys": stale.keys.sorted().joined(separator: ",")
+        ])
+        return entries.filter { stale[$0.key] == nil }
     }
 }
