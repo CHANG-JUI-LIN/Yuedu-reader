@@ -1,0 +1,14 @@
+{
+ "schema": 1,
+ "note": "Machine-local corpus of English trade books from the big publishers (Penguin Random House, HarperCollins, Hachette): their production CSS is what the 16-book corpus lacks. Measure with `measure.sh --corpus corpus-publishers.json`. Kept apart from corpus.json so the 16-book baseline stays comparable. No book content is committed.",
+ "root": "/Users/zhangruilin/Desktop/Test document/EPUB Publishers",
+ "sample": {"dev": 10, "holdout": 6},
+ "books": [
+  {"id": "thinking", "match": "Thinking, Fast and Slow", "pinned": []},
+  {"id": "strangers", "match": "Strangers - A Memoir", "pinned": []},
+  {"id": "atomic-habits", "match": "Atomic Habits", "pinned": []},
+  {"id": "yesteryear", "match": "Yesteryear", "pinned": []},
+  {"id": "correspondent", "match": "The Correspondent", "pinned": []},
+  {"id": "deep-work", "match": "Deep Work", "pinned": []}
+ ]
+}
