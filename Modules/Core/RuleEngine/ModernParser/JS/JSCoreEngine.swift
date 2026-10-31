@@ -959,6 +959,28 @@ class JSCoreEngine {
         // sources require eval — e.g. obfuscated jsLib loaders (`eval(java.importScript(url))`)
         // and explore builders (`eval('sort'+i+'.push(json)')`). Disabling it broke those
         // sources without adding real isolation, so native eval is used.
+        //
+        // The source an eval compiles is Rhino source as much as a rule is, so
+        // `LegadoRhinoNormalizer` wraps every direct `eval(x)` argument in this, and a string
+        // gets the same rewrites before JavaScriptCore compiles it.
+        let rhinoSourceBlock: @convention(block) (JSValue) -> JSValue = { value in
+            guard value.isString, let source = value.toString() else { return value }
+            return JSValue(object: LegadoRhinoNormalizer.normalize(source).source, in: value.context)
+        }
+        ctx.setObject(rhinoSourceBlock, forKeyedSubscript: "__yueduRhinoSource" as NSString)
+
+        // The normalizer rewrites a no-argument `.length()` call to this: a Java String's
+        // `length()` (every `java.*` result under Rhino) is the JS string's `length`, and an
+        // object that really has a `length()` method still gets it called.
+        ctx.evaluateScript("""
+            Object.defineProperty(Object.prototype, '__yueduJavaLength', {
+                value: function () {
+                    var length = this.length;
+                    return typeof length === 'function' ? length.call(this) : length;
+                },
+                enumerable: false, configurable: true, writable: true
+            });
+        """)
 
         // JSON is always natively available in JSContext — this guard is a safety net only.
         // The eval() fallback from the original Legado port has been removed (eval is disabled).
@@ -1256,8 +1278,15 @@ class JSCoreEngine {
                 EP.ownText = function () { return this._n ? this._n.ownText() : ''; };
                 EP.outerHtml = function () { return this._n ? this._n.outerHtml() : ''; };
                 EP.toString = function () { return this.outerHtml(); };
+                // A rule's JS result reaches the rule engine as JSON. Rhino hands Legado the
+                // jsoup node itself, whose string form is its outer HTML; the rule engine's own
+                // list extraction represents an element the same way (JsoupDefaultExtractor).
+                EP.toJSON = function () { return this.outerHtml(); };
                 EP.attr = function (k, v) { if (arguments.length === 2) { return this; } return this._n ? this._n.attr(String(k)) : ''; };
                 EP.select = function (q) { return wrap(this._n ? this._n.select(String(q)) : [], this._baseUrl); };
+                // jsoup `Element.selectFirst`: the first match, or null. jsoup 1.16.2 (the
+                // version every Legado fork pins) has no `Elements.selectFirst`, so neither do we.
+                EP.selectFirst = function (q) { return this.select(q).first(); };
                 EP.first = function () { return null; };
                 EP.last = function () { return null; };
                 EP.children = function () { return wrap(this._n ? this._n.children() : [], this._baseUrl); };
@@ -1312,6 +1341,10 @@ class JSCoreEngine {
                 };
                 ESP.outerHtml = function () { return this._arr.map(function (e) { return e.outerHtml(); }).join(''); };
                 ESP.toString = function () { return this.outerHtml(); };
+                // Legado's list rules take a returned jsoup Elements as the list itself
+                // (AnalyzeRule.getElements). As JSON it is the array of its elements, so a
+                // chapterList ending in `doc.select(…)` yields one row per element.
+                ESP.toJSON = function () { return this._arr; };
                 ESP.not = function () { return this; };
                 ESP.eq = function (i) { return new Elements([this._arr[i]]); };
                 ESP.is = function () { return false; };
@@ -1555,7 +1588,7 @@ class JSCoreEngine {
         let trimmed = headerStr.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return [:] }
         if let script = Self.headerJSScript(trimmed) {
-            let evaluated = (evaluate(script) ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+            let evaluated = (evaluateHeaderScript(script) ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
             guard !evaluated.isEmpty, let data = evaluated.data(using: .utf8),
                   let json = try? JSONSerialization.jsonObject(with: data) as? [String: String] else {
                 // A JS header rule that fails must yield nothing: the line-format
@@ -1583,6 +1616,28 @@ class JSCoreEngine {
             if parts.count == 2 { result[parts[0]] = parts[1] }
         }
         return result
+    }
+
+    /// Every fork evaluates a header rule through `BaseSource.evalJS`, which binds `baseUrl`
+    /// to the source URL (`getKey()`); a header script reading it here hit a ReferenceError.
+    /// A header rule can be resolved while another rule is running — the first `java.ajax`
+    /// of a TOC script — so the global is put back afterwards and that rule keeps its own
+    /// `baseUrl`.
+    private func evaluateHeaderScript(_ script: String) -> String? {
+        onJSQueue { [self] () -> String? in
+            let global: JSValue = context.globalObject
+            let hadBaseURL = global.hasProperty("baseUrl")
+            let previous = global.forProperty("baseUrl")
+            global.setValue(bookSource?.bookSourceUrl ?? "", forProperty: "baseUrl")
+            defer {
+                if hadBaseURL {
+                    global.setValue(previous, forProperty: "baseUrl")
+                } else {
+                    global.deleteProperty("baseUrl")
+                }
+            }
+            return evaluate(script)
+        }
     }
 
     /// The JS body of a `@js:` / `<js>…</js>` header rule, or nil for a plain header.
@@ -1618,6 +1673,15 @@ class JSCoreEngine {
             if let jsonVal,
                !jsonVal.isUndefined, !jsonVal.isNull,
                let json = jsonVal.toString(), !json.isEmpty {
+                // An object whose JSON form is a string stands in for a Java object that
+                // Rhino would hand Legado as its `toString()`: a jsoup Element (its outer
+                // HTML) or a `java.lang.String` (a boxed JS string). Return that string, not
+                // a quoted JSON literal. JSON.stringify's own output always parses.
+                if json.hasPrefix("\""),
+                   let data = json.data(using: .utf8),
+                   let string = try? JSONSerialization.jsonObject(with: data, options: .fragmentsAllowed) as? String {
+                    return string
+                }
                 return json
             }
         }

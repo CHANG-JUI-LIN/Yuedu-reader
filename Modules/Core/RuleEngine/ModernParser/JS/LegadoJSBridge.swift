@@ -2489,6 +2489,10 @@ struct LegadoHTTPResult {
 
 /// JS-callable response object returned by `java.startBrowserAwait()`.
 /// Mirrors Legado's `StrResponse(url, body)`.
+///
+/// `url` is a method, as in every Legado fork's `StrResponse` (`fun url()`): in Rhino the
+/// method shadows the Kotlin `val url` bean property, so `result.url()` is the call sources
+/// make (搜笔趣阁, 手打书, 哔哩小说 and 飞库文学网 in `loginCheckJs`).
 @objc protocol LegadoStrResponseExport: JSExport {
     func body() -> String
     func cookies() -> LegadoJavaMap
@@ -2497,14 +2501,15 @@ struct LegadoHTTPResult {
     func message() -> String
     func statusCode() -> Int
     func statusMessage() -> String
+    func url() -> String
     func urlString() -> String
     func isSuccessful() -> Bool
     func toString() -> String
-    var url: String { get }
 }
 
 @objc class LegadoStrResponse: NSObject, LegadoStrResponseExport {
-    @objc let url: String
+    /// The final URL, after redirects.
+    let finalURLString: String
     private let result: LegadoHTTPResult
 
     init(url: String, body: String) {
@@ -2518,13 +2523,13 @@ struct LegadoHTTPResult {
             cookies: [:],
             body: body
         )
-        self.url = url
+        self.finalURLString = url
         super.init()
     }
 
     init(result: LegadoHTTPResult) {
         self.result = result
-        self.url = result.finalURL.absoluteString
+        self.finalURLString = result.finalURL.absoluteString
         super.init()
     }
 
@@ -2535,9 +2540,10 @@ struct LegadoHTTPResult {
     func message() -> String { result.statusMessage }
     func statusCode() -> Int { result.statusCode }
     func statusMessage() -> String { result.statusMessage }
-    func urlString() -> String { url }
+    func url() -> String { finalURLString }
+    func urlString() -> String { finalURLString }
     func isSuccessful() -> Bool { (200..<300).contains(result.statusCode) }
-    func toString() -> String { "Response{code=\(result.statusCode), url=\(url)}" }
+    func toString() -> String { "Response{code=\(result.statusCode), url=\(finalURLString)}" }
     override var description: String { toString() }
 }
 

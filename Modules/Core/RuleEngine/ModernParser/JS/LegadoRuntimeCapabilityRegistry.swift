@@ -17,6 +17,7 @@ enum LegadoRuntimeCapabilityRegistry {
         .init(path: "Packages", kind: .namespace),
         .init(path: "Packages.java.lang", kind: .namespace),
         .init(path: "Packages.java.lang.String", kind: .constructor),
+        .init(path: "Packages.java.lang.Integer.parseInt", kind: .method),
         .init(path: "Packages.java.lang.Thread", kind: .namespace),
         .init(path: "Packages.java.lang.System.nanoTime", kind: .method),
         .init(path: "Packages.java.lang.System.currentTimeMillis", kind: .method),

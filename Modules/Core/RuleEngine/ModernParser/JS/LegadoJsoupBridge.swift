@@ -53,6 +53,10 @@ import SwiftSoup
         super.init()
     }
 
+    /// jsoup throws `Selector.SelectorParseException` for a query it cannot parse, and Rhino
+    /// raises it in the script, where a source's `try`/`catch` can take another route. Answering
+    /// it with an empty list instead turned a TOC whose script passed Legado rule syntax
+    /// (`[id="ul_all_chapters"]@li`) to `select` into a silent 0 chapters with no JS error.
     func select(_ query: String) -> [LegadoJsoupElement] {
         do {
             return try element.select(query).map { LegadoJsoupElement(document: document, element: $0) }
@@ -61,8 +65,19 @@ import SwiftSoup
                 "jsoup bridge select failed",
                 context: ["query": query, "error": "\(error)"]
             )
+            if let context = JSContext.current() {
+                context.exception = JSValue(
+                    newErrorFromMessage: "org.jsoup.select.Selector$SelectorParseException: \(Self.message(of: error))",
+                    in: context
+                )
+            }
             return []
         }
+    }
+
+    private static func message(of error: Error) -> String {
+        guard case Exception.Error(_, let message) = error else { return "\(error)" }
+        return message
     }
 
     func children() -> [LegadoJsoupElement] {

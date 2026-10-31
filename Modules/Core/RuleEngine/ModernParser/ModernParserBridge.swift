@@ -2529,7 +2529,7 @@ class ModernParserBridge {
         return jsEngine.evaluateResponseScript(
             js,
             response: response,
-            bindings: ["baseUrl": response.url, "baseURL": response.url]
+            bindings: ["baseUrl": response.url(), "baseURL": response.url()]
         )
     }
 
@@ -2761,7 +2761,7 @@ class ModernParserBridge {
         let sourceResponse = LegadoStrResponse(result: capturedResult)
         let checkedResponse = applyLoginCheck(to: sourceResponse)
         let body = checkedResponse.body()
-        let finalUrl = checkedResponse.url
+        let finalUrl = checkedResponse.url()
         if sourceRuleData.source.exploreUrl.contains("_csrfToken"),
            let path = request.url?.path,
            path.contains("/majax/") {

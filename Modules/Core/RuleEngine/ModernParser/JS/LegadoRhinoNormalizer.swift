@@ -89,6 +89,43 @@ enum LegadoRhinoNormalizer {
             pending.append(PendingEdit(range: NSRange(location: NSMaxRange(tokens[close].range), length: 0), replacement: ")"))
         }
 
+        // Rhino hands source JS a Java String from every `java.*` call, so sources count
+        // one with Java's `length()`; a JavaScriptCore string has only the `length` number.
+        // Route a no-argument `.length()` call through `__yueduJavaLength` (JSCoreEngine),
+        // which also still calls a `length()` method that an object really has.
+        for index in tokens.indices where tokens[index].text == "length" {
+            guard index > 0, tokens[index - 1].text == ".",
+                  tokens.indices.contains(index + 2),
+                  tokens[index + 1].text == "(", tokens[index + 2].text == ")" else { continue }
+            pending.append(PendingEdit(range: tokens[index].range, replacement: "__yueduJavaLength"))
+        }
+
+        // `eval`'d source is Rhino source too: 小小阅读 keeps its decoder in
+        // `bookSourceComment` and runs `eval(String(source.bookSourceComment))`. Pass a direct
+        // eval's argument through `__yueduRhinoSource` (JSCoreEngine), which applies these
+        // rules to a string. The callee stays `eval`, so it is still a direct eval that sees
+        // the caller's scope. A method or function named `eval` is left alone. The lexer
+        // emits no token for a string literal, so `eval('…')` is told from `eval()` by the
+        // source text between the parentheses.
+        for index in tokens.indices where tokens[index].text == "eval" {
+            guard index == 0 || (tokens[index - 1].text != "." && tokens[index - 1].text != "function"),
+                  tokens.indices.contains(index + 2), tokens[index + 1].text == "(",
+                  tokens[index + 2].text != "__yueduRhinoSource",
+                  let close = matching(open: "(", close: ")", at: index + 1, in: tokens),
+                  !(tokens.indices.contains(close + 1) && tokens[close + 1].text == "{") else { continue }
+            let argumentStart = NSMaxRange(tokens[index + 1].range)
+            let argument = (source as NSString).substring(with: NSRange(
+                location: argumentStart,
+                length: tokens[close].range.location - argumentStart
+            ))
+            guard !argument.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { continue }
+            pending.append(PendingEdit(
+                range: NSRange(location: argumentStart, length: 0),
+                replacement: "__yueduRhinoSource("
+            ))
+            pending.append(PendingEdit(range: NSRange(location: tokens[close].range.location, length: 0), replacement: ")"))
+        }
+
         // Coalesce duplicate edits (a parameter named result matches two contracts).
         var seen = Set<String>()
         pending = pending.filter {

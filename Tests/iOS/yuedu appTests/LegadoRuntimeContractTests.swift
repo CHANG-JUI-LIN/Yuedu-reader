@@ -99,7 +99,7 @@ struct LegadoConnectionResponseTests {
         #expect(response.headers().get("x-test") == "yes")
         #expect(response.statusCode() == 201)
         #expect(response.statusMessage() == "Created")
-        #expect(response.url == finalURL.absoluteString)
+        #expect(response.url() == finalURL.absoluteString)
         #expect(response.urlString() == finalURL.absoluteString)
         #expect(response.isSuccessful())
     }
@@ -121,7 +121,7 @@ struct LegadoConnectionResponseTests {
         let value = engine.evaluate("""
         var response = java.get('https://example.com/token', {});
         [response.body(), response.cookies().get('token'), response.headers().get('X-Test'),
-         response.statusCode(), response.statusMessage(), response.url, response.isSuccessful()].join('|');
+         response.statusCode(), response.statusMessage(), response.url(), response.isSuccessful()].join('|');
         """)
         #expect(value == "created|abc|yes|201|Created|https://example.com/redirected|true")
     }

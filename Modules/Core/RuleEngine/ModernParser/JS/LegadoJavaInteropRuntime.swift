@@ -54,18 +54,27 @@ enum LegadoJavaInteropRuntime {
             }
             return out;
         }
+        // Android's `new String(bytes)` (ART StringFactory) is the W3C UTF-8 decoder: each
+        // maximal subpart of a malformed sequence becomes one U+FFFD. Sources hash such a
+        // string — 小小阅读 derives its AES key from `String(random salt bytes)` — so a
+        // decoder that read past malformed bytes produced a different key and no plaintext.
         function utf8String(bytes) {
-            var out = '', i = 0;
-            while (i < bytes.length) {
-                var c = bytes[i++];
-                if (c < 128) out += String.fromCharCode(c);
-                else if ((c & 224) === 192) out += String.fromCharCode(((c & 31) << 6) | (bytes[i++] & 63));
-                else if ((c & 240) === 224) out += String.fromCharCode(((c & 15) << 12) | ((bytes[i++] & 63) << 6) | (bytes[i++] & 63));
-                else {
-                    var cp = ((c & 7) << 18) | ((bytes[i++] & 63) << 12) | ((bytes[i++] & 63) << 6) | (bytes[i++] & 63);
-                    cp -= 0x10000;
-                    out += String.fromCharCode(0xd800 | (cp >> 10), 0xdc00 | (cp & 1023));
+            var out = '', i = 0, n = bytes.length;
+            while (i < n) {
+                var c = bytes[i++] & 255, need = 0, lower = 0x80, upper = 0xbf, cp;
+                if (c < 0x80) { out += String.fromCharCode(c); continue; }
+                if (c >= 0xc2 && c <= 0xdf) { need = 1; cp = c & 31; }
+                else if (c >= 0xe0 && c <= 0xef) { need = 2; cp = c & 15; if (c === 0xe0) lower = 0xa0; if (c === 0xed) upper = 0x9f; }
+                else if (c >= 0xf0 && c <= 0xf4) { need = 3; cp = c & 7; if (c === 0xf0) lower = 0x90; if (c === 0xf4) upper = 0x8f; }
+                else { out += '�'; continue; }
+                while (need > 0) {
+                    var b = i < n ? bytes[i] & 255 : -1;
+                    if (b < lower || b > upper) break;
+                    cp = (cp << 6) | (b & 63); i++; need--; lower = 0x80; upper = 0xbf;
                 }
+                if (need > 0) { out += '�'; continue; }
+                if (cp < 0x10000) out += String.fromCharCode(cp);
+                else { cp -= 0x10000; out += String.fromCharCode(0xd800 | (cp >> 10), 0xdc00 | (cp & 1023)); }
             }
             return out;
         }
@@ -179,6 +188,24 @@ enum LegadoJavaInteropRuntime {
         };
         var Arrays = { copyOfRange: function (value, from, to) { return unsignedBytes(value).slice(Number(from), Number(to)); } };
         var System = { nanoTime: function () { return Date.now() * 1000000; }, currentTimeMillis: function () { return Date.now(); } };
+        // Java's parseInt rejects what JS parseInt skips over: an empty string, a stray
+        // character, an int overflow. A source's `try`/`catch` sees the same exception.
+        var Integer = {
+            MAX_VALUE: 2147483647, MIN_VALUE: -2147483648,
+            parseInt: function (value, radix) {
+                var s = String(value), r = radix == null ? 10 : Number(radix);
+                var digits = '0123456789abcdefghijklmnopqrstuvwxyz'.slice(0, r);
+                var body = /^[+-]/.test(s) ? s.slice(1) : s;
+                var valid = r >= 2 && r <= 36 && body.length > 0 && body.toLowerCase().split('').every(function (ch) {
+                    return digits.indexOf(ch) >= 0;
+                });
+                var parsed = valid ? parseInt(s, r) : NaN;
+                if (!valid || parsed > 2147483647 || parsed < -2147483648) {
+                    throw new Error('java.lang.NumberFormatException: For input string: "' + s + '"' + (r === 10 ? '' : ' under radix ' + r));
+                }
+                return parsed;
+            }
+        };
         function SecretKeySpec(bytes, algorithm) { return { __bytes: unsignedBytes(bytes), __alg: String(algorithm || '') }; }
         function IvParameterSpec(bytes) { return { __bytes: unsignedBytes(bytes) }; }
         var Cipher = {
@@ -303,7 +330,7 @@ enum LegadoJavaInteropRuntime {
         };
 
         var members = {
-            'java.lang': { String: JavaString, System: System },
+            'java.lang': { String: JavaString, System: System, Integer: Integer },
             'java.util': { Base64: JavaBase64, Arrays: Arrays, UUID: UUID },
             'android.util': { Base64: AndroidBase64 },
             'javax.crypto': { Cipher: Cipher },

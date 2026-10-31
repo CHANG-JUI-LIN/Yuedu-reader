@@ -3811,14 +3811,14 @@ struct LegadoStrResponseTests {
     @Test("body returns stored body")
     func bodyReturns() {
         let response = LegadoStrResponse(url: "https://example.com", body: "<html>test</html>")
-        #expect(response.url == "https://example.com")
+        #expect(response.url() == "https://example.com")
         #expect(response.body() == "<html>test</html>")
     }
 
     @Test("empty body is fine")
     func emptyBody() {
         let response = LegadoStrResponse(url: "about:blank", body: "")
-        #expect(response.url == "about:blank")
+        #expect(response.url() == "about:blank")
         #expect(response.body() == "")
     }
 }
