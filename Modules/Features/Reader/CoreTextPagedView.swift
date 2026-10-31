@@ -233,10 +233,7 @@ struct CoreTextPageEngineView: UIViewControllerRepresentable {
         }
 
         if spreadModeChanged {
-            if context.coordinator.placeAfterAppearanceChange(targetViewController, on: uiViewController, layoutNow: true),
-               context.coordinator.externalTargetPosition != nil {
-                DispatchQueue.main.async { context.coordinator.clearExternalTargetPosition() }
-            }
+            context.coordinator.placeAfterAppearanceChange(targetViewController, on: uiViewController, layoutNow: true)
             return
         }
         if context.coordinator.currentTheme != theme {
@@ -245,10 +242,7 @@ struct CoreTextPageEngineView: UIViewControllerRepresentable {
                 textColor: UIColor(theme.textColor),
                 backgroundColor: UIColor(theme.backgroundColor)
             )
-            if context.coordinator.placeAfterAppearanceChange(targetViewController, on: uiViewController),
-               context.coordinator.externalTargetPosition != nil {
-                DispatchQueue.main.async { context.coordinator.clearExternalTargetPosition() }
-            }
+            context.coordinator.placeAfterAppearanceChange(targetViewController, on: uiViewController)
             return
         }
 
@@ -283,8 +277,7 @@ struct CoreTextPageEngineView: UIViewControllerRepresentable {
             // One-shot: without this the target persists and every re-render snaps
             // back — the curl "animates then bounces back" bug after scroll→paged.
             if !context.coordinator.isPlaceholderDisplay(targetVC) {
-                let clear = clearExternalTargetPosition
-                DispatchQueue.main.async { clear() }
+                context.coordinator.completeExternalTarget()
             }
             return
         }
@@ -691,6 +684,19 @@ struct CoreTextPageEngineView: UIViewControllerRepresentable {
             let targetVC = displayViewController(for: position)
             setPage(targetVC, on: pageViewController, layoutNow: true)
             guard !isPlaceholderDisplay(targetVC) else { return }
+            completeExternalTarget()
+        }
+
+        /// The external target is on screen as a real page, so nothing is owed for it any more.
+        ///
+        /// Setting the target parks a `pendingNavigation` (`externalTargetPosition.didSet`, and
+        /// `init` for the opening position) for the case it lands on a 載入中 page, which
+        /// `handleChapterReady` then swaps for the real one. Landing on a real page has to take
+        /// that back. Left behind, it is replayed by the next chapter to lay out — a neighbour
+        /// preloading after the opening transition, the next chapter's fetch — over every turn
+        /// made since, and the reader is taken back to the page the book opened on (feedback #112).
+        fileprivate func completeExternalTarget() {
+            pendingNavigation = nil
             let clear = clearExternalTargetPosition
             DispatchQueue.main.async { clear() }
         }
@@ -715,16 +721,25 @@ struct CoreTextPageEngineView: UIViewControllerRepresentable {
         /// Re-places the page after the theme or spread mode changed. Mid-swipe the write
         /// waits for the stack like every other (the same crash as a deferred refresh);
         /// a pending external target is owed instead when there is one, since that is
-        /// where this placement would have gone. Returns whether the page was placed now.
+        /// where this placement would have gone.
         fileprivate func placeAfterAppearanceChange(
             _ target: () -> UIViewController,
             on pageViewController: UIPageViewController,
             layoutNow: Bool = false
-        ) -> Bool {
+        ) {
             let write: ReaderStackWrite = externalTargetPosition != nil ? .externalTarget : .appearance
-            guard stackWriteGate.request(write) == .performNow else { return false }
-            setPage(target(), on: pageViewController, layoutNow: layoutNow)
-            return true
+            guard stackWriteGate.request(write) == .performNow else { return }
+            let placed = target()
+            setPage(placed, on: pageViewController, layoutNow: layoutNow)
+            guard externalTargetPosition != nil else { return }
+            guard !isPlaceholderDisplay(placed) else {
+                // The one-shot is spent; `pendingNavigation` still carries the target to
+                // the chapter's landing.
+                let clear = clearExternalTargetPosition
+                DispatchQueue.main.async { clear() }
+                return
+            }
+            completeExternalTarget()
         }
 
         /// The single non-animated stack writer. Every code path that places a page
