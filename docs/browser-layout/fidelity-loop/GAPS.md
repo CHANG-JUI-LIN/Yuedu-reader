@@ -1,6 +1,6 @@
 ---
 title: 渲染相似度的已知差距
-updated: 2026-10-31
+updated: 2026-11-01
 tags: [yuedu, browser-layout, fidelity-loop]
 ---
 
@@ -102,6 +102,8 @@ tags: [yuedu, browser-layout, fidelity-loop]
 - 根因（已確認）：`BoxTreeBuilder.collectInline` 遇到行內盒裡的區塊子元素就跳過，區塊和裡面的字全部丟掉，從套件 0.3.0 就是這樣。`5fb62a4` 照 CSS 2.1 §9.2.1.1 把行內盒拆開；同一條規則也修了「容器最後一個區塊後面的行內文字，從容器頂端開始排、壓在第一個區塊上」。hongwu:11 的章標題因此對齊 WebKit（首圖 y：295.9 → 340.1，WebKit 340.0）
 - 還沒做：inline-block 是不可拆的原子盒（CSS 2.1 §9.2.2），引擎還沒有這種排版，泡泡被當成行內盒拆開，所以背景、圓角、內距都沒畫。the-deal:12 因此是 74.0（版面 99.5、畫面 48.5），低於 0.10.1 走舊引擎時的 82.1（版面 87.2、畫面 76.9）；the-deal:23 是 91.6，高於舊引擎的 85.2；orv:5 是 91.6，舊引擎 74.2。the-deal 另外 6 章聊天章節不在抽樣裡，沒有量過
 - 完成的樣子：測試書的 background 扣分歸零；the-deal:12 ≥ 82.1
+- **2026-11-01：整合分支 `2910434` 修好（還沒發佈成套件版本）。** inline-block 照 §9.2.2 做成原子盒：自己排版、寬度 auto 時 shrink-to-fit、坐在最後一行的基線上；放得進一頁就整個換頁，比一頁高才在它自己的行之間分頁；捲動模式只在它那一行要排字時才排它。測試書 66.9 → 97.4、the-deal:12 74.0 → 99.3、the-deal:23 91.6 → 99.4（run `ib-after-gaps`、`ib-after-base`，對 `fix-after-*`）；orv:5 的泡泡同時是 float，走 float 的路，沒變。其他新引擎章節變動都在 0.3 以內
+- 還沒做：`vertical-align` 只支援相對基線的位移，`middle`／`top`／`bottom` 還沒有（語料裡沒有 inline-block 用到）；shrink-to-fit 沒有 min-content 下限（CSS 會讓放不進一行、又不能斷開的內容把泡泡撐得比容器寬；我們的泡泡最寬就是行寬）；直排章節裡有非圖片的 inline-block 時整章交給舊引擎
 
 還沒細查的：flex／grid 與 `position`（orv 10 章、game-designer:10）；整頁背景圖的大小與位置（guimi:64、redchamber:305）；行內小圖相對容器左移沒有生效（game-designer:58）；版面相關的 `@media`（寬度查詢）求值。
 
