@@ -24,6 +24,11 @@ struct PublicLibraryRegistryTests {
         let coverOnly = OPDSEntry(id: "c", title: "C", coverURL: medium)
         #expect(PublicLibrary.listCoverURL(for: coverOnly, connectionID: "saved-catalog") == medium)
         #expect(PublicLibrary.listCoverURL(for: remote, connectionID: "saved-catalog") == small)
+        // A card draws larger than a row, so another catalog's card takes the full cover, and Gutenberg's own stays.
+        let thumbnailOnly = OPDSEntry(id: "d", title: "D", thumbnailURL: small)
+        #expect(PublicLibrary.cardCoverURL(for: remote, connectionID: "saved-catalog") == medium)
+        #expect(PublicLibrary.cardCoverURL(for: thumbnailOnly, connectionID: "saved-catalog") == small)
+        #expect(PublicLibrary.cardCoverURL(for: listed, connectionID: gutenberg) == medium)
     }
 
     @Test func gutenbergCoverComesFromTheEbookNumber() {

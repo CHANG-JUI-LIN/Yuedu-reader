@@ -124,6 +124,14 @@ enum PublicLibrary {
         return GutenbergBook(entry: entry)?.coverURL
     }
 
+    /// The cover a card shows for an entry: `listCoverURL`, except that another catalog's card
+    /// takes the full cover over the thumbnail (`OPDSEntry.cardCoverURL`). A list's small rows keep
+    /// the thumbnail, so a page of fifty entries does not fetch fifty full covers.
+    static func cardCoverURL(for entry: OPDSEntry, connectionID: String) -> URL? {
+        guard connectionID == PublicLibraryID.gutenberg.rawValue else { return entry.cardCoverURL }
+        return GutenbergBook(entry: entry)?.coverURL
+    }
+
     static func gutenbergCoverURL(number: String) -> URL? {
         URL(string: "https://www.gutenberg.org/cache/epub/\(number)/pg\(number).cover.medium.jpg")
     }

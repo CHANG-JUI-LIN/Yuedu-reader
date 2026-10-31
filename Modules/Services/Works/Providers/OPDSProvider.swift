@@ -68,7 +68,7 @@ extension WorkSummary {
         WorkSummary(
             title: entry.title,
             authors: record.authors,
-            cover: PublicLibrary.listCoverURL(for: entry, connectionID: connectionID)
+            cover: PublicLibrary.cardCoverURL(for: entry, connectionID: connectionID)
                 .map { .remote($0, headers: [:]) } ?? .generated(seed: entry.title),
             // A Gutenberg list entry's content is its creator or a download count
             // (`GutenbergBook.init?(entry:)`), never a description.

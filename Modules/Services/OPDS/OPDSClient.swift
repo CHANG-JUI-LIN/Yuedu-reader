@@ -109,6 +109,9 @@ struct OPDSEntry: Identifiable, Hashable {
         acquisitions.filter(\.isSupported).min { $0.preference < $1.preference }
     }
     var displayCoverURL: URL? { thumbnailURL ?? coverURL }
+    /// The cover a card draws at its own size: the full cover, not the thumbnail. Calibre's
+    /// thumbnail is 52×80 px, which a home row's or hero's card enlarges to several times that.
+    var cardCoverURL: URL? { coverURL ?? thumbnailURL }
 
     /// The images an entry's links gave only under legacy rels (`OPDSImageRelation`), once
     /// its spec rels are all applied: a spec rel wins in whatever order the links came.

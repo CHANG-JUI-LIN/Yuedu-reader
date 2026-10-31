@@ -95,6 +95,7 @@ struct OPDSParserTests {
         #expect(book.thumbnailURL?.absoluteString == "https://example.com/covers/1-thumb.jpg")
         #expect(book.coverURL?.absoluteString == "https://example.com/covers/1.jpg")
         #expect(book.displayCoverURL == book.thumbnailURL)
+        #expect(book.cardCoverURL == book.coverURL)
         #expect(book.bestAcquisition?.importExtension == "epub")
     }
 
