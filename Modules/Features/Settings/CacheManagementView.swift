@@ -9,7 +9,7 @@ final class CacheManagementViewModel: ObservableObject {
 
     private let service: CacheManagementService
 
-    init(service: CacheManagementService = CacheManagementService()) {
+    init(service: CacheManagementService) {
         self.service = service
     }
 
@@ -19,7 +19,7 @@ final class CacheManagementViewModel: ObservableObject {
         errorMessage = nil
         let service = service
         snapshot = await Task.detached(priority: .utility) {
-            service.snapshot()
+            await service.snapshot()
         }.value
         isLoading = false
     }
@@ -30,10 +30,10 @@ final class CacheManagementViewModel: ObservableObject {
         let service = service
         do {
             try await Task.detached(priority: .utility) {
-                try service.clear(category)
+                try await service.clear(category)
             }.value
             snapshot = await Task.detached(priority: .utility) {
-                service.snapshot()
+                await service.snapshot()
             }.value
         } catch {
             AppLogger.error("CacheManagementView clear failed", error: error)
@@ -48,14 +48,14 @@ final class CacheManagementViewModel: ObservableObject {
         let service = service
         do {
             try await Task.detached(priority: .utility) {
-                try service.clearAll()
+                try await service.clearAll()
             }.value
             snapshot = CacheStorageSnapshot()
         } catch {
             AppLogger.error("CacheManagementView clear-all failed", error: error)
             errorMessage = localized("快取操作失敗")
             snapshot = await Task.detached(priority: .utility) {
-                service.snapshot()
+                await service.snapshot()
             }.value
         }
         isLoading = false
@@ -80,7 +80,7 @@ struct CacheManagementView: View {
     @State private var pendingConfirmation: CacheConfirmation?
     @State private var showError = false
 
-    init(service: CacheManagementService = CacheManagementService()) {
+    init(service: CacheManagementService) {
         _viewModel = StateObject(
             wrappedValue: CacheManagementViewModel(service: service)
         )
@@ -230,5 +230,5 @@ struct CacheManagementView: View {
 }
 
 #Preview {
-    CacheManagementView()
+    CacheManagementView(service: CacheManagementService(coverOwner: BookStore()))
 }

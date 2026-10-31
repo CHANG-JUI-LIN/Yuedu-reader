@@ -143,12 +143,28 @@ enum CacheManagementError: LocalizedError, Equatable {
     }
 }
 
+/// The books behind `CacheStorageRoots.covers`. That directory holds the covers books
+/// downloaded beside covers nothing can fetch again, an imported book's own artwork among
+/// them, so 快取管理 asks the books which files those are before deleting and tells them
+/// afterwards. Feedback #116: covers were deleted wholesale while every book kept pointing
+/// at its file, and nothing ever fetched one back.
+@MainActor
+protocol SavedCoverOwner: AnyObject {
+    /// Files in `covers` no download brings back; clearing keeps them. Nil while the books
+    /// are not all known (an unreadable shelf file): no file can then be shown to be
+    /// replaceable, and the directory is left alone.
+    func irreplaceableCoverFilenames() -> Set<String>?
+    /// `covers` has just been cleared: fetch back the covers books still show.
+    func downloadedCoversRemoved()
+}
+
 /// Owns the cache-management use cases exposed by Settings.
 ///
 /// Only app-maintained, re-downloadable artifacts are included here. Imported
 /// books, local manga archives, audiobook files, settings, and sync payloads are
 /// deliberately outside these roots and are never removed by this service.
 final class CacheManagementService: @unchecked Sendable {
+    private let coverOwner: any SavedCoverOwner
     private let fileManager: FileManager
     private let roots: CacheStorageRoots
     /// The live writer behind the diagnostics directory, when there is one. Tests
@@ -161,12 +177,14 @@ final class CacheManagementService: @unchecked Sendable {
     private let coverPipeline: CoverImagePipeline
 
     init(
+        coverOwner: any SavedCoverOwner,
         fileManager: FileManager = .default,
         roots: CacheStorageRoots = .live,
         diagnosticLog: DiagnosticLog? = .shared,
         remoteLibraryCache: RemoteLibraryCache? = nil,
         coverPipeline: CoverImagePipeline = .shared
     ) {
+        self.coverOwner = coverOwner
         self.fileManager = fileManager
         self.roots = roots
         self.diagnosticLog = diagnosticLog
@@ -175,18 +193,19 @@ final class CacheManagementService: @unchecked Sendable {
             ?? (roots.remoteBooks == StorageLocations.remoteLibraryCache ? .shared : RemoteLibraryCache(root: roots.remoteBooks))
     }
 
-    func snapshot() -> CacheStorageSnapshot {
-        CacheStorageSnapshot(
+    func snapshot() async -> CacheStorageSnapshot {
+        let keptCovers = await coverOwner.irreplaceableCoverFilenames()
+        return CacheStorageSnapshot(
             chapters: byteCount(in: roots.chapters),
             ttsAudio: byteCount(in: roots.ttsAudio),
             mangaImages: byteCount(in: roots.mangaImages),
-            covers: byteCount(in: roots.covers) + byteCount(in: roots.networkCovers),
+            covers: clearableCoverBytes(keeping: keptCovers) + byteCount(in: roots.networkCovers),
             diagnostics: byteCount(in: roots.diagnostics),
             remoteBooks: byteCount(in: roots.remoteBooks)
         )
     }
 
-    func clear(_ category: CacheCategory) throws {
+    func clear(_ category: CacheCategory) async throws {
         // The diagnostics directory has a live writer behind it. Deleting the files
         // from under it would race the batched append; `DiagnosticLog.clear()` does
         // the same work on the queue that owns those files.
@@ -200,11 +219,7 @@ final class CacheManagementService: @unchecked Sendable {
                 return
             }
             if category == .covers {
-                // Also when the delete stops partway: whatever did go must not
-                // keep drawing from memory.
-                defer { coverPipeline.invalidateDownloadedBookCovers() }
-                try clearDirectory(roots.covers)
-                try clearDirectory(roots.networkCovers)
+                try await clearCovers()
                 return
             }
             try clearDirectory(roots[category])
@@ -220,13 +235,39 @@ final class CacheManagementService: @unchecked Sendable {
         }
     }
 
-    func clearAll() throws {
+    func clearAll() async throws {
         for category in CacheCategory.allCases {
-            try clear(category)
+            try await clear(category)
         }
     }
 
-    private func byteCount(in directory: URL) -> Int64 {
+    /// Deletes every file in `covers` but those the books cannot fetch again, and all of
+    /// `networkCovers`; then the books fetch back the covers they show.
+    private func clearCovers() async throws {
+        let kept = await coverOwner.irreplaceableCoverFilenames()
+        if kept == nil {
+            AppLogger.cache("⟐ saved covers kept: the shelf did not load completely", level: .notice)
+        }
+        let deletion = Result {
+            if let kept { try clearDirectory(roots.covers, keeping: kept) }
+            try clearDirectory(roots.networkCovers)
+        }
+        // Also when the delete stopped partway: whatever did go must not keep drawing from
+        // memory, and the books fetch it back. Told only now, so nothing they fetch back is
+        // deleted after.
+        coverPipeline.invalidateDownloadedBookCovers()
+        await coverOwner.downloadedCoversRemoved()
+        try deletion.get()
+    }
+
+    /// What clearing `covers` frees, without the files it keeps: a size that stays after
+    /// 清除 reads as a broken button.
+    private func clearableCoverBytes(keeping kept: Set<String>?) -> Int64 {
+        guard let kept else { return 0 }
+        return byteCount(in: roots.covers) { !kept.contains($0.lastPathComponent) }
+    }
+
+    private func byteCount(in directory: URL, counting isCounted: (URL) -> Bool = { _ in true }) -> Int64 {
         guard let enumerator = fileManager.enumerator(
             at: directory,
             includingPropertiesForKeys: [.fileSizeKey, .isRegularFileKey]
@@ -238,14 +279,15 @@ final class CacheManagementService: @unchecked Sendable {
                 let values = try? fileURL.resourceValues(
                     forKeys: [.fileSizeKey, .isRegularFileKey]
                 ),
-                values.isRegularFile == true
+                values.isRegularFile == true,
+                isCounted(fileURL)
             else { continue }
             total += Int64(values.fileSize ?? 0)
         }
         return total
     }
 
-    private func clearDirectory(_ directory: URL) throws {
+    private func clearDirectory(_ directory: URL, keeping kept: Set<String> = []) throws {
         guard fileManager.fileExists(atPath: directory.path) else {
             try fileManager.createDirectory(
                 at: directory,
@@ -259,7 +301,7 @@ final class CacheManagementService: @unchecked Sendable {
             includingPropertiesForKeys: nil,
             options: []
         )
-        for item in contents {
+        for item in contents where !kept.contains(item.lastPathComponent) {
             try fileManager.removeItem(at: item)
         }
     }

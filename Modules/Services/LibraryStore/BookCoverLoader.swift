@@ -193,8 +193,12 @@ enum BookCoverLoader {
         filename: String,
         session: URLSession? = nil
     ) async -> String? {
-        guard let image = await loadImage(urlString: urlString, headers: headers, session: session),
-              let jpeg = image.jpegData(compressionQuality: 0.85) else { return nil }
+        // `loadImage` logs why a cover did not load.
+        guard let image = await loadImage(urlString: urlString, headers: headers, session: session) else { return nil }
+        guard let jpeg = image.jpegData(compressionQuality: 0.85) else {
+            AppLogger.cache("⟐ downloaded cover could not be encoded", context: ["url": String(urlString.prefix(300))])
+            return nil
+        }
         do {
             try BookCoverFileStore.live.write(jpeg, filename: filename)
             return filename

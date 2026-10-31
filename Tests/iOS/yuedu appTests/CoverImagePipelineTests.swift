@@ -451,11 +451,12 @@ struct CoverImagePipelineTests {
         let subscription = pipeline.invalidations.sink { received.append($0) }
         defer { subscription.cancel() }
         let service = CacheManagementService(
+            coverOwner: SavedCoverOwnerStub(),
             roots: fixture.cacheRoots,
             diagnosticLog: nil,
             coverPipeline: pipeline
         )
-        try service.clear(.covers)
+        try await service.clear(.covers)
         fixture.probe.release(downloaded)
         fixture.probe.release(custom)
 
@@ -1015,6 +1016,7 @@ struct SavedNetworkCoverTests {
         #expect(exists("new"))
     }
 
+    @MainActor
     @Test("快取管理's 封面 counts and clears saved network covers too")
     func cacheManagementCoversSavedNetworkCovers() async throws {
         let fixture = try CoverFixture()
@@ -1028,15 +1030,16 @@ struct SavedNetworkCoverTests {
         )
 
         let service = CacheManagementService(
+            coverOwner: SavedCoverOwnerStub(),
             roots: fixture.cacheRoots,
             diagnosticLog: nil,
             coverPipeline: fixture.pipeline
         )
-        #expect(service.snapshot().covers == Int64(savedBytes))
-        try service.clear(.covers)
+        #expect(await service.snapshot().covers == Int64(savedBytes))
+        try await service.clear(.covers)
 
         #expect(!FileManager.default.fileExists(atPath: saved.path))
-        #expect(service.snapshot().covers == 0)
+        #expect(await service.snapshot().covers == 0)
         _ = await fixture.pipeline.coalescedNetworkLoad(key: key, decode: decodeSaved, network.fetch(.red))
         #expect(network.fetches == 2)
     }

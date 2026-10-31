@@ -4,9 +4,9 @@ import Testing
 
 /// The custom-cover (封面搜索 / 相簿) storage contract.
 ///
-/// The routing exists for one reason: 設定 → 快取管理 empties the cover cache
-/// wholesale, and a cover the user picked from their photo library cannot be
-/// downloaded again. If a custom cover ever resolves back into the cache root,
+/// The routing exists for one reason: 設定 → 快取管理 clears the cover cache,
+/// and a cover the user picked from their photo library cannot be downloaded
+/// again. If a custom cover ever resolves back into the cache root,
 /// clearing the cache silently destroys it.
 @Suite("Custom cover storage")
 struct CustomCoverStorageTests {

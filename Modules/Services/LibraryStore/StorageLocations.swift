@@ -76,16 +76,17 @@ enum StorageLocations {
         support.appendingPathComponent("book_sources.json")
     }
 
-    /// Downloaded cover images, named by `ReadingBook.coverImagePath`.
+    /// Saved cover images, named by `ReadingBook.coverImagePath`: those downloaded from a
+    /// book's `coverUrl`, and an imported book's own artwork. 設定 → 快取管理 deletes only
+    /// what can be downloaded again (`SavedCoverOwner`).
     static var covers: URL {
         directory(coversDirectoryName)
     }
 
     /// Covers the user set by hand in 書籍資訊 (封面搜索 / 相簿).
     ///
-    /// Deliberately outside `covers`: 設定 → 快取管理 empties that directory
-    /// wholesale on the premise that every cover in it can be downloaded again,
-    /// and a picture the user chose from their photo library cannot.
+    /// Deliberately outside `covers`, which 設定 → 快取管理 clears: a picture the user
+    /// chose from their photo library has no second source.
     static var customCovers: URL {
         directory(customCoversDirectoryName)
     }

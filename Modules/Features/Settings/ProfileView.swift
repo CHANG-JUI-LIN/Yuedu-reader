@@ -319,7 +319,7 @@ struct SettingsView: View {
                 BackupSyncView()
             }
             .sheet(isPresented: $showCacheManagement) {
-                CacheManagementView()
+                CacheManagementView(service: CacheManagementService(coverOwner: store))
             }
             .sheet(isPresented: $showLanServer) {
                 LanServerView().environmentObject(store)

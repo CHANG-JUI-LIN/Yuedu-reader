@@ -288,6 +288,9 @@ struct yuedu_appApp: App {
                     SharedImportQueueDrainer.shared.bind(bookStore: bookStore)
                     WebDAVManager.shared.bind(bookStore: bookStore)
                     DiagnosticScale.publish(bookStore: bookStore, reason: "launch")
+                    // What an earlier 清除封面快取 deleted, or a cover download that failed then
+                    // (feedback #116).
+                    Task(priority: .utility) { await bookStore.restoreMissingDownloadedCovers() }
                     _ = FirebaseAuthManager.shared
                     Task {
                         await AppDependencies.live.offlineDownloadManager

@@ -19,8 +19,9 @@ enum CoverImageSource: Hashable, Sendable {
     /// `Caches/Works/covers` (unified library 2d), drawn on Explore's home (5c).
     case indexedCover(path: String)
 
-    /// Downloaded covers sit in the directory 設定 → 快取管理 empties wholesale.
-    /// Covers the user picked (`CustomCovers`) and the 預設封面 library do not.
+    /// Saved covers in `Covers`, which 設定 → 快取管理 clears of every cover a book can
+    /// download again. Covers the user picked (`CustomCovers`) and the 預設封面 library
+    /// are never there.
     var isDownloadedBookCover: Bool {
         guard case .bookCover(let filename) = self else { return false }
         return !StorageLocations.isCustomCoverFilename(filename)
@@ -123,7 +124,7 @@ enum CoverImageResult: Sendable {
 /// bitmap for an affected source drops it and loads again.
 enum CoverInvalidation: Sendable, Equatable {
     case sources(Set<CoverImageSource>)
-    /// 快取管理 emptied the downloaded-cover directory.
+    /// 快取管理 cleared the saved-cover directory.
     case downloadedBookCovers
     /// The 預設封面 library changed.
     case defaultCovers
@@ -760,10 +761,10 @@ final class CoverImagePipeline: @unchecked Sendable {
         invalidate([source])
     }
 
-    /// 快取管理 emptied the downloaded-cover directory. Every downloaded cover is
-    /// stale at once, including ones mid-load. The other bitmaps are still valid;
-    /// dropping them too is only memory reclaim, and views already showing them keep
-    /// the bitmap they hold.
+    /// 快取管理 cleared the saved-cover directory. Every cover in it is stale at once,
+    /// including ones mid-load; one it kept only loads again. The other bitmaps are
+    /// still valid; dropping them too is only memory reclaim, and views already showing
+    /// them keep the bitmap they hold.
     func invalidateDownloadedBookCovers() {
         state.withLock { state in
             state.epoch &+= 1

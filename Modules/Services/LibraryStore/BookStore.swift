@@ -1688,27 +1688,76 @@ class BookStore: @MainActor ObservableObject, BookProvider {
     }
 
     /// Download a remote cover (with source headers) and store it on the book.
-    /// No-op when the URL is empty or the book already has a cover.
+    /// No-op when the URL is empty or the book already shows a saved cover.
     func downloadCoverIfNeeded(bookId: UUID, coverUrl: String, sourceId: UUID?) {
+        Task { [weak self] in
+            await self?.downloadCover(bookId: bookId, coverUrl: coverUrl, sourceId: sourceId)
+        }
+    }
+
+    /// `downloadCoverIfNeeded`, returning once the cover is saved or the download failed
+    /// (`BookCoverLoader` logs each failure where it happens).
+    ///
+    /// A downloaded cover whose file is gone — 快取管理 deleted it (feedback #116) — is
+    /// downloaded again under the name its record already has, so the record does not change
+    /// and sync has nothing to send.
+    func downloadCover(bookId: UUID, coverUrl: String, sourceId: UUID?) async {
         let trimmed = coverUrl.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty,
               let book = records.first(where: { $0.id == bookId }),
-              book.coverImagePath == nil else { return }
+              !Self.showsSavedCover(book.coverImagePath) else { return }
 
         let source = sourceId.flatMap { id in BookSourceStore.shared.source(id: id) }
         CoverDecodeService.shared.registerIfNeeded(coverUrl: trimmed, source: source)
-        let filename = "\(bookId.uuidString)_cover.jpg"
-        Task { [weak self] in
-            let headers = BookCoverLoader.headers(
-                sourceBaseURL: source?.bookSourceUrl,
-                sourceHeaders: await source?.resolvedHeaders() ?? [:]
-            )
-            guard let saved = await BookCoverLoader.downloadAndSave(
-                urlString: trimmed, headers: headers, filename: filename
-            ) else { return }
-            guard let self else { return }
-            await MainActor.run { self.setCoverImagePath(bookId: bookId, filename: saved) }
+        let filename = book.coverImagePath.flatMap { $0.isEmpty ? nil : $0 } ?? "\(bookId.uuidString)_cover.jpg"
+        let headers = BookCoverLoader.headers(
+            sourceBaseURL: source?.bookSourceUrl,
+            sourceHeaders: await source?.resolvedHeaders() ?? [:]
+        )
+        guard let saved = await BookCoverLoader.downloadAndSave(
+            urlString: trimmed, headers: headers, filename: filename
+        ) else { return }
+        guard records.first(where: { $0.id == bookId })?.coverImagePath != saved else { return }
+        setCoverImagePath(bookId: bookId, filename: saved)
+    }
+
+    /// Whether the saved cover `path` names is there to show: one the user picked, or a
+    /// download still on disk. A picked cover whose file is gone is not replaced by the
+    /// source's.
+    nonisolated static func showsSavedCover(_ path: String?) -> Bool {
+        guard let path, !path.isEmpty else { return false }
+        return StorageLocations.isCustomCoverFilename(path)
+            || FileManager.default.fileExists(atPath: StorageLocations.coverFileLocation(path).path)
+    }
+
+    /// Downloads again every downloaded cover whose file is gone: after 快取管理 cleared the
+    /// covers, and at launch for what an earlier clear (3.0.0 (143), feedback #116) or a
+    /// download that failed then left behind. Returns once each has been saved or has failed.
+    func restoreMissingDownloadedCovers() async {
+        let downloads = records.filter(\.downloadsItsCover).map {
+            MissingCoverCandidate(id: $0.id, path: $0.coverImagePath, url: $0.coverUrl ?? "", sourceId: $0.bookSourceId)
         }
+        guard !downloads.isEmpty else { return }
+        // A file check per book, off the main thread: a shelf can hold hundreds.
+        let missing = await Task.detached(priority: .utility) {
+            downloads.filter { $0.path?.isEmpty == false && !Self.showsSavedCover($0.path) }
+        }.value
+        guard !missing.isEmpty else { return }
+        AppLogger.cache("⟐ downloading missing covers again", context: ["count": missing.count], level: .notice)
+        await withTaskGroup(of: Void.self) { group in
+            for cover in missing {
+                group.addTask {
+                    await self.downloadCover(bookId: cover.id, coverUrl: cover.url, sourceId: cover.sourceId)
+                }
+            }
+        }
+    }
+
+    private struct MissingCoverCandidate: Sendable {
+        let id: UUID
+        let path: String?
+        let url: String
+        let sourceId: UUID?
     }
 
     /// Assign a downloaded cover filename to a book and persist.
@@ -3645,4 +3694,37 @@ private final class TaskBox: @unchecked Sendable {
     private var task: Task<Void, Never>?
     func set(_ task: Task<Void, Never>) { lock.lock(); self.task = task; lock.unlock() }
     var value: Task<Void, Never>? { lock.lock(); defer { lock.unlock() }; return task }
+}
+
+// MARK: - 快取管理's covers
+
+extension BookStore: SavedCoverOwner {
+    /// Every cover a book shows or keeps for 重設封面 that is not its own download: an
+    /// imported book's artwork came out of its file, and a remote-library copy's address
+    /// needs its catalog's session. Nil until every record has loaded.
+    func irreplaceableCoverFilenames() -> Set<String>? {
+        guard recordsLoadedCompletely else { return nil }
+        var kept = Set<String>()
+        for book in records where !book.downloadsItsCover {
+            for name in [book.coverImagePath, book.originalCoverImagePath] {
+                if let name, !name.isEmpty { kept.insert(name) }
+            }
+        }
+        return kept
+    }
+
+    func downloadedCoversRemoved() {
+        Task { await restoreMissingDownloadedCovers() }
+    }
+}
+
+extension ReadingBook {
+    /// The cover this book shows is downloaded from its own `coverUrl`
+    /// (`BookStore.downloadCover`), so 快取管理 may delete the file and the book fetches it
+    /// back. Only an online book's: an imported book's cover came out of its file, and a
+    /// remote-library copy, which is not an online book, draws its address with the catalog's
+    /// session (`BookshelfCoverPlan`).
+    var downloadsItsCover: Bool {
+        isOnline && coverUrl?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false
+    }
 }
