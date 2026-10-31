@@ -799,7 +799,7 @@ struct ReaderSettingsView: View {
                 isEnabled: !settings.followSystemBrightness
             )
 
-            // Device-wide, like brightness: outside 排版生效範圍 and its backup.
+            // Outside 排版生效範圍 and its backup: iCloud syncs it on its own.
             Toggle(isOn: $settings.readerKeepsScreenAwake) {
                 SettingsRowLabel(localized("閱讀時螢幕常亮"), systemImage: "lock.open.display")
             }

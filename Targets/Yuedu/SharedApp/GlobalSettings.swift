@@ -510,6 +510,15 @@ enum AppearanceColorScheme: String, Equatable {
     }
 }
 
+/// The iCloud-synced 閱讀時螢幕常亮, shaped like `ReaderBarLayoutSyncRecord`: ONE
+/// always-present last-write-wins record under a constant id, since an absent one would
+/// let the merge tombstone that id and undo a switch flipped on another device.
+/// `modifiedAt` advances only when the user flips the switch on that device.
+struct ReaderKeepsScreenAwakeSyncRecord: Codable, Equatable, Sendable {
+    var keepsScreenAwake: Bool
+    var modifiedAt: Date?
+}
+
 // MARK: - Global Settings
 
 /// Every global setting. `@Observable` (it was an `ObservableObject` with 156 `@Published`
@@ -610,6 +619,7 @@ class GlobalSettings {
     private static let ttsHighlightBoxStyleKey = "yd_tts_highlight_box_style"
     private static let ttsKeepsScreenAwakeKey = "yd_tts_keeps_screen_awake"
     private static let readerKeepsScreenAwakeKey = "yd_reader_keeps_screen_awake"
+    private static let readerKeepsScreenAwakeSyncClockKey = "yd_reader_keeps_screen_awake_sync_clock"
     private static let ttsSystemVoiceIdentifiersKey = "yd_tts_system_voice_ids"
     private static let ttsMultiRoleEnabledKey = "yd_tts_multi_role_enabled"
     private static let ttsRoleVoicesKey = "yd_tts_role_voices"
@@ -752,11 +762,26 @@ class GlobalSettings {
         }
     }
     /// 閱讀時螢幕常亮: no auto-lock while a reader is open in the foreground. Off by
-    /// default. Kept on this device only, like brightness and 朗讀時保持螢幕開啟
-    /// (`ttsKeepsScreenAwake`), and outside 排版生效範圍: it is about this screen, not the
-    /// page.
+    /// default. Synced through iCloud as a record of its own
+    /// (`ReaderKeepsScreenAwakeSyncRecord`), outside 排版生效範圍: it is about the screen,
+    /// not the page, so no theme carries it.
     var readerKeepsScreenAwake: Bool {
-        didSet { UserDefaults.standard.set(readerKeepsScreenAwake, forKey: Self.readerKeepsScreenAwakeKey) }
+        didSet {
+            UserDefaults.standard.set(readerKeepsScreenAwake, forKey: Self.readerKeepsScreenAwakeKey)
+            readerKeepsScreenAwakeSyncClock = Date()
+        }
+    }
+    /// Merge clock for the iCloud-synced 閱讀時螢幕常亮. Advances when the user flips it
+    /// here; a synced value brings the winning device's clock along
+    /// (`applyReaderKeepsScreenAwakeFromSync`), so no device claims a change it did not make.
+    private(set) var readerKeepsScreenAwakeSyncClock: Date? {
+        didSet {
+            if let readerKeepsScreenAwakeSyncClock {
+                UserDefaults.standard.set(readerKeepsScreenAwakeSyncClock, forKey: Self.readerKeepsScreenAwakeSyncClockKey)
+            } else {
+                UserDefaults.standard.removeObject(forKey: Self.readerKeepsScreenAwakeSyncClockKey)
+            }
+        }
     }
     var letterSpacing: Double {
         didSet {
@@ -2008,6 +2033,8 @@ class GlobalSettings {
             followSystemBrightness = UserDefaults.standard.bool(forKey: "yd_follow_sys_brightness")
         }
         readerKeepsScreenAwake = UserDefaults.standard.bool(forKey: Self.readerKeepsScreenAwakeKey)
+        readerKeepsScreenAwakeSyncClock =
+            UserDefaults.standard.object(forKey: Self.readerKeepsScreenAwakeSyncClockKey) as? Date
         letterSpacing =
             (UserDefaults.standard.object(forKey: "yd_letter_spacing") as? Double) ?? 0.0
 
@@ -2834,6 +2861,16 @@ class GlobalSettings {
         guard persistReaderBarLayout(layout, stampsSyncClock: false) else { return false }
         readerBarLayoutSyncClock = modifiedAt
         return true
+    }
+
+    /// Applies the iCloud-merged 閱讀時螢幕常亮 with the clock it won by. A reader on screen
+    /// follows at once (`ReaderView` watches the setting).
+    func applyReaderKeepsScreenAwakeFromSync(_ record: ReaderKeepsScreenAwakeSyncRecord) {
+        guard record.keepsScreenAwake != readerKeepsScreenAwake
+            || record.modifiedAt != readerKeepsScreenAwakeSyncClock else { return }
+        readerKeepsScreenAwake = record.keepsScreenAwake
+        // After the value, whose didSet stamped this device's clock as if flipped here.
+        readerKeepsScreenAwakeSyncClock = record.modifiedAt
     }
 
     @discardableResult

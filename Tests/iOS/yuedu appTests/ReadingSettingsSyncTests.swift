@@ -133,6 +133,48 @@ struct ReadingSettingsSyncTests {
         #expect(settings.readerBarLayout == layout)
     }
 
+    /// 閱讀時螢幕常亮 flipped here moves its own record's clock, so the next sync carries it
+    /// to the other devices; it is not a 排版生效範圍 row (2026-10-31).
+    @Test func keepScreenOnFlippedHereStampsItsClock() {
+        let settings = GlobalSettings.shared
+        let fixture = Fixture(settings)
+        defer { fixture.restore() }
+        let original = ReaderKeepsScreenAwakeSyncRecord(
+            keepsScreenAwake: settings.readerKeepsScreenAwake,
+            modifiedAt: settings.readerKeepsScreenAwakeSyncClock
+        )
+        defer { settings.applyReaderKeepsScreenAwakeFromSync(original) }
+        settings.readingSettingSyncRecords = []
+
+        let before = Date()
+        settings.readerKeepsScreenAwake.toggle()
+
+        #expect(settings.readerKeepsScreenAwake == !original.keepsScreenAwake)
+        let clock = settings.readerKeepsScreenAwakeSyncClock
+        #expect(clock.map { $0 >= before } == true)
+        #expect(settings.readingSettingSyncRecords.isEmpty)
+    }
+
+    /// Another device's 閱讀時螢幕常亮 is worn with the clock it won by, not stamped as set
+    /// here: stamped, both devices would claim to be newest on every pass.
+    @Test func keepScreenOnFromAnotherDeviceKeepsItsClock() {
+        let settings = GlobalSettings.shared
+        let original = ReaderKeepsScreenAwakeSyncRecord(
+            keepsScreenAwake: settings.readerKeepsScreenAwake,
+            modifiedAt: settings.readerKeepsScreenAwakeSyncClock
+        )
+        defer { settings.applyReaderKeepsScreenAwakeFromSync(original) }
+
+        let elsewhere = Date(timeIntervalSince1970: 1_900_000_000)
+        settings.applyReaderKeepsScreenAwakeFromSync(
+            ReaderKeepsScreenAwakeSyncRecord(keepsScreenAwake: !original.keepsScreenAwake, modifiedAt: elsewhere)
+        )
+
+        #expect(settings.readerKeepsScreenAwake == !original.keepsScreenAwake)
+        #expect(settings.readerKeepsScreenAwakeSyncClock == elsewhere)
+        #expect(UserDefaults.standard.bool(forKey: "yd_reader_keeps_screen_awake") == !original.keepsScreenAwake)
+    }
+
     /// Puts back the settings these tests set, then the stores and the sync rows — the
     /// writes that put the live values back note rows too.
     @MainActor

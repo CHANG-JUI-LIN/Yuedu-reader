@@ -149,6 +149,8 @@ final class ICloudSyncManager: ObservableObject {
     /// `reader_overlay_layout`: a build that predates the bar model still syncs that one,
     /// and would fail to decode a bar layout written into it.
     nonisolated private static let readerBarLayoutRecordID = "reader_bar_layout"
+    /// Fixed id of the one item in the 閱讀時螢幕常亮 record.
+    nonisolated private static let readerKeepsScreenAwakeRecordID = "reader_keeps_screen_awake"
     nonisolated private static let readerBackgroundPicturePrefix = "readerbg_"
     /// The pictures the reading setup shows are file records named `readerstyle_<asset ID>`.
     nonisolated private static let readerStylePicturePrefix = "readerstyle_"
@@ -176,6 +178,7 @@ final class ICloudSyncManager: ObservableObject {
     /// The reading setup, one item per 排版生效範圍 row as last set on any device.
     nonisolated private static let readingSettingsRecordName = "reading_settings_v2"
     nonisolated private static let readerBarLayoutRecordName = "reader_bar_layout_v2"
+    nonisolated private static let readerKeepsScreenAwakeRecordName = "reader_keeps_screen_awake_v2"
     nonisolated private static let booksRecordName = "books_meta_v2"
     /// The shelf as builds from before the split sync it.
     nonisolated private static let olderBuildsBooksRecordName = "books_meta"
@@ -188,7 +191,7 @@ final class ICloudSyncManager: ObservableObject {
     nonisolated private static let mergedRecordNames = [
         bookSourcesRecordName, replaceRulesRecordName, bubbleStylesRecordName,
         bubbleSelectionRecordName, commentCardStylesRecordName, readerBackgroundsRecordName, readingSettingsRecordName,
-        readerBarLayoutRecordName, booksRecordName,
+        readerBarLayoutRecordName, readerKeepsScreenAwakeRecordName, booksRecordName,
         "book_sources", "replace_rules", "comment_bubble_styles", bubbleSelectionRecordID,
         "reader_backgrounds", "reading_settings", readerBarLayoutRecordID, olderBuildsBooksRecordName,
         "reader_background_choice", readerOverlayLayoutRecordID,
@@ -203,6 +206,7 @@ final class ICloudSyncManager: ObservableObject {
     nonisolated private static let shadowCommentBubbleSelection = "icloud_commentBubbleSelection_v2"
     nonisolated private static let shadowCommentCardStyles = "icloud_commentCardStyles_v2"
     nonisolated private static let shadowReaderBarLayout = "icloud_readerBarLayout_v2"
+    nonisolated private static let shadowReaderKeepsScreenAwake = "icloud_readerKeepsScreenAwake_v2"
     nonisolated private static let shadowReaderBackgrounds = "icloud_readerBackgrounds_v2"
     nonisolated private static let shadowReadingSettings = "icloud_readingSettings_v2"
     /// What this device synced through `books_meta` before the split: every book it had
@@ -657,6 +661,36 @@ final class ICloudSyncManager: ObservableObject {
                 }
             )
             changedRemote = changedRemote || barLayoutMerge.uploaded
+
+            try Task.checkCancellation()
+            // 4a. 閱讀時螢幕常亮 (singleton setting), shaped like the bar layout: one
+            //     always-present record whose clock advances only when a user flips the
+            //     switch, and a synced value brings the winner's clock with it.
+            let (localKeepsScreenAwake, keepsScreenAwakeClock) = await onMain("sync.read.keepsScreenAwake") {
+                let settings = GlobalSettings.shared
+                return (settings.readerKeepsScreenAwake, settings.readerKeepsScreenAwakeSyncClock)
+            }
+            let keepsScreenAwakeMerge = try await mergeType(
+                recordName: Self.readerKeepsScreenAwakeRecordName,
+                shadowKey: Self.shadowReaderKeepsScreenAwake,
+                local: [
+                    ReaderKeepsScreenAwakeSyncRecord(
+                        keepsScreenAwake: localKeepsScreenAwake,
+                        modifiedAt: keepsScreenAwakeClock
+                    )
+                ],
+                id: { _ in Self.readerKeepsScreenAwakeRecordID },
+                hash: { Self.stableHash($0) },
+                fallbackUpdatedAt: { $0.modifiedAt ?? .distantPast },
+                applyLocally: { merged in
+                    guard let record = merged.first else { return true }
+                    await onMain("sync.apply.keepsScreenAwake") {
+                        GlobalSettings.shared.applyReaderKeepsScreenAwakeFromSync(record)
+                    }
+                    return true
+                }
+            )
+            changedRemote = changedRemote || keepsScreenAwakeMerge.uploaded
 
             try Task.checkCancellation()
             // 5. Bookshelf (bound store). Progress lives in each book's
