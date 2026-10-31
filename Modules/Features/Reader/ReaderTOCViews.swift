@@ -362,14 +362,13 @@ struct ReaderTOCView: View {
             .scrollContentBackground(.hidden)
             .contentMargins(.top, 0, for: .scrollContent)
             .onAppear {
-                guard !isSearching else { return }
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
-                    if chapters.first(where: { $0.index == currentIndex }) != nil {
-                        // No animation: the list opens on the current chapter, it
-                        // does not travel there each time the sheet comes up.
-                        proxy.scrollTo(currentIndex, anchor: .center)
-                    }
-                }
+                guard !isSearching,
+                      chapters.contains(where: { $0.index == currentIndex }) else { return }
+                // No animation: the list opens on the current chapter, it does not travel
+                // there each time the sheet comes up. Straight from onAppear, as 有聲書 and
+                // the fixed-page reader's 目錄 do; the 0.1 s wait this replaced had no reason
+                // on record.
+                proxy.scrollTo(currentIndex, anchor: .center)
             }
         }
     }
