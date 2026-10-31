@@ -609,6 +609,7 @@ class GlobalSettings {
     private static let ttsHighlightBoxColorHexKey = "yd_tts_highlight_box_color_hex"
     private static let ttsHighlightBoxStyleKey = "yd_tts_highlight_box_style"
     private static let ttsKeepsScreenAwakeKey = "yd_tts_keeps_screen_awake"
+    private static let readerKeepsScreenAwakeKey = "yd_reader_keeps_screen_awake"
     private static let ttsSystemVoiceIdentifiersKey = "yd_tts_system_voice_ids"
     private static let ttsMultiRoleEnabledKey = "yd_tts_multi_role_enabled"
     private static let ttsRoleVoicesKey = "yd_tts_role_voices"
@@ -749,6 +750,13 @@ class GlobalSettings {
         didSet {
             UserDefaults.standard.set(followSystemBrightness, forKey: "yd_follow_sys_brightness")
         }
+    }
+    /// 閱讀時螢幕常亮: no auto-lock while a reader is open in the foreground. Off by
+    /// default. Kept on this device only, like brightness and 朗讀時保持螢幕開啟
+    /// (`ttsKeepsScreenAwake`), and outside 排版生效範圍: it is about this screen, not the
+    /// page.
+    var readerKeepsScreenAwake: Bool {
+        didSet { UserDefaults.standard.set(readerKeepsScreenAwake, forKey: Self.readerKeepsScreenAwakeKey) }
     }
     var letterSpacing: Double {
         didSet {
@@ -1999,6 +2007,7 @@ class GlobalSettings {
         } else {
             followSystemBrightness = UserDefaults.standard.bool(forKey: "yd_follow_sys_brightness")
         }
+        readerKeepsScreenAwake = UserDefaults.standard.bool(forKey: Self.readerKeepsScreenAwakeKey)
         letterSpacing =
             (UserDefaults.standard.object(forKey: "yd_letter_spacing") as? Double) ?? 0.0
 

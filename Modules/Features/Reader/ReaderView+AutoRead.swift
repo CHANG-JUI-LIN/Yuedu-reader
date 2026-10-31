@@ -43,26 +43,11 @@ extension ReaderView {
         showAutoReadPanel = false
         showQuickThemePanel = false
         setReaderChromeVisible(false)
-        applyAutoReadIdleTimer()
     }
 
     func exitAutoRead() {
         autoReader.exit()
         showAutoReadPanel = false
-        applyAutoReadIdleTimer()
-    }
-
-    /// 自動閱讀 keeps the screen on for as long as it runs (legado sets
-    /// `screenTimeOut = -1`). The idle timer has another owner — `TTSCoordinator`
-    /// holds it while 朗讀 is playing — so leaving the mode hands it back rather
-    /// than switching it off blind.
-    func applyAutoReadIdleTimer() {
-        if autoReader.isActive {
-            UIApplication.shared.isIdleTimerDisabled = true
-        } else {
-            UIApplication.shared.isIdleTimerDisabled =
-                ttsCoordinator.isPlaying && settings.ttsKeepsScreenAwake
-        }
     }
 
     /// Whether something is over the page that makes watching it turn pointless.

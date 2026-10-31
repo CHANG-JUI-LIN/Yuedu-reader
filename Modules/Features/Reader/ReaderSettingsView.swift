@@ -798,9 +798,17 @@ struct ReaderSettingsView: View {
                 step: 0.05,
                 isEnabled: !settings.followSystemBrightness
             )
+
+            // Device-wide, like brightness: outside 排版生效範圍 and its backup.
+            Toggle(isOn: $settings.readerKeepsScreenAwake) {
+                SettingsRowLabel(localized("閱讀時螢幕常亮"), systemImage: "lock.open.display")
+            }
         } header: {
             Text(localized("亮度"))
                 .foregroundStyle(DSColor.textSecondary)
+        } footer: {
+            Text(localized("只防止自動鎖定，會比較耗電；按下電源鍵仍可鎖定螢幕。"))
+                .dsSectionFooter()
         }
         .interfaceSectionSurface()
     }

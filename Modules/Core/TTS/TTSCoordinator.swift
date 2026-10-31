@@ -680,10 +680,13 @@ final class TTSCoordinator: ObservableObject {
         errorMessage = nil
     }
 
-    /// Applies the user preference immediately when it changes while narration is active.
+    /// Holds the screen on while this coordinator is the one narrating and the user wants
+    /// that; re-run whenever any of the three changes, the preference included.
     func updateScreenAwakePreference() {
-        guard Self.activeSystemMediaCoordinator === self else { return }
-        UIApplication.shared.isIdleTimerDisabled = isPlaying && GlobalSettings.shared.ttsKeepsScreenAwake
+        let holdsScreen = Self.activeSystemMediaCoordinator === self
+            && isPlaying
+            && GlobalSettings.shared.ttsKeepsScreenAwake
+        ScreenAwakeController.shared.setHeld(holdsScreen, .narration, by: self)
     }
 
     func stop(reason: String = "direct") {
@@ -832,9 +835,9 @@ final class TTSCoordinator: ObservableObject {
         let ownsSystemMedia = Self.activeSystemMediaCoordinator === self
         isPlaying = false
         playbackState = .stopped
-        if ownsSystemMedia {
-            UIApplication.shared.isIdleTimerDisabled = false
-        }
+        // Only this coordinator's own hold: 自動閱讀 or an open reader may still want the
+        // screen on.
+        ScreenAwakeController.shared.setHeld(false, .narration, by: self)
         cancelSleepTimer()
         if ownsSystemMedia {
             MPNowPlayingInfoCenter.default().playbackState = .stopped

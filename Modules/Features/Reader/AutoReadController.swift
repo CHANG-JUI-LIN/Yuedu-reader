@@ -39,8 +39,14 @@ final class AutoReadController: NSObject, ObservableObject {
 
     /// Also a Crashlytics key, like `tts_playing`: a stall report says whether the pages
     /// were turning by themselves.
+    ///
+    /// Keeps the screen on for as long as the mode runs (legado sets `screenTimeOut = -1`).
+    /// Every way out — 退出, the reader closing — passes through here.
     @Published private(set) var isActive = false {
-        didSet { CrashContext.setKey("auto_read", isActive) }
+        didSet {
+            CrashContext.setKey("auto_read", isActive)
+            ScreenAwakeController.shared.setHeld(isActive, .autoRead, by: self)
+        }
     }
     /// Held, not stopped: the menu is open, or a gesture is in flight. legado
     /// pauses on exactly these and resumes without losing the reveal's position.

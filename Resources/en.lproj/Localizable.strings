@@ -350,6 +350,8 @@
 "語音朗讀" = "Read Aloud";
 "朗讀時保持螢幕開啟" = "Keep Screen On While Reading Aloud";
 "只防止自動鎖定，按下電源鍵仍可鎖屏並繼續朗讀。" = "This only prevents auto-lock. You can still lock the screen with the side or top button, and reading aloud continues.";
+"閱讀時螢幕常亮" = "Keep Screen On While Reading";
+"只防止自動鎖定，會比較耗電；按下電源鍵仍可鎖定螢幕。" = "This only prevents auto-lock and uses more battery. You can still lock the screen with the side or top button.";
 "朗讀失敗：%@" = "Couldn't read aloud: %@";
 "第 %d 段語音無法下載：%@" = "Couldn't download audio segment %d: %@";
 "第 %d 段語音無法播放" = "Couldn't play audio segment %d.";

@@ -176,6 +176,11 @@ struct ReaderView: View {
 
     /// Not private: the footer pill in `ReaderView+Footer` reads its running state.
     @StateObject var autoReader = AutoReadController()
+    /// This reader's key for 閱讀時螢幕常亮 in `ScreenAwakeController`.
+    @State private var screenAwakeOwner = ScreenAwakeController.Owner()
+    /// Between `onAppear` and `onDisappear`. A page pushed over the reader, or a
+    /// full-screen cover, takes it off screen; a sheet does not.
+    @State private var readerIsOnScreen = false
 
     /// Builds 頁眉／頁腳 for any page the paged engine asks about. A reference type
     /// so the escaping closure the engine holds cannot freeze a copy of this
@@ -216,6 +221,15 @@ struct ReaderView: View {
         } else {
             screen.brightness = CGFloat(settings.readerBrightness)
         }
+    }
+
+    /// 閱讀時螢幕常亮: the screen stays on while this reader is on screen with the app in
+    /// the foreground. Re-run whenever any of the three changes.
+    private func applyReadingScreenAwake() {
+        let holdsScreen = settings.readerKeepsScreenAwake
+            && readerIsOnScreen
+            && scenePhase != .background
+        ScreenAwakeController.shared.setHeld(holdsScreen, .reading, by: screenAwakeOwner)
     }
 
     private func restoreReaderDisplayStateAfterResume() {
@@ -2296,6 +2310,8 @@ struct ReaderView: View {
             }
             rebuildReaderOverlayLegacyContentIndex()
             beginReadingStatsSession()
+            readerIsOnScreen = true
+            applyReadingScreenAwake()
             syncCoreTextTextAnnotations()
             readerWindow.withWindow { window in
                 guard let screen = window.windowScene?.screen else { return }
@@ -2370,7 +2386,8 @@ struct ReaderView: View {
             }
             volumeHandler.stopListening()
             autoReader.stopForReaderExit()
-            applyAutoReadIdleTimer()
+            readerIsOnScreen = false
+            applyReadingScreenAwake()
             mediaOverlayCoordinator.stop()
             EPUBVideoPlaybackManager.shared.stopAll()
             ReaderWebEmbedManager.shared.stopAll()
@@ -2407,6 +2424,7 @@ struct ReaderView: View {
                     restoreReaderDisplayStateAfterResume()
                     beginReadingStatsSession()
                 }
+                applyReadingScreenAwake()
             }
         }
         .onReceive(epubRenderer.$scrollEngine) { engine in
@@ -2441,6 +2459,9 @@ struct ReaderView: View {
             } else {
                 readerWindow.screen?.brightness = CGFloat(settings.readerBrightness)
             }
+        }
+        .onChanged(of: settings.readerKeepsScreenAwake) { _ in
+            applyReadingScreenAwake()
         }
         .onChanged(of: systemColorScheme) { _ in
             alignReaderModeWithDevice()
