@@ -10,21 +10,27 @@ import ObjectiveC
 /// SpringBoard class names, uncached: `-[FBSSettings _allSceneExtensions]`, reached from
 /// `_UIKeyboardInputSceneClientComponent` through `ui_safeAreaSettings`. Two of the names are
 /// Swift names (`Module.Class`). Objective-C cannot find them and asks the Swift runtime's
-/// getClass hook, which finds no such type and then searches every protocol conformance
-/// record of every loaded image (this app alone has about 9,100). It does not remember the
-/// miss. That is two full searches per update, on the main thread: 200–850 ms together
-/// (median about 540) when the app has sat idle for two minutes first, 5–10 ms when it has
-/// not. Measured with Time Profiler on the iOS 27.0 simulator, Release build, 2026-10-31
-/// (Crashlytics 6f607251, `phase background`). Only iOS 27 has these two classes; the iOS
-/// 17.5, 18.6 and 26 simulator runtimes do not.
+/// getClass hook, which finds no such type and then searches protocol conformance records for
+/// it. It does not remember the miss, so that is two searches per update, on the main thread.
+/// Only iOS 27 has these two classes; the iOS 17.5, 18.6 and 26 simulator runtimes do not.
+///
+/// What the two searches cost on a device has not been measured. On the iOS 27.0 simulator
+/// they take 200–850 ms per trip to the background (median about 540) after two idle minutes,
+/// 5–10 ms otherwise (Time Profiler, Release build, 2026-10-31, Crashlytics 6f607251,
+/// `phase background`). That figure does not carry over to a device. On the simulator
+/// `dyld_shared_cache_some_image_overridden()` is true, so the Swift runtime searches every
+/// loaded image (about 580 images, 327,000 records) and drops what it found each time another
+/// image loads. A device searches only the images outside the shared cache, which is
+/// essentially this app's own 9,100 records.
 ///
 /// ShellSceneKit and AppRestrictionsCore, the frameworks that define the two classes, are
 /// not loaded in an app process, so "not found" is the answer the search would have reached.
 /// If one of them is loaded, its name goes on to the real lookup, which finds the type.
 ///
-/// Delete this once FrontBoardServices stops asking app processes for these names, or once
-/// the Swift runtime caches failed lookups. To check, profile a trip to the background and
-/// look for `_searchConformancesByMangledTypeName` under `_allSceneExtensions`.
+/// Delete this if a device trace shows the search under about 10 ms on a trip after two idle
+/// minutes, once FrontBoardServices stops asking app processes for these names, or once the
+/// Swift runtime caches failed lookups. To check, profile a trip to the background without
+/// this hook and look for `_searchConformancesByMangledTypeName` under `_allSceneExtensions`.
 enum SpringBoardSceneExtensionLookup {
     /// Each class name as UIKit asks for it, with the framework that defines it.
     nonisolated static let absentClasses: [(name: StaticString, framework: StaticString)] = [
