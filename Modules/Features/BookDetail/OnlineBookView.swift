@@ -329,7 +329,7 @@ struct OnlineBookView: View {
                     onSetSourceVariable: { showsSourceVariableEditor = true },
                     onSetBookVariable: { showsBookVariableEditor = true },
                     onOpenChooser: { showsMoreChooser = true },
-                    sourceActions: sourceCallBacks?.menuActions
+                    sourceActions: sourceMenuActions
                 )
             }
         }
@@ -337,7 +337,7 @@ struct OnlineBookView: View {
             isPresented: $showsMoreChooser,
             onSetSourceVariable: { showsSourceVariableEditor = true },
             onSetBookVariable: { showsBookVariableEditor = true },
-            sourceActions: sourceCallBacks?.menuActions
+            sourceActions: sourceMenuActions
         )
         .sourceCallBackTaps($sourceCallBackTap)
         .bookIntroActions($introActionRequest) { await loadTOC(forceRefresh: true) }
@@ -550,6 +550,11 @@ struct OnlineBookView: View {
             intro: displayIntro,
             runtimeVariables: effectiveRuntimeVariables ?? [:]
         )
+    }
+
+    /// 「更多」's items for this book's source (`BookDetailSourceMenuActions`).
+    private var sourceMenuActions: BookDetailSourceMenuActions? {
+        BookDetailSourceMenuActions(source: source, book: sourceScriptBook, callBacks: sourceCallBacks)
     }
 
     /// The taps and menu items a source that listens for events takes (legado `SourceCallBack`).

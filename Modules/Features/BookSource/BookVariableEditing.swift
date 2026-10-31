@@ -105,7 +105,8 @@ extension View {
     }
 }
 
-/// The detail page's 「更多」 menu: the variable editors Legado's book page offers.
+/// The detail page's 「更多」 menu: the items for the book's source, then the variable editors
+/// Legado's book page offers.
 ///
 /// Before iOS 18 a `Menu` can drop the sheet its action asks for while the menu is still
 /// dismissing (Technotes/iOS17MenuModalPresentation.md), so there the control is a plain
@@ -116,7 +117,7 @@ struct BookDetailMoreMenu: View {
     let onSetBookVariable: () -> Void
     /// Before iOS 18: shows the screen's `bookDetailMoreChooser`.
     let onOpenChooser: () -> Void
-    /// The items a source that listens for events adds (legado `SourceCallBack`).
+    /// The items for the book's source; nil without one.
     var sourceActions: BookDetailSourceMenuActions? = nil
 
     var body: some View {
@@ -153,9 +154,12 @@ struct BookDetailMoreMenu: View {
     }
 }
 
-/// What legado's book page menu offers a source that listens for events: its custom button
-/// (only with `customButton`), share, copy the book and TOC URLs, clear the cache. Each goes
-/// to the source's `callBackJs` first and falls back to the action itself.
+/// The detail page's items for its source, above the variable editors. Every book that has a
+/// source gets 開啟網頁 and the copies of its book and TOC URLs — legado offers the copies on
+/// every online book's page, and a reader debugging one rule starts from them (#84, #105). A
+/// source that listens for events (legado `SourceCallBack`) adds its custom button (only with
+/// `customButton`), share and 清除快取, and its `callBackJs` takes every tap but 開啟網頁 first,
+/// falling back to the action itself.
 struct BookDetailSourceMenuActions {
     struct Item: Identifiable {
         let route: BookDetailMoreRoute
@@ -165,26 +169,48 @@ struct BookDetailSourceMenuActions {
         var id: BookDetailMoreRoute { route }
     }
 
+    var isListening: Bool
     var showsCustomButton: Bool
-    var onCustomButton: () -> Void
-    var onShare: () -> Void
+    var onOpenWebPage: () -> Void
     var onCopyBookURL: () -> Void
     var onCopyTOCURL: () -> Void
+    /// Only a listening source's items run these.
+    var onCustomButton: () -> Void
+    var onShare: () -> Void
     var onClearCache: () -> Void
 
+    /// Which items a source gets, in menu order.
+    static func routes(isListening: Bool, showsCustomButton: Bool) -> [BookDetailMoreRoute] {
+        var routes: [BookDetailMoreRoute] = []
+        if isListening, showsCustomButton { routes.append(.customButton) }
+        routes.append(.openWebPage)
+        if isListening { routes.append(.share) }
+        routes += [.copyBookURL, .copyTOCURL]
+        if isListening { routes.append(.clearCache) }
+        return routes
+    }
+
     var items: [Item] {
-        var items: [Item] = []
-        if showsCustomButton {
-            items.append(Item(route: .customButton, title: localized("自訂按鈕"),
-                              systemImage: "hand.tap", perform: onCustomButton))
+        Self.routes(isListening: isListening, showsCustomButton: showsCustomButton).compactMap(item)
+    }
+
+    private func item(for route: BookDetailMoreRoute) -> Item? {
+        switch route {
+        case .customButton:
+            Item(route: route, title: localized("自訂按鈕"), systemImage: "hand.tap", perform: onCustomButton)
+        case .openWebPage:
+            Item(route: route, title: localized("開啟網頁"), systemImage: "globe", perform: onOpenWebPage)
+        case .share:
+            Item(route: route, title: localized("分享"), systemImage: "square.and.arrow.up", perform: onShare)
+        case .copyBookURL:
+            Item(route: route, title: localized("複製書籍網址"), systemImage: "link", perform: onCopyBookURL)
+        case .copyTOCURL:
+            Item(route: route, title: localized("複製目錄網址"), systemImage: "list.bullet", perform: onCopyTOCURL)
+        case .clearCache:
+            Item(route: route, title: localized("清除快取"), systemImage: "trash", perform: onClearCache)
+        case .sourceVariable, .bookVariable:
+            nil
         }
-        items += [
-            Item(route: .share, title: localized("分享"), systemImage: "square.and.arrow.up", perform: onShare),
-            Item(route: .copyBookURL, title: localized("複製書籍網址"), systemImage: "link", perform: onCopyBookURL),
-            Item(route: .copyTOCURL, title: localized("複製目錄網址"), systemImage: "list.bullet", perform: onCopyTOCURL),
-            Item(route: .clearCache, title: localized("清除快取"), systemImage: "trash", perform: onClearCache),
-        ]
-        return items
     }
 }
 
@@ -192,6 +218,7 @@ enum BookDetailMoreRoute: Hashable {
     case sourceVariable
     case bookVariable
     case customButton
+    case openWebPage
     case share
     case copyBookURL
     case copyTOCURL
@@ -257,5 +284,28 @@ private struct BookDetailMoreChooser: ViewModifier {
             sourceActions?.items.first { $0.route == route }?.perform()
         case nil: break
         }
+    }
+}
+
+#Preview("詳情頁「更多」：一般來源") {
+    NavigationStack {
+        Text(verbatim: "示例書")
+            .navigationTitle(Text(verbatim: "示例書"))
+            .toolbarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    BookDetailMoreMenu(
+                        hasSource: true,
+                        onSetSourceVariable: {},
+                        onSetBookVariable: {},
+                        onOpenChooser: {},
+                        sourceActions: BookDetailSourceMenuActions(
+                            isListening: false, showsCustomButton: false,
+                            onOpenWebPage: {}, onCopyBookURL: {}, onCopyTOCURL: {},
+                            onCustomButton: {}, onShare: {}, onClearCache: {}
+                        )
+                    )
+                }
+            }
     }
 }

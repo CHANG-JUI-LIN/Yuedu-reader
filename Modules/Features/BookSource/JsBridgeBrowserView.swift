@@ -128,6 +128,17 @@ struct JsBridgeBrowserView: View {
                             .accessibilityLabel(localized("取消"))
                             .disabled(isSyncing)
                         }
+                        // The page's own address, after its redirects and the reader's taps:
+                        // what a reader debugging the source's rules pastes into 調試規則.
+                        ToolbarItem(placement: .navigationBarTrailing) {
+                            Button {
+                                SourceWebPage.copy(bridge.currentURL?.absoluteString ?? urlString)
+                            } label: {
+                                Label(localized("複製網址"), systemImage: "doc.on.doc")
+                                    .labelStyle(.iconOnly)
+                            }
+                            .accessibilityLabel(localized("複製網址"))
+                        }
                         ToolbarItem(placement: .navigationBarTrailing) {
                             Button {
                                 bridge.reload?()
@@ -333,6 +344,8 @@ final class JsBridgeBrowserBridge: @MainActor ObservableObject {
     var reload: (() -> Void)?
 
     @Published var progress: Double = 0
+    /// The web view's current page; nil until its first navigation starts.
+    @Published var currentURL: URL?
     @Published var phase: Phase = .loading
     @Published var errorText: String?
     /// A Cloudflare challenge on the page has cleared (see `finishesWhenChallengeClears`).
@@ -561,6 +574,9 @@ struct JsBridgeBrowserRepresentable: UIViewRepresentable {
         context.coordinator.progressObservation = wv.observe(\.estimatedProgress, options: [.new]) { [weak bridge] web, _ in
             DispatchQueue.main.async { [bridge] in bridge?.progress = web.estimatedProgress }
         }
+        context.coordinator.urlObservation = wv.observe(\.url, options: [.new]) { [weak bridge] web, _ in
+            DispatchQueue.main.async { [bridge] in bridge?.currentURL = web.url }
+        }
 
         context.coordinator.installKeyboardReFocusWorkaround()
 
@@ -619,6 +635,7 @@ struct JsBridgeBrowserRepresentable: UIViewRepresentable {
         weak var webView: WKWebView?
         weak var bridge: JsBridgeBrowserBridge?
         var progressObservation: NSKeyValueObservation?
+        var urlObservation: NSKeyValueObservation?
         var sourceRunHandler: ((String) async throws -> String)?
         var sourceConfigurationUpdateHandler: ((String) -> Void)?
         var finishesWhenChallengeClears = false

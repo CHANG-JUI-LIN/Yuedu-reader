@@ -391,6 +391,8 @@ struct ReaderView: View {
     @State var versionFinder = ReaderVersionFinder()
     /// The source whose 來源配置登入 the book card opened.
     @State var sourceLoginTarget: BookSource?
+    /// 調試正文's 調試規則, from 更多.
+    @State var contentDebugTarget: ReaderContentDebugTarget?
     @State private var replaceRuleDraft: ReplaceRule?
     @State var reviewTarget: ReaderHTMLUtilities.ReviewTarget?
     @State private var coreTextExternalTargetVersion: UInt = 0
@@ -3069,6 +3071,9 @@ struct ReaderView: View {
         }
         .sheet(item: $sourceLoginTarget) { source in
             BookSourceLoginSheet(source: source) { sourceLoginTarget = nil }
+        }
+        .sheet(item: $contentDebugTarget) { target in
+            BookSourceRuleDebugView(source: target.source, initialTab: .content, initialURL: target.chapterURL)
         }
         .sheet(item: $replaceRuleDraft) { rule in
             AdaptiveSheetContainer(maxWidth: DSLayout.readableListWidth) {

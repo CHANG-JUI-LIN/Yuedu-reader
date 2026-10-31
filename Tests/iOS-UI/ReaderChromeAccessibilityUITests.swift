@@ -215,6 +215,64 @@ final class ReaderChromeAccessibilityUITests: XCTestCase {
         XCTAssertFalse(translation.exists, app.debugDescription)
     }
 
+    /// #84, #102, #104, #105: this fixture's source does not listen for events, and its book
+    /// page's 更多 still offers 開啟網頁 and both copies; the page it opens copies its URL; the
+    /// reader's 更多 offers 複製正文網址 and 調試正文, which opens 調試規則 on 正文 with the
+    /// chapter's URL filled in.
+    @MainActor
+    func testSourceDebugEntriesOnBookPageAndInReader() throws {
+        let app = try launch()
+        try openFromLibrary(app, read: false)
+
+        let detailMore = app.buttons["更多"].firstMatch
+        XCTAssertTrue(detailMore.waitForExistence(timeout: 30), app.debugDescription)
+        detailMore.tap()
+        for label in ["開啟網頁", "複製書籍網址", "複製目錄網址"] {
+            XCTAssertTrue(app.buttons[label].firstMatch.waitForExistence(timeout: 5), "\(label)\n\(app.debugDescription)")
+        }
+        attachScreenshot(app, named: "詳情頁更多")
+        app.buttons["開啟網頁"].firstMatch.tap()
+
+        let copyURL = app.buttons["複製網址"].firstMatch
+        XCTAssertTrue(copyURL.waitForExistence(timeout: 15), app.debugDescription)
+        attachScreenshot(app, named: "網頁")
+        copyURL.tap()
+        let copied = app.alerts.staticTexts["已複製"].firstMatch
+        XCTAssertTrue(copied.waitForExistence(timeout: 5), app.debugDescription)
+        XCTAssertTrue(copied.waitForNonExistence(timeout: 10), app.debugDescription)
+        app.buttons["取消"].firstMatch.tap()
+        XCTAssertTrue(copyURL.waitForNonExistence(timeout: 10), app.debugDescription)
+
+        tapRead(app)
+        let text = app.descendants(matching: .any)
+            .matching(NSPredicate(format: "label CONTAINS %@", "測試閱讀器工具列")).firstMatch
+        XCTAssertTrue(text.waitForExistence(timeout: 60), app.debugDescription)
+        try showChrome(app)
+        let readerMore = app.buttons["reader_tool_more"].firstMatch
+        XCTAssertTrue(readerMore.waitForExistence(timeout: 5), app.debugDescription)
+        readerMore.tap()
+        let copyChapter = app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", "複製正文網址")).firstMatch
+        let debug = app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", "調試正文")).firstMatch
+        XCTAssertTrue(copyChapter.waitForExistence(timeout: 5), app.debugDescription)
+        XCTAssertTrue(debug.exists, app.debugDescription)
+        attachScreenshot(app, named: "閱讀器更多")
+        debug.tap()
+
+        let url = app.textFields.firstMatch
+        XCTAssertTrue(url.waitForExistence(timeout: 10), app.debugDescription)
+        let value = url.value as? String ?? ""
+        XCTAssertTrue(value.contains("/book/\(token)/"), "\(value)\n\(app.debugDescription)")
+        attachScreenshot(app, named: "調試正文")
+    }
+
+    @MainActor
+    private func attachScreenshot(_ app: XCUIApplication, named name: String) {
+        let screenshot = XCTAttachment(screenshot: app.screenshot())
+        screenshot.name = name
+        screenshot.lifetime = .keepAlways
+        add(screenshot)
+    }
+
     /// 全書搜尋 from the book card: a hit opens on its page with the bar that steps through
     /// hits, and ✕ asks whether to go back to where the search began.
     @MainActor
@@ -285,7 +343,7 @@ final class ReaderChromeAccessibilityUITests: XCTestCase {
     }
 
     @MainActor
-    private func openFromLibrary(_ app: XCUIApplication) throws {
+    private func openFromLibrary(_ app: XCUIApplication, read: Bool = true) throws {
         rootTab(app, "資源庫").tap()
         let all = app.buttons["library.sources.all"].firstMatch
         for _ in 0..<6 where !all.exists { app.scrollViews.firstMatch.swipeUp(velocity: .slow) }
@@ -294,7 +352,7 @@ final class ReaderChromeAccessibilityUITests: XCTestCase {
         let source = app.buttons["library.source.\(Self.sourceName)"].firstMatch
         XCTAssertTrue(source.waitForExistence(timeout: 10), app.debugDescription)
         source.tap()
-        openBook(app)
+        openBook(app, read: read)
     }
 
     /// The source's 熱門 added to 探索's home as a row (編輯首頁 › 新增欄目), then the run's book
@@ -333,11 +391,11 @@ final class ReaderChromeAccessibilityUITests: XCTestCase {
 
     /// From the source's discover page: the run's book, then 立即閱讀 on its page.
     @MainActor
-    private func openBook(_ app: XCUIApplication) {
+    private func openBook(_ app: XCUIApplication, read: Bool = true) {
         let book = app.descendants(matching: .any).matching(NSPredicate(format: "label BEGINSWITH %@", title)).firstMatch
         XCTAssertTrue(book.waitForExistence(timeout: 30), app.debugDescription)
         book.tap()
-        tapRead(app)
+        if read { tapRead(app) }
     }
 
     /// The book page's read button: 立即閱讀 on a source's book page, 開始閱讀 on 作品詳情.

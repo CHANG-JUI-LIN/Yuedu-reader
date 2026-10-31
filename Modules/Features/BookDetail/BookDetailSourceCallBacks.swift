@@ -48,7 +48,8 @@ struct BookDetailSourceCallBacks {
         self.send = send
     }
 
-    private func request(_ event: SourceCallBackEvent, result: String?, fallback: (@MainActor () -> Void)?) {
+    /// Hands `event` to the source's `callBackJs`; `fallback` runs when the script does not take it.
+    func request(_ event: SourceCallBackEvent, result: String?, fallback: (@MainActor () -> Void)?) {
         send(SourceCallBackTapRequest(
             event: event, source: source, book: book,
             runtimeVariables: runtimeVariables, result: result, fallback: fallback
@@ -75,36 +76,9 @@ struct BookDetailSourceCallBacks {
         )
     }
 
-    var menuActions: BookDetailSourceMenuActions {
-        let bookURL = book.bookURL
-        let tocURL = book.tocURL
-        let shelfBookId = shelfBookId
-        let bookStore = bookStore
-        return BookDetailSourceMenuActions(
-            showsCustomButton: SourceCallBackService.showsCustomButton(source),
-            onCustomButton: { request(.clickCustomButton, result: nil, fallback: nil) },
-            onShare: { request(.clickShareBook, result: bookURL) { Self.share(bookURL) } },
-            onCopyBookURL: { request(.clickCopyBookUrl, result: bookURL) { Self.copy(bookURL) } },
-            onCopyTOCURL: { request(.clickCopyTocUrl, result: tocURL) { Self.copy(tocURL) } },
-            onClearCache: {
-                request(.clickClearCache, result: nil) {
-                    guard let shelfBookId else { return }
-                    BookSourceFetcher.shared.clearAllChapterCache(bookId: shelfBookId)
-                    bookStore.clearAllCachedChapterFilenames(bookId: shelfBookId)
-                }
-            }
-        )
-    }
-
-    private static func copy(_ text: String) {
-        guard !text.isEmpty else { return }
-        UIPasteboard.general.string = text
-        BookSourceFormLoginView.presentToastAlert(message: localized("已複製"))
-    }
-
     /// legado shares the book's URL; the system share sheet from the top of the stack, since
     /// the request can arrive from a menu that is still dismissing.
-    private static func share(_ text: String) {
+    fileprivate static func share(_ text: String) {
         guard !text.isEmpty, let presenter = BookSourceFormLoginView.topViewController() else { return }
         let controller = UIActivityViewController(activityItems: [text], applicationActivities: nil)
         controller.popoverPresentationController?.sourceView = presenter.view
@@ -112,6 +86,49 @@ struct BookDetailSourceCallBacks {
             x: presenter.view.bounds.midX, y: presenter.view.bounds.minY + 44, width: 1, height: 1
         )
         presenter.present(controller, animated: true)
+    }
+}
+
+extension BookDetailSourceMenuActions {
+    /// The 「更多」 items for a page's book of `source`; nil without a source. `callBacks` is the
+    /// page's `BookDetailSourceCallBacks`, present only for a source that listens.
+    @MainActor
+    init?(source: BookSource?, book: ReaderHTMLUtilities.LegadoSourceActionContext.BookSnapshot,
+          callBacks: BookDetailSourceCallBacks?) {
+        guard let source else { return nil }
+        let bookURL = book.bookURL
+        let tocURL = book.tocURL
+        let title = book.name
+        // The source's script first when it listens, else the action itself.
+        func tap(_ event: SourceCallBackEvent, result: String?, _ action: @escaping @MainActor () -> Void) {
+            if let callBacks {
+                callBacks.request(event, result: result, fallback: action)
+            } else {
+                action()
+            }
+        }
+        self.init(
+            isListening: callBacks != nil,
+            showsCustomButton: SourceCallBackService.showsCustomButton(source),
+            // legado has no event for it: the page opens as the reader's 開啟網頁 opens a chapter.
+            onOpenWebPage: { SourceWebPage.open(bookURL, title: title, source: source) },
+            onCopyBookURL: { tap(.clickCopyBookUrl, result: bookURL) { SourceWebPage.copy(bookURL) } },
+            onCopyTOCURL: { tap(.clickCopyTocUrl, result: tocURL) { SourceWebPage.copy(tocURL) } },
+            onCustomButton: { callBacks?.request(.clickCustomButton, result: nil, fallback: nil) },
+            onShare: {
+                callBacks?.request(.clickShareBook, result: bookURL) { BookDetailSourceCallBacks.share(bookURL) }
+            },
+            onClearCache: {
+                guard let callBacks else { return }
+                let shelfBookId = callBacks.shelfBookId
+                let bookStore = callBacks.bookStore
+                callBacks.request(.clickClearCache, result: nil) {
+                    guard let shelfBookId else { return }
+                    BookSourceFetcher.shared.clearAllChapterCache(bookId: shelfBookId)
+                    bookStore.clearAllCachedChapterFilenames(bookId: shelfBookId)
+                }
+            }
+        )
     }
 }
 

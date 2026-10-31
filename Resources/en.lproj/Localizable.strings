@@ -721,6 +721,9 @@
 "開啟首頁" = "Open Home Page";
 "以網頁開啟" = "Open as Web Page";
 "開啟網頁" = "Open Web Page";
+"複製網址" = "Copy URL";
+"複製正文網址" = "Copy Chapter URL";
+"調試正文" = "Debug Text Rules";
 "此訂閱源以網頁方式瀏覽" = "This feed opens as a web page.";
 "此來源是網頁而非 RSS 訂閱，可直接以網頁開啟。" = "This is a web page, not an RSS feed. You can open it as a web page instead.";
 "隱藏已讀訂閱" = "Hide Read Feeds";

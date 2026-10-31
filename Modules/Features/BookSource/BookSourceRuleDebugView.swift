@@ -25,9 +25,13 @@ struct BookSourceRuleDebugView: View {
         var id: String { rawValue }
     }
 
-    init(source: BookSource) {
+    /// `initialTab` and `initialURL` open it on one stage with its input filled in — the
+    /// reader's 調試正文 opens 正文 with the chapter on screen.
+    init(source: BookSource, initialTab: DebugTab = .search, initialURL: String = "") {
         self.source = source
         _engine = StateObject(wrappedValue: BookSourceDebugEngine(source: source))
+        _selectedTab = State(initialValue: initialTab)
+        _inputURL = State(initialValue: initialURL)
     }
 
     var body: some View {
@@ -129,6 +133,7 @@ struct BookSourceRuleDebugView: View {
                     } label: {
                         Image(systemName: "xmark")
                     }
+                    .accessibilityLabel(localized("關閉"))
                 }
             }
         }
@@ -228,4 +233,12 @@ private struct DebugLogRow: View {
         case .pipeline: return .secondary
         }
     }
+}
+
+#Preview("調試正文") {
+    BookSourceRuleDebugView(
+        source: BookSource(bookSourceUrl: "https://example.com", bookSourceName: "示例來源"),
+        initialTab: .content,
+        initialURL: "https://example.com/book/1/chapter/2.html"
+    )
 }

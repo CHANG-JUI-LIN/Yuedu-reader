@@ -20,6 +20,11 @@ struct ReaderSecondaryAction: Identifiable {
         /// 來源配置登入, for a source that has a login. Not a chrome customization item
         /// either: like the source's own button, it is there only when the source asks.
         case sourceLogin
+        /// 複製正文網址 and 調試正文, in 更多 for an online chapter whose source is installed
+        /// (`ReaderSourceDebugActions`). Not chrome customization items: they come and go with
+        /// the source.
+        case copyChapterURL
+        case debugContent
     }
 
     let id: ID

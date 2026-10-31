@@ -139,7 +139,7 @@ enum ReaderChromeActionItem: String, CaseIterable, Codable, Hashable, Identifiab
         case .aiAssistant: self = .aiAssistant
         case .translation: self = .translation
         case .openWebPage: self = .openWebPage
-        case .sourceCustomButton, .sourceLogin: return nil
+        case .sourceCustomButton, .sourceLogin, .copyChapterURL, .debugContent: return nil
         }
     }
 }

@@ -207,7 +207,8 @@ extension ReaderView {
             onToggleDarkMode: { toggleReaderDarkMode() },
             onOpenBookmarks: { showBookmarkList = true },
             onToggleBookmark: { toggleCurrentPageBookmark() },
-            moreActions: settings.visibleReaderSecondaryActions(readerMoreActions)
+            moreActions: settings.visibleReaderSecondaryActions(readerMoreActions),
+            sourceActions: readerSourceDebugActions
         )
     }
 
@@ -413,28 +414,34 @@ extension ReaderView {
         return chapters[currentChapterIndex]
     }
 
-    /// 開啟網頁: the current chapter's page, opened with the source's headers and cookies the
-    /// way Legado's reading menu opens its chapter URL. This is where a reader gets past a
-    /// Cloudflare check or a login — nothing opens one by itself — and the cookies the page
-    /// leaves serve the source's next requests.
+    /// 開啟網頁: the current chapter's page, with its source's headers and cookies
+    /// (`SourceWebPage.open`).
     func openCurrentChapterWebPage() {
         guard let book, let chapter = currentOnlineChapter else { return }
         let source = book.bookSourceId.flatMap { id in
             BookSourceStore.shared.source(id: id)
         }
-        // Resolving the source's headers can run its JS (`@js:` header rules), on its host.
-        let chapterURL = chapter.url
-        Task {
-            var urlRequest: URLRequest?
-            if let source {
-                urlRequest = await BookSourceSession.session(for: source).host.run {
-                    $0.sourceBrowserRequest(urlString: chapterURL)
+        SourceWebPage.open(chapter.url, title: chapter.title, source: source)
+    }
+
+    /// 複製正文網址 and 調試正文, a group of their own in 更多 (`ReaderSourceDebugActions`).
+    var readerSourceDebugActions: [ReaderSecondaryAction] {
+        let source = readerSource
+        let chapterURL = currentOnlineChapter?.url
+        return ReaderSourceDebugActions.ids(chapterURL: chapterURL, hasSource: source != nil).compactMap { id in
+            guard let source, let chapterURL else { return nil }
+            switch id {
+            case .copyChapterURL:
+                return ReaderSecondaryAction(id: id, icon: "link", label: localized("複製正文網址")) {
+                    SourceWebPage.copy(chapterURL)
                 }
+            case .debugContent:
+                return ReaderSecondaryAction(id: id, icon: "ladybug", label: localized("調試正文")) {
+                    contentDebugTarget = ReaderContentDebugTarget(source: source, chapterURL: chapterURL)
+                }
+            default:
+                return nil
             }
-            urlRequest = urlRequest ?? URL(string: chapterURL).map { URLRequest(url: $0) }
-            let request = SourceBrowserRequest(
-                url: chapter.url, title: chapter.title, urlRequest: urlRequest, awaitsResult: false)
-            SourceBrowserPresenter.present(request) { _ in }
         }
     }
 

@@ -43,6 +43,9 @@ struct ReaderModernBottomControlBar: View {
     /// AI 助手 and AI 翻譯 — those that apply to this book and that 自定義 left on — listed
     /// under 書籤 in 更多.
     let moreActions: [ReaderSecondaryAction]
+    /// 複製正文網址 and 調試正文 for an online chapter (`ReaderSourceDebugActions`), a group of
+    /// their own below `moreActions`.
+    var sourceActions: [ReaderSecondaryAction] = []
 
     @Bindable private var settings = GlobalSettings.shared
 
@@ -313,7 +316,7 @@ struct ReaderModernBottomControlBar: View {
                                 title: bookmarkToggleTitle,
                                 systemImage: bookmarkToggleSymbol
                             ),
-                        ] + moreActions.map { action in
+                        ] + (moreActions + sourceActions).map { action in
                             DismissalSequencedAction(
                                 route: MoreRoute.action(action.id),
                                 title: action.label,
@@ -351,6 +354,16 @@ struct ReaderModernBottomControlBar: View {
                         }
                     }
                 }
+                if !sourceActions.isEmpty {
+                    Section {
+                        ForEach(sourceActions) { action in
+                            Button(action: action.action) {
+                                Label(action.label, systemImage: action.icon)
+                            }
+                            .accessibilityIdentifier("reader_more_\(action.id.rawValue)")
+                        }
+                    }
+                }
             } label: {
                 moreLabel
             }
@@ -383,7 +396,7 @@ struct ReaderModernBottomControlBar: View {
         switch legacyMoreSequence.consumeAfterDismissal() {
         case .bookmarks: onOpenBookmarks()
         case .toggleBookmark: onToggleBookmark()
-        case .action(let id): moreActions.first { $0.id == id }?.action()
+        case .action(let id): (moreActions + sourceActions).first { $0.id == id }?.action()
         case nil: break
         }
     }
@@ -458,6 +471,10 @@ private struct GlassGroup<Content: View>: View {
             moreActions: [
                 ReaderSecondaryAction(id: .aiAssistant, icon: "sparkles", label: "AI 助手", isLocked: true, action: {}),
                 ReaderSecondaryAction(id: .translation, icon: "translate", label: "AI 翻譯", isLocked: true, action: {})
+            ],
+            sourceActions: [
+                ReaderSecondaryAction(id: .copyChapterURL, icon: "link", label: "複製正文網址", action: {}),
+                ReaderSecondaryAction(id: .debugContent, icon: "ladybug", label: "調試正文", action: {})
             ]
         )
         .frame(maxHeight: .infinity, alignment: .bottom)
