@@ -513,6 +513,76 @@ struct ShelfWorkTests {
         }
     }
 
+    // MARK: - A version read from its source's page
+
+    @Test("a version 立即閱讀 reads from 探索 is still there, with its bookmarks and 條漫, after its reader closes")
+    func versionReadFromItsSourcePageIsKept() async throws {
+        try await withFixture { store, _, service in
+            // Read from the manga source, set to 條漫, then 換源 to an imported file: the source
+            // copy is kept beside the file as a version.
+            let sourceCopy = store.addOnlineBook(
+                name: "海賊王", author: "尾田榮一郎", sourceId: mangaSource.id,
+                bookInfoURL: mangaCopy().bookInfoURL, chapters: mangaCopy().chapters
+            )
+            store.updateLastOpened(bookId: sourceCopy.id)
+            let webtoon = FixedPageReadingMode.webtoon.recommendedConfiguration
+            store.readerSettings.setFixedPageConfiguration(webtoon, for: sourceCopy.id)
+            store.addBookmark(bookId: sourceCopy.id, bookmark: Bookmark(
+                chapterIndex: 1, chapterTitle: "第2話", position: CoreTextReadingPosition(spineIndex: 1, charOffset: 0)
+            ))
+            let imported = ReadingBook(title: "海賊王", author: "尾田榮一郎", source: "local_manga", contentFilename: "one-piece.cbz")
+            store.saveReadingBook(imported)
+            try await service.versions.commit(from: sourceCopy.id, to: imported.id)
+
+            // 探索 opens the source's own page, with no shelf copy: 立即閱讀 reads the version itself.
+            let read = service.readingCopy(mangaCopy())
+            #expect(read.id == sourceCopy.id)
+            store.updateLastOpened(bookId: read.id)
+            // The reader closes: a version is the work's already, so nothing is asked.
+            #expect(ReaderShelvePrompt.copy(read.id, in: store) == nil)
+            service.discardUnopenedCopy(id: read.id)
+
+            let version = try #require(store.readingBook(id: sourceCopy.id))
+            #expect(version.versionOf == imported.id)
+            #expect(!version.isInBookshelf)
+            #expect(version.bookmarks.map(\.chapterTitle) == ["第2話"])
+            #expect(store.readerSettings.fixedPageConfiguration(for: version.id) == webtoon)
+            #expect(store.keptVersions(of: imported.id).map(\.id) == [sourceCopy.id])
+        }
+    }
+
+    @Test("a version never opened is not deleted when a reader on it closes unopened")
+    func unopenedVersionIsKept() async throws {
+        try await withFixture { store, _, service in
+            let sourceCopy = store.addOnlineBook(
+                name: "海賊王", author: "尾田榮一郎", sourceId: mangaSource.id,
+                bookInfoURL: mangaCopy().bookInfoURL, chapters: mangaCopy().chapters
+            )
+            let imported = ReadingBook(title: "海賊王", author: "尾田榮一郎", source: "local_manga", contentFilename: "one-piece.cbz")
+            store.saveReadingBook(imported)
+            try await service.versions.commit(from: sourceCopy.id, to: imported.id)
+            #expect(store.readingBook(id: sourceCopy.id)?.lastOpenedDate == nil)
+
+            let read = service.readingCopy(mangaCopy())
+            service.discardUnopenedCopy(id: read.id)
+
+            #expect(store.readingBook(id: sourceCopy.id)?.versionOf == imported.id)
+        }
+    }
+
+    @Test("a copy made for 立即閱讀 whose reader never opened it is deleted")
+    func unopenedReadCopyIsDiscarded() async throws {
+        try await withFixture { store, _, service in
+            let read = service.readingCopy(mangaCopy())
+            #expect(ReaderShelvePrompt.copy(read.id, in: store) == nil)
+
+            service.discardUnopenedCopy(id: read.id)
+
+            #expect(store.readingBook(id: read.id) == nil)
+            #expect(store.readingBooks.isEmpty)
+        }
+    }
+
     // MARK: - Helpers
 
     private func withFixture(

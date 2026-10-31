@@ -430,9 +430,11 @@ struct ShelfWorkService {
     }
 
     /// The copy 立即閱讀 reads when `copy` is not on the shelf: the record it was read as
-    /// before, left off the shelf — 「加入書架？」 declined, or the app ended with its reader
-    /// open — with the page's newer list, so it opens with its place, bookmarks and reading
-    /// mode; else a new record off the shelf, which neither shows on the shelf nor syncs.
+    /// before, left off the shelf — 「加入書架？」 declined, the app ended with its reader open,
+    /// or 換源 kept it beside the work's shelf book as a version, read as itself as 作品詳情
+    /// reads a module's or a library's — with the page's newer list, so it opens with its
+    /// place, bookmarks and reading mode; else a new record off the shelf, which neither shows
+    /// on the shelf nor syncs.
     func readingCopy(_ copy: OnlineCopy) -> ReadingBook {
         if let read = store.onlineBook(sourceId: copy.sourceId, bookInfoURL: copy.bookInfoURL, onShelf: false) {
             store.updateOnlineChapters(bookId: read.id, chapters: copy.chapters, runtimeVariables: copy.runtimeVariables)
@@ -454,6 +456,18 @@ struct ShelfWorkService {
     func leaveReadCopyOffShelf(id: UUID) {
         guard let copy = store.readingBook(id: id), !copy.isInBookshelf else { return }
         store.recordOffShelfRead(copy)
+    }
+
+    /// When 立即閱讀's reader closes with nothing for 「加入書架？」 to ask
+    /// (`ReaderShelvePrompt.copy`): a copy made for that reader and never opened is deleted. A
+    /// version kept beside a shelf book stays, opened or not: it is the work's, and `readingCopy`
+    /// reads it when its source's page is opened without its copy — from 探索, 同題材, or a book
+    /// 作品詳情 found. Deleting it took its place, bookmarks and reading mode, and, synced, took
+    /// it from every device.
+    func discardUnopenedCopy(id: UUID) {
+        guard let copy = store.readingBook(id: id), !copy.isInBookshelf, copy.versionOf == nil,
+              copy.lastOpenedDate == nil else { return }
+        store.delete(bookId: id)
     }
 
     /// 加入書架 for a copy only read so far (立即閱讀 → the reader closed → 「加入書架？」).

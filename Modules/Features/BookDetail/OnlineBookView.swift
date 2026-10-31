@@ -998,9 +998,10 @@ struct OnlineBookView: View {
         checkAlreadyInShelf()
     }
 
-    /// A copy made for a reader that never opened it.
+    /// The reader closed with nothing for 「加入書架？」 to ask: a copy made for it and never
+    /// opened goes, a version read as itself stays (`ShelfWorkService.discardUnopenedCopy`).
     private func discardTemporaryReaderBook(_ tempId: UUID) {
-        bookStore.delete(bookId: tempId)
+        ShelfWorkService(store: bookStore, dependencies: dependencies).discardUnopenedCopy(id: tempId)
         if temporaryReaderBookId == tempId { temporaryReaderBookId = nil }
         if addedBookId == tempId { addedBookId = nil }
         checkAlreadyInShelf()
