@@ -94,22 +94,23 @@ struct BookSourceCheckCPUTests {
     /// busiest 180 s: many ordinary table-of-contents parses, no single culprit. The check
     /// narrows to what 0.4 of a core allows, measured on the process's own CPU, and to its
     /// floor while the trailing 180 s near MetricKit's 90.
-    @Test("a check starts at a quarter of the configured width")
-    func pacingStartsAtAQuarter() {
-        #expect(BookSourceCheckPacing(ceiling: 32, start: .init(wall: 0, cpu: 0)).width == 8)
-        #expect(BookSourceCheckPacing(ceiling: 6, start: .init(wall: 0, cpu: 0)).width == 2)
+    /// A check of slow sites spends almost nothing: it must not wait for windows to widen.
+    @Test("a check starts at the configured width")
+    func pacingStartsAtTheCeiling() {
+        #expect(BookSourceCheckPacing(ceiling: 32, start: .init(wall: 0, cpu: 0)).width == 32)
+        #expect(BookSourceCheckPacing(ceiling: 16, start: .init(wall: 0, cpu: 0)).width == 16)
         #expect(BookSourceCheckPacing(ceiling: 1, start: .init(wall: 0, cpu: 0)).width == 1)
     }
 
     @Test("a window over the CPU target narrows the check to what the target allows")
     func pacingNarrowsWhenHot() {
         var pacing = BookSourceCheckPacing(ceiling: 32, start: .init(wall: 0, cpu: 0))
-        // 8 sources in flight burning 0.7 of a core: 0.4 of a core allows 4.6 of them.
-        #expect(pacing.sourceFinished(at: .init(wall: 5, cpu: 3.5), inFlight: 8) == nil)
-        let cut = pacing.sourceFinished(at: .init(wall: 10, cpu: 7), inFlight: 8)
-        #expect(cut?.from == 8)
-        #expect(cut?.to == 4)
-        #expect(pacing.width == 4)
+        // 32 sources in flight burning 1.5 cores: 0.4 of a core allows 8.5 of them.
+        #expect(pacing.sourceFinished(at: .init(wall: 5, cpu: 7.5), inFlight: 32) == nil)
+        let cut = pacing.sourceFinished(at: .init(wall: 10, cpu: 15), inFlight: 32)
+        #expect(cut?.from == 32)
+        #expect(cut?.to == 8)
+        #expect(pacing.width == 8)
     }
 
     /// The sources already in flight keep burning CPU after a cut. Acting on every completion
@@ -117,19 +118,19 @@ struct BookSourceCheckCPUTests {
     @Test("the next window measures the narrower width before the width changes again")
     func pacingWaitsOutTheWindow() {
         var pacing = BookSourceCheckPacing(ceiling: 32, start: .init(wall: 0, cpu: 0))
-        _ = pacing.sourceFinished(at: .init(wall: 10, cpu: 7), inFlight: 8)
-        #expect(pacing.sourceFinished(at: .init(wall: 15, cpu: 10.5), inFlight: 8) == nil)
-        #expect(pacing.width == 4)
+        _ = pacing.sourceFinished(at: .init(wall: 10, cpu: 15), inFlight: 32)
+        #expect(pacing.sourceFinished(at: .init(wall: 15, cpu: 22.5), inFlight: 32) == nil)
+        #expect(pacing.width == 8)
     }
 
     @Test("the mean in-flight count over the window, not the width, sizes the cut")
     func pacingUsesMeanInFlight() {
         var pacing = BookSourceCheckPacing(ceiling: 32, start: .init(wall: 0, cpu: 0))
-        // 8 in flight for five seconds, 4 for the next five: 6 on average, at half a core.
-        // The width (8) would allow 6; the last count (4) would allow 3.
-        _ = pacing.sourceFinished(at: .init(wall: 5, cpu: 2.5), inFlight: 8)
-        let cut = pacing.sourceFinished(at: .init(wall: 10, cpu: 5), inFlight: 4)
-        #expect(cut?.to == 4)
+        // 32 in flight for five seconds, 12 for the next five: 22 on average, at one core.
+        // The width (32) would allow 12; the last count (12) would allow 4.
+        _ = pacing.sourceFinished(at: .init(wall: 5, cpu: 5), inFlight: 32)
+        let cut = pacing.sourceFinished(at: .init(wall: 10, cpu: 10), inFlight: 12)
+        #expect(cut?.to == 8)
     }
 
     /// Measured: `11→14 cores=0.62 inFlight=21.7`. Right after a cut, the sources still
@@ -138,19 +139,22 @@ struct BookSourceCheckCPUTests {
     @Test("a window over the CPU target never widens the check")
     func pacingDoesNotWidenWhileHot() {
         var pacing = BookSourceCheckPacing(ceiling: 32, start: .init(wall: 0, cpu: 0))
-        // 20 in flight at 0.6 of a core would allow 13 at the CPU each spent.
-        #expect(pacing.sourceFinished(at: .init(wall: 10, cpu: 6), inFlight: 20) == nil)
+        _ = pacing.sourceFinished(at: .init(wall: 10, cpu: 15), inFlight: 32)
+        // Still 20 in flight a window after the cut to 8, at 0.6 of a core: that would allow
+        // 13 at the CPU each spent.
+        #expect(pacing.sourceFinished(at: .init(wall: 20, cpu: 21), inFlight: 20) == nil)
         #expect(pacing.width == 8)
     }
 
     @Test("a cool window widens by half, up to the configured width")
     func pacingWidensWhenCool() {
         var pacing = BookSourceCheckPacing(ceiling: 32, start: .init(wall: 0, cpu: 0))
+        _ = pacing.sourceFinished(at: .init(wall: 10, cpu: 15), inFlight: 32)
         var widths: [Int] = []
-        var wall = 0.0
+        var wall = 10.0
         for _ in 0..<5 {
             wall += 10
-            _ = pacing.sourceFinished(at: .init(wall: wall, cpu: 0), inFlight: pacing.width)
+            _ = pacing.sourceFinished(at: .init(wall: wall, cpu: 15), inFlight: pacing.width)
             widths.append(pacing.width)
         }
         #expect(widths == [12, 18, 27, 32, 32])
@@ -159,7 +163,7 @@ struct BookSourceCheckCPUTests {
     @Test("the width never falls below two, nor above the configured width")
     func pacingFloorAndCeiling() {
         var hot = BookSourceCheckPacing(ceiling: 32, start: .init(wall: 0, cpu: 0))
-        _ = hot.sourceFinished(at: .init(wall: 10, cpu: 50), inFlight: 8)
+        _ = hot.sourceFinished(at: .init(wall: 10, cpu: 50), inFlight: 32)
         #expect(hot.width == 2)
         #expect(hot.minWidth == 2)
 
@@ -176,9 +180,9 @@ struct BookSourceCheckCPUTests {
     @Test("the trailing 180 s nearing the budget drops the check to its floor at once")
     func pacingGuardsTheTrailingBudget() {
         var pacing = BookSourceCheckPacing(ceiling: 32, start: .init(wall: 0, cpu: 0))
-        _ = pacing.sourceFinished(at: .init(wall: 1, cpu: 0.4), inFlight: 8)
-        let guarded = pacing.sourceFinished(at: .init(wall: 3, cpu: 66), inFlight: 8)
-        #expect(guarded?.from == 8)
+        _ = pacing.sourceFinished(at: .init(wall: 1, cpu: 0.4), inFlight: 32)
+        let guarded = pacing.sourceFinished(at: .init(wall: 3, cpu: 66), inFlight: 32)
+        #expect(guarded?.from == 32)
         #expect(guarded?.to == 2)
 
         // Cool windows do not widen it while the spike is inside the trailing 180 s...
@@ -205,15 +209,15 @@ struct BookSourceCheckCPUTests {
 
         #expect(checker.finishedCount == 1_000)
         let inFlight = await fetcher.inFlightAtStart
-        // 8 start, nine refill before the first window closes at four cores; then 0.4 of a
-        // core allows less than one, and the check runs at its floor of two.
-        #expect((inFlight.prefix(17).max() ?? 0) > 2)
-        #expect((inFlight.dropFirst(17).max() ?? 0) <= 2, "\(inFlight.dropFirst(17).prefix(40))")
+        // 32 start at once, nine refill before the first window closes at four cores; then
+        // 0.4 of a core allows three, and the trailing budget takes the floor of two.
+        #expect((inFlight.prefix(41).max() ?? 0) > 3)
+        #expect((inFlight.dropFirst(41).max() ?? 0) <= 3, "\(inFlight.dropFirst(41).prefix(40))")
     }
 
     @MainActor
-    @Test("a check whose process stays cool widens to the configured width")
-    func coolCheckWidens() async {
+    @Test("a check whose process stays cool keeps the configured width")
+    func coolCheckKeepsWidth() async {
         let fetcher = InFlightRecordingFetcher()
         let clock = FakeCPUClock(busyCores: 0)
         let checker = BookSourceHealthChecker(fetcher: fetcher, cpuClock: clock.clock)

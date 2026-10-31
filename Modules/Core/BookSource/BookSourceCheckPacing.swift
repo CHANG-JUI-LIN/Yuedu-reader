@@ -67,13 +67,14 @@ struct BookSourceCheckPacing: Sendable {
     /// is measured from; the run's start until the run is that old.
     private var history: [Sample]
 
-    /// Starts at a quarter of `ceiling`: the first window's CPU is not known until it has run,
-    /// and at 32 wide the measured run spent 1.83 cores in it. A check that waits on its sites
-    /// is at `ceiling` four cool windows later.
+    /// Starts at `ceiling`, so a check that waits on its sites runs at full width from its
+    /// first source. A hot start is caught like any other burst: at 32 wide the measured run
+    /// spent 1.83 cores in its first window, which the window rule cuts and the trailing
+    /// budget counts.
     init(ceiling: Int, start: Sample) {
         self.ceiling = max(1, ceiling)
         floor = min(2, self.ceiling)
-        width = max(floor, self.ceiling / 4)
+        width = self.ceiling
         minWidth = width
         windowStart = start
         lastEvent = start.wall
