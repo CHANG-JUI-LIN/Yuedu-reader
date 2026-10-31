@@ -199,7 +199,7 @@ private struct VerticalTOCView: View {
 ///
 /// 只有目錄——書籤與重點在 `ReaderBookmarkListView`。原本三者共用一個分段控制，
 /// 但目錄本來就由工具列的目錄鈕進入、書籤由書籤鈕進入，分段控制只是把兩個入口
-/// 再混回同一個畫面；拆開後目錄頂端讓給原生搜尋列（下拉才出現）。
+/// 再混回同一個畫面；拆開後目錄頂端讓給原生搜尋列，一直顯示。
 struct ReaderTOCView: View {
     let chapters: [BookChapter]
     let bookTitle: String
@@ -228,14 +228,6 @@ struct ReaderTOCView: View {
         }
     }
 
-    /// 直排書的目錄是水平捲動的欄位，沒有垂直捲動可以把搜尋列收起來，
-    /// 所以那個版面固定顯示搜尋列。
-    private var searchPlacement: SearchFieldPlacement {
-        tocLayoutMode == .verticalRTLColumns
-            ? .navigationBarDrawer(displayMode: .always)
-            : .navigationBarDrawer(displayMode: .automatic)
-    }
-
     var body: some View {
         NavigationStack {
             content
@@ -252,9 +244,12 @@ struct ReaderTOCView: View {
                         .accessibilityLabel(localized("完成"))
                     }
                 }
+                // 兩種版面都固定顯示搜尋列。目錄一打開就捲到目前章節，`.automatic`
+                // 的搜尋列跟著捲動收起來，要拉回最頂端才找得到（回饋 #46）；直排的
+                // 水平欄位本來就沒有垂直捲動能把它拉出來。
                 .searchable(
                     text: $searchText,
-                    placement: searchPlacement,
+                    placement: .navigationBarDrawer(displayMode: .always),
                     prompt: localized("搜索章節")
                 )
                 .background(PageBackgroundView(scope: .settings).ignoresSafeArea())
