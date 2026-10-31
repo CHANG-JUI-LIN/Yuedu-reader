@@ -69,7 +69,18 @@ private struct RootTabBarHidingModifier: ViewModifier {
 
     func body(content: Content) -> some View {
         content
-            .toolbar(hidesTabBar ? .hidden : .automatic, for: .tabBar)
+            // Hidden while it hides, and nothing otherwise: `.automatic` is not "no preference".
+            // On a stack's root it overrode the `.hidden` of every page pushed over it, which
+            // left the tab bar over 探索's readers on iOS 17 (FB-100, iOS 17.5 simulator), as it
+            // kept the bar over 書架's 選取 mode from a tab's content (`RootTabBarHider`). In a
+            // background, as there, so `content` keeps its identity.
+            .background {
+                if hidesTabBar {
+                    Color.clear
+                        .toolbar(.hidden, for: .tabBar)
+                        .accessibilityHidden(true)
+                }
+            }
             .onAppear {
                 isOnScreen = true
                 rootTabBar?.setRequest(requestID, hidesTabBar: hidesTabBar)

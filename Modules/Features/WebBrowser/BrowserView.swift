@@ -705,7 +705,7 @@ struct BrowserView: View {
     @ObservedObject var browser: BrowserState
 
     var body: some View {
-        ExploreTabRoot(browser: browser)
+        ExploreHome(browser: browser)
             .environmentObject(store)
     }
 }

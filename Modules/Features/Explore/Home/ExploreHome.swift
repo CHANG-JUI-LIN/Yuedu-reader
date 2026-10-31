@@ -12,8 +12,8 @@ import SwiftUI
 ///
 /// - One stack for everything the home opens (decision 5): Explore's routes, the libraries'
 ///   feeds, folders and books, the store's pages, and the store's card carousel over it all.
-/// - The page is read once the book-source library is read (`ExploreTabRoot` waits for
-///   that), and the defaults are saved then, for good but for 預設's official modules' lists,
+/// - The page is read once the book-source library is read (its stack shows 載入中 until
+///   then), and the defaults are saved then, for good but for 預設's official modules' lists,
 ///   which follow the language (`HomePageStore.pageOrDefaults`).
 /// - Rows are built again when the page (or the 首頁配置 chosen), the sources, the connections or
 ///   the region change. Rows read from this device load again when the home comes back into
@@ -157,7 +157,7 @@ private struct ExploreHomeRoot: View {
     /// What the rows are built from; any change builds them again.
     private var syncKey: [AnyHashable] {
         // 中繼資料語言偏好推薦: a module's 地區 that follows it reads it.
-        [pageStore.page, connections.catalogs.map(\.id), exploreSources.map(\.bookSourceUrl), availability.isAvailable,
+        [tabModel.isLoaded, pageStore.page, connections.catalogs.map(\.id), exploreSources.map(\.bookSourceUrl), availability.isAvailable,
          aozora.catalog != nil, aggregation.settings.hiddenFromLatest, aggregation.readingLanguages.language,
          modules.modules.map { "\($0.module.id)@\($0.module.version)" }]
     }
@@ -181,16 +181,32 @@ private struct ExploreHomeRoot: View {
     // MARK: Body
 
     var body: some View {
+        // The stack is there from the tab's first frame, the source library read or not, and
+        // stays the same stack. On iOS 17 a tab whose content had no navigation stack on its
+        // first frame never hands the status bar or the tab bar to the pages pushed on it, and
+        // 探索 is the tab the app opens on: built only once the library had been read, the stack
+        // left the status bar, the tab bar and the home indicator over every reader 探索 pushed —
+        // 繼續閱讀's, 作品詳情's, a library's — while 書架's, which UIKit pushes, hid them (FB-100,
+        // iOS 17.7.2; on the iOS 17.5 simulator the tab's hosting controller named no child for
+        // the status bar).
         NavigationStack(path: $path) {
-            home
-            .toolbar { toolbar }
-            // 編輯首頁 hides the tab bar while the home is being edited, as 書架's 選取 does, and
-            // its ＋ takes the bar's place (maintainer, 2026-10-17).
-            .hidesRootTabBar(showsEditorBars)
-            .exploreRouteDestinations(openBrowser: openBrowser)
-            .homeEditDestinations()
-            .remoteLibraryDestinations()
-            .publicLibraryDestinations()
+            if tabModel.isLoaded {
+                home
+                .toolbar { toolbar }
+                // 編輯首頁 hides the tab bar while the home is being edited, as 書架's 選取 does, and
+                // its ＋ takes the bar's place (maintainer, 2026-10-17).
+                .hidesRootTabBar(showsEditorBars)
+                .exploreRouteDestinations(openBrowser: openBrowser)
+                .homeEditDestinations()
+                .remoteLibraryDestinations()
+                .publicLibraryDestinations()
+            } else {
+                // The source library is still being read (about a second at 50 000 sources); the
+                // home's default sections depend on whether it holds any, and are saved for good
+                // the first time it draws.
+                ProgressView()
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+            }
         }
         // Both covers on the stack, not its root: on iOS 26.4.x a cover on the root had its content
         // built again whenever anything was presented over it, 選擇內容來源's sheet or a filter's
@@ -215,14 +231,23 @@ private struct ExploreHomeRoot: View {
         .environment(\.explorePush) { $0.append(to: &path) }
         .environment(\.homeDefaults, defaultsContext)
         .task(id: syncKey) {
-            // Saved here, not while drawing: the first read saves the defaults.
+            // Saved here, not while drawing: the first read saves the defaults. Not before the
+            // library is read: the defaults depend on whether it holds any source.
+            guard tabModel.isLoaded else { return }
             await model.sync(with: pageStore.pageOrDefaults(mode: defaultsContext.mode,
                                                             publicLibrariesAvailable: defaultsContext.publicLibrariesAvailable,
                                                             languages: defaultsContext.languages),
                              hiddenFromLatest: Set(aggregation.settings.hiddenFromLatest ?? []))
         }
-        .task { await aozora.load() }
+        // After the library is read, as when the home was built only then.
+        .task(id: tabModel.isLoaded) {
+            guard tabModel.isLoaded else { return }
+            await aozora.load()
+        }
         .onReceive(sourceStore.sourcesPublisher) { _ in
+            // Not the placeholder `[]` published until the library is read: reading the sources
+            // then waits for the read, on the main thread. The read's own publish passes.
+            guard sourceStore.isLoaded else { return }
             exploreSources = DiscoverViewModel.exploreSources(in: sourceStore)
         }
     }
