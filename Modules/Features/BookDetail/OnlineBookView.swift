@@ -398,7 +398,7 @@ struct OnlineBookView: View {
                     .environmentObject(bookStore)
             }
         }
-        .readerShelvePrompt($shelvePrompt, onAdd: keepReadBook, onDecline: { discardTemporaryReaderBook($0.id) })
+        .readerShelvePrompt($shelvePrompt, onAdd: keepReadBook, onDecline: leaveReadBook)
         .fullScreenCover(isPresented: $showReader, onDismiss: readerDidClose) {
             // Audiobooks keep their dedicated modal player.
             if let bid = addedBookId {
@@ -917,18 +917,7 @@ struct OnlineBookView: View {
         guard !alreadyInShelf, !addingToShelf, !chapters.isEmpty, let source else { return }
         addingToShelf = true
         let requestBook = currentBook
-        let copy = ShelfWorkService.OnlineCopy(
-            name: displayName,
-            author: displayAuthor == localized("未知作者") ? "" : displayAuthor,
-            sourceId: source.id,
-            bookInfoURL: currentBook.bookUrl,
-            tocURL: resolvedTOCURL,
-            coverUrl: displayCoverUrl,
-            runtimeVariables: tocRuntimeVariables
-                ?? detailInfo?.runtimeVariables
-                ?? currentBook.runtimeVariables,
-            chapters: chapters
-        )
+        let copy = onlineCopy(from: source)
         Task { @MainActor in
             defer { addingToShelf = false }
             do {
@@ -943,6 +932,22 @@ struct OnlineBookView: View {
                 tocError = error.localizedDescription
             }
         }
+    }
+
+    /// What this page has in hand for 加入書架 and 立即閱讀.
+    private func onlineCopy(from source: BookSource) -> ShelfWorkService.OnlineCopy {
+        ShelfWorkService.OnlineCopy(
+            name: displayName,
+            author: displayAuthor == localized("未知作者") ? "" : displayAuthor,
+            sourceId: source.id,
+            bookInfoURL: currentBook.bookUrl,
+            tocURL: resolvedTOCURL,
+            coverUrl: displayCoverUrl,
+            runtimeVariables: tocRuntimeVariables
+                ?? detailInfo?.runtimeVariables
+                ?? currentBook.runtimeVariables,
+            chapters: chapters
+        )
     }
 
     /// Kept once it is on the shelf: its download put it there
@@ -984,6 +989,16 @@ struct OnlineBookView: View {
         }
     }
 
+    /// 不加入: the record read stays off the shelf, and 立即閱讀 reads it again with its place
+    /// and reading mode (`ShelfWorkService.leaveReadCopyOffShelf`, feedback #101).
+    private func leaveReadBook(_ book: ReadingBook) {
+        ShelfWorkService(store: bookStore, dependencies: dependencies).leaveReadCopyOffShelf(id: book.id)
+        if temporaryReaderBookId == book.id { temporaryReaderBookId = nil }
+        if addedBookId == book.id { addedBookId = nil }
+        checkAlreadyInShelf()
+    }
+
+    /// A copy made for a reader that never opened it.
     private func discardTemporaryReaderBook(_ tempId: UUID) {
         bookStore.delete(bookId: tempId)
         if temporaryReaderBookId == tempId { temporaryReaderBookId = nil }
@@ -1017,35 +1032,10 @@ struct OnlineBookView: View {
             // A book read without being added is a record off the shelf: it neither shows
             // on the shelf nor syncs. It used to be a shelf book until the reader closed,
             // and synced while it was open; a device on 2.0.6, which never takes a
-            // deletion, kept it as a second copy of the book (reported 2026-10-04). One a
-            // reader left behind — the app ended before it closed — is read again rather
-            // than joined by another.
-            let runtimeVariables = tocRuntimeVariables
-                ?? detailInfo?.runtimeVariables
-                ?? currentBook.runtimeVariables
-            let tempBook: ReadingBook
-            if let leftover = bookStore.onlineBook(
-                sourceId: source.id, bookInfoURL: currentBook.bookUrl, onShelf: false
-            ) {
-                bookStore.updateOnlineChapters(
-                    bookId: leftover.id,
-                    chapters: chapters,
-                    runtimeVariables: runtimeVariables
-                )
-                tempBook = leftover
-            } else {
-                tempBook = bookStore.addOnlineBook(
-                    name: displayName,
-                    author: displayAuthor == localized("未知作者") ? "" : displayAuthor,
-                    sourceId: source.id,
-                    bookInfoURL: currentBook.bookUrl,
-                    tocURL: resolvedTOCURL,
-                    coverUrl: displayCoverUrl,
-                    runtimeVariables: runtimeVariables,
-                    chapters: chapters,
-                    isInBookshelf: false
-                )
-            }
+            // deletion, kept it as a second copy of the book (reported 2026-10-04). One read
+            // before — 不加入, or the app ended before its reader closed — is read again.
+            let tempBook = ShelfWorkService(store: bookStore, dependencies: dependencies)
+                .readingCopy(onlineCopy(from: source))
             addedBookId = tempBook.id
             temporaryReaderBookId = tempBook.id
             targetBookId = tempBook.id

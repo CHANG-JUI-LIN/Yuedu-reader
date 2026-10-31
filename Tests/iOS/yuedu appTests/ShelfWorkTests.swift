@@ -10,6 +10,12 @@ import Testing
 struct ShelfWorkTests {
     private let sourceA = BookSource(bookSourceUrl: "https://shelf-work-a.test", bookSourceName: "來源甲")
     private let sourceB = BookSource(bookSourceUrl: "https://shelf-work-b.test", bookSourceName: "來源乙")
+    /// An image source: what it reads is a manga, as `addOnlineBook` infers from the source.
+    private let mangaSource: BookSource = {
+        var source = BookSource(bookSourceUrl: "https://shelf-work-manga.test", bookSourceName: "漫畫源")
+        source.bookSourceType = 2
+        return source
+    }()
 
     private let listA = [
         OnlineChapterRef(index: 0, title: "序章", url: "https://shelf-work-a.test/0"),
@@ -449,9 +455,68 @@ struct ShelfWorkTests {
         }
     }
 
+    // MARK: - Read without adding (feedback #101)
+
+    @Test("a manga read without adding, set to 條漫 and declined, opens in 條漫 again")
+    func declinedReadCopyKeepsItsReadingMode() async throws {
+        try await withFixture { store, _, service in
+            // 立即閱讀 on the source's page, then the reader opens it.
+            let read = service.readingCopy(mangaCopy())
+            #expect(read.resolvedPipelineKind == .manga)
+            store.updateLastOpened(bookId: read.id)
+            let webtoon = FixedPageReadingMode.webtoon.recommendedConfiguration
+            store.readerSettings.setFixedPageConfiguration(webtoon, for: read.id)
+
+            // The reader closes, and 「加入書架？」 is answered 不加入.
+            service.leaveReadCopyOffShelf(id: read.id)
+            let again = service.readingCopy(mangaCopy())
+
+            #expect(again.id == read.id, "read again as the same copy")
+            #expect(!again.isInBookshelf)
+            #expect(store.books.isEmpty)
+            // Whatever 漫畫預設模式 is, its own mode wins.
+            #expect(store.fixedPageConfiguration(for: again, mangaDefault: .rtl) == webtoon)
+        }
+    }
+
+    @Test("a manga read without adding and never given a mode opens in 漫畫預設模式, before and after 不加入")
+    func readCopyWithoutModeOpensInMangaDefault() async throws {
+        try await withFixture { store, _, service in
+            let webtoon = FixedPageReadingMode.webtoon.recommendedConfiguration
+            let read = service.readingCopy(mangaCopy())
+            #expect(!store.readerSettings.hasFixedPageConfiguration(for: read.id))
+            #expect(store.fixedPageConfiguration(for: read, mangaDefault: .webtoon) == webtoon)
+
+            store.updateLastOpened(bookId: read.id)
+            service.leaveReadCopyOffShelf(id: read.id)
+            let again = service.readingCopy(mangaCopy())
+
+            #expect(!store.readerSettings.hasFixedPageConfiguration(for: again.id))
+            #expect(store.fixedPageConfiguration(for: again, mangaDefault: .webtoon) == webtoon)
+        }
+    }
+
+    @Test("不加入 leaves the copy's name for 搜索's 最近閱讀, as a book removed after reading does")
+    func declinedReadCopyIsListedInRecentReading() async throws {
+        let suiteName = "test.shelf-work.off-shelf-reads.\(UUID().uuidString)"
+        let defaults = try #require(UserDefaults(suiteName: suiteName))
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+        try await withFixture(offShelfReadRecords: defaults) { store, _, service in
+            let read = service.readingCopy(mangaCopy())
+            store.updateLastOpened(bookId: read.id)
+
+            service.leaveReadCopyOffShelf(id: read.id)
+
+            let records = defaults.string(forKey: OffShelfReadRecords.storageKey)
+                .flatMap(OffShelfReadRecords.init(rawValue:))?.records ?? []
+            #expect(records.map(\.title) == ["海賊王"])
+        }
+    }
+
     // MARK: - Helpers
 
     private func withFixture(
+        offShelfReadRecords: UserDefaults? = nil,
         _ body: (BookStore, InMemoryShelfPositions, ShelfWorkService) async throws -> Void
     ) async throws {
         let directory = FileManager.default.temporaryDirectory
@@ -459,10 +524,11 @@ struct ShelfWorkTests {
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: directory) }
         let previousSources = BookSourceStore.shared.sources
-        BookSourceStore.shared.replaceSources([sourceA, sourceB])
+        BookSourceStore.shared.replaceSources([sourceA, sourceB, mangaSource])
         defer { BookSourceStore.shared.replaceSources(previousSources) }
 
-        let store = BookStore(metadataFileURL: directory.appendingPathComponent("books_meta.json"))
+        let store = BookStore(metadataFileURL: directory.appendingPathComponent("books_meta.json"),
+                              offShelfReadRecordsDefaults: offShelfReadRecords)
         let positions = InMemoryShelfPositions()
         let offline = OfflineChapterStore(roots: OfflineStorageRoots(
             textRoot: directory.appendingPathComponent("text", isDirectory: true),
@@ -486,6 +552,19 @@ struct ShelfWorkTests {
             name: name, author: author, sourceId: sourceB.id,
             bookInfoURL: url, tocURL: "\(url)/toc",
             runtimeVariables: nil, chapters: listB
+        )
+    }
+
+    /// What a manga source's page has in hand for 立即閱讀: no kind of its own, as `OnlineBookView`
+    /// passes none.
+    private func mangaCopy() -> ShelfWorkService.OnlineCopy {
+        ShelfWorkService.OnlineCopy(
+            name: "海賊王", author: "尾田榮一郎", sourceId: mangaSource.id,
+            bookInfoURL: "https://shelf-work-manga.test/one-piece", tocURL: nil,
+            runtimeVariables: nil, chapters: [
+                OnlineChapterRef(index: 0, title: "第1話", url: "https://shelf-work-manga.test/one-piece/1"),
+                OnlineChapterRef(index: 1, title: "第2話", url: "https://shelf-work-manga.test/one-piece/2"),
+            ]
         )
     }
 

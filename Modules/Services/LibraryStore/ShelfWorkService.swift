@@ -319,7 +319,8 @@ struct ShelfWorkMerger {
     }
 }
 
-/// 加入書架 for books read from a 來源配置 — the one use case every entry point calls.
+/// 加入書架 for books read from a 來源配置, and 立即閱讀／不加入 of one not on the shelf — the one
+/// use case every entry point calls.
 @MainActor
 struct ShelfWorkService {
     /// What the detail page has in hand for the copy being added.
@@ -379,7 +380,7 @@ struct ShelfWorkService {
             return .alreadyOnShelf(existing)
         }
         // This source's copy was read without being added and is still here: the app ended
-        // while its reader was open, or 作品詳情's 「加入書架？」 was declined. It is the book
+        // while its reader was open, or 「加入書架？」 was declined. It is the book
         // being added, so it goes on the shelf the way a read copy does, with its reading mode,
         // place and bookmarks. A new record beside it left all of those behind (feedback #74).
         if let readCopy = store.onlineBook(sourceId: copy.sourceId, bookInfoURL: copy.bookInfoURL, onShelf: false) {
@@ -426,6 +427,33 @@ struct ShelfWorkService {
             chapters: copy.chapters
         )
         return .added(book)
+    }
+
+    /// The copy 立即閱讀 reads when `copy` is not on the shelf: the record it was read as
+    /// before, left off the shelf — 「加入書架？」 declined, or the app ended with its reader
+    /// open — with the page's newer list, so it opens with its place, bookmarks and reading
+    /// mode; else a new record off the shelf, which neither shows on the shelf nor syncs.
+    func readingCopy(_ copy: OnlineCopy) -> ReadingBook {
+        if let read = store.onlineBook(sourceId: copy.sourceId, bookInfoURL: copy.bookInfoURL, onShelf: false) {
+            store.updateOnlineChapters(bookId: read.id, chapters: copy.chapters, runtimeVariables: copy.runtimeVariables)
+            return store.readingBook(id: read.id) ?? read
+        }
+        return store.addOnlineBook(
+            name: copy.name, author: copy.author, sourceId: copy.sourceId,
+            bookInfoURL: copy.bookInfoURL, tocURL: copy.tocURL, coverUrl: copy.coverUrl,
+            runtimeVariables: copy.runtimeVariables, contentKind: copy.contentKind,
+            chapters: copy.chapters, isInBookshelf: false
+        )
+    }
+
+    /// 不加入 for a copy only read so far: it stays off the shelf, and the next 立即閱讀 reads it
+    /// again (`readingCopy`) with its place, bookmarks and reading mode, as 作品詳情, a module and
+    /// 青空文庫 keep theirs (maintainer, 2026-10-13). Deleting it took its reading mode along, and
+    /// a manga read that way reopened in 漫畫預設模式 every time (feedback #101). Its name goes to
+    /// 搜索's 最近閱讀, as a book removed after reading leaves it.
+    func leaveReadCopyOffShelf(id: UUID) {
+        guard let copy = store.readingBook(id: id), !copy.isInBookshelf else { return }
+        store.recordOffShelfRead(copy)
     }
 
     /// 加入書架 for a copy only read so far (立即閱讀 → the reader closed → 「加入書架？」).

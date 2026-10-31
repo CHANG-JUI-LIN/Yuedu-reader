@@ -1491,6 +1491,20 @@ class BookStore: @MainActor ObservableObject, BookProvider {
         saveMeta()
     }
 
+    /// Keeps the name of `book`, read and now off the shelf — removed, or read from its detail
+    /// page and not added (`ShelfWorkService.leaveReadCopyOffShelf`) — for 搜索's 最近閱讀, as
+    /// legado's 閱讀記錄 outlives the book.
+    func recordOffShelfRead(_ book: ReadingBook) {
+        guard let offShelfReadRecordsDefaults, let lastRead = book.lastOpenedDate else { return }
+        OffShelfReadRecords.record(
+            title: book.title,
+            author: book.author,
+            coverUrl: book.coverUrl ?? "",
+            at: lastRead,
+            defaults: offShelfReadRecordsDefaults
+        )
+    }
+
     func delete(bookId: UUID) {
         // The versions kept beside a shelf book (`ShelfVersionSwitch`) are the same work, and only
         // its 換源 lists them: deleting the book deletes them. A merge relinks them first
@@ -1504,18 +1518,7 @@ class BookStore: @MainActor ObservableObject, BookProvider {
         }
         if let idx = records.firstIndex(where: { $0.id == bookId }) {
             let book = records[idx]
-            // Read and now off the shelf — removed, or read from its detail page without
-            // being added: its name stays for 搜索's 最近閱讀, as legado's 閱讀記錄
-            // outlives the book.
-            if let offShelfReadRecordsDefaults, let lastRead = book.lastOpenedDate {
-                OffShelfReadRecords.record(
-                    title: book.title,
-                    author: book.author,
-                    coverUrl: book.coverUrl ?? "",
-                    at: lastRead,
-                    defaults: offShelfReadRecordsDefaults
-                )
-            }
+            recordOffShelfRead(book)
             if book.remoteSource != nil {
                 // Removing a remote shelf reference keeps the same reading record
                 // and explicit offline copy available from its library detail.
