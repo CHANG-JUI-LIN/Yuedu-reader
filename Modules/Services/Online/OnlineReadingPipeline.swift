@@ -259,6 +259,23 @@ actor ChapterFetchManager {
         return stored == .cached ? .missing : stored
     }
 
+    /// The chapters of `book` that need the network to be read — what 目錄 marks. One listing
+    /// of the book's cache rather than `isChapterCached(book:chapterIndex:)` per row, and off
+    /// this actor: it reads files and none of the actor's state. A volume heading has nothing
+    /// to fetch, so it is never one of them.
+    nonisolated func uncachedChapterIndexes(book: ReadingBook) -> Set<Int> {
+        guard let refs = book.onlineChapters, !refs.isEmpty else { return [] }
+        return SourcePerfTrace.span("toc.cacheMarks", "chapters=\(refs.count)") {
+            let cached = bookSourceFetcher.cachedChapterIndices(bookId: book.id, refs: refs)
+            var uncached: Set<Int> = []
+            for (index, ref) in refs.enumerated()
+            where !cached.contains(index) && !ref.shouldRenderAsVolumeSeparator {
+                uncached.insert(index)
+            }
+            return uncached
+        }
+    }
+
     func isChapterCached(book: ReadingBook, chapterIndex: Int) -> Bool {
         guard let refs = book.onlineChapters, refs.indices.contains(chapterIndex) else {
             return false

@@ -133,6 +133,10 @@ protocol OnlineBookCoordinating: AnyObject, Sendable {
 protocol ChapterFetching: Sendable {
     func isChapterCached(book: ReadingBook, chapterIndex: Int) async -> Bool
 
+    /// The chapters of an online book that need the network to be read (目錄 marks them),
+    /// from one look at its cache. Called off the main actor.
+    func uncachedChapterIndexes(book: ReadingBook) async -> Set<Int>
+
     /// Returns an already-validated cached package without starting a network request.
     /// Metadata consumers use this off the main actor after cache readiness is known.
     func cachedChapterPackage(book: ReadingBook, chapterIndex: Int) async -> ChapterPackage?
@@ -155,6 +159,11 @@ protocol ChapterFetching: Sendable {
 extension ChapterFetching {
     func cachedChapterPackage(book: ReadingBook, chapterIndex: Int) async -> ChapterPackage? {
         nil
+    }
+
+    /// Test doubles and previews have no cache to look at, so 目錄 marks nothing.
+    func uncachedChapterIndexes(book: ReadingBook) async -> Set<Int> {
+        []
     }
 
     /// - Parameter includingDownloads: `false` spares offline-download fetches. The reader
@@ -306,6 +315,10 @@ struct LiveChapterFetcher: ChapterFetching {
 
     func isChapterCached(book: ReadingBook, chapterIndex: Int) async -> Bool {
         await chapterFetchManager.isChapterCached(book: book, chapterIndex: chapterIndex)
+    }
+
+    func uncachedChapterIndexes(book: ReadingBook) async -> Set<Int> {
+        chapterFetchManager.uncachedChapterIndexes(book: book)
     }
 
     func cachedChapterPackage(book: ReadingBook, chapterIndex: Int) async -> ChapterPackage? {

@@ -32,6 +32,10 @@ extension BookSourceFetcher {
         )
     }
 
+    nonisolated func cachedChapterIndices(bookId: UUID, refs: [OnlineChapterRef]) -> Set<Int> {
+        Self.chapterCacheRepository.cachedChapterIndices(bookId: bookId, refs: refs)
+    }
+
     nonisolated func clearChapterCache(bookId: UUID, chapterIndex: Int) {
         Self.chapterCacheRepository.clearChapterCache(bookId: bookId, chapterIndex: chapterIndex)
     }

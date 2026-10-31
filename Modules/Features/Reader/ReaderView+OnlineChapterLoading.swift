@@ -270,12 +270,38 @@ extension ReaderView {
         AppLogger.cache("⟐ offline cache cleared, resetting chapter states", context: [
             "chapter": currentChapterIndex,
         ])
+        // 目錄 reads the cache again when it next opens, instead of first showing the old marks.
+        tocUncachedChapters = nil
         pendingChapterContentReplacements.formUnion(0..<(book?.onlineChapters?.count ?? 0))
         readerViewModel.resetAllChapterStates()
         chapterConsistencyRecoveryAttempts.removeAll()
         // Resetting alone would leave the overlay spinning forever: nothing else refetches
         // a chapter whose state merely went back to `.idle`.
         ensureChapterReady(chapterIndex: currentChapterIndex, priority: .jump)
+    }
+
+    // MARK: - 目錄's cache marks
+
+    /// The chapters 目錄 marks as needing the network (回饋 #88): the cache as read when it
+    /// opened, less what the offline download has finished since. The download publishes each
+    /// batch through the store, so the marks follow it without the cache being read again.
+    var tocUncachedChapterIndexes: Set<Int> {
+        guard let scanned = tocUncachedChapters else { return [] }
+        guard let completed = book?.offlineDownloadTask?.completedIndices else { return scanned }
+        return scanned.subtracting(completed.subtracting(tocCompletedAtScan))
+    }
+
+    /// One read of the book's chapter cache, off the main actor.
+    func scanTOCCacheMarks() async {
+        guard let book, book.isOnline else {
+            tocUncachedChapters = nil
+            return
+        }
+        // Taken before the read: a chapter the download finishes during it is then still
+        // taken off, whether or not the listing saw its file.
+        let completed = book.offlineDownloadTask?.completedIndices ?? []
+        tocUncachedChapters = await dependencies.chapterFetcher.uncachedChapterIndexes(book: book)
+        tocCompletedAtScan = completed
     }
 
     // MARK: - Failure Surface

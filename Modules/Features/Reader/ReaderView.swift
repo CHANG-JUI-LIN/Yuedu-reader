@@ -119,6 +119,12 @@ struct ReaderView: View {
     @State var readerTranslationSelection = ""
     @State var showReaderTranslation = false
     @State var showTOC = false
+    /// 目錄's uncached chapters as last read from the cache (`scanTOCCacheMarks`); nil until
+    /// then, and for a book that is not online.
+    @State var tocUncachedChapters: Set<Int>?
+    /// The offline download's finished chapters at that read: only what it finishes afterwards
+    /// comes off the marks, so the cache stays the one thing that says what is cached.
+    @State var tocCompletedAtScan: Set<Int> = []
     @State var showBookmarkList = false
     /// The confirmation that pops up after a bookmark is added or removed.
     @State var bookmarkToast: ReaderBookmarkToast?
@@ -2794,10 +2800,13 @@ struct ReaderView: View {
                     showsPageNumbers: book?.isOnline != true,
                     currentIndex: currentChapterIndex,
                     currentChapterID: currentTOCChapterID,
+                    uncachedChapterIndexes: tocUncachedChapterIndexes,
                     onSelectChapter: { jumpToTOCEntry($0) },
                     isPresented: $showTOC
                 )
             }
+            // Each time 目錄 opens, and again if the list changed under it (a refresh landing).
+            .task(id: book?.onlineChapters?.count) { await scanTOCCacheMarks() }
         }
         .sheet(isPresented: $showBookmarkList) {
             AdaptiveSheetContainer(maxWidth: DSLayout.readableListWidth) {

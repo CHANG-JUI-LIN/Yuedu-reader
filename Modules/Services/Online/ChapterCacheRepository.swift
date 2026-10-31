@@ -74,6 +74,46 @@ struct ChapterCacheRepository: Sendable {
         return true
     }
 
+    /// Which of `refs` have a cached body that is still theirs: the whole-list form of
+    /// `isChapterCached(bookId:chapterIndex:expectedSourceURL:expectedTOCTitle:)`, for 目錄's
+    /// marks. One directory listing finds the bodies (`<index>.txt`, only ever written with
+    /// content), and only those have their metadata compared — a refresh that moves a chapter
+    /// leaves its file at the old index (`OfflineChapterStore.reconcileBook`,
+    /// `.preserveContent`). The URLs tried are the reader's
+    /// (`ChapterFetchManager.cachedChapterPackage`). Unlike `isChapterCached` it writes
+    /// nothing: no legacy entry is upgraded on the way.
+    func cachedChapterIndices(bookId: UUID, refs: [OnlineChapterRef]) -> Set<Int> {
+        let names: [String]
+        do {
+            names = try FileManager.default.contentsOfDirectory(atPath: cacheDir(for: bookId).path)
+        } catch let error as CocoaError where error.code == .fileReadNoSuchFile {
+            return []  // Nothing of this book was ever cached.
+        } catch {
+            AppLogger.cache("Chapter cache listing failed", error: error, context: [
+                "bookId": bookId.uuidString,
+            ])
+            return []
+        }
+        var cached: Set<Int> = []
+        for name in names where name.hasSuffix(".txt") {
+            guard let index = Int(name.dropLast(4)), refs.indices.contains(index) else { continue }
+            let ref = refs[index]
+            let sanitizedURL = RuleEngine.sanitizeExtractedURL(ref.url)
+            let candidateURLs = sanitizedURL == ref.url ? [ref.url] : [sanitizedURL, ref.url]
+            if candidateURLs.contains(where: {
+                isCachedChapterMetadataValid(
+                    bookId: bookId,
+                    chapterIndex: index,
+                    expectedSourceURL: $0,
+                    expectedTOCTitle: ref.title
+                )
+            }) {
+                cached.insert(index)
+            }
+        }
+        return cached
+    }
+
     func clearChapterCache(bookId: UUID, chapterIndex: Int) {
         try? FileManager.default.removeItem(at: cachePath(bookId: bookId, chapterIndex: chapterIndex))
         try? FileManager.default.removeItem(at: cacheMetadataPath(bookId: bookId, chapterIndex: chapterIndex))

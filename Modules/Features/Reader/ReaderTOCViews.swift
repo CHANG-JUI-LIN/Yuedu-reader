@@ -86,11 +86,23 @@ private struct VerticalTOCText: View {
     }
 }
 
+/// 目錄's mark on a chapter that is not cached yet (回饋 #88): reading it needs the network.
+/// The title keeps its full contrast; the row itself tells VoiceOver (`accessibilityValue`).
+private struct TOCUncachedMark: View {
+    var body: some View {
+        Image(systemName: "icloud")
+            .font(DSFont.fixed(size: 13))
+            .foregroundStyle(DSColor.textSecondary)
+            .accessibilityHidden(true)
+    }
+}
+
 private struct VerticalTOCColumn: View {
     let title: String
     let page: Int
     let isSelected: Bool
     let showsPageNumber: Bool
+    let isUncached: Bool
     let action: () -> Void
 
     var body: some View {
@@ -111,6 +123,10 @@ private struct VerticalTOCColumn: View {
                     Text("\(page)")
                         .font(DSFont.fixed(size: 15, weight: .regular))
                         .foregroundStyle(isSelected ? DSColor.textPrimary : DSColor.textSecondary)
+                }
+
+                if isUncached {
+                    TOCUncachedMark()
                 }
             }
             .frame(width: VerticalTOCLayout.columnWidth, alignment: .top)
@@ -141,6 +157,7 @@ private struct VerticalTOCColumn: View {
             )
         }
         .buttonStyle(.plain)
+        .accessibilityValue(isUncached ? localized("未下載") : "")
     }
 }
 
@@ -150,6 +167,7 @@ private struct VerticalTOCView: View {
     let currentChapterID: UUID?
     let pageOffsets: [UUID: Int]
     let showsPageNumbers: Bool
+    let uncachedChapterIndexes: Set<Int>
     let onSelectChapter: (BookChapter) -> Void
 
     @State private var didInitialTOCScroll = false
@@ -173,7 +191,8 @@ private struct VerticalTOCView: View {
                             title: chapter.title,
                             page: pageNumber,
                             isSelected: chapter.id == currentChapterID,
-                            showsPageNumber: showsPageNumbers
+                            showsPageNumber: showsPageNumbers,
+                            isUncached: uncachedChapterIndexes.contains(chapter.index)
                         ) {
                             onSelectChapter(chapter)
                         }
@@ -210,6 +229,9 @@ struct ReaderTOCView: View {
     let showsPageNumbers: Bool
     let currentIndex: Int
     let currentChapterID: UUID?
+    /// An online book's chapters that are not cached yet, by `BookChapter.index`; empty for
+    /// a local book, which has nothing to fetch.
+    let uncachedChapterIndexes: Set<Int>
     let onSelectChapter: (BookChapter) -> Void
 
     @Binding var isPresented: Bool
@@ -283,6 +305,7 @@ struct ReaderTOCView: View {
                     currentChapterID: currentChapterID,
                     pageOffsets: pageOffsets,
                     showsPageNumbers: showsPageNumbers,
+                    uncachedChapterIndexes: uncachedChapterIndexes,
                     onSelectChapter: { chapter in
                         onSelectChapter(chapter)
                         isPresented = false
@@ -384,6 +407,10 @@ struct ReaderTOCView: View {
 
                 Spacer()
 
+                if uncachedChapterIndexes.contains(chapter.index) {
+                    TOCUncachedMark()
+                }
+
                 if showsPageNumbers {
                     Text("\(pageNumber(for: chapter))")
                         .font(DSFont.fixed(size: 18, weight: .regular, design: .monospaced))
@@ -401,6 +428,7 @@ struct ReaderTOCView: View {
             }
         }
         .buttonStyle(.plain)
+        .accessibilityValue(uncachedChapterIndexes.contains(chapter.index) ? localized("未下載") : "")
         .listRowBackground(Color.clear)
         .listRowInsets(EdgeInsets())
         .listRowSeparator(.hidden, edges: chapter.id == filteredChapters.first?.id ? .top : [])
@@ -425,6 +453,7 @@ struct ReaderTOCView: View {
         showsPageNumbers: true,
         currentIndex: 0,
         currentChapterID: nil,
+        uncachedChapterIndexes: [],
         onSelectChapter: { _ in },
         isPresented: .constant(true)
     )
@@ -447,6 +476,29 @@ struct ReaderTOCView: View {
         showsPageNumbers: false,
         currentIndex: 1,
         currentChapterID: nil,
+        uncachedChapterIndexes: [2, 3],
+        onSelectChapter: { _ in },
+        isPresented: .constant(true)
+    )
+}
+
+#Preview("目錄・直排未快取") {
+    ReaderTOCView(
+        chapters: [
+            BookChapter(index: 0, title: "第一章 序幕", content: ""),
+            BookChapter(index: 1, title: "第二章 啟程", content: ""),
+            BookChapter(index: 2, title: "第三章 抉擇", content: ""),
+            BookChapter(index: 3, title: "第四章 歸途", content: ""),
+        ],
+        bookTitle: "範例書名",
+        currentPage: 0,
+        totalPages: 0,
+        tocLayoutMode: .verticalRTLColumns,
+        pageOffsets: [:],
+        showsPageNumbers: false,
+        currentIndex: 1,
+        currentChapterID: nil,
+        uncachedChapterIndexes: [2, 3],
         onSelectChapter: { _ in },
         isPresented: .constant(true)
     )
