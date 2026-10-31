@@ -1730,34 +1730,100 @@ class BookStore: @MainActor ObservableObject, BookProvider {
             || FileManager.default.fileExists(atPath: StorageLocations.coverFileLocation(path).path)
     }
 
-    /// Downloads again every downloaded cover whose file is gone: after 快取管理 cleared the
-    /// covers, and at launch for what an earlier clear (3.0.0 (143), feedback #116) or a
-    /// download that failed then left behind. Returns once each has been saved or has failed.
-    func restoreMissingDownloadedCovers() async {
-        let downloads = records.filter(\.downloadsItsCover).map {
-            MissingCoverCandidate(id: $0.id, path: $0.coverImagePath, url: $0.coverUrl ?? "", sourceId: $0.bookSourceId)
-        }
-        guard !downloads.isEmpty else { return }
-        // A file check per book, off the main thread: a shelf can hold hundreds.
+    /// Puts back each saved cover a book shows whose file is gone: after 快取管理 cleared the
+    /// covers, and at launch for what an earlier clear (3.0.0 (143), feedback #116), a failed
+    /// download or a lost file left behind. A download is downloaded again; an imported book's
+    /// own cover is read again from its file. Returns once each is back or has failed.
+    func restoreMissingCovers() async {
+        let saved = records.compactMap(SavedCovers.init)
+        guard !saved.isEmpty else { return }
+        // A file check per cover, off the main thread: a shelf can hold hundreds.
         let missing = await Task.detached(priority: .utility) {
-            downloads.filter { $0.path?.isEmpty == false && !Self.showsSavedCover($0.path) }
+            saved.compactMap { $0.missing() }
         }.value
         guard !missing.isEmpty else { return }
-        AppLogger.cache("⟐ downloading missing covers again", context: ["count": missing.count], level: .notice)
+        AppLogger.cache("⟐ restoring missing covers", context: ["books": missing.count], level: .notice)
         await withTaskGroup(of: Void.self) { group in
-            for cover in missing {
-                group.addTask {
-                    await self.downloadCover(bookId: cover.id, coverUrl: cover.url, sourceId: cover.sourceId)
+            var reads: [SavedCovers] = []
+            for covers in missing {
+                guard case .download(let url, let sourceId) = covers.origin else {
+                    reads.append(covers)
+                    continue
                 }
+                group.addTask { await self.downloadCover(bookId: covers.id, coverUrl: url, sourceId: sourceId) }
+            }
+            // One book file at a time: opening one is memory-heavy, and there is no network to wait on.
+            group.addTask { [reads] in
+                for covers in reads { await self.readCoverAgain(covers) }
             }
         }
     }
 
-    private struct MissingCoverCandidate: Sendable {
+    /// Reads an imported book's own cover again from its file, into each name whose file is gone.
+    nonisolated private func readCoverAgain(_ covers: SavedCovers) async {
+        guard case .file(let format, let contentFilename) = covers.origin else { return }
+        let file: URL? = switch format {
+        case .epub: localEPUBURL(forContent: contentFilename)
+        case .pdf, .comic: documentsURL(for: contentFilename)
+        case .audio: chapters(for: covers.id)?.first.map { documentsURL(for: $0.url) }
+        }
+        guard let file, FileManager.default.fileExists(atPath: file.path) else {
+            AppLogger.cache(
+                "⟐ cover not restored: the book's file is not on this device",
+                context: ["format": format.rawValue],
+                level: .notice
+            )
+            return
+        }
+        guard let data = await ImportedBookCover.read(format, from: file) else { return }
+        for name in covers.names {
+            do {
+                try BookCoverFileStore.live.write(data, filename: name)
+            } catch {
+                AppLogger.cache("⟐ restored cover could not be saved", error: error)
+            }
+        }
+    }
+
+    /// A book's saved cover names, and where they come back from.
+    private struct SavedCovers: Sendable {
+        enum Origin: Sendable {
+            case download(url: String, sourceId: UUID?)
+            case file(ImportedBookCover.Format, contentFilename: String)
+        }
+
         let id: UUID
-        let path: String?
-        let url: String
-        let sourceId: UUID?
+        let names: [String]
+        let origin: Origin
+
+        init?(_ book: ReadingBook) {
+            let names: [String?]
+            if book.downloadsItsCover {
+                // Not the original kept for 重設封面, which downloads it again itself.
+                names = [book.coverImagePath]
+                origin = .download(url: book.coverUrl ?? "", sourceId: book.bookSourceId)
+            } else if let format = ImportedBookCover.format(of: book) {
+                names = [book.coverImagePath, book.originalCoverImagePath]
+                origin = .file(format, contentFilename: book.contentFilename)
+            } else {
+                return nil
+            }
+            id = book.id
+            self.names = names.compactMap { $0 }.filter { !$0.isEmpty }
+            guard !self.names.isEmpty else { return nil }
+        }
+
+        nonisolated private init(id: UUID, names: [String], origin: Origin) {
+            self.id = id
+            self.names = names
+            self.origin = origin
+        }
+
+        /// The same, with only the names whose file is gone; nil when none is.
+        nonisolated func missing() -> SavedCovers? {
+            let gone = names.filter { !BookStore.showsSavedCover($0) }
+            return gone.isEmpty ? nil : SavedCovers(id: id, names: gone, origin: origin)
+        }
     }
 
     /// Assign a downloaded cover filename to a book and persist.
@@ -2656,9 +2722,13 @@ class BookStore: @MainActor ObservableObject, BookProvider {
     }
 
     nonisolated func localEPUBURL(for book: ReadingBook) -> URL {
-        let epubFilename = book.contentFilename.hasSuffix(".epub")
-            ? book.contentFilename
-            : book.contentFilename.replacingOccurrences(of: "_epub.json", with: ".epub")
+        localEPUBURL(forContent: book.contentFilename)
+    }
+
+    nonisolated private func localEPUBURL(forContent contentFilename: String) -> URL {
+        let epubFilename = contentFilename.hasSuffix(".epub")
+            ? contentFilename
+            : contentFilename.replacingOccurrences(of: "_epub.json", with: ".epub")
         return documentsURL(for: epubFilename)
     }
 
@@ -3714,7 +3784,7 @@ extension BookStore: SavedCoverOwner {
     }
 
     func downloadedCoversRemoved() {
-        Task { await restoreMissingDownloadedCovers() }
+        Task { await restoreMissingCovers() }
     }
 }
 

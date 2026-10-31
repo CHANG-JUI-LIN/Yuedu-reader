@@ -290,7 +290,7 @@ struct yuedu_appApp: App {
                     DiagnosticScale.publish(bookStore: bookStore, reason: "launch")
                     // What an earlier 清除封面快取 deleted, or a cover download that failed then
                     // (feedback #116).
-                    Task(priority: .utility) { await bookStore.restoreMissingDownloadedCovers() }
+                    Task(priority: .utility) { await bookStore.restoreMissingCovers() }
                     _ = FirebaseAuthManager.shared
                     Task {
                         await AppDependencies.live.offlineDownloadManager

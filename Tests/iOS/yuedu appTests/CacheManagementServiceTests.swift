@@ -210,7 +210,7 @@ struct CacheManagementServiceTests {
         defer { try? FileManager.default.removeItem(at: cover) }
         #expect(!FileManager.default.fileExists(atPath: cover.path))
 
-        await store.restoreMissingDownloadedCovers()
+        await store.restoreMissingCovers()
 
         #expect(FileManager.default.fileExists(atPath: cover.path))
         #expect(store.readingBook(id: book.id)?.coverImagePath == filename)
@@ -233,10 +233,97 @@ struct CacheManagementServiceTests {
         let download = StorageLocations.coverFileLocation("\(book.id.uuidString)_cover.jpg")
         defer { try? FileManager.default.removeItem(at: download) }
 
-        await store.restoreMissingDownloadedCovers()
+        await store.restoreMissingCovers()
 
         #expect(store.readingBook(id: book.id)?.coverImagePath == picked)
         #expect(!FileManager.default.fileExists(atPath: download.path))
+    }
+
+    enum ImportedFormat: String, CaseIterable, Sendable {
+        case epub, pdf, comic
+    }
+
+    @Test("an imported book's cover whose file is gone is read again from the book's file",
+          arguments: ImportedFormat.allCases)
+    @MainActor
+    func goneImportedCoverIsReadAgain(format: ImportedFormat) async throws {
+        let directory = try makeDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let store = BookStore(metadataFileURL: directory.appendingPathComponent("books_meta.json"))
+        let source = try await Self.importable(format, in: directory)
+        let book = switch format {
+        case .epub: try await store.importEpub(url: source)
+        case .pdf: try await store.importLocalPDF(url: source)
+        case .comic: try await store.importLocalManga(url: source)
+        }
+        let content = StorageLocations.bookFile(book.contentFilename)
+        let filename = try #require(book.coverImagePath)
+        let cover = StorageLocations.coverFileLocation(filename)
+        defer {
+            try? FileManager.default.removeItem(at: content)
+            try? FileManager.default.removeItem(at: cover)
+        }
+        // What 清除封面快取 did to every imported book in 3.0.0 (143).
+        try FileManager.default.removeItem(at: cover)
+
+        await store.restoreMissingCovers()
+
+        #expect(FileManager.default.fileExists(atPath: cover.path))
+        #expect(BookCoverLoader.localImage(filename: filename) != nil)
+        #expect(store.readingBook(id: book.id)?.coverImagePath == filename)
+    }
+
+    /// A file of `format` whose import saves a cover.
+    @MainActor
+    private static func importable(_ format: ImportedFormat, in directory: URL) async throws -> URL {
+        let jpeg = EPUBTestFixtures.makeJPEG(width: 200, height: 300)
+        switch format {
+        case .epub:
+            return try await EPUBTestFixtures.makeArchive(entries: [
+                "mimetype": Data("application/epub+zip".utf8),
+                "META-INF/container.xml": Data("""
+                <?xml version="1.0" encoding="UTF-8"?>
+                <container version="1.0" xmlns="urn:oasis:names:tc:opendocument:xmlns:container">
+                  <rootfiles><rootfile full-path="OPS/package.opf" media-type="application/oebps-package+xml"/></rootfiles>
+                </container>
+                """.utf8),
+                "OPS/package.opf": Data("""
+                <?xml version="1.0" encoding="UTF-8"?>
+                <package version="3.0" unique-identifier="bookid" xmlns="http://www.idpf.org/2007/opf">
+                  <metadata xmlns:dc="http://purl.org/dc/elements/1.1/">
+                    <dc:identifier id="bookid">urn:uuid:\(UUID().uuidString)</dc:identifier>
+                    <dc:title>封面書</dc:title>
+                    <dc:language>zh</dc:language>
+                  </metadata>
+                  <manifest>
+                    <item id="nav" href="nav.xhtml" media-type="application/xhtml+xml" properties="nav"/>
+                    <item id="cover" href="cover.jpg" media-type="image/jpeg" properties="cover-image"/>
+                    <item id="ch1" href="chapter1.xhtml" media-type="application/xhtml+xml"/>
+                  </manifest>
+                  <spine><itemref idref="ch1"/></spine>
+                </package>
+                """.utf8),
+                "OPS/nav.xhtml": Data(EPUBTestFixtures.xhtml(
+                    title: "Nav",
+                    body: #"<nav epub:type="toc"><ol><li><a href="chapter1.xhtml">一</a></li></ol></nav>"#
+                ).utf8),
+                "OPS/chapter1.xhtml": Data(EPUBTestFixtures.xhtml(title: "一", body: "<p>正文</p>").utf8),
+                "OPS/cover.jpg": jpeg
+            ])
+        case .pdf:
+            let url = directory.appendingPathComponent("封面書.pdf")
+            try UIGraphicsPDFRenderer(bounds: CGRect(x: 0, y: 0, width: 200, height: 300)).pdfData { context in
+                context.beginPage()
+                UIColor.systemTeal.setFill()
+                context.fill(CGRect(x: 0, y: 0, width: 200, height: 300))
+            }.write(to: url)
+            return url
+        case .comic:
+            let archive = try await EPUBTestFixtures.makeArchive(entries: ["001.jpg": jpeg, "002.jpg": jpeg])
+            let url = directory.appendingPathComponent("封面書.cbz")
+            try FileManager.default.moveItem(at: archive, to: url)
+            return url
+        }
     }
 
     @MainActor
