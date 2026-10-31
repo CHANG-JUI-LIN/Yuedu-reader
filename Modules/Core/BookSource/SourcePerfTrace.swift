@@ -13,6 +13,7 @@ import Foundation
 ///   toc.nextPageChain  (how many next pages a table of contents walked)
 ///   sourceCheck.run / sourceCheck.toc / sourceCheck.content  (書源檢查: the whole run with the
 ///     process's CPU seconds, and each source's table-of-contents and content probes)
+///   sourceCheck.width  (the check's width changing with the CPU it spent over the window)
 ///   js.runtimeCreate
 ///   coreText.firstPage / coreText.fullLayout
 ///   coreText.scroll.loadChapter / coreText.scroll.slice / coreText.scroll.placeholderSlice

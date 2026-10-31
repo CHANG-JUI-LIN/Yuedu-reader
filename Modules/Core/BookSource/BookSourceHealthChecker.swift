@@ -394,7 +394,8 @@ final class BookSourceHealthChecker: ObservableObject {
     /// set before `runAll()`.
     var policy = BookSourceCheckPolicy()
 
-    /// How many sources are probed at once. Follows the user's 網路設定 → 並發數,
+    /// The most sources probed at once; `BookSourceCheckPacing` narrows from it while the
+    /// process spends more CPU than MetricKit allows. Follows the user's 網路設定 → 並發數,
     /// the same knob the search fan-out uses — Legado likewise drives both its
     /// search and its 校验书源 from one `threadCount`. This used to be hard-wired to
     /// 6 with no way to raise it, which is most of why validating a large source
@@ -418,13 +419,17 @@ final class BookSourceHealthChecker: ObservableObject {
     private let fetcher: any BookSourceHealthCheckFetching
     /// Where measured response times and the post-run 停用／刪除 policy land.
     private let store: BookSourceStore
+    /// What `BookSourceCheckPacing` measures a run's CPU with.
+    private let cpuClock: BookSourceCheckCPUClock
 
     init(
         fetcher: any BookSourceHealthCheckFetching = BookSourceFetcher.shared,
-        store: BookSourceStore = .shared
+        store: BookSourceStore = .shared,
+        cpuClock: BookSourceCheckCPUClock = .live
     ) {
         self.fetcher = fetcher
         self.store = store
+        self.cpuClock = cpuClock
     }
 
     private(set) var finishedCount = 0
@@ -494,16 +499,17 @@ final class BookSourceHealthChecker: ObservableObject {
         cancelled = false
         lastSummary = nil
 
-        let concurrency = maxConcurrent
         let total = items.count
         let startedAt = ProcessInfo.processInfo.systemUptime
         // The process's CPU over the run: MetricKit's cpu-exception is a budget of 90 s in
         // 180 s for the whole process, and large runs met it (Crashlytics c0ec35f1, 20727455).
         let cpuAtStart = SourcePerfTrace.processCPU
+        var pacing = BookSourceCheckPacing(ceiling: maxConcurrent, start: cpuClock.sample())
         defer {
             SourcePerfTrace.record(
                 "sourceCheck.run",
-                "sources=\(total) finished=\(finishedCount) concurrency=\(concurrency) "
+                "sources=\(total) finished=\(finishedCount) concurrency=\(pacing.ceiling) "
+                    + "minWidth=\(pacing.minWidth) "
                     + "cpu=\(String(format: "%.1f", SourcePerfTrace.processCPU - cpuAtStart))s",
                 since: startedAt,
                 thresholdMs: 0
@@ -511,16 +517,32 @@ final class BookSourceHealthChecker: ObservableObject {
         }
         await withTaskGroup(of: Void.self) { group in
             var next = 0
-            while next < min(concurrency, total) {
+            var inFlight = 0
+            while inFlight < pacing.width, next < total {
                 let index = next
                 group.addTask { [weak self] in await self?.checkItem(at: index) }
                 next += 1
+                inFlight += 1
             }
             while await group.next() != nil {
-                guard !cancelled, next < total else { continue }
-                let index = next
-                group.addTask { [weak self] in await self?.checkItem(at: index) }
-                next += 1
+                if let change = pacing.sourceFinished(at: cpuClock.sample(), inFlight: inFlight) {
+                    SourcePerfTrace.record(
+                        "sourceCheck.width",
+                        "\(change.from)→\(change.to) cores=\(String(format: "%.2f", change.cores)) "
+                            + "inFlight=\(String(format: "%.1f", change.meanInFlight)) "
+                            + "trailing=\(String(format: "%.1f", change.trailingCPU))s",
+                        since: change.windowStart,
+                        thresholdMs: 0
+                    )
+                }
+                inFlight -= 1
+                guard !cancelled else { continue }
+                while inFlight < pacing.width, next < total {
+                    let index = next
+                    group.addTask { [weak self] in await self?.checkItem(at: index) }
+                    next += 1
+                    inFlight += 1
+                }
             }
         }
 
