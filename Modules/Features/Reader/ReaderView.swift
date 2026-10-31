@@ -351,7 +351,12 @@ struct ReaderView: View {
     @State var readerOverlayLegacyContentIndex = ReaderLegacyContentIndex.empty
 
     @State var isRestoringPosition = true
-    @State var savedCoreTextRestoreTarget: (chapterIndex: Int, charOffset: Int)?
+    /// The saved position the book opened at, while the reader is still owed it.
+    @State var openingRestore = ReaderOpeningRestore()
+    var savedCoreTextRestoreTarget: (chapterIndex: Int, charOffset: Int)? {
+        get { openingRestore.target }
+        nonmutating set { openingRestore.target = newValue }
+    }
     /// 換源 sheet 內的變量編輯入口 (Legado 設置書籍變量/設置源變量)。
     @State var showBookVariableEditor = false
     @State var showSourceVariableEditor = false
@@ -1160,6 +1165,22 @@ struct ReaderView: View {
             totalPages: engine.totalPages,
             shouldPersist: false
         )
+        // The executor showing the saved position delivers the restore. Left owed, a later
+        // run of it (`applyInitialProgressIfNeeded`) took the reader back there over every
+        // turn made since (feedback #112). It settles once this page change is handled, so
+        // this settle is still not persisted: it would store the page's start over the saved
+        // offset.
+        let deliveredRestore = savedCoreTextRestoreTarget.flatMap { target in
+            openingRestore.pageSettled(newPage, pageIndex: { engine.pageIndex(for: $0) })
+                ? CoreTextReadingPosition(spineIndex: target.chapterIndex, charOffset: target.charOffset)
+                : nil
+        }
+        defer {
+            if let deliveredRestore {
+                progressTrace("restore shown page=\(newPage)")
+                settleCoreTextRestore(at: deliveredRestore, page: newPage, engine: engine)
+            }
+        }
 
         progressTrace("onPageChanged page=\(newPage) chapter=\(currentChapterIndex) visiblePosition=\(String(describing: visiblePosition))")
 
@@ -3273,10 +3294,7 @@ struct ReaderView: View {
                 currentChapterIndex = position.spineIndex
                 scrollVisibleChapter = position.spineIndex
                 moveReaderSession(to: position, source: .restored, shouldPersist: false)
-                savedCoreTextRestoreTarget = nil
-                isRestoringPosition = false
-                alignToAdoptedNarration()
-                openAtOpeningTOCTarget(restoredSpine: position.spineIndex)
+                finishCoreTextRestore(restoredSpine: position.spineIndex)
             }
             return
         }
@@ -3290,47 +3308,58 @@ struct ReaderView: View {
                 isApplyingCoreTextRestore = true
                 Task { @MainActor in
                     defer { self.isApplyingCoreTextRestore = false }
-                    let maxSpine = max(0, self.chapters.count - 1)
-                    let spineIndex = max(0, min(target.chapterIndex, maxSpine))
-                    self.progressTrace("applyInitialProgress tryPreciseRestore requested=(\(target.chapterIndex),\(target.charOffset)) clampedSpine=\(spineIndex)")
-                    await engine.preloadChapter(at: spineIndex)
-                    guard let resolvedPage = ReaderProgressRestoreResolver.resolvePage(
-                        chapterIndex: spineIndex,
-                        charOffset: target.charOffset,
-                        resolver: { position in
-                            engine.pageIndex(for: position)
-                        }
-                    ) else {
-                        self.progressTrace("applyInitialProgress preciseRestore unresolved keepTarget=(\(target.chapterIndex),\(target.charOffset))")
+                    self.progressTrace("applyInitialProgress tryPreciseRestore requested=(\(target.chapterIndex),\(target.charOffset))")
+                    let resolution = await self.openingRestore.resolve(
+                        chapterCount: self.chapters.count,
+                        preload: { spineIndex in _ = await engine.preloadChapter(at: spineIndex) },
+                        pageIndex: { engine.pageIndex(for: $0) }
+                    )
+                    guard case let .restore(position, resolvedPage) = resolution else {
+                        self.progressTrace("applyInitialProgress preciseRestore \(resolution == .unresolved ? "unresolved keepTarget" : "shown meanwhile")=(\(target.chapterIndex),\(target.charOffset))")
                         return
                     }
-                    self.progressTrace("applyInitialProgress preciseRestore resolvedPage=\(resolvedPage) from=(\(spineIndex),\(target.charOffset))")
+                    self.progressTrace("applyInitialProgress preciseRestore resolvedPage=\(resolvedPage) from=(\(position.spineIndex),\(position.charOffset))")
                     self.currentPage = resolvedPage
                     // Phase-2: binding writes are display-only; re-issue the position
                     // command so the executor corrects any estimated-page residual
                     // (previously the binding-vs-visible reconciler picked this up).
-                    self.setCoreTextExternalTarget(
-                        CoreTextReadingPosition(spineIndex: spineIndex, charOffset: target.charOffset)
-                    )
-                    self.currentChapterIndex = spineIndex
-                    self.moveReaderSession(
-                        to: CoreTextReadingPosition(spineIndex: spineIndex, charOffset: target.charOffset),
-                        source: .restored,
-                        pageIndex: resolvedPage,
-                        totalPages: engine.totalPages,
-                        shouldPersist: false
-                    )
-                    self.ensureChapterReady(chapterIndex: spineIndex)
-                    self.epubRenderer.updateCurrentPosition(globalPage: resolvedPage, engine: engine)
-                    self.savedCoreTextRestoreTarget = nil
-                    self.isRestoringPosition = false
-                    self.alignToAdoptedNarration()
-                    self.openAtOpeningTOCTarget(restoredSpine: spineIndex)
+                    self.setCoreTextExternalTarget(position)
+                    self.currentChapterIndex = position.spineIndex
+                    self.settleCoreTextRestore(at: position, page: resolvedPage, engine: engine)
                 }
                 return
             }
             return
         }
+    }
+
+    /// The restore is on screen at `page`, reached by the restore's own resolution or by the
+    /// executor settling there, whichever comes first. The reader's state takes the saved
+    /// position — not the start of the page showing it — and the restore finishes.
+    func settleCoreTextRestore(
+        at position: CoreTextReadingPosition,
+        page: Int,
+        engine: any PageRenderingProvider
+    ) {
+        moveReaderSession(
+            to: position,
+            source: .restored,
+            pageIndex: page,
+            totalPages: engine.totalPages,
+            shouldPersist: false
+        )
+        ensureChapterReady(chapterIndex: position.spineIndex)
+        epubRenderer.updateCurrentPosition(globalPage: page, engine: engine)
+        finishCoreTextRestore(restoredSpine: position.spineIndex)
+    }
+
+    /// The saved position is on screen, so the restore is no longer owed, and what waited on
+    /// it runs now, once.
+    func finishCoreTextRestore(restoredSpine: Int) {
+        savedCoreTextRestoreTarget = nil
+        isRestoringPosition = false
+        alignToAdoptedNarration()
+        openAtOpeningTOCTarget(restoredSpine: restoredSpine)
     }
 
     func beginCurlStartupTrace(reason: String) {
