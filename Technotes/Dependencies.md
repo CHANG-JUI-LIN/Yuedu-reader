@@ -12,7 +12,7 @@ This document records the Swift Package dependencies configured in the Xcode pro
 | **iosMath** | `https://github.com/kostub/iosMath.git` | Up to Next Major Version (`2.3.1` < `3.0.0`) | `2.3.1` |
 | **Nuke** | `https://github.com/kean/Nuke` | Up to Next Major Version (`12.0.0` < `13.0.0`) | `12.0.0` |
 | **Readium** | `https://github.com/readium/swift-toolkit.git` | Up to Next Major Version (`3.8.0` < `4.0.0`) | `3.8.0` |
-| **SwiftSoup** | `https://github.com/scinfu/SwiftSoup` | Up to Next Major Version (`2.11.3` < `3.0.0`) | `2.11.3` |
+| **SwiftSoup** | `Packages/SwiftSoup` (vendored from `https://github.com/scinfu/SwiftSoup`) | Local package; also stands in for the copy Readium and YueduCoreText depend on | `2.13.7` + one backported fix, see its `VENDOR-MANIFEST.json` |
 | **ReadiumZIPFoundation** | `https://github.com/readium/ZIPFoundation.git` | Up to Next Major Version (`3.0.1` < `4.0.0`) | `3.0.1` |
 
 ## Transitive Dependencies

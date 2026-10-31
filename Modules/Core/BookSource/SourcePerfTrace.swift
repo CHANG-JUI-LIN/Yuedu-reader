@@ -7,6 +7,12 @@ import Foundation
 ///   detail.network / detail.parse
 ///   toc.network / toc.parse / toc.nextPage
 ///   chapter.network / chapter.parse
+///   search.rules / detail.rules / toc.rules / toc.nextRules / chapter.rules  (one page through
+///     a source's rules; `cpu=` is the parsing thread's own time)
+///   webNovel.content  (the content heuristic for a source with no content rule; `cpu=` too)
+///   toc.nextPageChain  (how many next pages a table of contents walked)
+///   sourceCheck.run / sourceCheck.toc / sourceCheck.content  (書源檢查: the whole run with the
+///     process's CPU seconds, and each source's table-of-contents and content probes)
 ///   js.runtimeCreate
 ///   coreText.firstPage / coreText.fullLayout
 ///   coreText.scroll.loadChapter / coreText.scroll.slice / coreText.scroll.placeholderSlice
@@ -42,22 +48,75 @@ enum SourcePerfTrace {
     /// work in a closure don't each spell out the clock.
     static var now: TimeInterval { ProcessInfo.processInfo.systemUptime }
 
+    /// CPU time the calling thread has used. Wall time under a 32-wide 書源檢查 is mostly
+    /// waiting for a core, so the spans that attribute a run's CPU also say how much of their
+    /// time was their own thread's (`cpuStart()` / `record(since: CPUStart)`). Synchronous
+    /// work only: an `await` can resume on another thread.
+    static var threadCPU: TimeInterval {
+        var time = timespec()
+        clock_gettime(CLOCK_THREAD_CPUTIME_ID, &time)
+        return TimeInterval(time.tv_sec) + TimeInterval(time.tv_nsec) / 1_000_000_000
+    }
+
+    /// CPU time the whole process has used, user and system: what MetricKit's cpu-exception
+    /// counts against its budget of 90 s in 180 s.
+    static var processCPU: TimeInterval {
+        var usage = rusage()
+        getrusage(RUSAGE_SELF, &usage)
+        func seconds(_ time: timeval) -> TimeInterval {
+            TimeInterval(time.tv_sec) + TimeInterval(time.tv_usec) / 1_000_000
+        }
+        return seconds(usage.ru_utime) + seconds(usage.ru_stime)
+    }
+
+    struct CPUStart {
+        let wall: TimeInterval
+        let cpu: TimeInterval
+    }
+
+    static func cpuStart() -> CPUStart {
+        CPUStart(wall: now, cpu: threadCPU)
+    }
+
+    /// `record(since:)` for a `cpuStart()` span: the line also carries `cpu=`, this thread's
+    /// CPU time over the span.
+    static func record(
+        _ stage: String,
+        _ detail: String = "",
+        since start: CPUStart,
+        thresholdMs: Double = 1
+    ) {
+        let cpuMs = (threadCPU - start.cpu) * 1000
+        record(
+            stage,
+            "cpu=\(String(format: "%.0f", cpuMs))ms\(detail.isEmpty ? "" : " \(detail)")",
+            since: start.wall,
+            thresholdMs: thresholdMs
+        )
+    }
+
     /// Measure a synchronous span.
     @discardableResult
     static func span<T>(
         _ stage: String,
         _ detail: @autoclosure () -> String = "",
         thresholdMs: Double = 1,
+        measuresCPU: Bool = false,
         _ body: () throws -> T
     ) rethrows -> T {
         let t0 = ProcessInfo.processInfo.systemUptime
+        let cpu0 = measuresCPU ? threadCPU : 0
         // A synchronous span on the main thread is, while it runs, what the main thread is
         // doing: `MainThreadMonitor` names it when the main thread stops answering.
         let onMain = Thread.isMainThread
         if onMain { MainThreadActivity.push(stage) }
         defer {
             if onMain { MainThreadActivity.pop() }
-            record(stage, detail(), since: t0, thresholdMs: thresholdMs)
+            if measuresCPU {
+                record(stage, detail(), since: CPUStart(wall: t0, cpu: cpu0), thresholdMs: thresholdMs)
+            } else {
+                record(stage, detail(), since: t0, thresholdMs: thresholdMs)
+            }
         }
         return try body()
     }

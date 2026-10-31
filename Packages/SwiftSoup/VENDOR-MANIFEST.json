@@ -1,0 +1,30 @@
+{
+  "upstream": {
+    "repository": "https://github.com/scinfu/SwiftSoup.git",
+    "version": "2.13.7",
+    "revision": "8d6ad267714cac3ae747cefdd21f7a6665006e1f",
+    "license": "MIT"
+  },
+  "vendored": [
+    "LICENSE",
+    "Sources"
+  ],
+  "omitted": [
+    "Package.swift (replaced: the SwiftSoup library target only; upstream also declares the SwiftSoupProfile executable and the test target)",
+    "Tests",
+    "Tools"
+  ],
+  "why": "Same package identity as the remote SwiftSoup, so it also stands in for the copy swift-toolkit and YueduCoreText (exact 2.13.7) depend on. The pin stays at 2.13.7: 2.14 brings more than a hundred parser behavior changes, and YueduCoreText renders with this parser too.",
+  "patches": [
+    {
+      "file": "Sources/Element.swift",
+      "functions": [
+        "nextElementSibling()",
+        "previousElementSibling()"
+      ],
+      "upstreamCommit": "fd2975e (SwiftSoup 2.14.0)",
+      "reason": "Both rebuilt the parent's element list and searched it on every call, so a general-sibling (~) selector was cubic in the number of siblings: 書源檢查 spent 129 s of CPU on one 1189-chapter table of contents with `#list > dl > dt:nth-of-type(2) ~ dd` (Crashlytics 20727455, c0ec35f1, 77f93443, bdd4dca3). Backported verbatim: walk childNodes from siblingIndex, verified against the node before it is trusted.",
+      "removeWhen": "SwiftSoup is upgraded to 2.14.0 or later; then delete Packages/SwiftSoup and depend on the remote package again."
+    }
+  ]
+}

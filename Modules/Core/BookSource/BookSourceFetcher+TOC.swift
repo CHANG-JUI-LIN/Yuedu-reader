@@ -266,6 +266,17 @@ extension BookSourceFetcher {
             var pageRuntimeVariables: [[String: String]] = []
             var read: Set<String> = [firstPageURL]
             var nextURL = nextURLs[0]
+            let chainStart = SourcePerfTrace.now
+            // How far a table of contents walked, in one line: 書源檢查's CPU exceptions came with
+            // logs of nothing but next-page rules (Crashlytics c0ec35f1, 20727455).
+            defer {
+                SourcePerfTrace.record(
+                    "toc.nextPageChain",
+                    "pages=\(read.count - 1) chapters=\(chapters.count) \(source.bookSourceName)",
+                    since: chainStart,
+                    thresholdMs: 0
+                )
+            }
             while !nextURL.isEmpty, read.insert(nextURL).inserted {
                 let pageStart = ProcessInfo.processInfo.systemUptime
                 let page = try await fetchFollowingTOCPage(nextURL, source: source, runtimeVariables: runtimeVariables)

@@ -497,10 +497,14 @@ final class BookSourceHealthChecker: ObservableObject {
         let concurrency = maxConcurrent
         let total = items.count
         let startedAt = ProcessInfo.processInfo.systemUptime
+        // The process's CPU over the run: MetricKit's cpu-exception is a budget of 90 s in
+        // 180 s for the whole process, and large runs met it (Crashlytics c0ec35f1, 20727455).
+        let cpuAtStart = SourcePerfTrace.processCPU
         defer {
             SourcePerfTrace.record(
                 "sourceCheck.run",
-                "sources=\(total) finished=\(finishedCount) concurrency=\(concurrency)",
+                "sources=\(total) finished=\(finishedCount) concurrency=\(concurrency) "
+                    + "cpu=\(String(format: "%.1f", SourcePerfTrace.processCPU - cpuAtStart))s",
                 since: startedAt,
                 thresholdMs: 0
             )
@@ -1052,6 +1056,14 @@ final class BookSourceHealthChecker: ObservableObject {
         guard !tocURL.isEmpty else {
             return .failure(.ruleMissing, localized("目錄地址為空"))
         }
+        let startedAt = SourcePerfTrace.now
+        var chapterCount = 0
+        defer {
+            SourcePerfTrace.record(
+                "sourceCheck.toc", "chapters=\(chapterCount) \(source.bookSourceName)",
+                since: startedAt, thresholdMs: 0
+            )
+        }
         do {
             let package = try await fetcher.fetchTOCPackage(
                 tocUrl: tocURL,
@@ -1065,6 +1077,7 @@ final class BookSourceHealthChecker: ObservableObject {
                 // likewise clears the chapter it fetched).
                 writesCache: false
             )
+            chapterCount = package.chapters.count
             guard var first = package.chapters.first(where: {
                 !$0.shouldRenderAsVolumeSeparator && $0.hasLoadableContentURL
             }) else {
@@ -1091,7 +1104,15 @@ final class BookSourceHealthChecker: ObservableObject {
         chapter: ValidatedChapter, source: BookSource
     ) async -> ProbeResult<Int> {
         let bookID = UUID()
-        defer { BookSourceFetcher.shared.clearAllChapterCache(bookId: bookID) }
+        let startedAt = SourcePerfTrace.now
+        var characters = 0
+        defer {
+            BookSourceFetcher.shared.clearAllChapterCache(bookId: bookID)
+            SourcePerfTrace.record(
+                "sourceCheck.content", "chars=\(characters) \(source.bookSourceName)",
+                since: startedAt, thresholdMs: 0
+            )
+        }
         do {
             let package = try await fetcher.fetchChapterPackage(
                 ref: chapter.ref,
@@ -1101,6 +1122,7 @@ final class BookSourceHealthChecker: ObservableObject {
             )
             let text = package.content
             let count = text.trimmingCharacters(in: .whitespacesAndNewlines).count
+            characters = count
             guard count > 0 else { return .failure(.contentEmpty, localized("正文失效")) }
             try ChapterFetcher.shared.validateResolvedContent(text)
             guard !ChapterFetchManager.isSuspiciousChapterContent(text) else {

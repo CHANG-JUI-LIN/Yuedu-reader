@@ -475,7 +475,6 @@
 			minimizedProjectReferenceProxies = 1;
 			packageReferences = (
 				46935AA62F52E48600662F9D /* XCRemoteSwiftPackageReference "ZIPFoundation" */,
-				46935AA72F52E49B00662F9D /* XCRemoteSwiftPackageReference "SwiftSoup" */,
 				AAAA1111AAAA1111AAAA0003 /* XCRemoteSwiftPackageReference "Nuke" */,
 				8A11B0E12F9A1C7300A1B001 /* XCRemoteSwiftPackageReference "Fuzi" */,
 				460274812F710D7500486947 /* XCRemoteSwiftPackageReference "swift-toolkit" */,
@@ -484,6 +483,7 @@
 				4F766A6C466F0B91C61C6FB1 /* XCRemoteSwiftPackageReference "iosMath" */,
 				4503FB56A177080D0D9E31E4 /* XCRemoteSwiftPackageReference "YueduCoreText" */,
 				D8654E038B484E472D6D37EA /* XCLocalSwiftPackageReference "Packages/CLexbor" */,
+				9E73816D0186A1DA34077B88 /* XCLocalSwiftPackageReference "Packages/SwiftSoup" */,
 			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = 460D365A2F51C5B8006E774C /* Products */;
@@ -1179,6 +1179,10 @@
 			isa = XCLocalSwiftPackageReference;
 			relativePath = Packages/CLexbor;
 		};
+		9E73816D0186A1DA34077B88 /* XCLocalSwiftPackageReference "Packages/SwiftSoup" */ = {
+			isa = XCLocalSwiftPackageReference;
+			relativePath = Packages/SwiftSoup;
+		};
 /* End XCLocalSwiftPackageReference section */
 
 /* Begin XCRemoteSwiftPackageReference section */
@@ -1212,14 +1216,6 @@
 			requirement = {
 				kind = upToNextMajorVersion;
 				minimumVersion = 3.0.1;
-			};
-		};
-		46935AA72F52E49B00662F9D /* XCRemoteSwiftPackageReference "SwiftSoup" */ = {
-			isa = XCRemoteSwiftPackageReference;
-			repositoryURL = "https://github.com/scinfu/SwiftSoup.git";
-			requirement = {
-				kind = upToNextMajorVersion;
-				minimumVersion = 2.3.2;
 			};
 		};
 		46A6AB5D2FCD4ED60071B397 /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */ = {
@@ -1374,7 +1370,6 @@
 		};
 		489E6E08B47AA3AC9F140CAD /* SwiftSoup */ = {
 			isa = XCSwiftPackageProductDependency;
-			package = 46935AA72F52E49B00662F9D /* XCRemoteSwiftPackageReference "SwiftSoup" */;
 			productName = SwiftSoup;
 		};
 		54FF42D2FA99075B5C91D59B /* ReadiumShared */ = {

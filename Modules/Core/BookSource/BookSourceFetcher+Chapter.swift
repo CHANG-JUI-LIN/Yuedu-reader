@@ -75,6 +75,17 @@ extension BookSourceFetcher {
         ), cached.state == .cached, !cached.content.isEmpty {
             return cached
         }
+        // Legado's `WebBook.getContentAwait` (legado, legado-E and MD3 alike): a source with no
+        // content rule reads the chapter URL as the chapter (正文规则为空,使用章节链接). For an
+        // audio source that URL is the stream the player opens. Fetching it instead downloaded
+        // whole audio files and parsed them as pages: in 書源檢查 asmr's 37.8 MB stream took
+        // 61 s of CPU and 轻音潇社's overflowed a thread's stack (Crashlytics c0ec35f1), and the
+        // player found no URL in the parsed text. Text sources keep the content heuristic,
+        // which reads their pages.
+        if source.bookSourceType == 1,
+           source.ruleContent.content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            return try saveChapterURLPackage(ref: ref, bookId: bookId)
+        }
         if source.shouldUseLegadoRuntimeFetch(for: ref.url) {
             return try await fetchLegadoRuntimeChapterPackage(
                 ref: ref,
@@ -288,6 +299,37 @@ extension BookSourceFetcher {
             expectedTOCTitle: ref.title
         )
         guard let reloaded else { throw ChapterCacheWriteError.verificationFailed }
+        return reloaded
+    }
+
+    /// An audio source's chapter when the source has no content rule: its URL, unfetched.
+    private func saveChapterURLPackage(ref: OnlineChapterRef, bookId: UUID) throws -> ChapterPackage {
+        let checksum = SHA256.hash(data: Data(ref.url.utf8)).map {
+            String(format: "%02x", $0)
+        }.joined()
+        let package = ChapterPackage(
+            bookId: bookId,
+            chapterIndex: ref.index,
+            sourceURL: ref.url,
+            tocTitle: ref.title,
+            canonicalTitle: nil,
+            content: ref.url,
+            contentChecksum: checksum,
+            rawHTMLFilename: "\(ref.index).raw.html",
+            normalizedHTMLFilename: "\(ref.index).normalized.xhtml",
+            savedAt: Date(),
+            state: .cached,
+            failureReason: nil
+        )
+        try saveChapterPackageToCache(package, rawHTML: nil, normalizedHTML: nil)
+        guard let reloaded = loadChapterPackageSync(
+            bookId: bookId,
+            chapterIndex: ref.index,
+            expectedSourceURL: ref.url,
+            expectedTOCTitle: ref.title
+        ) else {
+            throw ChapterCacheWriteError.verificationFailed
+        }
         return reloaded
     }
 

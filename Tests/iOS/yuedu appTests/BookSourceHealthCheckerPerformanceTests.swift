@@ -924,4 +924,73 @@ private actor TimedHealthCheckFetcher: BookSourceHealthCheckFetching {
             chapterReferer: chapterReferer
         )
     }
+
+    // The checker calls these three. Without them the protocol's defaults stood in: a TOC fetched
+    // without preUpdateJs, written to the TOC cache and served from it to a later source with the
+    // same book, so the timings were not those of the checker's own path.
+
+    func fetchBookInfoPackage(
+        url: String,
+        source: BookSource,
+        runtimeVariables: [String: String]?,
+        knownBook: OnlineBook?,
+        writesCache: Bool
+    ) async throws -> BookInfoPackage {
+        let start = begin("detail")
+        defer { end("detail", start) }
+        return try await base.fetchBookInfoPackage(
+            url: url,
+            source: source,
+            runtimeVariables: runtimeVariables,
+            knownBook: knownBook,
+            writesCache: writesCache
+        )
+    }
+
+    nonisolated func fetchTOCPackage(
+        tocUrl: String,
+        source: BookSource,
+        runtimeVariables: [String: String]?,
+        onFirstPageReady: ((_ chapters: [OnlineChapterRef]) -> Void)?,
+        forceRefresh: Bool,
+        runPreUpdateJs: Bool,
+        writesCache: Bool
+    ) async throws -> TOCPackage {
+        let start = await begin("toc")
+        do {
+            // As with `onHasMore`: the checker passes none, and a non-Sendable callback cannot be
+            // handed on from here.
+            if onFirstPageReady != nil { Issue.record("the checker passed onFirstPageReady") }
+            let package = try await base.fetchTOCPackage(
+                tocUrl: tocUrl,
+                source: source,
+                runtimeVariables: runtimeVariables,
+                onFirstPageReady: nil,
+                forceRefresh: forceRefresh,
+                runPreUpdateJs: runPreUpdateJs,
+                writesCache: writesCache
+            )
+            await end("toc", start)
+            return package
+        } catch {
+            await end("toc", start)
+            throw error
+        }
+    }
+
+    func fetchChapterPackage(
+        ref: OnlineChapterRef,
+        bookId: UUID,
+        source: BookSource,
+        chapterReferer: String?
+    ) async throws -> ChapterPackage {
+        let start = begin("content")
+        defer { end("content", start) }
+        return try await base.fetchChapterPackage(
+            ref: ref,
+            bookId: bookId,
+            source: source,
+            chapterReferer: chapterReferer
+        )
+    }
 }

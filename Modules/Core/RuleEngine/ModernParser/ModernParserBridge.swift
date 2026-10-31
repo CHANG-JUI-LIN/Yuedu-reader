@@ -1031,6 +1031,8 @@ class ModernParserBridge {
         pageVariables: [String: String]? = nil,
         earlyFilter: ((_ name: String, _ author: String) -> Bool)? = nil
     ) throws -> [OnlineBook] {
+        let cpuSpan = SourcePerfTrace.cpuStart()
+        defer { SourcePerfTrace.record("search.rules", "bytes=\(html.utf8.count) \(source.bookSourceName)", since: cpuSpan) }
         let engine = makeEngine()
         let rule = source.ruleSearch
         var withoutLink: [String] = []
@@ -1061,6 +1063,8 @@ class ModernParserBridge {
         source: BookSource,
         runtimeVariables: [String: String]? = nil
     ) throws -> OnlineBook {
+        let cpuSpan = SourcePerfTrace.cpuStart()
+        defer { SourcePerfTrace.record("detail.rules", "bytes=\(html.utf8.count) \(source.bookSourceName)", since: cpuSpan) }
         loadRuntimeVariables(runtimeVariables)
         setBookContext(runtimeVariables: runtimeVariables)
         if !bookUrl.isEmpty {
@@ -1156,6 +1160,8 @@ class ModernParserBridge {
         source: BookSource,
         runtimeVariables: [String: String]? = nil
     ) throws -> [OnlineChapterRef] {
+        let cpuSpan = SourcePerfTrace.cpuStart()
+        defer { SourcePerfTrace.record("toc.rules", "bytes=\(html.utf8.count) \(source.bookSourceName)", since: cpuSpan) }
         lastTOCRuntimeVariables = nil
         loadRuntimeVariables(runtimeVariables)
         setBookContext(runtimeVariables: runtimeVariables)
@@ -1308,6 +1314,8 @@ class ModernParserBridge {
     ) -> [String] {
         let rule = source.ruleToc.nextTocUrl
         guard !rule.isEmpty else { return [] }
+        let cpuSpan = SourcePerfTrace.cpuStart()
+        defer { SourcePerfTrace.record("toc.nextRules", "bytes=\(html.utf8.count) \(source.bookSourceName)", since: cpuSpan) }
         loadRuntimeVariables(runtimeVariables)
         let engine = makeEngine()
         engine.setContent(html, baseUrl: baseURL)
@@ -1342,6 +1350,8 @@ class ModernParserBridge {
         chapterRef: OnlineChapterRef? = nil,
         nextChapterURL: String? = nil
     ) throws -> ChapterParsePayload {
+        let cpuSpan = SourcePerfTrace.cpuStart()
+        defer { SourcePerfTrace.record("chapter.rules", "bytes=\(html.utf8.count) \(source.bookSourceName)", since: cpuSpan) }
         loadRuntimeVariables(runtimeVariables)
         setBookContext(runtimeVariables: runtimeVariables)
         if let chapterRef {

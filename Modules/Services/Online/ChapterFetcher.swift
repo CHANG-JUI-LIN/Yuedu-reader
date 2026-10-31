@@ -962,7 +962,9 @@ struct ChapterFetcher {
     /// content rule; the whole page's text when no container holds 80 characters.
     static func extractLocalHTMLContent(html: String, pageURL: String) -> String {
         var winner = "none"
-        return SourcePerfTrace.span("chapter.localSelectors", "bytes=\(html.utf8.count) best=\(winner)", thresholdMs: 5) {
+        return SourcePerfTrace.span(
+            "chapter.localSelectors", "bytes=\(html.utf8.count) best=\(winner)", thresholdMs: 5, measuresCPU: true
+        ) {
             extractLocalHTMLContent(html: html, pageURL: pageURL, winner: &winner)
         }
     }

@@ -107,7 +107,9 @@ enum WebNovelParser {
         // One line per slow page, naming how its text was found: 書源檢查's CPU exceptions
         // (Crashlytics 084ef85c) were sampled in this call.
         var foundBy = "parse"
-        return SourcePerfTrace.span("webNovel.content", "bytes=\(html.utf8.count) via=\(foundBy)", thresholdMs: 5) {
+        return SourcePerfTrace.span(
+            "webNovel.content", "bytes=\(html.utf8.count) via=\(foundBy)", thresholdMs: 5, measuresCPU: true
+        ) {
             extractContent(html: html, pageURL: pageURL, foundBy: &foundBy)
         }
     }
