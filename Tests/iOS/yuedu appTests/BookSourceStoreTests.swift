@@ -469,7 +469,9 @@ struct BookSourceStoreTests {
         }
         let url = directory.appendingPathComponent("book_sources.json")
 
-        try BookSourceStore.writeLibrary(sources, to: url)
+        let bytes = try BookSourceStore.writeLibrary(sources, to: url)
+        let fileSize = try FileManager.default.attributesOfItem(atPath: url.path)[.size] as? Int
+        #expect(bytes == fileSize, "the count `DiskWriteTally` records is the file's size")
 
         // Compared through sorted keys: `JSONEncoder` orders keys differently on every call
         // (the one-shot encode the writer replaced did too), so equal files are equal JSON,
@@ -494,6 +496,37 @@ struct BookSourceStoreTests {
 
         let reloaded = BookSourceStore(directory: directory)
         #expect(try sortedJSON(reloaded.sources) == sortedJSON(store.sources))
+    }
+
+    @Test("saving a source unchanged does not rewrite the library")
+    func unchangedUpdateDoesNotRewrite() throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("BookSourceStoreUnchanged-\(UUID().uuidString)")
+        let store = BookSourceStore(directory: directory)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        store.replaceSourcesFromSync((0..<50).map(makeSource))
+        store.waitForQueuedWrites()
+        // Every write renames a new file over the library, so the file number names the write.
+        let url = directory.appendingPathComponent("book_sources.json")
+        func fileNumber() throws -> Int? {
+            try FileManager.default.attributesOfItem(atPath: url.path)[.systemFileNumber] as? Int
+        }
+        let firstWrite = try #require(try fileNumber())
+        let clock = store.sources[3].lastUpdateTime
+
+        var same = store.sources[3]
+        same.lastUpdateTime += 1
+        store.update(same)
+        store.waitForQueuedWrites()
+        #expect(try fileNumber() == firstWrite)
+        #expect(store.sources[3].lastUpdateTime == clock)
+
+        var edited = store.sources[3]
+        edited.bookSourceComment = "edited"
+        store.update(edited)
+        store.waitForQueuedWrites()
+        #expect(try fileNumber() != firstWrite)
+        #expect(store.sources[3].lastUpdateTime > clock)
     }
 
     @Test("re-importing an unchanged pack keeps every source's sync clock")

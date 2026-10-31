@@ -426,6 +426,7 @@ final class ICloudSyncManager: ObservableObject {
                 id: { $0.id.uuidString },
                 hash: { Self.stableHash($0) },
                 fallbackUpdatedAt: { Date(timeIntervalSince1970: TimeInterval(max($0.lastUpdateTime, 0)) / 1000) },
+                kept: BookSourceStore.dedupedByURL,
                 applyLocally: { merged in
                     // The network merge can outlive a user deletion. Only apply its result when
                     // the store still has the exact snapshot that was merged; otherwise the
@@ -748,6 +749,7 @@ final class ICloudSyncManager: ObservableObject {
     /// hands the merged values to `applyLocally` when they differ from `local`, and then
     /// persists the new shadow (`shadowToCommit`).
     ///
+    /// - Parameter kept: what the local store keeps of a merged list (`resolveMerge`).
     /// - Parameter applyLocally: puts the merged values in the local store; false when the
     ///   store would not take them — it changed during the round trip.
     nonisolated private func mergeType<T: Codable>(
@@ -757,6 +759,7 @@ final class ICloudSyncManager: ObservableObject {
         id: @escaping (T) -> String,
         hash: @escaping (T) -> String,
         fallbackUpdatedAt: @escaping (T) -> Date,
+        kept: ([T]) -> [T] = { $0 },
         applyLocally: ([T]) async throws -> Bool
     ) async throws -> CloudSyncMergeResult<T> {
         let remote = try await downloadRecords(recordName, as: T.self, id: id, fallbackUpdatedAt: fallbackUpdatedAt)
@@ -767,7 +770,8 @@ final class ICloudSyncManager: ObservableObject {
             shadow: loadedShadow,
             id: id,
             hash: hash,
-            fallbackUpdatedAt: fallbackUpdatedAt
+            fallbackUpdatedAt: fallbackUpdatedAt,
+            kept: kept
         )
         let uploaded = try await uploadRecords(
             recordName,
@@ -896,6 +900,7 @@ final class ICloudSyncManager: ObservableObject {
         id: (T) -> String,
         hash: (T) -> String,
         fallbackUpdatedAt: (T) -> Date,
+        kept: ([T]) -> [T] = { $0 },
         now: Date = Date()
     ) -> (values: [T], shadow: [String: SyncShadowEntry], shouldApplyLocally: Bool) {
         let localFingerprint = collectionFingerprint(local, id: id, hash: hash)
@@ -928,7 +933,11 @@ final class ICloudSyncManager: ObservableObject {
             local: local, remote: remote, shadow: shadow,
             id: id, hash: hash, fallbackUpdatedAt: fallbackUpdatedAt
         )
-        let shouldApplyLocally = localFingerprint != collectionFingerprint(result.values, id: id, hash: hash)
+        // Against what the store keeps of the merge, not the merge itself. The book-source
+        // store drops a second copy of a URL (`BookSourceStore.dedupedByURL`), so a merge that
+        // brings another device's copy of a source this device has looked like a change, and
+        // its apply rewrote the whole library — tens of megabytes — to what it already held.
+        let shouldApplyLocally = localFingerprint != collectionFingerprint(kept(result.values), id: id, hash: hash)
         return (result.values, result.shadow, shouldApplyLocally)
     }
 
@@ -1001,18 +1010,7 @@ final class ICloudSyncManager: ObservableObject {
         id: (T) -> String,
         remotePayloadHash: String?
     ) async throws -> Bool {
-        var valuesByID: [String: T] = .init(minimumCapacity: values.count)
-        for v in values {
-            valuesByID[id(v)] = v
-        }
-        let records: [CloudSyncRecord<T>] = shadow.map { sid, entry in
-            CloudSyncRecord(
-                id: sid,
-                value: entry.deleted ? nil : valuesByID[sid],
-                updatedAt: entry.updatedAt,
-                deleted: entry.deleted
-            )
-        }
+        let records = Self.cloudSyncRecords(values: values, shadow: shadow, id: id)
         let shouldUpload = try Self.shouldUploadCloudSyncRecords(records, remotePayloadHash: remotePayloadHash)
         if !shouldUpload {
             AppLogger.sync("upload \(recordName): unchanged; skipped", level: .notice)
@@ -1023,24 +1021,34 @@ final class ICloudSyncManager: ObservableObject {
         return true
     }
 
+    /// The writer `uploadData` counts its temporary files under (`DiskWriteTally`).
+    nonisolated static let uploadDiskWriteTallyName = "icloudUpload"
+
     /// Uploads in-memory data as the CKAsset for a file record.
     nonisolated private func uploadData(_ data: Data, recordName: String) async throws {
+        // Before the file is written: an upload whose record cannot be fetched ends here,
+        // not after writing tens of megabytes it will never send.
+        let record = try await recordToSave(fileRecordID(recordName), type: Self.fileRecordType)
         let tempURL = FileManager.default.temporaryDirectory
             .appendingPathComponent("yuedu-icloud-\(recordName)-\(UUID().uuidString)")
             .appendingPathExtension("json")
         try data.write(to: tempURL, options: .atomic)
-        AppLogger.sync("⟐ diskwrite uploadData \(recordName): \(data.count) bytes", level: .notice)
+        DiskWriteTally.record(Self.uploadDiskWriteTallyName, reason: recordName, bytes: data.count)
         defer { try? FileManager.default.removeItem(at: tempURL) }
 
-        let recordID = fileRecordID(recordName)
-        let record = (try? await fetchRecord(recordID)) ?? CKRecord(
-            recordType: Self.fileRecordType,
-            recordID: recordID
-        )
         record[Field.name] = recordName as NSString
         record[Field.updatedAt] = Date() as NSDate
         record[Field.asset] = CKAsset(fileURL: tempURL)
-        try await saveRecord(record)
+        do {
+            try await saveRecord(record)
+        } catch {
+            // The file is written before the save is tried, so a save that keeps failing (a
+            // full iCloud, no network) rewrites it on every pass. Said where a MetricKit
+            // report's log tail shows it, beside the write's own line.
+            let code = (error as? CKError).map { "CKError \($0.code.rawValue)" } ?? "\(error)"
+            CrashContext.breadcrumb("⟐ iCloud upload \(recordName) failed after writing \(data.count) bytes: \(code)")
+            throw error
+        }
     }
 
     /// Edit detection: equal content must hash equally every time. Without
@@ -1099,6 +1107,27 @@ final class ICloudSyncManager: ObservableObject {
             hash: currentHash,
             deleted: false
         )
+    }
+
+    /// The blob a merge uploads: one record per shadow entry, live ones carrying their merged
+    /// value. Apart from `uploadRecords` so a test can run the upload decision on it.
+    nonisolated static func cloudSyncRecords<T: Codable>(
+        values: [T],
+        shadow: [String: SyncShadowEntry],
+        id: (T) -> String
+    ) -> [CloudSyncRecord<T>] {
+        var valuesByID: [String: T] = .init(minimumCapacity: values.count)
+        for v in values {
+            valuesByID[id(v)] = v
+        }
+        return shadow.map { sid, entry in
+            CloudSyncRecord(
+                id: sid,
+                value: entry.deleted ? nil : valuesByID[sid],
+                updatedAt: entry.updatedAt,
+                deleted: entry.deleted
+            )
+        }
     }
 
     nonisolated static func encodeCloudSyncRecords<T: Codable>(_ records: [CloudSyncRecord<T>]) throws -> Data {
@@ -1353,6 +1382,8 @@ final class ICloudSyncManager: ObservableObject {
         await BookStore.queuedWritesLanded()
         guard FileManager.default.fileExists(atPath: file.localURL.path) else { return }
 
+        // Before the copy is written, as in `uploadData`.
+        let record = try await recordToSave(fileRecordID(file.recordName), type: Self.fileRecordType)
         let data = try Data(contentsOf: file.localURL)
         let tempURL = FileManager.default.temporaryDirectory
             .appendingPathComponent("yuedu-icloud-\(file.recordName)-\(UUID().uuidString)")
@@ -1360,11 +1391,6 @@ final class ICloudSyncManager: ObservableObject {
         try data.write(to: tempURL, options: .atomic)
         defer { try? FileManager.default.removeItem(at: tempURL) }
 
-        let recordID = fileRecordID(file.recordName)
-        let record = (try? await fetchRecord(recordID)) ?? CKRecord(
-            recordType: Self.fileRecordType,
-            recordID: recordID
-        )
         record[Field.name] = file.recordName as NSString
         record[Field.filename] = file.localURL.lastPathComponent as NSString
         record[Field.updatedAt] = Date() as NSDate
@@ -1514,11 +1540,7 @@ final class ICloudSyncManager: ObservableObject {
         let marker = "\(file.recordName):\(size)"
         if uploadedBookFileMarkers.contains(marker) { return false }
 
-        let recordID = CKRecord.ID(recordName: file.recordName)
-        let record = (try? await fetchRecord(recordID)) ?? CKRecord(
-            recordType: Self.bookFileRecordType,
-            recordID: recordID
-        )
+        let record = try await recordToSave(CKRecord.ID(recordName: file.recordName), type: Self.bookFileRecordType)
         record[Field.filename] = file.localURL.lastPathComponent as NSString
         if let name = file.name { record[Field.name] = name as NSString }
         record[Field.updatedAt] = Date() as NSDate
@@ -1690,11 +1712,7 @@ final class ICloudSyncManager: ObservableObject {
     }
 
     nonisolated private func saveManifest(_ manifest: ICloudSyncManifest) async throws {
-        let recordID = CKRecord.ID(recordName: Self.manifestRecordName)
-        let record = (try? await fetchRecord(recordID)) ?? CKRecord(
-            recordType: Self.manifestRecordType,
-            recordID: recordID
-        )
+        let record = try await recordToSave(CKRecord.ID(recordName: Self.manifestRecordName), type: Self.manifestRecordType)
         record[Field.deviceId] = manifest.deviceId as NSString
         record[Field.deviceName] = manifest.deviceName as NSString
         record[Field.backupDate] = manifest.backupDate as NSDate
@@ -1748,16 +1766,33 @@ final class ICloudSyncManager: ObservableObject {
     /// behind, the asset with it, so a blob of any size costs one small round trip. Nil when
     /// there is no such record.
     nonisolated private func fetchRecordChangeTag(_ recordID: CKRecord.ID) async throws -> String? {
+        try await fetchRecordWithoutFields(recordID)?.recordChangeTag
+    }
+
+    /// The record a save goes over: the stored one, fetched without its fields — the save
+    /// replaces them, and an asset runs to tens of megabytes — or a new one when there is
+    /// none. Any other failure is thrown.
+    ///
+    /// Until 3.0.0 (143) every upload fetched the whole record and dropped the fetch's error
+    /// (`try?`): a fetch that failed for any reason made a new record, whose save over the
+    /// stored one can only fail (`serverRecordChanged`) — after the upload had written its
+    /// file, on every pass.
+    nonisolated private func recordToSave(_ recordID: CKRecord.ID, type: CKRecord.RecordType) async throws -> CKRecord {
+        try await fetchRecordWithoutFields(recordID) ?? CKRecord(recordType: type, recordID: recordID)
+    }
+
+    /// A record with its change tag and none of its fields; nil when there is no such record.
+    nonisolated private func fetchRecordWithoutFields(_ recordID: CKRecord.ID) async throws -> CKRecord? {
         try await withCheckedThrowingContinuation { continuation in
             let operation = CKFetchRecordsOperation(recordIDs: [recordID])
             operation.desiredKeys = []
             // Both blocks run on the operation's own serial queue: the record's result
             // first, when it has one, then the operation's.
-            var outcome: Result<String?, Error>?
+            var outcome: Result<CKRecord?, Error>?
             operation.perRecordResultBlock = { _, result in
                 switch result {
                 case .success(let record):
-                    outcome = .success(record.recordChangeTag)
+                    outcome = .success(record)
                 case .failure(let error):
                     outcome = self.isRecordNotFound(error) ? .success(nil) : .failure(error)
                 }

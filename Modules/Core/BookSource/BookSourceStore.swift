@@ -309,22 +309,22 @@ class BookSourceStore: @MainActor ObservableObject {
             updated.insert(stamped, at: 0)
         }
         replaceSources(updated)
-        save()
+        save(reason: "add")
     }
 
     func update(_ source: BookSource) {
         var current = sources
         if let idx = current.firstIndex(where: { $0.id == source.id }) {
+            // Nothing to save when only the clock would move: the save rewrites the whole
+            // library, and the clock would churn the sync.
+            guard !source.hasSameContent(as: current[idx]) else { return }
             var updated = source
             // Advance the sync clock so an in-app edit wins the last-write-wins merge and isn't
-            // resurrected to the cloud copy on the next sync. Skip when only the clock would move,
-            // so re-saving an unchanged source doesn't churn the sync.
-            updated.lastUpdateTime = updated.hasSameContent(as: current[idx])
-                ? current[idx].lastUpdateTime
-                : Self.currentMillis()
+            // resurrected to the cloud copy on the next sync.
+            updated.lastUpdateTime = Self.currentMillis()
             current[idx] = updated
             replaceSources(current)
-            save()
+            save(reason: "update")
         }
     }
 
@@ -341,7 +341,7 @@ class BookSourceStore: @MainActor ObservableObject {
         if removedCount > 0 {
             replaceSources(updated)
             dropPins(of: ids)
-            save()
+            save(reason: "delete")
         }
         return removedCount
     }
@@ -368,7 +368,7 @@ class BookSourceStore: @MainActor ObservableObject {
             // The user's enable/disable must win the iCloud sync merge (advance the clock).
             current[idx].lastUpdateTime = Self.currentMillis()
             replaceSources(current)
-            save()
+            save(reason: "toggle")
         }
     }
 
@@ -396,7 +396,7 @@ class BookSourceStore: @MainActor ObservableObject {
         replaceSources(reordered)
         updatePins { $0[id] = SourcePinRecord(position: .top, originalIndex: originalIndex) }
         savePins()
-        save()
+        save(reason: "pinToTop")
     }
 
     /// Moves a source to the tail of the list and marks it 置底. Newest-first like 置頂:
@@ -415,7 +415,7 @@ class BookSourceStore: @MainActor ObservableObject {
         replaceSources(reordered)
         updatePins { $0[id] = SourcePinRecord(position: .bottom, originalIndex: originalIndex) }
         savePins()
-        save()
+        save(reason: "pinToBottom")
     }
 
     /// 取消置頂／取消置底: drops the pin and returns the source to the position it held when
@@ -446,7 +446,7 @@ class BookSourceStore: @MainActor ObservableObject {
         }
         replaceSources(reordered)
         savePins()
-        save()
+        save(reason: "unpin")
     }
 
     nonisolated func pinRecord(for id: UUID) -> SourcePinRecord? {
@@ -501,7 +501,7 @@ class BookSourceStore: @MainActor ObservableObject {
         var updated = sources
         guard Self.applyRespondTimes(times, to: &updated) else { return }
         replaceSources(updated)
-        save()
+        save(reason: "respondTimes")
     }
 
     private static func applyRespondTimes(_ times: [UUID: Int64], to sources: inout [BookSource]) -> Bool {
@@ -533,7 +533,7 @@ class BookSourceStore: @MainActor ObservableObject {
         var updated = sources
         guard Self.applyEnabled(enabled, to: ids, in: &updated) else { return }
         replaceSources(updated)
-        save()
+        save(reason: "setEnabled")
     }
 
     /// The automated form: no `lastUpdateTime` bump (see `setEnabled(id:enabled:)`).
@@ -568,7 +568,7 @@ class BookSourceStore: @MainActor ObservableObject {
         if removedCount > 0 {
             dropPins(of: delete)
         }
-        save()
+        save(reason: "checkOutcome")
         return removedCount
     }
 
@@ -589,7 +589,7 @@ class BookSourceStore: @MainActor ObservableObject {
         }
         guard changed else { return }
         replaceSources(updated)
-        save()
+        save(reason: "enabledByUser")
     }
 
     /// Rewrites `bookSourceGroup` for a set of sources (重命名分組 / 合併到其他分組). An empty
@@ -610,7 +610,7 @@ class BookSourceStore: @MainActor ObservableObject {
         }
         guard changed else { return }
         replaceSources(updated)
-        save()
+        save(reason: "setGroup")
     }
 
     /// Every distinct non-empty `bookSourceGroup` with how many sources it holds, in
@@ -655,7 +655,7 @@ class BookSourceStore: @MainActor ObservableObject {
         }
         if changed > 0 {
             replaceSources(updated)
-            save()
+            save(reason: "groupByDomain")
         }
         return changed
     }
@@ -877,7 +877,7 @@ class BookSourceStore: @MainActor ObservableObject {
             merged.insert(contentsOf: additions, at: insertionIndex)
         }
         replaceSources(merged)
-        save()
+        save(reason: "import")
         return imported.count
     }
 
@@ -1059,7 +1059,7 @@ class BookSourceStore: @MainActor ObservableObject {
         // couldn't unify, so an old cloud copy can't resurface next to a freshly imported one.
         replaceSources(Self.dedupedByURL(syncedSources))
         prunePins()
-        save()
+        save(reason: "sync")
         return true
     }
 
@@ -1100,19 +1100,30 @@ class BookSourceStore: @MainActor ObservableObject {
     /// run writing respond times, then 停用, then 刪除) used to queue one full encode per
     /// edit, each holding its own snapshot of the library. Now the queue writes whatever
     /// snapshot is newest when it gets there; edits that land meanwhile only replace it.
-    private func save() {
-        guard pendingWrite.replace(with: sources) else { return }
+    ///
+    /// `reason` names the mutator, and each write is counted under it (`DiskWriteTally`):
+    /// a write is the whole library, so how often one runs is what decides the disk it costs.
+    private func save(reason: String) {
+        guard pendingWrite.replace(with: sources, reason: reason) else { return }
         let url = fileURL
         let pendingWrite = self.pendingWrite
         Self.persistQueue.async {
-            guard let snapshot = pendingWrite.take() else { return }
+            guard let (snapshot, reason) = pendingWrite.take() else { return }
             do {
-                try Self.writeLibrary(snapshot, to: url)
+                let bytes = try Self.writeLibrary(snapshot, to: url)
+                DiskWriteTally.record(
+                    Self.diskWriteTallyName,
+                    reason: "\(reason) sources=\(snapshot.count)",
+                    bytes: bytes
+                )
             } catch {
                 AppLogger.cache("BookSourceStore could not write book_sources.json", error: error)
             }
         }
     }
+
+    /// The writer `save()` counts its writes under.
+    nonisolated static let diskWriteTallyName = "bookSources"
 
     private nonisolated let pendingWrite = PendingSourceWrite()
 
@@ -1127,7 +1138,9 @@ class BookSourceStore: @MainActor ObservableObject {
     /// landed: a 50,000-source save grew the process by 738 MB (100,000: 1.37 GB) — most of
     /// the headroom a 3 GB iPhone leaves the app. Here the extra memory is one chunk of
     /// encoded sources.
-    nonisolated static func writeLibrary(_ sources: [BookSource], to url: URL) throws {
+    /// Returns how many bytes it wrote.
+    @discardableResult
+    nonisolated static func writeLibrary(_ sources: [BookSource], to url: URL) throws -> Int {
         let fileManager = FileManager.default
         let temporaryURL = url.deletingLastPathComponent()
             .appendingPathComponent(".\(url.lastPathComponent).\(UUID().uuidString).tmp")
@@ -1138,13 +1151,14 @@ class BookSourceStore: @MainActor ObservableObject {
             let handle = try FileHandle(forWritingTo: temporaryURL)
             let written = Result { try writeLibraryJSON(sources, to: handle) }
             let closed = Result { try handle.close() }
-            try written.get()
+            let bytes = try written.get()
             try closed.get()
             // rename(2) replaces the old file in one step: a crash mid-write leaves the
             // previous library in place, never half a file.
             guard rename(temporaryURL.path, url.path) == 0 else {
                 throw POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO)
             }
+            return bytes
         } catch {
             do {
                 try fileManager.removeItem(at: temporaryURL)
@@ -1155,9 +1169,10 @@ class BookSourceStore: @MainActor ObservableObject {
         }
     }
 
-    private nonisolated static func writeLibraryJSON(_ sources: [BookSource], to handle: FileHandle) throws {
+    private nonisolated static func writeLibraryJSON(_ sources: [BookSource], to handle: FileHandle) throws -> Int {
         let encoder = JSONEncoder()
         var chunk = Data()
+        var written = 0
         chunk.reserveCapacity(libraryWriteChunkBytes)
         chunk.append(UInt8(ascii: "["))
         for index in sources.indices {
@@ -1166,12 +1181,14 @@ class BookSourceStore: @MainActor ObservableObject {
                 chunk.append(try encoder.encode(sources[index]))
                 if chunk.count >= libraryWriteChunkBytes {
                     try handle.write(contentsOf: chunk)
+                    written += chunk.count
                     chunk.removeAll(keepingCapacity: true)
                 }
             }
         }
         chunk.append(UInt8(ascii: "]"))
         try handle.write(contentsOf: chunk)
+        return written + chunk.count
     }
 
     /// Keeps the app running until every queued write has landed.
@@ -1226,22 +1243,36 @@ class BookSourceStore: @MainActor ObservableObject {
 private final class PendingSourceWrite: @unchecked Sendable {
     private let lock = NSLock()
     private var snapshot: [BookSource]?
+    /// Why the saves folded into the waiting write were asked for, in the order first asked,
+    /// each with how many times — counted, not listed, so a burst of saves stays a short
+    /// breadcrumb and does not push the rest out of Crashlytics' log tail.
+    private var reasons: [(name: String, count: Int)] = []
 
     /// Stores the newest snapshot. True when no write was waiting for one, so the caller
     /// has to queue it.
-    func replace(with newSnapshot: [BookSource]) -> Bool {
+    func replace(with newSnapshot: [BookSource], reason: String) -> Bool {
         lock.lock()
         defer { lock.unlock() }
         let needsWrite = snapshot == nil
         snapshot = newSnapshot
+        if let index = reasons.firstIndex(where: { $0.name == reason }) {
+            reasons[index].count += 1
+        } else {
+            reasons.append((reason, 1))
+        }
         return needsWrite
     }
 
-    func take() -> [BookSource]? {
+    /// The waiting snapshot and why it was saved: `sync`, `delete×3+sync`.
+    func take() -> ([BookSource], reason: String)? {
         lock.lock()
         defer { lock.unlock() }
-        let current = snapshot
+        guard let current = snapshot else { return nil }
+        let reason = reasons
+            .map { $0.count > 1 ? "\($0.name)×\($0.count)" : $0.name }
+            .joined(separator: "+")
         snapshot = nil
-        return current
+        reasons = []
+        return (current, reason)
     }
 }
