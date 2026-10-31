@@ -272,6 +272,7 @@ Server environment (`gateway/.env`, never committed):
 | `PUBLIC_BASE_URL` | `https://gateway.example.com` (exact entry URL, no trailing slash) | avatar URL returned by `PUT /v1/avatar` is fetchable |
 | `GOOGLE_APPLICATION_CREDENTIALS` or `FIREBASE_SERVICE_ACCOUNT_JSON` | Mounted service-account JSON / base64 | `/readyz` = ready |
 | `FUNCTIONS_REGION` | `asia-east1` (current callables region) | account-token returns a UUID |
+| `IOS_BUNDLE_ID` | `com.zhangruilin.yuedureader` (default). Sent on Apple token revocation like the iOS SDK does | deleting an account with Apple linked completes |
 | `TRUST_PROXY_HOPS` | `1` with the bundled Caddy/Docker topology; `0` if the Node process is exposed directly (do not do that) | forged `X-Forwarded-For` cannot change the rate-limit key |
 | `PORT`, `RATE_LIMIT_*` (incl. `RATE_LIMIT_FEEDBACK_WRITE_MAX`, default 30/min), `UPSTREAM_TIMEOUT_MS`, `BODY_LIMIT_BYTES`, `AVATAR_MAX_BYTES` | defaults are safe | optional tuning |
 

@@ -17,6 +17,7 @@ function testConfig(): GatewayConfig {
     apiKey: "test-key",
     storageBucket: "test-project.firebasestorage.app",
     functionsRegion: "asia-east1",
+    iosBundleId: "com.example.test",
     publicBaseUrl: "https://gateway.test",
     trustProxyHops: 1,
     serviceAccountJson: null,

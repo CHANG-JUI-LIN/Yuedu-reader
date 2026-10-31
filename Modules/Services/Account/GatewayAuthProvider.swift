@@ -82,10 +82,15 @@ final class GatewayAuthProvider {
 
     // MARK: - Account linking
 
-    func linkEmail(email: String, password: String) async throws {
+    /// Setting a password ends every session the account had, this one included, so the
+    /// Gateway hands back the session that replaces it. Keeping the old refresh token
+    /// signed the user out right after a link that had in fact succeeded.
+    func linkEmail(email: String, password: String) async throws -> AccountUser {
         let request = try GatewayRequest(method: "POST", path: "/v1/auth/link/email")
             .jsonBody(EmailBody(email: email, password: password))
-        try await store.authorizedSendVoid(request)
+        let payload = try await store.authorizedSend(request, as: GatewaySessionPayload.self)
+        store.adopt(payload)
+        return payload.user
     }
 
     func linkApple(idToken: String, rawNonce: String) async throws {
@@ -100,15 +105,17 @@ final class GatewayAuthProvider {
 
     private func linkIdp(_ body: IdpLinkBody) async throws {
         let request = try GatewayRequest(method: "POST", path: "/v1/auth/link/idp").jsonBody(body)
-        do {
-            try await store.authorizedSendVoid(request)
-        } catch let error as GatewayAPIError where error.requiresRecentAuth {
-            // The credential is already in hand; re-verify it through the normal
-            // sign-in endpoint to mint a token with a fresh auth_time, then retry
-            // the link once. This is a real credential check, not a token refresh.
-            _ = try await reauthenticateWithIdp(body)
-            try await store.authorizedSendVoid(request)
-        }
+        try await store.authorizedSendVoid(request)
+    }
+
+    /// Re-verifies one of the account's own sign-in methods so an operation that
+    /// answered `reauth-required` can run again with a fresh `auth_time`.
+    func reauthenticate(_ reauth: GatewayReauth) async throws -> AccountUser {
+        let request = try GatewayRequest(method: "POST", path: "/v1/auth/reauth")
+            .jsonBody(ReauthBody(reauth: ReauthBody.Reauth(reauth)))
+        let payload = try await store.authorizedSend(request, as: GatewaySessionPayload.self)
+        store.adopt(payload)
+        return payload.user
     }
 
     func unlink(providerID: String) async throws -> AccountUser {
@@ -136,7 +143,7 @@ final class GatewayAuthProvider {
 
     func deleteAccount(reauth: GatewayReauth) async throws {
         let request = try GatewayRequest(method: "POST", path: "/v1/account/delete")
-            .jsonBody(DeleteBody(reauth: DeleteBody.Reauth(reauth)))
+            .jsonBody(ReauthBody(reauth: ReauthBody.Reauth(reauth)))
         try await store.authorizedSendVoid(request)
         store.clearLocalSession()
     }
@@ -145,20 +152,6 @@ final class GatewayAuthProvider {
 
     private func authenticate<Body: Encodable>(path: String, body: Body) async throws -> AccountUser {
         let request = try GatewayRequest(method: "POST", path: path).jsonBody(body)
-        do {
-            let payload = try await client.send(request, as: GatewaySessionPayload.self)
-            store.adopt(payload)
-            return payload.user
-        } catch let error as GatewayAPIError {
-            if let pending = error.details["pendingToken"] as? String, !pending.isEmpty {
-                throw AuthFlowError.pendingGatewayCredential(pending)
-            }
-            throw error
-        }
-    }
-
-    private func reauthenticateWithIdp(_ body: IdpLinkBody) async throws -> AccountUser {
-        let request = try GatewayRequest(method: "POST", path: "/v1/auth/idp").jsonBody(body)
         do {
             let payload = try await client.send(request, as: GatewaySessionPayload.self)
             store.adopt(payload)
@@ -196,7 +189,8 @@ private struct IdpLinkBody: Encodable {
     let accessToken: String?
 }
 
-private struct DeleteBody: Encodable {
+/// `{reauth: {...}}` — the credential shape shared by deletion and re-verification.
+private struct ReauthBody: Encodable {
     let reauth: Reauth
 
     struct Reauth: Encodable {

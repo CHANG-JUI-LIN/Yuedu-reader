@@ -19,6 +19,7 @@ import {
   requireRecentAuth,
   requireShortString,
 } from "../policy.js";
+import {verifyReauthentication} from "../reauth.js";
 import {applyFirstAppleDisplayName, buildSessionPayload} from "../sessionResponse.js";
 
 export function authRouter(context: GatewayContext): Router {
@@ -113,8 +114,26 @@ export function authRouter(context: GatewayContext): Router {
   });
 
   /**
+   * Re-verifies one of the account's own sign-in methods and returns a session
+   * with a fresh `auth_time`, so the client can retry an operation that
+   * answered `reauth-required` without signing out.
+   */
+  router.post("/reauth", requireAuth(context.auth), async (request, response, next) => {
+    try {
+      const user = authenticatedUser(request);
+      const body = asObject(request.body);
+      const {session} = await verifyReauthentication(context, user.uid, body.reauth);
+      response.json(await buildSessionPayload(context.auth, session));
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  /**
    * Links an email/password credential to the signed-in account. Sensitive, so
-   * it requires a recent sign-in rather than just an unexpired token.
+   * it requires a recent sign-in rather than just an unexpired token. Setting a
+   * password ends the account's other sessions, so the new session is returned
+   * for the client to adopt.
    */
   router.post("/link/email", requireAuth(context.auth), async (request, response, next) => {
     try {
@@ -127,9 +146,11 @@ export function authRouter(context: GatewayContext): Router {
       if (record.providerData.some((provider) => provider.providerId === "password")) {
         throw new ApiError("provider-already-linked", "Email sign-in is already linked.");
       }
-      const header = bearerToken(request);
-      await linkEmailPassword(toolkit, header, email, password);
-      response.json({linked: true});
+      const session = await linkEmailPassword(toolkit, bearerToken(request), email, password);
+      if (session.localId !== user.uid) {
+        throw new ApiError("internal", "Linking returned a session for a different account.");
+      }
+      response.json(await buildSessionPayload(context.auth, session));
     } catch (error) {
       next(error);
     }

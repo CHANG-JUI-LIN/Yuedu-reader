@@ -26,6 +26,9 @@ struct UserDetailView: View {
     @State private var showLinkEmailAlert = false
     @State private var linkEmail = ""
     @State private var linkPassword = ""
+    /// Apple or Google link waiting for a password-only account's current password.
+    @State private var passwordGatedLinkProvider: String?
+    @State private var linkCurrentPassword = ""
     @State private var unlinkTarget: UnlinkTarget?
 
     /// Identifies which sign-in method the unlink confirmation is about.
@@ -341,6 +344,29 @@ struct UserDetailView: View {
         } message: { target in
             Text("\(target.title)\n\(localized("解除後就不能再用這個方式登入此帳號，帳號本身與已同步的資料不受影響。"))")
         }
+        .alert(
+            localized("輸入目前的密碼"),
+            isPresented: Binding(
+                get: { passwordGatedLinkProvider != nil },
+                set: { if !$0 { passwordGatedLinkProvider = nil } }
+            ),
+            presenting: passwordGatedLinkProvider
+        ) { providerID in
+            SecureField(localized("請輸入密碼"), text: $linkCurrentPassword)
+                .textInputAutocapitalization(.never)
+            Button(localized("繼續")) {
+                let password = linkCurrentPassword
+                linkCurrentPassword = ""
+                passwordGatedLinkProvider = nil
+                performFederatedLink(providerID, currentPassword: password)
+            }
+            Button(localized("取消"), role: .cancel) {
+                linkCurrentPassword = ""
+                passwordGatedLinkProvider = nil
+            }
+        } message: { _ in
+            Text(localized("連結新的登入方式前，請先輸入這個帳號的密碼。"))
+        }
         .alert(localized("連結電子郵件"), isPresented: $showLinkEmailAlert) {
             TextField(localized("請輸入您的 Email"), text: $linkEmail)
                 .keyboardType(.emailAddress)
@@ -400,11 +426,20 @@ struct UserDetailView: View {
             showLinkEmailAlert = true
             return
         }
+        if auth.linkingRequiresPassword {
+            linkErrorMessage = nil
+            passwordGatedLinkProvider = providerID
+            return
+        }
+        performFederatedLink(providerID, currentPassword: nil)
+    }
+
+    private func performFederatedLink(_ providerID: String, currentPassword: String?) {
         performLink {
             if providerID == "google.com" {
-                try await auth.linkGoogle()
+                try await auth.linkGoogle(currentPassword: currentPassword)
             } else {
-                try await auth.linkApple()
+                try await auth.linkApple(currentPassword: currentPassword)
             }
         }
     }

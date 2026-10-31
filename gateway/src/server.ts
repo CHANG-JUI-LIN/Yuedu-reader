@@ -73,6 +73,11 @@ export function createApp(context: GatewayContext): express.Express {
     "/v1/auth/refresh",
     rateLimitMiddleware(authLimiter, (request) => `auth-refresh|${request.ip ?? "unknown"}`)
   );
+  // Re-verification takes a password like sign-in does.
+  app.use(
+    "/v1/auth/reauth",
+    rateLimitMiddleware(authLimiter, (request) => `auth-reauth|${request.ip ?? "unknown"}`)
+  );
 
   // 回饋中心 writes, limited per address and per inbox: one address can be a
   // whole carrier NAT on the mainland, and an inbox key costs nothing to invent,

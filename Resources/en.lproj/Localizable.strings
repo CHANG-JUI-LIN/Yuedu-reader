@@ -4187,3 +4187,21 @@
 "ReaderSettings.BookSpacing.Footer" = "When off, line and paragraph spacing always use the settings above instead of the book's own layout.";
 "沒有「%@」的結果" = "No Results for “%@”";
 "請檢查拼字或嘗試新的搜尋。" = "Check the spelling or try a new search.";
+
+/* Account: Gateway errors, re-verification before linking, Apple revocation on deletion */
+"登入資訊不正確，請再試一次" = "The sign-in details are incorrect. Please try again.";
+"請用這個帳號已連結的 Apple 或 Google 帳號驗證" = "Verify with the Apple or Google account already linked to this account.";
+"這個電子郵件已被其他帳號使用" = "This email address is already used by another account.";
+"這個帳號已被停用" = "This account has been disabled.";
+"這個帳號已不存在" = "This account no longer exists.";
+"登入狀態已失效，請重新登入" = "You've been signed out. Please sign in again.";
+"這個帳號已經連結過此登入方式" = "This sign-in method is already linked to this account.";
+"嘗試次數過多，請稍後再試" = "Too many attempts. Please try again later.";
+"服務暫時無法使用，請稍後再試" = "The service is temporarily unavailable. Please try again later.";
+"無法撤銷 Apple 授權，帳號沒有被刪除，請稍後再試" = "Apple access couldn't be revoked, so your account wasn't deleted. Please try again later.";
+"帳號資料沒有刪除完成，帳號仍保留，請再試一次" = "Your account data wasn't fully deleted and the account still exists. Please try again.";
+"電子郵件格式不正確" = "The email address isn't valid.";
+"伺服器無法完成這個請求（%@）" = "The server couldn't complete this request (%@).";
+"請輸入目前的密碼以繼續" = "Enter your current password to continue.";
+"輸入目前的密碼" = "Enter Current Password";
+"連結新的登入方式前，請先輸入這個帳號的密碼。" = "Before linking a new sign-in method, enter this account's password.";

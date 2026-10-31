@@ -203,7 +203,8 @@ final class FirebaseAuthManager: ObservableObject {
     // MARK: - Account linking
 
     /// Links a Google identity to the currently signed-in account (same uid).
-    func linkGoogle() async throws {
+    /// `currentPassword` is needed only when `linkingRequiresPassword`.
+    func linkGoogle(currentPassword: String? = nil) async throws {
         let route = sessionRoute
         do {
             switch route {
@@ -217,10 +218,8 @@ final class FirebaseAuthManager: ObservableObject {
                 try await link(user, with: credential)
             case .gateway:
                 let tokens = try await requestGoogleIDTokens(presenting: try topViewController())
-                do {
-                    try await gateway.linkGoogle(idToken: tokens.idToken, accessToken: tokens.accessToken)
-                } catch let error as GatewayAPIError where error.requiresRecentAuth {
-                    throw AuthFlowError.requiresRecentLogin
+                try await withGatewayRecentAuth(password: currentPassword) {
+                    try await self.gateway.linkGoogle(idToken: tokens.idToken, accessToken: tokens.accessToken)
                 }
                 try await refreshGatewayAccount()
             }
@@ -232,7 +231,8 @@ final class FirebaseAuthManager: ObservableObject {
     }
 
     /// Links an Apple identity to the currently signed-in account (same uid).
-    func linkApple() async throws {
+    /// `currentPassword` is needed only when `linkingRequiresPassword`.
+    func linkApple(currentPassword: String? = nil) async throws {
         let nonce = AppleSignInNonce.random()
         let coordinator = AppleReauthCoordinator()
         appleReauthCoordinator = coordinator
@@ -256,12 +256,8 @@ final class FirebaseAuthManager: ObservableObject {
                 )
                 try await link(user, with: credential)
             case .gateway:
-                do {
-                    try await gateway.linkApple(idToken: idToken, rawNonce: nonce)
-                } catch let error as GatewayAPIError where error.requiresRecentAuth {
-                    // The Apple credential is already in hand; the provider
-                    // re-verifies it to mint a fresh token before retrying.
-                    throw AuthFlowError.requiresRecentLogin
+                try await withGatewayRecentAuth(password: currentPassword) {
+                    try await self.gateway.linkApple(idToken: idToken, rawNonce: nonce)
                 }
                 try await refreshGatewayAccount()
             }
@@ -282,12 +278,12 @@ final class FirebaseAuthManager: ObservableObject {
                 let credential = EmailAuthProvider.credential(withEmail: email, password: password)
                 try await link(user, with: credential)
             case .gateway:
-                do {
-                    try await gateway.linkEmail(email: email, password: password)
-                } catch let error as GatewayAPIError where error.requiresRecentAuth {
-                    throw AuthFlowError.requiresRecentLogin
+                // The account has no password yet, so re-verification (if the sign-in
+                // is older than the Gateway allows) goes through Apple or Google.
+                let user = try await withGatewayRecentAuth(password: nil) {
+                    try await self.gateway.linkEmail(email: email, password: password)
                 }
-                try await refreshGatewayAccount()
+                apply(user, route: .gateway)
             }
         } catch let error as AuthFlowError {
             throw error
@@ -313,8 +309,10 @@ final class FirebaseAuthManager: ObservableObject {
                     as? AuthCredential ?? credential
                 hasPendingSignInCredential = true
                 throw AuthFlowError.providerLinkedToAnotherAccount
-            case AuthErrorCode.emailAlreadyInUse.rawValue, AuthErrorCode.providerAlreadyLinked.rawValue:
+            case AuthErrorCode.emailAlreadyInUse.rawValue:
                 throw AuthFlowError.providerAlreadyLinked
+            case AuthErrorCode.providerAlreadyLinked.rawValue:
+                throw AuthFlowError.alreadyLinkedHere
             default:
                 throw error
             }
@@ -333,8 +331,14 @@ final class FirebaseAuthManager: ObservableObject {
             apply(AccountUser(firebaseUser: updated), route: .direct)
         case .gateway:
             do {
-                let user = try await gateway.unlink(providerID: providerID)
+                // Two providers remain at this point, one of them Apple or Google, so
+                // re-verification never needs a password here.
+                let user = try await withGatewayRecentAuth(password: nil) {
+                    try await self.gateway.unlink(providerID: providerID)
+                }
                 apply(user, route: .gateway)
+            } catch let error as AuthFlowError {
+                throw error
             } catch let error as GatewayAPIError {
                 switch error.serverCode {
                 case "cannot-unlink-last-provider":
@@ -403,9 +407,9 @@ final class FirebaseAuthManager: ObservableObject {
     }
 
     /// Deletes the account, in the only order that cannot strand data: re-authenticate
-    /// (interactive for Google/Apple, password for Email) → clear the user-owned cloud
-    /// documents while the credentials that may delete them still exist → revoke the
-    /// Apple token → delete the auth user last.
+    /// (interactive for Google/Apple, password for Email) → revoke the Apple token →
+    /// clear the user-owned cloud documents while the credentials that may delete them
+    /// still exist → delete the auth user last.
     func deleteAccount(emailPassword: String? = nil) async throws {
         if activeRoute == .gateway {
             try await deleteGatewayAccount(emailPassword: emailPassword)
@@ -417,6 +421,21 @@ final class FirebaseAuthManager: ObservableObject {
         }
         let uid = user.uid
         let appleAuthorizationCode = try await reauthenticate(user, emailPassword: emailPassword)
+
+        // Sign in with Apple requires the app to revoke the token when the user deletes
+        // their account (App Store guideline 5.1.1(v)), while the auth user still exists.
+        // It goes first and stops the deletion when it fails: it deletes nothing of ours,
+        // so the account is still whole and a retry is safe. It used to run after the
+        // documents were deleted and only log a failure, which hid the Gateway's revocation
+        // failing for every user.
+        if let appleAuthorizationCode {
+            do {
+                try await Auth.auth().revokeToken(withAuthorizationCode: appleAuthorizationCode)
+            } catch {
+                AppLogger.error("⟐ account-delete apple token revoke failed", error: error, context: ["uid": uid])
+                throw AuthFlowError.appleRevokeFailed
+            }
+        }
 
         // Subscription bookkeeping lives in a callable Cloud Function. Its documents are
         // keyed by uid, server-owned and invisible in the app, so losing that cleanup only
@@ -435,17 +454,6 @@ final class FirebaseAuthManager: ObservableObject {
         // documents, so dropping the auth user first would strand the profile forever.
         try await FirestoreSyncManager.shared.deleteRemoteData(uid: uid)
 
-        // Sign in with Apple requires the app to revoke the token when the user deletes
-        // their account (App Store guideline 5.1.1(v)); it has to happen while the auth
-        // user still exists.
-        if let appleAuthorizationCode {
-            do {
-                try await Auth.auth().revokeToken(withAuthorizationCode: appleAuthorizationCode)
-            } catch {
-                AppLogger.error("⟐ account-delete apple token revoke failed", error: error, context: ["uid": uid])
-            }
-        }
-
         do {
             try await user.delete()
         } catch {
@@ -463,40 +471,9 @@ final class FirebaseAuthManager: ObservableObject {
     /// server-owned data first and removes the Auth user last. A partial failure
     /// is recorded server-side and can be retried with a fresh credential.
     private func deleteGatewayAccount(emailPassword: String?) async throws {
-        guard let account = accountUser else {
-            throw AuthFlowError.missingFirebaseUser
-        }
-        let reauth: GatewayReauth
-        switch preferredReauthProviderID(for: account.providerIds) {
-        case "google.com":
-            let tokens = try await requestGoogleIDTokens(presenting: try topViewController())
-            reauth = .google(idToken: tokens.idToken, accessToken: tokens.accessToken)
-        case "apple.com":
-            let apple = try await appleReauthCredential()
-            reauth = .apple(
-                idToken: apple.idToken,
-                rawNonce: apple.rawNonce,
-                authorizationCode: apple.authorizationCode
-            )
-        case "password":
-            guard let emailPassword, !emailPassword.isEmpty else {
-                throw AuthFlowError.requiresPassword
-            }
-            reauth = .password(emailPassword)
-        default:
-            throw AuthFlowError.missingFirebaseUser
-        }
-
-        do {
-            try await gateway.deleteAccount(reauth: reauth)
-        } catch let error as GatewayAPIError {
-            switch error.serverCode {
-            case "reauth-required", "invalid-credentials":
-                throw AuthFlowError.requiresRecentLogin
-            default:
-                throw error
-            }
-        }
+        let reauth = try await gatewayReauthCredential(password: emailPassword, whenPasswordMissing: .requiresPassword)
+        // Every failure, a wrong password included, reads from the Gateway's error code.
+        try await gateway.deleteAccount(reauth: reauth)
         GIDSignIn.sharedInstance.signOut()
         FirestoreSyncManager.shared.resetLocalSyncState()
         apply(nil, route: nil)
@@ -507,6 +484,63 @@ final class FirebaseAuthManager: ObservableObject {
     var deletionRequiresPassword: Bool {
         guard let account = accountUser else { return false }
         return preferredReauthProviderID(for: account.providerIds) == "password"
+    }
+
+    /// Whether linking Apple or Google needs the account's password first: on the
+    /// Gateway an old sign-in has to be re-verified, and a password-only account can
+    /// only re-verify with its password. Asking before the Apple/Google sheet keeps
+    /// that sheet from appearing twice.
+    var linkingRequiresPassword: Bool {
+        guard activeRoute == .gateway, let account = accountUser else { return false }
+        return preferredReauthProviderID(for: account.providerIds) == "password"
+    }
+
+    /// The Gateway links and unlinks only within ten minutes of a real sign-in; past
+    /// that it answers `reauth-required`, and token refreshes do not move the sign-in
+    /// time. One of the account's own sign-in methods is then re-verified — an Apple or
+    /// Google sheet, or the password the user already typed — and the operation runs
+    /// once more. The credential being linked is never used for this: signing in with
+    /// it creates a separate account when it has none, and the user was left in it.
+    private func withGatewayRecentAuth<T>(
+        password: String?,
+        _ operation: () async throws -> T
+    ) async throws -> T {
+        do {
+            return try await operation()
+        } catch let error as GatewayAPIError where error.requiresRecentAuth {
+            let reauth = try await gatewayReauthCredential(
+                password: password,
+                whenPasswordMissing: .requiresCurrentPassword
+            )
+            apply(try await gateway.reauthenticate(reauth), route: .gateway)
+            return try await operation()
+        }
+    }
+
+    /// A fresh credential for the account's preferred sign-in method, for the Gateway to
+    /// re-verify. Apple also hands back the authorization code that deletion revokes.
+    private func gatewayReauthCredential(
+        password: String?,
+        whenPasswordMissing missingPassword: AuthFlowError
+    ) async throws -> GatewayReauth {
+        guard let account = accountUser else {
+            throw AuthFlowError.missingFirebaseUser
+        }
+        switch preferredReauthProviderID(for: account.providerIds) {
+        case "google.com":
+            let tokens = try await requestGoogleIDTokens(presenting: try topViewController())
+            return .google(idToken: tokens.idToken, accessToken: tokens.accessToken)
+        case "apple.com":
+            let apple = try await appleReauthCredential()
+            return .apple(idToken: apple.idToken, rawNonce: apple.rawNonce, authorizationCode: apple.authorizationCode)
+        case "password":
+            guard let password, !password.isEmpty else {
+                throw missingPassword
+            }
+            return .password(password)
+        default:
+            throw AuthFlowError.missingFirebaseUser
+        }
     }
 
     // MARK: - Routing
@@ -647,8 +681,10 @@ final class FirebaseAuthManager: ObservableObject {
     private func mapGatewayLinkingError(_ error: Error) throws -> Never {
         guard let gatewayError = error as? GatewayAPIError else { throw error }
         switch gatewayError.serverCode {
-        case "provider-already-linked", "email-exists":
+        case "email-exists":
             throw AuthFlowError.providerAlreadyLinked
+        case "provider-already-linked":
+            throw AuthFlowError.alreadyLinkedHere
         case "credential-already-in-use":
             if let pending = gatewayError.details["pendingToken"] as? String, !pending.isEmpty {
                 pendingGatewayToken = pending
@@ -791,9 +827,12 @@ enum AuthFlowError: LocalizedError {
     case pendingGatewayCredential(String)
     case requiresRecentLogin
     case requiresPassword
+    case requiresCurrentPassword
     case providerAlreadyLinked
+    case alreadyLinkedHere
     case providerLinkedToAnotherAccount
     case cannotUnlinkLastProvider
+    case appleRevokeFailed
 
     var errorDescription: String? {
         switch self {
@@ -815,12 +854,18 @@ enum AuthFlowError: LocalizedError {
             return localized("為了保護帳號安全，請重新登入後再試")
         case .requiresPassword:
             return localized("請輸入密碼以確認刪除帳號")
+        case .requiresCurrentPassword:
+            return localized("請輸入目前的密碼以繼續")
         case .providerAlreadyLinked:
             return localized("此登入方式已綁定其他帳號，無法連結")
+        case .alreadyLinkedHere:
+            return localized("這個帳號已經連結過此登入方式")
         case .providerLinkedToAnotherAccount:
             return localized("此登入方式屬於另一個帳號。你可以改用它登入那個帳號，或先在那個帳號解除連結。")
         case .cannotUnlinkLastProvider:
             return localized("這是唯一的登入方式，解除後就無法再登入，請先連結另一種方式")
+        case .appleRevokeFailed:
+            return localized("無法撤銷 Apple 授權，帳號沒有被刪除，請稍後再試")
         }
     }
 }

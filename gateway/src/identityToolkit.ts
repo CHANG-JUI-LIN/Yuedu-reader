@@ -29,7 +29,19 @@ interface IdentityToolkitConfig {
 }
 
 const IDENTITY_TOOLKIT_BASE = "https://identitytoolkit.googleapis.com/v1";
+/** `accounts:revokeToken` exists only here; the SDK reaches it with `useIdentityPlatform`. */
+const IDENTITY_PLATFORM_BASE = "https://identitytoolkit.googleapis.com/v2";
 const SECURE_TOKEN_URL = "https://securetoken.googleapis.com/v1/token";
+
+/**
+ * Apple token revocation lives on Identity Platform v2. The first gateway sent
+ * it to v1, where the method does not exist: every revocation got a 404 and
+ * every deletion of an account with Apple linked stopped there (2026-10). Exported
+ * so the URL shape is unit-tested.
+ */
+export function revokeTokenURL(apiKey: string): string {
+  return `${IDENTITY_PLATFORM_BASE}/accounts:revokeToken?key=${encodeURIComponent(apiKey)}`;
+}
 
 /**
  * Token Service requires the API key in the query string like every other
@@ -45,13 +57,14 @@ export function secureTokenURL(apiKey: string): string {
 async function postJson(
   config: IdentityToolkitConfig,
   url: string,
-  body: Record<string, unknown>
+  body: Record<string, unknown>,
+  headers: Record<string, string> = {}
 ): Promise<Record<string, unknown>> {
   let response: Response;
   try {
     response = await fetch(url, {
       method: "POST",
-      headers: {"Content-Type": "application/json"},
+      headers: {...headers, "Content-Type": "application/json"},
       body: JSON.stringify(body),
       signal: AbortSignal.timeout(config.upstreamTimeoutMs),
     });
@@ -286,38 +299,48 @@ export async function refreshSession(
   };
 }
 
-/** `accounts:update` — links an email/password credential to the signed-in user. */
+/**
+ * `accounts:signUp` with the user's ID token — links an email/password
+ * credential the way the iOS SDK does (`SignUpNewUserRequest`). The gateway
+ * first used `accounts:update`, which email enumeration protection no longer
+ * allows for linking. Setting a password also ends every existing session, so
+ * the session returned here must replace the caller's.
+ */
 export async function linkEmailPassword(
   config: IdentityToolkitConfig,
   idToken: string,
   email: string,
   password: string
-): Promise<void> {
-  await postJson(
+): Promise<IdentitySession> {
+  const data = await postJson(
     config,
-    `${IDENTITY_TOOLKIT_BASE}/accounts:update?key=${encodeURIComponent(config.apiKey)}`,
+    `${IDENTITY_TOOLKIT_BASE}/accounts:signUp?key=${encodeURIComponent(config.apiKey)}`,
     {idToken, email, password, returnSecureToken: true}
   );
+  return sessionFrom(data);
 }
 
 /**
- * `accounts:revokeToken` — revokes an Apple authorization code, the same call
- * `Auth.revokeToken(withAuthorizationCode:)` makes. Apple requires this when an
- * account is deleted.
+ * `accounts:revokeToken` — revokes an Apple authorization code, sent exactly
+ * as `Auth.revokeToken(withAuthorizationCode:)` sends it: same v2 endpoint, same
+ * body, and the app's bundle ID header the SDK puts on every request (the code
+ * was issued to the app, not to the web Services ID). Apple requires this when
+ * an account is deleted.
  */
 export async function revokeAppleAuthorizationCode(
-  config: IdentityToolkitConfig,
+  config: IdentityToolkitConfig & {iosBundleId: string},
   idToken: string,
   authorizationCode: string
 ): Promise<void> {
   await postJson(
     config,
-    `${IDENTITY_TOOLKIT_BASE}/accounts:revokeToken?key=${encodeURIComponent(config.apiKey)}`,
+    revokeTokenURL(config.apiKey),
     {
       providerId: "apple.com",
       tokenType: "3",
       token: authorizationCode,
       idToken,
-    }
+    },
+    {"X-Ios-Bundle-Identifier": config.iosBundleId}
   );
 }

@@ -12,6 +12,11 @@ export interface GatewayConfig {
   apiKey: string;
   storageBucket: string;
   functionsRegion: string;
+  /**
+   * The iOS app's bundle ID. Apple authorization codes are issued to the app, so
+   * token revocation names it the way the Firebase iOS SDK does.
+   */
+  iosBundleId: string;
   /** Absolute public base URL, used to build avatar URLs handed to the client. */
   publicBaseUrl: string;
   /**
@@ -66,6 +71,7 @@ export function loadConfig(): GatewayConfig {
     apiKey: required("FIREBASE_API_KEY"),
     storageBucket: optional("FIREBASE_STORAGE_BUCKET", `${projectId}.firebasestorage.app`),
     functionsRegion: optional("FUNCTIONS_REGION", "asia-east1"),
+    iosBundleId: optional("IOS_BUNDLE_ID", "com.zhangruilin.yuedureader"),
     publicBaseUrl: required("PUBLIC_BASE_URL").replace(/\/+$/, ""),
     trustProxyHops: integer("TRUST_PROXY_HOPS", 0),
     serviceAccountJson,

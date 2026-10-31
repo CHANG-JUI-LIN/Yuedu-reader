@@ -130,9 +130,9 @@ final class GatewaySessionStore: ObservableObject {
         return try await refreshPayload().idToken
     }
 
-    /// Authenticated request helper: attaches the token, retries once after a
-    /// server-side 401 with a forced refresh, and clears the session only when
-    /// the server says the session is actually invalid.
+    /// Authenticated request helper: attaches the token, retries once with a forced
+    /// refresh when the server rejected the token itself, and clears the session only
+    /// when the server says the session is actually invalid.
     func authorizedSend<T: Decodable & Sendable>(
         _ request: GatewayRequest,
         as type: T.Type = T.self,
@@ -142,7 +142,7 @@ final class GatewaySessionStore: ObservableObject {
         do {
             return try await send(request, as: type, idToken: token)
         } catch let error as GatewayAPIError {
-            if allowStaleTokenRetry, case .server(_, _, let status, _) = error, status == 401 {
+            if allowStaleTokenRetry, error.isStaleToken {
                 do {
                     token = try await validIDToken(forceRefresh: true)
                     return try await send(request, as: type, idToken: token)
@@ -161,7 +161,7 @@ final class GatewaySessionStore: ObservableObject {
         do {
             try await send(request, idToken: token)
         } catch let error as GatewayAPIError {
-            if case .server(_, _, let status, _) = error, status == 401 {
+            if error.isStaleToken {
                 do {
                     token = try await validIDToken(forceRefresh: true)
                     try await send(request, idToken: token)
@@ -181,7 +181,7 @@ final class GatewaySessionStore: ObservableObject {
         do {
             return try await sendForData(request, idToken: token)
         } catch let error as GatewayAPIError {
-            if case .server(_, _, let status, _) = error, status == 401 {
+            if error.isStaleToken {
                 do {
                     token = try await validIDToken(forceRefresh: true)
                     return try await sendForData(request, idToken: token)

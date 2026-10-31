@@ -5,6 +5,7 @@
 export type ApiErrorCode =
   | "invalid-argument"
   | "invalid-credentials"
+  | "wrong-account"
   | "email-exists"
   | "user-disabled"
   | "user-not-found"
@@ -27,6 +28,7 @@ export type ApiErrorCode =
 const statusByCode: Record<ApiErrorCode, number> = {
   "invalid-argument": 400,
   "invalid-credentials": 401,
+  "wrong-account": 403,
   "email-exists": 409,
   "user-disabled": 403,
   "user-not-found": 404,

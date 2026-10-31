@@ -192,6 +192,37 @@ struct GatewayAPIErrorTests {
         #expect(!error.isConnectivityFailure)
     }
 
+    @Test("only a rejected token is worth a refresh; reauth-required and wrong passwords are not")
+    func staleTokenClassification() {
+        #expect(GatewayAPIError.server(code: "unauthenticated", message: "x", status: 401, details: [:]).isStaleToken)
+        for code in ["reauth-required", "invalid-credentials", "wrong-account"] {
+            let error = GatewayAPIError.server(code: code, message: "x", status: 401, details: [:])
+            #expect(!error.isStaleToken)
+        }
+    }
+
+    @Test("server errors are described from their code, never the Gateway's English text")
+    func localizedServerMessages() {
+        let revoke = GatewayAPIError.server(
+            code: "apple-revoke-failed",
+            message: "Apple access could not be revoked. Retry the deletion.",
+            status: 502,
+            details: [:]
+        )
+        #expect(revoke.errorDescription == localized("無法撤銷 Apple 授權，帳號沒有被刪除，請稍後再試"))
+
+        let weak = GatewayAPIError.server(
+            code: "invalid-argument",
+            message: "WEAK_PASSWORD : Password should be at least 6 characters",
+            status: 400,
+            details: ["upstream": "WEAK_PASSWORD"]
+        )
+        #expect(weak.errorDescription == localized("密碼至少需要 6 個字元"))
+
+        let unknown = GatewayAPIError.server(code: "teapot", message: "I'm a teapot", status: 418, details: [:])
+        #expect(unknown.errorDescription == String(format: localized("伺服器無法完成這個請求（%@）"), "teapot"))
+    }
+
     @Test("callable gRPC metadata survives the wire")
     func grpcMetadata() {
         let error = GatewayAPIError.server(
@@ -507,6 +538,63 @@ struct GatewaySessionStoreTests {
         )
         #expect(response.user.uid == "uid-1")
         #expect(GatewayMockURLProtocol.refreshCount == 1)
+    }
+
+    @Test("reauth-required is passed straight to the caller without a refresh")
+    func reauthRequiredIsNotRetried() async {
+        clearKeychain()
+        defer { clearKeychain() }
+        GatewayMockURLProtocol.reset()
+        GatewayMockURLProtocol.handler = { _ in
+            (401, #"{"error":{"code":"reauth-required","message":"recent sign-in required"}}"#.data(using: .utf8)!)
+        }
+        let store = makeStore()
+        store.adopt(try! JSONDecoder().decode(
+            GatewaySessionPayload.self,
+            from: sessionJSON(idToken: "t", refreshToken: "r", expiresIn: 3600)
+        ))
+        do {
+            try await store.authorizedSendVoid(GatewayRequest(method: "POST", path: "/v1/auth/unlink"))
+            Issue.record("expected reauth-required")
+        } catch let error as GatewayAPIError {
+            #expect(error.requiresRecentAuth)
+        } catch {
+            Issue.record("unexpected \(error)")
+        }
+        #expect(GatewayMockURLProtocol.refreshCount == 0)
+        #expect(GatewayMockURLProtocol.requestCount == 1)
+        #expect(store.hasSession)
+    }
+
+    @Test("linking an email adopts the session that replaces the revoked one")
+    func linkEmailAdoptsNewSession() async throws {
+        clearKeychain()
+        defer { clearKeychain() }
+        GatewayMockURLProtocol.reset()
+        // Anything but the link call made with the pre-link token is answered with an error.
+        GatewayMockURLProtocol.handler = { request in
+            guard request.url?.path == "/v1/auth/link/email",
+                  request.value(forHTTPHeaderField: "Authorization") == "Bearer old"
+            else {
+                return (400, #"{"error":{"code":"invalid-argument","message":"unexpected request"}}"#.data(using: .utf8)!)
+            }
+            return (200, self.sessionJSON(idToken: "linked", refreshToken: "r-linked", expiresIn: 3600))
+        }
+        let store = makeStore()
+        store.adopt(try! JSONDecoder().decode(
+            GatewaySessionPayload.self,
+            from: sessionJSON(idToken: "old", refreshToken: "r-old", expiresIn: 3600)
+        ))
+        let provider = GatewayAuthProvider(store: store)
+
+        let user = try await provider.linkEmail(email: "a@b.co", password: "secret1")
+
+        #expect(user.uid == "uid-1")
+        #expect(try await store.validIDToken() == "linked")
+        #expect(GatewayMockURLProtocol.refreshCount == 0)
+        let persisted = GatewayKeychain.load(account: GatewayKeychain.refreshTokenAccount)
+            .flatMap { String(data: $0, encoding: .utf8) }
+        #expect(persisted?.contains("r-linked") == true)
     }
 }
 
