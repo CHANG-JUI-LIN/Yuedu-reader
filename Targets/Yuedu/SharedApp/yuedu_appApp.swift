@@ -88,6 +88,9 @@ struct yuedu_appApp: App {
         // Before any source script can ask for it: `java.deviceID()` runs on the JS queue,
         // and `UIDevice` can only be read here, on main.
         DeviceIdentity.captureAtLaunch()
+        // Before the scene connects: every scene-settings update after that looks up two
+        // SpringBoard classes by Swift name, and each miss searches the whole binary.
+        SpringBoardSceneExtensionLookup.install()
         #if DEBUG
         // Isolate first-install / upgrade UI cases without clearing the reader's books.
         if ProcessInfo.processInfo.arguments.contains("-reset-public-library-explore") {
