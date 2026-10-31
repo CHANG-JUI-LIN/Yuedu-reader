@@ -11,6 +11,7 @@ struct WorkMatchKeyTests {
         #expect(WorkMatchKey.title("ＡＢＣ") == "abc")
         #expect(WorkMatchKey.title("Harry Potter: The Philosopher's Stone") == "harrypotterthephilosophersstone")
         #expect(WorkMatchKey.title("ネコ") == WorkMatchKey.title("ねこ"))
+        #expect(WorkMatchKey.title("異世界ファンタジー") == "异世界ふぁんたじい", "script and kana fold in one string")
         #expect(WorkMatchKey.title("「吾輩は猫である」") == WorkMatchKey.title("吾輩は猫である"))
         #expect(WorkMatchKey.title(" 【 】 ").isEmpty)
     }
