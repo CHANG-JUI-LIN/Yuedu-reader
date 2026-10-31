@@ -893,6 +893,15 @@ class BookSourceStore: @MainActor ObservableObject {
     /// letting the cloud's older copy resurface — read by the user as a version revert / duplicate.
     /// `bookSourceUrl` is the real identity (importSources already dedupes on it), so normalize
     /// merged- and loaded-in source lists the same way, keeping the most recently updated copy.
+    ///
+    /// Which copy is kept depends on the copies alone, never on their order: on the same
+    /// `lastUpdateTime` the smaller `id` (as the string the sync keys on) wins. Every device
+    /// runs this on what the iCloud merge brings, and the merge lists that device's own copies
+    /// first, so a tie left to position kept each device's own copy; the next sync read the
+    /// other device's copy — the one that device kept — as deleted here and tombstoned it.
+    /// Two devices with the same pack on the same clock emptied each other's libraries by their
+    /// third sync. The tie is real: imports before 2026-07-16 kept the pack's own clock, the same
+    /// on every device that imported it, and an unchanged re-import keeps the clock it has.
     nonisolated static func dedupedByURL(_ input: [BookSource]) -> [BookSource] {
         var indexByURL: [String: Int] = .init(minimumCapacity: input.count)
         var result: [BookSource] = []
@@ -904,8 +913,10 @@ class BookSourceStore: @MainActor ObservableObject {
                 continue
             }
             if let idx = indexByURL[key] {
-                if source.lastUpdateTime > result[idx].lastUpdateTime {
-                    result[idx] = source   // keep the newer copy in the earlier slot
+                let kept = result[idx]
+                if source.lastUpdateTime > kept.lastUpdateTime
+                    || (source.lastUpdateTime == kept.lastUpdateTime && source.id.uuidString < kept.id.uuidString) {
+                    result[idx] = source   // keep the winning copy in the earlier slot
                 }
             } else {
                 indexByURL[key] = result.count

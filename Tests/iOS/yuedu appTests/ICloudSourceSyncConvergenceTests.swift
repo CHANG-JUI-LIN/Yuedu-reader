@@ -167,4 +167,44 @@ struct ICloudSourceSyncConvergenceTests {
         #expect(Set(phone.local.map(\.bookSourceUrl)).count == 40, "phone keeps every source")
         #expect(Set(pad.local.map(\.bookSourceUrl)).count == 40, "pad keeps every source")
     }
+
+    /// The same, with both copies of every source on the same clock: what two devices hold
+    /// after importing one pack on a build from before 2026-07-16, which kept the pack's own
+    /// `lastUpdateTime` (stamping the import moment came with ebfd8e96). Each device kept its
+    /// own copy of every URL and tombstoned the other's — the copy the other device kept — and
+    /// within three rounds both libraries were empty.
+    @Test func twoDevicesWithTheSamePackOnTheSameClockKeepEverySource() throws {
+        let cloud = Cloud()
+        let pack = Self.legadoPack(count: 40)
+        var phone = Device(local: try #require(BookSourceStore.parseSources(pack)))
+        var pad = Device(local: try #require(BookSourceStore.parseSources(pack)))
+        #expect(Set(phone.local.map(\.lastUpdateTime) + pad.local.map(\.lastUpdateTime)).count == 1)
+        var settledRounds = 0
+        for round in 0..<10 {
+            let t = start.addingTimeInterval(Double(round) * 600)
+            let before = (phone.uploads + phone.applies, pad.uploads + pad.applies)
+            try Self.relaunch(&phone)
+            try Self.pass(&phone, cloud: cloud, now: t)
+            try Self.relaunch(&pad)
+            try Self.pass(&pad, cloud: cloud, now: t.addingTimeInterval(300))
+            settledRounds = (phone.uploads + phone.applies, pad.uploads + pad.applies) == before ? settledRounds + 1 : 0
+        }
+        let state = "phone \(phone.local.count) \(phone.uploads)u \(phone.applies)a, pad \(pad.local.count) \(pad.uploads)u \(pad.applies)a"
+        #expect(Set(phone.local.map(\.bookSourceUrl)).count == 40, "phone keeps every source: \(state)")
+        #expect(Set(pad.local.map(\.bookSourceUrl)).count == 40, "pad keeps every source: \(state)")
+        #expect(Set(phone.local.map(\.id)) == Set(pad.local.map(\.id)), "both keep the same copy of each source")
+        #expect(settledRounds >= 7, "settled by the third round: \(state)")
+        #expect(phone.applies <= 1 && pad.applies <= 1, "each takes the other's winning copies once: \(state)")
+
+        // Only the copy neither device keeps is deleted in the cloud…
+        let kept = Set(phone.local.map(Self.id))
+        let records = try Self.remote(cloud).records
+        #expect(records.filter(\.deleted).allSatisfy { !kept.contains($0.id) })
+        #expect(kept.isSubset(of: Set(records.filter { !$0.deleted }.map(\.id))))
+        // …and neither shadow holds a live entry the next pass would read as a deletion here.
+        for device in [phone, pad] {
+            let live = Set(device.shadow.filter { !$0.value.deleted }.keys)
+            #expect(live == Set(device.local.map(Self.id)))
+        }
+    }
 }

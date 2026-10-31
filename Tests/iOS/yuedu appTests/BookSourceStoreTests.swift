@@ -80,6 +80,22 @@ struct BookSourceStoreTests {
         #expect(a.bookSourceName == "newer")   // newest lastUpdateTime wins the collision
     }
 
+    @Test("dedupedByURL breaks a clock tie the same way whatever the order")
+    func dedupedByURLBreaksATieByID() throws {
+        var a = BookSource()
+        a.bookSourceUrl = "https://dup.test/a"
+        a.lastUpdateTime = 100
+        var b = a
+        b.id = UUID()   // another device's copy, on the same clock
+
+        // A merge lists this device's copies first, so each device would keep its own.
+        let one = BookSourceStore.dedupedByURL([a, b])
+        let other = BookSourceStore.dedupedByURL([b, a])
+
+        #expect(one.count == 1)
+        #expect(one.map(\.id) == other.map(\.id))
+    }
+
     @Test("importing a source stamps lastUpdateTime so the local import wins the sync merge")
     func importStampsLastUpdateTime() throws {
         let store = BookSourceStore.shared
