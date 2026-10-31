@@ -235,12 +235,17 @@ extension BookSourceFetcher {
             }
         }
         let extractNextPages: @Sendable (String, String) async -> [String] = { [self] html, baseURL in
-            await self.pipeline.extractNextContentURLs(
+            let next = await self.pipeline.extractNextContentURLs(
                 html: html,
                 baseURL: baseURL,
                 source: source,
                 runtimeVariables: runtimeBox.get()
             )
+            // What the rule put is the chapter's, for its next page to read.
+            if let runtimeVariables = next.runtimeVariables {
+                runtimeBox.set(runtimeVariables)
+            }
+            return next.urls
         }
 
         let stagedRawHTML = try await SourcePerfTrace.spanAsync(

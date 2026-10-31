@@ -46,8 +46,6 @@ extension BookSourceFetcher {
             return []
         }
 
-        let host = BookSourceSession.session(for: source).host
-        let (html, finalURL) = try await host.fetch(ruleUrl: rawURL, page: page)
-        return await host.run { $0.parseExploreResults(html: html, baseURL: finalURL, source: source) }
+        return try await BookSourceSession.session(for: source).host.exploreBooks(ruleUrl: rawURL, page: page)
     }
 }

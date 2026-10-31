@@ -6,9 +6,10 @@ extension BookSource {
     /// (`shouldUseLegadoRuntimeFetch`), which reads them as Legado's AnalyzeUrl does.
     ///
     /// Any other `{{…}}` left after those substitutions is source JS, evaluated in the
-    /// source's own session runtime (`evaluateRemainingTemplates`).
+    /// source's own session runtime (`evaluateRemainingTemplates`). What that JS puts is the
+    /// page's (`pageVariables`), for its list to start from.
     func renderSearchURL(query: String, page: Int = 1) async -> (
-        url: String, method: String, body: String?
+        url: String, method: String, body: String?, pageVariables: [String: String]?
     ) {
         let encoded = query.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? query
         let pageStr = String(page)
@@ -51,12 +52,13 @@ extension BookSource {
         }
 
         guard urlTemplate.contains("{{") || bodyTemplate?.contains("{{") == true else {
-            return (urlTemplate, method, bodyTemplate.flatMap { $0.isEmpty ? nil : $0 })
+            return (urlTemplate, method, bodyTemplate.flatMap { $0.isEmpty ? nil : $0 }, nil)
         }
         // Source JS runs on the source's host, exactly like the runtime's own URL rendering
-        // (`prepareFetch`).
+        // (`prepareFetch`), and its puts go to the page's scope as they do there.
         let source = self
-        let (url, body) = await BookSourceSession.session(for: source).host.run { bridge in
+        let (url, body, pageVariables) = await BookSourceSession.session(for: source).host.run { bridge in
+            let pageScope = RuleData()
             // AnalyzeUrl's template bindings (`buildJsBindings`), so a template reads the
             // same names here as on the runtime path. `key` is the raw query, as in Legado.
             let bindings: [String: Any] = [
@@ -67,14 +69,17 @@ extension BookSource {
                 "speakSpeed": 0,
                 "header": source.header,
             ]
-            let url = Self.evaluateRemainingTemplates(
-                urlTemplate, source: source, bridge: bridge, bindings: bindings)
-            let body = bodyTemplate.map {
-                Self.evaluateRemainingTemplates($0, source: source, bridge: bridge, bindings: bindings)
+            let (url, body) = bridge.withPutScope(pageScope) {
+                let url = Self.evaluateRemainingTemplates(
+                    urlTemplate, source: source, bridge: bridge, bindings: bindings)
+                let body = bodyTemplate.map {
+                    Self.evaluateRemainingTemplates($0, source: source, bridge: bridge, bindings: bindings)
+                }
+                return (url, body)
             }
-            return (url, body)
+            return (url, body, pageScope.variableMap.isEmpty ? nil : pageScope.variableMap)
         }
-        return (url, method, body.flatMap { $0.isEmpty ? nil : $0 })
+        return (url, method, body.flatMap { $0.isEmpty ? nil : $0 }, pageVariables)
     }
 
     /// The header rule as a dictionary, for a caller that cannot wait (a SwiftUI body, a

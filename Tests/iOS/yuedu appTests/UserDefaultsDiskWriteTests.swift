@@ -148,6 +148,32 @@ struct UserDefaultsDiskWriteTests {
         #expect(store.sourceValue(for: source.bookSourceUrl, key: "bid") == nil)
     }
 
+    /// The request's own script: what a search URL put was stored as the source's state, a
+    /// write on every search; it is the page's now, carried by each row.
+    @Test("a search request whose URL calls java.put writes no preferences")
+    func scriptedPutSearchRequestWritesNothing() async throws {
+        let seeded = Self.seedSourceState()
+        var source = Self.searchSource()
+        let page = Data(Self.searchPage(0).utf8).base64EncodedString()
+        source.searchUrl = "data:;base64,{{java.put('searchToken', 's-' + key); '\(page)'}}"
+        let store = BookSourceRuntimeStateStore.shared
+        defer { Self.removeSourceState(seeded + [source.bookSourceUrl]) }
+        let suites = [Self.legacyRuntimeSuite, store.suiteName(for: source.bookSourceUrl)]
+            + seeded.map(store.suiteName(for:))
+
+        let host = SourceScriptHost(bridgeFor: source)
+        for keyword in ["alpha", "beta", "gamma"] {
+            var books: [OnlineBook] = []
+            let written = try await Self.measure("search.requestPut", suites: suites) {
+                books = try await host.searchBooks(keyword: keyword)
+            }
+            #expect(written.isEmpty)
+            #expect(books.count == 20)
+            #expect(books.allSatisfy { $0.runtimeVariables?["searchToken"] == "s-\(keyword)" })
+        }
+        #expect(store.sourceValue(for: source.bookSourceUrl, key: "searchToken") == nil)
+    }
+
     @Test("a search page whose rule uses @put, searched again, writes nothing")
     func unchangedSearchWritesNothing() async throws {
         let seeded = Self.seedSourceState()

@@ -849,4 +849,124 @@ struct LegadoParserBridgeContractTests {
         #expect(store.sourceValue(for: source.bookSourceUrl, key: "scriptKey") == "script")
         #expect(books.allSatisfy { $0.runtimeVariables?["libKey"] == nil })
     }
+
+    /// `putSearchPage` behind a `data:` URL whose script puts `pageToken` (`token` is JS) and
+    /// keeps a mark with `source.put`.
+    private static func pageRequestURL(token: String) -> String {
+        let page = Data(putSearchPage.utf8).base64EncodedString()
+        return "data:;base64,{{java.put('pageToken', \(token)); source.put('requestMark', 'kept'); '\(page)'}}"
+    }
+
+    /// Legado's `WebBook.searchBookAwait` builds the search `AnalyzeUrl` with the `RuleData` its
+    /// `BookList` then reads, so every row starts from what the request put.
+    @Test("a search request's put is its page's, which every row starts from")
+    func searchRequestPutsBelongToThePage() async throws {
+        var source = Self.putScopeSource()
+        source.searchUrl = Self.pageRequestURL(token: "'p-' + key")
+        source.ruleSearch.kind = "@js:java.get('pageToken')"
+        defer { Self.removeSourceState(source) }
+        let host = SourceScriptHost(bridgeFor: source)
+
+        let books = try await host.searchBooks(keyword: "alpha")
+        let streamed = try await host.searchBooksStreaming(keyword: "beta") { _ in }
+
+        #expect(books.map(\.kind) == ["p-alpha", "p-alpha", "p-alpha"])
+        #expect(books.map { $0.runtimeVariables?["pageToken"] } == ["p-alpha", "p-alpha", "p-alpha"])
+        #expect(books.map { $0.runtimeVariables?["bid"] } == ["a1", "b2", "c3"])
+        #expect(streamed.books.map(\.kind) == ["p-beta", "p-beta", "p-beta"])
+        let store = BookSourceRuntimeStateStore.shared
+        #expect(store.sourceValue(for: source.bookSourceUrl, key: "pageToken") == nil)
+        #expect(store.sourceValue(for: source.bookSourceUrl, key: "requestMark") == "kept")
+    }
+
+    @Test("an explore request's put is its page's, which every row starts from")
+    func exploreRequestPutsBelongToThePage() async throws {
+        var source = Self.putScopeSource()
+        source.ruleSearch.kind = "@js:java.get('pageToken')"
+        defer { Self.removeSourceState(source) }
+        let host = SourceScriptHost(bridgeFor: source)
+
+        let books = try await host.exploreBooks(ruleUrl: Self.pageRequestURL(token: "'e-' + page"), page: 2)
+
+        #expect(books.map(\.kind) == ["e-2", "e-2", "e-2"])
+        #expect(books.map { $0.runtimeVariables?["bid"] } == ["a1", "b2", "c3"])
+        #expect(BookSourceRuntimeStateStore.shared.sourceValue(for: source.bookSourceUrl, key: "pageToken") == nil)
+    }
+
+    /// A search URL with no options and no jsLib is rendered outside the runtime (`renderSearchURL`).
+    @Test("a search URL rendered outside the runtime puts into its page too")
+    func renderedSearchURLPutsBelongToThePage() async throws {
+        var source = Self.putScopeSource()
+        // No comma in the script: this path reads `URL,POST,body` by splitting at commas.
+        source.searchUrl = "https://put-scope.example/search?k={{key}}&t={{java.put(...('pageToken n-' + key).split(' ')); 't'}}"
+        source.ruleSearch.kind = "@js:java.get('pageToken')"
+        defer { Self.removeSourceState(source) }
+
+        let request = await source.renderSearchURL(query: "alpha")
+        let books = try await BookSourceParsingPipeline().parseSearchResults(
+            html: Self.putSearchPage, baseURL: request.url, source: source, pageVariables: request.pageVariables
+        )
+
+        #expect(request.url == "https://put-scope.example/search?k=alpha&t=t")
+        #expect(request.pageVariables == ["pageToken": "n-alpha"])
+        #expect(books.map(\.kind) == ["n-alpha", "n-alpha", "n-alpha"])
+        #expect(BookSourceRuntimeStateStore.shared.sourceValue(for: source.bookSourceUrl, key: "pageToken") == nil)
+    }
+
+    /// Legado's `BookContent` reads a page, its next-page rule included, with the chapter set.
+    @Test("a content page's put is its chapter's, read by the chapter's next page")
+    func contentPutsBelongToTheChapter() throws {
+        var source = Self.putScopeSource()
+        source.ruleContent.content = "@js:java.put('pageNo', String(Number(java.get('pageNo') || '0') + 1)); java.get('pageNo')"
+        source.ruleContent.nextContentUrl = "@js:java.put('nextToken', 'n-' + java.get('pageNo')); 'https://put-scope.example/chapter/1_2'"
+        defer { Self.removeSourceState(source) }
+        let bridge = ModernParserBridge(source: source)
+        let chapter = OnlineChapterRef(index: 0, title: "第一章", url: "https://put-scope.example/chapter/1")
+
+        let first = try bridge.parseChapterResult(
+            html: "{}", baseURL: chapter.url, source: source, runtimeVariables: ["bid": "a1"], chapterRef: chapter
+        )
+        let next = bridge.extractNextContentURLs(
+            html: "{}", baseURL: chapter.url, source: source, runtimeVariables: first.runtimeVariables
+        )
+        let nextURL = try #require(next.urls.first)
+        let second = try bridge.parseChapterResult(
+            html: "{}", baseURL: nextURL, source: source, runtimeVariables: next.runtimeVariables, chapterRef: chapter
+        )
+
+        #expect(first.content == "1")
+        #expect(first.runtimeVariables?["pageNo"] == "1")
+        #expect(next.runtimeVariables?["nextToken"] == "n-1")
+        #expect(next.runtimeVariables?["bid"] == "a1")
+        #expect(second.content == "2")
+        let store = BookSourceRuntimeStateStore.shared
+        #expect(store.sourceValue(for: source.bookSourceUrl, key: "pageNo") == nil)
+        #expect(store.sourceValue(for: source.bookSourceUrl, key: "nextToken") == nil)
+    }
+
+    /// Legado runs `preUpdateJs` as `AnalyzeRule(book, source).evalJS`.
+    @Test("TOC pre-update's java.put is the book's, read by its TOC")
+    func tocPreUpdatePutsBelongToTheBook() throws {
+        var source = Self.putScopeSource()
+        source.ruleToc.chapterList = "$.chapters[*]"
+        source.ruleToc.chapterName = "@js:java.get('tocToken')"
+        source.ruleToc.chapterUrl = "$.url"
+        defer { Self.removeSourceState(source) }
+        let bridge = ModernParserBridge(source: source)
+
+        let result = try bridge.runTOCPreUpdateJS(
+            "java.put('tocToken', 't-' + java.get('bid'));",
+            tocURL: "https://put-scope.example/toc/a1",
+            runtimeVariables: ["bid": "a1"]
+        )
+        #expect(result.runtimeVariables?["tocToken"] == "t-a1")
+        #expect(BookSourceRuntimeStateStore.shared.sourceValue(for: source.bookSourceUrl, key: "tocToken") == nil)
+        #expect(bridge.sourceRuleData.variableMap["tocToken"] == nil)
+
+        let chapters = try bridge.parseTOC(
+            html: #"{"chapters":[{"url":"https://put-scope.example/chapter/1"}]}"#,
+            baseURL: result.tocURL, source: source, runtimeVariables: result.runtimeVariables
+        )
+        #expect(chapters.map(\.title) == ["t-a1"])
+    }
 }

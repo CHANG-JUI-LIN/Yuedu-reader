@@ -77,6 +77,10 @@ extension SourceScriptHost where Resident == ModernParserBridge {
         try await resident.getContent(url: url, on: self)
     }
 
+    func exploreBooks(ruleUrl: String, page: Int = 1) async throws -> [OnlineBook] {
+        try await resident.exploreBooks(ruleUrl: ruleUrl, page: page, on: self)
+    }
+
     func getExploreItems(
         page: Int = 1, variableOverlay: [String: String] = [:]
     ) -> [ModernParserBridge.DiscoverItem] {

@@ -267,6 +267,13 @@ class ModernParserBridge {
         jsEngine.bookBridge.tocUrl = tocURL
         jsEngine.setChapterBridge(LegadoChapterBridge())
         evaluateJsLibIfNeeded()
+        // Legado runs it as `AnalyzeRule(book, source).evalJS`, so its `java.put` is the book's:
+        // it comes back in `runtimeVariables` for the TOC, not in the source's stored state.
+        // `source.put` stays the source's.
+        let bookScope = RuleData()
+        runtimeBookScope = bookScope
+        runtimeChapterScope = nil
+        defer { runtimeBookScope = nil }
         _ = jsEngine.evaluateIsolated(
             trimmed,
             bindings: [
@@ -1016,10 +1023,12 @@ class ModernParserBridge {
         return true
     }
 
+    /// - Parameter pageVariables: what the page's request URL put (`fetch`'s `pageScope`).
     func parseSearchResults(
         html: String,
         baseURL: String,
         source: BookSource,
+        pageVariables: [String: String]? = nil,
         earlyFilter: ((_ name: String, _ author: String) -> Bool)? = nil
     ) throws -> [OnlineBook] {
         let engine = makeEngine()
@@ -1029,6 +1038,7 @@ class ModernParserBridge {
             engine: engine, content: html, baseURL: baseURL, listRule: rule.bookList,
             fields: RuleListFields(name: rule.name, author: rule.author, bookUrl: rule.bookUrl, coverUrl: rule.coverUrl,
                                    intro: rule.intro, wordCount: rule.wordCount, lastChapter: rule.lastChapter, kind: rule.kind),
+            pageVariables: pageVariables,
             earlyFilter: earlyFilter,
             onMissingLink: { withoutLink.append($0) }
         ).map { OnlineBook($0, source: source) }
@@ -1347,6 +1357,14 @@ class ModernParserBridge {
             jsEngine.setChapterBridge(LegadoChapterBridge())
         }
         let engine = makeEngine(nextChapterURL: nextChapterURL)
+        // Legado's `BookContent` reads a page with `AnalyzeRule(book, source).setChapter(chapter)`,
+        // so a `@put` or `java.put` here is the chapter's: it comes back in the payload's
+        // `runtimeVariables` for the chapter's next page, not in the source's stored state.
+        let chapterScope = RuleData()
+        runtimeBookScope = nil
+        runtimeChapterScope = chapterScope
+        engine.chapter = chapterScope
+        defer { runtimeChapterScope = nil }
         engine.setContent(html, baseUrl: baseURL)
 
         // ⟐ contentJS — diagnose 段评-on infinite-loading: if "done" never logs the
@@ -1657,19 +1675,27 @@ class ModernParserBridge {
         }
     }
 
+    /// The chapter's next pages, and its variables once the rule's puts are on them (nil when
+    /// it put nothing). Legado reads `nextContentUrl` with the chapter set, like the content.
     func extractNextContentURLs(
         html: String,
         baseURL: String,
         source: BookSource,
         runtimeVariables: [String: String]? = nil
-    ) -> [String] {
+    ) -> (urls: [String], runtimeVariables: [String: String]?) {
         let rule = source.ruleContent.nextContentUrl
-        guard !rule.isEmpty else { return [] }
+        guard !rule.isEmpty else { return ([], nil) }
         loadRuntimeVariables(runtimeVariables)
         let engine = makeEngine()
+        let chapterScope = RuleData()
+        runtimeBookScope = nil
+        runtimeChapterScope = chapterScope
+        engine.chapter = chapterScope
+        defer { runtimeChapterScope = nil }
         engine.setContent(html, baseUrl: baseURL)
-        let list = engine.getStringList(ruleStr: rule, isUrl: true)
-        return list.filter { !$0.isEmpty }
+        let urls = engine.getStringList(ruleStr: rule, isUrl: true).filter { !$0.isEmpty }
+        guard !chapterScope.variableMap.isEmpty else { return (urls, nil) }
+        return (urls, (runtimeVariables ?? [:]).merging(chapterScope.variableMap) { _, put in put })
     }
 
     // MARK: - Full pipeline methods (fetch + parse)
@@ -1683,8 +1709,9 @@ class ModernParserBridge {
         let source = sourceRuleData.source
         guard !source.searchUrl.isEmpty else { return [] }
 
+        let pageScope = RuleData()
         let (body, finalUrl) = try await fetch(
-            ruleUrl: source.searchUrl, key: keyword, page: page, on: host
+            ruleUrl: source.searchUrl, key: keyword, page: page, pageScope: pageScope, on: host
         )
         // #region agent log
         if source.bookSourceName.contains("企点") {
@@ -1701,7 +1728,9 @@ class ModernParserBridge {
             "搜索参数": Self.searchParamsPreview(from: finalUrl),
         ], hyp: "S1")
         // #endregion
-        return try parseSearchResults(html: body, baseURL: finalUrl, source: source)
+        return try parseSearchResults(
+            html: body, baseURL: finalUrl, source: source, pageVariables: pageScope.variableMap
+        )
     }
 
     func searchBooksStreaming(
@@ -1713,8 +1742,9 @@ class ModernParserBridge {
         let source = sourceRuleData.source
         guard !source.searchUrl.isEmpty else { return ([], false) }
 
+        let pageScope = RuleData()
         let (body, finalUrl) = try await fetch(
-            ruleUrl: source.searchUrl, key: keyword, page: page, on: host
+            ruleUrl: source.searchUrl, key: keyword, page: page, pageScope: pageScope, on: host
         )
         // #region agent log
         _dbgLog("聚合/JS 搜尋", data: [
@@ -1728,18 +1758,22 @@ class ModernParserBridge {
         ], hyp: "S1")
         // #endregion
 
+        let pageVariables = pageScope.variableMap
         if let plan = aggregateSearchPlan(fromHexBody: body) {
             let books = await searchAggregateSubsources(
                 plan: plan,
                 baseURL: finalUrl,
                 source: source,
+                pageVariables: pageVariables,
                 onBatch: onBatch,
                 on: host
             )
             return (books, true)
         }
 
-        let books = try parseSearchResults(html: body, baseURL: finalUrl, source: source)
+        let books = try parseSearchResults(
+            html: body, baseURL: finalUrl, source: source, pageVariables: pageVariables
+        )
         return (books, false)
     }
 
@@ -1814,6 +1848,7 @@ class ModernParserBridge {
         plan: AggregateSearchPlan,
         baseURL: String,
         source: BookSource,
+        pageVariables: [String: String],
         onBatch: @escaping @Sendable ([OnlineBook]) async -> Void,
         on host: isolated SourceScriptHost<ModernParserBridge>
     ) async -> [OnlineBook] {
@@ -1842,7 +1877,8 @@ class ModernParserBridge {
                             (try? bridge.parseSearchResults(
                                 html: body,
                                 baseURL: baseURL,
-                                source: source
+                                source: source,
+                                pageVariables: pageVariables
                             )) ?? []
                         }
                     }
@@ -2302,8 +2338,23 @@ class ModernParserBridge {
         return trimmed.hasPrefix("[") || trimmed.hasPrefix("{")
     }
 
+    /// One explore page: its request (whose URL puts into the page's scope), then its list.
+    func exploreBooks(
+        ruleUrl: String, page: Int, on host: isolated SourceScriptHost<ModernParserBridge>
+    ) async throws -> [OnlineBook] {
+        let pageScope = RuleData()
+        let (html, finalURL) = try await fetch(ruleUrl: ruleUrl, page: page, pageScope: pageScope, on: host)
+        return parseExploreResults(
+            html: html, baseURL: finalURL, source: sourceRuleData.source, pageVariables: pageScope.variableMap
+        )
+    }
+
     /// Parse explore results using ruleExplore rules (for non-JS exploreUrl).
-    func parseExploreResults(html: String, baseURL: String, source: BookSource) -> [OnlineBook] {
+    ///
+    /// - Parameter pageVariables: what the page's request URL put (`fetch`'s `pageScope`).
+    func parseExploreResults(
+        html: String, baseURL: String, source: BookSource, pageVariables: [String: String]? = nil
+    ) -> [OnlineBook] {
         let engine = makeEngine()
         engine.setContent(html, baseUrl: baseURL)
 
@@ -2333,7 +2384,8 @@ class ModernParserBridge {
         // <img>, like zymk's `class.item@h3`) leaves the cover empty, which is what the
         // cover-broaden retry below looks for.
         func parseBooks(listVariant: String) -> [OnlineBook] {
-            listItems(engine: engine, content: html, baseURL: baseURL, listRule: listVariant, fields: fields)
+            listItems(engine: engine, content: html, baseURL: baseURL, listRule: listVariant, fields: fields,
+                      pageVariables: pageVariables)
                 .map { OnlineBook($0, source: source) }
         }
 
@@ -2392,16 +2444,21 @@ class ModernParserBridge {
     /// and travels with that book as its `runtimeVariables`. Stored as source state, a per-row
     /// put rewrote the source's preferences once per result (Crashlytics afe8e4bd, 3.0.0) and
     /// left the next stage reading whichever row ran last.
+    ///
+    /// - Parameter pageVariables: what the page's request URL put; the page's scope starts
+    ///   from them, as Legado's shared `RuleData` does.
     private func listItems(
         engine: ModernRuleEngine,
         content: Any,
         baseURL: String,
         listRule: String,
         fields: RuleListFields,
+        pageVariables: [String: String]?,
         earlyFilter: ((_ name: String, _ author: String) -> Bool)? = nil,
         onMissingLink: ((_ name: String) -> Void)? = nil
     ) -> [RuleListItem] {
         let listScope = RuleData()
+        listScope.variableMap = pageVariables ?? [:]
         runtimeChapterScope = nil
         runtimeBookScope = listScope
         engine.chapter = nil
@@ -2499,7 +2556,10 @@ class ModernParserBridge {
             includingRelatedDomains: true
         )
         do {
-            let (body, finalURL) = try await fetch(ruleUrl: searchUrl, key: "1", page: 1, on: host)
+            // A search request like any other: its URL's puts go to a page nothing reads.
+            let (body, finalURL) = try await fetch(
+                ruleUrl: searchUrl, key: "1", page: 1, pageScope: RuleData(), on: host
+            )
             let after = CookieStore.shared.getKey(url: cookieHost, key: "_csrfToken")
             NSLog(
                 "❖DISC TRACE❖ source=%@ stage=csrf.prime.end tokenAfter=%d bodyLen=%d finalHost=%@",
@@ -2519,9 +2579,12 @@ class ModernParserBridge {
         }
     }
 
+    /// - Parameter pageScope: a search or explore page's `RuleData`, where its URL's puts land
+    ///   (`prepareFetch`). Nil for a book's stages.
     func fetch(
         ruleUrl: String, key: String? = nil, page: Int? = nil,
         runtimeVariables: [String: String]? = nil,
+        pageScope: RuleData? = nil,
         on host: isolated SourceScriptHost<ModernParserBridge>
     ) async throws -> (String, String) {
         // Building the request runs source JS (jsLib, cloud settings, `@js:` URLs and
@@ -2529,7 +2592,8 @@ class ModernParserBridge {
         // here on the host — a script may stop for the reader — and only the network
         // round-trip leaves it.
         let prepared = try prepareFetch(
-            ruleUrl: ruleUrl, key: key, page: page, runtimeVariables: runtimeVariables
+            ruleUrl: ruleUrl, key: key, page: page, runtimeVariables: runtimeVariables,
+            pageScope: pageScope
         )
         let analyzeUrl: AnalyzeUrl
         let request: URLRequest
@@ -2588,7 +2652,8 @@ class ModernParserBridge {
 
     /// `fetch`'s script half before the network: the rule URL resolved into a request.
     private func prepareFetch(
-        ruleUrl: String, key: String?, page: Int?, runtimeVariables: [String: String]?
+        ruleUrl: String, key: String?, page: Int?, runtimeVariables: [String: String]?,
+        pageScope: RuleData?
     ) throws -> PreparedFetch {
         // A book's request is built against its variables, as Legado's `AnalyzeUrl(ruleData =
         // book)` builds it: a detail, TOC or content URL can read back what the book's search
@@ -2601,17 +2666,24 @@ class ModernParserBridge {
         // as "Invalid URL: @js:getApiUrl(…)". Hash-guarded, so it is a no-op once loaded.
         evaluateJsLibIfNeeded()
         ensureCloudSettingsIfNeeded()
-        let analyzeUrl = AnalyzeUrl(
-            ruleUrl: ruleUrl,
-            key: key,
-            page: page,
-            sourceHeader: sourceRuleData.source.header,
-            baseUrl: sourceRuleData.source.bookSourceUrl,
-            source: sourceRuleData,
-            jsEvaluator: { [weak self] jsCode, bindings in
-                self?.jsEngine.evaluateIsolated(jsCode, bindings: bindings)
-            }
-        )
+        // A search or explore page's URL puts into that page's own `RuleData`, which its list
+        // then starts from (`pageScope`): Legado's `WebBook.searchBookAwait`/`exploreBookAwait`
+        // build the `AnalyzeUrl` with `ruleData = RuleData()` and hand it to `BookList`. Stored
+        // as source state, it rewrote the source's preferences on every search request.
+        let analyzeUrl = withPutScope(pageScope) {
+            AnalyzeUrl(
+                ruleUrl: ruleUrl,
+                key: key,
+                page: page,
+                sourceHeader: sourceRuleData.source.header,
+                baseUrl: sourceRuleData.source.bookSourceUrl,
+                source: sourceRuleData,
+                book: pageScope,
+                jsEvaluator: { [weak self] jsCode, bindings in
+                    self?.jsEngine.evaluateIsolated(jsCode, bindings: bindings)
+                }
+            )
+        }
 
         if analyzeUrl.isDataUri {
             // Hand back the FULL rule URL, options included. A `data:` URI has no
@@ -2737,6 +2809,21 @@ class ModernParserBridge {
     }
 
     // MARK: - Private: Runtime Variable Helpers
+
+    /// `body` with `scope` as where `java.put` lands, the scopes it found restored after. Nil
+    /// leaves them as they are. Synchronous on purpose: a scope held across a suspension
+    /// would catch whatever else the host ran on this bridge meanwhile.
+    func withPutScope<T>(_ scope: RuleData?, _ body: () throws -> T) rethrows -> T {
+        guard let scope else { return try body() }
+        let scopes = (book: runtimeBookScope, chapter: runtimeChapterScope)
+        runtimeBookScope = scope
+        runtimeChapterScope = nil
+        defer {
+            runtimeBookScope = scopes.book
+            runtimeChapterScope = scopes.chapter
+        }
+        return try body()
+    }
 
     private func loadRuntimeVariables(_ vars: [String: String]?) {
         guard let vars, !vars.isEmpty else { return }

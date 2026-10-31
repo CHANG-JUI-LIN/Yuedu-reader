@@ -34,12 +34,12 @@ struct BookSourceNextContentPerformanceTests {
             bookSourceName: "Next page fixture"
         )
         source.ruleContent.nextContentUrl = "a.next@href"
-        let urls = await BookSourceParsingPipeline().extractNextContentURLs(
+        let next = await BookSourceParsingPipeline().extractNextContentURLs(
             html: "<a class='next' href='/chapter/2'>Next</a>",
             baseURL: "https://fixture.example/chapter/1",
             source: source
         )
-        #expect(urls == ["https://fixture.example/chapter/2"])
+        #expect(next.urls == ["https://fixture.example/chapter/2"])
     }
 }
 
@@ -66,7 +66,7 @@ private final class NextContentSessionProbe: @unchecked Sendable {
             html: "<p>Chapter content</p>",
             baseURL: "https://fixture.example/chapter/1",
             source: source
-        )
+        ).urls
         completed.signal()
     }
 }

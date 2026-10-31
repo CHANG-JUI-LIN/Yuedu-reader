@@ -220,7 +220,7 @@ extension BookSourceFetcher {
         do {
             books = try await pipeline.parseSearchResults(
                 html: html, baseURL: url.absoluteString, source: source,
-                earlyFilter: earlyFilter)
+                pageVariables: request.pageVariables, earlyFilter: earlyFilter)
         } catch {
             onHasMore?(false)
             let failure = BookSourceSearchFailure.parse(error.localizedDescription)

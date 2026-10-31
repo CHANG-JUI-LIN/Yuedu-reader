@@ -15,11 +15,13 @@ struct BookSourceParsingPipeline {
         html: String,
         baseURL: String,
         source: BookSource,
+        pageVariables: [String: String]? = nil,
         earlyFilter: (@Sendable (_ name: String, _ author: String) -> Bool)? = nil
     ) async throws -> [OnlineBook] {
         try await BookSourceSession.session(for: source).withTurn { bridge in
             try bridge.parseSearchResults(
-                html: html, baseURL: baseURL, source: source, earlyFilter: earlyFilter
+                html: html, baseURL: baseURL, source: source, pageVariables: pageVariables,
+                earlyFilter: earlyFilter
             )
         }
     }
@@ -123,12 +125,12 @@ struct BookSourceParsingPipeline {
         baseURL: String,
         source: BookSource,
         runtimeVariables: [String: String]? = nil
-    ) async -> [String] {
+    ) async -> (urls: [String], runtimeVariables: [String: String]?) {
         await SourcePerfTrace.spanAsync("chapter.nextContent", source.bookSourceName, thresholdMs: 0) {
             // An absent rule needs no runtime context. Acquiring the shared parse lock
             // first made a completed chapter wait for another chapter's review requests
             // merely to discover that this source has no continuation page.
-            guard !source.ruleContent.nextContentUrl.isEmpty else { return [] }
+            guard !source.ruleContent.nextContentUrl.isEmpty else { return ([], nil) }
             return await BookSourceSession.session(for: source).withTurn { bridge in
                 bridge.extractNextContentURLs(
                     html: html, baseURL: baseURL,
