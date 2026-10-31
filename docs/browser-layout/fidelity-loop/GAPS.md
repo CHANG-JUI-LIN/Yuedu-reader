@@ -1,6 +1,6 @@
 ---
 title: 渲染相似度的已知差距
-updated: 2026-10-25
+updated: 2026-10-31
 tags: [yuedu, browser-layout, fidelity-loop]
 ---
 
@@ -80,6 +80,7 @@ tags: [yuedu, browser-layout, fidelity-loop]
 - 依據：image-size 與 paint:image 33.7；quanzhi:418（79.4）
 - 假設的根因：`<div class="ctleft">`（float，寬度是 body 的一半）裡的 `<img width="85%">`。WebKit 的圖寬 152.4（容器 179.3 的 85%）；我們是 76.2，剛好一半，像是容器的百分比被多套了一次
 - 完成的樣子：兩張圖的寬度和對照組相差 2pt 以內
+- **2026-10-31：YueduCoreText PR #3–#15 一起合併後修好。** 測試書 65.5 → 99.7（run `prcheck2-after-gaps`，整合分支；套件 0.10.1 加這些 PR）
 
 ### S010 — 首字放大這類非圖片的 float 需要 shrink-to-fit 寬度
 - 測試書：[`s010-drop-cap-float`](../../../scripts/fidelity/fixtures/gaps/S010-drop-cap-float/)（`gaps-2026-10-25`：75.6，回退 float）
@@ -87,12 +88,20 @@ tags: [yuedu, browser-layout, fidelity-loop]
 - 代表章節：the-deal:12、harry-potter:100
 - 假設的根因：`float: left; font-size: 3em; line-height: 100%` 的 `<span>`，寬度是 auto。`validateFloats` 對非 replaced、`width: auto` 的 float 一律拒絕，因為還沒有 shrink-to-fit（CSS 2.1 §10.3.5）。只含行內文字的 float，寬度就是它的 max-content 寬度
 - 完成的樣子：這 26 章走新引擎，而且 the-deal、harry-potter 的分數不下降
+- **2026-10-31：YueduCoreText PR #7（float 的 shrink-to-fit）修好。** 測試書改走新引擎，75.6 → 91.3；基線裡 the-deal 走新引擎的章節 3 → 16、harry-potter 4 → 16（run `prcheck2-after-base`）。the-deal 的聊天章節因此改走新引擎，接著暴露出 S012
 
 ### S011 — UA 預設的標題字級用 16 算，沒有跟著根字級
 - 測試書：沒有單獨的一本；`s001b-ordered-list-markers`、`s003-root-background` 的 `<h2>` 都重現了（`gaps-2026-10-25`：這兩本各自扣的 font-size 就是它）
 - 依據：`<h2>` 在 WebKit 是 25.5（1.5 × 17），我們是 24（1.5 × 16）；sherlock:21 的標題 34 對 32 是同一個比例（2em）
 - 假設的根因：標題的 UA 字級（h1 2em、h2 1.5em…）是對 16 的預設字級解析，而不是對根元素的字級（閱讀設定給的 17）。如果成立，App 裡讀者調大字級時，標題不會跟著等比例變大；沒有在 App 裡確認過
 - 完成的樣子：上面兩本測試書的 font-size 扣分歸零；sherlock:21 標題 34
+
+### S012 — 行內盒裡的區塊整塊消失；聊天泡泡（inline-block）畫不出外形
+- 測試書：[`s012-block-in-inline`](../../../scripts/fidelity/fixtures/gaps/S012-block-in-inline/)（`fix-before-gaps`，套件 0.10.1：48.2，470 字只對上 297；`fix-after-gaps`，整合分支 `5fb62a4`：66.9，470 字全部對上，剩下的扣分是泡泡背景沒畫，background 57.4）
+- 依據：the-deal 的聊天章節（第 7、11、12、22、23、32、35、38 章，共 65 個泡泡）、orv:5（16 個）。S010 修好後這些章節改走新引擎：the-deal:12 少 456 字、the-deal:23 少 154 字
+- 根因（已確認）：`BoxTreeBuilder.collectInline` 遇到行內盒裡的區塊子元素就跳過，區塊和裡面的字全部丟掉，從套件 0.3.0 就是這樣。`5fb62a4` 照 CSS 2.1 §9.2.1.1 把行內盒拆開；同一條規則也修了「容器最後一個區塊後面的行內文字，從容器頂端開始排、壓在第一個區塊上」。hongwu:11 的章標題因此對齊 WebKit（首圖 y：295.9 → 340.1，WebKit 340.0）
+- 還沒做：inline-block 是不可拆的原子盒（CSS 2.1 §9.2.2），引擎還沒有這種排版，泡泡被當成行內盒拆開，所以背景、圓角、內距都沒畫。the-deal:12 因此是 74.0（版面 99.5、畫面 48.5），低於 0.10.1 走舊引擎時的 82.1（版面 87.2、畫面 76.9）；the-deal:23 是 91.6，高於舊引擎的 85.2；orv:5 是 91.6，舊引擎 74.2。the-deal 另外 6 章聊天章節不在抽樣裡，沒有量過
+- 完成的樣子：測試書的 background 扣分歸零；the-deal:12 ≥ 82.1
 
 還沒細查的：flex／grid 與 `position`（orv 10 章、game-designer:10）；整頁背景圖的大小與位置（guimi:64、redchamber:305）；行內小圖相對容器左移沒有生效（game-designer:58）；版面相關的 `@media`（寬度查詢）求值。
 

@@ -1,0 +1,6 @@
+{
+ "title": "S012 Blocks inside inline boxes",
+ "language": "en",
+ "vertical": false,
+ "reproduces": "GAPS S012: a block inside an inline box (CSS 2.1 §9.2.1.1). Chat bubbles are written as an inline-block holding a <p>, and a note as a <span> holding a <div>. The browser engine's inline walk skipped every block child of an inline box, so each message and the note vanished from the page with all their text. The bubble's own shape needs atomic inline-block layout, which the engine does not have."
+}

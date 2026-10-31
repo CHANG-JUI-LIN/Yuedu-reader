@@ -1,0 +1,9 @@
+p, .para { margin: 0 0 0.6em; }
+.thread { margin: 1em 0; font-family: Helvetica Neue, Helvetica, sans-serif; font-size: 0.85em; text-align: left; }
+.them { display: block; margin-right: 20%; margin-top: 0.15em; }
+.me { display: block; margin-left: 20%; margin-top: 0.15em; }
+.bubble { display: inline-block; padding: 0.2em 2.5%; border: 1px solid #d0d0d0; border-radius: 1em; background-color: rgba(180, 180, 180, 0.4); }
+.me .bubble { border-color: #a8c8e0; background-color: rgba(50, 130, 190, 0.4); }
+.bubble p { margin: 0; }
+.aside { font-style: italic; }
+.aside div { margin: 0.4em 0; padding-left: 1em; border-left: 3px solid #999; font-style: normal; }
