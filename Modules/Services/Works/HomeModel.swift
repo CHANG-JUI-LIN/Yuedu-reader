@@ -203,7 +203,8 @@ final class HomeModel: ObservableObject {
         start(row)
     }
 
-    /// Pull to refresh: rows already loaded load again.
+    /// Pull to refresh: rows already loaded load again, each showing what it had until the new
+    /// load replaces it (`fetch`).
     func reload() {
         firstPages?.refresh()
         for row in rows where requested.contains(row.id) && !active.contains(row.id) {
@@ -213,6 +214,7 @@ final class HomeModel: ObservableObject {
 
     /// The rows read from this device load again, when the home comes back into view: a book
     /// read meanwhile moves in 繼續閱讀. Not on every shelf change, which a page turn makes.
+    /// Each keeps what it showed, nothing too, until the new load replaces it (`fetch`).
     func reloadLocal() {
         for row in rows where row.policy == .local && requested.contains(row.id) && !active.contains(row.id) {
             start(row)
@@ -239,7 +241,12 @@ final class HomeModel: ObservableObject {
             if rerun.remove(rowID) != nil, let current = row(rowID) { start(current) }
         }
         guard let row = row(rowID), let provider = providers[rowID] else { return }
-        setState(.loading, of: rowID)
+        // Only a row with nothing to show yet, or a failure to retry, draws its skeleton. One that
+        // has loaded keeps its books, or its nothing, until this load replaces them: coming back
+        // to 探索 loads the shelf's rows again, and an empty 系列下一本 drawn as a skeleton for that
+        // moment made the home flash (FB-38).
+        let keepsShown = if case .loaded = row.state { true } else { false }
+        if !keepsShown { setState(.loading, of: rowID) }
         let started = SourcePerfTrace.now
         do {
             let entries = try await provider.load(row.loadingSection)
@@ -256,7 +263,7 @@ final class HomeModel: ObservableObject {
             }
             setState(.loaded(entries), of: rowID)
         } catch is CancellationError {
-            setState(.idle, of: rowID)
+            if !keepsShown { setState(.idle, of: rowID) }
         } catch {
             AppLogger.network("⟐ home row failed", error: error, context: [
                 "source": "\(row.source.type.rawValue):\(row.source.id)", "section": row.section.id.uuidString,

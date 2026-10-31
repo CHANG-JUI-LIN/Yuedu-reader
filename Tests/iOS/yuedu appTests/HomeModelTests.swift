@@ -39,6 +39,10 @@ private final class FakeProvider: HomeSectionProviding {
     var inputs: String?
     /// Stands in for the network's answer time (step 6's measurement).
     var latency: Duration?
+    /// What each load finds; nil finds one location per load.
+    var entries: [CollectionEntry]?
+    /// Opened as a load ends, found or thrown: a load that leaves the rows as they were sends no `rows`.
+    var ended: Gate?
     private(set) var loads: [UUID] = []
     private(set) var inFlight = 0
     private(set) var mostInFlight = 0
@@ -54,6 +58,7 @@ private final class FakeProvider: HomeSectionProviding {
     func inputsKey(for section: HomeSection) -> String? { inputs }
 
     func load(_ section: HomeSection) async throws -> [CollectionEntry] {
+        defer { ended?.open() }
         let gate = loads.count < gates.count ? gates[loads.count] : nil
         loads.append(section.id)
         inFlight += 1
@@ -62,7 +67,7 @@ private final class FakeProvider: HomeSectionProviding {
         if let latency { try await Task.sleep(for: latency) }
         inFlight -= 1
         if let failure { throw failure }
-        return [.location(CollectionLocation(id: "\(instance.id)/\(loads.count)", title: displayName))]
+        return entries ?? [.location(CollectionLocation(id: "\(instance.id)/\(loads.count)", title: displayName))]
     }
 }
 
@@ -350,6 +355,58 @@ struct HomeModelTests {
         await until(home) { $0.allSatisfy { isLoaded($0.state) } }
         #expect(shelf.loads.count == 2)
         #expect(feed.loads.count == 1)
+    }
+
+    @Test("coming back into view and pull to refresh keep what each row shows, nothing too, until the new load replaces it (FB-38)")
+    func reloadKeepsWhatRowsShow() async throws {
+        let shelf = FakeProvider("local", type: .library) { $0.binding == .continueReading ? .local : nil }
+        let series = FakeProvider("series", type: .library) { $0.binding == .nextInSeries ? .local : nil }
+        series.entries = []
+        let feed = FakeProvider("f", type: .opds) { $0.binding == .latest ? .parallel : nil }
+        let home = model([shelf, series, feed])
+        await home.sync(with: HomePage(sections: [
+            HomeSection(layout: .row, binding: .continueReading),
+            HomeSection(layout: .row, binding: .nextInSeries),
+            HomeSection(layout: .row, binding: .latest),
+        ]))
+        rows(home).map(\.id).forEach(home.load)
+        await until(home) { $0.allSatisfy { isLoaded($0.state) } }
+
+        // Every rows the home is given: `@Published` sends each as it is set, a moment's skeleton too.
+        var shown: [[HomeModel.Row]] = []
+        let watch = home.$rows.sink { shown.append($0) }
+        home.reloadLocal()
+        await until(home) { _ in shelf.loads.count == 2 && series.loads.count == 2 && shelf.inFlight + series.inFlight == 0 }
+        home.reload()
+        await until(home) { _ in
+            shelf.loads.count == 3 && series.loads.count == 3 && feed.loads.count == 2
+                && shelf.inFlight + series.inFlight + feed.inFlight == 0
+        }
+        watch.cancel()
+
+        #expect(shown.count > 1)
+        #expect(shown.allSatisfy { $0.allSatisfy { isLoaded($0.state) } }, "no row went back to its skeleton")
+        #expect(shown.allSatisfy { rows in
+            HomeScopeFilter.groups(rows, in: nil).first { $0.section.binding == .nextInSeries }?.isSettledEmpty == true
+        }, "系列下一本, which found nothing, never takes room")
+    }
+
+    @Test("a load again that is cancelled leaves the row as it was, not a skeleton nothing asks again (FB-38)")
+    func cancelledReloadKeepsRow() async throws {
+        let shelf = FakeProvider("local", type: .library) { $0.binding == .continueReading ? .local : nil }
+        let home = model([shelf])
+        await home.sync(with: HomePage(sections: [HomeSection(layout: .row, binding: .continueReading)]))
+        home.load(rows(home)[0].id)
+        await until(home) { isLoaded($0[0].state) }
+        let loaded = rows(home)[0].state
+
+        let ended = Gate()
+        shelf.ended = ended
+        shelf.failure = CancellationError()
+        home.reloadLocal()
+        await ended.wait()
+        #expect(shelf.loads.count == 2)
+        #expect(rows(home)[0].state == loaded)
     }
 
     @Test("a failed row says why, and 重試 loads it again")
