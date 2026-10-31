@@ -734,6 +734,12 @@ struct OnlineChapterRef: Identifiable, Codable, Equatable {
     var isVolume: Bool = false
     var isVip: Bool = false
     var isPay: Bool = false
+    /// What the source's `ruleToc.updateTime` read for this row — legado keeps it as
+    /// `BookChapter.tag` — shown verbatim under the title in 目錄. A source writes whatever it
+    /// likes there (「2024-05-01」, 「卷一 | 3小時前」), so it stays text. Nil when the source
+    /// has no such rule or the rule read nothing, which also keeps a list from a source
+    /// without one encoding exactly as before.
+    var updateTime: String? = nil
     /// Set by builds up to 3.0.0 (136) whenever a chapter was cached; nothing sets it now,
     /// and nothing decides by it — the cached file is the record (`isChapterCached`). Lists
     /// saved before still carry it, and the refresh carries it over, so no list is written
@@ -749,7 +755,7 @@ struct OnlineChapterRef: Identifiable, Codable, Equatable {
 
 extension OnlineChapterRef {
     private enum CodingKeys: String, CodingKey {
-        case id, index, title, url, isVolume, isVip, isPay, cachedFilename
+        case id, index, title, url, isVolume, isVip, isPay, updateTime, cachedFilename
         case runtimeVariables, audioStartSeconds, audioDurationSeconds, pdfPageCount
     }
 
@@ -766,6 +772,7 @@ extension OnlineChapterRef {
         isVolume = try values.decodeIfPresent(Bool.self, forKey: .isVolume) ?? false
         isVip = try values.decodeIfPresent(Bool.self, forKey: .isVip) ?? false
         isPay = try values.decodeIfPresent(Bool.self, forKey: .isPay) ?? false
+        updateTime = try values.decodeIfPresent(String.self, forKey: .updateTime)
         cachedFilename = try values.decodeIfPresent(String.self, forKey: .cachedFilename)
         runtimeVariables = try values.decodeIfPresent([String: String].self, forKey: .runtimeVariables)
         audioStartSeconds = try values.decodeIfPresent(Double.self, forKey: .audioStartSeconds)

@@ -2783,6 +2783,7 @@ struct ReaderView: View {
                     chapters: chapters.map { chapter in
                         var display = chapter
                         display.title = chapter.title.converted(to: settings.textConversion)
+                        display.updateTime = chapter.updateTime?.converted(to: settings.textConversion)
                         return display
                     },
                     bookTitle: book?.title ?? "",

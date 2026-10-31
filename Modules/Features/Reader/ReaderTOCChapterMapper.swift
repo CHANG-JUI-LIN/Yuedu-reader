@@ -1,6 +1,20 @@
 import Foundation
 
 enum ReaderTOCChapterMapper {
+    /// An online book's table of contents. `index` is the chapter's position in the list —
+    /// what the reader fetches, caches and pages by — not `OnlineChapterRef.index`.
+    static func chapters(from refs: [OnlineChapterRef]) -> [BookChapter] {
+        refs.enumerated().map { offset, ref in
+            BookChapter(
+                index: offset,
+                title: ref.title,
+                content: "",
+                href: ref.sanitizedContentURL,
+                updateTime: ref.updateTime
+            )
+        }
+    }
+
     static func chapters(from tocEntries: [EPUBTocEntry], session: PublicationSession) -> [BookChapter] {
         let spineIndexByHref: [String: Int] = Dictionary(
             session.chapters.map { ($0.href, $0.index) },

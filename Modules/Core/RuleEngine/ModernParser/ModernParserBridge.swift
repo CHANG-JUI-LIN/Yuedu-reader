@@ -1198,6 +1198,8 @@ class ModernParserBridge {
         lastTOCRuntimeVariables = bookRuntimeVariables
 
         let formatJs = source.ruleToc.formatJs.trimmingCharacters(in: .whitespacesAndNewlines)
+        // Most sources have no 更新時間 rule; skipping it spares every row an evaluation.
+        let updateTimeRule = source.ruleToc.updateTime.trimmingCharacters(in: .whitespacesAndNewlines)
 
         var chapters: [OnlineChapterRef] = []
         chapters.reserveCapacity(elements.count)
@@ -1230,6 +1232,10 @@ class ModernParserBridge {
                     let isVolume = Self.parseBool(isVolumeStr)
                     let isVip = Self.parseBool(isVipStr)
                     let isPay = Self.parseBool(isPayStr)
+                    // legado: `bookChapter.tag = analyzeRule.getString(upTimeRule)`.
+                    let updateTime = updateTimeRule.isEmpty ? "" : ReaderHTMLUtilities.displayText(
+                        fromHTMLFragment: engine.getString(ruleStr: updateTimeRule)
+                    )
 
                     if !formatJs.isEmpty {
                         let chapterDict: [String: Any] = [
@@ -1259,6 +1265,7 @@ class ModernParserBridge {
                         isVolume: isVolume,
                         isVip: isVip,
                         isPay: isPay,
+                        updateTime: updateTime.isEmpty ? nil : updateTime,
                         runtimeVariables: chapterDelta.isEmpty ? nil : chapterDelta
                     )
                     if ref.isVolume || ref.hasVolumeSeparatorTitle || index < 12 {

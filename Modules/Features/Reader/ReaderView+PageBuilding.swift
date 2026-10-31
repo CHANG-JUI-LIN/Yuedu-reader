@@ -240,10 +240,7 @@ extension ReaderView {
 
         let settings = readerRenderSettings(for: activeReaderDisplayMode)
         let refs = book.onlineChapters ?? []
-        chapters = refs.enumerated().map { idx, ref in
-            let href = ref.sanitizedContentURL
-            return BookChapter(index: idx, title: ref.title, content: "", href: href)
-        }
+        chapters = ReaderTOCChapterMapper.chapters(from: refs)
         if chapters.isEmpty {
             chapters = [BookChapter(index: 0, title: book.title, content: "")]
         }

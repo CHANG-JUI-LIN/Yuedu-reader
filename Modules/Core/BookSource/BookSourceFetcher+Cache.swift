@@ -166,6 +166,9 @@ extension BookSourceFetcher {
         for chapter in chapters {
             add("\(chapter.index)"); add(chapter.title); add(chapter.url)
             add("\(chapter.isVolume)\(chapter.isVip)\(chapter.isPay)")
+            // Only when present: a list without update times keeps the fingerprint it had,
+            // so adding the field rewrote no cached table of contents.
+            if let updateTime = chapter.updateTime { add("⏱"); add(updateTime) }
             add(chapter.cachedFilename ?? "∅")
             add(chapter.runtimeVariables)
             add("\(chapter.audioStartSeconds ?? -1)|\(chapter.audioDurationSeconds ?? -1)|\(chapter.pdfPageCount ?? -1)")

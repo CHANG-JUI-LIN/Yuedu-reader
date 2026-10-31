@@ -18,6 +18,7 @@ struct BookChapter: Identifiable, Codable {
     var href: String = ""  // EPUB chapter path, used as the rendering baseURL
     var level: Int = 0  // TOC indentation level (0 = top, 1 = sub-chapter, …)
     var fragment: String? = nil  // EPUB TOC anchor within the spine file (the part after '#')
+    var updateTime: String? = nil  // Online books: `OnlineChapterRef.updateTime`, the TOC row's second line
 }
 
 // MARK: - Online Chapter Reference

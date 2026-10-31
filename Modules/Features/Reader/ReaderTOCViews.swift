@@ -362,14 +362,25 @@ struct ReaderTOCView: View {
                         .frame(width: CGFloat(chapter.level) * 16)
                 }
 
-                Text(chapter.title)
-                    .font(
-                        chapter.level == 0
-                        ? DSFont.fixed(size: 14, weight: .semibold)
-                        : DSFont.fixed(size: 12, weight: .regular)
-                    )
-                    .foregroundStyle(DSColor.textPrimary)
-                    .lineLimit(2)
+                VStack(alignment: .leading, spacing: DSSpacing.xxs) {
+                    Text(chapter.title)
+                        .font(
+                            chapter.level == 0
+                            ? DSFont.fixed(size: 14, weight: .semibold)
+                            : DSFont.fixed(size: 12, weight: .regular)
+                        )
+                        .foregroundStyle(DSColor.textPrimary)
+                        .lineLimit(2)
+
+                    // The source's 更新時間, verbatim; a row without one takes no extra line.
+                    if let updateTime = chapter.updateTime {
+                        Text(updateTime)
+                            .font(DSFont.fixed(size: 12))
+                            .foregroundStyle(DSColor.textSecondary)
+                            .lineLimit(1)
+                    }
+                }
+                .padding(.vertical, DSSpacing.xs)
 
                 Spacer()
 
@@ -379,7 +390,8 @@ struct ReaderTOCView: View {
                         .foregroundStyle(DSColor.textSecondary)
                 }
             }
-            .frame(height: 48)
+            // A minimum, not a height: a two-line title over an update time needs more.
+            .frame(minHeight: 48)
             .padding(.horizontal, 30)
             .background {
                 if chapter.id == currentChapterID {
@@ -412,6 +424,28 @@ struct ReaderTOCView: View {
         pageOffsets: [:],
         showsPageNumbers: true,
         currentIndex: 0,
+        currentChapterID: nil,
+        onSelectChapter: { _ in },
+        isPresented: .constant(true)
+    )
+}
+
+#Preview("目錄・線上書更新時間") {
+    ReaderTOCView(
+        chapters: [
+            BookChapter(index: 0, title: "第一卷 風起", content: ""),
+            BookChapter(index: 1, title: "第一章 序幕", content: "", updateTime: "第一卷 | 2026-10-01 08:00"),
+            BookChapter(index: 2, title: "第二章 啟程：一個長到要換行才放得下的章節標題", content: "",
+                        updateTime: "第一卷 | 2026-10-02 08:00"),
+            BookChapter(index: 3, title: "第三章 抉擇", content: ""),
+        ],
+        bookTitle: "範例書名",
+        currentPage: 0,
+        totalPages: 0,
+        tocLayoutMode: .horizontalList,
+        pageOffsets: [:],
+        showsPageNumbers: false,
+        currentIndex: 1,
         currentChapterID: nil,
         onSelectChapter: { _ in },
         isPresented: .constant(true)
