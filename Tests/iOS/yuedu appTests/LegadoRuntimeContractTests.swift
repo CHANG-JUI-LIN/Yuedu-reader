@@ -897,8 +897,7 @@ struct LegadoParserBridgeContractTests {
     @Test("a search URL rendered outside the runtime puts into its page too")
     func renderedSearchURLPutsBelongToThePage() async throws {
         var source = Self.putScopeSource()
-        // No comma in the script: this path reads `URL,POST,body` by splitting at commas.
-        source.searchUrl = "https://put-scope.example/search?k={{key}}&t={{java.put(...('pageToken n-' + key).split(' ')); 't'}}"
+        source.searchUrl = "https://put-scope.example/search?k={{key}}&t={{java.put('pageToken', 'n-' + key); 't'}}"
         source.ruleSearch.kind = "@js:java.get('pageToken')"
         defer { Self.removeSourceState(source) }
 

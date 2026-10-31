@@ -59,4 +59,42 @@ struct SearchURLTemplateRenderingTests {
         #expect(request.method == "POST")
         #expect(request.body == "kw=abc&from=20")
     }
+
+    @Test("a charset template's comma does not cut the URL", arguments: [
+        "{{key,GBK}}", "{{key,gb2312}}", "{key,GB2312}",
+    ])
+    func charsetTemplateKeepsTheURL(template: String) async {
+        let source = source(searchUrl: "https://template-render.test/s?q=\(template)&p={{page}}")
+        #expect(!source.shouldUseLegadoRuntimeFetch(for: source.searchUrl))
+
+        let request = await source.renderSearchURL(query: "我", page: 2)
+
+        #expect(request.url == "https://template-render.test/s?q=%CE%D2&p=2")
+        #expect(request.method == "GET")
+    }
+
+    @Test("a JS template's comma does not cut the URL")
+    func jsTemplateCommaKeepsTheURL() async {
+        let source = source(searchUrl: "https://template-render.test/s?q={{[key, page].join('-')}}&lang=zh")
+        #expect(!source.shouldUseLegadoRuntimeFetch(for: source.searchUrl))
+
+        let request = await source.renderSearchURL(query: "abc", page: 3)
+
+        #expect(request.url == "https://template-render.test/s?q=abc-3&lang=zh")
+        #expect(request.method == "GET")
+    }
+
+    @Test("a template's comma in the URL does not hide the legacy POST")
+    func templateCommaBeforeLegacyPost() async {
+        let source = source(
+            searchUrl: "https://template-render.test/s?t={{[page, 0].join('')}},POST,kw={{key}}&tag={{['a', 'b'].join(',')}}"
+        )
+        #expect(!source.shouldUseLegadoRuntimeFetch(for: source.searchUrl))
+
+        let request = await source.renderSearchURL(query: "abc", page: 2)
+
+        #expect(request.url == "https://template-render.test/s?t=20")
+        #expect(request.method == "POST")
+        #expect(request.body == "kw=abc&tag=a,b")
+    }
 }

@@ -39,7 +39,7 @@ extension BookSource {
 
         let trimmedSearch = searchUrl.trimmingCharacters(in: .whitespacesAndNewlines)
         // Legacy format: URL,POST,bodyTemplate
-        let parts = trimmedSearch.components(separatedBy: ",")
+        let parts = Self.legacySearchURLParts(trimmedSearch)
         let urlTemplate = applyVars(parts[0].trimmingCharacters(in: .whitespacesAndNewlines))
         let method: String
         let bodyTemplate: String?
@@ -80,6 +80,44 @@ extension BookSource {
             return (url, body, pageScope.variableMap.isEmpty ? nil : pageScope.variableMap)
         }
         return (url, method, body.flatMap { $0.isEmpty ? nil : $0 }, pageVariables)
+    }
+
+    /// `searchUrl` cut at its commas, for the legacy `URL,POST,body`. A comma inside braces is
+    /// the template's — `{{key,GBK}}`, `{key,GB2312}`, `{{java.put('k', 'v' + key)}}` — and
+    /// cutting there left the URL ending mid-template. Quotes count only inside braces, where
+    /// they open JS strings; in the URL itself they are text.
+    private static func legacySearchURLParts(_ searchUrl: String) -> [String] {
+        var parts: [String] = []
+        var current = ""
+        var depth = 0
+        var quote: Character?
+        var escaped = false
+        for char in searchUrl {
+            if depth > 0 {
+                if escaped {
+                    escaped = false
+                } else if char == "\\" {
+                    escaped = true
+                } else if let open = quote {
+                    if char == open { quote = nil }
+                } else if char == "'" || char == "\"" {
+                    quote = char
+                } else if char == "{" {
+                    depth += 1
+                } else if char == "}" {
+                    depth -= 1
+                }
+            } else if char == "{" {
+                depth = 1
+            } else if char == "," {
+                parts.append(current)
+                current = ""
+                continue
+            }
+            current.append(char)
+        }
+        parts.append(current)
+        return parts
     }
 
     /// The header rule as a dictionary, for a caller that cannot wait (a SwiftUI body, a
