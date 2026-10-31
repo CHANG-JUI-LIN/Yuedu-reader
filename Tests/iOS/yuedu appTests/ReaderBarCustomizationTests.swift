@@ -36,8 +36,22 @@ struct ReaderBarCustomizationTests {
         #expect(ReaderOverlayPresentationPolicy.visibility(layout: layout, headerEnabled: true,
             footerEnabled: true, isChapterOpeningPage: true).showsHeader)
         layout.fields = []
-        #expect(layout.reservesSpace(in: .header))
-        #expect(layout.reservesSpace(in: .footer))
+        #expect(layout.reservesSpace(in: .header, isScrolling: false))
+        #expect(layout.reservesSpace(in: .footer, isScrolling: false))
+        // Scroll mode only ever draws the body fields, so an opening-only bar
+        // would be a band that stays blank.
+        #expect(!layout.reservesSpace(in: .header, isScrolling: true))
+        #expect(!layout.reservesSpace(in: .footer, isScrolling: true))
+    }
+
+    /// FB-115: the default layout hides the header on a chapter's opening page. Scroll
+    /// mode's first screen of a chapter is 本章 page 1 but not an opening page, so its
+    /// header keeps the body fields.
+    @Test @MainActor func scrollModeChapterStartKeepsBodyHeader() {
+        let scrolling = model(.default, bar: .header, page: 1, scope: .resolve(chapterPage: 1, isScrolling: true))
+        let paged = model(.default, bar: .header, page: 1, scope: .resolve(chapterPage: 1, isScrolling: false))
+        #expect(!scrolling.isEmpty)
+        #expect(paged.isEmpty)
     }
 
     @Test func oldLayoutRetainsOpeningVisibilityAndCustomization() throws {
@@ -145,9 +159,15 @@ struct ReaderBarCustomizationTests {
         #expect(ReaderConfig.shared.pageMarginBottom == 39)
     }
 
-    @MainActor private func model(_ layout: ReaderBarLayout, bar: ReaderBar, page: Int) -> ReaderBarRenderModel {
+    @MainActor private func model(
+        _ layout: ReaderBarLayout,
+        bar: ReaderBar,
+        page: Int,
+        scope: ReaderOverlayPageScope? = nil
+    ) -> ReaderBarRenderModel {
         ReaderBarRenderModelBuilder().model(for: bar, layout: layout,
             content: .init(bookTitle: "Book", chapterTitle: "Chapter", chapterPage: page, chapterPageCount: 12,
+                pageScope: scope ?? .resolve(chapterPage: page, isScrolling: false),
                 totalProgress: 0.4, now: Date(timeIntervalSince1970: 0), batteryLevel: 0.7, isCharging: false,
                 readingDuration: 1500, estimatedRemainingTime: 4200),
             readerTextColor: .black, horizontalPadding: 16, svgAssetStore: nil, userInterfaceStyle: .light, displayScale: 1)

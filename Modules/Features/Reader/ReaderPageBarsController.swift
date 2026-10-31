@@ -112,13 +112,15 @@ final class ReaderPageBarsController {
               let content = pageContent?(globalPage)
         else { return nil }
 
+        // Now genuinely per page. The screen-fixed overlay had to answer this with
+        // whatever the *current* page was and apply it to everything. Only paged
+        // mode asks for a page's bars.
+        let pageScope = ReaderOverlayPageScope.resolve(chapterPage: content.chapterPage, isScrolling: false)
         let visibility = ReaderOverlayPresentationPolicy.visibility(
             layout: environment.layout,
             headerEnabled: environment.headerEnabled,
             footerEnabled: environment.footerEnabled,
-            // Now genuinely per page. The screen-fixed overlay had to answer this
-            // with whatever the *current* page was and apply it to everything.
-            isChapterOpeningPage: content.chapterPage == 1
+            isChapterOpeningPage: pageScope == .chapterOpening
         )
         // The ribbon hangs whether or not the user shows any bars: with both off, a
         // bookmarked page still gets bars — empty ones that carry only the ribbon.
@@ -133,6 +135,7 @@ final class ReaderPageBarsController {
             chapterTitle: content.chapterTitle,
             chapterPage: content.chapterPage,
             chapterPageCount: content.chapterPageCount,
+            pageScope: pageScope,
             totalProgress: content.totalProgress,
             now: environment.now,
             batteryLevel: environment.batteryLevel,

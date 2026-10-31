@@ -5,9 +5,18 @@ import Testing
 struct ReaderOverlayIntegrationTests {
     @Test("Chapter page one selects opening overlays")
     func firstChapterPageUsesOpeningScope() {
-        #expect(ReaderOverlayPageScope.resolve(chapterPage: 1) == .chapterOpening)
-        #expect(ReaderOverlayPageScope.resolve(chapterPage: 2) == .chapterBody)
-        #expect(ReaderOverlayPageScope.resolve(chapterPage: 0) == .chapterBody)
+        #expect(ReaderOverlayPageScope.resolve(chapterPage: 1, isScrolling: false) == .chapterOpening)
+        #expect(ReaderOverlayPageScope.resolve(chapterPage: 2, isScrolling: false) == .chapterBody)
+        #expect(ReaderOverlayPageScope.resolve(chapterPage: 0, isScrolling: false) == .chapterBody)
+    }
+
+    /// FB-115: scroll mode counts a chapter's first screen as 本章 page 1, and that
+    /// selected the 章節首頁 fields — by default no header — for as long as the reader
+    /// sat near a chapter's start. Scroll mode has no pages, so it has no opening page.
+    @Test("Scroll mode never selects the chapter-opening scope")
+    func scrollModeHasNoChapterOpening() {
+        #expect(ReaderOverlayPageScope.resolve(chapterPage: 1, isScrolling: true) == .chapterBody)
+        #expect(ReaderOverlayPageScope.resolve(chapterPage: 2, isScrolling: true) == .chapterBody)
     }
 
     /// The whole point of the bar model: `visibility` has no scroll parameter, so

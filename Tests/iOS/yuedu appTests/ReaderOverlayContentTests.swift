@@ -36,6 +36,7 @@ struct ReaderOverlayContentTests {
             chapterTitle: "Chapter",
             chapterPage: chapterPage,
             chapterPageCount: chapterPageCount,
+            pageScope: .chapterBody,
             totalProgress: totalProgress,
             now: fixedDate,
             batteryLevel: batteryLevel,
@@ -139,7 +140,7 @@ struct ReaderOverlayContentTests {
                     fresh.dateFormat = "HH:mm"
                     for seconds in [0.0, 3601.0] {
                         let value = ReaderOverlayContentSnapshot(bookTitle: "Book", chapterTitle: "Chapter",
-                            chapterPage: 3, chapterPageCount: 12, totalProgress: 0.5,
+                            chapterPage: 3, chapterPageCount: 12, pageScope: .chapterBody, totalProgress: 0.5,
                             now: fixedDate.addingTimeInterval(seconds), batteryLevel: 0.5,
                             isCharging: false, readingDuration: 0, estimatedRemainingTime: nil)
                         #expect(value.text(for: .currentTime, format: .hourMinute24,

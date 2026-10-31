@@ -518,6 +518,7 @@ struct ReaderBarLayoutEditorView: View {
             chapterTitle: localized("第一章 示例章節"),
             chapterPage: editsChapterOpening ? 1 : 3,
             chapterPageCount: 12,
+            pageScope: editsChapterOpening ? .chapterOpening : .chapterBody,
             totalProgress: 0.4523,
             now: clock.now,
             batteryLevel: clock.batteryLevel,

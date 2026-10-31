@@ -1296,6 +1296,7 @@ struct ReaderView: View {
                 chapterTitle: content.chapterTitle,
                 chapterPage: content.chapterPage,
                 chapterPageCount: content.chapterPageCount,
+                pageScope: .resolve(chapterPage: content.chapterPage, isScrolling: effectiveScrollMode),
                 totalProgress: content.totalProgress,
                 now: now,
                 batteryLevel: clock.batteryLevel,
@@ -1317,6 +1318,7 @@ struct ReaderView: View {
             chapterTitle: currentChapterTitle.converted(to: settings.textConversion),
             chapterPage: pageMetrics.chapterPage,
             chapterPageCount: pageMetrics.chapterPageCount,
+            pageScope: .resolve(chapterPage: pageMetrics.chapterPage, isScrolling: effectiveScrollMode),
             totalProgress: pageMetrics.totalProgress,
             now: now,
             batteryLevel: clock.batteryLevel,
@@ -1324,6 +1326,11 @@ struct ReaderView: View {
             readingDuration: readingMetrics.elapsed,
             estimatedRemainingTime: estimatedRemainingTime
         )
+    }
+
+    /// Which of the bar layout's two field sets is on screen now.
+    private var readerOverlayPageScope: ReaderOverlayPageScope {
+        .resolve(chapterPage: readerOverlayPageMetrics.chapterPage, isScrolling: effectiveScrollMode)
     }
 
     private var readerOverlayPageMetrics: (
@@ -1804,7 +1811,7 @@ struct ReaderView: View {
             layout: settings.readerBarLayout,
             headerEnabled: readerConfig.readerHeaderVisible,
             footerEnabled: readerConfig.readerFooterVisible,
-            isChapterOpeningPage: readerOverlayPageMetrics.chapterPage == 1
+            isChapterOpeningPage: readerOverlayPageScope == .chapterOpening
         )
         let readerLayers = AnyView(
             ZStack(alignment: .top) {
@@ -1969,7 +1976,7 @@ struct ReaderView: View {
                         layout: settings.readerBarLayout,
                         headerEnabled: readerConfig.readerHeaderVisible,
                         footerEnabled: readerConfig.readerFooterVisible,
-                        isChapterOpeningPage: readerOverlayPageMetrics.chapterPage == 1
+                        isChapterOpeningPage: readerOverlayPageScope == .chapterOpening
                     )
                     readerBars(visibility: visibility,
                                drawsFixedBars: visibility.showsHeader || visibility.showsFooter)

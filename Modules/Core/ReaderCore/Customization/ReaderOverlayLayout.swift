@@ -337,8 +337,13 @@ enum ReaderOverlayPageScope: String, CaseIterable, Equatable, Sendable {
     case chapterOpening
     case chapterBody
 
-    static func resolve(chapterPage: Int) -> ReaderOverlayPageScope {
-        chapterPage == 1 ? .chapterOpening : .chapterBody
+    /// 章節首頁 is a page: the one that opens with the chapter's title. Scroll mode
+    /// has no pages, only a fixed band over text that moves; its 本章 page 1 is just the
+    /// chapter's first screen of scrolling. Treating that as an opening page blanked the
+    /// header for as long as the reader sat near a chapter's start, so scroll mode is
+    /// always 正文 (FB-115).
+    static func resolve(chapterPage: Int, isScrolling: Bool) -> ReaderOverlayPageScope {
+        !isScrolling && chapterPage == 1 ? .chapterOpening : .chapterBody
     }
 }
 

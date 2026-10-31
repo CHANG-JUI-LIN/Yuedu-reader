@@ -50,7 +50,7 @@ final class ReaderBarRenderModelBuilder {
         userInterfaceStyle: UIUserInterfaceStyle,
         displayScale: CGFloat
     ) -> ReaderBarRenderModel {
-        let layout = layout.resolved(isChapterOpening: content.chapterPage == 1)
+        let layout = layout.resolved(isChapterOpening: content.pageScope == .chapterOpening)
         let margins = bar == .header ? layout.headerMargins : layout.footerMargins
         let style = ReaderBarStyleResolver.resolve(
             layout.style,

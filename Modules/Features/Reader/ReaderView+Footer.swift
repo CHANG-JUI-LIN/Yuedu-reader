@@ -52,12 +52,14 @@ extension ReaderView {
     ///
     /// Reserve the union of body and opening-page content. Geometry must not
     /// depend on the currently visible page, or a chapter boundary could change
-    /// pagination while the reader is displaying it.
+    /// pagination while the reader is displaying it. Scroll mode has only the body.
     var readerBarContentInsets: (top: CGFloat, bottom: CGFloat) {
         let layout = settings.readerBarLayout
         let visibility = ReaderBarVisibility(
-            showsHeader: readerConfig.readerHeaderVisible && layout.reservesSpace(in: .header),
-            showsFooter: readerConfig.readerFooterVisible && layout.reservesSpace(in: .footer)
+            showsHeader: readerConfig.readerHeaderVisible
+                && layout.reservesSpace(in: .header, isScrolling: effectiveScrollMode),
+            showsFooter: readerConfig.readerFooterVisible
+                && layout.reservesSpace(in: .footer, isScrolling: effectiveScrollMode)
         )
         return ReaderLayoutMetrics.barContentInsets(
             safeTop: effectiveReaderSafeTop,
@@ -107,8 +109,10 @@ extension ReaderView {
     var readerScrollBarInsets: ReaderScrollBarInsets {
         let layout = settings.readerBarLayout
         let visibility = ReaderBarVisibility(
-            showsHeader: readerConfig.readerHeaderVisible && layout.reservesSpace(in: .header),
-            showsFooter: readerConfig.readerFooterVisible && layout.reservesSpace(in: .footer)
+            showsHeader: readerConfig.readerHeaderVisible
+                && layout.reservesSpace(in: .header, isScrolling: effectiveScrollMode),
+            showsFooter: readerConfig.readerFooterVisible
+                && layout.reservesSpace(in: .footer, isScrolling: effectiveScrollMode)
         )
         let extents = readerBarExtents
         let total = readerBarContentInsets

@@ -8,7 +8,7 @@ struct ReaderBarRendererTests {
     @Test @MainActor func everyComponentUsesItsOwnAppearanceColor() throws {
         let snapshot = ReaderOverlayContentSnapshot(
             bookTitle: "Book", chapterTitle: "Chapter", chapterPage: 2, chapterPageCount: 10,
-            totalProgress: 0.2, now: Date(timeIntervalSince1970: 0), batteryLevel: 0.7,
+            pageScope: .chapterBody, totalProgress: 0.2, now: Date(timeIntervalSince1970: 0), batteryLevel: 0.7,
             isCharging: false, readingDuration: 60, estimatedRemainingTime: 240
         )
         let builder = ReaderBarRenderModelBuilder()
@@ -113,7 +113,7 @@ struct ReaderBarRendererTests {
         layout.style.color = .init(source: .custom, hexRGBA: 0x123456FF, darkHexRGBA: 0xABCDEF80)
         let snapshot = ReaderOverlayContentSnapshot(
             bookTitle: "Book", chapterTitle: "Chapter", chapterPage: 2, chapterPageCount: 10,
-            totalProgress: 0.2, now: Date(timeIntervalSince1970: 0), batteryLevel: 0.7,
+            pageScope: .chapterBody, totalProgress: 0.2, now: Date(timeIntervalSince1970: 0), batteryLevel: 0.7,
             isCharging: false, readingDuration: 60, estimatedRemainingTime: 240
         )
         var environment = ReaderPageBarsEnvironment(

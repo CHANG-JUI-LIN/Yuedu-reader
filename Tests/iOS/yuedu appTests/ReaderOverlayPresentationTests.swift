@@ -19,6 +19,7 @@ struct ReaderOverlayPresentationTests {
             chapterTitle: "Chapter",
             chapterPage: 3,
             chapterPageCount: 12,
+            pageScope: .chapterBody,
             totalProgress: 0.425,
             now: Date(timeIntervalSince1970: 1_700_000_000),
             batteryLevel: 0.64,

@@ -281,8 +281,11 @@ struct ReaderBarLayout: Codable, Equatable, Sendable {
         return result
     }
 
-    func reservesSpace(in bar: ReaderBar) -> Bool {
-        hasContent(in: bar) || resolved(isChapterOpening: true).hasContent(in: bar)
+    /// Pages reserve what either page type shows, so a chapter boundary never moves
+    /// the text. Scroll mode has no opening page and only ever draws the body fields
+    /// (FB-115), so a bar that only the opening page fills would be a blank band.
+    func reservesSpace(in bar: ReaderBar, isScrolling: Bool) -> Bool {
+        hasContent(in: bar) || (!isScrolling && resolved(isChapterOpening: true).hasContent(in: bar))
     }
 
     mutating func setSelected(_ selected: Bool, kind: ReaderOverlayComponentKind, in slot: ReaderBarSlot) {

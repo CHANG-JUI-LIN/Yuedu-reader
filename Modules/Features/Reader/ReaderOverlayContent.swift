@@ -5,6 +5,9 @@ struct ReaderOverlayContentSnapshot: Equatable, Sendable {
     let chapterTitle: String
     let chapterPage: Int
     let chapterPageCount: Int
+    /// Which of the layout's two field sets the bars draw. Carried rather than read
+    /// off `chapterPage == 1`: scroll mode has a 本章 page 1 but no opening page.
+    let pageScope: ReaderOverlayPageScope
     let totalProgress: Double
     let now: Date
     let batteryLevel: Double?

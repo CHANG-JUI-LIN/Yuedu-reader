@@ -62,7 +62,7 @@ struct ContinuousScrollCostTests {
         var calendar = Calendar(identifier: .gregorian)
         calendar.timeZone = TimeZone(secondsFromGMT: 0)!
         let snapshot = ReaderOverlayContentSnapshot(bookTitle: "Book", chapterTitle: "Chapter",
-            chapterPage: 3, chapterPageCount: 12, totalProgress: 0.257,
+            chapterPage: 3, chapterPageCount: 12, pageScope: .chapterBody, totalProgress: 0.257,
             now: Date(timeIntervalSince1970: 0), batteryLevel: 0.42, isCharging: false,
             readingDuration: 3661, estimatedRemainingTime: 732)
         let fields: [(ReaderOverlayComponentKind, ReaderOverlayDisplayFormat)] = [
