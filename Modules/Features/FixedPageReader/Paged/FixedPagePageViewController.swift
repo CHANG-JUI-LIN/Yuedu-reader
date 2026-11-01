@@ -129,8 +129,18 @@ final class FixedPagePageViewController: UIViewController {
 
     private func load() {
         retryButton.isHidden = true
-        spinner.startAnimating()
         loadTask?.cancel()
+        // A page already in memory goes up as the page is built. Waiting for it left a page
+        // turned to empty — the reader's black background — for at least a frame, as in the
+        // webtoon (FB-114).
+        if let image = FixedPageImageLoader.cachedImage(
+            for: page, targetWidth: targetWidth, cropBorders: fixedPageReaderConfiguration.cropBorders
+        ) {
+            spinner.stopAnimating()
+            show(image)
+            return
+        }
+        spinner.startAnimating()
         let renderScale = traitCollection.displayScale
         loadTask = Task { [weak self] in
             guard let self else { return }
@@ -143,20 +153,24 @@ final class FixedPagePageViewController: UIViewController {
             if Task.isCancelled { return }
             self.spinner.stopAnimating()
             if let image {
-                self.baseImage = image
-                self.renderedWidthMultiple = 1
-                self.imageView.image = image
-                // UI tests find a page only once its image is on screen
-                // (DetailReaderBackSwipeUITests). VoiceOver never reads an
-                // identifier, and it leaves the image unfocusable as before.
-                self.imageView.accessibilityIdentifier = "fixed_page_image"
-                self.layoutImage()
-                self.onImageLoaded?(image)
-                self.analyzeLiveText(for: image)
+                self.show(image)
             } else {
                 self.retryButton.isHidden = false
             }
         }
+    }
+
+    private func show(_ image: UIImage) {
+        baseImage = image
+        renderedWidthMultiple = 1
+        imageView.image = image
+        // UI tests find a page only once its image is on screen
+        // (DetailReaderBackSwipeUITests). VoiceOver never reads an
+        // identifier, and it leaves the image unfocusable as before.
+        imageView.accessibilityIdentifier = "fixed_page_image"
+        layoutImage()
+        onImageLoaded?(image)
+        analyzeLiveText(for: image)
     }
 
     private func analyzeLiveText(for image: UIImage) {
