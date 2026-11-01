@@ -31,8 +31,8 @@ final class VideoEpisodeStills {
     /// The running time of every still decoded this launch, by key. A memory hit in the
     /// pipeline is always a still that went through `remember`, so its time is here.
     private let durations = OSAllocatedUnfairLock<[String: TimeInterval]>(initialState: [:])
-    /// Episodes whose still could not be taken this launch (a DASH or audio-only episode, a
-    /// player page with no video): scrolling back to one does not resolve it again.
+    /// Episodes whose still cannot be taken (a DASH or audio-only episode, a player page with
+    /// no video — `failsEveryTime`): scrolling back to one does not resolve it again this launch.
     private var failed: Set<String> = []
 
     init(pipeline: CoverImagePipeline = .shared) {
@@ -81,9 +81,16 @@ final class VideoEpisodeStills {
     }
 
     private func recordFailure(key: String, chapterIndex: Int, error: Error) {
-        failed.insert(key)
+        if Self.failsEveryTime(error) { failed.insert(key) }
         AppLogger.network("[Video] episode still not taken", error: error,
                           context: ["episode": chapterIndex, "key": String(key.suffix(160))], level: .notice)
+    }
+
+    /// A failure the episode itself causes, so asking again would fail the same way: DASH, a
+    /// player page with no video, a stream with no picture. A refused or silent stream is not
+    /// one — the network may be back when the card next appears — and is asked again.
+    nonisolated static func failsEveryTime(_ error: Error) -> Bool {
+        !(error is CancellationError) && !isStaleLink(error)
     }
 
     private nonisolated static func take(
@@ -103,7 +110,8 @@ final class VideoEpisodeStills {
             } catch where isStaleLink(error) {
                 // The link may be one the chapter cache kept from an earlier visit or play, and a
                 // CDN's signed links expire: discard it and resolve the episode once more, the
-                // one retry the player gives a link that fails to play.
+                // one retry the player gives a link that fails to play. It can go when the chapter
+                // cache stops handing out a resolved link past its expiry.
                 AppLogger.network("[Video] still's link failed; resolving it again", error: error,
                                   context: ["episode": chapterIndex], level: .notice)
                 await VideoChapterLinks.discardResolvedLink(for: book, chapterIndex: chapterIndex, store: store)

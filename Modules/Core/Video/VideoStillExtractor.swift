@@ -46,6 +46,7 @@ enum VideoStillExtractor {
     /// nothing — or a seek that never returns (seen 2026-11-01 on an HLS item without a video
     /// output), which would otherwise hold one of the stills' few slots for as long as its
     /// card stays on screen. A stream that answers at all is ready in well under a second.
+    /// It can go only if AVFoundation gains a deadline of its own for readying and seeking.
     static let timeout: Duration = .seconds(20)
 
     static func still(of stream: VideoStream, fitting pixelSize: CGSize) async throws -> VideoStillFrame {

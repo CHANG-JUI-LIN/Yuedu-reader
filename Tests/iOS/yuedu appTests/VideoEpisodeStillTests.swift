@@ -124,6 +124,17 @@ struct VideoEpisodeStillTests {
         #expect(VideoEpisodeRange.ranges(of: []) { $0 }.isEmpty)
     }
 
+    @Test("only a failure the episode itself causes is remembered; a network one is asked again")
+    func rememberedFailures() {
+        #expect(VideoEpisodeStills.failsEveryTime(VideoStillError.noFrame))
+        #expect(VideoEpisodeStills.failsEveryTime(VideoChapterLinkError.dashManifest))
+        #expect(VideoEpisodeStills.failsEveryTime(VideoChapterLinkError.noVideoOnPage))
+        #expect(!VideoEpisodeStills.failsEveryTime(VideoStillError.timedOut))
+        #expect(!VideoEpisodeStills.failsEveryTime(URLError(.notConnectedToInternet)))
+        #expect(!VideoEpisodeStills.failsEveryTime(VideoChapterLinkError.notALink(preview: "")))
+        #expect(!VideoEpisodeStills.failsEveryTime(CancellationError()))
+    }
+
     @Test("an unshelved video keeps one id per work across visits")
     func unshelvedID() {
         let source = UUID()
