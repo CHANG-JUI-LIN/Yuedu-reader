@@ -959,6 +959,34 @@ struct SavedNetworkCoverTests {
         #expect(network.fetches == 1)
     }
 
+    // An episode's still is taken only while its card is on screen (`VideoEpisodeStills`).
+    @Test("A network load asked to be cancelled stops when its last waiter leaves")
+    func abandonedLoadIsCancelled() async throws {
+        let pipeline = try CoverFixture().pipeline
+        let (started, startedContinuation) = AsyncStream.makeStream(of: Void.self)
+        let (ended, endedContinuation) = AsyncStream.makeStream(of: Bool.self)
+        let waiter = Task {
+            await pipeline.coalescedNetworkLoad(key: "videoStill|abandoned", abandonment: .cancelWork,
+                                                decode: decodeSaved) {
+                startedContinuation.yield()
+                do {
+                    // Stands in for a stream that takes its time; only cancellation ends it.
+                    try await Task.sleep(for: .seconds(60))
+                    endedContinuation.yield(false)
+                } catch {
+                    endedContinuation.yield(true)
+                }
+                return nil
+            }
+        }
+        var startedIterator = started.makeAsyncIterator()
+        _ = await startedIterator.next()
+        waiter.cancel()
+        var endedIterator = ended.makeAsyncIterator()
+        #expect(await endedIterator.next() == true)
+        #expect(await waiter.value == nil)
+    }
+
     @Test("An inline cover is not saved")
     func inlineCoverIsNotSaved() async throws {
         let fixture = try CoverFixture()

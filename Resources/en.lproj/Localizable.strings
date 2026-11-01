@@ -3983,6 +3983,10 @@
 "%1$@，共 %2$@" = "%1$@ of %2$@";
 "線路 %d" = "Mirror %d";
 "第 %d 集" = "Episode %d";
+"第 %d 集 · %d 分鐘" = "Episode %d · %d min";
+"%1$d · %2$d" = "%1$d · %2$d";
+"第 %1$d 至 %2$d 集" = "Episodes %1$d–%2$d";
+"跳到最後一集" = "Jump to Last Episode";
 "共 %d 集" = "%d episodes";
 "集數" = "Episodes";
 "沒有這個類型的作品" = "No works of this type";

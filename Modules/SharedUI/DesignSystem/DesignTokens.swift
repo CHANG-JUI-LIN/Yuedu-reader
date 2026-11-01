@@ -1002,6 +1002,11 @@ enum DSLayout {
     /// The ring that marks the episode to resume, and how far outside the tile it is drawn.
     static let videoEpisodeResumeStroke: CGFloat = 1.5
     static let videoEpisodeResumeRingOutset: CGFloat = 2.5
+    /// 選集's 「1 · 30」 capsules under the episode row, measured off VidHub's (34pt tall); the
+    /// run the row is in brighter than the rest.
+    static let videoEpisodeRangeHeight: CGFloat = 34
+    static let videoEpisodeRangeFillOpacity: Double = 0.1
+    static let videoEpisodeRangeSelectedFillOpacity: Double = 0.24
     /// Posters in a video detail page's wall of related works: three rows of three.
     static let videoPosterWallCount = 9
 }

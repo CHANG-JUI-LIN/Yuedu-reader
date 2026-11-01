@@ -336,10 +336,11 @@ struct ReadingBook: Identifiable, Codable {
     var chaptersBuiltByRules: Bool { bookSourceId != nil || module != nil }
 
     init(
+        id: UUID = UUID(),
         title: String, author: String = "未知作者",
         source: String = "local", contentFilename: String
     ) {
-        self.id = UUID()
+        self.id = id
         self.title = title
         self.author = author
         self.source = source

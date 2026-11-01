@@ -1,3 +1,4 @@
+import CryptoKit
 import SwiftUI
 
 /// Everything a video detail page pushes, through its one `navigationDestination`.
@@ -49,6 +50,7 @@ struct VideoDetailView: View {
     /// The average colour of the poster's foot, which it fades into and the page is drawn in.
     @State private var posterFoot: CoverTint.RGB?
     @Environment(\.colorSchemeContrast) private var contrast
+    @Environment(\.displayScale) private var displayScale
     private var source: BookSource? { BookSourceStore.shared.source(id: currentBook.sourceId) }
 
     @State private var chapters: [OnlineChapterRef] = []
@@ -64,6 +66,9 @@ struct VideoDetailView: View {
     @State private var alreadyInShelf = false
     @State private var player: VideoPlayerRequest?
     @State private var routeID = 0
+    /// The episode at the leading edge of 選集's row: where it scrolls to, and which run of
+    /// episodes the bar under it marks.
+    @State private var leadingEpisode: Int?
     @State private var showsEpisodes = false
     @State private var pendingEpisode: Int?
     @State private var showSourcePicker = false
@@ -509,18 +514,19 @@ struct VideoDetailView: View {
         .accessibilityValue(VideoEpisodeNaming.routeName(current))
     }
 
-    /// The 線路's episodes as VidHub's episode stills — the episode's number in the frame its
-    /// still would fill, as sources give no stills, and 第 N 集 under it with the source's own
-    /// name for it — scrolled to the one 繼續播放 resumes, which a white ring marks.
+    /// The 線路's episodes as VidHub's episode stills (`VideoEpisodeCard`), scrolled to the one
+    /// 繼續播放 resumes, and under them its runs of episodes and the way to its last
+    /// (`VideoEpisodeRangeBar`).
     private func episodeCards(_ guide: VideoEpisodeGuide) -> some View {
         let route = guide.routes.first { $0.id == routeID } ?? guide.routes[0]
         let resume = resumeEpisode
-        return ScrollViewReader { proxy in
+        let ranges = VideoEpisodeRange.ranges(of: route.episodes) { guide.episodeNumber(of: $0) ?? $0 + 1 }
+        let lead = leadingEpisode ?? route.episodes.first
+        return VStack(alignment: .leading, spacing: DSSpacing.lg) {
             ScrollView(.horizontal) {
                 LazyHStack(alignment: .top, spacing: DSSpacing.md) {
                     ForEach(route.episodes, id: \.self) { chapterIndex in
                         episodeCard(chapterIndex, in: guide, isResume: chapterIndex == resume)
-                            .id(chapterIndex)
                     }
                 }
                 .scrollTargetLayout()
@@ -530,55 +536,45 @@ struct VideoDetailView: View {
             .scrollIndicators(.hidden)
             .contentMargins(.horizontal, DSSpacing.lg, for: .scrollContent)
             .scrollTargetBehavior(.viewAligned)
-            .onAppear { if let resume { proxy.scrollTo(resume, anchor: .leading) } }
-            .onChange(of: routeID) { _, _ in
-                if let first = route.episodes.first { proxy.scrollTo(first, anchor: .leading) }
-            }
+            .scrollPosition(id: $leadingEpisode, anchor: .leading)
+            VideoEpisodeRangeBar(
+                ranges: ranges,
+                selected: ranges.first { range in lead.map(range.episodes.contains) ?? false }?.id,
+                onSelect: { range in withAnimation(DSAnimation.standard) { leadingEpisode = range.episodes.first } },
+                onLast: { withAnimation(DSAnimation.standard) { leadingEpisode = route.episodes.last } }
+            )
+            .padding(.horizontal, DSSpacing.lg)
         }
+        .onAppear { if let resume { leadingEpisode = resume } }
+        .onChange(of: routeID) { _, _ in leadingEpisode = route.episodes.first }
     }
 
     private func episodeCard(_ chapterIndex: Int, in guide: VideoEpisodeGuide, isResume: Bool) -> some View {
         let number = guide.episodeNumber(of: chapterIndex) ?? chapterIndex + 1
-        let name = VideoEpisodeNaming.episodeName(chapterIndex, in: guide, title: episodeTitle)
         let numbered = String(format: localized("第 %d 集"), number)
         // The source's own name, unless it only says the same 第 N 集.
         let sourceName = episodeTitle(chapterIndex).trimmingCharacters(in: .whitespacesAndNewlines)
         let showsSourceName = !sourceName.isEmpty
             && sourceName.filter { !$0.isWhitespace } != numbered.filter { !$0.isWhitespace }
-        let shape = RoundedRectangle(cornerRadius: DSRadius.md, style: .continuous)
-        return Button { play(chapterIndex: chapterIndex) } label: {
-            VStack(alignment: .leading, spacing: DSSpacing.xs) {
-                Text(number.formatted())
-                    .font(DSFont.title.weight(.bold).monospacedDigit())
-                    .foregroundStyle(DSColor.textPrimary)
-                    .frame(width: DSLayout.videoEpisodeCardWidth, height: DSLayout.videoEpisodeCardHeight)
-                    .background(DSColor.neutralControlFill, in: shape)
-                    .overlay {
-                        if isResume {
-                            RoundedRectangle(cornerRadius: DSRadius.md + DSLayout.videoEpisodeResumeRingOutset,
-                                             style: .continuous)
-                                .stroke(DSColor.textPrimary, lineWidth: DSLayout.videoEpisodeResumeStroke)
-                                .padding(-DSLayout.videoEpisodeResumeRingOutset)
-                        }
-                    }
-                VStack(alignment: .leading, spacing: DSSpacing.xxs) {
-                    Text(numbered)
-                        .font(DSFont.caption)
-                        .foregroundStyle(DSColor.textSecondary)
-                    if showsSourceName {
-                        Text(sourceName)
-                            .font(DSFont.footnote.weight(.semibold))
-                            .foregroundStyle(DSColor.textPrimary)
-                    }
-                }
-                .lineLimit(1)
-                .frame(width: DSLayout.videoEpisodeCardWidth, alignment: .leading)
-            }
-            .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .accessibilityLabel(name)
-        .accessibilityValue(isResume ? localized("繼續播放") : "")
+        let address = chapters.indices.contains(chapterIndex) ? chapters[chapterIndex].url : ""
+        let stillKey = address.isEmpty ? nil : VideoEpisodeStills.key(sourceId: currentBook.sourceId, chapterURL: address)
+        return VideoEpisodeCard(
+            number: number,
+            sourceName: showsSourceName ? sourceName : nil,
+            name: VideoEpisodeNaming.episodeName(chapterIndex, in: guide, title: episodeTitle),
+            isResume: isResume,
+            stillKey: stillKey,
+            loadStill: { await loadStill(chapterIndex, key: stillKey) },
+            action: { play(chapterIndex: chapterIndex) }
+        )
+    }
+
+    private func loadStill(_ chapterIndex: Int, key: String?) async -> VideoEpisodeStill? {
+        guard let key, let book = playbackBook() else { return nil }
+        let pixelSize = CGSize(width: DSLayout.videoEpisodeCardWidth * displayScale,
+                               height: DSLayout.videoEpisodeCardHeight * displayScale)
+        return await VideoEpisodeStills.shared.still(forKey: key, book: book, chapterIndex: chapterIndex,
+                                                     store: bookStore, pixelSize: pixelSize)
     }
 
     // MARK: Info
@@ -837,6 +833,35 @@ struct VideoDetailView: View {
         alreadyInShelf = false
     }
 
+    /// The book an episode resolves its link through: the shelf copy with this page's
+    /// episodes, which 播放 is about to save to it, else the page's unshelved copy.
+    private func playbackBook() -> ReadingBook? {
+        guard !chapters.isEmpty, let source else { return nil }
+        guard let id = existingShelfBookId(), var shelved = bookStore.readingBook(id: id) else {
+            return unshelvedBook(source: source)
+        }
+        shelved.onlineChapters = chapters
+        shelved.runtimeVariables = resolvedRuntimeVariables
+        return shelved
+    }
+
+    /// The work while it is not on the shelf, under one id for as long as it stays off it
+    /// (`UUID.unshelvedVideoID`).
+    private func unshelvedBook(source: BookSource) -> ReadingBook {
+        var book = ReadingBook(id: .unshelvedVideoID(sourceId: source.id, bookURL: currentBook.bookUrl),
+                               title: displayName, author: displayAuthor, source: currentBook.bookUrl,
+                               contentFilename: "")
+        book.isOnline = true
+        book.contentPipelineKind = .video
+        book.bookSourceId = source.id
+        book.bookInfoURL = currentBook.bookUrl
+        book.tocURL = resolvedTOCURL
+        book.runtimeVariables = resolvedRuntimeVariables
+        book.coverUrl = displayCoverUrl
+        book.onlineChapters = chapters
+        return book
+    }
+
     /// Plays an episode. Only 加入書架 shelves the book; a book not on the shelf plays with
     /// its position kept in memory, as an unshelved audiobook does.
     private func play(chapterIndex: Int) {
@@ -854,16 +879,7 @@ struct VideoDetailView: View {
                                           totalChapters: chapters.count, forceSave: true)
             player = .shelf(existing)
         } else {
-            var book = ReadingBook(title: displayName, author: displayAuthor, source: currentBook.bookUrl,
-                                   contentFilename: "")
-            book.isOnline = true
-            book.contentPipelineKind = .video
-            book.bookSourceId = source.id
-            book.bookInfoURL = currentBook.bookUrl
-            book.tocURL = resolvedTOCURL
-            book.runtimeVariables = runtimeVars
-            book.coverUrl = displayCoverUrl
-            book.onlineChapters = chapters
+            var book = unshelvedBook(source: source)
             book.audioChapterIndex = chapterIndex
             player = .transient(book)
             // Watched without being shelved: only its name stays, for 搜索's 最近閱讀.
@@ -896,5 +912,20 @@ private struct VideoHeroCapsuleIcon: ViewModifier {
             sourceId: UUID(),
             sourceName: "示範影視來源"))
         .environmentObject(BookStore())
+    }
+}
+
+extension UUID {
+    /// An unshelved video's id, the same on every visit: the links its episodes resolve —
+    /// for 選集's stills, then for 播放 — are cached under one directory per work instead of
+    /// one per visit or per tap, which nothing but 快取管理 would ever reclaim. A link cached
+    /// long ago and since expired is resolved again once, by the player and by the stills alike.
+    static func unshelvedVideoID(sourceId: UUID, bookURL: String) -> UUID {
+        let digest = SHA256.hash(data: Data("unshelved-video|\(sourceId.uuidString)|\(bookURL)".utf8))
+        var bytes = Array(digest.prefix(16))
+        bytes[6] = (bytes[6] & 0x0F) | 0x50  // version 5: name-based
+        bytes[8] = (bytes[8] & 0x3F) | 0x80  // RFC 4122 variant
+        return UUID(uuid: (bytes[0], bytes[1], bytes[2], bytes[3], bytes[4], bytes[5], bytes[6], bytes[7],
+                           bytes[8], bytes[9], bytes[10], bytes[11], bytes[12], bytes[13], bytes[14], bytes[15]))
     }
 }

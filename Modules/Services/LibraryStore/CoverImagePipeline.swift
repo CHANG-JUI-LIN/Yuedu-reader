@@ -646,15 +646,18 @@ final class CoverImagePipeline: @unchecked Sendable {
 
     /// Memory missed: the saved copy if there is one, else `fetch`, whose bytes are
     /// then saved. `decode` turns saved bytes into the bitmap `fetch` would have
-    /// returned for them, so a cover looks the same from either side.
+    /// returned for them, so a cover looks the same from either side. `abandonment` is what
+    /// happens when every waiter leaves: a cover's download finishes and is saved; an episode's
+    /// still (`VideoEpisodeStills`) is taken only while its card is on screen.
     func coalescedNetworkLoad(
         key: String,
+        abandonment: CoverInflightStore.Abandonment = .finishWork,
         decode: @escaping @Sendable (Data) -> UIImage?,
         _ fetch: @escaping @Sendable () async -> FetchedNetworkCover?
     ) async -> UIImage? {
         let result = await inflight.result(
             for: "network|\(key)",
-            abandonment: .finishWork,
+            abandonment: abandonment,
             onJoin: { self.signposter.emitEvent("CoverCoalesced") },
             work: {
                 if let saved = await self.savedNetworkCover(forKey: key, decode: decode).image {

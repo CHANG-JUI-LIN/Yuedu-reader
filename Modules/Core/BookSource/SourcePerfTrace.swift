@@ -33,6 +33,8 @@ import Foundation
 ///   search.listPublish / search.listPublish.summary
 ///   search.firstResult  (submit to the first merged batch; tagged origin / sources / cacheDays)
 ///   search.iOS17.nativeTableApply
+///   video.still.resolve / video.still.extract  (an episode's still for 選集: its link, then
+///     the frame taken from its stream)
 ///   home.sync / home.groups / home.rowContent  (the 探索 home's main-thread parts: building its
 ///     rows, its sections, a section's cards)
 ///   module.entries  (a module list's items made into entries, off the main actor; wall clock:
