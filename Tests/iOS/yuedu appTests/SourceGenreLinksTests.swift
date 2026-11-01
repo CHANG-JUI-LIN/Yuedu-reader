@@ -17,7 +17,7 @@ private func book(_ name: String, url: String? = nil) -> OnlineBook {
 }
 
 private func display(_ online: OnlineBook) -> DiscoverBookDisplay {
-    DiscoverBookDisplay(book: online, intro: "", isAudiobook: false)
+    DiscoverBookDisplay(book: online, intro: "", contentKind: .text)
 }
 
 @Suite("Genre matching")

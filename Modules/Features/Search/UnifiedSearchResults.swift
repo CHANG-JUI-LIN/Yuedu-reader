@@ -232,7 +232,7 @@ extension SearchBookListRowContent {
         case .dataOnly: localized("只有資料")
         }
         let parts = [availability] + (work.sourceCount > 0 ? [String(format: localized("%d 源"), work.sourceCount)] : [])
-        self.init(title: lead.title, titleTag: work.lead.contentKind == .audio ? localized("有聲書") : nil,
+        self.init(title: lead.title, titleTag: work.lead.contentKind.mediaTag,
                   author: lead.author, detail: parts.joined(separator: " · "), spokenDetail: parts.joined(separator: "，"))
     }
 }

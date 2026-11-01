@@ -260,6 +260,7 @@ extension ContentKind {
         switch pipeline {
         case .manga: self = .comic
         case .audio: self = .audio
+        case .video: self = .video
         case .epub, .txt, .html, .fixedPage: self = .text
         }
     }
@@ -269,6 +270,7 @@ extension ContentKind {
         case .text: self = .text
         case .audio: self = .audio
         case .manga: self = .comic
+        case .video: self = .video
         }
     }
 }

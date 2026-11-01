@@ -3967,6 +3967,7 @@
 "搜尋分組：書籍" = "Books";
 "搜尋分組：漫畫" = "Comics";
 "搜尋分組：有聲書" = "Audiobooks";
+"搜尋分組：影片" = "Videos";
 "沒有這個類型的作品" = "No works of this type";
 "已勾選 %1$d 個，共 %2$d 個" = "%1$d of %2$d checked";
 "搜尋來源" = "Search Sources";

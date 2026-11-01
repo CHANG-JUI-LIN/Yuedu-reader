@@ -5,7 +5,7 @@ enum BookshelfAccessibility {
     static func description(for book: ReadingBook) -> String {
         var parts = [book.title]
         if !book.author.isEmpty { parts.append(book.author) }
-        if book.resolvedPipelineKind == .audio { parts.append(localized("有聲書")) }
+        if let tag = ContentKind(book.resolvedPipelineKind).mediaTag { parts.append(tag) }
         if let latest = book.latestChapterDisplayTitle {
             parts.append(localized("最新") + localized("，") + latest)
         }

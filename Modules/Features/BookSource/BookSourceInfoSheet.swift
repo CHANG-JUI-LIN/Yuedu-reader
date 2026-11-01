@@ -16,6 +16,7 @@ struct BookSourceInfoSheet: View {
         case 1: return localized("音頻")
         case 2: return localized("圖片")
         case 3: return localized("文件")
+        case 4: return localized("影片")
         default: return localized("文本")
         }
     }

@@ -97,14 +97,16 @@ extension CollectionEntry {
 extension WorkDetailRoute {
     /// 搜索's result as 作品詳情 opens it (unified library 5f-4c, decision 29), built from the
     /// snapshot the route froze at the tap (Technotes/iOS17SearchWatchdogPostmortem.md, guardrail 1).
-    /// The version is the origin the result's own page opens on — an audiobook's first audio
-    /// origin, else the first — so the versions, the pin and the shelf lookup name the source shown.
+    /// The version is the origin the result's own page opens on — an audiobook's or a video's
+    /// first origin of that kind, else the first — so the versions, the pin and the shelf lookup
+    /// name the source shown.
     ///
     /// Nil when the result has no origin, or its source is no longer installed.
     @MainActor
     init?(searchResult: SearchBook, sources: BookSourceStore = .shared) {
         let kind = searchResult.inferredContentKind()
-        guard let origin = (kind == .audio ? searchResult.preferredOrigin(for: .audio) : nil) ?? searchResult.origins.first
+        let mediaKind = kind == .audio || kind == .video
+        guard let origin = (mediaKind ? searchResult.preferredOrigin(for: kind) : nil) ?? searchResult.origins.first
         else { return nil }
         guard let source = sources.source(id: origin.sourceId) else {
             AppLogger.error("⟐ search result's source is gone", context: ["source": origin.sourceName])

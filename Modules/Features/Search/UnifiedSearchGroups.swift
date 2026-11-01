@@ -4,8 +4,8 @@ import SwiftUI
 // 電視劇 under a header each, and the 類型 chip that narrows it to one.
 
 extension ContentKind {
-    /// The groups' order: 書籍, 漫畫, 有聲書.
-    static let searchGroupOrder: [ContentKind] = [.text, .comic, .audio]
+    /// The groups' order: 書籍, 漫畫, 有聲書, 影片.
+    static let searchGroupOrder: [ContentKind] = [.text, .comic, .audio, .video]
 
     /// A group's header, and the 類型 chip's choice.
     var searchGroupTitle: String {
@@ -13,6 +13,7 @@ extension ContentKind {
         case .text: localized("搜尋分組：書籍")
         case .comic: localized("搜尋分組：漫畫")
         case .audio: localized("搜尋分組：有聲書")
+        case .video: localized("搜尋分組：影片")
         }
     }
 }
@@ -25,7 +26,7 @@ struct UnifiedSearchGroup<Row>: Identifiable {
 
     var id: ContentKind { kind }
 
-    /// `rows` in groups: 書籍, 漫畫, 有聲書, those with nothing left out; with a `filter`, its
+    /// `rows` in groups: 書籍, 漫畫, 有聲書, 影片, those with nothing left out; with a `filter`, its
     /// kind's group alone.
     static func groups(of rows: [Row], kind: (Row) -> ContentKind, filter: ContentKind?) -> [Self] {
         var byKind: [ContentKind: [Row]] = [:]

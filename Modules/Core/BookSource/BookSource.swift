@@ -256,7 +256,7 @@ struct BookSource: Identifiable, Codable {
         return bookSourceUrl
     }
     var bookSourceComment: String = ""
-    var bookSourceType: Int = 0       // 0 = text, 1 = audio, 2 = image, 3 = file
+    var bookSourceType: Int = 0       // 0 = text, 1 = audio, 2 = image, 3 = file, 4 = video
     var bookUrlPattern: String = ""   // Legado: URL match pattern
     var customOrder: Int = 0          // Legado: custom ordering
     var enabled: Bool = true
@@ -327,7 +327,7 @@ struct BookSource: Identifiable, Codable {
 
     /// Whether this book source must be fetched through a real WebView.
     ///
-    /// `bookSourceType` is a CONTENT type (0=text, 1=audio, 2=image, 3=file), NOT a transport
+    /// `bookSourceType` is a CONTENT type (0=text, 1=audio, 2=image, 3=file, 4=video), NOT a transport
     /// hint — audio sources are ordinary HTTP/JSON APIs and must never be forced through a
     /// WebView (doing so broke audiobook search/detail). Genuine WebView needs are driven
     /// per-request (`requestSpec.useWebView`), by chapter JS (`hasWebJs`), or by the
@@ -421,6 +421,9 @@ enum OnlineBookContentKind: Equatable, Sendable {
     case text
     case audio
     case manga
+    /// legado `bookSourceType` 4, the same value in legado-E, Sigma, MD3 and huajideshutiao:
+    /// each chapter's content is the episode's stream link, and a volume row is a 線路.
+    case video
 }
 
 enum OnlineBookContentInference {
@@ -469,6 +472,7 @@ enum OnlineBookContentInference {
         switch sourceType {
         case 1: return .audio
         case 2: return .manga
+        case 4: return .video
         default: return .text
         }
     }
@@ -719,6 +723,7 @@ enum OnlineBookValidationSelector {
         case 0: return .text
         case 1: return .audio
         case 2: return .manga
+        case 4: return .video
         default: return nil
         }
     }

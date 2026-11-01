@@ -283,7 +283,7 @@ struct ReadingBook: Identifiable, Codable {
     var mangaChapterIndex: Int = 0
     var mangaPage: Int = 0
 
-    // Audiobook reading position: chapter index + playback time (seconds)
+    // Audiobook and video reading position: chapter index + playback time (seconds)
     var audioChapterIndex: Int = 0
     var audioTimeSeconds: Double = 0
 
@@ -518,7 +518,7 @@ extension ReadingBook {
 
     var resolvedPipelineKind: BookPipelineKind {
         if contentPipelineKind == .manga || contentPipelineKind == .fixedPage
-            || contentPipelineKind == .audio {
+            || contentPipelineKind == .audio || contentPipelineKind == .video {
             return contentPipelineKind
         }
         if isOnline { return .html }
@@ -529,7 +529,8 @@ extension ReadingBook {
     }
 
     var allowsUserSelectedReaderFont: Bool {
-        if resolvedPipelineKind == .manga || resolvedPipelineKind == .audio { return false }
+        if resolvedPipelineKind == .manga || resolvedPipelineKind == .audio
+            || resolvedPipelineKind == .video { return false }
         if isOnline { return true }
         return resolvedPipelineKind.allowsUserSelectedReaderFont
     }
@@ -554,12 +555,15 @@ enum BookPipelineKind: String, Codable {
     case manga
     case fixedPage
     case audio
+    /// An online book from a video source (`OnlineBookContentKind.video`). A build that
+    /// predates it decodes the raw value as unknown and falls back to inference (`.html`).
+    case video
 
     var allowsUserSelectedReaderFont: Bool {
         switch self {
         case .txt, .epub:
             return true
-        case .html, .manga, .fixedPage, .audio:
+        case .html, .manga, .fixedPage, .audio, .video:
             return false
         }
     }
@@ -574,6 +578,7 @@ enum BookPipelineKind: String, Codable {
         case .fixedPage: return "PDF"
         case .manga: return localized("漫畫")
         case .audio: return localized("有聲書")
+        case .video: return localized("影片")
         }
     }
 }
@@ -1160,7 +1165,7 @@ final class ReaderFeatureFlags: Sendable {
             key = txtWebKey
         case .html:
             key = htmlWebKey
-        case .manga, .fixedPage, .audio:
+        case .manga, .fixedPage, .audio, .video:
             return false
         }
         return defaults.object(forKey: key) as? Bool ?? true

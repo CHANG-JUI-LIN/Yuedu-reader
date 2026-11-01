@@ -189,6 +189,7 @@ struct HomeCardContent: Identifiable {
         case .text: localized("書籍")
         case .comic: localized("漫畫")
         case .audio: localized("有聲書")
+        case .video: localized("影片")
         }
         return [kindName, series, detail].compactMap { $0 }.joined(separator: "・")
     }

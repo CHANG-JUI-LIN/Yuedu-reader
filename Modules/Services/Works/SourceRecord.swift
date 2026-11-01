@@ -134,7 +134,7 @@ struct ExternalIdentifier: Hashable, Codable, Sendable {
 }
 
 enum ContentKind: String, Codable, Hashable, Sendable {
-    case text, comic, audio
+    case text, comic, audio, video
 }
 
 /// How a record can be read; the existing services still perform it (design D7).

@@ -75,15 +75,7 @@ extension BookSourceFetcher {
         ), cached.state == .cached, !cached.content.isEmpty {
             return cached
         }
-        // Legado's `WebBook.getContentAwait` (legado, legado-E and MD3 alike): a source with no
-        // content rule reads the chapter URL as the chapter (正文规则为空,使用章节链接). For an
-        // audio source that URL is the stream the player opens. Fetching it instead downloaded
-        // whole audio files and parsed them as pages: in 書源檢查 asmr's 37.8 MB stream took
-        // 61 s of CPU and 轻音潇社's overflowed a thread's stack (Crashlytics c0ec35f1), and the
-        // player found no URL in the parsed text. Text sources keep the content heuristic,
-        // which reads their pages.
-        if source.bookSourceType == 1,
-           source.ruleContent.content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+        if source.readsChapterURLAsContent {
             return try saveChapterURLPackage(ref: ref, bookId: bookId)
         }
         if source.shouldUseLegadoRuntimeFetch(for: ref.url) {
@@ -423,5 +415,20 @@ extension BookSourceFetcher {
             "urlLen": ref.sanitizedContentURL.count,
             "urlHead": String(ref.sanitizedContentURL.prefix(120))
         ])
+    }
+}
+
+extension BookSource {
+    /// Legado's `WebBook.getContentAwait` (legado, legado-E and MD3 alike): a source with no
+    /// content rule reads the chapter URL as the chapter (正文规则为空,使用章节链接). For an
+    /// audio source that URL is the stream the player opens. Fetching it instead downloaded
+    /// whole audio files and parsed them as pages: in 書源檢查 asmr's 37.8 MB stream took
+    /// 61 s of CPU and 轻音潇社's overflowed a thread's stack (Crashlytics c0ec35f1), and the
+    /// player found no URL in the parsed text. A video source's chapter URL is its episode's
+    /// stream the same way (稀饭影视 has no content rule). Text sources keep the content
+    /// heuristic, which reads their pages.
+    var readsChapterURLAsContent: Bool {
+        (bookSourceType == 1 || bookSourceType == 4)
+            && ruleContent.content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
 }

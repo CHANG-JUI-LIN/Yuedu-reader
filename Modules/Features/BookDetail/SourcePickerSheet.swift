@@ -82,6 +82,7 @@ struct SourceOriginRow: View {
         case .text: nil
         case .audio: localized("有聲書")
         case .manga: localized("漫畫")
+        case .video: localized("影片")
         }
     }
 

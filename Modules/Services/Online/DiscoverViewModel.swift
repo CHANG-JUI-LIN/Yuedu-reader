@@ -83,8 +83,8 @@ struct DiscoverBookDisplay: Identifiable {
     let book: OnlineBook
     /// Plain-text intro, cleaned the way search rows clean theirs.
     let intro: String
-    /// Whether the audiobook cover badge shows (`inferredContentKind == .audio`).
-    let isAudiobook: Bool
+    /// What the book is (`inferredContentKind`): an audiobook or a video carries a cover badge.
+    let contentKind: OnlineBookContentKind
 
     var id: UUID { book.id }
 }
@@ -762,13 +762,13 @@ final class DiscoverViewModel: ObservableObject {
                 intro: SearchResultIPSDiagnostics.sanitizeIntroForSearchRow(
                     OnlineBookDetailPresentationPolicy.sanitizeIntro(book.intro)
                 ),
-                isAudiobook: OnlineBookContentInference.infer(
+                contentKind: OnlineBookContentInference.infer(
                     sourceType: sourceType,
                     runtimeVariables: book.runtimeVariables,
                     urls: [book.bookUrl, book.tocUrl],
                     metadataText: [book.kind, book.intro, book.lastChapter, book.sourceName]
                         + modeMarkers
-                ) == .audio
+                )
             )
         }
     }

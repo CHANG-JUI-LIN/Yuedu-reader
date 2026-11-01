@@ -2055,7 +2055,9 @@ struct BookRow: View {
             .clipShape(RoundedRectangle(cornerRadius: BookshelfCoverStyle.cornerRadius))
             .shadow(color: .black.opacity(0.08), radius: 15, x: 0, y: 10)
             .overlay(alignment: .bottomTrailing) {
-                if book.resolvedPipelineKind == .audio { AudiobookCoverBadge(glyphSize: 7) }
+                if let symbol = ContentKind(book.resolvedPipelineKind).coverBadgeSymbol {
+                    MediaCoverBadge(systemImage: symbol, glyphSize: 7)
+                }
             }
     }
 
@@ -2250,8 +2252,8 @@ struct BookGridCell: View {
             .shadow(color: .black.opacity(0.18), radius: 4, x: 0, y: 2)
             .overlay(alignment: .bottomTrailing) {
                 // The selection mark takes this corner while selecting.
-                if book.resolvedPipelineKind == .audio && !isEditing {
-                    AudiobookCoverBadge(glyphSize: 11)
+                if let symbol = ContentKind(book.resolvedPipelineKind).coverBadgeSymbol, !isEditing {
+                    MediaCoverBadge(systemImage: symbol, glyphSize: 11)
                 }
             }
     }

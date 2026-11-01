@@ -505,7 +505,7 @@ struct DiscoverFeaturedCard: View {
         .frame(width: DSLayout.discoverShelfCoverWidth, alignment: .leading)
         .contentShape(Rectangle())
         .accessibilityElement(children: .combine)
-        .accessibilityValue(display.isAudiobook ? localized("有聲書") : "")
+        .accessibilityValue(ContentKind(display.contentKind).mediaTag ?? "")
     }
 }
 
@@ -533,8 +533,8 @@ struct DiscoverCover: View {
         .clipShape(shape)
         .overlay(shape.stroke(DSColor.separator, lineWidth: 0.5))
         .overlay(alignment: .bottomTrailing) {
-            if display.isAudiobook {
-                AudiobookCoverBadge()
+            if let symbol = ContentKind(display.contentKind).coverBadgeSymbol {
+                MediaCoverBadge(systemImage: symbol)
             }
         }
         .accessibilityHidden(true)
@@ -602,7 +602,7 @@ private struct DiscoverBookRow: View {
         .padding(.vertical, DSSpacing.sm)
         .contentShape(Rectangle())
         .accessibilityElement(children: .combine)
-        .accessibilityValue(display.isAudiobook ? localized("有聲書") : "")
+        .accessibilityValue(ContentKind(display.contentKind).mediaTag ?? "")
     }
 }
 

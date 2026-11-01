@@ -210,7 +210,7 @@ struct BookDetailRelatedSection: View {
             book: OnlineBook(name: name, author: "作者", intro: "", coverUrl: "", bookUrl: "/\(name)",
                              tocUrl: "", wordCount: "", lastChapter: "", kind: "玄幻",
                              sourceId: UUID(), sourceName: "晴天小說"),
-            intro: "", isAudiobook: false
+            intro: "", contentKind: .text
         )
     }
     var section = DiscoverShowcaseSection(

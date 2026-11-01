@@ -16,6 +16,8 @@ extension OnlineBookContentKind {
             return .audio
         case .manga:
             return .manga
+        case .video:
+            return .video
         case .text:
             return .html
         }
@@ -379,6 +381,8 @@ class BookStore: @MainActor ObservableObject, BookProvider {
             throw ReaderError.unsupportedFormat("固定頁面文件使用獨立的固定頁面閱讀器，無 CoreText 套件")
         case .audio:
             throw ReaderError.unsupportedFormat("有聲書使用獨立的音訊播放器，無 CoreText 套件")
+        case .video:
+            throw ReaderError.unsupportedFormat("影片使用獨立的影片播放器，無 CoreText 套件")
         }
     }
 
@@ -1669,7 +1673,9 @@ class BookStore: @MainActor ObservableObject, BookProvider {
         bookId: UUID, content: String, imageStyle: String? = nil, atChapter chapterIndex: Int
     ) -> Bool {
         guard let idx = records.firstIndex(where: { $0.id == bookId }) else { return false }
-        guard records[idx].isOnline, records[idx].contentPipelineKind != .manga else { return false }
+        guard records[idx].isOnline,
+              records[idx].contentPipelineKind != .manga,
+              records[idx].contentPipelineKind != .video else { return false }
         guard MangaChapterParser.looksLikeMangaContent(content, imageStyle: imageStyle) else { return false }
         records[idx].contentPipelineKind = .manga
         records[idx].mangaChapterIndex = chapterIndex
@@ -1693,7 +1699,8 @@ class BookStore: @MainActor ObservableObject, BookProvider {
         guard let idx = records.firstIndex(where: { $0.id == bookId }) else { return false }
         guard records[idx].isOnline,
               records[idx].contentPipelineKind != .manga,
-              records[idx].contentPipelineKind != .audio else { return false }
+              records[idx].contentPipelineKind != .audio,
+              records[idx].contentPipelineKind != .video else { return false }
         guard DirectChapterAudioResolver.looksLikeAudioContent(content) else { return false }
         records[idx].contentPipelineKind = .audio
         records[idx].audioChapterIndex = chapterIndex
@@ -2839,6 +2846,16 @@ class BookStore: @MainActor ObservableObject, BookProvider {
             if merged.module == nil, merged.isOnline, merged.bookSourceId == nil,
                let local = localRecords[book.id]?.module {
                 merged.module = local
+            }
+            // A video whose record came back from a build before `.video` existed: that build
+            // decodes the unknown kind by inference (online → `.html`) and, once the book changes
+            // there, uploads it so. A type-4 source's book is a video on every build that knows
+            // the kind, so only that pair is taken back. Delete once no build from before video
+            // sources (2026-11) syncs.
+            if merged.isOnline, merged.contentPipelineKind == .html,
+               let sourceID = merged.bookSourceId,
+               BookSourceStore.shared.source(id: sourceID)?.bookSourceType == 4 {
+                merged.contentPipelineKind = .video
             }
             if let incoming = book.onlineChapters, !incoming.isEmpty, !chapterStore.hasList(for: book.id) {
                 merged.onlineChapters = incoming

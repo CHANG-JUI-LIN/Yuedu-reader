@@ -48,7 +48,7 @@ struct ChapterRenumbering: Equatable, Sendable {
         case .manga, .fixedPage:
             let untouched = book.mangaChapterIndex == 0 && book.mangaPage == 0 && book.currentPosition == 0
             if !untouched { book.mangaChapterIndex = chapterIndex(for: book.mangaChapterIndex) }
-        case .audio:
+        case .audio, .video:
             let untouched = book.audioChapterIndex == 0 && book.audioTimeSeconds == 0
             if !untouched { book.audioChapterIndex = chapterIndex(for: book.audioChapterIndex) }
         default:

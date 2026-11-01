@@ -255,20 +255,42 @@ extension BookCoverImage {
     }
 }
 
-/// Headphones badge marking an audiobook cover, matching the audiobook detail page.
-/// Overlay it at a cover's `.bottomTrailing` (after the cover's own `clipShape`) so
-/// audiobooks are distinguishable wherever covers are listed.
-struct AudiobookCoverBadge: View {
+/// Badge marking a cover that is not a book to read — headphones for an audiobook (matching
+/// the audiobook detail page), a play mark for a video. Overlay it at a cover's
+/// `.bottomTrailing` (after the cover's own `clipShape`) so these are distinguishable
+/// wherever covers are listed; `ContentKind.coverBadgeSymbol` picks the glyph.
+struct MediaCoverBadge: View {
+    let systemImage: String
     var glyphSize: CGFloat = 9
 
     var body: some View {
-        Image(systemName: "headphones")
+        Image(systemName: systemImage)
             .font(DSFont.fixed(size: glyphSize, weight: .bold))
             .foregroundStyle(DSColor.textOnAccent)
             .padding(glyphSize * 0.5)
             .background(DSColor.accent, in: Circle())
             .overlay(Circle().stroke(Color.white.opacity(0.85), lineWidth: 0.5))
             .padding(2)
+    }
+}
+
+extension ContentKind {
+    /// The glyph of a cover's `MediaCoverBadge`; nil for books, which carry none.
+    var coverBadgeSymbol: String? {
+        switch self {
+        case .audio: "headphones"
+        case .video: "play.fill"
+        case .text, .comic: nil
+        }
+    }
+
+    /// The word a list puts beside such a title, and VoiceOver reads with it; nil for books.
+    var mediaTag: String? {
+        switch self {
+        case .audio: localized("有聲書")
+        case .video: localized("影片")
+        case .text, .comic: nil
+        }
     }
 }
 

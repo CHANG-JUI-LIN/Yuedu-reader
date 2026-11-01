@@ -191,6 +191,7 @@ struct BookSourceEditView: View {
                     Text(localized("音頻")).tag(1)
                     Text(localized("圖片")).tag(2)
                     Text(localized("文件")).tag(3)
+                    Text(localized("影片")).tag(4)
                 }
                 .pickerStyle(.menu)
                 Toggle(localized("啟用"), isOn: $source.enabled)

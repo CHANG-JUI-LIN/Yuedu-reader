@@ -139,7 +139,7 @@ struct OnlineBookSourceSwitch {
                 page: mapped == book.mangaChapterIndex ? book.mangaPage : 0,
                 totalChapters: newRefs.count, forceSave: true
             )
-        case .audio where book.audioChapterIndex > 0:
+        case .audio where book.audioChapterIndex > 0, .video where book.audioChapterIndex > 0:
             let mapped = Self.mappedChapterIndex(oldRefs: oldRefs, newRefs: newRefs, oldIndex: book.audioChapterIndex)
             store.updateAudioPosition(
                 bookId: book.id, chapter: mapped,

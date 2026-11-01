@@ -22,7 +22,7 @@ enum WorkTableOfContents {
         case .txt:
             let ext = (book.contentFilename as NSString).pathExtension.lowercased()
             return ext != "md" && ext != "markdown"
-        case .html, .manga, .fixedPage, .audio:
+        case .html, .manga, .fixedPage, .audio, .video:
             return false
         }
     }
@@ -65,7 +65,7 @@ enum WorkTableOfContents {
         case .html where book.module != nil:
             // The list the module read when the copy was made, and each update since.
             return store.chapters(for: book.id)
-        case .html, .manga, .fixedPage, .audio:
+        case .html, .manga, .fixedPage, .audio, .video:
             return nil
         }
     }

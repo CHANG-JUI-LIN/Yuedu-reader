@@ -47,7 +47,7 @@ extension SearchBookListRowContent {
     init(shelfBook book: ReadingBook) {
         self.init(
             title: book.title,
-            titleTag: book.resolvedPipelineKind == .audio ? localized("有聲書") : nil,
+            titleTag: ContentKind(book.resolvedPipelineKind).mediaTag,
             author: book.author,
             detail: book.currentPosition >= 0.99
                 ? localized("已讀完")
@@ -71,12 +71,13 @@ extension SearchBookListRowContent {
         case .text: localized("小說")
         case .audio: localized("有聲書")
         case .manga: localized("漫畫")
+        case .video: localized("影片")
         }
     }
 
-    /// Audiobooks carry the tag, where the cover used to carry a headphones badge.
+    /// Audiobooks and videos carry the tag, where the cover used to carry a headphones badge.
     static func titleTag(for kind: OnlineBookContentKind) -> String? {
-        kind == .audio ? localized("有聲書") : nil
+        ContentKind(kind).mediaTag
     }
 }
 
