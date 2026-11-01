@@ -82,6 +82,37 @@ struct VideoSourceTypeTests {
         #expect(kind == .video)
     }
 
+    private func base64JSON(_ object: [String: String]) throws -> String {
+        try JSONSerialization.data(withJSONObject: object).base64EncodedString()
+    }
+
+    // The aggregate sources whose 短剧 play from a page, each as its URLs are shaped.
+    @Test("大灰狼's 短剧 search result is a video")
+    func dahuilangShortDrama() throws {
+        let payload = try base64JSON(["book_id": "1", "sources": "番茄", "tab": "短剧", "url": ""])
+        let kind = OnlineBookContentInference.infer(
+            sourceType: 0, urls: ["data:;base64,\(payload),{\"type\":\"qingtian\"}"]
+        )
+        #expect(kind == .video)
+    }
+
+    @Test("七猫-OE's 短剧 detail URL is a video")
+    func qimaoShortDrama() {
+        let kind = OnlineBookContentInference.infer(
+            sourceType: 0, urls: ["http://103.0.0.1:11459/api/drama/detail?playlet_id=9&api_key=k"]
+        )
+        #expect(kind == .video)
+    }
+
+    @Test("书山's video catalog, a data URL with a media type, is a video")
+    func shushanVideoCatalog() throws {
+        let payload = try base64JSON(["source": "番茄短剧", "url": "x", "name": "劇", "tab": "video"])
+        let kind = OnlineBookContentInference.infer(
+            sourceType: 0, urls: ["data:detailsUrl;base64,e30=", "data:catalogUrl;base64,\(payload),{\"type\":\"susan\"}"]
+        )
+        #expect(kind == .video)
+    }
+
     @Test("legado-E's and the original's video book types are videos")
     func videoBookTypes() {
         for type in ["4", "2048"] {

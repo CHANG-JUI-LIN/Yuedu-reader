@@ -542,8 +542,8 @@ enum OnlineBookContentInference {
         }
         // A video under a text source has no book type to say so (see `explicitKind`), and
         // an aggregate API names it in the path: UAA's `/video/info`, 番茄四合一's
-        // `/api/video/detail`.
-        if components.path.split(separator: "/").contains(where: { $0.lowercased() == "video" }) {
+        // `/api/video/detail`, 七猫-OE's 短剧 `/api/drama/detail`.
+        if components.path.split(separator: "/").contains(where: { ["video", "drama"].contains($0.lowercased()) }) {
             return .video
         }
         return nil
@@ -558,14 +558,16 @@ enum OnlineBookContentInference {
         return (try? JSONSerialization.jsonObject(with: data)) as? [String: Any]
     }
 
+    /// The JSON payloads of a URL's base64 `data:` parts. A data URL may name a media type
+    /// before `;base64` (RFC 2397), and 书山聚合 names its parts there (`data:catalogUrl;base64,`).
     private static func dataURLPayloads(from text: String) -> [[String: Any]] {
-        let marker = "data:;base64,"
+        let marker = #"data:[^;,]*;base64,"#
         var payloads: [[String: Any]] = []
         var searchStart = text.startIndex
 
         while let markerRange = text.range(
             of: marker,
-            options: [.caseInsensitive],
+            options: [.caseInsensitive, .regularExpression],
             range: searchStart..<text.endIndex
         ) {
             let base64Start = markerRange.upperBound

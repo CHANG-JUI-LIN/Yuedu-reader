@@ -39,6 +39,8 @@ enum SourceBrowserPresenter {
             return
         }
         let stream = VideoStream(url: url, headers: request.allHTTPHeaderFields ?? [:])
+        // Hosted outside the app's view tree, so without its `BookStore`: the one-link player
+        // reads none, and a change that makes it read one must hand it over here.
         let host = UIHostingController<VideoPlayerView?>(rootView: nil)
         host.rootView = VideoPlayerView(content: .link(stream, title: title)) { [weak host] in
             host?.dismiss(animated: true)
