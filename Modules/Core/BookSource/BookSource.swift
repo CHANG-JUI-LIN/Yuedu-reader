@@ -452,13 +452,23 @@ enum OnlineBookContentInference {
         urls: [String] = [],
         metadataText: [String] = []
     ) -> OnlineBookContentKind? {
-        if let runtimeKind = kind(fromRuntimeVariables: runtimeVariables) {
+        let runtimeKind = kind(fromRuntimeVariables: runtimeVariables)
+        if let runtimeKind, runtimeKind != .text {
             return runtimeKind
         }
-        for url in urls {
-            if let urlKind = kind(fromURL: url) {
-                return urlKind
-            }
+        let urlKind = urls.lazy.compactMap { kind(fromURL: $0) }.first
+        // A text book type does not rule a video out: legado has no book type a source can
+        // set for one without probing legado-E (`getAppVariant`), so an aggregate source
+        // declares its videos text and plays them from the content script — UAA's TOC sets
+        // `book.type = 8` beside a `{"type":"video"}` URL.
+        if urlKind == .video {
+            return .video
+        }
+        if let runtimeKind {
+            return runtimeKind
+        }
+        if let urlKind {
+            return urlKind
         }
         for text in metadataText {
             if let metadataKind = kind(fromMetadataText: text) {
@@ -479,6 +489,12 @@ enum OnlineBookContentInference {
 
     private static func kind(fromRuntimeVariables vars: [String: String]?) -> OnlineBookContentKind? {
         guard let vars, !vars.isEmpty else { return nil }
+
+        // legado-E's `BookType.video` (0b100) and the original's (1 << 11). Read from the book
+        // type alone: as a URL value, `?type=4` is usually a novel category.
+        if let bookType = vars["book.type"].flatMap({ Int($0) }), bookType == 4 || bookType == 2048 {
+            return .video
+        }
 
         for key in ["book.type", "type", "media", "tab", "find_tab", "contentType"] {
             if let kind = kind(fromStructuredValue: vars[key]) {
@@ -505,6 +521,17 @@ enum OnlineBookContentInference {
             }
         }
 
+        // legado's `url,{options}`. Its `type` only asks for the response in hex, so an
+        // aggregate source can carry the kind in it: UAA's TOC URL ends `,{"type":"video"}`.
+        // Only a kind's name counts there: any value turns hex on, so a number is no kind.
+        if let options = legadoOptions(in: trimmed) {
+            for (key, value) in options where isContentKindKey(key) {
+                if let name = value as? String, Int(name) == nil, let kind = kind(fromStructuredValue: name) {
+                    return kind
+                }
+            }
+        }
+
         let requestURL = trimmed.split(separator: ",", maxSplits: 1).first.map(String.init) ?? trimmed
         guard let components = URLComponents(string: requestURL) else { return nil }
         for item in components.queryItems ?? [] {
@@ -513,7 +540,22 @@ enum OnlineBookContentInference {
                 return kind
             }
         }
+        // A video under a text source has no book type to say so (see `explicitKind`), and
+        // an aggregate API names it in the path: UAA's `/video/info`, 番茄四合一's
+        // `/api/video/detail`.
+        if components.path.split(separator: "/").contains(where: { $0.lowercased() == "video" }) {
+            return .video
+        }
         return nil
+    }
+
+    /// The JSON object after a legado URL's first `,{`, when it parses as one.
+    private static func legadoOptions(in text: String) -> [String: Any]? {
+        guard let comma = text.range(of: #",\s*\{"#, options: .regularExpression) else { return nil }
+        let json = text[text.index(before: comma.upperBound)...]
+        guard let data = json.data(using: .utf8) else { return nil }
+        // Many options are JS object literals rather than JSON; those name no kind here.
+        return (try? JSONSerialization.jsonObject(with: data)) as? [String: Any]
     }
 
     private static func dataURLPayloads(from text: String) -> [[String: Any]] {
@@ -606,6 +648,11 @@ enum OnlineBookContentInference {
         if normalized == "小说" || normalized == "小說" || normalized == "novel"
             || normalized == "text" || normalized == "文字" {
             return .text
+        }
+        // 光遇 and 大灰狼 name the tab 短剧 / 视频; UAA's type is `video`.
+        if normalized == "视频" || normalized == "視頻" || normalized == "影片" || normalized == "video"
+            || normalized == "短剧" || normalized == "短劇" {
+            return .video
         }
         return nil
     }

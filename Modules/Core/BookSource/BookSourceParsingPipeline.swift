@@ -108,14 +108,16 @@ struct BookSourceParsingPipeline {
         source: BookSource,
         runtimeVariables: [String: String]? = nil,
         chapterRef: OnlineChapterRef? = nil,
-        nextChapterURL: String? = nil
+        nextChapterURL: String? = nil,
+        isVideoEpisode: Bool = false
     ) async throws -> ChapterParsePayload {
         try await BookSourceSession.session(for: source).withTurn { bridge in
             try bridge.parseChapterResult(
                 html: html, baseURL: baseURL,
                 source: source, runtimeVariables: runtimeVariables,
                 chapterRef: chapterRef,
-                nextChapterURL: nextChapterURL
+                nextChapterURL: nextChapterURL,
+                isVideoEpisode: isVideoEpisode
             )
         }
     }

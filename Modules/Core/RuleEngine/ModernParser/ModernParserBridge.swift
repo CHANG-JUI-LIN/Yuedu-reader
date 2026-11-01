@@ -1348,7 +1348,8 @@ class ModernParserBridge {
         source: BookSource,
         runtimeVariables: [String: String]? = nil,
         chapterRef: OnlineChapterRef? = nil,
-        nextChapterURL: String? = nil
+        nextChapterURL: String? = nil,
+        isVideoEpisode: Bool = false
     ) throws -> ChapterParsePayload {
         let cpuSpan = SourcePerfTrace.cpuStart()
         defer { SourcePerfTrace.record("chapter.rules", "bytes=\(html.utf8.count) \(source.bookSourceName)", since: cpuSpan) }
@@ -1508,7 +1509,15 @@ class ModernParserBridge {
         lastJSNetworkExchange = nil
         let _contentStart = Date()
         reviewResponses.begin()
-        var content = engine.getString(ruleStr: source.ruleContent.content)
+        var content: String
+        var handover = LegadoJSBridge.VideoEpisodeHandover()
+        if isVideoEpisode {
+            (content, handover) = jsEngine.handingOverVideoEpisode {
+                engine.getString(ruleStr: source.ruleContent.content)
+            }
+        } else {
+            content = engine.getString(ruleStr: source.ruleContent.content)
+        }
         let contentResponses = reviewResponses.end()
         // Snapshot before restoring the temporary deviceType override: every
         // `jsEngine.evaluate` clears the previous rule error.
@@ -1632,6 +1641,14 @@ class ModernParserBridge {
         // whole page with it here fed nothing but a log field, and on a long page the
         // backtracking match was the stack behind a 90-second CPU exception during 書源檢查
         // (Crashlytics a4c29d35, build 131).
+        if let handedOver = handover.episodeContent {
+            AppLogger.parse("⟐ video episode handed over", context: [
+                "source": source.bookSourceName,
+                "chapterIndex": chapterRef?.index ?? -1,
+                "as": handover.stream != nil ? "stream" : "page",
+            ])
+            content = handedOver
+        }
         return ChapterParsePayload(
             content: content,
             title: title,

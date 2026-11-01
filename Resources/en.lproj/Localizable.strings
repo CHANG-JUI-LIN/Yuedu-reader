@@ -3970,6 +3970,7 @@
 "搜尋分組：影片" = "Videos";
 "這一集是 DASH 串流，iOS 無法播放" = "This episode is a DASH stream, which iOS can't play.";
 "這一集沒有可播放的影片連結" = "This episode has no playable video link.";
+"這一集的播放頁沒有找到影片" = "Couldn't find a video on this episode's player page.";
 "這部影片沒有可播放的集數" = "This video has no playable episodes.";
 "無法播放這一集" = "Can't play this episode.";
 "填滿螢幕" = "Fill Screen";

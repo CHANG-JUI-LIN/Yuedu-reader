@@ -22,6 +22,17 @@ extension BookSourceFetcher {
     func fetchChapterPackage(
         ref: OnlineChapterRef, bookId: UUID, source: BookSource, chapterReferer: String? = nil
     ) async throws -> ChapterPackage {
+        try await fetchChapterPackage(
+            ref: ref, bookId: bookId, source: source, chapterReferer: chapterReferer, isVideoEpisode: false
+        )
+    }
+
+    /// `isVideoEpisode`: what the content script hands to `java.openVideoPlayer` or
+    /// `java.startBrowser` is the episode's content (`ModernParserBridge.parseChapterResult`).
+    func fetchChapterPackage(
+        ref: OnlineChapterRef, bookId: UUID, source: BookSource, chapterReferer: String?,
+        isVideoEpisode: Bool
+    ) async throws -> ChapterPackage {
         logChapterFetchGate(ref: ref, source: source)
         guard !ref.shouldRenderAsVolumeSeparator else {
             throw FetchError.volumeSeparator(ref.title)
@@ -42,7 +53,8 @@ extension BookSourceFetcher {
                     ref: ref,
                     bookId: bookId,
                     source: source,
-                    chapterReferer: chapterReferer
+                    chapterReferer: chapterReferer,
+                    isVideoEpisode: isVideoEpisode
                 )
             }
             group.addTask {
@@ -58,7 +70,8 @@ extension BookSourceFetcher {
     }
 
     private func fetchChapterPackageInner(
-        ref: OnlineChapterRef, bookId: UUID, source: BookSource, chapterReferer: String? = nil
+        ref: OnlineChapterRef, bookId: UUID, source: BookSource, chapterReferer: String? = nil,
+        isVideoEpisode: Bool
     ) async throws
         -> ChapterPackage
     {
@@ -82,7 +95,8 @@ extension BookSourceFetcher {
             return try await fetchLegadoRuntimeChapterPackage(
                 ref: ref,
                 bookId: bookId,
-                source: source
+                source: source,
+                isVideoEpisode: isVideoEpisode
             )
         }
         // Sanitize: old TOC cache may contain HTML fragments (e.g. <a href="...">), sanitize before parsing
@@ -213,7 +227,8 @@ extension BookSourceFetcher {
                         source: source,
                         runtimeVariables: runtimeBox.get(),
                         chapterRef: ref,
-                        nextChapterURL: ref.runtimeVariables?[Self.nextChapterRuntimeVariableKey]
+                        nextChapterURL: ref.runtimeVariables?[Self.nextChapterRuntimeVariableKey],
+                        isVideoEpisode: isVideoEpisode
                     )
                 }
                 if let runtimeVariables = parsed.runtimeVariables, !runtimeVariables.isEmpty {
@@ -328,7 +343,8 @@ extension BookSourceFetcher {
     private func fetchLegadoRuntimeChapterPackage(
         ref: OnlineChapterRef,
         bookId: UUID,
-        source: BookSource
+        source: BookSource,
+        isVideoEpisode: Bool
     ) async throws -> ChapterPackage {
         logChapterFetchGate(ref: ref, source: source)
         guard !ref.shouldRenderAsVolumeSeparator else {
@@ -350,7 +366,8 @@ extension BookSourceFetcher {
                     source: source,
                     runtimeVariables: ref.runtimeVariables,
                     chapterRef: ref,
-                    nextChapterURL: ref.runtimeVariables?[Self.nextChapterRuntimeVariableKey]
+                    nextChapterURL: ref.runtimeVariables?[Self.nextChapterRuntimeVariableKey],
+                    isVideoEpisode: isVideoEpisode
                 )
             }
         }

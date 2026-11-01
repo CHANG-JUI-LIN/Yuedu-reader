@@ -786,6 +786,16 @@ class JSCoreEngine {
         lastError = nil
     }
 
+    /// Runs `body` — the content rule of the video episode being played — with
+    /// `java.openVideoPlayer` and `java.startBrowser` handing their link or page to the caller
+    /// instead of opening a player or a sheet (`LegadoJSBridge.videoEpisodeHandover`).
+    func handingOverVideoEpisode<T>(_ body: () throws -> T) rethrows -> (T, LegadoJSBridge.VideoEpisodeHandover) {
+        onJSQueue { bridge.videoEpisodeHandover = .init() }
+        defer { onJSQueue { bridge.videoEpisodeHandover = nil } }
+        let result = try body()
+        return (result, onJSQueue { bridge.videoEpisodeHandover ?? .init() })
+    }
+
     func setBookBridge(_ bridge: LegadoBookBridge) {
         onJSQueue {
             self.bookBridge = bridge

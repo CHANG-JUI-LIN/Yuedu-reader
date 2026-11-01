@@ -1,4 +1,3 @@
-import AVKit
 import SwiftUI
 import UIKit
 
@@ -32,22 +31,20 @@ enum SourceBrowserPresenter {
         }
     }
 
-    /// `java.openVideoPlayer`: the system player, full screen, playing at once — legado-E's
+    /// `java.openVideoPlayer`: the app's video player, full screen, playing at once — legado-E's
     /// `VideoPlayerActivity`. Not queued with the sheets: nothing waits on it.
     static func presentVideo(_ request: URLRequest, title: String) {
         guard let url = request.url, let topVC = BookSourceFormLoginView.topViewController() else {
             AppLogger.parse("⟐ openVideoPlayer: nowhere to present", context: [:])
             return
         }
-        AudioSessionActivator.activate(category: .playback, mode: .moviePlayback)
-        let player = AVPlayer(playerItem: AVPlayerItem(
-            asset: HeaderedMediaAsset.make(url: url, headers: request.allHTTPHeaderFields ?? [:])
-        ))
-        let controller = AVPlayerViewController()
-        controller.player = player
-        controller.title = title
-        controller.modalPresentationStyle = .fullScreen
-        topVC.present(controller, animated: true) { player.play() }
+        let stream = VideoStream(url: url, headers: request.allHTTPHeaderFields ?? [:])
+        let host = UIHostingController<VideoPlayerView?>(rootView: nil)
+        host.rootView = VideoPlayerView(content: .link(stream, title: title)) { [weak host] in
+            host?.dismiss(animated: true)
+        }
+        host.modalPresentationStyle = .fullScreen
+        topVC.present(host, animated: true)
     }
 
     /// Shows `request`'s page. `completion` runs exactly once: with the page's HTML when the

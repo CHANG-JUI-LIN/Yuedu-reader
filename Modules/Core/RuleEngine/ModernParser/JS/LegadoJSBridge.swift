@@ -259,6 +259,7 @@ struct LegadoHTTPResult {
     func deviceID() -> String
     func androidId() -> String
     func openVideoPlayer(_ url: String, _ title: String)
+    func getAppVariant() -> String
     func upLoginData(_ data: JSValue)
     // `java.qread()` is a no-op stub ON PURPOSE: it makes 起点-family content JS set
     // `dev='android-轻阅读'`, so createSvg emits the 轻阅读 段评 SVG variant — the one the user wants
@@ -365,6 +366,18 @@ struct LegadoHTTPResult {
     private var browserPresenter: BrowserPresenter? {
         browserPresentHandler ?? Self.sharedBrowserPresenter
     }
+
+    /// What a video episode's content script handed over rather than returned: legado-E plays
+    /// `java.openVideoPlayer`'s link and opens `java.startBrowser`'s page the moment the script
+    /// asks, but for the episode the video player is fetching they are the episode itself.
+    struct VideoEpisodeHandover: Equatable {
+        var stream: String?
+        var page: String?
+    }
+
+    /// Non-nil only while the content rule of the episode being played runs
+    /// (`JSCoreEngine.handingOverVideoEpisode`); the script runs on this bridge's one queue.
+    var videoEpisodeHandover: VideoEpisodeHandover?
 
     /// Presents the captcha for `java.getVerificationCode`; the completion receives the code
     /// the user entered, nil when they dismissed it. Unset, `sharedCaptchaPresenter` does.
@@ -1086,7 +1099,13 @@ struct LegadoHTTPResult {
     }
 
     /// Legado `java.startBrowser(url, title, html)`: `html` is shown with `url` as its base.
+    /// While a video episode is being fetched, a page of the source's (no `html`) is where that
+    /// episode plays (`videoEpisodeHandover`).
     func startBrowser(_ url: String, _ title: String, _ html: String?) {
+        if videoEpisodeHandover != nil, html == nil {
+            if videoEpisodeHandover?.page == nil { videoEpisodeHandover?.page = url }
+            return
+        }
         browserPresenter?(browserRequest(url: url, title: title, awaitsResult: false, html: html)) { _ in }
     }
 
@@ -1968,8 +1987,13 @@ struct LegadoHTTPResult {
 
     /// legado-E `java.openVideoPlayer(url, title[, isFloat])`: the native full-screen player.
     /// legado-E's floating-window variant (`isFloat`) has no counterpart here; a third argument
-    /// is ignored and the video opens full screen.
+    /// is ignored and the video opens full screen. While a video episode is being fetched the
+    /// link is that episode's instead (`videoEpisodeHandover`).
     func openVideoPlayer(_ url: String, _ title: String) {
+        if videoEpisodeHandover != nil {
+            if videoEpisodeHandover?.stream == nil { videoEpisodeHandover?.stream = url }
+            return
+        }
         guard let request = sourceBrowserRequest(urlString: url) else {
             AppLogger.parse("⟐ openVideoPlayer: not an http(s) video URL", context: ["url": String(url.prefix(160))])
             return
@@ -1989,6 +2013,14 @@ struct LegadoHTTPResult {
         print("[JSBridge] upLoginData() called")
         #endif
         upLoginDataHandler?(data)
+    }
+
+    /// `java.getAppVariant()`, which an aggregate source probes for legado-E's video support:
+    /// 光遇聚合 then declares 短剧 a video (`book.type = 4`) and returns its stream as the
+    /// content, instead of a note and a browser page (maintainer, 2026-11-01). Only the
+    /// function's presence is read; the value names a release build, as legado's `AppVariant`.
+    func getAppVariant() -> String {
+        "OFFICIAL"
     }
 
     /// Legado `java.qread()` — no-op stub (kept on purpose; see note in LegadoJSBridgeExports).

@@ -6,12 +6,17 @@ import SwiftUI
 /// 「照開源的emby player」, 「plezy 這個也算吧」): the picture full screen, and over it a top
 /// bar (close, title, actions), previous / play-pause / next in the centre (plezy), and the
 /// timeline at the bottom. A tap shows and hides them; the episodes open in a sheet.
+///
+/// On an iPhone it opens in landscape and turns to portrait for a portrait picture, as the
+/// picture reports its size (maintainer, 2026-11-01: 「依影片比例」).
 struct VideoPlayerView: View {
     enum Content {
         /// A shelf book: its position is saved to the shelf.
         case shelf(UUID)
         /// A book played from its detail page without being shelved: position in memory only.
         case transient(ReadingBook)
+        /// A source script's one link (`java.openVideoPlayer`).
+        case link(VideoStream, title: String)
     }
 
     let content: Content
@@ -28,12 +33,14 @@ struct VideoPlayerView: View {
     /// The time under the finger while the timeline is dragged.
     @State private var scrubTime: Double?
     @State private var fillsScreen = false
+    @State private var window = ReaderWindowReference()
 
     var body: some View {
         ZStack {
             DSColor.videoPlayerBackground.ignoresSafeArea()
             if let controller {
-                VideoPlayerLayerView(player: controller.player, fillsScreen: fillsScreen)
+                VideoPlayerLayerView(player: controller.player, fillsScreen: fillsScreen,
+                                     onLayer: controller.attachPictureInPicture(to:))
                     .ignoresSafeArea()
                     .accessibilityHidden(true)
                 gestureSurface(controller)
@@ -49,15 +56,20 @@ struct VideoPlayerView: View {
                     .tint(DSColor.textOnFixedFill)
             }
         }
+        .readerWindowProbe(window)
         .statusBarHidden(!showsControls)
         .persistentSystemOverlays(.hidden)
         .environment(\.colorScheme, .dark)
         .animation(DSAnimation.fast, value: showsControls)
         .task {
-            guard controller == nil, let book else { return }
-            let controller = VideoPlaybackController(book: book, store: store, persists: persists)
+            guard controller == nil, let controller = makeController() else { return }
             self.controller = controller
+            turn(to: .landscape)
             controller.start()
+        }
+        .onChange(of: controller?.pictureSize) { _, size in
+            guard let size else { return }
+            turn(to: size.height > size.width ? .portrait : .landscape)
         }
         // An inactivity timeout, not a wait for state: the controls get out of the picture's
         // way, as every video player's do. VoiceOver keeps them, as it cannot find a hidden one.
@@ -75,7 +87,10 @@ struct VideoPlayerView: View {
         .onChange(of: voiceOverEnabled) { _, enabled in
             if enabled { showsControls = true }
         }
-        .onDisappear { controller?.close() }
+        .onDisappear {
+            controller?.close()
+            if turnsWindow { ReaderOrientationController.shared.restoreDefault(in: window.windowScene) }
+        }
         .sheet(isPresented: $showsEpisodes) {
             if let controller {
                 VideoEpisodeSheet(
@@ -92,16 +107,28 @@ struct VideoPlayerView: View {
         }
     }
 
-    private var book: ReadingBook? {
+    private func makeController() -> VideoPlaybackController? {
         switch content {
-        case .shelf(let id): store.readingBook(id: id)
-        case .transient(let book): book
+        case .shelf(let id):
+            store.readingBook(id: id).map { VideoPlaybackController(book: $0, store: store, persists: true) }
+        case .transient(let book):
+            VideoPlaybackController(book: book, store: store, persists: false)
+        case .link(let stream, let title):
+            VideoPlaybackController(link: stream, title: title)
         }
     }
 
-    private var persists: Bool {
-        if case .shelf = content { return true }
-        return false
+    /// Whether the player turns its window: an iPhone's only. An iPad's window is the size the
+    /// person made it, and turning the device is theirs.
+    private var turnsWindow: Bool {
+        window.windowScene?.traitCollection.userInterfaceIdiom == .phone
+    }
+
+    private func turn(to orientation: FixedLayoutOrientation) {
+        window.withWindow { uiWindow in
+            guard let scene = uiWindow.windowScene, scene.traitCollection.userInterfaceIdiom == .phone else { return }
+            ReaderOrientationController.shared.request(orientation, in: scene)
+        }
     }
 
     private func touched() {
@@ -129,7 +156,7 @@ struct VideoPlayerView: View {
             }
             .gesture(
                 DragGesture(minimumDistance: DSLayout.videoSwipeThreshold).onEnded { value in
-                    if value.translation.height < -DSLayout.videoSwipeThreshold,
+                    if hasEpisodes(controller), value.translation.height < -DSLayout.videoSwipeThreshold,
                        abs(value.translation.width) < abs(value.translation.height) {
                         showsEpisodes = true
                     }
@@ -212,15 +239,22 @@ struct VideoPlayerView: View {
                     .frame(width: DSLayout.minimumTapTarget, height: DSLayout.minimumTapTarget)
             }
             .accessibilityLabel(fillsScreen ? localized("完整畫面") : localized("填滿螢幕"))
-            Button {
-                showsEpisodes = true
-            } label: {
-                Image(systemName: "list.bullet")
-                    .font(DSFont.toolbarIcon)
-                    .frame(width: DSLayout.minimumTapTarget, height: DSLayout.minimumTapTarget)
+            if hasEpisodes(controller) {
+                Button {
+                    showsEpisodes = true
+                } label: {
+                    Image(systemName: "list.bullet")
+                        .font(DSFont.toolbarIcon)
+                        .frame(width: DSLayout.minimumTapTarget, height: DSLayout.minimumTapTarget)
+                }
+                .accessibilityLabel(localized("選集"))
             }
-            .accessibilityLabel(localized("選集"))
         }
+    }
+
+    /// A script's single link has no episodes to choose from.
+    private func hasEpisodes(_ controller: VideoPlaybackController) -> Bool {
+        controller.hasNext || controller.hasPrevious
     }
 
     private func subtitle(_ controller: VideoPlaybackController) -> String {
@@ -372,6 +406,8 @@ enum VideoPlayerFormat {
 struct VideoPlayerLayerView: UIViewRepresentable {
     let player: AVPlayer
     let fillsScreen: Bool
+    /// Hands over the layer once, for Picture in Picture.
+    var onLayer: @MainActor (AVPlayerLayer) -> Void = { _ in }
 
     final class LayerView: UIView {
         override static var layerClass: AnyClass { AVPlayerLayer.self }
@@ -382,6 +418,7 @@ struct VideoPlayerLayerView: UIViewRepresentable {
         let view = LayerView()
         view.backgroundColor = UIColor(DSColor.videoPlayerBackground)
         view.playerLayer.player = player
+        onLayer(view.playerLayer)
         return view
     }
 

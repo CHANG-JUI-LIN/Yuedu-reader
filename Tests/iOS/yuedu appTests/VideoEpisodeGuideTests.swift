@@ -57,9 +57,17 @@ struct VideoEpisodeGuideTests {
         #expect(guide.resumeEpisode(saved: 40) == 1)
     }
 
+    private func stream(from content: String) throws -> URLRequest {
+        guard case .stream(let request) = try DirectChapterVideoResolver.link(from: content) else {
+            Issue.record("expected a stream: \(content)")
+            return URLRequest(url: URL(string: "about:blank")!)
+        }
+        return request
+    }
+
     @Test("a chapter's link may carry legado's header options")
     func linkWithHeaders() throws {
-        let request = try DirectChapterVideoResolver.request(
+        let request = try stream(
             from: #"https://cdn.example.com/a/index.m3u8,{"headers":{"Referer":"https://example.com/"}}"#
         )
         #expect(request.url?.absoluteString == "https://cdn.example.com/a/index.m3u8")
@@ -68,9 +76,9 @@ struct VideoEpisodeGuideTests {
 
     @Test("a link wrapped in the content pipeline's markup still plays")
     func wrappedLink() throws {
-        let request = try DirectChapterVideoResolver.request(from: "<p>https://example.com/v.mp4</p>")
+        let request = try stream(from: "<p>https://example.com/v.mp4</p>")
         #expect(request.url?.absoluteString == "https://example.com/v.mp4")
-        let withHeaders = try DirectChapterVideoResolver.request(
+        let withHeaders = try stream(
             from: #"<p>https://example.com/v.m3u8?a=1&amp;b=2,{&quot;headers&quot;:{&quot;Referer&quot;:&quot;https://example.com/&quot;}}</p>"#
         )
         #expect(withHeaders.url?.absoluteString == "https://example.com/v.m3u8?a=1&b=2")
@@ -79,7 +87,7 @@ struct VideoEpisodeGuideTests {
 
     @Test("a bare link's query is kept as it is")
     func bareLinkQueryUntouched() throws {
-        let request = try DirectChapterVideoResolver.request(from: "https://example.com/v.mp4?id=3&lang=zh&copy=1")
+        let request = try stream(from: "https://example.com/v.mp4?id=3&lang=zh&copy=1")
         #expect(request.url?.absoluteString == "https://example.com/v.mp4?id=3&lang=zh&copy=1")
     }
 
@@ -87,17 +95,57 @@ struct VideoEpisodeGuideTests {
     @Test("a link inside a source's message is not taken as the stream")
     func linkInProseIsNotAStream() {
         #expect(throws: VideoChapterLinkError.self) {
-            try DirectChapterVideoResolver.request(from: "【刷新正文】播放 ✅直链: https://example.com/v.mp4")
+            try DirectChapterVideoResolver.link(from: "【刷新正文】播放 ✅直链: https://example.com/v.mp4")
         }
     }
 
     @Test("DASH, as a manifest or a link, says so")
     func dashIsNamed() {
         #expect(throws: VideoChapterLinkError.dashManifest) {
-            try DirectChapterVideoResolver.request(from: #"<?xml version="1.0"?><MPD xmlns="urn:mpeg:dash"></MPD>"#)
+            try DirectChapterVideoResolver.link(from: #"<?xml version="1.0"?><MPD xmlns="urn:mpeg:dash"></MPD>"#)
         }
         #expect(throws: VideoChapterLinkError.dashManifest) {
-            try DirectChapterVideoResolver.request(from: "https://example.com/v/manifest.mpd")
+            try DirectChapterVideoResolver.link(from: "https://example.com/v/manifest.mpd")
         }
+    }
+
+    // 番茄四合一 / 七猫-OE: the content script opens the source's player page (`java.startBrowser`).
+    @Test("a page the script opened for the episode is a page to sniff, keeping its options")
+    func handedOverPageIsAPage() throws {
+        let page = "http://example.com:8020/videoplayer?series_id=1&item_id=2&api_key=k"
+        let content = DirectChapterVideoResolver.pageContent(page + #",{"headers":{"Referer":"http://example.com/"}}"#)
+        guard case .page(let request) = try DirectChapterVideoResolver.link(from: content) else {
+            Issue.record("expected a page: \(content)")
+            return
+        }
+        #expect(request.url?.absoluteString == page)
+        #expect(request.value(forHTTPHeaderField: "Referer") == "http://example.com/")
+    }
+
+    @Test("the handover prefers the script's stream to its page")
+    func handoverPrefersStream() {
+        let both = LegadoJSBridge.VideoEpisodeHandover(stream: "https://cdn.example.com/a.m3u8", page: "https://example.com/p")
+        #expect(both.episodeContent == "https://cdn.example.com/a.m3u8")
+        let page = LegadoJSBridge.VideoEpisodeHandover(stream: nil, page: "https://example.com/p")
+        #expect(page.episodeContent == #"https://example.com/p,{"webView":true}"#)
+        #expect(LegadoJSBridge.VideoEpisodeHandover().episodeContent == nil)
+    }
+
+    @Test("a stream request is told from the page and its API")
+    func videoRequests() {
+        let streams = [
+            "https://cdn.example.com/hls/index.m3u8?sign=1",
+            "https://cdn.example.com/v/1.MP4",
+            "https://v26-default.example.com/abc/video/tos/cn/x/?a=1&mime_type=video_mp4&qs=0",
+            "https://cdn.example.com/dash/manifest.mpd",
+        ]
+        for link in streams { #expect(DirectChapterVideoResolver.isVideoRequest(URL(string: link)!), "\(link)") }
+        let pages = [
+            "http://example.com:8020/videoplayer?series_id=1&item_id=2",
+            "http://example.com:8020/api/video/detail?series_id=1",
+            "https://example.com/api/playinfo?file=x",
+            "blob:https://example.com/1234",
+        ]
+        for link in pages { #expect(!DirectChapterVideoResolver.isVideoRequest(URL(string: link)!), "\(link)") }
     }
 }

@@ -337,11 +337,14 @@ actor ChapterFetchManager {
         return false
     }
 
+    /// `isVideoEpisode`: the episode the video player is about to play
+    /// (`VideoChapterLinks.stream`), fetched as legado-E's player fetches it.
     func fetchChapter(
         book: ReadingBook,
         chapterIndex: Int,
         priority: ChapterFetchPriority,
-        store: BookStore?
+        store: BookStore?,
+        isVideoEpisode: Bool = false
     ) async throws -> ChapterPackage {
         guard let refs = book.onlineChapters, refs.indices.contains(chapterIndex) else {
             throw NSError(
@@ -471,6 +474,13 @@ actor ChapterFetchManager {
             }
             ref.runtimeVariables = mergedRuntime
         }
+        if isVideoEpisode {
+            // The episode being played is the book's current chapter, as in legado-E's player:
+            // UAA's script hands its link over only when `book.durChapterIndex` is this one.
+            var runtime = ref.runtimeVariables ?? [:]
+            runtime["book.durChapterIndex"] = String(chapterIndex)
+            ref.runtimeVariables = runtime
+        }
         let startedAt = CFAbsoluteTimeGetCurrent()
         let bookId = book.id
         ReaderTelemetry.shared.log(
@@ -511,7 +521,8 @@ actor ChapterFetchManager {
                     ref: ref,
                     bookId: book.id,
                     source: source,
-                    chapterReferer: book.tocURL ?? book.bookInfoURL ?? book.source
+                    chapterReferer: book.tocURL ?? book.bookInfoURL ?? book.source,
+                    isVideoEpisode: isVideoEpisode
                 )
             }
 

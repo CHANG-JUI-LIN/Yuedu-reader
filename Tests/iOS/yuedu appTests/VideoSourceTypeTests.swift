@@ -43,6 +43,52 @@ struct VideoSourceTypeTests {
         #expect(book.inferredContentKind(source: text) == .text)
     }
 
+    // UAA's TOC: a text source, `book.type = 8`, and the kind in legado's hex option.
+    @Test("a video URL outranks a text book type")
+    func videoURLOutranksTextBookType() {
+        let kind = OnlineBookContentInference.infer(
+            sourceType: 0, runtimeVariables: ["book.type": "8"],
+            urls: [#"https://api.example.com/video/info?id=12,{"type":"video"}"#]
+        )
+        #expect(kind == .video)
+    }
+
+    @Test("an aggregate API's video path is a video")
+    func videoPathIsVideo() {
+        let kind = OnlineBookContentInference.infer(
+            sourceType: 0, urls: ["http://example.com:8020/api/video/detail?series_id=7"]
+        )
+        #expect(kind == .video)
+    }
+
+    // legado's `type` option turns on a hex response; any value does, so a number names no kind.
+    @Test("a number in the hex option is no kind")
+    func hexOptionNumberIsNoKind() {
+        let kind = OnlineBookContentInference.explicitKind(
+            urls: [#"https://example.com/chapter?id=1,{"type":"1"}"#]
+        )
+        #expect(kind == nil)
+    }
+
+    // 光遇聚合: the detail payload's tab, under a source whose markers say 听书.
+    @Test("a 短剧 tab is a video over the source's audio markers")
+    func shortDramaTabIsVideo() throws {
+        let payload = try JSONSerialization.data(withJSONObject: ["book_id": "1", "tab": "短剧"])
+        let kind = OnlineBookContentInference.infer(
+            sourceType: 0,
+            urls: ["https://example.com/gydetail,data:;base64," + payload.base64EncodedString()],
+            metadataText: ["听书"]
+        )
+        #expect(kind == .video)
+    }
+
+    @Test("legado-E's and the original's video book types are videos")
+    func videoBookTypes() {
+        for type in ["4", "2048"] {
+            #expect(OnlineBookContentInference.explicitKind(runtimeVariables: ["book.type": type]) == .video)
+        }
+    }
+
     @Test("validation prefers a video result for a video source")
     func validationPrefersVideo() {
         let video = source(type: 4)
