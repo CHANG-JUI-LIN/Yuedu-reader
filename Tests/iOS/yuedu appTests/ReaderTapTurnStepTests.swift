@@ -45,6 +45,48 @@ struct ReaderTapTurnStepTests {
 
         #expect(reader.shownPage() == 7, "two taps landed on \(String(describing: reader.shownPage()))")
     }
+
+    /// Fast tapping runs ahead of loading: the next chapter's layout has not landed, and
+    /// the pages turned to are its 載入中 pages. The curl's back was named from the page
+    /// before the target, which a loading page does not have, so the turn ran without
+    /// the curl. Forward, the sheet lifted is the page on screen: the chapter's first
+    /// loading page knows it is the chapter's start, the ones after it have no position.
+    @Test("taps into a chapter still loading curl onto each loading page")
+    func tapsIntoLoadingChapterCurl() async throws {
+        let gate = ChapterLoadGate()
+        let reader = try await TapTurnReader.open(builder: TapTurnBuilder(loading: (1, gate)), preloading: [0]) {
+            $0.layouts[0].map { $0.pageRanges.count - 1 }
+        }
+        defer { gate.open(); reader.close() }
+        let lastPage = try #require(reader.shownPage())
+
+        for step in 1...3 {
+            let animated = try await reader.tapOntoLoadingPage(.forward, landingOn: lastPage + step)
+            #expect(reader.loadingPageIndex() == lastPage + step,
+                    "tap \(step) landed on \(String(describing: reader.loadingPageIndex()))")
+            #expect(animated, "tap \(step) into the loading chapter turned without the curl animation")
+        }
+    }
+
+    /// Backward, the sheet lifted is the target: the loading chapter's last page knows it
+    /// is the chapter's end, the ones before it have no position.
+    @Test("taps back into a chapter still loading curl onto each loading page")
+    func tapsBackIntoLoadingChapterCurl() async throws {
+        let gate = ChapterLoadGate()
+        // Chapter 0 is the one the engine lays out to start, so the gated chapter is 1.
+        let reader = try await TapTurnReader.open(builder: TapTurnBuilder(loading: (1, gate)), preloading: [0, 2]) {
+            $0.pageIndex(for: .chapterStart(2))
+        }
+        defer { gate.open(); reader.close() }
+        let firstPage = try #require(reader.shownPage())
+
+        for step in 1...2 {
+            let animated = try await reader.tapOntoLoadingPage(.backward, landingOn: firstPage - step)
+            #expect(reader.loadingPageIndex() == firstPage - step,
+                    "tap \(step) landed on \(String(describing: reader.loadingPageIndex()))")
+            #expect(animated, "tap \(step) back into the loading chapter turned without the curl animation")
+        }
+    }
 }
 
 /// The paged host as `ReaderView` mounts it, with a real session coordinator so turns queue
@@ -67,16 +109,23 @@ private final class TapTurnReader {
     }
 
     static func open(atPage page: Int) async throws -> TapTurnReader {
+        try await open { _ in page }
+    }
+
+    static func open(builder: TapTurnBuilder = TapTurnBuilder(), preloading chapters: [Int] = [0, 1],
+                     at openingPage: (CoreTextPageEngine) -> Int?) async throws -> TapTurnReader {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         let engine = CoreTextPageEngine(
-            attributedBuilder: TapTurnBuilder(),
+            attributedBuilder: builder,
             renderSettings: EPUBTestFixtures.renderSettings(),
             offsetStore: CharOffsetStore(directoryURL: directory)
         )
         let bookId = UUID().uuidString
         await engine.start(renderSize: CGSize(width: 320, height: 480), bookId: bookId)
-        _ = await engine.preloadChapter(at: 0)
-        _ = await engine.preloadChapter(at: 1)
+        for chapter in chapters {
+            _ = await engine.preloadChapter(at: chapter)
+        }
+        let page = try #require(openingPage(engine))
         let opening = try #require(engine.readingPosition(forPage: page))
         try #require(engine.pageIndex(for: opening) == page)
         engine.updateReadingPosition(opening)
@@ -116,10 +165,29 @@ private final class TapTurnReader {
             .coreTextReadingPosition.flatMap { engine.pageIndex(for: $0) }
     }
 
+    /// The page a 載入中 page on screen stands for; a page with no layout has no position to ask.
+    func loadingPageIndex() -> Int? {
+        (pageViewController?.viewControllers?.first as? PlaceholderPageViewController)?.globalPageIndex
+    }
+
+    /// Taps once, as `ReaderView` issues it, and waits for the turn to settle on the
+    /// 載入中 page `page`; returns whether it animated on the way.
+    func tapOntoLoadingPage(_ step: ReaderPageTurnCommand.Step, landingOn page: Int) async throws -> Bool {
+        state.turn(step, showing: page, animated: true)
+        var animated = false
+        try await waitUntil {
+            animated = animated || isAnimating()
+            return loadingPageIndex() == page && !isAnimating()
+        }
+        return animated
+    }
+
     /// The curl animates layers inside the page view controller's view, not the view itself.
+    /// A 載入中 page's spinner spins for as long as it shows; it is not a turn.
     func isAnimating() -> Bool {
         func animating(_ layer: CALayer) -> Bool {
-            !(layer.animationKeys() ?? []).isEmpty || (layer.sublayers ?? []).contains(where: animating)
+            guard !(layer.delegate is UIActivityIndicatorView) else { return false }
+            return !(layer.animationKeys() ?? []).isEmpty || (layer.sublayers ?? []).contains(where: animating)
         }
         return pageViewController.map { animating($0.view.layer) } ?? false
     }
@@ -199,18 +267,61 @@ private final class TapTurnPositionStore: ReadingPositionStore, @unchecked Senda
     func flush(for bookId: String) async {}
 }
 
-/// Two chapters of plain prose, a dozen pages each.
+/// Three chapters of plain prose, a dozen pages each.
 private actor TapTurnBuilder: AttributedStringBuilding {
-    nonisolated let chapterCount = 2
-    nonisolated var prefersLazyByteScan: Bool { true }
+    nonisolated let chapterCount = 3
+    /// A chapter that stays 載入中 until its gate opens.
+    nonisolated let loading: (chapter: Int, gate: ChapterLoadGate)?
+
+    init(loading: (chapter: Int, gate: ChapterLoadGate)? = nil) {
+        self.loading = loading
+    }
+
+    /// Sizes are known up front, as an EPUB's are, so a chapter not laid out yet is
+    /// estimated at many pages rather than one.
+    nonisolated var prefersLazyByteScan: Bool { false }
     nonisolated func chapterTitle(at index: Int) -> String { "第\(index + 1)章" }
-    func chapterDataSize(at index: Int) -> Int { 0 }
+    func chapterDataSize(at index: Int) -> Int { Self.text(of: index).utf8.count }
+    private nonisolated static func text(of index: Int) -> String {
+        String(repeating: "第\(index + 1)章的正文，風穿過山林，江水映著月光。\n", count: 240)
+    }
     nonisolated func buildChapter(at index: Int, settings: ReaderRenderSettings,
                                   themeTextColor: UIColor, themeBackgroundColor: UIColor) async throws -> AttributedChapterBuildResult {
-        let text = String(repeating: "第\(index + 1)章的正文，風穿過山林，江水映著月光。\n", count: 240)
-        return AttributedChapterBuildResult(attributedString: NSAttributedString(string: text, attributes: [
+        if let loading, loading.chapter == index {
+            await loading.gate.wait()
+        }
+        return AttributedChapterBuildResult(attributedString: NSAttributedString(string: Self.text(of: index), attributes: [
             .font: UIFont.systemFont(ofSize: settings.fontSize), .foregroundColor: themeTextColor,
         ]), imagePage: nil, pageBackgroundImage: nil, anchorOffsets: [:])
+    }
+}
+
+/// Holds a chapter's build until the test lets it finish.
+private final class ChapterLoadGate: @unchecked Sendable {
+    private let lock = NSLock()
+    private var isOpen = false
+    private var waiting: [CheckedContinuation<Void, Never>] = []
+
+    func wait() async {
+        await withCheckedContinuation { continuation in
+            lock.lock()
+            guard !isOpen else {
+                lock.unlock()
+                continuation.resume()
+                return
+            }
+            waiting.append(continuation)
+            lock.unlock()
+        }
+    }
+
+    func open() {
+        lock.lock()
+        isOpen = true
+        let resumed = waiting
+        waiting.removeAll()
+        lock.unlock()
+        resumed.forEach { $0.resume() }
     }
 }
 

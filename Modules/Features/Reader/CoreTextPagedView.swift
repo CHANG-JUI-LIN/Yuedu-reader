@@ -930,10 +930,25 @@ struct CoreTextPageEngineView: UIViewControllerRepresentable {
         /// a back stepping from its build-time index turned onto the wrong page (回饋中心
         /// #118). The index below is only today's name for the page, for its snapshot.
         private func curlBackPage(behind position: CoreTextReadingPosition) -> PageBackViewController? {
-            guard let contentPage = currentEngine.estimatedGlobalPage(for: position) else { return nil }
+            currentEngine.estimatedGlobalPage(for: position).map { curlBackPage(onPage: $0, behind: position) }
+        }
+
+        /// The back of the sheet a turn lifts. A 載入中 page inside a chapter nobody has
+        /// measured has no position — `committedReadingPosition(of:)` refuses to guess
+        /// one — so its back is named by the page it stands for, carries no position
+        /// either, and like every page with nothing laid out shows the theme colour.
+        private func curlBackPage(of sheet: UIViewController) -> PageBackViewController? {
+            if let position = committedReadingPosition(of: sheet) {
+                return curlBackPage(behind: position)
+            }
+            guard isPlaceholderDisplay(sheet), let placeholder = sheet as? any PageIndexProviding else { return nil }
+            return curlBackPage(onPage: placeholder.globalPageIndex, behind: nil)
+        }
+
+        private func curlBackPage(onPage contentPage: Int, behind position: CoreTextReadingPosition?) -> PageBackViewController {
             let snapshotTrace = pageTurnTrace.beginCurlBack(page: contentPage)
             // An estimate names a page nobody has measured; it has nothing to draw.
-            let renderedPageImage = currentEngine.pageIndex(for: position)
+            let renderedPageImage = position.flatMap { currentEngine.pageIndex(for: $0) }
                 .flatMap { currentEngine.renderSnapshot(forPage: $0) }
             pageTurnTrace.endCurlBack(snapshotTrace, hasImage: renderedPageImage != nil)
             return PageBackViewController(
@@ -955,24 +970,27 @@ struct CoreTextPageEngineView: UIViewControllerRepresentable {
             )
         }
 
+        /// The stack an animated curl turns onto: the target, and the back of the sheet
+        /// UIKit lifts, named as the interactive curl names it (`pageForward`,
+        /// `pageBackward`). Forward, the sheet is the page on screen; backward, it is the
+        /// target. Both are at hand whether or not the target is laid out, and a sheet
+        /// with no position still has a back (`curlBackPage(of:)`). The back used to be
+        /// named from the page before the target, which a 載入中 page does not have: a tap
+        /// that ran ahead of loading turned onto it without the curl, because UIKit cannot
+        /// animate a double-sided curl without a back.
         fileprivate func transitionViewControllerStack(
             startingWith viewController: UIViewController,
             animated: Bool,
+            lifting visibleViewController: UIViewController?,
             visiblePage: Int
         ) -> [UIViewController] {
             guard usesCurlBackPages,
                   animated,
-                  !isPlaceholderDisplay(viewController),
                   let page = viewController as? any PageIndexProviding & UIViewController else {
                 return viewControllerStack(startingWith: viewController)
             }
-            // Forward, the sheet lifted is the visible page — the one before the target;
-            // backward, it is the target itself.
-            guard let target = committedReadingPosition(of: page),
-                  let behind = page.globalPageIndex >= visiblePage
-                    ? currentEngine.positionBefore(target)
-                    : target,
-                  let backPage = curlBackPage(behind: behind) else {
+            let sheet = page.globalPageIndex >= visiblePage ? visibleViewController : viewController
+            guard let backPage = sheet.flatMap(curlBackPage(of:)) else {
                 return viewControllerStack(startingWith: viewController)
             }
             stackWriteTotalPages = currentEngine.totalPages
@@ -1615,6 +1633,7 @@ struct CoreTextPageEngineView: UIViewControllerRepresentable {
                 let stack = self.transitionViewControllerStack(
                     startingWith: targetViewController,
                     animated: animatedFlag,
+                    lifting: self.readingPage(of: pageViewController),
                     visiblePage: visiblePage
                 )
                 if let sessionCoordinator = self.sessionCoordinator {

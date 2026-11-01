@@ -43,9 +43,13 @@ struct ProgrammaticPageTransitionPerformer {
             targetStack = targetViewControllers ?? [targetViewController]
         }
 
-        // Edge-spine double-sided curl requires [front, mirrored back]. A placeholder
-        // or book boundary may temporarily have only the front, where UIKit would
-        // raise for an animated transition; show that page without animation instead.
+        // Edge-spine double-sided curl requires [front, mirrored back], and UIKit raises
+        // for an animated transition with the front alone. A turn names its back from the
+        // page on screen or the target (`transitionViewControllerStack`), a 載入中 one
+        // included, so a turn ahead of loading no longer arrives here without one; this
+        // guard stays for a back that cannot be named at all (no page on screen, or a
+        // laid-out page the engine cannot place), where a crash is the alternative. Its
+        // log line is the signal that some other path reaches it.
         let effectiveAnimated: Bool = {
             guard pageTurnStyle == .curl, animated, targetStack.count < 2 else { return animated }
             AppLogger.render("[CurlTrace] degrade animated curl → non-animated (stack count \(targetStack.count))")
