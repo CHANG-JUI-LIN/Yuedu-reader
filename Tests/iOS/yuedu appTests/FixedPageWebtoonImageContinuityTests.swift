@@ -106,7 +106,100 @@ struct FixedPageWebtoonImageContinuityTests {
         }
     }
 
+    // MARK: - Chapter limit
+
+    @Test("a fourth chapter below lets go of the first once it is off screen; the pages on screen stay put")
+    func appendingAFourthChapterDropsTheFirst() async throws {
+        let chapters = (0..<4).map { Self.cachedPages(count: 4, chapter: "limit-append-\($0)") }
+        let container = HeldChaptersContainer()
+        container.held.reset(to: 0, pageCount: 4)
+        try await Self.withReader(chapters[0], container: container) { reader in
+            for index in 1...2 {
+                container.held.append(index, pageCount: 4)
+                reader.appendPages(chapters[index])
+            }
+            #expect(reader.pages.count == 12)
+            // Read on into the third chapter.
+            reader.goToPage(8, animated: false)
+            await Self.settle()
+            let shown = try await Self.pagesOnScreen(in: reader)
+            let watch = ImageClearWatch(shown.map(\.cell.imageView))
+            let page = reader.currentPageIndex()
+
+            container.held.append(3, pageCount: 4)
+            reader.appendPages(chapters[3])
+            reader.collectionView.layoutIfNeeded()
+
+            #expect(container.held.chapters.map(\.index) == [1, 2, 3])
+            #expect(reader.pages == Array(chapters[1...3].joined()))
+            #expect(reader.currentPageIndex() == page - 4)
+            #expect(watch.clears == 0)
+            Self.expectStillShown(shown, movedBy: -4, in: reader)
+            for shownPage in shown {
+                #expect(shownPage.cell.imageView.accessibilityIdentifier == "webtoon_page_\(shownPage.item - 4)")
+            }
+        }
+    }
+
+    @Test("a fourth chapter above lets go of the last once it is off screen; the pages on screen stay put")
+    func prependingAFourthChapterDropsTheLast() async throws {
+        let chapters = (0..<4).map { Self.cachedPages(count: 4, chapter: "limit-prepend-\($0)") }
+        let container = HeldChaptersContainer()
+        container.held.reset(to: 1, pageCount: 4)
+        try await Self.withReader(chapters[1], container: container) { reader in
+            for index in 2...3 {
+                container.held.append(index, pageCount: 4)
+                reader.appendPages(chapters[index])
+            }
+            await Self.settle()
+            let shown = try await Self.pagesOnScreen(in: reader)
+            let watch = ImageClearWatch(shown.map(\.cell.imageView))
+
+            container.held.prepend(0, pageCount: 4)
+            reader.insertPagesAbove(chapters[0])
+            reader.collectionView.layoutIfNeeded()
+
+            #expect(container.held.chapters.map(\.index) == [0, 1, 2])
+            #expect(reader.pages == Array(chapters[0...2].joined()))
+            #expect(watch.clears == 0)
+            Self.expectStillShown(shown, movedBy: 4, in: reader)
+        }
+    }
+
+    @Test("a chapter still on screen is kept past the limit, and let go of once it scrolls away")
+    func chapterOnScreenIsKept() async throws {
+        // One page each: the first two chapters share the screen.
+        let chapters = (0..<5).map { Self.cachedPages(count: 1, chapter: "limit-kept-\($0)") }
+        let container = HeldChaptersContainer()
+        container.held.reset(to: 0, pageCount: 1)
+        try await Self.withReader(chapters[0], container: container) { reader in
+            for index in 1...2 {
+                container.held.append(index, pageCount: 1)
+                reader.appendPages(chapters[index])
+            }
+            await Self.settle()
+            container.held.append(3, pageCount: 1)
+            reader.appendPages(chapters[3])
+            #expect(container.held.chapters.map(\.index) == [0, 1, 2, 3])
+            #expect(reader.pages.count == 4)
+
+            // Both chapters above the screen go once the next one comes in.
+            reader.goToPage(2, animated: false)
+            await Self.settle()
+            container.held.append(4, pageCount: 1)
+            reader.appendPages(chapters[4])
+            #expect(container.held.chapters.map(\.index) == [2, 3, 4])
+            #expect(reader.pages == Array(chapters[2...4].joined()))
+        }
+    }
+
     // MARK: - Helpers
+
+    /// Lets the chapter loads the list starts as it scrolls (a stand-in container answers
+    /// them with nothing) run to their end, so neither end of the strip counts as loading.
+    private static func settle() async {
+        for _ in 0..<5 { await Task.yield() }
+    }
 
     struct ShownPage {
         let item: Int
@@ -119,6 +212,7 @@ struct FixedPageWebtoonImageContinuityTests {
     /// A webtoon reader in a key window, so the list displays cells and `willDisplay` loads them.
     private static func withReader(
         _ pages: [FixedPage],
+        container: FixedPageReaderContainer? = nil,
         _ body: (FixedPageWebtoonViewController) async throws -> Void
     ) async throws {
         let targetWidth = FixedPageTargetWidth()
@@ -127,6 +221,7 @@ struct FixedPageWebtoonImageContinuityTests {
             fixedPageReaderConfiguration: configuration,
             targetWidth: targetWidth
         )
+        reader.container = container
         let scene = try #require(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first)
         let window = UIWindow(windowScene: scene)
         window.frame = CGRect(origin: .zero, size: size)
@@ -252,4 +347,26 @@ private final class ImageClearWatch {
             }
         }
     }
+}
+
+/// Holds the strip's chapters the way the reader's container does, and nothing else.
+@MainActor
+private final class HeldChaptersContainer: FixedPageReaderContainer {
+    var held = FixedPageHeldChapters()
+
+    func readerSurplusChapterPageCount(atStart: Bool) -> Int? {
+        held.surplusChapter(atStart: atStart)?.pageCount
+    }
+
+    func readerDidDropChapter(atStart: Bool) {
+        held.drop(atStart: atStart)
+    }
+
+    func reader(didMoveToPage page: Int, total: Int) {}
+    func readerRequestsNextChapter() {}
+    func readerRequestsPreviousChapter() {}
+    func readerHideControlsForPageTurn() -> Bool { false }
+    func readerToggleControls() {}
+    func readerToggleBookmark() {}
+    func readerShowTableOfContents() {}
 }

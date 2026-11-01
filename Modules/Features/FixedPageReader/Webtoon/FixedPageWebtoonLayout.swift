@@ -17,8 +17,8 @@ final class FixedPageWebtoonLayout: UICollectionViewFlowLayout {
     private var currentAttributes: [IndexPath: UICollectionViewLayoutAttributes] = [:]
     private var computedContentSize: CGSize = .zero
     private let fixedPageReaderConfiguration: FixedPageReaderConfiguration
-    /// Items inserted at the start since the last `prepare()`: maps the previous pass's
-    /// item indices onto the current ones for the scroll anchor.
+    /// Items inserted at the start since the last `prepare()`, negative for items removed
+    /// there: maps the previous pass's item indices onto the current ones for the scroll anchor.
     private var pendingInsertedAtStart = 0
     /// The zoom the previous pass laid out at. A pass that changes it leaves the offset
     /// to the zoom code, which places it around the pinch itself.
@@ -64,6 +64,22 @@ final class FixedPageWebtoonLayout: UICollectionViewFlowLayout {
         guard count > 0 else { return }
         ratios = Dictionary(uniqueKeysWithValues: ratios.map { ($0.key + count, $0.value) })
         pendingInsertedAtStart += count
+    }
+
+    /// The first `count` items were removed (a chapter above the screen let go of). Measured
+    /// heights follow their pages to the new indices, and the next pass keeps the page on
+    /// screen where it is.
+    func removeItemsAtStart(_ count: Int) {
+        guard count > 0 else { return }
+        ratios = Dictionary(uniqueKeysWithValues: ratios.compactMap { item, ratio in
+            item >= count ? (item - count, ratio) : nil
+        })
+        pendingInsertedAtStart -= count
+    }
+
+    /// The items from `index` on were removed (a chapter below the screen let go of).
+    func removeItems(from index: Int) {
+        ratios = ratios.filter { $0.key < index }
     }
 
     private func height(for index: Int, width: CGFloat) -> CGFloat {

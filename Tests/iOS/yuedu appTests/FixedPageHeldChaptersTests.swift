@@ -55,6 +55,32 @@ struct FixedPageHeldChaptersTests {
         #expect(held.heldPage(forPage: 0, inChapter: 7) == nil)
     }
 
+    @Test("past three chapters the strip can let go of the one at either end")
+    func surplusChapterIsAtTheFarEnd() {
+        var held = FixedPageHeldChapters()
+        held.reset(to: 3, pageCount: 5)
+        held.append(4, pageCount: 3)
+        held.prepend(2, pageCount: 4)
+        #expect(held.surplusChapter(atStart: true) == nil)
+        #expect(held.surplusChapter(atStart: false) == nil)
+
+        held.append(5, pageCount: 6)
+        #expect(held.surplusChapter(atStart: true) == .init(index: 2, pageCount: 4))
+        #expect(held.surplusChapter(atStart: false) == .init(index: 5, pageCount: 6))
+
+        held.drop(atStart: true)
+        #expect(held.chapters.map(\.index) == [3, 4, 5])
+        #expect(held.surplusChapter(atStart: true) == nil)
+        // Pages count from the first chapter still held.
+        #expect(held.position(ofHeldPage: 0) == .init(chapter: 3, page: 0, chapterPageCount: 5))
+        #expect(held.previousToPrepend == 2)
+
+        held.prepend(2, pageCount: 4)
+        held.drop(atStart: false)
+        #expect(held.chapters.map(\.index) == [2, 3, 4])
+        #expect(held.nextToAppend == 5)
+    }
+
     @Test("a single held chapter counts its pages as they are")
     func singleChapterIsItself() {
         var held = FixedPageHeldChapters()

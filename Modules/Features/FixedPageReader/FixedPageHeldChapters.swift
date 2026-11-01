@@ -55,6 +55,29 @@ struct FixedPageHeldChapters: Equatable {
         chapters.insert(Chapter(index: index, pageCount: pageCount), at: 0)
     }
 
+    /// The most chapters the strip holds. Every page it holds is laid out again when a page's
+    /// measured height changes, so a strip that kept every chapter read grew slower the longer
+    /// a session ran (FB-114, simulator: 1.18 ms per newly shown page at 2000 pages, 0.26 ms
+    /// at 500). Aidoku keeps three as well.
+    static let retainedLimit = 3
+
+    /// The chapter at the top (`atStart`) or bottom end that the strip can let go of, once it
+    /// holds more than `retainedLimit`.
+    func surplusChapter(atStart: Bool) -> Chapter? {
+        guard chapters.count > Self.retainedLimit else { return nil }
+        return atStart ? chapters.first : chapters.last
+    }
+
+    /// The strip let go of its first (`atStart`) or last chapter.
+    mutating func drop(atStart: Bool) {
+        guard !chapters.isEmpty else { return }
+        if atStart {
+            chapters.removeFirst()
+        } else {
+            chapters.removeLast()
+        }
+    }
+
     /// The chapter and page of the reader's `heldPage`, counted through every held chapter.
     func position(ofHeldPage heldPage: Int) -> Position? {
         guard heldPage >= 0 else { return nil }

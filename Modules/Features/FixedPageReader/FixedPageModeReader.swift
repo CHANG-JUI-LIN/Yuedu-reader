@@ -54,6 +54,11 @@ protocol FixedPageReaderContainer: AnyObject {
     func readerAppendNextChapter() async -> [FixedPage]?
     /// Requests to fetch and prepend the previous chapter seamlessly in infinite webtoon mode.
     func readerPrependPreviousChapter() async -> [FixedPage]?
+    /// The page count of the chapter at the top (`atStart`) or bottom end of the strip when the
+    /// strip holds more chapters than it keeps (`FixedPageHeldChapters.retainedLimit`).
+    func readerSurplusChapterPageCount(atStart: Bool) -> Int?
+    /// The strip let go of that chapter's pages.
+    func readerDidDropChapter(atStart: Bool)
 }
 
 extension FixedPageReaderContainer {
@@ -61,4 +66,6 @@ extension FixedPageReaderContainer {
     func readerContentScrollingChanged(_ isScrolling: Bool) {}
     func readerAppendNextChapter() async -> [FixedPage]? { nil }
     func readerPrependPreviousChapter() async -> [FixedPage]? { nil }
+    func readerSurplusChapterPageCount(atStart: Bool) -> Int? { nil }
+    func readerDidDropChapter(atStart: Bool) {}
 }

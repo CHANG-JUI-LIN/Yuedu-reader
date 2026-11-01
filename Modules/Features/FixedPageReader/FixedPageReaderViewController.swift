@@ -31,6 +31,10 @@ final class FixedPageReaderViewController: UIViewController, FixedPageReaderCont
     private var loadToken = UUID()
     private var saveTask: Task<Void, Never>?
     private var prefetchTask: Task<Void, Never>?
+    /// The next chapter whose first images were asked for. Every page turned in a chapter's
+    /// last quarter asks for them, and each ask used to fetch and parse that chapter on the
+    /// main thread again (FB-114, simulator: 1.24 ms for 70 images) and cancel the one before.
+    private var prefetchedNextChapter: Int?
     private var imagePrefetcher = ImagePrefetcher()
     private var currentPages: [FixedPage] = []
     /// Shared with the mode readers, which read it when they load a page or configure a cell.
@@ -269,6 +273,7 @@ final class FixedPageReaderViewController: UIViewController, FixedPageReaderCont
         currentPages = []
         heldChapters.clear()
         prefetchTask?.cancel()
+        prefetchedNextChapter = nil
         state.currentChapterIndex = index
         state.isLoading = true
         state.errorMessage = nil
@@ -629,6 +634,20 @@ final class FixedPageReaderViewController: UIViewController, FixedPageReaderCont
         return nil
     }
 
+    func readerSurplusChapterPageCount(atStart: Bool) -> Int? {
+        heldChapters.surplusChapter(atStart: atStart)?.pageCount
+    }
+
+    func readerDidDropChapter(atStart: Bool) {
+        guard let dropped = heldChapters.surplusChapter(atStart: atStart) else { return }
+        heldChapters.drop(atStart: atStart)
+        if atStart {
+            currentPages.removeFirst(dropped.pageCount)
+        } else {
+            currentPages.removeLast(dropped.pageCount)
+        }
+    }
+
     // MARK: Prefetching
 
     private func prefetchAroundChapters() {
@@ -692,7 +711,8 @@ final class FixedPageReaderViewController: UIViewController, FixedPageReaderCont
     private func prefetchNextChapterImages() {
         guard book.isOnline else { return }
         let nextIndex = chapterIndex + 1
-        guard nextIndex < chapters.count else { return }
+        guard nextIndex < chapters.count, nextIndex != prefetchedNextChapter else { return }
+        prefetchedNextChapter = nextIndex
 
         prefetchTask?.cancel()
         prefetchTask = Task { [weak self] in
@@ -707,6 +727,8 @@ final class FixedPageReaderViewController: UIViewController, FixedPageReaderCont
                 )
             } catch {
                 AppLogger.error("Next manga chapter prefetch failed", error: error)
+                // The next page turned asks again, as each one did before it was asked once.
+                if self.prefetchedNextChapter == nextIndex { self.prefetchedNextChapter = nil }
                 return
             }
             let localDir = MangaChapterParser.chapterDirectory(bookId: book.id, chapterIndex: nextIndex)

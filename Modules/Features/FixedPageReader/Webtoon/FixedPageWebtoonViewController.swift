@@ -414,12 +414,8 @@ final class FixedPageWebtoonViewController: UIViewController, FixedPageModeReade
         insertItems(at: 0..<newPages.count) {
             self.pages.insert(contentsOf: newPages, at: 0)
         }
-        // The cells on screen keep their pages, which are now further down the strip.
-        for case let cell as FixedPageWebtoonCell in collectionView.visibleCells {
-            if let indexPath = collectionView.indexPath(for: cell) {
-                cell.pageMoved(to: indexPath.item)
-            }
-        }
+        updateVisibleCellItems()
+        dropSurplusChapters(atStart: false)
     }
 
     /// The next chapter's pages go below the strip.
@@ -428,6 +424,59 @@ final class FixedPageWebtoonViewController: UIViewController, FixedPageModeReade
         let start = pages.count
         insertItems(at: start..<start + newPages.count) {
             self.pages.append(contentsOf: newPages)
+        }
+        dropSurplusChapters(atStart: true)
+    }
+
+    /// Lets go of the chapter at the top (`atStart`) or bottom end of the strip while it holds
+    /// more chapters than it keeps (`FixedPageHeldChapters.retainedLimit`) and that chapter is
+    /// wholly off screen. Scrolling back to it loads it again, like any chapter.
+    private func dropSurplusChapters(atStart: Bool) {
+        // A chapter loading at that end was asked for as the neighbour of the one that would go.
+        guard !(atStart ? isLoadingPrevChapter : isLoadingNextChapter) else { return }
+        while let count = container?.readerSurplusChapterPageCount(atStart: atStart),
+              count > 0, count < pages.count {
+            let items = atStart ? 0..<count : (pages.count - count)..<pages.count
+            guard isOffScreen(items, above: atStart) else { return }
+            removePages(items, atStart: atStart)
+        }
+    }
+
+    /// Whether `items` lie wholly above the screen (`above`) or wholly below it.
+    private func isOffScreen(_ items: Range<Int>, above: Bool) -> Bool {
+        collectionView.layoutIfNeeded()
+        let edge = IndexPath(item: above ? items.upperBound - 1 : items.lowerBound, section: 0)
+        guard let frame = layout.layoutAttributesForItem(at: edge)?.frame else { return false }
+        let screen = collectionView.bounds
+        return above ? frame.maxY <= screen.minY : frame.minY >= screen.maxY
+    }
+
+    /// Takes a chapter's items out of the strip; the page on screen stays where it is.
+    private func removePages(_ items: Range<Int>, atStart: Bool) {
+        if atStart {
+            layout.removeItemsAtStart(items.count)
+            currentIndex -= items.count
+        } else {
+            layout.removeItems(from: items.lowerBound)
+        }
+        // The container numbers held pages as the strip does; it lets go of the chapter
+        // before the list can report a page under the new numbering.
+        container?.readerDidDropChapter(atStart: atStart)
+        UIView.performWithoutAnimation {
+            collectionView.performBatchUpdates {
+                self.pages.removeSubrange(items)
+                self.collectionView.deleteItems(at: items.map { IndexPath(item: $0, section: 0) })
+            }
+        }
+        if atStart { updateVisibleCellItems() }
+    }
+
+    /// The cells on screen keep their pages, which a change above has moved to other items.
+    private func updateVisibleCellItems() {
+        for case let cell as FixedPageWebtoonCell in collectionView.visibleCells {
+            if let indexPath = collectionView.indexPath(for: cell) {
+                cell.pageMoved(to: indexPath.item)
+            }
         }
     }
 
