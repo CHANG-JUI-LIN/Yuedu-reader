@@ -400,12 +400,7 @@ struct BookDetailHero<Cover: View>: View {
     /// alone. Drawn behind the artwork's frame, so the hero's size never changes with it.
     var seriesFan: SeriesFan? = nil
 
-    @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
-    @Environment(\.colorSchemeContrast) private var contrast
-    @Environment(\.colorScheme) private var colorScheme
     @Environment(\.bookDetailEmbedding) private var embedding
-    @Bindable private var settings = GlobalSettings.shared
-    @ObservedObject private var subscriptions = SubscriptionStore.shared
     /// The hue of the cover on screen, as its view reports it; nil until then, for a cover
     /// with no bitmap (a generated one) and for a grey one (`CoverTint.wash`).
     @State private var wash: CoverTint.Wash?
@@ -436,7 +431,7 @@ struct BookDetailHero<Cover: View>: View {
         .frame(maxWidth: embedding?.contentWidth ?? .infinity)
         .frame(maxWidth: .infinity)
         .background(alignment: .top) {
-            if let tone = embedding?.tone { cardTop(tone) } else { backdrop }
+            if let tone = embedding?.tone { cardTop(tone) } else { BookDetailCoverWash(wash: wash) }
         }
     }
 
@@ -463,14 +458,7 @@ struct BookDetailHero<Cover: View>: View {
     private var artwork: some View {
         let shape = RoundedRectangle(cornerRadius: DSRadius.md, style: .continuous)
         return cover
-            .environment(\.coverImageObserver, { image in
-                Task {
-                    let found = await Task.detached(priority: .utility) {
-                        CoverTint.average(of: image).flatMap(CoverTint.wash(for:))
-                    }.value
-                    if found != wash { wash = found }
-                }
-            })
+            .reportsCoverWash(to: $wash)
             .frame(width: artworkSize.width, height: artworkSize.height)
             .clipShape(shape)
             .overlay(shape.stroke(DSColor.separator, lineWidth: 0.5))
@@ -665,15 +653,24 @@ struct BookDetailHero<Cover: View>: View {
         // The 44pt tap targets would push the line apart; the text keeps its rhythm.
         .padding(.vertical, -DSSpacing.md)
     }
+}
 
-    /// The cover's hue as a faint wash behind the hero, fading into the page: never the
-    /// cover itself blurred, which turned a dull cover into grey haze. It runs up past the
-    /// hero's own top edge, under the navigation and status bars, so the bars float over it
-    /// instead of ending it as a band. A cover with no hue — a generated one, a grey one —
-    /// leaves the page background as it is, and so do a theme's page picture (it owns the
-    /// background), Reduce Transparency and Increase Contrast.
-    @ViewBuilder
-    private var backdrop: some View {
+/// The cover's hue as a faint wash behind a detail page's header, fading into the page: never
+/// the cover itself blurred, which turned a dull cover into grey haze. It runs up past the
+/// header's own top edge, under the navigation and status bars, so the bars float over it
+/// instead of ending it as a band. A cover with no hue — a generated one, a grey one —
+/// leaves the page background as it is, and so do a theme's page picture (it owns the
+/// background), Reduce Transparency and Increase Contrast.
+struct BookDetailCoverWash: View {
+    let wash: CoverTint.Wash?
+
+    @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
+    @Environment(\.colorSchemeContrast) private var contrast
+    @Environment(\.colorScheme) private var colorScheme
+    @Bindable private var settings = GlobalSettings.shared
+    @ObservedObject private var subscriptions = SubscriptionStore.shared
+
+    var body: some View {
         if let wash, !reduceTransparency, contrast != .increased,
            PageBackgroundView.slice(for: .global, colorScheme: colorScheme, settings: settings,
                                     subscriptions: subscriptions) == nil {
@@ -695,6 +692,20 @@ struct BookDetailHero<Cover: View>: View {
             .allowsHitTesting(false)
             .accessibilityHidden(true)
         }
+    }
+}
+
+extension View {
+    /// Reads the hue of the cover this view draws into `wash`, for `BookDetailCoverWash`.
+    func reportsCoverWash(to wash: Binding<CoverTint.Wash?>) -> some View {
+        environment(\.coverImageObserver, { image in
+            Task {
+                let found = await Task.detached(priority: .utility) {
+                    CoverTint.average(of: image).flatMap(CoverTint.wash(for:))
+                }.value
+                if found != wash.wrappedValue { wash.wrappedValue = found }
+            }
+        })
     }
 }
 

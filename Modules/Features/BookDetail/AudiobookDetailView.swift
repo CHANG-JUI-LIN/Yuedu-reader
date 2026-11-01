@@ -580,7 +580,7 @@ struct AudiobookDetailView: View {
     }
 
     private func applyOrigin(_ origin: BookOrigin) {
-        if DetailSourceKind.kind(of: origin, in: searchBook) != .audio,
+        if DetailPageKind.of(origin, in: searchBook) != .audio,
            let onSourceKindChange {
             onSourceKindChange(origin)
             return
@@ -809,27 +809,28 @@ extension BookSourceStore {
         return sources.first { $0.id == id }?.bookSourceType == 1
     }
 
-    nonisolated func isAudiobook(_ book: OnlineBook) -> Bool {
+    /// The kind that picks the book's detail page, logged as the routing diagnostic.
+    nonisolated func routedContentKind(_ book: OnlineBook) -> OnlineBookContentKind {
         let source = sources.first { $0.id == book.sourceId }
         let kind = book.inferredContentKind(source: source)
         let modes = OnlineBookContentInference.sourceRuntimeModeMarkers(for: source)
         audioRouteLog.notice(
             "⟐ route \(book.name, privacy: .public) → \(String(describing: kind), privacy: .public) srcType=\(source?.bookSourceType ?? -1) modes=\(modes.joined(separator: ","), privacy: .public) vars=\(book.runtimeVariables?.keys.joined(separator: ",") ?? "-", privacy: .public) url=\(String(book.bookUrl.prefix(160)), privacy: .public)"
         )
-        return kind == .audio
+        return kind
     }
 
-    nonisolated func isAudiobook(_ searchBook: SearchBook) -> Bool {
+    nonisolated func routedContentKind(_ searchBook: SearchBook) -> OnlineBookContentKind {
         let kind = searchBook.inferredContentKind(sourceStore: self)
         let origin = searchBook.origins.first
         let source = sources.first { $0.id == origin?.sourceId }
         audioRouteLog.notice(
             "⟐ route(search snapshot) \(searchBook.name, privacy: .public) → \(String(describing: kind), privacy: .public) origins=\(searchBook.origins.count) srcType=\(source?.bookSourceType ?? -1) url=\(String(origin?.bookUrl.prefix(160) ?? ""), privacy: .public)"
         )
-        return kind == .audio
+        return kind
     }
 
-    // Quiet variants for list/cover badges — the logging `isAudiobook` methods above are
+    // Quiet variants for list/cover badges — the logging `routedContentKind` methods above are
     // routing diagnostics and must not fire per-cell while a list scrolls.
     nonisolated func isAudiobookForBadge(_ book: OnlineBook) -> Bool {
         book.inferredContentKind(source: sources.first { $0.id == book.sourceId }) == .audio

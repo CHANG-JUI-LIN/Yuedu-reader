@@ -406,7 +406,7 @@ enum DirectChapterAudioResolver {
             || lowered.contains("/tts/")
     }
 
-    private static func stripLegadoOptions(from candidate: String) -> String {
+    static func stripLegadoOptions(from candidate: String) -> String {
         if let range = candidate.range(of: #"\s*,\s*\{"#, options: .regularExpression) {
             return String(candidate[..<range.lowerBound])
         }

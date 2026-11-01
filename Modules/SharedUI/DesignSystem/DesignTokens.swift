@@ -46,6 +46,10 @@ enum DSColor {
     /// Text on a strong fill whose colour does not follow the theme's accent: the rank
     /// badges, the destructive count, a cover's tint, a photo or the dim over one.
     static let textOnFixedFill = Color.white
+    /// Behind a video's picture, letterbox included: black in every theme, as every player's.
+    static let videoPlayerBackground = Color.black
+    /// The dim under the video player's controls, so white controls read over any picture.
+    static let videoControlScrim = Color.black.opacity(0.55)
     /// The least contrast white text on an accent fill may have before it turns black:
     /// WCAG's floor for UI components and large text (user's call, 2026-10-25). Blue and
     /// violet accents keep white; 琥珀金, 苔原綠's derived dark accent and the near-white
@@ -947,6 +951,20 @@ enum DSLayout {
     static let onboardingSketchBorderWidth: CGFloat = 0.5
     /// One of 新手導覽's page dots.
     static let onboardingPageDotSize: CGFloat = 8
+
+    /// The video player's previous / play-pause / next (plezy's centre controls).
+    static let videoCenterControlSide: CGFloat = 64
+    /// How far a finger travels before a swipe on the picture counts (up opens 選集).
+    static let videoSwipeThreshold: CGFloat = 40
+    /// The poster on a video's detail page (Swiftfin's compact header).
+    static let videoPosterWidth: CGFloat = 120
+    /// An episode card in a video detail page's 選集 row.
+    static let videoEpisodeCardWidth: CGFloat = 140
+    static let videoEpisodeCardHeight: CGFloat = 64
+    /// The outline that marks the episode to resume.
+    static let videoEpisodeResumeStroke: CGFloat = 2
+    /// Posters in a video detail page's wall of related works: three rows of three.
+    static let videoPosterWallCount = 9
 }
 
 // MARK: - Design System: Corner Radius Tokens
@@ -1031,6 +1049,10 @@ enum DSAnimation {
     static let celebrationFrameInterval: TimeInterval = 1.0 / 60
     /// Delay between the pieces of 新手導覽's welcome page coming in, one after another.
     static let onboardingStagger: TimeInterval = 0.05
+    /// The video player's controls get out of the picture's way this long after the last touch.
+    static let videoControlsAutoHide: Duration = .seconds(4)
+    /// How long a press on the picture lasts before it plays faster while held (legado-E).
+    static let videoLongPressSeconds: Double = 0.5
 }
 
 // MARK: - View Extensions

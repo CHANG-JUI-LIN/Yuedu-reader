@@ -8,10 +8,10 @@ import SwiftUI
 /// Legado (original, legado-E and MD3 alike) hands a changed source's type to the
 /// book: `SearchBook.toBook()` carries the new source's `type`, and the read action
 /// branches on that type. Yuedu has one detail page per kind — `AudiobookDetailView`
-/// for audio, `OnlineBookView` for everything else — so here the kind picks the
-/// page. Switching an audiobook detail to a text source replaces it with the text
-/// detail, and switching a text detail to an audio source does the reverse; the
-/// page was previously fixed by the source that happened to open it.
+/// for audio, `VideoDetailView` for video, `OnlineBookView` for everything else — so here
+/// the kind picks the page. Switching an audiobook detail to a text source replaces it
+/// with the text detail, and switching a text detail to an audio source does the reverse;
+/// the page was previously fixed by the source that happened to open it.
 struct OnlineBookDetailDestination: View {
     enum Entry {
         /// Aggregated search result; the pages switch among its origins.
@@ -39,7 +39,7 @@ struct OnlineBookDetailDestination: View {
     /// The origin selected across a kind change. `nil` until the first such change,
     /// so the entry opens on each page's own default origin.
     @State private var switchedOrigin: BookOrigin?
-    @State private var showsAudioPage: Bool
+    @State private var pageKind: DetailPageKind
 
     init(
         _ entry: Entry,
@@ -55,14 +55,14 @@ struct OnlineBookDetailDestination: View {
         self.workVersions = workVersions
         self.seriesFan = seriesFan
         self.textPageReaderNavigator = textPageReaderNavigator
-        let isAudio: Bool
+        let kind: OnlineBookContentKind
         switch entry {
         case .search(let searchBook):
-            isAudio = BookSourceStore.shared.isAudiobook(searchBook)
+            kind = BookSourceStore.shared.routedContentKind(searchBook)
         case .book(let book):
-            isAudio = BookSourceStore.shared.isAudiobook(book)
+            kind = BookSourceStore.shared.routedContentKind(book)
         }
-        _showsAudioPage = State(initialValue: isAudio)
+        _pageKind = State(initialValue: DetailPageKind(kind))
     }
 
     var body: some View {
@@ -76,7 +76,8 @@ struct OnlineBookDetailDestination: View {
     private var page: some View {
         switch entry {
         case .search(let searchBook):
-            if showsAudioPage {
+            switch pageKind {
+            case .audio:
                 AudiobookDetailView(
                     searchBook: searchBook,
                     initialOrigin: switchedOrigin,
@@ -85,7 +86,15 @@ struct OnlineBookDetailDestination: View {
                     workVersions: workVersions,
                     seriesFan: seriesFan
                 )
-            } else {
+            case .video:
+                VideoDetailView(
+                    searchBook: searchBook,
+                    initialOrigin: switchedOrigin,
+                    onRemoveFromShelf: onRemoveFromShelf,
+                    onSourceKindChange: switchPage,
+                    workVersions: workVersions
+                )
+            case .book:
                 OnlineBookView(
                     searchBook: searchBook,
                     initialOrigin: switchedOrigin,
@@ -101,7 +110,8 @@ struct OnlineBookDetailDestination: View {
             let shown = switchedOrigin.map {
                 OnlineBook(detailOrigin: $0, name: book.name, author: book.author)
             } ?? book
-            if showsAudioPage {
+            switch pageKind {
+            case .audio:
                 AudiobookDetailView(
                     book: shown,
                     onRemoveFromShelf: onRemoveFromShelf,
@@ -109,7 +119,14 @@ struct OnlineBookDetailDestination: View {
                     workVersions: workVersions,
                     seriesFan: seriesFan
                 )
-            } else {
+            case .video:
+                VideoDetailView(
+                    book: shown,
+                    onRemoveFromShelf: onRemoveFromShelf,
+                    onSourceKindChange: switchPage,
+                    workVersions: workVersions
+                )
+            case .book:
                 OnlineBookView(
                     book: shown,
                     sourceSwitchBookId: shelfCopyId,
@@ -124,7 +141,7 @@ struct OnlineBookDetailDestination: View {
     }
 
     private func switchPage(to origin: BookOrigin) {
-        showsAudioPage = DetailSourceKind.kind(of: origin, in: searchBook) == .audio
+        pageKind = DetailPageKind.of(origin, in: searchBook)
         switchedOrigin = origin
     }
 
@@ -156,6 +173,26 @@ enum DetailSourceKind {
         }
         let source = BookSourceStore.shared.source(id: book.sourceId)
         return book.inferredContentKind(source: source)
+    }
+}
+
+/// Which detail page shows a kind: audio and video each have their own, and text and manga
+/// share the book page.
+enum DetailPageKind: Equatable {
+    case book
+    case audio
+    case video
+
+    init(_ kind: OnlineBookContentKind) {
+        switch kind {
+        case .audio: self = .audio
+        case .video: self = .video
+        case .text, .manga: self = .book
+        }
+    }
+
+    static func of(_ origin: BookOrigin, in searchBook: SearchBook?) -> DetailPageKind {
+        DetailPageKind(DetailSourceKind.kind(of: origin, in: searchBook))
     }
 }
 

@@ -82,6 +82,8 @@ private struct BookReaderContent: View {
                 ReaderPreparingView(error: nil, onRetry: {}, onClose: closeReader)
             } else if isAudiobook {
                 AudiobookReaderView(bookId: bookId)
+            } else if book?.resolvedPipelineKind == .video {
+                VideoPlayerView(content: .shelf(bookId), onClose: closeReader)
             } else if shouldUseFixedPageReader {
                 FixedPageReaderView(bookId: bookId)
             } else {

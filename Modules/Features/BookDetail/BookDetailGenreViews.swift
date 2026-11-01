@@ -92,8 +92,16 @@ struct BookDetailRelatedBookDestination: View {
 /// shelf of covers. Not shown when no genre names a category (`SourceGenreLinks.Related`).
 /// The menu beside the title picks another category (maintainer, 2026-10-15).
 struct BookDetailRelatedSection: View {
+    /// How the works are laid out: a row that scrolls (books), or a wall of posters, as a media
+    /// centre shows a genre (videos; maintainer, 2026-11-01: 「海報牆」).
+    enum Layout {
+        case shelf
+        case wall
+    }
+
     let related: SourceGenreLinks.Related
     var choices: RelatedCategoryChoices?
+    var layout: Layout = .shelf
     var onChoose: (String) -> Void = { _ in }
     let onShowAll: (ExploreCategoryReference) -> Void
     let onSelect: (OnlineBook) -> Void
@@ -168,7 +176,10 @@ struct BookDetailRelatedSection: View {
                 .frame(maxWidth: .infinity, minHeight: DSLayout.discoverShelfCoverHeight)
                 .padding(.horizontal, DSSpacing.lg)
         case .loaded(_, let section):
-            shelf(section)
+            switch layout {
+            case .shelf: shelf(section)
+            case .wall: wall(section)
+            }
         case .failed:
             Button(action: onRetry) {
                 Label(localized("載入失敗，點按重試"), systemImage: "arrow.clockwise")
@@ -201,6 +212,47 @@ struct BookDetailRelatedSection: View {
         .scrollTargetBehavior(.viewAligned)
         .scrollClipDisabled()
     }
+
+    /// Three posters a row, the first few rows; 查看全部 has the rest. Not a lazy grid: it is
+    /// a handful, and a lazy one inside the page's scroll view can leave VoiceOver nothing to
+    /// reach.
+    private func wall(_ section: DiscoverShowcaseSection) -> some View {
+        let books = Array(section.books.prefix(DSLayout.videoPosterWallCount))
+        let columns = 3
+        return VStack(alignment: .leading, spacing: DSSpacing.lg) {
+            ForEach(Array(stride(from: 0, to: books.count, by: columns)), id: \.self) { start in
+                HStack(alignment: .top, spacing: DSSpacing.md) {
+                    ForEach(start..<(start + columns), id: \.self) { index in
+                        if books.indices.contains(index) {
+                            poster(books[index], in: section)
+                        } else {
+                            Color.clear.frame(maxWidth: .infinity)
+                        }
+                    }
+                }
+            }
+        }
+        .padding(.horizontal, DSSpacing.lg)
+    }
+
+    private func poster(_ display: DiscoverBookDisplay, in section: DiscoverShowcaseSection) -> some View {
+        Button { onSelect(display.book) } label: {
+            VStack(alignment: .leading, spacing: DSSpacing.xs) {
+                DiscoverCover(display: display, section: section, size: nil)
+                Text(display.book.name)
+                    .font(DSFont.footnote.weight(.medium))
+                    .foregroundStyle(DSColor.textPrimary)
+                    .lineLimit(2, reservesSpace: true)
+                    .multilineTextAlignment(.leading)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .contentShape(Rectangle())
+            .accessibilityElement(children: .combine)
+            .accessibilityValue(ContentKind(display.contentKind).mediaTag ?? "")
+        }
+        .buttonStyle(.plain)
+        .accessibilityIdentifier("detail.related.book")
+    }
 }
 
 #Preview("同題材") {
@@ -222,6 +274,8 @@ struct BookDetailRelatedSection: View {
             BookDetailRelatedSection(related: .loaded(reference, section),
                                      choices: RelatedCategoryChoices(matched: ["玄幻", "仙俠"], others: ["都市", "歷史"],
                                                                      current: "玄幻"),
+                                     onShowAll: { _ in }, onSelect: { _ in }, onRetry: {})
+            BookDetailRelatedSection(related: .loaded(reference, section), layout: .wall,
                                      onShowAll: { _ in }, onSelect: { _ in }, onRetry: {})
             BookDetailRelatedSection(related: .loading(reference), onShowAll: { _ in },
                                      onSelect: { _ in }, onRetry: {})

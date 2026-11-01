@@ -76,7 +76,7 @@ final class OnlineChapterAudioProvider: ChapterAudioProvider {
             )
         }
 
-        let mergedHeaders = await sourceHeaders(for: book)
+        let mergedHeaders = await OnlineChapterMedia.sourceHeaders(for: book)
             .merging(request.allHTTPHeaderFields ?? [:]) { _, requestValue in requestValue }
 
         return ChapterAudio(
@@ -85,14 +85,23 @@ final class OnlineChapterAudioProvider: ChapterAudioProvider {
         )
     }
 
+    func discardResolvedAudio(for book: ReadingBook, chapterIndex: Int, store: BookStore) {
+        OnlineChapterMedia.discardResolvedChapter(of: book, chapterIndex: chapterIndex, store: store)
+    }
+}
+
+/// What an online audio or video chapter shares: the cached content is the chapter's resolved
+/// link, and its CDN wants the source's headers.
+@MainActor
+enum OnlineChapterMedia {
     /// The same two steps the reader's refetch takes: the cached chapter file, and the
     /// shelf record's pointer to it.
-    func discardResolvedAudio(for book: ReadingBook, chapterIndex: Int, store: BookStore) {
+    static func discardResolvedChapter(of book: ReadingBook, chapterIndex: Int, store: BookStore) {
         BookSourceFetcher.shared.clearChapterCache(bookId: book.id, chapterIndex: chapterIndex)
         store.clearCachedChapter(bookId: book.id, chapterIndex: chapterIndex)
     }
 
-    private func sourceHeaders(for book: ReadingBook) async -> [String: String] {
+    static func sourceHeaders(for book: ReadingBook) async -> [String: String] {
         let source = book.bookSourceId.flatMap { id in
             BookSourceStore.shared.source(id: id)
         }

@@ -305,6 +305,13 @@ final class NowPlayingHub: ObservableObject {
         if source == .tts { coordinator?.stop(reason: "audiobook takeover") }
     }
 
+    /// A video takes the audio session: the audiobook pauses where it is, so its bar can
+    /// resume it afterwards, and narration stops.
+    func yieldToVideo() {
+        if source == .audiobook, audiobook?.isPlaying == true { audiobook?.pause() }
+        if source == .tts { coordinator?.stop(reason: "video takeover") }
+    }
+
     // MARK: - Audiobook source (app-global)
 
     /// Bind the hub to the live audiobook session so the global mini-player can mirror

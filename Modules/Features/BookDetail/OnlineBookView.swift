@@ -400,7 +400,7 @@ struct OnlineBookView: View {
         }
         .readerShelvePrompt($shelvePrompt, onAdd: keepReadBook, onDecline: leaveReadBook)
         .fullScreenCover(isPresented: $showReader, onDismiss: readerDidClose) {
-            // Audiobooks keep their dedicated modal player.
+            // Audiobooks and videos keep their dedicated modal player.
             if let bid = addedBookId {
                 BookReaderView(bookId: bid)
                     .environmentObject(bookStore)
@@ -639,7 +639,7 @@ struct OnlineBookView: View {
     }
 
     private func applyOrigin(_ origin: BookOrigin) {
-        if DetailSourceKind.kind(of: origin, in: searchBook) == .audio,
+        if DetailPageKind.of(origin, in: searchBook) != .book,
            let onSourceKindChange {
             onSourceKindChange(origin)
             return
@@ -1057,7 +1057,7 @@ struct OnlineBookView: View {
                 openingReader = false
                 return
             }
-            if readingBook.resolvedPipelineKind == .audio {
+            if readingBook.resolvedPipelineKind == .audio || readingBook.resolvedPipelineKind == .video {
                 openingReader = false
                 showReader = true
                 return
