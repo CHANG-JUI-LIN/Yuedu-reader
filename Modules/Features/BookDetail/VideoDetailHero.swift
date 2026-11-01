@@ -5,9 +5,10 @@ import SwiftUI
 /// background, light or dark, with the title, its facts and the buttons on the faded part,
 /// centred (maintainer, 2026-11-01: 「海報顏色淡出…往下滑顏色就沒了…就是正常黑白色」).
 ///
-/// A portrait poster stretched across a wide window would be cropped to a band, so there — an
-/// iPad, a phone on its side — the poster stands beside the title over a blur of itself, as
-/// plezy's wide hero keeps its column at the leading edge. On a phone the poster card stands
+/// A wide window — an iPad, a phone on its side — keeps the poster across the whole width,
+/// sharp, and moves the text to a bottom-leading column, as plezy, Infuse, VidHub and Swiftfin
+/// lay out their iPad pages (maintainer, 2026-11-01: 「你確定他們 ipad 版本橫屏是這樣嗎？」
+/// about a poster card over a blur of itself, which none of them does). A poster card stands
 /// above the title until there is artwork: a generated cover drawn across the width would
 /// print the title twice.
 struct VideoDetailHero<Cover: View, Actions: View>: View {
@@ -27,7 +28,8 @@ struct VideoDetailHero<Cover: View, Actions: View>: View {
     @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
-    /// Wide enough that a full-width portrait poster would be cut to a band.
+    /// Wide enough that a centred title would float in the middle of the poster: the text
+    /// moves to the leading edge, as plezy's hero does past a phone's width.
     private var isWide: Bool { horizontalSizeClass == .regular || verticalSizeClass == .compact }
 
     /// The poster is gone before the text begins, so the text is on the page alone.
@@ -36,51 +38,29 @@ struct VideoDetailHero<Cover: View, Actions: View>: View {
     }
 
     var body: some View {
-        if isWide {
-            beside
-        } else {
-            centred
-        }
-    }
-
-    private var centred: some View {
+        let alignment: HorizontalAlignment = isWide ? .leading : .center
+        let inset = isWide ? DSSpacing.xl : DSSpacing.lg
         ZStack(alignment: .bottom) {
             if poster != nil {
                 // The poster's height; the text grows the hero past it at the larger sizes.
                 Color.clear
                     .containerRelativeFrame(.vertical) { length, _ in length * DSLayout.videoHeroHeightFraction }
             }
-            VStack(spacing: DSSpacing.lg) {
-                if poster == nil { posterCard(width: DSLayout.videoPosterWidth) }
-                titleBlock(alignment: .center)
+            VStack(alignment: alignment, spacing: DSSpacing.lg) {
+                if poster == nil {
+                    posterCard(width: isWide ? DSLayout.videoPosterWideWidth : DSLayout.videoPosterWidth)
+                }
+                titleBlock(alignment: alignment)
                 actions
             }
-            .padding(.horizontal, DSSpacing.lg)
-            .padding(.top, barInset + DSSpacing.lg)
+            .frame(maxWidth: .infinity, alignment: Alignment(horizontal: alignment, vertical: .center))
+            .padding(.horizontal, inset)
+            .padding(.top, barInset + inset)
         }
         .frame(maxWidth: .infinity)
         .background {
             if let poster {
-                VideoPosterBackdrop(image: poster, isBlurred: false, fadesEarly: fadesEarly)
-            }
-        }
-    }
-
-    private var beside: some View {
-        HStack(alignment: .bottom, spacing: DSSpacing.xl) {
-            posterCard(width: DSLayout.videoPosterWideWidth)
-            VStack(alignment: .leading, spacing: DSSpacing.lg) {
-                titleBlock(alignment: .leading)
-                actions
-            }
-            .frame(maxWidth: .infinity, alignment: .leading)
-        }
-        .padding(.horizontal, DSSpacing.xl)
-        .padding(.top, barInset + DSSpacing.xl)
-        .frame(maxWidth: .infinity)
-        .background {
-            if let poster, !reduceTransparency {
-                VideoPosterBackdrop(image: poster, isBlurred: true, fadesEarly: fadesEarly)
+                VideoPosterBackdrop(image: poster, fadesEarly: fadesEarly)
             }
         }
     }
@@ -136,7 +116,6 @@ struct VideoDetailHero<Cover: View, Actions: View>: View {
 /// poster. Pulled down past the top of the page, it grows from its bottom edge into the gap.
 private struct VideoPosterBackdrop: View {
     let image: UIImage
-    let isBlurred: Bool
     let fadesEarly: Bool
 
     @Environment(\.bookDetailHeroBarInset) private var barInset
@@ -147,7 +126,6 @@ private struct VideoPosterBackdrop: View {
                 Image(uiImage: image)
                     .resizable()
                     .scaledToFill()
-                    .blur(radius: isBlurred ? DSLayout.videoBackdropBlur : 0, opaque: true)
             }
             .clipped()
             // Only a mask's opacity counts, so its colour is any opaque one.

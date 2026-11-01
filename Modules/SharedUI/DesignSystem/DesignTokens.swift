@@ -958,7 +958,7 @@ enum DSLayout {
     static let videoSwipeThreshold: CGFloat = 40
     /// The poster card on a video's detail page while it has no artwork to fill the width with.
     static let videoPosterWidth: CGFloat = 120
-    /// The poster card beside the title on a wide window (iPad, a phone on its side).
+    /// The same card on a wide window (iPad, a phone on its side).
     static let videoPosterWideWidth: CGFloat = 180
     /// How much of the screen's height a video's full-width poster takes (plezy's 60 %).
     static let videoHeroHeightFraction: CGFloat = 0.6
@@ -973,8 +973,6 @@ enum DSLayout {
     /// The poster's opacity at the very top, under the status bar and the navigation bar,
     /// so their text and buttons read over a bright poster.
     static let videoHeroBarOpacity: Double = 0.35
-    /// The blur on the poster behind a wide window's header.
-    static let videoBackdropBlur: CGFloat = 40
     /// The widest the play button gets beside the icon buttons.
     static let videoPlayButtonMaxWidth: CGFloat = 320
     /// The most facts (episode count, genres) under a video's title: one line on a phone.
