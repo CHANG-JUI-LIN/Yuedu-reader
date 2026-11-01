@@ -49,9 +49,12 @@ final class FixedPageWebtoonLayout: UICollectionViewFlowLayout {
         pendingInsertedAtStart = 0
     }
 
-    func setRatio(_ ratio: CGFloat, forItem index: Int) {
-        guard ratio > 0, ratios[index] != ratio else { return }
+    /// Whether the item's height changed, and so the layout with it.
+    @discardableResult
+    func setRatio(_ ratio: CGFloat, forItem index: Int) -> Bool {
+        guard ratio > 0, ratios[index] != ratio else { return false }
         ratios[index] = ratio
+        return true
     }
 
     /// `count` items were inserted before item 0 (a previous chapter prepended). Measured
@@ -106,6 +109,18 @@ final class FixedPageWebtoonLayout: UICollectionViewFlowLayout {
     override func prepare() {
         super.prepare()
         guard let collectionView else { return }
+        // A pass lays out every item of the strip, and the strip grows with each chapter it
+        // takes in; one that runs past half a 120 Hz frame is logged with how many it laid out.
+        SourcePerfTrace.span(
+            "webtoon.layout",
+            "items=\(collectionView.numberOfItems(inSection: 0))",
+            thresholdMs: 4
+        ) {
+            layOut(collectionView)
+        }
+    }
+
+    private func layOut(_ collectionView: UICollectionView) {
         let scale = zoomScale
         let anchor = scale == preparedZoomScale ? scrollAnchor(in: collectionView) : nil
         pendingInsertedAtStart = 0

@@ -390,14 +390,17 @@ final class FixedPageWebtoonViewController: UIViewController, FixedPageModeReade
         return cell
     }
 
-    /// A cell's image arrived: size its item to the image. The cell reports the index it
-    /// was configured with, which is stale when a chapter was prepended while the image
-    /// loaded — that slot now holds another page, and sizing it by this image draws that
-    /// page aspect-fit in the wrong frame. Such a report is dropped; `reloadData` has
-    /// already queued the cell to be configured for its new index, and it reports again.
+    /// A cell's image arrived: size its item to the image. The cell reports the item its
+    /// page is at (a chapter going in above moves it, `insertPagesAbove`); a report whose
+    /// item holds another page is dropped — sizing that item by this image would draw its
+    /// page aspect-fit in the wrong frame.
+    ///
+    /// A page shown again reports the height it already has, and changes nothing: laying
+    /// the whole strip out again for it is work that grows with every chapter added.
     func pageImageDidLoad(index: Int, page: FixedPage, ratio: CGFloat) {
-        guard pages.indices.contains(index), pages[index] == page else { return }
-        layout.setRatio(ratio, forItem: index)
+        guard pages.indices.contains(index), pages[index] == page,
+              layout.setRatio(ratio, forItem: index)
+        else { return }
         layout.invalidateLayout()
     }
 
@@ -406,14 +409,45 @@ final class FixedPageWebtoonViewController: UIViewController, FixedPageModeReade
     func insertPagesAbove(_ newPages: [FixedPage]) {
         guard !newPages.isEmpty else { return }
         layout.insertItemsAtStart(newPages.count)
-        pages.insert(contentsOf: newPages, at: 0)
         // The page on screen stays put, now further down the strip.
         currentIndex += newPages.count
-        collectionView.reloadData()
+        insertItems(at: 0..<newPages.count) {
+            self.pages.insert(contentsOf: newPages, at: 0)
+        }
+        // The cells on screen keep their pages, which are now further down the strip.
+        for case let cell as FixedPageWebtoonCell in collectionView.visibleCells {
+            if let indexPath = collectionView.indexPath(for: cell) {
+                cell.pageMoved(to: indexPath.item)
+            }
+        }
+    }
+
+    /// The next chapter's pages go below the strip.
+    func appendPages(_ newPages: [FixedPage]) {
+        guard !newPages.isEmpty else { return }
+        let start = pages.count
+        insertItems(at: start..<start + newPages.count) {
+            self.pages.append(contentsOf: newPages)
+        }
+    }
+
+    /// Adds a chapter's items to the list as it is. `reloadData` handed every cell on screen
+    /// back for reuse, which emptied it and loaded its page again: each one showed the
+    /// reader's black background until its image was back (FB-114).
+    private func insertItems(at items: Range<Int>, updatingPages updatePages: @escaping () -> Void) {
+        UIView.performWithoutAnimation {
+            collectionView.performBatchUpdates {
+                updatePages()
+                self.collectionView.insertItems(at: items.map { IndexPath(item: $0, section: 0) })
+            }
+        }
     }
 
     func collectionView(_ collectionView: UICollectionView, willDisplay cell: UICollectionViewCell, forItemAt indexPath: IndexPath) {
-        (cell as? FixedPageWebtoonCell)?.load()
+        guard let cell = cell as? FixedPageWebtoonCell else { return }
+        // A cell made ready ahead of display was configured before any chapter went in above.
+        cell.pageMoved(to: indexPath.item)
+        cell.load()
     }
 
     func collectionView(_ collectionView: UICollectionView, didEndDisplaying cell: UICollectionViewCell, forItemAt indexPath: IndexPath) {
@@ -464,9 +498,16 @@ final class FixedPageWebtoonViewController: UIViewController, FixedPageModeReade
             isLoadingNextChapter = true
             Task { [weak self] in
                 guard let self else { return }
-                if let nextPages = await self.container?.readerAppendNextChapter(), !nextPages.isEmpty {
-                    self.pages.append(contentsOf: nextPages)
-                    self.collectionView.reloadData()
+                let start = SourcePerfTrace.now
+                if let nextPages = await self.container?.readerAppendNextChapter() {
+                    let fetched = (SourcePerfTrace.now - start) * 1000
+                    SourcePerfTrace.span(
+                        "webtoon.appendChapter",
+                        "pages=\(nextPages.count) items=\(self.pages.count) fetch=\(Int(fetched))ms",
+                        thresholdMs: 0
+                    ) {
+                        self.appendPages(nextPages)
+                    }
                 }
                 self.isLoadingNextChapter = false
             }
@@ -477,8 +518,16 @@ final class FixedPageWebtoonViewController: UIViewController, FixedPageModeReade
             isLoadingPrevChapter = true
             Task { [weak self] in
                 guard let self else { return }
+                let start = SourcePerfTrace.now
                 if let prevPages = await self.container?.readerPrependPreviousChapter() {
-                    self.insertPagesAbove(prevPages)
+                    let fetched = (SourcePerfTrace.now - start) * 1000
+                    SourcePerfTrace.span(
+                        "webtoon.prependChapter",
+                        "pages=\(prevPages.count) items=\(self.pages.count) fetch=\(Int(fetched))ms",
+                        thresholdMs: 0
+                    ) {
+                        self.insertPagesAbove(prevPages)
+                    }
                 }
                 self.isLoadingPrevChapter = false
             }

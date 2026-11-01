@@ -121,12 +121,34 @@ enum FixedPageImageLoader {
             }
         }
 
-        guard var image = baseImage else { return nil }
+        guard let baseImage else { return nil }
+        return displayedImage(baseImage, for: page)
+    }
 
-        if let side = page.subPageSide {
-            image = FixedPageSplitProcessor.cropHalf(from: image, side: side)
+    /// The page's image when it is already decoded in memory, for a view about to show it; nil
+    /// when it has to be loaded (`loadImage`). Image pages keep theirs in Nuke's memory cache,
+    /// under the request `loadImage` makes; rasterized pages are not looked up here.
+    ///
+    /// `loadImage` finds the same image, but only after Nuke hops to its own queue, so a view
+    /// that waits for it shows nothing for at least a frame: the webtoon showed the reader's
+    /// black background through every page it re-displayed (FB-114).
+    @MainActor
+    static func cachedImage(for page: FixedPage, targetWidth: CGFloat, cropBorders: Bool = false) -> UIImage? {
+        switch page.renderSource {
+        case .image, .archiveImage:
+            let request = request(for: page, targetWidth: targetWidth, cropBorders: cropBorders)
+            // A progressive preview is not the page; it keeps loading.
+            guard let container = ImagePipeline.shared.cache[request], !container.isPreview else { return nil }
+            return displayedImage(container.image, for: page)
+        case .pdf, .fixedLayoutEPUB:
+            return nil
         }
-        return image
+    }
+
+    /// The half of a split spread that `page` shows, or the whole image.
+    private static func displayedImage(_ image: UIImage, for page: FixedPage) -> UIImage {
+        guard let side = page.subPageSide else { return image }
+        return FixedPageSplitProcessor.cropHalf(from: image, side: side)
     }
 
     /// Where a page's image comes from, for the log: archive and entry name of a local

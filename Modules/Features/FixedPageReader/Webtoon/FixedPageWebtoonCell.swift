@@ -11,7 +11,7 @@ final class FixedPageWebtoonCell: UICollectionViewCell {
 
     static let reuseID = "FixedPageWebtoonCell"
 
-    private let imageView = UIImageView()
+    let imageView = UIImageView()
     private let spinner = UIActivityIndicatorView(style: .medium)
     private var loadTask: Task<Void, Never>?
     private var liveTextTask: Task<Void, Never>?
@@ -89,9 +89,17 @@ final class FixedPageWebtoonCell: UICollectionViewCell {
 
     func load() {
         guard let page else { return }
-        let index = self.index
-        spinner.startAnimating()
         loadTask?.cancel()
+        // A page already in memory goes up in this layout pass. Waiting for it left the cell
+        // empty — the reader's black background — for at least a frame (FB-114).
+        if let image = FixedPageImageLoader.cachedImage(
+            for: page, targetWidth: targetWidth, cropBorders: cropBorders
+        ) {
+            spinner.stopAnimating()
+            show(image, of: page)
+            return
+        }
+        spinner.startAnimating()
         let renderScale = traitCollection.displayScale
         loadTask = Task { [weak self] in
             guard let self else { return }
@@ -103,14 +111,31 @@ final class FixedPageWebtoonCell: UICollectionViewCell {
             )
             if Task.isCancelled { return }
             self.spinner.stopAnimating()
-            guard let image, image.size.width > 0 else { return }
-            self.imageView.image = image
-            // UI tests find a strip page by its position once its image is on screen
-            // (DetailReaderBackSwipeUITests); cells are reused, so the index is in it.
-            // VoiceOver never reads an identifier.
-            self.imageView.accessibilityIdentifier = "webtoon_page_\(index)"
-            self.onRatio?(index, page, image.size.height / image.size.width)
-            self.analyzeLiveText(for: image)
+            guard let image else { return }
+            self.show(image, of: page)
+        }
+    }
+
+    /// `index` as it is when the image lands, not when its load began: a chapter going in
+    /// above moves the page while the load is in flight (`pageMoved(to:)`).
+    private func show(_ image: UIImage, of page: FixedPage) {
+        guard image.size.width > 0 else { return }
+        imageView.image = image
+        // UI tests find a strip page by its position once its image is on screen
+        // (DetailReaderBackSwipeUITests); cells are reused, so the index is in it.
+        // VoiceOver never reads an identifier.
+        imageView.accessibilityIdentifier = "webtoon_page_\(index)"
+        onRatio?(index, page, image.size.height / image.size.width)
+        analyzeLiveText(for: image)
+    }
+
+    /// The cell's page is now item `index`: a previous chapter went in above it while the
+    /// cell stayed configured, on screen or ready for it. Its image stays.
+    func pageMoved(to index: Int) {
+        guard index != self.index else { return }
+        self.index = index
+        if imageView.image != nil {
+            imageView.accessibilityIdentifier = "webtoon_page_\(index)"
         }
     }
 
