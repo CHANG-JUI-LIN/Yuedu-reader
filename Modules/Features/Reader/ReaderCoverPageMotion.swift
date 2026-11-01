@@ -266,13 +266,3 @@ enum ReaderCurlVirtualIndex {
     }
 }
 
-enum ReaderCurlBackPageResolver {
-    static func logicalPageIndex(targetPage: Int, visiblePage: Int) -> Int {
-        targetPage >= visiblePage ? targetPage - 1 : targetPage
-    }
-
-    static func contentPageIndex(logicalPageIndex: Int, totalPages: Int) -> Int? {
-        guard logicalPageIndex >= 0, logicalPageIndex < totalPages else { return nil }
-        return logicalPageIndex
-    }
-}

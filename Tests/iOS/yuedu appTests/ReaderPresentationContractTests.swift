@@ -236,18 +236,6 @@ struct ReaderPresentationContractTests {
         #expect(ReaderCurlVirtualIndex.backIndex(forLogicalPage: 3, isRTL: true) == 6)
     }
 
-    @Test("curl back uses the same logical page instead of leaking the next page")
-    func curlBackUsesSameLogicalPage() {
-        #expect(ReaderCurlBackPageResolver.logicalPageIndex(targetPage: 4, visiblePage: 3) == 3)
-        #expect(ReaderCurlBackPageResolver.contentPageIndex(logicalPageIndex: 3, totalPages: 6) == 3)
-
-        #expect(ReaderCurlBackPageResolver.logicalPageIndex(targetPage: 2, visiblePage: 3) == 2)
-        #expect(ReaderCurlBackPageResolver.contentPageIndex(logicalPageIndex: 2, totalPages: 6) == 2)
-
-        #expect(ReaderCurlBackPageResolver.contentPageIndex(logicalPageIndex: -1, totalPages: 6) == nil)
-        #expect(ReaderCurlBackPageResolver.contentPageIndex(logicalPageIndex: 6, totalPages: 6) == nil)
-    }
-
     @Test("curl back mirrors the complete rendered page material")
     func curlBackMirrorsRenderedPageMaterial() throws {
         let renderedPageImage = splitColorImage(left: .black, right: .systemTeal)

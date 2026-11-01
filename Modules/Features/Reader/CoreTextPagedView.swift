@@ -296,9 +296,11 @@ struct CoreTextPageEngineView: UIViewControllerRepresentable {
             // has no layout yet (pageIndex(for:) returns nil).
             let resolvedTarget = command.targetPosition.flatMap { engine.pageIndex(for: $0) }
             let target = max(0, min(resolvedTarget ?? command.target, max(engine.totalPages - 1, 0)))
-            guard target != visible.globalPageIndex else {
+            // The visible page answers in the same numbering as the target.
+            let visiblePage = context.coordinator.currentPageIndex(of: visible)
+            guard target != visiblePage else {
                 context.coordinator.pageTurnTrace.commandExecuted(
-                    version: command.version, target: target, visible: visible.globalPageIndex,
+                    version: command.version, target: target, visible: visiblePage,
                     speed: context.coordinator.activeTurnSpeed, adjacent: false, route: "samePage"
                 )
                 return
@@ -306,19 +308,19 @@ struct CoreTextPageEngineView: UIViewControllerRepresentable {
             // Rapid-tap speed-up: register cadence now, before the cover / slide /
             // curl branches read activeTurnSpeed.
             let turnSpeed = context.coordinator.registerTurnSpeed()
-            AppLogger.render("[CurlTrace] turnCommand v\(command.version) target=\(target) visible=\(visible.globalPageIndex) speed=\(String(format: "%.2f", turnSpeed))")
+            AppLogger.render("[CurlTrace] turnCommand v\(command.version) target=\(target) visible=\(visiblePage) speed=\(String(format: "%.2f", turnSpeed))")
 
             var direction: UIPageViewController.NavigationDirection =
-                target >= visible.globalPageIndex ? .forward : .reverse
+                target >= visiblePage ? .forward : .reverse
             // RTL: swap navigation direction to match data source swap (Before↔After).
             if isRTL {
                 direction = direction == .forward ? .reverse : .forward
             }
-            let isAdjacent = context.coordinator.isAdjacentDisplayPage(target, to: visible.globalPageIndex)
+            let isAdjacent = context.coordinator.isAdjacentDisplayPage(target, to: visiblePage)
             let shouldAnimate = command.animated && (pageTurnStyle != .none) && isAdjacent
             let traceCommand = { (route: StaticString) in
                 context.coordinator.pageTurnTrace.commandExecuted(
-                    version: command.version, target: target, visible: visible.globalPageIndex,
+                    version: command.version, target: target, visible: visiblePage,
                     speed: turnSpeed, adjacent: isAdjacent, route: route
                 )
             }
@@ -327,7 +329,7 @@ struct CoreTextPageEngineView: UIViewControllerRepresentable {
                 traceCommand("cover")
                 if shouldAnimate {
                     context.coordinator.animateCoverTransition(
-                        from: visible.globalPageIndex,
+                        from: visiblePage,
                         to: target,
                         direction: direction,
                         on: uiViewController
@@ -342,7 +344,7 @@ struct CoreTextPageEngineView: UIViewControllerRepresentable {
             if shouldAnimate {
                 let effects = context.coordinator.requestPageTransition(
                     to: target,
-                    visiblePage: visible.globalPageIndex
+                    visiblePage: visiblePage
                 )
                 // Deferred: the queue recorded the latest target; the running
                 // transition's settle chains to it (latest intent wins).
@@ -356,7 +358,7 @@ struct CoreTextPageEngineView: UIViewControllerRepresentable {
             } else if context.coordinator.isPageTransitioning {
                 _ = context.coordinator.requestPageTransition(
                     to: target,
-                    visiblePage: visible.globalPageIndex
+                    visiblePage: visiblePage
                 )
                 traceCommand("queued")
                 context.coordinator.prefetchPages(around: target)
@@ -367,7 +369,7 @@ struct CoreTextPageEngineView: UIViewControllerRepresentable {
             context.coordinator.performProgrammaticTransition(
                 on: uiViewController,
                 to: target,
-                from: visible.globalPageIndex,
+                from: visiblePage,
                 direction: direction,
                 animated: shouldAnimate
             )
@@ -831,7 +833,8 @@ struct CoreTextPageEngineView: UIViewControllerRepresentable {
             guard usesMidSpine else { return [viewController] }
             // Display controllers open a spread (`makeDisplayViewController`), so this is
             // the spread's first page in reading order.
-            let firstPage = (viewController as? any PageIndexProviding)?.globalPageIndex ?? 0
+            let firstPage = (viewController as? any PageIndexProviding & UIViewController)
+                .map { currentPageIndex(of: $0) } ?? 0
             return midSpineStack(first: viewController, second: midSpinePartner(of: firstPage))
         }
 
@@ -891,7 +894,8 @@ struct CoreTextPageEngineView: UIViewControllerRepresentable {
         /// back of the sheet UIKit lifts is the page after the one on its front.
         private func midSpinePage(after viewController: UIViewController) -> UIViewController? {
             if viewController is ReaderSpreadBlankPageViewController { return nil }
-            guard let page = (viewController as? any PageIndexProviding)?.globalPageIndex else { return nil }
+            guard let page = (viewController as? any PageIndexProviding & UIViewController)
+                .map({ currentPageIndex(of: $0) }) else { return nil }
             // A spread's first page is always followed — by its partner, blank or not. UIKit
             // asks for a sheet's two sides in turn, and a nil for the second after a page
             // for the first is "number required (2)".
@@ -904,7 +908,8 @@ struct CoreTextPageEngineView: UIViewControllerRepresentable {
             if let blank = viewController as? ReaderSpreadBlankPageViewController {
                 return midSpinePage(at: blank.facingPage)
             }
-            guard let page = (viewController as? any PageIndexProviding)?.globalPageIndex,
+            guard let page = (viewController as? any PageIndexProviding & UIViewController)
+                    .map({ currentPageIndex(of: $0) }),
                   page > 0 else { return nil }
             return midSpinePage(at: page - 1)
         }
@@ -913,20 +918,24 @@ struct CoreTextPageEngineView: UIViewControllerRepresentable {
             max(currentEngine.totalPages, stackWriteTotalPages)
         }
 
-        private func curlBackPage(logicalPageIndex: Int) -> PageBackViewController? {
-            guard let contentPage = ReaderCurlBackPageResolver.contentPageIndex(
-                logicalPageIndex: logicalPageIndex,
-                totalPages: curlNeighbourPageCount
-            ) else { return nil }
+        /// The back of the sheet whose front shows `position`. A back is named by its front's
+        /// reading position, never by an index: an earlier chapter landing with a different
+        /// page count renumbers every page after it while the sheet is in UIKit's hands, and
+        /// a back stepping from its build-time index turned onto the wrong page (回饋中心
+        /// #118). The index below is only today's name for the page, for its snapshot.
+        private func curlBackPage(behind position: CoreTextReadingPosition) -> PageBackViewController? {
+            guard let contentPage = currentEngine.estimatedGlobalPage(for: position) else { return nil }
             let snapshotTrace = pageTurnTrace.beginCurlBack(page: contentPage)
-            let renderedPageImage = currentEngine.renderSnapshot(forPage: contentPage)
+            // An estimate names a page nobody has measured; it has nothing to draw.
+            let renderedPageImage = currentEngine.pageIndex(for: position)
+                .flatMap { currentEngine.renderSnapshot(forPage: $0) }
             pageTurnTrace.endCurlBack(snapshotTrace, hasImage: renderedPageImage != nil)
             return PageBackViewController(
                 virtualIndex: ReaderCurlVirtualIndex.backIndex(
-                    forLogicalPage: logicalPageIndex,
+                    forLogicalPage: contentPage,
                     isRTL: isRTL
                 ),
-                logicalPageIndex: logicalPageIndex,
+                logicalPageIndex: contentPage,
                 globalPageIndex: contentPage,
                 backgroundColor: curlBackPageColor,
                 // The back is the same fully composed page, mirrored by
@@ -936,7 +945,7 @@ struct CoreTextPageEngineView: UIViewControllerRepresentable {
                 // keeps the effective theme/custom color as a crash-safe back. Remove
                 // that fallback once every PageRenderingProvider supports snapshots.
                 renderedPageImage: renderedPageImage,
-                readingPosition: currentEngine.readingPosition(forPage: contentPage)
+                readingPosition: position
             )
         }
 
@@ -951,11 +960,13 @@ struct CoreTextPageEngineView: UIViewControllerRepresentable {
                   let page = viewController as? any PageIndexProviding & UIViewController else {
                 return viewControllerStack(startingWith: viewController)
             }
-            let logicalPage = ReaderCurlBackPageResolver.logicalPageIndex(
-                targetPage: page.globalPageIndex,
-                visiblePage: visiblePage
-            )
-            guard let backPage = curlBackPage(logicalPageIndex: logicalPage) else {
+            // Forward, the sheet lifted is the visible page — the one before the target;
+            // backward, it is the target itself.
+            guard let target = committedReadingPosition(of: page),
+                  let behind = page.globalPageIndex >= visiblePage
+                    ? currentEngine.positionBefore(target)
+                    : target,
+                  let backPage = curlBackPage(behind: behind) else {
                 return viewControllerStack(startingWith: viewController)
             }
             stackWriteTotalPages = currentEngine.totalPages
@@ -1375,7 +1386,7 @@ struct CoreTextPageEngineView: UIViewControllerRepresentable {
 
             var direction: UIPageViewController.NavigationDirection
             if let first = readingPage(of: pageViewController) as? (any PageIndexProviding & UIViewController) {
-                direction = targetPage >= first.globalPageIndex ? .forward : .reverse
+                direction = targetPage >= currentPageIndex(of: first) ? .forward : .reverse
             } else {
                 direction = .forward
             }
@@ -1808,6 +1819,17 @@ struct CoreTextPageEngineView: UIViewControllerRepresentable {
             return readingPosition(from: viewController)
         }
 
+        /// Where a page sits in the page numbering as it is now. A laid-out page's
+        /// `globalPageIndex` is the number it was built under: an earlier chapter landing
+        /// with a different page count renumbers every page after it, and the controller
+        /// on screen is not told (回饋中心 #118). Its reading position does not move. A page
+        /// with no committed position — a placeholder nobody has measured — has nothing
+        /// better than its index, which was an estimate to begin with.
+        fileprivate func currentPageIndex(of page: any PageIndexProviding & UIViewController) -> Int {
+            committedReadingPosition(of: page).flatMap { currentEngine.pageIndex(for: $0) }
+                ?? page.globalPageIndex
+        }
+
         private func readingPosition(from viewController: UIViewController) -> CoreTextReadingPosition? {
             if let provider = viewController as? CoreTextReadingPositionProviding,
                let position = provider.coreTextReadingPosition {
@@ -1929,26 +1951,27 @@ struct CoreTextPageEngineView: UIViewControllerRepresentable {
 
         private func pageBackward(from viewController: UIViewController) -> UIViewController? {
             if usesMidSpine { return midSpinePage(before: viewController) }
+            // A back's front is the page before it in the turn's direction: going back,
+            // the sheet's front is the page being turned to.
             if let backPage = viewController as? PageBackViewController {
-                return neighbourViewController(for: .page(backPage.logicalPageIndex))
+                return backPage.coreTextReadingPosition.flatMap { neighbourViewController(for: .position($0)) }
             }
 
-            guard let vc = viewController as? any PageIndexProviding & UIViewController,
-                  vc.globalPageIndex > 0 else { return nil }
+            guard let vc = viewController as? any PageIndexProviding & UIViewController else { return nil }
 
             if isDoublePageSpread {
-                guard let targetPage = previousDisplayPage(before: vc.globalPageIndex) else { return nil }
+                guard let targetPage = previousDisplayPage(before: currentPageIndex(of: vc)) else { return nil }
                 return neighbourViewController(for: .page(targetPage))
-            }
-
-            if usesCurlBackPages {
-                return curlBackPage(logicalPageIndex: vc.globalPageIndex - 1)
             }
 
             // Position space from here down: see `PagePositionWalking`. The index the
             // page is showing under right now is not an identity UIKit may hold.
             guard let current = committedReadingPosition(of: vc),
                   let previous = currentEngine.positionBefore(current) else { return nil }
+
+            if usesCurlBackPages {
+                return curlBackPage(behind: previous)
+            }
             let previousVC = neighbourViewController(for: .position(previous))
             AppLogger.render("[FlipTrace] pageBackward from=\(current) to=\(previous) landingType=\(previousVC.map { "\(type(of: $0))" } ?? "nil")")
             return previousVC
@@ -1957,23 +1980,16 @@ struct CoreTextPageEngineView: UIViewControllerRepresentable {
         private func pageForward(from viewController: UIViewController) -> UIViewController? {
             if usesMidSpine { return midSpinePage(after: viewController) }
             if let backPage = viewController as? PageBackViewController {
-                guard backPage.logicalPageIndex + 1 < curlNeighbourPageCount else { return nil }
-                return neighbourViewController(for: .page(backPage.logicalPageIndex + 1))
+                guard let front = backPage.coreTextReadingPosition,
+                      let next = currentEngine.positionAfter(front) else { return nil }
+                return neighbourViewController(for: .position(next))
             }
 
             guard let vc = viewController as? any PageIndexProviding & UIViewController else { return nil }
 
             if isDoublePageSpread {
-                guard let targetPage = nextDisplayPage(after: vc.globalPageIndex) else { return nil }
+                guard let targetPage = nextDisplayPage(after: currentPageIndex(of: vc)) else { return nil }
                 return neighbourViewController(for: .page(targetPage))
-            }
-
-            if usesCurlBackPages {
-                // Double-sided interactive curl asks for a back and then a front.
-                // At the book's end, returning a back first advertises a transition
-                // whose second controller is nil; UIKit rejects that incomplete pair.
-                guard vc.globalPageIndex < curlNeighbourPageCount - 1 else { return nil }
-                return curlBackPage(logicalPageIndex: vc.globalPageIndex)
             }
 
             // Position space from here down: see `PagePositionWalking`. Crossing a
@@ -1982,6 +1998,13 @@ struct CoreTextPageEngineView: UIViewControllerRepresentable {
             // (which is re-derived every time any chapter's layout lands).
             guard let current = committedReadingPosition(of: vc),
                   let next = currentEngine.positionAfter(current) else { return nil }
+
+            if usesCurlBackPages {
+                // Double-sided interactive curl asks for a back and then a front. A back
+                // is only offered once the front after it exists: a back followed by a
+                // nil is an incomplete pair, which UIKit rejects.
+                return curlBackPage(behind: current)
+            }
             let nextVC = neighbourViewController(for: .position(next))
             AppLogger.render("[FlipTrace] pageForward from=\(current) to=\(next) landingType=\(nextVC.map { "\(type(of: $0))" } ?? "nil")")
             return nextVC
@@ -2242,7 +2265,8 @@ struct CoreTextPageEngineView: UIViewControllerRepresentable {
             }
 
             guard let turnDirection else { return }
-            let visiblePage = (readingPage(of: pvc) as? (any PageIndexProviding & UIViewController))?.globalPageIndex
+            let visiblePage = (readingPage(of: pvc) as? (any PageIndexProviding & UIViewController))
+                .map { currentPageIndex(of: $0) }
                 ?? currentPage
             let targetPage: Int?
             switch turnDirection {
