@@ -318,16 +318,17 @@ private struct BookDetailCardButtonGroup<Buttons: View>: View {
     }
 }
 
-/// The bar's glass on iOS 26, tinted with the card; older systems have no glass, so
+/// The bar's glass capsule on iOS 26 behind a group of buttons, tinted with a card's colour
+/// or clear over a page (a video's 加入書架 / 選集 / 換源); older systems have no glass, so
 /// the tint lies over `.regularMaterial`. The `#if compiler` guard mirrors
 /// `FrostedGlassBackground`.
-private struct CardButtonGlass: ViewModifier {
-    let tint: Color
+struct CardButtonGlass: ViewModifier {
+    var tint: Color?
 
     func body(content: Content) -> some View {
         #if compiler(>=6.2)
         if #available(iOS 26.0, *) {
-            content.glassEffect(.regular.tint(tint.opacity(DSLayout.cardHeaderGlassTintOpacity)).interactive(), in: Capsule())
+            content.glassEffect(glass, in: Capsule())
         } else {
             legacy(content)
         }
@@ -336,9 +337,17 @@ private struct CardButtonGlass: ViewModifier {
         #endif
     }
 
+    #if compiler(>=6.2)
+    @available(iOS 26.0, *)
+    private var glass: Glass {
+        guard let tint else { return .regular.interactive() }
+        return .regular.tint(tint.opacity(DSLayout.cardHeaderGlassTintOpacity)).interactive()
+    }
+    #endif
+
     private func legacy(_ content: Content) -> some View {
         content
-            .background(tint.opacity(DSLayout.cardHeaderGlassTintOpacity), in: Capsule())
+            .background(tint?.opacity(DSLayout.cardHeaderGlassTintOpacity) ?? .clear, in: Capsule())
             .background(.regularMaterial, in: Capsule())
     }
 }
@@ -683,6 +692,8 @@ struct BookDetailHero<Cover: View>: View {
 /// background), Reduce Transparency and Increase Contrast.
 struct BookDetailCoverWash: View {
     let wash: CoverTint.Wash?
+    /// How far down the hero the wash holds before it fades out.
+    var fadeStart = DSLayout.bookDetailBackdropFadeStart
 
     @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
     @Environment(\.colorSchemeContrast) private var contrast
@@ -699,8 +710,7 @@ struct BookDetailCoverWash: View {
                 LinearGradient(
                     stops: [
                         .init(color: wash.color(dark: colorScheme == .dark), location: 0),
-                        .init(color: wash.color(dark: colorScheme == .dark),
-                              location: DSLayout.bookDetailBackdropFadeStart),
+                        .init(color: wash.color(dark: colorScheme == .dark), location: fadeStart),
                         .init(color: .clear, location: 1),
                     ],
                     startPoint: .top,
@@ -1074,6 +1084,13 @@ struct BookDetailRecommendationSection: View {
 /// time at its intrinsic height, which `Technotes/iOS17SearchWatchdogPostmortem.md`
 /// (guardrail 6) rules out for source-controlled text inside this scroll view on iOS 17.
 struct BookDetailIntroSection: View {
+    /// A section of its own, or under a video's play button as Infuse and VidHub show a
+    /// series' overview: no 簡介 header, two lines, in the hero's margins.
+    enum Placement {
+        case section
+        case hero
+    }
+
     let text: String
     @Binding var isExpanded: Bool
     /// Base for relative links and images in a rich intro (the book's detail URL).
@@ -1087,25 +1104,28 @@ struct BookDetailIntroSection: View {
     /// Whether `text` says there is no description in the reader's language (沒有繁體中文簡介):
     /// secondary, as the card draws it.
     var isUnavailable = false
+    var placement = Placement.section
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var webLayout = BookIntroLayout()
     /// Parsed once per intro, never in `body` (guardrail 5).
     @State private var markdown: AttributedString?
-    /// About four lines of the intro's text: a rich intro collapses to its last whole line above it.
-    @ScaledMetric(relativeTo: .subheadline) private var collapsedRichLimit: CGFloat = 88
+    /// About one line of the intro's text: a rich intro collapses to its last whole line above
+    /// the collapsed lines.
+    @ScaledMetric(relativeTo: .subheadline) private var richLineHeight: CGFloat = 22
 
-    private static let collapsedLineLimit = 4
-    /// Roughly four lines of CJK body text at the default text size on a phone.
-    private static let collapsedCharacterEstimate = 80
+    private var collapsedLineLimit: Int { placement == .hero ? 2 : 4 }
+    /// Roughly that many lines of CJK body text at the default text size on a phone.
+    private var collapsedCharacterEstimate: Int { collapsedLineLimit * 20 }
+    private var collapsedRichLimit: CGFloat { richLineHeight * CGFloat(collapsedLineLimit) }
 
     private var content: BookIntroContent { readsSourceFormats ? BookIntroContent(text) : .plain(text) }
 
     private var mayOverflow: Bool {
         switch content {
         case .plain(let plain), .markdown(let plain):
-            plain.count > Self.collapsedCharacterEstimate
-                || plain.reduce(0) { $1.isNewline ? $0 + 1 : $0 } >= Self.collapsedLineLimit
+            plain.count > collapsedCharacterEstimate
+                || plain.reduce(0) { $1.isNewline ? $0 + 1 : $0 } >= collapsedLineLimit
         case .html, .web:
             webLayout.height > collapsedRichHeight + 0.5
         }
@@ -1117,7 +1137,9 @@ struct BookDetailIntroSection: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: DSSpacing.sm) {
-            BookDetailSectionHeader(title: localized("簡介"))
+            if placement == .section {
+                BookDetailSectionHeader(title: localized("簡介"))
+            }
             introBody
                 .frame(maxWidth: .infinity, alignment: .leading)
             if mayOverflow {
@@ -1136,7 +1158,7 @@ struct BookDetailIntroSection: View {
                 .frame(maxWidth: .infinity, alignment: .trailing)
             }
         }
-        .padding(.horizontal, DSSpacing.lg)
+        .padding(.horizontal, placement == .section ? DSSpacing.lg : 0)
         .task(id: text) { parseMarkdownIfNeeded() }
     }
 
@@ -1147,12 +1169,12 @@ struct BookDetailIntroSection: View {
             Text(plain)
                 .font(DSFont.subheadline)
                 .foregroundStyle(isUnavailable ? DSColor.textSecondary : DSColor.textPrimary)
-                .lineLimit(isExpanded ? nil : Self.collapsedLineLimit)
+                .lineLimit(isExpanded ? nil : collapsedLineLimit)
         case .markdown(let source):
             Text(markdown ?? AttributedString(source))
                 .font(DSFont.subheadline)
                 .foregroundStyle(DSColor.textPrimary)
-                .lineLimit(isExpanded ? nil : Self.collapsedLineLimit)
+                .lineLimit(isExpanded ? nil : collapsedLineLimit)
         case .html(let markup):
             richBody(markup, mode: .fragment)
         case .web(let markup):

@@ -183,16 +183,6 @@ struct VideoDetailView: View {
         return BookDetailScaffold(title: displayName, compactAction: playAction(guide), heroUnderBars: true) {
             hero(guide)
         } content: {
-            if !displayIntro.isEmpty {
-                BookDetailIntroSection(
-                    text: displayIntro,
-                    isExpanded: $introExpanded,
-                    baseURL: currentBook.bookUrl,
-                    onAction: requestIntroAction,
-                    readsSourceFormats: true,
-                    isUnavailable: false
-                )
-            }
             episodesSection(guide)
             BookDetailRelatedSection(
                 related: genres.related,
@@ -286,12 +276,24 @@ struct VideoDetailView: View {
     // MARK: Hero
 
     private func hero(_ guide: VideoEpisodeGuide) -> some View {
-        VideoDetailHero(poster: poster, title: displayName, subtitle: displayAuthor, facts: facts(guide)) {
+        VideoDetailHero(poster: poster, title: displayName, facts: facts(guide)) {
             // The card fetches the artwork, through the path every cover takes; what it
             // draws becomes the full-width poster.
             cover.environment(\.coverImageObserver) { image in poster = image }
         } actions: {
             heroActions(guide)
+        } intro: {
+            if !displayIntro.isEmpty {
+                BookDetailIntroSection(
+                    text: displayIntro,
+                    isExpanded: $introExpanded,
+                    baseURL: currentBook.bookUrl,
+                    onAction: requestIntroAction,
+                    readsSourceFormats: true,
+                    isUnavailable: false,
+                    placement: .hero
+                )
+            }
         }
     }
 
@@ -305,68 +307,86 @@ struct VideoDetailView: View {
         )
     }
 
-    /// The episode count, then the source's genres: plezy's chips, one line of them.
+    /// The maker, then the episode count and the source's genres: the line under the title.
     private func facts(_ guide: VideoEpisodeGuide) -> [String] {
         var facts: [String] = []
         let count = guide.routes.first?.episodes.count ?? 0
         if count > 0 { facts.append(String(format: localized("共 %d 集"), count)) }
         for tag in tags where !facts.contains(tag) { facts.append(tag) }
-        return Array(facts.prefix(DSLayout.videoHeroFactLimit))
+        let maker = displayAuthor.trimmingCharacters(in: .whitespacesAndNewlines)
+        return (maker.isEmpty ? [] : [maker]) + facts.prefix(DSLayout.videoHeroFactLimit)
     }
 
-    /// plezy's action row: the play button, then the page's other actions as round buttons;
-    /// the round ones go under it when the text is too large for one line.
+    /// plezy's action row: the play button, then the page's other actions together in one
+    /// glass capsule as tall as it (maintainer, 2026-11-01: 「那三個按鈕包在一個膠囊裡面」,
+    /// 「我要的是這樣的玻璃膠囊」); the capsule goes under it when the text is too large for
+    /// one line.
     private func heroActions(_ guide: VideoEpisodeGuide) -> some View {
         ViewThatFits(in: .horizontal) {
             HStack(spacing: DSSpacing.md) {
                 playButton(guide)
-                iconButtons(guide)
+                actionCapsule(guide)
             }
+            .fixedSize(horizontal: false, vertical: true)
             VStack(spacing: DSSpacing.md) {
                 playButton(guide)
-                HStack(spacing: DSSpacing.md) { iconButtons(guide) }
+                actionCapsule(guide)
             }
         }
     }
 
+    private func actionCapsule(_ guide: VideoEpisodeGuide) -> some View {
+        HStack(spacing: 0) { iconButtons(guide) }
+            .font(DSFont.headline)
+            .foregroundStyle(DSColor.textPrimary)
+            .buttonStyle(.borderless)
+            .padding(.horizontal, DSSpacing.xs)
+            .frame(maxHeight: .infinity)
+            .modifier(CardButtonGlass())
+    }
+
+    /// 繼續播放 at the saved episode, else 開始播放 at the first; either names the episode.
     private func playAction(_ guide: VideoEpisodeGuide) -> BookDetailAction {
         let resume = resumeEpisode
+        let episode = resume ?? guide.firstEpisode
         return BookDetailAction(
             title: resume != nil ? localized("繼續播放") : localized("開始播放"),
             systemImage: "play.fill",
             isBusy: false,
             isEnabled: !guide.isEmpty && !addingToShelf,
-            detail: resume.map { VideoEpisodeNaming.resumeDetail($0, in: guide, title: episodeTitle) },
-            action: { if let episode = resume ?? guide.firstEpisode { play(chapterIndex: episode) } }
+            detail: episode.map { VideoEpisodeNaming.resumeDetail($0, in: guide, title: episodeTitle) },
+            action: { if let episode { play(chapterIndex: episode) } }
         )
     }
 
-    /// The capsule plezy, Infuse and VidHub lead with, in the page's text colour with the page's
-    /// colour for its words (white on a dark page, black on a light one), the episode it
-    /// plays after its title.
+    /// The white capsule plezy, Infuse and VidHub lead with, in light and dark alike
+    /// (maintainer, 2026-11-01: 「給我調成白色吧，白天模式下」): its title, and the episode
+    /// it plays on a second line under it.
     private func playButton(_ guide: VideoEpisodeGuide) -> some View {
         let action = playAction(guide)
         return Button(action: action.action) {
-            HStack(spacing: DSSpacing.xs) {
+            HStack(spacing: DSSpacing.sm) {
                 Image(systemName: action.systemImage)
+                    .font(DSFont.title3)
                     .accessibilityHidden(true)
-                Text(action.title)
-                    .layoutPriority(1)
-                if let detail = action.detail {
-                    Text(detail)
-                        .fontWeight(.regular)
-                        .lineLimit(1)
+                VStack(alignment: .leading, spacing: 0) {
+                    Text(action.title)
+                        .font(DSFont.headline)
+                    if let detail = action.detail {
+                        Text(detail)
+                            .font(DSFont.subheadline)
+                            .foregroundStyle(.secondary)
+                    }
                 }
+                .lineLimit(1)
             }
-            .font(DSFont.headline)
-            .lineLimit(1)
-            .foregroundStyle(DSColor.background)
+            .foregroundStyle(DSColor.cardPrimaryActionLabel)
             .frame(maxWidth: DSLayout.videoPlayButtonMaxWidth)
         }
         .buttonStyle(.borderedProminent)
         .buttonBorderShape(.capsule)
         .controlSize(.large)
-        .tint(DSColor.textPrimary)
+        .tint(DSColor.cardPrimaryActionFill)
         .disabled(!action.isEnabled)
         .accessibilityLabel(action.title)
         .accessibilityValue(action.detail ?? "")
@@ -377,23 +397,27 @@ struct VideoDetailView: View {
         Button {
             if alreadyInShelf { confirmsRemoval = true } else { addToShelf() }
         } label: {
-            if addingToShelf {
-                ProgressView()
-            } else {
-                Image(systemName: alreadyInShelf ? "checkmark" : "plus")
+            Group {
+                if addingToShelf {
+                    ProgressView()
+                } else {
+                    Image(systemName: alreadyInShelf ? "checkmark" : "plus")
+                }
             }
+            .modifier(VideoHeroCapsuleIcon())
         }
-        .modifier(VideoHeroIconButtonStyle())
         .disabled(chapters.isEmpty || addingToShelf)
         .accessibilityLabel(alreadyInShelf ? localized("移除書架") : localized("加入書架"))
         if !guide.isEmpty {
-            Button { showsEpisodes = true } label: { Image(systemName: "list.bullet") }
-                .modifier(VideoHeroIconButtonStyle())
-                .accessibilityLabel(localized("選集"))
+            Button { showsEpisodes = true } label: {
+                Image(systemName: "list.bullet").modifier(VideoHeroCapsuleIcon())
+            }
+            .accessibilityLabel(localized("選集"))
         }
-        Button { showSourcePicker = true } label: { Image(systemName: "arrow.triangle.2.circlepath") }
-            .modifier(VideoHeroIconButtonStyle())
-            .accessibilityLabel(localized("換源"))
+        Button { showSourcePicker = true } label: {
+            Image(systemName: "arrow.triangle.2.circlepath").modifier(VideoHeroCapsuleIcon())
+        }
+        .accessibilityLabel(localized("換源"))
     }
 
     // MARK: 選集
@@ -797,15 +821,12 @@ struct VideoDetailView: View {
     }
 }
 
-/// plezy's round buttons beside play: grey circles in the page's text colour.
-private struct VideoHeroIconButtonStyle: ViewModifier {
+/// An action in the capsule beside the play button: its icon, with a whole tap target.
+private struct VideoHeroCapsuleIcon: ViewModifier {
     func body(content: Content) -> some View {
         content
-            .font(DSFont.headline)
-            .buttonStyle(.bordered)
-            .buttonBorderShape(.circle)
-            .controlSize(.large)
-            .tint(DSColor.textPrimary)
+            .frame(width: DSLayout.minimumTapTarget, height: DSLayout.minimumTapTarget)
+            .contentShape(Rectangle())
     }
 }
 

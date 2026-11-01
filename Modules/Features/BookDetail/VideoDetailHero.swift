@@ -4,6 +4,8 @@ import SwiftUI
 /// the poster fills the width from the top edge of the screen and fades into the page's own
 /// background, light or dark, with the title, its facts and the buttons on the faded part,
 /// centred (maintainer, 2026-11-01: 「海報顏色淡出…往下滑顏色就沒了…就是正常黑白色」).
+/// Under the buttons, the intro, and the poster's hue washed behind all of it until the
+/// episodes begin, as the series pages the maintainer picked (「我喜歡圖二圖三的排版」).
 ///
 /// A wide window — an iPad, a phone on its side — keeps the poster across the whole width,
 /// sharp, and moves the text to a bottom-leading column, as plezy, Infuse, VidHub and Swiftfin
@@ -11,15 +13,19 @@ import SwiftUI
 /// about a poster card over a blur of itself, which none of them does). A poster card stands
 /// above the title until there is artwork: a generated cover drawn across the width would
 /// print the title twice.
-struct VideoDetailHero<Cover: View, Actions: View>: View {
+struct VideoDetailHero<Cover: View, Actions: View, Intro: View>: View {
     /// The source's artwork, once it has loaded; nil while it loads and when there is none.
     let poster: UIImage?
     let title: String
-    let subtitle: String
-    /// The episode count and the genres, as plezy's chips.
+    /// The maker, the episode count and the genres: one line under the title, a dot between
+    /// each, as Infuse and VidHub list a series' year, country and episodes.
     let facts: [String]
     @ViewBuilder var cover: Cover
     @ViewBuilder var actions: Actions
+    @ViewBuilder var intro: Intro
+
+    /// The poster's hue, for the wash behind the hero; nil for a grey poster.
+    @State private var wash: CoverTint.Wash?
 
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     @Environment(\.verticalSizeClass) private var verticalSizeClass
@@ -52,6 +58,8 @@ struct VideoDetailHero<Cover: View, Actions: View>: View {
                 }
                 titleBlock(alignment: alignment)
                 actions
+                intro
+                    .frame(maxWidth: isWide ? DSLayout.readableListWidth : nil)
             }
             .frame(maxWidth: .infinity, alignment: Alignment(horizontal: alignment, vertical: .center))
             .padding(.horizontal, inset)
@@ -60,8 +68,20 @@ struct VideoDetailHero<Cover: View, Actions: View>: View {
         .frame(maxWidth: .infinity)
         .background {
             if let poster {
+                // The poster fades into its own hue, which holds until the poster has gone
+                // and then fades into the page above the episodes.
+                BookDetailCoverWash(wash: wash, fadeStart: DSLayout.videoHeroFadeEnd)
                 VideoPosterBackdrop(image: poster, fadesEarly: fadesEarly)
             }
+        }
+        .task(id: poster) {
+            guard let poster else {
+                wash = nil
+                return
+            }
+            wash = await Task.detached(priority: .utility) {
+                CoverTint.average(of: poster).flatMap(CoverTint.wash(for:))
+            }.value
         }
     }
 
@@ -84,27 +104,14 @@ struct VideoDetailHero<Cover: View, Actions: View>: View {
                 .lineLimit(3)
                 .fixedSize(horizontal: false, vertical: true)
                 .accessibilityAddTraits(.isHeader)
-            if !subtitle.isEmpty {
-                Text(subtitle)
+            if !facts.isEmpty {
+                Text(facts.joined(separator: " · "))
                     .font(DSFont.subheadline)
                     .foregroundStyle(DSColor.textSecondary)
                     .multilineTextAlignment(textAlignment)
                     .lineLimit(2)
-            }
-            if !facts.isEmpty {
-                WrappingFlowLayout(spacing: DSSpacing.xs, alignment: alignment) {
-                    ForEach(facts, id: \.self) { fact in
-                        Text(fact)
-                            .font(DSFont.caption.weight(.semibold))
-                            .foregroundStyle(DSColor.textPrimary)
-                            .lineLimit(1)
-                            .padding(.horizontal, DSSpacing.sm)
-                            .padding(.vertical, DSSpacing.xxs)
-                            .background(DSColor.neutralControlFill,
-                                        in: RoundedRectangle(cornerRadius: DSRadius.sm, style: .continuous))
-                    }
-                }
-                .accessibilityElement(children: .combine)
+                    // Read as a list, not with its dots.
+                    .accessibilityLabel(facts.formatted(.list(type: .and, width: .narrow)))
             }
         }
         .frame(maxWidth: .infinity, alignment: Alignment(horizontal: alignment, vertical: .center))
@@ -164,14 +171,17 @@ private struct VideoPosterBackdrop: View {
 
 #Preview("No artwork") {
     ScrollView {
-        VideoDetailHero(poster: nil, title: "示範短劇", subtitle: "主演 示範演員",
-                        facts: ["共 80 集", "都市", "短劇"]) {
+        VideoDetailHero(poster: nil, title: "示範短劇", facts: ["主演 示範演員", "共 80 集", "都市", "短劇"]) {
             GeneratedBookCover(title: "示範短劇", author: nil)
         } actions: {
             Button(localized("開始播放"), systemImage: "play.fill") {}
                 .buttonStyle(.borderedProminent)
                 .buttonBorderShape(.capsule)
                 .controlSize(.large)
+        } intro: {
+            Text("示範簡介：一部示範用的短劇。")
+                .font(DSFont.subheadline)
+                .frame(maxWidth: .infinity, alignment: .leading)
         }
     }
 }
