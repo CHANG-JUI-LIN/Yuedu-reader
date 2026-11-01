@@ -42,6 +42,20 @@ enum ReaderScrollItem: ScrollFragmentMeasuring {
             return offset <= 0 ? 0 : max(0, t.chapter.documentY(for: offset) - t.documentRect.minY)
         }
     }
+    /// Where the line showing `offset` starts, from this item's top: what a viewport anchor
+    /// measured on screen. `topOffset` puts a chapter's offset 0 at the chapter's top edge,
+    /// above its first line's margin, which is where opening a chapter belongs. An anchor is
+    /// a line the reader is looking at: resolved at that edge, every layout that arrived
+    /// while a chapter's first line was the topmost one on screen — below a video or a map
+    /// page, or just past a chapter's start — moved the reader by the line's margin.
+    func anchorTop(forCharacterIndex offset: Int) -> CGFloat? {
+        switch self {
+        case .legacy(let c): return c.topOffset(forCharacterIndex: offset)
+        case .browser(let t):
+            guard !t.chapter.writingMode.isVertical else { return nil }
+            return t.chapter.documentY(for: offset) - t.documentRect.minY
+        }
+    }
     /// `CoreTextChunk.rightOffset(forCharacterIndex:)` for either engine: how far left of this
     /// item's right edge the column showing `offset` starts. `nil` puts it at the right edge.
     ///
@@ -182,6 +196,30 @@ final class BrowserScrollChapter {
         snapshot?.sourceOffset(at: y) ?? document.charOffset(atDocumentY: y)
     }
 
+    /// Whether the committed snapshot has laid out the line that shows `offset`, which is
+    /// what an anchored request and a restore wait for. That line holds the first character
+    /// at or after `offset` that a line draws: an offset between items (a paragraph break, the
+    /// space an image stands in) belongs to the line after it. When no text follows — an
+    /// image- or video-only chapter, a chapter that ends in pictures — no line will ever
+    /// show it and there is nothing to wait for.
+    ///
+    /// `documentPoint(forCharOffset:)` alone never said yes there, so every layout that
+    /// arrived requested itself again and re-applied the restore, about 4000 times a second
+    /// on 剑来's cover, maps and video pages: the scroll was pinned and shook in place.
+    func hasLaidOutLine(showing offset: Int) -> Bool {
+        if document.documentPoint(forCharOffset: offset) != nil { return true }
+        let text = attributedString.string as NSString
+        let start = min(max(0, offset), text.length)
+        let next = text.rangeOfCharacter(from: Self.lineCharacters,
+                                         range: NSRange(location: start, length: text.length - start))
+        guard next.location != NSNotFound else { return true }
+        return document.documentPoint(forCharOffset: next.location) != nil
+    }
+
+    /// Characters a text line draws: not white space, and not the stand-in for an object.
+    private static let lineCharacters = CharacterSet.whitespacesAndNewlines
+        .union(CharacterSet(charactersIn: "\u{FFFC}")).inverted
+
     /// Asks the layout thread for `bounds` and a runway around it, unless the
     /// committed snapshot already covers them. Never waits: until the snapshot
     /// arrives, the region shows what the current one has (no text where
@@ -199,7 +237,7 @@ final class BrowserScrollChapter {
         case .layout(let region, _)?: region.contains(bounds)
         case nil: materializedBounds.contains(bounds)
         }
-        if covered, anchorOffset == nil || document.documentPoint(forCharOffset: anchorOffset!) != nil { return }
+        if covered, anchorOffset.map(hasLaidOutLine(showing:)) ?? true { return }
         submit(.layout(bounds.insetBy(dx: 0, dy: -min(900, max(300, bounds.height * 0.5))), anchorOffset: anchorOffset))
     }
 

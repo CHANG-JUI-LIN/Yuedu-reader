@@ -1170,7 +1170,7 @@ final class CoreTextCollectionScrollViewController: UIViewController, @MainActor
             let bounds = CGRect(x: 0, y: chapter.documentY(for: target.charOffset),
                                 width: engine.contentWidth, height: max(1, collectionView.bounds.height))
             let laidOut = chapter.materializedBounds.contains(bounds)
-                && chapter.document.documentPoint(forCharOffset: target.charOffset) != nil
+                && chapter.hasLaidOutLine(showing: target.charOffset)
             restoreAwaitingLayout = laidOut ? nil : target
             engine.requestViewport(chapter: target.spineIndex, bounds: bounds, anchorOffset: target.charOffset)
         }
@@ -1785,7 +1785,7 @@ final class CoreTextCollectionScrollViewController: UIViewController, @MainActor
             if let anchor,
                let row = engine.chunkIndex(forChapter: anchor.spine, charOffset: anchor.offset) {
                 let origin = layout.snappedOrigin(extents.prefix(row).reduce(0, +))
-                let within = engine.chunks[row].topOffset(forCharacterIndex: anchor.offset) ?? 0
+                let within = engine.chunks[row].anchorTop(forCharacterIndex: anchor.offset) ?? 0
                 let y = origin + chapterGap(for: row) + within
                 anchorY = y
                 correction = y - anchor.screenY - before.y
