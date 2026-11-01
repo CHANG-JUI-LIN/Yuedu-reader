@@ -105,6 +105,10 @@ extension EnvironmentValues {
         get { self[BookDetailCardChromeKey.self] }
         set { self[BookDetailCardChromeKey.self] = newValue }
     }
+
+    /// How far the status bar and the navigation bar reach down over a hero laid from the
+    /// top edge of the screen (`BookDetailScaffold.heroUnderBars`); 0 for every other hero.
+    @Entry var bookDetailHeroBarInset: CGFloat = 0
 }
 
 /// Scroll container, background and navigation chrome shared by the detail pages.
@@ -121,6 +125,10 @@ struct BookDetailScaffold<Hero: View, Content: View, Actions: View>: View {
     var content: Content
     /// Trailing buttons: in the navigation bar, or in the card's header when embedded.
     var actions: Actions
+    /// Lays the hero from the top edge of the screen, under the status bar and the
+    /// navigation bar, for a hero that is artwork (a video's poster, as plezy and Infuse
+    /// show it). The hero keeps its text clear of the bars with `bookDetailHeroBarInset`.
+    var heroUnderBars = false
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.bookDetailEmbedding) private var embedding
@@ -130,13 +138,18 @@ struct BookDetailScaffold<Hero: View, Content: View, Actions: View>: View {
     @State private var heroScrolledAway = false
     /// Top edge of the visible scroll area (below the navigation bar), in global coordinates.
     @State private var visibleTop: CGFloat = 0
+    /// How far the status bar and the navigation bar reach down: the scroll view's top safe
+    /// area, which a `heroUnderBars` page lays its hero into.
+    @State private var barInset: CGFloat = 0
 
     init(title: String, compactAction: BookDetailAction, onRefresh: (() async -> Void)? = nil,
+         heroUnderBars: Bool = false,
          @ViewBuilder hero: () -> Hero, @ViewBuilder content: () -> Content,
          @ViewBuilder actions: () -> Actions) {
         self.title = title
         self.compactAction = compactAction
         self.onRefresh = onRefresh
+        self.heroUnderBars = heroUnderBars
         self.hero = hero()
         self.content = content()
         self.actions = actions()
@@ -146,10 +159,16 @@ struct BookDetailScaffold<Hero: View, Content: View, Actions: View>: View {
         if embedding != nil {
             stack.frame(maxWidth: .infinity)
         } else {
-            ScrollView { stack }
+            ScrollView { stack.environment(\.bookDetailHeroBarInset, heroUnderBars ? barInset : 0) }
+                .ignoresSafeArea(.container, edges: heroUnderBars ? .top : [])
                 .onGeometryChange(for: CGFloat.self) { proxy in
                     proxy.frame(in: .global).minY + proxy.safeAreaInsets.top
                 } action: { visibleTop = $0 }
+                .onGeometryChange(for: CGFloat.self) { proxy in
+                    proxy.safeAreaInsets.top
+                } action: { [heroUnderBars] inset in
+                    if heroUnderBars { barInset = inset }
+                }
                 .modifier(BookDetailRefreshModifier(onRefresh: onRefresh))
                 // iOS 26's soft top edge fades whatever scrolls under the navigation bar into
                 // the page background — it turned the cover wash under the bar into a flat
@@ -227,9 +246,10 @@ struct BookDetailScaffold<Hero: View, Content: View, Actions: View>: View {
 
 extension BookDetailScaffold where Actions == EmptyView {
     init(title: String, compactAction: BookDetailAction, onRefresh: (() async -> Void)? = nil,
+         heroUnderBars: Bool = false,
          @ViewBuilder hero: () -> Hero, @ViewBuilder content: () -> Content) {
         self.init(title: title, compactAction: compactAction, onRefresh: onRefresh,
-                  hero: hero, content: content, actions: { EmptyView() })
+                  heroUnderBars: heroUnderBars, hero: hero, content: content, actions: { EmptyView() })
     }
 }
 

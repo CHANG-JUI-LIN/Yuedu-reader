@@ -20,11 +20,12 @@ private enum VideoPlayerRequest: Identifiable {
     }
 }
 
-/// A video's detail page, laid out as a media centre lays out a series (Swiftfin's item page;
-/// maintainer, 2026-11-01: 「視頻的詳情頁就是按照emby播放器，別共用一個詳情頁」「就是什麼海報牆之類的」):
-/// the poster over its hue, the title beside it, one wide play button, then
-/// 選集 — the 線路 picked as a season is, its episodes as cards — and a poster wall of the
-/// source's other works in the same genre. Videos only: books keep Editorial Minimalism.
+/// A video's detail page, laid out as a media centre lays out a series (maintainer, 2026-11-01:
+/// 「視頻的詳情頁就是按照emby播放器，別共用一個詳情頁」「就是什麼海報牆之類的」, then 「去看
+/// infuse、rex、senplayer、vidhub…的詳情頁」): the poster across the top, fading into the page
+/// (`VideoDetailHero`), the title and a row of buttons led by play, then 選集 — the 線路
+/// picked as a season is, its episodes as tiles — and a poster wall of the source's other works
+/// in the same genre. Videos only: books keep Editorial Minimalism.
 ///
 /// Its data goes through the services every detail page uses: the shared fetcher for detail
 /// and episodes, `ShelfWorkService` for the shelf, `SourceGenreLinks` for the genre wall.
@@ -42,8 +43,9 @@ struct VideoDetailView: View {
     // A stable binding while a page is pushed above this one, as on the other detail pages.
     @Environment(\.presentationMode) private var presentationMode
     @Environment(\.appDependencies) private var dependencies
-    /// The poster's hue, washed behind the header as on every detail page.
-    @State private var wash: CoverTint.Wash?
+    /// The artwork the poster card drew, for the hero's full-width poster; nil while it loads
+    /// and when there is none. A cached poster is there from the first frame.
+    @State private var poster: UIImage?
     private var source: BookSource? { BookSourceStore.shared.source(id: currentBook.sourceId) }
 
     @State private var chapters: [OnlineChapterRef] = []
@@ -85,7 +87,9 @@ struct VideoDetailView: View {
         self.onRemoveFromShelf = onRemoveFromShelf
         self.onSourceKindChange = onSourceKindChange
         self.workVersions = workVersions
-        _currentBook = State(initialValue: OnlineBookDetailPresentationPolicy.sanitized(book))
+        let sanitized = OnlineBookDetailPresentationPolicy.sanitized(book)
+        _currentBook = State(initialValue: sanitized)
+        _poster = State(initialValue: BookCoverLoader.cachedImage(for: sanitized.coverUrl))
     }
 
     /// Search entry: `initialOrigin` when given, else the first video origin, else the first.
@@ -101,12 +105,14 @@ struct VideoDetailView: View {
         self.onSourceKindChange = onSourceKindChange
         self.workVersions = workVersions
         let origin = initialOrigin ?? searchBook.preferredOrigin(for: .video) ?? searchBook.origins.first
-        _currentBook = State(initialValue: origin.map { OnlineBook(detailOrigin: $0, in: searchBook) }
+        let book = origin.map { OnlineBook(detailOrigin: $0, in: searchBook) }
             ?? OnlineBook(
                 id: SearchResultDetailIdentity.onlineBookID(searchBookID: searchBook.id, originID: nil),
                 name: searchBook.name, author: searchBook.author, intro: "", coverUrl: "",
                 bookUrl: "", tocUrl: "", wordCount: "", lastChapter: "", kind: "",
-                sourceId: searchBook.id, sourceName: ""))
+                sourceId: searchBook.id, sourceName: "")
+        _currentBook = State(initialValue: book)
+        _poster = State(initialValue: BookCoverLoader.cachedImage(for: book.coverUrl))
     }
 
     // MARK: Display
@@ -174,7 +180,7 @@ struct VideoDetailView: View {
 
     var body: some View {
         let guide = guide
-        return BookDetailScaffold(title: displayName, compactAction: playAction(guide)) {
+        return BookDetailScaffold(title: displayName, compactAction: playAction(guide), heroUnderBars: true) {
             hero(guide)
         } content: {
             if !displayIntro.isEmpty {
@@ -279,50 +285,14 @@ struct VideoDetailView: View {
 
     // MARK: Hero
 
-    /// Swiftfin's compact poster header: the poster, the title beside it, and one wide play
-    /// button under both. Sources give a poster and no backdrop art, so the poster's hue is the
-    /// backdrop, as on the book pages.
     private func hero(_ guide: VideoEpisodeGuide) -> some View {
-        VStack(alignment: .leading, spacing: DSSpacing.lg) {
-            HStack(alignment: .bottom, spacing: DSSpacing.lg) {
-                cover
-                    .reportsCoverWash(to: $wash)
-                    .frame(width: DSLayout.videoPosterWidth,
-                           height: DSLayout.videoPosterWidth / DSLayout.discoverCoverAspectRatio)
-                    .clipShape(RoundedRectangle(cornerRadius: DSRadius.md, style: .continuous))
-                    .shadow(color: DSColor.bookDetailCoverShadow, radius: DSLayout.bookDetailCoverShadowRadius,
-                            y: DSLayout.bookDetailCoverShadowOffsetY)
-                    .accessibilityHidden(true)
-                VStack(alignment: .leading, spacing: DSSpacing.xs) {
-                    Text(displayName)
-                        .font(DSFont.title2.weight(.bold))
-                        .foregroundStyle(DSColor.textPrimary)
-                        .fixedSize(horizontal: false, vertical: true)
-                        .accessibilityAddTraits(.isHeader)
-                    if !displayAuthor.isEmpty {
-                        Text(displayAuthor)
-                            .font(DSFont.subheadline)
-                            .foregroundStyle(DSColor.textSecondary)
-                            .lineLimit(1)
-                    }
-                    if !metaLine(guide).isEmpty {
-                        Text(metaLine(guide))
-                            .font(DSFont.footnote)
-                            .foregroundStyle(DSColor.textSecondary)
-                            .lineLimit(2)
-                    }
-                }
-                .frame(maxWidth: .infinity, alignment: .leading)
-            }
-            HStack(spacing: DSSpacing.md) {
-                playButton(guide)
-                shelfButton
-            }
+        VideoDetailHero(poster: poster, title: displayName, subtitle: displayAuthor, facts: facts(guide)) {
+            // The card fetches the artwork, through the path every cover takes; what it
+            // draws becomes the full-width poster.
+            cover.environment(\.coverImageObserver) { image in poster = image }
+        } actions: {
+            heroActions(guide)
         }
-        .padding(.horizontal, DSSpacing.lg)
-        .padding(.top, DSSpacing.xl)
-        .frame(maxWidth: .infinity)
-        .background(alignment: .top) { BookDetailCoverWash(wash: wash) }
     }
 
     private var cover: some View {
@@ -335,11 +305,28 @@ struct VideoDetailView: View {
         )
     }
 
-    private func metaLine(_ guide: VideoEpisodeGuide) -> String {
-        var parts = tags
+    /// The episode count, then the source's genres: plezy's chips, one line of them.
+    private func facts(_ guide: VideoEpisodeGuide) -> [String] {
+        var facts: [String] = []
         let count = guide.routes.first?.episodes.count ?? 0
-        if count > 0 { parts.append(String(format: localized("共 %d 集"), count)) }
-        return parts.joined(separator: " · ")
+        if count > 0 { facts.append(String(format: localized("共 %d 集"), count)) }
+        for tag in tags where !facts.contains(tag) { facts.append(tag) }
+        return Array(facts.prefix(DSLayout.videoHeroFactLimit))
+    }
+
+    /// plezy's action row: the play button, then the page's other actions as round buttons;
+    /// the round ones go under it when the text is too large for one line.
+    private func heroActions(_ guide: VideoEpisodeGuide) -> some View {
+        ViewThatFits(in: .horizontal) {
+            HStack(spacing: DSSpacing.md) {
+                playButton(guide)
+                iconButtons(guide)
+            }
+            VStack(spacing: DSSpacing.md) {
+                playButton(guide)
+                HStack(spacing: DSSpacing.md) { iconButtons(guide) }
+            }
+        }
     }
 
     private func playAction(_ guide: VideoEpisodeGuide) -> BookDetailAction {
@@ -354,49 +341,59 @@ struct VideoDetailView: View {
         )
     }
 
-    /// The one wide button Swiftfin leads with, the episode it resumes under its words.
+    /// The capsule plezy, Infuse and VidHub lead with, in the page's text colour with the page's
+    /// colour for its words (white on a dark page, black on a light one), the episode it
+    /// plays after its title.
     private func playButton(_ guide: VideoEpisodeGuide) -> some View {
         let action = playAction(guide)
         return Button(action: action.action) {
-            VStack(spacing: DSSpacing.xxs) {
-                Label(action.title, systemImage: action.systemImage)
-                    .font(DSFont.headline)
+            HStack(spacing: DSSpacing.xs) {
+                Image(systemName: action.systemImage)
+                    .accessibilityHidden(true)
+                Text(action.title)
+                    .layoutPriority(1)
                 if let detail = action.detail {
                     Text(detail)
-                        .font(DSFont.caption)
+                        .fontWeight(.regular)
                         .lineLimit(1)
                 }
             }
-            .frame(maxWidth: .infinity, minHeight: DSLayout.minimumTapTarget)
+            .font(DSFont.headline)
+            .lineLimit(1)
+            .foregroundStyle(DSColor.background)
+            .frame(maxWidth: DSLayout.videoPlayButtonMaxWidth)
         }
         .buttonStyle(.borderedProminent)
         .buttonBorderShape(.capsule)
         .controlSize(.large)
+        .tint(DSColor.textPrimary)
         .disabled(!action.isEnabled)
         .accessibilityLabel(action.title)
         .accessibilityValue(action.detail ?? "")
     }
 
-    private var shelfButton: some View {
+    @ViewBuilder
+    private func iconButtons(_ guide: VideoEpisodeGuide) -> some View {
         Button {
             if alreadyInShelf { confirmsRemoval = true } else { addToShelf() }
         } label: {
-            Group {
-                if addingToShelf {
-                    ProgressView()
-                } else {
-                    Image(systemName: alreadyInShelf ? "checkmark" : "plus")
-                        .font(DSFont.headline)
-                }
+            if addingToShelf {
+                ProgressView()
+            } else {
+                Image(systemName: alreadyInShelf ? "checkmark" : "plus")
             }
-            .frame(width: DSLayout.minimumTapTarget, height: DSLayout.minimumTapTarget)
         }
-        .buttonStyle(.bordered)
-        .buttonBorderShape(.circle)
-        .controlSize(.large)
-        .tint(DSColor.textSecondary)
+        .modifier(VideoHeroIconButtonStyle())
         .disabled(chapters.isEmpty || addingToShelf)
         .accessibilityLabel(alreadyInShelf ? localized("移除書架") : localized("加入書架"))
+        if !guide.isEmpty {
+            Button { showsEpisodes = true } label: { Image(systemName: "list.bullet") }
+                .modifier(VideoHeroIconButtonStyle())
+                .accessibilityLabel(localized("選集"))
+        }
+        Button { showSourcePicker = true } label: { Image(systemName: "arrow.triangle.2.circlepath") }
+            .modifier(VideoHeroIconButtonStyle())
+            .accessibilityLabel(localized("換源"))
     }
 
     // MARK: 選集
@@ -436,7 +433,7 @@ struct VideoDetailView: View {
         }
     }
 
-    /// Swiftfin's season selector.
+    /// The season capsule of Swiftfin and plezy (「Season 1 ⌄」).
     private func routeMenu(_ guide: VideoEpisodeGuide) -> some View {
         let current = guide.routes.first { $0.id == routeID } ?? guide.routes[0]
         return Menu {
@@ -446,24 +443,18 @@ struct VideoDetailView: View {
                 }
             }
         } label: {
-            HStack(spacing: DSSpacing.xxs) {
-                Text(VideoEpisodeNaming.routeName(current))
-                    .lineLimit(1)
-                Image(systemName: "chevron.up.chevron.down")
-                    .font(DSFont.caption2.weight(.semibold))
-                    .accessibilityHidden(true)
-            }
-            .font(DSFont.subheadline)
-            .foregroundStyle(DSColor.accent)
-            .frame(minHeight: DSLayout.minimumTapTarget)
-            .contentShape(Rectangle())
+            DSCapsuleLabel(title: VideoEpisodeNaming.routeName(current), trailingSystemImage: "chevron.down")
+                .frame(minHeight: DSLayout.minimumTapTarget)
+                .contentShape(Rectangle())
         }
+        .buttonStyle(.plain)
         .accessibilityLabel(localized("線路"))
         .accessibilityValue(VideoEpisodeNaming.routeName(current))
     }
 
-    /// The 線路's episodes as Swiftfin's episode cards — number and title, as sources give no
-    /// stills — scrolled to the one 繼續播放 resumes.
+    /// The 線路's episodes as the episode tiles of Infuse and Swiftfin — the episode's number
+    /// in the frame its still would fill, as sources give no stills, and its name under it —
+    /// scrolled to the one 繼續播放 resumes.
     private func episodeCards(_ guide: VideoEpisodeGuide) -> some View {
         let route = guide.routes.first { $0.id == routeID } ?? guide.routes[0]
         let resume = resumeEpisode
@@ -492,25 +483,23 @@ struct VideoDetailView: View {
         let name = VideoEpisodeNaming.episodeName(chapterIndex, in: guide, title: episodeTitle)
         let shape = RoundedRectangle(cornerRadius: DSRadius.md, style: .continuous)
         return Button { play(chapterIndex: chapterIndex) } label: {
-            VStack(alignment: .leading, spacing: DSSpacing.xs) {
+            VStack(alignment: .leading, spacing: DSSpacing.sm) {
                 Text(number.formatted())
-                    .font(DSFont.title2.weight(.semibold).monospacedDigit())
+                    .font(DSFont.title.weight(.bold).monospacedDigit())
                     .foregroundStyle(isResume ? DSColor.accent : DSColor.textPrimary)
+                    .frame(width: DSLayout.videoEpisodeCardWidth, height: DSLayout.videoEpisodeCardHeight)
+                    .background(DSColor.neutralControlFill, in: shape)
+                    .overlay {
+                        if isResume { shape.stroke(DSColor.accent, lineWidth: DSLayout.videoEpisodeResumeStroke) }
+                    }
                 Text(name)
                     .font(DSFont.footnote)
                     .foregroundStyle(DSColor.textSecondary)
                     .lineLimit(2, reservesSpace: true)
                     .multilineTextAlignment(.leading)
+                    .frame(width: DSLayout.videoEpisodeCardWidth, alignment: .topLeading)
             }
-            .padding(DSSpacing.md)
-            // Grows with the text at the larger sizes instead of clipping it.
-            .frame(width: DSLayout.videoEpisodeCardWidth, alignment: .topLeading)
-            .frame(minHeight: DSLayout.videoEpisodeCardHeight, alignment: .topLeading)
-            .background(DSColor.surface, in: shape)
-            .overlay {
-                if isResume { shape.stroke(DSColor.accent, lineWidth: DSLayout.videoEpisodeResumeStroke) }
-            }
-            .contentShape(shape)
+            .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
         .accessibilityLabel(name)
@@ -595,7 +584,7 @@ struct VideoDetailView: View {
         guard newBook.sourceId != currentBook.sourceId || newBook.bookUrl != currentBook.bookUrl else { return }
         currentBook = newBook
         detailInfo = nil
-        wash = nil
+        poster = BookCoverLoader.cachedImage(for: newBook.coverUrl)
         chapters = []
         guide = VideoEpisodeGuide(chapters: [])
         loadError = nil
@@ -805,6 +794,18 @@ struct VideoDetailView: View {
             // Watched without being shelved: only its name stays, for 搜索's 最近閱讀.
             OffShelfReadRecords.record(title: book.title, author: book.author, coverUrl: displayCoverUrl)
         }
+    }
+}
+
+/// plezy's round buttons beside play: grey circles in the page's text colour.
+private struct VideoHeroIconButtonStyle: ViewModifier {
+    func body(content: Content) -> some View {
+        content
+            .font(DSFont.headline)
+            .buttonStyle(.bordered)
+            .buttonBorderShape(.circle)
+            .controlSize(.large)
+            .tint(DSColor.textPrimary)
     }
 }
 

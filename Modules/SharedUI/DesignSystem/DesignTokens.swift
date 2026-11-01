@@ -956,11 +956,33 @@ enum DSLayout {
     static let videoCenterControlSide: CGFloat = 64
     /// How far a finger travels before a swipe on the picture counts (up opens 選集).
     static let videoSwipeThreshold: CGFloat = 40
-    /// The poster on a video's detail page (Swiftfin's compact header).
+    /// The poster card on a video's detail page while it has no artwork to fill the width with.
     static let videoPosterWidth: CGFloat = 120
-    /// An episode card in a video detail page's 選集 row.
-    static let videoEpisodeCardWidth: CGFloat = 140
-    static let videoEpisodeCardHeight: CGFloat = 64
+    /// The poster card beside the title on a wide window (iPad, a phone on its side).
+    static let videoPosterWideWidth: CGFloat = 180
+    /// How much of the screen's height a video's full-width poster takes (plezy's 60 %).
+    static let videoHeroHeightFraction: CGFloat = 0.6
+    /// Where, down the poster, it starts fading into the page and where it is gone: the
+    /// title, facts and buttons sit on the faded part.
+    static let videoHeroFadeStart: Double = 0.15
+    static let videoHeroFadeEnd: Double = 0.85
+    /// The same with Increase Contrast, Reduce Transparency or an accessibility text size:
+    /// gone before the text begins, so the text is on the page alone.
+    static let videoHeroStrongFadeStart: Double = 0
+    static let videoHeroStrongFadeEnd: Double = 0.55
+    /// The poster's opacity at the very top, under the status bar and the navigation bar,
+    /// so their text and buttons read over a bright poster.
+    static let videoHeroBarOpacity: Double = 0.35
+    /// The blur on the poster behind a wide window's header.
+    static let videoBackdropBlur: CGFloat = 40
+    /// The widest the play button gets beside the icon buttons.
+    static let videoPlayButtonMaxWidth: CGFloat = 320
+    /// The most facts (episode count, genres) under a video's title: one line on a phone.
+    static let videoHeroFactLimit = 4
+    /// An episode tile in a video detail page's 選集 row: a 16:9 frame, as the stills
+    /// Infuse and Swiftfin show there.
+    static let videoEpisodeCardWidth: CGFloat = 160
+    static let videoEpisodeCardHeight: CGFloat = 90
     /// The outline that marks the episode to resume.
     static let videoEpisodeResumeStroke: CGFloat = 2
     /// Posters in a video detail page's wall of related works: three rows of three.
