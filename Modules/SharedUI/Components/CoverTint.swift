@@ -29,13 +29,18 @@ enum CoverTint {
     /// Thread-safe; one for every average instead of a context per call.
     private static let context = CIContext(options: [.workingColorSpace: NSNull()])
 
-    /// The image's average colour (`CIAreaAverage`), or nil when it has no bitmap.
-    static func average(of image: UIImage) -> RGB? {
+    /// The image's average colour (`CIAreaAverage`), or nil when it has no bitmap. With a
+    /// `bottomFraction` below 1, of that share of the image's height at its foot alone: the
+    /// colour a picture faded out at its bottom edge runs into.
+    static func average(of image: UIImage, bottomFraction: Double = 1) -> RGB? {
         guard let cg = image.cgImage else { return nil }
         let ciImage = CIImage(cgImage: cg)
-        guard let filter = CIFilter(
+        // Core Image's origin is the image's bottom-left corner.
+        var extent = ciImage.extent
+        extent.size.height *= min(max(bottomFraction, 0), 1)
+        guard extent.height >= 1, let filter = CIFilter(
             name: "CIAreaAverage",
-            parameters: [kCIInputImageKey: ciImage, kCIInputExtentKey: CIVector(cgRect: ciImage.extent)]
+            parameters: [kCIInputImageKey: ciImage, kCIInputExtentKey: CIVector(cgRect: extent)]
         ), let output = filter.outputImage else { return nil }
 
         var bitmap = [UInt8](repeating: 0, count: 4)

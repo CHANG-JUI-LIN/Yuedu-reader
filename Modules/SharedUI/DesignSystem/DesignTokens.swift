@@ -960,31 +960,48 @@ enum DSLayout {
     static let videoPosterWidth: CGFloat = 120
     /// The same card on a wide window (iPad, a phone on its side).
     static let videoPosterWideWidth: CGFloat = 180
-    /// How much of the screen's height a video's hero takes, the poster with the title, the
-    /// buttons and the intro at its foot: the poster reaches down to the title.
-    static let videoHeroHeightFraction: CGFloat = 0.75
-    /// Where, down the hero, the poster starts fading into its own hue and where it is gone:
-    /// the title, facts and buttons sit on the faded part. The hue holds from there and fades
-    /// into the page by the hero's foot.
-    static let videoHeroFadeStart: Double = 0.25
-    static let videoHeroFadeEnd: Double = 0.75
+    /// A video detail page's side margins on a phone, VidHub's: its title, buttons and intro.
+    static let videoDetailMargin: CGFloat = 18
+    /// The poster's box across a phone's width: 2:3, as the artwork itself, from the top edge
+    /// of the screen.
+    static let videoPosterAspectRatio: CGFloat = 2.0 / 3
+    /// How much of the window's height the poster takes on a wide window, where a 2:3 box
+    /// across the width would be taller than the window.
+    static let videoHeroHeightFraction: CGFloat = 0.6
+    /// Where, down the poster's box, it starts fading into the page and where it is gone: the
+    /// title, facts and buttons sit on the faded part.
+    static let videoHeroFadeStart: Double = 0.55
+    static let videoHeroFadeEnd: Double = 1
     /// The same with Increase Contrast, Reduce Transparency or an accessibility text size:
     /// gone before the text begins, so the text is on the page alone.
     static let videoHeroStrongFadeStart: Double = 0
     static let videoHeroStrongFadeEnd: Double = 0.55
-    /// The poster's opacity at the very top, under the status bar and the navigation bar,
-    /// so their text and buttons read over a bright poster.
-    static let videoHeroBarOpacity: Double = 0.35
+    /// The share of the poster, from its foot, whose average colour the whole page is drawn
+    /// in: the part the poster fades into.
+    static let videoPosterFootFraction: Double = 0.15
+    /// From the facts line down to the buttons.
+    static let videoHeroFactsActionsSpacing: CGFloat = 18
+    /// From the buttons down to the intro.
+    static let videoHeroIntroSpacing: CGFloat = 13
+    /// The intro's line height under the buttons, VidHub's two tight lines of caption text.
+    static let videoIntroLineHeight: CGFloat = 14
     /// The widest the play button gets beside the icon buttons.
     static let videoPlayButtonMaxWidth: CGFloat = 320
+    /// The play button's height, VidHub's: a point under the other pages' action buttons.
+    static let videoPlayButtonHeight: CGFloat = 45
+    /// From the play button's icon to its two lines.
+    static let videoPlayIconSpacing: CGFloat = 10
+    /// One icon's share of the glass capsule beside the play button.
+    static let videoActionSlotWidth: CGFloat = 50
     /// The most facts (episode count, genres) after the maker under a video's title.
     static let videoHeroFactLimit = 4
-    /// An episode tile in a video detail page's 選集 row: a 16:9 frame, as the stills
-    /// Infuse and Swiftfin show there, two to a phone's width with the next one peeking in.
-    static let videoEpisodeCardWidth: CGFloat = 208
-    static let videoEpisodeCardHeight: CGFloat = 117
-    /// The outline that marks the episode to resume.
-    static let videoEpisodeResumeStroke: CGFloat = 2
+    /// An episode tile in a video detail page's 選集 row: a 16:9 frame, as the stills VidHub
+    /// shows there, a little more than half a phone's width with the next one peeking in.
+    static let videoEpisodeCardWidth: CGFloat = 224
+    static let videoEpisodeCardHeight: CGFloat = 126
+    /// The ring that marks the episode to resume, and how far outside the tile it is drawn.
+    static let videoEpisodeResumeStroke: CGFloat = 1.5
+    static let videoEpisodeResumeRingOutset: CGFloat = 2.5
     /// Posters in a video detail page's wall of related works: three rows of three.
     static let videoPosterWallCount = 9
 }

@@ -470,7 +470,7 @@ struct AudiobookReaderView: View {
     /// when there is no cover so callers can fall back to the palette.
     static func dominantColor(from image: UIImage?) -> Color? {
         // Darken slightly so white controls stay legible on pale covers.
-        image.flatMap(CoverTint.average(of:))?.scaled(by: 0.82).color
+        image.flatMap { CoverTint.average(of: $0) }?.scaled(by: 0.82).color
     }
 }
 

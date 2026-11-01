@@ -46,6 +46,9 @@ struct VideoDetailView: View {
     /// The artwork the poster card drew, for the hero's full-width poster; nil while it loads
     /// and when there is none. A cached poster is there from the first frame.
     @State private var poster: UIImage?
+    /// The average colour of the poster's foot, which it fades into and the page is drawn in.
+    @State private var posterFoot: CoverTint.RGB?
+    @Environment(\.colorSchemeContrast) private var contrast
     private var source: BookSource? { BookSourceStore.shared.source(id: currentBook.sourceId) }
 
     @State private var chapters: [OnlineChapterRef] = []
@@ -180,7 +183,8 @@ struct VideoDetailView: View {
 
     var body: some View {
         let guide = guide
-        return BookDetailScaffold(title: displayName, compactAction: playAction(guide), heroUnderBars: true) {
+        return BookDetailScaffold(title: displayName, compactAction: playAction(guide), heroUnderBars: true,
+                                  pageTint: pageTint) {
             hero(guide)
         } content: {
             episodesSection(guide)
@@ -271,9 +275,25 @@ struct VideoDetailView: View {
             guard let key = genreLoadKey else { return }
             await genres.load(key: key, source: source, tags: tags, book: currentBook)
         }
+        .task(id: poster) {
+            guard let poster else {
+                posterFoot = nil
+                return
+            }
+            posterFoot = await Task.detached(priority: .utility) {
+                CoverTint.average(of: poster, bottomFraction: DSLayout.videoPosterFootFraction)
+            }.value
+        }
     }
 
     // MARK: Hero
+
+    /// The colour of the poster's foot, darkened as far as white text on it needs; a neutral
+    /// dark grey until the poster has loaded, and when there is none.
+    private var pageTint: Color {
+        guard let posterFoot else { return CoverTint.placeholder.color }
+        return CoverTint.background(for: posterFoot, minimumContrast: contrast == .increased ? 7 : 4.5).color
+    }
 
     private func hero(_ guide: VideoEpisodeGuide) -> some View {
         VideoDetailHero(poster: poster, title: displayName, facts: facts(guide)) {
@@ -317,13 +337,13 @@ struct VideoDetailView: View {
         return (maker.isEmpty ? [] : [maker]) + facts.prefix(DSLayout.videoHeroFactLimit)
     }
 
-    /// plezy's action row: the play button, then the page's other actions together in one
+    /// VidHub's action row: the play button, then the page's other actions together in one
     /// glass capsule as tall as it (maintainer, 2026-11-01: 「那三個按鈕包在一個膠囊裡面」,
     /// 「我要的是這樣的玻璃膠囊」); the capsule goes under it when the text is too large for
     /// one line.
     private func heroActions(_ guide: VideoEpisodeGuide) -> some View {
         ViewThatFits(in: .horizontal) {
-            HStack(spacing: DSSpacing.md) {
+            HStack(spacing: DSSpacing.lg) {
                 playButton(guide)
                 actionCapsule(guide)
             }
@@ -337,10 +357,9 @@ struct VideoDetailView: View {
 
     private func actionCapsule(_ guide: VideoEpisodeGuide) -> some View {
         HStack(spacing: 0) { iconButtons(guide) }
-            .font(DSFont.headline)
+            .font(DSFont.title3)
             .foregroundStyle(DSColor.textPrimary)
             .buttonStyle(.borderless)
-            .padding(.horizontal, DSSpacing.xs)
             .frame(maxHeight: .infinity)
             .modifier(CardButtonGlass())
     }
@@ -365,28 +384,28 @@ struct VideoDetailView: View {
     private func playButton(_ guide: VideoEpisodeGuide) -> some View {
         let action = playAction(guide)
         return Button(action: action.action) {
-            HStack(spacing: DSSpacing.sm) {
+            HStack(spacing: DSLayout.videoPlayIconSpacing) {
                 Image(systemName: action.systemImage)
-                    .font(DSFont.title3)
+                    .font(DSFont.subheadline)
                     .accessibilityHidden(true)
                 VStack(alignment: .leading, spacing: 0) {
                     Text(action.title)
-                        .font(DSFont.headline)
+                        .font(DSFont.footnote.weight(.semibold))
                     if let detail = action.detail {
                         Text(detail)
-                            .font(DSFont.subheadline)
+                            .font(DSFont.caption2)
                             .foregroundStyle(.secondary)
                     }
                 }
                 .lineLimit(1)
             }
-            .foregroundStyle(DSColor.cardPrimaryActionLabel)
+            .padding(.vertical, DSSpacing.sm)
+            .padding(.horizontal, DSSpacing.lg)
             .frame(maxWidth: DSLayout.videoPlayButtonMaxWidth)
         }
-        .buttonStyle(.borderedProminent)
-        .buttonBorderShape(.capsule)
-        .controlSize(.large)
-        .tint(DSColor.cardPrimaryActionFill)
+        .buttonStyle(BookDetailCardActionStyle(fill: DSColor.cardPrimaryActionFill,
+                                               label: DSColor.cardPrimaryActionLabel,
+                                               minHeight: DSLayout.videoPlayButtonHeight))
         .disabled(!action.isEnabled)
         .accessibilityLabel(action.title)
         .accessibilityValue(action.detail ?? "")
@@ -424,15 +443,9 @@ struct VideoDetailView: View {
 
     @ViewBuilder
     private func episodesSection(_ guide: VideoEpisodeGuide) -> some View {
-        VStack(alignment: .leading, spacing: DSSpacing.sm) {
-            BookDetailSectionHeader(
-                title: localized("選集"),
-                actionTitle: guide.isEmpty ? nil : localized("全部"),
-                action: { showsEpisodes = true }
-            ) {
-                if guide.routes.count > 1 { routeMenu(guide) }
-            }
-            .padding(.horizontal, DSSpacing.lg)
+        VStack(alignment: .leading, spacing: DSSpacing.lg) {
+            episodesHeader(guide)
+                .padding(.horizontal, DSLayout.videoDetailMargin)
             if loading {
                 ProgressView()
                     .frame(maxWidth: .infinity, minHeight: DSLayout.videoEpisodeCardHeight)
@@ -444,7 +457,7 @@ struct VideoDetailView: View {
                         .frame(maxWidth: .infinity, minHeight: DSLayout.videoEpisodeCardHeight)
                 }
                 .buttonStyle(.plain)
-                .padding(.horizontal, DSSpacing.lg)
+                .padding(.horizontal, DSLayout.videoDetailMargin)
                 .accessibilityHint(localized("載入失敗，點按重試"))
             } else if guide.isEmpty {
                 Text(localized("這部影片沒有可播放的集數"))
@@ -457,7 +470,20 @@ struct VideoDetailView: View {
         }
     }
 
-    /// The season capsule of Swiftfin and plezy (「Season 1 ⌄」).
+    /// VidHub's season header (「第 1 季 ⌄」): the 線路 menu itself when there are several,
+    /// else 選集. The whole list opens from the capsule's 選集 button.
+    @ViewBuilder
+    private func episodesHeader(_ guide: VideoEpisodeGuide) -> some View {
+        if guide.routes.count > 1 {
+            routeMenu(guide)
+        } else {
+            Text(localized("選集"))
+                .font(DSFont.headline.weight(.bold))
+                .foregroundStyle(DSColor.textPrimary)
+                .accessibilityAddTraits(.isHeader)
+        }
+    }
+
     private func routeMenu(_ guide: VideoEpisodeGuide) -> some View {
         let current = guide.routes.first { $0.id == routeID } ?? guide.routes[0]
         return Menu {
@@ -467,30 +493,39 @@ struct VideoDetailView: View {
                 }
             }
         } label: {
-            DSCapsuleLabel(title: VideoEpisodeNaming.routeName(current), trailingSystemImage: "chevron.down")
-                .frame(minHeight: DSLayout.minimumTapTarget)
-                .contentShape(Rectangle())
+            HStack(spacing: DSLayout.videoPlayIconSpacing) {
+                Text(VideoEpisodeNaming.routeName(current))
+                    .font(DSFont.headline.weight(.bold))
+                Image(systemName: "chevron.down")
+                    .font(DSFont.title3)
+                    .accessibilityHidden(true)
+            }
+            .foregroundStyle(DSColor.textPrimary)
+            .frame(minHeight: DSLayout.minimumTapTarget)
+            .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
         .accessibilityLabel(localized("線路"))
         .accessibilityValue(VideoEpisodeNaming.routeName(current))
     }
 
-    /// The 線路's episodes as the episode tiles of Infuse and Swiftfin — the episode's number
-    /// in the frame its still would fill, as sources give no stills, and its name under it —
-    /// scrolled to the one 繼續播放 resumes.
+    /// The 線路's episodes as VidHub's episode stills — the episode's number in the frame its
+    /// still would fill, as sources give no stills, and 第 N 集 under it with the source's own
+    /// name for it — scrolled to the one 繼續播放 resumes, which a white ring marks.
     private func episodeCards(_ guide: VideoEpisodeGuide) -> some View {
         let route = guide.routes.first { $0.id == routeID } ?? guide.routes[0]
         let resume = resumeEpisode
         return ScrollViewReader { proxy in
             ScrollView(.horizontal) {
-                LazyHStack(spacing: DSSpacing.md) {
+                LazyHStack(alignment: .top, spacing: DSSpacing.md) {
                     ForEach(route.episodes, id: \.self) { chapterIndex in
                         episodeCard(chapterIndex, in: guide, isResume: chapterIndex == resume)
                             .id(chapterIndex)
                     }
                 }
                 .scrollTargetLayout()
+                // Room for the ring around the resumed episode, which the scroll view would clip.
+                .padding(.vertical, DSLayout.videoEpisodeResumeRingOutset)
             }
             .scrollIndicators(.hidden)
             .contentMargins(.horizontal, DSSpacing.lg, for: .scrollContent)
@@ -505,23 +540,39 @@ struct VideoDetailView: View {
     private func episodeCard(_ chapterIndex: Int, in guide: VideoEpisodeGuide, isResume: Bool) -> some View {
         let number = guide.episodeNumber(of: chapterIndex) ?? chapterIndex + 1
         let name = VideoEpisodeNaming.episodeName(chapterIndex, in: guide, title: episodeTitle)
+        let numbered = String(format: localized("第 %d 集"), number)
+        // The source's own name, unless it only says the same 第 N 集.
+        let sourceName = episodeTitle(chapterIndex).trimmingCharacters(in: .whitespacesAndNewlines)
+        let showsSourceName = !sourceName.isEmpty
+            && sourceName.filter { !$0.isWhitespace } != numbered.filter { !$0.isWhitespace }
         let shape = RoundedRectangle(cornerRadius: DSRadius.md, style: .continuous)
         return Button { play(chapterIndex: chapterIndex) } label: {
-            VStack(alignment: .leading, spacing: DSSpacing.sm) {
+            VStack(alignment: .leading, spacing: DSSpacing.xs) {
                 Text(number.formatted())
                     .font(DSFont.title.weight(.bold).monospacedDigit())
-                    .foregroundStyle(isResume ? DSColor.accent : DSColor.textPrimary)
+                    .foregroundStyle(DSColor.textPrimary)
                     .frame(width: DSLayout.videoEpisodeCardWidth, height: DSLayout.videoEpisodeCardHeight)
                     .background(DSColor.neutralControlFill, in: shape)
                     .overlay {
-                        if isResume { shape.stroke(DSColor.accent, lineWidth: DSLayout.videoEpisodeResumeStroke) }
+                        if isResume {
+                            RoundedRectangle(cornerRadius: DSRadius.md + DSLayout.videoEpisodeResumeRingOutset,
+                                             style: .continuous)
+                                .stroke(DSColor.textPrimary, lineWidth: DSLayout.videoEpisodeResumeStroke)
+                                .padding(-DSLayout.videoEpisodeResumeRingOutset)
+                        }
                     }
-                Text(name)
-                    .font(DSFont.footnote)
-                    .foregroundStyle(DSColor.textSecondary)
-                    .lineLimit(2, reservesSpace: true)
-                    .multilineTextAlignment(.leading)
-                    .frame(width: DSLayout.videoEpisodeCardWidth, alignment: .topLeading)
+                VStack(alignment: .leading, spacing: DSSpacing.xxs) {
+                    Text(numbered)
+                        .font(DSFont.caption)
+                        .foregroundStyle(DSColor.textSecondary)
+                    if showsSourceName {
+                        Text(sourceName)
+                            .font(DSFont.footnote.weight(.semibold))
+                            .foregroundStyle(DSColor.textPrimary)
+                    }
+                }
+                .lineLimit(1)
+                .frame(width: DSLayout.videoEpisodeCardWidth, alignment: .leading)
             }
             .contentShape(Rectangle())
         }
@@ -825,7 +876,7 @@ struct VideoDetailView: View {
 private struct VideoHeroCapsuleIcon: ViewModifier {
     func body(content: Content) -> some View {
         content
-            .frame(width: DSLayout.minimumTapTarget, height: DSLayout.minimumTapTarget)
+            .frame(width: DSLayout.videoActionSlotWidth, height: DSLayout.minimumTapTarget)
             .contentShape(Rectangle())
     }
 }

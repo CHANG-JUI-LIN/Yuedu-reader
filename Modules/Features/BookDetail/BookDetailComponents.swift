@@ -129,8 +129,13 @@ struct BookDetailScaffold<Hero: View, Content: View, Actions: View>: View {
     /// navigation bar, for a hero that is artwork (a video's poster, as plezy and Infuse
     /// show it). The hero keeps its text clear of the bars with `bookDetailHeroBarInset`.
     var heroUnderBars = false
+    /// The whole page in one colour taken from its artwork, drawn dark with white text in
+    /// light and dark mode alike, as Infuse and VidHub draw a series' page; nil for the
+    /// app's page background.
+    var pageTint: Color?
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.colorScheme) private var colorScheme
     @Environment(\.bookDetailEmbedding) private var embedding
     /// Whether the hero has scrolled up under the navigation bar. Stored as the crossing
     /// itself: it used to be the hero's bottom edge, written on every frame of a scroll, and
@@ -143,13 +148,14 @@ struct BookDetailScaffold<Hero: View, Content: View, Actions: View>: View {
     @State private var barInset: CGFloat = 0
 
     init(title: String, compactAction: BookDetailAction, onRefresh: (() async -> Void)? = nil,
-         heroUnderBars: Bool = false,
+         heroUnderBars: Bool = false, pageTint: Color? = nil,
          @ViewBuilder hero: () -> Hero, @ViewBuilder content: () -> Content,
          @ViewBuilder actions: () -> Actions) {
         self.title = title
         self.compactAction = compactAction
         self.onRefresh = onRefresh
         self.heroUnderBars = heroUnderBars
+        self.pageTint = pageTint
         self.hero = hero()
         self.content = content()
         self.actions = actions()
@@ -159,7 +165,12 @@ struct BookDetailScaffold<Hero: View, Content: View, Actions: View>: View {
         if embedding != nil {
             stack.frame(maxWidth: .infinity)
         } else {
-            ScrollView { stack.environment(\.bookDetailHeroBarInset, heroUnderBars ? barInset : 0) }
+            ScrollView {
+                stack
+                    .environment(\.bookDetailHeroBarInset, heroUnderBars ? barInset : 0)
+                    // Only the page: the sheets and dialogs it presents keep the app's appearance.
+                    .environment(\.colorScheme, pageTint == nil ? colorScheme : .dark)
+            }
                 .ignoresSafeArea(.container, edges: heroUnderBars ? .top : [])
                 .onGeometryChange(for: CGFloat.self) { proxy in
                     proxy.frame(in: .global).minY + proxy.safeAreaInsets.top
@@ -176,8 +187,16 @@ struct BookDetailScaffold<Hero: View, Content: View, Actions: View>: View {
                 // away the edge effect returns to keep the bar's title and button legible.
                 .softScrollEdges(hidingTop: !heroScrolledAway)
                 .scrollIndicators(.hidden)
-                .background(PageBackgroundView(scope: .global).ignoresSafeArea())
+                .background {
+                    if let pageTint {
+                        pageTint.ignoresSafeArea()
+                    } else {
+                        PageBackgroundView(scope: .global).ignoresSafeArea()
+                    }
+                }
                 .pageBackgroundToolbar(for: .global)
+                // The bar's title and buttons over a tinted page are white too.
+                .toolbarColorScheme(pageTint == nil ? nil : .dark, for: .navigationBar)
                 .toolbarTitleDisplayMode(.inline)
                 .hidesRootTabBar()
                 .toolbar {
@@ -246,10 +265,11 @@ struct BookDetailScaffold<Hero: View, Content: View, Actions: View>: View {
 
 extension BookDetailScaffold where Actions == EmptyView {
     init(title: String, compactAction: BookDetailAction, onRefresh: (() async -> Void)? = nil,
-         heroUnderBars: Bool = false,
+         heroUnderBars: Bool = false, pageTint: Color? = nil,
          @ViewBuilder hero: () -> Hero, @ViewBuilder content: () -> Content) {
         self.init(title: title, compactAction: compactAction, onRefresh: onRefresh,
-                  heroUnderBars: heroUnderBars, hero: hero, content: content, actions: { EmptyView() })
+                  heroUnderBars: heroUnderBars, pageTint: pageTint, hero: hero, content: content,
+                  actions: { EmptyView() })
     }
 }
 
@@ -692,8 +712,6 @@ struct BookDetailHero<Cover: View>: View {
 /// background), Reduce Transparency and Increase Contrast.
 struct BookDetailCoverWash: View {
     let wash: CoverTint.Wash?
-    /// How far down the hero the wash holds before it fades out.
-    var fadeStart = DSLayout.bookDetailBackdropFadeStart
 
     @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
     @Environment(\.colorSchemeContrast) private var contrast
@@ -710,7 +728,8 @@ struct BookDetailCoverWash: View {
                 LinearGradient(
                     stops: [
                         .init(color: wash.color(dark: colorScheme == .dark), location: 0),
-                        .init(color: wash.color(dark: colorScheme == .dark), location: fadeStart),
+                        .init(color: wash.color(dark: colorScheme == .dark),
+                              location: DSLayout.bookDetailBackdropFadeStart),
                         .init(color: .clear, location: 1),
                     ],
                     startPoint: .top,
@@ -739,17 +758,19 @@ extension View {
     }
 }
 
-/// A carousel card's action, as Apple Books draws its store card's: a flat capsule
-/// whose colours do not change when the action is unavailable, so a card does not
-/// flicker as its page loads. Whether it can be pressed is still announced.
-private struct BookDetailCardActionStyle: ButtonStyle {
+/// A carousel card's action, as Apple Books draws its store card's, and a video page's
+/// white play button: a flat capsule whose colours do not change when the action is
+/// unavailable, so a card does not flicker as its page loads. Whether it can be pressed is
+/// still announced.
+struct BookDetailCardActionStyle: ButtonStyle {
     let fill: Color
     let label: Color
+    var minHeight = DSLayout.cardActionHeight
 
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
             .foregroundStyle(label)
-            .frame(minHeight: DSLayout.cardActionHeight)
+            .frame(minHeight: minHeight)
             .background(fill, in: Capsule())
             .opacity(configuration.isPressed ? DSLayout.cardActionPressedOpacity : 1)
     }
@@ -1085,7 +1106,8 @@ struct BookDetailRecommendationSection: View {
 /// (guardrail 6) rules out for source-controlled text inside this scroll view on iOS 17.
 struct BookDetailIntroSection: View {
     /// A section of its own, or under a video's play button as Infuse and VidHub show a
-    /// series' overview: no 簡介 header, two lines, in the hero's margins.
+    /// series' overview: no 簡介 header, two small lines that open when tapped, in the
+    /// hero's margins.
     enum Placement {
         case section
         case hero
@@ -1113,11 +1135,20 @@ struct BookDetailIntroSection: View {
     /// About one line of the intro's text: a rich intro collapses to its last whole line above
     /// the collapsed lines.
     @ScaledMetric(relativeTo: .subheadline) private var richLineHeight: CGFloat = 22
+    @ScaledMetric(relativeTo: .caption) private var heroLineHeight = DSLayout.videoIntroLineHeight
 
     private var collapsedLineLimit: Int { placement == .hero ? 2 : 4 }
-    /// Roughly that many lines of CJK body text at the default text size on a phone.
-    private var collapsedCharacterEstimate: Int { collapsedLineLimit * 20 }
+    /// Roughly that many lines of CJK text at the default text size across a phone.
+    private var collapsedCharacterEstimate: Int { placement == .hero ? 66 : 80 }
     private var collapsedRichLimit: CGFloat { richLineHeight * CGFloat(collapsedLineLimit) }
+    private var textFont: Font { placement == .hero ? DSFont.caption : DSFont.subheadline }
+
+    private var isRich: Bool {
+        switch content {
+        case .plain, .markdown: false
+        case .html, .web: true
+        }
+    }
 
     private var content: BookIntroContent { readsSourceFormats ? BookIntroContent(text) : .plain(text) }
 
@@ -1140,14 +1171,22 @@ struct BookDetailIntroSection: View {
             if placement == .section {
                 BookDetailSectionHeader(title: localized("簡介"))
             }
-            introBody
-                .frame(maxWidth: .infinity, alignment: .leading)
-            if mayOverflow {
-                Button {
-                    withAnimation(reduceMotion ? nil : DSAnimation.standard) {
-                        isExpanded.toggle()
-                    }
-                } label: {
+            if placement == .hero, !isRich, mayOverflow {
+                // The lines themselves open, with no 更多 under them; a web intro takes its
+                // own taps, so it keeps the button.
+                Button(action: toggle) {
+                    introBody
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityHint(isExpanded ? localized("收合") : localized("簡介：更多"))
+            } else {
+                introBody
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            if mayOverflow, placement == .section || isRich {
+                Button(action: toggle) {
                     Text(isExpanded ? localized("收合") : localized("簡介：更多"))
                         .font(DSFont.subheadline.weight(.semibold))
                         .foregroundStyle(DSColor.accent)
@@ -1162,19 +1201,27 @@ struct BookDetailIntroSection: View {
         .task(id: text) { parseMarkdownIfNeeded() }
     }
 
+    private func toggle() {
+        withAnimation(reduceMotion ? nil : DSAnimation.standard) {
+            isExpanded.toggle()
+        }
+    }
+
     @ViewBuilder
     private var introBody: some View {
         switch content {
         case .plain(let plain):
             Text(plain)
-                .font(DSFont.subheadline)
+                .font(textFont)
                 .foregroundStyle(isUnavailable ? DSColor.textSecondary : DSColor.textPrimary)
                 .lineLimit(isExpanded ? nil : collapsedLineLimit)
+                .modifier(IntroLineHeight(points: placement == .hero ? heroLineHeight : nil))
         case .markdown(let source):
             Text(markdown ?? AttributedString(source))
-                .font(DSFont.subheadline)
+                .font(textFont)
                 .foregroundStyle(DSColor.textPrimary)
                 .lineLimit(isExpanded ? nil : collapsedLineLimit)
+                .modifier(IntroLineHeight(points: placement == .hero ? heroLineHeight : nil))
         case .html(let markup):
             richBody(markup, mode: .fragment)
         case .web(let markup):
@@ -1211,6 +1258,25 @@ struct BookDetailIntroSection: View {
             AppLogger.parse("⟐ <md> intro is not valid Markdown", error: error)
             markdown = AttributedString(source)
         }
+    }
+}
+
+/// VidHub's tight lines under a video's buttons: CJK at its font's own line height spreads
+/// them apart. `Text` takes a line height from iOS 26 on; earlier systems keep the font's.
+/// The `#if compiler` guard mirrors `CardButtonGlass`.
+private struct IntroLineHeight: ViewModifier {
+    let points: CGFloat?
+
+    func body(content: Content) -> some View {
+        #if compiler(>=6.2)
+        if #available(iOS 26.0, *), let points {
+            content.lineHeight(.exact(points: points))
+        } else {
+            content
+        }
+        #else
+        content
+        #endif
     }
 }
 

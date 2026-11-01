@@ -1,31 +1,26 @@
 import SwiftUI
 
-/// The top of a video's detail page, as plezy lays out a show and Infuse and VidHub a series:
-/// the poster fills the width from the top edge of the screen and fades into the page's own
-/// background, light or dark, with the title, its facts and the buttons on the faded part,
-/// centred (maintainer, 2026-11-01: 「海報顏色淡出…往下滑顏色就沒了…就是正常黑白色」).
-/// Under the buttons, the intro, and the poster's hue washed behind all of it until the
-/// episodes begin, as the series pages the maintainer picked (「我喜歡圖二圖三的排版」).
+/// The top of a video's detail page, point for point as VidHub draws a series (maintainer,
+/// 2026-11-01: 「我叫你 1 比 1 pt 復刻」 against its 法網遊龍 page): the poster across the width
+/// at 2:3 from the top edge of the screen, fading at its foot into the colour the whole page is
+/// drawn in (`BookDetailScaffold.pageTint`, taken from that foot), with the title, a line of
+/// facts and the buttons over the faded part, and the intro under it.
 ///
-/// A wide window — an iPad, a phone on its side — keeps the poster across the whole width,
-/// sharp, and moves the text to a bottom-leading column, as plezy, Infuse, VidHub and Swiftfin
-/// lay out their iPad pages (maintainer, 2026-11-01: 「你確定他們 ipad 版本橫屏是這樣嗎？」
-/// about a poster card over a blur of itself, which none of them does). A poster card stands
-/// above the title until there is artwork: a generated cover drawn across the width would
-/// print the title twice.
+/// A wide window — an iPad, a phone on its side — keeps the poster across the width but only as
+/// tall as part of the window, the text in a bottom-leading column, as plezy, Infuse, VidHub and
+/// Swiftfin lay out their iPad pages (maintainer, 2026-11-01: 「你確定他們 ipad 版本橫屏是這樣嗎？」):
+/// a 2:3 box that wide would be taller than the window. A poster card stands above the title
+/// until there is artwork: a generated cover drawn across the width would print the title twice.
 struct VideoDetailHero<Cover: View, Actions: View, Intro: View>: View {
     /// The source's artwork, once it has loaded; nil while it loads and when there is none.
     let poster: UIImage?
     let title: String
     /// The maker, the episode count and the genres: one line under the title, a dot between
-    /// each, as Infuse and VidHub list a series' year, country and episodes.
+    /// each, as VidHub lists a series' first air date, country and episodes.
     let facts: [String]
     @ViewBuilder var cover: Cover
     @ViewBuilder var actions: Actions
     @ViewBuilder var intro: Intro
-
-    /// The poster's hue, for the wash behind the hero; nil for a grey poster.
-    @State private var wash: CoverTint.Wash?
 
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     @Environment(\.verticalSizeClass) private var verticalSizeClass
@@ -45,43 +40,46 @@ struct VideoDetailHero<Cover: View, Actions: View, Intro: View>: View {
 
     var body: some View {
         let alignment: HorizontalAlignment = isWide ? .leading : .center
-        let inset = isWide ? DSSpacing.xl : DSSpacing.lg
-        ZStack(alignment: .bottom) {
-            if poster != nil {
-                // The poster's height; the text grows the hero past it at the larger sizes.
-                Color.clear
-                    .containerRelativeFrame(.vertical) { length, _ in length * DSLayout.videoHeroHeightFraction }
-            }
-            VStack(alignment: alignment, spacing: DSSpacing.lg) {
-                if poster == nil {
-                    posterCard(width: isWide ? DSLayout.videoPosterWideWidth : DSLayout.videoPosterWidth)
+        let margin = isWide ? DSSpacing.xl : DSLayout.videoDetailMargin
+        VStack(alignment: alignment, spacing: DSLayout.videoHeroIntroSpacing) {
+            ZStack(alignment: .bottom) {
+                if poster != nil { posterFrame }
+                VStack(alignment: alignment, spacing: 0) {
+                    if poster == nil {
+                        posterCard(width: isWide ? DSLayout.videoPosterWideWidth : DSLayout.videoPosterWidth)
+                            .padding(.bottom, DSSpacing.lg)
+                    }
+                    titleBlock(alignment: alignment)
+                        .padding(.bottom, DSLayout.videoHeroFactsActionsSpacing)
+                    actions
                 }
-                titleBlock(alignment: alignment)
-                actions
-                intro
-                    .frame(maxWidth: isWide ? DSLayout.readableListWidth : nil)
+                .frame(maxWidth: .infinity, alignment: Alignment(horizontal: alignment, vertical: .center))
+                .padding(.horizontal, margin)
+                .padding(.top, barInset + margin)
+                .padding(.bottom, DSSpacing.xs)
             }
-            .frame(maxWidth: .infinity, alignment: Alignment(horizontal: alignment, vertical: .center))
-            .padding(.horizontal, inset)
-            .padding(.top, barInset + inset)
+            .frame(maxWidth: .infinity)
+            .background {
+                if let poster {
+                    VideoPosterBackdrop(image: poster, fadesEarly: fadesEarly)
+                }
+            }
+            intro
+                .frame(maxWidth: isWide ? DSLayout.readableListWidth : nil)
+                .padding(.horizontal, margin)
         }
-        .frame(maxWidth: .infinity)
-        .background {
-            if let poster {
-                // The poster fades into its own hue, which holds until the poster has gone
-                // and then fades into the page above the episodes.
-                BookDetailCoverWash(wash: wash, fadeStart: DSLayout.videoHeroFadeEnd)
-                VideoPosterBackdrop(image: poster, fadesEarly: fadesEarly)
-            }
-        }
-        .task(id: poster) {
-            guard let poster else {
-                wash = nil
-                return
-            }
-            wash = await Task.detached(priority: .utility) {
-                CoverTint.average(of: poster).flatMap(CoverTint.wash(for:))
-            }.value
+    }
+
+    /// The poster's box: 2:3 across a phone, part of the window's height on a wide one. The
+    /// text grows the hero past it at the larger sizes.
+    @ViewBuilder
+    private var posterFrame: some View {
+        if isWide {
+            Color.clear
+                .containerRelativeFrame(.vertical) { length, _ in length * DSLayout.videoHeroHeightFraction }
+        } else {
+            Color.clear
+                .aspectRatio(DSLayout.videoPosterAspectRatio, contentMode: .fit)
         }
     }
 
@@ -105,9 +103,9 @@ struct VideoDetailHero<Cover: View, Actions: View, Intro: View>: View {
                 .fixedSize(horizontal: false, vertical: true)
                 .accessibilityAddTraits(.isHeader)
             if !facts.isEmpty {
-                Text(facts.joined(separator: " · "))
-                    .font(DSFont.subheadline)
-                    .foregroundStyle(DSColor.textSecondary)
+                Text(factLine)
+                    .font(DSFont.caption)
+                    .foregroundStyle(DSColor.textPrimary)
                     .multilineTextAlignment(textAlignment)
                     .lineLimit(2)
                     // Read as a list, not with its dots.
@@ -116,16 +114,28 @@ struct VideoDetailHero<Cover: View, Actions: View, Intro: View>: View {
         }
         .frame(maxWidth: .infinity, alignment: Alignment(horizontal: alignment, vertical: .center))
     }
+
+    /// The facts with a dimmer dot between each.
+    private var factLine: AttributedString {
+        var line = AttributedString()
+        for (index, fact) in facts.enumerated() {
+            if index > 0 {
+                var dot = AttributedString(" · ")
+                dot.foregroundColor = DSColor.textSecondary
+                line += dot
+            }
+            line += AttributedString(fact)
+        }
+        return line
+    }
 }
 
-/// The poster behind the hero: filling it from the top edge of the screen, faded into the page
-/// below it and dimmed under the bars above it, so their text and buttons read over a bright
-/// poster. Pulled down past the top of the page, it grows from its bottom edge into the gap.
+/// The poster behind the hero: filling it from the top edge of the screen and faded out at its
+/// foot, where the page's own colour shows through. Pulled down past the top of the page, it
+/// grows from its bottom edge into the gap.
 private struct VideoPosterBackdrop: View {
     let image: UIImage
     let fadesEarly: Bool
-
-    @Environment(\.bookDetailHeroBarInset) private var barInset
 
     var body: some View {
         Color.clear
@@ -137,14 +147,6 @@ private struct VideoPosterBackdrop: View {
             .clipped()
             // Only a mask's opacity counts, so its colour is any opaque one.
             .mask { LinearGradient(stops: fadeStops, startPoint: .top, endPoint: .bottom) }
-            .mask(alignment: .top) {
-                VStack(spacing: 0) {
-                    LinearGradient(colors: [.black.opacity(DSLayout.videoHeroBarOpacity), .black],
-                                   startPoint: .top, endPoint: .bottom)
-                        .frame(height: barInset)
-                    Color.black
-                }
-            }
             .visualEffect { content, proxy in
                 let pull = max(0, proxy.frame(in: .scrollView).minY)
                 let height = max(proxy.size.height, 1)
@@ -180,8 +182,10 @@ private struct VideoPosterBackdrop: View {
                 .controlSize(.large)
         } intro: {
             Text("示範簡介：一部示範用的短劇。")
-                .font(DSFont.subheadline)
+                .font(DSFont.caption)
                 .frame(maxWidth: .infinity, alignment: .leading)
         }
     }
+    .background(CoverTint.placeholder.color)
+    .environment(\.colorScheme, .dark)
 }
