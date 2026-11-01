@@ -7,6 +7,7 @@ import SwiftUI
 import UIKit
 import WidgetKit
 import ReadiumShared
+import YueduCoreText
 
 extension OnlineBookContentKind {
     var pipelineKind: BookPipelineKind {
@@ -1243,6 +1244,21 @@ class BookStore: @MainActor ObservableObject, BookProvider {
         records[idx].bookmarks.removeAll { removedIDs.contains($0.id) }
         saveMeta()
         return false
+    }
+
+    /// Moves the bookmarks of `spine` saved before pictures took up source text
+    /// (`PictureOffsetMigration`), once the chapter's browser layout exists.
+    /// - Returns: whether any moved.
+    @discardableResult
+    func movePictureOffsets(bookId: UUID, spine: Int, sourceText: String, pictures: BrowserPictureOffsets) -> Bool {
+        guard let idx = records.firstIndex(where: { $0.id == bookId }),
+              let moved = PictureOffsetMigration.moved(records[idx].bookmarks, spine: spine,
+                                                        sourceText: sourceText, pictures: pictures) else { return false }
+        let count = zip(records[idx].bookmarks, moved).filter { $0.position != $1.position || $0.length != $1.length }.count
+        records[idx].bookmarks = moved
+        saveMeta()
+        AppLogger.cache("[PictureOffsets] bookmarks bookId=\(bookId) spine=\(spine) moved=\(count)")
+        return true
     }
 
     func addTextAnnotation(

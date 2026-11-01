@@ -35,7 +35,7 @@ struct ReaderNoteEditorView: View {
         onUpgrade: @escaping () -> Void,
         onClose: @escaping () -> Void
     ) {
-        self.excerpt = excerpt
+        self.excerpt = ReaderBookmarkExcerpt.plain(excerpt)
         self.date = date
         self.showsDelete = showsDelete
         self.isEditable = isEditable

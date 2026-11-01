@@ -128,6 +128,8 @@ final class BrowserScrollChapter {
     let usesReaderBackground: Bool
     let paragraphRanges: [NSRange]
     let mediaAttachments: [Int: EPUBMediaAttachment]
+    /// The picture characters of the chapter's source text.
+    let pictureOffsets: BrowserPictureOffsets
     /// The html/body background's image, decoded for display. The host draws the
     /// page background behind the chapter; the chapter's documents leave it out.
     let pageBackgroundImage: UIImage?
@@ -146,8 +148,9 @@ final class BrowserScrollChapter {
     private var pending: Request?
     private var idleWaiters: [CheckedContinuation<Void, Never>] = []
 
-    init(spineIndex: Int, document: BrowserScrollDocument, writingMode: ReaderWritingMode = .horizontal, backgroundColor: UIColor, usesReaderBackground: Bool, paragraphRanges: [NSRange] = [], mediaAttachments: [Int: EPUBMediaAttachment] = [:]) {
+    init(spineIndex: Int, document: BrowserScrollDocument, writingMode: ReaderWritingMode = .horizontal, backgroundColor: UIColor, usesReaderBackground: Bool, paragraphRanges: [NSRange] = [], mediaAttachments: [Int: EPUBMediaAttachment] = [:], pictureOffsets: BrowserPictureOffsets = BrowserPictureOffsets([])) {
         self.paragraphRanges = paragraphRanges
+        self.pictureOffsets = pictureOffsets
         self.mediaAttachments = mediaAttachments
         self.spineIndex = spineIndex
         self.document = document
@@ -172,6 +175,7 @@ final class BrowserScrollChapter {
         self.usesReaderBackground = usesReaderBackground
         self.pageBackgroundImage = pageBackgroundImage
         paragraphRanges = layoutOwner.facts.paragraphRanges
+        pictureOffsets = layoutOwner.facts.pictureOffsets
         self.mediaAttachments = mediaAttachments
         attributedString = NSAttributedString(string: layoutOwner.facts.sourceText)
     }

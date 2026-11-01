@@ -5,6 +5,15 @@ protocol ReadingPositionStore: AnyObject, Sendable {
     func load(for bookId: String) async -> CoreTextReadingPosition?
     func loadSync(for bookId: String) -> CoreTextReadingPosition?
     func flush(for bookId: String) async
+    /// Whether the saved position was written by a build whose browser engine gives every
+    /// picture one character of a chapter's source text (YueduCoreText 0.11). A position
+    /// written before is moved once by `PictureOffsetMigration`.
+    func countsPictures(for bookId: String) -> Bool
+}
+
+extension ReadingPositionStore {
+    /// A store with no files from before 0.11 holds nothing to move.
+    func countsPictures(for bookId: String) -> Bool { true }
 }
 
 final class JSONFileReadingPositionStore: ReadingPositionStore {
@@ -21,7 +30,7 @@ final class JSONFileReadingPositionStore: ReadingPositionStore {
     }
 
     func save(_ position: CoreTextReadingPosition, for bookId: String) async {
-        guard let data = try? encoder.encode(position) else { return }
+        guard let data = try? encoder.encode(StoredPosition(position)) else { return }
         let url = fileURL(for: bookId)
         try? data.write(to: url, options: .atomic)
         // Debounce the cloud push: positions save on every page turn, so writing
@@ -49,6 +58,33 @@ final class JSONFileReadingPositionStore: ReadingPositionStore {
     }
 
     func flush(for bookId: String) async {
+    }
+
+    func countsPictures(for bookId: String) -> Bool {
+        guard let data = try? Data(contentsOf: fileURL(for: bookId)) else { return true }
+        do {
+            return try decoder.decode(StoredPosition.self, from: data).countsPictures == true
+        } catch {
+            AppLogger.cache("[PictureOffsets] unreadable position file bookId=\(bookId): \(error)")
+            return true
+        }
+    }
+
+    /// The file: the position's own keys, which older builds decode, and the 0.11 stamp
+    /// they ignore. A position written through `replacePositionsFromSync` carries no stamp:
+    /// another device's build wrote it.
+    private struct StoredPosition: Codable {
+        let spineIndex: Int
+        let charOffset: Int
+        var translationOffset: Int?
+        var countsPictures: Bool?
+
+        init(_ position: CoreTextReadingPosition) {
+            spineIndex = position.spineIndex
+            charOffset = position.charOffset
+            translationOffset = position.translationOffset
+            countsPictures = true
+        }
     }
 
     static func replacePositionsFromSync(_ positions: [String: CoreTextReadingPosition]) {

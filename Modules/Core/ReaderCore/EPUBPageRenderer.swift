@@ -48,6 +48,11 @@ final class EPUBPageRenderer: ObservableObject {
     var translationSource: (any ReaderTranslationSource)? {
         didSet { chapterDocumentStore?.translationSource = translationSource }
     }
+    /// Handed to every browser engine this renderer makes:
+    /// `BrowserLayoutPageEngine.onBrowserChapterPictures`.
+    var onBrowserChapterPictures: ((_ spine: Int, _ sourceText: String, _ pictures: BrowserPictureOffsets) -> Void)? {
+        didSet { (engine as? BrowserLayoutPageEngine)?.onBrowserChapterPictures = onBrowserChapterPictures }
+    }
 
     /// Scroll-mode-specific engine (alongside the page engine). Created automatically when builder is available.
     @Published private(set) var scrollEngine: CoreTextScrollEngine? {
@@ -477,11 +482,13 @@ final class EPUBPageRenderer: ObservableObject {
         )
 
         newEngine.applyThemeChange(textColor: settings.textColor, backgroundColor: settings.backgroundColor)
-        self.engine = BrowserLayoutPageEngine(
+        let browserEngine = BrowserLayoutPageEngine(
             resource: EPUBBrowserLayoutResourceAdapter(session: session),
             delegate: newEngine, settings: settings, mode: .browserAuto
         )
-        (self.engine as? BrowserLayoutPageEngine)?.usesViewportScrolling = continuousScrolling && !settings.writingMode.isVertical
+        browserEngine.onBrowserChapterPictures = onBrowserChapterPictures
+        self.engine = browserEngine
+        browserEngine.usesViewportScrolling = continuousScrolling && !settings.writingMode.isVertical
         self.scrollEngine?.browserAutoEngine = self.engine as? BrowserLayoutPageEngine
         isCoreTextReady = false
 
@@ -499,6 +506,29 @@ final class EPUBPageRenderer: ObservableObject {
             pendingStartBookId = bookIdentifier
             logProgress("load deferred bookId=\(bookIdentifier) reason=invalidRenderSize size=\(renderSize)")
         }
+    }
+
+    /// `spine`'s picture characters as this book's browser engine would read the chapter, for a
+    /// reading position saved before 0.11 that must move before the reader restores it. Asks an
+    /// engine of its own, which lays out and publishes nothing; nil for a chapter the legacy
+    /// engine renders.
+    func savedPositionPictures(
+        publicationSession session: PublicationSession, bookIdentifier: String, renderSize: CGSize,
+        settings: ReaderRenderSettings, spine: Int
+    ) async -> BrowserPictureOffsets? {
+        guard session.layoutMode != .prePaginated, renderSize.width > 0, renderSize.height > 0 else { return nil }
+        let builder = EPUBAttributedStringBuilder(session: session, renderSize: renderSize)
+        // The same offset store `load` opens for this book; this engine never writes to it.
+        let delegate = CoreTextPageEngine(
+            attributedBuilder: builder, renderSettings: settings,
+            chapterDocumentStore: ChapterDocumentStore(builder: builder),
+            offsetStore: CharOffsetStore(directoryURL: StorageLocations.epubCharOffsets.appendingPathComponent(bookIdentifier))
+        )
+        let engine = BrowserLayoutPageEngine(
+            resource: EPUBBrowserLayoutResourceAdapter(session: session),
+            delegate: delegate, settings: settings, mode: .browserAuto
+        )
+        return await engine.pictureOffsets(forSpine: spine, renderSize: renderSize)
     }
 
     func loadTXT(

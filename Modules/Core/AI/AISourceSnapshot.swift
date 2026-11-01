@@ -95,7 +95,8 @@ enum AITextCoordinates {
             var offset = 0, normalizedOffset = 0
             for scalar in original.unicodeScalars {
                 let count = scalar.utf16.count
-                if !CharacterSet.whitespacesAndNewlines.contains(scalar) {
+                // A picture's U+FFFC is the reader's, not the book text's.
+                if !CharacterSet.whitespacesAndNewlines.contains(scalar), scalar != "\u{FFFC}" {
                     units.append(.init(start: offset, end: offset + count, normalizedOffset: normalizedOffset))
                     text.unicodeScalars.append(scalar)
                     normalizedOffset += count

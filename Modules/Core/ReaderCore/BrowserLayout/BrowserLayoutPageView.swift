@@ -484,9 +484,10 @@ final class BrowserLayoutPageView: UIView, UIGestureRecognizerDelegate, @preconc
         }
     }
 
-    /// Plain text of the page currently drawn.
+    /// Plain text of the page currently drawn. A picture's U+FFFC in the source text has
+    /// nothing to say.
     var accessibilityPageText: String {
-        pageSourceText.trimmingCharacters(in: .whitespacesAndNewlines)
+        pageSourceText.replacingOccurrences(of: "\u{FFFC}", with: "").trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
     func refreshAccessibility() {

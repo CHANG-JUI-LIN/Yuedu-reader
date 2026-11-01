@@ -166,6 +166,7 @@ extension ReaderView {
         ]
 
         attachTranslationSource()
+        bindBrowserChapterPictures()
         epubRenderer.load(
             publicationSession: session,
             bookIdentifier: book.remoteEPUBRenderIdentifier ?? session.sourceURL.standardizedFileURL.path,
@@ -184,6 +185,7 @@ extension ReaderView {
         Task {
             do {
                 let session = try await EPUBBookService.shared.openSession(for: book, using: store, remoteLibrary: dependencies.remoteLibrary)
+                await self.moveSavedPositionForPictures(book: book, session: session)
                 await MainActor.run {
                     guard self.book?.id == book.id else { return }
                     if session.epubWritingMode == .verticalRL {
@@ -214,6 +216,48 @@ extension ReaderView {
                     self.setReaderChromeVisible(false)
                 }
             }
+        }
+    }
+
+    /// A position saved before YueduCoreText 0.11 counted no picture characters. Moves it to
+    /// its chapter's offsets before anything restores it, then reads it again, as the TXT index
+    /// migration does. Once per book: every save stamps the file as 0.11's.
+    func moveSavedPositionForPictures(book: ReadingBook, session: PublicationSession) async {
+        let settings = readerRenderSettings(for: activeReaderDisplayMode)
+        // The box tree a position counts in does not depend on the page's size, but the
+        // chapter's admission needs some size. Guards a book opened before the reader's viewport
+        // is measured (`readerViewportSize` still zero); delete once opening waits for it.
+        let measured = currentReaderRenderSize
+        let size = measured.width > 0 && measured.height > 0 ? measured : CGSize(width: 390, height: 844)
+        let renderer = epubRenderer
+        let identifier = book.remoteEPUBRenderIdentifier ?? session.sourceURL.standardizedFileURL.path
+        let moved = await PictureOffsetMigration.migrateSavedPosition(
+            bookId: book.id.uuidString, positions: dependencies.readingPositionStore
+        ) { spine in
+            await renderer.savedPositionPictures(publicationSession: session, bookIdentifier: identifier,
+                                                 renderSize: size, settings: settings, spine: spine)
+        }
+        guard moved, self.book?.id == book.id else { return }
+        refreshInitialRestoreState()
+    }
+
+    /// Moves a chapter's bookmarks saved before pictures took up source text the moment its
+    /// browser layout exists, before any of them is drawn or jumped to.
+    ///
+    /// Captures the store, not `self`: the renderer keeps this closure for the life of the
+    /// reader, and `@EnvironmentObject` is resolved per body.
+    func bindBrowserChapterPictures() {
+        let store = store
+        let bookId = bookId
+        let renderer = epubRenderer
+        renderer.onBrowserChapterPictures = { [weak store, weak renderer] spine, sourceText, pictures in
+            guard let store, let renderer,
+                  store.movePictureOffsets(bookId: bookId, spine: spine, sourceText: sourceText, pictures: pictures)
+            else { return }
+            // What `syncCoreTextTextAnnotations` hands both engines.
+            let annotations = (store.readingBook(id: bookId)?.bookmarks ?? []).compactMap(\.coreTextTextAnnotation)
+            renderer.engine?.setTextAnnotations(annotations)
+            renderer.scrollEngine?.textAnnotations = annotations
         }
     }
 

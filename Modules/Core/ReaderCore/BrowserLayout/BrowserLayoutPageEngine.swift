@@ -127,6 +127,8 @@ struct BrowserChapterLayout {
     let mediaAttachments: [Int: EPUBMediaAttachment]
     let pronunciationHints: [TTSPronunciationHint]
     let paragraphRanges: [NSRange]
+    /// The picture characters of `sourceText`, and the map for offsets saved before they had one.
+    let pictureOffsets: BrowserPictureOffsets
     /// Page-local source ranges (into `sourceText`), rebuilt whenever `pages`
     /// changes (incremental completion grows them).
     ///
@@ -154,8 +156,10 @@ struct BrowserChapterLayout {
          mediaAttachments: [Int: EPUBMediaAttachment] = [:],
          pronunciationHints: [TTSPronunciationHint] = [],
          paragraphRanges: [NSRange] = [],
+         pictureOffsets: BrowserPictureOffsets = BrowserPictureOffsets([]),
          fontSize: CGFloat, themeTextColor: UIColor, themeBackgroundColor: UIColor) {
         self.spineIndex = spineIndex
+        self.pictureOffsets = pictureOffsets
         self.pages = pages
         self.sourceText = sourceText
         self.anchorOffsets = anchorOffsets
@@ -351,6 +355,11 @@ final class BrowserLayoutPageEngine: PageRenderingProvider, LinkNavigationProvid
     var offsetStore: CharOffsetStore { delegate.offsetStore }
 
     var onChapterReady: ((Int?) -> Void)?
+    /// A browser chapter's source text and picture characters, on the main actor, before
+    /// `onChapterReady` and before anything on screen reads a position in it: what moves the
+    /// chapter's bookmarks saved before pictures took up source text. Only for a chapter
+    /// that has pictures.
+    var onBrowserChapterPictures: ((_ spine: Int, _ sourceText: String, _ pictures: BrowserPictureOffsets) -> Void)?
     var onChapterLayoutUnresolved: ((Int, ChapterLayoutOutcome) -> Void)?
     var onNavigateToPage: ((Int) -> Void)?
     var onLinkNavigate: ((Int) -> Void)?
@@ -838,6 +847,7 @@ final class BrowserLayoutPageEngine: PageRenderingProvider, LinkNavigationProvid
                 },
                 pronunciationHints: session.pipelinePronunciationHints,
                 paragraphRanges: session.pipelineParagraphRanges,
+                pictureOffsets: session.pictureOffsets,
                 fontSize: settings.fontSize,
                 themeTextColor: self.themeTextColor,
                 themeBackgroundColor: themeBackgroundColor
@@ -848,6 +858,7 @@ final class BrowserLayoutPageEngine: PageRenderingProvider, LinkNavigationProvid
             chapterLayoutStates[spineIndex] = .ready
             engineStatus[spineIndex] = "browser"
             rebuildOffsets()
+            reportPictures(spineIndex, sourceText: layout.sourceText, pictures: layout.pictureOffsets)
             onChapterReady?(spineIndex)
 
             // REMAINING PAGES: generated after the first-page publish. The
@@ -1745,6 +1756,38 @@ final class BrowserLayoutPageEngine: PageRenderingProvider, LinkNavigationProvid
         return BrowserPageGeometry.rects(pages: layout.pages, sourceText: layout.sourceText, range: range)
     }
 
+    // MARK: - Pictures in the source text
+
+    private func reportPictures(_ spine: Int, sourceText: String, pictures: BrowserPictureOffsets) {
+        guard !pictures.offsets.isEmpty else { return }
+        onBrowserChapterPictures?(spine, sourceText, pictures)
+    }
+
+    /// `spine`'s picture characters as this engine reads the chapter — the admission real
+    /// layout makes, then the box tree alone. Lays out, publishes and keeps nothing, so a
+    /// position saved before 0.11 can be moved before the reader restores it. Nil for a
+    /// chapter the legacy engine renders: its offsets have always counted every picture.
+    func pictureOffsets(forSpine spine: Int, renderSize size: CGSize) async -> BrowserPictureOffsets? {
+        if renderSize == .zero { renderSize = size }
+        let generation = layoutGeneration
+        guard let admission = await decideEngine(for: spine, generation: generation),
+              isCurrentWork(generation), admission.choice.isBrowser else { return nil }
+        guard let evaluation = admission.evaluation else {
+            // Only a choice cached by an earlier layout comes without its evaluation, and
+            // that layout reported its pictures.
+            return browserChapters[spine]?.pictureOffsets ?? scrollChapters[spine]?.pictureOffsets
+        }
+        do {
+            let session = try BrowserLayoutSession(evaluation: evaluation, imageLoader: { _ in nil },
+                                                   generation: generation)
+            _ = try session.prepare()
+            return session.pictureOffsets
+        } catch {
+            AppLogger.render("[PictureOffsets] box tree failed spine=\(spine): \(error)")
+            return nil
+        }
+    }
+
     // MARK: - Internal helpers
 
     private var contentWidth: CGFloat {
@@ -1998,6 +2041,9 @@ extension BrowserLayoutPageEngine {
                 }
                 self.scrollChapters[spine] = chapter
                 self.scrollPreparations.removeValue(forKey: spine)
+                if let chapter {
+                    self.reportPictures(spine, sourceText: chapter.document.sourceText, pictures: chapter.pictureOffsets)
+                }
             }
             scrollPreparations[spine] = task
         }
@@ -2087,6 +2133,7 @@ extension BrowserLayoutPageEngine {
         FootnoteStore.index(notes: prepared.footnotes, spineIndex: spine)
         // Read before the layout moves to the display-list stage; nothing reads it after.
         let paragraphRanges = prepared.paragraphRanges
+        let pictureOffsets = prepared.pictureOffsets
         let mediaAttachments = prepared.mediaAttachments.mapValues {
             resource.resolveMediaAttachment(forChapter: spine, media: $0)
         }
@@ -2095,7 +2142,7 @@ extension BrowserLayoutPageEngine {
             backgroundColor: settings.backgroundColor,
             usesReaderBackground: settings.readerBackgroundImageURL != nil,
             paragraphRanges: paragraphRanges,
-            mediaAttachments: mediaAttachments)
+            mediaAttachments: mediaAttachments, pictureOffsets: pictureOffsets)
     }
 
     // The package's layout results are not Sendable. Each stage below runs on the global

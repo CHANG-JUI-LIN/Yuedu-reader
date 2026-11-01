@@ -193,15 +193,16 @@ struct BookmarkListSection: View {
                 selection: $selection,
                 chapterTitle: resolvedChapterTitle,
                 primaryText: { bm in
-                    guard !bm.excerpt.isEmpty else { return bm.chapterTitle }
                     // 章首那一頁的摘錄開頭就是排進版面的章名，而它正上方的分組標題
                     // 已經寫著同一句；重複兩次等於這張卡片沒說出這一頁講什麼。
-                    return ReaderBookmarkExcerpt.body(
+                    let body = ReaderBookmarkExcerpt.body(
                         of: bm.excerpt,
                         chapterTitle: resolvedChapterTitle(
                             ReaderBookmarkChapterGroup(chapterIndex: bm.chapterIndex, items: [bm])
                         )
                     )
+                    // 只有插圖的那一頁沒有文字可摘。
+                    return body.isEmpty ? bm.chapterTitle : body
                 },
                 icon: { bm in
                     switch bm.kind {

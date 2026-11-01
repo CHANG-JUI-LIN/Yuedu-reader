@@ -167,6 +167,17 @@ extension ReaderView {
             requestScrollNavigation(to: position)
             return
         }
+        // A chapter not laid out yet may hold bookmarks saved before pictures took up source
+        // text. Its layout moves them (`bindBrowserChapterPictures`); the jump reads the moved one.
+        if let engine = epubRenderer.engine as? BrowserLayoutPageEngine,
+           engine.chapterPagination(forSpine: position.spineIndex, charOffset: 0) == nil {
+            Task {
+                await engine.preloadChapter(at: position.spineIndex)
+                let moved = book?.bookmarks.first { $0.id == bookmark.id }?.position ?? position
+                jumpToChapter(moved.spineIndex, charOffset: moved.charOffset)
+            }
+            return
+        }
         jumpToChapter(position.spineIndex, charOffset: position.charOffset)
     }
 
