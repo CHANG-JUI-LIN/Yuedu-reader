@@ -60,7 +60,7 @@ struct ReaderOpeningTargetReplayTests {
         try await waitUntil { state.externalTarget == nil && shownPosition() == opening }
 
         // A tap on the next-page zone, issued the way `ReaderView.issuePageTurn` does.
-        state.turn(to: openingPage + 1, position: turnedTo, animated: style != .none)
+        state.turn(.forward, showing: openingPage + 1, animated: style != .none)
         try await waitUntil { shownPosition() == turnedTo && turnIsOver() }
 
         // The neighbour that preloads once the opening transition is over lands now.
@@ -105,10 +105,10 @@ private final class OpeningHostState: ObservableObject {
         self.page = page
     }
 
-    func turn(to page: Int, position: CoreTextReadingPosition, animated: Bool) {
+    func turn(_ step: ReaderPageTurnCommand.Step, showing page: Int, animated: Bool) {
         self.page = page
         version &+= 1
-        command = ReaderPageTurnCommand(target: page, targetPosition: position, animated: animated, version: version)
+        command = ReaderPageTurnCommand(step: step, animated: animated, version: version)
     }
 }
 

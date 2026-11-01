@@ -19,6 +19,20 @@ struct ReaderPageTransitionQueue {
 
     private static let watchdogTimeout: CFAbsoluteTime = 2.5
 
+    /// Where the reader ends up once every accepted turn has played: the queued turn,
+    /// else the one on screen. A tap steps from here, so a burst of taps accumulates
+    /// one page per tap. Nil when idle, during a gesture whose destination isn't known,
+    /// and once the watchdog would force-settle a stuck turn — the next request
+    /// discards that turn, so stepping from it would skip a page.
+    var destination: Int? {
+        guard isTransitioning, !isStuck else { return nil }
+        return queuedPage ?? inFlightTarget
+    }
+
+    private var isStuck: Bool {
+        CFAbsoluteTimeGetCurrent() - transitionStartTime >= Self.watchdogTimeout
+    }
+
     mutating func requestTransition(to targetPage: Int, visiblePage: Int) -> ReaderPageTransitionDecision {
         guard targetPage != visiblePage else { return .ignore }
 

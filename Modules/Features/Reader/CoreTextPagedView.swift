@@ -286,42 +286,41 @@ struct CoreTextPageEngineView: UIViewControllerRepresentable {
         //    version; stale re-renders with the same command are no-ops.
         if let command = pageTurnCommand, command.version != context.coordinator.lastExecutedTurnVersion {
             context.coordinator.lastExecutedTurnVersion = command.version
-            // Resolve the command's absolute position against the CURRENT
-            // pagination. A page index only exists inside the layout that
-            // produced it; a chapter boundary layout landing between issue and
-            // execution renumbers every page after it, so the raw index would
-            // land on content the user never asked for (the "jumped one page
-            // too far" bug family). The position keeps the intent anchored to
-            // content; the raw index is the fallback while the target chapter
-            // has no layout yet (pageIndex(for:) returns nil).
-            let resolvedTarget = command.targetPosition.flatMap { engine.pageIndex(for: $0) }
-            let target = max(0, min(resolvedTarget ?? command.target, max(engine.totalPages - 1, 0)))
-            // The visible page answers in the same numbering as the target.
+            // One step from where the reader really is (see ReaderPageTurnCommand): the
+            // page on screen, in the numbering live now, or — while turns are still
+            // playing — the page they end on, so a burst of taps adds a page per tap.
             let visiblePage = context.coordinator.currentPageIndex(of: visible)
-            guard target != visiblePage else {
+            let base = context.coordinator.pageTurnDestination ?? visiblePage
+            let traceRefused = { (target: Int, route: StaticString) in
                 context.coordinator.pageTurnTrace.commandExecuted(
                     version: command.version, target: target, visible: visiblePage,
-                    speed: context.coordinator.activeTurnSpeed, adjacent: false, route: "samePage"
+                    speed: context.coordinator.activeTurnSpeed, base: base, route: route
                 )
+            }
+            guard let target = context.coordinator.displayPage(command.step, from: base) else {
+                traceRefused(base, "edge")
+                return
+            }
+            guard target != visiblePage else {
+                traceRefused(target, "samePage")
                 return
             }
             // Rapid-tap speed-up: register cadence now, before the cover / slide /
             // curl branches read activeTurnSpeed.
             let turnSpeed = context.coordinator.registerTurnSpeed()
-            AppLogger.render("[CurlTrace] turnCommand v\(command.version) target=\(target) visible=\(visiblePage) speed=\(String(format: "%.2f", turnSpeed))")
+            AppLogger.render("[CurlTrace] turnCommand v\(command.version) target=\(target) base=\(base) visible=\(visiblePage) speed=\(String(format: "%.2f", turnSpeed))")
 
             var direction: UIPageViewController.NavigationDirection =
-                target >= visiblePage ? .forward : .reverse
+                command.step == .forward ? .forward : .reverse
             // RTL: swap navigation direction to match data source swap (Before↔After).
             if isRTL {
                 direction = direction == .forward ? .reverse : .forward
             }
-            let isAdjacent = context.coordinator.isAdjacentDisplayPage(target, to: visiblePage)
-            let shouldAnimate = command.animated && (pageTurnStyle != .none) && isAdjacent
+            let shouldAnimate = command.animated && (pageTurnStyle != .none)
             let traceCommand = { (route: StaticString) in
                 context.coordinator.pageTurnTrace.commandExecuted(
                     version: command.version, target: target, visible: visiblePage,
-                    speed: turnSpeed, adjacent: isAdjacent, route: route
+                    speed: turnSpeed, base: base, route: route
                 )
             }
 
@@ -555,6 +554,10 @@ struct CoreTextPageEngineView: UIViewControllerRepresentable {
             sessionCoordinator?.isPageTransitioning ?? false
         }
 
+        var pageTurnDestination: Int? {
+            sessionCoordinator?.pageTurnDestination
+        }
+
         private var curlBackPageColor: UIColor {
             UIColor(currentTheme.backgroundColor)
         }
@@ -585,9 +588,12 @@ struct CoreTextPageEngineView: UIViewControllerRepresentable {
             return target >= 0 ? target : nil
         }
 
-        fileprivate func isAdjacentDisplayPage(_ targetPage: Int, to visiblePage: Int) -> Bool {
-            nextDisplayPage(after: visiblePage) == targetPage ||
-                previousDisplayPage(before: visiblePage) == targetPage
+        /// The page one turn away from `page`, nil at the book's edge.
+        fileprivate func displayPage(_ step: ReaderPageTurnCommand.Step, from page: Int) -> Int? {
+            switch step {
+            case .forward: nextDisplayPage(after: page)
+            case .backward: previousDisplayPage(before: page)
+            }
         }
 
         private var usesCurlBackPages: Bool {

@@ -24,6 +24,27 @@ struct ReaderPageTransitionQueueTests {
         #expect(!queue.isTransitioning)
     }
 
+    /// A tap steps from where every accepted turn ends, so a burst adds a page per tap.
+    @Test("a tap steps from the queued turn, else the turn on screen, else the page")
+    func destinationIsWhereAcceptedTurnsEnd() {
+        var queue = ReaderPageTransitionQueue()
+        #expect(queue.destination == nil)
+
+        #expect(queue.requestTransition(to: 11, visiblePage: 10) == .startImmediately)
+        #expect(queue.destination == 11)
+        #expect(queue.requestTransition(to: 12, visiblePage: 10) == .deferUntilCurrentTransitionFinishes)
+        #expect(queue.destination == 12)
+
+        #expect(queue.transitionFinished(showing: 11) == 12)
+        #expect(queue.destination == 12)
+        #expect(queue.transitionFinished(showing: 12) == nil)
+        #expect(queue.destination == nil)
+
+        // A swipe whose far side is still paginating has no known destination.
+        queue.beginInteractiveTransition()
+        #expect(queue.destination == nil)
+    }
+
     @Test("drops a queued target that matches the settled page")
     func ignoresQueuedTargetMatchingSettledPage() {
         var queue = ReaderPageTransitionQueue()

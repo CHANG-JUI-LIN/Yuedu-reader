@@ -154,7 +154,7 @@ extension ReaderView {
     func goToPrevPage() {
         guard currentPage > 0 else { return }
         autoReader.resetReveal()
-        issuePageTurn(to: previousReaderPage(before: currentPage))
+        issuePageTurn(.backward, showing: previousReaderPage(before: currentPage))
     }
 
     /// 自動閱讀's page advance: instant, and it reports the end of the book so the
@@ -168,7 +168,7 @@ extension ReaderView {
             maxPage = allPages.count - 1
         }
         guard currentPage < maxPage else { return false }
-        issuePageTurn(to: nextReaderPage(after: currentPage, maxPage: maxPage), animated: false)
+        issuePageTurn(.forward, showing: nextReaderPage(after: currentPage, maxPage: maxPage), animated: false)
         return true
     }
 
@@ -181,47 +181,27 @@ extension ReaderView {
         }
         guard currentPage < maxPage else { return }
         autoReader.resetReveal()
-        issuePageTurn(to: nextReaderPage(after: currentPage, maxPage: maxPage))
+        issuePageTurn(.forward, showing: nextReaderPage(after: currentPage, maxPage: maxPage))
     }
 
     /// Phase-2 intent channel: page turns are explicit one-shot commands consumed
-    /// by the paged executor (see ReaderPageTurnCommand). `currentPage` is still
-    /// written immediately — as display state and as the accumulation baseline for
-    /// rapid-tap bursts — but the executor no longer treats binding drift as an
-    /// instruction, so this write can never trigger a correction transition.
-    ///
-    /// The command carries the turn's absolute position (`(spineIndex, charOffset)`)
-    /// alongside the page index it was computed against. Page indices only exist
-    /// inside one pagination; resolving the turn against live layout at execution
-    /// time keeps it anchored to content across renumbering (CLAUDE.md: positions
-    /// are (spineIndex, charOffset), never a global page index).
+    /// by the paged executor (see ReaderPageTurnCommand). The command is a step; the
+    /// executor decides the page from what is on screen when it runs.
+    /// - Parameter page: written to `currentPage` at once, so the page number follows
+    ///   the tap. It is display state only — the executor never reads it, and the
+    ///   page that settles is published back over it.
     /// - Parameter animated: overrides the reader's own page-turn animation.
     ///   自動閱讀 passes `false`: its curtain *is* the animation, and running the
     ///   reader's 仿真／覆蓋／滑動 underneath it would be two transitions at once —
     ///   legado bypasses its `PageDelegate` for the same reason.
-    func issuePageTurn(to targetPage: Int, animated: Bool? = nil) {
-        currentPage = targetPage
+    func issuePageTurn(_ step: ReaderPageTurnCommand.Step, showing page: Int, animated: Bool? = nil) {
+        currentPage = page
         pageTurnVersion &+= 1
         pageTurnCommand = ReaderPageTurnCommand(
-            target: targetPage,
-            targetPosition: resolvedTargetPosition(forPage: targetPage),
+            step: step,
             animated: animated ?? (effectivePageTurnStyle != .none),
             version: pageTurnVersion
         )
-    }
-
-    /// Resolves a page index to its absolute position. `nil` when the engine
-    /// isn't ready or the chapter has no layout yet — the executor then falls
-    /// back to the raw page index, matching the pre-position behavior while a
-    /// chapter is still paginating.
-    private func resolvedTargetPosition(forPage page: Int) -> CoreTextReadingPosition? {
-        guard let engine = epubRenderer.engine else { return nil }
-        let clamped = max(0, min(page, max(engine.totalPages - 1, 0)))
-        let (spineIndex, charOffset) = engine.charOffset(forPage: clamped)
-        guard engine.chapterPagination(forSpine: spineIndex, charOffset: charOffset) != nil else {
-            return nil
-        }
-        return CoreTextReadingPosition(spineIndex: spineIndex, charOffset: charOffset)
     }
 
 }

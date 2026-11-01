@@ -19,18 +19,21 @@ enum PageDirection {
 /// display output only; commands and the Navigator-owned external target are the
 /// only inputs that move pages.
 ///
-/// `target` is the global page index the intent was computed against at issue
-/// time; `targetPosition` is the same intent as an absolute reading position
-/// `(spineIndex, charOffset)`. The executor prefers the position and re-resolves
-/// it against whatever pagination is live when the turn executes — a global
-/// page index is only meaningful for the pagination that produced it, and a
-/// chapter boundary layout landing between issue and execution renumbers every
-/// page after it (the "jumped one page too far" bug family). The position keeps
-/// the intent anchored to content; `target` remains the fallback while the
-/// target chapter has no layout yet.
+/// A turn is one step — a page, or a spread — not a destination. The executor takes
+/// it from where the reader really is: the page on screen, or the page a turn still
+/// playing is headed for, numbered by the pagination live when it runs. A destination
+/// computed at the tap could disagree with the page on screen — the binding lags a
+/// swipe, a chapter landing renumbers every page after it — and the executor set a
+/// target that was not the visible page's neighbour without animation: the 仿真 curl
+/// lost its animation, or the reader jumped to a page it never asked for. Jumps
+/// (目錄, the progress slider) are the external target's path, never a command.
 struct ReaderPageTurnCommand: Equatable {
-    let target: Int
-    let targetPosition: CoreTextReadingPosition?
+    enum Step: Equatable {
+        case forward
+        case backward
+    }
+
+    let step: Step
     let animated: Bool
     let version: UInt
 }

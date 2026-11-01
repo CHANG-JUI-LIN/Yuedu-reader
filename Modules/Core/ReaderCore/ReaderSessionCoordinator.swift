@@ -72,6 +72,12 @@ final class ReaderSessionCoordinator: ObservableObject {
         transitionQueue.isTransitioning
     }
 
+    /// The page a tap turn steps from while turns are still playing; see
+    /// `ReaderPageTransitionQueue.destination`.
+    var pageTurnDestination: Int? {
+        transitionQueue.destination
+    }
+
     @discardableResult
     func restore() async -> ReaderLocation {
         await navigator.restore()

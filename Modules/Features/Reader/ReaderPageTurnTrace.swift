@@ -113,13 +113,13 @@ final class ReaderPageTurnTrace: NSObject {
         target: Int,
         visible: Int,
         speed: Float,
-        adjacent: Bool,
+        base: Int,
         route: StaticString
     ) {
         guard isEnabled else { return }
         signposter.emitEvent(
             "TurnCommand",
-            "v=\(version) route=\(String(describing: route), privacy: .public) target=\(target) visible=\(visible) speed=\(String(format: "%.2f", speed), privacy: .public) adjacent=\(adjacent ? 1 : 0) style=\(self.style, privacy: .public)"
+            "v=\(version) route=\(String(describing: route), privacy: .public) target=\(target) base=\(base) visible=\(visible) speed=\(String(format: "%.2f", speed), privacy: .public) style=\(self.style, privacy: .public)"
         )
         closePendingTap("v=\(version) route=\(route)")
     }
