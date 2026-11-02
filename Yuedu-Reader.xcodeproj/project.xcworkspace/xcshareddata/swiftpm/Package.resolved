@@ -222,8 +222,8 @@
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/CHANG-JUI-LIN/YueduCoreText",
       "state" : {
-        "revision" : "7f0f2b79b4cb598407703357980a273c3cd4cfba",
-        "version" : "0.11.0"
+        "revision" : "a438cc46910e779a3d79837ef18142842f7199cf",
+        "version" : "0.12.0"
       }
     },
     {
