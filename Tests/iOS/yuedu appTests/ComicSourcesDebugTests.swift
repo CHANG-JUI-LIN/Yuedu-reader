@@ -292,7 +292,13 @@ struct ComicSourcesDebugTests {
             }
 
             // 1. Categories
-            let items = await fetcher.discoverItems(in: source)
+            let items: [ModernParserBridge.DiscoverItem]
+            do {
+                items = try await fetcher.discoverItems(in: source)
+            } catch {
+                log("[\(i)] explore rule failed: \(error.localizedDescription)")
+                continue
+            }
             log("[\(i)] categories=\(items.count) :: " + items.prefix(4).map { "\($0.title ?? "nil")[\($0.type ?? "-")]" }.joined(separator: ", "))
             let fetchable = items.first { ($0.type ?? "") != "select" && !($0.url ?? "").isEmpty }
             guard let first = fetchable else {

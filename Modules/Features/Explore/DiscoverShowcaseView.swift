@@ -94,7 +94,11 @@ private struct DiscoverEmptyState: View {
         // (e.g. 「请先于【源变量】处填写共享Token」), show ITS words — the generic
         // copy would hide the one instruction the user needs.
         ContentUnavailableView {
-            UnavailableLabel(localized("暫無發現內容"), systemImage: "sparkles")
+            if discover.exploreError != nil {
+                UnavailableLabel(localized("載入失敗"), systemImage: "exclamationmark.triangle")
+            } else {
+                UnavailableLabel(localized("暫無發現內容"), systemImage: "sparkles")
+            }
         } description: {
             Text(
                 discover.sourceNotice

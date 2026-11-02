@@ -10,7 +10,7 @@ protocol BookSourceHealthCheckFetching: Sendable {
         onHasMore: ((Bool?) -> Void)?,
         failureMode: BookSourceSearchFailureMode
     ) async throws -> [OnlineBook]
-    func discoverItems(page: Int, in source: BookSource) async -> [ModernParserBridge.DiscoverItem]
+    func discoverItems(page: Int, in source: BookSource) async throws -> [ModernParserBridge.DiscoverItem]
     func discoverBooks(
         from item: ModernParserBridge.DiscoverItem,
         page: Int,
@@ -1017,7 +1017,7 @@ final class BookSourceHealthChecker: ObservableObject {
     /// `exploreBookAwait`.
     private func probeDiscovery(_ source: BookSource) async -> ProbeResult<OnlineBook> {
         do {
-            let sections = contentSections(await fetcher.discoverItems(page: 1, in: source))
+            let sections = contentSections(try await fetcher.discoverItems(page: 1, in: source))
             guard let section = sections.first else {
                 return .failure(.ruleMissing, localized("發現規則為空"))
             }
@@ -1030,6 +1030,8 @@ final class BookSourceHealthChecker: ObservableObject {
             }
             let title = section.title ?? localized("發現")
             return .success(book, String(format: localized("「%1$@」%2$d 本"), title, books.count))
+        } catch let error as ModernParserBridge.ExploreScriptError {
+            return .failure(.jsError, error.message)
         } catch {
             return .failure(.siteError, error.localizedDescription)
         }

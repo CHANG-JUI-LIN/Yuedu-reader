@@ -68,6 +68,12 @@ struct DiscoverPageSettingsSheet: View {
                 if groups.isEmpty && !hasControls {
                     if discover.isLoadingItems {
                         ProgressView()
+                    } else if discover.exploreError != nil {
+                        ContentUnavailableView {
+                            UnavailableLabel(localized("載入失敗"), systemImage: "exclamationmark.triangle")
+                        } description: {
+                            Text(discover.sourceNotice ?? "")
+                        }
                     } else {
                         ContentUnavailableView {
                             UnavailableLabel(localized("暫無發現內容"), systemImage: "sparkles")

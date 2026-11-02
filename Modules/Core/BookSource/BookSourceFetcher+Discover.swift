@@ -7,8 +7,8 @@ extension BookSourceFetcher {
     func discoverItems(
         page: Int = 1,
         in source: BookSource
-    ) async -> [ModernParserBridge.DiscoverItem] {
-        await discoverItems(page: page, in: source, variableOverlay: [:])
+    ) async throws -> [ModernParserBridge.DiscoverItem] {
+        try await discoverItems(page: page, in: source, variableOverlay: [:])
     }
 
     /// - Parameter variableOverlay: discover filter values the explore rule reads in place of
@@ -17,14 +17,14 @@ extension BookSourceFetcher {
         page: Int = 1,
         in source: BookSource,
         variableOverlay: [String: String]
-    ) async -> [ModernParserBridge.DiscoverItem] {
+    ) async throws -> [ModernParserBridge.DiscoverItem] {
         guard source.enabledExplore,
               !source.exploreUrl.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
         else {
             return []
         }
 
-        return await BookSourceSession.session(for: source).host
+        return try await BookSourceSession.session(for: source).host
             .getExploreItems(page: page, variableOverlay: variableOverlay)
     }
 

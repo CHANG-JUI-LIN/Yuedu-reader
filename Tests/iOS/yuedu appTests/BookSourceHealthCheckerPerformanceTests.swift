@@ -864,10 +864,10 @@ private actor TimedHealthCheckFetcher: BookSourceHealthCheckFetching {
         }
     }
 
-    func discoverItems(page: Int, in source: BookSource) async -> [ModernParserBridge.DiscoverItem] {
+    func discoverItems(page: Int, in source: BookSource) async throws -> [ModernParserBridge.DiscoverItem] {
         let start = begin("discoverItems")
         defer { end("discoverItems", start) }
-        return await base.discoverItems(page: page, in: source)
+        return try await base.discoverItems(page: page, in: source)
     }
 
     func discoverBooks(

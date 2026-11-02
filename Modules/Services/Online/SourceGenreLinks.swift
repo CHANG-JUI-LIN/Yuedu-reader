@@ -130,7 +130,7 @@ final class SourceGenreLinks: ObservableObject {
     /// What the section's menu offers; nil while 同題材 is hidden.
     @Published private(set) var choices: RelatedCategoryChoices?
 
-    typealias LoadCategories = @Sendable (BookSource) async -> [ModernParserBridge.DiscoverItem]
+    typealias LoadCategories = @Sendable (BookSource) async throws -> [ModernParserBridge.DiscoverItem]
     typealias PrimeCookies = @Sendable (BookSource) async -> Void
 
     private let loadCategories: LoadCategories
@@ -144,7 +144,7 @@ final class SourceGenreLinks: ObservableObject {
 
     init(
         loadCategories: @escaping LoadCategories = {
-            await BookSourceFetcher.shared.discoverItems(page: 1, in: $0, variableOverlay: [:])
+            try await BookSourceFetcher.shared.discoverItems(page: 1, in: $0, variableOverlay: [:])
         },
         primeCookies: @escaping PrimeCookies = {
             await BookSourceFetcher.shared.primeDiscoverCookies(in: $0)
@@ -169,7 +169,18 @@ final class SourceGenreLinks: ObservableObject {
             // as the source's own discover page primes before it lists them.
             await primeCookies(source)
             let started = SourcePerfTrace.now
-            let raw = await loadCategories(source)
+            let raw: [ModernParserBridge.DiscoverItem]
+            do {
+                raw = try await loadCategories(source)
+            } catch {
+                // 同題材 has no failure state of its own: a source whose categories cannot be
+                // read offers none, and the reason is in the log. Its own 發現頁 shows the error.
+                AppLogger.parse("⟐ genre categories failed", context: [
+                    "source": source.bookSourceName,
+                    "error": error.localizedDescription,
+                ])
+                raw = []
+            }
             let items = raw.compactMap(DiscoverViewModel.mapItem).filter(\.isFetchable)
             SourcePerfTrace.record("detail.genre.categories", "items=\(items.count)",
                                    since: started, thresholdMs: 0)

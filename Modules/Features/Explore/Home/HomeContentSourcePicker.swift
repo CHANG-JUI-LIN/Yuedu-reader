@@ -627,6 +627,12 @@ struct HomeCategoryChoices: View {
                         UnavailableLabel(localized("暫無發現內容"), systemImage: "sparkles")
                     }
                 }
+            case .failed(let message):
+                ContentUnavailableView {
+                    UnavailableLabel(localized("載入失敗"), systemImage: "exclamationmark.triangle")
+                } description: {
+                    Text(String(format: localized("%@：%@"), localized("來源配置腳本錯誤"), message))
+                }
             case .loaded:
                 if !trimmedQuery.isEmpty, groups.isEmpty { UnavailableSearchView(text: trimmedQuery) }
             }

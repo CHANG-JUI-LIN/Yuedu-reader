@@ -134,6 +134,9 @@ final class DiscoverViewModel: ObservableObject {
     @Published var sections: [DiscoverShowcaseSection] = []
 
     @Published var isLoadingItems = false
+    /// Why the source's categories could not be read: its explore rule threw. Shown in place
+    /// of 「暫無發現內容」, which would claim the source has none.
+    @Published private(set) var exploreError: String?
 
     /// Serial loading queue for showcase sections (see `loadSection`).
     private var sectionQueue: [UUID] = []
@@ -489,6 +492,7 @@ final class DiscoverViewModel: ObservableObject {
         rawItems = []
         items = []
         sections = []
+        exploreError = nil
         isLoadingItems = true
         let cacheKey = discoverKindsCacheKey(for: source)
         loadItemsTask = Task { [weak self] in
@@ -509,7 +513,14 @@ final class DiscoverViewModel: ObservableObject {
                 return
             }
 
-            var raw = await BookSourceFetcher.shared.discoverItems(page: 1, in: source)
+            var raw: [ModernParserBridge.DiscoverItem]
+            do {
+                raw = try await BookSourceFetcher.shared.discoverItems(page: 1, in: source)
+            } catch {
+                guard !Task.isCancelled else { return }
+                self.failDiscoverItems(error)
+                return
+            }
             guard !Task.isCancelled else { return }
 
             // Recover from a poisoned discover variable. A JS exploreUrl that builds
@@ -526,7 +537,13 @@ final class DiscoverViewModel: ObservableObject {
                Self.exploreLikelyDegraded(source: source, items: raw) {
                 self.didAutoResetDiscoverVariable = true
                 if self.resetDiscoverFilterValues(for: source) {
-                    raw = await BookSourceFetcher.shared.discoverItems(page: 1, in: source)
+                    do {
+                        raw = try await BookSourceFetcher.shared.discoverItems(page: 1, in: source)
+                    } catch {
+                        guard !Task.isCancelled else { return }
+                        self.failDiscoverItems(error)
+                        return
+                    }
                     guard !Task.isCancelled else { return }
                 }
             }
@@ -553,6 +570,17 @@ final class DiscoverViewModel: ObservableObject {
     ) async -> [String: String] {
         guard raw.contains(where: { ($0.type ?? "") == "select" }) else { return [:] }
         return await DiscoverQuickActionRunner.infoMapValues(source: source)
+    }
+
+    /// The explore rule failed: no categories, and the reason on screen instead of an empty
+    /// page. Nothing is cached, so the next open or pull-to-refresh runs the rule again.
+    private func failDiscoverItems(_ error: Error) {
+        rawItems = []
+        filters = []
+        items = []
+        sections = []
+        exploreError = error.localizedDescription
+        isLoadingItems = false
     }
 
     /// Shared tail of `reload()` for both the cache-hit and network paths.
@@ -585,6 +613,9 @@ final class DiscoverViewModel: ObservableObject {
     /// word — an empty page whose only explanation was in the device log.
     var sourceNotice: String? {
         guard items.isEmpty else { return nil }
+        if let exploreError {
+            return String(format: localized("%@：%@"), localized("來源配置腳本錯誤"), exploreError)
+        }
         if !rawItems.isEmpty {
             let labels = rawItems.compactMap { item -> String? in
                 guard (item.type ?? "") != "select" else { return nil }  // filters render on their own

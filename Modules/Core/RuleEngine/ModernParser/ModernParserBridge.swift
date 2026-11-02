@@ -2136,13 +2136,21 @@ class ModernParserBridge {
         }
     }
 
+    /// The explore rule's JS threw before it produced anything. Not an empty category list:
+    /// the source has categories and we failed to read them (回饋中心 #124 showed this as
+    /// 「暫無發現內容」 after a TypeError in our jsoup bridge).
+    struct ExploreScriptError: LocalizedError {
+        let message: String
+        var errorDescription: String? { message }
+    }
+
     /// Evaluate exploreUrl for a book source and return discover items
     /// (`SourceScriptHost.getExploreItems`). Mirrors Legado's exploreKinds(): JS may produce
     /// a rule string, JSON is decoded directly, and plain text is split into title::url kinds.
     /// - Parameter variableOverlay: values the explore rule reads in place of the source's
     ///   stored variable, without storing them: an Explore home section's own discover
     ///   filters (unified library 5d-5).
-    func exploreItems(page: Int, variableOverlay: [String: String]) -> [DiscoverItem] {
+    func exploreItems(page: Int, variableOverlay: [String: String]) throws -> [DiscoverItem] {
         ensureCloudSettingsIfNeeded()
         let source = sourceRuleData.source
         let rawExploreUrl = source.exploreUrl.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -2267,6 +2275,11 @@ class ModernParserBridge {
             )
         }
 
+        // Only a rule that threw *and* produced nothing: a script that recovered from its own
+        // error and still answered has a usable payload, already decoded above.
+        if isJS, ruleStr.isEmpty, let exploreJSError {
+            throw ExploreScriptError(message: exploreJSError)
+        }
         return result
     }
 

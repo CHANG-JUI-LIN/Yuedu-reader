@@ -1330,12 +1330,22 @@ class JSCoreEngine {
                 EP.hasAttr = function (k) { return this._n ? this._n.hasAttr(String(k)) : false; };
                 EP.removeAttr = function () { return this; };
 
-                function Elements(arr) { this._arr = arr || []; }
+                // jsoup's Elements is a java.util.ArrayList, and Rhino lets Legado scripts use it
+                // as one: `els[0]`, `els.toArray()`, and `for (i in els)` over its indices
+                // (🥝猕猴桃漫画's explore rule does all three). The elements are the wrapper's
+                // own index properties; `_arr` and every method are non-enumerable, so for-in
+                // sees the indices and nothing else. An Elements is never mutated after this.
+                function Elements(arr) {
+                    arr = arr || [];
+                    Object.defineProperty(this, '_arr', { value: arr });
+                    for (var i = 0; i < arr.length; i++) this[i] = arr[i];
+                }
                 var ESP = Elements.prototype;
                 ESP.size = function () { return this._arr.length; };
                 ESP.size2 = function () { return this._arr.length; };
                 Object.defineProperty(ESP, 'length', { get: function () { return this._arr.length; }, configurable: true });
                 ESP.get = function (i) { return this._arr[i] || null; };
+                ESP.toArray = function () { return this._arr.slice(); };
                 ESP.first = function () { return this._arr[0] || null; };
                 ESP.last = function () { return this._arr[this._arr.length - 1] || null; };
                 ESP.text = function () { return this._arr.map(function (e) { return e.text(); }).join(''); };
@@ -1361,6 +1371,7 @@ class JSCoreEngine {
                 ESP.empty = function () { return this._arr.length === 0; };
                 ESP.iterator = function () { return this._arr[Symbol.iterator](); };
                 ESP[Symbol.iterator] = function () { return this._arr[Symbol.iterator](); };
+                Object.keys(ESP).forEach(function (k) { Object.defineProperty(ESP, k, { enumerable: false }); });
 
                 function Document(node, baseUrl) { Element.call(this, node, baseUrl); }
                 Document.prototype = Object.create(Element.prototype);

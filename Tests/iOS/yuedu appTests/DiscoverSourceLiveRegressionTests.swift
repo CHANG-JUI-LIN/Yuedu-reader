@@ -43,7 +43,7 @@ struct DiscoverSourceLiveRegressionTests {
             source.id = UUID()
             source.lastUpdateTime = Int64(Date().timeIntervalSince1970 * 1_000)
             let host = BookSourceSession.session(for: source).host
-            let items = await host.getExploreItems(page: 1)
+            let items = try await host.getExploreItems(page: 1)
             var attempts: [Attempt] = []
 
             for item in items.filter({

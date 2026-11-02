@@ -22,6 +22,63 @@ struct LegadoJsoupBridgeCompatibilityTests {
         #expect(engine.lastError == nil)
     }
 
+    @Test("Elements is a Java List: toArray, numeric index, and for-in over indices only")
+    func elementsBehaveAsJavaList() {
+        let engine = JSCoreEngine()
+        let value = engine.evaluate("""
+        var doc = org.jsoup.Jsoup.parse('<ul><li>a</li><li>b</li></ul>');
+        var lis = doc.select('li');
+        var keys = [];
+        for (var k in lis) keys.push(k);
+        var arr = lis.toArray();
+        [Array.isArray(arr), arr.length, arr.at(-1).text(), lis[0].text(), lis[1].text(),
+         lis[2] === undefined, keys.join(','), lis.size(), lis.get(1).text(), JSON.stringify(lis)].join('|');
+        """)
+        #expect(value == #"true|2|b|a|b|true|0,1|2|b|["<li>a</li>","<li>b</li>"]"#)
+        #expect(engine.lastError == nil)
+    }
+
+    /// 回饋中心 #124: 🥝猕猴桃漫画's exploreUrl and jsLib, verbatim. The site lives in the source
+    /// variable `jsLib`'s `Url()` reads, and its `/cate` page comes from `KiwiCateURLProtocol`;
+    /// so the test also covers `const { source, java } = this` inside a jsLib function.
+    @Test("🥝猕猴桃漫画's explore rule lists the last tag block's tags")
+    func kiwiComicExploreTags() async throws {
+        var source = BookSource()
+        source.bookSourceName = "🥝猕猴桃漫画"
+        source.bookSourceUrl = "https://kiwi-\(UUID().uuidString).test"
+        source.enabledExplore = true
+        source.jsLib = Self.kiwiJsLib
+        source.exploreUrl = Self.kiwiExploreUrl
+        let store = BookSourceRuntimeStateStore.shared
+        store.setSourceVariableJSON(#"{"sourceurl":"https://\#(KiwiCateURLProtocol.host)"}"#, for: source.bookSourceUrl)
+        defer { store.setSourceVariableJSON(nil, for: source.bookSourceUrl) }
+
+        let items = try await SourceScriptHost(bridgeFor: source, requestSession: KiwiCateURLProtocol.session())
+            .getExploreItems(page: 1)
+
+        #expect(items.map(\.title) == ["全部", "热血", "恋爱"])
+        #expect(items.map { $0.url?.hasPrefix("{{Url()}}/api/cate") } == [true, true, true])
+        #expect(items.dropFirst().first?.url?.contains(#"\"tag\":\"热血\""#) == true)
+    }
+
+    /// A rule that throws has categories we failed to read. Returning [] made 回饋中心 #124's
+    /// TypeError read as 「暫無發現內容」, a source with nothing to show.
+    @Test("an explore rule whose JS throws is an error, not an empty category list")
+    func throwingExploreRuleIsAnError() async {
+        var source = BookSource()
+        source.bookSourceName = "explore throws"
+        source.bookSourceUrl = "https://explore-throws-\(UUID().uuidString).test"
+        source.enabledExplore = true
+        source.exploreUrl = "@js:\nvar tags = undefined; tags.toArray();"
+
+        await #expect(throws: ModernParserBridge.ExploreScriptError.self) {
+            try await SourceScriptHost(bridgeFor: source).getExploreItems(page: 1)
+        }
+        await #expect(throws: ModernParserBridge.ExploreScriptError.self) {
+            try await BookSourceFetcher.shared.discoverItems(page: 1, in: source)
+        }
+    }
+
     @Test("an element returned from a script reads as its outer HTML")
     func elementResultIsOuterHTML() {
         let engine = JSCoreEngine()
@@ -232,4 +289,83 @@ struct LegadoJsoupBridgeCompatibilityTests {
             return c;
         }
     """#
+
+    // MARK: - 🥝猕猴桃漫画 (回饋中心 #124)
+
+    private static let kiwiJsLib = #"""
+    function Url() {
+        const { source, java } = this;
+        var original = {
+            "sourceurl": "https://www.mhtmh.com",
+            "imageSourceUrl": "",
+            "Urls": [],
+            "imageSource": []
+        };
+        if (source.getVariable() == '') {
+            source.setVariable(JSON.stringify(original, null, "\t"));
+            java.toast('已初始化');
+        }
+        return JSON.parse(source.getVariable()).sourceurl;
+    }
+    """#
+
+    private static let kiwiExploreUrl = #"""
+    @js:
+    var result = [];
+    var push = (title, tag, p, size) => result.push({
+        title: title,
+        url: `{{Url()}}/api${p}` + "," + JSON.stringify({
+      "body": `{\"page\":{\"page\":{{page}},\"pageSize\":10},\"category\":\"comic\",\"sort\":0,\"comic\":{\"status\":-1,\"day\":0,\"tag\":\"${tag}\"},\"video\":{\"year\":0,\"typeId\":0,\"typeId1\":0,\"area\":\"\",\"lang\":\"\",\"status\":-1,\"day\":0},\"novel\":{\"status\":-1,\"day\":0,\"sortId\":0}}`,
+      "method": "POST"
+    }),
+        style: {
+            layout_flexGrow: 1,
+            layout_flexBasisPercent: size
+        }
+    });
+    var tags = org.jsoup.Jsoup.parse(java.ajax(Url() + '/cate')).select('.tag-container').toArray().at(-1).select('a');
+    if (tags[0].text() != '全部') push('全部', '', '/cate', 1);
+    for (let i in tags) {
+    	let size = tags[i].text() == '全部' ? 1 : 0.25;
+    	push(tags[i].text(), tags[i].attr('data-value'), tags[i].attr('href'), size);
+    }
+    JSON.stringify(result);
+    """#
+}
+
+/// 🥝猕猴桃漫画's `/cate` page: two `.tag-container` blocks, the rule reads the last one.
+private final class KiwiCateURLProtocol: URLProtocol {
+    static let host = "kiwi-cate.yuedu.test"
+    private static let page = """
+    <div class="tag-container"><a data-value="x" href="/other">其他</a></div>
+    <div class="tag-container"><a data-value="" href="/cate">全部</a><a data-value="热血" href="/cate?t=1">热血</a><a data-value="恋爱" href="/cate?t=2">恋爱</a></div>
+    """
+
+    static func session() -> URLSession {
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [KiwiCateURLProtocol.self]
+        return URLSession(configuration: configuration)
+    }
+
+    override class func canInit(with request: URLRequest) -> Bool {
+        request.url?.host == host
+    }
+
+    override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
+
+    override func startLoading() {
+        guard let url = request.url, url.path == "/cate" else {
+            client?.urlProtocol(self, didFailWithError: URLError(.fileDoesNotExist))
+            return
+        }
+        let response = HTTPURLResponse(
+            url: url, statusCode: 200, httpVersion: "HTTP/1.1",
+            headerFields: ["Content-Type": "text/html; charset=utf-8"]
+        )!
+        client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
+        client?.urlProtocol(self, didLoad: Data(Self.page.utf8))
+        client?.urlProtocolDidFinishLoading(self)
+    }
+
+    override func stopLoading() {}
 }

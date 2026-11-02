@@ -130,9 +130,13 @@ struct CommonSourcesSmokeTests {
             // DISCOVER (explore)
             let hasExplore = !source.exploreUrl.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
             if hasExplore {
-                let items = await BookSourceFetcher.shared.discoverItems(in: source)
-                let sample = items.prefix(4).compactMap { $0.title }.joined(separator: " / ")
-                log("    🧭 discover → \(items.count) categories\(items.isEmpty ? "" : " · \(sample)")")
+                do {
+                    let items = try await BookSourceFetcher.shared.discoverItems(in: source)
+                    let sample = items.prefix(4).compactMap { $0.title }.joined(separator: " / ")
+                    log("    🧭 discover → \(items.count) categories\(items.isEmpty ? "" : " · \(sample)")")
+                } catch {
+                    log("    🧭 discover → explore rule failed: \(error.localizedDescription)")
+                }
             } else {
                 log("    🧭 discover → (no exploreUrl)")
             }

@@ -25,7 +25,7 @@ struct SourceVariableOverlayTests {
     }
 
     @Test("the rule reads the overlay through getVariable and get; the stored variable is left as it was")
-    func readsTheOverlay() async {
+    func readsTheOverlay() async throws {
         let source = source("""
         <js>var v = JSON.parse(source.getVariable() || '{}');
         JSON.stringify([{title: v['頻道'] + '/' + source.get('頻道'), url: 'https://x.test/' + v['頻道']}]);</js>
@@ -35,17 +35,17 @@ struct SourceVariableOverlayTests {
         defer { store.setSourceVariableJSON(nil, for: source.bookSourceUrl) }
         let host = SourceScriptHost(bridgeFor: source)
 
-        let overlaid = await host.getExploreItems(page: 1, variableOverlay: ["頻道": "女"])
+        let overlaid = try await host.getExploreItems(page: 1, variableOverlay: ["頻道": "女"])
         #expect(overlaid.map(\.title) == ["女/女"])
         #expect(overlaid.map(\.url) == ["https://x.test/女"])
         #expect(store.sourceVariableJSON(for: source.bookSourceUrl) == stored, "byte for byte")
 
-        let plain = await host.getExploreItems(page: 1)
+        let plain = try await host.getExploreItems(page: 1)
         #expect(plain.map(\.title) == ["男/男"], "the next evaluation reads the stored values")
     }
 
     @Test("a script that writes the variable back keeps its own keys; the overlay's are not stored")
-    func writesKeepTheStoredValues() async {
+    func writesKeepTheStoredValues() async throws {
         let source = source("""
         <js>var v = JSON.parse(source.getVariable() || '{}');
         v['云端配置'] = 'b';
@@ -56,19 +56,19 @@ struct SourceVariableOverlayTests {
         store.setSourceVariableJSON(#"{"頻道":"男","云端配置":"a"}"#, for: source.bookSourceUrl)
         defer { store.setSourceVariableJSON(nil, for: source.bookSourceUrl) }
 
-        let items = await SourceScriptHost(bridgeFor: source).getExploreItems(page: 1, variableOverlay: ["頻道": "女", "排序": "新書"])
+        let items = try await SourceScriptHost(bridgeFor: source).getExploreItems(page: 1, variableOverlay: ["頻道": "女", "排序": "新書"])
         #expect(items.map(\.title) == ["女新書"])
         let after = object(store.sourceVariableJSON(for: source.bookSourceUrl))
         #expect(after == ["頻道": "男", "云端配置": "b", "線路": "two"], "排序 stays absent, 頻道 stays 男")
     }
 
     @Test("a variable that is not a JSON object is read as stored")
-    func skipsANonObjectVariable() async {
+    func skipsANonObjectVariable() async throws {
         let source = source("<js>JSON.stringify([{title: source.getVariable(), url: 'https://x.test/'}]);</js>")
         store.setSourceVariableJSON("token-1", for: source.bookSourceUrl)
         defer { store.setSourceVariableJSON(nil, for: source.bookSourceUrl) }
 
-        let items = await SourceScriptHost(bridgeFor: source).getExploreItems(page: 1, variableOverlay: ["頻道": "女"])
+        let items = try await SourceScriptHost(bridgeFor: source).getExploreItems(page: 1, variableOverlay: ["頻道": "女"])
         #expect(items.map(\.title) == ["token-1"])
         #expect(store.sourceVariableJSON(for: source.bookSourceUrl) == "token-1")
     }

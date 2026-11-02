@@ -1977,7 +1977,7 @@ struct AnalyzeUrlTests {
         )
         source.exploreUrl = "<js>java.ajax(\(jsURLLiteral));</js>"
 
-        let items = await SourceScriptHost(bridgeFor: source).getExploreItems()
+        let items = try await SourceScriptHost(bridgeFor: source).getExploreItems()
 
         #expect(items.map(\.title) == ["榜單"])
         #expect(items.map(\.url) == ["https://example.com/rank"])
@@ -2011,9 +2011,12 @@ struct AnalyzeUrlTests {
         )
         source.exploreUrl = "<js>java.ajax(\(jsURLLiteral));</js>"
 
-        let items = await SourceScriptHost(bridgeFor: source).getExploreItems()
-
-        #expect(items.isEmpty)
+        // The rule fails with the transform's own error, never with the untransformed payload.
+        let error = await #expect(throws: ModernParserBridge.ExploreScriptError.self) {
+            try await SourceScriptHost(bridgeFor: source).getExploreItems()
+        }
+        #expect(error?.message.contains("broken transform") == true)
+        #expect(error?.message.contains("原始資料不得外洩") == false)
     }
 
     @Test("{header} template resolves to sourceHeader in URL options")
@@ -2143,7 +2146,7 @@ struct AnalyzeUrlTests {
             LegadoCacheBridge(sourceId: source.bookSourceUrl).delete("gyksconfig")
         }
 
-        let items = await SourceScriptHost(bridgeFor: source).getExploreItems()
+        let items = try await SourceScriptHost(bridgeFor: source).getExploreItems()
         let platform = try #require(items.first)
 
         #expect(platform.chars == ["番茄", "七猫"])
@@ -2287,7 +2290,7 @@ struct AnalyzeUrlTests {
         #expect(content == "Chapter body from runtime")
 
         let fetcher = BookSourceFetcher.shared
-        let discoverItems = await fetcher.discoverItems(page: 2, in: source)
+        let discoverItems = try await fetcher.discoverItems(page: 2, in: source)
         #expect(discoverItems.compactMap(\.title) == ["Hot Books"])
         let discoveredBooks = try await fetcher.discoverBooks(from: discoverItems[0], in: source)
         #expect(discoveredBooks.map(\.name) == ["Pipeline Book"])
@@ -2367,7 +2370,7 @@ struct BookSourceLocalFixtureTests {
             cache.delete("gyksconfig")
         }
 
-        let items = await SourceScriptHost(bridgeFor: source).getExploreItems()
+        let items = try await SourceScriptHost(bridgeFor: source).getExploreItems()
         let platform = try #require(items.first { $0.title == "平台" })
         let platforms = try #require(platform.chars)
 
@@ -2410,7 +2413,7 @@ struct QidianSourceRegressionTests {
         )
         defer { LoginManager.shared.clearLogin(sourceUrl: source.bookSourceUrl) }
 
-        let items = await SourceScriptHost(bridgeFor: source).getExploreItems(page: 1)
+        let items = try await SourceScriptHost(bridgeFor: source).getExploreItems(page: 1)
 
         #expect(!items.isEmpty)
         #expect(items.contains { ($0.url ?? "").contains("qidian.com") })
@@ -2485,7 +2488,7 @@ struct QidianSourceRegressionTests {
         )
         defer { LoginManager.shared.clearLogin(sourceUrl: source.bookSourceUrl) }
 
-        let items = await SourceScriptHost(bridgeFor: source).getExploreItems(page: 1)
+        let items = try await SourceScriptHost(bridgeFor: source).getExploreItems(page: 1)
         let category = try #require(items.first { item in
             guard let url = item.url else { return false }
             return url.contains("qidian.com")
@@ -2566,7 +2569,7 @@ struct QimoSourceRegressionTests {
                 $0.bookSourceName.contains("柒墨")
             }
         )
-        let items = await SourceScriptHost(bridgeFor: source).getExploreItems(page: 1)
+        let items = try await SourceScriptHost(bridgeFor: source).getExploreItems(page: 1)
         let ranking = try #require(items.first { item in
             guard let url = item.url else { return false }
             return url.contains("m.qidian.com/majax/rank/")
@@ -3877,7 +3880,7 @@ struct ModernParserBridgeExploreTests {
         {"title":"分类","url":"https://example.com/c","style":{"layout_flexBasisPercent":null}}]
         """
 
-        let items = await SourceScriptHost(bridgeFor: source).getExploreItems()
+        let items = try await SourceScriptHost(bridgeFor: source).getExploreItems()
 
         #expect(items.map(\.title) == ["🔥热播榜", "完结", "分类"], "actual=\(items.map(\.title))")
         #expect(items.compactMap(\.url).count == 3, "actual=\(items.compactMap(\.url))")
@@ -3895,7 +3898,7 @@ struct ModernParserBridgeExploreTests {
         {"title":"乙","url":"https://example.com/b","style":"not-an-object"}]
         """
 
-        let items = await SourceScriptHost(bridgeFor: source).getExploreItems()
+        let items = try await SourceScriptHost(bridgeFor: source).getExploreItems()
 
         #expect(items.map(\.title) == ["甲", "乙"], "actual=\(items.map(\.title))")
     }
@@ -3916,7 +3919,7 @@ struct ModernParserBridgeExploreTests {
         全部::/category/0/<,{{page}}.html>
         """
 
-        let items = await SourceScriptHost(bridgeFor: source).getExploreItems()
+        let items = try await SourceScriptHost(bridgeFor: source).getExploreItems()
 
         #expect(items.map(\.title) == ["玄幻·奇幻", "仙侠·武侠", "全部"], "actual=\(items.map(\.title))")
         #expect(items.compactMap(\.url) == [
@@ -3939,7 +3942,7 @@ struct ModernParserBridgeExploreTests {
         <div class="err">something</div>
         """
 
-        let items = await SourceScriptHost(bridgeFor: source).getExploreItems()
+        let items = try await SourceScriptHost(bridgeFor: source).getExploreItems()
 
         #expect(items.map(\.title) == ["玄幻"], "actual=\(items.map(\.title))")
     }
@@ -3981,7 +3984,7 @@ struct ModernParserBridgeExploreTests {
         JSON.stringify(result);
         """
 
-        let items = await SourceScriptHost(bridgeFor: source).getExploreItems()
+        let items = try await SourceScriptHost(bridgeFor: source).getExploreItems()
         let filter = try #require(items.first)
 
         #expect(filter.title == "分类")
@@ -4010,9 +4013,9 @@ struct ModernParserBridgeExploreTests {
             for: source.bookSourceUrl
         )
 
-        let firstItems = await SourceScriptHost(bridgeFor: source).getExploreItems()
+        let firstItems = try await SourceScriptHost(bridgeFor: source).getExploreItems()
         let first = try #require(firstItems.first)
-        let secondItems = await SourceScriptHost(bridgeFor: source).getExploreItems()
+        let secondItems = try await SourceScriptHost(bridgeFor: source).getExploreItems()
         let second = try #require(secondItems.first)
 
         #expect(first.title == token)
@@ -4087,7 +4090,7 @@ struct ModernParserBridgeExploreTests {
     }
 
     @Test("plain text exploreUrl is parsed as Legado explore kinds without fetching")
-    func plainTextExploreKinds() async {
+    func plainTextExploreKinds() async throws {
         var source = BookSource()
         source.bookSourceUrl = "https://example.com/source"
         source.bookSourceName = "Plain Explore"
@@ -4097,7 +4100,7 @@ struct ModernParserBridgeExploreTests {
         分類二::https://example.com/cat/2
         """
 
-        let items = await SourceScriptHost(bridgeFor: source).getExploreItems(page: 2)
+        let items = try await SourceScriptHost(bridgeFor: source).getExploreItems(page: 2)
 
         #expect(items.map { $0.title ?? "" } == ["分類一", "分組標題", "分類二"])
         #expect(items.map { $0.url } == [
@@ -4108,7 +4111,7 @@ struct ModernParserBridgeExploreTests {
     }
 
     @Test("JS exploreUrl returning plain text is parsed as Legado explore kinds")
-    func jsReturnedPlainTextExploreKinds() async {
+    func jsReturnedPlainTextExploreKinds() async throws {
         var source = BookSource()
         source.bookSourceUrl = "https://example.com/source"
         source.bookSourceName = "JS Text Explore"
@@ -4118,7 +4121,7 @@ struct ModernParserBridgeExploreTests {
         </js>
         """
 
-        let items = await SourceScriptHost(bridgeFor: source).getExploreItems()
+        let items = try await SourceScriptHost(bridgeFor: source).getExploreItems()
 
         #expect(items.map { $0.title ?? "" } == ["排行榜", "完本"])
         #expect(items.map { $0.url ?? "" } == [
@@ -4128,13 +4131,13 @@ struct ModernParserBridgeExploreTests {
     }
 
     @Test("inline JSON exploreUrl is parsed without fetching")
-    func inlineJSONExploreKinds() async {
+    func inlineJSONExploreKinds() async throws {
         var source = BookSource()
         source.bookSourceUrl = "https://example.com/source"
         source.bookSourceName = "JSON Explore"
         source.exploreUrl = #"[{"title":"推薦","url":"https://example.com/recommend","style":{"layout_flexBasisPercent":0.45}}]"#
 
-        let items = await SourceScriptHost(bridgeFor: source).getExploreItems()
+        let items = try await SourceScriptHost(bridgeFor: source).getExploreItems()
 
         #expect(items.count == 1)
         #expect(items.first?.title == "推薦")

@@ -20,6 +20,8 @@ final class SourceCategoryListing: ObservableObject {
         case loaded
         /// The source returned no category.
         case empty
+        /// The source's explore rule failed; the message says how.
+        case failed(String)
     }
 
     let source: BookSource
@@ -30,7 +32,7 @@ final class SourceCategoryListing: ObservableObject {
     @Published private(set) var filters: [DiscoverFilter] = []
     /// The values the explore rule reads in place of the stored ones.
     private(set) var overlay: [String: String]
-    private let loadItems: (BookSource, [String: String]) async -> [ModernParserBridge.DiscoverItem]
+    private let loadItems: (BookSource, [String: String]) async throws -> [ModernParserBridge.DiscoverItem]
     private let storedVariables: (BookSource) -> [String: Any]
     /// The latest load; an earlier one finishing after it is dropped.
     private var generation = 0
@@ -38,8 +40,8 @@ final class SourceCategoryListing: ObservableObject {
     /// - Parameter filterValues: the section's own values, from when it picked its category.
     init(source: BookSource,
          filterValues: [String: String] = [:],
-         loadItems: @escaping (BookSource, [String: String]) async -> [ModernParserBridge.DiscoverItem] = {
-             await BookSourceFetcher.shared.discoverItems(page: 1, in: $0, variableOverlay: $1)
+         loadItems: @escaping (BookSource, [String: String]) async throws -> [ModernParserBridge.DiscoverItem] = {
+             try await BookSourceFetcher.shared.discoverItems(page: 1, in: $0, variableOverlay: $1)
          },
          storedVariables: @escaping (BookSource) -> [String: Any] = {
              BookSourceRuntimeStateStore.shared.sourceVariables(for: $0.bookSourceUrl)
@@ -55,7 +57,16 @@ final class SourceCategoryListing: ObservableObject {
         let current = generation
         state = .loading
         let started = SourcePerfTrace.now
-        let items = await loadItems(source, overlay)
+        let items: [ModernParserBridge.DiscoverItem]
+        do {
+            items = try await loadItems(source, overlay)
+        } catch {
+            guard !Task.isCancelled, current == generation else { return }
+            groups = []
+            filters = []
+            state = .failed(error.localizedDescription)
+            return
+        }
         guard !Task.isCancelled, current == generation else { return }
         groups = DiscoverViewModel.categoryGroups(from: items, defaultTitle: localized("分類"))
         filters = DiscoverViewModel.extractFilters(from: items)

@@ -83,8 +83,8 @@ extension SourceScriptHost where Resident == ModernParserBridge {
 
     func getExploreItems(
         page: Int = 1, variableOverlay: [String: String] = [:]
-    ) -> [ModernParserBridge.DiscoverItem] {
-        resident.exploreItems(page: page, variableOverlay: variableOverlay)
+    ) throws -> [ModernParserBridge.DiscoverItem] {
+        try resident.exploreItems(page: page, variableOverlay: variableOverlay)
     }
 
     func primeDiscoverCookiesIfNeeded() async {

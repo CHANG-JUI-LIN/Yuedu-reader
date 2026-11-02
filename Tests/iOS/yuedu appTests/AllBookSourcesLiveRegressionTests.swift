@@ -126,7 +126,7 @@ struct AllBookSourcesLiveRegressionTests {
             do {
                 if source.enabledExplore,
                    !source.exploreUrl.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                    let items = await fetcher.discoverItems(in: source)
+                    let items = try await fetcher.discoverItems(in: source)
                     discoverCategoryCount = items.count
                     var discoveredBooks: [OnlineBook] = []
                     var attemptErrors: [String] = []

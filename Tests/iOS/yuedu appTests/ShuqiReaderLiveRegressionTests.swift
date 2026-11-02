@@ -414,7 +414,7 @@ struct ShuqiReaderLiveRegressionTests {
         let source = loadedSource
 
         let fetcher = BookSourceFetcher.shared
-        let items = await fetcher.discoverItems(in: source)
+        let items = try await fetcher.discoverItems(in: source)
         let discoverItem = try #require(items.first {
             !(($0.url ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
         })
