@@ -336,9 +336,9 @@ struct WorkDetailView: View {
             pendingChapter = nil
             openChapter(chapter)
         }) {
-            if case .loaded(_, let chapters) = toc.state {
+            if case .loaded(let bookID, let chapters) = toc.state {
                 NavigationStack {
-                    BookDetailChapterListSheet(chapters: chapters, trailing: .disclosure, onSelect: { offset in
+                    BookDetailChapterListSheet(chapters: chapters, bookID: bookID, trailing: .disclosure, onSelect: { offset in
                         pendingChapter = chapters[offset]
                         showChapterList = false
                     })

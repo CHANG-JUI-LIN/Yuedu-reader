@@ -4256,3 +4256,5 @@
 "點擊選取 TXT / EPUB / AZW3 / MOBI / PDF / 漫畫 / 音訊文件" = "Tap to Choose a TXT, EPUB, AZW3, MOBI, PDF, Comic, or Audio File";
 "傳送期間請保持此頁開啟，離開或切背景會中斷。支援 EPUB、AZW3、MOBI、PDF、TXT、Markdown。" = "Keep this page open while transferring; leaving it or moving the app to the background ends the connection. Supports EPUB, AZW3, MOBI, PDF, TXT, and Markdown.";
 "建立在這本書另一版的轉換文字上，無法跳轉" = "Saved in another version of this book's converted text, so you can't go to it.";
+"正序" = "First to Last";
+"倒序" = "Last to First";

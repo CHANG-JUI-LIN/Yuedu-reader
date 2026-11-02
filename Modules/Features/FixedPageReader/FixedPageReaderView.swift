@@ -213,7 +213,7 @@ struct FixedPageReaderView: View {
             if UIAccessibility.isVoiceOverRunning { state.showControls = true }
         }
         .sheet(isPresented: $state.showChapterList) {
-            FixedPageChapterListView(state: state)
+            FixedPageChapterListView(state: state, bookID: bookId)
         }
     }
 
@@ -596,12 +596,19 @@ struct FixedPageReaderSettingsView: View {
 
 struct FixedPageChapterListView: View {
     @ObservedObject var state: FixedPageReaderState
+    /// Whose 正序／倒序 to read and save.
+    let bookID: UUID?
     @Environment(\.dismiss) private var dismiss
+    @State private var chosenOrder: ChapterListOrder?
+
+    private var orderBinding: Binding<ChapterListOrder> {
+        ChapterListOrder.binding(chosen: $chosenOrder, for: bookID)
+    }
 
     var body: some View {
         NavigationStack {
             ScrollViewReader { proxy in
-                List(state.chapterListItems) { item in
+                List(orderBinding.wrappedValue.arranged(state.chapterListItems)) { item in
                     Button {
                         state.onSelectChapter?(item.index)
                     } label: {
@@ -627,6 +634,10 @@ struct FixedPageChapterListView: View {
                 .onAppear {
                     proxy.scrollTo(state.currentChapterIndex, anchor: .center)
                 }
+                // Rows are `.id`'d by chapter index, so the current one is found in either order.
+                .onChange(of: orderBinding.wrappedValue) {
+                    proxy.scrollTo(state.currentChapterIndex, anchor: .center)
+                }
             }
             .background(PageBackgroundView(scope: .settings).ignoresSafeArea())
             .pageBackgroundToolbar(for: .settings)
@@ -639,6 +650,9 @@ struct FixedPageChapterListView: View {
                     } label: {
                         Image(systemName: "xmark")
                     }
+                }
+                ToolbarItem(placement: .topBarTrailing) {
+                    ChapterListOrderMenu(order: orderBinding)
                 }
             }
         }
@@ -664,6 +678,17 @@ struct FixedPageChapterListView: View {
         }
         .toolbarTitleDisplayMode(.inline)
     }
+}
+
+#Preview("目錄・倒序") {
+    let state = FixedPageReaderState()
+    state.chapterListItems = FixedPageChapterListItem.items(
+        from: (0..<12).map { OnlineChapterRef(index: $0, title: "第 \($0 + 1) 話", url: "") }
+    )
+    state.currentChapterIndex = 4
+    let bookID = UUID()
+    ChapterListOrder.store(.descending, for: bookID)
+    return FixedPageChapterListView(state: state, bookID: bookID)
 }
 
 #Preview("Settings") {

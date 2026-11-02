@@ -414,6 +414,7 @@ struct OnlineBookView: View {
             NavigationStack {
                 BookDetailChapterListSheet(
                     chapters: chapters,
+                    bookID: addedBookId,
                     trailing: .disclosure,
                     onSelect: { offset in
                         pendingChapterSelection = chapters[offset].index

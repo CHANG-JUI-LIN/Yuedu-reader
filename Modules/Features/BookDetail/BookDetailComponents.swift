@@ -1438,16 +1438,29 @@ struct BookDetailChapterSection<Row: View>: View {
 /// The full chapter list, presented from 「查看全部」.
 struct BookDetailChapterListSheet: View {
     let chapters: [OnlineChapterRef]
+    /// Whose 正序／倒序 to read and save; nil for a book not on the shelf.
+    let bookID: UUID?
     let trailing: BookDetailChapterRow.Trailing
-    /// Called with the chapter's offset in `chapters`.
+    /// Called with the chapter's offset in `chapters` — in 倒序 too.
     let onSelect: (_ offset: Int) -> Void
 
     @Environment(\.dismiss) private var dismiss
+    @State private var chosenOrder: ChapterListOrder?
+
+    private var orderBinding: Binding<ChapterListOrder> {
+        ChapterListOrder.binding(chosen: $chosenOrder, for: bookID)
+    }
+
+    /// Rows in the chosen order, each keeping its offset in `chapters` for `onSelect` and the
+    /// 「第 N 章」 fallback title.
+    nonisolated static func rows(_ chapters: [OnlineChapterRef], order: ChapterListOrder) -> [(offset: Int, element: OnlineChapterRef)] {
+        order.arranged(Array(chapters.enumerated()).map { (offset: $0.offset, element: $0.element) })
+    }
 
     var body: some View {
         List {
             Section {
-                ForEach(Array(chapters.enumerated()), id: \.element.id) { offset, chapter in
+                ForEach(Self.rows(chapters, order: orderBinding.wrappedValue), id: \.element.id) { offset, chapter in
                     BookDetailChapterRow(
                         title: BookDetailChapterTitle.display(chapter, offset: offset),
                         isLocked: chapter.isVip || chapter.isPay,
@@ -1474,6 +1487,9 @@ struct BookDetailChapterListSheet: View {
                     Label(localized("關閉"), systemImage: "xmark")
                         .labelStyle(.iconOnly)
                 }
+            }
+            ToolbarItem(placement: .topBarTrailing) {
+                ChapterListOrderMenu(order: orderBinding)
             }
         }
     }

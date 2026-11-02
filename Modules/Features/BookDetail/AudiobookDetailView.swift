@@ -347,6 +347,7 @@ struct AudiobookDetailView: View {
             NavigationStack {
                 BookDetailChapterListSheet(
                     chapters: chapters,
+                    bookID: addedBookId,
                     trailing: .play,
                     onSelect: { offset in
                         pendingChapterSelection = offset

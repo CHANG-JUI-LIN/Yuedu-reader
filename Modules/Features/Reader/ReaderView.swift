@@ -2843,6 +2843,7 @@ struct ReaderView: View {
                         return display
                     },
                     bookTitle: book?.title ?? "",
+                    bookID: book?.id,
                     currentPage: currentPage,
                     totalPages: renderedPageCount,
                     tocLayoutMode: .from(writingMode: bookDirection.principalMode),

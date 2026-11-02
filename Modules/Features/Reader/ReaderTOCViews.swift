@@ -168,10 +168,13 @@ private struct VerticalTOCView: View {
     let pageOffsets: [UUID: Int]
     let showsPageNumbers: Bool
     let uncachedChapterIndexes: Set<Int>
+    let order: ChapterListOrder
     let onSelectChapter: (BookChapter) -> Void
 
     @State private var didInitialTOCScroll = false
 
+    /// Right to left: the columns run the other way from `chapters`, which is already in the
+    /// reader's 正序／倒序.
     private var reversedChapters: [BookChapter] {
         Array(chapters.reversed())
     }
@@ -206,11 +209,26 @@ private struct VerticalTOCView: View {
                 guard !didInitialTOCScroll else { return }
                 didInitialTOCScroll = true
 
-                if chapters.first(where: { $0.index == currentIndex }) != nil {
-                    proxy.scrollTo(currentIndex, anchor: .trailing)
+                if let row = ReaderTOCScrollTarget.row(currentIndex: currentIndex, in: chapters) {
+                    proxy.scrollTo(row, anchor: .trailing)
+                }
+            }
+            // Switching 正序／倒序 moves the current chapter to the other end; follow it.
+            .onChange(of: order) {
+                if let row = ReaderTOCScrollTarget.row(currentIndex: currentIndex, in: chapters) {
+                    proxy.scrollTo(row, anchor: .trailing)
                 }
             }
         }
+    }
+}
+
+/// Which row a 目錄 scrolls to: the current chapter, by the `BookChapter.index` each row is
+/// `.id`'d with, so it is the same row in 正序 and 倒序. Nil when the shown list does not have it
+/// (a search that filtered it out, a chapter missing from the 目錄).
+enum ReaderTOCScrollTarget {
+    static func row(currentIndex: Int, in shown: [BookChapter]) -> Int? {
+        shown.contains(where: { $0.index == currentIndex }) ? currentIndex : nil
     }
 }
 
@@ -222,6 +240,8 @@ private struct VerticalTOCView: View {
 struct ReaderTOCView: View {
     let chapters: [BookChapter]
     let bookTitle: String
+    /// Whose 正序／倒序 to read and save.
+    let bookID: UUID?
     let currentPage: Int
     let totalPages: Int
     let tocLayoutMode: TOCLayoutMode
@@ -237,6 +257,13 @@ struct ReaderTOCView: View {
     @Binding var isPresented: Bool
 
     @State private var searchText = ""
+    @State private var chosenOrder: ChapterListOrder?
+
+    private var orderBinding: Binding<ChapterListOrder> {
+        ChapterListOrder.binding(chosen: $chosenOrder, for: bookID)
+    }
+
+    private var order: ChapterListOrder { orderBinding.wrappedValue }
 
     private var isSearching: Bool {
         !searchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
@@ -244,8 +271,9 @@ struct ReaderTOCView: View {
 
     private var filteredChapters: [BookChapter] {
         let query = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !query.isEmpty else { return chapters }
-        return chapters.filter {
+        let ordered = order.arranged(chapters, level: \.level)
+        guard !query.isEmpty else { return ordered }
+        return ordered.filter {
             $0.title.localizedCaseInsensitiveContains(query)
         }
     }
@@ -257,6 +285,9 @@ struct ReaderTOCView: View {
                 .navigationTitle(bookTitle)
                 .toolbarTitleDisplayMode(.inline)
                 .toolbar {
+                    ToolbarItem(placement: .topBarTrailing) {
+                        ChapterListOrderMenu(order: orderBinding)
+                    }
                     ToolbarItem(placement: .topBarTrailing) {
                         Button {
                             isPresented = false
@@ -306,6 +337,7 @@ struct ReaderTOCView: View {
                     pageOffsets: pageOffsets,
                     showsPageNumbers: showsPageNumbers,
                     uncachedChapterIndexes: uncachedChapterIndexes,
+                    order: order,
                     onSelectChapter: { chapter in
                         onSelectChapter(chapter)
                         isPresented = false
@@ -363,12 +395,19 @@ struct ReaderTOCView: View {
             .contentMargins(.top, 0, for: .scrollContent)
             .onAppear {
                 guard !isSearching,
-                      chapters.contains(where: { $0.index == currentIndex }) else { return }
+                      let row = ReaderTOCScrollTarget.row(currentIndex: currentIndex, in: filteredChapters)
+                else { return }
                 // No animation: the list opens on the current chapter, it does not travel
                 // there each time the sheet comes up. Straight from onAppear, as 有聲書 and
                 // the fixed-page reader's 目錄 do; the 0.1 s wait this replaced had no reason
                 // on record.
-                proxy.scrollTo(currentIndex, anchor: .center)
+                proxy.scrollTo(row, anchor: .center)
+            }
+            // Switching 正序／倒序 moves the current chapter to the other end; follow it.
+            .onChange(of: order) {
+                guard let row = ReaderTOCScrollTarget.row(currentIndex: currentIndex, in: filteredChapters)
+                else { return }
+                proxy.scrollTo(row, anchor: .center)
             }
         }
     }
@@ -445,6 +484,7 @@ struct ReaderTOCView: View {
             BookChapter(index: 2, title: "第三章 抉擇", content: ""),
         ],
         bookTitle: "範例書名",
+        bookID: nil,
         currentPage: 1,
         totalPages: 240,
         tocLayoutMode: .horizontalList,
@@ -468,6 +508,7 @@ struct ReaderTOCView: View {
             BookChapter(index: 3, title: "第三章 抉擇", content: ""),
         ],
         bookTitle: "範例書名",
+        bookID: nil,
         currentPage: 0,
         totalPages: 0,
         tocLayoutMode: .horizontalList,
@@ -490,6 +531,7 @@ struct ReaderTOCView: View {
             BookChapter(index: 3, title: "第四章 歸途", content: ""),
         ],
         bookTitle: "範例書名",
+        bookID: nil,
         currentPage: 0,
         totalPages: 0,
         tocLayoutMode: .verticalRTLColumns,
@@ -498,6 +540,34 @@ struct ReaderTOCView: View {
         currentIndex: 1,
         currentChapterID: nil,
         uncachedChapterIndexes: [2, 3],
+        onSelectChapter: { _ in },
+        isPresented: .constant(true)
+    )
+}
+
+/// 倒序 with volumes: each volume stays above its own chapters, the volumes run last to first.
+#Preview("目錄・倒序分卷") {
+    let bookID = UUID()
+    ChapterListOrder.store(.descending, for: bookID)
+    return ReaderTOCView(
+        chapters: [
+            BookChapter(index: 0, title: "第一卷 風起", content: ""),
+            BookChapter(index: 1, title: "第一章 序幕", content: "", level: 1),
+            BookChapter(index: 2, title: "第二章 啟程", content: "", level: 1),
+            BookChapter(index: 3, title: "第二卷 雲湧", content: ""),
+            BookChapter(index: 4, title: "第三章 抉擇", content: "", level: 1),
+            BookChapter(index: 5, title: "第四章 歸途", content: "", level: 1),
+        ],
+        bookTitle: "範例書名",
+        bookID: bookID,
+        currentPage: 0,
+        totalPages: 0,
+        tocLayoutMode: .horizontalList,
+        pageOffsets: [:],
+        showsPageNumbers: false,
+        currentIndex: 2,
+        currentChapterID: nil,
+        uncachedChapterIndexes: [],
         onSelectChapter: { _ in },
         isPresented: .constant(true)
     )
