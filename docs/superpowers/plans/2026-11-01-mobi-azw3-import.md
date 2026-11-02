@@ -475,4 +475,6 @@ Found in step 6 (2026-11-02):
   time, EPUBs as much as Kindle files. Files opened from the Files app are not copied: the built app has
   `LSSupportsOpeningDocumentsInPlace` (from `INFOPLIST_KEY_…` in the project). Fixed 2026-11-02: `openFile`
   deletes its own copy once the import is over, and a sweep as the app goes to the background takes
-  earlier builds' leftovers.
+  earlier builds' leftovers. That sweep did not run while the Open In reader was up: the app's
+  `onChange(of: scenePhase)` sat on the window's content, which UIKit's full-screen presentation takes
+  out of the window. Moved onto the scene the same day.

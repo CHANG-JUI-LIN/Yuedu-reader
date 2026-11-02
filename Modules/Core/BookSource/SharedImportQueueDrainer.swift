@@ -232,10 +232,6 @@ final class SharedImportQueueDrainer: ObservableObject {
     /// the app goes to the background, never at the end of an import: the system copies a
     /// file in before `openFile` registers it, so a sweep then could take a copy whose import
     /// has not started. By the background, every delivered copy is in `openingURLs` or done.
-    ///
-    /// Known gap: the background handler it runs in (`yuedu_appApp`'s `onChange(of:
-    /// scenePhase)`) did not run while a reader was presented full screen on the simulator,
-    /// so leftovers wait for a background reached from elsewhere.
     func removeOpenInCopies() {
         let copies: [URL]
         do {

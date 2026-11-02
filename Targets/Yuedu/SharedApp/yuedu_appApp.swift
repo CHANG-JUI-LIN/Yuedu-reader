@@ -329,74 +329,81 @@ struct yuedu_appApp: App {
                     launchOwnsChapterRefresh = true
                     syncThenRefreshChapters(syncReason: GlobalSettings.shared.iCloudAutoSync ? "launch" : nil)
                 }
-                .onChange(of: scenePhase) { _, newPhase in
-                    MainThreadMonitor.shared.notePhase(String(describing: newPhase))
-                    // Named so a stall on the way into the background says whether this
-                    // handler was it: the field's background stalls all read "no
-                    // instrumented span" (MainThreadStall, 3.0.0 (129)).
-                    SourcePerfTrace.span("scene.phase.\(newPhase)", thresholdMs: 5) {
-                        WebDAVIndexCoordinator.shared.setActive(newPhase == .active)
-                        bookStore.metadataFill.setActive(newPhase == .active)
-                        // Diagnostics session bookkeeping: reaching the background is
-                        // this app's definition of "survived", and is also the last
-                        // reliable moment to get buffered log lines onto disk.
-                        switch newPhase {
-                        case .background:
-                            resumesFromBackground = true
-                            DiagnosticLog.shared.noteEnteredBackground()
-                            // Book-source persistence moved off the main thread to stop iCloud
-                            // sync blowing the scene-update watchdog; the cost is that a save
-                            // issued moments ago may still be in flight. This is the last
-                            // reliable moment to let it land.
-                            BookSourceStore.shared.flushPendingWrites()
-                            SourcePerfTrace.span("openIn.inbox.clean", thresholdMs: 5) {
-                                SharedImportQueueDrainer.shared.removeOpenInCopies()
-                            }
-                            DiagnosticScale.publish(bookStore: bookStore, reason: "background")
-                            // Here, not in the app delegate: in a scene-based app UIKit never
-                            // calls `applicationDidEnterBackground`, so the badge and the next
-                            // RSS refresh were only ever set at launch.
-                            RSSNotificationManager.shared.updateBadge(unreadCount: RSSStore.shared.totalUnreadCount())
-                            RSSBackgroundRefresh.shared.schedule()
-                        case .active: DiagnosticLog.shared.noteBecameActive()
-                        default: break
-                        }
-                        // Inactive, not only background: the app switcher kills the app
-                        // while it is inactive, before a debounced shelf save has run.
-                        if newPhase != .active { bookStore.flushPendingMetadataSave() }
-                        // Pick up sources shared while the app was backgrounded.
-                        if newPhase == .active {
-                            Task { await subscriptionStore.refreshAllEntitlements() }
-                            Task { await subscriptionStore.reloadProductsIfStorefrontChanged() }
-                            Task { await SharedImportQueueDrainer.shared.drain() }
-                            // A button tap while the app was suspended is waiting in the queue.
-                            Task { await DownloadActivityCommandApplier.drainObserved() }
-                            Task {
-                                await AppDependencies.live.offlineDownloadManager
-                                    .reconcileInterruptedDownloads(store: bookStore)
-                            }
-                            // Back from the background, merge with the cloud before the book on
-                            // screen is read on: another device may have moved it on while this
-                            // one was suspended, unaware (feedback #6: read to 15% on an
-                            // iPhone, the iPad that had only been suspended opened chapter 1).
-                            // Returning to the foreground also checks online books for new
-                            // chapters (throttled). Cold launch already kicked one off in
-                            // onAppear, after its sync; the first `.active` leaves it to that.
-                            let syncReason = resumesFromBackground && GlobalSettings.shared.iCloudAutoSync
-                                ? "foreground" : nil
-                            resumesFromBackground = false
-                            let launchRefreshes = launchOwnsChapterRefresh
-                            launchOwnsChapterRefresh = false
-                            if syncReason != nil || !launchRefreshes {
-                                syncThenRefreshChapters(syncReason: syncReason)
-                            }
-                        }
-                        // Seamless iCloud: push/merge when leaving the app, in background time.
-                        if newPhase == .background, GlobalSettings.shared.iCloudAutoSync {
-                            ICloudSyncManager.shared.syncOnTheWayToTheBackground()
-                        }
+        }
+        // On the scene, not on the window's content. A controller UIKit presents full screen
+        // over the content — the reader an Open In book opens in (`ImportedBookPresentation`)
+        // — takes the content's hosting view out of the window, and SwiftUI does not update a
+        // view out of the window: on the content, this never heard the app reach the
+        // background for as long as that reader was up. (Under a SwiftUI `fullScreenCover` the
+        // content kept updating.) The scene's first `.active` still comes after the content's
+        // `onAppear` (iOS 17.5 and 27.1, 2026-11-02), so what `onAppear` binds is bound by then.
+        .onChange(of: scenePhase) { _, newPhase in
+            MainThreadMonitor.shared.notePhase(String(describing: newPhase))
+            // Named so a stall on the way into the background says whether this
+            // handler was it: the field's background stalls all read "no
+            // instrumented span" (MainThreadStall, 3.0.0 (129)).
+            SourcePerfTrace.span("scene.phase.\(newPhase)", thresholdMs: 5) {
+                WebDAVIndexCoordinator.shared.setActive(newPhase == .active)
+                bookStore.metadataFill.setActive(newPhase == .active)
+                // Diagnostics session bookkeeping: reaching the background is
+                // this app's definition of "survived", and is also the last
+                // reliable moment to get buffered log lines onto disk.
+                switch newPhase {
+                case .background:
+                    resumesFromBackground = true
+                    DiagnosticLog.shared.noteEnteredBackground()
+                    // Book-source persistence moved off the main thread to stop iCloud
+                    // sync blowing the scene-update watchdog; the cost is that a save
+                    // issued moments ago may still be in flight. This is the last
+                    // reliable moment to let it land.
+                    BookSourceStore.shared.flushPendingWrites()
+                    SourcePerfTrace.span("openIn.inbox.clean", thresholdMs: 5) {
+                        SharedImportQueueDrainer.shared.removeOpenInCopies()
+                    }
+                    DiagnosticScale.publish(bookStore: bookStore, reason: "background")
+                    // Here, not in the app delegate: in a scene-based app UIKit never
+                    // calls `applicationDidEnterBackground`, so the badge and the next
+                    // RSS refresh were only ever set at launch.
+                    RSSNotificationManager.shared.updateBadge(unreadCount: RSSStore.shared.totalUnreadCount())
+                    RSSBackgroundRefresh.shared.schedule()
+                case .active: DiagnosticLog.shared.noteBecameActive()
+                default: break
+                }
+                // Inactive, not only background: the app switcher kills the app
+                // while it is inactive, before a debounced shelf save has run.
+                if newPhase != .active { bookStore.flushPendingMetadataSave() }
+                // Pick up sources shared while the app was backgrounded.
+                if newPhase == .active {
+                    Task { await subscriptionStore.refreshAllEntitlements() }
+                    Task { await subscriptionStore.reloadProductsIfStorefrontChanged() }
+                    Task { await SharedImportQueueDrainer.shared.drain() }
+                    // A button tap while the app was suspended is waiting in the queue.
+                    Task { await DownloadActivityCommandApplier.drainObserved() }
+                    Task {
+                        await AppDependencies.live.offlineDownloadManager
+                            .reconcileInterruptedDownloads(store: bookStore)
+                    }
+                    // Back from the background, merge with the cloud before the book on
+                    // screen is read on: another device may have moved it on while this
+                    // one was suspended, unaware (feedback #6: read to 15% on an
+                    // iPhone, the iPad that had only been suspended opened chapter 1).
+                    // Returning to the foreground also checks online books for new
+                    // chapters (throttled). Cold launch already kicked one off in
+                    // onAppear, after its sync; the first `.active` leaves it to that.
+                    let syncReason = resumesFromBackground && GlobalSettings.shared.iCloudAutoSync
+                        ? "foreground" : nil
+                    resumesFromBackground = false
+                    let launchRefreshes = launchOwnsChapterRefresh
+                    launchOwnsChapterRefresh = false
+                    if syncReason != nil || !launchRefreshes {
+                        syncThenRefreshChapters(syncReason: syncReason)
                     }
                 }
+                // Seamless iCloud: push/merge when leaving the app, in background time.
+                if newPhase == .background, GlobalSettings.shared.iCloudAutoSync {
+                    ICloudSyncManager.shared.syncOnTheWayToTheBackground()
+                }
+            }
         }
     }
 
