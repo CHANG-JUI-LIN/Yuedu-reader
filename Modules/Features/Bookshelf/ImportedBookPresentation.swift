@@ -34,7 +34,7 @@ struct ImportedBookPresentation: UIViewControllerRepresentable {
             }, didStart: didPresentCustomization)
             return
         }
-        controller.receive(requestID: request?.id, makeDestination: {
+        controller.receive(requestID: request?.id, makeDestination: { scene in
             guard let request else { return nil }
             return UIHostingController(rootView:
                 BookReaderView(bookId: request.bookID)
@@ -42,6 +42,7 @@ struct ImportedBookPresentation: UIViewControllerRepresentable {
                     .environmentObject(store)
                     .environmentObject(subscriptionStore)
                     .environment(\.appDependencies, .live)
+                    .followsScenePhase(of: scene)
             )
         }, didPresent: didPresent)
     }
@@ -53,7 +54,7 @@ final class ImportedBookPresentationController: UIViewController {
     /// (a book), or a flow of its own presentations (a shared customization file, which
     /// asks with an alert and reports in a sheet).
     private enum Work {
-        case destination(() -> UIViewController?)
+        case destination((UIWindowScene) -> UIViewController?)
         case flow((UIWindow, @escaping () -> Void) -> SharedCustomizationImportFlow)
     }
 
@@ -77,7 +78,7 @@ final class ImportedBookPresentationController: UIViewController {
         presentPending()
     }
 
-    func receive(requestID: UUID?, makeDestination: @escaping () -> UIViewController?,
+    func receive(requestID: UUID?, makeDestination: @escaping (UIWindowScene) -> UIViewController?,
                  didPresent: @escaping (UUID) -> Void) {
         pendingID = requestID
         pendingWork = .destination(makeDestination)
@@ -135,7 +136,7 @@ final class ImportedBookPresentationController: UIViewController {
             acknowledge?(requestID)
             flow.start()
         case .destination(let makeDestination):
-            guard let destination = makeDestination() else { return }
+            guard let scene = window.windowScene, let destination = makeDestination(scene) else { return }
             presentingID = requestID
             destination.modalPresentationStyle = .fullScreen
             presenter.present(destination, animated: true) { [weak self] in
