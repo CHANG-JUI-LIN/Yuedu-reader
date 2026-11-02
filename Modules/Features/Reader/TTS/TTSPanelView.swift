@@ -66,8 +66,6 @@ struct TTSPanelView: View {
     let aiProgress: Double
     @Environment(\.dismiss) var dismiss
     @Bindable private var gs = GlobalSettings.shared
-    @State private var isScrubbing = false
-    @State private var scrubProgress = 0.0
     @State private var showChapterPicker = false
     @State private var path: [TTSPanelRoute] = []
     /// Measured height of the list's content, so the sheet is exactly as tall as what it
@@ -111,11 +109,6 @@ struct TTSPanelView: View {
     /// Seeking needs a chapter that is loaded into segments.
     private var canSeek: Bool {
         tts.playbackState != .stopped && tts.totalSegments > 1
-    }
-
-    private var playbackProgress: Double {
-        guard canSeek else { return 0 }
-        return Double(tts.currentSegmentIndex) / Double(tts.totalSegments - 1)
     }
 
     /// 「段落 12 / 40」, or nil before a chapter has been split into segments.
@@ -234,11 +227,6 @@ struct TTSPanelView: View {
         .sheet(isPresented: $showChapterPicker) {
             chapterPicker
         }
-        .onChange(of: tts.currentSegmentIndex) { _, _ in
-            if !isScrubbing {
-                scrubProgress = playbackProgress
-            }
-        }
         .onChange(of: gs.ttsKeepsScreenAwake) { _, _ in
             tts.updateScreenAwakePreference()
         }
@@ -330,35 +318,13 @@ struct TTSPanelView: View {
 
     /// Where in the chapter the voice is, and the place to drag it somewhere else.
     private var progressRow: some View {
-        VStack(spacing: DSSpacing.xs) {
-            Slider(
-                value: Binding(
-                    get: { isScrubbing ? scrubProgress : playbackProgress },
-                    set: { scrubProgress = $0 }
-                ),
-                in: 0...1,
-                onEditingChanged: { editing in
-                    isScrubbing = editing
-                    if editing {
-                        scrubProgress = playbackProgress
-                    } else {
-                        tts.seekToProgress(scrubProgress)
-                    }
-                }
-            )
-            .tint(DSColor.textPrimary)
-            .disabled(!canSeek)
-            .accessibilityLabel(localized("朗讀進度"))
-            .accessibilityValue(paragraphText ?? "")
-            HStack {
-                Text(localized("章節開始"))
-                Spacer()
-                Text(localized("章節結尾"))
-            }
-            .font(DSFont.caption)
-            .foregroundStyle(DSColor.textSecondary)
-            .accessibilityHidden(true)
-        }
+        TTSNarrationProgressRow(
+            segmentIndex: tts.currentSegmentIndex,
+            segmentCount: tts.totalSegments,
+            canSeek: canSeek,
+            paragraphText: paragraphText,
+            onSeek: { tts.seekToProgress($0) }
+        )
     }
 
     private var transportRow: some View {
@@ -642,4 +608,74 @@ private extension View {
             self
         }
     }
+}
+
+// MARK: - 朗讀進度
+
+/// Where in the chapter the voice is, and the place to drag it somewhere else.
+struct TTSNarrationProgressRow: View {
+    /// The paragraph being read, and how many the chapter was split into.
+    let segmentIndex: Int
+    let segmentCount: Int
+    /// Seeking needs a chapter that is loaded into segments.
+    let canSeek: Bool
+    /// 「段落 12 / 40」, what VoiceOver reads as the slider's value.
+    let paragraphText: String?
+    /// A place in the chapter, 0–1.
+    let onSeek: (Double) -> Void
+
+    /// The place under the finger while it drags.
+    @State private var scrub: Double?
+
+    private var playbackProgress: Double {
+        guard canSeek else { return 0 }
+        return progress(ofSegment: segmentIndex)
+    }
+
+    private func progress(ofSegment index: Int) -> Double {
+        Double(index) / Double(segmentCount - 1)
+    }
+
+    var body: some View {
+        VStack(spacing: DSSpacing.xs) {
+            ScrubSlider(
+                value: scrub ?? playbackProgress,
+                tint: DSColor.textPrimary,
+                onScrub: { scrub = $0 },
+                onCommit: { progress in
+                    onSeek(progress)
+                    scrub = nil
+                },
+                // A paragraph per swipe, the unit 段落 12 / 40 counts in. The slider's own
+                // step, a tenth of the chapter, skips paragraphs in a long chapter and rounds
+                // back to the same one in a chapter of five or fewer.
+                onIncrement: segmentIndex + 1 < segmentCount
+                    ? { onSeek(progress(ofSegment: segmentIndex + 1)) } : nil,
+                onDecrement: segmentIndex > 0
+                    ? { onSeek(progress(ofSegment: segmentIndex - 1)) } : nil
+            )
+            .disabled(!canSeek)
+            .accessibilityLabel(localized("朗讀進度"))
+            .accessibilityValue(paragraphText ?? "")
+            HStack {
+                Text(localized("章節開始"))
+                Spacer()
+                Text(localized("章節結尾"))
+            }
+            .font(DSFont.caption)
+            .foregroundStyle(DSColor.textSecondary)
+            .accessibilityHidden(true)
+        }
+    }
+}
+
+#Preview("朗讀進度") {
+    TTSNarrationProgressRow(
+        segmentIndex: 11,
+        segmentCount: 40,
+        canSeek: true,
+        paragraphText: String(format: localized("段落 %1$d / %2$d"), 12, 40),
+        onSeek: { _ in }
+    )
+    .padding(DSSpacing.lg)
 }

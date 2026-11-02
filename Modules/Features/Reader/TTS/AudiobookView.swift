@@ -20,10 +20,6 @@ struct AudiobookReaderView: View {
     @Environment(\.verticalSizeClass) private var verticalSizeClass
     @StateObject private var player = AudiobookPlayer.shared
 
-    @State private var sliderValue: Double = 0
-    @State private var isDraggingSlider = false
-    /// The chapter the slider is scrubbing; its position is only meaningful on that chapter.
-    @State private var scrubbedChapter: Int?
     @State private var showChapterList = false
     @State private var showSleepTimer = false
     @State private var showSkipCredits = false
@@ -79,9 +75,6 @@ struct AudiobookReaderView: View {
             }
         }
         .onChanged(of: player.bookId) { _ in updateBaseColor() }
-        .onChanged(of: player.currentTime) { t in
-            if !isDraggingSlider { sliderValue = t }
-        }
         .sheet(item: $sourcePage) { target in
             LegadoReviewBrowserView(target: target) { _ in sourcePage = nil }
                 .presentationDetents([.medium, .large])
@@ -285,37 +278,15 @@ struct AudiobookReaderView: View {
     // MARK: Progress
 
     private var progressSection: some View {
-        VStack(spacing: 4) {
-            Slider(
-                value: $sliderValue,
-                in: 0...max(player.duration, 1),
-                onEditingChanged: { editing in
-                    if editing {
-                        isDraggingSlider = true
-                        scrubbedChapter = player.chapterIndex
-                    } else if isDraggingSlider {
-                        // Seek once per scrub. After a release at the far end the player
-                        // received a seek to the current chapter's end every ~40 ms
-                        // (simulator, CoreMedia log), and each one finished whichever
-                        // chapter was current by then — chapters were skipped.
-                        isDraggingSlider = false
-                        player.seek(to: sliderValue, inChapter: scrubbedChapter)
-                        scrubbedChapter = nil
-                    }
-                }
-            )
-            .tint(.white)
-            .disabled(player.isLoading || player.duration <= 0)
-
-            HStack {
-                Text(Self.formatTime(sliderValue))
-                Spacer()
-                Text(Self.formatTime(player.duration))
-            }
-            .font(DSFont.fixed(size: 12, weight: .medium))
-            .foregroundColor(.white.opacity(0.75))
-        }
-        .padding(.horizontal, DSSpacing.xl)
+        AudiobookProgressSection(
+            currentTime: player.currentTime,
+            duration: player.duration,
+            chapterIndex: player.chapterIndex,
+            onSeek: { player.seek(to: $0, inChapter: $1) },
+            onSkipBackward: { player.skipBackward(15) },
+            onSkipForward: { player.skipForward(15) }
+        )
+        .disabled(player.isLoading || player.duration <= 0)
     }
 
     // MARK: Transport
@@ -453,6 +424,13 @@ struct AudiobookReaderView: View {
     static func rateLabel(_ rate: Float) -> String {
         if rate == rate.rounded() { return "\(Int(rate)).0x" }
         return "\(rate)x"
+    }
+
+    /// The timeline's VoiceOver value: where it is, of how long. Made of the times printed
+    /// under it.
+    static func positionText(_ time: TimeInterval, of duration: TimeInterval) -> String {
+        guard duration > 0 else { return formatTime(time) }
+        return String(format: localized("%1$@，共 %2$@"), formatTime(time), formatTime(duration))
     }
 
     static func formatTime(_ t: TimeInterval) -> String {
@@ -695,3 +673,74 @@ private extension AudiobookPlayMode {
     AudiobookSkipCreditsView(player: .shared)
 }
 #endif
+
+// MARK: - 播放進度
+
+/// The chapter's timeline, and the place to drag it somewhere else.
+struct AudiobookProgressSection: View {
+    let currentTime: TimeInterval
+    let duration: TimeInterval
+    /// The chapter `currentTime` is on.
+    let chapterIndex: Int
+    /// A time on the timeline of the chapter the scrub began on.
+    let onSeek: (TimeInterval, Int?) -> Void
+    /// VoiceOver's swipe down / up: the 15 seconds the buttons beside play skip.
+    let onSkipBackward: () -> Void
+    let onSkipForward: () -> Void
+
+    /// The time under the finger while it drags.
+    @State private var scrubTime: TimeInterval?
+    /// The chapter the scrub began on; its times are only meaningful on that chapter.
+    @State private var scrubbedChapter: Int?
+
+    private var shownTime: TimeInterval { scrubTime ?? currentTime }
+
+    var body: some View {
+        VStack(spacing: 4) {
+            ScrubSlider(
+                value: shownTime,
+                bounds: 0...max(duration, 1),
+                tint: .white,
+                onScrub: { time in
+                    if scrubTime == nil { scrubbedChapter = chapterIndex }
+                    scrubTime = time
+                },
+                onCommit: { time in
+                    // Once per scrub, never per tick: a seek to the chapter's end every ~40 ms
+                    // while the finger rested there finished whichever chapter was current by
+                    // then (simulator, CoreMedia log) — chapters were skipped.
+                    onSeek(time, scrubbedChapter)
+                    scrubTime = nil
+                },
+                onIncrement: onSkipForward,
+                onDecrement: onSkipBackward
+            )
+            .accessibilityLabel(localized("播放進度"))
+            .accessibilityValue(AudiobookReaderView.positionText(shownTime, of: duration))
+
+            HStack {
+                Text(AudiobookReaderView.formatTime(shownTime))
+                Spacer()
+                Text(AudiobookReaderView.formatTime(duration))
+            }
+            .font(DSFont.fixed(size: 12, weight: .medium))
+            .foregroundColor(.white.opacity(0.75))
+            .accessibilityHidden(true)
+        }
+        .padding(.horizontal, DSSpacing.xl)
+    }
+}
+
+#Preview("播放進度") {
+    AudiobookProgressSection(
+        currentTime: 100,
+        duration: 600,
+        chapterIndex: 0,
+        onSeek: { _, _ in },
+        onSkipBackward: {},
+        onSkipForward: {}
+    )
+    .padding(.vertical, DSSpacing.lg)
+    .background(DSColor.background)
+    .environment(\.colorScheme, .dark)
+}

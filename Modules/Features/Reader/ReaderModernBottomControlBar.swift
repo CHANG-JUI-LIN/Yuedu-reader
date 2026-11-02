@@ -123,7 +123,7 @@ struct ReaderModernBottomControlBar: View {
             )
 
             ZStack {
-                ReaderProgressSlider(
+                ScrubSlider(
                     value: sliderProgress,
                     tint: palette.bottomIcon,
                     onScrub: { chapterSliderDraft = $0 },

@@ -6,7 +6,7 @@ import XCTest
 /// to that chapter, but the scrub preview (percent and chapter title) and the slider's value stayed
 /// at the release position for good: iOS 26's slider sends one last `valueChanged` as its thumb
 /// settles after `touchUpInside`, and a SwiftUI `Slider` took that as a new scrub that never ended
-/// (`ReaderProgressSlider`). It showed first on 守燈人手記 jumping between writing-mode segments,
+/// (`ScrubSlider`). It showed first on 守燈人手記 jumping between writing-mode segments,
 /// but a release inside one segment stuck the same way.
 ///
 /// The book is the converted `vertical-zh.azw3` fixture (spine 0 cover, 1 and 2 vertical-rl
