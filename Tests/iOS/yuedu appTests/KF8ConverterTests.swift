@@ -294,16 +294,12 @@ struct KF8ConverterTests {
         // Calibre writes the language without its region (zh-TW becomes zh).
         #expect(converted.language?.prefix(2) == source.language?.prefix(2))
         #expect(converted.chapters.count == book.chapters.count)
-        // The opening animation's preflight. The OPF says nothing of vertical
-        // writing in either book (Calibre's EXTH 525 is not carried over), so it
-        // reads the stylesheets: the source's `html { writing-mode }` rule, the
-        // conversion's `.calibre` class on `<html>`. What the reader itself does is
-        // `verticalInReader`.
-        let convertedFlow = await PublicationSession.inspectOpeningFlow(sourceURL: written.url)
-        let sourceFlow = await PublicationSession.inspectOpeningFlow(sourceURL: Self.source(name))
-        #expect(convertedFlow.isVertical == sourceFlow.isVertical)
-        #expect(convertedFlow.pageProgressionIsRTL == sourceFlow.pageProgressionIsRTL)
-        #expect(convertedFlow.isVertical == (name == "vertical-zh.azw3"))
+        // The opening animation's preflight, by the reader's own rules
+        // (`BookWritingModes`; per-document modes are `BookWritingModesTests`).
+        let convertedIsRTL = await PublicationSession.inspectDirectionIsRTL(sourceURL: written.url)
+        let sourceIsRTL = await PublicationSession.inspectDirectionIsRTL(sourceURL: Self.source(name))
+        #expect(convertedIsRTL == sourceIsRTL)
+        #expect(convertedIsRTL == (name == "vertical-zh.azw3"))
     }
 
     /// Neither book's OPF declares vertical writing, so the reader turns a book

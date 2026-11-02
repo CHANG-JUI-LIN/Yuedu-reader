@@ -413,26 +413,12 @@ struct ReaderCardTransitionMathTests {
     }
 }
 
-@Suite("EPUBOpeningFlow", .serialized)
-struct EPUBOpeningFlowTests {
-    @Test("CSS-only vertical writing mode is detected before opening")
-    func detectsVerticalCSS() {
-        #expect(EPUBOpeningFlow.containsVerticalWritingModeDeclaration(
-            in: "body { writing-mode: vertical-rl; }"
-        ))
-        #expect(EPUBOpeningFlow.containsVerticalWritingModeDeclaration(
-            in: ".book { -webkit-writing-mode: vertical-rl }"
-        ))
-        #expect(!EPUBOpeningFlow.containsVerticalWritingModeDeclaration(
-            in: "body { writing-mode: horizontal-tb; }"
-        ))
-    }
-}
-
 @Suite("ReaderBookOpeningDirection", .serialized)
 struct ReaderBookOpeningDirectionTests {
     @Test("writing direction resolves to the physical spine side")
     func resolvesSpineSide() {
+        #expect(ReaderBookOpeningDirection.resolve(isRTL: true) == .rightSpine)
+        #expect(ReaderBookOpeningDirection.resolve(isRTL: false) == .leftSpine)
         #expect(ReaderBookOpeningDirection.resolve(
             writingMode: .horizontal,
             pageProgressionIsRTL: false

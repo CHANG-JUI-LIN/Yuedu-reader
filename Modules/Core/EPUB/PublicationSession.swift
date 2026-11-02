@@ -542,56 +542,83 @@ final class PublicationSession: Sendable {
         PublicationSessionRegistry.shared.unregister(id: id)
     }
 
-    /// Reads only `container.xml` and the OPF package metadata. This avoids
-    /// constructing a full Readium publication merely to choose the opening
-    /// animation direction at tap time.
-    static func inspectOpeningFlow(sourceURL: URL) async -> EPUBOpeningFlow {
+    /// Whether the book reads right to left, for the shelf's opening animation, before the reader opens
+    /// it. Reads `container.xml`, the OPF and the stylesheets without constructing a Readium publication,
+    /// and parses the leading documents only when the OPF declares no page progression. Same rules as the
+    /// reader's (`BookWritingModes`).
+    static func inspectDirectionIsRTL(sourceURL: URL) async -> Bool {
         do {
             let package = try await retrievePackage(sourceURL: sourceURL, httpClient: DefaultHTTPClient())
-            let metadata = parseOPFMetadataXML(package.resources.opfXML, opfPath: package.resources.opfPath)
-            let cssDeclaresVertical = metadata.writingMode != .verticalRL
-                ? try await packageDeclaresVerticalWritingMode(resources: package.resources, metadata: metadata)
-                : false
-            return EPUBOpeningFlow(
-                isVertical: metadata.writingMode == .verticalRL || cssDeclaresVertical,
-                pageProgressionIsRTL: metadata.pageProgressionDirection == .rtl
+            let resources = package.resources
+            let metadata = parseOPFMetadataXML(resources.opfXML, opfPath: resources.opfPath)
+            let facts = await writingModeFacts(
+                resources: resources, writingMode: metadata.writingMode,
+                pageProgression: metadata.pageProgressionDirection,
+                manifestItemsByID: metadata.manifestItemsByID, spineReferences: metadata.spineReferences
             )
+            switch facts.pageProgression {
+            case .rtl: return true
+            case .ltr: return false
+            case .default: break
+            }
+            let provider = PackageResourcesBookResourceProvider(
+                resources: resources, spineReferences: metadata.spineReferences
+            )
+            let modes = await BookWritingModes.resolve(
+                facts: facts, spineIndex: { provider.chapterIndex(for: $0) },
+                styleInput: { try await provider.cssFrontendInput(forChapter: $0) }
+            )
+            return modes.direction.isRTL
         } catch {
-            AppLogger.render("EPUB opening-flow inspection failed", error: error)
+            AppLogger.render("EPUB direction inspection failed", error: error)
             // This preflight only chooses an animation. If the file cannot be
             // inspected, keep the default animation; the real open still throws
             // the read/parse error. Remove when animation no longer needs preflight.
-            return EPUBOpeningFlow(isVertical: false, pageProgressionIsRTL: false)
+            return false
         }
     }
 
-    /// Detects the CSS-only vertical EPUBs that do not declare their writing
-    /// mode in OPF metadata. Stylesheets are cheap and authoritative for this
-    /// reader; a few leading spine documents cover inline body declarations
-    /// without expanding every chapter at tap time.
-    private static func packageDeclaresVerticalWritingMode(
-        resources: EPUBPackageResources,
-        metadata: OPFMetadataResult
-    ) async throws -> Bool {
+    /// What the package says about writing modes (`BookWritingModeFacts`).
+    func writingModeFacts() async -> BookWritingModeFacts {
+        await Self.writingModeFacts(
+            resources: packageResources, writingMode: epubWritingMode, pageProgression: pageProgressionDirection,
+            manifestItemsByID: opfManifestItemsByID, spineReferences: opfSpineReferences
+        )
+    }
 
-        let stylesheetHrefs = metadata.manifestItemsByID.values
+    /// Reads every manifest stylesheet and the first three linear spine documents for a `writing-mode`
+    /// declaration of any value. Stylesheets are cheap and a few leading documents cover inline body
+    /// declarations without expanding every chapter at tap time. A file that cannot be read declares
+    /// nothing, as it lays nothing out: stylesheet ingestion skips it too.
+    private static func writingModeFacts(
+        resources: EPUBPackageResources,
+        writingMode: EPUBWritingMode,
+        pageProgression: EPUBPageProgressionDirection,
+        manifestItemsByID: [String: EPUBManifestReference],
+        spineReferences: [EPUBSpineReference]
+    ) async -> BookWritingModeFacts {
+        let stylesheetHrefs = manifestItemsByID.values
             .filter { $0.mediaType?.lowercased() == "text/css" }
             .map(\.href)
             .sorted()
-        let leadingSpineHrefs = metadata.spineReferences
-            .filter(\.linear)
-            .prefix(3)
-            .map(\.href)
-
+        let leadingSpineHrefs = spineReferences.filter(\.linear).prefix(3).map(\.href)
+        var declares = false
         var inspected = Set<String>()
-        for href in stylesheetHrefs + leadingSpineHrefs {
+        for href in stylesheetHrefs + leadingSpineHrefs where !declares {
             guard inspected.insert(href).inserted else { continue }
-            if let source = try await resources.optionalText(href),
-               EPUBOpeningFlow.containsVerticalWritingModeDeclaration(in: source) {
-                return true
+            do {
+                if let source = try await resources.optionalText(href) {
+                    declares = BookWritingModeFacts.containsWritingModeDeclaration(in: source)
+                }
+            } catch {
+                AppLogger.parse("Writing mode: a stylesheet or leading document could not be read",
+                                error: error, context: ["href": href])
             }
         }
-        return false
+        return BookWritingModeFacts(
+            opfWritingMode: writingMode, pageProgression: pageProgression,
+            declaresWritingModeInCSS: declares, leadingDocumentHrefs: Array(leadingSpineHrefs)
+        )
     }
 
     static func open(sourceURL: URL, cacheDirectory: URL? = nil) async throws -> PublicationSession {

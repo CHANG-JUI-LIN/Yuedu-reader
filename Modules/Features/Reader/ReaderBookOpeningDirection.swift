@@ -19,6 +19,11 @@ enum ReaderBookOpeningDirection: Equatable {
     case leftSpine
     case rightSpine
 
+    /// 書由右往左讀（`BookDirection.isRTL`）＝書脊在右。
+    static func resolve(isRTL: Bool) -> ReaderBookOpeningDirection {
+        isRTL ? .rightSpine : .leftSpine
+    }
+
     /// 依書本寫作模式與 EPUB 方向決定開書方向。
     static func resolve(
         writingMode: ReaderWritingMode,

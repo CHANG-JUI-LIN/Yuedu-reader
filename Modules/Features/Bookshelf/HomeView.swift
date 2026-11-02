@@ -481,13 +481,10 @@ struct HomeView: View {
             let url = store.localEPUBURL(for: book)
             AppLogger.info("⟐ resolveOpeningDirection EPUB url=\(url.lastPathComponent) starting inspect")
             let t0 = CACurrentMediaTime()
-            let flow = await PublicationSession.inspectOpeningFlow(sourceURL: url)
-            let direction = ReaderBookOpeningDirection.resolve(
-                writingMode: flow.isVertical ? .verticalRTL : .horizontal,
-                pageProgressionIsRTL: flow.pageProgressionIsRTL
-            )
+            let isRTL = await PublicationSession.inspectDirectionIsRTL(sourceURL: url)
+            let direction = ReaderBookOpeningDirection.resolve(isRTL: isRTL)
             let elapsed = (CACurrentMediaTime() - t0) * 1000
-            AppLogger.info("⟐ resolveOpeningDirection EPUB done elapsedMs=\(Int(elapsed)) isVertical=\(flow.isVertical) pageProgressionRTL=\(flow.pageProgressionIsRTL) direction=\(direction)")
+            AppLogger.info("⟐ resolveOpeningDirection EPUB done elapsedMs=\(Int(elapsed)) isRTL=\(isRTL) direction=\(direction)")
             return direction
         }
 
