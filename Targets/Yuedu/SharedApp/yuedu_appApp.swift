@@ -330,13 +330,13 @@ struct yuedu_appApp: App {
                     syncThenRefreshChapters(syncReason: GlobalSettings.shared.iCloudAutoSync ? "launch" : nil)
                 }
         }
-        // On the scene, not on the window's content. A controller UIKit presents full screen
-        // over the content — the reader an Open In book opens in (`ImportedBookPresentation`)
-        // — takes the content's hosting view out of the window, and SwiftUI does not update a
-        // view out of the window: on the content, this never heard the app reach the
-        // background for as long as that reader was up. (Under a SwiftUI `fullScreenCover` the
-        // content kept updating.) The scene's first `.active` still comes after the content's
-        // `onAppear` (iOS 17.5 and 27.1, 2026-11-02), so what `onAppear` binds is bound by then.
+        // On the scene, not on the window's content: SwiftUI does not update a view out of the
+        // window, and UIKit's `.fullScreen` took the content out of it — on the content, this
+        // never heard the app reach the background while the Open In reader was up. The app's
+        // full-screen presentations now leave the content in place (`coversFullScreen()`), but
+        // what the app does on leaving it does not hang on that. The scene's first `.active`
+        // still comes after the content's `onAppear` (iOS 17.5 and 27.1, 2026-11-02), so what
+        // `onAppear` binds is bound by then.
         .onChange(of: scenePhase) { _, newPhase in
             MainThreadMonitor.shared.notePhase(String(describing: newPhase))
             // Named so a stall on the way into the background says whether this

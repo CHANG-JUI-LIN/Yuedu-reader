@@ -59,6 +59,8 @@ struct ImportedBookPresentationTests {
         #expect(root.presentedViewController === existing)
         #expect(existing.presentedViewController === destination)
         #expect(completed == requestID)
+        // Over what was there, which stays in the window (`CoversFullScreenTests`).
+        #expect(destination.modalPresentationStyle == .overFullScreen)
     }
 
     @Test("A theme arriving during a book transition keeps each request's acknowledgement")

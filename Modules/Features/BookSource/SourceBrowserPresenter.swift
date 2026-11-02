@@ -50,7 +50,7 @@ enum SourceBrowserPresenter {
                 .followsScenePhase(of: scene)
         )
         box.host = host
-        host.modalPresentationStyle = .fullScreen
+        host.coversFullScreen()
         topVC.present(host, animated: true)
     }
 
@@ -128,7 +128,7 @@ enum SourceBrowserPresenter {
             // Phone-oriented login pages need the whole of a wide window (iPad, an unfolded
             // iPhone Duo); a nested form sheet can clip the submit controls below its fixed height.
             if topVC.traitCollection.horizontalSizeClass == .regular {
-                hostVC.modalPresentationStyle = .fullScreen
+                hostVC.coversFullScreen()
             }
         case .captcha(let request):
             hostVC = UIHostingController(

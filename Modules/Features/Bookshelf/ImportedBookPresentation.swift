@@ -138,7 +138,7 @@ final class ImportedBookPresentationController: UIViewController {
         case .destination(let makeDestination):
             guard let scene = window.windowScene, let destination = makeDestination(scene) else { return }
             presentingID = requestID
-            destination.modalPresentationStyle = .fullScreen
+            destination.coversFullScreen()
             presenter.present(destination, animated: true) { [weak self] in
                 guard let self else { return }
                 self.presentingID = nil
