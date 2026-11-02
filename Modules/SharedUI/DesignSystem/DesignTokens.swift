@@ -1009,6 +1009,15 @@ enum DSLayout {
     static let videoEpisodeRangeSelectedFillOpacity: Double = 0.24
     /// Posters in a video detail page's wall of related works: three rows of three.
     static let videoPosterWallCount = 9
+    /// The share of the picture's width, at each side, where an up-down drag sets the
+    /// brightness (left) or the volume (right) — plezy's edge tracker.
+    static let videoEdgeGestureFraction: CGFloat = 1.0 / 3
+    /// Seconds a drag across the picture's whole width scrubs.
+    static let videoScrubSecondsPerWidth: Double = 120
+    /// How far a pinch has to go before it fills the screen (out) or fits the picture (in).
+    static let videoPinchThreshold: CGFloat = 0.15
+    /// The brightness / volume level shown while an edge drag sets it.
+    static let videoLevelIndicatorWidth: CGFloat = 160
 }
 
 // MARK: - Design System: Corner Radius Tokens
@@ -1097,6 +1106,10 @@ enum DSAnimation {
     static let videoControlsAutoHide: Duration = .seconds(4)
     /// How long a press on the picture lasts before it plays faster while held (legado-E).
     static let videoLongPressSeconds: Double = 0.5
+    /// A swipe across the picture this quick jumps instead of scrubbing (Swiftfin).
+    static let videoFlickSeconds: TimeInterval = 0.25
+    /// The brightness / volume level stays this long after the drag or the button that set it.
+    static let videoLevelIndicatorLinger: Duration = .seconds(1)
 }
 
 // MARK: - View Extensions
