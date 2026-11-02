@@ -28,13 +28,10 @@ struct ReaderModernBookCard: View {
     let actions: [ReaderSecondaryAction]
     let palette: ReaderChromePalette
 
-    /// Width of the reader the popover hangs over; the card insets from it rather than
-    /// taking a fixed width. See `DSLayout.readerModernBookCardWidth(viewportWidth:)`.
-    let availableWidth: CGFloat
-
     /// 搜尋書籍 — always the first cell of the action grid. Book-scoped actions come and
     /// go with the book and 自定義's roster; whole-book search applies to every book, so
-    /// it is its own entry rather than a `ReaderSecondaryAction`.
+    /// it is its own entry rather than a `ReaderSecondaryAction` — though its icon is
+    /// still 自定義's `ReaderChromeActionItem.search`.
     let onOpenSearch: () -> Void
 
     let onOpenDetail: (() -> Void)?
@@ -47,7 +44,11 @@ struct ReaderModernBookCard: View {
             actionBlock
         }
         .padding(DSSpacing.md)
-        .frame(width: DSLayout.readerModernBookCardWidth(viewportWidth: availableWidth))
+        // As wide as the popover lets it be; see `DSLayout.readerModernBookCardMaxWidth`.
+        .frame(
+            idealWidth: DSLayout.readerModernBookCardMaxWidth,
+            maxWidth: DSLayout.readerModernBookCardMaxWidth
+        )
         .foregroundStyle(palette.panelText)
     }
 
@@ -137,8 +138,8 @@ struct ReaderModernBookCard: View {
     // MARK: - Actions
 
     /// One cell of the action block. 搜尋 is not a `ReaderSecondaryAction` — it has no
-    /// book-scoped state and no entry in 自定義's icon roster — so the two sources are
-    /// flattened into this before layout rather than branched inside it.
+    /// book-scoped state — so the two sources are flattened into this before layout
+    /// rather than branched inside it.
     private struct ActionCell: Identifiable {
         let id: String
         let label: String
@@ -155,8 +156,8 @@ struct ReaderModernBookCard: View {
                 id: "search",
                 label: localized("Search Book"),
                 isLocked: false,
-                item: nil,
-                fallbackIcon: "magnifyingglass",
+                item: .search,
+                fallbackIcon: ReaderChromeActionItem.search.defaultSystemImage,
                 action: onOpenSearch
             )
         ]
@@ -290,7 +291,6 @@ struct ReaderModernBookCard: View {
             ReaderSecondaryAction(id: .sourceLogin, icon: "person.crop.circle", label: "來源配置登入", action: {})
         ],
         palette: ReaderChromePalette(theme: .sepia, settings: .shared),
-        availableWidth: 440,
         onOpenSearch: {},
         onOpenDetail: {}
     )

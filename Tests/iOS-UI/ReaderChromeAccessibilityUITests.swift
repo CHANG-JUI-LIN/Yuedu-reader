@@ -215,6 +215,48 @@ final class ReaderChromeAccessibilityUITests: XCTestCase {
         XCTAssertFalse(translation.exists, app.debugDescription)
     }
 
+    /// Feedback #43: the book card hung off-centre — 22pt from the left edge, 10pt from the right
+    /// on a 414pt phone — because it was narrower than the popover's room and slid against the
+    /// trailing margin. Its two margins must match, and 搜尋書籍 keeps its name whatever icon a
+    /// theme gives it.
+    @MainActor
+    func testBookCardHangsCentredWithSearchFirst() throws {
+        let app = try launch()
+        try openFromLibrary(app)
+        let text = app.descendants(matching: .any)
+            .matching(NSPredicate(format: "label CONTAINS %@", "測試閱讀器工具列")).firstMatch
+        XCTAssertTrue(text.waitForExistence(timeout: 60), app.debugDescription)
+        try showChrome(app)
+        app.buttons["書本選單"].firstMatch.tap()
+
+        let details = app.buttons["reader_book_card_details"].firstMatch
+        XCTAssertTrue(details.waitForExistence(timeout: 5), app.debugDescription)
+        XCTAssertTrue(app.buttons["搜尋書籍"].firstMatch.exists, app.debugDescription)
+        let screenshot = XCTAttachment(screenshot: app.screenshot())
+        screenshot.name = "書卡"
+        screenshot.lifetime = .keepAlways
+        add(screenshot)
+
+        let tree = XCTAttachment(string: app.debugDescription)
+        tree.name = "書卡 accessibility tree"
+        tree.lifetime = .keepAlways
+        add(tree)
+
+        let window = app.windows.firstMatch.frame
+        let leading = details.frame.minX - window.minX
+        let trailing = window.maxX - details.frame.maxX
+        XCTAssertEqual(leading, trailing, accuracy: 1, "leading \(leading), trailing \(trailing)")
+
+        // Equal margins are not enough: on iOS 17.5 the card was wider than the popover and lost
+        // the same 9.5pt off each side, so its 12pt padding (`DSSpacing.md`) showed as 3pt. The
+        // identity block has to keep that padding to the popover's edges.
+        let popover = app.popovers.firstMatch
+        XCTAssertTrue(popover.exists, app.debugDescription)
+        let inside = (details.frame.minX - popover.frame.minX, popover.frame.maxX - details.frame.maxX)
+        XCTAssertGreaterThanOrEqual(inside.0, 11.5, "details \(details.frame), popover \(popover.frame)")
+        XCTAssertGreaterThanOrEqual(inside.1, 11.5, "details \(details.frame), popover \(popover.frame)")
+    }
+
     /// #84, #102, #104, #105: this fixture's source does not listen for events, and its book
     /// page's 更多 still offers 開啟網頁 and both copies; the page it opens copies its URL; the
     /// reader's 更多 offers 複製正文網址 and 調試正文, which opens 調試規則 on 正文 with the

@@ -88,8 +88,12 @@ enum ReaderChromeToolItem: String, CaseIterable, Codable, Hashable, Identifiable
 
 /// The book-scoped actions: in the card behind the cover, except the AI ones, which are
 /// in the bottom bar's 更多 (`isInMoreMenu`). Backed by `ReaderSecondaryAction.ID`, which
-/// is what `ReaderView` actually builds the live lists from.
+/// is what `ReaderView` actually builds the live lists from — all but 搜尋書籍, the card's
+/// first cell, which applies to every book and is not a `ReaderSecondaryAction`.
 enum ReaderChromeActionItem: String, CaseIterable, Codable, Hashable, Identifiable, ReaderChromeIconItem {
+    /// Listed first, the way the card draws it. Its icon was the one in the card a theme
+    /// could not replace (feedback #43).
+    case search
     case refresh
     case changeSource
     case download
@@ -104,12 +108,17 @@ enum ReaderChromeActionItem: String, CaseIterable, Codable, Hashable, Identifiab
     var isInMoreMenu: Bool {
         switch self {
         case .aiAssistant, .translation: return true
-        case .refresh, .changeSource, .download, .openWebPage: return false
+        case .search, .refresh, .changeSource, .download, .openWebPage: return false
         }
     }
 
+    /// 搜尋書籍 only changes its icon. It has always been in the card, and hiding it would
+    /// leave 現代 with no way into whole-book search.
+    var isAlwaysVisible: Bool { self == .search }
+
     var titleKey: String {
         switch self {
+        case .search: return "搜尋書籍"
         case .refresh: return "刷新"
         case .changeSource: return "換源"
         case .download: return "下載"
@@ -121,6 +130,7 @@ enum ReaderChromeActionItem: String, CaseIterable, Codable, Hashable, Identifiab
 
     var defaultSystemImage: String {
         switch self {
+        case .search: return "magnifyingglass"
         case .refresh: return "arrow.clockwise"
         case .changeSource: return "arrow.left.and.right"
         case .download: return "arrow.down.circle"

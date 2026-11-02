@@ -824,22 +824,16 @@ enum DSLayout {
     /// Diameter of 現代's cover button in the reader toolbar. The cover fills it
     /// as a circle, so this is the control size, not an inset thumbnail size.
     static let readerModernCoverButtonSize: CGFloat = 34
-    /// How close to a screen edge UIKit lets a popover sit: `popoverLayoutMargins`,
-    /// documented as 10pt along each edge.
-    static let popoverScreenMargin: CGFloat = 10
-    /// Width of 現代's book-card popover, from the width of the reader under it.
-    /// Popovers size to their content, so the card needs an explicit width or a long
-    /// book name stretches it; a *fixed* one was the other failure — 320pt on a 440pt
-    /// phone left a narrow slip hanging off the cover thumbnail.
+    /// Widest 現代's book-card popover grows: on an iPad it would otherwise become a band
+    /// across the screen. Below this the card takes whatever width the popover is given.
     ///
-    /// Exactly the width a popover may take, so it has nowhere to slide. The card hangs
-    /// off the cover at the trailing edge, and a popover centres on its anchor until it
-    /// meets a margin: 32pt narrower, it was pushed against the right margin and sat
-    /// 10pt from that edge and 22pt from the other. The cap stops an iPad popover from
-    /// growing into a band across the screen.
-    static func readerModernBookCardWidth(viewportWidth: CGFloat) -> CGFloat {
-        min(max(viewportWidth - popoverScreenMargin * 2, 280), readableNarrowWidth)
-    }
+    /// It asks for exactly this much and lets UIKit cut it down, rather than computing the
+    /// room from the reader's width. A popover hanging off the trailing cover centres on it
+    /// until it meets a screen margin, so a card narrower than the room slid against the
+    /// right margin (10pt there, 22pt on the left — feedback #43); and the margin is not one
+    /// number to subtract — 10pt on iOS 26 and later, 19.5pt on iOS 17 — so a card sized
+    /// from 10pt was wider than the iOS 17 popover and lost 9.5pt of padding off each side.
+    static let readerModernBookCardMaxWidth: CGFloat = readableNarrowWidth
     /// The cover inside that card, at the 3:4 the generated covers are drawn to.
     static let readerModernBookCardCoverWidth: CGFloat = 72
     static let readerModernBookCardCoverHeight: CGFloat = 96

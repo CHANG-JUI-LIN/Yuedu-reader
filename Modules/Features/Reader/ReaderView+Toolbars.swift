@@ -131,8 +131,9 @@ extension ReaderView {
         .buttonStyle(.plain)
         .accessibilityLabel(localized("書本選單"))
         // On the cover, not on 書名: a popover anchored to the bar's principal item ran
-        // off the trailing edge of the screen on iOS 27. Its width is what keeps the
-        // two side margins equal; see `DSLayout.readerModernBookCardWidth`.
+        // off the trailing edge of the screen on iOS 27. The card filling the popover's
+        // whole width is what keeps the two side margins equal; see
+        // `DSLayout.readerModernBookCardMaxWidth`.
         .popover(isPresented: $showModernBookCard, arrowEdge: .bottom) {
             modernBookCard
                 // Keep it a popover on iPhone too — the card belongs to the cover it
@@ -235,7 +236,6 @@ extension ReaderView {
                 }
             },
             palette: modernPalette,
-            availableWidth: readerViewportSize.width,
             // Same deferral as the actions above: `ReaderBookSearchView` is a sheet, and a
             // sheet asked for while the popover is still dismissing never appears.
             onOpenSearch: {

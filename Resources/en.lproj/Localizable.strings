@@ -3345,7 +3345,6 @@
 "「%@」已設為目前的外觀主題。" = "“%@” is now your appearance theme.";
 "閱讀背景圖無法讀取，已略過。" = "The reading background image couldn't be read and was skipped.";
 "閱讀工具列的「%@」圖示在本 App 沒有對應的按鈕，已略過。" = "The “%@” icon in the reading toolbar has no matching button in this app and was skipped.";
-"書內搜尋" = "Search in Book";
 "%d 項跟隨主題" = "%d items follow theme";
 "上下邊距同時是頁首頁尾的容身空間，改動不會移動頁首頁尾本身。" = "The top and bottom margins also contain the header and footer. Changing them doesn't move the header or footer.";
 "介面" = "Interface";

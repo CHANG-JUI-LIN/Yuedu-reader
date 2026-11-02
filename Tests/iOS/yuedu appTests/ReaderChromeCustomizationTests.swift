@@ -116,6 +116,36 @@ struct ReaderChromeCustomizationTests {
         #expect(settings.readerChromeHiddenIDs.isEmpty)
     }
 
+    @Test("搜尋書籍 takes an imported icon but can never be hidden (feedback #43)")
+    func searchIsCustomizableButAlwaysVisible() throws {
+        let settings = GlobalSettings.shared
+        Self.resetAll(settings)
+        defer { Self.resetAll(settings) }
+
+        #expect(ReaderChromeActionItem.search.storageID == "action.search")
+        #expect(ReaderChromeActionItem.search.defaultSystemImage == "magnifyingglass")
+        #expect(!ReaderChromeActionItem.search.isInMoreMenu)
+        // First, the way the card draws it.
+        #expect(ReaderChromeActionItem.allCases.first == .search)
+
+        settings.setReaderChromeItem(ReaderChromeActionItem.search, visible: false)
+        #expect(settings.isReaderChromeItemVisible(ReaderChromeActionItem.search))
+        #expect(settings.readerChromeHiddenIDs.isEmpty)
+
+        let png = try #require(UIGraphicsImageRenderer(size: CGSize(width: 8, height: 8))
+            .image { context in
+                UIColor.red.setFill()
+                context.fill(CGRect(x: 0, y: 0, width: 8, height: 8))
+            }
+            .pngData())
+        try settings.importReaderChromeIcon(
+            data: png,
+            originalFileName: "search.png",
+            item: ReaderChromeActionItem.search
+        )
+        #expect(settings.readerChromeIconImage(for: ReaderChromeActionItem.search) != nil)
+    }
+
     @Test("hiding an action drops it from the live book-action list")
     func hidingActionFiltersTheLiveList() {
         let settings = GlobalSettings.shared

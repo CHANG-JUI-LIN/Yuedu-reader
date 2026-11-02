@@ -157,15 +157,16 @@ struct QiThemeRealPackTests {
         #expect(card.light.fillHex == 0xFFFFFF)
         #expect(abs(card.light.fillOpacity - 0.85) < 0.0001)
 
-        // Three of its four toolbar icons have a button here; search does not.
+        // All four of its toolbar icons have a button here, search included.
         #expect(Set(result.readerChromeIcons.map(\.itemID)) == [
             ReaderChromeToolItem.tableOfContents.storageID,
             ReaderChromeToolItem.settings.storageID,
             ReaderChromeToolItem.listen.storageID,
+            ReaderChromeActionItem.search.storageID,
         ])
-        #expect(result.notes.contains(String(
+        #expect(!result.notes.contains(String(
             format: localized("閱讀工具列的「%@」圖示在本 App 沒有對應的按鈕，已略過。"),
-            localized("書內搜尋")
+            "search"
         )))
     }
 }

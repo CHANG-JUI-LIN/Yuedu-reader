@@ -278,7 +278,7 @@ enum QiThemeImporter {
             guard let itemID = readerChromeItemID(for: item) else {
                 notes.append(String(
                     format: localized("閱讀工具列的「%@」圖示在本 App 沒有對應的按鈕，已略過。"),
-                    readerToolbarItemName(item)
+                    item
                 ))
                 continue
             }
@@ -506,23 +506,15 @@ enum QiThemeImporter {
     /// QiReader's reading-toolbar functions against our reader buttons, as the
     /// `ReaderChromeToolItem` / `ReaderChromeActionItem` storage ids — spelled out so
     /// this layer does not reach into the reader's feature code; a test pins them to the
-    /// real items. `search` has no button of its own here: in-book search opens from
-    /// the book card, so its icon has nowhere to go.
+    /// real items. `search` is their in-book search, which here is the book card's
+    /// 搜尋書籍 cell.
     static func readerChromeItemID(for qiItem: String) -> String? {
         switch qiItem {
         case "chapterList": return "tool.tableOfContents"
         case "settings": return "tool.settings"
         case "speech": return "tool.listen"
+        case "search": return "action.search"
         default: return nil
-        }
-    }
-
-    /// How a skipped toolbar function is named in the note — the user never saw
-    /// QiReader's key, only the button.
-    private static func readerToolbarItemName(_ qiItem: String) -> String {
-        switch qiItem {
-        case "search": return localized("書內搜尋")
-        default: return qiItem
         }
     }
 

@@ -280,7 +280,7 @@ struct QiThemeImporterTests {
                 "chapterList": ["type": "custom", "imageFileName": "icons/rtb_chapterList.png"],
                 "settings": ["type": "custom", "imageFileName": "icons/rtb_settings.png"],
                 "speech": ["type": "custom", "imageFileName": "icons/rtb_speech.png"],
-                // No button of ours opens search, so this one is reported and dropped.
+                // Their in-book search is the book card's 搜尋書籍 cell here.
                 "search": ["type": "custom", "imageFileName": "icons/rtb_search.png"],
             ],
         ]
@@ -297,10 +297,11 @@ struct QiThemeImporterTests {
             ReaderChromeToolItem.tableOfContents.storageID,
             ReaderChromeToolItem.settings.storageID,
             ReaderChromeToolItem.listen.storageID,
+            ReaderChromeActionItem.search.storageID,
         ])
-        #expect(result.notes.contains(String(
+        #expect(!result.notes.contains(String(
             format: localized("閱讀工具列的「%@」圖示在本 App 沒有對應的按鈕，已略過。"),
-            localized("書內搜尋")
+            "search"
         )))
     }
 
@@ -312,7 +313,8 @@ struct QiThemeImporterTests {
             == ReaderChromeToolItem.settings.storageID)
         #expect(QiThemeImporter.readerChromeItemID(for: "speech")
             == ReaderChromeToolItem.listen.storageID)
-        #expect(QiThemeImporter.readerChromeItemID(for: "search") == nil)
+        #expect(QiThemeImporter.readerChromeItemID(for: "search")
+            == ReaderChromeActionItem.search.storageID)
     }
 
     @Test("a colour-only card background keeps the pack's opacity on the colour")
