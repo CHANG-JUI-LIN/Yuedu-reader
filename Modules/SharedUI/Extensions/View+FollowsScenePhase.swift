@@ -10,9 +10,10 @@ extension View {
     /// dark meanwhile. The same reader under a SwiftUI `fullScreenCover` saw every change.
     ///
     /// A bridge, not a second source: the phase is the scene's own, the one SwiftUI derives
-    /// for the trees it hosts. Delete it when the Open In reader is presented by SwiftUI, or
-    /// once SwiftUI hands hosts the phase itself — remove the call, send the app to the
-    /// background with an Open In reader up, and look for the reader's `scenePhase=` line.
+    /// for the trees it hosts. Delete it when its callers — the Open In reader, and the player
+    /// a source's `java.openVideoPlayer` opens (`SourceBrowserPresenter`) — are presented by
+    /// SwiftUI, or once SwiftUI hands hosts the phase itself: remove the call, send the app to
+    /// the background with an Open In reader up, and look for the reader's `scenePhase=` line.
     func followsScenePhase(of scene: UIWindowScene) -> some View {
         modifier(FollowsScenePhase(scene: scene))
     }

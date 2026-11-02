@@ -34,17 +34,22 @@ enum SourceBrowserPresenter {
     /// `java.openVideoPlayer`: the app's video player, full screen, playing at once — legado-E's
     /// `VideoPlayerActivity`. Not queued with the sheets: nothing waits on it.
     static func presentVideo(_ request: URLRequest, title: String) {
-        guard let url = request.url, let topVC = BookSourceFormLoginView.topViewController() else {
+        guard let url = request.url, let topVC = BookSourceFormLoginView.topViewController(),
+              let scene = topVC.view.window?.windowScene else {
             AppLogger.parse("⟐ openVideoPlayer: nowhere to present", context: [:])
             return
         }
         let stream = VideoStream(url: url, headers: request.allHTTPHeaderFields ?? [:])
         // Hosted outside the app's view tree, so without its `BookStore`: the one-link player
-        // reads none, and a change that makes it read one must hand it over here.
-        let host = UIHostingController<VideoPlayerView?>(rootView: nil)
-        host.rootView = VideoPlayerView(content: .link(stream, title: title)) { [weak host] in
-            host?.dismiss(animated: true)
-        }
+        // reads none, and a change that makes it read one must hand it over here. Nor its
+        // `scenePhase`, which the player saves its place by on leaving the app.
+        final class HostBox { weak var host: UIViewController? }
+        let box = HostBox()
+        let host = UIHostingController(rootView:
+            VideoPlayerView(content: .link(stream, title: title)) { box.host?.dismiss(animated: true) }
+                .followsScenePhase(of: scene)
+        )
+        box.host = host
         host.modalPresentationStyle = .fullScreen
         topVC.present(host, animated: true)
     }

@@ -101,13 +101,7 @@ struct ImportedBookPresentationTests {
     @Test("A tree UIKit hosts takes its scene's phase: where the scene is, then every change")
     func followsScenePhase() async throws {
         let scene = try #require(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first)
-        // Not always active: a fresh simulator holds the test host inactive behind RSS's
-        // notification-permission alert.
-        let current: ScenePhase = switch scene.activationState {
-        case .foregroundActive: .active
-        case .foregroundInactive: .inactive
-        default: .background
-        }
+        let current = ScenePhase(of: scene)
         let log = ScenePhaseLog()
         let window = UIWindow(windowScene: scene)
         window.rootViewController = UIHostingController(
@@ -119,17 +113,54 @@ struct ImportedBookPresentationTests {
         // it came back.
         #expect(log.appeared == current)
         #expect(log.changes.isEmpty)
-        let cycle: [(Notification.Name, ScenePhase)] = [
-            (UIScene.willDeactivateNotification, .inactive),
-            (UIScene.didEnterBackgroundNotification, .background),
-            (UIScene.willEnterForegroundNotification, .inactive),
-            (UIScene.didActivateNotification, .active),
-        ]
-        let steps = (current == .active ? [] : [(UIScene.didActivateNotification, ScenePhase.active)]) + cycle
-        for (name, _) in steps {
-            await log.update { NotificationCenter.default.post(name: name, object: scene) }
+        let expected = await log.tripOutAndBack(of: scene, from: current)
+        #expect(log.changes == expected)
+    }
+}
+
+/// A reader under an image preview missed every trip out of the app: `.fullScreen` took it
+/// out of the window, where SwiftUI updates nothing, and it heard nothing after the preview
+/// closed either. Covered the way SwiftUI's own `fullScreenCover` covers
+/// (`coversFullScreen()`), what is underneath stays in the window.
+@Suite("Full-screen covers", .serialized)
+@MainActor
+struct CoversFullScreenTests {
+    @Test("The tree under an image preview keeps hearing its scene")
+    func underImagePreview() async throws {
+        let scene = try #require(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first)
+        let current = ScenePhase(of: scene)
+        let log = ScenePhaseLog()
+        let window = UIWindow(windowScene: scene)
+        let root = UIHostingController(rootView: ScenePhaseProbe(log: log).followsScenePhase(of: scene))
+        window.rootViewController = root
+        defer { window.isHidden = true; window.rootViewController = nil }
+        await log.update { window.makeKeyAndVisible() }
+        let image = UIGraphicsImageRenderer(size: CGSize(width: 4, height: 4)).image { _ in }
+        let preview = CoreTextImagePreviewController(
+            attachment: .init(rect: CGRect(x: 0, y: 0, width: 4, height: 4), image: image, opacity: 1)
+        )
+        await withCheckedContinuation { continuation in
+            root.present(preview, animated: false) { continuation.resume() }
         }
-        #expect(log.changes == steps.map(\.1))
+        #expect(root.presentedViewController === preview)
+        #expect(root.view.window === window)
+        let expected = await log.tripOutAndBack(of: scene, from: current)
+        #expect(log.changes == expected)
+        await withCheckedContinuation { continuation in
+            root.dismiss(animated: false) { continuation.resume() }
+        }
+    }
+}
+
+private extension ScenePhase {
+    /// Not always active: a fresh simulator holds the test host inactive behind RSS's
+    /// notification-permission alert.
+    init(of scene: UIWindowScene) {
+        self = switch scene.activationState {
+        case .foregroundActive: .active
+        case .foregroundInactive: .inactive
+        default: .background
+        }
     }
 }
 
@@ -147,6 +178,22 @@ private final class ScenePhaseLog {
     func record(changed phase: ScenePhase) {
         changes.append(phase)
         updated?()
+    }
+
+    /// Posts `scene` out of the app and back, from `current`, one step at a time, and returns
+    /// the changes the probe should have seen.
+    func tripOutAndBack(of scene: UIWindowScene, from current: ScenePhase) async -> [ScenePhase] {
+        let cycle: [(Notification.Name, ScenePhase)] = [
+            (UIScene.willDeactivateNotification, .inactive),
+            (UIScene.didEnterBackgroundNotification, .background),
+            (UIScene.willEnterForegroundNotification, .inactive),
+            (UIScene.didActivateNotification, .active),
+        ]
+        let steps = (current == .active ? [] : [(UIScene.didActivateNotification, ScenePhase.active)]) + cycle
+        for (name, _) in steps {
+            await update { NotificationCenter.default.post(name: name, object: scene) }
+        }
+        return steps.map(\.1)
     }
 
     /// Runs `action`, waits for the probe to see it, then for the next frame: one change at a

@@ -2034,7 +2034,6 @@ extension CoreTextCollectionScrollViewController: UICollectionViewDataSource, UI
                     opacity: 1, sourceHref: item.source, alt: item.alt, linkHref: item.linkTarget,
                     originalSize: image.size)
                 let preview = CoreTextImagePreviewController(attachment: attachment)
-                preview.modalPresentationStyle = .fullScreen
                 present(preview, animated: true)
             }
             cell.configure(tile: tile, horizontalInset: sideInsets.left, leadingSpacing: chapterGap(for: indexPath.item), verticalInset: verticalInset,

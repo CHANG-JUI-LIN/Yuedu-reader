@@ -38,7 +38,7 @@ enum RuleModuleLinkPresenter {
                 presentSheet(address, from: top)
             }
         })
-        host.modalPresentationStyle = .fullScreen
+        host.coversFullScreen()
         box.controller = host
         top.present(host, animated: true)
     }

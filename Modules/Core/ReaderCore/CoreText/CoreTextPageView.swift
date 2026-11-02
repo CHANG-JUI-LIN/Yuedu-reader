@@ -2750,7 +2750,6 @@ final class CoreTextPageViewController: UIViewController, ReaderBookmarkRibbonHo
 
     private func presentImagePreview(for attachment: CoreTextPaginator.RenderedAttachment) {
         let controller = CoreTextImagePreviewController(attachment: attachment)
-        controller.modalPresentationStyle = .fullScreen
         present(controller, animated: true)
     }
 
@@ -2817,7 +2816,7 @@ final class CoreTextImagePreviewController: UIViewController, UIScrollViewDelega
     init(attachment: CoreTextPaginator.RenderedAttachment) {
         self.attachment = attachment
         super.init(nibName: nil, bundle: nil)
-        modalPresentationCapturesStatusBarAppearance = true
+        coversFullScreen()
     }
 
     @available(*, unavailable)

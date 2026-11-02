@@ -894,7 +894,6 @@ final class BrowserLayoutPageViewController: UIViewController,
             originalSize: item.image?.size
         )
         let controller = CoreTextImagePreviewController(attachment: attachment)
-        controller.modalPresentationStyle = .fullScreen
         present(controller, animated: true)
     }
 
