@@ -112,6 +112,11 @@ final class FixedPageWebtoonViewController: UIViewController, FixedPageModeReade
         collectionView.delegate = self
         collectionView.register(FixedPageWebtoonCell.self, forCellWithReuseIdentifier: FixedPageWebtoonCell.reuseID)
         view.addSubview(collectionView)
+        // The layout puts every page edge on the display's pixel grid; a different grid
+        // (another screen) needs the edges placed again.
+        registerForTraitChanges([UITraitDisplayScale.self]) { (self: Self, _) in
+            self.layout.invalidateLayout()
+        }
 
         // Waits for the double tap below through its delegate.
         let tap = UITapGestureRecognizer(target: self, action: #selector(handleTap(_:)))

@@ -149,25 +149,33 @@ final class FixedPageWebtoonLayout: UICollectionViewFlowLayout {
             : totalWidth
         let originX = (totalWidth - effectiveWidth) / 2
 
+        // Every edge sits on the display's pixel grid, and a page's height is the distance
+        // between its two rounded edges. Two pages meeting mid-pixel are each anti-aliased
+        // along that row, and the reader's dark background shows through as a thin line
+        // across the strip (FB-127). Rounding each edge once, from the same running offset
+        // the next page starts at, makes adjacent pages share one exact pixel boundary.
+        let pixelScale = collectionView.traitCollection.displayScale
+        func pixelAligned(_ value: CGFloat) -> CGFloat {
+            (value * pixelScale).rounded() / pixelScale
+        }
+        let minX = pixelAligned(originX * scale)
+        let maxX = pixelAligned((originX + effectiveWidth) * scale)
+
         var originY: CGFloat = 0
+        var lastMaxY: CGFloat = 0
         let count = collectionView.numberOfItems(inSection: 0)
         for item in 0..<count {
             let indexPath = IndexPath(item: item, section: 0)
             let attributes = UICollectionViewLayoutAttributes(forCellWith: indexPath)
             let h = height(for: item, width: effectiveWidth)
-            attributes.frame = CGRect(
-                x: originX * scale,
-                y: originY * scale,
-                width: effectiveWidth * scale,
-                height: h * scale
-            )
+            let minY = pixelAligned(originY * scale)
+            let maxY = pixelAligned((originY + h) * scale)
+            attributes.frame = CGRect(x: minX, y: minY, width: maxX - minX, height: maxY - minY)
             currentAttributes[indexPath] = attributes
+            lastMaxY = maxY
             originY += h + minimumLineSpacing
         }
-        computedContentSize = CGSize(
-            width: totalWidth * scale,
-            height: max(0, originY - minimumLineSpacing) * scale
-        )
+        computedContentSize = CGSize(width: totalWidth * scale, height: lastMaxY)
 
         // Keep the anchor item where it was on screen.
         if let anchor, let frame = currentAttributes[IndexPath(item: anchor.item, section: 0)]?.frame {

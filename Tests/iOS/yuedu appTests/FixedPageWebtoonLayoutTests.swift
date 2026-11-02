@@ -89,6 +89,37 @@ struct FixedPageWebtoonLayoutTests {
         #expect(reader.currentPageIndex() == 2)
     }
 
+    /// 回饋 #127（3.0.1、線上漫畫、條漫）：某些頁交界出現一條細黑線，別的 App 同一張圖沒有。
+    /// 截圖（3×）白色對話框上 255 → 193 → 99 → 255：兩格交界落在半像素，兩邊各自反鋸齒，
+    /// 透出閱讀器的深色底。每一格的上下緣都要落在像素格上，相鄰兩格共用同一條像素邊界。
+    @Test("adjacent pages meet on an exact pixel boundary", arguments: [CGFloat(1), 1.37])
+    func pagesMeetOnPixelBoundary(zoomScale: CGFloat) {
+        let ratios: [CGFloat] = [1.4371, 0.7777, 2.123456, 1.0001, 3.33333, 0.61803]
+        let (reader, pages) = Self.makeReader(pageCount: ratios.count, chapter: "seam", displayScale: 3)
+        for (index, ratio) in ratios.enumerated() {
+            reader.pageImageDidLoad(index: index, page: pages[index], ratio: ratio)
+        }
+        reader.layout.zoomScale = zoomScale
+        reader.layout.invalidateLayout()
+        reader.collectionView.layoutIfNeeded()
+
+        let spacing = reader.layout.minimumLineSpacing
+        #expect(spacing == 0, "the webtoon default has no gap between pages")
+        let frames = ratios.indices.map { Self.frame(of: $0, in: reader) }
+        for (item, frame) in frames.enumerated() {
+            for edge in [frame.minY, frame.maxY, frame.minX, frame.maxX] {
+                #expect(Self.isOnPixelGrid(edge, scale: 3), "item \(item) edge \(edge) falls between pixels")
+            }
+            // Still the page's own height, to within the pixel the edges were moved by.
+            let expected = frame.width * ratios[item]
+            #expect(abs(frame.height - expected) <= 1.0 / 3 + 0.0001, "item \(item) height \(frame.height) vs \(expected)")
+        }
+        for item in frames.indices.dropLast() {
+            #expect(frames[item].maxY + spacing == frames[item + 1].minY, "items \(item) and \(item + 1) do not share an edge")
+        }
+        #expect(reader.layout.collectionViewContentSize.height == frames.last?.maxY)
+    }
+
     @Test("a page image that fails to load leaves one log line; a cancelled load leaves none")
     func loaderLogsFailuresButNotCancellation() async throws {
         let failing = Self.missingFilePage(named: "FixedPageImageLoader-fails-\(UUID().uuidString).jpg")
@@ -115,13 +146,20 @@ struct FixedPageWebtoonLayoutTests {
 
     /// A webtoon reader 400pt wide holding `pageCount` pages whose images never load
     /// (missing files), so every height comes from what the test reports.
-    private static func makeReader(pageCount: Int, chapter: String) -> (FixedPageWebtoonViewController, [FixedPage]) {
+    private static func makeReader(
+        pageCount: Int,
+        chapter: String,
+        displayScale: CGFloat? = nil
+    ) -> (FixedPageWebtoonViewController, [FixedPage]) {
         let targetWidth = FixedPageTargetWidth()
         targetWidth.value = width
         let reader = FixedPageWebtoonViewController(
             fixedPageReaderConfiguration: .recommendedDefault(for: .webtoon),
             targetWidth: targetWidth
         )
+        if let displayScale {
+            reader.traitOverrides.displayScale = displayScale
+        }
         reader.view.frame = CGRect(x: 0, y: 0, width: width, height: 800)
         reader.view.layoutIfNeeded()
         let pages = makePages(count: pageCount, chapter: chapter)
@@ -145,6 +183,11 @@ struct FixedPageWebtoonLayoutTests {
         let attributes = reader.layout.layoutAttributesForItem(at: IndexPath(item: item, section: 0))
         #expect(attributes != nil, "item \(item) has no layout attributes")
         return attributes?.frame ?? .null
+    }
+
+    private static func isOnPixelGrid(_ value: CGFloat, scale: CGFloat) -> Bool {
+        let pixels = value * scale
+        return abs(pixels - pixels.rounded()) < 0.0001
     }
 
     private static func isClose(_ a: CGFloat, _ b: CGFloat) -> Bool {
