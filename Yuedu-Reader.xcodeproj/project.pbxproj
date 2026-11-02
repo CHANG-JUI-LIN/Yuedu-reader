@@ -1175,13 +1175,13 @@
 /* End XCConfigurationList section */
 
 /* Begin XCLocalSwiftPackageReference section */
-		D8654E038B484E472D6D37EA /* XCLocalSwiftPackageReference "Packages/CLexbor" */ = {
-			isa = XCLocalSwiftPackageReference;
-			relativePath = Packages/CLexbor;
-		};
 		9E73816D0186A1DA34077B88 /* XCLocalSwiftPackageReference "Packages/SwiftSoup" */ = {
 			isa = XCLocalSwiftPackageReference;
 			relativePath = Packages/SwiftSoup;
+		};
+		D8654E038B484E472D6D37EA /* XCLocalSwiftPackageReference "Packages/CLexbor" */ = {
+			isa = XCLocalSwiftPackageReference;
+			relativePath = Packages/CLexbor;
 		};
 /* End XCLocalSwiftPackageReference section */
 
