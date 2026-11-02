@@ -683,6 +683,15 @@ time, on the segment's axis.
   and starts the new axis square). With `ChapterWritingModeEngineTests`, `CoreTextScrollTests`,
   `ContinuousScrollRestoreTests`, `BrowserVerticalReaderRouteTests`, `ReaderOpeningRestoreTests` and
   `ReaderPresentationContractTests`: 81 tests in 7 suites pass on iOS 17.5, 26.5 and 27.2.
+- **Known limitations, left as they were.** A chapter inserted on the RTL axis puts the reader back at the
+  committed position; only the vertical axis keeps the live cell's place (`applyChunkInsertion`), so a chapter
+  arriving mid-drag in a vertical-rl segment can pull the reader back. A change of extent alone (bars, insets)
+  reslices at the chapter's start, dropping the place inside it (`update(axis:)`). `BrowserTextInteractionController`
+  draws note badges and highlights with `isVertical: false`. Other places bound a spine index by the TOC's
+  `chapters.count`: `canGoNextChapter` and the next-chapter warm-up (`ReaderView.swift:1461`, `:76`) stop at
+  the TOC's last entry, so on the converted book the bar reads 書末頁 on spine 1 (by the code, not yet seen),
+  and scroll mode's chapter slider (`chapterSliderProgressValue` / `applyChapterSliderProgress`) reaches spines
+  0 and 1 only. All predate this plan.
 
 **Opening restore, done 2026-11-02 (its own commit, after Step 4).** Both clamps count the spine
 (`spineChapters.count`), not the TOC. In scroll mode `applyInitialProgressIfNeeded` waits while the opening
