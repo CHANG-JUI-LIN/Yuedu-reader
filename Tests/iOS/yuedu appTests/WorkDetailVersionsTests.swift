@@ -90,7 +90,7 @@ struct WorkDetailVersionsTests {
 
     @Test("data only: a file the app cannot read is listed but never read, and with nothing else there is no main version")
     func dataOnly() {
-        let unreadable = file("三體.azw3", acquisitions: [])
+        let unreadable = file("三體.kfx", acquisitions: [])
         #expect(!unreadable.isReadable)
         #expect(WorkVersions.primary(in: [unreadable]) == nil)
         let readable = file("三體.epub")
@@ -106,7 +106,7 @@ struct WorkDetailVersionsTests {
 
     @Test("來源 shows the version picked while it is listed, else the primary one, else the first")
     func selection() {
-        let unreadable = file("三體.azw3", acquisitions: [])
+        let unreadable = file("三體.kfx", acquisitions: [])
         let readable = file("三體.epub")
         let shelf = copy()
         let versions = [unreadable, shelf, readable]

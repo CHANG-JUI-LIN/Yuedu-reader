@@ -11,7 +11,7 @@ struct WebDAVBrowseClient {
         var etag: String? = nil
         var lastModified: String? = nil
         var fileExtension: String { url.pathExtension.lowercased() }
-        var isImportableBook: Bool { ["epub", "pdf", "txt", "md", "markdown"].contains(fileExtension) }
+        var isImportableBook: Bool { BookFileFormat.document(fileExtension: fileExtension) != nil }
     }
 
     let serverUrl: String

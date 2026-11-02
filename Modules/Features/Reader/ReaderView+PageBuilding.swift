@@ -255,7 +255,8 @@ extension ReaderView {
                   store.movePictureOffsets(bookId: bookId, spine: spine, sourceText: sourceText, pictures: pictures)
             else { return }
             // What `syncCoreTextTextAnnotations` hands both engines.
-            let annotations = (store.readingBook(id: bookId)?.bookmarks ?? []).compactMap(\.coreTextTextAnnotation)
+            let annotations = (store.readingBook(id: bookId)?.bookmarks ?? []).indexingReadText(of: bookId)
+                .compactMap(\.coreTextTextAnnotation)
             renderer.engine?.setTextAnnotations(annotations)
             renderer.scrollEngine?.textAnnotations = annotations
         }

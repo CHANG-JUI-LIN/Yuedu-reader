@@ -1527,14 +1527,14 @@ final class ICloudSyncManager: ObservableObject {
     }
 
     /// The files iCloud syncs for one book, by name and location: its content file
-    /// and, for a converted Aozora book, the original kept beside it, both only for a
+    /// and, for a book converted at import, the original kept beside it, both only for a
     /// syncable local book; and its cover, for every book. Another device converts its
     /// own copy from the original rather than taking this one's EPUB.
     nonisolated static func syncableFiles(for book: ReadingBook) -> [(name: String, url: URL)] {
         var files: [(name: String, url: URL)] = []
         if let content = syncableContentFilename(for: book) {
             files.append((content, StorageLocations.bookFile(content)))
-            if let original = book.aozora?.originalFilename {
+            if let original = book.convertedOriginalFilename {
                 files.append((original, StorageLocations.bookFile(original)))
             }
         }

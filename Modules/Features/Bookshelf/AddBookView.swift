@@ -64,8 +64,8 @@ struct FileImportTab: View {
         ScrollView {
             VStack(spacing: DSSpacing.xl) {
                 HintCard(
-                    icon: "doc.text", title: localized("支援格式：TXT / Markdown / JSON / EPUB / PDF / CBZ / ZIP / 音訊"),
-                    detail: localized("支援純文字（.txt / .md / .markdown / .json）、電子書（.epub）、PDF（.pdf）、本地漫畫（.cbz / .zip）與音訊（.mp3 / .m4a / .m4b / .aac / .flac / .wav）格式。選取後系統自動識別內容。"))
+                    icon: "doc.text", title: localized("支援格式：TXT / Markdown / JSON / EPUB / AZW3 / MOBI / PDF / CBZ / ZIP / 音訊"),
+                    detail: localized("支援純文字（.txt / .md / .markdown / .json）、電子書（.epub）、沒有 DRM 的 Kindle 電子書（.azw3 / .azw / .mobi / .prc）、PDF（.pdf）、本地漫畫（.cbz / .zip）與音訊（.mp3 / .m4a / .m4b / .aac / .flac / .wav）格式。選取後系統自動識別內容。"))
 
                 Button {
                     showFilePicker = true
@@ -74,7 +74,7 @@ struct FileImportTab: View {
                         Image(systemName: "folder.badge.plus")
                             .font(DSFont.fixed(size: 44)).foregroundColor(DSColor.accent)
                             .accessibilityHidden(true)
-                        Text(localized("點擊選取 TXT / EPUB / PDF / 漫畫 / 音訊文件"))
+                        Text(localized("點擊選取 TXT / EPUB / AZW3 / MOBI / PDF / 漫畫 / 音訊文件"))
                             .font(DSFont.headline).foregroundColor(DSColor.accent)
                         Text(localized("從文件 App、iCloud、本機儲存等選取"))
                             .font(DSFont.caption).foregroundColor(DSColor.textSecondary)

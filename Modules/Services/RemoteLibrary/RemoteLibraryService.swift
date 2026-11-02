@@ -99,6 +99,8 @@ final class RemoteLibraryService: RemoteLibraryServing {
         switch format.fileExtension.lowercased() {
         case "epub": return "local_epub"
         case "pdf": return "local_pdf"
+        // Read as the EPUB it is converted into on this device (`prepareLocal`).
+        case let ext where BookFileFormat(fileExtension: ext)?.importsAsMOBI == true: return "local_epub"
         default: return "local"
         }
     }
@@ -262,12 +264,38 @@ final class RemoteLibraryService: RemoteLibraryServing {
         var book = book
         var session: PublicationSession?
         let url = localURL(book.contentFilename)
-        switch book.remoteSource?.format.fileExtension {
-        case "epub":
+        // The offline copy and each server version have a cache folder of their own.
+        func cacheDirectory() throws -> URL {
             let version = book.remoteSource?.offlineFilename == book.contentFilename
                 ? "offline-" + book.contentFilename : book.remoteSource?.version ?? UUID().uuidString
-            let directory = try cache.directory(bookID: book.id, version: version)
-            session = try await PublicationSession.open(sourceURL: url, cacheDirectory: directory)
+            return try cache.directory(bookID: book.id, version: version)
+        }
+        switch book.remoteSource?.format.fileExtension {
+        case "epub":
+            session = try await PublicationSession.open(sourceURL: url, cacheDirectory: try cacheDirectory())
+        case let ext? where BookFileFormat(fileExtension: ext)?.importsAsMOBI == true:
+            // Converted into an EPUB in the cache folder, which the reader opens: a cache of
+            // this device's, never synced, since the remote file is the original. It follows
+            // the regenerator's outcomes as a local book does (MOBI plan, step 4).
+            let kind = try await Task.detached(priority: .userInitiated) { try MOBIBookImporter.kind(of: url) }.value
+            let directory = try cacheDirectory()
+            let epub = directory.appendingPathComponent("converted.epub")
+            // Not in use by another reader: sessions over this EPUB are opened only below,
+            // after the regenerator, and its converter's version is fixed for the process,
+            // so only the first preparation can rebuild it. The reader asking holds the book
+            // already (`ReadingResourceUsage`), which the guard would count against it.
+            do {
+                _ = try await ConvertedBookRegenerator.prepare(
+                    bookID: book.id, epub: epub, original: url, converter: MOBIBookImporter.converter,
+                    isInUse: false, spineCache: directory.appendingPathComponent("spine.json"))
+            } catch let error where FileManager.default.fileExists(atPath: epub.path) {
+                // As a local book opens: a failed rebuild leaves the EPUB it has. Only the
+                // first conversion has nothing to open.
+                AppLogger.error("Regenerating a remote converted book failed; opening the existing EPUB",
+                                error: error, context: ["book": book.id.uuidString])
+            }
+            book.mobi = MOBIBookSource(originalFilename: nil, kind: kind)
+            session = try await PublicationSession.open(sourceURL: epub, cacheDirectory: directory)
         case "pdf":
             let info = try LocalPDFArchive.inspect(url: url)
             book.contentPipelineKind = .fixedPage
@@ -307,6 +335,10 @@ final class RemoteLibraryService: RemoteLibraryServing {
         current.remoteSource?.lastModified = prepared.remoteSource?.lastModified
         current.remoteSource?.contentLength = prepared.remoteSource?.contentLength
         current.remoteSource?.cachedFilename = prepared.remoteSource?.cachedFilename
+        // The 格式 chip's AZW3/MOBI, cleared when the copy's format has become another.
+        let convertsMOBI = prepared.remoteSource
+            .flatMap { BookFileFormat(fileExtension: $0.format.fileExtension) }?.importsAsMOBI == true
+        current.mobi = convertsMOBI ? prepared.mobi : nil
         if prepared.remoteSource?.format.fileExtension == "pdf" {
             current.contentPipelineKind = prepared.contentPipelineKind
             current.onlineChapters = prepared.onlineChapters
@@ -334,12 +366,18 @@ final class RemoteLibraryService: RemoteLibraryServing {
             catch { AppLogger.error("Remote staging cleanup failed", error: error) } }
         try await download(reference: reference, transport: transport, to: staging, operation: operation)
         // Validate the requested format before marking the offline copy complete.
+        var kindleKind: MOBIFile.Kind?
         switch format.fileExtension {
         case "epub": _ = try await PublicationSession.open(sourceURL: staging)
         case "pdf": _ = try LocalPDFArchive.inspect(url: staging)
+        case let ext where BookFileFormat(fileExtension: ext)?.importsAsMOBI == true:
+            // Its headers only; it is converted when it is read (`prepareLocal`).
+            kindleKind = try await Task.detached { try MOBIBookImporter.kind(of: staging) }.value
         default: _ = try await Task.detached { try TXTMetadataProbe.probe(url: staging, fallbackTitle: staging.deletingPathExtension().lastPathComponent) }.value
         }
         book = try currentBook(matching: book, store: store, operation: operation)
+        // The 格式 chip says AZW3/MOBI before the copy is first opened.
+        if let kindleKind { book.mobi = MOBIBookSource(originalFilename: nil, kind: kindleKind) }
         if FileManager.default.fileExists(atPath: target.path) { try FileManager.default.removeItem(at: target) }
         try FileManager.default.moveItem(at: staging, to: target)
         book.remoteSource?.offlineFilename = filename

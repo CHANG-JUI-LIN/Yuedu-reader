@@ -52,20 +52,14 @@ enum RemoteLibraryBrowsePresentation {
     }
 
     static func mimeType(for fileExtension: String) -> String {
-        switch fileExtension.lowercased() {
-        case "epub": "application/epub+zip"
-        case "pdf": "application/pdf"
-        case "txt": "text/plain"
-        case "md", "markdown": "text/markdown"
-        default: "application/octet-stream"
-        }
+        BookFileFormat(fileExtension: fileExtension)?.mediaType ?? "application/octet-stream"
     }
 
     static func preferredFormat(in item: RemoteLibraryItem) -> RemoteLibraryFormat? {
-        let order = ["epub": 0, "pdf": 1, "txt": 2, "md": 3]
-        return item.formats.filter(\.isSupported).min {
-            (order[$0.fileExtension] ?? 9) < (order[$1.fileExtension] ?? 9)
-        } ?? item.formats.first
+        func rank(_ format: RemoteLibraryFormat) -> Int {
+            BookFileFormat.document(fileExtension: format.fileExtension)?.readingPreference ?? 9
+        }
+        return item.formats.filter(\.isSupported).min { rank($0) < rank($1) } ?? item.formats.first
     }
 }
 

@@ -20,6 +20,8 @@
 "Book source document" = "来源配置文件";
 "OPML document" = "OPML 文件";
 "Markdown document" = "Markdown 文件";
+"Mobipocket eBook" = "Mobipocket 电子书";
+"Kindle eBook" = "Kindle 电子书";
 "Comic book archive" = "漫画压缩包";
 "FLAC audio" = "FLAC 音频";
 "MPEG-4 audiobook" = "MPEG-4 有声书";

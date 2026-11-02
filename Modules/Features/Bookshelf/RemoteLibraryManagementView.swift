@@ -83,7 +83,7 @@ struct RemoteLibraryManagementView: View {
         .task { await loadCapabilities() }
         .onDisappear { task?.cancel() }
         .fileImporter(isPresented: $importing,
-                      allowedContentTypes: ["epub", "pdf", "txt", "md", "markdown"].compactMap { UTType(filenameExtension: $0) },
+                      allowedContentTypes: BookFileFormat.uploadExtensions.sorted().compactMap { UTType(filenameExtension: $0) },
                       allowsMultipleSelection: false) { result in
             switch result {
             case .success(let urls):

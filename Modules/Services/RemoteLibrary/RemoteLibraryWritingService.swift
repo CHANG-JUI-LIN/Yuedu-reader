@@ -104,7 +104,7 @@ final class RemoteLibraryWritingService: RemoteLibraryWriting {
         guard values.isRegularFile == true, (values.fileSize ?? 0) > 0 else { throw RemoteLibraryWriteError.invalidName }
         let filename = try validName(fileURL.lastPathComponent)
         let ext = fileURL.pathExtension.lowercased()
-        guard ["epub", "pdf", "txt", "md", "markdown"].contains(ext) else { throw RemoteLibraryError.unsupportedFormat }
+        guard BookFileFormat.uploadExtensions.contains(ext) else { throw RemoteLibraryError.unsupportedFormat }
         var request: URLRequest
         var libraryID: String?
         switch connection.kind {

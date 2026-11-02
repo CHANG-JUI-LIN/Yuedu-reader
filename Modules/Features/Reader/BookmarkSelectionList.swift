@@ -20,6 +20,9 @@ struct BookmarkSelectionList: View {
     var onSelect: (Bookmark) -> Void
     var onSelectChapter: (ReaderBookmarkChapterGroup) -> Void
     var onDelete: (Bookmark) -> Void
+    /// 這條書籤的位置是不是對著這台裝置讀的文字（`ConvertedTextVersions`）。轉換書換了
+    /// 轉換版本後，另一版的書籤照列、變灰、不能跳，編輯模式照樣能選取刪除。
+    var indexesReadText: (Bookmark) -> Bool = { _ in true }
 
     @Environment(\.editMode) private var editMode
 
@@ -38,6 +41,7 @@ struct BookmarkSelectionList: View {
                             date: dateText(bm),
                             page: pageText(bm),
                             note: noteText(bm),
+                            indexesReadText: indexesReadText(bm),
                             isEditing: isEditing,
                             onSelect: { onSelect(bm) },
                             onDelete: { onDelete(bm) }
@@ -109,6 +113,7 @@ private struct BookmarkCardRow: View {
     let date: String
     let page: String?
     let note: String?
+    let indexesReadText: Bool
     let isEditing: Bool
     let onSelect: () -> Void
     let onDelete: () -> Void
@@ -131,9 +136,15 @@ private struct BookmarkCardRow: View {
 
             Text(primary)
                 .font(DSFont.body)
-                .foregroundStyle(DSColor.textPrimary)
+                .foregroundStyle(indexesReadText ? DSColor.textPrimary : DSColor.textSecondary)
                 .lineLimit(2)
                 .multilineTextAlignment(.leading)
+
+            if !indexesReadText {
+                Text(localized("建立在這本書另一版的轉換文字上，無法跳轉"))
+                    .font(DSFont.footnote)
+                    .foregroundStyle(DSColor.textSecondary)
+            }
 
             if let note, !note.isEmpty {
                 Label(note, systemImage: "note.text")
@@ -151,29 +162,37 @@ private struct BookmarkCardRow: View {
         HStack(alignment: .top, spacing: DSSpacing.sm) {
             if isEditing {
                 content
+            } else if !indexesReadText {
+                // Nothing to jump to: read as one element, with no 「點兩下跳至此頁」.
+                content.accessibilityElement(children: .combine)
+                moreMenu
             } else {
                 Button(action: onSelect) { content }
                     .buttonStyle(.borderless)
                     .accessibilityLabel("\(primary)，\(metaText)")
                     .accessibilityHint(localized("點兩下跳至此頁"))
 
-                Menu {
-                    Button(role: .destructive, action: onDelete) {
-                        Label(localized("刪除"), systemImage: "trash")
-                    }
-                } label: {
-                    Image(systemName: "ellipsis")
-                        .font(DSFont.footnote)
-                        .foregroundStyle(DSColor.textSecondary)
-                        .frame(width: DSLayout.minimumTapTarget, height: DSLayout.minimumTapTarget)
-                        .contentShape(Rectangle())
-                }
-                .buttonStyle(.borderless)
-                .accessibilityLabel(localized("更多"))
+                moreMenu
             }
         }
         .padding(.vertical, DSSpacing.md)
         .padding(.leading, DSSpacing.md)
         .padding(.trailing, isEditing ? DSSpacing.md : DSSpacing.xs)
+    }
+
+    private var moreMenu: some View {
+        Menu {
+            Button(role: .destructive, action: onDelete) {
+                Label(localized("刪除"), systemImage: "trash")
+            }
+        } label: {
+            Image(systemName: "ellipsis")
+                .font(DSFont.footnote)
+                .foregroundStyle(DSColor.textSecondary)
+                .frame(width: DSLayout.minimumTapTarget, height: DSLayout.minimumTapTarget)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.borderless)
+        .accessibilityLabel(localized("更多"))
     }
 }

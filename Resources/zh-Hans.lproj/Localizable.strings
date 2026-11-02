@@ -4233,3 +4233,27 @@
 "請輸入目前的密碼以繼續" = "请输入当前密码以继续";
 "輸入目前的密碼" = "输入当前密码";
 "連結新的登入方式前，請先輸入這個帳號的密碼。" = "关联新的登录方式前，请先输入这个账户的密码。";
+
+/* MOBI / AZW3 import (2026-11-02): import failure reasons, format lists, bookmarks of another converted text. */
+"這個 Kindle 檔案有 DRM 保護，無法開啟" = "此 Kindle 文件受 DRM 保护，无法打开";
+"這個 Kindle 檔案的壓縮方式目前不支援" = "此 Kindle 文件的压缩方式暂不支持";
+"無法讀取這個 Kindle 檔案" = "无法读取此 Kindle 文件";
+"無法辨識這個青空文庫檔案的文字編碼" = "无法识别此青空文库文件的文字编码";
+"這個青空文庫檔案裡沒有內文" = "此青空文库文件中没有正文";
+"不支援這種檔案格式" = "不支持此文件格式";
+"找不到這本 EPUB 的檔案" = "找不到这本 EPUB 的文件";
+"這本 EPUB 沒有這一章" = "这本 EPUB 没有这一章";
+"無法讀取這本 EPUB" = "无法读取这本 EPUB";
+"這本 EPUB 缺少需要的檔案" = "这本 EPUB 缺少所需的文件";
+"無法讀取這本 EPUB 裡的檔案" = "无法读取这本 EPUB 中的文件";
+"無法解析來源配置資料" = "无法解析来源配置数据";
+"無法解析來源配置資料：%@" = "无法解析来源配置数据：%@";
+"%@ 格式經過加密，無法直接匯入。請用原本的 App 匯出成 JSON 或 TXT。" = "%@ 格式经过加密，无法直接导入。请用原来的 App 导出为 JSON 或 TXT。";
+"找不到分享過來的檔案" = "找不到分享过来的文件";
+"書架還沒準備好，請再分享一次" = "书架尚未准备好，请再分享一次";
+"分享過來的網址無效" = "分享过来的网址无效";
+"支援格式：TXT / Markdown / JSON / EPUB / AZW3 / MOBI / PDF / CBZ / ZIP / 音訊" = "支持格式：TXT / Markdown / JSON / EPUB / AZW3 / MOBI / PDF / CBZ / ZIP / 音频";
+"支援純文字（.txt / .md / .markdown / .json）、電子書（.epub）、沒有 DRM 的 Kindle 電子書（.azw3 / .azw / .mobi / .prc）、PDF（.pdf）、本地漫畫（.cbz / .zip）與音訊（.mp3 / .m4a / .m4b / .aac / .flac / .wav）格式。選取後系統自動識別內容。" = "支持纯文本（.txt / .md / .markdown / .json）、电子书（.epub）、无 DRM 的 Kindle 电子书（.azw3 / .azw / .mobi / .prc）、PDF（.pdf）、本地漫画（.cbz / .zip）和音频（.mp3 / .m4a / .m4b / .aac / .flac / .wav）格式。选择文件后会自动识别内容。";
+"點擊選取 TXT / EPUB / AZW3 / MOBI / PDF / 漫畫 / 音訊文件" = "轻点选择 TXT / EPUB / AZW3 / MOBI / PDF / 漫画 / 音频文件";
+"傳送期間請保持此頁開啟，離開或切背景會中斷。支援 EPUB、AZW3、MOBI、PDF、TXT、Markdown。" = "传输期间请保持此页面打开，离开或切换到后台会中断。支持 EPUB、AZW3、MOBI、PDF、TXT、Markdown。";
+"建立在這本書另一版的轉換文字上，無法跳轉" = "建立在这本书另一版的转换文字上，无法跳转";

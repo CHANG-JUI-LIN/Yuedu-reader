@@ -34,6 +34,9 @@ final class SharedImportQueueDrainer: ObservableObject {
         var importedRSSCount = 0
         var importedReplaceRuleCount = 0
         var bookToOpen: UUID?
+        /// Why each failed item failed, as the Files importer lists it: `name: reason`, or
+        /// the reason alone for an item that arrived without a name.
+        var failures: [String] = []
 
         mutating func record(_ result: ImportResult) {
             importedCount += result.count
@@ -52,8 +55,10 @@ final class SharedImportQueueDrainer: ObservableObject {
             }
         }
 
-        mutating func recordFailure() {
+        mutating func recordFailure(_ error: Error, item: String?) {
             failureCount += 1
+            let reason = error.localizedDescription
+            failures.append(item.map { $0.isEmpty ? reason : "\($0): \(reason)" } ?? reason)
         }
     }
 
@@ -104,7 +109,7 @@ final class SharedImportQueueDrainer: ObservableObject {
         var bookID: UUID?
     }
 
-    enum ImportError: LocalizedError {
+    enum ImportError: LocalizedError, DiagnosableError {
         case missingPayloadDirectory
         case missingQueuedFile(String)
         case missingBookStore
@@ -112,6 +117,15 @@ final class SharedImportQueueDrainer: ObservableObject {
         case unsupportedPayload(String)
 
         var errorDescription: String? {
+            switch self {
+            case .missingPayloadDirectory, .missingQueuedFile: localized("找不到分享過來的檔案")
+            case .missingBookStore: localized("書架還沒準備好，請再分享一次")
+            case .invalidRemoteURL: localized("分享過來的網址無效")
+            case .unsupportedPayload: localized("不支援這種檔案格式")
+            }
+        }
+
+        var diagnosticDescription: String {
             switch self {
             case .missingPayloadDirectory:
                 return "App Group import directory is unavailable"
@@ -195,7 +209,7 @@ final class SharedImportQueueDrainer: ObservableObject {
         do {
             outcome.record(try await importFilePayload(url, suggestedFilename: url.lastPathComponent))
         } catch {
-            outcome.recordFailure()
+            outcome.recordFailure(error, item: url.lastPathComponent)
             AppLogger.error("Document import failed", error: error)
         }
         publish(outcome)
@@ -297,12 +311,14 @@ final class SharedImportQueueDrainer: ObservableObject {
         defaults.removeObject(forKey: Self.payloadQueueKey)
         let decoder = JSONDecoder()
         for encoded in queue {
+            var item: String?
             do {
                 let payload = try decoder.decode(QueuedPayload.self, from: encoded)
+                item = payload.suggestedFilename ?? payload.remoteURLString
                 let result = try await importQueuedPayload(payload)
                 outcome.record(result)
             } catch {
-                outcome.recordFailure()
+                outcome.recordFailure(error, item: item)
                 AppLogger.error("Shared payload import failed", error: error)
             }
         }
@@ -322,7 +338,7 @@ final class SharedImportQueueDrainer: ObservableObject {
                     )
                 )
             } catch {
-                outcome.recordFailure()
+                outcome.recordFailure(error, item: nil)
                 AppLogger.error("Shared book-source JSON import failed", error: error)
             }
         }
@@ -335,7 +351,7 @@ final class SharedImportQueueDrainer: ObservableObject {
         defaults.removeObject(forKey: Self.sourceURLsQueueKey)
         for urlString in urlQueue {
             guard let url = URL(string: urlString) else {
-                outcome.recordFailure()
+                outcome.recordFailure(ImportError.invalidRemoteURL(urlString), item: nil)
                 continue
             }
             do {
@@ -347,7 +363,7 @@ final class SharedImportQueueDrainer: ObservableObject {
                     )
                 )
             } catch {
-                outcome.recordFailure()
+                outcome.recordFailure(error, item: urlString)
                 AppLogger.network(
                     "Shared book-source URL import failed",
                     error: error,
@@ -574,6 +590,11 @@ enum SharedImportPayloadClassifier {
         }
 
         let sample = try readSample(from: fileURL)
+        // A shared link's URL often has no extension; a Kindle book says what it is at
+        // offset 60. Which of its two formats it holds is read again at import.
+        if MOBIFile.isMOBI(sample) {
+            return .localBook(fileExtension: "mobi")
+        }
         if ext == "opml" || looksLikeOPML(sample) {
             return .rssOPML
         }
@@ -607,6 +628,10 @@ enum SharedImportPayloadClassifier {
 
         if ["yds", "mrs"].contains(ext) {
             return .bookSource(fileExtension: ext)
+        }
+
+        if MOBIFile.isMOBI(data) {
+            return .localBook(fileExtension: "mobi")
         }
 
         if ext == "opml" || looksLikeOPML(data) {

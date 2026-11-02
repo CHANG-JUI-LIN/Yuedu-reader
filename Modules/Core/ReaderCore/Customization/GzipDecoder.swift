@@ -8,10 +8,14 @@ enum GzipDecoderError: Error, Equatable {
     case corrupt
     case tooLarge(maximum: Int)
     case lengthMismatch(expected: UInt32, actual: Int)
+    case notZlib
+    case presetDictionary
+    case checksumMismatch
 }
 
 /// RFC 1952 gzip members, as Reeden writes its highlight packs and the artwork inside
-/// them. Foundation only inflates raw DEFLATE, so the header and trailer are read here.
+/// them, and RFC 1950 zlib streams, as KF8 files store fonts. Foundation only
+/// inflates raw DEFLATE, so the headers and trailers are read here.
 enum GzipDecoder {
     static func isGzip(_ data: Data) -> Bool {
         data.count >= 2 && data[data.startIndex] == 0x1F && data[data.startIndex + 1] == 0x8B
@@ -44,6 +48,36 @@ enum GzipDecoder {
             throw GzipDecoderError.lengthMismatch(expected: expectedLength, actual: output.count)
         }
         return output
+    }
+
+    /// An RFC 1950 stream: a two-byte header, DEFLATE data, and the Adler-32 of
+    /// the output, which is checked.
+    static func decompressZlib(_ data: Data, maximumBytes: Int) throws -> Data {
+        let bytes = [UInt8](data)
+        guard bytes.count >= 6, bytes[0] & 0x0F == 8, (Int(bytes[0]) << 8 | Int(bytes[1])) % 31 == 0 else {
+            throw GzipDecoderError.notZlib
+        }
+        // A preset dictionary (FDICT) is for protocols that share one; files never do.
+        guard bytes[1] & 0x20 == 0 else { throw GzipDecoderError.presetDictionary }
+        let output = try inflate(Array(bytes[2 ..< bytes.count - 4]), maximumBytes: maximumBytes)
+        let expected = bytes[(bytes.count - 4)...].reduce(UInt32(0)) { ($0 << 8) | UInt32($1) }
+        guard adler32(output) == expected else { throw GzipDecoderError.checksumMismatch }
+        return output
+    }
+
+    private static func adler32(_ data: Data) -> UInt32 {
+        var a: UInt32 = 1
+        var b: UInt32 = 0
+        // 5552 bytes is the most that can be summed before the 32-bit sums overflow.
+        for start in stride(from: data.startIndex, to: data.endIndex, by: 5552) {
+            for byte in data[start ..< min(start + 5552, data.endIndex)] {
+                a += UInt32(byte)
+                b += a
+            }
+            a %= 65521
+            b %= 65521
+        }
+        return b << 16 | a
     }
 
     /// Raw DEFLATE (`COMPRESSION_ZLIB` is headerless), streamed so a hostile member

@@ -97,7 +97,7 @@ struct CalibreWirelessView: View {
                 Text(localized("接收紀錄"))
                     .foregroundStyle(DSColor.textSecondary)
             } footer: {
-                Text(localized("傳送期間請保持此頁開啟，離開或切背景會中斷。支援 EPUB、PDF、TXT、Markdown。"))
+                Text(localized("傳送期間請保持此頁開啟，離開或切背景會中斷。支援 EPUB、AZW3、MOBI、PDF、TXT、Markdown。"))
                     .dsSectionFooter()
             }
             .interfaceSectionSurface()

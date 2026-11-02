@@ -7,13 +7,15 @@ import ReadiumZIPFoundation
 /// regenerate it. One type reads Aozora zips.
 @MainActor
 enum AozoraBookImporter {
-    enum ImportError: Error, CustomStringConvertible {
+    enum ImportError: LocalizedError, CustomStringConvertible, DiagnosableError {
         case undecodable(String)
         var description: String {
             switch self {
             case .undecodable(let file): return "\(file) could not be decoded"
             }
         }
+        var errorDescription: String? { localized("無法辨識這個青空文庫檔案的文字編碼") }
+        var diagnosticDescription: String { description }
     }
 
     /// A text the detector accepted, decoded, with the figures its document names.
@@ -119,6 +121,25 @@ enum AozoraBookImporter {
         }
     }
 
+    /// The converter `ConvertedBookRegenerator` calls for an Aozora book.
+    nonisolated static let converter = ConvertedBookRegenerator.Converter(
+        name: "Aozora", manifestPath: AozoraEPUBWriter.manifestPath,
+        converterVersion: AozoraEPUBWriter.converterVersion, textVersion: AozoraEPUBWriter.textVersion
+    ) { original, identifier in
+        guard let converted = try await convert(original, isZip: original.pathExtension.lowercased() == "zip",
+                                                identifier: identifier) else {
+            throw ImportError.undecodable(original.lastPathComponent)
+        }
+        let manifest = converted.manifest
+        return ConvertedBookRegenerator.Converted(
+            epub: converted.epub,
+            recorded: ConvertedBookRegenerator.Recorded(
+                converterVersion: manifest.converterVersion, textVersion: manifest.textVersion,
+                identifier: manifest.identifier,
+                chapters: manifest.chapters.map { .init(length: $0.length, sha256: $0.sha256) }),
+            workDirectory: converted.workDirectory)
+    }
+
     // MARK: Zips
 
     /// The first visible `.txt` entry the detector accepts, extracted into `work`.
@@ -184,4 +205,9 @@ enum AozoraBookImporter {
                             context: ["file": url.lastPathComponent])
         }
     }
+}
+
+extension AozoraEPUBWriter.WriteError: LocalizedError, DiagnosableError {
+    var errorDescription: String? { localized("這個青空文庫檔案裡沒有內文") }
+    var diagnosticDescription: String { description }
 }

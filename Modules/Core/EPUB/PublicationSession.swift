@@ -319,7 +319,9 @@ final class ReadiumBookResourceAdapter: BookResourceProvider {
     }
 }
 
-enum PublicationSessionError: LocalizedError {
+/// What reaches a reader is a sentence (`errorDescription`); the href or reason each case
+/// carries goes to the log only (`diagnosticDescription`).
+enum PublicationSessionError: LocalizedError, DiagnosableError {
     case fileNotFound
     case chapterOutOfRange(Int)
     case parsingFailed(String)
@@ -327,6 +329,16 @@ enum PublicationSessionError: LocalizedError {
     case resourceReadFailed(String)
 
     var errorDescription: String? {
+        switch self {
+        case .fileNotFound: localized("找不到這本 EPUB 的檔案")
+        case .chapterOutOfRange: localized("這本 EPUB 沒有這一章")
+        case .parsingFailed: localized("無法讀取這本 EPUB")
+        case .resourceNotFound: localized("這本 EPUB 缺少需要的檔案")
+        case .resourceReadFailed: localized("無法讀取這本 EPUB 裡的檔案")
+        }
+    }
+
+    var diagnosticDescription: String {
         switch self {
         case .fileNotFound:
             return "EPUB file not found"

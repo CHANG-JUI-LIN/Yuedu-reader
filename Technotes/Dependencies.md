@@ -40,3 +40,11 @@ These are dependencies of our direct dependencies that Xcode Cloud resolves and 
     *   `google/grpc-binary`
     *   `firebase/leveldb`
     *   `googleads/google-ads-on-device-conversion-ios-sdk`
+
+## Ported Code
+
+Not a package: source translated into the app, with the original licence kept beside it.
+
+| Origin | Licence | Where | Notes |
+|--------|---------|-------|-------|
+| **foliate-js** `mobi.js` (`https://github.com/johnfactotum/foliate-js`, commit `9a676796`) | MIT | `Modules/Core/MOBI/` (`foliate-js-LICENSE.txt`) | MOBI/AZW3 reading, ported to Swift for the import-time converter. libmobi was not used: LGPL-3.0 and ships Kindle DRM removal |

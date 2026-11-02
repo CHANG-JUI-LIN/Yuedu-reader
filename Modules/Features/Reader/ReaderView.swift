@@ -1559,8 +1559,9 @@ struct ReaderView: View {
         return String(content.prefix(Bookmark.pageExcerptLength))
     }
 
+    /// Highlights of another converted text version mark other words here, and are not drawn.
     var coreTextTextAnnotations: [CoreTextTextAnnotation] {
-        (book?.bookmarks ?? []).compactMap(\.coreTextTextAnnotation)
+        (book?.bookmarks ?? []).indexingReadText(of: bookId).compactMap(\.coreTextTextAnnotation)
     }
 
     func syncCoreTextTextAnnotations() {
@@ -2874,6 +2875,7 @@ struct ReaderView: View {
                         jumpToChapter(index)
                     },
                     onDelete: { deleteBookmarkEntry($0) },
+                    indexesReadText: { ConvertedTextVersions.shared.indexesReadText($0.textVersion, bookId: bookId.uuidString) },
                     isPresented: $showBookmarkList
                 )
             }

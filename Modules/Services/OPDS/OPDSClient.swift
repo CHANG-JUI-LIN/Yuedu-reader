@@ -7,31 +7,22 @@ struct OPDSAcquisition: Hashable {
     let rel: String
     var size: Int64? = nil
 
-    var importExtension: String? {
-        let mime = type.lowercased().split(separator: ";").first.map(String.init) ?? ""
-        if mime.contains("epub") { return "epub" }
-        if mime.contains("pdf") { return "pdf" }
-        if mime.contains("markdown") { return "md" }
-        if mime == "text/plain" { return "txt" }
+    var importExtension: String? { format?.extensions.first }
+    var isSupported: Bool { format != nil }
+    /// `BookFileFormat`'s reading preference, with an EPUB 3 ahead of other EPUBs.
+    var preference: Int {
+        guard let format, let rank = format.readingPreference else { return 9 }
+        if format == .epub { return url.path.contains(".epub3") ? 0 : 1 }
+        return rank + 1
+    }
+
+    private var format: BookFileFormat? {
+        if let format = BookFileFormat(mediaType: type) { return format }
         // Some catalogs omit the media type or use the generic binary type.
         // Their advertised filename still identifies a format the reader supports.
-        if mime.isEmpty || mime == "application/octet-stream" {
-            let ext = url.pathExtension.lowercased()
-            if ["epub", "pdf", "txt", "md", "markdown"].contains(ext) {
-                return ext == "markdown" ? "md" : ext
-            }
-        }
-        return nil
-    }
-    var isSupported: Bool { importExtension != nil }
-    var preference: Int {
-        switch importExtension {
-        case "epub": url.path.contains(".epub3") ? 0 : 1
-        case "pdf": 2
-        case "txt": 3
-        case "md": 4
-        default: 9
-        }
+        let mime = type.lowercased().split(separator: ";").first.map(String.init) ?? ""
+        guard mime.isEmpty || mime == "application/octet-stream" else { return nil }
+        return BookFileFormat.document(fileExtension: url.pathExtension)
     }
 }
 

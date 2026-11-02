@@ -127,7 +127,7 @@ enum CalibreWirelessError: LocalizedError, Equatable {
 }
 
 enum CalibreWirelessHandshake {
-    static let supportedExtensions = ["epub", "pdf", "txt", "md", "markdown"]
+    static let supportedExtensions = BookFileFormat.documentExtensions
 
     static func response(to arguments: [String: CalibreJSON], password: String, deviceName: String) throws -> CalibreFrame {
         guard arguments["serverProtocolVersion"]?.integer == 1 else { throw CalibreWirelessError.unsupportedProtocol }

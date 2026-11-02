@@ -40,7 +40,10 @@ struct OPDSParserTests {
             type: "application/octet-stream", rel: "http://opds-spec.org/acquisition")
         #expect(file.importExtension == "epub")
         #expect(file.isSupported)
-        let unsupported = OPDSAcquisition(url: URL(string: "https://example.com/book.mobi")!,
+        let kindle = OPDSAcquisition(url: URL(string: "https://example.com/book.mobi")!,
+            type: "application/octet-stream", rel: "http://opds-spec.org/acquisition")
+        #expect(kindle.importExtension == "mobi")
+        let unsupported = OPDSAcquisition(url: URL(string: "https://example.com/book.docx")!,
             type: "application/octet-stream", rel: "http://opds-spec.org/acquisition")
         #expect(!unsupported.isSupported)
     }

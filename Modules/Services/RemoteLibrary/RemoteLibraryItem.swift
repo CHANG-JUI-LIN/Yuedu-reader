@@ -14,7 +14,7 @@ struct RemoteLibraryFormat: Codable, Hashable, Identifiable, Sendable {
     }
 
     var id: String { url.absoluteString + "#" + fileExtension.lowercased() }
-    var isSupported: Bool { ["epub", "pdf", "txt", "md", "markdown"].contains(fileExtension.lowercased()) }
+    var isSupported: Bool { BookFileFormat.document(fileExtension: fileExtension) != nil }
     var displayName: String { fileExtension.uppercased() }
 }
 

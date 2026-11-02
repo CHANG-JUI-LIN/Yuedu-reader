@@ -75,7 +75,8 @@ struct LiveCalibreWirelessTests {
         let originalEntry = try #require(originalRegistry.books.first)
         #expect(originalRegistry.books.count == 1)
         #expect(originalEntry.bookID == imported.id)
-        print("[LiveCalibreWireless] RECEIVED_READABLE_EPUB bookID=\(imported.id) calibreUUID=\(originalEntry.calibreUUID) bytes=\(completed.totalBytes) chapters=\(publication.chapters.count)")
+        // `lpath` ends in the format Calibre chose to send, for a book it holds in several.
+        print("[LiveCalibreWireless] RECEIVED_READABLE_EPUB bookID=\(imported.id) calibreUUID=\(originalEntry.calibreUUID) lpath=\(originalEntry.lpath) bytes=\(completed.totalBytes) chapters=\(publication.chapters.count)")
 
         print("[LiveCalibreWireless] READY_FOR_EJECT; use desktop Calibre Eject device now")
         try await liveDeadline(seconds: 180, stage: "desktop eject ACK and peer TCP closure") {

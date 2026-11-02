@@ -69,7 +69,7 @@ struct CalibreWirelessProtocolTests {
         ], password: "secret", deviceName: "Yuedu iPhone")
         #expect(response.opcode == 0)
         #expect(response.arguments["passwordHash"] == .string("74f13475f71d6e993fda62bf704e51fbfaddd213"))
-        #expect(response.arguments["acceptedExtensions"] == .array([.string("epub"), .string("pdf")]))
+        #expect(response.arguments["acceptedExtensions"] == .array([.string("epub"), .string("mobi"), .string("pdf")]))
         #expect(response.arguments["canUseCachedMetadata"] == .bool(false))
         #expect(response.arguments["canDeleteMultipleBooks"] == .bool(true))
         #expect(response.arguments["canReceiveBookBinary"] == .bool(true))

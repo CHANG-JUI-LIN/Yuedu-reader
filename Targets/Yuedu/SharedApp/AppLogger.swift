@@ -12,6 +12,13 @@ import os.log
 // matters: it is the one place all ~330 call sites pass through, so the device-
 // readable log needed no changes at any of them.
 
+/// An error whose `localizedDescription` is a sentence for the reader, which leaves out
+/// what a diagnosis needs: the case, a path, the parser's own reason. `AppLogger` writes
+/// `diagnosticDescription` beside it, so a message shown to users costs the log nothing.
+protocol DiagnosableError: Error {
+    var diagnosticDescription: String { get }
+}
+
 enum AppLogger {
     private static let subsystem = Bundle.main.bundleIdentifier ?? "com.yuedu.app"
 
@@ -188,6 +195,9 @@ enum AppLogger {
         var parts = [message]
         if let error {
             parts.append("error=\(error.localizedDescription)")
+            if let error = error as? DiagnosableError {
+                parts.append("cause=\(error.diagnosticDescription)")
+            }
         }
         if !context.isEmpty {
             let ctxStr = context.map { "\($0.key)=\($0.value)" }.sorted().joined(separator: " ")

@@ -32,7 +32,8 @@ struct ChapterRenumbering: Equatable, Sendable {
                 chapterIndex: chapterIndex(for: bookmark.chapterIndex), chapterTitle: bookmark.chapterTitle,
                 position: position(for: bookmark.position), length: bookmark.length, kind: bookmark.kind,
                 note: bookmark.note, excerpt: bookmark.excerpt, id: bookmark.id, date: bookmark.date,
-                annotationStyle: bookmark.annotationStyle, annotationColor: bookmark.annotationColor
+                annotationStyle: bookmark.annotationStyle, annotationColor: bookmark.annotationColor,
+                textVersion: bookmark.textVersion
             )
         }
     }

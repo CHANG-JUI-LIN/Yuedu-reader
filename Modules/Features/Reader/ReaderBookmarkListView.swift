@@ -24,6 +24,8 @@ struct ReaderBookmarkListView: View {
     /// 點章名：跳回這一章的開頭。
     let onSelectChapter: (Int) -> Void
     let onDelete: (Bookmark) -> Void
+    /// 見 `BookmarkSelectionList.indexesReadText`。
+    var indexesReadText: (Bookmark) -> Bool = { _ in true }
 
     @Binding var isPresented: Bool
 
@@ -139,6 +141,7 @@ struct ReaderBookmarkListView: View {
             onSelect: onSelect,
             onSelectChapter: onSelectChapter,
             onDelete: onDelete,
+            indexesReadText: indexesReadText,
             selection: $selection
         )
     }
@@ -169,6 +172,7 @@ struct BookmarkListSection: View {
     let onSelect: (Bookmark) -> Void
     let onSelectChapter: (Int) -> Void
     let onDelete: (Bookmark) -> Void
+    var indexesReadText: (Bookmark) -> Bool = { _ in true }
 
     @Binding var selection: Set<UUID>
 
@@ -219,7 +223,8 @@ struct BookmarkListSection: View {
                 },
                 onSelect: onSelect,
                 onSelectChapter: { onSelectChapter($0.chapterIndex) },
-                onDelete: onDelete
+                onDelete: onDelete,
+                indexesReadText: indexesReadText
             )
         }
     }
@@ -274,6 +279,30 @@ struct BookmarkListSection: View {
         onSelect: { _ in },
         onSelectChapter: { _ in },
         onDelete: { _ in },
+        isPresented: .constant(true)
+    )
+}
+
+#Preview("另一版轉換文字的書籤") {
+    let current = Bookmark(
+        chapterIndex: 2, chapterTitle: "第三章",
+        position: CoreTextReadingPosition(spineIndex: 2, charOffset: 0),
+        excerpt: "這一條對著目前的文字，點了會跳過去。", date: Date().addingTimeInterval(-60), textVersion: 2
+    )
+    let older = Bookmark(
+        chapterIndex: 2, chapterTitle: "第三章",
+        position: CoreTextReadingPosition(spineIndex: 2, charOffset: 480),
+        excerpt: "這一條建立在上一版轉換的文字上。", date: Date().addingTimeInterval(-3600), textVersion: 1
+    )
+    ReaderBookmarkListView(
+        bookTitle: "轉換書",
+        bookmarks: [current, older],
+        pageNumber: { _ in 3 },
+        chapterTitle: { _ in "第三章" },
+        onSelect: { _ in },
+        onSelectChapter: { _ in },
+        onDelete: { _ in },
+        indexesReadText: { $0.textVersion == 2 },
         isPresented: .constant(true)
     )
 }

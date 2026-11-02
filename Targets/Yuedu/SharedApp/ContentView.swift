@@ -291,18 +291,25 @@ struct ContentView: View {
         }
     }
 
-    private static func sharedImportMessage(for outcome: SharedImportQueueDrainer.Outcome) -> String {
+    static func sharedImportMessage(for outcome: SharedImportQueueDrainer.Outcome) -> String {
         let imported = outcome.importedCount
         let failed = outcome.failureCount
+        let summary: String
         if imported > 0 && failed == 0 {
-            return String(format: localized("成功匯入 %d 個項目"), imported)
+            summary = String(format: localized("成功匯入 %d 個項目"), imported)
         } else if imported > 0 {
-            return String(
+            summary = String(
                 format: localized("成功匯入 %1$d 個項目，%2$d 個失敗"), imported, failed)
         } else {
-            return String(format: localized("%d 個項目匯入失敗"), failed)
+            summary = String(format: localized("%d 個項目匯入失敗"), failed)
         }
+        // Why, as the Files importer says it; the count above already gives the total, so
+        // a long batch of failures keeps the alert short.
+        let reasons = outcome.failures.prefix(Self.sharedImportReasonLimit)
+        return reasons.isEmpty ? summary : summary + "\n\n" + reasons.joined(separator: "\n")
     }
+
+    static let sharedImportReasonLimit = 3
 
     /// The root tab bar is driven by `GlobalSettings` so users can hide pages
     /// and customize tab icon assets without changing the feature screens.

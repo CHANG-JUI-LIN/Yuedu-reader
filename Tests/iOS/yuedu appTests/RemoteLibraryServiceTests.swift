@@ -433,6 +433,66 @@ struct RemoteLibraryServiceTests {
         #expect(context.store.books.isEmpty)
     }
 
+    private static let mobiFixtures = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
+        .appendingPathComponent("Fixtures/MOBI")
+
+    @Test("a remote AZW3 or MOBI is converted in the cache on its first open and reused after",
+          arguments: [("features.azw3", MOBIFile.Kind.kf8), ("features.mobi", .mobi6)])
+    func kindleConvertsInCache(name: String, kind: MOBIFile.Kind) async throws {
+        let data = try Data(contentsOf: Self.mobiFixtures.appendingPathComponent(name))
+        let context = try Context(extension: (name as NSString).pathExtension, data: data)
+        defer { context.cleanup() }
+        let book = try await context.service.read(item: context.item, format: context.format, store: context.store)
+        #expect(context.store.books.isEmpty)
+        #expect(book.source == "local_epub")
+        #expect(book.resolvedPipelineKind == .epub)
+        #expect(book.mobi == MOBIBookSource(originalFilename: nil, kind: kind))
+        #expect(!book.isConvertedAtImport, "the remote file is the original; nothing is kept beside it")
+        let original = StorageLocations.bookFile(book.contentFilename)
+        #expect(try Data(contentsOf: original) == data)
+        let publication = try #require(context.service.publication(bookID: book.id))
+        let html = try await publication.chapterHTML(at: 0)
+        #expect(!html.isEmpty)
+
+        let converted = original.deletingLastPathComponent().appendingPathComponent("converted.epub")
+        let values = try converted.resourceValues(forKeys: [.contentModificationDateKey])
+        let written = try #require(values.contentModificationDate)
+        context.service.release(bookID: book.id)
+        let reopened = try await context.service.read(item: context.item, format: context.format, store: context.store)
+        #expect(context.service.publication(bookID: reopened.id) != nil)
+        let reopenedValues = try converted.resourceValues(forKeys: [.contentModificationDateKey])
+        #expect(reopenedValues.contentModificationDate == written)
+        #expect(context.transport.downloadCount == 1)
+    }
+
+    @Test("an offline AZW3 copy is checked as a Kindle file and converted when it is read")
+    func kindleOfflineCopy() async throws {
+        let data = try Data(contentsOf: Self.mobiFixtures.appendingPathComponent("features.azw3"))
+        let context = try Context(extension: "azw3", data: data)
+        defer { context.cleanup() }
+        let downloaded = try await context.service.downloadOffline(item: context.item, format: context.format,
+                                                                   store: context.store)
+        let offline = try #require(downloaded.remoteSource?.offlineFilename)
+        #expect(try Data(contentsOf: StorageLocations.bookFile(offline)) == data)
+        #expect(downloaded.mobi?.kind == .kf8, "named before the copy is first opened")
+        context.transport.headError = URLError(.notConnectedToInternet)
+        let read = try await context.service.prepare(bookID: downloaded.id, store: context.store)
+        #expect(read.contentFilename == offline)
+        #expect(read.mobi?.kind == .kf8)
+        #expect(context.service.publication(bookID: read.id) != nil)
+    }
+
+    @Test("an offline copy that is not a Kindle file is refused and not kept")
+    func kindleOfflineCopyRefused() async throws {
+        let context = try Context(extension: "azw3", data: Data("not a Kindle book".utf8))
+        defer { context.cleanup() }
+        await #expect(throws: MOBIError.notMOBI) {
+            _ = try await context.service.downloadOffline(item: context.item, format: context.format, store: context.store)
+        }
+        let book = context.service.book(for: context.item, format: context.format, store: context.store)
+        #expect(book?.remoteSource?.offlineFilename == nil)
+    }
+
     @MainActor
     private final class Context {
         let root: URL

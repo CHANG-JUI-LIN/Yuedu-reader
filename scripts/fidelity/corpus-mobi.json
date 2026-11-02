@@ -1,0 +1,27 @@
+{
+ "schema": 1,
+ "note": "Machine-local corpus for the MOBI / AZW3 importer (docs/superpowers/plans/2026-11-01-mobi-azw3-import.md, step 6): what the converter writes, measured beside the EPUB it came from, so a drop from `-src` to `-azw3` / `-mobi` is the converter's. `root` holds the EPUBs the app wrote when the Kindle files were opened in it (Open In, a Release build), named by id, and the sources as symlinks: the fixtures under Tests/iOS/yuedu appTests/Fixtures/MOBI, and three corpus.json books converted to AZW3 with Calibre. No book content is committed.",
+ "root": "/Users/zhangruilin/Library/Caches/YueduMOBI/corpus",
+ "sample": {"dev": 10, "holdout": 6},
+ "books": [
+  {"id": "features-src", "match": "features-src.epub", "pinned": []},
+  {"id": "features-azw3", "match": "features-azw3.epub", "pinned": []},
+  {"id": "features-mobi", "match": "features-mobi.epub", "pinned": []},
+  {"id": "features-combo-mobi", "match": "features-combo-mobi.epub", "pinned": []},
+  {"id": "features-uncompressed-mobi", "match": "features-uncompressed-mobi.epub", "pinned": []},
+  {"id": "vertical-zh-src", "match": "vertical-zh-src.epub", "pinned": []},
+  {"id": "vertical-zh-azw3", "match": "vertical-zh-azw3.epub", "pinned": []},
+  {"id": "vertical-zh-mobi", "match": "vertical-zh-mobi.epub", "pinned": []},
+  {"id": "gutenberg-11-src", "match": "gutenberg-11-src.epub", "pinned": []},
+  {"id": "gutenberg-11-azw3", "match": "gutenberg-11-azw3.epub", "pinned": []},
+  {"id": "gutenberg-11-mobi", "match": "gutenberg-11-mobi.epub", "pinned": []},
+  {"id": "embedded-font-src", "match": "embedded-font-src.epub", "pinned": []},
+  {"id": "embedded-font-azw3", "match": "embedded-font-azw3.epub", "pinned": []},
+  {"id": "guimi-src", "match": "guimi-src.epub", "pinned": []},
+  {"id": "guimi-azw3", "match": "guimi-azw3.epub", "pinned": []},
+  {"id": "quanzhi-src", "match": "quanzhi-src.epub", "pinned": []},
+  {"id": "quanzhi-azw3", "match": "quanzhi-azw3.epub", "pinned": []},
+  {"id": "redchamber-src", "match": "redchamber-src.epub", "pinned": []},
+  {"id": "redchamber-azw3", "match": "redchamber-azw3.epub", "pinned": []}
+ ]
+}

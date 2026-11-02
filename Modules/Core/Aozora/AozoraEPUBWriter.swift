@@ -1,6 +1,4 @@
-import CryptoKit
 import Foundation
-import ReadiumZIPFoundation
 
 /// What a converted book records about itself, in `OPS/yuedu-aozora.json`. It lives
 /// in the EPUB, not in the book record: a synced field would tell another device
@@ -54,16 +52,6 @@ enum AozoraEPUBWriter {
     static func write(_ document: AozoraDocument, chapters: [AozoraChapter], images: [String: URL],
                       source: AozoraEPUBManifest.Source, identifier: String, to url: URL) async throws -> AozoraEPUBManifest {
         guard !chapters.isEmpty else { throw WriteError.noChapters }
-        let staging = FileManager.default.temporaryDirectory
-            .appendingPathComponent("aozora-epub-\(UUID().uuidString)", isDirectory: true)
-        try FileManager.default.createDirectory(at: staging, withIntermediateDirectories: true)
-        defer {
-            do {
-                try FileManager.default.removeItem(at: staging)
-            } catch {
-                AppLogger.parse("[Aozora] could not remove the EPUB staging folder: \(error)", level: .notice)
-            }
-        }
 
         // Figures: package path by source name, for the chapters that show them.
         var figures: [(name: String, path: String, file: URL)] = []
@@ -76,12 +64,12 @@ enum AozoraEPUBWriter {
             figurePaths[name] = "../images/" + packageName
         }
 
-        var entries: [(path: String, data: Data)] = []
+        var entries: [EPUBPackageArchive.Entry] = []
         var manifestChapters: [AozoraEPUBManifest.Chapter] = []
         for (index, chapter) in chapters.enumerated() {
             let href = String(format: "text/c%04d.xhtml", index + 1)
             let xhtml = AozoraXHTMLWriter.document(for: chapter, in: document, images: figurePaths)
-            entries.append(("OPS/" + href, Data(xhtml.utf8)))
+            entries.append(.text("OPS/" + href, xhtml))
             manifestChapters.append(AozoraEPUBManifest.Chapter(
                 href: href, length: chapter.text.utf16.count, sha256: sha256(Data(chapter.text.utf8)),
                 sourceMap: chapter.sourceMap.runs.flatMap {
@@ -92,50 +80,23 @@ enum AozoraEPUBWriter {
                                           identifier: identifier, source: source, chapters: manifestChapters)
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.sortedKeys]
-        entries.append((manifestPath, try encoder.encode(manifest)))
-        entries.append(("OPS/style/aozora.css", Data(AozoraXHTMLWriter.stylesheet.utf8)))
-        entries.append(("OPS/nav.xhtml", Data(navigation(chapters, title: title(of: document)).utf8)))
-        entries.append(("OPS/package.opf", Data(packageDocument(document, chapters: chapters,
+        entries.append(.data(manifestPath, try encoder.encode(manifest)))
+        entries.append(.text("OPS/style/aozora.css", AozoraXHTMLWriter.stylesheet))
+        entries.append(.text("OPS/nav.xhtml", navigation(chapters, title: title(of: document))))
+        entries.append(.text("OPS/package.opf", packageDocument(document, chapters: chapters,
                                                                 figures: figures.map { (path: $0.path, name: $0.name) },
-                                                                identifier: identifier).utf8)))
-        entries.append(("META-INF/container.xml", Data(containerXML.utf8)))
-
-        if FileManager.default.fileExists(atPath: url.path) {
-            try FileManager.default.removeItem(at: url)
-        }
-        let archive = try await Archive(url: url, accessMode: .create)
-        // `mimetype` first and stored, as OCF requires.
-        try await add("mimetype", Data("application/epub+zip".utf8), to: archive, in: staging, compression: .none)
-        for entry in entries {
-            try await add(entry.path, entry.data, to: archive, in: staging, compression: .deflate)
-        }
-        for figure in figures {
-            try await archive.addEntry(with: figure.path, fileURL: figure.file, compressionMethod: .deflate)
-        }
+                                                                identifier: identifier)))
+        entries.append(.text("META-INF/container.xml", EPUBPackageArchive.containerXML))
+        entries += figures.map { .file($0.path, $0.file) }
+        try await EPUBPackageArchive.write(entries, to: url)
         return manifest
     }
 
-    private static func add(_ path: String, _ data: Data, to archive: Archive, in staging: URL,
-                            compression: CompressionMethod) async throws {
-        let file = staging.appendingPathComponent(path)
-        try FileManager.default.createDirectory(at: file.deletingLastPathComponent(), withIntermediateDirectories: true)
-        try data.write(to: file)
-        try await archive.addEntry(with: path, fileURL: file, compressionMethod: compression)
-    }
-
     static func sha256(_ data: Data) -> String {
-        SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
+        EPUBPackageArchive.sha256(data)
     }
 
     // MARK: Package documents
-
-    private static let containerXML = """
-        <?xml version="1.0" encoding="UTF-8"?>
-        <container version="1.0" xmlns="urn:oasis:names:tc:opendocument:xmlns:container">
-          <rootfiles><rootfile full-path="OPS/package.opf" media-type="application/oebps-package+xml"/></rootfiles>
-        </container>
-
-        """
 
     private static func title(of document: AozoraDocument) -> String {
         document.header?.title ?? document.headerBlocks.first?.displayedText ?? ""
@@ -163,7 +124,7 @@ enum AozoraEPUBWriter {
             metadata += "    <dc:\(person.element) id=\"\(id)\">\(escape(person.name))</dc:\(person.element)>\n"
             metadata += "    <meta refines=\"#\(id)\" property=\"role\" scheme=\"marc:relators\">\(person.role)</meta>\n"
         }
-        metadata += "    <meta property=\"dcterms:modified\">\(modifiedDate())</meta>\n"
+        metadata += "    <meta property=\"dcterms:modified\">\(EPUBPackageArchive.modifiedTimestamp())</meta>\n"
 
         var manifest = """
                 <item id="nav" href="nav.xhtml" media-type="application/xhtml+xml" properties="nav"/>
@@ -251,12 +212,6 @@ enum AozoraEPUBWriter {
             open.append(level)
             return open.count - 1
         }
-    }
-
-    private static func modifiedDate() -> String {
-        let formatter = ISO8601DateFormatter()
-        formatter.formatOptions = [.withInternetDateTime]
-        return formatter.string(from: Date())
     }
 
     private static func mediaType(of path: String) -> String {

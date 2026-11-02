@@ -159,6 +159,12 @@ extension ReaderView {
     func jumpToBookmark(_ bookmark: Bookmark) {
         let position = bookmark.position
         guard spineChapters.indices.contains(position.spineIndex) else { return }
+        // Its offset indexes another converted text version: here it would land on other words.
+        // How the list shows such a bookmark is the MOBI plan's step 5.
+        guard ConvertedTextVersions.shared.indexesReadText(bookmark.textVersion, bookId: bookId.uuidString) else {
+            AppLogger.cache("[ConvertedText] bookmark of another text version not jumped to bookId=\(bookId) stamp=\(bookmark.textVersion.map(String.init) ?? "none")", level: .notice)
+            return
+        }
         if effectiveScrollMode, epubRenderer.scrollEngine != nil {
             currentChapterIndex = position.spineIndex
             scrollVisibleChapter = position.spineIndex

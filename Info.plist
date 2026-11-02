@@ -23,6 +23,10 @@
 				<string>com.adobe.pdf</string>
 				<string>public.plain-text</string>
 				<string>net.daringfireball.markdown</string>
+				<string>org.mobipocket.mobi</string>
+				<string>com.amazon.azw</string>
+				<string>com.amazon.mobi-ebook</string>
+				<string>com.amazon.mobi8-ebook</string>
 				<string>public.json</string>
 				<string>public.zip-archive</string>
 				<string>com.macitbetter.cbz-archive</string>
@@ -216,6 +220,49 @@
 				</array>
 				<key>public.mime-type</key>
 				<string>text/markdown</string>
+			</dict>
+		</dict>
+		<dict>
+			<key>UTTypeConformsTo</key>
+			<array>
+				<string>public.data</string>
+			</array>
+			<key>UTTypeDescription</key>
+			<string>Mobipocket eBook</string>
+			<key>UTTypeIdentifier</key>
+			<string>org.mobipocket.mobi</string>
+			<key>UTTypeTagSpecification</key>
+			<dict>
+				<key>public.filename-extension</key>
+				<array>
+					<string>mobi</string>
+					<string>prc</string>
+				</array>
+				<key>public.mime-type</key>
+				<string>application/x-mobipocket-ebook</string>
+			</dict>
+		</dict>
+		<dict>
+			<key>UTTypeConformsTo</key>
+			<array>
+				<string>public.data</string>
+			</array>
+			<key>UTTypeDescription</key>
+			<string>Kindle eBook</string>
+			<key>UTTypeIdentifier</key>
+			<string>com.amazon.azw</string>
+			<key>UTTypeTagSpecification</key>
+			<dict>
+				<key>public.filename-extension</key>
+				<array>
+					<string>azw</string>
+					<string>azw3</string>
+				</array>
+				<key>public.mime-type</key>
+				<array>
+					<string>application/vnd.amazon.ebook</string>
+					<string>application/x-mobi8-ebook</string>
+				</array>
 			</dict>
 		</dict>
 		<dict>

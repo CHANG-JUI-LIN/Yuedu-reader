@@ -23,7 +23,7 @@ final class FirestoreSyncManager: ObservableObject {
     private let db = Firestore.firestore()
     private var cancellables = Set<AnyCancellable>()
     private var pushWorkItems: [String: Task<Void, Never>] = [:]
-    private var pendingPositions: [String: CoreTextReadingPosition] = [:]
+    private var pendingPositions: [String: SyncedReadingPosition] = [:]
     private var bookStore: BookStore?
     private var isApplyingRemote = false
     private var isSyncing = false
@@ -223,8 +223,9 @@ final class FirestoreSyncManager: ObservableObject {
 
     // MARK: - Reading position (debounced)
 
-    func scheduleReadingPositionPush(_ position: CoreTextReadingPosition, for bookId: String) {
-        pendingPositions[bookId] = position
+    /// `textVersion`: the converted text the position indexes (`ConvertedTextVersions`).
+    func scheduleReadingPositionPush(_ position: CoreTextReadingPosition, for bookId: String, textVersion: Int? = nil) {
+        pendingPositions[bookId] = SyncedReadingPosition(position: position, textVersion: textVersion)
         schedulePush("position-\(bookId)") { [weak self] in
             guard let self, let pending = self.pendingPositions[bookId] else { return }
             self.pendingPositions[bookId] = nil
@@ -232,10 +233,14 @@ final class FirestoreSyncManager: ObservableObject {
         }
     }
 
-    private func writeReadingPosition(_ position: CoreTextReadingPosition, for bookId: String) async throws {
+    private func writeReadingPosition(_ position: SyncedReadingPosition, for bookId: String) async throws {
         guard let uid = FirebaseAuthManager.shared.uid else { return }
-        let envelope = SyncEnvelope(id: bookId, value: position, updatedAt: Date())
-        try userDocument(uid).collection("readingPositions").document(bookId).setData(from: envelope, merge: true)
+        let envelope = SyncEnvelope(id: bookId, value: position.position, updatedAt: Date(), textVersion: position.textVersion)
+        var payload = try Firestore.Encoder().encode(envelope)
+        // A merge keeps keys the write leaves out: an unstamped position must not inherit the
+        // stamp of the one it replaces.
+        payload["textVersion"] = position.textVersion.map { $0 as Any } ?? FieldValue.delete()
+        userDocument(uid).collection("readingPositions").document(bookId).setData(payload, merge: true, completion: nil)
     }
 
     // MARK: - Account deletion
@@ -388,7 +393,9 @@ final class FirestoreSyncManager: ObservableObject {
         }
 
         if let positions = try await fetchEnvelopes(CoreTextReadingPosition.self, at: userRef.collection("readingPositions")) {
-            JSONFileReadingPositionStore.replacePositionsFromSync(positions)
+            JSONFileReadingPositionStore.replacePositionsFromSync(positions.mapValues {
+                SyncedReadingPosition(position: $0.value, textVersion: $0.textVersion)
+            })
         }
 
         let mergedSources = try await pullCollection(
@@ -608,16 +615,17 @@ final class FirestoreSyncManager: ObservableObject {
         }
     }
 
-    private func fetchEnvelopes<T: Codable>(_ type: T.Type, at collection: CollectionReference) async throws -> [String: T]? {
+    private func fetchEnvelopes<T: Codable>(_ type: T.Type, at collection: CollectionReference) async throws
+        -> [String: (value: T, textVersion: Int?)]? {
         let snapshot = try await collection.getDocuments()
         guard !snapshot.documents.isEmpty else { return nil }
-        var result: [String: T] = [:]
+        var result: [String: (value: T, textVersion: Int?)] = [:]
         for document in snapshot.documents {
             if (document.get("deleted") as? Bool) == true { continue }
             if let envelope = try? document.data(as: SyncEnvelope<T>.self) {
-                result[document.documentID] = envelope.value
+                result[document.documentID] = (envelope.value, envelope.textVersion)
             } else if let value = try? document.data(as: T.self) {
-                result[document.documentID] = value
+                result[document.documentID] = (value, nil)
             }
         }
         return result
@@ -659,6 +667,9 @@ private struct SyncEnvelope<T: Codable>: Codable {
     var id: String
     var value: T
     var updatedAt: Date
+    /// A reading position's converted text version (`ConvertedTextVersions`); absent from
+    /// every other envelope, and from a position that is not stamped.
+    var textVersion: Int? = nil
 }
 
 struct FirestoreSyncRecord<Value> {

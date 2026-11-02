@@ -43,6 +43,10 @@ struct Bookmark: Identifiable, Codable, Equatable {
     let excerpt: String
     let annotationStyle: AnnotationStyle?
     let annotationColor: AnnotationColor?
+    /// The converted text version its place indexes (`ConvertedTextVersions`); nil for a
+    /// book that is not converted. Encoded only when present, so other books' records keep
+    /// their bytes and their sync hash.
+    var textVersion: Int?
 
     init(
         chapterIndex: Int,
@@ -55,7 +59,8 @@ struct Bookmark: Identifiable, Codable, Equatable {
         id: UUID = UUID(),
         date: Date = Date(),
         annotationStyle: AnnotationStyle? = nil,
-        annotationColor: AnnotationColor? = nil
+        annotationColor: AnnotationColor? = nil,
+        textVersion: Int? = nil
     ) {
         self.id = id
         self.chapterIndex = chapterIndex
@@ -68,6 +73,7 @@ struct Bookmark: Identifiable, Codable, Equatable {
         self.excerpt = excerpt
         self.annotationStyle = annotationStyle
         self.annotationColor = annotationColor
+        self.textVersion = textVersion
     }
 
     /// 書籤卡片摘錄的字數上限。卡片給摘錄兩行，而章首那一頁的開頭是排進版面的
@@ -97,6 +103,7 @@ struct Bookmark: Identifiable, Codable, Equatable {
         case id, chapterIndex, chapterTitle, position, length, kind, date, note, excerpt
         case spineIndex, charOffset, pageIndex
         case annotationStyle, annotationColor
+        case textVersion
     }
 
     init(from decoder: Decoder) throws {
@@ -118,6 +125,7 @@ struct Bookmark: Identifiable, Codable, Equatable {
         excerpt = (try? c.decode(String.self, forKey: .excerpt)) ?? ""
         annotationStyle = try? c.decode(AnnotationStyle.self, forKey: .annotationStyle)
         annotationColor = try? c.decode(AnnotationColor.self, forKey: .annotationColor)
+        textVersion = try? c.decode(Int.self, forKey: .textVersion)
     }
 
     func encode(to encoder: Encoder) throws {
@@ -133,10 +141,18 @@ struct Bookmark: Identifiable, Codable, Equatable {
         try c.encode(excerpt, forKey: .excerpt)
         try c.encodeIfPresent(annotationStyle, forKey: .annotationStyle)
         try c.encodeIfPresent(annotationColor, forKey: .annotationColor)
+        try c.encodeIfPresent(textVersion, forKey: .textVersion)
     }
 }
 
 extension Array where Element == Bookmark {
+    /// Those whose place indexes the text this device reads the book from
+    /// (`ConvertedTextVersions`): all of them, unless the book is converted.
+    func indexingReadText(of bookId: UUID) -> [Bookmark] {
+        guard ConvertedTextVersions.shared.version(for: bookId.uuidString) != nil else { return self }
+        return filter { ConvertedTextVersions.shared.indexesReadText($0.textVersion, bookId: bookId.uuidString) }
+    }
+
     func sortedByStablePosition() -> [Bookmark] {
         sorted(by: Bookmark.stablePositionSort)
     }
@@ -305,6 +321,10 @@ struct ReadingBook: Identifiable, Codable {
     /// another device that its copy was regenerated when only this one was.
     var aozora: AozoraBookSource?
 
+    /// Set on a book converted from a MOBI or AZW3 file (`MOBIBookSource`). Optional
+    /// and encoded only when present, for the reason `audioPlayMode` gives.
+    var mobi: MOBIBookSource?
+
     /// When 從繼續閱讀移除 or 標記為已讀完 last took the book out of 繼續閱讀 (unified library
     /// 5d-3c). It stays out until it is opened again, as Apple Books' Continue does: see
     /// `isInContinueReading`. Optional and encoded only when present, for the reason
@@ -426,6 +446,7 @@ struct ReadingBook: Identifiable, Codable {
         audioOpenCreditsSeconds = try? c.decode(Int.self, forKey: .audioOpenCreditsSeconds)
         audioCloseCreditsSeconds = try? c.decode(Int.self, forKey: .audioCloseCreditsSeconds)
         aozora = try c.decodeIfPresent(AozoraBookSource.self, forKey: .aozora)
+        mobi = try c.decodeIfPresent(MOBIBookSource.self, forKey: .mobi)
         continueReadingHiddenAt = try c.decodeIfPresent(Date.self, forKey: .continueReadingHiddenAt)
         customIntro = try c.decodeIfPresent(String.self, forKey: .customIntro)
         module = try c.decodeIfPresent(ModuleBookReference.self, forKey: .module)
@@ -444,6 +465,7 @@ struct ReadingBook: Identifiable, Codable {
         case audioChapterIndex, audioTimeSeconds
         case audioPlayMode, audioOpenCreditsSeconds, audioCloseCreditsSeconds
         case aozora
+        case mobi
         case continueReadingHiddenAt
         case customIntro
         case module
@@ -544,6 +566,7 @@ extension ReadingBook {
     /// so the pipeline kind alone can't name the format — the import source can.
     var displayFormatLabel: String {
         if isOnline { return localized("線上") }
+        if let mobi { return mobi.formatLabel }
         if resolvedPipelineKind == .fixedPage, source == "local_epub" { return "EPUB" }
         return resolvedPipelineKind.displayFormat
     }

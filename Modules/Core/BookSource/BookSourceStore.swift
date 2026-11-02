@@ -1222,7 +1222,7 @@ class BookSourceStore: @MainActor ObservableObject {
 
     // MARK: Errors
 
-    enum ImportError: LocalizedError {
+    enum ImportError: LocalizedError, DiagnosableError {
         case invalidData
         case parseError
         case parseErrorDetail(String)
@@ -1239,14 +1239,17 @@ class BookSourceStore: @MainActor ObservableObject {
                     ByteCountFormatter.string(fromByteCount: Int64(BookSourceStore.maxImportBytes), countStyle: .file)
                 )
             case .notUTF8: return localized("檔案不是 UTF-8 編碼，無法讀取來源配置。")
-            case .invalidData: return "Invalid data format"
-            case .parseError: return "Unable to parse book source JSON"
+            case .invalidData: return localized("無法讀取來源配置資料")
+            case .parseError: return localized("無法解析來源配置資料")
+            // The decoder's own words name the key or value a source's author has to fix.
             case .parseErrorDetail(let detail):
-                return "Unable to parse book source JSON: \(detail)"
+                return String(format: localized("無法解析來源配置資料：%@"), detail)
             case .encryptedFormat(let fmt):
-                return "\(fmt) format uses proprietary encryption and is not supported for direct import. Please use the corresponding app to export as JSON/TXT format."
+                return String(format: localized("%@ 格式經過加密，無法直接匯入。請用原本的 App 匯出成 JSON 或 TXT。"), fmt)
             }
         }
+
+        var diagnosticDescription: String { String(describing: self) }
     }
 }
 

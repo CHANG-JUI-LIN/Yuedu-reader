@@ -75,6 +75,7 @@ struct RemoteLibraryBrowsePresentationTests {
         let item = RemoteLibraryItem(id: "book", connectionID: "catalog", title: "Book", formats: formats)
         #expect(RemoteLibraryBrowsePresentation.preferredFormat(in: item)?.fileExtension == "epub")
         #expect(item.formats == formats)
-        #expect(item.formats.first?.isSupported == false)
+        // Readable since MOBI import (MOBI plan, step 4), and still behind the EPUB.
+        #expect(item.formats.first?.isSupported == true)
     }
 }

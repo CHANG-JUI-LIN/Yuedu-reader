@@ -816,7 +816,17 @@ class BookStore: @MainActor ObservableObject, BookProvider {
             if requireValidPublication {
                 // A received file must be readable before the transfer is
                 // committed. Reuse this metadata open instead of parsing twice.
-                session = try await PublicationSession.open(sourceURL: destURL)
+                do {
+                    session = try await PublicationSession.open(sourceURL: destURL)
+                } catch let error as PublicationSessionError {
+                    throw error
+                } catch is CancellationError {
+                    throw CancellationError()
+                } catch {
+                    // Readium's own errors say nothing a reader can use, and the import
+                    // alerts show this one; what Readium said goes to the log.
+                    throw PublicationSessionError.parsingFailed(String(describing: error))
+                }
             } else {
                 session = try? await PublicationSession.open(sourceURL: destURL)
             }
@@ -1201,6 +1211,10 @@ class BookStore: @MainActor ObservableObject, BookProvider {
 
     func addBookmark(bookId: UUID, bookmark: Bookmark) {
         guard let idx = records.firstIndex(where: { $0.id == bookId }) else { return }
+        var bookmark = bookmark
+        if bookmark.textVersion == nil {
+            bookmark.textVersion = ConvertedTextVersions.shared.version(for: bookId.uuidString)
+        }
         // Prevent duplicate bookmarks at the same stable position.
         // Top-bar bookmarks write chapter-start positions, so they share one per chapter.
         if records[idx].bookmarks.contains(where: { $0.hasSameStableLocation(as: bookmark) }) { return }
@@ -1215,10 +1229,11 @@ class BookStore: @MainActor ObservableObject, BookProvider {
         saveMeta()
     }
 
-    /// 一頁一個書籤：這一頁上已有的書籤，由早到晚。
+    /// 一頁一個書籤：這一頁上已有的書籤，由早到晚。Another converted text version's bookmarks
+    /// mark other words, and belong to no page here.
     func pageBookmarks(bookId: UUID, in range: ReaderPageBookmarkRange) -> [Bookmark] {
         guard let book = records.first(where: { $0.id == bookId }) else { return [] }
-        return range.pageBookmarks(in: book.bookmarks)
+        return range.pageBookmarks(in: book.bookmarks.indexingReadText(of: bookId))
     }
 
     /// 一頁一個書籤：這頁沒有就加一個（位置記在頁首），已經有就把整頁範圍內的書籤都移除。
@@ -1232,13 +1247,14 @@ class BookStore: @MainActor ObservableObject, BookProvider {
         range: ReaderPageBookmarkRange, excerpt: String
     ) -> Bool {
         guard let idx = records.firstIndex(where: { $0.id == bookId }) else { return false }
-        let existing = range.pageBookmarks(in: records[idx].bookmarks)
+        let existing = range.pageBookmarks(in: records[idx].bookmarks.indexingReadText(of: bookId))
         if existing.isEmpty {
             records[idx].bookmarks.append(Bookmark(
                 chapterIndex: chapterIndex,
                 chapterTitle: chapterTitle,
                 position: range.bookmarkPosition,
-                excerpt: excerpt
+                excerpt: excerpt,
+                textVersion: ConvertedTextVersions.shared.version(for: bookId.uuidString)
             ))
             records[idx].bookmarks = records[idx].bookmarks.sortedByStablePosition()
             saveMeta()
@@ -1279,7 +1295,8 @@ class BookStore: @MainActor ObservableObject, BookProvider {
         guard let idx = records.firstIndex(where: { $0.id == bookId }) else { return }
         let safeLength = max(1, length)
         let targetRange = NSRange(location: position.charOffset, length: safeLength)
-        let existingAnnotations = records[idx].bookmarks.compactMap(\.coreTextTextAnnotation)
+        // Another text version's highlights index other words; they neither merge nor move.
+        let existingAnnotations = records[idx].bookmarks.indexingReadText(of: bookId).compactMap(\.coreTextTextAnnotation)
         // 改顏色／樣式時範圍不變，舊標註會被下面的 removeExact 拿掉。新標註要接手它的身分
         // （id、筆記、建立時間、摘錄），否則「換個顏色」等於刪掉重畫一條新的。
         let replaced = existingAnnotations.first {
@@ -1335,7 +1352,8 @@ class BookStore: @MainActor ObservableObject, BookProvider {
             id: annotation.id,
             date: consumed.map(\.date).min() ?? Date(),
             annotationStyle: annotation.style,
-            annotationColor: annotation.color
+            annotationColor: annotation.color,
+            textVersion: ConvertedTextVersions.shared.version(for: bookId.uuidString)
         ))
         records[idx].bookmarks = records[idx].bookmarks.sortedByStablePosition()
         saveMeta()
@@ -1562,12 +1580,12 @@ class BookStore: @MainActor ObservableObject, BookProvider {
                 } catch {
                     AppLogger.cache("Failed to remove document file \(book.contentFilename): \(error)")
                 }
-                // A converted Aozora book keeps its original beside the EPUB.
-                if let original = book.aozora?.originalFilename {
+                // A book converted at import keeps its original beside the EPUB.
+                if let original = book.convertedOriginalFilename {
                     do {
                         try FileManager.default.removeItem(at: documentsURL(for: original))
                     } catch {
-                        AppLogger.cache("Failed to remove the Aozora original \(original): \(error)")
+                        AppLogger.cache("Failed to remove the converted book's original \(original): \(error)")
                     }
                 }
                 if book.resolvedPipelineKind == .manga || book.resolvedPipelineKind == .fixedPage {

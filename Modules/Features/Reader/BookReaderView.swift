@@ -59,8 +59,8 @@ private struct BookReaderContent: View {
     @Environment(\.presentationMode) private var presentationMode
     @State private var resourceOwnerID = UUID()
     @State private var remoteReady = false
-    /// A converted Aozora book is brought up to this build's converter before it opens.
-    @State private var aozoraReady = false
+    /// A book converted at import is brought up to this build's converter before it opens.
+    @State private var conversionReady = false
     @State private var remoteError: String?
     @State private var retryGeneration = 0
     @State private var holdsCache = false
@@ -78,7 +78,7 @@ private struct BookReaderContent: View {
                     onRetry: { retryGeneration += 1 },
                     onClose: closeReader
                 )
-            } else if book?.aozora != nil && !aozoraReady {
+            } else if book?.isConvertedAtImport == true && !conversionReady {
                 ReaderPreparingView(error: nil, onRetry: {}, onClose: closeReader)
             } else if isAudiobook {
                 AudiobookReaderView(bookId: bookId)
@@ -125,17 +125,17 @@ private struct BookReaderContent: View {
             }
         }
         .task(id: bookId) {
-            guard let book, book.aozora != nil, !aozoraReady else { return }
+            guard let book, book.isConvertedAtImport, !conversionReady else { return }
             do {
-                _ = try await AozoraBookRegenerator.prepare(book: book, store: store, readerID: resourceOwnerID)
+                _ = try await ConvertedBookRegenerator.prepare(book: book, store: store, readerID: resourceOwnerID)
             } catch is CancellationError {
                 return
             } catch {
                 // Opening never waits on a failure: the existing EPUB still reads.
-                AppLogger.error("Aozora regeneration failed; opening the existing EPUB", error: error,
+                AppLogger.error("Regenerating a converted book failed; opening the existing EPUB", error: error,
                                 context: ["book": bookId.uuidString])
             }
-            aozoraReady = true
+            conversionReady = true
         }
         .onAppear {
             ReadingResourceUsage.shared.retain(bookID: bookId, ownerID: resourceOwnerID)

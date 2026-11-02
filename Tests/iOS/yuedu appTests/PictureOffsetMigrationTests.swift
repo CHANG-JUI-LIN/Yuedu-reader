@@ -165,7 +165,7 @@ struct PictureOffsetMigrationTests {
         #expect(try JSONDecoder().decode(CoreTextReadingPosition.self, from: Data(contentsOf: url))
             == CoreTextReadingPosition(spineIndex: 3, charOffset: 3))
 
-        JSONFileReadingPositionStore.replacePositionsFromSync([bookId: CoreTextReadingPosition(spineIndex: 3, charOffset: 2)])
+        JSONFileReadingPositionStore.replacePositionsFromSync([bookId: SyncedReadingPosition(position: CoreTextReadingPosition(spineIndex: 3, charOffset: 2))])
         #expect(!store.countsPictures(for: bookId))
     }
 

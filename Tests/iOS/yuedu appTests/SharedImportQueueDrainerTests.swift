@@ -216,6 +216,24 @@ struct SharedImportQueueDrainerTests {
         #expect(recorder.importedBookFilenames == ["假期計畫.pdf"])
     }
 
+    /// A shared link's URL often has no extension; a Kindle book is known by the
+    /// `BOOKMOBI` at offset 60, whichever of its formats it holds.
+    @Test("a Kindle book shared with no extension is recognised by its contents",
+          arguments: ["features.azw3", "features.mobi"])
+    func extensionlessKindleBook(fixture: String) throws {
+        let data = try Data(contentsOf: URL(fileURLWithPath: #filePath).deletingLastPathComponent()
+            .appendingPathComponent("Fixtures/MOBI").appendingPathComponent(fixture))
+        let payloadDirectory = try makePayloadDirectory()
+        defer { try? FileManager.default.removeItem(at: payloadDirectory) }
+        let file = payloadDirectory.appendingPathComponent("download")
+        try data.write(to: file)
+
+        #expect(try SharedImportPayloadClassifier.classify(fileURL: file, fileExtension: "", suggestedFilename: nil)
+                == .localBook(fileExtension: "mobi"))
+        #expect(try SharedImportPayloadClassifier.classify(data: data, fileExtension: "", suggestedFilename: "download")
+                == .localBook(fileExtension: "mobi"))
+    }
+
     @Test("a payload with no filename still gets a usable extension")
     func stagedFilenameFallsBackToGeneratedName() {
         #expect(
@@ -290,7 +308,7 @@ struct SharedImportQueueDrainerTests {
         )
 
         let first = await drainer.drain()
-        #expect(first == .init(importedCount: 0, failureCount: 1))
+        #expect(first == .init(importedCount: 0, failureCount: 1, failures: [Boom().localizedDescription]))
         #expect(defaults.array(forKey: SharedImportQueueDrainer.bookSourcesQueueKey) == nil)
 
         // A second drain finds an empty queue → no repeated failure toast.
@@ -314,8 +332,9 @@ struct SharedImportQueueDrainerTests {
 
         let outcome = await drainer.drain()
 
-        // JSON blob (+1) and the valid URL (+1) import; the empty URL fails (+1).
-        #expect(outcome == .init(importedCount: 2, failureCount: 1, importedBookSourceCount: 2))
+        // JSON blob (+1) and the valid URL (+1) import; the empty URL fails (+1), and says why.
+        #expect(outcome == .init(importedCount: 2, failureCount: 1, importedBookSourceCount: 2,
+                                 failures: [localized("分享過來的網址無效")]))
     }
 
     @Test("empty queues produce no outcome so no toast is shown")

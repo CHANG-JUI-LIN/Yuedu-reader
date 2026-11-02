@@ -57,7 +57,8 @@ enum PictureOffsetMigration {
             length: moved.length, kind: bookmark.kind, note: bookmark.note,
             excerpt: text.substring(with: NSRange(location: moved.location, length: span)),
             id: bookmark.id, date: bookmark.date,
-            annotationStyle: bookmark.annotationStyle, annotationColor: bookmark.annotationColor
+            annotationStyle: bookmark.annotationStyle, annotationColor: bookmark.annotationColor,
+            textVersion: bookmark.textVersion
         )
     }
 

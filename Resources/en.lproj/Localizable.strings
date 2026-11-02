@@ -4232,3 +4232,27 @@
 "請輸入目前的密碼以繼續" = "Enter your current password to continue.";
 "輸入目前的密碼" = "Enter Current Password";
 "連結新的登入方式前，請先輸入這個帳號的密碼。" = "Before linking a new sign-in method, enter this account's password.";
+
+/* MOBI / AZW3 import (2026-11-02): import failure reasons, format lists, bookmarks of another converted text. */
+"這個 Kindle 檔案有 DRM 保護，無法開啟" = "This Kindle file is DRM-protected and can't be opened.";
+"這個 Kindle 檔案的壓縮方式目前不支援" = "This Kindle file uses a compression method that isn't supported yet.";
+"無法讀取這個 Kindle 檔案" = "Couldn't read this Kindle file.";
+"無法辨識這個青空文庫檔案的文字編碼" = "Couldn't detect the text encoding of this Aozora Bunko file.";
+"這個青空文庫檔案裡沒有內文" = "This Aozora Bunko file has no body text.";
+"不支援這種檔案格式" = "This file format isn't supported.";
+"找不到這本 EPUB 的檔案" = "Couldn't find this EPUB's file.";
+"這本 EPUB 沒有這一章" = "This EPUB doesn't have that chapter.";
+"無法讀取這本 EPUB" = "Couldn't read this EPUB.";
+"這本 EPUB 缺少需要的檔案" = "This EPUB is missing a file it needs.";
+"無法讀取這本 EPUB 裡的檔案" = "Couldn't read a file inside this EPUB.";
+"無法解析來源配置資料" = "Couldn't parse the source data.";
+"無法解析來源配置資料：%@" = "Couldn't parse the source data: %@";
+"%@ 格式經過加密，無法直接匯入。請用原本的 App 匯出成 JSON 或 TXT。" = "The %@ format is encrypted and can't be imported directly. Export it as JSON or TXT from the app it came from.";
+"找不到分享過來的檔案" = "Couldn't find the shared file.";
+"書架還沒準備好，請再分享一次" = "The shelf isn't ready yet. Share the file again.";
+"分享過來的網址無效" = "The shared URL isn't valid.";
+"支援格式：TXT / Markdown / JSON / EPUB / AZW3 / MOBI / PDF / CBZ / ZIP / 音訊" = "Supported formats: TXT, Markdown, JSON, EPUB, AZW3, MOBI, PDF, CBZ, ZIP, audio";
+"支援純文字（.txt / .md / .markdown / .json）、電子書（.epub）、沒有 DRM 的 Kindle 電子書（.azw3 / .azw / .mobi / .prc）、PDF（.pdf）、本地漫畫（.cbz / .zip）與音訊（.mp3 / .m4a / .m4b / .aac / .flac / .wav）格式。選取後系統自動識別內容。" = "Supports plain text (.txt, .md, .markdown, .json), ebooks (.epub), DRM-free Kindle books (.azw3, .azw, .mobi, .prc), PDF (.pdf), local comics (.cbz, .zip), and audio (.mp3, .m4a, .m4b, .aac, .flac, .wav). The content type is detected automatically after you choose a file.";
+"點擊選取 TXT / EPUB / AZW3 / MOBI / PDF / 漫畫 / 音訊文件" = "Tap to Choose a TXT, EPUB, AZW3, MOBI, PDF, Comic, or Audio File";
+"傳送期間請保持此頁開啟，離開或切背景會中斷。支援 EPUB、AZW3、MOBI、PDF、TXT、Markdown。" = "Keep this page open while transferring; leaving it or moving the app to the background ends the connection. Supports EPUB, AZW3, MOBI, PDF, TXT, and Markdown.";
+"建立在這本書另一版的轉換文字上，無法跳轉" = "Saved in another version of this book's converted text, so you can't go to it.";

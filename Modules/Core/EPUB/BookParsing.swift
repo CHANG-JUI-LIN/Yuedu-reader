@@ -39,15 +39,17 @@ protocol BookParser: Sendable {
     func parse(url: URL) async throws -> ParsedBookDocument
 }
 
-enum BookParserRegistryError: LocalizedError {
+enum BookParserRegistryError: LocalizedError, DiagnosableError {
     case unsupportedFormat
 
     var errorDescription: String? {
         switch self {
         case .unsupportedFormat:
-            return "Unsupported file format"
+            return localized("不支援這種檔案格式")
         }
     }
+
+    var diagnosticDescription: String { "Unsupported file format" }
 }
 
 enum BookParserRegistry {

@@ -5,10 +5,7 @@ import UniformTypeIdentifiers
 /// parser or reader pipeline. Callers retain ownership of staging and cleanup.
 @MainActor
 enum LocalBookImportService {
-    nonisolated static let supportedExtensions: Set<String> = [
-        "epub", "pdf", "txt", "md", "markdown", "json", "cbz", "zip",
-        "mp3", "m4a", "m4b", "aac", "flac", "wav"
-    ]
+    nonisolated static let supportedExtensions = BookFileFormat.localImportExtensions
 
     static var supportedContentTypes: [UTType] {
         Array(Set(supportedExtensions.compactMap { UTType(filenameExtension: $0) }))
@@ -46,6 +43,8 @@ enum LocalBookImportService {
         case "cbz": book = try await store.importLocalManga(url: url, title: title, author: author)
         case "mp3", "m4a", "m4b", "aac", "flac", "wav":
             book = try await store.importLocalAudiobook(url: url, title: title, author: author)
+        case let ext where BookFileFormat(fileExtension: ext)?.importsAsMOBI == true:
+            book = try await MOBIBookImporter.importBook(at: url, title: title, store: store)
         default: throw BookParserRegistryError.unsupportedFormat
         }
         // A user's confirmed import form or Calibre's metadata is authoritative.
