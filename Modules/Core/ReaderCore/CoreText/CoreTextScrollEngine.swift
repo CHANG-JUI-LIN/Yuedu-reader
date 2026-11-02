@@ -193,6 +193,11 @@ final class CoreTextScrollEngine: ObservableObject, ScrollReaderEngine {
     // MARK: - Inputs
 
     var browserAutoEngine: BrowserLayoutPageEngine?
+    /// A publisher EPUB's chapter modes (`BookWritingModes`), the resolver the paged engines ask. The
+    /// engine shows one *segment*, consecutive chapters laid out in `renderSettings.writingMode`, and
+    /// never loads a chapter of another mode: one collection view has one scroll axis. `nil` for a
+    /// book laid out in one mode.
+    var writingModes: BookWritingModes?
     private let builder: any AttributedStringBuilding
     private let chapterDocumentStore: ChapterDocumentStore
     private(set) var renderSettings: ReaderRenderSettings
@@ -219,6 +224,8 @@ final class CoreTextScrollEngine: ObservableObject, ScrollReaderEngine {
     /// Paged mode renders a placeholder page for these; scroll mode used to render
     /// nothing at all, which is why an uncached chapter appeared as a blank screen.
     private var placeholderChapters: Set<Int> = []
+    /// Chapters found to be laid out in another mode than this segment's: where it ends.
+    private var segmentBoundaries: Set<Int> = []
     /// Latest-wins guard for overlapping settings/content reslices.
     private var resliceGeneration: UInt64 = 0
 
@@ -257,6 +264,15 @@ final class CoreTextScrollEngine: ObservableObject, ScrollReaderEngine {
         let clamped = max(0, min(initialChapter, max(0, builder.chapterCount - 1)))
         await loadChapter(clamped)
         guard generation == resliceGeneration, !Task.isCancelled else { return }
+        if segmentBoundaries.contains(clamped) {
+            // Whoever started this engine skipped `EPUBPageRenderer.enterScrollSegment`, the one way
+            // to scroll to a chapter of another mode. Laying it out in this segment's mode would be
+            // wrong, so nothing is shown and the reslice reports the failure.
+            AppLogger.render("Scroll engine started on a chapter outside its segment", context: [
+                "spine": clamped, "segmentMode": String(describing: renderSettings.writingMode),
+            ], level: .error)
+            return
+        }
         isReady = true
         guard loadAdjacentChapters else { return }
         if clamped + 1 < builder.chapterCount {
@@ -279,7 +295,8 @@ final class CoreTextScrollEngine: ObservableObject, ScrollReaderEngine {
         guard next < builder.chapterCount,
               !loadedChapters.contains(next),
               slicingChapters[next] == nil,
-              !pendingMissingChapters.contains(next) else { return }
+              !pendingMissingChapters.contains(next),
+              !segmentBoundaries.contains(next) else { return }
         Task { await loadChapter(next) }
     }
 
@@ -290,8 +307,21 @@ final class CoreTextScrollEngine: ObservableObject, ScrollReaderEngine {
         guard prev >= 0,
               !loadedChapters.contains(prev),
               slicingChapters[prev] == nil,
-              !pendingMissingChapters.contains(prev) else { return }
+              !pendingMissingChapters.contains(prev),
+              !segmentBoundaries.contains(prev) else { return }
         Task { await loadChapter(prev) }
+    }
+
+    /// The chapter after `chapter` when it is known to be in another mode: the next segment starts
+    /// there. `nil` while it is unresolved, in this segment, or past the end of the book.
+    func segmentBoundary(after chapter: Int) -> Int? {
+        segmentBoundaries.contains(chapter + 1) ? chapter + 1 : nil
+    }
+
+    /// The chapter before `chapter` when it is known to be in another mode: the previous segment
+    /// ends there.
+    func segmentBoundary(before chapter: Int) -> Int? {
+        segmentBoundaries.contains(chapter - 1) ? chapter - 1 : nil
     }
 
     /// Reslice (settings changed): clear all chunks and re-slice from the specified chapter
@@ -314,6 +344,7 @@ final class CoreTextScrollEngine: ObservableObject, ScrollReaderEngine {
             chapterDocumentStore: chapterDocumentStore
         )
         replacement.browserAutoEngine = browserAutoEngine
+        replacement.writingModes = writingModes
         replacement.onChapterContentRequired = onChapterContentRequired
         await replacement.start(
             initialChapter: chapterIndex,
@@ -344,6 +375,7 @@ final class CoreTextScrollEngine: ObservableObject, ScrollReaderEngine {
         slicingChapters = [:]
         pendingMissingChapters = replacement.pendingMissingChapters
         placeholderChapters = replacement.placeholderChapters
+        segmentBoundaries = replacement.segmentBoundaries
         isReady = replacement.isReady
         events.send(.reset(restorePosition: restorePosition))
         return chapterRanges[chapterIndex]?.isEmpty == false
@@ -534,6 +566,18 @@ final class CoreTextScrollEngine: ObservableObject, ScrollReaderEngine {
                 loadIdleWaiters.removeAll()
                 for waiter in waiters { waiter.resume() }
             }
+        }
+
+        if let writingModes {
+            // A segment's mode changes only by a reslice, whose new engine finds its own boundaries:
+            // the chapters it was asked to load and are of another mode.
+            let mode = await writingModes.writingMode(forSpine: chapterIndex)
+            guard generation == resliceGeneration, !Task.isCancelled else { return }
+            guard mode == renderSettings.writingMode else {
+                segmentBoundaries.insert(chapterIndex)
+                return
+            }
+            segmentBoundaries.remove(chapterIndex)
         }
 
         // Stage-0 baseline for `Technotes/ViewportScrollArchitecture.md`. The migration's only

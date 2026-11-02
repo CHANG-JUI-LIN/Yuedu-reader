@@ -58,8 +58,9 @@ extension ReaderView {
             letterSpacing: readerConfig.letterSpacing,
             marginH: pageMarginH(for: mode),
             // The mode the engines lay a chapter out in when nothing more specific decides it: a publisher
-            // EPUB's paged chapters each have their own (`BookWritingModes`).
-            writingMode: bookDirection.principalMode,
+            // EPUB's paged chapters each have their own (`BookWritingModes`); scroll mode lays out its
+            // segment's.
+            writingMode: mode == .scroll ? scrollWritingMode : bookDirection.principalMode,
             // The observed property, not the resolver's snapshot read: `body` compares these
             // settings in `onChanged`, and only an observed read redraws on a font change.
             fontPostScriptName: UserReaderFontResolver.postScriptName(settings.selectedReaderFontPostScript),

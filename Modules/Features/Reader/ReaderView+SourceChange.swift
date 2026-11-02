@@ -582,14 +582,13 @@ extension ReaderView {
     }
 
     func applyChapterSliderProgress(_ value: Double) {
-        // Scroll mode: round to nearest chapter, then reslice the engine.
-        if effectiveScrollMode, let scrollEngine = epubRenderer.scrollEngine {
+        // Scroll mode: round to nearest chapter and go there the way 目錄 does, through the scroll
+        // host, which holds the position and enters the chapter's segment. Reslicing the engine
+        // directly left the host restoring its old position, and could lay a chapter out in
+        // another segment's mode.
+        if effectiveScrollMode, epubRenderer.scrollEngine != nil {
             let total = max(chapters.count - 1, 1)
-            let target = max(0, min(Int(round(value * Double(total))), total))
-            scrollVisibleChapter = target
-            currentChapterIndex = target
-            let width = scrollEngine.contentWidth
-            Task { await scrollEngine.reslice(restoreAt: target, contentWidth: width) }
+            jumpToChapter(max(0, min(Int(round(value * Double(total))), total)))
             return
         }
         let totalChapters = book?.onlineChapters?.count ?? chapters.count

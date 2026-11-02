@@ -9,7 +9,14 @@ extension ReaderView {
     /// no-engine surface both modes share.
     @ViewBuilder
     var scrollBody: some View {
-        if let scrollEngine = epubRenderer.scrollEngine {
+        if let scrollEngine = epubRenderer.scrollEngine, epubRenderer.scrollSegmentIsPending {
+            // The host is built on its segment's axis, never built on the book's and turned: the
+            // segment of the chapter it opens on is decided first. The loading surface stands over this.
+            Color.clear
+                .task(id: ObjectIdentifier(scrollEngine)) {
+                    _ = await epubRenderer.enterScrollSegment(containing: computeScrollInitialPosition().chapter)
+                }
+        } else if let scrollEngine = epubRenderer.scrollEngine {
             let initialPos = computeScrollInitialPosition()
             CoreTextScrollHostView(
                 engine: scrollEngine,
@@ -103,6 +110,8 @@ extension ReaderView {
                 onChapterContentRequired: { chapterIndex in
                     ensureChapterReady(chapterIndex: chapterIndex)
                 },
+                // Scrolling past a segment's edge goes to the chapter beyond it, as 下一章 would.
+                onSegmentBoundary: { spine in jumpToChapter(spine) }
             )
             .id(ObjectIdentifier(scrollEngine))
             .background(readerSurfaceBackground)
@@ -110,12 +119,19 @@ extension ReaderView {
         }
     }
 
+    /// Every caller has moved the reader's session to `position` first.
     func requestScrollNavigation(to position: CoreTextReadingPosition) {
-        scrollNavigationVersion &+= 1
-        scrollNavigationRequest = ReaderScrollNavigationRequest(
-            version: scrollNavigationVersion,
-            position: position
-        )
+        Task { @MainActor in
+            // A chapter of another writing mode is in another segment. Entering it changes the scroll
+            // settings' mode, and the refresh that change submits lays the segment out at the session's
+            // position: one reslice, at `position`.
+            guard await epubRenderer.enterScrollSegment(containing: position.spineIndex) == .unchanged else { return }
+            scrollNavigationVersion &+= 1
+            scrollNavigationRequest = ReaderScrollNavigationRequest(
+                version: scrollNavigationVersion,
+                position: position
+            )
+        }
     }
 
     var usesSessionLocalScrollProgress: Bool {
@@ -148,8 +164,13 @@ extension ReaderView {
         settings.scrollMode
     }
 
+    /// The mode scroll mode lays chapters out in: the segment's on screen, else the book's.
+    var scrollWritingMode: ReaderWritingMode {
+        epubRenderer.scrollSegmentMode ?? bookDirection.principalMode
+    }
+
     var scrollAxis: CoreTextScrollAxis {
-        bookDirection.principalMode.isVertical ? .horizontalRTL : .vertical
+        scrollWritingMode.isVertical ? .horizontalRTL : .vertical
     }
 
     func goToPrevPage() {

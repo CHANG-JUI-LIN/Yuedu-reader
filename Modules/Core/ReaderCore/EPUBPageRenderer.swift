@@ -36,6 +36,12 @@ final class EPUBPageRenderer: ObservableObject {
     /// (`resolveWritingModes(for:)`). Nil for a book laid out in the user's 排版方向: TXT, online,
     /// Aozora.
     @Published private(set) var bookDirection: BookDirection?
+    /// The writing mode of the scroll *segment* on screen: consecutive chapters of one mode, which
+    /// scroll mode shows on that mode's axis. Nil until scroll mode first shows the book, and for a book
+    /// laid out in one mode. The reader's scroll settings and axis follow it.
+    @Published private(set) var scrollSegmentMode: ReaderWritingMode?
+    /// Latest wins among overlapping `enterScrollSegment` calls.
+    private var scrollSegmentGeneration: UInt64 = 0
     /// The EPUB's writing modes with the ingestion they were read from, which `load` hands its browser
     /// engine so the chapters the resolver read are not ingested again.
     private var writingModes: (session: PublicationSession, modes: BookWritingModes,
@@ -263,10 +269,11 @@ final class EPUBPageRenderer: ObservableObject {
         }
 
         private func prepareScroll() async -> RefreshPreparationResult {
-            (engine as? BrowserLayoutPageEngine)?.usesViewportScrolling = !request.settings.writingMode.isVertical
             guard let scrollEngine else {
                 return .failed(.engineUnavailable(.scroll))
             }
+            // The scroll engine's settings carry the segment's mode, which the request's may not.
+            (engine as? BrowserLayoutPageEngine)?.usesViewportScrolling = !scrollEngine.renderSettings.writingMode.isVertical
 
             switch request.intent {
             case .layout, .documentStyle:
@@ -409,6 +416,47 @@ final class EPUBPageRenderer: ObservableObject {
         return modes
     }
 
+    /// Scroll mode cannot show the book before it knows the segment of the chapter it opens on.
+    var scrollSegmentIsPending: Bool { writingModes != nil && scrollSegmentMode == nil }
+
+    enum ScrollSegmentEntry: Equatable {
+        /// The chapter is in the segment on screen (or the book has none).
+        case unchanged
+        /// Its segment is the one on screen now. The reader's scroll settings change with it, and the
+        /// refresh that follows lays the segment out at the reading position.
+        case entered
+        /// A later call decided the segment.
+        case superseded
+    }
+
+    /// Makes the segment holding `spine` the one scroll mode shows: the one way the segment changes. The
+    /// scroll engine lays out in its mode from here on, and so does the browser engine's continuous
+    /// layout, which follows the scroll engine's settings.
+    func enterScrollSegment(containing spine: Int) async -> ScrollSegmentEntry {
+        guard let writingModes else { return .unchanged }
+        scrollSegmentGeneration &+= 1
+        let generation = scrollSegmentGeneration
+        let mode = await writingModes.modes.writingMode(forSpine: spine)
+        guard generation == scrollSegmentGeneration, self.writingModes?.session === writingModes.session else {
+            return .superseded
+        }
+        guard mode != scrollSegmentMode else { return .unchanged }
+        if let scrollEngine {
+            var settings = scrollEngine.renderSettings
+            settings.writingMode = mode
+            scrollEngine.updateRenderSettings(settings)
+        }
+        (engine as? BrowserLayoutPageEngine)?.usesViewportScrolling = !mode.isVertical
+        scrollSegmentMode = mode
+        return .entered
+    }
+
+    /// Paged mode shows no segment; the next scroll session decides its own.
+    func leaveScrollSegment() {
+        scrollSegmentGeneration &+= 1
+        scrollSegmentMode = nil
+    }
+
     /// The writing mode of a chapter of the EPUB being read, once it is known; nil for a book in the
     /// user's 排版方向 and a chapter not resolved yet.
     func cachedWritingMode(forSpine spine: Int) -> ReaderWritingMode? {
@@ -466,6 +514,7 @@ final class EPUBPageRenderer: ObservableObject {
         let resolved = writingModes?.session === session ? writingModes : nil
         writingModes = resolved
         bookDirection = resolved?.modes.direction
+        scrollSegmentMode = nil
 
         let effectiveSize = renderSize.width > 0 ? renderSize : lastViewportSize
 
@@ -517,6 +566,7 @@ final class EPUBPageRenderer: ObservableObject {
             delegate: newEngine, settings: settings, mode: .browserAuto
         )
         browserEngine.writingModes = resolved?.modes
+        scrollEngine?.writingModes = resolved?.modes
         browserEngine.onBrowserChapterPictures = onBrowserChapterPictures
         self.engine = browserEngine
         browserEngine.usesViewportScrolling = continuousScrolling && !settings.writingMode.isVertical
@@ -597,6 +647,7 @@ final class EPUBPageRenderer: ObservableObject {
         publicationSession = nil
         writingModes = nil
         bookDirection = nil
+        scrollSegmentMode = nil
         let progressDir = StorageLocations.epubCharOffsets.appendingPathComponent(bookIdentifier)
         let store = CharOffsetStore(directoryURL: progressDir)
         let chapterDocumentStore = ChapterDocumentStore(builder: attributedBuilder)
@@ -655,6 +706,7 @@ final class EPUBPageRenderer: ObservableObject {
     ) {
         writingModes = nil
         bookDirection = nil
+        scrollSegmentMode = nil
         let progressDir = StorageLocations.epubCharOffsets.appendingPathComponent(bookIdentifier)
         let store = CharOffsetStore(directoryURL: progressDir)
         let resourceAdapter = UniversalBookResourceAdapter(
@@ -814,7 +866,12 @@ final class EPUBPageRenderer: ObservableObject {
 
     func updateRenderSettings(_ settings: ReaderRenderSettings) {
         engine?.updateRenderSettings(settings)
-        scrollEngine?.updateRenderSettings(settings)
+        // While a segment is shown, the scroll engine lays out its mode whatever a request carries: a
+        // refresh submitted before the segment was entered (entering scroll mode submits one at once)
+        // reaches here after it, with the book's mode.
+        var scrollSettings = settings
+        if let scrollSegmentMode { scrollSettings.writingMode = scrollSegmentMode }
+        scrollEngine?.updateRenderSettings(scrollSettings)
     }
 
     // MARK: - Refresh transactions

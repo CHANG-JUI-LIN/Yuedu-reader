@@ -628,3 +628,58 @@ mid-session flip that set the opening direction from D3 are deleted.
   cover `linear="no"`, so the conversion's documents are compared per book (`[v, v]` → `[v, v, v, h]`), not by
   index. Must-stay-green plus `EPUBAutoRoutingTests` and `BrowserLayoutPageEngineTests`: 262 tests in 19 suites
   pass on the iOS 27.2 simulator.
+
+**Step 4, done 2026-11-02, except the opening-restore row.** Scroll mode shows a publisher EPUB one segment at a
+time, on the segment's axis.
+
+- **Engine.** `CoreTextScrollEngine.writingModes` (the instance the paged engines ask). `loadChapter` awaits a
+  chapter's mode before building it and refuses one of another mode than `renderSettings.writingMode`, recording it
+  as a boundary; `ensureChapterAhead/Behind` never ask for a boundary chapter, so prefetch stops there.
+  `segmentBoundary(after:)` / `(before:)` tell the host where the segment ends. An engine started on a chapter
+  outside its segment shows nothing and logs an error: the one way to reach another mode is to enter its segment.
+- **One entry point.** `EPUBPageRenderer.enterScrollSegment(containing:)` resolves the chapter's mode and, when it
+  differs from the segment on screen, writes it into the scroll engine's settings, sets the browser engine's
+  viewport scrolling, and publishes `scrollSegmentMode` (latest call wins). ReaderView's scroll settings and axis
+  read it (`scrollWritingMode`), so the change submits a `.layout` refresh at the session's position: one reslice,
+  at the target. Scroll mode does not build its host before the opening chapter's segment is known, so the host is
+  never built on the book's axis and turned. A refresh built before the segment was entered (entering scroll mode
+  submits one at once) keeps the segment's mode: `updateRenderSettings` and `prepareScroll` read it from the scroll
+  engine. Leaving scroll mode clears it.
+- **Navigation.** `requestScrollNavigation` enters the target's segment first; every scroll jump goes through it
+  (目錄, bookmarks, links, search, 上一章／下一章 and now the chapter slider, which used to reslice the engine
+  directly and left the host restoring its old position).
+- **Crossing.** The host checks the edge in `scrollViewDidScroll`, only while `isDragging || isDecelerating`, once
+  per gesture: forward at the end opens the next segment's first chapter at its start; backward at the start opens
+  the previous one's last chapter at its end (`scrollToContentEnd`, the last column at the trailing edge, then a
+  layout pass so the landing is read back from the cells and committed). While a crossing is on its way no position
+  is persisted from the segment being left. `update(axis:)` no longer reslices on an axis change (the refresh does,
+  at the reading position). From the axis change to that reslice's reset the host shows nothing and reads no offset
+  (`awaitsAxisReset`): the engine's chunks are still the old axis's, and in the simulator they showed the segment
+  being left, cover first, on the new axis. The axis change also puts the offset at the content's start on both
+  axes, which stops a deceleration still running: the old axis's offset had carried over and pushed the TOC's text
+  off the side of the screen. A failed reslice still sends its reset; the one path that leaves the flag set is a
+  refresh with no viewport (`scrollViewportUnavailable`), which an axis change, made on a laid-out host, does not
+  reach. A segment shorter than the screen bounces on its axis, so a drag can leave it. 自動閱讀 stops at the
+  segment's end.
+- **Cost** (`⏱ scroll.segmentCross`, iPhone 17 Pro simulator, iOS 26.5, the converted book). Warm crossings:
+  forward into the TOC 53–56 ms, backward to spine 2's end 98 ms. The first backward crossing after launch took
+  590 ms, of which a 416 ms main-thread block with no instrumented span ran alongside Metal shader compiles (the
+  first draw of the reader's glass bar in that process). The screen is blank for ~85 ms between the axis change and
+  the reset.
+- **Simulator.** Forward: the TOC opens at its top, its lines' starts on screen (1/1 · 96.9%). Backward: spine 2's
+  last column at the trailing edge (第 240 夜, 91.9%), saved as (2, 1809); the refresh's own apply and spine 1's
+  insertion behind it keep it there (sentry delta 0 each). Paged mode lays c0004 out horizontally (1/1 · 96.9%).
+- **Not done: the opening restore** (*Scroll mode* table, `ReaderView.swift:3311`). `applyInitialProgressIfNeeded`
+  still picks its branch by the book's axis, because it runs before the segment is entered. It cannot be moved to
+  the restore chapter's segment yet: both branches clamp the saved spine to `chapters.count - 1`, and `chapters`
+  is the EPUB's TOC entries, not its spine (`ReaderView+PageBuilding.swift:138`; the paged branch through
+  `ReaderOpeningRestore.resolve(chapterCount:)`). The converted book has 2 TOC entries and 4 spine items, so a save
+  at (3, 0) resolves to (1, 0): in scroll mode the header reads 第一章 and the footer 3.2% over the TOC (the save
+  stays (3, 0)); in paged mode the book reopens on 第一章's first page. Older than this plan; it hits every EPUB
+  whose spine is longer than its TOC.
+- **Tests.** New `ScrollWritingModeSegmentTests` (a vertical segment stops at the TOC; entering the TOC's segment;
+  entering is idempotent; a stale refresh keeps the segment's mode; a start outside the segment; only the reader's
+  drag crosses; save and reopen inside the TOC; a one-screen segment; an axis turn shows nothing until the reslice
+  and starts the new axis square). With `ChapterWritingModeEngineTests`, `CoreTextScrollTests`,
+  `ContinuousScrollRestoreTests`, `BrowserVerticalReaderRouteTests`, `ReaderOpeningRestoreTests` and
+  `ReaderPresentationContractTests`: 81 tests in 7 suites pass on iOS 17.5, 26.5 and 27.2.

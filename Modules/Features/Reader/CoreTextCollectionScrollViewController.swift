@@ -31,6 +31,9 @@ final class CoreTextCollectionScrollViewController: UIViewController, @MainActor
     /// The reader's finger started scrolling (never an app-driven scroll).
     var onUserScrollBegan: (() -> Void)?
     var onInternalLinkTap: ((String) -> Void)?
+    /// The reader scrolled past the segment on screen into a chapter of another writing mode
+    /// (`CoreTextScrollEngine.segmentBoundary`). The reader goes there the way 目錄 does.
+    var onSegmentBoundary: ((Int) -> Void)?
     private(set) var lastAppliedRefreshTransactionID: UInt64 = 0
 
     private let collectionView: UICollectionView
@@ -132,6 +135,17 @@ final class CoreTextCollectionScrollViewController: UIViewController, @MainActor
     private var lastCommittedPosition: CoreTextReadingPosition?
     private var hasKickedOffEngine = false
     private var pendingInitialChapter: Int = 0
+    /// Set once a gesture has crossed into another segment, until the next gesture begins.
+    private var hasCrossedSegmentThisGesture = false
+    /// The chapter a backward crossing enters: it opens at its end, not its start.
+    private var pendingSegmentEnd: Int?
+    /// A crossing on its way, for `⏱ scroll.segmentCross`. Until it lands, what is on screen is the
+    /// segment being left, so no position is taken from it.
+    private var segmentCrossStart: (spine: Int, time: TimeInterval)?
+    /// From an axis change to the engine's next reset. The engine's chunks are laid out for the old
+    /// axis until then, so none is shown, the offset is not read against them, and a chapter
+    /// arriving for them is left for the reset to replace.
+    private var awaitsAxisReset = false
     private struct ViewportItemID: Hashable {
         let spine: Int
         let ordinal: Int
@@ -225,6 +239,14 @@ final class CoreTextCollectionScrollViewController: UIViewController, @MainActor
         view.isOpaque = !isTransparent
         collectionView.isOpaque = !isTransparent
         collectionView.semanticContentAttribute = axis.semanticContentAttribute
+        applyBounce(for: axis)
+    }
+
+    /// A segment shorter than the screen (the table of contents a conversion appends) must still move
+    /// under a drag, or nothing could scroll out of it into the next segment.
+    private func applyBounce(for axis: CoreTextScrollAxis) {
+        collectionView.alwaysBounceVertical = axis == .vertical
+        collectionView.alwaysBounceHorizontal = axis == .horizontalRTL
     }
 
     required init?(coder: NSCoder) { fatalError() }
@@ -688,6 +710,8 @@ final class CoreTextCollectionScrollViewController: UIViewController, @MainActor
         )
         hasAppliedReadingPosition = false
         pendingInitialChapter = chapter
+        pendingSegmentEnd = nil
+        segmentCrossStart = nil
         applyReadingPositionIfPossible(cause: .initialLayout)
     }
 
@@ -723,6 +747,7 @@ final class CoreTextCollectionScrollViewController: UIViewController, @MainActor
         collectionView.contentInset = contentInset
         collectionView.semanticContentAttribute = axis.semanticContentAttribute
         if axisChanged {
+            applyBounce(for: axis)
             let layout: UICollectionViewLayout
             if axis == .vertical {
                 let vertical = ReaderScrollLayout()
@@ -747,11 +772,26 @@ final class CoreTextCollectionScrollViewController: UIViewController, @MainActor
 
         let newExtent = currentContentExtent
         let newImageExtent = currentImageContentWidth
-        if axisChanged
-            || abs(newExtent - oldExtent) > 0.5
-            || abs(newImageExtent - oldImageExtent) > 0.5 {
+        if axisChanged {
+            // Only a change of writing mode turns the axis (排版方向, or entering another segment), and
+            // the reader's refresh for that change reslices at the reading position. Reslicing here
+            // too laid the chapter out twice, the first time at its start. Until that reset nothing is
+            // shown (`awaitsAxisReset`): the old axis's chunks showed the segment being left, its
+            // cover first, on the new one. The offset across the new axis was the old axis's, and a
+            // deceleration still running moved it on, which pushed the next segment's text off the
+            // side of the screen; setting it stops the deceleration.
+            awaitsAxisReset = true
+            lastObservedAxisOffset = nil
+            displayedCount = 0
+            collectionView.reloadData()
+            setScrollOffset(
+                CGPoint(x: -collectionView.adjustedContentInset.left, y: -collectionView.adjustedContentInset.top),
+                source: .restore,
+                detail: "axisChange"
+            )
+        } else if abs(newExtent - oldExtent) > 0.5 || abs(newImageExtent - oldImageExtent) > 0.5 {
             requestReslice(at: restoreChapter)
-        } else {
+        } else if !awaitsAxisReset {
             displayedCount = engine.chunks.count
             warmChunks(around: visibleProgressRow(), force: true)
             collectionView.reloadData()
@@ -839,6 +879,9 @@ final class CoreTextCollectionScrollViewController: UIViewController, @MainActor
     }
 
     func requestReslice(at chapter: Int, charOffset: Int = 0) {
+        // A command goes where it says, never to the end a crossing on its way was opening.
+        pendingSegmentEnd = nil
+        segmentCrossStart = nil
         requestReslice(at: chapter, charOffset: charOffset, completion: nil)
     }
 
@@ -1085,6 +1128,7 @@ final class CoreTextCollectionScrollViewController: UIViewController, @MainActor
                 setReadingPosition(restorePosition, .engineReset)
             }
             hasAppliedReadingPosition = false
+            awaitsAxisReset = false
             displayedCount = engine.chunks.count
             lastWarmRow = nil
             collectionView.reloadData()
@@ -1099,6 +1143,10 @@ final class CoreTextCollectionScrollViewController: UIViewController, @MainActor
     /// Commit new items and the live anchor correction together, for both paint
     /// backends. Only an initial/unresolved viewport uses the saved restore target.
     private func applyChunkInsertion(_ range: Range<Int>) {
+        guard !awaitsAxisReset else {
+            posTrace("insert", "range=\(range.lowerBound)..<\(range.upperBound) held for the axis change's reset")
+            return
+        }
         if hasAppliedReadingPosition, scrollAxis == .vertical,
            let anchor = visibleVerticalAnchor() {
             // A chapter arriving while the finger is moving must preserve the
@@ -1195,14 +1243,26 @@ final class CoreTextCollectionScrollViewController: UIViewController, @MainActor
                 + "chunkChapter=\(chunk.chapterIndex) chunkStart=\(chunk.charRange.location) "
                 + "withinChunkChars=\(targetOffset - chunk.charRange.location)"
         )
-        guard scrollToRow(row, charOffset: targetOffset) else { return false }
+        var expected = target
+        let landsAtSegmentEnd = pendingSegmentEnd == target.spineIndex
+        if landsAtSegmentEnd {
+            guard scrollToContentEnd() else { return false }
+            pendingSegmentEnd = nil
+            // From here the reader is where the crossing put them; later insertions keep them there.
+            if let landed = visibleCanonicalPosition() {
+                expected = landed
+                setReadingPosition(landed, .settle(readerDriven: true))
+            }
+        } else {
+            guard scrollToRow(row, charOffset: targetOffset) else { return false }
+        }
         warmChunks(around: row, force: true)
         // The whole contract of this method is that the reader ends up where they were.
         // Checking it here rather than at each caller is deliberate: every structural
         // change funnels through this one call, so a new one cannot be added without
         // being covered.
         ReaderPositionSentry.shared.observeScrollGeometryChange(
-            expected: target,
+            expected: expected,
             landed: visibleCanonicalPosition(),
             cause: cause
         )
@@ -1211,9 +1271,45 @@ final class CoreTextCollectionScrollViewController: UIViewController, @MainActor
             cause: cause
         )
         hasAppliedReadingPosition = true
+        if let crossing = segmentCrossStart {
+            // The first position applied after a crossing is its landing, or a command that replaced it.
+            segmentCrossStart = nil
+            if crossing.spine == target.spineIndex {
+                SourcePerfTrace.record("scroll.segmentCross", "spine=\(crossing.spine) end=\(landsAtSegmentEnd)",
+                                       since: crossing.time, thresholdMs: 0)
+            }
+        }
         let completion = pendingVisibleRefreshCompletion
         pendingVisibleRefreshCompletion = nil
         completion?(true)
+        if landsAtSegmentEnd { commitProgress(readerDriven: true, reason: "segmentEnd") }
+        return true
+    }
+
+    /// A backward crossing opens the previous segment's last chapter at its end: its last line, or in
+    /// vertical writing its last column, at the trailing edge. The reslice that opens it lays out that
+    /// chapter alone, so its end is the content's.
+    private func scrollToContentEnd() -> Bool {
+        guard !isApplyingReadingPosition,
+              collectionView.window != nil,
+              collectionView.bounds.width > 0,
+              collectionView.bounds.height > 0
+        else { return false }
+        isApplyingReadingPosition = true
+        defer { isApplyingReadingPosition = false }
+        collectionView.layoutIfNeeded()
+        let end = scrollableAxisRange.upperBound
+        setScrollOffset(
+            scrollAxis == .vertical
+                ? CGPoint(x: collectionView.contentOffset.x, y: end)
+                : CGPoint(x: end, y: collectionView.contentOffset.y),
+            source: .restore,
+            detail: "segmentEnd"
+        )
+        // The landing is read back from the cells at the end. Until a layout pass puts them there
+        // none is, the position stayed the chapter's start, and the refresh's own apply and the next
+        // chapter's insertion took the reader back to it (simulator, 2026-11-02).
+        collectionView.layoutIfNeeded()
         return true
     }
 
@@ -1662,23 +1758,34 @@ final class CoreTextCollectionScrollViewController: UIViewController, @MainActor
     /// `-(content - width)...0`, assumed negative offsets; nothing horizontal came through this
     /// writer until the vertical-writing restore did, which it would have pinned to 0.
     private func clampedScrollOffset(_ proposed: CGPoint) -> CGPoint {
+        let range = scrollableAxisRange
+        switch scrollAxis {
+        case .vertical:
+            return CGPoint(x: proposed.x, y: min(max(range.lowerBound, proposed.y), range.upperBound))
+        case .horizontalRTL:
+            return CGPoint(x: min(max(range.lowerBound, proposed.x), range.upperBound), y: proposed.y)
+        }
+    }
+
+    /// The offsets on the scroll axis between the content's start and its end. They grow toward the
+    /// end on both axes: UIKit mirrors a right-to-left collection view on screen and leaves its offsets
+    /// alone.
+    private var scrollableAxisRange: ClosedRange<CGFloat> {
         switch scrollAxis {
         case .vertical:
             let minY = -collectionView.adjustedContentInset.top
-            let maxY = max(
+            return minY...max(
                 minY,
                 collectionView.contentSize.height - collectionView.bounds.height
                     + collectionView.adjustedContentInset.bottom
             )
-            return CGPoint(x: proposed.x, y: min(max(minY, proposed.y), maxY))
         case .horizontalRTL:
             let minX = -collectionView.adjustedContentInset.left
-            let maxX = max(
+            return minX...max(
                 minX,
                 collectionView.contentSize.width - collectionView.bounds.width
                     + collectionView.adjustedContentInset.right
             )
-            return CGPoint(x: min(max(minX, proposed.x), maxX), y: proposed.y)
         }
     }
 
@@ -2119,7 +2226,7 @@ extension CoreTextCollectionScrollViewController: UICollectionViewDataSource, UI
     }
 
     func scrollViewDidScroll(_ scrollView: UIScrollView) {
-        guard !isResolvingViewport else { return }
+        guard !isResolvingViewport, !awaitsAxisReset else { return }
         let interval = Self.viewportSignposter.beginInterval("viewport.didScroll")
         defer { Self.viewportSignposter.endInterval("viewport.didScroll", interval) }
         #if DEBUG
@@ -2134,6 +2241,7 @@ extension CoreTextCollectionScrollViewController: UICollectionViewDataSource, UI
             #endif
         }
         resolveVisibleViewport()
+        crossSegmentIfAtEdge(scrollView)
         noteScrollAttribution(scrollView)
 
         let chunks = engine.chunks
@@ -2164,6 +2272,37 @@ extension CoreTextCollectionScrollViewController: UICollectionViewDataSource, UI
         }
     }
 
+    /// Scrolling forward to the segment's end opens the next segment at its first chapter's start;
+    /// scrolling backward to its start opens the previous one at its last chapter's end. No threshold
+    /// and no button (maintainer, 2026-11-02). Only the reader's own drag, or the deceleration it
+    /// started, crosses, once per gesture: layout, insertion, restore, TTS follow and 自動閱讀 move the
+    /// offset without crossing, so 自動閱讀 stops at the segment's end as at the book's.
+    private func crossSegmentIfAtEdge(_ scrollView: UIScrollView) {
+        guard scrollView.isDragging || scrollView.isDecelerating,
+              !hasCrossedSegmentThisGesture,
+              !isApplyingReadingPosition,
+              let previous = lastObservedAxisOffset,
+              let first = engine.chunks.first?.chapterIndex,
+              let last = engine.chunks.last?.chapterIndex
+        else { return }
+        let offset = scrollAxis == .vertical ? scrollView.contentOffset.y : scrollView.contentOffset.x
+        let range = scrollableAxisRange
+        let target: Int
+        if offset > previous, offset >= range.upperBound - 0.5, let next = engine.segmentBoundary(after: last) {
+            target = next
+        } else if offset < previous, offset <= range.lowerBound + 0.5,
+                  let previousChapter = engine.segmentBoundary(before: first) {
+            target = previousChapter
+            pendingSegmentEnd = previousChapter
+        } else {
+            return
+        }
+        hasCrossedSegmentThisGesture = true
+        segmentCrossStart = (target, SourcePerfTrace.now)
+        posTrace("segment.cross", "to=ch\(target) end=\(pendingSegmentEnd == target)")
+        onSegmentBoundary?(target)
+    }
+
     /// Records movement nobody admits to causing.
     ///
     /// Three things may legitimately move the offset: the reader's finger (dragging or the
@@ -2191,6 +2330,7 @@ extension CoreTextCollectionScrollViewController: UICollectionViewDataSource, UI
     }
 
     func scrollViewWillBeginDragging(_ scrollView: UIScrollView) {
+        hasCrossedSegmentThisGesture = false
         // The reader now decides the position; a layout arriving later must
         // keep what is on screen instead of returning to the restore target.
         restoreAwaitingLayout = nil
@@ -2223,6 +2363,8 @@ extension CoreTextCollectionScrollViewController: UICollectionViewDataSource, UI
     /// during a drag/auto-scroll must not flush an older gesture's checkpoint.
     func positionForPersistence() -> CoreTextReadingPosition? {
         guard hasAppliedReadingPosition, !isApplyingReadingPosition, !isResolvingViewport else { return nil }
+        // On the way to another segment or axis: the reader's session already holds where they are going.
+        guard segmentCrossStart == nil, !awaitsAxisReset else { return nil }
         return visibleCanonicalPosition()
     }
 

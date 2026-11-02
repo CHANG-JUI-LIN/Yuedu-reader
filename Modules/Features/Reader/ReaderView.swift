@@ -3441,6 +3441,7 @@ struct ReaderView: View {
             ensureChapterReady(chapterIndex: position.spineIndex, priority: .jump)
         } else {
             pendingScrollJumpTarget = nil
+            epubRenderer.leaveScrollSegment()
             position = readerSessionCoordinator?.state.location.coreTextPosition
                 ?? CoreTextReadingPosition(spineIndex: scrollVisibleChapter, charOffset: 0)
             moveReaderSession(to: position, source: .modeSwitch)
