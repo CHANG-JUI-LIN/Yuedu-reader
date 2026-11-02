@@ -349,6 +349,9 @@ struct yuedu_appApp: App {
                             // issued moments ago may still be in flight. This is the last
                             // reliable moment to let it land.
                             BookSourceStore.shared.flushPendingWrites()
+                            SourcePerfTrace.span("openIn.inbox.clean", thresholdMs: 5) {
+                                SharedImportQueueDrainer.shared.removeOpenInCopies()
+                            }
                             DiagnosticScale.publish(bookStore: bookStore, reason: "background")
                             // Here, not in the app delegate: in a scene-based app UIKit never
                             // calls `applicationDidEnterBackground`, so the badge and the next

@@ -193,6 +193,11 @@ final class SharedImportQueueDrainer: ObservableObject {
     /// Document handoff arrives in the main app, including on a cold launch.
     /// Keep provider access alive through the durable import; never move/delete
     /// the provider's original file. The queue and Open In share classification.
+    ///
+    /// The app opens in place only a file a provider holds, as the Files app's. Any other app
+    /// that hands a file over — AirDrop, Mail, a chat app — gets it copied into
+    /// `Documents/Inbox`, and that copy is the app's to delete: it goes once its import is
+    /// over, whatever the outcome. Every importer copies what it keeps.
     @discardableResult
     func openFile(_ url: URL) async -> Outcome {
         guard url.isFileURL, openingURLs.insert(url).inserted else {
@@ -212,8 +217,51 @@ final class SharedImportQueueDrainer: ObservableObject {
             outcome.recordFailure(error, item: url.lastPathComponent)
             AppLogger.error("Document import failed", error: error)
         }
+        if url.resolvingSymlinksInPath().deletingLastPathComponent().path == openInInboxPath {
+            removeOpenInCopy(url)
+        }
         publish(outcome)
         return outcome
+    }
+
+    /// Deletes what Open In left in `Documents/Inbox`, except a copy still being imported.
+    ///
+    /// `openFile` deletes its own copy; this is for the rest. Builds before it deleted none,
+    /// so every book handed over was kept twice, in a folder the Files app shows; and an
+    /// import the system ends by terminating the app never reaches its own deletion. Run as
+    /// the app goes to the background, never at the end of an import: the system copies a
+    /// file in before `openFile` registers it, so a sweep then could take a copy whose import
+    /// has not started. By the background, every delivered copy is in `openingURLs` or done.
+    ///
+    /// Known gap: the background handler it runs in (`yuedu_appApp`'s `onChange(of:
+    /// scenePhase)`) did not run while a reader was presented full screen on the simulator,
+    /// so leftovers wait for a background reached from elsewhere.
+    func removeOpenInCopies() {
+        let copies: [URL]
+        do {
+            copies = try FileManager.default.contentsOfDirectory(at: openInInboxURL, includingPropertiesForKeys: nil)
+        } catch let error as CocoaError where error.code == .fileReadNoSuchFile {
+            return // Nothing has been handed over since the app was installed.
+        } catch {
+            AppLogger.error("Open In inbox could not be listed", error: error)
+            return
+        }
+        // A delivered URL can spell the container /private/var where the listing says /var.
+        let importing = Set(openingURLs.map { $0.resolvingSymlinksInPath().path })
+        for copy in copies where !importing.contains(copy.resolvingSymlinksInPath().path) {
+            removeOpenInCopy(copy)
+        }
+    }
+
+    private var openInInboxPath: String { openInInboxURL.resolvingSymlinksInPath().path }
+
+    private func removeOpenInCopy(_ copy: URL) {
+        do {
+            try FileManager.default.removeItem(at: copy)
+        } catch {
+            AppLogger.error("Open In copy could not be removed", error: error,
+                            context: ["file": copy.lastPathComponent])
+        }
     }
 
     private func publish(_ outcome: Outcome) {
@@ -229,6 +277,7 @@ final class SharedImportQueueDrainer: ObservableObject {
 
     private let defaults: UserDefaults?
     private let payloadDirectoryURL: URL?
+    private let openInInboxURL: URL
     /// Injected only by tests that want the write to happen inline. Production leaves it
     /// `nil` so a shared pack goes through the confirmation list instead.
     private let importDataOverride: ((Data) throws -> Int)?
@@ -243,6 +292,7 @@ final class SharedImportQueueDrainer: ObservableObject {
     init(
         defaults: UserDefaults? = UserDefaults(suiteName: SharedImportQueueDrainer.appGroupID),
         payloadDirectoryURL: URL? = SharedImportQueueDrainer.defaultPayloadDirectoryURL(),
+        openInInboxURL: URL = SharedImportQueueDrainer.defaultOpenInInboxURL(),
         importData: ((Data) throws -> Int)? = nil,
         fetchURL: @escaping (URL) async throws -> Data = {
             try await URLSession.shared.data(from: $0).0
@@ -262,6 +312,7 @@ final class SharedImportQueueDrainer: ObservableObject {
     ) {
         self.defaults = defaults
         self.payloadDirectoryURL = payloadDirectoryURL
+        self.openInInboxURL = openInInboxURL
         self.importDataOverride = importData
         self.fetchURL = fetchURL
         self.importBookFileOverride = importBookFile
@@ -274,6 +325,12 @@ final class SharedImportQueueDrainer: ObservableObject {
         FileManager.default
             .containerURL(forSecurityApplicationGroupIdentifier: appGroupID)?
             .appendingPathComponent(payloadDirectoryName, isDirectory: true)
+    }
+
+    /// Where the system puts its copy of a file Open In could not open in place.
+    nonisolated static func defaultOpenInInboxURL() -> URL {
+        FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
+            .appendingPathComponent("Inbox", isDirectory: true)
     }
 
     func bind(bookStore: BookStore) {

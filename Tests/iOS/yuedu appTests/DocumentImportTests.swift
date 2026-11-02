@@ -124,6 +124,64 @@ struct DocumentImportTests {
         #expect(FileManager.default.fileExists(atPath: file.path))
     }
 
+    @Test("Open In copies leave the inbox, but not one still being imported")
+    func openInCopiesRemoved() async throws {
+        let root = try directory()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let inbox = root.appendingPathComponent("Inbox", isDirectory: true)
+        try FileManager.default.createDirectory(at: inbox, withIntermediateDirectories: true)
+        for name in ["earlier.epub", "earlier-1.epub", "rules.json"] {
+            try Data("left behind".utf8).write(to: inbox.appendingPathComponent(name))
+        }
+        try Data("第一章\n內文".utf8).write(to: inbox.appendingPathComponent("新書.txt"))
+        // Delivered under another spelling of the inbox, as a device's /private/var and /var.
+        let alias = root.appendingPathComponent("alias")
+        try FileManager.default.createSymbolicLink(at: alias, withDestinationURL: inbox)
+        var removeOpenInCopies: () -> Void = {}
+        var keptWhileImporting = false
+        let importer = SharedImportQueueDrainer(defaults: nil, openInInboxURL: inbox, importBookFile: { url in
+            removeOpenInCopies()
+            keptWhileImporting = FileManager.default.fileExists(atPath: url.path)
+            return 1
+        })
+        removeOpenInCopies = { importer.removeOpenInCopies() }
+        let result = await importer.openFile(alias.appendingPathComponent("新書.txt"))
+        #expect(result.importedBookCount == 1)
+        #expect(keptWhileImporting)
+        // The leftovers went with the sweep, the delivered copy with its own import.
+        #expect(try FileManager.default.contentsOfDirectory(atPath: inbox.path).isEmpty)
+    }
+
+    @Test("An Open In copy goes once its import is over, whatever the outcome", arguments: [true, false])
+    func openInCopyRemovedAfterImport(succeeds: Bool) async throws {
+        let root = try directory()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let inbox = root.appendingPathComponent("Inbox", isDirectory: true)
+        try FileManager.default.createDirectory(at: inbox, withIntermediateDirectories: true)
+        // Another delivery whose import may not have started: only the sweep may take it.
+        try Data("第一章\n下一本".utf8).write(to: inbox.appendingPathComponent("下一本.txt"))
+        let delivered = inbox.appendingPathComponent("新書.txt")
+        try Data("第一章\n內文".utf8).write(to: delivered)
+        let importer = SharedImportQueueDrainer(defaults: nil, openInInboxURL: inbox, importBookFile: { _ in
+            if succeeds { return 1 }
+            throw CocoaError(.fileReadCorruptFile)
+        })
+        let result = await importer.openFile(delivered)
+        #expect(result.failureCount == (succeeds ? 0 : 1))
+        #expect(try FileManager.default.contentsOfDirectory(atPath: inbox.path) == ["下一本.txt"])
+    }
+
+    @Test("An app nothing was ever opened into has no inbox, and that is not an error")
+    func openInInboxNeverMade() throws {
+        let root = try directory()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let before = Set(DiagnosticLog.shared.snapshot().map(\.id))
+        let importer = SharedImportQueueDrainer(defaults: nil, openInInboxURL: root.appendingPathComponent("Inbox"))
+        importer.removeOpenInCopies()
+        let logged = DiagnosticLog.shared.snapshot().filter { !before.contains($0.id) && $0.message.contains("Open In") }
+        #expect(logged.isEmpty)
+    }
+
     @Test("JSON source documents keep their existing non-reader route")
     func sourceDocument() async throws {
         let root = try directory()

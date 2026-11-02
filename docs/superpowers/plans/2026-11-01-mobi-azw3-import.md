@@ -470,6 +470,9 @@ Found in step 6 (2026-11-02):
   Calibre process; then the test with `TEST_RUNNER_YUEDU_LIVE_CALIBRE_WIRELESS_HOST=127.0.0.1` and `…_PORT`,
   and Send to device within 180 s of `READY_FOR_SEND`. Tried 2026-11-02: the wireless connection was never
   started, and the maintainer chose to commit first and observe later.
-- **Found, not caused here:** nothing removes what Open In leaves in `Documents/Inbox` (no
-  `LSSupportsOpeningDocumentsInPlace`, no cleanup anywhere), so every book opened into the app from another
-  app stays there a second time, EPUBs as much as Kindle files.
+- **Found, not caused here:** nothing removed what Open In leaves in `Documents/Inbox`, so every book
+  another app handed over (AirDrop, Mail, a chat app, `simctl openurl` of a Mac path) stayed there a second
+  time, EPUBs as much as Kindle files. Files opened from the Files app are not copied: the built app has
+  `LSSupportsOpeningDocumentsInPlace` (from `INFOPLIST_KEY_…` in the project). Fixed 2026-11-02: `openFile`
+  deletes its own copy once the import is over, and a sweep as the app goes to the background takes
+  earlier builds' leftovers.
