@@ -339,7 +339,6 @@ struct AudiobookDetailView: View {
             }
         }
         .sourceKindMismatchAlert(origin: $kindMismatchOrigin, onConfirm: applyOrigin)
-        .removeFromShelfConfirmation(isPresented: $confirmsRemoval, onConfirm: removeFromShelf)
         .sheet(isPresented: $showChapterList, onDismiss: {
             guard let chapterIndex = pendingChapterSelection else { return }
             pendingChapterSelection = nil
@@ -445,6 +444,7 @@ struct AudiobookDetailView: View {
             systemImage: alreadyInShelf ? "checkmark" : "plus",
             isBusy: addingToShelf,
             isEnabled: !chapters.isEmpty,
+            removalConfirmation: BookDetailRemovalConfirmation(isPresented: $confirmsRemoval, onConfirm: removeFromShelf),
             action: {
                 if alreadyInShelf { confirmsRemoval = true } else { addToShelfOnly() }
             }

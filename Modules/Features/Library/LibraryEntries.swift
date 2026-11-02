@@ -199,6 +199,8 @@ struct LibrarySourceEntry: View {
                 onDelete: { pendingDeletion = source }
             )
         }
+        // On the card, not in the menu: a context menu's content is gone once it closes.
+        .bookSourceDeleteConfirmation(for: source, pendingDeletion: $pendingDeletion)
     }
 }
 
@@ -246,7 +248,7 @@ struct LibrarySourcesView: View {
                 .accessibilityLabel(localized("更多"))
             }
         }
-        .bookSourceActionSheets(sheet: $sheet, pendingDeletion: $pendingDeletion)
+        .bookSourceActionSheets(sheet: $sheet)
         .onReceive(sourceStore.sourcesPublisher) { library in
             // The published value: the publisher sends before the store holds it.
             sources = DiscoverViewModel.exploreSources(DiscoverViewModel.exploreSources(in: library),

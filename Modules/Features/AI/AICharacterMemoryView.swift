@@ -81,6 +81,10 @@ struct AICharacterMemoryView: View {
                     Text(localized("按章節進度查看")).tag(ViewScope.chapter)
                     Text(localized("查看後文人物資料")).tag(ViewScope.wholeBook)
                 }
+                .confirmationDialog(localized("查看後文可能揭露人物身分與關係"), isPresented: $confirmView, titleVisibility: .visible) {
+                    Button(localized("確認查看後文")) { allowFutureView = true; viewingWholeBook = true }
+                    Button(localized("取消"), role: .cancel) {}
+                }
                 if viewScope == .chapter {
                     Stepper(String(format: localized("查看到第 %d 章"), viewChapter + 1), value: $viewChapter, in: 0...maximumViewChapter)
                 }
@@ -111,6 +115,13 @@ struct AICharacterMemoryView: View {
             }
             Section {
                 Button(localized("清除本書人物建檔資料"), role: .destructive) { confirmClear = true }
+                    .confirmationDialog(localized("清除本書人物建檔資料？"), isPresented: $confirmClear, titleVisibility: .visible) {
+                        Button(localized("清除"), role: .destructive) { Task {
+                            do { try await service.clear(book: adapter.chunkBookID); projection = .init(cards: [], aliases: [], approvedAliasIDs: []) }
+                            catch { self.error = error.localizedDescription }
+                        } }
+                        Button(localized("取消"), role: .cancel) {}
+                    }
             } footer: {
                 Text(localized("清除不會刪除正文、聊天或人工角色聲音設定。"))
                     .dsSectionFooter()
@@ -142,23 +153,6 @@ struct AICharacterMemoryView: View {
             NavigationStack {
                 AIMemoryCardView(entityID: selection.id, source: adapter, boundary: boundary, onOpenCitation: onOpenCitation)
             }
-        }
-        .confirmationDialog(localized("查看後文可能揭露人物身分與關係"), isPresented: $confirmView, titleVisibility: .visible) {
-            Button(localized("確認查看後文")) { allowFutureView = true; viewingWholeBook = true }
-            Button(localized("取消"), role: .cancel) {}
-        }
-        .confirmationDialog(localized("確認續跑與呼叫預算"), isPresented: $confirmResume, titleVisibility: .visible) {
-            Button(localized("確認續跑")) { resume() }
-            Button(localized("取消"), role: .cancel) {}
-        } message: {
-            Text(localized("未保存的上一批可能已呼叫並計費；續跑可能再次計費，所有呼叫仍計入此工作的總預算。"))
-        }
-        .confirmationDialog(localized("清除本書人物建檔資料？"), isPresented: $confirmClear, titleVisibility: .visible) {
-            Button(localized("清除"), role: .destructive) { Task {
-                do { try await service.clear(book: adapter.chunkBookID); projection = .init(cards: [], aliases: [], approvedAliasIDs: []) }
-                catch { self.error = error.localizedDescription }
-            } }
-            Button(localized("取消"), role: .cancel) {}
         }
     }
     private func prepare() {
@@ -194,6 +188,12 @@ struct AICharacterMemoryView: View {
             else if job.state != .completedAvailable {
                 Stepper(String(format: localized("追加呼叫額度：%d"), additionalCalls), value: $additionalCalls, in: 0...100_000)
                 Button(localized("續跑／重試未完成批次")) { confirmResume = true }
+                    .confirmationDialog(localized("確認續跑與呼叫預算"), isPresented: $confirmResume, titleVisibility: .visible) {
+                        Button(localized("確認續跑")) { resume() }
+                        Button(localized("取消"), role: .cancel) {}
+                    } message: {
+                        Text(localized("未保存的上一批可能已呼叫並計費；續跑可能再次計費，所有呼叫仍計入此工作的總預算。"))
+                    }
                 if job.state == .failed {
                     Button(localized("分拆未完成批次")) { Task {
                         do { try await service.splitFailed(source: adapter) } catch { self.error = error.localizedDescription }

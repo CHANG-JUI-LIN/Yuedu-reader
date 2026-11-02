@@ -2,8 +2,9 @@ import SwiftUI
 
 // Unified library 5d-4: what is asked about a 首頁配置 (Phase 5 plan, decision 22). Since
 // 2026-10-22 首頁配置's own page asks it: 新增首頁配置 from one of its templates asks only the
-// name (where to start is the template), and deleting one of the reader's own asks first. A
-// name is changed on the configuration's own page.
+// name (where to start is the template), and deleting one of the reader's own asks first, on
+// its row (`homeConfigurationDeleteConfirmation`). A name is changed on the configuration's own
+// page.
 
 enum HomeConfigurationPrompt: Identifiable {
     /// From the template tapped.
@@ -19,9 +20,28 @@ enum HomeConfigurationPrompt: Identifiable {
 }
 
 extension View {
-    /// 新增首頁配置's name alert and the delete dialog for `prompt`.
+    /// 新增首頁配置's name alert for `prompt`.
     func homeConfigurationPrompts(_ prompt: Binding<HomeConfigurationPrompt?>) -> some View {
         modifier(HomeConfigurationPrompts(prompt: prompt))
+    }
+
+    /// The delete dialog for `configuration`, on its row: the swipe and 編輯's delete both ask
+    /// from there, so on iOS 26+ the popover points at the row being deleted.
+    func homeConfigurationDeleteConfirmation(for configuration: HomeConfigurationListing,
+                                             prompt: Binding<HomeConfigurationPrompt?>) -> some View {
+        confirmationDialog(
+            String(format: localized("刪除「%@」？"), configuration.name),
+            isPresented: Binding(
+                get: { prompt.wrappedValue?.id == HomeConfigurationPrompt.delete(configuration).id },
+                set: { if !$0 { prompt.wrappedValue = nil } }
+            ),
+            titleVisibility: .visible
+        ) {
+            Button(localized("刪除"), role: .destructive) { HomePageStore.shared.deleteConfiguration(configuration.id) }
+            Button(localized("取消"), role: .cancel) {}
+        } message: {
+            Text(localized("首頁配置裡的欄目會一起刪除。"))
+        }
     }
 }
 
@@ -34,11 +54,6 @@ private struct HomeConfigurationPrompts: ViewModifier {
     /// Where a new one starts, while its name is asked.
     private var creating: HomeConfigurationTemplate? {
         if case .create(let template) = prompt { return template }
-        return nil
-    }
-
-    private var deleting: HomeConfigurationListing? {
-        if case .delete(let configuration) = prompt { return configuration }
         return nil
     }
 
@@ -57,19 +72,6 @@ private struct HomeConfigurationPrompts: ViewModifier {
                 // defaults are for; a preview has none.
                 .disabled(homeDefaults == nil)
                 Button(localized("取消"), role: .cancel) {}
-            }
-            .background {
-                Color.clear.confirmationDialog(
-                    String(format: localized("刪除「%@」？"), deleting?.name ?? ""),
-                    isPresented: Binding(get: { deleting != nil }, set: { if !$0 { prompt = nil } }),
-                    titleVisibility: .visible,
-                    presenting: deleting
-                ) { configuration in
-                    Button(localized("刪除"), role: .destructive) { store.deleteConfiguration(configuration.id) }
-                    Button(localized("取消"), role: .cancel) {}
-                } message: { _ in
-                    Text(localized("首頁配置裡的欄目會一起刪除。"))
-                }
             }
             .onChange(of: prompt?.id) { _, _ in
                 if creating != nil { name = "" }

@@ -63,10 +63,6 @@ struct AICharacterListView: View {
             AIAssistantService.shared.activate(adapter)
         }
         .onDisappear { task?.cancel() }
-        .confirmationDialog(localized("全書模式可能揭露身分、關係與結局"), isPresented: $confirmWholeBook, titleVisibility: .visible) {
-            Button(localized("使用全書模式")) { scope = .wholeBook }
-            Button(localized("取消"), role: .cancel) {}
-        }
     }
 
     /// Selects the evidence scope for manually requested character cards. Whole book asks
@@ -80,6 +76,10 @@ struct AICharacterListView: View {
                 Text(localized("全書")).tag(Scope.wholeBook)
             }
             .pickerStyle(.segmented)
+            .confirmationDialog(localized("全書模式可能揭露身分、關係與結局"), isPresented: $confirmWholeBook, titleVisibility: .visible) {
+                Button(localized("使用全書模式")) { scope = .wholeBook }
+                Button(localized("取消"), role: .cancel) {}
+            }
         } footer: {
             Text(
                 scope == .read

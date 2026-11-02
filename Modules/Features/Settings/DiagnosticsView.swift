@@ -259,17 +259,18 @@ struct DiagnosticsView: View {
                         .accessibilityHidden(true)
                 }
                 .accessibilityLabel(localized("更多動作"))
+                // On the menu, not in it: a menu's content is gone once it closes.
+                .confirmationDialog(
+                    localized("清除所有診斷紀錄？"),
+                    isPresented: $showClearConfirmation,
+                    titleVisibility: .visible
+                ) {
+                    Button(localized("清除"), role: .destructive) { model.clear() }
+                    Button(localized("取消"), role: .cancel) {}
+                } message: {
+                    Text(localized("清除後無法復原。如果要回報問題，請先匯出。"))
+                }
             }
-        }
-        .confirmationDialog(
-            localized("清除所有診斷紀錄？"),
-            isPresented: $showClearConfirmation,
-            titleVisibility: .visible
-        ) {
-            Button(localized("清除"), role: .destructive) { model.clear() }
-            Button(localized("取消"), role: .cancel) {}
-        } message: {
-            Text(localized("清除後無法復原。如果要回報問題，請先匯出。"))
         }
         .sheet(item: $pendingShare) { ShareExportSheet(export: $0) }
         .alert(localized("傳送診斷紀錄給開發者？"), isPresented: $showSendConfirmation) {

@@ -91,10 +91,12 @@ final class FeedbackCenterUITests: XCTestCase {
                        "Firebase's own English error text must not reach the screen")
         attach(app, "feedback-list")
 
-        // The sort tab opens the sort choices and leaves the selected group alone.
-        let sortTab = tabButton(app, "排序")
-        XCTAssertTrue(sortTab.exists, app.debugDescription)
-        sortTab.tap()
+        // The toolbar's 排序 opens the sort choices and leaves the selected group alone. It
+        // was the tab bar's last tab until FB-19, which left the dialog with nothing to point at.
+        let sortButton = app.buttons["feedback_list_sort"].firstMatch
+        XCTAssertTrue(sortButton.exists, app.debugDescription)
+        XCTAssertEqual(sortButton.label, "排序")
+        sortButton.tap()
         let oldestFirst = app.buttons["最早的在前"].firstMatch
         XCTAssertTrue(oldestFirst.waitForExistence(timeout: 5), app.debugDescription)
         attach(app, "feedback-list-sort")

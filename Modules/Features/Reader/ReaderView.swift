@@ -2277,15 +2277,6 @@ struct ReaderView: View {
             applyAutoReadPause()
         }
         .hidesRootTabBar()
-        .confirmationDialog(
-            localized("回到搜尋前的位置？"),
-            isPresented: $showBookSearchExitConfirmation,
-            titleVisibility: .visible
-        ) {
-            Button(localized("回到原位置")) { endBookSearch(returningToOrigin: true) }
-            Button(localized("留在這裡")) { endBookSearch(returningToOrigin: false) }
-            Button(localized("取消"), role: .cancel) {}
-        }
         .alert(localized("TXT 目錄修復未完成"), isPresented: $showTXTIndexFailure) {
             Button(localized("確定"), role: .cancel) { setReaderChromeVisible(true) }
         } message: {

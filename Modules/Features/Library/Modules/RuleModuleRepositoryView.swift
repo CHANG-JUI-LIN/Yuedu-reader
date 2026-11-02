@@ -51,16 +51,6 @@ struct RuleModuleRepositoryView: View {
         .sheet(isPresented: $showsImport) {
             RuleModuleImportSheet(model: importer, title: importTitle)
         }
-        .confirmationDialog(String(format: localized("取消訂閱「%@」？"), repository?.subscription.name ?? ""),
-                            isPresented: $confirmsUnsubscription, titleVisibility: .visible) {
-            Button(localized("取消訂閱"), role: .destructive) {
-                repositories.unsubscribe(url)
-                dismiss()
-            }
-            Button(localized("取消"), role: .cancel) {}
-        } message: {
-            Text(localized("已安裝的模組會留下。"))
-        }
         .task {
             guard !hasLoaded else { return }
             hasLoaded = true
@@ -82,11 +72,26 @@ struct RuleModuleRepositoryView: View {
             } actions: {
                 UnavailableActions {
                     Button(localized("重試")) { Task { await repositories.reload(url) } }
-                    Button(localized("取消訂閱"), role: .destructive) { confirmsUnsubscription = true }
+                    unsubscribeConfirmation(
+                        Button(localized("取消訂閱"), role: .destructive) { confirmsUnsubscription = true })
                 }
             }
         case .loaded(let index):
             list(index)
+        }
+    }
+
+    /// 取消訂閱's question, on whichever 取消訂閱 asked it: the failed page's or the list's.
+    private func unsubscribeConfirmation(_ trigger: some View) -> some View {
+        trigger.confirmationDialog(String(format: localized("取消訂閱「%@」？"), repository?.subscription.name ?? ""),
+                                   isPresented: $confirmsUnsubscription, titleVisibility: .visible) {
+            Button(localized("取消訂閱"), role: .destructive) {
+                repositories.unsubscribe(url)
+                dismiss()
+            }
+            Button(localized("取消"), role: .cancel) {}
+        } message: {
+            Text(localized("已安裝的模組會留下。"))
         }
     }
 
@@ -113,12 +118,13 @@ struct RuleModuleRepositoryView: View {
                     Text(url.absoluteString)
                         .foregroundStyle(DSColor.textPrimary)
                         .textSelection(.enabled)
-                    Button(role: .destructive) {
-                        confirmsUnsubscription = true
-                    } label: {
-                        SettingsRowLabel(localized("取消訂閱"), systemImage: "minus.circle", role: .destructive)
-                    }
-                    .accessibilityIdentifier("modules.repository.unsubscribe")
+                    unsubscribeConfirmation(
+                        Button(role: .destructive) {
+                            confirmsUnsubscription = true
+                        } label: {
+                            SettingsRowLabel(localized("取消訂閱"), systemImage: "minus.circle", role: .destructive)
+                        }
+                        .accessibilityIdentifier("modules.repository.unsubscribe"))
                 } header: {
                     Text(localized("訂閱網址")).foregroundStyle(DSColor.textSecondary)
                 }

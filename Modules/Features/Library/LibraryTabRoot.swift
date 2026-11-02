@@ -109,7 +109,7 @@ struct LibraryTabRoot: View {
                 exploreSources = DiscoverViewModel.exploreSources(in: library)
                 sourceGroups = LibrarySourceGroups.groups(of: exploreSources)
             }
-            .bookSourceActionSheets(sheet: $sourceActionSheet, pendingDeletion: $sourcePendingDeletion)
+            .bookSourceActionSheets(sheet: $sourceActionSheet)
             .task { await modules.loadIfNeeded() }
             .exploreRouteDestinations(openBrowser: { browserEntry = BrowserEntryPresentation(entry: $0) })
             .remoteLibraryDestinations()

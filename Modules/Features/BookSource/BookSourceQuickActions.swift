@@ -66,11 +66,10 @@ enum BookSourceActionSheet: Identifiable {
 }
 
 extension View {
-    /// Presents the sheets and the delete confirmation behind `BookSourceActionMenuItems`.
-    func bookSourceActionSheets(
-        sheet: Binding<BookSourceActionSheet?>,
-        pendingDeletion: Binding<BookSource?>
-    ) -> some View {
+    /// Presents the sheets behind `BookSourceActionMenuItems`. 刪除's confirmation is not here: it
+    /// hangs off the source's own card (`bookSourceDeleteConfirmation`), so on iOS 26+ its
+    /// popover points at the card the long press was on, not the middle of the page.
+    func bookSourceActionSheets(sheet: Binding<BookSourceActionSheet?>) -> some View {
         self
             .sheet(item: sheet) { action in
                 switch action {
@@ -95,22 +94,25 @@ extension View {
                     }
                 }
             }
-            .confirmationDialog(
-                localized("刪除來源配置"),
-                isPresented: Binding(
-                    get: { pendingDeletion.wrappedValue != nil },
-                    set: { if !$0 { pendingDeletion.wrappedValue = nil } }
-                ),
-                titleVisibility: .visible,
-                presenting: pendingDeletion.wrappedValue
-            ) { source in
-                Button(localized("刪除"), role: .destructive) {
-                    _ = BookSourceStore.shared.delete(id: source.id)
-                }
-                Button(localized("取消"), role: .cancel) {}
-            } message: { source in
-                Text(source.bookSourceName)
+    }
+
+    /// `BookSourceActionMenuItems`' 刪除 asks first, on the card of the `source` it was chosen for.
+    func bookSourceDeleteConfirmation(for source: BookSource, pendingDeletion: Binding<BookSource?>) -> some View {
+        confirmationDialog(
+            localized("刪除來源配置"),
+            isPresented: Binding(
+                get: { pendingDeletion.wrappedValue?.id == source.id },
+                set: { if !$0 { pendingDeletion.wrappedValue = nil } }
+            ),
+            titleVisibility: .visible
+        ) {
+            Button(localized("刪除"), role: .destructive) {
+                _ = BookSourceStore.shared.delete(id: source.id)
             }
+            Button(localized("取消"), role: .cancel) {}
+        } message: {
+            Text(source.bookSourceName)
+        }
     }
 }
 

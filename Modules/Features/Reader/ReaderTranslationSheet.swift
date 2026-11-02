@@ -49,6 +49,12 @@ struct ReaderTranslationSheet: View {
 
                 Section {
                     Button(localized("清除本書譯文"), role: .destructive) { confirmsClear = true }
+                        .confirmationDialog(localized("清除本書的所有譯文？"), isPresented: $confirmsClear, titleVisibility: .visible) {
+                            Button(localized("清除譯文"), role: .destructive) { clear() }
+                            Button(localized("取消"), role: .cancel) {}
+                        } message: {
+                            Text(localized("譯文會刪除，翻譯也會關閉；之後再開啟要重新翻譯。"))
+                        }
                 } footer: {
                     if let clearError {
                         Text(clearError).dsSectionFooter()
@@ -65,12 +71,6 @@ struct ReaderTranslationSheet: View {
                     Button { dismiss() } label: { Image(systemName: "xmark") }
                         .accessibilityLabel(localized("關閉"))
                 }
-            }
-            .confirmationDialog(localized("清除本書的所有譯文？"), isPresented: $confirmsClear, titleVisibility: .visible) {
-                Button(localized("清除譯文"), role: .destructive) { clear() }
-                Button(localized("取消"), role: .cancel) {}
-            } message: {
-                Text(localized("譯文會刪除，翻譯也會關閉；之後再開啟要重新翻譯。"))
             }
         }
     }

@@ -63,6 +63,17 @@ struct RuleModuleGroupView: View {
                             .accessibilityLabel(failure.folder)
                             .accessibilityValue(localized("無法讀取的模組"))
                             .accessibilityHint(localized("移除模組"))
+                            .confirmationDialog(String(format: localized("移除「%@」？"), failure.folder),
+                                                isPresented: Binding(get: { pendingRemoval?.folder == failure.folder },
+                                                                     set: { if !$0 { pendingRemoval = nil } }),
+                                                titleVisibility: .visible) {
+                                Button(localized("移除模組"), role: .destructive) {
+                                    Task { await remove(failure.folder) }
+                                }
+                                Button(localized("取消"), role: .cancel) {}
+                            } message: {
+                                Text(localized("它的快取會一起刪除。"))
+                            }
                         }
                     }
                     .interfaceSectionSurface()
@@ -75,16 +86,6 @@ struct RuleModuleGroupView: View {
         .themedAppSurface(for: .settings)
         .hidesRootTabBar()
         .task { await library.loadIfNeeded() }
-        .confirmationDialog(pendingRemoval.map { String(format: localized("移除「%@」？"), $0.folder) } ?? "",
-                            isPresented: Binding(get: { pendingRemoval != nil }, set: { if !$0 { pendingRemoval = nil } }),
-                            titleVisibility: .visible, presenting: pendingRemoval) { failure in
-            Button(localized("移除模組"), role: .destructive) {
-                Task { await remove(failure.folder) }
-            }
-            Button(localized("取消"), role: .cancel) {}
-        } message: { _ in
-            Text(localized("它的快取會一起刪除。"))
-        }
         .alert(localized("操作失敗"), isPresented: Binding(get: { removalFailure != nil }, set: { if !$0 { removalFailure = nil } })) {
             Button(localized("確定"), role: .cancel) {}
         } message: {

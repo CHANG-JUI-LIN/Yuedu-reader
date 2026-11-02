@@ -53,16 +53,6 @@ struct AIServiceEditorView: View {
             .alert(localized("無法儲存"), isPresented: Binding(get: { saveError != nil }, set: { if !$0 { saveError = nil } })) {
                 Button(localized("確定"), role: .cancel) { saveError = nil }
             } message: { Text(saveError ?? "") }
-            .confirmationDialog(
-                localized("移除 API Key？"),
-                isPresented: $showClearKeyConfirmation,
-                titleVisibility: .visible
-            ) {
-                Button(localized("移除"), role: .destructive) { clearKey() }
-                Button(localized("取消"), role: .cancel) {}
-            } message: {
-                Text(localized("移除後 AI 功能會停用，閱讀與聽書不受影響。"))
-            }
     }
 
     // MARK: - Sections
@@ -218,6 +208,16 @@ struct AIServiceEditorView: View {
                 showClearKeyConfirmation = true
             } label: {
                 Text(localized("移除 API Key"))
+            }
+            .confirmationDialog(
+                localized("移除 API Key？"),
+                isPresented: $showClearKeyConfirmation,
+                titleVisibility: .visible
+            ) {
+                Button(localized("移除"), role: .destructive) { clearKey() }
+                Button(localized("取消"), role: .cancel) {}
+            } message: {
+                Text(localized("移除後 AI 功能會停用，閱讀與聽書不受影響。"))
             }
         }
         .interfaceSectionSurface()

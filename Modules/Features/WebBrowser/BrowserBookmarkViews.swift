@@ -98,6 +98,14 @@ struct BrowserSitesList: View {
                         Button(localized("清除"), role: .destructive) { confirmsHistoryClear = true }
                             .font(DSFont.footnote)
                             .textCase(nil)
+                            .confirmationDialog(
+                                localized("要清除所有瀏覽記錄嗎？"),
+                                isPresented: $confirmsHistoryClear,
+                                titleVisibility: .visible
+                            ) {
+                                Button(localized("清除"), role: .destructive) { history.clear() }
+                                Button(localized("取消"), role: .cancel) {}
+                            }
                     }
                 }
             }
@@ -106,14 +114,6 @@ struct BrowserSitesList: View {
         .softScrollEdges()
         .scrollContentBackground(.hidden)
         .background(PageBackgroundView(scope: .explore).ignoresSafeArea())
-        .confirmationDialog(
-            localized("要清除所有瀏覽記錄嗎？"),
-            isPresented: $confirmsHistoryClear,
-            titleVisibility: .visible
-        ) {
-            Button(localized("清除"), role: .destructive) { history.clear() }
-            Button(localized("取消"), role: .cancel) {}
-        }
     }
 
     static func relativeTime(_ date: Date) -> String {
@@ -415,6 +415,14 @@ private struct BrowserStartCustomizeSheet: View {
                         SettingsRowLabel(localized("清除瀏覽記錄"), systemImage: "trash", role: .destructive)
                     }
                     .disabled(history.entries.isEmpty)
+                    .confirmationDialog(
+                        localized("要清除所有瀏覽記錄嗎？"),
+                        isPresented: $confirmsHistoryClear,
+                        titleVisibility: .visible
+                    ) {
+                        Button(localized("清除"), role: .destructive) { history.clear() }
+                        Button(localized("取消"), role: .cancel) {}
+                    }
                 }
                 .interfaceSectionSurface()
             }
@@ -428,14 +436,6 @@ private struct BrowserStartCustomizeSheet: View {
                             .labelStyle(.iconOnly)
                     }
                 }
-            }
-            .confirmationDialog(
-                localized("要清除所有瀏覽記錄嗎？"),
-                isPresented: $confirmsHistoryClear,
-                titleVisibility: .visible
-            ) {
-                Button(localized("清除"), role: .destructive) { history.clear() }
-                Button(localized("取消"), role: .cancel) {}
             }
         }
         .presentationDetents([.medium, .large])

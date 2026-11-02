@@ -373,7 +373,6 @@ struct OnlineBookView: View {
             }
         }
         .sourceKindMismatchAlert(origin: $kindMismatchOrigin, onConfirm: applyOrigin)
-        .removeFromShelfConfirmation(isPresented: $confirmsRemoval, onConfirm: removeFromShelf)
         .navigationDestination(item: $pushed) { push in
             switch push {
             case .reader(let id):
@@ -507,6 +506,7 @@ struct OnlineBookView: View {
             systemImage: alreadyInShelf ? "checkmark" : "plus",
             isBusy: addingToShelf,
             isEnabled: !chapters.isEmpty,
+            removalConfirmation: BookDetailRemovalConfirmation(isPresented: $confirmsRemoval, onConfirm: removeFromShelf),
             action: {
                 if alreadyInShelf { confirmsRemoval = true } else { addToShelfOnly() }
             }

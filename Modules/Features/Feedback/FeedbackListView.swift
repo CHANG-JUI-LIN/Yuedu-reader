@@ -2,19 +2,12 @@ import SwiftUI
 
 /// 回饋中心 › 我的回饋: every report this inbox sent, filtered by status group, newest
 /// first by default. The groups are the tabs of the page's own tab bar — the app's tab bar
-/// steps aside for it — and the sort control is its last tab.
+/// steps aside for it — and the sort control is a toolbar button.
 struct FeedbackListView: View {
     private enum LoadState: Equatable {
         case loading
         case loaded
         case failed(String)
-    }
-
-    /// A tab: one per status group, and the sort control, which opens the sort choices
-    /// instead of becoming the selected page.
-    private enum ListTab: Hashable {
-        case group(FeedbackStatusGroup)
-        case sort
     }
 
     @State private var threads: [FeedbackThread] = []
@@ -37,23 +30,12 @@ struct FeedbackListView: View {
 
     private var hasUnread: Bool { threads.contains(where: \.isUnread) }
 
-    private var tabSelection: Binding<ListTab> {
-        Binding(
-            get: { .group(group) },
-            set: { tab in
-                switch tab {
-                case .group(let selected): group = selected
-                case .sort: showsSortOptions = true
-                }
-            }
-        )
-    }
-
     var body: some View {
         tabs
             .navigationTitle(localized("我的回饋"))
             .toolbarTitleDisplayMode(.inline)
             .toolbar {
+                ToolbarItem(placement: .topBarTrailing) { sortButton }
                 ToolbarItem(placement: .topBarTrailing) {
                     Button(localized("全部已讀")) { markAllRead() }
                         .disabled(!hasUnread)
@@ -62,13 +44,6 @@ struct FeedbackListView: View {
             // The app's tab bar showed under this one (maintainer, 2026-10-17): a page pushed
             // inside a tab asks for it to be hidden itself.
             .hidesRootTabBar()
-            .confirmationDialog(localized("排序"), isPresented: $showsSortOptions, titleVisibility: .visible) {
-                ForEach(FeedbackSortOrder.allCases) { order in
-                    Button(order.title) { sortOrder = order }
-                }
-            } message: {
-                Text(String(format: localized("目前：%@"), sortOrder.title))
-            }
             .alert(
                 localized("無法標記為已讀"),
                 isPresented: Binding(get: { markAllError != nil }, set: { if !$0 { markAllError = nil } })
@@ -80,19 +55,36 @@ struct FeedbackListView: View {
             .task(id: reloadToken) { await observe() }
     }
 
+    /// 排序 was the tab bar's last tab until FB-19: a tab item cannot anchor the dialog, so on
+    /// iOS 26+ its popover pointed at the middle of the page. The dialog hangs off this button.
+    private var sortButton: some View {
+        Button {
+            showsSortOptions = true
+        } label: {
+            Image(systemName: "arrow.up.arrow.down")
+                .accessibilityHidden(true)
+        }
+        .accessibilityLabel(localized("排序"))
+        .accessibilityValue(sortOrder.title)
+        .accessibilityIdentifier("feedback_list_sort")
+        .confirmationDialog(localized("排序"), isPresented: $showsSortOptions, titleVisibility: .visible) {
+            ForEach(FeedbackSortOrder.allCases) { order in
+                Button(order.title) { sortOrder = order }
+            }
+        } message: {
+            Text(String(format: localized("目前：%@"), sortOrder.title))
+        }
+    }
+
     private var tabs: some View {
-        TabView(selection: tabSelection) {
+        TabView(selection: $group) {
             ForEach(FeedbackStatusGroup.allCases) { group in
                 page(for: group)
                     // The pages keep the real size class; only the bar is made compact.
                     .environment(\.horizontalSizeClass, horizontalSizeClass)
                     .tabItem { Label(group.title, systemImage: group.systemImage) }
-                    .tag(ListTab.group(group))
+                    .tag(group)
             }
-            // Never shown: selecting this tab opens the sort choices (`tabSelection`).
-            Color.clear
-                .tabItem { Label(localized("排序"), systemImage: "arrow.up.arrow.down") }
-                .tag(ListTab.sort)
         }
         // iPadOS 18+ draws a regular-width TabView as the floating top bar: titles only, plus
         // a sidebar button beside the app's own. The groups are this page's filter, so on

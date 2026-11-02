@@ -54,6 +54,15 @@ struct RuleModuleManagerView: View {
                         Button(localized("取消訂閱"), role: .destructive) { pendingUnsubscription = repository }
                     }
                     .accessibilityIdentifier("modules.repository.\(repository.id.absoluteString)")
+                    .confirmationDialog(String(format: localized("取消訂閱「%@」？"), repository.subscription.name),
+                                        isPresented: Binding(get: { pendingUnsubscription?.id == repository.id },
+                                                             set: { if !$0 { pendingUnsubscription = nil } }),
+                                        titleVisibility: .visible) {
+                        Button(localized("取消訂閱"), role: .destructive) { repositories.unsubscribe(repository.id) }
+                        Button(localized("取消"), role: .cancel) {}
+                    } message: {
+                        Text(localized("已安裝的模組會留下。"))
+                    }
                 }
 
                 NavigationLink(value: ExploreNavigationRoute.moduleGroup(.imported)) {
@@ -77,14 +86,6 @@ struct RuleModuleManagerView: View {
             if addFlow != nil {
                 ToolbarItem(placement: .topBarTrailing) { addControl }
             }
-        }
-        .confirmationDialog(pendingUnsubscription.map { String(format: localized("取消訂閱「%@」？"), $0.subscription.name) } ?? "",
-                            isPresented: Binding(get: { pendingUnsubscription != nil }, set: { if !$0 { pendingUnsubscription = nil } }),
-                            titleVisibility: .visible, presenting: pendingUnsubscription) { repository in
-            Button(localized("取消訂閱"), role: .destructive) { repositories.unsubscribe(repository.id) }
-            Button(localized("取消"), role: .cancel) {}
-        } message: { _ in
-            Text(localized("已安裝的模組會留下。"))
         }
         .alert(localized("操作失敗"), isPresented: Binding(get: { repositories.message != nil },
                                                           set: { if !$0 { repositories.message = nil } })) {

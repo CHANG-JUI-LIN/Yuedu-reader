@@ -108,6 +108,7 @@ struct HomeConfigurationsPage: View {
                 Label(localized("編輯"), systemImage: "pencil")
             }
         }
+        .homeConfigurationDeleteConfirmation(for: configuration, prompt: $prompt)
     }
 
     /// 預設 says what it is, as Rex's 默認 does; the reader's own are their name.

@@ -16,7 +16,26 @@ struct BookDetailAction {
     /// Where reading resumes, in grey after the title: 「第 12 章」 or 「已讀 32%」
     /// (`BookDetailResume`). Read by VoiceOver as the button's value.
     var detail: String? = nil
+    /// 移除書架's question, asked from this button so on iOS 26+ its popover points at it:
+    /// `action` presents it, and confirming removes the book.
+    var removalConfirmation: BookDetailRemovalConfirmation? = nil
     var action: () -> Void
+}
+
+struct BookDetailRemovalConfirmation {
+    var isPresented: Binding<Bool>
+    var onConfirm: () -> Void
+}
+
+extension View {
+    @ViewBuilder
+    fileprivate func removalConfirmation(_ confirmation: BookDetailRemovalConfirmation?) -> some View {
+        if let confirmation {
+            removeFromShelfConfirmation(isPresented: confirmation.isPresented, onConfirm: confirmation.onConfirm)
+        } else {
+            self
+        }
+    }
 }
 
 struct BookDetailAuthorAction: Identifiable {
@@ -652,6 +671,7 @@ struct BookDetailHero<Cover: View>: View {
             .buttonStyle(BookDetailCardActionStyle(fill: tone.ink.opacity(DSLayout.cardSecondaryActionFillOpacity), label: tone.ink))
             .disabled(!secondary.isEnabled || secondary.isBusy)
             .accessibilityLabel(secondary.title)
+            .removalConfirmation(secondary.removalConfirmation)
         } else {
             Button(action: secondary.action) {
                 HStack(spacing: DSSpacing.xs) {
@@ -671,6 +691,7 @@ struct BookDetailHero<Cover: View>: View {
             .fixedSize()
             .layoutPriority(1)
             .disabled(!secondary.isEnabled || secondary.isBusy)
+            .removalConfirmation(secondary.removalConfirmation)
         }
     }
 

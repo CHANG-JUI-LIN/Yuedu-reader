@@ -33,6 +33,17 @@ struct AIBookSummaryView: View {
                 Section {
                     Button(localized("清除本書摘要"), role: .destructive) { confirmClear = true }
                         .disabled(isRunning)
+                        .confirmationDialog(localized("清除本書摘要？"), isPresented: $confirmClear, titleVisibility: .visible) {
+                            Button(localized("清除"), role: .destructive) {
+                                Task {
+                                    do { try await service.clear(book: book) } catch { planError = error.localizedDescription }
+                                    await refreshPlan()
+                                }
+                            }
+                            Button(localized("取消"), role: .cancel) {}
+                        } message: {
+                            Text(localized("已整理的逐章、分卷與全書摘要都會刪除，重新整理需要再次呼叫模型。"))
+                        }
                 }
                 .interfaceSectionSurface()
             }
@@ -50,17 +61,6 @@ struct AIBookSummaryView: View {
         .onChange(of: scenePhase) { _, phase in if phase != .active { service.pause(book: book) } }
         .onDisappear { service.pause(book: book) }
         .sheet(item: $proposal) { consent($0) }
-        .confirmationDialog(localized("清除本書摘要？"), isPresented: $confirmClear, titleVisibility: .visible) {
-            Button(localized("清除"), role: .destructive) {
-                Task {
-                    do { try await service.clear(book: book) } catch { planError = error.localizedDescription }
-                    await refreshPlan()
-                }
-            }
-            Button(localized("取消"), role: .cancel) {}
-        } message: {
-            Text(localized("已整理的逐章、分卷與全書摘要都會刪除，重新整理需要再次呼叫模型。"))
-        }
     }
 
     // MARK: - Sections

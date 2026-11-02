@@ -42,6 +42,13 @@ struct SourceCaptchaView: View {
                         Button(localized("刪除來源配置"), role: .destructive) {
                             confirmsDelete = true
                         }
+                        .confirmationDialog(
+                            String(format: localized("確定要刪除來源配置「%@」嗎？"), request.sourceName),
+                            isPresented: $confirmsDelete,
+                            titleVisibility: .visible
+                        ) {
+                            Button(localized("刪除"), role: .destructive, action: deleteSource)
+                        }
                     }
                 }
             }
@@ -66,13 +73,6 @@ struct SourceCaptchaView: View {
                     .accessibilityLabel(localized("完成"))
                     .disabled(trimmedCode.isEmpty)
                 }
-            }
-            .confirmationDialog(
-                String(format: localized("確定要刪除來源配置「%@」嗎？"), request.sourceName),
-                isPresented: $confirmsDelete,
-                titleVisibility: .visible
-            ) {
-                Button(localized("刪除"), role: .destructive, action: deleteSource)
             }
         }
         .task { await loadImage() }

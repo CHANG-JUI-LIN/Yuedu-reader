@@ -78,17 +78,17 @@ struct TTSRoleCastView: View {
                 // roster, no cards. It used to test the cast alone, so it sat greyed out
                 // while a roster and a pile of character cards existed behind it.
                 .disabled(!hasAnythingToReset)
+                .confirmationDialog(
+                    localized("重設這本書的角色設定？"),
+                    isPresented: $showResetConfirmation,
+                    titleVisibility: .visible
+                ) {
+                    Button(localized("重設"), role: .destructive) { resetBook() }
+                    Button(localized("取消"), role: .cancel) {}
+                } message: {
+                    Text(localized("會清掉這本書的配音、AI 整理的角色名單，以及所有人物卡。書本身和聽書設定不受影響。"))
+                }
             }
-        }
-        .confirmationDialog(
-            localized("重設這本書的角色設定？"),
-            isPresented: $showResetConfirmation,
-            titleVisibility: .visible
-        ) {
-            Button(localized("重設"), role: .destructive) { resetBook() }
-            Button(localized("取消"), role: .cancel) {}
-        } message: {
-            Text(localized("會清掉這本書的配音、AI 整理的角色名單，以及所有人物卡。書本身和聽書設定不受影響。"))
         }
     }
 

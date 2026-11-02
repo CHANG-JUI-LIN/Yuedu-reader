@@ -174,6 +174,15 @@ extension ReaderView {
                     .frame(width: DSLayout.minimumTapTarget, height: DSLayout.minimumTapTarget)
             }
             .accessibilityLabel(localized("結束搜尋"))
+            .confirmationDialog(
+                localized("回到搜尋前的位置？"),
+                isPresented: $showBookSearchExitConfirmation,
+                titleVisibility: .visible
+            ) {
+                Button(localized("回到原位置")) { endBookSearch(returningToOrigin: true) }
+                Button(localized("留在這裡")) { endBookSearch(returningToOrigin: false) }
+                Button(localized("取消"), role: .cancel) {}
+            }
         }
         .buttonStyle(.borderless)
         .foregroundStyle(palette.bottomIcon)

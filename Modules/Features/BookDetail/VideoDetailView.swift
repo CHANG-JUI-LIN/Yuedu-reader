@@ -238,7 +238,6 @@ struct VideoDetailView: View {
         )
         .sheet(isPresented: $showSourcePicker, onDismiss: resolvePendingOrigin) { sourceSheet }
         .sourceKindMismatchAlert(origin: $kindMismatchOrigin, onConfirm: applyOrigin)
-        .removeFromShelfConfirmation(isPresented: $confirmsRemoval, onConfirm: removeFromShelf)
         // Played once the sheet has gone, so the player is not presented over a sheet leaving.
         .sheet(isPresented: $showsEpisodes, onDismiss: {
             guard let chapterIndex = pendingEpisode else { return }
@@ -432,6 +431,7 @@ struct VideoDetailView: View {
         }
         .disabled(chapters.isEmpty || addingToShelf)
         .accessibilityLabel(alreadyInShelf ? localized("移除書架") : localized("加入書架"))
+        .removeFromShelfConfirmation(isPresented: $confirmsRemoval, onConfirm: removeFromShelf)
         if !guide.isEmpty {
             Button { showsEpisodes = true } label: {
                 Image(systemName: "list.bullet").modifier(VideoHeroCapsuleIcon())

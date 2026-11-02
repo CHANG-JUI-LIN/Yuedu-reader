@@ -94,15 +94,6 @@ struct RuleModuleDetailView: View {
         .sheet(isPresented: $showsUpdate) {
             RuleModuleImportSheet(model: updates, title: localized("檢查更新"))
         }
-        .confirmationDialog(String(format: localized("移除「%@」？"), installed.module.title),
-                            isPresented: $confirmsRemoval, titleVisibility: .visible) {
-            Button(localized("移除模組"), role: .destructive) {
-                Task { await remove() }
-            }
-            Button(localized("取消"), role: .cancel) {}
-        } message: {
-            Text(localized("它的快取會一起刪除。"))
-        }
         .alert(localized("操作失敗"), isPresented: Binding(get: { removalFailure != nil }, set: { if !$0 { removalFailure = nil } })) {
             Button(localized("確定"), role: .cancel) {}
         } message: {
@@ -152,6 +143,15 @@ struct RuleModuleDetailView: View {
                 SettingsRowLabel(localized("移除模組"), systemImage: "trash", role: .destructive)
             }
             .accessibilityIdentifier("module.remove")
+            .confirmationDialog(String(format: localized("移除「%@」？"), installed.module.title),
+                                isPresented: $confirmsRemoval, titleVisibility: .visible) {
+                Button(localized("移除模組"), role: .destructive) {
+                    Task { await remove() }
+                }
+                Button(localized("取消"), role: .cancel) {}
+            } message: {
+                Text(localized("它的快取會一起刪除。"))
+            }
         }
         .interfaceSectionSurface()
     }
