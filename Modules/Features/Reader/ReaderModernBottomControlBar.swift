@@ -123,22 +123,20 @@ struct ReaderModernBottomControlBar: View {
             )
 
             ZStack {
-                Slider(
-                    value: Binding<Double>(
-                        get: { sliderProgress },
-                        set: { chapterSliderDraft = $0 }
-                    ),
-                    in: 0...1,
-                    onEditingChanged: { editing in
-                        if editing {
-                            chapterSliderDraft = chapterSliderProgressValue()
-                        } else if let draft = chapterSliderDraft {
-                            applyChapterSliderProgress(draft)
-                            chapterSliderDraft = nil
-                        }
-                    }
+                ReaderProgressSlider(
+                    value: sliderProgress,
+                    tint: palette.bottomIcon,
+                    onScrub: { chapterSliderDraft = $0 },
+                    onCommit: { value in
+                        applyChapterSliderProgress(value)
+                        chapterSliderDraft = nil
+                    },
+                    // A chapter per swipe, as ⏮ / ⏭ beside it: the slider's own step is a tenth
+                    // of its range, which in scroll mode (one notch per spine item) can round back
+                    // to the chapter it started from.
+                    onIncrement: canGoNextChapter ? onNextChapter : nil,
+                    onDecrement: canGoPrevChapter ? onPrevChapter : nil
                 )
-                .tint(palette.bottomIcon)
                 .accessibilityLabel(localized("閱讀進度"))
                 .accessibilityValue(progressPercentText)
 
