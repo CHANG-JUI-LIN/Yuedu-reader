@@ -93,6 +93,17 @@ struct BookWritingModesTests {
         #expect(book.direction == BookDirection(isRTL: true, principalMode: .verticalRTL))
     }
 
+    @Test("a later document's own style element is read, though the book-wide scan never sees it")
+    func laterDocumentStyleElement() async throws {
+        let book = try await Self.resolve(try await Self.epub(
+            language: "ja", progression: "rtl",
+            chapters: ["<p>一</p>", "<p>二</p>", "<p>三</p>", "<p>Colophon</p>"],
+            heads: [3: "<style>body { writing-mode: horizontal-tb }</style>"]
+        ))
+        #expect(book.modes == [.verticalRTL, .verticalRTL, .verticalRTL, .horizontal])
+        #expect(book.direction == BookDirection(isRTL: true, principalMode: .verticalRTL))
+    }
+
     @Test("Hebrew pages right to left and stays horizontal")
     func hebrew() async throws {
         let book = try await Self.resolve(try await Self.epub(language: "he", progression: "rtl",
@@ -134,6 +145,10 @@ struct BookWritingModesTests {
         #expect(BookWritingModeFacts.containsWritingModeDeclaration(in: #"<body style="writing-mode:vertical-rl">"#))
         #expect(!BookWritingModeFacts.containsWritingModeDeclaration(in: "/* writing-mode: vertical-rl */ p {}"))
         #expect(!BookWritingModeFacts.containsWritingModeDeclaration(in: "p { text-orientation: upright }"))
+        // The per-chapter check before a parse: any mention, in any case.
+        #expect(BookWritingModeFacts.mentionsWritingMode("P { -WEBKIT-WRITING-MODE: vertical-rl }"))
+        #expect(BookWritingModeFacts.mentionsWritingMode("/* writing-mode */"))
+        #expect(!BookWritingModeFacts.mentionsWritingMode("p { text-orientation: upright }"))
     }
 
     @Test("undeclared documents follow the CSS when the book declares modes, the OPF when it does not")
@@ -163,9 +178,11 @@ struct BookWritingModesTests {
 
     // MARK: - Fixtures
 
-    /// A minimal EPUB 3: one stylesheet linked from every chapter when `css` is given.
+    /// A minimal EPUB 3: one stylesheet linked from every chapter when `css` is given, and `heads[n]` in
+    /// chapter n's `<head>`.
     private static func epub(language: String, progression: String? = nil, css: String? = nil,
-                             chapters: [String], bodyClasses: [Int: String] = [:]) async throws -> URL {
+                             chapters: [String], bodyClasses: [Int: String] = [:],
+                             heads: [Int: String] = [:]) async throws -> URL {
         var entries: [String: Data] = [
             "mimetype": Data("application/epub+zip".utf8),
             "META-INF/container.xml": Data("""
@@ -180,7 +197,7 @@ struct BookWritingModesTests {
             let bodyClass = bodyClasses[index].map { #" class="\#($0)""# } ?? ""
             entries["OPS/c\(index).xhtml"] = Data("""
             <?xml version="1.0" encoding="UTF-8"?>
-            <html xmlns="http://www.w3.org/1999/xhtml"><head><title>\(index)</title>\(link)</head>
+            <html xmlns="http://www.w3.org/1999/xhtml"><head><title>\(index)</title>\(link)\(heads[index] ?? "")</head>
             <body\(bodyClass)>\(body)</body></html>
             """.utf8)
         }

@@ -527,3 +527,65 @@ Steps 1–4 are engine and reader changes; step 5 is the measurement and is neve
   (`EPUBPageRenderer.loadTXT`, `:552-608`).
 - Readest offers a per-book writing-mode override for EPUB (`auto` / `horizontal-tb` / `horizontal-rl` /
   `vertical-rl`). Nothing here adds one; noted only because it is the obvious next request.
+
+## Implementation log
+
+**Step 1, done 2026-11-02.** YueduCoreText 0.12.0 published (tag `0.12.0`, commit `a438cc4`, GitHub release):
+`BrowserChapterDocument.principalWritingMode` (`Engine/PrincipalWritingMode.swift`, 17 tests in
+`PrincipalWritingModeTests`). It reads `<html>`/`<body>` declarations through the cascade's order; SVG spellings
+(`tb-rl`, `lr-tb`) read; values the engine cannot lay out (`vertical-lr`, `sideways-lr`) ignored as an
+unsupported declaration; dark-media rules ignored. The app requires 0.12.0.
+
+**Decisions taken while implementing** (they refine the sections above; where they differ, these win):
+
+- **Scroll mode carries the segment's mode in the engine-bound settings.** Inside a segment every chapter has the
+  segment's mode, so the copy of `ReaderRenderSettings` handed to `CoreTextScrollEngine` and the browser engine
+  in scroll mode has `writingMode` = the segment's mode, and a crossing is today's axis change (settings change →
+  reslice → reset). Risk 5 does not apply: the value is constant within a segment. It is written only on that
+  engine-bound copy, never into the persisted settings or the field that means the user's 排版方向 (TXT, online
+  and Aozora read that field).
+- **Paged mode uses a per-spine provider** `writingMode(forSpine:)`, a defaulted parameter whose default answers
+  `settings.writingMode` for every spine (which keeps `RenderFidelityOracleTests` building and measuring as today).
+  Every `BrowserLayoutConfig` built for a chapter uses that chapter's mode (`makeConfiguration`, `decideEngine`,
+  `chapterEvaluation`, `layoutBrowserChapter`): `CascadeInputs` includes the writing mode, and a mismatch makes
+  `accepts` / `rebound(to:)` fail.
+- **Resolver API.** `BookWritingModes` (`@MainActor`), created at book open: `direction` (`progression`,
+  `principalMode`) known after open; `writingMode(forSpine:) async` resolved lazily, cached per spine, in-flight
+  requests deduplicated; `cachedWritingMode(forSpine:)` for synchronous readers. The parse and the
+  `principalWritingMode` read run in one `nonisolated` async helper (the property walks the DOM). No open-time
+  pass over every chapter. Its own parse, not shared with admission until `⏱ chapter.writingMode` says it matters.
+- **Shelf.** A `BookResourceProvider` over `EPUBPackageResources` feeds the existing `EPUBStylesheetIngestion`
+  (one ingestion path). It parses only when `page-progression-direction` is undeclared.
+- **"Old decision" for the Step 2 gate** = D1 OR D3 over any chapter (D3 is sticky, so its union over the book).
+
+**Step 2, done 2026-11-02** (`04ef254f`, then the early-outs below). `BookWritingModes` and the shelf's
+`PublicationSession.inspectDirectionIsRTL`; `EPUBOpeningFlow` deleted. Measured on the iPhone 18 Pro Max simulator
+with a test-only tool (`WritingModeGateTool`, env-gated, not committed; kept outside the repo).
+
+- **Gate.** 40 books: `corpus.json`'s 19, `corpus-mobi.json`'s 19, the two fixed-layout fixtures. 38 unchanged.
+  No book changes direction. Two chapters change mode, each compared under both modes by the paged engines and by
+  `CoreTextScrollEngine`:
+  - `红楼梦脂评汇校本` spine 0 `titlepage.xhtml`, a Calibre SVG cover that links none of the book's stylesheets:
+    vertical → horizontal, route legacy (`vertical-writing-mode`) → browser, text 1 → 2 UTF-16 in both engines. A
+    position saved there is 0 or 1, both inside the new text: no migration.
+  - `vertical-zh-azw3` spine 3 `c0004.xhtml` (the inline TOC): vertical → horizontal, browser → browser, text equal
+    (29 UTF-16) in both engines.
+  No book of risk 2's narrowing kind (vertical by OPF, writing modes declared only on inner elements) is in the
+  corpus.
+- **Early-outs, all exact** (no mode changed when they landed): a document none of whose parse texts (markup and
+  `productionStylesheetTexts`, `@import` already inlined) mention `writing-mode` is not parsed; the leading
+  documents are not parsed when rule 1's scan found no declaration; the shelf returns a declared progression before
+  reading any stylesheet; the resolver reuses ingestion the adapter already holds.
+- **Cost, per chapter, after the ingestion admission shares** (median; before = Step 2 as first committed, which
+  read the chapter again and parsed whenever any manifest stylesheet named the property): `mahabharata` (2,014
+  chapters, no declaration) 20.4 → **0.7 ms**; `kusamakura` (declares, so parses) 11.0 → **8.2 ms**, which Step 3
+  removes by reading the mode from admission's own parse. Ingestion itself, unchanged and shared with admission:
+  80 ms (`mahabharata`), 133 ms (`全职高手3`); the first gate run timed it together with the mode (82 ms).
+- **Cost at the shelf.** Declared progression: 1.4–6.3 ms (no stylesheet read). No declaration: the old preflight's
+  reads (package, OPF, every stylesheet, three leading documents' text), `mahabharata` 144 → 119 ms, `全职高手3`
+  338 → 196 ms, `redchamber-azw3` 121 → 51 ms (before = Step 2 as first committed; the old preflight did the same
+  reads and was not measured separately). A CSS-declaring book with no progression adds three leading parses; none
+  is in the corpus.
+- **Found, not in this plan:** `PublicationSession`'s spine cache is keyed by file name alone
+  (`getCacheURL`, `spine_cache_<name>.json`), so two books with the same file name share one cached spine. The
+  test EPUBs, all named `book.epub`, read each other's spines until they were given unique names.

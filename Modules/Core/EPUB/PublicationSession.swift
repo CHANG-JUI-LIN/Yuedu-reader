@@ -543,24 +543,25 @@ final class PublicationSession: Sendable {
     }
 
     /// Whether the book reads right to left, for the shelf's opening animation, before the reader opens
-    /// it. Reads `container.xml`, the OPF and the stylesheets without constructing a Readium publication,
-    /// and parses the leading documents only when the OPF declares no page progression. Same rules as the
-    /// reader's (`BookWritingModes`).
+    /// it. Reads `container.xml` and the OPF without constructing a Readium publication; the stylesheets
+    /// only when the OPF declares no page progression, and parses the leading documents only when those
+    /// declare a writing mode. Same rules as the reader's (`BookWritingModes`).
     static func inspectDirectionIsRTL(sourceURL: URL) async -> Bool {
         do {
             let package = try await retrievePackage(sourceURL: sourceURL, httpClient: DefaultHTTPClient())
             let resources = package.resources
             let metadata = parseOPFMetadataXML(resources.opfXML, opfPath: resources.opfPath)
+            // A declared progression is the direction (`BookWritingModeFacts.direction`): no stylesheet to read.
+            switch metadata.pageProgressionDirection {
+            case .rtl: return true
+            case .ltr: return false
+            case .default: break
+            }
             let facts = await writingModeFacts(
                 resources: resources, writingMode: metadata.writingMode,
                 pageProgression: metadata.pageProgressionDirection,
                 manifestItemsByID: metadata.manifestItemsByID, spineReferences: metadata.spineReferences
             )
-            switch facts.pageProgression {
-            case .rtl: return true
-            case .ltr: return false
-            case .default: break
-            }
             let provider = PackageResourcesBookResourceProvider(
                 resources: resources, spineReferences: metadata.spineReferences
             )

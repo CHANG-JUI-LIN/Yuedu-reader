@@ -82,6 +82,12 @@ final class EPUBBrowserLayoutResourceAdapter: BrowserLayoutResourceProviding {
         }
     }
 
+    /// The chapter's input as ingestion last produced it, without reading the chapter again: `nil` until
+    /// something has ingested it.
+    func ingestedCSSFrontendInput(forChapter index: Int) -> CSSFrontendInput? {
+        cssInputCache[index]
+    }
+
     func cssFrontendInput(forChapter index: Int, html: String) async -> CSSFrontendInput {
         if let cached = cssInputCache[index], cached.html == html { return cached }
         guard session.chapters.indices.contains(index) else {

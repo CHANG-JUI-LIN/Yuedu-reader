@@ -56,6 +56,12 @@ struct BookWritingModeFacts: Equatable, Sendable {
                                  options: [.regularExpression, .caseInsensitive]) != nil
     }
 
+    /// Whether `source` names the property at all, in a declaration, a comment or anywhere else: what a
+    /// document must contain to declare a mode, cheap enough to ask of every chapter before parsing it.
+    static func mentionsWritingMode(_ source: String) -> Bool {
+        source.range(of: "writing-mode", options: [.caseInsensitive, .literal]) != nil
+    }
+
     func writingMode(declared: ReaderWritingMode?) -> ReaderWritingMode {
         declared ?? bookDefault
     }
@@ -110,12 +116,14 @@ final class BookWritingModes {
     }
 
     /// A publisher EPUB. Parses the leading documents, which decide the direction; every other document
-    /// is parsed when it is first asked for.
+    /// is parsed when it is first asked for. When the book declares no writing mode (rule 1's scan read
+    /// every manifest stylesheet and the leading documents themselves, and found none), the leading
+    /// documents declare nothing by construction and are not read again.
     static func resolve(facts: BookWritingModeFacts, spineIndex: (String) -> Int?,
                         styleInput: @escaping StyleInput) async -> BookWritingModes {
         var resolved: [Int: ReaderWritingMode] = [:]
         var leading: [ReaderWritingMode?] = []
-        for href in facts.leadingDocumentHrefs {
+        for href in facts.leadingDocumentHrefs where facts.declaresWritingModeInCSS {
             guard let spine = spineIndex(href) else {
                 AppLogger.parse("Writing mode: a leading spine document is not in the reading order", context: [
                     "href": href,
@@ -154,11 +162,19 @@ final class BookWritingModes {
     /// read or parsed takes the book's default: the browser engine refuses it too (`chapterParse`) and the
     /// legacy engine lays it out in the mode given. Logged; removable if the package ever parses every
     /// document.
+    ///
+    /// A document none of whose texts names the property declares nothing, so it is not parsed: most books
+    /// never write `writing-mode`, and the parse costs tens of milliseconds a chapter. The texts are the
+    /// ones the parse reads, its markup (inline `style` and `<style>`) and `productionStylesheetTexts`,
+    /// into which ingestion has already inlined every `@import`.
     private static func declaredMode(spine: Int, styleInput: StyleInput) async -> ReaderWritingMode? {
         let start = SourcePerfTrace.now
         defer { SourcePerfTrace.record("chapter.writingMode", "spine=\(spine)", since: start, thresholdMs: 0) }
         do {
-            return try await principalWritingMode(of: try await styleInput(spine))
+            let input = try await styleInput(spine)
+            guard ([input.html] + input.productionStylesheetTexts)
+                .contains(where: BookWritingModeFacts.mentionsWritingMode) else { return nil }
+            return try await principalWritingMode(of: input)
         } catch {
             AppLogger.parse("Writing mode: the chapter could not be parsed; it takes the book's default",
                             context: ["spine": spine, "error": String(describing: error)])
@@ -174,13 +190,15 @@ final class BookWritingModes {
 
 extension BookWritingModes {
     /// A publisher EPUB in the reader: its documents read through the browser engine's ingestion, so the
-    /// mode is decided from the stylesheets the chapter is laid out with.
+    /// mode is decided from the stylesheets the chapter is laid out with. A chapter admission has already
+    /// ingested is not read again (reading one costs ~20 ms in a 2,000-chapter book).
     static func resolve(session: PublicationSession,
                         resource: EPUBBrowserLayoutResourceAdapter) async -> BookWritingModes {
         await resolve(facts: await session.writingModeFacts(), spineIndex: { session.chapterIndex(for: $0) },
                       styleInput: { spine in
-                          await resource.cssFrontendInput(forChapter: spine,
-                                                          html: try await resource.chapterHTML(at: spine))
+                          if let ingested = resource.ingestedCSSFrontendInput(forChapter: spine) { return ingested }
+                          return await resource.cssFrontendInput(forChapter: spine,
+                                                                 html: try await resource.chapterHTML(at: spine))
                       })
     }
 }
