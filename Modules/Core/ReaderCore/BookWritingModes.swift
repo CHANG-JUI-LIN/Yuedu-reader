@@ -158,6 +158,29 @@ final class BookWritingModes {
         facts == nil ? direction.principalMode : resolved[spine]
     }
 
+    /// Spine `spine`'s mode when it is decided without reading a parse of `input`: already resolved, a
+    /// book in one mode, or a document none of whose texts names the property. `nil` when the caller,
+    /// which has parsed `input` (browser admission), must read that parse: `writingMode(forSpine:declared:)`.
+    func writingModeWithoutParse(forSpine spine: Int, input: CSSFrontendInput) -> ReaderWritingMode? {
+        guard let facts else { return direction.principalMode }
+        if let mode = resolved[spine] { return mode }
+        guard Self.mayDeclare(input) else {
+            let mode = facts.writingMode(declared: nil)
+            resolved[spine] = mode
+            return mode
+        }
+        return nil
+    }
+
+    /// Records the mode the caller's own parse declares (`BrowserChapterDocument.principalWritingMode`),
+    /// so the chapter is never parsed a second time for it.
+    func writingMode(forSpine spine: Int, declared: ReaderWritingMode?) -> ReaderWritingMode {
+        guard let facts else { return direction.principalMode }
+        let mode = facts.writingMode(declared: declared)
+        resolved[spine] = mode
+        return mode
+    }
+
     /// `nil` when the document declares no writing mode. A document whose markup or stylesheets cannot be
     /// read or parsed takes the book's default: the browser engine refuses it too (`chapterParse`) and the
     /// legacy engine lays it out in the mode given. Logged; removable if the package ever parses every
@@ -172,14 +195,17 @@ final class BookWritingModes {
         defer { SourcePerfTrace.record("chapter.writingMode", "spine=\(spine)", since: start, thresholdMs: 0) }
         do {
             let input = try await styleInput(spine)
-            guard ([input.html] + input.productionStylesheetTexts)
-                .contains(where: BookWritingModeFacts.mentionsWritingMode) else { return nil }
+            guard mayDeclare(input) else { return nil }
             return try await principalWritingMode(of: input)
         } catch {
             AppLogger.parse("Writing mode: the chapter could not be parsed; it takes the book's default",
                             context: ["spine": spine, "error": String(describing: error)])
             return nil
         }
+    }
+
+    private static func mayDeclare(_ input: CSSFrontendInput) -> Bool {
+        ([input.html] + input.productionStylesheetTexts).contains(where: BookWritingModeFacts.mentionsWritingMode)
     }
 
     /// Off the main actor: the parse and the read both walk the document.

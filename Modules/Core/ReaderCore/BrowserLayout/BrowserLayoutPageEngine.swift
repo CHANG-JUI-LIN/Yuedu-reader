@@ -273,6 +273,10 @@ final class BrowserLayoutImageStore: @unchecked Sendable {
 /// nonisolated and reads only these Sendable inputs, so what it returns belongs to no one.
 struct BrowserLayoutConfigInputs: Sendable {
     var settings: ReaderRenderSettings
+    /// The chapter's writing mode, which `settings.writingMode` is not: a publisher EPUB's chapters each
+    /// have their own (`BookWritingModes`). The cascade's inputs include it, so an admission evaluation
+    /// rebinds only to a configuration in the same mode.
+    var writingMode: ReaderWritingMode
     var fontScalePolicy: PublicationFontScalePolicy
     var contentWidth: CGFloat
     var contentHeight: CGFloat
@@ -307,7 +311,7 @@ struct BrowserLayoutConfigInputs: Sendable {
                     size: size, weight: weight, italic: italic)
                 ?? publicationResolver?(families, weight, italic, size)
             },
-            writingMode: settings.writingMode,
+            writingMode: writingMode,
             cjkTypographyStyle: cjkTypographyStyle,
             // Scroll settings always carry false: a scroll column has no page bottom.
             bottomJustify: settings.bottomJustify
@@ -369,6 +373,13 @@ final class BrowserLayoutPageEngine: PageRenderingProvider, LinkNavigationProvid
     private let resource: any BrowserLayoutResourceProviding
     private let delegate: CoreTextPageEngine
     private var settings: ReaderRenderSettings
+    /// Each chapter's writing mode in a publisher EPUB. Handed to the legacy delegate too, so a chapter
+    /// this engine refuses is laid out in the same mode. Nil lays every chapter out in
+    /// `settings.writingMode`, the user's 排版方向 or the mode a test fixes. Scroll mode lays chapters
+    /// out in its own settings' mode.
+    var writingModes: BookWritingModes? {
+        didSet { delegate.writingModes = writingModes }
+    }
     private var regexHighlightNeedsRelayout = false
     private var themeTextColor: UIColor
     private var themeBackgroundColor: UIColor
@@ -419,6 +430,9 @@ final class BrowserLayoutPageEngine: PageRenderingProvider, LinkNavigationProvid
     var testChapterLayoutStates: [Int: ChapterLayoutState] { chapterLayoutStates }
     /// Test seam: sessionEnsure attempt counts per "\(generation):\(spine)".
     var testSessionEnsureCounts: [String: Int] { sessionEnsureCounts }
+    /// Test seam: chapters whose admission evaluation their layout could not reuse, in order. A
+    /// configuration whose cascade inputs differ from admission's (a writing mode, say) parses again.
+    private(set) var testStaleAdmissionSpines: [Int] = []
     private var browserSessions: [Int: BrowserLayoutSession] = [:]
     private var backgroundFinishTasks: [Int: Task<Void, Never>] = [:]
     private var spinePageOffsets: [Int] = []
@@ -688,7 +702,6 @@ final class BrowserLayoutPageEngine: PageRenderingProvider, LinkNavigationProvid
         // cascade below styles it with the layout configuration, and the layout
         // that follows an admission starts from that style tree instead of
         // parsing the chapter a second and third time.
-        let writingMode = settings.writingMode
         let parseStart = SourcePerfTrace.now
         // The package parses and evaluates on the global concurrent executor and hands
         // each result back as `sending`: nothing else holds it, so it may cross here.
@@ -703,8 +716,22 @@ final class BrowserLayoutPageEngine: PageRenderingProvider, LinkNavigationProvid
             return ChapterAdmission(choice: .legacyEngineFailure(.resourceFailure("chapterParse")))
         }
         guard isCurrentWork(generation) else { return nil }
+        // The chapter's mode, read from this parse: the resolver never parses an admitted chapter again.
+        var writingMode = settings.writingMode
+        if let writingModes {
+            if let known = writingModes.writingModeWithoutParse(forSpine: spineIndex, input: input) {
+                writingMode = known
+            } else {
+                let readStart = SourcePerfTrace.now
+                let declared = document.principalWritingMode
+                writingMode = writingModes.writingMode(forSpine: spineIndex, declared: declared)
+                SourcePerfTrace.record("chapter.writingMode", "spine=\(spineIndex) source=admission",
+                                       since: readStart, thresholdMs: 0)
+            }
+        }
         let config = browserConfigInputs(
-            html: html, fontScalePolicy: PublicationFontScalePolicy.resolve(bodyInlineStyle: document.bodyInlineStyle)
+            html: html, fontScalePolicy: PublicationFontScalePolicy.resolve(bodyInlineStyle: document.bodyInlineStyle),
+            writingMode: writingMode
         ).makeConfiguration()
         let evaluation = await BrowserChapterDocument.evaluate(document, configuration: config, writingMode: writingMode)
         SourcePerfTrace.record("browser.admission", "spine=\(spineIndex)", since: parseStart, thresholdMs: 0)
@@ -774,8 +801,11 @@ final class BrowserLayoutPageEngine: PageRenderingProvider, LinkNavigationProvid
 
             // The configuration is made after the fonts are prepared so its resolver
             // sees them; its cascade inputs are the admission configuration's.
-            let evaluation = try await chapterEvaluation(for: spineIndex, input: input, admitted: admitted) { policy in
-                browserConfigInputs(html: html, fontScalePolicy: policy)
+            let writingMode = await chapterWritingMode(spineIndex)
+            guard isCurrentWork(generation) else { return }
+            let evaluation = try await chapterEvaluation(for: spineIndex, input: input, writingMode: writingMode,
+                                                         admitted: admitted) { policy in
+                browserConfigInputs(html: html, fontScalePolicy: policy, writingMode: writingMode)
             }
             guard isCurrentWork(generation) else { return }
             if settings.regexHighlightConfiguration.isEnabled {
@@ -922,6 +952,7 @@ final class BrowserLayoutPageEngine: PageRenderingProvider, LinkNavigationProvid
     /// What the chapter's layout configuration is made of, read here on the main actor.
     /// `makeConfiguration()` builds the configuration from it off this class's isolation.
     private func browserConfigInputs(html: String, fontScalePolicy: PublicationFontScalePolicy = .readerAdjustable,
+        writingMode: ReaderWritingMode,
         scrollSettings: ReaderRenderSettings? = nil, scrollSize: CGSize? = nil) -> BrowserLayoutConfigInputs {
         let settings = scrollSettings ?? self.settings
         // The same decision the legacy builders reach from their rendered text: what the
@@ -932,6 +963,7 @@ final class BrowserLayoutPageEngine: PageRenderingProvider, LinkNavigationProvid
             declaredLanguage: resource.declaredLanguage)
         return BrowserLayoutConfigInputs(
             settings: settings,
+            writingMode: writingMode,
             fontScalePolicy: fontScalePolicy,
             contentWidth: scrollSize?.width ?? self.contentWidth,
             contentHeight: scrollSize?.height ?? self.contentHeight,
@@ -941,6 +973,12 @@ final class BrowserLayoutPageEngine: PageRenderingProvider, LinkNavigationProvid
             cjkTypographyStyle: cjkTypographyStyle,
             publicationFontResolver: resource.fontResolver()
         )
+    }
+
+    /// The mode a paged chapter is laid out in. Admission has usually resolved it already.
+    private func chapterWritingMode(_ spine: Int) async -> ReaderWritingMode {
+        guard let writingModes else { return settings.writingMode }
+        return await writingModes.writingMode(forSpine: spine)
     }
 
     private func prepareBrowserFonts(at spine: Int) async {
@@ -973,6 +1011,7 @@ final class BrowserLayoutPageEngine: PageRenderingProvider, LinkNavigationProvid
     private func chapterEvaluation(
         for spineIndex: Int,
         input: CSSFrontendInput,
+        writingMode: ReaderWritingMode,
         admitted: sending BrowserChapterEvaluation?,
         configurationInputs: (PublicationFontScalePolicy) -> BrowserLayoutConfigInputs
     ) async throws -> sending BrowserChapterEvaluation {
@@ -984,8 +1023,8 @@ final class BrowserLayoutPageEngine: PageRenderingProvider, LinkNavigationProvid
                 return rebound
             }
             BrowserLayoutDeviceDiagnostic.summary("\(BrowserLayoutDeviceDiagnostic.prefix) admissionEvaluationStale spine=\(spineIndex)")
+            testStaleAdmissionSpines.append(spineIndex)
         }
-        let writingMode = settings.writingMode
         let start = SourcePerfTrace.now
         let document = try await BrowserChapterDocument.parse(input: input)
         let configuration = configurationInputs(
@@ -2079,8 +2118,10 @@ extension BrowserLayoutPageEngine {
         try Task.checkCancellation()
         let store = BrowserLayoutImageStore(await resource.prefetchImages(
             forChapter: spine, html: html, renderWidth: contentSize.width))
-        let evaluation = try await chapterEvaluation(for: spine, input: input, admitted: admitted) { policy in
-            var inputs = browserConfigInputs(html: html, fontScalePolicy: policy, scrollSettings: settings, scrollSize: contentSize)
+        let evaluation = try await chapterEvaluation(for: spine, input: input, writingMode: settings.writingMode,
+                                                     admitted: admitted) { policy in
+            var inputs = browserConfigInputs(html: html, fontScalePolicy: policy, writingMode: settings.writingMode,
+                                             scrollSettings: settings, scrollSize: contentSize)
             // The scroll host owns the reader's outer margins and fixed bars.
             inputs.contentInsets = .zero
             return inputs

@@ -57,7 +57,9 @@ extension ReaderView {
             paragraphSpacing: readerConfig.paragraphSpacing,
             letterSpacing: readerConfig.letterSpacing,
             marginH: pageMarginH(for: mode),
-            writingMode: effectiveWritingMode,
+            // The mode the engines lay a chapter out in when nothing more specific decides it: a publisher
+            // EPUB's paged chapters each have their own (`BookWritingModes`).
+            writingMode: bookDirection.principalMode,
             // The observed property, not the resolver's snapshot read: `body` compares these
             // settings in `onChanged`, and only an observed read redraws on a font change.
             fontPostScriptName: UserReaderFontResolver.postScriptName(settings.selectedReaderFontPostScript),
@@ -120,18 +122,10 @@ extension ReaderView {
         let document = BookDocumentFactory.makeEPUBDocument(book: book, session: session)
         applyDocument(document)
 
-        // Do not overwrite the tap-time CSS preflight with "unspecified"
-        // package metadata. CSS-only vertical EPUBs remain right-spine through
-        // loading; explicit OPF writing mode or RTL progression is still
-        // authoritative (LTR progression alone does not imply horizontal text).
-        if session.epubWritingMode != .unspecified
-            || session.pageProgressionDirection == .rtl {
-            readerNavigator?.updateOpeningDirection(
-                ReaderBookOpeningDirection.resolve(
-                    writingMode: session.epubWritingMode == .verticalRL ? .verticalRTL : .horizontal,
-                    pageProgressionIsRTL: session.pageProgressionDirection == .rtl
-                )
-            )
+        // The shelf decided the opening animation by the same rules (`inspectDirectionIsRTL`), so this
+        // only confirms it for the closing one.
+        if let direction = epubRenderer.bookDirection {
+            readerNavigator?.updateOpeningDirection(ReaderBookOpeningDirection.resolve(isRTL: direction.isRTL))
         }
 
         // Start any authored background soundtrack for the chapter we're opening on.
@@ -185,12 +179,14 @@ extension ReaderView {
         Task {
             do {
                 let session = try await EPUBBookService.shared.openSession(for: book, using: store, remoteLibrary: dependencies.remoteLibrary)
+                // Which way the book reads, before anything is laid out for it: the settings below,
+                // the picture migration and the page view are all made in its direction.
+                if book.opensWithDeclaredEPUBFlow {
+                    await self.epubRenderer.resolveWritingModes(for: session)
+                }
                 await self.moveSavedPositionForPictures(book: book, session: session)
                 await MainActor.run {
                     guard self.book?.id == book.id else { return }
-                    if session.epubWritingMode == .verticalRL {
-                        self.isVerticalEPUB = true
-                    }
                     let settings = self.readerRenderSettings(for: self.activeReaderDisplayMode)
                     self.applyPublicationSession(session, book: book, settings: settings)
                 }

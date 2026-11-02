@@ -32,6 +32,14 @@ final class EPUBPageRenderer: ObservableObject {
     @Published private(set) var fixedLayoutOrientation: FixedLayoutOrientation = .auto
     @Published private(set) var fixedLayoutViewport: FixedLayoutViewport?
     @Published private(set) var mediaOverlaysByChapter: [Int: EPUBMediaOverlay] = [:]
+    /// Which way the publisher EPUB being read reads, known before its first layout
+    /// (`resolveWritingModes(for:)`). Nil for a book laid out in the user's 排版方向: TXT, online,
+    /// Aozora.
+    @Published private(set) var bookDirection: BookDirection?
+    /// The EPUB's writing modes with the ingestion they were read from, which `load` hands its browser
+    /// engine so the chapters the resolver read are not ingested again.
+    private var writingModes: (session: PublicationSession, modes: BookWritingModes,
+                               resource: EPUBBrowserLayoutResourceAdapter)?
     /// Holds the EPUB builder so notifyViewportSize can update renderSize.
     private var epubBuilder: EPUBAttributedStringBuilder?
     private var onlineBuilder: OnlineProviderAttributedStringBuilder?
@@ -386,9 +394,26 @@ final class EPUBPageRenderer: ObservableObject {
         layoutMode == .prePaginated
     }
 
-    /// True when CSS writing-mode: vertical-rl is detected from EPUB stylesheets.
-    var cssDetectedVerticalWritingMode: Bool {
-        epubBuilder?.cssDetectedVerticalWritingMode ?? false
+    /// Resolves a publisher EPUB's writing modes before `load`, so the reader knows which way the book
+    /// reads before anything is laid out or built for it. `load` and `savedPositionPictures` of the same
+    /// session use them.
+    @discardableResult
+    func resolveWritingModes(for session: PublicationSession) async -> BookWritingModes {
+        if let writingModes, writingModes.session === session { return writingModes.modes }
+        let start = SourcePerfTrace.now
+        let resource = EPUBBrowserLayoutResourceAdapter(session: session)
+        let modes = await BookWritingModes.resolve(session: session, resource: resource)
+        SourcePerfTrace.record("reader.open.writingModes", "rtl=\(modes.direction.isRTL)", since: start, thresholdMs: 0)
+        writingModes = (session, modes, resource)
+        bookDirection = modes.direction
+        return modes
+    }
+
+    /// The writing mode of a chapter of the EPUB being read, once it is known; nil for a book in the
+    /// user's 排版方向 and a chapter not resolved yet.
+    func cachedWritingMode(forSpine spine: Int) -> ReaderWritingMode? {
+        guard let writingModes, writingModes.session === publicationSession else { return nil }
+        return writingModes.modes.cachedWritingMode(forSpine: spine)
     }
 
     func resourceURL(for href: String) -> URL? {
@@ -436,6 +461,11 @@ final class EPUBPageRenderer: ObservableObject {
         fixedLayoutViewport = session.fixedLayoutViewport
         mediaOverlaysByChapter = session.mediaOverlaysByChapter
         publicationSession = session
+        // A session whose modes were not resolved (a caller that fixes the mode in `settings`) lays every
+        // chapter out in `settings.writingMode`.
+        let resolved = writingModes?.session === session ? writingModes : nil
+        writingModes = resolved
+        bookDirection = resolved?.modes.direction
 
         let effectiveSize = renderSize.width > 0 ? renderSize : lastViewportSize
 
@@ -483,9 +513,10 @@ final class EPUBPageRenderer: ObservableObject {
 
         newEngine.applyThemeChange(textColor: settings.textColor, backgroundColor: settings.backgroundColor)
         let browserEngine = BrowserLayoutPageEngine(
-            resource: EPUBBrowserLayoutResourceAdapter(session: session),
+            resource: resolved?.resource ?? EPUBBrowserLayoutResourceAdapter(session: session),
             delegate: newEngine, settings: settings, mode: .browserAuto
         )
+        browserEngine.writingModes = resolved?.modes
         browserEngine.onBrowserChapterPictures = onBrowserChapterPictures
         self.engine = browserEngine
         browserEngine.usesViewportScrolling = continuousScrolling && !settings.writingMode.isVertical
@@ -524,10 +555,12 @@ final class EPUBPageRenderer: ObservableObject {
             chapterDocumentStore: ChapterDocumentStore(builder: builder),
             offsetStore: CharOffsetStore(directoryURL: StorageLocations.epubCharOffsets.appendingPathComponent(bookIdentifier))
         )
+        let resolved = writingModes?.session === session ? writingModes : nil
         let engine = BrowserLayoutPageEngine(
-            resource: EPUBBrowserLayoutResourceAdapter(session: session),
+            resource: resolved?.resource ?? EPUBBrowserLayoutResourceAdapter(session: session),
             delegate: delegate, settings: settings, mode: .browserAuto
         )
+        engine.writingModes = resolved?.modes
         return await engine.pictureOffsets(forSpine: spine, renderSize: renderSize)
     }
 
@@ -562,6 +595,8 @@ final class EPUBPageRenderer: ObservableObject {
         pageProgressionDirection = .default
         layoutMode = .reflowable
         publicationSession = nil
+        writingModes = nil
+        bookDirection = nil
         let progressDir = StorageLocations.epubCharOffsets.appendingPathComponent(bookIdentifier)
         let store = CharOffsetStore(directoryURL: progressDir)
         let chapterDocumentStore = ChapterDocumentStore(builder: attributedBuilder)
@@ -618,6 +653,8 @@ final class EPUBPageRenderer: ObservableObject {
         imageHeaders: [String: String] = [:],
         imageCacheDirectory: URL? = nil
     ) {
+        writingModes = nil
+        bookDirection = nil
         let progressDir = StorageLocations.epubCharOffsets.appendingPathComponent(bookIdentifier)
         let store = CharOffsetStore(directoryURL: progressDir)
         let resourceAdapter = UniversalBookResourceAdapter(

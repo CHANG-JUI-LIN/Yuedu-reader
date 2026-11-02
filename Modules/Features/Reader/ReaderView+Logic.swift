@@ -575,7 +575,8 @@ extension ReaderView {
         } else { return }
         guard let position, let text, session.chapters.indices.contains(position.spineIndex) else { return }
         let href = session.chapters[position.spineIndex].href
-        let isVertical = effectiveWritingMode.isVertical
+        let isVertical = (epubRenderer.cachedWritingMode(forSpine: position.spineIndex)
+            ?? bookDirection.principalMode).isVertical
         let service = dependencies.calibreProgress
         Task {
             await service.save(book: book, chapterHref: href, position: position, renderedText: text, isVertical: isVertical)

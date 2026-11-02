@@ -521,8 +521,6 @@ final class HTMLAttributedStringBuilder {
     var mediaURLResolver: (@Sendable (String) -> String?)?
     var resolvedFontFamily: (@Sendable (String) -> String?)?
     var resolvedFont: (@Sendable ([String], Int, Bool, CGFloat) -> UIFont?)?
-    /// Set to true after buildStyledAST if CSS writing-mode: vertical-rl is detected on the body element.
-    var detectedVerticalWritingMode = false
 
     private let domParser = HTMLBuilderDOMParser()
     private let styleResolver = HTMLBuilderStyleResolver()
@@ -605,10 +603,7 @@ final class HTMLAttributedStringBuilder {
             thresholdMs: 0
         )
 
-        if ast.resolvedStyle.isVerticalWritingMode {
-            detectedVerticalWritingMode = true
-        }
-        epubFlowLog("buildStyledAST.done bodyClass=\(ast.classes.joined(separator: ".")) bodyVertical=\(ast.resolvedStyle.isVerticalWritingMode) cssDetectedVertical=\(detectedVerticalWritingMode) childCount=\(ast.children.count)")
+        epubFlowLog("buildStyledAST.done bodyClass=\(ast.classes.joined(separator: ".")) bodyVertical=\(ast.resolvedStyle.isVerticalWritingMode) childCount=\(ast.children.count)")
         return ast
     }
 
@@ -661,8 +656,7 @@ final class HTMLAttributedStringBuilder {
             for styleTag in styleTags {
                 let css = (try? styleTag.html()) ?? ""
                 if !css.isEmpty {
-                    epubFlowLog("css.inline len=\(css.count) hasVertical=\(cssContainsVerticalWritingMode(css))")
-                    scanCSSForVerticalWritingMode(css)
+                    epubFlowLog("css.inline len=\(css.count)")
                     styles.append(css)
                 }
             }
@@ -677,8 +671,7 @@ final class HTMLAttributedStringBuilder {
                     epubFlowLog("css.failed href=\(href)")
                     continue
                 }
-                epubFlowLog("css.loaded href=\(href) len=\(cssText.count) hasVertical=\(cssContainsVerticalWritingMode(cssText))")
-                scanCSSForVerticalWritingMode(cssText)
+                epubFlowLog("css.loaded href=\(href) len=\(cssText.count)")
                 styles.append(cssText)
             }
         }
@@ -699,32 +692,6 @@ final class HTMLAttributedStringBuilder {
             thresholdMs: 0
         )
         return styles
-    }
-
-    private func scanCSSForVerticalWritingMode(_ css: String) {
-        guard !detectedVerticalWritingMode else { return }
-        guard let matchedProperty = firstVerticalWritingModeProperty(in: css) else { return }
-        epubFlowLog("css.verticalWritingModeDetected property=\(matchedProperty)")
-        detectedVerticalWritingMode = true
-    }
-
-    private func cssContainsVerticalWritingMode(_ css: String) -> Bool {
-        firstVerticalWritingModeProperty(in: css) != nil
-    }
-
-    private func firstVerticalWritingModeProperty(in css: String) -> String? {
-        let patterns: [(String, String)] = [
-            ("-epub-writing-mode", #"-epub-writing-mode\s*:\s*vertical-rl"#),
-            ("-webkit-writing-mode", #"-webkit-writing-mode\s*:\s*vertical-rl"#),
-            ("writing-mode", #"(^|[;\s{])writing-mode\s*:\s*vertical-rl"#),
-        ]
-        for (property, pattern) in patterns {
-            if let regex = try? NSRegularExpression(pattern: pattern, options: [.caseInsensitive]),
-               regex.firstMatch(in: css, range: NSRange(css.startIndex..., in: css)) != nil {
-                return property
-            }
-        }
-        return nil
     }
 
     private func epubFlowLog(_ message: @autoclosure () -> String) {

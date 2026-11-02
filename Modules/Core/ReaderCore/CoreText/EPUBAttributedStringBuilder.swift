@@ -43,8 +43,6 @@ final class EPUBAttributedStringBuilder: @preconcurrency AttributedStringBuildin
     }()
     /// Current render area size (injected by EPUBPageRenderer during load / notifyViewportSize).
     var renderSize: CGSize
-    /// Set to true when CSS writing-mode: vertical-rl is detected from any chapter's stylesheet or body element.
-    var cssDetectedVerticalWritingMode = false
 
     // MARK: - Initialization
 
@@ -262,10 +260,7 @@ final class EPUBAttributedStringBuilder: @preconcurrency AttributedStringBuildin
                 honorsBookSpacing: settings.usesBookSpacing
             )
         )
-        if localBuilder.detectedVerticalWritingMode {
-            cssDetectedVerticalWritingMode = true
-        }
-        CoreTextPaginator.debugVerticalLog("EPUBFLOW epubBuilder.ast index=\(index) href=\(chapterHref) bodyClass=\(ast.classes.joined(separator: ".")) bodyVertical=\(ast.resolvedStyle.isVerticalWritingMode) cssDetectedVertical=\(localBuilder.detectedVerticalWritingMode) nodeCount=\(nodes.count)")
+        CoreTextPaginator.debugVerticalLog("EPUBFLOW epubBuilder.ast index=\(index) href=\(chapterHref) bodyClass=\(ast.classes.joined(separator: ".")) bodyVertical=\(ast.resolvedStyle.isVerticalWritingMode) nodeCount=\(nodes.count)")
 
         let renderInterval = ReaderPerfTrace.begin(
             .attributedRender,
@@ -279,7 +274,7 @@ final class EPUBAttributedStringBuilder: @preconcurrency AttributedStringBuildin
         let attributedString = await renderer.render(nodes)
         let afterRender = SourcePerfTrace.now
         ReaderPerfTrace.end(renderInterval)
-        CoreTextPaginator.debugVerticalLog("EPUBFLOW epubBuilder.rendered index=\(index) href=\(chapterHref) attrLen=\(attributedString.length) cssDetectedVerticalGlobal=\(cssDetectedVerticalWritingMode) prefix=\"\(debugTextPreview(attributedString.string))\"")
+        CoreTextPaginator.debugVerticalLog("EPUBFLOW epubBuilder.rendered index=\(index) href=\(chapterHref) attrLen=\(attributedString.length) prefix=\"\(debugTextPreview(attributedString.string))\"")
         let anchorOffsets = localBuilder.anchorOffsets(in: attributedString)
         let afterAnchors = SourcePerfTrace.now
 
@@ -421,7 +416,7 @@ final class EPUBAttributedStringBuilder: @preconcurrency AttributedStringBuildin
         if !processed.isEmpty {
             processedCSSCache[resolved] = processed
         }
-        CoreTextPaginator.debugVerticalLog("EPUBFLOW epubBuilder.css.loaded href=\(href) resolved=\(resolved) rawLen=\(cssText.count) processedLen=\(processed.count) hasVertical=\(Self.cssContainsVerticalWritingMode(processed))")
+        CoreTextPaginator.debugVerticalLog("EPUBFLOW epubBuilder.css.loaded href=\(href) resolved=\(resolved) rawLen=\(cssText.count) processedLen=\(processed.count)")
         return processed.isEmpty ? nil : processed
     }
 
@@ -435,20 +430,6 @@ final class EPUBAttributedStringBuilder: @preconcurrency AttributedStringBuildin
         }
         guard let source, !source.isEmpty else { return nil }
         return await loadImage(src: source, chapterHref: chapterHref)
-    }
-
-    private static func cssContainsVerticalWritingMode(_ css: String) -> Bool {
-        let patterns = [
-            #"-epub-writing-mode\s*:\s*vertical-rl"#,
-            #"-webkit-writing-mode\s*:\s*vertical-rl"#,
-            #"(^|[;\s{])writing-mode\s*:\s*vertical-rl"#,
-        ]
-        return patterns.contains { pattern in
-            guard let regex = try? NSRegularExpression(pattern: pattern, options: [.caseInsensitive]) else {
-                return false
-            }
-            return regex.firstMatch(in: css, range: NSRange(css.startIndex..., in: css)) != nil
-        }
     }
 
     private func debugTextPreview(_ text: String, limit: Int = 80) -> String {

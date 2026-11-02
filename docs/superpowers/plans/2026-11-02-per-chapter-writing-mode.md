@@ -589,3 +589,42 @@ with a test-only tool (`WritingModeGateTool`, env-gated, not committed; kept out
 - **Found, not in this plan:** `PublicationSession`'s spine cache is keyed by file name alone
   (`getCacheURL`, `spine_cache_<name>.json`), so two books with the same file name share one cached spine. The
   test EPUBs, all named `book.epub`, read each other's spines until they were given unique names.
+
+**Step 3, done 2026-11-02.** Both paged engines lay each chapter of a publisher EPUB out in its own mode, and
+everything that reads the book's direction reads `BookDirection`. `isVerticalEPUB`, `effectiveWritingMode`, D3
+(`detectedVerticalWritingMode`, `cssDetectedVerticalWritingMode` and their regex scans in both builders) and the
+mid-session flip that set the opening direction from D3 are deleted.
+
+- **Engines.** `CoreTextPageEngine.writingModes` and `BrowserLayoutPageEngine.writingModes` (the browser engine
+  hands the same instance to its legacy delegate). `nil` lays every chapter out in `settings.writingMode`, which is
+  what the oracle and every other caller that does not set it get. The legacy engine awaits the chapter's mode, then
+  checks its generation again, and carries it in the settings copy each `ChapterDocumentRequest` and
+  `PaginationRequest` is built from (no new request field). The browser engine reads it once per chapter and passes
+  it to the config, the evaluation and `layoutBrowserChapter`; scroll preparation keeps the scroll settings' mode.
+- **Admission reads its own parse.** `decideEngine` asks `writingModeWithoutParse(forSpine:input:)` (already
+  resolved, or a document none of whose texts name the property) and otherwise reads
+  `BrowserChapterDocument.principalWritingMode` from the document it has just parsed
+  (`writingMode(forSpine:declared:)`, `⏱ chapter.writingMode source=admission`). No chapter is parsed a second
+  time for its mode; `testStaleAdmissionSpines` stays empty on the converted book (an evaluation built in one mode
+  and reused in another would show there).
+- **Reader.** `loadLocalEPUB` resolves the modes after the session opens, before the picture migration and the
+  engines (`resolveWritingModes(for:)`, `⏱ reader.open.writingModes`); `load` hands them only to the session they
+  were resolved for, so a book another session resolved never lends its modes. `bookDirection` is published from
+  then on, so the page view is built in the book's direction from its first layout; TXT, online and Aozora books
+  have none and follow 排版方向. `readerPageViewIdentity` includes the direction. Fixed-layout books get their
+  direction too (opening and closing animation, as before).
+- **Cost** (iPhone 18 Pro Max simulator, a test-only timing tool, not committed). Admission's read of its own parse,
+  per chapter that names the property: `kusamakura` median **0.09 ms** (Step 2's separate parse: 8.2 ms),
+  `红楼梦脂评汇校本` 0.16 ms; the parse it reads costs 6.5 / 1.7 ms and admission does it anyway. Opening a book now
+  adds `resolveWritingModes` before the engines start (warm runs): 12 ms `mahabharata`, 17 ms `全职高手3` (rule 1's
+  stylesheet scan; no declaration, so no parse), 15 ms `红楼梦脂评汇校本`, 50–54 ms `kusamakura` (three leading
+  documents ingested, which admission then reuses, and parsed, which it does not).
+- **Interim until Step 4.** Scroll mode still lays a whole book out in its principal mode, so in scroll mode
+  admission (per chapter) and `prepareScrollChapter` (the scroll settings) can disagree on a chapter like `c0004`,
+  which is then evaluated again. Step 4 makes the scroll settings' mode the segment's, equal to the chapter's.
+- **Tests.** New `ChapterWritingModeEngineTests` (legacy alone; BrowserAuto with no stale admission; stepping from
+  the last vertical page into the TOC still right to left; direction before the first layout; another session's
+  and TXT's direction; the identity). `KF8ConverterTests.verticalInReader` asks the renderer: the source marks its
+  cover `linear="no"`, so the conversion's documents are compared per book (`[v, v]` → `[v, v, v, h]`), not by
+  index. Must-stay-green plus `EPUBAutoRoutingTests` and `BrowserLayoutPageEngineTests`: 262 tests in 19 suites
+  pass on the iOS 27.2 simulator.

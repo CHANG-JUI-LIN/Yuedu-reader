@@ -4,6 +4,7 @@ import ReadiumZIPFoundation
 import SwiftSoup
 import Testing
 import UIKit
+import YueduCoreText
 @testable import yuedu_app
 
 /// As for MOBI 6, the oracle is the EPUB each fixture was made from. KF8 keeps the
@@ -302,25 +303,34 @@ struct KF8ConverterTests {
         #expect(convertedIsRTL == (name == "vertical-zh.azw3"))
     }
 
-    /// Neither book's OPF declares vertical writing, so the reader turns a book
-    /// vertical only when its renderer has found a vertical `writing-mode` in the
-    /// CSS (`ReaderView` on `isCoreTextReady`).
-    @Test("the reader turns the conversion vertical exactly when it turns the source vertical",
+    /// The reader's own answer (`EPUBPageRenderer.resolveWritingModes`, the resolver both engines ask):
+    /// the conversion reads in its source's direction, each document it shares with the source is laid out
+    /// in the source's mode, and the table of contents Calibre appends, which declares no mode in a book
+    /// whose CSS declares them, is horizontal.
+    @Test("the reader lays the conversion out in its source's direction and modes, its appended TOC horizontal",
           arguments: ["vertical-zh.azw3", "features.azw3"])
     @MainActor
     func verticalInReader(name: String) async throws {
-        func detectsVertical(_ url: URL) async throws -> Bool {
+        func modes(_ url: URL) async throws -> (direction: BookDirection, chapters: [ReaderWritingMode]) {
             let session = try await PublicationSession.open(sourceURL: url)
-            let renderer = EPUBPageRenderer()
-            renderer.load(publicationSession: session, bookIdentifier: UUID().uuidString,
-                          renderSize: CGSize(width: 320, height: 480), settings: EPUBTestFixtures.renderSettings())
-            for await ready in renderer.$isCoreTextReady.values where ready { break }
-            return renderer.cssDetectedVerticalWritingMode
+            let modes = await EPUBPageRenderer().resolveWritingModes(for: session)
+            var chapters: [ReaderWritingMode] = []
+            for spine in session.chapters.indices { chapters.append(await modes.writingMode(forSpine: spine)) }
+            return (modes.direction, chapters)
         }
-        let source = try await detectsVertical(Self.source(name))
-        let converted = try await detectsVertical(try await Helpers.write(try Self.convert(name)).url)
-        #expect(source == (name == "vertical-zh.azw3"))
-        #expect(converted == source)
+        let source = try await modes(Self.source(name))
+        let converted = try await modes(try await Helpers.write(try Self.convert(name)).url)
+        #expect(converted.direction == source.direction)
+        #expect(source.direction.isRTL == (name == "vertical-zh.azw3"))
+        // The source's reading order marks its cover `linear="no"`, which the reader's chapters leave
+        // out, so the conversion's documents do not line up with the source's by index.
+        if name == "vertical-zh.azw3" {
+            #expect(source.chapters == [.verticalRTL, .verticalRTL])
+            #expect(converted.chapters == [.verticalRTL, .verticalRTL, .verticalRTL, .horizontal])
+        } else {
+            #expect(source.chapters.allSatisfy { $0 == .horizontal })
+            #expect(converted.chapters.allSatisfy { $0 == .horizontal })
+        }
     }
 
     @Test("the package records a KF8 source and writes the page progression from EXTH 527, not 525")

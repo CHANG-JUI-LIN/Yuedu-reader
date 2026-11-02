@@ -136,11 +136,12 @@ extension ReaderView {
         return (max(0, currentChapterIndex), 0)
     }
 
-    var effectiveWritingMode: ReaderWritingMode {
-        guard isVerticalEPUB || book?.allowsVerticalWritingMode == true else {
-            return .horizontal
-        }
-        return isVerticalEPUB ? .verticalRTL : settings.readerWritingMode
+    /// Which way the book reads. A publisher EPUB's is its own, resolved before its first layout
+    /// (`EPUBPageRenderer.bookDirection`); a book that follows 排版方向 reads the way the setting lays it
+    /// out, read live so the toggle turns it.
+    var bookDirection: BookDirection {
+        if let direction = epubRenderer.bookDirection { return direction }
+        return BookDirection(uniform: book?.allowsVerticalWritingMode == true ? settings.readerWritingMode : .horizontal)
     }
 
     var effectiveScrollMode: Bool {
@@ -148,7 +149,7 @@ extension ReaderView {
     }
 
     var scrollAxis: CoreTextScrollAxis {
-        effectiveWritingMode.isVertical ? .horizontalRTL : .vertical
+        bookDirection.principalMode.isVertical ? .horizontalRTL : .vertical
     }
 
     func goToPrevPage() {

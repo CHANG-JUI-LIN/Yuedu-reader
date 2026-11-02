@@ -31,7 +31,7 @@ struct BookWritingModesTests {
                         shelfIsRTL: await PublicationSession.inspectDirectionIsRTL(sourceURL: url))
     }
 
-    private static func converted(_ name: String) async throws -> URL {
+    static func converted(_ name: String) async throws -> URL {
         let file = try MOBIFile(data: Data(contentsOf: MOBI.fixtures.appendingPathComponent(name)))
         return try await MOBI.write(try KF8Converter.convert(file)).url
     }
@@ -180,9 +180,9 @@ struct BookWritingModesTests {
 
     /// A minimal EPUB 3: one stylesheet linked from every chapter when `css` is given, and `heads[n]` in
     /// chapter n's `<head>`.
-    private static func epub(language: String, progression: String? = nil, css: String? = nil,
-                             chapters: [String], bodyClasses: [Int: String] = [:],
-                             heads: [Int: String] = [:]) async throws -> URL {
+    static func epub(language: String, progression: String? = nil, css: String? = nil,
+                     chapters: [String], bodyClasses: [Int: String] = [:],
+                     heads: [Int: String] = [:]) async throws -> URL {
         var entries: [String: Data] = [
             "mimetype": Data("application/epub+zip".utf8),
             "META-INF/container.xml": Data("""

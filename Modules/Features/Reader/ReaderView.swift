@@ -571,7 +571,7 @@ struct ReaderView: View {
     /// sideways, so its columns stand where a page's text does.
     private func readerTextBand(for mode: ReaderDisplayMode) -> ClosedRange<CGFloat> {
         let height = readerViewportSize.height
-        if mode == .scroll, !effectiveWritingMode.isVertical {
+        if mode == .scroll, scrollAxis == .vertical {
             let bands = readerScrollBarInsets
             return Self.band(bands.topBand, height - bands.bottomBand)
         }
@@ -663,8 +663,15 @@ struct ReaderView: View {
         // page views are reused with their old `layout.renderSize`, and CoreTextPageView scales the
         // stale CTFrame to the new bounds → text renders narrow. (Double-page rotation already
         // recreates because the spread mode toggles, which is why it never showed this bug.)
-        let size = currentReaderRenderSize
-        return "\(effectivePageTurnStyle.rawValue)-\(effectiveReaderSpreadMode.rawValue)-\(Int(size.width))x\(Int(size.height))"
+        Self.pageViewIdentity(pageTurnStyle: effectivePageTurnStyle, spreadMode: effectiveReaderSpreadMode,
+                              size: currentReaderRenderSize, direction: bookDirection)
+    }
+
+    /// The direction too: the page view controller's spine side and page order are fixed when it is
+    /// built, so 排版方向 turning a TXT book needs a new one.
+    static func pageViewIdentity(pageTurnStyle: PageTurnStyle, spreadMode: ReaderSpreadMode, size: CGSize,
+                                 direction: BookDirection) -> String {
+        "\(pageTurnStyle.rawValue)-\(spreadMode.rawValue)-\(Int(size.width))x\(Int(size.height))-\(direction.isRTL ? "rtl" : "ltr")"
     }
 
     var currentReaderRenderSize: CGSize {
@@ -693,8 +700,6 @@ struct ReaderView: View {
     var isTXT: Bool {
         book?.resolvedPipelineKind == .txt
     }
-
-    @State var isVerticalEPUB = false
 
     var usesCoreTextEPUB: Bool {
         epubRenderer.engine != nil
@@ -949,7 +954,7 @@ struct ReaderView: View {
         ReaderPresentationState(
             location: readerSessionCoordinator?.state.location
                 ?? ReaderLocation(spineIndex: currentChapterIndex, charOffset: 0),
-            direction: effectiveWritingMode.isVertical ? .rtl : .ltr,
+            direction: bookDirection.isRTL ? .rtl : .ltr,
             spreadMode: effectiveReaderSpreadMode,
             viewportSize: readerViewportSize,
             appearance: ReaderAppearance(
@@ -1015,7 +1020,7 @@ struct ReaderView: View {
         }
         readerSessionCoordinator?.send(.updateAppearance(currentReaderPresentationState.appearance))
         readerSessionCoordinator?.send(.updateViewport(readerViewportSize))
-        readerSessionCoordinator?.send(.updateDirection(effectiveWritingMode.isVertical ? .rtl : .ltr))
+        readerSessionCoordinator?.send(.updateDirection(bookDirection.isRTL ? .rtl : .ltr))
         readerSessionCoordinator?.send(.updatePagingStyle(ReaderPagingStyle(pageTurnStyle: settings.pageTurnStyle)))
         readerSessionCoordinator?.send(.updateSpreadMode(effectiveReaderSpreadMode))
     }
@@ -1951,9 +1956,9 @@ struct ReaderView: View {
                     pageTurnStyle: effectivePageTurnStyle,
                     theme: readerTheme,
                     playbackHighlight: activePlaybackHighlight,
-                    // RTL page-turn flow applies to both vertical-rl CJK and
-                    // horizontal RTL bidi scripts (Hebrew, Arabic, …).
-                    isRTL: epubRenderer.pageProgressionDirection == .rtl || effectiveWritingMode.isVertical,
+                    // The book's direction, for every chapter: a horizontal chapter of a vertical
+                    // book still turns right to left, and so do RTL scripts (Hebrew, Arabic, …).
+                    isRTL: bookDirection.isRTL,
                     isDoublePageSpread: isDoublePageSpreadActive,
                     spreadGutter: readerPagingAdapter.spreadGutter,
                     sessionCoordinator: readerSessionCoordinator,
@@ -2184,7 +2189,7 @@ struct ReaderView: View {
 
             if showTouchZoneEditor {
                 ReaderTouchZoneEditorView(
-                    isRTL: epubRenderer.pageProgressionDirection == .rtl || effectiveWritingMode.isVertical,
+                    isRTL: bookDirection.isRTL,
                     onCancel: { showTouchZoneEditor = false },
                     onSave: { showTouchZoneEditor = false }
                 )
@@ -2722,7 +2727,7 @@ struct ReaderView: View {
                     capabilities: readerCapabilities,
                     allowsUserSelectedReaderFont: book?.allowsUserSelectedReaderFont == true,
                     usesPublicationFontDefault: book?.resolvedPipelineKind == .epub,
-                    isVerticalWritingMode: effectiveWritingMode.isVertical,
+                    isVerticalWritingMode: bookDirection.principalMode.isVertical,
                     allowsVerticalWritingMode: (book ?? snapshotBook)?.allowsVerticalWritingMode == true,
                     hasParagraphReviews: currentBookHasParagraphReviews,
                     onOpenTouchZoneEditor: {
@@ -2746,7 +2751,7 @@ struct ReaderView: View {
                     set: { readerTheme = $0 }
                 ),
                 pageTurnOption: quickPageTurnOption,
-                isVerticalWritingMode: effectiveWritingMode.isVertical,
+                isVerticalWritingMode: bookDirection.principalMode.isVertical,
                 onSelectPageTurnOption: { applyQuickPageTurnOption($0) },
                 onStartAutoRead: {
                     // The whole flow: enter the mode, put every surface away, and
@@ -2840,7 +2845,7 @@ struct ReaderView: View {
                     bookTitle: book?.title ?? "",
                     currentPage: currentPage,
                     totalPages: renderedPageCount,
-                    tocLayoutMode: .from(writingMode: effectiveWritingMode),
+                    tocLayoutMode: .from(writingMode: bookDirection.principalMode),
                     pageOffsets: tocPageOffsets,
                     showsPageNumbers: book?.isOnline != true,
                     currentIndex: currentChapterIndex,
@@ -3117,10 +3122,6 @@ struct ReaderView: View {
                 // tile so this chapter's CSS/font/pagination work does not land
                 // inside the animation window.
                 readerNavigator?.signalReaderContentReady()
-                if !isVerticalEPUB && epubRenderer.cssDetectedVerticalWritingMode {
-                    isVerticalEPUB = true
-                    readerNavigator?.updateOpeningDirection(.rightSpine)
-                }
                 syncCoreTextTextAnnotations()
                 applyInitialProgressIfNeeded()
                 relocateReadingStatsPosition()

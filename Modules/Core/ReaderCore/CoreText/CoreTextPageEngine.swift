@@ -316,6 +316,10 @@ final class CoreTextPageEngine: PageRenderingProvider, LinkNavigationProviding, 
     let offsetStore: CharOffsetStore
 
     private(set) var renderSettings: ReaderRenderSettings
+    /// Each chapter's writing mode in a publisher EPUB, the one resolver its browser engine also asks.
+    /// Nil lays every chapter out in `renderSettings.writingMode`: the user's 排版方向 (TXT, online,
+    /// Aozora), or the mode a test fixes.
+    var writingModes: BookWritingModes?
 
     private var currentBookId: String?
     private var chapterByteScanTask: Task<Void, Never>?
@@ -1105,6 +1109,10 @@ final class CoreTextPageEngine: PageRenderingProvider, LinkNavigationProviding, 
     ) async -> ChapterLayoutOutcome {
         guard (0..<chapterCount).contains(spineIndex) else { return .outOfRange }
         guard _layouts[spineIndex]?.isPartial != false else { return .alreadyLaidOut }
+        // The chapter's own writing mode rides on this chapter's copy of the settings only. The
+        // engine's settings stay the book's, so one chapter's mode never invalidates another's layout.
+        var settings = renderSettings
+        if let writingModes { settings.writingMode = await writingModes.writingMode(forSpine: spineIndex) }
         if let abort = abortReason(generation: generation) { return abort }
         AppLogger.render("[FlipTrace] preload begin spine=\(spineIndex) generation=\(generation) layouts=\(_layouts.keys.sorted())")
 
@@ -1118,7 +1126,7 @@ final class CoreTextPageEngine: PageRenderingProvider, LinkNavigationProviding, 
                 .chapterLoad,
                 metadata: ReaderPerfMetadata(
                     spineIndex: spineIndex,
-                    writingMode: String(describing: renderSettings.writingMode),
+                    writingMode: String(describing: settings.writingMode),
                     executor: Thread.isMainThread ? "main" : "background",
                     generation: generation
                 )
@@ -1126,7 +1134,7 @@ final class CoreTextPageEngine: PageRenderingProvider, LinkNavigationProviding, 
                 try await chapterDocumentStore.document(
                     for: ChapterDocumentRequest(
                         spineIndex: spineIndex,
-                        settings: renderSettings,
+                        settings: settings,
                         themeTextColor: themeTextColor,
                         themeBackgroundColor: themeBackgroundColor
                     )
@@ -1185,7 +1193,7 @@ final class CoreTextPageEngine: PageRenderingProvider, LinkNavigationProviding, 
             letterSpacing: renderSettings.letterSpacing,
             contentInsets: currentContentInsets(),
             revision: buildResult.revision,
-            writingMode: renderSettings.writingMode,
+            writingMode: settings.writingMode,
             bottomJustify: renderSettings.bottomJustify
         )
 
@@ -1199,7 +1207,7 @@ final class CoreTextPageEngine: PageRenderingProvider, LinkNavigationProviding, 
                 metadata: ReaderPerfMetadata(
                     spineIndex: spineIndex,
                     characterCount: buildResult.attributedString.length,
-                    writingMode: String(describing: renderSettings.writingMode),
+                    writingMode: String(describing: settings.writingMode),
                     executor: Thread.isMainThread ? "main" : "background",
                     generation: generation
                 )
@@ -1230,7 +1238,7 @@ final class CoreTextPageEngine: PageRenderingProvider, LinkNavigationProviding, 
                             spineIndex: spineIndex,
                             characterCount: buildResult.attributedString.length,
                             pageCount: firstPageLayout.pageRanges.count,
-                            writingMode: String(describing: renderSettings.writingMode),
+                            writingMode: String(describing: settings.writingMode),
                             executor: Thread.isMainThread ? "main" : "background",
                             generation: generation
                         )
@@ -1244,7 +1252,7 @@ final class CoreTextPageEngine: PageRenderingProvider, LinkNavigationProviding, 
                             spineIndex: spineIndex,
                             characterCount: buildResult.attributedString.length,
                             pageCount: firstPageLayout.pageRanges.count,
-                            writingMode: String(describing: renderSettings.writingMode),
+                            writingMode: String(describing: settings.writingMode),
                             cacheResult: "hit",
                             executor: Thread.isMainThread ? "main" : "background",
                             generation: generation
