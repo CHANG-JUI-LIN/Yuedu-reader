@@ -428,6 +428,41 @@ struct BookSourceStoreTests {
         #expect(store.sources[0].enabled == false)
     }
 
+    // FB-123: 資源庫 recomputed its explore sources from the store inside
+    // `onReceive(sourcesPublisher)`, and lagged one edit behind 來源配置管理.
+    @Test("a sourcesPublisher subscriber sees the toggled library in the published value")
+    func sourcesPublisherSendsTheNewLibrary() throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("BookSourceStorePublisher-\(UUID().uuidString)")
+        let store = BookSourceStore(directory: directory)
+        defer {
+            store.waitForQueuedWrites()
+            try? FileManager.default.removeItem(at: directory)
+        }
+        let sources = (0..<3).map { index in
+            var source = makeSource(index: index)
+            source.exploreUrl = "https://example.com/explore-\(index)"
+            return source
+        }
+        store.replaceSourcesFromSync(sources)
+        #expect(DiscoverViewModel.exploreSources(in: store).count == 3)
+
+        var fromValue: [Int] = []
+        var fromStore: [Int] = []
+        let subscription = store.sourcesPublisher.dropFirst().sink { library in
+            fromValue.append(DiscoverViewModel.exploreSources(in: library).count)
+            fromStore.append(DiscoverViewModel.exploreSources(in: store).count)
+        }
+        defer { subscription.cancel() }
+
+        store.toggle(id: sources[0].id)
+
+        #expect(fromValue == [2])
+        #expect(DiscoverViewModel.exploreSources(in: store).count == 2)
+        // Why the subscriber must not read the store: it still holds the library before the edit.
+        #expect(fromStore == [3])
+    }
+
     @Test("bulk writes stay linear on a 20,000-source library")
     func bulkWritesStayLinear() throws {
         let directory = FileManager.default.temporaryDirectory

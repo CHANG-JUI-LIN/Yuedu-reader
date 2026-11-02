@@ -194,10 +194,22 @@ final class DiscoverViewModel: ObservableObject {
 
     /// The explore sources 探索 lists: enabled, with explore on and an explore URL.
     static func exploreSources(in store: BookSourceStore) -> [BookSource] {
-        store.enabledSources.filter {
-            $0.enabledExplore
-                && !$0.exploreUrl.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-        }
+        exploreSources(in: store.sources)
+    }
+
+    /// The same, over a library value — what a `sourcesPublisher` subscriber must use: the
+    /// publisher sends before the store holds the new library, so reading the store there
+    /// sees the library as it was before the edit.
+    nonisolated static func exploreSources(in sources: [BookSource]) -> [BookSource] {
+        sources.filter(isExploreSource)
+    }
+
+    /// Whether 探索 lists `source` — also what 來源配置管理 counts as 支持發現 (FB-123: it
+    /// counted disabled sources, and never matched 資源庫).
+    nonisolated static func isExploreSource(_ source: BookSource) -> Bool {
+        // Presence of any non-blank character, not a trim: `exploreUrl` is often kilobytes of
+        // JS, and the management list asks this of every source on every library edit.
+        source.enabled && source.enabledExplore && source.exploreUrl.contains(where: { !$0.isWhitespace })
     }
 
     /// The sources in `group` (all of them when `nil`) whose name or group holds `query`:

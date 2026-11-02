@@ -244,11 +244,12 @@ private struct ExploreHomeRoot: View {
             guard tabModel.isLoaded else { return }
             await aozora.load()
         }
-        .onReceive(sourceStore.sourcesPublisher) { _ in
-            // Not the placeholder `[]` published until the library is read: reading the sources
-            // then waits for the read, on the main thread. The read's own publish passes.
+        .onReceive(sourceStore.sourcesPublisher) { library in
+            // Not the placeholder `[]` published until the library is read. The read's own
+            // publish passes. The published value, not the store: the publisher sends before
+            // the store holds it.
             guard sourceStore.isLoaded else { return }
-            exploreSources = DiscoverViewModel.exploreSources(in: sourceStore)
+            exploreSources = DiscoverViewModel.exploreSources(in: library)
         }
     }
 

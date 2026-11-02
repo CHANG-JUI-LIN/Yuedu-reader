@@ -104,8 +104,9 @@ struct LibraryTabRoot: View {
             }
             .searchable(text: $query, placement: .navigationBarDrawer(displayMode: .always),
                         prompt: localized("搜索來源配置"))
-            .onReceive(sourceStore.sourcesPublisher) { _ in
-                exploreSources = DiscoverViewModel.exploreSources(in: sourceStore)
+            .onReceive(sourceStore.sourcesPublisher) { library in
+                // The published value: the publisher sends before the store holds it.
+                exploreSources = DiscoverViewModel.exploreSources(in: library)
                 sourceGroups = LibrarySourceGroups.groups(of: exploreSources)
             }
             .bookSourceActionSheets(sheet: $sourceActionSheet, pendingDeletion: $sourcePendingDeletion)

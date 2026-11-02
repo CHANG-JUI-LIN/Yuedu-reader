@@ -247,8 +247,9 @@ struct LibrarySourcesView: View {
             }
         }
         .bookSourceActionSheets(sheet: $sheet, pendingDeletion: $pendingDeletion)
-        .onReceive(sourceStore.sourcesPublisher) { _ in
-            sources = DiscoverViewModel.exploreSources(DiscoverViewModel.exploreSources(in: sourceStore),
+        .onReceive(sourceStore.sourcesPublisher) { library in
+            // The published value: the publisher sends before the store holds it.
+            sources = DiscoverViewModel.exploreSources(DiscoverViewModel.exploreSources(in: library),
                                                        inGroup: group, matching: "")
         }
     }

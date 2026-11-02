@@ -268,12 +268,7 @@ final class BookSourceManagementModel: ObservableObject {
                     indexByID[id] = index
                     groupKeys.append(Self.trimmedGroup(buffer[index].bookSourceGroup))
                     if buffer[index].enabled { enabled += 1 }
-                    // Presence of any non-blank character, not a trim: `exploreUrl` is often
-                    // kilobytes of JS, and trimming it copied every one on every render.
-                    if buffer[index].enabledExplore,
-                       buffer[index].exploreUrl.contains(where: { !$0.isWhitespace }) {
-                        discover += 1
-                    }
+                    if DiscoverViewModel.isExploreSource(buffer[index]) { discover += 1 }
                 }
             }
             self.ids = ids

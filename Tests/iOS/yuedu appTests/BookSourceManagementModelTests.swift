@@ -138,6 +138,26 @@ struct BookSourceManagementModelTests {
         #expect(model.counts.total == 5)
     }
 
+    // FB-123: 支持發現 counted disabled sources, so it never matched 資源庫's explore sources.
+    @Test("支持發現 counts exactly the sources 探索 lists")
+    func discoverCountMatchesExploreSources() async throws {
+        var sources = (0..<4).map { Self.source("書源\($0)") }
+        for index in sources.indices { sources[index].exploreUrl = sources[index].bookSourceUrl + "/explore" }
+        sources[1].enabled = false
+        sources[2].enabledExplore = false
+        sources[3].exploreUrl = "  \n"
+        let harness = try await Harness(sources: sources, validates: false)
+        defer { harness.remove() }
+
+        #expect(harness.model.counts.discover == 1)
+        #expect(harness.model.counts.discover == DiscoverViewModel.exploreSources(in: harness.store).count)
+
+        harness.store.toggle(id: sources[1].id)
+        await Self.mainQueueTurn()
+        #expect(harness.model.counts.discover == 2)
+        #expect(harness.model.counts.discover == DiscoverViewModel.exploreSources(in: harness.store).count)
+    }
+
     // MARK: - Harness
 
     static func source(_ name: String, group: String = "") -> BookSource {
