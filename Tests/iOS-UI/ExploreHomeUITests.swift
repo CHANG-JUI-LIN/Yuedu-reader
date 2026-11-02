@@ -504,6 +504,34 @@ final class ExploreHomeUITests: XCTestCase {
         XCTAssertTrue(first.waitForExistence(timeout: 10), app.debugDescription)
     }
 
+    /// A row of lists holds its cards: 編輯首頁 after it is drawn below them, never over them, on
+    /// the way down as at the end (回饋中心 #120, iOS 17.0: mid-scroll the button sat over 月票榜's
+    /// card, the row reporting less height than it drew, and each scroll up was taken back to
+    /// 編輯首頁 at the end). A guard: the 17.5 and 27 simulators passed it before the fix too.
+    @MainActor
+    func testListsRowHoldsItsCards() {
+        let app = application()
+        app.launch()
+        openExplore(app)
+        let card = app.buttons[featuredCard].firstMatch
+        XCTAssertTrue(card.waitForExistence(timeout: 15), app.debugDescription)
+        let edit = app.buttons["home.edit"].firstMatch
+        let window = app.windows.firstMatch.frame
+        for step in 0..<12 {
+            if card.exists, edit.exists, window.intersects(card.frame) || window.intersects(edit.frame) {
+                XCTAssertLessThanOrEqual(card.frame.maxY, edit.frame.minY + 0.5,
+                                         "step \(step): 編輯首頁 over the list's card: \(app.debugDescription)")
+            }
+            if edit.isHittable { break }
+            let start = app.windows.firstMatch.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.7))
+            start.press(forDuration: 0.05, thenDragTo: start.withOffset(CGVector(dx: 0, dy: -150)), withVelocity: .slow,
+                        thenHoldForDuration: 0.2)
+        }
+        XCTAssertTrue(edit.isHittable, app.debugDescription)
+        XCTAssertLessThanOrEqual(card.frame.maxY, edit.frame.minY + 0.5, app.debugDescription)
+        attach(app, "explore-lists-row-end")
+    }
+
     /// ••• → 中繼資料語言偏好推薦 and ••• → 參與聚合的來源 push 聚合設定, and back is the home (decision
     /// 36); ••• → 重新整理 keeps the home drawn.
     @MainActor

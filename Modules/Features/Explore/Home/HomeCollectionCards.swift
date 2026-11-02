@@ -372,7 +372,7 @@ struct HomeBannerCards: View {
                                          open: open) {
                         HomeBannerCard(collection: collection)
                     }
-                    .containerRelativeFrame(.horizontal) { length, _ in
+                    .homeSidewaysCardWidth { length in
                         let peek = collections.count > perScreen ? DSSpacing.lg + DSLayout.homePagePeek : 0
                         let gaps = DSSpacing.lg * CGFloat(perScreen - 1)
                         return max(0, (length - gaps - peek) / CGFloat(perScreen))

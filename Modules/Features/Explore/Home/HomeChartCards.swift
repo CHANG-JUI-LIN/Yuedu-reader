@@ -33,7 +33,7 @@ struct HomeChartColumns: View {
             LazyHStack(alignment: .top, spacing: DSSpacing.xl) {
                 ForEach(collections) { collection in
                     column(collection, headed: headed)
-                        .containerRelativeFrame(.horizontal) { length, _ in
+                        .homeSidewaysCardWidth { length in
                             guard collections.count > perScreen else {
                                 return max(0, (length - DSSpacing.xl * CGFloat(collections.count - 1)) / CGFloat(collections.count))
                             }

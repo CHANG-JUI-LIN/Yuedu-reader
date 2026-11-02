@@ -290,7 +290,7 @@ struct HomeSectionCards: View {
                     }
                     // Apple Books' width, the next card past it; the whole width, less a peek,
                     // when the text goes under the cover at accessibility sizes.
-                    .containerRelativeFrame(.horizontal) { length, _ in
+                    .homeSidewaysCardWidth { length in
                         guard stacks else { return min(continueCardWidth, length) }
                         return max(0, length - (cards.count > 1 ? DSLayout.homeReadingCardPeek + DSSpacing.lg : 0))
                     }
@@ -420,10 +420,35 @@ extension View {
     /// A card a page in a sideways row, `perScreen` to a page, the next card showing past the edge
     /// when there is one.
     func homePageCardWidth(perScreen: Int, count: Int) -> some View {
-        containerRelativeFrame(.horizontal) { length, _ in
+        homeSidewaysCardWidth { length in
             let peek = count > perScreen ? DSLayout.homeReadingCardPeek + DSSpacing.md : 0
             let gaps = DSSpacing.md * CGFloat(perScreen - 1)
             return max(0, (length - gaps - peek) / CGFloat(perScreen))
+        }
+    }
+
+    /// A card's width in a sideways row, worked out by `width` from the row's length: its scroll
+    /// view's width less the margins `HomeSidewaysScroll` gives it.
+    func homeSidewaysCardWidth(_ width: @escaping (CGFloat) -> CGFloat) -> some View {
+        modifier(HomeSidewaysCardWidth(width: width))
+    }
+}
+
+/// On the home, from the width the home lays its sections out in (`homeRowWidth`), a width the
+/// row knows as it is first measured. Sized by `containerRelativeFrame` there, a row of lists
+/// reported less height than it drew — mid-scroll 編輯首頁 sat over 月票榜's card — and each scroll
+/// up was taken back to 編輯首頁 at the end (回饋中心 #120, a reader's iOS 17.0 recording; the 17.5
+/// and 27 simulators lay it out right either way). Off the home — 作品詳情's series, 模組, a
+/// layout's preview — the container's length, as before: those pages hand down no width.
+private struct HomeSidewaysCardWidth: ViewModifier {
+    let width: (CGFloat) -> CGFloat
+    @Environment(\.homeRowWidth) private var rowWidth
+
+    func body(content: Content) -> some View {
+        if let rowWidth {
+            content.frame(width: width(max(0, rowWidth - DSSpacing.lg * 2)))
+        } else {
+            content.containerRelativeFrame(.horizontal) { length, _ in width(length) }
         }
     }
 }

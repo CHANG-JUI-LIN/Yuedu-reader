@@ -86,6 +86,9 @@ extension EnvironmentValues {
     @Entry var homeDrawsSideways = false
     /// The section 編輯首頁's long press lifts, wherever it starts in its card; nil on the home.
     @Entry var homeSectionDrag: HomeSectionDrag? = nil
+    /// The width the home lays its sections out in, which its sideways rows size their cards from
+    /// (`homeSidewaysCardWidth`); nil off the home, and before the home has a width.
+    @Entry var homeRowWidth: CGFloat? = nil
 }
 
 /// What a long press lifts in 編輯首頁: a section, by its id, with its name under the finger.
@@ -317,6 +320,7 @@ private struct HomeSectionMorph<Mark: View, Surface: View, Gestures: ViewModifie
                 // it at its edge. Laid out in the card's own width, the row shrank — a carousel's
                 // cards, a grid's covers, a synopsis's lines (maintainer, 2026-10-21 and 2026-10-22).
                 .frame(width: width, alignment: .leading)
+                .environment(\.homeRowWidth, width)
                 // In 編輯首頁 the card is one element, the surface over it.
                 .accessibilityHidden(onlyWhen: isEditing || presence < 1)
                 .padding(.vertical, DSSpacing.lg * edited)
