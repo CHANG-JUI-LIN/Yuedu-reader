@@ -82,6 +82,12 @@ ASC 金鑰的三個 secret 移到 `appStoreConnectSecrets.ts`，TestFlight 邀�
    每天的 /triage 先掃 git log 的 trailer 補標漏掉的 `fixed`，並列出認領超過 3 天沒提交的項目。
    發版時用 trailer 列出這一版修了什麼、標 `shipped` 並擬回覆；回覆經你逐則確認才用 `functions/tools/feedback.ts reply` 送出
    （要先 `gcloud auth application-default login`）。
+   **使用者看到的狀態跟著 triage 走（2026-11-03 起）**：`onTriageItemUpdated`（`functions/src/feedbackStatusSync.ts`，
+   規則在 `feedbackStatusSyncPolicy.ts`）在回饋項目的 `status` 一變就改 `threadPath` 那串的 `status`：
+   fixing／fixed → 處理中（不推播）、shipped → 已完成（推播「已完成」），new／triaged／wontfix 不動
+   （wontfix 由開發者回覆說明時自己 `--status done`）。只往前、不把已完成改回去。所以標 triage 就是唯一一步，
+   不必再手動跑 `feedback.ts status`。之前兩邊沒接上：標了 fixing／fixed 的回饋，使用者一直看到排隊中或待補充
+   （11-03 回填：3.0.0 (143) 已含修復的 33 筆標 shipped，其餘 fixing／fixed 的串改處理中）。
 4. 查詢 `status IN … ORDER BY lastSeenAt DESC` 用的複合索引在 `firestore.indexes.json`。
 
 ## 需要你做的

@@ -12,6 +12,8 @@
 // marks the thread unread for its owner, and moves the summary the list shows.
 // A reply, or a status moved to needsInfo or done, also reaches the owner's devices as a
 // push (functions/src/feedbackPush.ts) — one notification even when both happen at once.
+// A report with a triage item gets 處理中／已完成 from that item's status
+// (functions/src/feedbackStatusSync.ts); `status` here is for threads the triage flow does not cover.
 // Attachments are printed as gs:// paths; `gsutil cp` fetches them.
 
 import {initializeApp} from "firebase-admin/app";
