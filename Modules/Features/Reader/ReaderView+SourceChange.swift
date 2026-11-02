@@ -549,6 +549,10 @@ extension ReaderView {
             }
             return chapters.indices.contains(targetIndex) ? chapters[targetIndex].title : ""
         }
+        // The chapter the release lands on (`applyChapterSliderProgress`), not the paged engine's.
+        if effectiveScrollMode, epubRenderer.scrollEngine != nil {
+            return chapterTitle(forSpineIndex: Self.scrollSliderSpine(forProgress: value, spineCount: spineChapters.count))
+        }
         if let engine = epubRenderer.engine, usesCoreTextEPUB {
             let pos = engine.position(forProgress: value)
             if let chapter = tocChapter(forSpineIndex: pos.spineIndex, charOffset: pos.charOffset) {
@@ -562,15 +566,29 @@ extension ReaderView {
         return ""
     }
 
+    /// Scroll mode's slider steps through spine items, the unit scroll positions count: chunks
+    /// load as they are reached, so there is no whole-book character count to place it by.
+    /// 0 is the first item and 1 the last. An EPUB's `chapters` is its TOC, which can be shorter.
+    static func scrollSliderSpine(forProgress value: Double, spineCount: Int) -> Int {
+        let last = spineCount - 1
+        guard last > 0 else { return 0 }
+        return max(0, min(Int((value * Double(last)).rounded()), last))
+    }
+
+    /// Where `scrollSliderSpine(forProgress:spineCount:)` puts the slider for a spine item.
+    static func scrollSliderProgress(forSpine spineIndex: Int, spineCount: Int) -> Double {
+        let last = spineCount - 1
+        guard last > 0 else { return 0 }
+        return Double(max(0, min(spineIndex, last))) / Double(last)
+    }
+
     func chapterSliderProgressValue() -> Double {
-        // Scroll mode: approximate using chapter index (chunks may not be fully loaded, no reliable character count).
         if effectiveScrollMode {
-            let total = max(chapters.count - 1, 1)
-            return Double(min(scrollVisibleChapter, total)) / Double(total)
+            return Self.scrollSliderProgress(forSpine: scrollVisibleChapter, spineCount: spineChapters.count)
         }
-        let totalChapters = book?.onlineChapters?.count ?? chapters.count
-        guard totalChapters > 1 else { return 0 }
         if book?.isOnline == true {
+            let totalChapters = book?.onlineChapters?.count ?? chapters.count
+            guard totalChapters > 1 else { return 0 }
             return Double(currentChapterIndex) / Double(totalChapters - 1)
         }
         if let engine = epubRenderer.engine, usesCoreTextEPUB {
@@ -587,8 +605,7 @@ extension ReaderView {
         // directly left the host restoring its old position, and could lay a chapter out in
         // another segment's mode.
         if effectiveScrollMode, epubRenderer.scrollEngine != nil {
-            let total = max(chapters.count - 1, 1)
-            jumpToChapter(max(0, min(Int(round(value * Double(total))), total)))
+            jumpToChapter(Self.scrollSliderSpine(forProgress: value, spineCount: spineChapters.count))
             return
         }
         let totalChapters = book?.onlineChapters?.count ?? chapters.count
@@ -669,7 +686,7 @@ extension ReaderView {
 
     func alignReaderToTTSAnchorIfNeeded() {
         guard               let anchor = ttsPlaybackAnchor,
-              chapters.indices.contains(anchor.spineIndex),
+              spineChapters.indices.contains(anchor.spineIndex),
               !isReaderAtTTSAnchor(anchor)
         else { return }
 
@@ -728,7 +745,7 @@ extension ReaderView {
         // anchor never moves past it, and the page never turns.
         if ttsNarrationOffsets != nil {
             guard let chapterIndex = ttsChapterIndex,
-                  chapters.indices.contains(chapterIndex),
+                  spineChapters.indices.contains(chapterIndex),
                   engine.chapterText(forSpine: chapterIndex)?.isEmpty == false,
                   // No segment between units: the coordinator clears the range while a
                   // chapter switch or wait is in progress.
@@ -748,7 +765,7 @@ extension ReaderView {
         // can still pin the anchor to its first occurrence. Delete this once every
         // narration unit carries a `sourceOffsets` map.
         let chapterIndex = ttsChapterIndex ?? currentChapterIndex
-        guard chapters.indices.contains(chapterIndex),
+        guard spineChapters.indices.contains(chapterIndex),
               let chapterText = engine.chapterText(forSpine: chapterIndex),
               !chapterText.isEmpty
         else { return }
@@ -927,6 +944,23 @@ extension ReaderView {
         }
     }
 
+    /// 聽書's chapter list picks a 目錄 entry: narration starts in its spine item, at the entry's
+    /// anchor where that item is laid out (`tocPosition`), else at the item's start.
+    func startTTSChapter(atTOCEntry entry: BookChapter) {
+        let position = tocPosition(for: entry, engine: epubRenderer.engine)
+        startTTSChapter(position.spineIndex, syncReader: true, startCharOffset: position.charOffset)
+    }
+
+    /// 聽書's 下一章: enabled exactly when `startAdjacentTTSChapter(delta: 1)` has a chapter to start.
+    var ttsHasNextChapter: Bool {
+        Self.narratableChapter(
+            from: ttsChapterIndex ?? currentChapterIndex,
+            direction: 1,
+            spineCount: spineChapters.count,
+            isSeparator: isVolumeSeparatorChapter
+        ) != nil
+    }
+
     @discardableResult
     func startTTSChapter(
         _ chapterIndex: Int,
@@ -934,7 +968,7 @@ extension ReaderView {
         startCharOffset: Int = 0,
         layoutAwaited: Bool = false
     ) -> Bool {
-        guard chapters.indices.contains(chapterIndex) else { return false }
+        guard spineChapters.indices.contains(chapterIndex) else { return false }
         // Whatever this call does, it replaces a start still waiting on a layout.
         ttsStartLayoutRequest = nil
         // Starting on a volume separator (the reader is parked on one, or the user picked one
@@ -1024,7 +1058,7 @@ extension ReaderView {
             ttsCoordinator.roleAliases = activeTTSRoleAliases()
             ttsCoordinator.speak(
                 text: text,
-                title: chapters[chapterIndex].title.converted(to: settings.textConversion),
+                title: chapterTitle(forSpineIndex: chapterIndex).converted(to: settings.textConversion),
                 bookTitle: ttsNowPlayingBookTitle,
                 author: ttsNowPlayingAuthor,
                 artwork: ttsNowPlayingArtwork(),
@@ -1078,7 +1112,7 @@ extension ReaderView {
             .chapterStart(target),
             alignReader: true
         )
-        ttsCoordinator.updateNowPlayingChapter(title: chapters[target].title.converted(to: settings.textConversion), text: narration.text)
+        ttsCoordinator.updateNowPlayingChapter(title: chapterTitle(forSpineIndex: target).converted(to: settings.textConversion), text: narration.text)
         prepareNextTTSChapter(after: target)
     }
 
@@ -1096,14 +1130,27 @@ extension ReaderView {
     }
 
     /// Next chapter in `direction` (+1 / -1) that actually has prose, skipping volume
-    /// separators. Returns nil at the ends of the book. Bounded by `chapters.indices`, so a
-    /// run of consecutive separators terminates instead of looping.
+    /// separators. Returns nil at the ends of the book.
     func narratableTTSChapter(from base: Int, direction: Int) -> Int? {
+        Self.narratableChapter(from: base, direction: direction, spineCount: spineChapters.count) { candidate in
+            let isSeparator = isVolumeSeparatorChapter(candidate)
+            if isSeparator { ttsLog("[TTS][Reader] skipping volume separator chapter=\(candidate)") }
+            return isSeparator
+        }
+    }
+
+    /// `narratableTTSChapter`'s walk. Narration counts spine items, so it is bounded by the spine
+    /// rather than the TOC — and so a run of consecutive separators terminates instead of looping.
+    static func narratableChapter(
+        from base: Int,
+        direction: Int,
+        spineCount: Int,
+        isSeparator: (Int) -> Bool
+    ) -> Int? {
         guard direction != 0 else { return nil }
         var candidate = base + direction
-        while chapters.indices.contains(candidate) {
-            if !isVolumeSeparatorChapter(candidate) { return candidate }
-            ttsLog("[TTS][Reader] skipping volume separator chapter=\(candidate)")
+        while (0..<spineCount).contains(candidate) {
+            if !isSeparator(candidate) { return candidate }
             candidate += direction
         }
         return nil
@@ -1150,7 +1197,7 @@ extension ReaderView {
     func resolveWaitingTTSChapter(_ target: Int) {
         guard ttsPendingChapterIndex == target else { return }
         guard let engine = epubRenderer.engine, usesCoreTextEPUB else {
-            // Non-CoreText books read from `allPages` / `chapters[i].content`, which need no
+            // Non-CoreText books read from `allPages` / `spineChapters[i].content`, which need no
             // layout pass — if the text is still empty here there is nothing left to wait for.
             let narration = narrationForTTSChapter(target)
             finishWaitingTTSChapter(target, narration: narration)
@@ -1198,7 +1245,7 @@ extension ReaderView {
         }
         ttsLog("[TTS][Reader] chapter wait resolved chapter=\(target) textCount=\(text.count)")
         commitTTSChapterAdvance(to: target, narration: narration)
-        ttsCoordinator.supplyPendingNarration(narration, chapterTitle: chapters[target].title.converted(to: settings.textConversion))
+        ttsCoordinator.supplyPendingNarration(narration, chapterTitle: chapterTitle(forSpineIndex: target).converted(to: settings.textConversion))
     }
 
     /// Called from the `chapterStates` observer. Drives the pending wait forward on the real
@@ -1253,7 +1300,7 @@ extension ReaderView {
 
     func jumpBackToTTSChapter() {
         guard let anchor = ttsPlaybackAnchor,
-              chapters.indices.contains(anchor.spineIndex) else { return }
+              spineChapters.indices.contains(anchor.spineIndex) else { return }
         withAnimation(DSAnimation.fast) {
             showTTSJumpPrompt = false
             ttsJumpPromptChapterIndex = nil
@@ -1324,7 +1371,7 @@ extension ReaderView {
         let started = SourcePerfTrace.now
         defer { SourcePerfTrace.record("reader.tts.detectSpeakers", since: started) }
         let chapterIndex = ttsChapterIndex ?? currentChapterIndex
-        guard chapters.indices.contains(chapterIndex) else { return [] }
+        guard spineChapters.indices.contains(chapterIndex) else { return [] }
         let text = narrationForTTSChapter(chapterIndex).text
         guard !text.isEmpty else { return [] }
         var seen: Set<String> = []
@@ -1361,7 +1408,7 @@ extension ReaderView {
     }
 
     func narrationForTTSChapter(_ chapterIndex: Int) -> TTSNarrationUnit {
-        guard chapters.indices.contains(chapterIndex) else {
+        guard spineChapters.indices.contains(chapterIndex) else {
             return TTSNarrationUnit(text: "")
         }
         // The legacy delegate may retain chapter zero from its startup even
@@ -1417,7 +1464,7 @@ extension ReaderView {
             .joined(separator: "\n")
             .trimmingCharacters(in: .whitespacesAndNewlines)
         if !pageText.isEmpty { return TTSNarrationUnit(text: pageText) }
-        return TTSNarrationUnit(text: chapters[chapterIndex].content)
+        return TTSNarrationUnit(text: spineChapters[chapterIndex].content)
     }
 
     func textForTTSChapter(_ chapterIndex: Int) -> String {

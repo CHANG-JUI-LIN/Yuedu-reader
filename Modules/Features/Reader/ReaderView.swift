@@ -73,7 +73,7 @@ struct ReaderView: View {
     
     private func speculativePreLayoutNextChapter() {
         Task { @MainActor in
-            guard currentChapterIndex + 1 < chapters.count else { return }
+            guard currentChapterIndex + 1 < spineChapters.count else { return }
             if let engine = epubRenderer.engine {
                 applyReaderEffects(
                     readerSessionCoordinator?.send(.warmUpNext(currentGlobalPage: currentPage + 1))
@@ -722,8 +722,15 @@ struct ReaderView: View {
 
     /// The single TOC entry to highlight as "current". EPUB uses spine index + in-spine
     /// character offset because the TOC/nav list is not guaranteed to be 1:1 with the spine.
-    private var currentTOCChapterID: UUID? {
+    var currentTOCChapterID: UUID? {
         currentTOCChapter?.id
+    }
+
+    /// The 目錄 entry narration is in, for 聽書's chapter list; the reader's while nothing is read.
+    private var ttsTOCChapterID: UUID? {
+        guard let spine = ttsChapterIndex else { return currentTOCChapterID }
+        let offset = ttsPlaybackAnchor.flatMap { $0.spineIndex == spine ? $0.charOffset : nil } ?? 0
+        return tocChapter(forSpineIndex: spine, charOffset: offset)?.id
     }
 
     private var currentTOCChapter: BookChapter? {
@@ -1241,7 +1248,7 @@ struct ReaderView: View {
             if let engine = epubRenderer.engine, usesCoreTextEPUB {
                 let navigator = readerNavigator
                 for neighbor in [newChapter - 1, newChapter + 1]
-                where chapters.indices.contains(neighbor) && isChapterContentAvailable(at: neighbor) {
+                where spineChapters.indices.contains(neighbor) && isChapterContentAvailable(at: neighbor) {
                     Task { @MainActor in
                         let waitStart = ProcessInfo.processInfo.systemUptime
                         let waited = await navigator?.awaitOpeningTransitionEnd() ?? false
@@ -1458,7 +1465,7 @@ struct ReaderView: View {
     }
 
     var canGoPrevChapter: Bool { currentChapterIndex > 0 }
-    var canGoNextChapter: Bool { currentChapterIndex < chapters.count - 1 }
+    var canGoNextChapter: Bool { currentChapterIndex < spineChapters.count - 1 }
 
     /// Footer intrinsic height (points), excluding safe area bottom.
     let footerOverlayHeight: CGFloat = ReaderLayoutMetrics.footerHeight
@@ -1502,7 +1509,7 @@ struct ReaderView: View {
         let added = store.togglePageBookmark(
             bookId: bookId,
             chapterIndex: range.spineIndex,
-            chapterTitle: bookmarkChapterTitle(for: range.spineIndex),
+            chapterTitle: chapterTitle(forSpineIndex: range.spineIndex),
             range: range,
             excerpt: currentPageBookmarkExcerpt
         )
@@ -1514,13 +1521,16 @@ struct ReaderView: View {
         return added
     }
 
-    func bookmarkChapterTitle(for chapterIndex: Int) -> String {
+    /// The title a spine item reads under: the 目錄 entry it starts in. An EPUB's spine index
+    /// does not index `chapters`, which is its TOC; a spine item before the first entry (a
+    /// cover) takes its own title.
+    func chapterTitle(forSpineIndex chapterIndex: Int) -> String {
         if usesCoreTextEPUB,
            let chapter = tocChapter(forSpineIndex: chapterIndex, charOffset: 0) {
             return chapter.title
         }
-        if chapters.indices.contains(chapterIndex) {
-            return chapters[chapterIndex].title
+        if spineChapters.indices.contains(chapterIndex) {
+            return spineChapters[chapterIndex].title
         }
         if let page = allPages.first(where: { $0.chapterIndex == chapterIndex }) {
             return page.chapterTitle
@@ -1577,7 +1587,7 @@ struct ReaderView: View {
 
     func addUnderlineBookmark(_ request: CoreTextUnderlineSelectionRequest) {
         let position = request.position
-        guard chapters.indices.contains(position.spineIndex) else { return }
+        guard spineChapters.indices.contains(position.spineIndex) else { return }
         if request.removesExistingUnderline {
             store.removeTextAnnotation(
                 bookId: bookId,
@@ -1592,7 +1602,7 @@ struct ReaderView: View {
         store.addTextAnnotation(
             bookId: bookId,
             chapterIndex: position.spineIndex,
-            chapterTitle: bookmarkChapterTitle(for: position.spineIndex),
+            chapterTitle: chapterTitle(forSpineIndex: position.spineIndex),
             position: position,
             length: request.length,
             excerpt: request.excerpt.isEmpty ? currentPageExcerpt : String(request.excerpt.prefix(80)),
@@ -1676,8 +1686,7 @@ struct ReaderView: View {
     }
 
     var activeTTSChapterTitle: String {
-        let index = ttsChapterIndex ?? currentChapterIndex
-        let title = chapters.indices.contains(index) ? chapters[index].title : currentChapterTitle
+        let title = ttsChapterIndex.map { chapterTitle(forSpineIndex: $0) } ?? currentChapterTitle
         return title.converted(to: settings.textConversion)
     }
 
@@ -2866,10 +2875,10 @@ struct ReaderView: View {
                     pageNumber: { inChapterPageNumber(for: $0) },
                     chapterTitle: { index in
                         // 章節已經不在目錄裡（換源、目錄重抓）就回空字串，讓清單退回
-                        // 書籤存檔時的章名——`bookmarkChapterTitle` 最後一手會回「目前
-                        // 章節」，掛在別章的書籤上是錯的。
-                        guard chapters.indices.contains(index) else { return "" }
-                        return bookmarkChapterTitle(for: index).converted(to: settings.textConversion)
+                        // 書籤存檔時的章名——`chapterTitle(forSpineIndex:)` 最後一手會回
+                        // 「目前章節」，掛在別章的書籤上是錯的。
+                        guard spineChapters.indices.contains(index) else { return "" }
+                        return chapterTitle(forSpineIndex: index).converted(to: settings.textConversion)
                     },
                     onSelect: { bm in
                         showBookmarkList = false
@@ -3021,8 +3030,10 @@ struct ReaderView: View {
                 TTSPanelView(
                     tts: ttsCoordinator,
                     chapters: chapters,
+                    currentChapterID: ttsTOCChapterID,
                     currentReaderChapterIndex: currentChapterIndex,
                     activeTTSChapterIndex: ttsChapterIndex,
+                    canGoNextChapter: ttsHasNextChapter,
                     activeChapterTitle: activeTTSChapterTitle,
                     coverImage: modernCoverImage,
                     bookTitle: modernBookTitle,
@@ -3030,7 +3041,7 @@ struct ReaderView: View {
                     onPlayPause: { handleTTSPlayPause() },
                     onPreviousChapter: { startAdjacentTTSChapter(delta: -1) },
                     onNextChapter: { startAdjacentTTSChapter(delta: 1) },
-                    onSelectChapter: { startTTSChapter($0, syncReader: true) },
+                    onSelectChapter: { startTTSChapter(atTOCEntry: $0) },
                     bookID: bookId,
                     detectedSpeakers: ttsDetectedSpeakers,
                     aiAdapter: aiBookAdapter(),
@@ -3052,8 +3063,7 @@ struct ReaderView: View {
                 if let chapterIndex = activeMediaOverlayChapterIndex,
                    let overlay = epubRenderer.mediaOverlaysByChapter[chapterIndex] {
                     EPUBMediaOverlayPlayerView(
-                        title: (chapters.indices.contains(chapterIndex) ? chapters[chapterIndex].title : currentChapterTitle)
-                            .converted(to: settings.textConversion),
+                        title: chapterTitle(forSpineIndex: chapterIndex).converted(to: settings.textConversion),
                         overlay: overlay,
                         chapterIndex: chapterIndex,
                         coordinator: mediaOverlayCoordinator,

@@ -284,10 +284,13 @@ extension ReaderView {
     }
 
     /// "current chapter / total chapters" — the 進度 chip in the book card. Chapters,
-    /// not pages: pages shift as chapters load, chapter position doesn't.
+    /// not pages: pages shift as chapters load, chapter position doesn't. Counted in 目錄
+    /// entries, as 目錄 lists them: an EPUB's spine index counts files, not those entries.
+    /// A position before the first entry (a cover) is 0.
     var modernChapterProgressText: String {
         guard !chapters.isEmpty else { return "" }
-        return "\(min(currentChapterIndex + 1, chapters.count)) / \(chapters.count)"
+        let current = chapters.firstIndex { $0.id == currentTOCChapterID }.map { $0 + 1 } ?? 0
+        return "\(current) / \(chapters.count)"
     }
 
     /// Reads the book's cover off disk for the top bar's cover button. Same file the TTS
@@ -565,12 +568,12 @@ extension ReaderView {
     }
 
     var ttsJumpPromptMessage: String {
-        guard let ttsChapterIndex, chapters.indices.contains(ttsChapterIndex) else {
+        guard let ttsChapterIndex, spineChapters.indices.contains(ttsChapterIndex) else {
             return localized("你已移到其他章節，可以選擇回到正在朗讀的位置，或從目前章節重新開始。")
         }
         return String(
             format: localized("聽書仍在「%@」，可以選擇回去，或改從目前章節開始。"),
-            chapters[ttsChapterIndex].title.converted(to: settings.textConversion)
+            chapterTitle(forSpineIndex: ttsChapterIndex).converted(to: settings.textConversion)
         )
     }
 

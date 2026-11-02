@@ -57,7 +57,7 @@ extension ReaderView {
     /// 已經寫過的筆記則照常打開、只是唯讀。
     func openNoteEditor(_ request: CoreTextNoteEditRequest) {
         let position = request.position
-        guard chapters.indices.contains(position.spineIndex), request.length > 0 else { return }
+        guard spineChapters.indices.contains(position.spineIndex), request.length > 0 else { return }
 
         let canEdit = readerPremiumVisibility.allowsParagraphNoteEditing
         let hasExistingNote = !request.existingNote
@@ -78,7 +78,7 @@ extension ReaderView {
             store.addTextAnnotation(
                 bookId: bookId,
                 chapterIndex: position.spineIndex,
-                chapterTitle: bookmarkChapterTitle(for: position.spineIndex),
+                chapterTitle: chapterTitle(forSpineIndex: position.spineIndex),
                 position: position,
                 length: request.length,
                 excerpt: request.excerpt.isEmpty ? currentPageExcerpt : String(request.excerpt.prefix(80)),

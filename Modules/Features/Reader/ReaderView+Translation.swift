@@ -59,7 +59,7 @@ extension ReaderView {
         }
         if AIChapterTranslationService.shared.runs[chapter] == .finished,
            chapter.spine == translationReadingPosition?.spineIndex,
-           chapter.spine + 1 < chapters.count {
+           chapter.spine + 1 < spineChapters.count {
             translateChapter(chapter.spine + 1, readingOffset: 0, force: false)
         }
     }

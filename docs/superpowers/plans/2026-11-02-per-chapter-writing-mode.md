@@ -687,11 +687,8 @@ time, on the segment's axis.
   committed position; only the vertical axis keeps the live cell's place (`applyChunkInsertion`), so a chapter
   arriving mid-drag in a vertical-rl segment can pull the reader back. A change of extent alone (bars, insets)
   reslices at the chapter's start, dropping the place inside it (`update(axis:)`). `BrowserTextInteractionController`
-  draws note badges and highlights with `isVertical: false`. Other places bound a spine index by the TOC's
-  `chapters.count`: `canGoNextChapter` and the next-chapter warm-up (`ReaderView.swift:1461`, `:76`) stop at
-  the TOC's last entry, so on the converted book the bar reads 書末頁 on spine 1 (by the code, not yet seen),
-  and scroll mode's chapter slider (`chapterSliderProgressValue` / `applyChapterSliderProgress`) reaches spines
-  0 and 1 only. All predate this plan.
+  draws note badges and highlights with `isVertical: false`. (Spine indices bounded by the TOC's
+  `chapters.count` were listed here; fixed in their own commit, below.)
 
 **Opening restore, done 2026-11-02 (its own commit, after Step 4).** Both clamps count the spine
 (`spineChapters.count`), not the TOC. In scroll mode `applyInitialProgressIfNeeded` waits while the opening
@@ -702,3 +699,17 @@ reopens at the TOC on c0004 (1/1 · 96.9%; it opened 第一章 page 1/11 before)
 header 第二章 潮汐 and 96.9% (第一章 and 3.2% before); a save at (2, 1809) in scroll mode resolves to spine 2,
 spine 2's last column at the trailing edge, 91.9% (spine 1 before). `ReaderView` has no unit-test host for the
 opening restore; the same seven suites pass on iOS 17.5, 26.5 and 27.2.
+
+**Spine indices, done 2026-11-02 (its own commit).** Every reader site that bounded a spine index by the TOC's
+`chapters.count`, or read a TOC entry by a spine index, now counts `spineChapters`: `canGoNextChapter`, the
+next-chapter warm-up, neighbour preload, the scroll slider (`scrollSliderSpine(forProgress:spineCount:)` /
+`scrollSliderProgress(forSpine:spineCount:)`, shared by the thumb, the release and the scrub caption), 聽書's
+chapter chain (`narratableChapter(from:direction:spineCount:isSeparator:)`) and text, notes and highlights,
+translation prefetch. Titles by spine go through `chapterTitle(forSpineIndex:)` (the TOC entry the item starts
+in). 聽書's panel takes its 下一章 state from the reader and its chapter list picks TOC entries
+(`startTTSChapter(atTOCEntry:)`). The 進度 chip counts TOC entries (0 before the first). The paged slider no
+longer sits at 0 for a one-entry TOC. New `ReaderSpineIndexTests`; with `ReaderOpeningRestoreTests`,
+`ScrollWritingModeSegmentTests` and four more, 57 tests in 7 suites pass on iOS 17.5, 26.5 and 27.2. Simulator
+(iOS 26.5, scroll mode, a throwaway UI test): the slider at its end lands on the Calibre TOC (spine 3, 書末頁
+disabled); 上一章 twice reaches 第一章 with 下一章 enabled; 下一章 goes to 第二章 and then the TOC; the slider at
+its start reaches the cover, and a drag to two thirds 第二章.

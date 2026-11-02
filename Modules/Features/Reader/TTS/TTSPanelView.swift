@@ -4,8 +4,10 @@ import SwiftUI
     TTSPanelView(
         tts: TTSCoordinator(),
         chapters: [],
+        currentChapterID: nil,
         currentReaderChapterIndex: 0,
         activeTTSChapterIndex: nil,
+        canGoNextChapter: true,
         activeChapterTitle: "第三章　霧港",
         coverImage: nil,
         bookTitle: "歸舟",
@@ -35,9 +37,15 @@ private enum TTSPanelRoute: Hashable {
 /// their own pages — so the sheet fits its content instead of being a long form.
 struct TTSPanelView: View {
     @ObservedObject var tts: TTSCoordinator
+    /// The 目錄 the chapter list shows. Its positions are not the spine indices below: an
+    /// EPUB's TOC can be shorter than its spine or hold several entries in one item.
     let chapters: [BookChapter]
+    /// The entry the list checks: where narration is, or the reader while nothing is read.
+    let currentChapterID: UUID?
     let currentReaderChapterIndex: Int
     let activeTTSChapterIndex: Int?
+    /// Whether 下一章 has a chapter to read, decided where it is started.
+    let canGoNextChapter: Bool
     let activeChapterTitle: String
     let coverImage: UIImage?
     let bookTitle: String
@@ -46,7 +54,7 @@ struct TTSPanelView: View {
     let onPlayPause: () -> Void
     let onPreviousChapter: () -> Bool
     let onNextChapter: () -> Bool
-    let onSelectChapter: (Int) -> Void
+    let onSelectChapter: (BookChapter) -> Void
     let bookID: UUID
     /// Characters detected in the chapter being read, for 多角色朗讀. Computed by the
     /// reader, which is the only thing holding the chapter's narration text.
@@ -94,10 +102,6 @@ struct TTSPanelView: View {
 
     private var canGoPreviousChapter: Bool {
         controlChapterIndex > 0
-    }
-
-    private var canGoNextChapter: Bool {
-        controlChapterIndex < chapters.count - 1
     }
 
     private var isPlaying: Bool {
@@ -500,13 +504,13 @@ struct TTSPanelView: View {
             List(chapters.indices, id: \.self) { index in
                 Button {
                     showChapterPicker = false
-                    onSelectChapter(index)
+                    onSelectChapter(chapters[index])
                 } label: {
                     HStack {
                         Text(chapters[index].title)
                             .foregroundStyle(DSColor.textPrimary)
                         Spacer()
-                        if index == controlChapterIndex {
+                        if chapters[index].id == currentChapterID {
                             Image(systemName: "checkmark")
                                 .foregroundColor(.accentColor)
                         }
