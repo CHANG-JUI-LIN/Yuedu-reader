@@ -15,6 +15,8 @@ extension ReaderView {
             Color.clear
                 .task(id: ObjectIdentifier(scrollEngine)) {
                     _ = await epubRenderer.enterScrollSegment(containing: computeScrollInitialPosition().chapter)
+                    // The opening restore waited for this segment's axis.
+                    applyInitialProgressIfNeeded()
                 }
         } else if let scrollEngine = epubRenderer.scrollEngine {
             let initialPos = computeScrollInitialPosition()

@@ -3309,6 +3309,9 @@ struct ReaderView: View {
     }
 
     func applyInitialProgressIfNeeded() {
+        // Scroll mode restores on the axis of the restore chapter's segment, which `scrollAxis` is the
+        // book's until that segment is entered (`scrollBody`, which calls this again then).
+        if effectiveScrollMode, epubRenderer.scrollSegmentIsPending { return }
         if effectiveScrollMode, scrollAxis == .vertical {
             // Every continuous source restores a character anchor in the scroll
             // host. A late paged-engine preload must not reassert the opening
@@ -3317,7 +3320,8 @@ struct ReaderView: View {
                   ReaderProgressSyncPolicy.canPublishIndexPosition(isTXT: isTXT, indexReady: txtIndexReady)
             else { return }
             if let target = savedCoreTextRestoreTarget {
-                let position = CoreTextReadingPosition(spineIndex: max(0, min(target.chapterIndex, chapters.count - 1)),
+                // Positions count spine items; an EPUB's `chapters` are its TOC entries (`spineChapters`).
+                let position = CoreTextReadingPosition(spineIndex: max(0, min(target.chapterIndex, spineChapters.count - 1)),
                                                        charOffset: max(0, target.charOffset))
                 pendingScrollJumpTarget = position
                 currentChapterIndex = position.spineIndex
@@ -3339,7 +3343,7 @@ struct ReaderView: View {
                     defer { self.isApplyingCoreTextRestore = false }
                     self.progressTrace("applyInitialProgress tryPreciseRestore requested=(\(target.chapterIndex),\(target.charOffset))")
                     let resolution = await self.openingRestore.resolve(
-                        chapterCount: self.chapters.count,
+                        chapterCount: self.spineChapters.count,
                         preload: { spineIndex in _ = await engine.preloadChapter(at: spineIndex) },
                         pageIndex: { engine.pageIndex(for: $0) }
                     )

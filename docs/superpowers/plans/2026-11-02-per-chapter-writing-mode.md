@@ -683,3 +683,13 @@ time, on the segment's axis.
   and starts the new axis square). With `ChapterWritingModeEngineTests`, `CoreTextScrollTests`,
   `ContinuousScrollRestoreTests`, `BrowserVerticalReaderRouteTests`, `ReaderOpeningRestoreTests` and
   `ReaderPresentationContractTests`: 81 tests in 7 suites pass on iOS 17.5, 26.5 and 27.2.
+
+**Opening restore, done 2026-11-02 (its own commit, after Step 4).** Both clamps count the spine
+(`spineChapters.count`), not the TOC. In scroll mode `applyInitialProgressIfNeeded` waits while the opening
+chapter's segment is pending and runs again once `scrollBody` has entered it, so its branch follows the axis of
+the restore chapter's segment: a horizontal segment restores in the scroll host, a vertical-rl one still goes
+through the paged engine, as a vertical book always has. Simulator (iOS 26.5, the converted book): paged mode
+reopens at the TOC on c0004 (1/1 · 96.9%; it opened 第一章 page 1/11 before); scroll mode reopens there with
+header 第二章 潮汐 and 96.9% (第一章 and 3.2% before); a save at (2, 1809) in scroll mode resolves to spine 2,
+spine 2's last column at the trailing edge, 91.9% (spine 1 before). `ReaderView` has no unit-test host for the
+opening restore; the same seven suites pass on iOS 17.5, 26.5 and 27.2.

@@ -41,7 +41,8 @@ final class ReaderOpeningRestore {
         return true
     }
 
-    /// Lays out the restored chapter and names the page the restore is on.
+    /// Lays out the restored chapter and names the page the restore is on. `chapterCount` counts
+    /// spine items, as positions do; an EPUB's TOC can have fewer entries.
     func resolve(
         chapterCount: Int,
         preload: (Int) async -> Void,
