@@ -3,11 +3,11 @@ import Testing
 import UIKit
 @testable import yuedu_app
 
-/// Hosts `view` in a window and hands `body` its slider as VoiceOver finds it: the accessibility
-/// element that is a `UISlider`. The view holds one.
+/// Hosts `view` in a window, with the accessibility elements VoiceOver would find built, and
+/// hands `body` the hosting view.
 @MainActor
-func withAccessibleSlider<V: View>(in view: V,
-                                   body: (UISlider, UIView) async throws -> Void) async throws {
+func withAccessibilityHost<V: View>(in view: V,
+                                    body: (UIView) async throws -> Void) async throws {
     // SwiftUI builds no accessibility elements until something reads them — VoiceOver, or
     // XCUITest's automation. Turned on here as XCUITest does it, and back off after.
     let accessibility = try #require(dlopen("/usr/lib/libAccessibility.dylib", RTLD_NOW))
@@ -25,21 +25,36 @@ func withAccessibleSlider<V: View>(in view: V,
     window.rootViewController = root
     window.makeKeyAndVisible()
     defer { window.isHidden = true; window.rootViewController = nil }
+    try await body(root.view)
+}
 
-    func slider(in object: NSObject) -> UISlider? {
-        if object.isAccessibilityElement { return object as? UISlider }
-        let children = (object.accessibilityElements as? [NSObject]) ?? (object as? UIView)?.subviews ?? []
-        return children.lazy.compactMap(slider(in:)).first
+/// The elements VoiceOver steps through under `object`, in order.
+@MainActor
+func accessibilityElements(in object: NSObject) -> [NSObject] {
+    if object.isAccessibilityElement { return [object] }
+    let children = (object.accessibilityElements as? [NSObject]) ?? (object as? UIView)?.subviews ?? []
+    return children.flatMap(accessibilityElements(in:))
+}
+
+/// Hosts `view` in a window and hands `body` its slider as VoiceOver finds it: the accessibility
+/// element that is a `UISlider`. The view holds one.
+@MainActor
+func withAccessibleSlider<V: View>(in view: V,
+                                   body: (UISlider, UIView) async throws -> Void) async throws {
+    try await withAccessibilityHost(in: view) { host in
+        @MainActor func slider() -> UISlider? {
+            accessibilityElements(in: host).lazy.compactMap { $0 as? UISlider }.first
+        }
+        let deadline = ContinuousClock.now + .seconds(5)
+        var found = slider()
+        while found == nil, ContinuousClock.now < deadline {
+            try await Task.sleep(for: .milliseconds(20))
+            found = slider()
+        }
+        let element = try #require(found, "the slider never reached the accessibility tree")
+        #expect(element.accessibilityTraits.contains(.adjustable))
+        try await body(element, host)
     }
-    let deadline = ContinuousClock.now + .seconds(5)
-    var found = slider(in: root.view)
-    while found == nil, ContinuousClock.now < deadline {
-        try await Task.sleep(for: .milliseconds(20))
-        found = slider(in: root.view)
-    }
-    let element = try #require(found, "the slider never reached the accessibility tree")
-    #expect(element.accessibilityTraits.contains(.adjustable))
-    try await body(element, root.view)
 }
 
 /// Draws what the last change did.

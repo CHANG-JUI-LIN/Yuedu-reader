@@ -395,31 +395,17 @@ struct TTSPanelView: View {
 
     // MARK: - 語速
 
-    /// 語速 and its value, with a tenth-at-a-time stepper for the speeds between and
-    /// beyond the presets — the panel's slider used to reach 0.2×–5×.
     private var speechRateRow: some View {
-        Stepper(
-            value: Binding(
+        TTSSpeechRateRow(
+            rate: Binding(
                 get: { tts.speechRate },
                 set: { tts.updateRate($0) }
             ),
-            in: TTSCoordinator.minSpeechRate...TTSCoordinator.maxSpeechRate,
-            step: Self.speechRateStep
-        ) {
-            HStack {
-                Text(localized("語速"))
-                    .font(DSFont.headline)
-                Spacer()
-                Text(speechRateText)
-                    .font(DSFont.headline.monospacedDigit())
-            }
-        } onEditingChanged: { editing in
-            // Once per press, not per step: re-synthesising HTTP audio on every tick
-            // would hammer rate-limited sources.
-            if !editing { tts.applyRateToActivePlayback() }
-        }
-        .accessibilityLabel(localized("語速"))
-        .accessibilityValue(speechRateText)
+            bounds: TTSCoordinator.minSpeechRate...TTSCoordinator.maxSpeechRate,
+            step: Self.speechRateStep,
+            rateText: speechRateText,
+            onEditingEnded: { tts.applyRateToActivePlayback() }
+        )
     }
 
     /// One tap to a common speed. A speed set with the stepper selects none of them.
@@ -678,4 +664,57 @@ struct TTSNarrationProgressRow: View {
         onSeek: { _ in }
     )
     .padding(DSSpacing.lg)
+}
+
+// MARK: - 語速
+
+/// 語速 and its value, with a tenth-at-a-time stepper for the speeds between and
+/// beyond the presets — the panel's slider used to reach 0.2×–5×.
+struct TTSSpeechRateRow: View {
+    @Binding var rate: Float
+    let bounds: ClosedRange<Float>
+    let step: Float
+    /// 「1.0×」 beside 語速; also what VoiceOver reads as the stepper's value.
+    let rateText: String
+    let onEditingEnded: () -> Void
+
+    var body: some View {
+        Stepper(value: $rate, in: bounds, step: step) {
+            HStack {
+                Text(localized("語速"))
+                    .font(DSFont.headline)
+                Spacer()
+                Text(rateText)
+                    .font(DSFont.headline.monospacedDigit())
+            }
+        } onEditingChanged: { editingChanged($0) }
+        // A Stepper reads everything in its label into the name of both its buttons, and adds
+        // an `.accessibilityLabel` to that rather than replacing it: each button read
+        // 「語速、1.0×、語速, 增量」 and then 1.0× again as its value. VoiceOver gets a stepper
+        // labelled 語速 alone instead: one adjustable element, read 「語速, 1.0×」, that a swipe
+        // up or down moves a step — the gesture of 朗讀進度 just above it.
+        .accessibilityRepresentation {
+            Stepper(localized("語速"), value: $rate, in: bounds, step: step) { editingChanged($0) }
+                .accessibilityValue(rateText)
+        }
+    }
+
+    /// Once per press, not per step: re-synthesising HTTP audio on every tick
+    /// would hammer rate-limited sources. A VoiceOver swipe is a press.
+    private func editingChanged(_ editing: Bool) {
+        if !editing { onEditingEnded() }
+    }
+}
+
+#Preview("語速") {
+    @Previewable @State var rate: Float = 0.5
+    List {
+        TTSSpeechRateRow(
+            rate: $rate,
+            bounds: TTSCoordinator.minSpeechRate...TTSCoordinator.maxSpeechRate,
+            step: 0.05,
+            rateText: (Double(rate) / 0.5).formatted(.number.precision(.fractionLength(1...2))) + "×",
+            onEditingEnded: {}
+        )
+    }
 }
