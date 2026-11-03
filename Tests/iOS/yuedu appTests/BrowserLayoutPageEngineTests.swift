@@ -614,4 +614,109 @@ struct BrowserLayoutPageEngineTests {
         #expect(engine.choice(for: 1)?.isBrowser == true)
         #expect(engine.totalPages >= 2, "reader can turn past the diagnostic cover into chapter one")
     }
+
+    /// Crashlytics db641b67: a large chapter's layout ran on the main thread, 3–5 s each
+    /// time one opened. The chapter is a quarter of the synthetic one that reproduced it
+    /// (6000 paragraphs of 40–120 words in one spine item, ~2.5 MB), to keep the suite
+    /// fast. Measured on the full chapter (Debug, simulator): the main thread ran 10576 ms
+    /// of the chapter's layout before, 433 ms after, against 550 ms that this test host's
+    /// main thread spends in 35 s with nothing laid out.
+    ///
+    /// The assertion is on the main thread's CPU time, not on the longest unanswered ping:
+    /// the test host's own work blocks its main thread for up to ~600 ms at random, with or
+    /// without a chapter, so the ping is printed for diagnosis only.
+    @Test func largeChapterLayoutDoesNotBlockMainThread() async throws {
+        let big = MockBrowserLayoutResource.Chapter(title: "Volumen 23", href: "c1.xhtml",
+            html: Self.largeSyntheticChapterHTML(paragraphs: 1500),
+            css: ["p{text-indent:1em;margin:0 0 .5em 0;text-align:justify} h1{text-align:center}"])
+        let (engine, _, _) = await makeEngine(chapters: [plainChapter("Start.", index: 0), big])
+        engine.chapterTimeoutNanos = 120_000_000_000
+        let watchdog = MainThreadWatchdog()
+        watchdog.start()
+        let start = ContinuousClock.now
+        let cpuStart = MainThreadWatchdog.mainThreadCPUSeconds()
+        let outcome = await engine.preloadChapter(at: 1)
+        let mainCPU = MainThreadWatchdog.mainThreadCPUSeconds() - cpuStart
+        let elapsed = ContinuousClock.now - start
+        let longest = watchdog.stop()
+        print("⏱ largeChapter preload=\(elapsed) mainThreadCPU=\(Int(mainCPU * 1000)) ms "
+              + "longestMainBlock=\(Int(longest * 1000)) ms pages=\(engine.totalPages)")
+        #expect(outcome.isReady)
+        #expect(engine.choice(for: 1)?.isBrowser == true)
+        #expect(mainCPU < 1, "the main thread laid the chapter out")
+    }
+
+    /// The word list and paragraph lengths of the synthetic EPUB generator, with a fixed
+    /// seed so every run lays out the same text.
+    static func largeSyntheticChapterHTML(paragraphs: Int) -> String {
+        let words = ("el la de que y en un una por con para su lo como más pero sus le ya o fue este ha sí "
+            + "porque esta son entre está cuando muy sin sobre ser tiene también me hasta hay donde quien "
+            + "desde todo nos durante todos uno les ni contra otros fueron ese eso había ante ellos e esto mí "
+            + "antes algunos qué unos yo otro otras otra él tanto esa estos mucho quienes nada muchos cual sea "
+            + "poco ella estar haber estas estaba estamos algunas algo nosotros Rudeus Eris Roxy Sylphie "
+            + "espada magia ciudad camino").split(separator: " ")
+        var state: UInt64 = 1
+        func next(_ bound: Int) -> Int {
+            state = state &* 6364136223846793005 &+ 1442695040888963407
+            return Int((state >> 33) % UInt64(bound))
+        }
+        var body = ""
+        for _ in 0..<paragraphs {
+            let count = 40 + next(81)
+            let text = (0..<count).map { _ in words[next(words.count)] }.joined(separator: " ")
+            body += "<p>\(text.prefix(1).uppercased() + text.dropFirst()).</p>\n"
+        }
+        return "<html><head><title>Volumen 23</title></head><body><h1>Volumen 23</h1>\(body)</body></html>"
+    }
+}
+
+/// Measures the longest time the main queue goes without answering. A background thread
+/// posts to the main queue and waits for the answer before posting again.
+final class MainThreadWatchdog: @unchecked Sendable {
+    private let lock = NSLock()
+    private var running = false
+    private var longest: TimeInterval = 0
+    private var thread: Thread?
+
+    func start() {
+        lock.withLock { running = true }
+        let thread = Thread { [self] in
+            while lock.withLock({ running }) {
+                let answered = DispatchSemaphore(value: 0)
+                let sent = CFAbsoluteTimeGetCurrent()
+                DispatchQueue.main.async { answered.signal() }
+                answered.wait()
+                let waited = CFAbsoluteTimeGetCurrent() - sent
+                lock.withLock { longest = max(longest, waited) }
+                // The sampling interval between pings, not a wait for state to settle.
+                Thread.sleep(forTimeInterval: 0.005)
+            }
+        }
+        self.thread = thread
+        thread.start()
+    }
+
+    /// CPU time the calling thread has run, in seconds. Call it on the main thread: the
+    /// difference between two calls is the work the main thread did in between.
+    static func mainThreadCPUSeconds() -> Double {
+        var info = thread_basic_info()
+        var count = mach_msg_type_number_t(MemoryLayout<thread_basic_info_data_t>.size / MemoryLayout<integer_t>.size)
+        let port = pthread_mach_thread_np(pthread_self())
+        let result = withUnsafeMutablePointer(to: &info) {
+            $0.withMemoryRebound(to: integer_t.self, capacity: Int(count)) {
+                thread_info(port, thread_flavor_t(THREAD_BASIC_INFO), $0, &count)
+            }
+        }
+        guard result == KERN_SUCCESS else { return 0 }
+        func seconds(_ time: time_value_t) -> Double { Double(time.seconds) + Double(time.microseconds) / 1_000_000 }
+        return seconds(info.user_time) + seconds(info.system_time)
+    }
+
+    /// Stops sampling and returns the longest unanswered interval, in seconds.
+    func stop() -> TimeInterval {
+        lock.withLock {
+            running = false
+            return longest
+        }
+    }
 }

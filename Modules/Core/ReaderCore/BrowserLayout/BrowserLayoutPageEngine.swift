@@ -437,7 +437,8 @@ final class BrowserLayoutPageEngine: PageRenderingProvider, LinkNavigationProvid
     /// Test seam: chapters whose admission evaluation their layout could not reuse, in order. A
     /// configuration whose cascade inputs differ from admission's (a writing mode, say) parses again.
     private(set) var testStaleAdmissionSpines: [Int] = []
-    private var browserSessions: [Int: BrowserLayoutSession] = [:]
+    /// Chapters with pages left to lay out, each on its own layout owner.
+    private var browserSessions: [Int: BrowserPageLayoutOwner] = [:]
     private var backgroundFinishTasks: [Int: Task<Void, Never>] = [:]
     private var spinePageOffsets: [Int] = []
     private var chapterPageCounts: [Int: Int] = [:]
@@ -824,11 +825,11 @@ final class BrowserLayoutPageEngine: PageRenderingProvider, LinkNavigationProvid
             // A chapter ensures at most once normally; more than twice on a
             // NON-terminal chapter is the livelock — fault loudly in debug.
             noteSessionEnsure(spineIndex: spineIndex, generation: generation)
-            let session = try BrowserLayoutSession(
-                evaluation: evaluation,
-                imageLoader: { [store] in store.image(for: $0) }, generation: generation
-            )
-            session.diagnosticSpine = spineIndex
+            // Every layout step below runs on the chapter's owner, never on the main
+            // thread: building the box tree of a 2.5 MB chapter took 3–5 s, and while it
+            // ran here the reader froze (Crashlytics db641b67).
+            let owner = try Self.makePageLayoutOwner(evaluation, store: store, generation: generation,
+                                                     spine: spineIndex)
 
             // Build the style/box tree first, then fetch the root
             // background-image the COMPUTED tree actually resolved. Paint-only,
@@ -836,12 +837,12 @@ final class BrowserLayoutPageEngine: PageRenderingProvider, LinkNavigationProvid
             // from the style tree (instead of re-scanning the stylesheets) is
             // what makes the fetched key and the painted key the same string.
             let prepareStart = SourcePerfTrace.now
-            let backgroundSource = try await withTimeout(nanos: chapterTimeoutNanos) {
-                try session.prepare()
+            let facts = try await withTimeout(nanos: chapterTimeoutNanos) {
+                try await owner.prepare()
             }
             SourcePerfTrace.record("browser.prepare", "spine=\(spineIndex)", since: prepareStart, thresholdMs: 0)
             guard isCurrentWork(generation) else { return }
-            if let backgroundSource, store.image(for: backgroundSource) == nil {
+            if let backgroundSource = facts.backgroundImageSource, store.image(for: backgroundSource) == nil {
                 store.set(
                     await resource.loadImage(
                         forChapter: spineIndex, source: backgroundSource, renderWidth: contentWidth
@@ -853,13 +854,13 @@ final class BrowserLayoutPageEngine: PageRenderingProvider, LinkNavigationProvid
             // 多看 popup footnotes: publish to the SAME store the legacy engine
             // uses, so a tap on a 注 marker opens the note in place instead of
             // paging to the chapter tail.
-            FootnoteStore.index(notes: session.pipelineFootnotes, spineIndex: spineIndex)
+            FootnoteStore.index(notes: facts.footnotes, spineIndex: spineIndex)
 
             // FIRST PAGE: publish immediately — the rest of the chapter is NOT
             // laid out yet.
             let firstPageStart = SourcePerfTrace.now
             let firstPage = try await withTimeout(nanos: chapterTimeoutNanos) {
-                try await session.layoutNextPage()
+                try await owner.layoutNextPage()
             }
             SourcePerfTrace.record("browser.firstPage", "spine=\(spineIndex)", since: firstPageStart, thresholdMs: 0)
             guard isCurrentWork(generation) else { return }
@@ -874,25 +875,25 @@ final class BrowserLayoutPageEngine: PageRenderingProvider, LinkNavigationProvid
                 )
                 return
             }
-            browserSessions[spineIndex] = session
+            browserSessions[spineIndex] = owner
             var layout = BrowserChapterLayout(
                 spineIndex: spineIndex,
                 pages: [firstPage],
-                sourceText: session.sourceText,
-                anchorOffsets: session.anchorOffsets,
-                linkAnchors: session.pipelineLinkAnchors,
-                mediaAttachments: session.pipelineMediaAttachments.mapValues {
+                sourceText: facts.sourceText,
+                anchorOffsets: facts.anchorOffsets,
+                linkAnchors: facts.linkAnchors,
+                mediaAttachments: facts.mediaAttachments.mapValues {
                     resource.resolveMediaAttachment(forChapter: spineIndex, media: $0)
                 },
-                pronunciationHints: session.pipelinePronunciationHints,
-                paragraphRanges: session.pipelineParagraphRanges,
-                pictureOffsets: session.pictureOffsets,
+                pronunciationHints: facts.pronunciationHints,
+                paragraphRanges: facts.paragraphRanges,
+                pictureOffsets: facts.pictureOffsets,
                 fontSize: settings.fontSize,
                 themeTextColor: self.themeTextColor,
                 themeBackgroundColor: themeBackgroundColor
             )
             layout.diagnosticGeneration = generation
-            layout.recordLifecycleBytes(nodeCount: session.pipelineNodeCount, boxCount: session.pipelineBoxCount)
+            layout.recordLifecycleBytes(nodeCount: facts.nodeCount, boxCount: facts.boxCount)
             browserChapters[spineIndex] = layout
             chapterLayoutStates[spineIndex] = .ready
             engineStatus[spineIndex] = "browser"
@@ -921,10 +922,11 @@ final class BrowserLayoutPageEngine: PageRenderingProvider, LinkNavigationProvid
     /// Background completion of a chapter's remaining pages. On failure the
     /// WHOLE chapter falls back to the legacy delegate (no mixed chapter).
     private func finishBrowserChapter(_ spineIndex: Int, generation: Int) async {
-        guard let session = browserSessions[spineIndex] else { return }
+        guard let owner = browserSessions[spineIndex] else { return }
         let finishStart = SourcePerfTrace.now
+        let pages: [PageFragments]
         do {
-            try await session.finish()
+            pages = try await owner.finish()
             SourcePerfTrace.record("browser.finish", "spine=\(spineIndex)", since: finishStart, thresholdMs: 0)
         } catch is CancellationError {
             return
@@ -940,7 +942,7 @@ final class BrowserLayoutPageEngine: PageRenderingProvider, LinkNavigationProvid
             return
         }
         guard isCurrentWork(generation), var layout = browserChapters[spineIndex] else { return }
-        layout.pages = session.completedPages
+        layout.pages = pages
         layout.refreshFragmentBytes()
         browserChapters[spineIndex] = layout
         browserSessions.removeValue(forKey: spineIndex)
@@ -951,10 +953,20 @@ final class BrowserLayoutPageEngine: PageRenderingProvider, LinkNavigationProvid
     /// Extends a browser chapter's layout to cover `sourceOffset` on demand
     /// (the caller may then resolve the offset to an exact page).
     func extendLayout(spineIndex: Int, toSourceOffset offset: Int) async {
-        guard let session = browserSessions[spineIndex], !session.isFinished else { return }
-        try? await session.layout(untilSourceOffset: offset)
-        guard layoutGeneration == session.generation, var layout = browserChapters[spineIndex] else { return }
-        layout.pages = session.completedPages
+        // A chapter whose owner is gone has every page laid out already.
+        guard let owner = browserSessions[spineIndex] else { return }
+        let pages: [PageFragments]
+        do {
+            pages = try await owner.layout(untilSourceOffset: offset)
+        } catch HTMLLayoutError.cancelled {
+            return
+        } catch {
+            // The chapter's own finish reports the same failure and falls back.
+            AppLogger.render("[BrowserLayout] extendLayout failed spine=\(spineIndex): \(error)")
+            return
+        }
+        guard layoutGeneration == owner.generation, var layout = browserChapters[spineIndex] else { return }
+        layout.pages = pages
         layout.refreshFragmentBytes()
         browserChapters[spineIndex] = layout
         rebuildOffsets()
@@ -1846,10 +1858,10 @@ final class BrowserLayoutPageEngine: PageRenderingProvider, LinkNavigationProvid
             return browserChapters[spine]?.pictureOffsets ?? scrollChapters[spine]?.pictureOffsets
         }
         do {
-            let session = try BrowserLayoutSession(evaluation: evaluation, imageLoader: { _ in nil },
-                                                   generation: generation)
-            _ = try session.prepare()
-            return session.pictureOffsets
+            // The same box tree as a layout, so it is built on a layout owner too.
+            let owner = try Self.makePageLayoutOwner(evaluation, store: BrowserLayoutImageStore(),
+                                                     generation: generation, spine: spine)
+            return try await owner.prepare().pictureOffsets
         } catch {
             AppLogger.render("[PictureOffsets] box tree failed spine=\(spine): \(error)")
             return nil
@@ -1972,29 +1984,30 @@ final class BrowserLayoutPageEngine: PageRenderingProvider, LinkNavigationProvid
         displayListCacheBytes.removeAll()
     }
 
-    /// Fails a session step that took longer than `nanos`.
+    /// Fails a layout step that takes longer than `nanos`, and stops it.
     ///
-    /// `BrowserLayoutSession` is main-actor confined and its steps run to completion
-    /// without suspending, so nothing can stop one part-way; what a timeout decides is
-    /// whether the step's result is still used. The step runs here, in this task, and
-    /// only the timer is a child task: its verdict is a Bool, so the step's result (a
-    /// `PageFragments`, which is not Sendable) never crosses a task boundary.
-    private func withTimeout<T>(nanos: UInt64, _ body: () async throws -> T) async throws -> T {
-        try await withThrowingTaskGroup(of: Bool.self) { group in
+    /// The step and a timer are sibling child tasks; the first to finish decides and
+    /// the other is cancelled. A step on a `BrowserPageLayoutOwner` stops at its next
+    /// block or page once cancelled, so a chapter past its time goes to the legacy
+    /// engine without being laid out to the end first.
+    private func withTimeout<T: Sendable>(nanos: UInt64,
+                                          _ step: @escaping @Sendable () async throws -> T) async throws -> T {
+        try await withThrowingTaskGroup(of: TimedStep<T>.self) { group in
+            group.addTask { .finished(try await step()) }
             group.addTask {
-                do {
-                    try await Task.sleep(nanoseconds: nanos)
-                    return true
-                } catch {
-                    return false  // Cancelled: the step finished first.
-                }
+                try await Task.sleep(nanoseconds: nanos)
+                return .timedOut
             }
-            let result = try await body()
-            group.cancelAll()
-            if try await group.next() == true { throw EngineTimeoutError() }
-            return result
+            defer { group.cancelAll() }
+            guard case .finished(let value)? = try await group.next() else { throw EngineTimeoutError() }
+            return value
         }
     }
+}
+
+private enum TimedStep<T: Sendable>: Sendable {
+    case finished(T)
+    case timedOut
 }
 
 private struct EngineTimeoutError: Error {}
@@ -2213,6 +2226,15 @@ extension BrowserLayoutPageEngine {
             usesReaderBackground: settings.readerBackgroundImageURL != nil,
             paragraphRanges: paragraphRanges,
             mediaAttachments: mediaAttachments, pictureOffsets: pictureOffsets)
+    }
+
+    /// Creates a paged chapter's layout owner. Its image loader is formed here, off the
+    /// main actor, for the reason given below.
+    private nonisolated static func makePageLayoutOwner(
+        _ evaluation: sending BrowserChapterEvaluation, store: BrowserLayoutImageStore, generation: Int, spine: Int
+    ) throws -> BrowserPageLayoutOwner {
+        try BrowserPageLayoutOwner(evaluation: evaluation, imageLoader: { store.image(for: $0) },
+                                   generation: generation, diagnosticSpine: spine)
     }
 
     // The package's layout results are not Sendable. Each stage below runs on the global

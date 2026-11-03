@@ -5,6 +5,19 @@ import UIKit
 
 @MainActor
 struct SVGCoverFixtureTests {
+    /// A layout owner for `html` with the configuration these tests use. The evaluation is
+    /// made here, off the main actor, so it can move to the owner.
+    nonisolated static func pageOwner(html: String, css: [String], spine: Int = -1) throws -> BrowserPageLayoutOwner {
+        let config = BrowserLayoutConfig(
+            renderWidth: 366, renderHeight: 820, rootFontSize: 17,
+            contentInsets: UIEdgeInsets(top: 12, left: 12, bottom: 12, right: 12)
+        )
+        return try BrowserPageLayoutOwner(
+            evaluation: BrowserChapterDocument(input: .currentCompatibility(html: html, cssTexts: css))
+                .evaluate(configuration: config),
+            imageLoader: { _ in nil }, generation: 1, diagnosticSpine: spine)
+    }
+
     static func timeout<T: Sendable>(nanos: UInt64, _ body: @escaping @Sendable () async throws -> T) async throws -> T {
         try await withThrowingTaskGroup(of: T.self) { group in
             group.addTask { try await body() }
@@ -143,8 +156,7 @@ struct SVGCoverFixtureTests {
             renderWidth: 366, renderHeight: 820, rootFontSize: 17,
             contentInsets: UIEdgeInsets(top: 12, left: 12, bottom: 12, right: 12)
         )
-        let s = BrowserLayoutSession(html: html, cssTexts: css, config: config, imageLoader: { _ in nil }, generation: 1)
-        s.diagnosticSpine = 0
+        let owner = try Self.pageOwner(html: html, css: css, spine: 0)
         // Walk manually step-by-step to find the hang point.
         let doc = BrowserLayoutDocument(html: html, cssTexts: css, config: config, imageLoader: { _ in nil })
         let result = try doc.makeLayout(containerSize: CGSize(width: 390, height: 844))
@@ -158,10 +170,10 @@ struct SVGCoverFixtureTests {
         }
         print("SPINE0 steps=\(steps)")
         // Now the full session path (the one the engine uses).
-        let hasFirstPage = try await Self.timeout(nanos: 8_000_000_000) { @MainActor in
-            try await s.layoutNextPage() != nil
+        let hasFirstPage = try await Self.timeout(nanos: 8_000_000_000) {
+            try await owner.layoutNextPage() != nil
         }
-        print("SPINE0-SESSION firstPage=\(hasFirstPage) pages=\(s.completedPages.count)")
+        print("SPINE0-SESSION firstPage=\(hasFirstPage)")
         #expect(!hasFirstPage)  // empty cover: no content → nil is CORRECT
     }
 
@@ -176,24 +188,17 @@ struct SVGCoverFixtureTests {
         <p>After SVG paragraph content.</p>
         </body></html>
         """
-        let config = BrowserLayoutConfig(
-            renderWidth: 366, renderHeight: 820, rootFontSize: 17,
-            contentInsets: UIEdgeInsets(top: 12, left: 12, bottom: 12, right: 12)
-        )
-        let session = BrowserLayoutSession(
-            html: html, cssTexts: [], config: config, imageLoader: { _ in nil }, generation: 1
-        )
+        let owner = try Self.pageOwner(html: html, css: [])
         // First page must complete within 3s (task-race timeout).
-        let hasFirstPage = try await Self.timeout(nanos: 3_000_000_000) { @MainActor in
-            try await session.layoutNextPage() != nil
+        let hasFirstPage = try await Self.timeout(nanos: 3_000_000_000) {
+            try await owner.layoutNextPage() != nil
         }
         #expect(hasFirstPage)
         // Finish must complete within 3s too.
-        _ = try await Self.timeout(nanos: 3_000_000_000) { @MainActor in
-            try await session.finish()
-            return true
+        let pageCount = try await Self.timeout(nanos: 3_000_000_000) {
+            try await owner.finish().count
         }
-        print("SVG-FIXTURE pages=\(session.completedPages.count)")
-        #expect(session.completedPages.count >= 1)
+        print("SVG-FIXTURE pages=\(pageCount)")
+        #expect(pageCount >= 1)
     }
 }
