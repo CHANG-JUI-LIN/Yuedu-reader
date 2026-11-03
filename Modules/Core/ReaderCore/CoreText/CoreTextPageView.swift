@@ -773,6 +773,17 @@ final class CoreTextPageView: UIView, UIGestureRecognizerDelegate, @MainActor UI
         let canonicalBounds = CGRect(origin: .zero, size: layoutSize)
         let scaleX = bounds.width / layoutSize.width
         let scaleY = bounds.height / layoutSize.height
+        // The scale only absorbs a page drawn at another size of the same shape. A layout
+        // of another shape is one that missed a resize, and scaling it stretches the glyphs —
+        // how FB-131's landscape snapshot layout reached the portrait page unnoticed. Say so
+        // in the device log rather than let the stretch be the only trace.
+        if abs(scaleX - scaleY) > 0.02 * max(scaleX, scaleY) {
+            AppLogger.render(
+                "⟐ renderPage shape mismatch spine=\(layout.spineIndex) page=\(pageIndex)"
+                    + " layout=\(layoutSize) bounds=\(bounds.size)",
+                level: .warning
+            )
+        }
 
         ctx.saveGState()
         ctx.translateBy(x: bounds.minX, y: bounds.minY)

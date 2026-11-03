@@ -168,6 +168,14 @@ struct ReaderView: View {
     /// layout, the spread mode — would be for a window the reader is not in. While it is zero the
     /// renderer holds the engine start (`EPUBPageRenderer.pendingStartBookId`).
     @State var readerViewportSize: CGSize = .zero
+    /// The page size the latest layout refresh asked for, ahead of the engine — see
+    /// `ReaderSubmittedLayoutSize`. `submitReaderRefresh` records every request into it.
+    @State var submittedLayoutSize = ReaderSubmittedLayoutSize()
+    /// The last window size reported while the app was in the background, taken up when it
+    /// comes back. iOS turns a backgrounded window to landscape for the app-switcher snapshot
+    /// and back again; laying the chapter out for each of those cost two full relayouts per
+    /// visit to the home screen, for a picture taken before either finished.
+    @State private var viewportSizeReportedInBackground: CGSize?
     /// What the window keeps the reader clear of, from `reportsReaderWindowObstructions`: the text
     /// and the 頁眉／頁腳 each keep clear of what reaches their own height (`readerTextSideInsets`,
     /// `readerBarSideInsets`). Nothing in an iPhone's portrait.
@@ -974,6 +982,10 @@ struct ReaderView: View {
 
     func handleReaderViewportSizeChange(_ newSize: CGSize) {
         guard newSize.width > 1, newSize.height > 1 else { return }
+        guard scenePhase != .background else {
+            viewportSizeReportedInBackground = newSize
+            return
+        }
 
         let previousSize = readerViewportSize
         readerViewportSize = newSize
@@ -999,8 +1011,7 @@ struct ReaderView: View {
             return
         }
 
-        if abs(targetRenderSize.width - engine.renderSize.width) > 0.5 ||
-            abs(targetRenderSize.height - engine.renderSize.height) > 0.5 {
+        if submittedLayoutSize.needsLayout(toFit: targetRenderSize, engineRenderSize: engine.renderSize) {
             submitReaderRefresh(
                 intent: .layout,
                 viewportSize: targetRenderSize
@@ -2427,6 +2438,10 @@ struct ReaderView: View {
                 if phase.showsDeviceAppearance {
                     alignReaderModeWithDevice(in: phase)
                     syncActiveThemePreset()
+                }
+                if phase != .background, let size = viewportSizeReportedInBackground {
+                    viewportSizeReportedInBackground = nil
+                    handleReaderViewportSizeChange(size)
                 }
                 if phase == .active {
                     restoreReaderDisplayStateAfterResume()

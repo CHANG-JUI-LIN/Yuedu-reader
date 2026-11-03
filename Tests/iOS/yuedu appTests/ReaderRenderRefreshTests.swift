@@ -722,6 +722,80 @@ struct ReaderRenderRefreshTests {
         try await waitUntil { pageViewController.viewControllers?.first !== showing }
     }
 
+    /// FB-131: backgrounded, the system turns the window to landscape for the app-switcher
+    /// snapshot and straight back. Both reports arrive before the first refresh reaches the
+    /// engine, so the engine still holds the portrait size when the second one is judged.
+    @Test("a size reported back before the engine moves still gets laid out")
+    func sizeReportedBackBeforeEngineMovesStillGetsLaidOut() {
+        let portrait = CGSize(width: 466, height: 678)
+        let landscape = CGSize(width: 951, height: 669)
+        var submitted = ReaderSubmittedLayoutSize()
+
+        #expect(submitted.needsLayout(toFit: landscape, engineRenderSize: portrait))
+        submitted.record(Self.request(viewportSize: landscape))
+
+        // The landscape refresh is still on its way: the engine has not moved.
+        #expect(submitted.needsLayout(toFit: portrait, engineRenderSize: portrait))
+        submitted.record(Self.request(viewportSize: portrait))
+        #expect(!submitted.needsLayout(toFit: portrait, engineRenderSize: landscape))
+    }
+
+    @Test("only refreshes that lay out at the viewport move the submitted size")
+    func onlyLayoutRefreshesMoveTheSubmittedSize() {
+        var submitted = ReaderSubmittedLayoutSize()
+        let size = CGSize(width: 466, height: 678)
+        submitted.record(Self.request(intent: .appearance, viewportSize: size))
+        submitted.record(Self.request(intent: .chapterContent(0), viewportSize: size))
+        submitted.record(Self.request(intent: .modeActivation, viewportSize: size))
+        submitted.record(Self.request(intent: .layout, viewportSize: .zero))
+        #expect(submitted.size == nil)
+        submitted.record(Self.request(intent: .documentStyle, viewportSize: size))
+        #expect(submitted.size == size)
+    }
+
+    @Test("a snapshot size laid out and taken back leaves the page count it started with")
+    func snapshotSizeTakenBackRestoresPageCount() async {
+        let portrait = CGSize(width: 320, height: 480)
+        let landscape = CGSize(width: 480, height: 320)
+        let renderer = EPUBPageRenderer()
+        renderer.loadTXT(
+            attributedBuilder: MutableReaderRefreshBuilder(
+                body: String(repeating: "閱讀直排的一段正文，用來排出好幾頁。\n", count: 120)
+            ),
+            bookIdentifier: UUID().uuidString,
+            renderSize: portrait,
+            settings: Self.makeSettings(fontSize: 18)
+        )
+        await waitUntilPagedReady(renderer)
+        let engine = renderer.engine as? CoreTextPageEngine
+        let portraitPages = engine?.totalPages ?? 0
+        #expect(portraitPages > 1)
+
+        let away = Task { await renderer.refresh(Self.request(viewportSize: landscape)) }
+        let back = Task { await renderer.refresh(Self.request(viewportSize: portrait)) }
+        let commit = await waitForVisibleCommit(renderer, after: 1)
+        renderer.finishVisibleRefresh(transactionID: commit.transactionID, outcome: .applied)
+
+        #expect(await away.value == .superseded(transactionID: 1))
+        #expect(await back.value == .completed(transactionID: 2))
+        #expect(engine?.renderSize == portrait)
+        #expect(engine?.layouts[0]?.renderSize == portrait)
+        #expect(engine?.totalPages == portraitPages)
+    }
+
+    private static func request(
+        intent: ReaderRenderRefreshIntent = .layout,
+        viewportSize: CGSize
+    ) -> ReaderRenderRefreshRequest {
+        ReaderRenderRefreshRequest(
+            intent: intent,
+            mode: .paged,
+            settings: makeSettings(fontSize: 18),
+            position: .chapterStart(0),
+            viewportSize: viewportSize
+        )
+    }
+
     private static func makeSettings(
         fontSize: CGFloat,
         theme: String = "sepia",

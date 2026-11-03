@@ -634,6 +634,7 @@ extension ReaderView {
             position: position ?? currentReaderRefreshPosition,
             viewportSize: viewportSize ?? currentReaderRenderSize
         )
+        submittedLayoutSize.record(request)
         Task { @MainActor in
             await ReaderStyleAssetStore.shared.prewarmRegexHighlightAssets(
                 configuration: resolvedSettings.regexHighlightConfiguration,
