@@ -46,6 +46,16 @@ extension BookSourceFetcher {
             return []
         }
 
-        return try await BookSourceSession.session(for: source).host.exploreBooks(ruleUrl: rawURL, page: page)
+        let books = try await BookSourceSession.session(for: source).host.exploreBooks(ruleUrl: rawURL, page: page)
+        // Every explore row's cover, not just the ones a screen prefetches: `BookCoverLoader`
+        // only sees a URL, and an unregistered cover from a `coverDecodeJs` source is drawn
+        // from its encrypted bytes — blank (FB-135: 探索 sections, 查看全部, the related row).
+        for book in books {
+            CoverDecodeService.shared.registerIfNeeded(
+                coverUrl: book.coverUrl.trimmingCharacters(in: .whitespacesAndNewlines),
+                source: source
+            )
+        }
+        return books
     }
 }

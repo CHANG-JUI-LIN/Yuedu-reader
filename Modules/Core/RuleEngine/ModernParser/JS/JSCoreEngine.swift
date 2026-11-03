@@ -697,13 +697,17 @@ class JSCoreEngine {
 
     /// Evaluate a script whose result is BYTES (Legado image-decode convention:
     /// `result` holds the raw bytes, the script returns decoded bytes). The
-    /// input bytes are exposed as a JS number array (0–255); the return value
+    /// input bytes are exposed as a JS number array (0–255) that also answers the
+    /// java.io.InputStream reads (`__yueduByteInputStream`); the return value
     /// may be a number array (Java byte semantics tolerated) or a base64 string.
     func evaluateBytes(_ script: String, data: Data, bindings: [String: Any] = [:]) -> Data? {
         let numbers = data.map { NSNumber(value: $0) }
         switch onJSQueueWithTimeout({ [self] () -> Data? in
             lastError = nil
-            context.setObject(numbers, forKeyedSubscript: "result" as NSString)
+            let input: JSValue = JSValue(object: numbers, in: context)
+            let result: JSValue = context.objectForKeyedSubscript("__yueduByteInputStream")
+                .call(withArguments: [input])
+            context.setObject(result, forKeyedSubscript: "result" as NSString)
             for (key, value) in bindings {
                 context.setObject(value, forKeyedSubscript: key as NSString)
             }
@@ -1128,6 +1132,41 @@ class JSCoreEngine {
                 def('isEmpty', function () { return this.length === 0; });
                 def('contains', function (value) { return this.indexOf(value) >= 0; });
             })(Array.prototype);
+        """)
+
+        // An image-decode `result` is a byte array that also reads like a java.io.InputStream.
+        // The Legado forks (legado-E, Sigma, MD3) hand `coverDecodeJs` the cover download's
+        // `byteStream()` and every other decode a `byte[]`, so cover rules written for them
+        // call `result.readAllBytes()` (🥝猕猴桃漫画, FB-135). The methods go on the one array
+        // instance, non-enumerable: rules that index the bytes, XOR them in place or test
+        // `typeof x.readAllBytes` on ordinary arrays see no difference.
+        ctx.evaluateScript("""
+            Object.defineProperty(this, '__yueduByteInputStream', {
+                enumerable: false,
+                value: function (bytes) {
+                    var position = 0;
+                    function def(name, fn) {
+                        Object.defineProperty(bytes, name, {
+                            value: fn, enumerable: false, configurable: true, writable: true
+                        });
+                    }
+                    function take(count) {
+                        var end = Math.min(bytes.length, position + Math.max(0, count));
+                        var out = Array.prototype.slice.call(bytes, position, end);
+                        position = end;
+                        return out;
+                    }
+                    def('available', function () { return Math.max(0, bytes.length - position); });
+                    def('readAllBytes', function () { return take(bytes.length - position); });
+                    def('readNBytes', function (count) { return take(Number(count) || 0); });
+                    def('read', function () {
+                        return position < bytes.length ? (Number(bytes[position++]) & 255) : -1;
+                    });
+                    def('skip', function (count) { return take(Number(count) || 0).length; });
+                    def('close', function () {});
+                    return bytes;
+                }
+            });
         """)
 
         // Luo-Ya-Cheng (洛雅橙/lyc) mod compatibility shim.

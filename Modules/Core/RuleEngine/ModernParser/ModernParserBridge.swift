@@ -855,7 +855,17 @@ class ModernParserBridge {
                   let closeRange = script.range(of: "</js>", options: [.caseInsensitive, .backwards]) {
             script = String(script[script.index(script.startIndex, offsetBy: 4)..<closeRange.lowerBound])
         }
-        return jsEngine.evaluateBytes(script, data: data, bindings: ["src": src])
+        let decoded = jsEngine.evaluateBytes(script, data: data, bindings: ["src": src])
+        if decoded == nil {
+            // A thrown rule is already logged by the engine; a rule that returns something other
+            // than bytes is not, and the caller then draws the still-encrypted original.
+            AppLogger.parse("⟐ image decode failed", context: [
+                "source": sourceRuleData.source.bookSourceName,
+                "src": String(src.prefix(300)),
+                "error": jsEngine.lastError ?? "rule returned no bytes"
+            ])
+        }
+        return decoded
     }
 
     /// Runs `ruleContent.imageDecode` purely for its side effects, with no image bytes to hand.
@@ -864,8 +874,9 @@ class ModernParserBridge {
     /// it — 同人小说网 clears the memory flag that makes `createSvg()` draw the 段評 bubble, so the
     /// next call (the user's tap) opens the review page instead. Images whose bytes we never
     /// downloaded because the source's own JS produced them (`LegadoImageSourceResolver`) still owe
-    /// the source that call. `result` is bound to an empty byte array: the rules that use this hook
-    /// return `result` untouched, and the return value is irrelevant here.
+    /// the source that call. `result` is bound to an empty byte array, through the same binding as
+    /// `decodeImageBytes` so a rule that reads it as a stream does not throw: the rules that use
+    /// this hook return `result` untouched, and the return value is irrelevant here.
     func runImageDecodeHook(src: String, ruleJs: String) {
         var script = ruleJs.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !script.isEmpty else { return }
@@ -875,7 +886,7 @@ class ModernParserBridge {
                   let closeRange = script.range(of: "</js>", options: [.caseInsensitive, .backwards]) {
             script = String(script[script.index(script.startIndex, offsetBy: 4)..<closeRange.lowerBound])
         }
-        _ = jsEngine.evaluate(script, result: [Int](), bindings: ["src": src])
+        _ = jsEngine.evaluateBytes(script, data: Data(), bindings: ["src": src])
     }
 
     /// Evaluates a bare source-JS expression with `jsLib` in scope and returns its string result.

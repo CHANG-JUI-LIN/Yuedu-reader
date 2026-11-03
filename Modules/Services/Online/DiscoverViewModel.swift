@@ -848,9 +848,7 @@ final class DiscoverViewModel: ObservableObject {
             .map { $0.coverUrl.trimmingCharacters(in: .whitespacesAndNewlines) }
             .filter { !$0.isEmpty && BookCoverLoader.cachedImage(for: $0) == nil }
         guard !urls.isEmpty else { return }
-        for url in urls {
-            CoverDecodeService.shared.registerIfNeeded(coverUrl: url, source: source)
-        }
+        // `coverDecodeJs` registration happened when the rows were fetched (`discoverBooks`).
         Task.detached(priority: .utility) {
             let headers = BookCoverLoader.headers(
                 sourceBaseURL: source.bookSourceUrl,
