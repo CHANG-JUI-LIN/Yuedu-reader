@@ -833,11 +833,11 @@ private struct HomeModuleParameters: View {
                     .accessibilityIdentifier("homeSection.parameter.\(param.name)")
                 case .count:
                     let count = Int(value) ?? 1
-                    Stepper(value: Binding(get: { count }, set: { set(param.name, String($0)) }),
-                            in: 1...max(100, count)) {
+                    let binding = Binding(get: { count }, set: { set(param.name, String($0)) })
+                    Stepper(value: binding, in: 1...max(100, count)) {
                         LabeledContent(title, value: String(count))
                     }
-                    .accessibilityValue(String(count))
+                    .accessibilityStepper(title, value: binding, in: 1...max(100, count), valueText: String(count))
                     .accessibilityIdentifier("homeSection.parameter.\(param.name)")
                 default:
                     HomeModuleTextParameter(title: title, committed: value) { set(param.name, $0) }

@@ -64,6 +64,7 @@ struct AICharacterMemoryView: View {
                 }
                 DisclosureGroup(localized("進階設定")) {
                 Stepper(String(format: localized("總呼叫上限：%d"), budget.maximumCalls), value: $budget.maximumCalls, in: 1...100_000)
+                    .accessibilityStepper(localized("總呼叫上限"), value: $budget.maximumCalls, in: 1...100_000, valueText: "\(budget.maximumCalls)")
                 Toggle(localized("截斷時允許自動分拆一次"), isOn: Binding(get: { budget.automaticSplitDepth > 0 }, set: { budget.automaticSplitDepth = $0 ? 1 : 0 }))
                 }
                 Button(buildWholeBook ? localized("規劃人物建檔") : localized("整理已讀人物")) { prepare() }.disabled(job?.state == .running)
@@ -86,7 +87,7 @@ struct AICharacterMemoryView: View {
                     Button(localized("取消"), role: .cancel) {}
                 }
                 if viewScope == .chapter {
-                    Stepper(String(format: localized("查看到第 %d 章"), viewChapter + 1), value: $viewChapter, in: 0...maximumViewChapter)
+                    AIMemoryViewChapterStepper(chapter: $viewChapter, lastChapter: maximumViewChapter)
                 }
                 ThemedLabeledContent(localized("目前範圍人物數"), value: "\(visible.count)")
             }
@@ -187,6 +188,7 @@ struct AICharacterMemoryView: View {
             if job.state == .running { Button(localized("暫停建檔")) { service.pause(book: adapter.chunkBookID) } }
             else if job.state != .completedAvailable {
                 Stepper(String(format: localized("追加呼叫額度：%d"), additionalCalls), value: $additionalCalls, in: 0...100_000)
+                    .accessibilityStepper(localized("追加呼叫額度"), value: $additionalCalls, in: 0...100_000, valueText: "\(additionalCalls)")
                 Button(localized("續跑／重試未完成批次")) { confirmResume = true }
                     .confirmationDialog(localized("確認續跑與呼叫預算"), isPresented: $confirmResume, titleVisibility: .visible) {
                         Button(localized("確認續跑")) { resume() }
@@ -270,6 +272,21 @@ struct AICharacterMemoryView: View {
         case .extractionFailed: return localized("正文抽取失敗")
         case .unsupported: return localized("格式不支援正文抽取")
         }
+    }
+}
+
+/// 按章節進度查看's chapter: the people as they stand at the end of it. `chapter` counts from 0.
+struct AIMemoryViewChapterStepper: View {
+    @Binding var chapter: Int
+    let lastChapter: Int
+
+    var body: some View {
+        Stepper(String(format: localized("查看到第 %d 章"), chapter + 1), value: $chapter, in: 0...lastChapter)
+            // Read as the chapter shown: the binding counts from 0.
+            .accessibilityStepper(
+                localized("章節進度"), value: $chapter, in: 0...lastChapter,
+                valueText: String(format: localized("第 %d 章"), chapter + 1)
+            )
     }
 }
 

@@ -175,9 +175,14 @@ struct RegexHighlightRuleEditorView: View {
                     step: 1,
                     unit: "pt"
                 )
-                Stepper(value: styleIntBinding(\.text.fontWeight, fallback: 400), in: 100...900, step: 100) {
+                let fontWeight = styleIntBinding(\.text.fontWeight, fallback: 400)
+                Stepper(value: fontWeight, in: 100...900, step: 100) {
                     LabeledContent(localized("字重"), value: "\(activeStyle.text.fontWeight ?? 400)")
                 }
+                .accessibilityStepper(
+                    localized("字重"), value: fontWeight, in: 100...900, step: 100,
+                    valueText: "\(activeStyle.text.fontWeight ?? 400)"
+                )
                 Toggle(localized("斜體"), isOn: styleBoolBinding(\.text.italic))
                 Toggle(localized("底線"), isOn: styleBoolBinding(\.text.underline))
                 Toggle(localized("刪除線"), isOn: styleBoolBinding(\.text.strikethrough))

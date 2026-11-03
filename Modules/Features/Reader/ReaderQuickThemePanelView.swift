@@ -177,32 +177,30 @@ struct ReaderQuickThemePanelView: View {
     ///
     /// Both ends keep `.buttonRepeatBehavior(.enabled)`, so press-and-hold keeps
     /// stepping.
+    ///
+    /// VoiceOver reads the capsule as one adjustable 字體大小 valued at the size, which a
+    /// swipe up or down moves a point. It was two buttons, 縮小字體 and 放大字體, with the
+    /// number hidden: nothing read the size, before a press or after it.
     private var fontSizeStepper: some View {
         HStack(spacing: 0) {
-            fontSizeStepButton(
-                -1,
-                textFont: DSFont.body.weight(.semibold),
-                accessibilityKey: "縮小字體"
-            )
+            fontSizeStepButton(-1, textFont: DSFont.body.weight(.semibold))
 
             Text("\(Int(fontSize))")
                 .font(DSFont.title3.weight(.medium).monospacedDigit())
                 .foregroundStyle(DSColor.textPrimary)
                 .frame(minWidth: DSSpacing.xxl)
-                // The stepper is one control with one value; the buttons carry
-                // their own labels, so the number would only repeat what VoiceOver
-                // already announces when the value changes.
-                .accessibilityHidden(true)
 
-            fontSizeStepButton(
-                1,
-                textFont: DSFont.title2.weight(.semibold),
-                accessibilityKey: "放大字體"
-            )
+            fontSizeStepButton(1, textFont: DSFont.title2.weight(.semibold))
         }
         .frame(maxWidth: .infinity, minHeight: DSLayout.readerQuickPanelTopControlHeight)
         .background(DSColor.neutralControlFill, in: Capsule())
         .shadow(color: DSColor.shadow, radius: 6, y: 1)
+        .accessibilityStepper(
+            localized(ReadingSettingsScopeItem.fontSize.titleKey),
+            valueText: String(format: localized("ReaderOverlay.Format.Points"), Int(fontSize)),
+            onIncrement: { adjustFontSize(1) },
+            onDecrement: { adjustFontSize(-1) }
+        )
     }
 
     /// A `Menu` behind a capsule button.
@@ -251,7 +249,7 @@ struct ReaderQuickThemePanelView: View {
 
     /// One half of the A / A stepper. `.buttonRepeatBehavior(.enabled)` makes
     /// press-and-hold keep stepping, matching Apple Books.
-    private func fontSizeStepButton(_ delta: CGFloat, textFont: Font, accessibilityKey: String) -> some View {
+    private func fontSizeStepButton(_ delta: CGFloat, textFont: Font) -> some View {
         Button {
             adjustFontSize(delta)
         } label: {
@@ -263,7 +261,6 @@ struct ReaderQuickThemePanelView: View {
         }
         .buttonStyle(QuickPanelSegmentButtonStyle())
         .buttonRepeatBehavior(.enabled)
-        .accessibilityLabel(localized(accessibilityKey))
     }
 
     // MARK: - Brightness

@@ -61,6 +61,7 @@ struct BookSourceRuleDebugView: View {
                             if selectedTab == .search {
                                 Stepper("P\(page)", value: $page, in: 1...999)
                                     .fixedSize()
+                                    .accessibilityStepper(localized("頁碼"), value: $page, in: 1...999, valueText: "\(page)")
                             }
                         }
                     } else {

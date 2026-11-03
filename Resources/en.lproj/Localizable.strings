@@ -2919,12 +2919,14 @@
 "確認續跑與呼叫預算" = "Confirm Resume and Call Budget";
 "經歷與關係（原文揭露順序）" = "History and Relationships (In Order of Disclosure)";
 "總呼叫上限：%d" = "Total Call Limit: %d";
+"總呼叫上限" = "Total Call Limit";
 "總模型呼叫上限" = "Total Model Call Limit";
 "續跑／重試未完成批次" = "Resume or Retry Unfinished Batches";
 "規劃人物建檔" = "Plan Character Analysis";
 "角色發言／自述" = "Character Statement or Self-Description";
 "該批抽取失敗，未保存為成功。" = "This batch's extraction failed and wasn't saved as successful.";
 "追加呼叫額度：%d" = "Additional Calls: %d";
+"追加呼叫額度" = "Additional Calls";
 "這是模型抽取的結構化記錄，不代表人物或事實全部正確；每項保留原文供核對。新別名不會自動送入問答或朗讀。" = "These are structured records extracted by the model and may not be entirely accurate. Each item keeps the original text for checking. New aliases aren't automatically used in Q&A or read aloud.";
 "這會逐批傳送正文，不只是問答命中的少數片段。全書範圍可能包含後文；模型服務可能收費，沒有價格或 tokenizer 資料時不估價。" = "This sends text in batches, not just the few passages matched for Q&A. The whole-book scope may include parts you haven't read. The model service may charge you; without pricing or tokenizer data, no cost estimate is shown.";
 "關係記錄" = "Relationships";

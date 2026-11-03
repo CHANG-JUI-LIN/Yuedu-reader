@@ -235,16 +235,17 @@ struct ChapterTitleInspectorView: View {
                 step: 1,
                 unit: "pt"
             )
-            Stepper(
-                value: Binding(
-                    get: { appearanceStyle(selectedLayer ?? layer).ruleStyle.text.fontWeight ?? 400 },
-                    set: { value in mutateStyle(layer) { $0.ruleStyle.text.fontWeight = value } }
-                ),
-                in: 100...900,
-                step: 100
-            ) {
-                ThemedLabeledContent(localized("字重"), value: "\(appearanceStyle(selectedLayer ?? layer).ruleStyle.text.fontWeight ?? 400)")
+            let fontWeight = Binding(
+                get: { appearanceStyle(selectedLayer ?? layer).ruleStyle.text.fontWeight ?? 400 },
+                set: { value in mutateStyle(layer) { $0.ruleStyle.text.fontWeight = value } }
+            )
+            Stepper(value: fontWeight, in: 100...900, step: 100) {
+                ThemedLabeledContent(localized("字重"), value: "\(fontWeight.wrappedValue)")
             }
+            .accessibilityStepper(
+                localized("字重"), value: fontWeight, in: 100...900, step: 100,
+                valueText: "\(fontWeight.wrappedValue)"
+            )
             Toggle(
                 localized("斜體"),
                 isOn: optionalBoolBinding(layer, keyPath: \.italic)

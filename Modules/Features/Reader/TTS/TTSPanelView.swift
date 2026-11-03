@@ -688,15 +688,12 @@ struct TTSSpeechRateRow: View {
                     .font(DSFont.headline.monospacedDigit())
             }
         } onEditingChanged: { editingChanged($0) }
-        // A Stepper reads everything in its label into the name of both its buttons, and adds
-        // an `.accessibilityLabel` to that rather than replacing it: each button read
-        // 「語速、1.0×、語速, 增量」 and then 1.0× again as its value. VoiceOver gets a stepper
-        // labelled 語速 alone instead: one adjustable element, read 「語速, 1.0×」, that a swipe
-        // up or down moves a step — the gesture of 朗讀進度 just above it.
-        .accessibilityRepresentation {
-            Stepper(localized("語速"), value: $rate, in: bounds, step: step) { editingChanged($0) }
-                .accessibilityValue(rateText)
-        }
+        // Read 「語速, 1.0×」 and moved by a swipe up or down — the gesture of 朗讀進度 just
+        // above it. Each button used to read 「語速、1.0×、語速, 增量」 and then 1.0× again.
+        .accessibilityStepper(
+            localized("語速"), value: $rate, in: bounds, step: step,
+            valueText: rateText, onEditingChanged: editingChanged
+        )
     }
 
     /// Once per press, not per step: re-synthesising HTTP audio on every tick

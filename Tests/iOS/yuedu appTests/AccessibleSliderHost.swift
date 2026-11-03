@@ -4,9 +4,10 @@ import UIKit
 @testable import yuedu_app
 
 /// Hosts `view` in a window, with the accessibility elements VoiceOver would find built, and
-/// hands `body` the hosting view.
+/// hands `body` the hosting view. A `height` taller than the screen lays out the rows a list
+/// would otherwise leave for scrolling to.
 @MainActor
-func withAccessibilityHost<V: View>(in view: V,
+func withAccessibilityHost<V: View>(in view: V, height: CGFloat? = nil,
                                     body: (UIView) async throws -> Void) async throws {
     // SwiftUI builds no accessibility elements until something reads them — VoiceOver, or
     // XCUITest's automation. Turned on here as XCUITest does it, and back off after.
@@ -22,6 +23,7 @@ func withAccessibilityHost<V: View>(in view: V,
     let root = UIHostingController(rootView: view)
     let scene = try #require(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first)
     let window = UIWindow(windowScene: scene)
+    if let height { window.frame.size.height = height }
     window.rootViewController = root
     window.makeKeyAndVisible()
     defer { window.isHidden = true; window.rootViewController = nil }

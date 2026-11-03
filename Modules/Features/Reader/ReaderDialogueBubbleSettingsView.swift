@@ -303,16 +303,17 @@ struct ReaderDialogueBubbleSettingsView: View {
                 step: 0.05,
                 text: percent(sideStyle.fontSizeMultiplier)
             )
-            Stepper(
-                value: Binding(
-                    get: { sideStyle.fontWeight ?? 400 },
-                    set: { value in update { $0[keyPath: path].fontWeight = value } }
-                ),
-                in: 100...900,
-                step: 100
-            ) {
+            let fontWeight = Binding(
+                get: { sideStyle.fontWeight ?? 400 },
+                set: { value in update { $0[keyPath: path].fontWeight = value } }
+            )
+            Stepper(value: fontWeight, in: 100...900, step: 100) {
                 ThemedLabeledContent(localized("氣泡字重"), value: "\(sideStyle.fontWeight ?? 400)")
             }
+            .accessibilityStepper(
+                localized("氣泡字重"), value: fontWeight, in: 100...900, step: 100,
+                valueText: "\(sideStyle.fontWeight ?? 400)"
+            )
             slider(
                 title: localized("氣泡字距"),
                 value: Binding(

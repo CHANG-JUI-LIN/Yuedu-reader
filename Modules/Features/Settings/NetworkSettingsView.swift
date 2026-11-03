@@ -111,6 +111,9 @@ struct NetworkSettingsView: View {
                     .labelsHidden()
                     .fixedSize()
             }
+            // The labels-hidden stepper named its buttons nothing but 增量 and 減量, the same
+            // in every row.
+            .accessibilityStepper(title, value: value, in: range, valueText: "\(value.wrappedValue)")
             Text(description)
                 .font(DSFont.caption)
                 .foregroundColor(DSColor.textSecondary)
