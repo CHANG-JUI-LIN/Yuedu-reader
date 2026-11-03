@@ -1124,6 +1124,9 @@ final class BrowserLayoutPageEngine: PageRenderingProvider, LinkNavigationProvid
 
     func invalidateLayout(newSize: CGSize, ensuringSpine: Int?) async {
         guard !Task.isCancelled else { return }
+        // Every caller relays the whole book out, and some reach here without a refresh
+        // transaction (setFontSize, setPageMargins): name each in the Crashlytics log.
+        CrashContext.breadcrumb("browser invalidateLayout size=\(newSize) ensuring=\(ensuringSpine.map(String.init) ?? "nil")")
         regexHighlightNeedsRelayout = false
         let restore = readingPosition(forPage: currentPage)
         layoutGeneration += 1
@@ -1209,6 +1212,7 @@ final class BrowserLayoutPageEngine: PageRenderingProvider, LinkNavigationProvid
     }
 
     func notifyChapterDataChanged(at spineIndex: Int) async {
+        CrashContext.breadcrumb("browser notifyChapterDataChanged spine=\(spineIndex)")
         scrollPreparations.removeValue(forKey: spineIndex)?.cancel()
         scrollPreparationIDs.removeValue(forKey: spineIndex)
         scrollChapters.removeValue(forKey: spineIndex)

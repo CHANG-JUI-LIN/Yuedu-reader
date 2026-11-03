@@ -1,4 +1,5 @@
 @testable import YueduCoreText
+import os
 import Testing
 import UIKit
 @testable import yuedu_app
@@ -47,6 +48,9 @@ final class MockBrowserLayoutResource: BrowserLayoutResourceProviding {
 /// the full HTML pipeline.
 final class MockAttributedStringBuilder: AttributedStringBuilding {
     let texts: [String]
+    private let buildCountsStorage = OSAllocatedUnfairLock(initialState: [Int: Int]())
+    /// Documents built per chapter: a legacy layout that is not kept builds again.
+    var buildCounts: [Int: Int] { buildCountsStorage.withLock { $0 } }
 
     init(texts: [String]) {
         self.texts = texts
@@ -73,6 +77,7 @@ final class MockAttributedStringBuilder: AttributedStringBuilding {
         themeBackgroundColor: UIColor
     ) async throws -> AttributedChapterBuildResult {
         guard texts.indices.contains(index) else { throw AttributedStringBuildingError.chapterOutOfRange(index) }
+        buildCountsStorage.withLock { $0[index, default: 0] += 1 }
         let text = texts[index]
         let attributed = NSMutableAttributedString(string: text, attributes: [
             .font: UIFont.systemFont(ofSize: settings.fontSize),
@@ -120,10 +125,11 @@ struct BrowserLayoutPageEngineTests {
         chapters: [MockBrowserLayoutResource.Chapter],
         fontSize: CGFloat = 17,
         fontPostScriptName: String? = nil,
-        mode: EPUBLayoutEngineMode = .browserAuto
+        mode: EPUBLayoutEngineMode = .browserAuto,
+        builder: MockAttributedStringBuilder? = nil
     ) async -> (engine: BrowserLayoutPageEngine, resource: MockBrowserLayoutResource, delegate: CoreTextPageEngine) {
         let resource = MockBrowserLayoutResource(chapters: chapters)
-        let builder = MockAttributedStringBuilder(texts: chapters.map { $0.title })
+        let builder = builder ?? MockAttributedStringBuilder(texts: chapters.map { $0.title })
         let store = CharOffsetStore(directoryURL: FileManager.default.temporaryDirectory.appendingPathComponent("bl-test-\(UUID().uuidString)"))
         var settings = makeSettings(fontSize: fontSize)
         settings.fontPostScriptName = fontPostScriptName
@@ -518,10 +524,12 @@ struct BrowserLayoutPageEngineTests {
     /// A chapter whose layout ran past the timeout goes to the legacy engine, and must
     /// not stay `.loading` — nothing is loading it any more.
     @Test func timedOutChapterLeavesNoLoadingState() async throws {
-        let (engine, _, _) = await makeEngine(chapters: [
+        let chapters = [
             plainChapter("First chapter.", index: 0),
             plainChapter(String(repeating: "Second chapter text. ", count: 40), index: 1),
-        ])
+        ]
+        let builder = MockAttributedStringBuilder(texts: chapters.map { $0.title })
+        let (engine, _, _) = await makeEngine(chapters: chapters, builder: builder)
         engine.chapterTimeoutNanos = 1
         await engine.preloadChapter(at: 1)
         guard case .legacyEngineFailure(.timeout) = engine.choice(for: 1) else {
@@ -534,6 +542,7 @@ struct BrowserLayoutPageEngineTests {
             await engine.preloadChapter(at: 1)
         }
         #expect(engine.testSessionEnsureTotals[1] == 1)
+        #expect(builder.buildCounts[1] == 1, "the legacy engine built the timed-out chapter again after a cancel")
     }
 
     /// THE LIVELOCK REGRESSION: an image-only / zero-page chapter under
