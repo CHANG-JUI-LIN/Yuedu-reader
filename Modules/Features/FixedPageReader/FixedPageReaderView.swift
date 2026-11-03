@@ -648,7 +648,7 @@ struct FixedPageChapterListView: View {
                     Button {
                         dismiss()
                     } label: {
-                        Image(systemName: "xmark")
+                        Label(localized("關閉"), systemImage: "xmark").labelStyle(.iconOnly)
                     }
                 }
                 ToolbarItem(placement: .topBarTrailing) {
