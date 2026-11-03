@@ -430,6 +430,10 @@ final class BrowserLayoutPageEngine: PageRenderingProvider, LinkNavigationProvid
     var testChapterLayoutStates: [Int: ChapterLayoutState] { chapterLayoutStates }
     /// Test seam: sessionEnsure attempt counts per "\(generation):\(spine)".
     var testSessionEnsureCounts: [String: Int] { sessionEnsureCounts }
+    /// Test seam: sessions created per spine over the engine's whole life. Unlike
+    /// `testSessionEnsureCounts` it survives generation bumps, which is where a
+    /// cross-generation re-layout loop hides.
+    private(set) var testSessionEnsureTotals: [Int: Int] = [:]
     /// Test seam: chapters whose admission evaluation their layout could not reuse, in order. A
     /// configuration whose cascade inputs differ from admission's (a writing mode, say) parses again.
     private(set) var testStaleAdmissionSpines: [Int] = []
@@ -466,7 +470,8 @@ final class BrowserLayoutPageEngine: PageRenderingProvider, LinkNavigationProvid
 
     private var layoutGeneration = 0
     private var preloadTasks: [Int: Task<Void, Never>] = [:]
-    private var chapterTimeoutNanos: UInt64 = 5_000_000_000
+    /// Internal for tests, which force the timeout path with a 1 ns limit.
+    var chapterTimeoutNanos: UInt64 = 5_000_000_000
     /// Stored for future annotation/selection integration (data structures must
     /// not block later work).
     private var textAnnotations: [CoreTextTextAnnotation] = []
@@ -830,9 +835,11 @@ final class BrowserLayoutPageEngine: PageRenderingProvider, LinkNavigationProvid
             // so it is not needed to lay anything out — and taking the source
             // from the style tree (instead of re-scanning the stylesheets) is
             // what makes the fetched key and the painted key the same string.
+            let prepareStart = SourcePerfTrace.now
             let backgroundSource = try await withTimeout(nanos: chapterTimeoutNanos) {
                 try session.prepare()
             }
+            SourcePerfTrace.record("browser.prepare", "spine=\(spineIndex)", since: prepareStart, thresholdMs: 0)
             guard isCurrentWork(generation) else { return }
             if let backgroundSource, store.image(for: backgroundSource) == nil {
                 store.set(
@@ -850,9 +857,11 @@ final class BrowserLayoutPageEngine: PageRenderingProvider, LinkNavigationProvid
 
             // FIRST PAGE: publish immediately — the rest of the chapter is NOT
             // laid out yet.
+            let firstPageStart = SourcePerfTrace.now
             let firstPage = try await withTimeout(nanos: chapterTimeoutNanos) {
                 try await session.layoutNextPage()
             }
+            SourcePerfTrace.record("browser.firstPage", "spine=\(spineIndex)", since: firstPageStart, thresholdMs: 0)
             guard isCurrentWork(generation) else { return }
             guard let firstPage else {
                 // A chapter that produced zero pages: distinguish an image-only
@@ -913,8 +922,10 @@ final class BrowserLayoutPageEngine: PageRenderingProvider, LinkNavigationProvid
     /// WHOLE chapter falls back to the legacy delegate (no mixed chapter).
     private func finishBrowserChapter(_ spineIndex: Int, generation: Int) async {
         guard let session = browserSessions[spineIndex] else { return }
+        let finishStart = SourcePerfTrace.now
         do {
             try await session.finish()
+            SourcePerfTrace.record("browser.finish", "spine=\(spineIndex)", since: finishStart, thresholdMs: 0)
         } catch is CancellationError {
             return
         } catch HTMLLayoutError.cancelled {
@@ -1048,6 +1059,9 @@ final class BrowserLayoutPageEngine: PageRenderingProvider, LinkNavigationProvid
             return
         }
         choices[spineIndex] = .legacyEngineFailure(reason)
+        // The browser engine no longer owns this chapter; its `.loading` must not outlive
+        // the attempt.
+        chapterLayoutStates.removeValue(forKey: spineIndex)
         engineStatus[spineIndex] = "legacy: engineFailure \(reason.description)"
         BrowserLayoutDeviceDiagnostic.summary("\(BrowserLayoutDeviceDiagnostic.prefix) fallbackToLegacy spine=\(spineIndex) reason=\(reason.description)")
         await delegate.preloadChapter(at: spineIndex)
@@ -1090,6 +1104,7 @@ final class BrowserLayoutPageEngine: PageRenderingProvider, LinkNavigationProvid
     /// the reader is hammering ensure/layout — the livelock. Fault loudly in
     /// debug instead of spinning forever.
     private func noteSessionEnsure(spineIndex: Int, generation: Int) {
+        testSessionEnsureTotals[spineIndex, default: 0] += 1
         let key = "\(generation):\(spineIndex)"
         let count = (sessionEnsureCounts[key] ?? 0) + 1
         sessionEnsureCounts[key] = count
@@ -1172,6 +1187,9 @@ final class BrowserLayoutPageEngine: PageRenderingProvider, LinkNavigationProvid
         // failure choices or clear the replacement generation's task/session.
         layoutGeneration += 1
         discardScrollPreparation()
+        // A chapter still holding a session had pages left to lay out; cancelling ends that,
+        // so it must be laid out again.
+        let unfinishedSpines = Set(browserSessions.keys)
         for session in browserSessions.values { session.cancel() }
         browserSessions.removeAll()
         delegate.cancelPendingWork(cause: cause)
@@ -1179,7 +1197,14 @@ final class BrowserLayoutPageEngine: PageRenderingProvider, LinkNavigationProvid
         preloadTasks.removeAll()
         for task in backgroundFinishTasks.values { task.cancel() }
         backgroundFinishTasks.removeAll()
-        chapterLayoutStates.removeAll()
+        // A finished chapter has nothing pending, so it keeps its terminal state. Dropping
+        // it made the next preload lay the whole chapter out again — and every refresh
+        // transaction cancels and then preloads the visible spine, so a large chapter was
+        // re-laid out once per refresh (Crashlytics db641b67: 3–5 s of main thread every
+        // ~4 s for two minutes).
+        chapterLayoutStates = chapterLayoutStates.filter { spine, state in
+            state.isTerminal && !unfinishedSpines.contains(spine)
+        }
         sessionEnsureCounts.removeAll()
     }
 

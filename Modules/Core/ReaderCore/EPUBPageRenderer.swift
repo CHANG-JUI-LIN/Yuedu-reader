@@ -192,7 +192,14 @@ final class EPUBPageRenderer: ObservableObject {
 
             if let browser = engine as? BrowserLayoutPageEngine {
                 await browser.activatePagedLayout()
-                await browser.preloadChapter(at: request.position.spineIndex)
+                // A layout or document-style refresh invalidates every chapter and then
+                // ensures this spine itself; preloading it first laid it out twice.
+                switch request.intent {
+                case .layout, .documentStyle:
+                    break
+                case .appearance, .chapterContent, .modeActivation:
+                    await browser.preloadChapter(at: request.position.spineIndex)
+                }
             }
             let coverage: RefreshRevisionCoverage
             switch request.intent {
@@ -922,6 +929,12 @@ final class EPUBPageRenderer: ObservableObject {
         nextRefreshTransactionID &+= 1
         currentRefreshTransactionID = nextRefreshTransactionID
         let transactionID = currentRefreshTransactionID
+        // Into the Crashlytics log too: crashlytics db641b67 showed spine 0 laid out again
+        // every ~4 s and nothing said which refresh asked for it.
+        let refreshLine = "refresh transaction=\(transactionID) intent=\(request.intent) mode=\(request.mode) "
+            + "spine=\(request.position.spineIndex) viewport=\(request.viewportSize)"
+        AppLogger.render(refreshLine)
+        CrashContext.breadcrumb(refreshLine)
 
         // A published visible commit is a command the host may not have consumed yet:
         // SwiftUI applies `pendingVisibleRefreshCommit` on its own update pass, so

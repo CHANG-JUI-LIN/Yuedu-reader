@@ -496,6 +496,46 @@ struct BrowserLayoutPageEngineTests {
         #expect(restored == page)
     }
 
+    /// Crashlytics db641b67: every refresh transaction calls `cancelPendingWork` and the
+    /// paged refresh then preloads the visible spine. Cancelling dropped the finished
+    /// chapter's `.ready`, so each refresh laid the whole chapter out again — 3–5 s of
+    /// main thread per round on a large EPUB chapter, for two minutes.
+    @Test func cancellingPendingWorkKeepsAFinishedChapter() async throws {
+        let chapter = plainChapter(String(repeating: "Una frase para llenar el capítulo. ", count: 80))
+        let (engine, _, _) = await makeEngine(chapters: [chapter])
+        #expect(engine.testSessionEnsureTotals[0] == 1)
+        let pages = engine.totalPages
+        for _ in 0..<5 {
+            engine.cancelPendingWork(cause: .refreshTransaction)
+            let outcome = await engine.preloadChapter(at: 0)
+            #expect(outcome.isReady)
+        }
+        #expect(engine.testSessionEnsureTotals[0] == 1, "a finished chapter was laid out again after a cancel")
+        #expect(engine.totalPages == pages)
+        #expect(engine.testChapterLayoutStates[0] == .ready)
+    }
+
+    /// A chapter whose layout ran past the timeout goes to the legacy engine, and must
+    /// not stay `.loading` — nothing is loading it any more.
+    @Test func timedOutChapterLeavesNoLoadingState() async throws {
+        let (engine, _, _) = await makeEngine(chapters: [
+            plainChapter("First chapter.", index: 0),
+            plainChapter(String(repeating: "Second chapter text. ", count: 40), index: 1),
+        ])
+        engine.chapterTimeoutNanos = 1
+        await engine.preloadChapter(at: 1)
+        guard case .legacyEngineFailure(.timeout) = engine.choice(for: 1) else {
+            Issue.record("expected a timeout fallback, got \(String(describing: engine.choice(for: 1)))")
+            return
+        }
+        #expect(engine.testChapterLayoutStates[1] != .loading)
+        for _ in 0..<3 {
+            engine.cancelPendingWork(cause: .refreshTransaction)
+            await engine.preloadChapter(at: 1)
+        }
+        #expect(engine.testSessionEnsureTotals[1] == 1)
+    }
+
     /// THE LIVELOCK REGRESSION: an image-only / zero-page chapter under
     /// browserForced MUST publish a terminal diagnostic page (1 page, browser
     /// engine, never re-ensured). Position queries must not start a second
