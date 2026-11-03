@@ -9,7 +9,10 @@ link and its 同題材 section lead there. The text book has a solid blue cover,
 page's cover wash. "Navigation Audio Fixture" (an audiobook source) has the
 same genre and category, for the audiobook detail page's links. "Navigation Bare Fixture" has
 nothing but a title, an author and one chapter — no cover, genre or description — the detail
-page's design baseline (Editorial Minimalism, 2026-10-12).
+page's design baseline (Editorial Minimalism, 2026-10-12). "Navigation Pager Fixture" only
+answers a search for exactly "fixture" (no other test searches that): then every page has new
+books and each later page takes PAGER_DELAY seconds, so 搜索 keeps publishing results for half a minute — what a
+real search tab does under an open reader (feedback #132, iOS 17.0).
 
 The app must be installed on the selected, booted simulator. Stop the app before
 prepare/clean. Only records belonging to these fixture source UUIDs are changed.
@@ -21,19 +24,25 @@ import json
 from pathlib import Path
 import struct
 import subprocess
+import time
+from urllib.parse import parse_qs, urlparse
 import zlib
 
 SOURCE_ID = "C5DED179-61D0-49C4-BDB7-93A7B3DAD8F4"
 MANGA_SOURCE_ID = "42017D70-DAD6-4EDE-845E-C5DBAC606CA4"
 AUDIO_SOURCE_ID = "8B0E6A52-3C1F-4D7A-9E25-6F4C2B1D9A73"
 BARE_SOURCE_ID = "E3A1C0D2-7B54-4F0E-9A86-1D2C3B4A5F60"
-SOURCE_IDS = {SOURCE_ID, MANGA_SOURCE_ID, AUDIO_SOURCE_ID, BARE_SOURCE_ID}
+PAGER_SOURCE_ID = "6F1D2A8E-94B3-4C7A-B0E5-2D9C8F3A1B47"
+SOURCE_IDS = {SOURCE_ID, MANGA_SOURCE_ID, AUDIO_SOURCE_ID, BARE_SOURCE_ID, PAGER_SOURCE_ID}
 ROOT = Path("/tmp/yuedu-back-swipe-fixture")
 BASE = "http://localhost:18765"
 MANGA_BASE = BASE + "/manga"
 RELATED_BASE = BASE + "/related"
 AUDIO_BASE = BASE + "/audio"
 BARE_BASE = BASE + "/bare"
+PAGER_BASE = BASE + "/pager"
+# Seconds each later page of the pager's search takes; SearchAggregator asks for at most 10.
+PAGER_DELAY = 3
 RELATED_CATEGORY = "Related"
 # One colour per page. Chapter 1 has three pages and chapter 2 two, so the reader's
 # page indicator also tells the chapters apart.
@@ -83,6 +92,30 @@ def png(width, height, rgb):
 def catalog_entry(base, title):
     return (f'<div class="book"><h2>{title}</h2>'
             f'<a href="{base}/book.html">Read</a><span class="author">Regression</span></div>')
+
+
+class FixtureHandler(SimpleHTTPRequestHandler):
+    def do_GET(self):
+        url = urlparse(self.path)
+        if url.path != "/pager/search":
+            return super().do_GET()
+        query = parse_qs(url.query)
+        page = int(query.get("page", ["1"])[0] or 1)
+        books = ""
+        if query.get("key", [""])[0].strip().lower() == "fixture":
+            if page > 1:
+                time.sleep(PAGER_DELAY)
+            # One book on page 1, so the books the test looks for stay on screen; a distinct
+            # book URL each, since a page of books already merged would end the paging.
+            books = "".join(catalog_entry(BARE_BASE, f"Pager Fixture {page}-{i}")
+                            .replace("/book.html", f"/book.html?p={page}-{i}")
+                            for i in range(1 if page == 1 else 20))
+        body = books.encode()
+        self.send_response(200)
+        self.send_header("Content-Type", "text/html; charset=utf-8")
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
 
 
 def write_book(directory, base, title, intro, chapters, kind="", cover=None):
@@ -152,6 +185,8 @@ def prepare(simulator):
         source(AUDIO_SOURCE_ID, "Navigation Audio Fixture", AUDIO_BASE, "Audio Test",
                extra_categories=[{"title": RELATED_CATEGORY, "url": AUDIO_BASE + "/related.html"}], bookSourceType=1),
         source(BARE_SOURCE_ID, "Navigation Bare Fixture", BARE_BASE, "Bare Test"),
+        source(PAGER_SOURCE_ID, "Navigation Pager Fixture", PAGER_BASE, "Pager Test",
+               searchUrl=PAGER_BASE + "/search?key={{key}}&page={{page}}"),
     ]
     update_records(support(simulator) / "book_sources.json", lambda r: r.get("id") not in SOURCE_IDS, sources)
     drop_cached_pages(simulator)
@@ -163,7 +198,7 @@ def main():
     parser.add_argument("--simulator", help="Live simulator UDID from scripts/sim.sh")
     args = parser.parse_args()
     if args.action == "serve":
-        ThreadingHTTPServer(("127.0.0.1", 18765), partial(SimpleHTTPRequestHandler, directory=str(ROOT))).serve_forever()
+        ThreadingHTTPServer(("127.0.0.1", 18765), partial(FixtureHandler, directory=str(ROOT))).serve_forever()
     elif not args.simulator:
         parser.error("prepare/clean require --simulator")
     elif args.action == "prepare":

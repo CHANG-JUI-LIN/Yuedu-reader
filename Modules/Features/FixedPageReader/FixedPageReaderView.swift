@@ -213,7 +213,7 @@ struct FixedPageReaderView: View {
             if UIAccessibility.isVoiceOverRunning { state.showControls = true }
         }
         .sheet(isPresented: $state.showChapterList) {
-            FixedPageChapterListView(state: state, bookID: bookId)
+            FixedPageChapterListView(state: state, bookID: bookId) { state.showChapterList = false }
         }
     }
 
@@ -337,6 +337,7 @@ struct FixedPageReaderControlsOverlay: View {
         }) {
             FixedPageReaderSettingsView(
                 state: state,
+                onClose: { showSettings = false },
                 onOpenTouchZoneEditor: {
                     pendingTouchZoneEditor = true
                     showSettings = false
@@ -429,12 +430,17 @@ struct FixedPageReaderControlsOverlay: View {
 
 struct FixedPageReaderSettingsView: View {
     @ObservedObject var state: FixedPageReaderState
+    /// Closes this sheet. Not `@Environment(\.dismiss)`: under the detail → reader push
+    /// iOS 17 replaces that DismissAction on every update of the pages below — 搜索
+    /// publishing its later pages re-ran this body each time, the open 閱讀模式 menu
+    /// included. Feedback #132 (iOS 17.0) reported picks made then that did not take.
+    /// `Technotes/iOS17ReaderNavigationWatchdog.md`.
+    var onClose: () -> Void
     var onOpenTouchZoneEditor: () -> Void
     /// iOS 17: hands the paywall to the controls overlay, which presents it once this
     /// sheet is gone — a sheet asked for from inside this one can be dropped there
     /// (`ReaderSettingsPresentationPolicy`). Nil where this view presents it itself.
     var onOpenPaywall: ((PremiumFeature) -> Void)? = nil
-    @Environment(\.dismiss) private var dismiss
     @ObservedObject private var subscriptionStore = SubscriptionStore.shared
     @Bindable private var globalSettings = GlobalSettings.shared
     @State private var paywallFeature: PremiumFeature?
@@ -540,7 +546,7 @@ struct FixedPageReaderSettingsView: View {
             .toolbarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
-                    Button { dismiss() } label: {
+                    Button(action: onClose) {
                         Label(localized("關閉"), systemImage: "xmark").labelStyle(.iconOnly)
                     }
                 }
@@ -598,7 +604,9 @@ struct FixedPageChapterListView: View {
     @ObservedObject var state: FixedPageReaderState
     /// Whose 正序／倒序 to read and save.
     let bookID: UUID?
-    @Environment(\.dismiss) private var dismiss
+    /// Closes this sheet; not `@Environment(\.dismiss)`, for the reason on
+    /// `FixedPageReaderSettingsView.onClose`.
+    var onClose: () -> Void
     @State private var chosenOrder: ChapterListOrder?
 
     private var orderBinding: Binding<ChapterListOrder> {
@@ -645,9 +653,7 @@ struct FixedPageChapterListView: View {
             .toolbarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
-                    Button {
-                        dismiss()
-                    } label: {
+                    Button(action: onClose) {
                         Label(localized("關閉"), systemImage: "xmark").labelStyle(.iconOnly)
                     }
                 }
@@ -688,12 +694,12 @@ struct FixedPageChapterListView: View {
     state.currentChapterIndex = 4
     let bookID = UUID()
     ChapterListOrder.store(.descending, for: bookID)
-    return FixedPageChapterListView(state: state, bookID: bookID)
+    return FixedPageChapterListView(state: state, bookID: bookID, onClose: {})
 }
 
 #Preview("Settings") {
     // Paged by default, so 翻頁區塊編輯 shows — locked unless Pro is active.
-    FixedPageReaderSettingsView(state: FixedPageReaderState(), onOpenTouchZoneEditor: {})
+    FixedPageReaderSettingsView(state: FixedPageReaderState(), onClose: {}, onOpenTouchZoneEditor: {})
         .environmentObject(SubscriptionStore.shared)
 }
 
@@ -702,6 +708,6 @@ struct FixedPageChapterListView: View {
     let state = FixedPageReaderState()
     state.isManga = true
     state.followsMangaDefault = true
-    return FixedPageReaderSettingsView(state: state, onOpenTouchZoneEditor: {})
+    return FixedPageReaderSettingsView(state: state, onClose: {}, onOpenTouchZoneEditor: {})
         .environmentObject(SubscriptionStore.shared)
 }

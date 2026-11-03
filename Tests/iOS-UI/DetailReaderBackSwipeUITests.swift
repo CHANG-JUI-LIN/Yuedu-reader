@@ -585,6 +585,80 @@ final class DetailReaderBackSwipeUITests: XCTestCase {
         }
     }
 
+    /// Feedback #132 (iOS 17.0): 搜索 → a coverless manga → 阅读设置 → 阅读模式 picked several
+    /// times, ending on 条漫 → closed with the reader's own 返回. The detail page it returns to
+    /// must take touches on its content, not only on the navigation bar.
+    @MainActor
+    func testSearchMangaDetailTakesTouchesAfterReadingModeChanges() throws {
+        continueAfterFailure = false
+        try configureStoreKit()
+        let app = XCUIApplication()
+        app.launchArguments = ["-no-official-modules", "-onboarding.completed", "YES", "-explore.mode", "sources", "-reset-explore-home", "-reset-reading-settings", "-AppleLanguages", "(zh-Hans)", "-AppleLocale", "zh_CN",
+                               "-yd_root_tab_visible_ids", "(bookshelf, explore, settings, search)"]
+        app.launch()
+        let searchTab = app.tabBars.buttons["搜索"]
+        XCTAssertTrue(searchTab.waitForExistence(timeout: 15), app.debugDescription)
+        searchTab.tap()
+        let search = app.searchFields.firstMatch
+        XCTAssertTrue(search.waitForExistence(timeout: 15), app.debugDescription)
+        search.tap()
+        // "fixture" wakes the fixture's pager source: 搜索 keeps fetching its later pages, and
+        // publishing them, the whole time the reader below is open — as the reporter's 搜索 did.
+        search.typeText("fixture\n")
+        let result = app.descendants(matching: .any)
+            .matching(NSPredicate(format: "label CONTAINS %@ AND (elementType == %d OR elementType == %d)",
+                                  "Navigation Manga Fixture", XCUIElement.ElementType.cell.rawValue,
+                                  XCUIElement.ElementType.button.rawValue)).firstMatch
+        XCTAssertTrue(result.waitForExistence(timeout: 20), app.debugDescription)
+        result.tap()
+        let read = app.buttons.matching(NSPredicate(format: "label IN %@", ["立即阅读", "继续阅读"])).firstMatch
+        XCTAssertTrue(read.waitForExistence(timeout: 15), app.debugDescription)
+        let enabled = XCTNSPredicateExpectation(predicate: NSPredicate(format: "enabled == true"), object: read)
+        XCTAssertEqual(XCTWaiter.wait(for: [enabled], timeout: 15), .completed, app.debugDescription)
+        read.tap()
+        waitForMangaPage(app)
+        app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
+        let readerBack = app.navigationBars.buttons["返回"]
+        XCTAssertTrue(readerBack.waitForExistence(timeout: 8), app.debugDescription)
+        app.buttons["阅读设置"].tap()
+        let mode = app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", "阅读模式")).firstMatch
+        XCTAssertTrue(mode.waitForExistence(timeout: 5), app.debugDescription)
+        for choice in ["从左到右", "条漫", "从右到左", "条漫"] {
+            mode.tap()
+            let option = app.buttons[choice].firstMatch
+            XCTAssertTrue(option.waitForExistence(timeout: 5), app.debugDescription)
+            option.tap()
+            let picked = XCTNSPredicateExpectation(
+                predicate: NSPredicate(format: "label CONTAINS %@", choice), object: mode)
+            XCTAssertEqual(XCTWaiter.wait(for: [picked], timeout: 5), .completed,
+                           "Picking \(choice) must take the first time.\n\(app.debugDescription)")
+        }
+        app.buttons["关闭"].firstMatch.tap()
+        let page = app.images.matching(NSPredicate(format: "identifier BEGINSWITH %@", "webtoon_page_")).firstMatch
+        XCTAssertTrue(page.waitForExistence(timeout: 15), app.debugDescription)
+        if !readerBack.exists {
+            app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
+        }
+        XCTAssertTrue(readerBack.waitForExistence(timeout: 8), app.debugDescription)
+        readerBack.tap()
+        XCTAssertTrue(read.waitForExistence(timeout: 8), app.debugDescription)
+        attachScreenshot(app, named: "Search manga detail after webtoon")
+        // Content, not the navigation bar: the reported detail ignored every tap on its rows.
+        read.tap()
+        XCTAssertTrue(page.waitForExistence(timeout: 15),
+                      "立即阅读 on the detail must open the reader again.\n\(app.debugDescription)")
+        // Leave the book paged for the other tests.
+        if !readerBack.exists {
+            app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
+        }
+        XCTAssertTrue(readerBack.waitForExistence(timeout: 8), app.debugDescription)
+        app.buttons["阅读设置"].tap()
+        XCTAssertTrue(mode.waitForExistence(timeout: 5), app.debugDescription)
+        mode.tap()
+        app.buttons["从右到左"].firstMatch.tap()
+        app.buttons["关闭"].firstMatch.tap()
+    }
+
     /// Unified search acceptance (design §16 item 6): the 搜索 tab's one list of works — a UIKit
     /// table on iOS 17 — pushes 作品詳情 from a frozen route; ten pushes and pops in a row
     /// neither freeze the app nor lose the row.

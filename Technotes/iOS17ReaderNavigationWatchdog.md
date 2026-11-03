@@ -45,6 +45,16 @@ stack inside that destination, and manga stopped opening from a book detail
 modal case; the two manga methods under Regression open a real manga from a
 detail.
 
+Its two sheets, 閱讀設定 and 目錄, close through a closure from the view that
+presents them, not `@Environment(\.dismiss)`. Feedback #132 (iOS 17.0): from the 搜索
+tab, 閱讀模式 picks in 閱讀設定 did not take until the third or fourth try, and the
+detail below ignored taps after the reader closed. The report's log shows 搜索 still
+publishing its later pages under the open reader. With the fixture's pager source
+(`fixture` as the search key) and 閱讀設定 left open and untouched on the iOS 17.0
+simulator, the settings body re-ran on every one of those publications — its
+DismissAction replaced each time — and on none of them once it stopped reading
+`dismiss`. The simulator never reproduced the lost picks or the dead taps themselves.
+
 ## The search page
 
 The search page sits under the same detail and reader, and it read
