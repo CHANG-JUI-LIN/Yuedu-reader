@@ -246,11 +246,11 @@ enum TTSSourceJSONParser {
 /// fetches it and the engine that plays it. One place, because both had to agree on what
 /// counts as audio and neither could see the other's answer.
 enum TTSAudioPayload {
-    /// Whether the bytes open with a container `AVAudioFile` can actually decode.
+    /// Whether the bytes open with a container `AudioFile` can actually decode.
     ///
-    /// The same magic numbers `TTSChunkAudioPlayer.fileExtension(for:)` reads to pick a file
-    /// extension — it just never used them to say no, defaulting anything unrecognised to
-    /// "mp3" and letting AVFoundation discover the truth at playback time. Deciding it here
+    /// The same magic numbers `TTSChunkDecoder.fileTypeHint(for:)` reads to pick a file type
+    /// hint — it never uses them to say no, defaulting anything unrecognised to MP3 and
+    /// letting AudioToolbox discover the truth at playback time. Deciding it here
     /// keeps a bad payload out of the segment cache, so the failure is attributed to the
     /// request that produced it rather than to a segment several minutes of audio later.
     static func looksLikeAudioContainer(_ data: Data) -> Bool {
