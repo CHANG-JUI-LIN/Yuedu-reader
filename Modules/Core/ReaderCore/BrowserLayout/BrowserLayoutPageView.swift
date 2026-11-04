@@ -416,11 +416,12 @@ final class BrowserLayoutPageView: UIView, UIGestureRecognizerDelegate, @preconc
 
     /// Maps displayed text geometry back into the chapter source coordinate
     /// space. Ruby annotations carry their base range, so hit-testing never
-    /// invents a second offset space for `<rt>`.
+    /// invents a second offset space for `<rt>`. A list counter or a `q`'s
+    /// quotation mark owns no source characters and is passed by.
     func sourceRange(at point: CGPoint) -> NSRange? {
         if let textInteraction { return textInteraction.sourceRange(at: point) }
         for item in displayList.items.reversed() {
-            guard case .text(let text) = item, text.rect.contains(point) else { continue }
+            guard case .text(let text) = item, text.sourceRange.length > 0, text.rect.contains(point) else { continue }
             return text.sourceRange
         }
         return nil
@@ -484,10 +485,13 @@ final class BrowserLayoutPageView: UIView, UIGestureRecognizerDelegate, @preconc
         }
     }
 
-    /// Plain text of the page currently drawn. A picture's U+FFFC in the source text has
-    /// nothing to say.
+    /// What VoiceOver reads for the page currently drawn (`DisplayList.spokenText`): its
+    /// source text with a line for each paragraph that starts on it and an ordered list's
+    /// counter where its item starts. A picture's U+FFFC has nothing to say. Listening and
+    /// offsets keep reading the source text.
     var accessibilityPageText: String {
-        pageSourceText.replacingOccurrences(of: "\u{FFFC}", with: "").trimmingCharacters(in: .whitespacesAndNewlines)
+        displayList.spokenText(pageText: pageSourceText, pageRange: pageSourceRange,
+                               paragraphRanges: textInteraction?.paragraphRanges ?? [])
     }
 
     func refreshAccessibility() {
@@ -511,8 +515,10 @@ final class BrowserLayoutPageView: UIView, UIGestureRecognizerDelegate, @preconc
         ]
         if textInteraction != nil {
             accessibilityCustomActions?.append(UIAccessibilityCustomAction(name: localized("選取文字")) { [weak self] _ in
+                // The first text with source characters: a page that starts a
+                // list draws its counter first, which selection passes by.
                 guard let self, let first = displayList.items.compactMap({ item -> CGRect? in
-                    if case .text(let text) = item { return text.rect.rawValue }; return nil
+                    if case .text(let text) = item, text.sourceRange.length > 0 { return text.rect.rawValue }; return nil
                 }).first else { return false }
                 textInteraction?.begin(at: CGPoint(x: first.midX, y: first.midY))
                 textInteraction?.finish()

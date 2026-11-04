@@ -1278,13 +1278,18 @@ final class HTMLAttributedStringBuilder {
         // stylesheets. They are typed by the shared semantic layer rather than
         // converted into CSS strings, so Legacy and Browser cannot disagree on
         // percentage-vs-pixel parsing and a future Lexbor adapter can reuse it.
-        applyPresentationalHints(
-            HTMLPresentationalHintExtractor.extract(
-                from: SwiftSoupHTMLSemanticAdapter.adapt(element)
-            ),
-            to: &style,
-            percentageBase: pct
-        )
+        // Legacy takes `img`'s width and height only, the hints it has always
+        // had; the list `type`, `font` and `hr` hints (YueduCoreText 0.13) are
+        // the browser engine's, so Legacy's output stays as it was.
+        if element.tagName().lowercased() == "img" {
+            applyPresentationalHints(
+                HTMLPresentationalHintExtractor.extract(
+                    from: SwiftSoupHTMLSemanticAdapter.adapt(element)
+                ),
+                to: &style,
+                percentageBase: pct
+            )
+        }
 
         let matchedRules = rules
             .filter { $0.selector.matches(element: element, parent: parentElement) }
@@ -1472,6 +1477,10 @@ final class HTMLAttributedStringBuilder {
             case .height:
                 style.height = max(0, resolved)
                 style.rawHeightPercent = rawPercent
+            case .listStyleType, .color, .fontSize, .fontFamily, .backgroundColor, .borderColor,
+                 .borderStyle, .borderBottomWidth, .marginLeft, .marginRight:
+                // `hr`'s and `font`'s; the caller passes `img`'s only.
+                break
             }
         }
     }

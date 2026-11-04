@@ -7,7 +7,9 @@ import YueduCoreText
 final class BrowserTextInteractionController: NSObject, @preconcurrency UIEditMenuInteractionDelegate, UIGestureRecognizerDelegate {
     private weak var page: BrowserLayoutPageView?
     private var source: NSAttributedString
-    private var paragraphRanges: [NSRange]
+    /// The chapter's paragraphs, which selection extends to and VoiceOver
+    /// starts a line at (`BrowserLayoutPageView.accessibilityPageText`).
+    private(set) var paragraphRanges: [NSRange]
     private(set) var spineIndex: Int
     private(set) var isBound = true
     private(set) var bindingGeneration: UInt64 = 0

@@ -121,9 +121,10 @@ private final class LexborValueStyleTree {
         style.borderBottomWidth = 3; style.borderLeftWidth = 3
         style.borderTopStyle = .none; style.borderRightStyle = .none
         style.borderBottomStyle = .none; style.borderLeftStyle = .none
-        style.borderColor = style.color
+        style.uniformBorderColor = style.color
         ComputedStyleTreeBuilder.applyPresentationalHints(
-            HTMLPresentationalHintExtractor.extract(from: element.htmlSemanticElement), to: &style
+            HTMLPresentationalHintExtractor.extract(from: element.htmlSemanticElement), to: &style,
+            rootFontSize: config.rootFontSize
         )
         let winners = declarations[id] ?? []
         LexborComputedStyleAdapter.apply(winners: winners, to: &style, parent: parent,
@@ -132,7 +133,7 @@ private final class LexborValueStyleTree {
         if style.borderRightStyle == .none { style.borderRightWidth = 0 }
         if style.borderBottomStyle == .none { style.borderBottomWidth = 0 }
         if style.borderLeftStyle == .none { style.borderLeftWidth = 0 }
-        if !(winners.contains { $0.property == "border-color" }) { style.borderColor = style.color }
+        if !(winners.contains { $0.property == "border-color" }) { style.uniformBorderColor = style.color }
         if element.attribute("hidden") != nil { style.isHidden = true }
         var winningSources: [String: StyleSourceIdentity] = [:]
         for winner in winners { winningSources[winner.property] = winner.source }

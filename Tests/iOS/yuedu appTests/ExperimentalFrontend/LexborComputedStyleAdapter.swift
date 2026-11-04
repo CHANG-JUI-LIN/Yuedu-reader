@@ -73,7 +73,7 @@ enum LexborComputedStyleAdapter {
             if property == "visibility", source.isHidden {
                 gap("The model cannot preserve hidden boxes and independently visible descendants")
             }
-            if property == "border-color", value != "inherit" { style.borderColor = style.color ?? config.textColor }
+            if property == "border-color", value != "inherit" { style.uniformBorderColor = style.color ?? config.textColor }
             return
         }
         switch property {
@@ -148,7 +148,7 @@ enum LexborComputedStyleAdapter {
             switch property {
             case "color": style.color = parsed
             case "background-color": style.backgroundColor = parsed
-            default: style.borderColor = parsed
+            default: style.uniformBorderColor = parsed
             }
         case "background-image":
             if value == "none" { style.backgroundImage = nil }
@@ -338,7 +338,7 @@ enum LexborComputedStyleAdapter {
         case "border-right-style": style.borderRightStyle = source.borderRightStyle
         case "border-bottom-style": style.borderBottomStyle = source.borderBottomStyle
         case "border-left-style": style.borderLeftStyle = source.borderLeftStyle
-        case "border-color": style.borderColor = source.borderColor ?? source.color
+        case "border-color": style.uniformBorderColor = source.uniformBorderColor ?? source.color
         case "border-radius": style.borderRadius = source.borderRadius; style.pendingBorderRadius = nil
         case "ruby-align", "-epub-ruby-align", "-webkit-ruby-align": style.rubyAlign = source.rubyAlign
         case "ruby-position", "-epub-ruby-position", "-webkit-ruby-position": style.rubyPosition = source.rubyPosition
@@ -486,5 +486,17 @@ enum LexborComputedStyleAdapter {
         guard let r = channel(parts[0], alpha: false), let g = channel(parts[1], alpha: false), let b = channel(parts[2], alpha: false),
               let a = channel(parts.count == 4 ? parts[3] : "1", alpha: true) else { return nil }
         return UIColor(red: r, green: g, blue: b, alpha: a)
+    }
+}
+
+extension ComputedStyle {
+    /// The one `border-color` this frontend reads, on all four sides
+    /// (YueduCoreText 0.13 keeps a colour per side, nil for `currentColor`).
+    var uniformBorderColor: UIColor? {
+        get { borderTopColor }
+        set {
+            borderTopColor = newValue; borderRightColor = newValue
+            borderBottomColor = newValue; borderLeftColor = newValue
+        }
     }
 }

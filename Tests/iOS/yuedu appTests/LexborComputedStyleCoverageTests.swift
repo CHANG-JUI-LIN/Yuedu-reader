@@ -185,7 +185,7 @@ struct LexborComputedStyleCoverageTests {
             ("border-top-style", "dotted"), ("border-right-style", "dashed"), ("border-bottom-style", "none"), ("border-left-style", "solid")
         ])
         #expect(style.color == UIColor(red: 1.0 / 15, green: 2.0 / 15, blue: 3.0 / 15, alpha: 4.0 / 15))
-        #expect(style.borderColor == style.color); #expect(style.backgroundColor == .clear)
+        #expect(style.uniformBorderColor == style.color); #expect(style.backgroundColor == .clear)
         #expect(style.borderTopStyle == .dotted); #expect(style.borderRightStyle == .dashed)
         #expect(style.borderBottomStyle == .none); #expect(style.borderLeftStyle == .solid); #expect(!facts.blocksCutover)
     }

@@ -317,6 +317,28 @@ struct BrowserLayoutPageEngineTests {
         } == true)
     }
 
+    /// VoiceOver reads an ordered list's numbers where its items start and each
+    /// paragraph on a line of its own (YueduCoreText `DisplayList.spokenText`);
+    /// a bullet says nothing. The counters own no source characters, so the
+    /// page's source text, which listening reads, has none of them.
+    @Test func browserPageReadsListNumbersAndParagraphsToVoiceOver() async throws {
+        let chapter = MockBrowserLayoutResource.Chapter(title: "Lists", href: "lists.xhtml",
+            html: "<html><body><ol><li>Apple</li><li>Banana</li></ol><ul><li>Pear</li></ul><p>End.</p></body></html>",
+            css: [])
+        let (engine, _, _) = await makeEngine(chapters: [chapter])
+        let controller = try #require(engine.pageViewController(at: 0) as? BrowserLayoutPageViewController)
+        controller.loadViewIfNeeded()
+        let view = controller.pageView
+        #expect(view.accessibilityLabel == "1. Apple\n2. Banana\nPear\nEnd.")
+        #expect(view.pageSourceText == "AppleBananaPearEnd.")
+
+        // The page starts with a counter; "選取文字" starts at the first text with
+        // source characters instead.
+        let select = try #require(view.accessibilityCustomActions?.first { $0.name == localized("選取文字") })
+        #expect(select.actionHandler?(select) == true)
+        #expect(view.textInteraction?.selection.hasSelection == true)
+    }
+
     /// A page whose chapter layout has not reached it yet must still identify
     /// ITSELF. The placeholder used to be default-constructed
     /// (`PlaceholderPageViewController()`), reporting `globalPageIndex == 0`

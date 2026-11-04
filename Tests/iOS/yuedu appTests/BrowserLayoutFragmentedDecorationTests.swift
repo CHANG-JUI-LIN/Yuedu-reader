@@ -17,7 +17,10 @@ struct BrowserLayoutFragmentedDecorationTests {
         style.borderRightStyle = .dashed
         style.borderBottomStyle = .dashed
         style.borderLeftStyle = .dashed
-        style.borderColor = .red
+        style.borderTopColor = .red
+        style.borderRightColor = .red
+        style.borderBottomColor = .red
+        style.borderLeftColor = .red
         style.borderRadius = 8
         style.backgroundColor = .yellow
 
