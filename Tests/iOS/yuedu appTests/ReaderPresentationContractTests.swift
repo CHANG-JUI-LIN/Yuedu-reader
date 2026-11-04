@@ -187,6 +187,21 @@ struct ReaderPresentationContractTests {
         #expect(ReaderOrientationController.mask(for: .landscape) == .landscape)
     }
 
+    @Test("geometry request error handler runs off the main thread without an isolation trap")
+    func geometryRequestErrorHandlerRunsOffMain() async {
+        // UIKit calls this handler on a BoardServices (BSAction) response queue. When it was a closure
+        // inheriting the controller's @MainActor isolation, Swift 6's runtime check trapped there
+        // (Crashlytics 74fef9ec). Invoke the exact value `apply` passes, from a background queue.
+        let handler = ReaderOrientationController.geometryRequestErrorHandler
+        let ranOffMain = await withCheckedContinuation { (continuation: CheckedContinuation<Bool, Never>) in
+            DispatchQueue.global(qos: .userInitiated).async {
+                handler(NSError(domain: "UISceneErrorDomain", code: 101))
+                continuation.resume(returning: !Thread.isMainThread)
+            }
+        }
+        #expect(ranOffMain)
+    }
+
     @Test("spread policy asks the window, not the device: iPad landscape and an unfolded iPhone Duo")
     func spreadPolicyAsksTheWindow() {
         func mode(

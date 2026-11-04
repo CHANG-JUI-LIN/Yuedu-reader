@@ -49,10 +49,18 @@ final class ReaderOrientationController {
         guard let scene else { return }
         scene.windows.first?.rootViewController?.setNeedsUpdateOfSupportedInterfaceOrientations()
         let targetMask = mask ?? Self.defaultMask(for: scene.traitCollection.userInterfaceIdiom)
-        scene.requestGeometryUpdate(.iOS(interfaceOrientations: targetMask)) { error in
-            #if DEBUG
-            print("[ReaderOrientation] geometry request failed: \(error.localizedDescription)")
-            #endif
-        }
+        scene.requestGeometryUpdate(
+            .iOS(interfaceOrientations: targetMask),
+            errorHandler: Self.geometryRequestErrorHandler
+        )
+    }
+
+    /// The exact handler `apply` gives UIKit, which calls it on a BoardServices (BSAction) response
+    /// queue, not the main thread. It must stay `nonisolated` and `@Sendable`: written as a
+    /// closure inline in this `@MainActor` type, Swift 6 makes it main-actor isolated and its
+    /// runtime isolation check traps when UIKit invokes it off main (Crashlytics 74fef9ec,
+    /// backgrounded app, iOS 26.3).
+    nonisolated static let geometryRequestErrorHandler: @Sendable (any Error) -> Void = { error in
+        AppLogger.render("Reader orientation geometry request failed", error: error)
     }
 }
