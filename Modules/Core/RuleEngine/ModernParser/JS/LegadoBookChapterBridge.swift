@@ -5,8 +5,20 @@ import JavaScriptCore
     var useReplaceRule: Bool { get set }
 }
 
+/// Lock-guarded like `LegadoBookBridge`: a timeout reset copies it while the abandoned script
+/// may still be writing it.
 @objc final class LegadoReadConfigBridge: NSObject, LegadoReadConfigBridgeExport {
-    @objc var useReplaceRule: Bool = true
+    private let enabled: Locked<Bool>
+
+    init(useReplaceRule: Bool = true) {
+        enabled = Locked(useReplaceRule)
+        super.init()
+    }
+
+    @objc var useReplaceRule: Bool {
+        get { enabled.withLock { $0 } }
+        set { enabled.withLock { $0 = newValue } }
+    }
 }
 
 @objc protocol LegadoBookBridgeExport: JSExport {
@@ -28,21 +40,29 @@ import JavaScriptCore
     func setVariable(_ key: String, _ value: String)
 }
 
+/// Legado's mutable `book` object. Its state is behind a lock: a JS timeout reset abandons the
+/// old context with its script still running and hands the new context a copy
+/// (`replacementForNewContext()`), so the abandoned script may be writing this one while the
+/// copy is read — and an unguarded `String` written from two threads crashes like
+/// `LegadoSourceBridge.put` did (Crashlytics 61eb93e6…).
 @objc final class LegadoBookBridge: NSObject, LegadoBookBridgeExport {
-    @objc var durChapterIndex: Int
-    @objc var durChapterTitle: String
-    @objc var order: Int
-    @objc var type: Int
-    @objc var imageStyle: String
-    @objc var name: String
-    @objc var author: String
-    @objc var coverUrl: String
-    @objc var bookUrl: String
-    @objc var tocUrl: String
-    @objc var abstract: String
-    @objc let readConfig = LegadoReadConfigBridge()
+    private struct State: Sendable {
+        var durChapterIndex: Int
+        var durChapterTitle: String
+        var order: Int
+        var type: Int
+        var imageStyle: String
+        var name: String
+        var author: String
+        var coverUrl: String
+        var bookUrl: String
+        var tocUrl: String
+        var abstract: String
+        var variables: [String: String]
+    }
 
-    private var variables: [String: String]
+    private let state: Locked<State>
+    @objc let readConfig: LegadoReadConfigBridge
 
     init(
         durChapterIndex: Int = 0,
@@ -58,19 +78,80 @@ import JavaScriptCore
         abstract: String = "",
         variables: [String: String] = [:]
     ) {
-        self.durChapterIndex = durChapterIndex
-        self.durChapterTitle = durChapterTitle
-        self.order = order
-        self.type = type
-        self.imageStyle = imageStyle
-        self.name = name
-        self.author = author
-        self.coverUrl = coverUrl
-        self.bookUrl = bookUrl
-        self.tocUrl = tocUrl
-        self.abstract = abstract
-        self.variables = variables
+        state = Locked(State(
+            durChapterIndex: durChapterIndex,
+            durChapterTitle: durChapterTitle,
+            order: order,
+            type: type,
+            imageStyle: imageStyle,
+            name: name,
+            author: author,
+            coverUrl: coverUrl,
+            bookUrl: bookUrl,
+            tocUrl: tocUrl,
+            abstract: abstract,
+            variables: variables
+        ))
+        readConfig = LegadoReadConfigBridge()
         super.init()
+    }
+
+    private init(state snapshot: State, useReplaceRule: Bool) {
+        state = Locked(snapshot)
+        readConfig = LegadoReadConfigBridge(useReplaceRule: useReplaceRule)
+        super.init()
+    }
+
+    /// The `book` for the context a JS timeout reset creates: what this one holds now, as its
+    /// own object. The abandoned script keeps this one, so its later writes stay out of the
+    /// new context.
+    func replacementForNewContext() -> LegadoBookBridge {
+        LegadoBookBridge(state: state.withLock { $0 }, useReplaceRule: readConfig.useReplaceRule)
+    }
+
+    @objc var durChapterIndex: Int {
+        get { state.withLock { $0.durChapterIndex } }
+        set { state.withLock { $0.durChapterIndex = newValue } }
+    }
+    @objc var durChapterTitle: String {
+        get { state.withLock { $0.durChapterTitle } }
+        set { state.withLock { $0.durChapterTitle = newValue } }
+    }
+    @objc var order: Int {
+        get { state.withLock { $0.order } }
+        set { state.withLock { $0.order = newValue } }
+    }
+    @objc var type: Int {
+        get { state.withLock { $0.type } }
+        set { state.withLock { $0.type = newValue } }
+    }
+    @objc var imageStyle: String {
+        get { state.withLock { $0.imageStyle } }
+        set { state.withLock { $0.imageStyle = newValue } }
+    }
+    @objc var name: String {
+        get { state.withLock { $0.name } }
+        set { state.withLock { $0.name = newValue } }
+    }
+    @objc var author: String {
+        get { state.withLock { $0.author } }
+        set { state.withLock { $0.author = newValue } }
+    }
+    @objc var coverUrl: String {
+        get { state.withLock { $0.coverUrl } }
+        set { state.withLock { $0.coverUrl = newValue } }
+    }
+    @objc var bookUrl: String {
+        get { state.withLock { $0.bookUrl } }
+        set { state.withLock { $0.bookUrl = newValue } }
+    }
+    @objc var tocUrl: String {
+        get { state.withLock { $0.tocUrl } }
+        set { state.withLock { $0.tocUrl = newValue } }
+    }
+    @objc var abstract: String {
+        get { state.withLock { $0.abstract } }
+        set { state.withLock { $0.abstract = newValue } }
     }
 
     func setUseReplaceRule(_ enabled: Bool) {
@@ -78,46 +159,47 @@ import JavaScriptCore
     }
 
     func getVariable(_ key: String) -> String {
-        variables[key] ?? ""
+        state.withLock { $0.variables[key] } ?? ""
     }
 
     func setVariable(_ key: String, _ value: String) {
-        variables[key] = value
+        state.withLock { $0.variables[key] = value }
     }
 
     func runtimeVariables() -> [String: String] {
-        variables
+        state.withLock { $0.variables }
     }
 
     func runtimeStateVariables() -> [String: String] {
+        let book = state.withLock { $0 }
         var state: [String: String] = [
-            "book.durChapterIndex": "\(durChapterIndex)",
-            "book.order": "\(order)",
-            "book.type": "\(type)"
+            "book.durChapterIndex": "\(book.durChapterIndex)",
+            "book.order": "\(book.order)",
+            "book.type": "\(book.type)"
         ]
-        if !durChapterTitle.isEmpty {
-            state["book.durChapterTitle"] = durChapterTitle
+        if !book.durChapterTitle.isEmpty {
+            state["book.durChapterTitle"] = book.durChapterTitle
         }
-        if !imageStyle.isEmpty {
-            state["book.imageStyle"] = imageStyle
+        if !book.imageStyle.isEmpty {
+            state["book.imageStyle"] = book.imageStyle
         }
-        if !name.isEmpty {
-            state["book.name"] = name
+        if !book.name.isEmpty {
+            state["book.name"] = book.name
         }
-        if !author.isEmpty {
-            state["book.author"] = author
+        if !book.author.isEmpty {
+            state["book.author"] = book.author
         }
-        if !coverUrl.isEmpty {
-            state["book.coverUrl"] = coverUrl
+        if !book.coverUrl.isEmpty {
+            state["book.coverUrl"] = book.coverUrl
         }
-        if !bookUrl.isEmpty {
-            state["book.bookUrl"] = bookUrl
+        if !book.bookUrl.isEmpty {
+            state["book.bookUrl"] = book.bookUrl
         }
-        if !tocUrl.isEmpty {
-            state["book.tocUrl"] = tocUrl
+        if !book.tocUrl.isEmpty {
+            state["book.tocUrl"] = book.tocUrl
         }
-        if !abstract.isEmpty {
-            state["book.abstract"] = abstract
+        if !book.abstract.isEmpty {
+            state["book.abstract"] = book.abstract
         }
         return state
     }
@@ -134,20 +216,52 @@ import JavaScriptCore
     @objc(isVip) func isVip() -> Bool
 }
 
+/// Legado's mutable `chapter` object, lock-guarded and copied on a timeout reset for the same
+/// reason as `LegadoBookBridge`.
 @objc final class LegadoChapterBridge: NSObject, LegadoChapterBridgeExport {
-    @objc var index: Int
-    @objc var title: String
-    @objc var order: Int
-    @objc var url: String
-    @objc var isVipValue: Bool
+    private struct State: Sendable {
+        var index: Int
+        var title: String
+        var order: Int
+        var url: String
+        var isVip: Bool
+    }
+
+    private let state: Locked<State>
 
     init(index: Int = 0, title: String = "", order: Int = 0, url: String = "", isVip: Bool = false) {
-        self.index = index
-        self.title = title
-        self.order = order
-        self.url = url
-        self.isVipValue = isVip
+        state = Locked(State(index: index, title: title, order: order, url: url, isVip: isVip))
         super.init()
+    }
+
+    /// The `chapter` for the context a JS timeout reset creates (`LegadoBookBridge.replacementForNewContext()`).
+    func replacementForNewContext() -> LegadoChapterBridge {
+        let chapter = state.withLock { $0 }
+        return LegadoChapterBridge(
+            index: chapter.index, title: chapter.title, order: chapter.order,
+            url: chapter.url, isVip: chapter.isVip
+        )
+    }
+
+    @objc var index: Int {
+        get { state.withLock { $0.index } }
+        set { state.withLock { $0.index = newValue } }
+    }
+    @objc var title: String {
+        get { state.withLock { $0.title } }
+        set { state.withLock { $0.title = newValue } }
+    }
+    @objc var order: Int {
+        get { state.withLock { $0.order } }
+        set { state.withLock { $0.order = newValue } }
+    }
+    @objc var url: String {
+        get { state.withLock { $0.url } }
+        set { state.withLock { $0.url = newValue } }
+    }
+    @objc var isVipValue: Bool {
+        get { state.withLock { $0.isVip } }
+        set { state.withLock { $0.isVip = newValue } }
     }
 
     @objc(isVip) func isVip() -> Bool {

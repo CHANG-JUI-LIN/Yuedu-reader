@@ -16,16 +16,48 @@ import os
 class JSCoreEngine {
 
     private var context: JSContext
-    private let bridge: LegadoJSBridge
+    /// Stateless (it goes straight to `HTTPCookieStorage`), so every context shares it.
     private let cookieBridge = LegadoCookieBridge()
-    /// Bridge for `source.*` — replaces the plain dictionary with a full Legado-compatible object.
-    private(set) var sourceBridge: LegadoSourceBridge
-    /// Bridge for `cache.*` — persistent + memory key-value store.
+    /// Bridge for `cache.*` — persistent + memory key-value store. Lock-guarded (`LRUCache`,
+    /// `UserDefaults`), so a context a timeout abandoned may share it.
     private(set) var cacheBridge: LegadoCacheBridge
+
+    /// The bridges a context holds that keep state: each context has its own. A JS timeout
+    /// reset abandons the old context with its script still running, and that script keeps
+    /// calling them — one `source` bridge written from both queues crashed in `put`
+    /// (Crashlytics 61eb93e6…, 3.0.1 build 144, background `refresh.all`).
+    private struct ContextBridges {
+        var java: LegadoJSBridge
+        var source: LegadoSourceBridge
+        var book: LegadoBookBridge
+        var chapter: LegadoChapterBridge
+    }
+
+    /// The current context's bridges. Guarded by `queueLock`, and replaced together with the
+    /// queue, the context and `generation`: callers read `bookBridge` from their own threads
+    /// while a timeout's reset swaps it from the waiting one.
+    private var currentBridges: ContextBridges
+
+    /// Bridge for Legado's `java` object.
+    private(set) var bridge: LegadoJSBridge {
+        get { withQueueLock { currentBridges.java } }
+        set { withQueueLock { currentBridges.java = newValue } }
+    }
+    /// Bridge for `source.*` — replaces the plain dictionary with a full Legado-compatible object.
+    private(set) var sourceBridge: LegadoSourceBridge {
+        get { withQueueLock { currentBridges.source } }
+        set { withQueueLock { currentBridges.source = newValue } }
+    }
     /// Bridge for Legado's mutable `book` object.
-    private(set) var bookBridge: LegadoBookBridge
+    private(set) var bookBridge: LegadoBookBridge {
+        get { withQueueLock { currentBridges.book } }
+        set { withQueueLock { currentBridges.book = newValue } }
+    }
     /// Bridge for Legado's mutable `chapter` object.
-    private(set) var chapterBridge: LegadoChapterBridge
+    private(set) var chapterBridge: LegadoChapterBridge {
+        get { withQueueLock { currentBridges.chapter } }
+        set { withQueueLock { currentBridges.chapter = newValue } }
+    }
 
     // Serial queue owns the JSContext — all evaluations run on this queue.
     // Using a dedicated queue instead of NSLock eliminates the deadlock that
@@ -165,7 +197,7 @@ class JSCoreEngine {
                     )
                     cacheBridge = LegadoCacheBridge(sourceId: "")
                     bridge.requestTimeoutSeconds = 8
-                    injectSourceObject(into: context)
+                    injectSourceObject(sourceBridge, into: context)
                     context.setObject(cacheBridge, forKeyedSubscript: "cache" as NSString)
                     return
                 }
@@ -173,7 +205,7 @@ class JSCoreEngine {
                 sourceBridge = LegadoSourceBridge.from(src)
                 sourceBridge.getVariableHandler = prevHandlers
                 cacheBridge = LegadoCacheBridge(sourceId: src.bookSourceUrl)
-                injectSourceObject(into: context)
+                injectSourceObject(sourceBridge, into: context)
                 context.setObject(cacheBridge, forKeyedSubscript: "cache" as NSString)
                 installExploreInfoMap(into: context)
                 bridge.requestTimeoutSeconds = Self.clampedRequestTimeoutSeconds(src.respondTime)
@@ -272,17 +304,47 @@ class JSCoreEngine {
     init() {
         let ctx = JSContext()!
         self.context = ctx
-        self.bridge = LegadoJSBridge()
-        self.sourceBridge = LegadoSourceBridge(
-            bookSourceUrl: "", bookSourceName: "", bookSourceGroup: "",
-            bookSourceComment: "", loginUrl: "", header: "", loginCheckJs: ""
+        self.currentBridges = ContextBridges(
+            java: LegadoJSBridge(),
+            source: LegadoSourceBridge(
+                bookSourceUrl: "", bookSourceName: "", bookSourceGroup: "",
+                bookSourceComment: "", loginUrl: "", header: "", loginCheckJs: ""
+            ),
+            book: LegadoBookBridge(),
+            chapter: LegadoChapterBridge()
         )
         self.cacheBridge = LegadoCacheBridge(sourceId: "")
-        self.bookBridge = LegadoBookBridge()
-        self.chapterBridge = LegadoChapterBridge()
 
         jsQueue.setSpecific(key: jsQueueKey, value: 0)
-        configureContext(ctx)
+        configureContext(ctx, bridges: currentBridges)
+        configureJavaBridge(currentBridges.java)
+    }
+
+    /// Everything the engine installs on a `java` bridge: the delegates set on the engine and
+    /// the providers. The initializer and a timeout's reset both configure theirs here, so a
+    /// replacement bridge works exactly like the first. Called under `queueLock` on a reset.
+    private func configureJavaBridge(_ bridge: LegadoJSBridge) {
+        bridge.getData = getData
+        bridge.putData = putData
+        bridge.networkHandler = networkHandler
+        bridge.analyzeUrlHandler = analyzeUrlHandler
+        bridge.getStringHandler = getStringHandler
+        bridge.getStringListHandler = getStringListHandler
+        bridge.setContentHandler = setContentHandler
+        bridge.getElementsHandler = getElementsHandler
+        bridge.getStringWithContentHandler = getStringWithContentHandler
+        bridge.browserPresentHandler = browserPresentHandler
+        bridge.captchaPresentHandler = captchaPresentHandler
+        bridge.browserPagePresentHandler = browserPagePresentHandler
+        bridge.reLoginViewHandler = reLoginViewHandler
+        bridge.upLoginDataHandler = upLoginDataHandler
+        bridge.toastHandler = toastHandler
+        bridge.refreshBookInfoHandler = refreshBookInfoHandler
+        bridge.refreshBookTocHandler = refreshBookTocHandler
+        bridge.refreshExploreHandler = refreshExploreHandler
+        bridge.setResponseBase64Handler = responseBase64Handler
+        bridge.requestTimeoutSeconds = bookSource.map { Self.clampedRequestTimeoutSeconds($0.respondTime) } ?? 8
+        bridge.videoEpisodeHandover = isHandingOverVideoEpisode ? .init() : nil
 
         // `java.get`/`java.post`/`java.ajax` inside rule JS ask for the source's
         // headers per request; resolve them lazily so a `@js:` rule runs after
@@ -314,12 +376,14 @@ class JSCoreEngine {
     // Lock protecting `jsQueue` swap during timeout recovery.
     private let queueLock = NSLock()
 
-    /// Read the current jsQueue under lock (safe to call from any thread).
-    private var safeJsQueue: DispatchQueue {
+    private func withQueueLock<T>(_ body: () -> T) -> T {
         queueLock.lock()
-        let q = jsQueue
-        queueLock.unlock()
-        return q
+        defer { queueLock.unlock() }
+        return body()
+    }
+
+    private func isCurrentGeneration(_ queueGeneration: UInt64) -> Bool {
+        withQueueLock { generation == queueGeneration }
     }
 
     /// Whether the caller is running on the current generation's JS queue. A script abandoned
@@ -328,9 +392,7 @@ class JSCoreEngine {
     /// context and bridges at the same time as they do.
     private var isOnCurrentJSQueue: Bool {
         guard let queueGeneration = DispatchQueue.getSpecific(key: jsQueueKey) else { return false }
-        queueLock.lock()
-        defer { queueLock.unlock() }
-        return queueGeneration == generation
+        return isCurrentGeneration(queueGeneration)
     }
 
     /// Dispatch work to the JS serial queue, re-entrant-safe.
@@ -340,7 +402,15 @@ class JSCoreEngine {
         if isOnCurrentJSQueue {
             return work() // already on the JS queue — run inline
         }
-        return SourcePerfTrace.mainThreadWait("wait.jsQueue") { safeJsQueue.sync { work() } }
+        let (queue, queueGeneration) = withQueueLock { (jsQueue, generation) }
+        return SourcePerfTrace.mainThreadWait("wait.jsQueue") {
+            queue.sync {
+                // Queued behind a script a timeout abandoned: the engine moved to a new queue
+                // meanwhile, and run here this would touch the new context alongside it.
+                guard isCurrentGeneration(queueGeneration) else { return onJSQueue(work) }
+                return work()
+            }
+        }
     }
 
     /// Like `onJSQueue` but with a timeout. Returns `.timedOut` when the JS
@@ -360,7 +430,9 @@ class JSCoreEngine {
         // the late write lands in the lock and is never read.
         let result = OSAllocatedUnfairLock<JSConfined<T>?>(initialState: nil)
         let group = DispatchGroup()
-        let queue = safeJsQueue
+        // The job's queue, generation and `java` bridge, read together: a timeout resets only
+        // the generation it dispatched to, and only that bridge says the script awaits the user.
+        let (queue, queueGeneration, javaBridge) = withQueueLock { (jsQueue, generation, currentBridges.java) }
         let work = JSConfined(work)
         // Only guards against the engine being torn down; the engine itself is unused
         // because `work` is a self-contained closure.
@@ -368,7 +440,13 @@ class JSCoreEngine {
 
         group.enter()
         queue.async {
-            guard engine.value() != nil else { group.leave(); return }
+            // A job queued behind a script a timeout abandoned never runs: on this queue it would
+            // run against the new context at the same time as the new queue's jobs. Its caller
+            // gets the timeout's nil, as it would have had its own wait run out first.
+            guard let liveEngine = engine.value(), liveEngine.isCurrentGeneration(queueGeneration) else {
+                group.leave()
+                return
+            }
             let value = JSConfined(work.value())
             result.withLock { $0 = value }
             group.leave()
@@ -383,15 +461,15 @@ class JSCoreEngine {
         var timedOut = false
         SourcePerfTrace.mainThreadWait("wait.jsQueue", "timeout=\(Int(Self.jsTimeout))s timedOut=\(timedOut)") {
             while group.wait(timeout: .now() + Self.jsTimeout) == .timedOut {
-                if bridge.isAwaitingUser, !Thread.isMainThread { continue }
-                resetEngine()
+                if javaBridge.isAwaitingUser, !Thread.isMainThread { continue }
+                resetEngine(abandoning: queueGeneration)
                 timedOut = true
                 return
             }
         }
         if timedOut { return .timedOut }
-
-        return .completed(result.withLock { $0 }!.value)
+        guard let value = result.withLock({ $0 }) else { return .timedOut }
+        return .completed(value.value)
     }
 
     // MARK: - JS network attribution
@@ -774,8 +852,8 @@ class JSCoreEngine {
     func reset() {
         onJSQueue {
             let ctx = JSContext()!
-            self.context = ctx
-            configureContext(ctx)
+            configureContext(ctx, bridges: withQueueLock { currentBridges })
+            withQueueLock { self.context = ctx }
             lastError = nil
         }
     }
@@ -788,37 +866,63 @@ class JSCoreEngine {
     /// Used after a JS evaluation timeout to break free from a hung script;
     /// the old queue and context are abandoned and the script keeps running on them.
     ///
-    /// The new context gets its own `source` bridge: the abandoned script still calls
-    /// `source.put` on the old one from the old queue, and one bridge written from both queues
-    /// crashed in `put` (Crashlytics 61eb93e6…, 3.0.1 build 144, background `refresh.all`).
-    /// The old queue keeps its generation mark, so its calls back into the engine queue behind
-    /// the new jobs instead of running inline (`isOnCurrentJSQueue`).
-    private func resetEngine() {
+    /// Nothing the abandoned script can reach is the new context's:
+    /// - the new context gets its own `java`, `source`, `book` and `chapter` bridges — `book`
+    ///   and `chapter` as copies of what the old ones hold, `source` with the same handlers;
+    /// - the old queue keeps its generation mark, so its calls back into the engine
+    ///   (`source.evalJS`, `java.getString`) queue behind the new jobs (`isOnCurrentJSQueue`),
+    ///   and the jobs queued behind the hung script never run (`onJSQueueWithTimeout`);
+    /// - its exceptions are not the engine's `lastError` (`configureContext`).
+    ///
+    /// Resets only `staleGeneration`: every job queued behind the hung script times out too,
+    /// and those must not reset the queue that replaced it.
+    private func resetEngine(abandoning staleGeneration: UInt64) {
+        let (old, isStale) = withQueueLock { (currentBridges, generation == staleGeneration) }
+        guard isStale else { return }
         let label = "com.yuedu.jsengine.\(UUID().uuidString.prefix(8))"
         let newQueue = DispatchQueue(label: label, qos: .userInitiated)
-        queueLock.lock()
-        let newGeneration = generation + 1
-        queueLock.unlock()
-        newQueue.setSpecific(key: jsQueueKey, value: newGeneration)
-        sourceBridge = sourceBridge.replacementForNewContext()
         let newContext = JSContext()!
-        configureContext(newContext)
+        let bridges = ContextBridges(
+            java: LegadoJSBridge(),
+            source: old.source.replacementForNewContext(),
+            book: old.book.replacementForNewContext(),
+            chapter: old.chapter.replacementForNewContext()
+        )
+        configureContext(newContext, bridges: bridges)
 
-        queueLock.lock()
-        jsQueue = newQueue
-        context = newContext
-        generation = newGeneration
-        queueLock.unlock()
-
-        lastError = nil
+        let published: Bool = withQueueLock {
+            guard generation == staleGeneration else { return false }
+            generation += 1
+            newQueue.setSpecific(key: jsQueueKey, value: generation)
+            // Under the lock: a delegate set on the engine during this reset is either read
+            // here or forwarded by its `didSet` to the bridge published here.
+            configureJavaBridge(bridges.java)
+            currentBridges = bridges
+            jsQueue = newQueue
+            context = newContext
+            return true
+        }
+        if published { lastError = nil }
     }
+
+    /// Whether `handingOverVideoEpisode` is running, so a reset's new `java` bridge hands
+    /// over too. Guarded by `queueLock`.
+    private var isHandingOverVideoEpisode = false
 
     /// Runs `body` — the content rule of the video episode being played — with
     /// `java.openVideoPlayer` and `java.startBrowser` handing their link or page to the caller
     /// instead of opening a player or a sheet (`LegadoJSBridge.videoEpisodeHandover`).
     func handingOverVideoEpisode<T>(_ body: () throws -> T) rethrows -> (T, LegadoJSBridge.VideoEpisodeHandover) {
-        onJSQueue { bridge.videoEpisodeHandover = .init() }
-        defer { onJSQueue { bridge.videoEpisodeHandover = nil } }
+        onJSQueue {
+            withQueueLock { isHandingOverVideoEpisode = true }
+            bridge.videoEpisodeHandover = .init()
+        }
+        defer {
+            onJSQueue {
+                withQueueLock { isHandingOverVideoEpisode = false }
+                bridge.videoEpisodeHandover = nil
+            }
+        }
         let result = try body()
         return (result, onJSQueue { bridge.videoEpisodeHandover ?? .init() })
     }
@@ -841,11 +945,24 @@ class JSCoreEngine {
     // MARK: - Private Helpers
 
     /// Configure a fresh JSContext with the bridge object and helpers.
-    private func configureContext(_ ctx: JSContext) {
+    private func configureContext(_ ctx: JSContext, bridges: ContextBridges) {
+        // This context's own bridges: every block below captures these, never the engine's
+        // current ones, which a timeout's reset replaces while this context may still run.
+        let bridge = bridges.java
+        let sourceBridge = bridges.source
+
         // Exception handler
-        ctx.exceptionHandler = { [weak self] _, exception in
+        ctx.exceptionHandler = { [weak self] thrower, exception in
             let msg = exception?.toString() ?? "Unknown JS error"
-            self?.lastError = msg
+            // A context a timeout abandoned runs on beside the new one: its exception is not
+            // the current job's error, and writing `lastError` from its thread races the job.
+            guard let self, self.withQueueLock({ self.context === thrower }) else {
+                AppLogger.parse("Book source rule JS exception in a context a timeout abandoned", context: [
+                    "error": msg
+                ])
+                return
+            }
+            self.lastError = msg
             if msg.contains("eval() is disabled") {
                 AppLogger.security("Book source JS attempted to use disabled eval(); blocked", context: ["error": msg])
             }
@@ -853,10 +970,10 @@ class JSCoreEngine {
             // source failures (TOC/content not loading, etc.) are diagnosable without
             // the in-app debug engine. Only uncaught exceptions reach this handler.
             AppLogger.parse("Book source rule JS exception", context: [
-                "source": self?.bookSource?.bookSourceName ?? "?",
+                "source": self.bookSource?.bookSourceName ?? "?",
                 "error": msg
             ])
-            self?.errorHandler?(msg, "js exception")
+            self.errorHandler?(msg, "js exception")
             #if DEBUG
             print("[JSCoreEngine] JS Error: \(msg)")
             #endif
@@ -971,15 +1088,15 @@ class JSCoreEngine {
         ctx.setObject(LegadoJsoupBridge(), forKeyedSubscript: "__yueduJsoup" as NSString)
 
         // Inject `source` as a full bridge object (Legado-compatible)
-        injectSourceObject(into: ctx)
+        injectSourceObject(sourceBridge, into: ctx)
 
         // Inject `cache` bridge object (persistent + memory key-value store)
         ctx.setObject(cacheBridge, forKeyedSubscript: "cache" as NSString)
 
         // Inject mutable book/chapter bridge objects used by Legado rule JS.
-        ctx.setObject(bookBridge, forKeyedSubscript: "book" as NSString)
-        ctx.setObject(chapterBridge, forKeyedSubscript: "chapter" as NSString)
-        injectChapterGlobals(chapterBridge, into: ctx)
+        ctx.setObject(bridges.book, forKeyedSubscript: "book" as NSString)
+        ctx.setObject(bridges.chapter, forKeyedSubscript: "chapter" as NSString)
+        injectChapterGlobals(bridges.chapter, into: ctx)
 
         // Inject a top-level `print` that delegates to java.log
         let printBlock: @convention(block) (String) -> Void = { msg in
@@ -1481,9 +1598,13 @@ class JSCoreEngine {
 
     private func installExploreInfoMap(into ctx: JSContext) {
         let stored = exploreInfoMapKey.flatMap { cacheBridge.get($0) } ?? "{}"
-        let persist: @convention(block) (String) -> Void = { [weak self] json in
-            guard let self, let key = self.exploreInfoMapKey else { return }
-            self.cacheBridge.put(key, json)
+        // The key and store as they are now: installed again whenever the source changes, and
+        // read from this context's thread, which a timeout may have abandoned.
+        let key = exploreInfoMapKey
+        let cache = cacheBridge
+        let persist: @convention(block) (String) -> Void = { json in
+            guard let key else { return }
+            cache.put(key, json)
         }
         ctx.setObject(persist, forKeyedSubscript: "__yueduPersistInfoMap" as NSString)
         ctx.setObject(stored, forKeyedSubscript: "__yueduStoredInfoMap" as NSString)
@@ -1616,7 +1737,7 @@ class JSCoreEngine {
     }
 
     /// Inject `source` as a Legado-compatible bridge object with methods and properties.
-    private func injectSourceObject(into ctx: JSContext) {
+    private func injectSourceObject(_ sourceBridge: LegadoSourceBridge, into ctx: JSContext) {
         ctx.setObject(sourceBridge, forKeyedSubscript: "source" as NSString)
     }
 

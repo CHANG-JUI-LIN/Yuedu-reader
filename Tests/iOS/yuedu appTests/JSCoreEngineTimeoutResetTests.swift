@@ -50,3 +50,76 @@ struct JSCoreEngineTimeoutResetTests {
         #expect(next == "leak= eval=2")
     }
 }
+
+extension JSCoreEngineTimeoutResetTests {
+    /// Box for a value one thread writes and the test reads after joining it.
+    private final class Box<T>: @unchecked Sendable {
+        private let lock = NSLock()
+        private var stored: T?
+        var value: T? {
+            get { lock.lock(); defer { lock.unlock() }; return stored }
+            set { lock.lock(); stored = newValue; lock.unlock() }
+        }
+    }
+
+    @Test("the abandoned generation reaches none of the new context's bridges, jobs queued behind it never run, and its errors stay its own")
+    func abandonedGenerationIsIsolated() {
+        let engine = JSCoreEngine()
+        engine.setBookBridge(LegadoBookBridge(tocUrl: "toc-before", variables: ["v": "before"]))
+        engine.setChapterBridge(LegadoChapterBridge(title: "chapter-before"))
+        engine.sourceBridge.evalJSHandler = { [weak engine] js in engine?.evaluate(js) ?? "" }
+
+        // The hanging script tells the test it has started through `source.login()`, so the
+        // job that queues behind it is queued while it runs.
+        let started = DispatchSemaphore(value: 0)
+        engine.sourceBridge.loginHandler = { started.signal(); return "" }
+
+        let bridgesBefore = [
+            ObjectIdentifier(engine.bridge), ObjectIdentifier(engine.sourceBridge),
+            ObjectIdentifier(engine.bookBridge), ObjectIdentifier(engine.chapterBridge),
+        ]
+        let generationBefore = engine.generation
+        let start = Date().timeIntervalSince1970 * 1000
+
+        // A job queued on the old queue behind the hanging script: refresh.all queues many.
+        let staleResult = Box<String?>()
+        let staleDone = DispatchSemaphore(value: 0)
+        DispatchQueue.global().async {
+            started.wait()
+            staleResult.value = engine.evaluate("source.put('stale', '1'); 'stale-ran'")
+            staleDone.signal()
+        }
+
+        let abandoned = engine.evaluate("""
+        source.login();
+        while (Date.now() < \(start) + 36000) {
+            if (Date.now() > \(start) + 31000) {
+                book.tocUrl = 'late';
+                book.setVariable('v', 'late');
+                chapter.title = 'late';
+            }
+        }
+        throw new Error('abandoned-late');
+        """)
+        #expect(abandoned == nil, "the first script should have timed out")
+        staleDone.wait()
+        #expect(staleResult.value == .some(nil), "a job queued behind the abandoned script must not run")
+        #expect(engine.generation == generationBefore + 1, "only the job that dispatched to the hung queue resets")
+
+        let bridgesAfter = [
+            ObjectIdentifier(engine.bridge), ObjectIdentifier(engine.sourceBridge),
+            ObjectIdentifier(engine.bookBridge), ObjectIdentifier(engine.chapterBridge),
+        ]
+        for (before, after) in zip(bridgesBefore, bridgesAfter) {
+            #expect(before != after, "every bridge must be the new context's own")
+        }
+
+        // Runs until the abandoned script has thrown and the stale job would have run.
+        let next = engine.evaluate("""
+        while (Date.now() < \(start) + 38000) {}
+        [book.tocUrl, book.getVariable('v'), chapter.title, source.get('stale'), source.evalJS('1 + 1')].join('|');
+        """)
+        #expect(next == "toc-before|before|chapter-before||2")
+        #expect(engine.lastError == nil, "the abandoned script's exception is not the new job's error")
+    }
+}
