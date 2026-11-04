@@ -1,0 +1,7 @@
+{
+ "title": "S001m 注音位置",
+ "language": "zh-Hant",
+ "vertical": false,
+ "elements": true,
+ "reproduces": "Ruby annotation sides for Aozora's 左ルビ and readings on both sides (Aozora plan Task 9): a ruby over (right of) its base, under (left of) it with ruby-position: under, and the nested rubies the converter writes: a right reading inside a left one, a left inside a right, two on one side (a ママ note over a word with ruby), each with its inner ruby's side set explicitly, since ruby-position inherits; the nested form with no inner side, which inherits under; annotations wider and narrower than the base; and the line growth at line-height 1.5 and normal. WebKit 27.2 lays an rtc's text inline as base text, so the fixture has no rtc. Each data-ink=\"text\" rt is measured alone by making its colour transparent. Then three-line paragraphs broken by br, a ruby under, over or on both sides on the first, second or third line, or under on all three, with each line's first characters in a data-m span: a ruby on a block's first line grows it as on a line of its own, on a later line as CSS Ruby 1 §4.4 sizes it."
+}

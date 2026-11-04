@@ -79,6 +79,9 @@ enum AozoraXHTMLWriter {
         ("kaeriten", ".kaeriten { font-size: 0.8125rem; }\n"),
         ("okurigana", ".okurigana { font-size: 0.8125rem; }\n"),
         ("tcy", ".tcy { text-combine-upright: all; }\n"),
+        // 左ルビ: under the text, and on the left of a vertical line.
+        ("left", "ruby.left { -webkit-ruby-position: after; ruby-position: under; }\n"),
+        ("over", "ruby.over { -webkit-ruby-position: before; ruby-position: over; }\n"),
     ] + emphasisRules
 
     /// 傍点 and 傍線, which are `em`, italic by default: aozora.css sets them upright.
@@ -244,19 +247,22 @@ enum AozoraXHTMLWriter {
 
     // MARK: Inlines
 
+    /// `rubySide` is the side a ruby takes unless it names its own: `ruby-position` is
+    /// inherited, so inside a left ruby it is the left.
     private static func write(_ inlines: [AozoraInline], blockIndex: Int, ordinal: inout Int,
-                              images: [String: String]) -> String {
+                              images: [String: String], rubySide: AozoraSide = .right) -> String {
         var out = ""
         for inline in inlines {
-            out += write(inline, blockIndex: blockIndex, ordinal: &ordinal, images: images)
+            out += write(inline, blockIndex: blockIndex, ordinal: &ordinal, images: images, rubySide: rubySide)
         }
         return out
     }
 
     private static func write(_ inline: AozoraInline, blockIndex: Int, ordinal: inout Int,
-                              images: [String: String]) -> String {
-        func wrap(_ open: String, _ close: String, _ children: [AozoraInline]) -> String {
-            open + write(children, blockIndex: blockIndex, ordinal: &ordinal, images: images) + close
+                              images: [String: String], rubySide: AozoraSide) -> String {
+        func wrap(_ open: String, _ close: String, _ children: [AozoraInline], rubySide inner: AozoraSide? = nil) -> String {
+            open + write(children, blockIndex: blockIndex, ordinal: &ordinal, images: images,
+                         rubySide: inner ?? rubySide) + close
         }
         switch inline {
         case .text(let text):
@@ -265,7 +271,10 @@ enum AozoraXHTMLWriter {
             // A ruby over nothing, such as a figure whose file is missing, is left out:
             // it annotates nothing, and BrowserAuto lays out no ruby without a base.
             guard shows(base, images: images) else { return wrap("", "", base) }
-            return wrap(side == .left ? "<ruby class=\"left\">" : "<ruby>", "<rt>\(escaped(reading))</rt></ruby>", base)
+            // A word with readings on both sides is a ruby inside a ruby. Inside a left
+            // one a right ruby names its side, or it would inherit the left.
+            let open = side == .left ? "<ruby class=\"left\">" : rubySide == .left ? "<ruby class=\"over\">" : "<ruby>"
+            return wrap(open, "<rt>\(escaped(reading))</rt></ruby>", base, rubySide: side)
         case .emphasis(let style, let side, let children):
             let name = style.className + (side == .left ? "_after" : "")
             return wrap("<em class=\"\(name)\">", "</em>", children)

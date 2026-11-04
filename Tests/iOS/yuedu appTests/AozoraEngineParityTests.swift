@@ -13,8 +13,8 @@ import YueduCoreText
 struct AozoraEngineParityTests {
     /// Every construct of the writer's table and every class of its stylesheet,
     /// collapsed ASCII spaces, U+3000 at block edges, blank lines, a line split by
-    /// 地付き and a multi-line heading; and a chapter of its own for the ruby
-    /// BrowserAuto leaves to legacy.
+    /// 地付き and a multi-line heading; a chapter of its own for readings on both
+    /// sides of a word, and one for the ruby over a figure BrowserAuto leaves to legacy.
     static let source = """
         題
         著者
@@ -57,7 +57,9 @@ struct AozoraEngineParityTests {
         ［＃挿絵１（fig1.png、横10×縦10）入る］
         "A" and 'B' are straight quotes.
         ［＃改ページ］
-        室適《しつてき》［＃「室適」の左に「オクサマ」のルビ］と文字［＃ヘブライ文字「YOD」（fig1.png、横10×縦10）入る］《ヨッド》。
+        室適《しつてき》［＃「室適」の左に「オクサマ」のルビ］と｜真似《まね》［＃「真似」に「ママ」の注記］。
+        ［＃改ページ］
+        文字［＃ヘブライ文字「YOD」（fig1.png、横10×縦10）入る］《ヨッド》。
 
         底本：「題」架空書房
         入力：誰か
@@ -72,10 +74,11 @@ struct AozoraEngineParityTests {
         #expect(session.chapters.count == chapters.count)
         let document = AozoraDocumentParser.parse(Self.source)
         let xhtml = chapters.map { AozoraXHTMLWriter.document(for: $0, in: document, images: Self.images) }
-        #expect(xhtml.filter(Self.holdsLegacyRuby).count == 1, "the fixture's ruby chapter")
+        #expect(xhtml.filter(Self.holdsNestedRuby).count == 1, "the fixture's chapter with readings on both sides")
+        #expect(xhtml.filter(Self.holdsRubyOverFigure).count == 1, "the fixture's chapter with a ruby over a figure")
         try await Self.expectPlannedText(in: session, chapters: chapters, spines: Array(chapters.indices),
                                          figures: { Self.figureCount(in: xhtml[$0]) },
-                                         legacyRuby: { Self.holdsLegacyRuby(xhtml[$0]) }, mode: mode, label: "fixture")
+                                         legacyRuby: { Self.holdsRubyOverFigure(xhtml[$0]) }, mode: mode, label: "fixture")
     }
 
     /// Legacy, and BrowserAuto's paged and scroll layouts wherever it lays the chapter
@@ -188,21 +191,25 @@ struct AozoraEngineParityTests {
         xhtml.components(separatedBy: "<img ").count - 1
     }
 
-    /// Whether BrowserAuto leaves a chapter to legacy, in either writing mode, for its
-    /// ruby: a ruby inside a ruby (a word with readings on both sides) or a figure in
-    /// a ruby base. `HorizontalRubySupport` takes neither, nor `rtc`.
-    nonisolated static func holdsLegacyRuby(_ xhtml: String) -> Bool {
-        var depth = 0
+    /// Whether a chapter holds a ruby over a figure, which BrowserAuto does not lay out
+    /// (`HorizontalRubySupport`: a ruby's base is text), so the chapter goes to legacy.
+    nonisolated static func holdsRubyOverFigure(_ xhtml: String) -> Bool { rubyContents(xhtml).figure }
+
+    /// Whether a chapter holds a ruby inside a ruby: a word with readings on both sides.
+    nonisolated static func holdsNestedRuby(_ xhtml: String) -> Bool { rubyContents(xhtml).ruby }
+
+    private nonisolated static func rubyContents(_ xhtml: String) -> (ruby: Bool, figure: Bool) {
+        var depth = 0, ruby = false, figure = false
         let tags = try! NSRegularExpression(pattern: "<ruby[ >]|</ruby>|<img ")
         for match in tags.matches(in: xhtml, range: NSRange(xhtml.startIndex..., in: xhtml)) {
             switch (xhtml as NSString).substring(with: match.range) {
             case "</ruby>": depth -= 1
-            case "<img ": if depth > 0 { return true }
+            case "<img ": if depth > 0 { figure = true }
             default:
-                if depth > 0 { return true }
+                if depth > 0 { ruby = true }
                 depth += 1
             }
         }
-        return false
+        return (ruby, figure)
     }
 }

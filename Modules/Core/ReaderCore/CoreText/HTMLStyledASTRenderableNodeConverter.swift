@@ -574,6 +574,7 @@ private extension RenderStyle {
                 RenderTextEmphasis(style: style, color: s.textEmphasisColor.flatMap { RenderColor(uiColor: $0) },
                                    position: s.textEmphasisPosition)
             },
+            rubyUnder: s.rubyUnder,
             isVerticalWritingMode: s.isVerticalWritingMode,
             textCombineUpright: s.textCombineUpright,
             borderRadius: s.borderRadius,

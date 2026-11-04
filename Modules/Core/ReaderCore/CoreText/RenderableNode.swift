@@ -179,6 +179,9 @@ public struct RenderStyle: Sendable {
     public var textDecorations: [RenderTextDecoration]
     /// `text-emphasis` (inherited). nil is `none`.
     public var textEmphasis: RenderTextEmphasis?
+    /// `ruby-position: under` (inherited), on a ruby: its annotation under the base, on its left in
+    /// vertical writing.
+    public var rubyUnder: Bool
     public var borderRadius: CGFloat
     public var isInlineAnnotation: Bool
     public var isVerticalWritingMode: Bool
@@ -258,6 +261,7 @@ public struct RenderStyle: Sendable {
         firstLetterColor: RenderColor? = nil,
         textDecorations: [RenderTextDecoration] = [],
         textEmphasis: RenderTextEmphasis? = nil,
+        rubyUnder: Bool = false,
         isInlineAnnotation: Bool = false,
         isVerticalWritingMode: Bool = false,
         textCombineUpright: TextCombineUpright = .none,
@@ -324,6 +328,7 @@ public struct RenderStyle: Sendable {
         self.firstLetterColor = firstLetterColor
         self.textDecorations = textDecorations
         self.textEmphasis = textEmphasis
+        self.rubyUnder = rubyUnder
         self.borderRadius = borderRadius
         self.isInlineAnnotation = isInlineAnnotation
         self.isVerticalWritingMode = isVerticalWritingMode

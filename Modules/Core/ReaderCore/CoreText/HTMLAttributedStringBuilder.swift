@@ -267,6 +267,9 @@ final class HTMLAttributedStringBuilder {
         var textEmphasisStyle: TextEmphasisStyle? = nil
         var textEmphasisColor: UIColor? = nil
         var textEmphasisPosition = TextEmphasisPosition()
+        /// `ruby-position: under` (inherited): a ruby's annotation under its base, on its left in
+        /// vertical writing.
+        var rubyUnder = false
         /// Accumulated margins from ancestor block containers.
         /// CoreText uses a single frame so parent block margins must be added to child paragraph indents.
         var inheritedBlockMarginLeft: CGFloat
@@ -1048,19 +1051,33 @@ final class HTMLAttributedStringBuilder {
         return marker
     }
 
-    static func makeRubyAnnotation(text: String) -> CTRubyAnnotation {
+    /// A ruby's annotation: `before` over the text and on the right of a vertical line, `after`
+    /// (`ruby-position: under`) under it and on the left.
+    static func makeRubyAnnotation(text: String, under: Bool = false) -> CTRubyAnnotation {
         let attributes: [CFString: Any] = [
-            kCTRubyAnnotationSizeFactorAttributeName: 0.85,
+            kCTRubyAnnotationSizeFactorAttributeName: rubySizeFactor,
             kCTRubyAnnotationScaleToFitAttributeName: false,
         ]
         return CTRubyAnnotationCreateWithAttributes(
             .center,
             .auto,
-            .before,
+            under ? .after : .before,
             text as CFString,
             attributes as CFDictionary
         )
     }
+
+    /// One annotation with a reading on each side of the base: Core Text holds one ruby per range,
+    /// with a text for each position.
+    static func makeRubyAnnotation(over: String, under: String) -> CTRubyAnnotation {
+        let over = over as CFString, under = under as CFString
+        var texts: [Unmanaged<CFString>?] = [.passUnretained(over), .passUnretained(under), nil, nil]
+        return withExtendedLifetime((over, under)) {
+            CTRubyAnnotationCreate(.center, .auto, rubySizeFactor, &texts)
+        }
+    }
+
+    private static let rubySizeFactor: CGFloat = 0.85
 
 
 
@@ -1596,6 +1613,7 @@ final class HTMLAttributedStringBuilder {
         style.textEmphasisStyle = parent.textEmphasisStyle
         style.textEmphasisColor = parent.textEmphasisColor
         style.textEmphasisPosition = parent.textEmphasisPosition
+        style.rubyUnder = parent.rubyUnder
         return style
     }
 

@@ -1191,7 +1191,7 @@
 			repositoryURL = "https://github.com/CHANG-JUI-LIN/YueduCoreText";
 			requirement = {
 				kind = upToNextMinorVersion;
-				minimumVersion = 0.14.1;
+				minimumVersion = 0.15.0;
 			};
 		};
 		460274812F710D7500486947 /* XCRemoteSwiftPackageReference "swift-toolkit" */ = {

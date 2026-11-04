@@ -424,19 +424,56 @@ Drawing the marks in the page and scroll views, as 縦中横 cells are drawn, wo
 - `HorizontalRubySupport` refuses nested ruby, `rtc` and an `<img>` in a base.
 - 左ルビ (15 works) uses `class="left"`, with no CSS yet.
 
-- [ ] **Step 1 (package): failing tests.**
+- [x] **Step 1 (package): failing tests.** Done; the double-sided form is a ruby inside a ruby, not `rtc` (see the record).
   - `ruby-position: under`: below the text in horizontal, on the left in `vertical-rl`.
   - Double-sided ruby: `<ruby>base<rt>right</rt><rtc style="ruby-position: under"><rt>left</rt></rtc></ruby>`, with both annotations placed and the text unchanged.
   - The capability scanner accepts both.
-- [ ] **Step 2 (package): implement and release.** Same checkpoint as Task 3.
-- [ ] **Step 3 (app, legacy).** `CTRubyAnnotationCreate` takes text for several positions at once (`kCTRubyPositionBefore` and `kCTRubyPositionAfter`). Use it for the double-sided form and for 左ルビ. Write a probe test in both writing modes.
-- [ ] **Step 4 (writer; `converterVersion` + 1).**
+- [x] **Step 2 (package): implement and release.** Same checkpoint as Task 3. YueduCoreText 0.15.0.
+- [x] **Step 3 (app, legacy).** `CTRubyAnnotationCreate` takes text for several positions at once (`kCTRubyPositionBefore` and `kCTRubyPositionAfter`). Use it for the double-sided form and for 左ルビ. Write a probe test in both writing modes.
+- [ ] **Step 4 (writer; `converterVersion` + 1).** Done except the last bullet: 20 chapters are left, with a ruby over part of another ruby's base (see the record).
   - A ruby inside a ruby becomes the `rtc` form.
   - `ruby.left` gets `ruby-position: under`.
   - Remove the ruby exception from the contract.
   - Update `AozoraEngineParityTests.holdsLegacyRuby` and the fixture chapter to expect BrowserAuto.
   - The corpus count of legacy ruby chapters in the conversion test must reach 0.
-- [ ] **Step 5: A ruby over a figure.** It goes away with Task 10, or stays an exception. Record which.
+- [x] **Step 5: A ruby over a figure.** It goes away with Task 10, or stays an exception. Record which. It stays an exception.
+
+### Phase 2d: what landed
+
+**Status, 2026-11-04: done, on YueduCoreText 0.15.0.** Converter version 4; text version still 1.
+
+**Releases and commits.**
+- Package 0.15.0 (`042fe86`): `ruby-position: under`, and a ruby whose base is one ruby as one ruby with two annotations. Annotations sit, and lines grow, as WebKit sets them: measured in a WKWebView on iOS 27.2 with the app's fixtures S001m (horizontal) and S001n (vertical), pinned by the package's `RubyPositionReferenceTests`.
+- App: this commit (the pin, legacy, the writer and the contract).
+
+**How WebKit sets ruby (iOS 27.2, 17px PingFang at 1.5, an 8.5px annotation).** The probes measured it; the package now follows it.
+- An annotation stands on the base's content box (its font's ascent and descent rounded up): its baseline is 22 over the base's, or 16 under it; in `vertical-rl`, 19 either side of the column's centre. A second annotation on the same side sits 13 further.
+- **A block's first line** is the union of the base's half-leading box and its annotations: 38.25 tall with one annotation, 51.25 with readings on both sides.
+- **Every later line follows CSS Ruby 1 §4.4**: leading is added on an annotation's side only as far as the annotation reaches past the base's inline box. That gives 38 with one annotation and 63.5 with readings on both sides, because the outer annotation's need counts the inner one's annotation too. The first-line and later-line rules differ; the fixtures' `u1`–`ua` rows found it, a quarter point at a time.
+- **No `rtc`.** WebKit lays an `rtc`'s text on the line, as base text. So the writer does not use the `rtc` form the plan's Steps 1 and 4 named: it keeps the ruby inside a ruby, which WebKit, and now BrowserAuto, set on both sides.
+
+**The writer (converter version 4).**
+- `ruby.left` (左ルビ) is `-webkit-ruby-position: after; ruby-position: under`.
+- `ruby-position` is inherited, so a right ruby inside a left one is written `<ruby class="over">` (`ruby-position: over`); a left ruby inside a right one already names its side.
+- A ruby inside a ruby with both readings on one side, such as 「ママ」 over a word with ruby, needs no class.
+
+**Legacy.** `ruby-position` and `-webkit-ruby-position` are parsed (inherited). A ruby under its base is a `CTRubyAnnotation` at `after`. A ruby inside a ruby is one annotation with a text for each side (`CTRubyAnnotationCreate`): Core Text holds one ruby per range.
+- **Limit, recorded:** Core Text has one text per side, so two readings on the same side keep the inner one, the base's own reading. 「ママ」 over a word with ruby is not drawn in legacy; BrowserAuto draws both.
+
+**The ruby over a figure stays an exception (Step 5).** Task 10 is about figures in vertical columns; a figure as a ruby's base is a separate engine feature, and 黒死館殺人事件 is its only user (19 rubies). The contract keeps it as its one ruby exception.
+
+**Verified:**
+- **The four checks** after the last edit, with `AozoraRubyProbeTests` (new) and the ruby and scanner suites: 235 tests in 28 suites. 18 issues, all in three suites this task did not touch and that fail without it: `BrowserLayoutCapabilityScannerTests` still expects floats and tables to be refused (the package lays both out now), `BrowserLayoutInlineFormattingContextParityTests` pins fingerprints from before YueduCoreText 0.6.0, and one `BrowserLayout CSS text-indent` test.
+- **The probe.** `AozoraRubyProbeTests` converts one book with 左ルビ, a word with readings on both sides, 「ママ」 over a word with ruby and a plain ruby. In BrowserAuto it finds each reading as ink on its side and none on the other, a second reading on the same side 13 further out; in legacy, one annotation over the whole base with the inner reading on each side, and the line grown on each side that has one. The pages are in `2026-10-07-aozora-complete-support/phase-2d/`: `browser-h.png`, `browser-v.png`, `legacy-h.png` and `legacy-v.png`.
+- **The corpus** (iOS 26.5 simulator): 17 158 works parse in 68 s and convert into 113 562 chapters that Readium opens, each keeping the baseline's text. The largest work (2.1 MB, 324 chapters) converts in 2.0–2.7 s.
+  - Of the 82 chapters (31 works) with a ruby inside a ruby, 62 now go to BrowserAuto. **20 chapters in 15 works still go to legacy**: their outer ruby's base is text beside an inner ruby, not one ruby, which 0.15.0 does not take. Three shapes: a note on part of a word, most often 「（ママ）」 (`<ruby><ruby>制<rt>（ママ）</rt></ruby>肘<rt>ちゅう</rt></ruby>`, 45641 spines 2–4); an `em` holding the inner ruby (50095); and one ruby over a whole kanbun sentence with its own 左ルビ, 送り仮名 and 返り点 (59114, and 58400 spine 75). `AozoraCorpusTests` expects none, and fails on these 20 until the package takes them: that follows Phase 2e.
+  - The ruby over a figure: 19 in 1 work, as before.
+  - **Parity** (50 works chosen for coverage): horizontal passes. Vertical fails on one chapter, 1323 spine 3, and not for its ruby: BrowserAuto takes the chapter now and its first page timed out (`fallbackToLegacy reason=timeout`), so legacy laid it out. The chapter is 400 KB of markup with thousands of rubies; BrowserAuto's admission took 3.6–4.5 s and its preparation 4.8 s, against the 5 s limit on preparation. The cause is measured and fixed with Phase 2e's pin.
+- **Fidelity:** not remeasured here. The harness ran on the iOS 27.2 runtime, which no longer mounts after the macOS 27.3 update; Phase 2e remeasures on 26.5.
+
+**Findings, not fixed:**
+- An annotation wider than its base does not overhang its neighbours in BrowserAuto. WebKit lets it overhang by half the annotation's font size (4.25 at 8.5px).
+- Two annotations on the same side of a later line take CSS Ruby's leading for both together, as two sides do. This is not measured.
 
 ## Phase 2e — Figures in vertical writing
 

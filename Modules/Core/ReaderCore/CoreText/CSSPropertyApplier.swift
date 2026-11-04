@@ -77,6 +77,8 @@ final class HTMLCSSPropertyApplierRegistry: Sendable {
         TextCombineUprightApplier(key: "-ms-text-combine-horizontal", legacy: false),
         TextCombineUprightApplier(key: "-webkit-text-combine", legacy: true),
         TextCombineUprightApplier(key: "-epub-text-combine", legacy: true),
+        RubyPositionApplier(key: "ruby-position"),
+        RubyPositionApplier(key: "-webkit-ruby-position"),
     ] as [any HTMLCSSPropertyApplier]) + ["", "-webkit-"].flatMap { prefix -> [any HTMLCSSPropertyApplier] in [
         TextDecorationShorthandApplier(key: prefix + "text-decoration"),
         TextDecorationLineApplier(key: prefix + "text-decoration-line"),
@@ -651,6 +653,21 @@ private struct TextEmphasisPositionApplier: HTMLCSSPropertyApplier {
         case "initial": style.textEmphasisPosition = TextEmphasisPosition()
         default:
             if let parsed = TextEmphasisValue.position(lowered) { style.textEmphasisPosition = parsed }
+        }
+    }
+}
+
+/// `ruby-position` and WebKit's `-webkit-ruby-position`: `over` or `before`, `under` or `after`.
+/// Legacy draws no `inter-character` or `alternate` ruby, so those leave the side as it was.
+private struct RubyPositionApplier: HTMLCSSPropertyApplier {
+    let key: String
+
+    func apply(value: String, style: inout HTMLAttributedStringBuilder.ResolvedStyle, context: HTMLCSSApplyContext) {
+        switch value.trimmingCharacters(in: .whitespaces).lowercased() {
+        case "inherit", "unset": style.rubyUnder = context.parentStyle.rubyUnder
+        case "initial", "over", "before": style.rubyUnder = false
+        case "under", "after": style.rubyUnder = true
+        default: break
         }
     }
 }

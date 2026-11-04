@@ -68,13 +68,19 @@ struct BrowserLayoutRubySubsetTests {
         ).isSupported)
     }
 
+    @Test func acceptsRubyUnderItsBase() throws {
+        for css in ["ruby { ruby-position:under }", "ruby { -epub-ruby-position:under }",
+                    "ruby { -webkit-ruby-position:after }"] {
+            let root = try tree("<p><ruby>漢<rt>a</rt></ruby></p>", css: [css])
+            #expect(HorizontalRubySupport.validate(root).isSupported, "\(css)")
+        }
+    }
+
     @Test func rejectsUnsupportedRubyCSSValues() throws {
         for css in [
             "ruby { ruby-align:start }",
             "ruby { ruby-align:space-between }",
-            "ruby { ruby-position:under }",
             "ruby { ruby-position:inter-character }",
-            "ruby { -epub-ruby-position:under }",
             "ruby { ruby-merge:collapse }",
         ] {
             let root = try tree("<p><ruby>漢<rt>a</rt></ruby></p>", css: [css])

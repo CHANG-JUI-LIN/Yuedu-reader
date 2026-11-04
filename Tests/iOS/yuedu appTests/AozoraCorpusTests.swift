@@ -165,10 +165,13 @@ struct AozoraCorpusTests {
             \(conversions.reduce(0) { $0 + $1.chapters }) chapters
             ⟐ largest \(largest.path) (\(largest.bytes) bytes, \(largest.chapters) chapters), three times each: \
             converted on its own in \(range(\.convert)), imported in \(range(\.import)), regenerated in \(range(\.regenerate))
-            ⟐ chapters left to legacy for a ruby inside a ruby: \(conversions.reduce(0) { $0 + $1.nestedRubyChapters }) \
-            in \(conversions.filter { $0.nestedRubyChapters > 0 }.count) works; rubies over a figure: \
+            ⟐ chapters with a ruby inside a ruby: \(conversions.reduce(0) { $0 + $1.nestedRubyChapters }) \
+            in \(conversions.filter { $0.nestedRubyChapters > 0 }.count) works, left to legacy for it: \
+            \(conversions.reduce(0) { $0 + $1.legacyNestedRubyChapters }); rubies over a figure: \
             \(conversions.reduce(0) { $0 + $1.rubiesOverFigures }) in \(conversions.filter { $0.rubiesOverFigures > 0 }.count) works
             """)
+        let legacyNested = conversions.filter { $0.legacyNestedRubyChapters > 0 }.map(\.path)
+        #expect(legacyNested.isEmpty, "BrowserAuto refuses the ruby inside a ruby in \(legacyNested.count) works, e.g. \(legacyNested.prefix(5))")
     }
 
     private struct Conversion: Sendable {
@@ -179,8 +182,10 @@ struct AozoraCorpusTests {
         var chapters = 0
         var hash = ""
         var problems: [String] = []
-        /// Chapters BrowserAuto leaves to legacy for a ruby inside a ruby.
+        /// Chapters with a ruby inside a ruby, readings on both sides of a word; and those
+        /// whose ruby BrowserAuto refuses in either writing mode, which go to legacy.
         var nestedRubyChapters = 0
+        var legacyNestedRubyChapters = 0
         /// Rubies over a figure: written without a base when the figure's file is missing.
         var rubiesOverFigures = 0
     }
@@ -206,9 +211,18 @@ struct AozoraCorpusTests {
             let chapters = AozoraChapterPlanner.plan(document, source: text)
             result.chapters = chapters.count
             problems = packageProblems(session: session, manifest: converted.manifest, document: document, chapters: chapters)
-            result.nestedRubyChapters = chapters.filter {
-                AozoraEngineParityTests.holdsLegacyRuby(AozoraXHTMLWriter.document(for: $0, in: document, images: [:]))
-            }.count
+            for chapter in chapters {
+                let xhtml = AozoraXHTMLWriter.document(for: chapter, in: document, images: [:])
+                guard AozoraEngineParityTests.holdsNestedRuby(xhtml) else { continue }
+                result.nestedRubyChapters += 1
+                let css = [AozoraXHTMLWriter.stylesheet(forChapters: [xhtml])]
+                if [ReaderWritingMode.horizontal, .verticalRTL].contains(where: {
+                    BrowserLayoutCapabilityScanner.scan(html: xhtml, cssTexts: css, writingMode: $0)
+                        .unsupportedFeatures.contains(.ruby)
+                }) {
+                    result.legacyNestedRubyChapters += 1
+                }
+            }
             result.rubiesOverFigures = rubiesOverFigures(in: document)
             let chapterHashes = converted.manifest.chapters.map(\.sha256).joined(separator: "\n")
             result.hash = String(AozoraEPUBWriter.sha256(Data(chapterHashes.utf8)).prefix(16))
@@ -383,7 +397,7 @@ struct AozoraCorpusTests {
             try await AozoraEngineParityTests.expectPlannedText(
                 in: session, chapters: chapters, spines: spines,
                 figures: { AozoraEngineParityTests.figureCount(in: xhtml[$0] ?? "") },
-                legacyRuby: { AozoraEngineParityTests.holdsLegacyRuby(xhtml[$0] ?? "") }, mode: mode, label: work.path)
+                legacyRuby: { AozoraEngineParityTests.holdsRubyOverFigure(xhtml[$0] ?? "") }, mode: mode, label: work.path)
             checked += spines.count
             print("""
                 ⟐ parity \(mode): \(work.path), chosen for \(Self.coverageCriteria[criterion]) \

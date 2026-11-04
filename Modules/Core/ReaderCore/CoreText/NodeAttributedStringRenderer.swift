@@ -637,8 +637,15 @@ struct NodeAttributedStringRenderer: Sendable {
 
         case .ruby(let base, let text, let style):
             let childCtx = applyInlineStyle(style, to: ctx)
+            // A ruby whose base is one ruby: Aozora's readings on both sides of a word.
+            if base.count == 1, case .ruby(let innerBase, let innerText, let innerStyle) = base[0] {
+                let rendered = NSMutableAttributedString(attributedString: await renderInlineChildren(
+                    innerBase, ctx: applyInlineStyle(innerStyle, to: childCtx)))
+                addRubyAnnotation(inner: (innerText, innerStyle.rubyUnder), outer: (text, style.rubyUnder), to: rendered)
+                return rendered
+            }
             let rendered = NSMutableAttributedString(attributedString: await renderInlineChildren(base, ctx: childCtx))
-            addRubyAnnotation(text, to: rendered)
+            addRubyAnnotation(text, under: style.rubyUnder, to: rendered)
             return rendered
 
         case .anchorTarget(let id, let child):
@@ -2494,12 +2501,33 @@ struct NodeAttributedStringRenderer: Sendable {
         return placeholder
     }
 
-    private func addRubyAnnotation(_ text: String, to attributedString: NSMutableAttributedString) {
+    private func addRubyAnnotation(_ text: String, under: Bool, to attributedString: NSMutableAttributedString) {
         let rubyText = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !rubyText.isEmpty, attributedString.length > 0 else { return }
         attributedString.addAttribute(
             HTMLAttributedStringBuilder.rubyAnnotationAttribute,
-            value: HTMLAttributedStringBuilder.makeRubyAnnotation(text: rubyText),
+            value: HTMLAttributedStringBuilder.makeRubyAnnotation(text: rubyText, under: under),
+            range: NSRange(location: 0, length: attributedString.length)
+        )
+    }
+
+    /// A nested ruby's two readings as one annotation, one on each side. Core Text has one text
+    /// per side, so two readings on the same side keep the inner one, the base's own reading:
+    /// a note over a word with ruby (「ママ」) is not drawn.
+    private func addRubyAnnotation(inner: (text: String, under: Bool), outer: (text: String, under: Bool),
+                                   to attributedString: NSMutableAttributedString) {
+        let innerText = inner.text.trimmingCharacters(in: .whitespacesAndNewlines)
+        let outerText = outer.text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard attributedString.length > 0 else { return }
+        guard !innerText.isEmpty, !outerText.isEmpty, inner.under != outer.under else {
+            let (text, under) = innerText.isEmpty ? (outerText, outer.under) : (innerText, inner.under)
+            addRubyAnnotation(text, under: under, to: attributedString)
+            return
+        }
+        attributedString.addAttribute(
+            HTMLAttributedStringBuilder.rubyAnnotationAttribute,
+            value: HTMLAttributedStringBuilder.makeRubyAnnotation(
+                over: inner.under ? outerText : innerText, under: inner.under ? innerText : outerText),
             range: NSRange(location: 0, length: attributedString.length)
         )
     }

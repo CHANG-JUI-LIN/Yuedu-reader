@@ -22,7 +22,7 @@ A temporary probe on 2026-10-06 gave both engines the same chapters, horizontal 
 | U+3000, also at edges and alone in a block | kept | kept |
 | ruby, `<span>`, `<sub>`, `<sup>`, `<em>`, nested `<div>` blocks | identical | identical |
 
-BrowserAuto's paged and scroll texts were identical. It fell back to legacy for a non-default `ruby-position`, and, in vertical writing, for any chapter holding an `<img>` (`VerticalTextSupport.accepts`).
+BrowserAuto's paged and scroll texts were identical. It fell back to legacy for a non-default `ruby-position` (until YueduCoreText 0.15), and, in vertical writing, for any chapter holding an `<img>` (`VerticalTextSupport.accepts`).
 
 ## The rules the writer follows
 
@@ -30,7 +30,7 @@ BrowserAuto's paged and scroll texts were identical. It fell back to legacy for 
 - **Line break inside a block.** `<br/>`. Legacy reads U+2028, one unit like BrowserAuto's `"\n"`.
 - **Headings.** `<h3>`, `<h4>`, `<h5>`, as aozora2html writes them; never `<h1>`.
 - **Page breaks.** They end the chapter; the stylesheet has no page-break property.
-- **Stylesheet limits.** No `writing-mode`, `ruby-position`, `@media`, `calc()`, tables, floats or positioning.
+- **Stylesheet limits.** No `writing-mode`, `@media`, `calc()`, tables, floats or positioning. `ruby-position` only sets a ruby's side: `ruby.left` for 左ルビ, and `ruby.over` for a right ruby inside one (converter version 4).
 - **The stylesheet** (converter version 2) is written per book: the base rules, then a rule for each class the book's chapters use, in a fixed order (`AozoraXHTMLWriter.stylesheet(forChapters:)`). Its values follow 青空文庫's aozora.css and the inline styles aozora2html writes, in logical properties so one stylesheet serves both writing modes; font-size keywords are written in `rem`. A run of 罫囲み blocks is wrapped in one `<div class="keigakomi">`, which adds no text in either engine.
 - **U+3000.** Written as `&#12288;`. Legacy's cleanup of spaces between Han characters never ran (its pattern failed to compile) and was deleted in 55711b23; `HTMLCJKSeparatorPreservationTests` now pins U+3000 between Han verbatim, and the character reference stays, harmless.
 - **ASCII whitespace.** Collapsed in the displayed text itself, as HTML collapses it (`AozoraDocumentParser`, Phase 1b Task 12): the engines disagree only about spaces at a block's edge, and there are none left.
@@ -38,10 +38,11 @@ BrowserAuto's paged and scroll texts were identical. It fell back to legacy for 
 
 ## The ruby exception
 
-BrowserAuto lays out a ruby only over a base of inline text that shows something, with no ruby inside it (`HorizontalRubySupport`): no nested `<ruby>`, no `<rtc>`, no `<img>` in the base. A chapter holding any other ruby goes to legacy in both writing modes. Both engines read the same text from it, so positions hold; only the engine changes. `AozoraEngineParityTests` pins both cases.
+BrowserAuto lays out a ruby over a base of inline text that shows something (`HorizontalRubySupport`), on either side of it, and, since YueduCoreText 0.15, a ruby whose base is one ruby. It lays out no `<rtc>`, no `<img>` in a base, and no base that holds a ruby beside other content. A chapter holding such a ruby goes to legacy in both writing modes. Both engines read the same text from it, so positions hold; only the engine changes. `AozoraEngineParityTests` pins both cases.
 
-- **A word with readings on both sides**, a ruby and a 左に…のルビ on the same text, is written as a ruby inside a ruby: 82 chapters in 31 works of the corpus.
-- **A ruby over a figure**, as 黒死館殺人事件 sets Hebrew letters (a figure, with the letter's name as its reading), keeps the figure as its base: 19 rubies, all in that one work. When the figure's file is missing, as for a `.txt` imported without its zip, the ruby would annotate nothing, and the writer leaves it out.
+- **A word with readings on both sides**, a ruby and a 左に…のルビ on the same text, is written as a ruby inside a ruby, and BrowserAuto lays it out (converter version 4). A ruby inside a ruby is in 82 chapters in 31 works of the corpus.
+- **A ruby over part of another ruby's base** stays with legacy for now: 20 of those 82 chapters, in 15 works. Most are a note on one character of a word with ruby, 「（ママ）」 most often (`<ruby><ruby>制<rt>（ママ）</rt></ruby>肘<rt>ちゅう</rt></ruby>`); one work wraps the inner ruby in an `em`; and one ruby covers a whole kanbun sentence (59114, and 58400 spine 75). `AozoraCorpusTests` scans every such chapter in both writing modes and expects none left to legacy, so it fails until BrowserAuto takes them.
+- **A ruby over a figure** stays the exception. 黒死館殺人事件 sets Hebrew letters this way (a figure, with the letter's name as its reading), and the ruby keeps the figure as its base: 19 rubies, all in that one work. When the figure's file is missing, as for a `.txt` imported without its zip, the ruby would annotate nothing, and the writer leaves it out.
 
 ## Figures
 

@@ -67,6 +67,10 @@ struct AozoraXHTMLWriterTests {
         ("上［＃改行］下", #"上<br/>下"#),
         ("｜漢字《かんじ》", #"<ruby>漢字<rt>かんじ</rt></ruby>"#),
         ("刺［＃「刺」の左に「テフダ」の注記］", #"<ruby class="left">刺<rt>テフダ</rt></ruby>"#),
+        // Readings on both sides: inside a left ruby a right one names its side.
+        ("室適《しつてき》［＃「室適」の左に「オクサマ」のルビ］",
+         #"<ruby class="left"><ruby class="over">室適<rt>しつてき</rt></ruby><rt>オクサマ</rt></ruby>"#),
+        ("｜真似《まね》［＃「真似」に「ママ」の注記］", #"<ruby><ruby>真似<rt>まね</rt></ruby><rt>ママ</rt></ruby>"#),
         ("強調［＃「強調」に傍点］", #"<em class="sesame_dot">強調</em>"#),
         ("点［＃「点」の左に傍点］", #"<em class="sesame_dot_after">点</em>"#),
         ("線［＃「線」に傍線］", #"<em class="underline_solid">線</em>"#),
@@ -184,6 +188,9 @@ struct AozoraXHTMLWriterTests {
         ("x2［＃「2」は上付き小文字］", [".superscript { font-size: 0.8125rem; }"]),
         ("学［＃（ビテ）］而時習［＃レ］之", [".okurigana { font-size: 0.8125rem; }", ".kaeriten { font-size: 0.8125rem; }"]),
         ("12［＃「12」は縦中横］", [".tcy { text-combine-upright: all; }"]),
+        ("室適《しつてき》［＃「室適」の左に「オクサマ」のルビ］",
+         ["ruby.left { -webkit-ruby-position: after; ruby-position: under; }",
+          "ruby.over { -webkit-ruby-position: before; ruby-position: over; }"]),
         ("強調［＃「強調」に傍点］と点［＃「点」の左に傍点］",
          [".sesame_dot { font-style: normal; -webkit-text-emphasis-style: filled sesame; text-emphasis-style: filled sesame; -webkit-text-emphasis-position: over right; text-emphasis-position: over right; }",
           ".sesame_dot_after { font-style: normal; -webkit-text-emphasis-style: filled sesame; text-emphasis-style: filled sesame; -webkit-text-emphasis-position: under left; text-emphasis-position: under left; }"]),
@@ -205,10 +212,15 @@ struct AozoraXHTMLWriterTests {
     @Test("the stylesheet sets no colour, writing mode or the other properties the contract rules out")
     func stylesheetLimits() {
         let css = AozoraXHTMLWriter.stylesheet(forChapters: [body(
-            "［＃ここから罫囲み］\n本文\n［＃ここで罫囲み終わり］\n強調［＃「強調」に傍点］、12［＃「12」は縦中横］、図［＃「図」はキャプション］")])
+            "［＃ここから罫囲み］\n本文\n［＃ここで罫囲み終わり］\n強調［＃「強調」に傍点］、12［＃「12」は縦中横］、図［＃「図」はキャプション］、"
+                + "室適《しつてき》［＃「室適」の左に「オクサマ」のルビ］")])
         #expect(!css.contains("color"))
-        for forbidden in ["writing-mode", "ruby-position", "@media", "calc(", "float"] {
+        for forbidden in ["writing-mode", "@media", "calc(", "float"] {
             #expect(!css.contains(forbidden), "\(forbidden)")
+        }
+        // `ruby-position` only sets a ruby's side: 左ルビ, and a right ruby inside one.
+        for line in css.split(separator: "\n") where line.contains("ruby-position") {
+            #expect(line.hasPrefix("ruby.left ") || line.hasPrefix("ruby.over "), "\(line)")
         }
         // The `position` property: `text-emphasis-position` and `text-underline-position` place marks.
         #expect(css.range(of: #"(?<![-\w])position\s*:"#, options: .regularExpression) == nil, "\(css)")
