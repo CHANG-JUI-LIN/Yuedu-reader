@@ -748,7 +748,7 @@ struct AozoraCorpusTests {
     }
 
     /// Values written from concurrent iterations, one slot each.
-    private final class Slots<Element: Sendable>: @unchecked Sendable {
+    final class Slots<Element: Sendable>: @unchecked Sendable {
         private var storage: [Element?]
         private let lock = NSLock()
 

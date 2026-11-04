@@ -652,21 +652,46 @@ Corpus (17158 works, `AozoraCorpusTests`): unknown annotations from 2556 in 524 
 
 ### Task 18: One Aozora parser (Phase 1c, step 4 only)
 
-- [ ] `AozoraMarkupParser`, used on the TXT path for every TXT chapter, delegates to `Modules/Core/Aozora` in a TXT-compatible mode:
+- [x] `AozoraMarkupParser`, used on the TXT path for every TXT chapter, delegates to `Modules/Core/Aozora` in a TXT-compatible mode:
   - it strips notes;
   - it keeps the kana-reading guard (Chinese 《》 are book-title marks);
   - it does no gaiji, accent or くの字点 conversion.
-- [ ] `AozoraTXTTests` must pass **unchanged**. The TXT path's displayed text must not move: it has no migration either.
-- [ ] Phase 1c steps 1–3 (coordinate-space tag, inverse projection, migration service) stay out of scope. The maintainer decides when there are Aozora readers to migrate.
+- [x] `AozoraTXTTests` must pass **unchanged**. The TXT path's displayed text must not move: it has no migration either.
+- [x] Phase 1c steps 1–3 (coordinate-space tag, inverse projection, migration service) stay out of scope. The maintainer decides when there are Aozora readers to migrate.
 
 ### Task 19: Book information from the colophon
 
-- [ ] The parser already keeps the colophon (卷末) as the last chapter. Extract 底本, 初出, 入力 and 校正 into the OPF:
+- [x] The parser already keeps the colophon (卷末) as the last chapter. Extract 底本, 初出, 入力 and 校正 into the OPF:
   - `dc:source` for 底本 and its publisher;
   - `dc:contributor` with an MARC role code for each person, choosing a code where one fits and recording the choice;
   - a `meta` for 初出.
-- [ ] Check what the app's book detail shows for a local EPUB, and show these fields there if it does not. The UI change follows `yuedu-ios-design`.
-- [ ] Bump `converterVersion`; the chapter text is unchanged. Run the four checks and a regenerator test.
+- [x] Check what the app's book detail shows for a local EPUB, and show these fields there if it does not. The UI change follows `yuedu-ios-design`.
+- [x] Bump `converterVersion`; the chapter text is unchanged. Run the four checks and a regenerator test.
+
+### Phase 4 (Tasks 18 and 19): what landed
+
+**Status, 2026-11-04: verified in the simulator (iOS 26.5), not released.** Converter version 6. Phase 3 is app commit 030a3812.
+
+**Task 19, the colophon.**
+- The writer puts it in the package, never the text: 底本 as `dc:source`, 初出 as `<meta property="dcterms:bibliographicCitation">`, 入力 and 校正 as `dc:contributor`s refined with MARC relator roles. A field over several lines (底本 and its printing) is joined into one line with a space.
+- **Role codes (decided).** 入力 is `trc`, transcriber: the person who keyed the printed text in. 校正 is `pfr`, proofreader. Neither is in Readium's known roles, so both land in `Metadata.contributors` with their role, never among the authors; `dcterms:` is a reserved prefix in EPUB 3, so the package declares none.
+- **Import.** `ImportedMetadataCapture.EPUBColophon` reads the four from Readium (`otherMetadata` under `http://purl.org/dc/terms/source` and `…/bibliographicCitation`; the people by role) into four new sidecar fields, `printedSource`, `firstAppearance`, `transcribers`, `proofreaders`. Every place that reads an EPUB's package for metadata reads them: the import (`BookStore`), `ImportedMetadataCapture.reread`, and the WebDAV filler. Any EPUB that names them keeps them in its sidecar, but only a converted 青空文庫 text shows them: Project Gutenberg's packages name their own URL as `dc:source`, which is no 底本.
+- **Books converted before version 6** get them when they open: `ConvertedBookRegenerator.prepare(book:)` rereads the copy's package into its sidecar after a regeneration (the one path, `reread`, that the series backfill already uses). The sidecar is local, so nothing syncs.
+- **Book detail.** Before, a converted copy showed only 來源, 格式 and 檔案大小; the catalogue's own page showed 底本 and 出版社. The work page of a converted copy now adds 底本, 初次發表, 輸入 and 校對 rows from its sidecar (`WorkDetailView.colophonItems`), skipping 底本 on a catalogue version, which has its own. Plain label and value rows of `BookDetailInfoSection`, read by VoiceOver as the other rows are. New keys in all five languages: 初次發表, 版權頁：輸入 (輸入 already meant the verb), 校對.
+- Tests: `AozoraEPUBWriterTests` (the package, and Readium reading it back as an `EPUBColophon`; 初出 over two lines), `AozoraBookRegeneratorTests` (the sidecar at import, and again after an older book regenerates).
+
+**Task 18, one parser.**
+- `AozoraMarkupParser` (the TXT reader, every TXT chapter) no longer scans the markup itself: it reads each piece through `AozoraTokenizer.markup(in:at:limit:dialect: .txt)`, the converter's tokenizer in a TXT-compatible dialect, and keeps only its own policy: notes hidden, ruby shown, the kana guard for bare 《》 (Chinese book-title marks), Han-only implicit bases, no gaiji, accent or くの字点 conversion.
+- **The TXT reading is the old reader's, exactly**, because its displayed text has no position migration. It reads in two passes, as the old reader did:
+  - notes first, found as NSString finds them (`AozoraTokenizer.txtNotes`): ［＃ does not nest, the first ］ closes it (the converter follows aozora2html and nests), and a ［＃ or ］ with a combining mark after it is not a delimiter;
+  - then ruby, on the text with the notes taken out, by Swift character: a ｜, 《 or 》 that shares a character with its neighbour (a combining mark, a variation selector, a ZWJ) is text, so the parser masks it before the tokenizer sees it. A reading also ends at U+000B, U+000C, U+0085, U+2028 and U+2029 (`Character.isNewline`).
+  - The document dialect is unchanged.
+- The old implementation is frozen in `AozoraMarkupParserEquivalenceTests` as the oracle, and the new one must give the same nodes, displayed text, hidden notes and removed ruby markup:
+  - 200,000 random strings (seed 0x5EED_2026_1104) over the delimiters, line ends of every kind, Han of both planes, kana, and the characters that join a delimiter to its neighbour: no difference. A first, one-pass version differed on 10,949 of 300,000 such strings, all with a combining mark or ZWJ beside a delimiter; it was rewritten into the two passes above.
+  - The TXT fixtures (`Fixtures/TXTEncodings`) and every work of the corpus (17158): no difference.
+  - `AozoraTXTTests` pass unchanged.
+- **Time.** The largest 200 works (59,043,785 UTF-16 units), each read whole on the simulator (iOS 26.5): 16.31 s with the old reader, 15.96 s with the new. On macOS, the largest work alone: 164 ms before, 148 ms after.
+- Phase 1c steps 1–3 stay out of scope, as planned.
 
 ### Task 20: Checks on a device
 

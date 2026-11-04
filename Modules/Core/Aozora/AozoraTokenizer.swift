@@ -42,6 +42,39 @@ struct AozoraToken: Equatable, Sendable {
 /// Markup that never closes stays text: an unterminated ［＃ or 《 is shown
 /// as written.
 enum AozoraTokenizer {
+    /// Which reading of the markup.
+    enum Dialect: Sendable {
+        /// aozora2html's, for the converter (`AozoraDocumentParser`).
+        case document
+        /// The TXT reader's (`AozoraMarkupParser`), which shows a TXT book's ruby and hides its
+        /// notes, read as it always has been: its displayed text has no position migration, so
+        /// it must not move (Aozora plan, Task 18). Its notes are found first, over the whole
+        /// text (`txtNotes(in:)`), and its ruby is then read in the text without them: there is
+        /// no annotation, gaiji, accent or くの字点 token, so ※, 〔〕 and ／＼ stay text, and a
+        /// reading also ends at any line separator (U+000B, U+000C, U+0085, U+2028, U+2029).
+        case txt
+    }
+
+    /// The TXT dialect's notes: each ［＃ to the first ］ after it, nothing nested, across lines,
+    /// matched as `NSString` matches them, so a ［＃ or ］ with a combining mark after it is no
+    /// delimiter; an unclosed ［＃ ends the search. The text without them, and their ranges.
+    static func txtNotes(in text: String) -> (shown: String, notes: [NSRange]) {
+        let ns = text as NSString
+        var cursor = 0, shown = "", notes: [NSRange] = []
+        while cursor < ns.length {
+            let opening = ns.range(of: "［＃", range: NSRange(location: cursor, length: ns.length - cursor))
+            guard opening.location != NSNotFound else { break }
+            let contentStart = NSMaxRange(opening)
+            let closing = ns.range(of: "］", range: NSRange(location: contentStart, length: ns.length - contentStart))
+            guard closing.location != NSNotFound else { break }
+            shown += ns.substring(with: NSRange(location: cursor, length: opening.location - cursor))
+            notes.append(NSRange(location: opening.location, length: NSMaxRange(closing) - opening.location))
+            cursor = NSMaxRange(closing)
+        }
+        shown += ns.substring(from: cursor)
+        return (shown, notes)
+    }
+
     static func tokenize(_ text: String) -> [AozoraToken] {
         let units = Array(text.utf16)
         return tokenize(units, in: 0..<units.count)
@@ -53,7 +86,7 @@ enum AozoraTokenizer {
         var index = range.lowerBound
         let limit = range.upperBound
         while index < limit {
-            guard let token = token(in: units, at: index, limit: limit) else {
+            guard let token = markup(in: units, at: index, limit: limit) else {
                 index += 1
                 continue
             }
@@ -92,6 +125,14 @@ enum AozoraTokenizer {
         unit == lineFeed || unit == carriageReturn
     }
 
+    /// Every unit Swift's `Character.isNewline` holds: the TXT reader's line ends.
+    static func isLineSeparator(_ unit: UInt16) -> Bool {
+        switch unit {
+        case 0x0A...0x0D, 0x85, 0x2028, 0x2029: true
+        default: false
+        }
+    }
+
     /// The end of the ［＃…］ starting at `start`, or nil when it never
     /// closes. Like aozora2html's TagParser, only ［＃ nests; a plain ［ is a
     /// character and the first unmatched ］ closes the annotation.
@@ -114,10 +155,27 @@ enum AozoraTokenizer {
         return nil
     }
 
-    private static func token(in units: [UInt16], at index: Int, limit: Int) -> AozoraToken? {
+    /// The markup starting at `index`, or nil for a unit of text. A reader that takes markup
+    /// back as text (the TXT reader's ruby without a base) reads on from its next unit.
+    static func markup(in units: [UInt16], at index: Int, limit: Int, dialect: Dialect = .document) -> AozoraToken? {
         let unit = units[index]
         func next(_ offset: Int) -> UInt16? {
             index + offset < limit ? units[index + offset] : nil
+        }
+        if dialect == .txt {
+            switch unit {
+            case lineFeed:
+                return AozoraToken(kind: .newline, range: index..<(index + 1))
+            case carriageReturn:
+                return AozoraToken(kind: .newline, range: index..<(index + (next(1) == lineFeed ? 2 : 1)))
+            case rubyBar:
+                return AozoraToken(kind: .rubyBar, range: index..<(index + 1))
+            case rubyOpen:
+                return rubyEnd(in: units, from: index, limit: limit, dialect: .txt)
+                    .map { AozoraToken(kind: .ruby, range: index..<$0) }
+            default:
+                return nil
+            }
         }
         switch unit {
         case lineFeed:
@@ -127,7 +185,7 @@ enum AozoraTokenizer {
         case rubyBar:
             return AozoraToken(kind: .rubyBar, range: index..<(index + 1))
         case rubyOpen:
-            return rubyEnd(in: units, from: index, limit: limit)
+            return rubyEnd(in: units, from: index, limit: limit, dialect: .document)
                 .map { AozoraToken(kind: .ruby, range: index..<$0) }
         case bracketOpen where next(1) == sharp:
             return annotationEnd(in: units, from: index, limit: limit)
@@ -148,13 +206,14 @@ enum AozoraTokenizer {
 
     /// A non-empty reading on the same line. Annotations inside the reading
     /// (a gaiji, a note) are skipped whole; another 《 means this one is text.
-    private static func rubyEnd(in units: [UInt16], from start: Int, limit: Int) -> Int? {
+    /// In the TXT dialect the notes are gone already, and nothing is skipped.
+    private static func rubyEnd(in units: [UInt16], from start: Int, limit: Int, dialect: Dialect) -> Int? {
         var index = start + 1
         while index < limit {
             let unit = units[index]
             if unit == rubyClose { return index > start + 1 ? index + 1 : nil }
-            if unit == rubyOpen || isNewline(unit) { return nil }
-            if unit == bracketOpen, index + 1 < limit, units[index + 1] == sharp,
+            if unit == rubyOpen || (dialect == .txt ? isLineSeparator(unit) : isNewline(unit)) { return nil }
+            if dialect == .document, unit == bracketOpen, index + 1 < limit, units[index + 1] == sharp,
                let end = annotationEnd(in: units, from: index, limit: limit) {
                 index = end
                 continue
