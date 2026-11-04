@@ -125,8 +125,10 @@ struct AIRecommendationRow: View {
     private var header: some View {
         HStack(spacing: DSSpacing.sm) {
             HomeRowTitle(title: title, subtitle: subtitle, bandLine: drawsBand ? HomeBandGround.line(for: bandCover).color : nil)
-                // The band's white name on the band's colour when its long press lifts it out.
-                .background(drawsBand ? HomeBandGround.ground(for: bandCover, contrast: contrast) : .clear)
+                // The band's white name on the band's colour when its long press lifts it out,
+                // inside the safe area as the band is (FB-136, `HomeRowView.header`).
+                .background(drawsBand ? HomeBandGround.ground(for: bandCover, contrast: contrast) : .clear,
+                            ignoresSafeAreaEdges: [])
                 .accessibilityElement(children: .combine)
                 .accessibilityAddTraits(.isHeader)
                 .accessibilityIdentifier("home.row.header.\(rowID)")

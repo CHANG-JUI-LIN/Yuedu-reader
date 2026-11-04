@@ -198,8 +198,12 @@ struct HomeRowView: View {
         let label = HomeRowTitle(title: group.title, subtitle: group.section.displaySubtitle, showsChevron: showAll != nil,
                                  bandLine: drawsBand ? HomeBandGround.line(for: bandCover).color : nil)
             .padding(.horizontal, DSSpacing.lg)
-            // The band's white name on the band's colour when its long press lifts it out.
-            .background(drawsBand ? HomeBandGround.ground(for: bandCover, contrast: contrast) : .clear)
+            // The band's white name on the band's colour when its long press lifts it out. Inside
+            // the safe area, as the band is: a colour's own `.background` runs out past the
+            // header's edges into it, and under iPadOS 26's sidebar showed as a strip beside it
+            // (FB-136).
+            .background(drawsBand ? HomeBandGround.ground(for: bandCover, contrast: contrast) : .clear,
+                        ignoresSafeAreaEdges: [])
 
         if let showAll {
             Button(action: showAll) { label }

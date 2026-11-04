@@ -198,4 +198,18 @@ enum HomeDesignFixtureData {
     HomeDesignFixture().environmentObject(BookStore())
         .environment(\.dynamicTypeSize, .accessibility2)
 }
+
+/// The band under iPadOS 26's floating sidebar: nothing of it shows beside the sidebar (FB-136).
+#Preview("探索首頁 — iPad 側邊欄", traits: .landscapeLeft) {
+    if #available(iOS 18.0, *) {
+        TabView {
+            Tab(localized("探索"), systemImage: "safari") { HomeDesignFixture() }
+            Tab(localized("書架"), systemImage: "books.vertical") { Color.clear }
+        }
+        .tabViewStyle(.sidebarAdaptable)
+        .environmentObject(BookStore())
+    } else {
+        HomeDesignFixture().environmentObject(BookStore())
+    }
+}
 #endif
