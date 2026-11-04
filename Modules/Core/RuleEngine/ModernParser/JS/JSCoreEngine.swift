@@ -31,7 +31,10 @@ class JSCoreEngine {
     // Using a dedicated queue instead of NSLock eliminates the deadlock that
     // NSLock causes when JS calls java.ajax() (semaphore) while the lock is held.
     private var jsQueue = DispatchQueue(label: "com.yuedu.jsengine.serial", qos: .userInitiated)
-    private let jsQueueKey = DispatchSpecificKey<Void>()
+    /// Marks a queue as the engine's, with the generation it serves. A timeout reset abandons
+    /// the old queue with its script still running, and that queue keeps its mark: work only
+    /// runs inline on a queue whose generation is the current one (`isOnCurrentJSQueue`).
+    private let jsQueueKey = DispatchSpecificKey<UInt64>()
 
     /// JS evaluation timeout. If a script takes longer than this, the engine is
     /// reset and the evaluation returns nil. Guards against infinite loops in
@@ -278,7 +281,7 @@ class JSCoreEngine {
         self.bookBridge = LegadoBookBridge()
         self.chapterBridge = LegadoChapterBridge()
 
-        jsQueue.setSpecific(key: jsQueueKey, value: ())
+        jsQueue.setSpecific(key: jsQueueKey, value: 0)
         configureContext(ctx)
 
         // `java.get`/`java.post`/`java.ajax` inside rule JS ask for the source's
@@ -319,11 +322,22 @@ class JSCoreEngine {
         return q
     }
 
+    /// Whether the caller is running on the current generation's JS queue. A script abandoned
+    /// by a timeout reset that calls back into the engine (`source.evalJS`, `java.getString`)
+    /// is on the old queue: it must queue behind the new jobs, not run inline against the new
+    /// context and bridges at the same time as they do.
+    private var isOnCurrentJSQueue: Bool {
+        guard let queueGeneration = DispatchQueue.getSpecific(key: jsQueueKey) else { return false }
+        queueLock.lock()
+        defer { queueLock.unlock() }
+        return queueGeneration == generation
+    }
+
     /// Dispatch work to the JS serial queue, re-entrant-safe.
     /// If already executing on the JS queue (e.g. java.getString → engine.getString → evaluate),
     /// the work runs inline to avoid a deadlock.
     private func onJSQueue<T>(_ work: () -> T) -> T {
-        if DispatchQueue.getSpecific(key: jsQueueKey) != nil {
+        if isOnCurrentJSQueue {
             return work() // already on the JS queue — run inline
         }
         return SourcePerfTrace.mainThreadWait("wait.jsQueue") { safeJsQueue.sync { work() } }
@@ -338,7 +352,7 @@ class JSCoreEngine {
     }
 
     private func onJSQueueWithTimeout<T>(_ work: @escaping () -> T) -> JSTimeoutResult<T> {
-        if DispatchQueue.getSpecific(key: jsQueueKey) != nil {
+        if isOnCurrentJSQueue {
             return .completed(work())
         }
 
@@ -772,19 +786,28 @@ class JSCoreEngine {
 
     /// Hard-reset the engine by creating a fresh serial queue and JSContext.
     /// Used after a JS evaluation timeout to break free from a hung script;
-    /// the old queue and context are abandoned (they continue running on their
-    /// thread but never affect the new engine).
+    /// the old queue and context are abandoned and the script keeps running on them.
+    ///
+    /// The new context gets its own `source` bridge: the abandoned script still calls
+    /// `source.put` on the old one from the old queue, and one bridge written from both queues
+    /// crashed in `put` (Crashlytics 61eb93e6…, 3.0.1 build 144, background `refresh.all`).
+    /// The old queue keeps its generation mark, so its calls back into the engine queue behind
+    /// the new jobs instead of running inline (`isOnCurrentJSQueue`).
     private func resetEngine() {
         let label = "com.yuedu.jsengine.\(UUID().uuidString.prefix(8))"
         let newQueue = DispatchQueue(label: label, qos: .userInitiated)
-        newQueue.setSpecific(key: jsQueueKey, value: ())
+        queueLock.lock()
+        let newGeneration = generation + 1
+        queueLock.unlock()
+        newQueue.setSpecific(key: jsQueueKey, value: newGeneration)
+        sourceBridge = sourceBridge.replacementForNewContext()
         let newContext = JSContext()!
         configureContext(newContext)
 
         queueLock.lock()
         jsQueue = newQueue
         context = newContext
-        generation += 1
+        generation = newGeneration
         queueLock.unlock()
 
         lastError = nil

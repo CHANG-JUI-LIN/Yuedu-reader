@@ -160,11 +160,18 @@ import JavaScriptCore
 
     // MARK: Simple key-value store (in-memory, mirrors Legado's variableStore)
 
+    /// Touched only by the context this bridge is set into, on that context's queue. A timeout
+    /// reset gives the new context its own bridge (`replacementForNewContext()`), because the
+    /// abandoned script keeps calling `source.put` on this one from the old queue.
     private var variableStore: [String: String] = [:]
+
+    /// The source this bridge was built from, for `replacementForNewContext()`.
+    private let origin: BookSource
 
     // MARK: Init
 
     init(source: BookSource) {
+        origin = source
         bookSourceUrl = source.bookSourceUrl
         bookSourceName = source.bookSourceName
         bookSourceGroup = source.bookSourceGroup
@@ -501,5 +508,31 @@ extension LegadoSourceBridge {
     /// Create a bridge populated from a BookSource.
     static func from(_ source: BookSource) -> LegadoSourceBridge {
         return LegadoSourceBridge(source: source)
+    }
+
+    /// The bridge for the context a JS timeout reset creates: the same source and every handler,
+    /// but its own in-memory key-value store. The abandoned context keeps this bridge and its
+    /// script keeps running on the old queue; sharing one bridge let both queues mutate
+    /// `variableStore` at once, and `put` crashed releasing a value the other thread had freed
+    /// (Crashlytics 61eb93e6…, 3.0.1 build 144). Values a wired engine stores reach the new
+    /// bridge through the handlers; only an unwired engine's in-memory values stay behind —
+    /// copying them would read this store while the abandoned script writes it.
+    func replacementForNewContext() -> LegadoSourceBridge {
+        let replacement = LegadoSourceBridge(source: origin)
+        replacement.getVariableHandler = getVariableHandler
+        replacement.setVariableHandler = setVariableHandler
+        replacement.getKeyValueHandler = getKeyValueHandler
+        replacement.putKeyValueHandler = putKeyValueHandler
+        replacement.getLoginInfoHandler = getLoginInfoHandler
+        replacement.putLoginInfoHandler = putLoginInfoHandler
+        replacement.getLoginInfoMapHandler = getLoginInfoMapHandler
+        replacement.removeLoginInfoHandler = removeLoginInfoHandler
+        replacement.putLoginHeaderHandler = putLoginHeaderHandler
+        replacement.getLoginHeaderHandler = getLoginHeaderHandler
+        replacement.removeLoginHeaderHandler = removeLoginHeaderHandler
+        replacement.getHeaderMapHandler = getHeaderMapHandler
+        replacement.loginHandler = loginHandler
+        replacement.evalJSHandler = evalJSHandler
+        return replacement
     }
 }
