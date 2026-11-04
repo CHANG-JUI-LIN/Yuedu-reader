@@ -115,7 +115,7 @@ struct AozoraPageCentringTests {
         #expect(abs(titleGaps.start - titleGaps.end) < 0.5, "\(mode) title page gaps \(titleGaps)")
         #expect(titleGaps.start > 50, "\(mode) the title page moved")
         // A chapter that does not ask stays at the start of its page: its first line sits
-        // where any chapter's does, 8 below the content's top in this setup.
+        // where any chapter's does, below the body's 8px user-agent margin.
         let body = try await textRects(plain)
         #expect(Self.gaps(body.rects, mode: mode).start < 12, "\(mode) body gaps \(Self.gaps(body.rects, mode: mode))")
     }
