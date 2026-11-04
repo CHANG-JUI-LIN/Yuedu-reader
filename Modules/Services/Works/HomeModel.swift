@@ -102,21 +102,25 @@ final class HomeModel: ObservableObject {
         await waitForSources()
         // Timed on the main thread, where a stall during it is named: every sync makes a provider
         // for each explore source, and a library can hold thousands (16883 at install 0DCE3CDE).
+        // `cpu=` and the stages tell main-thread work from a frozen process: Crashlytics 09195e35
+        // logged 20075 ms here with 997 providers, while 1511 providers measured 3–14 ms on a
+        // simulator (stages ≤ 10 / 2 / 1 ms, 2026-11-04).
         var offered = 0
-        SourcePerfTrace.span("home.sync", "providers=\(offered) rows=\(rows.count)", thresholdMs: 16) {
+        SourcePerfTrace.span("home.sync", "providers=\(offered) rows=\(rows.count)", thresholdMs: 16, measuresCPU: true) {
             offered = build(page, hiddenFromLatest: hiddenFromLatest)
         }
     }
 
     /// `sync` once the library is read; returns how many providers were offered.
     private func build(_ page: HomePage, hiddenFromLatest: Set<SourceInstanceKey>) -> Int {
-        let available = makeProviders()
+        let available = SourcePerfTrace.span("home.sync.providers", thresholdMs: 16, measuresCPU: true) { makeProviders() }
         let existing = Dictionary(rows.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
         var built: [Row] = []
         var restarted: [String] = []
         var servedBy: [String: any HomeSectionProviding] = [:]
         var planned: [(section: HomeSection, load: HomeSection, card: (index: Int, card: HomeListCard)?,
                        providers: [any HomeSectionProviding])] = []
+        let planStarted = SourcePerfTrace.cpuStart()
         for section in page.sections where section.isEnabled {
             if case .myLibrary = section.binding { continue }
             let loads: [(load: HomeSection, card: (index: Int, card: HomeListCard)?)] = section.drawsLists
@@ -136,6 +140,9 @@ final class HomeModel: ObservableObject {
                 planned.append((section, load, card, serving))
             }
         }
+        SourcePerfTrace.record("home.sync.plan", "providers=\(available.count) loads=\(planned.count)",
+                               since: planStarted, thresholdMs: 16)
+        let rowsStarted = SourcePerfTrace.cpuStart()
         for (section, load, card, serving) in planned {
             for provider in serving {
                 guard let policy = provider.loadPolicy(for: load) else { continue }
@@ -160,6 +167,7 @@ final class HomeModel: ObservableObject {
         requested.formIntersection(servedBy.keys)
         rows = built
         isReady = true
+        SourcePerfTrace.record("home.sync.rows", "rows=\(built.count)", since: rowsStarted, thresholdMs: 16)
         for id in restarted {
             if active.contains(id) {
                 requested.insert(id)
