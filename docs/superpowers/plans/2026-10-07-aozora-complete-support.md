@@ -372,6 +372,49 @@ Phase 2a is done. The screenshot probes and the corpus run belong to Phase 2b, w
   - The census's 「…」～「…」に傍点 range form is Task 16.
   - Commit with `feat(aozora): draw 傍点 and 傍線 in both engines`.
 
+### Phase 2c: what landed
+
+**Status, 2026-11-04: done, on YueduCoreText 0.14.1.** Converter version 3; text version still 1.
+
+**Releases and commits.**
+- Package 0.13.0: `text-decoration` and its longhands, `text-underline-position` and `-offset`, placed and snapped as WebKit places them (Task 5). 0.13.1 and 0.13.2 fix line boxes the probes found along the way: an inline box at `line-height: normal`, and WebKit's font-metric rounding (Times and Helvetica gain 15% above, rounded up; a Hiragino face keeps its own descent; found with S001i's `Hg` rows).
+- Package 0.14.0: `text-emphasis`, as WebKit draws it in both writing modes, and lines grow to hold the marks (Task 6). 0.14.1 makes the emphasis values public (`YueduCoreTextTypography`), so legacy picks the characters that take a mark exactly as BrowserAuto does.
+- App: `252aedff` (0.13.0), `85ee23ab` (0.13.2 and the WebKit layout probes), `4fee65a5` (0.14.1), `202819ff` (legacy, Task 7), `469ef7ba` (legacy's marks, made fast), and this commit (the writer, Task 8).
+
+**Remeasured** (fidelity harness, iOS 27.2 simulator, 0.14.1 against 0.13.2): no chapter of the base or published sets regresses. kusamakura, which has 傍点, gains 0.2 on average. The emphasis fixtures gain 7.0 (S001i, horizontal) and 4.3 (S001j, vertical).
+
+**Legacy's mechanism, chosen by probe (Task 7, Step 2): one `CTRubyAnnotation` per marked character**, at half size: `before` for over and right, `after` for under and left. The probe showed:
+- each character's annotation stays its own mark, next to an identical one too;
+- Core Text grows only the lines with marks, as WebKit does;
+- only layout reads the ruby attribute, so speech, search and copied text never see a mark.
+
+Drawing the marks in the page and scroll views, as 縦中横 cells are drawn, would have needed a second drawing path in both views.
+
+**Legacy's lines.** Core Text has no line-through, overline or wavy line, and draws a vertical underline on the left only. `ReaderTextDecorationRenderer` therefore draws every line itself, placed and snapped as the package's `TextDecorationPainter` places them. **Before this, legacy's `<s>` and `<del>` were never struck through.** A mark or a line with no colour of its own takes its run's theme colour when drawn, so a theme change recolours it with the text.
+
+**Legacy's limits, recorded:**
+- A character under a ruby keeps the ruby and takes no mark. On the ruby's side CSS does the same; on the other side WebKit draws both, which one annotation per character cannot.
+- A 縦中横 cell takes no mark; WebKit, and BrowserAuto, give it one.
+- No skip-ink under Latin descenders.
+
+**Legacy's marks were slow, and are fixed.** With one new annotation object per character, every mark was a new attribute value. On 43624 spine 1 (17 814 marks, found by the corpus run), `applyMarks` took 9 461 ms and the chapter's legacy build 9 979 ms. Two annotations per style, alternated between neighbouring characters, take 15–17 ms, and the build 454–518 ms. BrowserAuto lays the same chapter out in 1 206–1 280 ms (171 pages), inside its 5 s limit. An earlier 5–6 s reading was taken on a loaded machine.
+
+**The writer (Task 8).** The class names are aozora2html's and match the table as planned. `AozoraEmphasisStyle.className` gives `sesame_dot`, `white_sesame_dot`, `black_circle`, `white_circle`, `black_up-pointing_triangle`, `white_up-pointing_triangle`, `bullseye`, `fisheye` and `saltire`.
+- Each 傍点 class sets `text-emphasis-style` and `text-emphasis-position: over right`, and its `_after` (左に) class `under left`. Both properties are also written with the `-webkit-` prefix, for other WebKit-based EPUB readers.
+- 傍線 is `text-decoration-line: underline` with the matching style and `text-underline-position: right`; 左に傍線 (`overline_*`) uses `left`. As decided: horizontally both draw under the text, where aozora2html draws 左に傍線 over it, because one stylesheet serves both writing modes and must keep the vertical sides right.
+- 鎖線 (`*_dotted`) is `dotted`; 波線 (`*_wave`) is `wavy`.
+- Every class keeps `font-style: normal` (Phase 2b).
+- The census's 「…」～「…」に傍点 range form is Task 16.
+
+**Verified:**
+- **The four checks** after the last edit, with `AozoraEmphasisProbeTests` and `LegacyTextEmphasisDecorationTests`: 40 tests in 7 suites.
+- **The corpus.** Its run for this commit was cut short by a restart of the Mac (the macOS 27.3 update). The corpus runs again with Task 9, over both tasks' changes; see Phase 2d.
+- **The probe screenshots.** `AozoraEmphasisProbeTests` (new) converts one book with 傍点, 左に傍点, ばつ傍点, 傍線, 左に傍線, 二重傍線 and 波線, and lays it out in BrowserAuto and legacy in both writing modes. It asserts each construct's marks or lines as ink on the right side of its text and none on the other: the mark count, one line or two, a wave with more breaks than a solid line. The pages are in `2026-10-07-aozora-complete-support/phase-2c/`: `browser-h.png`, `browser-v.png`, `legacy-h.png` and `legacy-v.png`.
+
+**Findings, not fixed:**
+- In vertical writing WebKit draws a `filled circle` mark at the text's full size, unlike every other mark (a 46.25 column). Both engines draw it at half size (36.25).
+- WebKit's horizontal filled triangle is a device pixel smaller each way than Hiragino's ▲, and up to a point higher. No installed font explains it, so both engines draw Hiragino's.
+
 ## Phase 2d — Ruby that BrowserAuto leaves to legacy
 
 ### Task 9: 左ルビ and readings on both sides

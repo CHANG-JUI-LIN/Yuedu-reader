@@ -67,8 +67,7 @@ enum AozoraXHTMLWriter {
         }
     }()
 
-    /// The classes with a fixed rule, in the order they are written. 傍点 and 傍線
-    /// are `em`, which is italic by default; aozora.css sets them upright.
+    /// The classes with a fixed rule, in the order they are written.
     private static let namedRules: [(String, String)] = [
         ("futoji", ".futoji { font-weight: bold; }\n"),
         ("shatai", ".shatai { font-style: italic; }\n"),
@@ -80,15 +79,38 @@ enum AozoraXHTMLWriter {
         ("kaeriten", ".kaeriten { font-size: 0.8125rem; }\n"),
         ("okurigana", ".okurigana { font-size: 0.8125rem; }\n"),
         ("tcy", ".tcy { text-combine-upright: all; }\n"),
-    ] + emphasisClasses.map { name in (name, ".\(name) { font-style: normal; }\n") }
+    ] + emphasisRules
 
-    /// The 傍点 and 傍線 classes, on either side.
-    private static let emphasisClasses: [String] = {
-        let marks: [String] = AozoraEmphasisStyle.allCases.flatMap { style -> [String] in
-            [style.className, style.className + "_after"]
+    /// 傍点 and 傍線, which are `em`, italic by default: aozora.css sets them upright.
+    /// - 傍点 is `text-emphasis`, over the text and on the right of a vertical line;
+    ///   左に傍点 (`_after`) under it and on the left.
+    /// - 傍線 is an underline on the right of a vertical line, 左に傍線 (`overline_`)
+    ///   one on the left. Horizontally both are under the text, where aozora2html
+    ///   draws 左に傍線 over it: one stylesheet serves both writing modes, and keeps
+    ///   the vertical sides right (Aozora plan, Task 8).
+    ///
+    /// Each property is also written with WebKit's prefix, which other EPUB readers
+    /// built on WebKit may need.
+    private static let emphasisRules: [(String, String)] = {
+        func rule(_ name: String, _ declarations: [(String, String)], prefixed: Set<String>) -> (String, String) {
+            let body = declarations.flatMap { property, value in
+                (prefixed.contains(property) ? ["-webkit-\(property): \(value);"] : []) + ["\(property): \(value);"]
+            }
+            return (name, ".\(name) { font-style: normal; \(body.joined(separator: " ")) }\n")
         }
-        let lines: [String] = AozoraSidelineStyle.allCases.flatMap { style -> [String] in
-            ["underline_" + style.classSuffix, "overline_" + style.classSuffix]
+        let emphasis: Set<String> = ["text-emphasis-style", "text-emphasis-position"]
+        let marks = AozoraEmphasisStyle.allCases.flatMap { style in
+            [("", "over right"), ("_after", "under left")].map { suffix, position in
+                rule(style.className + suffix, [("text-emphasis-style", style.emphasisStyle),
+                                                ("text-emphasis-position", position)], prefixed: emphasis)
+            }
+        }
+        let lines = AozoraSidelineStyle.allCases.flatMap { style in
+            [("underline_", "right"), ("overline_", "left")].map { prefix, side in
+                rule(prefix + style.classSuffix, [("text-decoration-line", "underline"),
+                                                  ("text-decoration-style", style.decorationStyle),
+                                                  ("text-underline-position", side)], prefixed: [])
+            }
         }
         return marks + lines
     }()
@@ -374,6 +396,21 @@ private extension AozoraEmphasisStyle {
         case .saltire: return "saltire"
         }
     }
+
+    /// The `text-emphasis-style` that draws it.
+    var emphasisStyle: String {
+        switch self {
+        case .sesameDot: return "filled sesame"
+        case .whiteSesameDot: return "open sesame"
+        case .blackCircle: return "filled circle"
+        case .whiteCircle: return "open circle"
+        case .blackTriangle: return "filled triangle"
+        case .whiteTriangle: return "open triangle"
+        case .bullseye: return "filled double-circle"
+        case .fisheye: return "open double-circle"
+        case .saltire: return "\"×\""
+        }
+    }
 }
 
 private extension AozoraSidelineStyle {
@@ -384,6 +421,17 @@ private extension AozoraSidelineStyle {
         case .chain: return "dotted"
         case .dashed: return "dashed"
         case .wave: return "wave"
+        }
+    }
+
+    /// The `text-decoration-style` that draws it: 鎖線 as dots.
+    var decorationStyle: String {
+        switch self {
+        case .solid: return "solid"
+        case .double: return "double"
+        case .chain: return "dotted"
+        case .dashed: return "dashed"
+        case .wave: return "wavy"
         }
     }
 }

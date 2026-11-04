@@ -178,18 +178,23 @@ struct AozoraXHTMLWriterTests {
         ("一［＃「一」は同行中見出し］　本文", [".dogyo-naka-midashi { font-size: 1.125rem; font-weight: bold; }"]),
         ("節［＃「節」は小見出し］", [".ko-midashi { font-size: 1rem; font-weight: bold; }"]),
         ("［＃ここから罫囲み］\n本文\n［＃ここで罫囲み終わり］",
-         ["div.keigakomi { border: 1px solid; padding-block-start: 0.5em; padding-block-end: 0.5em; "
-            + "padding-inline-start: 1em; padding-inline-end: 0.5em; }", "span.keigakomi { border: 1px solid; }"]),
+         ["div.keigakomi { border: 1px solid; padding-block-start: 0.5em; padding-block-end: 0.5em; padding-inline-start: 1em; padding-inline-end: 0.5em; }", "span.keigakomi { border: 1px solid; }"]),
         ("太［＃「太」は太字］と斜［＃「斜」は斜体］", [".futoji { font-weight: bold; }", ".shatai { font-style: italic; }"]),
         ("図［＃「図」はキャプション］", [".caption { font-size: 0.8125rem; font-weight: bold; }"]),
         ("x2［＃「2」は上付き小文字］", [".superscript { font-size: 0.8125rem; }"]),
         ("学［＃（ビテ）］而時習［＃レ］之", [".okurigana { font-size: 0.8125rem; }", ".kaeriten { font-size: 0.8125rem; }"]),
         ("12［＃「12」は縦中横］", [".tcy { text-combine-upright: all; }"]),
         ("強調［＃「強調」に傍点］と点［＃「点」の左に傍点］",
-         [".sesame_dot { font-style: normal; }", ".sesame_dot_after { font-style: normal; }"]),
+         [".sesame_dot { font-style: normal; -webkit-text-emphasis-style: filled sesame; text-emphasis-style: filled sesame; -webkit-text-emphasis-position: over right; text-emphasis-position: over right; }",
+          ".sesame_dot_after { font-style: normal; -webkit-text-emphasis-style: filled sesame; text-emphasis-style: filled sesame; -webkit-text-emphasis-position: under left; text-emphasis-position: under left; }"]),
+        ("×［＃「×」にばつ傍点］と蛇［＃「蛇」に蛇の目傍点］",
+         [#".saltire { font-style: normal; -webkit-text-emphasis-style: "×"; text-emphasis-style: "×"; -webkit-text-emphasis-position: over right; text-emphasis-position: over right; }"#,
+          ".fisheye { font-style: normal; -webkit-text-emphasis-style: open double-circle; text-emphasis-style: open double-circle; -webkit-text-emphasis-position: over right; text-emphasis-position: over right; }"]),
         ("線［＃「線」に傍線］と線［＃「線」の左に波線］",
-         [".underline_solid { font-style: normal; }", ".overline_wave { font-style: normal; }"]),
-    ])
+         [".underline_solid { font-style: normal; text-decoration-line: underline; text-decoration-style: solid; text-underline-position: right; }",
+          ".overline_wave { font-style: normal; text-decoration-line: underline; text-decoration-style: wavy; text-underline-position: left; }"]),
+        ("線［＃「線」に鎖線］", [".underline_dotted { font-style: normal; text-decoration-line: underline; text-decoration-style: dotted; text-underline-position: right; }"]),
+    ] as [(String, [String])])
     func classRule(text: String, rules: [String]) {
         let css = AozoraXHTMLWriter.stylesheet(forChapters: [body(text)])
         for rule in rules {
@@ -202,9 +207,11 @@ struct AozoraXHTMLWriterTests {
         let css = AozoraXHTMLWriter.stylesheet(forChapters: [body(
             "［＃ここから罫囲み］\n本文\n［＃ここで罫囲み終わり］\n強調［＃「強調」に傍点］、12［＃「12」は縦中横］、図［＃「図」はキャプション］")])
         #expect(!css.contains("color"))
-        for forbidden in ["writing-mode", "ruby-position", "@media", "calc(", "float", "position"] {
+        for forbidden in ["writing-mode", "ruby-position", "@media", "calc(", "float"] {
             #expect(!css.contains(forbidden), "\(forbidden)")
         }
+        // The `position` property: `text-emphasis-position` and `text-underline-position` place marks.
+        #expect(css.range(of: #"(?<![-\w])position\s*:"#, options: .regularExpression) == nil, "\(css)")
     }
 
     // MARK: Helpers

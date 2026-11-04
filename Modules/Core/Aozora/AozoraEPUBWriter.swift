@@ -36,7 +36,7 @@ struct AozoraEPUBManifest: Codable, Equatable, Sendable {
 /// Packages a planned Aozora document as an EPUB 3 file (Phase 1b, Task 16).
 enum AozoraEPUBWriter {
     /// Changes with any change to the files the writer produces.
-    static let converterVersion = 2
+    static let converterVersion = 3
     /// Changes only when some chapter's text changes, and then ships with a
     /// position migration (Phase 1c's tools), never alone.
     static let textVersion = 1
