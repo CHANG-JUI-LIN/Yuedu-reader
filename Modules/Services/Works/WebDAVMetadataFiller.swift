@@ -89,7 +89,8 @@ struct WebDAVMetadataFiller: Sendable {
             sourceItem: file.record.key, identifiers: package.identifiers, languages: metadata.languages,
             description: metadata.description, subjects: metadata.subjects.map(\.name),
             publishers: metadata.publishers.map(\.name), published: metadata.published,
-            series: ImportedMetadataCapture.EPUBSeries(metadata), now: now()
+            series: ImportedMetadataCapture.EPUBSeries(metadata),
+            colophon: ImportedMetadataCapture.EPUBColophon(metadata), now: now()
         )
         file.identifiers = fields.identifiers
         var values = fields.values

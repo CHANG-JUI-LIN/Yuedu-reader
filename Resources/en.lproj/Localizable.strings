@@ -3494,6 +3494,12 @@
 "書誌資料：青空文庫（[CC BY 4.0](https://creativecommons.org/licenses/by/4.0/)）" = "Bibliographic data: Aozora Bunko ([CC BY 4.0](https://creativecommons.org/licenses/by/4.0/))";
 
 "底本" = "Original Edition";
+/* 作品詳情：EPUB 版權頁的初出（青空文庫）。 */
+"初次發表" = "First Published In";
+/* 作品詳情：EPUB 版權頁的入力，打字輸入文本的人（青空文庫）；不是「輸入」動作。 */
+"版權頁：輸入" = "Transcribed By";
+/* 作品詳情：EPUB 版權頁的校正（青空文庫）。 */
+"校對" = "Proofread By";
 
 "公開日" = "Published";
 

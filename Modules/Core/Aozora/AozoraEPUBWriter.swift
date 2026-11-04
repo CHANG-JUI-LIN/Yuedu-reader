@@ -36,7 +36,7 @@ struct AozoraEPUBManifest: Codable, Equatable, Sendable {
 /// Packages a planned Aozora document as an EPUB 3 file (Phase 1b, Task 16).
 enum AozoraEPUBWriter {
     /// Changes with any change to the files the writer produces.
-    static let converterVersion = 5
+    static let converterVersion = 6
     /// Changes only when some chapter's text changes, and then ships with a
     /// position migration (Phase 1c's tools), never alone.
     static let textVersion = 1
@@ -100,6 +100,12 @@ enum AozoraEPUBWriter {
 
     // MARK: Package documents
 
+    /// A colophon field's lines, as one: 底本's printing goes on its title's line.
+    private static func oneLine(_ field: String) -> String {
+        field.split(separator: "\n").map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }
+            .joined(separator: " ")
+    }
+
     private static func title(of document: AozoraDocument) -> String {
         document.header?.title ?? document.headerBlocks.first?.displayedText ?? ""
     }
@@ -121,10 +127,20 @@ enum AozoraEPUBWriter {
             people.append((henyaku, "edt", "contributor"))
             people.append((henyaku, "trl", "contributor"))
         }
+        // The colophon (Aozora plan, Task 19): 入力 is MARC's transcriber, 校正 its proofreader.
+        let bibliography = document.bibliography
+        if let input = bibliography.input.map(oneLine) { people.append((input, "trc", "contributor")) }
+        if let proofreading = bibliography.proofreading.map(oneLine) { people.append((proofreading, "pfr", "contributor")) }
         for (index, person) in people.enumerated() {
             let id = "person\(index + 1)"
             metadata += "    <dc:\(person.element) id=\"\(id)\">\(escape(person.name))</dc:\(person.element)>\n"
             metadata += "    <meta refines=\"#\(id)\" property=\"role\" scheme=\"marc:relators\">\(person.role)</meta>\n"
+        }
+        // 底本, the printed edition the text was keyed from, with its printing; 初出, where the
+        // work first appeared, as a citation of it.
+        if let source = bibliography.source.map(oneLine) { metadata += "    <dc:source>\(escape(source))</dc:source>\n" }
+        if let first = bibliography.firstPublished.map(oneLine) {
+            metadata += "    <meta property=\"dcterms:bibliographicCitation\">\(escape(first))</meta>\n"
         }
         metadata += "    <meta property=\"dcterms:modified\">\(EPUBPackageArchive.modifiedTimestamp())</meta>\n"
 

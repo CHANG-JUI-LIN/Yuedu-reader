@@ -897,7 +897,8 @@ class BookStore: @MainActor ObservableObject, BookProvider {
                     subjects: metadata.subjects.map(\.name),
                     publishers: metadata.publishers.map(\.name),
                     published: metadata.published,
-                    series: ImportedMetadataCapture.EPUBSeries(metadata)
+                    series: ImportedMetadataCapture.EPUBSeries(metadata),
+                    colophon: ImportedMetadataCapture.EPUBColophon(metadata)
                 ))
             }
             try await MainActor.run {

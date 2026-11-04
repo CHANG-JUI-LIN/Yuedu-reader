@@ -32,6 +32,26 @@ struct AozoraBookRegeneratorTests {
         }
     }
 
+    /// Aozora plan, Task 19: an import keeps the package's colophon in the copy's sidecar, and a
+    /// book converted before the package had one gets it when its EPUB is regenerated.
+    @Test("the colophon reaches the sidecar at import, and again once an older book is regenerated")
+    func colophonSidecar() async throws {
+        try await withBook { store, book in
+            let colophon: Set<MetadataField> = [.printedSource, .transcribers, .proofreaders]
+            @MainActor func fields() -> Set<MetadataField> {
+                Set(store.importedMetadata.read(copyID: book.id)?.values.map(\.field) ?? []).intersection(colophon)
+            }
+            #expect(fields() == colophon)
+            store.importedMetadata.rewriteValues(copyID: book.id) { $0.filter { !colophon.contains($0.field) } }
+            try await Self.rewriteManifest(of: book) { $0.converterVersion = 5 }
+            #expect(fields().isEmpty)
+            #expect(try await AozoraBookRegenerator.prepare(book: book, store: store) == .regenerated)
+            #expect(fields() == colophon)
+            #expect(store.importedMetadata.read(copyID: book.id)?.values.first { $0.field == .transcribers }?.value
+                    == .texts(["Nana ohbe"]))
+        }
+    }
+
     @Test("an older converter whose text would change is left alone")
     func olderConverterChangedText() async throws {
         try await withBook { store, book in

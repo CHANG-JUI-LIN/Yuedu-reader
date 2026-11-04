@@ -79,8 +79,12 @@ enum ConvertedBookRegenerator {
         let epub = StorageLocations.bookFile(book.contentFilename)
         let inUse = readerID.map { ReadingResourceUsage.shared.isInUse(bookID: book.id, besides: $0) }
             ?? ReadingResourceUsage.shared.isInUse(bookID: book.id)
-        return try await prepare(bookID: book.id, epub: epub, original: StorageLocations.bookFile(original),
-                                 converter: converter, isInUse: inUse, spineCache: localSpineCache(for: epub))
+        let outcome = try await prepare(bookID: book.id, epub: epub, original: StorageLocations.bookFile(original),
+                                        converter: converter, isInUse: inUse, spineCache: localSpineCache(for: epub))
+        // The new package may say more than the one the import read (an Aozora book's colophon
+        // since converter 6): the copy's sidecar reads it again.
+        if outcome == .regenerated { await ImportedMetadataCapture.reread(copy: book, store: store) }
+        return outcome
     }
 
     /// `epub` need not exist yet: a remote library's book is converted on its first open,

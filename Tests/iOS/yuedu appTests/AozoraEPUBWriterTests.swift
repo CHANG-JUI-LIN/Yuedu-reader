@@ -1,4 +1,5 @@
 import Foundation
+import ReadiumShared
 import ReadiumZIPFoundation
 import Testing
 import UIKit
@@ -72,6 +73,46 @@ struct AozoraEPUBWriterTests {
         #expect(xhtml.contains(#"src="../images/1-fig1.png""#))
         let session = try await PublicationSession.open(sourceURL: written.url)
         #expect(session.chapters.count == 2)
+    }
+
+    /// Aozora plan, Task 19: the colophon in the package, where Readium reads it and the import
+    /// keeps it in the copy's sidecar (`ImportedMetadataCapture.EPUBColophon`).
+    @Test("the colophon's 底本, 入力 and 校正 go into the package and come back as sidecar values")
+    func colophon() async throws {
+        let text = try TXTFileReader.readTextFile(url: Self.fixture)
+        let written = try await write(text, images: [:])
+        let archive = try await Archive(url: written.url, accessMode: .read)
+        let package = try #require(try await archive.entries().first { $0.path == "OPS/package.opf" })
+        let opf = String(decoding: try await data(of: package, in: archive), as: UTF8.self)
+        let source = "「筑摩全集類聚版　夏目漱石全集第十巻」筑摩書房 1972（昭和47）年1月10日第1刷発行"
+        // U+3000 goes in as a character reference, as everywhere the writer writes text.
+        #expect(opf.contains("<dc:source>\(AozoraXHTMLWriter.escaped(source))</dc:source>"))
+        #expect(!opf.contains("bibliographicCitation"), "the fixture has no 初出")
+
+        let session = try await PublicationSession.open(sourceURL: written.url)
+        let metadata = session.publication.metadata
+        #expect(metadata.authors.map(\.name) == ["夏目漱石"], "入力 and 校正 are not authors")
+        let colophon = try #require(ImportedMetadataCapture.EPUBColophon(metadata))
+        #expect(colophon == .init(source: source, citation: nil, transcribers: ["Nana ohbe"], proofreaders: ["米田進"]))
+
+        let copy = ReadingBook(title: "題", author: "夏目漱石", source: "local_epub", contentFilename: "x.epub")
+        let values = ImportedMetadataCapture.epub(
+            copy: copy, sourceItem: .copy(copy.id), identifiers: [], languages: [], description: nil, subjects: [],
+            publishers: [], published: nil, colophon: colophon).values
+        func value(_ field: MetadataField) -> MetadataPayload? { values.first { $0.field == field }?.value }
+        #expect(value(.printedSource) == .text(source))
+        #expect(value(.firstAppearance) == nil)
+        #expect(value(.transcribers) == .texts(["Nana ohbe"]))
+        #expect(value(.proofreaders) == .texts(["米田進"]))
+    }
+
+    @Test("初出 is a citation; a field over several lines is one")
+    func firstPublished() async throws {
+        let text = "題\n著者\n\n本文\n\n底本：「題」架空書房\n初出：「雑誌」\n　　　1900年1月号\n入力：誰か\n"
+        let written = try await write(text, images: [:])
+        let session = try await PublicationSession.open(sourceURL: written.url)
+        let colophon = try #require(ImportedMetadataCapture.EPUBColophon(session.publication.metadata))
+        #expect(colophon == .init(source: "「題」架空書房", citation: "「雑誌」 1900年1月号", transcribers: ["誰か"], proofreaders: []))
     }
 
     @Test("the table of contents nests one step at a time")

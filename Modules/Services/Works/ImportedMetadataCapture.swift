@@ -17,10 +17,12 @@ enum ImportedMetadataCapture {
         publishers: [String],
         published: Date?,
         series: EPUBSeries? = nil,
+        colophon: EPUBColophon? = nil,
         now: Date = Date()
     ) -> ImportedMetadata {
         let read = epubFields(sourceItem: sourceItem, identifiers: identifiers, languages: languages, description: description,
-                              subjects: subjects, publishers: publishers, published: published, series: series, now: now)
+                              subjects: subjects, publishers: publishers, published: published, series: series,
+                              colophon: colophon, now: now)
         return ImportedMetadata(copyID: copy.id, sourceItem: sourceItem, identifiers: read.identifiers, values: read.values)
     }
 
@@ -35,6 +37,7 @@ enum ImportedMetadataCapture {
         publishers: [String],
         published: Date?,
         series: EPUBSeries? = nil,
+        colophon: EPUBColophon? = nil,
         now: Date = Date()
     ) -> (identifiers: [ExternalIdentifier], values: [MetadataValue]) {
         var values: [MetadataValue] = []
@@ -52,7 +55,58 @@ enum ImportedMetadataCapture {
             add(.series, name)
             if let position = series.position, position.isFinite { add(.seriesIndex, .number(position)) }
         }
+        if let colophon {
+            add(.printedSource, text(colophon.source))
+            add(.firstAppearance, text(colophon.citation))
+            add(.transcribers, texts(colophon.transcribers))
+            add(.proofreaders, texts(colophon.proofreaders))
+        }
         return (unique(identifiers.compactMap { classify($0, in: identifiers) }), values)
+    }
+
+    /// A package's colophon beyond its publisher: `dc:source`, the edition its text was keyed
+    /// from (青空文庫's 底本); `dcterms:bibliographicCitation`, where the work first appeared
+    /// (初出); and the contributors MARC calls transcriber (`trc`, 入力) and proofreader (`pfr`,
+    /// 校正). The Aozora converter writes all four (Aozora plan, Task 19). Readium keeps the
+    /// first two in `otherMetadata`, by vocabulary URI and property, and the people, whose roles
+    /// it has no field for, in `contributors` with their roles.
+    struct EPUBColophon: Hashable, Sendable {
+        var source: String?
+        var citation: String?
+        var transcribers: [String]
+        var proofreaders: [String]
+
+        init(source: String?, citation: String?, transcribers: [String], proofreaders: [String]) {
+            self.source = source
+            self.citation = citation
+            self.transcribers = transcribers
+            self.proofreaders = proofreaders
+        }
+
+        /// Nil when the package names none of them.
+        init?(_ metadata: Metadata) {
+            func first(_ key: String) -> String? {
+                metadata.otherMetadata[key].flatMap { Self.strings(in: $0).first }
+            }
+            func people(_ role: String) -> [String] {
+                metadata.contributors.filter { $0.roles.contains(role) }.map(\.name)
+            }
+            self.init(source: first("http://purl.org/dc/terms/source"),
+                      citation: first("http://purl.org/dc/terms/bibliographicCitation"),
+                      transcribers: people("trc"), proofreaders: people("pfr"))
+            guard source != nil || citation != nil || !transcribers.isEmpty || !proofreaders.isEmpty else { return nil }
+        }
+
+        /// An `otherMetadata` value: the text, a refined meta's `@value`, or each of a repeated
+        /// meta's (`OPFMetaList.otherMetadata`).
+        private static func strings(in value: Any) -> [String] {
+            switch value {
+            case let text as String: [text]
+            case let refined as [String: Any]: (refined["@value"] as? String).map { [$0] } ?? []
+            case let repeated as [Any]: repeated.flatMap(strings(in:))
+            default: []
+            }
+        }
     }
 
     /// The series an EPUB's package names first, and the book's number in it: Calibre's
@@ -300,7 +354,8 @@ extension ImportedMetadataCapture {
             subjects: metadata.subjects.map(\.name),
             publishers: metadata.publishers.map(\.name),
             published: metadata.published,
-            series: EPUBSeries(metadata)
+            series: EPUBSeries(metadata),
+            colophon: EPUBColophon(metadata)
         ))
         return true
     }

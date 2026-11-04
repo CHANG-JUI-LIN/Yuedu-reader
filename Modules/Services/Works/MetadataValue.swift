@@ -7,6 +7,9 @@ import Foundation
 enum MetadataField: String, Codable, Hashable, Sendable {
     case title, authors, cover, intro, tags, series, seriesIndex, language, publisher, publishedDate,
          wordCount, serialStatus
+    /// A colophon's 底本 (`dc:source`), 初出 (`dcterms:bibliographicCitation`), 入力 (MARC `trc`)
+    /// and 校正 (`pfr`), as an EPUB's package names them (`ImportedMetadataCapture.EPUBColophon`).
+    case printedSource, firstAppearance, transcribers, proofreaders
 }
 
 enum MetadataPayload: Hashable, Codable, Sendable {

@@ -731,7 +731,31 @@ struct WorkDetailView: View {
                 BookDetailInfoItem(id: $0.id, label: $0.label, value: $0.value)
             }
         }
+        result += colophonItems(cataloguedSource: { if case .aozora = version.opening { true } else { false } }())
         return result
+    }
+
+    /// The shown copy's colophon, as its package names it (Aozora plan, Task 19): a converted
+    /// 青空文庫 text's 底本, 初出, 入力 and 校正. A catalogue version already has its 底本 row.
+    /// Only a converted 青空文庫 text: other packages also name a `dc:source` (Project
+    /// Gutenberg's is its own URL), which is no 底本.
+    private func colophonItems(cataloguedSource: Bool) -> [BookDetailInfoItem] {
+        guard shownCopy?.aozora != nil else { return [] }
+        let rows: [(field: MetadataField, label: String)] = [
+            (.printedSource, localized("底本")), (.firstAppearance, localized("初次發表")),
+            (.transcribers, localized("版權頁：輸入")), (.proofreaders, localized("校對")),
+        ]
+        return rows.compactMap { row in
+            guard !(cataloguedSource && row.field == .printedSource),
+                  let value = copySidecar.first(where: { $0.field == row.field })?.value else { return nil }
+            let text = switch value {
+            case .text(let single): single
+            case .texts(let names): names.joined(separator: "、")
+            case .number, .date: ""
+            }
+            guard !text.isEmpty else { return nil }
+            return BookDetailInfoItem(id: "colophon.\(row.field.rawValue)", label: row.label, value: text)
+        }
     }
 
     /// 來源: the version shown, switched in place from its menu when the work has others. The
@@ -1197,6 +1221,20 @@ extension WorkSourceFinder.State {
             BookDetailInfoItem(id: "failed", label: localized("來源"), value: "本機",
                                detail: "\(localized("搜索失敗")) · \(localized("重試"))", action: {},
                                spokenDetail: localized("搜索失敗")),
+        ])
+    }
+}
+
+#Preview("作品詳情 · 版權頁") {
+    // A converted 青空文庫 text's colophon, as `colophonItems` adds it under 來源.
+    ScrollView {
+        BookDetailInfoSection(items: [
+            BookDetailInfoItem(id: "source", label: localized("來源"), value: "本機"),
+            BookDetailInfoItem(id: "colophon.printedSource", label: localized("底本"),
+                               value: "「筑摩全集類聚版　夏目漱石全集第十巻」筑摩書房 1972（昭和47）年1月10日第1刷発行"),
+            BookDetailInfoItem(id: "colophon.firstAppearance", label: localized("初次發表"), value: "「雑誌」1900年1月号"),
+            BookDetailInfoItem(id: "colophon.transcribers", label: localized("版權頁：輸入"), value: "Nana ohbe"),
+            BookDetailInfoItem(id: "colophon.proofreaders", label: localized("校對"), value: "米田進"),
         ])
     }
 }
