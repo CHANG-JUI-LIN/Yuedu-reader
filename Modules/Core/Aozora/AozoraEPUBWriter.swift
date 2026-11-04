@@ -36,7 +36,7 @@ struct AozoraEPUBManifest: Codable, Equatable, Sendable {
 /// Packages a planned Aozora document as an EPUB 3 file (Phase 1b, Task 16).
 enum AozoraEPUBWriter {
     /// Changes with any change to the files the writer produces.
-    static let converterVersion = 4
+    static let converterVersion = 5
     /// Changes only when some chapter's text changes, and then ships with a
     /// position migration (Phase 1c's tools), never alone.
     static let textVersion = 1
@@ -243,7 +243,7 @@ enum AozoraEPUBWriter {
                     names.append(source)
                     walk(caption)
                 case .ruby(let children, _, _), .emphasis(_, _, let children), .sideline(_, _, let children),
-                     .bold(let children), .italic(let children), .size(_, let children),
+                     .bold(let children), .italic(let children), .gothic(let children), .size(_, let children),
                      .tateChuYoko(let children), .script(_, let children), .warichu(let children),
                      .heading(_, _, let children), .boxed(let children), .horizontal(let children),
                      .caption(let children):

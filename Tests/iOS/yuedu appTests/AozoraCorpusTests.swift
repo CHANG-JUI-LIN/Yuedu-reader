@@ -705,7 +705,7 @@ struct AozoraCorpusTests {
         visit(inline)
         switch inline {
         case .ruby(let children, _, _), .emphasis(_, _, let children), .sideline(_, _, let children),
-             .bold(let children), .italic(let children), .size(_, let children), .tateChuYoko(let children),
+             .bold(let children), .italic(let children), .gothic(let children), .size(_, let children), .tateChuYoko(let children),
              .script(_, let children), .warichu(let children), .heading(_, _, let children),
              .boxed(let children), .horizontal(let children), .caption(let children),
              .image(_, _, _, let children):

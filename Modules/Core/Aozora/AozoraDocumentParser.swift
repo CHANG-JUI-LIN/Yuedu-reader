@@ -441,6 +441,7 @@ private extension AozoraCommandTable.Style {
         case .sideline(let shape, let side): return .sideline(shape, side: side, children)
         case .bold: return .bold(children)
         case .italic: return .italic(children)
+        case .gothic: return .gothic(children)
         case .size(let steps): return .size(steps: steps, children)
         case .tateChuYoko: return .tateChuYoko(children)
         case .script(let kind): return .script(kind, children)
@@ -625,6 +626,10 @@ private final class AozoraBlockParser {
     private var lineEndAlignment: Int?
     /// One-line 字下げ.
     private var lineIndent: Int?
+    /// この行は…: styles on the whole line, wherever on it the annotation stands.
+    private var lineStyles: [AozoraCommandTable.Style] = []
+    /// ページの左右中央, from the annotation to the next page break.
+    private var pageCentered = false
     private var lineHasTokens = false
 
     /// Where a ruby base would start: the run of one character class before
@@ -712,6 +717,7 @@ private final class AozoraBlockParser {
         openRanges = []
         lineEndAlignment = nil
         lineIndent = nil
+        lineStyles = []
         lineHasTokens = false
     }
 
@@ -796,6 +802,7 @@ private final class AozoraBlockParser {
                 }
                 emit(.pageBreak(kind), showing: [], at: node.source.lowerBound)
                 endAlignment = nil
+                pageCentered = false
             default:
                 segment.append(node)
             }
@@ -850,6 +857,7 @@ private final class AozoraBlockParser {
             style.indent = lineIndent
         }
         if let lineEndAlignment { style.endAlignment = lineEndAlignment }
+        style.isPageCentered = pageCentered
         return style
     }
 
@@ -858,6 +866,7 @@ private final class AozoraBlockParser {
         var result = inlines
         if blockStyles.contains(where: { $0.kinds.contains(.bold) }) { result = [.bold(result)] }
         if blockStyles.contains(where: { $0.kinds.contains(.italic) }) { result = [.italic(result)] }
+        for style in lineStyles { result = [style.inline(result)] }
         return result
     }
 
@@ -1065,6 +1074,19 @@ private final class AozoraBlockParser {
 
     private func handleAnnotation(_ token: AozoraToken) {
         let command = source.string(token.content)
+        if command == "ページの左右中央" || command == "ここからページの左右中央" {
+            pageCentered = true
+            return
+        }
+        if command == "ここでページの左右中央終わり" {
+            pageCentered = false
+            return
+        }
+        // この行はゴシック体: the line takes the style, as a forward reference names its text.
+        if command.hasPrefix("この行は"), let style = AozoraCommandTable.style(String(command.dropFirst(4))) {
+            lineStyles.append(style)
+            return
+        }
         if command.hasPrefix("ここから") || command.contains("折り返して") {
             if command == "ここから割り注" {
                 openRange(command, container: .style(.warichu), token: token)
@@ -1373,16 +1395,20 @@ private final class AozoraBlockParser {
     private struct ForwardReference {
         /// The text the annotation names, between its outer 「」.
         var target: Range<Int>
+        /// 「X」〜「Y」: the text named runs from X through Y.
+        var through: Range<Int>?
         /// What to do with it: 傍点, は太字, に「…」の注記 …
         var spec: Range<Int>
     }
 
-    /// 「X」に…, 「X」は…, 「X」の…: X may hold 「」 pairs and annotations
-    /// (aozora2html PAT_FRONTREF).
+    /// 「X」に…, 「X」は…, 「X」の…, and 「X」〜「Y」に… for the text from X through Y: X and Y
+    /// may hold 「」 pairs and annotations (aozora2html PAT_FRONTREF).
     private func forwardReference(in content: Range<Int>) -> ForwardReference? {
         let units = source.units
         var depth = 0
         var index = content.lowerBound
+        var first: Range<Int>?
+        var start = content.lowerBound + 1
         while index < content.upperBound {
             let unit = units[index]
             if unit == 0x300C {                                          // 「
@@ -1390,10 +1416,18 @@ private final class AozoraBlockParser {
             } else if unit == 0x300D {                                   // 」
                 depth -= 1
                 if depth == 0 {
-                    guard index + 1 < content.upperBound,
-                          [0x306B, 0x306F, 0x306E].contains(units[index + 1])   // に は の
+                    guard index + 1 < content.upperBound else { return nil }
+                    // 〜 (U+301C, or ～ U+FF5E as CP932 decodes it) and a second 「.
+                    if first == nil, [0x301C, 0xFF5E].contains(units[index + 1]),
+                       index + 2 < content.upperBound, units[index + 2] == 0x300C {
+                        first = start..<index
+                        start = index + 3
+                        index += 2
+                        continue
+                    }
+                    guard [0x306B, 0x306F, 0x306E].contains(units[index + 1])   // に は の
                     else { return nil }
-                    return ForwardReference(target: (content.lowerBound + 1)..<index,
+                    return ForwardReference(target: first ?? start..<index, through: first.map { _ in start..<index },
                                             spec: (index + 2)..<content.upperBound)
                 }
             } else if unit == AozoraTokenizer.bracketOpen, index + 1 < content.upperBound,
@@ -1410,6 +1444,8 @@ private final class AozoraBlockParser {
     private static let leftRuby = try! NSRegularExpression(pattern: "^(?:左|下)に「(.*)」の(?:ルビ|注記)$")
     private static let rightRuby = try! NSRegularExpression(pattern: "^(?:右に)?「(.*)」の(?:ルビ|注記)$")
     private static let sideMark = try! NSRegularExpression(pattern: "^「(.)」の傍記$")
+    /// 上に「⌒」付き: a mark over the text, set as a ruby over it (right of a vertical line).
+    private static let markAbove = try! NSRegularExpression(pattern: "^上に「(.*)」付き$")
 
     private enum ForwardAction {
         case style(AozoraCommandTable.Style)
@@ -1421,12 +1457,13 @@ private final class AozoraBlockParser {
     private func handleForwardReference(_ token: AozoraToken, command: String) -> Bool {
         guard let reference = forwardReference(in: token.content) else { return false }
         let target = visibleText(reference.target)
+        let through = reference.through.map(visibleText)
         let spec = source.string(reference.spec)
         let specRange = NSRange(spec.startIndex..., in: spec)
 
         // ［＃「１」はローマ数字、1-13-21］: the code names the character the
         // target stands for (aozora2html `exec_style` → `kuten2png`).
-        if !spec.contains("※［＃"), !spec.contains("非0213外字") {
+        if through == nil, !spec.contains("※［＃"), !spec.contains("非0213外字") {
             let (gaiji, unmapped) = AozoraDocumentParser.gaiji(spec, tables: tables)
             if gaiji.code != nil, gaiji.resolved != nil {
                 if !wrapTarget(target, make: { replaced in
@@ -1440,8 +1477,11 @@ private final class AozoraBlockParser {
             if unmapped { diagnostics.record(.unmappedGaijiCode) }
         }
 
-        // Ruby-like notes: に「Y」の注記, の左に「Y」のルビ, に「・」の傍記.
-        for (pattern, side) in [(Self.leftRuby, AozoraSide.left), (Self.rightRuby, .right)] {
+        // Ruby-like notes: に「Y」の注記, の左に「Y」のルビ, 上に「⌒」付き, に「・」の傍記. A range
+        // takes styles only.
+        let notes: [(NSRegularExpression, AozoraSide)] = through != nil ? []
+            : [(Self.leftRuby, .left), (Self.rightRuby, .right), (Self.markAbove, .right)]
+        for (pattern, side) in notes {
             if let match = pattern.firstMatch(in: spec, range: specRange) {
                 let start = reference.spec.lowerBound + match.range(at: 1).location
                 let reading = visibleText(start..<(start + match.range(at: 1).length))
@@ -1452,7 +1492,7 @@ private final class AozoraBlockParser {
                 return true
             }
         }
-        if let match = Self.sideMark.firstMatch(in: spec, range: specRange),
+        if through == nil, let match = Self.sideMark.firstMatch(in: spec, range: specRange),
            let markRange = Range(match.range(at: 1), in: spec) {
             let reading = Array(repeating: String(spec[markRange]), count: target.count).joined(separator: "\u{00A0}")
             if !wrapTarget(target, make: { AozoraNode(kind: .container(.ruby(reading: reading, side: .right)),
@@ -1478,7 +1518,7 @@ private final class AozoraBlockParser {
         }
         if !actions.isEmpty {
             for action in actions {
-                let applied = wrapTarget(target) { wrapped in
+                let applied = wrapTarget(target, through: through) { wrapped in
                     switch action {
                     case .style(let style):
                         return AozoraNode(kind: .container(.style(style)), source: token.range, children: wrapped)
@@ -1516,18 +1556,43 @@ private final class AozoraBlockParser {
     /// (matched on what the reader sees, so ruby readings are skipped). An
     /// occurrence that would cut through a ruby, a gaiji or an open range is
     /// passed over for an earlier one.
-    private func wrapTarget(_ target: String, make: ([AozoraNode]) -> AozoraNode) -> Bool {
+    ///
+    /// With `through`, the text runs from an occurrence of `target` through the nearest preceding
+    /// occurrence of `through` that ends at or after it (「X」〜「Y」).
+    private func wrapTarget(_ target: String, through: String? = nil, make: ([AozoraNode]) -> AozoraNode) -> Bool {
         let needle = Array(target.utf16)
         guard !needle.isEmpty else { return false }
         var haystack: [UInt16] = []
         for node in nodes { node.appendVisibleUnits(to: &haystack) }
-        var start = haystack.count - needle.count
-        while start >= 0 {
-            if haystack[start..<(start + needle.count)].elementsEqual(needle),
-               wrap(start..<(start + needle.count), in: &nodes, topLevel: true, make: make) {
-                return true
+        func occurs(_ units: [UInt16], at index: Int) -> Bool {
+            index >= 0 && index + units.count <= haystack.count
+                && haystack[index..<(index + units.count)].elementsEqual(units)
+        }
+        guard let through else {
+            var start = haystack.count - needle.count
+            while start >= 0 {
+                if occurs(needle, at: start), wrap(start..<(start + needle.count), in: &nodes, topLevel: true, make: make) {
+                    return true
+                }
+                start -= 1
             }
-            start -= 1
+            return false
+        }
+        let tail = Array(through.utf16)
+        guard !tail.isEmpty else { return false }
+        var tailStart = haystack.count - tail.count
+        while tailStart >= 0 {
+            if occurs(tail, at: tailStart) {
+                let end = tailStart + tail.count
+                var start = min(tailStart, end - needle.count)
+                while start >= 0 {
+                    if occurs(needle, at: start), wrap(start..<end, in: &nodes, topLevel: true, make: make) {
+                        return true
+                    }
+                    start -= 1
+                }
+            }
+            tailStart -= 1
         }
         return false
     }

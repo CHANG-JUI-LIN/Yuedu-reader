@@ -575,6 +575,13 @@ private extension RenderStyle {
                                    position: s.textEmphasisPosition)
             },
             rubyUnder: s.rubyUnder,
+            verticalAlign: {
+                switch s.verticalAlign {
+                case .super: .superscript
+                case .sub: .subscript
+                case .baseline, .top, .middle, .bottom: .baseline
+                }
+            }(),
             isVerticalWritingMode: s.isVerticalWritingMode,
             textCombineUpright: s.textCombineUpright,
             borderRadius: s.borderRadius,

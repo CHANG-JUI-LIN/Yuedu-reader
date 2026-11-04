@@ -56,6 +56,49 @@ struct AozoraAnnotationTests {
         #expect(inlines("12［＃「12」は縦中横、行右小書き］") == [.script(.lineRight, [.tateChuYoko([.text("12")])])])
     }
 
+    @Test("the corpus's style-only annotations the parser used not to know (Aozora plan, Task 16)")
+    func styleOnlyAnnotations() {
+        #expect(inlines("井伏鱒二［＃「井伏鱒二」はゴチック］は") == [.gothic([.text("井伏鱒二")]), .text("は")])
+        #expect(inlines("見出し［＃「見出し」はゴシック体］") == [.gothic([.text("見出し")])])
+        #expect(inlines("万ガ［＃「ガ」は小書き］一") == [.text("万"), .size(steps: -1, [.text("ガ")]), .text("一")])
+        #expect(inlines("か？！［＃「？！」は横一列］") == [.text("か"), .tateChuYoko([.text("？！")])])
+        #expect(inlines("五月三日［＃「五月三日」に傍点（白丸）］") == [
+            .emphasis(.whiteCircle, side: .right, [.text("五月三日")]),
+        ])
+        #expect(inlines("ヤフ［＃「フ」は上に「⌒」付き］ー") == [
+            .text("ヤ"), .ruby(base: [.text("フ")], reading: "⌒", side: .right), .text("ー"),
+        ])
+    }
+
+    @Test("「X」〜「Y」 names the text from X through Y")
+    func rangeForwardReference() {
+        #expect(inlines("前。實はさうで、思想があるので［＃「實は」〜「思想があるので」に傍点］。") == [
+            .text("前。"), .emphasis(.sesameDot, side: .right, [.text("實はさうで、思想があるので")]), .text("。"),
+        ])
+        // ～ as CP932 decodes 〜, and the nearest end before the annotation.
+        #expect(inlines("甲乙丙。甲乙丙［＃「甲」～「丙」に白丸傍点］") == [
+            .text("甲乙丙。"), .emphasis(.whiteCircle, side: .right, [.text("甲乙丙")]),
+        ])
+        // A range takes styles only: a ruby-like note on one wraps nothing.
+        #expect(inlines("甲乙［＃「甲」〜「乙」に「ママ」の注記］").displayedText == "甲乙")
+    }
+
+    @Test("この行は… styles the whole line")
+    func thisLineStyle() {
+        #expect(inlines("カルヴィン派　宗教改革の歴史［＃この行はゴシック体］") == [
+            .gothic([.text("カルヴィン派　宗教改革の歴史")]),
+        ])
+    }
+
+    @Test("ページの左右中央 marks the blocks up to the next page break, and shows nothing")
+    func pageCentered() {
+        let document = AozoraDocumentParser.parse("題\n\n前\n［＃改丁］\n［＃ページの左右中央］\n\n第一篇\n［＃改ページ］\n本文\n")
+        let shown = document.body.filter { if case .paragraph(let inlines, _) = $0 { return !inlines.isEmpty }; return false }
+        #expect(shown.map { inlines(of: $0).displayedText } == ["前", "第一篇", "本文"])
+        #expect(shown.map { style($0)?.isPageCentered } == [false, true, false])
+        #expect(document.diagnostics[.unknownAnnotation("ページの左右中央")] == 0)
+    }
+
     @Test("a 割り注 is set in parentheses unless the text has them")
     func warichu() {
         #expect(inlines("本文［＃割り注］注釈［＃割り注終わり］続き") == [
@@ -343,7 +386,7 @@ private extension AozoraInline {
         switch self {
         case .emphasis(let shape, _, let children): return [shape.rawValue] + children.flatMap(\.styleNames)
         case .sideline(let shape, _, let children): return [shape.rawValue] + children.flatMap(\.styleNames)
-        case .ruby(let children, _, _), .bold(let children), .italic(let children), .size(_, let children),
+        case .ruby(let children, _, _), .bold(let children), .italic(let children), .gothic(let children), .size(_, let children),
              .tateChuYoko(let children), .script(_, let children), .warichu(let children),
              .heading(_, _, let children), .boxed(let children), .horizontal(let children),
              .caption(let children), .image(_, _, _, let children):

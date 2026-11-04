@@ -71,13 +71,18 @@ enum AozoraXHTMLWriter {
     private static let namedRules: [(String, String)] = [
         ("futoji", ".futoji { font-weight: bold; }\n"),
         ("shatai", ".shatai { font-style: italic; }\n"),
+        ("gothic", ".gothic { font-family: sans-serif; }\n"),
         ("keigakomi", "div.keigakomi { border: 1px solid; padding-block-start: 0.5em; padding-block-end: 0.5em; "
             + "padding-inline-start: 1em; padding-inline-end: 0.5em; }\nspan.keigakomi { border: 1px solid; }\n"),
         ("caption", ".caption { font-size: 0.8125rem; font-weight: bold; }\n"),
         ("superscript", ".superscript { font-size: 0.8125rem; }\n"),
         ("subscript", ".subscript { font-size: 0.8125rem; }\n"),
-        ("kaeriten", ".kaeriten { font-size: 0.8125rem; }\n"),
-        ("okurigana", ".okurigana { font-size: 0.8125rem; }\n"),
+        // 返り点 and 訓点送り仮名, half size beside the character before: lowered and raised, left
+        // and right of a vertical line. Kanbun sets them under the character; CSS has no such place.
+        ("kaeriten", ".kaeriten { font-size: 0.5em; vertical-align: sub; }\n"),
+        ("okurigana", ".okurigana { font-size: 0.5em; vertical-align: super; }\n"),
+        // 割り注, in one line at half size between the （） the parser keeps; CSS has no two-line form.
+        ("warichu", ".warichu { font-size: 0.5em; }\n"),
         ("tcy", ".tcy { text-combine-upright: all; }\n"),
         // 左ルビ: under the text, and on the left of a vertical line.
         ("left", "ruby.left { -webkit-ruby-position: after; ruby-position: under; }\n"),
@@ -285,6 +290,8 @@ enum AozoraXHTMLWriter {
             return wrap("<span class=\"futoji\">", "</span>", children)
         case .italic(let children):
             return wrap("<span class=\"shatai\">", "</span>", children)
+        case .gothic(let children):
+            return wrap("<span class=\"gothic\">", "</span>", children)
         case .size(let steps, let children):
             guard let name = sizeClass(steps) else { return wrap("", "", children) }
             return wrap("<span class=\"\(name)\">", "</span>", children)

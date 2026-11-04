@@ -1,0 +1,7 @@
+html { writing-mode: vertical-rl; -webkit-writing-mode: vertical-rl; -epub-writing-mode: vertical-rl; }
+p { margin: 0; }
+.superscript { font-size: 0.8125rem; }
+.subscript { font-size: 0.8125rem; }
+.kaeriten { font-size: 0.5em; vertical-align: sub; }
+.okurigana { font-size: 0.5em; vertical-align: super; }
+.warichu { font-size: 0.5em; }

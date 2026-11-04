@@ -11,6 +11,7 @@ enum AozoraCommandTable {
         case sideline(AozoraSidelineStyle, AozoraSide)
         case bold
         case italic
+        case gothic
         case size(Int)
         case tateChuYoko
         case script(AozoraScriptKind)
@@ -44,6 +45,13 @@ enum AozoraCommandTable {
         case "罫囲み": return .boxed
         case "キャプション": return .caption
         case "割り注", "割書": return .warichu
+        case "ゴシック体", "ゴチック": return .gothic
+        // 小書き: a smaller character on the line, as ヶ for ケ (万ガ［＃「ガ」は小書き］一).
+        case "小書き": return .size(-1)
+        // 横一列: a few characters set across one column, as 縦中横 (「？！」は横一列).
+        case "横一列": return .tateChuYoko
+        // 傍点（白丸）, the other name of 白丸傍点.
+        case "傍点（白丸）": return .emphasis(.whiteCircle, .right)
         default: break
         }
         // 右に／左に／上に／下に: aozora2html moves 傍点 to the left side for 左

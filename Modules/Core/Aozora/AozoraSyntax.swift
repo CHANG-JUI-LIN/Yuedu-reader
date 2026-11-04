@@ -93,6 +93,8 @@ indirect enum AozoraInline: Equatable, Sendable {
     case sideline(AozoraSidelineStyle, side: AozoraSide, [AozoraInline])
     case bold([AozoraInline])
     case italic([AozoraInline])
+    /// ゴシック体: a sans-serif face.
+    case gothic([AozoraInline])
     /// 字級: positive is N steps larger, negative N steps smaller.
     case size(steps: Int, [AozoraInline])
     case tateChuYoko([AozoraInline])
@@ -139,6 +141,9 @@ struct AozoraParagraphStyle: Equatable, Sendable {
     var isHorizontal = false
     /// キャプション.
     var isCaption = false
+    /// ページの左右中央: the page this block is on is centred both ways, as a title page. Parsed,
+    /// not yet written: neither engine centres a page (Aozora plan, Task 15).
+    var isPageCentered = false
 
     static let plain = AozoraParagraphStyle()
 }
@@ -161,7 +166,7 @@ extension AozoraInline {
         case .lineBreak: return "\n"
         case .editorialNote, .unknownAnnotation: return ""
         case .ruby(let children, _, _), .emphasis(_, _, let children), .sideline(_, _, let children),
-             .bold(let children), .italic(let children), .size(_, let children),
+             .bold(let children), .italic(let children), .gothic(let children), .size(_, let children),
              .tateChuYoko(let children), .script(_, let children), .warichu(let children),
              .heading(_, _, let children), .boxed(let children), .horizontal(let children),
              .caption(let children), .image(_, _, _, let children):
@@ -179,7 +184,7 @@ extension AozoraInline {
     var children: [AozoraInline] {
         switch self {
         case .ruby(let children, _, _), .emphasis(_, _, let children), .sideline(_, _, let children),
-             .bold(let children), .italic(let children), .size(_, let children),
+             .bold(let children), .italic(let children), .gothic(let children), .size(_, let children),
              .tateChuYoko(let children), .script(_, let children), .warichu(let children),
              .heading(_, _, let children), .boxed(let children), .horizontal(let children),
              .caption(let children), .image(_, _, _, let children):

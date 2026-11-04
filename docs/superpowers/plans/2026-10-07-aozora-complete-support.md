@@ -564,16 +564,16 @@ Each task here is small in the census but may need engine work. Each starts with
 
 Census: 470 works and 243 works.
 
-- [ ] In vertical kanbun, 返り点 sit small at the lower left of a character and 送り仮名 small at the lower right.
-- [ ] First do the CSS approximation, `.kaeriten { font-size: 0.5em; vertical-align: sub }` and `.okurigana { font-size: 0.5em; vertical-align: super }`. Check that both engines move them along the right axis in vertical writing.
-- [ ] Record the gap to true kanbun placement, and propose the engine feature as its own design if the result is not readable.
+- [x] In vertical kanbun, 返り点 sit small at the lower left of a character and 送り仮名 small at the lower right.
+- [x] First do the CSS approximation, `.kaeriten { font-size: 0.5em; vertical-align: sub }` and `.okurigana { font-size: 0.5em; vertical-align: super }`. Check that both engines move them along the right axis in vertical writing.
+- [x] Record the gap to true kanbun placement, and propose the engine feature as its own design if the result is not readable.
 
 ### Task 12: 横組み inside vertical text
 
 Census: 401 works.
 
 - [ ] Today a `writing-mode` other than `vertical-rl` sends the chapter to legacy (`BrowserLayoutCapabilityScanner.declaration`).
-- [ ] Decide with the maintainer whether to implement inline horizontal runs in BrowserAuto (a longer cousin of the 縦中横 cell), or to accept legacy for those chapters as a recorded exception.
+- [x] Decide with the maintainer whether to implement inline horizontal runs in BrowserAuto (a longer cousin of the 縦中横 cell), or to accept legacy for those chapters as a recorded exception.
 - [ ] Map `.yokogumi` only after that decision.
 
 ### Task 13: 割り注
@@ -581,20 +581,20 @@ Census: 401 works.
 Census: 319 works.
 
 - [ ] True 割り注 sets a note in two half-size lines within one line. CSS has no such feature.
-- [ ] Start with `.warichu { font-size: 0.5em }`, keeping the （） the parser already adds.
+- [x] Start with `.warichu { font-size: 0.5em }`, keeping the （） the parser already adds.
 - [ ] Propose the two-line layout as an engine design only if the maintainer asks.
 
 ### Task 14: 上付き, 下付き and 小書き in vertical writing
 
 Census: 294 works.
 
-- [ ] Probe how `<sup>` and `<sub>` sit in vertical writing in both engines, and fix whichever differs from WebKit.
+- [x] Probe how `<sup>` and `<sub>` sit in vertical writing in both engines, and fix whichever differs from WebKit.
 
 ### Task 15: ページの左右中央
 
 Census: 225 works and 747 occurrences, about 712 of them unknown to the parser today.
 
-- [ ] Teach the parser the annotation as a block style (tree only).
+- [x] Teach the parser the annotation as a block style (tree only).
 - [ ] Design centring for paged mode: the chapter's content centred on its page in both axes, as on a title page. In scroll mode it is centred in the viewport's inline axis.
 - [ ] This is engine work in both engines. Get the design approved first.
 
@@ -602,7 +602,7 @@ Census: 225 works and 747 occurrences, about 712 of them unknown to the parser t
 
 **Source:** census `unknown_top`, and the corpus suite's "top unknown" line.
 
-- [ ] Classify each shape before touching it.
+- [x] Classify each shape before touching it.
   - **Style only** (allowed):
     - 「…」～「…」に傍点 and its 白丸 form (range forward references, about 200 occurrences);
     - はゴシック体 and the other typefaces (`font-family: sans-serif`);
@@ -613,13 +613,40 @@ Census: 225 works and 747 occurrences, about 712 of them unknown to the parser t
   - **Text-changing** (blocked by constraint 1; ask the maintainer):
     - letters with dots, such as 「mは上ドット付き」 → ṁ;
     - 分数, if it would compose characters.
-- [ ] For each style-only shape, add a parser test, a writer rule and the four checks. Watch the corpus suite's unknown count fall.
+- [x] For each style-only shape, add a parser test, a writer rule and the four checks. Watch the corpus suite's unknown count fall.
 
 ### Task 17: 段組み
 
 Census: 17 works.
 
-- [ ] CSS columns are not supported by either engine. Record the decision not to map them unless the maintainer asks.
+- [x] CSS columns are not supported by either engine. Record the decision not to map them unless the maintainer asks.
+
+### Phase 3: what landed
+
+**Status, 2026-11-04: verified in the simulator (iOS 26.5, `scripts/xctest.sh`), not released.** No new package version: the shift both engines use, `VerticalAlignShift`, shipped in YueduCoreText 0.17.0 with `ScriptShiftReferenceTests` pinning BrowserAuto to WebKit 26.5 (S013 and S013a fixtures). Converter version 5. The maintainer asked for the whole plan without being asked (2026-11-04), so every decision below was made in the session and is recorded here for veto.
+
+What each task did:
+- **Task 11, 返り点 and 訓点送り仮名.** The CSS approximation, `.kaeriten { font-size: 0.5em; vertical-align: sub }` and `.okurigana { font-size: 0.5em; vertical-align: super }`.
+  - Legacy used to ignore `vertical-align` entirely, so 送り仮名 and 返り点 sat on the baseline there. It now moves a `super` run up by its parent's size / 3 + 1 and a `sub` run down by / 5 + 1, as WebKit does (`RenderStyle.verticalAlign`, applied as a `.baselineOffset` in `NodeAttributedStringRenderer.applyInlineStyle`); Core Text turns the offset with a vertical line's glyphs, so up is right of the column.
+  - Measured in legacy (`AozoraScriptShiftProbeTests`, 17pt, the ink's centre against the same text with `vertical-align: baseline`, 3× pixels): 送り仮名 +6.67 in horizontal and vertical, paged and scroll (expected 6.67); 返り点 −4.33 horizontal and −4.67 vertical (expected −4.40, a pixel either way). BrowserAuto agrees with WebKit within 0.02pt.
+  - **The gap to true kanbun placement.** Print sets a 返り点 at the lower left of the character before it and a 送り仮名 at its lower right, taking no room along the line. The approximation puts them after that character, each advancing the line by its own (half) size, so a kanbun line runs about half as long again as in print. It reads correctly and in order. True placement would be an engine feature, an inline that takes no advance and hangs off the previous character like a ruby on the leading side; not proposed, since the approximation is readable.
+- **Task 12, 横組み in vertical text: not mapped (decided).** The contract forbids `writing-mode` in the stylesheet, and mapping `.yokogumi` to `writing-mode: horizontal-tb` would send each of those chapters (401 works) to legacy, which cannot lay an inline horizontal run either. The class stays unstyled: the text keeps its place in the column, Latin sideways as everywhere else. Reopen only with an engine design for inline horizontal runs.
+- **Task 13, 割り注.** `.warichu { font-size: 0.5em }`, inside the （） the parser already adds; it stays on the baseline. The two-line layout was not proposed.
+- **Task 14, 上付き and 下付き in vertical writing.** Probed in both engines: BrowserAuto matched WebKit; legacy did not move them at all, fixed by Task 11's shift. 小書き maps to one step smaller (Task 16). Known difference, recorded in the package's CHANGELOG: a vertical superscript grows its column by 4.28 in BrowserAuto against WebKit's 3.66.
+- **Task 15, ページの左右中央: parser only.** ［＃ページの左右中央］, and the ［＃ここから…］ / ［＃ここで…終わり］ pair, set `AozoraParagraphStyle.isPageCentered` on the blocks after it until the next page break (tree only; the writer does not write it yet, so the text and the pages are unchanged). The unknown-annotation count no longer holds them.
+  - **Centring design (decided, not implemented).** CSS cannot say it in either engine (no `align-content` on a block container, no viewport units), so it would be a host property: the writer marks the chapter (`<body class="page-center">`), and each paginator, when a marked chapter fits on one page, offsets its content by half the page's spare block extent and centres each line in the inline axis; a chapter that does not fit pages as now. Scroll mode centres only in the inline axis. It is engine work in the package and in legacy, with a package release; the 225 works keep their title pages at the top until then.
+- **Task 16, style-only shapes** (the text-changing ones stay blocked by constraint 1):
+  - 「X」〜「Y」に傍点, a range forward reference, with U+301C or U+FF5E between the quotes, for every style (傍点, 傍線, 太字 …): the nearest Y before the note, then the nearest X before it;
+  - ゴシック体 and ゴチック → `.gothic { font-family: sans-serif }`;
+  - 小書き → one step smaller;
+  - 横一列 → 縦中横 (the corpus has no 横二列 or 横三列);
+  - 傍点（白丸）→ white-circle 傍点;
+  - 「X」は上に「Y」付き → Y as a ruby-like note over X;
+  - ［＃この行は…］ applies its style to the rest of its line.
+  - What is left in the corpus's top unknown shapes is editorial cross-references (「三五頁」は「須佐の男の神」の「穀物の種」), 分数, 段組み and dotted letters.
+- **Task 17, 段組み: not mapped (decided).** Neither engine supports CSS columns.
+
+Corpus (17158 works, `AozoraCorpusTests`): unknown annotations from 2556 in 524 works to 1288 in 280; every chapter of every work keeps the baseline's text; the parity sample is green in both modes; a ruby inside a ruby sends no chapter to legacy. The test run: 333 tests in 32 suites, the only failures the 18 known before this phase (`BrowserLayoutCapabilityScannerTests`' floats and tables, `BrowserLayoutInlineFormattingContextParityTests`' fingerprints, one `BrowserLayout CSS text-indent` test).
 
 ## Phase 4 — Housekeeping
 

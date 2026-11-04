@@ -182,6 +182,9 @@ public struct RenderStyle: Sendable {
     /// `ruby-position: under` (inherited), on a ruby: its annotation under the base, on its left in
     /// vertical writing.
     public var rubyUnder: Bool
+    /// `vertical-align` on an inline element (not inherited): `super` and `sub` raise or lower its
+    /// text from its parent's baseline.
+    public var verticalAlign: RenderVerticalAlign
     public var borderRadius: CGFloat
     public var isInlineAnnotation: Bool
     public var isVerticalWritingMode: Bool
@@ -262,6 +265,7 @@ public struct RenderStyle: Sendable {
         textDecorations: [RenderTextDecoration] = [],
         textEmphasis: RenderTextEmphasis? = nil,
         rubyUnder: Bool = false,
+        verticalAlign: RenderVerticalAlign = .baseline,
         isInlineAnnotation: Bool = false,
         isVerticalWritingMode: Bool = false,
         textCombineUpright: TextCombineUpright = .none,
@@ -329,6 +333,7 @@ public struct RenderStyle: Sendable {
         self.textDecorations = textDecorations
         self.textEmphasis = textEmphasis
         self.rubyUnder = rubyUnder
+        self.verticalAlign = verticalAlign
         self.borderRadius = borderRadius
         self.isInlineAnnotation = isInlineAnnotation
         self.isVerticalWritingMode = isVerticalWritingMode
@@ -409,6 +414,13 @@ public enum RenderTextAlignment: Sendable {
     case center
     case right
     case justify
+}
+
+/// The `vertical-align` values that move inline text; the others leave it on its parent's baseline.
+public enum RenderVerticalAlign: Sendable {
+    case baseline
+    case superscript
+    case `subscript`
 }
 
 public enum RenderFloatSide: Sendable {

@@ -1,0 +1,7 @@
+{
+ "title": "S013 上付き・下付き・訓点・割り注",
+ "language": "ja",
+ "vertical": false,
+ "elements": true,
+ "reproduces": "How the Aozora converter's small scripts sit (Aozora plan Tasks 11, 13 and 14): 上付き and 下付き小文字 as sup.superscript and sub.subscript at 0.8125rem, after Latin and after a Han character; 訓点送り仮名 as sup.okurigana and 返り点 (レ点, 一二点) as sub.kaeriten at 0.5em with vertical-align super and sub; and 割り注 as span.warichu at 0.5em on the line. Each small run and the text either side of it carry data-m."
+}

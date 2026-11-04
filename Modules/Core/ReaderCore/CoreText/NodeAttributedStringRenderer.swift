@@ -1244,7 +1244,7 @@ struct NodeAttributedStringRenderer: Sendable {
         ctx.textCombineUpright = style.textCombineUpright
         guard style.bold || style.italic || style.color != nil || !style.fontFamilies.isEmpty
                 || !style.textDecorations.isEmpty || style.textEmphasis != nil || style.fontSizeMultiplier != 1.0
-                || style.ssmlIPA != nil else { return ctx }
+                || style.ssmlIPA != nil || style.verticalAlign != .baseline else { return ctx }
         var newCtx = ctx
         let families = style.fontFamilies.isEmpty ? ctx.fontFamilies : style.fontFamilies
         let bold = style.bold || ctx.font.isBold
@@ -1260,6 +1260,13 @@ struct NodeAttributedStringRenderer: Sendable {
         if !style.textDecorations.isEmpty { newCtx.textDecorations = style.textDecorations }
         if let emphasis = style.textEmphasis { newCtx.textEmphasis = emphasis }
         if let ipa = style.ssmlIPA { newCtx.ipaPronunciation = ipa }
+        // `super` and `sub` move the baseline by the parent's size, as WebKit does. Up is right of
+        // a vertical line, where Core Text turns the offset with the glyphs.
+        switch style.verticalAlign {
+        case .superscript: newCtx.baselineOffset += VerticalAlignShift.superscript(parentFontSize: ctx.font.pointSize)
+        case .subscript: newCtx.baselineOffset -= VerticalAlignShift.subscript(parentFontSize: ctx.font.pointSize)
+        case .baseline: break
+        }
         return newCtx
     }
 

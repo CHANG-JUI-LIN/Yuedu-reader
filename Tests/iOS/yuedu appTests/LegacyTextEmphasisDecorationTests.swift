@@ -32,7 +32,7 @@ struct LegacyTextEmphasisDecorationTests {
         .none { text-decoration: none; }
         """
 
-    static func entries(body: String) -> [String: Data] {
+    static func entries(body: String, css: String = LegacyTextEmphasisDecorationTests.css) -> [String: Data] {
         [
             "mimetype": Data("application/epub+zip".utf8),
             "META-INF/container.xml": Data("""
@@ -68,8 +68,8 @@ struct LegacyTextEmphasisDecorationTests {
         ]
     }
 
-    static func build(_ body: String, mode: ReaderWritingMode) async throws -> NSAttributedString {
-        let url = try await EPUBTestFixtures.makeArchive(entries: entries(body: body))
+    static func build(_ body: String, mode: ReaderWritingMode, css: String = LegacyTextEmphasisDecorationTests.css) async throws -> NSAttributedString {
+        let url = try await EPUBTestFixtures.makeArchive(entries: entries(body: body, css: css))
         let session = try await PublicationSession.open(sourceURL: url)
         let builder = EPUBAttributedStringBuilder(session: session, renderSize: pageSize)
         let built = try await builder.buildChapter(
@@ -78,8 +78,8 @@ struct LegacyTextEmphasisDecorationTests {
         return built.attributedString
     }
 
-    static func layout(_ body: String, mode: ReaderWritingMode) async throws -> CoreTextPaginator.ChapterLayout {
-        let string = try await build(body, mode: mode)
+    static func layout(_ body: String, mode: ReaderWritingMode, css: String = LegacyTextEmphasisDecorationTests.css) async throws -> CoreTextPaginator.ChapterLayout {
+        let string = try await build(body, mode: mode, css: css)
         return await CoreTextPaginator().paginate(
             spineIndex: 0, attrStr: LayoutShared(string).wrappedValue, renderSize: pageSize,
             fontSize: 17, contentInsets: UIEdgeInsets(top: 16, left: 16, bottom: 16, right: 16), writingMode: mode)
