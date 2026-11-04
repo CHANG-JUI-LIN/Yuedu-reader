@@ -107,10 +107,9 @@ struct AozoraEngineParityTests {
             for await ready in renderer.$isCoreTextReady.values where ready { break }
             let engine = try #require(renderer.engine as? BrowserLayoutPageEngine)
             _ = await engine.preloadChapter(at: spine)
-            // The engine choice: BrowserAuto everywhere in horizontal writing; in vertical
-            // writing a chapter with a figure goes to legacy (VerticalTextSupport.accepts).
-            // In either, so does a chapter with a ruby BrowserAuto does not lay out.
-            let expectsBrowser = (mode == .horizontal || figureCount == 0) && !legacyRuby(spine)
+            // The engine choice: BrowserAuto in both writing modes, figures and all (since
+            // YueduCoreText 0.16), except for a chapter with a ruby it does not lay out.
+            let expectsBrowser = !legacyRuby(spine)
             #expect(engine.choice(for: spine)?.isBrowser == expectsBrowser, "\(place)")
             guard expectsBrowser else { continue }
             guard let paged = engine.testLayout(for: spine) else {

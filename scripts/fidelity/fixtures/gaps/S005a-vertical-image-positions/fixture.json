@@ -1,0 +1,7 @@
+{
+ "title": "S005a 直排插圖位置",
+ "language": "zh-Hant",
+ "vertical": true,
+ "elements": true,
+ "reproduces": "Where WebKit sets images in vertical-rl (Aozora plan Task 10, GAPS S005): an inline image between text, 17×17 like a one-character mark, wider (40×10) and taller (10×40) than it is the other way, 60×60 so it grows its column, and 240×160 sized by a width attribute; an inline image on a paragraph's second line; a block image centred in a div.figure; an img with display: block; and an image longer than the column, which is clamped to it. Each image and the text either side of it carry data-m."
+}

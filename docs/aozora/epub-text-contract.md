@@ -22,7 +22,7 @@ A temporary probe on 2026-10-06 gave both engines the same chapters, horizontal 
 | U+3000, also at edges and alone in a block | kept | kept |
 | ruby, `<span>`, `<sub>`, `<sup>`, `<em>`, nested `<div>` blocks | identical | identical |
 
-BrowserAuto's paged and scroll texts were identical. It fell back to legacy for a non-default `ruby-position` (until YueduCoreText 0.15), and, in vertical writing, for any chapter holding an `<img>` (`VerticalTextSupport.accepts`).
+BrowserAuto's paged and scroll texts were identical. It fell back to legacy for a non-default `ruby-position` (until YueduCoreText 0.15), and, in vertical writing, for any chapter holding an `<img>` (`VerticalTextSupport.accepts`, until 0.16).
 
 ## The rules the writer follows
 
@@ -50,4 +50,4 @@ Both engines read one U+FFFC per figure: legacy always has, and BrowserAuto sinc
 
 - The planned chapter text, and the manifest's lengths and source maps, leave figures out: a figure contributes only its caption. An offset after a figure is one unit later in either engine for each figure before it. `AozoraEngineParityTests` removes the U+FFFC before comparing and counts them.
 - Works with figures are 2.8% of the corpus.
-- In vertical writing, BrowserAuto still sends every chapter with a figure to legacy (`VerticalTextSupport.accepts`); only the engine changes.
+- BrowserAuto lays figures out in vertical writing too, since YueduCoreText 0.16: upright at their size, an inline one centred on its column, a block one at the column's start. A chapter with figures goes to legacy only for another reason; in the corpus, that is the ruby over a figure.

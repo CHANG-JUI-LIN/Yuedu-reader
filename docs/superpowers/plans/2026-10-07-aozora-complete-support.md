@@ -481,16 +481,57 @@ Drawing the marks in the page and scroll views, as 縦中横 cells are drawn, wo
 
 **Today:** `VerticalTextSupport.accepts` (`LogicalFlow.swift` L119) refuses any `<img>` in vertical writing. Every Aozora chapter with a figure then goes to legacy, which also costs one U+FFFC per figure (the contract's figure exception).
 
-- [ ] **Step 1: A design note first**, as GAPS.md S005 asks:
+- [x] **Step 1: A design note first**, as GAPS.md S005 asks:
   - how an inline image takes a place in a column, and how much column length it uses;
   - block images;
   - which cases keep falling back.
 
-  Ask the maintainer to approve it before coding.
-- [ ] **Step 2: Inline images first, then block images.** Each in the package, released as in Task 3. Use the probe tests and the fidelity books `redchamber-vertical` and `kusamakura`.
-- [ ] **Step 3 (app).**
+  Ask the maintainer to approve it before coding. Decided without review, as instructed; see the record.
+- [x] **Step 2: Inline images first, then block images.** Each in the package, released as in Task 3. Use the probe tests and the fidelity books `redchamber-vertical` and `kusamakura`. Both in 0.16.0, by probe; the fidelity books are measured once with Phase 3.
+- [x] **Step 3 (app).**
   - Update the parity test's vertical expectation (`expectsBrowser`).
   - Narrow the contract's figure exception: the U+FFFC difference remains only for chapters that fall back for other reasons.
+
+### Phase 2e: what landed
+
+**Status, 2026-11-04: done, on YueduCoreText 0.16.1.** Converter version 4 (no writer change); text version still 1.
+
+**The design note (Step 1), decided without the maintainer's review, as instructed ("全部做完，別問我").** The measurements decided it: WKWebView on iOS 26.5 with the app's new fixture S005a-vertical-image-positions (the iOS 27.2 runtime no longer mounts after the macOS 27.3 update).
+- **An inline image in a column.** It stays upright at its own size: its height runs down the column and is the length it takes there, its width lies across the column. It is centred on the column's central line, as text is, and the column widens to hold it: the column is as wide as its widest box. Measured: a 17×17 image leaves a 25 column at 25, a 40×10 one widens it to 40, a 10×40 one takes 40 down the column and leaves it at 25, 60×60 gives 60, and an image 48 wide by its `width` attribute (240×160, so 32 long) gives 48. On a paragraph's second line, only that line widens.
+- **Block images.** A `display: block` image is a block as wide as the image, at the column's start. An image alone in a `div` or `p` with `text-align: center` (the writer's `p.figure`) is an inline image on a line of its own, centred down the column, as WebKit sets it: 240×160 in a 760 column with 1em margins starts 17 + 283 in.
+- **An image longer than its column.** WebKit lets a 60×1000 image run 274 past the end of its 726 column. BrowserAuto scales it to the column, as it scales an image wider than its line in horizontal writing. **A deliberate difference**, kept for both writing modes: a page cannot scroll to the rest of the image.
+- **What still falls back to legacy in vertical writing:** an image as a ruby's base (the ruby over a figure, Step 5 of Task 9: still the contract's one ruby exception), a floated image, an inline-block that is not an image, `svg`, `video`, `audio` and tables, a `max-width` anywhere, and a percentage `width`.
+
+**Why one change covers both kinds.** The package lays vertical text out in canonical axes (inline along x, block along y) and turns the page at the end (`LogicalFlow`). An image's size now enters those axes turned (`BlockLayout.intrinsicSize`): its height inline, its width across. Lines, alignment, breaking and pagination then treat it as they treat a horizontal image. Only the baseline differs: an inline image's `AtomicInline.descent` is half its block size in vertical writing, so the line and the walker centre it on the central line. Before, images were refused in vertical writing (`VerticalTextSupport.accepts`), so nothing needed turning.
+
+**Releases and commits.**
+- Package 0.16.0: images inline and as blocks in vertical writing, pinned by `VerticalImageReferenceTests` against S005a.
+- Package 0.16.1: styling and line layout no longer quadratic in a block's content (below).
+- App: this commit (the pin, the parity test's vertical expectation, and the contract).
+
+**Phase 2d's parity failure, measured and fixed (0.16.1).** 1323 spine 3 is 400 KB of markup with 13 489 rubies in 413 blocks. Once 0.15 took its nested rubies, BrowserAuto's preparation of it ran past the 5 s limit in vertical writing and the chapter fell back to legacy. A Time Profiler trace of the package's layout of that chapter (Debug, iOS 26.5 simulator) found two quadratic loops, not slow typesetting:
+- **Styling** spent 83% of its time working out each element's semantic path from the element itself, which lists the element siblings of it and of every ancestor (`SwiftSoup`'s `elementSiblingIndex`). The style tree now builds each path from its parent's as it walks down; `StyleTreeSemanticPathTests` pins the strings.
+- **Line layout** read every run of a block for each line's metrics, twice, and for each line's runs. A line now reads only its own runs, once, and a ruby's pieces take their fonts from the line's font cache, as its text does.
+
+| Stage, warm (ms) | 0.16.0 | 0.16.1 |
+|---|---|---|
+| Styling | 3 400–4 500 | 620–730 |
+| Capability scan (styles the chapter too) | 3 900–4 900 | 1 000 |
+| Line layout, either writing mode | 3 300–4 300 | 1 470–1 880 |
+
+Every fragment of the chapter lands where it did: the layout's fingerprint (each text and image fragment's source range and rect) is the same in both writing modes, 271 and 268 pages. The limit was not changed.
+
+**The contract.** The figure exception narrows: BrowserAuto lays out vertical chapters with figures, so both engines' U+FFFC agree in every chapter BrowserAuto takes; a chapter with figures goes to legacy only for another reason (in the corpus, the ruby over a figure).
+
+**Verified:**
+- **The four checks** on 0.16.1, after the last edit (the Aozora, ruby, scanner, vertical and fingerprint suites): 235 tests in 28 suites. The same 18 issues as Phase 2d, in the same three suites that fail without this work (`BrowserLayoutCapabilityScannerTests`, `BrowserLayoutInlineFormattingContextParityTests`, one `BrowserLayout CSS text-indent` test). `AozoraEngineParityTests` passes in both writing modes with the figure chapters on BrowserAuto.
+- **The package:** `VerticalImageReferenceTests` against S005a, `StyleTreeSemanticPathTests`, and the whole package suite on 0.16.1 (538 tests).
+- **The corpus** (iOS 26.5 simulator): 17 158 works parse in 68 s and convert into 113 562 chapters that Readium opens, each keeping the baseline's text; the largest work converts in 1.7–1.9 s. The 20 chapters with partial nesting still go to legacy, so the conversion test still fails on `legacyNested.isEmpty`, as Phase 2d recorded; the ruby over a figure, 19 in 1 work, as before.
+  - **Parity** (50 works chosen for coverage) passes in both writing modes. 1323 spine 3 now goes to BrowserAuto in vertical writing too: admission 952–966 ms (3.6–4.5 s before), preparation 2.6–2.9 s (4.8 s before, against the 5 s limit), its first page 30 ms. The margin is about 2 s in a Debug build on the simulator; Task 20 times it on a device.
+- **Fidelity:** not remeasured in this phase. One run on 26.5, from YueduCoreText 0.14.1 to the last release of this plan, covers every phase since; it is recorded with Phase 3.
+
+**Findings, not fixed:**
+- WebKit on iOS 26.5 sets a plain 17px column at line-height 1.5 25 wide; on iOS 27.2 it was 25.5 (`RubyPositionReferenceTests`). BrowserAuto follows 27.2. The image tests pin how images sit against the text, so they hold on either.
 
 ## Phase 3 — The long tail
 
