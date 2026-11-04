@@ -141,8 +141,9 @@ struct AozoraParagraphStyle: Equatable, Sendable {
     var isHorizontal = false
     /// キャプション.
     var isCaption = false
-    /// ページの左右中央: the page this block is on is centred both ways, as a title page. Parsed,
-    /// not yet written: neither engine centres a page (Aozora plan, Task 15).
+    /// ページの左右中央: the page this block is on sits in the middle of the page's block axis,
+    /// as a title page does. A chapter wholly under it asks the reader to centre it
+    /// (`AozoraXHTMLWriter.isPageCentred`; Aozora plan, Task 15).
     var isPageCentered = false
 
     static let plain = AozoraParagraphStyle()

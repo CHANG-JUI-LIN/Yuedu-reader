@@ -169,6 +169,7 @@ enum AozoraXHTMLWriter {
         }
         if boxed { body += "</div>" }
         let title = chapter.navigation.first?.title ?? document.header?.title ?? ""
+        let bodyTag = isPageCentred(chapter, in: document) ? "<body style=\"\(pageCentredBodyStyle)\">" : "<body>"
         return """
             <?xml version="1.0" encoding="UTF-8"?>
             <!DOCTYPE html>
@@ -177,10 +178,37 @@ enum AozoraXHTMLWriter {
             <title>\(escaped(title))</title>
             <link rel="stylesheet" type="text/css" href="\(stylesheetHref)"/>
             </head>
-            <body>\(body)</body>
+            \(bodyTag)\(body)</body>
             </html>
 
             """
+    }
+
+    /// The body style of a chapter under ページの左右中央 (Aozora plan, Task 15): a host
+    /// property, not CSS, asking the reader to set the chapter in the middle of its page
+    /// (`PublicationPageAlignment`). WebKit drops it as an unknown property.
+    static let pageCentredBodyStyle = "zy-page-align: center"
+
+    /// Whether every text block of `chapter` is under ページの左右中央. A page break ends the
+    /// annotation and a chapter alike, so a chapter is wholly under it or not at all: in the
+    /// corpus, 707 chapters of 213 works, none mixed. Blank lines and figures have no say.
+    static func isPageCentred(_ chapter: AozoraChapter, in document: AozoraDocument) -> Bool {
+        var centred = false
+        for span in chapter.spans {
+            let style: AozoraParagraphStyle
+            switch block(span, in: document) {
+            case .paragraph(let inlines, let paragraphStyle):
+                guard !inlines.displayedText.isEmpty else { continue }
+                style = paragraphStyle
+            case .heading(_, _, _, let headingStyle):
+                style = headingStyle
+            case .pageBreak, .image:
+                continue
+            }
+            guard style.isPageCentered else { return false }
+            centred = true
+        }
+        return centred
     }
 
     static func block(_ span: AozoraBlockSpan, in document: AozoraDocument) -> AozoraBlock {

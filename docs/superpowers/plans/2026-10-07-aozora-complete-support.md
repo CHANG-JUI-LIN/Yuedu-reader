@@ -595,8 +595,8 @@ Census: 294 works.
 Census: 225 works and 747 occurrences, about 712 of them unknown to the parser today.
 
 - [x] Teach the parser the annotation as a block style (tree only).
-- [ ] Design centring for paged mode: the chapter's content centred on its page in both axes, as on a title page. In scroll mode it is centred in the viewport's inline axis.
-- [ ] This is engine work in both engines. Get the design approved first.
+- [x] Design centring for paged mode. Decided in the session (the maintainer asked for the whole plan, 2026-11-04): the block axis only, a chapter that fits on one page; scroll mode unchanged. See "Task 15: what landed".
+- [x] Engine work in both engines: YueduCoreText 0.18.0 and the legacy paginator.
 
 ### Task 16: Unknown annotations in the parser
 
@@ -633,8 +633,7 @@ What each task did:
 - **Task 12, 横組み in vertical text: not mapped (decided).** The contract forbids `writing-mode` in the stylesheet, and mapping `.yokogumi` to `writing-mode: horizontal-tb` would send each of those chapters (401 works) to legacy, which cannot lay an inline horizontal run either. The class stays unstyled: the text keeps its place in the column, Latin sideways as everywhere else. Reopen only with an engine design for inline horizontal runs.
 - **Task 13, 割り注.** `.warichu { font-size: 0.5em }`, inside the （） the parser already adds; it stays on the baseline. The two-line layout was not proposed.
 - **Task 14, 上付き and 下付き in vertical writing.** Probed in both engines: BrowserAuto matched WebKit; legacy did not move them at all, fixed by Task 11's shift. 小書き maps to one step smaller (Task 16). Known difference, recorded in the package's CHANGELOG: a vertical superscript grows its column by 4.28 in BrowserAuto against WebKit's 3.66.
-- **Task 15, ページの左右中央: parser only.** ［＃ページの左右中央］, and the ［＃ここから…］ / ［＃ここで…終わり］ pair, set `AozoraParagraphStyle.isPageCentered` on the blocks after it until the next page break (tree only; the writer does not write it yet, so the text and the pages are unchanged). The unknown-annotation count no longer holds them.
-  - **Centring design (decided, not implemented).** CSS cannot say it in either engine (no `align-content` on a block container, no viewport units), so it would be a host property: the writer marks the chapter (`<body class="page-center">`), and each paginator, when a marked chapter fits on one page, offsets its content by half the page's spare block extent and centres each line in the inline axis; a chapter that does not fit pages as now. Scroll mode centres only in the inline axis. It is engine work in the package and in legacy, with a package release; the 225 works keep their title pages at the top until then.
+- **Task 15, ページの左右中央: parser only in this phase.** ［＃ページの左右中央］, and the ［＃ここから…］ / ［＃ここで…終わり］ pair, set `AozoraParagraphStyle.isPageCentered` on the blocks after it until the next page break. The unknown-annotation count no longer holds them. The writer and both engines followed after Phase 4: see "Task 15 (ページの左右中央): what landed".
 - **Task 16, style-only shapes** (the text-changing ones stay blocked by constraint 1):
   - 「X」〜「Y」に傍点, a range forward reference, with U+301C or U+FF5E between the quotes, for every style (傍点, 傍線, 太字 …): the nearest Y before the note, then the nearest X before it;
   - ゴシック体 and ゴチック → `.gothic { font-family: sans-serif }`;
@@ -645,6 +644,12 @@ What each task did:
   - ［＃この行は…］ applies its style to the rest of its line.
   - What is left in the corpus's top unknown shapes is editorial cross-references (「三五頁」は「須佐の男の神」の「穀物の種」), 分数, 段組み and dotted letters.
 - **Task 17, 段組み: not mapped (decided).** Neither engine supports CSS columns.
+
+**Fidelity, Phases 2c to 4** (the one run Phase 2e promised; iOS 26.5 simulator, 2026-11-05): the 0.14.1 tree (app dd1e3713, package 0.14.1) against main at 9485459f with package 0.17.0, all three corpora, dev and holdout. Task 15 is not in it: no chapter of the corpora carries `zy-page-align`.
+- **Base** (455 comparable chapters of 473): PASS. No book moves but kusamakura, +0.5 (67.7 → 68.2), from 傍点 and ruby.
+- **Publishers** (96): no change.
+- **Gaps** (40): ruby that used to go to legacy now lays out under BrowserAuto and gains 13 to 26 (S001m +26.2, S001n +20.8, S001o +25.0, S001p +13.1); vertical figures gain 33.8 (S005) and 26.1 (S005a); S001j, vertical emphasis, +2.8.
+- **One fall, S001i (horizontal emphasis): 89.3 → 87.8**, layout 94.1 → 94.2, visual 76.9 → 71.4. It is the ruby work, and the line it changes is closer to WebKit, not further. The fixture's line with ruby under the same marks (`<span class="fs"><ruby>漢<rt>かん</rt></ruby>字</span>`) stands 65 below the line before it in WebKit; 0.14.1 gave it 60.5, 0.17.0 gives 63.0, so every line after it sits 2.48 lower. Every other line of the fixture, in both runs alike, runs 0.5 to 0.75 lower than WebKit's, one more each line: the engine's 17px line at 1.5 is 25.5, WebKit's on iOS 26.5 is 25 (on 27.2 it is 25.5, which is what Phase 2c measured against). 0.14.1's short ruby line happened to cancel that drift; 0.17.0's cancels less of it. Recorded, not fixed: the ruby line is still 2.0 short of WebKit's (how WebKit sets marks and ruby on one side was not probed), and the 26.5 line-height rounding is a runtime difference.
 
 Corpus (17158 works, `AozoraCorpusTests`): unknown annotations from 2556 in 524 works to 1288 in 280; every chapter of every work keeps the baseline's text; the parity sample is green in both modes; a ruby inside a ruby sends no chapter to legacy. The test run: 333 tests in 32 suites, the only failures the 18 known before this phase (`BrowserLayoutCapabilityScannerTests`' floats and tables, `BrowserLayoutInlineFormattingContextParityTests`' fingerprints, one `BrowserLayout CSS text-indent` test).
 
@@ -692,6 +697,29 @@ Corpus (17158 works, `AozoraCorpusTests`): unknown annotations from 2556 in 524 
   - `AozoraTXTTests` pass unchanged.
 - **Time.** The largest 200 works (59,043,785 UTF-16 units), each read whole on the simulator (iOS 26.5): 16.31 s with the old reader, 15.96 s with the new. On macOS, the largest work alone: 164 ms before, 148 ms after.
 - Phase 1c steps 1–3 stay out of scope, as planned.
+
+### Task 15 (ページの左右中央): what landed
+
+**Status, 2026-11-05: verified in the simulator (iOS 26.5), not on a device.** YueduCoreText 0.18.0 and 0.18.1; converter version 7. The maintainer asked for the whole plan without being asked (2026-11-04), so the design below was decided in the session and is recorded here for veto.
+
+**Census** (17158 works, the parser's `isPageCentered`): 213 works hold it, and every one of their 707 marked chapters is marked whole; no chapter mixes centred and uncentred blocks, because the annotation runs to the next page break and a page break ends a chapter. 570 of the 707 hold one text block, and 637 hold at most 16 blocks of at most 40 characters, a title page or a dedication. The largest is 167 blocks (3235 characters), which pages as before.
+
+**Decisions.**
+- **Block axis only.** 左右中央 is the block axis of vertical writing, the way the works are set: the line's own position (its 字下げ, or the full-width spaces before it) stays where the source puts it, and the page centres the lines as a group, right to left. Horizontal writing centres the same group top to bottom. The earlier design note also centred each line in the inline axis; that would undo the source's own indents, so it was dropped.
+- **The signal is a body property, not a class or CSS.** CSS cannot centre a page's content in either engine, so the writer marks a chapter wholly under the annotation with `<body style="zy-page-align: center">` (`AozoraXHTMLWriter.isPageCentred`), as `zy-fontsize-adjust` already marks a fixed-size chapter. `PublicationPageAlignment` reads it for both engines. WebKit ignores the unknown property; the text is unchanged (the parity test now holds a centred chapter).
+- **Only a chapter that fits on one page moves, and only in paged mode.** A longer chapter, and scroll mode, lay out as before. A move under a point is not made.
+- **BrowserAuto** (`BrowserLayoutConfig.centersSinglePage`): both paged walkers, the session and the batch, take their page insets from one helper, `LogicalFlow.pageInsets`, which grows the block-start inset until what the page paints, the chapter's line boxes and block images, sits in the middle. Every fragment moves with it, so painting, selection, search and TTS highlights follow. It is geometry, not a cascade input, so an admitted evaluation is reused.
+  - 0.18.0 centred the chapter's whole box. The app test caught it: the reader's paragraph spacing comes before the first line and after the last without painting anything, and the title page sat 4 points high at 8 points of spacing (gaps 181.5 and 189.5). 0.18.1 centres the painted extent, and never moves the chapter further than its whole box leaves room for, so it stays on one page.
+- **Legacy** (`CoreTextPaginator.computeLayout`): when the one page's lines leave room, the chapter is laid out again with its insets translated along the block axis by `centringShift`, the path the same size, so the same lines land in the middle. Every page view rebuilds its frame, its hit-testing and its drawing from the layout's insets, so they follow. The shift comes from the lines' typographic extents (ascent and descent), skipping lines with nothing visible.
+
+**Measured** (`AozoraPageCentringTests`, 320×480 page, insets 20/16/30/24 so a centre taken from the wrong edge shows, 17pt, 8pt paragraph spacing; a title page of two lines):
+- BrowserAuto, the space before and after the line boxes: 185.5 and 185.5 horizontal, 110.5 and 110.5 vertical (right and left).
+- Legacy, the space before and after the ink, painted as a page view paints it: 191.0 and 189.7 horizontal, 111.7 and 114.3 vertical. Ink is not the line box: a glyph's ink sits a little off its line's centre, so the test allows 4.
+- A chapter that does not ask stays at the top of its page in both engines, and the centred chapter's text is the planned text (the parity test now holds one).
+
+**Fidelity**: unchanged by this task. No chapter of the fidelity corpora asks to be centred; Phase 3 records the run.
+
+Tests: `AozoraPageCentringTests` (new), `AozoraEngineParityTests`, `AozoraEPUBWriterTests`, `AozoraXHTMLWriterTests`, `AozoraBookRegeneratorTests`, `AozoraCorpusTests`, `LegacyTextEmphasisDecorationTests`, `AozoraScriptShiftProbeTests`, `BottomJustifyPaginationTests`, `BrowserBottomJustifyEngineTests`, `ContentRevisionPaginationTests`, `CurlRepaginationNeighbourTests`, `RedChamberProductionRenderingRegressionTests`: 70 tests in 13 suites pass (iOS 26.5). The package: 49 XCTest and 500 Swift Testing tests pass, `BrowserPageCentringTests` among them.
 
 ### Task 20: Checks on a device
 

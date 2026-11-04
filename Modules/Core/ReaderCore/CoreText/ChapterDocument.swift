@@ -15,6 +15,8 @@ struct ChapterDocument: Sendable {
     let darkPageBackgroundColor: UIColor?
     let anchorOffsets: [String: Int]
     let revision: ContentRevision
+    /// The chapter asks to sit in the middle of its page (`PublicationPageAlignment`); paged only.
+    let centresSinglePage: Bool
     /// 整章翻譯: set when `attributedString` is the chapter with its translations spliced in.
     /// `anchorOffsets` stay in the chapter's own text, like every other stored position.
     let translation: ReaderTranslationLayout?
@@ -29,6 +31,7 @@ struct ChapterDocument: Sendable {
         darkPageBackgroundColor = buildResult.darkPageBackgroundColor
         anchorOffsets = buildResult.anchorOffsets
         revision = buildResult.revision
+        centresSinglePage = buildResult.centresSinglePage
         translation = translated?.layout
     }
 }

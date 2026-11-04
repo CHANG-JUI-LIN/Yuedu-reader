@@ -308,7 +308,8 @@ final class EPUBAttributedStringBuilder: @preconcurrency AttributedStringBuildin
             pageBackgroundImage: pageBackgroundImage,
             pageBackgroundColor: pageBackgroundColor,
             darkPageBackgroundColor: darkPageBackgroundColor,
-            anchorOffsets: anchorOffsets
+            anchorOffsets: anchorOffsets,
+            centresSinglePage: PublicationPageAlignment.centresSinglePage(bodyInlineStyle: ast.attributes["style"] ?? "")
         )
     }
 

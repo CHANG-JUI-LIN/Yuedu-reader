@@ -285,6 +285,8 @@ struct BrowserLayoutConfigInputs: Sendable {
     var contentInsets: UIEdgeInsets
     var cjkTypographyStyle: CJKTypographyStyle?
     var publicationFontResolver: BrowserFontResolver?
+    /// The chapter asks to sit in the middle of its page (`PublicationPageAlignment`). Paged only.
+    var centresSinglePage = false
 
     func makeConfiguration() -> BrowserLayoutConfig {
         // Use the same reader-font policy as the EPUB builder before shaping.
@@ -314,7 +316,8 @@ struct BrowserLayoutConfigInputs: Sendable {
             writingMode: writingMode,
             cjkTypographyStyle: cjkTypographyStyle,
             // Scroll settings always carry false: a scroll column has no page bottom.
-            bottomJustify: settings.bottomJustify
+            bottomJustify: settings.bottomJustify,
+            centersSinglePage: centresSinglePage
         )
     }
 }
@@ -736,8 +739,7 @@ final class BrowserLayoutPageEngine: PageRenderingProvider, LinkNavigationProvid
             }
         }
         let config = browserConfigInputs(
-            html: html, fontScalePolicy: PublicationFontScalePolicy.resolve(bodyInlineStyle: document.bodyInlineStyle),
-            writingMode: writingMode
+            html: html, bodyInlineStyle: document.bodyInlineStyle, writingMode: writingMode
         ).makeConfiguration()
         let evaluation = await BrowserChapterDocument.evaluate(document, configuration: config, writingMode: writingMode)
         SourcePerfTrace.record("browser.admission", "spine=\(spineIndex)", since: parseStart, thresholdMs: 0)
@@ -810,8 +812,8 @@ final class BrowserLayoutPageEngine: PageRenderingProvider, LinkNavigationProvid
             let writingMode = await chapterWritingMode(spineIndex)
             guard isCurrentWork(generation) else { return }
             let evaluation = try await chapterEvaluation(for: spineIndex, input: input, writingMode: writingMode,
-                                                         admitted: admitted) { policy in
-                browserConfigInputs(html: html, fontScalePolicy: policy, writingMode: writingMode)
+                                                         admitted: admitted) { bodyInlineStyle in
+                browserConfigInputs(html: html, bodyInlineStyle: bodyInlineStyle, writingMode: writingMode)
             }
             guard isCurrentWork(generation) else { return }
             if settings.regexHighlightConfiguration.isEnabled {
@@ -974,7 +976,10 @@ final class BrowserLayoutPageEngine: PageRenderingProvider, LinkNavigationProvid
 
     /// What the chapter's layout configuration is made of, read here on the main actor.
     /// `makeConfiguration()` builds the configuration from it off this class's isolation.
-    private func browserConfigInputs(html: String, fontScalePolicy: PublicationFontScalePolicy = .readerAdjustable,
+    /// `bodyInlineStyle` is the chapter's `<body style>`, where it asks for what CSS cannot say:
+    /// a fixed font scale (`PublicationFontScalePolicy`) and, on a page, to sit in its middle
+    /// (`PublicationPageAlignment`).
+    private func browserConfigInputs(html: String, bodyInlineStyle: String,
         writingMode: ReaderWritingMode,
         scrollSettings: ReaderRenderSettings? = nil, scrollSize: CGSize? = nil) -> BrowserLayoutConfigInputs {
         let settings = scrollSettings ?? self.settings
@@ -987,14 +992,17 @@ final class BrowserLayoutPageEngine: PageRenderingProvider, LinkNavigationProvid
         return BrowserLayoutConfigInputs(
             settings: settings,
             writingMode: writingMode,
-            fontScalePolicy: fontScalePolicy,
+            fontScalePolicy: PublicationFontScalePolicy.resolve(bodyInlineStyle: bodyInlineStyle),
             contentWidth: scrollSize?.width ?? self.contentWidth,
             contentHeight: scrollSize?.height ?? self.contentHeight,
             textColor: scrollSettings?.textColor ?? self.themeTextColor,
             backgroundColor: scrollSettings?.backgroundColor ?? self.themeBackgroundColor,
             contentInsets: settings.contentInsets,
             cjkTypographyStyle: cjkTypographyStyle,
-            publicationFontResolver: resource.fontResolver()
+            publicationFontResolver: resource.fontResolver(),
+            // A scroll column has no page to sit in the middle of.
+            centresSinglePage: scrollSettings == nil
+                && PublicationPageAlignment.centresSinglePage(bodyInlineStyle: bodyInlineStyle)
         )
     }
 
@@ -1018,13 +1026,11 @@ final class BrowserLayoutPageEngine: PageRenderingProvider, LinkNavigationProvid
             since: start, thresholdMs: 0)
     }
 
-    /// Chapter font-scale policy from the body inline style
-    /// (`zy-fontsize-adjust: fixed` → fixed; otherwise reader-adjustable).
     /// The chapter's evaluation for the layout about to run: the one admission
     /// built (`admitted`), when its cascade inputs are still the layout's; otherwise
     /// a fresh one (a cached choice, or a layout after a font-size change, say).
     /// `configurationInputs` reads the layout configuration's inputs for the
-    /// chapter's font-scale policy — call it after the fonts are prepared, so the
+    /// chapter's `<body style>` — call it after the fonts are prepared, so the
     /// resolver it snapshots sees them. Either way the chapter is parsed once here,
     /// never again for this layout.
     ///
@@ -1036,12 +1042,10 @@ final class BrowserLayoutPageEngine: PageRenderingProvider, LinkNavigationProvid
         input: CSSFrontendInput,
         writingMode: ReaderWritingMode,
         admitted: sending BrowserChapterEvaluation?,
-        configurationInputs: (PublicationFontScalePolicy) -> BrowserLayoutConfigInputs
+        configurationInputs: (_ bodyInlineStyle: String) -> BrowserLayoutConfigInputs
     ) async throws -> sending BrowserChapterEvaluation {
         if let admitted {
-            let configuration = configurationInputs(
-                PublicationFontScalePolicy.resolve(bodyInlineStyle: admitted.document.bodyInlineStyle)
-            ).makeConfiguration()
+            let configuration = configurationInputs(admitted.document.bodyInlineStyle).makeConfiguration()
             if let rebound = admitted.rebound(to: configuration) {
                 return rebound
             }
@@ -1050,9 +1054,7 @@ final class BrowserLayoutPageEngine: PageRenderingProvider, LinkNavigationProvid
         }
         let start = SourcePerfTrace.now
         let document = try await BrowserChapterDocument.parse(input: input)
-        let configuration = configurationInputs(
-            PublicationFontScalePolicy.resolve(bodyInlineStyle: document.bodyInlineStyle)
-        ).makeConfiguration()
+        let configuration = configurationInputs(document.bodyInlineStyle).makeConfiguration()
         let evaluation = await BrowserChapterDocument.evaluate(document, configuration: configuration,
                                                                writingMode: writingMode)
         SourcePerfTrace.record("browser.evaluation", "spine=\(spineIndex)", since: start, thresholdMs: 0)
@@ -2161,8 +2163,9 @@ extension BrowserLayoutPageEngine {
         let store = BrowserLayoutImageStore(await resource.prefetchImages(
             forChapter: spine, html: html, renderWidth: contentSize.width))
         let evaluation = try await chapterEvaluation(for: spine, input: input, writingMode: settings.writingMode,
-                                                     admitted: admitted) { policy in
-            var inputs = browserConfigInputs(html: html, fontScalePolicy: policy, writingMode: settings.writingMode,
+                                                     admitted: admitted) { bodyInlineStyle in
+            var inputs = browserConfigInputs(html: html, bodyInlineStyle: bodyInlineStyle,
+                                             writingMode: settings.writingMode,
                                              scrollSettings: settings, scrollSize: contentSize)
             // The scroll host owns the reader's outer margins and fixed bars.
             inputs.contentInsets = .zero

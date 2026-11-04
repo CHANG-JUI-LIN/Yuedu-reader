@@ -1194,7 +1194,8 @@ final class CoreTextPageEngine: PageRenderingProvider, LinkNavigationProviding, 
             contentInsets: currentContentInsets(),
             revision: buildResult.revision,
             writingMode: settings.writingMode,
-            bottomJustify: renderSettings.bottomJustify
+            bottomJustify: renderSettings.bottomJustify,
+            centresSinglePage: buildResult.centresSinglePage
         )
 
         // Two-phase open for long chapters (Legado TextChapterLayout idea): lay

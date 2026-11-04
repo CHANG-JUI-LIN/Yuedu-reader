@@ -17,6 +17,7 @@ struct PaginationRequest: Sendable {
     let revision: ContentRevision
     var writingMode: ReaderWritingMode = .horizontal
     var bottomJustify: Bool = false
+    var centresSinglePage: Bool = false
 }
 
 struct PaginationResult: Sendable {
@@ -47,6 +48,7 @@ final class PaginationManager {
             contentInsets: request.contentInsets,
             writingMode: request.writingMode,
             bottomJustify: request.bottomJustify,
+            centresSinglePage: request.centresSinglePage,
             revision: request.revision
         )
         return PaginationResult(layout: layout)
@@ -70,6 +72,7 @@ final class PaginationManager {
             contentInsets: request.contentInsets,
             writingMode: request.writingMode,
             bottomJustify: request.bottomJustify,
+            centresSinglePage: request.centresSinglePage,
             revision: request.revision
         )
         return layout.map { PaginationResult(layout: $0) }

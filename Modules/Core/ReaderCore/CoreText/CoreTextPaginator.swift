@@ -625,6 +625,7 @@ final class CoreTextPaginator: Sendable {
         let letterSpacing: CGFloat
         let writingMode: ReaderWritingMode
         let bottomJustify: Bool
+        let centresSinglePage: Bool
         let contentIdentity: ContentIdentity
         let pageBackgroundColorFingerprint: UInt32?
     }
@@ -745,6 +746,7 @@ final class CoreTextPaginator: Sendable {
         contentInsets: UIEdgeInsets = .zero,
         writingMode: ReaderWritingMode = .horizontal,
         bottomJustify: Bool = false,
+        centresSinglePage: Bool = false,
         revision: ContentRevision? = nil
     ) async -> ChapterLayout {
         let contentIdentity: ContentIdentity
@@ -777,6 +779,7 @@ final class CoreTextPaginator: Sendable {
                            letterSpacing: letterSpacing,
                            writingMode: writingMode,
                            bottomJustify: bottomJustify,
+                           centresSinglePage: centresSinglePage,
                            contentIdentity: contentIdentity,
                            pageBackgroundColorFingerprint: Self.colorFingerprint(pageBackgroundColor))
         Self.debugVerticalLog("EPUBFLOW paginator.request spine=\(spineIndex) writingMode=\(writingMode) isVertical=\(writingMode.isVertical) size=\(renderSize) fontSize=\(fontSize) insets=\(contentInsets) attrLen=\(attrStr.length) contentIdentity=\(key.contentIdentity)")
@@ -825,7 +828,8 @@ final class CoreTextPaginator: Sendable {
                                fontSize: fontSize,
                                contentInsets: contentInsets,
                                writingMode: writingMode,
-                               bottomJustify: bottomJustify)
+                               bottomJustify: bottomJustify,
+                               centresSinglePage: centresSinglePage)
         }.value
 
         storeLayout(layout, for: key)
@@ -855,6 +859,7 @@ final class CoreTextPaginator: Sendable {
         contentInsets: UIEdgeInsets = .zero,
         writingMode: ReaderWritingMode = .horizontal,
         bottomJustify: Bool = false,
+        centresSinglePage: Bool = false,
         revision: ContentRevision? = nil
     ) async -> ChapterLayout? {
         guard imagePage == nil else { return nil }
@@ -888,6 +893,7 @@ final class CoreTextPaginator: Sendable {
                            letterSpacing: letterSpacing,
                            writingMode: writingMode,
                            bottomJustify: bottomJustify,
+                           centresSinglePage: centresSinglePage,
                            contentIdentity: contentIdentity,
                            pageBackgroundColorFingerprint: Self.colorFingerprint(pageBackgroundColor))
         let cacheTrace = ReaderPerfTrace.begin(
@@ -927,7 +933,8 @@ final class CoreTextPaginator: Sendable {
                                contentInsets: contentInsets,
                                writingMode: writingMode,
                                bottomJustify: bottomJustify,
-                               maxPages: 1)
+                               maxPages: 1,
+                               centresSinglePage: centresSinglePage)
         }.value
     }
 
@@ -968,8 +975,11 @@ final class CoreTextPaginator: Sendable {
         contentInsets: UIEdgeInsets,
         writingMode: ReaderWritingMode,
         bottomJustify: Bool,
-        maxPages: Int? = nil
+        maxPages: Int? = nil,
+        centresSinglePage: Bool = false
     ) -> ChapterLayout {
+        // The string as given, before vertical preparation: a centred page is laid out again from it.
+        let sourceAttrStr = attrStr
         let contentRect = uiContentRect(
             renderSize: renderSize,
             contentInsets: contentInsets,
@@ -1315,6 +1325,30 @@ final class CoreTextPaginator: Sendable {
                 pageRanges.count + 1,
                 Int((Double(pageRanges.count) * density).rounded(.up))
             )
+        }
+
+        // A title page (`PublicationPageAlignment`, Aozora Bunko's ページの左右中央): a chapter
+        // that fits on one page moves to the middle of the page's block axis. The frame keeps
+        // its size and only moves, so its lines are these ones, and every page view rebuilds
+        // it from the insets the layout keeps.
+        if centresSinglePage, !isPartial, pageRanges.count == 1, pageFloatNotches.isEmpty,
+           let artifact = pageArtifacts.first,
+           let shift = centringShift(frame: artifact.frame, origins: artifact.lineOrigins,
+                                     contentPathRect: contentPathRect, writingMode: writingMode) {
+            var moved = contentInsets
+            if writingMode.isVertical {
+                moved.right += shift
+                moved.left -= shift
+            } else {
+                moved.top += shift
+                moved.bottom -= shift
+            }
+            return computeLayout(
+                spineIndex: spineIndex, attrStr: sourceAttrStr, imagePage: imagePage,
+                pageBackgroundImage: pageBackgroundImage, pageBackgroundColor: pageBackgroundColor,
+                darkPageBackgroundColor: darkPageBackgroundColor, anchorOffsets: anchorOffsets,
+                renderSize: renderSize, fontSize: fontSize, contentInsets: moved, writingMode: writingMode,
+                bottomJustify: bottomJustify, maxPages: maxPages, centresSinglePage: false)
         }
 
         return ChapterLayout(
@@ -1773,6 +1807,35 @@ final class CoreTextPaginator: Sendable {
             if !(info is InlineAnnotationRunInfo), info.displayMode == .block { return true }
         }
         return false
+    }
+
+    /// How far a page's lines move along its block axis to sit in the middle of it, or nil
+    /// when that is under a point. The lines' extent runs from the first line's block-start
+    /// edge to the last line's block-end edge: a line spans its baseline widened by its ascent
+    /// and descent, and a vertical column its baseline widened by its ascent (right) and
+    /// descent (left), as `CoreTextChunk.columnSpan` measures it. A line with no visible
+    /// width, such as a trailing paragraph end, has no say.
+    static func centringShift(frame: CTFrame, origins: [CGPoint], contentPathRect: CGRect,
+                              writingMode: ReaderWritingMode) -> CGFloat? {
+        let lines = CTFrameGetLines(frame) as! [CTLine]
+        guard lines.count == origins.count else { return nil }
+        // Core Text's y-up page space, or x for vertical: block start is the larger value.
+        var start = -CGFloat.infinity
+        var end = CGFloat.infinity
+        for (line, origin) in zip(lines, origins) {
+            var ascent: CGFloat = 0
+            var descent: CGFloat = 0
+            let width = CTLineGetTypographicBounds(line, &ascent, &descent, nil)
+            guard CGFloat(width) - CGFloat(CTLineGetTrailingWhitespaceWidth(line)) > 0 else { continue }
+            let baseline = writingMode.isVertical ? contentPathRect.minX + origin.x : contentPathRect.minY + origin.y
+            start = max(start, baseline + ascent)
+            end = min(end, baseline - descent)
+        }
+        guard start > end else { return nil }
+        let areaStart = writingMode.isVertical ? contentPathRect.maxX : contentPathRect.maxY
+        let areaEnd = writingMode.isVertical ? contentPathRect.minX : contentPathRect.minY
+        let shift = ((start + end) - (areaStart + areaEnd)) / 2
+        return shift >= 1 ? shift : nil
     }
 
     /// The top edge (CoreText y-up, absolute coords) of the line containing `offset` within `frame`.

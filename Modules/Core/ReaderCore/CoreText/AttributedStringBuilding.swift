@@ -23,6 +23,8 @@ struct AttributedChapterBuildResult {
     let darkPageBackgroundColor: UIColor?
     let anchorOffsets: [String: Int]
     let revision: ContentRevision
+    /// The chapter asks to sit in the middle of its page (`PublicationPageAlignment`).
+    let centresSinglePage: Bool
 
     init(
         attributedString: NSAttributedString,
@@ -31,7 +33,8 @@ struct AttributedChapterBuildResult {
         pageBackgroundColor: UIColor? = nil,
         darkPageBackgroundColor: UIColor? = nil,
         anchorOffsets: [String: Int],
-        revision: ContentRevision = ContentRevision()
+        revision: ContentRevision = ContentRevision(),
+        centresSinglePage: Bool = false
     ) {
         self.attributedString = attributedString
         self.imagePage = imagePage
@@ -40,6 +43,7 @@ struct AttributedChapterBuildResult {
         self.darkPageBackgroundColor = darkPageBackgroundColor
         self.anchorOffsets = anchorOffsets
         self.revision = revision
+        self.centresSinglePage = centresSinglePage
     }
 }
 
