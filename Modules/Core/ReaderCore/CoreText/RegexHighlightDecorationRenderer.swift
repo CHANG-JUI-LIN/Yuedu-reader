@@ -29,7 +29,16 @@ enum RegexHighlightDecorationRenderer {
         paint(fragments: fragments, writingMode: .horizontal, context: context)
     }
 
-    /// Builds the decoration rects for one drawn line.
+    /// One run of an attribute in a drawn horizontal line: its characters, its value, and
+    /// where it starts and ends along the line, from the line's origin.
+    struct LineSpan {
+        let range: NSRange
+        let value: Any
+        let start: CGFloat
+        let end: CGFloat
+    }
+
+    /// The runs of `key` in one drawn line, each ending where the line's text does.
     ///
     /// `line` is the line as it will actually be drawn, which is not always the CTFrame's own line:
     /// `CoreTextHorizontalLineDrawer` rebuilds every justified line from that line's attributed
@@ -38,12 +47,12 @@ enum RegexHighlightDecorationRenderer {
     /// indices to such a line clamps them to its end, which collapses the fragment to zero width
     /// (highlight silently loses its background) or anchors it at the wrong character. Every index
     /// is therefore rebased into the line's own index space before it reaches CoreText.
-    static func horizontalFragments(
+    static func horizontalSpans(
+        of key: NSAttributedString.Key,
         line: CTLine,
-        origin: CGPoint,
         attributedString: NSAttributedString,
         range: NSRange
-    ) -> [Fragment] {
+    ) -> [LineSpan] {
         let boundedRange = NSIntersectionRange(
             range,
             NSRange(location: 0, length: attributedString.length)
@@ -63,26 +72,16 @@ enum RegexHighlightDecorationRenderer {
             in: attributedString.string as NSString
         ) + indexShift
 
-        var lineAscent: CGFloat = 0
-        var lineDescent: CGFloat = 0
-        _ = CTLineGetTypographicBounds(line, &lineAscent, &lineDescent, nil)
-
-        var fragments: [Fragment] = []
-        attributedString.enumerateAttribute(
-            RegexHighlightDecoration.attributeKey,
-            in: boundedRange,
-            options: []
-        ) { value, highlightedRange, _ in
-            guard let decoration = value as? RegexHighlightDecoration,
-                  highlightedRange.length > 0 else { return }
-
+        var spans: [LineSpan] = []
+        attributedString.enumerateAttribute(key, in: boundedRange, options: []) { value, spanRange, _ in
+            guard let value, spanRange.length > 0 else { return }
             let startIndex = clamped(
-                highlightedRange.location + indexShift,
+                spanRange.location + indexShift,
                 lowerBound: lineLowerBound,
                 upperBound: textUpperBound
             )
             let endIndex = clamped(
-                NSMaxRange(highlightedRange) + indexShift,
+                NSMaxRange(spanRange) + indexShift,
                 lowerBound: lineLowerBound,
                 upperBound: textUpperBound
             )
@@ -92,7 +91,28 @@ enum RegexHighlightDecorationRenderer {
             let endOffset = CGFloat(GlyphBoundary.offset(line, at: endIndex))
             guard startOffset.isFinite, endOffset.isFinite,
                   abs(endOffset - startOffset) > 0.25 else { return }
+            spans.append(LineSpan(range: spanRange, value: value,
+                                  start: min(startOffset, endOffset), end: max(startOffset, endOffset)))
+        }
+        return spans
+    }
 
+    /// Builds the decoration rects for one drawn line (`horizontalSpans`).
+    static func horizontalFragments(
+        line: CTLine,
+        origin: CGPoint,
+        attributedString: NSAttributedString,
+        range: NSRange
+    ) -> [Fragment] {
+        var lineAscent: CGFloat = 0
+        var lineDescent: CGFloat = 0
+        _ = CTLineGetTypographicBounds(line, &lineAscent, &lineDescent, nil)
+
+        var fragments: [Fragment] = []
+        for span in horizontalSpans(of: RegexHighlightDecoration.attributeKey, line: line,
+                                    attributedString: attributedString, range: range) {
+            guard let decoration = span.value as? RegexHighlightDecoration else { continue }
+            let highlightedRange = span.range
             let drawing = dominantDrawing(of: highlightedRange, in: attributedString)
             var ascent = drawing.font?.ascender ?? lineAscent
             var descent = drawing.font.map { -$0.descender } ?? lineDescent
@@ -103,9 +123,9 @@ enum RegexHighlightDecorationRenderer {
             }
 
             let glyphRect = CGRect(
-                x: origin.x + min(startOffset, endOffset),
+                x: origin.x + span.start,
                 y: origin.y + drawing.raise - descent,
-                width: abs(endOffset - startOffset),
+                width: span.end - span.start,
                 height: max(1, ascent + descent)
             )
             let logicalEdges = RegexHighlightDecorationGeometry.combinedEdges(
@@ -183,7 +203,7 @@ enum RegexHighlightDecorationRenderer {
     /// (`CJKTypography.applyOrientation`), and `inVerticalLine` reads that mark.
     ///
     /// A tie keeps the earlier drawing.
-    private static func dominantDrawing(
+    static func dominantDrawing(
         of range: NSRange,
         in attributedString: NSAttributedString,
         inVerticalLine: Bool = false
@@ -329,7 +349,7 @@ enum RegexHighlightDecorationRenderer {
     /// Selection and read-aloud mark the whole column pitch (`CoreTextAnnotationRenderer`). A
     /// highlight box that wide was the line height thick, 29.7pt at 18pt × 1.65, where the same
     /// text's box in a horizontal line is its font's 25.2pt: 89px against 76px (2026-10-15).
-    private static func verticalGlyphRects(
+    static func verticalGlyphRects(
         of range: NSRange,
         lines: [CTLine],
         origins: [CGPoint],

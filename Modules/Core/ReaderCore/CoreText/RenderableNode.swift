@@ -175,8 +175,10 @@ public struct RenderStyle: Sendable {
     public var firstLetterFontWeight: Int?
     /// Pre-resolved :first-letter color.
     public var firstLetterColor: RenderColor?
-    public var underline: Bool
-    public var strikethrough: Bool
+    /// The `text-decoration` lines in effect on this element's text, its ancestors' first.
+    public var textDecorations: [RenderTextDecoration]
+    /// `text-emphasis` (inherited). nil is `none`.
+    public var textEmphasis: RenderTextEmphasis?
     public var borderRadius: CGFloat
     public var isInlineAnnotation: Bool
     public var isVerticalWritingMode: Bool
@@ -254,8 +256,8 @@ public struct RenderStyle: Sendable {
         firstLetterFontSizeMultiplier: CGFloat? = nil,
         firstLetterFontWeight: Int? = nil,
         firstLetterColor: RenderColor? = nil,
-        underline: Bool = false,
-        strikethrough: Bool = false,
+        textDecorations: [RenderTextDecoration] = [],
+        textEmphasis: RenderTextEmphasis? = nil,
         isInlineAnnotation: Bool = false,
         isVerticalWritingMode: Bool = false,
         textCombineUpright: TextCombineUpright = .none,
@@ -320,8 +322,8 @@ public struct RenderStyle: Sendable {
         self.firstLetterFontSizeMultiplier = firstLetterFontSizeMultiplier
         self.firstLetterFontWeight = firstLetterFontWeight
         self.firstLetterColor = firstLetterColor
-        self.underline = underline
-        self.strikethrough = strikethrough
+        self.textDecorations = textDecorations
+        self.textEmphasis = textEmphasis
         self.borderRadius = borderRadius
         self.isInlineAnnotation = isInlineAnnotation
         self.isVerticalWritingMode = isVerticalWritingMode
@@ -343,6 +345,55 @@ public struct RenderStyle: Sendable {
 
     /// Body paragraph style (default for block cases).
     public static let body = RenderStyle()
+}
+
+// MARK: - Text decorations and emphasis marks
+
+/// A `text-decoration` in effect on text: set on an element or an ancestor, drawn in that
+/// element's colour and style (CSS Text Decoration 3 §2). Decorations reach the text of every
+/// descendant; they are not inherited, so a descendant's `none` takes none away.
+public struct RenderTextDecoration: Sendable, Equatable {
+    public struct Lines: OptionSet, Sendable, Equatable {
+        public let rawValue: UInt8
+        public init(rawValue: UInt8) { self.rawValue = rawValue }
+        public static let underline = Lines(rawValue: 1)
+        public static let overline = Lines(rawValue: 2)
+        public static let lineThrough = Lines(rawValue: 4)
+    }
+
+    public enum Style: Sendable, Equatable {
+        case solid, double, dotted, dashed, wavy
+    }
+
+    public var lines: Lines
+    public var style: Style
+    /// nil is the text's own colour, which a theme change recolours with it.
+    public var color: RenderColor?
+    /// `text-underline-position: right`, the decorating element's: a vertical underline on
+    /// the right, and its overline on the left.
+    public var underlineRight: Bool
+
+    public init(lines: Lines, style: Style = .solid, color: RenderColor? = nil, underlineRight: Bool = false) {
+        self.lines = lines
+        self.style = style
+        self.color = color
+        self.underlineRight = underlineRight
+    }
+}
+
+/// `text-emphasis`, inherited: the marks one character after another takes
+/// (`ReaderTextEmphasis`).
+public struct RenderTextEmphasis: Sendable, Equatable {
+    public var style: TextEmphasisStyle
+    /// nil is `currentColor`.
+    public var color: RenderColor?
+    public var position: TextEmphasisPosition
+
+    public init(style: TextEmphasisStyle, color: RenderColor? = nil, position: TextEmphasisPosition = TextEmphasisPosition()) {
+        self.style = style
+        self.color = color
+        self.position = position
+    }
 }
 
 // MARK: - RenderTextAlignment

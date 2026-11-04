@@ -270,6 +270,15 @@ struct NodeAttributedStringRenderer: Sendable {
         )
     }
 
+    /// The language `text-emphasis-position: auto` reads: marks go over Japanese and Korean.
+    private static func emphasisLanguage(_ style: CJKTypographyStyle) -> String? {
+        switch style {
+        case .japanese: return "ja"
+        case .korean: return "ko"
+        default: return nil
+        }
+    }
+
     private func renderTopLevel(_ nodes: [RenderableNode], cjkTypographyStyle: CJKTypographyStyle) async -> NSAttributedString {
         let result = NSMutableAttributedString()
         let ctx = RenderContext.makeBody(config: config, cjkTypographyStyle: cjkTypographyStyle)
@@ -304,6 +313,8 @@ struct NodeAttributedStringRenderer: Sendable {
             CJKTypography.apply(to: processed, style: cjkTypographyStyle, vertical: config.writingMode.isVertical)
         }
         relaxParagraphsContainingRubyAnnotations(processed)
+        ReaderTextEmphasis.applyMarks(to: processed, vertical: config.writingMode.isVertical,
+                                      language: Self.emphasisLanguage(cjkTypographyStyle))
         relaxParagraphsContainingTallRuns(processed)
         // The converter flattens body children into top-level nodes, so each block's
         // `renderBlock` collapse only sees its own children. Adjacent TOP-LEVEL blocks
@@ -407,6 +418,9 @@ struct NodeAttributedStringRenderer: Sendable {
             if ctx.textCombineUpright != .none {
                 attributes[HTMLAttributedStringBuilder.textCombineUprightAttribute] =
                     TextCombineUprightMark(mode: ctx.textCombineUpright)
+            }
+            if let emphasis = ctx.textEmphasis {
+                attributes[HTMLAttributedStringBuilder.textEmphasisAttribute] = ReaderTextEmphasisMark(emphasis)
             }
             return NSAttributedString(string: str, attributes: attributes)
 
@@ -1193,8 +1207,8 @@ struct NodeAttributedStringRenderer: Sendable {
             targetLineHeight: para.minimumLineHeight
         )
 
-        if style.underline { newCtx.underline = true }
-        if style.strikethrough { newCtx.strikethrough = true }
+        if !style.textDecorations.isEmpty { newCtx.textDecorations = style.textDecorations }
+        if let emphasis = style.textEmphasis { newCtx.textEmphasis = emphasis }
         // Accumulate the parent content box for nested child blocks. CoreText has one frame, so
         // child paragraph indents must inherit not only authored margins, but also the centering
         // inset created by width:auto margins plus border/padding. Otherwise a `width:80%`
@@ -1212,7 +1226,7 @@ struct NodeAttributedStringRenderer: Sendable {
         var ctx = ctx
         ctx.textCombineUpright = style.textCombineUpright
         guard style.bold || style.italic || style.color != nil || !style.fontFamilies.isEmpty
-                || style.underline || style.strikethrough || style.fontSizeMultiplier != 1.0
+                || !style.textDecorations.isEmpty || style.textEmphasis != nil || style.fontSizeMultiplier != 1.0
                 || style.ssmlIPA != nil else { return ctx }
         var newCtx = ctx
         let families = style.fontFamilies.isEmpty ? ctx.fontFamilies : style.fontFamilies
@@ -1226,8 +1240,8 @@ struct NodeAttributedStringRenderer: Sendable {
         newCtx.fontWeight = weight
         if let c = style.color { newCtx.textColor = c.uiColor; newCtx.hasCSSColor = true }
         if let c = style.darkColor { newCtx.darkCSSColor = c.uiColor }
-        if style.underline { newCtx.underline = true }
-        if style.strikethrough { newCtx.strikethrough = true }
+        if !style.textDecorations.isEmpty { newCtx.textDecorations = style.textDecorations }
+        if let emphasis = style.textEmphasis { newCtx.textEmphasis = emphasis }
         if let ipa = style.ssmlIPA { newCtx.ipaPronunciation = ipa }
         return newCtx
     }
@@ -3226,8 +3240,10 @@ struct NodeAttributedStringRenderer: Sendable {
         var lineHeightMultiple: CGFloat
         var linkHref: String?
         var ipaPronunciation: String?
-        var underline: Bool
-        var strikethrough: Bool
+        /// The `text-decoration` lines in effect, drawn by `ReaderTextDecorationRenderer`.
+        var textDecorations: [RenderTextDecoration]
+        /// `text-emphasis`, which `ReaderTextEmphasis.applyMarks` draws as ruby marks.
+        var textEmphasis: RenderTextEmphasis? = nil
         var inheritedBlockMarginLeft: CGFloat
         var inheritedBlockMarginRight: CGFloat
         /// Inside a chat thread (`div.tk` of message bubbles): suppress the reader's body
@@ -3275,11 +3291,8 @@ struct NodeAttributedStringRenderer: Sendable {
             if let ipaPronunciation {
                 attrs[HTMLAttributedStringBuilder.ipaPronunciationAttribute] = ipaPronunciation
             }
-            if underline {
-                attrs[.underlineStyle] = NSUnderlineStyle.single.rawValue
-            }
-            if strikethrough {
-                attrs[.strikethroughStyle] = NSUnderlineStyle.single.rawValue
+            if !textDecorations.isEmpty {
+                attrs[HTMLAttributedStringBuilder.textDecorationAttribute] = ReaderTextDecorationMark(textDecorations)
             }
             return attrs
         }
@@ -3312,8 +3325,7 @@ struct NodeAttributedStringRenderer: Sendable {
                     targetLineHeight: targetLineHeight
                 ),
                 lineHeightMultiple: config.lineHeightMultiple,
-                underline: false,
-                strikethrough: false,
+                textDecorations: [],
                 inheritedBlockMarginLeft: 0,
                 inheritedBlockMarginRight: 0,
                 baseSize: config.baseFontSize,

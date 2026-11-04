@@ -40,6 +40,12 @@ final class HTMLAttributedStringBuilder {
     /// Authored 縦中横 on rendered text: a `TextCombineUprightMark`, one per text node, so
     /// neighbouring nodes make separate cells as in BrowserAuto.
     static let textCombineUprightAttribute = NSAttributedString.Key("ReaderTextCombineUpright")
+    /// Authored `text-decoration` lines on rendered text: a `ReaderTextDecorationMark` with every
+    /// line in effect there, which `ReaderTextDecorationRenderer` draws.
+    static let textDecorationAttribute = NSAttributedString.Key("ReaderTextDecoration")
+    /// Authored `text-emphasis` on rendered text: a `ReaderTextEmphasisMark`, until
+    /// `ReaderTextEmphasis.applyMarks` turns it into one ruby mark per character.
+    static let textEmphasisAttribute = NSAttributedString.Key("ReaderTextEmphasis")
     /// One 縦中横 cell in the prepared vertical string: a `CombinedUprightCell` over its
     /// characters, which run delegates size and the page view draws.
     static let combinedUprightCellAttribute = NSAttributedString.Key("ReaderCombinedUprightCell")
@@ -246,8 +252,21 @@ final class HTMLAttributedStringBuilder {
         var firstLetterFontSizeMultiplier: CGFloat?
         var firstLetterFontWeight: Int?
         var firstLetterColor: UIColor?
-        var underline: Bool
-        var strikethrough: Bool
+        /// The decorations in effect on this element's text: its ancestors', then its own.
+        var textDecorations: [RenderTextDecoration]
+        /// This element's own `text-decoration-*` values, which join `textDecorations` once
+        /// the cascade is done. Not inherited.
+        var textDecorationLine: RenderTextDecoration.Lines = []
+        var textDecorationStyle: RenderTextDecoration.Style = .solid
+        /// nil is `currentColor`.
+        var textDecorationColor: UIColor? = nil
+        /// `text-underline-position: right` (inherited).
+        var textUnderlineRight = false
+        /// `text-emphasis-style`, `-color` and `-position` (all inherited). A nil style is
+        /// `none`; a nil colour is `currentColor`.
+        var textEmphasisStyle: TextEmphasisStyle? = nil
+        var textEmphasisColor: UIColor? = nil
+        var textEmphasisPosition = TextEmphasisPosition()
         /// Accumulated margins from ancestor block containers.
         /// CoreText uses a single frame so parent block margins must be added to child paragraph indents.
         var inheritedBlockMarginLeft: CGFloat
@@ -995,8 +1014,7 @@ final class HTMLAttributedStringBuilder {
         var unstyled = true
         attributed.enumerateAttributes(in: fullRange, options: []) { attrs, _, stop in
             if attrs[cssSpecifiedForegroundColorAttribute] != nil
-                || attrs[.underlineStyle] != nil
-                || attrs[.strikethroughStyle] != nil
+                || attrs[textDecorationAttribute] != nil
                 || attrs[.backgroundColor] != nil
                 || attrs[inlineBorderBoxAttribute] != nil
                 || attrs[mediaAttachmentAttribute] != nil
@@ -1393,11 +1411,15 @@ final class HTMLAttributedStringBuilder {
             }
         }
 
-        // Underline / strikethrough from semantic HTML tags (regardless of CSS)
-        switch element.tagName().lowercased() {
-        case "u", "ins": style.underline = true
-        case "s", "strike", "del": style.strikethrough = true
-        default: break
+        // This element's own lines reach its text and its descendants', in its colour: its
+        // authored one, or the text's, which a theme change recolours. `u`, `s` and their kin
+        // take theirs from the user-agent declarations, so a book's `u { text-decoration: none }`
+        // keeps them off.
+        if !style.textDecorationLine.isEmpty {
+            let color = style.textDecorationColor ?? (style.hasCSSColor ? style.textColor : nil)
+            style.textDecorations.append(RenderTextDecoration(
+                lines: style.textDecorationLine, style: style.textDecorationStyle,
+                color: color.flatMap { RenderColor(uiColor: $0) }, underlineRight: style.textUnderlineRight))
         }
 
         // The HTML `hidden` boolean attribute maps to the UA rule `[hidden] { display: none }`.
@@ -1560,8 +1582,7 @@ final class HTMLAttributedStringBuilder {
             firstLetterFontSizeMultiplier: nil,
             firstLetterFontWeight: nil,
             firstLetterColor: nil,
-            underline: parent.underline,
-            strikethrough: parent.strikethrough,
+            textDecorations: parent.textDecorations,
             inheritedBlockMarginLeft: parent.inheritedBlockMarginLeft,
             inheritedBlockMarginRight: parent.inheritedBlockMarginRight,
             borderRadius: parent.borderRadius,
@@ -1571,6 +1592,10 @@ final class HTMLAttributedStringBuilder {
             avoidsPageBreakInside: false
         )
         style.textCombineUpright = parent.textCombineUpright
+        style.textUnderlineRight = parent.textUnderlineRight
+        style.textEmphasisStyle = parent.textEmphasisStyle
+        style.textEmphasisColor = parent.textEmphasisColor
+        style.textEmphasisPosition = parent.textEmphasisPosition
         return style
     }
 
@@ -1628,8 +1653,7 @@ final class HTMLAttributedStringBuilder {
             firstLetterFontSizeMultiplier: nil,
             firstLetterFontWeight: nil,
             firstLetterColor: nil,
-            underline: false,
-            strikethrough: false,
+            textDecorations: [],
             inheritedBlockMarginLeft: 0,
             inheritedBlockMarginRight: 0,
             borderRadius: 0,

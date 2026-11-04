@@ -46,6 +46,10 @@ struct CoreTextPaintFragment {
                 as? HTMLAttributedStringBuilder.HRDividerStyle {
                 halo = max(halo, abs(rule.lineWidth ?? 0.5) / 2 + 1)
             }
+            if attributes[HTMLAttributedStringBuilder.textDecorationAttribute] != nil,
+               let font = attributes[.font] as? UIFont {
+                halo = max(halo, ReaderTextDecorationRenderer.reach(fontSize: font.pointSize))
+            }
         }
         if GlobalSettings.shared.readerTextUnderlineDecorationEnabled {
             halo = max(halo, CGFloat(abs(GlobalSettings.shared.readerTextUnderlineOffset)

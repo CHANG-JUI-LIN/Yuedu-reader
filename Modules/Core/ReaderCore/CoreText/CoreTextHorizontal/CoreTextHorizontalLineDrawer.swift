@@ -152,8 +152,20 @@ enum CoreTextHorizontalLineDrawer {
                 in: ctx
             )
 
+            let boundedLineRange = NSIntersectionRange(
+                NSRange(location: max(0, lineStart), length: max(0, lineRange.length)),
+                NSRange(location: 0, length: stringLength)
+            )
+            ReaderTextDecorationRenderer.drawHorizontal(
+                line: lineToDraw, origin: origin, attributedString: attrStr, range: boundedLineRange,
+                layer: .underText, context: ctx
+            )
             ctx.textPosition = origin
             CTLineDraw(lineToDraw, ctx)
+            ReaderTextDecorationRenderer.drawHorizontal(
+                line: lineToDraw, origin: origin, attributedString: attrStr, range: boundedLineRange,
+                layer: .overText, context: ctx
+            )
             drawTextUnderlineDecorationIfNeeded(
                 underline,
                 line: lineToDraw,

@@ -848,11 +848,29 @@ final class CoreTextPageView: UIView, UIGestureRecognizerDelegate, @MainActor UI
                 suppressedRanges: suppressedRanges,
                 context: ctx
             )
+            ReaderTextDecorationRenderer.drawVertical(
+                frame: frame,
+                attributedString: layout.attributedString,
+                contentOffset: CGPoint(x: contentPathRect.minX, y: contentPathRect.minY),
+                layoutHeight: layoutSize.height,
+                suppressedRanges: suppressedRanges,
+                layer: .underText,
+                context: ctx
+            )
             drawVerticalFrame(
                 frame,
                 contentOffset: CGPoint(x: contentPathRect.minX, y: contentPathRect.minY),
                 suppressedRanges: suppressedRanges,
                 in: ctx
+            )
+            ReaderTextDecorationRenderer.drawVertical(
+                frame: frame,
+                attributedString: layout.attributedString,
+                contentOffset: CGPoint(x: contentPathRect.minX, y: contentPathRect.minY),
+                layoutHeight: layoutSize.height,
+                suppressedRanges: suppressedRanges,
+                layer: .overText,
+                context: ctx
             )
         } else {
             drawHorizontalFrame(

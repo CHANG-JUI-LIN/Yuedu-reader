@@ -313,7 +313,7 @@ private extension HTMLAttributedStringBuilder.ElementNode {
                 // resolved style as the inherited style). Plain links stay unwrapped so the single-image
                 // anchor detection (`unwrapSingleImage`) and minimal nesting are preserved.
                 let anchorStylesOwnText = style.bold || style.italic || style.color != nil
-                    || !style.fontFamilies.isEmpty || style.underline || style.strikethrough
+                    || !style.fontFamilies.isEmpty || !style.textDecorations.isEmpty
                     || style.fontSizeMultiplier != 1.0
                 let anchorNode = RenderableNode.anchor(
                     href: href,
@@ -569,8 +569,11 @@ private extension RenderStyle {
             firstLetterFontSizeMultiplier: s.firstLetterFontSizeMultiplier,
             firstLetterFontWeight: s.firstLetterFontWeight,
             firstLetterColor: s.firstLetterColor.flatMap { RenderColor(uiColor: $0) },
-            underline: s.underline,
-            strikethrough: s.strikethrough,
+            textDecorations: s.textDecorations,
+            textEmphasis: s.textEmphasisStyle.map { style in
+                RenderTextEmphasis(style: style, color: s.textEmphasisColor.flatMap { RenderColor(uiColor: $0) },
+                                   position: s.textEmphasisPosition)
+            },
             isVerticalWritingMode: s.isVerticalWritingMode,
             textCombineUpright: s.textCombineUpright,
             borderRadius: s.borderRadius,

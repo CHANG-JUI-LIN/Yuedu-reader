@@ -192,11 +192,29 @@ enum CoreTextChunkPainter {
                 suppressedRanges: suppressedRanges,
                 context: ctx
             )
+            ReaderTextDecorationRenderer.drawVertical(
+                frame: frame,
+                attributedString: content.attributedString,
+                contentOffset: .zero,
+                layoutHeight: bounds.height,
+                suppressedRanges: suppressedRanges,
+                layer: .underText,
+                context: ctx
+            )
             CoreTextPageView.drawVerticalFrame(
                 frame,
                 contentOffset: .zero,
                 suppressedRanges: suppressedRanges,
                 in: ctx
+            )
+            ReaderTextDecorationRenderer.drawVertical(
+                frame: frame,
+                attributedString: content.attributedString,
+                contentOffset: .zero,
+                layoutHeight: bounds.height,
+                suppressedRanges: suppressedRanges,
+                layer: .overText,
+                context: ctx
             )
         } else {
             CoreTextHorizontalLineDrawer.drawLines(
