@@ -37,10 +37,16 @@ struct DiscoverFilter: Identifiable {
 
 /// A source's categories as 發現頁設定 lists them, under the group label the source
 /// emits before them (a non-fetchable title item, as Legado's explore page shows one).
-struct DiscoverCategoryGroup: Identifiable {
+struct DiscoverCategoryGroup: Identifiable, Equatable {
     let id: String
     let title: String
     let items: [DiscoverCardItem]
+
+    /// The same group of the same categories, by the categories' `stableKey`: a category
+    /// list mapped again holds the same chips under new item ids.
+    static func == (lhs: DiscoverCategoryGroup, rhs: DiscoverCategoryGroup) -> Bool {
+        lhs.id == rhs.id && lhs.title == rhs.title && lhs.items.map(\.stableKey) == rhs.items.map(\.stableKey)
+    }
 
     /// The groups holding categories that match `query`; a group whose own label matches
     /// keeps all of its categories. An empty query keeps every group.
@@ -128,7 +134,16 @@ final class DiscoverViewModel: ObservableObject {
     @Published var items: [DiscoverCardItem] = []
     /// Raw source-emitted discover items, including `select` controls and pure
     /// label separators. The showcase maps only fetchable/action entries.
-    @Published var rawItems: [ModernParserBridge.DiscoverItem] = []
+    @Published var rawItems: [ModernParserBridge.DiscoverItem] = [] {
+        didSet { categoryGroups = Self.categoryGroups(from: rawItems, defaultTitle: localized("分類")) }
+    }
+
+    /// 發現頁設定's list: the categories the source returned, each once, under the group
+    /// labels the source emits between them (「分類」 heads those before any label). Mapped
+    /// once per new category list, not per read: the sheet reads it on every update of the
+    /// page behind it, and mapping a source's hundreds of categories each time, with new
+    /// ids, made the sheet lay every chip out again (FB-137).
+    private(set) var categoryGroups: [DiscoverCategoryGroup] = []
 
     /// Showcase sections for the redesigned 發現 page (one per source category).
     @Published var sections: [DiscoverShowcaseSection] = []
@@ -252,12 +267,6 @@ final class DiscoverViewModel: ObservableObject {
     }
 
     // MARK: - 發現頁設定
-
-    /// 發現頁設定's list: the categories the source returned, each once, under the group
-    /// labels the source emits between them; `defaultTitle` heads those before any label.
-    func categoryGroups(defaultTitle: String) -> [DiscoverCategoryGroup] {
-        Self.categoryGroups(from: rawItems, defaultTitle: defaultTitle)
-    }
 
     var hasCustomCategorySelection: Bool { shownCategoryKeys != nil }
 

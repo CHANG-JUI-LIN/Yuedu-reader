@@ -25,7 +25,7 @@ struct DiscoverPageSettingsSheet: View {
     }
 
     private var groups: [DiscoverCategoryGroup] {
-        discover.categoryGroups(defaultTitle: localized("分類"))
+        discover.categoryGroups
     }
 
     private var trimmedQuery: String {
@@ -39,24 +39,28 @@ struct DiscoverPageSettingsSheet: View {
     var body: some View {
         NavigationStack {
             ScrollView {
-                VStack(alignment: .leading, spacing: DSSpacing.lg) {
+                // Lazy, and each card redrawn only when its own chips or picks change: a
+                // source can list hundreds of categories, and laying every chip out again on
+                // each update of the page behind the sheet — its categories loading one by
+                // one — made scrolling and 全部顯示 stutter (FB-137).
+                LazyVStack(alignment: .leading, spacing: DSSpacing.lg) {
                     // A search looks through the categories alone. The controls show even
                     // without categories: a source may list none until its login button
                     // has run.
                     if trimmedQuery.isEmpty && (!groups.isEmpty || hasControls) {
                         quickActions
                     }
-                    if !groups.isEmpty {
-                        ForEach(visibleGroups) { group in
-                            DiscoverChipCard(title: group.title, minimumChipWidth: chipMinWidth) {
-                                // Keyed by the category: the groups are mapped afresh on
-                                // every update of the page behind the sheet, each item with
-                                // a new id, which would rebuild every chip each time.
-                                ForEach(group.items, id: \.stableKey) { item in
-                                    categoryChip(item)
-                                }
-                            }
-                        }
+                    let picked = discover.shownCategoryKeys ?? []
+                    ForEach(visibleGroups) { group in
+                        DiscoverCategoryCard(
+                            group: group,
+                            pickedKeys: picked.isEmpty
+                                ? []
+                                : Set(group.items.lazy.map(\.stableKey).filter(picked.contains)),
+                            minimumChipWidth: chipMinWidth,
+                            onToggle: { discover.toggleCategorySelection($0) }
+                        )
+                        .equatable()
                     }
                 }
                 // The full width even with nothing to list, as 探索's own page needs.
@@ -213,13 +217,34 @@ struct DiscoverPageSettingsSheet: View {
         .disabled(discover.runningQuickActionID != nil)
     }
 
-    private func categoryChip(_ item: DiscoverCardItem) -> some View {
-        let selected = discover.isCategorySelected(item)
-        return Button { discover.toggleCategorySelection(item) } label: {
-            DSCapsuleLabel(title: item.title, isSelected: selected, fillsWidth: true, onCard: true)
+}
+
+/// One group's categories as a card of chips, a picked one drawn selected. Equal while the
+/// group holds the same categories with the same picks, so an update elsewhere on the
+/// model leaves the card — and the layout of its chips — as it was.
+private struct DiscoverCategoryCard: View, Equatable {
+    let group: DiscoverCategoryGroup
+    /// The group's categories the reader picked, by `stableKey`.
+    let pickedKeys: Set<String>
+    let minimumChipWidth: CGFloat
+    let onToggle: (DiscoverCardItem) -> Void
+
+    nonisolated static func == (lhs: Self, rhs: Self) -> Bool {
+        lhs.group == rhs.group && lhs.pickedKeys == rhs.pickedKeys && lhs.minimumChipWidth == rhs.minimumChipWidth
+    }
+
+    var body: some View {
+        DiscoverChipCard(title: group.title, minimumChipWidth: minimumChipWidth) {
+            // Keyed by the category, which outlives a new mapping of the source's list.
+            ForEach(group.items, id: \.stableKey) { item in
+                let selected = pickedKeys.contains(item.stableKey)
+                Button { onToggle(item) } label: {
+                    DSCapsuleLabel(title: item.title, isSelected: selected, fillsWidth: true, onCard: true)
+                }
+                .buttonStyle(.plain)
+                .accessibilityAddTraits(selected ? .isSelected : [])
+            }
         }
-        .buttonStyle(.plain)
-        .accessibilityAddTraits(selected ? .isSelected : [])
     }
 }
 
@@ -244,5 +269,10 @@ private struct SubtitleWhereAvailable: ViewModifier {
     var source = BookSource()
     source.bookSourceName = "範例來源配置"
     source.bookSourceUrl = "https://example.com"
-    return DiscoverPageSettingsSheet(discover: DiscoverViewModel(source: source), onOpenPage: { _ in })
+    let discover = DiscoverViewModel(source: source)
+    discover.rawItems = (1...3).flatMap { group in
+        [ModernParserBridge.DiscoverItem(title: "☆ 分區 \(group) ☆")]
+            + (1...8).map { .init(title: "分類 \(group)-\($0)", url: "https://example.com/\(group)/\($0)") }
+    }
+    return DiscoverPageSettingsSheet(discover: discover, onOpenPage: { _ in })
 }

@@ -1,3 +1,4 @@
+import Combine
 import Foundation
 import Testing
 @testable import yuedu_app
@@ -135,6 +136,41 @@ struct ExploreSettingsTests {
             defaultTitle: "分類"
         )
         #expect(separated.map(\.title) == ["分類"])
+    }
+
+    /// FB-137: 發現頁設定 reads the groups on every update of the page behind it. Mapped on
+    /// each read, a source's hundreds of categories came back with new ids every time and
+    /// every chip was laid out again; they are mapped once per category list now.
+    @MainActor
+    @Test("發現頁設定's groups are mapped once per category list, not on every update")
+    func discoverCategoryGroupsOutliveUpdates() throws {
+        var source = BookSource()
+        source.bookSourceUrl = "https://discover-groups-once.test"
+        let storageKey = DiscoverViewModel.categorySelectionKey(sourceURL: source.bookSourceUrl)
+        defer { UserDefaults.standard.removeObject(forKey: storageKey) }
+
+        let discover = DiscoverViewModel(source: source)
+        #expect(discover.categoryGroups.isEmpty)
+        discover.rawItems = Self.discoverRaw
+        discover.items = Self.discoverRaw.compactMap(DiscoverViewModel.mapItem)
+        let groups = discover.categoryGroups
+        #expect(groups.map { $0.items.map(\.title) } == [["月票榜", "畅销榜"], ["玄幻"]])
+        func ids(_ groups: [DiscoverCategoryGroup]) -> [UUID] { groups.flatMap { $0.items.map(\.id) } }
+
+        // Picks, 全部顯示 and the page's other updates leave the same items in place.
+        let month = try #require(groups.first?.items.first)
+        discover.toggleCategorySelection(month)
+        discover.showAllCategories()
+        discover.objectWillChange.send()
+        #expect(ids(discover.categoryGroups) == ids(groups))
+        #expect(discover.categoryGroups == groups)
+
+        // A new list from the source is mapped again; the same categories stay equal.
+        discover.rawItems = Self.discoverRaw
+        #expect(ids(discover.categoryGroups) != ids(groups))
+        #expect(discover.categoryGroups == groups)
+        discover.rawItems = Array(Self.discoverRaw.prefix(3))
+        #expect(discover.categoryGroups.map { $0.items.map(\.title) } == [["月票榜", "畅销榜"]])
     }
 
     @MainActor
