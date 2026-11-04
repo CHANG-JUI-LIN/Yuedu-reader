@@ -1,0 +1,26 @@
+html { writing-mode: vertical-rl; -webkit-writing-mode: vertical-rl; -epub-writing-mode: vertical-rl; }
+ul.m, ol.m { margin: 0; padding: 0; list-style: none; }
+.pe { padding-block-end: 1px; }
+.be { border-block-end: 1px solid black; }
+.neg { margin-block-end: -10px; }
+.m0 { margin: 0; }
+.as { vertical-align: super; font-size: 75%; }
+.sz { font-size: 0.7em; }
+.ov { text-decoration: overline; }
+.ul-lt { text-decoration: underline line-through; }
+.big30 { font-size: 30px; }
+.nodec { text-decoration: none; }
+.red { color: red; }
+.di { display: initial; }
+.du { display: unset; }
+hr.dot { border-top: 1px dotted #999; }
+.cc { border: 2px solid; color: blue; }
+.cc2 { border: 2px solid; border-left-color: red; }
+.ri { border: 4px inset rgb(128,128,128); border-radius: 10px; }
+.serif { font-family: serif; }
+.sans { font-family: sans-serif; }
+.cursive { font-family: cursive; }
+.fantasy { font-family: fantasy; }
+.sysui { font-family: system-ui; }
+.n-gray { color: gray; } .n-green { color: green; } .n-orange { color: orange; } .n-purple { color: purple; } .n-silver { color: silver; } .n-rebecca { color: rebeccapurple; }
+.fixed { width: 40px; } .cw { height: 100px; } .narrow { height: 200px; }

@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml" lang="zh-Hant" xml:lang="zh-Hant">
+<head>
+<meta charset="UTF-8"/>
+<title>清單項目的變化</title>
+<link rel="stylesheet" type="text/css" href="style.css"/>
+</head>
+<body>
+<p class="note">中間一項是 display: block，沒有編號，也不算序號。</p>
+<ol data-case="13-li-block">
+<li>第一項。</li>
+<li class="block">不是清單項目。</li>
+<li>第二項。</li>
+</ol>
+<p class="note">中間一項包在 div 裡。</p>
+<ol data-case="13-li-in-div">
+<li>第一項。</li>
+<div><li>包在 div 裡的一項。</li></div>
+<li>第三項。</li>
+</ol>
+<p class="note">display: list-item 的 div，沒有清單外框。</p>
+<div data-case="13-div-list-item">
+<div class="item">第一個 div。</div>
+<div class="item">第二個 div。</div>
+</div>
+<p class="note">不在 ol／ul 裡的項目，外層 div 有左內距。</p>
+<div class="pad"><li data-case="13-orphan-li">沒有清單外框的項目。</li></div>
+<p class="note">清單之後的正文。</p>
+</body>
+</html>

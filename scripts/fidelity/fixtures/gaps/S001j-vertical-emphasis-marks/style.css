@@ -1,0 +1,18 @@
+html { writing-mode: vertical-rl; -webkit-writing-mode: vertical-rl; -epub-writing-mode: vertical-rl; }
+.fs { -webkit-text-emphasis-style: filled sesame; text-emphasis-style: filled sesame; }
+.os { -webkit-text-emphasis-style: open sesame; text-emphasis-style: open sesame; }
+.fd { -webkit-text-emphasis-style: filled dot; text-emphasis-style: filled dot; }
+.od { -webkit-text-emphasis-style: open dot; text-emphasis-style: open dot; }
+.fc { -webkit-text-emphasis-style: filled circle; text-emphasis-style: filled circle; }
+.oc { -webkit-text-emphasis-style: open circle; text-emphasis-style: open circle; }
+.fdc { -webkit-text-emphasis-style: filled double-circle; text-emphasis-style: filled double-circle; }
+.odc { -webkit-text-emphasis-style: open double-circle; text-emphasis-style: open double-circle; }
+.ft { -webkit-text-emphasis-style: filled triangle; text-emphasis-style: filled triangle; }
+.ot { -webkit-text-emphasis-style: open triangle; text-emphasis-style: open triangle; }
+.str { -webkit-text-emphasis-style: "×"; text-emphasis-style: "×"; }
+.sesame_dot { font-style: normal; -webkit-text-emphasis-style: filled sesame; text-emphasis-style: filled sesame; }
+.under { -webkit-text-emphasis-position: under left; text-emphasis-position: under left; }
+.normal { line-height: normal; }
+.big { font-size: 2em; }
+.over { -webkit-text-emphasis-position: over right; text-emphasis-position: over right; }
+.left { -webkit-text-emphasis-position: over left; text-emphasis-position: over left; }

@@ -1,0 +1,7 @@
+{
+ "title": "S001l 傍點：縱中橫（直排）",
+ "language": "zh-Hant",
+ "vertical": true,
+ "elements": true,
+ "reproduces": "text-emphasis marks on text-combine-upright cells in vertical-rl (Aozora plan Task 6): one mark per cell, centred on its em square, punctuation cells too, before and after a plain character. Each data-ink=\"emphasis\" element's marks are measured alone by making text-emphasis-color transparent."
+}

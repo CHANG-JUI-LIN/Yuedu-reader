@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml" lang="zh-Hant" xml:lang="zh-Hant">
+<head>
+<meta charset="UTF-8"/>
+<title>浮動推開的行</title>
+<link rel="stylesheet" type="text/css" href="style.css"/>
+</head>
+<body>
+<p><img class="float" src="plate-small.png" alt=""/>左邊有一張浮動圖片。</p>
+<ol data-case="12-float-before">
+<li>第一項被浮動圖片推開。</li>
+<li>第二項寫得比較長，長到在這個寬度上一定會折行，有幾行在圖片旁邊，有幾行在圖片下面。</li>
+<li>第三項。</li>
+</ol>
+<p class="note">項目自己以浮動圖片開頭。</p>
+<ol data-case="12-float-in-li">
+<li><img class="float" src="plate-small.png" alt=""/>項目以浮動圖片開頭，第一行被圖片推開，看編號跟著行走還是留在原處。</li>
+<li>第二項。</li>
+</ol>
+</body>
+</html>

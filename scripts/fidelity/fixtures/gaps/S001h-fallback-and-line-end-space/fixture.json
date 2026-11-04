@@ -1,0 +1,7 @@
+{
+ "title": "S001h 備援字型與行尾空白",
+ "language": "zh-Hant",
+ "vertical": false,
+ "elements": true,
+ "reproduces": "Whether a fallback font (Han text in Georgia or the system font, drawn in PingFang) grows the line box at a fixed and at a normal line-height, and whether a collapsible space at the end of a line inside an inline element before <br> is removed before centring (harry-potter v7end's title image; sherlock's 0.5pt-per-line drift after YueduCoreText 0.13)."
+}

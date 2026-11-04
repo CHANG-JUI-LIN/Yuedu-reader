@@ -1,0 +1,82 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml" lang="zh-Hant" xml:lang="zh-Hant">
+<head>
+<meta charset="UTF-8"/>
+<title>基本清單與序號</title>
+<link rel="stylesheet" type="text/css" href="style.css"/>
+</head>
+<body>
+<p class="note">沒有作者樣式的有序清單，編號從一到十二，看一位數和兩位數怎麼對齊。</p>
+<ol data-case="01-ol-text">
+<li>第一項。</li>
+<li>第二項寫得比較長，長到在這個寬度上一定會折行，折下去的那一行要對齊文字。</li>
+<li>第三項。</li>
+<li>第四項。</li>
+<li>第五項。</li>
+<li>第六項。</li>
+<li>第七項。</li>
+<li>第八項。</li>
+<li>第九項。</li>
+<li>第十項寫得比較長，長到在這個寬度上一定會折行，看兩位數的編號往哪裡長。</li>
+<li>第十一項。</li>
+<li>第十二項。</li>
+</ol>
+<p class="note">沒有作者樣式的無序清單。</p>
+<ul data-case="01-ul-text">
+<li>第一項。</li>
+<li>第二項寫得比較長，長到在這個寬度上一定會折行，折下去的那一行要對齊文字。</li>
+<li>第三項。</li>
+</ul>
+<p class="note">從五開始。</p>
+<ol start="5" data-case="06-start">
+<li>第五項。</li>
+<li>第六項。</li>
+</ol>
+<p class="note">倒數，沒有起點。</p>
+<ol reversed="reversed" data-case="06-reversed">
+<li>第三項。</li>
+<li>第二項。</li>
+<li>第一項。</li>
+</ol>
+<p class="note">倒數，從十開始。</p>
+<ol reversed="reversed" start="10" data-case="06-reversed-start">
+<li>第十項。</li>
+<li>第九項。</li>
+</ol>
+<p class="note">個別項目指定序號，包括負數。</p>
+<ol data-case="06-value">
+<li>第一項。</li>
+<li value="7">第七項。</li>
+<li>第八項。</li>
+<li value="-2">負二。</li>
+<li>負一。</li>
+<li>零。</li>
+</ol>
+<p class="note">大寫字母。</p>
+<ol type="A" data-case="06-type-A">
+<li>甲。</li>
+<li>乙。</li>
+</ol>
+<p class="note">小寫羅馬數字。</p>
+<ol type="i" data-case="06-type-i">
+<li>一。</li>
+<li>二。</li>
+<li>三。</li>
+<li>四。</li>
+</ol>
+<p class="note">小寫字母從零開始，跨過 z。</p>
+<ol type="a" start="0" data-case="06-alpha-range">
+<li>零。</li>
+<li>一。</li>
+<li value="26">二十六。</li>
+<li>二十七。</li>
+</ol>
+<p class="note">大寫羅馬數字跨過 3999。</p>
+<ol class="wider" type="I" start="3998" data-case="06-roman-range">
+<li>三九九八。</li>
+<li>三九九九。</li>
+<li>四千。</li>
+</ol>
+</body>
+</html>

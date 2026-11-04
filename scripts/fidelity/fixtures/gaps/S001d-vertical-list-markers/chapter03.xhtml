@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml" lang="zh-Hant" xml:lang="zh-Hant">
+<head>
+<meta charset="UTF-8"/>
+<title>空項目與行首的字級</title>
+<link rel="stylesheet" type="text/css" href="style.css"/>
+</head>
+<body>
+<p class="note">中間一項是空的，行高是正文的。</p>
+<ol data-case="14-empty">
+<li>第一項。</li>
+<li></li>
+<li>第三項。</li>
+</ol>
+<p class="note">中間一項是空的，項目行高是 1。</p>
+<ol class="lh1" data-case="14-empty-lh1">
+<li>第一項。</li>
+<li></li>
+<li>第三項。</li>
+</ol>
+<p class="note">第一項是空的無序項目。</p>
+<ul data-case="14-empty-ul">
+<li></li>
+<li>第二項。</li>
+</ul>
+<p class="note">行首是兩倍字級的 span，項目行高是 1。</p>
+<ol class="lh1" data-case="14-span-first-large">
+<li><span class="big">大</span>字在行首。</li>
+<li>第二項。</li>
+</ol>
+<p class="note">兩倍字級的 span 在行中間，項目行高是 1。</p>
+<ol class="lh1" data-case="14-span-later-large">
+<li>行首是正文，<span class="big">大</span>字在後面。</li>
+<li>第二項。</li>
+</ol>
+<p class="note">行首是零點六倍字級的 span，項目行高是 1。</p>
+<ol class="lh1" data-case="14-span-first-small">
+<li><span class="small">小</span>字在行首。</li>
+<li>第二項。</li>
+</ol>
+<p>清單之後的正文。</p>
+</body>
+</html>

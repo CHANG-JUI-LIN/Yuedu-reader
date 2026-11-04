@@ -296,6 +296,7 @@ Phase 2a is done. The screenshot probes and the corpus run belong to Phase 2b, w
   - the size steps and the heading sizes and weights;
   - the 罫囲み box around its text;
   - 傍点 upright, 斜体 slanted.
+- **Not probed: scroll mode.** The geometry probe lays out pages only. BrowserAuto's scroll path runs the same inline layout, but no test drives it with this stylesheet.
 
 ## Phase 2c — 傍点 and 傍線
 

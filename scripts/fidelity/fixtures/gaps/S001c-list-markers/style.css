@@ -1,0 +1,38 @@
+p.note { margin: 1em 0 0.3em; }
+p.indent { margin: 0; text-indent: 2em; }
+p.shift { margin: 0 0 0 2em; }
+ol.padded li { padding-left: 1em; }
+ol.bordered li { border-left: 3px solid #888888; }
+ol.centered li { text-align: center; }
+ol.large li, ul.large li { font-size: 1.5em; }
+ol.large li p, ul.large li p { font-size: 0.6667em; margin: 0; }
+ol.lower-alpha { list-style-type: lower-alpha; }
+ol.upper-alpha { list-style-type: upper-alpha; }
+ol.lower-roman { list-style-type: lower-roman; }
+ol.upper-roman { list-style-type: upper-roman; }
+ol.leading-zero { list-style-type: decimal-leading-zero; }
+ol.cjk-ideographic { list-style-type: cjk-ideographic; }
+ol.trad-informal { list-style-type: trad-chinese-informal; }
+ol.simp-informal { list-style-type: simp-chinese-informal; }
+ol.cjk-decimal { list-style-type: cjk-decimal; }
+li.c { list-style-type: circle; }
+li.s { list-style-type: square; }
+ul.circle { list-style-type: circle; }
+ul.square { list-style-type: square; }
+img.block { display: block; }
+a { color: inherit; text-decoration: none; }
+li.footnote-a { list-style-type: cjk-ideographic; text-align: left; font-size: 90%; line-height: 100%; }
+li.footnote-b { list-style-type: decimal; text-align: left; font-size: 90%; margin: 0.3em 0; padding: 5px 0; line-height: 120%; }
+li.block { display: block; }
+div.item { display: list-item; margin-left: 2em; }
+ol.wide { padding-left: 6em; }
+ol.wider { padding-left: 9em; }
+div.pad { padding-left: 3em; }
+ul.fs9 li { font-size: 9px; }
+ul.fs12 li { font-size: 12px; }
+ul.fs25 li { font-size: 25.5px; }
+ul.fs34 li { font-size: 34px; }
+ul.fs50 li { font-size: 50px; }
+ul.times li { font-family: "Times New Roman"; }
+ol.lh1 li { line-height: 1; }
+img.float { float: left; width: 4em; height: 7em; margin-right: 0.5em; }

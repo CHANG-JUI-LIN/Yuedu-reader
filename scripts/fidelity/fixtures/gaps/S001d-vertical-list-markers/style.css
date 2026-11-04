@@ -1,0 +1,25 @@
+html {
+  writing-mode: vertical-rl;
+  -webkit-writing-mode: vertical-rl;
+  -epub-writing-mode: vertical-rl;
+}
+p { margin: 0; text-indent: 1em; }
+p.note { margin: 0 0 0 0.5em; text-indent: 0; }
+li p { text-indent: 1em; }
+ol.cjk-ideographic { list-style-type: cjk-ideographic; }
+ol.lower-roman { list-style-type: lower-roman; }
+ol.wide { padding-top: 6em; }
+ol.lh1 li { line-height: 1; }
+ol.large li, ul.large li { font-size: 1.5em; }
+ol.large li p, ul.large li p { font-size: 0.6667em; }
+li.s { list-style-type: square; }
+ol.p-lh1 li p { line-height: 1; }
+ol.large-lh1 li { font-size: 1.5em; line-height: 1; }
+ol.large-tall li { font-size: 1.5em; }
+ol.large-tall li p { font-size: 0.6667em; line-height: 2.5; }
+ul.plain { list-style: none; }
+a { color: inherit; text-decoration: none; }
+li.footnote-a { list-style-type: cjk-ideographic; text-align: left; font-size: 90%; line-height: 100%; }
+li.footnote-b { list-style-type: decimal; text-align: left; font-size: 90%; margin: 0.3em 0; padding: 5px 0; line-height: 120%; }
+span.big { font-size: 2em; }
+span.small { font-size: 0.6em; }

@@ -1,0 +1,66 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml" lang="zh-Hant" xml:lang="zh-Hant">
+<head>
+<meta charset="UTF-8"/>
+<title>直排的段落與註腳</title>
+<link rel="stylesheet" type="text/css" href="style.css"/>
+</head>
+<body>
+<p class="note">項目裡放首行縮排一個字的段落。</p>
+<ol data-case="14-li-p">
+<li><p>首行縮排一個字的段落放在清單項目裡，第一行往下縮，看編號會不會跟著動。</p></li>
+<li><p>第二項。</p></li>
+</ol>
+<p class="note">項目行高是 1，比正文的行高小。</p>
+<ol class="lh1" data-case="14-li-lh1">
+<li>行高是一的項目。</li>
+<li>第二項。</li>
+</ol>
+<p class="note">項目字級是一倍半，裡面的段落縮回正文字級。</p>
+<ol class="large" data-case="14-li-large">
+<li><p>項目的字級比段落大，看編號會不會把這一欄撐寬。</p></li>
+<li><p>第二項。</p></li>
+</ol>
+<p class="note">中文編號，項目字級是一倍半，裡面的段落縮回正文字級。</p>
+<ol class="large cjk-ideographic" data-case="14-cjk-large">
+<li><p>直立的編號用項目的字級，看它在欄裡的位置。</p></li>
+<li><p>第二項。</p></li>
+</ol>
+<p class="note">無序清單，項目字級是一倍半，裡面的段落縮回正文字級。</p>
+<ul class="large" data-case="14-disc-large">
+<li><p>圓點用項目的字級，看它在欄裡的位置。</p></li>
+<li class="s"><p>方塊。</p></li>
+</ul>
+<p class="note">項目裡的段落行高是 1。</p>
+<ol class="p-lh1" data-case="14-li-p-lh1">
+<li><p>段落行高是一，看編號會不會把段落的這一欄撐寬。</p></li>
+<li><p>第二項。</p></li>
+</ol>
+<p class="note">項目字級是一倍半、行高是 1，文字直接放在項目裡。</p>
+<ol class="large-lh1" data-case="14-li-large-lh1">
+<li>項目自己的一行，看編號會不會撐寬。</li>
+<li>第二項。</li>
+</ol>
+<p class="note">項目字級是一倍半，裡面的段落行高是 2.5，比編號還寬。</p>
+<ol class="large-tall" data-case="14-li-large-tall">
+<li><p>段落這一欄比編號寬，看編號置中還是靠右。</p></li>
+<li><p>第二項。</p></li>
+</ol>
+<p>正文裡有註腳<a id="fa1-back" href="#fa1">〔一〕</a>，註腳本身放在章末的清單裡<a id="fb1-back" href="#fb1">〔二〕</a>。</p>
+<ol class="duokan-footnote-content" data-case="14-footnote-cjk">
+<li class="duokan-footnote-item footnote-a" id="fa1"><a href="#fa1-back">第一條註腳用中文數字，字級是正文的九成，行高百分之百。</a></li>
+<li class="duokan-footnote-item footnote-a" id="fa2"><a href="#fa1-back">第二條註腳。</a></li>
+</ol>
+<ol class="duokan-footnote-content" data-case="14-footnote-decimal">
+<li class="duokan-footnote-item footnote-b" id="fb1"> <a href="#fb1-back">第一條註腳用阿拉伯數字，行高百分之一百二十，左右各有內距。</a> </li>
+<li class="duokan-footnote-item footnote-b" id="fb2"> <a href="#fb1-back">第二條註腳。</a> </li>
+</ol>
+<p class="note">沒有符號的無序清單，瀏覽器預設的縮排應該在上方。</p>
+<ul class="plain" data-case="14-list-style-none">
+<li>第一項沒有符號。</li>
+<li>第二項沒有符號。</li>
+</ul>
+<p>清單之後的正文。</p>
+</body>
+</html>

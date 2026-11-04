@@ -1,0 +1,7 @@
+{
+ "title": "S001g q 引號與通用字族",
+ "language": "zh-Hant",
+ "vertical": false,
+ "elements": true,
+ "reproduces": "q's quotation marks by language and nesting depth and the quotes property (chapter 1), and the CSS generic font families by content language with each face's line metrics (chapter 2), for list-marker design step 8f. YueduCoreText's QuoteAndFontHintTests and GenericFontFamily hold the numbers."
+}

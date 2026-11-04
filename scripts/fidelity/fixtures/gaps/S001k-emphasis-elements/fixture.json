@@ -1,0 +1,7 @@
+{
+ "title": "S001k 傍點：元素與字體樣式",
+ "language": "zh-Hant",
+ "vertical": false,
+ "elements": true,
+ "reproduces": "text-emphasis marks on Aozora's <em class=\"sesame_dot\"> and on em, i, b and strong, upright and italic (Aozora plan Task 6). S001i reads no marks on its one em row, in two runs; this fixture measures the same markup elsewhere, where WebKit draws them as on a span. Each data-ink=\"emphasis\" element's marks are measured alone by making text-emphasis-color transparent."
+}

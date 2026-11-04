@@ -1,0 +1,47 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml" lang="zh-Hant" xml:lang="zh-Hant">
+<head>
+<meta charset="UTF-8"/>
+<title>巢狀清單</title>
+<link rel="stylesheet" type="text/css" href="style.css"/>
+</head>
+<body>
+<p class="note">三層無序清單：實心圓、空心圓、實心方塊。</p>
+<ul data-case="10-nested-ul">
+<li>第一層。
+<ul>
+<li>第二層。
+<ul>
+<li>第三層。</li>
+</ul>
+</li>
+</ul>
+</li>
+<li>第一層的第二項。</li>
+</ul>
+<p class="note">無序清單裡的有序清單。</p>
+<ul data-case="10-ol-in-ul">
+<li>外層。
+<ol>
+<li>內層的第一項。</li>
+<li>內層的第二項。</li>
+</ol>
+</li>
+</ul>
+<p class="note">有序清單裡的無序清單。</p>
+<ol data-case="10-ul-in-ol">
+<li>外層。
+<ul>
+<li>內層的第一項。</li>
+</ul>
+</li>
+<li>外層的第二項。</li>
+</ol>
+<p class="note">項目一開頭就是另一份清單。</p>
+<ol data-case="10-li-starts-with-list">
+<li><ol><li>內層的第一項。</li><li>內層的第二項。</li></ol></li>
+<li>外層的第二項。</li>
+</ol>
+</body>
+</html>

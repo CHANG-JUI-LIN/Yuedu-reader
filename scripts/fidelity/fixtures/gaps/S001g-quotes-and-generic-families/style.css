@@ -1,0 +1,9 @@
+.serif { font-family: serif; }
+.sans { font-family: sans-serif; }
+.cursive { font-family: cursive; }
+.fantasy { font-family: fantasy; }
+.mono { font-family: monospace; }
+.sysui { font-family: system-ui; }
+.qnone { quotes: none; }
+.qcustom { quotes: "<<" ">>" "<" ">"; }
+.qauto { quotes: auto; }

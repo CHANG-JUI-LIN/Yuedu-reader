@@ -1,0 +1,7 @@
+{
+ "title": "S001j 傍點（直排）",
+ "language": "zh-Hant",
+ "vertical": true,
+ "elements": true,
+ "reproduces": "S001i in vertical-rl: text-emphasis marks for Aozora's 傍點 (Aozora plan Task 6): every style's mark, one per character and none on punctuation or spaces, the over and under (right and left) sides, a ruby inside emphasized text, and whether marks move lines at line-height 1.5 and normal. Each data-ink=\"emphasis\" element's marks are measured alone by making text-emphasis-color transparent."
+}

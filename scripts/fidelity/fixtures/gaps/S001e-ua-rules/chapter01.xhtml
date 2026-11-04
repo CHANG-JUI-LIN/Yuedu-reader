@@ -1,0 +1,89 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml" lang="zh-Hant" xml:lang="zh-Hant">
+<head>
+<meta charset="UTF-8"/>
+<title>其餘 UA 規則</title>
+<link rel="stylesheet" type="text/css" href="style.css"/>
+</head>
+<body>
+<p data-m="p0">起點段落。</p>
+<div><p data-m="mb1">甲一段落。</p></div>
+<ol class="m"><li data-m="mb1-after">甲一之後。</li></ol>
+<div><div><p data-m="mb2">甲二段落。</p></div></div>
+<ol class="m"><li data-m="mb2-after">甲二之後。</li></ol>
+<div class="pe"><p data-m="mb3">甲三段落。</p></div>
+<ol class="m"><li data-m="mb3-after">甲三之後。</li></ol>
+<div class="be"><p data-m="mb4">甲四段落。</p></div>
+<ol class="m"><li data-m="mb4-after">甲四之後。</li></ol>
+<ul><li><p data-m="mb5">甲五段落。</p></li></ul>
+<ol class="m"><li data-m="mb5-after">甲五之後。</li></ol>
+<div class="neg"><p data-m="mb6">甲六段落。</p></div>
+<ol class="m"><li data-m="mb6-after">甲六之後。</li></ol>
+<div class="fixed"><p data-m="mb7">甲七段落。</p></div>
+<ol class="m"><li data-m="mb7-after">甲七之後。</li></ol>
+<div><p data-m="mb8">甲八段落。</p></div>
+<p data-m="mb8-after">甲八之後段落。</p>
+<div class="m0"><div class="m0"><p data-m="mb9">甲九段落。</p></div><div class="empty"></div></div>
+<ol class="m"><li data-m="mb9-after">甲九之後。</li></ol>
+<ol class="m"><li data-m="big">乙一<big data-m="big-in">大字</big>乙一尾。</li></ol>
+<ol class="m"><li data-m="small">乙二<small data-m="small-in">小字</small>乙二尾。</li></ol>
+<ol class="m"><li data-m="sup">乙三<sup data-m="sup-in">1</sup>乙三尾。</li></ol>
+<ol class="m"><li data-m="sub">乙四<sub data-m="sub-in">2</sub>乙四尾。</li></ol>
+<ol class="m"><li data-m="sup-cjk">乙五<sup data-m="sup-cjk-in">註</sup>乙五尾。</li></ol>
+<ol class="m"><li data-m="sup-nest">乙六<sup data-m="sup-nest-a">外<sup data-m="sup-nest-b">內</sup></sup>乙六尾。</li></ol>
+<ol class="m"><li data-m="sup-class">乙七<span class="as" data-m="sup-class-in">釋</span>乙七尾。</li></ol>
+<ol class="m"><li data-m="sup-size">乙八<sup class="sz" data-m="sup-size-in">3</sup>乙八尾。</li></ol>
+<ol class="m"><li data-m="sub-cjk">乙九<sub data-m="sub-cjk-in">下</sub>乙九尾。</li></ol>
+<ol class="m"><li data-m="u">丙一<u data-m="u-in" data-ink="decoration">底線文字</u>丙一尾。</li></ol>
+<ol class="m"><li data-m="ins">丙二<ins data-m="ins-in" data-ink="decoration">插入文字</ins>丙二尾。</li></ol>
+<ol class="m"><li data-m="s">丙三<s data-m="s-in" data-ink="decoration">刪除文字</s>丙三尾。</li></ol>
+<ol class="m"><li data-m="del">丙四<del data-m="del-in" data-ink="decoration">刪去文字</del>丙四尾。</li></ol>
+<ol class="m"><li data-m="over">丙五<span class="ov" data-m="over-in" data-ink="decoration">上線文字</span>丙五尾。</li></ol>
+<ol class="m"><li data-m="both">丙六<span class="ul-lt" data-m="both-in" data-ink="decoration">雙線文字</span>丙六尾。</li></ol>
+<ol class="m"><li data-m="u-mixed">丙七<u data-m="u-mixed-in" data-ink="decoration">小字<span class="big30">大</span>小字</u>丙七尾。</li></ol>
+<ol class="m"><li data-m="u-none">丙八<u data-m="u-none-in" data-ink="decoration">外層<span class="nodec">內層</span>外層</u>丙八尾。</li></ol>
+<ol class="m"><li data-m="u-latin">丙九<u data-m="u-latin-in" data-ink="decoration">Ugjpq</u>丙九尾。</li></ol>
+<ol class="m"><li data-m="u-red">丙十<u class="red" data-m="u-red-in">紅底線</u>丙十尾。</li></ol>
+<ol class="m"><li data-m="u-big">丙十一<u class="big30" data-m="u-big-in" data-ink="decoration">大底</u>丙十一尾。</li></ol>
+<ol class="m"><li data-m="link">丙十二<a href="#x" data-m="link-in" data-ink="decoration">連結文字</a>丙十二尾。</li></ol>
+<ol class="m"><li data-m="ital">丁一<cite data-m="cite">引用</cite><var data-m="var">變數</var><dfn data-m="dfn">定義</dfn>丁一尾。</li></ol>
+<address data-m="address">丁二地址</address>
+<ol class="m"><li data-m="after-address">丁三之後。</li></ol>
+<center data-m="center">丁四置中</center>
+<center><div class="cw" data-m="center-div">丁五塊</div></center>
+<ol class="m"><li data-m="after-center">丁六之後。</li></ol>
+<p class="narrow" data-m="nobr-p">丁七<nobr data-m="nobr">不換行的很長很長很長很長很長的文字</nobr>尾。</p>
+<p lang="zh-CN" data-m="q-cn-p">戊一<q data-m="q-cn" data-ink="text">简体引号</q>戊一尾。</p>
+<p lang="zh-CN" data-m="q-nest-p">戊二<q data-m="q-nest" data-ink="text">外层<q data-m="q-inner">内层</q>外层</q>戊二尾。</p>
+<p data-m="q-tw-p">戊三<q data-m="q-tw" data-ink="text">繁體引號</q>戊三尾。</p>
+<p lang="en" data-m="q-en-p">戊四<q data-m="q-en" data-ink="text">quote</q>戊四尾。</p>
+<p lang="ja" data-m="q-ja-p">戊五<q data-m="q-ja" data-ink="text">日本引用</q>戊五尾。</p>
+<p data-m="font-p">己一<font size="1" data-m="fs1">一</font><font size="2" data-m="fs2">二</font><font size="3" data-m="fs3">三</font><font size="4" data-m="fs4">四</font><font size="5" data-m="fs5">五</font><font size="6" data-m="fs6">六</font><font size="7" data-m="fs7">七</font><font size="+1" data-m="fsp1">加</font><font size="-1" data-m="fsm1">減</font><font size="+5" data-m="fsp5">超</font><font size="0" data-m="fs0">零</font>尾。</p>
+<p data-m="fontc-p">己二<font color="red" data-m="fc-red">紅</font><font color="#00f" data-m="fc-hex3">藍</font><font color="00ff00" data-m="fc-bare">綠</font><font color="chucknorris" data-m="fc-junk">怪</font><font face="Menlo" data-m="ff-menlo">Mono</font><font face="NoSuchFont, Courier" data-m="ff-list">Cour</font>尾。</p>
+<div class="di" data-m="di">庚一起始</div><div class="du" data-m="du">庚二未設</div>
+<ol class="m"><li data-m="after-di">庚三之後。</li></ol>
+<dialog data-m="dlg">庚四對話</dialog>
+<ol class="m"><li data-m="after-dlg">庚五之後。</li></ol>
+<hr data-m="hr-plain"/>
+<hr noshade="noshade" data-m="hr-noshade"/>
+<hr size="5" data-m="hr-size"/>
+<hr color="red" data-m="hr-color"/>
+<hr width="50%" data-m="hr-w"/>
+<hr width="100" align="left" data-m="hr-left"/>
+<hr width="100" align="right" data-m="hr-right"/>
+<hr class="dot" data-m="hr-dot"/>
+<ol class="m"><li data-m="after-hr">辛一之後。</li></ol>
+<div class="cc" data-m="cc">辛二邊框</div>
+<div class="cc2" data-m="cc2">辛三邊框</div>
+<div class="ri" data-m="ri" data-ink="text">辛四圓角</div>
+<ol class="m"><li data-m="after-border">辛五之後。</li></ol>
+<p data-m="gf-p"><span class="serif" data-m="gf-serif-l" data-ink="text">Hamburgefonstiv</span> <span class="serif" data-m="gf-serif-c" data-ink="text">壬一襯線</span></p>
+<p><span class="sans" data-m="gf-sans-l" data-ink="text">Hamburgefonstiv</span> <span class="sans" data-m="gf-sans-c" data-ink="text">壬二無襯</span></p>
+<p><span class="cursive" data-m="gf-cursive-l" data-ink="text">Hamburgefonstiv</span> <span class="fantasy" data-m="gf-fantasy-l" data-ink="text">Hamburgefonstiv</span></p>
+<p><span class="sysui" data-m="gf-sysui-l" data-ink="text">Hamburgefonstiv</span> <span class="plain" data-m="gf-default-l" data-ink="text">Hamburgefonstiv</span></p>
+<p lang="zh-CN"><span class="serif" data-m="gf-serif-cn" data-ink="text">壬三衬线</span> <span class="sans" data-m="gf-sans-cn" data-ink="text">壬四无衬</span></p>
+<ol class="m"><li data-m="named">癸一<span class="n-gray" data-m="n-gray">灰</span><span class="n-green" data-m="n-green">綠</span><span class="n-orange" data-m="n-orange">橙</span><span class="n-purple" data-m="n-purple">紫</span><span class="n-silver" data-m="n-silver">銀</span><span class="n-rebecca" data-m="n-rebecca">紫二</span></li></ol>
+<ol class="m"><li data-m="end">癸二結尾。</li></ol>
+</body>
+</html>

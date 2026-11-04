@@ -1,0 +1,57 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml" lang="zh-Hant" xml:lang="zh-Hant">
+<head>
+<meta charset="UTF-8"/>
+<title>段落與盒子</title>
+<link rel="stylesheet" type="text/css" href="style.css"/>
+</head>
+<body>
+<p class="note">項目裡放首行縮排兩個字的段落。</p>
+<ol data-case="02-p-indent">
+<li><p class="indent">首行縮排兩個字的段落放在清單項目裡，第一行往裡縮，看編號會不會跟著動。</p></li>
+<li><p class="indent">第二項。</p></li>
+</ol>
+<p class="note">項目裡放左邊距兩個字的段落。</p>
+<ol data-case="03-p-margin">
+<li><p class="shift">左邊距兩個字的段落放在清單項目裡，整段往裡縮，看編號會不會跟著動。</p></li>
+<li><p class="shift">第二項。</p></li>
+</ol>
+<p class="note">項目裡放沒有作者樣式的段落，上下各有一行的邊距。</p>
+<ol data-case="02-p-default">
+<li><p>沒有作者樣式的段落放在清單項目裡，編號要對齊段落的第一行，而不是項目的頂端。</p></li>
+<li><p>第二項。</p></li>
+</ol>
+<p class="note">項目左邊有一個字的內距。</p>
+<ol class="padded" data-case="04-li-padding">
+<li>項目有左內距，文字往裡縮，看編號留在內距外面還是跟著文字。</li>
+<li>第二項。</li>
+</ol>
+<p class="note">項目左邊有一條框線。</p>
+<ol class="bordered" data-case="04-li-border">
+<li>項目有左框線，看編號在框線的哪一邊。</li>
+<li>第二項。</li>
+</ol>
+<p class="note">項目置中。</p>
+<ol class="centered" data-case="05-center">
+<li>置中的一項。</li>
+<li>置中而且很長的一項，長到在這個寬度上一定會折行，看編號留在左邊還是跟著文字。</li>
+</ol>
+<p class="note">項目字級是一倍半，裡面的段落縮回正文字級。</p>
+<ol class="large" data-case="08-li-large">
+<li><p>項目的字級比段落大，編號用項目的字級，看它會不會把第一行撐高。</p></li>
+<li><p>第二項。</p></li>
+</ol>
+<p class="note">無序清單的項目字級是一倍半，裡面的段落縮回正文字級。</p>
+<ul class="large" data-case="08-ul-large">
+<li><p>圓點用項目的字級，看圓點的大小和高度跟著哪個字型。</p></li>
+<li class="s"><p>方塊。</p></li>
+</ul>
+<p class="note">項目行高是 1，比正文的行高小。</p>
+<ol class="lh1" data-case="08-li-lh1">
+<li>行高是一的項目。</li>
+<li>第二項。</li>
+</ol>
+<p class="note">清單之後的正文。</p>
+</body>
+</html>

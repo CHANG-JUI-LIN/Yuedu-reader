@@ -1,0 +1,6 @@
+{
+ "title": "S001c 清單符號（橫排）",
+ "language": "zh-Hant",
+ "vertical": false,
+ "reproduces": "GAPS S001, the marker geometry the design (docs/superpowers/specs/2026-11-03-browser-list-markers-design.md §12) has to match: every case is one ol/ul carrying data-case, numbered after the design's list. Chapter 1: text items, one- and two-digit numbers, start/reversed/value/type, alpha and roman range edges. 2: li > p with text-indent, margin-left and default margins, li padding and border, centred items, an li font larger than its p. 3: the predefined types, and their range edges: past ±9999 and negative for the Chinese styles, negative cjk-decimal, decimal-leading-zero at 0 and below. 4: empty items and image-only items. 5: 多看 footnote lists (the two li.duokan-footnote-item rules of 诡秘之主). 6: nested lists. 7: list items that are not li in a list. 8: floats pushing the first line (alone, as the engine falls back on float). Markers are generated content: the oracle sees them only in the paint score; scripts/fidelity/list_probe.sh measures their boxes."
+}

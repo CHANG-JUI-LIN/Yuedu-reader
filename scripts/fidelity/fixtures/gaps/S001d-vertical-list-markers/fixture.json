@@ -1,0 +1,6 @@
+{
+ "title": "S001d 清單符號（直排）",
+ "language": "zh-Hant",
+ "vertical": true,
+ "reproduces": "GAPS S001 in vertical-rl, the design's case 14 (docs/superpowers/specs/2026-11-03-browser-list-markers-design.md §10, §12). Chapter 1: decimal one to twelve (sideways Latin digits), disc, cjk-ideographic (upright with a vertical 、), lower-roman. Chapter 2: li > p with text-indent, the two 多看 footnote lists, and a list-style: none ul like 草枕's, whose UA indent belongs on top (padding-inline-start), not on the left. Chapter 3: empty items at the body line-height and at line-height 1, an empty ul item, and a 2em / 0.6em span at the start or in the middle of a line-height: 1 item, which tell whose font sizes the room a vertical marker takes (the line's root inline box, its first box, or its largest). Image-only items and floats are left out: a vertical chapter with either never reaches the new engine (VerticalTextSupport). No pictures, so S005 does not send a chapter to Legacy. scripts/fidelity/list_probe.sh measures the markers."
+}
