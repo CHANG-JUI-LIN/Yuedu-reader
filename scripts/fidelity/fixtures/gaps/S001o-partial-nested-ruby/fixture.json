@@ -1,0 +1,7 @@
+{
+ "title": "S001o 部分巢狀注音",
+ "language": "ja",
+ "vertical": false,
+ "elements": true,
+ "reproduces": "Partial nesting: a ruby whose base holds an inner ruby beside other text, as the Aozora converter writes a note on part of a word with ruby (Aozora plan Task 9, the 20 chapters 0.15 leaves to legacy). The inner ruby at the base's start, end and middle, with both readings on one side; an outer reading on the left over a right inner one, wider than the whole base; an outer reading on the right over a left inner one; the inner ruby inside a span in the base; an inner annotation wider than its own base; two inner rubies in one base. Each data-ink=\"text\" rt is measured alone by making its colour transparent. Then three-line paragraphs broken by br, a partly nested ruby on the first or second line, one-sided and on both sides, with each line's first characters in a data-m span: how such a ruby grows a block's first line and a later one."
+}

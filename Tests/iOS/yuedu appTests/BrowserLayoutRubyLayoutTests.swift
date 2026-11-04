@@ -47,7 +47,8 @@ struct BrowserLayoutRubySubsetTests {
             "<p><ruby>漢</ruby></p>",
             "<p><ruby>漢<rt>a</rt><rt>b</rt></ruby></p>",
             "<p><ruby>漢<rtc><rt>a</rt></rtc></ruby></p>",
-            "<p><ruby>外<ruby>內<rt>n</rt></ruby><rt>w</rt></ruby></p>",
+            // A ruby nested two deep; one level, beside text, is laid out since YueduCoreText 0.17.0.
+            "<p><ruby>外<ruby>內<ruby>深<rt>d</rt></ruby><rt>n</rt></ruby><rt>w</rt></ruby></p>",
             "<p><ruby><span style='display:block'>漢</span><rt>a</rt></ruby></p>",
             "<p><ruby>漢<rt><span style='display:block'>a</span></rt></ruby></p>",
         ]

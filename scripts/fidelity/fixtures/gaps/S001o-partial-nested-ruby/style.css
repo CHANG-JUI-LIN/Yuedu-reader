@@ -1,0 +1,2 @@
+.under, ruby.left { -webkit-ruby-position: after; ruby-position: under; }
+.over { -webkit-ruby-position: before; ruby-position: over; }

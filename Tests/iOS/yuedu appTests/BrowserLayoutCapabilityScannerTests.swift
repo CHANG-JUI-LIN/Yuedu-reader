@@ -95,6 +95,8 @@ struct BrowserLayoutCapabilityScannerTests {
             ("<ruby>漢<rt>a</rt></ruby>", ["ruby { -epub-ruby-position:under }"]),
             ("<ruby>漢<rt>a</rt></ruby>", ["ruby { -webkit-ruby-position:after }"]),
             ("<ruby class='u'><ruby>漢<rt>a</rt></ruby><rt>b</rt></ruby>", ["ruby.u { ruby-position:under }"]),
+            // YueduCoreText 0.17.0: a ruby whose base holds rubies beside its text.
+            ("<ruby>外<ruby>內<rt>n</rt></ruby><rt>w</rt></ruby>", []),
         ]
         for (ruby, css) in accepted {
             let result = scan("<html><body><p>\(ruby)</p></body></html>", css)
@@ -110,7 +112,7 @@ struct BrowserLayoutCapabilityScannerTests {
             ("<ruby>漢<rtc><rt>a</rt></rtc></ruby>", []),
             ("<ruby>漢<rt>a</rt></ruby>", ["ruby { ruby-position:inter-character }"]),
             ("<ruby>漢<rt>a</rt></ruby>", ["ruby { ruby-align:start }"]),
-            ("<ruby>外<ruby>內<rt>n</rt></ruby><rt>w</rt></ruby>", []),
+            ("<ruby>外<ruby>內<ruby>深<rt>d</rt></ruby><rt>n</rt></ruby><rt>w</rt></ruby>", []),
             ("<ruby>漢<rt><span style='display:block'>a</span></rt></ruby>", []),
         ]
         for (ruby, css) in rejected {

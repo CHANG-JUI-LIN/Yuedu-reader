@@ -430,7 +430,7 @@ Drawing the marks in the page and scroll views, as 縦中横 cells are drawn, wo
   - The capability scanner accepts both.
 - [x] **Step 2 (package): implement and release.** Same checkpoint as Task 3. YueduCoreText 0.15.0.
 - [x] **Step 3 (app, legacy).** `CTRubyAnnotationCreate` takes text for several positions at once (`kCTRubyPositionBefore` and `kCTRubyPositionAfter`). Use it for the double-sided form and for 左ルビ. Write a probe test in both writing modes.
-- [ ] **Step 4 (writer; `converterVersion` + 1).** Done except the last bullet: 20 chapters are left, with a ruby over part of another ruby's base (see the record).
+- [x] **Step 4 (writer; `converterVersion` + 1).** Done. The last bullet's 20 chapters, with a ruby over part of another ruby's base, went to BrowserAuto with YueduCoreText 0.17.0 (see "Phase 2f").
   - A ruby inside a ruby becomes the `rtc` form.
   - `ruby.left` gets `ruby-position: under`.
   - Remove the ruby exception from the contract.
@@ -532,6 +532,29 @@ Every fragment of the chapter lands where it did: the layout's fingerprint (each
 
 **Findings, not fixed:**
 - WebKit on iOS 26.5 sets a plain 17px column at line-height 1.5 25 wide; on iOS 27.2 it was 25.5 (`RubyPositionReferenceTests`). BrowserAuto follows 27.2. The image tests pin how images sit against the text, so they hold on either.
+
+### Phase 2f: a ruby over part of another ruby's base — what landed
+
+**Status, 2026-11-04: done, on YueduCoreText 0.17.0.** Converter version 4 (no writer change); text version still 1. This finishes Task 9 Step 4: the corpus leaves no ruby inside a ruby to legacy.
+
+**How WebKit sets it (WKWebView, iOS 26.5, 17px PingFang at 1.5, 8.5px annotations; the app's new fixtures S001o-partial-nested-ruby and S001p-vertical-partial-nested-ruby, 15 rows each).**
+- An inner ruby is as wide as the wider of its base and its annotation, its base centred in it. The outer base runs on past it.
+- The outer annotation spans the whole base, inner rubies and all. On a side it shares with an inner annotation it stands beyond it: 35 over the base's baseline, or 32 from the column's centre. On a side of its own it sits where a single annotation does: 22 over or 16 under, 19 either side of the column.
+- Lines grow as for full nesting (Phase 2d): a first line with readings on both sides holds both, a later line takes CSS Ruby's leading.
+
+**The package (0.17.0, `2344a9e`).** Full nesting is the case of one inner ruby over the whole base, so one path takes both: `HorizontalRubySupport` admits a base of text, inline elements and inner rubies of one base and one `rt`, `BoxTreeBuilder` records each inner ruby's span of base pieces, and `RubyInlineLayout` widens each span to its annotation, places the inner annotations next to the base and the ruby's own beyond them. `PartialNestedRubyReferenceTests` pins every row against S001o and S001p. The pronunciation hint stays the 0.15 rule when one inner ruby holds the whole base, and is the outer annotation otherwise. A ruby nested two deep, an inner ruby with several pairs and an `rtc` are still refused.
+
+**The app.** The pin, and the capability and ruby tests now accept the partial shape and refuse one nested two deep. The contract's ruby exception narrows to the ruby over a figure.
+
+**Verified:**
+- **The package:** the whole suite on 0.17.0, 544 tests (49 + 495), with `PartialNestedRubyReferenceTests` and `ScriptShiftReferenceTests` (Task 14) new.
+- **The four checks** after the last edit: 238 tests in 29 suites, with the same 18 issues as Phase 2d in the same three suites that fail without this work.
+- **The corpus** (iOS 26.5 simulator): 17 158 works parse in 62 s and convert into 113 562 chapters that Readium opens, each keeping the baseline's text; the largest work converts in 1.7–1.8 s. Chapters with a ruby inside a ruby: 82 in 31 works, **left to legacy for it: 0** (20 before). The ruby over a figure: 19 in 1 work, as before. Parity (50 works) passes in both writing modes.
+
+**Findings, not fixed** (the package's 0.17.0 known issues):
+- WebKit spaces a base around under a wider annotation (`ruby-align: space-around`); BrowserAuto centres it, its characters together.
+- An inner annotation wider than its base overhangs the outer base's text beside it in WebKit, by up to half its font size; BrowserAuto keeps it within the inner ruby. A base character after such a ruby sits 4.25 further along than in WebKit.
+- Kana annotations fall back to Hiragino Sans in BrowserAuto, whose kerning narrows pairs such as ハイ and ザイ; WebKit sets them in PingFang, unkerned. A 14-kana annotation is 118.15 long, where WebKit's is 119. This holds for every ruby, nested or not.
 
 ## Phase 3 — The long tail
 
