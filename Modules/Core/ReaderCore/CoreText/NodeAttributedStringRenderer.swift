@@ -1035,8 +1035,12 @@ struct NodeAttributedStringRenderer: Sendable {
         newCtx.textCombineUpright = style.textCombineUpright
 
         // ── Font size ──
+        // The heading scale is the app's own for unstyled headings; a size the book's CSS
+        // sets wins, as in the browser engine (青空文庫's 中見出し is 1.125rem on an h4).
         let sizeMultiplier: CGFloat
-        if isHeading {
+        if isHeading, headingLevel > 1, style.hasAuthoredFontSize {
+            sizeMultiplier = style.fontSizeMultiplier
+        } else if isHeading {
             switch headingLevel {
             case 1:  sizeMultiplier = 2.0
             case 2:  sizeMultiplier = 1.5

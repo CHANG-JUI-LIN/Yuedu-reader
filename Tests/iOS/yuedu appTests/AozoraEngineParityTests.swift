@@ -11,9 +11,10 @@ import YueduCoreText
 @Suite("Aozora engine parity", .serialized)
 @MainActor
 struct AozoraEngineParityTests {
-    /// Every construct of the writer's table, collapsed ASCII spaces, U+3000 at block
-    /// edges, blank lines, a line split by 地付き and a multi-line heading; and a
-    /// chapter of its own for the ruby BrowserAuto leaves to legacy.
+    /// Every construct of the writer's table and every class of its stylesheet,
+    /// collapsed ASCII spaces, U+3000 at block edges, blank lines, a line split by
+    /// 地付き and a multi-line heading; and a chapter of its own for the ruby
+    /// BrowserAuto leaves to legacy.
     static let source = """
         題
         著者
@@ -39,6 +40,18 @@ struct AozoraEngineParityTests {
         ［＃ここで字下げ終わり］
         小節［＃「小節」は小見出し］
         一［＃「一」は同行中見出し］　同行の本文
+        ［＃ここから罫囲み］
+        囲みの一行目
+        囲みの二行目
+        ［＃ここで罫囲み終わり］
+        ［＃ここから３字下げ、折り返して５字下げ］
+        折り返しの段落。
+        ［＃ここで字下げ終わり］
+        ［＃ここから１０字詰め］
+        字詰めの段落。
+        ［＃ここで字詰め終わり］
+        上げ［＃地から２字上げ］
+        小［＃「小」は１段階小さな文字］、窓［＃「窓」は窓中見出し］の本文
         ［＃改ページ］
         図の前［＃「猫の図」のキャプション付きの図（fig1.png、横10×縦10）入る］図の後
         ［＃挿絵１（fig1.png、横10×縦10）入る］
@@ -101,6 +114,7 @@ struct AozoraEngineParityTests {
                 Issue.record("no BrowserAuto paged layout for \(place)")
                 continue
             }
+            #expect(paged.sourceText.filter { $0 == "\u{FFFC}" }.count == figureCount, "paged \(place)")
             if let difference = firstDifference(read: paged.sourceText, planned: planned) {
                 Issue.record("paged \(place): \(difference)")
             }
@@ -112,6 +126,7 @@ struct AozoraEngineParityTests {
                 Issue.record("expected a BrowserAuto scroll tile for \(place)")
                 continue
             }
+            #expect(tile.chapter.document.sourceText.filter { $0 == "\u{FFFC}" }.count == figureCount, "scroll \(place)")
             if let difference = firstDifference(read: tile.chapter.document.sourceText, planned: planned) {
                 Issue.record("scroll \(place): \(difference)")
             }
@@ -119,11 +134,12 @@ struct AozoraEngineParityTests {
     }
 
     /// Where an engine's text first departs from the planned text, with some context;
-    /// nil when they agree. Legacy's text may hold a U+FFFC per figure, U+2028 for a
-    /// line break, and curled quotes for straight ones.
+    /// nil when they agree. Both engines' texts hold a U+FFFC per figure, which the
+    /// planned text leaves out (BrowserAuto's since YueduCoreText 0.11); legacy's may
+    /// also hold U+2028 for a line break, and curled quotes for straight ones.
     static func firstDifference(read: String, planned: String, legacy: Bool = false) -> String? {
         var actual = Array(read.unicodeScalars)
-        if legacy { actual.removeAll { $0 == "\u{FFFC}" } }
+        actual.removeAll { $0 == "\u{FFFC}" }
         let expected = Array(planned.unicodeScalars)
         func same(_ a: Unicode.Scalar, _ b: Unicode.Scalar) -> Bool {
             guard a != b else { return true }

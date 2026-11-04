@@ -6,15 +6,118 @@ import Foundation
 /// a line break inside a block is `<br/>`, headings are h3–h5, and U+3000 is
 /// written as a character reference. Class names follow aozora2html
 /// (`lib/aozora2html.rb` and `yml/command_table.yml` at 9ca5395), so the
-/// stylesheet reads like 青空文庫's own; Phase 1b styles only a few of them.
+/// stylesheet reads like 青空文庫's own.
 enum AozoraXHTMLWriter {
-    /// Size only, no colour, so reader themes still apply.
-    static let stylesheet = """
+    /// The rules every book gets: block breaks, no margins on paragraphs and
+    /// headings, and notes a size smaller, as 青空文庫's aozora.css sets them
+    /// (fetched 2026-11-04). No colour, so reader themes still apply.
+    static let baseStylesheet = """
         br.eol { display: block; }
         p { margin: 0; }
-        .notes { font-size: 0.8em; }
+        h3, h4, h5 { margin: 0; }
+        .notes { font-size: smaller; }
 
         """
+
+    /// The stylesheet for a book whose chapters are `chapters`: the base rules,
+    /// then a rule for each class the chapters use, in a fixed order, so the same
+    /// book always gives the same bytes. Values follow aozora.css and the inline
+    /// styles aozora2html writes, with its physical properties made logical: the
+    /// reader's 排版方向, not the book, sets the writing mode. aozora2html's
+    /// font-size keywords are written in `rem` with WebKit's proportions (`small`
+    /// is 13/16 of `medium`): like a keyword, relative to the reader's size, not
+    /// the parent's, and read by both engines.
+    static func stylesheet(forChapters chapters: [String]) -> String {
+        let lists = chapters.flatMap(classLists(in:))
+        let used = Set(lists.joined())
+        func numbers(_ prefix: String) -> [Int] {
+            used.compactMap { number($0, prefix) }.sorted()
+        }
+        var css = baseStylesheet
+        for (name, rule) in headingRules where used.contains(name) { css += rule }
+        for n in numbers("jisage_") { css += ".jisage_\(n) { margin-inline-start: \(n)em; }\n" }
+        // 折り返して: the first line's own 字下げ, as an indent from the block's. A
+        // pair without 字下げ comes first, so source order agrees with specificity.
+        let hanging = Set(lists.compactMap { list -> [Int]? in
+            guard let first = list.lazy.compactMap({ number($0, "first_") }).first else { return nil }
+            return [list.lazy.compactMap { number($0, "jisage_") }.first ?? 0, first]
+        })
+        for pair in hanging.sorted(by: { $0.lexicographicallyPrecedes($1) }) {
+            let selector = (pair[0] > 0 ? ".jisage_\(pair[0])" : "") + ".first_\(pair[1])"
+            css += "\(selector) { text-indent: \(pair[1] - pair[0])em; }\n"
+        }
+        for n in numbers("chitsuki_") { css += ".chitsuki_\(n) { text-align: end; margin-inline-end: \(n)em; }\n" }
+        for n in numbers("jizume_") { css += ".jizume_\(n) { max-inline-size: \(n)em; }\n" }
+        for n in numbers("dai") { css += ".dai\(n) { font-size: \(keywordSize(steps: n))rem; }\n" }
+        for n in numbers("sho") { css += ".sho\(n) { font-size: \(keywordSize(steps: -n))rem; }\n" }
+        for (name, rule) in namedRules where used.contains(name) { css += rule }
+        return css
+    }
+
+    /// aozora.css sizes h3 at 125%, h4 `large` and h5 `medium`. aozora2html gives
+    /// 同行 and 窓 headings the same classes on a `span`, so the size and the
+    /// weight go on the class, where both forms take them.
+    private static let headingRules: [(String, String)] = {
+        let sizes: [(String, String)] = [("o", "1.25em"), ("naka", "1.125rem"), ("ko", "1rem")]
+        return sizes.flatMap { size, value -> [(String, String)] in
+            ["", "dogyo-", "mado-"].map { form -> (String, String) in
+                let name = "\(form)\(size)-midashi"
+                return (name, ".\(name) { font-size: \(value); font-weight: bold; }\n")
+            }
+        }
+    }()
+
+    /// The classes with a fixed rule, in the order they are written. 傍点 and 傍線
+    /// are `em`, which is italic by default; aozora.css sets them upright.
+    private static let namedRules: [(String, String)] = [
+        ("futoji", ".futoji { font-weight: bold; }\n"),
+        ("shatai", ".shatai { font-style: italic; }\n"),
+        ("keigakomi", "div.keigakomi { border: 1px solid; padding-block-start: 0.5em; padding-block-end: 0.5em; "
+            + "padding-inline-start: 1em; padding-inline-end: 0.5em; }\nspan.keigakomi { border: 1px solid; }\n"),
+        ("caption", ".caption { font-size: 0.8125rem; font-weight: bold; }\n"),
+        ("superscript", ".superscript { font-size: 0.8125rem; }\n"),
+        ("subscript", ".subscript { font-size: 0.8125rem; }\n"),
+        ("kaeriten", ".kaeriten { font-size: 0.8125rem; }\n"),
+        ("okurigana", ".okurigana { font-size: 0.8125rem; }\n"),
+        ("tcy", ".tcy { text-combine-upright: all; }\n"),
+    ] + emphasisClasses.map { name in (name, ".\(name) { font-style: normal; }\n") }
+
+    /// The 傍点 and 傍線 classes, on either side.
+    private static let emphasisClasses: [String] = {
+        let marks: [String] = AozoraEmphasisStyle.allCases.flatMap { style -> [String] in
+            [style.className, style.className + "_after"]
+        }
+        let lines: [String] = AozoraSidelineStyle.allCases.flatMap { style -> [String] in
+            ["underline_" + style.classSuffix, "overline_" + style.classSuffix]
+        }
+        return marks + lines
+    }()
+
+    /// aozora2html's size for `steps` 段階: `large`, `x-large`, and `xx-large` for
+    /// three or more, and `small` to `xx-small` down, in WebKit's proportions to
+    /// `medium` (18, 24, 32 and 13, 10, 9 of 16).
+    private static func keywordSize(steps: Int) -> String {
+        switch steps {
+        case 1: "1.125"
+        case 2: "1.5"
+        case 3...: "2"
+        case -1: "0.8125"
+        case -2: "0.625"
+        default: "0.5625"
+        }
+    }
+
+    /// The class lists of the elements in `xhtml`, as the writer writes them.
+    private static func classLists(in xhtml: String) -> [[String]] {
+        xhtml.components(separatedBy: "class=\"").dropFirst().map {
+            $0.prefix { $0 != "\"" }.split(separator: " ").map(String.init)
+        }
+    }
+
+    /// The number after `prefix` in a class name such as `jisage_2`.
+    private static func number(_ name: String, _ prefix: String) -> Int? {
+        name.hasPrefix(prefix) ? Int(name.dropFirst(prefix.count)) : nil
+    }
 
     /// The stylesheet's path from a chapter file (`OPS/text/…`).
     static let stylesheetHref = "../style/aozora.css"
@@ -23,10 +126,18 @@ enum AozoraXHTMLWriter {
     static func document(for chapter: AozoraChapter, in document: AozoraDocument, images: [String: String]) -> String {
         let positions = Dictionary(uniqueKeysWithValues: document.blockSpans.enumerated().map { ($1, $0) })
         var body = ""
+        var boxed = false
         for span in chapter.spans {
             let blockIndex = positions[span] ?? 0
-            body += write(block(span, in: document), blockIndex: blockIndex, images: images)
+            let block = block(span, in: document)
+            // A run of 罫囲み blocks is one box, as aozora2html draws it.
+            if block.isBoxed != boxed {
+                body += block.isBoxed ? "<div class=\"keigakomi\">" : "</div>"
+                boxed = block.isBoxed
+            }
+            body += write(block, blockIndex: blockIndex, images: images)
         }
+        if boxed { body += "</div>" }
         let title = chapter.navigation.first?.title ?? document.header?.title ?? ""
         return """
             <?xml version="1.0" encoding="UTF-8"?>
@@ -226,6 +337,15 @@ enum AozoraXHTMLWriter {
             }
         }
         return out
+    }
+}
+
+private extension AozoraBlock {
+    var isBoxed: Bool {
+        switch self {
+        case .paragraph(_, let style), .heading(_, _, _, let style): style.isBoxed
+        case .image, .pageBreak: false
+        }
     }
 }
 

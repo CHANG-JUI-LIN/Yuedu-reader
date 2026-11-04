@@ -241,6 +241,62 @@ Phase 2a is done. The screenshot probes and the corpus run belong to Phase 2b, w
   - Add a "Phase 2b: what landed" record here, with the screenshots.
   - Commit with `feat(aozora): set Aozora's layout annotations in both writing modes`.
 
+### Phase 2b: what landed
+
+**Status, 2026-11-04: done, on YueduCoreText 0.13.0.** Converter version 2; text version still 1.
+
+**The stylesheet follows 青空文庫's own aozora.css, not the table above.** aozora.css (fetched 2026-11-04, Shift-JIS) and the inline styles aozora2html writes give the values; the table's guesses were wrong in four places:
+- **Sizes.** aozora2html writes `１段階大きな文字` as `font-size: large`, a keyword relative to `medium`, not to the parent. The writer writes the keywords in `rem` with WebKit's proportions to `medium`:
+  - up: 1.125, 1.5, 2 for three steps or more;
+  - down: 0.8125, 0.625, 0.5625.
+  - `rem` because both engines read it and it is relative to the reader's size, as a keyword is.
+- **Headings.** aozora.css sizes h3 (大見出し) at 125%, h4 (中見出し) `large` and h5 (小見出し) `medium`, all bold:
+  - so `o-midashi` 1.25em, `naka-midashi` 1.125rem, `ko-midashi` 1rem;
+  - the rules go on the classes, so the 同行 and 窓 forms (a `span` with the same class) take them;
+  - `h3, h4, h5 { margin: 0 }`.
+- **罫囲み.** `border: 1px solid` (current colour, so themes still apply).
+  - A run of 罫囲み blocks is one `<div class="keigakomi">`, as aozora2html draws it; it adds no text in either engine.
+  - Its padding is aozora.css's: 0.5em on the block sides, 1em at the inline start, 0.5em at the end.
+  - Inline 罫囲み is the border alone.
+- **Small text.** `.notes` is `smaller`. `caption` is 0.8125rem and bold. `superscript`, `subscript`, `kaeriten` and `okurigana` are 0.8125rem.
+
+**As planned:**
+- `jisage_N` is `margin-inline-start`;
+- `first_M` with `jisage_N` is `text-indent: (M−N)em`; a pair without 字下げ is written first, so source order agrees with specificity;
+- `chitsuki_N` is `text-align: end; margin-inline-end`;
+- `jizume_N` is `max-inline-size`;
+- `futoji`, `shatai` and `tcy` as in the table.
+
+**Also:**
+- **傍点 and 傍線 are upright.** They are `em` elements, italic by default; aozora.css sets them `font-style: normal`, and so does the writer, for every emphasis and sideline class on both sides. The marks themselves are Phase 2c.
+- **Rules only for what a book uses.** The stylesheet is written per book (`AozoraXHTMLWriter.stylesheet(forChapters:)`): the base rules, then one rule per class the chapters use, in a fixed order. The same book always gives the same bytes.
+
+**Legacy honoured no CSS heading size.** `applyBlockStyle` scaled h2–h6 by its own factors whatever the book said: 中見出し came out 18.7pt instead of 19.125.
+- An authored `font-size` on a heading now wins over that scale. It is passed as `ResolvedStyle.hasAuthoredFontSize` → `RenderStyle.hasAuthoredFontSize`, set by an author rule or the `style` attribute, not inherited.
+- h1 keeps the app's scale. Unstyled headings in other EPUBs are unchanged.
+
+**Italic in vertical CJK.**
+- Both engines synthesise an oblique: a 0.2 shear in the font matrix.
+  - BrowserAuto puts it on its CJK stand-in (`CJKFontLookup.standIn`); Latin takes the system's real italic.
+  - Legacy puts it on the run's font.
+- The same shear is drawn in vertical writing.
+- **Finding, not fixed:** with no CJK stand-in (`cjk: nil`) and the system font, BrowserAuto's Han falls back to PingFang UI without the shear and is drawn upright.
+
+**縦中横.** `text-combine-upright: all` takes no chapter to legacy in either mode: the parity sample shows no new legacy chapters.
+
+**Verified:**
+- **The four checks,** after the last edit (69 tests in 8 suites, with `CoreTextWritingModeTests` and `BookIntroLayoutTests`). `AozoraBookRegeneratorTests` regenerates version 1 books with the text unchanged.
+- **The corpus** (`AozoraCorpusTests`, 712 s):
+  - 17158 works parse;
+  - every work converts and Readium opens it, every chapter keeping the baseline's text;
+  - the 50-work parity sample reads as planned in both writing modes.
+  - Chapters left to legacy are unchanged from before the stylesheet: 82 rubies inside a ruby in 31 works, 19 rubies over a figure in 1 work.
+- **The geometry probe,** `AozoraStylesheetGeometryTests` (new), replaces the screenshots: no images were saved. One fixture uses every measured class. For BrowserAuto (paged) and legacy, each in both writing modes, it asserts where the text lands:
+  - 字下げ, 折り返して, 地付き, 字上げ and 字詰め;
+  - the size steps and the heading sizes and weights;
+  - the 罫囲み box around its text;
+  - 傍点 upright, 斜体 slanted.
+
 ## Phase 2c — 傍点 and 傍線
 
 **Impact:** 傍点 is in 35.9% of works and 傍線 in 1.9%. Neither engine draws emphasis marks. BrowserAuto has no `text-decoration` at all, which also affects ordinary EPUBs (`<u>`, `<s>`).

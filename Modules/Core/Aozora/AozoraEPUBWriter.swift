@@ -36,7 +36,7 @@ struct AozoraEPUBManifest: Codable, Equatable, Sendable {
 /// Packages a planned Aozora document as an EPUB 3 file (Phase 1b, Task 16).
 enum AozoraEPUBWriter {
     /// Changes with any change to the files the writer produces.
-    static let converterVersion = 1
+    static let converterVersion = 2
     /// Changes only when some chapter's text changes, and then ships with a
     /// position migration (Phase 1c's tools), never alone.
     static let textVersion = 1
@@ -66,9 +66,11 @@ enum AozoraEPUBWriter {
 
         var entries: [EPUBPackageArchive.Entry] = []
         var manifestChapters: [AozoraEPUBManifest.Chapter] = []
+        var documents: [String] = []
         for (index, chapter) in chapters.enumerated() {
             let href = String(format: "text/c%04d.xhtml", index + 1)
             let xhtml = AozoraXHTMLWriter.document(for: chapter, in: document, images: figurePaths)
+            documents.append(xhtml)
             entries.append(.text("OPS/" + href, xhtml))
             manifestChapters.append(AozoraEPUBManifest.Chapter(
                 href: href, length: chapter.text.utf16.count, sha256: sha256(Data(chapter.text.utf8)),
@@ -81,7 +83,7 @@ enum AozoraEPUBWriter {
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.sortedKeys]
         entries.append(.data(manifestPath, try encoder.encode(manifest)))
-        entries.append(.text("OPS/style/aozora.css", AozoraXHTMLWriter.stylesheet))
+        entries.append(.text("OPS/style/aozora.css", AozoraXHTMLWriter.stylesheet(forChapters: documents)))
         entries.append(.text("OPS/nav.xhtml", navigation(chapters, title: title(of: document))))
         entries.append(.text("OPS/package.opf", packageDocument(document, chapters: chapters,
                                                                 figures: figures.map { (path: $0.path, name: $0.name) },

@@ -23,10 +23,18 @@ struct AozoraXHTMLWriterTests {
         ("［＃ここから地から１字上げ］\n本文\n［＃ここで字上げ終わり］", "chitsuki_1"),
         ("［＃ここから１６字詰め］\n本文\n［＃ここで字詰め終わり］", "jizume_16"),
         ("［＃ここから１段階小さな文字］\n本文\n［＃ここで小さな文字終わり］", "sho1"),
-        ("［＃ここから罫囲み］\n本文\n［＃ここで罫囲み終わり］", "keigakomi"),
     ])
     func paragraphClasses(text: String, classes: String) {
         #expect(body(text) == #"<p class="\#(classes)">本文<br class="eol"/></p>"#)
+    }
+
+    @Test("a run of 罫囲み blocks is one box around them")
+    func boxedBlocks() {
+        #expect(body("前\n［＃ここから罫囲み］\n上\n下\n［＃ここで罫囲み終わり］\n後")
+            == #"<p>前<br class="eol"/></p><div class="keigakomi"><p class="keigakomi">上<br class="eol"/></p>"#
+            + #"<p class="keigakomi">下<br class="eol"/></p></div><p>後<br class="eol"/></p>"#)
+        #expect(body("［＃ここから罫囲み］\n本文\n［＃ここで罫囲み終わり］")
+            == #"<div class="keigakomi"><p class="keigakomi">本文<br class="eol"/></p></div>"#)
     }
 
     @Test("heading blocks are h3, h4 and h5 with an id", arguments: [
@@ -132,13 +140,70 @@ struct AozoraXHTMLWriterTests {
         #expect(inner.contains(#"</h4><p>上<br class="eol"/></p><p>下"#))
     }
 
-    @Test("the stylesheet sets block breaks and paragraph margins, and only sizes otherwise")
-    func stylesheet() {
-        #expect(AozoraXHTMLWriter.stylesheet.contains("br.eol { display: block; }"))
-        #expect(AozoraXHTMLWriter.stylesheet.contains("p { margin: 0; }"))
-        #expect(!AozoraXHTMLWriter.stylesheet.contains("color"))
+    @Test("a book with no classes gets the base rules only")
+    func baseStylesheet() {
+        let css = AozoraXHTMLWriter.stylesheet(forChapters: [body("本文")])
+        #expect(css == AozoraXHTMLWriter.baseStylesheet)
+        #expect(css.contains("br.eol { display: block; }"))
+        #expect(css.contains("p { margin: 0; }"))
+        #expect(css.contains("h3, h4, h5 { margin: 0; }"))
+        #expect(css.contains(".notes { font-size: smaller; }"))
+    }
+
+    @Test("the stylesheet has a rule for each class the book uses, and no others")
+    func rulesForUsedClasses() {
+        let chapters = [
+            body("［＃ここから２字下げ］\n本文\n［＃ここで字下げ終わり］"),
+            body("［＃ここから１０字下げ］\n本文\n［＃ここで字下げ終わり］\n［＃ここから２字下げ］\n本文\n［＃ここで字下げ終わり］"),
+        ]
+        let css = AozoraXHTMLWriter.stylesheet(forChapters: chapters)
+        #expect(css == AozoraXHTMLWriter.baseStylesheet
+            + ".jisage_2 { margin-inline-start: 2em; }\n.jisage_10 { margin-inline-start: 10em; }\n")
+        #expect(AozoraXHTMLWriter.stylesheet(forChapters: chapters.reversed()) == css, "the same bytes whatever the order")
+    }
+
+    @Test("each class maps to its rule", arguments: [
+        ("［＃ここから２字下げ、折り返して３字下げ］\n本文\n［＃ここで字下げ終わり］",
+         [".jisage_3 { margin-inline-start: 3em; }", ".jisage_3.first_2 { text-indent: -1em; }"]),
+        ("［＃ここから改行天付き、折り返して３字下げ］\n本文\n［＃ここで字下げ終わり］",
+         [".jisage_3.first_0 { text-indent: -3em; }"]),
+        ("本文［＃地付き］", [".chitsuki_0 { text-align: end; margin-inline-end: 0em; }"]),
+        ("［＃ここから地から１字上げ］\n本文\n［＃ここで字上げ終わり］", [".chitsuki_1 { text-align: end; margin-inline-end: 1em; }"]),
+        ("［＃ここから１６字詰め］\n本文\n［＃ここで字詰め終わり］", [".jizume_16 { max-inline-size: 16em; }"]),
+        ("［＃ここから１段階小さな文字］\n本文\n［＃ここで小さな文字終わり］", [".sho1 { font-size: 0.8125rem; }"]),
+        ("大［＃「大」は２段階大きな文字］", [".dai2 { font-size: 1.5rem; }"]),
+        ("大［＃「大」は４段階大きな文字］", [".dai4 { font-size: 2rem; }"]),
+        ("小［＃「小」は３段階小さな文字］", [".sho3 { font-size: 0.5625rem; }"]),
+        ("第一章［＃「第一章」は大見出し］", [".o-midashi { font-size: 1.25em; font-weight: bold; }"]),
+        ("一［＃「一」は同行中見出し］　本文", [".dogyo-naka-midashi { font-size: 1.125rem; font-weight: bold; }"]),
+        ("節［＃「節」は小見出し］", [".ko-midashi { font-size: 1rem; font-weight: bold; }"]),
+        ("［＃ここから罫囲み］\n本文\n［＃ここで罫囲み終わり］",
+         ["div.keigakomi { border: 1px solid; padding-block-start: 0.5em; padding-block-end: 0.5em; "
+            + "padding-inline-start: 1em; padding-inline-end: 0.5em; }", "span.keigakomi { border: 1px solid; }"]),
+        ("太［＃「太」は太字］と斜［＃「斜」は斜体］", [".futoji { font-weight: bold; }", ".shatai { font-style: italic; }"]),
+        ("図［＃「図」はキャプション］", [".caption { font-size: 0.8125rem; font-weight: bold; }"]),
+        ("x2［＃「2」は上付き小文字］", [".superscript { font-size: 0.8125rem; }"]),
+        ("学［＃（ビテ）］而時習［＃レ］之", [".okurigana { font-size: 0.8125rem; }", ".kaeriten { font-size: 0.8125rem; }"]),
+        ("12［＃「12」は縦中横］", [".tcy { text-combine-upright: all; }"]),
+        ("強調［＃「強調」に傍点］と点［＃「点」の左に傍点］",
+         [".sesame_dot { font-style: normal; }", ".sesame_dot_after { font-style: normal; }"]),
+        ("線［＃「線」に傍線］と線［＃「線」の左に波線］",
+         [".underline_solid { font-style: normal; }", ".overline_wave { font-style: normal; }"]),
+    ])
+    func classRule(text: String, rules: [String]) {
+        let css = AozoraXHTMLWriter.stylesheet(forChapters: [body(text)])
+        for rule in rules {
+            #expect(css.contains(rule + "\n"), "\(rule) in \(css)")
+        }
+    }
+
+    @Test("the stylesheet sets no colour, writing mode or the other properties the contract rules out")
+    func stylesheetLimits() {
+        let css = AozoraXHTMLWriter.stylesheet(forChapters: [body(
+            "［＃ここから罫囲み］\n本文\n［＃ここで罫囲み終わり］\n強調［＃「強調」に傍点］、12［＃「12」は縦中横］、図［＃「図」はキャプション］")])
+        #expect(!css.contains("color"))
         for forbidden in ["writing-mode", "ruby-position", "@media", "calc(", "float", "position"] {
-            #expect(!AozoraXHTMLWriter.stylesheet.contains(forbidden))
+            #expect(!css.contains(forbidden), "\(forbidden)")
         }
     }
 

@@ -198,6 +198,9 @@ final class HTMLAttributedStringBuilder {
         /// including an explicit 0. Inside decorated boxes the explicit value wins over the
         /// reader's default paragraph spacing.
         var hasExplicitVerticalMargins: Bool = false
+        /// An author rule or the `style` attribute set this element's `font-size`, not the
+        /// user-agent defaults; not inherited. The renderer's own heading scale yields to it.
+        var hasAuthoredFontSize: Bool = false
         var backgroundImage: String?
         /// Resolved CSS `background-size` in points (e.g. `3em 3em`). nil = intrinsic size.
         var backgroundImageSize: CGSize? = nil
@@ -1311,6 +1314,9 @@ final class HTMLAttributedStringBuilder {
         }
 
         let inlineStyle = CSSParser.parseDeclarationBlock((try? element.attr("style")) ?? "")
+        style.hasAuthoredFontSize = matchedRules.contains {
+            $0.declarations["font-size"] != nil || $0.importantDeclarations["font-size"] != nil
+        } || inlineStyle.normal["font-size"] != nil || inlineStyle.important["font-size"] != nil
         apply(
             declarations: LegacyLogicalProperties.resolved(inlineStyle.normal, order: inlineStyle.order),
             to: &style,

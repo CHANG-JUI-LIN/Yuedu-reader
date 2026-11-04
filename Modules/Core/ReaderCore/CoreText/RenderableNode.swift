@@ -191,6 +191,9 @@ public struct RenderStyle: Sendable {
     /// The author explicitly declared vertical margins (including an explicit 0). Inside a
     /// decorated container the explicit value wins over the reader's default paragraph spacing.
     public var hasExplicitVerticalMargins: Bool
+    /// An author rule set this block's `font-size` (`ResolvedStyle.hasAuthoredFontSize`): a
+    /// heading then takes `fontSizeMultiplier` instead of the renderer's heading scale.
+    public var hasAuthoredFontSize: Bool
     /// CSS `background-image` URL on a block (decorative frames / textures). The renderer loads
     /// it and the block-decoration system draws it behind the block's text (Phase 1, before glyphs).
     public var backgroundImageSource: String?
@@ -262,6 +265,7 @@ public struct RenderStyle: Sendable {
         avoidsPageBreakInside: Bool = false,
         ssmlIPA: String? = nil,
         hasExplicitVerticalMargins: Bool = false,
+        hasAuthoredFontSize: Bool = false,
         backgroundImageSource: String? = nil,
         backgroundImageSize: CGSize? = nil,
         backgroundImageStretches: Bool = false,
@@ -327,6 +331,7 @@ public struct RenderStyle: Sendable {
         self.avoidsPageBreakInside = avoidsPageBreakInside
         self.ssmlIPA = ssmlIPA
         self.hasExplicitVerticalMargins = hasExplicitVerticalMargins
+        self.hasAuthoredFontSize = hasAuthoredFontSize
         self.backgroundImageSource = backgroundImageSource
         self.backgroundImageSize = backgroundImageSize
         self.backgroundImageStretches = backgroundImageStretches
