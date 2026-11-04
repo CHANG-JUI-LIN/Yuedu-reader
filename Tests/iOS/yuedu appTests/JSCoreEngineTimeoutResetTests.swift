@@ -12,6 +12,10 @@ struct JSCoreEngineTimeoutResetTests {
     @Test("a script abandoned by the timeout writes source.put to its own bridge, not the next job's")
     func abandonedScriptDoesNotShareSourceBridge() {
         let engine = JSCoreEngine()
+        // Re-enters the engine from inside a script, as ModernParserBridge wires it: on the
+        // current queue that must run inline, or it would wait on its own queue until the timeout.
+        engine.sourceBridge.evalJSHandler = { [weak engine] js in engine?.evaluate(js) ?? "" }
+        #expect(engine.evaluate("source.evalJS('1 + 1')") == "2")
         let bridgeBefore = ObjectIdentifier(engine.sourceBridge)
         let generationBefore = engine.generation
         let start = Date().timeIntervalSince1970 * 1000
@@ -41,8 +45,8 @@ struct JSCoreEngineTimeoutResetTests {
             source.put('k' + (j % 256), 'new-' + j + '-' + 'y'.repeat(j % 64));
             j++;
         }
-        'leak=' + source.get('leak');
+        'leak=' + source.get('leak') + ' eval=' + source.evalJS('1 + 1');
         """)
-        #expect(next == "leak=")
+        #expect(next == "leak= eval=2")
     }
 }
