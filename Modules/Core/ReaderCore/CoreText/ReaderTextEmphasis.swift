@@ -48,16 +48,19 @@ enum ReaderTextEmphasis {
         guard !runs.isEmpty else { return }
         text.removeAttribute(HTMLAttributedStringBuilder.textEmphasisAttribute, range: full)
         let string = text.string as NSString
+        var previous: (end: Int, annotation: CTRubyAnnotation)?
+        // Two annotations per emphasis, taken in turn. One shared by neighbouring characters
+        // would join them into a single ruby with a single mark. One per character made every
+        // mark a new attribute value: 43624 spine 1's 17 814 marks took 9 461 ms that way and
+        // take 15 ms in turn (iOS 27.2 simulator, 2026-11-04).
+        var pairs: [(emphasis: RenderTextEmphasis, annotations: [CTRubyAnnotation])] = []
         for run in runs {
-            let mark = run.emphasis.style.mark(vertical: vertical) as CFString
-            let over = vertical ? run.emphasis.position.right : run.emphasis.position.isOver(language: language)
-            var attributes: [CFString: Any] = [
-                kCTRubyAnnotationSizeFactorAttributeName: 0.5,
-                kCTRubyAnnotationScaleToFitAttributeName: false,
-            ]
-            // Without a colour of its own the mark takes its text's, also after a theme change.
-            if let color = run.emphasis.color {
-                attributes[kCTForegroundColorAttributeName] = color.uiColor.cgColor
+            let pair: [CTRubyAnnotation]
+            if let made = pairs.first(where: { $0.emphasis == run.emphasis }) {
+                pair = made.annotations
+            } else {
+                pair = annotations(for: run.emphasis, vertical: vertical, language: language)
+                pairs.append((run.emphasis, pair))
             }
             var index = run.range.location
             while index < NSMaxRange(run.range) {
@@ -69,12 +72,30 @@ enum ReaderTextEmphasis {
                                      effectiveRange: nil) == nil,
                       text.attribute(HTMLAttributedStringBuilder.textCombineUprightAttribute, at: unit.location,
                                      effectiveRange: nil) == nil else { continue }
-                // A new annotation for every character: one shared object would join the run
-                // into a single ruby with a single mark.
-                let annotation = CTRubyAnnotationCreateWithAttributes(
-                    .center, .none, over ? .before : .after, mark, attributes as CFDictionary)
+                // The other of the pair from the character just before, whichever run marked it.
+                let annotation = previous.map { $0.end == unit.location && $0.annotation === pair[0] } == true
+                    ? pair[1] : pair[0]
                 text.addAttribute(HTMLAttributedStringBuilder.rubyAnnotationAttribute, value: annotation, range: unit)
+                previous = (NSMaxRange(unit), annotation)
             }
+        }
+    }
+
+    private static func annotations(for emphasis: RenderTextEmphasis, vertical: Bool,
+                                    language: String?) -> [CTRubyAnnotation] {
+        let mark = emphasis.style.mark(vertical: vertical) as CFString
+        let over = vertical ? emphasis.position.right : emphasis.position.isOver(language: language)
+        var attributes: [CFString: Any] = [
+            kCTRubyAnnotationSizeFactorAttributeName: 0.5,
+            kCTRubyAnnotationScaleToFitAttributeName: false,
+        ]
+        // Without a colour of its own the mark takes its text's, also after a theme change.
+        if let color = emphasis.color {
+            attributes[kCTForegroundColorAttributeName] = color.uiColor.cgColor
+        }
+        return (0..<2).map { _ in
+            CTRubyAnnotationCreateWithAttributes(.center, .none, over ? .before : .after, mark,
+                                                 attributes as CFDictionary)
         }
     }
 }

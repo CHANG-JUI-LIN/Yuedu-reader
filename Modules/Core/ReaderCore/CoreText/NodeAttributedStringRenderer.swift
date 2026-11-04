@@ -282,6 +282,7 @@ struct NodeAttributedStringRenderer: Sendable {
     private func renderTopLevel(_ nodes: [RenderableNode], cjkTypographyStyle: CJKTypographyStyle) async -> NSAttributedString {
         let result = NSMutableAttributedString()
         let ctx = RenderContext.makeBody(config: config, cjkTypographyStyle: cjkTypographyStyle)
+        let nodesStart = SourcePerfTrace.now
         for node in nodes {
             // A bare `<img>` becomes a TOP-LEVEL `.image` node (the converter never wraps it in a
             // block), so it would otherwise render as an inline attachment, left-aligned. Online
@@ -302,6 +303,7 @@ struct NodeAttributedStringRenderer: Sendable {
             }
             result.append(await render(node: node, ctx: ctx))
         }
+        SourcePerfTrace.record("coreText.document.renderNodes", "nodes=\(nodes.count) chars=\(result.length)", since: nodesStart)
         // Before every pass that reads characters (CJK typography, regex highlight, dialogue
         // bubbles), so they all see the text the reader will.
         config.textConversion.apply(to: result)
@@ -312,20 +314,28 @@ struct NodeAttributedStringRenderer: Sendable {
         SourcePerfTrace.span("cjk.typography.prepare", "chars=\(processed.length)") {
             CJKTypography.apply(to: processed, style: cjkTypographyStyle, vertical: config.writingMode.isVertical)
         }
-        relaxParagraphsContainingRubyAnnotations(processed)
-        ReaderTextEmphasis.applyMarks(to: processed, vertical: config.writingMode.isVertical,
-                                      language: Self.emphasisLanguage(cjkTypographyStyle))
-        relaxParagraphsContainingTallRuns(processed)
+        SourcePerfTrace.span("coreText.document.relaxRuby", "chars=\(processed.length)") {
+            relaxParagraphsContainingRubyAnnotations(processed)
+        }
+        SourcePerfTrace.span("coreText.document.emphasisMarks", "chars=\(processed.length)") {
+            ReaderTextEmphasis.applyMarks(to: processed, vertical: config.writingMode.isVertical,
+                                          language: Self.emphasisLanguage(cjkTypographyStyle))
+        }
+        SourcePerfTrace.span("coreText.document.relaxTallRuns", "chars=\(processed.length)") {
+            relaxParagraphsContainingTallRuns(processed)
+        }
         // The converter flattens body children into top-level nodes, so each block's
         // `renderBlock` collapse only sees its own children. Adjacent TOP-LEVEL blocks
         // (e.g. a narration `<p>` beside a decorated thread `<div>`) never got a collapse
         // pass: the container's collapsible margin stayed folded in its first child's
         // `paragraphSpacingBefore` instead of collapsing with the preceding paragraph.
         // Run one final collapse over the whole chapter (CSS margin-collapse semantics).
-        if !config.writingMode.isVertical {
-            collapseAdjacentParagraphSpacing(processed, honorStructuralInsets: true)
+        SourcePerfTrace.span("coreText.document.blockSpacing", "chars=\(processed.length)") {
+            if !config.writingMode.isVertical {
+                collapseAdjacentParagraphSpacing(processed, honorStructuralInsets: true)
+            }
+            normalizeCompactBlockSpacing(processed)
         }
-        normalizeCompactBlockSpacing(processed)
         if config.regexHighlightConfiguration.isEnabled {
             await ReaderDocumentTrace.measuring("regexPrewarm") {
                 await prewarmRegexHighlightAssets()
