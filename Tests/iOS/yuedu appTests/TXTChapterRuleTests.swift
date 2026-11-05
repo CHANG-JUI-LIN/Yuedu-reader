@@ -9,6 +9,8 @@ import UIKit
 @Suite(.serialized)
 struct TXTChapterRuleTests {
     static let defaults = TXTTocRuleSet(rules: TXTTocRuleDefaults.rules)
+    /// The app's own built-in rules, without legado's defaults (ids -1 … -100).
+    static let appRules = TXTTocRuleDefaults.rules.filter { $0.id <= -1_001 }
     static let body = String(repeating: "　這是一段普通的正文內容，用來把標題隔開超過一千個字元。\n", count: 40)
 
     private func titles(_ text: String, _ rules: TXTTocRuleSet) -> [String] {
@@ -92,6 +94,26 @@ struct TXTChapterRuleTests {
         var reordered = TXTTocRuleDefaults.rules
         reordered.swapAt(0, 4)
         #expect(titles(text, TXTTocRuleSet(rules: reordered)) == ["Preface", "第一篇：人仙篇！", "第二篇：地仙篇。"])
+    }
+
+    @Test func rulesWithoutAPrefilterCompeteOnTheFirstBlockAsInLegado() {
+        // ◆ headings fill the first 512 KB; ◇ headings, more of them, only come after it.
+        // Neither rule can be prefiltered, so ◇ stops running at the sample's end.
+        let diamond = TXTTocRule(id: 20, name: "◆", chapterRule: "^◆.{1,30}$")
+        let hollow = TXTTocRule(id: 21, name: "◇", chapterRule: "^◇.{1,30}$")
+        let filler = String(repeating: Self.body, count: 50)
+        let text = (1...3).map { "◆\($0) 前段\n" + filler }.joined()
+            + (1...6).map { "◇\($0) 後段\n" + Self.body }.joined()
+        #expect(text.utf8.count > TXTChapterParser.selectionSampleBytes)
+        let rules = TXTTocRuleSet(rules: [diamond, hollow])
+        let found = titles(text, rules)
+        // Sections of ~180 KB, each also cut by size into ◆N 前段(1), (2).
+        #expect((1...3).allSatisfy { number in found.contains { $0.hasPrefix("◆\(number) 前段") } })
+        #expect(!found.contains { $0.hasPrefix("◇") })
+        // The app's own rules read the whole book: 6 later 章 beat 3 sampled 節.
+        let chapters = (1...3).map { "第\($0)節 前段\n" + filler }.joined()
+            + (1...6).map { "第\($0)章 後段\n" + Self.body }.joined()
+        #expect(titles(chapters, Self.defaults).filter { $0.contains("章") }.count == 6)
     }
 
     @Test func disabledRulesAreIgnored() {
@@ -183,12 +205,14 @@ struct TXTChapterRuleTests {
                 .appendingPathComponent("\(book.id.uuidString).txt-reindex.json"))
         }
 
-        // Read through the built-in rules: 2 chapters, cached under their fingerprint.
-        let old = TXTChapterParser.parseMappedChapterIndexes(file, bookTitle: book.title, rules: Self.defaults)
+        // Read through the app's own rules: 2 chapters, cached under their fingerprint.
+        // (legado's 数字 rule, a default, would already take the numbered sections.)
+        let oldRules = TXTTocRuleSet(rules: Self.appRules)
+        let old = TXTChapterParser.parseMappedChapterIndexes(file, bookTitle: book.title, rules: oldRules)
         #expect(old.map(\.title) == ["第1章 大章", "第2章 大章"])
         try TXTChapterParser.writeCachedIndexes(old, bookId: book.id, fileSize: file.byteCount,
                                                fingerprint: TXTFileReader.fileFingerprint(data: file.data),
-                                               encoding: file.encoding, rulesFingerprint: Self.defaults.fingerprint)
+                                               encoding: file.encoding, rulesFingerprint: oldRules.fingerprint)
         let oldChapter = try await render(old, file, at: 1)
         let target = oldChapter.range(of: "標記2-2")
         let highlight = oldChapter.range(of: "標記2-3在這裡")
@@ -210,7 +234,7 @@ struct TXTChapterRuleTests {
 
         // Numbered sections added above the built-ins: they now outnumber 章.
         let numbered = TXTTocRule(id: 99, name: "數字", chapterRule: "^\\d{1,4}、.{1,30}$")
-        let newRules = TXTTocRuleSet(rules: [numbered] + TXTTocRuleDefaults.rules)
+        let newRules = TXTTocRuleSet(rules: [numbered] + Self.appRules)
         let preparation = try TXTReaderPreparationService.prepare(url: url, bookId: book.id, bookTitle: book.title,
                                                                   ruleSet: newRules)
         #expect(preparation.cachedChapterIndexes == nil)

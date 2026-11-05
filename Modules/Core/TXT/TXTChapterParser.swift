@@ -522,11 +522,19 @@ enum TXTChapterParser {
         }
     }
 
-    /// Matches every enabled rule against every possible title line in one pass, then keeps
-    /// the rule legado's `getTocRule` would pick: the most headings more than
-    /// `headingSpacing` characters apart, ties to the rule higher in the list (maintainer,
-    /// 2026-11-05). Unlike legado it reads the whole file, not its first block, so headings
-    /// that start after a long front matter still count.
+    /// legado's `getTocRule` reads a book's first block to choose a rule. Rules the byte
+    /// prefilter cannot narrow run only on the lines starting in these first bytes, unless
+    /// they lead there.
+    static let selectionSampleBytes = 512_000
+
+    /// Picks the rule with the most headings more than `headingSpacing` characters apart,
+    /// ties to the rule higher in the list (legado's `getTocRule`, maintainer 2026-11-05).
+    ///
+    /// The app's own rules read the whole book: their byte prefilter keeps that cheap, and a
+    /// 512 KB lock once hid 章 headings that only start after a long preface (Technotes/
+    /// TXTChapterBoundaryMigration.md). Any other rule (legado's, the user's) decodes and
+    /// matches every line, ~20 ms a rule on a 200k-line book, so like legado it competes on
+    /// the first `selectionSampleBytes`: only the one leading there keeps running after it.
     private static func detectMappedTitleMatches(
         in mappedTextFile: TXTMappedTextFile,
         rules: TXTTocRuleSet,
@@ -550,38 +558,72 @@ enum TXTChapterParser {
             }
         }
 
-        // The byte prefilter knows only built-in rules' first characters; any other rule
-        // may match a line starting with anything, so every short line is decoded.
-        let titleMatcher: EncodedTitleStartMatcher? = ruleList.allSatisfy({ $0.titleStarts != nil })
-            ? EncodedTitleStartMatcher(
-                titleStarts: ruleList.flatMap { $0.titleStarts ?? [] }
-                    + (includesSpecialTitles ? specialTitleStartCharacters : []),
-                encoding: mappedTextFile.encoding)
-            : nil
+        func best(among indices: [Int]) -> Int? {
+            var winner: Int?
+            var winnerScore = 0
+            for index in indices.sorted() {
+                let score = wellSpacedCount(chapters[index], in: mappedTextFile)
+                if score > winnerScore { winner = index; winnerScore = score }
+            }
+            return winner
+        }
 
-        enumerateMappedTitleLines(in: mappedTextFile, matcher: titleMatcher) { lineByteRange, decodeLine in
+        // Rules the prefilter narrows (unedited built-ins) and special titles: only lines
+        // starting with one of their first characters can match them.
+        let prefiltered = ruleList.indices.filter { ruleList[$0].titleStarts != nil }
+        let prefilter = EncodedTitleStartMatcher(
+            titleStarts: prefiltered.flatMap { ruleList[$0].titleStarts ?? [] }
+                + (includesSpecialTitles ? specialTitleStartCharacters : []),
+            encoding: mappedTextFile.encoding)
+        // Every other rule while sampling; after it, the one leading the sample, if any.
+        var unfiltered = ruleList.indices.filter { ruleList[$0].titleStarts == nil }
+        var sampling = true
+        var lineMayBePrefiltered = false
+        func endSample() {
+            sampling = false
+            let leader = best(among: Array(ruleList.indices))
+            for index in unfiltered where index != leader {
+                chapters[index] = []
+                volumes[index] = []
+            }
+            unfiltered = unfiltered.filter { $0 == leader }
+        }
+
+        enumerateMappedTitleLines(
+            in: mappedTextFile,
+            mayBeTitle: { bytes, range in
+                if sampling, range.lowerBound >= selectionSampleBytes { endSample() }
+                lineMayBePrefiltered = prefilter.lineMayBeTitle(bytes: bytes, range: range)
+                return lineMayBePrefiltered || (!unfiltered.isEmpty && !range.isEmpty)
+            }
+        ) { lineByteRange, decodeLine in
             let lineText = decodeLine()
             let nsLine = lineText as NSString
             guard nsLine.length <= 100 else { return }
             // legado matches the whole text, so a rule's lookbehind (`(?<=[　\s])`) sees the
             // line break before a heading. Give each line that break, outside the range.
-            let context = "\n" + lineText
+            // One UTF-16 NSString per line: a bridged Swift String is transcoded on every
+            // match, which cost twice the match itself (FB-139 timing).
+            let context = NSMutableString(capacity: nsLine.length + 1)
+            context.append("\n")
+            context.append(lineText)
             let lineRange = NSRange(location: 1, length: nsLine.length)
             func title(_ regex: NSRegularExpression) -> String? {
-                guard let match = regex.firstMatch(in: context, options: .withTransparentBounds, range: lineRange),
-                      let range = Range(match.range, in: context) else { return nil }
-                let title = String(context[range]).trimmingCharacters(in: .whitespacesAndNewlines)
+                guard let match = regex.firstMatch(in: context as String, options: .withTransparentBounds,
+                                                   range: lineRange) else { return nil }
+                let title = context.substring(with: match.range).trimmingCharacters(in: .whitespacesAndNewlines)
                 return title.isEmpty ? nil : sanitizedTitle(title)
             }
 
-            for index in ruleList.indices {
+            let running = lineMayBePrefiltered ? prefiltered + unfiltered : unfiltered
+            for index in running {
                 if let found = title(ruleList[index].chapter) {
                     chapters[index].append(MappedTitleMatch(lineByteRange: lineByteRange, title: found))
                 }
             }
             var volumeTitles: [String?] = Array(repeating: nil, count: volumeRegexes.count)
             var volumeTested = Array(repeating: false, count: volumeRegexes.count)
-            for index in ruleList.indices {
+            for index in running {
                 guard let slot = volumeSlots[index] else { continue }
                 if !volumeTested[slot] {
                     volumeTitles[slot] = title(volumeRegexes[slot])
@@ -592,23 +634,14 @@ enum TXTChapterParser {
                 }
             }
 
-            if includesSpecialTitles, let specialRegex = specialTitlePattern {
-                let fullRange = NSRange(location: 0, length: nsLine.length)
-                guard let match = specialRegex.firstMatch(in: lineText, range: fullRange),
-                      let range = Range(match.range, in: lineText) else { return }
-                let title = String(lineText[range]).trimmingCharacters(in: .whitespacesAndNewlines)
-                guard !title.isEmpty else { return }
-                specialMatches.append(MappedTitleMatch(lineByteRange: lineByteRange, title: sanitizedTitle(title)))
+            if includesSpecialTitles, lineMayBePrefiltered, let specialRegex = specialTitlePattern,
+               let found = title(specialRegex) {
+                specialMatches.append(MappedTitleMatch(lineByteRange: lineByteRange, title: found))
             }
         }
-
         var selected: [MappedTitleMatch] = []
-        var bestScore = 0
-        for index in ruleList.indices {
-            let score = wellSpacedCount(chapters[index], in: mappedTextFile)
-            guard score > bestScore else { continue }
-            bestScore = score
-            selected = chapters[index] + associatedVolumes(volumes[index], primary: chapters[index]) {
+        if let chosen = best(among: prefiltered + unfiltered) {
+            selected = chapters[chosen] + associatedVolumes(volumes[chosen], primary: chapters[chosen]) {
                 mappedTextFile.string(in: $0).trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
             }
         }
@@ -904,7 +937,7 @@ enum TXTChapterParser {
     /// rejects ordinary UTF-8/GB18030/Big5/CP932/EUC-JP/EUC-KR body lines before String allocation.
     private static func enumerateMappedTitleLines(
         in mappedTextFile: TXTMappedTextFile,
-        matcher: EncodedTitleStartMatcher?,
+        mayBeTitle: (UnsafeBufferPointer<UInt8>, Range<Int>) -> Bool,
         _ body: (Range<Int>, () -> String) -> Void
     ) {
         let data = mappedTextFile.data
@@ -915,9 +948,7 @@ enum TXTChapterParser {
             func emitCandidate(_ range: Range<Int>) {
                 // Byte prefilter accommodates every supported encoding; the
                 // decoded UTF-16 limit above is shared with in-memory input.
-                guard range.count <= 400,
-                      matcher?.lineMayBeTitle(bytes: bytes, range: range) ?? !range.isEmpty
-                else { return }
+                guard range.count <= 400, mayBeTitle(bytes, range) else { return }
                 body(range, {
                     let line = mappedTextFile.string(in: range)
                     guard line.unicodeScalars.first == "\u{FEFF}" else { return line }
