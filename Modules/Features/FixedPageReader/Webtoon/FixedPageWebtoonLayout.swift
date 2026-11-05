@@ -127,7 +127,7 @@ final class FixedPageWebtoonLayout: UICollectionViewFlowLayout {
         guard let collectionView else { return }
         // A pass lays out every item of the strip, and the strip grows with each chapter it
         // takes in; one that runs past half a 120 Hz frame is logged with how many it laid out.
-        SourcePerfTrace.span(
+        FixedPageFrameGapProbe.span(
             "webtoon.layout",
             "items=\(collectionView.numberOfItems(inSection: 0))",
             thresholdMs: 4

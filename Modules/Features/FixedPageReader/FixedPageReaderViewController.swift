@@ -27,7 +27,7 @@ final class FixedPageReaderViewController: UIViewController, FixedPageReaderCont
     /// and counts its pages straight through them (`FixedPageHeldChapters`).
     private var heldChapters = FixedPageHeldChapters()
     private var fixedPageReaderConfiguration: FixedPageReaderConfiguration
-    private var reader: (any FixedPageModeReader)?
+    private(set) var reader: (any FixedPageModeReader)?
     private var loadToken = UUID()
     private var saveTask: Task<Void, Never>?
     private var prefetchTask: Task<Void, Never>?
@@ -700,12 +700,14 @@ final class FixedPageReaderViewController: UIViewController, FixedPageReaderCont
         let lookahead = isSingleChapterDocumentBook ? 2 : 5
         let end = min(start + lookahead, pages.count)
         guard start < end else { return }
-        FixedPageImageLoader.prefetch(
-            Array(pages[start..<end]),
-            targetWidth: targetWidth,
-            renderScale: traitCollection.displayScale,
-            cropBorders: fixedPageReaderConfiguration.cropBorders,
-            using: imagePrefetcher)
+        FixedPageFrameGapProbe.span("fixedPage.prefetch", "pages=\(end - start)", thresholdMs: 4) {
+            FixedPageImageLoader.prefetch(
+                Array(pages[start..<end]),
+                targetWidth: targetWidth,
+                renderScale: traitCollection.displayScale,
+                cropBorders: fixedPageReaderConfiguration.cropBorders,
+                using: imagePrefetcher)
+        }
     }
 
     private func prefetchNextChapterImages() {
@@ -756,13 +758,21 @@ final class FixedPageReaderViewController: UIViewController, FixedPageReaderCont
         saveTask = Task { [weak self] in
             try? await Task.sleep(nanoseconds: 800_000_000)
             guard let self, !Task.isCancelled else { return }
-            self.store?.updateMangaPosition(
-                bookId: self.book.id,
-                chapter: index,
-                page: page,
-                totalChapters: total,
-                pageProgress: progress
-            )
+            FixedPageFrameGapProbe.span("fixedPage.savePosition", thresholdMs: 4) {
+                // Written without telling the library views: a publish rebuilt the whole
+                // shelf behind the reader — and this reader's own SwiftUI host — once for
+                // every page read, the webtoon's missed frames about once a second (FB-133).
+                // The text reader saves its scrolling the same way; leaving the reader
+                // (`viewWillDisappear`) publishes the position for the shelf.
+                self.store?.updateMangaPosition(
+                    bookId: self.book.id,
+                    chapter: index,
+                    page: page,
+                    totalChapters: total,
+                    pageProgress: progress,
+                    notifyLibraryViews: false
+                )
+            }
         }
     }
 

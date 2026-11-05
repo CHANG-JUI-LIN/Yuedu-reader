@@ -120,13 +120,21 @@ final class FixedPageWebtoonCell: UICollectionViewCell {
     /// above moves the page while the load is in flight (`pageMoved(to:)`).
     private func show(_ image: UIImage, of page: FixedPage) {
         guard image.size.width > 0 else { return }
-        imageView.image = image
-        // UI tests find a strip page by its position once its image is on screen
-        // (DetailReaderBackSwipeUITests); cells are reused, so the index is in it.
-        // VoiceOver never reads an identifier.
-        imageView.accessibilityIdentifier = "webtoon_page_\(index)"
-        onRatio?(index, page, image.size.height / image.size.width)
-        analyzeLiveText(for: image)
+        FixedPageFrameGapProbe.span("webtoon.imageShown", Self.pixelSize(of: image)) {
+            imageView.image = image
+            // UI tests find a strip page by its position once its image is on screen
+            // (DetailReaderBackSwipeUITests); cells are reused, so the index is in it.
+            // VoiceOver never reads an identifier.
+            imageView.accessibilityIdentifier = "webtoon_page_\(index)"
+            onRatio?(index, page, image.size.height / image.size.width)
+            analyzeLiveText(for: image)
+        }
+    }
+
+    /// "1179x5000", the bitmap a gap line weighs the image by.
+    private static func pixelSize(of image: UIImage) -> String {
+        guard let cgImage = image.cgImage else { return "\(Int(image.size.width * image.scale))x\(Int(image.size.height * image.scale))" }
+        return "\(cgImage.width)x\(cgImage.height)"
     }
 
     /// The cell's page is now item `index`: a previous chapter went in above it while the

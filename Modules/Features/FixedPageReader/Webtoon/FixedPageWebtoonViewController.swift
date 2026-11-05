@@ -46,9 +46,12 @@ final class FixedPageWebtoonViewController: UIViewController, FixedPageModeReade
         didSet {
             if oldValue != isContentScrolling {
                 container?.readerContentScrollingChanged(isContentScrolling)
+                if isContentScrolling { frameGapProbe.start() } else { frameGapProbe.stop() }
             }
         }
     }
+    /// Logs the frames the screen misses while the strip moves (FB-133).
+    private let frameGapProbe = FixedPageFrameGapProbe(stage: "webtoon.frameGap")
 
     private func updateContentScrolling() {
         isContentScrolling = isFingerScrolling || (isAutoScrolling && !isPausedByTouch)
@@ -500,8 +503,10 @@ final class FixedPageWebtoonViewController: UIViewController, FixedPageModeReade
     func collectionView(_ collectionView: UICollectionView, willDisplay cell: UICollectionViewCell, forItemAt indexPath: IndexPath) {
         guard let cell = cell as? FixedPageWebtoonCell else { return }
         // A cell made ready ahead of display was configured before any chapter went in above.
-        cell.pageMoved(to: indexPath.item)
-        cell.load()
+        FixedPageFrameGapProbe.span("webtoon.cellLoad") {
+            cell.pageMoved(to: indexPath.item)
+            cell.load()
+        }
     }
 
     func collectionView(_ collectionView: UICollectionView, didEndDisplaying cell: UICollectionViewCell, forItemAt indexPath: IndexPath) {
@@ -541,7 +546,9 @@ final class FixedPageWebtoonViewController: UIViewController, FixedPageModeReade
         if let indexPath = collectionView.indexPathForItem(at: CGPoint(x: columnX, y: midY)),
            indexPath.item != currentIndex {
             currentIndex = indexPath.item
-            container?.reader(didMoveToPage: currentIndex, total: pages.count)
+            FixedPageFrameGapProbe.span("webtoon.pageMove", "page=\(currentIndex)") {
+                container?.reader(didMoveToPage: currentIndex, total: pages.count)
+            }
         }
 
         let scrollable = scrollView.contentSize.height > scrollView.bounds.height

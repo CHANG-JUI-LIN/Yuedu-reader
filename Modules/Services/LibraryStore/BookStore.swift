@@ -999,15 +999,19 @@ class BookStore: @MainActor ObservableObject, BookProvider {
     ///   (0...1). Books whose whole content is a single chapter — a local PDF — have
     ///   no chapter-level progress to report, so they pass this instead; leaving it
     ///   nil keeps the chapter-count behaviour every other fixed-page book has.
+    /// - Parameter notifyLibraryViews: false for the saves made while the reader is on
+    ///   screen, as `updatePosition`'s: the position is written, and the shelf behind the
+    ///   reader is not rebuilt for it until a notifying save (leaving the reader).
     func updateMangaPosition(
         bookId: UUID,
         chapter: Int,
         page: Int,
         totalChapters: Int,
         pageProgress: Double? = nil,
-        forceSave: Bool = false
+        forceSave: Bool = false,
+        notifyLibraryViews: Bool = true
     ) {
-        applyPositionUpdate(bookId: bookId, force: forceSave) { book in
+        applyPositionUpdate(bookId: bookId, force: forceSave, notifyLibraryViews: notifyLibraryViews) { book in
             book.mangaChapterIndex = chapter
             book.mangaPage = page
             if totalChapters > 0 {
