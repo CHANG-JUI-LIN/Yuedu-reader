@@ -153,8 +153,20 @@ enum ExplorePush: Hashable {
         return .work(route)
     }
 
+    /// Opens the route on `path`. A shelf audiobook is the exception: its player grows out of
+    /// the app root's now-playing bar (`NowPlayingHub.openIfAudiobook`), as Apple Books opens
+    /// one, instead of being pushed into this tab under its tab bar.
+    @MainActor
+    func open(in path: inout NavigationPath, store: BookStore) {
+        if case .reader(let route) = self, let book = store.readingBook(id: route.bookID),
+           NowPlayingHub.shared.openIfAudiobook(book, store: store) {
+            return
+        }
+        append(to: &path)
+    }
+
     /// Appends the route itself, so it reaches the destination registered for its type.
-    func append(to path: inout NavigationPath) {
+    private func append(to path: inout NavigationPath) {
         switch self {
         case .work(let route): path.append(route)
         case .reader(let route): path.append(route)

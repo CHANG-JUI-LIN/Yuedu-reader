@@ -1,3 +1,4 @@
+import UIKit
 import XCTest
 
 /// Narration outlives the reader it was started in: start 聽書 in one book, back out, open
@@ -9,7 +10,9 @@ import XCTest
 final class NowPlayingCapsuleUITests: XCTestCase {
     private let narrated = "膠囊測試甲"
     private let other = "膠囊測試乙"
-    private let audiobook = "膠囊測試有聲書"
+    /// Long enough that the player's title scrolls.
+    private let audiobook = "膠囊測試有聲書用很長很長的書名確認播放頁標題會捲動"
+    private let pdf = "膠囊測試PDF"
     private var folder: URL!
 
     private func body(_ title: String) -> String { "\(title)正文，用來確認閱讀器打開了這本書。" }
@@ -78,10 +81,19 @@ final class NowPlayingCapsuleUITests: XCTestCase {
         app.buttons["now_playing_reader_\(control)"].firstMatch
     }
 
-    /// The app root's capsule, drawn on every tab while no reader is on screen.
+    /// A button of the app root's now-playing bar, drawn over every tab while no reader is on
+    /// screen.
     @MainActor
     private func shelfCapsule(_ app: XCUIApplication, _ control: String) -> XCUIElement {
         app.buttons["now_playing_global_\(control)"].firstMatch
+    }
+
+    /// The now-playing bar's titles: one button for VoiceOver (LNPopupBar's), named the book and
+    /// then what plays of it — the book alone when nothing else names what plays — which opens
+    /// what the bar opens.
+    @MainActor
+    private func shelfBarTitles(_ app: XCUIApplication, _ title: String) -> XCUIElement {
+        app.buttons.matching(NSPredicate(format: "label == %@ OR label BEGINSWITH %@", title, title + "\n")).firstMatch
     }
 
     @MainActor
@@ -143,11 +155,20 @@ final class NowPlayingCapsuleUITests: XCTestCase {
         app.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", body(title))).firstMatch
     }
 
-    /// The capsule of a reader presented over another reader. XCUITest lists the reader under the
-    /// cover too, and its capsule comes first.
+    /// The capsule of a reader presented over another reader: the one that can be hit. XCUITest
+    /// lists the reader under the cover too, and in no order to rely on: the under reader's
+    /// capsule used to come first, and from the day the app root went into the now-playing bar's
+    /// container (2026-11-05) it came second, so `element(boundBy: 1)` tapped the covered one.
     @MainActor
     private func coveringCapsule(_ app: XCUIApplication, _ control: String) -> XCUIElement {
-        app.buttons.matching(identifier: "now_playing_reader_\(control)").element(boundBy: 1)
+        let matches = app.buttons.matching(identifier: "now_playing_reader_\(control)")
+        let deadline = Date().addingTimeInterval(10)
+        repeat {
+            if let covering = matches.allElementsBoundByIndex.first(where: \.isHittable) { return covering }
+            RunLoop.current.run(until: Date().addingTimeInterval(0.25))
+        } while Date() < deadline
+        XCTFail("No reader's \(control) can be hit.\n\(app.debugDescription)")
+        return matches.firstMatch
     }
 
     /// Taps the cover of the narrated book's capsule in `title`'s reader: the narrated book opens
@@ -207,8 +228,8 @@ final class NowPlayingCapsuleUITests: XCTestCase {
         XCTAssertTrue(playPause.waitForExistence(timeout: 10),
                       "The closed book's narration has its capsule on the shelf.\n\(app.debugDescription)")
         XCTAssertEqual(playPause.label, "暫停", "…and is still playing.")
-        let cover = shelfCapsule(app, "open_panel")
-        XCTAssertEqual(cover.label, narrated, "VoiceOver names the book being read aloud.")
+        let cover = shelfBarTitles(app, narrated)
+        XCTAssertTrue(cover.exists, "VoiceOver names the book being read aloud.\n\(app.debugDescription)")
         screenshot(app, "shelf-with-narration")
 
         playPause.tap()
@@ -283,13 +304,46 @@ final class NowPlayingCapsuleUITests: XCTestCase {
         app.terminate()
         launch(app, importing: audiobook, fileExtension: "wav", extraArguments: tabs)
 
-        // The shelf opens an audiobook in its player, which plays it; 收合 leaves it playing.
+        // The shelf opens an audiobook's player out of the now-playing bar, which plays it;
+        // 收合 folds it back into the bar, playing on.
         shelfBook(app, audiobook).tap()
-        let collapse = app.buttons["收合"].firstMatch
+        let collapse = app.buttons["收合播放頁"].firstMatch
         XCTAssertTrue(collapse.waitForExistence(timeout: 30), "The audiobook's player opens.\n\(app.debugDescription)")
+        // The shelf hands over its record, which has no table of contents; the player was
+        // started with that, found no chapter to play and said 未找到音訊.
+        let playing = app.buttons.matching(NSPredicate(
+            format: "label == %@ AND identifier != %@", "暫停", "now_playing_global_play_pause"
+        )).firstMatch
+        XCTAssertTrue(playing.waitForExistence(timeout: 15), "The player plays the book.\n\(app.debugDescription)")
+        XCTAssertFalse(app.staticTexts["未找到音訊"].exists, app.debugDescription)
+        let tabBar = app.tabBars.firstMatch
+        XCTAssertFalse(tabBar.exists && tabBar.isHittable, "Nothing is drawn over the player.\n\(app.debugDescription)")
+        screenshot(app, "audiobook-player-out-of-the-bar")
+
+        // 1倍's popover: a swipe that starts on a preset, not only one on the caption below
+        // them, turns the presets into the ruler.
+        app.buttons["倍速"].firstMatch.tap()
+        let preset = app.buttons["1.3倍"].firstMatch
+        XCTAssertTrue(preset.waitForExistence(timeout: 10), "1倍 opens its presets.\n\(app.debugDescription)")
+        screenshot(app, "speed-presets")
+        let from = preset.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5))
+        from.press(forDuration: 0.05, thenDragTo: from.withOffset(CGVector(dx: -60, dy: 0)))
+        XCTAssertTrue(preset.waitForNonExistence(timeout: 5),
+                      "A swipe across the presets shows the ruler.\n\(app.debugDescription)")
+        screenshot(app, "speed-ruler")
+        app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.2)).tap()
+        XCTAssertTrue(app.buttons["倍速"].firstMatch.waitForExistence(timeout: 5), app.debugDescription)
+
         collapse.tap()
+        XCTAssertTrue(collapse.waitForNonExistence(timeout: 10), app.debugDescription)
         XCTAssertTrue(shelfCapsule(app, "play_pause").waitForExistence(timeout: 10),
                       "The audiobook plays on with its player closed.\n\(app.debugDescription)")
+        // The bar opens it again.
+        shelfBarTitles(app, audiobook).tap()
+        XCTAssertTrue(collapse.waitForExistence(timeout: 10), "The bar opens the player.\n\(app.debugDescription)")
+        collapse.tap()
+        XCTAssertTrue(collapse.waitForNonExistence(timeout: 10), app.debugDescription)
+
 
         // 書架 pushes the reader inside its tab.
         open(app, other)
@@ -321,7 +375,7 @@ final class NowPlayingCapsuleUITests: XCTestCase {
         let cover = capsule(app, "open_panel")
         XCTAssertTrue(cover.waitForExistence(timeout: 10), "The reader's capsule shows the audiobook.\n\(app.debugDescription)")
         cover.tap()
-        let collapse = app.buttons["收合"].firstMatch
+        let collapse = app.buttons["收合播放頁"].firstMatch
         XCTAssertTrue(collapse.waitForExistence(timeout: 10),
                       "The capsule's cover opens the audiobook's player.\n\(app.debugDescription)")
         screenshot(app, "audiobook-player-over-\(title)")
@@ -329,6 +383,58 @@ final class NowPlayingCapsuleUITests: XCTestCase {
         XCTAssertTrue(collapse.waitForNonExistence(timeout: 10), app.debugDescription)
         XCTAssertTrue(page(app, title).waitForExistence(timeout: 10), "Back on the book.\n\(app.debugDescription)")
         XCTAssertTrue(cover.waitForExistence(timeout: 10), "The audiobook plays on.\n\(app.debugDescription)")
+    }
+
+    /// The comic and PDF reader draws no capsule; the now-playing bar goes with the tab bar,
+    /// which the reader hides, and comes back once it closes (maintainer, 2026-11-05: in a
+    /// reader the bar is hidden).
+    @MainActor
+    func testNowPlayingBarStepsAsideForAPDFReader() throws {
+        try samplePDF().write(to: folder.appendingPathComponent("\(pdf).pdf"))
+        try silentWAV(seconds: 300).write(to: folder.appendingPathComponent("\(audiobook).wav"))
+        let app = XCUIApplication()
+        launch(app, importing: pdf, fileExtension: "pdf")
+        app.terminate()
+        launch(app, importing: audiobook, fileExtension: "wav")
+
+        shelfBook(app, audiobook).tap()
+        let collapse = app.buttons["收合播放頁"].firstMatch
+        XCTAssertTrue(collapse.waitForExistence(timeout: 30), "The audiobook's player opens.\n\(app.debugDescription)")
+        collapse.tap()
+        let barPlayPause = shelfCapsule(app, "play_pause")
+        XCTAssertTrue(barPlayPause.waitForExistence(timeout: 10), "The bar shows the audiobook.\n\(app.debugDescription)")
+
+        let pdfOnShelf = shelfBook(app, pdf)
+        pdfOnShelf.tap()
+        XCTAssertTrue(pdfOnShelf.waitForNonExistence(timeout: 30) || !pdfOnShelf.isHittable,
+                      "The PDF opens.\n\(app.debugDescription)")
+        XCTAssertTrue(barPlayPause.waitForNonExistence(timeout: 10),
+                      "The bar is hidden in the PDF reader.\n\(app.debugDescription)")
+        screenshot(app, "pdf-reader-without-bar")
+
+        let back = app.buttons["返回"].firstMatch
+        if !back.waitForExistence(timeout: 2) {
+            app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
+        }
+        XCTAssertTrue(back.waitForExistence(timeout: 5), app.debugDescription)
+        back.tap()
+        _ = shelfBook(app, pdf)
+        XCTAssertTrue(barPlayPause.waitForExistence(timeout: 10),
+                      "Back on the shelf, the bar is back.\n\(app.debugDescription)")
+    }
+
+    /// A two-page PDF: a fixed-page book, which opens in the comic and PDF reader.
+    private func samplePDF() -> Data {
+        let page = CGRect(x: 0, y: 0, width: 612, height: 792)
+        return UIGraphicsPDFRenderer(bounds: page).pdfData { context in
+            for number in 1...2 {
+                context.beginPage()
+                ("\(pdf) 第 \(number) 頁" as NSString).draw(
+                    at: CGPoint(x: 72, y: 72),
+                    withAttributes: [.font: UIFont.systemFont(ofSize: 36)]
+                )
+            }
+        }
     }
 
     /// A 16-bit mono WAV of silence: an audiobook to play, without a sound.

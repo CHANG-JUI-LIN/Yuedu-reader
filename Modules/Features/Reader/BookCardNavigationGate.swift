@@ -21,7 +21,9 @@ enum BookCardNavigationGate {
         // reader would open inside the content column, beside the sidebar.
         guard !isRegularWidth else { return false }
         let kind = book.resolvedPipelineKind
-        // Audiobooks and videos retain their dedicated modal presentation.
+        // Videos retain their dedicated modal presentation. An audiobook opens out of the
+        // now-playing bar (`NowPlayingHub.openIfAudiobook`), and comes here only while
+        // something covers the tabs: then it is presented modally too.
         switch kind {
         case .audio, .video:
             return false

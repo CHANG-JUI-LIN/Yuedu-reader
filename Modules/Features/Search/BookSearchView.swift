@@ -717,6 +717,8 @@ struct BookSearchView: View {
     /// 最近閱讀: back into the book where it was left. Its reader moves it to the front of
     /// 最近閱讀, as every open does.
     private func openRecentBook(_ book: ReadingBook) {
+        // An audiobook's player grows out of the now-playing bar, as Apple Books opens one.
+        if NowPlayingHub.shared.openIfAudiobook(book, store: bookStore) { return }
         recentReaderRoute = DetailReaderRoute(id: book.id)
     }
 }

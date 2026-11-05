@@ -50,6 +50,42 @@ enum DSColor {
     static let videoPlayerBackground = Color.black
     /// The dim under the video player's controls, so white controls read over any picture.
     static let videoControlScrim = Color.black.opacity(0.55)
+
+    // ── Audiobook player (Apple Books' audiobook player, measured on its 2026-11-05 recording) ──
+    // White over the cover's colour, at the strengths the recording's pixels give on its ground.
+    /// The book's title, play / pause and the active sleep timer's countdown.
+    static let audiobookPlayerPrimary = Color.white
+    /// The author line.
+    static let audiobookPlayerSecondary = Color.white.opacity(0.75)
+    /// 「1倍」, the skip buttons, the moon, the speakers and AirPlay.
+    static let audiobookPlayerControl = Color.white.opacity(0.8)
+    /// The times and the chapter's title under the timeline.
+    static let audiobookPlayerTertiary = Color.white.opacity(0.4)
+    /// The played part of the timeline and of the volume.
+    static let audiobookPlayerTrackFill = Color.white.opacity(0.85)
+    /// The rest of the timeline and of the volume.
+    static let audiobookPlayerTrack = Color.white.opacity(0.3)
+    /// The ••• disc and the pill beside it.
+    static let audiobookPlayerChip = Color.white.opacity(0.2)
+    /// The grabber at the top of the page.
+    static let audiobookPlayerGrabber = Color.white.opacity(0.5)
+    /// The `+0:15` bubble a skip leaves over the timeline.
+    static let audiobookPlayerSkipBubble = Color.black.opacity(0.35)
+    /// The cover's shadow on the ground.
+    static let audiobookPlayerCoverShadow = Color.black.opacity(0.35)
+    /// The now-playing bar's 加入書架 pill: Apple Books' price pill, ink on paper — black in
+    /// the light, white in the dark.
+    static var nowPlayingPillFill: Color { Color(uiColor: .label) }
+    static var nowPlayingPillText: Color { Color(uiColor: .systemBackground) }
+    /// `DSUIColor.nowPlayingBarControl`.
+    static var nowPlayingBarControl: Color { Color(uiColor: DSUIColor.nowPlayingBarControl) }
+    /// The glow round 「1.5倍」 while the speed is not 1, and round the moon while a sleep
+    /// timer runs: Apple Books lights a control that is changing playback.
+    static let audiobookPlayerActiveGlow = Color.white.opacity(0.5)
+    /// The speed popover's preset discs, and the chosen one with its dark 「1.5倍」.
+    static let audiobookSpeedPresetFill = Color.white.opacity(0.15)
+    static let audiobookSpeedSelectedFill = Color.white.opacity(0.75)
+    static let audiobookSpeedSelectedText = Color.black.opacity(0.55)
     /// The least contrast white text on an accent fill may have before it turns black:
     /// WCAG's floor for UI components and large text (user's call, 2026-10-25). Blue and
     /// violet accents keep white; 琥珀金, 苔原綠's derived dark accent and the near-white
@@ -245,6 +281,10 @@ enum DSUIColor {
 
     /// `DSColor.readerSearchHit`.
     static let readerSearchHit = UIColor.systemYellow.withAlphaComponent(0.4)
+
+    /// The now-playing bar's ⏸ and ⏭: ink like its title, as Apple Books and Apple Music draw
+    /// them, never the accent the bar would otherwise take from the window.
+    static let nowPlayingBarControl = UIColor.label
 
     /// Resolves one authored text level as a **dynamic** color, falling back to the
     /// system label for any appearance whose theme did not author the trio. Kept
@@ -447,6 +487,128 @@ enum DSLayout {
     static let miniPlayerEdgeHandleHeight: CGFloat = 56
     /// The most a dragged mini-player gives past the edge of where it may rest.
     static let miniPlayerDragMaximumGive: CGFloat = 48
+
+    // ── The app root's now-playing bar (`NowPlayingPopupHost`): LNPopupUI's bar, which sizes
+    // itself; these are what Yuedu puts in it.
+    /// Height of the bar's 加入書架 pill, Apple Books' price pill.
+    static let nowPlayingPillHeight: CGFloat = 28
+    /// The width a book without a cover has its title card drawn at for the bar's artwork,
+    /// which the bar then scales down: about the bar's own cover, at full size.
+    static let nowPlayingArtworkRenderWidth: CGFloat = 64
+
+    // ── Audiobook player: Apple Books' audiobook player, measured from its recording on a
+    // 440 × 956 pt phone (maintainer, 2026-11-05: 1:1). Vertical gaps shrink with a shorter
+    // window (`audiobookPlayerReferenceHeight`); horizontal positions are fractions of the width.
+    static let audiobookPlayerReferenceHeight: CGFloat = 956
+    /// A thumbless `ScrubSlider`'s dot before iOS 26, which has no thumbless slider.
+    static let scrubSliderLegacyThumbSide: CGFloat = 10
+    /// The narrowest a shorter window squeezes the vertical gaps to.
+    static let audiobookPlayerMinimumVerticalScale: CGFloat = 0.6
+    /// On iPad and in wide windows the page is a phone-wide column.
+    static let audiobookPlayerMaximumColumnWidth: CGFloat = 480
+    static let audiobookPlayerGrabberSize = CGSize(width: 60, height: 4)
+    /// From the safe area's top to the grabber.
+    static let audiobookPlayerGrabberTopInset: CGFloat = 7
+    /// From the grabber to the cover.
+    static let audiobookPlayerCoverTopGap: CGFloat = 38
+    /// The least room kept between the cover and the title.
+    static let audiobookPlayerCoverMinimumBottomGap: CGFloat = 24
+    static let audiobookPlayerCoverHorizontalInset: CGFloat = 35
+    static let audiobookPlayerCoverCornerRadius: CGFloat = 9
+    /// The cover while paused: 275 of its 371 pt.
+    static let audiobookPlayerPausedCoverScale: CGFloat = 0.74
+    static let audiobookPlayerCoverShadowRadius: CGFloat = 24
+    static let audiobookPlayerHorizontalMargin: CGFloat = 32
+    static let audiobookPlayerTitleFontSize: CGFloat = 20
+    static let audiobookPlayerTitleRowHeight: CGFloat = 48
+    /// The ••• disc's diameter, and the height of the pill beside it.
+    static let audiobookPlayerMoreButtonSide: CGFloat = 34
+    static let audiobookPlayerPillHeight: CGFloat = 28
+    static let audiobookPlayerPillHorizontalPadding: CGFloat = 14
+    static let audiobookPlayerPillFontSize: CGFloat = 15
+    static let audiobookPlayerChipSpacing: CGFloat = 7
+    /// How strongly the player's popovers tint their glass with the cover's tone.
+    static let audiobookPlayerPopoverTint: Double = 0.6
+    /// How far the scrolling title fades out at either end.
+    static let audiobookPlayerMarqueeFade: CGFloat = 16
+    /// The gap between the scrolling title's end and its next start.
+    static let audiobookPlayerMarqueeGap: CGFloat = 40
+    /// Points a second the scrolling title moves.
+    static let audiobookPlayerMarqueeSpeed: CGFloat = 30
+    /// Seconds the scrolling title rests at its start each time round.
+    static let audiobookPlayerMarqueePause: Double = 2.5
+    /// From the title row to the timeline's centre.
+    static let audiobookPlayerTimelineTopGap: CGFloat = 33
+    static let audiobookPlayerTrackHeight: CGFloat = 7
+    /// The slider's touch height around its 7 pt track.
+    static let audiobookPlayerSliderHeight: CGFloat = 30
+    static let audiobookPlayerTimeFontSize: CGFloat = 12
+    /// From the timeline's centre to the times under it.
+    static let audiobookPlayerTimeLabelGap: CGFloat = 19
+    /// From the times to the centre of play / pause.
+    static let audiobookPlayerTransportTopGap: CGFloat = 90
+    /// The centres of 「1倍」, back 15, play / pause, forward 15 and the moon, across the width.
+    static let audiobookPlayerTransportCenters: [CGFloat] = [0.126, 0.300, 0.500, 0.698, 0.902]
+    static let audiobookPlayerSpeedFontSize: CGFloat = 17
+    static let audiobookPlayerSkipIconSize: CGFloat = 26
+    static let audiobookPlayerPlayIconSize: CGFloat = 36
+    static let audiobookPlayerSleepIconSize: CGFloat = 19
+    /// From play / pause's centre to the volume's.
+    static let audiobookPlayerVolumeTopGap: CGFloat = 98
+    static let audiobookPlayerSpeakerIconSize: CGFloat = 13
+    static let audiobookPlayerVolumeLeadingInset: CGFloat = 32
+    static let audiobookPlayerVolumeTrailingInset: CGFloat = 35
+    static let audiobookPlayerVolumeSpacing: CGFloat = 13
+    static let audiobookPlayerQuietSpeakerWidth: CGFloat = 12
+    static let audiobookPlayerLoudSpeakerWidth: CGFloat = 18
+    /// From the volume's centre to the bottom row's.
+    static let audiobookPlayerBottomRowTopGap: CGFloat = 41
+    /// The centres of AirPlay and 目錄 across the width.
+    static let audiobookPlayerBottomRowCenters: [CGFloat] = [0.286, 0.713]
+    static let audiobookPlayerBottomIconSize: CGFloat = 20
+    /// From the bottom row's centre to the safe area's bottom.
+    static let audiobookPlayerBottomInset: CGFloat = 42
+    /// A drag down the page this far, or flung, closes it.
+    static let audiobookPlayerDismissDistance: CGFloat = 140
+    /// Seconds the `+0:15` bubble stays after the last skip.
+    static let audiobookPlayerSkipBubbleDuration: Double = 1.5
+    /// How far above the timeline's centre the bubble sits.
+    static let audiobookPlayerSkipBubbleRise: CGFloat = 22
+    /// The play / pause button's square: larger than the others, as the glyph is.
+    static let audiobookPlayerPlayButtonSide: CGFloat = 60
+    /// Room the chapter's title leaves for the times at either end.
+    static let audiobookPlayerChapterTitleInset: CGFloat = 64
+    /// 目錄 with no chapters to list.
+    static let audiobookPlayerDisabledOpacity: Double = 0.35
+    /// The speed popover: the preset discs, the selected one, and the ruler's ticks.
+    static let audiobookSpeedPresetSide: CGFloat = 28
+    static let audiobookSpeedSelectedPresetSide: CGFloat = 34
+    /// From one preset's centre to the next (Apple Books, measured): the popover is six of
+    /// these and a margin either side.
+    static let audiobookSpeedPresetPitch: CGFloat = 42
+    static let audiobookSpeedTickSpacing: CGFloat = 8
+    static let audiobookSpeedTickHeight: CGFloat = 26
+    static let audiobookSpeedCenterTickHeight: CGFloat = 32
+    /// How far a finger moves on the presets before they give way to the ruler.
+    static let audiobookSpeedRulerDragThreshold: CGFloat = 10
+    static let audiobookSpeedPopoverWidth: CGFloat = 276
+    static let audiobookSpeedPresetFontSize: CGFloat = 13
+    static let audiobookSpeedSelectedPresetFontSize: CGFloat = 11
+    static let audiobookSpeedCaptionFontSize: CGFloat = 13
+    static let audiobookSpeedAnimalIconSize: CGFloat = 15
+    static let audiobookSpeedTickWidth: CGFloat = 1.5
+    static let audiobookSpeedCenterTickWidth: CGFloat = 2.5
+    static let audiobookSpeedTickOpacity: Double = 0.45
+    static let audiobookSpeedNeighbourTickOpacity: Double = 0.8
+    /// 自訂睡眠計時器's popover: its title and 完成, the count-down wheel, and its width.
+    static let audiobookSleepTitleFontSize: CGFloat = 17
+    static let audiobookSleepWheelHeight: CGFloat = 150
+    static let audiobookSleepPopoverWidth: CGFloat = 260
+    /// The ground under white is the cover's colour darkened until white on it has this much
+    /// contrast: what the recording's ground gives (white on #6B695E).
+    static let audiobookPlayerBackgroundContrast: Double = 5.3
+    /// The foot of the ground, this much darker than the cover's foot (#54564F under #6B695E).
+    static let audiobookPlayerBackgroundFootShade: Double = 0.8
     /// How far the reading assistant keeps the reader's own turn from the leading edge.
     /// The answer uses the full width as plain prose; the question stays a narrower
     /// bubble on the trailing side, so the two never read as the same kind of text.

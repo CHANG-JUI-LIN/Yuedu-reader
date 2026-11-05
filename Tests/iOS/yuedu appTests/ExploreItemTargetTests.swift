@@ -70,10 +70,13 @@ struct ExploreItemTargetTests {
         #expect(target(.aozora(work)) == nil, "no catalog, nothing to show it with")
     }
 
+    /// A book that is not an audiobook — here, none the store has — is pushed like any route;
+    /// an audiobook opens out of the now-playing bar instead (`NowPlayingHub.openIfAudiobook`).
     @Test func pushAppendsTheRouteItself() {
         var path = NavigationPath()
-        ExplorePush.reader(PublicLibraryReaderRoute(bookID: UUID())).append(to: &path)
-        ExplorePush.explore(.sourceManager).append(to: &path)
+        let store = BookStore()
+        ExplorePush.reader(PublicLibraryReaderRoute(bookID: UUID())).open(in: &path, store: store)
+        ExplorePush.explore(.sourceManager).open(in: &path, store: store)
         #expect(path.count == 2)
     }
 

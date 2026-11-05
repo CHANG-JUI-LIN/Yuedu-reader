@@ -25,6 +25,12 @@ struct ScrubSlider: UIViewRepresentable {
     var value: Double
     var bounds: ClosedRange<Double> = 0...1
     var tint: Color
+    /// The unplayed part of the track; the system's when nil.
+    var trackTint: Color? = nil
+    /// A media timeline: no thumb, a track that swells under the finger and moves by as much
+    /// as the finger does wherever it lands (UIKit's `.thumbless`, iOS 26). Before iOS 26 a
+    /// small dot stands in for the thumb.
+    var isThumbless = false
     /// The value under the finger while it scrubs; nil once the scrub is cancelled.
     var onScrub: (Double?) -> Void
     /// The value the finger was lifted at.
@@ -44,7 +50,25 @@ struct ScrubSlider: UIViewRepresentable {
         slider.addAction(UIAction { [unowned slider] _ in coordinator.parent.onCommit(Double(slider.value)) },
                          for: [.touchUpInside, .touchUpOutside])
         slider.addAction(UIAction { _ in coordinator.parent.onScrub(nil) }, for: .touchCancel)
+        if isThumbless { Self.makeThumbless(slider, dot: UIColor(tint)) }
         return slider
+    }
+
+    /// `.thumbless` where UIKit has it; a small dot in the tint before iOS 26.
+    static func makeThumbless(_ slider: UISlider, dot color: UIColor) {
+        #if compiler(>=6.2)
+        if #available(iOS 26.0, *) {
+            slider.sliderStyle = .thumbless
+            return
+        }
+        #endif
+        let side = DSLayout.scrubSliderLegacyThumbSide
+        let dot = UIGraphicsImageRenderer(size: CGSize(width: side, height: side)).image { context in
+            color.setFill()
+            context.cgContext.fillEllipse(in: CGRect(x: 0, y: 0, width: side, height: side))
+        }
+        slider.setThumbImage(dot, for: .normal)
+        slider.setThumbImage(dot, for: .highlighted)
     }
 
     func updateUIView(_ slider: AdjustableSlider, context: Context) {
@@ -54,6 +78,7 @@ struct ScrubSlider: UIViewRepresentable {
         // `.disabled(_:)` reaches a representable only through the environment.
         slider.isEnabled = context.environment.isEnabled
         slider.minimumTrackTintColor = UIColor(tint)
+        if let trackTint { slider.maximumTrackTintColor = UIColor(trackTint) }
         slider.onIncrement = onIncrement
         slider.onDecrement = onDecrement
         // Never under the finger: the scrub is what the finger says.

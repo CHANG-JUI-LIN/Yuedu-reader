@@ -81,7 +81,12 @@ private struct BookReaderContent: View {
             } else if book?.isConvertedAtImport == true && !conversionReady {
                 ReaderPreparingView(error: nil, onRetry: {}, onClose: closeReader)
             } else if isAudiobook {
-                AudiobookReaderView(bookId: bookId)
+                if playsUnderNowPlayingBar {
+                    // Handed to the now-playing bar as it appears (`handAudiobookToNowPlayingBar`).
+                    Color.clear
+                } else {
+                    AudiobookReaderView(bookId: bookId)
+                }
             } else if book?.resolvedPipelineKind == .video {
                 VideoPlayerView(content: .shelf(bookId), onClose: closeReader)
             } else if shouldUseFixedPageReader {
@@ -148,12 +153,14 @@ private struct BookReaderContent: View {
                 // once: coming back from a page pushed above the reader is not another open.
                 // The shelf's card transition stamps its open itself once the card has landed
                 // (`HomeView.openBook`), so a 最近閱讀 shelf does not move the source cover mid-open.
-                if !stampedOpen, readerNavigator == nil {
+                if !stampedOpen, readerNavigator == nil, !playsUnderNowPlayingBar {
                     stampedOpen = true
                     store.updateLastOpened(bookId: bookId)
                 }
             }
+            handAudiobookToNowPlayingBar()
         }
+        .onChange(of: isAudiobook) { _, _ in handAudiobookToNowPlayingBar() }
         .onDisappear {
             let releasedLastReader = ReadingResourceUsage.shared.release(bookID: bookId, ownerID: resourceOwnerID)
             if holdsCache {
@@ -191,6 +198,23 @@ private struct BookReaderContent: View {
     }
 
     private var isAudiobook: Bool { book?.resolvedPipelineKind == .audio }
+
+    /// An audiobook reaches a reader pushed in a tab only when its book turned out to be one
+    /// mid-read (`BookStore.upgradeToAudioIfDetected`): every page opens an audiobook out of the
+    /// now-playing bar instead (`NowPlayingHub.openIfAudiobook`). Its player would be pushed into
+    /// the tab under the tab bar and that bar, so it moves to the bar too.
+    private var playsUnderNowPlayingBar: Bool {
+        isAudiobook && isInTabNavigation && NowPlayingHub.rootTabsAreFrontmost
+    }
+
+    private func handAudiobookToNowPlayingBar() {
+        guard playsUnderNowPlayingBar, let book else { return }
+        AppLogger.info("⟐ audiobook \(bookId) in a reader pushed in a tab: handed to the now-playing bar")
+        if !NowPlayingHub.shared.openIfAudiobook(book, store: store) {
+            AppLogger.error("⟐ audiobook \(bookId) could not open out of the now-playing bar; closing its reader")
+        }
+        closeReader()
+    }
 }
 
 /// A book being readied before its reader can open — a library's copy downloading, a 青空文庫

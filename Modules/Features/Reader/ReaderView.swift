@@ -2176,7 +2176,6 @@ struct ReaderView: View {
             // nothing is playing. `barsVisible` lets it lift above the bottom toolbar
             // when the bars appear, and drop lower while they're hidden.
             NowPlayingMiniPlayer(
-                placement: .reader,
                 barsVisible: showBars,
                 presentDestination: { artworkDestination = $0 }
             )

@@ -1,3 +1,4 @@
+import Combine
 import SwiftUI
 import os.log
 
@@ -366,14 +367,22 @@ struct AudiobookDetailView: View {
                     .environmentObject(bookStore)
             }
         }
-        .fullScreenCover(isPresented: $showPlayer) {
+        // The player's own 加入書架 shelves the book while it is up; this page learns of it
+        // only once the player has gone.
+        .fullScreenCover(isPresented: $showPlayer, onDismiss: checkAlreadyInShelf) {
             if let bid = activePlayerBookId {
                 if bookStore.books.contains(where: { $0.id == bid }) {
                     BookReaderView(bookId: bid).environmentObject(bookStore)
                 } else {
-                    AudiobookReaderView(bookId: bid).environmentObject(bookStore)
+                    // This page is the book's page: the player's cover and 作品詳情 come back to it.
+                    AudiobookReaderView(bookId: bid, detailIsPresenter: true).environmentObject(bookStore)
                 }
             }
+        }
+        // The same, for the player opened out of the now-playing bar: it has gone once the bar
+        // has folded it away.
+        .onReceive(NowPlayingHub.shared.$isPlayerOpen.dropFirst().filter { !$0 }) { _ in
+            checkAlreadyInShelf()
         }
         .onAppear {
             checkAlreadyInShelf()
@@ -783,6 +792,14 @@ struct AudiobookDetailView: View {
                 totalChapters: chapters.count, forceSave: true)
             preparePlayerCoverFallback(bookId: existing, source: source)
             activePlayerBookId = existing
+            openingPlayer = false
+            // The player grows out of the now-playing bar, as Apple Books opens an audiobook;
+            // under a sheet or a cover, this page presents it over itself.
+            if let book = bookStore.readingBook(id: existing),
+               NowPlayingHub.shared.openAudiobookPlayer(book, store: bookStore) {
+                return
+            }
+            showPlayer = true
         } else {
             let transient = transientAudiobook(
                 source: source,
@@ -790,14 +807,20 @@ struct AudiobookDetailView: View {
                 chapterIndex: chapterIndex
             )
             preparePlayerCoverFallback(bookId: transient.id, source: source)
-            AudiobookPlayer.shared.startTransient(book: transient, store: bookStore)
             activePlayerBookId = transient.id
             // Listened to without being shelved, by a player that never enters the library:
             // only its name stays, for 搜索's 最近閱讀.
             OffShelfReadRecords.record(title: transient.title, author: transient.author, coverUrl: displayCoverUrl)
+            openingPlayer = false
+            // This page is the book's page: the player's cover and 作品詳情 come back to it.
+            if NowPlayingHub.shared.openAudiobookPlayer(
+                transient, store: bookStore, transient: true, fromDetailPage: true
+            ) {
+                return
+            }
+            AudiobookPlayer.shared.startTransient(book: transient, store: bookStore)
+            showPlayer = true
         }
-        openingPlayer = false
-        showPlayer = true
     }
 }
 

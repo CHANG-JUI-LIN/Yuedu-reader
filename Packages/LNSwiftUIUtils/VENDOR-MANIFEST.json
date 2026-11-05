@@ -1,0 +1,22 @@
+{
+  "upstream": {
+    "repository": "https://github.com/LeoNatan/LNSwiftUIUtils.git",
+    "version": "1.1.5",
+    "revision": "181a95b992f84d99a14c562c86e8ebef3cbcdca9",
+    "license": "MIT"
+  },
+  "vendored": [
+    "LICENSE",
+    "Package.swift",
+    "Sources"
+  ],
+  "omitted": [
+    "README.md",
+    "VERSION",
+    "releaseVersion.sh",
+    ".gitignore"
+  ],
+  "why": "The upstream repositories carry their demo apps' screenshots and videos in their history: resolving them as remote packages cloned about 2 GB (LNPopupUI 930 MB, LNPopupController about as much), which held every clean build, Xcode Cloud's included, for half an hour and more (2026-11-05), and would need four more repositories authorized in Xcode Cloud. Only the sources are vendored. A dependency of LNPopupUI.",
+  "patches": [],
+  "removeWhen": "Delete these four Packages/LN* folders and add https://github.com/LeoNatan/LNPopupUI as a remote package again, if its history is ever trimmed."
+}

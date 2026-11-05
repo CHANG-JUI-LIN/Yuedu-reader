@@ -1480,6 +1480,13 @@ class BookStore: @MainActor ObservableObject, BookProvider {
         return groups
     }
 
+    /// The shelf's groups in the group bar's order, each with how many books it holds.
+    var groupBookCounts: [(name: String, count: Int)] {
+        let counts = Dictionary(grouping: books.filter { !$0.group.isEmpty }, by: \.group)
+            .mapValues(\.count)
+        return allGroups.map { (name: $0, count: counts[$0] ?? 0) }
+    }
+
     func setGroup(_ group: String, for bookId: UUID) {
         setGroups([bookId: group])
     }

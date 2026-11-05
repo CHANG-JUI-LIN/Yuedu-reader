@@ -463,6 +463,7 @@ struct WorkDetailView: View {
         Task {
             await ReadingChapterPlace(store: store, positionStore: dependencies.readingPositionStore)
                 .open(atChapter: chapter.index, bookId: bookID)
+            if opensAudiobookPlayer(bookID) { return }
             pushed = .reader(bookID, target.fragment == nil ? nil : target)
         }
     }
@@ -1117,7 +1118,15 @@ struct WorkDetailView: View {
             readerContext.continueReading(nil)
             return
         }
+        if opensAudiobookPlayer(id) { return }
         pushed = .reader(id)
+    }
+
+    /// An audiobook's player grows out of the now-playing bar, as Apple Books opens one, rather
+    /// than being pushed onto this page's stack.
+    private func opensAudiobookPlayer(_ id: UUID) -> Bool {
+        guard let book = store.readingBook(id: id) else { return false }
+        return NowPlayingHub.shared.openIfAudiobook(book, store: store)
     }
 
     /// Reads or shelves the shown library item in the shown format.

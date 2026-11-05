@@ -4328,3 +4328,18 @@
 "建立在這本書另一版的轉換文字上，無法跳轉" = "Saved in another version of this book's converted text, so you can't go to it.";
 "正序" = "First to Last";
 "倒序" = "Last to First";
+
+/* Audiobook player (Apple Books layout) */
+"%1$@，%2$@" = "%1$@, %2$@";
+"%@倍" = "%@×";
+"1 小時" = "1 hour";
+"倒退 15 秒" = "Skip Back 15 Seconds";
+"快轉 15 秒" = "Skip Forward 15 Seconds";
+"播放模式：%@" = "Playback Mode: %@";
+"收合播放頁" = "Minimize Player";
+"當目前章節結束時" = "When Current Chapter Ends";
+"睡眠定時：關閉" = "Off";
+"移除書架…" = "Remove…";
+"自訂睡眠計時器" = "Custom Sleep Timer";
+"調整播放速度" = "Adjust Playback Speed";
+"滑動以顯示更多速度" = "Swipe for More Speeds";

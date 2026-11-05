@@ -2,7 +2,7 @@
 
 This document records the Swift Package dependencies configured in the Xcode project and their resolved versions.
 
-## Direct Dependencies (8 items)
+## Direct Dependencies (9 items)
 
 | Package Name | Repository URL | Dependency Rule | Current Resolved Version |
 |--------------|----------------|-----------------|--------------------------|
@@ -13,6 +13,7 @@ This document records the Swift Package dependencies configured in the Xcode pro
 | **Nuke** | `https://github.com/kean/Nuke` | Up to Next Major Version (`12.0.0` < `13.0.0`) | `12.0.0` |
 | **Readium** | `https://github.com/readium/swift-toolkit.git` | Up to Next Major Version (`3.8.0` < `4.0.0`) | `3.8.0` |
 | **SwiftSoup** | `Packages/SwiftSoup` (vendored from `https://github.com/scinfu/SwiftSoup`) | Local package; also stands in for the copy Readium and YueduCoreText depend on | `2.13.7` + one backported fix, see its `VENDOR-MANIFEST.json` |
+| **LNPopupUI** | `Packages/LNPopupUI` (vendored from `https://github.com/LeoNatan/LNPopupUI`, MIT), product `LNPopupUI-Static` | Local package; brings `Packages/LNPopupController` (`4.6.2`), `Packages/LNSwiftUIUtils` (`1.1.5`) and `Packages/LNSystemMarqueeLabel` (`0.1.2`), each vendored beside it | `4.0.4`, sources only — the upstream histories hold ~2 GB of demo media; see each `VENDOR-MANIFEST.json` |
 | **ReadiumZIPFoundation** | `https://github.com/readium/ZIPFoundation.git` | Up to Next Major Version (`3.0.1` < `4.0.0`) | `3.0.1` |
 
 ## Transitive Dependencies

@@ -34,7 +34,12 @@ struct ImportedBookPresentation: UIViewControllerRepresentable {
             }, didStart: didPresentCustomization)
             return
         }
-        controller.receive(requestID: request?.id, makeDestination: { scene in
+        controller.receive(requestID: request?.id, opensInPlace: {
+            // An imported audiobook plays out of the now-playing bar, as one tapped on the
+            // shelf does, when the tabs are on top (`NowPlayingHub.openIfAudiobook`).
+            guard let request, let book = store.readingBook(id: request.bookID) else { return false }
+            return NowPlayingHub.shared.openIfAudiobook(book, store: store)
+        }, makeDestination: { scene in
             guard let request else { return nil }
             return UIHostingController(rootView:
                 BookReaderView(bookId: request.bookID)
@@ -54,7 +59,7 @@ final class ImportedBookPresentationController: UIViewController {
     /// (a book), or a flow of its own presentations (a shared customization file, which
     /// asks with an alert and reports in a sheet).
     private enum Work {
-        case destination((UIWindowScene) -> UIViewController?)
+        case destination(opensInPlace: () -> Bool, make: (UIWindowScene) -> UIViewController?)
         case flow((UIWindow, @escaping () -> Void) -> SharedCustomizationImportFlow)
     }
 
@@ -78,10 +83,13 @@ final class ImportedBookPresentationController: UIViewController {
         presentPending()
     }
 
-    func receive(requestID: UUID?, makeDestination: @escaping (UIWindowScene) -> UIViewController?,
+    /// - Parameter opensInPlace: opens the request without a presentation of its own, once
+    ///   nothing is in transition; true when it did, and the request is then acknowledged.
+    func receive(requestID: UUID?, opensInPlace: @escaping () -> Bool = { false },
+                 makeDestination: @escaping (UIWindowScene) -> UIViewController?,
                  didPresent: @escaping (UUID) -> Void) {
         pendingID = requestID
-        pendingWork = .destination(makeDestination)
+        pendingWork = .destination(opensInPlace: opensInPlace, make: makeDestination)
         self.didPresent = didPresent
         presentPending()
     }
@@ -135,7 +143,12 @@ final class ImportedBookPresentationController: UIViewController {
             if pendingID == requestID { pendingID = nil }
             acknowledge?(requestID)
             flow.start()
-        case .destination(let makeDestination):
+        case .destination(let opensInPlace, let makeDestination):
+            if opensInPlace() {
+                if pendingID == requestID { pendingID = nil }
+                acknowledge?(requestID)
+                return
+            }
             guard let scene = window.windowScene, let destination = makeDestination(scene) else { return }
             presentingID = requestID
             destination.coversFullScreen()

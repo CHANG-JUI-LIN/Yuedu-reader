@@ -126,14 +126,6 @@ struct ContentView: View {
             }
         }
         .font(DSFont.body)
-        .overlay {
-            // App-wide audiobook mini-player: controls the long-lived audiobook session
-            // from any tab, and narration that went on after its book was closed. A
-            // full-screen cover hides it; a reader pushed inside a tab does
-            // not, so it hides itself while a reader hosts its own (`readerHostsPlayer`).
-            // No reader toolbar here, so allow dragging down to just above the tab bar.
-            NowPlayingMiniPlayer(placement: .global, minBottomClearance: 90)
-        }
         .iPadAdaptiveRootTabStyle()
         .background {
             ImportedBookPresentation(
@@ -241,7 +233,7 @@ struct ContentView: View {
             selectedRootTab = gs.fallbackRootTab(for: selectedRootTab)
         }
         .modifier(AudiobookPlayerPresentation(store: store))
-        // Over the tabs, their overlays and the mini player; under the launch image.
+        // Over the tabs, their overlays and the now-playing bar; under the launch image.
         .modifier(OnboardingPresentation(state: onboarding, selectedTab: $selectedRootTab,
                                          tint: appearanceTheme?.accentColor))
         // Cold-launch splash: sits above every tab/overlay and fades out.
@@ -281,6 +273,9 @@ struct ContentView: View {
                     }
             }
         }
+        // What plays on with no reader on screen: the bar over the tabs, and the audiobook player
+        // that grows out of it. Around everything above, since it re-hosts what it wraps.
+        .modifier(NowPlayingPopupHost(store: store, subscriptionStore: subscriptionStore, tabBar: rootTabBar))
         // Outermost, so the sheets and overlays above resolve their colours from it too:
         // `DSColor`'s themed colours read the themes from here when they draw
         // (`AppThemesTrait`), and follow a switch without their views being rebuilt.
@@ -445,8 +440,8 @@ struct ContentView: View {
 /// user configured a page background (Pro), the per-scope gradient/image layer.
 /// The default palette resolves to the system grouped background, so default users
 /// keep the same appearance while the view structure stays stable across updates.
-/// The app-root full-screen audiobook player, presented from the global now-playing bar —
-/// and, from the same bar, the book a closed reader is still narrating.
+/// The book a closed reader is still narrating, reopened full screen from the app root's
+/// now-playing bar. An audiobook's player opens out of the bar itself (`NowPlayingPopupHost`).
 ///
 /// Its own view, observing `NowPlayingHub`, so the root does not: the hub publishes on every
 /// spoken sentence (`currentSegmentIndex`), and the root observing it re-ran `ContentView.body`
@@ -526,22 +521,18 @@ private struct ThemedSurfaceBackground: ViewModifier {
     }
 }
 
+/// The reader's now-playing capsule: its own narration, or an audiobook playing on. Everywhere
+/// else the app root's bar shows what plays (`NowPlayingPopupHost`).
 struct NowPlayingMiniPlayer: View {
-    /// Where the mini-player lives. `.reader` is the in-reader TTS bar; `.global` is the
-    /// app-root bar that controls audiobook playback from any page.
-    enum Placement: String { case reader, global }
-    var placement: Placement = .reader
-
-    /// Whether the host reader's top/bottom bars are showing. Only meaningful for
-    /// `.reader`: when the bars appear the player lifts above the bottom toolbar; while
-    /// they're hidden it may be dragged lower (no toolbar to clear).
+    /// Whether the host reader's top/bottom bars are showing: when the bars appear the player
+    /// lifts above the bottom toolbar; while they're hidden it may be dragged lower (no toolbar
+    /// to clear).
     var barsVisible: Bool = true
 
     /// Presents what the artwork opens: the book a closed reader is still narrating, or the
-    /// audiobook's player. A reader passes its own and presents it over itself: it may be
-    /// presented full screen, and presenting from the app root closed it. `nil` at the root, which
-    /// presents it over every tab (`NowPlayingHub.appRootDestination`).
-    var presentDestination: ((NowPlayingHub.ArtworkDestination) -> Void)? = nil
+    /// audiobook's player. The reader presents it over itself: it may be presented full screen,
+    /// and presenting from the app root closed it.
+    let presentDestination: (NowPlayingHub.ArtworkDestination) -> Void
 
     @StateObject private var hub = NowPlayingHub.shared
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -562,19 +553,13 @@ struct NowPlayingMiniPlayer: View {
     @State private var liftedFromOffsetHeight: CGFloat?
     /// Resting distance of the bar's bottom edge from the screen bottom.
     var defaultBottomClearance: CGFloat = 136
-    /// Lowest the bar can be dragged on tab pages (clears the tab bar). `.global` only.
-    var minBottomClearance: CGFloat? = nil
     /// Lowest the bar can be dragged in the reader while the bars are hidden (no toolbar).
     var immersiveBottomClearance: CGFloat = 44
 
-    /// How close to the screen bottom the bar may be dragged, by context.
+    /// How close to the screen bottom the bar may be dragged: down past the bottom toolbar's
+    /// place only while the bars are hidden.
     private var dragFloorClearance: CGFloat {
-        switch placement {
-        case .global:
-            return minBottomClearance ?? defaultBottomClearance
-        case .reader:
-            return barsVisible ? defaultBottomClearance : immersiveBottomClearance
-        }
+        barsVisible ? defaultBottomClearance : immersiveBottomClearance
     }
 
     /// Max downward drag from the resting position (size-independent: the resting line is
@@ -583,11 +568,10 @@ struct NowPlayingMiniPlayer: View {
         defaultBottomClearance - dragFloorClearance
     }
 
-    /// In the reader, this book's TTS *or* a background audiobook; at the root, the
-    /// audiobook or a closed reader's narration, unless a reader on screen is already showing it.
+    /// This book's TTS *or* a background audiobook.
     private var isVisible: Bool {
         NowPlayingHub.showsMiniPlayer(
-            inReader: placement == .reader,
+            inReader: true,
             readerTTSVisible: hub.isVisible,
             audiobookLoaded: hub.showsGlobalBar,
             narrationOutlivesReader: hub.holdsNarrationPastReader,
@@ -648,11 +632,7 @@ struct NowPlayingMiniPlayer: View {
             Button {
                 performTapAction {
                     guard let destination = hub.openFromArtwork() else { return }
-                    if let presentDestination {
-                        presentDestination(destination)
-                    } else {
-                        hub.appRootDestination = destination
-                    }
+                    presentDestination(destination)
                 }
             } label: {
                 leadingArtwork
@@ -660,7 +640,7 @@ struct NowPlayingMiniPlayer: View {
             .buttonStyle(.plain)
             .accessibilityLabel(nowPlayingLabel)
             .accessibilityHint(openHint)
-            .accessibilityIdentifier("now_playing_\(placement.rawValue)_open_panel")
+            .accessibilityIdentifier("now_playing_reader_open_panel")
 
             Button {
                 performTapAction {
@@ -675,7 +655,7 @@ struct NowPlayingMiniPlayer: View {
                     .overlay(Circle().stroke(Color.secondary.opacity(0.35), lineWidth: 2))
             }
             .accessibilityLabel(localized(hub.playbackState == .playing ? "暫停" : "播放"))
-            .accessibilityIdentifier("now_playing_\(placement.rawValue)_play_pause")
+            .accessibilityIdentifier("now_playing_reader_play_pause")
 
             Button {
                 performTapAction {
@@ -688,7 +668,7 @@ struct NowPlayingMiniPlayer: View {
                     .frame(width: trailingButtonWidth, height: 48)
             }
             .accessibilityLabel(localized("停止播放"))
-            .accessibilityIdentifier("now_playing_\(placement.rawValue)_stop")
+            .accessibilityIdentifier("now_playing_reader_stop")
 
             // Tucks the player into the nearer side; playback keeps going. The arrow points
             // the way it will go, so it flips as the player is dragged across.
@@ -723,8 +703,8 @@ struct NowPlayingMiniPlayer: View {
         hub.title.isEmpty ? localized("語音朗讀") : hub.title
     }
 
-    /// What tapping the artwork does: narration whose reader has closed reopens its book, in
-    /// either placement (`NowPlayingHub.openFromArtwork`); anything else opens its player.
+    /// What tapping the artwork does: narration whose reader has closed reopens its book
+    /// (`NowPlayingHub.openFromArtwork`); anything else opens its player.
     private var openHint: String {
         hub.artworkReopensNarratedBook
             ? localized("打開這本書到正在朗讀的地方")
@@ -988,18 +968,7 @@ private struct SpinningCoverIcon<Face: View>: View {
         currentSegmentIndex: 0,
         totalSegments: 94
     )
-    return NowPlayingMiniPlayer(placement: .reader, barsVisible: false)
-}
-
-#Preview("Shelf mini-player, book closed mid-narration") {
-    NowPlayingHub.shared.configurePreview(
-        title: "第十章 玄雅的赔礼",
-        playbackState: .playing,
-        currentSegmentIndex: 12,
-        totalSegments: 94,
-        holdsNarrationPastReader: true
-    )
-    return NowPlayingMiniPlayer(placement: .global, minBottomClearance: 90)
+    return NowPlayingMiniPlayer(barsVisible: false, presentDestination: { _ in })
 }
 
 #Preview("Reader mini-player, another book's narration") {
@@ -1010,7 +979,7 @@ private struct SpinningCoverIcon<Face: View>: View {
         totalSegments: 94,
         holdsNarrationPastReader: true
     )
-    return NowPlayingMiniPlayer(placement: .reader, barsVisible: false, presentDestination: { _ in })
+    return NowPlayingMiniPlayer(barsVisible: false, presentDestination: { _ in })
 }
 
 #Preview("Artwork destination, an audiobook off the shelf") {

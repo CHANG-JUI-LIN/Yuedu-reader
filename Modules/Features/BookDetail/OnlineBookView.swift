@@ -1058,6 +1058,14 @@ struct OnlineBookView: View {
                 openingReader = false
                 return
             }
+            // A shelf book that turned out to be an audiobook (`upgradeToAudioIfDetected`) plays
+            // out of the now-playing bar, as every shelf audiobook does. A copy read without
+            // being added keeps its cover: closing it is when 加入書架？ is asked.
+            if temporaryReaderBookId == nil,
+               NowPlayingHub.shared.openIfAudiobook(readingBook, store: bookStore) {
+                openingReader = false
+                return
+            }
             if readingBook.resolvedPipelineKind == .audio || readingBook.resolvedPipelineKind == .video {
                 openingReader = false
                 showReader = true

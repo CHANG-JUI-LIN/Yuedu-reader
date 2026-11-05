@@ -159,6 +159,7 @@ Detailed package versions and their transitive dependencies are recorded in [Dep
 
 - **Readium** (BSD) — EPUB parsing (ReadiumShared, ReadiumStreamer, ReadiumZIPFoundation, ReadiumFuzi)
 - **SwiftSoup** (MIT) — HTML parsing for RSS and rule engine
+- **LNPopupUI** (MIT, vendored in `Packages/` with LNPopupController, LNSwiftUIUtils, LNSystemMarqueeLabel) — the now-playing bar the audiobook player opens out of and folds back into
 - **GoogleSignIn** (Apache 2.0) — Optional Google sign-in
 - **CryptoSwift**, **SQLite.swift**, **Zip**, **DifferenceKit**, **GCDWebServer**
 

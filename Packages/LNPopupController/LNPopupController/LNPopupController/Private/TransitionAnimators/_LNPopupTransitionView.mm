@@ -1,0 +1,209 @@
+//
+//  _LNPopupTransitionView.mm
+//  LNPopupController
+//
+//  Created by Léo Natan on 2025-03-23.
+//  Copyright © 2015-2026 Léo Natan. All rights reserved.
+//
+
+#import "_LNPopupTransitionView.h"
+#import "_LNPopupBase64Utils.hh"
+
+@implementation _LNPopupTransitionView
+{
+	UIView* _portalView;
+	UIView* _radiusContainerView;
+}
+
++ (instancetype)transitionViewWithSourceView:(UIView*)sourceView
+{
+	return [[self alloc] initWithSourceView:sourceView];
+}
+
++ (instancetype)transitionViewWithSourceLayer:(CALayer *)sourceLayer
+{
+	return [[self alloc] initWithSourceLayer:sourceLayer];
+}
+
+- (instancetype)initWithSourceView:(UIView*)sourceView
+{
+	return [self _initWithSourceView:sourceView orLayer:nil];
+}
+
+- (instancetype)initWithSourceLayer:(CALayer *)sourceLayer
+{
+	return [self _initWithSourceView:nil orLayer:sourceLayer];
+}
+
+static Class const PortalClass = NSClassFromString(LNPopupHiddenString("_UIPortalView"));
+static NSString* const SourceViewKey = LNPopupHiddenString("sourceView");
+static NSString* const SourceLayerKey = LNPopupHiddenString("sourceLayer");
+static NSString* const HideSourceViewKey = LNPopupHiddenString("hidesSourceView");
+static NSString* const MatchesTransformKey = LNPopupHiddenString("matchesTransform");
+static NSString* const HidesInOtherPortalsKey = LNPopupHiddenString("hidesSourceLayerInOtherPortals");
+static NSString* const MatchesAlphaKey = LNPopupHiddenString("matchesAlpha");
+static NSString* const MatchesPositionKey = LNPopupHiddenString("matchesPosition");
+static NSString* const ForwardHitTestingKey = LNPopupHiddenString("forwardsClientHitTestingToSourceView");
+static NSString* const AllowsBackdropGroupsKey = LNPopupHiddenString("allowsBackdropGroups");
+
+- (instancetype)_initWithSourceView:(UIView*)sourceView orLayer:(CALayer *)sourceLayer
+{
+	self = [super initWithFrame:CGRectZero];
+	
+	if(self)
+	{
+		if(sourceView != nil)
+		{
+			_sourceView = sourceView;
+			_sourceLayer = sourceView.layer;
+		}
+		else
+		{
+			_sourceLayer = sourceLayer;
+		}
+		
+		_portalView = [[PortalClass alloc] initWithFrame:CGRectZero];
+		_portalView.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight;
+		if(sourceView != nil)
+		{
+			[_portalView setValue:sourceView forKey:SourceViewKey];
+		}
+		else
+		{
+			[_portalView.layer setValue:sourceLayer forKey:SourceLayerKey];
+		}
+		[_portalView setValue:@YES forKey:HideSourceViewKey];
+		[_portalView setValue:@YES forKey:MatchesTransformKey];
+//		[_portalView setValue:@YES forKey:ForwardHitTestingKey];
+		if(@available(iOS 26.0, *))
+		{
+			[_portalView setValue:@NO forKey:HidesInOtherPortalsKey];
+		}
+//		_portalView.layer.contentsGravity = kCAGravityResize;
+		
+		_radiusContainerView = [[UIView alloc] initWithFrame:CGRectZero];
+		_radiusContainerView.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight;
+		_radiusContainerView.layer.cornerCurve = kCACornerCurveContinuous;
+		self.cornerRadius = 0.0;
+		
+		[_radiusContainerView addSubview:_portalView];
+		[self addSubview:_radiusContainerView];
+		
+		_layerAlwaysMasksToBounds = NO;
+		
+		self.layer.masksToBounds = NO;
+	}
+	
+	return self;
+}
+
+- (BOOL)matchesAlpha
+{
+	return [[_portalView valueForKey:MatchesAlphaKey] boolValue];
+}
+
+- (void)setMatchesAlpha:(BOOL)matchesAlpha
+{
+	[_portalView setValue:@(matchesAlpha) forKey:MatchesAlphaKey];
+}
+
+- (BOOL)matchesTransform
+{
+	return [[_portalView valueForKey:MatchesTransformKey] boolValue];
+}
+
+- (void)setMatchesTransform:(BOOL)matchesTransform
+{
+	[_portalView setValue:@(matchesTransform) forKey:MatchesTransformKey];
+}
+
+- (BOOL)matchesPosition
+{
+	return [[_portalView valueForKey:MatchesPositionKey] boolValue];
+}
+
+- (void)setMatchesPosition:(BOOL)matchesPosition
+{
+	[_portalView setValue:@(matchesPosition) forKey:MatchesPositionKey];
+}
+
+- (BOOL)allowsEffects
+{
+	return [[_portalView valueForKey:AllowsBackdropGroupsKey] boolValue];
+}
+
+- (void)setAllowsEffects:(BOOL)allowsEffects
+{
+	[_portalView setValue:@(allowsEffects) forKey:AllowsBackdropGroupsKey];
+}
+
+- (CGFloat)cornerRadius
+{
+	return _radiusContainerView.layer.cornerRadius;
+}
+
+- (void)setCornerRadius:(CGFloat)cornerRadius
+{
+	_radiusContainerView.layer.cornerRadius = cornerRadius;
+	_radiusContainerView.layer.masksToBounds = _layerAlwaysMasksToBounds || cornerRadius != 0.0;
+}
+
+- (void)setLayerAlwaysMasksToBounds:(BOOL)layerAlwaysMasksToBounds
+{
+	_layerAlwaysMasksToBounds = layerAlwaysMasksToBounds;
+	self.cornerRadius = self.cornerRadius;
+}
+
+- (void)setTargetFrameUpdatingTransform:(CGRect)targetFrame
+{
+	CGRect sourceFrame = self.frame;
+	
+	[super setFrame:targetFrame];
+	
+	CGFloat ratioX = targetFrame.size.width / sourceFrame.size.width;
+	CGFloat ratioY = targetFrame.size.height / sourceFrame.size.height;
+	[self setSourceViewTransform: CGAffineTransformMakeScale(ratioX, ratioY)];
+}
+
+- (void)setShadow:(NSShadow *)shadow
+{
+	_shadow = shadow;
+	
+	self.layer.shadowOffset = _shadow.shadowOffset;
+	self.layer.shadowRadius = _shadow.shadowBlurRadius;
+	
+	[self _updateShadowColor];
+}
+
+- (void)_updateShadowColor
+{
+	self.layer.shadowColor = [(UIColor*)_shadow.shadowColor colorWithAlphaComponent:1.0].CGColor;
+	self.layer.shadowOpacity = CGColorGetAlpha([_shadow.shadowColor CGColor]);
+}
+
+- (void)traitCollectionDidChange:(UITraitCollection *)previousTraitCollection
+{
+	[super traitCollectionDidChange:previousTraitCollection];
+	
+	self.layer.rasterizationScale = self.traitCollection.displayScale;
+	[self _updateShadowColor];
+}
+
+- (CGAffineTransform)sourceViewTransform
+{
+	return _portalView.transform;
+}
+
+- (void)setSourceViewTransform:(CGAffineTransform)sourceViewTransform
+{
+	_portalView.transform = sourceViewTransform;
+}
+
+- (void)setSourceLayer:(CALayer *)sourceLayer
+{
+	_sourceLayer = sourceLayer;
+	
+	[_portalView.layer setValue:sourceLayer forKey:SourceLayerKey];
+}
+
+@end

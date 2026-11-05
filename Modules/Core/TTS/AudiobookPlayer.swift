@@ -38,6 +38,45 @@ enum AudiobookPlayMode: Int, Codable, CaseIterable {
     }
 }
 
+// MARK: - Audiobook playback rate
+
+/// The speeds the player page offers, as Apple Books has them: six presets, and any tenth
+/// from half speed to triple speed by sliding past them.
+enum AudiobookPlaybackRate {
+    static let presets: [Float] = [0.8, 1.0, 1.3, 1.5, 1.8, 2.0]
+    static let range: ClosedRange<Float> = 0.5...3.0
+    static let step: Float = 0.1
+
+    /// `rate` on the nearest tenth inside `range`: a rate is only ever one of the ruler's ticks,
+    /// so comparing two of them is exact.
+    static func snapped(_ rate: Float) -> Float {
+        let clamped = min(max(rate, range.lowerBound), range.upperBound)
+        return (clamped * 10).rounded() / 10
+    }
+
+    /// The rate's tick on the ruler, from 0 at `range.lowerBound`.
+    static func tick(of rate: Float) -> Int {
+        Int(((snapped(rate) - range.lowerBound) / step).rounded())
+    }
+
+    static var tickCount: Int { tick(of: range.upperBound) + 1 }
+
+    static func rate(atTick tick: Int) -> Float {
+        snapped(range.lowerBound + Float(min(max(tick, 0), tickCount - 1)) * step)
+    }
+
+    /// 「1倍」「1.3倍」: whole speeds without a decimal, as Apple Books writes them.
+    static func label(_ rate: Float) -> String {
+        String(format: localized("%@倍"), number(rate))
+    }
+
+    /// The number alone, as the preset circles show it: 「0.8」「1」「1.3」.
+    static func number(_ rate: Float) -> String {
+        let value = snapped(rate)
+        return value == value.rounded() ? String(Int(value)) : String(format: "%.1f", value)
+    }
+}
+
 // MARK: - Audiobook playback coordinator
 //
 // The single brain for audiobook (有聲書) playback. It is a long-lived singleton
@@ -118,6 +157,8 @@ final class AudiobookPlayer: NSObject, ObservableObject {
 
     @Published private(set) var bookId: UUID?
     @Published private(set) var bookTitle: String = ""
+    /// The player page's second line under the title, as Apple Books has the author there.
+    @Published private(set) var bookAuthor: String = ""
     @Published private(set) var coverImage: UIImage?
     @Published private(set) var chapters: [OnlineChapterRef] = []
     /// The URL the current chapter is playing from — legado's 複製播放 URL, and what a source's
@@ -133,6 +174,9 @@ final class AudiobookPlayer: NSObject, ObservableObject {
     @Published var error: String? = nil
     @Published var playbackRate: Float = 1.0
     @Published var sleepOption: AudiobookSleepOption = .off
+    /// When a minutes sleep timer pauses playback; nil with no such timer running. The player
+    /// page counts down to it in place of the time left (Apple Books' `zzz 45:00`).
+    @Published private(set) var sleepFireDate: Date?
     @Published private(set) var playMode: AudiobookPlayMode = .listEndStop
     @Published private(set) var openingCreditsSeconds: Int = 0
     @Published private(set) var closingCreditsSeconds: Int = 0
@@ -234,6 +278,54 @@ final class AudiobookPlayer: NSObject, ObservableObject {
         start(book: book, store: store, persistsPositionInStore: false)
     }
 
+    /// Whether the book playing is a shelf book; false for a 作品詳情 audiobook played without
+    /// being added (`startTransient`), and with nothing loaded.
+    var isPlayingShelfBook: Bool { bookId != nil && persistsPositionInStore }
+
+    /// The book playing, as the store has it now, or the copy a transient session started with.
+    var playingBook: ReadingBook? { currentBook() }
+
+    /// The player page's 加入書架: shelves the transient audiobook through the shelf's one use
+    /// case (`ShelfWorkService`, which also folds it into a copy of the work already there),
+    /// then plays on as that shelf book without a pause. From then on its place, play mode
+    /// and credits are saved to it, and `bookId` is the shelf book's.
+    func addPlayingBookToShelf(dependencies: AppDependencies) async throws {
+        guard !persistsPositionInStore, let store, let book = activeBook,
+              let sourceId = book.bookSourceId else { return }
+        let copy = ShelfWorkService.OnlineCopy(
+            name: book.title,
+            author: book.author,
+            sourceId: sourceId,
+            bookInfoURL: book.bookInfoURL ?? book.source,
+            tocURL: book.tocURL,
+            coverUrl: coverFallbacks[book.id]?.urlString ?? "",
+            runtimeVariables: loadedRuntimeVariables,
+            contentKind: .audio,
+            chapters: chapters
+        )
+        let outcome = try await ShelfWorkService(store: store, dependencies: dependencies).add(copy)
+        // Another book took the player over while the shelf was being written.
+        guard bookId == book.id else { return }
+        let shelfBook = outcome.book
+        if case .alreadyOnShelf = outcome {
+            // That copy's chapter list may be older than the one playing, whose indices the
+            // place saved below counts in.
+            store.updateOnlineChapters(bookId: shelfBook.id, chapters: chapters, runtimeVariables: loadedRuntimeVariables)
+        } else {
+            SourceCallBackService.notify(.addBookShelf, book: shelfBook)
+        }
+        if let fallback = coverFallbacks[book.id] { coverFallbacks[shelfBook.id] = fallback }
+        bookId = shelfBook.id
+        activeBook = store.readingBook(id: shelfBook.id) ?? shelfBook
+        persistsPositionInStore = true
+        store.setAudioPlayMode(bookId: shelfBook.id, mode: playMode)
+        store.setAudioSkipCredits(
+            bookId: shelfBook.id, openSeconds: openingCreditsSeconds, closeSeconds: closingCreditsSeconds
+        )
+        persistPosition(force: true)
+        audiobookLog("shelved transient book=\(book.title) as \(shelfBook.id) outcome=\(outcome)")
+    }
+
     private func start(
         book: ReadingBook,
         store: BookStore,
@@ -258,6 +350,7 @@ final class AudiobookPlayer: NSObject, ObservableObject {
 
         bookId = book.id
         bookTitle = book.title
+        bookAuthor = book.author
         coverImage = Self.loadCover(book.coverImagePath)
         if coverImage == nil, let fallback = coverFallbacks[book.id] {
             loadRemoteCoverIfNeeded(for: book.id, fallback: fallback)
@@ -350,6 +443,7 @@ final class AudiobookPlayer: NSObject, ObservableObject {
         chapters = []
         currentChapterTitle = ""
         bookTitle = ""
+        bookAuthor = ""
         coverImage = nil
         activeBook = nil
         persistsPositionInStore = true
@@ -398,6 +492,7 @@ final class AudiobookPlayer: NSObject, ObservableObject {
     // MARK: - Rate
 
     func setRate(_ rate: Float) {
+        let rate = AudiobookPlaybackRate.snapped(rate)
         playbackRate = rate
         if isPlaying { player?.rate = rate }
         updateNowPlaying()
@@ -643,8 +738,10 @@ final class AudiobookPlayer: NSObject, ObservableObject {
         case .endOfChapter:
             stopAtChapterEnd = true
         case .minutes(let m) where m > 0:
+            let interval = TimeInterval(m * 60)
+            sleepFireDate = Date().addingTimeInterval(interval)
             sleepTimer = Timer.scheduledTimer(
-                withTimeInterval: TimeInterval(m * 60), repeats: false
+                withTimeInterval: interval, repeats: false
             ) { [weak self] _ in
                 Task { @MainActor in self?.handleSleepFired() }
             }
@@ -668,11 +765,13 @@ final class AudiobookPlayer: NSObject, ObservableObject {
     private func handleSleepFired() {
         pause()
         sleepOption = .off
+        sleepFireDate = nil
     }
 
     private func cancelSleepTimer() {
         sleepTimer?.invalidate()
         sleepTimer = nil
+        sleepFireDate = nil
     }
 
     // MARK: - Chapter loading
@@ -880,9 +979,18 @@ final class AudiobookPlayer: NSObject, ObservableObject {
         return QueueEntry(
             chapterIndex: index,
             audio: audio,
-            item: AVPlayerItem(asset: asset),
+            item: Self.playerItem(for: asset),
             autoPlay: autoPlay
         )
+    }
+
+    /// Every chapter's item, the queued one too: AVFoundation leaves the rate a queued item
+    /// plays at to the item's own pitch algorithm. `.timeDomain` is the one Apple names for
+    /// speech, and keeps the pitch at any rate the page offers, up to triple speed.
+    static func playerItem(for asset: AVAsset) -> AVPlayerItem {
+        let item = AVPlayerItem(asset: asset)
+        item.audioTimePitchAlgorithm = .timeDomain
+        return item
     }
 
     private func ensurePlayer() -> AVQueuePlayer {

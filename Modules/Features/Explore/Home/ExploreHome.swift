@@ -228,7 +228,7 @@ private struct ExploreHomeRoot: View {
         .environment(\.openPublicLibraryBooks) { selection in
             if let book = selection.selectedBook { path.append(WorkDetailRoute(book)) }
         }
-        .environment(\.explorePush) { $0.append(to: &path) }
+        .environment(\.explorePush) { $0.open(in: &path, store: store) }
         .environment(\.homeDefaults, defaultsContext)
         .task(id: syncKey) {
             // Saved here, not while drawing: the first read saves the defaults. Not before the
@@ -563,7 +563,7 @@ private struct ExploreHomeRoot: View {
     // MARK: Opening
 
     private func push(_ push: ExplorePush) {
-        push.append(to: &path)
+        push.open(in: &path, store: store)
     }
 
     private func openBrowser(_ entry: BrowserEntry) {

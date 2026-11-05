@@ -44,6 +44,7 @@
 		9345BAE6E7C14A44A078A749 /* GoogleService-Info.plist in Resources */ = {isa = PBXBuildFile; fileRef = E661223F57364063B509666C /* GoogleService-Info.plist */; };
 		AAAA1111AAAA1111AAAA0001 /* Nuke in Frameworks */ = {isa = PBXBuildFile; productRef = AAAA1111AAAA1111AAAA0002 /* Nuke */; };
 		BA0DC69BDD8FFF2AE7B103A0 /* YueduCoreTextTypography in Frameworks */ = {isa = PBXBuildFile; productRef = 3D3ACA9A6DDE978E3B91280C /* YueduCoreTextTypography */; };
+		BBBB2222BBBB2222BBBB0001 /* LNPopupUI-Static in Frameworks */ = {isa = PBXBuildFile; productRef = BBBB2222BBBB2222BBBB0002 /* LNPopupUI-Static */; };
 		D4C329B2F01E414A88BD6077 /* GoogleService-Info.plist in Resources */ = {isa = PBXBuildFile; fileRef = E661223F57364063B509666C /* GoogleService-Info.plist */; };
 		D698BFBD3CA24E3C9A05AD4B /* GoogleService-Info.plist in Resources */ = {isa = PBXBuildFile; fileRef = E661223F57364063B509666C /* GoogleService-Info.plist */; };
 /* End PBXBuildFile section */
@@ -195,6 +196,7 @@
 				46A6AB672FCD4ED60071B397 /* FirebaseAnalyticsIdentitySupport in Frameworks */,
 				3021769152B9F41FC1F2CBA5 /* SwiftSoup in Frameworks */,
 				AAAA1111AAAA1111AAAA0001 /* Nuke in Frameworks */,
+				BBBB2222BBBB2222BBBB0001 /* LNPopupUI-Static in Frameworks */,
 				46A6AB732FCD4ED60071B397 /* FirebaseCrashlytics in Frameworks */,
 				46A6AB692FCD4ED60071B397 /* FirebaseAppCheck in Frameworks */,
 				463C854D2FA4F48E008F9AD7 /* GoogleSignIn in Frameworks */,
@@ -333,6 +335,7 @@
 				7F41A49C749809CDAB632913 /* ReadiumZIPFoundation */,
 				489E6E08B47AA3AC9F140CAD /* SwiftSoup */,
 				AAAA1111AAAA1111AAAA0002 /* Nuke */,
+				BBBB2222BBBB2222BBBB0002 /* LNPopupUI-Static */,
 				460274842F710D7500486947 /* ReadiumAdapterLCPSQLite */,
 				54FF42D2FA99075B5C91D59B /* ReadiumShared */,
 				54FF42D4FA99075B5C91D59B /* ReadiumStreamer */,
@@ -484,6 +487,7 @@
 				4503FB56A177080D0D9E31E4 /* XCRemoteSwiftPackageReference "YueduCoreText" */,
 				D8654E038B484E472D6D37EA /* XCLocalSwiftPackageReference "Packages/CLexbor" */,
 				9E73816D0186A1DA34077B88 /* XCLocalSwiftPackageReference "Packages/SwiftSoup" */,
+				BBBB2222BBBB2222BBBB0003 /* XCLocalSwiftPackageReference "Packages/LNPopupUI" */,
 			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = 460D365A2F51C5B8006E774C /* Products */;
@@ -1183,6 +1187,10 @@
 			isa = XCLocalSwiftPackageReference;
 			relativePath = Packages/CLexbor;
 		};
+		BBBB2222BBBB2222BBBB0003 /* XCLocalSwiftPackageReference "Packages/LNPopupUI" */ = {
+			isa = XCLocalSwiftPackageReference;
+			relativePath = Packages/LNPopupUI;
+		};
 /* End XCLocalSwiftPackageReference section */
 
 /* Begin XCRemoteSwiftPackageReference section */
@@ -1396,6 +1404,10 @@
 			isa = XCSwiftPackageProductDependency;
 			package = AAAA1111AAAA1111AAAA0003 /* XCRemoteSwiftPackageReference "Nuke" */;
 			productName = Nuke;
+		};
+		BBBB2222BBBB2222BBBB0002 /* LNPopupUI-Static */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = "LNPopupUI-Static";
 		};
 		EC30E8EE1B7F4DA83ADB8821 /* CLexbor */ = {
 			isa = XCSwiftPackageProductDependency;

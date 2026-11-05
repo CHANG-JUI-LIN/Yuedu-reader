@@ -1,0 +1,213 @@
+//
+//  UITabBar+LNPopupInheritedBarMetricsSupport.mm
+//  LNPopupController
+//
+//  Created by Léo Natan on 26/9/25.
+//  Copyright © 2015-2026 Léo Natan. All rights reserved.
+//
+
+#import "UITabBar+LNPopupInheritedBarMetricsSupport.h"
+#import "UIViewController+LNPopupSupportPrivate.h"
+#import "LNPopupBar+Private.h"
+#import "_LNPopupGlassUtils.h"
+#import "_LNPopupBase64Utils.hh"
+#import "_LNWeakRef.h"
+#import <objc/runtime.h>
+#import "_LNPopupAddressInfo.h"
+
+static BOOL __LNPopupTabBarSupportsMinimizationAPI = NO;
+static NSString* __LNFrameForHostedAccessoryViewKey;
+static NSString* __LNMinimizedStateDidChangeHandlerKey;
+static NSString* __LNIsMinimizedKey;
+
+BOOL LNPopupEnvironmentTabBarSupportsMinimizationAPI(void)
+{
+	return __LNPopupTabBarSupportsMinimizationAPI;
+}
+
+@implementation UITabBar (LNPopupInheritedBarMetricsSupport)
+
+static BOOL __ln_hackApplied = NO;
+
++ (void)load
+{
+	@autoreleasepool
+	{
+		__LNFrameForHostedAccessoryViewKey = LNPopupHiddenString("_frameForHostedAccessoryView");
+		__LNMinimizedStateDidChangeHandlerKey = LNPopupHiddenString("_minimizedStateDidChangeHandler");
+		__LNIsMinimizedKey = LNPopupHiddenString("_isMinimized");
+		
+		BOOL glass = LNPopupEnvironmentHasGlass();
+		BOOL m1 = [self instancesRespondToSelector:NSSelectorFromString(__LNFrameForHostedAccessoryViewKey)];
+		BOOL m2 = [self instancesRespondToSelector:NSSelectorFromString(__LNMinimizedStateDidChangeHandlerKey)];
+		BOOL m3 = [self instancesRespondToSelector:NSSelectorFromString(__LNIsMinimizedKey)];
+		
+		__LNPopupTabBarSupportsMinimizationAPI = glass && m1 && m2 && m3;
+		
+		if(glass)
+		{
+			if(@available(iOS 27, *))
+			{
+				Class cls = UITabBar.class;
+				SEL sel = NSSelectorFromString(__LNIsMinimizedKey);
+				Method m = LNSwizzleClassGetInstanceMethod(cls, sel);
+				method_setImplementation(m, imp_implementationWithBlock(^BOOL(NSObject* self) {
+					static NSString* key = LNPopupHiddenString("visualProvider.currentMorphTarget");
+					NSInteger currentMorphTarget = [[self valueForKeyPath:key] integerValue];
+					return currentMorphTarget == 2;
+				}));
+			}
+			else
+			{
+				Method m = LNSwizzleClassGetInstanceMethod(UITabBar.class, NSSelectorFromString(LNPopupHiddenString("_isPhotosApp")));
+				method_setImplementation(m, imp_implementationWithBlock(^ BOOL (id _self) {
+					return YES;
+				}));
+			}
+		}
+	}
+}
+
+- (BOOL)_ln_wantsMinimizedPopupBar
+{
+	if(__LNPopupTabBarSupportsMinimizationAPI == NO)
+	{
+		return NO;
+	}
+	
+	return [[self valueForKey:__LNIsMinimizedKey] boolValue];
+}
+
+- (CGRect)_ln_proposedFrameForPopupBar
+{
+	if(@available(iOS 27, *))
+	{
+		static NSString* key = LNPopupHiddenString("_hostedElementLayoutResolver");
+		CGRect (^hostedElementLayoutResolver)(NSInteger element) = [self valueForKey:key];
+		return hostedElementLayoutResolver(2);
+	}
+	
+	return [[self valueForKey:__LNFrameForHostedAccessoryViewKey] CGRectValue];
+}
+
+static const void* __LNPopupTabBarMinimizationDelegateKey = &__LNPopupTabBarMinimizationDelegateKey;
+
+- (id<_LNPopupTabBarMinimizationDelegate>)_ln_minimizationDelegate
+{
+	_LNWeakRef* ref = objc_getAssociatedObject(self, __LNPopupTabBarMinimizationDelegateKey);
+	if(ref.object == nil)
+	{
+		objc_setAssociatedObject(self, __LNPopupTabBarMinimizationDelegateKey, nil, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+	}
+	return ref.object;
+}
+
+- (void)_ln_setMinimizationDelegate:(id<_LNPopupTabBarMinimizationDelegate>)minimizationDelegate
+{
+	_LNWeakRef* ref = [_LNWeakRef refWithObject:minimizationDelegate];
+	objc_setAssociatedObject(self, __LNPopupTabBarMinimizationDelegateKey, ref, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+	
+	__weak auto weakTabBar = self;
+	void (^handler)(BOOL) = minimizationDelegate == nil ? (id)nil : (id)^(BOOL wasMinimized) {
+		__strong auto tabBar = weakTabBar;
+		[tabBar._ln_minimizationDelegate tabBar:tabBar didMinimize:wasMinimized];
+	};
+	
+	if(__LNPopupTabBarSupportsMinimizationAPI)
+	{
+		[self setValue:handler forKey:__LNMinimizedStateDidChangeHandlerKey];
+	}
+}
+
+@end
+
+@implementation UITabBarController (LNPopupInheritedBarMetricsSupport)
+
+- (NSDirectionalEdgeInsets)_ln_popupBarMarginsForPopupBar:(LNPopupBar*)popupBar
+{
+	NSDirectionalEdgeInsets barInsets = NSDirectionalEdgeInsetsZero;
+	
+	if(@available(iOS 18, *))
+	{
+		static NSString* outlineViewKey = LNPopupHiddenString("_outlineView");
+		UIView* outlineView = [self.sidebar valueForKey:outlineViewKey];
+		
+		if(outlineView != nil)
+		{
+			static NSString* tabContainerViewKey = LNPopupHiddenString("visualStyle.tabContainerView");
+			UIView* parentForPopupBar = [self valueForKeyPath:tabContainerViewKey];
+			
+			static NSString* sidebarLayoutKey = LNPopupHiddenString("sidebarLayout");
+			
+			NSUInteger sidebarLayout = [[parentForPopupBar valueForKey:sidebarLayoutKey] unsignedIntegerValue];
+			
+			if(sidebarLayout == 0 || LNPopupBar.isCatalystApp)
+			{
+				CGFloat extra = 0.0;
+				if(ln_unavailable(iOS 27.0, *)) {
+					extra = 8.0;
+				}
+				barInsets.leading = self.sidebar.isHidden ? 0 : outlineView.bounds.size.width + extra;
+			}
+		}
+	}
+	
+	NSDirectionalEdgeInsets floatingLayoutMargins = self.popupBar.floatingLayoutMargins;
+	
+#if defined(__IPHONE_27_1)
+	if(@available(iOS 27.1, *))
+	{
+		if(self.traitCollection.verticalBarEdge == UIVerticalBarEdgeLeading)
+		{
+			barInsets.leading = self.tabBar.bounds.size.width + 16 - floatingLayoutMargins.leading;
+		}
+		else if(self.traitCollection.verticalBarEdge == UIVerticalBarEdgeTrailing)
+		{
+			barInsets.trailing = self.tabBar.bounds.size.width + 16 - floatingLayoutMargins.trailing;
+		}
+	}
+#endif
+	
+	if(__LNPopupTabBarSupportsMinimizationAPI && popupBar.inheritsBottomBarMetrics && [self _ln_isFloatingTabBar] == NO)
+	{
+		CGRect proposedInTabBarCoordinates = self.tabBar._ln_proposedFrameForPopupBar;
+		CGRect proposedMinimizedFrame = [popupBar convertRect:proposedInTabBarCoordinates fromView:self.tabBar];
+		if(proposedMinimizedFrame.size.height == 0)
+		{
+			return NSDirectionalEdgeInsetsZero;
+		}
+				
+		CGFloat ltrLeading = proposedMinimizedFrame.origin.x;
+		CGFloat ltrTrailing = self.tabBar.superview.bounds.size.width - proposedMinimizedFrame.size.width - proposedMinimizedFrame.origin.x;
+		
+		UIUserInterfaceLayoutDirection layoutDirection = [UIView userInterfaceLayoutDirectionForSemanticContentAttribute:popupBar.semanticContentAttribute];
+		if(layoutDirection == UIUserInterfaceLayoutDirectionLeftToRight)
+		{
+			barInsets.leading = ltrLeading;
+			barInsets.trailing = ltrTrailing;
+		}
+		else
+		{
+			barInsets.leading = ltrTrailing;
+			barInsets.trailing = ltrLeading;
+		}
+		
+		barInsets.leading -= floatingLayoutMargins.leading;
+		barInsets.trailing -= floatingLayoutMargins.trailing;
+		
+		BOOL isPhone = popupBar.traitCollection.userInterfaceIdiom == UIUserInterfaceIdiomPhone;
+		BOOL isPad = popupBar.traitCollection.userInterfaceIdiom == UIUserInterfaceIdiomPad;
+		BOOL isRegular = popupBar.traitCollection.horizontalSizeClass == UIUserInterfaceSizeClassRegular;
+		BOOL compactButHasSafeArea = popupBar.traitCollection.horizontalSizeClass == UIUserInterfaceSizeClassCompact && popupBar.safeAreaInsets.left > 10;
+		
+		if(self.adjustsTabBarLayoutForPopupBar == NO && isPhone && NSProcessInfo.processInfo.operatingSystemVersion.majorVersion > 26 && (isRegular || compactButHasSafeArea) && !isPad)
+		{
+			barInsets.leading += 20;
+			barInsets.trailing += 20;
+		}
+	}
+	
+	return barInsets;
+}
+
+@end

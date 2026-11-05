@@ -1,0 +1,140 @@
+//
+//  UIViewController+LNPopupSupportPrivate.h
+//  LNPopupController
+//
+//  Created by Léo Natan on 2015-08-23.
+//  Copyright © 2015-2026 Léo Natan. All rights reserved.
+//
+
+#import <LNPopupController/UIViewController+LNPopupSupport.h>
+#import "_LNPopupBarBackgroundView.h"
+#import "_LNPopupSwizzlingUtils.h"
+
+CF_EXTERN_C_BEGIN
+
+@class LNPopupController;
+@class _LNPopupBottomBarSupport;
+
+NS_ASSUME_NONNULL_BEGIN
+
+extern LNPopupInteractionStyle _LNPopupResolveInteractionStyleFromInteractionStyle(LNPopupInteractionStyle style, LNPopupPresentationState publicState, BOOL * __nullable  isAutomatic);
+
+LNAlwaysInline
+UIEdgeInsets __LNEdgeInsetsSum(UIEdgeInsets userEdgeInsets, UIEdgeInsets popupUserEdgeInsets)
+{
+	UIEdgeInsets final = userEdgeInsets;
+	final.bottom += popupUserEdgeInsets.bottom;
+	final.top += popupUserEdgeInsets.top;
+	final.left += popupUserEdgeInsets.left;
+	final.right += popupUserEdgeInsets.right;
+	
+	return final;
+}
+
+extern BOOL __ln_popup_suppressViewControllerLifecycle;
+
+UIEdgeInsets _LNPopupSafeAreaInsets(__kindof UIViewController* self);
+void _LNPopupSupportSetPopupInsetsForViewController(__kindof UIViewController* controller, LNPopupBar* popupBar, BOOL layout, UIEdgeInsets popupEdgeInsets);
+void __LNPopupUpdateChildInsets(__kindof UIViewController* controller);
+
+@interface NSObject (SwiftUISupport)
+
+- (BOOL)_ln_isObjectFromSwiftUI;
+
+@end
+
+@interface UIViewController (LNPopupSupport)
+
+@property (nonatomic, retain, readwrite) LNPopupItem* popupItem;
+@property (nullable, nonatomic, weak, readwrite) UIViewController* popupPresentationContainerViewController;
+@property (nullable, nonatomic, strong, readwrite) UIViewController* popupContentViewController;
+
+- (BOOL)_isContainedInPopupController;
+- (BOOL)_isContainedInOpenPopupController;
+- (BOOL)_isContainedInPopupControllerOrDeallocated;
+
+- (nullable UIPresentationController*)nonMemoryLeakingPresentationController;
+
+@property (nullable, nonatomic, weak, setter=_ln_setDiscoveredTransitionView:, getter=_ln_discoveredTransitionView) LNPopupImageView* ln_discoveredTransitionView;
+
+- (nullable UIView*)_ln_transitionViewForPopupTransitionFromPresentationState:(LNPopupPresentationState)fromState toPresentationState:(LNPopupPresentationState)toState view:(out id<LNPopupTransitionView> _Nonnull __strong * _Nonnull)outView;
+
+@end
+
+@interface UIViewController (LNCustomContainerPopupSupport)
+
+@property (nonatomic, strong, readonly, getter=_ln_popupController) LNPopupController* ln_popupController;
+- (LNPopupController*)_ln_popupController_nocreate;
+
+@property (nonnull, nonatomic, strong, readonly, getter=_ln_bottomBarSupport) _LNPopupBottomBarSupport* bottomBarSupport;
+- (nullable _LNPopupBottomBarSupport *)_ln_bottomBarSupport_nocreate;
+
+- (CGRect)defaultFrameForBottomDockingView_internal;
+- (CGRect)_defaultFrameForBottomDockingViewForPopupBar:(LNPopupBar*)LNPopupBar;
+
+- (nullable UIView *)bottomDockingViewForPopup_internal;
+- (nullable UIView *)bottomDockingViewForPopup_nocreateOrDeveloper;
+- (nonnull UIView *)bottomDockingViewForPopup_internalOrDeveloper;
+
+- (CGFloat)_ln_popupOffsetForPopupBar:(LNPopupBar*)popupBar;
+- (CGFloat)_ln_safeAreaCorrectiveOffset:(LNPopupBar*)popupBar;
+- (BOOL)_ln_wantsForcedAnimatedPopupBarLayout;
+
++ (void)_ln_beginTransitioningLockWithWindow:(UIWindow*)window userInteractionsEnabled:(BOOL)userInteractionEnabled allowedViews:(NSArray* __nullable)allowedViews lockRotation:(BOOL)lockRotation;
++ (void)_ln_endTransitioningLockWithWindow:(UIWindow*)window unlockingRotation:(BOOL)unlockRotation;
+
+- (BOOL)_ln_isPartOfPrimarySplit;
+
+@end
+
+@interface UIViewController (LNPopupLayout)
+
+- (void)_ln_updateSafeAreaInsets;
+
+- (BOOL)_ln_shouldDisplayBottomShadowViewDuringTransition;
+
+- (BOOL)_ln_reallyShouldExtendPopupBarUnderSafeArea;
+
+- (void)_ln_setPopupPresentationState:(LNPopupPresentationState)newState;
+
+- (BOOL)_ln_ignoringLayoutDuringTransition;
+- (void)_ln_setIgnoringLayoutDuringTransition:(BOOL)ignoringLayoutDuringTransition;
+
+- (_LNPopupBarBackgroundView*)_ln_bottomBarExtension_nocreate;
+- (_LNPopupBarBackgroundView*)_ln_bottomBarExtension;
+
+- (void)_userFacing_viewWillAppear:(BOOL)animated;
+- (void)_userFacing_viewIsAppearing:(BOOL)animated;
+- (void)_userFacing_viewDidAppear:(BOOL)animated;
+- (void)_userFacing_viewWillDisappear:(BOOL)animated;
+- (void)_userFacing_viewDidDisappear:(BOOL)animated;
+
+- (BOOL)_ln_shouldPopupContentAnyFadeForTransition;
+- (BOOL)_ln_shouldPopupContentViewFadeForTransition;
+
+- (nullable UIViewController*)_ln_childViewControllerForStatusBarLogic __attribute__((objc_direct));
+
+- (void)_layoutPopupBarOrderForUse;
+
+- (void)_ln_updatePopupBarContainerInsets;
+- (void)_ln_layoutPopupBarAndContent;
+
+@end
+
+@interface _LN_UIViewController_AppearanceControl : UIViewController @end
+
+@interface UITabBarController (LNPopupSupportPrivate)
+
+- (BOOL)_ln_isFloatingTabBar;
+
+@end
+
+@interface UINavigationController (LNPopupSupportPrivate)
+
+- (BOOL)_ln_isToolbarHiddenOrSwiftUIBuggyToolbar;
+
+@end
+
+NS_ASSUME_NONNULL_END
+
+CF_EXTERN_C_END

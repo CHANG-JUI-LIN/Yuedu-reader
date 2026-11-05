@@ -1,0 +1,124 @@
+//
+//  UIView+LNPopupSupportPrivate.h
+//  LNPopupController
+//
+//  Created by Léo Natan on 2020-08-01.
+//  Copyright © 2015-2026 Léo Natan. All rights reserved.
+//
+
+#import <UIKit/UIKit.h>
+
+@class LNPopupBar;
+@class LNPopupController;
+
+CF_EXTERN_C_BEGIN
+NS_ASSUME_NONNULL_BEGIN
+
+typedef struct {
+	CGSize leftBottom;
+	CGSize rightBottom;
+	CGSize rightTop;
+	CGSize leftTop;
+} LNPopupViewCorners;
+
+extern UIEdgeInsets __LNPopupEnvironmentLayoutInsets(UIView* containerView, BOOL limitToSafeAreas);
+
+#if TARGET_OS_MACCATALYST
+#define __LNPopupScaledFloat(value, t) (value * 0.77)
+#else
+#define __LNPopupScaledFloat(value, t) (value)
+#endif
+
+typedef void (^LNInWindowBlock)(dispatch_block_t);
+
+@interface NSObject (LNPopupSupportPrivate)
+
+@property (nonatomic, weak, nullable, getter=_ln_attachedPopupController, setter=_ln_setAttachedPopupController:) LNPopupController* attachedPopupController;
+
+@end
+
+UIEdgeInsets _LNEdgeInsetsFromDirectionalEdgeInsets(UIView* forView, NSDirectionalEdgeInsets edgeInsets);
+NSDirectionalEdgeInsets _LNDirectionalEdgeInsetsFromEdgeInsets(UIView* forView, UIEdgeInsets edgeInsets);
+
+@interface UIView ()
+
+- (void)_ln_updateSafeAreaInsets:(UIEdgeInsets)newSafeAreaInsets;
+
+@end
+
+@interface UIView (LNPopupSupportPrivate)
+
+@property (nonatomic, readonly, nullable) UIViewController* _ln_closestController;
+
+- (void)_ln_triggerBarAppearanceRefreshIfNeededTriggeringLayout:(BOOL)layout;
+- (BOOL)_ln_scrollEdgeAppearanceRequiresFadeForPopupBar:(LNPopupBar*)popupBar;
+
+- (void)_ln_letMeKnowWhenViewInWindowHierarchy:(LNInWindowBlock)block;
+- (void)_ln_forgetAboutIt;
+- (nullable NSString*)_ln_effectGroupingIdentifierIfAvailable;
+
+- (void)_ln_freezeInsets;
+
+- (BOOL)_ln_isAncestorOfView:(UIView *)view;
+- (nullable UIView*)_ln_firstSubviewPassingTest:(BOOL(^)(UIView* viewToTest))test includingSelf:(BOOL)includeSelf;
+- (nullable UIView*)_ln_lastSubviewPassingTest:(BOOL(^)(UIView* viewToTest))test includingSelf:(BOOL)includeSelf;
+- (nullable UIView*)_ln_firstDescendantPassingTest:(BOOL(^)(UIView* viewToTest))test includingSelf:(BOOL)includeSelf;
+
+- (void)_ln_removeInteractionsFromSubviewTree;
+
+@property (nonatomic, getter=_ln_corners, setter=_ln_setCorners:) LNPopupViewCorners corners;
+@property (nonatomic, readonly) CGFloat _ln_simulatedCornerRadiusFromCorners;
+
+- (CGFloat)_ln_whatsMyConcentricRadiusForCorner:(UIRectCorner)corner;
+
+@end
+
+@interface UIView ()
+
+- (id)_lnpopup_scrollEdgeAppearance;
+
+@end
+
+@interface UITabBar ()
+
+@property (nonatomic, getter=_ln_ignoringLayoutDuringTransition, setter=_ln_setIgnoringLayoutDuringTransition:) BOOL _ln_ignoringLayoutDuringTransition;
+
+@end
+
+@interface UIWindow (LNPopupSupport)
+
+@property (nonatomic, strong, readonly) UIEvent* _ln_currentEvent;
+
+@property (nonatomic, getter=_ln_isLockedForPopupTransition, setter=_ln_setLockedForPopupTransition:) BOOL lockedForPopupTransition;
+@property (nullable, nonatomic, copy, getter=_ln_popupInteractionOnly, setter=_ln_setPopupInteractionOnly:) NSArray* popupInteractionOnly;
+
+@end
+
+@interface UIScrollView (LNPopupSupportPrivate)
+
+- (BOOL)_ln_hasHorizontalContent;
+- (BOOL)_ln_hasVerticalContent;
+- (BOOL)_ln_scrollingOnlyVertically;
+- (BOOL)_ln_isAtTop;
+
+@end
+
+@interface _LNPopupBarBackgroundGroupNameOverride: NSObject <UIObjectTraitDefinition> @end
+
+@interface UIViewPropertyAnimator (KeyFrameSupport)
+
+- (void)ln_addAnimations:(void (^)(void))animation delayFactor:(CGFloat)delayFactor durationFactor:(CGFloat)durationFactor;
+
+@end
+
+@interface UIView ()
+
++ (void)_ln_fixUIHostingViewHitTest;
++ (void)_ln_animateUsingSwiftUIWithDuration:(NSTimeInterval)duration animations:(void(^)(void))animations completion:(void(^ __nullable)(void))completion;
++ (void)_ln_animateUsingSwiftUIWithDuration:(NSTimeInterval)duration delay:(NSTimeInterval)delay animations:(void(^)(void))animations completion:(void(^ __nullable)(void))completion;
++ (void)_ln_animateInteractiveUsingSwiftUIWithDuration:(NSTimeInterval)duration animations:(void(^)(void))animations completion:(void(^ __nullable)(void))completion;
+
+@end
+
+NS_ASSUME_NONNULL_END
+CF_EXTERN_C_END

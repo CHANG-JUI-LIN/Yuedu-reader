@@ -1,0 +1,18 @@
+//
+//  LNPopupInteractionPanGestureRecognizer.h
+//  LNPopupController
+//
+//  Created by Léo Natan on 2017-07-15.
+//  Copyright © 2015-2026 Léo Natan. All rights reserved.
+//
+
+#import <UIKit/UIKit.h>
+#import <LNPopupController/LNPopupContentView.h>
+
+@class LNPopupController;
+
+@interface LNPopupInteractionPanGestureRecognizer ()
+
+- (instancetype)initWithTarget:(id)target action:(SEL)action popupController:(LNPopupController*)popupController;
+
+@end

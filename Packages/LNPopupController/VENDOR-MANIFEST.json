@@ -1,0 +1,33 @@
+{
+  "upstream": {
+    "repository": "https://github.com/LeoNatan/LNPopupController.git",
+    "version": "4.6.2",
+    "revision": "0e130bcc3e88d4b2134f0afdbf034ea93f6ab75d",
+    "license": "MIT"
+  },
+  "vendored": [
+    "LICENSE",
+    "LNPopupController/LNPopupController.h",
+    "LNPopupController/include",
+    "LNPopupController/LNPopupController",
+    "LNPopupController+Swift"
+  ],
+  "omitted": [
+    "LNPopupController/Info.plist",
+    "LNPopupController/LNPopupController.xcodeproj",
+    "LNPopupControllerExample",
+    "Supplements",
+    ".github",
+    "README.md",
+    "releaseVersion.sh",
+    "update_copyright.sh"
+  ],
+  "why": "The upstream repositories carry their demo apps' screenshots and videos in their history: resolving them as remote packages cloned about 2 GB (LNPopupUI 930 MB, LNPopupController about as much), which held every clean build, Xcode Cloud's included, for half an hour and more (2026-11-05), and would need four more repositories authorized in Xcode Cloud. Only the sources are vendored. A dependency of LNPopupUI.",
+  "patches": [
+    {
+      "file": "Package.swift",
+      "change": "LNSystemMarqueeLabel by path (../LNSystemMarqueeLabel) instead of by URL; the exclude list drops Info.plist and LNPopupController.xcodeproj, which are not vendored."
+    }
+  ],
+  "removeWhen": "Delete these four Packages/LN* folders and add https://github.com/LeoNatan/LNPopupUI as a remote package again, if its history is ever trimmed."
+}

@@ -360,6 +360,8 @@ struct HomeView: View {
             for: book, isRegularWidth: sizeClass == .regular
         )
         AppLogger.info("⟐ openBook tap bookID=\(book.id) title=\(book.title) pipelineKind=\(book.resolvedPipelineKind) useCard=\(usesCardTransition) hasGeometry=\(sourceGeometry != nil)")
+        // An audiobook's player grows out of the now-playing bar, as Apple Books opens one.
+        if NowPlayingHub.shared.openIfAudiobook(book, store: store) { return }
         if usesCardTransition {
             // Re-entrancy guard: once a card open is staged (readerBookID set)
             // or the reader is already on screen, ignore further shelf taps.
@@ -628,7 +630,7 @@ struct HomeView: View {
             }
             .sheet(isPresented: $showAddToGroupSheet) {
                 AdaptiveSheetContainer(maxWidth: DSLayout.readableNarrowWidth) {
-                    BookshelfAddToGroupSheet(groups: groupBookCounts) { group in
+                    BookshelfAddToGroupSheet(groups: store.groupBookCounts) { group in
                         addSelection(toGroup: group)
                     }
                 }
@@ -774,7 +776,8 @@ struct HomeView: View {
                     #endif
             }
         }
-        // Audiobooks and the iPad shell retain their original modal presentation.
+        // The iPad shell and videos retain their original modal presentation, and so does an
+        // audiobook tapped while something covers the tabs (`NowPlayingHub.openIfAudiobook`).
         .fullScreenCover(
             isPresented: Binding(
                 get: { modalReaderBookId != nil },
@@ -981,13 +984,6 @@ struct HomeView: View {
                 }
             }
         }
-    }
-
-    /// The shelf's groups in the group bar's order, each with how many books it holds.
-    private var groupBookCounts: [(name: String, count: Int)] {
-        let counts = Dictionary(grouping: store.books.filter { !$0.group.isEmpty }, by: \.group)
-            .mapValues(\.count)
-        return store.allGroups.map { (name: $0, count: counts[$0] ?? 0) }
     }
 
     /// 重命名分組 from a folder's •••: the alert opens on the group's name.
@@ -2511,7 +2507,8 @@ private extension View {
 
 /// 加入分組: 新建分組 first, which names a group in an alert and puts the books straight in,
 /// then each of the shelf's groups with how many books it holds, and 取消 on its own below.
-private struct BookshelfAddToGroupSheet: View {
+/// The bookshelf's selection and the audiobook player's ••• both move books with it.
+struct BookshelfAddToGroupSheet: View {
     let groups: [(name: String, count: Int)]
     let onChoose: (String) -> Void
 

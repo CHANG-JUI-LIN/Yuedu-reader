@@ -40,6 +40,48 @@ enum BookshelfCoverStyle {
         return image
     }
 
+    /// The cover a shelf card draws for `book`, as one bitmap, for a surface that takes a
+    /// picture rather than a view: the now-playing bar. Resolved as the card resolves it
+    /// (`BookshelfCoverPlan.shelf`): the book's own cover, a catalog cover, the 預設封面, then
+    /// the generated one, laid out at `size` so its lettering is the shelf row's. Nil only when
+    /// a load was superseded or cancelled.
+    @MainActor
+    static func bitmap(
+        for book: ReadingBook,
+        colorScheme: ColorScheme,
+        filledCover: String?,
+        size: CGSize,
+        scale: CGFloat
+    ) async -> UIImage? {
+        let plan = BookshelfCoverPlan.shelf(for: book, colorScheme: colorScheme, filledCover: filledCover)
+        guard let pixels = CoverPixelSize.fitting(pointSize: size, scale: scale) else { return nil }
+        let pipeline = CoverImagePipeline.shared
+        if let own = plan.ownCover {
+            switch await pipeline.image(for: CoverImageRequest(source: own, size: pixels)) {
+            case .image(let image): return image
+            case .unavailable: break
+            case .superseded, .cancelled: return nil
+            }
+        }
+        // `BookCoverImage`'s chain for a catalog book: its remote cover, then the 預設封面
+        // seeded by the book's id — the plan's `defaultCover` — then the generated one.
+        if plan.catalogFallback != nil, let coverURL = book.coverUrl,
+           let cover = await BookCoverImage.fetchCover(
+               coverURL: coverURL, sourceBaseURL: nil, sourceHeaders: [:],
+               sourceID: book.bookSourceId, session: BookCoverLoader.remoteSession(for: book)
+           ) {
+            return cover
+        }
+        if let fallback = plan.defaultCover {
+            switch await pipeline.image(for: CoverImageRequest(source: fallback, size: pixels)) {
+            case .image(let image): return image
+            case .unavailable: break
+            case .superseded, .cancelled: return nil
+            }
+        }
+        return generatedSnapshot(for: book, colorScheme: colorScheme, sourceSize: size)
+    }
+
     /// Bitmap form for the open-book transition, which lifts a picture rather than
     /// a view and so cannot take `artwork(for:)`.
     ///

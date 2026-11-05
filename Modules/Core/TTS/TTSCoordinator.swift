@@ -33,21 +33,21 @@ enum NowPlayingSource {
     case audiobook  // app-global audiobook playback (persists across all pages)
 }
 
-/// Shared hub that backs the `NowPlayingMiniPlayer` mini-player and routes its
-/// controls to whichever audio engine is active — TTS narration inside the reader,
-/// or the long-lived `AudiobookPlayer` that keeps playing across every page.
+/// Shared hub that backs the now-playing surfaces and routes their controls to whichever
+/// audio engine is active — TTS narration inside the reader, or the long-lived
+/// `AudiobookPlayer` that keeps playing across every page.
 ///
 /// Two visibility surfaces:
-/// - `isVisible`: the in-reader TTS mini-player (`.reader` placement), allowed while a
-///   reader is on screen.
-/// - `showsGlobalBar`: the app-wide audiobook mini-player (`.global` placement),
-///   shown on any page while an audiobook is loaded. The same placement shows narration
-///   whose reader closed mid-narration (`holdsNarrationPastReader`): without it, closing
-///   the book left the narration playing with no control for it on the shelf.
+/// - `isVisible`: the reader's capsule (`NowPlayingMiniPlayer`), allowed while a reader is
+///   on screen.
+/// - `showsGlobalBar`: the app root's bar (`NowPlayingPopupHost`), shown over every tab while
+///   an audiobook is loaded. It shows narration whose reader closed mid-narration too
+///   (`holdsNarrationPastReader`): without it, closing the book left the narration playing
+///   with no control for it on the shelf.
 ///
-/// A reader on screen draws the audiobook in its own `.reader` placement, so the `.global`
-/// one steps aside while one is (`readerHostsPlayer`). 書架 pushes the reader inside its tab,
-/// under the app root's `.global` overlay: without that, both drew — two capsules.
+/// A reader on screen draws the audiobook in its own capsule, so the root's bar steps aside
+/// while one is (`readerHostsPlayer`). 書架 pushes the reader inside its tab, under the root's
+/// bar: without that, both drew.
 @MainActor
 final class NowPlayingHub: ObservableObject {
     static let shared = NowPlayingHub()
@@ -63,9 +63,16 @@ final class NowPlayingHub: ObservableObject {
     @Published private(set) var coverImage: UIImage?
     /// Book title, used to render the title-card placeholder disc when there is no cover art.
     @Published private(set) var coverTitle: String = ""
-    /// What the global bar's artwork opened, which the app root presents full screen over every
-    /// tab. A reader's bar presents what it opens over that reader instead (`openFromArtwork()`).
+    /// The narrated book the app root's bar reopened, which the root presents full screen over
+    /// every tab. A reader's capsule presents what it opens over that reader instead
+    /// (`openFromArtwork()`). An audiobook's player opens out of the bar itself (`isPlayerOpen`).
     @Published var appRootDestination: ArtworkDestination?
+    /// The audiobook's player is open out of the app root's bar — Apple Books' player, which
+    /// grows out of its bar and folds back into it (`NowPlayingPopupHost`).
+    @Published var isPlayerOpen = false
+    /// The transient audiobook playing was opened from its own 作品詳情 (`AudiobookDetailView`):
+    /// the player's cover and 作品詳情 fold the player back onto that page.
+    @Published private(set) var playerReturnsToDetailPage = false
 
     /// What the mini-player's artwork opens, full screen.
     enum ArtworkDestination: Hashable, Identifiable {
@@ -84,7 +91,7 @@ final class NowPlayingHub: ObservableObject {
     /// next reader can appear before the one it replaces disappears.
     private var readerOverlayOwners: Set<UUID> = []
     private var allowsReaderOverlay: Bool { !readerOverlayOwners.isEmpty }
-    /// A reader on screen hosts the mini-player, so the app root's `.global` one stays hidden.
+    /// A reader on screen hosts the mini-player, so the app root's bar stays hidden.
     @Published private(set) var readerHostsPlayer = false
 
     /// Whether a mini-player placement draws. Exactly one surface shows audio at a time: the
@@ -273,6 +280,18 @@ final class NowPlayingHub: ObservableObject {
     /// hint says both follow this.
     var artworkReopensNarratedBook: Bool { source == .tts && holdsNarrationPastReader }
 
+    /// The book the app root's mini player stands for, which its long-press menu acts on: the
+    /// audiobook loaded, or the book a closed reader is still narrating. Nil while the root's
+    /// bar has nothing to show — narration a reader on screen still drives belongs to that
+    /// reader's capsule.
+    var nowPlayingBookID: UUID? {
+        switch source {
+        case .audiobook: audiobookBookId
+        case .tts: holdsNarrationPastReader ? heldNarration?.narrationBookID : nil
+        case .none: nil
+        }
+    }
+
     /// The mini-player's artwork: what it opens, for the mini-player's host to present over
     /// itself. Narration whose reader has closed reopens its book, whose reader takes the narration
     /// over (`ReaderView.init`); an audiobook opens its player. The reader narrating opens its own
@@ -298,6 +317,75 @@ final class NowPlayingHub: ObservableObject {
         case .none:
             return nil
         }
+    }
+
+    /// What tapping the app root's bar opens: an audiobook's player out of the bar, or the
+    /// book a closed reader is still narrating, full screen — its reader takes the narration
+    /// over.
+    func openFromRootBar() {
+        switch openFromArtwork() {
+        case .audiobookPlayer?:
+            isPlayerOpen = true
+        case .narratedBook(let bookID)?:
+            appRootDestination = .narratedBook(bookID)
+        case nil:
+            break
+        }
+    }
+
+    /// Whether the app root's tabs are on top — nothing presented over them — so a player
+    /// opened now grows out of the root's bar where it can be seen. Under a sheet or a cover it
+    /// would open behind it; such a page presents the player over itself instead.
+    static var rootTabsAreFrontmost: Bool {
+        let scene = UIApplication.shared.connectedScenes
+            .compactMap { $0 as? UIWindowScene }
+            .first { $0.activationState == .foregroundActive }
+        guard let root = scene?.keyWindow?.rootViewController else { return false }
+        return root.presentedViewController == nil
+    }
+
+    /// Plays `book` — an audiobook — and opens its player out of the app root's bar, as Apple
+    /// Books opens an audiobook tapped in its library. Every page that opens an audiobook comes
+    /// here while the tabs are on top, rather than pushing the player into its tab, where the tab
+    /// bar and this bar were drawn over it. Returns false, having done nothing, when something is
+    /// presented over the tabs: the page presents the player over itself then.
+    @discardableResult
+    func openAudiobookPlayer(
+        _ book: ReadingBook,
+        store: BookStore,
+        transient: Bool = false,
+        fromDetailPage: Bool = false
+    ) -> Bool {
+        guard Self.rootTabsAreFrontmost else {
+            AppLogger.info("⟐ now playing open \(book.id) under a presentation: the page presents the player")
+            return false
+        }
+        CrashContext.setKey("current_book", "\(book.title) [\(book.id.uuidString.prefix(8))]")
+        CrashContext.setKey("current_book_kind", "\(book.resolvedPipelineKind)")
+        CrashContext.breadcrumb("open audiobook player: \(book.title)")
+        let player = AudiobookPlayer.shared
+        if transient {
+            player.startTransient(book: book, store: store)
+        } else {
+            // The shelf, 探索 and search hand over the shelf's record, which leaves the table of
+            // contents out (`BookStore.shelfRecord`): started with it, the player had no
+            // chapter to play and showed 未找到音訊. The player page used to read the whole book
+            // itself (`AudiobookReaderView.onAppear`); every open now comes through here.
+            player.start(book: store.readingBook(id: book.id) ?? book, store: store)
+            // An open is the book's newest, as a reader's is (`BookReaderView.onAppear`).
+            store.updateLastOpened(bookId: book.id)
+        }
+        playerReturnsToDetailPage = transient && fromDetailPage
+        isPlayerOpen = true
+        return true
+    }
+
+    /// `openAudiobookPlayer` for a shelf book that may be an audiobook: true when it was one
+    /// and its player opened; false otherwise, and the caller opens the book as it opens any.
+    @discardableResult
+    func openIfAudiobook(_ book: ReadingBook, store: BookStore) -> Bool {
+        guard book.resolvedPipelineKind == .audio else { return false }
+        return openAudiobookPlayer(book, store: store)
     }
 
     /// Stop TTS narration only (used when an audiobook takes over the audio session).
@@ -351,7 +439,8 @@ final class NowPlayingHub: ObservableObject {
         coverTitle = ""
         if source == .audiobook { source = .none }
         showsGlobalBar = false
-        if case .audiobookPlayer = appRootDestination { appRootDestination = nil }
+        isPlayerOpen = false
+        playerReturnsToDetailPage = false
         resetPlaybackFields()
     }
 
@@ -374,6 +463,16 @@ final class NowPlayingHub: ObservableObject {
         }
     }
 
+    /// Paused, not toggled: 標記為已讀完 pauses first, since a place saved while playing would
+    /// write the progress back over it.
+    func pause() {
+        switch source {
+        case .tts: coordinator?.pause()
+        case .audiobook: audiobook?.pause()
+        case .none: break
+        }
+    }
+
     func skipBackward() {
         switch source {
         case .tts: coordinator?.skipBackward()
@@ -386,6 +485,17 @@ final class NowPlayingHub: ObservableObject {
         switch source {
         case .tts: coordinator?.skipForward()
         case .audiobook: audiobook?.skipForward()
+        case .none: break
+        }
+    }
+
+    /// The next chapter, for either source: Apple Music's ⏭ on the app root's bar before
+    /// iOS 26.1, where an audiobook's or a narrated book's chapter is the track.
+    func nextChapter() {
+        switch source {
+        // The reader's next chapter (`onNextTrackRequested`), as the lock screen's ⏭ is.
+        case .tts: coordinator?.skipForward()
+        case .audiobook: audiobook?.nextChapter()
         case .none: break
         }
     }

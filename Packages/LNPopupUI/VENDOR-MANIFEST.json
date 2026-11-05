@@ -1,0 +1,29 @@
+{
+  "upstream": {
+    "repository": "https://github.com/LeoNatan/LNPopupUI.git",
+    "version": "4.0.4",
+    "revision": "fafaf6c8f506c4111cbb7ee2810122753b373b58",
+    "license": "MIT"
+  },
+  "vendored": [
+    "LICENSE",
+    "Sources"
+  ],
+  "omitted": [
+    "LNPopupUIExample",
+    "Supplements",
+    ".github",
+    "README.md",
+    "releaseVersion.sh",
+    "update_copyright.sh",
+    ".gitmodules"
+  ],
+  "why": "The upstream repositories carry their demo apps' screenshots and videos in their history: resolving them as remote packages cloned about 2 GB (LNPopupUI 930 MB, LNPopupController about as much), which held every clean build, Xcode Cloud's included, for half an hour and more (2026-11-05), and would need four more repositories authorized in Xcode Cloud. Only the sources are vendored. Yuedu uses LNPopupUI for the now-playing bar the audiobook player opens out of and folds back into (NowPlayingPopupHost).",
+  "patches": [
+    {
+      "file": "Package.swift",
+      "change": "LNPopupController and LNSwiftUIUtils by path (../LNPopupController, ../LNSwiftUIUtils) instead of by URL; upstream keeps these lines commented out for its own local development."
+    }
+  ],
+  "removeWhen": "Delete these four Packages/LN* folders and add https://github.com/LeoNatan/LNPopupUI as a remote package again, if its history is ever trimmed."
+}
