@@ -4,6 +4,11 @@ struct TXTReaderPreparation: Sendable {
     let mappedTextFile: TXTMappedTextFile
     let cachedChapterIndexes: [TXTMappedChapterIndex]?
     let previousChapterIndexes: [TXTMappedChapterIndex]?
+    /// The cache version `previousChapterIndexes` came from: v5/v6 rendered without Aozora
+    /// markup removal, v7 with it (an index built from other chapter rules).
+    let previousIndexVersion: Int?
+    /// The chapter rules this book is indexed with; their fingerprint keys the cache.
+    let ruleSet: TXTTocRuleSet
     let previewText: String
     let bookId: UUID
     let bookTitle: String
@@ -18,7 +23,8 @@ enum TXTReaderPreparationService {
     static func prepare(
         url: URL,
         bookId: UUID,
-        bookTitle: String
+        bookTitle: String,
+        ruleSet: TXTTocRuleSet = TXTTocRuleStore.currentRuleSet()
     ) throws -> TXTReaderPreparation {
         let mappedTextFile = try TXTFileReader.readMappedTextFile(url: url)
         let fileSize = mappedTextFile.byteCount
@@ -30,8 +36,14 @@ enum TXTReaderPreparationService {
             fingerprint: fingerprint,
             encoding: encoding
         )
-        let cached = snapshot?.version == TXTChapterParser.indexVersion ? snapshot?.indexes : nil
-        let previous = snapshot.flatMap { [5, 6].contains($0.version) ? $0.indexes : nil }
+        // Current only when built by this version from these rules. An index from other rules
+        // (edited in 設定, or the hard-coded patterns before them, with no fingerprint) is
+        // re-split like a v5/v6 one: its chapter numbers are what saved locations refer to.
+        let isCurrent = snapshot.map {
+            $0.version == TXTChapterParser.indexVersion && $0.rulesFingerprint == ruleSet.fingerprint
+        } ?? false
+        let cached = isCurrent ? snapshot?.indexes : nil
+        let previous = isCurrent ? nil : snapshot?.indexes
 
         let previewText: String
         if cached == nil, previous == nil {
@@ -49,6 +61,8 @@ enum TXTReaderPreparationService {
             mappedTextFile: mappedTextFile,
             cachedChapterIndexes: cached,
             previousChapterIndexes: previous,
+            previousIndexVersion: isCurrent ? nil : snapshot?.version,
+            ruleSet: ruleSet,
             previewText: previewText,
             bookId: bookId,
             bookTitle: bookTitle,
@@ -73,7 +87,8 @@ enum TXTReaderPreparationService {
         ) {
             TXTChapterParser.parseMappedChapterIndexes(
                 preparation.mappedTextFile,
-                bookTitle: preparation.bookTitle
+                bookTitle: preparation.bookTitle,
+                rules: preparation.ruleSet
             )
         }
         return indexes

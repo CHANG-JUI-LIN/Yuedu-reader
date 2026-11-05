@@ -23,7 +23,13 @@ enum TXTReaderIndexMigrationService {
         let position: CoreTextReadingPosition?
         let originalBookmarks: [Bookmark]
         let bookmarks: [Bookmark]
+        /// v3: the chapter rules `indexes` came from. nil in v1/v2 journals, whose indexes
+        /// the hard-coded patterns built, so the next open re-splits them again.
+        let rulesFingerprint: String?
     }
+
+    /// Journal version written now; v1 and v2 remain replayable.
+    private static let journalVersion = 3
 
     static func complete(
         _ preparation: TXTReaderPreparation,
@@ -35,7 +41,7 @@ enum TXTReaderIndexMigrationService {
             .appendingPathComponent("\(preparation.bookId.uuidString).txt-reindex.json")
         if FileManager.default.fileExists(atPath: journalURL.path) {
             let journal = try JSONDecoder().decode(Journal.self, from: Data(contentsOf: journalURL))
-            guard [1, 2].contains(journal.version), journal.bookId == preparation.bookId,
+            guard [1, 2, journalVersion].contains(journal.version), journal.bookId == preparation.bookId,
                   journal.fingerprint == preparation.fingerprint, journal.fileSize == preparation.fileSize,
                   journal.encoding == preparation.encoding.rawValue else {
                 throw TXTLocationMigration.Failure.missingSourceIdentity
@@ -71,36 +77,49 @@ enum TXTReaderIndexMigrationService {
         let indexes = await Task.detached(priority: .userInitiated) {
             TXTReaderPreparationService.buildChapterIndexes(for: preparation)
         }.value
+        if let unchanged = try publishIfUnchanged(indexes, preparation: preparation) {
+            return Result(indexes: unchanged, restoredPosition: originalPosition)
+        }
         let old = preparation.previousChapterIndexes ?? indexes
-        let mapping = try TXTLocationMigration(file: preparation.mappedTextFile, oldIndexes: old, newIndexes: indexes)
+        // v7 indexes (re-split because the chapter rules changed) rendered with Aozora markup
+        // removed, as the current builder does; v5/v6 rendered the markup as text.
+        let oldParsesAozora = preparation.previousIndexVersion == TXTChapterParser.indexVersion
+        let mapping = try TXTLocationMigration(file: preparation.mappedTextFile, oldIndexes: old, newIndexes: indexes,
+                                               oldParsesAozoraMarkup: oldParsesAozora)
         let oldBuilder = TXTLazyAttributedStringBuilder(mappedTextFile: preparation.mappedTextFile,
-                                                       chapterIndexes: old, parsesAozoraMarkup: false)
+                                                       chapterIndexes: old, parsesAozoraMarkup: oldParsesAozora)
         let newBuilder = TXTLazyAttributedStringBuilder(mappedTextFile: preparation.mappedTextFile, chapterIndexes: indexes)
         var oldStrings: [Int: String] = [:]
         var newStrings: [Int: String] = [:]
 
+        func newString(_ index: Int) async throws -> String {
+            if let built = newStrings[index] { return built }
+            let built = try await newBuilder.buildChapter(
+                at: index, settings: settings, themeTextColor: .label, themeBackgroundColor: .systemBackground
+            ).attributedString.string
+            newStrings[index] = built
+            return built
+        }
+
         func remap(_ position: CoreTextReadingPosition) async throws -> CoreTextReadingPosition {
-            let target = try mapping.destination(for: position.spineIndex)
-            // Source identity preserves ordinary TXT offsets. Markup removal needs
-            // the historical and current rendered strings even at equal boundaries.
-            if old[position.spineIndex].byteRange == indexes[target].byteRange,
-               old[position.spineIndex].title == indexes[target].title,
-               !AozoraMarkupParser.parse(preparation.mappedTextFile.string(in: old[position.spineIndex].byteRange)).hasChanges {
+            // Source identity preserves offsets when the rendering is unchanged too: the
+            // same builder, or no Aozora markup for the older one to have shown.
+            if let same = mapping.identicalChapter(for: position.spineIndex),
+               oldParsesAozora || !AozoraMarkupParser.parse(
+                   preparation.mappedTextFile.string(in: old[position.spineIndex].byteRange)).hasChanges {
                 guard position.charOffset >= 0 else { throw TXTLocationMigration.Failure.invalidPosition }
-                return .init(spineIndex: target, charOffset: position.charOffset)
+                return .init(spineIndex: same, charOffset: position.charOffset)
             }
+            guard old.indices.contains(position.spineIndex) else { throw TXTLocationMigration.Failure.invalidPosition }
             if oldStrings[position.spineIndex] == nil {
                 oldStrings[position.spineIndex] = try await oldBuilder.buildChapter(
                     at: position.spineIndex, settings: settings,
                     themeTextColor: .label, themeBackgroundColor: .systemBackground
                 ).attributedString.string
             }
-            if newStrings[target] == nil {
-                newStrings[target] = try await newBuilder.buildChapter(
-                    at: target, settings: settings, themeTextColor: .label, themeBackgroundColor: .systemBackground
-                ).attributedString.string
-            }
-            return try mapping.map(position, oldRendered: oldStrings[position.spineIndex]!, newRendered: newStrings[target]!)
+            let anchor = try mapping.anchor(for: position, oldRendered: oldStrings[position.spineIndex]!)
+            let target = try mapping.destination(for: anchor)
+            return try mapping.position(for: anchor, in: target, newRendered: try await newString(target))
         }
 
         let position: CoreTextReadingPosition?
@@ -110,10 +129,15 @@ enum TXTReaderIndexMigrationService {
             let start = try await remap(bookmark.position)
             let (endOffset, overflow) = bookmark.position.charOffset.addingReportingOverflow(bookmark.length)
             guard !overflow else { throw TXTLocationMigration.Failure.invalidPosition }
-            let end = try await remap(.init(spineIndex: bookmark.position.spineIndex, charOffset: endOffset))
-            guard start.spineIndex == end.spineIndex, end.charOffset >= start.charOffset else {
-                throw TXTLocationMigration.Failure.invalidPosition
+            var end = try await remap(.init(spineIndex: bookmark.position.spineIndex, charOffset: endOffset))
+            if end.spineIndex != start.spineIndex {
+                // A new chapter boundary now falls inside the highlight: it keeps its start
+                // and ends with its chapter, as a highlight cannot span chapters.
+                let length = (try await newString(start.spineIndex) as NSString).length
+                AppLogger.cache("TXT re-split cut a highlight at its chapter end bookId=\(preparation.bookId) bookmark=\(bookmark.id)")
+                end = .init(spineIndex: start.spineIndex, charOffset: length)
             }
+            guard end.charOffset >= start.charOffset else { throw TXTLocationMigration.Failure.invalidPosition }
             bookmarks.append(Bookmark(
                 chapterIndex: start.spineIndex, chapterTitle: indexes[start.spineIndex].title,
                 position: start, length: end.charOffset - start.charOffset, kind: bookmark.kind,
@@ -121,10 +145,11 @@ enum TXTReaderIndexMigrationService {
                 annotationStyle: bookmark.annotationStyle, annotationColor: bookmark.annotationColor
             ))
         }
-        let journal = Journal(version: 2, bookId: preparation.bookId, fingerprint: preparation.fingerprint,
+        let journal = Journal(version: journalVersion, bookId: preparation.bookId, fingerprint: preparation.fingerprint,
                               fileSize: preparation.fileSize, encoding: preparation.encoding.rawValue, indexes: indexes,
                               originalPosition: originalPosition, position: position,
-                              originalBookmarks: book.bookmarks, bookmarks: bookmarks)
+                              originalBookmarks: book.bookmarks, bookmarks: bookmarks,
+                              rulesFingerprint: preparation.ruleSet.fingerprint)
         guard positions.loadSync(for: preparation.bookId.uuidString) == originalPosition,
               store.readingBook(id: preparation.bookId)?.bookmarks == book.bookmarks else {
             throw TXTLocationMigration.Failure.missingSourceIdentity
@@ -146,7 +171,14 @@ enum TXTReaderIndexMigrationService {
             .appendingPathComponent("\(preparation.bookId.uuidString).txt-reindex.json")
         guard !FileManager.default.fileExists(atPath: journalURL.path) else { return nil }
         if let current = preparation.cachedChapterIndexes { return current }
-        guard preparation.previousChapterIndexes == nil, let book = store.readingBook(id: preparation.bookId),
+        if preparation.previousChapterIndexes != nil {
+            let indexes = await Task.detached(priority: .userInitiated) {
+                TXTReaderPreparationService.buildChapterIndexes(for: preparation)
+            }.value
+            // Locations need no mapping when the new rules split the book the same way.
+            return try publishIfUnchanged(indexes, preparation: preparation)
+        }
+        guard let book = store.readingBook(id: preparation.bookId),
               book.bookmarks.isEmpty, positions.loadSync(for: preparation.bookId.uuidString) == nil else { return nil }
         let indexes = await Task.detached(priority: .userInitiated) {
             TXTReaderPreparationService.buildChapterIndexes(for: preparation)
@@ -155,11 +187,26 @@ enum TXTReaderIndexMigrationService {
         guard !FileManager.default.fileExists(atPath: journalURL.path),
               store.readingBook(id: preparation.bookId)?.bookmarks.isEmpty == true,
               positions.loadSync(for: preparation.bookId.uuidString) == nil else { return nil }
-        let journal = Journal(version: 2, bookId: preparation.bookId, fingerprint: preparation.fingerprint,
+        let journal = Journal(version: journalVersion, bookId: preparation.bookId, fingerprint: preparation.fingerprint,
                               fileSize: preparation.fileSize, encoding: preparation.encoding.rawValue, indexes: indexes,
-                              originalPosition: nil, position: nil, originalBookmarks: [], bookmarks: [])
+                              originalPosition: nil, position: nil, originalBookmarks: [], bookmarks: [],
+                              rulesFingerprint: preparation.ruleSet.fingerprint)
         try JSONEncoder().encode(journal).write(to: journalURL, options: .atomic)
         return try await commit(journal, preparation: preparation, store: store, positions: positions, url: journalURL).indexes
+    }
+
+    /// Republishes an index from other chapter rules under the current ones when they split
+    /// the book identically, so no saved location moves: same chapters, and (for a v7 index)
+    /// the same rendering. nil when locations must be mapped through `complete`.
+    private static func publishIfUnchanged(_ indexes: [TXTMappedChapterIndex],
+                                           preparation: TXTReaderPreparation) throws -> [TXTMappedChapterIndex]? {
+        guard preparation.previousIndexVersion == TXTChapterParser.indexVersion,
+              preparation.previousChapterIndexes == indexes else { return nil }
+        try TXTChapterParser.writeCachedIndexes(indexes, bookId: preparation.bookId, fileSize: preparation.fileSize,
+                                               fingerprint: preparation.fingerprint, encoding: preparation.encoding,
+                                               rulesFingerprint: preparation.ruleSet.fingerprint)
+        AppLogger.cache("TXT index unchanged under new chapter rules bookId=\(preparation.bookId) chapters=\(indexes.count)")
+        return indexes
     }
 
     private static func commit(_ journal: Journal, preparation: TXTReaderPreparation, store: BookStore,
@@ -179,7 +226,7 @@ enum TXTReaderIndexMigrationService {
         }
         try TXTChapterParser.writeCachedIndexes(journal.indexes, bookId: journal.bookId,
                                                fileSize: preparation.fileSize, fingerprint: preparation.fingerprint,
-                                               encoding: preparation.encoding)
+                                               encoding: preparation.encoding, rulesFingerprint: journal.rulesFingerprint)
         try FileManager.default.removeItem(at: url)
         AppLogger.cache("TXT index migration committed bookId=\(journal.bookId) chapters=\(journal.indexes.count) bookmarks=\(journal.bookmarks.count)")
         return Result(indexes: journal.indexes, restoredPosition: journal.position)

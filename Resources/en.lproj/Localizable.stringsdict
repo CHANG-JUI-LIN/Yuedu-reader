@@ -51,6 +51,38 @@
 			<string>Imported %d replacement rules.</string>
 		</dict>
 	</dict>
+	<key>已匯入 %d 條分章規則</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>%#@n@</string>
+		<key>n</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringPluralRuleType</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>d</string>
+			<key>one</key>
+			<string>Imported %d chapter rule.</string>
+			<key>other</key>
+			<string>Imported %d chapter rules.</string>
+		</dict>
+	</dict>
+	<key>找到 %d 章。</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>%#@n@</string>
+		<key>n</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringPluralRuleType</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>d</string>
+			<key>one</key>
+			<string>Found %d chapter.</string>
+			<key>other</key>
+			<string>Found %d chapters.</string>
+		</dict>
+	</dict>
 	<key>%d 欄</key>
 	<dict>
 		<key>NSStringLocalizedFormatKey</key>

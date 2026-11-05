@@ -1,0 +1,1912 @@
+{
+  "aozora-cp932" : [
+    {
+      "lower" : 0,
+      "title" : "Baseline",
+      "upper" : 6808
+    }
+  ],
+  "aozora-euc-jp" : [
+    {
+      "lower" : 0,
+      "title" : "Baseline",
+      "upper" : 6804
+    }
+  ],
+  "aozora-neko-jijo" : [
+    {
+      "lower" : 0,
+      "title" : "Baseline",
+      "upper" : 5772
+    }
+  ],
+  "bu" : [
+    {
+      "lower" : 18,
+      "title" : "第1部 部分",
+      "upper" : 3415
+    },
+    {
+      "lower" : 3433,
+      "title" : "第2部 部分",
+      "upper" : 6830
+    },
+    {
+      "lower" : 6848,
+      "title" : "第3部 部分",
+      "upper" : 10245
+    }
+  ],
+  "bu-utf16le" : [
+    {
+      "lower" : 16,
+      "title" : "第1部 部分",
+      "upper" : 2334
+    },
+    {
+      "lower" : 2350,
+      "title" : "第2部 部分",
+      "upper" : 4668
+    },
+    {
+      "lower" : 4684,
+      "title" : "第3部 部分",
+      "upper" : 7002
+    }
+  ],
+  "chapters" : [
+    {
+      "lower" : 19,
+      "title" : "第1章 標題1",
+      "upper" : 3416
+    },
+    {
+      "lower" : 3435,
+      "title" : "第2章 標題2",
+      "upper" : 6832
+    },
+    {
+      "lower" : 6851,
+      "title" : "第3章 標題3",
+      "upper" : 10248
+    },
+    {
+      "lower" : 10267,
+      "title" : "第4章 標題4",
+      "upper" : 13664
+    },
+    {
+      "lower" : 13683,
+      "title" : "第5章 標題5",
+      "upper" : 17080
+    },
+    {
+      "lower" : 17099,
+      "title" : "第6章 標題6",
+      "upper" : 20496
+    }
+  ],
+  "chapters-utf16le" : [
+    {
+      "lower" : 18,
+      "title" : "第1章 標題1",
+      "upper" : 2336
+    },
+    {
+      "lower" : 2354,
+      "title" : "第2章 標題2",
+      "upper" : 4672
+    },
+    {
+      "lower" : 4690,
+      "title" : "第3章 標題3",
+      "upper" : 7008
+    },
+    {
+      "lower" : 7026,
+      "title" : "第4章 標題4",
+      "upper" : 9344
+    },
+    {
+      "lower" : 9362,
+      "title" : "第5章 標題5",
+      "upper" : 11680
+    },
+    {
+      "lower" : 11698,
+      "title" : "第6章 標題6",
+      "upper" : 14016
+    }
+  ],
+  "embedded-parts" : [
+    {
+      "lower" : 15,
+      "title" : "第1章 開始",
+      "upper" : 3493
+    },
+    {
+      "lower" : 3511,
+      "title" : "第2章 繼續",
+      "upper" : 6908
+    }
+  ],
+  "embedded-parts-utf16le" : [
+    {
+      "lower" : 14,
+      "title" : "第1章 開始",
+      "upper" : 2390
+    },
+    {
+      "lower" : 2406,
+      "title" : "第2章 繼續",
+      "upper" : 4724
+    }
+  ],
+  "english" : [
+    {
+      "lower" : 19,
+      "title" : "Chapter 1 Title",
+      "upper" : 3416
+    },
+    {
+      "lower" : 3435,
+      "title" : "Chapter 2 Title",
+      "upper" : 6832
+    },
+    {
+      "lower" : 6851,
+      "title" : "Chapter 3 Title",
+      "upper" : 10248
+    },
+    {
+      "lower" : 10267,
+      "title" : "Chapter 4 Title",
+      "upper" : 13664
+    }
+  ],
+  "english-part" : [
+    {
+      "lower" : 10,
+      "title" : "Part 1",
+      "upper" : 3407
+    },
+    {
+      "lower" : 3417,
+      "title" : "Part 2",
+      "upper" : 6814
+    },
+    {
+      "lower" : 6824,
+      "title" : "Part 3",
+      "upper" : 10221
+    }
+  ],
+  "english-part-utf16le" : [
+    {
+      "lower" : 16,
+      "title" : "Part 1",
+      "upper" : 2334
+    },
+    {
+      "lower" : 2350,
+      "title" : "Part 2",
+      "upper" : 4668
+    },
+    {
+      "lower" : 4684,
+      "title" : "Part 3",
+      "upper" : 7002
+    }
+  ],
+  "english-upper" : [
+    {
+      "lower" : 13,
+      "title" : "CHAPTER 1",
+      "upper" : 3410
+    },
+    {
+      "lower" : 3423,
+      "title" : "CHAPTER 2",
+      "upper" : 6820
+    },
+    {
+      "lower" : 6833,
+      "title" : "CHAPTER 3",
+      "upper" : 10230
+    }
+  ],
+  "english-upper-utf16le" : [
+    {
+      "lower" : 22,
+      "title" : "CHAPTER 1",
+      "upper" : 2340
+    },
+    {
+      "lower" : 2362,
+      "title" : "CHAPTER 2",
+      "upper" : 4680
+    },
+    {
+      "lower" : 4702,
+      "title" : "CHAPTER 3",
+      "upper" : 7020
+    }
+  ],
+  "english-utf16le" : [
+    {
+      "lower" : 34,
+      "title" : "Chapter 1 Title",
+      "upper" : 2352
+    },
+    {
+      "lower" : 2386,
+      "title" : "Chapter 2 Title",
+      "upper" : 4704
+    },
+    {
+      "lower" : 4738,
+      "title" : "Chapter 3 Title",
+      "upper" : 7056
+    },
+    {
+      "lower" : 7090,
+      "title" : "Chapter 4 Title",
+      "upper" : 9408
+    }
+  ],
+  "han-chapters" : [
+    {
+      "lower" : 20,
+      "title" : "第一章 漢字",
+      "upper" : 3417
+    },
+    {
+      "lower" : 3437,
+      "title" : "第二章 漢字",
+      "upper" : 6834
+    },
+    {
+      "lower" : 6854,
+      "title" : "第三章 漢字",
+      "upper" : 10251
+    },
+    {
+      "lower" : 10271,
+      "title" : "第四章 漢字",
+      "upper" : 13668
+    }
+  ],
+  "han-chapters-utf16le" : [
+    {
+      "lower" : 16,
+      "title" : "第一章 漢字",
+      "upper" : 2334
+    },
+    {
+      "lower" : 2350,
+      "title" : "第二章 漢字",
+      "upper" : 4668
+    },
+    {
+      "lower" : 4684,
+      "title" : "第三章 漢字",
+      "upper" : 7002
+    },
+    {
+      "lower" : 7018,
+      "title" : "第四章 漢字",
+      "upper" : 9336
+    }
+  ],
+  "hui" : [
+    {
+      "lower" : 18,
+      "title" : "第1回 章回",
+      "upper" : 3415
+    },
+    {
+      "lower" : 3433,
+      "title" : "第2回 章回",
+      "upper" : 6830
+    },
+    {
+      "lower" : 6848,
+      "title" : "第3回 章回",
+      "upper" : 10245
+    },
+    {
+      "lower" : 10263,
+      "title" : "第4回 章回",
+      "upper" : 13660
+    }
+  ],
+  "hui-utf16le" : [
+    {
+      "lower" : 16,
+      "title" : "第1回 章回",
+      "upper" : 2334
+    },
+    {
+      "lower" : 2350,
+      "title" : "第2回 章回",
+      "upper" : 4668
+    },
+    {
+      "lower" : 4684,
+      "title" : "第3回 章回",
+      "upper" : 7002
+    },
+    {
+      "lower" : 7018,
+      "title" : "第4回 章回",
+      "upper" : 9336
+    }
+  ],
+  "juan-x" : [
+    {
+      "lower" : 15,
+      "title" : "卷1 卷名",
+      "upper" : 3412
+    },
+    {
+      "lower" : 3427,
+      "title" : "卷2 卷名",
+      "upper" : 6824
+    },
+    {
+      "lower" : 6839,
+      "title" : "卷3 卷名",
+      "upper" : 10236
+    }
+  ],
+  "juan-x-utf16le" : [
+    {
+      "lower" : 14,
+      "title" : "卷1 卷名",
+      "upper" : 2332
+    },
+    {
+      "lower" : 2346,
+      "title" : "卷2 卷名",
+      "upper" : 4664
+    },
+    {
+      "lower" : 4678,
+      "title" : "卷3 卷名",
+      "upper" : 6996
+    }
+  ],
+  "korean-euc-kr" : [
+    {
+      "lower" : 0,
+      "title" : "Baseline",
+      "upper" : 12080
+    }
+  ],
+  "no-headings" : [
+    {
+      "lower" : 0,
+      "title" : "Baseline",
+      "upper" : 12324
+    },
+    {
+      "lower" : 12325,
+      "title" : "Section 2",
+      "upper" : 24649
+    },
+    {
+      "lower" : 24650,
+      "title" : "Section 3",
+      "upper" : 36974
+    },
+    {
+      "lower" : 36975,
+      "title" : "Section 4",
+      "upper" : 49299
+    },
+    {
+      "lower" : 49300,
+      "title" : "Section 5",
+      "upper" : 61624
+    },
+    {
+      "lower" : 61625,
+      "title" : "Section 6",
+      "upper" : 68000
+    }
+  ],
+  "no-headings-utf16le" : [
+    {
+      "lower" : 0,
+      "title" : "Baseline",
+      "upper" : 12294
+    },
+    {
+      "lower" : 12296,
+      "title" : "Section 2",
+      "upper" : 24590
+    },
+    {
+      "lower" : 24592,
+      "title" : "Section 3",
+      "upper" : 36886
+    },
+    {
+      "lower" : 36888,
+      "title" : "Section 4",
+      "upper" : 46400
+    }
+  ],
+  "overlong" : [
+    {
+      "lower" : 18,
+      "title" : "第1章 很長(1)",
+      "upper" : 102439
+    },
+    {
+      "lower" : 102440,
+      "title" : "第1章 很長(2)",
+      "upper" : 204864
+    },
+    {
+      "lower" : 204865,
+      "title" : "第1章 很長(3)",
+      "upper" : 272015
+    },
+    {
+      "lower" : 272030,
+      "title" : "第2章 短",
+      "upper" : 275427
+    }
+  ],
+  "overlong-utf16le" : [
+    {
+      "lower" : 16,
+      "title" : "第1章 很長(1)",
+      "upper" : 102440
+    },
+    {
+      "lower" : 102442,
+      "title" : "第1章 很長(2)",
+      "upper" : 185614
+    },
+    {
+      "lower" : 185628,
+      "title" : "第2章 短",
+      "upper" : 187946
+    }
+  ],
+  "parts" : [
+    {
+      "lower" : 18,
+      "title" : "第1篇 篇章",
+      "upper" : 3415
+    },
+    {
+      "lower" : 3433,
+      "title" : "第2篇 篇章",
+      "upper" : 6830
+    },
+    {
+      "lower" : 6848,
+      "title" : "第3篇 篇章",
+      "upper" : 10245
+    }
+  ],
+  "parts-utf16le" : [
+    {
+      "lower" : 16,
+      "title" : "第1篇 篇章",
+      "upper" : 2334
+    },
+    {
+      "lower" : 2350,
+      "title" : "第2篇 篇章",
+      "upper" : 4668
+    },
+    {
+      "lower" : 4684,
+      "title" : "第3篇 篇章",
+      "upper" : 7002
+    }
+  ],
+  "preface" : [
+    {
+      "lower" : 0,
+      "title" : "Preface",
+      "upper" : 3439
+    },
+    {
+      "lower" : 3457,
+      "title" : "第1章 開始",
+      "upper" : 6854
+    },
+    {
+      "lower" : 6872,
+      "title" : "第2章 繼續",
+      "upper" : 10269
+    }
+  ],
+  "preface-utf16le" : [
+    {
+      "lower" : 0,
+      "title" : "Preface",
+      "upper" : 2350
+    },
+    {
+      "lower" : 2366,
+      "title" : "第1章 開始",
+      "upper" : 4684
+    },
+    {
+      "lower" : 4700,
+      "title" : "第2章 繼續",
+      "upper" : 7018
+    }
+  ],
+  "sections" : [
+    {
+      "lower" : 18,
+      "title" : "第1節 小節",
+      "upper" : 3415
+    },
+    {
+      "lower" : 3433,
+      "title" : "第2節 小節",
+      "upper" : 6830
+    },
+    {
+      "lower" : 6848,
+      "title" : "第3節 小節",
+      "upper" : 10245
+    },
+    {
+      "lower" : 10263,
+      "title" : "第4節 小節",
+      "upper" : 13660
+    }
+  ],
+  "sections-utf16le" : [
+    {
+      "lower" : 16,
+      "title" : "第1節 小節",
+      "upper" : 2334
+    },
+    {
+      "lower" : 2350,
+      "title" : "第2節 小節",
+      "upper" : 4668
+    },
+    {
+      "lower" : 4684,
+      "title" : "第3節 小節",
+      "upper" : 7002
+    },
+    {
+      "lower" : 7018,
+      "title" : "第4節 小節",
+      "upper" : 9336
+    }
+  ],
+  "simplified-gb18030" : [
+    {
+      "lower" : 12,
+      "title" : "第一章 阅读",
+      "upper" : 67
+    },
+    {
+      "lower" : 79,
+      "title" : "第一章 阅读",
+      "upper" : 134
+    },
+    {
+      "lower" : 146,
+      "title" : "第一章 阅读",
+      "upper" : 201
+    },
+    {
+      "lower" : 213,
+      "title" : "第一章 阅读",
+      "upper" : 268
+    },
+    {
+      "lower" : 280,
+      "title" : "第一章 阅读",
+      "upper" : 335
+    },
+    {
+      "lower" : 347,
+      "title" : "第一章 阅读",
+      "upper" : 402
+    },
+    {
+      "lower" : 414,
+      "title" : "第一章 阅读",
+      "upper" : 469
+    },
+    {
+      "lower" : 481,
+      "title" : "第一章 阅读",
+      "upper" : 536
+    },
+    {
+      "lower" : 548,
+      "title" : "第一章 阅读",
+      "upper" : 603
+    },
+    {
+      "lower" : 615,
+      "title" : "第一章 阅读",
+      "upper" : 670
+    },
+    {
+      "lower" : 682,
+      "title" : "第一章 阅读",
+      "upper" : 737
+    },
+    {
+      "lower" : 749,
+      "title" : "第一章 阅读",
+      "upper" : 804
+    },
+    {
+      "lower" : 816,
+      "title" : "第一章 阅读",
+      "upper" : 871
+    },
+    {
+      "lower" : 883,
+      "title" : "第一章 阅读",
+      "upper" : 938
+    },
+    {
+      "lower" : 950,
+      "title" : "第一章 阅读",
+      "upper" : 1005
+    },
+    {
+      "lower" : 1017,
+      "title" : "第一章 阅读",
+      "upper" : 1072
+    },
+    {
+      "lower" : 1084,
+      "title" : "第一章 阅读",
+      "upper" : 1139
+    },
+    {
+      "lower" : 1151,
+      "title" : "第一章 阅读",
+      "upper" : 1206
+    },
+    {
+      "lower" : 1218,
+      "title" : "第一章 阅读",
+      "upper" : 1273
+    },
+    {
+      "lower" : 1285,
+      "title" : "第一章 阅读",
+      "upper" : 1340
+    },
+    {
+      "lower" : 1352,
+      "title" : "第一章 阅读",
+      "upper" : 1407
+    },
+    {
+      "lower" : 1419,
+      "title" : "第一章 阅读",
+      "upper" : 1474
+    },
+    {
+      "lower" : 1486,
+      "title" : "第一章 阅读",
+      "upper" : 1541
+    },
+    {
+      "lower" : 1553,
+      "title" : "第一章 阅读",
+      "upper" : 1608
+    },
+    {
+      "lower" : 1620,
+      "title" : "第一章 阅读",
+      "upper" : 1675
+    },
+    {
+      "lower" : 1687,
+      "title" : "第一章 阅读",
+      "upper" : 1742
+    },
+    {
+      "lower" : 1754,
+      "title" : "第一章 阅读",
+      "upper" : 1809
+    },
+    {
+      "lower" : 1821,
+      "title" : "第一章 阅读",
+      "upper" : 1876
+    },
+    {
+      "lower" : 1888,
+      "title" : "第一章 阅读",
+      "upper" : 1943
+    },
+    {
+      "lower" : 1955,
+      "title" : "第一章 阅读",
+      "upper" : 2010
+    },
+    {
+      "lower" : 2022,
+      "title" : "第一章 阅读",
+      "upper" : 2077
+    },
+    {
+      "lower" : 2089,
+      "title" : "第一章 阅读",
+      "upper" : 2144
+    },
+    {
+      "lower" : 2156,
+      "title" : "第一章 阅读",
+      "upper" : 2211
+    },
+    {
+      "lower" : 2223,
+      "title" : "第一章 阅读",
+      "upper" : 2278
+    },
+    {
+      "lower" : 2290,
+      "title" : "第一章 阅读",
+      "upper" : 2345
+    },
+    {
+      "lower" : 2357,
+      "title" : "第一章 阅读",
+      "upper" : 2412
+    },
+    {
+      "lower" : 2424,
+      "title" : "第一章 阅读",
+      "upper" : 2479
+    },
+    {
+      "lower" : 2491,
+      "title" : "第一章 阅读",
+      "upper" : 2546
+    },
+    {
+      "lower" : 2558,
+      "title" : "第一章 阅读",
+      "upper" : 2613
+    },
+    {
+      "lower" : 2625,
+      "title" : "第一章 阅读",
+      "upper" : 2680
+    },
+    {
+      "lower" : 2692,
+      "title" : "第一章 阅读",
+      "upper" : 2747
+    },
+    {
+      "lower" : 2759,
+      "title" : "第一章 阅读",
+      "upper" : 2814
+    },
+    {
+      "lower" : 2826,
+      "title" : "第一章 阅读",
+      "upper" : 2881
+    },
+    {
+      "lower" : 2893,
+      "title" : "第一章 阅读",
+      "upper" : 2948
+    },
+    {
+      "lower" : 2960,
+      "title" : "第一章 阅读",
+      "upper" : 3015
+    },
+    {
+      "lower" : 3027,
+      "title" : "第一章 阅读",
+      "upper" : 3082
+    },
+    {
+      "lower" : 3094,
+      "title" : "第一章 阅读",
+      "upper" : 3149
+    },
+    {
+      "lower" : 3161,
+      "title" : "第一章 阅读",
+      "upper" : 3216
+    },
+    {
+      "lower" : 3228,
+      "title" : "第一章 阅读",
+      "upper" : 3283
+    },
+    {
+      "lower" : 3295,
+      "title" : "第一章 阅读",
+      "upper" : 3350
+    },
+    {
+      "lower" : 3362,
+      "title" : "第一章 阅读",
+      "upper" : 3417
+    },
+    {
+      "lower" : 3429,
+      "title" : "第一章 阅读",
+      "upper" : 3484
+    },
+    {
+      "lower" : 3496,
+      "title" : "第一章 阅读",
+      "upper" : 3551
+    },
+    {
+      "lower" : 3563,
+      "title" : "第一章 阅读",
+      "upper" : 3618
+    },
+    {
+      "lower" : 3630,
+      "title" : "第一章 阅读",
+      "upper" : 3685
+    },
+    {
+      "lower" : 3697,
+      "title" : "第一章 阅读",
+      "upper" : 3752
+    },
+    {
+      "lower" : 3764,
+      "title" : "第一章 阅读",
+      "upper" : 3819
+    },
+    {
+      "lower" : 3831,
+      "title" : "第一章 阅读",
+      "upper" : 3886
+    },
+    {
+      "lower" : 3898,
+      "title" : "第一章 阅读",
+      "upper" : 3953
+    },
+    {
+      "lower" : 3965,
+      "title" : "第一章 阅读",
+      "upper" : 4020
+    },
+    {
+      "lower" : 4032,
+      "title" : "第一章 阅读",
+      "upper" : 4087
+    },
+    {
+      "lower" : 4099,
+      "title" : "第一章 阅读",
+      "upper" : 4154
+    },
+    {
+      "lower" : 4166,
+      "title" : "第一章 阅读",
+      "upper" : 4221
+    },
+    {
+      "lower" : 4233,
+      "title" : "第一章 阅读",
+      "upper" : 4288
+    },
+    {
+      "lower" : 4300,
+      "title" : "第一章 阅读",
+      "upper" : 4355
+    },
+    {
+      "lower" : 4367,
+      "title" : "第一章 阅读",
+      "upper" : 4422
+    },
+    {
+      "lower" : 4434,
+      "title" : "第一章 阅读",
+      "upper" : 4489
+    },
+    {
+      "lower" : 4501,
+      "title" : "第一章 阅读",
+      "upper" : 4556
+    },
+    {
+      "lower" : 4568,
+      "title" : "第一章 阅读",
+      "upper" : 4623
+    },
+    {
+      "lower" : 4635,
+      "title" : "第一章 阅读",
+      "upper" : 4690
+    },
+    {
+      "lower" : 4702,
+      "title" : "第一章 阅读",
+      "upper" : 4757
+    },
+    {
+      "lower" : 4769,
+      "title" : "第一章 阅读",
+      "upper" : 4824
+    },
+    {
+      "lower" : 4836,
+      "title" : "第一章 阅读",
+      "upper" : 4891
+    },
+    {
+      "lower" : 4903,
+      "title" : "第一章 阅读",
+      "upper" : 4958
+    },
+    {
+      "lower" : 4970,
+      "title" : "第一章 阅读",
+      "upper" : 5025
+    },
+    {
+      "lower" : 5037,
+      "title" : "第一章 阅读",
+      "upper" : 5092
+    },
+    {
+      "lower" : 5104,
+      "title" : "第一章 阅读",
+      "upper" : 5159
+    },
+    {
+      "lower" : 5171,
+      "title" : "第一章 阅读",
+      "upper" : 5226
+    },
+    {
+      "lower" : 5238,
+      "title" : "第一章 阅读",
+      "upper" : 5293
+    },
+    {
+      "lower" : 5305,
+      "title" : "第一章 阅读",
+      "upper" : 5385
+    }
+  ],
+  "simplified-gbk" : [
+    {
+      "lower" : 12,
+      "title" : "第一章 阅读",
+      "upper" : 142
+    },
+    {
+      "lower" : 154,
+      "title" : "第一章 阅读",
+      "upper" : 284
+    },
+    {
+      "lower" : 296,
+      "title" : "第一章 阅读",
+      "upper" : 426
+    },
+    {
+      "lower" : 438,
+      "title" : "第一章 阅读",
+      "upper" : 568
+    },
+    {
+      "lower" : 580,
+      "title" : "第一章 阅读",
+      "upper" : 710
+    },
+    {
+      "lower" : 722,
+      "title" : "第一章 阅读",
+      "upper" : 852
+    },
+    {
+      "lower" : 864,
+      "title" : "第一章 阅读",
+      "upper" : 994
+    },
+    {
+      "lower" : 1006,
+      "title" : "第一章 阅读",
+      "upper" : 1136
+    },
+    {
+      "lower" : 1148,
+      "title" : "第一章 阅读",
+      "upper" : 1278
+    },
+    {
+      "lower" : 1290,
+      "title" : "第一章 阅读",
+      "upper" : 1420
+    },
+    {
+      "lower" : 1432,
+      "title" : "第一章 阅读",
+      "upper" : 1562
+    },
+    {
+      "lower" : 1574,
+      "title" : "第一章 阅读",
+      "upper" : 1704
+    },
+    {
+      "lower" : 1716,
+      "title" : "第一章 阅读",
+      "upper" : 1846
+    },
+    {
+      "lower" : 1858,
+      "title" : "第一章 阅读",
+      "upper" : 1988
+    },
+    {
+      "lower" : 2000,
+      "title" : "第一章 阅读",
+      "upper" : 2130
+    },
+    {
+      "lower" : 2142,
+      "title" : "第一章 阅读",
+      "upper" : 2272
+    },
+    {
+      "lower" : 2284,
+      "title" : "第一章 阅读",
+      "upper" : 2414
+    },
+    {
+      "lower" : 2426,
+      "title" : "第一章 阅读",
+      "upper" : 2556
+    },
+    {
+      "lower" : 2568,
+      "title" : "第一章 阅读",
+      "upper" : 2698
+    },
+    {
+      "lower" : 2710,
+      "title" : "第一章 阅读",
+      "upper" : 2840
+    },
+    {
+      "lower" : 2852,
+      "title" : "第一章 阅读",
+      "upper" : 2982
+    },
+    {
+      "lower" : 2994,
+      "title" : "第一章 阅读",
+      "upper" : 3124
+    },
+    {
+      "lower" : 3136,
+      "title" : "第一章 阅读",
+      "upper" : 3266
+    },
+    {
+      "lower" : 3278,
+      "title" : "第一章 阅读",
+      "upper" : 3408
+    },
+    {
+      "lower" : 3420,
+      "title" : "第一章 阅读",
+      "upper" : 3550
+    },
+    {
+      "lower" : 3562,
+      "title" : "第一章 阅读",
+      "upper" : 3692
+    },
+    {
+      "lower" : 3704,
+      "title" : "第一章 阅读",
+      "upper" : 3834
+    },
+    {
+      "lower" : 3846,
+      "title" : "第一章 阅读",
+      "upper" : 3976
+    },
+    {
+      "lower" : 3988,
+      "title" : "第一章 阅读",
+      "upper" : 4118
+    },
+    {
+      "lower" : 4130,
+      "title" : "第一章 阅读",
+      "upper" : 4260
+    },
+    {
+      "lower" : 4272,
+      "title" : "第一章 阅读",
+      "upper" : 4402
+    },
+    {
+      "lower" : 4414,
+      "title" : "第一章 阅读",
+      "upper" : 4544
+    },
+    {
+      "lower" : 4556,
+      "title" : "第一章 阅读",
+      "upper" : 4686
+    },
+    {
+      "lower" : 4698,
+      "title" : "第一章 阅读",
+      "upper" : 4828
+    },
+    {
+      "lower" : 4840,
+      "title" : "第一章 阅读",
+      "upper" : 4970
+    },
+    {
+      "lower" : 4982,
+      "title" : "第一章 阅读",
+      "upper" : 5112
+    },
+    {
+      "lower" : 5124,
+      "title" : "第一章 阅读",
+      "upper" : 5254
+    },
+    {
+      "lower" : 5266,
+      "title" : "第一章 阅读",
+      "upper" : 5396
+    },
+    {
+      "lower" : 5408,
+      "title" : "第一章 阅读",
+      "upper" : 5538
+    },
+    {
+      "lower" : 5550,
+      "title" : "第一章 阅读",
+      "upper" : 5680
+    },
+    {
+      "lower" : 5692,
+      "title" : "第一章 阅读",
+      "upper" : 5822
+    },
+    {
+      "lower" : 5834,
+      "title" : "第一章 阅读",
+      "upper" : 5964
+    },
+    {
+      "lower" : 5976,
+      "title" : "第一章 阅读",
+      "upper" : 6106
+    },
+    {
+      "lower" : 6118,
+      "title" : "第一章 阅读",
+      "upper" : 6248
+    },
+    {
+      "lower" : 6260,
+      "title" : "第一章 阅读",
+      "upper" : 6390
+    },
+    {
+      "lower" : 6402,
+      "title" : "第一章 阅读",
+      "upper" : 6532
+    },
+    {
+      "lower" : 6544,
+      "title" : "第一章 阅读",
+      "upper" : 6674
+    },
+    {
+      "lower" : 6686,
+      "title" : "第一章 阅读",
+      "upper" : 6816
+    },
+    {
+      "lower" : 6828,
+      "title" : "第一章 阅读",
+      "upper" : 6958
+    },
+    {
+      "lower" : 6970,
+      "title" : "第一章 阅读",
+      "upper" : 7100
+    },
+    {
+      "lower" : 7112,
+      "title" : "第一章 阅读",
+      "upper" : 7242
+    },
+    {
+      "lower" : 7254,
+      "title" : "第一章 阅读",
+      "upper" : 7384
+    },
+    {
+      "lower" : 7396,
+      "title" : "第一章 阅读",
+      "upper" : 7526
+    },
+    {
+      "lower" : 7538,
+      "title" : "第一章 阅读",
+      "upper" : 7668
+    },
+    {
+      "lower" : 7680,
+      "title" : "第一章 阅读",
+      "upper" : 7810
+    },
+    {
+      "lower" : 7822,
+      "title" : "第一章 阅读",
+      "upper" : 7952
+    },
+    {
+      "lower" : 7964,
+      "title" : "第一章 阅读",
+      "upper" : 8094
+    },
+    {
+      "lower" : 8106,
+      "title" : "第一章 阅读",
+      "upper" : 8236
+    },
+    {
+      "lower" : 8248,
+      "title" : "第一章 阅读",
+      "upper" : 8378
+    },
+    {
+      "lower" : 8390,
+      "title" : "第一章 阅读",
+      "upper" : 8520
+    },
+    {
+      "lower" : 8532,
+      "title" : "第一章 阅读",
+      "upper" : 8662
+    },
+    {
+      "lower" : 8674,
+      "title" : "第一章 阅读",
+      "upper" : 8804
+    },
+    {
+      "lower" : 8816,
+      "title" : "第一章 阅读",
+      "upper" : 8946
+    },
+    {
+      "lower" : 8958,
+      "title" : "第一章 阅读",
+      "upper" : 9088
+    },
+    {
+      "lower" : 9100,
+      "title" : "第一章 阅读",
+      "upper" : 9230
+    },
+    {
+      "lower" : 9242,
+      "title" : "第一章 阅读",
+      "upper" : 9372
+    },
+    {
+      "lower" : 9384,
+      "title" : "第一章 阅读",
+      "upper" : 9514
+    },
+    {
+      "lower" : 9526,
+      "title" : "第一章 阅读",
+      "upper" : 9656
+    },
+    {
+      "lower" : 9668,
+      "title" : "第一章 阅读",
+      "upper" : 9798
+    },
+    {
+      "lower" : 9810,
+      "title" : "第一章 阅读",
+      "upper" : 9940
+    },
+    {
+      "lower" : 9952,
+      "title" : "第一章 阅读",
+      "upper" : 10082
+    },
+    {
+      "lower" : 10094,
+      "title" : "第一章 阅读",
+      "upper" : 10224
+    },
+    {
+      "lower" : 10236,
+      "title" : "第一章 阅读",
+      "upper" : 10366
+    },
+    {
+      "lower" : 10378,
+      "title" : "第一章 阅读",
+      "upper" : 10508
+    },
+    {
+      "lower" : 10520,
+      "title" : "第一章 阅读",
+      "upper" : 10650
+    },
+    {
+      "lower" : 10662,
+      "title" : "第一章 阅读",
+      "upper" : 10792
+    },
+    {
+      "lower" : 10804,
+      "title" : "第一章 阅读",
+      "upper" : 10934
+    },
+    {
+      "lower" : 10946,
+      "title" : "第一章 阅读",
+      "upper" : 11076
+    },
+    {
+      "lower" : 11088,
+      "title" : "第一章 阅读",
+      "upper" : 11218
+    },
+    {
+      "lower" : 11230,
+      "title" : "第一章 阅读",
+      "upper" : 11360
+    }
+  ],
+  "special" : [
+    {
+      "lower" : 17,
+      "title" : "序章 開端",
+      "upper" : 3414
+    },
+    {
+      "lower" : 3432,
+      "title" : "第1章 正文",
+      "upper" : 6829
+    },
+    {
+      "lower" : 6844,
+      "title" : "第2章 續",
+      "upper" : 10241
+    },
+    {
+      "lower" : 10258,
+      "title" : "番外 後日",
+      "upper" : 13655
+    },
+    {
+      "lower" : 13665,
+      "title" : "後記",
+      "upper" : 17062
+    }
+  ],
+  "special-utf16le" : [
+    {
+      "lower" : 14,
+      "title" : "序章 開端",
+      "upper" : 2332
+    },
+    {
+      "lower" : 2348,
+      "title" : "第1章 正文",
+      "upper" : 4666
+    },
+    {
+      "lower" : 4680,
+      "title" : "第2章 續",
+      "upper" : 6998
+    },
+    {
+      "lower" : 7012,
+      "title" : "番外 後日",
+      "upper" : 9330
+    },
+    {
+      "lower" : 9338,
+      "title" : "後記",
+      "upper" : 11656
+    }
+  ],
+  "traditional-big5" : [
+    {
+      "lower" : 12,
+      "title" : "第一章 閱讀",
+      "upper" : 142
+    },
+    {
+      "lower" : 154,
+      "title" : "第一章 閱讀",
+      "upper" : 284
+    },
+    {
+      "lower" : 296,
+      "title" : "第一章 閱讀",
+      "upper" : 426
+    },
+    {
+      "lower" : 438,
+      "title" : "第一章 閱讀",
+      "upper" : 568
+    },
+    {
+      "lower" : 580,
+      "title" : "第一章 閱讀",
+      "upper" : 710
+    },
+    {
+      "lower" : 722,
+      "title" : "第一章 閱讀",
+      "upper" : 852
+    },
+    {
+      "lower" : 864,
+      "title" : "第一章 閱讀",
+      "upper" : 994
+    },
+    {
+      "lower" : 1006,
+      "title" : "第一章 閱讀",
+      "upper" : 1136
+    },
+    {
+      "lower" : 1148,
+      "title" : "第一章 閱讀",
+      "upper" : 1278
+    },
+    {
+      "lower" : 1290,
+      "title" : "第一章 閱讀",
+      "upper" : 1420
+    },
+    {
+      "lower" : 1432,
+      "title" : "第一章 閱讀",
+      "upper" : 1562
+    },
+    {
+      "lower" : 1574,
+      "title" : "第一章 閱讀",
+      "upper" : 1704
+    },
+    {
+      "lower" : 1716,
+      "title" : "第一章 閱讀",
+      "upper" : 1846
+    },
+    {
+      "lower" : 1858,
+      "title" : "第一章 閱讀",
+      "upper" : 1988
+    },
+    {
+      "lower" : 2000,
+      "title" : "第一章 閱讀",
+      "upper" : 2130
+    },
+    {
+      "lower" : 2142,
+      "title" : "第一章 閱讀",
+      "upper" : 2272
+    },
+    {
+      "lower" : 2284,
+      "title" : "第一章 閱讀",
+      "upper" : 2414
+    },
+    {
+      "lower" : 2426,
+      "title" : "第一章 閱讀",
+      "upper" : 2556
+    },
+    {
+      "lower" : 2568,
+      "title" : "第一章 閱讀",
+      "upper" : 2698
+    },
+    {
+      "lower" : 2710,
+      "title" : "第一章 閱讀",
+      "upper" : 2840
+    },
+    {
+      "lower" : 2852,
+      "title" : "第一章 閱讀",
+      "upper" : 2982
+    },
+    {
+      "lower" : 2994,
+      "title" : "第一章 閱讀",
+      "upper" : 3124
+    },
+    {
+      "lower" : 3136,
+      "title" : "第一章 閱讀",
+      "upper" : 3266
+    },
+    {
+      "lower" : 3278,
+      "title" : "第一章 閱讀",
+      "upper" : 3408
+    },
+    {
+      "lower" : 3420,
+      "title" : "第一章 閱讀",
+      "upper" : 3550
+    },
+    {
+      "lower" : 3562,
+      "title" : "第一章 閱讀",
+      "upper" : 3692
+    },
+    {
+      "lower" : 3704,
+      "title" : "第一章 閱讀",
+      "upper" : 3834
+    },
+    {
+      "lower" : 3846,
+      "title" : "第一章 閱讀",
+      "upper" : 3976
+    },
+    {
+      "lower" : 3988,
+      "title" : "第一章 閱讀",
+      "upper" : 4118
+    },
+    {
+      "lower" : 4130,
+      "title" : "第一章 閱讀",
+      "upper" : 4260
+    },
+    {
+      "lower" : 4272,
+      "title" : "第一章 閱讀",
+      "upper" : 4402
+    },
+    {
+      "lower" : 4414,
+      "title" : "第一章 閱讀",
+      "upper" : 4544
+    },
+    {
+      "lower" : 4556,
+      "title" : "第一章 閱讀",
+      "upper" : 4686
+    },
+    {
+      "lower" : 4698,
+      "title" : "第一章 閱讀",
+      "upper" : 4828
+    },
+    {
+      "lower" : 4840,
+      "title" : "第一章 閱讀",
+      "upper" : 4970
+    },
+    {
+      "lower" : 4982,
+      "title" : "第一章 閱讀",
+      "upper" : 5112
+    },
+    {
+      "lower" : 5124,
+      "title" : "第一章 閱讀",
+      "upper" : 5254
+    },
+    {
+      "lower" : 5266,
+      "title" : "第一章 閱讀",
+      "upper" : 5396
+    },
+    {
+      "lower" : 5408,
+      "title" : "第一章 閱讀",
+      "upper" : 5538
+    },
+    {
+      "lower" : 5550,
+      "title" : "第一章 閱讀",
+      "upper" : 5680
+    },
+    {
+      "lower" : 5692,
+      "title" : "第一章 閱讀",
+      "upper" : 5822
+    },
+    {
+      "lower" : 5834,
+      "title" : "第一章 閱讀",
+      "upper" : 5964
+    },
+    {
+      "lower" : 5976,
+      "title" : "第一章 閱讀",
+      "upper" : 6106
+    },
+    {
+      "lower" : 6118,
+      "title" : "第一章 閱讀",
+      "upper" : 6248
+    },
+    {
+      "lower" : 6260,
+      "title" : "第一章 閱讀",
+      "upper" : 6390
+    },
+    {
+      "lower" : 6402,
+      "title" : "第一章 閱讀",
+      "upper" : 6532
+    },
+    {
+      "lower" : 6544,
+      "title" : "第一章 閱讀",
+      "upper" : 6674
+    },
+    {
+      "lower" : 6686,
+      "title" : "第一章 閱讀",
+      "upper" : 6816
+    },
+    {
+      "lower" : 6828,
+      "title" : "第一章 閱讀",
+      "upper" : 6958
+    },
+    {
+      "lower" : 6970,
+      "title" : "第一章 閱讀",
+      "upper" : 7100
+    },
+    {
+      "lower" : 7112,
+      "title" : "第一章 閱讀",
+      "upper" : 7242
+    },
+    {
+      "lower" : 7254,
+      "title" : "第一章 閱讀",
+      "upper" : 7384
+    },
+    {
+      "lower" : 7396,
+      "title" : "第一章 閱讀",
+      "upper" : 7526
+    },
+    {
+      "lower" : 7538,
+      "title" : "第一章 閱讀",
+      "upper" : 7668
+    },
+    {
+      "lower" : 7680,
+      "title" : "第一章 閱讀",
+      "upper" : 7810
+    },
+    {
+      "lower" : 7822,
+      "title" : "第一章 閱讀",
+      "upper" : 7952
+    },
+    {
+      "lower" : 7964,
+      "title" : "第一章 閱讀",
+      "upper" : 8094
+    },
+    {
+      "lower" : 8106,
+      "title" : "第一章 閱讀",
+      "upper" : 8236
+    },
+    {
+      "lower" : 8248,
+      "title" : "第一章 閱讀",
+      "upper" : 8378
+    },
+    {
+      "lower" : 8390,
+      "title" : "第一章 閱讀",
+      "upper" : 8520
+    },
+    {
+      "lower" : 8532,
+      "title" : "第一章 閱讀",
+      "upper" : 8662
+    },
+    {
+      "lower" : 8674,
+      "title" : "第一章 閱讀",
+      "upper" : 8804
+    },
+    {
+      "lower" : 8816,
+      "title" : "第一章 閱讀",
+      "upper" : 8946
+    },
+    {
+      "lower" : 8958,
+      "title" : "第一章 閱讀",
+      "upper" : 9088
+    },
+    {
+      "lower" : 9100,
+      "title" : "第一章 閱讀",
+      "upper" : 9230
+    },
+    {
+      "lower" : 9242,
+      "title" : "第一章 閱讀",
+      "upper" : 9372
+    },
+    {
+      "lower" : 9384,
+      "title" : "第一章 閱讀",
+      "upper" : 9514
+    },
+    {
+      "lower" : 9526,
+      "title" : "第一章 閱讀",
+      "upper" : 9656
+    },
+    {
+      "lower" : 9668,
+      "title" : "第一章 閱讀",
+      "upper" : 9798
+    },
+    {
+      "lower" : 9810,
+      "title" : "第一章 閱讀",
+      "upper" : 9940
+    },
+    {
+      "lower" : 9952,
+      "title" : "第一章 閱讀",
+      "upper" : 10082
+    },
+    {
+      "lower" : 10094,
+      "title" : "第一章 閱讀",
+      "upper" : 10224
+    },
+    {
+      "lower" : 10236,
+      "title" : "第一章 閱讀",
+      "upper" : 10366
+    },
+    {
+      "lower" : 10378,
+      "title" : "第一章 閱讀",
+      "upper" : 10508
+    },
+    {
+      "lower" : 10520,
+      "title" : "第一章 閱讀",
+      "upper" : 10650
+    },
+    {
+      "lower" : 10662,
+      "title" : "第一章 閱讀",
+      "upper" : 10792
+    },
+    {
+      "lower" : 10804,
+      "title" : "第一章 閱讀",
+      "upper" : 10934
+    },
+    {
+      "lower" : 10946,
+      "title" : "第一章 閱讀",
+      "upper" : 11076
+    },
+    {
+      "lower" : 11088,
+      "title" : "第一章 閱讀",
+      "upper" : 11218
+    },
+    {
+      "lower" : 11230,
+      "title" : "第一章 閱讀",
+      "upper" : 11360
+    }
+  ],
+  "txt-chapter-sample" : [
+    {
+      "lower" : 28,
+      "title" : "第1章 八百年后",
+      "upper" : 11331
+    }
+  ],
+  "volumes" : [
+    {
+      "lower" : 14,
+      "title" : "第一卷 起",
+      "upper" : 14
+    },
+    {
+      "lower" : 29,
+      "title" : "第1章 甲",
+      "upper" : 3426
+    },
+    {
+      "lower" : 3441,
+      "title" : "第2章 乙",
+      "upper" : 6838
+    },
+    {
+      "lower" : 6852,
+      "title" : "第二卷 承",
+      "upper" : 6852
+    },
+    {
+      "lower" : 6867,
+      "title" : "第3章 丙",
+      "upper" : 10264
+    }
+  ],
+  "volumes-utf16le" : [
+    {
+      "lower" : 12,
+      "title" : "第一卷 起",
+      "upper" : 12
+    },
+    {
+      "lower" : 26,
+      "title" : "第1章 甲",
+      "upper" : 2344
+    },
+    {
+      "lower" : 2358,
+      "title" : "第2章 乙",
+      "upper" : 4676
+    },
+    {
+      "lower" : 4688,
+      "title" : "第二卷 承",
+      "upper" : 4688
+    },
+    {
+      "lower" : 4702,
+      "title" : "第3章 丙",
+      "upper" : 7020
+    }
+  ]
+}

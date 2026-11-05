@@ -187,6 +187,17 @@ struct SettingsView: View {
                             title: localized("替換規則"),
                             action: { showReplaceRules = true }
                         )
+
+                        // FB-139: pushed, not a sheet like 替換規則 — its file importer needs a
+                        // first-level presenter on iOS 17.
+                        NavigationLink {
+                            TXTTocRuleListView()
+                        } label: {
+                            Label(localized("TXT 分章規則"), systemImage: "list.number")
+                                .foregroundColor(DSColor.textPrimary)
+                                .labelStyle(IconConsistentLabelStyle())
+                        }
+                        .accessibilityIdentifier("settings_txt_toc_rules")
                     } header: {
                         Text(localized("設定分組：閱讀"))
                             .foregroundStyle(DSColor.textSecondary)

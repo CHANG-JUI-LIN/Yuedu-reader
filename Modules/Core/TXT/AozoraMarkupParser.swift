@@ -25,6 +25,18 @@ enum AozoraMarkupParser {
             Self.project(Self.project(offset, through: noteRanges), through: rubyRanges)
         }
 
+        /// The first source offset shown at `displayed`: a location just after removed markup
+        /// goes back to before it, which projects forward to the same displayed offset.
+        func sourceOffset(forDisplayedOffset displayed: Int) -> Int {
+            let removed = noteRanges.reduce(0) { $0 + $1.length } + rubyRanges.reduce(0) { $0 + $1.length }
+            var low = 0, high = displayed + removed
+            while low < high {
+                let mid = (low + high) / 2
+                if displayedOffset(forSourceOffset: mid) < displayed { low = mid + 1 } else { high = mid }
+            }
+            return low
+        }
+
         private static func project(_ offset: Int, through ranges: [NSRange]) -> Int {
             offset - ranges.reduce(0) { removed, range in
                 removed + max(0, min(range.length, offset - range.location))
