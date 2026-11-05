@@ -173,6 +173,52 @@ struct ReaderTapTurnStepTests {
         }
         #expect(reader.shownPosition() == shown)
     }
+
+    /// A chapter whose fetch failed never lays out; its card offers only 重試. Stepping
+    /// by position alone would leave the reader stuck on its 載入中 page, so a turn
+    /// from there steps over it to the next chapter — named by the chapter count.
+    @Test("a tap from a chapter that failed to load steps over it to the next chapter")
+    func tapFromFailedChapterStepsOverIt() async throws {
+        let gate = ChapterLoadGate()
+        let reader = try await TapTurnReader.open(
+            builder: TapTurnBuilder(chapterCount: 4, loading: ([1], gate), unsized: [1]),
+            preloading: [0, 2]
+        ) {
+            $0.layouts[0].map { $0.pageRanges.count - 1 }
+        }
+        defer { gate.open(); reader.close() }
+        let lastPage = try #require(reader.shownPage())
+
+        _ = try await reader.tapOntoLoadingPage(.forward, landingOn: lastPage + 1)
+        #expect(reader.shownPosition() == .chapterStart(1))
+
+        reader.state.failedChapters = [1]
+        reader.state.turn(.forward, showing: lastPage + 2, animated: true)
+        try await reader.waitForTurn(to: .chapterStart(2))
+        #expect(reader.shownPosition() == .chapterStart(2),
+                "the tap from the failed chapter landed on \(String(describing: reader.shownPosition()))")
+    }
+
+    /// TXT pages with its own engine; a tap walks it by position too.
+    @Test("a tap at a TXT chapter's end turns onto the next chapter's start")
+    func txtTapCrossesChapterByPosition() async throws {
+        let text = (1...3).map { chapter in
+            "第\(chapter)章 山林\n" + String(repeating: "風穿過山林，江水映著月光，第\(chapter)章的正文。\n", count: 120)
+        }.joined()
+        let reader = try await TapTurnReader.openTXT(text, preloading: [0, 1, 2]) { engine in
+            engine.pageIndex(for: .chapterStart(2)).map { $0 - 1 }
+        }
+        defer { reader.close() }
+        let shown = try #require(reader.shownPosition())
+        let nextChapter = try #require(reader.engine.pageIndex(for: .chapterStart(shown.spineIndex + 1)))
+
+        reader.state.turn(.forward, showing: nextChapter, animated: true)
+        // By position: the TXT engine finishing its pagination renumbers the pages
+        // while the turn plays.
+        try await reader.waitForTurn(to: .chapterStart(shown.spineIndex + 1))
+        #expect(reader.shownPosition() == .chapterStart(shown.spineIndex + 1),
+                "the tap landed on \(String(describing: reader.shownPosition()))")
+    }
 }
 
 /// The paged host as `ReaderView` mounts it, with a real session coordinator so turns queue
@@ -180,13 +226,13 @@ struct ReaderTapTurnStepTests {
 @MainActor
 private final class TapTurnReader {
     let state: TapTurnHostState
-    let engine: CoreTextPageEngine
+    let engine: any PageRenderingProvider
     private let coordinator: ReaderSessionCoordinator
     private let host: UIHostingController<TapTurnHost>
     private let window: UIWindow
     private let directory: URL
 
-    private init(state: TapTurnHostState, engine: CoreTextPageEngine, coordinator: ReaderSessionCoordinator,
+    private init(state: TapTurnHostState, engine: any PageRenderingProvider, coordinator: ReaderSessionCoordinator,
                  host: UIHostingController<TapTurnHost>, window: UIWindow, directory: URL) {
         self.state = state
         self.engine = engine
@@ -201,13 +247,30 @@ private final class TapTurnReader {
     }
 
     static func open(builder: TapTurnBuilder = TapTurnBuilder(), preloading chapters: [Int] = [0, 1],
-                     at openingPage: (CoreTextPageEngine) -> Int?) async throws -> TapTurnReader {
+                     at openingPage: (any PageRenderingProvider) -> Int?) async throws -> TapTurnReader {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         let engine = CoreTextPageEngine(
             attributedBuilder: builder,
             renderSettings: EPUBTestFixtures.renderSettings(),
             offsetStore: CharOffsetStore(directoryURL: directory)
         )
+        return try await open(engine: engine, directory: directory, preloading: chapters, at: openingPage)
+    }
+
+    /// A TXT book, paged by its own engine.
+    static func openTXT(_ text: String, preloading chapters: [Int],
+                        at openingPage: (any PageRenderingProvider) -> Int?) async throws -> TapTurnReader {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        let engine = TXTPageEngine(
+            text: text, title: "測試",
+            offsetStore: CharOffsetStore(directoryURL: directory),
+            settings: EPUBTestFixtures.renderSettings()
+        )
+        return try await open(engine: engine, directory: directory, preloading: chapters, at: openingPage)
+    }
+
+    private static func open(engine: any PageRenderingProvider, directory: URL, preloading chapters: [Int],
+                             at openingPage: (any PageRenderingProvider) -> Int?) async throws -> TapTurnReader {
         let bookId = UUID().uuidString
         await engine.start(renderSize: CGSize(width: 320, height: 480), bookId: bookId)
         for chapter in chapters {
@@ -297,6 +360,11 @@ private final class TapTurnReader {
         return pageViewController.map { animating($0.view.layer) } ?? false
     }
 
+    /// Waits for the turn to settle on the page at `position`, whatever it is numbered.
+    func waitForTurn(to position: CoreTextReadingPosition) async throws {
+        try await waitUntil { shownPosition() == position && !isAnimating() && !isTurning() }
+    }
+
     /// Waits for the turn to settle on `page`; returns whether it animated on the way.
     func waitForTurn(to page: Int) async throws -> Bool {
         var animated = false
@@ -334,6 +402,8 @@ private final class TapTurnHostState: ObservableObject {
     @Published private(set) var command: ReaderPageTurnCommand?
     /// Every page change the host was told about, as `ReaderView` receives them.
     var reported: [(page: Int, position: CoreTextReadingPosition?)] = []
+    /// Chapters whose fetch failed, as `ReaderView` reads them off the chapter states.
+    var failedChapters: Set<Int> = []
     private var version: UInt = 0
 
     init(target: CoreTextReadingPosition, page: Int) {
@@ -361,7 +431,8 @@ private struct TapTurnHost: View {
             sessionCoordinator: coordinator, externalTargetVersion: 0, externalTargetPosition: state.externalTarget,
             pageTurnCommand: state.command, clearExternalTargetPosition: { state.externalTarget = nil },
             currentPage: $state.page,
-            onPageChanged: { page, position in state.reported.append((page, position)) }, onTapZone: { _ in }
+            onPageChanged: { page, position in state.reported.append((page, position)) }, onTapZone: { _ in },
+            hasChapterFailedToLoad: { state.failedChapters.contains($0) }
         )
     }
 }

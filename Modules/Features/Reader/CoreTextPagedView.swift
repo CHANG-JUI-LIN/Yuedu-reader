@@ -41,6 +41,9 @@ struct CoreTextPageEngineView: UIViewControllerRepresentable {
     var onPullDownBookmark: () -> Void = {}
     var visibleRefreshCommit: ReaderVisibleRefreshCommit?
     var onVisibleRefreshFinished: (UInt64, ReaderVisibleRefreshOutcome) -> Void = { _, _ in }
+    /// Whether a chapter's fetch failed: it will not lay out until 重試 succeeds, so a
+    /// turn from its 載入中 page steps over it (`Coordinator.steppedPosition`).
+    var hasChapterFailedToLoad: (Int) -> Bool = { _ in false }
 
     /// How the page view controller is built. The spine it picks is fixed for the
     /// controller's life; `ReaderView.readerPageViewIdentity` builds a new one whenever
@@ -180,6 +183,7 @@ struct CoreTextPageEngineView: UIViewControllerRepresentable {
         // a copy captured once at makeCoordinator time would answer for the page
         // the book opened on.
         context.coordinator.isCurrentPageBookmarked = isCurrentPageBookmarked
+        context.coordinator.hasChapterFailedToLoad = hasChapterFailedToLoad
         context.coordinator.onPullDownBookmark = onPullDownBookmark
         context.coordinator.currentPlaybackHighlight = playbackHighlight
         let spreadModeChanged = context.coordinator.isDoublePageSpread != isDoublePageSpread
@@ -435,6 +439,8 @@ struct CoreTextPageEngineView: UIViewControllerRepresentable {
         let onUserPageTurnBegan: () -> Void
         let onSwipeUpExit: () -> Void
         var isCurrentPageBookmarked: () -> Bool
+        /// Refreshed every update pass; see `CoreTextPageEngineView.hasChapterFailedToLoad`.
+        var hasChapterFailedToLoad: (Int) -> Bool = { _ in false }
         var onPullDownBookmark: () -> Void
         let isRTL: Bool
         var isDoublePageSpread: Bool
@@ -642,10 +648,45 @@ struct CoreTextPageEngineView: UIViewControllerRepresentable {
             }
             guard let position = base.position else { return nil }
             let next = switch step {
+            case .forward: steppedPosition(.forward, from: position)
+            case .backward: steppedPosition(.backward, from: position)
+            }
+            return next.flatMap(turnTarget(at:))
+        }
+
+        /// The page one step from `position` in reading order — the one walk every turn
+        /// takes: a swipe, a tap, the curl's back, and the sentry's expectation of both.
+        ///
+        /// Nil from a page nobody has measured, so a turn waits for its chapter to land.
+        /// One exception, for a real external failure: a chapter whose fetch failed
+        /// never lands, and its 章節載入失敗 card offers only 重試, so waiting would leave
+        /// the reader stuck there (the 晴天 half of 回饋中心 #70 is such a chapter). From
+        /// its 載入中 page the turn steps over it, to the neighbouring chapter's edge —
+        /// named by the chapter count, never by an estimate. Delete this once a failed
+        /// chapter lays out a page of its own (its failure card as content).
+        private func steppedPosition(
+            _ step: ReaderPageTurnCommand.Step,
+            from position: CoreTextReadingPosition
+        ) -> CoreTextReadingPosition? {
+            let walked = switch step {
             case .forward: currentEngine.positionAfter(position)
             case .backward: currentEngine.positionBefore(position)
             }
-            return next.flatMap(turnTarget(at:))
+            if let walked { return walked }
+            let spine = position.spineIndex
+            guard currentEngine.layouts[spine] == nil, hasChapterFailedToLoad(spine) else { return nil }
+            let neighbour: CoreTextReadingPosition = switch step {
+            case .forward: .chapterStart(spine + 1)
+            case .backward: .chapterEnd(spine - 1)
+            }
+            // Out of the book's range at either edge. An engine may clamp an estimate
+            // into range (TXT does), so the page it names must be in that chapter.
+            guard neighbour.spineIndex >= 0,
+                  let page = currentEngine.estimatedGlobalPage(for: neighbour),
+                  currentEngine.localPosition(for: page).spineIndex == neighbour.spineIndex
+            else { return nil }
+            AppLogger.render("[FlipTrace] step over failed chapter=\(spine) to=\(neighbour)")
+            return neighbour
         }
 
         /// A position as a turn target, numbered by the pagination live now.
@@ -2089,7 +2130,7 @@ struct CoreTextPageEngineView: UIViewControllerRepresentable {
             // Position space from here down: see `PagePositionWalking`. The index the
             // page is showing under right now is not an identity UIKit may hold.
             guard let current = committedReadingPosition(of: vc),
-                  let previous = currentEngine.positionBefore(current) else { return nil }
+                  let previous = steppedPosition(.backward, from: current) else { return nil }
 
             if usesCurlBackPages {
                 return curlBackPage(behind: previous)
@@ -2103,7 +2144,7 @@ struct CoreTextPageEngineView: UIViewControllerRepresentable {
             if usesMidSpine { return midSpinePage(after: viewController) }
             if let backPage = viewController as? PageBackViewController {
                 guard let front = backPage.coreTextReadingPosition,
-                      let next = currentEngine.positionAfter(front) else { return nil }
+                      let next = steppedPosition(.forward, from: front) else { return nil }
                 return neighbourViewController(for: .position(next))
             }
 
@@ -2119,7 +2160,7 @@ struct CoreTextPageEngineView: UIViewControllerRepresentable {
             // goes silent while a chapter is partially paginated) or on `totalPages`
             // (which is re-derived every time any chapter's layout lands).
             guard let current = committedReadingPosition(of: vc),
-                  let next = currentEngine.positionAfter(current) else { return nil }
+                  let next = steppedPosition(.forward, from: current) else { return nil }
 
             if usesCurlBackPages {
                 // Double-sided interactive curl asks for a back and then a front. A back
@@ -2191,8 +2232,8 @@ struct CoreTextPageEngineView: UIViewControllerRepresentable {
                let start = committedReadingPosition(of: visible) {
                 ReaderPositionSentry.shared.expectGesture(
                     from: start,
-                    before: currentEngine.positionBefore(start),
-                    after: currentEngine.positionAfter(start),
+                    before: steppedPosition(.backward, from: start),
+                    after: steppedPosition(.forward, from: start),
                     // The gate is already counting animations we started ourselves, so
                     // it is the one thing here that can tell a user's swipe apart from
                     // a `setViewControllers(animated: true)` the app issued.

@@ -2008,6 +2008,10 @@ struct ReaderView: View {
                             transactionID: transactionID,
                             outcome: outcome
                         )
+                    },
+                    hasChapterFailedToLoad: { chapter in
+                        if case .failed = readerViewModel.chapterState(for: chapter) { return true }
+                        return false
                     }
                 )
                 .id(readerPageViewIdentity)
