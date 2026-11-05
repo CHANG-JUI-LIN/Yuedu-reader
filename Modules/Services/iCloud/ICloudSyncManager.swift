@@ -180,6 +180,8 @@ final class ICloudSyncManager: ObservableObject {
     nonisolated private static let readerBarLayoutRecordName = "reader_bar_layout_v2"
     nonisolated private static let readerKeepsScreenAwakeRecordName = "reader_keeps_screen_awake_v2"
     nonisolated private static let booksRecordName = "books_meta_v2"
+    /// Text readers' saved positions (`ReadingPositionSyncItem`), one item per book.
+    nonisolated private static let readingPositionsRecordName = "reading_positions_v1"
     /// The shelf as builds from before the split sync it.
     nonisolated private static let olderBuildsBooksRecordName = "books_meta"
 
@@ -191,7 +193,7 @@ final class ICloudSyncManager: ObservableObject {
     nonisolated private static let mergedRecordNames = [
         bookSourcesRecordName, replaceRulesRecordName, bubbleStylesRecordName,
         bubbleSelectionRecordName, commentCardStylesRecordName, readerBackgroundsRecordName, readingSettingsRecordName,
-        readerBarLayoutRecordName, readerKeepsScreenAwakeRecordName, booksRecordName,
+        readerBarLayoutRecordName, readerKeepsScreenAwakeRecordName, booksRecordName, readingPositionsRecordName,
         "book_sources", "replace_rules", "comment_bubble_styles", bubbleSelectionRecordID,
         "reader_backgrounds", "reading_settings", readerBarLayoutRecordID, olderBuildsBooksRecordName,
         "reader_background_choice", readerOverlayLayoutRecordID,
@@ -209,6 +211,7 @@ final class ICloudSyncManager: ObservableObject {
     nonisolated private static let shadowReaderKeepsScreenAwake = "icloud_readerKeepsScreenAwake_v2"
     nonisolated private static let shadowReaderBackgrounds = "icloud_readerBackgrounds_v2"
     nonisolated private static let shadowReadingSettings = "icloud_readingSettings_v2"
+    nonisolated private static let shadowReadingPositions = "icloud_readingPositions_v1"
     /// What this device synced through `books_meta` before the split: every book it had
     /// there, and every one it deleted. Only read, to tell a book an older build added from
     /// one this device already knew (`adoptBooksAddedByOlderBuilds`).
@@ -750,6 +753,15 @@ final class ICloudSyncManager: ObservableObject {
                     }
                 )
                 changedRemote = changedRemote || bookMerge.uploaded
+
+                try Task.checkCancellation()
+                // 5b. Text readers' positions. They restore only from the position store
+                //     (`ReaderNavigator.restore()`), which nothing synced since Firestore stopped
+                //     carrying data: a book read to 15% on one device showed 15% on the other's
+                //     shelf and opened at its first chapter (feedback #6). After the shelf, so a
+                //     book new here is held before its position arrives.
+                let positionMerge = try await mergeReadingPositions()
+                changedRemote = changedRemote || positionMerge.uploaded
             }
 
             try Task.checkCancellation()
@@ -786,6 +798,30 @@ final class ICloudSyncManager: ObservableObject {
             AppLogger.sync("sync(\(reason)) failed: \(error.localizedDescription)", level: .error)
             throw error
         }
+    }
+
+    /// Every saved position, merged newest-wins: each by when its file was saved here until a
+    /// sync has seen it, then by the merge's own clock. All of them, not only those of books on
+    /// this shelf: a position this device did not hold would be read as one it deleted, and
+    /// its tombstone would take the position from the devices that read the book. One for a
+    /// book not here yet waits in its file for the book.
+    nonisolated private func mergeReadingPositions() async throws -> CloudSyncMergeResult<ReadingPositionSyncItem> {
+        let positionStore = JSONFileReadingPositionStore()
+        let saved = positionStore.syncItems()
+        let savedAt = Dictionary(saved.map { ($0.item.bookId, $0.savedAt) }, uniquingKeysWith: { max($0, $1) })
+        return try await mergeType(
+            recordName: Self.readingPositionsRecordName,
+            shadowKey: Self.shadowReadingPositions,
+            local: saved.map(\.item),
+            id: { $0.bookId },
+            hash: { Self.stableHash($0) },
+            fallbackUpdatedAt: { savedAt[$0.bookId] ?? .distantPast },
+            applyLocally: { merged in
+                let written = positionStore.applySyncItems(merged)
+                AppLogger.sync("⟐ reading positions: \(written) written from another device", level: .notice)
+                return true
+            }
+        )
     }
 
     /// Downloads one cloud data blob, merges it with `local`, uploads the merged blob back,

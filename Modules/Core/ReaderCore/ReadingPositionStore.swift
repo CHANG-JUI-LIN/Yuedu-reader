@@ -21,8 +21,8 @@ final class JSONFileReadingPositionStore: ReadingPositionStore {
     private let encoder = JSONEncoder()
     private let decoder = JSONDecoder()
 
-    init() {
-        self.baseURL = StorageLocations.readingPosition
+    init(baseURL: URL = StorageLocations.readingPosition) {
+        self.baseURL = baseURL
     }
 
     private func fileURL(for bookId: String) -> URL {
@@ -85,7 +85,7 @@ final class JSONFileReadingPositionStore: ReadingPositionStore {
     /// ignore — 0.11's, and a converted book's text version (`ConvertedTextVersions`). A
     /// position written through `replacePositionsFromSync` carries no 0.11 stamp: another
     /// device's build wrote it. It keeps the text version that device stamped.
-    private struct StoredPosition: Codable {
+    fileprivate struct StoredPosition: Codable {
         let spineIndex: Int
         let charOffset: Int
         var translationOffset: Int?
@@ -101,23 +101,109 @@ final class JSONFileReadingPositionStore: ReadingPositionStore {
         }
     }
 
-    /// Another device's positions. One stamped with a text version other than this device's
-    /// saved position is not written over it: each indexes its own text, and this device
-    /// can read only its own.
+    /// Another device's positions, from Firestore. They carry no 0.11 stamp.
     static func replacePositionsFromSync(_ positions: [String: SyncedReadingPosition]) {
-        let store = JSONFileReadingPositionStore()
-        for (bookId, synced) in positions {
-            let url = store.fileURL(for: bookId)
-            if let data = try? Data(contentsOf: url),
-               let saved = try? store.decoder.decode(StoredPosition.self, from: data),
-               (saved.textVersion ?? ConvertedTextVersions.unstamped) != (synced.textVersion ?? ConvertedTextVersions.unstamped) {
-                AppLogger.cache("[ConvertedText] synced position of another text version kept apart bookId=\(bookId) saved=\(saved.textVersion.map(String.init) ?? "none") synced=\(synced.textVersion.map(String.init) ?? "none")", level: .notice)
-                continue
-            }
-            let stored = StoredPosition(synced.position, countsPictures: nil, textVersion: synced.textVersion)
-            guard let data = try? store.encoder.encode(stored) else { continue }
-            try? data.write(to: url, options: .atomic)
+        JSONFileReadingPositionStore().applySyncItems(positions.map { bookId, synced in
+            ReadingPositionSyncItem(bookId: bookId, position: synced.position, textVersion: synced.textVersion)
+        })
+    }
+
+    // MARK: Sync
+
+    /// Every book's saved position, with when it was saved: the file's modification date, the
+    /// clock iCloud merges positions by (`ICloudSyncManager`, "reading_positions_v1"). Only
+    /// `<book id>.json` files: the folder also holds TXT re-index journals.
+    func syncItems() -> [(item: ReadingPositionSyncItem, savedAt: Date)] {
+        let names: [String]
+        do {
+            names = try FileManager.default.contentsOfDirectory(atPath: baseURL.path)
+        } catch {
+            AppLogger.cache("[PositionSync] position folder unreadable: \(error)", level: .error)
+            return []
         }
+        return names.compactMap { name -> (item: ReadingPositionSyncItem, savedAt: Date)? in
+            guard name.hasSuffix(".json") else { return nil }
+            let bookId = String(name.dropLast(".json".count))
+            guard UUID(uuidString: bookId) != nil else { return nil }
+            let url = baseURL.appendingPathComponent(name)
+            do {
+                let saved = try decoder.decode(StoredPosition.self, from: Data(contentsOf: url))
+                let savedAt = try FileManager.default.attributesOfItem(atPath: url.path)[.modificationDate] as? Date
+                return (ReadingPositionSyncItem(bookId: bookId, saved), savedAt ?? .distantPast)
+            } catch {
+                AppLogger.cache("[PositionSync] unreadable position file bookId=\(bookId): \(error)", level: .error)
+                return nil
+            }
+        }
+    }
+
+    /// Writes the positions another device saved over this device's, as that device stamped
+    /// them, and returns how many it wrote. One already saved here as it is, or one of a text
+    /// version other than this device's saved position, is left: each version indexes its own
+    /// text, and this device can read only its own.
+    @discardableResult
+    func applySyncItems(_ items: [ReadingPositionSyncItem]) -> Int {
+        var written = 0
+        for item in items {
+            let url = fileURL(for: item.bookId)
+            if FileManager.default.fileExists(atPath: url.path) {
+                do {
+                    let saved = try decoder.decode(StoredPosition.self, from: Data(contentsOf: url))
+                    if ReadingPositionSyncItem(bookId: item.bookId, saved) == item { continue }
+                    if (saved.textVersion ?? ConvertedTextVersions.unstamped) != (item.textVersion ?? ConvertedTextVersions.unstamped) {
+                        AppLogger.cache("[ConvertedText] synced position of another text version kept apart bookId=\(item.bookId) saved=\(saved.textVersion.map(String.init) ?? "none") synced=\(item.textVersion.map(String.init) ?? "none")", level: .notice)
+                        continue
+                    }
+                } catch {
+                    AppLogger.cache("[PositionSync] unreadable position file bookId=\(item.bookId), replaced: \(error)", level: .error)
+                }
+            }
+            let stored = StoredPosition(item.position, countsPictures: item.countsPictures, textVersion: item.textVersion)
+            do {
+                try encoder.encode(stored).write(to: url, options: .atomic)
+                written += 1
+                AppLogger.cache("[ProgressTrace][PositionStore] synced bookId=\(item.bookId) spine=\(item.spineIndex) charOffset=\(item.charOffset)")
+            } catch {
+                AppLogger.cache("[PositionSync] synced position not written bookId=\(item.bookId): \(error)", level: .error)
+            }
+        }
+        return written
+    }
+}
+
+/// One book's saved text-reader position as iCloud syncs it: what its file holds, the stamps
+/// included, so the device it reaches reads it as the device that saved it did. Text readers
+/// restore only from this file (`ReaderNavigator.restore()`); the book record's
+/// `currentPosition` is the shelf's percentage, and does not place the reader.
+struct ReadingPositionSyncItem: Codable, Equatable, Sendable {
+    var bookId: String
+    var spineIndex: Int
+    var charOffset: Int
+    var translationOffset: Int?
+    /// The file's 0.11 stamp (`PictureOffsetMigration`); absent from one saved unstamped,
+    /// which the receiving device moves once, as the saving device would have.
+    var countsPictures: Bool?
+    /// A converted book's text version (`ConvertedTextVersions`).
+    var textVersion: Int?
+
+    init(bookId: String, position: CoreTextReadingPosition, countsPictures: Bool? = nil, textVersion: Int? = nil) {
+        self.bookId = bookId
+        spineIndex = position.spineIndex
+        charOffset = position.charOffset
+        translationOffset = position.translationOffset
+        self.countsPictures = countsPictures
+        self.textVersion = textVersion
+    }
+
+    fileprivate init(bookId: String, _ saved: JSONFileReadingPositionStore.StoredPosition) {
+        self.init(bookId: bookId,
+                  position: CoreTextReadingPosition(spineIndex: saved.spineIndex, charOffset: saved.charOffset,
+                                                    translationOffset: saved.translationOffset),
+                  countsPictures: saved.countsPictures, textVersion: saved.textVersion)
+    }
+
+    var position: CoreTextReadingPosition {
+        CoreTextReadingPosition(spineIndex: spineIndex, charOffset: charOffset, translationOffset: translationOffset)
     }
 }
 
