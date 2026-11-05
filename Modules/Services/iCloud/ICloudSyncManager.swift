@@ -712,11 +712,20 @@ final class ICloudSyncManager: ObservableObject {
                 // trip to the background.
                 // Main-thread hops of a sync are spans: a stall during one names it instead
                 // of "no instrumented span" (the field's background stalls, 3.0.0 (129)).
-                let (localBooks, bookMutationRevision) = await MainActor.run {
+                let (heldBooks, bookMutationRevision) = await MainActor.run {
                     SourcePerfTrace.span("sync.read.books", thresholdMs: 5) {
                         (store.syncedBooks.map { $0.withoutTableOfContents() }, store.mutationRevision)
                     }
                 }
+                BookSyncHashMigration.runOnce(
+                    shadowKey: Self.shadowBooks,
+                    local: heldBooks,
+                    oldHash: { Self.stableHash(BookSyncHashMigration.legacyHashedBook($0)) },
+                    newHash: { Self.stableHash($0.strippedForSync()) }
+                )
+                // What this device keeps for itself stays out of the upload as it stays out of
+                // the hash; `snapshotForSync` puts it back on whatever the merge applies.
+                let localBooks = heldBooks.map { $0.strippedForSync() }
                 let bookMerge = try await mergeType(
                     recordName: Self.booksRecordName,
                     shadowKey: Self.shadowBooks,

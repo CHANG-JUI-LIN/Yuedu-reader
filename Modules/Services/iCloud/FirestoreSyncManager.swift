@@ -370,6 +370,7 @@ final class FirestoreSyncManager: ObservableObject {
         }
 
         if let store = bookStore {
+            migrateBookShadowHashes(local: store.syncedBooks)
             let bookMutationRevision = store.mutationRevision
             let merged = try await pullCollection(
                 ReadingBook.self,
@@ -493,6 +494,7 @@ final class FirestoreSyncManager: ObservableObject {
 
     private func pushBooks() async throws {
         guard let uid = FirebaseAuthManager.shared.uid, let bookStore else { return }
+        migrateBookShadowHashes(local: bookStore.syncedBooks)
         let stripped = bookStore.syncedBooks.map { $0.strippedForSync() }
         try await pushCollection(
             stripped,
@@ -645,6 +647,17 @@ final class FirestoreSyncManager: ObservableObject {
         state = .synced(date)
     }
 
+    /// The books shadow, pull's and push's, rehashed once without device-local state
+    /// (`BookSyncHashMigration`).
+    private func migrateBookShadowHashes(local: [ReadingBook]) {
+        BookSyncHashMigration.runOnce(
+            shadowKey: "books",
+            local: local,
+            oldHash: { [weak self] in self?.stableHash(BookSyncHashMigration.legacyHashedBook($0)) ?? "" },
+            newHash: { [weak self] in self?.stableHash($0.strippedForSync()) ?? "" }
+        )
+    }
+
     /// Deterministic content hash used for change detection (stable across launches).
     private func stableHash<T: Encodable>(_ value: T) -> String {
         let encoder = JSONEncoder()
@@ -755,17 +768,17 @@ enum FirestoreSyncMerge {
 enum SyncShadowStore {
     private static let prefix = "yd_firestore_shadow_"
 
-    static func load(_ collection: String) -> [String: SyncShadowEntry] {
-        guard let data = UserDefaults.standard.data(forKey: prefix + collection),
+    static func load(_ collection: String, defaults: UserDefaults = .standard) -> [String: SyncShadowEntry] {
+        guard let data = defaults.data(forKey: prefix + collection),
               let decoded = try? JSONDecoder().decode([String: SyncShadowEntry].self, from: data) else {
             return [:]
         }
         return decoded
     }
 
-    static func save(_ collection: String, _ entries: [String: SyncShadowEntry]) {
+    static func save(_ collection: String, _ entries: [String: SyncShadowEntry], defaults: UserDefaults = .standard) {
         guard let data = try? JSONEncoder().encode(entries) else { return }
-        UserDefaults.standard.set(data, forKey: prefix + collection)
+        defaults.set(data, forKey: prefix + collection)
     }
 
     static func clearAll(collections: [String]) {

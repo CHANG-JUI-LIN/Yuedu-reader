@@ -2858,7 +2858,11 @@ class BookStore: @MainActor ObservableObject, BookProvider {
         // it otherwise.
         let shelfIDs = Set(syncedRecords.filter { $0.versionOf == nil }.map(\.id))
         let shelf = syncedRecords.map { book in
+            // What each device keeps for itself stays this device's: a merged copy carries none,
+            // or, from a build before 2026-11-05, the other device's (`withDeviceLocalState`). A
+            // book new here takes what arrived, which from a current build is that state reset.
             var merged = book.withoutTableOfContents()
+            if let local = localRecords[book.id] { merged = merged.withDeviceLocalState(of: local) }
             if let shelfID = merged.versionOf, !shelfIDs.contains(shelfID) { merged.versionOf = nil }
             merged.isInBookshelf = merged.versionOf == nil
             // A module's book whose record came back from a build before `module` existed:

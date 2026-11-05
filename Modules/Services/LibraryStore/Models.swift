@@ -201,15 +201,60 @@ extension ReadingBook {
         return copy
     }
 
-    /// A copy suitable for storing in a single Firestore document. The online
-    /// chapter list can be thousands of entries (web novels) and would risk the
-    /// 1 MB document limit, so it is dropped — it stays local and is re-fetchable
-    /// from the source's table of contents.
+    /// The book as it leaves this device — the value iCloud and Firestore upload, and the one
+    /// their sync hash is computed from: without its table of contents (`withoutTableOfContents`)
+    /// and without the state each device keeps for itself (`withDeviceLocalState(of: nil)`).
+    ///
+    /// The hash is the merge's edit detector: a hash that differs from the last sync's stamps the
+    /// whole record `now`, and the newest record wins. A field a device sets on its own — a launch
+    /// refresh finding new chapters, a download finishing a chapter, a remote file revalidated —
+    /// made the iPad's untouched copy, still at the first chapter, newer than the 15% read on the
+    /// iPhone, and it overwrote it (feedback #6). Only what the reader did belongs in the hash.
     func strippedForSync() -> ReadingBook {
-        var copy = withoutTableOfContents()
+        withoutTableOfContents().withDeviceLocalState(of: nil)
+    }
+
+    /// This book with the state each device keeps for itself taken from `local`, the record this
+    /// device holds — or, for a book new here, reset to what a device that has done nothing with
+    /// it holds. The one definition of that state; every other encoded field syncs:
+    ///
+    /// - `hasNewChapterUpdate`: set by this device's own table-of-contents refresh, cleared when
+    ///   it opens the book.
+    /// - `offlineDownloadState`, `downloadedChapterCount`, `offlineDownloadTask`: the chapters
+    ///   downloaded here.
+    /// - `compatibilityState`'s automatic values (`.quarantined`, `.autoFallback`), written when
+    ///   chapters fail to load here. Any other value is kept as it arrived.
+    /// - `remoteSource`'s `version`, `entityTag`, `lastModified`, `contentLength` and
+    ///   `cachedFilename`, and the `contentFilename` that names that cache: what this device last
+    ///   fetched of a remote library's file. Another device opens the saved offline copy, if any.
+    func withDeviceLocalState(of local: ReadingBook?) -> ReadingBook {
+        var copy = self
+        copy.hasNewChapterUpdate = local?.hasNewChapterUpdate ?? false
+        copy.offlineDownloadState = local?.offlineDownloadState ?? .none
+        copy.downloadedChapterCount = local?.downloadedChapterCount ?? 0
+        copy.offlineDownloadTask = local?.offlineDownloadTask
+        if let mine = local?.compatibilityState, mine.isAutomatic {
+            copy.compatibilityState = mine
+        } else if copy.compatibilityState.isAutomatic {
+            copy.compatibilityState = .defaultWeb
+        }
         if let reference = copy.remoteSource {
-            copy.remoteSource?.cachedFilename = nil
-            copy.contentFilename = reference.offlineFilename ?? ""
+            if let local, let mine = local.remoteSource, mine.connectionID == reference.connectionID,
+               mine.entryID == reference.entryID, mine.format == reference.format {
+                copy.remoteSource?.version = mine.version
+                copy.remoteSource?.entityTag = mine.entityTag
+                copy.remoteSource?.lastModified = mine.lastModified
+                copy.remoteSource?.contentLength = mine.contentLength
+                copy.remoteSource?.cachedFilename = mine.cachedFilename
+                copy.contentFilename = local.contentFilename
+            } else {
+                copy.remoteSource?.version = nil
+                copy.remoteSource?.entityTag = nil
+                copy.remoteSource?.lastModified = nil
+                copy.remoteSource?.contentLength = nil
+                copy.remoteSource?.cachedFilename = nil
+                copy.contentFilename = reference.offlineFilename ?? ""
+            }
         }
         return copy
     }
@@ -618,6 +663,10 @@ enum BookCompatibilityState: String, Codable {
     case autoFallback
     case forcedLegacy
     case quarantined
+
+    /// Written by this device's own failures, not chosen: kept off sync
+    /// (`ReadingBook.withDeviceLocalState(of:)`).
+    var isAutomatic: Bool { self == .autoFallback || self == .quarantined }
 }
 
 enum BookOfflineDownloadState: String, Codable, Sendable {
