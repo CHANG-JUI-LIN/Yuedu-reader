@@ -471,17 +471,22 @@ struct AudiobookVolumeSlider: UIViewRepresentable {
             // that draws it differently, or the simulator, which has no volume to set — leaves
             // the system's look.
             guard let slider = subviews.lazy.compactMap({ $0 as? UISlider }).first else { return }
-            if !isStyled {
-                isStyled = true
-                ScrubSlider.makeThumbless(slider, dot: UIColor(DSColor.audiobookPlayerTrackFill))
-                slider.minimumTrackTintColor = UIColor(DSColor.audiobookPlayerTrackFill)
-                slider.maximumTrackTintColor = UIColor(DSColor.audiobookPlayerTrack)
-            }
-            // MPVolumeView lays its slider from the top of its bounds, at the slider's own
-            // height; the row centres this view on the speakers beside it, so the track sat
-            // above their middle (on device, 2026-11-05). Every layout puts the track's middle on ours.
-            let track = slider.convert(slider.trackRect(forBounds: slider.bounds), to: self)
-            slider.frame.origin.y += bounds.midY - track.midY
+            guard !isStyled else { return }
+            isStyled = true
+            ScrubSlider.makeThumbless(slider, dot: UIColor(DSColor.audiobookPlayerTrackFill))
+            slider.minimumTrackTintColor = UIColor(DSColor.audiobookPlayerTrackFill)
+            slider.maximumTrackTintColor = UIColor(DSColor.audiobookPlayerTrack)
+        }
+
+        /// The slider's middle on ours. UIKit draws the track in the slider's middle; the row
+        /// centres this view on the speakers beside it. MPVolumeView's own rect hangs its 28pt
+        /// slider off the 18pt route button instead, which put the track 6pt above the speakers
+        /// (device, 2026-11-05). Every frame the slider gets comes from here — layout, and route
+        /// discovery, which a device runs on its own and which never lays the view out again.
+        override func volumeSliderRect(forBounds bounds: CGRect) -> CGRect {
+            var rect = super.volumeSliderRect(forBounds: bounds)
+            rect.origin.y = bounds.midY - rect.height / 2
+            return rect
         }
     }
 }

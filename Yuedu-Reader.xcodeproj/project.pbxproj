@@ -1183,13 +1183,13 @@
 			isa = XCLocalSwiftPackageReference;
 			relativePath = Packages/SwiftSoup;
 		};
-		D8654E038B484E472D6D37EA /* XCLocalSwiftPackageReference "Packages/CLexbor" */ = {
-			isa = XCLocalSwiftPackageReference;
-			relativePath = Packages/CLexbor;
-		};
 		BBBB2222BBBB2222BBBB0003 /* XCLocalSwiftPackageReference "Packages/LNPopupUI" */ = {
 			isa = XCLocalSwiftPackageReference;
 			relativePath = Packages/LNPopupUI;
+		};
+		D8654E038B484E472D6D37EA /* XCLocalSwiftPackageReference "Packages/CLexbor" */ = {
+			isa = XCLocalSwiftPackageReference;
+			relativePath = Packages/CLexbor;
 		};
 /* End XCLocalSwiftPackageReference section */
 
