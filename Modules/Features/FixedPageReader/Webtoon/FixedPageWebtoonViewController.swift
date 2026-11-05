@@ -52,6 +52,7 @@ final class FixedPageWebtoonViewController: UIViewController, FixedPageModeReade
     }
     /// Logs the frames the screen misses while the strip moves (FB-133).
     private let frameGapProbe = FixedPageFrameGapProbe(stage: "webtoon.frameGap")
+    var isWatchingFrames: Bool { frameGapProbe.isWatching }
 
     private func updateContentScrolling() {
         isContentScrolling = isFingerScrolling || (isAutoScrolling && !isPausedByTouch)
@@ -100,6 +101,9 @@ final class FixedPageWebtoonViewController: UIViewController, FixedPageModeReade
         super.viewWillDisappear(animated)
         stopAutoScroll()
         cancelZoomAnimation()
+        // A reader closed mid-fling never hears the fling end. The strip stops moving with
+        // it, and the frame-gap probe's display link, which holds the probe, goes with it.
+        isFingerScrolling = false
     }
 
     override func viewDidLoad() {

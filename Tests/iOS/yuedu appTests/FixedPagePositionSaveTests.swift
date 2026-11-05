@@ -32,6 +32,21 @@ struct FixedPagePositionSaveTests {
         #expect(harness.store.books.first { $0.id == harness.bookID }?.mangaPage == 3)
     }
 
+    @Test("a strip closed while it is still moving stops watching its frames")
+    func closingMidFlingStopsTheFrameProbe() async throws {
+        let harness = try await Harness()
+        defer { harness.tearDown() }
+        let strip = try #require(harness.reader.reader as? FixedPageWebtoonViewController)
+
+        // A drag begins and is let go with momentum; the reader closes before the glide ends.
+        strip.scrollViewWillBeginDragging(strip.collectionView)
+        strip.scrollViewDidEndDragging(strip.collectionView, willDecelerate: true)
+        #expect(strip.isWatchingFrames)
+
+        harness.leave()
+        #expect(!strip.isWatchingFrames, "the probe's display link outlived the reader")
+    }
+
     /// The main thread's own time for each page read, with the real `HomeView` and 300 books
     /// mounted behind the reader: what one position save costs while the strip moves.
     /// Opt-in (`TEST_RUNNER_SHELF_RENDER_SCALE_TESTS=1`), like `ShelfRenderScaleTests`; the
