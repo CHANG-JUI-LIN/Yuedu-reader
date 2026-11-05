@@ -131,6 +131,59 @@ struct TTSChunkAudioPlayerTests {
         #expect(peak < 1)
     }
 
+    /// 回饋中心 #134's other voice is an imported 小米 MiMo source: `java.setResponseBase64`
+    /// hands over the base64 WAV from `choices[0].message.audio.data`. MiMo's docs give no
+    /// sample rate, so every rate a TTS server plausibly uses, in every header shape a WAV
+    /// writer emits: an extra `LIST` chunk, a `fmt ` with `cbSize`, WAVE_FORMAT_EXTENSIBLE,
+    /// the 0xFFFFFFFF sizes a streaming writer leaves, a `data` size past the end of the body,
+    /// and an odd-sized chunk with its pad byte. A misread header would turn speech into noise.
+    @Test(
+        "a MiMo-shaped PCM16 WAV decodes bit-exact under every header variant",
+        arguments: [16_000, 22_050, 24_000, 44_100, 48_000]
+    )
+    func wavHeaderVariantsDecodeBitExact(sampleRate: Int) throws {
+        let pcm = Self.speechLikePCM16(frames: sampleRate * 3 + 777, sampleRate: sampleRate)
+        for variant in WAVVariant.allCases {
+            let decoder = try TTSChunkDecoder(data: Self.wav(pcm, sampleRate: sampleRate, variant: variant))
+            #expect(decoder.processingFormat.sampleRate == Double(sampleRate), "\(variant)")
+            #expect(decoder.processingFormat.channelCount == 1, "\(variant)")
+            var decoded: [Float] = []
+            while let buffer = try decoder.read(frameCapacity: AVAudioFrameCount(sampleRate)) {
+                decoded += Self.channel0(buffer)
+            }
+            #expect(decoded.count == pcm.count, "\(variant)")
+            let worst = zip(decoded, pcm).map { abs($0 - Float($1) / 32_768) }.max() ?? 1
+            #expect(worst == 0, "\(variant) at \(sampleRate) Hz: worst sample error \(worst)")
+        }
+    }
+
+    /// The same WAV through the whole graph a listener hears — time-pitch at 1×, the mixer's
+    /// mono→stereo upmix and its resample to a 48 kHz route. THD+N of a 1 kHz tone isolates
+    /// in-band noise, which the >12 kHz image check above cannot see. A 16-bit source's own
+    /// quantization floor is about −98 dB at 0.9 full scale.
+    @Test("a MiMo-shaped WAV reaches a 48 kHz stereo route at the 16-bit noise floor")
+    func wavThroughGraphIsAtNoiseFloor() async throws {
+        let sampleRate = 24_000
+        let pcm = (0..<(sampleRate * 4)).map {
+            Int16((0.9 * 32_767 * sin(2 * Double.pi * 1_000 * Double($0) / Double(sampleRate))).rounded())
+        }
+        let output = try #require(AVAudioFormat(standardFormatWithSampleRate: 48_000, channels: 2))
+        let player = TTSChunkAudioPlayer(manualRenderingFormat: output)
+        try player.load(data: Self.wav(pcm, sampleRate: sampleRate, variant: .canonical))
+        player.rate = 1
+        #expect(player.play())
+
+        let (left, right) = try await Self.renderStereo(player, frames: 48_000 * 3)
+        // Skip the resampler's start-up; measure two settled seconds.
+        let window = 24_000..<120_000
+        let thdnLeft = Self.thdn(Array(left[window]), frequency: 1_000, sampleRate: 48_000)
+        let thdnRight = Self.thdn(Array(right[window]), frequency: 1_000, sampleRate: 48_000)
+        print("⏱ TTSChunkAudioPlayer MiMo-shaped WAV 24k→48k stereo THD+N L=\(String(format: "%.1f", thdnLeft)) dB R=\(String(format: "%.1f", thdnRight)) dB")
+        #expect(thdnLeft < -90)
+        #expect(thdnRight < -90)
+        #expect((left.map(abs).max() ?? 0) < 1)
+    }
+
     // MARK: - Helpers
 
     private final class FinishRecorder: TTSChunkAudioPlayerDelegate {
@@ -162,6 +215,94 @@ struct TTSChunkAudioPlayerTests {
         data.append(contentsOf: Array("data".utf8)); u32(size)
         samples.forEach { u16(UInt16(bitPattern: $0)) }
         return data
+    }
+
+    enum WAVVariant: CaseIterable {
+        case canonical, listChunk, fmtWithCbSize, extensible, streamingSizes, oversizedData, oddChunkPadding
+    }
+
+    /// Speech-band tones plus a little noise, near full scale, so a byte-misaligned or
+    /// mis-scaled decode cannot hide.
+    private static func speechLikePCM16(frames: Int, sampleRate: Int) -> [Int16] {
+        var seed: UInt64 = 0x134
+        return (0..<frames).map { i in
+            let t = Double(i) / Double(sampleRate)
+            seed = seed &* 6_364_136_223_846_793_005 &+ 1_442_695_040_888_963_407
+            let noise = Double(Int64(bitPattern: seed >> 11) % 1_000) / 1_000
+            let v = 0.9 * (0.5 * sin(2 * .pi * 180 * t) + 0.3 * sin(2 * .pi * 1_234 * t)
+                + 0.15 * sin(2 * .pi * 3_700 * t) + 0.05 * noise)
+            return Int16(max(-32_768, min(32_767, (v * 32_767).rounded())))
+        }
+    }
+
+    private static func wav(_ pcm: [Int16], sampleRate: Int, variant: WAVVariant) -> Data {
+        func u32(_ v: UInt32) -> [UInt8] { withUnsafeBytes(of: v.littleEndian, Array.init) }
+        func u16(_ v: UInt16) -> [UInt8] { withUnsafeBytes(of: v.littleEndian, Array.init) }
+        func chunk(_ id: String, _ body: [UInt8], size: UInt32? = nil) -> [UInt8] {
+            Array(id.utf8) + u32(size ?? UInt32(body.count)) + body + (body.count % 2 == 1 ? [0] : [])
+        }
+        let samples = pcm.flatMap { u16(UInt16(bitPattern: $0)) }
+        var fmt = u16(variant == .extensible ? 0xFFFE : 1) + u16(1) + u32(UInt32(sampleRate))
+            + u32(UInt32(sampleRate * 2)) + u16(2) + u16(16)
+        switch variant {
+        case .fmtWithCbSize: fmt += u16(0)
+        case .extensible:
+            // cbSize 22, 16 valid bits, front-centre, KSDATAFORMAT_SUBTYPE_PCM.
+            fmt += u16(22) + u16(16) + u32(4)
+                + [0x01, 0, 0, 0, 0, 0, 0x10, 0, 0x80, 0, 0, 0xAA, 0, 0x38, 0x9B, 0x71]
+        default: break
+        }
+        var body = Array("WAVE".utf8) + chunk("fmt ", fmt)
+        switch variant {
+        case .listChunk: body += chunk("LIST", Array("INFOISFT".utf8) + u32(14) + Array("Lavf61.7.100\0\0".utf8))
+        case .oddChunkPadding: body += chunk("junk", [1, 2, 3])
+        default: break
+        }
+        switch variant {
+        case .streamingSizes: body += chunk("data", samples, size: 0xFFFF_FFFF)
+        case .oversizedData: body += chunk("data", samples, size: UInt32(samples.count + 10_000))
+        default: body += chunk("data", samples)
+        }
+        let riffSize: UInt32 = variant == .streamingSizes ? 0xFFFF_FFFF : UInt32(body.count)
+        return Data(Array("RIFF".utf8) + u32(riffSize) + body)
+    }
+
+    /// Total harmonic distortion plus noise: the least-squares fundamental removed, the
+    /// residual's energy relative to the whole, in dB.
+    private static func thdn(_ samples: [Float], frequency: Double, sampleRate: Double) -> Double {
+        var s = 0.0, c = 0.0, ss = 0.0, cc = 0.0, sc = 0.0
+        for (i, v) in samples.enumerated() {
+            let w = 2 * Double.pi * frequency * Double(i) / sampleRate
+            let a = sin(w), b = cos(w)
+            s += Double(v) * a; c += Double(v) * b; ss += a * a; cc += b * b; sc += a * b
+        }
+        let det = ss * cc - sc * sc
+        let sinGain = (s * cc - c * sc) / det, cosGain = (c * ss - s * sc) / det
+        var residual = 0.0, total = 0.0
+        for (i, v) in samples.enumerated() {
+            let w = 2 * Double.pi * frequency * Double(i) / sampleRate
+            let r = Double(v) - sinGain * sin(w) - cosGain * cos(w)
+            residual += r * r
+            total += Double(v) * Double(v)
+        }
+        return 10 * log10(max(residual, 1e-30) / max(total, 1e-30))
+    }
+
+    private static func renderStereo(
+        _ player: TTSChunkAudioPlayer,
+        frames: Int
+    ) async throws -> (left: [Float], right: [Float]) {
+        let buffer = try #require(AVAudioPCMBuffer(pcmFormat: player.engine.manualRenderingFormat, frameCapacity: 4096))
+        var left: [Float] = [], right: [Float] = []
+        while left.count < frames {
+            let status = try player.engine.renderOffline(AVAudioFrameCount(min(4096, frames - left.count)), to: buffer)
+            #expect(status == .success)
+            let count = Int(buffer.frameLength)
+            left += UnsafeBufferPointer(start: buffer.floatChannelData![0], count: count)
+            right += UnsafeBufferPointer(start: buffer.floatChannelData![1], count: count)
+            try await Task.sleep(for: .milliseconds(1))
+        }
+        return (left, right)
     }
 
     private static func sourceFormat() throws -> AVAudioFormat {
