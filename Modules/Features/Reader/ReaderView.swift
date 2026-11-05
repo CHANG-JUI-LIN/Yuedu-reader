@@ -1187,16 +1187,19 @@ struct ReaderView: View {
         guard ReaderProgressSyncPolicy.canPublishIndexPosition(
             isTXT: book?.resolvedPipelineKind == .txt, indexReady: txtIndexReady
         ) else { return }
-        let newChapter = visiblePosition?.spineIndex ?? engine.charOffset(forPage: newPage).spineIndex
+        // A page number alone is display output. Read back into a chapter, it named
+        // whichever chapter the page estimates put there by the time this ran — two
+        // main-queue hops after it was taken, with a chapter landing in between — and
+        // this moved the reader there: 目錄 to 第31章, then 第112章 (回饋中心 #140). Every
+        // page the reader can settle on comes with its position.
+        guard let settledPosition = visiblePosition else {
+            progressTrace("onPageChanged page=\(newPage) noPosition — the reading position stays")
+            return
+        }
+        let newChapter = settledPosition.spineIndex
         let chapterChanged = newChapter != currentChapterIndex
 
         currentChapterIndex = newChapter
-        let settledPosition = visiblePosition
-            ?? engine.readingPosition(forPage: newPage)
-            ?? CoreTextReadingPosition(
-                spineIndex: engine.charOffset(forPage: newPage).spineIndex,
-                charOffset: engine.charOffset(forPage: newPage).charOffset
-            )
         moveReaderSession(
             to: settledPosition,
             source: .settledPage,

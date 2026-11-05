@@ -429,21 +429,21 @@ struct ReaderPresentationContractTests {
     func sessionCoordinatorOwnsTransitionQueue() {
         let coordinator = makeSessionCoordinator(bookId: "coordinator-transition")
 
-        let first = coordinator.send(.pageTurnRequested(targetPage: 11, visiblePage: 10))
-        #expect(first == [.requestPageTransition(targetPage: 11)])
+        let first = coordinator.send(.pageTurnRequested(target: .page(11), visible: .page(10)))
+        #expect(first == [.requestPageTransition(.page(11))])
         #expect(coordinator.isPageTransitioning)
 
-        let second = coordinator.send(.pageTurnRequested(targetPage: 12, visiblePage: 10))
+        let second = coordinator.send(.pageTurnRequested(target: .page(12), visible: .page(10)))
         #expect(second.isEmpty)
 
-        let settled = coordinator.send(.pageTransitionSettled(visiblePage: 11))
+        let settled = coordinator.send(.pageTransitionSettled(visible: .page(11)))
         #expect(settled == [
             .warmUpNext(currentGlobalPage: 11),
-            .requestPageTransition(targetPage: 12)
+            .requestPageTransition(.page(12))
         ])
         #expect(coordinator.isPageTransitioning)
 
-        let finalSettle = coordinator.send(.pageTransitionSettled(visiblePage: 12))
+        let finalSettle = coordinator.send(.pageTransitionSettled(visible: .page(12)))
         #expect(finalSettle == [.warmUpNext(currentGlobalPage: 12)])
         #expect(!coordinator.isPageTransitioning)
 

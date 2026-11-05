@@ -23,8 +23,8 @@ enum ReaderAction: Equatable {
     case updateDirection(ReaderReadingDirection)
     case updateSpreadMode(ReaderSpreadMode)
     case updatePagingStyle(ReaderPagingStyle)
-    case pageTurnRequested(targetPage: Int, visiblePage: Int)
-    case pageTransitionSettled(visiblePage: Int)
+    case pageTurnRequested(target: ReaderPageTurnTarget, visible: ReaderPageTurnTarget)
+    case pageTransitionSettled(visible: ReaderPageTurnTarget)
     case chapterReady(Int?)
     case warmUpNext(currentGlobalPage: Int)
     case internalLinkResolved(position: CoreTextReadingPosition, pageIndex: Int?, totalPages: Int?)
@@ -33,7 +33,7 @@ enum ReaderAction: Equatable {
 
 enum ReaderEffect: Equatable {
     case persistPosition(CoreTextReadingPosition)
-    case requestPageTransition(targetPage: Int)
+    case requestPageTransition(ReaderPageTurnTarget)
     case warmUpNext(currentGlobalPage: Int)
     case clearExternalTarget
     case publishPageChanged(pageIndex: Int, position: CoreTextReadingPosition?)
@@ -74,7 +74,7 @@ final class ReaderSessionCoordinator: ObservableObject {
 
     /// The page a tap turn steps from while turns are still playing; see
     /// `ReaderPageTransitionQueue.destination`.
-    var pageTurnDestination: Int? {
+    var pageTurnDestination: ReaderPageTurnTarget? {
         transitionQueue.destination
     }
 
@@ -102,7 +102,7 @@ final class ReaderSessionCoordinator: ObservableObject {
         return [.clearExternalTarget]
     }
 
-    func beginInteractivePageTransition(target: Int? = nil) {
+    func beginInteractivePageTransition(target: ReaderPageTurnTarget? = nil) {
         transitionQueue.beginInteractiveTransition(target: target)
     }
 
@@ -162,18 +162,18 @@ final class ReaderSessionCoordinator: ObservableObject {
             navigator.switchPagingStyle(style)
             return []
 
-        case let .pageTurnRequested(targetPage, visiblePage):
-            switch transitionQueue.requestTransition(to: targetPage, visiblePage: visiblePage) {
+        case let .pageTurnRequested(target, visible):
+            switch transitionQueue.requestTransition(to: target, visible: visible) {
             case .ignore, .deferUntilCurrentTransitionFinishes:
                 return []
             case .startImmediately:
-                return [.requestPageTransition(targetPage: targetPage)]
+                return [.requestPageTransition(target)]
             }
 
-        case let .pageTransitionSettled(visiblePage):
-            var effects: [ReaderEffect] = [.warmUpNext(currentGlobalPage: visiblePage)]
-            if let queuedPage = transitionQueue.transitionFinished(showing: visiblePage) {
-                effects.append(.requestPageTransition(targetPage: queuedPage))
+        case let .pageTransitionSettled(visible):
+            var effects: [ReaderEffect] = [.warmUpNext(currentGlobalPage: visible.page)]
+            if let queued = transitionQueue.transitionFinished(showing: visible) {
+                effects.append(.requestPageTransition(queued))
             }
             return effects
 
