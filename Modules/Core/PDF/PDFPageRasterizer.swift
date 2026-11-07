@@ -70,6 +70,12 @@ actor PDFPageRasterizer {
             cropBorders: cropBorders
         )
         if let cached = cache.object(forKey: key) { return cached }
+        // A load its view gave up on — the cell scrolled away or was reused, the reader closed —
+        // still waits its turn on this actor behind the pages asked for before it, and drawing
+        // it anyway is work nobody sees: a fling down a scanned PDF strip spent 90 s of CPU in
+        // 140 s scaling pages in `renderPage` (Crashlytics 19bca592, MetricKit cpu-exception).
+        // The draw itself cannot stop once it starts, so the checks sit before each one.
+        guard !Task.isCancelled else { return nil }
 
         guard let document = document(for: fileURL) else {
             AppLogger.render("PDF rasterize failed: cannot open \(fileURL.lastPathComponent)")
@@ -80,6 +86,7 @@ actor PDFPageRasterizer {
             return nil
         }
         let contentRect = cropBorders ? self.contentRect(of: page, fileURL: fileURL, pageIndex: pageIndex) : nil
+        guard !Task.isCancelled else { return nil }
         guard let image = Self.renderPage(page, targetWidth: targetWidth, scale: scale, contentRect: contentRect) else {
             AppLogger.render("PDF rasterize failed: page \(pageIndex) of \(fileURL.lastPathComponent)")
             return nil

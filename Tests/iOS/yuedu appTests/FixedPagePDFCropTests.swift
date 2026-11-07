@@ -90,6 +90,30 @@ struct FixedPagePDFCropTests {
         #expect(Self.contentGray.contains(channel(image, x: 0.5, y: 0.02)))
     }
 
+    /// Crashlytics 19bca592：條漫快速滑過掃描 PDF 時，格子取消了載入，排在光柵化 actor 上的請求
+    /// 卻照樣把頁畫完（背景 140 秒用掉 90 秒 CPU）。被取消的載入輪到時不能再畫。
+    @Test("a load its cell cancelled does not rasterize the page")
+    @MainActor
+    func cancelledLoadIsNotRasterized() async throws {
+        let (page, url) = try makePDFPage { context in
+            UIColor(white: 0.5, alpha: 1).setFill()
+            context.fill(CGRect(x: 0, y: 0, width: 400, height: 600))
+        }
+        defer { cleanup(url) }
+        await PDFPageRasterizer.shared.purge()
+
+        let cancelled = Task { @MainActor () -> UIImage? in
+            withUnsafeCurrentTask { $0?.cancel() }
+            return await FixedPageImageLoader.loadImage(for: page, targetWidth: 320, renderScale: 1)
+        }
+        #expect(await cancelled.value == nil, "a cancelled load still drew the page")
+
+        // 對照：同一頁沒被取消時照常畫出來。
+        let image = await FixedPageImageLoader.loadImage(for: page, targetWidth: 320, renderScale: 1)
+        await PDFPageRasterizer.shared.purge()
+        #expect(image?.size.width == 320)
+    }
+
     // MARK: - Helpers
 
     /// 寫一份單頁 400 × 600 的 PDF 到 `LocalPDFArchive.archiveURL`，回傳對應的固定頁。
