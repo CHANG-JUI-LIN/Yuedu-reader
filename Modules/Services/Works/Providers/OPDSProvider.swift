@@ -88,13 +88,16 @@ final class OPDSProvider: OPDSFeedProviding {
     /// Built on first use: making one reads the keychain, and listing providers must not.
     private lazy var client: OPDSClient = makeClient()
     private let makeClient: () -> OPDSClient
+    /// Where its home rows' books are saved for the next launch.
+    let homeFeedPages: HomeFeedPageStore
 
     convenience init(connection: OPDSCatalog, store: OPDSCatalogStore) {
         self.init(connection: connection) { store.client(for: connection) }
     }
 
-    init(connection: OPDSCatalog, client: @escaping () -> OPDSClient) {
+    init(connection: OPDSCatalog, homeFeedPages: HomeFeedPageStore = .shared, client: @escaping () -> OPDSClient) {
         self.connection = connection
+        self.homeFeedPages = homeFeedPages
         makeClient = client
     }
 
@@ -128,9 +131,13 @@ final class OPDSProvider: OPDSFeedProviding {
 final class GutenbergProvider: OPDSFeedProviding {
     private let availabilitySource: PublicLibraryAvailability
     private let transport: (URL) async throws -> OPDSFeed
+    /// Where its home rows' books are saved for the next launch.
+    let homeFeedPages: HomeFeedPageStore
 
-    init(availability: PublicLibraryAvailability, transport: @escaping (URL) async throws -> OPDSFeed = PublicLibraryFeedTransport.fetch) {
+    init(availability: PublicLibraryAvailability, homeFeedPages: HomeFeedPageStore = .shared,
+         transport: @escaping (URL) async throws -> OPDSFeed = PublicLibraryFeedTransport.fetch) {
         availabilitySource = availability
+        self.homeFeedPages = homeFeedPages
         self.transport = transport
     }
 

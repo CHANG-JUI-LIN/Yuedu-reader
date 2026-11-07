@@ -71,6 +71,28 @@ struct CacheManagementServiceTests {
         }
     }
 
+    @Test("探索首頁快取 counts and clears both the book-source pages and the feed rows")
+    @MainActor
+    func exploreHomeCoversBothStores() async throws {
+        let fixture = try makeFixture()
+        defer { try? FileManager.default.removeItem(at: fixture.container) }
+        let page = fixture.roots.exploreHome.appendingPathComponent("page.json")
+        let row = fixture.roots.homeFeeds.appendingPathComponent("row.json")
+        let chapter = fixture.roots.chapters.appendingPathComponent("chapter.txt")
+        try Data(repeating: 1, count: 3).write(to: page)
+        try Data(repeating: 2, count: 5).write(to: row)
+        try Data(repeating: 3, count: 7).write(to: chapter)
+        let caches = service(fixture)
+
+        #expect(await caches.snapshot().exploreHome == 8)
+        try await caches.clear(.exploreHome)
+
+        #expect(!FileManager.default.fileExists(atPath: page.path))
+        #expect(!FileManager.default.fileExists(atPath: row.path))
+        #expect(FileManager.default.fileExists(atPath: chapter.path))
+        #expect(await caches.snapshot().exploreHome == 0)
+    }
+
     @Test("remote cleanup preserves active books, explicit offline files and reading metadata")
     @MainActor
     func remoteCleanupKeepsActiveReading() async throws {
@@ -358,7 +380,7 @@ struct CacheManagementServiceTests {
             covers: container.appendingPathComponent("covers", isDirectory: true),
             diagnostics: container.appendingPathComponent("diagnostics", isDirectory: true)
         )
-        for directory in CacheCategory.allCases.map({ roots[$0] }) + [roots.networkCovers] {
+        for directory in CacheCategory.allCases.map({ roots[$0] }) + [roots.networkCovers, roots.homeFeeds] {
             try FileManager.default.createDirectory(
                 at: directory,
                 withIntermediateDirectories: true

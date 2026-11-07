@@ -2498,6 +2498,9 @@
 
 "遠端書籍快取" = "Remote Book Cache";
 "清除遠端書籍快取" = "Clear Remote Book Cache";
+"探索首頁快取" = "Explore Home Cache";
+"清除探索首頁快取" = "Clear Explore Home Cache";
+"探索首頁各列上次載入的書目，打開探索時先顯示，再於背景更新" = "The books each Explore home row last loaded, shown first when you open Explore while the rows refresh in the background";
 "線上閱讀暫存；清除時保留正在閱讀的內容、進度與離線副本。" = "Temporary files for online reading; clearing keeps books you're reading, your progress, and offline copies";
 
 "無法開啟書籍" = "Couldn't Open Book";

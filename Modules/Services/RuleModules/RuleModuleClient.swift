@@ -96,7 +96,13 @@ struct RuleModuleClient: Sendable {
         self.now = now
     }
 
-    func page(of entry: RuleModule.Entry, in module: RuleModule, values: [String: String]) async throws -> RuleModulePage {
+    /// - Parameter keepsForHome: a home row's page, saved even when the entry sets no
+    ///   `cacheDuration`, so the next launch draws it while the row loads again (`savedPage`;
+    ///   maintainer, 2026-11-07: 先顯示舊的、背景更新). `cacheDuration` still alone decides whether
+    ///   a saved page answers without a request. Searches, lookups and later pages are not kept:
+    ///   one file per keyword would pile up.
+    func page(of entry: RuleModule.Entry, in module: RuleModule, values: [String: String],
+              keepsForHome: Bool = false) async throws -> RuleModulePage {
         let entryID = entry.id ?? "search"
         let cacheFile = cacheFile(module: module.id, entry: entryID, values: values)
         let duration = TimeInterval(max(entry.cacheDuration ?? 0, 0))
@@ -110,8 +116,17 @@ struct RuleModuleClient: Sendable {
                                   version: module.version)
         SourcePerfTrace.record("module.page", "module=\(module.id) entry=\(entryID) items=\(page.items.count)",
                                since: started, thresholdMs: 0)
-        if duration > 0 { save(page, to: cacheFile) }
+        if duration > 0 || keepsForHome { save(page, to: cacheFile) }
         return page
+    }
+
+    /// The page as last saved, however old, if this version of the module read it: what a home row
+    /// draws while `page` fetches it again. Off the main actor: it reads and decodes a file.
+    @concurrent
+    func savedPage(of entry: RuleModule.Entry, in module: RuleModule, values: [String: String]) async -> RuleModulePage? {
+        guard let saved = cached(cacheFile(module: module.id, entry: entry.id ?? "search", values: values)),
+              saved.version == module.version else { return nil }
+        return saved
     }
 
     // MARK: - Request

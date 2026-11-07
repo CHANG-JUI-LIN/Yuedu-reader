@@ -7,6 +7,7 @@ enum CacheCategory: String, CaseIterable, Identifiable, Sendable {
     case covers
     case diagnostics
     case remoteBooks
+    case exploreHome
 
     var id: String { rawValue }
 
@@ -18,6 +19,7 @@ enum CacheCategory: String, CaseIterable, Identifiable, Sendable {
         case .covers: return "封面圖片快取"
         case .diagnostics: return "診斷紀錄"
         case .remoteBooks: return "遠端書籍快取"
+        case .exploreHome: return "探索首頁快取"
         }
     }
 
@@ -29,6 +31,7 @@ enum CacheCategory: String, CaseIterable, Identifiable, Sendable {
         case .covers: return "清除封面快取"
         case .diagnostics: return "清除診斷紀錄"
         case .remoteBooks: return "清除遠端書籍快取"
+        case .exploreHome: return "清除探索首頁快取"
         }
     }
 
@@ -40,6 +43,7 @@ enum CacheCategory: String, CaseIterable, Identifiable, Sendable {
         case .covers: return "書籍封面圖片的快取"
         case .diagnostics: return "設定 → 回饋中心 → 診斷紀錄 顯示的日誌與崩潰記錄"
         case .remoteBooks: return "線上閱讀暫存；清除時保留正在閱讀的內容、進度與離線副本"
+        case .exploreHome: return "探索首頁各列上次載入的書目，打開探索時先顯示，再於背景更新"
         }
     }
 
@@ -51,6 +55,7 @@ enum CacheCategory: String, CaseIterable, Identifiable, Sendable {
         case .covers: return "photo"
         case .diagnostics: return "stethoscope"
         case .remoteBooks: return "books.vertical"
+        case .exploreHome: return "safari"
         }
     }
 }
@@ -65,6 +70,11 @@ struct CacheStorageRoots: Equatable, Sendable {
     var networkCovers: URL
     var diagnostics: URL
     var remoteBooks: URL
+    /// The book-source pages the Explore home last drew (`ForYouCandidateStore`). Counted and
+    /// cleared with `homeFeeds`: to the user both are 探索首頁快取.
+    var exploreHome: URL
+    /// The OPDS, Calibre and Gutenberg rows the Explore home last drew (`HomeFeedPageStore`).
+    var homeFeeds: URL
 
     init(
         chapters: URL,
@@ -73,7 +83,9 @@ struct CacheStorageRoots: Equatable, Sendable {
         covers: URL,
         diagnostics: URL,
         remoteBooks: URL? = nil,
-        networkCovers: URL? = nil
+        networkCovers: URL? = nil,
+        exploreHome: URL? = nil,
+        homeFeeds: URL? = nil
     ) {
         self.chapters = chapters
         self.ttsAudio = ttsAudio
@@ -82,6 +94,8 @@ struct CacheStorageRoots: Equatable, Sendable {
         self.networkCovers = networkCovers ?? chapters.deletingLastPathComponent().appendingPathComponent("NetworkCovers", isDirectory: true)
         self.diagnostics = diagnostics
         self.remoteBooks = remoteBooks ?? chapters.deletingLastPathComponent().appendingPathComponent("RemoteLibrary", isDirectory: true)
+        self.exploreHome = exploreHome ?? chapters.deletingLastPathComponent().appendingPathComponent("ForYou", isDirectory: true)
+        self.homeFeeds = homeFeeds ?? chapters.deletingLastPathComponent().appendingPathComponent("HomeFeeds", isDirectory: true)
     }
 
     static var live: CacheStorageRoots {
@@ -92,7 +106,9 @@ struct CacheStorageRoots: Equatable, Sendable {
             covers: StorageLocations.covers,
             diagnostics: StorageLocations.diagnostics,
             remoteBooks: StorageLocations.remoteLibraryCache,
-            networkCovers: StorageLocations.networkCoverCache
+            networkCovers: StorageLocations.networkCoverCache,
+            exploreHome: ForYouCandidateStore.shared.directory,
+            homeFeeds: HomeFeedPageStore.shared.directory
         )
     }
 
@@ -104,6 +120,7 @@ struct CacheStorageRoots: Equatable, Sendable {
         case .covers: return covers
         case .diagnostics: return diagnostics
         case .remoteBooks: return remoteBooks
+        case .exploreHome: return exploreHome
         }
     }
 }
@@ -115,6 +132,7 @@ struct CacheStorageSnapshot: Equatable, Sendable {
     var covers: Int64 = 0
     var diagnostics: Int64 = 0
     var remoteBooks: Int64 = 0
+    var exploreHome: Int64 = 0
 
     subscript(category: CacheCategory) -> Int64 {
         switch category {
@@ -124,11 +142,12 @@ struct CacheStorageSnapshot: Equatable, Sendable {
         case .covers: return covers
         case .diagnostics: return diagnostics
         case .remoteBooks: return remoteBooks
+        case .exploreHome: return exploreHome
         }
     }
 
     var total: Int64 {
-        chapters + ttsAudio + mangaImages + covers + diagnostics + remoteBooks
+        chapters + ttsAudio + mangaImages + covers + diagnostics + remoteBooks + exploreHome
     }
 }
 
@@ -201,7 +220,8 @@ final class CacheManagementService: @unchecked Sendable {
             mangaImages: byteCount(in: roots.mangaImages),
             covers: clearableCoverBytes(keeping: keptCovers) + byteCount(in: roots.networkCovers),
             diagnostics: byteCount(in: roots.diagnostics),
-            remoteBooks: byteCount(in: roots.remoteBooks)
+            remoteBooks: byteCount(in: roots.remoteBooks),
+            exploreHome: byteCount(in: roots.exploreHome) + byteCount(in: roots.homeFeeds)
         )
     }
 
@@ -220,6 +240,11 @@ final class CacheManagementService: @unchecked Sendable {
             }
             if category == .covers {
                 try await clearCovers()
+                return
+            }
+            if category == .exploreHome {
+                try clearDirectory(roots.exploreHome)
+                try clearDirectory(roots.homeFeeds)
                 return
             }
             try clearDirectory(roots[category])

@@ -30,6 +30,11 @@ protocol HomeSectionProviding: SourceProvider {
     func loadPolicy(for section: HomeSection) -> SectionLoadPolicy?
     /// The first page of `section`'s row. Throws `SourceFailure`; an empty row is not a failure.
     func load(_ section: HomeSection) async throws -> [CollectionEntry]
+    /// `section`'s row as this device last fetched it, drawn while `load` fetches it again, so
+    /// a home made at launch shows books, not skeletons (maintainer, 2026-11-07: 先顯示舊的、
+    /// 背景更新). Nil when nothing is saved. Only book sources save their pages
+    /// (`ForYouCandidateStore`); every other provider has none.
+    func savedPage(_ section: HomeSection) async -> [CollectionEntry]?
     /// What `section` reads besides itself, as a key: a row whose key changed loads again.
     /// A module's list reads its version and the language it follows (`ModuleProvider`); every
     /// other section reads only itself (nil).
@@ -40,6 +45,7 @@ protocol HomeSectionProviding: SourceProvider {
 }
 
 extension HomeSectionProviding {
+    func savedPage(_ section: HomeSection) async -> [CollectionEntry]? { nil }
     func inputsKey(for section: HomeSection) -> String? { nil }
     func rowName(for section: HomeSection) -> String { displayName }
 }
@@ -88,22 +94,28 @@ extension OPDSProvider: HomeSectionProviding {
     func load(_ section: HomeSection) async throws -> [CollectionEntry] {
         switch section.binding {
         case .opdsFeed(_, let url):
-            return try await browse(CollectionLocation(id: url, title: ""), after: nil).items(limit: HomeRow.limit)
+            return try await homeRow(feedURL(url), for: section, pages: homeFeedPages)
         case .latest:
             guard let rootURL else { throw SourceFailure(kind: .invalidAddress, underlying: OPDSError.invalidURL) }
             let feed = try await feed(rootURL, isSearch: false)
             if let newest = feed.newestURL {
-                return try await browse(CollectionLocation(id: newest.absoluteString, title: ""), after: nil)
-                    .items(limit: HomeRow.limit)
+                return try await homeRow(newest, for: section, pages: homeFeedPages)
             }
             let root = await CollectionPage.opds(from: feed, connectionID: instance.id, record: makeRecord, opening: makeOpening)
-            let items = root.items(limit: HomeRow.limit)
-            if !items.isEmpty { return items }
-            guard let first = root.entries.firstLocation else { return [] }
-            return try await browse(first, after: nil).items(limit: HomeRow.limit)
+            if !root.items(limit: HomeRow.limit).isEmpty {
+                return await homeRow(from: feed, for: section, pages: homeFeedPages)
+            }
+            guard let first = root.entries.firstLocation else {
+                return await homeRow(from: OPDSFeed(), for: section, pages: homeFeedPages)
+            }
+            return try await homeRow(feedURL(first.id), for: section, pages: homeFeedPages)
         default:
             return []
         }
+    }
+
+    func savedPage(_ section: HomeSection) async -> [CollectionEntry]? {
+        await savedHomeRow(section, pages: homeFeedPages)
     }
 }
 
@@ -130,16 +142,22 @@ extension GutenbergProvider: HomeSectionProviding {
         case .gutenbergLists:
             return PublicLibraryCollection.all.map { .collection(.bundledGutenberg($0)) }
         case .gutenbergFeed(let url):
-            return try await browse(CollectionLocation(id: url, title: ""), after: nil).items(limit: HomeRow.limit)
+            return try await homeRow(feedURL(url), for: section, pages: homeFeedPages)
         case .gutenbergShelf(let id):
             guard let shelf = GutenbergShelf.shelf(id: id) else { return [] }
-            return try await browse(CollectionLocation(id: shelf.url.absoluteString, title: ""), after: nil).items(limit: HomeRow.limit)
+            return try await homeRow(shelf.url, for: section, pages: homeFeedPages)
         case .latest:
-            let url = GutenbergEndpoint.current.latestURL.absoluteString
-            return try await browse(CollectionLocation(id: url, title: ""), after: nil).items(limit: HomeRow.limit)
+            return try await homeRow(GutenbergEndpoint.current.latestURL, for: section, pages: homeFeedPages)
         default:
             return []
         }
+    }
+
+    /// Its feeds' rows as an earlier launch saved them; its bundled lists send no request, so they
+    /// need none.
+    func savedPage(_ section: HomeSection) async -> [CollectionEntry]? {
+        guard loadPolicy(for: section) == .withHome else { return nil }
+        return await savedHomeRow(section, pages: homeFeedPages)
     }
 }
 

@@ -14,6 +14,9 @@ import Foundation
 /// - A row loads when its view asks: book-source rows one at a time per source, bundled and
 ///   on-device rows at once. Gutenberg's load as soon as the home shows (`homeAppeared`),
 ///   wherever they sit on the page (Phase 5 plan, decision 15).
+/// - A row with nothing to show yet draws the page saved on an earlier launch while it loads,
+///   and keeps it if the load fails (book sources' `ForYouCandidateStore`; maintainer,
+///   2026-11-07: 先顯示舊的、背景更新). Every launch used to open on skeletons.
 @MainActor
 final class HomeModel: ObservableObject {
     enum RowState: Equatable {
@@ -21,6 +24,11 @@ final class HomeModel: ObservableObject {
         case loading
         case loaded([CollectionEntry])
         case failed(String)
+
+        var isLoaded: Bool {
+            if case .loaded = self { return true }
+            return false
+        }
     }
 
     struct Row: Identifiable, Equatable {
@@ -60,6 +68,9 @@ final class HomeModel: ObservableObject {
     /// Rows a sync changed while they loaded: they start again once that load ends, which
     /// shows nothing (`isCurrent`).
     private var rerun: Set<String> = []
+    /// Rows drawing the page saved on an earlier launch (`HomeSectionProviding.savedPage`), until
+    /// a load replaces it. A load that fails leaves such a row as it is.
+    private var showsSaved: Set<String> = []
 
     /// - Parameters:
     ///   - providers: the sources now, asked again at each `sync`
@@ -157,6 +168,7 @@ final class HomeModel: ObservableObject {
                 } else {
                     if existing[id] != nil, requested.contains(id) { restarted.append(id) }
                     requested.remove(id)
+                    showsSaved.remove(id)
                     built.append(Row(id: id, section: section, source: provider.instance, sourceName: provider.rowName(for: load),
                                      policy: policy, state: .idle, inputsKey: inputsKey, card: card?.card,
                                      cardIndex: card?.index, providerName: provider.displayName))
@@ -165,6 +177,7 @@ final class HomeModel: ObservableObject {
         }
         providers = servedBy
         requested.formIntersection(servedBy.keys)
+        showsSaved.formIntersection(servedBy.keys)
         rows = built
         isReady = true
         SourcePerfTrace.record("home.sync.rows", "rows=\(built.count)", since: rowsStarted, thresholdMs: 16)
@@ -231,6 +244,11 @@ final class HomeModel: ObservableObject {
 
     private func start(_ row: Row) {
         guard active.insert(row.id).inserted else { return }
+        // Before the queue: a source's later rows wait their turn for the network, not for the
+        // page saved on disk.
+        if !row.state.isLoaded {
+            Task { [weak self] in await self?.showSavedPage(row) }
+        }
         switch row.policy {
         case .serialPerSource:
             let previous = queueTails[row.source]
@@ -269,16 +287,28 @@ final class HomeModel: ObservableObject {
                     "card": String(index),
                 ])
             }
+            showsSaved.remove(rowID)
             setState(.loaded(entries), of: rowID)
         } catch is CancellationError {
-            if !keepsShown { setState(.idle, of: rowID) }
+            if !keepsShown, !showsSaved.contains(rowID) { setState(.idle, of: rowID) }
         } catch {
             AppLogger.network("⟐ home row failed", error: error, context: [
                 "source": "\(row.source.type.rawValue):\(row.source.id)", "section": row.section.id.uuidString,
+                "keepsSavedPage": showsSaved.contains(rowID),
             ])
             guard isCurrent(row) else { return }
+            // Offline, or the site down: the saved page stays, as it would have without this load.
+            guard !showsSaved.contains(rowID) else { return }
             setState(.failed(error.localizedDescription), of: rowID)
         }
+    }
+
+    /// Draws the row's saved page while its load runs, unless that load has already answered.
+    private func showSavedPage(_ row: Row) async {
+        guard let provider = providers[row.id], let saved = await provider.savedPage(row.loadingSection),
+              isCurrent(row), let current = self.row(row.id), !current.state.isLoaded else { return }
+        showsSaved.insert(row.id)
+        setState(.loaded(saved), of: row.id)
     }
 
     /// Whether `row`, as a load began, is still the row: same content, same inputs.

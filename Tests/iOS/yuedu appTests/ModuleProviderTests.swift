@@ -243,6 +243,42 @@ struct ModuleProviderTests {
         #expect(ModuleStub.urls.count == 2, "1.1's own page is answered from the cache")
     }
 
+    @Test("a home row is saved without a cacheDuration, and the next launch draws it with no request, however old")
+    func savedPageForHome() async throws {
+        let f = makeFixture()
+        defer { try? FileManager.default.removeItem(at: f.folder) }
+        ModuleStub.install(["example.com/new/novel": .html(listHTML), "example.com/new/comic": .html(#"<ul class="books"></ul>"#)])
+        let provider = ModuleProvider(module: module([htmlEntry()]), client: f.client)
+        #expect(await provider.savedPage(section()) == nil, "nothing saved yet")
+
+        let loaded = try await provider.load(section())
+        f.clock.date += 30 * 86_400
+        let relaunched = ModuleProvider(module: module([htmlEntry()]), client: f.client)
+        let saved = try #require(await relaunched.savedPage(section()))
+        #expect(saved == loaded, "the same cards the load drew")
+        #expect(ModuleStub.urls.count == 1, "read with no request")
+
+        _ = try await relaunched.load(section())
+        #expect(ModuleStub.urls.count == 2, "with no cacheDuration the row still loads every time")
+
+        #expect(try await relaunched.load(section(parameters: ["category": "comic"])).isEmpty)
+        #expect(await relaunched.savedPage(section(parameters: ["category": "comic"])) == nil, "an empty page is none")
+    }
+
+    @Test("a page another version of the module saved is not drawn")
+    func savedPageFollowsVersion() async throws {
+        let f = makeFixture()
+        defer { try? FileManager.default.removeItem(at: f.folder) }
+        ModuleStub.install(["example.com/new/novel": .html(listHTML)])
+        let old = module([htmlEntry()])
+        _ = try await ModuleProvider(module: old, client: f.client).load(section())
+        #expect(await ModuleProvider(module: old, client: f.client).savedPage(section()) != nil)
+
+        var bundled = old
+        bundled.version = "1.1"
+        #expect(await ModuleProvider(module: bundled, client: f.client).savedPage(section()) == nil, "1.0's page is not 1.1's")
+    }
+
     @Test("its manifest, and its binding round-trips")
     func manifestAndBinding() async throws {
         let f = makeFixture()

@@ -57,6 +57,19 @@ private final class FakeProvider: HomeSectionProviding {
 
     func inputsKey(for section: HomeSection) -> String? { inputs }
 
+    /// `savedPage`: what an earlier launch saved; nil saved nothing.
+    var saved: [CollectionEntry]?
+    /// Holds `savedPage` until it opens.
+    var savedGate: Gate?
+    /// Opened as `savedPage` ends.
+    var savedEnded: Gate?
+
+    func savedPage(_ section: HomeSection) async -> [CollectionEntry]? {
+        defer { savedEnded?.open() }
+        await savedGate?.wait()
+        return saved
+    }
+
     func load(_ section: HomeSection) async throws -> [CollectionEntry] {
         defer { ended?.open() }
         let gate = loads.count < gates.count ? gates[loads.count] : nil
@@ -409,6 +422,69 @@ struct HomeModelTests {
         #expect(rows(home)[0].state == loaded)
     }
 
+    @Test("a row draws the page an earlier launch saved while it loads, then the page it loaded")
+    func savedPageWhileLoading() async throws {
+        let saved: [CollectionEntry] = [.location(CollectionLocation(id: "saved", title: "a"))]
+        let a = FakeProvider("a") { _ in .serialPerSource }
+        a.saved = saved
+        let gate = Gate()
+        a.gates = [gate]
+        let home = model([a])
+        await home.sync(with: HomePage(sections: [HomeSection(layout: .row, binding: .sourceCategories([category]))]))
+        let row = try #require(rows(home).first)
+
+        var shown: [HomeModel.RowState] = []
+        let watch = home.$rows.sink { if let state = $0.first?.state { shown.append(state) } }
+        home.load(row.id)
+        await until(home) { $0[0].state == .loaded(saved) }
+        gate.open()
+        await until(home) { $0[0].state.isLoaded && $0[0].state != .loaded(saved) }
+        watch.cancel()
+
+        #expect(a.loads.count == 1)
+        let afterSaved = shown.drop { $0 != .loaded(saved) }
+        let staysLoaded = afterSaved.allSatisfy { $0.isLoaded }
+        #expect(!afterSaved.isEmpty)
+        #expect(staysLoaded, "no skeleton or failure once the saved page shows")
+    }
+
+    @Test("a load that fails behind a saved page leaves the saved page, not a failure")
+    func failedLoadKeepsSavedPage() async throws {
+        let saved: [CollectionEntry] = [.location(CollectionLocation(id: "saved", title: "a"))]
+        let a = FakeProvider("a") { _ in .serialPerSource }
+        a.saved = saved
+        a.failure = RowFailed()
+        let gate = Gate(), ended = Gate()
+        a.gates = [gate]
+        a.ended = ended
+        let home = model([a])
+        await home.sync(with: HomePage(sections: [HomeSection(layout: .row, binding: .sourceCategories([category]))]))
+        home.load(try #require(rows(home).first).id)
+        await until(home) { $0[0].state == .loaded(saved) }
+
+        gate.open()
+        await ended.wait()
+        #expect(rows(home)[0].state == .loaded(saved))
+    }
+
+    @Test("a saved page read after the load answered is not drawn over it")
+    func lateSavedPageIsDropped() async throws {
+        let a = FakeProvider("a") { _ in .serialPerSource }
+        a.saved = [.location(CollectionLocation(id: "saved", title: "a"))]
+        let savedGate = Gate(), savedEnded = Gate()
+        a.savedGate = savedGate
+        a.savedEnded = savedEnded
+        let home = model([a])
+        await home.sync(with: HomePage(sections: [HomeSection(layout: .row, binding: .sourceCategories([category]))]))
+        home.load(try #require(rows(home).first).id)
+        await until(home) { $0[0].state.isLoaded }
+        let fresh = rows(home)[0].state
+
+        savedGate.open()
+        await savedEnded.wait()
+        #expect(rows(home)[0].state == fresh)
+    }
+
     @Test("a failed row says why, and 重試 loads it again")
     func failureAndRetry() async throws {
         let a = FakeProvider("a", type: .opds) { _ in .parallel }
@@ -444,7 +520,10 @@ struct HomeModelTests {
     func gutenbergRequests() async throws {
         let availability = PublicLibraryAvailability(defaults: UserDefaults(suiteName: "HomeModelTests-\(UUID().uuidString)")!)
         var requests = 0
-        let gutenberg = GutenbergProvider(availability: availability) { _ in
+        let pages = HomeFeedPageStore(directory: FileManager.default.temporaryDirectory
+            .appendingPathComponent("HomeModelTests-\(UUID().uuidString)", isDirectory: true))
+        defer { try? FileManager.default.removeItem(at: pages.directory) }
+        let gutenberg = GutenbergProvider(availability: availability, homeFeedPages: pages) { _ in
             requests += 1
             return OPDSFeed()
         }

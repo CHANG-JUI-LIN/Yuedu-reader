@@ -93,7 +93,21 @@ final class ModuleProvider: CollectionBrowsing, HomeSectionProviding {
     func load(_ section: HomeSection) async throws -> [CollectionEntry] {
         guard case .module(let moduleID, let entryID) = section.binding, moduleID == module.id,
               let entry = entry(entryID) else { return [] }
-        return try await page(of: entry, parameters: section.parameters, after: nil).items(limit: HomeRow.limit)
+        return try await page(of: entry, parameters: section.parameters, after: nil, keepsForHome: true).items(limit: HomeRow.limit)
+    }
+
+    /// The row's first page as an earlier launch saved it (`RuleModuleClient.savedPage`), mapped as
+    /// its load maps it; nil when none was saved by this version of the module, or it holds nothing.
+    func savedPage(_ section: HomeSection) async -> [CollectionEntry]? {
+        guard case .module(let moduleID, let entryID) = section.binding, moduleID == module.id,
+              let entry = entry(entryID) else { return nil }
+        let values = entry.values(section.parameters, position: entry.firstPosition, language: language())
+        guard let saved = await client.savedPage(of: entry, in: module, values: values), !saved.items.isEmpty else { return nil }
+        let entries = await Self.entries(saved.items, of: entry, moduleID: module.id, instance: instance,
+                                         hasURLRule: Self.hasURLRule(entry), hosts: RuleModuleHosts(module.hosts),
+                                         isReadable: isReadable(entry))
+        let items = CollectionPage(entries: entries, next: nil).items(limit: HomeRow.limit)
+        return items.isEmpty ? nil : items
     }
 
     // MARK: - Pages
@@ -150,9 +164,10 @@ final class ModuleProvider: CollectionBrowsing, HomeSectionProviding {
     }
 
     private func page(of entry: RuleModule.Entry, parameters: [String: String],
-                      after cursor: CollectionCursor?, keyword: String? = nil) async throws -> CollectionPage {
+                      after cursor: CollectionCursor?, keyword: String? = nil, keepsForHome: Bool = false) async throws -> CollectionPage {
         let position = cursor.flatMap { Int($0.value) } ?? entry.firstPosition
-        let items = try await items(of: entry, parameters: parameters, position: position, keyword: keyword)
+        let items = try await items(of: entry, parameters: parameters, position: position, keyword: keyword,
+                                    keepsForHome: keepsForHome)
         let entries = await Self.entries(items, of: entry, moduleID: module.id, instance: instance,
                                          hasURLRule: Self.hasURLRule(entry), hosts: RuleModuleHosts(module.hosts),
                                          isReadable: isReadable(entry))
@@ -197,13 +212,14 @@ final class ModuleProvider: CollectionBrowsing, HomeSectionProviding {
     }
 
     private func items(of entry: RuleModule.Entry, parameters: [String: String], position: Int,
-                       keyword: String?) async throws -> [RuleListItem] {
-        try await items(of: entry, values: entry.values(parameters, position: position, keyword: keyword, language: language()))
+                       keyword: String?, keepsForHome: Bool = false) async throws -> [RuleListItem] {
+        try await items(of: entry, values: entry.values(parameters, position: position, keyword: keyword, language: language()),
+                        keepsForHome: keepsForHome)
     }
 
-    private func items(of entry: RuleModule.Entry, values: [String: String]) async throws -> [RuleListItem] {
+    private func items(of entry: RuleModule.Entry, values: [String: String], keepsForHome: Bool = false) async throws -> [RuleListItem] {
         do {
-            return try await client.page(of: entry, in: module, values: values).items
+            return try await client.page(of: entry, in: module, values: values, keepsForHome: keepsForHome).items
         } catch {
             let failure = try SourceFailure.classify(error)
             AppLogger.network("module page failed", error: SourceFailure.loggable(error), context: [

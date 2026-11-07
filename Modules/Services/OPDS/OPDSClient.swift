@@ -1,7 +1,7 @@
 import Foundation
 import SwiftSoup
 
-struct OPDSAcquisition: Hashable {
+struct OPDSAcquisition: Hashable, Codable {
     let url: URL
     let type: String
     let rel: String
@@ -26,7 +26,7 @@ struct OPDSAcquisition: Hashable {
     }
 }
 
-struct OPDSRelatedLink: Hashable {
+struct OPDSRelatedLink: Hashable, Codable {
     let title: String
     let url: URL
 }
@@ -66,7 +66,8 @@ struct OPDSImageRelation: Equatable {
     private static let legacyThumbnails: Set = ["http://opds-spec.org/thumbnail", "x-stanza-cover-image-thumbnail"]
 }
 
-struct OPDSEntry: Identifiable, Hashable {
+/// Codable for `HomeFeedPageStore`, which saves the books a home row drew.
+struct OPDSEntry: Identifiable, Hashable, Codable {
     var id: String
     var title: String
     var author: String?

@@ -49,6 +49,14 @@ final class BookSourceProvider: HomeSectionProviding {
         }
     }
 
+    /// The category's first page as this device last saved it. An empty one is none: the row's
+    /// skeleton shows until the request answers, rather than nothing and then books.
+    func savedPage(_ section: HomeSection) async -> [CollectionEntry]? {
+        guard let category = category(for: section), category.cardItem != nil,
+              let books = await firstPages.savedPage(of: category, in: source), !books.isEmpty else { return nil }
+        return books.prefix(HomeRow.limit).map { entry($0) }
+    }
+
     /// The category a section shows from this source: its own, or the one picked for 「最新」.
     private func category(for section: HomeSection) -> ExploreCategoryReference? {
         switch section.binding {

@@ -13,7 +13,8 @@ import Foundation
 /// - **Every page is saved** to `ForYouCandidateStore`, which 作品詳情's versions read with no
 ///   request (7b-1).
 /// - **One request per category in the home's life**, until its pull to refresh: a page saved
-///   since then answers a later ask (Discovery Phase 7a-5).
+///   since then answers a later ask (Discovery Phase 7a-5). A page saved before the home was
+///   made is not an answer, but the home draws it while the request runs (`savedPage`).
 ///
 /// One per home: `SourceProviderRegistry.homeProviders` hands it to the providers it makes,
 /// and calls `beginSync()` each time it makes them. The queue and the requests on their way
@@ -74,6 +75,12 @@ final class DiscoverFirstPages {
             }
             return try await self.fetch(category, key, in: source).value
         }
+    }
+
+    /// The category's first page as last saved, however old: what the home shows until
+    /// `firstPage` answers (maintainer, 2026-11-07). Reads the store only, never the network.
+    func savedPage(of category: ExploreCategoryReference, in source: BookSource) async -> [OnlineBook]? {
+        await store.read(sourceURL: source.bookSourceUrl, categoryURL: category.url, sourceID: source.id)?.books
     }
 
     private func fetch(_ category: ExploreCategoryReference, _ key: DiscoverRequestLanes.Key,

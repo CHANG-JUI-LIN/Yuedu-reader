@@ -228,6 +228,28 @@ struct DiscoverFirstPagesTests {
         #expect(try await pages.firstPage(of: category(a, "/hot"), in: a).value.map(\.name) == ["a/hot-1", "a/hot-2"])
     }
 
+    @Test("a page saved before the home was made is the row's saved page while it is fetched again")
+    func olderPagesAreTheSavedPage() async throws {
+        let probe = FetchProbe()
+        let store = ForYouCandidateStore(directory: scratchDirectory())
+        let a = source("a")
+        let section = HomeSection(layout: .row, binding: .sourceCategories([category(a, "/hot")]))
+        let provider = BookSourceProvider(source: a, firstPages: pages(probe, store: store))
+        #expect(await provider.savedPage(section) == nil, "nothing saved yet")
+
+        await store.write(ForYouCandidates(sourceURL: "a", categoryURL: "/hot", fetchedAt: Date().addingTimeInterval(-86_400),
+                                           books: [book("舊", source: a.id)]))
+        let saved = try #require(await provider.savedPage(section))
+        #expect(saved.count == 1)
+        #expect(await probe.log.isEmpty, "the saved page sends no request")
+        await probe.release("a/hot")
+        #expect(try await provider.load(section).count == 2)
+
+        await store.write(ForYouCandidates(sourceURL: "a", categoryURL: "/new", fetchedAt: Date(), books: []))
+        let empty = HomeSection(layout: .row, binding: .sourceCategories([category(a, "/new")]))
+        #expect(await provider.savedPage(empty) == nil, "an empty saved page is none: the skeleton shows")
+    }
+
     @Test("a row's first page is written to the candidate store")
     func rowWritesTheStore() async throws {
         let probe = FetchProbe()
