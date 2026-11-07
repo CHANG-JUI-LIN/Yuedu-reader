@@ -55,6 +55,55 @@ struct FixedPageWebtoonAutoScrollTests {
         #expect(container.states == [true, false, true, false])
     }
 
+    @Test("a speed change reaches the running webtoon reader without reinstalling it (FB-150)")
+    @MainActor
+    func speedChangeAppliesLive() throws {
+        let metadata = FileManager.default.temporaryDirectory
+            .appendingPathComponent("webtoon-speed-\(UUID().uuidString).json")
+        defer { try? FileManager.default.removeItem(at: metadata) }
+        let store = BookStore(metadataFileURL: metadata)
+        var book = ReadingBook(title: "Strip", author: "", contentFilename: "")
+        book.isOnline = true
+        book.onlineChapters = [OnlineChapterRef(index: 0, title: "1", url: "https://example.invalid/0")]
+        let webtoon = FixedPageReaderConfiguration.recommendedDefault(for: .webtoon)
+        store.readerSettings.setFixedPageConfiguration(webtoon, for: book.id)
+        let state = FixedPageReaderState()
+        let controller = FixedPageReaderViewController(
+            book: book, store: store, state: state, chapterFetcher: MockChapterFetcher())
+        controller.loadViewIfNeeded()
+
+        let strip = try #require(controller.reader as? FixedPageWebtoonViewController)
+        strip.startAutoScroll()
+        var faster = webtoon
+        faster.autoScrollSpeed = 7
+        state.onSetConfiguration?(faster)
+
+        #expect(controller.reader === strip)
+        #expect(strip.isAutoScrolling)
+        #expect(strip.fixedPageReaderConfiguration.autoScrollSpeed == 7)
+        #expect(state.fixedPageReaderConfiguration.autoScrollSpeed == 7)
+        #expect(store.readerSettings.fixedPageConfiguration(for: book.id).autoScrollSpeed == 7)
+
+        // Anything else still rebuilds the reader with the new configuration.
+        var cropped = faster
+        cropped.cropBorders.toggle()
+        state.onSetConfiguration?(cropped)
+        #expect(controller.reader !== strip)
+        strip.stopAutoScroll()
+    }
+
+    @Test("only a speed-only difference skips the reinstall")
+    func speedOnlyDifference() {
+        let base = FixedPageReaderConfiguration.recommendedDefault(for: .webtoon)
+        var speed = base
+        speed.autoScrollSpeed = 9
+        var both = speed
+        both.pillarbox.toggle()
+        #expect(FixedPageReaderViewController.differsOnlyInAutoScrollSpeed(base, speed))
+        #expect(!FixedPageReaderViewController.differsOnlyInAutoScrollSpeed(base, both))
+        #expect(!FixedPageReaderViewController.differsOnlyInAutoScrollSpeed(base, base))
+    }
+
 }
 
 

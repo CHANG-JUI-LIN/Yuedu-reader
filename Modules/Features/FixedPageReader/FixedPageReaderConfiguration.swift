@@ -101,6 +101,10 @@ struct FixedPageReaderConfiguration: Equatable, Codable {
         isLiveTextEnabled = try container.decodeIfPresent(Bool.self, forKey: .isLiveTextEnabled) ?? false
     }
 
+    /// What the speed slider offers. The tick floors the setting at 1; 10 is about
+    /// 480pt a second, already faster than a strip can be read.
+    static let autoScrollSpeedRange: ClosedRange<Int> = 1...10
+
     static func recommendedDefault(for mode: FixedPageReadingMode) -> FixedPageReaderConfiguration {
         mode.recommendedConfiguration
     }

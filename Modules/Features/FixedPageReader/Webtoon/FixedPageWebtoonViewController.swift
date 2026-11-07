@@ -17,7 +17,7 @@ final class FixedPageWebtoonViewController: UIViewController, FixedPageModeReade
 
     weak var container: FixedPageReaderContainer?
 
-    private let fixedPageReaderConfiguration: FixedPageReaderConfiguration
+    private(set) var fixedPageReaderConfiguration: FixedPageReaderConfiguration
     private let targetWidth: FixedPageTargetWidth
     private(set) var pages: [FixedPage] = []
     let layout: FixedPageWebtoonLayout
@@ -199,6 +199,12 @@ final class FixedPageWebtoonViewController: UIViewController, FixedPageModeReade
         let link = CADisplayLink(target: self, selector: #selector(handleAutoScrollTick(_:)))
         link.add(to: .main, forMode: .common)
         autoScrollDisplayLink = link
+    }
+
+    /// Changes the speed in place: the tick reads the configuration every frame, so a
+    /// run in progress picks it up on its next frame without restarting (FB-150).
+    func setAutoScrollSpeed(_ speed: Int) {
+        fixedPageReaderConfiguration.autoScrollSpeed = speed
     }
 
     func stopAutoScroll() {

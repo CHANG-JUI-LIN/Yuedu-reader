@@ -25,12 +25,15 @@ protocol FixedPageModeReader: UIViewController {
     func stopAutoScroll()
     func toggleAutoScroll()
     var isAutoScrolling: Bool { get }
+    /// Applies a new auto-scroll speed without reinstalling the reader.
+    func setAutoScrollSpeed(_ speed: Int)
 }
 
 extension FixedPageModeReader {
     func stopAutoScroll() {}
     func toggleAutoScroll() {}
     var isAutoScrolling: Bool { false }
+    func setAutoScrollSpeed(_ speed: Int) {}
 }
 
 @MainActor

@@ -508,6 +508,7 @@ struct FixedPageReaderSettingsView: View {
                                 Text(localized("左側")).tag(FixedPageAutoScrollButtonPosition.left)
                                 Text(localized("右側")).tag(FixedPageAutoScrollButtonPosition.right)
                             }
+                            autoScrollSpeedRow
                         }
                     } footer: {
                         Text(localized("開啟後，畫面角落會出現播放按鈕，點一下開始或暫停自動捲動。"))
@@ -581,6 +582,36 @@ struct FixedPageReaderSettingsView: View {
         updated.splitWideImages = configuration.splitWideImages
         updated.pillarbox = configuration.pillarbox
         state.onSetConfiguration?(updated)
+    }
+
+    /// Spoken and shown alike, so VoiceOver never reads a different number.
+    private var autoScrollSpeedText: String {
+        configuration.autoScrollSpeed.formatted()
+    }
+
+    /// The rows around it carry no symbol, so this one doesn't either; otherwise the
+    /// same shape as `SettingsSliderRow`.
+    private var autoScrollSpeedRow: some View {
+        VStack(alignment: .leading, spacing: DSSpacing.sm) {
+            LabeledContent(localized("速度")) {
+                Text(autoScrollSpeedText)
+                    .monospacedDigit()
+                    .foregroundStyle(DSColor.textSecondary)
+            }
+            // The slider below carries both; read once, not twice.
+            .accessibilityHidden(true)
+            Slider(
+                value: Binding(
+                    get: { Double(configuration.autoScrollSpeed) },
+                    set: { binding(\.autoScrollSpeed).wrappedValue = Int($0.rounded()) }
+                ),
+                in: Double(FixedPageReaderConfiguration.autoScrollSpeedRange.lowerBound)
+                    ... Double(FixedPageReaderConfiguration.autoScrollSpeedRange.upperBound),
+                step: 1
+            )
+            .accessibilityLabel(localized("速度"))
+            .accessibilityValue(autoScrollSpeedText)
+        }
     }
 
     private func binding<Value>(_ keyPath: WritableKeyPath<FixedPageReaderConfiguration, Value>) -> Binding<Value> {
@@ -700,6 +731,15 @@ struct FixedPageChapterListView: View {
 #Preview("Settings") {
     // Paged by default, so 翻頁區塊編輯 shows — locked unless Pro is active.
     FixedPageReaderSettingsView(state: FixedPageReaderState(), onClose: {}, onOpenTouchZoneEditor: {})
+        .environmentObject(SubscriptionStore.shared)
+}
+
+#Preview("Settings — webtoon auto-scroll") {
+    // Webtoon layout with the auto-scroll button on, so the speed slider shows.
+    let state = FixedPageReaderState()
+    state.fixedPageReaderConfiguration = .recommendedDefault(for: .webtoon)
+    GlobalSettings.shared.fixedPageAutoScrollButton = true
+    return FixedPageReaderSettingsView(state: state, onClose: {}, onOpenTouchZoneEditor: {})
         .environmentObject(SubscriptionStore.shared)
 }
 

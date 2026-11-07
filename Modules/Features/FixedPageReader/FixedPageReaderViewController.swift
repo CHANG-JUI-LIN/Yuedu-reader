@@ -500,13 +500,28 @@ final class FixedPageReaderViewController: UIViewController, FixedPageReaderCont
         loadChapter(at: chapterIndex - 1, startPage: 0)
     }
 
+    static func differsOnlyInAutoScrollSpeed(
+        _ old: FixedPageReaderConfiguration, _ new: FixedPageReaderConfiguration
+    ) -> Bool {
+        var probe = old
+        probe.autoScrollSpeed = new.autoScrollSpeed
+        return probe == new && old != new
+    }
+
     private func changeConfiguration(_ newConfiguration: FixedPageReaderConfiguration) {
+        let old = fixedPageReaderConfiguration
         guard newConfiguration != fixedPageReaderConfiguration else { return }
-        let page = currentChapterPage
         fixedPageReaderConfiguration = newConfiguration
         store?.readerSettings.setFixedPageConfiguration(newConfiguration, for: book.id)
         state.fixedPageReaderConfiguration = newConfiguration
         state.followsMangaDefault = false
+        if Self.differsOnlyInAutoScrollSpeed(old, newConfiguration) {
+            // Dragging the speed slider sends a change per step; reinstalling the reader
+            // for each would stop a running auto-scroll and reload the chapter (FB-150).
+            reader?.setAutoScrollSpeed(newConfiguration.autoScrollSpeed)
+            return
+        }
+        let page = currentChapterPage
         installReader()
         loadChapter(at: chapterIndex, startPage: page)
     }
