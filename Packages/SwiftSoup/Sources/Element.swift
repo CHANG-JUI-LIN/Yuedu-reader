@@ -139,8 +139,8 @@ final class SelectorResultCache {
         probationary = LRUMap(capacity: probationaryCap)
         protected = LRUMap(capacity: protectedCap)
         doorkeeperCapacity = max(1, capacity)
-        doorkeeper.reserveCapacity(doorkeeperCapacity)
-        doorkeeperOrder.reserveCapacity(doorkeeperCapacity)
+        // Yuedu patch (VENDOR-MANIFEST): the doorkeeper grows as keys arrive. Reserving it for
+        // `capacity` keys up front cost ~12 KB for every element a selector runs from.
     }
 
     @inline(__always)
@@ -206,9 +206,12 @@ final class SelectorQueryStats {
 
     init(windowSize: Int) {
         self.windowSize = max(1, windowSize)
-        self.queries = Array(repeating: "", count: self.windowSize)
-        self.hits = Array(repeating: 0, count: self.windowSize)
-        self.uniqueCounts.reserveCapacity(self.windowSize)
+        // Yuedu patch (VENDOR-MANIFEST): the window grows as queries arrive. Every element a
+        // selector runs from gets one of these, and allocating the whole window up front cost
+        // ~33 KB per element: with the result cache's doorkeeper, an 8000-row table of contents
+        // read row by row grew its page document by about 460 MB.
+        self.queries = []
+        self.hits = []
     }
 
     @inline(__always)
@@ -227,9 +230,14 @@ final class SelectorQueryStats {
                 }
             }
         }
-        queries[index] = query
         let hitByte: UInt8 = hit ? 1 : 0
-        hits[index] = hitByte
+        if index < queries.count {
+            queries[index] = query
+            hits[index] = hitByte
+        } else {
+            queries.append(query)
+            hits.append(hitByte)
+        }
         if hitByte != 0 {
             hitCount &+= 1
         }

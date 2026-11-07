@@ -1044,6 +1044,8 @@ class ModernParserBridge {
         pageVariables: [String: String]? = nil,
         earlyFilter: ((_ name: String, _ author: String) -> Bool)? = nil
     ) throws -> [OnlineBook] {
+        let documents = JsoupDocumentCache.beginParse()
+        defer { documents.end() }
         let cpuSpan = SourcePerfTrace.cpuStart()
         defer { SourcePerfTrace.record("search.rules", "bytes=\(html.utf8.count) \(source.bookSourceName)", since: cpuSpan) }
         let engine = makeEngine()
@@ -1076,6 +1078,8 @@ class ModernParserBridge {
         source: BookSource,
         runtimeVariables: [String: String]? = nil
     ) throws -> OnlineBook {
+        let documents = JsoupDocumentCache.beginParse()
+        defer { documents.end() }
         let cpuSpan = SourcePerfTrace.cpuStart()
         defer { SourcePerfTrace.record("detail.rules", "bytes=\(html.utf8.count) \(source.bookSourceName)", since: cpuSpan) }
         loadRuntimeVariables(runtimeVariables)
@@ -1173,6 +1177,8 @@ class ModernParserBridge {
         source: BookSource,
         runtimeVariables: [String: String]? = nil
     ) throws -> [OnlineChapterRef] {
+        let documents = JsoupDocumentCache.beginParse()
+        defer { documents.end() }
         let cpuSpan = SourcePerfTrace.cpuStart()
         defer { SourcePerfTrace.record("toc.rules", "bytes=\(html.utf8.count) \(source.bookSourceName)", since: cpuSpan) }
         lastTOCRuntimeVariables = nil
@@ -1325,6 +1331,8 @@ class ModernParserBridge {
         source: BookSource,
         runtimeVariables: [String: String]? = nil
     ) -> [String] {
+        let documents = JsoupDocumentCache.beginParse()
+        defer { documents.end() }
         let rule = source.ruleToc.nextTocUrl
         guard !rule.isEmpty else { return [] }
         let cpuSpan = SourcePerfTrace.cpuStart()
@@ -1344,6 +1352,8 @@ class ModernParserBridge {
         source: BookSource,
         runtimeVariables: [String: String]? = nil
     ) throws -> (chapters: [OnlineChapterRef], nextTocURLs: [String]) {
+        let documents = JsoupDocumentCache.beginParse()
+        defer { documents.end() }
         let chapters = try parseTOC(
             html: html, baseURL: baseURL,
             source: source, runtimeVariables: runtimeVariables
@@ -1364,6 +1374,8 @@ class ModernParserBridge {
         nextChapterURL: String? = nil,
         isVideoEpisode: Bool = false
     ) throws -> ChapterParsePayload {
+        let documents = JsoupDocumentCache.beginParse()
+        defer { documents.end() }
         let cpuSpan = SourcePerfTrace.cpuStart()
         defer { SourcePerfTrace.record("chapter.rules", "bytes=\(html.utf8.count) \(source.bookSourceName)", since: cpuSpan) }
         loadRuntimeVariables(runtimeVariables)
@@ -1730,6 +1742,8 @@ class ModernParserBridge {
         source: BookSource,
         runtimeVariables: [String: String]? = nil
     ) -> (urls: [String], runtimeVariables: [String: String]?) {
+        let documents = JsoupDocumentCache.beginParse()
+        defer { documents.end() }
         let rule = source.ruleContent.nextContentUrl
         guard !rule.isEmpty else { return ([], nil) }
         loadRuntimeVariables(runtimeVariables)
@@ -2415,6 +2429,8 @@ class ModernParserBridge {
     func parseExploreResults(
         html: String, baseURL: String, source: BookSource, pageVariables: [String: String]? = nil
     ) -> [OnlineBook] {
+        let documents = JsoupDocumentCache.beginParse()
+        defer { documents.end() }
         let engine = makeEngine()
         engine.setContent(html, baseUrl: baseURL)
 

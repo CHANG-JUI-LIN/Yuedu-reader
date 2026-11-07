@@ -25,6 +25,17 @@
       "upstreamCommit": "fd2975e (SwiftSoup 2.14.0)",
       "reason": "Both rebuilt the parent's element list and searched it on every call, so a general-sibling (~) selector was cubic in the number of siblings: 書源檢查 spent 129 s of CPU on one 1189-chapter table of contents with `#list > dl > dt:nth-of-type(2) ~ dd` (Crashlytics 20727455, c0ec35f1, 77f93443, bdd4dca3). Backported verbatim: walk childNodes from siblingIndex, verified against the node before it is trusted.",
       "removeWhen": "SwiftSoup is upgraded to 2.14.0 or later; then delete Packages/SwiftSoup and depend on the remote package again."
+    },
+    {
+      "file": "Sources/Element.swift",
+      "functions": [
+        "SelectorResultCache.init(capacity:)",
+        "SelectorQueryStats.init(windowSize:)",
+        "SelectorQueryStats.record(_:hit:)"
+      ],
+      "upstreamCommit": "none (Yuedu fix)",
+      "reason": "Every element a selector runs from gets a SelectorResultCache and a SelectorQueryStats, and both allocated for their full size up front: the cache's doorkeeper reserved 256 keys (~12 KB) and the stats their whole 512-query window (~33 KB). Reading a table of contents row by row selects from every row, so an 8,000-row page grew its document by about 460 MB, and the 書源檢查's 32 parallel parses ran a user with 8,735 sources out of memory (Crashlytics 6dda6179). Both now grow as keys and queries arrive; the stats window wraps exactly as before once full.",
+      "removeWhen": "Upstream SwiftSoup stops allocating the doorkeeper and the window up front (master still does both as of 2026-11-07)."
     }
   ]
 }

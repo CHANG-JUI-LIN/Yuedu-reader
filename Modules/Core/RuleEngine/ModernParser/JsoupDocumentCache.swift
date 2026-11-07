@@ -42,9 +42,46 @@ import SwiftSoup
 /// Capacity is 1 because the access pattern is consecutive: N field rules against
 /// the page currently being parsed. Holding more would multiply peak memory by the
 /// number of live parsing threads for no hit-rate gain.
+///
+/// # Kept for the parse, not for the thread
+///
+/// A source's parses run on its host's serial queue, and GCD runs those queues on whichever
+/// worker thread is free, so every worker that ever parsed a page kept that page until it
+/// happened to parse another. The 書源檢查 keeps 32 sources parsing at once: a user with
+/// 8,735 sources ran out of memory at 3.7 GB after about a hundred tables of contents
+/// (Crashlytics 6dda6179). `ModernParserBridge` brackets each parse with `beginParse()`, and
+/// the documents go when the outermost parse on the thread ends.
 final class JsoupDocumentCache {
 
     private static let threadDictionaryKey = "com.yuedu.jsoupDocumentCache"
+    private static let parseDepthKey = "com.yuedu.jsoupDocumentCache.parseDepth"
+
+    /// One parse on one thread, from `beginParse()` to `end()`.
+    struct ParseScope {
+        fileprivate let thread: Thread
+
+        /// Ends the parse; call it on the thread that began it (`defer` right after
+        /// `beginParse()`). The outermost end forgets the thread's documents.
+        func end() {
+            assert(Thread.current === thread, "a parse scope ended on another thread than it began on")
+            let storage = Thread.current.threadDictionary
+            let depth = ((storage[JsoupDocumentCache.parseDepthKey] as? Int) ?? 1) - 1
+            guard depth == 0 else {
+                storage[JsoupDocumentCache.parseDepthKey] = depth
+                return
+            }
+            storage.removeObject(forKey: JsoupDocumentCache.parseDepthKey)
+            storage.removeObject(forKey: JsoupDocumentCache.threadDictionaryKey)
+        }
+    }
+
+    /// Begins a parse on this thread. A parse inside another (`parseTOCPage` reading the
+    /// chapters, then the next pages, of one page) shares the outer one's documents.
+    static func beginParse() -> ParseScope {
+        let storage = Thread.current.threadDictionary
+        storage[parseDepthKey] = ((storage[parseDepthKey] as? Int) ?? 0) + 1
+        return ParseScope(thread: .current)
+    }
 
     /// The calling thread's cache. Never hand the returned instance — or any
     /// `Document`/`Element` obtained from it — to another thread.
