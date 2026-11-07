@@ -450,6 +450,54 @@ struct ReaderViewModelChapterStateTests {
         await waitForState(.ready, in: viewModel, chapterIndex: 0)
     }
 
+    /// FB-155: the neighbour window used to be fetched behind the view model's back, so the
+    /// bytes reached the cache while `chapterStates` never heard of them — and the engine's
+    /// 載入中 placeholder for n±1 stayed until the reader actually crossed into it.
+    @Test("prefetching around a chapter publishes each neighbour's state")
+    func prefetchAroundPublishesNeighbourStates() async throws {
+        let fetcher = MockChapterFetcher()
+        let book = makeBook(chapterCount: 6)
+        let viewModel = makeViewModel(chapterFetcher: fetcher)
+        await fetcher.setCached(chapterIndex: 1)
+        await fetcher.setCached(chapterIndex: 3)
+        for index in [2, 4] {
+            await fetcher.enqueuePackage(
+                chapterIndex: index,
+                package: makePackage(bookId: book.id, chapterIndex: index, content: "ch\(index)")
+            )
+        }
+
+        await viewModel.prefetchAround(book: book, center: 2, store: nil)
+
+        // Cached neighbours become ready without a fetch; missing ones fetch at the
+        // window's priorities and publish ready when they land.
+        #expect(viewModel.chapterStates[1] == .ready)
+        #expect(viewModel.chapterStates[3] == .ready)
+        #expect(await fetcher.fetchCount(for: 1) == 0)
+        #expect(await fetcher.fetchCount(for: 3) == 0)
+        await waitForState(.ready, in: viewModel, chapterIndex: 4)
+        #expect(await fetcher.priorities(for: 4) == [.prefetch])
+        #expect(viewModel.isChapterContentAvailable(at: 4))
+        // The center is the caller's chapter, not part of its own window.
+        #expect(await fetcher.fetchCount(for: 2) == 0)
+        #expect(viewModel.chapterStates[2] == nil)
+    }
+
+    @Test("the neighbour window reads forward at prefetch and backward at background")
+    func adjacentPrefetchWindowPriorities() {
+        let window = OnlineBookCoordinator.adjacentPrefetchWindow(center: 1, chapterCount: 4)
+        #expect(window.map(\.index) == [2, 3, 0])
+        #expect(window.map(\.priority) == [.prefetch, .prefetch, .background])
+    }
+
+    private func makeBook(chapterCount: Int) -> ReadingBook {
+        var book = makeBook()
+        book.onlineChapters = (0..<chapterCount).map {
+            OnlineChapterRef(index: $0, title: "Chapter \($0 + 1)", url: "https://example.com/\($0 + 1)")
+        }
+        return book
+    }
+
     private func makeBook() -> ReadingBook {
         var book = ReadingBook(title: "Book", author: "Author", source: "https://example.com", contentFilename: "")
         book.isOnline = true
@@ -462,7 +510,6 @@ struct ReaderViewModelChapterStateTests {
     private func makeViewModel(chapterFetcher: MockChapterFetcher) -> ReaderViewModel {
         ReaderViewModel(
             chapterFetcher: chapterFetcher,
-            bookCoordinator: StubOnlineBookCoordinator(),
             bookSourceFetcher: StubBookSourceFetcher()
         )
     }
@@ -681,18 +728,6 @@ actor MockChapterFetcher: ChapterFetching {
     }
 
     func cancelAll(for bookId: UUID) async {}
-}
-
-private final class StubOnlineBookCoordinator: OnlineBookCoordinating {
-    func downloadBook(_ book: ReadingBook, store: BookStore?) {}
-    func downloadBook(
-        _ book: ReadingBook,
-        store: BookStore?,
-        startChapterIndex: Int,
-        chapterCount: Int?
-    ) {}
-    func pauseDownload(book: ReadingBook, store: BookStore?) {}
-    func prefetchAround(book: ReadingBook, center: Int, store: BookStore?) async {}
 }
 
 private struct StubBookSourceFetcher: BookSourceFetching {

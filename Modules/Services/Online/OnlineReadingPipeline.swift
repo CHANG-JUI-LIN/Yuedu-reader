@@ -1155,24 +1155,30 @@ final class OnlineBookCoordinator: Sendable {
         }
     }
 
+    /// The chapters worth having before the reader reaches them, nearest first: N+1, N+2 at
+    /// `.prefetch` (readers mostly go forward), N-1, N-2 at `.background` (back-navigation).
+    /// The reader's own prefetch (`ReaderViewModel.prefetchAround`) and this coordinator's
+    /// share it, so the two can never disagree about what "around" means.
+    static func adjacentPrefetchWindow(
+        center: Int,
+        chapterCount: Int
+    ) -> [(index: Int, priority: ChapterFetchPriority)] {
+        let valid = 0..<chapterCount
+        let forward = [center + 1, center + 2].filter(valid.contains)
+            .map { (index: $0, priority: ChapterFetchPriority.prefetch) }
+        let backward = [center - 1, center - 2].filter(valid.contains)
+            .map { (index: $0, priority: ChapterFetchPriority.background) }
+        return forward + backward
+    }
+
     func prefetchAround(book: ReadingBook, center: Int, store: BookStore?) async {
         guard let refs = book.onlineChapters, !refs.isEmpty else { return }
-        let last = refs.count - 1
-
-        // Forward priority: N+1, N+2 use prefetch (user is far more likely to read forward)
-        let forwardIndices = [center + 1, center + 2]
-            .filter { $0 >= 0 && $0 <= last }
-        // Backward fallback: N-1, N-2 use background (preserve back-navigation)
-        let backwardIndices = [center - 1, center - 2]
-            .filter { $0 >= 0 && $0 <= last }
-
-        if !forwardIndices.isEmpty {
+        let window = Self.adjacentPrefetchWindow(center: center, chapterCount: refs.count)
+        for priority in [ChapterFetchPriority.prefetch, .background] {
+            let indices = window.filter { $0.priority == priority }.map(\.index)
+            guard !indices.isEmpty else { continue }
             await chapterFetchManager.prefetchChapters(
-                book: book, indices: forwardIndices, priority: .prefetch, store: store)
-        }
-        if !backwardIndices.isEmpty {
-            await chapterFetchManager.prefetchChapters(
-                book: book, indices: backwardIndices, priority: .background, store: store)
+                book: book, indices: indices, priority: priority, store: store)
         }
     }
 

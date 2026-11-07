@@ -126,7 +126,6 @@ struct NetworkSettingsSearchTests {
         let fetcher = CountingBookSourceFetcher()
         let viewModel = ReaderViewModel(
             chapterFetcher: NoopChapterFetcher(),
-            bookCoordinator: NoopOnlineBookCoordinator(),
             bookSourceFetcher: fetcher
         )
         var book = ReadingBook(title: "Issue32", author: "Author", contentFilename: "")
@@ -173,7 +172,6 @@ struct NetworkSettingsSearchTests {
         let fetcher = CountingBookSourceFetcher()
         let viewModel = ReaderViewModel(
             chapterFetcher: NoopChapterFetcher(),
-            bookCoordinator: NoopOnlineBookCoordinator(),
             bookSourceFetcher: fetcher
         )
 
@@ -218,7 +216,6 @@ struct NetworkSettingsSearchTests {
         let fetcher = CountingBookSourceFetcher()
         let viewModel = ReaderViewModel(
             chapterFetcher: NoopChapterFetcher(),
-            bookCoordinator: NoopOnlineBookCoordinator(),
             bookSourceFetcher: fetcher
         )
 
@@ -296,7 +293,6 @@ struct NetworkSettingsSearchTests {
         let fetcher = CancellableTOCFetcher()
         let viewModel = ReaderViewModel(
             chapterFetcher: NoopChapterFetcher(),
-            bookCoordinator: NoopOnlineBookCoordinator(),
             bookSourceFetcher: fetcher
         )
         viewModel.loadOtherOrigins(
@@ -537,14 +533,3 @@ private struct NoopChapterFetcher: ChapterFetching {
     func cancelAll(for bookId: UUID) async {}
 }
 
-private final class NoopOnlineBookCoordinator: OnlineBookCoordinating {
-    func downloadBook(_ book: ReadingBook, store: BookStore?) {}
-    func downloadBook(
-        _ book: ReadingBook,
-        store: BookStore?,
-        startChapterIndex: Int,
-        chapterCount: Int?
-    ) {}
-    func pauseDownload(book: ReadingBook, store: BookStore?) {}
-    func prefetchAround(book: ReadingBook, center: Int, store: BookStore?) async {}
-}

@@ -37,7 +37,6 @@ final class ReaderViewModel: ObservableObject {
     }
 
     private var chapterFetcher: ChapterFetching
-    private var bookCoordinator: OnlineBookCoordinating
     private var bookSourceFetcher: BookSourceFetching
     private var offlineDownloadManager: (any OfflineDownloadManaging)?
     private var inFlightRequests: [Int: InFlightRequest] = [:]
@@ -71,7 +70,6 @@ final class ReaderViewModel: ObservableObject {
     convenience init() {
         self.init(
             chapterFetcher: AppDependencies.live.chapterFetcher,
-            bookCoordinator: AppDependencies.live.onlineBookCoordinator,
             bookSourceFetcher: AppDependencies.live.bookSourceFetcher,
             offlineDownloadManager: AppDependencies.live.offlineDownloadManager
         )
@@ -79,12 +77,10 @@ final class ReaderViewModel: ObservableObject {
 
     init(
         chapterFetcher: ChapterFetching,
-        bookCoordinator: OnlineBookCoordinating,
         bookSourceFetcher: BookSourceFetching,
         offlineDownloadManager: (any OfflineDownloadManaging)? = nil
     ) {
         self.chapterFetcher = chapterFetcher
-        self.bookCoordinator = bookCoordinator
         self.bookSourceFetcher = bookSourceFetcher
         self.offlineDownloadManager = offlineDownloadManager
     }
@@ -287,10 +283,28 @@ final class ReaderViewModel: ObservableObject {
 
     // MARK: - Neighbour Prefetch
 
-    /// Prefetches chapters around the given center index through the injected coordinator.
-    func prefetchAround(book: ReadingBook, center: Int, store: BookStore) {
-        Task {
-            await bookCoordinator.prefetchAround(book: book, center: center, store: store)
+    /// Requests the neighbour window around `center` through `ensureChapterReady`, the same
+    /// entry the reader's own chapter uses.
+    ///
+    /// It used to go through `OnlineBookCoordinator.prefetchAround`, which fills the cache
+    /// without telling anyone. The engine preloads n±1 the moment a chapter opens — before
+    /// any prefetch can land — and gets a 載入中 placeholder; with no `.ready` published for
+    /// the neighbour, nothing supplied it again, so the placeholder stayed until the reader
+    /// crossed into it and the entry probe found the bytes. That was one frame of
+    /// 「第N章 載入中」 on the first chapter turn after every open (回饋中心 #155). Through
+    /// here each neighbour publishes its own `.ready`, and `handleChapterStateChanges`
+    /// supplies it to the engine like any other arriving chapter.
+    func prefetchAround(book: ReadingBook, center: Int, store: BookStore?) async {
+        guard let refs = book.onlineChapters, !refs.isEmpty else { return }
+        for neighbour in OnlineBookCoordinator.adjacentPrefetchWindow(
+            center: center, chapterCount: refs.count
+        ) {
+            await ensureChapterReady(
+                book: book,
+                chapterIndex: neighbour.index,
+                priority: neighbour.priority,
+                store: store
+            )
         }
     }
 

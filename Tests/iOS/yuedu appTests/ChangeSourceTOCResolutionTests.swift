@@ -36,7 +36,6 @@ struct ChangeSourceTOCResolutionTests {
         )
         let viewModel = ReaderViewModel(
             chapterFetcher: NoopChangeSourceChapterFetcher(),
-            bookCoordinator: NoopChangeSourceCoordinator(),
             bookSourceFetcher: fetcher
         )
 
@@ -76,7 +75,6 @@ struct ChangeSourceTOCResolutionTests {
         )
         let viewModel = ReaderViewModel(
             chapterFetcher: NoopChangeSourceChapterFetcher(),
-            bookCoordinator: NoopChangeSourceCoordinator(),
             bookSourceFetcher: fetcher
         )
 
@@ -203,12 +201,3 @@ private struct NoopChangeSourceChapterFetcher: ChapterFetching {
     func cancelAll(for bookId: UUID) async {}
 }
 
-private final class NoopChangeSourceCoordinator: OnlineBookCoordinating {
-    func downloadBook(_ book: ReadingBook, store: BookStore?) {}
-    func downloadBook(
-        _ book: ReadingBook, store: BookStore?,
-        startChapterIndex: Int, chapterCount: Int?
-    ) {}
-    func pauseDownload(book: ReadingBook, store: BookStore?) {}
-    func prefetchAround(book: ReadingBook, center: Int, store: BookStore?) async {}
-}
