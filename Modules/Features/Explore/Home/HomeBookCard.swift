@@ -309,7 +309,10 @@ struct HomeCardCover: View {
     @Environment(\.redactionReasons) private var redactionReasons
 
     var body: some View {
-        let shape = RoundedRectangle(cornerRadius: DSRadius.searchListCover, style: .continuous)
+        // The shelf's 封面圓角 (外觀主題 → 預設封面), so a book is cut the same on 探索 as on the
+        // shelf: a fixed 2 pt here read as a different cover (feedback #45). Read in `body`,
+        // so the setting's observation rebuilds the card when it changes.
+        let shape = RoundedRectangle(cornerRadius: BookshelfCoverStyle.cornerRadius, style: .continuous)
         Group {
             if redactionReasons.contains(.placeholder) {
                 shape.fill(DSColor.neutralControlFill)
@@ -390,4 +393,14 @@ private struct HomeFileCover: View {
             if read == nil { failed = request }
         }
     }
+}
+
+#Preview("Home cover follows the shelf's corner radius") {
+    HStack(spacing: DSSpacing.md) {
+        HomeCardCover(cover: .reference(nil, session: nil), title: "三體", author: "劉慈欣",
+                      size: CGSize(width: 96, height: 144))
+        HomeCardCover(cover: .placeholder, title: "", author: "", size: CGSize(width: 96, height: 144))
+            .redacted(reason: .placeholder)
+    }
+    .padding()
 }
