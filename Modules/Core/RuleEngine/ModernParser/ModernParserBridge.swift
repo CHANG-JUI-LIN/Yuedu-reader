@@ -772,7 +772,9 @@ class ModernParserBridge {
         }
 
         let started = ProcessInfo.processInfo.systemUptime
-        let task = requestSession.dataTask(with: request) { data, response, _ in
+        let task = BoundedResponseLoader.dataTask(
+            with: request, session: requestSession, transport: "reviewSummary"
+        ) { data, response, _ in
             let statusCode = (response as? HTTPURLResponse)?.statusCode
             let body = data.flatMap { String(data: $0, encoding: .utf8) }
             let usable = statusCode.map({ (200..<300).contains($0) }) == true
@@ -2676,7 +2678,9 @@ class ModernParserBridge {
                     of: (Data, URLResponse).self
                 ) { group in
                     group.addTask {
-                        try await requestSession.data(for: request)
+                        try await BoundedResponseLoader.load(
+                            request, session: requestSession, transport: "jsRuntime"
+                        )
                     }
                     group.addTask {
                         try await Task.sleep(nanoseconds: 30_000_000_000)

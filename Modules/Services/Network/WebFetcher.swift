@@ -161,9 +161,6 @@ actor WebFetcher {
             let latencyMs = Int((CFAbsoluteTimeGetCurrent() - fetchStart) * 1000)
             return FetchedPage(request: request, data: data, response: response, latencyMs: latencyMs)
         } catch {
-            if case FetchError.responseTooLarge(let bytes, let limit) = error {
-                Self.logOversized(url: url, bytes: bytes, limit: limit, transport: "http")
-            }
             WebCrawlerDebugger.logError(error, url: url.absoluteString)
             throw error
         }

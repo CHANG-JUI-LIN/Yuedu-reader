@@ -12,37 +12,77 @@ import os
 /// it (chunked or compressed responses declare no usable length) is cancelled at the chunk that
 /// crosses it. Either way the exchange ends in `FetchError.responseTooLarge`.
 ///
-/// It also answers redirects for `WebFetcher.fetchPage(redirect:)`: a refused redirect is not
-/// sent, and its 3xx response comes back as the answer.
+/// Every transport that reads a page for a source goes through here: `WebFetcher.fetchPage`
+/// (`load`) and the JS bridge's `java.*` requests and rule-URL fetches (`dataTask`, `load`).
+///
+/// It also answers redirects: a refused redirect is not sent, and its 3xx response comes back
+/// as the answer.
 final class BoundedResponseLoader: NSObject, URLSessionDataDelegate, @unchecked Sendable {
+    typealias Completion = @Sendable (Result<(Data, URLResponse), any Error>) -> Void
+
     private struct State {
         var data = Data()
         var response: URLResponse?
         /// Bytes that had arrived (or were declared) when reading stopped at the limit.
         var overLimitBytes: Int?
-        var continuation: CheckedContinuation<(Data, URLResponse), any Error>?
+        var completion: Completion?
         var task: URLSessionDataTask?
         var cancelled = false
     }
 
     private let limit: Int
     private let redirect: (@Sendable (URL) -> Bool)?
+    private let transport: String
     private let state = OSAllocatedUnfairLock(initialState: State())
 
-    private init(limit: Int, redirect: (@Sendable (URL) -> Bool)?) {
+    private init(limit: Int, redirect: (@Sendable (URL) -> Bool)?, transport: String, completion: Completion?) {
         self.limit = limit
         self.redirect = redirect
+        self.transport = transport
+        super.init()
+        state.withLock { $0.completion = completion }
     }
 
     /// `request` sent on `session`; its body, at most `limit` bytes, and its response. Cancelling
     /// the calling task cancels the exchange (`URLError.cancelled`, as `data(for:)` throws).
+    /// `transport` names the caller in the size-limit log line.
     static func load(
         _ request: URLRequest,
         session: URLSession,
-        limit: Int,
-        redirect: (@Sendable (URL) -> Bool)? = nil
+        limit: Int = WebFetcher.responseByteLimit,
+        redirect: (@Sendable (URL) -> Bool)? = nil,
+        transport: String = "http"
     ) async throws -> (Data, URLResponse) {
-        try await BoundedResponseLoader(limit: limit, redirect: redirect).run(request, session: session)
+        let loader = BoundedResponseLoader(limit: limit, redirect: redirect, transport: transport, completion: nil)
+        return try await loader.run(request, session: session)
+    }
+
+    /// A data task, not yet resumed, that reads `request`'s body up to `limit` bytes and calls
+    /// `completionHandler` once as `URLSession.dataTask(with:completionHandler:)` would. A body
+    /// past the limit comes back as no data and `FetchError.responseTooLarge`.
+    static func dataTask(
+        with request: URLRequest,
+        session: URLSession,
+        limit: Int = WebFetcher.responseByteLimit,
+        redirect: (@Sendable (URL) -> Bool)? = nil,
+        transport: String,
+        completionHandler: @escaping @Sendable (Data?, URLResponse?, (any Error)?) -> Void
+    ) -> URLSessionDataTask {
+        let task = session.dataTask(with: request)
+        let loader = BoundedResponseLoader(
+            limit: limit, redirect: redirect, transport: transport,
+            completion: { [weak task] result in
+                switch result {
+                case .success(let (data, response)):
+                    completionHandler(data, response, nil)
+                case .failure(let error):
+                    completionHandler(nil, task?.response, error)
+                }
+            }
+        )
+        loader.state.withLock { $0.task = task }
+        task.delegate = loader
+        return task
     }
 
     private func run(_ request: URLRequest, session: URLSession) async throws -> (Data, URLResponse) {
@@ -52,7 +92,7 @@ final class BoundedResponseLoader: NSObject, URLSessionDataDelegate, @unchecked 
                 task.delegate = self
                 let starts = state.withLock { state -> Bool in
                     guard !state.cancelled else { return false }
-                    state.continuation = continuation
+                    state.completion = { continuation.resume(with: $0) }
                     state.task = task
                     return true
                 }
@@ -128,25 +168,28 @@ final class BoundedResponseLoader: NSObject, URLSessionDataDelegate, @unchecked 
 
     func urlSession(_ session: URLSession, task: URLSessionTask, didCompleteWithError error: (any Error)?) {
         let limit = self.limit
-        let (continuation, result) = state.withLock {
-            state -> (CheckedContinuation<(Data, URLResponse), any Error>?, Result<(Data, URLResponse), any Error>) in
-            let continuation = state.continuation
-            state.continuation = nil
+        let (completion, result, oversized) = state.withLock {
+            state -> (Completion?, Result<(Data, URLResponse), any Error>, Int?) in
+            let completion = state.completion
+            state.completion = nil
             // The task holds this delegate until it completes; drop the way back to it.
             state.task = nil
             if let bytes = state.overLimitBytes {
-                return (continuation, .failure(FetchError.responseTooLarge(bytes: bytes, limit: limit)))
+                return (completion, .failure(FetchError.responseTooLarge(bytes: bytes, limit: limit)), bytes)
             }
             if let error {
-                return (continuation, .failure(error))
+                return (completion, .failure(error), nil)
             }
             guard let response = state.response ?? task.response else {
-                return (continuation, .failure(URLError(.badServerResponse)))
+                return (completion, .failure(URLError(.badServerResponse)), nil)
             }
             let data = state.data
             state.data = Data()
-            return (continuation, .success((data, response)))
+            return (completion, .success((data, response)), nil)
         }
-        continuation?.resume(with: result)
+        if let oversized, let url = task.originalRequest?.url {
+            WebFetcher.logOversized(url: url, bytes: oversized, limit: limit, transport: transport)
+        }
+        completion?(result)
     }
 }

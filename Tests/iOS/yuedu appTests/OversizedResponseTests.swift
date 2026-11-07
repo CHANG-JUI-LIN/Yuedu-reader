@@ -127,6 +127,62 @@ struct OversizedResponseTests {
     }
 }
 
+/// The JS bridge's own session (`LegadoJSBridge.requestSession`) carries every `java.*` request
+/// and the runtime's rule-URL fetches — a chapter URL with options, a content rule that fetches
+/// with `java.ajax`. It is held to the same limit as `WebFetcher`.
+@Suite("Oversized responses on the JS bridge", .serialized)
+struct OversizedBridgeResponseTests {
+    private static func source() -> BookSource {
+        BookSource(
+            bookSourceUrl: "https://\(OversizedURLProtocol.host)/source#\(UUID().uuidString)",
+            bookSourceName: "Oversized bridge"
+        )
+    }
+
+    /// `java.ajax(url)` and `java.ajax('url,{…}')`: the script gets no body, not 50 MB of one.
+    @Test(
+        "java.ajax of a 50 MB page hands the script no body and stops the download",
+        .timeLimit(.minutes(1)),
+        arguments: ["", ",{\"method\":\"GET\"}"]
+    )
+    func ajaxOfOversizedPageIsRefused(options: String) async throws {
+        OversizedURLProtocol.reset()
+        let host = SourceScriptHost(bridgeFor: Self.source(), requestSession: OversizedURLProtocol.session())
+        let url = "https://\(OversizedURLProtocol.host)/stream/\(UUID().uuidString)\(options)"
+
+        let length = await host.run { $0.evaluateSourceScript("String(String(java.ajax('\(url)')).length)") }
+
+        #expect(Int(length ?? "") ?? .max < 1024, "the script received \(length ?? "nil") characters")
+        #expect(OversizedURLProtocol.chunksSent < OversizedURLProtocol.chunkCount)
+    }
+
+    /// A rule URL the runtime fetches (the chapter route of `fetchLegadoRuntimeChapterPackage`).
+    @Test("a runtime rule-URL fetch of a 50 MB page fails with the size error", .timeLimit(.minutes(1)))
+    func runtimeFetchOfOversizedPageFails() async throws {
+        OversizedURLProtocol.reset()
+        let host = SourceScriptHost(bridgeFor: Self.source(), requestSession: OversizedURLProtocol.session())
+        let url = "https://\(OversizedURLProtocol.host)/stream/\(UUID().uuidString),{\"method\":\"GET\"}"
+
+        do {
+            _ = try await host.fetch(ruleUrl: url)
+            Issue.record("a 50 MB page must not come back")
+        } catch let FetchError.responseTooLarge(_, limit) {
+            #expect(limit == WebFetcher.responseByteLimit)
+        }
+        #expect(OversizedURLProtocol.chunksSent < OversizedURLProtocol.chunkCount)
+    }
+
+    @Test("java.ajax of an ordinary page still reads it whole", .timeLimit(.minutes(1)))
+    func ajaxOfSmallPageArrives() async throws {
+        let host = SourceScriptHost(bridgeFor: Self.source(), requestSession: OversizedURLProtocol.session())
+        let url = "https://\(OversizedURLProtocol.host)/small/\(UUID().uuidString)"
+
+        let body = await host.run { $0.evaluateSourceScript("String(java.ajax('\(url)'))") }
+
+        #expect(body?.contains("第一段正文") == true)
+    }
+}
+
 /// `/stream/…` sends 50 MB of chapter-like HTML in 1 MB chunks with no Content-Length, paced a
 /// few milliseconds apart so a cancelled load is seen to stop sending before the last chunk. `/declared/…` announces 50 MB up front.
 /// `/small/…` is an ordinary chapter page.
