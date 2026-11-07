@@ -39,19 +39,31 @@ struct ReaderWindowObstructionsTests {
         #expect(Self.foldedDuo.sideInsets(across: 630...648) == .zero)
     }
 
-    /// iPhone landscape: the Dynamic Island sits halfway down a side, never in a corner, so it
-    /// is not a housing and nothing changes from the safe area — even taking its frame, margins
-    /// included, to reach the edge and fill the inset. (Not measured: the simulator runs iOS
-    /// 27.1 only on the iPhone Duo.)
+    /// iPhone landscape: the Dynamic Island's side reports a band down its whole length,
+    /// narrower than the inset, so it is no housing and nothing changes from the safe area.
+    /// Measured on the iPhone 18 Pro Max simulator, iOS 27.2, status bar hidden.
     @Test func iPhoneLandscapeKeepsItsSafeArea() {
         let landscape = ReaderWindowObstructions(
-            windowWidth: 932,
-            windowHeight: 430,
-            sideSafeArea: ReaderSideInsets(left: 59, right: 59),
-            occlusions: [CGRect(x: 0, y: 140, width: 59, height: 150)]
+            windowWidth: 956,
+            windowHeight: 440,
+            sideSafeArea: ReaderSideInsets(left: 62, right: 62),
+            occlusions: [CGRect(x: 0, y: 0, width: 54, height: 440)]
         )
-        #expect(landscape.sideInsets(across: 300...400) == ReaderSideInsets(left: 59, right: 59))
-        #expect(landscape.sideInsets(across: 20...40) == ReaderSideInsets(left: 59, right: 59))
+        #expect(landscape.sideInsets(across: 300...400) == ReaderSideInsets(left: 62, right: 62))
+        #expect(landscape.sideInsets(across: 20...40) == ReaderSideInsets(left: 62, right: 62))
+    }
+
+    /// The first pass of an iPhone turning to landscape: the window has its landscape size and
+    /// insets but still portrait's band across the top. A band that wide is no housing, so the
+    /// 頁腳 keeps the left inset. Measured as above.
+    @Test func iPhoneTurningToLandscapeKeepsItsSafeArea() {
+        let turning = ReaderWindowObstructions(
+            windowWidth: 956,
+            windowHeight: 440,
+            sideSafeArea: ReaderSideInsets(left: 62, right: 62),
+            occlusions: [CGRect(x: 0, y: 0, width: 440, height: 54)]
+        )
+        #expect(turning.sideInsets(across: 400...420) == ReaderSideInsets(left: 62, right: 62))
     }
 
     /// The folded Duo turned over: the housing is in the bottom-left corner, and the text above
@@ -110,9 +122,10 @@ struct ReaderWindowObstructionsTests {
 
     // MARK: The reporter
 
-    /// The reporter reads SwiftUI's regions, which are in the reader root's own space; the
-    /// reader's surfaces draw from the window's corner. Whatever the window itself reports
-    /// through UIKit, the reporter must hand on in the same place.
+    /// Whatever the window itself reports through UIKit, the reporter must hand on in the same
+    /// place. SwiftUI hands a view only the regions that reach its frame, and the reader's root
+    /// is the safe-area rectangle, which none of them reach: measured there, an iPhone's band
+    /// across the top and the folded iPhone Duo's housing both came back empty (iOS 27.2).
     @Test(.timeLimit(.minutes(1))) @MainActor
     func reporterHandsOnTheWindowsOwnRegions() async throws {
         let host = try ObstructionsHost()

@@ -43,7 +43,8 @@ extension View {
 
     /// Reports what the window keeps the reader clear of — its side safe areas, and on iOS 27.1
     /// what covers or folds the screen — every time it changes. Attached beside
-    /// `reportsReaderViewport`, for the same reason: only there are the insets the window's.
+    /// `reportsReaderViewport`, for the same reason: only there does the reader's frame,
+    /// stretched over its safe area, cover the window.
     /// The side safe areas are the reader's window's own; the reporter keeps `window` pointed at
     /// that window (`readerWindowProbe`), for the reader's other uses of it too.
     func reportsReaderWindowObstructions(
@@ -115,21 +116,26 @@ struct ReaderWindowObstructions: Equatable {
     /// `band`. A side with no housing reported keeps its inset as it is.
     ///
     /// A housing sits in a corner: flush with this side, flush with the top or the bottom, and
-    /// as wide as the inset — the folded iPhone Duo's is, held either way up. An iPhone in
-    /// landscape reports its Dynamic Island halfway down the side, so it never qualifies, and
-    /// nothing changes there however far its frame reaches. (The simulator runs iOS 27.1 only on
-    /// the iPhone Duo, so an iPhone's island could not be measured; the corner test is what
-    /// keeps the rule from depending on it.)
+    /// exactly as wide as the inset, which is there for it — the folded iPhone Duo's is 84pt
+    /// beside an 84pt inset, held upright or on its side, status bar shown or hidden.
+    ///
+    /// An iPhone reports a 54pt band along the Dynamic Island's whole edge: across the top in
+    /// portrait, where the sides have no inset, and down one side in landscape, narrower than
+    /// its 62pt inset (iPhone 18 Pro Max, iOS 27.2). Neither is a housing, and a band down a
+    /// whole side would keep its inset regardless, since every band meets it. Wider than the
+    /// inset is no housing either: for one pass of a turn to landscape the window already has
+    /// its landscape size and insets but still carries portrait's band, 440pt across the top
+    /// left, which must not free the 頁腳 from the left inset.
     private func inset(_ safeArea: CGFloat, onLeft: Bool, across band: ClosedRange<CGFloat>) -> CGFloat {
         guard safeArea > 0 else { return 0 }
         let onThisSide = occlusions.filter { onLeft == ($0.midX < windowWidth / 2) }
         let tolerance: CGFloat = 0.5
         let isHousing: (CGRect) -> Bool = { rect in
-            let spansInset = onLeft
-                ? rect.minX <= tolerance && rect.maxX >= safeArea - tolerance
-                : rect.maxX >= windowWidth - tolerance && rect.minX <= windowWidth - safeArea + tolerance
+            let fillsInset = onLeft
+                ? rect.minX <= tolerance && abs(rect.maxX - safeArea) <= tolerance
+                : rect.maxX >= windowWidth - tolerance && abs(rect.minX - (windowWidth - safeArea)) <= tolerance
             let inCorner = rect.minY <= tolerance || rect.maxY >= windowHeight - tolerance
-            return spansInset && inCorner
+            return fillsInset && inCorner
         }
         guard onThisSide.contains(where: isHousing),
               !onThisSide.contains(where: { $0.minY < band.upperBound && $0.maxY > band.lowerBound })
@@ -139,7 +145,6 @@ struct ReaderWindowObstructions: Equatable {
 }
 
 private struct ReaderWindowObstructionsReporter: ViewModifier {
-    @Environment(\.layoutDirection) private var layoutDirection
     let window: ReaderWindowReference
     let action: (ReaderWindowObstructions) -> Void
     @State private var held = HeldObstructions()
@@ -152,44 +157,46 @@ private struct ReaderWindowObstructionsReporter: ViewModifier {
     }
 
     func body(content: Content) -> some View {
-        let isRightToLeft = layoutDirection == .rightToLeft
         content
             .readerWindowProbe(window)
-            .onGeometryChange(for: ReaderWindowObstructions.self) { proxy in
-                let insets = proxy.safeAreaInsets
-                let window = ReaderViewportMetrics.windowSize(containerSize: proxy.size, safeAreaInsets: insets)
-                var obstructions = ReaderWindowObstructions(
-                    windowWidth: window.width,
-                    windowHeight: window.height,
-                    sideSafeArea: isRightToLeft
-                        ? ReaderSideInsets(left: insets.trailing, right: insets.leading)
-                        : ReaderSideInsets(left: insets.leading, right: insets.trailing)
-                )
-                if #available(iOS 27.1, *) {
-                    // In the proxy's own space, which starts where the safe area does; the
-                    // reader's surfaces draw from the window's corner.
-                    let origin = proxy.frame(in: .global).origin
-                    let toWindow = { (region: ReservedRegion) in
-                        region.frame.offsetBy(dx: origin.x, dy: origin.y)
+            .background {
+                // Measured over the whole window, not over the reader, which is the safe-area
+                // rectangle: SwiftUI hands a view only the reserved regions that reach its own
+                // frame, and those are exactly what the safe area keeps the reader clear of. The
+                // reader got none on iOS 27.2 — neither an iPhone's 54pt band across the top
+                // nor the folded iPhone Duo's housing beside its 84pt inset — while this
+                // rectangle gets the window's own (both simulators, 2026-11-07). It is the
+                // window's, so its space is the window's too.
+                Color.clear
+                    .onGeometryChange(for: ReaderWindowObstructions.self) { proxy in
+                        var obstructions = ReaderWindowObstructions(
+                            windowWidth: proxy.size.width,
+                            windowHeight: proxy.size.height
+                        )
+                        if #available(iOS 27.1, *) {
+                            obstructions.occlusions = proxy
+                                .reservedRegions(kind: .occlusion, layoutDirectionBehavior: .fixed)
+                                .map(\.frame)
+                            // Inactive too: the fold is there whether or not the device is bent at it.
+                            obstructions.folds = proxy
+                                .reservedRegions(kind: .division, options: .includeInactive, layoutDirectionBehavior: .fixed)
+                                .map(\.frame)
+                        }
+                        return obstructions
+                    } action: { obstructions in
+                        report(obstructions)
                     }
-                    obstructions.occlusions = proxy
-                        .reservedRegions(kind: .occlusion, layoutDirectionBehavior: .fixed)
-                        .map(toWindow)
-                    // Inactive too: the fold is there whether or not the device is bent at it.
-                    obstructions.folds = proxy
-                        .reservedRegions(kind: .division, options: .includeInactive, layoutDirectionBehavior: .fixed)
-                        .map(toWindow)
-                }
-                return obstructions
-            } action: { obstructions in
-                report(obstructions)
+                    .ignoresSafeArea()
+                    .allowsHitTesting(false)
+                    .accessibilityHidden(true)
             }
     }
 
     /// Reports `obstructions` with the window's own side safe areas. A reader laid out in its
     /// window before the probe beside it has joined it — the first layout of one pushed inside a
-    /// tab — waits for the probe instead of reporting SwiftUI's (the test host reported 168pt on
-    /// the right, its window's 84pt and its container's 84pt). The probe joins from inside a
+    /// tab — waits for the probe: the side safe areas come from the window alone, never from
+    /// SwiftUI, whose include the container's (the test host had 168pt on the right, its
+    /// window's 84pt and its container's 84pt). The probe joins from inside a
     /// SwiftUI update, where the reader's state must not change, so the report goes out on the
     /// main actor once that update is over, with whatever SwiftUI reported last.
     private func report(_ obstructions: ReaderWindowObstructions) {
@@ -221,9 +228,10 @@ private struct ReaderWindowObstructionsReporter: ViewModifier {
     /// window, so the window's are the safe areas there are.
     ///
     /// Asked in the handler, never in the measuring closure: a SwiftUI update must not consult
-    /// UIKit's window geometry (`ReaderView.effectiveReaderSafeTop`). A change in the window's
-    /// own inset that a container's wider inset hides changes nothing SwiftUI reports, so it
-    /// arrives with the next change that does.
+    /// UIKit's window geometry (`ReaderView.effectiveReaderSafeTop`). The window's insets move
+    /// only with its size or with what covers it, and both are measured: through a rotation,
+    /// every report found the window's insets already matching its new size (iOS 27.2, iPhone
+    /// 18 Pro Max and iPhone Duo, 2026-11-07).
     private static func withSides(
         of readerWindow: UIWindow,
         _ obstructions: ReaderWindowObstructions
