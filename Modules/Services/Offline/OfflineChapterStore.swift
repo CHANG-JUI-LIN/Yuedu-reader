@@ -78,7 +78,9 @@ protocol OfflineImageDownloading: Sendable {
 
 struct URLSessionOfflineImageDownloader: OfflineImageDownloading {
     func response(for request: URLRequest) async throws -> OfflineImageResponse {
-        let (data, response) = try await URLSession.shared.data(for: request)
+        // Each image is written to the chapter's directory or `OnlineImageDiskCache`; a URL
+        // cache would write it again (`URLSession.savedDownloads`).
+        let (data, response) = try await URLSession.savedDownloads.data(for: request)
         let statusCode = (response as? HTTPURLResponse)?.statusCode ?? 0
         return OfflineImageResponse(
             data: data,
