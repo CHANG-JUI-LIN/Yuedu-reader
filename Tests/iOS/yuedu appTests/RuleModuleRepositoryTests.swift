@@ -322,6 +322,33 @@ struct RuleModuleRepositoryTests {
         #expect(again.isEnabled("b.two") && again.isShownInLibrary("b.two"), "installed again, it starts on")
     }
 
+    @Test("AI 推薦, 古騰堡 and 青空文庫 can be taken out of 資源庫, and stay out after a relaunch")
+    func appModulesHideFromLibrary() throws {
+        let suite = "AppModuleSwitches-\(UUID().uuidString)"
+        let preferences = try #require(UserDefaults(suiteName: suite))
+        defer { preferences.removePersistentDomain(forName: suite) }
+        func library() -> RuleModuleLibrary {
+            RuleModuleLibrary(store: RuleModuleStore(directory: FileManager.default.temporaryDirectory
+                                                        .appendingPathComponent(UUID().uuidString)),
+                              appVersion: "3.0", officialFiles: { [] }, availability: nil, preferences: preferences)
+        }
+        let modules = AppOfficialModule.available(librariesAvailable: true)
+        #expect(modules.count == 3)
+        for module in modules {
+            // No module file can take the name the switch is kept under.
+            #expect(!RuleModuleValidator.isFileSafe(module.libraryVisibilityID))
+        }
+
+        let first = library()
+        #expect(modules.allSatisfy { first.isShownInLibrary($0.libraryVisibilityID) }, "all three start on")
+        for module in modules { first.setShownInLibrary(false, id: module.libraryVisibilityID) }
+
+        let again = library()
+        #expect(modules.allSatisfy { !again.isShownInLibrary($0.libraryVisibilityID) }, "kept across launches")
+        again.setShownInLibrary(true, id: AppOfficialModule.aiRecommendations.libraryVisibilityID)
+        #expect(again.isShownInLibrary(AppOfficialModule.aiRecommendations.libraryVisibilityID))
+    }
+
     @Test("a file that is not the module the index lists is refused")
     func mismatch() async throws {
         let folder = try folder()

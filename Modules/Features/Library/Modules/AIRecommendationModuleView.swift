@@ -40,6 +40,8 @@ struct AIRecommendationModuleView: View {
                 }
                 .listRowBackground(Color.clear)
             }
+            // Without Pro too: the card is in 資源庫 either way.
+            AppOfficialModuleVisibilitySection(module: .aiRecommendations)
         }
         .navigationTitle(localized("AI 推薦"))
         .toolbarTitleDisplayMode(.inline)

@@ -27,8 +27,17 @@ struct RuleModuleSection<Libraries: View>: View {
         // 在資源庫中展示 and 停用 (M6) leave a module's card out; 設定's 模組 still lists it.
         let official = library.official.filter { library.isShownInLibrary($0.module.id) }
         let imported = library.imported.filter { library.isShownInLibrary($0.module.id) }
+        let appModules = AppOfficialModule.available(librariesAvailable: availability.isAvailable)
+            .filter { library.isShownInLibrary($0.libraryVisibilityID) }
+        // Every card turned off: no 模組 heading over nothing. 設定 → 模組 still lists them all.
+        if !library.isLoaded || !(appModules.isEmpty && official.isEmpty && imported.isEmpty && library.failures.isEmpty) {
+            section(appModules: appModules, modules: official + imported)
+        }
+    }
+
+    private func section(appModules: [AppOfficialModule], modules: [InstalledRuleModule]) -> some View {
         LibrarySection(localized("模組"), isLazy: false) { layout in
-            ForEach(AppOfficialModule.available(librariesAvailable: availability.isAvailable)) { module in
+            ForEach(appModules) { module in
                 switch module {
                 case .aiRecommendations:
                     NavigationLink(value: module.route) {
@@ -47,7 +56,7 @@ struct RuleModuleSection<Libraries: View>: View {
                 ProgressView()
                     .frame(maxWidth: .infinity, alignment: .leading)
             } else {
-                ForEach(official + imported, id: \.module.id) { installed in
+                ForEach(modules, id: \.module.id) { installed in
                     RuleModuleCard(module: installed.module, layout: layout)
                 }
                 ForEach(library.failures, id: \.folder) { failure in

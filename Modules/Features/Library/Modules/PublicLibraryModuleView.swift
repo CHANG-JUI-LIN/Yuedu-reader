@@ -35,6 +35,8 @@ struct PublicLibraryModuleView: View {
             }
             .interfaceSectionSurface()
 
+            AppOfficialModuleVisibilitySection(module: .library(key))
+
             Section {
                 Text(localized("官方模組")).foregroundStyle(DSColor.textPrimary)
             } footer: {
