@@ -227,6 +227,9 @@ enum FetchError: LocalizedError {
     case emptyContent
     case sourceAPIError(String)
     case volumeSeparator(String)
+    /// A response body past `WebFetcher.responseByteLimit`: `bytes` is what had arrived (or what
+    /// the response declared) when reading stopped.
+    case responseTooLarge(bytes: Int, limit: Int)
 
     var errorDescription: String? {
         switch self {
@@ -238,6 +241,8 @@ enum FetchError: LocalizedError {
         case .emptyContent: return "Fetched empty content"
         case .sourceAPIError(let message): return "Source API error: \(message)"
         case .volumeSeparator(let title): return "Volume separator has no chapter content: \(title)"
+        case .responseTooLarge(let bytes, let limit):
+            return "Page too large: \(bytes / 1024) KB (limit \(limit / 1024) KB)"
         }
     }
 }

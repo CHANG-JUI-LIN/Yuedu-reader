@@ -54,7 +54,7 @@ enum ReaderError: LocalizedError {
         if let fetchErr = error as? FetchError {
             switch fetchErr {
             case .httpError, .cloudflareChallengeRequired, .invalidURL, .noSearchURL,
-                 .encodingError, .emptyContent, .sourceAPIError:
+                 .encodingError, .emptyContent, .sourceAPIError, .responseTooLarge:
                 return .network(underlying: fetchErr)
             case .volumeSeparator:
                 return .rendering(underlying: fetchErr)

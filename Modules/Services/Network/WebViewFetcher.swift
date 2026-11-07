@@ -182,6 +182,29 @@ final class WebViewFetcher: NSObject, WKNavigationDelegate {
     }
 
 
+    /// The rendered page's `outerHTML`, held to `WebFetcher.responseByteLimit` as an HTTP body is:
+    /// the length is measured inside the page, and a page past the limit sends back only its
+    /// length, so the oversized string never crosses into this process to be parsed. JS lengths
+    /// are UTF-16 units — two bytes each in the string this process would hold.
+    @MainActor
+    private static func boundedOuterHTML(of webView: WKWebView, url: URL) async throws -> String {
+        let maxUnits = WebFetcher.responseByteLimit / 2
+        let script = """
+            (function () {
+                var html = document.documentElement.outerHTML;
+                return html.length > \(maxUnits) ? html.length : html;
+            })()
+            """
+        let value = try await webView.evaluateJavaScript(script)
+        if let html = value as? String { return html }
+        if let units = value as? Int {
+            let bytes = units * 2
+            WebFetcher.logOversized(url: url, bytes: bytes, limit: WebFetcher.responseByteLimit, transport: "webView")
+            throw FetchError.responseTooLarge(bytes: bytes, limit: WebFetcher.responseByteLimit)
+        }
+        return ""
+    }
+
     /// - Parameters:
     ///   - url: Target URL
     ///   - headers: Custom HTTP headers
@@ -216,10 +239,7 @@ final class WebViewFetcher: NSObject, WKNavigationDelegate {
                 try await Task.sleep(nanoseconds: UInt64(jsWait * 1_000_000_000))
 
                 // Extract full HTML
-                let html =
-                    try await webView.evaluateJavaScript(
-                        "document.documentElement.outerHTML"
-                    ) as? String ?? ""
+                let html = try await Self.boundedOuterHTML(of: webView, url: url)
 
                 if LegadoJSBridge.isCloudflareChallengedBody(html) {
                     throw FetchError.cloudflareChallengeRequired(url.absoluteString)
@@ -271,7 +291,7 @@ final class WebViewFetcher: NSObject, WKNavigationDelegate {
                 if !jsAfterLoad.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                     _ = try? await webView.evaluateJavaScript(jsAfterLoad)
                 }
-                let html = try await webView.evaluateJavaScript("document.documentElement.outerHTML") as? String ?? ""
+                let html = try await Self.boundedOuterHTML(of: webView, url: url)
                 if LegadoJSBridge.isCloudflareChallengedBody(html) {
                     throw FetchError.cloudflareChallengeRequired(url.absoluteString)
                 }

@@ -13,6 +13,24 @@ struct FetchedPage {
 actor WebFetcher {
     static let shared = WebFetcher()
 
+    /// The most bytes one response body may bring in (`BoundedResponseLoader`); a larger one ends
+    /// in `FetchError.responseTooLarge` and is never decoded or parsed.
+    ///
+    /// Measured 2026-11-07 on the HK host over the bookSourceUrl of 979 text sources (yckceo 合集
+    /// 1230 + 1189), crawling home → first book link → a chapter link: chapter pages n=173,
+    /// median 14 KB, p99 101 KB, max 104 KB; book / TOC pages n=288, median 23 KB, p99 790 KB,
+    /// max 1.3 MB; nothing over 4 MB on any hop. The limit is shared by every stage (search,
+    /// 詳情, 目錄, 正文, module files and covers), so it sits well above the largest TOC seen —
+    /// six times 1.3 MB leaves room for one-page catalogs of 10,000-chapter books and 段評-heavy
+    /// chapters of hundreds of KB.
+    ///
+    /// The ceiling is what parsing turns a page into. 3.0.0 (143) died on single allocations of
+    /// 51 MB (SwiftSoup `Element.text`), 68 MB (`collectTextFastTrimmed`) and 145 MB
+    /// (`ChapterContentCleaner`'s regex) — text buffers that size come from pages of tens of MB,
+    /// and a 50 MB page kept `WebNovelParser` busy for 67 s of CPU in `OversizedResponseTests`.
+    /// At 8 MB the worst page a source can send costs a few tens of MB transiently.
+    nonisolated static let responseByteLimit = 8 * 1024 * 1024
+
     /// Nonisolated so the request/response path can run off the actor's executor.
     nonisolated private let session: URLSession
 
@@ -136,17 +154,43 @@ actor WebFetcher {
 
         do {
             let (data, response) = try await PerHostSemaphore.shared.withLock(host: host) {
-                if let redirect {
-                    return try await self.session.data(for: request, delegate: RedirectGate(allows: redirect))
-                }
-                return try await self.session.data(for: request)
+                try await BoundedResponseLoader.load(
+                    request, session: self.session, limit: Self.responseByteLimit, redirect: redirect
+                )
             }
             let latencyMs = Int((CFAbsoluteTimeGetCurrent() - fetchStart) * 1000)
             return FetchedPage(request: request, data: data, response: response, latencyMs: latencyMs)
         } catch {
+            if case FetchError.responseTooLarge(let bytes, let limit) = error {
+                Self.logOversized(url: url, bytes: bytes, limit: limit, transport: "http")
+            }
             WebCrawlerDebugger.logError(error, url: url.absoluteString)
             throw error
         }
+    }
+
+    /// A body refused at `responseByteLimit`, on the record: the source check marks the source
+    /// failed with the error, and this line says which page it was.
+    nonisolated static func logOversized(url: URL, bytes: Int, limit: Int, transport: String) {
+        AppLogger.network(
+            "response over size limit",
+            error: FetchError.responseTooLarge(bytes: bytes, limit: limit),
+            context: [
+                "url": String(url.absoluteString.prefix(160)),
+                "bytes": bytes,
+                "limit": limit,
+                "transport": transport,
+            ]
+        )
+        ReaderTelemetry.shared.log(
+            "fetch_error",
+            attributes: [
+                "url": String(url.absoluteString.prefix(120)),
+                "reason": "responseTooLarge",
+                "bytes": "\(bytes)",
+                "transport": transport,
+            ]
+        )
     }
 
     /// Assembles a fully-configured URLRequest, including harvested WebView cookies,
@@ -243,20 +287,5 @@ actor WebFetcher {
         let cookies = session.configuration.httpCookieStorage?.cookies(for: url) ?? HTTPCookieStorage.shared.cookies(for: url) ?? []
         guard !cookies.isEmpty else { return nil }
         return HTTPCookie.requestHeaderFields(with: cookies)["Cookie"]
-    }
-}
-
-/// Asks before a redirect is followed (`WebFetcher.fetchPage(redirect:)`).
-private final class RedirectGate: NSObject, URLSessionTaskDelegate, Sendable {
-    let allows: @Sendable (URL) -> Bool
-
-    init(allows: @escaping @Sendable (URL) -> Bool) {
-        self.allows = allows
-    }
-
-    func urlSession(_ session: URLSession, task: URLSessionTask, willPerformHTTPRedirection response: HTTPURLResponse,
-                    newRequest request: URLRequest) async -> URLRequest? {
-        guard let url = request.url, allows(url) else { return nil }
-        return request
     }
 }

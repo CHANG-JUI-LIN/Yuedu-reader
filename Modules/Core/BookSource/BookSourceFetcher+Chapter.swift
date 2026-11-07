@@ -213,44 +213,34 @@ extension BookSourceFetcher {
         let parsePage: @Sendable (String, String) async throws -> ChapterParsePayload = { [self] html, baseURL in
             let ruleContent = source.ruleContent.content.trimmingCharacters(
                 in: .whitespacesAndNewlines)
+            // Not a fallback: a source with no content rule has no other way to its text, and
+            // reading the page with the heuristic is how such a source reads at all
+            // (`BookSourceCheckCPUTests.textSourceWithoutContentRuleReadsPage`). The page reaching
+            // it is bounded by `WebFetcher.responseByteLimit`, like every other page.
             if ruleContent.isEmpty {
                 let content = await ChapterFetcher.shared.extractWebContentSinglePage(
                     html: html, pageURL: baseURL)
                 return ChapterParsePayload(
                     content: content, title: "", sourceMatched: true, isPay: ref.isPay)
             }
-            do {
-                let parsed = try await SourcePerfTrace.spanAsync("chapter.parse", source.bookSourceName) {
-                    try await self.pipeline.parseChapterResult(
-                        html: html,
-                        baseURL: baseURL,
-                        source: source,
-                        runtimeVariables: runtimeBox.get(),
-                        chapterRef: ref,
-                        nextChapterURL: ref.runtimeVariables?[Self.nextChapterRuntimeVariableKey],
-                        isVideoEpisode: isVideoEpisode
-                    )
-                }
-                if let runtimeVariables = parsed.runtimeVariables, !runtimeVariables.isEmpty {
-                    runtimeBox.set(runtimeVariables)
-                }
-                return parsed
-            } catch {
-                let fallback = await ChapterFetcher.shared.extractWebContentSinglePage(
+            // A rule that matches nothing is the source's answer, as in Legado: no heuristic
+            // stands in for it. (A `catch` here used to read the page with the heuristic when the
+            // rule threw; `ModernParserBridge.parseChapterResult` throws nothing, so it never ran.)
+            let parsed = try await SourcePerfTrace.spanAsync("chapter.parse", source.bookSourceName) {
+                try await self.pipeline.parseChapterResult(
                     html: html,
-                    pageURL: baseURL
+                    baseURL: baseURL,
+                    source: source,
+                    runtimeVariables: runtimeBox.get(),
+                    chapterRef: ref,
+                    nextChapterURL: ref.runtimeVariables?[Self.nextChapterRuntimeVariableKey],
+                    isVideoEpisode: isVideoEpisode
                 )
-                if !fallback.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                    return ChapterParsePayload(
-                        content: fallback,
-                        title: "",
-                        sourceMatched: false,
-                        isPay: ref.isPay,
-                        runtimeVariables: runtimeBox.get()
-                    )
-                }
-                throw error
             }
+            if let runtimeVariables = parsed.runtimeVariables, !runtimeVariables.isEmpty {
+                runtimeBox.set(runtimeVariables)
+            }
+            return parsed
         }
         let extractNextPages: @Sendable (String, String) async -> [String] = { [self] html, baseURL in
             let next = await self.pipeline.extractNextContentURLs(
