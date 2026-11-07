@@ -127,6 +127,27 @@ struct RemoteLibraryConnectionTests {
         #expect(BookCoverLoader.remoteSession(for: book, connections: store) !== original)
     }
 
+    @Test("a connection's cover cache key is the same after a relaunch, and differs by account")
+    @MainActor func coverCacheKeySurvivesRelaunch() throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let url = "https://example.com/covers/1.jpg"
+        let first = OPDSCatalogStore(storageDirectory: directory, importLegacyWebDAV: false)
+        let connection = first.add(name: "Catalog", url: "https://example.com/opds", username: "reader", password: "secret")
+        defer { first.remove(connection) }
+        let firstKey = BookCoverLoader.cacheKey(for: url, session: first.httpClient(for: connection).session)
+        // A new launch: a new store reads the same saved connection and builds its client again.
+        let relaunched = OPDSCatalogStore(storageDirectory: directory, importLegacyWebDAV: false)
+        let reread = try #require(relaunched.connection(id: connection.id))
+        #expect(BookCoverLoader.cacheKey(for: url, session: relaunched.httpClient(for: reread).session) == firstKey)
+        // Another account on the same connection keeps covers of its own.
+        var otherAccount = connection
+        otherAccount.username = "other"
+        first.update(otherAccount, password: nil)
+        let updated = try #require(first.connection(id: connection.id))
+        #expect(BookCoverLoader.cacheKey(for: url, session: first.httpClient(for: updated).session) != firstKey)
+    }
+
     @Test("legacy OPDS usernames migrate into Keychain without losing login")
     @MainActor func legacyUsernameMigration() throws {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)

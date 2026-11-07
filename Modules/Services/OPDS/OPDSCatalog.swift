@@ -165,7 +165,8 @@ final class OPDSCatalogStore: @MainActor ObservableObject {
     func httpClient(for catalog: OPDSCatalog) -> RemoteLibraryHTTPClient {
         if let client = clients[catalog.id] { return client }
         let client = RemoteLibraryHTTPClient(baseURL: URL(string: catalog.url) ?? URL(string: "https://invalid.invalid")!,
-                                             username: catalog.username, password: password(for: catalog))
+                                             username: catalog.username, password: password(for: catalog),
+                                             connectionID: catalog.id)
         clients[catalog.id] = client
         return client
     }

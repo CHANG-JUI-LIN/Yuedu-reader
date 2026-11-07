@@ -30,8 +30,14 @@ final class RemoteLibraryHTTPClient: @unchecked Sendable, RemoteLibraryTransport
     let session: URLSession
     var readiumClient: any HTTPClient { self }
 
+    /// - Parameter connectionID: the saved connection this client serves, if any. It names the
+    ///   session, and `BookCoverLoader.cacheKey` keys covers by that name, memory and the saved
+    ///   copies in `Caches/NetworkCovers` alike. A saved connection's name is the same every
+    ///   launch, so its covers come back from disk; it used to be a fresh UUID, and every
+    ///   OPDS, WebDAV and Gutenberg cover on 探索 was downloaded again on each launch. Without
+    ///   one (a connection test, a one-off download) the session gets a name of its own.
     init(baseURL: URL, username: String? = nil, password: String? = nil,
-         configuration: URLSessionConfiguration = .ephemeral) {
+         configuration: URLSessionConfiguration = .ephemeral, connectionID: String? = nil) {
         self.baseURL = baseURL
         configuration.urlCredentialStorage = nil
         configuration.httpCookieStorage = nil
@@ -40,7 +46,14 @@ final class RemoteLibraryHTTPClient: @unchecked Sendable, RemoteLibraryTransport
         configuration.httpAdditionalHeaders = headers
         let delegate = RemoteLibraryAuthenticationDelegate(baseURL: baseURL, username: username, password: password)
         session = URLSession(configuration: configuration, delegate: delegate, delegateQueue: nil)
-        session.sessionDescription = "remote-library-\(UUID().uuidString)"
+        session.sessionDescription = Self.sessionName(connectionID: connectionID, username: username)
+    }
+
+    /// The session's name: the connection and the account signed in to it, so another account on
+    /// the same connection does not see the covers the first one fetched.
+    static func sessionName(connectionID: String?, username: String?) -> String {
+        guard let connectionID else { return "remote-library-\(UUID().uuidString)" }
+        return "remote-library-\(connectionID)|\(username ?? "")"
     }
 
     deinit { session.invalidateAndCancel() }
