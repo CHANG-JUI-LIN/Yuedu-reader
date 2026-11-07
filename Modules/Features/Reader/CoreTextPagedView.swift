@@ -171,6 +171,28 @@ struct CoreTextPageEngineView: UIViewControllerRepresentable {
         return pvc
     }
 
+    /// Crashlytics 658b2c27 / 1e94b6ec, "The number of view controllers provided (0) doesn't
+    /// match the number required (2)". A controller SwiftUI retires — a new
+    /// `ReaderView.readerPageViewIdentity` (window size, spread mode, style), a source switch,
+    /// closing the book — can outlive this Coordinator, its weak data source, while it is still
+    /// on screen and taking touches (the reader fades it out). UIKit 27.2's
+    /// `_handlePanGesture:` asks for the curl's incoming pages again at `.began` and hands them
+    /// to the transition unchecked, and with the data source gone `_canHandleGestures` is false
+    /// and that answer is empty without the data source ever being asked — so a curl pan that
+    /// passed its begin check before the Coordinator went throws. Both reports had no
+    /// `curl no page` breadcrumb at the throw, which is that path.
+    ///
+    /// Disabling a recognizer cancels a recognition in flight synchronously, so no pan reaches
+    /// `.began` here; the controller then takes no more touches and has no data source to lose.
+    static func dismantleUIViewController(_ uiViewController: UIPageViewController, coordinator: Coordinator) {
+        for recognizer in uiViewController.gestureRecognizers {
+            recognizer.isEnabled = false
+        }
+        uiViewController.view.isUserInteractionEnabled = false
+        uiViewController.dataSource = nil
+        uiViewController.delegate = nil
+    }
+
     func updateUIViewController(_ uiViewController: UIPageViewController, context: Context) {
         let updateTrace = context.coordinator.pageTurnTrace.beginUpdatePass()
         defer { context.coordinator.pageTurnTrace.endUpdatePass(updateTrace) }
