@@ -90,6 +90,34 @@ struct ContinuousScrollRestoreTests {
         #expect(resaved == target, "\(source): rebuilding the engine and viewport must preserve the saved line")
     }
 
+    /// FB-159: at 80–120 s/頁 one frame of 自動閱讀 is a fraction of a pixel. The scroll view
+    /// rounds that away, and reading "the offset did not grow" as "the content ended" quit the
+    /// mode on its second frame — every time it was entered again, at the speed it had saved.
+    @Test("自動閱讀 at its slowest speed accumulates sub-pixel frames instead of ending (FB-159)")
+    func slowAutoReadAccumulatesSubPixelFrames() async throws {
+        let scene = try #require(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first)
+        let engine = engine(.txt)
+        await engine.start(initialChapter: 0, contentWidth: scene.coordinateSpace.bounds.width - 24,
+                           loadAdjacentChapters: false)
+        let (window, controller, collection) = try mount(engine, position: .chapterStart(0))
+        defer { window.isHidden = true; window.rootViewController = nil }
+        let pixel = 1 / window.screen.scale
+        // 120 s for one page at 120 Hz: AutoReadController's per-frame fraction times the viewport.
+        let fraction = AutoReadController.fraction(ofPageIn: 1.0 / 120, secondsPerPage: 120)
+        let step = controller.autoScrollViewportHeight * CGFloat(fraction)
+        #expect(step < pixel / 2, "the case under test is a frame smaller than half a pixel")
+        let start = collection.contentOffset.y
+        let frames = 600
+        var stoppedAt: Int?
+        for frame in 0..<frames {
+            if !controller.autoScroll(by: step) { stoppedAt = frame; break }
+        }
+        #expect(stoppedAt == nil, "mid-chapter, 自動閱讀 ended at frame \(stoppedAt ?? -1)")
+        let moved = collection.contentOffset.y - start
+        #expect(abs(moved - step * CGFloat(frames)) <= pixel + 0.001,
+                "\(frames) frames of \(step)pt moved \(moved)pt")
+    }
+
     @Test(arguments: Source.allCases)
     func restoreIncludesChapterLeadingSpacing(source: Source) async throws {
         let scene = try #require(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first)
