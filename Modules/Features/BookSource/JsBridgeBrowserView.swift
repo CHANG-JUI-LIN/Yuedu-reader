@@ -887,10 +887,13 @@ struct JsBridgeBrowserRepresentable: UIViewRepresentable {
                             ? String(cookie.domain.dropFirst()) : cookie.domain
                         byDomain["https://\(domain)", default: []].append(cookie)
                     }
-                    for (domainKey, domainCookies) in byDomain {
-                        let joined = domainCookies.map { "\($0.name)=\($0.value)" }.joined(separator: "; ")
-                        CookieStore.shared.set(url: domainKey, cookie: joined)
-                    }
+                    // One merge and at most one file write for the whole jar: this runs on
+                    // every page load, and per-domain writes cost 1 GB (crashlytics_fa6a505e…).
+                    CookieStore.shared.set(byDomain.map { domainKey, domainCookies in
+                        (url: domainKey,
+                         cookie: domainCookies.map { "\($0.name)=\($0.value)" }
+                            .joined(separator: "; "))
+                    })
 
                     completion?(pageBody)
                 }

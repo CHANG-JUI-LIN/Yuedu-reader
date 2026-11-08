@@ -23,12 +23,21 @@ final class CookieStore: Sendable {
     /// Domain → raw cookie string (persistent snapshot).
     private let store: OSAllocatedUnfairLock<[String: String]>
     private let fileURL: URL
+    /// How many times the file has been rewritten — read by tests to prove an unchanged
+    /// merge costs no disk write.
+    private let writeCount = OSAllocatedUnfairLock(initialState: 0)
+    var persistedWriteCount: Int { writeCount.withLock { $0 } }
 
     // MARK: - Init
 
-    private init() {
+    private convenience init() {
         let dir = FileManager.default.urls(for: .libraryDirectory, in: .userDomainMask).first!
-        fileURL = dir.appendingPathComponent("legado_cookies.json")
+        self.init(fileURL: dir.appendingPathComponent("legado_cookies.json"))
+    }
+
+    /// A store persisted at `fileURL`. The app uses `shared`; tests pass a temporary file.
+    init(fileURL: URL) {
+        self.fileURL = fileURL
         store = OSAllocatedUnfairLock(initialState: Self.load(from: fileURL))
         replayIntoHTTPCookieStorage()
     }
@@ -76,17 +85,43 @@ final class CookieStore: Sendable {
     /// attribute separator (Set-Cookie style) and drops non-standard pairs
     /// such as the `dttoken` in `"key=xxx; dttoken=yyy"`.
     func set(url: String, cookie: String) {
-        guard !cookie.isEmpty, let cookieURL = URL(string: url) else { return }
+        set([(url: url, cookie: cookie)])
+    }
 
-        // Write to HTTPCookieStorage — always use makeCookies which splits by ;
-        makeCookies(cookie, for: cookieURL).forEach {
-            HTTPCookieStorage.shared.setCookie($0)
+    /// Stores every `(url, cookie)` pair, then rewrites the file at most once — and not at all
+    /// when every merged value already equals what is stored.
+    ///
+    /// The source web page syncs the whole WebKit jar on every page load (one entry per
+    /// domain). Writing per entry, unchanged or not, cost a user 1 GB of background disk
+    /// writes in one MetricKit window (crashlytics_fa6a505e…).
+    func set(_ entries: [(url: String, cookie: String)]) {
+        var updates: [(domain: String, cookie: String)] = []
+        for entry in entries {
+            guard !entry.cookie.isEmpty, let cookieURL = URL(string: entry.url) else { continue }
+            // Write to HTTPCookieStorage — always use makeCookies which splits by ;
+            makeCookies(entry.cookie, for: cookieURL).forEach {
+                HTTPCookieStorage.shared.setCookie($0)
+            }
+            updates.append((canonicalDomain(for: entry.url), entry.cookie))
         }
+        guard !updates.isEmpty else { return }
+        let pending = updates
 
-        // Persist: merge with existing value for this domain
-        let domain = canonicalDomain(for: url)
-        store.withLock { $0[domain] = merge(existing: $0[domain], incoming: cookie) }
-        save()
+        // Persist: merge with the existing value for each domain. Compare as name→value maps,
+        // not strings — the stored string's pair order is arbitrary.
+        let changed = store.withLock { store -> Bool in
+            var changed = false
+            for update in pending {
+                let existing = Self.cookiePairs(store[update.domain])
+                var merged = existing
+                merged.merge(Self.cookiePairs(update.cookie)) { _, incoming in incoming }
+                guard merged != existing else { continue }
+                store[update.domain] = Self.cookieString(merged)
+                changed = true
+            }
+            return changed
+        }
+        if changed { save() }
     }
 
     /// Returns the value of a single cookie named `key` for the host of `url`.
@@ -181,18 +216,30 @@ final class CookieStore: Sendable {
     // MARK: - Private: Persistence
 
     private static func load(from fileURL: URL) -> [String: String] {
-        guard FileManager.default.fileExists(atPath: fileURL.path),
-              let data = try? Data(contentsOf: fileURL),
-              let decoded = try? JSONDecoder().decode([String: String].self, from: data) else {
+        guard FileManager.default.fileExists(atPath: fileURL.path) else { return [:] }
+        do {
+            let data = try Data(contentsOf: fileURL)
+            return try JSONDecoder().decode([String: String].self, from: data)
+        } catch {
+            AppLogger.cache("cookie store load failed", error: error, context: [
+                "file": fileURL.lastPathComponent
+            ])
             return [:]
         }
-        return decoded
     }
 
     private func save() {
         let snapshot = store.withLock { $0 }
-        guard let data = try? JSONEncoder().encode(snapshot) else { return }
-        try? data.write(to: fileURL, options: .atomic)
+        do {
+            let data = try JSONEncoder().encode(snapshot)
+            try data.write(to: fileURL, options: .atomic)
+            writeCount.withLock { $0 += 1 }
+        } catch {
+            AppLogger.cache("cookie store save failed", error: error, context: [
+                "file": fileURL.lastPathComponent,
+                "domains": snapshot.count
+            ])
+        }
     }
 
     /// Replay persisted cookies into HTTPCookieStorage on startup.
@@ -238,9 +285,15 @@ final class CookieStore: Sendable {
     /// Merge incoming `name=value` pairs into an existing cookie string.
     /// Incoming values overwrite existing ones with the same name.
     private func merge(existing: String?, incoming: String) -> String {
+        var dict = Self.cookiePairs(existing)
+        dict.merge(Self.cookiePairs(incoming)) { _, incoming in incoming }
+        return Self.cookieString(dict)
+    }
+
+    /// `name=value; name2=value2` → name → value. A later pair wins a repeated name.
+    private static func cookiePairs(_ raw: String?) -> [String: String] {
         var dict: [String: String] = [:]
-        // Parse existing
-        for segment in (existing ?? "").components(separatedBy: ";") {
+        for segment in (raw ?? "").components(separatedBy: ";") {
             let trimmed = segment.trimmingCharacters(in: .whitespaces)
             let parts = trimmed.split(separator: "=", maxSplits: 1).map(String.init)
             if parts.count == 2, !parts[0].isEmpty {
@@ -248,16 +301,11 @@ final class CookieStore: Sendable {
                     parts[1].trimmingCharacters(in: .whitespaces)
             }
         }
-        // Overwrite with incoming
-        for segment in incoming.components(separatedBy: ";") {
-            let trimmed = segment.trimmingCharacters(in: .whitespaces)
-            let parts = trimmed.split(separator: "=", maxSplits: 1).map(String.init)
-            if parts.count == 2, !parts[0].isEmpty {
-                dict[parts[0].trimmingCharacters(in: .whitespaces)] =
-                    parts[1].trimmingCharacters(in: .whitespaces)
-            }
-        }
-        return dict.map { "\($0.key)=\($0.value)" }.joined(separator: "; ")
+        return dict
+    }
+
+    private static func cookieString(_ pairs: [String: String]) -> String {
+        pairs.map { "\($0.key)=\($0.value)" }.joined(separator: "; ")
     }
 
     private func removingCookie(named key: String, from raw: String) -> String {
