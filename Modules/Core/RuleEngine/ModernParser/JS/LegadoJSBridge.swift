@@ -147,7 +147,9 @@ struct LegadoHTTPResult {
     // Networking
     func ajax(_ urlStr: String) -> String
     func axja(_ urlStr: String) -> String
-    func ajaxAll(_ urlArray: [String]) -> [LegadoStrResponse]
+    /// The list is a `JSValue`, not `[String]`: a script's list may hold objects or numbers, and
+    /// the bridging cast to `[String]` aborts the app before the method runs.
+    func ajaxAll(_ urlArray: JSValue) -> [LegadoStrResponse]
     func connect(_ urlStr: String) -> LegadoStrResponse
     func connectWithOptions(_ urlStr: String, _ headers: JSValue, _ timeout: JSValue) -> LegadoStrResponse
     func head(_ urlStr: String, _ headers: JSValue) -> LegadoStrResponse
@@ -665,7 +667,48 @@ struct LegadoHTTPResult {
         uniquingKeysWith: { first, _ in first }
     )
 
-    func ajaxAll(_ urlArray: [String]) -> [LegadoStrResponse] {
+    /// The URL strings of `java.ajaxAll`/`java.ajaxTestAll`'s list, as Rhino gives Legado's
+    /// `Array<String>` parameter: each element through JS ToString, so an object answers
+    /// `"[object Object]"` (or its own `toString()`), a number its digits, `null` `"null"` — one
+    /// request, and one response, per element, in order. Every fork (legado-E, Sigma, MD3)
+    /// declares `Array<String>` and none reads a `url` field. A coerced element is logged: it is
+    /// almost always a broken URL, and the source that sent it is worth finding.
+    static func ajaxURLList(_ list: JSValue, call: String) -> [String] {
+        guard list.isArray else {
+            // Rhino throws converting a non-array to `Array<String>`; answering no responses
+            // keeps the script running, and every source indexes the answer by its own list.
+            AppLogger.parse("⟐ \(call) list is not an array", context: [
+                "type": Self.jsTypeName(list),
+                "value": String((list.toString() ?? "").prefix(120))
+            ])
+            return []
+        }
+        let count = Int(list.forProperty("length")?.toInt32() ?? 0)
+        return (0..<count).map { index in
+            guard let element = list.atIndex(index) else { return "undefined" }
+            if element.isString { return element.toString() ?? "" }
+            let coerced = element.toString() ?? ""
+            AppLogger.parse("⟐ \(call) element is not a string", context: [
+                "i": index,
+                "type": Self.jsTypeName(element),
+                "coerced": String(coerced.prefix(120))
+            ])
+            return coerced
+        }
+    }
+
+    private static func jsTypeName(_ value: JSValue) -> String {
+        if value.isUndefined { return "undefined" }
+        if value.isNull { return "null" }
+        if value.isNumber { return "number" }
+        if value.isBoolean { return "boolean" }
+        if value.isString { return "string" }
+        if value.isArray { return "array" }
+        return "object"
+    }
+
+    func ajaxAll(_ list: JSValue) -> [LegadoStrResponse] {
+        let urlArray = Self.ajaxURLList(list, call: "ajaxAll")
         guard !urlArray.isEmpty else { return [] }
         // Legado's `java.ajaxAll` returns `StrResponse[]`; sources ALWAYS call `.body()` on
         // each element (起点 段评: `cmtData[0].body()`; 番茄 bookshelf: `r.body()`). Returning
