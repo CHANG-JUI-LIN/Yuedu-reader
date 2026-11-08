@@ -150,10 +150,10 @@ struct ChapterTitleStyleSettingsView: View {
     }
 
     private func presetRow(_ preset: ChapterTitleStylePreset) -> some View {
-        let isSelected = style == preset.style
+        let isSelected = style.matchesLook(preset.style)
         let displayName = preset.isBuiltin ? localized(preset.name) : preset.name
         return Button {
-            applyStyle(preset.style)
+            applyStyle(style.applyingLook(of: preset.style))
         } label: {
             Label(
                 displayName,
@@ -349,7 +349,11 @@ struct ChapterTitleStyleSettingsView: View {
         let trimmed = savePresetName.trimmingCharacters(in: .whitespacesAndNewlines)
         let name = trimmed.isEmpty ? localized("我的樣式") : trimmed
         settings.upsertChapterTitleCustomPreset(
-            ChapterTitleStylePreset(name: name, style: style)
+            ChapterTitleStylePreset.userPreset(
+                named: name,
+                style: style,
+                replacingIn: settings.chapterTitleCustomPresets
+            )
         )
         savePresetName = ""
     }

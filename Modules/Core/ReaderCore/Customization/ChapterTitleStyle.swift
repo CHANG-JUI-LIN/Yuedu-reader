@@ -196,6 +196,25 @@ struct ChapterTitleStyle: Codable, Equatable, Sendable {
         return min(max(value, range.lowerBound), range.upperBound)
     }
 
+    /// This style with `preset`'s look — templates, design, weight, alignment, the
+    /// two-line split and fonts — while keeping the reader's own size, spacing and
+    /// 顯示標題. Picking a preset restyles the title; it never resets the 標題大小
+    /// the reader dialled in (FB-162: a saved preset froze 22 pt and snapped it back).
+    func applyingLook(of preset: ChapterTitleStyle) -> ChapterTitleStyle {
+        var copy = preset
+        copy.visible = visible
+        copy.size = size
+        copy.topSpacing = topSpacing
+        copy.bottomSpacing = bottomSpacing
+        return copy
+    }
+
+    /// Whether this style looks like `preset`, ignoring size, spacing and
+    /// visibility — so a preset stays ✓ while the reader adjusts those sliders.
+    func matchesLook(_ preset: ChapterTitleStyle) -> Bool {
+        applyingLook(of: preset) == self
+    }
+
     /// Effective PostScript name for a segment, honouring the follow-body toggle.
     /// `nil` means "use the reader's selected font (or system font)".
     func numberFontName() -> String? { followsBodyFont ? nil : numberFontPostScript }
@@ -367,6 +386,20 @@ struct ChapterTitleStylePreset: Codable, Equatable, Identifiable, Sendable {
 }
 
 extension ChapterTitleStylePreset {
+    /// A user preset to save under `name`. Saving again under a name already in
+    /// `existing` keeps that preset's id, so the upsert replaces it instead of
+    /// adding a second preset with the same name.
+    static func userPreset(
+        named name: String,
+        style: ChapterTitleStyle,
+        replacingIn existing: [ChapterTitleStylePreset]
+    ) -> ChapterTitleStylePreset {
+        if let match = existing.first(where: { !$0.isBuiltin && $0.name == name }) {
+            return ChapterTitleStylePreset(id: match.id, name: name, style: style)
+        }
+        return ChapterTitleStylePreset(name: name, style: style)
+    }
+
     /// Built-in presets. All six are HTML/CSS-template styles (advanced CSS on),
     /// shown in the picker only while 高級 CSS 樣式 is enabled. Each carries a
     /// light and a dark template; every CSS property used here (per-side border,
