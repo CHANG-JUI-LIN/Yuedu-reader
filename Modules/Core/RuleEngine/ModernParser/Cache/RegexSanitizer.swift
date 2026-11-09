@@ -13,14 +13,6 @@ import Foundation
 ///
 /// All conversions are semantically approximate.  Possessive quantifiers and
 /// atomic groups lose their backtrack-preventing semantics but remain valid.
-/// Box for safely transferring a value across a DispatchQueue boundary without
-/// requiring `T: Sendable`. The semaphore signal/wait pair provides the
-/// happens-before ordering that makes the @unchecked Sendable safe:
-/// write completes before signal(), read happens after wait().
-private final class _TimeoutResultBox<T>: @unchecked Sendable {
-    var value: T?
-}
-
 enum RegexSanitizer {
 
     // MARK: - Public API
@@ -42,45 +34,6 @@ enum RegexSanitizer {
     /// Returns `true` if the sanitized pattern can be compiled by NSRegularExpression.
     static func canCompile(_ pattern: String) -> Bool {
         (try? NSRegularExpression(pattern: sanitize(pattern))) != nil
-    }
-
-    // MARK: - Timeout-Protected Execution
-
-    /// Execute `work` on a detached OS thread, returning `fallback` if it takes
-    /// longer than `seconds`.  The background thread is not cancelled — it will
-    /// finish eventually — but the caller is unblocked.
-    ///
-    /// Uses a dedicated `Thread` (run at the caller's QoS) instead of GCD to avoid
-    /// exhausting the global dispatch thread pool when many callers block on the
-    /// semaphore simultaneously, and to avoid a priority inversion against the waiter.
-    ///
-    /// Use this wrapper around any NSRegularExpression matching call to guard
-    /// against catastrophic backtracking.
-    static func withTimeout<T>(
-        seconds: TimeInterval,
-        work: @escaping @Sendable () -> T,
-        fallback: T
-    ) -> T {
-        let box = _TimeoutResultBox<T>()
-        let sema = DispatchSemaphore(value: 0)
-        // The caller blocks on `sema.wait` below. If the worker runs at a lower QoS than
-        // the caller, the high-QoS waiter is stuck behind low-QoS work — a priority
-        // inversion the Thread Performance Checker flags as a "Hang Risk". Pin the worker
-        // to the caller's QoS so waiter and worker sit at the same level.
-        let worker = Thread {
-            box.value = work()
-            sema.signal()
-        }
-        worker.qualityOfService = Thread.current.qualityOfService
-        worker.start()
-        var timedOut = false
-        SourcePerfTrace.mainThreadWait("wait.regex", "timeout=\(seconds)s timedOut=\(timedOut)") {
-            timedOut = sema.wait(timeout: .now() + seconds) == .timedOut
-        }
-        if timedOut {
-            return fallback
-        }
-        return box.value ?? fallback
     }
 
     // MARK: - Private Helpers

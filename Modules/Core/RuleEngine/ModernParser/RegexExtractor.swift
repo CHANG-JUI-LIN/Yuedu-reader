@@ -23,9 +23,9 @@ final class RegexExtractor: RuleExtractor {
         let nsContent = content as NSString
         let fullRange = NSRange(location: 0, length: nsContent.length)
 
-        let matches = RegexSanitizer.withTimeout(seconds: 2.0, work: {
-            regex.matches(in: content, range: fullRange)
-        }, fallback: [] as [NSTextCheckingResult])
+        let matches = RegexMatching.matches(
+            of: regex, in: content, range: fullRange, firstOnly: false, timeout: 2.0
+        ) ?? []
 
         guard !matches.isEmpty else { return [] }
 
@@ -56,9 +56,9 @@ final class RegexExtractor: RuleExtractor {
         let nsContent = content as NSString
         let fullRange = NSRange(location: 0, length: nsContent.length)
 
-        guard let match = RegexSanitizer.withTimeout(seconds: 2.0, work: {
-            regex.firstMatch(in: content, range: fullRange)
-        }, fallback: nil) else {
+        guard let match = RegexMatching.matches(
+            of: regex, in: content, range: fullRange, firstOnly: true, timeout: 2.0
+        )?.first else {
             return ""
         }
 
@@ -104,15 +104,14 @@ enum RegexReplacer {
         guard !pattern.isEmpty else { return "" }
         guard let regex = RegexCache.shared.regex(for: pattern) else { return "" }
 
-        let fullRange = NSRange(result.startIndex..., in: result)
-        return RegexSanitizer.withTimeout(seconds: timeout, work: {
-            guard let match = regex.firstMatch(in: result, range: fullRange) else {
-                return ""
-            }
-            return regex.replacementString(
-                for: match, in: result, offset: 0, template: replacement
-            )
-        }, fallback: "")
+        guard let match = RegexMatching.matches(
+            of: regex, in: result, firstOnly: true, timeout: timeout
+        )?.first else {
+            return ""
+        }
+        return regex.replacementString(
+            for: match, in: result, offset: 0, template: replacement
+        )
     }
 
     /// Replace regex matches in `result`.
@@ -134,24 +133,8 @@ enum RegexReplacer {
         guard !pattern.isEmpty else { return result }
         guard let regex = RegexCache.shared.regex(for: pattern) else { return result }
 
-        let fullRange = NSRange(result.startIndex..., in: result)
-
-        return RegexSanitizer.withTimeout(seconds: timeout, work: {
-            if replaceFirst {
-                guard let match = regex.firstMatch(in: result, range: fullRange) else {
-                    return result
-                }
-                let template = regex.replacementString(
-                    for: match, in: result, offset: 0, template: replacement
-                )
-                let mutable = NSMutableString(string: result)
-                mutable.replaceCharacters(in: match.range, with: template)
-                return mutable as String
-            } else {
-                return regex.stringByReplacingMatches(
-                    in: result, range: fullRange, withTemplate: replacement
-                )
-            }
-        }, fallback: result)
+        return RegexMatching.replacing(
+            regex, in: result, template: replacement, firstOnly: replaceFirst, timeout: timeout
+        ) ?? result
     }
 }

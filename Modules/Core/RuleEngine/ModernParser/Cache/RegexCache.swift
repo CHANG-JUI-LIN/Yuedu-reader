@@ -30,7 +30,7 @@ final class RegexCache: Sendable {
     }
 
     /// Replace all matches of `pattern` in `string` with `replacement`.
-    /// Protected by a 2-second timeout to guard against catastrophic backtracking.
+    /// Stopped after `timeout` (2 s) on catastrophic backtracking, via `RegexMatching`.
     /// Returns nil if the pattern is invalid, or the original string on timeout.
     func replaceMatches(
         in string: String,
@@ -40,14 +40,13 @@ final class RegexCache: Sendable {
         timeout: TimeInterval = 2.0
     ) -> String? {
         guard let regex = regex(for: pattern, options: options) else { return nil }
-        let range = NSRange(string.startIndex..., in: string)
-        return RegexSanitizer.withTimeout(seconds: timeout, work: {
-            regex.stringByReplacingMatches(in: string, range: range, withTemplate: replacement)
-        }, fallback: string)
+        return RegexMatching.replacing(
+            regex, in: string, template: replacement, firstOnly: false, timeout: timeout
+        ) ?? string
     }
 
     /// Find the first match of `pattern` in `string`.
-    /// Protected by a 2-second timeout to guard against catastrophic backtracking.
+    /// Stopped after `timeout` (2 s) on catastrophic backtracking, via `RegexMatching`.
     /// Returns nil if the pattern is invalid or no match is found within the timeout.
     func firstMatch(
         in string: String,
@@ -56,10 +55,9 @@ final class RegexCache: Sendable {
         timeout: TimeInterval = 2.0
     ) -> NSTextCheckingResult? {
         guard let regex = regex(for: pattern, options: options) else { return nil }
-        let range = NSRange(string.startIndex..., in: string)
-        return RegexSanitizer.withTimeout(seconds: timeout, work: {
-            regex.firstMatch(in: string, range: range)
-        }, fallback: nil)
+        return RegexMatching.matches(
+            of: regex, in: string, firstOnly: true, timeout: timeout
+        )?.first
     }
 
     /// Clear all cached patterns.
