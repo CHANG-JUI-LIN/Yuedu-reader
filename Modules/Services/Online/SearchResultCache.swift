@@ -4,6 +4,9 @@ import Foundation
 final class SearchResultCache: Sendable {
     static let shared = SearchResultCache()
 
+    /// The writer `store` counts its writes under (`DiskWriteTally`).
+    static let diskWriteTallyName = "searchCache"
+
     struct Entry: Codable {
         var books: [CachedBook]
         var timestamp: Date
@@ -119,9 +122,15 @@ final class SearchResultCache: Sendable {
         // search path pay for the *next* search's speed-up. Losing an entry to an
         // app kill just costs one re-fetch.
         let url = fileURL(for: key)
+        let sourceName = source.bookSourceName
         writeQueue.async {
-            guard let data = try? JSONEncoder().encode(entry) else { return }
-            try? data.write(to: url, options: .atomic)
+            do {
+                let data = try JSONEncoder().encode(entry)
+                try data.write(to: url, options: .atomic)
+                DiskWriteTally.record(Self.diskWriteTallyName, reason: "books=\(entry.books.count)", bytes: data.count)
+            } catch {
+                AppLogger.cache("Search result cache not saved", error: error, context: ["source": sourceName])
+            }
         }
     }
 

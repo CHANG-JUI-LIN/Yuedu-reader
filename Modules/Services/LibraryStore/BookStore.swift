@@ -3295,6 +3295,7 @@ class BookStore: @MainActor ObservableObject, BookProvider {
                         // what this store last wrote.
                         if Self.file(metadataFileURL, holds: files.shelfData) {
                             try shelfData.write(to: metadataFileURL, options: .atomic)
+                            DiskWriteTally.record("shelf", reason: "shelf books=\(input.records.count)", bytes: shelfData.count)
                             files.shelfData = shelfData
                             written.shelfData = shelfData
                         } else {
@@ -3307,6 +3308,7 @@ class BookStore: @MainActor ObservableObject, BookProvider {
                     AppLogger.cache("Reading records are unreadable and were not kept aside; leaving them as they are")
                 } else if let readingData, readingData != files.readingData {
                     try readingData.write(to: readingMetadataFileURL, options: .atomic)
+                    DiskWriteTally.record("shelf", reason: "reading", bytes: readingData.count)
                     files.readingData = readingData
                     written.readingData = readingData
                 }

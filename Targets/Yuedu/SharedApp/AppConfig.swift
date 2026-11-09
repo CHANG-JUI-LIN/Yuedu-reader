@@ -30,8 +30,13 @@ enum AppConfig {
     /// Minimum seconds between *automatic* table-of-contents refreshes (cold
     /// launch and returning to the foreground). Manual pull-to-refresh ignores
     /// this. Prevents hammering book sources when the app is switched in and out
-    /// rapidly. Reasonable range: 120–600.
-    static let autoRefreshMinInterval: TimeInterval = 300
+    /// rapidly.
+    ///
+    /// 30 minutes (maintainer, 2026-11-09): every pass rewrites the chapter list of each book
+    /// that gained a chapter (≈690 KB for 2000 chapters), and at 5 minutes a 248-online-book
+    /// shelf reached 1 GB of writes a day (3.0.1 (146) MetricKit disk-write exception).
+    /// Serials publish hours apart, so a new chapter shows at most half an hour late.
+    static let autoRefreshMinInterval: TimeInterval = 30 * 60
 
     /// How long a cached table of contents / book-info package may be served without
     /// going back to the source.

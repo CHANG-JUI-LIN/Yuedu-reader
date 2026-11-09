@@ -133,22 +133,39 @@ extension BookSourceFetcher {
         let path = tocPackagePath(tocUrl: tocUrl, source: source)
         let fingerprintPath = tocFingerprintPath(tocUrl: tocUrl, source: source)
         let fingerprint = Self.tocFingerprint(chapters: chapters, runtimeVariables: runtimeVariables)
+        let fields = TOCFieldDigests(chapters: chapters, runtimeVariables: runtimeVariables)
         do {
-            if manager.fileExists(atPath: path.path), manager.fileExists(atPath: fingerprintPath.path),
-               try String(contentsOf: fingerprintPath, encoding: .utf8) == fingerprint {
+            var stored: String?
+            if manager.fileExists(atPath: path.path), manager.fileExists(atPath: fingerprintPath.path) {
+                stored = try String(contentsOf: fingerprintPath, encoding: .utf8)
+            }
+            // The first line is the whole-list fingerprint; files written before the field
+            // digests were added hold only that line, and still match.
+            let storedLines = stored?.split(separator: "\n", omittingEmptySubsequences: false) ?? []
+            if let first = storedLines.first, String(first) == fingerprint {
                 try manager.setAttributes([.modificationDate: Date()], ofItemAtPath: path.path)
                 return package
             }
             try manager.createDirectory(at: tocCacheDir(), withIntermediateDirectories: true)
             let data = try JSONEncoder().encode(package)
             try data.write(to: path, options: .atomic)
-            try Data(fingerprint.utf8).write(to: fingerprintPath, options: .atomic)
+            let fingerprintData = Data((fingerprint + "\n" + fields.serialized).utf8)
+            try fingerprintData.write(to: fingerprintPath, options: .atomic)
+            let previous = storedLines.count > 1 ? TOCFieldDigests(serialized: String(storedLines[1])) : nil
+            DiskWriteTally.record(
+                Self.tocDiskWriteTallyName,
+                reason: fields.changeReason(from: previous, hadPackage: stored != nil),
+                bytes: data.count + fingerprintData.count
+            )
             SourcePerfTrace.record("toc.cache.write", "bytes=\(data.count) \(source.bookSourceName)", since: SourcePerfTrace.now)
         } catch {
             AppLogger.cache("TOC cache not saved", error: error, context: ["source": source.bookSourceName])
         }
         return package
     }
+
+    /// The writer `saveTOCPackage` counts its writes under (`DiskWriteTally`).
+    nonisolated static let tocDiskWriteTallyName = "toc"
 
     /// SHA-256 over everything a cached list carries except chapter ids.
     nonisolated static func tocFingerprint(chapters: [OnlineChapterRef], runtimeVariables: [String: String]?) -> String {
@@ -181,12 +198,15 @@ extension BookSourceFetcher {
         info: OnlineBook,
         source: BookSource
     ) -> BookInfoPackage {
-        let dir = bookInfoCacheDir()
-        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         // The page's raw HTML used to be written beside it; nothing ever read it.
         let package = makeBookInfoPackage(info: info, source: source)
-        if let data = try? JSONEncoder().encode(package) {
-            try? data.write(to: bookInfoPackagePath(url: info.bookUrl, source: source), options: .atomic)
+        do {
+            try FileManager.default.createDirectory(at: bookInfoCacheDir(), withIntermediateDirectories: true)
+            let data = try JSONEncoder().encode(package)
+            try data.write(to: bookInfoPackagePath(url: info.bookUrl, source: source), options: .atomic)
+            DiskWriteTally.record("bookInfo", reason: source.bookSourceName, bytes: data.count)
+        } catch {
+            AppLogger.cache("Book info cache not saved", error: error, context: ["source": source.bookSourceName])
         }
         return package
     }
@@ -257,5 +277,75 @@ extension BookSourceFetcher {
 
     nonisolated static func cleanChapterContent(_ text: String) -> String {
         ChapterFetcher.shared.cleanChapterContent(text)
+    }
+}
+
+/// A cached table of contents, digested field by field, so a rewrite can say what changed.
+///
+/// `saveTOCPackage` rewrites the whole package (≈1 MB for a long novel) whenever the
+/// whole-list fingerprint differs. Two field reports (3.0.1 (146), 1 GB in a day each) could
+/// not say whether those rewrites were new chapters — real work — or a list that came back
+/// the same length with something churning in it (a per-request token in every URL, a
+/// relative update time, runtime variables). The digests ride on the fingerprint file's second
+/// line and name the churning field in the `toc` tally's reason.
+struct TOCFieldDigests: Equatable {
+    var count: Int
+    /// Field name → hex digest over that field of every chapter, in order.
+    var fields: [String: String]
+
+    nonisolated static let fieldNames = ["titles", "urls", "updateTimes", "flags", "cachedFilenames", "chapterVariables", "media", "variables"]
+
+    nonisolated init(chapters: [OnlineChapterRef], runtimeVariables: [String: String]?) {
+        var hashers = Dictionary(uniqueKeysWithValues: Self.fieldNames.map { ($0, SHA256()) })
+        func add(_ field: String, _ text: String) {
+            hashers[field]?.update(data: Data(text.utf8))
+            hashers[field]?.update(data: Data([0]))
+        }
+        func variables(_ values: [String: String]?) -> String {
+            guard let values else { return "∅" }
+            return values.keys.sorted().map { "\($0)=\(values[$0] ?? "")" }.joined(separator: "\u{1f}")
+        }
+        add("variables", variables(runtimeVariables))
+        for chapter in chapters {
+            add("titles", "\(chapter.index)|\(chapter.title)")
+            add("urls", chapter.url)
+            add("updateTimes", chapter.updateTime ?? "∅")
+            add("flags", "\(chapter.isVolume)\(chapter.isVip)\(chapter.isPay)")
+            add("cachedFilenames", chapter.cachedFilename ?? "∅")
+            add("chapterVariables", variables(chapter.runtimeVariables))
+            add("media", "\(chapter.audioStartSeconds ?? -1)|\(chapter.audioDurationSeconds ?? -1)|\(chapter.pdfPageCount ?? -1)")
+        }
+        count = chapters.count
+        // 8 bytes of each digest is plenty to tell "changed" from "same".
+        fields = hashers.mapValues { $0.finalize().prefix(8).map { String(format: "%02x", $0) }.joined() }
+    }
+
+    /// Reads `serialized`; nil for a line this type did not write.
+    nonisolated init?(serialized: String) {
+        var count: Int?
+        var fields: [String: String] = [:]
+        for pair in serialized.split(separator: ";") {
+            let parts = pair.split(separator: "=", maxSplits: 1).map(String.init)
+            guard parts.count == 2 else { return nil }
+            if parts[0] == "n" { count = Int(parts[1]) } else { fields[parts[0]] = parts[1] }
+        }
+        guard let count else { return nil }
+        self.count = count
+        self.fields = fields
+    }
+
+    nonisolated var serialized: String {
+        (["n=\(count)"] + Self.fieldNames.map { "\($0)=\(fields[$0] ?? "")" }).joined(separator: ";")
+    }
+
+    /// Why a package is being written over `previous`: new chapters, lost chapters, or the
+    /// same number of chapters with the named fields changed.
+    nonisolated func changeReason(from previous: TOCFieldDigests?, hadPackage: Bool) -> String {
+        guard hadPackage else { return "new n=\(count)" }
+        guard let previous else { return "changed n=\(count) fields=unknown" }
+        let changed = Self.fieldNames.filter { fields[$0] != previous.fields[$0] }
+        if count > previous.count { return "grew+\(count - previous.count) n=\(count)" }
+        if count < previous.count { return "shrank-\(previous.count - count) n=\(count)" }
+        return "sameCount n=\(count) fields=\(changed.isEmpty ? "none" : changed.joined(separator: ","))"
     }
 }

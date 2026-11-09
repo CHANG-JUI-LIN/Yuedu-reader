@@ -40,6 +40,9 @@ final class BookChapterStore: Sendable {
     /// end up holding them all, as the shelf file used to.
     private static let cachedListLimit = 8
 
+    /// The writer `flush` counts its writes under (`DiskWriteTally`).
+    static let diskWriteTallyName = "chapters"
+
     let directoryURL: URL
     private let state = OSAllocatedUnfairLock(initialState: State())
 
@@ -204,6 +207,7 @@ final class BookChapterStore: Sendable {
         try FileManager.default.createDirectory(at: directoryURL, withIntermediateDirectories: true)
         let data = try JSONEncoder().encode(chapters)
         try data.write(to: url, options: .atomic)
+        DiskWriteTally.record(Self.diskWriteTallyName, reason: "n=\(chapters.count)", bytes: data.count)
         return data.count
     }
 
