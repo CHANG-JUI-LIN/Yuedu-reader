@@ -132,29 +132,31 @@ struct ReaderBarCustomizationTests {
         #expect(restored.readerBarLayout == layout)
     }
 
-    @Test @MainActor func independentBodyMarginsSyncAndOldPreferencesStillDecode() throws {
-        let original = ReaderPreferences.current()
-        defer { original.apply() }
-        var preferences = original
-        preferences.pageMarginTop = 8
-        preferences.pageMarginBottom = 39
-        let restored = try JSONDecoder().decode(ReaderPreferences.self, from: JSONEncoder().encode(preferences))
-        restored.apply()
-        #expect(ReaderConfig.shared.pageMarginTop == 8)
-        #expect(ReaderConfig.shared.pageMarginBottom == 39)
+    @Test @MainActor func independentBodyMarginsWriteBackAndOldPreferencesStillDecode() throws {
+        let settings = GlobalSettings.shared
+        let saved = (settings.pageMarginTop, settings.pageMarginBottom)
+        defer {
+            settings.pageMarginTop = saved.0
+            settings.pageMarginBottom = saved.1
+            ReaderConfig.shared.syncFromGlobalSettings()
+        }
+        settings.pageMarginBottom = 39
+        ReaderConfig.shared.syncFromGlobalSettings()
         ReaderConfig.shared.pageMarginTop = 17
-        #expect(GlobalSettings.shared.pageMarginTop == 17)
-        #expect(GlobalSettings.shared.pageMarginBottom == 39)
+        #expect(settings.pageMarginTop == 17)
+        #expect(settings.pageMarginBottom == 39)
         #expect(UserDefaults.standard.double(forKey: "yd_page_margin_top") == 17)
         #expect(UserDefaults.standard.double(forKey: "yd_page_margin_bottom") == 39)
 
-        var object = try #require(JSONSerialization.jsonObject(with: JSONEncoder().encode(preferences)) as? [String: Any])
+        // A profile from before the two margins still decodes. It sets neither: the account
+        // profile does not write the reading setup (FB-166).
+        var object = try #require(JSONSerialization.jsonObject(
+            with: JSONEncoder().encode(ReaderPreferences.current(settings: settings))) as? [String: Any])
         object.removeValue(forKey: "pageMarginTop")
         object.removeValue(forKey: "pageMarginBottom")
         let legacy = try JSONDecoder().decode(ReaderPreferences.self, from: JSONSerialization.data(withJSONObject: object))
+        #expect(legacy.pageMarginTop == nil)
         legacy.apply()
-        // Preferences from before the two margins keep this device's (feedback #25): filling
-        // them from `pageMarginV` turned a reader's 下邊距 back into 上下邊距 on every sign-in.
         #expect(ReaderConfig.shared.pageMarginTop == 17)
         #expect(ReaderConfig.shared.pageMarginBottom == 39)
     }

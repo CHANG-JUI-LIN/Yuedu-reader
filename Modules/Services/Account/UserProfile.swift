@@ -84,52 +84,21 @@ struct ReaderPreferences: Codable, Equatable {
         )
     }
 
+    /// What a profile pulled at sign-in — and at every launch that restores the session —
+    /// sets here: 簡繁轉換 only.
+    ///
+    /// The reading setup is not taken from the profile. iCloud syncs it row by row with a
+    /// merge clock (`ReadingSettingsSync`), worn through 排版生效範圍; the profile has no
+    /// clock and holds whatever was on screen at its last upload — a theme's own values
+    /// included. Written here, it overwrote the reader's newer settings on every relaunch
+    /// and was recorded into 全域 as an edit, so the next re-wear kept it: FB-166 (11-08,
+    /// 行距／段距 back to the theme's after a trip to another app), and feedback #25 and
+    /// #22 before it (margins reset on every sign-in). `current()` still uploads the
+    /// fields, which the account gateway's schema carries.
     @MainActor
     func apply(to settings: GlobalSettings = .shared) {
         var updates = SettingsUpdateBatch(settings, reason: "readerPreferences")
         defer { updates.finish() }
-        updates.set(\.readerFontSize, readerFontSize, field: "readerFontSize")
-        if let theme = ReaderTheme(rawValue: theme) {
-            if ReaderTheme.loadPersisted() != theme {
-                theme.persist()
-                settings.adoptReaderDarkMode(from: theme)
-            }
-        }
-        updates.set(\.lineHeightMultiple, lineHeightMultiple, field: "lineHeightMultiple")
-        updates.set(\.letterSpacing, letterSpacing, field: "letterSpacing")
-        updates.set(\.paragraphSpacingMultiplier, paragraphSpacingMultiplier, field: "paragraphSpacingMultiplier")
-        updates.set(\.pageMarginH, pageMarginH, field: "pageMarginH")
-        updates.set(\.pageMarginV, pageMarginV, field: "pageMarginV")
-        // Absent, as the header fields below: a profile from a build before the split, or one
-        // the account gateway returned before it kept these fields (2026-10-20). Filling them
-        // from 上下邊距 overwrote the reader's own on every sign-in (feedback #25, #22).
-        if let pageMarginTop {
-            updates.set(\.pageMarginTop, pageMarginTop, field: "pageMarginTop")
-        }
-        if let pageMarginBottom {
-            updates.set(\.pageMarginBottom, pageMarginBottom, field: "pageMarginBottom")
-        }
-        updates.set(\.footerBottomPadding, footerBottomPadding, field: "footerBottomPadding")
-        updates.set(\.footerTextGap, footerTextGap, field: "footerTextGap")
-        updates.set(\.pageTurnStyle, PageTurnStyle(rawValue: pageTurnStyle) ?? settings.pageTurnStyle, field: "pageTurnStyle")
-        updates.set(\.readerWritingMode, ReaderWritingMode(rawValue: readerWritingMode) ?? settings.readerWritingMode, field: "readerWritingMode")
         updates.set(\.textConversion, TextConversion(rawValue: textConversion) ?? settings.textConversion, field: "textConversion")
-        updates.set(\.scrollMode, scrollMode, field: "scrollMode")
-        if let readerHeaderVisible {
-            updates.set(\.readerHeaderVisible, readerHeaderVisible, field: "readerHeaderVisible")
-        }
-        if let readerHeaderTopPadding {
-            updates.set(\.readerHeaderTopPadding, readerHeaderTopPadding, field: "readerHeaderTopPadding")
-        }
-        if let readerHeaderTextGap {
-            updates.set(\.readerHeaderTextGap, readerHeaderTextGap, field: "readerHeaderTextGap")
-        }
-        if let readerHeaderFieldPositions {
-            updates.set(\.readerHeaderFieldPositions, readerHeaderFieldPositions, field: "readerHeaderFieldPositions")
-        }
-        if let readerTextColorOverrides {
-            updates.set(\.readerTextColorOverrides, readerTextColorOverrides, field: "readerTextColorOverrides")
-        }
-        ReaderConfig.shared.syncFromGlobalSettings()
     }
 }

@@ -383,6 +383,80 @@ struct ReadingSettingsScopeTests {
         #expect(decoded.barLayout == nil)
     }
 
+    // MARK: - The account profile (FB-166)
+
+    /// FB-166: with every setting on 全域, 行距 and 段距 went back to the theme's after
+    /// switching to another app. The relaunch that followed restored the account session,
+    /// and its profile — carrying whatever the live settings were at its last upload — was
+    /// written over the reader's own and recorded into 全域 as an edit. iCloud syncs the
+    /// reading setup row by row with a clock; the profile has none and must not touch it.
+    @Test func aSignInProfileLeavesTheReadingSetupAlone() throws {
+        let settings = GlobalSettings.shared
+        let fixture = Fixture(settings)
+        let appearance = settings.appearanceOnScreen
+        defer {
+            settings.appearanceOnScreen = appearance
+            fixture.restore()
+        }
+        fixture.reset()
+
+        var scope = settings.readingSettingsScope
+        scope.defaultScope = .global
+        settings.readingSettingsScope = scope
+        settings.lineHeightMultiple = 1.5
+        settings.paragraphSpacingMultiplier = 0.8
+        let records = settings.readingSettingSyncRecords
+
+        var preferences = ReaderPreferences.current(settings: settings)
+        preferences.lineHeightMultiple = 1.83
+        preferences.letterSpacing = 0.1
+        preferences.paragraphSpacingMultiplier = 1.2
+        preferences.readerFontSize = 30
+        let profile = UserProfile(
+            uid: settings.accountUserIdentifier, displayName: settings.accountDisplayName,
+            email: settings.accountEmail, provider: settings.accountProvider,
+            photoURL: settings.accountPhotoURL, preferences: preferences
+        )
+        settings.applyFirebaseProfile(profile)
+
+        #expect(settings.lineHeightMultiple == 1.5)
+        #expect(settings.paragraphSpacingMultiplier == 0.8)
+        #expect(settings.letterSpacing == 0)
+        #expect(settings.readerFontSize == 18)
+        #expect(settings.globalReadingSettings.lineHeightMultiple == 1.5)
+        #expect(settings.globalReadingSettings.paragraphSpacingMultiplier == 0.8)
+        #expect(settings.readingSettingSyncRecords == records)
+
+        // And wearing the setup again, as a change of appearance does, keeps them.
+        settings.appearanceOnScreen = settings.appearanceOnScreen == .dark ? .light : .dark
+        #expect(settings.lineHeightMultiple == 1.5)
+        #expect(settings.paragraphSpacingMultiplier == 0.8)
+    }
+
+    /// The lead FB-166 was first triaged on: going to the background flips the appearance on
+    /// screen, which wears the setup again. A 全域 edit survives it.
+    @Test func aChangeOfAppearanceKeepsAnEditToGlobal() throws {
+        let settings = GlobalSettings.shared
+        let fixture = Fixture(settings)
+        let appearance = settings.appearanceOnScreen
+        defer {
+            settings.appearanceOnScreen = appearance
+            fixture.restore()
+        }
+        fixture.reset()
+
+        var scope = settings.readingSettingsScope
+        scope.defaultScope = .global
+        settings.readingSettingsScope = scope
+        settings.lineHeightMultiple = 1.75
+        settings.paragraphSpacingMultiplier = 0.9
+
+        settings.appearanceOnScreen = appearance == .dark ? .light : .dark
+        settings.appearanceOnScreen = appearance
+        #expect(settings.lineHeightMultiple == 1.75)
+        #expect(settings.paragraphSpacingMultiplier == 0.9)
+    }
+
     // MARK: - Helpers
 
     private static func ownReading(of themeID: String) -> AppearanceThemeReadingSettings? {

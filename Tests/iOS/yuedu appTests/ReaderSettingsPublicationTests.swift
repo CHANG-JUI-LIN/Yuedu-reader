@@ -4,23 +4,6 @@ import XCTest
 
 @MainActor
 final class ReaderSettingsPublicationTests: XCTestCase {
-    func testChangedThemeAppliesOnceAndIdenticalThemeDoesNotRepublish() throws {
-        let original = ReaderPreferences.current()
-        defer { original.apply() }
-        original.apply()
-        let theme = try XCTUnwrap(ReaderTheme.allCases.first { $0.rawValue != original.theme })
-        var next = original
-        next.theme = theme.rawValue
-        var themes: [ReaderTheme] = []
-        let token = ReaderConfig.shared.$theme.dropFirst().sink { themes.append($0) }
-        next.apply()
-        next.apply()
-        XCTAssertEqual(ReaderTheme.loadPersisted(), theme)
-        XCTAssertEqual(ReaderConfig.shared.theme, theme)
-        XCTAssertEqual(themes, [theme])
-        withExtendedLifetime(token) {}
-    }
-
     func testIdenticalPreferencesAndConfigPublishNothing() {
         let settings = GlobalSettings.shared
         let preferences = ReaderPreferences.current()
@@ -56,37 +39,14 @@ final class ReaderSettingsPublicationTests: XCTestCase {
         recorder.cancel()
     }
 
-    func testRemoteChangeSupersedesPendingLocalWritebackWithoutEcho() {
+    func testUserEditStillWritesBack() {
         let settings = GlobalSettings.shared
-        let original = ReaderPreferences.current()
-        defer { original.apply() }
-        original.apply()
-        // This edit has already entered the existing slider debounce when sync arrives.
-        ReaderConfig.shared.fontSize = CGFloat(original.readerFontSize + 1)
-        var remote = original
-        remote.readerFontSize += 2
-        remote.readerHeaderTopPadding = (original.readerHeaderTopPadding ?? 0) + 5
-        let fontValues = ObservationRecorder { settings.readerFontSize }
-        remote.apply()
-        RunLoop.main.run(until: Date())
-        XCTAssertEqual(fontValues.values, [remote.readerFontSize])
-        XCTAssertEqual(ReaderConfig.shared.fontSize, CGFloat(remote.readerFontSize))
-        XCTAssertEqual(settings.readerHeaderTopPadding, remote.readerHeaderTopPadding)
-        let echo = ObservationRecorder { ReaderPreferences.current(settings: settings) }
-        // Runs past a known 120 ms debounce, not waiting for app readiness.
-        RunLoop.main.run(until: Date(timeIntervalSinceNow: 0.3))
-        XCTAssertEqual(echo.changeCount, 0, "remote sync must not echo after the slider debounce")
-        XCTAssertEqual(fontValues.values, [remote.readerFontSize])
-        echo.cancel()
-        fontValues.cancel()
-    }
-
-    func testUserEditStillWritesBackAfterRemoteSync() {
-        let settings = GlobalSettings.shared
-        let original = ReaderPreferences.current()
-        defer { original.apply() }
-        original.apply()
-        let expected = original.readerFontSize + 1
+        let original = settings.readerFontSize
+        defer {
+            settings.readerFontSize = original
+            ReaderConfig.shared.syncFromGlobalSettings()
+        }
+        let expected = original + 1
         ReaderConfig.shared.fontSize = CGFloat(expected)
         // The write-back is debounced; run the main loop until it lands, up to 2 s.
         let deadline = Date(timeIntervalSinceNow: 2)
