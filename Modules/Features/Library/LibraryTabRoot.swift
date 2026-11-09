@@ -214,17 +214,30 @@ struct LibraryTabRoot: View {
     /// while no source has a discover page: adding one is 設定's, and the card that led to
     /// 來源配置管理 went with 遠端書庫's (maintainer, 2026-10-27).
     ///
-    /// Eager, as 模組 and 訂閱 are: lazy, the grid's rows after the first stayed out of the
-    /// accessibility tree on the iOS 27.0 simulator (iPhone 18 Pro Max), so VoiceOver never
+    /// Lazy, except on iOS 27 (`groupsLaidOutAtOnce`).
+    ///
+    /// Eager on iOS 27, as 模組 and 訂閱 are: lazy, the grid's rows after the first stayed out of
+    /// the accessibility tree on the iOS 27.0 simulator (iPhone 18 Pro Max), so VoiceOver never
     /// reached 男频 although it was drawn on screen, and a hit test there landed on a nameless
     /// node (2026-10-26, `testSourcesByGroup`). It did so before 模組 moved to the top: the
-    /// order did not cause it. Measured on that simulator, eager lays 50 groups out in 63 ms
-    /// against lazy's 24, and 200 in 231 against 26; a later change to the page re-lays 200 in
-    /// 5 ms. Delete `isLazy: false` once `testSourcesByGroup` passes without it.
+    /// order did not cause it, and iOS 26.5 never showed it.
+    ///
+    /// Lazy below iOS 27, because every card alive costs every frame of a scroll there: with a
+    /// reader's 150 groups (FB-165: 1500 sources, 700 with a discover page, "only 60 fps" on an
+    /// iPhone 15 Pro on iOS 17.0), the iOS 17.5 simulator's main thread spent 4111 ms of a 25 s
+    /// drag sequence eager against 2926 lazy — CA commit 2250 against 1420 — with no view body
+    /// running: it is SwiftUI keeping each card's geometry current as the page moves
+    /// (`LibraryScrollProfilingUITests`, 2026-11-09). `testSourcesByGroup` passes lazy on iOS
+    /// 17.5, 18.6 and 26.5. Lay out lazily everywhere once it passes lazy on iOS 27 too.
+    private static var groupsLaidOutAtOnce: Bool {
+        if #available(iOS 27.0, *) { return true }
+        return false
+    }
+
     @ViewBuilder
     private var sourcesSection: some View {
         if !exploreSources.isEmpty {
-            LibrarySection(localized("來源配置"), isLazy: false) {
+            LibrarySection(localized("來源配置"), isLazy: !Self.groupsLaidOutAtOnce) {
                 NavigationLink(value: ExploreNavigationRoute.sourceManager) {
                     LibrarySectionAccessoryLabel()
                 }
