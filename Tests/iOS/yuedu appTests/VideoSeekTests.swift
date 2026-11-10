@@ -58,6 +58,13 @@ struct VideoSeekTests {
         #expect(VideoPan.seekTime(origin: 20, translation: -400, width: 400, in: 15...45) == 15)
     }
 
+    /// Measured on the simulator: playing at 0:47 of a playlist without an end, seekable 0–0:30.
+    @Test("a swipe from past the seekable window moves from its edge")
+    func seekTimeFromOutsideRange() {
+        #expect(VideoPan.seekTime(origin: 47, translation: -200, width: 400, in: 0...30) == 15)
+        #expect(VideoPan.seekTime(origin: 47, translation: 0, width: 400, in: 0...30) == 30)
+    }
+
     @Test("a swipe across decides by its dominant axis")
     func panAxis() {
         let size = CGSize(width: 900, height: 400)

@@ -48,10 +48,13 @@ struct VideoPan: Equatable {
         return min(span, max(DSLayout.videoScrubSecondsPerWidth, span * DSLayout.videoScrubDurationShareOfWidth))
     }
 
-    /// The time a pan across points at, kept inside the seekable range.
+    /// The time a pan across points at, kept inside the seekable range. It moves from the origin
+    /// brought into the range: a playlist without an end plays past its seekable window (measured:
+    /// at 0:47 with 0–0:30 seekable), and a pan from outside it would otherwise stick at the edge.
     static func seekTime(origin: Double, translation: CGFloat, width: CGFloat, in range: ClosedRange<Double>) -> Double {
         let span = range.upperBound - range.lowerBound
-        let target = origin + Double(translation / max(width, 1)) * secondsPerWidth(span: span)
+        let start = min(max(origin, range.lowerBound), range.upperBound)
+        let target = start + Double(translation / max(width, 1)) * secondsPerWidth(span: span)
         return min(max(target, range.lowerBound), range.upperBound)
     }
 

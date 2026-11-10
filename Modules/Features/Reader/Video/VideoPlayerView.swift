@@ -239,7 +239,10 @@ struct VideoPlayerView: View {
             }
             .padding(.horizontal, DSSpacing.lg)
             .padding(.vertical, DSSpacing.sm)
-            centerControls(controller)
+            // A swipe across puts its time badge where the transport row sits.
+            if pan?.kind != .seek {
+                centerControls(controller)
+            }
         }
         .foregroundStyle(DSColor.textOnFixedFill)
     }
