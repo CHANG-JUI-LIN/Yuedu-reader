@@ -1,9 +1,9 @@
 import Foundation
 
-/// Runs a source-supplied regex against a deadline that stops the matcher itself.
+/// Runs a source- or user-supplied regex against a deadline that stops the matcher itself.
 ///
 /// Book sources ship their own regexes (`##pattern##replacement`, `##` extraction rules), and
-/// some backtrack catastrophically. The match runs on the calling thread through
+/// so do replace rules (替換規則, `ReplaceRuleEngine`); some backtrack catastrophically. The match runs on the calling thread through
 /// `enumerateMatches(options: .reportProgress)`: ICU calls the block periodically even in the
 /// middle of a single `find`, and setting `stop` there aborts the search. So a timed-out match
 /// costs `timeout` of CPU and nothing more.
@@ -23,16 +23,36 @@ enum RegexMatching {
         firstOnly: Bool,
         timeout: TimeInterval
     ) -> [NSTextCheckingResult]? {
+        var found: [NSTextCheckingResult] = []
+        let completed = enumerateMatches(of: regex, in: string, range: range, timeout: timeout) { match, stop in
+            found.append(match)
+            if firstOnly { stop = true }
+        }
+        return completed ? found : nil
+    }
+
+    /// Hands each match of `regex` in `string` to `body` as it is found, so a caller that
+    /// counts its output (replace rules' budget) can stop before holding every match. Returns
+    /// false when the search ran past `timeout` and was stopped (logged); `body` setting
+    /// `stop` is a normal completion.
+    @discardableResult
+    static func enumerateMatches(
+        of regex: NSRegularExpression,
+        in string: String,
+        range: NSRange? = nil,
+        timeout: TimeInterval,
+        _ body: (NSTextCheckingResult, inout Bool) -> Void
+    ) -> Bool {
         let range = range ?? NSRange(location: 0, length: (string as NSString).length)
         let start = ProcessInfo.processInfo.systemUptime
         let deadline = start + timeout
-        var found: [NSTextCheckingResult] = []
         var timedOut = false
         SourcePerfTrace.mainThreadWait("wait.regex", "timeout=\(timeout)s") {
             regex.enumerateMatches(in: string, options: [.reportProgress], range: range) { match, _, stop in
                 if let match {
-                    found.append(match)
-                    if firstOnly {
+                    var stopHere = false
+                    body(match, &stopHere)
+                    if stopHere {
                         stop.pointee = true
                         return
                     }
@@ -50,9 +70,9 @@ enum RegexMatching {
                 "timeoutMs": Int(timeout * 1000),
                 "elapsedMs": Int((ProcessInfo.processInfo.systemUptime - start) * 1000),
             ], level: .warning)
-            return nil
+            return false
         }
-        return found
+        return true
     }
 
     /// `string` with every match of `regex` (just the first under `firstOnly`) replaced by

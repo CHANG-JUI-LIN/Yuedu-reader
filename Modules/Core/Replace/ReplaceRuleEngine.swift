@@ -29,7 +29,8 @@ enum ReplaceRuleEngine {
     }
 
     /// `content` with `rule` applied, or nil when the rule's output would pass `limit`
-    /// UTF-16 units (logged) or its pattern does not compile (logged by `regex(for:)`).
+    /// UTF-16 units (logged), its search ran past `regexTimeout` (logged), or its pattern
+    /// does not compile (logged by `regex(for:)`).
     static func replacing(_ rule: ReplaceRule, in content: String, limit: Int) -> String? {
         let text = content as NSString
         switch edits(of: rule, in: text, range: NSRange(location: 0, length: text.length), limit: limit) {
@@ -37,6 +38,9 @@ enum ReplaceRuleEngine {
             return nil
         case .overBudget:
             logOverBudget(limit)
+            return nil
+        case .timedOut:
+            logTimedOut(rule)
             return nil
         case .edits(let edits):
             guard !edits.isEmpty else { return content }
@@ -66,6 +70,16 @@ enum ReplaceRuleEngine {
         AppLogger.error("Replace rule output exceeds chapter budget", context: ["limit": "\(limit)"])
     }
 
+    /// Names the rule, so the 替換規則 to fix can be found; `RegexMatching` has already
+    /// logged the pattern and the time it took.
+    private static func logTimedOut(_ rule: ReplaceRule) {
+        AppLogger.error("Replace rule skipped at its timeout", context: [
+            "rule": rule.name,
+            "id": rule.id,
+            "timeoutMs": "\(Int(regexTimeout * 1000))",
+        ])
+    }
+
     /// The compiled rule, shared by both entry points so a string and an attributed string
     /// see exactly the same options (`anchorsMatchLines`).
     private static func regex(for pattern: String) -> NSRegularExpression? {
@@ -89,6 +103,27 @@ enum ReplaceRuleEngine {
         return compiled
     }
 
+    /// How long one rule may search one chapter: Legado's `ReplaceRule.timeoutMillisecond`
+    /// default (3000 ms in legado, Sigma and MD3). A rule that runs out is skipped for that
+    /// chapter and logged; Legado instead disables the rule for good and shows the error in
+    /// place of the chapter.
+    static let regexTimeout: TimeInterval = 3
+
+    /// `ruleEdits(_:in:from:)` on a cooperative thread, for callers on the main actor: each
+    /// rule may take up to `regexTimeout`, and several slow rules on the main thread would
+    /// still reach the scene-update watchdog (Crashlytics 1dbb0353). Only the string and the
+    /// edits cross; the caller replays them onto its attributed text with `replay(_:on:)`.
+    @concurrent
+    static func ruleEditsOffMain(_ rules: [ReplaceRule], in string: String, from start: Int) async -> [[Edit]] {
+        ruleEdits(rules, in: string, from: start)
+    }
+
+    /// `apply(_:to:)` on a cooperative thread, for callers on the main actor.
+    @concurrent
+    static func applyingOffMain(_ rules: [ReplaceRule], to content: String) async -> String {
+        apply(rules, to: content)
+    }
+
     // MARK: - Attributed text
 
     /// Applies `rules` to the text of `attributed` from `start` to its end, in place, with
@@ -107,30 +142,51 @@ enum ReplaceRuleEngine {
         to attributed: NSMutableAttributedString,
         from start: Int
     ) -> Bool {
-        var changed = false
+        replay(ruleEdits(rules, in: attributed.string, from: start), on: attributed)
+    }
+
+    /// What `rules` do to `string` from `start` to its end: one list of edits per rule that
+    /// matched, in rule order, each against the text the rules before it left. Plain strings
+    /// and edits only, so the regex work can run anywhere and the attributed text it applies
+    /// to stays where it lives.
+    static func ruleEdits(_ rules: [ReplaceRule], in string: String, from start: Int) -> [[Edit]] {
+        let text = NSMutableString(string: string)
+        var result: [[Edit]] = []
         for rule in rules {
             guard rule.enabled, !rule.pattern.isEmpty else { continue }
-            let text = attributed.string as NSString
             let lower = min(max(0, start), text.length)
             let range = NSRange(location: lower, length: text.length - lower)
             let limit = outputLimit(for: text.length)
-            let edits: [Edit]
-            switch Self.edits(of: rule, in: text, range: range, limit: limit) {
+            switch edits(of: rule, in: text, range: range, limit: limit) {
             case nil:
                 continue
             case .overBudget:
                 logOverBudget(limit)
                 continue
+            case .timedOut:
+                logTimedOut(rule)
+                continue
             case .edits(let found):
-                edits = found
+                guard !found.isEmpty else { continue }
+                for edit in found.reversed() {
+                    text.replaceCharacters(in: edit.range, with: edit.text)
+                }
+                result.append(found)
             }
-            guard !edits.isEmpty else { continue }
+        }
+        return result
+    }
+
+    /// Applies `ruleEdits` to `attributed` in order. Each replacement takes the attributes of
+    /// the text it replaces. Returns whether anything changed.
+    @discardableResult
+    static func replay(_ ruleEdits: [[Edit]], on attributed: NSMutableAttributedString) -> Bool {
+        for edits in ruleEdits {
             for edit in edits.reversed() {
                 attributed.replaceCharacters(in: edit.range, with: edit.text)
             }
-            changed = true
         }
-        return changed
+        return !ruleEdits.isEmpty
     }
 
     struct Edit {
@@ -143,10 +199,13 @@ enum ReplaceRuleEngine {
         /// The rule's output would pass the budget. Enumeration stopped at the match that
         /// passed it, after `scanned` matches.
         case overBudget(scanned: Int)
+        /// The regex search ran past `regexTimeout` and was stopped; the rule does nothing.
+        case timedOut
     }
 
     /// What `rule` does to `range` of `text`: the single place matches turn into
     /// replacement text, for both entry points. Nil when the pattern does not compile.
+    /// A regex search runs through `RegexMatching`, stopped at `regexTimeout`.
     ///
     /// The output is counted as it is produced, and enumeration stops at the first match
     /// that would take it past `limit` UTF-16 units. Output only grows from left to right,
@@ -163,8 +222,9 @@ enum ReplaceRuleEngine {
         if rule.isRegex {
             guard let regex = regex(for: rule.pattern) else { return nil }
             let parts = templateParts(rule.replacement, captureCount: regex.numberOfCaptureGroups)
-            regex.enumerateMatches(in: text as String, range: range) { match, _, stop in
-                guard let match else { return }
+            let completed = RegexMatching.enumerateMatches(
+                of: regex, in: text as String, range: range, timeout: regexTimeout
+            ) { match, stop in
                 scanned += 1
                 // The output so far ends where this match starts.
                 var length = match.range.location + growth
@@ -189,12 +249,13 @@ enum ReplaceRuleEngine {
                 }
                 guard fits else {
                     exceeded = true
-                    stop.pointee = true
+                    stop = true
                     return
                 }
                 growth += output.utf16.count - match.range.length
                 edits.append(Edit(range: match.range, text: output))
             }
+            guard completed else { return .timedOut }
         } else {
             let replacementLength = rule.replacement.utf16.count
             var searchRange = range

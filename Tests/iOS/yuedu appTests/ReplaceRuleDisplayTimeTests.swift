@@ -53,6 +53,47 @@ struct ReplaceRuleDisplayTimeTests {
         #expect(color == .red)
     }
 
+    /// `(a+)+$` on `a…ab` backtracks exponentially: 28 a's ran ~10 s on a Mac, and the
+    /// display-time path held the main thread with it until the scene-update watchdog killed
+    /// the app (Crashlytics 1dbb0353, 3.0.1 (146)). The rule is stopped at its timeout and the
+    /// chapter keeps its text, on both entry points.
+    @Test("a catastrophically backtracking rule is stopped at its timeout and changes nothing")
+    func catastrophicRuleTimesOut() {
+        let source = "第一段\n" + String(repeating: "a", count: 28) + "b"
+        let rules = [Self.rule("(a+)+$", "X")]
+        let limit = ReplaceRuleEngine.regexTimeout + 2
+
+        let started = ProcessInfo.processInfo.systemUptime
+        let text = Self.attributed(source)
+        #expect(!ReplaceRuleEngine.apply(rules, to: text, from: 0))
+        #expect(text.string == source)
+        #expect(ProcessInfo.processInfo.systemUptime - started < limit)
+
+        let plainStarted = ProcessInfo.processInfo.systemUptime
+        #expect(ReplaceRuleEngine.apply(rules, to: source) == source)
+        #expect(ProcessInfo.processInfo.systemUptime - plainStarted < limit)
+    }
+
+    @Test("a timed-out rule is skipped, the rules after it still apply")
+    func rulesAfterTimeoutStillApply() {
+        let source = String(repeating: "a", count: 28) + "b 永夜"
+        let rules = [Self.rule("(a+)+$", "X"), Self.rule("永夜", "長夜", regex: false)]
+        #expect(ReplaceRuleEngine.apply(rules, to: source) == String(repeating: "a", count: 28) + "b 長夜")
+    }
+
+    @Test("the off-main entry point gives the same text as the in-place one")
+    func offMainMatchesInPlace() async {
+        let rules = [Self.rule("第(\\d+)章", "Chapter $1"), Self.rule("^[\\u3000 ]+", "")]
+        let source = "標題\n第12章\n　正文"
+        let inPlace = Self.attributed(source)
+        ReplaceRuleEngine.apply(rules, to: inPlace, from: 3)
+        let offMain = Self.attributed(source)
+        let edits = await ReplaceRuleEngine.ruleEditsOffMain(rules, in: source, from: 3)
+        #expect(ReplaceRuleEngine.replay(edits, on: offMain))
+        #expect(offMain.string == inPlace.string)
+        #expect(await ReplaceRuleEngine.ruleEditsOffMain([Self.rule("永夜", "長夜")], in: source, from: 0).isEmpty)
+    }
+
     @Test("no match reports no change")
     func noMatch() {
         let text = Self.attributed("天地漆黑")

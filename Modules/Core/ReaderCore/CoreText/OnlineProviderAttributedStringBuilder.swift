@@ -288,7 +288,7 @@ final class OnlineProviderAttributedStringBuilder: @preconcurrency AttributedStr
             // The cache holds the source's text; rules apply on the way out, here as on
             // screen (`applyReplaceRules`), so AI reads what the reader shows.
             let rules = applyingReplaceRules ? ReplaceRuleStore.rules(for: replaceRuleScopeURL) : []
-            return .extracted(rules.isEmpty ? text : ReplaceRuleEngine.apply(rules, to: text))
+            return .extracted(rules.isEmpty ? text : await ReplaceRuleEngine.applyingOffMain(rules, to: text))
         } catch BookContentProviderError.contentNotCached {
             return .init(text: nil, status: .notDownloaded)
         } catch BookContentProviderError.unsupportedChapterContent {
@@ -550,7 +550,7 @@ final class OnlineProviderAttributedStringBuilder: @preconcurrency AttributedStr
         )
 
         let rules = ReplaceRuleStore.rules(for: replaceRuleScopeURL)
-        let replaced = rules.isEmpty ? result : applyReplaceRules(rules, to: result, bodyStart: built.titleBlockLength)
+        let replaced = rules.isEmpty ? result : await applyReplaceRules(rules, to: result, bodyStart: built.titleBlockLength)
         return fittingReviewBubbles(replaced, settings: settings)
     }
 
@@ -594,13 +594,20 @@ final class OnlineProviderAttributedStringBuilder: @preconcurrency AttributedStr
     /// when scoped to them. Running them over the whole string let the default rule
     /// `^[\u3000\s]+` delete the title's 上距 spacer line, so 標題上距 did nothing in every
     /// online book (reported 2026-10-10).
+    ///
+    /// The rules run off the main actor: they are user- and source-supplied regexes, each
+    /// allowed `ReplaceRuleEngine.regexTimeout`, and on the main thread one that backtracked
+    /// held 沧元图 past the scene-update watchdog (Crashlytics 1dbb0353, 3.0.1 (146)).
     private func applyReplaceRules(
         _ rules: [ReplaceRule],
         to result: AttributedChapterBuildResult,
         bodyStart: Int
-    ) -> AttributedChapterBuildResult {
+    ) async -> AttributedChapterBuildResult {
+        let edits = await ReplaceRuleEngine.ruleEditsOffMain(
+            rules, in: result.attributedString.string, from: bodyStart
+        )
         let mutable = NSMutableAttributedString(attributedString: result.attributedString)
-        guard ReplaceRuleEngine.apply(rules, to: mutable, from: bodyStart) else { return result }
+        guard ReplaceRuleEngine.replay(edits, on: mutable) else { return result }
 
         return AttributedChapterBuildResult(
             attributedString: mutable,
