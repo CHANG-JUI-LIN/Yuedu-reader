@@ -2407,7 +2407,11 @@ class BookStore: @MainActor ObservableObject, BookProvider {
             forceRefresh: true,
             // A detail page read just now (a stored package carries none) is the TOC's when the
             // TOC is the book's own page: Legado's refresh reads `tocHtml` too.
-            detailPage: infoPackage?.onlineBook.detailPage
+            detailPage: infoPackage?.onlineBook.detailPage,
+            // The list lands in `chapterStore` below; a second copy in the TOC cache doubled
+            // every changed list's bytes (≈690 KB per 2000-chapter list, 3.0.1 (146) 1 GB/day
+            // disk-write report). Nothing opens a shelved book from the TOC cache.
+            writesCache: false
         )
         if let fetchedRuntime = tocPackage.runtimeVariables, !fetchedRuntime.isEmpty {
             runtimeVariables = fetchedRuntime

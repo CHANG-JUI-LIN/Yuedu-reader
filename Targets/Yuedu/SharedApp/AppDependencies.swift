@@ -39,6 +39,19 @@ protocol BookSourceFetching: Sendable {
         detailPage: BookDetailPage?
     ) async throws -> TOCPackage
 
+    /// `writesCache: false`: the caller keeps the list itself and nothing reads it back from
+    /// the TOC cache — the shelf's "check for new chapters", whose list lives in
+    /// `BookChapterStore`. Caching it there too wrote every changed list twice.
+    func fetchTOCPackage(
+        tocUrl: String,
+        source: BookSource,
+        runtimeVariables: [String: String]?,
+        onFirstPageReady: (([OnlineChapterRef]) -> Void)?,
+        forceRefresh: Bool,
+        detailPage: BookDetailPage?,
+        writesCache: Bool
+    ) async throws -> TOCPackage
+
     func cachedTOCPackage(
         tocUrl: String,
         source: BookSource
@@ -88,6 +101,26 @@ extension BookSourceFetching {
         source: BookSource
     ) async -> TOCPackage? {
         nil
+    }
+
+    /// A fetcher without a TOC cache has nothing to skip.
+    func fetchTOCPackage(
+        tocUrl: String,
+        source: BookSource,
+        runtimeVariables: [String: String]?,
+        onFirstPageReady: (([OnlineChapterRef]) -> Void)?,
+        forceRefresh: Bool,
+        detailPage: BookDetailPage?,
+        writesCache: Bool
+    ) async throws -> TOCPackage {
+        try await fetchTOCPackage(
+            tocUrl: tocUrl,
+            source: source,
+            runtimeVariables: runtimeVariables,
+            onFirstPageReady: onFirstPageReady,
+            forceRefresh: forceRefresh,
+            detailPage: detailPage
+        )
     }
 
     /// A fetcher that reads every TOC from the site.
@@ -280,12 +313,33 @@ struct LiveBookSourceFetcher: BookSourceFetching {
         forceRefresh: Bool,
         detailPage: BookDetailPage?
     ) async throws -> TOCPackage {
+        try await fetchTOCPackage(
+            tocUrl: tocUrl,
+            source: source,
+            runtimeVariables: runtimeVariables,
+            onFirstPageReady: onFirstPageReady,
+            forceRefresh: forceRefresh,
+            detailPage: detailPage,
+            writesCache: true
+        )
+    }
+
+    func fetchTOCPackage(
+        tocUrl: String,
+        source: BookSource,
+        runtimeVariables: [String: String]?,
+        onFirstPageReady: (([OnlineChapterRef]) -> Void)?,
+        forceRefresh: Bool,
+        detailPage: BookDetailPage?,
+        writesCache: Bool
+    ) async throws -> TOCPackage {
         try await bookSourceFetcher.fetchTOCPackage(
             tocUrl: tocUrl,
             source: source,
             runtimeVariables: runtimeVariables,
             onFirstPageReady: onFirstPageReady,
             forceRefresh: forceRefresh,
+            writesCache: writesCache,
             detailPage: detailPage
         )
     }
