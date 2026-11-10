@@ -109,7 +109,7 @@ struct ModuleBookTests {
                                              isInBookshelf: true)
         defer { BookSourceFetcher.shared.clearAllChapterCache(bookId: copy.id) }
         ModuleStub.install(["ncode.syosetu.com/n9669bk/1": .html(try page("narou-episode.html"))])
-        let manager = ChapterFetchManager(webViewFetcher: WebViewFetcher.shared, moduleReader: setup.reader)
+        let manager = ChapterFetchManager(moduleReader: setup.reader)
 
         let book = try #require(setup.store.readingBook(id: copy.id))
         setup.store.flushPendingMetadataSave()

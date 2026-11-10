@@ -479,10 +479,13 @@ struct AppDependencies: Sendable {
     var readingPositionStore: ReadingPositionStore
 
     static let live: AppDependencies = {
-        let webFetcher = WebFetcher()
+        // The process-wide instances, not copies: a second ChapterFetchManager had its own
+        // in-flight dedup and priorities (the same chapter fetched twice), and a second
+        // WebFetcher its own connection pool.
+        let webFetcher = WebFetcher.shared
         let webViewFetcher = MainActor.assumeIsolated { WebViewFetcher.shared }
-        let bsf = BookSourceFetcher(webFetcher: webFetcher)
-        let cfm = ChapterFetchManager(bookSourceFetcher: bsf, webViewFetcher: webViewFetcher)
+        let bsf = BookSourceFetcher.shared
+        let cfm = ChapterFetchManager.shared
         let liveChapterFetcher = LiveChapterFetcher(chapterFetchManager: cfm)
         let offlineChapterStore = OfflineChapterStore()
         let offlineDownloadManager = OfflineDownloadManager(

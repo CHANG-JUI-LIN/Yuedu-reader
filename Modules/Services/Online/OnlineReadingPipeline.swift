@@ -87,11 +87,13 @@ enum ChapterFetchPriority: Int {
 }
 
 actor ChapterFetchManager {
-    // Safe: always first accessed from @MainActor context (AppDependencies.live or @MainActor tests).
-    static let shared = ChapterFetchManager(webViewFetcher: MainActor.assumeIsolated { WebViewFetcher.shared })
+    /// The one chapter fetch manager: the reader's coordinator (`AppDependencies.live`) and every
+    /// other caller (TTS, AI, video, browser) share its in-flight dedup, priorities, generation
+    /// tokens and quarantine counts. Built without the main actor — its first touch can come from
+    /// any executor (Crashlytics f71d7b80: `OnlineChapterContentService.payload` on a worker).
+    static let shared = ChapterFetchManager()
 
     private let bookSourceFetcher: BookSourceFetcher
-    private let webViewFetcher: WebViewFetcher
     private let moduleReader: ModuleBookReader
     private var tasks: [String: Task<ChapterPackage, Error>] = [:]
     private var states: [String: OnlineChapterLoadState] = [:]
@@ -110,11 +112,9 @@ actor ChapterFetchManager {
 
     init(
         bookSourceFetcher: BookSourceFetcher = .shared,
-        webViewFetcher: WebViewFetcher,
         moduleReader: ModuleBookReader = .live
     ) {
         self.bookSourceFetcher = bookSourceFetcher
-        self.webViewFetcher = webViewFetcher
         self.moduleReader = moduleReader
     }
 
@@ -859,7 +859,7 @@ actor ChapterFetchManager {
             // A Cloudflare page ends up here as `cloudflareChallengeRequired`, like any other
             // failure: nothing opens a verification page by itself (Legado never does). The
             // reader passes the check from the reading menu's 開啟網頁.
-            let result = try await webViewFetcher.fetchContentWithNextPage(
+            let result = try await WebViewFetcher.shared.fetchContentWithNextPage(
                 url: url,
                 headers: headers,
                 timeout: AppConfig.webViewFetchTimeout,

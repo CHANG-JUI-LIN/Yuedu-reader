@@ -184,7 +184,7 @@ struct OnlineChapterMergeHeuristicTests {
                                        isInBookshelf: true)
         let book = try #require(store.readingBook(id: copy.id))
         ModuleStub.install(["ncode.syosetu.com/n0000aa/120": .html(Self.episodePage(content))])
-        let manager = ChapterFetchManager(webViewFetcher: WebViewFetcher.shared, moduleReader: reader)
+        let manager = ChapterFetchManager(moduleReader: reader)
 
         let first = try await manager.fetchChapter(book: book, chapterIndex: 0, priority: .immediate, store: store)
         let again = try await manager.fetchChapter(book: book, chapterIndex: 0, priority: .immediate, store: store)

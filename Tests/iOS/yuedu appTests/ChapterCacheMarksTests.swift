@@ -73,7 +73,7 @@ struct ChapterCacheMarksTests {
         try BookSourceFetcher.shared.saveToCache(
             content: "正文", bookId: book.id, chapterIndex: 1, sourceURL: list[1].url, tocTitle: list[1].title
         )
-        let manager = ChapterFetchManager(webViewFetcher: WebViewFetcher.shared)
+        let manager = ChapterFetchManager()
 
         #expect(manager.uncachedChapterIndexes(book: book) == [2])
         let fetcher = LiveChapterFetcher(chapterFetchManager: manager)
