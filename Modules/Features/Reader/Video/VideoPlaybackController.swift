@@ -34,6 +34,9 @@ final class VideoPlaybackController {
     private(set) var phase: Phase = .loading
     private(set) var currentTime: Double = 0
     private(set) var duration: Double = 0
+    /// The span the timeline and a swipe across the picture can seek in; `nil` while the stream
+    /// has no seekable span (still loading, or live with no window to go back in).
+    private(set) var seekableRange: ClosedRange<Double>?
     /// The speed the player keeps; a long press only lends it another for a while.
     private(set) var rate: Float = 1
     private(set) var isLongPressing = false
@@ -53,6 +56,7 @@ final class VideoPlaybackController {
     private var endObserver: NSObjectProtocol?
     private var statusObservation: NSKeyValueObservation?
     private var sizeObservation: NSKeyValueObservation?
+    private var timelineObservations: [NSKeyValueObservation] = []
     /// Where the episode being loaded opens, applied once it is ready to play.
     private var pendingSeek: Double = 0
     /// The episode whose link was already resolved again after failing to play: legado
@@ -125,6 +129,7 @@ final class VideoPlaybackController {
         endObserver = nil
         statusObservation = nil
         sizeObservation = nil
+        timelineObservations = []
         nowPlayingSession = nil
         pictureInPicture = nil
     }
@@ -167,10 +172,12 @@ final class VideoPlaybackController {
         player.replaceCurrentItem(with: nil)
         statusObservation = nil
         sizeObservation = nil
+        timelineObservations = []
         pictureSize = nil
         phase = .loading
         currentTime = time
         duration = 0
+        seekableRange = nil
         pendingSeek = time
         lastSavedTime = time
         let store: BookStore
@@ -234,6 +241,17 @@ final class VideoPlaybackController {
                 self?.pictureSize = size
             }
         }
+        // Both change after `readyToPlay`: an HLS playlist without `#EXT-X-ENDLIST` plays as
+        // live, its duration indefinite while its seekable span grows with every reload.
+        let timelineChanged: @Sendable (AVPlayerItem) -> Void = { [weak self] item in
+            let timeline = VideoTimeline(duration: item.duration.seconds,
+                                         seekable: item.seekableTimeRanges.map(\.timeRangeValue))
+            Task { @MainActor in self?.timelineChanged(timeline, of: identity) }
+        }
+        timelineObservations = [
+            item.observe(\.duration, options: [.new]) { item, _ in timelineChanged(item) },
+            item.observe(\.seekableTimeRanges, options: [.new]) { item, _ in timelineChanged(item) },
+        ]
         player.replaceCurrentItem(with: item)
     }
 
@@ -243,8 +261,8 @@ final class VideoPlaybackController {
         switch status {
         case .readyToPlay:
             guard phase == .loading, let item = player.currentItem else { return }
-            let seconds = item.duration.seconds
-            duration = seconds.isFinite ? seconds : 0
+            apply(VideoTimeline(duration: item.duration.seconds,
+                                seekable: item.seekableTimeRanges.map(\.timeRangeValue)))
             let seek = pendingSeek
             pendingSeek = 0
             if seek > 0, duration == 0 || seek < duration - 1 {
@@ -266,6 +284,16 @@ final class VideoPlaybackController {
         default:
             break
         }
+    }
+
+    private func timelineChanged(_ timeline: VideoTimeline, of item: ObjectIdentifier) {
+        guard player.currentItem.map(ObjectIdentifier.init) == item else { return }
+        apply(timeline)
+    }
+
+    private func apply(_ timeline: VideoTimeline) {
+        duration = timeline.duration
+        seekableRange = timeline.seekableRange
     }
 
     // MARK: Transport
@@ -297,8 +325,10 @@ final class VideoPlaybackController {
         load(at: currentTime)
     }
 
+    /// Does nothing while nothing is seekable: a live stream with no window, or one still loading.
     func seek(to seconds: Double) {
-        let target = max(0, duration > 0 ? min(seconds, duration) : seconds)
+        guard let range = seekableRange else { return }
+        let target = min(max(seconds, range.lowerBound), range.upperBound)
         currentTime = target
         player.seek(to: CMTime(seconds: target, preferredTimescale: 600),
                     toleranceBefore: .zero, toleranceAfter: .zero)
@@ -429,6 +459,35 @@ final class VideoPlaybackController {
         album.value = book.title as NSString
         album.extendedLanguageTag = "und"
         return [title, album]
+    }
+}
+
+/// How far an episode reaches and where it can be sought, from what its item reports.
+///
+/// An MP4 or a finished HLS playlist reports its duration, and is seekable from 0 to there. An
+/// HLS playlist without `#EXT-X-ENDLIST` plays as live: its duration is indefinite (NaN), yet its
+/// seekable ranges still cover the segments listed so far (measured 2026-11-10 against a 60 s
+/// playlist with the tag removed: duration NaN, seekable 0–30 s) — the timeline is those ranges.
+/// A live stream with no window to go back in has none, and nothing to seek.
+struct VideoTimeline: Equatable, Sendable {
+    /// 0 when the item does not know it.
+    let duration: Double
+    let seekableRange: ClosedRange<Double>?
+
+    init(duration seconds: Double, seekable: [CMTimeRange]) {
+        if seconds.isFinite, seconds > 0 {
+            duration = seconds
+            seekableRange = 0...seconds
+            return
+        }
+        duration = 0
+        let spans = seekable.filter { $0.start.isNumeric && $0.end.isNumeric }
+        guard let lower = spans.map(\.start.seconds).min(),
+              let upper = spans.map(\.end.seconds).max(), upper > lower else {
+            seekableRange = nil
+            return
+        }
+        seekableRange = lower...upper
     }
 }
 

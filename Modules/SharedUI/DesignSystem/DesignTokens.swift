@@ -1178,8 +1178,12 @@ enum DSLayout {
     /// The share of the picture's width, at each side, where an up-down drag sets the
     /// brightness (left) or the volume (right) — plezy's edge tracker.
     static let videoEdgeGestureFraction: CGFloat = 1.0 / 3
-    /// Seconds a drag across the picture's whole width scrubs.
+    /// Seconds a drag across the picture's whole width scrubs, for a video of up to 20 minutes;
+    /// a shorter one spans its whole length instead.
     static let videoScrubSecondsPerWidth: Double = 120
+    /// The share of a longer video a drag across the whole width scrubs (a 45-minute episode:
+    /// 4½ minutes), so crossing a film is a few swipes, not dozens.
+    static let videoScrubDurationShareOfWidth: Double = 0.1
     /// How far a pinch has to go before it fills the screen (out) or fits the picture (in).
     static let videoPinchThreshold: CGFloat = 0.15
     /// The brightness / volume level shown while an edge drag sets it.

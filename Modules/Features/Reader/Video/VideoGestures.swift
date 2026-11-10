@@ -40,11 +40,19 @@ struct VideoPan: Equatable {
     /// Seconds a quick swipe across jumps instead of scrubbing (Swiftfin's jump interval).
     static let jumpSeconds: Double = 10
 
-    /// The time a pan across points at: the picture's whole width spans
-    /// `videoScrubSecondsPerWidth`, so a long video scrubs as finely as a short one.
-    static func seekTime(origin: Double, translation: CGFloat, width: CGFloat, duration: Double) -> Double {
-        let target = origin + Double(translation / max(width, 1)) * DSLayout.videoScrubSecondsPerWidth
-        return max(0, duration > 0 ? min(target, duration) : target)
+    /// Seconds a pan across the picture's whole width scrubs in a timeline this long: the whole of
+    /// a short one, `videoScrubSecondsPerWidth` of a mid-length one, and
+    /// `videoScrubDurationShareOfWidth` of a long one.
+    static func secondsPerWidth(span: Double) -> Double {
+        guard span > 0 else { return DSLayout.videoScrubSecondsPerWidth }
+        return min(span, max(DSLayout.videoScrubSecondsPerWidth, span * DSLayout.videoScrubDurationShareOfWidth))
+    }
+
+    /// The time a pan across points at, kept inside the seekable range.
+    static func seekTime(origin: Double, translation: CGFloat, width: CGFloat, in range: ClosedRange<Double>) -> Double {
+        let span = range.upperBound - range.lowerBound
+        let target = origin + Double(translation / max(width, 1)) * secondsPerWidth(span: span)
+        return min(max(target, range.lowerBound), range.upperBound)
     }
 
     /// The level an edge pan sets: the picture's whole height spans the whole range, up raises.
