@@ -388,6 +388,7 @@ struct yuedu_appApp: App {
                 if newPhase == .active {
                     Task { await subscriptionStore.refreshAllEntitlements() }
                     Task { await subscriptionStore.reloadProductsIfStorefrontChanged() }
+                    Task { await PublicLibraryAvailability.shared.refresh() }
                     Task { await SharedImportQueueDrainer.shared.drain() }
                     // A button tap while the app was suspended is waiting in the queue.
                     Task { await DownloadActivityCommandApplier.drainObserved() }

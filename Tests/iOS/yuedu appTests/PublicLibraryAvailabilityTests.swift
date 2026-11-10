@@ -21,16 +21,26 @@ struct PublicLibraryAvailabilityTests {
         #expect(PublicLibraryAvailability(defaults: defaults).isAvailable)
     }
 
-    @Test func runningUpdates() async throws {
+    @Test func refreshFollowsStorefrontOnlyOnceStarted() async throws {
         let suite = "PublicLibraryAvailabilityTests.\(UUID().uuidString)"
         let defaults = try #require(UserDefaults(suiteName: suite))
         defer { defaults.removePersistentDomain(forName: suite) }
-        let availability = PublicLibraryAvailability(defaults: defaults)
-        let updates = AsyncStream<String> { continuation in
-            continuation.yield("CHN")
-            continuation.finish()
-        }
-        await availability.observe(updates)
+        var storefront: String? = "USA"
+        let availability = PublicLibraryAvailability(defaults: defaults) { storefront }
+        // A country pinned before `start()` (UI tests' `-debug-storefront-country`)
+        // survives the app becoming active.
+        availability.receive(countryCode: "CHN")
+        await availability.refresh()
+        #expect(availability.countryCode == "CHN")
+
+        availability.start()
+        await availability.refresh()
+        #expect(availability.countryCode == "USA")
+        storefront = "CHN" // Changed in Settings while the app was away.
+        await availability.refresh()
         #expect(!availability.isAvailable)
+        storefront = nil // A transient missing answer keeps the last known country.
+        await availability.refresh()
+        #expect(availability.countryCode == "CHN")
     }
 }
