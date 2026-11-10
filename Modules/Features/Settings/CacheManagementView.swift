@@ -6,11 +6,22 @@ final class CacheManagementViewModel: ObservableObject {
     @Published private(set) var snapshot = CacheStorageSnapshot()
     @Published private(set) var isLoading = false
     @Published private(set) var errorMessage: String?
+    /// 自動清理上限, in MB (`CacheAutoCleanupLimit`). Lowering it trims at once.
+    @Published private(set) var autoCleanupLimitMB = CacheAutoCleanupLimit.megabytes()
 
     private let service: CacheManagementService
 
     init(service: CacheManagementService) {
         self.service = service
+    }
+
+    func setAutoCleanupLimit(_ megabytes: Int) async {
+        guard megabytes != autoCleanupLimitMB else { return }
+        autoCleanupLimitMB = megabytes
+        UserDefaults.standard.set(megabytes, forKey: CacheAutoCleanupLimit.defaultsKey)
+        // The sizes shown afterwards are the trimmed ones.
+        await CacheAutoCleaner.shared.requestCheck(reason: "limit")?.value
+        await refresh()
     }
 
     func refresh() async {
@@ -115,6 +126,20 @@ struct CacheManagementView: View {
                     }
                     .interfaceSectionSurface()
                 }
+
+                Section {
+                    Picker(selection: autoCleanupLimitBinding) {
+                        ForEach(CacheAutoCleanupLimit.optionsMB, id: \.self) { megabytes in
+                            Text(formattedByteCount(Int64(megabytes) * 1024 * 1024)).tag(megabytes)
+                        }
+                    } label: {
+                        SettingsRowLabel(localized("自動清理上限"), systemImage: "externaldrive")
+                    }
+                } footer: {
+                    Text(localized("快取超過上限時，自動刪除最久沒用的部分。下載離線閱讀的書、匯入的書與閱讀進度不會被刪除。"))
+                        .dsSectionFooter()
+                }
+                .interfaceSectionSurface()
 
                 ForEach(CacheCategory.allCases) { category in
                     cacheSection(for: category)
@@ -224,11 +249,19 @@ struct CacheManagementView: View {
         .interfaceSectionSurface()
     }
 
+    private var autoCleanupLimitBinding: Binding<Int> {
+        Binding(
+            get: { viewModel.autoCleanupLimitMB },
+            set: { megabytes in Task { await viewModel.setAutoCleanupLimit(megabytes) } }
+        )
+    }
+
     private func formattedByteCount(_ bytes: Int64) -> String {
         ByteCountFormatter.string(fromByteCount: bytes, countStyle: .file)
     }
 }
 
 #Preview {
-    CacheManagementView(service: CacheManagementService(coverOwner: BookStore()))
+    let store = BookStore()
+    CacheManagementView(service: CacheManagementService(coverOwner: store, retentionOwner: store))
 }

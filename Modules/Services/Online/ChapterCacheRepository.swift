@@ -253,6 +253,10 @@ struct ChapterCacheRepository: Sendable {
             clearChapterCache(bookId: package.bookId, chapterIndex: package.chapterIndex)
             throw ChapterCacheWriteError.verificationFailed
         }
+        // The body and the HTML beside it; the metadata and package files are a few hundred bytes.
+        CacheAutoCleaner.shared.noteWrite(
+            bytes: package.content.utf8.count + (rawHTML?.utf8.count ?? 0) + (normalizedHTML?.utf8.count ?? 0)
+        )
         return filename
     }
 

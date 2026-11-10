@@ -294,6 +294,7 @@ actor OfflineChapterStore: OfflineChapterStoring {
                                 to: directory.appendingPathComponent(filename),
                                 options: .atomic
                             )
+                            CacheAutoCleaner.shared.noteWrite(bytes: response.data.count)
                         } catch {
                             throw OfflineChapterStoreError.imageWrite(
                                 index: item.index,

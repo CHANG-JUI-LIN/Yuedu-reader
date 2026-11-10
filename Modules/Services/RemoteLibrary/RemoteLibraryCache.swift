@@ -13,6 +13,8 @@ final class RemoteLibraryCache: @unchecked Sendable {
     init(root: URL) { self.root = root }
 
     func retain(_ id: UUID) { lock.withLock { activeBooks[id, default: 0] += 1 } }
+    /// A reader or a preparation holds the book: its files are in use.
+    func isActive(_ id: UUID) -> Bool { lock.withLock { activeBooks[id] != nil } }
     func release(_ id: UUID) {
         lock.withLock {
             let count = activeBooks[id, default: 0] - 1

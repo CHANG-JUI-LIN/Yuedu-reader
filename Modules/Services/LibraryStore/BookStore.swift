@@ -3877,6 +3877,24 @@ extension BookStore: SavedCoverOwner {
     }
 }
 
+extension BookStore: CacheRetentionOwner {
+    /// Kept: every book on the shelf with an offline download (done, running, paused, failed
+    /// partway: the user asked for it), and every book open in a reader, shelf or not.
+    func cacheRetention() -> CacheRetention? {
+        guard recordsLoadedCompletely else { return nil }
+        var kept = Set<UUID>()
+        var lastOpened: [UUID: Date] = [:]
+        for book in records {
+            if let opened = book.lastOpenedDate { lastOpened[book.id] = opened }
+            if book.isInBookshelf, book.offlineDownloadState != .none || book.offlineDownloadTask != nil {
+                kept.insert(book.id)
+            }
+        }
+        kept.formUnion(ReadingResourceUsage.shared.booksInUse)
+        return CacheRetention(keptBooks: kept, lastOpened: lastOpened)
+    }
+}
+
 extension ReadingBook {
     /// The cover this book shows is downloaded from its own `coverUrl`
     /// (`BookStore.downloadCover`), so 快取管理 may delete the file and the book fetches it

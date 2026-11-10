@@ -22,6 +22,9 @@ final class ReadingResourceUsage {
 
     func isInUse(bookID: UUID) -> Bool { owners[bookID]?.isEmpty == false }
 
+    /// Every book a reader holds, on the shelf or not (automatic cache cleanup keeps them).
+    var booksInUse: Set<UUID> { Set(owners.compactMap { $0.value.isEmpty ? nil : $0.key }) }
+
     /// Whether a reader other than `ownerID` holds the book.
     func isInUse(bookID: UUID, besides ownerID: UUID) -> Bool {
         owners[bookID]?.contains { $0 != ownerID } == true

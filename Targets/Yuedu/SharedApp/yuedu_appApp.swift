@@ -300,6 +300,12 @@ struct yuedu_appApp: App {
                     // What an earlier 清除封面快取 deleted, or a cover download that failed then
                     // (feedback #116).
                     Task(priority: .utility) { await bookStore.restoreMissingCovers() }
+                    // Caches over the cap in 快取管理 lose their least recently used first
+                    // (feedback #47, #129): checked now, then as cache writes add up.
+                    CacheAutoCleaner.shared.bind(
+                        CacheManagementService(coverOwner: bookStore, retentionOwner: bookStore)
+                    )
+                    CacheAutoCleaner.shared.requestCheck(reason: "launch")
                     _ = FirebaseAuthManager.shared
                     Task {
                         await AppDependencies.live.offlineDownloadManager

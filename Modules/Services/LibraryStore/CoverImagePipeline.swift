@@ -460,12 +460,6 @@ final class CoverImagePipeline: @unchecked Sendable {
     /// remembered forever. It only affects new requests: a view already showing the
     /// fallback does not poll.
     static let defaultFailureLifetime: TimeInterval = 30
-    /// Saved network covers kept at most, in bytes on disk; past it the oldest saved go
-    /// first, down to four fifths. About a thousand covers at typical CDN sizes.
-    static let networkDiskLimit = 200 * 1024 * 1024
-    /// Bytes saved between two checks against `networkDiskLimit`. The first save of a
-    /// launch checks too, so a cap lowered by an update applies at once.
-    static let networkDiskTrimInterval = 16 * 1024 * 1024
     /// Failure records kept at most; the oldest go first.
     static let failureCapacity = 256
 
@@ -487,10 +481,6 @@ final class CoverImagePipeline: @unchecked Sendable {
         var defaultCoverKeys: Set<String> = []
         var counters = CoverPipelineCounters()
         var lastSummaryAt: TimeInterval = 0
-        /// Bytes saved to `networkCovers` since the last trim; starts past the
-        /// interval so the first save of a launch trims.
-        var networkBytesSinceTrim = CoverImagePipeline.networkDiskTrimInterval
-        var isTrimmingNetworkCovers = false
     }
 
     private let memory: NSCache<NSString, UIImage>
@@ -499,7 +489,6 @@ final class CoverImagePipeline: @unchecked Sendable {
     private let executor: CoverLoadExecutor
     private let io: CoverImageIO
     private let failureLifetime: TimeInterval
-    private let networkDiskLimit: Int
     private let now: @Sendable () -> TimeInterval
     private let invalidationSubject = PassthroughSubject<CoverInvalidation, Never>()
     /// Delivered on the main thread. Stored, not computed, so every view body hands
@@ -520,7 +509,6 @@ final class CoverImagePipeline: @unchecked Sendable {
         memoryCostLimit: Int = CoverImagePipeline.memoryCostLimit,
         memoryCountLimit: Int = CoverImagePipeline.memoryCountLimit,
         failureLifetime: TimeInterval = CoverImagePipeline.defaultFailureLifetime,
-        networkDiskLimit: Int = CoverImagePipeline.networkDiskLimit,
         now: @escaping @Sendable () -> TimeInterval = { ProcessInfo.processInfo.systemUptime },
         logsSummaries: Bool = UserDefaults.standard.bool(forKey: "yd_cover_pipeline_diagnostics")
     ) {
@@ -533,7 +521,6 @@ final class CoverImagePipeline: @unchecked Sendable {
         self.io = io
         self.executor = CoverLoadExecutor(maxConcurrent: maxConcurrentLoads)
         self.failureLifetime = failureLifetime
-        self.networkDiskLimit = networkDiskLimit
         self.now = now
         self.logsSummaries = logsSummaries
         self.invalidations = invalidationSubject.eraseToAnyPublisher()
@@ -634,7 +621,7 @@ final class CoverImagePipeline: @unchecked Sendable {
     // rebuilding a row asks again) comes back from disk, not the network, and still
     // comes back when the source is slow or down. A saved copy is never revalidated
     // against its address, like Legado's (Glide's) disk cache: it goes when 快取管理
-    // clears 封面 or `networkDiskLimit` pushes it out.
+    // clears 封面 or automatic cleanup (`CacheAutoCleaner`) pushes it out.
 
     func cachedNetworkImage(forKey key: String) -> UIImage? {
         memory.object(forKey: Self.networkMemoryKey(key))
@@ -679,59 +666,6 @@ final class CoverImagePipeline: @unchecked Sendable {
         let digest = SHA256.hash(data: Data(key.utf8))
         let name = digest.map { String(format: "%02x", $0) }.joined()
         return io.networkCovers.appendingPathComponent(name, isDirectory: false)
-    }
-
-    /// Deletes the oldest saved network covers until they fit four fifths of
-    /// `networkDiskLimit`, if they are over it. Blocking; saves schedule it off the
-    /// main thread on their own, tests call it directly.
-    func trimSavedNetworkCovers() {
-        let directory = io.networkCovers
-        let keys: Set<URLResourceKey> = [.contentModificationDateKey, .fileSizeKey, .isRegularFileKey]
-        let files: [URL]
-        do {
-            files = try FileManager.default.contentsOfDirectory(
-                at: directory,
-                includingPropertiesForKeys: Array(keys)
-            )
-        } catch {
-            // Nothing saved yet, or 快取管理 just removed the directory.
-            if Self.isMissingFile(error) { return }
-            AppLogger.cache("⟐ saved network covers could not be listed", error: error)
-            return
-        }
-        var entries: [(url: URL, savedAt: Date, bytes: Int)] = []
-        var total = 0
-        for file in files {
-            let values: URLResourceValues
-            do {
-                values = try file.resourceValues(forKeys: keys)
-            } catch {
-                AppLogger.cache("⟐ saved network cover could not be inspected", error: error)
-                continue
-            }
-            guard values.isRegularFile == true else { continue }
-            let bytes = values.fileSize ?? 0
-            entries.append((file, values.contentModificationDate ?? .distantPast, bytes))
-            total += bytes
-        }
-        guard total > networkDiskLimit else { return }
-        let target = networkDiskLimit / 5 * 4
-        var removed = 0
-        for entry in entries.sorted(by: { $0.savedAt < $1.savedAt }) {
-            guard total > target else { break }
-            do {
-                try FileManager.default.removeItem(at: entry.url)
-                total -= entry.bytes
-                removed += 1
-            } catch {
-                AppLogger.cache("⟐ saved network cover could not be removed", error: error)
-            }
-        }
-        AppLogger.cache(
-            "⟐ trimmed saved network covers",
-            context: ["removed": removed, "remainingBytes": total],
-            level: .trace
-        )
     }
 
     // MARK: Invalidation
@@ -843,8 +777,8 @@ final class CoverImagePipeline: @unchecked Sendable {
         }
     }
 
-    /// Saves a fetched cover's bytes, then trims if enough has been saved since the
-    /// last check. A failed save is logged; the cover is in memory either way.
+    /// Saves a fetched cover's bytes and counts them toward automatic cleanup's next
+    /// check. A failed save is logged; the cover is in memory either way.
     private func saveNetworkCover(_ bytes: Data, forKey key: String) {
         do {
             try io.write(bytes, networkCoverLocation(forKey: key))
@@ -852,20 +786,8 @@ final class CoverImagePipeline: @unchecked Sendable {
             AppLogger.cache("⟐ network cover could not be saved", error: error, context: ["bytes": bytes.count])
             return
         }
-        let trims = state.withLock { state -> Bool in
-            state.counters.networkDiskSaves += 1
-            state.networkBytesSinceTrim += bytes.count
-            guard state.networkBytesSinceTrim >= Self.networkDiskTrimInterval,
-                  !state.isTrimmingNetworkCovers else { return false }
-            state.networkBytesSinceTrim = 0
-            state.isTrimmingNetworkCovers = true
-            return true
-        }
-        guard trims else { return }
-        Task.detached(priority: .utility) {
-            self.trimSavedNetworkCovers()
-            self.state.withLock { $0.isTrimmingNetworkCovers = false }
-        }
+        count { $0.networkDiskSaves += 1 }
+        CacheAutoCleaner.shared.noteWrite(bytes: bytes.count)
     }
 
     private static func isDefaultCover(_ source: CoverImageSource) -> Bool {

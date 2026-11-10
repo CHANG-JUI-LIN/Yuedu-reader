@@ -53,5 +53,6 @@ struct OnlineImageDiskCache {
     func write(_ data: Data, for url: String) throws {
         try fileManager.createDirectory(at: directory, withIntermediateDirectories: true)
         try data.write(to: fileURL(for: url), options: .atomic)
+        CacheAutoCleaner.shared.noteWrite(bytes: data.count)
     }
 }

@@ -75,6 +75,13 @@ struct CacheStorageRoots: Equatable, Sendable {
     var exploreHome: URL
     /// The OPDS, Calibre and Gutenberg rows the Explore home last drew (`HomeFeedPageStore`).
     var homeFeeds: URL
+    /// Tables of contents fetched from book sources (`BookSourceFetcher.saveTOCPackage`).
+    /// Counted and cleared with `chapters`: to the user both are 章節快取. A shelf book's own
+    /// list lives in `BookChapterStore`, so this is only a fetch cache.
+    var tableOfContents: URL
+    /// Book-detail pages fetched from book sources (`BookSourceFetcher.saveBookInfoPackage`),
+    /// counted and cleared with `chapters` like `tableOfContents`.
+    var bookInfo: URL
 
     init(
         chapters: URL,
@@ -85,7 +92,9 @@ struct CacheStorageRoots: Equatable, Sendable {
         remoteBooks: URL? = nil,
         networkCovers: URL? = nil,
         exploreHome: URL? = nil,
-        homeFeeds: URL? = nil
+        homeFeeds: URL? = nil,
+        tableOfContents: URL? = nil,
+        bookInfo: URL? = nil
     ) {
         self.chapters = chapters
         self.ttsAudio = ttsAudio
@@ -96,6 +105,8 @@ struct CacheStorageRoots: Equatable, Sendable {
         self.remoteBooks = remoteBooks ?? chapters.deletingLastPathComponent().appendingPathComponent("RemoteLibrary", isDirectory: true)
         self.exploreHome = exploreHome ?? chapters.deletingLastPathComponent().appendingPathComponent("ForYou", isDirectory: true)
         self.homeFeeds = homeFeeds ?? chapters.deletingLastPathComponent().appendingPathComponent("HomeFeeds", isDirectory: true)
+        self.tableOfContents = tableOfContents ?? chapters.deletingLastPathComponent().appendingPathComponent("toc_cache", isDirectory: true)
+        self.bookInfo = bookInfo ?? chapters.deletingLastPathComponent().appendingPathComponent("book_info_cache", isDirectory: true)
     }
 
     static var live: CacheStorageRoots {
@@ -108,7 +119,9 @@ struct CacheStorageRoots: Equatable, Sendable {
             remoteBooks: StorageLocations.remoteLibraryCache,
             networkCovers: StorageLocations.networkCoverCache,
             exploreHome: ForYouCandidateStore.shared.directory,
-            homeFeeds: HomeFeedPageStore.shared.directory
+            homeFeeds: HomeFeedPageStore.shared.directory,
+            tableOfContents: StorageLocations.tocCache,
+            bookInfo: StorageLocations.bookInfoCache
         )
     }
 
@@ -184,6 +197,8 @@ protocol SavedCoverOwner: AnyObject {
 /// deliberately outside these roots and are never removed by this service.
 final class CacheManagementService: @unchecked Sendable {
     private let coverOwner: any SavedCoverOwner
+    /// Says which books' caches automatic cleanup keeps (`trimAutomaticCaches`).
+    private let retentionOwner: any CacheRetentionOwner
     private let fileManager: FileManager
     private let roots: CacheStorageRoots
     /// The live writer behind the diagnostics directory, when there is one. Tests
@@ -197,6 +212,7 @@ final class CacheManagementService: @unchecked Sendable {
 
     init(
         coverOwner: any SavedCoverOwner,
+        retentionOwner: any CacheRetentionOwner,
         fileManager: FileManager = .default,
         roots: CacheStorageRoots = .live,
         diagnosticLog: DiagnosticLog? = .shared,
@@ -204,6 +220,7 @@ final class CacheManagementService: @unchecked Sendable {
         coverPipeline: CoverImagePipeline = .shared
     ) {
         self.coverOwner = coverOwner
+        self.retentionOwner = retentionOwner
         self.fileManager = fileManager
         self.roots = roots
         self.diagnosticLog = diagnosticLog
@@ -215,7 +232,8 @@ final class CacheManagementService: @unchecked Sendable {
     func snapshot() async -> CacheStorageSnapshot {
         let keptCovers = await coverOwner.irreplaceableCoverFilenames()
         return CacheStorageSnapshot(
-            chapters: byteCount(in: roots.chapters),
+            chapters: byteCount(in: roots.chapters) + byteCount(in: roots.tableOfContents)
+                + byteCount(in: roots.bookInfo),
             ttsAudio: byteCount(in: roots.ttsAudio),
             mangaImages: byteCount(in: roots.mangaImages),
             covers: clearableCoverBytes(keeping: keptCovers) + byteCount(in: roots.networkCovers),
@@ -245,6 +263,12 @@ final class CacheManagementService: @unchecked Sendable {
             if category == .exploreHome {
                 try clearDirectory(roots.exploreHome)
                 try clearDirectory(roots.homeFeeds)
+                return
+            }
+            if category == .chapters {
+                try clearDirectory(roots.chapters)
+                try clearDirectory(roots.tableOfContents)
+                try clearDirectory(roots.bookInfo)
                 return
             }
             try clearDirectory(roots[category])
@@ -329,5 +353,144 @@ final class CacheManagementService: @unchecked Sendable {
         for item in contents where !kept.contains(item.lastPathComponent) {
             try fileManager.removeItem(at: item)
         }
+    }
+}
+
+// MARK: - Automatic cleanup
+
+/// What one automatic-cleanup pass found and did.
+struct CacheTrimReport: Equatable, Sendable {
+    /// Bytes cleanup may delete, before the pass.
+    var candidateBytes: Int64 = 0
+    var removedBytes: Int64 = 0
+    var removedCount = 0
+    /// False when the books were not all known, so no per-book cache was considered.
+    var consideredBooks = false
+}
+
+extension CacheManagementService {
+    /// Deletes the least recently used re-downloadable caches until they fit `limit`, if they
+    /// are over it. Never touched: a book's chapters, manga pages and remote-file caches while
+    /// the book is on the shelf and downloaded for offline reading, or open in a reader; saved
+    /// book covers (`covers`, which the shelf draws); imported books and reading positions,
+    /// which live outside every root listed here. Blocking file work; `CacheAutoCleaner` calls
+    /// it off the main thread.
+    @discardableResult
+    func trimAutomaticCaches(toLimit limit: Int64, reason: String) async -> CacheTrimReport {
+        let started = Date()
+        let retention = await retentionOwner.cacheRetention()
+        let candidates = automaticCleanupCandidates(retention: retention)
+        var report = CacheTrimReport(
+            candidateBytes: candidates.reduce(0) { $0 + $1.bytes },
+            consideredBooks: retention != nil
+        )
+        if retention == nil {
+            AppLogger.cache("⟐ cache cleanup kept every book's chapters: the shelf did not load completely", level: .notice)
+        }
+        for victim in CacheEvictionPolicy.victims(of: candidates, limit: limit) {
+            var removedAll = true
+            for item in victim.items {
+                do {
+                    try fileManager.removeItem(at: item)
+                } catch let error as CocoaError where error.code == .fileNoSuchFile {
+                    continue  // Gone since it was listed.
+                } catch {
+                    removedAll = false
+                    AppLogger.cache("⟐ cache cleanup could not remove an item", error: error, context: [
+                        "item": item.lastPathComponent,
+                    ])
+                }
+            }
+            if removedAll {
+                report.removedBytes += victim.bytes
+                report.removedCount += 1
+            }
+        }
+        AppLogger.cache("⟐ cache cleanup", context: [
+            "reason": reason,
+            "limitMB": limit / 1_048_576,
+            "candidateMB": report.candidateBytes / 1_048_576,
+            "removed": report.removedCount,
+            "removedMB": report.removedBytes / 1_048_576,
+            "ms": Int(Date().timeIntervalSince(started) * 1000),
+        ], level: report.removedCount > 0 ? .notice : .trace)
+        return report
+    }
+
+    /// Everything automatic cleanup may delete, each with its size and last use.
+    func automaticCleanupCandidates(retention: CacheRetention?) -> [CacheEvictionCandidate] {
+        var candidates: [CacheEvictionCandidate] = []
+        if let retention {
+            // A book's chapters (and their illustrations), its manga pages, and the remote
+            // file a library book is read from: one candidate per book directory.
+            for root in [roots.chapters, roots.mangaImages, roots.remoteBooks] {
+                for directory in children(of: root) {
+                    guard let bookID = UUID(uuidString: directory.lastPathComponent),
+                          !retention.keptBooks.contains(bookID) else { continue }
+                    if root == roots.remoteBooks, remoteLibraryCache.isActive(bookID) { continue }
+                    guard var candidate = candidate(for: [directory]) else { continue }
+                    if let opened = retention.lastOpened[bookID], opened > candidate.lastUsed {
+                        candidate.lastUsed = opened
+                    }
+                    candidates.append(candidate)
+                }
+            }
+        }
+        // Saved network covers and synthesized audio: one candidate per file.
+        for root in [roots.networkCovers, roots.ttsAudio] {
+            for file in children(of: root) {
+                if let candidate = candidate(for: [file]) { candidates.append(candidate) }
+            }
+        }
+        // A fetched table of contents or detail page is a few files with one stem
+        // (`<key>.json`, `<key>.sha256`, `<key>.raw.html`): one candidate per stem.
+        for root in [roots.tableOfContents, roots.bookInfo] {
+            let groups = Dictionary(grouping: children(of: root)) { url in
+                url.lastPathComponent.split(separator: ".", maxSplits: 1).first.map(String.init) ?? url.lastPathComponent
+            }
+            for (_, files) in groups.sorted(by: { $0.key < $1.key }) {
+                if let candidate = candidate(for: files) { candidates.append(candidate) }
+            }
+        }
+        return candidates
+    }
+
+    private func children(of directory: URL) -> [URL] {
+        do {
+            return try fileManager.contentsOfDirectory(at: directory, includingPropertiesForKeys: nil)
+        } catch let error as CocoaError where error.code == .fileReadNoSuchFile {
+            return []  // Nothing was ever written there, or 快取管理 just removed it.
+        } catch {
+            AppLogger.cache("⟐ cache cleanup could not list a cache", error: error, context: [
+                "directory": directory.lastPathComponent,
+            ])
+            return []
+        }
+    }
+
+    /// The size and newest modification of `items` (files, or directories walked whole).
+    private func candidate(for items: [URL]) -> CacheEvictionCandidate? {
+        let keys: Set<URLResourceKey> = [.fileSizeKey, .isRegularFileKey, .isDirectoryKey, .contentModificationDateKey]
+        var bytes: Int64 = 0
+        var newest = Date.distantPast
+        func add(_ url: URL) -> Bool {
+            do {
+                let values = try url.resourceValues(forKeys: keys)
+                if let modified = values.contentModificationDate, modified > newest { newest = modified }
+                if values.isRegularFile == true { bytes += Int64(values.fileSize ?? 0) }
+                return values.isDirectory == true
+            } catch {
+                AppLogger.cache("⟐ cache cleanup could not inspect an item", error: error, context: [
+                    "item": url.lastPathComponent,
+                ])
+                return false
+            }
+        }
+        for item in items where add(item) {
+            guard let enumerator = fileManager.enumerator(at: item, includingPropertiesForKeys: Array(keys)) else { continue }
+            for case let url as URL in enumerator { _ = add(url) }
+        }
+        guard newest != .distantPast || bytes > 0 else { return nil }
+        return CacheEvictionCandidate(items: items, bytes: bytes, lastUsed: newest)
     }
 }

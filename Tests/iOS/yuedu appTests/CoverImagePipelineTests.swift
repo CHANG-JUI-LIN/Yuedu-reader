@@ -123,8 +123,7 @@ private final class CoverFixture {
 
     init(
         maxConcurrentLoads: Int = 2,
-        failureLifetime: TimeInterval = 30,
-        networkDiskLimit: Int = CoverImagePipeline.networkDiskLimit
+        failureLifetime: TimeInterval = 30
     ) throws {
         root = FileManager.default.temporaryDirectory
             .appendingPathComponent("CoverImagePipelineTests-\(UUID().uuidString)", isDirectory: true)
@@ -134,7 +133,6 @@ private final class CoverFixture {
             io: probe.io,
             maxConcurrentLoads: maxConcurrentLoads,
             failureLifetime: failureLifetime,
-            networkDiskLimit: networkDiskLimit,
             now: clock.now,
             logsSummaries: false
         )
@@ -452,6 +450,7 @@ struct CoverImagePipelineTests {
         defer { subscription.cancel() }
         let service = CacheManagementService(
             coverOwner: SavedCoverOwnerStub(),
+            retentionOwner: CacheRetentionStub(),
             roots: fixture.cacheRoots,
             diagnosticLog: nil,
             coverPipeline: pipeline
@@ -1018,9 +1017,10 @@ struct SavedNetworkCoverTests {
         #expect(fixture.pipeline.counters.networkDiskHits == 1)
     }
 
-    @Test("Saved network covers over the cap lose the oldest first")
-    func trimRemovesOldestFirst() throws {
-        let fixture = try CoverFixture(networkDiskLimit: 1_000)
+    @MainActor
+    @Test("Saved network covers over the cleanup cap lose the oldest first")
+    func trimRemovesOldestFirst() async throws {
+        let fixture = try CoverFixture()
         let pipeline = fixture.pipeline
         let now = Date()
         let ages: [(key: String, secondsAgo: TimeInterval)] = [("old", 300), ("middle", 200), ("new", 100)]
@@ -1033,7 +1033,14 @@ struct SavedNetworkCoverTests {
             )
         }
 
-        pipeline.trimSavedNetworkCovers()
+        let service = CacheManagementService(
+            coverOwner: SavedCoverOwnerStub(),
+            retentionOwner: CacheRetentionStub(),
+            roots: fixture.cacheRoots,
+            diagnosticLog: nil,
+            coverPipeline: pipeline
+        )
+        await service.trimAutomaticCaches(toLimit: 1_000, reason: "test")
 
         // 1 200 bytes over a 1 000 cap trims to 800: only the oldest goes.
         let exists = { (key: String) in
@@ -1059,6 +1066,7 @@ struct SavedNetworkCoverTests {
 
         let service = CacheManagementService(
             coverOwner: SavedCoverOwnerStub(),
+            retentionOwner: CacheRetentionStub(),
             roots: fixture.cacheRoots,
             diagnosticLog: nil,
             coverPipeline: fixture.pipeline

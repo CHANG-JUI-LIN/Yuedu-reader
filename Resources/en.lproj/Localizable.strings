@@ -1776,6 +1776,8 @@
 "快取管理" = "Cache";
 "章節快取" = "Chapter Cache";
 "清除章節快取" = "Clear Chapter Cache";
+"自動清理上限" = "Auto-Clean Limit";
+"快取超過上限時，自動刪除最久沒用的部分。下載離線閱讀的書、匯入的書與閱讀進度不會被刪除。" = "When the cache goes over the limit, what has gone unused longest is deleted automatically. Books downloaded for offline reading, imported books and reading progress are never deleted.";
 "小說正文內容的離線快取" = "Chapter text saved for offline reading";
 "聽書音頻快取" = "Read Aloud Audio Cache";
 "清除音頻快取" = "Clear Audio Cache";

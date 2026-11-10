@@ -152,6 +152,7 @@ extension BookSourceFetcher {
             let fingerprintData = Data((fingerprint + "\n" + fields.serialized).utf8)
             try fingerprintData.write(to: fingerprintPath, options: .atomic)
             let previous = storedLines.count > 1 ? TOCFieldDigests(serialized: String(storedLines[1])) : nil
+            CacheAutoCleaner.shared.noteWrite(bytes: data.count + fingerprintData.count)
             DiskWriteTally.record(
                 Self.tocDiskWriteTallyName,
                 reason: fields.changeReason(from: previous, hadPackage: stored != nil),
@@ -205,6 +206,7 @@ extension BookSourceFetcher {
             let data = try JSONEncoder().encode(package)
             try data.write(to: bookInfoPackagePath(url: info.bookUrl, source: source), options: .atomic)
             DiskWriteTally.record("bookInfo", reason: source.bookSourceName, bytes: data.count)
+            CacheAutoCleaner.shared.noteWrite(bytes: data.count)
         } catch {
             AppLogger.cache("Book info cache not saved", error: error, context: ["source": source.bookSourceName])
         }

@@ -112,6 +112,7 @@ struct CacheManagementServiceTests {
         cache.retain(activeID)
         let service = CacheManagementService(
             coverOwner: SavedCoverOwnerStub(),
+            retentionOwner: CacheRetentionStub(),
             roots: fixture.roots,
             diagnosticLog: nil,
             remoteLibraryCache: cache
@@ -150,7 +151,7 @@ struct CacheManagementServiceTests {
             irreplaceable: ["imported_cover.jpg", "original_cover.jpg"],
             watching: covers
         )
-        let service = CacheManagementService(coverOwner: owner, roots: fixture.roots, diagnosticLog: nil)
+        let service = CacheManagementService(coverOwner: owner, retentionOwner: CacheRetentionStub(), roots: fixture.roots, diagnosticLog: nil)
 
         // Only what clearing frees: a size that stays after 清除 reads as a broken button.
         #expect(await service.snapshot().covers == 5 + 7 + 11)
@@ -176,7 +177,7 @@ struct CacheManagementServiceTests {
         try Data(repeating: 1, count: 5).write(to: cover)
         try Data(repeating: 2, count: 11).write(to: network)
         let owner = SavedCoverOwnerStub(irreplaceable: nil, watching: fixture.roots.covers)
-        let service = CacheManagementService(coverOwner: owner, roots: fixture.roots, diagnosticLog: nil)
+        let service = CacheManagementService(coverOwner: owner, retentionOwner: CacheRetentionStub(), roots: fixture.roots, diagnosticLog: nil)
 
         #expect(await service.snapshot().covers == 11)
         try await service.clear(.covers)
@@ -350,7 +351,7 @@ struct CacheManagementServiceTests {
 
     @MainActor
     private func service(_ fixture: (container: URL, roots: CacheStorageRoots)) -> CacheManagementService {
-        CacheManagementService(coverOwner: SavedCoverOwnerStub(), roots: fixture.roots, diagnosticLog: nil)
+        CacheManagementService(coverOwner: SavedCoverOwnerStub(), retentionOwner: CacheRetentionStub(), roots: fixture.roots, diagnosticLog: nil)
     }
 
     /// An image `BookCoverLoader` decodes without the network.
@@ -409,4 +410,16 @@ final class SavedCoverOwnerStub: SavedCoverOwner {
         let names = covers.flatMap { try? FileManager.default.contentsOfDirectory(atPath: $0.path) } ?? []
         coversLeftWhenTold.append(Set(names))
     }
+}
+
+/// Stands in for the books (`BookStore`) deciding which per-book caches cleanup keeps.
+@MainActor
+final class CacheRetentionStub: CacheRetentionOwner {
+    var retention: CacheRetention?
+
+    init(_ retention: CacheRetention? = CacheRetention(keptBooks: [], lastOpened: [:])) {
+        self.retention = retention
+    }
+
+    func cacheRetention() -> CacheRetention? { retention }
 }
