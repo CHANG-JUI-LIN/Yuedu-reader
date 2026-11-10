@@ -106,10 +106,13 @@ struct LibraryTabRoot: View {
                         prompt: localized("搜索來源配置"))
             .onReceive(sourceStore.sourcesPublisher) { library in
                 // The published value: the publisher sends before the store holds it.
-                exploreSources = DiscoverViewModel.exploreSources(in: library)
-                sourceGroups = LibrarySourceGroups.groups(of: exploreSources)
+                SourcePerfTrace.span("library.sourceGroups", "\(library.count) sources", thresholdMs: 5) {
+                    exploreSources = DiscoverViewModel.exploreSources(in: library)
+                    sourceGroups = LibrarySourceGroups.groups(of: exploreSources)
+                }
             }
             .bookSourceActionSheets(sheet: $sourceActionSheet)
+            .onAppear { LibraryTabTiming.noteAppeared() }
             .task { await modules.loadIfNeeded() }
             .exploreRouteDestinations(openBrowser: { browserEntry = BrowserEntryPresentation(entry: $0) })
             .remoteLibraryDestinations()
@@ -346,6 +349,34 @@ struct LibraryTabRoot: View {
         .padding(.vertical, DSSpacing.sm)
         .interfaceCardSurface(in: RoundedRectangle(cornerRadius: DSRadius.xl, style: .continuous))
         .shadow(color: DSColor.shadow, radius: DSLayout.exploreCardShadowRadius, y: DSLayout.exploreCardShadowY)
+    }
+}
+
+/// How long 資源庫 takes to show after its tab is tapped (FB-167: the first switch held the
+/// bookshelf on screen ~6 s with 2,611 sources): `library.tab.appear` when the root appears, and
+/// `library.tab.firstFrame` when the main run loop next goes to sleep — every observer, Core
+/// Animation's commit among them, has run, so the frame is on its way and the main thread is free.
+/// Not a transaction completion block: that waits for the tab transition's animations too.
+/// Only the switch that follows a tap is timed, not a later appearance after a pop.
+@MainActor
+enum LibraryTabTiming {
+    private static var selectedAt: TimeInterval?
+
+    static func noteSelected() {
+        selectedAt = SourcePerfTrace.now
+    }
+
+    static func noteAppeared() {
+        guard let start = selectedAt else { return }
+        selectedAt = nil
+        SourcePerfTrace.record("library.tab.appear", since: start, thresholdMs: 0)
+        let observer = CFRunLoopObserverCreateWithHandler(
+            nil, CFRunLoopActivity.beforeWaiting.rawValue, false, CFIndex.max
+        ) { observer, _ in
+            SourcePerfTrace.record("library.tab.firstFrame", since: start, thresholdMs: 0)
+            CFRunLoopRemoveObserver(CFRunLoopGetMain(), observer, .commonModes)
+        }
+        CFRunLoopAddObserver(CFRunLoopGetMain(), observer, .commonModes)
     }
 }
 

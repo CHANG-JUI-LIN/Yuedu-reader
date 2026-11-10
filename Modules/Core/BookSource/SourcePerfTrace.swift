@@ -37,6 +37,9 @@ import Foundation
 ///     the frame taken from its stream)
 ///   home.sync / home.groups / home.rowContent  (the 探索 home's main-thread parts: building its
 ///     rows, its sections, a section's cards)
+///   library.tab.appear / library.tab.firstFrame  (a tap on 資源庫's tab to its root appearing,
+///     and to the main run loop going idle after drawing it — `LibraryTabTiming`)
+///   library.sourceGroups  (資源庫's discover sources and their groups, worked out on a change)
 ///   module.entries  (a module list's items made into entries, off the main actor; wall clock:
 ///     lists landing together wait on ICU's transliterator lock in `WorkMatchKey`, so it reads
 ///     more than the work)

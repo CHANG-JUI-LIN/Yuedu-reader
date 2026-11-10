@@ -329,7 +329,13 @@ struct ContentView: View {
     }
 
     private var visibleTabsTabView: some View {
-        TabView(selection: $selectedRootTab) {
+        TabView(selection: Binding {
+            selectedRootTab
+        } set: { tab in
+            // Stamped as the tap lands: iOS 27 appears the tab's root before `onChange` runs.
+            if tab == .library, selectedRootTab != .library { LibraryTabTiming.noteSelected() }
+            selectedRootTab = tab
+        }) {
             ForEach(gs.visibleRootTabs) { tab in
                 rootTabContent(for: tab)
                     .modifier(ThemedSurfaceBackground(
