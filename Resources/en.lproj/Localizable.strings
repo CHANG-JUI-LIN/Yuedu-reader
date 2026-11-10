@@ -4485,3 +4485,4 @@
 "自動換源失敗：沒有可用的來源配置" = "Couldn't switch source automatically: no source has this book";
 "這一章取不到內容" = "This chapter has no text";
 "選擇要換上的章節" = "Choose the Chapter to Use";
+"已調整順序" = "Reordered";

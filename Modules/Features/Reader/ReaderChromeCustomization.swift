@@ -43,7 +43,8 @@ extension ReaderChromeIconItem {
     var isAlwaysVisible: Bool { false }
 }
 
-/// The tools in the bottom bar's capsule, in the order it draws them. 更多 follows
+/// The tools in the bottom bar's capsule, in their default order (the reader can rearrange
+/// them, `GlobalSettings.orderedReaderChromeToolItems`). 更多 follows
 /// them and is not an item: it holds 書籤, which has nowhere else to live.
 enum ReaderChromeToolItem: String, CaseIterable, Codable, Hashable, Identifiable, ReaderChromeIconItem {
     case tableOfContents
@@ -383,9 +384,41 @@ extension GlobalSettings {
         readerChromeHiddenIDs = sorted
     }
 
-    /// Bottom bar tools in `allCases` order, so persistence can never reshuffle the row.
+    // MARK: Order
+
+    /// Every bottom-bar tool in the reader's order (#36), hidden ones included so one switched
+    /// back on returns to its place. `allCases` when no order is saved.
+    var orderedReaderChromeToolItems: [ReaderChromeToolItem] {
+        CustomItemOrder.resolve(
+            readerChromeToolOrderIDs,
+            defaults: ReaderChromeToolItem.allCases,
+            id: \.storageID
+        )
+    }
+
+    /// The tools the bar draws, in the reader's order.
     var visibleReaderChromeToolItems: [ReaderChromeToolItem] {
-        ReaderChromeToolItem.allCases.filter { isReaderChromeItemVisible($0) }
+        orderedReaderChromeToolItems.filter { isReaderChromeItemVisible($0) }
+    }
+
+    /// `onMove` over `orderedReaderChromeToolItems`.
+    func moveReaderChromeTools(fromOffsets source: IndexSet, toOffset destination: Int) {
+        setReaderChromeToolOrder(
+            CustomItemOrder.moved(orderedReaderChromeToolItems, fromOffsets: source, toOffset: destination)
+        )
+    }
+
+    /// One place up (`-1`) or down (`+1`): the VoiceOver 上移／下移 actions.
+    func moveReaderChromeTool(_ item: ReaderChromeToolItem, by step: Int) {
+        let order = orderedReaderChromeToolItems
+        guard let index = order.firstIndex(of: item) else { return }
+        setReaderChromeToolOrder(CustomItemOrder.shifted(order, at: index, by: step))
+    }
+
+    private func setReaderChromeToolOrder(_ order: [ReaderChromeToolItem]) {
+        let stored = CustomItemOrder.stored(order, defaults: ReaderChromeToolItem.allCases, id: \.storageID)
+        guard stored != readerChromeToolOrderIDs else { return }
+        readerChromeToolOrderIDs = stored
     }
 
     /// Filters the live, book-dependent action list — `ReaderView` decides which
@@ -490,10 +523,11 @@ extension GlobalSettings {
         ReaderChromeSlot.allCases.contains { readerChromeColor(slot: $0) != nil }
             || !readerChromeIcons.isEmpty
             || !readerChromeHiddenIDs.isEmpty
+            || !readerChromeToolOrderIDs.isEmpty
     }
 
     /// Back to the stock look: every colour follows the reading theme again, every
-    /// button is visible, and imported icon files are deleted (not just forgotten)
+    /// button is visible in its default order, and imported icon files are deleted (not just forgotten)
     /// unless a theme still draws them.
     func resetReaderChrome() {
         readerChromeColors = [:]
@@ -503,5 +537,6 @@ extension GlobalSettings {
             discardReaderChromeIconFile(asset)
         }
         readerChromeHiddenIDs = []
+        readerChromeToolOrderIDs = []
     }
 }

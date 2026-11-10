@@ -9,13 +9,23 @@ import UniformTypeIdentifiers
 struct ReaderChromeIconSettingsView: View {
     @Bindable private var settings = GlobalSettings.shared
     @State private var importError: ReaderChromeIconImportError?
+    /// Drives the reorder handles of the 底部工具 rows (#36); only that section has `onMove`.
+    @State private var editMode: EditMode
+
+    init(startsReordering: Bool = false) {
+        _editMode = State(initialValue: startsReordering ? .active : .inactive)
+    }
 
     var body: some View {
         Form {
             section(
-                items: ReaderChromeToolItem.allCases,
+                items: settings.orderedReaderChromeToolItems,
                 headerKey: "底部工具",
-                footerKey: "關掉的按鈕會整個離開工具列。主題固定顯示——它是回到閱讀設定的唯一入口。"
+                footerKey: "關掉的按鈕會整個離開工具列。主題固定顯示——它是回到閱讀設定的唯一入口。",
+                reorder: ToolReorder(
+                    move: { settings.moveReaderChromeTools(fromOffsets: $0, toOffset: $1) },
+                    shift: { settings.moveReaderChromeTool($0, by: $1) }
+                )
             )
             section(
                 items: ReaderChromeActionItem.allCases.filter { !$0.isInMoreMenu },
@@ -32,6 +42,12 @@ struct ReaderChromeIconSettingsView: View {
         .scrollContentBackground(.hidden)
         .navigationTitle(localized("按鈕圖示"))
         .toolbarTitleDisplayMode(.inline)
+        .toolbar {
+            ToolbarItem(placement: .topBarTrailing) { EditButton() }
+        }
+        // Below the toolbar, so `EditButton` toggles this page's edit mode rather than the
+        // one of the screen this page is pushed from (see `RootTabCustomizationView`).
+        .environment(\.editMode, $editMode)
         .themedAppSurface(for: .settings)
         .alert(item: $importError) { error in
             Alert(
@@ -42,15 +58,23 @@ struct ReaderChromeIconSettingsView: View {
         }
     }
 
+    /// How a section's rows are rearranged; nil for the sections whose order is fixed.
+    fileprivate struct ToolReorder {
+        let move: (IndexSet, Int) -> Void
+        let shift: (ReaderChromeToolItem, Int) -> Void
+    }
+
     private func section<Item: ReaderChromeIconItem>(
         items: [Item],
         headerKey: String,
-        footerKey: String
+        footerKey: String,
+        reorder: ToolReorder? = nil
     ) -> some View {
         Section {
             ForEach(items) { item in
-                row(for: item)
+                row(for: item, reorder: reorder)
             }
+            .onMove(perform: reorder?.move)
         } header: {
             Text(localized(headerKey))
                 .font(DSFont.headline)
@@ -62,7 +86,7 @@ struct ReaderChromeIconSettingsView: View {
         .interfaceSectionSurface()
     }
 
-    private func row<Item: ReaderChromeIconItem>(for item: Item) -> some View {
+    private func row<Item: ReaderChromeIconItem>(for item: Item, reorder: ToolReorder?) -> some View {
         let asset = settings.readerChromeIcon(for: item)
         return VStack(spacing: DSSpacing.sm) {
             HStack(spacing: DSSpacing.md) {
@@ -76,6 +100,10 @@ struct ReaderChromeIconSettingsView: View {
                         .foregroundStyle(asset == nil ? DSColor.textSecondary : DSColor.accent)
                         .lineLimit(1)
                 }
+                // The row's name as one element, which carries the reorder actions: on the
+                // row's VStack they would land on the picker and the switch as well.
+                .accessibilityElement(children: .combine)
+                .modifier(ToolReorderActions(item: item as? ReaderChromeToolItem, reorder: reorder))
 
                 Spacer(minLength: DSSpacing.md)
 
@@ -173,6 +201,23 @@ struct ReaderChromeIconSettingsView: View {
     ]
 }
 
+/// 上移／下移 for VoiceOver and Switch Control, which cannot drag a handle — as
+/// `MetadataFillSourcesView` does. Nothing for a row whose section keeps a fixed order.
+private struct ToolReorderActions: ViewModifier {
+    let item: ReaderChromeToolItem?
+    let reorder: ReaderChromeIconSettingsView.ToolReorder?
+
+    func body(content: Content) -> some View {
+        if let item, let reorder {
+            content
+                .accessibilityAction(named: localized("上移")) { reorder.shift(item, -1) }
+                .accessibilityAction(named: localized("下移")) { reorder.shift(item, 1) }
+        } else {
+            content
+        }
+    }
+}
+
 private struct ReaderChromeIconImportError: Identifiable {
     let id = UUID()
     let message: String
@@ -181,5 +226,11 @@ private struct ReaderChromeIconImportError: Identifiable {
 #Preview {
     NavigationStack {
         ReaderChromeIconSettingsView()
+    }
+}
+
+#Preview("Reordering") {
+    NavigationStack {
+        ReaderChromeIconSettingsView(startsReordering: true)
     }
 }

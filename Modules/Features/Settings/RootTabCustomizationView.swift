@@ -6,6 +6,13 @@ struct RootTabCustomizationView: View {
     @EnvironmentObject private var subscriptionStore: SubscriptionStore
     @State private var showPaywall = false
     @State private var iconImportError: RootTabIconImportError?
+    /// Drives the reorder handles of the 顯示頁面 rows (#92); the other sections have no
+    /// `onMove`, so edit mode changes nothing there.
+    @State private var editMode: EditMode
+
+    init(startsReordering: Bool = false) {
+        _editMode = State(initialValue: startsReordering ? .active : .inactive)
+    }
 
     private var canCustomize: Bool {
         subscriptionStore.hasAccess(.bottomBarCustomization)
@@ -27,13 +34,23 @@ struct RootTabCustomizationView: View {
             visibleTabsSection
             tabPresentationSection
 
-            ForEach(RootTabItem.tabs) { tab in
+            ForEach(settings.orderedRootTabs) { tab in
                 iconSection(for: tab)
             }
         }
         .softScrollEdges()
         .navigationTitle(localized("底部 Tab"))
         .toolbarTitleDisplayMode(.inline)
+        .toolbar {
+            ToolbarItem(placement: .topBarTrailing) {
+                EditButton()
+                    .disabled(!canCustomize)
+            }
+        }
+        // Below the toolbar, so `EditButton` toggles this page's edit mode. Above it, the
+        // button bound the edit mode of the 外觀主題 list this page is pushed from, and the
+        // two screens re-rendered each other without end (100% CPU, seen 2026-11-10).
+        .environment(\.editMode, $editMode)
         .themedAppSurface(for: .settings)
         .alert(item: $iconImportError) { error in
             Alert(
@@ -50,24 +67,14 @@ struct RootTabCustomizationView: View {
 
     private var visibleTabsSection: some View {
         Section {
-            ForEach(RootTabItem.tabs) { tab in
-                if tab.isAlwaysVisible {
-                    HStack {
-                        Label(localized(tab.titleKey), systemImage: tab.defaultSystemImage)
-                            .labelStyle(IconConsistentLabelStyle())
-                        Spacer(minLength: DSSpacing.md)
-                        Text(localized("固定顯示"))
-                            .font(DSFont.caption)
-                            .foregroundStyle(DSColor.textSecondary)
-                    }
-                } else {
-                    Toggle(isOn: visibleBinding(for: tab)) {
-                        Label(localized(tab.titleKey), systemImage: tab.defaultSystemImage)
-                            .labelStyle(IconConsistentLabelStyle())
-                    }
-                    .disabled(!canCustomize)
-                }
+            ForEach(settings.orderedRootTabs) { tab in
+                visibleTabRow(tab)
+                    // Reordering without dragging (VoiceOver, Switch Control), as
+                    // `MetadataFillSourcesView` does.
+                    .accessibilityAction(named: localized("上移")) { moveTab(tab, by: -1) }
+                    .accessibilityAction(named: localized("下移")) { moveTab(tab, by: 1) }
             }
+            .onMove(perform: moveTabsAction)
         } header: {
             Text(localized("顯示頁面"))
                 .foregroundStyle(DSColor.textSecondary)
@@ -76,6 +83,35 @@ struct RootTabCustomizationView: View {
                 .dsSectionFooter()
         }
         .interfaceSectionSurface()
+    }
+
+    @ViewBuilder
+    private func visibleTabRow(_ tab: RootTabItem) -> some View {
+        if tab.isAlwaysVisible {
+            HStack {
+                Label(localized(tab.titleKey), systemImage: tab.defaultSystemImage)
+                    .labelStyle(IconConsistentLabelStyle())
+                Spacer(minLength: DSSpacing.md)
+                Text(localized("固定顯示"))
+                    .font(DSFont.caption)
+                    .foregroundStyle(DSColor.textSecondary)
+            }
+            // One element, so the reorder actions sit on the row rather than on each of
+            // its texts (docs/design.md §7.1).
+            .accessibilityElement(children: .combine)
+        } else {
+            Toggle(isOn: visibleBinding(for: tab)) {
+                Label(localized(tab.titleKey), systemImage: tab.defaultSystemImage)
+                    .labelStyle(IconConsistentLabelStyle())
+            }
+            .disabled(!canCustomize)
+        }
+    }
+
+    /// nil without Pro, which hides the drag handles.
+    private var moveTabsAction: ((IndexSet, Int) -> Void)? {
+        guard canCustomize else { return nil }
+        return { source, destination in moveTabs(fromOffsets: source, toOffset: destination) }
     }
 
     private var tabPresentationSection: some View {
@@ -253,6 +289,22 @@ struct RootTabCustomizationView: View {
         )
     }
 
+    private func moveTabs(fromOffsets source: IndexSet, toOffset destination: Int) {
+        guard canCustomize else {
+            showPaywall = true
+            return
+        }
+        settings.moveRootTabs(fromOffsets: source, toOffset: destination)
+    }
+
+    private func moveTab(_ tab: RootTabItem, by step: Int) {
+        guard canCustomize else {
+            showPaywall = true
+            return
+        }
+        settings.moveRootTab(tab, by: step)
+    }
+
     private func visibleBinding(for tab: RootTabItem) -> Binding<Bool> {
         Binding(
             get: { settings.isRootTabVisible(tab) },
@@ -309,6 +361,13 @@ private struct RootTabIconImportError: Identifiable {
 #Preview {
     NavigationStack {
         RootTabCustomizationView()
+            .environmentObject(SubscriptionStore.shared)
+    }
+}
+
+#Preview("Reordering") {
+    NavigationStack {
+        RootTabCustomizationView(startsReordering: true)
             .environmentObject(SubscriptionStore.shared)
     }
 }

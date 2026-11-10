@@ -6,7 +6,7 @@ import SwiftUI
 /// - The scrubber: ⏮ 上一章 / the book's progress slider / 下一章 ⏭, with the
 ///   chapter's page and the whole book's progress under the slider.
 /// - The tools: 目錄 / 深色 / 聽書 / 主題 from `ReaderChromeToolItem` (自定義 can
-///   hide or re-icon them), then 更多, which holds 書籤 and AI 助手 / AI 翻譯.
+///   hide, reorder or re-icon them), then 更多, which holds 書籤 and AI 助手 / AI 翻譯.
 ///
 /// Both wear the shared 界面效果 surface (`floatingSurface`), which on iOS 26 is the
 /// system's own glass, so 毛玻璃 / 透明度 / 光暈 reach them like every other floating
@@ -188,7 +188,7 @@ struct ReaderModernBottomControlBar: View {
     // MARK: - Tools
 
     /// Same shared list 自定義 edits, so hiding a tool or importing an icon applies
-    /// here. Order always follows `allCases`; persistence only records what is hidden.
+    /// here, and so does the order the reader arranged there.
     private var toolRow: some View {
         HStack(spacing: 0) {
             ForEach(settings.visibleReaderChromeToolItems) { item in

@@ -923,6 +923,7 @@ private struct AppearanceReaderInterfaceView: View {
         var parts: [String] = []
         if custom > 0 { parts.append(String(format: localized("已換 %d 個"), custom)) }
         if hidden > 0 { parts.append(String(format: localized("已隱藏 %d 個"), hidden)) }
+        if !settings.readerChromeToolOrderIDs.isEmpty { parts.append(localized("已調整順序")) }
         guard !parts.isEmpty else { return localized("預設") }
         return parts.formatted(.list(type: .and, width: .narrow))
     }

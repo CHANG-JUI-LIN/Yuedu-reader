@@ -227,9 +227,9 @@ struct ContentView: View {
             }
             #endif
         }
-        .onChange(of: gs.rootTabVisibleIDs) { _, ids in
-            // On iOS 17 a new tab set rebuilds every tab (`tabView`).
-            CrashContext.breadcrumb("root tabs \(ids.joined(separator: ","))")
+        .onChange(of: gs.visibleRootTabs) { _, tabs in
+            // On iOS 17 a new tab set — or a new order (#92) — rebuilds every tab (`tabView`).
+            CrashContext.breadcrumb("root tabs \(tabs.map(\.rawValue).joined(separator: ","))")
             selectedRootTab = gs.fallbackRootTab(for: selectedRootTab)
         }
         .modifier(AudiobookPlayerPresentation(store: store))

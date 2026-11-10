@@ -15,9 +15,10 @@ enum RootTabItem: String, CaseIterable, Codable, Hashable, Identifiable {
 
     var id: String { rawValue }
 
-    /// The tabs drawn, in order: 探索・書架・資源庫・設定・搜尋 (decision 30; 搜尋 moved to the far
-    /// right, 2026-10-16; 探索 first, and the app opens on it, 2026-10-25). A saved list follows
-    /// this order (`sanitizedRootTabVisibleIDs`).
+    /// The tabs drawn, in their default order: 探索・書架・資源庫・設定・搜尋 (decision 30; 搜尋
+    /// moved to the far right, 2026-10-16; 探索 first, and the app opens on it, 2026-10-25). The
+    /// reader can rearrange them (#92, `GlobalSettings.rootTabOrderIDs`); with no saved order
+    /// this is the order drawn. The saved visible list keeps this order regardless.
     static let tabs: [RootTabItem] = [.explore, .bookshelf, .library, .settings, .search]
 
     /// Tabs added after readers had saved which tabs they show. A saved list that does not name
@@ -316,9 +317,44 @@ extension GlobalSettings {
         rootTabIconSize > 0.001
     }
 
+    /// Every tab in the reader's order, hidden ones included (`RootTabItem.tabs` when no
+    /// order is saved).
+    nonisolated static func orderedRootTabs(_ orderIDs: [String]) -> [RootTabItem] {
+        CustomItemOrder.resolve(orderIDs, defaults: RootTabItem.tabs, id: \.rawValue)
+    }
+
+    /// The tabs drawn: which ones from `rootTabVisibleIDs`, in what order from
+    /// `rootTabOrderIDs`. On iOS 17 the tab bar is keyed on this whole array
+    /// (`ContentView.tabView`), so a reorder rebuilds it exactly as showing a tab does.
+    nonisolated static func visibleRootTabs(visibleIDs: [String], orderIDs: [String]) -> [RootTabItem] {
+        let visible = Set(sanitizedRootTabVisibleIDs(visibleIDs))
+        return orderedRootTabs(orderIDs).filter { visible.contains($0.rawValue) }
+    }
+
+    var orderedRootTabs: [RootTabItem] {
+        Self.orderedRootTabs(rootTabOrderIDs)
+    }
+
     var visibleRootTabs: [RootTabItem] {
-        Self.sanitizedRootTabVisibleIDs(rootTabVisibleIDs)
-            .compactMap(RootTabItem.init(rawValue:))
+        Self.visibleRootTabs(visibleIDs: rootTabVisibleIDs, orderIDs: rootTabOrderIDs)
+    }
+
+    /// `onMove` over `orderedRootTabs`.
+    func moveRootTabs(fromOffsets source: IndexSet, toOffset destination: Int) {
+        setRootTabOrder(CustomItemOrder.moved(orderedRootTabs, fromOffsets: source, toOffset: destination))
+    }
+
+    /// One place up (`-1`) or down (`+1`): the VoiceOver 上移／下移 actions.
+    func moveRootTab(_ tab: RootTabItem, by step: Int) {
+        let order = orderedRootTabs
+        guard let index = order.firstIndex(of: tab) else { return }
+        setRootTabOrder(CustomItemOrder.shifted(order, at: index, by: step))
+    }
+
+    private func setRootTabOrder(_ order: [RootTabItem]) {
+        let stored = CustomItemOrder.stored(order, defaults: RootTabItem.tabs, id: \.rawValue)
+        guard stored != rootTabOrderIDs else { return }
+        rootTabOrderIDs = stored
     }
 
     func isRootTabVisible(_ tab: RootTabItem) -> Bool {

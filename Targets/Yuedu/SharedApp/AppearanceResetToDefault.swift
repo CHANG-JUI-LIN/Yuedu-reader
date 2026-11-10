@@ -24,6 +24,7 @@ extension GlobalSettings {
         rootTabIconSize = Self.defaultRootTabIconSize
         rootTabHidesLabels = false
         rootTabVisibleIDs = Self.defaultRootTabVisibleIDs
+        rootTabOrderIDs = []
         selectedGlobalFontPostScript = nil
         interfaceGlowIntensity = Self.defaultInterfaceGlowIntensity
         interfaceGlowColor = nil
@@ -32,6 +33,7 @@ extension GlobalSettings {
         interfaceGlassCards = Self.defaultInterfaceGlassCards
         readerChromeColors = [:]
         readerChromeHiddenIDs = []
+        readerChromeToolOrderIDs = []
         readerChromeIcons = []
         launchImageEnabled = false
         launchImageLightFileName = nil

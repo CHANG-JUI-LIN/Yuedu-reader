@@ -573,6 +573,7 @@ class GlobalSettings {
     private static let appearanceBoundDarkReaderThemeKey = "yd_appearance_bound_dark_reader_theme"
     static let readerChromeColorsKey = "yd_reader_chrome_colors"
     static let readerChromeHiddenIDsKey = "yd_reader_chrome_hidden_ids"
+    static let readerChromeToolOrderIDsKey = "yd_reader_chrome_tool_order_ids"
     static let readerChromeIconsKey = "yd_reader_chrome_icons"
     private static let interfaceGlowIntensityKey = "yd_interface_glow_intensity"
     private static let interfaceGlowColorKey = "yd_interface_glow_color"
@@ -641,6 +642,7 @@ class GlobalSettings {
     private static let launchImageLightFileNameKey = "yd_launch_image_light_file_name"
     private static let launchImageDarkFileNameKey = "yd_launch_image_dark_file_name"
     private static let rootTabVisibleIDsKey = "yd_root_tab_visible_ids"
+    static let rootTabOrderIDsKey = "yd_root_tab_order_ids"
     private static let rootTabHidesLabelsKey = "yd_root_tab_hides_labels"
     private static let rootTabIconSizeKey = "yd_root_tab_icon_size"
     static let rootTabIconAssetsKey = "yd_root_tab_icon_assets"
@@ -1465,6 +1467,15 @@ class GlobalSettings {
         }
     }
 
+    /// `storageID`s of the bottom bar's tools in the order the reader arranged them (#36).
+    /// Empty = `ReaderChromeToolItem.allCases`; read through `CustomItemOrder.resolve`.
+    var readerChromeToolOrderIDs: [String] {
+        didSet {
+            UserDefaults.standard.set(readerChromeToolOrderIDs, forKey: Self.readerChromeToolOrderIDsKey)
+            updateActiveThemeExtras { $0.readerChromeToolOrderIDs = readerChromeToolOrderIDs }
+        }
+    }
+
     /// User-imported replacements for those buttons' symbols.
     var readerChromeIcons: [ReaderChromeIconAsset] {
         didSet {
@@ -1566,6 +1577,15 @@ class GlobalSettings {
                 UserDefaults.standard.set(rootTabVisibleIDs, forKey: Self.rootTabVisibleIDsKey)
                 updateActiveThemeExtras { $0.visibleTabIDs = rootTabVisibleIDs }
             }
+        }
+    }
+    /// `RootTabItem` raw values in the order the reader arranged the tabs (#92), hidden tabs
+    /// included so one shown again comes back where it was. Empty = `RootTabItem.tabs`;
+    /// read through `CustomItemOrder.resolve`. Which tabs show stays `rootTabVisibleIDs`.
+    var rootTabOrderIDs: [String] {
+        didSet {
+            UserDefaults.standard.set(rootTabOrderIDs, forKey: Self.rootTabOrderIDsKey)
+            updateActiveThemeExtras { $0.tabOrderIDs = rootTabOrderIDs }
         }
     }
     var rootTabHidesLabels: Bool {
@@ -2488,6 +2508,7 @@ class GlobalSettings {
         launchImageDarkFileName = UserDefaults.standard.string(forKey: Self.launchImageDarkFileNameKey)
         readerChromeColors = Self.loadReaderChromeColors()
         readerChromeHiddenIDs = UserDefaults.standard.stringArray(forKey: Self.readerChromeHiddenIDsKey) ?? []
+        readerChromeToolOrderIDs = UserDefaults.standard.stringArray(forKey: Self.readerChromeToolOrderIDsKey) ?? []
         readerChromeIcons = Self.loadReaderChromeIcons()
         interfaceGlowIntensity = Self.sanitizedInterfaceGlowIntensity(
             (UserDefaults.standard.object(forKey: Self.interfaceGlowIntensityKey) as? Double)
@@ -2509,6 +2530,7 @@ class GlobalSettings {
             UserDefaults.standard.stringArray(forKey: Self.rootTabVisibleIDsKey)
                 ?? Self.defaultRootTabVisibleIDs
         )
+        rootTabOrderIDs = UserDefaults.standard.stringArray(forKey: Self.rootTabOrderIDsKey) ?? []
         rootTabHidesLabels = UserDefaults.standard.bool(forKey: Self.rootTabHidesLabelsKey)
         let loadedRootTabIconSize =
             (UserDefaults.standard.object(forKey: Self.rootTabIconSizeKey) as? Double)

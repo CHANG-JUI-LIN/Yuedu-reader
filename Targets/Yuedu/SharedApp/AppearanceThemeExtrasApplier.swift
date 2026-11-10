@@ -157,6 +157,7 @@ extension GlobalSettings {
         snapshot.tabIconSize = rootTabIconSize
         snapshot.hidesTabLabels = rootTabHidesLabels
         snapshot.visibleTabIDs = rootTabVisibleIDs
+        snapshot.tabOrderIDs = rootTabOrderIDs
         snapshot.launchImageEnabled = launchImageEnabled
         snapshot.launchImageLightFileName = launchImageLightFileName ?? ""
         snapshot.launchImageDarkFileName = launchImageDarkFileName ?? ""
@@ -175,6 +176,7 @@ extension GlobalSettings {
         snapshot.pageBackgrounds = appearancePageBackgrounds
         snapshot.readerChromeColors = readerChromeColors
         snapshot.readerChromeHiddenIDs = readerChromeHiddenIDs
+        snapshot.readerChromeToolOrderIDs = readerChromeToolOrderIDs
         snapshot.readerChromeIcons = Dictionary(
             readerChromeIcons.map { ($0.itemID, $0.fileName) },
             uniquingKeysWith: { _, last in last }
@@ -205,6 +207,9 @@ extension GlobalSettings {
         // Assigned raw: the property's own `didSet` sanitizes, so a theme that names a
         // tab this build does not have — or names none — still lands on a usable bar.
         if let visible = extras.visibleTabIDs, !visible.isEmpty { rootTabVisibleIDs = visible }
+        // Empty is a real value here — the default order — so it is written too. Ids this
+        // build does not know are dropped when the order is read, not here.
+        if let order = extras.tabOrderIDs { rootTabOrderIDs = order }
         if let enabled = extras.launchImageEnabled { launchImageEnabled = enabled }
         if let name = extras.launchImageLightFileName {
             launchImageLightFileName = name.isEmpty ? nil : name
@@ -231,6 +236,7 @@ extension GlobalSettings {
         if let backgrounds = extras.pageBackgrounds { appearancePageBackgrounds = backgrounds }
         if let colors = extras.readerChromeColors { readerChromeColors = colors }
         if let hidden = extras.readerChromeHiddenIDs { readerChromeHiddenIDs = hidden }
+        if let order = extras.readerChromeToolOrderIDs { readerChromeToolOrderIDs = order }
         if let icons = extras.readerChromeIcons {
             // Same reconstruction as `tabIcons`: the theme carries the artwork, the
             // import metadata describes a user action this is not one of.

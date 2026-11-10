@@ -176,6 +176,9 @@ struct AppearanceThemeExtras: Codable, Hashable, Sendable {
     /// enforces the two floors (設定 always present, at least one content tab), so a
     /// theme cannot leave the bar in a state the user has no way out of.
     var visibleTabIDs: [String]?
+    /// `RootTabItem` raw values in the theme's tab order; empty is the default order.
+    /// Added after packs existed: an older pack has no such key and decodes it as nil.
+    var tabOrderIDs: [String]?
 
     var launchImageEnabled: Bool?
     var launchImageLightFileName: String?
@@ -219,6 +222,8 @@ struct AppearanceThemeExtras: Codable, Hashable, Sendable {
     var readerChromeColors: [String: UInt32]?
     /// `ReaderChromeItem` ids the theme hides.
     var readerChromeHiddenIDs: [String]?
+    /// Bottom-bar tool `storageID`s in the theme's order; empty is the default order.
+    var readerChromeToolOrderIDs: [String]?
     /// Keyed `itemID` to a stored icon file name — same shape as `tabIcons`, and
     /// for the same reason: the asset's `originalFileName`/`addedAt` describe the
     /// user's import, not the theme, so they are rebuilt on apply.
@@ -242,6 +247,7 @@ struct AppearanceThemeExtras: Codable, Hashable, Sendable {
         tabIcons?.isEmpty != false
             && tabIconSize == nil && hidesTabLabels == nil
             && visibleTabIDs?.isEmpty != false
+            && tabOrderIDs?.isEmpty != false
             && launchImageEnabled == nil
             && launchImageLightFileName == nil && launchImageDarkFileName == nil
             && defaultCoverLightFileNames?.isEmpty != false
@@ -256,6 +262,7 @@ struct AppearanceThemeExtras: Codable, Hashable, Sendable {
             && glassCards == nil
             && readerChromeColors?.isEmpty != false
             && readerChromeHiddenIDs?.isEmpty != false
+            && readerChromeToolOrderIDs?.isEmpty != false
             && readerChromeIcons?.isEmpty != false
         // `reading` is left out: it is worn by the reading scope, not with the rest of
         // these, and a theme that only keeps reading values speaks for no appearance
