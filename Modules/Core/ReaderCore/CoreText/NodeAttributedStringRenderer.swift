@@ -777,7 +777,7 @@ struct NodeAttributedStringRenderer: Sendable {
             // The break is the CSS anonymous-block boundary that would exist in a browser.
             if Self.isBlockLevelChild(child),
                result.length > 0,
-               !result.string.hasSuffix("\n") {
+               !Self.endsWithLineFeed(result) {
                 result.append(NSAttributedString(string: "\n", attributes: childCtx.baseAttributes))
             }
             result.append(await render(node: child, ctx: childCtx))
@@ -891,10 +891,22 @@ struct NodeAttributedStringRenderer: Sendable {
         // with one. Block children each close their own paragraph, so unconditionally appending
         // here gave every closed container an extra empty full-height paragraph, compounding
         // per nesting level (the mysterious gaps after chat threads / callout boxes).
-        if !result.string.hasSuffix("\n") {
+        if !Self.endsWithLineFeed(result) {
             result.append(NSAttributedString(string: "\n", attributes: childCtx.baseAttributes))
         }
         return result
+    }
+
+    /// Whether the text already ends a paragraph, read from the last UTF-16 unit.
+    ///
+    /// Never ask `result.string.hasSuffix("\n")` here: `.string` bridges the whole accumulated
+    /// text into a new Swift String (CJK transcodes through `_fromLargeUTF8Repairing`), and
+    /// `renderBlock` asks before every block child — O(children × length). An online chapter
+    /// whose body is one `<div>` of thousands of `<p>` spent 90 s of main-thread CPU there
+    /// (Crashlytics 7fa0d0f7). Unlike the grapheme-based `hasSuffix`, this also counts a
+    /// trailing `\r\n` as terminated, which is what CoreText does too.
+    private static func endsWithLineFeed(_ text: NSMutableAttributedString) -> Bool {
+        text.length > 0 && text.mutableString.character(at: text.length - 1) == 0x0A
     }
 
     /// Splits a short single-line text run into one-character paragraphs — the vertical
@@ -2994,25 +3006,33 @@ struct NodeAttributedStringRenderer: Sendable {
         guard paragraphRange.length > 0,
               NSMaxRange(paragraphRange) <= attributedString.length
         else { return (0, 0) }
-        let full = NSRange(location: 0, length: attributedString.length)
+        // Only "does the container run start/end exactly at this paragraph edge" matters, which
+        // the one character on either side of the edge decides. Searching the whole string made
+        // `longestEffectiveRange` walk every attribute run the container value spans — all of
+        // them when there is no container — so the per-paragraph collapse/normalize passes went
+        // O(paragraphs × runs): 9–12 s of main-thread CPU for a 10 000-paragraph chapter
+        // (Crashlytics 7fa0d0f7). The run's own values are compared exactly as before.
+        let length = attributedString.length
+        let start = paragraphRange.location
+        let end = NSMaxRange(paragraphRange)
         var top: CGFloat = 0
         var bottom: CGFloat = 0
         var startRun = NSRange()
         if let style = attributedString.attribute(
             HTMLAttributedStringBuilder.containerBlockRenderStyleAttribute,
-            at: paragraphRange.location,
+            at: start,
             longestEffectiveRange: &startRun,
-            in: full
+            in: NSRange(location: max(0, start - 1), length: start > 0 ? 2 : 1)
         ) as? HTMLAttributedStringBuilder.BlockRenderStyle,
-           startRun.location == paragraphRange.location {
+           startRun.location == start {
             top = style.paddingTop + style.borderTopWidth
         }
         var endRun = NSRange()
         if let style = attributedString.attribute(
             HTMLAttributedStringBuilder.containerBlockRenderStyleAttribute,
-            at: NSMaxRange(paragraphRange) - 1,
+            at: end - 1,
             longestEffectiveRange: &endRun,
-            in: full
+            in: NSRange(location: end - 1, length: end < length ? 2 : 1)
         ) as? HTMLAttributedStringBuilder.BlockRenderStyle,
            NSMaxRange(endRun) == NSMaxRange(paragraphRange) {
             bottom = style.paddingBottom + style.borderBottomWidth
