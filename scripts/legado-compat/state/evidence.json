@@ -5227,8 +5227,9 @@
    ],
    "pack": "1330",
    "proof": "The book the discovery list puts first (历心官场：仙尊重生后的情商修行, /html/lixinguanchang_xianzunzhongshenghoudeqingshangxiuxing/) is served with both chapter lists empty: <ul class=\"section-list fix\"> </ul> twice, 最后更新 1970-01-01, 最新章节 blank (diag reg16x, 2026-11-09). The search book of the same run has 128 chapters and its content loads.",
+   "retiredIn": "r20",
    "round": "r16",
-   "status": "active",
+   "status": "retired",
    "url": "https://www.langrenxiaoshuo.com/"
   },
   {
@@ -5247,8 +5248,9 @@
    ],
    "pack": "1331",
    "proof": "book.qq.com/book-cate/0-0-0-0-0-0-0-1 is server-rendered with an empty list: the tabs-content holds only <div class=\"empty\"> 「暂无记录」, no .book-large.rank-book (diag reg16x, and a plain curl with no headers gets the same 25891-byte page, 2026-11-09). Search, book, TOC and content on book.qq.com work in the same run.",
+   "retiredIn": "r20",
    "round": "r16",
-   "status": "active",
+   "status": "retired",
    "url": "https://ubook.reader.qq.com/?g_f=4000001"
   },
   {
@@ -5408,8 +5410,9 @@
    ],
    "pack": "1330",
    "proof": "z21 (2026-11-10 02:55): every page of www.x81zws.com — the search POST result /sosobaed0.html and /class/xuanhuan/1/ — answers HTTP 200 whose body starts with 数据库连接失败 and lists no book",
+   "retiredIn": "r20",
    "round": "r17",
-   "status": "active",
+   "status": "retired",
    "url": "http://www.x81zws.com/"
   },
   {
@@ -5462,8 +5465,9 @@
    ],
    "pack": "1330",
    "proof": "z21 and curl at 03:04 (2026-11-10): m.enread.com/index.php for search (keyword=我的) and for catid=9 answers DedeCMS Error Warning! Error infos: 无法使用数据库 catid error 2!",
+   "retiredIn": "r20",
    "round": "r17",
-   "status": "active",
+   "status": "retired",
    "url": "http://m.enread.com#"
   },
   {
@@ -5479,8 +5483,9 @@
    ],
    "pack": "1331",
    "proof": "z21 and curl at 03:04 (2026-11-10): m.enread.com/index.php answers DedeCMS Error Warning! Error infos: 无法使用数据库 for search and for catid=9 (same site as 1330#584)",
+   "retiredIn": "r20",
    "round": "r17",
-   "status": "active",
+   "status": "retired",
    "url": "http://m.enread.com#"
   },
   {
@@ -5556,8 +5561,9 @@
    ],
    "pack": "1330",
    "proof": "z21 (2026-11-10): the source searches through www.baidu.com/s (q6=xyyuedu.com, tn=baiduadv); Baidu answers HTTP 200 with its 百度安全验证 captcha page, no results",
+   "retiredIn": "r20",
    "round": "r17",
-   "status": "active",
+   "status": "retired",
    "url": "https://www.xyyuedu.com"
   },
   {
@@ -5703,8 +5709,9 @@
    ],
    "pack": "1331",
    "proof": "z22 (2026-11-10 04:06–04:07): www.cuoceng.org and www.sto66.com are one backend that rate-limits TOC pages per client: 1331#40 (m.cuoceng.org) fetched 10 TOC pages (two books × 5 pages, ~195 KB each) and its 11th, …/633122f9…/6.html, was answered HTTP 400 {\"code\":\"swq-003\",\"message\":\"书籍目录页访问次数受限制，请60秒后重试。\"}; 1331#41 (m.cuoceng.com → www.cuoceng.org) and 1331#121 (www.sto66.com) ran in the same minute and got the same swq-003 body on their first TOC page (04:07:05/07/12). Each passes alone: 1331#121 in diag http121 (870 chapters), 1331#41 alone in z18. Every round's audit checks these sources in the same minute, so the later ones always find the quota spent.",
+   "retiredIn": "r20",
    "round": "r17",
-   "status": "active",
+   "status": "retired",
    "url": "https://www.sto66.com"
   },
   {
@@ -5792,8 +5799,9 @@
    ],
    "pack": "1331",
    "proof": "z22 (2026-11-10 04:07 local, 20:07 UTC): shasha.one sits behind Cloudflare and its origin is down: the search https://shasha.one/q/我的妈妈我的家?page=1 got Cloudflare's 502 Bad gateway page ('You Working · San Jose Cloudflare Working · shasha.one Host Error') and the discovery list https://shasha.one/p/4/c/26?page=1 got Cloudflare's 522 Connection timed out (Host Error).",
+   "retiredIn": "r20",
    "round": "r17",
-   "status": "active",
+   "status": "retired",
    "url": "https://shasha.one"
   },
   {
@@ -6079,8 +6087,9 @@
    ],
    "pack": "1330",
    "proof": "m.powenwu16.com (104.233.139.200): the search POST keyword=我的 got HTTP 500 with a 2-byte body in diag z27 (07:08) and failed in r17/r19, while the same request passed in r15 and r18 (2007 books); r19 probe 06:50: HTTP read timed out from here and from the HK host; plain curl of the same POST at 07:21 took 10.3 s for a 542 KB page (3010 results). The server fails this heavy query under load; same 104.233.x family as #316/#489.",
+   "retiredIn": "r20",
    "round": "r19",
-   "status": "active",
+   "status": "retired",
    "url": "https://m.powenwu16.com"
   },
   {
@@ -6141,8 +6150,9 @@
    ],
    "pack": "1331",
    "proof": "diag z27: the discovery book 狐妖小红娘 (ac.qq.com/ComicView/index/id/518333/cid/1, 607 KB) carries a nonce script that ac.qq.com rotates per request; this time it evaluates a browser probe on document, so the content rule that evals it throws ReferenceError: Can't find variable: document. The search book in the same run passed content (2108 chars, its nonce had no probe). Same as the r12/r14/r17 evidence: the probe is the site's check that it runs in a browser.",
+   "retiredIn": "r20",
    "round": "r19",
-   "status": "active",
+   "status": "retired",
    "url": "https://ac.qq.com"
   },
   {
@@ -6181,6 +6191,261 @@
    "round": "r19",
    "status": "active",
    "url": "通用书源"
+  },
+  {
+   "addedAt": "2026-11-10T12:16:58+08:00",
+   "diag": "/tmp/yuedu-yck1330/run-1107/diag-1331-z32",
+   "index": 367,
+   "kind": "antibot",
+   "legado": "Legado BackstageWebView reads the same WAF probe document; passing it needs the WAF to accept the client, which neither app controls",
+   "name": "起点中文（优+++）",
+   "observed": [
+    "← WebView · 121 B https://www.qidian.com/so/%E5%BC%80%E5%B1%80%E5%9C%A3%E4%BA%BA%E4%BF%AE%E4%B8%BA%EF%BC%8C%E5%A5%B3%E5%B8%9D%E6%88%90%E4%",
+    "← HTTP 200 · 81010 B https://www.qidian.com/rank/yuepiao/page1/ title='小说月票排行榜单_2026年11月起点小说月票排行-起点中文网'",
+    "← HTTP 200 · 165730 B https://www.qidian.com/book/1050460263/ title='神宠供应商(轻泉流响)小说在线阅读-首发起点中文网'",
+    "← HTTP 200 · 78569 B https://www.qidian.com/chapter/1050460263/925357978/ title='第一章：海洋时代 _《神宠供应商》小说在线阅读 - 起点中文网'"
+   ],
+   "pack": "1331",
+   "proof": "search page /so/… answers Tencent Cloud WAF bot probe: WebView read a 121 B page holding only /C2WF946J0/probev3.js; plain curl gets HTTP 202 with /C2WF946J0/probe.js for both /so/ and /rank/ (2026-11-10). Discovery/detail/toc/content pass over HTTP.",
+   "round": "r20",
+   "status": "active",
+   "url": "https://www.qidian.com"
+  },
+  {
+   "addedAt": "2026-11-10T12:17:59+08:00",
+   "diag": "/tmp/yuedu-yck1330/run-1107/diag-1331-z32",
+   "index": 385,
+   "kind": "antibot",
+   "legado": "Legado sends the same GET (searchUrl, no webView) and gets the same captcha page; passing it needs a human",
+   "name": "刺猬猫猫（优++）",
+   "observed": [
+    "← HTTP 200 · 5970 B https://www.ciweimao.com/get-search-book-list/0-0-0-0-0-0/%E5%85%A8%E9%83%A8/%E6%88%91%E7%9A%84/1 title='验证码 - 刺猬猫'",
+    "← HTTP 200 · 87341 B https://www.ciweimao.com/rank-index/no-vip-click-week/1 title='小说点击榜 - 刺猬猫'",
+    "← HTTP 200 · 118141 B https://www.ciweimao.com/book/100509717 title='我的格斗仪怎么有点奇怪？最新章节(蓝夜),我的格斗仪怎么有点奇怪？无弹窗全文阅读-欢乐书客'",
+    "← HTTP 200 · 58962 B https://www.ciweimao.com/chapter-list/100509717/book_detail title='我的格斗仪怎么有点奇怪？最新章节(蓝夜),我的格斗仪怎么有点奇怪？无弹窗全文阅读-刺猬猫'",
+    "← WebView · 85928 B https://www.ciweimao.com/chapter/115439730 title='第一章 “我只是个普通的奥特战士” - 我的格斗仪怎么有点奇怪？ - 刺猬猫'"
+   ],
+   "pack": "1331",
+   "proof": "search /get-search-book-list/… answers a captcha page (<title>验证码 - 刺猬猫</title>, 5970 B) while rank, book, chapter-list pages answer normally (2026-11-10 diag z32)",
+   "round": "r20",
+   "status": "active",
+   "url": "https://www.ciweimao.com/"
+  },
+  {
+   "addedAt": "2026-11-10T12:17:59+08:00",
+   "diag": "/tmp/yuedu-yck1330/run-1107/diag-1331-z32",
+   "index": 167,
+   "kind": "site",
+   "legado": "Legado sends the same API requests from searchUrl/bookInfo init; the host answers 404/500 to any client",
+   "name": "小米阅读（优+）",
+   "observed": [
+    "← HTTP 404 · 3339 B https://reader.browser.miui.com/api/v2/search/word?query=%E6%88%91%E7%9A%84&size=100 title='404 网页未找到'",
+    "← HTTP 500 · 494 B https://reader.browser.miui.com/api/v2/book/39350 title='正在更新中'",
+    "← HTTP 200 · 10617 B https://reader.browser.duokan.com/api/v2/ranking?len=10&page=1&type=1-golden-week"
+   ],
+   "pack": "1331",
+   "proof": "search GET reader.browser.miui.com/api/v2/search/word → HTTP 404 (404 网页未找到); book API /api/v2/book/39350 → HTTP 500 <title>正在更新中</title> (diag z32, 2026-11-10)",
+   "round": "r20",
+   "status": "active",
+   "url": "https://reader.browser.miui.com/v2#"
+  },
+  {
+   "addedAt": "2026-11-10T12:18:00+08:00",
+   "diag": "/tmp/yuedu-yck1330/run-1107/diag-1331-z32",
+   "index": 169,
+   "kind": "site",
+   "legado": "Legado sends the same API requests from searchUrl/bookInfo init; the host answers 404/500 to any client",
+   "name": "小米书城（优+）",
+   "observed": [
+    "← HTTP 404 · 3339 B https://reader.browser.miui.com/api/v2/search/word?query=%E6%88%91%E7%9A%84&size=100 title='404 网页未找到'",
+    "← HTTP 500 · 494 B https://reader.browser.miui.com/api/v2/book/39350 title='正在更新中'",
+    "← HTTP 200 · 10617 B https://reader.browser.duokan.com/api/v2/ranking?len=10&page=1&type=1-golden-week"
+   ],
+   "pack": "1331",
+   "proof": "search GET reader.browser.miui.com/api/v2/search/word → HTTP 404 (404 网页未找到); book API /api/v2/book/39350 → HTTP 500 <title>正在更新中</title> (diag z32, 2026-11-10)",
+   "round": "r20",
+   "status": "active",
+   "url": "https://reader.browser.miui.com"
+  },
+  {
+   "addedAt": "2026-11-10T12:18:00+08:00",
+   "diag": "/tmp/yuedu-yck1330/run-1107/diag-1331-z32",
+   "index": 60,
+   "kind": "site",
+   "legado": "Legado sends the same chapter-list GET and the site rate-limits it by IP the same way",
+   "name": "台湾小说（优+++）",
+   "observed": [
+    "← HTTP 400 · 137 B https://www.twkan.cc/chapter/47a1Qa3gNPft9YHWeusQO9.html",
+    "← HTTP 400 · 137 B https://www.twkan.cc/chapter/56yS5fSz2CHbUM1wyhlg3W.html",
+    "← HTTP 200 · 6867 B https://www.twkan.cc/search/%E6%96%97%E7%A0%B4%E8%8B%8D%E7%A9%B9/1.html title='搜索:斗破苍穹-台灣小說網'",
+    "← HTTP 200 · 12570 B https://www.twkan.cc/book/47a1Qa3gNPft9YHWeusQO9.html title='鬥破蒼穹-台灣小說網-天蠶土豆小說-最新章節無錯字免費閱讀'",
+    "← HTTP 200 · 64760 B https://www.twkan.cc/ title='台灣小說網-無廣告彈窗-2026全免費繁體小說網'",
+    "← HTTP 200 · 14254 B https://www.twkan.cc/book/56yS5fSz2CHbUM1wyhlg3W.html title='系統賦我長生，我熬死了所有人-台灣小說網-一隻榴蓮3號小說-最新章節無錯字免費閱讀'"
+   ],
+   "pack": "1331",
+   "proof": "www.twkan.cc/chapter/… → HTTP 400 {\"code\":\"swq-003\",\"message\":\"书籍目录页访问次数受限制，请60秒后重试。\"} (diag z32 11:51:32); passes alone in diag z31; the limit is per IP across its sister sites",
+   "round": "r20",
+   "status": "active",
+   "url": "https://twkan.cc/"
+  },
+  {
+   "addedAt": "2026-11-10T12:19:20+08:00",
+   "diag": "/tmp/yuedu-yck1330/run-1107/diag-1331-z32",
+   "index": 221,
+   "kind": "site",
+   "legado": "Legado makes the same java.ajax to qyyuapi.com with okhttp callTimeout 60 s and waits the same",
+   "name": "存档书库（优）",
+   "observed": [
+    "← HTTP -1 · 0 B https://raw.githubusercontents.com/xiaohan231/decodeObfuscator/main/User_Activation.json?host=https://archive.org&versio",
+    "← HTTP 400 · 4877 B https://archive.org title='Bad Request'",
+    "← HTTP -1 · 0 B https://qyyuapi.com/User_Activation.json?host=https://archive.org&version=V2.2",
+    "← HTTP -1 · 0 B https://raw.githubusercontents.com/xiaohan231/decodeObfuscator/main/User_Activation.json?host=https://archive.org&versio",
+    "! 已取消 https://qyyuapi.com",
+    "← HTTP 200 · 50518 B https://archive.org/services/search/beta/page_production/?user_query=%E6%88%91%E7%9A%84&hits_per_page=20&page=1&filter_m"
+   ],
+   "pack": "1331",
+   "proof": "the source checks activation at https://qyyuapi.com/User_Activation.json before each stage; qyyuapi.com times out (TCP connect) from Taiwan and Hong Kong (2026-11-10 12:20, curl 20 s both), so each stage first waits the 60 s request timeout and content is cancelled by the stage deadline (diag z32 \"timeout\" event)",
+   "round": "r20",
+   "status": "active",
+   "url": "https://archive.org"
+  },
+  {
+   "addedAt": "2026-11-10T12:21:13+08:00",
+   "diag": "/tmp/yuedu-yck1330/run-1107/diag-1331-z32",
+   "index": 308,
+   "kind": "site",
+   "legado": "Legado sends the same GET with the source header (appId 12, okhttp UA) and gets the same empty list",
+   "name": "漫播听书（优）",
+   "observed": [
+    "← HTTP 200 · 164 B https://api.kilamanbo.com/api/v476/search/page/content/new?type=5&keyWord=%E6%88%91%E7%9A%84&pageNo=1&pageSize=20"
+   ],
+   "pack": "1331",
+   "proof": "search API api.kilamanbo.com/api/v476/search/page/content/new answers code 200 \"操作成功\" with searchStructureRespList:[] for every keyword (我的, 大) to the app (diag z32) and to plain curl (2026-11-10 12:27); it returned books in r17–r19",
+   "round": "r20",
+   "status": "active",
+   "url": "https://api.kilamanbo.com"
+  },
+  {
+   "addedAt": "2026-11-10T12:23:04+08:00",
+   "diag": "/tmp/yuedu-yck1330/run-1107/diag-1329-z32",
+   "index": 22,
+   "kind": "site",
+   "legado": "Legado's SharedJsScope downloads the same jsLib URL over okhttp and fails the same way; Reload is defined only in that library",
+   "name": "🎨漫画屋💞",
+   "observed": [
+    "← HTTP -1 · 0 B https://qyyuapi.com/sy/js/%E6%BC%AB%E7%94%BB%E5%B1%8B/jsLib.js"
+   ],
+   "pack": "1329",
+   "proof": "the source's jsLib is https://qyyuapi.com/sy/js/<name>/jsLib.js; qyyuapi.com times out at TCP connect from Taiwan and Hong Kong (curl 20 s, 2026-11-10 12:20), so the library never loads and search fails ReferenceError: Can't find variable: Reload (diag z32 timeout events)",
+   "round": "r20",
+   "status": "active",
+   "url": "https://www.mhua5.com"
+  },
+  {
+   "addedAt": "2026-11-10T12:23:04+08:00",
+   "diag": "/tmp/yuedu-yck1330/run-1107/diag-1329-z32",
+   "index": 312,
+   "kind": "site",
+   "legado": "Legado sends the same GETs from searchUrl/exploreUrl and gets the same empty lists",
+   "name": "知音漫客",
+   "observed": [
+    "← HTTP 200 · 191 B https://getcomicinfo-globalapi.zymk.cn/app_api/v5/getsortlist_new/?key=%E6%88%91%E7%9A%84&type=&page=1",
+    "← HTTP 200 · 176 B https://getcomicinfo-globalapi.zymk.cn/app_api/v5/getsortlist_new/?type=5&page=1&sort=date"
+   ],
+   "pack": "1329",
+   "proof": "zymk API getsortlist_new answers status 0 \"ok\" with total_num 0 and comic_list [] for search (key=我的) and discovery (type=5) alike, echoing an unrelated key; plain curl gets the same (2026-11-10 12:30)",
+   "round": "r20",
+   "status": "active",
+   "url": "https://getcomicinfo-globalapi.zymk.cn"
+  },
+  {
+   "addedAt": "2026-11-10T12:34:26+08:00",
+   "diag": "/tmp/yuedu-yck1330/run-1107/diag-1329-z33",
+   "index": 16,
+   "kind": "site",
+   "legado": "Legado's SharedJsScope downloads the same jsLib URL over okhttp and fails the same way; Reload is defined only in that library",
+   "name": "🎨漫画台💓",
+   "observed": [
+    "! 無法完成作業。（NSURLErrorDomain錯誤-1001 。） https://qyyuapi.com/sy/js/%E6%BC%AB%E7%94%BB%E5%8F%B0/jsLib.js",
+    "← HTTP -1 · 0 B https://qyyuapi.com/sy/js/%E6%BC%AB%E7%94%BB%E5%8F%B0/jsLib.js"
+   ],
+   "pack": "1329",
+   "proof": "the source's jsLib is https://qyyuapi.com/sy/js/<name>/jsLib.js; qyyuapi.com times out at TCP connect from Taiwan and Hong Kong (curl 20 s, 2026-11-10 12:20), so the library never loads and search fails ReferenceError: Can't find variable: Reload (diag z33 timeout errors)",
+   "round": "r20",
+   "status": "active",
+   "url": "https://m.manhuatai.com"
+  },
+  {
+   "addedAt": "2026-11-10T12:34:26+08:00",
+   "diag": "/tmp/yuedu-yck1330/run-1107/diag-1329-z33",
+   "index": 19,
+   "kind": "site",
+   "legado": "Legado's SharedJsScope downloads the same jsLib URL over okhttp and fails the same way; Reload is defined only in that library",
+   "name": "🎨G站漫画💞",
+   "observed": [
+    "! 無法完成作業。（NSURLErrorDomain錯誤-1001 。） https://qyyuapi.com/sy/js/G%E7%AB%99%E6%BC%AB%E7%94%BB/jsLib.js",
+    "← HTTP -1 · 0 B https://qyyuapi.com/sy/js/G%E7%AB%99%E6%BC%AB%E7%94%BB/jsLib.js"
+   ],
+   "pack": "1329",
+   "proof": "the source's jsLib is https://qyyuapi.com/sy/js/<name>/jsLib.js; qyyuapi.com times out at TCP connect from Taiwan and Hong Kong (curl 20 s, 2026-11-10 12:20), so the library never loads and search fails ReferenceError: Can't find variable: Reload (diag z33 timeout errors)",
+   "round": "r20",
+   "status": "active",
+   "url": "https://godamanga.com"
+  },
+  {
+   "addedAt": "2026-11-10T12:34:26+08:00",
+   "diag": "/tmp/yuedu-yck1330/run-1107/diag-1329-z33",
+   "index": 25,
+   "kind": "site",
+   "legado": "Legado's SharedJsScope downloads the same jsLib URL over okhttp and fails the same way; Reload is defined only in that library",
+   "name": "🎨如漫画💓",
+   "observed": [
+    "! 無法完成作業。（NSURLErrorDomain錯誤-1001 。） https://qyyuapi.com/sy/js/%E5%A6%82%E6%BC%AB%E7%94%BB/jsLib.js",
+    "! 無法完成作業。（NSURLErrorDomain錯誤-1001 。） https://qyyuapi.com/sy/js/%E5%A6%82%E6%BC%AB%E7%94%BB/jsLib.js"
+   ],
+   "pack": "1329",
+   "proof": "the source's jsLib is https://qyyuapi.com/sy/js/<name>/jsLib.js; qyyuapi.com times out at TCP connect from Taiwan and Hong Kong (curl 20 s, 2026-11-10 12:20), so the library never loads and search fails ReferenceError: Can't find variable: Reload (diag z33 timeout errors)",
+   "round": "r20",
+   "status": "active",
+   "url": "https://www.rumanhua.com"
+  },
+  {
+   "addedAt": "2026-11-10T12:34:26+08:00",
+   "diag": "/tmp/yuedu-yck1330/run-1107/diag-1329-z33",
+   "index": 28,
+   "kind": "site",
+   "legado": "Legado's SharedJsScope downloads the same jsLib URL over okhttp and fails the same way; Reload is defined only in that library",
+   "name": "🎨皮皮漫画💞",
+   "observed": [
+    "← HTTP -1 · 0 B https://qyyuapi.com/sy/js/%E7%9A%AE%E7%9A%AE%E6%BC%AB%E7%94%BB/jsLib.js",
+    "! 無法完成作業。（NSURLErrorDomain錯誤-1001 。） https://qyyuapi.com/sy/js/%E7%9A%AE%E7%9A%AE%E6%BC%AB%E7%94%BB/jsLib.js"
+   ],
+   "pack": "1329",
+   "proof": "the source's jsLib is https://qyyuapi.com/sy/js/<name>/jsLib.js; qyyuapi.com times out at TCP connect from Taiwan and Hong Kong (curl 20 s, 2026-11-10 12:20), so the library never loads and search fails ReferenceError: Can't find variable: Reload (diag z33 timeout errors)",
+   "round": "r20",
+   "status": "active",
+   "url": "http://www.pipimanhua.net"
+  },
+  {
+   "addedAt": "2026-11-10T12:42:10+08:00",
+   "diag": "/tmp/yuedu-yck1330/run-1107/diag-1330-z33",
+   "index": 55,
+   "kind": "site",
+   "legado": "Legado sends the same GBK form POST (searchkey=…&submit=) and gets the same database timeout from the site",
+   "name": "🔞肉文屋",
+   "observed": [
+    "← HTTP 200 · 2116 B https://m.rouwenwu14.com/search.php title='搜索-肉文屋'",
+    "← HTTP 200 · 9595 B https://m.rouwenwu14.com/top/allvisit_1.html title='总排行榜-小说排行榜-肉文屋手机阅读'",
+    "← HTTP 200 · 7517 B https://m.rouwenwu14.com/book/62028/ title='赌 （校园，1V1）-木口银-精品-肉文屋手机阅读'",
+    "← HTTP 200 · 7411 B https://m.rouwenwu14.com/book/62028_2/#chapterlist title='赌 （校园，1V1）-木口银-精品-肉文屋手机阅读'",
+    "← HTTP 200 · 7376 B https://m.rouwenwu14.com/book/62028_3/#chapterlist title='赌 （校园，1V1）-木口银-精品-肉文屋手机阅读'",
+    "← HTTP 200 · 7414 B https://m.rouwenwu14.com/book/62028_4/#chapterlist title='赌 （校园，1V1）-木口银-精品-肉文屋手机阅读'"
+   ],
+   "pack": "1330",
+   "proof": "search POST m.rouwenwu14.com/search.php answers a PHP warning \"Query execution was interrupted, maximum statement execution time exceeded\" (2116 B) instead of results; in diag z32 the same POST got no answer within 60 s; discovery, detail, toc, content pass (diag z33)",
+   "round": "r20",
+   "status": "active",
+   "url": "https://m.rouwenwu14.com/#🚀"
   }
  ]
 }

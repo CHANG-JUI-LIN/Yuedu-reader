@@ -477,7 +477,8 @@
     "2026-11-08T16:47:00+08:00 added: Scripts got a list item copied alone (no parent, siblings or page); Legado hands the element inside its page. 轻之文库 chapterName walks parentNode() five times up to the volume's h2. Oracle: scripts/legado-compat/oracle/cases/attached-element-toc.json",
     "2026-11-08T17:37:53+08:00 blocked: Fix implemented and proven; gate blocked by 轻之文库's own slowness only. Code: LegadoScriptTrees (script gets the element inside a copy of its whole page) + Legado tocHtml reuse (fetchTOCPackage detailPage:, WebBook.getChapterListAwait). Unit: LegadoJsoupBridgeCompatibilityTests/YCK1330CompatibilityTests/TOCFromDetailPageTests green (oracle attached-element-toc.json). Controls 7/7 both attempts. diag linovel3 on the same code: 1331#15 and #172 pass every stage (search 15, toc 171 chapters with volume-prefixed titles e.g. '樱花下的初遇：序章——…', discover toc 1618, content), TOC read from the detail page with no toc.network span. #17 fails search with one request cut at 60046 ms = Legado's own callTimeout(60s) (legado-E HttpHelper.kt:62); detail.network on this site measured 3.2-42 s per request. Re-measure in the next full round.",
     "2026-11-10T10:35:22+08:00 taken again: every source passed r19: r19 audited this code with all three 轻之文库 sources passing; both earlier gate failures were the item sources timing out on the site, with unit tests and 7/7 controls passing",
-    "2026-11-10T10:51:38+08:00 blocked after 3 failed verifications"
+    "2026-11-10T10:51:38+08:00 blocked after 3 failed verifications",
+    "2026-11-10T12:54:01+08:00 blocked: diag z34 on HEAD f0045bef: the three linovel searches went out one after another (12:48:09, 12:49:09, 12:50:09); the first two got nothing within 60 s, the third answered after ~50 s and its book page after 47 s, then requests answered in 0.1–1.8 s. In r20 the same sources passed with linovel pages at 4–23 s each. The site is slow, not this fix: Legado callTimeout 60 s fails the same requests. All three sources pass in r19 and r20"
    ],
    "openedIn": "r9",
    "owner": "zhangruilin",
@@ -1486,14 +1487,16 @@
   "empty:1330#143": {
    "attempts": [],
    "class": "empty",
-   "closedAt": "2026-11-10T05:25:45+08:00",
+   "closedAt": "2026-11-10T12:15:16+08:00",
    "id": "empty:1330#143",
    "notes": [
     "2026-11-09T10:02:27+08:00 no longer failing this way in r13",
     "2026-11-10T02:46:51+08:00 reopened: still failing in r17",
     "2026-11-10T04:05:22+08:00 skipped: passes every stage in batch diag z22 on this code (search, discovery, detail, TOC, content); r16 passed too, r15/r17 failed searches — the failure did not reproduce (diag z22 passed on this code)",
     "2026-11-10T05:05:43+08:00 reopened: still failing in r18",
-    "2026-11-10T05:25:45+08:00 evidence added (site)"
+    "2026-11-10T05:25:45+08:00 evidence added (site)",
+    "2026-11-10T11:38:17+08:00 reopened: still failing in r20",
+    "2026-11-10T12:15:16+08:00 skipped: passes on HEAD f0045bef (diag z32); the audit failure was transient (diag z32 passed on this code)"
    ],
    "openedIn": "r12",
    "owner": "zhangruilin",
@@ -1507,7 +1510,7 @@
     }
    ],
    "startedAt": "2026-11-10T03:55:48+08:00",
-   "status": "resolved"
+   "status": "skipped"
   },
   "empty:1330#148": {
    "attempts": [],
@@ -2141,10 +2144,12 @@
   "empty:1331#308": {
    "attempts": [],
    "class": "empty",
-   "closedAt": "2026-11-09T01:16:18+08:00",
+   "closedAt": "2026-11-10T12:21:13+08:00",
    "id": "empty:1331#308",
    "notes": [
-    "2026-11-09T01:16:18+08:00 evidence added (source)"
+    "2026-11-09T01:16:18+08:00 evidence added (source)",
+    "2026-11-10T11:38:17+08:00 reopened: still failing in r20",
+    "2026-11-10T12:21:13+08:00 evidence added (site)"
    ],
    "openedIn": "r8",
    "owner": "zhangruilin",
@@ -2245,10 +2250,30 @@
    ],
    "status": "resolved"
   },
+  "empty:1331#367": {
+   "attempts": [],
+   "class": "empty",
+   "closedAt": "2026-11-10T12:16:58+08:00",
+   "id": "empty:1331#367",
+   "notes": [
+    "2026-11-10T12:16:58+08:00 evidence added (antibot)"
+   ],
+   "openedIn": "r20",
+   "signature": null,
+   "sources": [
+    {
+     "index": 367,
+     "name": "起点中文（优+++）",
+     "pack": "1331",
+     "url": "https://www.qidian.com"
+    }
+   ],
+   "status": "resolved"
+  },
   "empty:1331#370": {
    "attempts": [],
    "class": "empty",
-   "closedAt": "2026-11-10T07:16:45+08:00",
+   "closedAt": "2026-11-10T12:15:16+08:00",
    "id": "empty:1331#370",
    "notes": [
     "2026-11-09T00:39:09+08:00 moved into bridge:regex-unmatched-group",
@@ -2259,7 +2284,9 @@
     "2026-11-10T05:05:43+08:00 reopened: still failing in r18",
     "2026-11-10T05:25:07+08:00 skipped: passes every stage in batch diag z24 on this code; the r18 failure did not reproduce (diag z24 passed on this code)",
     "2026-11-10T06:53:47+08:00 reopened: still failing in r19",
-    "2026-11-10T07:16:45+08:00 skipped: passes every stage in diag z27 on this code; the r19 audit failure was a one-off (diag z27 passed on this code)"
+    "2026-11-10T07:16:45+08:00 skipped: passes every stage in diag z27 on this code; the r19 audit failure was a one-off (diag z27 passed on this code)",
+    "2026-11-10T11:38:17+08:00 reopened: still failing in r20",
+    "2026-11-10T12:15:16+08:00 skipped: passes on HEAD f0045bef (diag z32); the audit failure was transient (diag z32 passed on this code)"
    ],
    "openedIn": "r9",
    "signature": null,
@@ -3114,7 +3141,7 @@
   "http-error:1331#40": {
    "attempts": [],
    "class": "http-error",
-   "closedAt": "2026-11-10T07:16:45+08:00",
+   "closedAt": "2026-11-10T12:15:16+08:00",
    "id": "http-error:1331#40",
    "notes": [
     "2026-11-09T08:57:13+08:00 skipped: passes every stage in diag cms4; the r12 400 was the site rate limit on chapter-list pages (swq-003 \"书籍目录页访问次数受限制，请60秒后重试\") (diag cms4 passed on this code)",
@@ -3131,7 +3158,9 @@
     "2026-11-10T05:05:43+08:00 reopened: still failing in r18",
     "2026-11-10T05:25:07+08:00 skipped: passes every stage in batch diag z24 on this code; the r18 failure did not reproduce (diag z24 passed on this code)",
     "2026-11-10T06:53:47+08:00 reopened: still failing in r19",
-    "2026-11-10T07:16:45+08:00 skipped: passes every stage in diag z27 on this code; the r19 audit failure was a one-off (diag z27 passed on this code)"
+    "2026-11-10T07:16:45+08:00 skipped: passes every stage in diag z27 on this code; the r19 audit failure was a one-off (diag z27 passed on this code)",
+    "2026-11-10T11:38:17+08:00 reopened: still failing in r20",
+    "2026-11-10T12:15:16+08:00 skipped: passes on HEAD f0045bef (diag z32); the audit failure was transient (diag z32 passed on this code)"
    ],
    "openedIn": "r12",
    "owner": "zhangruilin",
@@ -3242,11 +3271,13 @@
   "http-error:1331#60": {
    "attempts": [],
    "class": "http-error",
-   "closedAt": "2026-11-10T10:30:48+08:00",
+   "closedAt": "2026-11-10T12:18:00+08:00",
    "id": "http-error:1331#60",
    "notes": [
     "2026-11-09T09:00:05+08:00 blocked: www.twkan.cc answers its chapter-list pages HTTP 400 {\"code\":\"swq-003\",\"message\":\"书籍目录页访问次数受限制，请60秒后重试。\"} on the first request of each run (diags cms4 08:56, cms60 08:58), a per-IP limit longer than its 60 s. Sister sites 1331#40/41/121 (same CMS) pass when run alone. The source loginCheckJs itself throws 站点HTTP错误 400 on it, as it would in Legado. r13 remeasures.",
-    "2026-11-10T10:30:48+08:00 skipped: twkan.cc passed every stage alone (search, discovery, detail, 10 TOC pages, content). Its audit failure is the site limit swq-003 (书籍目录页访问次数受限制，请60秒后重试): about 10 TOC pages per client per minute, shared with the same-backend sources 1330#80, 1331#40, #41 and #121 checked in the same minute; plain curl got 200 x3 at 10:25 too. (diag z29 passed on this code)"
+    "2026-11-10T10:30:48+08:00 skipped: twkan.cc passed every stage alone (search, discovery, detail, 10 TOC pages, content). Its audit failure is the site limit swq-003 (书籍目录页访问次数受限制，请60秒后重试): about 10 TOC pages per client per minute, shared with the same-backend sources 1330#80, 1331#40, #41 and #121 checked in the same minute; plain curl got 200 x3 at 10:25 too. (diag z29 passed on this code)",
+    "2026-11-10T11:38:17+08:00 reopened: still failing in r20",
+    "2026-11-10T12:18:00+08:00 evidence added (site)"
    ],
    "openedIn": "r12",
    "owner": "zhangruilin",
@@ -3260,7 +3291,7 @@
     }
    ],
    "startedAt": "2026-11-09T09:00:05+08:00",
-   "status": "skipped"
+   "status": "resolved"
   },
   "http-error:1331#83": {
    "attempts": [],
@@ -3629,6 +3660,26 @@
     }
    ],
    "status": "resolved"
+  },
+  "network:1329#100": {
+   "attempts": [],
+   "class": "network",
+   "closedAt": "2026-11-10T12:23:04+08:00",
+   "id": "network:1329#100",
+   "notes": [
+    "2026-11-10T12:23:04+08:00 skipped: passes on HEAD f0045bef (diag z32); the audit failure was transient (diag z32 passed on this code)"
+   ],
+   "openedIn": "r20",
+   "signature": null,
+   "sources": [
+    {
+     "index": 100,
+     "name": "⚡📂趣悦小说",
+     "pack": "1329",
+     "url": "https://vreader.vivo.com.cn/"
+    }
+   ],
+   "status": "skipped"
   },
   "network:1329#101": {
    "attempts": [],
@@ -4029,6 +4080,26 @@
    "startedAt": "2026-11-09T15:45:06+08:00",
    "status": "skipped"
   },
+  "network:1329#16": {
+   "attempts": [],
+   "class": "network",
+   "closedAt": "2026-11-10T12:34:26+08:00",
+   "id": "network:1329#16",
+   "notes": [
+    "2026-11-10T12:34:26+08:00 evidence added (site)"
+   ],
+   "openedIn": "r20",
+   "signature": null,
+   "sources": [
+    {
+     "index": 16,
+     "name": "🎨漫画台💓",
+     "pack": "1329",
+     "url": "https://m.manhuatai.com"
+    }
+   ],
+   "status": "resolved"
+  },
   "network:1329#160": {
    "attempts": [],
    "class": "network",
@@ -4291,6 +4362,26 @@
    ],
    "status": "resolved"
   },
+  "network:1329#19": {
+   "attempts": [],
+   "class": "network",
+   "closedAt": "2026-11-10T12:34:26+08:00",
+   "id": "network:1329#19",
+   "notes": [
+    "2026-11-10T12:34:26+08:00 evidence added (site)"
+   ],
+   "openedIn": "r20",
+   "signature": null,
+   "sources": [
+    {
+     "index": 19,
+     "name": "🎨G站漫画💞",
+     "pack": "1329",
+     "url": "https://godamanga.com"
+    }
+   ],
+   "status": "resolved"
+  },
   "network:1329#192": {
    "attempts": [],
    "class": "network",
@@ -4374,10 +4465,12 @@
   "network:1329#201": {
    "attempts": [],
    "class": "network",
-   "closedAt": "2026-11-10T07:00:48+08:00",
+   "closedAt": "2026-11-10T11:49:19+08:00",
    "id": "network:1329#201",
    "notes": [
-    "2026-11-10T07:00:48+08:00 no longer failing this way in r19"
+    "2026-11-10T07:00:48+08:00 no longer failing this way in r19",
+    "2026-11-10T11:38:17+08:00 reopened: still failing in r20",
+    "2026-11-10T11:49:19+08:00 no longer failing this way in r20"
    ],
    "openedIn": "r19",
    "signature": null,
@@ -4589,6 +4682,26 @@
      "name": "⚡📂梦幻小说",
      "pack": "1329",
      "url": "http://www.pan5.info"
+    }
+   ],
+   "status": "resolved"
+  },
+  "network:1329#22": {
+   "attempts": [],
+   "class": "network",
+   "closedAt": "2026-11-10T12:23:04+08:00",
+   "id": "network:1329#22",
+   "notes": [
+    "2026-11-10T12:23:04+08:00 evidence added (site)"
+   ],
+   "openedIn": "r20",
+   "signature": null,
+   "sources": [
+    {
+     "index": 22,
+     "name": "🎨漫画屋💞",
+     "pack": "1329",
+     "url": "https://www.mhua5.com"
     }
    ],
    "status": "resolved"
@@ -4829,6 +4942,26 @@
      "name": "📂言情小说",
      "pack": "1329",
      "url": "http://m.xianqihaotianmi.org"
+    }
+   ],
+   "status": "resolved"
+  },
+  "network:1329#25": {
+   "attempts": [],
+   "class": "network",
+   "closedAt": "2026-11-10T12:34:26+08:00",
+   "id": "network:1329#25",
+   "notes": [
+    "2026-11-10T12:34:26+08:00 evidence added (site)"
+   ],
+   "openedIn": "r20",
+   "signature": null,
+   "sources": [
+    {
+     "index": 25,
+     "name": "🎨如漫画💓",
+     "pack": "1329",
+     "url": "https://www.rumanhua.com"
     }
    ],
    "status": "resolved"
@@ -5173,6 +5306,26 @@
    ],
    "status": "resolved"
   },
+  "network:1329#28": {
+   "attempts": [],
+   "class": "network",
+   "closedAt": "2026-11-10T12:34:26+08:00",
+   "id": "network:1329#28",
+   "notes": [
+    "2026-11-10T12:34:26+08:00 evidence added (site)"
+   ],
+   "openedIn": "r20",
+   "signature": null,
+   "sources": [
+    {
+     "index": 28,
+     "name": "🎨皮皮漫画💞",
+     "pack": "1329",
+     "url": "http://www.pipimanhua.net"
+    }
+   ],
+   "status": "resolved"
+  },
   "network:1329#280": {
    "attempts": [],
    "class": "network",
@@ -5432,6 +5585,26 @@
     }
    ],
    "status": "resolved"
+  },
+  "network:1329#34": {
+   "attempts": [],
+   "class": "network",
+   "closedAt": "2026-11-10T12:23:04+08:00",
+   "id": "network:1329#34",
+   "notes": [
+    "2026-11-10T12:23:04+08:00 skipped: passes on HEAD f0045bef (diag z32); the audit failure was transient (diag z32 passed on this code)"
+   ],
+   "openedIn": "r20",
+   "signature": null,
+   "sources": [
+    {
+     "index": 34,
+     "name": "📂无极书院",
+     "pack": "1329",
+     "url": "http://m.wjzxchina.com"
+    }
+   ],
+   "status": "skipped"
   },
   "network:1329#36": {
    "attempts": [],
@@ -6042,6 +6215,26 @@
    ],
    "status": "resolved"
   },
+  "network:1330#11": {
+   "attempts": [],
+   "class": "network",
+   "closedAt": "2026-11-10T11:49:19+08:00",
+   "id": "network:1330#11",
+   "notes": [
+    "2026-11-10T11:49:19+08:00 no longer failing this way in r20"
+   ],
+   "openedIn": "r20",
+   "signature": null,
+   "sources": [
+    {
+     "index": 11,
+     "name": "📂精华书阁",
+     "pack": "1330",
+     "url": "https://m.jhsssd.com"
+    }
+   ],
+   "status": "resolved"
+  },
   "network:1330#111": {
    "attempts": [],
    "class": "network",
@@ -6504,6 +6697,26 @@
      "name": "⚡📂画涯爱子",
      "pack": "1330",
      "url": "http://api.huaya.cc"
+    }
+   ],
+   "status": "resolved"
+  },
+  "network:1330#2": {
+   "attempts": [],
+   "class": "network",
+   "closedAt": "2026-11-10T11:49:19+08:00",
+   "id": "network:1330#2",
+   "notes": [
+    "2026-11-10T11:49:19+08:00 no longer failing this way in r20"
+   ],
+   "openedIn": "r20",
+   "signature": null,
+   "sources": [
+    {
+     "index": 2,
+     "name": "📂顶点小说xsbook",
+     "pack": "1330",
+     "url": "http://www.xsbook.org"
     }
    ],
    "status": "resolved"
@@ -7259,6 +7472,26 @@
    ],
    "status": "resolved"
   },
+  "network:1330#337": {
+   "attempts": [],
+   "class": "network",
+   "closedAt": "2026-11-10T11:49:19+08:00",
+   "id": "network:1330#337",
+   "notes": [
+    "2026-11-10T11:49:19+08:00 no longer failing this way in r20"
+   ],
+   "openedIn": "r20",
+   "signature": null,
+   "sources": [
+    {
+     "index": 337,
+     "name": "🏛名著阅读",
+     "pack": "1330",
+     "url": "https://api.520diandu.com"
+    }
+   ],
+   "status": "resolved"
+  },
   "network:1330#338": {
    "attempts": [],
    "class": "network",
@@ -7805,14 +8038,16 @@
   "network:1330#436": {
    "attempts": [],
    "class": "network",
-   "closedAt": "2026-11-10T01:03:15+08:00",
+   "closedAt": "2026-11-10T12:15:16+08:00",
    "id": "network:1330#436",
    "notes": [
     "2026-11-08T21:33:09+08:00 no longer failing this way in r11",
     "2026-11-09T12:16:56+08:00 reopened: still failing in r14",
     "2026-11-09T12:52:55+08:00 skipped: passes in a fresh diag on the current code; the round's failure was a transient network/site fault (diag r14c passed on this code)",
     "2026-11-09T21:05:20+08:00 reopened: still failing in r16",
-    "2026-11-10T01:03:15+08:00 skipped: passes every stage in diag z17; z16's failure was the site (eyushuwu detail timeout / zhizihuan's img.wulicdn.com stylesheet stalling at 6.6 of 75 KB, which held the page's load past 60 s) (diag z17 passed on this code)"
+    "2026-11-10T01:03:15+08:00 skipped: passes every stage in diag z17; z16's failure was the site (eyushuwu detail timeout / zhizihuan's img.wulicdn.com stylesheet stalling at 6.6 of 75 KB, which held the page's load past 60 s) (diag z17 passed on this code)",
+    "2026-11-10T11:38:17+08:00 reopened: still failing in r20",
+    "2026-11-10T12:15:16+08:00 skipped: passes on HEAD f0045bef (diag z32); the audit failure was transient (diag z32 passed on this code)"
    ],
    "openedIn": "r11",
    "signature": null,
@@ -7849,7 +8084,7 @@
   "network:1330#45": {
    "attempts": [],
    "class": "network",
-   "closedAt": "2026-11-10T01:03:15+08:00",
+   "closedAt": "2026-11-10T11:49:19+08:00",
    "id": "network:1330#45",
    "notes": [
     "2026-11-08T18:38:08+08:00 no longer failing this way in r10",
@@ -7860,7 +8095,9 @@
     "2026-11-09T14:49:59+08:00 reopened: still failing in r15",
     "2026-11-09T14:58:14+08:00 no longer failing this way in r15",
     "2026-11-09T21:05:20+08:00 reopened: still failing in r16",
-    "2026-11-10T01:03:15+08:00 skipped: passes every stage in diag z17; z16's failure was the site (eyushuwu detail timeout / zhizihuan's img.wulicdn.com stylesheet stalling at 6.6 of 75 KB, which held the page's load past 60 s) (diag z17 passed on this code)"
+    "2026-11-10T01:03:15+08:00 skipped: passes every stage in diag z17; z16's failure was the site (eyushuwu detail timeout / zhizihuan's img.wulicdn.com stylesheet stalling at 6.6 of 75 KB, which held the page's load past 60 s) (diag z17 passed on this code)",
+    "2026-11-10T11:38:17+08:00 reopened: still failing in r20",
+    "2026-11-10T11:49:19+08:00 no longer failing this way in r20"
    ],
    "openedIn": "r9",
    "signature": null,
@@ -7872,7 +8109,7 @@
      "url": "https://www.eyushuwu.com"
     }
    ],
-   "status": "skipped"
+   "status": "resolved"
   },
   "network:1330#450": {
    "attempts": [],
@@ -7915,6 +8152,26 @@
     }
    ],
    "status": "skipped"
+  },
+  "network:1330#46": {
+   "attempts": [],
+   "class": "network",
+   "closedAt": "2026-11-10T11:49:19+08:00",
+   "id": "network:1330#46",
+   "notes": [
+    "2026-11-10T11:49:19+08:00 no longer failing this way in r20"
+   ],
+   "openedIn": "r20",
+   "signature": null,
+   "sources": [
+    {
+     "index": 46,
+     "name": "🔞998读书网",
+     "pack": "1330",
+     "url": "http://www.998ds.net/"
+    }
+   ],
+   "status": "resolved"
   },
   "network:1330#460": {
    "attempts": [],
@@ -8150,11 +8407,13 @@
   "network:1330#484": {
    "attempts": [],
    "class": "network",
-   "closedAt": "2026-11-10T10:40:29+08:00",
+   "closedAt": "2026-11-10T11:49:19+08:00",
    "id": "network:1330#484",
    "notes": [
     "2026-11-09T11:34:41+08:00 blocked: Never passed in rounds r8–r13. diag r13n: the search POST answered 200 and the webView load then never finished (pageFinished=false; the page has no images, a third-party <script src> on daqfrp50.qlplayerr.cyou is the likely stall); diag r13q: the same POST hung 60 s with no response. Plain curl answers in about 1 s. Telling transport from our client needs probes auto mode denied. Waiting for the maintainer's authorization.",
-    "2026-11-10T10:40:29+08:00 skipped: blocked earlier; passed every stage in r19 and again alone in diag z30 on this code (diag z30 passed on this code)"
+    "2026-11-10T10:40:29+08:00 skipped: blocked earlier; passed every stage in r19 and again alone in diag z30 on this code (diag z30 passed on this code)",
+    "2026-11-10T11:38:17+08:00 reopened: still failing in r20",
+    "2026-11-10T11:49:19+08:00 no longer failing this way in r20"
    ],
    "openedIn": "r8",
    "signature": null,
@@ -8166,7 +8425,7 @@
      "url": "https://www.powenwu1.com/##ʕ ᵔᴥᵔ ʔ喜静"
     }
    ],
-   "status": "skipped"
+   "status": "resolved"
   },
   "network:1330#486": {
    "attempts": [],
@@ -8553,10 +8812,12 @@
   "network:1330#523": {
    "attempts": [],
    "class": "network",
-   "closedAt": "2026-11-09T12:25:00+08:00",
+   "closedAt": "2026-11-10T11:49:19+08:00",
    "id": "network:1330#523",
    "notes": [
-    "2026-11-09T12:25:00+08:00 no longer failing this way in r14"
+    "2026-11-09T12:25:00+08:00 no longer failing this way in r14",
+    "2026-11-10T11:38:17+08:00 reopened: still failing in r20",
+    "2026-11-10T11:49:19+08:00 no longer failing this way in r20"
    ],
    "openedIn": "r14",
    "signature": null,
@@ -8695,14 +8956,16 @@
   "network:1330#54": {
    "attempts": [],
    "class": "network",
-   "closedAt": "2026-11-10T05:21:11+08:00",
+   "closedAt": "2026-11-10T12:42:00+08:00",
    "id": "network:1330#54",
    "notes": [
     "2026-11-08T18:38:08+08:00 no longer failing this way in r10",
     "2026-11-08T21:25:19+08:00 reopened: still failing in r11",
     "2026-11-08T21:33:09+08:00 no longer failing this way in r11",
     "2026-11-10T05:05:43+08:00 reopened: still failing in r18",
-    "2026-11-10T05:21:11+08:00 skipped: passes every stage in batch diag z24 on this code; the r18 failure did not reproduce (diag z24 passed on this code)"
+    "2026-11-10T05:21:11+08:00 skipped: passes every stage in batch diag z24 on this code; the r18 failure did not reproduce (diag z24 passed on this code)",
+    "2026-11-10T11:38:17+08:00 reopened: still failing in r20",
+    "2026-11-10T12:42:00+08:00 skipped: passes on HEAD f0045bef (diag z33); r20/z32 failed on the site (17k volumes not answering within 60 s; dingdian888 \"搜索间隔15秒\" on the first search) at that hour (diag z33 passed on this code)"
    ],
    "openedIn": "r9",
    "signature": null,
@@ -8779,10 +9042,12 @@
   "network:1330#55": {
    "attempts": [],
    "class": "network",
-   "closedAt": "2026-11-10T05:21:11+08:00",
+   "closedAt": "2026-11-10T12:42:10+08:00",
    "id": "network:1330#55",
    "notes": [
-    "2026-11-10T05:21:11+08:00 skipped: passes every stage in batch diag z24 on this code; the r18 failure did not reproduce (diag z24 passed on this code)"
+    "2026-11-10T05:21:11+08:00 skipped: passes every stage in batch diag z24 on this code; the r18 failure did not reproduce (diag z24 passed on this code)",
+    "2026-11-10T11:38:17+08:00 reopened: still failing in r20",
+    "2026-11-10T12:42:10+08:00 evidence added (site)"
    ],
    "openedIn": "r18",
    "signature": null,
@@ -8794,7 +9059,7 @@
      "url": "https://m.rouwenwu14.com/#🚀"
     }
    ],
-   "status": "skipped"
+   "status": "resolved"
   },
   "network:1330#550": {
    "attempts": [],
@@ -8912,6 +9177,26 @@
      "name": "📂️企鹅",
      "pack": "1330",
      "url": "https://h5.reader.qq.com"
+    }
+   ],
+   "status": "resolved"
+  },
+  "network:1330#56": {
+   "attempts": [],
+   "class": "network",
+   "closedAt": "2026-11-10T11:49:19+08:00",
+   "id": "network:1330#56",
+   "notes": [
+    "2026-11-10T11:49:19+08:00 no longer failing this way in r20"
+   ],
+   "openedIn": "r20",
+   "signature": null,
+   "sources": [
+    {
+     "index": 56,
+     "name": "🏷七猫小说 · API",
+     "pack": "1330",
+     "url": "https://api-bc.wtzw.com"
     }
    ],
    "status": "resolved"
@@ -10196,7 +10481,8 @@
    "notes": [
     "2026-11-08T21:33:09+08:00 no longer failing this way in r11",
     "2026-11-09T10:02:27+08:00 reopened: still failing in r13",
-    "2026-11-09T11:44:05+08:00 blocked: Passed in r9, r11 and r12. www.xyyuedu.com is nginx and advertises HTTP/3 (alt-svc h3=\":443\"), as does www.baidu.com, whose search step answers. diag r13r: the next request (http://www.baidu.com/link?url=…) logged a QUIC decrypt failure (sec_framer_open_aesgcm -4308) and 'Connection reset by peer' within 0.3 s, then hung to the 60 s timeout; in r13n the same step answered and only /writer/liucixin/ hung. URLSession follows Alt-Svc to HTTP/3; curl and okhttp do not. Confirming needs task metrics on our own request, which auto mode denied. Waiting for the maintainer's authorization."
+    "2026-11-09T11:44:05+08:00 blocked: Passed in r9, r11 and r12. www.xyyuedu.com is nginx and advertises HTTP/3 (alt-svc h3=\":443\"), as does www.baidu.com, whose search step answers. diag r13r: the next request (http://www.baidu.com/link?url=…) logged a QUIC decrypt failure (sec_framer_open_aesgcm -4308) and 'Connection reset by peer' within 0.3 s, then hung to the 60 s timeout; in r13n the same step answered and only /writer/liucixin/ hung. URLSession follows Alt-Svc to HTTP/3; curl and okhttp do not. Confirming needs task metrics on our own request, which auto mode denied. Waiting for the maintainer's authorization.",
+    "2026-11-10T12:54:01+08:00 blocked: passes in r20 (counted usable). diag z34: its search is a Baidu site search (searchUrl www.baidu.com/s?…q6=xyyuedu.com) and Baidu answered its 百度安全验证 captcha page (1488 B); discovery/detail/toc/content on www.xyyuedu.com pass. Legado sends the same GET to Baidu and gets the same wall when Baidu challenges the IP"
    ],
    "openedIn": "r10",
    "signature": null,
@@ -10913,14 +11199,16 @@
   "network:1331#119": {
    "attempts": [],
    "class": "network",
-   "closedAt": "2026-11-10T07:00:48+08:00",
+   "closedAt": "2026-11-10T11:49:19+08:00",
    "id": "network:1331#119",
    "notes": [
     "2026-11-09T12:52:56+08:00 skipped: passes in a fresh diag on the current code; the round's failure was a transient network/site fault (diag r14d passed on this code)",
     "2026-11-09T21:05:20+08:00 reopened: still failing in r16",
     "2026-11-10T00:46:41+08:00 skipped: passes every stage in batch diag z16 after the chapter-cap removal, WebView request drain and image blocking (diag z16 passed on this code)",
     "2026-11-10T06:53:47+08:00 reopened: still failing in r19",
-    "2026-11-10T07:00:48+08:00 no longer failing this way in r19"
+    "2026-11-10T07:00:48+08:00 no longer failing this way in r19",
+    "2026-11-10T11:38:17+08:00 reopened: still failing in r20",
+    "2026-11-10T11:49:19+08:00 no longer failing this way in r20"
    ],
    "openedIn": "r14",
    "signature": null,
@@ -11307,14 +11595,16 @@
   "network:1331#15": {
    "attempts": [],
    "class": "network",
-   "closedAt": "2026-11-10T01:06:47+08:00",
+   "closedAt": "2026-11-10T11:49:19+08:00",
    "id": "network:1331#15",
    "notes": [
     "2026-11-09T10:08:15+08:00 no longer failing this way in r13",
     "2026-11-09T12:16:56+08:00 reopened: still failing in r14",
     "2026-11-09T12:25:00+08:00 no longer failing this way in r14",
     "2026-11-09T21:05:20+08:00 reopened: still failing in r16",
-    "2026-11-10T01:06:47+08:00 evidence added (site)"
+    "2026-11-10T01:06:47+08:00 evidence added (site)",
+    "2026-11-10T11:38:17+08:00 reopened: still failing in r20",
+    "2026-11-10T11:49:19+08:00 no longer failing this way in r20"
    ],
    "openedIn": "r13",
    "signature": null,
@@ -11471,14 +11761,16 @@
   "network:1331#17": {
    "attempts": [],
    "class": "network",
-   "closedAt": "2026-11-10T01:06:47+08:00",
+   "closedAt": "2026-11-10T11:49:19+08:00",
    "id": "network:1331#17",
    "notes": [
     "2026-11-08T16:47:00+08:00 moved into bridge:method:parentNode",
     "2026-11-09T12:16:56+08:00 reopened: still failing in r14",
     "2026-11-09T12:25:00+08:00 no longer failing this way in r14",
     "2026-11-09T21:05:20+08:00 reopened: still failing in r16",
-    "2026-11-10T01:06:47+08:00 evidence added (site)"
+    "2026-11-10T01:06:47+08:00 evidence added (site)",
+    "2026-11-10T11:38:17+08:00 reopened: still failing in r20",
+    "2026-11-10T11:49:19+08:00 no longer failing this way in r20"
    ],
    "openedIn": "r9",
    "signature": null,
@@ -11521,14 +11813,16 @@
   "network:1331#172": {
    "attempts": [],
    "class": "network",
-   "closedAt": "2026-11-10T01:06:47+08:00",
+   "closedAt": "2026-11-10T11:49:19+08:00",
    "id": "network:1331#172",
    "notes": [
     "2026-11-08T16:47:00+08:00 moved into bridge:method:parentNode",
     "2026-11-08T21:25:19+08:00 reopened: still failing in r11",
     "2026-11-09T08:39:10+08:00 no longer failing this way in r12",
     "2026-11-09T21:05:20+08:00 reopened: still failing in r16",
-    "2026-11-10T01:06:47+08:00 evidence added (site)"
+    "2026-11-10T01:06:47+08:00 evidence added (site)",
+    "2026-11-10T11:38:17+08:00 reopened: still failing in r20",
+    "2026-11-10T11:49:19+08:00 no longer failing this way in r20"
    ],
    "openedIn": "r8",
    "signature": null,
@@ -11722,6 +12016,26 @@
    ],
    "status": "resolved"
   },
+  "network:1331#23": {
+   "attempts": [],
+   "class": "network",
+   "closedAt": "2026-11-10T11:49:19+08:00",
+   "id": "network:1331#23",
+   "notes": [
+    "2026-11-10T11:49:19+08:00 no longer failing this way in r20"
+   ],
+   "openedIn": "r20",
+   "signature": null,
+   "sources": [
+    {
+     "index": 23,
+     "name": "爱听小说（优+++）",
+     "pack": "1331",
+     "url": "APP小说接口"
+    }
+   ],
+   "status": "resolved"
+  },
   "network:1331#233": {
    "attempts": [],
    "class": "network",
@@ -11805,7 +12119,7 @@
   "network:1331#251": {
    "attempts": [],
    "class": "network",
-   "closedAt": "2026-11-10T02:51:33+08:00",
+   "closedAt": "2026-11-10T11:49:19+08:00",
    "id": "network:1331#251",
    "notes": [
     "2026-11-08T18:38:08+08:00 no longer failing this way in r10",
@@ -11814,7 +12128,9 @@
     "2026-11-09T14:49:59+08:00 reopened: still failing in r15",
     "2026-11-09T14:58:14+08:00 no longer failing this way in r15",
     "2026-11-10T02:46:51+08:00 reopened: still failing in r17",
-    "2026-11-10T02:51:33+08:00 no longer failing this way in r17"
+    "2026-11-10T02:51:33+08:00 no longer failing this way in r17",
+    "2026-11-10T11:38:17+08:00 reopened: still failing in r20",
+    "2026-11-10T11:49:19+08:00 no longer failing this way in r20"
    ],
    "openedIn": "r9",
    "signature": null,
@@ -11961,10 +12277,12 @@
   "network:1331#304": {
    "attempts": [],
    "class": "network",
-   "closedAt": "2026-11-09T14:58:14+08:00",
+   "closedAt": "2026-11-10T12:15:16+08:00",
    "id": "network:1331#304",
    "notes": [
-    "2026-11-09T14:58:14+08:00 no longer failing this way in r15"
+    "2026-11-09T14:58:14+08:00 no longer failing this way in r15",
+    "2026-11-10T11:38:17+08:00 reopened: still failing in r20",
+    "2026-11-10T12:15:16+08:00 skipped: passes on HEAD f0045bef (diag z32); the audit failure was transient (diag z32 passed on this code)"
    ],
    "openedIn": "r15",
    "signature": null,
@@ -11976,7 +12294,7 @@
      "url": "https://www.missevan.com"
     }
    ],
-   "status": "resolved"
+   "status": "skipped"
   },
   "network:1331#329": {
    "attempts": [],
@@ -12196,7 +12514,7 @@
   "network:1331#424": {
    "attempts": [],
    "class": "network",
-   "closedAt": "2026-11-10T05:25:08+08:00",
+   "closedAt": "2026-11-10T12:15:16+08:00",
    "id": "network:1331#424",
    "notes": [
     "2026-11-08T16:21:29+08:00 no longer failing this way in r9",
@@ -12209,7 +12527,9 @@
     "2026-11-09T12:16:56+08:00 reopened: still failing in r14",
     "2026-11-09T12:52:57+08:00 skipped: passes in a fresh diag on the current code; the round's failure was a transient network/site fault (diag r14d passed on this code)",
     "2026-11-10T05:05:43+08:00 reopened: still failing in r18",
-    "2026-11-10T05:25:08+08:00 skipped: passes every stage in batch diag z24 on this code; the r18 failure did not reproduce (diag z24 passed on this code)"
+    "2026-11-10T05:25:08+08:00 skipped: passes every stage in batch diag z24 on this code; the r18 failure did not reproduce (diag z24 passed on this code)",
+    "2026-11-10T11:38:17+08:00 reopened: still failing in r20",
+    "2026-11-10T12:15:16+08:00 skipped: passes on HEAD f0045bef (diag z32); the audit failure was transient (diag z32 passed on this code)"
    ],
    "openedIn": "r8",
    "signature": null,
@@ -12226,7 +12546,7 @@
   "network:1331#425": {
    "attempts": [],
    "class": "network",
-   "closedAt": "2026-11-10T05:25:08+08:00",
+   "closedAt": "2026-11-10T12:36:51+08:00",
    "id": "network:1331#425",
    "notes": [
     "2026-11-08T16:21:29+08:00 no longer failing this way in r9",
@@ -12241,7 +12561,9 @@
     "2026-11-09T21:05:20+08:00 reopened: still failing in r16",
     "2026-11-10T00:46:42+08:00 skipped: passes every stage in batch diag z16 after the chapter-cap removal, WebView request drain and image blocking (diag z16 passed on this code)",
     "2026-11-10T05:05:43+08:00 reopened: still failing in r18",
-    "2026-11-10T05:25:08+08:00 skipped: passes every stage in batch diag z24 on this code; the r18 failure did not reproduce (diag z24 passed on this code)"
+    "2026-11-10T05:25:08+08:00 skipped: passes every stage in batch diag z24 on this code; the r18 failure did not reproduce (diag z24 passed on this code)",
+    "2026-11-10T11:38:17+08:00 reopened: still failing in r20",
+    "2026-11-10T12:36:51+08:00 skipped: passes on HEAD f0045bef (diag z33); the r20/z32 timeouts were the site not answering within 60 s at that hour, and plain curl answered in 1–3 s afterwards (diag z33 passed on this code)"
    ],
    "openedIn": "r8",
    "signature": null,
@@ -12541,13 +12863,35 @@
    ],
    "status": "resolved"
   },
+  "network:1331#79": {
+   "attempts": [],
+   "class": "network",
+   "closedAt": "2026-11-10T11:49:19+08:00",
+   "id": "network:1331#79",
+   "notes": [
+    "2026-11-10T11:49:19+08:00 no longer failing this way in r20"
+   ],
+   "openedIn": "r20",
+   "signature": null,
+   "sources": [
+    {
+     "index": 79,
+     "name": "茶马小说（优++）",
+     "pack": "1331",
+     "url": "https://www.chamabooks.net"
+    }
+   ],
+   "status": "resolved"
+  },
   "network:1331#85": {
    "attempts": [],
    "class": "network",
-   "closedAt": "2026-11-09T10:08:15+08:00",
+   "closedAt": "2026-11-10T12:36:51+08:00",
    "id": "network:1331#85",
    "notes": [
-    "2026-11-09T10:08:15+08:00 no longer failing this way in r13"
+    "2026-11-09T10:08:15+08:00 no longer failing this way in r13",
+    "2026-11-10T11:38:17+08:00 reopened: still failing in r20",
+    "2026-11-10T12:36:51+08:00 skipped: passes on HEAD f0045bef (diag z33); the r20/z32 timeouts were the site not answering within 60 s at that hour, and plain curl answered in 1–3 s afterwards (diag z33 passed on this code)"
    ],
    "openedIn": "r13",
    "signature": null,
@@ -12557,6 +12901,26 @@
      "name": "五八书阁（优++）",
      "pack": "1331",
      "url": "http://m.5859ycdh.com"
+    }
+   ],
+   "status": "skipped"
+  },
+  "network:1331#88": {
+   "attempts": [],
+   "class": "network",
+   "closedAt": "2026-11-10T11:49:19+08:00",
+   "id": "network:1331#88",
+   "notes": [
+    "2026-11-10T11:49:19+08:00 no longer failing this way in r20"
+   ],
+   "openedIn": "r20",
+   "signature": null,
+   "sources": [
+    {
+     "index": 88,
+     "name": "全本小说（优++）",
+     "pack": "1331",
+     "url": "http://119.45.176.116:5006"
     }
    ],
    "status": "resolved"
@@ -13025,6 +13389,26 @@
    ],
    "status": "resolved"
   },
+  "regression:1329#312": {
+   "attempts": [],
+   "class": "regression",
+   "closedAt": "2026-11-10T12:23:04+08:00",
+   "id": "regression:1329#312",
+   "notes": [
+    "2026-11-10T12:23:04+08:00 evidence added (site)"
+   ],
+   "openedIn": "r20",
+   "signature": null,
+   "sources": [
+    {
+     "index": 312,
+     "name": "知音漫客",
+     "pack": "1329",
+     "url": "https://getcomicinfo-globalapi.zymk.cn"
+    }
+   ],
+   "status": "resolved"
+  },
   "regression:1329#35": {
    "attempts": [],
    "class": "regression",
@@ -13095,9 +13479,12 @@
    "notes": [
     "2026-11-09T22:50:38+08:00 blocked: Legado fails the same way on this round's book: the discovery list put first 叶辰孙怡夏若雪 (12979 chapters), whose TOC is ~280 pages chained by nextTocUrl one at a time; the site answers each in ~0.7-1.0 s (plain curl 2026-11-09), so the TOC alone outlasts the 180 s CheckSource limit that Legado shares (CheckSource.timeout; BookChapterList walks a single nextTocUrl sequentially). Our run reached index_280 before the limit. Search-path TOC (370 chapters), detail and content pass. Reopens on its own once the discovery list leads with a shorter book.",
     "2026-11-09T22:54:06+08:00 blocked: Checked against legado-E: CheckSourceService.doCheckSource also checks the discovery list's first book (CheckSourceService.kt:216-221, checkBook(exploreBooks.first().toBook(), source, false) → getChapterListAwait) inside withTimeout(CheckSource.timeout) (:139, CheckSource.kt:17 default 180000 ms), so it walks the same ~280-page TOC and times out the same way.",
-    "2026-11-10T10:40:29+08:00 skipped: blocked earlier; passed every stage in r19 and again alone in diag z30 on this code (diag z30 passed on this code)"
+    "2026-11-10T10:40:29+08:00 skipped: blocked earlier; passed every stage in r19 and again alone in diag z30 on this code (diag z30 passed on this code)",
+    "2026-11-10T11:49:19+08:00 reopened: still failing in r20",
+    "2026-11-10T12:45:23+08:00 blocked: diag z32 and z33 on HEAD f0045bef: search path passes every stage (toc 3557 chapters, 148 pages, 95 s); discovery leads with 混沌天帝诀 (8160 chapters), whose TOC is ~340 single nextTocUrl pages fetched one after another (0.2–1.3 s each, server-bound: toc.rules 8 ms, curl TTFB 0.65 s), past the 180 s whole-source budget. legado-E CheckSourceService does the same inside withTimeout(CheckSource.timeout = 180000) (kt:139, :221 checkBook(exploreBooks.first()), :247 getChapterListAwait), and BookChapterList pages a single next URL sequentially. Passes when discovery leads with a shorter book (r17–r19, z30)"
    ],
    "openedIn": "r16",
+   "owner": "zhangruilin",
    "signature": null,
    "sources": [
     {
@@ -13107,7 +13494,8 @@
      "url": "https://m.jhsssd.com"
     }
    ],
-   "status": "skipped"
+   "startedAt": "2026-11-10T12:45:10+08:00",
+   "status": "blocked"
   },
   "regression:1330#130": {
    "attempts": [
@@ -13572,10 +13960,12 @@
   "regression:1330#399": {
    "attempts": [],
    "class": "regression",
-   "closedAt": "2026-11-09T22:41:10+08:00",
+   "closedAt": "2026-11-10T12:15:15+08:00",
    "id": "regression:1330#399",
    "notes": [
-    "2026-11-09T22:41:10+08:00 skipped: diag reg16x on this code passes every stage: the r16 failure was the network or the site that round (diag reg16x passed on this code)"
+    "2026-11-09T22:41:10+08:00 skipped: diag reg16x on this code passes every stage: the r16 failure was the network or the site that round (diag reg16x passed on this code)",
+    "2026-11-10T11:38:17+08:00 reopened: still failing in r20",
+    "2026-11-10T12:15:15+08:00 skipped: passes on HEAD f0045bef (diag z32); the audit failure was transient (diag z32 passed on this code)"
    ],
    "openedIn": "r16",
    "signature": null,
@@ -13917,6 +14307,26 @@
    ],
    "status": "resolved"
   },
+  "regression:1330#52": {
+   "attempts": [],
+   "class": "regression",
+   "closedAt": "2026-11-10T12:15:15+08:00",
+   "id": "regression:1330#52",
+   "notes": [
+    "2026-11-10T12:15:15+08:00 skipped: passes on HEAD f0045bef (diag z32); the audit failure was transient (diag z32 passed on this code)"
+   ],
+   "openedIn": "r20",
+   "signature": null,
+   "sources": [
+    {
+     "index": 52,
+     "name": "📂群小说",
+     "pack": "1330",
+     "url": "https://www.qunxs.com"
+    }
+   ],
+   "status": "skipped"
+  },
   "regression:1330#54": {
    "attempts": [
     {
@@ -14191,10 +14601,12 @@
   "regression:1330#691": {
    "attempts": [],
    "class": "regression",
-   "closedAt": "2026-11-09T22:41:11+08:00",
+   "closedAt": "2026-11-10T12:42:00+08:00",
    "id": "regression:1330#691",
    "notes": [
-    "2026-11-09T22:41:11+08:00 skipped: diag reg16x on this code passes every stage: the r16 failure was the network or the site that round (diag reg16x passed on this code)"
+    "2026-11-09T22:41:11+08:00 skipped: diag reg16x on this code passes every stage: the r16 failure was the network or the site that round (diag reg16x passed on this code)",
+    "2026-11-10T11:38:17+08:00 reopened: still failing in r20",
+    "2026-11-10T12:42:00+08:00 skipped: passes on HEAD f0045bef (diag z33); r20/z32 failed on the site (17k volumes not answering within 60 s; dingdian888 \"搜索间隔15秒\" on the first search) at that hour (diag z33 passed on this code)"
    ],
    "openedIn": "r16",
    "signature": null,
@@ -14233,10 +14645,12 @@
   "regression:1330#701": {
    "attempts": [],
    "class": "regression",
-   "closedAt": "2026-11-10T05:21:12+08:00",
+   "closedAt": "2026-11-10T12:15:15+08:00",
    "id": "regression:1330#701",
    "notes": [
-    "2026-11-10T05:21:12+08:00 skipped: passes every stage in batch diag z24 on this code; the r18 failure did not reproduce (diag z24 passed on this code)"
+    "2026-11-10T05:21:12+08:00 skipped: passes every stage in batch diag z24 on this code; the r18 failure did not reproduce (diag z24 passed on this code)",
+    "2026-11-10T11:38:17+08:00 reopened: still failing in r20",
+    "2026-11-10T12:15:15+08:00 skipped: passes on HEAD f0045bef (diag z32); the audit failure was transient (diag z32 passed on this code)"
    ],
    "openedIn": "r18",
    "signature": null,
@@ -14474,6 +14888,26 @@
    "startedAt": "2026-11-09T15:32:03+08:00",
    "status": "skipped"
   },
+  "regression:1330#91": {
+   "attempts": [],
+   "class": "regression",
+   "closedAt": "2026-11-10T12:15:16+08:00",
+   "id": "regression:1330#91",
+   "notes": [
+    "2026-11-10T12:15:16+08:00 skipped: passes on HEAD f0045bef (diag z32); the audit failure was transient (diag z32 passed on this code)"
+   ],
+   "openedIn": "r20",
+   "signature": null,
+   "sources": [
+    {
+     "index": 91,
+     "name": "🎨🔞老司机",
+     "pack": "1330",
+     "url": "https://www.laosijix.com"
+    }
+   ],
+   "status": "skipped"
+  },
   "regression:1330#95": {
    "attempts": [],
    "class": "regression",
@@ -14517,14 +14951,16 @@
   "regression:1331#167": {
    "attempts": [],
    "class": "regression",
-   "closedAt": "2026-11-10T07:16:45+08:00",
+   "closedAt": "2026-11-10T12:17:59+08:00",
    "id": "regression:1331#167",
    "notes": [
     "2026-11-09T10:13:59+08:00 skipped: Passes in diag r13a on this code; r13's search failure (HTTP 404 / empty) was the site at the time — 小米's search API answered 404 to a plain curl once and 200 after. (diag r13a passed on this code)",
     "2026-11-09T21:05:20+08:00 reopened: still failing in r16",
     "2026-11-09T22:46:18+08:00 evidence added (site)",
     "2026-11-10T06:53:47+08:00 reopened: still failing in r19",
-    "2026-11-10T07:16:45+08:00 skipped: passes every stage in diag z27 on this code; the r19 audit failure was a one-off (diag z27 passed on this code)"
+    "2026-11-10T07:16:45+08:00 skipped: passes every stage in diag z27 on this code; the r19 audit failure was a one-off (diag z27 passed on this code)",
+    "2026-11-10T11:38:17+08:00 reopened: still failing in r20",
+    "2026-11-10T12:17:59+08:00 evidence added (site)"
    ],
    "openedIn": "r13",
    "signature": null,
@@ -14536,19 +14972,21 @@
      "url": "https://reader.browser.miui.com/v2#"
     }
    ],
-   "status": "skipped"
+   "status": "resolved"
   },
   "regression:1331#169": {
    "attempts": [],
    "class": "regression",
-   "closedAt": "2026-11-10T07:16:45+08:00",
+   "closedAt": "2026-11-10T12:18:00+08:00",
    "id": "regression:1331#169",
    "notes": [
     "2026-11-09T10:13:59+08:00 skipped: Passes in diag r13a on this code; r13's search failure (HTTP 404 / empty) was the site at the time — 小米's search API answered 404 to a plain curl once and 200 after. (diag r13a passed on this code)",
     "2026-11-09T21:05:20+08:00 reopened: still failing in r16",
     "2026-11-09T22:46:18+08:00 evidence added (site)",
     "2026-11-10T06:53:47+08:00 reopened: still failing in r19",
-    "2026-11-10T07:16:45+08:00 skipped: passes every stage in diag z27 on this code; the r19 audit failure was a one-off (diag z27 passed on this code)"
+    "2026-11-10T07:16:45+08:00 skipped: passes every stage in diag z27 on this code; the r19 audit failure was a one-off (diag z27 passed on this code)",
+    "2026-11-10T11:38:17+08:00 reopened: still failing in r20",
+    "2026-11-10T12:18:00+08:00 evidence added (site)"
    ],
    "openedIn": "r13",
    "signature": null,
@@ -14560,7 +14998,7 @@
      "url": "https://reader.browser.miui.com"
     }
    ],
-   "status": "skipped"
+   "status": "resolved"
   },
   "regression:1331#173": {
    "attempts": [],
@@ -14605,10 +15043,12 @@
   "regression:1331#221": {
    "attempts": [],
    "class": "regression",
-   "closedAt": "2026-11-09T22:41:11+08:00",
+   "closedAt": "2026-11-10T12:19:20+08:00",
    "id": "regression:1331#221",
    "notes": [
-    "2026-11-09T22:41:11+08:00 skipped: diag reg16x on this code passes every stage: the r16 failure was the network or the site that round (diag reg16x passed on this code)"
+    "2026-11-09T22:41:11+08:00 skipped: diag reg16x on this code passes every stage: the r16 failure was the network or the site that round (diag reg16x passed on this code)",
+    "2026-11-10T11:38:17+08:00 reopened: still failing in r20",
+    "2026-11-10T12:19:20+08:00 evidence added (site)"
    ],
    "openedIn": "r16",
    "signature": null,
@@ -14620,7 +15060,7 @@
      "url": "https://archive.org"
     }
    ],
-   "status": "skipped"
+   "status": "resolved"
   },
   "regression:1331#235": {
    "attempts": [],
@@ -14726,6 +15166,26 @@
    ],
    "status": "skipped"
   },
+  "regression:1331#385": {
+   "attempts": [],
+   "class": "regression",
+   "closedAt": "2026-11-10T12:17:59+08:00",
+   "id": "regression:1331#385",
+   "notes": [
+    "2026-11-10T12:17:59+08:00 evidence added (antibot)"
+   ],
+   "openedIn": "r20",
+   "signature": null,
+   "sources": [
+    {
+     "index": 385,
+     "name": "刺猬猫猫（优++）",
+     "pack": "1331",
+     "url": "https://www.ciweimao.com/"
+    }
+   ],
+   "status": "resolved"
+  },
   "regression:1331#397": {
    "attempts": [],
    "class": "regression",
@@ -14786,6 +15246,26 @@
      "name": "优谁小说（优+）",
      "pack": "1331",
      "url": "http://xiaoshuo.uc.cn/"
+    }
+   ],
+   "status": "skipped"
+  },
+  "regression:1331#417": {
+   "attempts": [],
+   "class": "regression",
+   "closedAt": "2026-11-10T12:15:16+08:00",
+   "id": "regression:1331#417",
+   "notes": [
+    "2026-11-10T12:15:16+08:00 skipped: passes on HEAD f0045bef (diag z32); the audit failure was transient (diag z32 passed on this code)"
+   ],
+   "openedIn": "r20",
+   "signature": null,
+   "sources": [
+    {
+     "index": 417,
+     "name": "百度小说（优+）",
+     "pack": "1331",
+     "url": "https://dushu.baidu.com/"
     }
    ],
    "status": "skipped"
@@ -15889,5 +16369,5 @@
    "status": "resolved"
   }
  },
- "round": "r19"
+ "round": "r20"
 }

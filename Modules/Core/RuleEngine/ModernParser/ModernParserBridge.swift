@@ -223,7 +223,12 @@ class ModernParserBridge {
         // on. `WebFetcher`'s capture points miss everything here — rule fetches and
         // `java.ajax` go through `URLSession` directly, not through `WebFetcher`.
         if timedOut {
-            WebCrawlerDebugger.logInfo("timeout", url: url)
+            // No answer within the request timeout is a failed request, shown as any other
+            // failure is: a source whose script host is down (qyyuapi.com, YCK 1329) otherwise
+            // left only an info line, with nothing in the capture saying a request failed.
+            WebCrawlerDebugger.logError(
+                URLError(.timedOut, userInfo: [NSLocalizedDescriptionKey: localized("連線逾時")]), url: url
+            )
         } else {
             WebCrawlerDebugger.logResponse(
                 url: url ?? "-", statusCode: statusCode ?? -1, htmlBody: body ?? ""
