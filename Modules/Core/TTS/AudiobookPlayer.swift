@@ -1641,8 +1641,8 @@ final class AudiobookPlayer: NSObject, ObservableObject {
         c.togglePlayPauseCommand.isEnabled = true
         c.nextTrackCommand.isEnabled = true
         c.previousTrackCommand.isEnabled = true
-        c.skipForwardCommand.isEnabled = true
         c.skipBackwardCommand.isEnabled = true
+        applyForwardButton(AudiobookForwardButton.saved())
         c.skipForwardCommand.preferredIntervals = [15]
         c.skipBackwardCommand.preferredIntervals = [15]
         c.changePlaybackPositionCommand.isEnabled = true
@@ -1687,6 +1687,14 @@ final class AudiobookPlayer: NSObject, ObservableObject {
             Task { @MainActor in self?.seek(to: positionTime) }
             return .success
         }
+    }
+
+    /// The lock screen's right-hand button matches the player's (feedback #170). With 快轉
+    /// 15 秒 it is the skip; with 下一章 the skip goes, and the system shows next track in its
+    /// place — `nextTrackCommand` stays on either way, so a headphone's double press still
+    /// moves on a chapter.
+    func applyForwardButton(_ button: AudiobookForwardButton) {
+        MPRemoteCommandCenter.shared().skipForwardCommand.isEnabled = button == .skipForward15
     }
 
     private func updateNowPlaying() {

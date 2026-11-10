@@ -40,6 +40,8 @@ struct AudiobookReaderView: View {
     @Environment(\.verticalSizeClass) private var verticalSizeClass
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @StateObject private var player = AudiobookPlayer.shared
+    /// What the right-hand transport button does (feedback #170); 快轉 15 秒 unless changed.
+    @AppStorage(AudiobookForwardButton.storageKey) private var forwardButton: AudiobookForwardButton = .skipForward15
 
     @State private var palette = AudiobookPlayerPalette(cover: nil)
     /// How far the page has been drawn down by its grabber or cover.
@@ -463,6 +465,14 @@ struct AudiobookReaderView: View {
                 Label(localized("播放模式"), systemImage: player.playMode.systemImage)
             }
             .pickerStyle(.menu)
+            Picker(selection: Binding(get: { forwardButton }, set: { perform(.forwardButton($0)) })) {
+                ForEach(AudiobookForwardButton.allCases, id: \.self) { button in
+                    Label(button.localizedTitle, systemImage: button.systemImage).tag(button)
+                }
+            } label: {
+                Label(localized("快轉按鈕"), systemImage: forwardButton.systemImage)
+            }
+            .pickerStyle(.menu)
             Button { perform(.skipCredits) } label: {
                 Label(localized("跳過片頭片尾"), systemImage: skipsCredits ? "forward.fill" : "forward")
             }
@@ -506,6 +516,7 @@ struct AudiobookReaderView: View {
         if player.hasPreviousChapter { routes.append(.previousChapter) }
         if player.hasNextChapter { routes.append(.nextChapter) }
         routes += AudiobookPlayMode.allCases.map(AudiobookMoreRoute.playMode)
+        routes += AudiobookForwardButton.allCases.map(AudiobookMoreRoute.forwardButton)
         routes.append(.skipCredits)
         routes += sourceMoreRoutes
         if !isTransient { routes.append(.removeFromShelf) }
@@ -515,6 +526,13 @@ struct AudiobookReaderView: View {
                     route: route,
                     title: String(format: localized("播放模式：%@"), mode.localizedTitle),
                     systemImage: mode == player.playMode ? "checkmark" : mode.systemImage
+                )
+            }
+            if case .forwardButton(let button) = route {
+                return DismissalSequencedAction(
+                    route: route,
+                    title: String(format: localized("快轉按鈕：%@"), button.localizedTitle),
+                    systemImage: button == forwardButton ? "checkmark" : button.systemImage
                 )
             }
             return DismissalSequencedAction(
@@ -552,6 +570,10 @@ struct AudiobookReaderView: View {
             player.setPlayMode(mode)
             // The menu has closed; VoiceOver hears the mode it chose.
             AccessibilityNotification.Announcement(mode.localizedTitle).post()
+        case .forwardButton(let button):
+            forwardButton = button
+            player.applyForwardButton(button)
+            AccessibilityNotification.Announcement(button.localizedTitle).post()
         case .skipCredits:
             showSkipCredits = true
         case .customButton:
@@ -729,13 +751,28 @@ struct AudiobookReaderView: View {
             }
             .disabled(player.isLoading)
             .accessibilityLabel(localized(player.isPlaying ? "暫停" : "播放"))
-            Button { skip(by: 15) } label: {
-                transportIcon("goforward.15", size: DSLayout.audiobookPlayerSkipIconSize)
-            }
-            .accessibilityLabel(localized("快轉 15 秒"))
+            forwardTransportButton
             sleepButton
         }
         .buttonStyle(.plain)
+    }
+
+    /// 快轉 15 秒, or 下一章 when that is the choice in •••.
+    @ViewBuilder
+    private var forwardTransportButton: some View {
+        switch forwardButton {
+        case .skipForward15:
+            Button { skip(by: 15) } label: {
+                transportIcon(forwardButton.systemImage, size: DSLayout.audiobookPlayerSkipIconSize)
+            }
+            .accessibilityLabel(forwardButton.localizedTitle)
+        case .nextChapter:
+            Button { player.nextChapter() } label: {
+                transportIcon(forwardButton.systemImage, size: DSLayout.audiobookPlayerSkipIconSize)
+            }
+            .disabled(!player.hasNextChapter)
+            .accessibilityLabel(forwardButton.localizedTitle)
+        }
     }
 
     private func transportIcon(_ systemName: String, size: CGFloat) -> some View {
@@ -968,6 +1005,7 @@ enum AudiobookMoreRoute: Hashable {
     case previousChapter
     case nextChapter
     case playMode(AudiobookPlayMode)
+    case forwardButton(AudiobookForwardButton)
     case skipCredits
     case customButton
     case copyPlayURL
@@ -983,6 +1021,7 @@ enum AudiobookMoreRoute: Hashable {
         case .previousChapter: localized("上一章")
         case .nextChapter: localized("下一章")
         case .playMode(let mode): mode.localizedTitle
+        case .forwardButton(let button): button.localizedTitle
         case .skipCredits: localized("跳過片頭片尾")
         case .customButton: localized("自訂按鈕")
         case .copyPlayURL: localized("複製播放網址")
@@ -1000,6 +1039,7 @@ enum AudiobookMoreRoute: Hashable {
         case .previousChapter: "backward.end"
         case .nextChapter: "forward.end"
         case .playMode(let mode): mode.systemImage
+        case .forwardButton(let button): button.systemImage
         case .skipCredits: "forward"
         case .customButton: "hand.tap"
         case .copyPlayURL: "link"
@@ -1197,6 +1237,14 @@ extension AudiobookPlayMode {
 
 #if DEBUG
 #Preview {
+    AudiobookReaderView(bookId: UUID())
+        .environmentObject(BookStore())
+}
+
+#Preview("快轉按鈕：下一章") {
+    let _ = UserDefaults.standard.set(
+        AudiobookForwardButton.nextChapter.rawValue, forKey: AudiobookForwardButton.storageKey
+    )
     AudiobookReaderView(bookId: UUID())
         .environmentObject(BookStore())
 }

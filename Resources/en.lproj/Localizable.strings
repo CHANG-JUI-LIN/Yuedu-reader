@@ -4356,6 +4356,8 @@
 "倒退 15 秒" = "Skip Back 15 Seconds";
 "快轉 15 秒" = "Skip Forward 15 Seconds";
 "播放模式：%@" = "Playback Mode: %@";
+"快轉按鈕" = "Forward Button";
+"快轉按鈕：%@" = "Forward Button: %@";
 "收合播放頁" = "Minimize Player";
 "當目前章節結束時" = "When Current Chapter Ends";
 "睡眠定時：關閉" = "Off";
