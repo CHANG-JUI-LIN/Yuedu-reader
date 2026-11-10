@@ -43,7 +43,11 @@ actor PerHostSemaphore {
         return try await body()
     }
 
-    private func acquire(host: String, maxConcurrent: Int) async throws {
+    /// Takes one of `host`'s slots, for a caller that cannot put its work in `withLock`'s
+    /// `@Sendable` body (`ChapterFetchManager`'s actor-isolated fetch task gates read-ahead with
+    /// it). Every successful `acquire` must be paired with exactly one `release`; a throwing
+    /// `acquire` (cancelled while queued) took nothing.
+    func acquire(host: String, maxConcurrent: Int) async throws {
         try Task.checkCancellation()
         let current = available[host] ?? maxConcurrent
         if current > 0 {
@@ -72,7 +76,7 @@ actor PerHostSemaphore {
         }
     }
 
-    private func release(host: String) {
+    func release(host: String) {
         if let next = waiters[host]?.first {
             waiters[host]?.removeFirst()
             if waiters[host]?.isEmpty == true {

@@ -494,7 +494,21 @@ actor ChapterFetchManager {
         )
 
         let moduleReader = moduleReader
+        let readAheadGate = Self.readAheadGateKey(bookId: bookId, priority: priority)
         let task = Task(priority: priority.taskPriority) { () throws -> ChapterPackage in
+            // Read-ahead takes a slot of the book's gate before touching the network; the
+            // chapter on screen, a jump and a download never wait here.
+            if let readAheadGate {
+                let width = await MainActor.run {
+                    NetworkSearchSettings.clampedDownloadConcurrency(GlobalSettings.shared.searchConcurrency)
+                }
+                try await PerHostSemaphore.shared.acquire(host: readAheadGate, maxConcurrent: width)
+            }
+            defer {
+                if let readAheadGate {
+                    Task { await PerHostSemaphore.shared.release(host: readAheadGate) }
+                }
+            }
             // A module's book: online with no source, so before the browser import's branch.
             if let reference = book.module {
                 let built = try await moduleReader.chapterPackage(bookId: book.id, ref: ref, reference: reference)
@@ -677,6 +691,24 @@ actor ChapterFetchManager {
                 bookId: bookId, chapterIndex: chapterIndex, sourceURL: ref.url, tocTitle: ref.title, store: store, startedAt: startedAt,
                 reason: "error", pipelineKind: book.isOnline ? "online" : "txt")
             throw error
+        }
+    }
+
+    /// The `PerHostSemaphore` key that paces one book's read-ahead, or `nil` for a fetch that
+    /// must not wait behind it.
+    ///
+    /// 網路設定 →「預讀章節數」 can ask for ten chapters ahead plus two behind (FB-125), and every one
+    /// of them is a request to the one host the book's source lives on. `.prefetch` and
+    /// `.background` fetches therefore run at most `clampedDownloadConcurrency(並發數)` at a
+    /// time per book — the ceiling the offline download and the TOC page fan-out already use for
+    /// "many requests to one site". The rest queue behind them (FIFO, so roughly in the
+    /// window's nearest-first order), and a `.jump` to a queued chapter cancels its wait.
+    /// `.immediate`, `.jump` and `.download` are not gated: the chapter on screen never waits
+    /// for read-ahead, and downloads have their own slots in `OfflineDownloadManager`.
+    static func readAheadGateKey(bookId: UUID, priority: ChapterFetchPriority) -> String? {
+        switch priority {
+        case .prefetch, .background: return "chapterReadAhead#\(bookId.uuidString)"
+        case .immediate, .jump, .download: return nil
         }
     }
 
@@ -1155,16 +1187,20 @@ final class OnlineBookCoordinator: Sendable {
         }
     }
 
-    /// The chapters worth having before the reader reaches them, nearest first: N+1, N+2 at
-    /// `.prefetch` (readers mostly go forward), N-1, N-2 at `.background` (back-navigation).
+    /// The chapters worth having before the reader reaches them, nearest first: N+1 … N+`ahead`
+    /// at `.prefetch` (readers mostly go forward; `ahead` is 網路設定 →「預讀章節數」, FB-125),
+    /// N-1, N-2 at `.background` (back-navigation).
     /// The reader's own prefetch (`ReaderViewModel.prefetchAround`) and this coordinator's
-    /// share it, so the two can never disagree about what "around" means.
+    /// share it, so the two can never disagree about what "around" means. How many of these
+    /// run at once is `ChapterFetchManager`'s read-ahead gate, not the window's length.
     static func adjacentPrefetchWindow(
         center: Int,
-        chapterCount: Int
+        chapterCount: Int,
+        ahead: Int
     ) -> [(index: Int, priority: ChapterFetchPriority)] {
         let valid = 0..<chapterCount
-        let forward = [center + 1, center + 2].filter(valid.contains)
+        let ahead = NetworkSearchSettings.clampedChapterPrefetchCount(ahead)
+        let forward = (1...ahead).map { center + $0 }.filter(valid.contains)
             .map { (index: $0, priority: ChapterFetchPriority.prefetch) }
         let backward = [center - 1, center - 2].filter(valid.contains)
             .map { (index: $0, priority: ChapterFetchPriority.background) }
@@ -1173,7 +1209,8 @@ final class OnlineBookCoordinator: Sendable {
 
     func prefetchAround(book: ReadingBook, center: Int, store: BookStore?) async {
         guard let refs = book.onlineChapters, !refs.isEmpty else { return }
-        let window = Self.adjacentPrefetchWindow(center: center, chapterCount: refs.count)
+        let ahead = await MainActor.run { GlobalSettings.shared.chapterPrefetchCount }
+        let window = Self.adjacentPrefetchWindow(center: center, chapterCount: refs.count, ahead: ahead)
         for priority in [ChapterFetchPriority.prefetch, .background] {
             let indices = window.filter { $0.priority == priority }.map(\.index)
             guard !indices.isEmpty else { continue }

@@ -39,6 +39,21 @@ struct NetworkSettingsView: View {
                 }
                 .interfaceSectionSurface()
                 Section {
+                    Picker(selection: $settings.chapterPrefetchCount) {
+                        ForEach(NetworkSearchSettings.chapterPrefetchOptions, id: \.self) { count in
+                            Text(count.formatted()).tag(count)
+                        }
+                    } label: {
+                        Text(localized("預讀章節數"))
+                    }
+                    .pickerStyle(.menu)
+                    .accessibilityIdentifier("network.chapterPrefetchCount")
+                } footer: {
+                    Text(localized("提前下載正在閱讀章節之後的幾章。數字越大，對來源網站的請求與流量越多；同時進行的請求不超過「並行數」，最多 8 個。"))
+                        .dsSectionFooter()
+                }
+                .interfaceSectionSurface()
+                Section {
                     Toggle(localized("自動換源"), isOn: $settings.autoChangeSource)
                         .accessibilityIdentifier("network.autoChangeSource")
                 } footer: {

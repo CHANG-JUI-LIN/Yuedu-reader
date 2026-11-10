@@ -17,6 +17,15 @@ enum NetworkSearchSettings {
         min(maximumDownloadConcurrency, max(1, value))
     }
 
+    /// 網路設定 →「預讀章節數」 choices (FB-125): chapters an online book fetches past the one
+    /// being read. 2 is the default and the window the reader always had.
+    static let chapterPrefetchOptions = [2, 5, 10]
+    static let defaultChapterPrefetchCount = 2
+
+    static func clampedChapterPrefetchCount(_ value: Int) -> Int {
+        min(chapterPrefetchOptions.max() ?? defaultChapterPrefetchCount, max(1, value))
+    }
+
     /// Seconds 搜索 gives each source: Legado's `SearchModel` runs every source under
     /// `withTimeout(30000L)` (legado-E and MD3 agree).
     static let searchSecondsPerSource: UInt64 = 30

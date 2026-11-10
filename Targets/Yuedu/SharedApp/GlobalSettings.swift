@@ -1876,6 +1876,12 @@ class GlobalSettings {
             UserDefaults.standard.set(searchAutoPauseCount, forKey: "yd_search_auto_pause_count")
         }
     }
+    /// 網路設定 →「預讀章節數」: how many chapters past the one being read an online book
+    /// fetches ahead of the reader (FB-125). One of `NetworkSearchSettings.chapterPrefetchOptions`;
+    /// 2 is the window the reader always had.
+    var chapterPrefetchCount: Int {
+        didSet { UserDefaults.standard.set(chapterPrefetchCount, forKey: "yd_chapter_prefetch_count") }
+    }
     var searchCacheDays: Int {
         didSet {
             UserDefaults.standard.set(searchCacheDays, forKey: "yd_search_cache_days")
@@ -2583,6 +2589,10 @@ class GlobalSettings {
             (UserDefaults.standard.object(forKey: "yd_search_concurrency") as? Int) ?? 16
         searchAutoPauseCount =
             (UserDefaults.standard.object(forKey: "yd_search_auto_pause_count") as? Int) ?? 0
+        chapterPrefetchCount = NetworkSearchSettings.clampedChapterPrefetchCount(
+            (UserDefaults.standard.object(forKey: "yd_chapter_prefetch_count") as? Int)
+                ?? NetworkSearchSettings.defaultChapterPrefetchCount
+        )
         searchCacheDays =
             (UserDefaults.standard.object(forKey: "yd_search_cache_days") as? Int) ?? 5
         autoFillBookMetadata =

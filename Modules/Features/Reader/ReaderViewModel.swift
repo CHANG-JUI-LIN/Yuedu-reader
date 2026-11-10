@@ -309,7 +309,7 @@ final class ReaderViewModel: ObservableObject {
     func prefetchAround(book: ReadingBook, center: Int, store: BookStore?) async {
         guard let refs = book.onlineChapters, !refs.isEmpty else { return }
         for neighbour in OnlineBookCoordinator.adjacentPrefetchWindow(
-            center: center, chapterCount: refs.count
+            center: center, chapterCount: refs.count, ahead: GlobalSettings.shared.chapterPrefetchCount
         ) {
             await ensureChapterReady(
                 book: book,
