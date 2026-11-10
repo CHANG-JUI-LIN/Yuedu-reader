@@ -37,61 +37,7 @@ struct UnifiedSearchTests {
         #expect(work.content.author == "劉慈欣")
         #expect(work.content.detail == [localized("在書架上"), String(format: localized("%d 源"), 2)].joined(separator: " · "),
                 "Open Library is data, not a place to read from")
-        #expect(model.rows[1].content.detail == [localized("可閱讀"), "S0"].joined(separator: " · "),
-                "one place: its name, not 「1 源」 (FB-169)")
-    }
-
-    @Test("FB-169: one place names it, two count them; a shelf copy is not the place")
-    func onePlaceNamesIt() async throws {
-        let (store, folder) = try makeStore()
-        defer { try? FileManager.default.removeItem(at: folder) }
-        let model = UnifiedSearchModel(sourceURL: { _ in nil })
-        await model.update(UnifiedSearchParts(sources: [sourceRow("劍來", "烽火戲諸侯", origins: 1, names: ["筆趣閣"])]),
-                           query: "劍來")
-        let one = try #require(model.rows.first).content
-        #expect(one.detail == [localized("可閱讀"), "筆趣閣"].joined(separator: " · "))
-        #expect(one.spokenDetail == [localized("可閱讀"), "筆趣閣"].joined(separator: "，"))
-        #expect(one.accessibilityLabel == ["劍來", "烽火戲諸侯", localized("可閱讀"), "筆趣閣"].joined(separator: "，"))
-
-        await model.update(UnifiedSearchParts(sources: [sourceRow("劍來", "烽火戲諸侯", origins: 2, names: ["筆趣閣", "起點"])]),
-                           query: "劍來 ")
-        let two = try #require(model.rows.first).content
-        #expect(two.detail == [localized("可閱讀"), String(format: localized("%d 源"), 2)].joined(separator: " · "))
-        #expect(two.spokenDetail == [localized("可閱讀"), String(format: localized("%d 源"), 2)].joined(separator: "，"))
-
-        // The shelf copy leads, but the place counted is the source's.
-        let copy = book("劍來", "烽火戲諸侯")
-        store.saveReadingBook(copy)
-        await model.update(UnifiedSearchParts(shelf: [try shelfMatch(copy, store: store)],
-                                              sources: [sourceRow("劍來", "烽火戲諸侯", origins: 1, names: ["筆趣閣"])]),
-                           query: "劍來")
-        let shelved = try #require(model.rows.first)
-        guard case .shelf = shelved.lead else {
-            Issue.record("the shelf copy leads its work")
-            return
-        }
-        #expect(shelved.content.detail == [localized("在書架上"), "筆趣閣"].joined(separator: " · "))
-    }
-
-    @Test("FB-169: a source's name is bounded and made one line before a row shows it")
-    func placeNameBounded() throws {
-        #expect(SearchBookListRowContent.placeName("  筆趣閣\n\t（備用）\u{0007} ") == "筆趣閣 （備用）")
-        #expect(SearchBookListRowContent.placeName(" \n ") == nil)
-        let long = String(repeating: "源", count: 500)
-        let bounded = try #require(SearchBookListRowContent.placeName(long))
-        #expect(bounded.count == SearchBookListRowContent.placeNameLimit)
-        #expect(bounded.hasSuffix("…"))
-        #expect(SearchBookListRowContent.placeName(String(repeating: "源", count: SearchBookListRowContent.placeNameLimit))
-                == String(repeating: "源", count: SearchBookListRowContent.placeNameLimit))
-    }
-
-    @Test("FB-169: a source with no name left says 「1 源」")
-    func onePlaceWithoutName() async throws {
-        let model = UnifiedSearchModel(sourceURL: { _ in nil })
-        await model.update(UnifiedSearchParts(sources: [sourceRow("劍來", "烽火戲諸侯", origins: 1, names: [" \n"])]),
-                           query: "劍來")
-        #expect(model.rows.first?.content.detail
-                == [localized("可閱讀"), String(format: localized("%d 源"), 1)].joined(separator: " · "))
+        #expect(model.rows[1].content.detail == [localized("可閱讀"), String(format: localized("%d 源"), 1)].joined(separator: " · "))
     }
 
     @Test("VoiceOver reads one label: title, author, how many sources, on the shelf or not")
@@ -336,10 +282,10 @@ struct UnifiedSearchTests {
         return try #require(model.matches.first)
     }
 
-    private func sourceRow(_ title: String, _ author: String, origins: Int, names: [String] = []) -> SearchBook {
+    private func sourceRow(_ title: String, _ author: String, origins: Int) -> SearchBook {
         SearchBook(name: title, author: author,
                    origins: (0..<origins).map { i in
-                       BookOrigin(sourceId: UUID(), sourceName: names.indices.contains(i) ? names[i] : "S\(i)", bookUrl: "/\(title)/\(i)", tocUrl: "", coverUrl: "",
+                       BookOrigin(sourceId: UUID(), sourceName: "S\(i)", bookUrl: "/\(title)/\(i)", tocUrl: "", coverUrl: "",
                                   intro: "", lastChapter: "", wordCount: "", kind: "", runtimeVariables: nil)
                    })
     }

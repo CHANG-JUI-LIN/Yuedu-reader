@@ -50,19 +50,6 @@ enum UnifiedSearchPayload {
         }
     }
 
-    /// The place it can be read from, as a one-place row names it (FB-169): a source row's
-    /// one origin's 來源配置, a library's or module's name, 青空文庫. Source-controlled text,
-    /// bounded by `SearchBookListRowContent.placeName(_:)` before it reaches a row. Nil for a
-    /// shelf copy, which a row never counts as a place, and for a row with several origins.
-    var placeName: String? {
-        switch self {
-        case .shelf: nil
-        case .library(let match): match.detail
-        case .publicLibrary: localized("青空文庫")
-        case .bookSource(let row): row.origins.count == 1 ? row.origins[0].sourceName : nil
-        }
-    }
-
     /// The version it is in 作品詳情, with a book-source row's result for its page's 換源; nil
     /// for a row whose source is gone (logged by `WorkDetailRoute(searchResult:)`).
     @MainActor
@@ -190,8 +177,7 @@ final class UnifiedSearchModel {
         publish(works.compactMap { work in
             let members = work.members.compactMap { byID[$0.id] }
             guard let lead = members.first else { return nil }
-            return (work, UnifiedSearchSelection(lead: lead, others: Array(members.dropFirst())),
-                    Self.onePlace(of: work, byID: byID))
+            return (work, UnifiedSearchSelection(lead: lead, others: Array(members.dropFirst())))
         }, overflow: parts.publicLibraryOverflow, query: query)
         SourcePerfTrace.record("search.unified.resolve", "candidates=\(candidates.count) works=\(works.count)",
                                since: started, thresholdMs: 0)
@@ -215,72 +201,39 @@ final class UnifiedSearchModel {
         if publicLibraryOverflow != nil { publicLibraryOverflow = nil }
     }
 
-    private func publish(_ works: [(UnifiedSearchResult, UnifiedSearchSelection, place: String?)], overflow: PublicLibraryRoute?,
+    private func publish(_ works: [(UnifiedSearchResult, UnifiedSearchSelection)], overflow: PublicLibraryRoute?,
                          query: String) {
         if rowIDsQuery != query {
             rowIDs = [:]
             rowIDsQuery = query
         }
         var used = Set<UUID>()
-        rows = works.map { work, selection, place in
+        rows = works.map { work, selection in
             let memberIDs = work.members.map(\.id)
             let id = memberIDs.lazy.compactMap { self.rowIDs[$0] }.first { !used.contains($0) } ?? UUID()
             used.insert(id)
             for member in memberIDs { rowIDs[member] = id }
             return UnifiedSearchRow(id: id, work: work, selection: selection,
-                                    content: SearchBookListRowContent(work: work, lead: selection.lead,
-                                                                      place: place))
+                                    content: SearchBookListRowContent(work: work, lead: selection.lead))
         }
         publicLibraryOverflow = overflow
         isResolving = false
-    }
-
-    /// The name of the one place a work can be read from, when it has exactly one: the member
-    /// `SearchWorkResolver` counted (not a shelf copy, readable), which need not be the lead —
-    /// a shelf copy leads its work. Nil for zero or several places.
-    private static func onePlace(of work: UnifiedSearchResult,
-                                 byID: [SearchCandidate.ID: UnifiedSearchPayload]) -> String? {
-        guard work.sourceCount == 1,
-              let counted = work.members.first(where: { $0.kind != .shelf && $0.isReadable }) else { return nil }
-        return byID[counted.id]?.placeName
     }
 }
 
 extension SearchBookListRowContent {
     /// A work of 搜索's one list: its lead's title and author, then whether it is on the shelf,
-    /// readable or data only, and how many places it can be read from — 「在書架上 · 3 源」 —
-    /// or, when there is one, that place's name — 「可閱讀 · 筆趣閣」 (FB-169).
+    /// readable or data only, and how many places it can be read from — 「在書架上 · 3 源」.
     /// VoiceOver hears the same parts as pauses (§16 item 7).
-    /// - Parameter place: the one place's name when `work.sourceCount` is 1; ignored otherwise.
-    init(work: UnifiedSearchResult, lead: UnifiedSearchPayload, place: String? = nil) {
+    init(work: UnifiedSearchResult, lead: UnifiedSearchPayload) {
         let availability = switch work.availability {
         case .onShelf: localized("在書架上")
         case .readable: localized("可閱讀")
         case .dataOnly: localized("只有資料")
         }
-        let places: [String] = switch work.sourceCount {
-        case 0: []
-        case 1: [place.flatMap(Self.placeName) ?? String(format: localized("%d 源"), 1)]
-        default: [String(format: localized("%d 源"), work.sourceCount)]
-        }
-        let parts = [availability] + places
+        let parts = [availability] + (work.sourceCount > 0 ? [String(format: localized("%d 源"), work.sourceCount)] : [])
         self.init(title: lead.title, titleTag: work.lead.contentKind.mediaTag,
                   author: lead.author, detail: parts.joined(separator: " · "), spokenDetail: parts.joined(separator: "，"))
-    }
-
-    /// The longest place name a row shows; a longer one ends in 「…」.
-    static let placeNameLimit = 24
-
-    /// A place's name as a row shows it: a source names itself, so its text is bounded before
-    /// SwiftUI lays it out (iOS 17 search watchdog postmortem) — control characters and line
-    /// breaks become spaces, runs of space one, at most `placeNameLimit` characters. Nil when
-    /// nothing is left, so the row says 「1 源」 instead.
-    static func placeName(_ raw: String) -> String? {
-        let words = String(raw.prefix(placeNameLimit * 8)).unicodeScalars
-            .map { CharacterSet.controlCharacters.contains($0) || CharacterSet.newlines.contains($0) ? " " : Character($0) }
-        let collapsed = String(words).split(whereSeparator: \.isWhitespace).joined(separator: " ")
-        guard !collapsed.isEmpty else { return nil }
-        return collapsed.count > placeNameLimit ? String(collapsed.prefix(placeNameLimit - 1)) + "…" : collapsed
     }
 }
 
