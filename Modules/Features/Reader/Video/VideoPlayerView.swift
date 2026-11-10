@@ -8,7 +8,9 @@ import SwiftUI
 /// timeline at the bottom. A tap shows and hides them; the episodes open in a sheet.
 ///
 /// On an iPhone it opens in landscape and turns to portrait for a portrait picture, as the
-/// picture reports its size (maintainer, 2026-11-01: 「依影片比例」).
+/// picture reports its size (maintainer, 2026-11-01: 「依影片比例」). A button turns it the other way
+/// by hand — a short drama framed in a landscape picture is still watched upright, filling the
+/// screen (FB-163) — and the choice holds over the episodes after it.
 struct VideoPlayerView: View {
     enum Content {
         /// A shelf book: its position is saved to the shelf.
@@ -35,6 +37,10 @@ struct VideoPlayerView: View {
     /// A drag on the picture in progress.
     @State private var pan: VideoPan?
     @State private var fillsScreen = false
+    /// What the window was last turned to; nil until it is in one that turns (an iPhone's).
+    @State private var orientation: FixedLayoutOrientation?
+    /// Set once the person turns the window themselves: the picture's size no longer turns it.
+    @State private var turnedByHand = false
     @State private var window = ReaderWindowReference()
 
     var body: some View {
@@ -73,7 +79,7 @@ struct VideoPlayerView: View {
             controller.start()
         }
         .onChange(of: controller?.pictureSize) { _, size in
-            guard let size else { return }
+            guard let size, !turnedByHand else { return }
             turn(to: size.height > size.width ? .portrait : .landscape)
         }
         // An inactivity timeout, not a wait for state: the controls get out of the picture's
@@ -133,6 +139,7 @@ struct VideoPlayerView: View {
         window.withWindow { uiWindow in
             guard let scene = uiWindow.windowScene, scene.traitCollection.userInterfaceIdiom == .phone else { return }
             ReaderOrientationController.shared.request(orientation, in: scene)
+            self.orientation = orientation
         }
     }
 
@@ -270,6 +277,9 @@ struct VideoPlayerView: View {
                     .frame(width: DSLayout.minimumTapTarget, height: DSLayout.minimumTapTarget)
             }
             .accessibilityLabel(fillsScreen ? localized("完整畫面") : localized("填滿螢幕"))
+            if let orientation {
+                rotateButton(from: orientation)
+            }
             if hasEpisodes(controller) {
                 Button {
                     showsEpisodes = true
@@ -281,6 +291,21 @@ struct VideoPlayerView: View {
                 .accessibilityLabel(localized("選集"))
             }
         }
+    }
+
+    /// Turns an iPhone's window the other way and keeps it there (FB-163).
+    private func rotateButton(from orientation: FixedLayoutOrientation) -> some View {
+        let toPortrait = orientation != .portrait
+        return Button {
+            turnedByHand = true
+            turn(to: toPortrait ? .portrait : .landscape)
+            touched()
+        } label: {
+            Image(systemName: toPortrait ? "rectangle.portrait.rotate" : "rectangle.landscape.rotate")
+                .font(DSFont.toolbarIcon)
+                .frame(width: DSLayout.minimumTapTarget, height: DSLayout.minimumTapTarget)
+        }
+        .accessibilityLabel(toPortrait ? localized("轉為直向") : localized("轉為橫向"))
     }
 
     /// A script's single link has no episodes to choose from.

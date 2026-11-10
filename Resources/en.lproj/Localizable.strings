@@ -4071,6 +4071,8 @@
 "下一集" = "Next Episode";
 "播放進度" = "Playback Position";
 "%1$@，共 %2$@" = "%1$@ of %2$@";
+"轉為直向" = "Rotate to Portrait";
+"轉為橫向" = "Rotate to Landscape";
 "線路 %d" = "Mirror %d";
 "第 %d 集" = "Episode %d";
 "第 %d 集 · %d 分鐘" = "Episode %d · %d min";
