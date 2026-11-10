@@ -385,10 +385,29 @@ struct ReaderTOCView: View {
                         .listRowSeparator(.hidden)
                 }
 
-                ForEach(filteredChapters) { chapter in
-                    chapterRow(chapter)
+                if #available(iOS 26.0, *) {
+                    // 拖動條 (feedback #160): the system's section index down the trailing edge,
+                    // as 聯絡人 has, jumps through a long 目錄 in either order. Sections carry no
+                    // header, so the list looks as it did; a short 目錄 is one section and
+                    // shows no index.
+                    let sections = TOCIndexSection.sections(of: filteredChapters)
+                    ForEach(sections) { section in
+                        Section {
+                            ForEach(section.chapters) { chapter in
+                                // The index sits in the rows' trailing margin; the page
+                                // numbers move in clear of it.
+                                chapterRow(chapter, clearsSectionIndex: sections.count > 1)
+                            }
+                        }
+                        .sectionIndexLabel(section.label)
+                    }
+                } else {
+                    ForEach(filteredChapters) { chapter in
+                        chapterRow(chapter)
+                    }
                 }
             }
+            .tocSectionIndexVisible()
             .softScrollEdges()
             .listStyle(.plain)
             .scrollContentBackground(.hidden)
@@ -412,7 +431,7 @@ struct ReaderTOCView: View {
         }
     }
 
-    private func chapterRow(_ chapter: BookChapter) -> some View {
+    private func chapterRow(_ chapter: BookChapter, clearsSectionIndex: Bool = false) -> some View {
         Button {
             onSelectChapter(chapter)
             isPresented = false
@@ -458,6 +477,7 @@ struct ReaderTOCView: View {
             // A minimum, not a height: a two-line title over an update time needs more.
             .frame(minHeight: 48)
             .padding(.horizontal, 30)
+            .padding(.trailing, clearsSectionIndex ? DSSpacing.lg : 0)
             .background {
                 if chapter.id == currentChapterID {
                     RoundedRectangle(cornerRadius: 12, style: .continuous)
@@ -474,6 +494,68 @@ struct ReaderTOCView: View {
         .listRowSeparatorTint(Color.secondary.opacity(0.18))
         .id(chapter.index)
     }
+}
+
+/// The 目錄's chapters cut into the blocks its section index jumps between: one block per
+/// `size` rows in the order shown, labelled with its first chapter's number, so 倒序 reads
+/// from the last chapter down. Around 20 entries at most, the most the index shows unfolded
+/// on a phone; never under 100 chapters a block.
+struct TOCIndexSection: Identifiable {
+    let id: UUID
+    /// `nil` for a 目錄 of one block: no index entry.
+    let label: String?
+    let chapters: [BookChapter]
+
+    static let maximumEntries = 20
+    static let minimumSize = 100
+
+    static func size(forCount count: Int) -> Int {
+        let perEntry = (count + maximumEntries - 1) / maximumEntries
+        let rounded = (perEntry + minimumSize - 1) / minimumSize * minimumSize
+        return max(minimumSize, rounded)
+    }
+
+    static func sections(of chapters: [BookChapter]) -> [TOCIndexSection] {
+        let size = size(forCount: chapters.count)
+        // One block: the index would offer one place to jump to, so there is none.
+        guard chapters.count > size else {
+            return chapters.first.map { [TOCIndexSection(id: $0.id, label: nil, chapters: chapters)] } ?? []
+        }
+        return stride(from: 0, to: chapters.count, by: size).map { start in
+            let block = Array(chapters[start..<min(start + size, chapters.count)])
+            return TOCIndexSection(id: block[0].id, label: "\(block[0].index + 1)", chapters: block)
+        }
+    }
+}
+
+private extension View {
+    /// The section index shows for a 目錄 of more than one block (iOS 26 on).
+    @ViewBuilder
+    func tocSectionIndexVisible() -> some View {
+        if #available(iOS 26.0, *) {
+            listSectionIndexVisibility(.visible)
+        } else {
+            self
+        }
+    }
+}
+
+#Preview("目錄・1200 章索引") {
+    ReaderTOCView(
+        chapters: (0..<1200).map { BookChapter(index: $0, title: "第\($0 + 1)章", content: "") },
+        bookTitle: "長篇範例",
+        bookID: nil,
+        currentPage: 0,
+        totalPages: 0,
+        tocLayoutMode: .horizontalList,
+        pageOffsets: [:],
+        showsPageNumbers: false,
+        currentIndex: 600,
+        currentChapterID: nil,
+        uncachedChapterIndexes: [],
+        onSelectChapter: { _ in },
+        isPresented: .constant(true)
+    )
 }
 
 #Preview("目錄") {
