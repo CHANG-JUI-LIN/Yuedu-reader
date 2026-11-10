@@ -16,7 +16,12 @@ final class BookSourceManagementModel: ObservableObject {
         /// The stats card and page buttons at the top of the list.
         case header
         case group(String)
-        case source(UUID)
+        /// `group` tells apart the rows of a source listed under several groups — one under
+        /// each, and each row's 移動到分組 / 移出分組 act on its own group
+        /// (`groupScope(of:listedUnder:)`). Nil for a source with one row (one group, none, a
+        /// pin, the flat list): its row keeps its bare id, so pinning or regrouping it
+        /// animates as a move.
+        case source(UUID, group: String? = nil)
     }
 
     struct Counts: Equatable {
@@ -75,8 +80,10 @@ final class BookSourceManagementModel: ObservableObject {
     /// read one field.
     private var ids: [UUID] = []
     private var indexByID: [UUID: Int] = [:]
-    /// `bookSourceGroup` trimmed once per library change, not once per render.
-    private var groupKeys: [String] = []
+    /// Each source's groups — `bookSourceGroup` split by `BookSourceCheckMarks.groups(in:)`,
+    /// repeats dropped — once per library change, not once per render. Empty for a source
+    /// in the built-in 默認分組.
+    private var groupNames: [[String]] = []
     private var pins: [UUID: SourcePinPosition] = [:]
     /// Lowercased name + URL + group, built on the first search after a library change.
     private var searchKeys: [String]?
@@ -151,6 +158,17 @@ final class BookSourceManagementModel: ObservableObject {
 
     func group(_ id: String) -> BookSourceRowGroup? {
         groups[id]
+    }
+
+    /// What 移動到分組 / 移出分組 act on for a row of `id`. `group` is the row's `Item.source`
+    /// group, set only for a source listed under several groups: the row acts on the one it
+    /// is under. A source with one row acts on its only group, or on none (默認分組) — and one
+    /// listed under none of its several groups (置頂／置底, the flat list, a search) is
+    /// `.several`.
+    func groupScope(of id: UUID, listedUnder group: String?) -> BookSourceRowGroupScope {
+        if let group { return .leaving(group) }
+        let names = indexByID[id].map { groupNames[$0] } ?? []
+        return names.count > 1 ? .several(names) : .leaving(names.first ?? "")
     }
 
     func isSelected(_ id: UUID) -> Bool {
@@ -254,8 +272,11 @@ final class BookSourceManagementModel: ObservableObject {
             var ids: [UUID] = []
             ids.reserveCapacity(sources.count)
             var indexByID: [UUID: Int] = .init(minimumCapacity: sources.count)
-            var groupKeys: [String] = []
-            groupKeys.reserveCapacity(sources.count)
+            var groupNames: [[String]] = []
+            groupNames.reserveCapacity(sources.count)
+            // A pack repeats a few hundred group fields across thousands of sources, so each
+            // distinct field is split once per pass and its sources share the one array.
+            var splitFields: [String: [String]] = [:]
             var enabled = 0
             var discover = 0
             // Fields are read through the buffer, not by iterating `sources`: a `for source
@@ -266,14 +287,23 @@ final class BookSourceManagementModel: ObservableObject {
                     let id = buffer[index].id
                     ids.append(id)
                     indexByID[id] = index
-                    groupKeys.append(Self.trimmedGroup(buffer[index].bookSourceGroup))
+                    let field = buffer[index].bookSourceGroup
+                    if field.isEmpty {
+                        groupNames.append([])
+                    } else if let names = splitFields[field] {
+                        groupNames.append(names)
+                    } else {
+                        let names = Self.distinctGroups(in: field)
+                        splitFields[field] = names
+                        groupNames.append(names)
+                    }
                     if buffer[index].enabled { enabled += 1 }
                     if DiscoverViewModel.isExploreSource(buffer[index]) { discover += 1 }
                 }
             }
             self.ids = ids
             self.indexByID = indexByID
-            self.groupKeys = groupKeys
+            self.groupNames = groupNames
             searchKeys = nil
             var counts = healthCounts()
             counts.total = sources.count
@@ -284,8 +314,15 @@ final class BookSourceManagementModel: ObservableObject {
         }
         if let id = pendingRevealID {
             pendingRevealID = nil
-            scrollSerial += 1
-            scrollRequest = HostedCollectionListScrollRequest(item: .source(id), serial: scrollSerial)
+            // A source in several groups has a row under each; bring the first into view.
+            let row = items.first { item in
+                if case .source(let rowID, _) = item { return rowID == id }
+                return false
+            }
+            if let row {
+                scrollSerial += 1
+                scrollRequest = HostedCollectionListScrollRequest(item: row, serial: scrollSerial)
+            }
         }
         contentVersion += 1
     }
@@ -313,12 +350,13 @@ final class BookSourceManagementModel: ObservableObject {
         return counts
     }
 
-    /// `bookSourceGroup` without surrounding whitespace. Almost no group name has any, so
-    /// only those that do pay for a Foundation trim.
-    private static func trimmedGroup(_ group: String) -> String {
-        guard let first = group.first, let last = group.last,
-              first.isWhitespace || last.isWhitespace else { return group }
-        return group.trimmingCharacters(in: .whitespacesAndNewlines)
+    /// `BookSourceCheckMarks.groups(in:)` with repeats dropped: a hand-edited 「甲,甲」 would
+    /// otherwise list the source twice under 甲.
+    private static func distinctGroups(in field: String) -> [String] {
+        let names = BookSourceCheckMarks.groups(in: field)
+        guard names.count > 1 else { return names }
+        var seen = Set<String>()
+        return names.filter { seen.insert($0).inserted }
     }
 
     private func rebuildFilterPage(animated: Bool = false) {
@@ -374,42 +412,58 @@ final class BookSourceManagementModel: ObservableObject {
         var newGroups: [String: BookSourceRowGroup] = [:]
         if searchText.isEmpty && grouped {
             newItems.reserveCapacity(page.count + 64)
-            var topPinned: [UUID] = []
-            var bottomPinned: [UUID] = []
+            // Library indices, not ids: a member's row needs its group count, read by index.
+            var topPinned: [Int] = []
+            var bottomPinned: [Int] = []
             var names: [String] = []
-            var members: [String: [UUID]] = [:]
+            var members: [String: [Int]] = [:]
+            func join(_ name: String, _ index: Int) {
+                if members[name] == nil { names.append(name) }
+                members[name, default: []].append(index)
+            }
             for index in page {
-                let id = ids[index]
-                switch pins[id] {
-                case .top: topPinned.append(id)
-                case .bottom: bottomPinned.append(id)
+                switch pins[ids[index]] {
+                case .top: topPinned.append(index)
+                case .bottom: bottomPinned.append(index)
                 case nil:
-                    let key = groupKeys[index]
-                    if members[key] == nil { names.append(key) }
-                    members[key, default: []].append(id)
+                    // Listed under every one of its groups, as Legado's group filter finds
+                    // 「玄幻,搜索失效」 under both; a source with none goes to 默認分組 ("").
+                    let sourceGroups = groupNames[index]
+                    if sourceGroups.isEmpty {
+                        join("", index)
+                    } else {
+                        for name in sourceGroups { join(name, index) }
+                    }
                 }
             }
-            func append(_ group: BookSourceRowGroup) {
-                newGroups[group.id] = group
-                newItems.append(.group(group.id))
-                if expansion.isExpanded(group.id) {
-                    newItems.append(contentsOf: group.sourceIDs.lazy.map(Item.source))
-                }
+            /// `sourceGroup`: whether this is one of the sources' own groups, under which a
+            /// source in several groups has one of several rows (see `Item.source`).
+            func append(id: String, name: String, members: [Int], sourceGroup: Bool) {
+                let group = BookSourceRowGroup(id: id, name: name, sourceIDs: members.map { self.ids[$0] })
+                newGroups[id] = group
+                newItems.append(.group(id))
+                guard expansion.isExpanded(id) else { return }
+                newItems.append(contentsOf: members.lazy.map { index in
+                    sourceGroup && self.groupNames[index].count > 1
+                        ? Item.source(self.ids[index], group: id)
+                        : Item.source(self.ids[index])
+                })
             }
             if !topPinned.isEmpty {
-                append(BookSourceRowGroup(
-                    id: BookSourceRowGroup.topPinnedID, name: localized("置頂組"), sourceIDs: topPinned))
+                append(
+                    id: BookSourceRowGroup.topPinnedID, name: localized("置頂組"),
+                    members: topPinned, sourceGroup: false)
             }
             for name in names {
-                append(BookSourceRowGroup(
+                append(
                     id: name.isEmpty ? BookSourceRowGroup.defaultGroupID : name,
                     name: name.isEmpty ? defaultGroupName : name,
-                    sourceIDs: members[name] ?? []))
+                    members: members[name] ?? [], sourceGroup: !name.isEmpty)
             }
             if !bottomPinned.isEmpty {
-                append(BookSourceRowGroup(
+                append(
                     id: BookSourceRowGroup.bottomPinnedID, name: localized("置底組"),
-                    sourceIDs: bottomPinned))
+                    members: bottomPinned, sourceGroup: false)
             }
         } else {
             newItems.reserveCapacity(page.count + 1)

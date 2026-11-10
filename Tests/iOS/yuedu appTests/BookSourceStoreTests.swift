@@ -414,7 +414,7 @@ struct BookSourceStoreTests {
         store.setEnabled(ids: ids, enabled: true)
         #expect(sends == 1)
         sends = 0
-        store.setGroup("新分組", ids: ids)
+        store.replaceGroup("", with: "新分組", ids: ids)
         #expect(sends == 1)
         sends = 0
         #expect(store.groupByDomain() == 2_000)
@@ -426,6 +426,98 @@ struct BookSourceStoreTests {
         #expect(store.sources.allSatisfy { $0.respondTime == 1_234 })
         #expect(store.sources.dropFirst().allSatisfy { $0.enabled })
         #expect(store.sources[0].enabled == false)
+    }
+
+    // MARK: - Several groups per source (Legado's `bookSourceGroup`)
+
+    @Test("group edits change only the group they name and keep the source's other groups")
+    func replaceGroupKeepsOtherGroups() throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("BookSourceStoreGroups-\(UUID().uuidString)")
+        let store = BookSourceStore(directory: directory)
+        defer {
+            store.waitForQueuedWrites()
+            try? FileManager.default.removeItem(at: directory)
+        }
+        var fantasy = makeSource(index: 0)
+        fantasy.bookSourceGroup = "玄幻,搜索失效"
+        var mixed = makeSource(index: 1)
+        // Legado splits on `,;，；` (`AppPattern.splitGroupRegex`) and trims each name.
+        mixed.bookSourceGroup = " 都市 ；玄幻"
+        var plain = makeSource(index: 2)
+        plain.bookSourceGroup = "玄幻"
+        let none = makeSource(index: 3)
+        store.replaceSourcesFromSync([fantasy, mixed, plain, none])
+        func group(_ source: BookSource) -> String? {
+            store.sources.first { $0.id == source.id }?.bookSourceGroup
+        }
+        var sends = 0
+        let subscription = store.objectWillChange.sink { sends += 1 }
+        defer { subscription.cancel() }
+
+        // Leaving a group a source is in for one it already has rewrites nothing.
+        store.replaceGroup("都市", with: "都市", ids: [mixed.id])
+        #expect(group(mixed) == " 都市 ；玄幻")
+        #expect(sends == 0)
+
+        // 重命名分組 玄幻 → 奇幻: each source keeps the new name where the old one was, and
+        // keeps every other group — the 搜索失效 a 書源驗證 wrote included.
+        store.replaceGroup("玄幻", with: "奇幻", ids: [fantasy.id, mixed.id, plain.id])
+        #expect(group(fantasy) == "奇幻,搜索失效")
+        #expect(group(mixed) == "都市,奇幻")
+        #expect(group(plain) == "奇幻")
+        #expect(group(none) == "")
+        #expect(sends == 1)
+        // Group membership is synced source content: changed sources advance their clock.
+        #expect(store.sources.first { $0.id == fantasy.id }?.lastUpdateTime ?? 0 > 0)
+        #expect(store.sources.first { $0.id == none.id }?.lastUpdateTime == 0)
+
+        // 合併到其他分組 奇幻 → 搜索失效: a source already in 搜索失效 just leaves 奇幻.
+        store.replaceGroup("奇幻", with: "搜索失效", ids: [fantasy.id, mixed.id, plain.id])
+        #expect(group(fantasy) == "搜索失效")
+        #expect(group(mixed) == "都市,搜索失效")
+        #expect(group(plain) == "搜索失效")
+
+        // 移出分組, or merging into 默認分組: leave, join nothing. With no group left the
+        // source is back in 默認分組.
+        store.replaceGroup("搜索失效", with: "", ids: [mixed.id, plain.id])
+        #expect(group(mixed) == "都市")
+        #expect(group(plain) == "")
+
+        // 加入分組 leaves nothing; a typed 「甲，乙;都市」 joins each group once.
+        store.replaceGroup("", with: "甲，乙;都市", ids: [mixed.id, none.id])
+        #expect(group(mixed) == "都市,甲,乙")
+        #expect(group(none) == "甲,乙,都市")
+
+        // A source no longer in the group a frozen menu named is left alone.
+        sends = 0
+        let before = store.sources.map(\.bookSourceGroup)
+        store.replaceGroup("不存在", with: "丙", ids: Set(store.sources.map(\.id)))
+        #expect(store.sources.map(\.bookSourceGroup) == before)
+        #expect(sends == 0)
+    }
+
+    @Test("a source counts once in each of its groups when a group picker opens")
+    func groupCountsSplitTheField() throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("BookSourceStoreGroupCounts-\(UUID().uuidString)")
+        let store = BookSourceStore(directory: directory)
+        defer {
+            store.waitForQueuedWrites()
+            try? FileManager.default.removeItem(at: directory)
+        }
+        let fields = ["玄幻,搜索失效", "搜索失效；玄幻;玄幻", " 都市 ", "", ",;"]
+        store.replaceSourcesFromSync(fields.enumerated().map { index, field in
+            var source = makeSource(index: index)
+            source.bookSourceGroup = field
+            return source
+        })
+
+        let counts = store.groupCounts()
+        #expect(counts.map(\.name) == ["玄幻", "搜索失效", "都市"])
+        #expect(counts.map(\.count) == [2, 2, 1])
+        let joining = store.groupCounts(excluding: ["玄幻", "搜索失效"])
+        #expect(joining.map(\.name) == ["都市"])
     }
 
     // FB-123: 資源庫 recomputed its explore sources from the store inside

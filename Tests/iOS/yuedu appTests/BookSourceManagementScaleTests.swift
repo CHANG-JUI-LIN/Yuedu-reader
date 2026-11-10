@@ -419,7 +419,13 @@ struct ScaleFixture {
             bookSourceUrl: "https://source-\(index).example.com",
             bookSourceName: "書源 \(index)"
         )
-        source.bookSourceGroup = index % 3 == 0 ? "" : "分組 \(index % 88)"
+        // Real packs hold several groups in one field — 453 of the 794 sources in the YCK
+        // 1330 pack do — and a 書源驗證 appends its own (搜索失效, …).
+        source.bookSourceGroup = index % 3 == 0
+            ? ""
+            : index % 7 < 4
+                ? "分組 \(index % 88),分組 \((index + 31) % 88)；搜索失效"
+                : "分組 \(index % 88)"
         source.searchUrl = "/search?keyword={{key}}&page={{page}}," + String(repeating: "q", count: 160)
         source.enabledExplore = index % 5 != 0
         source.exploreUrl = index % 5 < 2

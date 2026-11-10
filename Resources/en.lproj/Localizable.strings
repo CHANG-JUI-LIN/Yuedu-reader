@@ -1731,6 +1731,7 @@
 "移動到分組" = "Move to Group";
 "移動到新分組" = "Move to New Group";
 "移出分組" = "Remove from Group";
+"移出分組「%@」" = "Remove from “%@”";
 "新增分組…" = "New Group…";
 "搜索分組" = "Search Groups";
 "沒有符合的分組" = "No Matching Groups";

@@ -24,10 +24,10 @@ import SwiftUI
 // closure for every element on every update. The rows are now hosted one cell at a time by
 // `HostedCollectionList`, and rows and groups carry ids instead of `BookSource` copies.
 
-/// One row group in the management list. Every displayed source belongs to exactly one
-/// group: pinned sources land in the built-in 置頂／置底 groups, the rest use their
-/// `bookSourceGroup` — and sources without one land in the built-in 默認分組 (Legado's
-/// default group — ungrouped sources are never left flat).
+/// One row group in the management list. Pinned sources land in the built-in 置頂／置底
+/// groups only; the rest are listed under each group in their `bookSourceGroup` (which holds
+/// several, as in Legado: 「玄幻,搜索失效」 is under both) — and sources without one land in
+/// the built-in 默認分組 (Legado's default group — ungrouped sources are never left flat).
 struct BookSourceRowGroup: Identifiable {
     /// Sentinel ids for the built-in 置頂／置底 groups — kept distinct from any user group
     /// name, so a group literally named 置頂 cannot collide with them.
@@ -50,6 +50,20 @@ struct BookSourceRowGroup: Identifiable {
 
     /// Computed, not stored: it is only read by the group menu's actions when they run.
     var sourceIds: Set<UUID> { Set(sourceIDs) }
+}
+
+/// What a source row's 移動到分組 / 移出分組 act on. A source can be in several groups, so
+/// they change one group and keep the rest — never the whole `bookSourceGroup`, which also
+/// carries the groups a 書源驗證 adds (搜索失效, …).
+enum BookSourceRowGroupScope: Equatable {
+    /// Moving swaps this group for the picked one, and 移出分組 removes it. Empty is the
+    /// built-in 默認分組: nothing to leave, so moving only joins.
+    case leaving(String)
+    /// Listed under none of its several groups — the flat list, a search, 置頂／置底 — so no
+    /// one group is the one to leave. Legado has no per-source move at all, only 加入分組
+    /// and 移除分組 naming the group, and never guesses; so here picking a group joins it
+    /// (titled 加入分組) and 移出分組 lists the groups to pick the one to remove.
+    case several([String])
 }
 
 /// Native share row for 匯出 …（儲存到「檔案」／AirDrop／…）. See `BookSourceExportFile` for
@@ -96,12 +110,12 @@ struct BookSourceRowActions {
     var export: (PendingShareExport<BookSourceExportFile>) -> Void
     var login: (BookSource) -> Void
     var editVariables: (BookSource) -> Void
-    /// Writes a group name to a set of sources; the built-in default group clears the field.
-    var applyGroupName: (String, Set<UUID>) -> Void
+    /// 移出分組: removes one group from a source and keeps its others.
+    var leaveGroup: (_ group: String, _ source: BookSource) -> Void
     /// Opens 移動到分組 — a searchable group list, not a submenu. See
     /// `BookSourceGroupPickerSheet` for why the submenu is gone.
-    var pickGroup: (BookSource) -> Void
-    var moveToNewGroup: (BookSource) -> Void
+    var pickGroup: (BookSource, BookSourceRowGroupScope) -> Void
+    var moveToNewGroup: (BookSource, BookSourceRowGroupScope) -> Void
     var pinToTop: (BookSource) -> Void
     var pinToBottom: (BookSource) -> Void
     /// The announcement is the caller's, because only the row knows which pin it is dropping.
@@ -122,8 +136,8 @@ struct BookSourceRow: View {
     let isSelected: Bool
     let pin: SourcePinPosition?
     let health: SourceValidationSummary?
-    /// Display label of the built-in group for sources with no `bookSourceGroup`.
-    let defaultGroupName: String
+    /// The group this row's 移動到分組 / 移出分組 act on — the one it is listed under.
+    let groupScope: BookSourceRowGroupScope
     let actions: BookSourceRowActions
 
     /// Leading slot for the 置頂／置底 pin icon, matching the old warning bar + checkbox
@@ -279,7 +293,7 @@ struct BookSourceRow: View {
                     systemImage: source.enabled ? "pause.circle" : "play.circle")
             }
             Button {
-                actions.pickGroup(source)
+                actions.pickGroup(source, groupScope)
             } label: {
                 Label(localized("移動到分組"), systemImage: "folder")
             }
@@ -417,14 +431,24 @@ struct BookSourceRow: View {
         // 移動到分組 is now a searchable list rather than a submenu of group names, so the
         // rotor can reach the real thing. 移動到新分組 stays as the quicker typing path.
         Button(localized("移動到分組")) {
-            actions.pickGroup(source)
+            actions.pickGroup(source, groupScope)
         }
         Button(localized("移動到新分組")) {
-            actions.moveToNewGroup(source)
+            actions.moveToNewGroup(source, groupScope)
         }
-        if !source.bookSourceGroup.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-            Button(localized("移出分組")) {
-                actions.applyGroupName(defaultGroupName, [source.id])
+        switch groupScope {
+        case .leaving(let group):
+            if !group.isEmpty {
+                Button(localized("移出分組")) {
+                    actions.leaveGroup(group, source)
+                }
+            }
+        case .several(let groups):
+            // The sheet's per-group 移出 rows, one rotor action each.
+            ForEach(groups, id: \.self) { group in
+                Button(String(format: localized("移出分組「%@」"), group)) {
+                    actions.leaveGroup(group, source)
+                }
             }
         }
         if pin == .top {
@@ -590,7 +614,7 @@ private func previewSource(
     toggleSelection: { _ in }, toggleEnabled: { _ in }, showInfo: { _ in }, test: { _ in },
     edit: { _ in }, copyJSON: { _ in }, export: { _ in }, login: { _ in },
     editVariables: { _ in },
-    applyGroupName: { _, _ in }, pickGroup: { _ in }, moveToNewGroup: { _ in },
+    leaveGroup: { _, _ in }, pickGroup: { _, _ in }, moveToNewGroup: { _, _ in },
     pinToTop: { _ in },
     pinToBottom: { _ in }, unpin: { _, _ in }, delete: { _ in }
 )
@@ -599,17 +623,17 @@ private func previewSource(
     List {
         BookSourceRow(
             source: previewSource(name: "示例來源配置", group: "常用"),
-            isSelected: false, pin: nil, health: nil, defaultGroupName: "默認分組",
+            isSelected: false, pin: nil, health: nil, groupScope: .leaving("常用"),
             actions: previewActions
         )
         BookSourceRow(
             source: previewSource(name: "已選取的源"),
-            isSelected: true, pin: .top, health: nil, defaultGroupName: "默認分組",
+            isSelected: true, pin: .top, health: nil, groupScope: .leaving(""),
             actions: previewActions
         )
         BookSourceRow(
-            source: previewSource(name: "已停用的源", group: "備用", enabled: false),
-            isSelected: false, pin: .bottom, health: nil, defaultGroupName: "默認分組",
+            source: previewSource(name: "已停用的源", group: "備用,搜索失效", enabled: false),
+            isSelected: false, pin: .bottom, health: nil, groupScope: .several(["備用", "搜索失效"]),
             actions: previewActions
         )
     }

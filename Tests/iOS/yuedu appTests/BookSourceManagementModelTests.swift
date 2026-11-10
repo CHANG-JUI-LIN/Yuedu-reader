@@ -116,6 +116,75 @@ struct BookSourceManagementModelTests {
         #expect(model.items == [.header, .source(c.id)])
     }
 
+    @Test("a source in several groups is listed under each, and each row acts on its own group")
+    func severalGroupsPerSource() async throws {
+        let settings = GlobalSettings.shared
+        let previousGrouped = settings.bookSourceListGrouped
+        settings.bookSourceListGrouped = true
+        defer { settings.bookSourceListGrouped = previousGrouped }
+
+        // Legado's separators (`AppPattern.splitGroupRegex` — `,;，；`), padded names, empty
+        // entries and a repeat.
+        let a = Self.source("甲", group: "玄幻,搜索失效")
+        let b = Self.source("乙", group: " 都市 ；玄幻;;")
+        let c = Self.source("丙", group: "搜索失效，玄幻,玄幻")
+        let d = Self.source("丁", group: ",")
+        let e = Self.source("戊", group: "都市")
+        let harness = try await Harness(sources: [a, b, c, d, e], validates: false)
+        defer { harness.remove() }
+        let model = harness.model
+        let ungrouped = BookSourceRowGroup.defaultGroupID
+
+        // Rows of a source in several groups carry the group they are under; a source with
+        // one row keeps its bare id.
+        #expect(model.items == [
+            .header,
+            .group("玄幻"),
+            .source(a.id, group: "玄幻"), .source(b.id, group: "玄幻"), .source(c.id, group: "玄幻"),
+            .group("搜索失效"), .source(a.id, group: "搜索失效"), .source(c.id, group: "搜索失效"),
+            .group("都市"), .source(b.id, group: "都市"), .source(e.id),
+            .group(ungrouped), .source(d.id),
+        ])
+        #expect(model.group("玄幻")?.sourceIDs == [a.id, b.id, c.id])
+
+        // Each of 甲's rows acts on the group it is under.
+        #expect(model.groupScope(of: a.id, listedUnder: "搜索失效") == .leaving("搜索失效"))
+        #expect(model.groupScope(of: a.id, listedUnder: "玄幻") == .leaving("玄幻"))
+        // A source with one row acts on its only group, or on none under 默認分組.
+        #expect(model.groupScope(of: e.id, listedUnder: nil) == .leaving("都市"))
+        #expect(model.groupScope(of: d.id, listedUnder: nil) == .leaving(""))
+        // Under none of its several groups — 置頂／置底, the flat list, a search — there is no
+        // one group to leave.
+        #expect(model.groupScope(of: a.id, listedUnder: nil) == .several(["玄幻", "搜索失效"]))
+        #expect(model.groupScope(of: c.id, listedUnder: nil) == .several(["搜索失效", "玄幻"]))
+
+        // 移動到分組 from 甲's row under 搜索失效 to 都市 moves it out of that group only.
+        harness.store.replaceGroup("搜索失效", with: "都市", ids: [a.id])
+        await Self.mainQueueTurn()
+        #expect(model.source(for: a.id)?.bookSourceGroup == "玄幻,都市")
+        #expect(model.group("玄幻")?.sourceIDs == [a.id, b.id, c.id])
+        #expect(model.group("搜索失效")?.sourceIDs == [c.id])
+        #expect(model.group("都市")?.sourceIDs == [a.id, b.id, e.id])
+
+        // 合併到其他分組 玄幻 → 搜索失效 keeps every member's other groups.
+        harness.store.replaceGroup("玄幻", with: "搜索失效", ids: model.group("玄幻")?.sourceIds ?? [])
+        await Self.mainQueueTurn()
+        #expect(model.group("玄幻") == nil)
+        #expect(model.group("搜索失效")?.sourceIDs == [a.id, b.id, c.id])
+        #expect(model.group("都市")?.sourceIDs == [a.id, b.id, e.id])
+
+        // 置頂 lists a source once, in 置頂組, under its bare id.
+        harness.store.pinToTop(id: a.id)
+        await Self.mainQueueTurn()
+        #expect(Array(model.items.prefix(3))
+            == [.header, .group(BookSourceRowGroup.topPinnedID), .source(a.id)])
+        #expect(model.group("搜索失效")?.sourceIDs == [b.id, c.id])
+
+        // A search lists each source once, whatever its groups.
+        model.searchText = "甲"
+        #expect(model.items == [.header, .source(a.id)])
+    }
+
     @Test("library edits land in one rebuild after the edit has finished")
     func libraryEditsRebuildOnce() async throws {
         let harness = try await Harness(validates: false)

@@ -100,11 +100,15 @@ struct BookSourceListView: View {
         let title: String
         let subtitle: String
         let sourceIds: Set<UUID>
+        /// The group these sources leave; empty when they only join one.
+        let leaving: String
         let candidates: [BookSourceGroupCandidate]
-        /// The group these sources are leaving, so the sheet doesn't offer to re-create it.
-        let excluded: String
+        /// The groups the sheet must not offer to re-create — see the sheet's `excluded`.
+        let excluded: Set<String>
         let defaultGroupTitle: String?
         let allowsNewGroup: Bool
+        /// One 移出分組「…」 row each — see `BookSourceRowGroupScope.several`.
+        var leavableGroups: [String] = []
     }
 
     /// A pending group-name entry — 重命名分組 for a whole group, or 移動到新分組 for one
@@ -114,6 +118,8 @@ struct BookSourceListView: View {
         let title: String
         let subtitle: String
         let sourceIds: Set<UUID>
+        /// The group the typed name replaces; empty when it only joins.
+        let leaving: String
         /// The name the entry must differ from to be worth writing.
         let currentName: String
     }
@@ -250,10 +256,15 @@ struct BookSourceListView: View {
                         excluded: pick.excluded,
                         defaultGroupTitle: pick.defaultGroupTitle,
                         defaultGroupName: defaultGroupName,
-                        allowsNewGroup: pick.allowsNewGroup
-                    ) { name in
-                        applyGroupName(name, to: pick.sourceIds)
-                    }
+                        allowsNewGroup: pick.allowsNewGroup,
+                        leavableGroups: pick.leavableGroups,
+                        onLeave: { group in
+                            applyGroupName(defaultGroupName, leaving: group, to: pick.sourceIds)
+                        },
+                        onSelect: { name in
+                            applyGroupName(name, leaving: pick.leaving, to: pick.sourceIds)
+                        }
+                    )
                 }
             }
             .sheet(item: $variableEditingSource) { src in
@@ -448,14 +459,14 @@ struct BookSourceListView: View {
                     )
                     .padding(.horizontal, DSSpacing.md)
                 }
-            case .source(let id):
+            case .source(let id, let groupID):
                 if let source = model.source(for: id) {
                     BookSourceRow(
                         source: source,
                         isSelected: model.isSelected(id),
                         pin: model.pin(for: id),
                         health: healthChecker.healthById[id],
-                        defaultGroupName: defaultGroupName,
+                        groupScope: model.groupScope(of: id, listedUnder: groupID),
                         actions: rowActions
                     )
                 }
@@ -481,9 +492,11 @@ struct BookSourceListView: View {
             export: { self.pendingExport = $0 },
             login: { self.loginSource = $0 },
             editVariables: { self.variableEditingSource = $0 },
-            applyGroupName: { self.applyGroupName($0, to: $1) },
-            pickGroup: { self.beginPickingGroup(for: $0) },
-            moveToNewGroup: { self.beginMovingToNewGroup($0) },
+            leaveGroup: { group, source in
+                self.applyGroupName(self.defaultGroupName, leaving: group, to: [source.id])
+            },
+            pickGroup: { self.beginPickingGroup(for: $0, scope: $1) },
+            moveToNewGroup: { self.beginMovingToNewGroup($0, scope: $1) },
             pinToTop: { self.pinSourceToTop($0) },
             pinToBottom: { self.pinSourceToBottom($0) },
             unpin: { self.unpinSource($0, announcement: $1) },
@@ -513,31 +526,50 @@ struct BookSourceListView: View {
 
     // MARK: - Group Operations
 
+    /// The stored group a header's 重命名分組 / 合併到其他分組 act on: its name, or nothing for
+    /// 默認分組, whose members have no group.
+    private func storedGroup(of group: BookSourceRowGroup) -> String {
+        group.id == BookSourceRowGroup.defaultGroupID ? "" : group.name
+    }
+
     private func beginRenamingGroup(_ group: BookSourceRowGroup) {
         // 默認分組 is a display-only label for sources with no group, so the field starts
         // empty rather than pre-filled with a name that was never stored.
-        groupNameText = group.name == defaultGroupName ? "" : group.name
+        groupNameText = storedGroup(of: group)
         groupNaming = PendingGroupNaming(
             id: group.id,
             title: localized("重命名分組"),
             subtitle: String(
                 format: localized("%1$@ · %2$d 個來源配置"), group.name, group.sourceIDs.count),
             sourceIds: group.sourceIds,
+            leaving: storedGroup(of: group),
             currentName: group.name
         )
     }
 
     /// 移動到分組 ▸ 新增分組… — typing an existing group's name merges the source into it,
-    /// so this doubles as "move somewhere not in the list".
-    private func beginMovingToNewGroup(_ source: BookSource) {
+    /// so this doubles as "move somewhere not in the list". A source with no one group to
+    /// leave only joins the typed one (加入分組).
+    private func beginMovingToNewGroup(_ source: BookSource, scope: BookSourceRowGroupScope) {
+        let leaving: String
+        let title: String
+        switch scope {
+        case .leaving(let group):
+            leaving = group
+            title = localized("移動到新分組")
+        case .several:
+            leaving = ""
+            title = localized("加入分組")
+        }
         groupNameText = ""
         groupNaming = PendingGroupNaming(
             id: source.id.uuidString,
-            title: localized("移動到新分組"),
+            title: title,
             subtitle: source.bookSourceName.isEmpty
                 ? localized("未命名來源配置") : source.bookSourceName,
             sourceIds: [source.id],
-            currentName: source.bookSourceGroup
+            leaving: leaving,
+            currentName: leaving
         )
     }
 
@@ -546,53 +578,76 @@ struct BookSourceListView: View {
         groupNaming = nil
         let trimmed = groupNameText.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty, trimmed != pending.currentName else { return }
-        applyGroupName(trimmed, to: pending.sourceIds)
+        applyGroupName(trimmed, leaving: pending.leaving, to: pending.sourceIds)
     }
 
-    /// 移動到分組 for one source — opens the searchable group list.
-    private func beginPickingGroup(for source: BookSource) {
-        let current = source.bookSourceGroup.trimmingCharacters(in: .whitespacesAndNewlines)
-        groupPicking = PendingGroupPick(
-            id: source.id.uuidString,
-            title: localized("移動到分組"),
-            subtitle: source.bookSourceName.isEmpty
-                ? localized("未命名來源配置") : source.bookSourceName,
-            sourceIds: [source.id],
-            candidates: groupCandidates(excluding: current),
-            excluded: current,
-            // Only a source that has a group can leave it.
-            defaultGroupTitle: current.isEmpty ? nil : localized("移出分組"),
-            allowsNewGroup: true
-        )
+    /// 移動到分組 for one source — opens the searchable group list. It moves the source out
+    /// of the group its row is listed under; a source listed under none of its several groups
+    /// joins the picked one instead and picks which to leave (`BookSourceRowGroupScope`).
+    private func beginPickingGroup(for source: BookSource, scope: BookSourceRowGroupScope) {
+        let subtitle = source.bookSourceName.isEmpty
+            ? localized("未命名來源配置") : source.bookSourceName
+        switch scope {
+        case .leaving(let group):
+            groupPicking = PendingGroupPick(
+                id: source.id.uuidString,
+                title: localized("移動到分組"),
+                subtitle: subtitle,
+                sourceIds: [source.id],
+                leaving: group,
+                candidates: groupCandidates(excluding: [group]),
+                excluded: [group],
+                // Only a source that has a group can leave it.
+                defaultGroupTitle: group.isEmpty ? nil : localized("移出分組"),
+                allowsNewGroup: true
+            )
+        case .several(let groups):
+            let held = Set(groups)
+            groupPicking = PendingGroupPick(
+                id: source.id.uuidString,
+                title: localized("加入分組"),
+                subtitle: subtitle,
+                sourceIds: [source.id],
+                leaving: "",
+                candidates: groupCandidates(excluding: held),
+                excluded: held,
+                defaultGroupTitle: nil,
+                allowsNewGroup: true,
+                leavableGroups: groups
+            )
+        }
     }
 
     /// 合併到其他分組 for a whole group — the same sheet, minus 新增分組 (重命名分組 covers
     /// moving a group to a name that doesn't exist yet).
     private func beginPickingMergeTarget(for group: BookSourceRowGroup) {
+        let leaving = storedGroup(of: group)
         groupPicking = PendingGroupPick(
             id: group.id,
             title: localized("合併到其他分組"),
             subtitle: String(
                 format: localized("%1$@ · %2$d 個來源配置"), group.name, group.sourceIDs.count),
             sourceIds: group.sourceIds,
-            candidates: groupCandidates(excluding: group.name),
-            excluded: group.name,
-            defaultGroupTitle: group.name == defaultGroupName ? nil : defaultGroupName,
+            leaving: leaving,
+            candidates: groupCandidates(excluding: [leaving]),
+            excluded: [leaving],
+            defaultGroupTitle: leaving.isEmpty ? nil : defaultGroupName,
             allowsNewGroup: false
         )
     }
 
-    private func groupCandidates(excluding excluded: String) -> [BookSourceGroupCandidate] {
+    private func groupCandidates(excluding excluded: Set<String>) -> [BookSourceGroupCandidate] {
         store.groupCounts(excluding: excluded).map {
             BookSourceGroupCandidate(name: $0.name, count: $0.count)
         }
     }
 
-    /// Single write path for 重命名分組 and 合併到其他分組. The built-in default group has no
-    /// stored name, so landing there means clearing `bookSourceGroup`.
-    private func applyGroupName(_ name: String, to ids: Set<UUID>) {
+    /// Single write path for 重命名分組, 合併到其他分組, 移動到分組, 加入分組 and 移出分組: the
+    /// sources leave `old` and join `name`, keeping their other groups. The built-in default
+    /// group has no stored name, so landing there means leaving `old` and joining nothing.
+    private func applyGroupName(_ name: String, leaving old: String, to ids: Set<UUID>) {
         model.animateNextLibraryChange()
-        store.setGroup(name == defaultGroupName ? "" : name, ids: ids)
+        store.replaceGroup(old, with: name == defaultGroupName ? "" : name, ids: ids)
     }
 
     private func copyGroupToPasteboard(_ group: BookSourceRowGroup) {

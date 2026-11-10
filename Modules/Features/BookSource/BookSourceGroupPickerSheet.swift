@@ -24,18 +24,24 @@ struct BookSourceGroupPickerSheet: View {
     let subtitle: String
     /// Destination groups, already excluding the current one, in first-appearance order.
     let candidates: [BookSourceGroupCandidate]
-    /// The group the pick came from; offering to create it again would be a no-op.
-    let excluded: String
-    /// Label for the row that clears `bookSourceGroup` — 移出分組 for one source, 默認分組
-    /// when merging a whole group. Absent when the source is already ungrouped.
+    /// Groups the pick came from — the one being left, or every group a source that only
+    /// joins already holds; offering to create one again would be a no-op.
+    let excluded: Set<String>
+    /// Label for the row that leaves the group the pick came from and joins none — 移出分組
+    /// for one source, 默認分組 when merging a whole group. Absent when there is no one
+    /// group to leave.
     let defaultGroupTitle: String?
     /// Display name of the built-in default group. Selecting the row above hands *this*
-    /// back, not the label — `applyGroupName` reads it as "clear `bookSourceGroup`", and
+    /// back, not the label — `applyGroupName` reads it as "leave the group, join none", and
     /// handing back 「移出分組」 would create a group literally called that.
     let defaultGroupName: String
     /// Whether the search text can be committed as a brand-new group. A whole group renames
     /// instead, so 合併到其他分組 leaves this off.
     let allowsNewGroup: Bool
+    /// For a source listed under none of its several groups (`BookSourceRowGroupScope.several`):
+    /// one 移出分組「…」 row per group, since there is no one group to leave. Empty otherwise.
+    var leavableGroups: [String] = []
+    var onLeave: (String) -> Void = { _ in }
     let onSelect: (String) -> Void
 
     @State private var query = ""
@@ -59,9 +65,16 @@ struct BookSourceGroupPickerSheet: View {
         return defaultGroupTitle.lowercased().contains(trimmedQuery.lowercased())
     }
 
+    /// The 移出分組「…」 rows, narrowed by the search like everything else.
+    private var filteredLeavableGroups: [String] {
+        guard !trimmedQuery.isEmpty else { return leavableGroups }
+        let needle = trimmedQuery.lowercased()
+        return leavableGroups.filter { $0.lowercased().contains(needle) }
+    }
+
     /// 新增分組「⋯」 — offered only for a name that doesn't exist yet.
     private var newGroupName: String? {
-        guard allowsNewGroup, !trimmedQuery.isEmpty, trimmedQuery != excluded else { return nil }
+        guard allowsNewGroup, !trimmedQuery.isEmpty, !excluded.contains(trimmedQuery) else { return nil }
         guard !candidates.contains(where: { $0.name == trimmedQuery }) else { return nil }
         return trimmedQuery
     }
@@ -83,6 +96,24 @@ struct BookSourceGroupPickerSheet: View {
                         } label: {
                             Label(defaultGroupTitle, systemImage: "folder.badge.minus")
                                 .foregroundColor(DSColor.textPrimary)
+                        }
+                    }
+                    .interfaceSectionSurface()
+                }
+
+                if !filteredLeavableGroups.isEmpty {
+                    Section {
+                        ForEach(filteredLeavableGroups, id: \.self) { group in
+                            Button {
+                                onLeave(group)
+                                dismiss()
+                            } label: {
+                                Label(
+                                    String(format: localized("移出分組「%@」"), group),
+                                    systemImage: "folder.badge.minus"
+                                )
+                                .foregroundColor(DSColor.textPrimary)
+                            }
                         }
                     }
                     .interfaceSectionSurface()
@@ -128,7 +159,8 @@ struct BookSourceGroupPickerSheet: View {
                     .interfaceSectionSurface()
                 }
 
-                if filteredCandidates.isEmpty && !showsDefaultGroupRow && newGroupName == nil {
+                if filteredCandidates.isEmpty && !showsDefaultGroupRow && filteredLeavableGroups.isEmpty
+                    && newGroupName == nil {
                     Section {
                         Text(localized("沒有符合的分組"))
                             .font(DSFont.subheadline)
@@ -176,7 +208,7 @@ struct BookSourceGroupPickerSheet: View {
             BookSourceGroupCandidate(name: "玄幻", count: 88),
             BookSourceGroupCandidate(name: "m.qidian.com", count: 4),
         ],
-        excluded: "聚合源",
+        excluded: ["聚合源"],
         defaultGroupTitle: "移出分組",
         defaultGroupName: "默認分組",
         allowsNewGroup: true,
@@ -189,10 +221,28 @@ struct BookSourceGroupPickerSheet: View {
         title: "合併到其他分組",
         subtitle: "言情 · 124 個來源配置",
         candidates: [],
-        excluded: "言情",
+        excluded: ["言情"],
         defaultGroupTitle: "默認分組",
         defaultGroupName: "默認分組",
         allowsNewGroup: false,
+        onSelect: { _ in }
+    )
+}
+
+#Preview("加入分組 — 多個分組") {
+    BookSourceGroupPickerSheet(
+        title: "加入分組",
+        subtitle: "示例來源配置",
+        candidates: [
+            BookSourceGroupCandidate(name: "言情", count: 124),
+            BookSourceGroupCandidate(name: "m.qidian.com", count: 4),
+        ],
+        excluded: ["玄幻", "搜索失效"],
+        defaultGroupTitle: nil,
+        defaultGroupName: "默認分組",
+        allowsNewGroup: true,
+        leavableGroups: ["玄幻", "搜索失效"],
+        onLeave: { _ in },
         onSelect: { _ in }
     )
 }

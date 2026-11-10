@@ -130,7 +130,7 @@ struct BookSourceImportOptionsView: View {
                 title: localized("匯入到分組"),
                 subtitle: localized("選中的來源配置會歸到這個分組"),
                 candidates: groupCandidates,
-                excluded: "",
+                excluded: [],
                 defaultGroupTitle: nil,
                 defaultGroupName: "",
                 allowsNewGroup: true,
