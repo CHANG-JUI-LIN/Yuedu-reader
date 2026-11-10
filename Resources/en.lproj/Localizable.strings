@@ -1695,6 +1695,9 @@
 "已置頂" = "Moved to top";
 "已置底" = "Moved to bottom";
 "取消置頂" = "Unpin from Top";
+"書架：置頂" = "Pin";
+"書架：取消置頂" = "Unpin";
+"書架：已置頂" = "Pinned";
 "取消置底" = "Unpin from Bottom";
 "已取消置頂" = "Unpinned from top";
 "已取消置底" = "Unpinned from bottom";

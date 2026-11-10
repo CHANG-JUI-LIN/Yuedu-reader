@@ -547,7 +547,14 @@ struct HomeView: View {
                 }
             }
             if BookSortOrder(rawValue: sortOrder) == .title {
-                entries.sort { $0.sortTitle.localizedCompare($1.sortTitle) == .orderedAscending }
+                // Pinned books stay in front of the folders too, as `pinnedFirst` puts them.
+                entries.sort { a, b in
+                    let aPinned = a.book?.pinnedAt, bPinned = b.book?.pinnedAt
+                    if aPinned != nil || bPinned != nil {
+                        return (aPinned ?? .distantPast) > (bPinned ?? .distantPast)
+                    }
+                    return a.sortTitle.localizedCompare(b.sortTitle) == .orderedAscending
+                }
             }
             return entries
         }
@@ -557,10 +564,11 @@ struct HomeView: View {
     private func sortedBooks(inGroup group: String?) -> [ReadingBook] {
         let base = group.map { group in store.books.filter { $0.group == group } } ?? store.books
         let order = BookSortOrder(rawValue: sortOrder) ?? .manual
-        guard order != .manual else { return base }
+        guard order != .manual else { return BookSortOrder.pinnedFirst(base) }
         var hasher = Hasher()
         for book in base {
             hasher.combine(book.id)
+            hasher.combine(book.pinnedAt)
             switch order {
             case .manual: break
             case .recentlyRead: hasher.combine(book.lastOpenedDate ?? book.addedDate)
@@ -1175,10 +1183,27 @@ struct HomeView: View {
                             },
                             onEdit: { editingBook = book },
                             onDelete: { bookToDelete = book },
-                            onShowWork: { showWorkDetail(for: book) }
+                            onShowWork: { showWorkDetail(for: book) },
+                            onTogglePin: { togglePin(book) }
                         )
                         .equatable()
                         .tag(book.id)
+                        // 左滑 (feedback #17), as legado's shelf: 置頂 and 刪除, the delete going
+                        // through the same confirmation as the ••• menu's. The list only.
+                        .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+                            if !isSelecting {
+                                Button(role: .destructive) { bookToDelete = book } label: {
+                                    Label(localized("刪除"), systemImage: "trash")
+                                }
+                                Button { togglePin(book) } label: {
+                                    Label(
+                                        BookshelfPinLabel.title(isPinned: book.isPinned),
+                                        systemImage: BookshelfPinLabel.systemImage(isPinned: book.isPinned)
+                                    )
+                                }
+                                .tint(DSColor.accent)
+                            }
+                        }
                     case .folder(let name, let books):
                         BookshelfFolderRow(
                             name: name,
@@ -1222,6 +1247,13 @@ struct HomeView: View {
         .accessibilityIdentifier(shelfAccessibilityIdentifier(for: page, isInView: isInView, grid: false))
         .refreshable {
             await ChapterUpdater.refreshAll(bookStore: store)
+        }
+    }
+
+    /// 置頂 / 取消置頂: the shelf's swipe, its ••• menu and its VoiceOver actions.
+    private func togglePin(_ book: ReadingBook) {
+        withAnimation(reduceMotion ? nil : DSAnimation.standard) {
+            store.setPinned(!book.isPinned, bookId: book.id)
         }
     }
 
@@ -1296,7 +1328,8 @@ struct HomeView: View {
                             },
                             onEdit: { editingBook = book },
                             onDelete: { bookToDelete = book },
-                            onShowWork: { showWorkDetail(for: book) }
+                            onShowWork: { showWorkDetail(for: book) },
+                            onTogglePin: { togglePin(book) }
                         )
                         .equatable()
                     case .folder(let name, let books):
@@ -1883,6 +1916,8 @@ struct BookRow: View {
     let onDelete: () -> Void
     /// 作品詳情 (5f), offered for every book.
     var onShowWork: (() -> Void)? = nil
+    /// 置頂 / 取消置頂 (feedback #17).
+    var onTogglePin: (() -> Void)? = nil
 
     /// A row's cover. A group's folder in the list takes the same frame.
     static let coverSize = CGSize(width: 45, height: 65)
@@ -1904,6 +1939,9 @@ struct BookRow: View {
                 .accessibilityActions {
                     if let onShowWork {
                         Button(localized("作品詳情")) { onShowWork() }
+                    }
+                    if let onTogglePin {
+                        Button(BookshelfPinLabel.title(isPinned: book.isPinned)) { onTogglePin() }
                     }
                     Button(localized("編輯書籍資訊")) { onEdit() }
                     Button(localized("刪除書籍"), role: .destructive) { onDelete() }
@@ -1934,9 +1972,11 @@ struct BookRow: View {
                             }
                             BookOverflowMenu(
                                 iconSize: 16,
+                                isPinned: book.isPinned,
                                 onEdit: onEdit,
                                 onDelete: onDelete,
-                                onShowWork: onShowWork
+                                onShowWork: onShowWork,
+                                onTogglePin: onTogglePin
                             )
                         }
                     }
@@ -1983,6 +2023,13 @@ struct BookRow: View {
                 }
 
                 HStack(spacing: 6) {
+                    if book.isPinned {
+                        // Read in the row's label (`BookshelfAccessibility`), not on its own.
+                        Image(systemName: "pin.fill")
+                            .font(DSFont.caption)
+                            .foregroundStyle(DSColor.textSecondary)
+                            .accessibilityHidden(true)
+                    }
                     if book.hasNewChapterUpdate {
                         updateBadge
                     }
@@ -2108,6 +2155,8 @@ struct BookGridCell: View {
     let onDelete: () -> Void
     /// 作品詳情 (5f), offered for every book.
     var onShowWork: (() -> Void)? = nil
+    /// 置頂 / 取消置頂 (feedback #17): the grid has no swipe, so its ••• offers it.
+    var onTogglePin: (() -> Void)? = nil
     @State private var coverFrame = BookshelfCoverFrameBox()
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -2183,9 +2232,11 @@ struct BookGridCell: View {
                     BookOverflowMenu(
                         iconSize: isCompactLayout ? 13 : 14,
                         controlSize: isCompactLayout ? 28 : 32,
+                        isPinned: book.isPinned,
                         onEdit: onEdit,
                         onDelete: onDelete,
-                        onShowWork: onShowWork
+                        onShowWork: onShowWork,
+                        onTogglePin: onTogglePin
                     )
                     // 選取 takes the per-book menu away, as it does in the list. It keeps
                     // its room, so the shelf does not reflow on the way in and out.
@@ -2608,16 +2659,27 @@ struct BookshelfAddToGroupSheet: View {
 private struct BookOverflowMenu: View {
     let iconSize: CGFloat
     var controlSize: CGFloat = 44
+    var isPinned = false
     let onEdit: () -> Void
     let onDelete: () -> Void
     /// 作品詳情 (5f), offered for every book.
     var onShowWork: (() -> Void)? = nil
+    /// 置頂 / 取消置頂 (feedback #17).
+    var onTogglePin: (() -> Void)? = nil
 
     var body: some View {
         Menu {
             if let onShowWork {
                 Button { onShowWork() } label: {
                     Label(localized("作品詳情"), systemImage: "books.vertical")
+                }
+            }
+            if let onTogglePin {
+                Button { onTogglePin() } label: {
+                    Label(
+                        BookshelfPinLabel.title(isPinned: isPinned),
+                        systemImage: BookshelfPinLabel.systemImage(isPinned: isPinned)
+                    )
                 }
             }
             Button { onEdit() } label: {
@@ -2631,6 +2693,17 @@ private struct BookOverflowMenu: View {
         }
         .buttonStyle(.plain)
         .accessibilityLabel(localized("更多"))
+    }
+}
+
+/// 置頂 or 取消置頂, as the book stands: the swipe, the ••• menu and VoiceOver say the same.
+enum BookshelfPinLabel {
+    static func title(isPinned: Bool) -> String {
+        localized(isPinned ? "書架：取消置頂" : "書架：置頂")
+    }
+
+    static func systemImage(isPinned: Bool) -> String {
+        isPinned ? "pin.slash" : "pin"
     }
 }
 
@@ -2794,6 +2867,7 @@ extension BookGridCell: @MainActor Equatable {
             && lhs.selectedCoverScale == rhs.selectedCoverScale
             && lhs.transitionNamespace == rhs.transitionNamespace
             && (lhs.onShowWork == nil) == (rhs.onShowWork == nil)
+            && (lhs.onTogglePin == nil) == (rhs.onTogglePin == nil)
             && (lhs.onCoverFrameChange == nil) == (rhs.onCoverFrameChange == nil)
     }
 }
@@ -2804,6 +2878,7 @@ extension BookRow: @MainActor Equatable {
             && lhs.isEditing == rhs.isEditing
             && lhs.transitionNamespace == rhs.transitionNamespace
             && (lhs.onShowWork == nil) == (rhs.onShowWork == nil)
+            && (lhs.onTogglePin == nil) == (rhs.onTogglePin == nil)
             && (lhs.onCoverFrameChange == nil) == (rhs.onCoverFrameChange == nil)
     }
 }

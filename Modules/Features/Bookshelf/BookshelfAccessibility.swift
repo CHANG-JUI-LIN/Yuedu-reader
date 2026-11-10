@@ -9,6 +9,7 @@ enum BookshelfAccessibility {
         if let latest = book.latestChapterDisplayTitle {
             parts.append(localized("最新") + localized("，") + latest)
         }
+        if book.isPinned { parts.append(localized("書架：已置頂")) }
         if book.hasNewChapterUpdate { parts.append(localized("有新章節")) }
         parts.append(readingStatus(for: book))
         if book.offlineDownloadState == .downloading { parts.append(localized("下載中")) }

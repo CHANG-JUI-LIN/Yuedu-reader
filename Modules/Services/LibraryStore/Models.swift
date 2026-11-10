@@ -395,6 +395,11 @@ struct ReadingBook: Identifiable, Codable {
     /// encoded only when present, for the reason `audioPlayMode` gives.
     var versionOf: UUID?
 
+    /// When 置頂 last pinned the book on the shelf (feedback #17); `nil` when it is not pinned.
+    /// A pinned book comes first in every shelf order (`BookSortOrder.pinnedFirst`). Optional
+    /// and encoded only when present, for the reason `audioPlayMode` gives.
+    var pinnedAt: Date?
+
     /// Its chapters are built by rules — a 來源配置's or a module's — into the cache's raw and
     /// normalized HTML (`ChapterFetcher.buildChapterPackage`); a browser import's are plain
     /// text a page gave.
@@ -496,6 +501,7 @@ struct ReadingBook: Identifiable, Codable {
         customIntro = try c.decodeIfPresent(String.self, forKey: .customIntro)
         module = try c.decodeIfPresent(ModuleBookReference.self, forKey: .module)
         versionOf = try c.decodeIfPresent(UUID.self, forKey: .versionOf)
+        pinnedAt = try c.decodeIfPresent(Date.self, forKey: .pinnedAt)
     }
 
     enum CodingKeys: String, CodingKey {
@@ -515,6 +521,7 @@ struct ReadingBook: Identifiable, Codable {
         case customIntro
         case module
         case versionOf
+        case pinnedAt
     }
 
     /// Read only: where builds before `BookChapterStore` kept the table of contents.
@@ -552,6 +559,9 @@ struct ReadingBook: Identifiable, Codable {
 }
 
 extension ReadingBook {
+    /// 置頂 on the shelf: it comes first in every order.
+    var isPinned: Bool { pinnedAt != nil }
+
     /// Whether 繼續閱讀 lists it: opened, and not taken out since it was last opened.
     var isInContinueReading: Bool {
         guard let opened = lastOpenedDate else { return false }
@@ -1299,12 +1309,22 @@ enum BookSortOrder: String {
     /// `books` in this order: the 書架 tab's, and 探索's 書架 section's (feedback #24). 手動 is
     /// the order the shelf holds them in.
     func sorted(_ books: [ReadingBook]) -> [ReadingBook] {
-        switch self {
+        let ordered: [ReadingBook] = switch self {
         case .manual:       books
         case .recentlyRead: books.sorted { ($0.lastOpenedDate ?? $0.addedDate) > ($1.lastOpenedDate ?? $1.addedDate) }
         case .title:        books.sorted { $0.title.localizedCompare($1.title) == .orderedAscending }
         case .author:       books.sorted { $0.author.localizedCompare($1.author) == .orderedAscending }
         }
+        return Self.pinnedFirst(ordered)
+    }
+
+    /// `books` with the pinned ones moved to the front, the latest pinned first (置頂, feedback
+    /// #17); the rest keep their order.
+    static func pinnedFirst(_ books: [ReadingBook]) -> [ReadingBook] {
+        let pinned = books.filter { $0.pinnedAt != nil }
+        guard !pinned.isEmpty else { return books }
+        return pinned.sorted { ($0.pinnedAt ?? .distantPast) > ($1.pinnedAt ?? .distantPast) }
+            + books.filter { $0.pinnedAt == nil }
     }
 }
 

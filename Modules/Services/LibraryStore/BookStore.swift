@@ -1047,6 +1047,15 @@ class BookStore: @MainActor ObservableObject, BookProvider {
         }
     }
 
+    /// 置頂 / 取消置頂 on the shelf (feedback #17). A pinned book comes first in every shelf
+    /// order, the latest pinned on top (`BookSortOrder.pinnedFirst`).
+    func setPinned(_ pinned: Bool, bookId: UUID) {
+        guard let idx = records.firstIndex(where: { $0.id == bookId }),
+              records[idx].isPinned != pinned else { return }
+        records[idx].pinnedAt = pinned ? Date() : nil
+        saveMeta()
+    }
+
     /// The audiobook player's play mode for this book (legado-E / MD3 `Book.setPlayMode`).
     func setAudioPlayMode(bookId: UUID, mode: AudiobookPlayMode) {
         guard let idx = records.firstIndex(where: { $0.id == bookId }),
