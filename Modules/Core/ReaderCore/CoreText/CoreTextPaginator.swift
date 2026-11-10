@@ -300,6 +300,47 @@ final class CoreTextPaginator: Sendable {
             )
         }
 
+        /// Everything `withUpdatedAppearance` reads from the reader, as one value: what a
+        /// caller compares to learn whether the appearance moved while a layout was being
+        /// given it off the main thread.
+        struct Appearance: Sendable, Equatable {
+            var textColor: UIColor
+            var backgroundColor: UIColor
+            var readerBackgroundImage: UIImage?
+            var regexHighlightConfiguration: RegexHighlightConfiguration = .disabled
+            var readerStyleAppearance: ReaderStyleAppearance = .light
+            var readerStyleAssetRevision: UInt64 = 0
+
+            static func == (lhs: Appearance, rhs: Appearance) -> Bool {
+                lhs.textColor == rhs.textColor
+                    && lhs.backgroundColor == rhs.backgroundColor
+                    // The engines hand out one cached image per URL; identity is the comparison.
+                    && lhs.readerBackgroundImage === rhs.readerBackgroundImage
+                    && lhs.regexHighlightConfiguration == rhs.regexHighlightConfiguration
+                    && lhs.readerStyleAppearance == rhs.readerStyleAppearance
+                    && lhs.readerStyleAssetRevision == rhs.readerStyleAssetRevision
+            }
+        }
+
+        /// `withUpdatedAppearance` run off the caller's executor, for a layout of unknown
+        /// size on the main actor. The update typesets the whole chapter again — a new
+        /// framesetter, then a frame per page — which for a book delivered as one chapter is
+        /// seconds: Crashlytics 27c07ad8 blocked the main thread ≥12.4 s here after a preload.
+        /// Measured on 1.2 M CJK characters / 1,376 pages (Debug, simulator): 9401 ms, of
+        /// which the framesetter is 8252 ms and the page frames 1269 ms.
+        func withUpdatedAppearanceInBackground(_ appearance: Appearance) async -> ChapterLayout {
+            await Task.detached(priority: .userInitiated) {
+                withUpdatedAppearance(
+                    textColor: appearance.textColor,
+                    backgroundColor: appearance.backgroundColor,
+                    readerBackgroundImage: appearance.readerBackgroundImage,
+                    regexHighlightConfiguration: appearance.regexHighlightConfiguration,
+                    readerStyleAppearance: appearance.readerStyleAppearance,
+                    readerStyleAssetRevision: appearance.readerStyleAssetRevision
+                )
+            }.value
+        }
+
         /// Updates reader appearance without re-paginating. A user-selected
         /// background image is kept independently from authored CSS backgrounds so
         /// clearing the reader preference restores the publication's own artwork.
@@ -312,6 +353,32 @@ final class CoreTextPaginator: Sendable {
             readerStyleAssetRevision: UInt64 = 0
         ) -> ChapterLayout {
             guard attributedString.length > 0 else { return self }
+            // On the main thread this span is also what `MainThreadMonitor` names if the
+            // thread stops answering (Crashlytics 27c07ad8 died here "during no instrumented span").
+            return SourcePerfTrace.span(
+                "coreText.appearance",
+                "spine=\(spineIndex) pages=\(pageRanges.count) chars=\(attributedString.length) main=\(Thread.isMainThread)"
+            ) {
+                appearanceUpdated(
+                    textColor: textColor,
+                    backgroundColor: backgroundColor,
+                    readerBackgroundImage: readerBackgroundImage,
+                    regexHighlightConfiguration: regexHighlightConfiguration,
+                    readerStyleAppearance: readerStyleAppearance,
+                    readerStyleAssetRevision: readerStyleAssetRevision
+                )
+            }
+        }
+
+        private func appearanceUpdated(
+            textColor: UIColor,
+            backgroundColor: UIColor,
+            readerBackgroundImage: UIImage?,
+            regexHighlightConfiguration: RegexHighlightConfiguration,
+            readerStyleAppearance: ReaderStyleAppearance,
+            readerStyleAssetRevision: UInt64
+        ) -> ChapterLayout {
+            let recolourStart = SourcePerfTrace.now
             let updated = NSMutableAttributedString(attributedString: attributedString)
             let fullRange = NSRange(location: 0, length: updated.length)
             let oldBackgroundColor = self.backgroundColor
@@ -477,6 +544,13 @@ final class CoreTextPaginator: Sendable {
                 }
             }
 
+            SourcePerfTrace.record("coreText.appearance.recolour", "spine=\(spineIndex)", since: recolourStart)
+            let framesStart = SourcePerfTrace.now
+            defer {
+                SourcePerfTrace.record(
+                    "coreText.appearance.frames", "spine=\(spineIndex) pages=\(pageRanges.count)", since: framesStart
+                )
+            }
             let newFramesetter = CoreTextFramesetterFactory.make(for: updated)
             // Dark appearance prefers the publication's own dark body fill when it has one;
             // otherwise the light authored fill (or the reader theme) carries over.

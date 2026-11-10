@@ -1103,6 +1103,39 @@ final class CoreTextPageEngine: PageRenderingProvider, LinkNavigationProviding, 
         onChapterReady?(spineIndex)
     }
 
+    private func currentLayoutAppearance() -> CoreTextPaginator.ChapterLayout.Appearance {
+        CoreTextPaginator.ChapterLayout.Appearance(
+            textColor: themeTextColor,
+            backgroundColor: themeBackgroundColor,
+            readerBackgroundImage: currentReaderBackgroundImage(),
+            regexHighlightConfiguration: renderSettings.regexHighlightConfiguration,
+            readerStyleAppearance: renderSettings.readerStyleAppearance,
+            readerStyleAssetRevision: renderSettings.readerStyleAssetRevision
+        )
+    }
+
+    /// A paginated layout in the reader's current appearance, built off the main actor
+    /// (Crashlytics 27c07ad8: this step ran here and blocked the reader ≥12.4 s on a book
+    /// that is one chapter). nil when the preload was superseded or cancelled meanwhile —
+    /// `abortReason(generation:)` names which.
+    ///
+    /// The theme can change while the layout is away; nothing else would recolour it, since
+    /// `applyThemeChange` only reaches layouts already installed. So the appearance is read
+    /// again on return and the layout redone until the one it carries is the current one.
+    private func layoutWithCurrentAppearance(
+        _ layout: CoreTextPaginator.ChapterLayout,
+        generation: Int
+    ) async -> CoreTextPaginator.ChapterLayout? {
+        var appearance = currentLayoutAppearance()
+        while true {
+            let styled = await layout.withUpdatedAppearanceInBackground(appearance)
+            guard abortReason(generation: generation) == nil else { return nil }
+            let current = currentLayoutAppearance()
+            if current == appearance { return styled }
+            appearance = current
+        }
+    }
+
     private func preloadChapterInternal(
         at spineIndex: Int,
         generation: Int
@@ -1220,14 +1253,12 @@ final class CoreTextPageEngine: PageRenderingProvider, LinkNavigationProviding, 
                 }
                 var paginatedFirstPage = firstPageResult.layout
                 paginatedFirstPage.translation = buildResult.translation
-                let firstPageLayout = paginatedFirstPage.withUpdatedAppearance(
-                    textColor: themeTextColor,
-                    backgroundColor: themeBackgroundColor,
-                    readerBackgroundImage: currentReaderBackgroundImage(),
-                    regexHighlightConfiguration: renderSettings.regexHighlightConfiguration,
-                    readerStyleAppearance: renderSettings.readerStyleAppearance,
-                    readerStyleAssetRevision: renderSettings.readerStyleAssetRevision
-                )
+                guard let firstPageLayout = await layoutWithCurrentAppearance(
+                    paginatedFirstPage, generation: generation
+                ) else {
+                    ReaderPerfTrace.end(firstPageTrace)
+                    return abortReason(generation: generation) ?? .cancelled
+                }
                 installLayout(firstPageLayout, for: spineIndex)
                 if firstPageLayout.isPartial {
                     SourcePerfTrace.record(
@@ -1277,17 +1308,16 @@ final class CoreTextPageEngine: PageRenderingProvider, LinkNavigationProviding, 
             since: fullLayoutStart
         )
 
-        installLayout(
-            layout.withUpdatedAppearance(
-                textColor: themeTextColor,
-                backgroundColor: themeBackgroundColor,
-                readerBackgroundImage: currentReaderBackgroundImage(),
-                regexHighlightConfiguration: renderSettings.regexHighlightConfiguration,
-                readerStyleAppearance: renderSettings.readerStyleAppearance,
-                readerStyleAssetRevision: renderSettings.readerStyleAssetRevision
-            ),
-            for: spineIndex
+        let appearanceStart = SourcePerfTrace.now
+        guard let styledLayout = await layoutWithCurrentAppearance(layout, generation: generation) else {
+            return abortReason(generation: generation) ?? .cancelled
+        }
+        SourcePerfTrace.record(
+            "coreText.fullLayout.appearance",
+            "spine=\(spineIndex) pages=\(layout.pageRanges.count)",
+            since: appearanceStart
         )
+        installLayout(styledLayout, for: spineIndex)
         AppLogger.render("[FlipTrace] preload done spine=\(spineIndex) pages=\(layout.pageRanges.count) generation=\(generation) layouts=\(_layouts.keys.sorted())")
         return documentIsEmpty ? .contentUnavailable : .laidOut
     }
