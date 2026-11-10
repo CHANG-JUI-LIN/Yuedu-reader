@@ -2,6 +2,7 @@ import CoreGraphics
 import Foundation
 import Testing
 import UIKit
+import YueduCoreText
 @testable import yuedu_app
 
 /// End-to-end coverage for 章節標題樣式 → 字體. Every one of these paths silently
@@ -83,8 +84,10 @@ struct ChapterTitleFontTests {
             for: resolved,
             isBoldRequested: true
         )
-        let strokeWidth = try #require(synthetic[.strokeWidth] as? NSNumber)
-        #expect(strokeWidth.doubleValue < 0)
+        // YueduCoreText fakes bold with a horizontal double draw (WebKit's), not a stroke.
+        let offset = try #require(synthetic[BrowserTextAttributes.syntheticBoldOffset] as? NSNumber)
+        #expect(offset.doubleValue > 0)
+        #expect(synthetic[.strokeWidth] == nil)
     }
 
     @Test("a lighter title weight does not drag in the system face either")
