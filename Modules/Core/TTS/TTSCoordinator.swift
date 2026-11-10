@@ -560,6 +560,9 @@ final class TTSCoordinator: ObservableObject {
     /// follow the player's real start callback, not the text/highlight callback.
     @Published private(set) var hasAudiblePlaybackStarted = false
     @Published private(set) var errorMessage: String?
+    /// What narration is waiting on before it can start — the AI working out who speaks in the
+    /// chapter. Shown so a press of 聽書 that is followed by seconds of silence explains itself.
+    @Published private(set) var preparationNotice: String?
     @Published var speechRate: Float = 0.5
     @Published var sleepMinutes: Int = 0
     var showsGlobalFloatingPlayer = false
@@ -704,7 +707,8 @@ final class TTSCoordinator: ObservableObject {
         bookTitle: String = "",
         author: String = "",
         artwork: UIImage? = nil,
-        pronunciationHints: [TTSPronunciationHint] = []
+        pronunciationHints: [TTSPronunciationHint] = [],
+        speakerAttributions: [TTSSpeakerAnnotator.Attribution]? = nil
     ) {
         guard !text.isEmpty else {
             ttsLog("[TTS][Coordinator] speak ignored empty text")
@@ -735,7 +739,8 @@ final class TTSCoordinator: ObservableObject {
             text: text,
             title: title,
             rate: speechRate,
-            pronunciationHints: pronunciationHints
+            pronunciationHints: pronunciationHints,
+            speakerAttributions: speakerAttributions
         )
         ttsLog("[TTS][Coordinator] engine speak returned enginePlaying=\(currentEngine.isPlaying)")
         guard currentEngine.isPlaying else {
@@ -893,6 +898,11 @@ final class TTSCoordinator: ObservableObject {
         currentSegmentNarrationRange = nil
         updateNowPlaying()
         publishFloatingPlayerState()
+    }
+
+    func setPreparationNotice(_ notice: String?) {
+        guard preparationNotice != notice else { return }
+        preparationNotice = notice
     }
 
     /// Deliver the chapter the engine has been waiting for and resume narration.

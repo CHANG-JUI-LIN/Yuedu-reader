@@ -54,7 +54,7 @@ final class ComicReaderView: UIImageView {
         contentMode = .scaleAspectFit
         clipsToBounds = true
         Task {
-            guard let (data, _) = try? await URLSession.shared.data(from: url) else { return }
+            guard let (data, _) = try? await URLSession.trusting.data(from: url) else { return }
             guard let image = UIImage(data: data) else { return }
             await MainActor.run {
                 self.image = image

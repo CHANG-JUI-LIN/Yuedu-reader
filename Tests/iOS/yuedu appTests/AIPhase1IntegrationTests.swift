@@ -211,20 +211,6 @@ extension AIPhase1IntegrationTests {
         #expect(cold.identifier == newer.identifier)
     }
 
-    @Test @MainActor func rosterUnknownOrWholeBookScopeIsNotSafe() {
-        let suite = "AIPhase1-\(UUID())"
-        let defaults = UserDefaults(suiteName: suite)!
-        defer { defaults.removePersistentDomain(forName: suite) }
-        let store = AISpeakerRosterStore(defaults: defaults)
-        let source = adapter(["first", "second"])
-        let boundary = end(source, spine: 1)
-        store.save(["lateAlias": "hero"], forBook: bookID)
-        #expect(store.safeRoster(forBook: bookID, boundary: boundary).isEmpty)
-        store.save(["lateAlias": "hero"], forBook: bookID, boundary: end(source, spine: 1, whole: true))
-        #expect(store.safeRoster(forBook: bookID, boundary: boundary).isEmpty)
-        store.save(["earlyAlias": "hero"], forBook: bookID, boundary: end(source, spine: 0))
-        #expect(store.safeRoster(forBook: bookID, boundary: boundary)["earlyAlias"] == "hero")
-    }
 }
 
 extension AIPhase1IntegrationTests {

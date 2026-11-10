@@ -33,6 +33,26 @@ struct WebKitDelegateWitnessTests {
         #expect(type.instancesRespond(to: Self.navigationActionWithPreferences), "\(name)")
     }
 
+    /// `ServerTrustPolicy`: a web view only accepts a certificate the system rejects when its
+    /// delegate answers the challenge. `FixedLayoutEPUBPageRasterizer` and the browser's
+    /// `BackgroundWebViewHandler` answer it too but are private to their files.
+    @Test("the authentication challenge is exposed to WebKit", arguments: [
+        ("SVGWebViewRasterizer", SVGWebViewRasterizer.self as NSObject.Type),
+        ("JSRuleEngineRunner", JSRuleEngineRunner.self),
+        ("LegadoHeadlessWebView", LegadoHeadlessWebView.self),
+        ("SourceLoginWebViewRepresentable.Coordinator", SourceLoginWebViewRepresentable.Coordinator.self),
+        ("ReaderWebEmbedManager", ReaderWebEmbedManager.self),
+        ("RSSArticleWebReaderView.Coordinator", RSSArticleWebReaderView.Coordinator.self),
+        ("BookIntroWebView.Coordinator", BookIntroWebView.Coordinator.self),
+        ("JsBridgeBrowserRepresentable.Coordinator", JsBridgeBrowserRepresentable.Coordinator.self),
+        ("BrowserState", BrowserState.self),
+        ("WebViewFetcher", WebViewFetcher.self),
+    ])
+    func authenticationChallenge(name: String, type: NSObject.Type) {
+        let selector = NSSelectorFromString("webView:didReceiveAuthenticationChallenge:completionHandler:")
+        #expect(type.instancesRespond(to: selector), "\(name)")
+    }
+
     @Test("decidePolicyFor navigation response is exposed to WebKit")
     func decidePolicyForNavigationResponse() {
         #expect(WebViewFetcher.instancesRespond(to: Self.navigationResponse))

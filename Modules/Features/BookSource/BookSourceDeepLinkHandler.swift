@@ -83,7 +83,7 @@ final class BookSourceDeepLinkHandler: ObservableObject {
 
     private func performImport(from sourceURL: URL) async {
         do {
-            let (data, _) = try await URLSession.shared.data(from: sourceURL)
+            let (data, _) = try await URLSession.trusting.data(from: sourceURL)
             guard !data.isEmpty else {
                 phase = .failed(message: localized("無法讀取來源配置資料"))
                 return

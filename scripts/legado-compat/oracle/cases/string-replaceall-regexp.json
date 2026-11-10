@@ -1,0 +1,70 @@
+[
+ {
+  "name": "wrapped Java String .replaceAll(non-global RegExp, '') on text with U+200B",
+  "js": "var r = result.replaceAll(/[\\u200A-\\u200F]/, ''); [typeof r, r.length(), escape(String(r))].join('|')",
+  "result": {
+   "javaString": "a​b/ /c"
+  }
+ },
+ {
+  "name": "wrapped Java String .replaceAll(global RegExp, '')",
+  "js": "var r = result.replaceAll(/[\\u200A-\\u200F]/g, ''); [typeof r, escape(String(r))].join('|')",
+  "result": {
+   "javaString": "a​b/ /c"
+  }
+ },
+ {
+  "name": "wrapped Java String .replaceAll(string regex, '$1') uses Java regex syntax",
+  "js": "var r = result.replaceAll('(b)', '[$1]'); String(r)",
+  "result": {
+   "javaString": "abc"
+  }
+ },
+ {
+  "name": "JS string .replaceAll(non-global RegExp, '')",
+  "js": "var s = 'a\\u200Bb'; escape(s.replaceAll(/[\\u200A-\\u200F]/, ''))"
+ },
+ {
+  "name": "JS string .replaceAll(global RegExp, '')",
+  "js": "var s = 'a\\u200Bb'; escape(s.replaceAll(/[\\u200A-\\u200F]/g, ''))"
+ },
+ {
+  "name": "JS string .replaceAll(string, string) is literal",
+  "js": "'a.b.c'.replaceAll('.', '-')"
+ },
+ {
+  "name": "wrapped Java String .replaceAll(string, string) is a Java regex",
+  "js": "String(result.replaceAll('.', '-'))",
+  "result": {
+   "javaString": "a.b"
+  }
+ },
+ {
+  "name": "wrapped Java String .replace(global RegExp, '')",
+  "js": "var r = result.replace(/b/g, ''); [typeof r, String(r)].join('|')",
+  "result": {
+   "javaString": "abcb"
+  }
+ },
+ {
+  "name": "wrapped Java String .replace(string, string)",
+  "js": "var r = result.replace('b', ''); [typeof r, String(r)].join('|')",
+  "result": {
+   "javaString": "abcb"
+  }
+ },
+ {
+  "name": "wrapped Java String .replaceAll(non-global RegExp with a group, '[$1]'): Java's $1",
+  "js": "String(result.replaceAll(/(b)/, '[$1]'))",
+  "result": {
+   "javaString": "x/b/y b"
+  }
+ },
+ {
+  "name": "wrapped Java String .replaceAll(RegExp valid in JS, invalid as a Java regex)",
+  "js": "try { String(result.replaceAll(/\\p/, '')) } catch (e) { 'threw ' + String(e).slice(0, 60) }",
+  "result": {
+   "javaString": "a p"
+  }
+ }
+]

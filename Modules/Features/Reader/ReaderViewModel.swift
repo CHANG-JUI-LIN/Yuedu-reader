@@ -16,12 +16,15 @@ final class ReaderViewModel: ObservableObject {
 
     // MARK: - Source Change State
 
-    @Published private(set) var changeSourceOrigins: [BookOrigin] = []
-    @Published private(set) var changeSourceLoading: Bool = false
-    @Published private(set) var changeSourceError: String? = nil
+    /// The 換源 list (search, TOCs, failure flags, scores), shared with 作品詳情's 換源. The sheet
+    /// observes it directly, so a result arriving re-renders the sheet and not the reader.
+    let changeSource: ChangeSourceSearch
+    var changeSourceOrigins: [BookOrigin] { changeSource.ranked }
+    var changeSourceLoading: Bool { changeSource.isSearching }
+    var changeSourceError: String? { changeSource.error }
     /// Normalized source-qualified keys of origins that failed to switch (TOC fetch threw),
     /// so the 換源 list can flag them. Backed by `ChangeSourceCache`.
-    @Published private(set) var changeSourceFailedKeys: Set<String> = []
+    var changeSourceFailedKeys: Set<String> { changeSource.failedKeys }
     /// Non-nil while a tapped source is being switched to. The sheet renders a cancellable
     /// "正在載入目錄…" over the row instead of looking frozen — Legado shows a `WaitDialog`
     /// on the same event, and its cancel listener aborts the fetch.
@@ -29,6 +32,25 @@ final class ReaderViewModel: ObservableObject {
     /// Non-nil while another version of the work is being switched to (`ShelfVersionSwitch`),
     /// by its node key: a kept copy's `.copy(id)`. One switch at a time, as with a source.
     @Published private(set) var changeSourcePendingVersion: SourceItemKey?
+    /// 自動換源 at work, or how it failed: the reader's banner (Legado toasts the same).
+    @Published private(set) var autoChangeSourceNotice: AutoChangeSourceNotice?
+
+    enum AutoChangeSourceNotice: Equatable {
+        case changing
+        case failed(id: UUID, message: String)
+    }
+
+    /// 單章換源: the 換源 sheet replaces only the text of the chapter being read (Legado's
+    /// ChangeChapterSourceDialog), not the book's 來源配置. Every opening of the sheet starts
+    /// on 整本書 (`resetChangeSourceSheetMode`).
+    @Published var changeSourceReplacesChapterOnly = false
+    /// The origin whose 目錄 is pushed to pick that chapter from.
+    @Published var changeChapterSourcePick: ChangeChapterSourcePick?
+
+    func resetChangeSourceSheetMode() {
+        changeSourceReplacesChapterOnly = false
+        changeChapterSourcePick = nil
+    }
 
     private struct InFlightRequest {
         let token: UUID
@@ -51,21 +73,10 @@ final class ReaderViewModel: ObservableObject {
     /// uses `ChapterFetching` asynchronously instead of synchronously reading files from a
     /// SwiftUI update callback.
     private var paragraphReviewInspectionAttempted: Set<CachedChapterInspectionKey> = []
-    /// The current 換源 (source switch) search, so a re-open cancels the previous run.
-    private var changeSourceSearchTask: Task<Void, Never>?
     /// The switch the user just tapped, while its TOC is being prepared. Drives the sheet's
     /// cancellable loading state (Legado's `WaitDialog`), and holding the task is what makes
     /// cancelling possible at all.
     private var changeSourceSwitchTask: Task<Void, Never>?
-    /// Background TOC warm-up feeding `searchTOCCache` (see `warmSearchTOCCacheIfEnabled`).
-    private var tocWarmTask: Task<Void, Never>?
-    /// TOCs captured during the search fan-out when 搜索時載入目錄 is on — Legado's `tocMap`.
-    /// A tap that hits this switches with no network round trip at all.
-    private var searchTOCCache: [String: TOCPackage] = [:]
-    /// Total chapters held in `searchTOCCache`. Legado caps the same map at 30 000 chapters
-    /// so a few long 萬章 novels can't pin the whole TOC set in memory.
-    private var searchTOCChapterCount = 0
-    private static let searchTOCChapterLimit = 30_000
 
     convenience init() {
         self.init(
@@ -83,6 +94,7 @@ final class ReaderViewModel: ObservableObject {
         self.chapterFetcher = chapterFetcher
         self.bookSourceFetcher = bookSourceFetcher
         self.offlineDownloadManager = offlineDownloadManager
+        self.changeSource = ChangeSourceSearch(fetcher: bookSourceFetcher)
     }
 
     func chapterState(for chapterIndex: Int) -> ChapterLoadState {
@@ -310,210 +322,52 @@ final class ReaderViewModel: ObservableObject {
 
     // MARK: - Source Change Search
 
-    /// Searches for alternative book sources with the same title. Results update changeSourceOrigins.
+    /// Searches for other origins of `book` (`ChangeSourceSearch`). Unless `forceRefresh` is
+    /// set, a fresh cached result for this book is reused (網路設定 →「搜索結果快取天數」).
     ///
-    /// Honors 網路設定 →「搜索結果快取天數」: unless `forceRefresh` is set, a fresh cached
-    /// result for this book is reused instead of re-running the full cross-source search.
+    /// Every enabled source is searched, the current one included: aggregation sources expose
+    /// several "channels" for the same book under one sourceId, and a user may have only that
+    /// one source installed. The origin in use is the one left out.
     func loadOtherOrigins(
         book: ReadingBook,
         currentSourceId: UUID?,
         enabledSources: [BookSource],
         store: BookStore,
-        forceRefresh: Bool = false
+        forceRefresh: Bool = false,
+        readingChapter: ChangeSourceTarget.ReadingChapter? = nil
     ) {
-        let bookId = book.id
+        changeSource.start(
+            ChangeSourceTarget(
+                title: book.title,
+                author: book.author,
+                bookId: book.id,
+                currentSourceId: currentSourceId,
+                // A book read from elsewhere (an imported file, a library, a module) has no
+                // origin among the sources to leave out.
+                currentBookURL: currentSourceId == nil ? nil : book.bookInfoURL,
+                readingChapter: readingChapter,
+                kind: Self.contentKind(of: book)
+            ),
+            sources: enabledSources,
+            forceRefresh: forceRefresh
+        )
+    }
 
-        // Cache hit: reuse recent results so reopening the sheet is instant.
-        if !forceRefresh,
-           let cached = ChangeSourceCache.shared.freshEntry(
-               for: bookId, days: GlobalSettings.shared.searchCacheDays) {
-            changeSourceSearchTask?.cancel()
-            changeSourceOrigins = cached.origins
-            changeSourceFailedKeys = Set(cached.failedKeys)
-            changeSourceLoading = false
-            changeSourceError = nil
-            sortChangeSourceOriginsByHealth()
-            warmSearchTOCCacheIfEnabled()
-            return
-        }
-
-        changeSourceLoading = true
-        changeSourceError = nil
-        changeSourceOrigins = []
-        // Keep prior failure flags across a re-search so a known-bad source stays marked.
-        changeSourceFailedKeys = Set(ChangeSourceCache.shared.entry(for: bookId)?.failedKeys ?? [])
-        let bookTitle = book.title
-        let bookAuthor = book.author
-        // A book read from elsewhere (an imported file, a library, a module) has no origin among
-        // the sources to leave out.
-        let currentOriginKey = currentSourceId.map {
-            ChangeSourceCache.originKey(sourceId: $0, bookUrl: book.bookInfoURL)
-        }
-        // Search ALL enabled sources, including the current one. Aggregation sources
-        // expose several "channels" for the same book under a single sourceId, and a
-        // user may have only that one source installed — filtering by sourceId would
-        // then yield zero results. We dedup by source-qualified origin, so sibling
-        // sources that share one site URL remain independently switchable.
-        let sources = enabledSources
-        let concurrency = NetworkSearchSettings.clampedConcurrency(GlobalSettings.shared.searchConcurrency)
-        let autoPausePolicy = SearchAutoPausePolicy.configured
-
-        changeSourceSearchTask?.cancel()
-        tocWarmTask?.cancel()
-        changeSourceSearchTask = Task { [weak self] in
-            guard let self else { return }
-            let bookSourceFetcher = self.bookSourceFetcher
-
-            // Fan out with a bounded active window (shared with 封面搜索). Results
-            // are consumed on the MainActor as they stream in, so the list fills
-            // progressively and auto-pause can stop enqueueing untouched sources.
-            let outcome = await BookOriginSearchService.stream(
-                title: bookTitle,
-                author: bookAuthor,
-                sources: sources,
-                concurrency: concurrency,
-                fetcher: bookSourceFetcher,
-                excludingOriginKey: currentOriginKey,
-                shouldStop: { matchCount in
-                    autoPausePolicy.shouldPause(exactCount: matchCount, fuzzyCount: 0)
-                },
-                onBatch: { batchOrigins in
-                    self.changeSourceOrigins.append(contentsOf: batchOrigins)
-                }
-            )
-
-            if Task.isCancelled { return }
-            self.changeSourceLoading = false
-            // Fastest sources first (respondTime EMA), then persist that order so
-            // the cached list reopens pre-sorted and TOC warm-up hits the best ones.
-            self.sortChangeSourceOriginsByHealth()
-            // Persist results so reopening the sheet is instant (honors 快取天數). A list cut
-            // short by 自動暫停 is stored as partial: reopening searches again instead of
-            // serving it as everything the sources have (feedback #16).
-            ChangeSourceCache.shared.store(
-                origins: self.changeSourceOrigins,
-                for: bookId,
-                isComplete: outcome == .completed
-            )
-            // Only when 搜索時載入目錄 is on; otherwise a tap fetches its own TOC.
-            self.warmSearchTOCCacheIfEnabled()
+    /// The kind of book the reader shows, for 換源's 「書籍類型不一樣」 check.
+    static func contentKind(of book: ReadingBook) -> OnlineBookContentKind {
+        switch book.contentPipelineKind {
+        case .manga: .manga
+        case .audio: .audio
+        case .video: .video
+        case .epub, .txt, .html, .fixedPage: .text
         }
     }
 
-    /// Orders 換源 candidates: origins that previously failed to switch sink to
-    /// the bottom; the rest sort by their source's measured response time
-    /// (unmeasured sources keep arrival order after measured ones).
-    private func sortChangeSourceOriginsByHealth() {
-        guard changeSourceOrigins.count > 1 else { return }
-        let failed = changeSourceFailedKeys
-        let health = SourceHealthStore.shared
-        let decorated = changeSourceOrigins.enumerated().map { offset, origin in
-            (
-                offset: offset,
-                origin: origin,
-                isFailed: failed.contains(ChangeSourceCache.originKey(
-                    sourceId: origin.sourceId, bookUrl: origin.bookUrl))
-                    || failed.contains(ChangeSourceCache.urlKey(origin.bookUrl)),
-                speed: health.responseSortKey(origin.sourceId)
-            )
-        }
-        changeSourceOrigins = decorated.sorted { a, b in
-            if a.isFailed != b.isFailed { return !a.isFailed }
-            if a.speed != b.speed { return a.speed < b.speed }
-            return a.offset < b.offset
-        }.map(\.origin)
-    }
-
-    /// Background-fetches the TOC of the first few switchable origins into
-    /// `BookSourceFetcher`'s cache-first TOC store (Legado's tocMap idea), so the
-    /// actual switch (`updateOnlineBookSource` → `fetchTOCPackage`) is a cache hit
-    /// instead of a network round-trip the user waits on. Serial and low-priority;
-    /// already-cached TOCs return immediately.
     // MARK: - Source Switch
 
-    /// Legado `ChangeBookSourceViewModel.getToc`: the search-phase cache first, the network
-    /// only on a miss. The resulting package is handed to the commit path, so a switch fetches
-    /// its TOC exactly once — the commit used to fetch it a second time.
+    /// The origin's TOC, from the 換源 search when it already fetched it (`ChangeSourceSearch`).
     func prepareTOCPackage(for origin: BookOrigin) async throws -> TOCPackage {
-        let key = ChangeSourceCache.originKey(sourceId: origin.sourceId, bookUrl: origin.bookUrl)
-        if let cached = searchTOCCache[key] {
-            return cached
-        }
-        guard let source = BookSourceStore.shared.source(id: origin.sourceId)
-        else {
-            throw NSError(
-                domain: "ReaderViewModel", code: -1,
-                userInfo: [NSLocalizedDescriptionKey: localized("找不到來源配置")])
-        }
-        // A search result almost never carries a tocUrl: it belongs to the book's
-        // DETAIL page, so `parseSearchResults` leaves it empty on purpose (an empty
-        // rule would otherwise resolve to the site root and we'd scrape the homepage
-        // as a TOC — see the guard in `ModernParserBridge.parseBookInfo`). Handing
-        // that empty string to `fetchTOCPackage` fails `safeURL` and every tapped
-        // origin came back as `Invalid URL:` with nothing after the colon.
-        //
-        // Legado closes the same gap in `ChangeBookSourceViewModel.getToc`:
-        //
-        //     if (book.tocUrl.isEmpty()) { WebBook.getBookInfoAwait(source, book) }
-        //     val toc = WebBook.getChapterListAwait(source, book).getOrThrow()
-        //
-        // Same shape here — fetch the detail page only when the TOC url is missing,
-        // and carry its runtime variables forward, because that request is what a
-        // source's bookInfo JS uses to stash chapter-list state.
-        var tocUrl = origin.tocUrl.trimmingCharacters(in: .whitespacesAndNewlines)
-        var tocRuntimeVariables = origin.runtimeVariables
-        if tocUrl.isEmpty {
-            // Hand over what the 換源 search already established, so a detail page that omits a
-            // field keeps the origin's value instead of blanking it. name/author are deliberately
-            // left empty: `BookOrigin` carries none (a source switch keeps the book's identity,
-            // which lives on the ReadingBook, not on the origin), and this path exists only to
-            // resolve a missing tocUrl — the switch must never rename the book being read.
-            let knownBook = OnlineBook(
-                name: "",
-                author: "",
-                intro: origin.intro,
-                coverUrl: origin.coverUrl,
-                bookUrl: origin.bookUrl,
-                tocUrl: origin.tocUrl,
-                wordCount: origin.wordCount,
-                lastChapter: origin.lastChapter,
-                kind: origin.kind,
-                sourceId: origin.sourceId,
-                sourceName: origin.sourceName,
-                runtimeVariables: origin.runtimeVariables
-            )
-            let info = try await bookSourceFetcher.fetchBookInfoPackage(
-                url: origin.bookUrl,
-                source: source,
-                runtimeVariables: origin.runtimeVariables,
-                knownBook: knownBook
-            )
-            tocUrl = info.tocUrl
-            tocRuntimeVariables = info.runtimeVariables ?? tocRuntimeVariables
-        }
-        let package = try await bookSourceFetcher.fetchTOCPackage(
-            tocUrl: tocUrl,
-            source: source,
-            runtimeVariables: tocRuntimeVariables
-        )
-        // An empty TOC means this source's rules matched nothing. Fail here, before the
-        // commit: the sheet stays open, the origin gets flagged, and the book keeps the
-        // source it already had. Committing an empty list instead left the book with no
-        // chapters at all — see the same guard in `BookStore.updateOnlineBookSource`.
-        guard !package.chapters.isEmpty else {
-            AppLogger.parse("⟐ changeSource empty TOC", context: [
-                "source": origin.sourceName,
-                // The RESOLVED url, not `origin.tocUrl` — that one is empty for most
-                // sources and would make every one of these log lines look identical.
-                "tocUrl": String(tocUrl.prefix(120)),
-                "fromDetailPage": origin.tocUrl.isEmpty,
-            ])
-            throw NSError(
-                domain: "ReaderViewModel", code: -2,
-                userInfo: [NSLocalizedDescriptionKey: localized("此來源配置取不到目錄")])
-        }
-        cacheSearchTOC(package, forKey: key)
-        return package
+        try await changeSource.prepareTOCPackage(for: origin)
     }
 
     /// Runs a tapped source switch as a cancellable unit, publishing the pending origin so the
@@ -548,13 +402,43 @@ final class ReaderViewModel: ObservableObject {
         }
     }
 
+    /// 自動換源 (Legado `autoChangeSource`): which origin it switches to is only known once one
+    /// loads, so there is no row to mark — the reader shows a banner instead.
+    func beginAutoSourceSwitch(work: @escaping @MainActor () async -> Void) {
+        changeSourceSwitchTask?.cancel()
+        changeSourcePendingOrigin = nil
+        changeSourcePendingVersion = nil
+        autoChangeSourceNotice = .changing
+        changeSourceSwitchTask = Task { @MainActor [weak self] in
+            await work()
+            guard !Task.isCancelled else { return }
+            self?.finishSourceSwitch()
+        }
+    }
+
+    /// 自動換源 found nothing to switch to, or its switch failed: the banner says so, and so
+    /// does the 換源 sheet's footer.
+    func reportAutoChangeSourceFailure(_ message: String) {
+        autoChangeSourceNotice = .failed(id: UUID(), message: message)
+        changeSource.reportError(message)
+    }
+
+    /// The failure banner has been shown long enough; a newer notice is left in place.
+    func dismissAutoChangeSourceNotice(_ notice: AutoChangeSourceNotice) {
+        if autoChangeSourceNotice == notice { autoChangeSourceNotice = nil }
+    }
+
     /// Whether a source or a version is being switched to.
-    var isSwitchingSource: Bool { changeSourcePendingOrigin != nil || changeSourcePendingVersion != nil }
+    var isSwitchingSource: Bool {
+        changeSourcePendingOrigin != nil || changeSourcePendingVersion != nil
+            || autoChangeSourceNotice == .changing
+    }
 
     func finishSourceSwitch() {
         changeSourceSwitchTask = nil
         changeSourcePendingOrigin = nil
         changeSourcePendingVersion = nil
+        if autoChangeSourceNotice == .changing { autoChangeSourceNotice = nil }
     }
 
     func cancelPendingSourceSwitch() {
@@ -566,106 +450,24 @@ final class ReaderViewModel: ObservableObject {
     /// the connection pool and the JS bridge, and from that point it is competing with the one
     /// fetch the user is actually waiting on (Legado's `getToc` opens with `stopSearch()`).
     func stopChangeSourceSearch() {
-        changeSourceSearchTask?.cancel()
-        changeSourceSearchTask = nil
-        tocWarmTask?.cancel()
-        tocWarmTask = nil
-        changeSourceLoading = false
-    }
-
-    private func cacheSearchTOC(_ package: TOCPackage, forKey key: String) {
-        // Never cache an empty TOC: `prepareTOCPackage` returns cache hits verbatim, so one
-        // stored here would slip past its empty-TOC guard on every later tap.
-        guard !package.chapters.isEmpty else { return }
-        guard !key.isEmpty, searchTOCCache[key] == nil else { return }
-        guard searchTOCChapterCount < Self.searchTOCChapterLimit else { return }
-        searchTOCChapterCount += package.chapters.count
-        searchTOCCache[key] = package
-    }
-
-    /// Fills `searchTOCCache` for the found candidates when 搜索時載入目錄 is on, so tapping one
-    /// switches with no network wait.
-    ///
-    /// Legado fetches each TOC inline inside that source's search coroutine, which makes the
-    /// result list itself appear slowly. Warming after the list is already sorted keeps the
-    /// list fast and still has most TOCs ready by the time a source is picked; a tap that
-    /// lands first simply fetches normally through `prepareTOCPackage`.
-    private func warmSearchTOCCacheIfEnabled() {
-        guard GlobalSettings.shared.changeSourceLoadToc else { return }
-        tocWarmTask?.cancel()
-        let failedKeys = changeSourceFailedKeys
-        let sources = BookSourceStore.shared.sources
-        let jobs: [(String, BookOrigin, BookSource)] = changeSourceOrigins.compactMap { origin in
-            let key = ChangeSourceCache.originKey(sourceId: origin.sourceId, bookUrl: origin.bookUrl)
-            guard !key.isEmpty,
-                  searchTOCCache[key] == nil,
-                  !failedKeys.contains(key),
-                  !failedKeys.contains(ChangeSourceCache.urlKey(origin.bookUrl)),
-                  let source = sources.first(where: { $0.id == origin.sourceId })
-            else { return nil }
-            return (key, origin, source)
-        }
-        guard !jobs.isEmpty else { return }
-        let fetcher = bookSourceFetcher
-        tocWarmTask = Task { @MainActor [weak self] in
-            await withTaskGroup(of: (String, TOCPackage)?.self) { group in
-                var next = 0
-                // Bounded window: the warm-up must stay in the background of whatever the
-                // user does next, not saturate the pool the way the fan-out does.
-                let active = min(4, jobs.count)
-
-                func enqueue() {
-                    guard next < jobs.count else { return }
-                    let (key, origin, source) = jobs[next]
-                    next += 1
-                    group.addTask {
-                        guard !Task.isCancelled else { return nil }
-                        guard let package = try? await fetcher.fetchTOCPackage(
-                            tocUrl: origin.tocUrl,
-                            source: source,
-                            runtimeVariables: origin.runtimeVariables
-                        ) else { return nil }
-                        return (key, package)
-                    }
-                }
-
-                for _ in 0..<active { enqueue() }
-                while let result = await group.next() {
-                    if Task.isCancelled { break }
-                    if let (key, package) = result {
-                        self?.cacheSearchTOC(package, forKey: key)
-                    }
-                    enqueue()
-                }
-            }
-        }
+        changeSource.stop()
     }
 
     /// Reports an error from a source change operation.
     func reportChangeSourceError(_ message: String?) {
-        changeSourceError = message
+        changeSource.reportError(message)
     }
 
     /// Flags an origin that failed to switch (its TOC fetch threw), persisting the
     /// flag so it stays marked across reopen/re-search of the same book.
     func markOriginFailed(bookId: UUID, sourceId: UUID, bookUrl: String) {
-        let key = ChangeSourceCache.originKey(sourceId: sourceId, bookUrl: bookUrl)
-        guard !key.isEmpty else { return }
-        changeSourceFailedKeys.insert(key)
-        ChangeSourceCache.shared.markFailed(originKey: key, for: bookId)
+        changeSource.markFailed(sourceId: sourceId, bookUrl: bookUrl, bookId: bookId)
     }
 
     /// Drops an origin's failure flag once it has switched successfully, so the row stops
-    /// showing 載入失敗. `markFailed` only ever appended, so without this a source that
-    /// failed once stayed badged for good — the flag is persisted, so even relaunching
-    /// kept it.
+    /// showing 載入失敗.
     func clearOriginFailure(bookId: UUID, sourceId: UUID, bookUrl: String) {
-        let key = ChangeSourceCache.originKey(sourceId: sourceId, bookUrl: bookUrl)
-        let legacyKey = ChangeSourceCache.urlKey(bookUrl)
-        guard !key.isEmpty else { return }
-        changeSourceFailedKeys.remove(key)
-        changeSourceFailedKeys.remove(legacyKey)
-        ChangeSourceCache.shared.clearFailure(originKeys: [key, legacyKey], for: bookId)
+        changeSource.clearFailure(sourceId: sourceId, bookUrl: bookUrl, bookId: bookId)
     }
 
     /// Searches one source with a timeout, off the main actor. Returns nil on error

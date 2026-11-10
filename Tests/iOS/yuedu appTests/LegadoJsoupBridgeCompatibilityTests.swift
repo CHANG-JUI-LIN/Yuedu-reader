@@ -7,6 +7,93 @@ import Testing
 @Suite("Legado jsoup bridge compatibility", .serialized)
 struct LegadoJsoupBridgeCompatibilityTests {
 
+    // MARK: - Elements a rule hands a script
+
+    /// The chapter titles of a TOC whose list is `.x` and whose chapter name is `script`.
+    private func scriptChapterNames(_ html: String, _ script: String) throws -> [String] {
+        var source = BookSource()
+        source.bookSourceUrl = "https://attached.test"
+        source.ruleToc.chapterList = ".x"
+        source.ruleToc.chapterName = "@js:" + script
+        source.ruleToc.chapterUrl = "@href"
+        return try ModernParserBridge(source: source).parseTOC(
+            html: html, baseURL: "https://attached.test/b", source: source
+        ).map(\.title)
+    }
+
+    /// A list item a rule hands a script is the element inside its page, as in Legado: 轻之文库
+    /// (YCK1331) names each chapter from its volume, five `parentNode()` up. It used to be a copy
+    /// of the item alone, with no parent. Expected values are Rhino 1.8.1 + jsoup 1.16.2's, from
+    /// `scripts/legado-compat/oracle/cases/attached-element-toc.json` (case names in comments).
+    @Test("a list item handed to a script keeps its page: ancestors, siblings, closest")
+    func scriptListItemKeepsItsPage() throws {
+        // 轻之文库 chapterName: five parentNode() up, then select('h2')
+        #expect(try scriptChapterNames(
+            "<div class='vol'><h2>卷一</h2><ul><li><span><b><a class='x' href='/1'>第一章</a></b></span></li></ul></div>",
+            "var title = result.parentNode().parentNode().parentNode().parentNode().parentNode(); title.select('h2').text() + '：' + result.text()"
+        ) == ["卷一：第一章"])
+        // parent, parents, tagName
+        #expect(try scriptChapterNames(
+            "<div id='a'><p><i class='x' href='/1'>t</i></p></div>",
+            "[result.parent().tagName(), result.parents().size(), result.parents().get(1).id()].join('|')"
+        ) == ["p|4|a"])
+        // siblings
+        #expect(try scriptChapterNames(
+            "<ul><li>a</li><li class='x' href='/1'>b</li><li>c</li></ul>",
+            "[result.elementSiblingIndex(), result.nextElementSibling().text(), result.previousElementSibling().text(), result.siblingElements().size()].join('|')"
+        ) == ["1|c|a|2"])
+        // closest
+        #expect(try scriptChapterNames(
+            "<div class='box'><section><p><a class='x' href='/1'>t</a></p></section></div>",
+            "[result.closest('div.box').className(), result.closest('section').tagName(), result.closest('table')].join('|')"
+        ) == ["box|section|"])
+    }
+
+    /// What a script changes is the page, which every later read sees — Legado's scripts edit
+    /// the page they were handed. Oracle: `attached-element-toc.json`.
+    @Test("a script's change to its page is seen by the next read and by the next item")
+    func scriptChangesItsPage() throws {
+        // removing the item is seen by the next read of its page
+        #expect(try scriptChapterNames(
+            "<ul><li class='x' href='/1'>a</li><li>b</li></ul>",
+            "var ul = result.parent(); result.remove(); [ul.children().size(), ul.text()].join('|')"
+        ) == ["1|b"])
+        // one page for every item: what a script removes, the next item's script no longer sees
+        #expect(try scriptChapterNames(
+            "<ul><li class='x' href='/1'>a</li><li class='x' href='/2'>b</li></ul>",
+            "var n = result.parent().children().size(); result.remove(); String(n)"
+        ) == ["2", "1"])
+    }
+
+    /// jsoup's `Node.equals` is identity, and `List.contains`/`indexOf` use it: 掌阅书城
+    /// (YCK1329) drops nested matches with `parents().contains(c)`. Oracle:
+    /// `attached-element-toc.json`. Its last case — `==` on two reads of one node, true in
+    /// Rhino — is not here: JavaScriptCore's `==` compares the two wrapper objects.
+    @Test("an element found again by another path is the same element")
+    func elementIdentityAcrossReads() throws {
+        #expect(try scriptChapterNames(
+            "<div class='a'><ul><li class='x' href='/1'>a</li><li>b</li></ul></div>",
+            "var c = result.parent().parent(); [result.parents().contains(c), result.parent().children().indexOf(result), c.select('li').contains(result), c.select('li').get(0).equals(result), c.select('li').get(1).equals(result)].join('|')"
+        ) == ["true|0|true|true|false"])
+    }
+
+    /// The page copies go when the parse that made them ends, as the engine's own documents
+    /// do: one kept per JSContext would hold a page in each session `BookSourceSession` keeps.
+    @Test("the page copies a parse handed its scripts go when the parse ends")
+    func scriptPageCopiesEndWithTheParse() throws {
+        var source = BookSource()
+        source.bookSourceUrl = "https://attached.test"
+        source.ruleToc.chapterList = ".x"
+        source.ruleToc.chapterName = "@js:result.parent().children().size() + ''"
+        source.ruleToc.chapterUrl = "@href"
+        let parser = ModernParserBridge(source: source)
+        let chapters = try parser.parseTOC(
+            html: "<ul><li class='x' href='/1'>a</li><li>b</li></ul>", baseURL: "https://attached.test/b", source: source
+        )
+        #expect(chapters.map(\.title) == ["2"])
+        #expect(parser.heldScriptPageCount == 0)
+    }
+
     // MARK: - jsoup
 
     @Test("selectFirst answers the first match or null, on documents and elements")
@@ -19,6 +106,30 @@ struct LegadoJsoupBridgeCompatibilityTests {
         """)
         // jsoup 1.16.2 (the version Legado pins) has no `Elements.selectFirst`.
         #expect(value == "x|true|/b|undefined")
+        #expect(engine.lastError == nil)
+    }
+
+    /// Expected values are Rhino 1.8.1 + jsoup 1.16.2's, from
+    /// `scripts/legado-compat/oracle/cases/elements-hasclass.json` (`lc.py oracle`). 1016
+    /// exceptions in the 2026-11-08 audit came from `result.select(…).hasClass(…)`.
+    @Test("hasClass on Elements and Element answers as jsoup does")
+    func hasClassMatchesJsoup() {
+        let engine = JSCoreEngine()
+        let value = engine.evaluate("""
+        function d(h) { return org.jsoup.Jsoup.parse(h); }
+        var two = d("<div class='a b'>x</div><div class='c'>y</div>");
+        [two.select('div').hasClass('b'),                                   // one element of several has it
+         two.select('div').hasClass('d'),                                   // none has it
+         d("<div class='a'>x</div>").select('span').hasClass('a'),          // empty selection
+         d("<div class='Active'>x</div>").select('div').hasClass('active'), // Elements: case-insensitive
+         d("<div class='Active'>x</div>").selectFirst('div').hasClass('ACTIVE'), // Element: case-insensitive
+         d("<div class='a\\tb\\nc'>x</div>").selectFirst('div').hasClass('b'),   // tab separates classes
+         d("<div class='a\\tb\\nc'>x</div>").selectFirst('div').hasClass('c'),   // newline separates classes
+         d("<div class='active-item'>x</div>").selectFirst('div').hasClass('active'), // a prefix is not the class
+         d("<ul><li class='chapter vip'>1</li></ul>").selectFirst('ul').select('li').hasClass('vip'),
+        ].join('|');
+        """)
+        #expect(value == "true|false|false|true|true|true|true|false|true")
         #expect(engine.lastError == nil)
     }
 
@@ -130,7 +241,6 @@ struct LegadoJsoupBridgeCompatibilityTests {
     func strResponseURLIsAMethod() {
         let engine = JSCoreEngine()
         let response = LegadoStrResponse(result: LegadoHTTPResult(
-            requestURL: URL(string: "https://example.com/start")!,
             finalURL: URL(string: "https://example.com/final")!,
             statusCode: 200,
             statusMessage: "OK",
@@ -139,6 +249,42 @@ struct LegadoJsoupBridgeCompatibilityTests {
             body: "ok"
         ))
         #expect(engine.evaluate("typeof result.url + '|' + result.url()", result: response) == "function|https://example.com/final")
+        // Under Rhino `result.body` is the Java method: 台湾小说's (YCK1331) loginCheckJs reads
+        // it with `typeof b === 'function' ? b.call(result) : b`.
+        #expect(engine.evaluate(
+            "var b = result.body; if (typeof b === 'function') b = b.call(result); "
+                + "var c = result.code; if (typeof c === 'function') c = c.call(result); "
+                + "String(b) + '|' + c + '|' + result.url.apply(result, [])",
+            result: response
+        ) == "ok|200|https://example.com/final")
+    }
+
+    @Test("each loginCheckJs run has a scope of its own, as Legado's evalJS does")
+    func loginCheckRunsInItsOwnScope() {
+        let engine = JSCoreEngine()
+        let response = LegadoStrResponse(result: LegadoHTTPResult(
+            finalURL: URL(string: "https://example.com/api-info-1")!,
+            statusCode: 200,
+            statusMessage: "OK",
+            headers: [:],
+            cookies: [:],
+            body: "packed"
+        ))
+        // 三爱小说 (YCK1331) opens its check with `let url`; the second response's check used
+        // to fail with "Can't create duplicate variable: 'url'" and leave the body packed.
+        let check = """
+        let url = result.url()
+        let body = result.body()
+        if (url.includes('format=g2')) {
+          Packages.io.legado.app.help.http.StrResponse(url, body)
+        } else {
+          Packages.io.legado.app.help.http.StrResponse(url, 'unpacked:' + body)
+        }
+        """
+        for _ in 0..<2 {
+            #expect(engine.evaluateResponseScript(check, response: response).body() == "unpacked:packed")
+            #expect(engine.lastError == nil)
+        }
     }
 
     // MARK: - Header JS
@@ -183,6 +329,27 @@ struct LegadoJsoupBridgeCompatibilityTests {
         #expect(engine.evaluate("({ length: function () { return 7; } }).length()") == "7")
         #expect(engine.evaluate("String(eval(42))") == "42")
         #expect(engine.lastError == nil)
+    }
+
+    /// Expected values: rhino 1.8.1, `oracle/cases/string-replaceall-regexp.json` — a wrapped
+    /// Java String (every `java.*` result on Legado) reads a RegExp as its `/source/` text.
+    /// 紫云宫 (YCK1330) strips zero-width characters from each decrypted chapter this way.
+    @Test("replaceAll with a non-global RegExp is a Java String's replaceAll")
+    func javaStringReplaceAllRegExp() {
+        let engine = JSCoreEngine()
+        // "wrapped Java String .replaceAll(non-global RegExp, '') on text with U+200B"
+        #expect(engine.evaluate(#"escape('a\u200Bb/\u200A/c'.replaceAll(/[\u200A-\u200F]/, ''))"#) == "a%u200Bbc")
+        // "… (non-global RegExp with a group, '[$1]'): Java's $1"
+        #expect(engine.evaluate("'x/b/y b'.replaceAll(/(b)/, '[$1]')") == "x[b]y b")
+        #expect(engine.lastError == nil)
+        // "… (RegExp valid in JS, invalid as a Java regex)": Java's PatternSyntaxException.
+        #expect(engine.evaluate(
+            #"try { 'a p'.replaceAll(/\p/, ''); 'replaced' } catch (e) { String(String(e).indexOf('java.util.regex.PatternSyntaxException') >= 0) }"#
+        ) == "true")
+        // What both engines do alike keeps JS's meaning: "JS string .replaceAll(global RegExp,
+        // '')" and "JS string .replaceAll(string, string) is literal".
+        #expect(engine.evaluate(#"escape('a\u200Bb'.replaceAll(/[\u200A-\u200F]/g, ''))"#) == "ab")
+        #expect(engine.evaluate("'a.b.c'.replaceAll('.', '-')") == "a-b-c")
     }
 
     @Test("Integer.parseInt has Java's radix and NumberFormatException behaviour")

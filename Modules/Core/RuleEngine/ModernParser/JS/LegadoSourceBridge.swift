@@ -16,20 +16,41 @@ import JavaScriptCore
 @objc protocol LegadoSourceBridgeExport: JSExport {
     func getVariable() -> String
     func setVariable(_ variable: String?)
-    func getLoginInfo() -> String?
+    /// Legado `BaseSource.putVariable(variable)` — the newer name for `setVariable`
+    /// (八一中文网 calls it).
+    func putVariable(_ variable: String?)
+    /// Legado `BaseSource.getLoginInfo(): String?` — `null` to the script when there is none
+    /// (`LegadoJavaNull`); Swift callers use `getLoginInfo()`.
+    @objc(getLoginInfo) func jsGetLoginInfo() -> JSValue
     func putLoginInfo(_ info: String)
     func getLoginInfoMap() -> JSValue
     func removeLoginInfo()
     func putLoginHeader(_ header: String)
-    func getLoginHeader() -> String?
+    /// Legado `BaseSource.getLoginHeader(): String?`, as `getLoginInfo`.
+    @objc(getLoginHeader) func jsGetLoginHeader() -> JSValue
     func getLoginHeaderMap() -> JSValue
     func removeLoginHeader()
     func getHeaderMap() -> JSValue
     func login() -> String
-    func put(_ key: String, _ value: String)
+    /// Legado's `BaseSource.put` returns the value it stored, so `{{page;source.put("p",page)}}`
+    /// is the page.
+    @discardableResult func put(_ key: String, _ value: String) -> String
     func get(_ key: String) -> String
     func evalJS(_ js: String) -> String
     func getKey() -> String
+    /// Legado `BookSource.getTag()`: the source's name. A method, not only `bookSourceName`:
+    /// Z-Library tests `if (source.getTag)` before calling it.
+    func getTag() -> String
+    /// Legado's `BaseSource` is a `JsExtensions` whose `getSource()` is itself. 移动阅读 (YCK1330)
+    /// reads its config with `source.getSource().bookSourceComment`.
+    func getSource() -> LegadoSourceBridge
+    /// Legado `BaseSource.refreshExplore()`: the source's 發現 categories are read anew.
+    func refreshExplore()
+    /// Legado `BaseSource.refreshJSLib()`: the source's jsLib runs again before its next script.
+    func refreshJSLib()
+    /// Legado `BaseSource.putConcurrent(value)`: the source's requests go at `value` (a
+    /// `concurrentRate`) from now on.
+    func putConcurrent(_ value: String)
 
     var bookSourceUrl: String { get }
     var bookSourceName: String { get }
@@ -114,6 +135,22 @@ import JavaScriptCore
     /// and the 發現頁 fell through to 「洋柿子发现页加载失败」 with no clue why.
     @objc func getKey() -> String { key }
 
+    @objc func getTag() -> String { bookSourceName }
+
+    @objc func getSource() -> LegadoSourceBridge { self }
+
+    @objc func refreshExplore() {
+        DiscoverKindsCache.shared.removeAll(sourceUrl: bookSourceUrl)
+    }
+
+    @objc func refreshJSLib() {
+        refreshJSLibHandler?()
+    }
+
+    @objc func putConcurrent(_ value: String) {
+        SourceRateLimit.updateRate(key: bookSourceUrl, rate: value)
+    }
+
     // MARK: Degates / Handlers (wired externally)
 
     /// Returns the full variable JSON string (Legado convention).
@@ -157,6 +194,9 @@ import JavaScriptCore
 
     /// JS evaluator for `source.evalJS(js)`.
     var evalJSHandler: ((String) -> String)?
+
+    /// Marks the source's jsLib for evaluation again (`source.refreshJSLib()`).
+    var refreshJSLibHandler: (() -> Void)?
 
     // MARK: Simple key-value store (in-memory, mirrors Legado's variableStore)
 
@@ -297,6 +337,10 @@ import JavaScriptCore
         writeVariableJSON(variable)
     }
 
+    func putVariable(_ variable: String?) {
+        writeVariableJSON(variable)
+    }
+
     // MARK: Variable overlay (unified library 5d-5)
 
     private static let variableOverlayKey = "com.yuedu.sourceVariableOverlay"
@@ -374,6 +418,8 @@ import JavaScriptCore
         return getLoginInfoHandler?()
     }
 
+    @objc(getLoginInfo) func jsGetLoginInfo() -> JSValue { LegadoJavaNull.value(getLoginInfo()) }
+
     func putLoginInfo(_ info: String) {
         putLoginInfoHandler?(info)
     }
@@ -395,6 +441,8 @@ import JavaScriptCore
     func getLoginHeader() -> String? {
         return getLoginHeaderHandler?()
     }
+
+    @objc(getLoginHeader) func jsGetLoginHeader() -> JSValue { LegadoJavaNull.value(getLoginHeader()) }
 
     func getLoginHeaderMap() -> JSValue {
         guard let raw = getLoginHeaderHandler?(),
@@ -422,7 +470,7 @@ import JavaScriptCore
 
     // MARK: Key-Value Store
 
-    func put(_ key: String, _ value: String) {
+    @discardableResult func put(_ key: String, _ value: String) -> String {
         let currentJson = readVariableJSON()
         let normalized = Self.normalizeStored(value)
 
@@ -442,6 +490,7 @@ import JavaScriptCore
         }
 
         variableStore[key] = normalized
+        return value
     }
 
     func get(_ key: String) -> String {
@@ -533,6 +582,7 @@ extension LegadoSourceBridge {
         replacement.getHeaderMapHandler = getHeaderMapHandler
         replacement.loginHandler = loginHandler
         replacement.evalJSHandler = evalJSHandler
+        replacement.refreshJSLibHandler = refreshJSLibHandler
         return replacement
     }
 }

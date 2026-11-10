@@ -85,16 +85,27 @@ final class SystemTTSEngine: NSObject, TTSPlayable {
         text: String,
         title: String,
         rate: Float,
-        pronunciationHints: [TTSPronunciationHint]
+        pronunciationHints: [TTSPronunciationHint],
+        speakerAttributions: [TTSSpeakerAnnotator.Attribution]?
     ) {
         ttsLog("[TTS][SystemEngine] speak requested textCount=\(text.count) title=\(title) rate=\(rate)")
         resetPlaybackState()
+        let voicedSpeakers = TTSRoleVoiceCast.speakersWithSpeakableVoices(in: roleVoices, family: .system)
+        let rendersDelivery = speakerAttributions?.contains { $0.delivery?.isNeutral == false } == true
         segments = TTSPronunciationProjector.segments(
             text,
             targetLength: targetChunkLength,
             hints: pronunciationHints,
-            multiRole: TTSRoleVoiceCast.containsSpeakableVoice(in: roleVoices, family: .system),
-            aliases: roleAliases
+            multiRole: rendersDelivery || !voicedSpeakers.isEmpty,
+            aliases: roleAliases,
+            precomputed: speakerAttributions,
+            needsOwnSegment: { attribution in
+                TTSRoleVoiceCast.needsOwnSegment(
+                    attribution,
+                    voicedSpeakers: voicedSpeakers,
+                    rendersDelivery: rendersDelivery
+                )
+            }
         )
         guard !segments.isEmpty else {
             ttsLog("[TTS][SystemEngine] speak aborted no chunks")
@@ -141,7 +152,13 @@ final class SystemTTSEngine: NSObject, TTSPlayable {
                 isWaitingForNextUnit = false
                 silence.stop()
                 ttsLog("[TTS][SystemEngine] resume plays chapter held during pause")
-                speak(text: unit.text, title: "", rate: lastRate, pronunciationHints: unit.pronunciationHints)
+                speak(
+                    text: unit.text,
+                    title: "",
+                    rate: lastRate,
+                    pronunciationHints: unit.pronunciationHints,
+                    speakerAttributions: unit.speakerAttributions
+                )
                 return
             }
             silence.start()
@@ -281,6 +298,7 @@ final class SystemTTSEngine: NSObject, TTSPlayable {
             return
         }
         utterance.voice = voice
+        Self.apply(TTSProsody.approximating(segments[index].delivery), to: utterance)
         activeUtterance = utterance
         isPlaying = true
 
@@ -324,6 +342,7 @@ final class SystemTTSEngine: NSObject, TTSPlayable {
             return
         }
         utterance.voice = voice
+        Self.apply(TTSProsody.approximating(segments[currentIndex].delivery), to: utterance)
         activeUtterance = utterance
         utteranceBaseOffset = offset
         isPlaying = true
@@ -413,7 +432,8 @@ final class SystemTTSEngine: NSObject, TTSPlayable {
                 text: next.text,
                 title: "",
                 rate: lastRate,
-                pronunciationHints: next.pronunciationHints
+                pronunciationHints: next.pronunciationHints,
+                speakerAttributions: next.speakerAttributions
             )
         case .waiting:
             enterWaitingForNextUnit()
@@ -485,7 +505,13 @@ final class SystemTTSEngine: NSObject, TTSPlayable {
         silence.stop()
         // `speak` resets state and mints a fresh token, which is what we want here: the
         // waiting period is the boundary between two chapters.
-        speak(text: unit.text, title: "", rate: lastRate, pronunciationHints: unit.pronunciationHints)
+        speak(
+            text: unit.text,
+            title: "",
+            rate: lastRate,
+            pronunciationHints: unit.pronunciationHints,
+            speakerAttributions: unit.speakerAttributions
+        )
     }
 
     private func publishSegmentChanged(index: Int) {
@@ -610,6 +636,16 @@ final class SystemTTSEngine: NSObject, TTSPlayable {
         }
         utterance.rate = utteranceRate(forUIRate: rate)
         return utterance
+    }
+
+    /// A line's emotion on the on-device voice: pitch and rate as asked, volume only downward —
+    /// an utterance cannot be louder than 1, so 喊叫 is carried by pitch and pace alone.
+    nonisolated static func apply(_ prosody: TTSProsody, to utterance: AVSpeechUtterance) {
+        guard prosody != .zero else { return }
+        utterance.pitchMultiplier = Float(min(max(1 + Double(prosody.pitchPercent) / 100, 0.5), 2.0))
+        utterance.volume = Float(min(max(1 + Double(prosody.volumePercent) / 100, 0.2), 1.0))
+        let scaled = utterance.rate * Float(1 + Double(prosody.ratePercent) / 100)
+        utterance.rate = max(AVSpeechUtteranceMinimumSpeechRate, min(scaled, AVSpeechUtteranceMaximumSpeechRate))
     }
 
     /// Maps the UI rate (0.5 is "normal") onto an `AVSpeechUtterance` rate centered on the

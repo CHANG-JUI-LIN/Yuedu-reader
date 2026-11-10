@@ -54,7 +54,9 @@ struct AjaxAllWorkerJSTests {
         #expect(bridge.evaluateSourceScript("java.ajax(\(Self.jsString(urls[0])))") == "a?n=2")
 
         // The JS timeout resets the engine; state the script set before the batch must survive it.
-        _ = bridge.evaluateSourceScript("var __ajaxAllProbe = 'kept'; 0")
+        // On the global object: a script's own `var` lives only as long as that run, as in
+        // Rhino (`LegadoRuleScope`).
+        _ = bridge.evaluateSourceScript("globalThis.__ajaxAllProbe = 'kept'; 0")
         let (value, elapsed) = Self.timedAjaxAll(bridge, urls)
         #expect(bridge.evaluateSourceScript("typeof __ajaxAllProbe") == "string")
         #expect(value == "a?n=2|b?n=4")
@@ -64,9 +66,11 @@ struct AjaxAllWorkerJSTests {
     @Test("An option URL's js option is evaluated without waiting for the batch timeout")
     func jsOptionInOptionURL() {
         let bridge = Self.bridge()
+        // The option's value is the URL from then on (Legado `url = evalJS(js, url)`), so it
+        // ends with `result`, the URL it was given.
         let urls = [
-            #"https://ajaxall.invalid/a,{"method":"GET","js":"java.put('ajaxAllJsOption', 'ran')"}"#,
-            #"https://ajaxall.invalid/b,{"method":"GET","js":"java.put('ajaxAllJsOption', 'ran')"}"#,
+            #"https://ajaxall.invalid/a,{"method":"GET","js":"java.put('ajaxAllJsOption', 'ran'); result"}"#,
+            #"https://ajaxall.invalid/b,{"method":"GET","js":"java.put('ajaxAllJsOption', 'ran'); result"}"#,
         ]
         #expect(bridge.evaluateSourceScript("java.ajax(\(Self.jsString(urls[0])))") == "a")
 
@@ -85,7 +89,9 @@ struct AjaxAllWorkerJSTests {
         #expect(bridge.evaluateSourceScript("java.ajax(\(Self.jsString(urls[0])))") == "a!")
 
         // The JS timeout resets the engine; state the script set before the batch must survive it.
-        _ = bridge.evaluateSourceScript("var __ajaxAllProbe = 'kept'; 0")
+        // On the global object: a script's own `var` lives only as long as that run, as in
+        // Rhino (`LegadoRuleScope`).
+        _ = bridge.evaluateSourceScript("globalThis.__ajaxAllProbe = 'kept'; 0")
         let (value, elapsed) = Self.timedAjaxAll(bridge, urls)
         #expect(bridge.evaluateSourceScript("typeof __ajaxAllProbe") == "string")
         #expect(value == "a!|b!")

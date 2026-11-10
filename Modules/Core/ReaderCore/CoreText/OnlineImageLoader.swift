@@ -45,6 +45,7 @@ enum OnlineImageLoader {
         timeout: TimeInterval = 8,
         headers: [String: String] = [:],
         cachePolicy: URLRequest.CachePolicy = .returnCacheDataElseLoad,
+        session: URLSession = .trusting,
         decode: (@Sendable (Data, String) async -> Data?)? = nil
     ) async -> UIImage? {
         let cleaned = cleanImageSource(src)
@@ -75,6 +76,7 @@ enum OnlineImageLoader {
                 themeTextColor: themeTextColor,
                 headers: effectiveHeaders,
                 cachePolicy: cachePolicy,
+                session: session,
                 decode: decode
             )
         }
@@ -96,6 +98,7 @@ enum OnlineImageLoader {
         themeTextColor: UIColor? = nil,
         headers: [String: String] = [:],
         cachePolicy: URLRequest.CachePolicy,
+        session: URLSession,
         decode: (@Sendable (Data, String) async -> Data?)? = nil
     ) async -> UIImage? {
         if cleaned.hasPrefix("data:") {
@@ -115,6 +118,7 @@ enum OnlineImageLoader {
                 themeTextColor: themeTextColor,
                 headers: headers,
                 cachePolicy: cachePolicy,
+                session: session,
                 decode: decode
             )
         }
@@ -236,12 +240,13 @@ enum OnlineImageLoader {
         themeTextColor: UIColor? = nil,
         headers: [String: String] = [:],
         cachePolicy: URLRequest.CachePolicy = .returnCacheDataElseLoad,
+        session: URLSession = .trusting,
         decode: (@Sendable (Data, String) async -> Data?)? = nil
     ) async -> UIImage? {
         guard let url = URL(string: urlString) else { return nil }
         // CRITICAL: the renderer loads images SEQUENTIALLY (await per node), so a single hung
         // remote image (段評 avatar/emoji, 版权页 photo) blocks the whole chapter → "infinite
-        // loading". `URLSession.shared.data(from:)` inherits the 60s default; cap it hard.
+        // loading". A request inherits the session's 60s default; cap it hard.
         var request = URLRequest(url: url, cachePolicy: cachePolicy, timeoutInterval: 10)
         request.setValue(
             "Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15",
@@ -258,7 +263,7 @@ enum OnlineImageLoader {
             "url": String(urlString.prefix(90)),
             "srcHeaders": headers.count
         ])
-        guard let (data, response) = try? await URLSession.shared.data(for: request), !data.isEmpty else {
+        guard let (data, response) = try? await session.sourceData(for: request), !data.isEmpty else {
             AppLogger.render("⟐ imgLoad http FAIL", context: [
                 "url": String(urlString.prefix(90)),
                 "ms": Int(Date().timeIntervalSince(started) * 1000)

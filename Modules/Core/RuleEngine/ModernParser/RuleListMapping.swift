@@ -60,9 +60,19 @@ enum RuleListMapping {
     ///   left out and named here. Legado lists it as its page (`bookUrl = baseUrl`), which is
     ///   how a site's "no results" row (「没有找到包含：…」) became a book in 搜尋 (search 9a). An
     ///   empty link rule still means the page itself, as Legado has it.
+    /// - Parameter onSelected: told how many items the list rule selected, before any is read
+    ///   or skipped — Legado's `collections.size`.
     /// - Parameter itemScope: called before each item's rules run; the scope it returns is
     ///   where that item's puts land, and its variables become the item's `runtimeVariables`
     ///   (Legado's `analyzeRule.setRuleData(searchBook)` in `BookList.getSearchItem`).
+    /// - Parameter itemBook: called before each item's rules run; the item's scripts read it as
+    ///   `book`, and each field is written into it as soon as it is read.
+    ///
+    /// The fields are read in Legado's order — name, author, kind, word count, latest chapter,
+    /// intro, cover, link (`BookList.getSearchItem`; legado-E, MD3 and upstream agree) — so a
+    /// later rule reads an earlier one off `book`: 松鹤阅读's link is
+    /// `…/bookInfo?resourceId={{book.kind}}`. The filter still runs right after the author: it
+    /// reads only those two, and a row it drops shows nothing of the rest.
     static func items(
         engine: ModernRuleEngine,
         content: Any,
@@ -71,18 +81,43 @@ enum RuleListMapping {
         fields: RuleListFields,
         earlyFilter: ((_ name: String, _ author: String) -> Bool)? = nil,
         onMissingLink: ((_ name: String) -> Void)? = nil,
-        itemScope: (() -> RuleDataInterface)? = nil
+        itemScope: (() -> RuleDataInterface)? = nil,
+        itemBook: (() -> LegadoBookBridge)? = nil,
+        onSelected: ((_ count: Int) -> Void)? = nil
     ) -> [RuleListItem] {
-        guard !listRule.isEmpty else { return [] }
+        guard !listRule.isEmpty else {
+            onSelected?(0)
+            return []
+        }
         engine.setContent(content, baseUrl: baseURL)
         var items: [RuleListItem] = []
-        for element in engine.getElements(ruleStr: listRule) {
+        let elements = engine.getElements(ruleStr: listRule)
+        onSelected?(elements.count)
+        for element in elements {
             let scope = itemScope?()
+            let book = itemBook?()
             engine.setContent(element, baseUrl: baseURL)
             let name = engine.getString(ruleStr: fields.name)
             guard !name.isEmpty else { continue }
+            book?.name = name
             let author = engine.getString(ruleStr: fields.author)
+            book?.author = author
             if let earlyFilter, !earlyFilter(name, author) { continue }
+            // Android Legado parses `kind` with getStringList and joins the values. Besides
+            // keeping several categories, this leaves the intermediate `result` a mutable
+            // List for trailing JS such as `result.add(...)`.
+            let kind = engine.getStringList(ruleStr: fields.kind).joined(separator: ",")
+            book?.kind = kind
+            let wordCount = engine.getString(ruleStr: fields.wordCount)
+            book?.wordCount = wordCount
+            let lastChapter = engine.getString(ruleStr: fields.lastChapter)
+            book?.latestChapterTitle = lastChapter
+            let intro = engine.getString(ruleStr: fields.intro)
+            book?.intro = intro
+            // A cover rule that matches nothing stays empty rather than falling back to the
+            // page's URL (`getOptionalURL`).
+            let coverUrl = engine.getOptionalURL(ruleStr: fields.coverUrl)
+            book?.coverUrl = coverUrl
             let bookUrl: String
             if let onMissingLink, !fields.bookUrl.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                 bookUrl = engine.getOptionalURL(ruleStr: fields.bookUrl)
@@ -93,20 +128,16 @@ enum RuleListMapping {
             } else {
                 bookUrl = engine.getString(ruleStr: fields.bookUrl, isUrl: true)
             }
+            book?.bookUrl = bookUrl
             items.append(RuleListItem(
                 name: name,
                 author: author,
                 bookUrl: bookUrl,
-                // A cover rule that matches nothing stays empty rather than falling back to
-                // the page's URL (`getOptionalURL`).
-                coverUrl: engine.getOptionalURL(ruleStr: fields.coverUrl),
-                intro: engine.getString(ruleStr: fields.intro),
-                wordCount: engine.getString(ruleStr: fields.wordCount),
-                lastChapter: engine.getString(ruleStr: fields.lastChapter),
-                // Android Legado parses `kind` with getStringList and joins the values. Besides
-                // keeping several categories, this leaves the intermediate `result` a mutable
-                // List for trailing JS such as `result.add(...)`.
-                kind: engine.getStringList(ruleStr: fields.kind).joined(separator: ","),
+                coverUrl: coverUrl,
+                intro: intro,
+                wordCount: wordCount,
+                lastChapter: lastChapter,
+                kind: kind,
                 language: fields.language.isEmpty ? "" : engine.getString(ruleStr: fields.language),
                 aliases: values(engine, fields.aliases),
                 tags: values(engine, fields.tags),

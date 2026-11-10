@@ -272,7 +272,9 @@ struct ReaderView: View {
     /// cache. Filled by `gatherAIBookText()` when an AI surface opens. See `aiBookAdapter()`.
     @State var aiPreparedSourceIdentity: ReaderAISourceIdentity?
     @State var aiSourceAdapter: AIBookContentAdapter?
-    @State var ttsDetectedSpeakers: [String] = []
+    /// The current chapter as the 多角色朗讀 screen sees it: its analysis request and the
+    /// speakers read off the prose. Built in a `.task`, never in `body`.
+    @State var ttsRoleCastContext: TTSRoleCastContext = .empty
     @State var aiGatherGeneration = UUID()
     @State var aiGatherTask: Task<Void, Never>?
     @State var aiCitationError: String?
@@ -411,13 +413,6 @@ struct ReaderView: View {
     /// Snapshot of the book at reader launch, so we can re-add it to the shelf
     /// if it was deleted during the reading session.
     @State var snapshotBook: ReadingBook?
-
-    // Source change state managed by ViewModel, exposed via computed properties to avoid duplicate state in the view.
-    var changeSourceOrigins: [BookOrigin] { readerViewModel.changeSourceOrigins }
-    var changeSourceLoading: Bool { readerViewModel.changeSourceLoading }
-    var changeSourceError: String? { readerViewModel.changeSourceError }
-    var changeSourceFailedKeys: Set<String> { readerViewModel.changeSourceFailedKeys }
-    var changeSourcePendingOrigin: BookOrigin? { readerViewModel.changeSourcePendingOrigin }
 
     @State private var systemBrightness: Double = 0.5
     /// The window the reader is in; see `ReaderWindowReference`. Not private:
@@ -2181,6 +2176,34 @@ struct ReaderView: View {
             )
             .zIndex(50)
 
+            if let notice = ttsCoordinator.preparationNotice {
+                // Same band as the bookmark toast. Stays for as long as narration waits on
+                // the AI, which is the whole point: a press of 聽書 followed by silence.
+                ReaderTTSPreparationBanner(
+                    text: notice,
+                    colorScheme: readerTheme == .night ? .dark : .light
+                )
+                .padding(.top, DSSpacing.sm)
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+                .allowsHitTesting(false)
+                .transition(.opacity)
+                .zIndex(51)
+            }
+
+            if let notice = readerViewModel.autoChangeSourceNotice {
+                // 自動換源: the same band, while it searches and briefly when it fails.
+                ReaderAutoChangeSourceBanner(
+                    notice: notice,
+                    colorScheme: readerTheme == .night ? .dark : .light,
+                    onExpire: { readerViewModel.dismissAutoChangeSourceNotice(notice) }
+                )
+                .padding(.top, DSSpacing.sm)
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+                .allowsHitTesting(false)
+                .transition(.opacity)
+                .zIndex(52)
+            }
+
             if let toast = bookmarkToast {
                 // A banner at the top, just under the Dynamic Island: the status bar
                 // is hidden while reading, so that band is free. With the chrome up it
@@ -2380,6 +2403,7 @@ struct ReaderView: View {
                 ttsNarrationOffsets = nil
                 ttsPendingChapterIndex = nil
                 ttsStartLayoutRequest = nil
+                ttsCoordinator.setPreparationNotice(nil)
                 ttsPlaybackAnchor = nil
                 showTTSJumpPrompt = false
                 ttsJumpPromptChapterIndex = nil
@@ -3056,14 +3080,17 @@ struct ReaderView: View {
                     onNextChapter: { startAdjacentTTSChapter(delta: 1) },
                     onSelectChapter: { startTTSChapter(atTOCEntry: $0) },
                     bookID: bookId,
-                    detectedSpeakers: ttsDetectedSpeakers,
+                    castContext: ttsRoleCastContext,
                     aiAdapter: aiBookAdapter(),
-                    aiProgress: aiReadingProgress()
+                    aiProgress: aiReadingProgress(),
+                    onPreAnalyze: { preAnalyzeTTSChapters(count: $0) },
+                    onCastChanged: { reapplyTTSRoleCast() }
                 )
                 .task(id: ttsSpeakerDetectionKey) {
                     // Detection may load persisted cards. Never perform it
                     // during SwiftUI body/accessibility tree evaluation.
-                    ttsDetectedSpeakers = detectedTTSSpeakers()
+                    await AIDialogueCastService.shared.loadRoster(forBook: bookId)
+                    ttsRoleCastContext = makeTTSRoleCastContext()
                 }
                 .task { await gatherAIBookText() }
             }
@@ -3133,6 +3160,7 @@ struct ReaderView: View {
                 // walked away from would still commit and yank them to another source.
                 readerViewModel.cancelPendingSourceSwitch()
                 readerViewModel.stopChangeSourceSearch()
+                readerViewModel.resetChangeSourceSheetMode()
                 versionFinder.stop()
             }
         }
@@ -3246,6 +3274,7 @@ struct ReaderView: View {
     private func performInitialLoad() {
         refreshInitialRestoreState()
         notifySourceStartRead()
+        autoChangeSourceIfSourceMissing()
         guard let currentBook = book, currentBook.isOnline else {
             loadContent()
             return

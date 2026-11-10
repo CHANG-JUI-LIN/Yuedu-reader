@@ -39,7 +39,12 @@ final class HTTPTTSEngine: NSObject, TTSPlayable {
     /// One reusable graph is kept across chunk boundaries. The index prevents a paused
     /// session after a seek/new chapter from accidentally resuming the previous chunk.
     private var audioPlayer: TTSChunkAudioPlayer?
-    private var loadedPlayerIndex: Int?
+    private var loadedPlayerIndex: Int? {
+        // Every path that unloads the player (stop, clear, a new chunk) also empties its queue.
+        didSet { if loadedPlayerIndex == nil { queuedPlayerIndex = nil } }
+    }
+    /// The segment queued on the player behind the one playing, so it starts with no gap.
+    private var queuedPlayerIndex: Int?
     private var audioProvider: TTSAudioProvider
     private let injectedAudioProvider: TTSAudioProvider?
     private struct DownloadTask {
@@ -102,7 +107,8 @@ final class HTTPTTSEngine: NSObject, TTSPlayable {
         text: String,
         title: String,
         rate: Float,
-        pronunciationHints: [TTSPronunciationHint] = []
+        pronunciationHints: [TTSPronunciationHint],
+        speakerAttributions: [TTSSpeakerAnnotator.Attribution]?
     ) {
         ttsLog("[TTS][HTTPEngine] speak requested textCount=\(text.count) title=\(title) rate=\(rate)")
         let isDirectChapterAudio = DirectChapterAudioResolver.request(from: text) != nil
@@ -127,6 +133,13 @@ final class HTTPTTSEngine: NSObject, TTSPlayable {
             onError?(error)
             return
         }
+        let family = Self.family(of: audioProvider)
+        // An imported source can only voice an emotion through its own template.
+        let deliveryAudible = family != .bookSource
+            || CustomHTTPProvider.templateTakesDelivery(GlobalSettings.shared.httpTtsUrlTemplate)
+        let rendersDelivery = deliveryAudible
+            && speakerAttributions?.contains { $0.delivery?.isNeutral == false } == true
+        let voicedSpeakers = TTSRoleVoiceCast.speakersWithSpeakableVoices(in: roleVoices, family: family)
         segments = isDirectChapterAudio
             ? [TTSSpeakableSegment(
                 text: text,
@@ -136,14 +149,20 @@ final class HTTPTTSEngine: NSObject, TTSPlayable {
                 text,
                 targetLength: targetChunkLength,
                 hints: pronunciationHints,
-                // Both network paths can change voice between segments now: 微軟線上語音
-                // by rebuilding the SSML, an imported source by using a different imported
-                // source. Direct chapter audio still cannot — there is no text to re-speak.
-                multiRole: TTSRoleVoiceCast.containsSpeakableVoice(
-                    in: roleVoices,
-                    family: audioProvider is EdgeTTSAudioProvider ? .edge : .bookSource
-                ),
-                aliases: roleAliases
+                // Every network path can change voice between segments: 微軟線上語音 and Azure
+                // by rebuilding the SSML, OpenAI and MiMo by naming another voice, an imported
+                // source by using a different imported source. Direct chapter audio cannot —
+                // there is no text to re-speak.
+                multiRole: rendersDelivery || !voicedSpeakers.isEmpty,
+                aliases: roleAliases,
+                precomputed: speakerAttributions,
+                needsOwnSegment: { attribution in
+                    TTSRoleVoiceCast.needsOwnSegment(
+                        attribution,
+                        voicedSpeakers: voicedSpeakers,
+                        rendersDelivery: rendersDelivery
+                    )
+                }
             )
         speechChunks = segments.map {
             TTSPronunciationSpeechText(text: $0.text, hints: $0.pronunciationHints).text
@@ -158,6 +177,7 @@ final class HTTPTTSEngine: NSObject, TTSPlayable {
         lastRate = rate
         serverControlsSpeed = !isDirectChapterAudio
             && (audioProvider is EdgeTTSAudioProvider
+                || audioProvider is AzureTTSAudioProvider
                 || GlobalSettings.shared.httpTtsUrlTemplate.contains("speakSpeed"))
         currentIndex = 0
         isPaused = false
@@ -194,7 +214,13 @@ final class HTTPTTSEngine: NSObject, TTSPlayable {
                 pendingUnit = nil
                 isWaitingForNextUnit = false
                 ttsLog("[TTS][HTTPEngine] resume plays chapter held during pause")
-                speak(text: unit.text, title: "", rate: lastRate, pronunciationHints: unit.pronunciationHints)
+                speak(
+                    text: unit.text,
+                    title: "",
+                    rate: lastRate,
+                    pronunciationHints: unit.pronunciationHints,
+                    speakerAttributions: unit.speakerAttributions
+                )
                 return
             }
             startSilence()
@@ -394,25 +420,53 @@ final class HTTPTTSEngine: NSObject, TTSPlayable {
     /// Direct chapter audio keeps the captured provider: it is a recording, not speech, and
     /// there is no text to re-speak in another voice.
     private func provider(forSegmentAt index: Int) -> any TTSAudioProvider {
-        guard injectedAudioProvider == nil,
-              segments.indices.contains(index),
-              let speaker = segments[index].speaker,
-              let stored = roleVoices[speaker],
-              let voice = TTSRoleVoice(storageValue: stored)
-        else {
+        guard injectedAudioProvider == nil, segments.indices.contains(index) else {
             return audioProvider
         }
+        let segment = segments[index]
+        let voice = segment.speaker
+            .flatMap { roleVoices[$0] }
+            .flatMap(TTSRoleVoice.init(storageValue:))
+        // Narration, and a quote nobody voiced or directed, keeps the narrator's provider.
+        let delivery = segment.delivery?.isNeutral == false || segment.delivery?.persona != nil
+            ? segment.delivery : nil
+        guard voice != nil || delivery != nil else { return audioProvider }
         // Cast with a voice this engine cannot speak — an on-device voice while the network
         // engine is running, or a source that was deleted — reads in the narrator's voice
-        // rather than failing the segment.
-        if audioProvider is EdgeTTSAudioProvider {
-            guard let edge = voice.edgeVoice else { return audioProvider }
-            return EdgeTTSAudioProvider(voice: edge)
-        }
-        guard audioProvider is CustomHTTPProvider, let source = voice.importedSource() else {
+        // rather than failing the segment; its emotion still applies.
+        switch audioProvider {
+        case let edge as EdgeTTSAudioProvider:
+            return EdgeTTSAudioProvider(voice: voice?.edgeVoice ?? edge.voice, delivery: delivery)
+        case let azure as AzureTTSAudioProvider:
+            let ref = voice?.cloudVoice(for: .azure).map(AzureTTSVoiceRef.init(storage:)) ?? azure.voice
+            return AzureTTSAudioProvider(
+                configuration: azure.configuration,
+                voice: ref,
+                delivery: delivery,
+                supportedStyles: AzureTTSVoiceCatalog.shared.voice(named: ref.shortName).map { Set($0.styles) }
+            )
+        case let cloud as OpenAICompatibleTTSAudioProvider:
+            return OpenAICompatibleTTSAudioProvider(
+                configuration: cloud.configuration,
+                voice: voice?.cloudVoice(for: cloud.configuration.service) ?? cloud.voice,
+                delivery: delivery
+            )
+        case is CustomHTTPProvider:
+            return CustomHTTPProvider(source: voice?.importedSource(), delivery: delivery)
+        default:
             return audioProvider
         }
-        return CustomHTTPProvider(source: source)
+    }
+
+    /// Which catalogue a narrator provider draws its cast from.
+    static func family(of provider: any TTSAudioProvider) -> TTSVoiceFamily {
+        switch provider {
+        case is EdgeTTSAudioProvider: return .edge
+        case is AzureTTSAudioProvider: return .azure
+        case let cloud as OpenAICompatibleTTSAudioProvider:
+            return cloud.configuration.service == .mimo ? .mimo : .openAI
+        default: return .bookSource
+        }
     }
 
     private func downloadChunk(at index: Int, token: UUID, priority: DownloadPriority) {
@@ -532,8 +586,45 @@ final class HTTPTTSEngine: NSObject, TTSPlayable {
             pendingPlaybackIndex = nil
             playChunk(at: index, token: token)
         } else {
+            if index == currentIndex + 1 { enqueueNextIfReady() }
             startPreloading(token: token)
         }
+    }
+
+    /// Queues the segment after the one playing on the player, so it follows with no gap.
+    ///
+    /// Not queued — and loaded at the boundary as before — when it has not downloaded yet,
+    /// when its audio format differs from the playing one's, or when it will not decode (the
+    /// boundary path then reports that failure against the right segment).
+    private func enqueueNextIfReady() {
+        let next = currentIndex + 1
+        guard isPlaying, !isPaused, !isWaitingForNextUnit,
+              loadedPlayerIndex == currentIndex, queuedPlayerIndex == nil,
+              segments.indices.contains(next),
+              let player = audioPlayer, player.isPlaying,
+              let data = audioCache[next] else { return }
+        do {
+            if try player.enqueue(data: data) {
+                queuedPlayerIndex = next
+                ttsLog("[TTS][HTTPEngine] queued gapless index=\(next)")
+            }
+        } catch {
+            ttsLog("[TTS][HTTPEngine] queue decode failed index=\(next) error=\(error.localizedDescription)")
+        }
+    }
+
+    /// The player moved on to the queued segment by itself.
+    private func handleAdvancedToQueuedChunk() {
+        guard let next = queuedPlayerIndex, segments.indices.contains(next), isPlaying, !isPaused else { return }
+        queuedPlayerIndex = nil
+        currentIndex = next
+        loadedPlayerIndex = next
+        resumePlaybackTime = 0
+        publishSegmentChanged(index: next)
+        if let audioPlayer { onPlaybackStarted?(audioPlayer.effectiveDuration) }
+        ttsLog("[TTS][HTTPEngine] advanced gapless index=\(next)")
+        startPreloading(token: playbackToken)
+        enqueueNextIfReady()
     }
 
     private func handleDownloadFailure(
@@ -621,6 +712,7 @@ final class HTTPTTSEngine: NSObject, TTSPlayable {
             player.rate = clientPlaybackRate
             audioPlayer = player
             loadedPlayerIndex = index
+            queuedPlayerIndex = nil
 
             let success = player.play()
             isPlaying = success
@@ -631,6 +723,7 @@ final class HTTPTTSEngine: NSObject, TTSPlayable {
             } else {
                 // Wall-clock length, so the Now Playing clock matches what is heard.
                 onPlaybackStarted?(player.effectiveDuration)
+                enqueueNextIfReady()
             }
         } catch {
             // The bytes, not just the error: a rate-limit page, a JSON quota notice and a
@@ -658,6 +751,7 @@ final class HTTPTTSEngine: NSObject, TTSPlayable {
             player.currentTime = min(max(0, time), max(0, player.duration - 0.05))
             audioPlayer = player
             loadedPlayerIndex = index
+            queuedPlayerIndex = nil
             currentIndex = index
 
             let success = player.play()
@@ -665,6 +759,7 @@ final class HTTPTTSEngine: NSObject, TTSPlayable {
             ttsLog("[TTS][HTTPEngine] resume cached chunk index=\(index) seekTo=\(time) duration=\(player.duration) success=\(success)")
             if success {
                 onPlaybackStarted?(player.effectiveDuration)
+                enqueueNextIfReady()
             } else {
                 failPlayback(TTSPlaybackError.playbackFailed(index: index), token: token)
             }
@@ -722,7 +817,8 @@ final class HTTPTTSEngine: NSObject, TTSPlayable {
                 text: next.text,
                 title: "",
                 rate: lastRate,
-                pronunciationHints: next.pronunciationHints
+                pronunciationHints: next.pronunciationHints,
+                speakerAttributions: next.speakerAttributions
             )
         case .waiting:
             enterWaitingForNextUnit()
@@ -765,7 +861,13 @@ final class HTTPTTSEngine: NSObject, TTSPlayable {
         ttsLog("[TTS][HTTPEngine] supplyPendingUnit resuming textCount=\(unit.text.count)")
         isWaitingForNextUnit = false
         // `speak` resets state and mints a fresh token — the wait IS the chapter boundary.
-        speak(text: unit.text, title: "", rate: lastRate, pronunciationHints: unit.pronunciationHints)
+        speak(
+            text: unit.text,
+            title: "",
+            rate: lastRate,
+            pronunciationHints: unit.pronunciationHints,
+            speakerAttributions: unit.speakerAttributions
+        )
     }
 
     private func invalidateDownloads() {
@@ -844,5 +946,10 @@ extension HTTPTTSEngine: TTSChunkAudioPlayerDelegate {
         // cursor advance, turning the previous chunk's completion into a skipped new chunk.
         guard player === audioPlayer else { return }
         handlePlaybackEnded(successfully: flag)
+    }
+
+    func chunkAudioPlayerDidAdvanceToQueuedChunk(_ player: TTSChunkAudioPlayer) {
+        guard player === audioPlayer else { return }
+        handleAdvancedToQueuedChunk()
     }
 }

@@ -146,10 +146,7 @@ struct AllBookSourcesLiveRegressionTests {
                         }
                     }
                     discoverBookCount = discoveredBooks.count
-                    discoveredSearchSeed = OnlineBookValidationSelector.preferredBook(
-                        from: discoveredBooks,
-                        for: source
-                    )?.name
+                    discoveredSearchSeed = OnlineBookValidationSelector.firstBook(in: discoveredBooks)?.name
                         .trimmingCharacters(in: .whitespacesAndNewlines)
                     if items.isEmpty {
                         let recorded = SourceAPIErrorLog.shared.last(
@@ -192,14 +189,11 @@ struct AllBookSourcesLiveRegressionTests {
                     resolvedSearchQuery = query
                     books = try await fetcher.search(query: query, in: source)
                     searchCount = books.count
-                    if OnlineBookValidationSelector.preferredBook(from: books, for: source) != nil {
+                    if OnlineBookValidationSelector.firstBook(in: books) != nil {
                         break
                     }
                 }
-                guard let book = OnlineBookValidationSelector.preferredBook(
-                    from: books,
-                    for: source
-                ) else {
+                guard let book = OnlineBookValidationSelector.firstBook(in: books) else {
                     throw StageFailure(stage: "search", detail: "no usable result")
                 }
 

@@ -1,20 +1,32 @@
 import Foundation
+import os
 
 /// Per-source request throttle honoring Legado's `concurrentRate` (源并发率)
-/// field, which sources declare to avoid tripping site rate limits / IP bans:
+/// field, which sources declare to avoid tripping site rate limits / IP bans.
+/// Legado's `ConcurrentRateLimiter` (legado-E, MD3 and upstream agree):
 /// - "" / "0" → unlimited (the overwhelming majority of sources)
-/// - "N"      → at most N requests in flight for the source at once
-/// - "N/M"    → at most N requests *started* per M milliseconds (sliding window)
+/// - "N"      → one request per N milliseconds ("非并发实际为1/毫秒")
+/// - "N/M"    → at most N requests started per M milliseconds
+///
+/// Until 11-07 a bare "N" here meant N requests in flight at once, so a source declaring
+/// `1000` (one a second — 29 of YCK1330's sources, 10 of 1329's, 12 of 1331's) was not
+/// throttled at all, and `1` made every request of the source wait for the one before.
 ///
 /// `run` acquires the source's budget, executes the operation WITHOUT holding
-/// any lock (so one slow host never serializes other sources), then releases.
-/// Requests of the same source queue on that source's own budget only.
+/// any lock (so one slow host never serializes other sources).
+/// Requests of the same source queue on that source's own budget only. The window slides
+/// (at most N starts in any M ms), where Legado's restarts when M ms have passed since its
+/// first request: the same budget, without the burst of 2N across a window's edge.
 enum SourceRateLimit {
 
-    fileprivate enum Mode: Sendable {
-        case concurrent(max: Int)
-        case window(count: Int, milliseconds: Int)
+    fileprivate struct Mode: Sendable, Equatable {
+        let count: Int
+        let milliseconds: Int
     }
+
+    /// The rate `source.putConcurrent(rate)` set for a source key: Legado's
+    /// `updateConcurrentRate`, which replaces the key's record for as long as the app runs.
+    private static let updatedRates = OSAllocatedUnfairLock(initialState: [String: Mode]())
 
     fileprivate static func parse(_ rawRate: String) -> Mode? {
         let rate = rawRate.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -23,10 +35,18 @@ enum SourceRateLimit {
             let countPart = Int(rate[..<slash].trimmingCharacters(in: .whitespaces))
             let msPart = Int(rate[rate.index(after: slash)...].trimmingCharacters(in: .whitespaces))
             guard let count = countPart, let ms = msPart, count > 0, ms > 0 else { return nil }
-            return .window(count: count, milliseconds: ms)
+            return Mode(count: count, milliseconds: ms)
         }
-        guard let maxInFlight = Int(rate), maxInFlight > 0 else { return nil }
-        return .concurrent(max: maxInFlight)
+        guard let interval = Int(rate), interval > 0 else { return nil }
+        return Mode(count: 1, milliseconds: interval)
+    }
+
+    /// Legado `BaseSource.putConcurrent(value)` → `ConcurrentRateLimiter.updateConcurrentRate`:
+    /// `key`'s requests go at `rate` from now on. A rate that does not parse leaves the
+    /// current one, as Legado's `NumberFormatException` branch keeps the record.
+    static func updateRate(key: String, rate: String) {
+        guard !key.isEmpty, let mode = parse(rate) else { return }
+        updatedRates.withLock { $0[key] = mode }
     }
 
     /// Runs `operation` under the source's declared budget. Sources without a
@@ -43,64 +63,40 @@ enum SourceRateLimit {
         key: String,
         _ operation: () async throws -> T
     ) async rethrows -> T {
-        guard let mode = parse(rate), !key.isEmpty else {
+        // Legado's `fetchStart` checks the source's own rate first: a source without one is
+        // never throttled, whatever `putConcurrent` stored for its key.
+        guard let declared = parse(rate), !key.isEmpty else {
             return try await operation()
         }
+        let mode = updatedRates.withLock { $0[key] } ?? declared
         await Ledger.shared.acquire(key: key, mode: mode)
-        defer {
-            // Release must not block the caller; only the concurrency form
-            // keeps in-flight state that needs decrementing.
-            if case .concurrent = mode {
-                Task { await Ledger.shared.release(key: key) }
-            }
-        }
         return try await operation()
     }
 
-    /// Bookkeeping actor: in-flight counts (concurrency form) and request start
-    /// timestamps (window form) per source key. Waits suspend inside the actor
-    /// (sleep releases it), so acquires of different sources never block each other.
+    /// Bookkeeping actor: request start timestamps per source key. Waits suspend inside the
+    /// actor (sleep releases it), so acquires of different sources never block each other.
     private actor Ledger {
         static let shared = Ledger()
 
-        private var inFlight: [String: Int] = [:]
         private var windowStamps: [String: [Date]] = [:]
 
         func acquire(key: String, mode: Mode) async {
-            switch mode {
-            case .concurrent(let maxInFlight):
-                while (inFlight[key] ?? 0) >= maxInFlight {
-                    try? await Task.sleep(nanoseconds: 50_000_000)
-                    if Task.isCancelled { break }
+            let windowSeconds = Double(mode.milliseconds) / 1000
+            while true {
+                let now = Date()
+                var stamps = (windowStamps[key] ?? []).filter {
+                    now.timeIntervalSince($0) < windowSeconds
                 }
-                inFlight[key, default: 0] += 1
-            case .window(let count, let milliseconds):
-                let windowSeconds = Double(milliseconds) / 1000
-                while true {
-                    let now = Date()
-                    var stamps = (windowStamps[key] ?? []).filter {
-                        now.timeIntervalSince($0) < windowSeconds
-                    }
-                    if stamps.count < count || Task.isCancelled {
-                        stamps.append(now)
-                        windowStamps[key] = stamps
-                        return
-                    }
+                if stamps.count < mode.count || Task.isCancelled {
+                    stamps.append(now)
                     windowStamps[key] = stamps
-                    let waitSeconds = windowSeconds - now.timeIntervalSince(stamps[0])
-                    try? await Task.sleep(
-                        nanoseconds: UInt64(Swift.max(0.01, waitSeconds) * 1_000_000_000)
-                    )
+                    return
                 }
-            }
-        }
-
-        func release(key: String) {
-            let next = (inFlight[key] ?? 1) - 1
-            if next <= 0 {
-                inFlight[key] = nil
-            } else {
-                inFlight[key] = next
+                windowStamps[key] = stamps
+                let waitSeconds = windowSeconds - now.timeIntervalSince(stamps[0])
+                try? await Task.sleep(
+                    nanoseconds: UInt64(Swift.max(0.01, waitSeconds) * 1_000_000_000)
+                )
             }
         }
     }

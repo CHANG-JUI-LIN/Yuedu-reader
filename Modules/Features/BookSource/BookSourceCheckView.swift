@@ -159,30 +159,64 @@ struct BookSourceCheckView: View {
     }
 
     private var progressCard: some View {
-        HStack(spacing: DSSpacing.sm) {
-            if checker.isRunning {
-                ProgressView().scaleEffect(0.9)
-                Text(localized("驗證中…"))
-                    .font(DSFont.bodyBold)
-                    .foregroundStyle(DSColor.textPrimary)
-            } else {
-                Image(systemName: "checkmark.circle.fill")
-                    .foregroundColor(DSColor.success)
-                Text(localized("驗證完成"))
-                    .font(DSFont.bodyBold)
-                    .foregroundStyle(DSColor.textPrimary)
+        VStack(alignment: .leading, spacing: DSSpacing.xs) {
+            HStack(spacing: DSSpacing.sm) {
+                if checker.isRunning {
+                    ProgressView().scaleEffect(0.9)
+                    Text(localized("驗證中…"))
+                        .font(DSFont.bodyBold)
+                        .foregroundStyle(DSColor.textPrimary)
+                } else {
+                    Image(systemName: endedSymbol)
+                        .foregroundColor(endedColor)
+                        .accessibilityHidden(true)
+                    Text(endedTitle)
+                        .font(DSFont.bodyBold)
+                        .foregroundStyle(DSColor.textPrimary)
+                }
+                Spacer()
+                Text("\(checker.finishedCount)/\(checker.items.count)")
+                    .font(DSFont.subheadline)
+                    .foregroundColor(DSColor.textSecondary)
+                    .monospacedDigit()
             }
-            Spacer()
-            Text("\(checker.finishedCount)/\(checker.items.count)")
-                .font(DSFont.subheadline)
-                .foregroundColor(DSColor.textSecondary)
-                .monospacedDigit()
+            if !checker.isRunning, checker.stopReason == .backgroundTimeExpired {
+                // Otherwise the stopped run reads as one that hung, or lost its results.
+                Text(localized("背景執行時間用完，系統停止了驗證；已驗完的結果已儲存。"))
+                    .font(DSFont.footnote)
+                    .foregroundStyle(DSColor.textSecondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
         }
         .padding(DSSpacing.md)
         // Follows 毛玻璃／分組卡片／透明度 like 書源管理's stats card; a hardcoded
         // `secondarySystemBackground` stayed opaque at every setting.
         .interfaceCardSurface(in: RoundedRectangle(cornerRadius: DSRadius.md, style: .continuous))
         .clipShape(RoundedRectangle(cornerRadius: DSRadius.md, style: .continuous))
+    }
+
+    private var endedTitle: String {
+        switch checker.stopReason {
+        case nil: return localized("驗證完成")
+        case .user?: return localized("已停止")
+        case .backgroundTimeExpired?: return localized("已在背景停止")
+        }
+    }
+
+    private var endedSymbol: String {
+        switch checker.stopReason {
+        case nil: return "checkmark.circle.fill"
+        case .user?: return "stop.circle.fill"
+        case .backgroundTimeExpired?: return "pause.circle.fill"
+        }
+    }
+
+    private var endedColor: Color {
+        switch checker.stopReason {
+        case nil: return DSColor.success
+        case .user?: return DSColor.textSecondary
+        case .backgroundTimeExpired?: return DSColor.warning
+        }
     }
 
     private var failureFilterSection: some View {

@@ -1627,6 +1627,8 @@ class BookStore: @MainActor ObservableObject, BookProvider {
             if remainingRoleVoices.count != globalSettings.ttsRoleVoices.count {
                 globalSettings.ttsRoleVoices = remainingRoleVoices
             }
+            // So is the AI's analysis of its chapters and the voices it picked.
+            Task { @MainActor in await AIDialogueCastService.shared.clear(book: bookId) }
             // Nothing draws this book's covers any more: release their bitmaps. The
             // files themselves stay where deletion has always left them.
             let coverSources = [book.coverImagePath, book.originalCoverImagePath]
@@ -2402,7 +2404,10 @@ class BookStore: @MainActor ObservableObject, BookProvider {
             // Always hit the network here: this is the "check for new chapters"
             // path, so the stale cached TOC must be bypassed or serial novels
             // never pick up newly-published chapters.
-            forceRefresh: true
+            forceRefresh: true,
+            // A detail page read just now (a stored package carries none) is the TOC's when the
+            // TOC is the book's own page: Legado's refresh reads `tocHtml` too.
+            detailPage: infoPackage?.onlineBook.detailPage
         )
         if let fetchedRuntime = tocPackage.runtimeVariables, !fetchedRuntime.isEmpty {
             runtimeVariables = fetchedRuntime

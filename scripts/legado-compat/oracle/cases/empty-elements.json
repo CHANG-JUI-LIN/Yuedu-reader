@@ -1,0 +1,11 @@
+[
+ {"name": "empty Elements.attr is an empty string",
+  "html": "<div><a href='/x'>x</a></div>",
+  "js": "var e = doc.select('h3 a'); [typeof e.attr('href'), '[' + e.attr('href') + ']', String(e.attr('href') || '')].join('|')"},
+ {"name": "empty Elements: size, isEmpty, text, html, first",
+  "html": "<div>x</div>",
+  "js": "var e = doc.select('span'); [e.size(), e.isEmpty(), '[' + e.text() + ']', '[' + e.html() + ']', e.first()].join('|')"},
+ {"name": "empty Elements.select and hasClass",
+  "html": "<div>x</div>",
+  "js": "var e = doc.select('span'); [e.select('a').size(), e.hasClass('a'), e.hasAttr('href')].join('|')"}
+]

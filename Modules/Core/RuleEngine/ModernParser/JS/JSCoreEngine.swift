@@ -15,6 +15,31 @@ import os
 /// ```
 class JSCoreEngine {
 
+    /// A Kotlin `Map<String, String>` as Legado binds one: the login sheet's `result`, which
+    /// `SourceLoginDialog.getLoginData` builds as a `HashMap` for the login button, every
+    /// loginUi button and every `loginUi`/`viewName` script. Bound, or set as `result`, it is
+    /// an object with `java.util.Map`'s methods (`__yueduJavaMap`), so `result.get('邮箱')`
+    /// reads it as `result['邮箱']` does. A dictionary binds as a plain object, with no `get`:
+    /// ☁️云端聚合's `login(true)` reads `result.get('邮箱')` inside a `try`, read nothing, and
+    /// answered every filled-in form with 「请先填写邮箱和密码」.
+    struct JavaMap: Sendable {
+        let entries: [String: String]
+        init(_ entries: [String: String]) { self.entries = entries }
+    }
+
+    /// A string a rule chain's earlier step made — a JSONPath, XPath, JSoup or regex step —
+    /// set as `result` as the plain JS string it is. Legado's `AnalyzeRule.getString` turns
+    /// every such step into a `String` (`AnalyzeByJSonPath.getString` joins a list with
+    /// "\n"; a regex replace answers a string), and Rhino binds a `String` as a JS string
+    /// (`Context.javaToJS`). Unmarked, a JSON-looking string is hydrated into the object it
+    /// spells (`setResult`), which a page body or a list item needs: 爱巴士 (YCK1330) reads
+    /// `$.data.content_data` — the text `["我的病娇男友","作者：闲于",…]` — and then
+    /// `result.match(/\["(.*)"\]/)`, which an array has no method for.
+    struct ScriptString: Sendable {
+        let value: String
+        init(_ value: String) { self.value = value }
+    }
+
     private var context: JSContext
     /// Stateless (it goes straight to `HTTPCookieStorage`), so every context shares it.
     private let cookieBridge = LegadoCookieBridge()
@@ -77,6 +102,25 @@ class JSCoreEngine {
     /// Last JavaScript error message (nil if no error on last evaluation).
     private(set) var lastError: String?
 
+    /// Every uncaught exception, counted, with the most recent messages kept. `lastError`
+    /// is cleared by each evaluation, so a stage that runs many scripts — a search page's
+    /// list and field rules — marks first and asks what was thrown since
+    /// (`uncaughtExceptions(since:)`). Guarded by `queueLock`.
+    private var uncaughtExceptionCount = 0
+    private var recentUncaughtExceptions: [String] = []
+
+    func uncaughtExceptionMark() -> Int {
+        withQueueLock { uncaughtExceptionCount }
+    }
+
+    /// The messages of the exceptions thrown since `mark`, oldest first (at most the last 8).
+    func uncaughtExceptions(since mark: Int) -> [String] {
+        withQueueLock {
+            let count = min(uncaughtExceptionCount - mark, recentUncaughtExceptions.count)
+            return count > 0 ? Array(recentUncaughtExceptions.suffix(count)) : []
+        }
+    }
+
     /// Human-readable pipeline stage included in structured compatibility errors.
     private(set) var executionStage = "javascript"
 
@@ -113,19 +157,61 @@ class JSCoreEngine {
         didSet { bridge.getStringListHandler = getStringListHandler }
     }
 
-    /// Handle `java.setContent(content, baseUrl)` — updates engine content and result.
+    /// Handle `java.setContent(content, baseUrl)`: the content of the reader the running rule
+    /// step belongs to (`RuleReaders.setContent`).
     var setContentHandler: ((Any?, String?) -> Void)? {
         didSet { bridge.setContentHandler = setContentHandler }
     }
 
     /// Handle `java.getElements(ruleStr)` — extracts elements from stored content.
-    var getElementsHandler: ((String) -> [Any]?)? {
+    var getElementsHandler: ((String) -> Any?)? {
         didSet { bridge.getElementsHandler = getElementsHandler }
     }
 
-    /// Handle `java.getString(ruleStr)` against previously stored setContent content.
+    /// Handle `java.getElement(ruleStr)` — Legado `AnalyzeRule.getElement`.
+    var getElementHandler: ((String) -> Any?)? {
+        didSet { bridge.getElementHandler = getElementHandler }
+    }
+
+    /// Handle `java.getString(ruleStr, content)`: the rule read against `content`.
     var getStringWithContentHandler: ((String, Any?) -> String?)? {
         didSet { bridge.getStringWithContentHandler = getStringWithContentHandler }
+    }
+
+    /// Makes the rule reader of a script's `AnalyzeRule()` (`LegadoAnalyzeRule`).
+    var analyzeRuleFactory: (() -> ModernRuleEngine?)? {
+        didSet { bridge.analyzeRuleFactory = analyzeRuleFactory }
+    }
+
+    /// The readers a rule step's script calls back into — `java.getString`, `getStringList`,
+    /// `getElements`, `getElement`, `getString(rule, content)`, `setContent` — which belong to
+    /// the engine the step runs in: Legado's `java` is that step's `AnalyzeRule`.
+    struct RuleReaders {
+        var getString: ((String) -> String?)?
+        var getStringList: ((String) -> [String]?)?
+        var getElements: ((String) -> Any?)?
+        var getElement: ((String) -> Any?)?
+        var getStringWithContent: ((String, Any?) -> String?)?
+        var setContent: ((Any?, String?) -> Void)?
+    }
+
+    var ruleReaders: RuleReaders {
+        get {
+            RuleReaders(
+                getString: getStringHandler, getStringList: getStringListHandler,
+                getElements: getElementsHandler, getElement: getElementHandler,
+                getStringWithContent: getStringWithContentHandler,
+                setContent: setContentHandler
+            )
+        }
+        set {
+            getStringHandler = newValue.getString
+            getStringListHandler = newValue.getStringList
+            getElementsHandler = newValue.getElements
+            getElementHandler = newValue.getElement
+            getStringWithContentHandler = newValue.getStringWithContent
+            setContentHandler = newValue.setContent
+        }
     }
 
     /// Called when JS invokes `java.startBrowser` / `java.startBrowserAwait`. Unset, pages
@@ -189,14 +275,12 @@ class JSCoreEngine {
     var bookSource: BookSource? {
         didSet {
             onJSQueue {
-                clearResolvedHeaderCache()
                 guard let src = bookSource else {
                     sourceBridge = LegadoSourceBridge(
                         bookSourceUrl: "", bookSourceName: "", bookSourceGroup: "",
                         bookSourceComment: "", loginUrl: "", header: "", loginCheckJs: ""
                     )
                     cacheBridge = LegadoCacheBridge(sourceId: "")
-                    bridge.requestTimeoutSeconds = 8
                     injectSourceObject(sourceBridge, into: context)
                     context.setObject(cacheBridge, forKeyedSubscript: "cache" as NSString)
                     return
@@ -208,28 +292,37 @@ class JSCoreEngine {
                 injectSourceObject(sourceBridge, into: context)
                 context.setObject(cacheBridge, forKeyedSubscript: "cache" as NSString)
                 installExploreInfoMap(into: context)
-                bridge.requestTimeoutSeconds = Self.clampedRequestTimeoutSeconds(src.respondTime)
             }
         }
     }
 
     // MARK: - Resolved source headers
 
-    private var resolvedHeaderCache: [String: String]?
-    private var resolvedHeaderLoginInfoRevision: UInt64?
-    private let resolvedHeaderCacheLock = NSLock()
     private var isResolvingHeaders = false
     /// Where every resolution is also published for readers off the source's host (cover
     /// cells on the main thread read it through `BookSource.parsedHeaders`).
     var headerSnapshot: SourceHeaderSnapshot?
 
+    /// The session's user waits (`BookSourceSession.userWaits`), handed to every bridge.
+    var userWaits: LegadoUserWaitRegistry? {
+        didSet { bridge.userWaits = userWaits }
+    }
+
     /// The source's `header` rule resolved to request headers (Legado
-    /// `getHeaderMap()`): plain JSON, or a `@js:` / `<js>` rule evaluated here.
+    /// `BaseSource.getHeaderMap()`): plain JSON, or a `@js:` / `<js>` rule evaluated here.
     ///
-    /// Resolved on first use — not when the source is attached — so a rule that
-    /// calls `jsLib` helpers sees them. Cached because a JS rule would otherwise
-    /// re-run for every `java.get`/`java.ajax` (段評 fires hundreds), and guarded
-    /// against re-entry because a header rule may itself issue a request.
+    /// Evaluated again on every call, as Legado evaluates it for every request
+    /// (`AnalyzeUrl.init`, `java.get`/`java.post`): a rule can read state a script set since
+    /// the last request, or have effects a later rule reads. 漫画台 and the other qyyuapi
+    /// sources (YCK 1329) `cache.put` their headers under a key built from a variable their
+    /// login script sets, and their search rule reads that key back; the result this kept
+    /// from before the variable existed (07-25 to 11-09) left the key unset. 小小阅读 signs
+    /// its headers with the current time. A caller building one request reads this once and
+    /// sends that map (`ModernParserBridge.applySourceAuthentication`).
+    ///
+    /// Resolved on first use — not when the source is attached — so a rule that calls
+    /// `jsLib` helpers sees them. A request the header rule's own script issues gets `[:]`,
+    /// where Legado would evaluate the rule again inside itself.
     ///
     /// Never called on the main thread: the source's host resolves it, and readers that
     /// cannot wait read `headerSnapshot` (`BookSource.parsedHeaders`).
@@ -238,34 +331,17 @@ class JSCoreEngine {
         // may reach here: hopping onto that queue deadlocks the batch until its timeout.
         // Every request reads its headers on the JS thread instead — `ajaxAll` resolves them
         // before it fans out, and the AnalyzeUrl handler while it builds each request
-        // (`PreparedSourceRequest`). `work` caches every result it resolves — `[:]` for a
-        // source with no header rule, or no source — except the `[:]` a header rule's own
-        // request gets on re-entry.
-        let loginInfoRevision = currentLoginInfoRevision()
-        resolvedHeaderCacheLock.lock()
-        let cached = resolvedHeaderCache
-        let cachedRevision = resolvedHeaderLoginInfoRevision
-        resolvedHeaderCacheLock.unlock()
-        if let cached, cachedRevision == loginInfoRevision { return cached }
-
+        // (`PreparedSourceRequest`).
         let work = { [self] () -> [String: String] in
-            let currentRevision = currentLoginInfoRevision()
-            resolvedHeaderCacheLock.lock()
-            let cached = resolvedHeaderCache
-            let cachedRevision = resolvedHeaderLoginInfoRevision
-            resolvedHeaderCacheLock.unlock()
-            if let cached, cachedRevision == currentRevision { return cached }
             guard !isResolvingHeaders else { return [:] }
             var headers: [String: String] = [:]
             if let header = bookSource?.header {
                 isResolvingHeaders = true
-                headers = parseHeaders(header)
+                // A source's map carries Legado's default User-Agent when it names none
+                // (`BookSource.withLegadoUserAgent`, Legado `BaseSource.getHeaderMap`).
+                headers = BookSource.withLegadoUserAgent(parseHeaders(header))
                 isResolvingHeaders = false
             }
-            resolvedHeaderCacheLock.lock()
-            resolvedHeaderCache = headers
-            resolvedHeaderLoginInfoRevision = currentRevision
-            resolvedHeaderCacheLock.unlock()
             headerSnapshot?.store(headers)
             return headers
         }
@@ -282,18 +358,6 @@ class JSCoreEngine {
         else { return headers }
         headers.merge(loginHeaders) { _, loginValue in loginValue }
         return headers
-    }
-
-    private func currentLoginInfoRevision() -> UInt64 {
-        guard let sourceUrl = bookSource?.bookSourceUrl else { return 0 }
-        return LoginManager.shared.loginInfoRevision(sourceUrl: sourceUrl)
-    }
-
-    private func clearResolvedHeaderCache() {
-        resolvedHeaderCacheLock.lock()
-        resolvedHeaderCache = nil
-        resolvedHeaderLoginInfoRevision = nil
-        resolvedHeaderCacheLock.unlock()
     }
 
     /// Called when JS evaluation fails, with the error message and the script that caused it.
@@ -332,7 +396,10 @@ class JSCoreEngine {
         bridge.getStringListHandler = getStringListHandler
         bridge.setContentHandler = setContentHandler
         bridge.getElementsHandler = getElementsHandler
+        bridge.getElementHandler = getElementHandler
+        bridge.userWaits = userWaits
         bridge.getStringWithContentHandler = getStringWithContentHandler
+        bridge.analyzeRuleFactory = analyzeRuleFactory
         bridge.browserPresentHandler = browserPresentHandler
         bridge.captchaPresentHandler = captchaPresentHandler
         bridge.browserPagePresentHandler = browserPagePresentHandler
@@ -343,12 +410,11 @@ class JSCoreEngine {
         bridge.refreshBookTocHandler = refreshBookTocHandler
         bridge.refreshExploreHandler = refreshExploreHandler
         bridge.setResponseBase64Handler = responseBase64Handler
-        bridge.requestTimeoutSeconds = bookSource.map { Self.clampedRequestTimeoutSeconds($0.respondTime) } ?? 8
         bridge.videoEpisodeHandover = isHandingOverVideoEpisode ? .init() : nil
 
         // `java.get`/`java.post`/`java.ajax` inside rule JS ask for the source's
         // headers per request; resolve them lazily so a `@js:` rule runs after
-        // jsLib is in place (and only once — see `resolvedSourceHeaders`).
+        // jsLib is in place, and again for every request — see `resolvedSourceHeaders`.
         bridge.sourceHeadersProvider = { [weak self] in
             self?.resolvedRequestHeaders() ?? [:]
         }
@@ -357,18 +423,16 @@ class JSCoreEngine {
         bridge.presentsAndroidIdentityProvider = { [weak self] in
             self?.bookSource?.presentsAndroidIdentity ?? false
         }
+        // The script's own `source` — a book source's or an RSS source's.
+        bridge.keepsCookieJarProvider = { [weak self] in
+            self?.sourceBridge.enabledCookieJar ?? false
+        }
         bridge.sourceIdentityProvider = { [weak self] in
             (self?.bookSource?.bookSourceName ?? "", self?.bookSource?.bookSourceUrl ?? "")
         }
         bridge.importScriptCacheProvider = { [weak self] in
             self?.cacheBridge
         }
-    }
-
-    private static func clampedRequestTimeoutSeconds(_ respondTimeMilliseconds: Int64) -> TimeInterval {
-        guard respondTimeMilliseconds > 0 else { return 8 }
-        let seconds = Double(respondTimeMilliseconds) / 1000.0
-        return min(30, max(8, seconds))
     }
 
     // MARK: - Public API
@@ -458,11 +522,36 @@ class JSCoreEngine {
         // engine under it threw away the script's state and its result. The sheet always
         // ends (`BrowserAwaitBox`) — but it is shown on the main thread, so a caller blocking
         // the main thread here keeps the timeout: waiting on would leave it unable to appear.
+        // A script blocked on the network is not stuck either: each wait is bounded by its
+        // request's own timeout, 60 s as in Legado (`LegadoScriptWaits`).
+        //
+        // So the timeout counts the script's own time, its waits taken out. It checked only
+        // whether a wait was in progress at each 30 s mark, and a script whose waits had all
+        // ended by then had them counted against it: 番茄听书 (YCK 1330 #31) downloads a
+        // chapter's audio and then decrypts it, about 8 s of its own, and a slow download put
+        // the 30 s mark in the decrypt — content and the 發現 after it failed.
         var timedOut = false
+        let started = DispatchTime.now().uptimeNanoseconds
+        let waitedBefore = javaBridge.waitedSeconds
+        var budget = Self.jsTimeout
         SourcePerfTrace.mainThreadWait("wait.jsQueue", "timeout=\(Int(Self.jsTimeout))s timedOut=\(timedOut)") {
-            while group.wait(timeout: .now() + Self.jsTimeout) == .timedOut {
-                if javaBridge.isAwaitingUser, !Thread.isMainThread { continue }
+            while group.wait(timeout: .now() + budget) == .timedOut {
+                if !Thread.isMainThread {
+                    let elapsed = TimeInterval(DispatchTime.now().uptimeNanoseconds - started) / 1_000_000_000
+                    let ownTime = elapsed - (javaBridge.waitedSeconds - waitedBefore)
+                    // Waiting adds nothing to its own time; once the wait ends, the rest of the
+                    // budget is checked again. A second's floor keeps a script near the limit,
+                    // parked on a long wait, from being polled in a tight loop.
+                    if ownTime < Self.jsTimeout || javaBridge.isWaiting {
+                        budget = max(Self.jsTimeout - ownTime, 1)
+                        continue
+                    }
+                }
                 resetEngine(abandoning: queueGeneration)
+                // Why the caller got nothing, read as it reads an exception: a URL script that
+                // ran out of time failed, where one that gave no value reads as Legado's null
+                // (`AnalyzeUrl.evaluateURLScript`).
+                lastError = "script timed out after \(Int(Self.jsTimeout)) s"
                 timedOut = true
                 return
             }
@@ -539,11 +628,31 @@ class JSCoreEngine {
         switch onJSQueueWithTimeout({ [self] () -> String? in
             lastError = nil
             setResult(result)
-            for (key, value) in bindings {
-                context.setObject(value, forKeyedSubscript: key as NSString)
-            }
+            let restoreJava = bindGlobals(bindings, converting: true)
+            defer { restoreJava() }
             let prepared = Self.prepareSourceJS(script)
             guard let value = context.evaluateScript(prepared) else { return nil }
+            return extractString(from: value)
+        }) {
+        case .completed(let r): return r
+        case .timedOut: return nil
+        }
+    }
+
+    /// A rule step's script (`@js:` / `<js>`): `evaluateIsolated`, except that a jsoup
+    /// `Element`/`Elements` the script returns stays elements for the next step, as in Legado
+    /// (`AnalyzeRule.evalJS` returns the Rhino value). Every other value is its string.
+    func evaluateRuleStep(_ script: String, result: Any?, bindings: [String: Any] = [:]) -> Any? {
+        let isolated = Self.isolatedSourceJS(script)
+        switch onJSQueueWithTimeout({ [self] () -> Any? in
+            lastError = nil
+            setResult(result)
+            let restoreJava = bindGlobals(bindings, converting: true)
+            defer { restoreJava() }
+            guard let value = context.evaluateScript(isolated) else { return nil }
+            if lastError == nil, let elements = LegadoJsoupElement.ruleValue(from: value) {
+                return elements
+            }
             return extractString(from: value)
         }) {
         case .completed(let r): return r
@@ -555,18 +664,22 @@ class JSCoreEngine {
     /// script returns another StrResponse, use it; scalar/undefined completion
     /// values mean the script only performed side effects (for example refreshing
     /// a login header), so the original response remains authoritative.
+    ///
+    /// The check runs once per response, so it runs in a scope of its own
+    /// (`isolatedSourceJS`): 三爱小说 (YCK1331) opens it with `let url = result.url()`, and
+    /// a second response's check met the first one's `url` in the shared global scope.
     func evaluateResponseScript(
         _ script: String,
         response: LegadoStrResponse,
         bindings: [String: Any] = [:]
     ) -> LegadoStrResponse {
+        let isolated = Self.isolatedSourceJS(script)
         switch onJSQueueWithTimeout({ [self] in
             lastError = nil
             setResult(response)
-            for (key, value) in bindings {
-                context.setObject(value, forKeyedSubscript: key as NSString)
-            }
-            guard let value = context.evaluateScript(Self.prepareSourceJS(script)),
+            let restoreJava = bindGlobals(bindings, converting: false)
+            defer { restoreJava() }
+            guard let value = context.evaluateScript(isolated),
                   lastError == nil,
                   !value.isUndefined,
                   !value.isNull,
@@ -586,163 +699,61 @@ class JSCoreEngine {
         LegadoRhinoNormalizer.normalize(script).source
     }
 
-    /// Detect a `return` that belongs to the rule snippet itself. Returns inside
-    /// a function/arrow body are valid in a block and must not force the outer
-    /// function wrapper, otherwise the block's final expression is lost.
-    private static func containsTopLevelReturn(_ script: String) -> Bool {
-        let bytes = Array(script.utf8)
-        var braceDepth = 0
-        var canStartRegex = true
-        var quote: UInt8?
-        var escaped = false
-        var lineComment = false
-        var blockComment = false
-        var index = 0
-
-        while index < bytes.count {
-            let byte = bytes[index]
-            let next = index + 1 < bytes.count ? bytes[index + 1] : 0
-
-            if lineComment {
-                if byte == 10 || byte == 13 { lineComment = false }
-                index += 1
-                continue
-            }
-            if blockComment {
-                if byte == 42 && next == 47 {
-                    blockComment = false
-                    index += 2
-                } else {
-                    index += 1
-                }
-                continue
-            }
-            if let activeQuote = quote {
-                if escaped {
-                    escaped = false
-                } else if byte == 92 {
-                    escaped = true
-                } else if byte == activeQuote {
-                    quote = nil
-                    canStartRegex = false
-                }
-                index += 1
-                continue
-            }
-            if byte == 47 && next == 47 {
-                lineComment = true
-                index += 2
-                continue
-            }
-            if byte == 47 && next == 42 {
-                blockComment = true
-                index += 2
-                continue
-            }
-            if byte == 39 || byte == 34 || byte == 96 {
-                quote = byte
-                index += 1
-                continue
-            }
-            // A regular-expression literal may contain an escaped slash immediately
-            // followed by its closing slash (for example `/^https?:\/\//`). A plain
-            // byte scan mistakes that pair for a `//` comment, then loses the braces
-            // on the rest of the line and can classify a nested `return` as top-level.
-            // Skip the complete literal, including character classes, before tracking
-            // block depth. This is the same lexical distinction Rhino makes.
-            if byte == 47, canStartRegex {
-                index += 1
-                var inCharacterClass = false
-                var regexEscaped = false
-                while index < bytes.count {
-                    let regexByte = bytes[index]
-                    if regexEscaped {
-                        regexEscaped = false
-                    } else if regexByte == 92 {
-                        regexEscaped = true
-                    } else if regexByte == 91 {
-                        inCharacterClass = true
-                    } else if regexByte == 93 {
-                        inCharacterClass = false
-                    } else if regexByte == 47, !inCharacterClass {
-                        index += 1
-                        while index < bytes.count,
-                              (bytes[index] >= 65 && bytes[index] <= 90)
-                                || (bytes[index] >= 97 && bytes[index] <= 122) {
-                            index += 1
-                        }
-                        break
-                    }
-                    index += 1
-                }
-                canStartRegex = false
-                continue
-            }
-            if byte == 123 {
-                braceDepth += 1
-                canStartRegex = true
-                index += 1
-                continue
-            }
-            if byte == 125 {
-                braceDepth = max(0, braceDepth - 1)
-                canStartRegex = false
-                index += 1
-                continue
-            }
-            if isIdentifierByte(byte), !(byte >= 48 && byte <= 57) {
-                let start = index
-                index += 1
-                while index < bytes.count, isIdentifierByte(bytes[index]) {
-                    index += 1
-                }
-                let word = String(decoding: bytes[start..<index], as: UTF8.self)
-                if braceDepth == 0, word == "return" {
-                    return true
-                }
-                canStartRegex = [
-                    "return", "case", "throw", "delete", "void", "typeof",
-                    "new", "in", "of", "yield", "await", "else", "do",
-                ].contains(word)
-                continue
-            }
-            if byte >= 48 && byte <= 57 {
-                index += 1
-                while index < bytes.count,
-                      isIdentifierByte(bytes[index]) || bytes[index] == 46 {
-                    index += 1
-                }
-                canStartRegex = false
-                continue
-            }
-            if byte == 40 || byte == 91 || byte == 44 || byte == 59
-                || byte == 58 || byte == 61 || byte == 63 || byte == 33
-                || byte == 38 || byte == 124 || byte == 43 || byte == 45
-                || byte == 42 || byte == 37 || byte == 94 || byte == 126 {
-                canStartRegex = true
-            } else if byte == 41 || byte == 93 {
-                canStartRegex = false
-            }
-            index += 1
-        }
-        return false
+    /// `prepareSourceJS` in a scope of its own (`LegadoRuleScope`), as Legado evaluates
+    /// every script in a fresh runtime scope (`RhinoScriptEngine.getRuntimeScope`): a
+    /// top-level `let url` in one script never meets another's, and a rule's `var d` never
+    /// meets jsLib's `let d`. The script answers with its completion value as Rhino computes
+    /// it (`LegadoCompletionValue`), or with a top-level `return`, which Rhino accepts. The
+    /// text is built once per script; rule scripts run once per item.
+    private static func isolatedSourceJS(_ script: String) -> String {
+        if let built = isolatedScripts.text(for: script) { return built }
+        let prepared = LegadoRhinoNormalizer.normalize(script, evalWrapper: LegadoRuleScope.evalWrapper).source
+        let built = LegadoRuleScope.payload(for: prepared)
+        isolatedScripts.store(built, for: script)
+        return built
     }
 
-    private static func isIdentifierByte(_ byte: UInt8) -> Bool {
-        (byte >= 48 && byte <= 57)
-            || (byte >= 65 && byte <= 90)
-            || (byte >= 97 && byte <= 122)
-            || byte == 95
-            || byte == 36
+    private static let isolatedScripts = IsolatedScriptTexts()
+
+    /// What a rule script's direct eval compiles for `code` (`LegadoRuleScope.evalSource`),
+    /// built once per code: a search script evaluates the same decoder for every request.
+    fileprivate static func ruleEvalSource(_ code: String) -> String {
+        if let built = ruleEvalTexts.text(for: code) { return built }
+        let built = LegadoRuleScope.evalSource(for: code)
+        ruleEvalTexts.store(built, for: code)
+        return built
+    }
+
+    private static let ruleEvalTexts = IsolatedScriptTexts()
+
+    /// Source script → what `isolatedSourceJS` (or `ruleEvalSource`) runs for it. Bounded:
+    /// emptied when full, since a source's scripts are a few dozen and a reading session
+    /// meets a few sources.
+    private final class IsolatedScriptTexts: @unchecked Sendable {
+        private let lock = NSLock()
+        private var texts: [String: String] = [:]
+        private static let capacity = 512
+
+        func text(for script: String) -> String? {
+            lock.lock()
+            defer { lock.unlock() }
+            return texts[script]
+        }
+
+        func store(_ text: String, for script: String) {
+            lock.lock()
+            defer { lock.unlock() }
+            if texts.count >= Self.capacity { texts.removeAll(keepingCapacity: true) }
+            texts[script] = text
+        }
     }
 
     /// Evaluate with multiple bindings injected into the context before execution.
     func evaluate(_ script: String, bindings: [String: Any]) -> String? {
         switch onJSQueueWithTimeout({ [self] () -> String? in
             lastError = nil
-            for (key, value) in bindings {
-                context.setObject(value, forKeyedSubscript: key as NSString)
-            }
+            let restoreJava = bindGlobals(bindings, converting: false)
+            defer { restoreJava() }
             guard let val = context.evaluateScript(Self.prepareSourceJS(script)) else { return nil }
             return extractString(from: val)
         }) {
@@ -751,26 +762,14 @@ class JSCoreEngine {
         }
     }
 
-    /// Evaluate a rule snippet in an isolated scope so `let`/`const` declarations
-    /// from one Legado rule segment do not leak into later segments. Legado also
-    /// permits a top-level `return` in rule snippets, which JavaScriptCore only
-    /// accepts inside a function body. Most snippets instead rely on the final
-    /// expression's completion value; wrapping those in a function would turn
-    /// the same valid value into `undefined`.
+    /// Evaluate a rule snippet in a scope of its own (`isolatedSourceJS`), so nothing one
+    /// Legado rule segment declares or assigns reaches later segments or jsLib.
     func evaluateIsolated(_ script: String, result: Any?, bindings: [String: Any] = [:]) -> String? {
-        let prepared = Self.prepareSourceJS(script)
-        let isolated = Self.containsTopLevelReturn(prepared)
-            ? "(function() {\n\(prepared)\n})()"
-            : "{\n\(prepared)\n}"
-        return evaluate(isolated, result: result, bindings: bindings)
+        evaluate(Self.isolatedSourceJS(script), result: result, bindings: bindings)
     }
 
     func evaluateIsolated(_ script: String, bindings: [String: Any]) -> String? {
-        let prepared = Self.prepareSourceJS(script)
-        let isolated = Self.containsTopLevelReturn(prepared)
-            ? "(function() {\n\(prepared)\n})()"
-            : "{\n\(prepared)\n}"
-        return evaluate(isolated, bindings: bindings)
+        evaluate(Self.isolatedSourceJS(script), bindings: bindings)
     }
 
     /// `evaluateIsolated(_:bindings:)` with `overlay` read in place of the source's stored
@@ -963,14 +962,22 @@ class JSCoreEngine {
                 return
             }
             self.lastError = msg
+            self.withQueueLock {
+                self.uncaughtExceptionCount += 1
+                self.recentUncaughtExceptions.append(msg)
+                if self.recentUncaughtExceptions.count > 8 { self.recentUncaughtExceptions.removeFirst() }
+            }
             if msg.contains("eval() is disabled") {
                 AppLogger.security("Book source JS attempted to use disabled eval(); blocked", context: ["error": msg])
             }
             // Surface uncaught rule-JS exceptions to the device log (Console) so book
             // source failures (TOC/content not loading, etc.) are diagnosable without
             // the in-app debug engine. Only uncaught exceptions reach this handler.
+            // `sourceUrl` names the source exactly: packs repeat names (dozens of 笔趣阁), and
+            // `scripts/legado-compat` attributes each exception to its source by this key.
             AppLogger.parse("Book source rule JS exception", context: [
                 "source": self.bookSource?.bookSourceName ?? "?",
+                "sourceUrl": self.bookSource?.bookSourceUrl ?? "?",
                 "error": msg
             ])
             self.errorHandler?(msg, "js exception")
@@ -1097,6 +1104,35 @@ class JSCoreEngine {
         ctx.setObject(bridges.book, forKeyedSubscript: "book" as NSString)
         ctx.setObject(bridges.chapter, forKeyedSubscript: "chapter" as NSString)
         injectChapterGlobals(bridges.chapter, into: ctx)
+        // Rhino, which runs Legado's rules, gives every bean property its accessor methods as
+        // well: 番茄听书 (YCK 1330) calls `book.setType(32)` and 黄果短剧 calls
+        // `source.getBookSourceUrl()`, which threw `is not a function` here — JSExport exports
+        // the property alone. The methods go on the prototype that every `book`, `chapter`
+        // and `source` of this context shares, so a later `setBookBridge` or a source switch
+        // keeps them; a method the bridge declares itself (`getVariable`, `getKey`) is left
+        // as it is.
+        ctx.evaluateScript("""
+            (function () {
+              function addAccessors(object) {
+                var proto = object && Object.getPrototypeOf(object);
+                if (!proto) return;
+                Object.getOwnPropertyNames(proto).forEach(function (name) {
+                  var d = Object.getOwnPropertyDescriptor(proto, name);
+                  if (!d || (!d.get && !d.set)) return;
+                  var cap = name.charAt(0).toUpperCase() + name.slice(1);
+                  if (d.get && !(('get' + cap) in proto)) {
+                    proto['get' + cap] = function () { return this[name]; };
+                  }
+                  if (d.set && !(('set' + cap) in proto)) {
+                    proto['set' + cap] = function (value) { this[name] = value; };
+                  }
+                });
+              }
+              addAccessors(book);
+              addAccessors(chapter);
+              addAccessors(source);
+            })();
+            """)
 
         // Inject a top-level `print` that delegates to java.log
         let printBlock: @convention(block) (String) -> Void = { msg in
@@ -1123,6 +1159,16 @@ class JSCoreEngine {
         }
         ctx.setObject(rhinoSourceBlock, forKeyedSubscript: "__yueduRhinoSource" as NSString)
 
+        // A rule script's direct eval passes its argument through this instead
+        // (`LegadoRuleScope.evalWrapper`): what the code declares in the script's function is
+        // the script's for `Function` code too, as on Rhino, through `__yueduRuleNames`.
+        let ruleEvalBlock: @convention(block) (JSValue) -> JSValue = { value in
+            guard value.isString, let code = value.toString() else { return value }
+            return JSValue(object: JSCoreEngine.ruleEvalSource(code), in: value.context)
+        }
+        ctx.setObject(ruleEvalBlock, forKeyedSubscript: LegadoRuleScope.evalWrapper as NSString)
+        ctx.evaluateScript(LegadoRuleScope.registry)
+
         // The normalizer rewrites a no-argument `.length()` call to this: a Java String's
         // `length()` (every `java.*` result under Rhino) is the JS string's `length`, and an
         // object that really has a `length()` method still gets it called.
@@ -1133,6 +1179,57 @@ class JSCoreEngine {
                     return typeof length === 'function' ? length.call(this) : length;
                 },
                 enumerable: false, configurable: true, writable: true
+            });
+        """)
+
+        // Under Rhino a `java.*` call returns a wrapped `java.lang.String`, and its
+        // `replaceAll(/re/, s)` is Java's `String.replaceAll(String, String)`: the RegExp
+        // converts to its `/source/flags` text and is read as a Java regex, and nothing throws
+        // (rhino 1.8.1, `oracle/cases/string-replaceall-regexp.json`). Our strings are all JS
+        // strings, and JS throws on a non-global RegExp — as Rhino does for a JS string, so a
+        // source that works on Legado made this call on a Java String. Only that call takes
+        // Java's meaning: a global RegExp or a string pattern works on both engines, and our
+        // strings carry no mark of having come from Java (string patterns on `java.*` results
+        // are Java regexes on Legado and stay literal here). 紫云宫 (YCK1330) strips
+        // zero-width characters from each decrypted chapter with one.
+        let javaReplaceAllBlock: @convention(block) (String, String, String) -> JSValue? = { text, pattern, replacement in
+            guard let context = JSContext.current() else { return nil }
+            guard let replaced = RegexCache.shared.replaceMatches(
+                in: text, pattern: pattern, replacement: replacement
+            ) else {
+                context.exception = JSValue(
+                    newErrorFromMessage: "java.util.regex.PatternSyntaxException: \(pattern)", in: context
+                )
+                return nil
+            }
+            return JSValue(object: replaced, in: context)
+        }
+        ctx.setObject(javaReplaceAllBlock, forKeyedSubscript: "__yueduJavaReplaceAll" as NSString)
+        ctx.evaluateScript("""
+            (function () {
+                var replaceAll = String.prototype.replaceAll;
+                Object.defineProperty(String.prototype, 'replaceAll', {
+                    value: function (pattern, replacement) {
+                        if (pattern instanceof RegExp && !pattern.global) {
+                            return __yueduJavaReplaceAll(String(this), String(pattern), String(replacement));
+                        }
+                        return replaceAll.call(this, pattern, replacement);
+                    },
+                    enumerable: false, configurable: true, writable: true
+                });
+            })();
+        """)
+
+        // The normalizer rewrites an E4X descendant access (`x..name`) to a member whose key is
+        // this call. Legado's Rhino parses E4X (`FEATURE_E4X` is on for `VERSION_ES6`) but ships
+        // without `rhino-xml`, so no XML object exists and evaluating one always throws
+        // `TypeError: … is not an xml object.` (verified against rhino 1.8.1).
+        ctx.evaluateScript("""
+            Object.defineProperty(this, '__yueduE4XDescendants', {
+                value: function (name) {
+                    throw new TypeError('..' + name + ': not an xml object.');
+                },
+                enumerable: false, configurable: false, writable: false
             });
         """)
 
@@ -1147,6 +1244,39 @@ class JSCoreEngine {
             }
         """)
 
+        // `java` in an AnalyzeUrl's own scripts (`bindGlobals`): the bridge, with the members the
+        // AnalyzeUrl's view has — `url`, `ruleUrl`, `headerMap`, `getStrResponse`, `initUrl` —
+        // taken from the view. Methods are bound to whichever object answered, because a JSExport
+        // method only runs against its own wrapper. `initUrl` is the view's `reinitUrl`: an
+        // `init…` selector is never exported as a method (`LegadoAnalyzeUrlScriptExport`).
+        //
+        // The native `Proxy` is captured now, before any source script runs: a source's
+        // top-level `var Proxy = …` replaces the global (存档书库's header script, YCK1331),
+        // and Legado's `java` is a Java object no source script can reach that way.
+        ctx.evaluateScript("""
+            (function (NativeProxy) { Object.defineProperty(this, '__yueduAnalyzeUrlJava', {
+                enumerable: false, configurable: false, writable: false,
+                value: function (bridge, view) {
+                    var exported = function (name) { return name === 'initUrl' ? 'reinitUrl' : name; };
+                    return new NativeProxy(bridge, {
+                        get: function (target, name) {
+                            var own = exported(name);
+                            var owner = (own in view) ? view : target;
+                            var value = owner === view ? view[own] : target[name];
+                            // A Java package the interop runtime hangs on the bridge
+                            // (`java.security`, `java.lang`) is callable but is navigated, not
+                            // called: bound, it lost its classes, and `.bind` itself resolved as
+                            // a package — 酷狗小说's jsLib signer threw
+                            // `Packages.java.security.bind` and sent `signature=`.
+                            if (typeof value === 'function' && value.__members === undefined) return value.bind(owner);
+                            return value;
+                        },
+                        has: function (target, name) { return (exported(name) in view) || (name in target); }
+                    });
+                }
+            }); }).call(this, Proxy);
+        """)
+
         // Legado/Rhino exposes a JSON response dynamically: source JS can read
         // `result.field`, while `String(result)` / `result.toString()` still yield
         // the original JSON text. A plain JavaScriptCore object loses that second
@@ -1154,6 +1284,11 @@ class JSCoreEngine {
         // inside JS so arrays keep their native methods, then attach non-enumerable
         // primitive conversion hooks that preserve the exact response string.
         // JSON.stringify remains structural because the hooks are non-enumerable.
+        //
+        // `text`, when given, is what the value reads as instead: an object a JSONPath rule
+        // selected is a `LinkedHashMap` in Rhino, whose string is `{id=12, name=…}`
+        // (`OrderedJSON.javaText`). Such a map (`isJavaMap`) also answers `java.util.Map`'s
+        // methods, as Rhino's `FEATURE_ENABLE_JAVA_MAP_ACCESS` (on in Legado) lets it.
         ctx.evaluateScript("""
             (function () {
                 var __nativeParse = JSON.parse;
@@ -1161,10 +1296,11 @@ class JSCoreEngine {
                     enumerable: false,
                     configurable: false,
                     writable: false,
-                    value: function (raw) {
+                    value: function (raw, text, isJavaMap) {
                         var parsed = __nativeParse(raw);
                         if (parsed === null || typeof parsed !== 'object') return parsed;
-                        var asString = function () { return raw; };
+                        var shown = typeof text === 'string' ? text : raw;
+                        var asString = function () { return shown; };
                         if (!Object.prototype.hasOwnProperty.call(parsed, 'toString')) {
                             Object.defineProperty(parsed, 'toString', {
                                 value: asString, enumerable: false, configurable: true
@@ -1180,11 +1316,36 @@ class JSCoreEngine {
                                 value: asString, enumerable: false, configurable: true
                             });
                         }
+                        // In Rhino the page is a string, so a script may test it as one before
+                        // parsing: Linpx (YCK1330 index 95) runs `result.startsWith("<!DOCTYPE
+                        // html>")` on its JSON detail page. An object keeps its fields and also
+                        // answers the string methods, on the original text; an array keeps its
+                        // own `indexOf` / `slice` / `includes`.
+                        if (isJavaMap === true && !Array.isArray(parsed)) __yueduJavaMap(parsed);
+                        if (!Array.isArray(parsed)) {
+                            Object.getOwnPropertyNames(String.prototype).forEach(function (name) {
+                                if (name === 'constructor' || name === 'length' || name in parsed) return;
+                                var method = String.prototype[name];
+                                if (typeof method !== 'function') return;
+                                Object.defineProperty(parsed, name, {
+                                    value: function () { return method.apply(shown, arguments); },
+                                    enumerable: false, configurable: true, writable: true
+                                });
+                            });
+                        }
                         return parsed;
                     }
                 });
+                // An object a script hands back to `JSON.parse` is a page it was given already
+                // parsed (above), and stays that object. A `String` object is text: Rhino's
+                // `JSON.parse` reads `ScriptRuntime.toString` of its argument, and `String(x)`
+                // inside `with (JavaImporter(java.lang))` is `java.lang.String`'s constructor,
+                // which `JavaString` answers with a boxed string. 书香之家 (YCK1331) parses
+                // `String(java.aesBase64DecodeToByteArray(…))` that way.
                 JSON.parse = function (value, reviver) {
-                    if (value !== null && typeof value === 'object') { return value; }
+                    if (value !== null && typeof value === 'object' && !(value instanceof String)) {
+                        return value;
+                    }
                     return __nativeParse(value, reviver);
                 };
             })();
@@ -1206,11 +1367,14 @@ class JSCoreEngine {
         // abort the whole rule (symptom: book opens but TOC/content silently fail).
         // `__yueduJavaMap` augments a plain object in place with the Map methods as
         // non-enumerable properties, so `obj[key]` / `for..in` / `Object.keys` are
-        // unaffected while `.get()` etc. work.
+        // unaffected while `.get()` etc. work. An entry of the same name wins, as it does
+        // in Rhino's `NativeJavaMap`: a JSON item with a `size` field reads `result.size`
+        // as the field.
         ctx.evaluateScript("""
             function __yueduJavaMap(o) {
                 o = o || {};
                 function def(name, fn) {
+                    if (Object.prototype.hasOwnProperty.call(o, name)) return;
                     Object.defineProperty(o, name, { value: fn, enumerable: false, configurable: true });
                 }
                 def('get', function (k) { var v = o[k]; return v === undefined ? null : v; });
@@ -1376,6 +1540,7 @@ class JSCoreEngine {
         Self.installJavaGetOverload(in: ctx)
         Self.installJavaConnectOverload(in: ctx)
         Self.installJavaHeadAndPostOverloads(in: ctx)
+        Self.installJavaElementAccessors(in: ctx)
 
         // Install the authoritative registry-backed Java/Android contract.
         LegadoJavaInteropRuntime.install(in: ctx)
@@ -1385,11 +1550,10 @@ class JSCoreEngine {
         // Legado Android uses Rhino with full Java interop, so book sources can call
         // `org.jsoup.Jsoup.connect(url).execute().body()` directly. JavaScriptCore has
         // no Java interop, so `org` is undefined → "undefined is not an object" crashes
-        // obfuscated content scripts (e.g. 番茄酱's remote `to.js`). This polyfill delegates
-        // HTTP to the existing `java.ajax` (GET) / `java.post` (POST) bridges. Response
-        // headers are not available through `java.ajax` (it returns body only), so
-        // `headers().get(name)` returns null — sources that rely on ETag caching fall
-        // back to their catch block, which is the existing behaviour.
+        // obfuscated content scripts (e.g. 番茄酱's remote `to.js`). `execute()` sends through
+        // the bridge's response-shaped requests, so `statusCode()`, `header(name)`, `cookies()`
+        // and the final `url()` are the server's; `followRedirects(false)` hands back the 3xx
+        // itself, as jsoup does.
         ctx.evaluateScript("""
             (function () {
                 function Connection(url) {
@@ -1417,53 +1581,117 @@ class JSCoreEngine {
                 P.timeout = function (ms) { this._timeout = parseInt(ms) || 10000; return this; };
                 P.userAgent = function (ua) { this._ua = String(ua); return this; };
                 P.referrer = function (r) { this._referrer = String(r); return this; };
-                P.followRedirects = function (b) { return this; };
+                P.followRedirects = function (b) { this._follow = b !== false; return this; };
+                P._follow = true;
                 P.sslSocketFactory = function () { return this; };
                 P.execute = function () { return new Response(this._fetch(), this._url); };
-                P.get = function () { this._method = 'GET'; return JsoupParse(this._fetch(), this._url); };
-                P.post = function () { this._method = 'POST'; return JsoupParse(this._fetch(), this._url); };
+                P.get = function () { this._method = 'GET'; return JsoupParse(this._fetch().body(), this._url); };
+                P.post = function () { this._method = 'POST'; return JsoupParse(this._fetch().body(), this._url); };
+                // The bridge's StrResponse for this request.
                 P._fetch = function () {
                     var url = this._url, pairs = [], hasData = false;
                     for (var k in this._data) { hasData = true; pairs.push(encodeURIComponent(k) + '=' + encodeURIComponent(this._data[k])); }
                     var dataStr = pairs.join('&');
-                    if (this._method === 'POST' || this._method === 'PUT') {
+                    var hdrs = this._headers;
+                    if (this._ua && !hdrs['User-Agent']) hdrs['User-Agent'] = this._ua;
+                    if (this._referrer && !hdrs['Referer']) hdrs['Referer'] = this._referrer;
+                    var method = String(this._method || 'GET').toUpperCase();
+                    if (method === 'POST' || method === 'PUT' || method === 'PATCH') {
                         var body = this._body || dataStr;
-                        var hdrs = this._headers;
                         if (dataStr && !this._body && !hdrs['Content-Type']) hdrs['Content-Type'] = 'application/x-www-form-urlencoded';
-                        var r = java.post(url, body, hdrs);
-                        return (r && typeof r.body === 'function') ? r.body() : String(r || '');
+                        // java.post refuses redirects (Legado-E jsoup POST); httpExecute follows them.
+                        return (this._follow || method !== 'POST')
+                            ? java.httpExecute(method, url, body, hdrs)
+                            : java.post(url, body, hdrs);
                     }
                     if (hasData) url += (url.indexOf('?') < 0 ? '?' : '&') + dataStr;
-                    return java.ajax(url);
+                    if (this._follow) return java.httpExecute(method, url, '', hdrs);
+                    return method === 'HEAD' ? java.head(url, hdrs) : java.get(url, hdrs);
                 };
-                function Response(body, url) { this._body = body || ''; this._url = url; }
+                // jsoup `Connection.Response` over the bridge's StrResponse.
+                function Response(raw, url) { this._raw = raw; this._url = url; }
                 var RP = Response.prototype;
-                RP.body = function () { return this._body; };
-                RP.text = function () { return this._body; };
-                RP.html = function () { return this._body; };
-                RP.header = function (n) { return null; };
-                RP.get = function (n) { return null; };
-                RP.headers = function () { return { get: function () { return null; }, has: function () { return false; }, size: function () { return 0; } }; };
-                RP.statusCode = function () { return 200; };
-                RP.contentType = function () { return 'text/html'; };
-                RP.url = function () { return this._url; };
-                RP.parse = function () { return JsoupParse(this._body, this._url); };
-                RP.statusMessage = function () { return 'OK'; };
+                RP.body = RP.text = RP.html = function () { var b = this._raw.body(); return b == null ? '' : String(b); };
+                RP.header = RP.get = function (n) { var v = this._raw.header(String(n)); return v == null ? null : String(v); };
+                RP.hasHeader = function (n) { return this._raw.hasHeader(String(n)); };
+                RP.headers = function (n) { return this._raw.headers(n); };
+                RP.cookie = function (n) { var v = this._raw.cookie(String(n)); return v == null ? null : String(v); };
+                RP.cookies = function () { return this._raw.cookies(); };
+                RP.statusCode = function () { return this._raw.code(); };
+                RP.statusMessage = function () { return this._raw.message(); };
+                RP.contentType = function () { return this._raw.contentType(); };
+                RP.url = function () { return this._raw.url() || this._url; };
+                RP.method = function () { return null; };
+                RP.parse = function () { return JsoupParse(this.body(), this.url()); };
+                RP.bodyAsBytes = function () { return java.strToBytes(this.body(), 'UTF-8'); };
 
-                // `_n` is a native SwiftSoup node (`__yueduJsoup`). JavaScriptCore owns its
+                // `_n` is a native SwiftSoup node (`LegadoJsoupElement`). JavaScriptCore owns its
                 // lifetime, so a selected element stays valid for as long as JS holds it —
                 // serialising back to a string between calls would mangle fragments the HTML
                 // parser is context-sensitive about (`<body>`, `<td>`, `<li>`, …).
-                // Mutating methods stay no-ops: wrappers in this context reuse parsed documents.
-                function Element(node, baseUrl) { this._n = node || null; this._baseUrl = baseUrl || ''; }
+                // The tree is the script's own (see LegadoJsoupElement), so jsoup's mutators
+                // change it: `doc.select('.ad').remove()` then `doc.html()` is how sources clean
+                // a chapter before reading it.
+                // `new org.jsoup.nodes.Element('a')` in a source is jsoup's `Element(String tag)`:
+                // a new element of that tag. Everywhere else `node` is a native node.
+                function Element(node, baseUrl) {
+                    if (typeof node === 'string' || node instanceof String) node = __yueduJsoup.createElement(String(node));
+                    this._n = node || null; this._baseUrl = baseUrl || '';
+                }
+                function isNode(v) { return v != null && typeof v === 'object' && typeof v.isJsoupNode === 'function'; }
+                function wrapOne(node, baseUrl) { return node ? new Element(node, baseUrl) : null; }
                 function wrap(list, baseUrl) {
                     var out = [];
                     if (list) for (var i = 0; i < list.length; i++) out.push(new Element(list[i], baseUrl));
                     return new Elements(out);
                 }
+                // jsoup's `Attributes`: iterable `Attribute`s with `key()`/`value()`, plus map reads.
+                function Attribute(k, v) { this._k = k; this._v = v; }
+                Attribute.prototype.key = Attribute.prototype.getKey = function () { return this._k; };
+                Attribute.prototype.value = Attribute.prototype.getValue = function () { return this._v; };
+                Attribute.prototype.toString = Attribute.prototype.html = function () { return this._k + '="' + this._v + '"'; };
+                function Attributes(list) {
+                    var arr = (list || []).map(function (a) { return new Attribute(String(a.key), String(a.value)); });
+                    Object.defineProperty(this, '_arr', { value: arr });
+                    for (var i = 0; i < arr.length; i++) this[i] = arr[i];
+                }
+                var AP = Attributes.prototype;
+                AP.size = function () { return this._arr.length; };
+                AP.isEmpty = function () { return this._arr.length === 0; };
+                AP.asList = function () { return this._arr.slice(); };
+                AP.get = function (k) { for (var i = 0; i < this._arr.length; i++) if (this._arr[i]._k === String(k)) return this._arr[i]._v; return ''; };
+                AP.hasKey = function (k) { for (var i = 0; i < this._arr.length; i++) if (this._arr[i]._k === String(k)) return true; return false; };
+                AP.dataset = function () {
+                    var out = __yueduJavaMap({});
+                    this._arr.forEach(function (a) { if (a._k.indexOf('data-') === 0) out.put(a._k.slice(5), a._v); });
+                    return out;
+                };
+                AP.forEach = function (fn) { this._arr.forEach(fn); };
+                AP.iterator = function () { return this._arr[Symbol.iterator](); };
+                AP[Symbol.iterator] = function () { return this._arr[Symbol.iterator](); };
+                AP.html = AP.toString = function () { return this._arr.map(function (a) { return ' ' + a.html(); }).join(''); };
+                Object.defineProperty(AP, 'length', { get: function () { return this._arr.length; }, configurable: true });
+                Object.keys(AP).forEach(function (k) { Object.defineProperty(AP, k, { enumerable: false }); });
+
+                // `TextNode` stays Element's alias for `instanceof`; only the string constructor
+                // differs. jsoup's `new TextNode(text)` is a text node, which the polyfill has no
+                // native for: it throws, rather than make an element named after the text.
+                function TextNode(node, baseUrl) {
+                    if (typeof node === 'string' || node instanceof String) {
+                        throw new Error('org.jsoup.nodes.TextNode(String) is not supported');
+                    }
+                    Element.call(this, node, baseUrl);
+                }
+                TextNode.prototype = Element.prototype;
                 var EP = Element.prototype;
-                EP.html = function () { return this._n ? this._n.html() : ''; };
-                EP.text = function () { return this._n ? this._n.text() : ''; };
+                EP.html = function (h) {
+                    if (arguments.length) { if (this._n) this._n.setHtml(String(h)); return this; }
+                    return this._n ? this._n.html() : '';
+                };
+                EP.text = function (t) {
+                    if (arguments.length) { if (this._n) this._n.setText(String(t)); return this; }
+                    return this._n ? this._n.text() : '';
+                };
                 EP.ownText = function () { return this._n ? this._n.ownText() : ''; };
                 EP.outerHtml = function () { return this._n ? this._n.outerHtml() : ''; };
                 EP.toString = function () { return this.outerHtml(); };
@@ -1471,26 +1699,65 @@ class JSCoreEngine {
                 // jsoup node itself, whose string form is its outer HTML; the rule engine's own
                 // list extraction represents an element the same way (JsoupDefaultExtractor).
                 EP.toJSON = function () { return this.outerHtml(); };
-                EP.attr = function (k, v) { if (arguments.length === 2) { return this; } return this._n ? this._n.attr(String(k)) : ''; };
+                EP.attr = function (k, v) {
+                    if (arguments.length === 2) { if (this._n) this._n.setAttr(String(k), String(v)); return this; }
+                    return this._n ? this._n.attr(String(k)) : '';
+                };
+                EP.attributes = function () { return new Attributes(this._n ? this._n.attributeList() : []); };
+                EP.dataset = function () { return this.attributes().dataset(); };
                 EP.select = function (q) { return wrap(this._n ? this._n.select(String(q)) : [], this._baseUrl); };
                 // jsoup `Element.selectFirst`: the first match, or null. jsoup 1.16.2 (the
                 // version every Legado fork pins) has no `Elements.selectFirst`, so neither do we.
                 EP.selectFirst = function (q) { return this.select(q).first(); };
+                EP.is = function (q) { return this._n ? this._n.matches(String(q)) : false; };
                 EP.first = function () { return null; };
                 EP.last = function () { return null; };
                 EP.children = function () { return wrap(this._n ? this._n.children() : [], this._baseUrl); };
+                EP.childrenSize = function () { return this.children().size(); };
                 EP.child = function (i) { return this.children().get(i); };
-                EP.parent = function () { var p = this._n ? this._n.parent() : null; return p ? new Element(p, this._baseUrl) : null; };
-                EP.nextElementSibling = function () { return null; };
-                EP.previousElementSibling = function () { return null; };
-                EP.appendChild = function (el) { return this; };
-                EP.prependChild = function (el) { return this; };
-                EP.remove = function () { return this; };
+                EP.firstElementChild = function () { return this.children().first(); };
+                EP.lastElementChild = function () { return this.children().last(); };
+                EP.parent = function () { return wrapOne(this._n ? this._n.parent() : null, this._baseUrl); };
+                EP.nextElementSibling = function () { return wrapOne(this._n ? this._n.nextElementSibling() : null, this._baseUrl); };
+                EP.previousElementSibling = function () { return wrapOne(this._n ? this._n.previousElementSibling() : null, this._baseUrl); };
+                EP.firstElementSibling = function () { return wrapOne(this._n ? this._n.firstElementSibling() : null, this._baseUrl); };
+                EP.lastElementSibling = function () { return wrapOne(this._n ? this._n.lastElementSibling() : null, this._baseUrl); };
+                EP.siblingElements = function () { return wrap(this._n ? this._n.siblingElements() : [], this._baseUrl); };
+                EP.elementSiblingIndex = function () { return this._n ? this._n.elementSiblingIndex() : 0; };
+                // jsoup `parents()`: up to <html>, not the document. 掌阅书城 (YCK1329) drops
+                // nested matches with `parents().contains(c)`.
+                EP.parents = function () { return wrap(this._n ? this._n.parents() : [], this._baseUrl); };
+                // jsoup `closest(query)`: this element or its nearest matching ancestor, else null.
+                EP.closest = function (q) { return wrapOne(this._n ? this._n.closest(String(q)) : null, this._baseUrl); };
+                // jsoup's `Node.equals` is identity: two reads of one node are equal. Rhino's `==`
+                // on two of them is true as well (it compares the unwrapped nodes); ours compares
+                // the wrappers, which no `==` can be taught otherwise.
+                EP.equals = function (o) { return o === this || (o instanceof Element && !!this._n && !!o._n && this._n.isSameNode(o._n)); };
+                // jsoup `clone()`: a deep copy the script may edit without touching this tree.
+                EP.clone = function () { return new Element(this._n ? this._n.cloneElement() : null, this._baseUrl); };
+                // jsoup moves a node `appendChild` is given; this inserts a copy of its markup.
+                EP.appendChild = function (el) { if (this._n && el) this._n.appendHtml(String(el.outerHtml ? el.outerHtml() : el)); return this; };
+                EP.prependChild = function (el) { if (this._n && el) this._n.prependHtml(String(el.outerHtml ? el.outerHtml() : el)); return this; };
+                EP.append = function (h) { if (this._n) this._n.appendHtml(String(h)); return this; };
+                EP.prepend = function (h) { if (this._n) this._n.prependHtml(String(h)); return this; };
+                EP.before = function (h) { if (this._n) this._n.beforeHtml(String(h && h.outerHtml ? h.outerHtml() : h)); return this; };
+                EP.after = function (h) { if (this._n) this._n.afterHtml(String(h && h.outerHtml ? h.outerHtml() : h)); return this; };
+                EP.empty = function () { if (this._n) this._n.empty(); return this; };
+                EP.remove = function () { if (this._n) this._n.remove(); };
+                EP.removeAttr = function (k) { if (this._n) this._n.removeAttr(String(k)); return this; };
                 EP.tagName = function () { return (this._n ? this._n.tagName() : '') || 'div'; };
                 EP.nodeName = function () { return this.tagName(); };
+                EP.normalName = function () { return this.tagName().toLowerCase(); };
                 EP.id = function () { return this._n ? this._n.id() : ''; };
                 EP.className = function () { return this._n ? this._n.className() : ''; };
-                EP.hasClass = function (c) { return (' ' + this.className() + ' ').indexOf(' ' + c + ' ') >= 0; };
+                EP.classNames = function () { return this.className().split(/\\s+/).filter(function (c) { return c; }); };
+                // jsoup compares each whitespace-separated class ignoring case
+                // (oracle case file elements-hasclass.json).
+                EP.hasClass = function (c) {
+                    var wanted = String(c).toLowerCase();
+                    return this.classNames().some(function (k) { return k.toLowerCase() === wanted; });
+                };
+                EP.hasText = function () { return this.text().trim().length > 0; };
                 EP.getElements = function () { return this.select('*'); };
                 EP.getAllElements = function () { return this.select('*'); };
                 EP.getElementById = function (id) { return this.select('#' + id).first(); };
@@ -1499,58 +1766,153 @@ class JSCoreEngine {
                 EP.getElementsByAttribute = function (a) { return this.select('[' + a + ']'); };
                 EP.getElementsByAttributeValue = function (a, v) { return this.select('[' + a + '="' + v + '"]'); };
                 EP.getElementsByAttributeValueContaining = function (a, v) { return this.select('[' + a + '*="' + v + '"]'); };
-                EP.absUrl = function (k) { return this.attr(k); };
+                EP.absUrl = function (k) { return this._n ? this._n.absUrl(String(k)) : ''; };
                 EP.baseUri = function () { return this._baseUrl; };
                 EP.parentNode = function () { return this.parent(); };
-                EP.wholeText = function () { return this.text(); };
-                EP.data = function () { return ''; };
-                EP.val = function () { return this.attr('value'); };
+                EP.wholeText = function () { return this._n ? this._n.wholeText() : ''; };
+                // jsoup `Element.data()`: script/style contents, which `text()` leaves out.
+                EP.data = function () { return this._n ? this._n.data() : ''; };
+                EP.val = function (v) { if (arguments.length) return this.attr('value', v); return this.attr('value'); };
                 EP.textNode = function () { return this.text(); };
                 EP.hasAttr = function (k) { return this._n ? this._n.hasAttr(String(k)) : false; };
-                EP.removeAttr = function () { return this; };
 
                 // jsoup's Elements is a java.util.ArrayList, and Rhino lets Legado scripts use it
-                // as one: `els[0]`, `els.toArray()`, and `for (i in els)` over its indices
-                // (🥝猕猴桃漫画's explore rule does all three). The elements are the wrapper's
-                // own index properties; `_arr` and every method are non-enumerable, so for-in
-                // sees the indices and nothing else. An Elements is never mutated after this.
+                // as one: `els[0]`, `els.toArray()`, `els.add(e)`, and `for (i in els)` over its
+                // indices (🥝猕猴桃漫画's explore rule does all three). The elements are the
+                // wrapper's own index properties; `_arr` and every method are non-enumerable, so
+                // for-in sees the indices and nothing else.
                 function Elements(arr) {
-                    arr = arr || [];
+                    if (arr == null) arr = [];
+                    else if (arr._arr) arr = arr._arr.slice();
+                    else if (typeof arr === 'object' && typeof arr.length === 'number') arr = Array.prototype.slice.call(arr);
+                    else arr = [];
                     Object.defineProperty(this, '_arr', { value: arr });
                     for (var i = 0; i < arr.length; i++) this[i] = arr[i];
                 }
                 var ESP = Elements.prototype;
+                ESP._reindex = function () {
+                    var n = this._arr.length;
+                    for (var k in this) { if (/^\\d+$/.test(k) && Number(k) >= n) delete this[k]; }
+                    for (var i = 0; i < n; i++) this[i] = this._arr[i];
+                };
                 ESP.size = function () { return this._arr.length; };
                 ESP.size2 = function () { return this._arr.length; };
+                ESP.isEmpty = function () { return this._arr.length === 0; };
                 Object.defineProperty(ESP, 'length', { get: function () { return this._arr.length; }, configurable: true });
                 ESP.get = function (i) { return this._arr[i] || null; };
+                ESP.add = function (a, b) {
+                    if (arguments.length === 2) this._arr.splice(Number(a), 0, b); else this._arr.push(a);
+                    this._reindex();
+                    return true;
+                };
+                ESP.addAll = function (list) {
+                    var items = list && list._arr ? list._arr : Array.prototype.slice.call(list || []);
+                    for (var i = 0; i < items.length; i++) this._arr.push(items[i]);
+                    this._reindex();
+                    return items.length > 0;
+                };
+                ESP.set = function (i, e) { var old = this._arr[i]; this._arr[i] = e; this[i] = e; return old; };
+                // java.util.List compares with `equals`, which for a jsoup node is the node itself.
+                ESP.indexOf = function (e) {
+                    for (var i = 0; i < this._arr.length; i++) {
+                        var x = this._arr[i];
+                        if (x === e || (x instanceof Element && x.equals(e))) return i;
+                    }
+                    return -1;
+                };
+                ESP.contains = function (e) { return this.indexOf(e) >= 0; };
                 ESP.toArray = function () { return this._arr.slice(); };
+                // java.util.List `sort(Comparator)`: in place, returning nothing; a comparator
+                // answer that is not a number counts as equal, as Rhino's int conversion reads
+                // NaN. 完本小说 and 小红书库 (YCK1330) order their chapter rows this way.
+                ESP.sort = function (comparator) {
+                    this._arr.sort(function (a, b) { var r = Number(comparator(a, b)); return r === r ? r : 0; });
+                    this._reindex();
+                };
+                // jsoup `Elements.clone()`: a deep copy of each element.
+                ESP.clone = function () { return new Elements(this._arr.map(function (e) { return e.clone(); })); };
                 ESP.first = function () { return this._arr[0] || null; };
                 ESP.last = function () { return this._arr[this._arr.length - 1] || null; };
-                ESP.text = function () { return this._arr.map(function (e) { return e.text(); }).join(''); };
-                ESP.html = function () { return this._arr.map(function (e) { return e.html(); }).join(''); };
+                // jsoup joins the matched elements' text with a space, and their HTML with newlines.
+                ESP.text = function () { return this._arr.map(function (e) { return e.text(); }).filter(function (t) { return t.length; }).join(' '); };
+                ESP.eachText = function () { return this._arr.map(function (e) { return e.text(); }).filter(function (t) { return t.length; }); };
+                ESP.eachAttr = function (k) { return this._arr.filter(function (e) { return e.hasAttr(k); }).map(function (e) { return e.attr(k); }); };
+                ESP.html = function () { return this._arr.map(function (e) { return e.html(); }).join('\\n'); };
+                ESP.hasText = function () { return this._arr.some(function (e) { return e.hasText(); }); };
                 ESP.each = function (fn) { this._arr.forEach(fn); return this; };
                 ESP.forEach = function (fn) { this._arr.forEach(fn); return this; };
-                ESP.attr = function () { return this._arr[0] ? this._arr[0].attr.apply(this._arr[0], arguments) : ''; };
+                // jsoup `Elements.attr(k)`: the first element that has the attribute;
+                // `attr(k, v)` sets it on every element.
+                ESP.attr = function (k, v) {
+                    if (arguments.length === 2) { this._arr.forEach(function (e) { e.attr(k, v); }); return this; }
+                    for (var i = 0; i < this._arr.length; i++) if (this._arr[i].hasAttr(k)) return this._arr[i].attr(k);
+                    return '';
+                };
                 ESP.hasAttr = function (k) { return this._arr.some(function (e) { return e.hasAttr(k); }); };
+                // jsoup `Elements.hasClass`: whether any element has the class.
+                ESP.hasClass = function (c) { return this._arr.some(function (e) { return e.hasClass(c); }); };
+                ESP.removeAttr = function (k) { this._arr.forEach(function (e) { e.removeAttr(k); }); return this; };
                 ESP.select = function (q) {
                     var out = [];
                     this._arr.forEach(function (e) { e.select(q).each(function (m) { out.push(m); }); });
                     return new Elements(out);
                 };
-                ESP.outerHtml = function () { return this._arr.map(function (e) { return e.outerHtml(); }).join(''); };
+                ESP.outerHtml = function () { return this._arr.map(function (e) { return e.outerHtml(); }).join('\\n'); };
                 ESP.toString = function () { return this.outerHtml(); };
                 // Legado's list rules take a returned jsoup Elements as the list itself
                 // (AnalyzeRule.getElements). As JSON it is the array of its elements, so a
                 // chapterList ending in `doc.select(…)` yields one row per element.
                 ESP.toJSON = function () { return this._arr; };
-                ESP.not = function () { return this; };
-                ESP.eq = function (i) { return new Elements([this._arr[i]]); };
-                ESP.is = function () { return false; };
-                ESP.empty = function () { return this._arr.length === 0; };
+                ESP.not = function (q) { return new Elements(this._arr.filter(function (e) { return !e.is(q); })); };
+                ESP.is = function (q) { return this._arr.some(function (e) { return e.is(q); }); };
+                ESP.filter = function (fn) { return new Elements(this._arr.filter(fn)); };
+                ESP.eq = function (i) { return new Elements(this._arr[i] ? [this._arr[i]] : []); };
+                ESP.next = function () { return new Elements(this._arr.map(function (e) { return e.nextElementSibling(); }).filter(function (e) { return e; })); };
+                ESP.prev = function () { return new Elements(this._arr.map(function (e) { return e.previousElementSibling(); }).filter(function (e) { return e; })); };
+                ESP.parents = function () {
+                    var out = [];
+                    this._arr.forEach(function (e) { var p = e.parent(); while (p) { out.push(p); p = p.parent(); } });
+                    return new Elements(out);
+                };
+                // `remove()` takes the elements out of their documents (jsoup); `remove(i)` /
+                // `remove(element)` is ArrayList's, taking one out of this list.
+                ESP.remove = function (x) {
+                    if (arguments.length === 0) { this._arr.forEach(function (e) { e.remove(); }); return this; }
+                    var i = typeof x === 'number' ? x : this._arr.indexOf(x);
+                    if (i < 0 || i >= this._arr.length) return typeof x === 'number' ? null : false;
+                    var removed = this._arr.splice(i, 1)[0];
+                    this._reindex();
+                    return typeof x === 'number' ? removed : true;
+                };
+                ESP.empty = function () { this._arr.forEach(function (e) { e.empty(); }); return this; };
+                ESP.append = function (h) { this._arr.forEach(function (e) { e.append(h); }); return this; };
+                ESP.prepend = function (h) { this._arr.forEach(function (e) { e.prepend(h); }); return this; };
+                ESP.before = function (h) { this._arr.forEach(function (e) { e.before(h); }); return this; };
+                ESP.after = function (h) { this._arr.forEach(function (e) { e.after(h); }); return this; };
                 ESP.iterator = function () { return this._arr[Symbol.iterator](); };
                 ESP[Symbol.iterator] = function () { return this._arr[Symbol.iterator](); };
                 Object.keys(ESP).forEach(function (k) { Object.defineProperty(ESP, k, { enumerable: false }); });
+
+                // A value from the rule engine: a native node becomes an Element, a list of them
+                // an Elements — what Rhino hands Legado's scripts. Anything else passes through.
+                this.__yueduJsoupWrap = function (v, baseUrl) {
+                    // A jsoup step's selection (`JsoupSelection`) is `Elements`, empty or not.
+                    if (v != null && typeof v === 'object' && Array.isArray(v.__yueduJsoupSelection)) {
+                        return wrap(v.__yueduJsoupSelection, baseUrl);
+                    }
+                    if (isNode(v)) return new Element(v, baseUrl);
+                    if (Array.isArray(v) && v.length > 0 && v.every(isNode)) return wrap(v, baseUrl);
+                    return v;
+                };
+                // The reverse, for a script's result: the native node of an Element, the native
+                // nodes of an Elements or of an array of Elements; undefined for anything else.
+                this.__yueduJsoupUnwrap = function (v) {
+                    if (v instanceof Element) return v._n || undefined;
+                    var items = v instanceof Elements ? v._arr : (Array.isArray(v) ? v : null);
+                    if (!items || items.length === 0) return undefined;
+                    for (var i = 0; i < items.length; i++) if (!(items[i] instanceof Element) || !items[i]._n) return undefined;
+                    return items.map(function (e) { return e._n; });
+                };
 
                 function Document(node, baseUrl) { Element.call(this, node, baseUrl); }
                 Document.prototype = Object.create(Element.prototype);
@@ -1571,10 +1933,13 @@ class JSCoreEngine {
                     jsoup: {
                         Jsoup: { connect: function (url) { return new Connection(url); }, parse: function (h, b) { return JsoupParse(h, b); }, parseBodyFragment: function (h, b) { return JsoupParse(h, b); }, clean: function (h) { return h; } },
                         Connection: { Method: Method, Response: Response, KeyVal: { create: function (k, v) { return { key: function () { return k; }, value: function () { return v; } }; } } },
-                        nodes: { Document: Document, Element: Element, TextNode: Element },
+                        nodes: { Document: Document, Element: Element, TextNode: TextNode },
                         safety: { Clean: { clean: function (h) { return h; } } },
-                        select: { Selector: { select: function (q, root) { return root ? root.select(q) : new Elements([]); } } },
-                        parser: { Parser: { parse: function (h, b) { return JsoupParse(h, b); } } },
+                        select: { Elements: Elements, Selector: { select: function (q, root) { return root ? root.select(q) : new Elements([]); } } },
+                        parser: { Parser: {
+                            parse: function (h, b) { return JsoupParse(h, b); },
+                            unescapeEntities: function (s) { return __yueduJsoup.unescape(s == null ? '' : String(s)); }
+                        } },
                         helper: { HttpConnection: { connect: function (url) { return new Connection(url); } } }
                     }
                 };
@@ -1697,6 +2062,26 @@ class JSCoreEngine {
         """)
     }
 
+    /// `java.getElements` / `java.getElement` hand back jsoup `Element`s, as Legado does: the
+    /// native side returns detached nodes and the polyfill's `__yueduJsoupWrap` (looked up at
+    /// call time) wraps them. Without this, `java.getElements('tag.li')[i].select(…)` threw.
+    private static func installJavaElementAccessors(in ctx: JSContext) {
+        ctx.evaluateScript("""
+        (function (g) {
+            if (typeof java === 'undefined' || java.__yueduElementAccessors) { return; }
+            function wrap(v) { return typeof g.__yueduJsoupWrap === 'function' ? g.__yueduJsoupWrap(v) : v; }
+            var nativeElements = java.getElements.bind(java);
+            java.getElements = function (rule) { return wrap(nativeElements(String(rule))); };
+            var nativeElement = java.getElementValue.bind(java);
+            java.getElement = function (rule) {
+                var v = nativeElement(String(rule));
+                return v === undefined ? null : wrap(v);
+            };
+            java.__yueduElementAccessors = true;
+        })(this);
+        """)
+    }
+
     private static func installJavaHeadAndPostOverloads(in ctx: JSContext) {
         ctx.evaluateScript("""
         (function () {
@@ -1746,6 +2131,20 @@ class JSCoreEngine {
             context.setObject(NSNull(), forKeyedSubscript: "result" as NSString)
             return
         }
+        if let map = result as? JavaMap {
+            context.setObject(javaMapValue(map), forKeyedSubscript: "result" as NSString)
+            return
+        }
+        if let string = result as? ScriptString {
+            context.setObject(string.value, forKeyedSubscript: "result" as NSString)
+            return
+        }
+        // A jsoup step's elements reach the script as jsoup `Element`/`Elements`, as Legado
+        // hands them over: `result.attr('href')`, `result[i].select('a')`.
+        if let elements = jsElements(result) {
+            context.setObject(elements, forKeyedSubscript: "result" as NSString)
+            return
+        }
         if let string = result as? String,
            Self.jsonObjectIfPossible(from: string) != nil,
            let wrapper = context.objectForKeyedSubscript("__yueduWrapJSONResult"),
@@ -1762,16 +2161,105 @@ class JSCoreEngine {
         // rules such as 番茄酱's `result.add("有声书")` must therefore be able to
         // mutate it. Re-enter through JSON only for JSON-safe value collections;
         // bridge objects such as LegadoStrResponse keep their native identity.
-        if JSONSerialization.isValidJSONObject(result),
-           let data = try? JSONSerialization.data(withJSONObject: result),
-           let raw = String(data: data, encoding: .utf8),
-           let wrapper = context.objectForKeyedSubscript("__yueduWrapJSONResult"),
-           let wrapped = wrapper.call(withArguments: [raw]),
-           !wrapped.isUndefined {
-            context.setObject(wrapped, forKeyedSubscript: "result" as NSString)
-            return
+        // The JSON text keeps each object's keys in document order, so the script's
+        // object does too. An object reads as Rhino's `LinkedHashMap`: 猫耳有声 takes an
+        // item's id with `String(result).match(/id=(\d+)/)`.
+        if result is NSDictionary || result is NSArray,
+           let raw = OrderedJSON.jsonText(result),
+           let wrapper = context.objectForKeyedSubscript("__yueduWrapJSONResult") {
+            let arguments: [Any] = result is NSDictionary
+                ? [raw, OrderedJSON.javaText(result), true]
+                : [raw]
+            if let wrapped = wrapper.call(withArguments: arguments), !wrapped.isUndefined {
+                context.setObject(wrapped, forKeyedSubscript: "result" as NSString)
+                return
+            }
         }
         context.setObject(result, forKeyedSubscript: "result" as NSString)
+    }
+
+    /// `map` as a script receives it: its entries in an object `__yueduJavaMap` gave the
+    /// `java.util.Map` methods. JS queue only.
+    private func javaMapValue(_ map: JavaMap) -> Any {
+        guard let object = JSValue(object: map.entries, in: context),
+              let wrapper = context.objectForKeyedSubscript("__yueduJavaMap"),
+              wrapper.isObject,
+              let wrapped = wrapper.call(withArguments: [object]) else {
+            // `configureContext` installs the shim in every context; not finding it is an
+            // engine bug, and the entries still read as `result[key]`.
+            AppLogger.parse("Java Map shim missing; binding a plain object", level: .anomaly)
+            return map.entries
+        }
+        return wrapped
+    }
+
+    /// Forgets the page copies this context's scripts were handed elements of
+    /// (`LegadoScriptTrees`), once the parse that handed them out is over. Any thread.
+    func releaseScriptTrees() {
+        bridge.scriptTrees.removeAll()
+    }
+
+    /// `value` as polyfill jsoup objects when it is an engine element or a list of them.
+    /// JS queue only.
+    private func jsElements(_ value: Any) -> JSValue? {
+        let bridged = LegadoJsoupElement.bridged(value, trees: bridge.scriptTrees)
+        let holdsElements = bridged is LegadoJsoupElement
+            || ((bridged as? [Any]).map { !$0.isEmpty && $0.allSatisfy { $0 is LegadoJsoupElement } } ?? false)
+        guard holdsElements,
+              let wrapper = context.objectForKeyedSubscript("__yueduJsoupWrap"),
+              !wrapper.isUndefined
+        else { return nil }
+        return wrapper.call(withArguments: [bridged])
+    }
+
+    /// A binding's value as the script receives it (`src` can be a selected element).
+    private func jsBinding(_ value: Any) -> Any {
+        jsElements(value) ?? value
+    }
+
+    /// Sets each binding as a global for one evaluation, as every evaluation always has. A
+    /// `java` binding that is an AnalyzeUrl's view does not replace the bridge: `java` becomes
+    /// the bridge with that AnalyzeUrl's members on top (`__yueduAnalyzeUrlJava`), which is what
+    /// Legado's `AnalyzeUrl.evalJS` binds (`LegadoAnalyzeUrlScriptView`).
+    ///
+    /// The returned closure puts the previous `java` and `result` back. Those two are what an
+    /// evaluation nested in a running script would otherwise take from it: `java.initUrl()` in
+    /// `loginCheckJs` runs the URL's scripts — its `js` option gets the URL as `result` — while
+    /// the check still reads its own `result` and `java`. Legado scopes every binding to its
+    /// evaluation; the other bindings stay set here, as they always have. JS queue only.
+    private func bindGlobals(_ bindings: [String: Any], converting: Bool) -> () -> Void {
+        let ctx = context
+        var restores: [() -> Void] = []
+        func scoped(_ key: String, _ value: Any) {
+            let previous = ctx.objectForKeyedSubscript(key)
+            ctx.setObject(value, forKeyedSubscript: key as NSString)
+            restores.append { ctx.setObject(previous, forKeyedSubscript: key as NSString) }
+        }
+        for (key, value) in bindings {
+            if key == "java", let view = value as? LegadoAnalyzeUrlScriptView {
+                guard let bridgeValue = JSValue(object: bridge, in: ctx),
+                      let layered = ctx.objectForKeyedSubscript("__yueduAnalyzeUrlJava")?
+                          .call(withArguments: [bridgeValue, view]),
+                      layered.isObject else {
+                    AppLogger.parse("AnalyzeUrl java could not be layered over the bridge", level: .warning)
+                    continue
+                }
+                scoped(key, layered)
+                continue
+            }
+            let bound: Any
+            if let map = value as? JavaMap {
+                bound = javaMapValue(map)
+            } else {
+                bound = converting ? jsBinding(value) : value
+            }
+            if key == "result" {
+                scoped(key, bound)
+            } else {
+                ctx.setObject(bound, forKeyedSubscript: key as NSString)
+            }
+        }
+        return { restores.reversed().forEach { $0() } }
     }
 
     private static func jsonObjectIfPossible(from string: String) -> Any? {
@@ -1781,45 +2269,36 @@ class JSCoreEngine {
         return try? JSONSerialization.jsonObject(with: data, options: .fragmentsAllowed)
     }
 
-    /// Parse a Legado header string (JSON object, `@js:`/`<js>` rule, or
-    /// "Key: Value\nKey2: Value2") into a dictionary.
+    /// Parse a Legado header rule (a JSON object, or an `@js:` / `<js>` rule that returns one)
+    /// into a dictionary, as `BaseSource.getHeaderMap()` does: the JSON goes through
+    /// `BookSource.legadoHeaderMap(fromJSON:)`, and a rule that yields none contributes
+    /// nothing.
     ///
-    /// Mirrors `BaseSource.getHeaderMap()`: a header rule may be JS that *builds*
-    /// the map (书山聚合 emits `java.getWebViewUA()` plus a constant API token that
-    /// its server requires on every endpoint). Evaluating it here is what makes
-    /// those headers reach the request at all.
+    /// A header rule may be JS that *builds* the map (书山聚合 emits `java.getWebViewUA()` plus
+    /// a constant API token that its server requires on every endpoint). Evaluating it here
+    /// is what makes those headers reach the request at all.
     func parseHeaders(_ headerStr: String) -> [String: String] {
         let trimmed = headerStr.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return [:] }
-        if let script = Self.headerJSScript(trimmed) {
-            let evaluated = (evaluateHeaderScript(script) ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
-            guard !evaluated.isEmpty, let data = evaluated.data(using: .utf8),
-                  let json = try? JSONSerialization.jsonObject(with: data) as? [String: String] else {
-                // A JS header rule that fails must yield nothing: the line-format
-                // fallback below would otherwise mine the *script text* for colons
-                // and emit junk headers such as `"User-Agent": java.getWebViewUA(),`.
-                AppLogger.parse("header JS produced no header map", context: [
-                    "rule": String(trimmed.prefix(120)),
-                    "result": String(evaluated.prefix(120)),
-                    "jsError": lastError ?? "-"
+        guard let script = Self.headerJSScript(trimmed) else {
+            guard let map = BookSource.legadoHeaderMap(fromJSON: trimmed) else {
+                AppLogger.parse("header rule is not JSON; requests carry only the default User-Agent", context: [
+                    "rule": String(trimmed.prefix(120))
                 ])
                 return [:]
             }
-            return json
+            return map
         }
-        if let data = trimmed.data(using: .utf8),
-           let json = try? JSONSerialization.jsonObject(with: data) as? [String: String] {
-            return json
+        let evaluated = (evaluateHeaderScript(script) ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let map = BookSource.legadoHeaderMap(fromJSON: evaluated) else {
+            AppLogger.parse("header JS produced no header map", context: [
+                "rule": String(trimmed.prefix(120)),
+                "result": String(evaluated.prefix(120)),
+                "jsError": lastError ?? "-"
+            ])
+            return [:]
         }
-        // Fallback: "Key: Value" line format
-        var result: [String: String] = [:]
-        trimmed.components(separatedBy: "\n").forEach { line in
-            let parts = line.split(separator: ":", maxSplits: 1).map {
-                $0.trimmingCharacters(in: .whitespaces)
-            }
-            if parts.count == 2 { result[parts[0]] = parts[1] }
-        }
-        return result
+        return map
     }
 
     /// Every fork evaluates a header rule through `BaseSource.evalJS`, which binds `baseUrl`
@@ -1827,6 +2306,11 @@ class JSCoreEngine {
     /// A header rule can be resolved while another rule is running — the first `java.ajax`
     /// of a TOC script — so the global is put back afterwards and that rule keeps its own
     /// `baseUrl`.
+    ///
+    /// In a scope of its own, as `BaseSource.evalJS` runs it in a fresh runtime scope: the
+    /// rule runs again for every request, and a top-level `let` in the global context threw
+    /// `SyntaxError: Can't create duplicate variable` the second time — 点众阅读 (YCK 1330)
+    /// declares `let randomUuid`, and its book pages went out without their signed header.
     private func evaluateHeaderScript(_ script: String) -> String? {
         onJSQueue { [self] () -> String? in
             let global: JSValue = context.globalObject
@@ -1840,7 +2324,7 @@ class JSCoreEngine {
                     global.deleteProperty("baseUrl")
                 }
             }
-            return evaluate(script)
+            return evaluateIsolated(script, bindings: [:])
         }
     }
 

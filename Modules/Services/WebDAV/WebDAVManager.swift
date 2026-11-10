@@ -106,7 +106,7 @@ final class WebDAVManager: @MainActor ObservableObject {
         config.timeoutIntervalForRequest = 60
         config.timeoutIntervalForResource = 300
         config.httpShouldUsePipelining = false
-        return URLSession(configuration: config)
+        return URLSession.trusting(config)
     }()
 
     // MARK: Initialization

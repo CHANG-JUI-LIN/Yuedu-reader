@@ -155,7 +155,7 @@ struct BookSourceLoginTests {
 
         let engine = JSCoreEngine()
         engine.bookSource = source
-        #expect(engine.resolvedSourceHeaders().isEmpty)
+        #expect(engine.resolvedSourceHeaders()["Authorization"] == nil)
 
         engine.sourceBridge.getLoginInfoMapHandler = {
             LoginManager.shared.getLoginInfo(sourceUrl: sourceURL) ?? [:]
@@ -361,6 +361,43 @@ struct BookSourceLoginTests {
         #expect(labels["b"] == "靜態源動態標籤")
         // Literal labels are resolved without JS and are not part of this pass.
         #expect(labels["a"] == nil)
+    }
+
+    /// ☁️云端聚合's `login(true)` reads the form with `result.get('邮箱')` inside a `try`. Bound as
+    /// a plain object, `get` threw, the `catch` swallowed it, and every filled-in form answered
+    /// 「请先填写邮箱和密码」. Legado binds `getLoginData`'s `HashMap`.
+    @Test("登入表單的 result 是 Java Map：get 與索引都讀得到、JSON 只有欄位")
+    func loginFormResultIsJavaMap() {
+        let engine = JSCoreEngine()
+        let value = engine.evaluate("""
+        var email = '', pwd = '';
+        try { email = result.get('邮箱') || ''; pwd = result.get('密码') || ''; } catch (e) {}
+        [email, pwd, result['邮箱'], result.containsKey('密码'), result.get('缺'), JSON.stringify(result)].join('|')
+        """, bindings: ["result": JSCoreEngine.JavaMap(["邮箱": "a@example.com", "密码": "pw"])])
+        #expect(engine.lastError == nil)
+        let parts = value?.components(separatedBy: "|") ?? []
+        #expect(parts.prefix(5) == ["a@example.com", "pw", "a@example.com", "true", ""])
+        let json = parts.count == 6 ? parts[5] : ""
+        let decoded = (try? JSONSerialization.jsonObject(with: Data(json.utf8))) as? [String: String]
+        #expect(decoded == ["邮箱": "a@example.com", "密码": "pw"])
+    }
+
+    @Test("loginUi 的 viewName 也拿到 Java Map 形態的 result")
+    @MainActor
+    func viewNameReadsResultAsJavaMap() {
+        var source = BookSource(
+            bookSourceUrl: "login-ui-result-map-\(UUID().uuidString)",
+            bookSourceName: "Result map viewName"
+        )
+        source.loginUrl = "function who() { return '帳號：' + result.get('邮箱'); }"
+        source.loginUi = #"[{"name": "who", "type": "button", "viewName": "who()"}]"#
+        let fields = LoginManager.shared.parseLoginUi(source.loginUi)
+
+        let labels = BookSourceFormLoginView.resolveDynamicLoginLabels(
+            fields: fields, source: source, credentials: ["邮箱": "a@example.com"]
+        )
+
+        #expect(labels["who"] == "帳號：a@example.com")
     }
 
     @Test("LoginManager.parseLoginUi 容忍單引號 JS 物件字面量（大灰狼聚合源）")

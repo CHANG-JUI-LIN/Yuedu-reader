@@ -59,14 +59,58 @@ final class DiscoverKindsCache: Sendable {
         }
     }
 
+    /// Legado `BookSource.clearExploreKindsCache`, which a source's `source.refreshExplore()`
+    /// runs — 露西弗俱乐部's login button calls it so that 發現 lists 我的收藏 once signed in:
+    /// every entry of `sourceUrl`, whatever its rule or variables.
+    func removeAll(sourceUrl: String) {
+        let prefix = Self.sourcePrefix(sourceUrl) + "-"
+        queue.sync {
+            let names: [String]
+            do {
+                names = try FileManager.default.contentsOfDirectory(atPath: directory.path)
+            } catch {
+                AppLogger.network("⟐ discover kinds cache unreadable", context: ["error": "\(error)"])
+                return
+            }
+            for name in names where name.hasPrefix(prefix) {
+                do {
+                    try FileManager.default.removeItem(at: directory.appendingPathComponent(name))
+                } catch {
+                    AppLogger.network("⟐ discover kinds entry not removed", context: [
+                        "file": name, "error": "\(error)",
+                    ])
+                }
+            }
+        }
+    }
+
     /// Stable cache key. `variableJSON` is the canonical JSON of the source's
     /// sanitized discover runtime variables (nil when the source has none).
+    /// Bumped when reading a rule's kinds changes what the same rule yields, so a list parsed
+    /// before the change is not served after it. 1: a line break inside a kind's JSON string
+    /// (美女图站's POST kinds had lost their URLs). 2: a kinds script's completion value is
+    /// Rhino's, so a valueless `if` after the list no longer replaces it.
+    private static let parserRevision = "2"
+
+    /// `<source digest>-<digest of every input>`: the first part lets `removeAll(sourceUrl:)`
+    /// find a source's entries. A key before 11-07 was the second part alone; those files are
+    /// never read again.
     static func key(sourceUrl: String, exploreUrl: String, variableJSON: String?) -> String {
+        sourcePrefix(sourceUrl) + "-" + digest(sourceUrl: sourceUrl, exploreUrl: exploreUrl, variableJSON: variableJSON)
+    }
+
+    private static func sourcePrefix(_ sourceUrl: String) -> String {
+        CryptoKit.Insecure.MD5.hash(data: Data(sourceUrl.utf8)).map { String(format: "%02x", $0) }.joined()
+    }
+
+    private static func digest(sourceUrl: String, exploreUrl: String, variableJSON: String?) -> String {
         var hasher = CryptoKit.Insecure.MD5()
         func feed(_ s: String) {
             let bytes = Array(s.utf8)
             hasher.update(data: Data(bytes))
         }
+        feed(parserRevision)
+        feed("|")
         feed(sourceUrl)
         feed("|")
         feed(exploreUrl)

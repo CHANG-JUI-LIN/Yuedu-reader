@@ -123,3 +123,52 @@ extension JSCoreEngineTimeoutResetTests {
         #expect(engine.lastError == nil, "the abandoned script's exception is not the new job's error")
     }
 }
+
+/// The runaway-script timeout counts a script's own time, not its waits on the network.
+///
+/// It checked only whether a wait was in progress at each 30 s mark, so a script whose waits had
+/// all ended by then had them counted against it: 番茄听书 (YCK 1330 #31) downloads a chapter's
+/// audio and then decrypts it, and a slow download put the 30 s mark in the decrypt.
+extension JSCoreEngineTimeoutResetTests {
+    /// A transport whose every request takes `seconds` to answer, as a slow server's would.
+    private static func slowTransport(_ seconds: TimeInterval) -> SourceScriptTransport {
+        { request, _ in
+            Thread.sleep(forTimeInterval: seconds)
+            return .bodyOnly(request: request, body: "answered")
+        }
+    }
+
+    @Test("a slow request followed by the script's own work is not cut at the 30 s mark", .timeLimit(.minutes(2)))
+    func slowRequestThenWorkFinishes() {
+        let engine = JSCoreEngine()
+        engine.networkHandler = Self.slowTransport(20)
+        let generationBefore = engine.generation
+
+        let result = engine.evaluate("""
+        var body = java.ajax('https://slow.example/audio');
+        var t = Date.now();
+        while (Date.now() - t < 12000) {}
+        body + ' and decrypted';
+        """)
+
+        #expect(result == "answered and decrypted")
+        #expect(engine.generation == generationBefore, "the engine must not have been reset")
+    }
+
+    @Test("a script's own work past 30 s is still cut after a request", .timeLimit(.minutes(2)))
+    func ownWorkPastTheLimitIsCut() {
+        let engine = JSCoreEngine()
+        engine.networkHandler = Self.slowTransport(2)
+        let generationBefore = engine.generation
+
+        let result = engine.evaluate("""
+        var body = java.ajax('https://slow.example/audio');
+        var t = Date.now();
+        while (Date.now() - t < 33000) {}
+        body;
+        """)
+
+        #expect(result == nil, "the script should have timed out")
+        #expect(engine.generation == generationBefore + 1)
+    }
+}

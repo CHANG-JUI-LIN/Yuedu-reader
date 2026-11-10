@@ -83,15 +83,15 @@ struct SourceCallBackTests {
 
     @Test("legado isTrue")
     func isTrue() {
-        for falsy in ["false", "FALSE", "no", "not", "0", "0.0", " false "] {
-            #expect(!LegadoReviewActionRunner.legadoIsTrue(falsy, nilIsTrue: true), "\(falsy)")
+        for falsy in ["false", "FALSE", "no", "not", "0", "0.0", " false ", "0\n"] {
+            #expect(!LegadoTruth.isTrue(falsy, nullIsTrue: true), "\(falsy)")
         }
-        for truthy in ["true", "1", "yes", "anything"] {
-            #expect(LegadoReviewActionRunner.legadoIsTrue(truthy, nilIsTrue: false))
+        for truthy in ["true", "1", "yes", "anything", "专题", "VIP"] {
+            #expect(LegadoTruth.isTrue(truthy))
         }
-        #expect(LegadoReviewActionRunner.legadoIsTrue(nil, nilIsTrue: true))
-        #expect(!LegadoReviewActionRunner.legadoIsTrue("null", nilIsTrue: false))
-        #expect(!LegadoReviewActionRunner.legadoIsTrue("", nilIsTrue: false))
+        #expect(LegadoTruth.isTrue(nil, nullIsTrue: true))
+        #expect(!LegadoTruth.isTrue("null"))
+        #expect(!LegadoTruth.isTrue(""))
     }
 
     @Test("the fields survive import and export, and a source without them encodes as before")

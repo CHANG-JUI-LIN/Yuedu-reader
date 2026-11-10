@@ -6,7 +6,6 @@ import SwiftUI
 /// its own; the pushing stack's back button leaves it.
 struct BookSourceListView: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @EnvironmentObject private var bookStore: BookStore
     /// Not observed: everything the screen draws from the library comes from `model`, which
     /// rebuilds once per library change instead of once per render.
     private let store: BookSourceStore
@@ -367,16 +366,26 @@ struct BookSourceListView: View {
                 // declared on the capsule it could not animate its own arrival.
                 ZStack {
                     if healthChecker.isRunning {
-                        HStack(spacing: DSSpacing.sm) {
-                            ProgressView().scaleEffect(0.8)
-                            Text(localized("驗證中…"))
-                                .font(DSFont.caption)
-                                .foregroundStyle(DSColor.textOnAccent)
+                        // Brings back the check's sheet once it was closed: its progress and
+                        // its stop button are there, and nowhere else.
+                        Button {
+                            showSourceCheck = true
+                        } label: {
+                            HStack(spacing: DSSpacing.sm) {
+                                ProgressView().scaleEffect(0.8)
+                                Text(localized("驗證中…"))
+                                    .font(DSFont.caption)
+                                    .foregroundStyle(DSColor.textOnAccent)
+                            }
+                            .padding(.horizontal, DSSpacing.lg)
+                            .padding(.vertical, DSSpacing.sm)
+                            .background(DSColor.accent.opacity(0.9))
+                            .clipShape(Capsule())
+                            .contentShape(Capsule())
                         }
-                        .padding(.horizontal, DSSpacing.lg)
-                        .padding(.vertical, DSSpacing.sm)
-                        .background(DSColor.accent.opacity(0.9))
-                        .clipShape(Capsule())
+                        .buttonStyle(.plain)
+                        .accessibilityLabel(localized("驗證中…"))
+                        .accessibilityHint(localized("打開來源配置驗證"))
                         .padding(.top, DSSpacing.sm)
                         .transition(
                             reduceMotion
@@ -772,18 +781,13 @@ struct BookSourceListView: View {
 
     private func startCheck(with policy: BookSourceCheckPolicy, sources: [BookSource]) {
         guard !sources.isEmpty else { return }
-        healthChecker.policy = policy
-        var shelfTitles: [UUID: String] = [:]
-        for book in bookStore.books where book.isOnline {
-            guard let sourceID = book.bookSourceId else { continue }
-            let title = book.title.trimmingCharacters(in: .whitespacesAndNewlines)
-            guard !title.isEmpty, shelfTitles[sourceID] == nil else { continue }
-            shelfTitles[sourceID] = title
+        // One run at a time, as in Legado: the running one is in the sheet.
+        guard !healthChecker.isRunning else {
+            showSourceCheck = true
+            return
         }
-        healthChecker.prepare(
-            sources: sources,
-            preferredSearchKeywords: shelfTitles
-        )
+        healthChecker.policy = policy
+        healthChecker.prepare(sources: sources)
         showSourceCheck = true
         Task {
             await healthChecker.runAll()

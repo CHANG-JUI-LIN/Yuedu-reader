@@ -36,20 +36,19 @@ struct StageLoginCheckTests {
         #expect(refetched.withLock { $0 }?.path == "/verified")
     }
 
-    @Test("a 403 the check leaves alone is still the stage's HTTP error")
-    func untouchedForbiddenResponseThrows() async throws {
+    /// Legado's `WebBook` reads no status: the stage's rules get the page the check leaves.
+    @Test("a 403 the check leaves alone goes to the stage's rules, as in Legado")
+    func untouchedForbiddenResponseReachesRules() async throws {
         StageURLProtocol.respond(status: 403, body: "forbidden")
         let source = makeSource(loginCheckJs: "result")
         let url = try #require(URL(string: source.bookSourceUrl + "/book/1"))
 
-        do {
-            _ = try await makeFetcher().fetchStageHTML(
-                url: url, method: "GET", body: nil, headers: [:],
-                baseURL: source.bookSourceUrl, source: source)
-            Issue.record("a 403 must not come back as a page")
-        } catch FetchError.httpError(let status) {
-            #expect(status == 403)
-        }
+        let page = try await makeFetcher().fetchStagePage(
+            url: url, method: "GET", body: nil, headers: [:],
+            baseURL: source.bookSourceUrl, source: source)
+
+        #expect(page.html == "forbidden")
+        #expect(page.statusCode == 403)
     }
 
     @Test("the check sees the real status: a 200 passes through untouched")
@@ -75,20 +74,36 @@ struct StageLoginCheckTests {
         #expect(!refetched.withLock { $0 })
     }
 
-    @Test("without loginCheckJs a 403 is an HTTP error, as before")
-    func sourceWithoutCheckIsUnchanged() async throws {
-        StageURLProtocol.respond(status: 403, body: "forbidden")
+    /// 番茄短剧 (YCK 1330) answers its detail URL with a 404 whose body its `init` script never
+    /// reads; Legado opens the book.
+    @Test("without loginCheckJs a 404 goes to the stage's rules too")
+    func sourceWithoutCheckReadsErrorPage() async throws {
+        StageURLProtocol.respond(status: 404, body: "not found")
         let source = makeSource(loginCheckJs: "")
-        let url = try #require(URL(string: source.bookSourceUrl + "/toc"))
+        let url = try #require(URL(string: source.bookSourceUrl + "/detail?series_id=1"))
 
-        do {
-            _ = try await makeFetcher().fetchStageHTML(
-                url: url, method: "GET", body: nil, headers: [:],
-                baseURL: source.bookSourceUrl, source: source)
-            Issue.record("a 403 must not come back as a page")
-        } catch FetchError.httpError(let status) {
-            #expect(status == 403)
-        }
+        let page = try await makeFetcher().fetchStagePage(
+            url: url, method: "GET", body: nil, headers: [:],
+            baseURL: source.bookSourceUrl, source: source)
+
+        #expect(page.html == "not found")
+        #expect(page.statusCode == 404)
+    }
+
+    /// A search reads an error page with its rules as well; finding nothing there is the
+    /// status's failure, not a source without the book.
+    @Test("a search finds books on an error page, and fails with its status when it finds none")
+    func searchOnErrorPage() async throws {
+        let source = makeSearchSource()
+        let fetcher = makeFetcher()
+
+        StageURLProtocol.respond(status: 404, body: #"<ul><li><a href="/b/1">書甲</a></li></ul>"#)
+        let found = try await fetcher.searchOutcome(query: "甲\(UUID().uuidString)", in: source)
+        #expect(found.books.map(\.name) == ["書甲"])
+
+        StageURLProtocol.respond(status: 404, body: "<p>not found</p>")
+        let none = try await fetcher.searchOutcome(query: "乙\(UUID().uuidString)", in: source)
+        #expect(none.failure == .http(404))
     }
 
     private func makeSource(loginCheckJs: String) -> BookSource {
@@ -97,6 +112,15 @@ struct StageLoginCheckTests {
             bookSourceName: "stage login check fixture"
         )
         source.loginCheckJs = loginCheckJs
+        return source
+    }
+
+    private func makeSearchSource() -> BookSource {
+        var source = makeSource(loginCheckJs: "")
+        source.searchUrl = "/search?q={{key}}"
+        source.ruleSearch.bookList = "li"
+        source.ruleSearch.name = "a@text"
+        source.ruleSearch.bookUrl = "a@href"
         return source
     }
 

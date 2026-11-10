@@ -437,6 +437,13 @@ class BrowserState: NSObject, ObservableObject, WKNavigationDelegate {
         webView.load(URLRequest(url: url))
     }
 
+    /// Accepts the server's certificate, as Legado's WebViews do (`ServerTrustPolicy`).
+    func webView(
+        _ webView: WKWebView, respondTo challenge: URLAuthenticationChallenge
+    ) async -> (URLSession.AuthChallengeDisposition, URLCredential?) {
+        ServerTrustPolicy.answer(challenge)
+    }
+
     func webView(
         _ webView: WKWebView,
         decidePolicyFor navigationAction: WKNavigationAction,
@@ -656,6 +663,13 @@ private class BackgroundWebViewHandler: NSObject, WKNavigationDelegate {
         self.targetWebView = targetWebView
         self.js = js
         self.onComplete = onComplete
+    }
+
+    /// Accepts the server's certificate, as Legado's WebViews do (`ServerTrustPolicy`).
+    func webView(
+        _ webView: WKWebView, respondTo challenge: URLAuthenticationChallenge
+    ) async -> (URLSession.AuthChallengeDisposition, URLCredential?) {
+        ServerTrustPolicy.answer(challenge)
     }
 
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {

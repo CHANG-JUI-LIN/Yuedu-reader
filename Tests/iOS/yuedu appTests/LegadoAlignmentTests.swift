@@ -22,6 +22,10 @@ import Testing
 // IMPORTANT: Keep fixtures OFFLINE (no live network) so tests are
 // deterministic and CI-safe.
 
+// A one-step string rule is an attribute in Legado (`getResultList` → `getResultLast(element,
+// "h1.title")` → `attr`), so a selector read as text needs its `@text`; the fixtures below that
+// once read `h1.title` bare were written by hand, not taken from Android.
+
 // ── Fixture helper ────────────────────────────────────────────────────────────
 
 private struct Fixture: Sendable {
@@ -107,7 +111,7 @@ private let fixtures: [Fixture] = [
           </div>
         </body></html>
         """,
-        rule: "h1.title",
+        rule: "h1.title@text",
         expected: "三體"
     ),
 
@@ -179,7 +183,7 @@ private let fixtures: [Fixture] = [
         html: """
         <html><body><p class="content">精彩內容[本站首發]繼續閱讀</p></body></html>
         """,
-        rule: "p.content##\\[.*?\\]##",
+        rule: "p.content@text##\\[.*?\\]##",
         expected: "精彩內容繼續閱讀"
     ),
 
@@ -206,7 +210,7 @@ private let fixtures: [Fixture] = [
           <div class="backup-title">倚天屠龍記</div>
         </body></html>
         """,
-        rule: "div.main-title||div.backup-title",
+        rule: "div.main-title@text||div.backup-title@text",
         expected: "倚天屠龍記"
     ),
 

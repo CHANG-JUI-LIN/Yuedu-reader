@@ -267,4 +267,23 @@ struct LoginFormLayoutTests {
         #expect(fields.literalViewNames == ["a": "登入"])
         #expect(fields.hasDynamicViewNames)
     }
+
+    // MARK: - A source updated while its login page is open
+
+    @Test("the form is rebuilt when loginUi, loginUrl or jsLib changed, not for other rules")
+    func formDefinitionChange() {
+        let old = BookSource(bookSourceUrl: "https://cloud.example", bookSourceName: "雲端")
+        var newLib = old
+        newLib.jsLib = "let localVersion = '1.20261107.1'"
+        #expect(BookSourceFormLoginView.formDefinitionChanged(from: old, to: newLib))
+        var newUi = old
+        newUi.loginUi = "[{\"name\":\"更新检测\",\"type\":\"button\"}]"
+        #expect(BookSourceFormLoginView.formDefinitionChanged(from: old, to: newUi))
+        var newLogin = old
+        newLogin.loginUrl = "function login() {}"
+        #expect(BookSourceFormLoginView.formDefinitionChanged(from: old, to: newLogin))
+        var newSearch = old
+        newSearch.searchUrl = "/search?q={{key}}"
+        #expect(!BookSourceFormLoginView.formDefinitionChanged(from: old, to: newSearch))
+    }
 }

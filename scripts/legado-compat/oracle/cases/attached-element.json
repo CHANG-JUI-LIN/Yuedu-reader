@@ -1,0 +1,50 @@
+[
+ {
+  "name": "a list item keeps its ancestors: parentNode chain then select (轻之文库 chapterName)",
+  "html": "<div class='vol'><h2>卷一</h2><ul><li><span><b><a class='chapter' href='/1'>第一章</a></b></span></li></ul></div>",
+  "result": {
+   "selectFirst": ".chapter"
+  },
+  "js": "var title = result.parentNode().parentNode().parentNode().parentNode().parentNode(); title.select('h2').text() + '：' + result.text()"
+ },
+ {
+  "name": "a list item keeps its ancestors: parent, parents, tagName",
+  "html": "<div id='a'><p><i class='x'>t</i></p></div>",
+  "result": {
+   "selectFirst": ".x"
+  },
+  "js": "[result.parent().tagName(), result.parents().size(), result.parents().get(1).id()].join('|')"
+ },
+ {
+  "name": "a list item keeps its siblings",
+  "html": "<ul><li>a</li><li class='x'>b</li><li>c</li></ul>",
+  "result": {
+   "selectFirst": ".x"
+  },
+  "js": "[result.elementSiblingIndex(), result.nextElementSibling().text(), result.previousElementSibling().text(), result.siblingElements().size()].join('|')"
+ },
+ {
+  "name": "closest finds the nearest matching ancestor",
+  "html": "<div class='box'><section><p><a class='x'>t</a></p></section></div>",
+  "result": {
+   "selectFirst": ".x"
+  },
+  "js": "[result.closest('div.box').className(), result.closest('section').tagName(), result.closest('table')].join('|')"
+ },
+ {
+  "name": "removing an item from the page is seen by the next read of the page",
+  "html": "<ul><li class='x'>a</li><li>b</li></ul>",
+  "result": {
+   "selectFirst": ".x"
+  },
+  "js": "var ul = result.parent(); result.remove(); [ul.children().size(), ul.text()].join('|')"
+ },
+ {
+  "name": "an element found again by another path is the same element (Elements.contains, indexOf)",
+  "html": "<div class='a'><ul><li class='x'>a</li><li>b</li></ul></div>",
+  "result": {
+   "selectFirst": ".x"
+  },
+  "js": "var c = result.parent().parent(); [result.parents().contains(c), result.parent().children().indexOf(result), doc.select('li').contains(result), doc.select('li').get(0) == result].join('|')"
+ }
+]

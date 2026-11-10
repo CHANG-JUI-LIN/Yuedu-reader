@@ -1,4 +1,5 @@
 import Foundation
+import UIKit
 
 /// How many sources a 書源檢查 probes at once, steered by the CPU the process actually spends.
 ///
@@ -133,4 +134,25 @@ struct BookSourceCheckCPUClock: Sendable {
     static let live = BookSourceCheckCPUClock {
         BookSourceCheckPacing.Sample(wall: SourcePerfTrace.now, cpu: SourcePerfTrace.processCPU)
     }
+}
+
+/// When a 書源檢查 narrows to what `BookSourceCheckPacing` allows.
+///
+/// The CPU budget pacing keeps to is the one iOS enforces on a process that is not in front:
+/// in the background a process that spends too much CPU is reported and can be killed, and a
+/// hot or Low Power device throttles everything anyway. In the foreground the run goes at full
+/// width — measured on 1,492 sources, 430 s instead of the 1,458 s it took paced throughout.
+struct BookSourceCheckPacingCondition: Sendable {
+    var isRequired: @MainActor @Sendable () -> Bool
+
+    static let live = BookSourceCheckPacingCondition {
+        let process = ProcessInfo.processInfo
+        return process.thermalState == .serious
+            || process.thermalState == .critical
+            || process.isLowPowerModeEnabled
+            || UIApplication.shared.applicationState == .background
+    }
+
+    /// Paced from the first source — the condition `BookSourceCheckCPUTests` measures pacing in.
+    static let always = BookSourceCheckPacingCondition { true }
 }

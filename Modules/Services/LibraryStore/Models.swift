@@ -911,6 +911,15 @@ struct BookInfoPackage: Codable {
     let runtimeVariables: [String: String]?
     let rawHTMLFilename: String?
     let savedAt: Date
+    /// `OnlineBook.tocHtml` of the book this package was parsed into: the page itself when the
+    /// TOC is on it. Never encoded (Legado `@Ignore`), so a stored package has none and its TOC
+    /// is requested.
+    var tocHtml: String? = nil
+
+    private enum CodingKeys: String, CodingKey {
+        case sourceId, sourceName, bookURL, name, author, intro, coverUrl, tocUrl, wordCount
+        case lastChapter, kind, runtimeVariables, rawHTMLFilename, savedAt
+    }
 
     var onlineBook: OnlineBook {
         OnlineBook(
@@ -925,7 +934,8 @@ struct BookInfoPackage: Codable {
             kind: kind,
             sourceId: sourceId,
             sourceName: sourceName,
-            runtimeVariables: runtimeVariables
+            runtimeVariables: runtimeVariables,
+            tocHtml: tocHtml
         )
     }
 
@@ -974,7 +984,8 @@ struct BookInfoPackage: Codable {
             kind: preferParsed(kind, known.kind),
             runtimeVariables: runtimeVariables ?? known.runtimeVariables,
             rawHTMLFilename: rawHTMLFilename,
-            savedAt: savedAt
+            savedAt: savedAt,
+            tocHtml: tocHtml
         )
     }
 }

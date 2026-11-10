@@ -56,6 +56,9 @@ final class ChangeCoverViewModel: ObservableObject {
                     !source.ruleSearch.coverUrl.trimmingCharacters(in: .whitespacesAndNewlines)
                         .isEmpty
                 },
+                // Legado's ChangeCoverViewModel keeps a cover only from the book of the same name
+                // and author (`searchBook.name == name && searchBook.author == author`).
+                matchesAuthor: true,
                 onBatch: { origins in
                     self.append(origins: origins)
                 }

@@ -351,6 +351,13 @@ private final class FixedLayoutEPUBPageRasterizer: NSObject, WKNavigationDelegat
 
     // MARK: WKNavigationDelegate
 
+    /// Accepts the server's certificate, as Legado's WebViews do (`ServerTrustPolicy`).
+    func webView(
+        _ webView: WKWebView, respondTo challenge: URLAuthenticationChallenge
+    ) async -> (URLSession.AuthChallengeDisposition, URLCredential?) {
+        ServerTrustPolicy.answer(challenge)
+    }
+
     nonisolated func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
         Task { @MainActor [weak self] in
             await self?.snapshotActivePage()

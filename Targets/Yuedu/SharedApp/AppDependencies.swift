@@ -28,6 +28,17 @@ protocol BookSourceFetching: Sendable {
         forceRefresh: Bool
     ) async throws -> TOCPackage
 
+    /// `detailPage`: the book's detail page, just read (`OnlineBook.detailPage`). A TOC at the
+    /// book's own URL is read from it rather than fetched again (Legado's `tocHtml`).
+    func fetchTOCPackage(
+        tocUrl: String,
+        source: BookSource,
+        runtimeVariables: [String: String]?,
+        onFirstPageReady: (([OnlineChapterRef]) -> Void)?,
+        forceRefresh: Bool,
+        detailPage: BookDetailPage?
+    ) async throws -> TOCPackage
+
     func cachedTOCPackage(
         tocUrl: String,
         source: BookSource
@@ -77,6 +88,24 @@ extension BookSourceFetching {
         source: BookSource
     ) async -> TOCPackage? {
         nil
+    }
+
+    /// A fetcher that reads every TOC from the site.
+    func fetchTOCPackage(
+        tocUrl: String,
+        source: BookSource,
+        runtimeVariables: [String: String]?,
+        onFirstPageReady: (([OnlineChapterRef]) -> Void)?,
+        forceRefresh: Bool,
+        detailPage: BookDetailPage?
+    ) async throws -> TOCPackage {
+        try await fetchTOCPackage(
+            tocUrl: tocUrl,
+            source: source,
+            runtimeVariables: runtimeVariables,
+            onFirstPageReady: onFirstPageReady,
+            forceRefresh: forceRefresh
+        )
     }
 
     func fetchTOCPackage(
@@ -240,6 +269,24 @@ struct LiveBookSourceFetcher: BookSourceFetching {
             runtimeVariables: runtimeVariables,
             onFirstPageReady: onFirstPageReady,
             forceRefresh: forceRefresh
+        )
+    }
+
+    func fetchTOCPackage(
+        tocUrl: String,
+        source: BookSource,
+        runtimeVariables: [String: String]?,
+        onFirstPageReady: (([OnlineChapterRef]) -> Void)?,
+        forceRefresh: Bool,
+        detailPage: BookDetailPage?
+    ) async throws -> TOCPackage {
+        try await bookSourceFetcher.fetchTOCPackage(
+            tocUrl: tocUrl,
+            source: source,
+            runtimeVariables: runtimeVariables,
+            onFirstPageReady: onFirstPageReady,
+            forceRefresh: forceRefresh,
+            detailPage: detailPage
         )
     }
 

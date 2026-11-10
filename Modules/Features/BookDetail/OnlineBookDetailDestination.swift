@@ -243,7 +243,8 @@ extension OnlineBook {
             kind: origin.kind,
             sourceId: origin.sourceId,
             sourceName: origin.sourceName,
-            runtimeVariables: origin.runtimeVariables
+            runtimeVariables: origin.runtimeVariables,
+            infoHtml: origin.infoHtml
         )
     }
 
@@ -261,7 +262,8 @@ extension OnlineBook {
             kind: origin.kind,
             sourceId: origin.sourceId,
             sourceName: origin.sourceName,
-            runtimeVariables: origin.runtimeVariables
+            runtimeVariables: origin.runtimeVariables,
+            infoHtml: origin.infoHtml
         )
     }
 

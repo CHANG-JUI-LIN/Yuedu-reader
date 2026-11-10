@@ -180,8 +180,6 @@ struct TTSCoordinatorTests {
         }
         """
         MimoTTSTestURLProtocol.responseData = Data(responseJSON.utf8)
-        URLProtocol.registerClass(MimoTTSTestURLProtocol.self)
-        defer { URLProtocol.unregisterClass(MimoTTSTestURLProtocol.self) }
 
         gs.importedTTSSources = [source]
         gs.httpTtsUrlTemplate = source.urlTemplate
@@ -199,7 +197,7 @@ struct TTSCoordinatorTests {
 
         // UI rate 0.5 == 100% must reach the source as legado speakSpeed 10 (the normal
         // band in its JS), so no speed style is prepended.
-        let data = try await CustomHTTPProvider().audioData(for: "你好", title: "測試", rate: 0.5)
+        let data = try await CustomHTTPProvider(session: MimoTTSTestURLProtocol.session).audioData(for: "你好", title: "測試", rate: 0.5)
 
         #expect(data == audio)
         #expect(MimoTTSTestURLProtocol.lastRequest?.url?.absoluteString == "https://api.xiaomimimo.com/v1/chat/completions")
@@ -219,7 +217,7 @@ struct TTSCoordinatorTests {
 
         // UI rate 1.0 == 200% maps to speakSpeed 20, which the source JS treats as 语速很快.
         MimoTTSTestURLProtocol.lastRequestBody = nil
-        _ = try await CustomHTTPProvider().audioData(for: "你好", title: "測試", rate: 1.0)
+        _ = try await CustomHTTPProvider(session: MimoTTSTestURLProtocol.session).audioData(for: "你好", title: "測試", rate: 1.0)
 
         let fastBody = try #require(MimoTTSTestURLProtocol.lastRequestBody)
         let fast = try #require(JSONSerialization.jsonObject(with: fastBody) as? [String: Any])
@@ -229,6 +227,14 @@ struct TTSCoordinatorTests {
 }
 
 private final class MimoTTSTestURLProtocol: URLProtocol {
+    /// A session that answers through this protocol. `URLProtocol.registerClass` reaches only
+    /// `URLSession.shared`, which the app no longer uses (`ServerTrustPolicy`).
+    static let session: URLSession = {
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [MimoTTSTestURLProtocol.self]
+        return URLSession(configuration: configuration)
+    }()
+
     private struct Exchange {
         var responseData = Data()
         var lastRequest: URLRequest?

@@ -210,7 +210,7 @@ final class BookSourceAddFlow: ObservableObject {
             defer { networkImportLoading = false }
             let data: Data
             do {
-                (data, _) = try await URLSession.shared.data(from: url)
+                (data, _) = try await URLSession.trusting.data(from: url)
             } catch {
                 fail(error.localizedDescription)
                 return

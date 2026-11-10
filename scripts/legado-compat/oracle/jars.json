@@ -1,0 +1,17 @@
+{
+ "_why": "Legado-E and MD3 pin these versions (gradle/libs.versions.toml: rhino 1.8.1, jsoup 1.16.2 — jsoup must not move past 1.16.2, issue #3811). The pinned sha256 values are of the jars in the Gradle cache, whose SHA-1s matched Maven Central's published .sha1 files on 2026-11-08 (rhino 40e5d3db…, jsoup 5d39ff6d…).",
+ "jars": [
+  {
+   "name": "rhino-1.8.1.jar",
+   "glob": "~/.gradle/caches/modules-2/files-2.1/org.mozilla/rhino/1.8.1/*/rhino-1.8.1.jar",
+   "sha256": "98a06d42bdd69da15bf9c2a7812b4cfe648ca9e64fe8baaeb502a32b0ed2c8ac",
+   "url": "https://repo1.maven.org/maven2/org/mozilla/rhino/1.8.1/rhino-1.8.1.jar"
+  },
+  {
+   "name": "jsoup-1.16.2.jar",
+   "glob": "~/.gradle/caches/modules-2/files-2.1/org.jsoup/jsoup/1.16.2/*/jsoup-1.16.2.jar",
+   "sha256": "a73a1eb5d02b51490547c46485e30f4f14e68af3624840b57abe8c4580a00b83",
+   "url": "https://repo1.maven.org/maven2/org/jsoup/jsoup/1.16.2/jsoup-1.16.2.jar"
+  }
+ ]
+}

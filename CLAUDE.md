@@ -49,6 +49,10 @@ Use `-quiet` to suppress build output, but pair it with `-resultBundlePath` — 
   verdict appears — the same run that cost 8+ minutes finishes in 1m26s. **The verdict is the
   result; the wrap-up is not.** Before concluding that a run hung, always
   `grep -E "Test run with|Test Suite 'All tests'"` the log first.
+- **`xctest.sh` erases the simulator it tested on** once the run ends (maintainer, 2026-11-09:
+  test caches had grown one device to 41 GB), unless another `xcodebuild` is still using that
+  device. Every run starts from a clean install; anything a manual check needs inside the app
+  (a theme pack, Pro) is set up again after the run.
 - **Always pass `-parallel-testing-enabled NO`** (`xctest.sh` does). This is a *separate*
   problem from the hang above, and it does not fix it — verified: a hung run with the flag set
   had left zero clones behind. What the flag prevents is Xcode cloning the destination
@@ -166,6 +170,7 @@ Detailed package versions and their transitive dependencies are recorded in [Dep
 
 ## Key Documentation
 
+- `.claude/skills/legado-compat/SKILL.md` — the loop for Legado source-pack compatibility (書源適配): `scripts/legado-compat/lc.py` audits, classifies, picks the next gap and gates each fix
 - `Technotes/Architecture.md` — full architecture
 - `Technotes/iOS17SearchWatchdogPostmortem.md` — verified iOS 17 search freeze root cause, failed approaches, and non-regression guardrails
 - `Technotes/iOS17MenuModalPresentation.md` — iOS 17 menu-to-sheet/importer presentation race and compatibility contract

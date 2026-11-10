@@ -1,53 +1,72 @@
 import AVFoundation
 import SwiftUI
 
-/// 多角色朗讀 — assigns a voice to each character so a novel is read as a cast rather
-/// than by one narrator.
+/// 多角色朗讀 — reads a novel as a cast rather than by one narrator.
 ///
-/// Scoped to the open book: the same name is a different person in a different novel, and
-/// the speaker list is read out of the chapter being listened to, so the names on screen
-/// are the ones about to be spoken.
+/// With AI: each chapter is analysed before it is read — who speaks every line, with what
+/// emotion — and characters get voices matched to their gender and age. The reader can
+/// override any of it. Without AI the speakers are read off 「某某說」 in the prose.
+///
+/// Scoped to the open book: the same name is a different person in a different novel.
 struct TTSRoleCastView: View {
     let bookID: UUID
-    /// Speakers found in the chapter being read, in the order they first speak.
-    let detectedSpeakers: [String]
+    let context: TTSRoleCastContext
     /// The book, for building character cards from here — the aliases they produce are what
     /// stop one person being cast as three.
     let adapter: AIBookContentAdapter
     /// How far the reader has got, so the character list can default to people who have
     /// actually appeared rather than spoiling the rest of the book.
     let progress: Double
+    let onPreAnalyze: (Int) -> Void
+    let onCastChanged: () -> Void
 
     @Bindable private var gs = GlobalSettings.shared
     @ObservedObject private var cards = AICharacterCardStore.shared
-    @Environment(\.dismiss) private var dismiss
+    @ObservedObject private var subscription = SubscriptionStore.shared
     @State private var showAISettings = false
     @State private var showResetConfirmation = false
-    @ObservedObject private var rosters = AISpeakerRosterStore.shared
-    @ObservedObject private var subscription = SubscriptionStore.shared
     /// Resolved on appear: `isConfigured` reads the Keychain, and `body` runs often.
     @State private var aiConfigured = false
+    @State private var analysisError: String?
+    @State private var fingerprintOnAppear: CastFingerprint?
 
+    private var service: AIDialogueCastService { .shared }
     private var family: TTSVoiceFamily { .active() }
-    private var cast: [String: String] { TTSRoleVoiceCast.cast(forBook: bookID, in: gs.ttsRoleVoices) }
+    private var allowsAI: Bool { ReaderPremiumVisibilityPolicy(isProActive: subscription.isProActive).allowsAI }
+    private var explicitCast: [String: String] { TTSRoleVoiceCast.cast(forBook: bookID, in: gs.ttsRoleVoices) }
+    private var autoCast: [String: String] {
+        gs.ttsAutoCastEnabled ? service.autoVoices(forBook: bookID, family: family) : [:]
+    }
+    private var roster: TTSDialogueRoster { service.roster(forBook: bookID) }
+    private var dialogue: TTSChapterDialogue? { context.request.flatMap(service.cachedChapter) }
+    private var chapterState: AIDialogueCastService.ChapterState? { context.request.flatMap(service.state(of:)) }
 
-    /// Characters cast earlier that this chapter does not happen to include. Without this
-    /// they would look un-cast, and re-casting them would silently replace a deliberate
-    /// choice made while reading a different chapter.
+    /// The chapter's speakers: the AI's when it has analysed the chapter, else the prose's.
+    private var chapterSpeakers: [String] { dialogue?.speakers ?? context.heuristicSpeakers }
+
+    /// Characters cast or met earlier that this chapter does not include. Only ones already
+    /// reached: analysing ahead must not put next chapter's characters on this screen.
     private var castElsewhere: [String] {
-        cast.keys.filter { !detectedSpeakers.contains($0) }.sorted()
+        let here = Set(chapterSpeakers)
+        let met = service.characters(forBook: bookID, through: context.chapterIndex).map(\.name)
+        let names = Set(explicitCast.keys).union(met).subtracting(here)
+        return names.sorted { lhs, rhs in
+            let left = roster.character(named: lhs)?.lineCount ?? 0
+            let right = roster.character(named: rhs)?.lineCount ?? 0
+            return left == right ? lhs < rhs : left > right
+        }
     }
 
     var body: some View {
         Form {
             enableSection
+            if supportsMultiRole, gs.ttsMultiRoleEnabled, allowsAI {
+                aiSection
+            }
             // Outside the multi-role gate on purpose: character cards are worth having
             // before a second voice exists — they are a reading aid in their own right, and
-            // the aliases have to be there the moment the reader does import one. Hiding
-            // them behind the toggle made them unreachable for anyone on a single source.
-            // Character cards are made by AI, which needs Pro; cards made earlier keep
-            // working either way.
-            if ReaderPremiumVisibilityPolicy(isProActive: subscription.isProActive).allowsAI {
+            // the aliases have to be there the moment the reader does import one.
+            if allowsAI {
                 aliasSection
             }
             if supportsMultiRole {
@@ -62,21 +81,35 @@ struct TTSRoleCastView: View {
         .onAppear {
             aiConfigured = AIAssistantService.shared.isConfigured
             cards.loadIfNeeded(forBook: bookID)
-            rosters.loadIfNeeded(forBook: bookID)
+            fingerprintOnAppear = currentFingerprint
+        }
+        .onDisappear {
+            // Applied when the reader leaves this screen, not on every tap: each change
+            // restarts the sentence being read.
+            if let before = fingerprintOnAppear, before != currentFingerprint { onCastChanged() }
+        }
+        .task {
+            await service.loadRoster(forBook: bookID)
+            if family == .azure { AzureTTSVoiceCatalog.shared.loadIfNeeded() }
         }
         .sheet(isPresented: $showAISettings, onDismiss: {
             aiConfigured = AIAssistantService.shared.isConfigured
         }) {
             AISettingsView()
         }
+        .alert(
+            localized("AI 分析失敗"),
+            isPresented: Binding(get: { analysisError != nil }, set: { if !$0 { analysisError = nil } })
+        ) {
+            Button(localized("好"), role: .cancel) { analysisError = nil }
+        } message: {
+            Text(analysisError ?? "")
+        }
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
                 Button(localized("重設")) {
                     showResetConfirmation = true
                 }
-                // Dead only when there is genuinely nothing for this book: no cast, no
-                // roster, no cards. It used to test the cast alone, so it sat greyed out
-                // while a roster and a pile of character cards existed behind it.
                 .disabled(!hasAnythingToReset)
                 .confirmationDialog(
                     localized("重設這本書的角色設定？"),
@@ -92,18 +125,27 @@ struct TTSRoleCastView: View {
         }
     }
 
+    private var currentFingerprint: CastFingerprint {
+        CastFingerprint(
+            multiRole: gs.ttsMultiRoleEnabled,
+            ai: gs.ttsAIDialogueEnabled,
+            auto: gs.ttsAutoCastEnabled,
+            emotion: gs.ttsEmotionEnabled,
+            cast: explicitCast,
+            revision: service.revisions[bookID] ?? 0
+        )
+    }
+
     private var hasAnythingToReset: Bool {
-        !cast.isEmpty
-            || !rosters.roster(forBook: bookID).isEmpty
-            || !cards.profiles(forBook: bookID).isEmpty
+        !explicitCast.isEmpty || !roster.characters.isEmpty || !cards.profiles(forBook: bookID).isEmpty
     }
 
     private func resetBook() {
         gs.ttsRoleVoices = TTSRoleVoiceCast.clearing(bookID: bookID, in: gs.ttsRoleVoices)
-        rosters.clear(forBook: bookID)
         for profile in cards.profiles(forBook: bookID) {
             cards.remove(name: profile.name, forBook: bookID)
         }
+        Task { await service.clear(book: bookID) }
     }
 
     // MARK: - Sections
@@ -113,7 +155,9 @@ struct TTSRoleCastView: View {
             Toggle(localized("多角色朗讀"), isOn: $gs.ttsMultiRoleEnabled)
                 .disabled(!supportsMultiRole)
         } footer: {
-            Text(enableFooterText).dsSectionFooter()
+            if let text = enableFooterText {
+                Text(text).dsSectionFooter()
+            }
         }
         .interfaceSectionSurface()
     }
@@ -124,44 +168,128 @@ struct TTSRoleCastView: View {
         family.supportsMultiRole(importedSourceCount: gs.importedTTSSources.count)
     }
 
-    private var enableFooterText: String {
+    private var enableFooterText: String? {
         switch family {
-        case .system:
-            return localized("為每個角色指派不同的系統語音。未指派的角色與旁白共用同一個聲音。")
-        case .edge:
-            return localized("為每個角色指派不同的微軟線上語音。角色越多，每章需要合成的片段也越多。")
-        case .bookSource:
-            // One source is one voice, so the cast is the list of imported sources. A reader
-            // with only one has nothing to switch between — which is a missing import, not
-            // an unsupported engine.
-            return supportsMultiRole
-                ? localized("為每個角色指派不同的匯入語音源。角色越多，每章需要的請求也越多。")
-                : localized("匯入的語音源一個就是一個聲音，目前只匯入了一個。到語音朗讀設定再匯入幾個（語音包通常一個音色一筆），就能指派給不同角色。")
+        case .bookSource where !supportsMultiRole:
+            // One source is one voice: a missing import, not an unsupported engine.
+            return localized("匯入的語音源一個就是一個聲音，目前只匯入了一個。到語音朗讀設定再匯入幾個（語音包通常一個音色一筆），就能指派給不同角色。")
+        case .edge, .system:
+            return localized("這個語音源的語氣只能用語速和音高模擬；Azure、OpenAI 或小米 MiMo 語音能真正演出情緒。")
+        default:
+            return nil
         }
     }
 
-    /// Why the same character can end up with three voices, and what to do about it.
-    ///
-    /// The dialogue heuristic reads a name out of the prose; it cannot know that 張若塵,
-    /// 若塵 and 塵哥 are one person. The AI character cards are the only thing that can tell
-    /// it, so this is where that connection is made visible — including when the AI is not
-    /// set up, which is the common case and must not look like a malfunction.
+    /// The AI part: who speaks, how, and the automatic voices.
     @ViewBuilder
-    private var aliasSection: some View {
-        let safeProfiles = cards.profiles(forBook: bookID).filter { $0.isSafe(at: adapter.boundary()) }
-        let aliasCount = AICharacterAliasTable.aliasMap(for: safeProfiles).count
-        let cardCount = safeProfiles.count
+    private var aiSection: some View {
         Section {
             if !aiConfigured {
                 Button {
                     showAISettings = true
                 } label: {
                     LabeledContent(localized("設定 AI 助手")) {
-                        Text(localized("未設定"))
+                        Text(localized("未設定")).foregroundStyle(DSColor.textSecondary)
+                    }
+                }
+            }
+            Toggle(localized("AI 判斷說話人與語氣"), isOn: $gs.ttsAIDialogueEnabled)
+            if gs.ttsAIDialogueEnabled, aiConfigured {
+                chapterAnalysisRow
+                preAnalysisRow
+            }
+            Toggle(localized("依性別年齡自動配音"), isOn: $gs.ttsAutoCastEnabled)
+            Toggle(localized("朗讀語氣"), isOn: $gs.ttsEmotionEnabled)
+        } header: {
+            Text(localized("AI 配音"))
+                .foregroundStyle(DSColor.textSecondary)
+        } footer: {
+            Text(localized("每章開始朗讀前會先請 AI 分析一次（下一章會在播放時預先分析），費用由你的 AI 服務計算。"))
+                .dsSectionFooter()
+        }
+        .interfaceSectionSurface()
+    }
+
+    @ViewBuilder
+    private var chapterAnalysisRow: some View {
+        if let request = context.request {
+            let analysing = chapterState == .analyzing
+            Button {
+                analyse(request, force: dialogue != nil)
+            } label: {
+                LabeledContent(localized(dialogue == nil ? "分析本章" : "重新分析本章")) {
+                    if analysing {
+                        ProgressView()
+                    } else {
+                        Text(chapterStatusText)
                             .foregroundStyle(DSColor.textSecondary)
                     }
                 }
             }
+            .disabled(analysing)
+            .accessibilityValue(analysing ? localized("分析中…") : chapterStatusText)
+        }
+    }
+
+    private var chapterStatusText: String {
+        if let dialogue {
+            return String(
+                format: localized("%1$d 句對白、%2$d 位角色"),
+                dialogue.attributedLineCount,
+                dialogue.speakers.count
+            )
+        }
+        if case .failed = chapterState { return localized("分析失敗") }
+        return localized("尚未分析")
+    }
+
+    @ViewBuilder
+    private var preAnalysisRow: some View {
+        if let batch = service.batchProgress[bookID] {
+            HStack(spacing: DSSpacing.sm) {
+                ProgressView(value: Double(batch.done), total: Double(max(batch.total, 1)))
+                    .accessibilityLabel(localized("預先分析"))
+                    .accessibilityValue(String(format: localized("%1$d / %2$d 章"), batch.done, batch.total))
+                Text(String(format: localized("%1$d / %2$d 章"), batch.done, batch.total))
+                    .font(DSFont.subheadline)
+                    .foregroundStyle(DSColor.textSecondary)
+                    .accessibilityHidden(true)
+                Button(localized("停止")) { service.cancelBatch(bookID: bookID) }
+                    .buttonStyle(.borderless)
+            }
+        } else {
+            Menu {
+                Button(localized("接下來 5 章")) { onPreAnalyze(5) }
+                Button(localized("接下來 20 章")) { onPreAnalyze(20) }
+            } label: {
+                LabeledContent(localized("預先分析")) {
+                    Image(systemName: "chevron.up.chevron.down")
+                        .foregroundStyle(DSColor.textSecondary)
+                        .accessibilityHidden(true)
+                }
+            }
+        }
+    }
+
+    private func analyse(_ request: AIDialogueCastService.Request, force: Bool) {
+        let aliases = context.knownAliases
+        Task {
+            do {
+                try await service.analyze(request, knownAliases: aliases, force: force)
+            } catch is CancellationError {
+            } catch {
+                analysisError = error.localizedDescription
+            }
+        }
+    }
+
+    /// Character cards: the names a reader confirmed are one person.
+    @ViewBuilder
+    private var aliasSection: some View {
+        let safeProfiles = cards.profiles(forBook: bookID).filter { $0.isSafe(at: adapter.boundary()) }
+        let aliasCount = AICharacterAliasTable.aliasMap(for: safeProfiles).count
+        let cardCount = safeProfiles.count
+        Section {
             NavigationLink {
                 AICharacterListView(bookID: bookID, adapter: adapter, progress: progress)
             } label: {
@@ -178,24 +306,20 @@ struct TTSRoleCastView: View {
             Text(localized("角色識別"))
                 .foregroundStyle(DSColor.textSecondary)
         } footer: {
-            Text(
-                aiConfigured
-                    ? localized("整理人物卡之後，同一個人的不同稱呼（張若塵／若塵／塵哥）會歸成同一個聲音。")
-                    : localized("沒有 AI 也能用，只是同一個人的不同稱呼會各拿一個聲音。")
-            )
-            .dsSectionFooter()
+            Text(localized("人物卡裡的別稱會告訴 AI 哪些稱呼是同一個人（張若塵／若塵／塵哥），讓他們共用一個聲音。"))
+                .dsSectionFooter()
         }
         .interfaceSectionSurface()
     }
 
     private var detectedSection: some View {
         Section {
-            if detectedSpeakers.isEmpty {
+            if chapterSpeakers.isEmpty {
                 Text(localized("這一章沒有偵測到對話。"))
                     .font(DSFont.subheadline)
                     .foregroundStyle(DSColor.textSecondary)
             } else {
-                ForEach(detectedSpeakers, id: \.self) { speaker in
+                ForEach(chapterSpeakers, id: \.self) { speaker in
                     speakerRow(speaker)
                 }
             }
@@ -203,8 +327,10 @@ struct TTSRoleCastView: View {
             Text(localized("本章角色"))
                 .foregroundStyle(DSColor.textSecondary)
         } footer: {
-            Text(localized("角色是從「某某說道：「…」」這類敘述裡讀出來的，判斷不出來的對話會用旁白的聲音。"))
-                .dsSectionFooter()
+            if dialogue == nil {
+                Text(localized("這一章還沒經過 AI 分析：角色是從「某某說道」這類敘述讀出來的，判斷不出來的對白會用旁白的聲音。"))
+                    .dsSectionFooter()
+            }
         }
         .interfaceSectionSurface()
     }
@@ -215,11 +341,8 @@ struct TTSRoleCastView: View {
                 speakerRow(speaker)
             }
         } header: {
-            Text(localized("其他已指派的角色"))
+            Text(localized("本書其他角色"))
                 .foregroundStyle(DSColor.textSecondary)
-        } footer: {
-            Text(localized("這些角色在本書其他章節出現過。"))
-                .dsSectionFooter()
         }
         .interfaceSectionSurface()
     }
@@ -227,41 +350,103 @@ struct TTSRoleCastView: View {
     // MARK: - Rows
 
     private func speakerRow(_ speaker: String) -> some View {
-        let assigned = cast[speaker].flatMap(TTSRoleVoice.init(storageValue:))
+        let character = roster.character(named: speaker)
+        let chosen = explicitCast[speaker]
+        let automatic = chosen == nil ? autoCast[speaker] : nil
+        let voiceText = TTSRoleVoiceNames.label(chosen: chosen, automatic: automatic, family: family)
+        let traits = character.map(TTSRoleVoiceNames.traits(of:))
         return NavigationLink {
-            TTSRoleVoicePickerView(bookID: bookID, speaker: speaker)
+            TTSRoleVoicePickerView(bookID: bookID, speaker: speaker, character: character, automatic: autoCast[speaker])
         } label: {
             HStack(spacing: DSSpacing.sm) {
-                Text(speaker)
-                    .foregroundStyle(DSColor.textPrimary)
+                VStack(alignment: .leading, spacing: DSSpacing.xxs) {
+                    Text(speaker)
+                        .foregroundStyle(DSColor.textPrimary)
+                    if let traits, !traits.isEmpty {
+                        Text(traits)
+                            .font(DSFont.caption)
+                            .foregroundStyle(DSColor.textSecondary)
+                    }
+                }
                 Spacer(minLength: DSSpacing.sm)
-                Text(voiceLabel(for: assigned))
+                Text(voiceText)
                     .font(DSFont.subheadline)
                     .foregroundStyle(DSColor.textSecondary)
                     .lineLimit(1)
             }
         }
-        // One focus stop per character, reading the name and the voice together, rather
-        // than the two labels VoiceOver would otherwise land on separately.
+        // One focus stop per character, reading the name, who they are and the voice together.
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel("\(speaker)，\(voiceLabel(for: assigned))")
+        .accessibilityLabel([speaker, traits ?? "", voiceText].filter { !$0.isEmpty }.joined(separator: "，"))
         .accessibilityHint(localized("選擇這個角色的聲音"))
     }
+}
 
-    /// What a row says about a character's voice — including the case the whole tagging
-    /// scheme exists for: cast with a voice the running engine cannot speak.
-    private func voiceLabel(for voice: TTSRoleVoice?) -> String {
-        guard let voice else { return localized("旁白") }
-        switch (voice, family) {
-        case let (.system(identifier), .system):
-            return AVSpeechSynthesisVoice(identifier: identifier)?.name ?? localized("語音已移除")
-        case let (.edge(voiceID), .edge):
-            return EdgeTTSVoice.voice(id: voiceID)?.displayName ?? localized("語音已移除")
-        case (.bookSource, .bookSource):
-            return voice.importedSource()?.name ?? localized("語音已移除")
-        default:
-            return localized("目前的語音來源不支援")
+/// What the cast screen compares on leaving to decide whether the listener needs to hear the
+/// change now.
+private struct CastFingerprint: Equatable {
+    let multiRole: Bool
+    let ai: Bool
+    let auto: Bool
+    let emotion: Bool
+    let cast: [String: String]
+    let revision: Int
+}
+
+/// Names for voices and characters on the cast screens.
+@MainActor
+enum TTSRoleVoiceNames {
+    static func displayName(for voice: TTSRoleVoice) -> String? {
+        switch voice {
+        case let .system(identifier):
+            return AVSpeechSynthesisVoice(identifier: identifier)?.name
+        case .edge:
+            return voice.edgeVoice?.displayName
+        case .bookSource:
+            return voice.importedSource()?.name
+        case let .azure(storage):
+            let ref = AzureTTSVoiceRef(storage: storage)
+            let name = AzureTTSVoiceCatalog.shared.voice(named: ref.shortName)?.localName ?? ref.shortName
+            guard let role = ref.role else { return name }
+            return String(format: localized("%1$@・扮演%2$@"), name, localized(AzureTTSRole.displayNameKey(role)))
+        case let .openAI(id):
+            return OpenAITTSVoices.all.first { $0.id == id }?.displayName ?? id
+        case let .mimo(id):
+            return MiMoTTSVoices.all.first { $0.id == id }?.displayName ?? id
         }
+    }
+
+    /// What a row says about a character's voice — including a voice the running engine
+    /// cannot speak, which is why the cast stores which catalogue a voice came from.
+    static func label(chosen: String?, automatic: String?, family: TTSVoiceFamily) -> String {
+        if chosen == TTSRoleVoiceCast.narratorChoice { return localized("旁白") }
+        if let stored = chosen ?? automatic, let voice = TTSRoleVoice(storageValue: stored) {
+            guard voice.family == family else { return localized("目前的語音來源不支援") }
+            let name = displayName(for: voice) ?? localized("語音已移除")
+            return chosen == nil ? String(format: localized("自動・%@"), name) : name
+        }
+        return localized("旁白")
+    }
+
+    /// 「男・青年・42 句」.
+    static func traits(of character: TTSDialogueCharacter) -> String {
+        var parts: [String] = []
+        switch character.gender {
+        case .male: parts.append(localized("男"))
+        case .female: parts.append(localized("女"))
+        case .unknown: break
+        }
+        switch character.age {
+        case .child: parts.append(localized("孩童"))
+        case .young: parts.append(localized("青年"))
+        case .adult: parts.append(localized("成年"))
+        case .elder: parts.append(localized("年長"))
+        case .unknown: break
+        }
+        if character.lineCount > 0 {
+            parts.append(String(format: localized("%d 句"), character.lineCount))
+        }
+        return parts.joined(separator: "・")
     }
 }
 
@@ -269,23 +454,37 @@ struct TTSRoleCastView: View {
 struct TTSRoleVoicePickerView: View {
     let bookID: UUID
     let speaker: String
+    let character: TTSDialogueCharacter?
+    /// The automatic pick, shown on the 自動 row.
+    let automatic: String?
 
     @Bindable private var gs = GlobalSettings.shared
     @Environment(\.dismiss) private var dismiss
 
     private var family: TTSVoiceFamily { .active() }
-    private var current: TTSRoleVoice? {
-        TTSRoleVoiceCast.cast(forBook: bookID, in: gs.ttsRoleVoices)[speaker]
-            .flatMap(TTSRoleVoice.init(storageValue:))
-    }
+    private var stored: String? { TTSRoleVoiceCast.cast(forBook: bookID, in: gs.ttsRoleVoices)[speaker] }
+    private var current: TTSRoleVoice? { stored.flatMap(TTSRoleVoice.init(storageValue:)) }
 
     var body: some View {
         Form {
             Section {
-                row(title: localized("旁白"), isSelected: current == nil) { assign(nil) }
+                if gs.ttsAutoCastEnabled {
+                    row(
+                        title: localized("自動"),
+                        detail: automatic.flatMap(TTSRoleVoice.init(storageValue:)).flatMap(TTSRoleVoiceNames.displayName(for:)),
+                        isSelected: stored == nil
+                    ) { assign(nil) }
+                }
+                row(
+                    title: localized("旁白"),
+                    isSelected: gs.ttsAutoCastEnabled ? stored == TTSRoleVoiceCast.narratorChoice : stored == nil
+                ) {
+                    assign(gs.ttsAutoCastEnabled ? TTSRoleVoiceCast.narratorChoice : nil)
+                }
             } footer: {
-                Text(localized("與沒有指派聲音的角色、以及旁白文字使用同一個聲音。"))
-                    .dsSectionFooter()
+                if let character {
+                    Text(TTSRoleVoiceNames.traits(of: character)).dsSectionFooter()
+                }
             }
             .interfaceSectionSurface()
 
@@ -293,18 +492,21 @@ struct TTSRoleVoicePickerView: View {
             case .system: systemVoiceSections
             case .edge: edgeVoiceSection
             case .bookSource: importedSourceSection
+            case .azure: azureVoiceSection
+            case .openAI: cloudVoiceSection(OpenAITTSVoices.all) { .openAI(voice: $0) }
+            case .mimo: cloudVoiceSection(MiMoTTSVoices.all) { .mimo(voice: $0) }
             }
         }
         .softScrollEdges()
         .navigationTitle(speaker)
         .toolbarTitleDisplayMode(.inline)
         .themedAppSurface(for: .settings)
+        .onAppear {
+            if family == .azure { AzureTTSVoiceCatalog.shared.loadIfNeeded() }
+        }
     }
 
     /// Each imported voice source is one voice.
-    ///
-    /// A voice pack ships one entry per speaker, so the list the reader already sees under
-    /// 語音朗讀設定 is exactly the cast they can draw from.
     private var importedSourceSection: some View {
         Section {
             ForEach(gs.importedTTSSources) { source in
@@ -312,15 +514,12 @@ struct TTSRoleVoicePickerView: View {
                     title: source.name,
                     isSelected: current == .bookSource(sourceID: source.id)
                 ) {
-                    assign(.bookSource(sourceID: source.id))
+                    assign(TTSRoleVoice.bookSource(sourceID: source.id).storageValue)
                 }
             }
         } header: {
             Text(localized("匯入的語音源"))
                 .foregroundStyle(DSColor.textSecondary)
-        } footer: {
-            Text(localized("每個匯入的語音源就是一個聲音。想要更多音色，就到語音朗讀設定匯入更多來源。"))
-                .dsSectionFooter()
         }
         .interfaceSectionSurface()
     }
@@ -335,7 +534,7 @@ struct TTSRoleVoicePickerView: View {
                         detail: SystemTTSVoiceCatalog.qualityLabel(for: voice),
                         isSelected: current?.systemIdentifier == voice.identifier
                     ) {
-                        assign(.system(identifier: voice.identifier))
+                        assign(TTSRoleVoice.system(identifier: voice.identifier).storageValue)
                     }
                 }
             } header: {
@@ -353,12 +552,62 @@ struct TTSRoleVoicePickerView: View {
                     title: voice.displayName,
                     isSelected: current?.edgeVoice?.id == voice.id
                 ) {
-                    assign(.edge(voiceID: voice.id))
+                    assign(TTSRoleVoice.edge(voiceID: voice.id).storageValue)
                 }
             }
         } header: {
             Text(localized("微軟線上語音"))
                 .foregroundStyle(DSColor.textSecondary)
+        }
+        .interfaceSectionSurface()
+    }
+
+    /// Azure voices in the narrator's language, each followed by the roles it can act.
+    @ViewBuilder
+    private var azureVoiceSection: some View {
+        let narrator = AzureTTSVoiceRef(storage: CloudTTSService.voiceID(inSourceIdentifier: gs.httpTtsUrlTemplate))
+        let group = TTSLanguageGroup.of(locale: narrator.locale)
+        let voices = AzureTTSVoiceCatalog.shared.voices.filter { $0.languageGroup == group }
+        Section {
+            if voices.isEmpty {
+                Text(localized("還沒有 Azure 聲音清單"))
+                    .foregroundStyle(DSColor.textSecondary)
+            }
+            ForEach(voices) { voice in
+                azureRow(AzureTTSVoiceRef(shortName: voice.shortName), title: voice.localName)
+                ForEach(voice.roles, id: \.self) { role in
+                    azureRow(
+                        AzureTTSVoiceRef(shortName: voice.shortName, role: role),
+                        title: String(format: localized("%1$@・扮演%2$@"), voice.localName, localized(AzureTTSRole.displayNameKey(role)))
+                    )
+                }
+            }
+        } header: {
+            Text(localized("Azure 語音"))
+                .foregroundStyle(DSColor.textSecondary)
+        } footer: {
+            if voices.isEmpty {
+                Text(localized("到語音源的 Azure 語音頁面取得聲音清單。"))
+                    .dsSectionFooter()
+            }
+        }
+        .interfaceSectionSurface()
+    }
+
+    private func azureRow(_ ref: AzureTTSVoiceRef, title: String) -> some View {
+        let value = TTSRoleVoice.azure(voice: ref.storage).storageValue
+        return row(title: title, isSelected: stored == value) { assign(value) }
+    }
+
+    private func cloudVoiceSection(
+        _ options: [CloudTTSVoiceOption],
+        make: @escaping (String) -> TTSRoleVoice
+    ) -> some View {
+        Section {
+            ForEach(options) { option in
+                let value = make(option.id).storageValue
+                row(title: option.displayName, isSelected: stored == value) { assign(value) }
+            }
         }
         .interfaceSectionSurface()
     }
@@ -373,7 +622,7 @@ struct TTSRoleVoicePickerView: View {
         if isSelected { _ = traits.insert(.isSelected) }
         return Button(action: action) {
             HStack(spacing: DSSpacing.sm) {
-                VStack(alignment: .leading, spacing: 2) {
+                VStack(alignment: .leading, spacing: DSSpacing.xxs) {
                     Text(title).foregroundStyle(DSColor.textPrimary)
                     if let detail, !detail.isEmpty {
                         Text(detail)
@@ -395,9 +644,9 @@ struct TTSRoleVoicePickerView: View {
         .accessibilityAddTraits(traits)
     }
 
-    private func assign(_ voice: TTSRoleVoice?) {
+    private func assign(_ value: String?) {
         gs.ttsRoleVoices = TTSRoleVoiceCast.setting(
-            voiceIdentifier: voice?.storageValue,
+            voiceIdentifier: value,
             forSpeaker: speaker,
             bookID: bookID,
             in: gs.ttsRoleVoices
@@ -410,9 +659,16 @@ struct TTSRoleVoicePickerView: View {
     NavigationStack {
         TTSRoleCastView(
             bookID: UUID(),
-            detectedSpeakers: ["張若塵", "池瑤", "齊源老道"],
+            context: TTSRoleCastContext(
+                chapterIndex: 3,
+                request: nil,
+                heuristicSpeakers: ["張若塵", "池瑤", "齊源老道"],
+                knownAliases: [:]
+            ),
             adapter: AIBookContentAdapter(bookID: UUID(), chapters: [], textForChapter: { _ in nil }),
-            progress: 0.42
+            progress: 0.42,
+            onPreAnalyze: { _ in },
+            onCastChanged: {}
         )
     }
 }
@@ -421,9 +677,11 @@ struct TTSRoleVoicePickerView: View {
     NavigationStack {
         TTSRoleCastView(
             bookID: UUID(),
-            detectedSpeakers: [],
+            context: .empty,
             adapter: AIBookContentAdapter(bookID: UUID(), chapters: [], textForChapter: { _ in nil }),
-            progress: 0.42
+            progress: 0.42,
+            onPreAnalyze: { _ in },
+            onCastChanged: {}
         )
     }
 }

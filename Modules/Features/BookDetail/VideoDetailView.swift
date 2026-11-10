@@ -611,8 +611,12 @@ struct VideoDetailView: View {
             AdaptiveSheetContainer(maxWidth: DSLayout.readableListWidth) {
                 SourceSearchSheet(
                     query: currentBook.name,
+                    author: currentBook.author,
                     currentSourceId: currentBook.sourceId,
                     currentBookURL: currentBook.bookUrl,
+                    kind: .video,
+                    currentSourceName: currentBook.sourceName,
+                    currentLastChapter: currentBook.lastChapter,
                     otherVersions: otherWorkVersions,
                     onSelectVersion: { id in pendingVersion = id },
                     onSelectOrigin: { origin in pendingOrigin = origin }
@@ -751,6 +755,7 @@ struct VideoDetailView: View {
             do {
                 var tocURL = request.bookUrl
                 var runtimeVars = request.runtimeVariables
+                var detailPage: BookDetailPage?
                 if !request.bookUrl.isEmpty {
                     let pkg = try await dependencies.bookSourceFetcher.fetchBookInfoPackage(
                         url: request.bookUrl, source: source, runtimeVariables: runtimeVars, knownBook: request)
@@ -758,9 +763,11 @@ struct VideoDetailView: View {
                     guard isCurrentRequest(request) else { return }
                     detailInfo = OnlineBookDetailPresentationPolicy.sanitized(pkg.onlineBook)
                     if !pkg.tocUrl.isEmpty { tocURL = pkg.tocUrl }
+                    detailPage = pkg.onlineBook.detailPage
                 }
                 let tocPkg = try await dependencies.bookSourceFetcher.fetchTOCPackage(
-                    tocUrl: tocURL, source: source, runtimeVariables: runtimeVars)
+                    tocUrl: tocURL, source: source, runtimeVariables: runtimeVars,
+                    onFirstPageReady: nil, forceRefresh: false, detailPage: detailPage)
                 runtimeVars = Self.merged(runtimeVars, tocPkg.runtimeVariables)
                 guard isCurrentRequest(request) else { return }
                 chapters = tocPkg.chapters

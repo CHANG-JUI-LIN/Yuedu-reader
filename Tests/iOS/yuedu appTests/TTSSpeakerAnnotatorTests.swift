@@ -71,9 +71,20 @@ struct TTSSpeakerAnnotatorTests {
 
     // MARK: - Segmentation
 
+    /// `他說：「好」` used to cast 他 as a character, and every man in the book shared that
+    /// one voice.
+    @Test("a pronoun is never read as a speaker")
+    func pronounIsNotASpeaker() {
+        for text in ["他說：「好。」", "她冷冷地道：「走。」", "「走吧。」我說。", "「好。」他們說。"] {
+            let attributions = TTSSpeakerAnnotator.attributions(in: text)
+            #expect(attributions.count == 1, "\(text)")
+            #expect(attributions.first?.speaker == nil, "\(text)")
+        }
+    }
+
     @Test("splits a narrated paragraph so each segment carries one voice")
     func splitsSpeechOutOfNarration() {
-        let text = "他說「好」，轉身走了。"
+        let text = "張三說「好」，轉身走了。"
         let segments = TTSPronunciationProjector.segments(
             text,
             targetLength: 2000,

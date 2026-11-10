@@ -93,7 +93,7 @@ enum DirectAuthReachability {
         configuration.timeoutIntervalForResource = timeout
         configuration.waitsForConnectivity = false
         configuration.requestCachePolicy = .reloadIgnoringLocalCacheData
-        return URLSession(configuration: configuration)
+        return URLSession.trusting(configuration)
     }()
 }
 

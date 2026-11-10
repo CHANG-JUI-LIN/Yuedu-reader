@@ -152,14 +152,12 @@ struct TTSResponseDiagnosticTests {
         let previousSources = gs.importedTTSSources
         let previousUseSystemVoice = gs.ttsUseSystemVoice
 
-        URLProtocol.registerClass(TTSDiagnosticTestURLProtocol.self)
         gs.importedTTSSources = [source]
         gs.httpTtsUrlTemplate = source.urlTemplate
         gs.httpTtsHeaders = [:]
         gs.ttsUseSystemVoice = false
 
         defer {
-            URLProtocol.unregisterClass(TTSDiagnosticTestURLProtocol.self)
             TTSDiagnosticTestURLProtocol.reset()
             LoginManager.shared.clearLogin(sourceUrl: source.id)
             gs.httpTtsUrlTemplate = previousTemplate
@@ -169,7 +167,7 @@ struct TTSResponseDiagnosticTests {
         }
 
         do {
-            _ = try await CustomHTTPProvider().audioData(for: "你好", title: "測試", rate: 0.5)
+            _ = try await CustomHTTPProvider(session: TTSDiagnosticTestURLProtocol.session).audioData(for: "你好", title: "測試", rate: 0.5)
             Issue.record("synthesis unexpectedly succeeded")
             return nil
         } catch {
@@ -179,6 +177,14 @@ struct TTSResponseDiagnosticTests {
 }
 
 private final class TTSDiagnosticTestURLProtocol: URLProtocol {
+    /// A session that answers through this protocol. `URLProtocol.registerClass` reaches only
+    /// `URLSession.shared`, which the app no longer uses (`ServerTrustPolicy`).
+    static let session: URLSession = {
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [TTSDiagnosticTestURLProtocol.self]
+        return URLSession(configuration: configuration)
+    }()
+
     nonisolated(unsafe) static var responseData = Data()
     nonisolated(unsafe) static var contentType = "audio/wav"
     nonisolated(unsafe) static var status = 200

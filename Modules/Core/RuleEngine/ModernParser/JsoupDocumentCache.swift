@@ -61,17 +61,19 @@ final class JsoupDocumentCache {
         fileprivate let thread: Thread
 
         /// Ends the parse; call it on the thread that began it (`defer` right after
-        /// `beginParse()`). The outermost end forgets the thread's documents.
-        func end() {
+        /// `beginParse()`). The outermost end forgets the thread's documents and says so.
+        @discardableResult
+        func end() -> Bool {
             assert(Thread.current === thread, "a parse scope ended on another thread than it began on")
             let storage = Thread.current.threadDictionary
             let depth = ((storage[JsoupDocumentCache.parseDepthKey] as? Int) ?? 1) - 1
             guard depth == 0 else {
                 storage[JsoupDocumentCache.parseDepthKey] = depth
-                return
+                return false
             }
             storage.removeObject(forKey: JsoupDocumentCache.parseDepthKey)
             storage.removeObject(forKey: JsoupDocumentCache.threadDictionaryKey)
+            return true
         }
     }
 
@@ -121,5 +123,12 @@ final class JsoupDocumentCache {
         let document = try SwiftSoup.parse(content, baseURL)
         entry = Entry(content: content, baseURL: baseURL, document: document)
         return document
+    }
+
+    /// Forget `document` once a script has changed it (`LegadoJsoupElement`'s jsoup mutators):
+    /// it no longer matches the markup it was parsed from, so the next parse of that markup
+    /// must not get it back.
+    func evict(_ document: Document) {
+        if entry?.document === document { entry = nil }
     }
 }

@@ -250,10 +250,11 @@ struct BookSource: Identifiable, Codable {
     var bookSourceGroup: String = ""
 
     var cleanedBookSourceURL: String {
-        if let hashIdx = bookSourceUrl.firstIndex(of: "#") {
-            return String(bookSourceUrl[..<hashIdx]).trimmingCharacters(in: .whitespacesAndNewlines)
-        }
-        return bookSourceUrl
+        // Java's `URL(spec)`, which Legado resolves against, drops leading and trailing
+        // whitespace: 品书斋子 (YCK 1331) has a `bookSourceUrl` that ends in a space.
+        let withoutFragment = bookSourceUrl.firstIndex(of: "#").map { String(bookSourceUrl[..<$0]) }
+            ?? bookSourceUrl
+        return withoutFragment.trimmingCharacters(in: .whitespacesAndNewlines)
     }
     var bookSourceComment: String = ""
     var bookSourceType: Int = 0       // 0 = text, 1 = audio, 2 = image, 3 = file, 4 = video
@@ -401,6 +402,21 @@ struct BookSource: Identifiable, Codable {
 
 // MARK: - Search Results / Book Info
 
+extension BookSource {
+    /// The keyword a validation run searches with — legado-E and MD3's
+    /// `BookSource.getCheckKeyword`. `checkKeyWord` doubles as the source debugger's input,
+    /// so a URL (`http…`), an explore entry (`::`) or a debug step (`++` TOC, `--` content)
+    /// there is not a keyword; the run then uses `fallback`.
+    func checkKeyword(default fallback: String) -> String {
+        let keyword = ruleSearch.checkKeyWord
+        guard !keyword.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+              !keyword.contains("http"), !keyword.contains("::"),
+              !keyword.contains("++"), !keyword.contains("--")
+        else { return fallback }
+        return keyword
+    }
+}
+
 struct OnlineBook: Identifiable, Codable, Sendable {
     var id = UUID()
     var name: String
@@ -415,6 +431,42 @@ struct OnlineBook: Identifiable, Codable, Sendable {
     var sourceId: UUID
     var sourceName: String
     var runtimeVariables: [String: String]? = nil
+    /// The page this book was read from when a search or discover page turned out to be the
+    /// book's own page (Legado `SearchBook.infoHtml`). The detail stage reads it instead of
+    /// requesting `bookUrl` again — which, for a page a POST search answered, is not the same
+    /// page. Never stored, as in Legado (`@Ignore`): not encoded, so a cached result has none.
+    var infoHtml: String? = nil
+    /// The detail page this book was read from, when its TOC URL is that page (Legado
+    /// `BaseBook.tocHtml`, which `BookInfo.analyzeBookInfo` sets when `tocUrl == baseUrl`): the
+    /// TOC stage reads the chapters from it instead of requesting the page again
+    /// (`detailPage`). Never stored, as in Legado (`@Ignore`).
+    var tocHtml: String? = nil
+
+    private enum CodingKeys: String, CodingKey {
+        case id, name, author, intro, coverUrl, bookUrl, tocUrl, wordCount, lastChapter, kind
+        case sourceId, sourceName, runtimeVariables
+    }
+
+    /// The detail page to hand this book's TOC stage (`fetchTOCPackage(…detailPage:)`).
+    var detailPage: BookDetailPage? {
+        guard let tocHtml, !tocHtml.isEmpty else { return nil }
+        return BookDetailPage(url: bookUrl, html: tocHtml)
+    }
+
+    func withInfoHTML(_ html: String) -> OnlineBook {
+        var book = self
+        book.infoHtml = html
+        return book
+    }
+}
+
+/// A book's detail page as the detail stage read it: `url` is the book's URL, `html` the page.
+/// Legado's `WebBook.getChapterListAwait` reads a TOC whose URL is the book's own from this page
+/// (`book.bookUrl == book.tocUrl && tocHtml`), after `preUpdateJs` had its chance to change the
+/// TOC URL, so the TOC stage compares the URL it ends up with.
+struct BookDetailPage: Sendable {
+    let url: String
+    let html: String
 }
 
 enum OnlineBookContentKind: Equatable, Sendable {
@@ -737,44 +789,16 @@ extension OnlineBook {
                 + OnlineBookContentInference.sourceRuntimeModeMarkers(for: source)
         )
     }
-
-    var explicitlyInferredContentKind: OnlineBookContentKind? {
-        OnlineBookContentInference.explicitKind(
-            runtimeVariables: runtimeVariables,
-            urls: [bookUrl, tocUrl],
-            metadataText: [kind, intro, lastChapter]
-        )
-    }
 }
 
-/// Picks one deterministic validation candidate without crossing an explicitly
-/// declared content boundary. Aggregate sources can return text, audio and manga
-/// in the same result list; validating the first URL blindly can therefore test a
-/// secondary mode instead of the source's declared primary mode.
+/// Which result of a search or discover page 書源驗證 goes on with.
 enum OnlineBookValidationSelector {
-    static func preferredBook(from books: [OnlineBook], for source: BookSource) -> OnlineBook? {
-        let candidates = books.filter {
-            !$0.bookUrl.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-        }
-        guard let expectedKind = declaredContentKind(for: source.bookSourceType) else {
-            return candidates.first
-        }
-        if let matching = candidates.first(where: {
-            $0.explicitlyInferredContentKind == expectedKind
-        }) {
-            return matching
-        }
-        return candidates.first(where: { $0.explicitlyInferredContentKind == nil })
-    }
-
-    private static func declaredContentKind(for sourceType: Int) -> OnlineBookContentKind? {
-        switch sourceType {
-        case 0: return .text
-        case 1: return .audio
-        case 2: return .manga
-        case 4: return .video
-        default: return nil
-        }
+    /// Legado's `CheckSourceService` takes the first result (`searchBooks.first()`,
+    /// `exploreBooks.first()`), whatever its type. A text source whose page lists an audio
+    /// result first is checked on that one there, and so here: picking the result matching the
+    /// source's declared type made sources pass here that Legado checks on another book.
+    static func firstBook(in books: [OnlineBook]) -> OnlineBook? {
+        books.first { !$0.bookUrl.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
     }
 }
 
@@ -886,10 +910,6 @@ extension BookSource {
         )
     }
 
-    var usesLegadoRuntimeSession: Bool {
-        !jsLib.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-    }
-
     /// Legado checks each stage's first response with this script (`loginCheckJs`).
     var hasLoginCheckJs: Bool {
         !loginCheckJs.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
@@ -922,11 +942,20 @@ extension BookSource {
         // Options go to the runtime however they are spaced (`url , {…}` too): the native
         // search path no longer parses them, after its own copy serialized a scalar `body`
         // into an Objective-C exception that crashed the app.
+        // A script anywhere in the URL is AnalyzeUrl's to run (Legado's `JS_PATTERN` finds it
+        // wherever it is): 笔趣小说's `/search` + `@js:` went out as that text, unrun.
+        //
+        // So is a `{{…}}` template that runs JS, jsLib or not: Legado splits the options off the
+        // URL after its templates ran (`replaceKeyPageJs`, then `analyzeUrl`), and a template can
+        // write them. 百合会坛 (YCK1331) builds its whole search URL in one, ending
+        // `,{"method":"POST",…}`; until 11-08 a source without a jsLib rendered it on the native
+        // path, which reads no options, and sent them to the site in the path of a GET. The
+        // native detail and TOC fetches never ran a template at all. Only the legacy
+        // `URL,POST,body` form, which AnalyzeUrl does not read, keeps its templates there.
         return url.hasPrefix("data:")
             || AnalyzeUrl.hasOptions(url)
-            || url.hasPrefix("<js>")
-            || url.hasPrefix("@js:")
-            || (usesLegadoRuntimeSession && urlContainsRuntimeTemplate(url))
+            || AnalyzeUrl.jsPattern.firstMatch(in: url, range: NSRange(url.startIndex..., in: url)) != nil
+            || (urlContainsRuntimeTemplate(url) && !Self.isLegacyPostSearchURL(url))
     }
 
     private func urlContainsRuntimeTemplate(_ url: String) -> Bool {

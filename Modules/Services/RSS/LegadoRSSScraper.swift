@@ -164,7 +164,9 @@ enum LegadoRSSScraper {
 
     /// Fetch an article's full content by applying the source's ruleContent to the
     /// article page. Returns HTML, or nil when the source has no ruleContent.
-    static func fetchArticleContent(source: RSSSource, articleLink: String) async throws -> String? {
+    static func fetchArticleContent(
+        source: RSSSource, articleLink: String, session: URLSession = .trusting
+    ) async throws -> String? {
         let contentRule = source.ruleContent?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         guard !contentRule.isEmpty else { return nil }
 
@@ -180,7 +182,7 @@ enum LegadoRSSScraper {
                 }
             ))
         }
-        let (body, finalURL) = try await fetchBody(prepared, headerJSON: source.header)
+        let (body, finalURL) = try await fetchBody(prepared, headerJSON: source.header, session: session)
         return await host.run { jsEngine in
             articleContent(body: body, finalURL: finalURL, contentRule: contentRule, jsEngine: jsEngine)
         }
@@ -238,7 +240,8 @@ enum LegadoRSSScraper {
     /// the response body honoring the rule's charset option.
     private static func fetchBody(
         _ analyzeUrl: PreparedRequest,
-        headerJSON: String?
+        headerJSON: String?,
+        session: URLSession = .trusting
     ) async throws -> (body: String, finalURL: String) {
         guard var request = analyzeUrl.request, let originalURL = request.url else {
             throw ScraperError.invalidURL
@@ -274,7 +277,7 @@ enum LegadoRSSScraper {
 
         let (data, response): (Data, URLResponse)
         do {
-            (data, response) = try await URLSession.shared.data(for: request)
+            (data, response) = try await session.data(for: request)
         } catch {
             if isATSBlocked(error) {
                 throw ScraperError.atsBlocked
@@ -340,16 +343,23 @@ enum LegadoRSSScraper {
     /// Wire java.ajax()-style network access for JS rules. Runs on the JS engine's
     /// dedicated serial queue, so blocking on a semaphore is safe (same pattern as
     /// ModernParserBridge).
+    ///
+    /// Sent as a book source's are (`legadoDataTask`): okhttp's headers, the redirect policy
+    /// and the size limit. Until 11-09 a plain data task skipped all three, and the wait was
+    /// 30 s where Legado's call timeout is 60 (`WebFetcher.sourceRequestTimeout`).
     private static func wireNetworkHandler(_ jsEngine: JSCoreEngine) {
         jsEngine.networkHandler = { request, declaredCharset in
             let pending = BlockingResult<LegadoHTTPResult>()
-            let task = URLSession.shared.dataTask(with: request) { data, response, _ in
+            let task = URLSession.trusting.legadoDataTask(with: request) { data, response, error in
                 pending.deliver(LegadoHTTPResult.make(
-                    request: request, data: data, response: response, declaredCharset: declaredCharset
+                    request: request, data: data, response: response, declaredCharset: declaredCharset,
+                    error: error
                 ))
             }
             task.resume()
-            return pending.wait(timeout: .now() + 30)
+            let response = pending.wait(timeout: .now() + WebFetcher.sourceRequestTimeout)
+            if response == nil { task.cancel() }
+            return response
         }
     }
 

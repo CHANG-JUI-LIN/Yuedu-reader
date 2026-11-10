@@ -77,7 +77,9 @@ struct AjaxAllSourceHeadersTests {
         let (value, elapsed) = Self.timedAjaxAll(engine, [
             #"https://ajaxall.invalid/a,{"method":"GET"}"#, #"https://ajaxall.invalid/b,{"method":"GET"}"#,
         ])
-        #expect(value == "0:a|0:b")
+        // A source's map is never empty: it carries Legado's default User-Agent
+        // (`BookSource.withLegadoUserAgent`). Without a source there is no map.
+        #expect(value == (header == nil ? "0:a|0:b" : "1:a|1:b"))
         #expect(elapsed < Self.budget)
     }
 }

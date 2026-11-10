@@ -1,0 +1,14 @@
+[
+ {
+  "name": "Java Object[] (List.toArray) concat another Object[]: length and element kinds",
+  "js": "function list(ids){var l=new java.util.ArrayList();ids.forEach(function(id){var m=new java.util.LinkedHashMap();m.put('album_id',id);l.add(m);});return l;} var a=list(['a1','a2']).toArray(); var r=a.concat(list(['p1']).toArray()); [r.length, typeof r[0], String(r[0] instanceof java.util.Map), String(r[0].getClass ? r[0].getClass().getName() : 'js')].join('|')"
+ },
+ {
+  "name": "Java Object[] concat: is the result a JS Array, and what is its first element",
+  "js": "var l=new java.util.ArrayList(); var m=new java.util.LinkedHashMap(); m.put('album_id','a1'); l.add(m); var r=l.toArray().concat(l.toArray()); [Array.isArray(r), r.length, String(r[0])].join('|')"
+ },
+ {
+  "name": "Java Object[] has concat at all",
+  "js": "var l=new java.util.ArrayList(); l.add('x'); typeof l.toArray().concat"
+ }
+]

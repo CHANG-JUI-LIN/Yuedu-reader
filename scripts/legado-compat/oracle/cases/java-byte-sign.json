@@ -1,0 +1,82 @@
+[
+ {
+  "name": "imported String getBytes is signed",
+  "js": "var ji = new JavaImporter(); ji.importPackage(Packages.java.lang); var out; with (ji) { var b = String('aé').getBytes('UTF-8'); out = [b.length, b[0], b[1], b[2], typeof b[1]].join(','); } out"
+ },
+ {
+  "name": "new java.lang.String getBytes is signed",
+  "js": "var b = new java.lang.String('ÿ').getBytes('ISO-8859-1'); [b.length, b[0]].join(',')"
+ },
+ {
+  "name": "Mac doFinal is signed",
+  "js": "var ji = new JavaImporter(); ji.importPackage(Packages.java.lang, Packages.javax.crypto, Packages.javax.crypto.spec); var out; with (ji) { var m = Mac.getInstance('HmacSHA256'); m.init(SecretKeySpec(String('k').getBytes('UTF-8'), 'HmacSHA256')); var b = m.doFinal(String('m').getBytes('UTF-8')); var a = []; for (var i = 0; i < b.length; i++) a.push(b[i]); out = a.join(','); } out"
+ },
+ {
+  "name": "MessageDigest digest is signed",
+  "js": "var b = java.security.MessageDigest.getInstance('MD5').digest(new java.lang.String('m').getBytes('UTF-8')); var a = []; for (var i = 0; i < b.length; i++) a.push(b[i]); a.join(',')"
+ },
+ {
+  "name": "Base64 decoder is signed",
+  "js": "var b = java.util.Base64.getDecoder().decode('/4A='); [b.length, b[0], b[1]].join(',')"
+ },
+ {
+  "name": "Cipher doFinal is signed",
+  "js": "var c = javax.crypto.Cipher.getInstance('AES/ECB/PKCS5Padding'); c.init(javax.crypto.Cipher.ENCRYPT_MODE, new javax.crypto.spec.SecretKeySpec(new java.lang.String('0123456789abcdef').getBytes('UTF-8'), 'AES')); var b = c.doFinal(new java.lang.String('m').getBytes('UTF-8')); var a = []; for (var i = 0; i < b.length; i++) a.push(b[i]); a.join(',')"
+ },
+ {
+  "name": "ByteArrayOutputStream toByteArray is signed",
+  "js": "var o = new java.io.ByteArrayOutputStream(); o.write(200); o.write(5); var b = o.toByteArray(); [b[0], b[1]].join(',')"
+ },
+ {
+  "name": "ByteArrayInputStream read is unsigned, read(buffer) signed",
+  "js": "var s = new java.io.ByteArrayInputStream(java.util.Base64.getDecoder().decode('/4A=')); var one = s.read(); var buf = java.lang.reflect.Array.newInstance(java.lang.Byte.TYPE, 1); var n = s.read(buf, 0, 1); [one, n, buf[0]].join(',')"
+ },
+ {
+  "name": "ByteBuffer get is signed",
+  "js": "var bb = java.nio.ByteBuffer.wrap(java.util.Base64.getDecoder().decode('/4A=')); [bb.get(), bb.get(1)].join(',')"
+ },
+ {
+  "name": "BigInteger toByteArray is signed",
+  "js": "var b = new java.math.BigInteger('255').toByteArray(); [b.length, b[0], b[1]].join(',')"
+ },
+ {
+  "name": "Arrays copyOfRange keeps the sign",
+  "js": "var b = java.util.Arrays.copyOfRange(java.util.Base64.getDecoder().decode('/4A='), 0, 2); [b[0], b[1]].join(',')"
+ },
+ {
+  "name": "signed shift lands in the Base64 table",
+  "js": "var ji = new JavaImporter(); ji.importPackage(Packages.java.lang); var out; with (ji) { var b10 = String('é').getBytes('UTF-8')[0]; var i19 = b10 >> 2; if ((b10 & -128) !== 0) i19 ^= 192; out = i19 & 255; } out"
+ },
+ {
+  "name": "ISO-8859-1 getBytes of é",
+  "js": "JSON.stringify(Array.prototype.slice.call(new java.lang.String('é').getBytes('ISO-8859-1')).map(Number))"
+ },
+ {
+  "name": "UTF-16LE getBytes of 中",
+  "js": "JSON.stringify(Array.prototype.slice.call(new java.lang.String('中').getBytes('UTF-16LE')).map(Number))"
+ },
+ {
+  "name": "UTF-8 getBytes of 中 (strToBytes)",
+  "js": "JSON.stringify(Array.prototype.slice.call(new java.lang.String('中').getBytes('UTF-8')).map(Number))"
+ },
+ {
+  "name": "URL-safe Base64 decode of _-4",
+  "js": "JSON.stringify(Array.prototype.slice.call(java.util.Base64.getUrlDecoder().decode('_-4')).map(Number))"
+ },
+ {
+  "name": "Base64 decode of AH+A/w==",
+  "js": "JSON.stringify(Array.prototype.slice.call(java.util.Base64.getDecoder().decode('AH+A/w==')).map(Number))"
+ },
+ {
+  "name": "hex 00ff10 as byte[]",
+  "js": "JSON.stringify(Array.prototype.slice.call(java.util.HexFormat.of().parseHex('00ff10')).map(Number))"
+ },
+ {
+  "name": "GZIPOutputStream header via toByteArray",
+  "js": "var o = new java.io.ByteArrayOutputStream(); var g = new java.util.zip.GZIPOutputStream(o); g.write(1); g.close(); var b = o.toByteArray(); [b[0], b[1]].join('|')"
+ },
+ {
+  "name": "BigInteger -129 toByteArray",
+  "js": "var b = new java.math.BigInteger('-129').toByteArray(); [b[0], b[1]].join(',')"
+ }
+]

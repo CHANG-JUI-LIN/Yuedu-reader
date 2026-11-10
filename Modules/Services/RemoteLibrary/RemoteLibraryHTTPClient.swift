@@ -44,6 +44,7 @@ final class RemoteLibraryHTTPClient: @unchecked Sendable, RemoteLibraryTransport
         var headers = configuration.httpAdditionalHeaders ?? [:]
         headers["User-Agent"] = Self.userAgent
         configuration.httpAdditionalHeaders = headers
+        ServerTrustPolicy.allowLegacyTLS(configuration)
         let delegate = RemoteLibraryAuthenticationDelegate(baseURL: baseURL, username: username, password: password)
         session = URLSession(configuration: configuration, delegate: delegate, delegateQueue: nil)
         session.sessionDescription = Self.sessionName(connectionID: connectionID, username: username)
@@ -237,6 +238,12 @@ final class RemoteLibraryAuthenticationDelegate: NSObject, URLSessionTaskDelegat
                     completionHandler: @escaping (URLSession.AuthChallengeDisposition, URLCredential?) -> Void) {
         let space = challenge.protectionSpace
         let method = space.authenticationMethod
+        // This delegate has no session-level handler, so server trust arrives here too.
+        if method == NSURLAuthenticationMethodServerTrust {
+            let (disposition, credential) = ServerTrustPolicy.answer(challenge)
+            completionHandler(disposition, credential)
+            return
+        }
         guard method == NSURLAuthenticationMethodHTTPBasic || method == NSURLAuthenticationMethodHTTPDigest else {
             completionHandler(.performDefaultHandling, nil)
             return

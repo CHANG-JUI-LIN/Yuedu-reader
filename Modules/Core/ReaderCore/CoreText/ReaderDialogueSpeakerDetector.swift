@@ -42,6 +42,15 @@ enum ReaderDialogueSpeakerDetector {
         "裡", "里", "中", "上", "下", "外", "有", "是", "了", "個", "个", "都",
     ]
 
+    /// Words that stand in for a speaker without naming one. `他說：「好」` reads 他 off the
+    /// lead-in exactly like a name, and casting 他 gave every man in the book one shared voice.
+    /// Checked against the whole candidate, not per character: 他 inside a real name is fine.
+    private static let pronouns: Set<String> = [
+        "他", "她", "它", "牠", "祂", "我", "你", "您", "妳", "俺", "咱", "吾",
+        "他們", "她們", "它們", "我們", "你們", "咱們", "他们", "她们", "它们", "我们", "你们", "咱们",
+        "大家", "眾人", "众人", "有人", "對方", "对方", "此人", "那人", "這人", "这人", "眾", "众",
+    ]
+
     private static let separators = CharacterSet(charactersIn: "，,。.！!？?；;：:、…—－-·　 \t\n\r「」『』“”\"'()（）")
 
     /// Long enough for 齊源老道, short enough that a whole clause never becomes a
@@ -173,6 +182,7 @@ enum ReaderDialogueSpeakerDetector {
         guard !characters.isEmpty, characters.count <= maximumNameLength else { return nil }
         guard let last = characters.last, !mannerSuffixes.contains(last) else { return nil }
         guard !characters.contains(where: { functionWords.contains($0) }) else { return nil }
+        guard !pronouns.contains(String(characters)) else { return nil }
         return String(characters)
     }
 

@@ -179,11 +179,14 @@ struct RuleEnginePipelineTests {
 
     // MARK: XPath Tests
 
+    /// Legado's `AnalyzeByXPath.getString` joins every match with "\n", so a rule for one
+    /// value selects one node; `//a[@class='title']/@href` alone reads all three links. A rule
+    /// that opens with `(` is XPath only with the `@XPath:` prefix, in Legado as here.
     @Test("XPath → attribute extraction")
     func xpathAttributeExtraction() {
         let (engine, _) = makeEngine()
         engine.setContent(sampleHTML, baseUrl: "https://example.com")
-        let result = engine.getString(ruleStr: "//a[@class='title']/@href", isUrl: true)
+        let result = engine.getString(ruleStr: "@XPath:(//a[@class='title'])[1]/@href", isUrl: true)
         #expect(result == "https://example.com/book/1")
     }
 

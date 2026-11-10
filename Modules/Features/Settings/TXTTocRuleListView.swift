@@ -221,7 +221,7 @@ struct TXTTocRuleListView: View {
         isImporting = true
         defer { isImporting = false }
         do {
-            let (data, _) = try await URLSession.shared.data(from: url)
+            let (data, _) = try await URLSession.trusting.data(from: url)
             finishImport(try store.importLegadoData(data))
         } catch {
             failImport(error)

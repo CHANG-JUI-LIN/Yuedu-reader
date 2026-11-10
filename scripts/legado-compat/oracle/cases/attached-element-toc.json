@@ -1,0 +1,50 @@
+[
+ {
+  "name": "轻之文库 chapterName: five parentNode() up, then select('h2')",
+  "html": "<div class='vol'><h2>卷一</h2><ul><li><span><b><a class='x' href='/1'>第一章</a></b></span></li></ul></div>",
+  "result": {"selectFirst": ".x"},
+  "js": "var title = result.parentNode().parentNode().parentNode().parentNode().parentNode(); title.select('h2').text() + '：' + result.text()"
+ },
+ {
+  "name": "parent, parents, tagName",
+  "html": "<div id='a'><p><i class='x' href='/1'>t</i></p></div>",
+  "result": {"selectFirst": ".x"},
+  "js": "[result.parent().tagName(), result.parents().size(), result.parents().get(1).id()].join('|')"
+ },
+ {
+  "name": "siblings",
+  "html": "<ul><li>a</li><li class='x' href='/1'>b</li><li>c</li></ul>",
+  "result": {"selectFirst": ".x"},
+  "js": "[result.elementSiblingIndex(), result.nextElementSibling().text(), result.previousElementSibling().text(), result.siblingElements().size()].join('|')"
+ },
+ {
+  "name": "closest",
+  "html": "<div class='box'><section><p><a class='x' href='/1'>t</a></p></section></div>",
+  "result": {"selectFirst": ".x"},
+  "js": "[result.closest('div.box').className(), result.closest('section').tagName(), result.closest('table')].join('|')"
+ },
+ {
+  "name": "removing the item is seen by the next read of its page",
+  "html": "<ul><li class='x' href='/1'>a</li><li>b</li></ul>",
+  "result": {"selectFirst": ".x"},
+  "js": "var ul = result.parent(); result.remove(); [ul.children().size(), ul.text()].join('|')"
+ },
+ {
+  "name": "an element found again by another path is the same element: contains, indexOf, equals",
+  "html": "<div class='a'><ul><li class='x' href='/1'>a</li><li>b</li></ul></div>",
+  "result": {"selectFirst": ".x"},
+  "js": "var c = result.parent().parent(); [result.parents().contains(c), result.parent().children().indexOf(result), c.select('li').contains(result), c.select('li').get(0).equals(result), c.select('li').get(1).equals(result)].join('|')"
+ },
+ {
+  "name": "one page for every item: what a script removes, the next item's script no longer sees",
+  "html": "<ul><li class='x' href='/1'>a</li><li class='x' href='/2'>b</li></ul>",
+  "result": {"select": ".x"},
+  "js": "function name(result) { var n = result.parent().children().size(); result.remove(); return n; } [name(result.get(0)), name(result.get(1))].join('|')"
+ },
+ {
+  "name": "two reads of one node compare equal with == (Rhino unwraps both)",
+  "html": "<ul><li class='x'>a</li></ul>",
+  "result": {"selectFirst": ".x"},
+  "js": "[result.parent().children().get(0) == result, result.parent() == result.parent()].join('|')"
+ }
+]

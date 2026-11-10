@@ -41,6 +41,22 @@ struct HTMLResponseDecoderTests {
         #expect(!decoded.contains("å"), "mojibake leaked: \(decoded.prefix(120))")
     }
 
+    /// 新御书屋's book pages declare UTF-8 in header and meta and carry one byte that is not
+    /// UTF-8. Java (Legado) decodes them with a U+FFFD in its place; strict decoding failed every
+    /// UTF-8 candidate and cp1252 turned the page into mojibake.
+    @Test("a declared UTF-8 page with one invalid byte still decodes as UTF-8")
+    func declaredUTF8WithInvalidByte() throws {
+        var data = Data(Self.chineseBody.utf8)
+        let body = try #require(data.range(of: Data("<body>".utf8)))
+        data.insert(0xEF, at: body.upperBound)
+        #expect(String(data: data, encoding: .utf8) == nil)
+        let decoded = try #require(
+            HTMLResponseDecoder.decode(data: data, response: response(contentType: "text/html; charset=UTF-8"))
+        )
+        #expect(decoded.contains("她推开家门"), "decoded=>>>\(decoded.prefix(120))<<<")
+        #expect(decoded.contains("\u{FFFD}"))
+    }
+
     @Test("a server with no charset falls back to the document's own meta charset")
     func noCharsetHeaderUsesMetaCharset() throws {
         let data = Data(Self.chineseBody.utf8)

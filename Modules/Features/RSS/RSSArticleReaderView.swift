@@ -340,6 +340,13 @@ struct RSSArticleWebReaderView: UIViewRepresentable {
             self.parent = parent
         }
 
+        /// Accepts the server's certificate, as Legado's WebViews do (`ServerTrustPolicy`).
+        func webView(
+            _ webView: WKWebView, respondTo challenge: URLAuthenticationChallenge
+        ) async -> (URLSession.AuthChallengeDisposition, URLCredential?) {
+            ServerTrustPolicy.answer(challenge)
+        }
+
         func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
             let scrollY = pendingRestoreScrollY ?? 0
             pendingRestoreScrollY = nil

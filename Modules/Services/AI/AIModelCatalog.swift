@@ -65,7 +65,7 @@ final class AIModelCatalog: ObservableObject {
                 var request = URLRequest(url: url)
                 request.setValue("Bearer \(key)", forHTTPHeaderField: "Authorization")
                 request.timeoutInterval = 15
-                let (data, response) = try await URLSession.shared.data(for: request)
+                let (data, response) = try await URLSession.trusting.data(for: request)
                 try Task.checkCancellation()
                 guard let http = response as? HTTPURLResponse else {
                     self?.finish(base: scope, failure: localized("非 HTTP 回應"))

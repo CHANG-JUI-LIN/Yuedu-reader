@@ -80,7 +80,7 @@ struct URLSessionOfflineImageDownloader: OfflineImageDownloading {
     func response(for request: URLRequest) async throws -> OfflineImageResponse {
         // Each image is written to the chapter's directory or `OnlineImageDiskCache`; a URL
         // cache would write it again (`URLSession.savedDownloads`).
-        let (data, response) = try await URLSession.savedDownloads.data(for: request)
+        let (data, response) = try await URLSession.savedDownloads.sourceData(for: request)
         let statusCode = (response as? HTTPURLResponse)?.statusCode ?? 0
         return OfflineImageResponse(
             data: data,

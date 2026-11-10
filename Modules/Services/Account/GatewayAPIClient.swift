@@ -44,13 +44,13 @@ final class GatewayAPIClient: Sendable {
             configuration.timeoutIntervalForRequest = 20
             configuration.timeoutIntervalForResource = 60
             configuration.waitsForConnectivity = false
-            self.session = URLSession(configuration: configuration)
+            self.session = URLSession.trusting(configuration)
 
             let transfers = URLSessionConfiguration.ephemeral
             transfers.timeoutIntervalForRequest = 60
             transfers.timeoutIntervalForResource = 15 * 60
             transfers.waitsForConnectivity = false
-            self.transferSession = URLSession(configuration: transfers)
+            self.transferSession = URLSession.trusting(transfers)
         }
         self.baseURLProvider = baseURLProvider
     }

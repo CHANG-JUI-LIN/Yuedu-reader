@@ -53,6 +53,11 @@ final class RuleAnalyzer {
     /// Split rule string by operators, handling nested brackets.
     /// Accepts one or more operator strings (e.g. "||", "&&", "%%").
     func splitRule(_ split: String...) -> [String] {
+        splitRule(split)
+    }
+
+    /// `splitRule(_:)` with the operators as an array.
+    func splitRule(_ split: [String]) -> [String] {
         let operators = split.filter { !$0.isEmpty }
         guard !operators.isEmpty else {
             elementsType = ""
@@ -156,15 +161,20 @@ final class RuleAnalyzer {
     ///   - inner: start marker (e.g. "{$." or "{{")
     ///   - startStep: chars not part of rule at start of match
     ///   - endStep: chars not part of rule at end of match
-    ///   - fr: resolver function
+    ///   - keepsEmptyValue: an empty value replaces its rule too. Legado's
+    ///     `innerRule(inner, …)` skips an empty value; its AnalyzeUrl `{{js}}` path
+    ///     (`innerRule("{{", "}}")`) does not, so a side-effect template disappears.
+    ///   - fr: resolver function; nil always leaves the rule in place
     func innerRule(inner: String, startStep: Int = 1, endStep: Int = 1,
+                   keepsEmptyValue: Bool = false,
                    fr: (String) -> String?) -> String {
         var result = ""
 
         while consumeTo(inner) {
             let posPre = pos
             if chompCodeBalanced("{", "}") {
-                if let frv = fr(substring(posPre + startStep, pos - endStep)), !frv.isEmpty {
+                if let frv = fr(substring(posPre + startStep, pos - endStep)),
+                   keepsEmptyValue || !frv.isEmpty {
                     result += substring(startX, posPre) + frv
                     startX = pos
                     continue

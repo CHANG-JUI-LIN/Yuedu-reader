@@ -1,4 +1,6 @@
 import Foundation
+import Combine
+import os
 import Testing
 
 @testable import yuedu_app
@@ -29,6 +31,20 @@ struct BookSourceCompatibilityAuditTests {
         /// Optional substrings; when present only sources whose name matches one are audited.
         /// Used to re-run a single failing source with its logs, without a 120-source sweep.
         let names: [String]?
+        /// Optional positions in the deduplicated list — a report's `index` — to re-audit a
+        /// subset of a whole-pack run. Each row keeps its index in the new report.
+        let indices: [Int]?
+        /// Nil preserves the historical text-only audit; [] audits every media type.
+        let sourceTypes: [Int]?
+        /// An atomic checkpoint, including unfinished stages if the host exits early.
+        let reportPath: String?
+        /// A follow-up audit may explicitly cancel UI requests, recording the prerequisite
+        /// rather than leaving a background test waiting indefinitely for user input.
+        let cancelInteractiveRequests: Bool?
+        /// True runs the probe at its full width: `BookSourceCheckPacing` narrows a run to keep
+        /// a phone under MetricKit's CPU limit, which on the simulator only makes a whole-pack
+        /// audit take an hour longer. The width itself is the app's (網路設定 → 並發數).
+        let unpaced: Bool?
     }
 
     private static let configPath = "/tmp/yuedu-source-audit.json"
@@ -38,7 +54,9 @@ struct BookSourceCompatibilityAuditTests {
         return try? JSONDecoder().decode(AuditConfig.self, from: data)
     }
 
-    @Test(.enabled(if: BookSourceCompatibilityAuditTests.config != nil), .timeLimit(.minutes(60)))
+    // 180 minutes: a whole pack of ~800 sources runs at CPU-paced width (`BookSourceCheckPacing`)
+    // and took 85+ minutes on the simulator (YCK 1330, 2026-11-07).
+    @Test(.enabled(if: BookSourceCompatibilityAuditTests.config != nil), .timeLimit(.minutes(180)))
     @MainActor
     func auditRealSourcePack() async throws {
         let config = try #require(Self.config)
@@ -50,11 +68,11 @@ struct BookSourceCompatibilityAuditTests {
         )
         let all = try JSONDecoder().decode([BookSource].self, from: data)
 
-        // Deduplicate by URL and keep text sources only: audio/comic/file types fail for reasons
-        // that say nothing about rule-engine compatibility.
+        // Keep the original text-only default, but allow an explicit whole-pack audit.
         var seen = Set<String>()
-        let sources = all.filter { source in
-            guard source.bookSourceType == 0 else { return false }
+        let listed = all.filter { source in
+            let types = config.sourceTypes ?? [0]
+            guard types.isEmpty || types.contains(source.bookSourceType) else { return false }
             guard !source.bookSourceUrl.isEmpty else { return false }
             if let names = config.names, !names.isEmpty {
                 guard names.contains(where: { source.bookSourceName.contains($0) }) else {
@@ -62,16 +80,106 @@ struct BookSourceCompatibilityAuditTests {
                 }
             }
             return seen.insert(source.bookSourceUrl).inserted
-        }.prefix(limit).map { $0 }
+        }
+        let wanted = config.indices.map(Set.init)
+        let picked = listed.enumerated().filter { wanted?.contains($0.offset) ?? true }.prefix(limit)
+        let sources = picked.map(\.element)
+        let listIndices = picked.map(\.offset)
 
         print("AUDIT pack=\(path) decoded=\(all.count) audited=\(sources.count)")
 
-        let checker = BookSourceHealthChecker.shared
+        let checker = config.unpaced == true
+            ? BookSourceHealthChecker(cpuClock: BookSourceCheckCPUClock {
+                BookSourceCheckPacing.Sample(wall: SourcePerfTrace.now, cpu: 0)
+            })
+            : BookSourceHealthChecker.shared
+        let interactionRequests = OSAllocatedUnfairLock<[[String: String]]>(initialState: [])
+        let browserPresenter = LegadoJSBridge.sharedBrowserPresenter
+        let captchaPresenter = LegadoJSBridge.sharedCaptchaPresenter
+        if config.cancelInteractiveRequests == true {
+            LegadoJSBridge.sharedBrowserPresenter = { request, completion in
+                interactionRequests.withLock {
+                    $0.append(["kind": "browser", "url": request.url, "title": request.title])
+                }
+                completion(nil)
+            }
+            LegadoJSBridge.sharedCaptchaPresenter = { request, completion in
+                interactionRequests.withLock {
+                    $0.append(["kind": "captcha", "sourceName": request.sourceName,
+                               "sourceURL": request.sourceURL])
+                }
+                completion(nil)
+            }
+        }
+        defer {
+            if config.cancelInteractiveRequests == true {
+                LegadoJSBridge.sharedBrowserPresenter = browserPresenter
+                LegadoJSBridge.sharedCaptchaPresenter = captchaPresenter
+            }
+        }
         var policy = BookSourceCheckPolicy()
         policy.badAction = .markOnly          // never touch the user's source list
         checker.policy = policy
         checker.prepare(sources: sources)
+        let startedAt = Date()
+        var reportedIDs = Set<UUID>()
+        var checkpointError: String?
+        func checkpoint() {
+            for item in checker.items where item.isFinished && reportedIDs.insert(item.source.id).inserted {
+                print("AUDIT_PROGRESS \(reportedIDs.count)/\(sources.count) \(item.overallPass ? "PASS" : "FAIL") \(item.source.bookSourceName)")
+            }
+            guard let reportPath = config.reportPath else { return }
+            do {
+                let rows: [[String: Any]] = checker.items.enumerated().map { index, item in
+                    [
+                        "index": listIndices.indices.contains(index) ? listIndices[index] : index,
+                        "sourceName": item.source.bookSourceName,
+                        "sourceIdentifier": item.source.bookSourceUrl,
+                        "sourceType": item.source.bookSourceType,
+                        "finished": item.isFinished,
+                        "passed": item.isFinished && item.overallPass,
+                        "responseMs": item.responseTime,
+                        "failureCategory": item.failureCategory.map { String(describing: $0) } ?? "",
+                        "apiError": SourceAPIErrorLog.shared.last(for: item.source.bookSourceUrl)?.displayText ?? "",
+                        "searchBookName": item.searchBook?.name ?? "",
+                        "discoveryBookName": item.discoveryBook?.name ?? "",
+                        "stages": ValidationStage.allCases.map { stage in
+                            ["stage": String(describing: stage),
+                             "status": String(describing: item.outcome(stage).status),
+                             "summary": item.outcome(stage).summary]
+                        },
+                    ]
+                }
+                let report: [String: Any] = [
+                    "pack": path,
+                    "startedAt": ISO8601DateFormatter().string(from: startedAt),
+                    "updatedAt": ISO8601DateFormatter().string(from: Date()),
+                    "decodedCount": all.count,
+                    "expectedCount": sources.count,
+                    "completedCount": checker.finishedCount,
+                    "passedCount": checker.passedCount,
+                    "timeoutSeconds": policy.timeoutSeconds,
+                    "keyword": policy.keyword,
+                    "cancelInteractiveRequests": config.cancelInteractiveRequests == true,
+                    "interactionRequests": interactionRequests.withLock { $0 },
+                    "results": rows,
+                ]
+                try JSONSerialization.data(withJSONObject: report, options: [.prettyPrinted, .sortedKeys])
+                    .write(to: URL(fileURLWithPath: reportPath), options: .atomic)
+            } catch {
+                checkpointError = String(describing: error)
+            }
+        }
+        checkpoint()
+        let observation = checker.didPublish.sink { checkpoint() }
         await checker.runAll()
+        observation.cancel()
+        checkpoint()
+        #expect(!sources.isEmpty)
+        #expect(checker.finishedCount == sources.count)
+        let allFinished = checker.items.allSatisfy { $0.isFinished }
+        #expect(allFinished)
+        #expect(checkpointError == nil, "Checkpoint failed: \(checkpointError ?? "")")
 
         // ── Report ────────────────────────────────────────────────────────────────
         var byCategory: [String: Int] = [:]

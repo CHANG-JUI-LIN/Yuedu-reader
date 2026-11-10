@@ -120,16 +120,6 @@ struct VideoSourceTypeTests {
         }
     }
 
-    @Test("validation prefers a video result for a video source")
-    func validationPrefersVideo() {
-        let video = source(type: 4)
-        var audioResult = onlineBook(source: video, bookURL: "https://example.com/a?type=1")
-        audioResult.runtimeVariables = ["type": "听书"]
-        let plain = onlineBook(source: video, bookURL: "https://example.com/v")
-        let chosen = OnlineBookValidationSelector.preferredBook(from: [audioResult, plain], for: video)
-        #expect(chosen?.bookUrl == plain.bookUrl)
-    }
-
     @Test("a video book keeps the video pipeline and no reader font")
     func videoPipelineResolves() {
         var book = ReadingBook(title: "短劇", author: "", contentFilename: "")

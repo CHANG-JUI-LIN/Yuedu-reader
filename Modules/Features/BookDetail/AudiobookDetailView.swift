@@ -330,8 +330,12 @@ struct AudiobookDetailView: View {
                 AdaptiveSheetContainer(maxWidth: DSLayout.readableListWidth) {
                     SourceSearchSheet(
                         query: currentBook.name,
+                        author: currentBook.author,
                         currentSourceId: currentBook.sourceId,
                         currentBookURL: currentBook.bookUrl,
+                        kind: .audio,
+                        currentSourceName: currentBook.sourceName,
+                        currentLastChapter: currentBook.lastChapter,
                         otherVersions: otherWorkVersions,
                         onSelectVersion: { id in pendingVersion = id },
                         onSelectOrigin: { origin in pendingOrigin = origin }
@@ -637,6 +641,7 @@ struct AudiobookDetailView: View {
             do {
                 var tocURL = request.bookUrl
                 var runtimeVars = request.runtimeVariables
+                var detailPage: BookDetailPage?
                 if !request.bookUrl.isEmpty {
                     let pkg = try await dependencies.bookSourceFetcher.fetchBookInfoPackage(
                         url: request.bookUrl, source: source, runtimeVariables: runtimeVars,
@@ -649,9 +654,11 @@ struct AudiobookDetailView: View {
                         )
                     }
                     if !pkg.tocUrl.isEmpty { tocURL = pkg.tocUrl }
+                    detailPage = pkg.onlineBook.detailPage
                 }
                 let tocPkg = try await dependencies.bookSourceFetcher.fetchTOCPackage(
-                    tocUrl: tocURL, source: source, runtimeVariables: runtimeVars)
+                    tocUrl: tocURL, source: source, runtimeVariables: runtimeVars,
+                    onFirstPageReady: nil, forceRefresh: false, detailPage: detailPage)
                 runtimeVars = Self.mergedRuntimeVariables(runtimeVars, tocPkg.runtimeVariables)
                 await MainActor.run {
                     guard isCurrentRequest(request) else { return }

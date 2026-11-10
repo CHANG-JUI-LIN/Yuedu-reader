@@ -264,12 +264,14 @@ struct yuedu_appApp: App {
                     if GIDSignIn.sharedInstance.handle(incomingURL) {
                         return
                     }
-                    guard TestFlightAccessController.shared.state.allowsUse else { return }
-                    if case .module(let address) = BookSourceImportDeepLink.target(from: incomingURL) {
-                        RuleModuleLinkPresenter.present(address)
-                        return
-                    }
-                    bookSourceDeepLinkHandler.handle(url: incomingURL)
+                    handleImportLink(incomingURL)
+                }
+                // A source script's `java.openUrl(legado://…)` (legado-E opens its importer
+                // directly). Routed here rather than through the system: another installed
+                // app can claim the `legado` scheme.
+                .onReceive(NotificationCenter.default.publisher(for: .sourceRequestedImportLink)) { note in
+                    guard let url = note.userInfo?["url"] as? URL else { return }
+                    handleImportLink(url)
                 }
                 .sheet(isPresented: bookSourceImportSheetBinding) {
                     BookSourceImportConfirmSheet(handler: bookSourceDeepLinkHandler)
@@ -405,6 +407,17 @@ struct yuedu_appApp: App {
                 }
             }
         }
+    }
+
+    /// A module link or a source-import link, from the system (`onOpenURL`) or from a source's
+    /// `java.openUrl`; anything else is ignored.
+    private func handleImportLink(_ url: URL) {
+        guard TestFlightAccessController.shared.state.allowsUse else { return }
+        if case .module(let address) = BookSourceImportDeepLink.target(from: url) {
+            RuleModuleLinkPresenter.present(address)
+            return
+        }
+        bookSourceDeepLinkHandler.handle(url: url)
     }
 
     /// The iCloud sync named by `syncReason` (none when nil), and the automatic chapter check

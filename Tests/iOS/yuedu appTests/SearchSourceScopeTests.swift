@@ -109,7 +109,6 @@ struct SearchSourceScopeTests {
         #expect(aggregator.progress.completed == 0)
         #expect(aggregator.progress.failed == 0)
         #expect(aggregator.progress.timedOut == 0)
-        #expect(aggregator.progress.skipped == 0)
     }
 
     private func makeSource(

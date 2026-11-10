@@ -62,7 +62,17 @@ enum HTMLResponseDecoder {
         var decodedByIndex = [Int: String]()
         func decoded(_ index: Int) -> String? {
             if let cached = decodedByIndex[index] { return cached }
-            guard let text = String(data: data, encoding: candidates[index].encoding) else {
+            // A charset the response declares (BOM, header, meta — what Legado decodes with)
+            // is read as Java's `String(bytes, charset)` reads it: bytes it cannot map become
+            // U+FFFD and the page stays. Strict decoding dropped a declared UTF-8 page over one
+            // bad byte (新御书屋's book pages, `charset=UTF-8` in header and meta): every UTF-8
+            // candidate failed, cp1252 won, and `text.显示全部章节` matched nothing in the
+            // mojibake. The replacements count against the candidate below, so a wrong
+            // declaration still loses; the undeclared guesses stay strict.
+            let encoding = candidates[index].encoding
+            let declared = candidates[index].priority >= 340
+            guard let text = String(data: data, encoding: encoding)
+                    ?? (declared ? lossyDecode(data, encoding) : nil) else {
                 return nil
             }
             decodedByIndex[index] = text
@@ -97,25 +107,60 @@ enum HTMLResponseDecoder {
         return best?.text
     }
 
-    /// Decodes with `declaredCharset` when a source names one — Legado's `charset` URL option
-    /// decides, and as with Java's decoder, bytes that charset cannot map become U+FFFD rather
-    /// than failing the page — and detects the charset (`decode(data:response:)`) otherwise.
+    /// Decodes a source's response; `declaredCharset` is the source's `charset` URL option.
+    ///
+    /// Legado decodes a response without that option — it encodes the request alone:
+    /// `newCallStrResponse` reads `body.text()` (legado-E, MD3 and upstream agree), which takes
+    /// the Content-Type charset, then the page's `<meta>` (`EncodingDetect.getHtmlEncode`), then
+    /// ICU's `CharsetDetector`. So a page that declares its charset — BOM, header or `<meta>` —
+    /// or is plainly UTF-8 decodes as it declares (`decode(data:response:)`): 福书网吧
+    /// (YCK1331) posts its search as `gbk` and gets back a page declaring UTF-8, which the option
+    /// had turned into "淇℃伅鎻愮ず" instead of 信息提示.
+    ///
+    /// A page that declares nothing is left to ICU's detection in Legado, which tells Big5 from
+    /// GBK where `decode(data:response:)` does not (`RuntimeFetchDecodingTests`). There the
+    /// option stands in for that detector — the source's author named the charset the site
+    /// sends — and, as with Java's decoder, bytes it cannot map become U+FFFD. Delete this
+    /// branch if detection here ever reads undeclared Big5 correctly.
     static func decode(data: Data, response: URLResponse?, declaredCharset: String?) -> String? {
         let name = declaredCharset?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-        guard !name.isEmpty else { return decode(data: data, response: response) }
+        guard !name.isEmpty, !pageDeclaresCharset(data: data, response: response) else {
+            return decode(data: data, response: response)
+        }
         guard let declared = encoding(forIANA: name) else {
             AppLogger.parse("unknown charset option; detecting the page's charset", context: ["charset": name])
             return decode(data: data, response: response)
         }
-        if let text = String(data: data, encoding: declared) { return text }
+        return String(data: data, encoding: declared) ?? lossyDecode(data, declared)
+    }
+
+    /// What Legado's `body.text()` decodes by before it guesses: a BOM, the Content-Type charset,
+    /// or the page's `<meta>` — or bytes ICU would read as UTF-8 at once (valid, multi-byte).
+    private static func pageDeclaresCharset(data: Data, response: URLResponse?) -> Bool {
+        if bomEncoding(in: data) != nil || usesMultiByteUTF8(data) { return true }
+        if encoding(forIANA: response?.textEncodingName) != nil { return true }
+        if let http = response as? HTTPURLResponse,
+           let contentType = http.value(forHTTPHeaderField: "Content-Type"),
+           encoding(forIANA: charsetInHeader(contentType)) != nil {
+            return true
+        }
+        let sniff = String(data: data.prefix(DecodeScoreWeights.sampleSize), encoding: .isoLatin1) ?? ""
+        return encoding(forIANA: metaCharset(sniff)) != nil
+    }
+
+    /// `data` in `encoding` with every byte sequence it cannot map replaced by U+FFFD, as
+    /// Java's `String(bytes, charset)` does.
+    private static func lossyDecode(_ data: Data, _ encoding: String.Encoding) -> String? {
+        if encoding == .utf8 { return String(decoding: data, as: UTF8.self) }
         var converted: NSString?
         var usedLossyConversion: ObjCBool = false
         _ = NSString.stringEncoding(
             for: data,
             encodingOptions: [
-                .suggestedEncodingsKey: [declared.rawValue],
+                .suggestedEncodingsKey: [encoding.rawValue],
                 .useOnlySuggestedEncodingsKey: true,
                 .allowLossyKey: true,
+                .lossySubstitutionKey: "\u{FFFD}",
             ],
             convertedString: &converted,
             usedLossyConversion: &usedLossyConversion
@@ -151,12 +196,13 @@ enum HTMLResponseDecoder {
             return nil
         }
         switch n {
-        case "utf-8", "utf8", "unicode-1-1-utf-8": return .utf8
+        // Java's own names too (`UTF8`, `ISO8859_1`): sources pass them to `java.*` calls.
+        case "utf-8", "utf8", "utf_8", "unicode-1-1-utf-8": return .utf8
         case "gbk", "gb2312", "gb_2312", "csgb2312", "x-gbk", "gb18030", "gb-18030", "gb_18030":
             return gbkEncoding
         case "big5", "big5-hkscs", "csbig5", "x-x-big5":
             return cfEncoding(CFStringEncodings.big5)
-        case "iso-8859-1", "iso8859-1", "latin1", "iso_8859-1", "csisolatin1":
+        case "iso-8859-1", "iso8859-1", "latin1", "iso_8859-1", "csisolatin1", "iso8859_1", "iso_8859_1", "8859_1":
             return .isoLatin1
         case "windows-1252", "cp1252", "x-cp1252":
             return .windowsCP1252
@@ -204,7 +250,8 @@ enum HTMLResponseDecoder {
         return nil
     }
 
-    private static func charsetInHeader(_ contentType: String) -> String? {
+    /// The `charset=` parameter of a `Content-Type` value, lowercased.
+    static func charsetInHeader(_ contentType: String) -> String? {
         let lower = contentType.lowercased()
         guard let r = lower.range(of: "charset=") else { return nil }
         let tail = lower[r.upperBound...]

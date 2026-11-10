@@ -151,6 +151,29 @@ grep -nE "^/Users.*error:" "$LOG" | sed "s|$ROOT/||" | head -25
 echo "--- verdict ---"
 grep -E "Test run with [0-9]+ tests?|Test Suite 'All tests' (passed|failed)|✘ Suite|\*\* TEST (SUCCEEDED|FAILED) \*\*|\*\* BUILD FAILED \*\*" "$LOG" | head -20
 
+# Every run hands its simulator back erased (maintainer, 2026-11-09). Tests write book caches,
+# downloads, cookies and settings into the app's container and nothing ever removed them: the
+# device the source audits ran on had grown to 41 GB. Erasing also starts every run from a
+# clean install. A device another xcodebuild is still testing on is left alone — erasing it
+# would kill that run; the run that ends last erases it. Only a `-destination id=<UDID>`
+# names a device to erase (the wrapper's own test passes a fixture name).
+erase_tested_simulator() {
+  local udid="${DEST#id=}"
+  [[ "$DEST" == id=* && "$udid" =~ ^[0-9A-Fa-f-]{36}$ ]] || return 0
+  if ps -Ao command | grep -E '[x]codebuild' | grep -q "id=$udid"; then
+    echo "simulator: $udid still in use by another run; not erased"
+    return 0
+  fi
+  # `shutdown` refuses a device that is already shut down, which is the state erase needs.
+  xcrun simctl shutdown "$udid" >/dev/null 2>&1
+  if xcrun simctl erase "$udid"; then
+    echo "simulator: erased $udid"
+  else
+    echo "!! simulator $udid could not be erased" >&2
+  fi
+}
+erase_tested_simulator
+
 # Framework/background logs can contain "failed" on a successful run. Only the test
 # runner's final verdict is authoritative; absence of a verdict is never success.
 # A natural nonzero exit is failure even when a success line was printed earlier.

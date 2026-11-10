@@ -282,6 +282,15 @@ final class CookieStore: Sendable {
         }
     }
 
+    /// Legado's `CookieManager.loadRequest`: a request's own `Cookie` header with the jar's
+    /// cookies for `url` laid over it — the jar's value wins a name both have. Nil when there is
+    /// neither.
+    func loadingJar(into cookieHeader: String?, url: String) -> String? {
+        let jar = get(url: url)
+        guard !jar.isEmpty else { return cookieHeader }
+        return merge(existing: cookieHeader, incoming: jar)
+    }
+
     /// Merge incoming `name=value` pairs into an existing cookie string.
     /// Incoming values overwrite existing ones with the same name.
     private func merge(existing: String?, incoming: String) -> String {

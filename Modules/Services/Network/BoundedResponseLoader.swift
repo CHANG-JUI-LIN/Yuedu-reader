@@ -17,6 +17,18 @@ import os
 ///
 /// It also answers redirects: a refused redirect is not sent, and its 3xx response comes back
 /// as the answer.
+///
+/// A cleartext `http` request with a body does not go to URLSession at all: it is sent in one
+/// write by `SingleWriteHTTPExchange`, under the same limit and redirect rule, because URLSession
+/// writes its headers and body separately and some servers never answer that.
+///
+/// `savesCookies` keeps the cookies every response sets — each redirect's included — in the
+/// session's cookie store, on a session that keeps none of its own (`WebFetcher`'s): Legado's
+/// network interceptor does that for a request of a source with a cookie jar
+/// (`CookieManager.saveResponse`, `HttpHelper.kt`), and for no other.
+///
+/// The redirects it follows stay with the response they led to (`URLResponse.followedRedirects`):
+/// okhttp's `Response.priorResponse()` chain, which a source reads.
 final class BoundedResponseLoader: NSObject, URLSessionDataDelegate, @unchecked Sendable {
     typealias Completion = @Sendable (Result<(Data, URLResponse), any Error>) -> Void
 
@@ -28,17 +40,24 @@ final class BoundedResponseLoader: NSObject, URLSessionDataDelegate, @unchecked 
         var completion: Completion?
         var task: URLSessionDataTask?
         var cancelled = false
+        /// The redirects followed so far, oldest first.
+        var redirects: [HTTPURLResponse] = []
     }
 
     private let limit: Int
     private let redirect: (@Sendable (URL) -> Bool)?
     private let transport: String
+    private let savesCookies: Bool
     private let state = OSAllocatedUnfairLock(initialState: State())
 
-    private init(limit: Int, redirect: (@Sendable (URL) -> Bool)?, transport: String, completion: Completion?) {
+    private init(
+        limit: Int, redirect: (@Sendable (URL) -> Bool)?, transport: String, savesCookies: Bool,
+        completion: Completion?
+    ) {
         self.limit = limit
         self.redirect = redirect
         self.transport = transport
+        self.savesCookies = savesCookies
         super.init()
         state.withLock { $0.completion = completion }
     }
@@ -51,31 +70,71 @@ final class BoundedResponseLoader: NSObject, URLSessionDataDelegate, @unchecked 
         session: URLSession,
         limit: Int = WebFetcher.responseByteLimit,
         redirect: (@Sendable (URL) -> Bool)? = nil,
-        transport: String = "http"
+        transport: String = "http",
+        savesCookies: Bool = false
     ) async throws -> (Data, URLResponse) {
-        let loader = BoundedResponseLoader(limit: limit, redirect: redirect, transport: transport, completion: nil)
-        return try await loader.run(request, session: session)
+        if SingleWriteHTTPExchange.handles(request, on: session) {
+            return try await SingleWriteHTTPExchange.load(
+                request, session: session, limit: limit, redirect: redirect, transport: transport,
+                savesCookies: savesCookies
+            )
+        }
+        let first = SourceTLSFallback.session(session, for: request.url)
+        do {
+            let loader = BoundedResponseLoader(
+                limit: limit, redirect: redirect, transport: transport, savesCookies: savesCookies, completion: nil
+            )
+            return try await loader.run(request, session: first)
+        } catch {
+            // A host that refuses TLS 1.2 on a source's capped session (`SourceTLSFallback`).
+            guard let twin = SourceTLSFallback.retrySession(after: error, on: first, request: request) else {
+                throw error
+            }
+            let loader = BoundedResponseLoader(
+                limit: limit, redirect: redirect, transport: transport, savesCookies: savesCookies, completion: nil
+            )
+            return try await loader.run(request, session: twin)
+        }
     }
 
     /// A data task, not yet resumed, that reads `request`'s body up to `limit` bytes and calls
     /// `completionHandler` once as `URLSession.dataTask(with:completionHandler:)` would. A body
     /// past the limit comes back as no data and `FetchError.responseTooLarge`.
+    ///
+    /// When a host refuses TLS 1.2 on a source's capped session, the request is sent once more
+    /// over TLS 1.3 (`SourceTLSFallback`) as a task of its own, which cancelling the returned
+    /// task does not reach.
     static func dataTask(
         with request: URLRequest,
         session: URLSession,
         limit: Int = WebFetcher.responseByteLimit,
         redirect: (@Sendable (URL) -> Bool)? = nil,
         transport: String,
+        savesCookies: Bool = false,
         completionHandler: @escaping @Sendable (Data?, URLResponse?, (any Error)?) -> Void
-    ) -> URLSessionDataTask {
-        let task = session.dataTask(with: request)
+    ) -> any SourceRequestTask {
+        if SingleWriteHTTPExchange.handles(request, on: session) {
+            return SingleWriteHTTPExchange.dataTask(
+                with: request, session: session, limit: limit, redirect: redirect,
+                transport: transport, savesCookies: savesCookies, completionHandler: completionHandler
+            )
+        }
+        let first = SourceTLSFallback.session(session, for: request.url)
+        let task = first.dataTask(with: request)
         let loader = BoundedResponseLoader(
-            limit: limit, redirect: redirect, transport: transport,
+            limit: limit, redirect: redirect, transport: transport, savesCookies: savesCookies,
             completion: { [weak task] result in
                 switch result {
                 case .success(let (data, response)):
                     completionHandler(data, response, nil)
                 case .failure(let error):
+                    if let twin = SourceTLSFallback.retrySession(after: error, on: first, request: request) {
+                        BoundedResponseLoader.dataTask(
+                            with: request, session: twin, limit: limit, redirect: redirect,
+                            transport: transport, savesCookies: savesCookies, completionHandler: completionHandler
+                        ).resume()
+                        return
+                    }
                     completionHandler(nil, task?.response, error)
                 }
             }
@@ -119,6 +178,9 @@ final class BoundedResponseLoader: NSObject, URLSessionDataDelegate, @unchecked 
         didReceive response: URLResponse,
         completionHandler: @escaping @Sendable (URLSession.ResponseDisposition) -> Void
     ) {
+        // Its headers are in, whether or not its body is read: Legado's interceptor keeps them
+        // before anything reads the body.
+        keepCookies(of: response, session: session)
         // A compressed body declares its compressed size, which the decoded body can only exceed.
         let declared = response.expectedContentLength
         let refused = state.withLock { state -> Bool in
@@ -155,15 +217,27 @@ final class BoundedResponseLoader: NSObject, URLSessionDataDelegate, @unchecked 
         newRequest request: URLRequest,
         completionHandler: @escaping @Sendable (URLRequest?) -> Void
     ) {
-        guard let redirect else {
-            completionHandler(request)
-            return
-        }
-        guard let url = request.url, redirect(url) else {
+        // A refused redirect comes back as the answer, through `didReceive response`; one that is
+        // followed passes here only.
+        if let redirect, request.url.map(redirect) != true {
             completionHandler(nil)
             return
         }
+        keepCookies(of: response, session: session)
+        state.withLock { $0.redirects.append(response) }
         completionHandler(request)
+    }
+
+    /// The cookies `response` sets, kept in `session`'s store when this exchange keeps them
+    /// (`savesCookies`). Read with `value(forHTTPHeaderField:)`, which finds an HTTP/2
+    /// `set-cookie` as well, and joins several into the one line `HTTPCookie` parses.
+    private func keepCookies(of response: URLResponse, session: URLSession) {
+        guard savesCookies, let http = response as? HTTPURLResponse, let url = http.url,
+              let line = http.value(forHTTPHeaderField: "Set-Cookie"),
+              let storage = session.configuration.httpCookieStorage else { return }
+        let cookies = HTTPCookie.cookies(withResponseHeaderFields: ["Set-Cookie": line], for: url)
+        guard !cookies.isEmpty else { return }
+        storage.setCookies(cookies, for: url, mainDocumentURL: url)
     }
 
     func urlSession(_ session: URLSession, task: URLSessionTask, didCompleteWithError error: (any Error)?) {
@@ -183,6 +257,7 @@ final class BoundedResponseLoader: NSObject, URLSessionDataDelegate, @unchecked 
             guard let response = state.response ?? task.response else {
                 return (completion, .failure(URLError(.badServerResponse)), nil)
             }
+            response.prependRedirects(state.redirects)
             let data = state.data
             state.data = Data()
             return (completion, .success((data, response)), nil)
@@ -191,5 +266,36 @@ final class BoundedResponseLoader: NSObject, URLSessionDataDelegate, @unchecked 
             WebFetcher.logOversized(url: url, bytes: oversized, limit: limit, transport: transport)
         }
         completion?(result)
+    }
+}
+
+extension URLResponse {
+    /// The redirects followed to reach this response, oldest first, each answered with no body:
+    /// okhttp's `Response.priorResponse()` chain, newest first there. Set by the transport that
+    /// read the response (`BoundedResponseLoader`, `SingleWriteHTTPExchange`); empty for one no
+    /// redirect led to, or one a redirect answered because it was refused.
+    var followedRedirects: [HTTPURLResponse] {
+        (objc_getAssociatedObject(self, FollowedRedirects.associationKey) as? FollowedRedirects)?.responses ?? []
+    }
+
+    /// `hops` put before the redirects already recorded: a transport that hands a redirect to the
+    /// next hop's transport learns of the rest only from the answer that comes back.
+    func prependRedirects(_ hops: [HTTPURLResponse]) {
+        guard !hops.isEmpty else { return }
+        objc_setAssociatedObject(
+            self, FollowedRedirects.associationKey, FollowedRedirects(hops + followedRedirects),
+            .OBJC_ASSOCIATION_RETAIN_NONATOMIC
+        )
+    }
+}
+
+private final class FollowedRedirects: NSObject {
+    let responses: [HTTPURLResponse]
+    init(_ responses: [HTTPURLResponse]) { self.responses = responses }
+
+    /// The association needs an address that is stable and unique in the process: this class
+    /// object's. Derived on each use, so there is no global mutable key variable.
+    static var associationKey: UnsafeRawPointer {
+        UnsafeRawPointer(Unmanaged.passUnretained(FollowedRedirects.self as AnyObject).toOpaque())
     }
 }

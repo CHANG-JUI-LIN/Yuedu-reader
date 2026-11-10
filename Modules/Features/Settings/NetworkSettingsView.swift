@@ -39,6 +39,14 @@ struct NetworkSettingsView: View {
                 }
                 .interfaceSectionSurface()
                 Section {
+                    Toggle(localized("自動換源"), isOn: $settings.autoChangeSource)
+                        .accessibilityIdentifier("network.autoChangeSource")
+                } footer: {
+                    Text(localized("書架上的書的來源配置被刪除後，打開時自動換到第一個能載入目錄的同名來源配置。"))
+                        .dsSectionFooter()
+                }
+                .interfaceSectionSurface()
+                Section {
                     Picker(selection: $coverDownloadLimit) {
                         ForEach(ExploreSettings.coverDownloadLimitOptions, id: \.self) { limit in
                             Text(limit == 0 ? localized("不限制") : limit.formatted()).tag(limit)

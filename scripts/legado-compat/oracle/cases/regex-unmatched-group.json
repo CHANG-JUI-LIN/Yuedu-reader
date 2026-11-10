@@ -1,0 +1,6 @@
+[
+ {
+  "name": "an alternation branch that did not match leaves its groups null",
+  "js": "var m = java.util.regex.Pattern.compile('<li><a href=\"(.*?)\">(.*?)</a></li>|<h3>(.*?)</h3>').matcher('<h3>第一卷</h3><li><a href=\"/c/1\">第1章</a></li>'); var out = []; while (m.find()) { var g = []; for (var i = 0; i <= m.groupCount(); i++) g.push(m.group(i) === null ? 'null' : String(m.group(i))); out.push(g.join(',')); } out.join(' | ')"
+ }
+]

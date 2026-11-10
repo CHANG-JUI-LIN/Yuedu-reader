@@ -58,9 +58,21 @@ enum EdgeTTSProtocol {
     }
 
     static func rateString(_ rate: Float) -> String {
+        rateString(rate, adjustedBy: 0)
+    }
+
+    /// The UI rate combined with a delivery's own rate change: an angry line at 1.5× is
+    /// 1.5 × 1.08, not 1.5 + 8%.
+    static func rateString(_ rate: Float, adjustedBy deltaPercent: Int) -> String {
         let value = rate.isFinite ? rate : 0.5
-        let percent = Int(((max(0.1, min(value, 2.5)) / 0.5 - 1) * 100).rounded())
+        let base = Double(max(0.1, min(value, 2.5)) / 0.5)
+        let combined = base * (1 + Double(deltaPercent) / 100)
+        let percent = Int(((combined - 1) * 100).rounded())
         return String(format: "%+d%%", percent)
+    }
+
+    static func percentString(_ percent: Int) -> String {
+        String(format: "%+d%%", percent)
     }
 
     /// Bound escaped UTF-8, rather than Character count: XML entities and combining
@@ -93,13 +105,24 @@ enum EdgeTTSProtocol {
         return chunks
     }
 
-    static func messages(escapedText: String, voice: EdgeTTSVoice, rate: Float, date: Date = Date()) -> [String] {
+    /// - Parameter prosody: a line's emotion as rate, pitch and volume. The Read Aloud endpoint
+    ///   accepts `prosody` and nothing richer — `mstts:express-as` styles are an Azure feature.
+    static func messages(
+        escapedText: String,
+        voice: EdgeTTSVoice,
+        rate: Float,
+        prosody: TTSProsody = .zero,
+        date: Date = Date()
+    ) -> [String] {
         let timestamp = timestamp(date)
         let config = "X-Timestamp:\(timestamp)\r\nContent-Type:application/json; charset=utf-8\r\nPath:speech.config\r\n\r\n"
             + #"{"context":{"synthesis":{"audio":{"metadataoptions":{"sentenceBoundaryEnabled":"false","wordBoundaryEnabled":"false"},"outputFormat":"audio-24khz-48kbitrate-mono-mp3"}}}}"# + "\r\n"
+        let pitch = prosody.pitchPercent == 0 ? "+0Hz" : percentString(prosody.pitchPercent)
+        let rateValue = rateString(rate, adjustedBy: prosody.ratePercent)
+        let volume = percentString(prosody.volumePercent)
         // The trailing Z matches Edge's wire timestamp, including its historical suffix.
         let ssml = "X-RequestId:\(compactID(UUID()))\r\nContent-Type:application/ssml+xml\r\nX-Timestamp:\(timestamp)Z\r\nPath:ssml\r\n\r\n"
-            + "<speak version='1.0' xmlns='http://www.w3.org/2001/10/synthesis' xml:lang='en-US'><voice name='\(voice.id)'><prosody pitch='+0Hz' rate='\(rateString(rate))' volume='+0%'>\(escapedText)</prosody></voice></speak>"
+            + "<speak version='1.0' xmlns='http://www.w3.org/2001/10/synthesis' xml:lang='en-US'><voice name='\(voice.id)'><prosody pitch='\(pitch)' rate='\(rateValue)' volume='\(volume)'>\(escapedText)</prosody></voice></speak>"
         return [config, ssml]
     }
 

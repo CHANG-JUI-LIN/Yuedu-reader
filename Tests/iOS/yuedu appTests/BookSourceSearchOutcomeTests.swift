@@ -130,8 +130,11 @@ struct BookSourceSearchOutcomeTests {
 
         _ = try await fetcher.searchOutcome(query: query, in: source)
 
+        // The failure's line. The rules read the error page first, as Legado's do, and an empty
+        // list is read as a book page with its own diagnostic line (`searchResponseAsBookPage`).
         let added = DiagnosticLog.shared.snapshot()
             .filter { !before.contains($0.id) && $0.message.contains(source.bookSourceName) }
+            .filter { $0.message.contains("search failed") }
         #expect(added.count == 1)
         let line = try #require(added.first)
         #expect(line.message.contains("shown as no results"))
@@ -152,6 +155,7 @@ struct BookSourceSearchOutcomeTests {
         #expect(outcome.failure == .http(403))
         let added = DiagnosticLog.shared.snapshot()
             .filter { !before.contains($0.id) && $0.message.contains(source.bookSourceName) }
+            .filter { $0.message.contains("search failed") }
         #expect(added.isEmpty)
     }
 

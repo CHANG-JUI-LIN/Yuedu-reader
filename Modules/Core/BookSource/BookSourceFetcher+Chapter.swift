@@ -29,44 +29,24 @@ extension BookSourceFetcher {
 
     /// `isVideoEpisode`: what the content script hands to `java.openVideoPlayer` or
     /// `java.startBrowser` is the episode's content (`ModernParserBridge.parseChapterResult`).
+    ///
+    /// No deadline of its own: each request bounds itself, as in Legado, whose
+    /// `WebBook.getContentAwait` sets none above OkHttp's 60 s call timeout and
+    /// `BackstageWebView`'s 60 s (`WebFetcher.sourceRequestTimeout` here). A 35 s cap over the
+    /// whole chapter used to race the fetch and cut off pages those transports allow: 17k's
+    /// WebView chapter (YCK 1330#54) finished loading at 37 s and failed with
+    /// `Chapter load timeout`.
     func fetchChapterPackage(
         ref: OnlineChapterRef, bookId: UUID, source: BookSource, chapterReferer: String?,
         isVideoEpisode: Bool
     ) async throws -> ChapterPackage {
-        logChapterFetchGate(ref: ref, source: source)
-        guard !ref.shouldRenderAsVolumeSeparator else {
-            throw FetchError.volumeSeparator(ref.title)
-        }
-
-        if let cached = loadChapterPackageSync(
+        try await fetchChapterPackageInner(
+            ref: ref,
             bookId: bookId,
-            chapterIndex: ref.index,
-            expectedSourceURL: ref.url,
-            expectedTOCTitle: ref.title
-        ), cached.state == .cached, !cached.content.isEmpty {
-            return cached
-        }
-
-        return try await withThrowingTaskGroup(of: ChapterPackage.self) { group in
-            group.addTask { [self] in
-                try await fetchChapterPackageInner(
-                    ref: ref,
-                    bookId: bookId,
-                    source: source,
-                    chapterReferer: chapterReferer,
-                    isVideoEpisode: isVideoEpisode
-                )
-            }
-            group.addTask {
-                try await Task.sleep(nanoseconds: AppConfig.chapterFetchTimeoutSeconds * 1_000_000_000)
-                throw FetchTimeoutError.chapterTimeout
-            }
-            guard let result = try await group.next() else {
-                throw CancellationError()
-            }
-            group.cancelAll()
-            return result
-        }
+            source: source,
+            chapterReferer: chapterReferer,
+            isVideoEpisode: isVideoEpisode
+        )
     }
 
     private func fetchChapterPackageInner(
@@ -123,9 +103,12 @@ extension BookSourceFetcher {
         let effectiveReferer = requestSpec.referer ?? chapterReferer ?? source.bookSourceUrl
         let shouldAttemptHTTPFirst = false
 
+        // No Referer the source did not ask for: Legado sends none (its AnalyzeUrl, WebBook and
+        // BackstageWebView add none). The chapter's TOC page, else the source URL, went out as
+        // one on every chapter request, page and WebView load until 11-09.
         var requestHeaders = mergedHeaders
-        if requestHeaders["Referer"] == nil && !effectiveReferer.isEmpty {
-            requestHeaders["Referer"] = effectiveReferer
+        if requestHeaders["Referer"] == nil, let referer = requestSpec.referer, !referer.isEmpty {
+            requestHeaders["Referer"] = referer
         }
         let requestHeadersSnapshot = requestHeaders
 
@@ -162,7 +145,7 @@ extension BookSourceFetcher {
                             url: targetURL,
                             headers: requestHeadersSnapshot,
                             jsAfterLoad: source.ruleContent.webJs,
-                            timeout: 25,
+                            timeout: WebFetcher.sourceRequestTimeout,
                             jsWait: effectiveWebViewDelay ?? AppConfig.webViewExplicitJSWait
                         )
                     } else {
@@ -183,15 +166,18 @@ extension BookSourceFetcher {
                     )
                 }
                 // A next page carries no options of the first page's: Legado builds its
-                // AnalyzeUrl from the next URL alone, so its charset is detected.
-                return try await self.fetchHTML(
-                    url: targetURL,
-                    method: method,
-                    body: body,
-                    headers: requestHeadersSnapshot,
-                    baseURL: effectiveReferer,
-                    source: source
-                )
+                // AnalyzeUrl from the next URL alone, so its charset is detected. An HTTP error
+                // status is a page like any other, as for a TOC's following page: Legado's
+                // `newCallStrResponse` hands back the error body, which reads as no text and no
+                // further link. 黄金书屋 (YCK1331) builds its last page's next link from that
+                // page's own URL (`…/2.html/2.html`), and the 404 used to fail the chapter.
+                return try await SourceRateLimit.run(source: source) {
+                    try await self.webFetcher.fetchDecodedPage(
+                        url: targetURL, method: method, body: body,
+                        headers: requestHeadersSnapshot, baseURL: effectiveReferer,
+                        throwsOnErrorStatus: false, client: .okHttp, cookieJar: source.enabledCookieJar
+                    )
+                }.html
             }
 
             if shouldAttemptHTTPFirst {
@@ -210,7 +196,7 @@ extension BookSourceFetcher {
             }
         }
 
-        let parsePage: @Sendable (String, String) async throws -> ChapterParsePayload = { [self] html, baseURL in
+        let parsePage: @Sendable (String, String, String) async throws -> ChapterParsePayload = { [self] html, baseURL, ruleURL in
             let ruleContent = source.ruleContent.content.trimmingCharacters(
                 in: .whitespacesAndNewlines)
             // Not a fallback: a source with no content rule has no other way to its text, and
@@ -230,6 +216,7 @@ extension BookSourceFetcher {
                 try await self.pipeline.parseChapterResult(
                     html: html,
                     baseURL: baseURL,
+                    ruleURL: ruleURL,
                     source: source,
                     runtimeVariables: runtimeBox.get(),
                     chapterRef: ref,
@@ -242,12 +229,14 @@ extension BookSourceFetcher {
             }
             return parsed
         }
-        let extractNextPages: @Sendable (String, String) async -> [String] = { [self] html, baseURL in
+        let extractNextPages: @Sendable (String, String, String) async -> [String] = { [self] html, baseURL, ruleURL in
             let next = await self.pipeline.extractNextContentURLs(
                 html: html,
                 baseURL: baseURL,
+                ruleURL: ruleURL,
                 source: source,
-                runtimeVariables: runtimeBox.get()
+                runtimeVariables: runtimeBox.get(),
+                chapterRef: ref
             )
             // What the rule put is the chapter's, for its next page to read.
             if let runtimeVariables = next.runtimeVariables {
@@ -271,10 +260,20 @@ extension BookSourceFetcher {
             initialURL: url,
             initialBaseURL: url.absoluteString,
             reviewContext: source.legadoReviewContext.withChapter(ref),
+            nextChapterURL: ref.runtimeVariables?[Self.nextChapterRuntimeVariableKey],
             parsePage: parsePage,
             extractNextURLs: extractNextPages
-        ) { nextPageURL in
-            try await fetchChapterHTML(nextPageURL, "GET", nil, false)
+        ) { link in
+            // A link carrying options or JS is the runtime's to read (`AnalyzeUrl`), as a TOC's
+            // following page is (`fetchFollowingTOCPage`); any other goes as before.
+            if source.shouldUseLegadoRuntimeFetch(for: link) {
+                return try await BookSourceSession.session(for: source).fetch(
+                    ruleUrl: link, runtimeVariables: runtimeBox.get(), contentStage: true
+                ).0
+            }
+            // The request goes out as OkHttp sends the link, `%XX` escapes as they are.
+            guard let pageURL = AnalyzeUrl.requestURL(link) else { throw FetchError.invalidURL(link) }
+            return try await fetchChapterHTML(pageURL, "GET", nil, false)
         }
 
         try saveChapterPackageToCache(
@@ -346,57 +345,69 @@ extension BookSourceFetcher {
         let (html, finalUrl) = try await SourcePerfTrace.spanAsync(
             "chapter.network", source.bookSourceName
         ) {
-            try await session.fetch(ruleUrl: ref.url, runtimeVariables: ref.runtimeVariables)
+            try await session.fetch(
+                ruleUrl: ref.url, runtimeVariables: ref.runtimeVariables, contentStage: true
+            )
         }
-        let parsed = try await session.parse { bridge in
-            try SourcePerfTrace.span("chapter.parse", source.bookSourceName) {
-                try bridge.parseChapterResult(
-                    html: html,
-                    baseURL: finalUrl,
-                    source: source,
-                    runtimeVariables: ref.runtimeVariables,
-                    chapterRef: ref,
-                    nextChapterURL: ref.runtimeVariables?[Self.nextChapterRuntimeVariableKey],
-                    isVideoEpisode: isVideoEpisode
-                )
-            }
-        }
-        let content = await ChapterFetcher.shared.resolveContent(parsed: parsed)
-        guard !content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
-            throw FetchError.emptyContent
-        }
-        try ChapterFetcher.shared.validateResolvedContent(content)
-        let canonicalTitle = parsed.title.trimmingCharacters(in: .whitespacesAndNewlines)
-        let effectiveTitle = canonicalTitle.isEmpty ? ref.title : canonicalTitle
-        let normalizedHTML = await ChapterFetcher.shared.buildRenderableNormalizedHTML(
-            title: effectiveTitle,
-            plainTextContent: content,
-            rawHTMLContent: parsed.content,
-            reviewContext: source.legadoReviewContext
-                .withRuntimeVariables(parsed.runtimeVariables ?? ref.runtimeVariables)
-                .withChapter(ref)
-        )
-        let checksum = SHA256.hash(data: Data(content.utf8)).map {
-            String(format: "%02x", $0)
-        }.joined()
-        let package = ChapterPackage(
+        guard let firstURL = URL(string: finalUrl) else { throw FetchError.invalidURL(finalUrl) }
+        // The chapter's pages go through `buildChapterPackage`, as on the native path: this path
+        // used to read the first page only, so a runtime source's `nextContentUrl` was never read.
+        let runtimeBox = RuntimeVariableBox(ref.runtimeVariables)
+        let nextChapterURL = ref.runtimeVariables?[Self.nextChapterRuntimeVariableKey]
+        let buildResult = try await ChapterFetcher.shared.buildChapterPackage(
             bookId: bookId,
             chapterIndex: ref.index,
             sourceURL: ref.url,
             tocTitle: ref.title,
-            canonicalTitle: canonicalTitle.isEmpty ? nil : canonicalTitle,
-            content: content,
-            contentChecksum: checksum,
-            rawHTMLFilename: "\(ref.index).raw.html",
-            normalizedHTMLFilename: "\(ref.index).normalized.xhtml",
-            savedAt: Date(),
-            state: .cached,
-            failureReason: nil
+            initialHTML: html,
+            initialURL: firstURL,
+            initialBaseURL: finalUrl,
+            reviewContext: source.legadoReviewContext
+                .withRuntimeVariables(ref.runtimeVariables)
+                .withChapter(ref),
+            nextChapterURL: nextChapterURL,
+            parsePage: { html, baseURL, ruleURL in
+                let parsed = try await session.parse { bridge in
+                    try SourcePerfTrace.span("chapter.parse", source.bookSourceName) {
+                        try bridge.parseChapterResult(
+                            html: html,
+                            baseURL: baseURL,
+                            ruleURL: ruleURL,
+                            source: source,
+                            runtimeVariables: runtimeBox.get(),
+                            chapterRef: ref,
+                            nextChapterURL: nextChapterURL,
+                            isVideoEpisode: isVideoEpisode
+                        )
+                    }
+                }
+                if let runtimeVariables = parsed.runtimeVariables, !runtimeVariables.isEmpty {
+                    runtimeBox.set(runtimeVariables)
+                }
+                return parsed
+            },
+            extractNextURLs: { [self] html, baseURL, ruleURL in
+                let next = await self.pipeline.extractNextContentURLs(
+                    html: html, baseURL: baseURL, ruleURL: ruleURL, source: source,
+                    runtimeVariables: runtimeBox.get(), chapterRef: ref
+                )
+                if let runtimeVariables = next.runtimeVariables {
+                    runtimeBox.set(runtimeVariables)
+                }
+                return next.urls
+            },
+            // Legado reads a next page with an AnalyzeUrl of its own link, options and all, and
+            // the content rule's `webJs` (`BookContent.getContent`).
+            fetchNextPageHTML: { link in
+                try await session.fetch(
+                    ruleUrl: link, runtimeVariables: runtimeBox.get(), contentStage: true
+                ).0
+            }
         )
         try saveChapterPackageToCache(
-            package,
-            rawHTML: html,
-            normalizedHTML: normalizedHTML
+            buildResult.package,
+            rawHTML: buildResult.rawHTML,
+            normalizedHTML: buildResult.normalizedHTML
         )
         guard let reloaded = loadChapterPackageSync(
             bookId: bookId,

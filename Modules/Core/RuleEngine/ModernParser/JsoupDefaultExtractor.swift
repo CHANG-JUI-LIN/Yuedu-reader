@@ -45,23 +45,46 @@ struct JsoupDefaultExtractor: RuleExtractor {
 
     // MARK: - RuleExtractor Protocol
 
+    /// Every HTML rule without another mode's prefix: Legado's default mode is `AnalyzeByJSoup`
+    /// whatever the rule looks like — `class.x@tag.a@href`, `ul li`, `div.item > a`, `#list a`
+    /// — and `getElementsSingle` hands a step it does not recognise to `select`. A rule that is
+    /// only a `##` regex has no selector and is `RegexExtractor`'s.
     func canHandle(rule: String) -> Bool {
-        let mainRule = rule.components(separatedBy: "##").first ?? rule
-        return Self.isJsoupDefaultRule(mainRule.trimmingCharacters(in: .whitespacesAndNewlines))
+        let mainRule = (rule.components(separatedBy: "##").first ?? rule)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !mainRule.isEmpty else { return false }
+        let lowered = mainRule.lowercased()
+        let otherModes = ["@css:", "@xpath:", "@json:", "@js:", "<js>", "$.", "$[", "//"]
+        return !otherModes.contains(where: { lowered.hasPrefix($0) })
     }
 
     func extractList(from content: String, rule: String, baseURL: String) throws -> [String] {
         guard !rule.isEmpty else { return [] }
         let doc = try JsoupDocumentCache.current.document(
             for: content.truncatedForSwiftSoup(), baseURL: baseURL)
+        return try extractList(from: doc, rule: rule, baseURL: baseURL)
+    }
+
+    /// `AnalyzeByJSoup(element)`: the rule runs against `root` itself — the page's document, or
+    /// an element an earlier rule step selected (`RuleHTMLElement`).
+    func extractList(from root: Element, rule: String, baseURL: String) throws -> [String] {
+        guard !rule.isEmpty else { return [] }
         if shouldExtractValuesForList(rule: rule) {
-            return try getStringList(from: doc, rule: rule, baseURL: baseURL)
+            return try getStringList(from: root, rule: rule, baseURL: baseURL)
         }
-        let elements = try getElements(from: doc, rule: rule)
+        let elements = try getElements(from: root, rule: rule)
         return try elements.array().compactMap { el in
             let html = try el.outerHtml()
             return html.isEmpty ? nil : html
         }
+    }
+
+    /// The elements a list rule selects, for `getElements`, or nil when its last step reads a
+    /// value (`extractList` decides the same way): such a list is its values.
+    func extractElements(from root: Element, rule: String) throws -> [Element]? {
+        guard !rule.isEmpty else { return [] }
+        if shouldExtractValuesForList(rule: rule) { return nil }
+        return try getElements(from: root, rule: rule).array()
     }
 
     /// Legado's `AnalyzeByJSoup.getStringList` (legado, MD3 and Sigma agree): the last `@` step
@@ -74,6 +97,11 @@ struct JsoupDefaultExtractor: RuleExtractor {
         guard !rule.isEmpty else { return [] }
         let doc = try JsoupDocumentCache.current.document(
             for: content.truncatedForSwiftSoup(), baseURL: baseURL)
+        return try extractValueList(from: doc, rule: rule, baseURL: baseURL)
+    }
+
+    func extractValueList(from root: Element, rule: String, baseURL: String) throws -> [String] {
+        guard !rule.isEmpty else { return [] }
         // Legado's `SourceRule.isCss`: an `@css:` rule reads every piece as CSS. A rule module
         // writes the prefix on each alternative instead (narou's TOC title), so a piece's own
         // prefix counts too; those pieces go to `CssExtractor`, the one CSS reader.
@@ -84,22 +112,14 @@ struct JsoupDefaultExtractor: RuleExtractor {
         var results: [[String]] = []
         for piece in pieces {
             let values = isCss || Self.hasCSSPrefix(piece)
-                ? try CssExtractor().extractList(from: content, rule: piece, baseURL: baseURL)
-                : try getStringList(from: doc, rule: piece, baseURL: baseURL)
+                ? try CssExtractor().extractList(from: root, rule: piece, baseURL: baseURL)
+                : try getStringList(from: root, rule: piece, baseURL: baseURL)
             guard !values.isEmpty else { continue }
             results.append(values)
             if analyzer.elementsType == "||" { break }
         }
-        guard analyzer.elementsType == "%%", let first = results.first else {
-            return results.flatMap { $0 }
-        }
-        var interleaved: [String] = []
-        for index in first.indices {
-            for values in results where index < values.count {
-                interleaved.append(values[index])
-            }
-        }
-        return interleaved
+        guard analyzer.elementsType == "%%" else { return results.flatMap { $0 } }
+        return RuleSyntaxParser.interleaveByFirst(results)
     }
 
     /// Legado's `AnalyzeByJSoup.getString`: every value, joined with "\n". A link read takes
@@ -110,50 +130,6 @@ struct JsoupDefaultExtractor: RuleExtractor {
 
     private static func hasCSSPrefix(_ rule: String) -> Bool {
         rule.trimmingCharacters(in: .whitespacesAndNewlines).lowercased().hasPrefix("@css:")
-    }
-
-    // MARK: - Rule Detection
-
-    /// Determines whether a rule uses Legado's custom JSOUP-default syntax.
-    static func isJsoupDefaultRule(_ rule: String) -> Bool {
-        let stripped = rule.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !stripped.isEmpty else { return false }
-
-        let segments = stripped.components(separatedBy: "@")
-        for seg in segments {
-            let s = seg.trimmingCharacters(in: .whitespacesAndNewlines)
-            if s.isEmpty { continue }
-
-            // Strip trailing bracket index like [0:5]
-            let cleaned: String
-            if let bracketStart = s.range(of: "[", options: .backwards), s.hasSuffix("]") {
-                cleaned = String(s[..<bracketStart.lowerBound])
-                    .trimmingCharacters(in: .whitespaces)
-            } else {
-                cleaned = s
-            }
-
-            // Strip trailing dot-index / bang-index like .0, .-1:3, !0
-            let noIndex = cleaned.replacingOccurrences(
-                of: #"[.!](-?\d+)(:-?\d+)*$"#, with: "", options: .regularExpression
-            )
-            let check = noIndex.isEmpty ? cleaned : noIndex
-
-            // Pure alphanumeric tag name (e.g. "div", "dt", "children", "text")
-            if !check.contains(".") && !check.isEmpty
-                && check.allSatisfy({ $0.isLetter || $0.isNumber }) {
-                return true
-            }
-
-            // type.name pattern
-            let parts = check.components(separatedBy: ".")
-            guard parts.count >= 2 else { continue }
-            let type = parts[0].lowercased()
-            if ["class", "id", "tag", "text", "children"].contains(type) {
-                return true
-            }
-        }
-        return false
     }
 
     // MARK: - Element Selection Pipeline
@@ -252,17 +228,13 @@ struct JsoupDefaultExtractor: RuleExtractor {
             // Empty prefix or pure index → children
             elements = element.children().array()
         } else {
-            let dotIdx = parsed.beforeRule.firstIndex(of: ".")
-            let type: String
-            let name: String
-
-            if let di = dotIdx {
-                type = String(parsed.beforeRule[..<di]).lowercased()
-                name = String(parsed.beforeRule[parsed.beforeRule.index(after: di)...])
-            } else {
-                type = parsed.beforeRule.lowercased()
-                name = ""
-            }
+            // Legado's `beforeRule.split(".")`: the type, then the name — and nothing after a
+            // second dot. 瀚海书阁 (YCK1330 index 88) reads its book link with
+            // `tag.div.bg-light-secondary@onclick`, which Legado runs as `getElementsByTag("div")`;
+            // taking `div.bg-light-secondary` as the tag name matched nothing.
+            let rules = parsed.beforeRule.components(separatedBy: ".")
+            let type = rules[0].lowercased()
+            let name = rules.count > 1 ? rules[1] : ""
 
             switch type {
             case "children":
@@ -286,11 +258,9 @@ struct JsoupDefaultExtractor: RuleExtractor {
             case "tag":
                 elements = try element.getElementsByTag(name).array()
             case "id":
-                if let found = try element.getElementById(name) {
-                    elements = [found]
-                } else {
-                    elements = []
-                }
+                // Legado's `Collector.collect(Evaluator.Id(name), temp)`: every element with that
+                // id, the element itself included, as jsoup's collectors include it.
+                elements = try element.getAllElements().array().filter { try $0.attr("id") == name }
             case "text":
                 elements = try element.getElementsContainingOwnText(name).array()
             default:
@@ -464,17 +434,17 @@ struct JsoupDefaultExtractor: RuleExtractor {
             }
 
         default:
-            // Generic attribute extraction (href, src, data-*, etc.)
+            // Any attribute (href, src, data-*, …) as written: Legado's `AnalyzeByJSoup` returns
+            // `element.attr(lastRule)`, and only a URL read (`getString(isUrl = true)`) makes it
+            // absolute, at the end of the whole rule (legado-E, MD3, Sigma and upstream agree).
+            // Resolving here handed the absolute URL to a following `<js>` that prefixes the
+            // host itself — 瀚海书阁's `a@href` + `<js>'https://host' + result` fetched
+            // `https://hosthttps://host/…`.
             for element in elements.array() {
                 let value = try element.attr(rule)
                 let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
                 if trimmed.isEmpty || results.contains(trimmed) { continue }
-
-                if lowered == "href" || lowered == "src" {
-                    results.append(RuleEngine.resolveURL(trimmed, base: baseURL))
-                } else {
-                    results.append(trimmed)
-                }
+                results.append(trimmed)
             }
         }
 

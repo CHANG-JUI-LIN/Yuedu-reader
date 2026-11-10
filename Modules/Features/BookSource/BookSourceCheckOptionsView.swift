@@ -194,6 +194,9 @@ struct BookSourceCheckOptionsView: View {
             Toggle(localized("檢查詳情"), isOn: $policy.checkInfo)
             Toggle(localized("檢查目錄"), isOn: $policy.checkCategory)
             Toggle(localized("檢查正文"), isOn: $policy.checkContent)
+            // Legado-E's CheckSource.checkDomain (off) and wSourceComment (on).
+            Toggle(localized("檢查域名"), isOn: $policy.checkDomain)
+            Toggle(localized("失敗原因寫入源註釋"), isOn: $policy.writesErrorComment)
         }
         .padding(.trailing, 2)
     }

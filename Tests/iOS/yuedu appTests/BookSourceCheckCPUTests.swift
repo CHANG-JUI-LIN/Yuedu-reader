@@ -203,7 +203,7 @@ struct BookSourceCheckCPUTests {
     func hotCheckNarrows() async {
         let fetcher = InFlightRecordingFetcher()
         let clock = FakeCPUClock(busyCores: 4)
-        let checker = BookSourceHealthChecker(fetcher: fetcher, cpuClock: clock.clock)
+        let checker = BookSourceHealthChecker(fetcher: fetcher, cpuClock: clock.clock, pacingCondition: .always)
         checker.prepare(sources: Self.pacingSources(1_000))
         await checker.runAll()
 
@@ -220,7 +220,7 @@ struct BookSourceCheckCPUTests {
     func coolCheckKeepsWidth() async {
         let fetcher = InFlightRecordingFetcher()
         let clock = FakeCPUClock(busyCores: 0)
-        let checker = BookSourceHealthChecker(fetcher: fetcher, cpuClock: clock.clock)
+        let checker = BookSourceHealthChecker(fetcher: fetcher, cpuClock: clock.clock, pacingCondition: .always)
         checker.prepare(sources: Self.pacingSources(1_000))
         await checker.runAll()
 

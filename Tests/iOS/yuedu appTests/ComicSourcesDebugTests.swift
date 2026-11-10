@@ -144,11 +144,12 @@ struct ComicSourcesDebugTests {
         let extractor = JsoupDefaultExtractor()
         let fragment = "<a href=\"/73xm/\" title=\"鬼灭之刃\" class=\"manga-item\"><p class=\"manga-item-title\">鬼灭之刃</p></a>"
 
-        // Bare `href` must resolve to the real link, not "" (which collapsed
-        // `href##$##,{Cookie...}` into a URL-less option blob).
+        // Bare `href` must read the real link, not "" (which collapsed
+        // `href##$##,{Cookie...}` into a URL-less option blob). As written: the URL read
+        // (`getString(isUrl:)`) makes it absolute, as in Legado.
         let href = try extractor.extractValue(
             from: fragment, rule: "href", baseURL: "https://www.xmanhua.com/search?title=x")
-        #expect(href == "https://www.xmanhua.com/73xm/")
+        #expect(href == "/73xm/")
 
         // Content keywords stay on the existing path and keep working.
         let title = try extractor.extractValue(
@@ -159,7 +160,7 @@ struct ComicSourcesDebugTests {
         let viaTag = try extractor.extractValue(
             from: "<div class=\"box\"><a href=\"/73xm/\">x</a></div>",
             rule: "tag.a@href", baseURL: "https://www.xmanhua.com/")
-        #expect(viaTag == "https://www.xmanhua.com/73xm/")
+        #expect(viaTag == "/73xm/")
     }
 
     /// Step 2d: bare-tag index field extraction (mangabz `p.0@text`).
@@ -175,29 +176,23 @@ struct ComicSourcesDebugTests {
             + "<p class=\"manga-i-list-subtitle\">sub</p></div>"
         let name = try ext.extractValue(from: div, rule: "p.0@text", baseURL: "https://www.mangabz.com/")
         #expect(name == "HIGH不起來的約會")
-        // also the no-index form should yield the first <p>
-        let first = try ext.extractValue(from: div, rule: "p@text", baseURL: "https://www.mangabz.com/")
-        #expect(first == "HIGH不起來的約會")
+        // Without an index the rule reads every <p>, joined with "\n" — Legado's `getString`.
+        let every = try ext.extractValue(from: div, rule: "p@text", baseURL: "https://www.mangabz.com/")
+        #expect(every == "HIGH不起來的約會\nsub")
 
-        // Real root cause: a bare `.class` list rule (no @accessor) must route to
-        // CssExtractor — which yields each element's outerHtml — not the text
-        // fallback (which returned element TEXT, so `p.0@text` found no tags).
-        #expect(CssExtractor().canHandle(rule: ".manga-i-list-item"))
-        #expect(CssExtractor().canHandle(rule: ".comic-item"))
-        #expect(!CssExtractor().canHandle(rule: ".manga-list@a")) // has @accessor → JsoupDefault
-
-        // `tag.index` (p.0, a.0) is Legado index notation — first/that-nth element —
-        // NOT CSS `tag.class`. It must route to JsoupDefault, not CssExtractor (which
-        // would `select("p.0")` for a <p class="0"> that never exists → empty name).
-        #expect(!CssExtractor().canHandle(rule: "p.0@text"))
-        #expect(!CssExtractor().canHandle(rule: "a.0@href"))
-        #expect(!CssExtractor().canHandle(rule: "li.-1@text"))
-        #expect(CssExtractor().canHandle(rule: "div.item@text")) // real tag.class stays CSS
-        // outerHtml (not text) must come back for the bare class list rule
-        let outer = try CssExtractor().extractList(
-            from: "<ul><li class=\"manga-i-list-item\"><p class=\"t\">名字</p></li></ul>",
-            rule: ".manga-i-list-item@outerHtml", baseURL: "https://www.mangabz.com/")
-        #expect(outer.first?.contains("<p") == true)
+        // A bare `.class` list rule selects the items themselves, so the item's own `p.0@text`
+        // still finds its <p> (the mangabz discover bug: each item came back as its text).
+        let engine = ModernRuleEngine()
+        engine.setContent(
+            "<ul>" + div.replacingOccurrences(of: "div", with: "li") + "</ul>",
+            baseUrl: "https://www.mangabz.com/")
+        let items = engine.getElements(ruleStr: ".manga-i-list-item")
+        #expect(items.count == 1)
+        let itemEngine = ModernRuleEngine()
+        itemEngine.setContent(try #require(items.first), baseUrl: "https://www.mangabz.com/")
+        #expect(itemEngine.getString(ruleStr: "p.0@text") == "HIGH不起來的約會")
+        #expect(itemEngine.getString(ruleStr: "p.-1@text") == "sub")
+        #expect(itemEngine.getString(ruleStr: "p.manga-i-list-subtitle@text") == "sub")
     }
 
     /// Step 3: Explore URL parsing diagnostic

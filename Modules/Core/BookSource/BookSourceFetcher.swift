@@ -39,7 +39,7 @@ func _dbgLog(
 }
 // #endregion
 
-/// Safely creates a URL: if `URL(string:)` fails due to unencoded characters (e.g. CJK), retries with percent-encoding.
+/// Safely creates a request URL, as OkHttp reads it (`AnalyzeUrl.requestURL`).
 /// Also filters dangerous schemes (file://, javascript:, etc.) and private IPs to prevent book source SSRF.
 func safeURL(string raw: String) -> URL? {
     func validate(_ url: URL) -> URL? {
@@ -57,11 +57,11 @@ func safeURL(string raw: String) -> URL? {
         return url
     }
 
-    if let url = URL(string: raw) { return validate(url) }
-    // Some Legado book sources return chapter URLs with unencoded CJK or special characters
-    if let encoded = raw.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed),
-       let url = URL(string: encoded) { return validate(url) }
-    return nil
+    // Sources hand over URLs half-encoded — a `%XX` keyword beside raw CJK, a chapter path
+    // in Chinese — and `requestURL` reads them as OkHttp does. The `.urlQueryAllowed`
+    // retry that was here encoded every `%` a second time.
+    guard let url = AnalyzeUrl.requestURL(raw) else { return nil }
+    return validate(url)
 }
 
 /// Returns true if host is a private/reserved IP (IPv4 or IPv6).
@@ -116,17 +116,6 @@ final class BookSourceFetcher: @unchecked Sendable {
     let pipeline = BookSourceParsingPipeline()
     let webFetcher: WebFetcher
 
-    enum FetchTimeoutError: LocalizedError {
-        case chapterTimeout
-
-        var errorDescription: String? {
-            switch self {
-            case .chapterTimeout:
-                return "Chapter load timeout"
-            }
-        }
-    }
-
     init(webFetcher: WebFetcher = WebFetcher.shared) {
         self.webFetcher = webFetcher
     }
@@ -137,7 +126,12 @@ final class BookSourceFetcher: @unchecked Sendable {
     @MainActor
     static func fetchViaWebView(url: URL, headers: [String: String], jsWait: TimeInterval? = nil) async throws -> String
     {
-        try await WebViewFetcher.shared.fetchHTML(url: url, headers: headers, timeout: 15, jsWait: jsWait ?? AppConfig.webViewJSRenderWait)
+        // Legado's `BackstageWebView` gives a page 60 s, as the runtime path's
+        // `LegadoHeadlessWebView.load` does.
+        try await WebViewFetcher.shared.fetchHTML(
+            url: url, headers: headers, timeout: WebFetcher.sourceRequestTimeout,
+            jsWait: jsWait ?? AppConfig.webViewJSRenderWait
+        )
     }
 
     // MARK: - HTTP Request
@@ -169,7 +163,9 @@ final class BookSourceFetcher: @unchecked Sendable {
                 body: body,
                 headers: headers,
                 baseURL: baseURL,
-                charset: charset
+                charset: charset,
+                client: .okHttp,
+                cookieJar: source.enabledCookieJar
             )
         }
     }
@@ -180,19 +176,58 @@ final class BookSourceFetcher: @unchecked Sendable {
     /// response whatever its status, and the stage goes on with whatever the script hands
     /// back. That is where sources notice their login wall or a Cloudflare page and call
     /// `java.startBrowserAwait`; with the status thrown away first, a 403 never reached the
-    /// script. Next pages are not checked, as in Legado. A status that is still not 2xx after
-    /// the check is the stage's HTTP error, as it is without a check.
+    /// script. Next pages are not checked, as in Legado.
+    ///
+    /// The response then goes to the stage's rules whatever its status, with or without a
+    /// check: Legado's `AnalyzeUrl.getStrResponseAwait` hands every stage the body of a 404 as
+    /// of a 200 (`newCallResponse` returns the last response, `WebBook` reads no status;
+    /// legado-E, MD3 and upstream agree). 番茄短剧 (YCK 1330) answers its detail URL with a
+    /// 404 its `init` script never reads — it calls the API with the URL's `series_id` — so a
+    /// thrown status failed a book Legado opens. A page whose rules read nothing reports its
+    /// stage empty, as in Legado; the status is logged (`WebFetcher.fetchDecodedPage`), and a
+    /// search that finds nothing keeps it as its failure (`searchOutcome`).
     func fetchStageHTML(
         url: URL, method: String, body: String?,
         headers: [String: String], baseURL: String,
         charset: String? = nil,
         source: BookSource
     ) async throws -> String {
+        try await fetchStagePage(
+            url: url, method: method, body: body, headers: headers,
+            baseURL: baseURL, charset: charset, source: source
+        ).html
+    }
+
+    /// `fetchStageHTML` with the URL the page came from, after redirects (or the one the
+    /// login check's replacement response names).
+    ///
+    /// - Parameter ruleURL: the rule URL the stage rendered, before it was made absolute — the
+    ///   check reads it as `java.ruleUrl`, as Legado's AnalyzeUrl has it. Nil is `url`: a
+    ///   detail, TOC or content URL is the book's or chapter's own, already absolute.
+    func fetchStagePage(
+        url: URL, method: String, body: String?,
+        headers: [String: String], baseURL: String,
+        charset: String? = nil,
+        ruleURL: String? = nil,
+        source: BookSource
+    ) async throws -> (html: String, finalURL: String, statusCode: Int) {
         guard source.hasLoginCheckJs else {
-            return try await fetchHTML(
-                url: url, method: method, body: body, headers: headers,
-                baseURL: baseURL, charset: charset, source: source
+            let page = try await SourceRateLimit.run(source: source) {
+                try await webFetcher.fetchDecodedPage(
+                    url: url, method: method, body: body, headers: headers,
+                    baseURL: baseURL, charset: charset, throwsOnErrorStatus: false, client: .okHttp,
+                    cookieJar: source.enabledCookieJar
+                )
+            }
+            // The source's API failure as of this answer, as every runtime response records
+            // it (`ModernParserBridge.finishFetch`): a stage page that answered 429 or 403 was
+            // nowhere a failure surface or the 書源檢查 audit could read (领域书库's 正文,
+            // YCK1330 #462, 11-08).
+            SourceAPIErrorLog.shared.record(
+                sourceUrl: source.bookSourceUrl, requestUrl: url.absoluteString,
+                statusCode: page.statusCode, body: page.html
             )
+            return (page.html, AnalyzeUrl.legadoURLString(final: page.finalURL, requested: url), page.statusCode)
         }
         let page = try await SourceRateLimit.run(source: source) {
             try await webFetcher.fetchPage(
@@ -201,17 +236,34 @@ final class BookSourceFetcher: @unchecked Sendable {
                 body: body,
                 headers: headers,
                 baseURL: baseURL,
-                bodyCharset: charset
+                bodyCharset: charset,
+                client: .okHttp,
+                cookieJar: source.enabledCookieJar
             )
         }
         let result = LegadoHTTPResult.make(
             request: page.request, data: page.data, response: page.response, declaredCharset: charset
         )
-        let checked = await pipeline.applyLoginCheck(to: result, source: source)
-        guard (200...299).contains(checked.code) else {
-            throw FetchError.httpError(checked.code)
+        // `fetchPage` records the request, not the response (`fetchDecodedPage` does, on the
+        // path above): what the server sent, before `loginCheckJs` can replace it.
+        WebCrawlerDebugger.logResponse(url: url.absoluteString, statusCode: result.statusCode, htmlBody: result.body)
+        let checked = await pipeline.applyLoginCheck(
+            to: result, request: page.request, headers: headers,
+            ruleUrl: ruleURL ?? url.absoluteString, charset: charset, source: source
+        )
+        if !(200...299).contains(checked.code) {
+            AppLogger.network("page answered an error status after its login check; its body goes to the rules", context: [
+                "source": source.bookSourceName,
+                "url": String(url.absoluteString.prefix(120)),
+                "statusCode": checked.code,
+            ])
         }
-        return checked.body
+        // The answer the rules read, as above.
+        SourceAPIErrorLog.shared.record(
+            sourceUrl: source.bookSourceUrl, requestUrl: url.absoluteString,
+            statusCode: checked.code, body: checked.body
+        )
+        return (checked.body, checked.url, checked.code)
     }
 
 }
@@ -282,7 +334,7 @@ final class WebCrawlerDebugger: ObservableObject {
     private static let entryLimit = 500
     /// Response bodies are truncated to this before being held. A chapter body can be
     /// megabytes; the head is what identifies a wrong response.
-    private nonisolated static let bodyLimit = 8 * 1024
+    nonisolated static let defaultBodyLimit = 8 * 1024
 
     struct LogEntry: Identifiable, Sendable {
         let id = UUID()
@@ -324,6 +376,13 @@ final class WebCrawlerDebugger: ObservableObject {
         didSet { Self.gate.set(parse: includesParseEvents) }
     }
 
+    /// Bytes of each response body kept. A source audit that replays its rules against the
+    /// response offline needs the whole page, which can hold its results past the first 8 KB.
+    var bodyLimit: Int {
+        get { Self.gate.bodyLimit }
+        set { Self.gate.set(bodyLimit: max(0, newValue)) }
+    }
+
     private init() {}
 
     func clear() {
@@ -337,12 +396,15 @@ final class WebCrawlerDebugger: ObservableObject {
         private let lock = NSLock()
         private var network = false
         private var parse = false
+        private var limit = WebCrawlerDebugger.defaultBodyLimit
 
         var isCapturingNetwork: Bool { lock.withLock { network } }
         var isCapturingParse: Bool { lock.withLock { network && parse } }
+        var bodyLimit: Int { lock.withLock { limit } }
 
         func set(network value: Bool) { lock.withLock { network = value } }
         func set(parse value: Bool) { lock.withLock { parse = value } }
+        func set(bodyLimit value: Int) { lock.withLock { limit = value } }
     }
 
     private nonisolated static let gate = Gate()
@@ -363,7 +425,24 @@ final class WebCrawlerDebugger: ObservableObject {
             type: .response,
             message: "HTTP \(statusCode) · \(htmlBody.utf8.count) B",
             url: url,
-            detail: .body(String(htmlBody.prefix(bodyLimit)))
+            detail: .body(String(htmlBody.prefix(gate.bodyLimit)))
+        ))
+    }
+
+    /// What a headless WebView answered (`LegadoHeadlessWebView.load`): the rendered page or its
+    /// script's result, kept as an HTTP body is, or why it answered nothing. A WebView's page
+    /// is not the HTTP response a plain GET of the URL returns: its scripts have run.
+    nonisolated static func logWebViewResponse(url: String, body: String, failure: String?) {
+        guard gate.isCapturingNetwork else { return }
+        if let failure {
+            append(.init(type: .error, message: failure, url: url, detail: .text("WebView: \(failure)")))
+            return
+        }
+        append(.init(
+            type: .response,
+            message: "WebView · \(body.utf8.count) B",
+            url: url,
+            detail: .body(String(body.prefix(gate.bodyLimit)))
         ))
     }
 

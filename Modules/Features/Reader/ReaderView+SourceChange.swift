@@ -6,39 +6,43 @@ extension ReaderView {
 
     // MARK: - Source Change Sheet
     var changeSourceSheetContent: AnyView {
-        AnyView(NavigationStack {
+        let search = readerViewModel.changeSource
+        let chapterOnly = canReplaceChapterOnly && readerViewModel.changeSourceReplacesChapterOnly
+        return AnyView(NavigationStack {
             List {
+                // 單章換源 (Legado's ChangeChapterSourceDialog): the same list, but a tap opens
+                // that origin's 目錄 and only the chapter being read takes the chosen text.
+                if canReplaceChapterOnly {
+                    Section {
+                        Picker(localized("換源範圍"), selection: $readerViewModel.changeSourceReplacesChapterOnly) {
+                            Text(localized("整本書")).tag(false)
+                            Text(localized("只換本章")).tag(true)
+                        }
+                        .pickerStyle(.segmented)
+                        .disabled(readerViewModel.isSwitchingSource)
+                    } footer: {
+                        if chapterOnly {
+                            Text(localized("只換掉正在讀的這一章；按「刷新」會換回原來的內容。"))
+                                .dsSectionFooter()
+                        }
+                    }
+                    .interfaceSectionSurface()
+                }
+
                 // Where the book is read from now — a 來源配置, a module, a library, an imported
                 // file — always visible with a checkmark (the lists below leave it out).
-                Section(localized("目前來源")) {
-                    HStack {
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text(currentOriginName)
-                                .foregroundStyle(DSColor.textPrimary)
-                            if let last = book?.onlineChapters?.last?.title, !last.isEmpty {
-                                Text(last)
-                                    .font(DSFont.caption)
-                                    .foregroundStyle(DSColor.textSecondary)
-                                    .lineLimit(1)
-                            }
-                        }
-                        Spacer()
-                        Image(systemName: "checkmark")
-                            .font(DSFont.body.weight(.semibold))
-                            .foregroundColor(.accentColor)
-                            // The tick is the visual form of 「使用中」; the `.isSelected`
-                            // trait below says it, so leaving it focusable only got the
-                            // symbol name read out.
-                            .accessibilityHidden(true)
-                    }
-                    .accessibilityElement(children: .combine)
-                    .accessibilityAddTraits(.isSelected)
-                }
+                ChangeSourceCurrentSection(
+                    search: search,
+                    name: currentOriginName,
+                    lastChapter: book?.onlineChapters?.last?.title,
+                    source: currentChangeSourceBookSource,
+                    onDeletedCurrent: { autoChangeSource(after: .deletedInSheet) }
+                )
                 .interfaceSectionSurface()
 
                 // The versions kept beside the book: what it was read from before 換源, and
                 // the copies merged into it. Each switches back with its own file and place.
-                let kept = store.keptVersions(of: bookId)
+                let kept = chapterOnly ? [] : store.keptVersions(of: bookId)
                 if !kept.isEmpty {
                     Section(localized("已知的閱讀來源")) {
                         ForEach(kept, id: \.id) { version in
@@ -51,14 +55,14 @@ extension ReaderView {
 
                 // The work in the saved libraries, 青空文庫 / Gutenberg and the modules: each a
                 // version like any other, its copy taken on the tap.
-                if !versionFinder.found.isEmpty || versionFinder.isSearching {
+                if !chapterOnly, !versionFinder.found.isEmpty || versionFinder.isSearching {
                     Section(localized("書庫與模組")) {
                         ForEach(versionFinder.found) { version in
                             Button { switchToLibraryVersion(version.route) } label: { changeSourceLibraryRow(version) }
                                 .disabled(readerViewModel.isSwitchingSource)
                         }
                         if versionFinder.isSearching {
-                            HStack(spacing: 8) {
+                            HStack(spacing: DSSpacing.sm) {
                                 ProgressView()
                                 Text(localized("正在搜尋…"))
                                     .font(DSFont.footnote)
@@ -69,45 +73,26 @@ extension ReaderView {
                     .interfaceSectionSurface()
                 }
 
-                // 其他可切換的書源。Results stream in one source at a time, so show them
-                // as soon as the first match arrives instead of blocking on the full
-                // fan-out (459 sources can take minutes).
-                Section {
-                    if !changeSourceOrigins.isEmpty {
-                        ForEach(changeSourceOrigins) { origin in
-                            Button { switchToOrigin(origin) } label: { changeSourceRow(origin) }
-                                // One switch at a time: a second tap would cancel the first
-                                // and restart the wait the user is already sitting through.
-                                .disabled(readerViewModel.isSwitchingSource)
-                        }
-                        if changeSourceLoading {
-                            HStack(spacing: 8) {
-                                ProgressView()
-                                Text(localized("正在搜尋更多來源配置…"))
-                                    .font(DSFont.footnote)
-                                    .foregroundStyle(DSColor.textSecondary)
-                            }
-                        }
-                    } else if changeSourceLoading {
-                        HStack(spacing: 8) {
-                            ProgressView()
-                            Text(localized("正在搜尋其他來源配置…"))
-                                .foregroundStyle(DSColor.textSecondary)
-                        }
-                    } else {
-                        Text(localized("暫無其他來源配置"))
-                            .foregroundStyle(DSColor.textSecondary)
-                    }
-                } header: {
-                    Text(localized("其他來源配置"))
-                        .foregroundStyle(DSColor.textSecondary)
-                } footer: {
-                    if let err = changeSourceError {
-                        Label(err, systemImage: "exclamationmark.triangle")
-                            .dsSectionFooter(color: DSColor.destructive)
-                    }
-                }
+                // The other origins. Results stream in one source at a time, so they show as
+                // soon as the first match arrives instead of blocking on the full fan-out
+                // (459 sources can take minutes).
+                ChangeSourceResultsSection(
+                    search: search,
+                    pendingOriginID: readerViewModel.changeSourcePendingOrigin?.id,
+                    // One switch at a time: a second tap would cancel the first and restart
+                    // the wait the user is already sitting through.
+                    isSwitching: readerViewModel.isSwitchingSource,
+                    onSelect: { origin in search.select(origin) { pickedOrigin($0, chapterOnly: chapterOnly) } }
+                )
                 .interfaceSectionSurface()
+            }
+            .changeSourceFilter(search)
+            .changeSourceEditor(search)
+            .changeSourceKindConfirmation(search) { pickedOrigin($0, chapterOnly: chapterOnly) }
+            .navigationDestination(item: $readerViewModel.changeChapterSourcePick) { pick in
+                ChangeChapterSourcePage(search: search, origin: pick.origin) { ref, toc in
+                    try await replaceReadingChapter(with: ref, from: toc)
+                }
             }
             .softScrollEdges()
             .scrollContentBackground(.hidden)
@@ -117,22 +102,18 @@ extension ReaderView {
             .toolbarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItemGroup(placement: .navigationBarLeading) {
-                    Button {
-                        loadOtherOrigins(forceRefresh: true)
+                    ChangeSourceSearchButton(search: search) {
                         versionFinder.start(for: bookId, store: store)
-                    } label: {
-                        Image(systemName: "arrow.clockwise")
                     }
-                    .disabled(changeSourceLoading)
-                    .accessibilityLabel(localized("重新搜尋"))
 
-                    // Legado-style variable editors: sources' JS reads these
+                    // Legado's 換源 menu, then its variable editors: sources' JS reads these
                     // back (`source.getVariable()` / book variables) on fetch. Legado offers
-                    // both only while the book has a source; a book read from elsewhere has
-                    // nothing in the menu. The book's source cannot change while the sheet is
-                    // open (a switch dismisses it), so the item keeps its identity.
-                    if currentChangeSourceBookSource != nil {
-                        Menu {
+                    // both only while the book has a source. The book's source cannot change
+                    // while the sheet is open (a switch dismisses it), so the items keep their
+                    // identity.
+                    ChangeSourceOptionsMenu(search: search) {
+                        if currentChangeSourceBookSource != nil {
+                            Divider()
                             Button {
                                 showSourceVariableEditor = true
                             } label: {
@@ -143,10 +124,7 @@ extension ReaderView {
                             } label: {
                                 Label(localized("設置書籍變量"), systemImage: "character.book.closed")
                             }
-                        } label: {
-                            Image(systemName: "ellipsis.circle")
                         }
-                        .accessibilityLabel(localized("更多"))
                     }
                 }
                 ToolbarItem(placement: .navigationBarTrailing) {
@@ -182,56 +160,65 @@ extension ReaderView {
         })
     }
 
+    /// 單章換源 needs a book of 來源配置 chapters: an online text book with a 目錄.
+    var canReplaceChapterOnly: Bool {
+        guard let current = book, current.isOnline, changeSourceReadingChapter != nil else { return false }
+        return ReaderViewModel.contentKind(of: current) == .text
+    }
+
+    /// A tapped origin: the whole book switches to it, or — 只換本章 — its 目錄 opens.
+    private func pickedOrigin(_ origin: BookOrigin, chapterOnly: Bool) {
+        if chapterOnly {
+            readerViewModel.changeChapterSourcePick = ChangeChapterSourcePick(origin: origin)
+        } else {
+            switchToOrigin(origin)
+        }
+    }
+
+    /// 單章換源's last step: the chapter being read takes the text of `ref`, another origin's
+    /// chapter, and is shown again. The book keeps its own 來源配置 and 目錄.
+    func replaceReadingChapter(with ref: OnlineChapterRef, from toc: TOCPackage) async throws {
+        guard let current = book, let refs = current.onlineChapters, !refs.isEmpty,
+              let reading = changeSourceReadingChapter else { return }
+        guard let source = BookSourceStore.shared.source(id: toc.sourceId) else {
+            throw NSError(
+                domain: "ChangeSourceSearch", code: -1,
+                userInfo: [NSLocalizedDescriptionKey: localized("找不到來源配置")])
+        }
+        let index = reading.index
+        let startedAt = ProcessInfo.processInfo.systemUptime
+        try await OtherSourceChapter.replace(
+            chapterIndex: index,
+            ofBook: current.id,
+            own: refs[index],
+            with: ref,
+            toc: toc,
+            source: source,
+            storeNormalizedHTML: current.chaptersBuiltByRules
+        )
+        SourcePerfTrace.record("changeSource.chapter", toc.sourceName, since: startedAt)
+        // The same reload as 重新整理本章 (`refetchChapter`), with the new text already cached.
+        pendingChapterContentReplacements.insert(index)
+        readerViewModel.resetChapterState(for: index)
+        ensureChapterReady(chapterIndex: index, priority: .jump)
+        showChangeSourceSheet = false
+        UIAccessibility.post(
+            notification: .announcement,
+            argument: String(format: localized("本章已換成「%@」的內容"), toc.sourceName)
+        )
+    }
+
     /// The source the book is currently reading from (for 設置源變量 in-reader).
     var currentChangeSourceBookSource: BookSource? {
         guard let sourceId = book?.bookSourceId else { return nil }
         return BookSourceStore.shared.source(id: sourceId)
     }
 
-    /// A single switchable-origin row; flags origins that previously failed to switch.
-    @ViewBuilder
-    func changeSourceRow(_ origin: BookOrigin) -> some View {
-        HStack {
-            VStack(alignment: .leading, spacing: 2) {
-                Text(origin.sourceName)
-                    .foregroundStyle(DSColor.textPrimary)
-                // Aggregation sources share one sourceName across channels;
-                // lastChapter distinguishes them.
-                if !origin.lastChapter.isEmpty {
-                    Text(origin.lastChapter)
-                        .font(DSFont.caption)
-                        .foregroundStyle(DSColor.textSecondary)
-                        .lineLimit(1)
-                }
-            }
-            Spacer()
-            let originKey = ChangeSourceCache.originKey(
-                sourceId: origin.sourceId, bookUrl: origin.bookUrl)
-            if changeSourcePendingOrigin?.id == origin.id {
-                // The tap is being worked on. Without this the sheet sat completely
-                // unchanged while the TOC downloaded, which reads as "nothing happened".
-                HStack(spacing: 6) {
-                    ProgressView()
-                    Text(localized("正在載入目錄…"))
-                        .font(DSFont.caption)
-                        .foregroundStyle(DSColor.textSecondary)
-                }
-            } else if changeSourceFailedKeys.contains(originKey)
-                || changeSourceFailedKeys.contains(ChangeSourceCache.urlKey(origin.bookUrl)) {
-                Text(localized("載入失敗"))
-                    .font(DSFont.caption2)
-                    .foregroundColor(.red)
-                    .padding(.horizontal, 6)
-                    .padding(.vertical, 2)
-                    .background(Capsule().fill(Color.red.opacity(0.12)))
-            } else {
-                Image(systemName: "chevron.right")
-                    .font(DSFont.caption)
-                    .foregroundStyle(DSColor.textSecondary)
-                    .accessibilityHidden(true)   // 純裝飾，否則旁白念出 "chevron.right"
-            }
-        }
-        .accessibilityElement(children: .combine)
+    /// The chapter on screen, for 加載字數 to read the same chapter in each result.
+    var changeSourceReadingChapter: ChangeSourceTarget.ReadingChapter? {
+        guard let refs = book?.onlineChapters, !refs.isEmpty else { return nil }
+        let index = min(max(0, currentChapterIndex), refs.count - 1)
+        return .init(index: index, title: refs[index].title, count: refs.count)
     }
 
     /// Where the book is read from now, as the title capsule names it.
@@ -389,8 +376,6 @@ extension ReaderView {
             switchToSourceVersion(origin)
             return
         }
-        let oldIndex = currentChapterIndex
-        let livePosition = readerSessionCoordinator?.state.location.coreTextPosition
         // The fan-out holds the connection pool and the JS bridge, and from this tap onward it
         // is racing the one fetch the user is waiting on. Legado's `getToc` opens with the
         // same `stopSearch()`.
@@ -403,45 +388,124 @@ extension ReaderView {
                 let tocPackage = try await SourcePerfTrace.spanAsync(
                     "changeSource.toc", origin.sourceName
                 ) {
-                    try await readerViewModel.prepareTOCPackage(for: origin)
+                    try await readerViewModel.changeSource.prepareTOCPackage(for: origin)
                 }
                 try Task.checkCancellation()
-                // Rebinds the source and carries the place on screen over to the new list
-                // (`OnlineBookSourceSwitch`, shared with the detail page and 加入書架), and
-                // persists it before loadContent so any restore path that re-reads the
-                // position store already sees the mapped chapter.
-                let mappedPosition = try await SourcePerfTrace.spanAsync(
-                    "changeSource.commit", "\(tocPackage.chapters.count)ch"
-                ) {
-                    try await OnlineBookSourceSwitch(store: store, dependencies: dependencies).commit(
-                        bookId: bookId,
-                        origin: origin,
-                        toc: tocPackage,
-                        readingFrom: .init(chapterIndex: oldIndex, position: livePosition)
-                    )
-                }
-                try Task.checkCancellation()
-                // It just worked; a stale flag from an earlier attempt would otherwise keep
-                // this row badged 載入失敗 in every future session.
-                readerViewModel.clearOriginFailure(
-                    bookId: bookId, sourceId: origin.sourceId, bookUrl: origin.bookUrl)
-
-                // Leave the pending state before dismissing: the sheet's dismiss handler
-                // cancels a pending switch, and at this point that switch is this one.
-                readerViewModel.finishSourceSwitch()
-                showChangeSourceSheet = false
-                SourcePerfTrace.span("changeSource.loadContent") { reopenOnStoredChapterList(at: mappedPosition) }
-                // Whole-tap total, so the stage spans above can be read as a share of what
-                // the user actually waited through.
-                SourcePerfTrace.record(
-                    "changeSource.total", origin.sourceName, since: switchStartedAt)
+                try await commitSourceSwitch(to: origin, toc: tocPackage, since: switchStartedAt)
             } catch is CancellationError {
                 // The user cancelled the wait. Nothing was committed and the source is not
                 // known to be bad, so it must not be flagged as a failed origin.
             } catch {
-                readerViewModel.markOriginFailed(
-                    bookId: bookId, sourceId: origin.sourceId, bookUrl: origin.bookUrl)
+                readerViewModel.changeSource.markFailed(origin)
                 readerViewModel.reportChangeSourceError(error.localizedDescription)
+            }
+        }
+    }
+
+    /// Rebinds the shelf book to `origin` with its TOC already in hand and reopens it at the
+    /// chapter being read. The one commit both a tapped switch and 自動換源 go through.
+    private func commitSourceSwitch(to origin: BookOrigin, toc tocPackage: TOCPackage, since switchStartedAt: TimeInterval) async throws {
+        let oldIndex = currentChapterIndex
+        let livePosition = readerSessionCoordinator?.state.location.coreTextPosition
+        // Rebinds the source and carries the place on screen over to the new list
+        // (`OnlineBookSourceSwitch`, shared with the detail page and 加入書架), and
+        // persists it before loadContent so any restore path that re-reads the
+        // position store already sees the mapped chapter.
+        let mappedPosition = try await SourcePerfTrace.spanAsync(
+            "changeSource.commit", "\(tocPackage.chapters.count)ch"
+        ) {
+            try await OnlineBookSourceSwitch(store: store, dependencies: dependencies).commit(
+                bookId: bookId,
+                origin: origin,
+                toc: tocPackage,
+                readingFrom: .init(chapterIndex: oldIndex, position: livePosition)
+            )
+        }
+        try Task.checkCancellation()
+        // It just worked; a stale flag from an earlier attempt would otherwise keep
+        // this row badged 載入失敗 in every future session.
+        readerViewModel.changeSource.clearFailure(origin)
+
+        // Leave the pending state before dismissing: the sheet's dismiss handler
+        // cancels a pending switch, and at this point that switch is this one.
+        readerViewModel.finishSourceSwitch()
+        showChangeSourceSheet = false
+        SourcePerfTrace.span("changeSource.loadContent") { reopenOnStoredChapterList(at: mappedPosition) }
+        // Whole-tap total, so the stage spans above can be read as a share of what
+        // the user actually waited through.
+        SourcePerfTrace.record(
+            "changeSource.total", origin.sourceName, since: switchStartedAt)
+    }
+
+    /// 自動換源 on opening (網路設定 → 自動換源): the shelf book's 來源配置 has been deleted — deleted
+    /// only, not disabled (maintainer 2026-11-07, as Legado: a disabled one still fetches). Waits for
+    /// the source library to be read first, so a library still loading is never taken for a
+    /// deleted source.
+    func autoChangeSourceIfSourceMissing() {
+        guard GlobalSettings.shared.autoChangeSource, let opened = book, opened.isOnline,
+              ShelfWork.isSourceCopy(opened), let sourceId = opened.bookSourceId else { return }
+        Task { @MainActor in
+            await BookSourceStore.shared.waitUntilLoaded()
+            guard book?.bookSourceId == sourceId, BookSourceStore.shared.source(id: sourceId) == nil else { return }
+            autoChangeSource(after: .sourceMissingOnOpen)
+        }
+    }
+
+    /// Why 自動換源 runs.
+    enum AutoChangeSourceTrigger {
+        /// The book opened and its 來源配置 is gone (Legado `ReadBookViewModel`: `bookSource == null`).
+        case sourceMissingOnOpen
+        /// The 來源配置 in use was deleted from the 換源 sheet (Legado `deleteSource` on the
+        /// book's own origin).
+        case deletedInSheet
+    }
+
+    /// Legado `autoChangeSource`: switches the shelf book to the first origin of its kind whose
+    /// TOC loads — the found list first, then results as they arrive. Only a 來源配置 copy, and
+    /// only when its source is really gone: a disabled source still loads chapters, so it is
+    /// left alone, as in Legado.
+    func autoChangeSource(after trigger: AutoChangeSourceTrigger) {
+        guard let current = book, current.isOnline, ShelfWork.isSourceCopy(current),
+              !readerViewModel.isSwitchingSource else { return }
+        let goneSourceId = current.bookSourceId
+        let search = readerViewModel.changeSource
+        let kind = ReaderViewModel.contentKind(of: current)
+        if trigger == .sourceMissingOnOpen {
+            // Legado searches with `preciseSearchAwait` here: name and author both.
+            search.start(
+                ChangeSourceTarget(
+                    title: current.title, author: current.author, bookId: current.id,
+                    currentSourceId: nil, currentBookURL: nil,
+                    readingChapter: changeSourceReadingChapter, kind: kind
+                ),
+                matchesAuthor: true
+            )
+        }
+        let switchStartedAt = ProcessInfo.processInfo.systemUptime
+        AppLogger.info("換源: automatic change source", context: [
+            "book": current.id.uuidString, "trigger": "\(trigger)",
+        ])
+        readerViewModel.beginAutoSourceSwitch {
+            guard let found = await search.firstLoadable(kind: kind, excluding: goneSourceId) else {
+                guard !Task.isCancelled else { return }
+                AppLogger.error("換源: automatic change source found no source", context: [
+                    "book": current.id.uuidString, "trigger": "\(trigger)",
+                ])
+                readerViewModel.reportAutoChangeSourceFailure(localized("自動換源失敗：沒有可用的來源配置"))
+                return
+            }
+            let (origin, toc) = found
+            search.stop()
+            do {
+                try await commitSourceSwitch(to: origin, toc: toc, since: switchStartedAt)
+            } catch is CancellationError {
+                // Cancelled before the commit: the book keeps the source it had.
+            } catch {
+                AppLogger.error("換源: automatic change source commit failed", error: error,
+                                context: ["book": current.id.uuidString, "source": origin.sourceName])
+                search.markFailed(origin)
+                readerViewModel.reportAutoChangeSourceFailure(
+                    String(format: localized("自動換源失敗：%@"), error.localizedDescription))
             }
         }
     }
@@ -508,19 +572,19 @@ extension ReaderView {
         readerViewModel.beginSourceSwitch(to: origin) {
             do {
                 let tocPackage = try await SourcePerfTrace.spanAsync("changeSource.toc", origin.sourceName) {
-                    try await readerViewModel.prepareTOCPackage(for: origin)
+                    try await readerViewModel.changeSource.prepareTOCPackage(for: origin)
                 }
                 try Task.checkCancellation()
                 let versions = ShelfVersionSwitch(store: store, dependencies: dependencies)
                 let copyID = try await versions.sourceCopy(of: bookId, origin: origin, toc: tocPackage,
                                                            sourceSwitch: OnlineBookSourceSwitch(store: store, dependencies: dependencies))
                 let opening = try await versions.commit(from: bookId, to: copyID, readingFrom: spine)
-                readerViewModel.clearOriginFailure(bookId: bookId, sourceId: origin.sourceId, bookUrl: origin.bookUrl)
+                readerViewModel.changeSource.clearFailure(origin)
                 handOver(to: copyID, opening: opening, since: switchStartedAt)
             } catch is CancellationError {
                 // Nothing was committed and the source is not known to be bad.
             } catch {
-                readerViewModel.markOriginFailed(bookId: bookId, sourceId: origin.sourceId, bookUrl: origin.bookUrl)
+                readerViewModel.changeSource.markFailed(origin)
                 readerViewModel.reportChangeSourceError(error.localizedDescription)
             }
         }
@@ -803,6 +867,12 @@ extension ReaderView {
             ttsStartLayoutRequest = nil
             ttsCoordinator.pause()
         case .paused:
+            // Resuming what was paused cancels a chapter start still waiting on its layout or
+            // on the AI; that analysis still lands in the cache for when the chapter is reached.
+            if ttsStartLayoutRequest != nil {
+                ttsStartLayoutRequest = nil
+                ttsCoordinator.setPreparationNotice(nil)
+            }
             ttsCoordinator.resume()
         case .stopped:
             let startOffset = currentTTSReaderPosition()
@@ -1021,6 +1091,28 @@ extension ReaderView {
             return false
         }
 
+        // AI 多角色朗讀: the chapter is analysed before it is read, so the first line already
+        // has the right voice. The analysis covers the whole chapter, then is sliced below
+        // along with the text.
+        var dialogue: TTSChapterDialogue?
+        if let request = ttsDialogueRequest(chapterIndex: chapterIndex, text: text) {
+            switch AIDialogueCastService.shared.readiness(request) {
+            case let .ready(analysed):
+                dialogue = analysed
+            case .needsAnalysis:
+                startTTSChapterOnceAnalyzed(
+                    chapterIndex,
+                    syncReader: syncReader,
+                    startCharOffset: startCharOffset,
+                    request: request
+                )
+                return true
+            case .unavailable:
+                break
+            }
+        }
+        let sliceOffset = startCharOffset > 0 && startCharOffset < (text as NSString).length ? startCharOffset : 0
+
         if startCharOffset > 0, startCharOffset < (text as NSString).length {
             let nsText = text as NSString
             text = nsText.substring(from: startCharOffset)
@@ -1054,15 +1146,18 @@ extension ReaderView {
             // Resolved here, not in the engine: only the reader knows which book is open,
             // and the cast is per book. Empty when 多角色朗讀 is off, which is also what
             // tells the engines not to split the chapter at quote boundaries at all.
-            ttsCoordinator.roleVoices = activeTTSRoleVoices()
-            ttsCoordinator.roleAliases = activeTTSRoleAliases()
+            refreshTTSRoleCast(sampleText: text)
+            ttsCoordinator.setPreparationNotice(nil)
             ttsCoordinator.speak(
                 text: text,
                 title: chapterTitle(forSpineIndex: chapterIndex).converted(to: settings.textConversion),
                 bookTitle: ttsNowPlayingBookTitle,
                 author: ttsNowPlayingAuthor,
                 artwork: ttsNowPlayingArtwork(),
-                pronunciationHints: hints
+                pronunciationHints: hints,
+                speakerAttributions: dialogue.map {
+                    ttsSpeakerAttributions(for: $0, droppingPrefix: sliceOffset, textLength: (text as NSString).length)
+                }
             )
             step("speak")
             ttsCoordinator.refreshNowPlayingForSystemSurfaces()
@@ -1089,12 +1184,22 @@ extension ReaderView {
             ttsNarrationOffsets = nil
             return .finished
         }
-        let narration = narrationForTTSChapter(target)
+        var narration = narrationForTTSChapter(target)
         let text = narration.text
         guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
             // Not "the book ended" — the chapter just isn't fetched/laid out yet. Hold the
             // session open and let `resolveWaitingTTSChapter` finish the job.
             beginWaitingForTTSChapter(target)
+            return .waiting
+        }
+        switch attachTTSDialogue(to: narration, chapterIndex: target) {
+        case let .ready(analysed):
+            narration = analysed
+        case let .needsAnalysis(request):
+            // The prefetch did not finish in time. Hold the session open like any other
+            // chapter wait; the analysis completing is what releases it.
+            ttsPendingChapterIndex = target
+            awaitTTSDialogue(for: target, request: request)
             return .waiting
         }
         commitTTSChapterAdvance(to: target, narration: narration)
@@ -1113,6 +1218,10 @@ extension ReaderView {
             alignReader: true
         )
         ttsCoordinator.updateNowPlayingChapter(title: chapterTitle(forSpineIndex: target).converted(to: settings.textConversion), text: narration.text)
+        // The new chapter may introduce characters; they need voices before the engine
+        // splits it, which happens as soon as this returns.
+        refreshTTSRoleCast(sampleText: narration.text)
+        ttsCoordinator.setPreparationNotice(nil)
         prepareNextTTSChapter(after: target)
     }
 
@@ -1169,9 +1278,14 @@ extension ReaderView {
         // Prepare the chapter narration will actually reach, not a separator it will skip.
         guard let next = narratableTTSChapter(from: chapterIndex, direction: 1) else { return }
         ensureChapterReady(chapterIndex: next, priority: .prefetch)
-        guard let engine = epubRenderer.engine, usesCoreTextEPUB else { return }
+        guard let engine = epubRenderer.engine, usesCoreTextEPUB else {
+            prefetchTTSDialogue(for: next)
+            return
+        }
         Task { @MainActor in
             await engine.preloadChapter(at: next)
+            // Analysed while this chapter plays, so the next one starts without a wait.
+            prefetchTTSDialogue(for: next)
         }
     }
 
@@ -1214,8 +1328,9 @@ extension ReaderView {
         }
     }
 
-    private func finishWaitingTTSChapter(_ target: Int, narration: TTSNarrationUnit) {
+    func finishWaitingTTSChapter(_ target: Int, narration unanalysed: TTSNarrationUnit) {
         guard ttsPendingChapterIndex == target else { return }
+        var narration = unanalysed
         guard ttsCoordinator.isWaitingForNextChapter else {
             // Playback was stopped or restarted while we were preparing; drop the result.
             ttsPendingChapterIndex = nil
@@ -1241,6 +1356,13 @@ extension ReaderView {
             )
             ttsPendingChapterIndex = nil
             ttsCoordinator.abortWaitingForNextChapter(reason: "empty chapter \(target)")
+            return
+        }
+        switch attachTTSDialogue(to: narration, chapterIndex: target) {
+        case let .ready(analysed):
+            narration = analysed
+        case let .needsAnalysis(request):
+            awaitTTSDialogue(for: target, request: request)
             return
         }
         ttsLog("[TTS][Reader] chapter wait resolved chapter=\(target) textCount=\(text.count)")
@@ -1353,12 +1475,10 @@ extension ReaderView {
     /// difference is that 張若塵, 若塵 and 塵哥 stop being three characters with three voices.
     func activeTTSRoleAliases() -> [String: String] {
         guard GlobalSettings.shared.ttsMultiRoleEnabled else { return [:] }
-        // The AI-verified roster first: it is the only thing here that can tell 試探 (an
-        // adverb the heuristic mistook for a name) from a person, and it also folds a
-        // character's nicknames onto one name. Character cards add whatever aliases they
-        // found on top.
+        // The AI analysis' own roster folds the names it has seen; the character cards add
+        // what the reader built by hand. Cards win on a conflict — they were asked for.
         let boundary = aiBookAdapter().boundary()
-        return AISpeakerRosterStore.shared.safeRoster(forBook: bookId, boundary: boundary)
+        return AIDialogueCastService.shared.roster(forBook: bookId).aliasMap
             .merging(AICharacterCardStore.shared.aliasMap(forBook: bookId, boundary: boundary)) { _, card in card }
     }
 
@@ -1378,16 +1498,14 @@ extension ReaderView {
         var ordered: [String] = []
         // Folded through the same alias table playback uses, so the cast screen lists the
         // characters that will actually be spoken rather than every name in the prose.
-        let boundary = aiBookAdapter().boundary()
-        let aliases = AISpeakerRosterStore.shared.safeRoster(forBook: bookId, boundary: boundary)
-            .merging(AICharacterCardStore.shared.aliasMap(forBook: bookId, boundary: boundary)) { _, card in card }
+        //
+        // No filtering by that table: it used to drop every speaker it did not list, which —
+        // once the alias table was the character cards — meant building one card hid every
+        // other character in the chapter from the cast screen.
+        let aliases = AIDialogueCastService.shared.roster(forBook: bookId).aliasMap
+            .merging(AICharacterCardStore.shared.aliasMap(forBook: bookId, boundary: aiBookAdapter().boundary())) { _, card in card }
         for attribution in TTSSpeakerAnnotator.attributions(in: text, aliases: aliases) {
             guard let speaker = attribution.speaker, seen.insert(speaker).inserted else { continue }
-            // Once a roster exists, anything it left out was judged not to be a person.
-            // Before that it cannot filter, or the list would be empty on first open.
-            if !aliases.isEmpty, aliases[speaker] == nil, !aliases.values.contains(speaker) {
-                continue
-            }
             ordered.append(speaker)
         }
         return ordered
@@ -1401,10 +1519,12 @@ extension ReaderView {
     /// for a listener who never turned the feature on.
     func activeTTSRoleVoices() -> [String: String] {
         guard GlobalSettings.shared.ttsMultiRoleEnabled else { return [:] }
-        return TTSRoleVoiceCast.cast(
-            forBook: bookId,
-            in: GlobalSettings.shared.ttsRoleVoices
-        )
+        let explicit = TTSRoleVoiceCast.cast(forBook: bookId, in: GlobalSettings.shared.ttsRoleVoices)
+        guard GlobalSettings.shared.ttsAutoCastEnabled else { return explicit }
+        // The reader's own choices win over the automatic ones.
+        return AIDialogueCastService.shared
+            .autoVoices(forBook: bookId, family: TTSVoiceFamily.active())
+            .merging(explicit) { _, chosen in chosen }
     }
 
     func narrationForTTSChapter(_ chapterIndex: Int) -> TTSNarrationUnit {

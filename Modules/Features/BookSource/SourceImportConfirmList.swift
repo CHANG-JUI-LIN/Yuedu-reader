@@ -136,15 +136,37 @@ struct SourceImportConfirmList<Source: ImportableSource, ExtraOptions: View>: Vi
             .accessibilityLabel(confirmTitle)
             .disabled(plan.selectedCount == 0)
         }
+        #if compiler(>=6.2)
+        if #available(iOS 26.0, *) {
+            ToolbarItem(placement: .bottomBar) { selectAllButton }
+            ToolbarSpacer(.flexible, placement: .bottomBar)
+            // A count, not a control. Otherwise it sits in a glass capsule like a button, and
+            // the capsule reshapes every time the number changes.
+            ToolbarItem(placement: .bottomBar) { selectedCountText }
+                .sharedBackgroundVisibility(.hidden)
+        } else {
+            ToolbarItemGroup(placement: .bottomBar) {
+                selectAllButton
+                Spacer()
+                selectedCountText
+            }
+        }
+        #else
         ToolbarItemGroup(placement: .bottomBar) {
             selectAllButton
             Spacer()
-            Text(String(format: localized("已選 %d 個"), plan.selectedCount))
-                .font(DSFont.caption)
-                .foregroundColor(DSColor.textSecondary)
-                // 全選's accessibility value already announces the same count.
-                .accessibilityHidden(true)
+            selectedCountText
         }
+        #endif
+    }
+
+    private var selectedCountText: some View {
+        Text(String(format: localized("已選 %d 個"), plan.selectedCount))
+            .font(DSFont.caption)
+            .monospacedDigit()
+            .foregroundColor(DSColor.textSecondary)
+            // 全選's accessibility value already announces the same count.
+            .accessibilityHidden(true)
     }
 
     private var optionsMenu: some View {

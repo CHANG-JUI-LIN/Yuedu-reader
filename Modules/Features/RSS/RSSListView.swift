@@ -1229,7 +1229,7 @@ struct RSSOPMLImportSheet: View {
         defer { isLoading = false }
 
         do {
-            let (data, response) = try await URLSession.shared.data(from: url)
+            let (data, response) = try await URLSession.trusting.data(from: url)
             if let httpResponse = response as? HTTPURLResponse,
                !(200...299).contains(httpResponse.statusCode) {
                 throw URLError(.badServerResponse)
@@ -1505,7 +1505,7 @@ struct ImportLegadoJSONURLSheet: View {
         defer { isLoading = false }
 
         do {
-            let (data, _) = try await URLSession.shared.data(from: url)
+            let (data, _) = try await URLSession.trusting.data(from: url)
             let sources = try LegadoSourceJSONParser.parse(data: data)
             let addedCount = store.addSources(sources)
             message = String(format: localized("已匯入 %d 個訂閱源"), addedCount)

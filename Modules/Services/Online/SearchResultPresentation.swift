@@ -292,7 +292,8 @@ enum SearchResultPresentationBuilder {
             lastChapter: book.lastChapter,
             wordCount: book.wordCount,
             kind: book.kind,
-            runtimeVariables: book.runtimeVariables
+            runtimeVariables: book.runtimeVariables,
+            infoHtml: book.infoHtml
         )
     }
 

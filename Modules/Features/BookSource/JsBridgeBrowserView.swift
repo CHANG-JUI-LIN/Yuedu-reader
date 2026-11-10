@@ -683,6 +683,13 @@ struct JsBridgeBrowserRepresentable: UIViewRepresentable {
             }
         }
 
+        /// Accepts the server's certificate, as Legado's WebViews do (`ServerTrustPolicy`).
+        func webView(
+            _ webView: WKWebView, respondTo challenge: URLAuthenticationChallenge
+        ) async -> (URLSession.AuthChallengeDisposition, URLCredential?) {
+            ServerTrustPolicy.answer(challenge)
+        }
+
         func webView(
             _ webView: WKWebView,
             decidePolicyFor navigationAction: WKNavigationAction,
@@ -911,7 +918,7 @@ struct JsBridgeBrowserRepresentable: UIViewRepresentable {
                 return
             }
 
-            URLSession.shared.dataTask(with: sourceURL) { data, _, error in
+            URLSession.trusting.dataTask(with: sourceURL) { data, _, error in
                 DispatchQueue.main.async {
                     if let error {
                         self.presentImportResult(error.localizedDescription, in: webView)

@@ -2,12 +2,13 @@ import Foundation
 
 extension BookSource {
     /// Render a search URL that has no JSON options: `{{key}}` `{{page}}` `{{key,GB2312}}`
-    /// and the legacy `URL,POST,body`. A URL with options (`URL,{…}`) is the runtime's
-    /// (`shouldUseLegadoRuntimeFetch`), which reads them as Legado's AnalyzeUrl does.
+    /// and the legacy `URL,POST,body`. A URL with options (`URL,{…}`) or a JS template is the
+    /// runtime's (`shouldUseLegadoRuntimeFetch`), which reads them as Legado's AnalyzeUrl does.
     ///
-    /// Any other `{{…}}` left after those substitutions is source JS, evaluated in the
-    /// source's own session runtime (`evaluateRemainingTemplates`). What that JS puts is the
-    /// page's (`pageVariables`), for its list to start from.
+    /// Any other `{{…}}` left after those substitutions — source JS in the legacy POST form, or
+    /// `{{ key }}` spaced or cased in a way they do not match — is evaluated in the source's own
+    /// session runtime (`evaluateRemainingTemplates`). What that JS puts is the page's
+    /// (`pageVariables`), for its list to start from.
     func renderSearchURL(query: String, page: Int = 1) async -> (
         url: String, method: String, body: String?, pageVariables: [String: String]?
     ) {
@@ -52,7 +53,11 @@ extension BookSource {
         }
 
         guard urlTemplate.contains("{{") || bodyTemplate?.contains("{{") == true else {
-            return (urlTemplate, method, bodyTemplate.flatMap { $0.isEmpty ? nil : $0 }, nil)
+            let body = bodyTemplate.map { AnalyzeUrl.applyPageRules($0, page: page) }
+            return (
+                AnalyzeUrl.applyPageRules(urlTemplate, page: page), method,
+                body.flatMap { $0.isEmpty ? nil : $0 }, nil
+            )
         }
         // Source JS runs on the source's host, exactly like the runtime's own URL rendering
         // (`prepareFetch`), and its puts go to the page's scope as they do there.
@@ -79,17 +84,31 @@ extension BookSource {
             }
             return (url, body, pageScope.variableMap.isEmpty ? nil : pageScope.variableMap)
         }
-        return (url, method, body.flatMap { $0.isEmpty ? nil : $0 }, pageVariables)
+        // Page rules after templates, Legado's order (`replaceKeyPageJs`).
+        let pagedBody = body.map { AnalyzeUrl.applyPageRules($0, page: page) }
+        return (
+            AnalyzeUrl.applyPageRules(url, page: page), method,
+            pagedBody.flatMap { $0.isEmpty ? nil : $0 }, pageVariables
+        )
+    }
+
+    /// Whether `searchUrl` is the legacy `URL,POST,body`, which only this renderer reads.
+    static func isLegacyPostSearchURL(_ searchUrl: String) -> Bool {
+        let parts = legacySearchURLParts(searchUrl)
+        return parts.count >= 2 && parts[1].trimmingCharacters(in: .whitespaces).uppercased() == "POST"
     }
 
     /// `searchUrl` cut at its commas, for the legacy `URL,POST,body`. A comma inside braces is
     /// the template's — `{{key,GBK}}`, `{key,GB2312}`, `{{java.put('k', 'v' + key)}}` — and
     /// cutting there left the URL ending mid-template. Quotes count only inside braces, where
-    /// they open JS strings; in the URL itself they are text.
+    /// they open JS strings; in the URL itself they are text. A comma inside a `<p1,p2>` page
+    /// rule is the rule's: cutting `/<,page/{{page}}/>?s={{key}}` there sent `/<` and 404'd
+    /// (恩京书房, YCK1330).
     private static func legacySearchURLParts(_ searchUrl: String) -> [String] {
         var parts: [String] = []
         var current = ""
         var depth = 0
+        var inPageRule = false
         var quote: Character?
         var escaped = false
         for char in searchUrl {
@@ -109,6 +128,10 @@ extension BookSource {
                 }
             } else if char == "{" {
                 depth = 1
+            } else if inPageRule {
+                if char == ">" { inPageRule = false }
+            } else if char == "<" {
+                inPageRule = true
             } else if char == "," {
                 parts.append(current)
                 current = ""
@@ -131,21 +154,81 @@ extension BookSource {
     /// this starts (`BookSourceSession.headerSnapshotStartingResolution`).
     var parsedHeaders: [String: String] {
         switch headerRule {
-        case .none: return [:]
-        case .dictionary(let headers): return headers
+        case .none: return Self.withLegadoUserAgent([:])
+        case .dictionary(let headers): return Self.withLegadoUserAgent(headers)
         case .script: return BookSourceSession.session(for: self).headerSnapshotStartingResolution()
         }
     }
 
-    /// The header rule as a dictionary for a request about to be sent: a `@js:` rule that
-    /// has not resolved yet resolves now, on the source's host, instead of the request going
-    /// out without it.
+    /// The header rule as a dictionary for a request about to be sent: a `@js:` rule is
+    /// evaluated now, on the source's host, as Legado evaluates it for every request
+    /// (`BookSourceSession.resolvedHeaders`).
     func resolvedHeaders() async -> [String: String] {
         switch headerRule {
-        case .none: return [:]
-        case .dictionary(let headers): return headers
+        case .none: return Self.withLegadoUserAgent([:])
+        case .dictionary(let headers): return Self.withLegadoUserAgent(headers)
         case .script: return await BookSourceSession.session(for: self).resolvedHeaders()
         }
+    }
+
+    /// Legado's `AppConfig.userAgent` as legado-E and MD3 ship it: desktop Chrome at their
+    /// Cronet version (`CronetMainVersion=128.0.0.0`).
+    static let legadoDefaultUserAgent =
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36"
+
+    /// Legado `BaseSource.getHeaderMap`: the source's headers, with `legadoDefaultUserAgent`
+    /// when they name no User-Agent (in any case). Every request a source makes starts from
+    /// this map — natively (`resolvedHeaders()`), on its script host (`JSCoreEngine
+    /// .resolvedSourceHeaders`, which `java.*`, AnalyzeUrl requests and `source.getHeaderMap()`
+    /// read), and in a WebView, whose user agent is the map's.
+    ///
+    /// 58% of the YCK 1329–1331 sources declare no User-Agent, so they were written against
+    /// the pages a site serves desktop Chrome 128. Before 11-07 they sent iPhone Safari 17
+    /// natively, a truncated `iPhone OS 18_0 … AppleWebKit/605.1.15` from `java.*`, and
+    /// CFNetwork's own `YueduReader/… CFNetwork/… Darwin/…` from AnalyzeUrl requests; the YCK
+    /// 1330 first run passed 24% of them against 52% of the sources with their own.
+    static func withLegadoUserAgent(_ headers: [String: String]) -> [String: String] {
+        guard !headers.keys.contains(where: { $0.caseInsensitiveCompare("User-Agent") == .orderedSame })
+        else { return headers }
+        var headers = headers
+        headers["User-Agent"] = legadoDefaultUserAgent
+        return headers
+    }
+
+    /// Legado `BaseSource.getHeaderMap`'s parse of a header rule's JSON — the source's own
+    /// header, or what its `@js:` / `<js>` header returned: `GSONStrict`, then the lenient
+    /// `GSON` (single quotes, bare keys), into a `Map<String, String>`, where Gson reads a
+    /// number or boolean as its text. nil when neither parses — Legado then sends only its
+    /// default User-Agent.
+    ///
+    /// The one parse for both the native requests and the script host. They disagreed: the
+    /// native one dropped a lenient header whole (猫眼看书's `{ 'User-Agent': 'okhttp/4.9.2',
+    /// 'Authorization': … }`, YCK 1329／1331, searched with no token), and the host's mined
+    /// `Key: Value` lines out of a broken one (楠楠漫画's unterminated `"Referer": "https://…/}`
+    /// sent a header named `{  "User-Agent"`, and nginx answered 400).
+    static func legadoHeaderMap(fromJSON text: String) -> [String: String]? {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard trimmed.hasPrefix("{"), let object = AnalyzeUrl.parseOptionDictionary(trimmed) else {
+            return nil
+        }
+        var map: [String: String] = [:]
+        for (key, value) in object {
+            switch value {
+            case let string as String:
+                map[key] = string
+            case let number as NSNumber:
+                map[key] = CFGetTypeID(number) == CFBooleanGetTypeID()
+                    ? (number.boolValue ? "true" : "false")
+                    : number.stringValue
+            case is NSNull:
+                continue
+            default:
+                // An object or array where Gson expects a string: its parse throws, and
+                // Legado keeps none of the map.
+                return nil
+            }
+        }
+        return map
     }
 
     private enum HeaderRule {
@@ -157,11 +240,14 @@ extension BookSource {
     private var headerRule: HeaderRule {
         let trimmed = header.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return .none }
-        if let data = trimmed.data(using: .utf8),
-           let dict = try? JSONSerialization.jsonObject(with: data) as? [String: String] {
-            return .dictionary(dict)
+        if JSCoreEngine.headerJSScript(trimmed) != nil { return .script }
+        guard let map = Self.legadoHeaderMap(fromJSON: trimmed) else {
+            AppLogger.parse("header rule is not JSON; requests carry only the default User-Agent", context: [
+                "source": bookSourceName, "rule": String(trimmed.prefix(120))
+            ])
+            return .none
         }
-        return JSCoreEngine.headerJSScript(trimmed) != nil ? .script : .none
+        return .dictionary(map)
     }
 
     /// Process remaining `{{...}}` JavaScript template expressions in URLs.

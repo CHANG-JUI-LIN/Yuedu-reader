@@ -5,6 +5,7 @@
 	<key>BGTaskSchedulerPermittedIdentifiers</key>
 	<array>
 		<string>com.yuedu.rss.feedRefresh</string>
+		<string>$(PRODUCT_BUNDLE_IDENTIFIER).sourceCheck.*</string>
 	</array>
 	<key>CADisableMinimumFrameDurationOnPhone</key>
 	<true/>

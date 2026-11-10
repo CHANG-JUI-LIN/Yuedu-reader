@@ -2,7 +2,7 @@ import Foundation
 import Testing
 @testable import yuedu_app
 
-/// `java.ajaxAll(list)` with a list whose elements are not all
+/// `java.ajaxAll(list)` / `java.ajaxTestAll(list, timeout)` with a list whose elements are not all
 /// strings. Every Legado fork declares the parameter `Array<String>`, and Rhino converts each
 /// element with JS ToString — an object becomes `"[object Object]"`, a number its digits — so the
 /// call answers one response per element and never throws. Our bridge used to take `[String]`:
@@ -41,6 +41,16 @@ struct AjaxAllArgumentCoercionTests {
                 + " r.length + ':' + r[0].body() + '|' + r[4].body()"
         )
         #expect(value == "5:a|b")
+    }
+
+    @Test("ajaxTestAll takes the same list")
+    func testAllObjectElements() {
+        let bridge = Self.bridge()
+        let value = bridge.evaluateSourceScript(
+            "var r = java.ajaxTestAll(['https://ajaxall.invalid/a', {url:'x'}], 5000);"
+                + " r.length + ':' + r[0].body()"
+        )
+        #expect(value == "2:a")
     }
 
     @Test("A list that is not an array answers no responses")

@@ -114,6 +114,13 @@ final class ReaderWebEmbedManager: NSObject {
 }
 
 extension ReaderWebEmbedManager: WKNavigationDelegate, WKUIDelegate {
+    /// Accepts the server's certificate, as Legado's WebViews do (`ServerTrustPolicy`).
+    func webView(
+        _ webView: WKWebView, respondTo challenge: URLAuthenticationChallenge
+    ) async -> (URLSession.AuthChallengeDisposition, URLCredential?) {
+        ServerTrustPolicy.answer(challenge)
+    }
+
     /// The embed stays the embed: a link the reader follows out of it opens in the source
     /// browser sheet instead of replacing the player inside the page.
     func webView(

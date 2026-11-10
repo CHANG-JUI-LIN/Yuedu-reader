@@ -9,13 +9,32 @@ import Testing
 /// wipe the real cache and is never called here.
 @Suite("Discover kinds cache (characterization)", .serialized)
 struct DiscoverKindsCacheTests {
-    @Test("the key is a stable 32-character hex digest of its three inputs")
+    @Test("the key is the source's digest, then a stable digest of its three inputs")
     func keyIsStable() {
         let key = DiscoverKindsCache.key(sourceUrl: "https://phase0-kinds.test/a", exploreUrl: "e", variableJSON: "{}")
 
         #expect(key == DiscoverKindsCache.key(sourceUrl: "https://phase0-kinds.test/a", exploreUrl: "e", variableJSON: "{}"))
-        #expect(key.count == 32)
-        #expect(key.allSatisfy { $0.isHexDigit })
+        let parts = key.split(separator: "-")
+        #expect(parts.map(\.count) == [32, 32])
+        #expect(parts.allSatisfy { $0.allSatisfy(\.isHexDigit) })
+        #expect(key.hasPrefix(String(DiscoverKindsCache.key(sourceUrl: "https://phase0-kinds.test/a", exploreUrl: "f", variableJSON: nil).prefix(33))))
+    }
+
+    /// Legado `source.refreshExplore()` → `clearExploreKindsCache`: 露西弗俱乐部's login button.
+    @Test("a source's entries go, whatever their rule or variables, and another source's stay")
+    func removeAllOfOneSource() {
+        let cache = DiscoverKindsCache.shared
+        let items: [ModernParserBridge.DiscoverItem] = [.init(title: "熱門", url: "https://phase0-kinds.test/hot")]
+        let first = DiscoverKindsCache.key(sourceUrl: "https://phase0-kinds.test/refresh", exploreUrl: "e", variableJSON: nil)
+        let second = DiscoverKindsCache.key(sourceUrl: "https://phase0-kinds.test/refresh", exploreUrl: "f", variableJSON: "{\"k\":1}")
+        let other = DiscoverKindsCache.key(sourceUrl: "https://phase0-kinds.test/refresh-other", exploreUrl: "e", variableJSON: nil)
+        for key in [first, second, other] { cache.store(items, forKey: key) }
+
+        cache.removeAll(sourceUrl: "https://phase0-kinds.test/refresh")
+
+        #expect(cache.items(forKey: first) == nil)
+        #expect(cache.items(forKey: second) == nil)
+        #expect(cache.items(forKey: other)?.map(\.title) == ["熱門"])
     }
 
     @Test("changing any input changes the key")
@@ -36,12 +55,13 @@ struct DiscoverKindsCacheTests {
         )
     }
 
-    @Test("a separator moved between inputs gives the same key")
+    @Test("a separator moved between the source and its rule no longer gives the same key")
     func separatorIsAmbiguous() {
-        // Current behavior: inputs are joined with "|" without escaping, so these collide.
+        // The inputs are still joined with "|" unescaped; the source's own digest in front
+        // tells these two apart.
         #expect(
             DiscoverKindsCache.key(sourceUrl: "a|b", exploreUrl: "c", variableJSON: nil)
-                == DiscoverKindsCache.key(sourceUrl: "a", exploreUrl: "b|c", variableJSON: nil)
+                != DiscoverKindsCache.key(sourceUrl: "a", exploreUrl: "b|c", variableJSON: nil)
         )
     }
 

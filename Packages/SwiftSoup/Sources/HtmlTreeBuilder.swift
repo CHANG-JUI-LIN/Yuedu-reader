@@ -570,7 +570,15 @@ class HtmlTreeBuilder: TreeBuilder {
         if tracksSourceRanges, node.sourceBuffer == nil {
             node.sourceBuffer = doc.sourceBuffer
         }
-        
+        // Yuedu patch: an element the tree builder implied (the `<tbody>` an HTML5 table
+        // gets around a bare `<tr>`, a reconstructed formatting element) has no source range,
+        // and its parent's raw source does not contain it. Left clean, the parent printed that
+        // raw source and the element vanished from `outerHtml()` although it is in the tree —
+        // jsoup prints it. Marking the parent dirty makes it serialise from the tree.
+        if tracksSourceRanges, node is Element, node.sourceRange == nil {
+            node.parentNode?.markSourceDirty(force: true)
+        }
+
         // connect form controls to their form element
         if let n = (node as? Element), n.tag().isFormListed() {
             formElement?.addElement(n)

@@ -15,7 +15,8 @@ enum GzipDecoderError: Error, Equatable {
 
 /// RFC 1952 gzip members, as Reeden writes its highlight packs and the artwork inside
 /// them, and RFC 1950 zlib streams, as KF8 files store fonts. Foundation only
-/// inflates raw DEFLATE, so the headers and trailers are read here.
+/// inflates raw DEFLATE, so the headers and trailers are read here. HTTP bodies the app
+/// reads off the wire itself use these too (`SingleWriteHTTPExchange`).
 enum GzipDecoder {
     static func isGzip(_ data: Data) -> Bool {
         data.count >= 2 && data[data.startIndex] == 0x1F && data[data.startIndex + 1] == 0x8B
@@ -80,9 +81,23 @@ enum GzipDecoder {
         return b << 16 | a
     }
 
-    /// Raw DEFLATE (`COMPRESSION_ZLIB` is headerless), streamed so a hostile member
-    /// stops at `maximumBytes` instead of expanding in full first.
-    private static func inflate(_ input: [UInt8], maximumBytes: Int) throws -> Data {
+    /// Raw DEFLATE with neither header nor trailer, as some servers send HTTP `deflate`
+    /// (`SingleWriteHTTPExchange`).
+    static func decompressRawDeflate(_ data: Data, maximumBytes: Int) throws -> Data {
+        try inflate([UInt8](data), maximumBytes: maximumBytes)
+    }
+
+    /// A Brotli stream (RFC 7932), HTTP `br` (`SingleWriteHTTPExchange`).
+    static func decompressBrotli(_ data: Data, maximumBytes: Int) throws -> Data {
+        try inflate([UInt8](data), maximumBytes: maximumBytes, algorithm: COMPRESSION_BROTLI)
+    }
+
+    /// Raw DEFLATE (`COMPRESSION_ZLIB` is headerless), or another of the Compression
+    /// framework's formats, streamed so a hostile member stops at `maximumBytes` instead of
+    /// expanding in full first.
+    private static func inflate(
+        _ input: [UInt8], maximumBytes: Int, algorithm: compression_algorithm = COMPRESSION_ZLIB
+    ) throws -> Data {
         let chunk = 64 * 1_024
         let destination = UnsafeMutablePointer<UInt8>.allocate(capacity: chunk)
         defer { destination.deallocate() }
@@ -91,7 +106,7 @@ enum GzipDecoder {
         var stream = compression_stream(
             dst_ptr: placeholder, dst_size: 0, src_ptr: placeholder, src_size: 0, state: nil
         )
-        guard compression_stream_init(&stream, COMPRESSION_STREAM_DECODE, COMPRESSION_ZLIB)
+        guard compression_stream_init(&stream, COMPRESSION_STREAM_DECODE, algorithm)
             == COMPRESSION_STATUS_OK else { throw GzipDecoderError.corrupt }
         defer { compression_stream_destroy(&stream) }
 

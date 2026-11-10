@@ -79,10 +79,6 @@ enum AppConfig {
     /// Timeout in seconds for a single JS rule engine execution.
     static let jsRuleEngineExecutionTimeout: TimeInterval = 8
 
-    /// Maximum timeout in seconds for chapter package fetch.
-    /// Exceeding this throws FetchTimeoutError.chapterTimeout.
-    static let chapterFetchTimeoutSeconds: UInt64 = 35
-
     /// Timeout in seconds for waiting after loading an HTML string into WKWebView.
     static let webViewHTMLLoadTimeout: UInt64 = 10
 

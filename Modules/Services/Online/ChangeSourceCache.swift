@@ -20,7 +20,16 @@ final class ChangeSourceCache: Sendable {
         /// known complete: those include the 10-result lists the hidden large-pack pause
         /// cached for 5 days (feedback #16), which must be searched again once.
         var isComplete: Bool?
+        /// Which matching rules found `origins` (`currentSearchRules`). Nil for every entry
+        /// written before 換源 followed Legado's (name only, 60 s a source): those lists left
+        /// out the sources that write the author differently or answer after 20 s, and are
+        /// searched again once instead of being served for the rest of their 快取天數.
+        var searchRules: Int?
     }
+
+    /// Bump when a change makes 換源 find different origins, so lists found the old way are
+    /// searched again. 1: name only and 60 s a source, as Legado (2026-11-07).
+    static let currentSearchRules = 1
 
     private let queue = DispatchQueue(label: "com.yuedu.changeSourceCache")
 
@@ -49,6 +58,7 @@ final class ChangeSourceCache: Sendable {
     /// (days <= 0 = disabled).
     func freshEntry(for bookId: UUID, days: Int) -> Entry? {
         guard days > 0, let entry = entry(for: bookId), entry.isComplete == true,
+              entry.searchRules == Self.currentSearchRules,
               !entry.origins.isEmpty else { return nil }
         let maxAge = TimeInterval(days) * 86_400
         guard Date().timeIntervalSince(entry.timestamp) < maxAge else { return nil }
@@ -71,7 +81,8 @@ final class ChangeSourceCache: Sendable {
             origins: origins,
             failedKeys: isComplete ? previousFailed.filter { validKeys.contains($0) } : previousFailed,
             timestamp: Date(),
-            isComplete: isComplete
+            isComplete: isComplete,
+            searchRules: Self.currentSearchRules
         )
         write(entry, for: bookId)
     }

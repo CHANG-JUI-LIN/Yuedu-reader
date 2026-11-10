@@ -407,6 +407,26 @@ open class Token {
             return self
         }
         
+        /// A pending attribute's name as `Attributes` keys it: its bytes, else its slice, trimmed.
+        @inline(__always)
+        private static func pendingName(of attribute: PendingAttribute) -> ByteSlice? {
+            if let bytes = attribute.nameBytes { return ByteSlice.fromArray(bytes).trim() }
+            return attribute.nameSlice?.trim()
+        }
+
+        /// Whether this tag already has an attribute of `name`. jsoup keeps an element's first
+        /// attribute of a name and drops the later ones (`Attributes.deduplicate`, which its
+        /// tree builders run on every start tag — the HTML spec's duplicate-attribute parse
+        /// error); materialized, a later one replaced the first here, so
+        /// `<a class="title" class="r">` was no `.title`. The names are as the parser keeps
+        /// them — lowercased for HTML, as written for XML — so equal bytes are jsoup's equal
+        /// names in both.
+        @inline(__always)
+        private func hasPendingAttribute(named name: ByteSlice?) -> Bool {
+            guard let name, let pending = _pendingAttributes else { return false }
+            return pending.contains { Tag.pendingName(of: $0) == name }
+        }
+
         func newAttribute() throws {
             let pendingNameSlice = _pendingAttributeNameS
             let pendingNameBytes = _pendingAttributeName
@@ -439,7 +459,7 @@ open class Token {
                     _pendingAttributes = []
                     _pendingAttributes!.reserveCapacity(8)
                     _pendingAttributes!.append(pending)
-                } else {
+                } else if !hasPendingAttribute(named: Tag.pendingName(of: pending)) {
                     _pendingAttributes!.append(pending)
                 }
                 _hasAttributes = true

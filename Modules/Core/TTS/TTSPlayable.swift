@@ -113,7 +113,15 @@ protocol TTSPlayable: AnyObject {
     var roleAliases: [String: String] { get set }
 
     /// Start reading the given text. Rate uses the UI scale 0.10–1.0 where 0.5 is 100%.
-    func speak(text: String, title: String, rate: Float, pronunciationHints: [TTSPronunciationHint])
+    /// - Parameter speakerAttributions: the AI analysis of `text` — who speaks each quoted run
+    ///   and how. `nil` means not analysed, and the engine reads speakers off the prose.
+    func speak(
+        text: String,
+        title: String,
+        rate: Float,
+        pronunciationHints: [TTSPronunciationHint],
+        speakerAttributions: [TTSSpeakerAnnotator.Attribution]?
+    )
     /// Apply a new rate to the playback session already in progress, so a slider change
     /// takes effect immediately instead of only on the next `speak`.
     func updateRate(_ rate: Float)
@@ -130,6 +138,10 @@ protocol TTSPlayable: AnyObject {
 
 extension TTSPlayable {
     func speak(text: String, title: String, rate: Float) {
-        speak(text: text, title: title, rate: rate, pronunciationHints: [])
+        speak(text: text, title: title, rate: rate, pronunciationHints: [], speakerAttributions: nil)
+    }
+
+    func speak(text: String, title: String, rate: Float, pronunciationHints: [TTSPronunciationHint]) {
+        speak(text: text, title: title, rate: rate, pronunciationHints: pronunciationHints, speakerAttributions: nil)
     }
 }

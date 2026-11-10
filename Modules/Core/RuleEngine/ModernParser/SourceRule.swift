@@ -155,11 +155,14 @@ struct SourceRule: Sendable {
 
                 switch regType {
                 case let n where n > Self.defaultRuleType:
-                    // $N regex group reference
-                    if let groups = result as? [String?],
-                       groups.count > n,
-                       let value = groups[n] {
-                        parts.append(value)
+                    // $N regex group reference. Against groups, Legado writes the group, and
+                    // nothing for a null one or an N past the last: its `?.run { if … }` is
+                    // Unit for any list, so the `?:` that writes the literal runs only when
+                    // the result is no list (AnalyzeRule.kt:721–729).
+                    if let groups = result as? [String?] {
+                        if groups.count > n, let value = groups[n] {
+                            parts.append(value)
+                        }
                     } else {
                         parts.append(ruleParam[index])
                     }
@@ -185,24 +188,20 @@ struct SourceRule: Sendable {
             rule = parts.joined()
         }
 
-        // Split by ## to extract regex replacement info.
-        // Bracket-aware split so that `@css:div[data-x="##"]` keeps its ## intact.
-        let segments = Self.bracketAwareSplitOnHashHash(rule)
-        rule = segments[0].trimmingCharacters(in: .whitespaces)
-
-        var segIdx = 1
-
-        if segments.count > segIdx {
-            replaceRegex = segments[segIdx]
-            segIdx += 1
+        // Split by ## to extract regex replacement info — a plain split, as Legado's
+        // `rule.split("##")` (legado-E, MD3 and upstream agree). A split that skipped `##` inside
+        // quotes or brackets swallowed the replacement of every regex holding an odd number of
+        // `"`: `##<img\s*src="([^"]+)"##$1###` kept `##$1###` inside the pattern.
+        let segments = rule.components(separatedBy: "##")
+        rule = segments[0].trimmingCharacters(in: .whitespacesAndNewlines)
+        if segments.count > 1 {
+            replaceRegex = segments[1]
         }
-        if segments.count > segIdx {
-            replacement = segments[segIdx]
-            segIdx += 1
+        if segments.count > 2 {
+            replacement = segments[2]
         }
-        // ### suffix (Legado OnlyOne regex) produces a 4th non-empty segment ("#")
-        // which is the standard way to signal "replace first match only".
-        if segments.count > segIdx, !segments[segIdx].isEmpty {
+        // `###` (or any further `##`) leaves a fourth segment: replace the first match only.
+        if segments.count > 3 {
             replaceFirst = true
         }
     }
@@ -223,9 +222,12 @@ private extension SourceRule {
     ) -> String {
         let lower = ruleStr.lowercased()
 
+        // Legado's `SourceRule` keeps `@CSS:` on the rule (`rule = ruleStr`): it is what tells
+        // `AnalyzeByJSoup` to read the rule as one CSS selector plus a last-`@` accessor.
+        // Stripping it here sent an explicit CSS rule through the default reader.
         if lower.hasPrefix("@css:") {
             mode = .default
-            return String(ruleStr.dropFirst(5))
+            return ruleStr
         }
         if ruleStr.hasPrefix("@@") {
             mode = .default
@@ -285,9 +287,12 @@ private extension SourceRule {
             guard jsonRange.location != NSNotFound else { continue }
             let jsonStr = nsRule.substring(with: jsonRange)
 
-            // First try standard JSON
-            if let data = jsonStr.data(using: .utf8),
-               let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
+            // Legado reads the block with GSON's lenient parser (`GSON.fromJsonObject`), and
+            // sources write it that way: bare keys and several of them, `{n:"…", a:"…"}`
+            // (万象书城, 夜伴书屋 and 20 more in YCK 1330). Strict JSON rejected those, and the
+            // single-pair fallback below then stored `"…", a:"…"` — quotes included — as `n`'s
+            // rule, so every detail field read empty.
+            if let obj = AnalyzeUrl.parseOptionDictionary(jsonStr) {
                 for (key, value) in obj {
                     putMap[key] = value is String ? (value as! String) : "\(value)"
                 }
@@ -419,58 +424,6 @@ private extension SourceRule {
             ruleType.append(Self.defaultRuleType)
             ruleParam.append(nsStr.substring(from: start))
         }
-    }
-
-    // MARK: Helpers
-
-    /// Split `rule` on `##` while respecting bracket/quote boundaries.
-    /// CSS selectors like `@css:div[data-x="##"]` must keep their `##` intact,
-    /// and Legado's `###` (OnlyOne regex) suffix must correctly produce the 4th segment.
-    static func bracketAwareSplitOnHashHash(_ rule: String) -> [String] {
-        var parts: [String] = []
-        var current = ""
-        var squareDepth = 0
-        var parenDepth = 0
-        var inDoubleQuote = false
-        var inSingleQuote = false
-        var index = rule.startIndex
-
-        while index < rule.endIndex {
-            let ch = rule[index]
-            let nextIdx = rule.index(after: index)
-
-            if !inDoubleQuote, !inSingleQuote, squareDepth == 0, parenDepth == 0 {
-                if ch == "#", nextIdx < rule.endIndex, rule[nextIdx] == "#" {
-                    parts.append(current)
-                    current = ""
-                    index = rule.index(after: nextIdx)
-                    continue
-                }
-            }
-
-            switch ch {
-            case "[" where !inDoubleQuote && !inSingleQuote:
-                squareDepth += 1
-            case "]" where !inDoubleQuote && !inSingleQuote:
-                squareDepth = max(0, squareDepth - 1)
-            case "(" where !inDoubleQuote && !inSingleQuote:
-                parenDepth += 1
-            case ")" where !inDoubleQuote && !inSingleQuote:
-                parenDepth = max(0, parenDepth - 1)
-            case "\"" where !inSingleQuote:
-                inDoubleQuote.toggle()
-            case "'" where !inDoubleQuote:
-                inSingleQuote.toggle()
-            default:
-                break
-            }
-
-            current.append(ch)
-            index = nextIdx
-        }
-
-        parts.append(current)
-        return parts
     }
 }
 

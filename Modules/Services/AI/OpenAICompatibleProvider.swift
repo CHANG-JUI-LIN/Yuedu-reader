@@ -29,7 +29,7 @@ final class OpenAICompatibleProvider: LLMProviding, @unchecked Sendable {
         configuration.timeoutIntervalForRequest = firstByteTimeout
         configuration.timeoutIntervalForResource = 300
         configuration.waitsForConnectivity = false
-        return URLSession(configuration: configuration)
+        return URLSession.trusting(configuration)
     }()
 
     // Spelled out rather than `Self.defaultSession`: Swift forbids a covariant `Self` in a
@@ -56,7 +56,7 @@ final class OpenAICompatibleProvider: LLMProviding, @unchecked Sendable {
             endpoint: endpoint,
             apiKey: apiKey,
             defaultModel: defaultModel,
-            session: URLSession(configuration: configuration)
+            session: URLSession.trusting(configuration)
         )
     }
 

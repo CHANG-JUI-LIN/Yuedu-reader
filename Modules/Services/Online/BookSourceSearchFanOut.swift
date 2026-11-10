@@ -32,8 +32,6 @@ struct BookSourceSearchFanOut {
     var concurrency: Int
     /// Seconds per source.
     var timeout: UInt64
-    /// Seconds per JS-driven source (`timeout(for:normal:aggregate:)`).
-    var aggregateTimeout: UInt64
     var fetcher: BookSourceFetcher = .shared
 
     enum Request: Sendable {
@@ -52,12 +50,6 @@ struct BookSourceSearchFanOut {
         var elapsedMs: Double
     }
 
-    /// JS-runtime searchUrls (aggregators + jsLib-backed API sources) get the longer budget;
-    /// plain `{{key}}`-template sources stay fail-fast.
-    nonisolated static func timeout(for source: BookSource, normal: UInt64, aggregate: UInt64) -> UInt64 {
-        source.shouldUseLegadoRuntimeFetch(for: source.searchUrl) ? aggregate : normal
-    }
-
     /// Runs `request` over `sources`. Returns when every source has answered, when
     /// `onAnswer` returns false (the rest are cancelled), or when the calling task is
     /// cancelled; a source still running then is not answered, so a resumed search asks it
@@ -70,8 +62,7 @@ struct BookSourceSearchFanOut {
     ) async {
         let width = min(concurrency, sources.count)
         guard width > 0 else { return }
-        let normal = timeout
-        let aggregate = aggregateTimeout
+        let sourceTimeout = timeout
         let fetcher = fetcher
         await withTaskGroup(of: (Int, Answer).self) { group in
             var next = 0
@@ -81,7 +72,6 @@ struct BookSourceSearchFanOut {
                 let index = next
                 let source = sources[index]
                 next += 1
-                let sourceTimeout = Self.timeout(for: source, normal: normal, aggregate: aggregate)
                 group.addTask {
                     guard !Task.isCancelled else {
                         return (index, Answer(outcome: .failed, books: [], hasMore: nil, elapsedMs: 0))

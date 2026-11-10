@@ -41,8 +41,8 @@ struct ParsedHeadersMainThreadTests {
         }
         #expect(pages.count == 1, "the source should be waiting on its verification page")
 
-        // A login change while the page is up invalidates the engine's resolved headers, so
-        // the next read has to reach the engine.
+        // A login change while the page is up: the next request resolves the rule again on the
+        // engine, which the page holds, so a read that cannot wait must not go there.
         LoginManager.shared.storeLoginHeader(sourceUrl: source.bookSourceUrl, raw: #"{"Cookie":"k=v"}"#)
 
         // Should the read block after all, release the page from a GCD thread so the test
@@ -52,13 +52,13 @@ struct ParsedHeadersMainThreadTests {
         let headers = source.parsedHeaders
         let seconds = Date().timeIntervalSince(started)
         #expect(seconds < 1, "the main thread waited \(seconds) s on a script parked for the reader")
-        #expect(headers == ["X-Source-Token": "abc"], "the last resolved headers stand in meanwhile")
+        #expect(headers == ["X-Source-Token": "abc", "User-Agent": BookSource.legadoDefaultUserAgent], "the last resolved headers stand in meanwhile")
 
         pages.releaseAll()
         #expect(try await stage.value == "<p>page</p>")
         // Once the page is gone the rule resolves against the new login state as before.
         let resolved = await BookSourceSession.session(for: source).host.run { $0.resolvedSourceHeaders() }
-        #expect(resolved == ["X-Source-Token": "abc"])
+        #expect(resolved == ["X-Source-Token": "abc", "User-Agent": BookSource.legadoDefaultUserAgent])
     }
 }
 
@@ -85,7 +85,7 @@ struct ColdHeaderRuleTests {
         let fetcher = BookSourceFetcher(webFetcher: WebFetcher(session: HeaderRecordingProtocol.session()))
 
         let book = try await fetcher.fetchBookInfoPackage(
-            url: source.bookSourceUrl + "/book/1", source: source, writesCache: false
+            url: source.bookSourceUrl + "/book/1", source: source, usesCache: false
         ).onlineBook
 
         #expect(book.name == "Cold")
@@ -103,7 +103,7 @@ struct ColdHeaderRuleTests {
             try #require(Date() < deadline, "the read never started a resolution")
             try await Task.sleep(for: .milliseconds(5))
         }
-        #expect(source.parsedHeaders == ["X-Source-Token": "abc"])
+        #expect(source.parsedHeaders == ["X-Source-Token": "abc", "User-Agent": BookSource.legadoDefaultUserAgent])
     }
 }
 

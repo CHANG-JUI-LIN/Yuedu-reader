@@ -8,7 +8,7 @@ import Testing
 @MainActor
 @Suite("Book source search fan-out", .serialized)
 struct BookSourceSearchFanOutTests {
-    private let fanOut = BookSourceSearchFanOut(concurrency: 2, timeout: 5, aggregateTimeout: 5)
+    private let fanOut = BookSourceSearchFanOut(concurrency: 2, timeout: 5)
 
     @Test("every source answers once, with its books, past the concurrency width")
     func everySourceAnswers() async throws {
@@ -35,7 +35,7 @@ struct BookSourceSearchFanOutTests {
         let sources = (0..<4).map { makeSource("stop-\($0)") }
         try await withCache(sources) {
             var answered: [String] = []
-            await BookSourceSearchFanOut(concurrency: 1, timeout: 5, aggregateTimeout: 5)
+            await BookSourceSearchFanOut(concurrency: 1, timeout: 5)
                 .run(query: "三體", sources: sources, request: .firstPage { _, _ in }) { source, _ in
                     answered.append(source.bookSourceName)
                     return false
@@ -51,13 +51,6 @@ struct BookSourceSearchFanOutTests {
         #expect(SearchSourceOutcome.failedAsEmpty.answered)
         #expect(!SearchSourceOutcome.timedOut.answered)
         #expect(!SearchSourceOutcome.failed.answered)
-    }
-
-    @Test("a JS-driven source gets the aggregate budget")
-    func timeoutBudget() {
-        var plain = makeSource("plain")
-        plain.searchUrl = "https://fanout.test/plain/search?q={{key}}"
-        #expect(BookSourceSearchFanOut.timeout(for: plain, normal: 12, aggregate: 30) == 12)
     }
 
     // MARK: - Helpers

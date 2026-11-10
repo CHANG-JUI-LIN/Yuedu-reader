@@ -172,8 +172,8 @@ struct BookSourceHealthCheckerPerformanceTests {
         #expect(checker.items[0].failureCategory == .siteError)
     }
 
-    @Test("bookshelf title is the primary source-specific search probe")
-    func bookshelfTitleReplacesGenericValidationKeyword() async {
+    @Test("the source's checkKeyWord is searched, else the run's keyword (Legado getCheckKeyword)")
+    func checkKeywordThenRunKeyword() async {
         let fetcher = HealthCheckKeywordCaptureFetcher()
         let checker = BookSourceHealthChecker(fetcher: fetcher)
         var source = BookSource(
@@ -181,21 +181,84 @@ struct BookSourceHealthCheckerPerformanceTests {
             bookSourceName: "shelf keyword"
         )
         source.searchUrl = "https://shelf-keyword.example/search?q={{key}}"
-        source.ruleSearch.checkKeyWord = "stale source keyword"
+        source.ruleSearch.checkKeyWord = "source keyword"
+        var plain = source
+        plain.bookSourceUrl = "https://plain-keyword.example"
+        plain.ruleSearch.checkKeyWord = ""
         checker.policy.checkDiscovery = false
         checker.policy.checkInfo = false
+        checker.policy.keyword = "run keyword"
 
-        checker.prepare(
-            sources: [source],
-            preferredSearchKeywords: [source.id: "Known Shelf Novel"]
-        )
+        checker.prepare(sources: [source, plain])
         await checker.runAll()
 
-        #expect(await fetcher.queries == ["Known Shelf Novel"])
+        #expect(Set(await fetcher.queries) == ["source keyword", "run keyword"])
         #expect(checker.items[0].outcome(.search).status == .pass)
     }
 
-    @Test("text source validation skips an explicitly typed audio result")
+    @Test("validation goes on with the first result, whatever its type (Legado searchBooks.first())")
+    func firstResultIsChecked() async {
+        let fetcher = HealthCheckMixedContentFetcher(audioFirst: true)
+        let checker = BookSourceHealthChecker(fetcher: fetcher)
+        var source = BookSource(
+            bookSourceUrl: "https://mixed-content.example",
+            bookSourceName: "mixed content"
+        )
+        source.bookSourceType = 0
+        source.searchUrl = "https://mixed-content.example/search?q={{key}}"
+        checker.policy.checkDiscovery = false
+
+        checker.prepare(sources: [source])
+        await checker.runAll()
+
+        #expect(checker.items[0].searchBook?.name == "audio result")
+        #expect(await fetcher.detailURLs == ["https://mixed-content.example/audio"])
+        #expect(checker.items[0].outcome(.toc).status == .fail)
+        #expect(checker.items[0].failureCategory == .tocEmpty)
+    }
+
+    @Test("a result that already carries its TOC URL skips the detail page (Legado checkBook)")
+    func resultWithTOCURLSkipsDetail() async {
+        let toc = "https://mixed-content.example/text/embedded-toc"
+        let fetcher = HealthCheckMixedContentFetcher(textResultTOCURL: toc)
+        let checker = BookSourceHealthChecker(fetcher: fetcher)
+        var source = BookSource(
+            bookSourceUrl: "https://mixed-content.example",
+            bookSourceName: "mixed content"
+        )
+        source.searchUrl = "https://mixed-content.example/search?q={{key}}"
+        checker.policy.checkDiscovery = false
+
+        checker.prepare(sources: [source])
+        await checker.runAll()
+
+        #expect(await fetcher.detailURLs.isEmpty)
+        #expect(checker.items[0].outcome(.detail).status == .pass)
+        #expect(await fetcher.chapterReferers == [toc])
+        #expect(checker.items[0].overallPass)
+    }
+
+    @Test("the first chapter's content reads up to the second chapter's URL")
+    func firstChapterCarriesNextChapterURL() async {
+        let fetcher = HealthCheckMixedContentFetcher()
+        let checker = BookSourceHealthChecker(fetcher: fetcher)
+        var source = BookSource(
+            bookSourceUrl: "https://mixed-content.example",
+            bookSourceName: "mixed content"
+        )
+        source.searchUrl = "https://mixed-content.example/search?q={{key}}"
+        checker.policy.checkDiscovery = false
+
+        checker.prepare(sources: [source])
+        await checker.runAll()
+
+        let variables = (await fetcher.contentRuntimeVariables).first ?? nil
+        // One chapter: Legado's `toc.getOrNull(1)?.url ?: toc.first().url`.
+        #expect(variables?[BookSourceFetcher.nextChapterRuntimeVariableKey]
+            == "https://mixed-content.example/text/toc/1")
+    }
+
+    @Test("text source validation runs the detail, TOC and content of the first result")
     func textSourceSelectsDeclaredPrimaryContent() async {
         let fetcher = HealthCheckMixedContentFetcher()
         let checker = BookSourceHealthChecker(fetcher: fetcher)
@@ -249,50 +312,26 @@ struct BookSourceHealthCheckerPerformanceTests {
         #expect(!checker.items[0].overallPass)
     }
 
-    @Test("validation candidate selection respects declared and unknown content types")
-    func declaredContentSelectionContract() {
-        var textSource = BookSource(
+    @Test("validation takes the first result with a URL, whatever its type")
+    func firstBookContract() {
+        let source = BookSource(
             bookSourceUrl: "https://selection.example/text",
             bookSourceName: "text"
         )
-        textSource.bookSourceType = 0
-        var audioSource = textSource
-        audioSource.bookSourceType = 1
-
-        func book(_ name: String, type: String?) -> OnlineBook {
+        func book(_ name: String, url: String) -> OnlineBook {
             OnlineBook(
-                name: name,
-                author: "",
-                intro: "",
-                coverUrl: "",
-                bookUrl: "https://selection.example/\(name)",
-                tocUrl: "",
-                wordCount: "",
-                lastChapter: "",
-                kind: "",
-                sourceId: textSource.id,
-                sourceName: textSource.bookSourceName,
-                runtimeVariables: type.map { ["book.type": $0] }
+                name: name, author: "", intro: "", coverUrl: "",
+                bookUrl: url, tocUrl: "", wordCount: "", lastChapter: "", kind: "",
+                sourceId: source.id, sourceName: source.bookSourceName,
+                runtimeVariables: ["book.type": "32"]
             )
         }
+        let noURL = book("no url", url: " ")
+        let audio = book("audio", url: "https://selection.example/audio")
+        let text = book("text", url: "https://selection.example/text")
 
-        let audio = book("audio", type: "32")
-        let text = book("text", type: "8")
-        let manga = book("manga", type: "64")
-        let unknown = book("unknown", type: nil)
-
-        #expect(OnlineBookValidationSelector.preferredBook(
-            from: [audio, text], for: textSource
-        )?.name == "text")
-        #expect(OnlineBookValidationSelector.preferredBook(
-            from: [text, audio], for: audioSource
-        )?.name == "audio")
-        #expect(OnlineBookValidationSelector.preferredBook(
-            from: [audio, unknown], for: textSource
-        )?.name == "unknown")
-        #expect(OnlineBookValidationSelector.preferredBook(
-            from: [audio, manga], for: textSource
-        ) == nil)
+        #expect(OnlineBookValidationSelector.firstBook(in: [noURL, audio, text])?.name == "audio")
+        #expect(OnlineBookValidationSelector.firstBook(in: [noURL]) == nil)
     }
 
     @Test("detail transport failure aborts before discovery")
@@ -547,8 +586,17 @@ private actor HealthCheckMixedContentFetcher: BookSourceHealthCheckFetching {
     private(set) var chapterReferers: [String?] = []
     private(set) var contentRuntimeVariables: [[String: String]?] = []
 
-    init(chapterContent: String = "content") {
+    private let audioFirst: Bool
+    private let textResultTOCURL: String
+
+    /// - Parameters:
+    ///   - audioFirst: the search page lists the audio result before the text one.
+    ///   - textResultTOCURL: the TOC URL the text result already carries, as a search that
+    ///     landed on the book's own page gives it.
+    init(chapterContent: String = "content", audioFirst: Bool = false, textResultTOCURL: String = "") {
         self.chapterContent = chapterContent
+        self.audioFirst = audioFirst
+        self.textResultTOCURL = textResultTOCURL
     }
 
     nonisolated func search(
@@ -559,21 +607,20 @@ private actor HealthCheckMixedContentFetcher: BookSourceHealthCheckFetching {
         onHasMore: ((Bool?) -> Void)?,
         failureMode: BookSourceSearchFailureMode
     ) async throws -> [OnlineBook] {
-        [
-            book(
-                name: "audio result",
-                url: "https://mixed-content.example/audio",
-                type: "32",
-                source: source
-            ),
-            book(
-                name: "text result",
-                url: "https://mixed-content.example/text",
-                tocURL: "https://mixed-content.example/text/embedded-toc",
-                type: "8",
-                source: source
-            ),
-        ]
+        let audio = book(
+            name: "audio result",
+            url: "https://mixed-content.example/audio",
+            type: "32",
+            source: source
+        )
+        let text = book(
+            name: "text result",
+            url: "https://mixed-content.example/text",
+            tocURL: textResultTOCURL,
+            type: "8",
+            source: source
+        )
+        return audioFirst ? [audio, text] : [text, audio]
     }
 
     func discoverItems(
@@ -624,7 +671,7 @@ private actor HealthCheckMixedContentFetcher: BookSourceHealthCheckFetching {
         source: BookSource,
         runtimeVariables: [String: String]?,
         knownBook: OnlineBook?,
-        writesCache: Bool
+        usesCache: Bool
     ) async throws -> BookInfoPackage {
         let info = try await fetchBookInfo(
             url: url,
@@ -666,7 +713,9 @@ private actor HealthCheckMixedContentFetcher: BookSourceHealthCheckFetching {
             source: source,
             runtimeVariables: runtimeVariables
         )
-        chapters[0].runtimeVariables = ["chapter.scope": "chapter"]
+        if !chapters.isEmpty {
+            chapters[0].runtimeVariables = ["chapter.scope": "chapter"]
+        }
         onFirstPageReady?(chapters)
         return TOCPackage(
             sourceId: source.id,
@@ -687,6 +736,10 @@ private actor HealthCheckMixedContentFetcher: BookSourceHealthCheckFetching {
     ) async throws -> ChapterPackage {
         chapterReferers.append(chapterReferer)
         contentRuntimeVariables.append(ref.runtimeVariables)
+        // What the reader's chapter path (`ChapterFetcher.buildChapterPackage`) refuses.
+        if let message = SourceAPIErrorLog.chapterErrorEnvelopeMessage(chapterContent) {
+            throw FetchError.sourceAPIError(message)
+        }
         return ChapterPackage(
             bookId: bookId,
             chapterIndex: ref.index,
@@ -934,7 +987,7 @@ private actor TimedHealthCheckFetcher: BookSourceHealthCheckFetching {
         source: BookSource,
         runtimeVariables: [String: String]?,
         knownBook: OnlineBook?,
-        writesCache: Bool
+        usesCache: Bool
     ) async throws -> BookInfoPackage {
         let start = begin("detail")
         defer { end("detail", start) }
@@ -943,7 +996,7 @@ private actor TimedHealthCheckFetcher: BookSourceHealthCheckFetching {
             source: source,
             runtimeVariables: runtimeVariables,
             knownBook: knownBook,
-            writesCache: writesCache
+            usesCache: usesCache
         )
     }
 

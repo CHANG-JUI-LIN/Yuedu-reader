@@ -85,7 +85,7 @@ struct TTSSourceJSLibTests {
         )
 
         try await withTTSSource(source) {
-            let data = try await CustomHTTPProvider().audioData(for: "你好", title: "測試", rate: 0.5)
+            let data = try await CustomHTTPProvider(session: TTSJSLibTestURLProtocol.session).audioData(for: "你好", title: "測試", rate: 0.5)
             #expect(data == Self.wav)
             let url = try #require(TTSJSLibTestURLProtocol.lastRequest?.url?.absoluteString)
             #expect(url.hasPrefix("https://tts.test/say?t="))
@@ -106,7 +106,7 @@ struct TTSSourceJSLibTests {
 
         try await withTTSSource(source) {
             await #expect(throws: TTSAudioProviderError.self) {
-                _ = try await CustomHTTPProvider().audioData(for: "你好", title: "測試", rate: 0.5)
+                _ = try await CustomHTTPProvider(session: TTSJSLibTestURLProtocol.session).audioData(for: "你好", title: "測試", rate: 0.5)
             }
             #expect(TTSJSLibTestURLProtocol.lastRequest == nil)
         }
@@ -124,7 +124,7 @@ struct TTSSourceJSLibTests {
         )
 
         try await withTTSSource(source) {
-            let data = try await CustomHTTPProvider().audioData(for: "你好", title: "測試", rate: 0.5)
+            let data = try await CustomHTTPProvider(session: TTSJSLibTestURLProtocol.session).audioData(for: "你好", title: "測試", rate: 0.5)
             #expect(data == Self.wav)
         }
     }
@@ -143,7 +143,7 @@ struct TTSSourceJSLibTests {
                 sourceUrl: source.id,
                 headers: ["Authorization": "Bearer stored-token"]
             )
-            _ = try await CustomHTTPProvider().audioData(for: "你好", title: "測試", rate: 0.5)
+            _ = try await CustomHTTPProvider(session: TTSJSLibTestURLProtocol.session).audioData(for: "你好", title: "測試", rate: 0.5)
             #expect(
                 TTSJSLibTestURLProtocol.lastRequest?
                     .value(forHTTPHeaderField: "Authorization") == "Bearer stored-token"
@@ -166,7 +166,7 @@ struct TTSSourceJSLibTests {
                 sourceUrl: source.id,
                 headers: ["User-Agent": "StoredAgent/9.9", "Cookie": "sid=abc"]
             )
-            _ = try await CustomHTTPProvider().audioData(for: "你好", title: "測試", rate: 0.5)
+            _ = try await CustomHTTPProvider(session: TTSJSLibTestURLProtocol.session).audioData(for: "你好", title: "測試", rate: 0.5)
 
             let request = try #require(TTSJSLibTestURLProtocol.lastRequest)
             // The rule's own identity survives, so its signature still matches.
@@ -194,7 +194,7 @@ struct TTSSourceJSLibTests {
                 sourceUrl: source.id,
                 headers: ["Authorization": "Bearer stale-token"]
             )
-            _ = try await CustomHTTPProvider().audioData(for: "你好", title: "測試", rate: 0.5)
+            _ = try await CustomHTTPProvider(session: TTSJSLibTestURLProtocol.session).audioData(for: "你好", title: "測試", rate: 0.5)
             #expect(
                 TTSJSLibTestURLProtocol.lastRequest?
                     .value(forHTTPHeaderField: "Authorization") == "Bearer fresh-token"
@@ -220,7 +220,6 @@ struct TTSSourceJSLibTests {
 
         TTSJSLibTestURLProtocol.reset()
         TTSJSLibTestURLProtocol.responseData = Self.wav
-        URLProtocol.registerClass(TTSJSLibTestURLProtocol.self)
 
         gs.importedTTSSources = [source]
         gs.httpTtsUrlTemplate = source.urlTemplate
@@ -228,7 +227,6 @@ struct TTSSourceJSLibTests {
         gs.ttsUseSystemVoice = false
 
         defer {
-            URLProtocol.unregisterClass(TTSJSLibTestURLProtocol.self)
             TTSJSLibTestURLProtocol.reset()
             LoginManager.shared.clearLogin(sourceUrl: source.id)
             gs.httpTtsUrlTemplate = previousTemplate
@@ -242,6 +240,14 @@ struct TTSSourceJSLibTests {
 }
 
 private final class TTSJSLibTestURLProtocol: URLProtocol {
+    /// A session that answers through this protocol. `URLProtocol.registerClass` reaches only
+    /// `URLSession.shared`, which the app no longer uses (`ServerTrustPolicy`).
+    static let session: URLSession = {
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [TTSJSLibTestURLProtocol.self]
+        return URLSession(configuration: configuration)
+    }()
+
     nonisolated(unsafe) static var responseData = Data()
     nonisolated(unsafe) static var lastRequest: URLRequest?
 

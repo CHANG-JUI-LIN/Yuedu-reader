@@ -30,11 +30,28 @@ struct TTSLoginScriptTests {
         let shown = ShownLoginInfo()
         let script = TTSLoginScript(source: source) { shown.record($0) }
         let started = Date()
-        await script.run(action: "verify()")
+        await script.run(action: "verify()", values: [:])
 
         #expect(Date().timeIntervalSince(started) < 5)
         #expect(LoginManager.shared.getLoginInfo(sourceUrl: source.id)?["page"] == "<html>verified</html>")
         #expect(shown.last?["page"] == "<html>verified</html>")
+    }
+
+    /// Legado's `SourceLoginDialog.handleButtonClick` binds `result` to the form
+    /// (`getLoginData`, a `HashMap`). A TTS button used to run with no `result` at all.
+    @Test("a login button reads the form through result.get")
+    func buttonReadsFormAsJavaMap() async throws {
+        let source = Self.source(loginUrl: """
+        function verify() {
+            source.putLoginInfo(JSON.stringify({ key: String(result.get('密鑰')) }));
+        }
+        """)
+        defer { LoginManager.shared.clearLogin(sourceUrl: source.id) }
+        let script = TTSLoginScript(source: source) { _ in }
+
+        await script.run(action: "verify()", values: ["密鑰": "abc123"])
+
+        #expect(LoginManager.shared.getLoginInfo(sourceUrl: source.id)?["key"] == "abc123")
     }
 
     @Test("dynamic labels resolve in the engine that loaded loginUrl")

@@ -570,7 +570,10 @@ open class Node: Equatable, Hashable {
         range.end = end
         sourceRange = range
         sourceRangeIsComplete = true
-        sourceRangeDirty = false
+        // Yuedu patch: the end tag completes the range but does not make the element match
+        // its source again. An element marked dirty while it was open — the tree builder
+        // implied a child (`HtmlTreeBuilder.insertNode`) — stays dirty, or `outerHtml()`
+        // prints the raw source without that child.
     }
 
     @inline(__always)

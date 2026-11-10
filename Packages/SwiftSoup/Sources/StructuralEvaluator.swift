@@ -114,11 +114,12 @@ public class StructuralEvaluator: Evaluator, @unchecked Sendable {
             super.init(evaluator)
         }
 
+        // Yuedu patch (VENDOR-MANIFEST.json): no stop at `root`. jsoup 1.16.2, the version
+        // Legado pins, reads a `>` chain with `ImmediateParentRun`, which walks the parents with
+        // no root check, so `html > body > div.searchbook > div.bookinfo a` selects inside a
+        // `div.searchbook` list item (精华书阁, YCK 1330). Upstream's check made every such
+        // rule read nothing.
         public override func matches(_ root: Element, _ element: Element) -> Bool {
-            if (root == element) {
-                return false
-            }
-
             if let parent = element.parent() {
                 do {
                     return try evaluator.matches(root, parent)

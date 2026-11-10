@@ -363,8 +363,12 @@ struct OnlineBookView: View {
                 AdaptiveSheetContainer(maxWidth: DSLayout.readableListWidth) {
                     SourceSearchSheet(
                         query: currentBook.name,
+                        author: currentBook.author,
                         currentSourceId: currentBook.sourceId,
                         currentBookURL: currentBook.bookUrl,
+                        kind: DetailSourceKind.kind(of: currentBook, in: searchBook),
+                        currentSourceName: currentBook.sourceName,
+                        currentLastChapter: currentBook.lastChapter,
                         otherVersions: otherWorkVersions,
                         onSelectVersion: { id in pendingVersion = id },
                         onSelectOrigin: { origin in pendingOrigin = origin }
@@ -824,7 +828,8 @@ struct OnlineBookView: View {
                         source: source,
                         runtimeVariables: currentRuntimeVariables,
                         onFirstPageReady: nil,
-                        forceRefresh: forceRefresh
+                        forceRefresh: forceRefresh,
+                        detailPage: infoPackage.onlineBook.detailPage
                     )
                 }
                 await applyFinal(tocPackage)
@@ -835,6 +840,7 @@ struct OnlineBookView: View {
             //    real TOC URL, then the TOC (instant when ① already showed
             //    this URL's cache).
             var finalTocURL = requestBook.bookUrl
+            var detailPage: BookDetailPage?
             if !requestBook.bookUrl.isEmpty {
                 let infoPackage = try await SourcePerfTrace.spanAsync(
                     "detail.total", source.bookSourceName
@@ -856,13 +862,15 @@ struct OnlineBookView: View {
                 if !infoPackage.tocUrl.isEmpty {
                     finalTocURL = infoPackage.tocUrl
                 }
+                detailPage = infoPackage.onlineBook.detailPage
             }
             let tocPackage = try await dependencies.bookSourceFetcher.fetchTOCPackage(
                 tocUrl: finalTocURL,
                 source: source,
                 runtimeVariables: currentRuntimeVariables,
                 onFirstPageReady: applyFirstPage,
-                forceRefresh: forceRefresh
+                forceRefresh: forceRefresh,
+                detailPage: detailPage
             )
             await applyFinal(tocPackage)
         } catch {

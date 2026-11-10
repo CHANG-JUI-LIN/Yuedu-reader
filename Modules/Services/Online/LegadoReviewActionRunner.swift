@@ -304,7 +304,7 @@ extension LegadoReviewActionRunner {
             presentToast: presentToast
         )
         let failed = run.outcome.errorMessage != nil
-        let handled = !failed && Self.legadoIsTrue(run.value, nilIsTrue: false)
+        let handled = !failed && LegadoTruth.isTrue(run.value)
         AppLogger.parse("⟐ callBackJs", context: [
             "source": source.bookSourceName,
             "event": event.rawValue,
@@ -318,15 +318,6 @@ extension LegadoReviewActionRunner {
             ])
         }
         return SourceCallBackOutcome(handled: handled, failed: failed, page: run.outcome.page, value: run.value)
-    }
-
-    /// legado `String?.isTrue(nullIsTrue)`.
-    static func legadoIsTrue(_ value: String?, nilIsTrue: Bool) -> Bool {
-        guard let value, !value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, value != "null" else {
-            return nilIsTrue
-        }
-        let falsy: Set<String> = ["false", "no", "not", "0", "0.0"]
-        return !falsy.contains(value.trimmingCharacters(in: .whitespaces).lowercased())
     }
 
     /// One book-scoped source script (簡介 button or image, `callBackJs`), on the source's

@@ -109,8 +109,6 @@ struct WorkSourceFinderTests {
                 == .failed)
         #expect(WorkSourceFinder.outcome(paused: false, progress: Progress(total: 2, completed: 2, failedAsEmpty: 1))
                 == .done(more: false))
-        // Every source cooling down from timeouts: none was asked, which is not a failed search.
-        #expect(WorkSourceFinder.outcome(paused: false, progress: Progress(total: 0, skipped: 4)) == .done(more: false))
     }
 
     @Test("no enabled source: says so without searching")

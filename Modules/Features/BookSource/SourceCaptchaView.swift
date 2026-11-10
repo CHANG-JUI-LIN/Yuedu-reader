@@ -121,7 +121,8 @@ struct SourceCaptchaView: View {
             src: request.imageURL,
             renderWidth: Self.renderWidth,
             headers: request.headers,
-            cachePolicy: .reloadIgnoringLocalCacheData
+            cachePolicy: .reloadIgnoringLocalCacheData,
+            session: .sourceSites
         )
         loadState = image == nil ? .failed : .loaded
     }

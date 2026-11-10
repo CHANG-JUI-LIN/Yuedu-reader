@@ -19,6 +19,9 @@ struct BookOrigin: Identifiable, Codable, Sendable {
     /// (`BookOriginSearchService`), for the metadata filler to tell one author from two; it
     /// is not saved with cached origins.
     var author: String = ""
+    /// The result's `OnlineBook.infoHtml` — its list page was its own page — carried to the
+    /// detail book `OnlineBook(detailOrigin:…)` rebuilds. Not saved with cached origins.
+    var infoHtml: String? = nil
 
     // `id` is a fresh UUID per instance and is intentionally excluded so cached
     // origins (換源 results) round-trip without persisting a meaningless identity.
@@ -411,8 +414,6 @@ class SearchAggregator: ObservableObject {
         var completed: Int = 0
         var failed: Int = 0
         var timedOut: Int = 0
-        /// Sources skipped this search because they are in a timeout cooldown.
-        var skipped: Int = 0
         /// Of `completed`, the sources whose fetch failed and that are shown as no results
         /// (Phase 0b), so a caller can tell 「沒有找到」 from a search no source answered.
         var failedAsEmpty: Int = 0
@@ -430,20 +431,20 @@ class SearchAggregator: ObservableObject {
         NetworkSearchSettings.clampedConcurrency(GlobalSettings.shared.searchConcurrency)
     }
 
-    /// Timeout seconds per book source. Kept tight so dead/unreachable hosts
-    /// free their concurrency slot quickly (fail-fast) instead of stalling the
-    /// whole search; repeat offenders are then skipped via `SourceHealthStore`.
-    private let perSourceTimeout: UInt64 = 12
-
-    /// Longer budget for JS-driven (`<js>`/`@js:`) search sources. Aggregate
-    /// sources (光遇/大灰狼…) fan out to dozens of sub-sites server-side and take
-    /// ~12–15s to return; the tight per-source timeout would cut them off and the
-    /// search would look broken even when the cloud is aggregating correctly.
-    private let perAggregateSourceTimeout: UInt64 = 30
+    /// Seconds per book source, as Legado gives them: 30 for 搜索 (`SearchModel`), 60 for 換源
+    /// and 尋找可用來源 (`ChangeBookSourceViewModel`). A plain template source used to get 12 s,
+    /// and a slow site that Legado searches was cut off. A dead host holds its slot for the
+    /// whole time, as there: Legado skips no source for having failed before.
+    private var perSourceTimeout: UInt64 {
+        switch mergeRule {
+        case .work: NetworkSearchSettings.searchSecondsPerSource
+        case .changeSource: NetworkSearchSettings.changeSourceSecondsPerSource
+        }
+    }
 
     private func fanOut(concurrency: Int) -> BookSourceSearchFanOut {
         BookSourceSearchFanOut(
-            concurrency: concurrency, timeout: perSourceTimeout, aggregateTimeout: perAggregateSourceTimeout,
+            concurrency: concurrency, timeout: perSourceTimeout,
             fetcher: fetcher
         )
     }
@@ -552,19 +553,10 @@ class SearchAggregator: ObservableObject {
         // Cancel previous search
         searchTask?.cancel()
 
-        // Skip sources cooling down from repeated timeouts — but only when
-        // searching across many sources. An explicitly chosen single source is
-        // always attempted (respect the user's pick).
-        let activeSources: [BookSource]
-        let skippedCount: Int
-        if sources.count > 1 {
-            let split = SourceHealthStore.shared.partition(sources)
-            activeSources = split.active
-            skippedCount = split.skipped.count
-        } else {
-            activeSources = sources
-            skippedCount = 0
-        }
+        // Every source is asked, as in Legado's `SearchModel`, however it answered before. A
+        // cooldown used to skip a source for 5–60 min after three timeouts or failures in a
+        // row, and readers saw a search, or a 換源, reach only part of their sources.
+        let activeSources = sources
 
         // Reset state for a brand-new query.
         resultsPublicationTask?.cancel()
@@ -577,10 +569,7 @@ class SearchAggregator: ObservableObject {
         publicationMetrics = ResultPublicationMetrics()
         internalResults = []
         resultsNeedSort = false
-        internalProgress = SearchProgress(
-            total: activeSources.count,
-            skipped: skippedCount
-        )
+        internalProgress = SearchProgress(total: activeSources.count)
         requestResultsPublication(force: true, reason: "reset")
         deduplicationMap = [:]
         answerTally = SourceAnswerTally()
@@ -664,18 +653,14 @@ class SearchAggregator: ObservableObject {
                     if answer.outcome == .results { self.pagedSourceIds.insert(sourceId) }
                     self.answerTally.count(answer.outcome)
                     if answer.outcome == .failedAsEmpty { self.internalProgress.failedAsEmpty += 1 }
-                    // Phase 0b: a failure the fetcher reported as "no results" still
-                    // counts as a success here. Counting it in SourceHealthStore (cooldown)
-                    // is design §17 item 9, not yet decided.
+                    // The round-trip feeds 換源's fastest-first order (`SourceHealthStore`).
                     SourceHealthStore.shared.recordSuccess(sourceId, responseMs: answer.elapsedMs)
                 case .timedOut:
                     self.internalProgress.timedOut += 1
                     self.completedSourceIds.insert(sourceId)
-                    SourceHealthStore.shared.recordFailure(sourceId)
                 case .failed:
                     self.internalProgress.failed += 1
                     self.completedSourceIds.insert(sourceId)
-                    SourceHealthStore.shared.recordFailure(sourceId)
                 }
                 self.requestResultsPublication(force: false, reason: "progress")
 
@@ -769,8 +754,7 @@ class SearchAggregator: ObservableObject {
     }
 
     /// Merges a source's later page. A page that adds nothing new, or that the source says is
-    /// its last, exhausts the source; a failed or timed-out later page stops paging it without
-    /// striking its health, since its page 1 succeeded.
+    /// its last, exhausts the source; a failed or timed-out later page stops paging it.
     private func mergeLaterPage(_ answer: BookSourceSearchFanOut.Answer, source: BookSource, query q: String) async {
         let sourceId = source.id
         guard answer.outcome.answered else {

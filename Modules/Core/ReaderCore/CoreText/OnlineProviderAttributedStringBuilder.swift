@@ -221,6 +221,8 @@ final class OnlineProviderAttributedStringBuilder: @preconcurrency AttributedStr
     /// Where offline download put this book's illustrations. Checked before the network, so a
     /// downloaded 插图 chapter reads on a plane — and a re-opened one doesn't re-fetch its plates.
     private let imageCache: OnlineImageDiskCache?
+    /// The session remote chapter images are fetched with.
+    private let imageSession: URLSession
 
     init(
         provider: any BookContentProvider,
@@ -230,8 +232,10 @@ final class OnlineProviderAttributedStringBuilder: @preconcurrency AttributedStr
         fontRegistrationService: any FontRegistrationServicing = CoreTextFontRegistrationService(),
         imageDecode: (@Sendable (Data, String) async -> Data?)? = nil,
         imageHeaders: [String: String] = [:],
-        imageCacheDirectory: URL? = nil
+        imageCacheDirectory: URL? = nil,
+        imageSession: URLSession = .sourceSites
     ) {
+        self.imageSession = imageSession
         self.provider = provider
         self.renderSize = renderSize
         self.resourceProvider = resourceProvider
@@ -433,6 +437,7 @@ final class OnlineProviderAttributedStringBuilder: @preconcurrency AttributedStr
             bodyPointSize: bodyPointSize,
             themeTextColor: themeTextColor,
             headers: imageHeaders,
+            session: imageSession,
             decode: imageDecode
         ) {
             return onlineImage

@@ -6,11 +6,18 @@ protocol EdgeTTSTransport: Sendable {
 
 final class EdgeTTSAudioProvider: TTSAudioProvider, Sendable {
     let voice: EdgeTTSVoice
+    /// The line's emotion, rendered as prosody — all this endpoint accepts.
+    let delivery: TTSDelivery?
     private let transport: any EdgeTTSTransport
     var displayName: String { localized("微軟線上語音") }
 
-    init(voice: EdgeTTSVoice, transport: any EdgeTTSTransport = EdgeTTSWebSocketTransport()) {
+    init(
+        voice: EdgeTTSVoice,
+        delivery: TTSDelivery? = nil,
+        transport: any EdgeTTSTransport = EdgeTTSWebSocketTransport()
+    ) {
         self.voice = voice
+        self.delivery = delivery
         self.transport = transport
     }
 
@@ -24,7 +31,12 @@ final class EdgeTTSAudioProvider: TTSAudioProvider, Sendable {
             try Task.checkCancellation()
             let data = try await transport.synthesize(
                 request: EdgeTTSProtocol.request(),
-                messages: EdgeTTSProtocol.messages(escapedText: escapedText, voice: voice, rate: rate)
+                messages: EdgeTTSProtocol.messages(
+                    escapedText: escapedText,
+                    voice: voice,
+                    rate: rate,
+                    prosody: TTSProsody.approximating(delivery)
+                )
             )
             try Task.checkCancellation()
             guard !data.isEmpty else { throw EdgeTTSError.emptyAudio }
@@ -45,7 +57,7 @@ struct EdgeTTSWebSocketTransport: EdgeTTSTransport {
         let configuration = URLSessionConfiguration.ephemeral
         configuration.timeoutIntervalForRequest = 15
         configuration.timeoutIntervalForResource = 60
-        return URLSession(configuration: configuration)
+        return URLSession.trusting(configuration)
     }()
 
     func synthesize(request: URLRequest, messages: [String]) async throws -> Data {
@@ -113,12 +125,35 @@ private final class EdgeTTSRequestDeadline: @unchecked Sendable {
 }
 
 enum TTSAudioProviderSelection {
+    /// The narrator's provider for the voice source the reader picked.
+    ///
+    /// Main actor: the cloud voices read their key from the Keychain here, once per chapter,
+    /// and the per-segment providers copy that configuration rather than reading it again.
+    @MainActor
     static func make(template: String, isDirectChapterAudio: Bool) throws -> any TTSAudioProvider {
-        if !isDirectChapterAudio, EdgeTTSVoice.isEdgeSource(template) {
+        guard !isDirectChapterAudio else { return CustomHTTPProvider() }
+        if EdgeTTSVoice.isEdgeSource(template) {
             guard let voice = EdgeTTSVoice.voice(sourceIdentifier: template) else {
                 throw EdgeTTSError.invalidVoice
             }
             return EdgeTTSAudioProvider(voice: voice)
+        }
+        if let service = CloudTTSService.service(forSourceIdentifier: template) {
+            let voice = CloudTTSService.voiceID(inSourceIdentifier: template)
+            switch service {
+            case .azure:
+                let ref = AzureTTSVoiceRef(storage: voice)
+                return AzureTTSAudioProvider(
+                    configuration: try AzureTTSConfiguration.current(),
+                    voice: ref,
+                    supportedStyles: AzureTTSVoiceCatalog.shared.voice(named: ref.shortName).map { Set($0.styles) }
+                )
+            case .openAI, .mimo:
+                return OpenAICompatibleTTSAudioProvider(
+                    configuration: try OpenAICompatibleTTSConfiguration.current(service: service),
+                    voice: voice
+                )
+            }
         }
         return CustomHTTPProvider()
     }

@@ -3,6 +3,7 @@ import JavaScriptCore
 import os
 import CryptoKit
 import CommonCrypto
+import Network
 import UIKit
 import zlib
 
@@ -36,6 +37,52 @@ struct SourceBrowserRequest {
     /// `startBrowserAwait(url, title, refetchAfterSuccess, html)`), shown with `url` as its
     /// base instead of loading `url`.
     var html: String? = nil
+    /// Set when a script waits on the page; the presenter takes it away early through this
+    /// (`LegadoUserWaitRegistry.cancelAll`).
+    var withdrawal: SourceWaitWithdrawal? = nil
+}
+
+/// How whoever shows a page or captcha a script is waiting on hears that the wait was ended
+/// from outside — a source-validation run's time ran out — so the sheet does not stay up with
+/// nobody waiting behind it. The presenter installs `onWithdraw`; it runs once, on the main
+/// queue, at once if the wait already ended.
+final class SourceWaitWithdrawal: Sendable {
+    private let state = OSAllocatedUnfairLock<(withdrawn: Bool, handler: (@Sendable @MainActor () -> Void)?)>(
+        initialState: (false, nil)
+    )
+
+    var isWithdrawn: Bool { state.withLock { $0.withdrawn } }
+
+    func onWithdraw(_ handler: @escaping @Sendable @MainActor () -> Void) {
+        let runNow = state.withLock { state -> Bool in
+            guard !state.withdrawn else { return true }
+            state.handler = handler
+            return false
+        }
+        if runNow { Task { @MainActor in handler() } }
+    }
+
+    func withdraw() {
+        let handler = state.withLock { state -> (@Sendable @MainActor () -> Void)? in
+            guard !state.withdrawn else { return nil }
+            state.withdrawn = true
+            defer { state.handler = nil }
+            return state.handler
+        }
+        if let handler { Task { @MainActor in handler() } }
+    }
+}
+
+/// A link source JS asked the system to open: Legado `java.openUrl(url[, mimeType])`.
+struct SourceOpenURLRequest: Sendable {
+    let url: URL
+    /// Legado hands it to Android's intent; iOS opens by URL alone, so it is only logged.
+    let mimeType: String?
+    let sourceName: String
+
+    /// legado-E sends `legado://` and `yuedu://` links to its importer instead of the system.
+    /// The same parser `onOpenURL` reads them with decides which those are.
+    var isImportLink: Bool { BookSourceImportDeepLink.target(from: url) != nil }
 }
 
 /// A code the source asks the reader to read off an image: Legado
@@ -48,12 +95,16 @@ struct SourceCaptchaRequest {
     let headers: [String: String]
     let sourceName: String
     let sourceURL: String
+    var withdrawal: SourceWaitWithdrawal? = nil
 }
 
 extension Notification.Name {
     /// A book source's JS asked the app to search for a keyword
     /// (`java.searchBook` / `java.open('search', …)`). `userInfo["keyword"]`.
     static let bookSourceRequestedSearch = Notification.Name("bookSourceRequestedSearch")
+    /// A source's `java.openUrl` named an import link (`legado://import/…`, `yuedu://…`).
+    /// `userInfo["url"]` is the `URL`; the app handles it as it does one from `onOpenURL`.
+    static let sourceRequestedImportLink = Notification.Name("sourceRequestedImportLink")
 }
 
 /// A `java.*` request on the AnalyzeUrl route (`url,{…}`, `data:`), split where its JS ends.
@@ -68,12 +119,174 @@ struct PreparedSourceRequest {
         let body: String
         /// Where the response came from; `bodyJs` reads it as `baseUrl`.
         let url: String
+        /// The bytes `body` was read from, for `java.downloadFile`; `nil` for a `data:` URI.
+        var data: Data? = nil
+        var transportError: (any Error)? = nil
+        /// The HTTP response itself — where a redirect landed, its status, headers and cookies —
+        /// which `java.connect` and `java.ajaxAll` hand the script as their `StrResponse`.
+        /// `nil` for a `data:` URI or a WebView page, which have none.
+        var http: LegadoHTTPResult? = nil
     }
 
     /// Network only, on any thread; must never reach the JS queue. `nil` when the request failed.
     let fetch: () -> Response?
     /// JS thread only. `nil` when the response's transform failed.
     let finish: (Response) -> String?
+    /// The URL's `type` option (`url,{"type":"mp3"}`): `java.downloadFile` names the file by it.
+    var type: String? = nil
+}
+
+/// The waits for the user (`java.startBrowserAwait`, `getVerificationCode`) a source's
+/// scripts are parked in, each endable from outside the script's thread.
+///
+/// A script waiting for the user is exempt from the runaway-script timeout, and an
+/// interactive reader needs that. A source-validation run does not wait: its per-source
+/// timeout ended the check but not the wait, so the script — and the validation worker
+/// behind it — stayed parked for as long as the page was up (茶杯狐狸, over ten minutes
+/// past a 180-second limit, YCK1330 report). The run now ends the source's waits when its
+/// time is up (`BookSourceHealthChecker`).
+final class LegadoUserWaitRegistry: Sendable {
+    private let waits = OSAllocatedUnfairLock<[UUID: @Sendable () -> Void]>(initialState: [:])
+
+    var isWaiting: Bool { waits.withLock { !$0.isEmpty } }
+
+    func register(_ cancel: @escaping @Sendable () -> Void) -> UUID {
+        let token = UUID()
+        waits.withLock { $0[token] = cancel }
+        return token
+    }
+
+    func unregister(_ token: UUID) {
+        _ = waits.withLock { $0.removeValue(forKey: token) }
+    }
+
+    /// Answers every wait in progress as dismissed. Their scripts go on, and raise the
+    /// dismissal (`browser cancelled`) as they do when the user closes the page.
+    func cancelAll() {
+        let cancels = waits.withLock { waits -> [@Sendable () -> Void] in
+            defer { waits.removeAll() }
+            return Array(waits.values)
+        }
+        cancels.forEach { $0() }
+    }
+}
+
+/// Whether a `java.*` request follows HTTP redirects.
+///
+/// Legado-E's `java.get`, `java.head` and `java.post` are jsoup requests with
+/// `followRedirects(false)` (`JsExtensions.get/head/post`): sources call them to read a
+/// redirect's `Location` header — the 3xx response itself is the result. Every other request
+/// (`java.ajax`, `java.connect`, the okhttp shim) follows redirects. The flag rides on the
+/// request so the runtime's transport, which owns the session, honours it too.
+enum LegadoRedirectPolicy {
+    private static let propertyKey = "YueduLegadoRefusesRedirects"
+
+    static func refusingRedirects(_ request: URLRequest) -> URLRequest {
+        guard let mutable = (request as NSURLRequest).mutableCopy() as? NSMutableURLRequest else {
+            return request
+        }
+        URLProtocol.setProperty(true, forKey: propertyKey, in: mutable)
+        return mutable as URLRequest
+    }
+
+    static func refusesRedirects(_ request: URLRequest) -> Bool {
+        (URLProtocol.property(forKey: propertyKey, in: request) as? Bool) == true
+    }
+}
+
+/// A request whose answer is bytes, not a page: a URL with Legado's `type` option
+/// (`url,{"type":"hex"}`, `java.downloadFile(url)` of such a URL), which Legado answers with the
+/// hex of the body. It is read up to `WebFetcher.binaryResponseByteLimit` instead of the page
+/// limit. The mark rides on the request, as `LegadoRedirectPolicy`'s does, through whatever
+/// transport a runtime installs.
+enum LegadoBinaryDownload {
+    private static let propertyKey = "YueduLegadoBinaryDownload"
+
+    static func marking(_ request: URLRequest) -> URLRequest {
+        guard let mutable = (request as NSURLRequest).mutableCopy() as? NSMutableURLRequest else {
+            return request
+        }
+        URLProtocol.setProperty(true, forKey: propertyKey, in: mutable)
+        return mutable as URLRequest
+    }
+
+    static func isMarked(_ request: URLRequest) -> Bool {
+        (URLProtocol.property(forKey: propertyKey, in: request) as? Bool) == true
+    }
+
+    static func byteLimit(for request: URLRequest) -> Int {
+        isMarked(request) ? WebFetcher.binaryResponseByteLimit : WebFetcher.responseByteLimit
+    }
+}
+
+extension URLSession {
+    /// A data task that honours `LegadoRedirectPolicy`. Every `java.*` request is sent through
+    /// this, by the bridge itself and by the transport a runtime installs.
+    ///
+    /// The body is read up to `WebFetcher.responseByteLimit`, as every page a source reads is
+    /// (`BoundedResponseLoader`), or a binary download's larger limit (`LegadoBinaryDownload`):
+    /// a larger one reaches the script as a failed request.
+    ///
+    /// It goes out with the headers of the Legado client it stands for — okhttp's, or a
+    /// `java.get`/`head`/`post`'s jsoup ones (`LegadoOutgoingHeaders`).
+    func legadoDataTask(
+        with request: URLRequest,
+        completionHandler: @escaping @Sendable (Data?, URLResponse?, (any Error)?) -> Void
+    ) -> any SourceRequestTask {
+        let request = LegadoOutgoingHeaders.prepared(request, as: LegadoOutgoingHeaders.client(of: request))
+        // A refused redirect is not sent: the task completes with the 3xx response.
+        let redirect: (@Sendable (URL) -> Bool)?
+        if LegadoRedirectPolicy.refusesRedirects(request) {
+            redirect = { _ in false }
+        } else {
+            redirect = nil
+        }
+        return BoundedResponseLoader.dataTask(
+            with: request, session: self, limit: LegadoBinaryDownload.byteLimit(for: request),
+            redirect: redirect, transport: "jsBridge", completionHandler: completionHandler
+        )
+    }
+}
+
+/// One runtime's scripts blocked on something outside them, and for how long: the network (a
+/// request, a `java.ajaxAll` batch, a headless `java.webView` page) or the reader (a
+/// `startBrowserAwait` page, a captcha). A request waits up to `WebFetcher.sourceRequestTimeout`
+/// (60 s, Legado's OkHttp `readTimeout`/`callTimeout`) and the reader's sheet always ends, so the
+/// engine's 30 s runaway-script timeout counts none of this time (`JSCoreEngine.onJSQueueWithTimeout`).
+/// Legado has no script timeout; the request's own bounds the wait. Only the waits are counted —
+/// a URL's own JS, built before its request, stays under the runaway timeout.
+final class LegadoScriptWaits: Sendable {
+    private struct State {
+        var count = 0
+        /// When `count` last went from 0 to 1.
+        var since: UInt64 = 0
+        /// The waits that have ended, overlapping ones (`ajaxAll`'s workers) counted once.
+        var ended: UInt64 = 0
+    }
+    private let state = OSAllocatedUnfairLock(initialState: State())
+
+    var isWaiting: Bool { state.withLock { $0.count > 0 } }
+
+    /// The time spent waiting so far, the wait in progress included.
+    var waitedSeconds: TimeInterval {
+        let now = DispatchTime.now().uptimeNanoseconds
+        let nanos = state.withLock { $0.ended + ($0.count > 0 ? now - $0.since : 0) }
+        return TimeInterval(nanos) / 1_000_000_000
+    }
+
+    func during<T>(_ wait: () -> T) -> T {
+        state.withLock { state in
+            if state.count == 0 { state.since = DispatchTime.now().uptimeNanoseconds }
+            state.count += 1
+        }
+        defer {
+            state.withLock { state in
+                state.count -= 1
+                if state.count == 0 { state.ended += DispatchTime.now().uptimeNanoseconds - state.since }
+            }
+        }
+        return wait()
+    }
 }
 
 /// The transport every `java.*` request goes through when a runtime installs one.
@@ -88,33 +301,60 @@ typealias SourceScriptTransport = (URLRequest, _ declaredCharset: String?) -> Le
 /// Response-shaped JavaScript APIs retain this metadata; string-shaped APIs consume
 /// only `body` without issuing a second request.
 struct LegadoHTTPResult {
-    let requestURL: URL
+    /// The URL the response came from, after redirects: okhttp's `Response.request().url()`,
+    /// which is also what `StrResponse.url()` reads.
     let finalURL: URL
     let statusCode: Int
     let statusMessage: String
     let headers: [String: String]
     let cookies: [String: String]
     let body: String
+    /// The response's bytes as they arrived; `nil` for a result built from text alone. Legado
+    /// reads them for a request with a `type` option (the body is their hex) and for
+    /// `java.downloadFile`, where decoding to text first would corrupt them.
+    var data: Data? = nil
+    /// Why no response arrived. `java.ajaxTestAll` reports it as Legado's error code.
+    var transportError: (any Error)? = nil
+    /// The URL the request asked for, which `urlString` reads a fragment from.
+    var requestedURL: URL? = nil
+    /// The redirects followed to reach this response, oldest first, with no body: okhttp's
+    /// `priorResponse()` chain (`URLResponse.followedRedirects`).
+    var redirects: [LegadoHTTPResult] = []
+
+    /// `finalURL` as a source reads it (`AnalyzeUrl.legadoURLString`): `StrResponse.url()`,
+    /// and the `baseUrl` of the page's rules.
+    var urlString: String { AnalyzeUrl.legadoURLString(final: finalURL, requested: requestedURL) }
 
     static func bodyOnly(request: URLRequest, body: String) -> LegadoHTTPResult {
         let url = request.url ?? URL(string: "about:blank")!
         return LegadoHTTPResult(
-            requestURL: url,
             finalURL: url,
             statusCode: 200,
             statusMessage: HTTPURLResponse.localizedString(forStatusCode: 200).capitalized,
             headers: [:],
             cookies: [:],
-            body: body
+            body: body,
+            requestedURL: request.url
+        )
+    }
+
+    /// This response with `body` for its own: Legado's `StrResponse(raw, body)`, which
+    /// `AnalyzeUrl.getStrResponseAwait` answers with once a `bodyJs` has run. The bytes that
+    /// arrived are not that body, so none are kept.
+    func replacingBody(_ body: String) -> LegadoHTTPResult {
+        LegadoHTTPResult(
+            finalURL: finalURL, statusCode: statusCode, statusMessage: statusMessage,
+            headers: headers, cookies: cookies, body: body, requestedURL: requestedURL,
+            redirects: redirects
         )
     }
 
     static func make(
-        request: URLRequest, data: Data?, response: URLResponse?, declaredCharset: String? = nil
+        request: URLRequest, data: Data?, response: URLResponse?, declaredCharset: String? = nil,
+        error: (any Error)? = nil
     ) -> LegadoHTTPResult {
         let http = response as? HTTPURLResponse
-        let requestURL = request.url ?? URL(string: "about:blank")!
-        let finalURL = response?.url ?? requestURL
+        let finalURL = response?.url ?? request.url ?? URL(string: "about:blank")!
         var headers: [String: String] = [:]
         http?.allHeaderFields.forEach { key, value in headers[String(describing: key)] = String(describing: value) }
         let cookieObjects = HTTPCookie.cookies(withResponseHeaderFields: headers, for: finalURL)
@@ -126,15 +366,23 @@ struct LegadoHTTPResult {
         }
         let code = http?.statusCode ?? (data == nil ? 0 : 200)
         return LegadoHTTPResult(
-            requestURL: requestURL,
             finalURL: finalURL,
             statusCode: code,
             statusMessage: code == 0 ? "" : HTTPURLResponse.localizedString(forStatusCode: code).capitalized,
             headers: headers,
             cookies: cookies,
-            body: data.map {
+            // A binary download's answer is its bytes (`LegadoBinaryDownload`), which Legado
+            // never reads as text: decoding 22 MB of audio as a page took a second (11-09).
+            body: LegadoBinaryDownload.isMarked(request) ? "" : data.map {
                 LegadoJSBridge.decodeData($0, response: response, declaredCharset: declaredCharset)
-            } ?? ""
+            } ?? "",
+            data: data,
+            transportError: error,
+            requestedURL: request.url,
+            // As okhttp hands them out: a redirect's body is never read.
+            redirects: response?.followedRedirects.map {
+                make(request: URLRequest(url: $0.url ?? finalURL), data: nil, response: $0)
+            } ?? []
         )
     }
 }
@@ -150,6 +398,8 @@ struct LegadoHTTPResult {
     /// The list is a `JSValue`, not `[String]`: a script's list may hold objects or numbers, and
     /// the bridging cast to `[String]` aborts the app before the method runs.
     func ajaxAll(_ urlArray: JSValue) -> [LegadoStrResponse]
+    /// Legado-E `java.ajaxTestAll(urls, timeout[, skipRateLimit])`.
+    func ajaxTestAll(_ urlArray: JSValue, _ timeout: Double, _ skipRateLimit: JSValue) -> [LegadoStrResponse]
     func connect(_ urlStr: String) -> LegadoStrResponse
     func connectWithOptions(_ urlStr: String, _ headers: JSValue, _ timeout: JSValue) -> LegadoStrResponse
     func head(_ urlStr: String, _ headers: JSValue) -> LegadoStrResponse
@@ -160,6 +410,17 @@ struct LegadoHTTPResult {
     /// Backs the two-argument `java.get(url, headers)`; see `installJavaGetOverload`.
     func httpGet(_ urlStr: String, _ headers: JSValue) -> LegadoStrResponse
     func importScript(_ url: String) -> String
+
+    // Source files under `LegadoJSBridge.sourceFilesRoot` (Legado `JsExtensions.getFile`)
+    /// `null` when there is no file.
+    func readFile(_ path: String) -> JSValue
+    /// `readTxtFile(path[, charsetName])`.
+    func readTxtFile(_ path: String, _ charset: JSValue) -> String
+    func deleteFile(_ path: String) -> Bool
+    /// `downloadFile(url)` and the deprecated `downloadFile(hex, url)`.
+    func downloadFile(_ first: String, _ second: JSValue) -> String
+    /// `cacheFile(url[, saveTime])`.
+    func cacheFile(_ url: String, _ saveTime: JSValue) -> String
 
     // Headless WebView (Legado java.webView(html, url, js) — runs js after load, returns result)
     func webView(_ html: JSValue, _ url: JSValue, _ js: JSValue) -> String
@@ -174,7 +435,10 @@ struct LegadoHTTPResult {
     func getWebViewUA() -> String
 
     // Variable storage
-    func put(_ key: String, _ value: String)
+    /// Legado's `AnalyzeRule.put` returns the value it stored: 晋江 (YCK1330 index 109)
+    /// searches with `keyword={{key;java.put("key",key)}}`, which is the keyword in Legado and
+    /// was an empty template here.
+    @discardableResult func put(_ key: String, _ value: String) -> String
     func get(_ key: String) -> String
 
     // Rule evaluation (placeholder — connected to ModernRuleEngine later)
@@ -184,7 +448,23 @@ struct LegadoHTTPResult {
     func getString(_ ruleStr: String, _ mContent: JSValue) -> String
     func getStringList(_ ruleStr: String) -> [String]
     func setContent(_ content: JSValue, _ baseUrl: JSValue) -> String
-    func getElements(_ ruleStr: String) -> [Any]
+    func getElements(_ ruleStr: String) -> Any
+    /// Backs `java.getElement(rule)` (Legado `AnalyzeRule.getElement`); the JS dispatcher in
+    /// `JSCoreEngine.installJavaElementAccessors` wraps nodes as jsoup `Element`s.
+    func getElementValue(_ ruleStr: String) -> Any?
+    /// Backs `Packages.io.legado.app.model.analyzeRule.AnalyzeRule()` (`LegadoAnalyzeRule`);
+    /// `null` when no parse wired a reader factory.
+    func newAnalyzeRule() -> LegadoAnalyzeRule?
+
+    // Java/Android classes the interop runtime builds on (LegadoJavaInteropRuntime)
+    /// `MessageDigest.digest()`: unsigned bytes in and out; `[]` for an unknown algorithm.
+    func digestBytes(_ bytes: JSValue, _ algorithm: String) -> [Int]
+    /// `Thread.sleep(millis)`: blocks this script's thread, as under Rhino.
+    func sleepMillis(_ millis: Double)
+    /// `new StrResponse(url, body)`.
+    func makeStrResponse(_ url: String, _ body: String) -> LegadoStrResponse
+    /// legado `java.getUserAgent()`: the source's own `User-Agent` header, else the app's.
+    func getUserAgent() -> String
 
     // Browser WebView (Legado startBrowser / startBrowserAwait) and image captcha
     func getVerificationCode(_ imageUrl: String) -> String
@@ -230,13 +510,37 @@ struct LegadoHTTPResult {
     // All args/returns are lowercase hex; empty string means failure.
     func aesDecryptHex(_ transformation: String, _ keyHex: String, _ ivHex: String, _ dataHex: String) -> String
     func aesEncryptHex(_ transformation: String, _ keyHex: String, _ ivHex: String, _ dataHex: String) -> String
-    func encodeURI(_ str: String) -> String
+    /// Backs `java.createAsymmetricCrypto` (`LegadoAsymmetricCrypto`). Hex in and out; a
+    /// failure throws into the script, as hutool's does.
+    func rsaCryptHex(_ transformation: String, _ keyHex: String, _ usePublicKey: Bool, _ encrypt: Bool, _ dataHex: String) -> String
+    func encodeURI(_ str: String, _ enc: JSValue) -> String
     func encodeURIComponent(_ str: String) -> String
     func htmlFormat(_ str: String) -> String
     func randomUUID() -> String
     func toNumChapter(_ title: String) -> String
     func urlParts(_ url: String, _ baseURL: JSValue) -> NSDictionary
     func gzipBytes(_ value: JSValue) -> [Int]
+
+    // Byte-level primitives behind the java.io / java.util.zip / java.net / java.security
+    // classes `LegadoJavaInteropRuntime` writes in JavaScript. Bytes are arrays of 0–255.
+    /// zlib inflate: `windowBits` -15 raw (`Inflater(true)`), 15 zlib (`Inflater()`), 31 gzip.
+    /// Answers `{bytes, finished, consumed}`; malformed input throws into the script.
+    func inflateBytes(_ value: JSValue, _ windowBits: Int) -> NSDictionary
+    func secureRandomBytes(_ count: Int) -> [Int]
+    func hmacBytes(_ data: JSValue, _ algorithm: String, _ key: JSValue) -> [Int]
+    func aesGcmHex(
+        _ encrypt: Bool, _ keyHex: String, _ ivHex: String, _ aadHex: String, _ tagBits: Int, _ dataHex: String
+    ) -> String
+    func rsaKeySizeBytes(_ keyHex: String, _ isPublic: Bool) -> Int
+    func rsaSignHex(_ algorithm: String, _ keyHex: String, _ dataHex: String) -> String
+    func rsaVerify(_ algorithm: String, _ keyHex: String, _ dataHex: String, _ signatureHex: String) -> Bool
+    /// One request whose body is bytes (hex), for `HttpURLConnection`; the response's bytes
+    /// are `bodyBytes()`.
+    func httpExecuteBytes(_ method: String, _ urlStr: String, _ bodyHex: String, _ headers: JSValue) -> LegadoStrResponse
+    /// `java.net.Socket.connect`: milliseconds to a TCP connection, -1 when none was made.
+    func tcpConnectMillis(_ host: String, _ port: Int, _ timeoutMillis: Int) -> Int
+    /// Java's `new URL(context, spec)`; "" when `context` is no absolute URL.
+    func absoluteURL(_ spec: String, _ base: String) -> String
 
     // App theme information exposed by Android's JsExtensions.
     // `getThemeMode`: 0 follows system, 1 light, 2 dark, 3 e-ink.
@@ -261,6 +565,11 @@ struct LegadoHTTPResult {
     func deviceID() -> String
     func androidId() -> String
     func openVideoPlayer(_ url: String, _ title: String)
+    /// legado-E `java.openUrl(url[, mimeType])`.
+    func openUrl(_ url: String, _ mimeType: JSValue)
+    /// legado `java.getTag()`: the source's name (`BaseSource.getTag`). `String?` in
+    /// `JsExtensions`, so `null` without a source (`LegadoJavaNull`).
+    @objc(getTag) func jsGetTag() -> JSValue
     func getAppVariant() -> String
     func upLoginData(_ data: JSValue)
     // `java.qread()` is a no-op stub ON PURPOSE: it makes 起点-family content JS set
@@ -402,6 +711,24 @@ struct LegadoHTTPResult {
     }
     nonisolated(unsafe) private static var _sharedCaptchaPresenter: CaptchaPresenter?
 
+    /// Asks the reader whether to open a source's link — legado-E `java.openUrl` and its
+    /// `OpenUrlConfirmActivity`. Installed at launch next to `sharedBrowserPresenter`.
+    typealias OpenURLPresenter = @Sendable (SourceOpenURLRequest) -> Void
+
+    static var sharedOpenURLPresenter: OpenURLPresenter? {
+        get {
+            sharedBrowserPresenterLock.lock()
+            defer { sharedBrowserPresenterLock.unlock() }
+            return _sharedOpenURLPresenter
+        }
+        set {
+            sharedBrowserPresenterLock.lock()
+            defer { sharedBrowserPresenterLock.unlock() }
+            _sharedOpenURLPresenter = newValue
+        }
+    }
+    nonisolated(unsafe) private static var _sharedOpenURLPresenter: OpenURLPresenter?
+
     /// Plays a source's video in the native full-screen player — legado-E
     /// `java.openVideoPlayer(url, title)`. The request already carries the URL's `,{headers}`
     /// option, the source's header map and its cookies (`sourceBrowserRequest`), which is what
@@ -425,33 +752,52 @@ struct LegadoHTTPResult {
     /// The attached source's name and URL, for the captcha sheet (which can 停用 or 刪除 it).
     var sourceIdentityProvider: (() -> (name: String, url: String))?
 
-    /// Scripts parked waiting for the user — on a `startBrowserAwait` page or a captcha. The
-    /// engine's runaway-script timeout does not apply to them — see
-    /// `JSCoreEngine.onJSQueueWithTimeout`.
-    var isAwaitingUser: Bool {
-        awaitingUserLock.lock()
-        defer { awaitingUserLock.unlock() }
-        return awaitingUserCount > 0
-    }
-    private var awaitingUserCount = 0
-    private let awaitingUserLock = NSLock()
+    /// This runtime's scripts parked waiting for the user — on a `startBrowserAwait` page or a
+    /// captcha — see `LegadoScriptWaits`.
+    private let readerWaits = LegadoScriptWaits()
 
-    /// Blocks this script until `present` reports back, however long the user takes.
-    private func waitForUser(_ present: (@escaping @Sendable (String?) -> Void) -> Void) -> String? {
+    /// This runtime's scripts blocked on the network — see `LegadoScriptWaits`.
+    let networkWaits = LegadoScriptWaits()
+
+    /// Whether a script is waiting on the network or the reader right now.
+    var isWaiting: Bool { networkWaits.isWaiting || readerWaits.isWaiting }
+
+    /// The time this runtime's scripts have spent waiting on the network or the reader. A script
+    /// waits for one at a time, so the two add up without overlapping.
+    var waitedSeconds: TimeInterval { networkWaits.waitedSeconds + readerWaits.waitedSeconds }
+
+    /// Where this runtime's waits for the user can be ended from outside — the source's
+    /// session hands it in (`BookSourceSession.userWaits`). Nil: nothing outside ends them.
+    var userWaits: LegadoUserWaitRegistry?
+
+    /// Blocks this script until `present` reports back, however long the user takes — or
+    /// until the session ends the wait (`LegadoUserWaitRegistry.cancelAll`), which answers
+    /// it as a dismissal.
+    private func waitForUser(
+        withdrawal: SourceWaitWithdrawal? = nil,
+        _ present: (@escaping @Sendable (String?) -> Void) -> Void
+    ) -> String? {
         let sem = DispatchSemaphore(value: 0)
-        let answer = OSAllocatedUnfairLock<String?>(initialState: nil)
-        awaitingUserLock.lock()
-        awaitingUserCount += 1
-        awaitingUserLock.unlock()
-        present { value in
-            answer.withLock { $0 = value }
-            sem.signal()
+        // First answer wins: the user's, or the session's cancellation.
+        let answer = OSAllocatedUnfairLock<(done: Bool, value: String?)>(initialState: (false, nil))
+        let finish: @Sendable (String?) -> Void = { value in
+            let first = answer.withLock { state -> Bool in
+                guard !state.done else { return false }
+                state = (true, value)
+                return true
+            }
+            if first { sem.signal() }
         }
-        sem.wait()
-        awaitingUserLock.lock()
-        awaitingUserCount -= 1
-        awaitingUserLock.unlock()
-        return answer.withLock { $0 }
+        readerWaits.during {
+            let token = userWaits?.register {
+                finish(nil)
+                withdrawal?.withdraw()
+            }
+            present(finish)
+            sem.wait()
+            if let token { userWaits?.unregister(token) }
+        }
+        return answer.withLock { $0.value }
     }
 
     /// Called for source-authored HTML browser pages. Unlike the two-argument browser API,
@@ -485,8 +831,13 @@ struct LegadoHTTPResult {
     var getStringHandler: ((String) -> String?)?
     var getStringListHandler: ((String) -> [String]?)?
     var setContentHandler: ((Any?, String?) -> Void)?
-    var getElementsHandler: ((String) -> [Any]?)?
+    var getElementsHandler: ((String) -> Any?)?
+    var getElementHandler: ((String) -> Any?)?
     var getStringWithContentHandler: ((String, Any?) -> String?)?
+    /// Makes the rule reader a script's `AnalyzeRule()` holds (`ModernParserBridge`).
+    var analyzeRuleFactory: (() -> ModernRuleEngine?)?
+    /// The pages this context's scripts were handed elements of (`LegadoScriptTrees`).
+    let scriptTrees = LegadoScriptTrees()
 
     /// Called when JS invokes `java.setResponseBase64(data, mimeType)` — stores decoded audio data.
     /// Used by TTS `loginCheckJs` to extract base64 audio from JSON API responses.
@@ -504,14 +855,20 @@ struct LegadoHTTPResult {
     /// (`BookSource.presentsAndroidIdentity`). Supplied by the owning engine
     /// because the bridge is per-source but the flag lives on the model.
     var presentsAndroidIdentityProvider: (() -> Bool)?
-    /// Android `importScript(http…)` delegates to `cacheFile`, whose MD5 URL
-    /// key lives in the same `cache` namespace exposed to source JavaScript.
+    /// Whether the script's `source` keeps a cookie jar (`enabledCookieJar`): Legado's
+    /// `java.get`/`head`/`post` then mark their request `CookieJar: 1`
+    /// (`performJsoupRequest`). Read live, on the JS thread.
+    var keepsCookieJarProvider: (() -> Bool)?
+    /// The source's `cache`: `cacheFile` (and `importScript(http…)`, which is `cacheFile`)
+    /// keeps its downloads' paths there under `md5Encode16(url)`, as Legado does.
     var importScriptCacheProvider: (() -> LegadoCacheBridge?)?
     var sourceHeaders: [String: String] { sourceHeadersProvider?() ?? [:] }
 
-    /// Timeout for `java.ajax`/`java.connect` requests. Legado sources carry `respondTime`
-    /// in milliseconds; JSCoreEngine clamps it before assigning here.
-    var requestTimeoutSeconds: TimeInterval = 8
+    /// Timeout for `java.*` requests a script gives none of its own: Legado's OkHttp client's
+    /// (`WebFetcher.sourceRequestTimeout`). A source's `respondTime` is not one in Legado — it
+    /// is the search's measured response time — and deriving 8–30 s from it cut off slow sites
+    /// Legado reads.
+    let requestTimeoutSeconds: TimeInterval = WebFetcher.sourceRequestTimeout
 
     /// AnalyzeUrl-based request handler. When set, `java.ajax()` routes URLs containing `,{json}`
     /// through AnalyzeUrl rather than treating the entire string as a simple URL. Called on the JS
@@ -551,11 +908,12 @@ struct LegadoHTTPResult {
     static let requestSession: URLSession = {
         let config = URLSessionConfiguration.default
         config.httpMaximumConnectionsPerHost = 16
-        config.timeoutIntervalForRequest = 20
+        config.timeoutIntervalForRequest = WebFetcher.sourceRequestTimeout
+        config.timeoutIntervalForResource = WebFetcher.sourceRequestTimeout
         // No URL cache, as in `WebFetcher.defaultSessionConfiguration`: responses are read
         // once, and `URLCache.shared` wrote every cacheable one to its Cache.db.
         config.urlCache = nil
-        return URLSession(configuration: config)
+        return URLSession.sourceSites(config)
     }()
 
     // MARK: Networking
@@ -667,6 +1025,10 @@ struct LegadoHTTPResult {
         uniquingKeysWith: { first, _ in first }
     )
 
+    func ajaxAll(_ urlArray: JSValue) -> [LegadoStrResponse] {
+        runAjaxBatch(Self.ajaxURLList(urlArray, call: "ajaxAll"), test: nil)
+    }
+
     /// The URL strings of `java.ajaxAll`/`java.ajaxTestAll`'s list, as Rhino gives Legado's
     /// `Array<String>` parameter: each element through JS ToString, so an object answers
     /// `"[object Object]"` (or its own `toString()`), a number its digits, `null` `"null"` — one
@@ -707,8 +1069,37 @@ struct LegadoHTTPResult {
         return "object"
     }
 
-    func ajaxAll(_ list: JSValue) -> [LegadoStrResponse] {
-        let urlArray = Self.ajaxURLList(list, call: "ajaxAll")
+    /// Legado-E `java.ajaxTestAll(urls, timeout[, skipRateLimit])`: `ajaxAll` as a speed test.
+    /// Each request has `timeout` milliseconds; one that fails answers a response whose body is
+    /// the error and whose `callTime()` is Legado's error code (`AnalyzeUrl.executeStrRequest`
+    /// with `isTest`), one that succeeds answers its time. `skipRateLimit` is accepted for
+    /// parity: this runtime applies no per-source rate limit to `java.*` requests.
+    func ajaxTestAll(_ urlArray: JSValue, _ timeout: Double, _ skipRateLimit: JSValue) -> [LegadoStrResponse] {
+        runAjaxBatch(Self.ajaxURLList(urlArray, call: "ajaxTestAll"), test: AjaxTestOptions(timeoutSeconds: max(0.1, timeout / 1000)))
+    }
+
+    private struct AjaxTestOptions {
+        let timeoutSeconds: TimeInterval
+    }
+
+    /// Legado's `ajaxTestAll` error codes for a request that got no response.
+    static func ajaxTestErrorCode(_ error: (any Error)?) -> Int {
+        guard let urlError = error as? URLError else { return -7 }
+        switch urlError.code {
+        case .timedOut: return -2
+        case .cannotFindHost, .dnsLookupFailed: return -3
+        case .cannotConnectToHost: return -4
+        case .networkConnectionLost, .notConnectedToInternet: return -5
+        case .secureConnectionFailed, .serverCertificateUntrusted, .serverCertificateHasBadDate,
+             .serverCertificateHasUnknownRoot, .serverCertificateNotYetValid,
+             .clientCertificateRejected, .clientCertificateRequired:
+            return -6
+        default: return -7
+        }
+    }
+
+    /// `ajaxAll` and `ajaxTestAll`: the requests 16 at a time, each answered in order.
+    private func runAjaxBatch(_ urlArray: [String], test: AjaxTestOptions?) -> [LegadoStrResponse] {
         guard !urlArray.isEmpty else { return [] }
         // Legado's `java.ajaxAll` returns `StrResponse[]`; sources ALWAYS call `.body()` on
         // each element (起点 段评: `cmtData[0].body()`; 番茄 bookshelf: `r.body()`). Returning
@@ -719,6 +1110,10 @@ struct LegadoHTTPResult {
         // What each worker brought back; `nil` until it does — and, after the timeout, for good.
         let collected = OSAllocatedUnfairLock(
             initialState: Array<AjaxAllOutcome?>(repeating: nil, count: urlArray.count)
+        )
+        // Each worker's own time, which `ajaxTestAll` reports and judges its timeout by.
+        let elapsedMs = OSAllocatedUnfairLock(
+            initialState: Array<Int?>(repeating: nil, count: urlArray.count)
         )
         let group = DispatchGroup()
 
@@ -741,7 +1136,16 @@ struct LegadoHTTPResult {
         // runs here: the source headers once, each AnalyzeUrl-route request's own JS as it is
         // built (`PreparedSourceRequest`), and its `bodyJs` after the batch. The workers get the
         // network alone.
-        let context = requestContext
+        var context = requestContext(for: urlArray)
+        if let test {
+            context = RequestContext(
+                analyzeUrlHandler: context.analyzeUrlHandler,
+                networkHandler: context.networkHandler,
+                sourceHeaders: context.sourceHeaders,
+                timeoutSeconds: test.timeoutSeconds,
+                networkWaits: context.networkWaits
+            )
+        }
         var routes: [AnalyzeUrlRoute?] = []
         routes.reserveCapacity(urlArray.count)
         var buildMs = 0.0
@@ -752,7 +1156,7 @@ struct LegadoHTTPResult {
             buildMs += Date().timeIntervalSince(buildStart) * 1000
             routes.append(route)
             let job = JSConfined(route.map { AjaxAllJob.analyzeUrl($0.request) } ?? .plain(context))
-            throttle.wait() // block until a concurrency slot is free
+            context.networkWaits.during { throttle.wait() } // block until a concurrency slot is free
             group.enter()
             DispatchQueue.global(qos: .utility).async {
                 let itemStart = Date()
@@ -766,6 +1170,7 @@ struct LegadoHTTPResult {
                 let body = outcome.body
                 let itemMs = Int(Date().timeIntervalSince(itemStart) * 1000)
                 collected.withLock { $0[index] = outcome }
+                elapsedMs.withLock { $0[index] = itemMs }
                 if index < 16 || Self.shouldLogReviewNetwork(urlStr) {
                     AppLogger.parse("⟐ ajaxAll item", context: [
                         "i": index,
@@ -783,11 +1188,16 @@ struct LegadoHTTPResult {
             }
         }
 
-        // Bounded wait: each performRequest is already capped at ~8s, so the whole batch
-        // must finish well within 30s. Never block the JS thread forever.
-        let waited = group.wait(timeout: .now() + 30)
+        // Bounded wait: every request still in flight started no earlier than the last slot
+        // freed, and each is capped at its own timeout, so the batch ends within one timeout of
+        // here. Never block the JS thread forever. A speed test is judged the same way: every
+        // earlier request by its own time below.
+        let waited = context.networkWaits.during {
+            group.wait(timeout: .now() + context.timeoutSeconds + 0.5)
+        }
         // After a timeout the stragglers are still writing; read one snapshot.
         let outcomes = collected.withLock { $0 }
+        let times = elapsedMs.withLock { $0 }
         let _ms = Int(Date().timeIntervalSince(_start) * 1000)
         // Batch wall time = how long the JS thread was actually blocked (requests ran up to
         // 16-wide over requestSession's 16 connections/host — matches Legado threadCount).
@@ -812,6 +1222,25 @@ struct LegadoHTTPResult {
             "empty": results.filter { ($0?.body ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }.count,
             "lens": results.map { $0?.body.count ?? 0 }
         ])
+        if let test {
+            let timeoutMs = Int(test.timeoutSeconds * 1000)
+            return urlArray.indices.map { index in
+                let url = urlArray[index].components(separatedBy: ",{").first ?? urlArray[index]
+                guard let result = results[index], let ms = times[index], ms <= timeoutMs else {
+                    let response = LegadoStrResponse(url: url, body: "timeout")
+                    response.callTimeMillis = -1
+                    return response
+                }
+                if result.data == nil, result.transportError != nil || result.body.isEmpty {
+                    let response = LegadoStrResponse(
+                        url: url, body: result.transportError?.localizedDescription ?? ""
+                    )
+                    response.callTimeMillis = Self.ajaxTestErrorCode(result.transportError)
+                    return response
+                }
+                return LegadoStrResponse(result: result, callTime: ms)
+            }
+        }
         // Wrap into StrResponse objects so JS `.body()` works (Legado contract).
         return zip(urlArray, results).map { url, result in
             if let result { return LegadoStrResponse(result: result) }
@@ -897,8 +1326,9 @@ struct LegadoHTTPResult {
     func connect(_ urlStr: String) -> LegadoStrResponse {
         let started = Date()
         let result = performRequestResult(urlStr)
-        recordBlockingNetwork(Date().timeIntervalSince(started) * 1000)
-        return LegadoStrResponse(result: result)
+        let elapsed = Date().timeIntervalSince(started) * 1000
+        recordBlockingNetwork(elapsed)
+        return LegadoStrResponse(result: result, callTime: Int(elapsed))
     }
 
     /// Header/timeout overload used by Legado-E and MD3. A JavaScript dispatcher
@@ -913,10 +1343,12 @@ struct LegadoHTTPResult {
         let result = performGet(
             urlStr,
             headers: Self.headerDict(from: headers),
-            timeoutOverride: timeoutSeconds
+            timeoutOverride: timeoutSeconds,
+            followRedirects: true
         )
-        recordBlockingNetwork(Date().timeIntervalSince(started) * 1000)
-        return LegadoStrResponse(result: result)
+        let elapsed = Date().timeIntervalSince(started) * 1000
+        recordBlockingNetwork(elapsed)
+        return LegadoStrResponse(result: result, callTime: Int(elapsed))
     }
 
     /// Legado `java.head(url, headers)` — a response-shaped HEAD request.
@@ -930,20 +1362,21 @@ struct LegadoHTTPResult {
         _ timeout: JSValue
     ) -> LegadoStrResponse {
         let started = Date()
-        let result = performSimpleRequest(
+        let result = performJsoupRequest(
             method: "HEAD",
-            urlStr: urlStr,
+            urlStr,
             body: nil,
             headers: Self.headerDict(from: headers),
             timeoutOverride: Self.timeoutSeconds(from: timeout)
         )
-        recordBlockingNetwork(Date().timeIntervalSince(started) * 1000)
-        return LegadoStrResponse(result: result)
+        let elapsed = Date().timeIntervalSince(started) * 1000
+        recordBlockingNetwork(elapsed)
+        return LegadoStrResponse(result: result, callTime: Int(elapsed))
     }
 
-    /// Legado `java.post(url, body, headers)` — HTTP POST returning a `StrResponse` (`.body()`).
-    /// `body` is sent verbatim; `headers` is a JS object. Defaults to
-    /// `application/x-www-form-urlencoded` when no Content-Type is supplied.
+    /// Legado `java.post(url, body, headers)` — jsoup's POST (`performJsoupRequest`) returning
+    /// its response (`.body()`, `.header(name)`). `body` is sent verbatim; `headers` is a JS
+    /// object.
     func post(_ urlStr: String, _ body: String, _ headers: JSValue) -> LegadoStrResponse {
         postWithOptions(urlStr, body, headers, JSValue(undefinedIn: headers.context))
     }
@@ -955,14 +1388,16 @@ struct LegadoHTTPResult {
         _ timeout: JSValue
     ) -> LegadoStrResponse {
         let started = Date()
-        let response = performPost(
+        let result = performJsoupRequest(
+            method: "POST",
             urlStr,
             body: body,
             headers: Self.headerDict(from: headers),
             timeoutOverride: Self.timeoutSeconds(from: timeout)
         )
-        recordBlockingNetwork(Date().timeIntervalSince(started) * 1000)
-        return response
+        let elapsed = Date().timeIntervalSince(started) * 1000
+        recordBlockingNetwork(elapsed)
+        return LegadoStrResponse(result: result, callTime: Int(elapsed))
     }
 
     /// Native execution primitive for the bounded okhttp3 compatibility surface.
@@ -977,34 +1412,265 @@ struct LegadoHTTPResult {
         let result = performSimpleRequest(
             method: normalizedMethod,
             urlStr: urlStr,
-            body: normalizedMethod == "GET" || normalizedMethod == "HEAD" ? nil : body,
+            body: normalizedMethod == "GET" || normalizedMethod == "HEAD" ? nil : Data(body.utf8),
             headers: Self.headerDict(from: headers),
-            timeoutOverride: nil
+            timeoutOverride: nil,
+            followRedirects: true
         )
-        recordBlockingNetwork(Date().timeIntervalSince(started) * 1000)
-        return LegadoStrResponse(result: result)
+        let elapsed = Date().timeIntervalSince(started) * 1000
+        recordBlockingNetwork(elapsed)
+        return LegadoStrResponse(result: result, callTime: Int(elapsed))
     }
 
-    /// Legado `java.importScript(url)` — fetch a remote JS library and return its text.
-    /// Sources typically wrap this in `eval(...)` to load shared helpers at runtime.
+    /// `java.net.HttpURLConnection` as the interop runtime writes it: the body is bytes (a
+    /// source posts gzip or its own binary framing), and so is the response it reads back.
+    /// Java's connection follows redirects within a scheme by default.
+    func httpExecuteBytes(_ method: String, _ urlStr: String, _ bodyHex: String, _ headers: JSValue) -> LegadoStrResponse {
+        let started = Date()
+        let normalizedMethod = method.uppercased()
+        guard let body = Self.bytesFromHex(bodyHex) else {
+            _ = throwIntoScript("java.io.IOException: malformed request body")
+            return LegadoStrResponse(url: urlStr, body: "")
+        }
+        let result = performSimpleRequest(
+            method: normalizedMethod,
+            urlStr: urlStr,
+            body: normalizedMethod == "GET" || normalizedMethod == "HEAD" || body.isEmpty ? nil : Data(body),
+            headers: Self.headerDict(from: headers),
+            timeoutOverride: nil,
+            followRedirects: true
+        )
+        let elapsed = Date().timeIntervalSince(started) * 1000
+        recordBlockingNetwork(elapsed)
+        return LegadoStrResponse(result: result, callTime: Int(elapsed))
+    }
+
+    /// Legado `java.importScript(path)` — a remote JS library's text (`http…`, cached by
+    /// `cacheFile`'s MD5 key) or a source file's (`readTxtFile`). Sources wrap it in `eval(...)`.
+    /// Legado throws when the text is blank (「内容获取失败或者为空」), so a failed library
+    /// stops the script there instead of leaving its functions undefined further on.
     func importScript(_ url: String) -> String {
         let trimmed = url.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard trimmed.hasPrefix("http") else { return trimmed }
-        let key = md5Encode16(trimmed)
-        if let cached = importScriptCacheProvider?()?.get(key),
-           !cached.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-            return cached
+        let text: String
+        if trimmed.hasPrefix("http") {
+            text = importRemoteScript(trimmed)
+        } else {
+            text = readSourceText(trimmed, charset: nil)
         }
+        guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            return throwIntoScript("\(trimmed) 内容获取失败或者为空")
+        }
+        return text
+    }
 
-        let response = performRequestResult(trimmed)
-        let body = response.body
-        if response.statusCode >= 200,
-           response.statusCode < 300,
-           !body.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
-           !Self.isCloudflareChallengedBody(body) {
-            importScriptCacheProvider?()?.put(key, body)
+    /// Legado `SharedJsScope`'s download of a JSON-object jsLib's library: the bare
+    /// `okHttpClient`, whose interceptor adds `AppConfig.userAgent` — no source headers, no
+    /// AnalyzeUrl options. Runs no JS, so any thread may call it.
+    func downloadSharedLibrary(_ url: String) -> LegadoHTTPResult {
+        Self.performPlainRequest(url, in: RequestContext(
+            analyzeUrlHandler: nil,
+            networkHandler: networkHandler,
+            sourceHeaders: ["User-Agent": BookSource.legadoDefaultUserAgent],
+            timeoutSeconds: requestTimeoutSeconds,
+            networkWaits: networkWaits
+        ))
+    }
+
+    /// Legado's `importScript(http…)` is `cacheFile(url)`.
+    private func importRemoteScript(_ url: String) -> String {
+        cacheFile(url, JSValue(undefinedIn: JSContext.current()))
+    }
+
+    // MARK: Source files
+
+    /// Where `java.readFile` / `downloadFile` / … keep a source's files: Legado's
+    /// `externalCache`, one directory every source shares. Sources keep the relative paths
+    /// these calls answer (`source.put`) and read them back later, so the root is fixed.
+    static let sourceFilesRoot: URL = FileManager.default
+        .urls(for: .cachesDirectory, in: .userDomainMask)[0]
+        .appendingPathComponent("LegadoSourceFiles", isDirectory: true)
+
+    /// Legado `JsExtensions.getFile(path)`: `path` under the files root, `/` or not. A path
+    /// that leaves the root throws into the script (Legado's 「非法路径」) and answers nil.
+    /// Legado allows the root's parent too (the app's whole external directory); here a
+    /// source reaches only its files root.
+    private func sourceFile(_ path: String) -> URL? {
+        let root = Self.sourceFilesRoot.standardizedFileURL
+        let relative = path.drop(while: { $0 == "/" })
+        let file = relative.isEmpty ? root : root.appendingPathComponent(String(relative)).standardizedFileURL
+        guard file.path == root.path || file.path.hasPrefix(root.path + "/") else {
+            _ = throwIntoScript("非法路径: \(path)")
+            return nil
         }
-        return body
+        return file
+    }
+
+    /// The path a written file is answered as: relative to the files root, with a leading `/`,
+    /// as Legado's `path.substring(cachePath.length)`.
+    private static func sourceFilePath(_ file: URL) -> String {
+        let root = sourceFilesRoot.standardizedFileURL.path
+        return String(file.standardizedFileURL.path.dropFirst(root.count))
+    }
+
+    /// Legado `java.readFile(path)`: the file's bytes, `null` when there is none. A directory
+    /// throws, as `File.readBytes` does.
+    func readFile(_ path: String) -> JSValue {
+        let null = JSValue(nullIn: JSContext.current())!
+        guard let file = sourceFile(path) else { return null }
+        guard let data = readSourceFileData(file) else { return null }
+        return JSValue(object: data.map(Int.init), in: JSContext.current())
+    }
+
+    /// Legado `java.readTxtFile(path[, charsetName])`: the file's text, `""` when there is
+    /// none. Without a charset the page decoder's detection reads it (Legado's `EncodingDetect`).
+    func readTxtFile(_ path: String, _ charset: JSValue) -> String {
+        readSourceText(path, charset: Self.optionalString(charset))
+    }
+
+    private func readSourceText(_ path: String, charset: String?) -> String {
+        guard let file = sourceFile(path), let data = readSourceFileData(file) else { return "" }
+        if let name = charset, !name.isEmpty {
+            return String(data: data, encoding: Self.stringEncoding(name)) ?? ""
+        }
+        return HTMLResponseDecoder.decode(data: data, response: nil, declaredCharset: nil) ?? ""
+    }
+
+    /// nil when there is no file; a directory or an unreadable file throws into the script.
+    private func readSourceFileData(_ file: URL) -> Data? {
+        var isDirectory: ObjCBool = false
+        guard FileManager.default.fileExists(atPath: file.path, isDirectory: &isDirectory) else {
+            return nil
+        }
+        if isDirectory.boolValue {
+            _ = throwIntoScript("\(file.path) (Is a directory)")
+            return nil
+        }
+        do {
+            return try Data(contentsOf: file)
+        } catch {
+            _ = throwIntoScript("\(file.path): \(error.localizedDescription)")
+            return nil
+        }
+    }
+
+    /// Legado `java.deleteFile(path)`: the file, or the directory with all it holds. `false`
+    /// when there was nothing to delete.
+    func deleteFile(_ path: String) -> Bool {
+        guard let file = sourceFile(path),
+              FileManager.default.fileExists(atPath: file.path) else { return false }
+        do {
+            try FileManager.default.removeItem(at: file)
+            return true
+        } catch {
+            AppLogger.parse("java.deleteFile failed", context: [
+                "path": String(path.prefix(200)), "error": error.localizedDescription,
+            ])
+            return false
+        }
+    }
+
+    /// Legado `java.downloadFile(url)`: the response's bytes saved under the files root as
+    /// `md5_16(url).<type>` — the URL's `type` option, else its suffix — answered as that
+    /// file's path. `java.downloadFile(hex, url)` (deprecated in Legado) saves the hex's bytes
+    /// instead, and answers "" when the URL has no `type` option.
+    func downloadFile(_ first: String, _ second: JSValue) -> String {
+        if let url = Self.optionalString(second) {
+            return saveHexFile(hex: first, url: url)
+        }
+        let url = first
+        let context = requestContext(for: [url])
+        let data: Data?
+        let type: String?
+        if let route = Self.analyzeUrlRoute(url, in: context) {
+            let response = networkWaits.during { route.request?.fetch() }
+            data = response?.data
+            type = route.request?.type
+        } else {
+            data = Self.performPlainRequest(url, in: context).data
+            type = nil
+        }
+        guard let data else {
+            return throwIntoScript("downloadFile: no response from \(AnalyzeUrl.stripOptions(from: url).prefix(200))")
+        }
+        return writeSourceFile(data, url: url, type: type ?? Self.urlSuffix(url))
+    }
+
+    /// Legado `java.cacheFile(url[, saveTime])`: the text of `url`, downloaded once. The
+    /// download's path is kept in the source's cache under `md5_16(url)` for `saveTime` seconds
+    /// (0 or none: for good), and while it is there and the file exists, the file is read
+    /// instead of the network — as `readTxtFile`, so its charset is detected. 拷贝轻说
+    /// (YCK1331) reads every chapter's text this way.
+    ///
+    /// Unlike Legado, a download that reads blank or as a Cloudflare challenge is not kept:
+    /// Legado keeps whatever came back, and a source whose first fetch hit the challenge read
+    /// that page in place of its library for good.
+    func cacheFile(_ url: String, _ saveTime: JSValue) -> String {
+        let key = md5Encode16(url)
+        let cache = importScriptCacheProvider?()
+        if let path = cache?.get(key), existingSourceFile(path) != nil {
+            return readSourceText(path, charset: nil)
+        }
+        let path = downloadFile(url, JSValue(undefinedIn: JSContext.current()))
+        // `downloadFile` threw into the script; there is no file to keep or read.
+        guard !path.isEmpty else { return "" }
+        log("首次下载 \(url) >> \(path)")
+        let text = readSourceText(path, charset: nil)
+        if !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+           !Self.isCloudflareChallengedBody(text) {
+            let seconds = saveTime.isUndefined || saveTime.isNull ? 0 : Int(saveTime.toInt32())
+            cache?.put(key, path, saveTime: seconds)
+        }
+        return text
+    }
+
+    /// The file a kept `cacheFile` path names, while it is there; `nil`, without throwing, for
+    /// any other value. Before `importScript` read through `cacheFile`, it kept the library's
+    /// text under the same key — such a value names no file, and the next call downloads again.
+    private func existingSourceFile(_ path: String) -> URL? {
+        guard path.hasPrefix("/"), !path.contains("\n") else { return nil }
+        let root = Self.sourceFilesRoot.standardizedFileURL
+        let file = root.appendingPathComponent(String(path.dropFirst())).standardizedFileURL
+        guard file.path.hasPrefix(root.path + "/") else { return nil }
+        var isDirectory: ObjCBool = false
+        guard FileManager.default.fileExists(atPath: file.path, isDirectory: &isDirectory),
+              !isDirectory.boolValue else { return nil }
+        return file
+    }
+
+    private func saveHexFile(hex: String, url: String) -> String {
+        // Only an AnalyzeUrl-route request has a `type`, and that route resolves its own headers.
+        guard let type = Self.analyzeUrlRoute(url, in: requestContext(for: []))?.request?.type else { return "" }
+        guard let bytes = Self.bytesFromHex(hex) else {
+            return throwIntoScript("downloadFile: content is not hex")
+        }
+        return writeSourceFile(Data(bytes), url: url, type: type)
+    }
+
+    private func writeSourceFile(_ data: Data, url: String, type: String) -> String {
+        let file = Self.sourceFilesRoot.appendingPathComponent("\(md5Encode16(url)).\(type)")
+        do {
+            try FileManager.default.createDirectory(
+                at: Self.sourceFilesRoot, withIntermediateDirectories: true
+            )
+            try data.write(to: file, options: .atomic)
+        } catch {
+            return throwIntoScript("downloadFile: \(error.localizedDescription)")
+        }
+        return Self.sourceFilePath(file)
+    }
+
+    /// Legado `UrlUtil.getSuffix(url)`: the last path segment's extension when it is 1–5
+    /// letters or digits, else `ext`.
+    static func urlSuffix(_ url: String) -> String {
+        let address = AnalyzeUrl.stripOptions(from: url)
+        let segment = address.split(separator: "/").last.map(String.init) ?? ""
+        let name = segment.split(separator: "?", maxSplits: 1).first.map(String.init) ?? ""
+        let bare = name.split(separator: "#", maxSplits: 1).first.map(String.init) ?? ""
+        guard let dot = bare.lastIndex(of: ".") else { return "ext" }
+        let suffix = bare[bare.index(after: dot)...]
+        guard !suffix.isEmpty, suffix.count <= 5,
+              suffix.allSatisfy({ $0.isASCII && ($0.isLetter || $0.isNumber) }) else { return "ext" }
+        return String(suffix)
     }
 
     // MARK: Cookie Helpers
@@ -1038,14 +1704,19 @@ struct LegadoHTTPResult {
         CookieStore.shared.remove(url: url)
     }
 
+    /// Legado: `WebSettings.getDefaultUserAgent` — the phone browser's own identity, not the
+    /// desktop `AppConfig.userAgent` requests default to. Sources put it in their header rule
+    /// for a site's mobile pages; ours is the identity the app's WebViews present. It was a
+    /// truncated `… AppleWebKit/605.1.15`, without the `Mobile/… Safari/…` tail sites test for.
     func getWebViewUA() -> String {
-        return "Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15"
+        SourceWebIdentity.phoneUserAgent
     }
 
     // MARK: Variable Storage
 
-    func put(_ key: String, _ value: String) {
+    @discardableResult func put(_ key: String, _ value: String) -> String {
         putData?(key, value)
+        return value
     }
 
     func get(_ key: String) -> String {
@@ -1064,16 +1735,14 @@ struct LegadoHTTPResult {
         let started = Date()
         let headerMap = headers.isUndefined || headers.isNull
             ? [:] : Self.headerDict(from: headers)
-        let response = performGet(urlStr, headers: headerMap)
-        recordBlockingNetwork(Date().timeIntervalSince(started) * 1000)
-        return LegadoStrResponse(result: response)
+        // Legado-E `java.get(url, headers)`: jsoup with `followRedirects(false)`.
+        let response = performJsoupRequest(method: "GET", urlStr, body: nil, headers: headerMap, timeoutOverride: nil)
+        let elapsed = Date().timeIntervalSince(started) * 1000
+        recordBlockingNetwork(elapsed)
+        return LegadoStrResponse(result: response, callTime: Int(elapsed))
     }
 
     // MARK: Rule Evaluation (placeholder)
-
-    /// Content stored by `java.setContent(...)` for chained rule evaluation.
-    private var storedContent: Any?
-    private var storedBaseUrl: String?
 
     /// `java.getString(rule)` evaluates against the response currently being parsed;
     /// `java.getString(rule, obj)` evaluates against `obj` instead (Legado's `mContent`).
@@ -1097,9 +1766,11 @@ struct LegadoHTTPResult {
 
     /// Converts an optional JS `mContent` argument into rule-engine input.
     /// `undefined`/`null` mean "not supplied" — fall back to the current parse content.
-    private static func ruleInput(from value: JSValue) -> Any? {
+    static func ruleInput(from value: JSValue) -> Any? {
         guard !value.isUndefined, !value.isNull else { return nil }
         if value.isString { return value.toString() }
+        // A jsoup Element the script holds is read as that element, as Legado reads it.
+        if let element = LegadoJsoupElement.ruleValue(from: value) { return element }
         return value.toObject()
     }
 
@@ -1107,30 +1778,72 @@ struct LegadoHTTPResult {
         return getStringListHandler?(ruleStr) ?? []
     }
 
+    /// Legado `AnalyzeRule.setContent(content, baseUrl)` on the `AnalyzeRule` that is `java`
+    /// in the running rule step: what every later read of that reader sees — `java.getString`,
+    /// the step's next rules, the item's next fields — until it is given its next content
+    /// (`BookList`'s `setContent(item)` for each row). It used to be kept here and read by
+    /// every one-argument `java.getString` after it, in every later step, row and parse of the
+    /// context: 爱发电 (YCK1331) sets its posts page in the discover list script, and each
+    /// row's URL script then read that page instead of the row (`album_id=` empty).
     @discardableResult
     func setContent(_ content: JSValue, _ baseUrl: JSValue) -> String {
-        if content.isString {
-            storedContent = content.toString()
-        } else if content.isObject {
-            storedContent = content.toObject()
-        } else {
-            storedContent = content.toString() ?? ""
+        guard let input = Self.ruleInput(from: content) else {
+            // Kotlin's `AssertionError`, which the script sees as an exception.
+            if let context = JSContext.current() {
+                context.exception = JSValue(newErrorFromMessage: "内容不可空（Content cannot be null）", in: context)
+            }
+            return ""
         }
-        storedBaseUrl = baseUrl.isString ? baseUrl.toString() : ""
-        // Update engine content and set result for subsequent JS code
-        setContentHandler?(storedContent, storedBaseUrl)
-        return "" // Legado returns "" after setContent
+        guard let setContentHandler else {
+            AppLogger.parse("java.setContent called outside a rule step (no rule reader)", level: .anomaly)
+            return ""
+        }
+        // `setBaseUrl(null)` keeps the base the reader had.
+        setContentHandler(input, baseUrl.isString ? baseUrl.toString() : nil)
+        return ""
     }
 
-    func getElements(_ ruleStr: String) -> [Any] {
-        return getElementsHandler?(ruleStr) ?? []
+    func getElements(_ ruleStr: String) -> Any {
+        let value = getElementsHandler?(ruleStr) ?? [Any]()
+        if value is JsoupSelection { return LegadoJsoupElement.bridged(value, trees: scriptTrees) }
+        return (value as? [Any] ?? []).map { LegadoJsoupElement.bridged($0, trees: scriptTrees) }
+    }
+
+    func getElementValue(_ ruleStr: String) -> Any? {
+        getElementHandler?(ruleStr).map { LegadoJsoupElement.bridged($0, trees: scriptTrees) }
+    }
+
+    func newAnalyzeRule() -> LegadoAnalyzeRule? {
+        guard let engine = analyzeRuleFactory?() else {
+            AppLogger.parse("AnalyzeRule() called with no rule reader (no factory, or its parser is gone)", level: .anomaly)
+            return nil
+        }
+        return LegadoAnalyzeRule(engine: engine, trees: scriptTrees)
+    }
+
+    func digestBytes(_ bytes: JSValue, _ algorithm: String) -> [Int] {
+        Self.digestData(Data(Self.byteArray(from: bytes)), algorithm: algorithm)?.map(Int.init) ?? []
+    }
+
+    func sleepMillis(_ millis: Double) {
+        guard millis.isFinite, millis > 0 else { return }
+        // Sources pace their requests with this (八叉书库, 兽人小说站, 晋江). It runs on the
+        // script's own serial queue, which the rule's watchdog still bounds.
+        Thread.sleep(forTimeInterval: min(millis, 30_000) / 1000)
+    }
+
+    func makeStrResponse(_ url: String, _ body: String) -> LegadoStrResponse {
+        LegadoStrResponse(url: url, body: body)
+    }
+
+    /// Legado `AnalyzeUrl.getUserAgent`: the source's User-Agent, else `AppConfig.userAgent`.
+    func getUserAgent() -> String {
+        sourceHeaders.first { $0.key.caseInsensitiveCompare("User-Agent") == .orderedSame }?.value
+            ?? BookSource.legadoDefaultUserAgent
     }
 
     private func _evaluateString(_ ruleStr: String) -> String {
-        if let content = storedContent {
-            return getStringWithContentHandler?(ruleStr, content) ?? ""
-        }
-        return getStringHandler?(ruleStr) ?? ""
+        getStringHandler?(ruleStr) ?? ""
     }
 
     // MARK: Browser & Toast (Legado java.startBrowser / startBrowserAwait / toast)
@@ -1195,8 +1908,10 @@ struct LegadoHTTPResult {
             AppLogger.parse("startBrowserAwait called on the main thread", context: ["url": String(url.prefix(200))])
             return throwBrowserCancelled(url: url)
         }
-        let request = browserRequest(url: url, title: title, awaitsResult: true, html: html)
-        guard let body = waitForUser({ presenter(request, $0) }) else {
+        var request = browserRequest(url: url, title: title, awaitsResult: true, html: html)
+        let withdrawal = SourceWaitWithdrawal()
+        request.withdrawal = withdrawal
+        guard let body = waitForUser(withdrawal: withdrawal, { presenter(request, $0) }) else {
             return throwBrowserCancelled(url: url)
         }
         guard refetchAfterSuccess else {
@@ -1230,13 +1945,15 @@ struct LegadoHTTPResult {
             return throwIntoScript("getVerificationCode: called on the main thread")
         }
         let identity = sourceIdentityProvider?() ?? (name: "", url: "")
+        let withdrawal = SourceWaitWithdrawal()
         let request = SourceCaptchaRequest(
             imageURL: imageUrl,
             headers: sourceBrowserRequest(urlString: imageUrl)?.allHTTPHeaderFields ?? [:],
             sourceName: identity.name,
-            sourceURL: identity.url
+            sourceURL: identity.url,
+            withdrawal: withdrawal
         )
-        guard let code = waitForUser({ presenter(request, $0) }), !code.isEmpty else {
+        guard let code = waitForUser(withdrawal: withdrawal, { presenter(request, $0) }), !code.isEmpty else {
             return throwIntoScript("getVerificationCode: no code entered")
         }
         return code
@@ -1406,12 +2123,10 @@ struct LegadoHTTPResult {
         return formatter.string(from: date)
     }
 
+    /// hutool's `Base64.decodeStr` (`LegadoBase64.hutoolDecode`), its bytes read as UTF-8 the way
+    /// Java's `String(bytes, UTF_8)` reads them: a malformed sequence becomes U+FFFD.
     func base64Decode(_ str: String) -> String {
-        guard let data = Data(base64Encoded: str, options: .ignoreUnknownCharacters),
-              let decoded = String(data: data, encoding: .utf8) else {
-            return ""
-        }
-        return decoded
+        String(decoding: LegadoBase64.hutoolDecode(str), as: UTF8.self)
     }
 
     func base64Encode(_ str: String) -> String {
@@ -1420,17 +2135,38 @@ struct LegadoHTTPResult {
     }
 
     func HMacBase64(_ content: String, _ algorithm: String, _ key: String) -> String {
-        let normalized = algorithm.uppercased().filter { $0.isLetter || $0.isNumber }
-        let message = Data(content.utf8)
-        let symmetricKey = SymmetricKey(data: Data(key.utf8))
+        guard let mac = Self.hmac(Data(content.utf8), key: Data(key.utf8), algorithm: algorithm) else {
+            AppLogger.parse(
+                "Legado bridge rejected unsupported HMAC algorithm",
+                context: ["algorithm": algorithm]
+            )
+            return ""
+        }
+        return mac.base64EncodedString()
+    }
 
+    /// `javax.crypto.Mac.doFinal`: bytes in, bytes out. An algorithm Java would not know
+    /// throws its NoSuchAlgorithmException into the script.
+    func hmacBytes(_ data: JSValue, _ algorithm: String, _ key: JSValue) -> [Int] {
+        guard let mac = Self.hmac(Data(Self.byteArray(from: data)), key: Data(Self.byteArray(from: key)), algorithm: algorithm) else {
+            _ = throwIntoScript("java.security.NoSuchAlgorithmException: Algorithm \(algorithm) not available")
+            return []
+        }
+        return mac.map(Int.init)
+    }
+
+    /// HMAC by Java's algorithm name (`HmacSHA256`; the bare digest name also reads).
+    private static func hmac(_ message: Data, key: Data, algorithm: String) -> Data? {
+        let normalized = algorithm.uppercased().filter { $0.isLetter || $0.isNumber }
+        let symmetricKey = SymmetricKey(data: key)
         switch normalized {
+        case "HMACMD5", "MD5":
+            return Data(HMAC<Insecure.MD5>.authenticationCode(for: message, using: symmetricKey))
         case "HMACSHA1", "SHA1":
-            return Data(HMAC<Insecure.SHA1>.authenticationCode(for: message, using: symmetricKey)).base64EncodedString()
+            return Data(HMAC<Insecure.SHA1>.authenticationCode(for: message, using: symmetricKey))
         case "HMACSHA224", "SHA224":
             var digest = [UInt8](repeating: 0, count: Int(CC_SHA224_DIGEST_LENGTH))
-            let keyData = Data(key.utf8)
-            keyData.withUnsafeBytes { keyBuffer in
+            key.withUnsafeBytes { keyBuffer in
                 message.withUnsafeBytes { messageBuffer in
                     CCHmac(
                         CCHmacAlgorithm(kCCHmacAlgSHA224),
@@ -1442,31 +2178,25 @@ struct LegadoHTTPResult {
                     )
                 }
             }
-            return Data(digest).base64EncodedString()
+            return Data(digest)
         case "HMACSHA256", "SHA256":
-            return Data(HMAC<SHA256>.authenticationCode(for: message, using: symmetricKey)).base64EncodedString()
+            return Data(HMAC<SHA256>.authenticationCode(for: message, using: symmetricKey))
         case "HMACSHA384", "SHA384":
-            return Data(HMAC<SHA384>.authenticationCode(for: message, using: symmetricKey)).base64EncodedString()
+            return Data(HMAC<SHA384>.authenticationCode(for: message, using: symmetricKey))
         case "HMACSHA512", "SHA512":
-            return Data(HMAC<SHA512>.authenticationCode(for: message, using: symmetricKey)).base64EncodedString()
+            return Data(HMAC<SHA512>.authenticationCode(for: message, using: symmetricKey))
         default:
-            AppLogger.parse(
-                "Legado bridge rejected unsupported HMAC algorithm",
-                context: ["algorithm": normalized]
-            )
-            return ""
+            return nil
         }
     }
 
     func HMacHex(_ content: String, _ algorithm: String, _ key: String) -> String {
         guard let data = Data(base64Encoded: HMacBase64(content, algorithm, key)) else { return "" }
-        return data.map { String(format: "%02x", $0) }.joined()
+        return Self.hexString(data)
     }
 
     func digestHex(_ content: String, _ algorithm: String) -> String {
-        Self.digestData(Data(content.utf8), algorithm: algorithm)?.map {
-            String(format: "%02x", $0)
-        }.joined() ?? ""
+        Self.digestData(Data(content.utf8), algorithm: algorithm).map { Self.hexString($0) } ?? ""
     }
 
     func digestBase64Str(_ content: String, _ algorithm: String) -> String {
@@ -1486,9 +2216,14 @@ struct LegadoHTTPResult {
         ) ?? ""
     }
 
+    /// `android.util.Base64.decode(str, DEFAULT)` (`LegadoBase64.androidDecode`). Text it calls
+    /// "bad base-64" throws into the script, as the `IllegalArgumentException` does there.
     func base64DecodeToByteArray(_ str: String) -> [Int] {
-        guard let data = Data(base64Encoded: str, options: .ignoreUnknownCharacters) else {
-            AppLogger.parse("Legado bridge rejected invalid Base64 byte-array input")
+        guard let data = LegadoBase64.androidDecode(str) else {
+            AppLogger.parse("Legado bridge rejected invalid Base64 byte-array input", context: [
+                "length": "\(str.utf16.count)", "head": String(str.prefix(40)),
+            ])
+            _ = throwIntoScript("bad base-64")
             return []
         }
         return data.map(Int.init)
@@ -1501,7 +2236,7 @@ struct LegadoHTTPResult {
     func md5Encode(_ str: String) -> String {
         guard let data = str.data(using: .utf8) else { return "" }
         let hash = Insecure.MD5.hash(data: data)
-        return hash.map { String(format: "%02x", $0) }.joined()
+        return Self.hexString(hash)
     }
 
     func md5Encode16(_ str: String) -> String {
@@ -1532,7 +2267,7 @@ struct LegadoHTTPResult {
 
     /// Encode a string to lowercase hex. Example: `"Hello"` → `"48656c6c6f"`.
     func hexEncodeToString(_ str: String) -> String {
-        str.data(using: .utf8)?.map { String(format: "%02x", $0) }.joined() ?? ""
+        Self.hexString(str.utf8)
     }
 
     private static func digestData(_ data: Data, algorithm: String) -> Data? {
@@ -1556,11 +2291,12 @@ struct LegadoHTTPResult {
         }
     }
 
+    /// A charset name as a source passes it — IANA or Java (`ISO8859_1`) — read by the one
+    /// resolver the page decoder uses. An unknown name is UTF-8, logged.
     private static func stringEncoding(_ charset: String) -> String.Encoding {
-        let normalized = charset.trimmingCharacters(in: .whitespacesAndNewlines)
-        let cfEncoding = CFStringConvertIANACharSetNameToEncoding(normalized as CFString)
-        guard cfEncoding != kCFStringEncodingInvalidId else { return .utf8 }
-        return String.Encoding(rawValue: CFStringConvertEncodingToNSStringEncoding(cfEncoding))
+        if let encoding = HTMLResponseDecoder.encoding(forIANA: charset) { return encoding }
+        AppLogger.parse("Legado bridge read an unknown charset as UTF-8", context: ["charset": charset])
+        return .utf8
     }
 
     private static func byteArray(from value: JSValue) -> [UInt8] {
@@ -1591,98 +2327,106 @@ struct LegadoHTTPResult {
         return Self.symmetricCrypt(encrypt: true, transformation: transformation, keyHex: keyHex, ivHex: ivHex, dataHex: dataHex)
     }
 
-    /// Hex string → bytes (nil on malformed input).
-    private static func bytesFromHex(_ hex: String) -> [UInt8]? {
-        let cleaned = hex.filter { !$0.isWhitespace }
-        guard cleaned.count % 2 == 0 else { return nil }
-        var bytes = [UInt8](); bytes.reserveCapacity(cleaned.count / 2)
-        var idx = cleaned.startIndex
-        while idx < cleaned.endIndex {
-            let next = cleaned.index(idx, offsetBy: 2)
-            guard let b = UInt8(cleaned[idx..<next], radix: 16) else { return nil }
-            bytes.append(b); idx = next
+    func rsaCryptHex(
+        _ transformation: String, _ keyHex: String, _ usePublicKey: Bool, _ encrypt: Bool, _ dataHex: String
+    ) -> String {
+        guard let key = Self.bytesFromHex(keyHex), let data = Self.bytesFromHex(dataHex) else {
+            return throwIntoScript("createAsymmetricCrypto: malformed key or data")
         }
-        return bytes
+        do {
+            let output = try LegadoAsymmetricCrypto.crypt(
+                transformation: transformation, key: key, usePublicKey: usePublicKey,
+                encrypt: encrypt, data: data
+            )
+            return Self.hexString(output)
+        } catch {
+            return throwIntoScript("createAsymmetricCrypto: \(error)")
+        }
     }
 
+    /// Hex string → bytes (nil on malformed input).
+    /// The bytes of `hex`, whitespace skipped; `nil` for anything else that is not a hex digit or
+    /// an odd count of them. Read scalar by scalar, not as `Character` pairs: 番茄听书 (YCK1330)
+    /// saves a chapter's audio as 16 million hex digits, which took 1.6 s that way (11-09).
+    private static func bytesFromHex(_ hex: String) -> [UInt8]? {
+        var bytes = [UInt8]()
+        bytes.reserveCapacity(hex.utf8.count / 2)
+        var high: UInt8?
+        for scalar in hex.unicodeScalars {
+            let nibble: UInt8
+            switch scalar.value {
+            case 0x30...0x39: nibble = UInt8(scalar.value - 0x30)
+            case 0x61...0x66: nibble = UInt8(scalar.value - 0x61 + 10)
+            case 0x41...0x46: nibble = UInt8(scalar.value - 0x41 + 10)
+            default:
+                guard scalar.properties.isWhitespace else { return nil }
+                continue
+            }
+            if let first = high {
+                bytes.append(first << 4 | nibble)
+                high = nil
+            } else {
+                high = nibble
+            }
+        }
+        return high == nil ? bytes : nil
+    }
+
+    /// Lowercase hex of `bytes`, as Hutool's `HexUtil.encodeHexStr` writes it — every hex the
+    /// bridge hands a script. From a table, not `String(format: "%02x")` a byte: 番茄听书
+    /// (YCK1330) fetches a chapter's audio as hex (`url,{"type":"hex"}`) and decrypts it one
+    /// sample at a time through `Cipher.doFinal`, and formatting 8 MB that way took 5 s of the
+    /// 30 a script has (11-09).
+    static func hexString(_ bytes: some Sequence<UInt8>) -> String {
+        var utf8 = [UInt8]()
+        utf8.reserveCapacity(bytes.underestimatedCount * 2)
+        for byte in bytes {
+            utf8.append(hexDigits[Int(byte >> 4)])
+            utf8.append(hexDigits[Int(byte & 0x0f)])
+        }
+        return String(decoding: utf8, as: UTF8.self)
+    }
+
+    private static let hexDigits = Array("0123456789abcdef".utf8)
+
+    /// `LegadoSymmetricCipher` over hex; "" on failure, logged (a script tests for it: 书山聚合
+    /// falls back to Base64 when `decryptStr` gives nothing).
     private static func symmetricCrypt(encrypt: Bool, transformation: String, keyHex: String, ivHex: String, dataHex: String) -> String {
-        let parts = transformation.uppercased().split(separator: "/").map(String.init)
-        let algorithmName = parts.first ?? "AES"
-        // 书山聚合 ships chapter content as DES/CBC/PKCS5Padding; restricting this to
-        // AES made `decryptStr` return "" WITHOUT throwing, so the source's own
-        // `catch → base64Decode` fallback never ran and the chapter came back empty
-        // with no JS error. hutool's SymmetricCrypto covers the DES family too.
-        let algorithm: CCAlgorithm
-        let blockSize: Int
-        switch algorithmName {
-        case "AES":
-            algorithm = CCAlgorithm(kCCAlgorithmAES); blockSize = kCCBlockSizeAES128
-        case "DES":
-            algorithm = CCAlgorithm(kCCAlgorithmDES); blockSize = kCCBlockSizeDES
-        case "DESEDE", "3DES", "TRIPLEDES":
-            algorithm = CCAlgorithm(kCCAlgorithm3DES); blockSize = kCCBlockSize3DES
-        default:
-            AppLogger.parse("⟐ crypto unsupported algorithm", context: ["transformation": transformation])
-            return ""
-        }
-        let mode = parts.count > 1 ? parts[1] : "ECB"
-        let padding = parts.count > 2 ? parts[2] : "PKCS5PADDING"
-
-        guard let key = bytesFromHex(keyHex), let data = bytesFromHex(dataHex), !data.isEmpty else { return "" }
+        guard let key = bytesFromHex(keyHex), let data = bytesFromHex(dataHex) else { return "" }
+        // A decrypt of nothing is nothing; an encrypt of nothing is still a padded block.
+        guard encrypt || !data.isEmpty else { return "" }
         let iv = bytesFromHex(ivHex) ?? []
-
-        var options: CCOptions = 0
-        switch padding {
-        case "PKCS5PADDING", "PKCS7PADDING": options |= CCOptions(kCCOptionPKCS7Padding)
-        case "NOPADDING": break
-        default:
-            // unsupported padding (e.g. ISO10126) — fail loudly rather than corrupt
-            AppLogger.parse("⟐ crypto unsupported padding", context: ["transformation": transformation])
-            return ""
-        }
-        if mode == "ECB" {
-            options |= CCOptions(kCCOptionECBMode)
-        } else if mode != "CBC" {
-            AppLogger.parse("⟐ crypto unsupported mode", context: ["transformation": transformation])
-            return "" // only ECB/CBC supported via CommonCrypto here
-        }
-        // CBC needs an IV of exactly one block; ECB ignores it.
-        let ivBytes: [UInt8] = (mode == "CBC")
-            ? (iv.count == blockSize ? iv : [UInt8](repeating: 0, count: blockSize))
-            : []
-
-        var out = [UInt8](repeating: 0, count: data.count + blockSize)
-        var moved = 0
-        let status = CCCrypt(
-            CCOperation(encrypt ? kCCEncrypt : kCCDecrypt),
-            algorithm,
-            options,
-            key, key.count,
-            ivBytes.isEmpty ? nil : ivBytes,
-            data, data.count,
-            &out, out.count,
-            &moved
-        )
-        guard status == kCCSuccess else {
+        do {
+            let output = try LegadoSymmetricCipher.crypt(
+                encrypt: encrypt, transformation: transformation, key: key, iv: iv, data: data
+            )
+            return Self.hexString(output)
+        } catch {
             AppLogger.parse("⟐ crypto failed", context: [
                 "transformation": transformation,
-                "status": Int(status),
+                "error": "\(error)",
                 "keyBytes": key.count,
                 "ivBytes": iv.count,
-                "dataBytes": data.count
+                "dataBytes": data.count,
             ])
             return ""
         }
-        return out.prefix(moved).map { String(format: "%02x", $0) }.joined()
     }
 
     // MARK: - URL Encoding
 
-    /// Mirrors Legado's `java.encodeURI(str)`. Encodes all characters except URI-safe ones.
-    func encodeURI(_ str: String) -> String {
-        str.addingPercentEncoding(
-            withAllowedCharacters: .init(charactersIn: "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_.!~*'();/?:@&=+$,#")
-        ) ?? str
+    /// Legado's `java.encodeURI(str)` and `java.encodeURI(str, enc)`: Java's
+    /// `URLEncoder.encode(str, enc ?: "UTF-8")`, a form encoder (a space is `+`; `/ ? : & = +`
+    /// are encoded), in the named charset; "" for a charset Java rejects, as Legado catches the
+    /// exception. The JS-`encodeURI`-style encoder before it kept `/?:&=+` and ignored the
+    /// charset, so 民间故事's `{{java.encodeURI(key,'gb2312')}}` sent UTF-8 to a GB2312 site.
+    func encodeURI(_ str: String, _ enc: JSValue) -> String {
+        let charset = enc.isUndefined || enc.isNull ? "UTF-8" : (enc.toString() ?? "UTF-8")
+        guard let encoded = AnalyzeUrl.javaURLEncode(str, charsetName: charset) else {
+            AppLogger.parse("java.encodeURI: unknown charset", context: ["charset": charset], level: .warning)
+            return ""
+        }
+        return encoded
     }
 
     /// Mirrors Legado's `java.encodeURIComponent(str)`. Encodes all characters except unreserved ones.
@@ -1729,6 +2473,127 @@ struct LegadoHTTPResult {
 
     func gzipBytes(_ value: JSValue) -> [Int] {
         Self.gzip(Data(Self.byteArray(from: value))).map(Int.init)
+    }
+
+    func inflateBytes(_ value: JSValue, _ windowBits: Int) -> NSDictionary {
+        let input = Data(Self.byteArray(from: value))
+        do {
+            let result = try Self.inflate(input, windowBits: Int32(windowBits))
+            return [
+                "bytes": result.output.map(Int.init),
+                "finished": result.finished,
+                "consumed": result.consumed,
+            ]
+        } catch {
+            // GZIPInputStream reads its header itself and says so; Inflater reports zlib's text.
+            let message = windowBits > 15 && input.prefix(2) != Data([0x1f, 0x8b])
+                ? "java.util.zip.ZipException: Not in GZIP format"
+                : "java.util.zip.DataFormatException: \(error)"
+            _ = throwIntoScript(message)
+            return ["bytes": [Int](), "finished": false, "consumed": 0]
+        }
+    }
+
+    func secureRandomBytes(_ count: Int) -> [Int] {
+        var generator = SystemRandomNumberGenerator()
+        return (0..<max(0, count)).map { _ in Int(UInt8.random(in: .min ... .max, using: &generator)) }
+    }
+
+    /// `Cipher.getInstance("AES/GCM/NoPadding")` with a `GCMParameterSpec`
+    /// (`LegadoSymmetricCipher.gcm`).
+    func aesGcmHex(
+        _ encrypt: Bool, _ keyHex: String, _ ivHex: String, _ aadHex: String, _ tagBits: Int, _ dataHex: String
+    ) -> String {
+        guard let key = Self.bytesFromHex(keyHex), let iv = Self.bytesFromHex(ivHex),
+              let aad = Self.bytesFromHex(aadHex), let data = Self.bytesFromHex(dataHex) else {
+            return throwIntoScript("javax.crypto.IllegalBlockSizeException: malformed GCM input")
+        }
+        guard tagBits == 128 else {
+            return throwIntoScript("java.security.InvalidAlgorithmParameterException: GCM tag of \(tagBits) bits is not supported")
+        }
+        do {
+            let output = try LegadoSymmetricCipher.gcm(encrypt: encrypt, key: key, iv: iv, aad: aad, data: data)
+            return Self.hexString(output)
+        } catch {
+            return throwIntoScript("javax.crypto.AEADBadTagException: \(error)")
+        }
+    }
+
+    /// Java's `Cipher.getBlockSize()` for RSA is computed from this: the modulus in bytes.
+    func rsaKeySizeBytes(_ keyHex: String, _ isPublic: Bool) -> Int {
+        guard let key = Self.bytesFromHex(keyHex) else {
+            _ = throwIntoScript("java.security.InvalidKeyException: malformed key")
+            return 0
+        }
+        do {
+            return try LegadoAsymmetricCrypto.modulusBytes(der: key, isPublic: isPublic)
+        } catch {
+            _ = throwIntoScript("java.security.InvalidKeyException: \(error)")
+            return 0
+        }
+    }
+
+    func rsaSignHex(_ algorithm: String, _ keyHex: String, _ dataHex: String) -> String {
+        guard let key = Self.bytesFromHex(keyHex), let data = Self.bytesFromHex(dataHex) else {
+            return throwIntoScript("java.security.SignatureException: malformed key or data")
+        }
+        do {
+            return Self.hexString(try LegadoAsymmetricCrypto.sign(algorithm: algorithm, privateKey: key, message: data))
+        } catch {
+            return throwIntoScript("java.security.SignatureException: \(error)")
+        }
+    }
+
+    func rsaVerify(_ algorithm: String, _ keyHex: String, _ dataHex: String, _ signatureHex: String) -> Bool {
+        guard let key = Self.bytesFromHex(keyHex), let data = Self.bytesFromHex(dataHex),
+              let signature = Self.bytesFromHex(signatureHex) else {
+            _ = throwIntoScript("java.security.SignatureException: malformed key, data or signature")
+            return false
+        }
+        do {
+            return try LegadoAsymmetricCrypto.verify(
+                algorithm: algorithm, publicKey: key, message: data, signature: signature
+            )
+        } catch {
+            _ = throwIntoScript("java.security.SignatureException: \(error)")
+            return false
+        }
+    }
+
+    func absoluteURL(_ spec: String, _ base: String) -> String {
+        AnalyzeUrl.javaAbsoluteURL(spec, base: base) ?? ""
+    }
+
+    /// `java.net.Socket.connect(address, timeout)`: sources time mirrors with it and pick the
+    /// fastest. Java's timeout 0 waits forever; here it is the request timeout.
+    func tcpConnectMillis(_ host: String, _ port: Int, _ timeoutMillis: Int) -> Int {
+        guard !host.isEmpty, let endpointPort = NWEndpoint.Port(rawValue: UInt16(clamping: port)), port > 0 else {
+            return -1
+        }
+        let timeout = timeoutMillis > 0 ? TimeInterval(timeoutMillis) / 1000 : requestTimeoutSeconds
+        let connection = NWConnection(host: NWEndpoint.Host(host), port: endpointPort, using: .tcp)
+        let outcome = BlockingResult<Bool>()
+        let delivered = OSAllocatedUnfairLock(initialState: false)
+        connection.stateUpdateHandler = { state in
+            let connected: Bool
+            switch state {
+            case .ready: connected = true
+            case .failed, .waiting, .cancelled: connected = false
+            default: return
+            }
+            let first = delivered.withLock { done -> Bool in
+                defer { done = true }
+                return !done
+            }
+            if first { outcome.deliver(connected) }
+        }
+        let started = Date()
+        connection.start(queue: .global(qos: .utility))
+        let connected = networkWaits.during { outcome.wait(timeout: .now() + timeout) } ?? false
+        let elapsed = Date().timeIntervalSince(started) * 1000
+        connection.cancel()
+        recordBlockingNetwork(elapsed)
+        return connected ? Int(elapsed) : -1
     }
 
     /// Matches Android `JsExtensions.getThemeMode()` rather than returning the
@@ -1843,15 +2708,57 @@ struct LegadoHTTPResult {
         return total + section + currentDigit
     }
 
+    struct InflateFailure: Error, CustomStringConvertible {
+        let description: String
+    }
+
+    /// The whole of `data` through zlib's inflate. Input that stops before the stream's end
+    /// gives what it held and `finished == false`, as Java's Inflater does (its streams then
+    /// throw EOFException).
+    static func inflate(_ data: Data, windowBits: Int32) throws -> (output: Data, finished: Bool, consumed: Int) {
+        var stream = z_stream()
+        guard inflateInit2_(&stream, windowBits, ZLIB_VERSION, Int32(MemoryLayout<z_stream>.size)) == Z_OK else {
+            throw InflateFailure(description: "inflateInit2 failed")
+        }
+        defer { inflateEnd(&stream) }
+        var output = Data()
+        let chunkSize = 32_768
+        var chunk = [UInt8](repeating: 0, count: chunkSize)
+        var status: Int32 = Z_OK
+        try data.withUnsafeBytes { rawBuffer in
+            stream.next_in = UnsafeMutablePointer<Bytef>(
+                mutating: rawBuffer.bindMemory(to: Bytef.self).baseAddress
+            )
+            stream.avail_in = uInt(data.count)
+            while status != Z_STREAM_END {
+                let produced = chunk.withUnsafeMutableBytes { chunkBuffer -> Int in
+                    stream.next_out = chunkBuffer.bindMemory(to: Bytef.self).baseAddress
+                    stream.avail_out = uInt(chunkSize)
+                    status = zlib.inflate(&stream, Z_NO_FLUSH)
+                    return chunkSize - Int(stream.avail_out)
+                }
+                if produced > 0 { output.append(contentsOf: chunk.prefix(produced)) }
+                if status == Z_BUF_ERROR, stream.avail_in == 0 { break }
+                guard status == Z_OK || status == Z_STREAM_END else {
+                    let reason = stream.msg.map { String(cString: $0) } ?? "zlib status \(status)"
+                    throw InflateFailure(description: reason)
+                }
+            }
+        }
+        return (output, status == Z_STREAM_END, Int(stream.total_in))
+    }
+
+    /// hutool `ZipUtil.gzip` and `GZIPOutputStream`: Java deflates with zlib at its default
+    /// level and memory level 8, so the same settings give a source the same bytes it would
+    /// sign or send on Android.
     private static func gzip(_ data: Data) -> Data {
-        guard !data.isEmpty else { return Data() }
         var stream = z_stream()
         let initialized = deflateInit2_(
             &stream,
             Z_DEFAULT_COMPRESSION,
             Z_DEFLATED,
             MAX_WBITS + 16,
-            MAX_MEM_LEVEL,
+            8,
             Z_DEFAULT_STRATEGY,
             ZLIB_VERSION,
             Int32(MemoryLayout<z_stream>.size)
@@ -2014,7 +2921,7 @@ struct LegadoHTTPResult {
         // down with it.
         guard presentsAndroidIdentityProvider?() == true else { return "" }
         let digest = SHA256.hash(data: Data(deviceID().utf8))
-        return digest.prefix(8).map { String(format: "%02x", $0) }.joined()
+        return Self.hexString(digest.prefix(8))
     }
 
     /// True for the 36-character uppercase vendor UUID `androidId()` used to hand out.
@@ -2032,6 +2939,36 @@ struct LegadoHTTPResult {
     /// legado-E's floating-window variant (`isFloat`) has no counterpart here; a third argument
     /// is ignored and the video opens full screen. While a video episode is being fetched the
     /// link is that episode's instead (`videoEpisodeHandover`).
+    /// legado-E `java.openUrl(url[, mimeType])`: an app link or a web page, opened after the
+    /// reader agrees (`OpenUrlConfirmActivity`). An import link (`legado://` / `yuedu://`)
+    /// goes to the app's own import, which asks first itself. The script does not wait.
+    func openUrl(_ url: String, _ mimeType: JSValue) {
+        guard url.utf16.count < 64 * 1024 else {
+            _ = throwIntoScript("openUrl parameter url too long")
+            return
+        }
+        let trimmed = url.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let target = URL(string: trimmed), target.scheme?.isEmpty == false else {
+            AppLogger.parse("⟐ openUrl: not a URL", context: ["url": String(trimmed.prefix(160))])
+            return
+        }
+        guard let presenter = Self.sharedOpenURLPresenter else {
+            AppLogger.parse("⟐ openUrl: no presenter installed", context: [:])
+            return
+        }
+        presenter(SourceOpenURLRequest(
+            url: target,
+            mimeType: Self.optionalString(mimeType),
+            sourceName: sourceIdentityProvider?().name ?? ""
+        ))
+    }
+
+    func getTag() -> String? {
+        sourceIdentityProvider?().name
+    }
+
+    @objc(getTag) func jsGetTag() -> JSValue { LegadoJavaNull.value(getTag()) }
+
     func openVideoPlayer(_ url: String, _ title: String) {
         if videoEpisodeHandover != nil {
             if videoEpisodeHandover?.stream == nil { videoEpisodeHandover?.stream = url }
@@ -2081,22 +3018,14 @@ struct LegadoHTTPResult {
     /// Cookies acquired during the load are copied into `HTTPCookieStorage` so later
     /// `java.ajax`/`cookie.getCookie` calls see them. Blocks the JS serial queue (not main).
     func webView(_ html: JSValue, _ url: JSValue, _ js: JSValue) -> String {
-        let htmlArg = Self.optionalString(html)
-        let urlArg = Self.optionalString(url)
-        let jsArg = Self.optionalString(js) ?? "document.documentElement.outerHTML"
-        let ua = sourceHeaders.first { $0.key.lowercased() == "user-agent" }?.value ?? getWebViewUA()
-
-        let sem = DispatchSemaphore(value: 0)
-        let box = WebViewResultBox()
-        Task { @MainActor in
-            box.value = await LegadoHeadlessWebView.run(
-                html: htmlArg, url: urlArg, js: jsArg, userAgent: ua, timeout: 30
-            )
-            sem.signal()
-        }
-        _ = sem.wait(timeout: .now() + 35)
-        return box.value
+        // No script is Legado's `javaScript == null`: the runner reads the page's outerHTML
+        // after giving it Legado's 900 ms to render.
+        runHeadlessWebView(html: html, url: url, js: js, sourceRegex: nil, overrideURLRegex: nil)
     }
+
+    /// Legado `BackstageWebView`'s `timeout ?: 60000L`, which no `java.webView*` call sets. A
+    /// variable only so a test can give a page that never answers a short deadline.
+    var webViewTimeoutSeconds: TimeInterval = WebFetcher.sourceRequestTimeout
 
     func webViewGetSource(
         _ html: JSValue,
@@ -2137,24 +3066,40 @@ struct LegadoHTTPResult {
     ) -> String {
         let htmlArg = Self.optionalString(html)
         let urlArg = Self.optionalString(url)
-        let jsArg = Self.optionalString(js) ?? ""
-        let ua = sourceHeaders.first { $0.key.lowercased() == "user-agent" }?.value ?? getWebViewUA()
+        let jsArg = Self.optionalString(js)
+        // Legado `BackstageWebView`: the source map's User-Agent, else `AppConfig.userAgent`.
+        let ua = getUserAgent()
+        let timeout = webViewTimeoutSeconds
         let sem = DispatchSemaphore(value: 0)
-        let box = WebViewResultBox()
+        // Nil until the runner answers: written on the main actor, read here on the JS thread,
+        // possibly after this thread stopped waiting.
+        let answer = OSAllocatedUnfairLock<(body: String, failure: LegadoHeadlessWebView.Failure?)?>(
+            initialState: nil
+        )
         Task { @MainActor in
-            box.value = await LegadoHeadlessWebView.run(
+            let page = await LegadoHeadlessWebView.run(
                 html: htmlArg,
                 url: urlArg,
                 js: jsArg,
                 userAgent: ua,
-                timeout: 30,
+                timeout: timeout,
                 sourceRegex: sourceRegex,
                 overrideURLRegex: overrideURLRegex
             )
+            answer.withLock { $0 = page }
             sem.signal()
         }
-        _ = sem.wait(timeout: .now() + 35)
-        return box.value
+        _ = networkWaits.during { sem.wait(timeout: .now() + timeout + 5) }
+        // The runner keeps its own deadline; not answering by this wait's is that deadline
+        // passing too, with the main actor too busy to say so.
+        let page = answer.withLock { $0 } ?? (
+            "", .timedOut(milliseconds: Int((timeout * 1000).rounded()))
+        )
+        if let failure = page.failure, failure.isLegadoError {
+            // Legado's `runBlocking` rethrows it: the script sees an exception, not a page.
+            return throwIntoScript(failure.message)
+        }
+        return page.body
     }
 
     /// Extract a non-empty String from a JS argument, treating undefined/null/"null" as nil.
@@ -2225,7 +3170,8 @@ struct LegadoHTTPResult {
     private func performGet(
         _ urlStr: String,
         headers: [String: String],
-        timeoutOverride: TimeInterval? = nil
+        timeoutOverride: TimeInterval? = nil,
+        followRedirects: Bool
     ) -> LegadoHTTPResult {
         let trimmed = urlStr.trimmingCharacters(in: .whitespacesAndNewlines)
         let fallbackURL = URL(string: "about:blank")!
@@ -2234,30 +3180,30 @@ struct LegadoHTTPResult {
             return .bodyOnly(request: URLRequest(url: fallbackURL), body: "")
         }
 
-        let timeoutSeconds = timeoutOverride ?? max(15, requestTimeoutSeconds)
+        let timeoutSeconds = timeoutOverride ?? requestTimeoutSeconds
         var request = URLRequest(
             url: url,
             cachePolicy: .reloadIgnoringLocalCacheData,
             timeoutInterval: timeoutSeconds
         )
         request.httpMethod = "GET"
-        request.setValue(
-            "Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15",
-            forHTTPHeaderField: "User-Agent"
-        )
+        // Legado's OkHttp interceptor: a request with no User-Agent of its own (no source, or
+        // the source's header rule fetching itself) sends `AppConfig.userAgent`.
+        request.setValue(BookSource.legadoDefaultUserAgent, forHTTPHeaderField: "User-Agent")
         sourceHeaders.forEach { request.setValue($1, forHTTPHeaderField: $0) }
         headers.forEach { request.setValue($1, forHTTPHeaderField: $0) }
+        if !followRedirects { request = LegadoRedirectPolicy.refusingRedirects(request) }
 
         if let handler = networkHandler {
-            return handler(request, nil) ?? .bodyOnly(request: request, body: "")
+            return networkWaits.during { handler(request, nil) } ?? .bodyOnly(request: request, body: "")
         }
 
         let pending = BlockingResult<LegadoHTTPResult>()
-        let task = Self.requestSession.dataTask(with: request) { [request] data, response, _ in
-            pending.deliver(LegadoHTTPResult.make(request: request, data: data, response: response))
+        let task = Self.requestSession.legadoDataTask(with: request) { [request] data, response, error in
+            pending.deliver(LegadoHTTPResult.make(request: request, data: data, response: response, error: error))
         }
         task.resume()
-        let responseResult = pending.wait(timeout: .now() + timeoutSeconds)
+        let responseResult = networkWaits.during { pending.wait(timeout: .now() + timeoutSeconds) }
         if responseResult == nil {
             task.cancel()
         }
@@ -2267,9 +3213,10 @@ struct LegadoHTTPResult {
     private func performSimpleRequest(
         method: String,
         urlStr: String,
-        body: String?,
+        body: Data?,
         headers: [String: String],
-        timeoutOverride: TimeInterval?
+        timeoutOverride: TimeInterval?,
+        followRedirects: Bool
     ) -> LegadoHTTPResult {
         let trimmed = urlStr.trimmingCharacters(in: .whitespacesAndNewlines)
         let fallbackURL = URL(string: "about:blank")!
@@ -2277,31 +3224,31 @@ struct LegadoHTTPResult {
             AppLogger.parse("⟐ js net bad URL", context: ["url": String(trimmed.prefix(200))])
             return .bodyOnly(request: URLRequest(url: fallbackURL), body: "")
         }
-        let timeoutSeconds = timeoutOverride ?? max(15, requestTimeoutSeconds)
+        let timeoutSeconds = timeoutOverride ?? requestTimeoutSeconds
         var request = URLRequest(
             url: url,
             cachePolicy: .reloadIgnoringLocalCacheData,
             timeoutInterval: timeoutSeconds
         )
         request.httpMethod = method
-        request.httpBody = body?.data(using: .utf8)
-        request.setValue(
-            "Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15",
-            forHTTPHeaderField: "User-Agent"
-        )
+        request.httpBody = body
+        // Legado's OkHttp interceptor: a request with no User-Agent of its own (no source, or
+        // the source's header rule fetching itself) sends `AppConfig.userAgent`.
+        request.setValue(BookSource.legadoDefaultUserAgent, forHTTPHeaderField: "User-Agent")
         sourceHeaders.forEach { request.setValue($1, forHTTPHeaderField: $0) }
         headers.forEach { request.setValue($1, forHTTPHeaderField: $0) }
+        if !followRedirects { request = LegadoRedirectPolicy.refusingRedirects(request) }
 
         if let handler = networkHandler {
-            return handler(request, nil) ?? .bodyOnly(request: request, body: "")
+            return networkWaits.during { handler(request, nil) } ?? .bodyOnly(request: request, body: "")
         }
 
         let pending = BlockingResult<LegadoHTTPResult>()
-        let task = Self.requestSession.dataTask(with: request) { [request] data, response, _ in
-            pending.deliver(LegadoHTTPResult.make(request: request, data: data, response: response))
+        let task = Self.requestSession.legadoDataTask(with: request) { [request] data, response, error in
+            pending.deliver(LegadoHTTPResult.make(request: request, data: data, response: response, error: error))
         }
         task.resume()
-        let responseResult = pending.wait(timeout: .now() + timeoutSeconds)
+        let responseResult = networkWaits.during { pending.wait(timeout: .now() + timeoutSeconds) }
         if responseResult == nil {
             task.cancel()
         }
@@ -2309,43 +3256,72 @@ struct LegadoHTTPResult {
     }
 
     /// Synchronous HTTP POST used by `java.post`. Blocks the calling (JS serial queue) thread.
-    private func performPost(
+    /// jsoup 1.16.2's `HttpConnection.DEFAULT_UA` — the jsoup legado-E and MD3 pin
+    /// (`gradle/libs.versions.toml`): the User-Agent of a `java.get`/`head`/`post` whose script
+    /// gives none.
+    static let jsoupDefaultUserAgent =
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/79.0.3945.130 Safari/537.36"
+
+    /// Legado-E's and MD3's `java.get(url, headers)`, `java.head` and `java.post`
+    /// (`JsExtensions`): `Jsoup.connect(url).headers(headers).followRedirects(false)`. A jsoup
+    /// request, not an AnalyzeUrl, so none of OkHttp's interceptors touch it:
+    /// - the script's headers over jsoup's defaults — its desktop User-Agent and, for a body,
+    ///   `Content-Type: application/x-www-form-urlencoded; charset=UTF-8` — and none of the
+    ///   source's header rule, which only an AnalyzeUrl request (`java.ajax`, `java.connect`)
+    ///   carries;
+    /// - `CookieJar: 1` when the source keeps a cookie jar: the marker Legado's interceptor reads
+    ///   and strips from an OkHttp request, which here reaches the server as written;
+    /// - no stored cookie goes out and the response's are not kept: jsoup keeps a connection's
+    ///   cookies in a jar of its own, and Legado sets no `CookieHandler`. A script reads them
+    ///   off the response (`cookies()`, `header("Set-Cookie")`).
+    ///
+    /// 八零电子书 (YCK1330 #744) posts its search form with `java.post(url, body, {})` and reads
+    /// the redirect's `Location`. Sent with its source's header rule and the shared jar, it was
+    /// answered a cookie challenge.
+    private func performJsoupRequest(
+        method: String,
         _ urlStr: String,
-        body: String,
+        body: String?,
         headers: [String: String],
-        timeoutOverride: TimeInterval? = nil
-    ) -> LegadoStrResponse {
-        guard let url = URL(string: urlStr.trimmingCharacters(in: .whitespacesAndNewlines)) else {
-            return LegadoStrResponse(url: urlStr, body: "")
+        timeoutOverride: TimeInterval?
+    ) -> LegadoHTTPResult {
+        let trimmed = urlStr.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let url = URL(string: trimmed) else {
+            AppLogger.parse("⟐ js net bad URL", context: ["url": String(trimmed.prefix(200))])
+            return .bodyOnly(request: URLRequest(url: URL(string: "about:blank")!), body: "")
         }
-        let timeoutSeconds = timeoutOverride ?? max(15, requestTimeoutSeconds)
+        let timeoutSeconds = timeoutOverride ?? requestTimeoutSeconds
         var request = URLRequest(url: url, cachePolicy: .reloadIgnoringLocalCacheData, timeoutInterval: timeoutSeconds)
-        request.httpMethod = "POST"
-        request.httpBody = body.data(using: .utf8)
-        request.setValue(
-            "Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15",
-            forHTTPHeaderField: "User-Agent"
-        )
-        // Source headers first, then explicit per-call headers override.
-        sourceHeaders.forEach { request.setValue($1, forHTTPHeaderField: $0) }
+        request.httpMethod = method
+        request.httpShouldHandleCookies = false
+        request.setValue(Self.jsoupDefaultUserAgent, forHTTPHeaderField: "User-Agent")
         headers.forEach { request.setValue($1, forHTTPHeaderField: $0) }
-        if request.value(forHTTPHeaderField: "Content-Type") == nil {
-            request.setValue("application/x-www-form-urlencoded", forHTTPHeaderField: "Content-Type")
+        if keepsCookieJarProvider?() == true {
+            request.setValue("1", forHTTPHeaderField: "CookieJar")
         }
+        if let body {
+            request.httpBody = Data(body.utf8)
+            if request.value(forHTTPHeaderField: "Content-Type") == nil {
+                request.setValue("application/x-www-form-urlencoded; charset=UTF-8", forHTTPHeaderField: "Content-Type")
+            }
+        }
+        request = LegadoRedirectPolicy.refusingRedirects(request)
+        request = LegadoOutgoingHeaders.markingJsoup(request)
 
         if let handler = networkHandler {
-            return LegadoStrResponse(
-                result: handler(request, nil) ?? .bodyOnly(request: request, body: "")
-            )
+            return networkWaits.during { handler(request, nil) } ?? .bodyOnly(request: request, body: "")
         }
 
         let pending = BlockingResult<LegadoHTTPResult>()
-        let task = Self.requestSession.dataTask(with: request) { [request] data, response, _ in
-            pending.deliver(LegadoHTTPResult.make(request: request, data: data, response: response))
+        let task = Self.requestSession.legadoDataTask(with: request) { [request] data, response, error in
+            pending.deliver(LegadoHTTPResult.make(request: request, data: data, response: response, error: error))
         }
         task.resume()
-        let responseResult = pending.wait(timeout: .now() + timeoutSeconds)
-        return LegadoStrResponse(result: responseResult ?? .bodyOnly(request: request, body: ""))
+        let responseResult = networkWaits.during { pending.wait(timeout: .now() + timeoutSeconds) }
+        if responseResult == nil {
+            task.cancel()
+        }
+        return responseResult ?? .bodyOnly(request: request, body: "")
     }
 
     private func performRequest(_ urlStr: String) -> String {
@@ -2359,23 +3335,31 @@ struct LegadoHTTPResult {
         let networkHandler: SourceScriptTransport?
         /// Resolved when the context is built, on the JS thread. Resolving them can evaluate the
         /// header rule on the engine's JS queue, which `ajaxAll` occupies while its workers run.
+        /// `[:]` when no request in it takes the plain route: the AnalyzeUrl handler evaluates
+        /// the rule itself, once per request, and an evaluation here as well ran it twice.
         let sourceHeaders: [String: String]
         let timeoutSeconds: TimeInterval
+        let networkWaits: LegadoScriptWaits
     }
 
     /// Built on the JS thread only: every `java.*` request runs there, and `ajaxAll` builds it
-    /// before it fans out.
-    private var requestContext: RequestContext {
-        RequestContext(
+    /// before it fans out. The source headers are resolved when one of `urls` takes the plain
+    /// route — the one that sends them from here.
+    private func requestContext(for urls: [String]) -> RequestContext {
+        let sendsSourceHeaders = urls.contains {
+            !Self.takesAnalyzeUrlRoute($0, handler: analyzeUrlHandler)
+        }
+        return RequestContext(
             analyzeUrlHandler: analyzeUrlHandler,
             networkHandler: networkHandler,
-            sourceHeaders: sourceHeaders,
-            timeoutSeconds: requestTimeoutSeconds
+            sourceHeaders: sendsSourceHeaders ? sourceHeaders : [:],
+            timeoutSeconds: requestTimeoutSeconds,
+            networkWaits: networkWaits
         )
     }
 
     private func performRequestResult(_ urlStr: String) -> LegadoHTTPResult {
-        Self.performRequest(urlStr, in: requestContext)
+        Self.performRequest(urlStr, in: requestContext(for: [urlStr]))
     }
 
     /// A request bound for the AnalyzeUrl handler, built on the JS thread.
@@ -2386,8 +3370,26 @@ struct LegadoHTTPResult {
         let placeholder: URLRequest
 
         /// JS thread only: `finish` runs the response's `bodyJs`.
+        ///
+        /// Legado's `connect(url,{…})` answers `AnalyzeUrl.getStrResponseAwait()`: the okhttp
+        /// response, so `raw().request().url()` is where a redirect landed and `code()` /
+        /// `headers()` are the server's. Rebuilt from the URL asked for, 言情小说 (YCK1330 #652)
+        /// read `index.php` back instead of its `result/?searchid=…` and searched an error page.
         func result(for response: PreparedSourceRequest.Response?) -> LegadoHTTPResult {
-            .bodyOnly(request: placeholder, body: response.flatMap { request?.finish($0) } ?? "")
+            let body = response.flatMap { request?.finish($0) } ?? ""
+            var result: LegadoHTTPResult
+            if let http = response?.http {
+                result = LegadoHTTPResult(
+                    finalURL: http.finalURL, statusCode: http.statusCode,
+                    statusMessage: http.statusMessage, headers: http.headers,
+                    cookies: http.cookies, body: body, requestedURL: http.requestedURL
+                )
+            } else {
+                result = LegadoHTTPResult.bodyOnly(request: placeholder, body: body)
+            }
+            result.data = response?.data
+            result.transportError = response?.transportError
+            return result
         }
     }
 
@@ -2411,14 +3413,23 @@ struct LegadoHTTPResult {
         }
     }
 
+    /// Whether `urlStr` is built by the AnalyzeUrl handler: a `data:` URI, or a URL with options.
+    private static func takesAnalyzeUrlRoute(
+        _ urlStr: String, handler: ((String) -> PreparedSourceRequest?)?
+    ) -> Bool {
+        guard handler != nil else { return false }
+        let trimmedUrl = urlStr.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmedUrl.hasPrefix("data:")
+            || trimmedUrl.contains(",{")
+            || trimmedUrl.contains("{\"method\"")
+    }
+
     /// JS thread only — building the request runs the URL's JS. `nil` for a plain URL.
     private static func analyzeUrlRoute(_ urlStr: String, in context: RequestContext) -> AnalyzeUrlRoute? {
-        let trimmedUrl = urlStr.trimmingCharacters(in: .whitespacesAndNewlines)
         guard let prepare = context.analyzeUrlHandler,
-              trimmedUrl.hasPrefix("data:")
-                || trimmedUrl.contains(",{")
-                || trimmedUrl.contains("{\"method\"")
+              takesAnalyzeUrlRoute(urlStr, handler: prepare)
         else { return nil }
+        let trimmedUrl = urlStr.trimmingCharacters(in: .whitespacesAndNewlines)
         let baseURL = URL(string: trimmedUrl.components(separatedBy: ",{").first ?? trimmedUrl)
             ?? URL(string: "about:blank")!
         return AnalyzeUrlRoute(request: prepare(urlStr), placeholder: URLRequest(url: baseURL))
@@ -2427,7 +3438,7 @@ struct LegadoHTTPResult {
     /// JS thread only.
     private static func performRequest(_ urlStr: String, in context: RequestContext) -> LegadoHTTPResult {
         if let route = analyzeUrlRoute(urlStr, in: context) {
-            return route.result(for: route.request?.fetch())
+            return route.result(for: context.networkWaits.during { route.request?.fetch() })
         }
         return performPlainRequest(urlStr, in: context)
     }
@@ -2440,7 +3451,7 @@ struct LegadoHTTPResult {
 
         // Delegate to external handler if provided
         if let handler = context.networkHandler {
-            guard let url = URL(string: trimmedUrl) else {
+            guard let url = AnalyzeUrl.requestURL(trimmedUrl) else {
                 // Silently returning "" here made the rule's `JSON.parse("")` throw
                 // three retries later with no trace of the real cause. Rule JS builds
                 // URLs by string concatenation, so unencoded CJK / spaces / stray
@@ -2450,22 +3461,22 @@ struct LegadoHTTPResult {
             }
             var request = URLRequest(url: url, cachePolicy: .reloadIgnoringLocalCacheData, timeoutInterval: context.timeoutSeconds)
             context.sourceHeaders.forEach { request.setValue($1, forHTTPHeaderField: $0) }
-            return handler(request, nil) ?? .bodyOnly(request: request, body: "")
+            return context.networkWaits.during { handler(request, nil) } ?? .bodyOnly(request: request, body: "")
         }
 
         // Fallback: synchronous URLSession request with charset-aware decoding
-        guard let url = URL(string: trimmedUrl) else {
+        guard let url = AnalyzeUrl.requestURL(trimmedUrl) else {
             AppLogger.parse("⟐ js net bad URL", context: ["url": String(trimmedUrl.prefix(200))])
             return .bodyOnly(request: URLRequest(url: baseURL), body: "")
         }
 
         var request = URLRequest(url: url, cachePolicy: .reloadIgnoringLocalCacheData, timeoutInterval: context.timeoutSeconds)
-        request.setValue(
-            "Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15",
-            forHTTPHeaderField: "User-Agent"
-        )
-        request.setValue("text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8", forHTTPHeaderField: "Accept")
-        request.setValue("zh-CN,zh;q=0.9", forHTTPHeaderField: "Accept-Language")
+        // Legado's OkHttp interceptor: a request with no User-Agent of its own (no source, or
+        // the source's header rule fetching itself) sends `AppConfig.userAgent`.
+        request.setValue(BookSource.legadoDefaultUserAgent, forHTTPHeaderField: "User-Agent")
+        // No `Accept` of our own, as `WebFetcher.buildRequest`: OkHttp sends none, and a
+        // browser's `text/html` turns a Django REST framework API's JSON into its HTML page.
+        // The rest of okhttp's headers are added on the way out (`legadoDataTask`).
         // Apply book source headers (may override User-Agent)
         context.sourceHeaders.forEach { request.setValue($1, forHTTPHeaderField: $0) }
 
@@ -2474,11 +3485,13 @@ struct LegadoHTTPResult {
         // The response goes back to the source as it came — a Cloudflare challenge page
         // included, as in Legado. A source whose site is protected checks the body itself
         // and calls `java.startBrowserAwait`; blanking the page here hid it from that check.
-        let task = requestSession.dataTask(with: request) { [request] data, response, _ in
-            pending.deliver(data.map { LegadoHTTPResult.make(request: request, data: $0, response: response) })
+        let task = requestSession.legadoDataTask(with: request) { [request] data, response, error in
+            pending.deliver(LegadoHTTPResult.make(request: request, data: data, response: response, error: error))
         }
         task.resume()
-        let responseResult = pending.wait(timeout: .now() + context.timeoutSeconds) ?? nil
+        let responseResult = context.networkWaits.during {
+            pending.wait(timeout: .now() + context.timeoutSeconds)
+        } ?? nil
         return responseResult ?? .bodyOnly(request: request, body: "")
     }
 
@@ -2512,8 +3525,10 @@ struct LegadoHTTPResult {
 // MARK: - Java collection and connection response contracts
 
 @objc protocol LegadoJavaMapExport: JSExport {
-    func get(_ key: String) -> String?
-    func put(_ key: String, _ value: String) -> String?
+    /// `java.util.Map.get` / `put`: `null` for a missing key or no previous value
+    /// (`LegadoJavaNull`). Swift callers use the `String?` twins.
+    @objc(get:) func jsGet(_ key: String) -> JSValue
+    @objc(put::) func jsPut(_ key: String, _ value: String) -> JSValue
     func containsKey(_ key: String) -> Bool
     func keySet() -> [String]
     func size() -> Int
@@ -2551,6 +3566,11 @@ struct LegadoHTTPResult {
         return previous
     }
 
+    @objc(get:) func jsGet(_ key: String) -> JSValue { LegadoJavaNull.value(get(key)) }
+    @objc(put::) func jsPut(_ key: String, _ value: String) -> JSValue {
+        LegadoJavaNull.value(put(key, value))
+    }
+
     func containsKey(_ key: String) -> Bool { get(key) != nil }
     func keySet() -> [String] { values.keys.sorted() }
     func size() -> Int { values.count }
@@ -2569,9 +3589,31 @@ struct LegadoHTTPResult {
 /// method shadows the Kotlin `val url` bean property, so `result.url()` is the call sources
 /// make (搜笔趣阁, 手打书, 哔哩小说 and 飞库文学网 in `loginCheckJs`).
 @objc protocol LegadoStrResponseExport: JSExport {
+    /// okhttp's `Response` in Legado (`StrResponse.raw()`); this object answers the same calls
+    /// (`code()`, `message()`, `headers()`, `header(name)`, `request().url()`).
+    func raw() -> LegadoStrResponse
+    /// Milliseconds the request took (`StrResponse.callTime()`); 0 for a constructed response.
+    func callTime() -> Int
+    func request() -> LegadoHTTPRequestInfo
+    /// One header, case-insensitive; `null` when absent (okhttp `header` / jsoup `header`).
+    func header(_ name: String) -> JSValue
+    func hasHeader(_ name: String) -> Bool
+    func cookie(_ name: String) -> JSValue
+    func contentType() -> JSValue
+    func isRedirect() -> Bool
+    /// okhttp's `priorResponse()`: the redirect that led here, with no body, and through its own
+    /// `priorResponse()` the one before it; `null` when no redirect led here.
+    func priorResponse() -> JSValue
     func body() -> String
+    /// The response's bytes as they arrived (okhttp `ResponseBody.bytes()`); the body text's
+    /// UTF-8 for a response built from text.
+    func bodyBytes() -> [Int]
     func cookies() -> LegadoJavaMap
-    func headers() -> LegadoJavaMap
+    /// okhttp's and jsoup's `headers()` — every header, case-insensitive — and, given a name,
+    /// their `headers(name)`: that header's values, a list. 精品小说 (YCK1331) reads the
+    /// redirect its search POST answers with `java.post(…).headers("location")[0]`; with the
+    /// name ignored that was the whole map, `[0]` nothing, and the search went to `/e/search/`.
+    @objc(headers:) func jsHeaders(_ name: JSValue) -> JSValue
     func code() -> Int
     func message() -> String
     func statusCode() -> Int
@@ -2590,7 +3632,6 @@ struct LegadoHTTPResult {
     init(url: String, body: String) {
         let parsedURL = URL(string: url) ?? URL(string: "about:blank")!
         self.result = LegadoHTTPResult(
-            requestURL: parsedURL,
             finalURL: parsedURL,
             statusCode: 200,
             statusMessage: "OK",
@@ -2602,15 +3643,51 @@ struct LegadoHTTPResult {
         super.init()
     }
 
-    init(result: LegadoHTTPResult) {
+    init(result: LegadoHTTPResult, callTime: Int = 0) {
         self.result = result
-        self.finalURLString = result.finalURL.absoluteString
+        self.finalURLString = result.urlString
+        self.callTimeMillis = callTime
         super.init()
     }
 
+    /// Set once by the call that made the request, before the object reaches JS.
+    var callTimeMillis = 0
+
+    func raw() -> LegadoStrResponse { self }
+    func callTime() -> Int { callTimeMillis }
+    /// okhttp's `Response.request()` is the request the response answers — after a redirect,
+    /// the redirect's. 全本同人小说网 (YCK1330) reads its search id from the URL its POST lands
+    /// on with `java.connect(…).raw().request().url()`; the URL asked for sent the search to a
+    /// GET of the form's address, which answers an error page.
+    func request() -> LegadoHTTPRequestInfo { LegadoHTTPRequestInfo(url: finalURLString) }
+    func header(_ name: String) -> JSValue { LegadoJavaNull.value(headerValue(name)) }
+    func hasHeader(_ name: String) -> Bool { headerValue(name) != nil }
+    func cookie(_ name: String) -> JSValue { LegadoJavaNull.value(result.cookies[name]) }
+    func contentType() -> JSValue { LegadoJavaNull.value(headerValue("Content-Type")) }
+
+    private func headerValue(_ name: String) -> String? {
+        result.headers.first { $0.key.caseInsensitiveCompare(name) == .orderedSame }?.value
+    }
+    func isRedirect() -> Bool { [300, 301, 302, 303, 307, 308].contains(result.statusCode) }
+    /// 八叉书库 (YCK 1330 #23) learns its mirror has moved in its `loginCheckJs`:
+    /// `result.raw().priorResponse()`, and when that `isRedirect()`, the URL it landed on. Every
+    /// stage threw a TypeError there without it.
+    func priorResponse() -> JSValue {
+        let context = JSContext.current()
+        guard var prior = result.redirects.last else { return JSValue(nullIn: context) }
+        prior.redirects = Array(result.redirects.dropLast())
+        return JSValue(object: LegadoStrResponse(result: prior), in: context)
+    }
     func body() -> String { result.body }
+    func bodyBytes() -> [Int] { (result.data ?? Data(result.body.utf8)).map(Int.init) }
     func cookies() -> LegadoJavaMap { LegadoJavaMap(result.cookies) }
     func headers() -> LegadoJavaMap { LegadoJavaMap(result.headers, caseInsensitive: true) }
+    func jsHeaders(_ name: JSValue) -> JSValue {
+        let context = JSContext.current()
+        guard !name.isUndefined, !name.isNull else { return JSValue(object: headers(), in: context) }
+        // A JS array stands for the Java `List<String>`, as `getHeaderFields` hands one out.
+        return JSValue(object: headerValue(name.toString()).map { [$0] } ?? [], in: context)
+    }
     func code() -> Int { result.statusCode }
     func message() -> String { result.statusMessage }
     func statusCode() -> Int { result.statusCode }
@@ -2620,6 +3697,23 @@ struct LegadoHTTPResult {
     func isSuccessful() -> Bool { (200..<300).contains(result.statusCode) }
     func toString() -> String { "Response{code=\(result.statusCode), url=\(finalURLString)}" }
     override var description: String { toString() }
+}
+
+/// okhttp `Request` as `StrResponse.raw().request()` hands it out: sources read its URL.
+@objc protocol LegadoHTTPRequestInfoExport: JSExport {
+    func url() -> String
+    func toString() -> String
+}
+
+@objc final class LegadoHTTPRequestInfo: NSObject, LegadoHTTPRequestInfoExport {
+    private let urlString: String
+    init(url: String) {
+        self.urlString = url
+        super.init()
+    }
+    func url() -> String { urlString }
+    func toString() -> String { urlString }
+    override var description: String { urlString }
 }
 
 // MARK: - Browser Await Completion
@@ -2645,13 +3739,4 @@ final class BrowserAwaitBox {
     }
 
     deinit { finish(nil) }
-}
-
-// MARK: - WebView Result Box
-
-/// Mutable, lock-free carrier for a `java.webView` result handed across the
-/// MainActor → JS-queue boundary. Safe because access is serialized by the
-/// DispatchSemaphore (write-before-signal, read-after-wait).
-final class WebViewResultBox: @unchecked Sendable {
-    var value: String = ""
 }

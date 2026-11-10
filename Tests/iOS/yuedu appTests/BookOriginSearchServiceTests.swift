@@ -9,7 +9,35 @@ import Testing
 @MainActor
 @Suite("Book origin search (characterization)", .serialized)
 struct BookOriginSearchServiceTests {
-    @Test("only the same book is kept: same title, compatible author")
+    @Test("換源 keeps every result with the book's name, whatever its author")
+    func changeSourceComparesTheNameOnly() async {
+        // Legado's ChangeBookSourceViewModel: `fName == name && (!checkAuthor || …)`, and
+        // 校验作者 is off by default. Comparing the author always hid sources that write it
+        // differently.
+        let source = makeSource("name-only")
+        let fetcher = ScriptedOriginFetcher([
+            source.bookSourceUrl: .success([
+                book("三體", "劉慈欣", in: source, path: "match"),
+                book("三體", "作者：劉慈欣", in: source, path: "labelled-author"),
+                book("三体", "", in: source, path: "no-author"),
+                book("三體II", "劉慈欣", in: source, path: "sequel"),
+            ]),
+        ])
+        var origins: [BookOrigin] = []
+
+        await BookOriginSearchService.stream(
+            title: "三體", author: "劉慈欣", sources: [source], concurrency: 1, fetcher: fetcher,
+            onBatch: { origins.append(contentsOf: $0) }
+        )
+
+        #expect(Set(origins.map(\.bookUrl)) == [
+            "\(source.bookSourceUrl)/match/三體",
+            "\(source.bookSourceUrl)/labelled-author/三體",
+            "\(source.bookSourceUrl)/no-author/三体",
+        ])
+    }
+
+    @Test("with the author compared, only the same book is kept: same title, compatible author")
     func keepsOnlyTheSameBook() async {
         let source = makeSource("same-book")
         let fetcher = ScriptedOriginFetcher([
@@ -181,17 +209,21 @@ struct BookOriginSearchServiceTests {
             answering.bookSourceUrl: .success([book("三體", "劉慈欣", in: answering)]),
         ])
         var answered = 0
+        var finished = 0
         var origins: [BookOrigin] = []
 
         await BookOriginSearchService.stream(
             title: "三體", author: "劉慈欣", sources: [failing, answering], concurrency: 1, fetcher: fetcher,
             onSourceAnswered: { answered += 1 },
+            onSourceFinished: { finished += 1 },
             onBatch: { origins.append(contentsOf: $0) }
         )
 
         #expect(fetcher.queriedSourceURLs == [failing.bookSourceUrl, answering.bookSourceUrl])
         #expect(origins.map(\.sourceId) == [answering.id])
         #expect(answered == 1)
+        // The failed source is finished too: 換源's done/total progress counts it.
+        #expect(finished == 2)
     }
 
     @Test("a source that throws answers nil, the same as one that times out")
@@ -204,7 +236,7 @@ struct BookOriginSearchServiceTests {
         ])
 
         let books = await BookOriginSearchService.searchSourceWithTimeout(
-            query: "三體", bookTitle: "三體", bookAuthor: "劉慈欣",
+            query: "三體", bookTitle: "三體", bookAuthor: "劉慈欣", matchesAuthor: true,
             source: source, bookSourceFetcher: fetcher, seconds: 5
         )
 
@@ -217,7 +249,7 @@ struct BookOriginSearchServiceTests {
         let fetcher = ScriptedOriginFetcher([:], waitsUntilCancelled: [source.bookSourceUrl])
 
         let books = await BookOriginSearchService.searchSourceWithTimeout(
-            query: "三體", bookTitle: "三體", bookAuthor: "劉慈欣",
+            query: "三體", bookTitle: "三體", bookAuthor: "劉慈欣", matchesAuthor: true,
             source: source, bookSourceFetcher: fetcher, seconds: 1
         )
 
@@ -235,10 +267,12 @@ struct BookOriginSearchServiceTests {
         sourceFilter: ((BookSource) -> Bool)? = nil
     ) async -> [BookOrigin] {
         var origins: [BookOrigin] = []
+        // With the author compared, as 封面搜索 and the metadata filler ask.
         await BookOriginSearchService.stream(
             title: title, author: author, sources: sources, concurrency: 1, fetcher: fetcher,
             excludingOriginKey: excludingOriginKey,
             sourceFilter: sourceFilter,
+            matchesAuthor: true,
             onBatch: { origins.append(contentsOf: $0) }
         )
         return origins

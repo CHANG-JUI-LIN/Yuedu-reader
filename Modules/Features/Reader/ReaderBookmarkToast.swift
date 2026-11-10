@@ -44,6 +44,33 @@ struct ReaderBookmarkToastView: View {
     }
 }
 
+/// Narration is waiting on the AI to work out who speaks in the chapter.
+struct ReaderTTSPreparationBanner: View {
+    let text: String
+    let colorScheme: ColorScheme
+
+    var body: some View {
+        HStack(spacing: DSSpacing.sm) {
+            ProgressView()
+            Text(text)
+                .foregroundStyle(.primary)
+        }
+        .font(DSFont.subheadline.weight(.semibold))
+        .padding(.horizontal, DSSpacing.lg)
+        .padding(.vertical, DSSpacing.md)
+        .background(.regularMaterial, in: Capsule())
+        .shadow(color: DSColor.shadow, radius: DSSpacing.sm, y: DSSpacing.xs)
+        .environment(\.colorScheme, colorScheme)
+        // Announced when it appears (`announceTTSPreparation`); not a focus target.
+        .accessibilityHidden(true)
+    }
+}
+
+#Preview("AI 分析中") {
+    ReaderTTSPreparationBanner(text: "AI 正在分析本章角色與語氣…", colorScheme: .light)
+        .padding()
+}
+
 #Preview("已加入") {
     ReaderBookmarkToastView(toast: ReaderBookmarkToast(isAdded: true), colorScheme: .light)
         .padding()

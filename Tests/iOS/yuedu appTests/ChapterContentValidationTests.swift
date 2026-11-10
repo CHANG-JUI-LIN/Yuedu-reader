@@ -23,10 +23,10 @@ struct ChapterContentValidationTests {
         "訪問異常 請驗證",
     ])
     func rejectedSignatures(_ signature: String) {
-        #expect(ChapterFetcher.shared.isRejectedChapterContent(signature, title: "正文"))
+        #expect(ChapterFetcher.shared.isRejectedChapterContent(signature))
         // Do not make validation cheaper by only looking at a short prefix.
         let lateSignature = String(repeating: "正常故事中的人物繼續往前走。\n", count: 1000) + signature
-        #expect(ChapterFetcher.shared.isRejectedChapterContent(lateSignature, title: "正文"))
+        #expect(ChapterFetcher.shared.isRejectedChapterContent(lateSignature))
     }
 
     @Test("prose mentioning only part of a signature stays readable", arguments: [
@@ -38,13 +38,19 @@ struct ChapterContentValidationTests {
         "關閉廣告屏蔽過濾功能，是人物看到的一句提示。",
     ])
     func validProse(_ content: String) {
-        #expect(!ChapterFetcher.shared.isRejectedChapterContent(content, title: "正文"))
+        #expect(!ChapterFetcher.shared.isRejectedChapterContent(content))
     }
 
-    @Test("title-only rejection keeps Unicode whitespace and case behavior")
-    func titleOnly() {
-        #expect(ChapterFetcher.shared.isRejectedChapterContent("\n 第 一章\u{3000}ABC \t", title: "第一章 abc"))
-        #expect(!ChapterFetcher.shared.isRejectedChapterContent("第一章\n故事開始。", title: "第一章"))
+    /// Legado keeps any chapter text that is not blank (`BookContent.getContent`): a volume's
+    /// opening page that holds only its name is a chapter like any other.
+    @Test("text that is only the chapter's title is kept")
+    func titleOnlyKept() async {
+        #expect(!ChapterFetcher.shared.isRejectedChapterContent("\n 第 一章\u{3000}ABC \t"))
+        #expect(!ChapterFetcher.shared.isRejectedChapterContent("正文"))
+        let resolved = await ChapterFetcher.shared.resolveContent(parsed: ChapterParsePayload(
+            content: "<section id=\"nr\"><h2>正文</h2><br /></section>", title: "正文", sourceMatched: true, isPay: false
+        ))
+        #expect(resolved == "正文")
     }
 
     @Test("cached prose validation benchmark preserves the full read policy")

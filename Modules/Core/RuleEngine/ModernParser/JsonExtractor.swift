@@ -27,6 +27,7 @@ final class JSONPathEvaluator {
         case slice(Int?, Int?, Int?)     // start:end:step
         case wild                        // [*] or .*
         case filter(String)             // [?(...)]
+        case deepFilter(String)         // ..[?(...)]
         case length                      // .length()
         case indices([Int])             // [0,1,2]
         case keys([String])             // ['a','b']
@@ -71,8 +72,16 @@ final class JSONPathEvaluator {
                         segments.append(.deepWild)
                         i += 1
                     } else if chars[i] == "[" {
-                        segments.append(.deepWild)
-                        // Don't advance — let bracket be parsed next iteration
+                        // `..[?(…)]` is one scan (jayway's `ScanPathToken` before a
+                        // `PredicatePathToken`); any other bracket applies to every descendant.
+                        var end = i + 1
+                        if case .filter(let expr) = parseBracket(readBracketContent(chars, &end)) {
+                            segments.append(.deepFilter(expr))
+                            i = end
+                        } else {
+                            segments.append(.deepWild)
+                            // Don't advance — let bracket be parsed next iteration
+                        }
                     } else {
                         let key = readDotKey(chars, &i)
                         if !key.isEmpty {
@@ -235,16 +244,22 @@ final class JSONPathEvaluator {
                 }
 
             case .wild:
-                if let arr = node as? [Any] {
-                    result.append(contentsOf: arr)
-                } else if let dict = node as? [String: Any] {
-                    result.append(contentsOf: dict.values)
-                }
+                // An object's values in the order its text wrote them, as jayway reads a
+                // `LinkedHashMap` (`OrderedJSON`).
+                result.append(contentsOf: OrderedJSON.children(of: node))
 
             case .filter(let expr):
+                // jayway's `PredicatePathToken`: an array keeps the elements that pass, an
+                // object is kept itself when it passes. 晋江文学's (YCK1331) list is
+                // `$.*[?(@.novelName)]` over a top-level array: `$.*` hands it the books.
                 if let arr = node as? [Any] {
                     result.append(contentsOf: arr.filter { evaluateFilter(expr, on: $0) })
+                } else if node is NSDictionary, evaluateFilter(expr, on: node) {
+                    result.append(node)
                 }
+
+            case .deepFilter(let expr):
+                result.append(contentsOf: scanFilter(expr, in: node))
 
             case .length:
                 if let arr = node as? [Any] { result.append(arr.count) }
@@ -270,30 +285,44 @@ final class JSONPathEvaluator {
 
     // MARK: - Deep Scan
 
+    /// jayway's `ScanPathToken`: the key at this level first, then each child in document
+    /// order. A source taking the first of several matches (`$..homePageUrl`, then the first
+    /// line) gets the one the text has first.
     private static func deepScan(key: String, in node: Any) -> [Any] {
         var results: [Any] = []
-        if let dict = node as? [String: Any] {
-            if let val = dict[key] { results.append(val) }
-            for (_, v) in dict { results.append(contentsOf: deepScan(key: key, in: v)) }
+        if let entries = OrderedJSON.entries(of: node) {
+            for entry in entries where entry.key == key { results.append(entry.value) }
+            for entry in entries { results.append(contentsOf: deepScan(key: key, in: entry.value)) }
         } else if let arr = node as? [Any] {
             for elem in arr { results.append(contentsOf: deepScan(key: key, in: elem)) }
         }
         return results
     }
 
-    /// Collect every descendant value (children, grandchildren, …) excluding the node itself.
-    private static func allDescendants(of node: Any) -> [Any] {
+    /// jayway's `ScanPathToken.walk` with a filter: the node and then each of its children in
+    /// document order, depth first. An object that passes is a result; an array that passes
+    /// gives the elements that do (`PredicatePathToken` on it).
+    private static func scanFilter(_ expr: String, in node: Any) -> [Any] {
         var results: [Any] = []
-        if let dict = node as? [String: Any] {
-            for (_, v) in dict {
-                results.append(v)
-                results.append(contentsOf: allDescendants(of: v))
-            }
+        if let entries = OrderedJSON.entries(of: node) {
+            if evaluateFilter(expr, on: node) { results.append(node) }
+            for entry in entries { results.append(contentsOf: scanFilter(expr, in: entry.value)) }
         } else if let arr = node as? [Any] {
-            for elem in arr {
-                results.append(elem)
-                results.append(contentsOf: allDescendants(of: elem))
+            if evaluateFilter(expr, on: arr) {
+                results.append(contentsOf: arr.filter { evaluateFilter(expr, on: $0) })
             }
+            for elem in arr { results.append(contentsOf: scanFilter(expr, in: elem)) }
+        }
+        return results
+    }
+
+    /// Every descendant value (children, grandchildren, …) excluding the node itself, in
+    /// jayway's `..*` order: a container's children, then each child's descendants.
+    private static func allDescendants(of node: Any) -> [Any] {
+        let children = OrderedJSON.children(of: node)
+        var results = children
+        for child in children {
+            results.append(contentsOf: allDescendants(of: child))
         }
         return results
     }
@@ -582,10 +611,10 @@ final class JSONPathEvaluator {
             return arr.map { stringify($0) }.joined(separator: "\n")
         }
 
-        if JSONSerialization.isValidJSONObject(value),
-           let data = try? JSONSerialization.data(withJSONObject: value, options: []),
-           let s = String(data: data, encoding: .utf8) {
-            return s
+        // An object reads as Legado's `LinkedHashMap.toString()` — `{id=12, name=…}` — which
+        // is what `getString` gives a source for one (`OrderedJSON`).
+        if value is NSDictionary {
+            return OrderedJSON.javaText(value)
         }
         return "\(value)"
     }
@@ -601,37 +630,36 @@ struct JsonExtractor: RuleExtractor {
         return lowered.hasPrefix("@json:") || trimmed.hasPrefix("$.") || trimmed.hasPrefix("$[")
     }
 
+    /// The JSON a rule reads in `content`: parsed JSON as it is — an item a list rule selected
+    /// keeps its key order, and is not written out and parsed again for every field rule —
+    /// and text parsed (`OrderedJSON.parse`). Nil when the content is not JSON.
+    static func document(_ content: Any) -> Any? {
+        if content is NSDictionary || content is NSArray { return content }
+        if let text = content as? String { return OrderedJSON.parse(text) }
+        return OrderedJSON.parse(ModernRuleEngine.toString(content))
+    }
+
     func extractList(from content: String, rule: String, baseURL: String) throws -> [String] {
+        extractList(json: Self.document(content), rule: rule)
+    }
+
+    func extractList(json: Any?, rule: String) -> [String] {
         // JSONPath itself can't express Legado's `||`/`&&`/`%%` fallback/merge operators, so split
         // them here (like the CSS extractor does) before evaluating each branch as a JSONPath.
-        let (opType, opParts) = RuleSyntaxParser.splitRuleByOperators(rule)
-        if opParts.count > 1 {
-            switch opType {
-            case "||":
-                for part in opParts {
-                    let r = try extractList(from: content, rule: part, baseURL: baseURL)
-                    if !r.isEmpty { return r }
-                }
-                return []
-            case "&&":
-                return try opParts.flatMap { try extractList(from: content, rule: $0, baseURL: baseURL) }
-            case "%%":
-                let lists = try opParts.map { try extractList(from: content, rule: $0, baseURL: baseURL) }
-                guard lists.allSatisfy({ !$0.isEmpty }) else { return [] }
-                var interleaved: [String] = []
-                var i = 0
-                while true {
-                    var appended = false
-                    for l in lists where i < l.count { interleaved.append(l[i]); appended = true }
-                    if !appended { break }
-                    i += 1
-                }
-                return interleaved
-            default:
-                break
+        // Legado's `AnalyzeByJSonPath.getStringList`: each piece is read (and split) again, and
+        // only the pieces that read something are merged.
+        let (opType, opParts) = RuleSyntaxParser.splitRuleByOperators(rule, code: true)
+        if !opType.isEmpty {
+            var lists: [[String]] = []
+            for part in opParts {
+                let list = extractList(json: json, rule: part)
+                guard !list.isEmpty else { continue }
+                lists.append(list)
+                if opType == "||" { break }
             }
+            return opType == "%%" ? RuleSyntaxParser.interleaveByFirst(lists) : lists.flatMap { $0 }
         }
-        guard let json = parseJSON(content) else { return [] }
+        guard let json else { return [] }
         let path = cleanRule(rule)
         let expanded = expandInnerRules(path, json: json)
         let effectivePath = expanded.isEmpty ? path : expanded
@@ -652,29 +680,28 @@ struct JsonExtractor: RuleExtractor {
     }
 
     func extractValue(from content: String, rule: String, baseURL: String) throws -> String {
+        extractValue(json: Self.document(content), rule: rule)
+    }
+
+    func extractValue(json: Any?, rule: String) -> String {
         // Split Legado `||` (first non-empty) / `&&` (join) before JSONPath evaluation — a field
         // rule like `$.bName||BookName` is two fallbacks, not one path. (企点 发现页/书单 name &
         // author rules rely on this; without it every record's name resolved empty → 0 books.)
-        let (opType, opParts) = RuleSyntaxParser.splitRuleByOperators(rule)
-        if opParts.count > 1 {
-            switch opType {
-            case "||":
-                for part in opParts {
-                    let v = try extractValue(from: content, rule: part, baseURL: baseURL)
-                    if !v.isEmpty { return v }
-                }
-                return ""
-            case "&&":
-                let pieces = try opParts.compactMap { part -> String? in
-                    let v = try extractValue(from: content, rule: part, baseURL: baseURL)
-                    return v.isEmpty ? nil : v
-                }
-                return pieces.joined(separator: "\n")
-            default:
-                break
+        // Legado's `AnalyzeByJSonPath.getString` splits `&&` and `||` only (`%%` is a list
+        // operator), reading each piece again.
+        let (opType, opParts) = RuleSyntaxParser.splitRuleByOperators(
+            rule, operators: ["&&", "||"], code: true)
+        if !opType.isEmpty {
+            var texts: [String] = []
+            for part in opParts {
+                let value = extractValue(json: json, rule: part)
+                guard !value.isEmpty else { continue }
+                texts.append(value)
+                if opType == "||" { break }
             }
+            return texts.joined(separator: "\n")
         }
-        guard let json = parseJSON(content) else { return "" }
+        guard let json else { return "" }
         // Expand `{$.field}` against the current JSON before normalizing a rule into
         // JSONPath. Legado permits JSON mode to build a literal value such as
         // `/b/{$.FolderName}`; prefixing that rule with `$.` first turns the intended URL
@@ -707,7 +734,11 @@ struct JsonExtractor: RuleExtractor {
     /// raw `[String: Any]` / `[Any]` objects so that a subsequent `<js>` filter
     /// can access properties like `item.BookName` directly.
     func extractRawElements(from content: String, rule: String) -> [Any] {
-        guard let json = parseJSON(content) else { return [] }
+        extractRawElements(json: Self.document(content), rule: rule)
+    }
+
+    func extractRawElements(json: Any?, rule: String) -> [Any] {
+        guard let json else { return [] }
         let path = cleanRule(rule)
         let results = JSONPathEvaluator.query(path, on: json)
         var objects: [Any] = []
@@ -721,25 +752,33 @@ struct JsonExtractor: RuleExtractor {
         return objects
     }
 
-    // MARK: - Private Helpers
-
-    private func parseJSON(_ content: String) -> Any? {
-        let trimmed = content.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty,
-              let data = trimmed.data(using: .utf8) else { return nil }
-        return try? JSONSerialization.jsonObject(with: data, options: .fragmentsAllowed)
+    /// Legado's `AnalyzeByJSonPath.getObject(rule)` (`AnalyzeRule.getElement`): what the path
+    /// reads — the value itself for a path that yields one, the list for one that yields
+    /// several, nil for nothing.
+    func extractRawObject(from content: String, rule: String) -> Any? {
+        extractRawObject(json: Self.document(content), rule: rule)
     }
+
+    func extractRawObject(json: Any?, rule: String) -> Any? {
+        guard let json else { return nil }
+        let results = JSONPathEvaluator.query(cleanRule(rule), on: json)
+        switch results.count {
+        case 0: return nil
+        case 1: return results[0]
+        default: return results
+        }
+    }
+
+    // MARK: - Private Helpers
 
     private func cleanRule(_ rule: String) -> String {
         var r = stripJSONPrefix(rule)
-        // Legado accepts a rootless leading-dot filter as a recursive search.
-        // Prefixing it with only `$` produces `$.[?(...)]`, which filters the
-        // root value and can never reach arrays nested below response envelopes.
-        if r.hasPrefix(".[?(") {
-            r = "$.." + String(r.dropFirst())
-        } else if r.hasPrefix(".") {
-            r = "$" + r
-        } else if !r.isEmpty, !r.hasPrefix("$") {
+        // jayway's `PathCompiler.compile`, which Legado's `ctx.read(rule)` runs: a path that does
+        // not start with `$` (or `@`) is read as `"$." + path`. A leading-dot rule therefore
+        // becomes a recursive search — `.chapters[*]` is `$..chapters[*]`, which reaches the
+        // `chapters` under 包子漫画's `data` envelope, and `.[?(…)]` is `$..[?(…)]`. Prefixing
+        // only `$` read them from the root and found nothing.
+        if !r.isEmpty, !r.hasPrefix("$") {
             r = "$." + r
         }
         return r

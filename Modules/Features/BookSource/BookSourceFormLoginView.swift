@@ -10,8 +10,17 @@ import JavaScriptCore
 // decides its width, like Legado's login dialog.
 
 struct BookSourceFormLoginView: View {
-    let source: BookSource
+    /// The library's current copy, not the one the page opened with: a source can update
+    /// itself from its own login page (☁️云端聚合's 「🔄更新检测」 imports the new version), and
+    /// the page then has to run the new `jsLib`/`loginUi` — the old copy kept showing the old
+    /// version until the page was reopened. `adoptLatest(_:)` keeps it current.
+    @State private var source: BookSource
     let onDismiss: () -> Void
+
+    init(source: BookSource, onDismiss: @escaping () -> Void) {
+        _source = State(initialValue: source)
+        self.onDismiss = onDismiss
+    }
 
     @MainActor private static weak var currentToastAlert: UIAlertController?
 
@@ -144,6 +153,11 @@ struct BookSourceFormLoginView: View {
             }
         }
         .onAppear { loadUI() }
+        .onReceive(BookSourceStore.shared.sourcesPublisher) { library in
+            // The published value: the publisher sends before the store holds it.
+            guard let latest = library.first(where: { $0.id == source.id }) else { return }
+            adoptLatest(latest)
+        }
         .sheet(isPresented: $showLog) {
             BookSourceDebugView()
         }
@@ -219,6 +233,23 @@ struct BookSourceFormLoginView: View {
     }
 
     // MARK: - Setup
+
+    /// Takes the library's new copy of this source. The form is built again only when what
+    /// builds it changed; what the user typed is stored first, so it survives the rebuild
+    /// (`loadUI` reads the stored values back into the new fields).
+    private func adoptLatest(_ latest: BookSource) {
+        guard !latest.hasSameContent(as: source) else { return }
+        let rebuildsForm = Self.formDefinitionChanged(from: source, to: latest)
+        if rebuildsForm { persistCurrentFormValues() }
+        source = latest
+        if rebuildsForm { loadUI() }
+    }
+
+    /// What the login form is made of: `loginUi` itself, the `loginUrl` script evaluated
+    /// before it (`evaluateJsLoginUiResult`), and the `jsLib` both call into.
+    nonisolated static func formDefinitionChanged(from old: BookSource, to new: BookSource) -> Bool {
+        old.loginUi != new.loginUi || old.loginUrl != new.loginUrl || old.jsLib != new.jsLib
+    }
 
     private func loadUI() {
         isLoading = true
@@ -312,7 +343,7 @@ struct BookSourceFormLoginView: View {
         """
         let out = engine.evaluate(
             wrapped,
-            result: storedLoginInfo,
+            result: JSCoreEngine.JavaMap(storedLoginInfo),
             bindings: sourceLoginBindings(source)
         ) ?? ""
         let error = engine.lastError
@@ -376,7 +407,7 @@ struct BookSourceFormLoginView: View {
         if let loginJS = LoginManager.shared.extractLoginJs(rawLogin),
            !loginJS.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
             _ = engine.evaluate(
-                loginJS, result: credentials, bindings: sourceLoginBindings(source)
+                loginJS, result: JSCoreEngine.JavaMap(credentials), bindings: sourceLoginBindings(source)
             )
         }
         return evaluateDynamicLabels(
@@ -397,7 +428,7 @@ struct BookSourceFormLoginView: View {
         for field in fields {
             guard let expression = field.viewName, !expression.isEmpty else { continue }
             let value = engine.evaluate(
-                expression, result: credentials, bindings: sourceLoginBindings(source)
+                expression, result: JSCoreEngine.JavaMap(credentials), bindings: sourceLoginBindings(source)
             )
             if let value, !value.isEmpty, value != "undefined", value != "null" {
                 labels[field.name] = value
@@ -514,10 +545,9 @@ struct BookSourceFormLoginView: View {
         }
 
         // Store credentials then run login JS
-        LoginManager.shared.storeLoginInfo(
-            sourceUrl: source.bookSourceUrl, info: credentials
-        )
-        runLoginJS(credentials: credentials)
+        let data = loginData(form: credentials)
+        LoginManager.shared.storeLoginInfo(sourceUrl: source.bookSourceUrl, info: data)
+        runLoginJS(credentials: data)
     }
 
     private func handleButton(field: LoginField) {
@@ -530,7 +560,7 @@ struct BookSourceFormLoginView: View {
             }
         } else {
             // JS button action
-            let currentCredentials = currentFormValues()
+            let currentCredentials = loginData(form: currentFormValues())
             if !currentCredentials.isEmpty {
                 LoginManager.shared.storeLoginInfo(
                     sourceUrl: source.bookSourceUrl,
@@ -565,7 +595,15 @@ struct BookSourceFormLoginView: View {
     private func persistCurrentFormValues() {
         let current = currentFormValues()
         guard !current.isEmpty else { return }
-        LoginManager.shared.storeLoginInfo(sourceUrl: source.bookSourceUrl, info: current)
+        LoginManager.shared.storeLoginInfo(sourceUrl: source.bookSourceUrl, info: loginData(form: current))
+    }
+
+    /// Legado's `SourceLoginDialog.getLoginData`: the stored login info with the form's values
+    /// over it. Storing the form alone dropped every key a script had stored beside the fields
+    /// (`source.putLoginInfo`, `java.upLoginData`'s settings), the next time a button was pressed.
+    private func loginData(form: [String: String]) -> [String: String] {
+        (LoginManager.shared.getLoginInfo(sourceUrl: source.bookSourceUrl) ?? [:])
+            .merging(form) { _, formValue in formValue }
     }
 
     // MARK: - JS Execution
@@ -597,7 +635,7 @@ struct BookSourceFormLoginView: View {
                     }
                 }
                 let bindings: [String: Any] = [
-                    "result": credentials,
+                    "result": JSCoreEngine.JavaMap(credentials),
                     "baseUrl": source.bookSourceUrl
                 ]
 
@@ -698,7 +736,7 @@ struct BookSourceFormLoginView: View {
                 }
 
                 let bindings: [String: Any] = [
-                    "result": credentials,
+                    "result": JSCoreEngine.JavaMap(credentials),
                     "baseUrl": source.bookSourceUrl
                 ]
                 SourceAPIErrorLog.shared.clear(for: source.bookSourceUrl)
@@ -881,12 +919,13 @@ struct BookSourceFormLoginView: View {
                     request.setValue(jar, forHTTPHeaderField: "Cookie")
                 }
             }
+            request = LegadoOutgoingHeaders.prepared(request, as: .okHttp)
             // The bridge's decoder: the `charset` option decides, and the page's charset is
             // detected otherwise. This sheet used to read every body as UTF-8, so a GBK reply was "".
             let charset = analyzeUrl.charset
             let fetch = { [request] () -> PreparedSourceRequest.Response? in
                 let pending = BlockingResult<(statusCode: Int?, body: String)>()
-                URLSession.shared.dataTask(with: request) { data, response, _ in
+                URLSession.sourceSites.sourceDataTask(with: request) { data, response, _ in
                     pending.deliver((
                         statusCode: (response as? HTTPURLResponse)?.statusCode,
                         body: data.map {
@@ -895,7 +934,7 @@ struct BookSourceFormLoginView: View {
                     ))
                 }.resume()
                 // A response that arrives after the timeout is never read.
-                let response = pending.wait(timeout: .now() + 30)
+                let response = pending.wait(timeout: .now() + WebFetcher.sourceRequestTimeout)
                 let timedOut = response == nil
                 let body = response?.body ?? ""
                 let statusCode = response?.statusCode

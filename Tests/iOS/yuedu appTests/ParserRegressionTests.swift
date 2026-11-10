@@ -84,8 +84,11 @@ struct CrossParserCompatibilityTests {
 
         let legacy = RuleEngine.routeExtractValue(content: html, baseURL: baseURL, rule: rule)
         let modern = try ModernRuleEngine().extractValue(from: html, rule: rule, baseURL: baseURL)
+        // Legado's AnalyzeByJSoup returns the attribute as written; a URL read makes it absolute.
+        let url = ModernRuleEngine().setContent(html, baseUrl: baseURL).getString(ruleStr: rule, isUrl: true)
 
-        #expect(normalise(modern) == normalise(legacy))
+        #expect(modern == "/detail/42")
+        #expect(normalise(url) == normalise(legacy))
     }
 
     // MARK: XPath
@@ -102,9 +105,12 @@ struct CrossParserCompatibilityTests {
 
         let legacy = RuleEngine.routeExtractValue(content: html, baseURL: baseURL, rule: rule)
         let modern = try ModernRuleEngine().extractValue(from: html, rule: rule, baseURL: baseURL)
+        // Legado's AnalyzeByXPath reads an element node with JsoupXpath's `JXNode.asString()`,
+        // which is `Element.toString()`: the outer HTML. Only `/text()` reads the text.
+        let text = try ModernRuleEngine().extractValue(from: html, rule: rule + "/text()", baseURL: baseURL)
 
-        #expect(normalise(modern) == normalise(legacy))
-        #expect(modern.contains("唐家三少"))
+        #expect(modern == "<p>作者：唐家三少</p>")
+        #expect(normalise(text) == normalise(legacy))
     }
 
     // MARK: JSONPath

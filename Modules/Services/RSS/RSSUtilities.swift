@@ -87,7 +87,7 @@ enum RSSFeedDiscovery {
         request.timeoutInterval = 10
         RSSRequestFactory.applyHeaders(to: &request)
         do {
-            let (data, _) = try await URLSession.shared.data(for: request)
+            let (data, _) = try await URLSession.trusting.data(for: request)
             return data.count >= 128 && isDefinitelyFeed(data)
         } catch {
             return false
@@ -239,7 +239,7 @@ enum RSSFaviconResolver {
         RSSRequestFactory.applyHeaders(to: &request)
 
         do {
-            let (data, response) = try await URLSession.shared.data(for: request)
+            let (data, response) = try await URLSession.trusting.data(for: request)
             if let httpResponse = response as? HTTPURLResponse,
                !(200...299).contains(httpResponse.statusCode) {
                 return []
@@ -1214,7 +1214,7 @@ enum RSSArticleContentLoader {
         RSSRequestFactory.applyHeaders(to: &request)
 
         do {
-            let (data, response) = try await URLSession.shared.data(for: request)
+            let (data, response) = try await URLSession.trusting.data(for: request)
             if let http = response as? HTTPURLResponse, !(200...299).contains(http.statusCode) {
                 throw RSSArticleContentLoaderError.httpStatus(http.statusCode)
             }

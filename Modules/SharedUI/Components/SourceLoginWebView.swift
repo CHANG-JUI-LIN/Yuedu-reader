@@ -204,6 +204,13 @@ struct SourceLoginWebViewRepresentable: UIViewRepresentable {
             }
         }
 
+        /// Accepts the server's certificate, as Legado's WebViews do (`ServerTrustPolicy`).
+        func webView(
+            _ webView: WKWebView, respondTo challenge: URLAuthenticationChallenge
+        ) async -> (URLSession.AuthChallengeDisposition, URLCredential?) {
+            ServerTrustPolicy.answer(challenge)
+        }
+
         /// Content mode is per navigation: a redirect, or a link the sign-in flow follows, must
         /// stay in the mode the user chose instead of reverting to the configuration default.
         func webView(

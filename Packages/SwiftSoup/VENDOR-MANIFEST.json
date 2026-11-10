@@ -27,6 +27,25 @@
       "removeWhen": "SwiftSoup is upgraded to 2.14.0 or later; then delete Packages/SwiftSoup and depend on the remote package again."
     },
     {
+      "file": "Sources/HtmlTreeBuilder.swift, Sources/Node.swift",
+      "functions": [
+        "HtmlTreeBuilder.insertNode(_:)",
+        "Node.setSourceRangeEnd(_:)"
+      ],
+      "upstreamCommit": "none (Yuedu fix)",
+      "reason": "With prettyPrint off, outerHtml() prints an unmodified element's raw source bytes. An element the tree builder implies (an HTML5 table's <tbody> around a bare <tr>, a reconstructed formatting element) has no source range and is absent from its parent's raw source, so the parent printed the source and the element vanished from the markup although it was in the tree; jsoup prints it. XPath reads that markup with libxml2, so `//table/tbody/tr` (YCK 1330 index 759 and every browser-copied path) found nothing. The parent of an inserted element without a source range is now marked dirty, and the parent's end tag (setSourceRangeEnd) no longer clears that mark.",
+      "removeWhen": "Upstream SwiftSoup serialises implied elements under raw-source output; check `SwiftSoup.parse(\"<table><tr><td>x</td></tr></table>\")` with prettyPrint off prints <tbody>."
+    },
+    {
+      "file": "Sources/StructuralEvaluator.swift",
+      "functions": [
+        "StructuralEvaluator.ImmediateParent.matches(_:_:)"
+      ],
+      "upstreamCommit": "none (Yuedu fix; matches jsoup 1.16.2)",
+      "reason": "Legado pins jsoup 1.16.2 (legado-E and MD3: 'do not update', jsoup PR 2017), whose `>` chain is an `ImmediateParentRun` that walks the parents with no stop at the select root. Upstream SwiftSoup returned false once the chain reached the root, so a rule written as a path from the page — `@css:html > body > div.searchbook > div.bookinfo > h4.bookname a@text`, read against a `div.searchbook` row — read nothing (YCK 1330 index 11, 精华书阁). The root check is removed; the descendant combinator (`Parent`) still stops at the root, as in jsoup 1.16.2.",
+      "removeWhen": "Never while book-source rules are read with this parser: it is Legado's jsoup behaviour, not an upstream bug. Keep it across SwiftSoup upgrades."
+    },
+    {
       "file": "Sources/Element.swift",
       "functions": [
         "SelectorResultCache.init(capacity:)",
@@ -36,6 +55,17 @@
       "upstreamCommit": "none (Yuedu fix)",
       "reason": "Every element a selector runs from gets a SelectorResultCache and a SelectorQueryStats, and both allocated for their full size up front: the cache's doorkeeper reserved 256 keys (~12 KB) and the stats their whole 512-query window (~33 KB). Reading a table of contents row by row selects from every row, so an 8,000-row page grew its document by about 460 MB, and the 書源檢查's 32 parallel parses ran a user with 8,735 sources out of memory (Crashlytics 6dda6179). Both now grow as keys and queries arrive; the stats window wraps exactly as before once full.",
       "removeWhen": "Upstream SwiftSoup stops allocating the doorkeeper and the window up front (master still does both as of 2026-11-07)."
+    },
+    {
+      "file": "Sources/Token.swift",
+      "functions": [
+        "Token.Tag.newAttribute()",
+        "Token.Tag.hasPendingAttribute(named:)",
+        "Token.Tag.pendingName(of:)"
+      ],
+      "upstreamCommit": "none (Yuedu fix; matches jsoup 1.16.2)",
+      "reason": "jsoup keeps an element's first attribute of a name and drops later ones (Token.newAttribute adds, then HtmlTreeBuilder/XmlTreeBuilder run Attributes.deduplicate on every start tag: case-insensitive for HTML, as written for XML). SwiftSoup kept the last one once the pending attributes were materialized, so `<a class=\"title\" href=\"/book/1/\" class=\"r\">` matched `.r` and not `.title`, and a rule written against Legado's jsoup read nothing (YCK 1330 index 290, 新龙). A start tag's pending attribute is now dropped when one of the same name is already pending; the names are compared as the tokenizer keeps them (lowercased for HTML, as written for XML).",
+      "removeWhen": "Never while book-source rules are read with this parser: it is Legado's jsoup behaviour. Keep it across SwiftSoup upgrades unless upstream already keeps the first duplicate (check `SwiftSoup.parse(\"<b class=x class=y>\").select(\"b\").attr(\"class\") == \"x\"`)."
     }
   ]
 }

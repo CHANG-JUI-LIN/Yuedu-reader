@@ -90,7 +90,7 @@ final class WorkSourceFinder: ObservableObject {
         state = Self.outcome(paused: aggregator.isPaused, progress: aggregator.progress)
         AppLogger.info("works.findSources done state=\(state) found=\(found.count) "
                        + "completed=\(aggregator.progress.completed) failedAsEmpty=\(aggregator.progress.failedAsEmpty) "
-                       + "failed=\(aggregator.progress.failed) timedOut=\(aggregator.progress.timedOut) skipped=\(aggregator.progress.skipped)")
+                       + "failed=\(aggregator.progress.failed) timedOut=\(aggregator.progress.timedOut)")
     }
 
     /// The search's books of `work`: each origin as its source's own version, kept by

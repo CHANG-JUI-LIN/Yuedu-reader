@@ -17,9 +17,16 @@ import SwiftUI
         onNextChapter: { false },
         onSelectChapter: { _ in },
         bookID: UUID(),
-        detectedSpeakers: ["張若塵", "池瑤"],
+        castContext: TTSRoleCastContext(
+            chapterIndex: 2,
+            request: nil,
+            heuristicSpeakers: ["張若塵", "池瑤"],
+            knownAliases: [:]
+        ),
         aiAdapter: AIBookContentAdapter(bookID: UUID(), chapters: [], textForChapter: { _ in nil }),
-        aiProgress: 0.42
+        aiProgress: 0.42,
+        onPreAnalyze: { _ in },
+        onCastChanged: {}
     )
 }
 
@@ -56,14 +63,18 @@ struct TTSPanelView: View {
     let onNextChapter: () -> Bool
     let onSelectChapter: (BookChapter) -> Void
     let bookID: UUID
-    /// Characters detected in the chapter being read, for 多角色朗讀. Computed by the
-    /// reader, which is the only thing holding the chapter's narration text.
-    let detectedSpeakers: [String]
+    /// The chapter being read, as 多角色朗讀 needs it. Computed by the reader, which is the
+    /// only thing holding the chapter's narration text.
+    let castContext: TTSRoleCastContext
     /// Passed through to 多角色朗讀 so character cards can be built where they are used.
     let aiAdapter: AIBookContentAdapter
     /// Reading position on the chunks' 0…1 scale, so the character list defaults to who has
     /// actually appeared.
     let aiProgress: Double
+    /// 預先分析: the current chapter and this many after it.
+    let onPreAnalyze: (Int) -> Void
+    /// The cast or its settings changed; the reader re-reads the current chapter with them.
+    let onCastChanged: () -> Void
     @Environment(\.dismiss) var dismiss
     @Bindable private var gs = GlobalSettings.shared
     @State private var showChapterPicker = false
@@ -113,6 +124,7 @@ struct TTSPanelView: View {
 
     /// 「段落 12 / 40」, or nil before a chapter has been split into segments.
     private var paragraphText: String? {
+        if let notice = tts.preparationNotice { return notice }
         guard tts.playbackState != .stopped, tts.totalSegments > 0 else { return nil }
         return String(
             format: localized("段落 %1$d / %2$d"),
@@ -137,6 +149,7 @@ struct TTSPanelView: View {
     private var voiceSourceName: String {
         if usesSystemVoice { return localized("系統離線語音") }
         if gs.usesEdgeTTS { return localized("微軟線上語音") }
+        if let cloud = gs.activeCloudTTSService { return localized(cloud.displayNameKey) }
         if let source = gs.activeTTSSource { return source.name }
         // A template no imported source carries any more (the source was deleted while
         // selected): name it by where it points.
@@ -241,9 +254,11 @@ struct TTSPanelView: View {
             if aiAdapter.isPrepared {
                 TTSRoleCastView(
                     bookID: bookID,
-                    detectedSpeakers: detectedSpeakers,
+                    context: castContext,
                     adapter: aiAdapter,
-                    progress: aiProgress
+                    progress: aiProgress,
+                    onPreAnalyze: onPreAnalyze,
+                    onCastChanged: onCastChanged
                 )
             } else {
                 ProgressView(localized("載入中…"))

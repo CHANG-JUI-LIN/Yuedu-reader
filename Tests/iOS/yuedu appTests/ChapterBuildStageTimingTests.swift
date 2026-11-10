@@ -215,8 +215,8 @@ struct ChapterBuildStageTimingTests {
                 _ = try await fetcher.buildChapterPackage(
                     bookId: UUID(), chapterIndex: 0, sourceURL: Self.pageURL, tocTitle: title,
                     initialHTML: page, initialURL: URL(string: Self.pageURL)!, initialBaseURL: Self.pageURL,
-                    parsePage: { _, _ in payload },
-                    extractNextURLs: { _, _ in [] },
+                    parsePage: { _, _, _ in payload },
+                    extractNextURLs: { _, _, _ in [] },
                     fetchNextPageHTML: { _ in page }
                 )
             }, body.utf8.count)
@@ -224,8 +224,8 @@ struct ChapterBuildStageTimingTests {
                 _ = try await fetcher.buildChapterPackage(
                     bookId: UUID(), chapterIndex: 0, sourceURL: Self.pageURL, tocTitle: title,
                     initialHTML: page, initialURL: URL(string: Self.pageURL)!, initialBaseURL: Self.pageURL,
-                    parsePage: { _, _ in payload },
-                    extractNextURLs: { _, base in
+                    parsePage: { _, _, _ in payload },
+                    extractNextURLs: { _, base, _ in
                         let next = (Int(base.split(separator: "p").last ?? "") ?? 0) + 1
                         return next < 4 ? ["\(Self.pageURL)p\(next)"] : []
                     },

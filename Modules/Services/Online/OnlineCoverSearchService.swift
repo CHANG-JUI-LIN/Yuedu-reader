@@ -65,7 +65,7 @@ enum OnlineCoverSearchService {
     ///
     /// Providers are independent: one being down or slow must not cost the other,
     /// so failures are logged per provider and the rest of the results stand.
-    static func searchCovers(name: String, author: String) async -> [Result] {
+    static func searchCovers(name: String, author: String, session: URLSession = .trusting) async -> [Result] {
         let query = name.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !query.isEmpty else { return [] }
 
@@ -74,7 +74,7 @@ enum OnlineCoverSearchService {
 
         await withTaskGroup(of: [Result].self) { group in
             for provider in [Provider.tuishujun, Provider.ypshuo] {
-                group.addTask { await search(provider: provider, name: query, author: author) }
+                group.addTask { await search(provider: provider, name: query, author: author, session: session) }
             }
             for await providerResults in group {
                 for result in providerResults where seen.insert(result.coverUrl).inserted {
@@ -85,14 +85,14 @@ enum OnlineCoverSearchService {
         return results
     }
 
-    private static func search(provider: Provider, name: String, author: String) async -> [Result] {
+    private static func search(provider: Provider, name: String, author: String, session: URLSession) async -> [Result] {
         guard let url = provider.requestURL(query: name) else { return [] }
         var request = URLRequest(url: url)
         request.timeoutInterval = 15
         request.setValue(BookCoverLoader.defaultUserAgent, forHTTPHeaderField: "User-Agent")
 
         do {
-            let (data, response) = try await URLSession.shared.data(for: request)
+            let (data, response) = try await session.data(for: request)
             if let http = response as? HTTPURLResponse, !(200..<300).contains(http.statusCode) {
                 AppLogger.network(
                     "[CoverSearch] \(provider.displayName) HTTP \(http.statusCode)"

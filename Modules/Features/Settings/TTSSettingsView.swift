@@ -37,6 +37,9 @@ struct TTSSettingsView: View {
     @State private var webLogin: SourceWebLogin?
     @State private var loginFieldValues: [String: String] = [:]
     @State private var showLoginSuccess: Bool = false
+    /// Read from the Keychain on appear — including on returning from a service's own page,
+    /// where the key may just have been saved — never from `body`.
+    @State private var cloudServicesWithKeys: Set<CloudTTSService> = []
 
     private var filteredSources: [ImportedTTSSource] {
         let q = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -78,6 +81,9 @@ struct TTSSettingsView: View {
                 SourceLoginWebView(login: login) {
                     webLogin = nil
                 }
+            }
+            .onAppear {
+                cloudServicesWithKeys = Set(CloudTTSService.allCases.filter(CloudTTSCredentials.hasKey))
             }
             .onDisappear {
                 testCoordinator.stop()
@@ -256,6 +262,27 @@ struct TTSSettingsView: View {
                         .dsSectionFooter(color: DSColor.destructive)
                         .accessibilityIdentifier("tts_preview_error")
                 }
+            }
+            .interfaceSectionSurface()
+
+            Section {
+                ForEach(CloudTTSService.allCases, id: \.self) { service in
+                    NavigationLink {
+                        TTSCloudVoiceSettingsView(service: service)
+                    } label: {
+                        LabeledContent(localized(service.displayNameKey)) {
+                            Text(cloudServiceStatus(service))
+                                .foregroundStyle(DSColor.textSecondary)
+                        }
+                    }
+                    .accessibilityIdentifier("tts_cloud_\(service.rawValue)")
+                }
+            } header: {
+                Text(localized("能演出語氣的語音"))
+                    .foregroundStyle(DSColor.textSecondary)
+            } footer: {
+                Text(localized("使用你自己的金鑰。多角色朗讀時能依 AI 判斷的情緒讀出生氣、悲傷、耳語等語氣。"))
+                    .dsSectionFooter()
             }
             .interfaceSectionSurface()
 
@@ -552,6 +579,12 @@ struct TTSSettingsView: View {
         presentationMode.wrappedValue.dismiss()
     }
 
+    /// 使用中 when it narrates; otherwise whether a key is in.
+    private func cloudServiceStatus(_ service: CloudTTSService) -> String {
+        if gs.activeCloudTTSService == service { return localized("使用中") }
+        return localized(cloudServicesWithKeys.contains(service) ? "已設定" : "未設定")
+    }
+
     private func isSelected(_ source: ImportedTTSSource) -> Bool {
         !gs.ttsUseSystemVoice && gs.httpTtsUrlTemplate == source.urlTemplate
     }
@@ -781,7 +814,7 @@ struct TTSSettingsView: View {
     }
 
     private func clearSources() {
-        let keepsBuiltInVoice = gs.usesEdgeTTS
+        let keepsBuiltInVoice = gs.usesEdgeTTS || gs.activeCloudTTSService != nil
         for source in gs.importedTTSSources {
             LoginManager.shared.clearLogin(sourceUrl: source.id)
         }
@@ -814,7 +847,7 @@ struct TTSSettingsView: View {
         defer { isImportingSources = false }
 
         do {
-            let (data, response) = try await URLSession.shared.data(from: url)
+            let (data, response) = try await URLSession.trusting.data(from: url)
             if let http = response as? HTTPURLResponse, !(200..<300).contains(http.statusCode) {
                 sourceImportMessage = String(format: localized("載入失敗：HTTP %d"), http.statusCode)
                 return
@@ -1042,12 +1075,13 @@ struct TTSSourceLoginView: View {
 
     private func handleButtonAction(_ field: LoginField) {
         guard let action = field.action else { return }
-        LoginManager.shared.storeLoginInfo(sourceUrl: source.id, info: resolvedFormValues)
+        let values = resolvedFormValues
+        LoginManager.shared.storeLoginInfo(sourceUrl: source.id, info: values)
         let script = loginScript()
         let sourceId = source.id
         Task {
             // Runs in the JS context that has the loginUrl functions loaded.
-            await script.run(action: action)
+            await script.run(action: action, values: values)
             // Reload field values after JS may have modified them
             if let updated = LoginManager.shared.getLoginInfo(sourceUrl: sourceId) {
                 fieldValues = updated

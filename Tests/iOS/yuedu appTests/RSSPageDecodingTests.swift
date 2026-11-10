@@ -53,19 +53,26 @@ struct RSSPageDecodingTests {
     private static func articleContent(body: Data, contentType: String) async throws -> String? {
         let host = "rss-page-\(UUID().uuidString.prefix(8).lowercased()).example"
         RSSPageFixtureProtocol.serve(host: host, contentType: contentType, body: body)
-        URLProtocol.registerClass(RSSPageFixtureProtocol.self)
-        defer { URLProtocol.unregisterClass(RSSPageFixtureProtocol.self) }
 
         var source = RSSSource(name: "rss page fixture", url: "https://\(host)/")
         source.ruleContent = "@css:p@text"
         return try await LegadoRSSScraper.fetchArticleContent(
-            source: source, articleLink: "https://\(host)/article"
+            source: source, articleLink: "https://\(host)/article",
+            session: RSSPageFixtureProtocol.session
         )
     }
 }
 
 /// Answers one fixture host with a fixed body and Content-Type.
 private final class RSSPageFixtureProtocol: URLProtocol {
+    /// A session that answers through this protocol. `URLProtocol.registerClass` reaches only
+    /// `URLSession.shared`, which the app no longer uses (`ServerTrustPolicy`).
+    static let session: URLSession = {
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [RSSPageFixtureProtocol.self]
+        return URLSession(configuration: configuration)
+    }()
+
     private static let lock = NSLock()
     nonisolated(unsafe) private static var host = ""
     nonisolated(unsafe) private static var contentType = ""

@@ -185,6 +185,13 @@ struct BookIntroWebView: UIViewRepresentable {
             }
         }
 
+        /// Accepts the server's certificate, as Legado's WebViews do (`ServerTrustPolicy`).
+        func webView(
+            _ webView: WKWebView, respondTo challenge: URLAuthenticationChallenge
+        ) async -> (URLSession.AuthChallengeDisposition, URLCredential?) {
+            ServerTrustPolicy.answer(challenge)
+        }
+
         /// The intro's own document loads in place; a link the reader taps opens in
         /// the system browser rather than replacing the intro.
         func webView(

@@ -477,19 +477,16 @@ struct AIPhase3CharacterMemoryTests {
         let name = "memory-isolation-\(UUID())", defaults = UserDefaults(suiteName: name)!
         defer { try? FileManager.default.removeItem(at: dir); defaults.removePersistentDomain(forName: name) }
         let chats = AIChatStore(defaults: defaults), cards = AICharacterCardStore(directory: dir.appendingPathComponent("legacy-cards"))
-        let roster = AISpeakerRosterStore(defaults: defaults)
         let session = AIChatSession(messages: [.init(role: .user, text: "Existing conversation")])
         chats.save(session, forBook: book)
         let profile = AICharacterProfile(name: "Manual", firstAppearance: nil, role: nil, relationships: [], aliasCandidates: ["Alias"], summary: "Existing profile", citationChunkIDs: [], provider: "manual", model: "none", promptVersion: "legacy")
         cards.upsert(profile, forBook: book)
-        roster.save(["Manual": "Manual"], forBook: book, boundary: source.boundary())
         defaults.set(TTSRoleVoiceCast.setting(voiceIdentifier: "system:manual", forSpeaker: "Manual", bookID: book, in: [:]), forKey: "manual-cast")
         let before = defaults.persistentDomain(forName: name)! as NSDictionary
         let service = AICharacterMemoryService(store: .init(directory: dir.appendingPathComponent("memory")), provider: Provider(), origin: .testFixture)
         try await service.start(confirmed: plan(source), source: source); await service.wait(book: book)
         let view = try await service.view(source: source, boundary: source.boundary())
         for alias in view.aliases { try await service.decide(alias: alias, approved: true, source: source, boundary: source.boundary()) }
-        #expect(roster.safeRoster(forBook: book, boundary: source.boundary())["蒙面人"] == nil)
         #expect(cards.aliasMap(forBook: book, boundary: source.boundary())["蒙面人"] == nil)
         try await service.clear(book: book)
         #expect(chats.sessions(forBook: book).first?.id == session.id)

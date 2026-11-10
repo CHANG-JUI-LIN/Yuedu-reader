@@ -4,8 +4,8 @@ import Testing
 
 /// Characterization tests (unified library, Phase 0a) for 封面搜索 on the open web.
 ///
-/// `OnlineCoverSearchService` calls `URLSession.shared` directly, so a `URLProtocol`
-/// registered with `registerClass` answers for both providers. The two providers run
+/// The service takes the session it searches with, so a `URLProtocol` in that session's
+/// configuration answers for both providers. The two providers run
 /// concurrently and their order varies, so results are compared as sets.
 @Suite("Online cover search (characterization)", .serialized)
 struct OnlineCoverSearchServiceTests {
@@ -100,16 +100,20 @@ struct OnlineCoverSearchServiceTests {
             "pre-api.tuishujun.com": tuishujun,
             "m.ypshuo.com": ypshuo,
         ])
-        URLProtocol.registerClass(CoverProviderURLProtocol.self)
-        defer {
-            URLProtocol.unregisterClass(CoverProviderURLProtocol.self)
-        }
-        return await OnlineCoverSearchService.searchCovers(name: name, author: author)
+        return await OnlineCoverSearchService.searchCovers(name: name, author: author, session: CoverProviderURLProtocol.session)
     }
 }
 
 /// Answers the two cover providers' hosts from a per-test table.
 private final class CoverProviderURLProtocol: URLProtocol {
+    /// A session that answers through this protocol. `URLProtocol.registerClass` reaches only
+    /// `URLSession.shared`, which the app no longer uses (`ServerTrustPolicy`).
+    static let session: URLSession = {
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [CoverProviderURLProtocol.self]
+        return URLSession(configuration: configuration)
+    }()
+
     enum Reply {
         case items([[String: String]])
         case status(Int)

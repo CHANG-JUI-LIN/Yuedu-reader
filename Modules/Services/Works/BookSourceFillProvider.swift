@@ -196,6 +196,12 @@ final class BookSourceFillProvider: MetadataFillProvider {
             sources: sources,
             concurrency: NetworkSearchSettings.clampedConcurrency(GlobalSettings.shared.searchConcurrency),
             fetcher: AppDependencies.live.bookSourceFetcher,
+            // The filler fills in the fields of one book: another author's book of that name
+            // must not lend it a description.
+            matchesAuthor: true,
+            // Not a Legado feature; it runs unasked, so a slow source is let go sooner than
+            // 換源's 60 s.
+            secondsPerSource: 20,
             requiresAuthor: true,
             shouldStop: { _ in enough },
             onSourceAnswered: { found.answered += 1 },

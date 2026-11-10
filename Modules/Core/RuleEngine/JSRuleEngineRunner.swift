@@ -494,6 +494,13 @@ final class JSRuleEngineRunner: NSObject, WKScriptMessageHandler {
 }
 
 extension JSRuleEngineRunner: WKNavigationDelegate {
+    /// Accepts the server's certificate, as Legado's WebViews do (`ServerTrustPolicy`).
+    func webView(
+        _ webView: WKWebView, respondTo challenge: URLAuthenticationChallenge
+    ) async -> (URLSession.AuthChallengeDisposition, URLCredential?) {
+        ServerTrustPolicy.answer(challenge)
+    }
+
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
         // #region agent log
         _dbgLog(location: "JSRuleEngineRunner.swift:didFinish", message: "didFinish fired", data: [:], hypothesisId: "H3")

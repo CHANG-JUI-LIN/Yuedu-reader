@@ -368,7 +368,7 @@ final class LoginManager: Sendable {
         }
 
         var request = URLRequest(url: url)
-        request.timeoutInterval = 30
+        request.timeoutInterval = WebFetcher.sourceRequestTimeout
 
         // Apply source-level headers.
         if let headerData = source.header.data(using: .utf8),
@@ -377,10 +377,11 @@ final class LoginManager: Sendable {
                 request.setValue(v, forHTTPHeaderField: k)
             }
         }
+        request = LegadoOutgoingHeaders.prepared(request, as: .okHttp)
 
         let (_, response): (Data, URLResponse)
         do {
-            (_, response) = try await URLSession.shared.data(for: request)
+            (_, response) = try await URLSession.sourceSites.sourceData(for: request)
         } catch {
             throw LoginError.networkError(error)
         }

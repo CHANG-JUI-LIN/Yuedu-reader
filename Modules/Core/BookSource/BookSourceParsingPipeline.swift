@@ -62,6 +62,7 @@ struct BookSourceParsingPipeline {
     func parseTOCResult(
         html: String,
         baseURL: String,
+        ruleURL: String? = nil,
         source: BookSource,
         runtimeVariables: [String: String]? = nil
     ) async throws -> (chapters: [OnlineChapterRef], runtimeVariables: [String: String]?) {
@@ -69,7 +70,7 @@ struct BookSourceParsingPipeline {
             // Drains SwiftSoup's autoreleased DOM per page.
             try autoreleasepool {
                 let chapters = try bridge.parseTOC(
-                    html: html, baseURL: baseURL,
+                    html: html, baseURL: baseURL, ruleURL: ruleURL,
                     source: source, runtimeVariables: runtimeVariables
                 )
                 return (chapters, bridge.lastTOCRuntimeVariables)
@@ -79,9 +80,12 @@ struct BookSourceParsingPipeline {
 
     /// One-pass TOC page parse: chapters AND the next-page URLs from a single
     /// DOM build (the split calls used to parse the same HTML twice).
+    /// `ruleURL` is the URL the rule gave for this page (options and all), `baseURL` the
+    /// response's: Legado's `baseUrl` and `redirectUrl` (`ModernParserBridge.setPage`).
     func parseTOCPage(
         html: String,
         baseURL: String,
+        ruleURL: String? = nil,
         source: BookSource,
         runtimeVariables: [String: String]? = nil
     ) async throws -> (
@@ -92,7 +96,7 @@ struct BookSourceParsingPipeline {
         try await BookSourceSession.session(for: source).withTurn { bridge in
             try autoreleasepool {
                 let page = try bridge.parseTOCPage(
-                    html: html, baseURL: baseURL,
+                    html: html, baseURL: baseURL, ruleURL: ruleURL,
                     source: source, runtimeVariables: runtimeVariables
                 )
                 return (page.chapters, page.nextTocURLs, bridge.lastTOCRuntimeVariables)
@@ -105,6 +109,7 @@ struct BookSourceParsingPipeline {
     func parseChapterResult(
         html: String,
         baseURL: String,
+        ruleURL: String? = nil,
         source: BookSource,
         runtimeVariables: [String: String]? = nil,
         chapterRef: OnlineChapterRef? = nil,
@@ -113,7 +118,7 @@ struct BookSourceParsingPipeline {
     ) async throws -> ChapterParsePayload {
         try await BookSourceSession.session(for: source).withTurn { bridge in
             try bridge.parseChapterResult(
-                html: html, baseURL: baseURL,
+                html: html, baseURL: baseURL, ruleURL: ruleURL,
                 source: source, runtimeVariables: runtimeVariables,
                 chapterRef: chapterRef,
                 nextChapterURL: nextChapterURL,
@@ -125,8 +130,10 @@ struct BookSourceParsingPipeline {
     func extractNextContentURLs(
         html: String,
         baseURL: String,
+        ruleURL: String? = nil,
         source: BookSource,
-        runtimeVariables: [String: String]? = nil
+        runtimeVariables: [String: String]? = nil,
+        chapterRef: OnlineChapterRef? = nil
     ) async -> (urls: [String], runtimeVariables: [String: String]?) {
         await SourcePerfTrace.spanAsync("chapter.nextContent", source.bookSourceName, thresholdMs: 0) {
             // An absent rule needs no runtime context. Acquiring the shared parse lock
@@ -135,8 +142,9 @@ struct BookSourceParsingPipeline {
             guard !source.ruleContent.nextContentUrl.isEmpty else { return ([], nil) }
             return await BookSourceSession.session(for: source).withTurn { bridge in
                 bridge.extractNextContentURLs(
-                    html: html, baseURL: baseURL,
-                    source: source, runtimeVariables: runtimeVariables
+                    html: html, baseURL: baseURL, ruleURL: ruleURL,
+                    source: source, runtimeVariables: runtimeVariables,
+                    chapterRef: chapterRef
                 )
             }
         }
@@ -148,31 +156,45 @@ struct BookSourceParsingPipeline {
     struct CheckedResponse: Sendable {
         let code: Int
         let body: String
+        /// The response's final URL — the replacement's, when the script handed one back.
+        let url: String
     }
 
     /// Executes Legado `loginCheckJs` against the response to `result` and returns the
     /// original or the source-replaced response after its side effects. The response object
     /// the script sees is built on the host, where it is used.
-    func applyLoginCheck(to result: LegadoHTTPResult, source: BookSource) async -> CheckedResponse {
+    ///
+    /// - Parameters:
+    ///   - request: the request `result` answers, sent with `headers` — the stage's own, before
+    ///     the jar's cookies were added. The check's `java` is a view of it
+    ///     (`ModernParserBridge.applyLoginCheck(to:request:headers:ruleUrl:charset:)`).
+    ///   - ruleUrl: the rule URL the stage rendered (`java.ruleUrl`).
+    func applyLoginCheck(
+        to result: LegadoHTTPResult, request: URLRequest, headers: [String: String],
+        ruleUrl: String, charset: String?, source: BookSource
+    ) async -> CheckedResponse {
         // Most sources declare no loginCheckJs; skipping the session lookup and its
         // parse lock keeps them off the bridge entirely on the search hot path.
         guard source.hasLoginCheckJs else {
             let response = LegadoStrResponse(result: result)
-            return CheckedResponse(code: response.code(), body: response.body())
+            return CheckedResponse(code: response.code(), body: response.body(), url: response.url())
         }
         return await BookSourceSession.session(for: source).withTurn { bridge in
-            let checked = bridge.applyLoginCheck(to: LegadoStrResponse(result: result))
-            return CheckedResponse(code: checked.code(), body: checked.body())
+            let checked = bridge.applyLoginCheck(
+                to: LegadoStrResponse(result: result), request: request, headers: headers,
+                ruleUrl: ruleUrl, charset: charset
+            )
+            return CheckedResponse(code: checked.code(), body: checked.body(), url: checked.url())
         }
     }
 
-    /// `applyLoginCheck(to:)` for a page rendered in a WebView, which has no status to
+    /// `applyLoginCheck(to:…)` for a page rendered in a WebView, which has no status to
     /// report: the check sees it as a 200.
     func applyLoginCheck(renderedHTML html: String, url: URL, source: BookSource) async -> String {
         guard source.hasLoginCheckJs else { return html }
         let urlString = url.absoluteString
         return await BookSourceSession.session(for: source).withTurn { bridge in
-            bridge.applyLoginCheck(to: LegadoStrResponse(url: urlString, body: html)).body()
+            bridge.applyLoginCheck(html: html, baseURL: urlString)
         }
     }
 }

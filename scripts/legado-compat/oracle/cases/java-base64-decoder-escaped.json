@@ -1,0 +1,10 @@
+[
+ {
+  "name": "java.util.Base64.getDecoder().decode on base64 holding a JS-escaped slash (\\/)",
+  "js": "try { var b = Packages.java.util.Base64.getDecoder().decode('YZTV\\\\/QyltNVL8'); 'decoded ' + b.length } catch (e) { 'threw ' + String(e).slice(0, 90) }"
+ },
+ {
+  "name": "java.util.Base64.getDecoder().decode on clean base64",
+  "js": "var b = Packages.java.util.Base64.getDecoder().decode('YZTV/QyltNVL'); 'decoded ' + b.length"
+ }
+]

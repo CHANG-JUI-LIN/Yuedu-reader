@@ -370,14 +370,14 @@ private actor DetailForwardingFetcher: BookSourceHealthCheckFetching {
         source: BookSource,
         runtimeVariables: [String: String]?,
         knownBook: OnlineBook?,
-        writesCache: Bool
+        usesCache: Bool
     ) async throws -> BookInfoPackage {
         try await real.fetchBookInfoPackage(
             url: url,
             source: source,
             runtimeVariables: runtimeVariables,
             knownBook: knownBook,
-            writesCache: writesCache
+            usesCache: usesCache
         )
     }
 

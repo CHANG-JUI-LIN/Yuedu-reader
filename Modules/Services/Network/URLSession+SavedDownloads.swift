@@ -17,6 +17,7 @@ extension URLSession {
         let configuration = URLSessionConfiguration.default
         configuration.urlCache = nil
         configuration.httpCookieStorage = HTTPCookieStorage.shared
-        return URLSession(configuration: configuration)
+        // Source sites' pages and pictures: capped at TLS 1.2 (`ServerTrustPolicy.capAtTLS12`).
+        return URLSession.sourceSites(configuration)
     }()
 }

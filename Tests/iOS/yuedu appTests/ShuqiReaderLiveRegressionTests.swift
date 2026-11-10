@@ -69,7 +69,6 @@ struct ShuqiReaderLiveRegressionTests {
             guard request.url?.host == "t.shuqi.com" else { return nil }
             var result = LegadoHTTPResult.bodyOnly(request: request, body: "")
             result = LegadoHTTPResult(
-                requestURL: result.requestURL,
                 finalURL: result.finalURL,
                 statusCode: 200,
                 statusMessage: "OK",

@@ -73,6 +73,7 @@ struct EdgeTTSTests {
         #expect(throws: EdgeTTSError.invalidResponse) { try EdgeTTSProtocol.event(.string("broken")) }
     }
 
+    @MainActor
     @Test func providerSelectionPreservesDirectAudioAndCustomSources() throws {
         let template = EdgeTTSVoice.defaultVoice.sourceIdentifier
         let edge = try #require(TTSAudioProviderSelection.make(template: template, isDirectChapterAudio: false) as? EdgeTTSAudioProvider)

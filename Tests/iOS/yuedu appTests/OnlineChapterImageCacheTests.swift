@@ -161,13 +161,12 @@ struct OnlineChapterImageCacheTests {
         try cache.write(Self.pngData(pixels: CGSize(width: 60, height: 40)), for: src)
 
         UnreachableHostURLProtocol.reset()
-        URLProtocol.registerClass(UnreachableHostURLProtocol.self)
-        defer { URLProtocol.unregisterClass(UnreachableHostURLProtocol.self) }
 
         let builder = OnlineProviderAttributedStringBuilder(
             provider: SingleHTMLChapterProvider(html: "<p><img src=\"\(src)\"></p>"),
             renderSize: CGSize(width: 320, height: 480),
-            imageCacheDirectory: roots.textImagesDirectory(bookId: bookId)
+            imageCacheDirectory: roots.textImagesDirectory(bookId: bookId),
+            imageSession: UnreachableHostURLProtocol.session
         )
 
         let result = try await builder.buildChapter(
@@ -189,13 +188,12 @@ struct OnlineChapterImageCacheTests {
         let src = "https://plates.example/\(UUID().uuidString).png"
 
         UnreachableHostURLProtocol.reset()
-        URLProtocol.registerClass(UnreachableHostURLProtocol.self)
-        defer { URLProtocol.unregisterClass(UnreachableHostURLProtocol.self) }
 
         let builder = OnlineProviderAttributedStringBuilder(
             provider: SingleHTMLChapterProvider(html: "<p><img src=\"\(src)\"></p>"),
             renderSize: CGSize(width: 320, height: 480),
-            imageCacheDirectory: roots.textImagesDirectory(bookId: bookId)
+            imageCacheDirectory: roots.textImagesDirectory(bookId: bookId),
+            imageSession: UnreachableHostURLProtocol.session
         )
 
         _ = try await builder.buildChapter(
@@ -259,6 +257,14 @@ private actor StubOfflineImageDownloader: OfflineImageDownloading {
 
 /// Counts requests and fails them all — proves whether the reader went to the network at all.
 private final class UnreachableHostURLProtocol: URLProtocol {
+    /// A session that answers through this protocol. `URLProtocol.registerClass` reaches only
+    /// `URLSession.shared`, which the app no longer uses (`ServerTrustPolicy`).
+    static let session: URLSession = {
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [UnreachableHostURLProtocol.self]
+        return URLSession(configuration: configuration)
+    }()
+
     private static let lock = NSLock()
     nonisolated(unsafe) private static var requests = 0
 

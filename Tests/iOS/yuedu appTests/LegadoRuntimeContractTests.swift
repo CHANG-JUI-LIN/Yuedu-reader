@@ -82,10 +82,8 @@ struct LegadoRhinoNormalizerTests {
 struct LegadoConnectionResponseTests {
     @Test("exposes one Jsoup-shaped response contract")
     func responseMetadata() {
-        let requestURL = URL(string: "https://example.com/start")!
         let finalURL = URL(string: "https://example.com/final")!
         let result = LegadoHTTPResult(
-            requestURL: requestURL,
             finalURL: finalURL,
             statusCode: 201,
             statusMessage: "Created",
@@ -109,7 +107,6 @@ struct LegadoConnectionResponseTests {
         let engine = JSCoreEngine()
         engine.networkHandler = { request, _ in
             LegadoHTTPResult(
-                requestURL: request.url!,
                 finalURL: URL(string: "https://example.com/redirected")!,
                 statusCode: 201,
                 statusMessage: "Created",
@@ -124,6 +121,27 @@ struct LegadoConnectionResponseTests {
          response.statusCode(), response.statusMessage(), response.url(), response.isSuccessful()].join('|');
         """)
         #expect(value == "created|abc|yes|201|Created|https://example.com/redirected|true")
+    }
+
+    /// okhttp's `Response.request()` is the request the response answers, so after a redirect
+    /// it is the redirect's. 全本同人小说网 (YCK1330) builds its search URL from where its POST
+    /// lands: `java.connect(so).raw().request().url()`.
+    @Test("raw().request().url() is the URL the response came from")
+    func rawRequestURLFollowsRedirect() {
+        let engine = JSCoreEngine()
+        engine.networkHandler = { request, _ in
+            LegadoHTTPResult(
+                finalURL: URL(string: "https://example.com/e/search/result/?searchid=8151007")!,
+                statusCode: 200, statusMessage: "OK", headers: [:], cookies: [:], body: "results"
+            )
+        }
+        let value = engine.evaluate("""
+        var url = java.connect('https://example.com/e/search/index.php,{"method":"POST","body":"k=1"}')
+            .raw().request().url();
+        String(url).replace(/result.*searchid/, 'result/index.php?page=0&searchid');
+        """)
+        #expect(value == "https://example.com/e/search/result/index.php?page=0&searchid=8151007")
+        #expect(engine.lastError == nil)
     }
 
     @Test("one argument java.get remains variable storage")
@@ -148,7 +166,7 @@ struct LegadoConnectionResponseTests {
         engine.networkHandler = { request, _ in
             requests.append(request)
             return LegadoHTTPResult(
-                requestURL: request.url!, finalURL: request.url!, statusCode: 204,
+                finalURL: request.url!, statusCode: 204,
                 statusMessage: "No Content", headers: ["X-Method": request.httpMethod ?? ""],
                 cookies: [:], body: request.value(forHTTPHeaderField: "X-Test") ?? ""
             )
@@ -174,15 +192,19 @@ struct LegadoJavaInteropRuntimeTests {
         #expect(engine.evaluate("JSON.stringify('中'.getBytes('UTF-16LE'))") == "[45,78]")
         #expect(engine.evaluate("new Packages.java.lang.String([45,78], 'UTF-16LE').toString()") == "中")
         #expect(engine.evaluate("new Packages.java.lang.String([0,65,0,66], 2, 2, 'UTF-16BE').toString()") == "B")
-        #expect(engine.evaluate("JSON.stringify('é'.getBytes('ISO-8859-1'))") == "[233]")
+        // Java's signed bytes (oracle case "ISO-8859-1 getBytes of é", java-byte-sign.json).
+        #expect(engine.evaluate("JSON.stringify('é'.getBytes('ISO-8859-1'))") == "[-23]")
     }
 
     @Test("Android Base64 flags and Java utilities are observable")
     func base64UUIDArrays() {
         let engine = JSCoreEngine()
         #expect(engine.evaluate("Packages.android.util.Base64.encodeToString([255,238], 11)") == "_-4")
-        #expect(engine.evaluate("JSON.stringify(Packages.android.util.Base64.decode('_-4', 8))") == "[255,238]")
+        // Oracle case "URL-safe Base64 decode of _-4" (java-byte-sign.json).
+        #expect(engine.evaluate("JSON.stringify(Packages.android.util.Base64.decode('_-4', 8))") == "[-1,-18]")
         #expect(engine.evaluate("JSON.stringify(Packages.java.util.Arrays.copyOfRange([1,2,300],1,3))") == "[2,44]")
+        // Java pads with zeros past the end of the array.
+        #expect(engine.evaluate("JSON.stringify(Packages.java.util.Arrays.copyOfRange([1,2,-1],1,5))") == "[2,-1,0,0]")
         let uuids = engine.evaluate("Packages.java.util.UUID.randomUUID() + '|' + Packages.java.util.UUID.randomUUID()") ?? ""
         let parts = uuids.split(separator: "|")
         #expect(parts.count == 2)
@@ -226,9 +248,13 @@ struct LegadoJavaInteropRuntimeTests {
     @Test("common java utility APIs match Legado contracts")
     func commonJavaUtilities() {
         let engine = JSCoreEngine()
-        #expect(engine.evaluate("JSON.stringify(java.strToBytes('中', 'UTF-8'))") == "[228,184,173]")
+        // Kotlin `ByteArray`s reach a script signed (oracle cases "UTF-8 getBytes of 中
+        // (strToBytes)" and "hex 00ff10 as byte[]", java-byte-sign.json); a byte array in reads
+        // either way.
+        #expect(engine.evaluate("JSON.stringify(java.strToBytes('中', 'UTF-8'))") == "[-28,-72,-83]")
         #expect(engine.evaluate("java.bytesToStr([228,184,173], 'UTF-8')") == "中")
-        #expect(engine.evaluate("JSON.stringify(java.hexDecodeToByteArray('00ff10'))") == "[0,255,16]")
+        #expect(engine.evaluate("java.bytesToStr([-28,-72,-83], 'UTF-8')") == "中")
+        #expect(engine.evaluate("JSON.stringify(java.hexDecodeToByteArray('00ff10'))") == "[0,-1,16]")
         #expect(engine.evaluate("java.toNumChapter('第十二章 標題')") == "第12章 標題")
         #expect(engine.evaluate("var u=java.toURL('../c?q=%E4%B8%AD','https://example.com/a/b'); [u.host,u.origin,u.pathname,u.searchParams.get('q')].join('|')") == "example.com|https://example.com|/c|中")
         #expect(engine.evaluate("java.digestHex('abc','SHA-256')") == "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad")
@@ -237,7 +263,9 @@ struct LegadoJavaInteropRuntimeTests {
         #expect(engine.evaluate("java.HMacHex('The quick brown fox jumps over the lazy dog','HmacSHA224','key')") == "88ff8b54675d39b8f72322e65ff945c52d96379988ada25639747e69")
         let uuid = engine.evaluate("java.randomUUID()") ?? ""
         #expect(uuid.range(of: #"^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"#, options: .regularExpression) != nil)
-        #expect(engine.evaluate("var z=Packages.cn.hutool.core.util.ZipUtil.gzip('abc',''); [z[0],z[1],z.length>10].join('|')") == "31|139|true")
+        // hutool answers a `byte[]`: the gzip magic 0x8b reads -117 (oracle case "GZIPOutputStream
+        // header via toByteArray", java-byte-sign.json).
+        #expect(engine.evaluate("var z=Packages.cn.hutool.core.util.ZipUtil.gzip('abc',''); [z[0],z[1],z.length>10].join('|')") == "31|-117|true")
     }
 
     @Test("theme APIs preserve Android mode JSON and Java Map shapes")
@@ -277,13 +305,13 @@ struct LegadoJavaInteropRuntimeTests {
         engine.networkHandler = { request, _ in
             requestCount += 1
             return LegadoHTTPResult(
-                requestURL: request.url!,
                 finalURL: request.url!,
                 statusCode: 200,
                 statusMessage: "OK",
                 headers: [:],
                 cookies: [:],
-                body: "script-\(requestCount)"
+                body: "script-\(requestCount)",
+                data: Data("script-\(requestCount)".utf8)
             )
         }
 
@@ -314,7 +342,7 @@ struct LegadoJavaInteropRuntimeTests {
         engine.networkHandler = { request, _ in
             captured = request
             return LegadoHTTPResult(
-                requestURL: request.url!, finalURL: request.url!, statusCode: 200,
+                finalURL: request.url!, statusCode: 200,
                 statusMessage: "OK", headers: ["X-Reply": "yes"], cookies: [:],
                 body: #"{"ok":true}"#
             )
@@ -460,7 +488,7 @@ struct LegadoFullSourceFixtureTests {
         bridge.sourceScriptNetworkHandler = { request, _ in
             requestCount += 1
             return LegadoHTTPResult(
-                requestURL: request.url!, finalURL: request.url!, statusCode: 200,
+                finalURL: request.url!, statusCode: 200,
                 statusMessage: "OK", headers: ["X-Test": "fixture"],
                 cookies: ["shuqi_token": "fixture-token", "z": "1"], body: "fixture-body"
             )
@@ -498,7 +526,7 @@ struct LegadoFullSourceFixtureTests {
             requestedHosts.append(request.url?.host ?? "<nil>")
             if request.url?.host == "t.shuqi.com" {
                 return LegadoHTTPResult(
-                    requestURL: request.url!, finalURL: request.url!, statusCode: 200,
+                    finalURL: request.url!, statusCode: 200,
                     statusMessage: "OK", headers: ["Set-Cookie": "shuqi_token=fresh-fixture"],
                     cookies: ["shuqi_token": "fresh-fixture", "z": "1"], body: "fixture"
                 )
@@ -694,8 +722,13 @@ struct LegadoParserBridgeContractTests {
 
         #expect(bridge.evaluateSourceScript("java.get('https://example.com/test', {'X-Call':'call-value'}).body()") == "fixture-body")
         #expect(requestCount == 1)
-        #expect(capturedHeaders["X-Source"] == "source-value")
+        // `java.get` is a jsoup request: the script's headers and none of the source's header
+        // rule, as in Legado (`JsExtensions.get`). `java.ajax` is an AnalyzeUrl and carries it.
+        #expect(capturedHeaders["X-Source"] == nil)
         #expect(capturedHeaders["X-Call"] == "call-value")
+        #expect(bridge.evaluateSourceScript("String(java.ajax('https://example.com/ajax'))") == "fixture-body")
+        #expect(requestCount == 2)
+        #expect(capturedHeaders["X-Source"] == "source-value")
     }
 
     @Test("putLoginHeader affects the next java request in the same JS evaluation")

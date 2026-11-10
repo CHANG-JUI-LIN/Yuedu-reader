@@ -21,6 +21,13 @@ enum LegadoJavaInteropRuntime {
     (function (global) {
         if (global.__yueduLegadoInteropInstalled) return;
         Object.defineProperty(global, '__yueduLegadoInteropInstalled', { value: true });
+        // Taken now, before any source script runs: a source's top-level `var Proxy = …` lands
+        // on this global (存档书库's header, YCK1331), where Legado's Java objects never see it.
+        var NativeProxy = global.Proxy;
+        // The bridge's own `strToBytes` (0–255), taken before `java.strToBytes` answers a script
+        // with Java's signed bytes (below): `getBytes` here works in 0–255.
+        var bridge = global.java, bridgeStrToBytes = bridge && bridge.strToBytes;
+        function nativeStrToBytes(s, charset) { return bridgeStrToBytes.call(bridge, s, charset); }
 
         var capabilityPaths = global.__yueduLegadoCapabilities || [];
         function isEnabled(path) {
@@ -37,6 +44,16 @@ enum LegadoJavaInteropRuntime {
             if (typeof value === 'string' || value instanceof String) return getBytes(String(value), 'UTF-8');
             return Array.prototype.slice.call(value).map(function (v) { return Number(v) & 255; });
         }
+        // A Java `byte[]` as Rhino hands it to a script: every element −128…127. The runtime
+        // works in 0–255 (`unsignedBytes`) and turns its bytes into Java's only where a script
+        // receives them — what Java types `byte[]`: `getBytes`, `digest`, `doFinal`, a Base64
+        // decoder, `toByteArray`, a filled buffer. Sources do arithmetic that only the signed
+        // value answers: 西瓜免费 (YCK1331) Base64-encodes its HMAC itself with `b >> 2` and
+        // `^= 192` for a negative `b`, and with 0–255 indexed past its alphabet, so the server
+        // rejected the request's sign (接口鉴权不合法). `& 255`, `< 0 ? v + 256` and every
+        // consumer here read both alike.
+        function javaByte(v) { return (Number(v) << 24) >> 24; }
+        function javaBytes(value) { return unsignedBytes(value).map(javaByte); }
         function charsetName(value) {
             return String(value || 'UTF-8').replace(/[_\s]/g, '-').toUpperCase();
         }
@@ -92,6 +109,7 @@ enum LegadoJavaInteropRuntime {
                 }
                 return out;
             }
+            if (name !== 'UTF-8' && name !== 'UTF8') return unsignedBytes(nativeStrToBytes(s, name));
             return utf8Bytes(s);
         }
         function bytesToString(value, charset, offset, length) {
@@ -109,6 +127,7 @@ enum LegadoJavaInteropRuntime {
                 }
                 return out;
             }
+            if (name !== 'UTF-8' && name !== 'UTF8') return String(java.bytesToStr(bytes, name));
             return utf8String(bytes);
         }
         function JavaString(value, a, b, c) {
@@ -117,16 +136,25 @@ enum LegadoJavaInteropRuntime {
             else if (typeof a === 'number') stringValue = bytesToString(value, c, a, b);
             else stringValue = bytesToString(value, a || 'UTF-8');
             var boxed = new String(stringValue);
-            boxed.getBytes = function (charset) { return getBytes(stringValue, charset); };
+            boxed.getBytes = function (charset) { return javaBytes(getBytes(stringValue, charset)); };
             return boxed;
         }
         Object.defineProperty(String.prototype, 'getBytes', {
-            value: function (charset) { return getBytes(String(this), charset); },
+            value: function (charset) { return javaBytes(getBytes(String(this), charset)); },
             enumerable: false, configurable: true, writable: true
         });
 
+        // From a table, in one pass over the bytes as `unsignedBytes` reads them: 番茄听书
+        // (YCK1330) encodes a chapter's audio, up to 22 MB, with `HexUtil.encodeHexStr`, and a
+        // copy, a `map` and a `toString(16)` a byte took 3.4 s of the script's 30 (11-09).
+        var hexPairs = [];
+        for (var pair = 0; pair < 256; pair++) hexPairs.push((pair < 16 ? '0' : '') + pair.toString(16));
         function bytesToHex(bytes) {
-            return unsignedBytes(bytes).map(function (v) { return (v < 16 ? '0' : '') + v.toString(16); }).join('');
+            var source = bytes == null ? [] : (bytes.__bytes || bytes);
+            if (typeof source === 'string' || source instanceof String) source = getBytes(String(source), 'UTF-8');
+            var length = source.length >>> 0, parts = new Array(length);
+            for (var i = 0; i < length; i++) parts[i] = hexPairs[Number(source[i]) & 255];
+            return parts.join('');
         }
         function hexToBytes(hex) {
             var out = [];
@@ -171,10 +199,10 @@ enum LegadoJavaInteropRuntime {
         var AndroidBase64 = {
             DEFAULT: 0, NO_PADDING: 1, NO_WRAP: 2, CRLF: 4, URL_SAFE: 8, NO_CLOSE: 16,
             encodeToString: function (bytes, flags) { return encode64(bytes, Number(flags) || 0); },
-            decode: function (value) { return decode64(value); }
+            decode: function (value) { return javaBytes(decode64(value)); }
         };
         var JavaBase64 = {
-            getDecoder: function () { return { decode: decode64 }; },
+            getDecoder: function () { return { decode: function (value) { return javaBytes(decode64(value)); } }; },
             getEncoder: function () { return { encodeToString: function (bytes) { return encode64(bytes, 2); } }; }
         };
         var UUID = {
@@ -186,7 +214,22 @@ enum LegadoJavaInteropRuntime {
                 return { toString: function () { return value; }, valueOf: function () { return value; } };
             }
         };
-        var Arrays = { copyOfRange: function (value, from, to) { return unsignedBytes(value).slice(Number(from), Number(to)); } };
+        // Java's `Arrays.copyOfRange`: the range alone is read, and zeros fill what lies past
+        // the end. It read the whole array first: 番茄听书 (YCK1330) decrypts a chapter's audio
+        // one sample at a time, copying each out of the 8 MB file, and a sample took 34 ms —
+        // 42 000 of them, twenty minutes, where a script has 30 s (11-09).
+        var Arrays = {
+            copyOfRange: function (value, from, to) {
+                from = Number(from); to = Number(to);
+                var array = value != null && typeof value !== 'string' && !(value instanceof String);
+                var part = array
+                    ? Array.prototype.slice.call(value.__bytes || value, from, to)
+                    : unsignedBytes(value).slice(from, to);
+                var out = javaBytes(part);
+                while (out.length < to - from) out.push(0);
+                return out;
+            }
+        };
         var System = { nanoTime: function () { return Date.now() * 1000000; }, currentTimeMillis: function () { return Date.now(); } };
         // Java's parseInt rejects what JS parseInt skips over: an empty string, a stray
         // character, an int overflow. A source's `try`/`catch` sees the same exception.
@@ -208,24 +251,204 @@ enum LegadoJavaInteropRuntime {
         };
         function SecretKeySpec(bytes, algorithm) { return { __bytes: unsignedBytes(bytes), __alg: String(algorithm || '') }; }
         function IvParameterSpec(bytes) { return { __bytes: unsignedBytes(bytes) }; }
-        var Cipher = {
-            ENCRYPT_MODE: 1, DECRYPT_MODE: 2,
-            getInstance: function (transformation) {
+        // javax.crypto.spec.DESKeySpec: the key's first eight bytes; Java refuses fewer.
+        // javax.crypto.SecretKeyFactory turns it into the key `Cipher.init` reads — for DES the
+        // same bytes (SunJCE fixes the parity bits, which DES ignores). 移动阅读 (YCK1330) signs
+        // its requests this way.
+        function DESKeySpec(bytes, offset) {
+            var all = unsignedBytes(bytes), at = Number(offset) || 0;
+            if (all.length - at < 8) throw new Error('java.security.InvalidKeyException: Wrong key size');
+            var key = all.slice(at, at + 8);
+            return { __bytes: key, __alg: 'DES', getKey: function () { return javaBytes(key); } };
+        }
+        DESKeySpec.DES_KEY_LEN = 8;
+        var SecretKeyFactory = {
+            getInstance: function (algorithm) {
+                var name = String(algorithm);
+                if (!/^DES$/i.test(name)) {
+                    throw new Error('java.security.NoSuchAlgorithmException: ' + name + ' SecretKeyFactory not available');
+                }
                 return {
-                    __t: String(transformation), __mode: 0, __key: [], __iv: [],
-                    init: function (mode, key, iv) { this.__mode = Number(mode); this.__key = unsignedBytes(key); this.__iv = unsignedBytes(iv); },
-                    doFinal: function (data) {
-                        var value = this.__mode === 1
-                            ? java.aesEncryptHex(this.__t, bytesToHex(this.__key), bytesToHex(this.__iv), bytesToHex(data))
-                            : java.aesDecryptHex(this.__t, bytesToHex(this.__key), bytesToHex(this.__iv), bytesToHex(data));
-                        return hexToBytes(value);
+                    getAlgorithm: function () { return name; },
+                    generateSecret: function (spec) {
+                        var key = unsignedBytes(spec);
+                        return {
+                            __bytes: key, __alg: name,
+                            getEncoded: function () { return javaBytes(key); },
+                            getAlgorithm: function () { return name; },
+                            getFormat: function () { return 'RAW'; }
+                        };
                     }
                 };
             }
         };
-        var DigestUtil = { md5Hex: function (s) { return java.md5Encode(String(s)); } };
+        // javax.crypto.Cipher is in `ioScript`, with the RSA and GCM paths it shares.
+        // java.security.MessageDigest: bytes in, Java's signed bytes out.
+        function MessageDigest(algorithm) { this._alg = algorithm; this._buf = []; }
+        MessageDigest.getInstance = function (algorithm) {
+            var name = String(algorithm).toUpperCase().replace(/_/g, '-');
+            if (!/^(MD5|SHA-?1|SHA-?224|SHA-?256|SHA-?384|SHA-?512)$/.test(name)) {
+                throw new Error('java.security.NoSuchAlgorithmException: ' + algorithm + ' MessageDigest not available');
+            }
+            return new MessageDigest(name);
+        };
+        MessageDigest.prototype.update = function (input, offset, length) {
+            if (typeof input === 'number') { this._buf.push(input & 255); return; }
+            var bytes = unsignedBytes(input);
+            if (offset != null) bytes = bytes.slice(Number(offset), Number(offset) + Number(length));
+            for (var i = 0; i < bytes.length; i++) this._buf.push(bytes[i]);
+        };
+        MessageDigest.prototype.digest = function (input) {
+            if (input != null) this.update(input);
+            var out = javaBytes(java.digestBytes(this._buf, this._alg));
+            this._buf = [];
+            return out;
+        };
+        MessageDigest.prototype.reset = function () { this._buf = []; };
+        MessageDigest.prototype.getAlgorithm = function () { return this._alg; };
+
+        // java.nio.charset.Charset: a name that `new String(bytes, cs)` / `s.getBytes(cs)` read.
+        function JavaCharset(name) { this._name = charsetName(name); }
+        JavaCharset.prototype.name = JavaCharset.prototype.displayName = JavaCharset.prototype.toString = function () { return this._name; };
+        var Charset = {
+            forName: function (name) { return new JavaCharset(name); },
+            defaultCharset: function () { return new JavaCharset('UTF-8'); }
+        };
+        var StandardCharsets = {
+            UTF_8: new JavaCharset('UTF-8'), ISO_8859_1: new JavaCharset('ISO-8859-1'), US_ASCII: new JavaCharset('US-ASCII'),
+            UTF_16: new JavaCharset('UTF-16'), UTF_16BE: new JavaCharset('UTF-16BE'), UTF_16LE: new JavaCharset('UTF-16LE')
+        };
+
+        // java.net.URLEncoder / URLDecoder: application/x-www-form-urlencoded in a charset.
+        function isUrlSafe(b) {
+            return (b >= 48 && b <= 57) || (b >= 65 && b <= 90) || (b >= 97 && b <= 122) || b === 46 || b === 45 || b === 42 || b === 95;
+        }
+        var URLEncoder = {
+            encode: function (value, charset) {
+                var bytes = getBytes(String(value), charset || 'UTF-8'), out = '';
+                for (var i = 0; i < bytes.length; i++) {
+                    var b = bytes[i] & 255;
+                    if (isUrlSafe(b)) out += String.fromCharCode(b);
+                    else if (b === 32) out += '+';
+                    else out += '%' + (b < 16 ? '0' : '') + b.toString(16).toUpperCase();
+                }
+                return out;
+            }
+        };
+        var URLDecoder = {
+            decode: function (value, charset) {
+                var s = String(value), bytes = [], i = 0;
+                while (i < s.length) {
+                    var c = s.charAt(i);
+                    if (c === '+') { bytes.push(32); i++; }
+                    else if (c === '%' && /^[0-9A-Fa-f]{2}$/.test(s.substr(i + 1, 2))) { bytes.push(parseInt(s.substr(i + 1, 2), 16)); i += 3; }
+                    else {
+                        var cp = s.codePointAt(i), ch = String.fromCodePoint(cp);
+                        Array.prototype.push.apply(bytes, getBytes(ch, charset || 'UTF-8'));
+                        i += ch.length;
+                    }
+                }
+                return bytesToString(bytes, charset || 'UTF-8');
+            }
+        };
+
+        // java.lang.Thread: `sleep` blocks the script's thread, as it does under Rhino; sources
+        // pace their own requests with it (八叉书库, 兽人小说站, 晋江).
+        var JavaThread = { sleep: function (millis) { java.sleepMillis(Number(millis) || 0); } };
+
+        var TextUtils = {
+            isEmpty: function (s) { return s == null || String(s).length === 0; },
+            equals: function (a, b) { return a === b || (a != null && b != null && String(a) === String(b)); }
+        };
+
+        // io.legado.app.model.analyzeRule.AnalyzeRule() — a rule reader of the script's own
+        // (`LegadoAnalyzeRule`), callable with or without `new`. Its methods return what
+        // Legado's do: `setContent`/`setBaseUrl` the reader, `getElement(s)` jsoup objects.
+        function AnalyzeRule() {
+            var reader = java.newAnalyzeRule();
+            if (reader == null) throw new Error('AnalyzeRule() is unavailable outside a rule parse');
+            return new AnalyzeRuleReader(reader);
+        }
+        function AnalyzeRuleReader(reader) { Object.defineProperty(this, '_r', { value: reader }); }
+        function jsoupWrap(v) { return typeof global.__yueduJsoupWrap === 'function' ? global.__yueduJsoupWrap(v) : v; }
+        AnalyzeRuleReader.prototype.setContent = function (content, baseUrl) {
+            this._r.setContent(content, baseUrl == null ? null : String(baseUrl));
+            return this;
+        };
+        AnalyzeRuleReader.prototype.setBaseUrl = function (baseUrl) {
+            this._r.setBaseUrl(baseUrl == null ? null : String(baseUrl));
+            return this;
+        };
+        AnalyzeRuleReader.prototype.getString = function (rule, mContent, isUrl) {
+            return this._r.getString(rule, mContent, isUrl === true);
+        };
+        AnalyzeRuleReader.prototype.getStringList = function (rule, mContent, isUrl) {
+            return this._r.getStringList(rule, mContent, isUrl === true);
+        };
+        AnalyzeRuleReader.prototype.getElement = function (rule) {
+            var v = this._r.getElement(String(rule));
+            return v === undefined ? null : jsoupWrap(v);
+        };
+        AnalyzeRuleReader.prototype.getElements = function (rule) { return jsoupWrap(this._r.getElements(String(rule))); };
+
+        // io.legado.app.help.http.StrResponse(url, body) — callable with or without `new`, as a
+        // Java class is under Rhino. The (rawResponse, body) form takes the response's URL.
+        function StrResponse(url, body) {
+            var u = url != null && typeof url.request === 'function' ? url.request().url() : url;
+            return java.makeStrResponse(u == null ? '' : String(u), body == null ? '' : String(body));
+        }
+
+        // Legado's StrResponse has `val url` and `var body` beside `url()` and `body()`, and
+        // Rhino reads either: `String(result.url).replace('/search', '/verified')` in a
+        // loginCheckJs, `result.body.match(…)`. Here the exported method is all there is, so
+        // `result.url` was the function and its text the method's source. Each becomes a getter
+        // whose value can still be called and otherwise reads as the string: String methods,
+        // `+`, `==`, String(), JSON. `typeof` says "function" and an empty one is truthy.
+        // Under Rhino `result.body` is the Java method, so a check written for either reads
+        // it with `typeof b === 'function' ? b.call(result) : b` (台湾小说, YCK1331): `call`
+        // and `apply` stay, since String.prototype in place of Function.prototype drops them.
+        function callableString(value) {
+            var text = value == null ? '' : String(value);
+            var read = function () { return text; };
+            Object.setPrototypeOf(read, String.prototype);
+            var own = function () { return text; };
+            Object.defineProperty(read, 'toString', { value: own });
+            Object.defineProperty(read, 'valueOf', { value: own });
+            Object.defineProperty(read, 'toJSON', { value: own });
+            Object.defineProperty(read, 'call', { value: own });
+            Object.defineProperty(read, 'apply', { value: own });
+            Object.defineProperty(read, 'length', { value: text.length });
+            return read;
+        }
+        (function () {
+            if (!global.java || typeof global.java.makeStrResponse !== 'function') return;
+            var proto = Object.getPrototypeOf(global.java.makeStrResponse('', ''));
+            ['url', 'body'].forEach(function (name) {
+                var method = proto[name];
+                if (typeof method !== 'function') return;
+                Object.defineProperty(proto, name, {
+                    configurable: true,
+                    get: function () { return callableString(method.call(this)); }
+                });
+            });
+        })();
+
+        // hutool `DigestUtil`: a String is digested as its UTF-8 bytes, a byte array as itself;
+        // `md5` / `sha1` / `sha256` answer the digest's bytes, the `…Hex` twins its hex. 起点中文
+        // (YCK1331) keys its chapter decryption with `DigestUtil.md5(bytes)`.
+        function hutoolDigest(algorithm) {
+            return function (data) { return javaBytes(java.digestBytes(unsignedBytes(data), algorithm)); };
+        }
+        function hutoolDigestHex(algorithm) {
+            return function (data) { return bytesToHex(java.digestBytes(unsignedBytes(data), algorithm)); };
+        }
+        var DigestUtil = {
+            md5: hutoolDigest('MD5'), md5Hex: hutoolDigestHex('MD5'),
+            sha1: hutoolDigest('SHA-1'), sha1Hex: hutoolDigestHex('SHA-1'),
+            sha256: hutoolDigest('SHA-256'), sha256Hex: hutoolDigestHex('SHA-256')
+        };
         var StrUtil = { reverse: function (s) { return String(s).split('').reverse().join(''); } };
-        var ZipUtil = { gzip: function (value) { return java.gzipBytes(value); } };
+        var ZipUtil = { gzip: function (value) { return javaBytes(java.gzipBytes(value)); } };
         var HutoolBase64 = { encode: function (s) { return java.base64Encode(String(s)); }, decode: function (s) { return java.base64Decode(String(s)); } };
 
         function MediaType(value) { this.value = String(value || ''); }
@@ -254,11 +477,19 @@ enum LegadoJavaInteropRuntime {
             return { url: this._url, method: this._method, body: (this._body && this._body.body) || '', headers: this._headers };
         };
         var Request = { Builder: RequestBuilder };
+        // okhttp3 `Response`. The bytes are read with the response, so `close()` — which
+        // sources call in a `finally` (起点中文, YCK1331) — has nothing left to release.
         function OkHttpResponse(nativeResponse) { this._native = nativeResponse; }
         OkHttpResponse.prototype.body = function () {
             var nativeResponse = this._native;
-            return { string: function () { return nativeResponse.body(); } };
+            return {
+                string: function () { return nativeResponse.body(); },
+                bytes: function () { return javaBytes(nativeResponse.bodyBytes()); },
+                close: function () {}
+            };
         };
+        OkHttpResponse.prototype.header = function (name) { return this._native.header(String(name)); };
+        OkHttpResponse.prototype.close = function () {};
         OkHttpResponse.prototype.headers = function () {
             var nativeHeaders = this._native.headers();
             return {
@@ -296,17 +527,90 @@ enum LegadoJavaInteropRuntime {
                     : bytesToHex(data);
             }
             return {
-                decrypt: function (data) { return hexToBytes(java.aesDecryptHex(t, keyHex, ivHex, decryptInputHex(data))); },
+                decrypt: function (data) { return javaBytes(hexToBytes(java.aesDecryptHex(t, keyHex, ivHex, decryptInputHex(data)))); },
                 decryptStr: function (data) { return bytesToString(this.decrypt(data), 'UTF-8'); },
-                encrypt: function (data) { return hexToBytes(java.aesEncryptHex(t, keyHex, ivHex, encryptInputHex(data))); },
+                encrypt: function (data) { return javaBytes(hexToBytes(java.aesEncryptHex(t, keyHex, ivHex, encryptInputHex(data)))); },
                 encryptBase64: function (data) { return encode64(this.encrypt(data), 2); },
                 encryptHex: function (data) { return java.aesEncryptHex(t, keyHex, ivHex, encryptInputHex(data)); }
             };
         };
+        // legado `JsEncodeUtils.createAsymmetricCrypto(transformation)` — hutool's
+        // AsymmetricCrypto as legado-E wraps it: keys are DER bytes (X.509 public, PKCS#8
+        // private; a Base64 or PEM string is read as its bytes), and every operation takes an
+        // optional `usePublicKey` that defaults to true — so a plain `decrypt` uses the public
+        // key (乐读小说). Kotlin's `getKeyType(null)` is the private key, and so is `null` here.
+        java.createAsymmetricCrypto = function (transformation) {
+            var t = String(transformation || 'RSA');
+            var keys = { pub: '', priv: '' };
+            function keyHex(key) {
+                if (typeof key === 'string' || key instanceof String) {
+                    return bytesToHex(decode64(String(key).replace(/-----[^-]+-----/g, '').replace(/\s+/g, '')));
+                }
+                return bytesToHex(key);
+            }
+            function decryptInputHex(data) {
+                if (typeof data !== 'string' && !(data instanceof String)) return bytesToHex(data);
+                var compact = String(data).replace(/\s+/g, '');
+                if (/^[0-9A-Fa-f]+$/.test(compact) && compact.length % 2 === 0) return compact.toLowerCase();
+                return bytesToHex(decode64(compact));
+            }
+            function encryptInputHex(data) {
+                return typeof data === 'string' || data instanceof String
+                    ? bytesToHex(getBytes(String(data), 'UTF-8'))
+                    : bytesToHex(data);
+            }
+            function usesPublic(usePublicKey) {
+                return usePublicKey === undefined || (usePublicKey !== null && !!usePublicKey);
+            }
+            function run(encrypt, data, usePublicKey) {
+                var pub = usesPublic(usePublicKey);
+                return java.rsaCryptHex(t, pub ? keys.pub : keys.priv, pub, encrypt,
+                    encrypt ? encryptInputHex(data) : decryptInputHex(data));
+            }
+            var crypto = {
+                setPublicKey: function (key) { keys.pub = keyHex(key); return crypto; },
+                setPrivateKey: function (key) { keys.priv = keyHex(key); return crypto; },
+                decrypt: function (data, usePublicKey) { return javaBytes(hexToBytes(run(false, data, usePublicKey))); },
+                decryptStr: function (data, usePublicKey) { return bytesToString(crypto.decrypt(data, usePublicKey), 'UTF-8'); },
+                encrypt: function (data, usePublicKey) { return javaBytes(hexToBytes(run(true, data, usePublicKey))); },
+                encryptHex: function (data, usePublicKey) { return run(true, data, usePublicKey); },
+                encryptBase64: function (data, usePublicKey) { return encode64(crypto.encrypt(data, usePublicKey), 2); }
+            };
+            return crypto;
+        };
         java.aesBase64Decode = function (data, key, transformation, iv) {
-            return hexToBytes(java.aesDecryptHex(String(transformation || 'AES'), bytesToHex(getBytes(key || '', 'UTF-8')), bytesToHex(getBytes(iv || '', 'UTF-8')), bytesToHex(decode64(data))));
+            return javaBytes(hexToBytes(java.aesDecryptHex(String(transformation || 'AES'), bytesToHex(getBytes(key || '', 'UTF-8')), bytesToHex(getBytes(iv || '', 'UTF-8')), bytesToHex(decode64(data)))));
         };
         java.aesBase64DecodeToString = function () { return bytesToString(java.aesBase64Decode.apply(java, arguments), 'UTF-8'); };
+        // legado `JsEncodeUtils.aes*`: deprecated there but still called — 存档书库 (YCK 1331)
+        // signs its archive.org login with aesEncodeToBase64String. Each is
+        // createSymmetricCrypto(transformation, key, iv) with string keys read as UTF-8, and the
+        // `Args` variants as legado writes them (decode: Base64 key and iv; encode: as given).
+        java.aesDecodeToByteArray = function (str, key, transformation, iv) {
+            return java.createSymmetricCrypto(transformation, key, iv).decrypt(str);
+        };
+        java.aesDecodeToString = function (str, key, transformation, iv) {
+            return java.createSymmetricCrypto(transformation, key, iv).decryptStr(str);
+        };
+        java.aesBase64DecodeToByteArray = java.aesDecodeToByteArray;
+        java.aesDecodeArgsBase64Str = function (data, key, mode, padding, iv) {
+            return java.createSymmetricCrypto('AES/' + mode + '/' + padding, decode64(key), decode64(iv || '')).decryptStr(data);
+        };
+        java.aesEncodeToByteArray = function (data, key, transformation, iv) {
+            return java.createSymmetricCrypto(transformation, key, iv).encrypt(data);
+        };
+        // Legado's own body: aesEncodeToString decrypts (`decryptStr(data)`), and sources
+        // written against it expect that.
+        java.aesEncodeToString = java.aesDecodeToString;
+        java.aesEncodeToBase64ByteArray = function (data, key, transformation, iv) {
+            return javaBytes(getBytes(java.createSymmetricCrypto(transformation, key, iv).encryptBase64(data), 'UTF-8'));
+        };
+        java.aesEncodeToBase64String = function (data, key, transformation, iv) {
+            return java.createSymmetricCrypto(transformation, key, iv).encryptBase64(data);
+        };
+        java.aesEncodeArgsBase64Str = function (data, key, mode, padding, iv) {
+            return java.createSymmetricCrypto('AES/' + mode + '/' + padding, key, iv).encryptBase64(data);
+        };
         // legado `JsEncodeUtils.tripleDES*`: thin wrappers over createSymmetricCrypto("DESede/…").
         // 起点's Argus API signs every request with tripleDESEncodeBase64Str; without it the
         // qm source's 彩蛋 TOC and 彩蛋 content requests never left the device.
@@ -323,40 +627,110 @@ enum LegadoJavaInteropRuntime {
         java.tripleDESDecodeArgsBase64Str = function (data, key, mode, padding, iv) {
             return java.createSymmetricCrypto('DESede/' + mode + '/' + padding, decode64(key), getBytes(iv || '', 'UTF-8')).decryptStr(data);
         };
+        // legado `JsEncodeUtils.des*`: string key and iv (UTF-8), as legado's createSymmetricCrypto
+        // takes them. 阅友网络 signs its requests with desEncodeToBase64String.
+        java.desDecodeToString = function (data, key, transformation, iv) {
+            return java.createSymmetricCrypto(transformation, key, iv).decryptStr(data);
+        };
+        java.desBase64DecodeToString = java.desDecodeToString;
+        java.desEncodeToString = function (data, key, transformation, iv) {
+            return bytesToString(java.createSymmetricCrypto(transformation, key, iv).encrypt(data), 'UTF-8');
+        };
+        java.desEncodeToBase64String = function (data, key, transformation, iv) {
+            return java.createSymmetricCrypto(transformation, key, iv).encryptBase64(data);
+        };
         java.toURL = function (url, baseUrl) {
             var value = java.urlParts(String(url || ''), baseUrl == null ? null : String(baseUrl));
             value.searchParams = __yueduJavaMap(value.searchParams || {});
             return value;
         };
+        // Legado's JsExtensions answer these with a Kotlin `ByteArray`, which reaches a script
+        // as Java's signed bytes; the bridge's own answer is 0–255.
+        ['strToBytes', 'base64DecodeToByteArray', 'hexDecodeToByteArray'].forEach(function (name) {
+            var native = bridge && bridge[name];
+            if (typeof native !== 'function') return;
+            bridge[name] = function () { return javaBytes(native.apply(bridge, arguments)); };
+        });
+
+        \#(ioScript)
 
         var members = {
-            'java.lang': { String: JavaString, System: System, Integer: Integer },
+            'java.lang': {
+                String: JavaString, System: System, Integer: Integer, Thread: JavaThread,
+                StringBuilder: StringBuilder, StringBuffer: StringBuilder, Byte: JavaByte
+            },
+            'java.lang.reflect': { Array: ReflectArray },
             'java.util': { Base64: JavaBase64, Arrays: Arrays, UUID: UUID },
+            'java.util.zip': {
+                Inflater: Inflater, InflaterInputStream: InflaterInputStream,
+                GZIPInputStream: GZIPInputStream, GZIPOutputStream: GZIPOutputStream
+            },
+            'java.io': {
+                ByteArrayInputStream: ByteArrayInputStream, ByteArrayOutputStream: ByteArrayOutputStream,
+                DataOutputStream: DataOutputStream, BufferedOutputStream: BufferedOutputStream,
+                InputStreamReader: InputStreamReader, StringReader: StringReader, BufferedReader: BufferedReader,
+                OutputStreamWriter: OutputStreamWriter, BufferedWriter: BufferedWriter
+            },
+            'java.nio': { ByteBuffer: ByteBuffer },
+            'java.math': { BigInteger: BigInteger },
+            'java.security': { MessageDigest: MessageDigest, SecureRandom: SecureRandom, KeyFactory: KeyFactory, Signature: Signature },
+            'java.security.spec': { X509EncodedKeySpec: X509EncodedKeySpec, PKCS8EncodedKeySpec: PKCS8EncodedKeySpec },
+            'java.nio.charset': { Charset: Charset, StandardCharsets: StandardCharsets },
+            'java.net': {
+                URLEncoder: URLEncoder, URLDecoder: URLDecoder, URL: JavaURL, HttpURLConnection: HttpURLConnection,
+                Socket: Socket, InetSocketAddress: InetSocketAddress
+            },
+            'javax.net.ssl': { HttpsURLConnection: HttpURLConnection },
             'android.util': { Base64: AndroidBase64 },
-            'javax.crypto': { Cipher: Cipher },
-            'javax.crypto.spec': { SecretKeySpec: SecretKeySpec, IvParameterSpec: IvParameterSpec },
+            'android.text': { TextUtils: TextUtils },
+            'android.webkit': { CookieManager: CookieManager },
+            'io.legado.app.help.http': { StrResponse: StrResponse, CookieStore: LegadoCookieStore },
+            'io.legado.app.model.analyzeRule': { AnalyzeRule: AnalyzeRule },
+            'javax.crypto': { Cipher: Cipher, Mac: Mac, SecretKeyFactory: SecretKeyFactory },
+            'javax.crypto.spec': { SecretKeySpec: SecretKeySpec, IvParameterSpec: IvParameterSpec, GCMParameterSpec: GCMParameterSpec, DESKeySpec: DESKeySpec },
             'cn.hutool.crypto.digest': { DigestUtil: DigestUtil },
-            'cn.hutool.core.util': { StrUtil: StrUtil, ZipUtil: ZipUtil },
+            'cn.hutool.core.util': { StrUtil: StrUtil, ZipUtil: ZipUtil, HexUtil: HexUtil },
             'cn.hutool.core.codec': { Base64: HutoolBase64 },
-            'okhttp3': { MediaType: MediaType, RequestBody: RequestBody, Request: Request, OkHttpClient: OkHttpClient }
+            'okhttp3': {
+                MediaType: MediaType, RequestBody: RequestBody, Request: Request, OkHttpClient: OkHttpClient,
+                HttpUrl: HttpUrl, Headers: Headers
+            }
         };
         function unsupported(path) {
             var c = global.__yueduLegadoErrorContext || {};
             throw new Error('UnsupportedLegadoAPIError: Packages.' + path + ' at ' + (c.stage || 'javascript') +
                 ' (' + (c.sourceName || '?') + ' | ' + (c.sourceId || '?') + ')');
         }
+        // `Packages.org.jsoup.*` is the global `org.jsoup` polyfill (installed after this file),
+        // looked up when it is read. Rhino scripts reach jsoup by either name; the
+        // `Packages` spelling threw UnsupportedLegadoAPIError (桔纸书屋, 台湾小说网, 格格党网).
+        function globalAlias(path) {
+            if (path !== 'org.jsoup' && path.indexOf('org.jsoup.') !== 0) return undefined;
+            if (!isEnabled('org.jsoup')) return undefined;
+            var value = global;
+            var parts = path.split('.');
+            for (var i = 0; i < parts.length; i++) {
+                if (value == null) return undefined;
+                value = value[parts[i]];
+            }
+            return value;
+        }
         function makeNamespace(path) {
             var registered = members[path] || {}, mem = {}, target = function () {};
             Object.keys(registered).forEach(function (key) {
-                if (isEnabled(path ? path + '.' + key : key)) mem[key] = registered[key];
+                var memberPath = path ? path + '.' + key : key;
+                if (isEnabled(memberPath)) mem[key] = registered[key];
             });
             Object.defineProperty(target, '__members', { value: mem });
             Object.keys(mem).forEach(function (key) { target[key] = mem[key]; });
-            return new Proxy(target, {
+            return new NativeProxy(target, {
                 get: function (t, property) {
                     if (typeof property !== 'string') return t[property];
                     if (Object.prototype.hasOwnProperty.call(t, property)) return t[property];
-                    return makeNamespace(path ? path + '.' + property : property);
+                    var childPath = path ? path + '.' + property : property;
+                    var aliased = globalAlias(childPath);
+                    if (aliased !== undefined) return aliased;
+                    return makeNamespace(childPath);
                 },
                 apply: function () { return unsupported(path); },
                 construct: function () {
@@ -368,6 +742,26 @@ enum LegadoJavaInteropRuntime {
             });
         }
         global.Packages = makeNamespace('');
+        // Rhino's top-level package names (`ScriptRuntime.getTopPackageNames`, `android`
+        // included on Dalvik): Legado's scopes are built on `initStandardObjects()`, so
+        // `javax.crypto.Cipher` and `android.util.Base64` need no `Packages.` there. `org` is
+        // the jsoup polyfill's own global (`Packages.org.jsoup` reads it).
+        ['javax', 'android', 'com', 'edu', 'net'].forEach(function (name) {
+            if (global[name] === undefined) global[name] = makeNamespace(name);
+        });
+        // `java` is the bridge here, in every scope. In Legado it is the bridge only in a rule's
+        // own scope: a jsLib runs in a scope of its own, where `java` is Rhino's Java package,
+        // and its functions resolve `java` there — 酷狗小说 (YCK1329) signs every request with
+        // `java.security.MessageDigest` and `new java.lang.String(s).getBytes("UTF-8")` inside
+        // a jsLib function, and with neither its signature came out empty. So the bridge also
+        // answers the `java.*` subpackages. No bridge method has one of these names.
+        if (global.java) {
+            ['lang', 'util', 'io', 'nio', 'math', 'net', 'security', 'text', 'time'].forEach(function (name) {
+                if (global.java[name] === undefined) {
+                    Object.defineProperty(global.java, name, { value: makeNamespace('java.' + name), configurable: true });
+                }
+            });
+        }
         global.JavaImporter = function () {
             var importer = {};
             importer.importPackage = function () {

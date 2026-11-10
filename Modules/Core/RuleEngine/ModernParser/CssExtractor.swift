@@ -53,31 +53,25 @@ struct CssExtractor: RuleExtractor {
 
     // MARK: - RuleExtractor
 
+    /// Only an `@CSS:` rule, as Legado's `AnalyzeByJSoup.SourceRule.isCss` decides. Every other
+    /// HTML rule is default mode (`JsoupDefaultExtractor`), CSS selectors included: Legado hands
+    /// a step it does not recognise to `select` after taking its `.N` / `!N` / `[…]` index off.
+    /// Guessing CSS from the rule's shape sent `.txt-list li!0` (格格党, 森林文学 and the
+    /// template they share, YCK1330 indices 142 and 170) to `select` with its `!0` still on.
     func canHandle(rule: String) -> Bool {
-        let trimmed = rule.trimmingCharacters(in: .whitespacesAndNewlines)
-        if trimmed.lowercased().hasPrefix("@css:") { return true }
-        if trimmed.contains("||") || trimmed.contains("&&") || trimmed.contains("%%") {
-            return false
-        }
-        // A tag-qualified first step can look like ordinary CSS even when the rule
-        // continues in Legado's Jsoup syntax: `ul.book-list@tag.li`.  SwiftSoup
-        // treats the full string as an invalid CSS selector, so leave any top-level
-        // legacy chain token to JsoupDefaultExtractor.  Tokens inside a quoted CSS
-        // attribute selector (for example `[data-route="@tag.li"]`) are literals.
-        if containsTopLevelLegacyChainToken(trimmed) { return false }
-        return looksLikeCssSelector(trimmed)
+        rule.trimmingCharacters(in: .whitespacesAndNewlines).lowercased().hasPrefix("@css:")
     }
 
     func extractList(from content: String, rule: String, baseURL: String) throws -> [String] {
-        let normalizedRule = normalizeRule(rule)
-        if normalizedRule.contains("@@") {
-            return try extractChainedList(from: content, rule: normalizedRule, baseURL: baseURL)
-        }
-        let (selector, accessor) = splitSelectorAndAccessor(normalizedRule)
-        guard !selector.isEmpty else { return [] }
-
         let document = try JsoupDocumentCache.current.document(for: content, baseURL: "")
-        let elements = try document.select(selector).array()
+        return try extractList(from: document, rule: rule, baseURL: baseURL)
+    }
+
+    /// `AnalyzeByJSoup(element)`: the rule selects within `root` itself — the page's document,
+    /// or an element an earlier rule step selected (`RuleHTMLElement`).
+    func extractList(from root: Element, rule: String, baseURL: String) throws -> [String] {
+        let normalizedRule = normalizeRule(rule)
+        let (elements, accessor) = try selectedElements(from: root, rule: normalizedRule)
 
         // @all: concatenate outerHtml of ALL matches into a single result
         if let acc = accessor, acc.lowercased() == "all" {
@@ -91,46 +85,45 @@ struct CssExtractor: RuleExtractor {
         }
     }
 
+    /// The elements a list rule selects, for `getElements`, or nil when the rule ends in an
+    /// accessor (`selector@href`): such a list is its values, read with `extractList`.
+    func extractElements(from root: Element, rule: String) throws -> [Element]? {
+        let (elements, accessor) = try selectedElements(from: root, rule: normalizeRule(rule))
+        return accessor == nil ? elements : nil
+    }
+
     /// Legado reads a CSS rule with `AnalyzeByJSoup.getString`: every value, joined with "\n".
     func extractValue(from content: String, rule: String, baseURL: String) throws -> String {
         try extractList(from: content, rule: rule, baseURL: baseURL).joined(separator: "\n")
     }
 
-    private func extractChainedList(from content: String, rule: String, baseURL: String) throws -> [String] {
+    /// The elements `rule` selects within `root` and the accessor its last step reads, if any.
+    /// A `@@` rule chains selections: each step selects within the previous step's matches.
+    private func selectedElements(from root: Element, rule: String) throws -> (elements: [Element], accessor: String?) {
+        guard rule.contains("@@") else {
+            let (selector, accessor) = splitSelectorAndAccessor(rule)
+            guard !selector.isEmpty else { return ([], accessor) }
+            return (try root.select(selector).array(), accessor)
+        }
         let steps = rule.components(separatedBy: "@@")
             .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
             .filter { !$0.isEmpty }
-        guard let firstStep = steps.first else { return [] }
+        guard let firstStep = steps.first else { return ([], nil) }
 
-        let document = try JsoupDocumentCache.current.document(for: content, baseURL: "")
-        var current = try document.select(firstStep).array()
-        guard !current.isEmpty else { return [] }
+        var current = try root.select(firstStep).array()
+        guard !current.isEmpty else { return ([], nil) }
 
         for step in steps.dropFirst().dropLast() {
             current = try current.flatMap { try $0.select(step).array() }
-            if current.isEmpty { return [] }
+            if current.isEmpty { return ([], nil) }
         }
 
         let finalRule = steps.last ?? firstStep
         let (selector, accessor) = splitSelectorAndAccessor(finalRule)
-        let elements: [Element]
-        if steps.count == 1 {
-            elements = current
-        } else if selector.isEmpty {
-            elements = current
-        } else {
-            elements = try current.flatMap { try $0.select(selector).array() }
+        if steps.count == 1 || selector.isEmpty {
+            return (current, accessor)
         }
-
-        if let acc = accessor, acc.lowercased() == "all" {
-            let combined = elements.compactMap { try? $0.outerHtml() }
-                .joined(separator: "\n")
-            return combined.isEmpty ? [] : [combined]
-        }
-
-        return elements.compactMap { element in
-            resolvedValue(from: element, accessor: accessor, baseURL: baseURL)
-        }
+        return (try current.flatMap { try $0.select(selector).array() }, accessor)
     }
 
     // MARK: - Rule Normalization
@@ -176,122 +169,6 @@ struct CssExtractor: RuleExtractor {
         !s.isEmpty && s.allSatisfy { $0.isLetter || $0.isNumber || $0 == "-" || $0 == "_" }
     }
 
-    // MARK: - CSS Selector Detection
-
-    /// Heuristic: detect standard CSS selector syntax so `canHandle` works
-    /// without the explicit `@CSS:` prefix. Only matches patterns that are
-    /// clearly CSS and would NOT be handled by JsoupDefaultExtractor.
-    private func looksLikeCssSelector(_ rule: String) -> Bool {
-        let lowered = rule.lowercased()
-        // Skip rules claimed by other extractors
-        if lowered.hasPrefix("@") { return false }
-        if lowered.hasPrefix("$.") || lowered.hasPrefix("$[") { return false }
-        if lowered.hasPrefix("//") { return false }
-        if lowered.hasPrefix("{") { return false }
-
-        // CSS-specific patterns not used in Legado JSOUP Default syntax
-        if rule.hasPrefix("#") { return true }              // #id
-        if rule.hasPrefix("[") { return true }              // [attr=value]
-        if rule.contains(">") { return true }               // child combinator
-        if rule.contains(" + ") { return true }             // adjacent sibling
-        if rule.contains(" ~ ") { return true }             // general sibling
-        if rule.contains(":not(") { return true }           // :not() pseudo-class
-        if rule.contains(":nth-") { return true }           // :nth-child / :nth-of-type
-        if rule.contains(":first-") { return true }         // :first-child / :first-of-type
-        if rule.contains(":last-") { return true }          // :last-child / :last-of-type
-        if looksLikeTagQualifiedSelector(rule) { return true } // div.item / a.title
-
-        // Bare class selector `.foo-bar` (leading dot + identifier, no Legado
-        // `@accessor`). Legado's JSOUP-default form is `class.foo`; this CSS
-        // leading-dot form is rejected by JsoupDefault (it parses an empty type) and
-        // would otherwise fall through to the text fallback — returning each matched
-        // element's TEXT instead of its outerHtml, so a follow-on field rule such as
-        // `p.0@text` finds no tags (the mangabz `.manga-i-list-item` discover bug).
-        // Require an identifier char after the dot so `.0` index notation and
-        // `.foo@text` accessor forms stay with their own handlers.
-        if rule.hasPrefix("."), !rule.contains("@"),
-           let c = rule.dropFirst().first, c.isLetter || c == "_" {
-            return true
-        }
-
-        return false
-    }
-
-    private func containsTopLevelLegacyChainToken(_ rule: String) -> Bool {
-        let legacyPrefixes = ["tag.", "class.", "id.", "text.", "children"]
-        let htmlTags: Set<String> = [
-            "a", "abbr", "address", "article", "aside", "audio", "b", "blockquote",
-            "body", "br", "button", "canvas", "caption", "code", "col", "colgroup",
-            "dd", "details", "div", "dl", "dt", "em", "figcaption", "figure", "footer",
-            "form", "h1", "h2", "h3", "h4", "h5", "h6", "head", "header", "hr", "i",
-            "iframe", "img", "input", "label", "li", "link", "main", "meta", "nav", "ol",
-            "option", "p", "picture", "pre", "script", "section", "select", "small", "source",
-            "span", "strong", "style", "summary", "table", "tbody", "td", "textarea", "tfoot",
-            "th", "thead", "title", "tr", "track", "ul", "video",
-        ]
-        var bracketDepth = 0
-        var quote: Character?
-        var escaped = false
-        var index = rule.startIndex
-
-        while index < rule.endIndex {
-            let character = rule[index]
-            if escaped {
-                escaped = false
-                index = rule.index(after: index)
-                continue
-            }
-            if character == "\\", quote != nil {
-                escaped = true
-                index = rule.index(after: index)
-                continue
-            }
-            if character == "\"" || character == "'" {
-                if quote == character { quote = nil }
-                else if quote == nil { quote = character }
-                index = rule.index(after: index)
-                continue
-            }
-            if quote == nil {
-                if character == "[" { bracketDepth += 1 }
-                else if character == "]" { bracketDepth = max(0, bracketDepth - 1) }
-                else if character == "@", bracketDepth == 0 {
-                    let tail = rule[rule.index(after: index)...].lowercased()
-                    if legacyPrefixes.contains(where: { tail.hasPrefix($0) }) {
-                        return true
-                    }
-                    let token = tail.prefix { $0.isLetter || $0.isNumber }
-                    if htmlTags.contains(String(token)) { return true }
-                }
-            }
-            index = rule.index(after: index)
-        }
-        return false
-    }
-
-    private func looksLikeTagQualifiedSelector(_ rule: String) -> Bool {
-        let mainRule = rule.split(separator: "@", maxSplits: 1).first.map(String.init) ?? rule
-        let trimmed = mainRule.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard let firstDot = trimmed.firstIndex(where: { $0 == "." || $0 == "#" }) else {
-            return false
-        }
-        let prefix = String(trimmed[..<firstDot]).lowercased()
-        guard !["class", "id", "tag", "text", "children"].contains(prefix) else {
-            return false
-        }
-        // A digit (or leading `-`) right after the dot is Legado index notation, NOT a
-        // CSS class — `p.0` means "the first <p>", `a.-1` "the last <a>". CSS class
-        // names never start with a digit, so claiming these for CssExtractor turned
-        // `p.0@text` into `select("p.0")` (a <p class="0"> that never exists) → empty.
-        // Leave them for JsoupDefault, which applies the index.
-        let afterDot = trimmed.index(after: firstDot)
-        if afterDot < trimmed.endIndex {
-            let c = trimmed[afterDot]
-            if c.isNumber || c == "-" { return false }
-        }
-        return !prefix.isEmpty && prefix.allSatisfy { $0.isLetter || $0.isNumber || $0 == "-" }
-    }
-
     // MARK: - Value Resolution
 
     private func resolvedValue(from element: Element, accessor: String?, baseURL: String) -> String? {
@@ -316,27 +193,27 @@ struct CssExtractor: RuleExtractor {
         case "outerhtml":
             return nilIfEmpty(try? element.outerHtml())
 
-        case "href":
-            let raw = (try? element.attr("href")) ?? ""
-            return nilIfEmpty(resolveURLIfNeeded(raw, attrName: "href", baseURL: baseURL))
-
-        case "src":
-            let raw = (try? element.attr("src")) ?? ""
-            return nilIfEmpty(resolveURLIfNeeded(raw, attrName: "src", baseURL: baseURL))
-
         default:
+            // Any attribute, `href` and `src` included, as written — see `attributeValue`.
             // attr(name) syntax
             if lowered.hasPrefix("attr("), lowered.hasSuffix(")") {
                 let attrName = String(accessor.dropFirst(5).dropLast())
                     .trimmingCharacters(in: .whitespacesAndNewlines)
                 guard !attrName.isEmpty else { return nil }
-                let raw = (try? element.attr(attrName)) ?? ""
-                return nilIfEmpty(resolveURLIfNeeded(raw, attrName: attrName, baseURL: baseURL))
+                return attributeValue(element, attrName)
             }
-            // Treat as arbitrary attribute name (covers data-* and others)
-            let raw = (try? element.attr(accessor)) ?? ""
-            return nilIfEmpty(resolveURLIfNeeded(raw, attrName: accessor, baseURL: baseURL))
+            // Treat as arbitrary attribute name (covers href, src, data-* and others)
+            return attributeValue(element, accessor)
         }
+    }
+
+    /// An attribute as written, trimmed. Legado's `AnalyzeByJSoup` returns
+    /// `element.attr(lastRule)`; only a URL read (`getString(isUrl = true)`) makes it absolute,
+    /// at the end of the whole rule (legado-E, MD3, Sigma and upstream agree). Resolving here
+    /// handed the absolute URL to a following `<js>` that prefixes the host itself — 瀚海书阁's
+    /// `a@href` + `<js>'https://host' + result` fetched `https://hosthttps://host/…`.
+    private func attributeValue(_ element: Element, _ name: String) -> String? {
+        nilIfEmpty(((try? element.attr(name)) ?? "").trimmingCharacters(in: .whitespacesAndNewlines))
     }
 
     // MARK: - Text Nodes
@@ -349,18 +226,6 @@ struct CssExtractor: RuleExtractor {
             .map { $0.getWholeText().trimmingCharacters(in: .whitespacesAndNewlines) }
             .filter { !$0.isEmpty }
             .joined(separator: "\n")
-    }
-
-    // MARK: - URL Resolution
-
-    private func resolveURLIfNeeded(_ value: String, attrName: String, baseURL: String) -> String {
-        let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else { return "" }
-        let lowered = attrName.lowercased()
-        if lowered == "href" || lowered == "src" {
-            return RuleEngine.resolveURL(trimmed, base: baseURL)
-        }
-        return trimmed
     }
 
     // MARK: - Helpers

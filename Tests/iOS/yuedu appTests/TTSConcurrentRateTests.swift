@@ -19,7 +19,10 @@ struct TTSConcurrentRateTests {
         let windowElapsed = await Self.elapsed(rate: "2/400", requests: 3)
         #expect(windowElapsed > 0.3)
 
-        // "N" — a concurrency cap, no waiting when nothing else is in flight.
+        // "N" — one request per N ms, as Legado's `ConcurrentRateLimiter` reads it ("非并发实际为
+        // 1/毫秒"), not N in flight: `200` spaces three requests over 400 ms, `1` over 2 ms.
+        let spacedElapsed = await Self.elapsed(rate: "200", requests: 3)
+        #expect(spacedElapsed > 0.35)
         let serialElapsed = await Self.elapsed(rate: "1", requests: 3)
         #expect(serialElapsed < 0.3)
 
@@ -44,7 +47,7 @@ struct TTSConcurrentRateTests {
             await withTaskGroup(of: Void.self) { group in
                 for index in 0..<3 {
                     group.addTask {
-                        _ = try? await CustomHTTPProvider()
+                        _ = try? await CustomHTTPProvider(session: TTSRateTestURLProtocol.session)
                             .audioData(for: "第\(index)段", title: "測試", rate: 0.5)
                     }
                 }
@@ -70,7 +73,7 @@ struct TTSConcurrentRateTests {
             await withTaskGroup(of: Void.self) { group in
                 for index in 0..<3 {
                     group.addTask {
-                        _ = try? await CustomHTTPProvider()
+                        _ = try? await CustomHTTPProvider(session: TTSRateTestURLProtocol.session)
                             .audioData(for: "第\(index)段", title: "測試", rate: 0.5)
                     }
                 }
@@ -108,7 +111,6 @@ struct TTSConcurrentRateTests {
 
         TTSRateTestURLProtocol.reset()
         TTSRateTestURLProtocol.responseData = wav
-        URLProtocol.registerClass(TTSRateTestURLProtocol.self)
 
         gs.importedTTSSources = [source]
         gs.httpTtsUrlTemplate = source.urlTemplate
@@ -116,7 +118,6 @@ struct TTSConcurrentRateTests {
         gs.ttsUseSystemVoice = false
 
         defer {
-            URLProtocol.unregisterClass(TTSRateTestURLProtocol.self)
             TTSRateTestURLProtocol.reset()
             LoginManager.shared.clearLogin(sourceUrl: source.id)
             gs.httpTtsUrlTemplate = previousTemplate
@@ -130,6 +131,14 @@ struct TTSConcurrentRateTests {
 }
 
 private final class TTSRateTestURLProtocol: URLProtocol {
+    /// A session that answers through this protocol. `URLProtocol.registerClass` reaches only
+    /// `URLSession.shared`, which the app no longer uses (`ServerTrustPolicy`).
+    static let session: URLSession = {
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [TTSRateTestURLProtocol.self]
+        return URLSession(configuration: configuration)
+    }()
+
     private static let lock = NSLock()
     nonisolated(unsafe) static var responseData = Data()
     nonisolated(unsafe) private static var count = 0

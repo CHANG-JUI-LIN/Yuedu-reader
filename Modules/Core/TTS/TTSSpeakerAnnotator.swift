@@ -14,11 +14,14 @@ import Foundation
 enum TTSSpeakerAnnotator {
 
     /// A quoted run and who says it, in the narration unit's own UTF-16 coordinates.
-    struct Attribution: Equatable {
+    struct Attribution: Equatable, Sendable {
         let range: NSRange
         /// `nil` when the line is quoted speech whose speaker could not be read off
         /// the surrounding narration.
         let speaker: String?
+        /// How the line is spoken. Only the AI analysis supplies one; the heuristic cannot
+        /// tell an angry line from a calm one.
+        var delivery: TTSDelivery? = nil
     }
 
     /// Quoted runs of `text`, in ascending order, each with its speaker if one
@@ -71,9 +74,13 @@ enum TTSSpeakerAnnotator {
     /// leaves one behind whenever a quote edge sits inside a ruby base it may not
     /// cut — reading that stretch as narration is the harmless answer.
     static func speaker(for range: NSRange, in attributions: [Attribution]) -> String? {
+        attribution(containing: range, in: attributions)?.speaker
+    }
+
+    static func attribution(containing range: NSRange, in attributions: [Attribution]) -> Attribution? {
         attributions.first {
             $0.range.location <= range.location && NSMaxRange(range) <= NSMaxRange($0.range)
-        }?.speaker
+        }
     }
 
     /// Cuts `chunks` so no chunk straddles the edge of a quoted run, which is what

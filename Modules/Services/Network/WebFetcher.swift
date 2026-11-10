@@ -31,23 +31,40 @@ actor WebFetcher {
     /// At 8 MB the worst page a source can send costs a few tens of MB transiently.
     nonisolated static let responseByteLimit = 8 * 1024 * 1024
 
+    /// The most a source's binary download may be: a URL with Legado's `type` option, whose
+    /// bytes reach the script as hex and are never parsed as a page (`LegadoBinaryDownload`).
+    /// 番茄听书 (YCK1330) fetches a chapter's audio this way and allows itself 22 MB; at 8 MB a
+    /// long chapter's audio failed outright. Pages stay at `responseByteLimit` (maintainer, 11-09).
+    nonisolated static let binaryResponseByteLimit = 32 * 1024 * 1024
+
     /// Nonisolated so the request/response path can run off the actor's executor.
     nonisolated private let session: URLSession
 
     init(session: URLSession? = nil) {
-        self.session = session ?? URLSession(configuration: Self.defaultSessionConfiguration())
+        self.session = session ?? URLSession.sourceSites(Self.defaultSessionConfiguration())
     }
+
+    /// How long a source's request may take: Legado's OkHttp client (`HttpHelper.okHttpClient`,
+    /// legado-E, MD3 and upstream alike) reads for up to 60 s and gives a call 60 s in all, and
+    /// its `BackstageWebView` gives a page 60 s. Ours was 15 s idle and 30 s in all, which cut off
+    /// sites that answer a search in 20–40 s and read fine in Legado. URLSession has no connect
+    /// timeout of its own — `timeoutIntervalForRequest` is the idle timeout, the connect
+    /// included — so a host that never answers now fails after 60 s where Legado's fails after
+    /// its 15 s connect timeout.
+    static let sourceRequestTimeout: TimeInterval = 60
 
     static func defaultSessionConfiguration() -> URLSessionConfiguration {
         let config = URLSessionConfiguration.default
-        config.timeoutIntervalForRequest = 15
-        config.timeoutIntervalForResource = 30
+        config.timeoutIntervalForRequest = sourceRequestTimeout
+        config.timeoutIntervalForResource = sourceRequestTimeout
         // Matches `LegadoJSBridge.requestSession` (and Legado's own default
         // threadCount of 16). At 6 the native rule path throttled itself well
         // below the search fan-out width, so raising search concurrency alone
         // did nothing — the extra sources just queued on connections.
         config.httpMaximumConnectionsPerHost = 16
         config.httpCookieStorage = HTTPCookieStorage.shared
+        // URLSession neither sends nor keeps a cookie: `buildRequest` sends the store's, and
+        // only a source with a cookie jar keeps its responses' (`fetchPage(cookieJar:)`).
         config.httpShouldSetCookies = false
         config.httpCookieAcceptPolicy = .always
         // Source pages are parsed once and never read back from a URL cache; backed by
@@ -72,21 +89,60 @@ actor WebFetcher {
     /// - Parameter charset: the source's `charset` URL option. As in Legado's AnalyzeUrl it is
     ///   one value for both directions: it encodes the request body and decodes the response.
     ///   Nil detects the response's charset.
+    /// - Parameter client: a source's request names the Legado client it stands for, and goes
+    ///   out with that client's headers only (`LegadoOutgoingHeaders`). Nil is the app's own
+    ///   page — a browser-like request that names `baseURL` as its Referer.
+    /// - Parameter cookieJar: the request is a source's that keeps a cookie jar
+    ///   (`enabledCookieJar`). The cookies its responses set — every redirect's included — are
+    ///   kept, and go out with later requests: Legado's network interceptor keeps them for a
+    ///   request it marks `CookieJar` (`CookieManager.saveResponse`). Any other request keeps
+    ///   none, as Legado's OkHttp client, which has no cookie jar, keeps none.
     nonisolated func fetchHTML(
         url: URL,
         method: String,
         body: String?,
         headers: [String: String],
         baseURL: String,
-        charset: String? = nil
+        charset: String? = nil,
+        client: LegadoOutgoingHeaders.Client? = nil,
+        cookieJar: Bool = false
     ) async throws -> String {
+        try await fetchDecodedPage(
+            url: url, method: method, body: body, headers: headers, baseURL: baseURL, charset: charset,
+            client: client, cookieJar: cookieJar
+        ).html
+    }
+
+    /// `fetchHTML` with the URL the response came from — after redirects, which a search
+    /// that lands on one book's page follows (Legado's `BookList` reads that URL).
+    ///
+    /// - Parameter throwsOnErrorStatus: false hands a non-2xx response's body back like any
+    ///   other, with its status, as Legado's `AnalyzeUrl.getStrResponseAwait` does for every
+    ///   stage (`BookSourceFetcher.fetchStagePage`). The status is logged.
+    nonisolated func fetchDecodedPage(
+        url: URL,
+        method: String,
+        body: String?,
+        headers: [String: String],
+        baseURL: String,
+        charset: String? = nil,
+        throwsOnErrorStatus: Bool = true,
+        client: LegadoOutgoingHeaders.Client? = nil,
+        cookieJar: Bool = false
+    ) async throws -> (html: String, finalURL: URL, statusCode: Int) {
         let page = try await fetchPage(
             url: url, method: method, body: body,
-            headers: headers, baseURL: baseURL, bodyCharset: charset
+            headers: headers, baseURL: baseURL, bodyCharset: charset, client: client, cookieJar: cookieJar
         )
         do {
             if !(200...299).contains(page.statusCode) {
-                throw nonSuccessStatus(page.statusCode, url: url, latencyMs: page.latencyMs)
+                if throwsOnErrorStatus {
+                    throw nonSuccessStatus(page.statusCode, url: url, latencyMs: page.latencyMs)
+                }
+                AppLogger.network("page answered an error status; its body goes to the rules", context: [
+                    "url": String(url.absoluteString.prefix(120)),
+                    "statusCode": page.statusCode,
+                ])
             }
 
             guard let html = HTMLResponseDecoder.decode(
@@ -109,7 +165,7 @@ actor WebFetcher {
                     "latencyMs": "\(page.latencyMs)",
                 ]
             )
-            return html
+            return (html, page.response.url ?? url, page.statusCode)
         } catch {
             WebCrawlerDebugger.logError(error, url: url.absoluteString)
             throw error
@@ -130,11 +186,13 @@ actor WebFetcher {
         headers: [String: String],
         baseURL: String,
         bodyCharset: String? = nil,
-        redirect: (@Sendable (URL) -> Bool)? = nil
+        redirect: (@Sendable (URL) -> Bool)? = nil,
+        client: LegadoOutgoingHeaders.Client? = nil,
+        cookieJar: Bool = false
     ) async throws -> FetchedPage {
         let request = await buildRequest(
             url: url, method: method, body: body,
-            headers: headers, baseURL: baseURL, bodyCharset: bodyCharset
+            headers: headers, baseURL: baseURL, bodyCharset: bodyCharset, client: client
         )
 
         WebCrawlerDebugger.logRequest(
@@ -155,7 +213,8 @@ actor WebFetcher {
         do {
             let (data, response) = try await PerHostSemaphore.shared.withLock(host: host) {
                 try await BoundedResponseLoader.load(
-                    request, session: self.session, limit: Self.responseByteLimit, redirect: redirect
+                    request, session: self.session, limit: Self.responseByteLimit, redirect: redirect,
+                    savesCookies: cookieJar
                 )
             }
             let latencyMs = Int((CFAbsoluteTimeGetCurrent() - fetchStart) * 1000)
@@ -198,7 +257,8 @@ actor WebFetcher {
         body: String?,
         headers: [String: String],
         baseURL: String,
-        bodyCharset: String?
+        bodyCharset: String?,
+        client: LegadoOutgoingHeaders.Client?
     ) async -> URLRequest {
         let allCookies: [HTTPCookie]
         if let host = url.host {
@@ -209,20 +269,21 @@ actor WebFetcher {
 
         var request = URLRequest(url: url, cachePolicy: .reloadIgnoringLocalCacheData)
         request.httpMethod = method
-        request.setValue(
-            "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1",
-            forHTTPHeaderField: "User-Agent"
-        )
-        request.setValue(
-            "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-            forHTTPHeaderField: "Accept"
-        )
-        request.setValue("zh-TW,zh;q=0.9,zh-CN;q=0.8,en;q=0.7", forHTTPHeaderField: "Accept-Language")
-        request.setValue("gzip, deflate, br", forHTTPHeaderField: "Accept-Encoding")
-        request.setValue("no-cache", forHTTPHeaderField: "Cache-Control")
-        request.setValue("no-cache", forHTTPHeaderField: "Pragma")
-        if !baseURL.isEmpty, let host = URL(string: baseURL)?.host, !host.isEmpty, url.host != nil {
-            request.setValue(baseURL, forHTTPHeaderField: "Referer")
+        // No `Accept` of our own on any request: Legado's OkHttp sends none, and CFNetwork's
+        // `*/*` reads the same to a server that negotiates. A browser's `text/html` first made
+        // Django REST framework APIs answer with their HTML browsable page instead of JSON —
+        // 拷贝轻说 (YCK1331) searched `api.mangacopy.com` and got "Inner – Django REST framework".
+        if client == nil {
+            request.setValue(
+                "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1",
+                forHTTPHeaderField: "User-Agent"
+            )
+            request.setValue("zh-TW,zh;q=0.9,zh-CN;q=0.8,en;q=0.7", forHTTPHeaderField: "Accept-Language")
+            request.setValue("gzip, deflate, br", forHTTPHeaderField: "Accept-Encoding")
+            request.setValue("no-cache", forHTTPHeaderField: "Cache-Control")
+            if !baseURL.isEmpty, let host = URL(string: baseURL)?.host, !host.isEmpty, url.host != nil {
+                request.setValue(baseURL, forHTTPHeaderField: "Referer")
+            }
         }
         for (key, value) in headers {
             request.setValue(value, forHTTPHeaderField: key)
@@ -256,6 +317,9 @@ actor WebFetcher {
                     forHTTPHeaderField: "Content-Type"
                 )
             }
+        }
+        if let client {
+            return LegadoOutgoingHeaders.prepared(request, as: client)
         }
         return request
     }

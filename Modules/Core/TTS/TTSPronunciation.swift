@@ -12,15 +12,20 @@ struct TTSNarrationUnit {
     /// reader is not driving, and an offset derived from them would point somewhere
     /// arbitrary. Highlighting falls back to searching for the spoken text there.
     let sourceOffsets: TTSNarrationOffsetMap?
+    /// Who speaks each quoted run and how, from the AI analysis, in `text`'s coordinates.
+    /// `nil` means "not analysed": the engines read the speakers off the prose themselves.
+    var speakerAttributions: [TTSSpeakerAnnotator.Attribution]?
 
     init(
         text: String,
         pronunciationHints: [TTSPronunciationHint] = [],
-        sourceOffsets: TTSNarrationOffsetMap? = nil
+        sourceOffsets: TTSNarrationOffsetMap? = nil,
+        speakerAttributions: [TTSSpeakerAnnotator.Attribution]? = nil
     ) {
         self.text = text
         self.pronunciationHints = pronunciationHints
         self.sourceOffsets = sourceOffsets
+        self.speakerAttributions = speakerAttributions
     }
 }
 
@@ -49,17 +54,21 @@ struct TTSSpeakableSegment: Equatable {
     /// Hints already rebased into this segment's own coordinates, so callers never
     /// re-project against the narration unit.
     let pronunciationHints: [TTSPronunciationHint]
+    /// How the line is spoken, when the AI analysis said. `nil` for narration.
+    let delivery: TTSDelivery?
 
     init(
         text: String,
         sourceRange: NSRange,
         speaker: String? = nil,
-        pronunciationHints: [TTSPronunciationHint] = []
+        pronunciationHints: [TTSPronunciationHint] = [],
+        delivery: TTSDelivery? = nil
     ) {
         self.text = text
         self.sourceRange = sourceRange
         self.speaker = speaker
         self.pronunciationHints = pronunciationHints
+        self.delivery = delivery
     }
 }
 
@@ -75,31 +84,43 @@ enum TTSPronunciationProjector {
     ///   fewer, cheaper on the network engine, and gap-free on the system one.
     /// - Parameter aliases: alias → canonical character name, so the same person
     ///   under several names gets one voice.
+    /// - Parameter precomputed: the AI analysis of this text. Used instead of the heuristic
+    ///   when present — it is the only source that knows who speaks an unattributed line.
+    /// - Parameter needsOwnSegment: whether a quoted run sounds different from the narration
+    ///   around it (a voice of its own, or an emotion the engine can render). Only those runs
+    ///   are cut out: a quote read in the narrator's voice stays inside its paragraph, which
+    ///   on a network voice is one request instead of three and keeps the sentence's flow.
+    ///   `nil` cuts at every quote, the behaviour before voices were consulted.
     static func segments(
         _ text: String,
         targetLength: Int,
         hints: [TTSPronunciationHint],
         multiRole: Bool = false,
-        aliases: [String: String] = [:]
+        aliases: [String: String] = [:],
+        precomputed: [TTSSpeakerAnnotator.Attribution]? = nil,
+        needsOwnSegment: ((TTSSpeakerAnnotator.Attribution) -> Bool)? = nil
     ) -> [TTSSpeakableSegment] {
         let attributions = multiRole
-            ? TTSSpeakerAnnotator.attributions(in: text, aliases: aliases)
+            ? (precomputed ?? TTSSpeakerAnnotator.attributions(in: text, aliases: aliases))
             : []
+        let cuts = needsOwnSegment.map { attributions.filter($0) } ?? attributions
         var chunkRanges = chunks(text, targetLength: targetLength, hints: hints)
-        if !attributions.isEmpty {
+        if !cuts.isEmpty {
             chunkRanges = TTSSpeakerAnnotator.splitting(
                 chunkRanges,
-                at: attributions,
+                at: cuts,
                 protecting: hints.filter { $0.reading != nil }.map(\.range),
                 in: text
             )
         }
         return chunkRanges.map { chunk in
-            TTSSpeakableSegment(
+            let attribution = TTSSpeakerAnnotator.attribution(containing: chunk.sourceRange, in: cuts)
+            return TTSSpeakableSegment(
                 text: chunk.text,
                 sourceRange: chunk.sourceRange,
-                speaker: TTSSpeakerAnnotator.speaker(for: chunk.sourceRange, in: attributions),
-                pronunciationHints: project(hints, into: chunk.sourceRange)
+                speaker: attribution?.speaker,
+                pronunciationHints: project(hints, into: chunk.sourceRange),
+                delivery: attribution?.delivery
             )
         }
     }

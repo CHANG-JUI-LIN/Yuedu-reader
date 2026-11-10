@@ -22,9 +22,10 @@ final class TTSLoginScript: @unchecked Sendable {
     }
 
     /// Runs a button's `action`: an `@js:` / `<js>` script, or a plain call into the functions
-    /// `loginUrl` declared.
-    func run(action: String) async {
-        await SourceScriptThread.run { self.evaluate(action: action) }
+    /// `loginUrl` declared. `values` is the form as it stands, the script's `result`, as Legado's
+    /// `SourceLoginDialog.handleButtonClick` binds `getLoginData(rowUis)`.
+    func run(action: String, values: [String: String]) async {
+        await SourceScriptThread.run { self.evaluate(action: action, values: values) }
     }
 
     /// The fields' dynamic `viewName` labels keyed by field name. A field whose expression
@@ -33,7 +34,7 @@ final class TTSLoginScript: @unchecked Sendable {
         await SourceScriptThread.run { self.resolveLabels(for: fields, values: values) }
     }
 
-    private func evaluate(action: String) {
+    private func evaluate(action: String, values: [String: String]) {
         let script: String
         if action.hasPrefix("@js:") {
             script = String(action.dropFirst(4))
@@ -43,7 +44,9 @@ final class TTSLoginScript: @unchecked Sendable {
             script = action
         }
         let engine = loadedEngine()
-        _ = engine.evaluate(script, result: nil, bindings: ["baseUrl": source.urlTemplate])
+        _ = engine.evaluate(
+            script, result: JSCoreEngine.JavaMap(values), bindings: ["baseUrl": source.urlTemplate]
+        )
         if let error = engine.lastError {
             AppLogger.error("[TTS] 語音源登入按鈕 JS 執行失敗", context: [
                 "source": source.name,
@@ -59,7 +62,7 @@ final class TTSLoginScript: @unchecked Sendable {
             guard let expression = field.viewName, !expression.isEmpty else { continue }
             let value = engine.evaluate(
                 expression,
-                result: values,
+                result: JSCoreEngine.JavaMap(values),
                 bindings: ["baseUrl": source.urlTemplate]
             )
             if let value, !value.isEmpty, value != "undefined", value != "null" {

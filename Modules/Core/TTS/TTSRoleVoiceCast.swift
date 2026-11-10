@@ -16,33 +16,65 @@ enum TTSRoleVoice: Equatable, Hashable {
     /// voice — and a pack of them is a cast. Voice packs ship exactly that way: a 小米 MiMo
     /// or 阿里 TTS JSON is usually a list with one entry per speaker.
     case bookSource(sourceID: String)
+    /// An Azure voice, possibly acting a role (`AzureTTSVoiceRef.storage`).
+    case azure(voice: String)
+    case openAI(voice: String)
+    case mimo(voice: String)
 
     private static let systemPrefix = "system:"
     private static let edgePrefix = "edge:"
     private static let sourcePrefix = "source:"
+    private static let azurePrefix = "azure:"
+    private static let openAIPrefix = "openai:"
+    private static let mimoPrefix = "mimo:"
 
     var storageValue: String {
         switch self {
         case let .system(identifier): return Self.systemPrefix + identifier
         case let .edge(voiceID): return Self.edgePrefix + voiceID
         case let .bookSource(sourceID): return Self.sourcePrefix + sourceID
+        case let .azure(voice): return Self.azurePrefix + voice
+        case let .openAI(voice): return Self.openAIPrefix + voice
+        case let .mimo(voice): return Self.mimoPrefix + voice
         }
     }
 
     init?(storageValue: String) {
-        if storageValue.hasPrefix(Self.systemPrefix) {
-            let identifier = String(storageValue.dropFirst(Self.systemPrefix.count))
-            guard !identifier.isEmpty else { return nil }
-            self = .system(identifier: identifier)
-        } else if storageValue.hasPrefix(Self.edgePrefix) {
-            let voiceID = String(storageValue.dropFirst(Self.edgePrefix.count))
-            guard !voiceID.isEmpty else { return nil }
-            self = .edge(voiceID: voiceID)
-        } else if storageValue.hasPrefix(Self.sourcePrefix) {
-            let sourceID = String(storageValue.dropFirst(Self.sourcePrefix.count))
-            guard !sourceID.isEmpty else { return nil }
-            self = .bookSource(sourceID: sourceID)
-        } else {
+        let cases: [(String, (String) -> TTSRoleVoice)] = [
+            (Self.systemPrefix, { .system(identifier: $0) }),
+            (Self.edgePrefix, { .edge(voiceID: $0) }),
+            (Self.sourcePrefix, { .bookSource(sourceID: $0) }),
+            (Self.azurePrefix, { .azure(voice: $0) }),
+            (Self.openAIPrefix, { .openAI(voice: $0) }),
+            (Self.mimoPrefix, { .mimo(voice: $0) }),
+        ]
+        for (prefix, make) in cases where storageValue.hasPrefix(prefix) {
+            let value = String(storageValue.dropFirst(prefix.count))
+            guard !value.isEmpty else { return nil }
+            self = make(value)
+            return
+        }
+        return nil
+    }
+
+    /// The catalogue this voice belongs to.
+    var family: TTSVoiceFamily {
+        switch self {
+        case .system: return .system
+        case .edge: return .edge
+        case .bookSource: return .bookSource
+        case .azure: return .azure
+        case .openAI: return .openAI
+        case .mimo: return .mimo
+        }
+    }
+
+    /// The cloud voice id for `service`, or `nil` when this voice belongs elsewhere.
+    func cloudVoice(for service: CloudTTSService) -> String? {
+        switch (self, service) {
+        case let (.azure(voice), .azure), let (.openAI(voice), .openAI), let (.mimo(voice), .mimo):
+            return voice
+        default:
             return nil
         }
     }
@@ -76,12 +108,34 @@ enum TTSRoleVoice: Equatable, Hashable {
 ///
 /// The cast screen has to offer the voices the running engine can actually speak, and has
 /// to be able to say why a character it cannot speak is reading in the narrator's voice.
-enum TTSVoiceFamily: Equatable {
+enum TTSVoiceFamily: String, Equatable, Sendable {
     case system
     case edge
     /// An imported voice source. One source is one voice, because the voice is baked into
     /// the URL — but a reader with a voice pack has several, and those are a cast.
     case bookSource
+    case azure
+    case openAI
+    case mimo
+
+    var cloudService: CloudTTSService? {
+        switch self {
+        case .azure: return .azure
+        case .openAI: return .openAI
+        case .mimo: return .mimo
+        default: return nil
+        }
+    }
+
+    /// Whether lines can carry an emotion this family renders as more than prosody — a
+    /// speaking style or instructions. Decides whether the AI is asked for a per-line
+    /// direction, which costs output tokens and therefore time before a chapter starts.
+    var takesInstructions: Bool {
+        switch self {
+        case .openAI, .mimo: return true
+        default: return false
+        }
+    }
 
     @MainActor
     static func active(
@@ -91,7 +145,13 @@ enum TTSVoiceFamily: Equatable {
         if useSystemVoice { return .system }
         let template = httpTemplate.trimmingCharacters(in: .whitespacesAndNewlines)
         if template.isEmpty { return .system }
-        return EdgeTTSVoice.isEdgeSource(template) ? .edge : .bookSource
+        if EdgeTTSVoice.isEdgeSource(template) { return .edge }
+        switch CloudTTSService.service(forSourceIdentifier: template) {
+        case .azure?: return .azure
+        case .openAI?: return .openAI
+        case .mimo?: return .mimo
+        case nil: return .bookSource
+        }
     }
 
     /// Whether a cast can be assigned at all.
@@ -108,7 +168,7 @@ enum TTSVoiceFamily: Equatable {
         importedSourceCount: Int = GlobalSettings.shared.importedTTSSources.count
     ) -> Bool {
         switch self {
-        case .system, .edge: return true
+        case .system, .edge, .azure, .openAI, .mimo: return true
         case .bookSource: return importedSourceCount >= 2
         }
     }
@@ -125,6 +185,11 @@ enum TTSRoleVoiceCast {
     /// ASCII Unit Separator: cannot appear in a UUID and will not appear in a name read
     /// out of prose, so a key never splits in the wrong place.
     private static let separator = "\u{1F}"
+
+    /// "Read this character in the narrator's voice", chosen on purpose. Distinct from no
+    /// entry, which hands the character to automatic casting. Not a `TTSRoleVoice`, so every
+    /// engine reads it as the narrator without knowing it exists.
+    static let narratorChoice = "narrator:"
 
     static func key(bookID: UUID, speaker: String) -> String {
         "\(bookID.uuidString)\(separator)\(speaker)"
@@ -175,11 +240,49 @@ enum TTSRoleVoiceCast {
     ) -> Bool {
         cast.values.contains { stored in
             guard let voice = TTSRoleVoice(storageValue: stored) else { return false }
-            switch family {
-            case .system: return voice.systemIdentifier != nil
-            case .edge: return voice.edgeVoice != nil
-            case .bookSource: return voice.importedSource(in: sources) != nil
-            }
+            return isSpeakable(voice, family: family, sources: sources)
+        }
+    }
+
+    /// The speakers in `cast` whose voice the engine running `family` can speak — the ones
+    /// that sound different from the narrator.
+    @MainActor
+    static func speakersWithSpeakableVoices(
+        in cast: [String: String],
+        family: TTSVoiceFamily,
+        sources: [ImportedTTSSource] = GlobalSettings.shared.importedTTSSources
+    ) -> Set<String> {
+        Set(cast.compactMap { speaker, stored in
+            guard let voice = TTSRoleVoice(storageValue: stored),
+                  isSpeakable(voice, family: family, sources: sources) else { return nil }
+            return speaker
+        })
+    }
+
+    /// Whether a quoted run must be its own segment: it is read in a voice of its own, or with
+    /// an emotion the engine can render. Anything else stays inside its paragraph.
+    nonisolated static func needsOwnSegment(
+        _ attribution: TTSSpeakerAnnotator.Attribution,
+        voicedSpeakers: Set<String>,
+        rendersDelivery: Bool
+    ) -> Bool {
+        if let speaker = attribution.speaker, voicedSpeakers.contains(speaker) { return true }
+        return rendersDelivery && attribution.delivery?.isNeutral == false
+    }
+
+    /// Whether the engine running `family` can speak `voice`.
+    @MainActor
+    static func isSpeakable(
+        _ voice: TTSRoleVoice,
+        family: TTSVoiceFamily,
+        sources: [ImportedTTSSource] = GlobalSettings.shared.importedTTSSources
+    ) -> Bool {
+        switch family {
+        case .system: return voice.systemIdentifier != nil
+        case .edge: return voice.edgeVoice != nil
+        case .bookSource: return voice.importedSource(in: sources) != nil
+        case .azure, .openAI, .mimo:
+            return family.cloudService.flatMap(voice.cloudVoice(for:)) != nil
         }
     }
 

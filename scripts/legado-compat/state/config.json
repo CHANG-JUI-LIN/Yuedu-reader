@@ -1,0 +1,11 @@
+{
+ "_why": "Targets: the maintainer's goal of 2026-11-07 — 1330 at least 700 usable of 794, 1331 and 1329 at least 90% (417/463, 288/320). Usable = passed + dead in both probe regions + evidence that the site or source is broken for Legado too.",
+ "workdir": "/tmp/yuedu-yck1330/run-1107",
+ "packs": [
+  {"id": "1330", "target": 700, "url": "https://www.yckceo.com/yuedu/shuyuans/json/id/1330.json"},
+  {"id": "1331", "target": 417, "url": "https://www.yckceo.com/yuedu/shuyuans/json/id/1331.json"},
+  {"id": "1329", "target": 288, "url": "https://www.yckceo.com/yuedu/shuyuans/json/id/1329.json"}
+ ],
+ "remoteProbe": {"host": "ubuntu@43.129.29.13", "identity": "~/.ssh/yuedu_deploy_ed25519"},
+ "auditTimeoutSeconds": 11000
+}

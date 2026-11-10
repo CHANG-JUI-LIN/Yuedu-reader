@@ -21,8 +21,8 @@ enum RuleEngine {
     // MARK: - Thread-safe Regex Cache
     //
     // NSRegularExpression initialization involves NFA compilation, which can cause
-    // significant CPU spikes during batch chapter parsing (each capture group and
-    // each replacement rule calls applyRegex / extractRegexAllInOneMatches).
+    // significant CPU spikes during batch chapter parsing (each replacement rule
+    // calls applyRegex).
     // NSCache is thread-safe and auto-evicts entries under memory pressure.
     private static let regexCache = ConcurrentCache<NSRegularExpression>()
 
@@ -932,28 +932,34 @@ enum RuleEngine {
         if urlPart.hasPrefix("http://") || urlPart.hasPrefix("https://") {
             return urlPart + optionSuffix
         }
-        guard let baseURL = URL(string: base) else { return trimmed }
-
-        if urlPart.hasPrefix("//") {
-            return (baseURL.scheme ?? "https") + ":" + urlPart + optionSuffix
-        }
-        if urlPart.hasPrefix("/") {
-            // The page's origin, its port included: a site on 8080 links `/c/1` to 8080.
-            let port = baseURL.port.map { ":\($0)" } ?? ""
-            let origin = (baseURL.scheme ?? "https") + "://" + (baseURL.host ?? "") + port
-            return origin + urlPart + optionSuffix
-        }
-        // Relative path
-        if let resolved = URL(string: urlPart, relativeTo: baseURL)?.absoluteString {
-            return resolved + optionSuffix
-        }
-        return trimmed
+        // Legado `NetworkUtils.getAbsoluteURL`: Java's `URL(base, spec)`, AnalyzeUrl's one
+        // implementation of it. Java trims the base, so 品书斋子 (YCK 1331), whose
+        // `bookSourceUrl` ends in a space, still resolves `page/1?s=…`; Foundation's
+        // `URL(string:)` rejected that base and the search URL stayed relative.
+        guard let resolved = AnalyzeUrl.javaAbsoluteURL(urlPart, base: base) else { return trimmed }
+        return resolved + optionSuffix
     }
 
     /// Clean extracted URL: if it contains HTML tags (e.g., `<a href="...">Ch1</a>`),
     /// attempt to extract the href attribute. Also handles percent-encoded HTML.
+    ///
+    /// Not a Legado step — Legado requests a chapter's URL as the rule wrote it — but a guard
+    /// from the first version of this app for chapter lists whose URLs were element markup. It
+    /// can go once no stored chapter list holds such a URL.
+    ///
+    /// Markup after a URL's `#` is the URL's own text: 有声骚麦 (YCK1330 #371) writes each
+    /// chapter as `book.bookUrl + "#" + String(result)`, the item's element after the play
+    /// page, so every chapter has its own URL, and its content rule finds the item's
+    /// `data-src` in that page. Read as a link, the fragment's `data-src` made the chapter
+    /// fetch the mp3 itself.
     static func sanitizeExtractedURL(_ raw: String) -> String {
         let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        if let hash = trimmed.firstIndex(of: "#"), hash != trimmed.startIndex {
+            let address = trimmed[..<hash]
+            if !(address.removingPercentEncoding ?? String(address)).contains("<"), !address.contains("<") {
+                return trimmed
+            }
+        }
         // Try percent-decode first, then check
         let decoded = trimmed.removingPercentEncoding ?? trimmed
         let workingStr: String
@@ -1000,30 +1006,6 @@ enum RuleEngine {
         let stripped = workingStr.replacingOccurrences(of: "<[^>]+>", with: "", options: .regularExpression)
             .trimmingCharacters(in: .whitespacesAndNewlines)
         return stripped.isEmpty ? trimmed : stripped
-    }
-
-    /// Legado Regex AllInOne: match regex against full text, return each match
-    /// as [fullMatch, group1, group2, ...]
-    static func extractRegexAllInOneMatches(html: String, pattern: String) -> [[String]] {
-        let p = pattern.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !p.isEmpty, let regex = cachedRegex(pattern: p) else { return [] }
-        let range = NSRange(html.startIndex..., in: html)
-        let matches = regex.matches(in: html, range: range)
-        return matches.map { match in
-            (0..<match.numberOfRanges).compactMap { i -> String? in
-                guard let r = Range(match.range(at: i), in: html) else { return nil }
-                return String(html[r])
-            }
-        }
-    }
-
-    /// Substitute $1, $2, ... in a template with groups[1], groups[2], ... (Legado TOC regex usage)
-    static func substituteGroupRefs(template: String, groups: [String]) -> String {
-        var s = template
-        for i in 1..<groups.count {
-            s = s.replacingOccurrences(of: "$\(i)", with: groups[i])
-        }
-        return s
     }
 
     // MARK: - XPath Parsing

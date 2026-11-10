@@ -34,6 +34,9 @@ final class BookSourceSession: Sendable {
     /// The source's `@js:` header rule as its engine last resolved it, readable without the
     /// host (`BookSource.parsedHeaders`, `resolvedHeaders()`).
     let headerSnapshot = SourceHeaderSnapshot()
+    /// The source's scripts parked waiting for the user, endable without the host — which
+    /// such a script holds (`LegadoUserWaitRegistry`).
+    let userWaits = LegadoUserWaitRegistry()
     private let gate = SourceTurnGate()
 
     /// `requestSession` carries a test's URLProtocol; production sessions come from
@@ -44,7 +47,10 @@ final class BookSourceSession: Sendable {
         // so the `js.runtimeCreate` span lives on that lazy accessor instead. A
         // pure-CSS source should never emit one.
         self.host = SourceScriptHost(
-            ModernParserBridge(source: source, requestSession: requestSession, headerSnapshot: headerSnapshot),
+            ModernParserBridge(
+                source: source, requestSession: requestSession,
+                headerSnapshot: headerSnapshot, userWaits: userWaits
+            ),
             label: source.bookSourceName
         )
     }
@@ -108,19 +114,24 @@ final class BookSourceSession: Sendable {
     var queuedCallers: Int { gate.queuedCallers }
 
     /// A rule URL fetched with the source's runtime: script halves on the host, no turn.
-    /// `runtimeVariables` are the book's, for a request of a book's own stage.
+    /// `runtimeVariables` are the book's, for a request of a book's own stage; `contentStage`
+    /// marks a chapter's content request (`ModernParserBridge.fetch`).
     func fetch(
-        ruleUrl: String, key: String? = nil, page: Int? = nil, runtimeVariables: [String: String]? = nil
+        ruleUrl: String, key: String? = nil, page: Int? = nil, runtimeVariables: [String: String]? = nil,
+        contentStage: Bool = false
     ) async throws -> (String, String) {
-        try await host.fetch(ruleUrl: ruleUrl, key: key, page: page, runtimeVariables: runtimeVariables)
+        try await host.fetch(
+            ruleUrl: ruleUrl, key: key, page: page, runtimeVariables: runtimeVariables,
+            contentStage: contentStage
+        )
     }
 
     // MARK: - Header rule
 
     /// The `@js:` header rule's result for a caller that cannot wait — a SwiftUI body, a
     /// cover cell on the main thread. Before the first resolution this is `[:]` and starts
-    /// one on the host; afterwards it is what the engine last resolved, which a resolution
-    /// for a new login state replaces.
+    /// one on the host; afterwards it is what the engine resolved for the source's latest
+    /// request.
     ///
     /// Never waits on the host: a script there may be parked on a verification page that only
     /// the main thread can show (TestFlight AGT4StkW1MHoKzDbZNJd4So, 「69书吧人机验证卡死」).
@@ -135,13 +146,18 @@ final class BookSourceSession: Sendable {
         return headers ?? [:]
     }
 
-    /// The `@js:` header rule's result for a request about to be sent: what the engine last
-    /// resolved, or — before any resolution — resolved now on the host. A request never goes
-    /// out without the rule's headers because nothing had resolved them yet: 书山聚合 puts
-    /// its required token there and answers `{"error":"访问被拒绝"}` without it.
+    /// The `@js:` header rule's result for a request about to be sent, evaluated now on the
+    /// host, as Legado evaluates it for every request it builds — an image's included
+    /// (`AnalyzeUrl.init`; `JSCoreEngine.resolvedSourceHeaders`). So a request never goes out
+    /// without the rule's headers (书山聚合 puts its required token there and answers
+    /// `{"error":"访问被拒绝"}` without it), nor with ones resolved before a script changed what
+    /// the rule reads, nor with an expired timestamp (小小阅读 signs its headers with the time).
+    ///
+    /// Waits for the host, so a source whose script is parked on a verification page holds
+    /// its own requests until the page closes; readers that cannot wait use
+    /// `headerSnapshotStartingResolution`.
     func resolvedHeaders() async -> [String: String] {
-        if let headers = headerSnapshot.headers { return headers }
-        return await resolveHeadersOnHost()
+        await resolveHeadersOnHost()
     }
 
     private func resolveHeadersOnHost() async -> [String: String] {
@@ -218,8 +234,6 @@ final class SourceHeaderSnapshot: Sendable {
     }
 
     private let state = OSAllocatedUnfairLock(initialState: State())
-
-    var headers: [String: String]? { state.withLock { $0.headers } }
 
     func store(_ headers: [String: String]) {
         state.withLock { $0.headers = headers }

@@ -112,7 +112,7 @@ final class AudioStreamResourceLoader: NSObject, AVAssetResourceLoaderDelegate, 
         }
 
         let key = ObjectIdentifier(loadingRequest)
-        let task = URLSession.shared.dataTask(with: request) { [weak self] data, response, error in
+        let task = URLSession.trusting.dataTask(with: request) { [weak self] data, response, error in
             guard let self else { return }
             self.tasks.withLock { $0[key] = nil }
 

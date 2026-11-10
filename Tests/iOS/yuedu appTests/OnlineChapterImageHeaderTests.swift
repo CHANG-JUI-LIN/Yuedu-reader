@@ -52,14 +52,13 @@ struct OnlineChapterImageHeaderTests {
     @Test("remote chapter image is fetched with the book source's header map")
     func remoteChapterImageUsesSourceHeaders() async throws {
         GatedImageCDNURLProtocol.reset(requiredUserAgent: Self.sourceUserAgent, body: Self.pngData())
-        URLProtocol.registerClass(GatedImageCDNURLProtocol.self)
-        defer { URLProtocol.unregisterClass(GatedImageCDNURLProtocol.self) }
 
         let url = "https://\(UUID().uuidString).picture-cdn.invalid/1/1614/54785/67547.jpg"
         let image = await OnlineImageLoader.load(
             src: url,
             renderWidth: 320,
-            headers: ["User-Agent": Self.sourceUserAgent]
+            headers: ["User-Agent": Self.sourceUserAgent],
+            session: GatedImageCDNURLProtocol.session
         )
 
         #expect(image != nil)
@@ -70,11 +69,9 @@ struct OnlineChapterImageHeaderTests {
     @Test("no source headers keeps the built-in User-Agent (EPUB / headerless sources)")
     func headerlessLoadKeepsDefaultUserAgent() async throws {
         GatedImageCDNURLProtocol.reset(requiredUserAgent: nil, body: Self.pngData())
-        URLProtocol.registerClass(GatedImageCDNURLProtocol.self)
-        defer { URLProtocol.unregisterClass(GatedImageCDNURLProtocol.self) }
 
         let url = "https://\(UUID().uuidString).picture-cdn.invalid/plain.png"
-        let image = await OnlineImageLoader.load(src: url, renderWidth: 320)
+        let image = await OnlineImageLoader.load(src: url, renderWidth: 320, session: GatedImageCDNURLProtocol.session)
 
         #expect(image != nil)
         let ua = try #require(GatedImageCDNURLProtocol.lastUserAgent)
@@ -84,8 +81,6 @@ struct OnlineChapterImageHeaderTests {
     @Test("source headers reach the CDN through the online chapter builder")
     func builderCarriesSourceHeadersToImageDownload() async throws {
         GatedImageCDNURLProtocol.reset(requiredUserAgent: Self.sourceUserAgent, body: Self.pngData())
-        URLProtocol.registerClass(GatedImageCDNURLProtocol.self)
-        defer { URLProtocol.unregisterClass(GatedImageCDNURLProtocol.self) }
 
         // Shape of a 幻梦轻小说 插图 chapter: illustrations wrapped one per <p>.
         let host = "\(UUID().uuidString).picture-cdn.invalid"
@@ -98,7 +93,8 @@ struct OnlineChapterImageHeaderTests {
         let builder = OnlineProviderAttributedStringBuilder(
             provider: provider,
             renderSize: CGSize(width: 320, height: 480),
-            imageHeaders: ["User-Agent": Self.sourceUserAgent]
+            imageHeaders: ["User-Agent": Self.sourceUserAgent],
+            imageSession: GatedImageCDNURLProtocol.session
         )
 
         let result = try await builder.buildChapter(
@@ -158,11 +154,9 @@ struct OnlineChapterImageHeaderTests {
         // Same shape as the 第一卷 插图 spread: far wider than any column or preview.
         let big = Self.pngData(pixels: CGSize(width: 3000, height: 1971))
         GatedImageCDNURLProtocol.reset(requiredUserAgent: nil, body: big)
-        URLProtocol.registerClass(GatedImageCDNURLProtocol.self)
-        defer { URLProtocol.unregisterClass(GatedImageCDNURLProtocol.self) }
 
         let url = "https://\(UUID().uuidString).picture-cdn.invalid/spread.png"
-        let image = try #require(await OnlineImageLoader.load(src: url, renderWidth: 360))
+        let image = try #require(await OnlineImageLoader.load(src: url, renderWidth: 360, session: GatedImageCDNURLProtocol.session))
 
         #expect(max(image.size.width, image.size.height) == 2048)
         // Aspect ratio survives: 3000:1971 → 2048:1345.
@@ -174,11 +168,9 @@ struct OnlineChapterImageHeaderTests {
         // 716x1023 — the size most plates in that chapter actually are.
         let plate = Self.pngData(pixels: CGSize(width: 716, height: 1023))
         GatedImageCDNURLProtocol.reset(requiredUserAgent: nil, body: plate)
-        URLProtocol.registerClass(GatedImageCDNURLProtocol.self)
-        defer { URLProtocol.unregisterClass(GatedImageCDNURLProtocol.self) }
 
         let url = "https://\(UUID().uuidString).picture-cdn.invalid/plate.png"
-        let image = try #require(await OnlineImageLoader.load(src: url, renderWidth: 360))
+        let image = try #require(await OnlineImageLoader.load(src: url, renderWidth: 360, session: GatedImageCDNURLProtocol.session))
 
         #expect(image.size == CGSize(width: 716, height: 1023))
     }
@@ -220,8 +212,6 @@ struct OnlineChapterImageHeaderTests {
     @Test("an image's own headers win over the source's")
     func perImageHeadersOverrideSourceHeaders() async throws {
         GatedImageCDNURLProtocol.reset(requiredUserAgent: "per-image-ua", body: Self.pngData())
-        URLProtocol.registerClass(GatedImageCDNURLProtocol.self)
-        defer { URLProtocol.unregisterClass(GatedImageCDNURLProtocol.self) }
 
         let src = OnlineImageRequestOptions.encoding(
             src: "https://\(UUID().uuidString).picture-cdn.invalid/1.jpg",
@@ -230,7 +220,8 @@ struct OnlineChapterImageHeaderTests {
         let image = await OnlineImageLoader.load(
             src: src,
             renderWidth: 320,
-            headers: ["User-Agent": "source-wide-ua", "Referer": "https://source.example/"]
+            headers: ["User-Agent": "source-wide-ua", "Referer": "https://source.example/"],
+            session: GatedImageCDNURLProtocol.session
         )
 
         #expect(image != nil)
@@ -281,6 +272,14 @@ private final class FixedImageChapterProvider: BookContentProvider {
 
 /// Models a Cloudflare-gated image CDN: 403 unless the request carries `requiredUserAgent`.
 private final class GatedImageCDNURLProtocol: URLProtocol {
+    /// A session that answers through this protocol. `URLProtocol.registerClass` reaches only
+    /// `URLSession.shared`, which the app no longer uses (`ServerTrustPolicy`).
+    static let session: URLSession = {
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [GatedImageCDNURLProtocol.self]
+        return URLSession(configuration: configuration)
+    }()
+
     private static let lock = NSLock()
     nonisolated(unsafe) private static var required: String?
     nonisolated(unsafe) private static var payload = Data()

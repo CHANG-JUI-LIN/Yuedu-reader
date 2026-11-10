@@ -18,6 +18,8 @@ enum BookSourceSearchFailure: Error, Equatable, Sendable {
     case emptyContent
     case transport(String)
     case parse(String)
+    /// The page read no books and a source script threw meanwhile (`ModernParserBridgeError.scriptError`).
+    case script(String)
     /// The search was cancelled (a timeout or a newer search). Not the source's fault and
     /// not logged.
     case cancelled
@@ -29,6 +31,7 @@ enum BookSourceSearchFailure: Error, Equatable, Sendable {
         case .emptyContent: "empty response"
         case .transport(let description): "transport: \(description)"
         case .parse(let description): "parse: \(description)"
+        case .script(let message): "script: \(message)"
         case .cancelled: "cancelled"
         }
     }
@@ -141,18 +144,23 @@ extension BookSourceFetcher {
     /// `search(…)` with the difference between a legitimately empty page and a failure kept.
     /// Throws exactly what `search(…)` throws; a failure it has always reported as no results
     /// comes back as `.failed` and is logged once, here.
+    ///
+    /// - Parameter usesCache: `false` for 書源驗證, which needs the site's answer now: Legado's
+    ///   `CheckSourceService` searches the site every time, so a stored page neither answers it
+    ///   (a site that died since passed on it) nor is written by it.
     func searchOutcome(
         query: String,
         in source: BookSource,
         page: Int = 1,
         earlyFilter: (@Sendable (_ name: String, _ author: String) -> Bool)? = nil,
         onHasMore: ((Bool?) -> Void)? = nil,
-        failureMode: BookSourceSearchFailureMode = .emptyResult
+        failureMode: BookSourceSearchFailureMode = .emptyResult,
+        usesCache: Bool = true
     ) async throws -> BookSourceSearchOutcome {
         guard !source.searchUrl.isEmpty else { throw FetchError.noSearchURL }
         let cacheDays = GlobalSettings.snapshot.searchCacheDays
-        let cacheEligible = page == 1 && earlyFilter == nil
-        if page == 1, let cached = SearchResultCache.shared.freshBooks(
+        let cacheEligible = usesCache && page == 1 && earlyFilter == nil
+        if usesCache, page == 1, let cached = SearchResultCache.shared.freshBooks(
             query: query,
             source: source,
             days: cacheDays
@@ -171,17 +179,15 @@ extension BookSourceFetcher {
                 // keeps the returned list consistent with the native path.
                 books = books.filter { earlyFilter($0.name, $0.author) }
             }
-            let filtered = Self.filterSearchResultsByCheckKeyWord(
-                books, query: query, checkKeyWord: source.ruleSearch.checkKeyWord)
             if cacheEligible {
                 SearchResultCache.shared.store(
-                    books: filtered,
+                    books: books,
                     query: query,
                     source: source,
                     days: cacheDays
                 )
             }
-            return BookSourceSearchOutcome(books: filtered)
+            return BookSourceSearchOutcome(books: books)
         }
 
         // A search URL with JSON options went to the runtime above, so this one has none.
@@ -196,15 +202,22 @@ extension BookSourceFetcher {
         let headers = await source.resolvedHeaders()
 
         let html: String
+        // The URL the response came from: a search that lands on one book's page reads it
+        // (`ModernParserBridge.parseSearchResults`, Legado's `bookUrlPattern`).
+        var responseURL = url.absoluteString
+        var responseStatus = 200
         do {
             if source.needsWebView {
                 let rendered = try await Self.fetchViaWebView(url: url, headers: headers)
                 html = await pipeline.applyLoginCheck(renderedHTML: rendered, url: url, source: source)
             } else {
-                html = try await fetchStageHTML(
+                let page = try await fetchStagePage(
                     url: url, method: request.method, body: request.body,
                     headers: headers, baseURL: source.cleanedBookSourceURL,
-                    source: source)
+                    ruleURL: request.url, source: source)
+                html = page.html
+                responseURL = page.finalURL
+                responseStatus = page.statusCode
             }
         } catch {
             switch BookSourceSearchFailure.disposition(of: error, mode: failureMode) {
@@ -219,13 +232,33 @@ extension BookSourceFetcher {
         let books: [OnlineBook]
         do {
             books = try await pipeline.parseSearchResults(
-                html: html, baseURL: url.absoluteString, source: source,
+                html: html, baseURL: responseURL, source: source,
                 pageVariables: request.pageVariables, earlyFilter: earlyFilter)
         } catch {
             onHasMore?(false)
-            let failure = BookSourceSearchFailure.parse(error.localizedDescription)
+            let failure: BookSourceSearchFailure
+            if case ModernParserBridgeError.scriptError(let message) = error {
+                failure = .script(message)
+            } else {
+                failure = .parse(error.localizedDescription)
+            }
             Self.logReportedAsEmpty(failure, source: source, host: url.host, mode: failureMode)
             return .failed(failure)
+        }
+
+        // The rules read the page whatever its status (`fetchStagePage`), as Legado's do. One
+        // that found nothing on an error page failed with that status, as before: a site
+        // answering 404 or 503 is not a source without the book.
+        if books.isEmpty, !(200...299).contains(responseStatus) {
+            let error = FetchError.httpError(responseStatus)
+            switch BookSourceSearchFailure.disposition(of: error, mode: failureMode) {
+            case .thrown:
+                throw error
+            case .reportedAsEmpty(let failure):
+                onHasMore?(false)
+                Self.logReportedAsEmpty(failure, source: source, host: url.host, mode: failureMode)
+                return .failed(failure)
+            }
         }
 
         if let onHasMore {
@@ -243,17 +276,15 @@ extension BookSourceFetcher {
             }
         }
 
-        let filtered = Self.filterSearchResultsByCheckKeyWord(
-            books, query: query, checkKeyWord: source.ruleSearch.checkKeyWord)
         if cacheEligible {
             SearchResultCache.shared.store(
-                books: filtered,
+                books: books,
                 query: query,
                 source: source,
                 days: cacheDays
             )
         }
-        return BookSourceSearchOutcome(books: filtered)
+        return BookSourceSearchOutcome(books: books)
     }
 
     /// One line per failed source, so a source that keeps failing can be found in the log
@@ -311,36 +342,19 @@ extension BookSourceFetcher {
         if source.shouldUseLegadoRuntimeFetch(for: source.searchUrl) {
             let outcome = try await BookSourceSession.session(for: source).host
                 .searchBooksStreaming(keyword: query, page: 1) { books in
-                    let filtered = Self.filterSearchResultsByCheckKeyWord(
-                        books, query: query, checkKeyWord: source.ruleSearch.checkKeyWord)
-                    guard !filtered.isEmpty else { return }
-                    await onBatch(filtered)
+                    guard !books.isEmpty else { return }
+                    await onBatch(books)
                 }
-            let filtered = Self.filterSearchResultsByCheckKeyWord(
-                outcome.books, query: query, checkKeyWord: source.ruleSearch.checkKeyWord)
             SearchResultCache.shared.store(
-                books: filtered,
+                books: outcome.books,
                 query: query,
                 source: source,
                 days: cacheDays
             )
-            return SearchStreamingOutcome(books: filtered, streamed: outcome.streamed)
+            return SearchStreamingOutcome(books: outcome.books, streamed: outcome.streamed)
         }
 
         let outcome = try await searchOutcome(query: query, in: source)
         return SearchStreamingOutcome(books: outcome.books, streamed: false, failure: outcome.failure)
-    }
-
-    /// Legado compatible: filter search results by checkKeyWord (keep only items matching keyword in title/author)
-    private static func filterSearchResultsByCheckKeyWord(
-        _ books: [OnlineBook], query: String, checkKeyWord: String
-    ) -> [OnlineBook] {
-        guard !checkKeyWord.isEmpty, !query.isEmpty else { return books }
-        let key = LegadoSearchKeyword.matchingTitle(from: query).lowercased()
-        guard !key.isEmpty else { return books }
-        return books.filter { book in
-            book.name.localizedCaseInsensitiveContains(key)
-                || book.author.localizedCaseInsensitiveContains(key)
-        }
     }
 }

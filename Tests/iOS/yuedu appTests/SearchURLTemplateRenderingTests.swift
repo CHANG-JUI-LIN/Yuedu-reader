@@ -3,8 +3,10 @@ import Testing
 @testable import yuedu_app
 
 /// The native search path's `{{…}}` source JS, evaluated in the source's session runtime
-/// (`BookSource.renderSearchURL`). A source with no `jsLib` keeps its JS templates on this path;
-/// one with `jsLib` sends them to the runtime instead (`shouldUseLegadoRuntimeFetch`).
+/// (`BookSource.renderSearchURL`). Since 11-08 a search URL with a JS template goes to the
+/// runtime, jsLib or not (`shouldUseLegadoRuntimeFetch`): a template can write the options
+/// Legado splits off afterwards. The renderer still runs the legacy `URL,POST,body` form's
+/// templates, which the runtime does not read; these tests call it directly.
 @Suite("Search URL template rendering")
 struct SearchURLTemplateRenderingTests {
 
@@ -20,7 +22,8 @@ struct SearchURLTemplateRenderingTests {
     @Test("a JS template reads the same key and page bindings as AnalyzeUrl")
     func expressionSeesKeyAndPage() async {
         let source = source(searchUrl: "https://template-render.test/s?q={{key}}&offset={{(page-1)*20}}")
-        #expect(!source.shouldUseLegadoRuntimeFetch(for: source.searchUrl))
+        // No jsLib, and still the runtime's: 百合会坛 (YCK1331) writes its options in a template.
+        #expect(source.shouldUseLegadoRuntimeFetch(for: source.searchUrl))
 
         let request = await source.renderSearchURL(query: "abc", page: 3)
 
@@ -76,7 +79,8 @@ struct SearchURLTemplateRenderingTests {
     @Test("a JS template's comma does not cut the URL")
     func jsTemplateCommaKeepsTheURL() async {
         let source = source(searchUrl: "https://template-render.test/s?q={{[key, page].join('-')}}&lang=zh")
-        #expect(!source.shouldUseLegadoRuntimeFetch(for: source.searchUrl))
+        // Not read as the legacy POST form, so the runtime's.
+        #expect(source.shouldUseLegadoRuntimeFetch(for: source.searchUrl))
 
         let request = await source.renderSearchURL(query: "abc", page: 3)
 

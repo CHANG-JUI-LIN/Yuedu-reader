@@ -413,7 +413,37 @@ struct ModernParserBridgeChapterCompatibilityTests {
         let rows = engine.getElements(ruleStr: "ul.book-list@tag.li")
 
         #expect(rows.count == 2)
-        #expect(CssExtractor().canHandle(rule: #"div.item[data-route="@tag.li"]"#))
+    }
+
+    @Test("an @ inside a quoted attribute selector is part of the selector")
+    func quotedAtStaysInSelector() {
+        let engine = ModernRuleEngine()
+        engine.setContent(
+            #"<div class="item" data-route="@tag.li"><a href="/b/1">One</a></div><div class="item" data-route="x"></div>"#,
+            baseUrl: "https://example.com/")
+        let rows = engine.getElements(ruleStr: #"div.item[data-route="@tag.li"]"#)
+        #expect(rows.count == 1)
+        #expect(engine.getString(ruleStr: #"div.item[data-route="@tag.li"]@tag.a@text"#) == "One")
+    }
+
+    /// Legado's default mode reads a CSS selector too, taking a trailing `!N` / `.N` / `[…]` off
+    /// as an index first; only `@CSS:` reads the whole rule as one selector. 格格党 and 森林文学
+    /// (YCK1330 indices 142 and 170) list their chapters with `.txt-list li!0`.
+    @Test("a CSS-looking step keeps its Legado index")
+    func cssLookingStepKeepsIndex() {
+        let engine = ModernRuleEngine()
+        engine.setContent(
+            #"<ul class="txt-list"><li>最新</li><li><a href="/1">第一章</a></li><li><a href="/2">第二章</a></li></ul>"#,
+            baseUrl: "https://example.com/")
+        #expect(engine.getElements(ruleStr: ".txt-list li!0").count == 2)
+        #expect(engine.getStringList(ruleStr: ".txt-list li!0@tag.a@text") == ["第一章", "第二章"])
+        #expect(engine.getStringList(ruleStr: "ul.txt-list > li[1,2]@text") == ["第一章", "第二章"])
+        #expect(engine.getStringList(ruleStr: "#none li@text||.txt-list li.0@text") == ["最新"])
+        // `@CSS:` is one selector and an accessor: `!0` is not an index there.
+        #expect(engine.getStringList(ruleStr: "@css:.txt-list li a@text") == ["第一章", "第二章"])
+        #expect(engine.getStringList(ruleStr: "@css:#none a@text||.txt-list a@href") == ["/1", "/2"])
+        #expect(engine.getStringList(ruleStr: "@css:#none a@text||.txt-list a@href", isUrl: true)
+            == ["https://example.com/1", "https://example.com/2"])
     }
 
     @Test("Legacy Jsoup bare-tag chain selects nested chapter rows")
@@ -457,8 +487,9 @@ struct ModernParserBridgeChapterCompatibilityTests {
             source: source
         )
 
-        #expect(books.count == 1)
-        #expect(books.first?.name == "First")
+        // legado-E and MD3 collect every element with the id (`Collector.collect(Evaluator.Id)`),
+        // as jsoup does; only the KMP rewrite (`getElementById`) stops at the first.
+        #expect(books.map(\.name) == ["First", "Second"])
         #expect(books.first?.bookUrl == "https://example.com/book/1")
     }
 
@@ -764,9 +795,10 @@ struct SourceRuleTests {
 
     @Test("@CSS: prefix sets default mode")
     func cssPrefixMode() {
+        // Legado keeps the prefix on the rule: it is what makes `AnalyzeByJSoup` read CSS.
         let rule = SourceRule(ruleStr: "@CSS:div.title@text")
         #expect(rule.mode == .default)
-        #expect(rule.rule.hasPrefix("div.title"))
+        #expect(rule.rule == "@CSS:div.title@text")
     }
 
     @Test("@XPath: prefix sets xpath mode")
@@ -1008,7 +1040,8 @@ struct RegexExtractorTests {
         #expect(result == "abcNUMdefNUM")
     }
 
-    @Test("RegexReplacer replaces first match only")
+    /// Legado's `###`: the first match alone, transformed; the text around it is dropped.
+    @Test("RegexReplacer replaceFirst returns the transformed first match")
     func replacerReplaceFirst() {
         let result = RegexReplacer.replaceRegex(
             result: "abc123def456",
@@ -1016,7 +1049,7 @@ struct RegexExtractorTests {
             replacement: "NUM",
             replaceFirst: true
         )
-        #expect(result == "abcNUMdef456")
+        #expect(result == "NUM")
     }
 
     @Test("RegexReplacer supports group references $1 $2")
@@ -1776,6 +1809,61 @@ struct AnalyzeUrlTests {
         #expect(url.contains("%E6%96%97%E7%BD%97%E5%A4%A7%E9%99%86"))
     }
 
+    /// Legado's `AnalyzeUrl.analyzeJs`: the text before a script is its `result`, and the
+    /// script's value is the URL — 笔趣小说's `/search` + `@js:` returning `result + "," + options`.
+    /// Text after a script is the URL with `@result` standing for the script's value.
+    @Test("a URL script reads the text before it as result and its value replaces the URL")
+    func urlScriptAfterTextReadsResult() throws {
+        let engine = JSCoreEngine()
+        let evaluator: (String, [String: Any]) -> String? = { engine.evaluate($0, bindings: $1) }
+        let search = AnalyzeUrl(
+            ruleUrl: """
+            /search
+            @js:
+            var body = `kw=${key}<,&page=${page}>`;
+            result + "," +
+            	JSON.stringify({ "body": String(body), "method": "POST" });
+            """,
+            key: "q", page: 1, baseUrl: "https://m.site.test",
+            jsEvaluator: evaluator)
+        #expect(search.method == "POST")
+        #expect(search.url == "https://m.site.test/search")
+        #expect(search.body == "kw=q")
+
+        let chained = AnalyzeUrl(
+            ruleUrl: "https://a.test/x<js>result + '?p=1'</js>@result&q=2",
+            jsEvaluator: evaluator)
+        #expect(chained.url == "https://a.test/x?p=1&q=2")
+
+        // The search runtime, not the native renderer, sends a URL with a script anywhere in it.
+        var source = BookSource()
+        source.searchUrl = "/search\n@js:result"
+        #expect(source.shouldUseLegadoRuntimeFetch(for: source.searchUrl))
+    }
+
+    /// 奇书网吧's options span lines with tabs and say `"method":"post"`; 中文看书's come from an
+    /// `@js:` that builds them. Both forms are sent with their body, encoded as Legado's form.
+    @Test("a POST body from multi-line or script-built options is sent encoded")
+    func postBodyFromOptionsIsSent() throws {
+        let options = AnalyzeUrl(
+            ruleUrl: "/e/search/index.php,{\n\t\"method\":\"post\",\n\t\"body\":\"show=title,softsay,softwriter&keyboard={{key}}&tbname=download&tempid=1&Submit22=搜索\"\n\t}",
+            key: "重生空间", page: 1, baseUrl: "https://www.site.test")
+        let request = try #require(options.toURLRequest())
+        #expect(request.httpMethod == "POST")
+        let body = String(decoding: try #require(request.httpBody), as: UTF8.self)
+        #expect(body.contains("keyboard=%E9%87%8D%E7%94%9F%E7%A9%BA%E9%97%B4"))
+
+        let engine = JSCoreEngine()
+        let scripted = AnalyzeUrl(
+            ruleUrl: "@js:\n\ntoken = 't1'\n\n\"/search,\"+JSON.stringify({\n  \"body\": `_token=${token}&kw=${key}`,\n  \"method\": \"POST\"\n})",
+            key: "剑来", page: 1, baseUrl: "http://wap.site.test",
+            jsEvaluator: { engine.evaluate($0, bindings: $1) })
+        let scriptedRequest = try #require(scripted.toURLRequest())
+        #expect(scriptedRequest.httpMethod == "POST")
+        let scriptedBody = String(decoding: try #require(scriptedRequest.httpBody), as: UTF8.self)
+        #expect(scriptedBody == "_token=t1&kw=%E5%89%91%E6%9D%A5")
+    }
+
     @Test("relative URL resolution against base")
     func relativeUrlResolution() {
         let au = AnalyzeUrl(
@@ -2153,6 +2241,25 @@ struct AnalyzeUrlTests {
         let stored = try #require(BookSourceRuntimeStateStore.shared.sourceVariableJSON(for: source.bookSourceUrl))
         #expect(stored.contains("\"云端配置\""))
         #expect(stored.contains("\"hosts\""))
+    }
+
+    /// 美女图站 (YCK1331) writes a POST kind's option block over several lines inside its `url`
+    /// string. Gson (Legado's `exploreKinds`) reads the line breaks as part of the string;
+    /// `JSONDecoder` rejected them only when the `url` field was read, so the kind kept its
+    /// title and lost its URL.
+    @Test("a line break inside a kind's JSON string stays part of the string, as Gson reads it")
+    func exploreKindURLWithLineBreaks() async throws {
+        var source = BookSource()
+        source.bookSourceUrl = "https://kinds-newline.test"
+        source.bookSourceName = "Kinds newline"
+        source.exploreUrl = "[{\"title\":\"站点\",\"url\":\"\"},\n{\"title\":\"美女\",\n \"url\":\"http://kinds-newline.test/api/list,{\n  \\\"body\\\": {\\\"catid\\\":6},\n  \\\"method\\\": \\\"POST\\\"}\"}]"
+
+        let items = try await SourceScriptHost(bridgeFor: source).getExploreItems()
+
+        #expect(items.compactMap(\.title) == ["站点", "美女"])
+        #expect(items.last?.url
+                == "http://kinds-newline.test/api/list,{\n  \"body\": {\"catid\":6},\n  \"method\": \"POST\"}")
+        #expect(AnalyzeUrl.normalizeLegadoOptionJSON("{'body':'a\nb'}") == #"{"body":"a\nb"}"#)
     }
 
     @Test("Legado runtime bridge runs search detail toc and content data URI pipeline")
@@ -2813,14 +2920,16 @@ struct JSCoreEngineTests {
         #expect(result == "97yD9DBThCSxMpjmqm+xQ+9NWaFJRhdZl0edvC0aPNg=")
     }
 
-    @Test("java.base64DecodeToByteArray exports unsigned bytes to JavaScript")
+    /// Legado's `base64DecodeToByteArray` answers a Kotlin `ByteArray`, which Rhino hands a
+    /// script signed (oracle case "Base64 decode of AH+A/w==", java-byte-sign.json).
+    @Test("java.base64DecodeToByteArray exports Java's signed bytes to JavaScript")
     func javaBase64ByteArrayBridge() {
         let engine = JSCoreEngine()
         let result = engine.evaluate(
             "JSON.stringify(java.base64DecodeToByteArray('AH+A/w=='))"
         )
 
-        #expect(result == "[0,127,128,255]")
+        #expect(result == "[0,127,-128,-1]")
     }
 
     @Test("error handling for invalid JS")
@@ -3219,7 +3328,10 @@ struct JSCoreEngineTests {
 
         #expect(bridge.evaluateSourceScript(script) == #"{"comments":[1]}"#)
         #expect(capturedRequest?.value(forHTTPHeaderField: "X-Page") == "page-header")
-        #expect(capturedRequest?.value(forHTTPHeaderField: "X-Source") == "source-header")
+        // legado-E's page bridge sends what the page gave and nothing of the source's:
+        // `WebJsExtensions.get` → `JsExtensions.get`, a `Jsoup.connect(url).headers(headers)`
+        // (WebJsExtensions.kt:186, JsExtensions.kt:487).
+        #expect(capturedRequest?.value(forHTTPHeaderField: "X-Source") == nil)
     }
 
     @Test("source browser common Java network methods preserve Android return shapes")
@@ -3233,7 +3345,6 @@ struct JSCoreEngineTests {
         bridge.sourceScriptNetworkHandler = { request, _ in
             requests.append(request)
             return LegadoHTTPResult(
-                requestURL: request.url!,
                 finalURL: request.url!,
                 statusCode: 200,
                 statusMessage: "OK",
@@ -3335,12 +3446,18 @@ struct JSCoreEngineTests {
         #expect(result.contains("a=b"))
     }
 
-    @Test("java.importScript returns inline (non-http) text verbatim")
-    func javaImportScriptInline() {
+    /// legado-E and MD3 `importScript(path)`: a path that is not `http…` is a source file
+    /// (`readTxtFile`), and blank text throws 「内容获取失败或者为空」.
+    @Test("java.importScript reads a non-http path as a source file, and throws when it is blank")
+    func javaImportScriptReadsSourceFile() throws {
+        let root = LegadoJSBridge.sourceFilesRoot
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        let name = "import-\(UUID().uuidString).js"
+        try Data("1 + 4".utf8).write(to: root.appendingPathComponent(name))
+        defer { try? FileManager.default.removeItem(at: root.appendingPathComponent(name)) }
         let engine = JSCoreEngine()
-        // Non-URL input is returned unchanged (no network), so eval() can consume it.
-        let result = engine.evaluate("eval(java.importScript('1 + 4'))")
-        #expect(result == "5")
+        #expect(engine.evaluate("eval(java.importScript('/\(name)'))") == "5")
+        #expect(engine.evaluate("try { java.importScript('missing-\(name)'); 'no' } catch (e) { 'threw' }") == "threw")
     }
 
     /// 书山聚合 decrypts chapter text with `DES/CBC/PKCS5Padding` through hutool's
@@ -3518,12 +3635,13 @@ struct LegadoJSBridgeTests {
         #expect(decoded == "Hello World")
     }
 
-    @Test("base64Decode with invalid input returns empty")
+    /// Legado's `java.base64Decode` is hutool's `Base64.decodeStr`, which never fails: it skips
+    /// every character outside the alphabet and pads the end (`LegadoBase64.hutoolDecode`).
+    @Test("base64Decode skips characters outside the alphabet, as hutool does")
     func base64DecodeInvalid() {
         let bridge = LegadoJSBridge()
         let result = bridge.base64Decode("!!!invalid!!!")
-        // Returns empty on failure
-        #expect(result.isEmpty || result == "!!!invalid!!!")
+        #expect(result == String(decoding: Data(base64Encoded: "invalid=")!, as: UTF8.self))
     }
 
     @Test("HMacBase64 supports Legado HMAC algorithm names")
@@ -4057,7 +4175,6 @@ struct ModernParserBridgeExploreTests {
             networkStarted.signal()
             _ = releaseNetwork.wait(timeout: .now() + 2)
             return LegadoHTTPResult(
-                requestURL: URL(string: "https://example.com/blocked")!,
                 finalURL: URL(string: "https://example.com/blocked")!,
                 statusCode: 200,
                 statusMessage: "OK",

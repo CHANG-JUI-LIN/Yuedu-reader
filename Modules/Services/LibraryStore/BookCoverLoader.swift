@@ -120,7 +120,7 @@ enum BookCoverLoader {
         let response: URLResponse
         await CoverDownloadGate.shared.enter(limit: downloadLimit)
         // The pipeline saves the bytes in NetworkCovers; a URL cache would write them again.
-        do { (data, response) = try await (session ?? .savedDownloads).data(for: request) }
+        do { (data, response) = try await (session ?? .savedDownloads).sourceData(for: request) }
         catch {
             await CoverDownloadGate.shared.leave()
             AppLogger.network("⟐ cover request failed", error: error, context: ["url": String(urlString.prefix(300))])

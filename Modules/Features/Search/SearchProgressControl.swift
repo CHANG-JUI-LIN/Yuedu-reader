@@ -40,10 +40,6 @@ struct SearchProgressControl: View {
                 + Text(String(format: localized("失敗 %d"), progress.failed))
                     .foregroundStyle(DSColor.destructive)
         }
-        if progress.skipped > 0 {
-            text = text + Self.separator
-                + Text(String(format: localized("暫跳 %d"), progress.skipped))
-        }
         return text
             .font(DSFont.footnote)
             .monospacedDigit()

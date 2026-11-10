@@ -78,7 +78,8 @@ struct AppStoreCrashRegressionTests {
                 let extractor = CssExtractor()
                 for _ in 0..<4 {
                     let links = try extractor.extractList(from: html, rule: ".entry a@href", baseURL: "https://example.com")
-                    #expect(links == (0..<100).map { "https://example.com/\($0)" })
+                    // As written, as Legado's AnalyzeByJSoup reads an attribute.
+                    #expect(links == (0..<100).map { "/\($0)" })
                     let indices = try extractor.extractList(from: html, rule: "div.entry[data-index]@data-index", baseURL: "")
                     #expect(indices == (0..<100).map(String.init))
                 }
