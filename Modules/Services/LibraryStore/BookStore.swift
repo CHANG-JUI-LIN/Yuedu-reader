@@ -488,10 +488,10 @@ class BookStore: @MainActor ObservableObject, BookProvider {
         url: URL,
         title: String? = nil,
         author: String = "未知作者"
-    ) throws -> ReadingBook {
+    ) async throws -> ReadingBook {
         let bookTitle = title ?? url.deletingPathExtension().lastPathComponent
         let ext = normalizedMarkdownExtension(url.pathExtension.lowercased())
-        return try importLocalTextFile(
+        return try await importLocalTextFile(
             url: url,
             title: bookTitle,
             author: author,
@@ -732,16 +732,24 @@ class BookStore: @MainActor ObservableObject, BookProvider {
         title: String,
         author: String,
         fileExtension: String
-    ) throws -> ReadingBook {
+    ) async throws -> ReadingBook {
         let filename = "\(UUID().uuidString).\(fileExtension)"
         let destURL = documentsURL(for: filename)
-        try TXTFilePersistence.persistOriginal(source: url, destination: destURL)
+        try await Self.persistOriginalOffMain(source: url, destination: destURL)
 
         var book = ReadingBook(title: title, author: author, source: "local", contentFilename: filename)
         book.contentPipelineKind = .txt
         records.insert(book, at: 0)
         saveMeta()
         return book
+    }
+
+    /// The copy of a text book into the library, off the main actor: a file a provider has
+    /// not downloaded blocks its reader until the download ends, which on the main thread
+    /// is the scene-update watchdog (Crashlytics e592cad9).
+    @concurrent
+    private nonisolated static func persistOriginalOffMain(source: URL, destination: URL) async throws {
+        try TXTFilePersistence.persistOriginal(source: source, destination: destination)
     }
 
     private func normalizedMarkdownExtension(_ ext: String) -> String {

@@ -25,7 +25,7 @@ enum LocalBookImportService {
             } else {
                 book = try await store.importTxt(url: url, title: title, author: author)
             }
-        case "md", "markdown": book = try store.importMarkdown(url: url, title: title, author: author ?? localized("未知作者"))
+        case "md", "markdown": book = try await store.importMarkdown(url: url, title: title, author: author ?? localized("未知作者"))
         case "json":
             let parsed = try await BookParserRegistry.parse(url: url)
             book = try store.importWeb(content: parsed.storageText, title: title ?? parsed.title,
