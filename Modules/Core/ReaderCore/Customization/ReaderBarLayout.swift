@@ -148,6 +148,63 @@ struct ReaderBarField: Codable, Equatable, Sendable, Identifiable {
 
 // MARK: - Shared style
 
+/// Where the bars' typeface comes from (FB-126). Size and weight stay the bars' own
+/// whichever one is picked.
+enum ReaderBarFontSource: String, Codable, Equatable, Hashable, Sendable {
+    /// The system font — what the bars always used, and still the default.
+    case system
+    /// Whatever the reading font is at the time, so changing it changes the bars too.
+    case followsBody
+    /// One installed reading font, named by `ReaderBarFontReference.postScriptName`.
+    case custom
+}
+
+/// The bars' typeface, shaped like `ReaderOverlayColorReference`: a source, plus the
+/// font's PostScript name when the source is `.custom`.
+struct ReaderBarFontReference: Codable, Equatable, Hashable, Sendable {
+    static let system = ReaderBarFontReference(source: .system)
+    static let followsBody = ReaderBarFontReference(source: .followsBody)
+
+    var source: ReaderBarFontSource
+    var postScriptName: String?
+
+    init(source: ReaderBarFontSource, postScriptName: String? = nil) {
+        self.source = source
+        self.postScriptName = postScriptName
+    }
+
+    static func custom(_ postScriptName: String) -> ReaderBarFontReference {
+        ReaderBarFontReference(source: .custom, postScriptName: postScriptName)
+    }
+
+    /// A name only means something for `.custom`, and `.custom` without one has
+    /// nothing to draw with, so it is the system font.
+    var normalized: ReaderBarFontReference {
+        switch source {
+        case .system, .followsBody:
+            return ReaderBarFontReference(source: source)
+        case .custom:
+            guard let postScriptName, !postScriptName.isEmpty else { return .system }
+            return .custom(postScriptName)
+        }
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case source
+        case postScriptName
+    }
+
+    /// An unknown source reads as the system font rather than failing: the reference
+    /// rides inside layout presets and 主題包, and a pack written by a later version
+    /// with a source this one lacks should still import with everything else intact.
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        let rawSource = try container.decodeIfPresent(String.self, forKey: .source)
+        source = rawSource.flatMap(ReaderBarFontSource.init(rawValue:)) ?? .system
+        postScriptName = try container.decodeIfPresent(String.self, forKey: .postScriptName)
+    }
+}
+
 /// Shared typography, opacity and default color. Each field can override color.
 struct ReaderBarStyle: Codable, Equatable, Sendable {
     static let defaultFontSize: Double = 11
@@ -159,17 +216,20 @@ struct ReaderBarStyle: Codable, Equatable, Sendable {
     var weight: ReaderOverlayFontWeight
     var color: ReaderOverlayColorReference
     var opacity: Double
+    var font: ReaderBarFontReference
 
     init(
         fontSize: Double = ReaderBarStyle.defaultFontSize,
         weight: ReaderOverlayFontWeight = .regular,
         color: ReaderOverlayColorReference = ReaderOverlayColorReference(source: .readerText),
-        opacity: Double = ReaderBarStyle.defaultOpacity
+        opacity: Double = ReaderBarStyle.defaultOpacity,
+        font: ReaderBarFontReference = .system
     ) {
         self.fontSize = fontSize
         self.weight = weight
         self.color = color
         self.opacity = opacity
+        self.font = font
     }
 
     var normalized: ReaderBarStyle {
@@ -177,7 +237,8 @@ struct ReaderBarStyle: Codable, Equatable, Sendable {
             fontSize: Self.clamp(fontSize, to: Self.fontSizeRange, fallback: Self.defaultFontSize),
             weight: weight,
             color: color.normalized,
-            opacity: Self.clamp(opacity, to: Self.opacityRange, fallback: Self.defaultOpacity)
+            opacity: Self.clamp(opacity, to: Self.opacityRange, fallback: Self.defaultOpacity),
+            font: font.normalized
         )
     }
 
@@ -195,8 +256,11 @@ struct ReaderBarStyle: Codable, Equatable, Sendable {
         case weight
         case color
         case opacity
+        case font
     }
 
+    /// Layouts saved, synced or exported before FB-126 carry no `font`: they keep the
+    /// system font they were drawn in.
     init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         fontSize = try container.decodeIfPresent(Double.self, forKey: .fontSize) ?? Self.defaultFontSize
@@ -204,6 +268,21 @@ struct ReaderBarStyle: Codable, Equatable, Sendable {
         color = try container.decodeIfPresent(ReaderOverlayColorReference.self, forKey: .color)
             ?? ReaderOverlayColorReference(source: .readerText)
         opacity = try container.decodeIfPresent(Double.self, forKey: .opacity) ?? Self.defaultOpacity
+        font = try container.decodeIfPresent(ReaderBarFontReference.self, forKey: .font) ?? .system
+    }
+
+    /// The system font is left out, so a layout nobody changed encodes exactly as it did
+    /// before FB-126 — the iCloud record and its shadow copy see no difference, and a
+    /// preset exported here still reads the same in a version without the option.
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(fontSize, forKey: .fontSize)
+        try container.encode(weight, forKey: .weight)
+        try container.encode(color, forKey: .color)
+        try container.encode(opacity, forKey: .opacity)
+        if font != .system {
+            try container.encode(font, forKey: .font)
+        }
     }
 }
 

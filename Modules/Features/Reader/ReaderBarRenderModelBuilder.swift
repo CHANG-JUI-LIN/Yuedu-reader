@@ -48,14 +48,16 @@ final class ReaderBarRenderModelBuilder {
         horizontalPadding: CGFloat,
         svgAssetStore: ReaderOverlaySVGAssetStore?,
         userInterfaceStyle: UIUserInterfaceStyle,
-        displayScale: CGFloat
+        displayScale: CGFloat,
+        bodyFontPostScriptName: String?
     ) -> ReaderBarRenderModel {
         let layout = layout.resolved(isChapterOpening: content.pageScope == .chapterOpening)
         let margins = bar == .header ? layout.headerMargins : layout.footerMargins
         let style = ReaderBarStyleResolver.resolve(
             layout.style,
             readerTextColor: readerTextColor,
-            userInterfaceStyle: userInterfaceStyle
+            userInterfaceStyle: userInterfaceStyle,
+            bodyFontPostScriptName: bodyFontPostScriptName
         )
         let barSlots = ReaderBarSlot.slots(in: bar)
         let slots = barSlots.map { slot in
@@ -65,7 +67,8 @@ final class ReaderBarRenderModelBuilder {
                 let resolved = ReaderBarStyleResolver.resolve(
                     fieldStyle,
                     readerTextColor: readerTextColor,
-                    userInterfaceStyle: userInterfaceStyle
+                    userInterfaceStyle: userInterfaceStyle,
+                    bodyFontPostScriptName: bodyFontPostScriptName
                 )
                 let colorHex = ReaderOverlayPresentationResolver.rgbaHex(
                     resolved.color, userInterfaceStyle: userInterfaceStyle
@@ -96,7 +99,8 @@ final class ReaderBarRenderModelBuilder {
             ),
             leftPadding: margins.left.map { CGFloat($0) },
             rightPadding: margins.right.map { CGFloat($0) },
-            showsComponentSeparators: layout.showsComponentSeparators
+            showsComponentSeparators: layout.showsComponentSeparators,
+            syntheticBoldOffset: style.syntheticBoldOffset
         )
     }
 

@@ -2472,6 +2472,7 @@
 
 // Reader bar appearance colors
 "跟隨正文顏色" = "Match Text Color";
+"跟隨正文" = "Match Body Text";
 "頁眉與頁腳共用樣式。自訂顏色可分別設定淺色與深色模式；未設定的顏色跟隨正文。" = "The header and footer share a style. Custom colors can be set separately for Light and Dark Mode; colors that aren't set follow the text color.";
 
 // Individual reader bar component colors

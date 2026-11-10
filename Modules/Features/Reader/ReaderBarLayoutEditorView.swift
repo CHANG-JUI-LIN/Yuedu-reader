@@ -108,7 +108,8 @@ struct ReaderBarLayoutEditorView: View {
                     : readerConfig.readerFooterHorizontalPadding,
                 svgAssetStore: svgAssetStore,
                 userInterfaceStyle: theme == .night ? .dark : .light,
-                displayScale: displayScale
+                displayScale: displayScale,
+                bodyFontPostScriptName: UserReaderFontResolver.postScriptName(settings.selectedReaderFontPostScript)
             )
         )
     }
@@ -352,6 +353,8 @@ struct ReaderBarLayoutEditorView: View {
                     .font(DSFont.body)
             }
 
+            fontPicker
+
             BarSliderRow(
                 title: localized("字級"),
                 value: Binding(
@@ -397,6 +400,46 @@ struct ReaderBarLayoutEditorView: View {
                 .dsSectionFooter()
         }
         .interfaceSectionSurface()
+    }
+
+    /// 系統字體, 跟隨正文, then the reading fonts the reader imported — the same list the
+    /// reading font menu offers (FB-126).
+    private var fontPicker: some View {
+        Picker(
+            selection: Binding(
+                get: { layout.style.font.normalized },
+                set: { newValue in update { $0.style.font = newValue } }
+            )
+        ) {
+            Text(localized("系統字體")).tag(ReaderBarFontReference.system)
+            Text(localized("跟隨正文")).tag(ReaderBarFontReference.followsBody)
+            if !installedFontChoices.isEmpty {
+                Section(localized("已匯入字體")) {
+                    ForEach(installedFontChoices, id: \.postScriptName) { choice in
+                        Text(choice.title).tag(ReaderBarFontReference.custom(choice.postScriptName))
+                    }
+                }
+            }
+        } label: {
+            Text(localized("字體"))
+                .font(DSFont.body)
+                .foregroundStyle(DSColor.textPrimary)
+        }
+        .pickerStyle(.menu)
+    }
+
+    /// The imported fonts, plus the one the bars name when it is no longer among them
+    /// (deleted here, or a preset from another device): the picker still shows what is
+    /// stored, by its PostScript name as the reading font menu does, while the bars draw
+    /// it in the system font (`UserReaderFontResolver.namedFont`).
+    private var installedFontChoices: [(title: String, postScriptName: String)] {
+        var choices = settings.userFonts.map { (title: $0.displayName, postScriptName: $0.postScriptName) }
+        let current = layout.style.font.normalized
+        if current.source == .custom, let name = current.postScriptName,
+           !choices.contains(where: { $0.postScriptName == name }) {
+            choices.append((title: name, postScriptName: name))
+        }
+        return choices
     }
 
     // MARK: - State

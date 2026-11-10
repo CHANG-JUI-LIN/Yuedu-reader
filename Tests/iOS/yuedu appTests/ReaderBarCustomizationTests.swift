@@ -172,6 +172,7 @@ struct ReaderBarCustomizationTests {
                 pageScope: scope ?? .resolve(chapterPage: page, isScrolling: false),
                 totalProgress: 0.4, now: Date(timeIntervalSince1970: 0), batteryLevel: 0.7, isCharging: false,
                 readingDuration: 1500, estimatedRemainingTime: 4200),
-            readerTextColor: .black, horizontalPadding: 16, svgAssetStore: nil, userInterfaceStyle: .light, displayScale: 1)
+            readerTextColor: .black, horizontalPadding: 16, svgAssetStore: nil, userInterfaceStyle: .light, displayScale: 1,
+            bodyFontPostScriptName: nil)
     }
 }

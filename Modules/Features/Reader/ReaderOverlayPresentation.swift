@@ -11,6 +11,9 @@ struct ReaderOverlayResolvedStyle: Equatable {
     var font: UIFont
     var color: UIColor
     var opacity: Double
+    /// How far right the text is drawn a second time to fake a bold face the font
+    /// lacks; 0 draws it once. See `ReaderBarStyleResolver.syntheticBoldOffset`.
+    var syntheticBoldOffset: CGFloat = 0
 }
 
 

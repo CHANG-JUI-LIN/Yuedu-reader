@@ -41,6 +41,9 @@ struct ReaderBarRenderModel: Equatable {
     /// What the window keeps this bar clear of on each side, cleared before its padding.
     var sideInsets: ReaderSideInsets = .zero
     var showsComponentSeparators = true
+    /// Synthetic bold for a reading font with no bold face (FB-126): the text is drawn
+    /// again this far to the right. 0 draws it once.
+    var syntheticBoldOffset: CGFloat = 0
 
     var isEmpty: Bool { slots.allSatisfy(\.isEmpty) }
 }
@@ -144,6 +147,7 @@ enum ReaderBarRenderer {
                 color: color,
                 imageAlpha: CGFloat(max(0, min(1, model.opacity))),
                 font: model.font,
+                syntheticBoldOffset: model.syntheticBoldOffset,
                 canvasHeight: canvasHeight,
                 context: ctx
             )
@@ -173,20 +177,25 @@ enum ReaderBarRenderer {
         model: ReaderBarRenderModel
     ) -> Group {
         var elements: [Element] = []
+        let bold = model.syntheticBoldOffset
         for (index, field) in fields.enumerated() {
-            if index > 0, model.showsComponentSeparators, let dot = makeLine(separator, font: model.font) {
+            if index > 0, model.showsComponentSeparators,
+               let dot = makeLine(separator, font: model.font, syntheticBoldOffset: bold) {
                 elements.append(dot)
             }
             switch field {
             case .text(let value, let color):
-                guard !value.isEmpty, let line = makeLine(value, font: model.font, color: color) else { continue }
+                guard !value.isEmpty,
+                      let line = makeLine(value, font: model.font, color: color, syntheticBoldOffset: bold)
+                else { continue }
                 elements.append(line)
             case .progress(let value, let color):
                 elements.append(Element(content: .progress(value), width: progressWidth(font: model.font), color: color))
             case .image(let image, let percentage, let color):
                 let size = imageSize(font: model.font)
                 elements.append(Element(content: .image(image), width: size.width))
-                if let percentage, !percentage.isEmpty, let line = makeLine(percentage, font: model.font, color: color) {
+                if let percentage, !percentage.isEmpty,
+                   let line = makeLine(percentage, font: model.font, color: color, syntheticBoldOffset: bold) {
                     elements.append(line)
                 }
             }
@@ -196,7 +205,12 @@ enum ReaderBarRenderer {
         return Group(elements: elements, width: elements.reduce(0) { $0 + $1.width } + spacing)
     }
 
-    private nonisolated static func makeLine(_ text: String, font: UIFont, color: UIColor? = nil) -> Element? {
+    private nonisolated static func makeLine(
+        _ text: String,
+        font: UIFont,
+        color: UIColor? = nil,
+        syntheticBoldOffset: CGFloat
+    ) -> Element? {
         guard !text.isEmpty else { return nil }
         let attributed = NSAttributedString(
             string: text,
@@ -208,7 +222,7 @@ enum ReaderBarRenderer {
             ]
         )
         let line = CTLineCreateWithAttributedString(attributed)
-        let width = CGFloat(CTLineGetTypographicBounds(line, nil, nil, nil))
+        let width = CGFloat(CTLineGetTypographicBounds(line, nil, nil, nil)) + syntheticBoldOffset
         return Element(content: .line(line), width: ceil(width), color: color)
     }
 
@@ -242,6 +256,7 @@ enum ReaderBarRenderer {
         color: UIColor,
         imageAlpha: CGFloat,
         font: UIFont,
+        syntheticBoldOffset: CGFloat,
         canvasHeight: CGFloat,
         context ctx: CGContext
     ) {
@@ -253,6 +268,7 @@ enum ReaderBarRenderer {
             switch element.content {
             case .line(let line):
                 drawLine(line, x: x, midY: midY, color: elementColor, font: font,
+                         syntheticBoldOffset: syntheticBoldOffset,
                          canvasHeight: canvasHeight, context: ctx)
             case .progress(let value):
                 drawProgress(value, x: x, midY: midY, width: element.width,
@@ -276,6 +292,7 @@ enum ReaderBarRenderer {
         midY: CGFloat,
         color: UIColor,
         font: UIFont,
+        syntheticBoldOffset: CGFloat,
         canvasHeight: CGFloat,
         context ctx: CGContext
     ) {
@@ -287,8 +304,23 @@ enum ReaderBarRenderer {
         ctx.textMatrix = .identity
         ctx.translateBy(x: 0, y: canvasHeight)
         ctx.scaleBy(x: 1, y: -1)
-        ctx.textPosition = CGPoint(x: x, y: canvasHeight - baselineY)
-        CTLineDraw(line, ctx)
+        if syntheticBoldOffset > 0 {
+            // The same horizontal double draw `DisplayListDrawer` gives body text. Bar
+            // text is translucent (0.45 by default), so the two passes are drawn opaque
+            // into one transparency layer and composited at the colour's alpha once —
+            // drawn directly, their overlap would come out darker than their edges.
+            ctx.setAlpha(color.cgColor.alpha)
+            ctx.beginTransparencyLayer(auxiliaryInfo: nil)
+            ctx.setFillColor(color.withAlphaComponent(1).cgColor)
+            for offset in [0, syntheticBoldOffset] {
+                ctx.textPosition = CGPoint(x: x + offset, y: canvasHeight - baselineY)
+                CTLineDraw(line, ctx)
+            }
+            ctx.endTransparencyLayer()
+        } else {
+            ctx.textPosition = CGPoint(x: x, y: canvasHeight - baselineY)
+            CTLineDraw(line, ctx)
+        }
         ctx.restoreGState()
     }
 
@@ -321,8 +353,18 @@ enum ReaderBarRenderer {
     // MARK: Shared sizing (kept identical to the SwiftUI field view it replaces)
 
     nonisolated static func imageSize(font: UIFont) -> CGSize {
-        let height = font.lineHeight
+        let height = metricLineHeight(font)
         return CGSize(width: height * DSLayout.readerOverlayBatteryAspectRatio, height: height)
+    }
+
+    /// The battery and the progress track are sized from the system font at the bar's
+    /// point size — the metric `rowHeight` already uses — not from the face the text is
+    /// in. A reading font's line box is often far taller than its digits (a CJK face's
+    /// commonly is), and sizing from it would grow the battery past the percentage
+    /// beside it and the row it sits in. The system font's line height does not vary
+    /// with weight, so the default 系統字體 bar measures what it always did.
+    private nonisolated static func metricLineHeight(_ font: UIFont) -> CGFloat {
+        UIFont.systemFont(ofSize: font.pointSize).lineHeight
     }
 
     private nonisolated static func aspectFit(_ size: CGSize, in box: CGRect) -> CGRect {
@@ -341,7 +383,7 @@ enum ReaderBarRenderer {
         min(
             max(
                 DSLayout.readerOverlayProgressMinimumWidth,
-                font.lineHeight * DSLayout.readerOverlayProgressWidthScale
+                metricLineHeight(font) * DSLayout.readerOverlayProgressWidthScale
             ),
             DSLayout.readerOverlayProgressMaximumWidth
         )

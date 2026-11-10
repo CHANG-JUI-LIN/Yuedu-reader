@@ -1,24 +1,36 @@
 import Combine
+import CoreText
 import SwiftUI
 import UIKit
+import YueduCoreText
 
 // MARK: - Style resolution
 
 /// Resolves the one style both bars share into a concrete font and colour.
 ///
-/// Deliberately simpler than the per-component resolver it replaces: a bar is a
-/// single row of small type, so imported fonts and per-field weights would only
-/// produce ransom-note rows. Size, weight, colour and opacity are enough, and
-/// they are the four things legado's `ReadTipConfig` exposes too.
+/// One typeface, size and weight for the whole row — a bar is a single row of small
+/// type, and a face per field would only produce ransom-note rows. The face is the
+/// system font unless the reader picks 跟隨正文 or one of their installed reading
+/// fonts (FB-126); size and weight apply to whichever it is.
 enum ReaderBarStyleResolver {
+    /// - Parameter bodyFontPostScriptName: the reading font as the reader stores it
+    ///   (`UserReaderFontResolver.postScriptName`), nil for the system font. Passed
+    ///   in rather than read here so the bars rebuild when it changes.
     static func resolve(
         _ style: ReaderBarStyle,
         readerTextColor: UIColor,
-        userInterfaceStyle: UIUserInterfaceStyle
+        userInterfaceStyle: UIUserInterfaceStyle,
+        bodyFontPostScriptName: String? = nil
     ) -> ReaderOverlayResolvedStyle {
         let normalized = style.normalized
         let size = CGFloat(normalized.fontSize)
-        let font = UIFont.systemFont(ofSize: size, weight: uiFontWeight(normalized.weight))
+        let weight = uiFontWeight(normalized.weight)
+        let font = Self.font(
+            normalized.font,
+            size: size,
+            weight: weight,
+            bodyFontPostScriptName: bodyFontPostScriptName
+        )
 
         let color: UIColor
         switch normalized.color.source {
@@ -35,8 +47,55 @@ enum ReaderBarStyleResolver {
             // Resolve before Core Graphics drawing and battery rasterization;
             // their ambient UIKit appearance can differ from the reader theme.
             color: color.resolvedColor(with: UITraitCollection(userInterfaceStyle: userInterfaceStyle)),
-            opacity: normalized.opacity
+            opacity: normalized.opacity,
+            syntheticBoldOffset: normalized.font.source == .system
+                ? 0
+                : syntheticBoldOffset(for: font, weight: weight)
         )
+    }
+
+    /// `.system` is exactly the font the bars drew before the option existed.
+    ///
+    /// Any other face goes through `UserReaderFontResolver.namedFont` — the path chapter
+    /// titles take — and asks for tabular figures, so the clock, page number and battery
+    /// percentage hold their width as their digits change. A face without them (most CJK
+    /// fonts, PingFang included) ignores the request and keeps its own digits.
+    static func font(
+        _ reference: ReaderBarFontReference,
+        size: CGFloat,
+        weight: UIFont.Weight,
+        bodyFontPostScriptName: String?
+    ) -> UIFont {
+        let postScriptName: String?
+        switch reference.normalized.source {
+        case .system:
+            return UIFont.systemFont(ofSize: size, weight: weight)
+        case .followsBody:
+            postScriptName = bodyFontPostScriptName
+        case .custom:
+            postScriptName = reference.normalized.postScriptName
+        }
+        let face = UserReaderFontResolver.namedFont(size: size, weight: weight, postScriptName: postScriptName)
+        let tabular = face.fontDescriptor.addingAttributes([
+            .featureSettings: [[
+                UIFontDescriptor.FeatureKey.type: kNumberSpacingType,
+                UIFontDescriptor.FeatureKey.selector: kMonospacedNumbersSelector,
+            ]]
+        ])
+        return UIFont(descriptor: tabular, size: size)
+    }
+
+    /// 半粗／粗 on a reading font with no bold face — most imported CJK fonts — would
+    /// otherwise draw Regular. The body text thickens those with a second, offset draw
+    /// (`FontTraits.syntheticBoldAttributes`); the bars ask the same question and get
+    /// the same offset, so a bar in the reading font is as bold as bold body text.
+    private static func syntheticBoldOffset(for font: UIFont, weight: UIFont.Weight) -> CGFloat {
+        let attributes = UserReaderFontResolver.syntheticBoldAttributes(
+            for: font,
+            isBoldRequested: weight.rawValue >= UIFont.Weight.semibold.rawValue
+        )
+        let offset = attributes[BrowserTextAttributes.syntheticBoldOffset] as? NSNumber
+        return CGFloat(offset?.doubleValue ?? 0)
     }
 
     private static func uiFontWeight(_ value: ReaderOverlayFontWeight) -> UIFont.Weight {
@@ -140,6 +199,9 @@ final class ReaderBarUIView: UIView {
 /// builds the snapshot inline defeats the type checker on this file.
 private struct ReaderBarsPreviewHost: View {
     let theme: ReaderTheme
+    var font: ReaderBarFontReference = .system
+    /// Stands in for the reading font a 跟隨正文 bar picks up.
+    var bodyFontPostScriptName: String?
 
     @State private var builder = ReaderBarRenderModelBuilder()
 
@@ -175,17 +237,24 @@ private struct ReaderBarsPreviewHost: View {
         }
     }
 
+    private var layout: ReaderBarLayout {
+        var layout = ReaderBarLayout.default
+        layout.style.font = font
+        return layout
+    }
+
     private func bar(_ which: ReaderBar, padding: CGFloat) -> some View {
         ReaderBarView(
             model: builder.model(
                 for: which,
-                layout: .default,
+                layout: layout,
                 content: snapshot,
                 readerTextColor: theme.uiTextColor,
                 horizontalPadding: padding,
                 svgAssetStore: nil,
                 userInterfaceStyle: theme == .night ? .dark : .light,
-                displayScale: 3
+                displayScale: 3,
+                bodyFontPostScriptName: bodyFontPostScriptName
             )
         )
     }
@@ -197,6 +266,10 @@ private struct ReaderBarsPreviewHost: View {
 
 #Preview("頁眉頁腳條 · 夜間") {
     ReaderBarsPreviewHost(theme: .night)
+}
+
+#Preview("頁眉頁腳條 · 跟隨正文") {
+    ReaderBarsPreviewHost(theme: .sepia, font: .followsBody, bodyFontPostScriptName: "Georgia")
 }
 
 // MARK: - Page Bars Layer
@@ -301,7 +374,8 @@ private struct ReaderPageBarsLayerPreviewHost: View {
             horizontalPadding: ReaderLayoutMetrics.defaultHeaderHorizontalPadding,
             svgAssetStore: nil,
             userInterfaceStyle: .light,
-            displayScale: 3
+            displayScale: 3,
+            bodyFontPostScriptName: nil
         )
     }
 }

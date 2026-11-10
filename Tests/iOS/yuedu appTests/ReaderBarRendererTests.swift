@@ -22,7 +22,8 @@ struct ReaderBarRendererTests {
             for (appearance, hex) in [(UIUserInterfaceStyle.light, "#FF0000FF"), (.dark, "#00FF00FF")] {
                 let model = builder.model(for: .header, layout: layout, content: snapshot,
                                           readerTextColor: .white, horizontalPadding: 0,
-                                          svgAssetStore: nil, userInterfaceStyle: appearance, displayScale: 1)
+                                          svgAssetStore: nil, userInterfaceStyle: appearance, displayScale: 1,
+                                          bodyFontPostScriptName: nil)
                 let field = try #require(model.slots[0].first)
                 let color: UIColor?
                 switch field {

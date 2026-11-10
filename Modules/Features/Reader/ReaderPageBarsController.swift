@@ -32,6 +32,9 @@ struct ReaderPageBarsEnvironment: Equatable {
     var readingDuration: TimeInterval
     var userInterfaceStyle: UIUserInterfaceStyle
     var displayScale: CGFloat
+    /// The reading font, for bars set to 跟隨正文 (FB-126); nil is the system font. Part
+    /// of the environment so changing the reading font rebuilds the bars on screen.
+    var bodyFontPostScriptName: String? = nil
     /// What each bar keeps clear of on each side before its own padding
     /// (`ReaderView.readerBarSideInsets`). Apart, because each clears only what reaches its
     /// own height: on a folded iPhone Duo the 頁眉 sits beside the camera and the 頁腳 does not.
@@ -174,7 +177,8 @@ final class ReaderPageBarsController {
                 : environment.footerHorizontalPadding,
             svgAssetStore: svgAssetStore,
             userInterfaceStyle: environment.userInterfaceStyle,
-            displayScale: environment.displayScale
+            displayScale: environment.displayScale,
+            bodyFontPostScriptName: environment.bodyFontPostScriptName
         )
         model.sideInsets = bar == .header ? environment.headerSideInsets : environment.footerSideInsets
         return model

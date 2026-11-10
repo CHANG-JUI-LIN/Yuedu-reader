@@ -68,14 +68,26 @@ enum UserReaderFontResolver {
     ///   - postScriptName: per-segment font override; `nil` follows the reader
     ///     font (or system font when none is selected).
     static func titleFont(size: CGFloat, weight: ChapterTitleWeight, postScriptName: String?) -> UIFont {
-        let resolvedName = postScriptName ?? selectedPostScriptName
+        namedFont(
+            size: size,
+            weight: weight.uiFontWeight,
+            postScriptName: postScriptName ?? selectedPostScriptName
+        )
+    }
+
+    /// `postScriptName` at `weight`, for text that picks its own face rather than
+    /// inheriting the body's — chapter titles and the 頁眉／頁腳 (FB-126). A family with
+    /// no face at that weight keeps the face it has (`weightedFont`). Nil, or a name no
+    /// registered font answers to (an imported font deleted since, or a preset from a
+    /// device that had it), is the system font.
+    static func namedFont(size: CGFloat, weight: UIFont.Weight, postScriptName: String?) -> UIFont {
         let baseFont: UIFont
-        if let resolvedName, let named = UIFont(name: resolvedName, size: size) {
+        if let postScriptName, let named = UIFont(name: postScriptName, size: size) {
             baseFont = named
         } else {
-            baseFont = UIFont.systemFont(ofSize: size, weight: weight.uiFontWeight)
+            baseFont = UIFont.systemFont(ofSize: size, weight: weight)
         }
-        return weightedFont(baseFont, size: size, weight: weight.uiFontWeight)
+        return weightedFont(baseFont, size: size, weight: weight)
     }
 
     private static func selectedFont(size: CGFloat) -> UIFont? {

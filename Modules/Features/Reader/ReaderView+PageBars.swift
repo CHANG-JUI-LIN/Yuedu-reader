@@ -77,6 +77,7 @@ extension ReaderView {
             // resolution of a dynamic tip colour.
             userInterfaceStyle: readerTheme == .night ? .dark : .light,
             displayScale: readerDisplayScale,
+            bodyFontPostScriptName: UserReaderFontResolver.postScriptName(settings.selectedReaderFontPostScript),
             headerSideInsets: readerBarSideInsets(for: .header),
             footerSideInsets: readerBarSideInsets(for: .footer),
             bakesBarsIntoPages: usesPageBakedBars
