@@ -39,20 +39,34 @@ struct ReaderPageSnapshotPerformanceTests {
         await engine.start(renderSize: Self.size, bookId: UUID().uuidString)
         await engine.preloadChapter(at: 0)
         // Engine starts with dynamic UIKit colors; make both palettes explicit.
-        engine.applyThemeChange(textColor: .black, backgroundColor: .white)
+        await restyled(engine) { engine.applyThemeChange(textColor: .black, backgroundColor: .white) }
         let last = try #require(engine.lastPageIndex(ofChapter: 0))
         for page in [0, 1, last] {
             let first = try #require(engine.renderSnapshot(forPage: page))
             #expect(engine.renderSnapshot(forPage: page) === first)
             let staleKey = try #require(engine.snapshotKey(spineIndex: 0, localPage: page))
-            engine.applyThemeChange(textColor: .white, backgroundColor: .black)
+            await restyled(engine) {
+                engine.applyThemeChange(textColor: .white, backgroundColor: .black)
+                // Stale from the moment the theme changes, before the chapter is restyled.
+                #expect(!engine.storeSnapshotIfCurrent(first, key: staleKey, spineIndex: 0, localPage: page))
+            }
             #expect(!engine.storeSnapshotIfCurrent(first, key: staleKey, spineIndex: 0, localPage: page))
             let dark = try #require(engine.renderSnapshot(forPage: page))
             #expect(dark !== first)
             #expect(dark.pngData() != first.pngData())
             #expect(engine.renderSnapshot(forPage: page) === dark)
-            engine.applyThemeChange(textColor: .black, backgroundColor: .white)
+            await restyled(engine) { engine.applyThemeChange(textColor: .black, backgroundColor: .white) }
         }
+    }
+
+    /// The fixture chapter is a long one (27,600 characters): a theme change restyles it
+    /// off the main thread and swaps the layout in through `onChapterReady`.
+    private func restyled(_ engine: CoreTextPageEngine, _ change: () -> Void) async {
+        let (swaps, signal) = AsyncStream.makeStream(of: Int.self)
+        engine.onChapterReady = { spine in if let spine { signal.yield(spine) } }
+        change()
+        for await spine in swaps where spine == 0 { break }
+        engine.onChapterReady = nil
     }
 
     @Test("refetched content rejects old asynchronous boundary and middle-page results")

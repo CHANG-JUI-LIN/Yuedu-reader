@@ -89,6 +89,42 @@ struct CoreTextAppearanceOffMainTests {
         #expect(mainCPU < 0.5, "the main thread typeset the chapter again for its appearance")
     }
 
+    /// The same step on a theme change: `applyThemeChange` restyled every installed layout
+    /// before returning. A long chapter now keeps its old colours until the restyled layout
+    /// is ready and is swapped in through `onChapterReady`; a short one is still restyled
+    /// in place, so an ordinary chapter never shows a frame of the old theme.
+    /// Measured on the full 1.2 M-character chapter (Debug, simulator): the call ran
+    /// 13872 ms on the main thread before, 1 ms after, the new colours arriving 13.1 s later.
+    @Test func themeChangeRestylesALongChapterOffTheMainThread() async throws {
+        let (engine, directory) = makeEngine(texts: ["開場。", Self.wholeBookChapter(characters: 300_000)])
+        defer { try? FileManager.default.removeItem(at: directory) }
+        await engine.start(renderSize: Self.renderSize, bookId: UUID().uuidString)
+        await engine.preloadChapter(at: 0)
+        await engine.preloadChapter(at: 1)
+        func textColor(ofChapter spine: Int) -> UIColor? {
+            engine.layouts[spine]?.attributedString.attribute(.foregroundColor, at: 0, effectiveRange: nil) as? UIColor
+        }
+        let pages = try #require(engine.layouts[1]).pageRanges.count
+
+        let (restyled, signal) = AsyncStream.makeStream(of: Int.self)
+        engine.onChapterReady = { spine in if let spine { signal.yield(spine) } }
+        let cpuStart = MainThreadWatchdog.mainThreadCPUSeconds()
+        let start = ContinuousClock.now
+        engine.applyThemeChange(textColor: .white, backgroundColor: .black)
+        let callCPU = MainThreadWatchdog.mainThreadCPUSeconds() - cpuStart
+        let call = ContinuousClock.now - start
+        // The short chapter is restyled before the call returns.
+        #expect(textColor(ofChapter: 0) == .white)
+        if textColor(ofChapter: 1) != .white {
+            for await spine in restyled where spine == 1 { break }
+        }
+        let swapped = ContinuousClock.now - start
+        print("⏱ themeChange call=\(call) callMainCPU=\(Int(callCPU * 1000)) ms swappedAfter=\(swapped) pages=\(pages)")
+        #expect(textColor(ofChapter: 1) == .white)
+        #expect(engine.layouts[1]?.pageRanges.count == pages)
+        #expect(callCPU < 0.25, "the theme change typeset the long chapter before returning")
+    }
+
     /// What the appearance step costs and where. On the full chapter: 9401 ms, of which
     /// the framesetter (typesetting the whole chapter again) is 8252 ms and the page
     /// frames 1269 ms — so building frames lazily per page would not have removed it. The
