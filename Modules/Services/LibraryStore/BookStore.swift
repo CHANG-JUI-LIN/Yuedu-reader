@@ -525,7 +525,7 @@ class BookStore: @MainActor ObservableObject, BookProvider {
             if FileManager.default.fileExists(atPath: destURL.path) {
                 try FileManager.default.removeItem(at: destURL)
             }
-            try FileManager.default.copyItem(at: url, to: destURL)
+            try BookFileProtection.copy(from: url, to: destURL)
 
             let resolvedTitle = title?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false
                 ? title!.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -596,7 +596,7 @@ class BookStore: @MainActor ObservableObject, BookProvider {
             if FileManager.default.fileExists(atPath: destURL.path) {
                 try FileManager.default.removeItem(at: destURL)
             }
-            try FileManager.default.copyItem(at: url, to: destURL)
+            try BookFileProtection.copy(from: url, to: destURL)
 
             let resolvedTitle = title?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false
                 ? title!.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -685,7 +685,7 @@ class BookStore: @MainActor ObservableObject, BookProvider {
                 if FileManager.default.fileExists(atPath: contentURL.path) {
                     try FileManager.default.removeItem(at: contentURL)
                 }
-                try FileManager.default.copyItem(at: url, to: contentURL)
+                try BookFileProtection.copy(from: url, to: contentURL)
                 chapters = info.chapterSeeds.enumerated().map { index, seed in
                     OnlineChapterRef(
                         index: index,
@@ -804,7 +804,7 @@ class BookStore: @MainActor ObservableObject, BookProvider {
             if FileManager.default.fileExists(atPath: destURL.path) {
                 try FileManager.default.removeItem(at: destURL)
             }
-            try FileManager.default.copyItem(at: url, to: destURL)
+            try BookFileProtection.copy(from: url, to: destURL)
             importTrace(
                 "stage=copy done elapsedMs=\(String(format: "%.1f", (ProcessInfo.processInfo.systemUptime - copyStart) * 1000))"
             )

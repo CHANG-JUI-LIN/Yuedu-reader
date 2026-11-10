@@ -40,6 +40,13 @@ enum TXTFileReader {
 
     static func readMappedTextFile(url: URL) throws -> TXTMappedTextFile {
         let data = try Data(contentsOf: url, options: .alwaysMapped)
+        // In every crash report from here on: a mapping whose file locks with the device
+        // faults (SIGBUS) on the first page read behind the lock screen, and the report
+        // itself cannot say which class the file was in. `BookFileProtection` owns the class.
+        CrashContext.breadcrumb(
+            "txt mapped: bytes=\(data.count) protection="
+                + BookFileProtection.name(BookFileProtection.Volume.live.protection(url))
+        )
         // Detection stays bounded even for a memory-mapped multi-gigabyte book.
         let encoding = try detectEncoding(fromSample: data.prefix(TXTEncodingDetector.maximumSampleBytes))
         return TXTMappedTextFile(data: data, encoding: encoding)

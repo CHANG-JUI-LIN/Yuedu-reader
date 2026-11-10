@@ -64,7 +64,7 @@ enum AozoraBookImporter {
             if FileManager.default.fileExists(atPath: originalURL.path) {
                 try FileManager.default.removeItem(at: originalURL)
             }
-            try FileManager.default.copyItem(at: url, to: originalURL)
+            try BookFileProtection.copy(from: url, to: originalURL)
             book.aozora = AozoraBookSource(originalFilename: original, sourceEncoding: converted.encoding.rawValue)
             store.saveReadingBook(book)
             return book

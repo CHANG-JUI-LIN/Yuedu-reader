@@ -8,7 +8,7 @@ enum TXTFilePersistence {
     static func persistOriginal(source: URL, destination: URL) throws {
         do {
             try Task.checkCancellation()
-            try FileManager.default.copyItem(at: source, to: destination)
+            try BookFileProtection.copy(from: source, to: destination)
             try Task.checkCancellation()
 
             let fileSize = try destination.resourceValues(forKeys: [.fileSizeKey]).fileSize ?? 0

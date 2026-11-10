@@ -33,7 +33,7 @@ enum MOBIBookImporter {
             if FileManager.default.fileExists(atPath: originalURL.path) {
                 try FileManager.default.removeItem(at: originalURL)
             }
-            try FileManager.default.copyItem(at: url, to: originalURL)
+            try BookFileProtection.copy(from: url, to: originalURL)
             book.mobi = MOBIBookSource(originalFilename: original, kind: converted.kind)
             store.saveReadingBook(book)
             return book

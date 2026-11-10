@@ -85,6 +85,10 @@ struct yuedu_appApp: App {
         // `AppLogger` call from here on is captured for 設定 → 診斷與回報, and the
         // session record is what tells the next launch whether this one survived.
         DiagnosticLog.shared.beginSession()
+        // Books imported before `BookFileProtection.copy` kept the class of the app they came
+        // from; one that locks with the device crashes 朗讀 behind the lock screen. Off main:
+        // it lists Documents, and nothing waits on it.
+        Task.detached(priority: .utility) { BookFileProtection.relaxExistingFiles() }
         // Before any source script can ask for it: `java.deviceID()` runs on the JS queue,
         // and `UIDevice` can only be read here, on main.
         DeviceIdentity.captureAtLaunch()
