@@ -1963,20 +1963,20 @@ struct BookRow: View {
 
             VStack(alignment: .leading, spacing: 5) {
                 Text(book.title)
-                    .font(DSFont.fixed(size: 15, weight: .medium))
+                    .font(DSFont.bookshelfRowTitle)
                     .lineLimit(2)
                     .foregroundStyle(DSColor.textPrimary)
 
                 if !book.author.isEmpty {
                     Text(book.author)
-                        .font(DSFont.fixed(size: 13))
+                        .font(DSFont.footnote)
                         .foregroundColor(DSColor.textSecondary)
                         .lineLimit(1)
                 }
 
                 if let latest = book.latestChapterDisplayTitle {
                     Text(localized("最新") + " · " + latest)
-                        .font(DSFont.fixed(size: 12))
+                        .font(DSFont.caption)
                         .foregroundColor(DSColor.textSecondary)
                         .lineLimit(1)
                         .truncationMode(.tail)
@@ -2029,11 +2029,11 @@ struct BookRow: View {
                 .clipShape(Capsule())
         } else if book.currentPosition >= 0.99 {
             Text(localized("已讀完"))
-                .font(DSFont.fixed(size: 12))
+                .font(DSFont.caption)
                 .foregroundColor(DSColor.textSecondary)
         } else {
             Text("\(Int(book.currentPosition * 100))%")
-                .font(DSFont.fixed(size: 12))
+                .font(DSFont.caption)
                 .foregroundColor(DSColor.textSecondary)
         }
     }
@@ -2166,7 +2166,7 @@ struct BookGridCell: View {
 
             VStack(alignment: .leading, spacing: 2) {
                 Text(book.title)
-                    .font(DSFont.fixed(size: isCompactLayout ? 12 : 13, weight: .semibold))
+                    .font(DSFont.bookshelfGridTitle(compact: isCompactLayout))
                     .multilineTextAlignment(.leading)
                     .fixedSize(horizontal: false, vertical: true)
                     .frame(maxWidth: .infinity, alignment: .leading)
@@ -2174,7 +2174,7 @@ struct BookGridCell: View {
 
                 HStack(alignment: .center, spacing: 2) {
                     Text(book.author)
-                        .font(DSFont.fixed(size: isCompactLayout ? 10 : 11))
+                        .font(DSFont.caption2)
                         .foregroundColor(DSColor.textSecondary)
                         .lineLimit(1)
                         .truncationMode(.tail)
@@ -2336,11 +2336,11 @@ private struct BookshelfFolderRow: View {
 
                         VStack(alignment: .leading, spacing: 5) {
                             Text(name)
-                                .font(DSFont.fixed(size: 15, weight: .medium))
+                                .font(DSFont.bookshelfRowTitle)
                                 .lineLimit(2)
                                 .foregroundStyle(DSColor.textPrimary)
                             Text(BookshelfFolderLabel.count(books.count))
-                                .font(DSFont.fixed(size: 13))
+                                .font(DSFont.footnote)
                                 .foregroundColor(DSColor.textSecondary)
                                 .lineLimit(1)
                         }
@@ -2415,7 +2415,7 @@ private struct BookshelfFolderGridCell: View {
 
             VStack(alignment: .leading, spacing: 2) {
                 Text(name)
-                    .font(DSFont.fixed(size: isCompactLayout ? 12 : 13, weight: .semibold))
+                    .font(DSFont.bookshelfGridTitle(compact: isCompactLayout))
                     .multilineTextAlignment(.leading)
                     .fixedSize(horizontal: false, vertical: true)
                     .frame(maxWidth: .infinity, alignment: .leading)
@@ -2423,7 +2423,7 @@ private struct BookshelfFolderGridCell: View {
 
                 HStack(alignment: .center, spacing: 2) {
                     Text(BookshelfFolderLabel.count(books.count))
-                        .font(DSFont.fixed(size: isCompactLayout ? 10 : 11))
+                        .font(DSFont.caption2)
                         .foregroundColor(DSColor.textSecondary)
                         .lineLimit(1)
                         .frame(maxWidth: .infinity, alignment: .leading)
@@ -2676,6 +2676,20 @@ private func previewOnlineBook(hasUpdate: Bool) -> ReadingBook {
     }
     .softScrollEdges()
     .listStyle(.plain)
+}
+
+#Preview("書架文字 – 輔助使用大字級") {
+    VStack(spacing: DSSpacing.lg) {
+        BookRow(book: previewOnlineBook(hasUpdate: false), onTap: { _ in }, onEdit: {}, onDelete: {})
+        BookGridCell(
+            book: previewOnlineBook(hasUpdate: false),
+            coverDisplaySize: CGSize(width: 110, height: 165),
+            onOpen: { _ in }, onEdit: {}, onDelete: {}
+        )
+        .frame(width: 110)
+    }
+    .padding()
+    .dynamicTypeSize(.accessibility2)
 }
 
 #Preview("BookGridCell – 有更新 / 無更新") {

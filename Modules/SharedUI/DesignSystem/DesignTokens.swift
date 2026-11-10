@@ -412,6 +412,16 @@ enum DSFont {
     static var onboardingTitle: Font {
         GlobalAppTypography.font(.title, weight: .bold, systemDesign: .serif)
     }
+    /// A book's title in the shelf's list: Subheadline in medium, so it follows the reader's
+    /// text size (feedback #110 — it was a fixed 15pt).
+    static var bookshelfRowTitle: Font {
+        GlobalAppTypography.font(.subheadline, weight: .medium)
+    }
+    /// A book's title under its cover in the shelf's grid: Footnote in semibold, Caption in
+    /// the five-column grid. Both follow the reader's text size.
+    static func bookshelfGridTitle(compact: Bool) -> Font {
+        GlobalAppTypography.font(compact ? .caption : .footnote, weight: .semibold)
+    }
 
     /// Existing fixed-size UI typography. Monospaced content intentionally
     /// remains system monospaced even when a global interface font is active.
