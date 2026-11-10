@@ -2239,6 +2239,7 @@ struct ReaderView: View {
             if showTouchZoneEditor {
                 ReaderTouchZoneEditorView(
                     isRTL: bookDirection.isRTL,
+                    offersChangeSource: canChangeModernSource,
                     onCancel: { showTouchZoneEditor = false },
                     onSave: { showTouchZoneEditor = false }
                 )
@@ -3268,6 +3269,10 @@ struct ReaderView: View {
             toggleCurrentPageBookmark()
         case .tableOfContents:
             showTOC = true
+        case .changeSource:
+            // Wherever the toolbar offers 換源 (feedback #80).
+            guard canChangeModernSource else { return }
+            showChangeSourceSheet = true
         }
     }
 

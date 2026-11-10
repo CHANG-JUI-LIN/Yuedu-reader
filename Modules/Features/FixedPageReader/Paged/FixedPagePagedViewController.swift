@@ -278,6 +278,8 @@ final class FixedPagePagedViewController: UIViewController, FixedPageModeReader,
         case .nextChapter: container?.readerRequestsNextChapter()
         case .toggleBookmark: container?.readerToggleBookmark()
         case .tableOfContents: container?.readerShowTableOfContents()
+        // The fixed-page reader has no 換源; a zone set to it in the text reader does nothing here.
+        case .changeSource: break
         }
     }
 

@@ -10,6 +10,9 @@ enum TouchAction: String, CaseIterable, Codable, Equatable {
     case nextChapter = "下一章"
     case toggleBookmark = "添加/移除書籤"
     case tableOfContents = "目錄"
+    /// Appended last (feedback #80): saved zones are stored by these raw values, so the cases
+    /// before it keep decoding as they did.
+    case changeSource = "換源"
 }
 
 enum ReaderTouchCommand: Equatable {
@@ -21,13 +24,14 @@ enum ReaderTouchCommand: Equatable {
     case nextChapter
     case toggleBookmark
     case tableOfContents
+    case changeSource
 
     /// Turns the page or the chapter. Starting a turn puts the reading menu away,
     /// in every reader.
     var turnsPage: Bool {
         switch self {
         case .previousPage, .nextPage, .previousChapter, .nextChapter: return true
-        case .none, .toggleMenu, .toggleBookmark, .tableOfContents: return false
+        case .none, .toggleMenu, .toggleBookmark, .tableOfContents, .changeSource: return false
         }
     }
 }
@@ -35,8 +39,14 @@ enum ReaderTouchCommand: Equatable {
 extension TouchAction {
     static let editorCases: [TouchAction] = [
         .none, .toggleMenu, .prevPage, .nextPage,
-        .previousChapter, .nextChapter, .toggleBookmark, .tableOfContents,
+        .previousChapter, .nextChapter, .toggleBookmark, .tableOfContents, .changeSource,
     ]
+
+    /// The editor's choices in a reader that does or does not have 換源: the fixed-page
+    /// reader has none, so it does not offer it.
+    static func editorCases(offersChangeSource: Bool) -> [TouchAction] {
+        offersChangeSource ? editorCases : editorCases.filter { $0 != .changeSource }
+    }
 
     var readerCommand: ReaderTouchCommand {
         switch self {
@@ -48,6 +58,7 @@ extension TouchAction {
         case .nextChapter: return .nextChapter
         case .toggleBookmark: return .toggleBookmark
         case .tableOfContents: return .tableOfContents
+        case .changeSource: return .changeSource
         }
     }
 }

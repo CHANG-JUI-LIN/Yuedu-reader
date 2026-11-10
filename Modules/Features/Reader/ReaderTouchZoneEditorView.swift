@@ -8,11 +8,19 @@ struct ReaderTouchZoneEditorView: View {
     @ObservedObject private var subscriptionStore = SubscriptionStore.shared
     @StateObject private var model: ReaderTouchZoneEditorModel
 
+    /// Whether this reader has 換源 to offer a zone (feedback #80).
+    let offersChangeSource: Bool
     let onCancel: () -> Void
     let onSave: () -> Void
 
-    init(isRTL: Bool, onCancel: @escaping () -> Void, onSave: @escaping () -> Void) {
+    init(
+        isRTL: Bool,
+        offersChangeSource: Bool,
+        onCancel: @escaping () -> Void,
+        onSave: @escaping () -> Void
+    ) {
         _model = StateObject(wrappedValue: ReaderTouchZoneEditorModel(isRTL: isRTL))
+        self.offersChangeSource = offersChangeSource
         self.onCancel = onCancel
         self.onSave = onSave
     }
@@ -76,7 +84,7 @@ struct ReaderTouchZoneEditorView: View {
 
     private func zoneMenu(index: Int) -> some View {
         Menu {
-            ForEach(TouchAction.editorCases, id: \.self) { action in
+            ForEach(TouchAction.editorCases(offersChangeSource: offersChangeSource), id: \.self) { action in
                 Button {
                     model.set(action, at: index)
                 } label: {
@@ -116,4 +124,8 @@ struct ReaderTouchZoneEditorView: View {
         .foregroundStyle(DSColor.accent)
         .interfaceCardSurface()
     }
+}
+
+#Preview("翻頁區塊編輯") {
+    ReaderTouchZoneEditorView(isRTL: false, offersChangeSource: true, onCancel: {}, onSave: {})
 }
