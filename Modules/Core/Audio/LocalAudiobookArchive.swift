@@ -101,19 +101,21 @@ enum LocalAudiobookArchive {
     }
 
     static func inspectZip(url: URL) async throws -> LocalAudiobookImportInfo {
-        let paths = try await audioEntryPaths(in: url)
-        guard !paths.isEmpty else { throw LocalAudiobookArchiveError.noAudioFound }
+        let archive = try await openArchive(url)
+        let entries = try await namedEntries(in: archive, archiveURL: url)
+        let audio = audioEntries(entries)
+        guard let firstAudio = audio.first else { throw LocalAudiobookArchiveError.noAudioFound }
 
         let coverData: Data?
-        if let imageData = await coverImageData(in: url) {
+        if let imageData = await coverImageData(in: archive, entries: entries) {
             coverData = imageData
         } else {
-            coverData = await firstAudioArtworkData(in: url, paths: paths)
+            coverData = await artworkData(of: firstAudio, in: archive)
         }
         let fallbackTitle = cleanChapterTitle(url.deletingPathExtension().lastPathComponent)
-        let seeds = paths.map { path in
+        let seeds = audio.map { item in
             LocalAudiobookChapterSeed(
-                title: cleanChapterTitle(((path as NSString).deletingPathExtension as NSString).lastPathComponent),
+                title: chapterTitle(forEntryPath: item.path),
                 audioStartSeconds: nil,
                 audioDurationSeconds: nil
             )
@@ -130,15 +132,9 @@ enum LocalAudiobookArchive {
     }
 
     static func extractAudioEntries(from archiveURL: URL, to directory: URL) async throws -> [LocalAudiobookExtractedChapter] {
-        let paths = try await audioEntryPaths(in: archiveURL)
-        guard !paths.isEmpty else { throw LocalAudiobookArchiveError.noAudioFound }
-
-        let archive: Archive
-        do {
-            archive = try await Archive(url: archiveURL, accessMode: .read)
-        } catch {
-            throw LocalAudiobookArchiveError.cannotReadArchive
-        }
+        let archive = try await openArchive(archiveURL)
+        let audio = audioEntries(try await namedEntries(in: archive, archiveURL: archiveURL))
+        guard !audio.isEmpty else { throw LocalAudiobookArchiveError.noAudioFound }
 
         do {
             if FileManager.default.fileExists(atPath: directory.path) {
@@ -150,21 +146,18 @@ enum LocalAudiobookArchive {
         }
 
         var extracted: [LocalAudiobookExtractedChapter] = []
-        for (index, path) in paths.enumerated() {
-            guard let entry = try? await archive.get(path) else {
-                throw LocalAudiobookArchiveError.extractionFailed
-            }
-            let ext = (path as NSString).pathExtension.lowercased()
+        for (index, item) in audio.enumerated() {
+            let ext = (item.path as NSString).pathExtension.lowercased()
             let filename = String(format: "%03d.%@", index, ext)
             let outputURL = directory.appendingPathComponent(filename)
             do {
-                _ = try await archive.extract(entry, to: outputURL, skipCRC32: true)
+                _ = try await archive.extract(item.entry, to: outputURL, skipCRC32: true)
             } catch {
                 throw LocalAudiobookArchiveError.extractionFailed
             }
             extracted.append(
                 LocalAudiobookExtractedChapter(
-                    title: cleanChapterTitle(((path as NSString).deletingPathExtension as NSString).lastPathComponent),
+                    title: chapterTitle(forEntryPath: item.path),
                     filename: filename
                 )
             )
@@ -172,20 +165,46 @@ enum LocalAudiobookArchive {
         return extracted
     }
 
+    /// The archive's audio files by their decoded names, in natural order.
     static func audioEntryPaths(in archiveURL: URL) async throws -> [String] {
+        let archive = try await openArchive(archiveURL)
+        return audioEntries(try await namedEntries(in: archive, archiveURL: archiveURL)).map(\.path)
+    }
+
+    private static func openArchive(_ archiveURL: URL) async throws -> Archive {
         guard allowedArchiveExtensions.contains(archiveURL.pathExtension.lowercased()) else {
             throw LocalAudiobookArchiveError.invalidFileType
         }
-        let archive: Archive
         do {
-            archive = try await Archive(url: archiveURL, accessMode: .read)
+            return try await Archive(url: archiveURL, accessMode: .read)
         } catch {
             throw LocalAudiobookArchiveError.cannotReadArchive
         }
-        let entries = (try? await archive.entries()) ?? []
-        return entries.map(\.path)
-            .filter(isAudioEntryPath)
-            .sorted { $0.localizedStandardCompare($1) == .orderedAscending }
+    }
+
+    /// Every entry with its name decoded as the archive was written (see `ZipEntryNames`).
+    /// Entries are extracted as they are, never looked up again by the decoded name.
+    private static func namedEntries(in archive: Archive, archiveURL: URL) async throws -> [(entry: Entry, path: String)] {
+        do {
+            return ZipEntryNames.decode(try await archive.entries(), archiveName: archiveURL.lastPathComponent)
+        } catch {
+            AppLogger.parse(
+                "Audiobook archive entries could not be read",
+                error: error,
+                context: ["archive": archiveURL.lastPathComponent]
+            )
+            throw LocalAudiobookArchiveError.cannotReadArchive
+        }
+    }
+
+    private static func audioEntries(_ entries: [(entry: Entry, path: String)]) -> [(entry: Entry, path: String)] {
+        entries
+            .filter { isAudioEntryPath($0.path) }
+            .sorted { $0.path.localizedStandardCompare($1.path) == .orderedAscending }
+    }
+
+    private static func chapterTitle(forEntryPath path: String) -> String {
+        cleanChapterTitle(((path as NSString).deletingPathExtension as NSString).lastPathComponent)
     }
 
     static func chapterSeeds(
@@ -247,35 +266,26 @@ enum LocalAudiobookArchive {
         )
     }
 
-    private static func coverImageData(in archiveURL: URL) async -> Data? {
-        guard let archive = try? await Archive(url: archiveURL, accessMode: .read),
-              let entries = try? await archive.entries(),
-              let path = entries.map(\.path)
-                .filter(isCoverImageEntryPath)
-                .sorted(by: { $0.localizedStandardCompare($1) == .orderedAscending })
-                .first,
-              let entry = try? await archive.get(path)
+    private static func coverImageData(in archive: Archive, entries: [(entry: Entry, path: String)]) async -> Data? {
+        guard let cover = entries
+            .filter({ isCoverImageEntryPath($0.path) })
+            .min(by: { $0.path.localizedStandardCompare($1.path) == .orderedAscending })
         else { return nil }
 
         let tempURL = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: tempURL) }
-        guard (try? await archive.extract(entry, to: tempURL, skipCRC32: true)) != nil else {
+        guard (try? await archive.extract(cover.entry, to: tempURL, skipCRC32: true)) != nil else {
             return nil
         }
         return try? Data(contentsOf: tempURL)
     }
 
-    private static func firstAudioArtworkData(in archiveURL: URL, paths: [String]) async -> Data? {
-        guard let firstPath = paths.first,
-              let archive = try? await Archive(url: archiveURL, accessMode: .read),
-              let entry = try? await archive.get(firstPath)
-        else { return nil }
-
+    private static func artworkData(of audio: (entry: Entry, path: String), in archive: Archive) async -> Data? {
         let tempURL = FileManager.default.temporaryDirectory
             .appendingPathComponent(UUID().uuidString)
-            .appendingPathExtension((firstPath as NSString).pathExtension)
+            .appendingPathExtension((audio.path as NSString).pathExtension)
         defer { try? FileManager.default.removeItem(at: tempURL) }
-        guard (try? await archive.extract(entry, to: tempURL, skipCRC32: true)) != nil,
+        guard (try? await archive.extract(audio.entry, to: tempURL, skipCRC32: true)) != nil,
               let info = try? await inspectSingleFile(url: tempURL)
         else { return nil }
         return info.coverImageData
