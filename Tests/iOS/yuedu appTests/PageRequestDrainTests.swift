@@ -116,11 +116,14 @@ struct PageRequestDrainTests {
         #expect(elapsed < .seconds(AppConfig.webViewJSRenderWait) + .milliseconds(1500))
     }
 
-    @Test("a request that never ends holds the read only up to the limit", .timeLimit(.minutes(1)))
+    /// The log line at the limit names the request still in flight, so a page held there can be
+    /// diagnosed from the app's own log (豆花文学 1329#155 needed a WebKit capture for that).
+    @Test("a request that never ends holds the read only up to the limit, and is named", .timeLimit(.minutes(1)))
     func neverEndingRequestIsCapped() async throws {
         let server = try Self.server()
         let base = try await server.start()
         defer { server.stop() }
+        let before = Set(DiagnosticLog.shared.snapshot().map(\.id))
         let started = ContinuousClock.now
         let html = try await WebViewFetcher.shared.fetchHTML(url: try #require(URL(string: "hang", relativeTo: base)), timeout: 30)
         let elapsed = ContinuousClock.now - started
@@ -128,5 +131,12 @@ struct PageRequestDrainTests {
         #expect(html.contains(Self.early))
         #expect(elapsed >= .milliseconds(PageRequestDrain.limitMs))
         #expect(elapsed < .milliseconds(PageRequestDrain.limitMs) + .seconds(5))
+
+        let never = try #require(URL(string: "never", relativeTo: base)).absoluteString
+        let line = DiagnosticLog.shared.snapshot().first {
+            !before.contains($0.id) && $0.message.contains("drain limit") && $0.message.contains(never)
+        }
+        print("⏱ drain limit line: \(line?.message ?? "none")")
+        #expect(line?.message.contains("requests=xhr ") == true)
     }
 }

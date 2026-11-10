@@ -459,6 +459,14 @@
      "gate": "FAIL",
      "n": 2,
      "tests": "yuedu appTests/LegadoJsoupBridgeCompatibilityTests,yuedu appTests/YCK1330CompatibilityTests,yuedu appTests/TOCFromDetailPageTests"
+    },
+    {
+     "at": "2026-11-10T10:51:38+08:00",
+     "detail": "unit tests: ** TEST SUCCEEDED **; item sources passing 0/3; controls passing 7/10; network noise (not counted): 1330#551 toc: 搜尋要求逾時。 | 1331#422 toc: 搜尋要求逾時。 | 1329#226 toc: 搜尋要求逾時。",
+     "fingerprint": "3907b14651b2eb17",
+     "gate": "FAIL",
+     "n": 3,
+     "tests": "yuedu appTests/LegadoJsoupBridgeCompatibilityTests,yuedu appTests/YCK1330CompatibilityTests,yuedu appTests/TOCFromDetailPageTests"
     }
    ],
    "class": "bridge-gap",
@@ -467,7 +475,9 @@
    "manual": true,
    "notes": [
     "2026-11-08T16:47:00+08:00 added: Scripts got a list item copied alone (no parent, siblings or page); Legado hands the element inside its page. 轻之文库 chapterName walks parentNode() five times up to the volume's h2. Oracle: scripts/legado-compat/oracle/cases/attached-element-toc.json",
-    "2026-11-08T17:37:53+08:00 blocked: Fix implemented and proven; gate blocked by 轻之文库's own slowness only. Code: LegadoScriptTrees (script gets the element inside a copy of its whole page) + Legado tocHtml reuse (fetchTOCPackage detailPage:, WebBook.getChapterListAwait). Unit: LegadoJsoupBridgeCompatibilityTests/YCK1330CompatibilityTests/TOCFromDetailPageTests green (oracle attached-element-toc.json). Controls 7/7 both attempts. diag linovel3 on the same code: 1331#15 and #172 pass every stage (search 15, toc 171 chapters with volume-prefixed titles e.g. '樱花下的初遇：序章——…', discover toc 1618, content), TOC read from the detail page with no toc.network span. #17 fails search with one request cut at 60046 ms = Legado's own callTimeout(60s) (legado-E HttpHelper.kt:62); detail.network on this site measured 3.2-42 s per request. Re-measure in the next full round."
+    "2026-11-08T17:37:53+08:00 blocked: Fix implemented and proven; gate blocked by 轻之文库's own slowness only. Code: LegadoScriptTrees (script gets the element inside a copy of its whole page) + Legado tocHtml reuse (fetchTOCPackage detailPage:, WebBook.getChapterListAwait). Unit: LegadoJsoupBridgeCompatibilityTests/YCK1330CompatibilityTests/TOCFromDetailPageTests green (oracle attached-element-toc.json). Controls 7/7 both attempts. diag linovel3 on the same code: 1331#15 and #172 pass every stage (search 15, toc 171 chapters with volume-prefixed titles e.g. '樱花下的初遇：序章——…', discover toc 1618, content), TOC read from the detail page with no toc.network span. #17 fails search with one request cut at 60046 ms = Legado's own callTimeout(60s) (legado-E HttpHelper.kt:62); detail.network on this site measured 3.2-42 s per request. Re-measure in the next full round.",
+    "2026-11-10T10:35:22+08:00 taken again: every source passed r19: r19 audited this code with all three 轻之文库 sources passing; both earlier gate failures were the item sources timing out on the site, with unit tests and 7/7 controls passing",
+    "2026-11-10T10:51:38+08:00 blocked after 3 failed verifications"
    ],
    "openedIn": "r9",
    "owner": "zhangruilin",
@@ -492,7 +502,7 @@
      "url": "https://www.linovel.net#yc"
     }
    ],
-   "startedAt": "2026-11-08T16:47:00+08:00",
+   "startedAt": "2026-11-10T10:35:22+08:00",
    "status": "blocked"
   },
   "bridge:method:priorResponse": {
@@ -1582,7 +1592,7 @@
   "empty:1330#293": {
    "attempts": [],
    "class": "empty",
-   "closedAt": "2026-11-09T12:52:55+08:00",
+   "closedAt": "2026-11-10T10:46:08+08:00",
    "id": "empty:1330#293",
    "notes": [
     "2026-11-08T22:20:59+08:00 skipped: Passes in diag n1 on this code: the fix is empty:1329#119 / empty:1329#263 (jsLib Java packages under the AnalyzeUrl java proxy; java.connect keeps the HTTP response) — the same source in both packs. (diag n1 passed on this code)",
@@ -1591,7 +1601,8 @@
     "2026-11-09T12:16:56+08:00 reopened: still failing in r14",
     "2026-11-09T12:52:55+08:00 skipped: passes in a fresh diag on the current code; the round's failure was a transient network/site fault (diag r14c passed on this code)",
     "2026-11-09T14:49:59+08:00 reopened: still failing in r15",
-    "2026-11-09T15:40:20+08:00 blocked: audit-only: search failed in r12, r14 and r15 audits with a 225 B answer and passed in every diag since the MessageDigest fix (n1, r14c, empty293: 584 B, 1 book). The failing requests were correct: each signature equals the MD5 recomputed from its logged clienttime with the jsLib's algorithm, and clienttime matches the send time to the second. 225 B = the gateway's 238 B 'err signature' template with an empty error_msg, i.e. another error code. Without x-router the gateway answers 502 'kws' (164 B), so the header was sent. The audit does not keep failing bodies; the error code is needed before anything can be changed."
+    "2026-11-09T15:40:20+08:00 blocked: audit-only: search failed in r12, r14 and r15 audits with a 225 B answer and passed in every diag since the MessageDigest fix (n1, r14c, empty293: 584 B, 1 book). The failing requests were correct: each signature equals the MD5 recomputed from its logged clienttime with the jsLib's algorithm, and clienttime matches the send time to the second. 225 B = the gateway's 238 B 'err signature' template with an empty error_msg, i.e. another error code. Without x-router the gateway answers 502 'kws' (164 B), so the header was sent. The audit does not keep failing bodies; the error code is needed before anything can be changed.",
+    "2026-11-10T10:46:08+08:00 skipped: Kugou search answered a correctly signed request (signature recomputed outside the app: identical) with error_code 20028 and no list in diag z30 at 10:38, while plain curl got the book at 10:41 and 10:45 and both 酷狗 sources passed diag z31 at 10:45 with the same headers (Legado defaults). An intermittent answer of the search service. (diag z31 passed on this code)"
    ],
    "openedIn": "r8",
    "owner": "zhangruilin",
@@ -1605,7 +1616,7 @@
     }
    ],
    "startedAt": "2026-11-09T15:34:27+08:00",
-   "status": "blocked"
+   "status": "skipped"
   },
   "empty:1330#30": {
    "attempts": [],
@@ -3231,9 +3242,11 @@
   "http-error:1331#60": {
    "attempts": [],
    "class": "http-error",
+   "closedAt": "2026-11-10T10:30:48+08:00",
    "id": "http-error:1331#60",
    "notes": [
-    "2026-11-09T09:00:05+08:00 blocked: www.twkan.cc answers its chapter-list pages HTTP 400 {\"code\":\"swq-003\",\"message\":\"书籍目录页访问次数受限制，请60秒后重试。\"} on the first request of each run (diags cms4 08:56, cms60 08:58), a per-IP limit longer than its 60 s. Sister sites 1331#40/41/121 (same CMS) pass when run alone. The source loginCheckJs itself throws 站点HTTP错误 400 on it, as it would in Legado. r13 remeasures."
+    "2026-11-09T09:00:05+08:00 blocked: www.twkan.cc answers its chapter-list pages HTTP 400 {\"code\":\"swq-003\",\"message\":\"书籍目录页访问次数受限制，请60秒后重试。\"} on the first request of each run (diags cms4 08:56, cms60 08:58), a per-IP limit longer than its 60 s. Sister sites 1331#40/41/121 (same CMS) pass when run alone. The source loginCheckJs itself throws 站点HTTP错误 400 on it, as it would in Legado. r13 remeasures.",
+    "2026-11-10T10:30:48+08:00 skipped: twkan.cc passed every stage alone (search, discovery, detail, 10 TOC pages, content). Its audit failure is the site limit swq-003 (书籍目录页访问次数受限制，请60秒后重试): about 10 TOC pages per client per minute, shared with the same-backend sources 1330#80, 1331#40, #41 and #121 checked in the same minute; plain curl got 200 x3 at 10:25 too. (diag z29 passed on this code)"
    ],
    "openedIn": "r12",
    "owner": "zhangruilin",
@@ -3247,7 +3260,7 @@
     }
    ],
    "startedAt": "2026-11-09T09:00:05+08:00",
-   "status": "blocked"
+   "status": "skipped"
   },
   "http-error:1331#83": {
    "attempts": [],
@@ -3994,12 +4007,13 @@
   "network:1329#158": {
    "attempts": [],
    "class": "network",
-   "closedAt": "2026-11-09T10:02:27+08:00",
+   "closedAt": "2026-11-10T10:40:28+08:00",
    "id": "network:1329#158",
    "notes": [
     "2026-11-09T10:02:27+08:00 no longer failing this way in r13",
     "2026-11-09T14:49:59+08:00 reopened: still failing in r15",
-    "2026-11-09T15:57:37+08:00 blocked: root cause found, fix needs a maintainer decision: www.oneceng.com (Alibaba Cloud 47.94.169.188, openresty) never answers a POST whose headers and body arrive in separate TCP segments. Same bytes as plain curl sent from a socket: one write -> 200 in 0.33-0.44 s (2/2); headers then body -> 0 bytes for 20 s (3/3, 0 and 50 ms gaps). URLSession always writes them separately (local server: 302 B then 45 B; also uploadTask, body stream, explicit Content-Length, Connection: close). OkHttp 5.3.2 (legado-E) buffers request line, headers and a known-length body in socket.sink and flushes once in finishRequest(). Same site as 1330#381."
+    "2026-11-09T15:57:37+08:00 blocked: root cause found, fix needs a maintainer decision: www.oneceng.com (Alibaba Cloud 47.94.169.188, openresty) never answers a POST whose headers and body arrive in separate TCP segments. Same bytes as plain curl sent from a socket: one write -> 200 in 0.33-0.44 s (2/2); headers then body -> 0 bytes for 20 s (3/3, 0 and 50 ms gaps). URLSession always writes them separately (local server: 302 B then 45 B; also uploadTask, body stream, explicit Content-Length, Connection: close). OkHttp 5.3.2 (legado-E) buffers request line, headers and a known-length body in socket.sink and flushes once in finishRequest(). Same site as 1330#381.",
+    "2026-11-10T10:40:28+08:00 skipped: blocked earlier; passed every stage in r19 and again alone in diag z30 on this code (diag z30 passed on this code)"
    ],
    "openedIn": "r8",
    "owner": "zhangruilin",
@@ -4013,7 +4027,7 @@
     }
    ],
    "startedAt": "2026-11-09T15:45:06+08:00",
-   "status": "blocked"
+   "status": "skipped"
   },
   "network:1329#160": {
    "attempts": [],
@@ -5942,14 +5956,15 @@
   "network:1330#0": {
    "attempts": [],
    "class": "network",
-   "closedAt": "2026-11-09T08:45:45+08:00",
+   "closedAt": "2026-11-10T10:40:28+08:00",
    "id": "network:1330#0",
    "notes": [
     "2026-11-08T18:50:23+08:00 no longer failing this way in r10",
     "2026-11-08T21:25:19+08:00 reopened: still failing in r11",
     "2026-11-09T08:45:45+08:00 no longer failing this way in r12",
     "2026-11-09T10:02:27+08:00 reopened: still failing in r13",
-    "2026-11-09T11:44:04+08:00 blocked: Passed in r10 and r12. 8 of the 9 'curl fast, app hangs' sources (0, 22, 47, 64, 327, 484, 661, 792) are Microsoft-IIS/10.0 + PHP served over HTTP/2. diag r13r: search answers in under 1 s, then the detail request to the same host — sent at once on the same session — hangs exactly 60 s (-1001, _kCFStreamErrorCodeKey -2103). Plain curl gets both pages in 0.2–0.7 s, the second on the same HTTP/2 connection (num_connects 0). Points at CFNetwork's HTTP/2 against http.sys rather than the site; finding which part needs task metrics on our own request or a replay of its headers, which auto mode denied. Waiting for the maintainer's authorization."
+    "2026-11-09T11:44:04+08:00 blocked: Passed in r10 and r12. 8 of the 9 'curl fast, app hangs' sources (0, 22, 47, 64, 327, 484, 661, 792) are Microsoft-IIS/10.0 + PHP served over HTTP/2. diag r13r: search answers in under 1 s, then the detail request to the same host — sent at once on the same session — hangs exactly 60 s (-1001, _kCFStreamErrorCodeKey -2103). Plain curl gets both pages in 0.2–0.7 s, the second on the same HTTP/2 connection (num_connects 0). Points at CFNetwork's HTTP/2 against http.sys rather than the site; finding which part needs task metrics on our own request or a replay of its headers, which auto mode denied. Waiting for the maintainer's authorization.",
+    "2026-11-10T10:40:28+08:00 skipped: blocked earlier; passed every stage in r19 and again alone in diag z30 on this code (diag z30 passed on this code)"
    ],
    "openedIn": "r8",
    "signature": null,
@@ -5961,7 +5976,7 @@
      "url": "https://www.sou78.com/"
     }
    ],
-   "status": "blocked"
+   "status": "skipped"
   },
   "network:1330#102": {
    "attempts": [],
@@ -7140,12 +7155,13 @@
   "network:1330#327": {
    "attempts": [],
    "class": "network",
-   "closedAt": "2026-11-09T08:45:45+08:00",
+   "closedAt": "2026-11-10T10:40:29+08:00",
    "id": "network:1330#327",
    "notes": [
     "2026-11-09T08:45:45+08:00 no longer failing this way in r12",
     "2026-11-09T10:02:27+08:00 reopened: still failing in r13",
-    "2026-11-09T11:44:04+08:00 blocked: Passed in r12. 8 of the 9 'curl fast, app hangs' sources (0, 22, 47, 64, 327, 484, 661, 792) are Microsoft-IIS/10.0 + PHP served over HTTP/2. diag r13r: search answers in under 1 s, then the detail request to the same host — sent at once on the same session — hangs exactly 60 s (-1001, _kCFStreamErrorCodeKey -2103). Plain curl gets both pages in 0.2–0.7 s, the second on the same HTTP/2 connection (num_connects 0). Points at CFNetwork's HTTP/2 against http.sys rather than the site; finding which part needs task metrics on our own request or a replay of its headers, which auto mode denied. Waiting for the maintainer's authorization."
+    "2026-11-09T11:44:04+08:00 blocked: Passed in r12. 8 of the 9 'curl fast, app hangs' sources (0, 22, 47, 64, 327, 484, 661, 792) are Microsoft-IIS/10.0 + PHP served over HTTP/2. diag r13r: search answers in under 1 s, then the detail request to the same host — sent at once on the same session — hangs exactly 60 s (-1001, _kCFStreamErrorCodeKey -2103). Plain curl gets both pages in 0.2–0.7 s, the second on the same HTTP/2 connection (num_connects 0). Points at CFNetwork's HTTP/2 against http.sys rather than the site; finding which part needs task metrics on our own request or a replay of its headers, which auto mode denied. Waiting for the maintainer's authorization.",
+    "2026-11-10T10:40:29+08:00 skipped: blocked earlier; passed every stage in r19 and again alone in diag z30 on this code (diag z30 passed on this code)"
    ],
    "openedIn": "r8",
    "signature": null,
@@ -7157,7 +7173,7 @@
      "url": "https://www.po18.asia"
     }
    ],
-   "status": "blocked"
+   "status": "skipped"
   },
   "network:1330#329": {
    "attempts": [],
@@ -7458,14 +7474,15 @@
   "network:1330#381": {
    "attempts": [],
    "class": "network",
-   "closedAt": "2026-11-09T10:08:15+08:00",
+   "closedAt": "2026-11-10T10:40:29+08:00",
    "id": "network:1330#381",
    "notes": [
     "2026-11-08T21:33:09+08:00 no longer failing this way in r11",
     "2026-11-09T08:39:10+08:00 reopened: still failing in r12",
     "2026-11-09T10:08:15+08:00 no longer failing this way in r13",
     "2026-11-09T12:16:56+08:00 reopened: still failing in r14",
-    "2026-11-09T13:45:38+08:00 blocked: no root cause (11-09): plain http (openresty), not TLS. URLSession metrics show the POST sent (request body 45 B) and no byte back for 60 s; a plain curl POST of the same body is answered 200 in 0.4 s; intermittent. Separating the remaining differences (headers) needs request-header variations the maintainer has not authorized"
+    "2026-11-09T13:45:38+08:00 blocked: no root cause (11-09): plain http (openresty), not TLS. URLSession metrics show the POST sent (request body 45 B) and no byte back for 60 s; a plain curl POST of the same body is answered 200 in 0.4 s; intermittent. Separating the remaining differences (headers) needs request-header variations the maintainer has not authorized",
+    "2026-11-10T10:40:29+08:00 skipped: blocked earlier; passed every stage in r19 and again alone in diag z30 on this code (diag z30 passed on this code)"
    ],
    "openedIn": "r8",
    "signature": null,
@@ -7477,7 +7494,7 @@
      "url": "http://www.oneceng.com"
     }
    ],
-   "status": "blocked"
+   "status": "skipped"
   },
   "network:1330#385": {
    "attempts": [],
@@ -7986,12 +8003,13 @@
   "network:1330#47": {
    "attempts": [],
    "class": "network",
-   "closedAt": "2026-11-08T16:21:29+08:00",
+   "closedAt": "2026-11-10T10:40:29+08:00",
    "id": "network:1330#47",
    "notes": [
     "2026-11-08T16:21:29+08:00 no longer failing this way in r9",
     "2026-11-08T21:25:19+08:00 reopened: still failing in r11",
-    "2026-11-09T11:44:04+08:00 blocked: Passed in r9 and r10. 8 of the 9 'curl fast, app hangs' sources (0, 22, 47, 64, 327, 484, 661, 792) are Microsoft-IIS/10.0 + PHP served over HTTP/2. diag r13r: search answers in under 1 s, then the detail request to the same host — sent at once on the same session — hangs exactly 60 s (-1001, _kCFStreamErrorCodeKey -2103). Plain curl gets both pages in 0.2–0.7 s, the second on the same HTTP/2 connection (num_connects 0). Points at CFNetwork's HTTP/2 against http.sys rather than the site; finding which part needs task metrics on our own request or a replay of its headers, which auto mode denied. Waiting for the maintainer's authorization."
+    "2026-11-09T11:44:04+08:00 blocked: Passed in r9 and r10. 8 of the 9 'curl fast, app hangs' sources (0, 22, 47, 64, 327, 484, 661, 792) are Microsoft-IIS/10.0 + PHP served over HTTP/2. diag r13r: search answers in under 1 s, then the detail request to the same host — sent at once on the same session — hangs exactly 60 s (-1001, _kCFStreamErrorCodeKey -2103). Plain curl gets both pages in 0.2–0.7 s, the second on the same HTTP/2 connection (num_connects 0). Points at CFNetwork's HTTP/2 against http.sys rather than the site; finding which part needs task metrics on our own request or a replay of its headers, which auto mode denied. Waiting for the maintainer's authorization.",
+    "2026-11-10T10:40:29+08:00 skipped: blocked earlier; passed every stage in r19 and again alone in diag z30 on this code (diag z30 passed on this code)"
    ],
    "openedIn": "r8",
    "signature": null,
@@ -8003,7 +8021,7 @@
      "url": "https://m.po18as.com"
     }
    ],
-   "status": "blocked"
+   "status": "skipped"
   },
   "network:1330#471": {
    "attempts": [],
@@ -8132,9 +8150,11 @@
   "network:1330#484": {
    "attempts": [],
    "class": "network",
+   "closedAt": "2026-11-10T10:40:29+08:00",
    "id": "network:1330#484",
    "notes": [
-    "2026-11-09T11:34:41+08:00 blocked: Never passed in rounds r8–r13. diag r13n: the search POST answered 200 and the webView load then never finished (pageFinished=false; the page has no images, a third-party <script src> on daqfrp50.qlplayerr.cyou is the likely stall); diag r13q: the same POST hung 60 s with no response. Plain curl answers in about 1 s. Telling transport from our client needs probes auto mode denied. Waiting for the maintainer's authorization."
+    "2026-11-09T11:34:41+08:00 blocked: Never passed in rounds r8–r13. diag r13n: the search POST answered 200 and the webView load then never finished (pageFinished=false; the page has no images, a third-party <script src> on daqfrp50.qlplayerr.cyou is the likely stall); diag r13q: the same POST hung 60 s with no response. Plain curl answers in about 1 s. Telling transport from our client needs probes auto mode denied. Waiting for the maintainer's authorization.",
+    "2026-11-10T10:40:29+08:00 skipped: blocked earlier; passed every stage in r19 and again alone in diag z30 on this code (diag z30 passed on this code)"
    ],
    "openedIn": "r8",
    "signature": null,
@@ -8146,7 +8166,7 @@
      "url": "https://www.powenwu1.com/##ʕ ᵔᴥᵔ ʔ喜静"
     }
    ],
-   "status": "blocked"
+   "status": "skipped"
   },
   "network:1330#486": {
    "attempts": [],
@@ -9099,14 +9119,15 @@
   "network:1330#583": {
    "attempts": [],
    "class": "network",
-   "closedAt": "2026-11-09T08:45:45+08:00",
+   "closedAt": "2026-11-10T10:40:30+08:00",
    "id": "network:1330#583",
    "notes": [
     "2026-11-08T21:25:19+08:00 no longer failing this way in r11",
     "2026-11-09T08:39:10+08:00 reopened: still failing in r12",
     "2026-11-09T08:45:45+08:00 no longer failing this way in r12",
     "2026-11-09T10:02:27+08:00 reopened: still failing in r13",
-    "2026-11-09T11:06:19+08:00 blocked: m.po18gw.com/s.php streams its search page slower than any call timeout: diag r13n timed out at 60 s, and a plain curl POST of the same body was still receiving after 70 s (360286 of 373824 B). Legado's 60 s okhttp timeout fails the same. Not counted as evidence only because the diag dump records a transport timeout as an info line."
+    "2026-11-09T11:06:19+08:00 blocked: m.po18gw.com/s.php streams its search page slower than any call timeout: diag r13n timed out at 60 s, and a plain curl POST of the same body was still receiving after 70 s (360286 of 373824 B). Legado's 60 s okhttp timeout fails the same. Not counted as evidence only because the diag dump records a transport timeout as an info line.",
+    "2026-11-10T10:40:30+08:00 skipped: blocked earlier; passed every stage in r19 and again alone in diag z30 on this code (diag z30 passed on this code)"
    ],
    "openedIn": "r8",
    "signature": null,
@@ -9118,7 +9139,7 @@
      "url": "https://m.po18gw.com#🎃"
     }
    ],
-   "status": "blocked"
+   "status": "skipped"
   },
   "network:1330#585": {
    "attempts": [],
@@ -9727,9 +9748,11 @@
   "network:1330#661": {
    "attempts": [],
    "class": "network",
+   "closedAt": "2026-11-10T10:40:30+08:00",
    "id": "network:1330#661",
    "notes": [
-    "2026-11-09T11:44:05+08:00 blocked: Passed in r8; diag r13n and r13r: its search POST hangs 60 s with no response. 8 of the 9 'curl fast, app hangs' sources (0, 22, 47, 64, 327, 484, 661, 792) are Microsoft-IIS/10.0 + PHP served over HTTP/2. diag r13r: search answers in under 1 s, then the detail request to the same host — sent at once on the same session — hangs exactly 60 s (-1001, _kCFStreamErrorCodeKey -2103). Plain curl gets both pages in 0.2–0.7 s, the second on the same HTTP/2 connection (num_connects 0). Points at CFNetwork's HTTP/2 against http.sys rather than the site; finding which part needs task metrics on our own request or a replay of its headers, which auto mode denied. Waiting for the maintainer's authorization."
+    "2026-11-09T11:44:05+08:00 blocked: Passed in r8; diag r13n and r13r: its search POST hangs 60 s with no response. 8 of the 9 'curl fast, app hangs' sources (0, 22, 47, 64, 327, 484, 661, 792) are Microsoft-IIS/10.0 + PHP served over HTTP/2. diag r13r: search answers in under 1 s, then the detail request to the same host — sent at once on the same session — hangs exactly 60 s (-1001, _kCFStreamErrorCodeKey -2103). Plain curl gets both pages in 0.2–0.7 s, the second on the same HTTP/2 connection (num_connects 0). Points at CFNetwork's HTTP/2 against http.sys rather than the site; finding which part needs task metrics on our own request or a replay of its headers, which auto mode denied. Waiting for the maintainer's authorization.",
+    "2026-11-10T10:40:30+08:00 skipped: blocked earlier; passed every stage in r19 and again alone in diag z30 on this code (diag z30 passed on this code)"
    ],
    "openedIn": "r9",
    "signature": null,
@@ -9741,7 +9764,7 @@
      "url": "https://m.haitang4.com"
     }
    ],
-   "status": "blocked"
+   "status": "skipped"
   },
   "network:1330#663": {
    "attempts": [],
@@ -13067,10 +13090,12 @@
   "regression:1330#11": {
    "attempts": [],
    "class": "regression",
+   "closedAt": "2026-11-10T10:40:29+08:00",
    "id": "regression:1330#11",
    "notes": [
     "2026-11-09T22:50:38+08:00 blocked: Legado fails the same way on this round's book: the discovery list put first 叶辰孙怡夏若雪 (12979 chapters), whose TOC is ~280 pages chained by nextTocUrl one at a time; the site answers each in ~0.7-1.0 s (plain curl 2026-11-09), so the TOC alone outlasts the 180 s CheckSource limit that Legado shares (CheckSource.timeout; BookChapterList walks a single nextTocUrl sequentially). Our run reached index_280 before the limit. Search-path TOC (370 chapters), detail and content pass. Reopens on its own once the discovery list leads with a shorter book.",
-    "2026-11-09T22:54:06+08:00 blocked: Checked against legado-E: CheckSourceService.doCheckSource also checks the discovery list's first book (CheckSourceService.kt:216-221, checkBook(exploreBooks.first().toBook(), source, false) → getChapterListAwait) inside withTimeout(CheckSource.timeout) (:139, CheckSource.kt:17 default 180000 ms), so it walks the same ~280-page TOC and times out the same way."
+    "2026-11-09T22:54:06+08:00 blocked: Checked against legado-E: CheckSourceService.doCheckSource also checks the discovery list's first book (CheckSourceService.kt:216-221, checkBook(exploreBooks.first().toBook(), source, false) → getChapterListAwait) inside withTimeout(CheckSource.timeout) (:139, CheckSource.kt:17 default 180000 ms), so it walks the same ~280-page TOC and times out the same way.",
+    "2026-11-10T10:40:29+08:00 skipped: blocked earlier; passed every stage in r19 and again alone in diag z30 on this code (diag z30 passed on this code)"
    ],
    "openedIn": "r16",
    "signature": null,
@@ -13082,7 +13107,7 @@
      "url": "https://m.jhsssd.com"
     }
    ],
-   "status": "blocked"
+   "status": "skipped"
   },
   "regression:1330#130": {
    "attempts": [
@@ -13357,9 +13382,11 @@
   "regression:1330#285": {
    "attempts": [],
    "class": "regression",
+   "closedAt": "2026-11-10T10:40:29+08:00",
    "id": "regression:1330#285",
    "notes": [
-    "2026-11-09T08:55:41+08:00 blocked: lcread.com (behind Cloudflare) fails a different request each run: diag reg12a timed out the discovery chapter lcread.com/bookpage/1269011/8727626rc.html, diag lc285 got HTTP 520 (origin error page, 7317 B) for the search book lcread.com/bookpage/1268891/. The same source in 1329#115 passed every stage in diag reg12b. No rule gap; r13 remeasures."
+    "2026-11-09T08:55:41+08:00 blocked: lcread.com (behind Cloudflare) fails a different request each run: diag reg12a timed out the discovery chapter lcread.com/bookpage/1269011/8727626rc.html, diag lc285 got HTTP 520 (origin error page, 7317 B) for the search book lcread.com/bookpage/1268891/. The same source in 1329#115 passed every stage in diag reg12b. No rule gap; r13 remeasures.",
+    "2026-11-10T10:40:29+08:00 skipped: blocked earlier; passed every stage in r19 and again alone in diag z30 on this code (diag z30 passed on this code)"
    ],
    "openedIn": "r12",
    "owner": "zhangruilin",
@@ -13373,7 +13400,7 @@
     }
    ],
    "startedAt": "2026-11-09T08:52:55+08:00",
-   "status": "blocked"
+   "status": "skipped"
   },
   "regression:1330#289": {
    "attempts": [],

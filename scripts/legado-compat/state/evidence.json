@@ -6165,6 +6165,22 @@
    "round": "r19",
    "status": "active",
    "url": "https://m.douhuawenxue.com"
+  },
+  {
+   "addedAt": "2026-11-10T10:30:48+08:00",
+   "diag": "/tmp/yuedu-yck1330/run-1107/diag-1331-z29",
+   "index": 359,
+   "kind": "site",
+   "legado": "legado-E CheckSourceService.kt:216 WebBook.exploreBookAwait(source, url) resolves the same host and throws UnknownHostException, which doCheckSource reports as 校验失败; with checkDomain on it stops earlier at :181, 源地址不是http链接 (bookSourceUrl is 通用书源).",
+   "name": "通用书源（写）",
+   "observed": [
+    "! 無法找到指定主機名稱的伺服器。 http://m.niliuxs.org/sort-1-1/"
+   ],
+   "pack": "1331",
+   "proof": "Discovery host m.niliuxs.org does not exist: dig from here answers NXDOMAIN (2026-11-10 10:30), and diag z29 recorded the request GET http://m.niliuxs.org/sort-1-1/ failing with NSURLErrorCannotFindHost (無法找到指定主機名稱的伺服器). The source has no search URL, so discovery is its only stage; its bookSourceUrl is the bare name 通用书源, not an http URL.",
+   "round": "r19",
+   "status": "active",
+   "url": "通用书源"
   }
  ]
 }

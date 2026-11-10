@@ -840,8 +840,24 @@ def cmd_take(args):
         if args.item not in ledger["items"]:
             die(f"no item {args.item}")
         item = ledger["items"][args.item]
-        if item["status"] != "todo":
-            die(f"{args.item} is {item['status']}; only a todo item is taken")
+        if item["status"] == "blocked" and args.reverify:
+            # A blocked fix whose sources all pass a later full audit gets one more verification:
+            # 轻之文库 (1331#15/#17/#172) blocked bridge:method:parentNode on the site's own
+            # slowness, then passed r19. The gate is the same; failing it blocks the item again.
+            if item["class"] != "bridge-gap":
+                die("only a bridge fix is verified again; any other blocked item that passes now "
+                    "ends with lc.py skip ITEM --diag TAG")
+            round_ = current_round()
+            classified = load(classified_path(round_), {})
+            failing = {(pack, row["url"]) for pack, data in classified.get("packs", {}).items()
+                       for row in data["failures"]}
+            still = [f"{s['pack']}#{s['index']}" for s in item["sources"] if (s["pack"], s["url"]) in failing]
+            if still:
+                die(f"{', '.join(still)} still fail in {round_}: the cause of the block still holds")
+            item["notes"].append(f"{now()} taken again: every source passed {round_}: {args.reverify}")
+        elif item["status"] != "todo":
+            die(f"{args.item} is {item['status']}; only a todo item is taken"
+                + (" (a blocked bridge fix whose sources now pass: --reverify '…')" if item["status"] == "blocked" else ""))
         item["status"] = "in_progress"
         item["startedAt"] = now()
         item["owner"] = args.owner
@@ -1484,6 +1500,8 @@ def main():
     p.add_argument("--proof"); p.add_argument("--legado"); p.set_defaults(func=cmd_unblock)
     p = sub.add_parser("take", help="take one named todo item whose fix is already written")
     p.add_argument("item"); p.add_argument("--owner", default=os.environ.get("USER", "agent"))
+    p.add_argument("--reverify", metavar="REASON",
+                   help="a blocked bridge fix whose sources all pass the latest round: verify it again")
     p.set_defaults(func=cmd_take)
     p = sub.add_parser("skip", help="network noise: closed for this round, reopens if it fails again")
     p.add_argument("item"); p.add_argument("--reason", required=True)

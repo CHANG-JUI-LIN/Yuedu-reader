@@ -51,7 +51,10 @@ decide anything, and never write a number or a status that you did not read in a
      `lc skip ITEM --diag TAG --reason '…'` (refused unless every one of its sources passed
      in that diag);
    - Legado fails the same way (bridge clusters only): `lc reject ITEM --legado 'file:line, why'`;
-   - stuck: `lc block ITEM --reason '…'`.
+   - stuck: `lc block ITEM --reason '…'`. A blocked bridge fix whose sources all pass a later
+     round (the block was the site, not the fix) is verified again with
+     `lc take ITEM --reverify '…'`, then `verify` and `done` as usual; any other blocked item
+     that passes now ends with `skip --diag`.
 6. When `lc next` has no open item, start the next round at step 1.
 
 ## Gates
