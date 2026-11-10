@@ -460,35 +460,77 @@ final class SharedImportQueueDrainer: ObservableObject {
 
     private func importFilePayload(_ url: URL, suggestedFilename: String?) async throws -> ImportResult {
         let fileExtension = effectiveFileExtension(for: url, suggestedFilename: suggestedFilename)
+        let contents = try await Self.readFilePayload(
+            url,
+            fileExtension: fileExtension,
+            suggestedFilename: suggestedFilename
+        )
+
+        switch contents {
+        case .customization(let data, let kind):
+            customizationRequests.append(.init(data: data, kind: kind))
+            return .init(count: 0, category: .customization)
+        case .bookSource(let data, let ext):
+            return .init(count: try importBookSources(data, fileExtension: ext), category: .bookSource)
+        case .rssOPML(let data):
+            return .init(count: try importOPMLData(data), category: .rss)
+        case .rssLegadoJSON(let data):
+            return .init(count: try importLegadoRSSData(data), category: .rss)
+        case .replaceRules(let data):
+            return .init(count: try importReplaceRuleData(data), category: .replaceRule)
+        case .localBook(let staged):
+            guard let staged else {
+                return try await importBookFile(url)
+            }
+            defer { try? FileManager.default.removeItem(at: staged.deletingLastPathComponent()) }
+            return try await importBookFile(staged)
+        }
+    }
+
+    /// What a shared file turned out to hold, with the bytes its importer needs already read.
+    private enum FilePayloadContents: Sendable {
+        case customization(Data, SharedCustomizationKind)
+        case bookSource(Data, fileExtension: String)
+        case rssOPML(Data)
+        case rssLegadoJSON(Data)
+        case replaceRules(Data)
+        /// The copy under the shared name, when the file on disk is named something else.
+        case localBook(staged: URL?)
+    }
+
+    /// Every read of a shared file — the classifier's sample, the whole payload, the copy
+    /// that restages a book — off the main actor. A file the Files app hands over can live
+    /// in a file provider that has not downloaded it; reading it then blocks until the
+    /// download ends, and on the main thread that outlasted the scene-update watchdog
+    /// (Crashlytics e592cad9, 10 s). The caller keeps the security scope open across this.
+    @concurrent
+    private nonisolated static func readFilePayload(
+        _ url: URL,
+        fileExtension: String,
+        suggestedFilename: String?
+    ) async throws -> FilePayloadContents {
         let classification = try SharedImportPayloadClassifier.classify(
             fileURL: url,
             fileExtension: fileExtension,
             suggestedFilename: suggestedFilename
         )
-
         switch classification {
         case .customization(let kind):
-            customizationRequests.append(.init(data: try Data(contentsOf: url), kind: kind))
-            return .init(count: 0, category: .customization)
+            return .customization(try Data(contentsOf: url), kind)
         case .bookSource(let ext):
-            let data = try BookSourceStore.importData(contentsOf: url)
-            return .init(count: try importBookSources(data, fileExtension: ext), category: .bookSource)
+            return .bookSource(try BookSourceStore.importData(contentsOf: url), fileExtension: ext)
         case .rssOPML:
-            return .init(count: try importOPMLData(Data(contentsOf: url)), category: .rss)
+            return .rssOPML(try Data(contentsOf: url))
         case .rssLegadoJSON:
-            return .init(count: try importLegadoRSSData(Data(contentsOf: url)), category: .rss)
+            return .rssLegadoJSON(try Data(contentsOf: url))
         case .replaceRules:
-            return .init(count: try importReplaceRuleData(Data(contentsOf: url)), category: .replaceRule)
+            return .replaceRules(try Data(contentsOf: url))
         case .localBook(let ext):
             let name = SharedImportPayloadClassifier.stagedFilename(
                 suggestedFilename: suggestedFilename ?? url.lastPathComponent,
                 fileExtension: ext
             )
-            guard let staged = try restagedIfRenamed(url, suggestedFilename: name) else {
-                return try await importBookFile(url)
-            }
-            defer { try? FileManager.default.removeItem(at: staged.deletingLastPathComponent()) }
-            return try await importBookFile(staged)
+            return .localBook(staged: try restagedIfRenamed(url, suggestedFilename: name))
         }
     }
 
@@ -589,7 +631,7 @@ final class SharedImportQueueDrainer: ObservableObject {
 
     /// Re-stage a queued file whose on-disk name isn't the name it was shared with,
     /// for the same reason `writeTemporaryPayload` keeps the suggested name.
-    private func restagedIfRenamed(_ url: URL, suggestedFilename: String?) throws -> URL? {
+    private nonisolated static func restagedIfRenamed(_ url: URL, suggestedFilename: String?) throws -> URL? {
         guard let suggestedFilename, !suggestedFilename.isEmpty,
               suggestedFilename != url.lastPathComponent else { return nil }
         let directory = FileManager.default.temporaryDirectory

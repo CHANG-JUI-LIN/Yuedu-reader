@@ -46,6 +46,33 @@ struct DocumentImportTests {
         #expect(try Data(contentsOf: file) == bytes)
     }
 
+    /// Crashlytics e592cad9: a file in a provider that has not downloaded it blocks whoever
+    /// reads it, and the import read it on the main thread until the watchdog ended the app.
+    /// A FIFO blocks its reader the same way, until the writer closes. Were the read back on
+    /// the main actor, this test could not get past its first `await`; the time limit says so.
+    @Test("A shared file whose read blocks leaves the main actor free", .timeLimit(.minutes(1)))
+    func blockedReadLeavesMainActorFree() async throws {
+        let root = try directory()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let file = root.appendingPathComponent("還沒下載.txt")
+        try #require(mkfifo(file.path, 0o600) == 0)
+        let importer = SharedImportQueueDrainer(defaults: nil, importBookFile: { _ in 1 })
+
+        let pending = Task { await importer.openFile(file) }
+        // Opening a FIFO to write returns once a reader holds it: the import is in its read.
+        let writer = await Task.detached { open(file.path, O_WRONLY) }.value
+        try #require(writer >= 0)
+        #expect(importer.activeImportCount == 1)
+
+        let bytes = Array("第一章\n內文".utf8)
+        #expect(write(writer, bytes, bytes.count) == bytes.count)
+        close(writer)
+        let result = await pending.value
+        #expect(result.importedBookCount == 1)
+        #expect(result.failureCount == 0)
+        #expect(importer.activeImportCount == 0)
+    }
+
     @Test("Real documents are saved before requesting their format reader", arguments: ["txt", "md", "markdown", "json", "epub", "pdf", "cbz", "zip", "wav", "audiozip"])
     func realImportAndOpen(ext: String) async throws {
         let root = try directory()
