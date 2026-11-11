@@ -298,17 +298,22 @@ final class ReaderViewModel: ObservableObject {
     /// Requests the neighbour window around `center` through `ensureChapterReady`, the same
     /// entry the reader's own chapter uses.
     ///
-    /// It used to go through `OnlineBookCoordinator.prefetchAround`, which fills the cache
-    /// without telling anyone. The engine preloads n±1 the moment a chapter opens — before
-    /// any prefetch can land — and gets a 載入中 placeholder; with no `.ready` published for
-    /// the neighbour, nothing supplied it again, so the placeholder stayed until the reader
-    /// crossed into it and the entry probe found the bytes. That was one frame of
-    /// 「第N章 載入中」 on the first chapter turn after every open (回饋中心 #155). Through
-    /// here each neighbour publishes its own `.ready`, and `handleChapterStateChanges`
-    /// supplies it to the engine like any other arriving chapter.
+    /// It used to go through a second prefetcher (`OnlineBookCoordinator.prefetchAround`, since
+    /// deleted), which filled the cache without telling anyone. The engine preloads n±1 the
+    /// moment a chapter opens — before any prefetch can land — and gets a 載入中 placeholder;
+    /// with no `.ready` published for the neighbour, nothing supplied it again, so the
+    /// placeholder stayed until the reader crossed into it and the entry probe found the bytes.
+    /// That was one frame of 「第N章 載入中」 on the first chapter turn after every open
+    /// (回饋中心 #155). Through here each neighbour publishes its own `.ready`, and
+    /// `handleChapterStateChanges` supplies it to the engine like any other arriving chapter.
+    ///
+    /// That prefetcher also decided "already cached" by whether a file existed at the index,
+    /// not by the ref's URL and title as `isChapterCached(book:chapterIndex:)` does. After a
+    /// table-of-contents refresh moved a chapter's URL, the old file passed, the neighbour was
+    /// never fetched, and it sat on 載入中 (FB-59). `ensureChapterReady` is the one judge.
     func prefetchAround(book: ReadingBook, center: Int, store: BookStore?) async {
         guard let refs = book.onlineChapters, !refs.isEmpty else { return }
-        for neighbour in OnlineBookCoordinator.adjacentPrefetchWindow(
+        for neighbour in ChapterFetchManager.adjacentPrefetchWindow(
             center: center, chapterCount: refs.count, ahead: GlobalSettings.shared.chapterPrefetchCount
         ) {
             await ensureChapterReady(

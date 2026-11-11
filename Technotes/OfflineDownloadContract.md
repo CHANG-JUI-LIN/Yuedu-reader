@@ -46,7 +46,9 @@
 
 `ChapterFetchManager.states` 曾經在移除下載後仍宣稱 `.cached`（移除只刪檔案，沒人通知這張表），而 `prefetchChapters` 會跳過任何非 `.missing`/`.failed` 的章節——結果整本書的預抓死掉，直到重開 App。
 
-`chapterState(bookId:chapterIndex:)` 先探磁碟；探不到時，**存著的 `.cached` 視為 `.missing`**。這就是 `BookHelp.hasContent` 的規則。
+那個預抓還有第二個坑（FB-59）：它問的「磁碟上有沒有」只看那個索引有沒有檔，不看章節網址與目錄標題。目錄刷新用 `.preserveContent` 留下舊檔，來源換了線路或插了一章之後，舊檔照樣過關，下一章從此沒人抓，而閱讀器自己讀檔時一律 `urlMismatch`。
+
+現在這張表、`prefetchChapters` 和它所屬的 `OnlineBookCoordinator` 都已刪除。「這章在不在磁碟上」只有一個判斷：`ChapterFetchManager.isChapterCached(book:chapterIndex:)`（經 `cachedChapterPackage`，先比清理過的網址、再比原始網址，加上目錄標題），閱讀器的 `ensureChapterReady` 與鄰章預抓都走它。這就是 `BookHelp.hasContent` 的規則：磁碟是唯一真相，而且是**屬於這個 ref 的**磁碟內容。
 
 ### 4　失敗只留在記憶體
 

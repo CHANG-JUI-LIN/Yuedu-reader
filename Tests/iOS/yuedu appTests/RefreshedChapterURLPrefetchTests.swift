@@ -9,8 +9,9 @@ import Testing
 /// body saved under the old URL is still on disk at the chapter's index. Everything that reads a
 /// chapter judges that file against the ref's URL and title and rejects it (`urlMismatch`); the
 /// only question is whether whatever decides "fetch the neighbour" judges it the same way. In
-/// build 135 it did not: the neighbour prefetch asked a URL-blind probe, which called the stale
-/// file cached, so nothing ever fetched the chapter.
+/// build 135 it did not: the neighbour prefetch went through a second prefetcher
+/// (`OnlineBookCoordinator.prefetchAround`, since deleted) that asked a URL-blind probe, which
+/// called the stale file cached, so nothing ever fetched the chapter.
 @MainActor
 @Suite("A refreshed chapter URL is fetched, not taken for cached (FB-59)", .serialized)
 struct RefreshedChapterURLPrefetchTests {
@@ -86,9 +87,7 @@ struct RefreshedChapterURLPrefetchTests {
         return true
     }
 
-    // MARK: - The reader's neighbour prefetch
-
-    /// The path the reader takes since FB-155 (1a74cf7d): `ReaderView.prefetchAdjacentChapters`
+    /// The only neighbour prefetch since FB-155 (1a74cf7d): `ReaderView.prefetchAdjacentChapters`
     /// → `ReaderViewModel.prefetchAround` → `ensureChapterReady`, against the real fetch manager.
     @Test("the reader's neighbour prefetch fetches a chapter whose URL a refresh changed")
     func readerPrefetchFetchesRefreshedNeighbour() async throws {
@@ -115,66 +114,34 @@ struct RefreshedChapterURLPrefetchTests {
         #expect(!package.content.contains("舊線路"), "the reader reads the chapter at its new URL")
     }
 
-    // MARK: - ChapterFetchManager's own prefetch gate
-
-    @Test("a body saved under the chapter's old URL is missing, and prefetch fetches it")
-    func gateFetchesChapterWithChangedURL() async throws {
-        let newURL = Self.chapterURL("2")
-        let fixture = try makeFixture(chapters: [
-            OnlineChapterRef(index: 0, title: "第一章 雨夜", url: Self.chapterURL("1")),
-            OnlineChapterRef(index: 1, title: "第二章 書店", url: newURL),
-        ])
-        defer { cleanUp(fixture) }
-        try cacheBeforeRefresh(bookId: fixture.book.id, chapterIndex: 1,
-                               url: "https://v3.example.com/chapter/2", title: "第二章 書店")
-        ModuleStub.install(["ncode.syosetu.com/n0059fb/2": .html(Self.episodePage(Self.body))])
-
-        #expect(await fixture.manager.chapterState(book: fixture.book, chapterIndex: 1) == .missing)
-
-        await fixture.manager.prefetchChapters(book: fixture.book, indices: [1], priority: .prefetch,
-                                               store: fixture.store)
-        #expect(await waitUntil { ModuleStub.urls == [newURL] }, "prefetch never asked for the chapter")
-        #expect(await waitUntil { await fixture.manager.isChapterCached(book: fixture.book, chapterIndex: 1) })
-        #expect(await fixture.manager.chapterState(book: fixture.book, chapterIndex: 1) == .cached)
-    }
-
-    @Test("a refresh that inserts a chapter leaves the next one's file at the wrong index, and prefetch fetches it")
-    func gateFetchesChapterAfterIndexShift() async throws {
+    @Test("the reader's neighbour prefetch fetches a chapter a refresh inserted over another's file")
+    func readerPrefetchFetchesInsertedNeighbour() async throws {
         // Before the refresh: 第一章 at 0, 第二章 at 1. The source inserted 請假條 between them, so
         // 第二章 moved to 2 — and index 1's file still holds 第二章.
         let insertedURL = Self.chapterURL("1a")
+        let movedURL = Self.chapterURL("2")
         let fixture = try makeFixture(chapters: [
             OnlineChapterRef(index: 0, title: "第一章 雨夜", url: Self.chapterURL("1")),
             OnlineChapterRef(index: 1, title: "請假條", url: insertedURL),
-            OnlineChapterRef(index: 2, title: "第二章 書店", url: Self.chapterURL("2")),
+            OnlineChapterRef(index: 2, title: "第二章 書店", url: movedURL),
         ])
         defer { cleanUp(fixture) }
-        try cacheBeforeRefresh(bookId: fixture.book.id, chapterIndex: 1,
-                               url: Self.chapterURL("2"), title: "第二章 書店")
-        ModuleStub.install(["ncode.syosetu.com/n0059fb/1a": .html(Self.episodePage(Self.body))])
-
-        #expect(await fixture.manager.chapterState(book: fixture.book, chapterIndex: 1) == .missing)
-
-        await fixture.manager.prefetchChapters(book: fixture.book, indices: [1], priority: .prefetch,
-                                               store: fixture.store)
-        #expect(await waitUntil { ModuleStub.urls == [insertedURL] }, "prefetch never asked for the chapter")
-        #expect(await waitUntil { await fixture.manager.isChapterCached(book: fixture.book, chapterIndex: 1) })
-    }
-
-    @Test("a chapter cached under its current URL is cached, and prefetch leaves it alone")
-    func gateSkipsChapterCachedUnderCurrentURL() async throws {
-        let url = Self.chapterURL("2")
-        let fixture = try makeFixture(chapters: [
-            OnlineChapterRef(index: 0, title: "第一章 雨夜", url: Self.chapterURL("1")),
-            OnlineChapterRef(index: 1, title: "第二章 書店", url: url),
+        try cacheBeforeRefresh(bookId: fixture.book.id, chapterIndex: 1, url: movedURL, title: "第二章 書店")
+        ModuleStub.install([
+            "ncode.syosetu.com/n0059fb/1a": .html(Self.episodePage("請假條\n" + Self.body)),
+            "ncode.syosetu.com/n0059fb/2": .html(Self.episodePage(Self.body)),
         ])
-        defer { cleanUp(fixture) }
-        try cacheBeforeRefresh(bookId: fixture.book.id, chapterIndex: 1, url: url, title: "第二章 書店")
-        ModuleStub.install([:])
+        let viewModel = ReaderViewModel(
+            chapterFetcher: LiveChapterFetcher(chapterFetchManager: fixture.manager),
+            bookSourceFetcher: StubBookSourceFetcher()
+        )
 
-        #expect(await fixture.manager.chapterState(book: fixture.book, chapterIndex: 1) == .cached)
-        await fixture.manager.prefetchChapters(book: fixture.book, indices: [1], priority: .prefetch,
-                                               store: fixture.store)
-        #expect(ModuleStub.urls.isEmpty)
+        await viewModel.prefetchAround(book: fixture.book, center: 0, store: fixture.store)
+
+        #expect(await waitUntil { viewModel.chapterStates[1] == .ready && viewModel.chapterStates[2] == .ready },
+                "the neighbours never became ready")
+        #expect(Set(ModuleStub.urls) == [insertedURL, movedURL])
+        let inserted = try #require(await fixture.manager.cachedChapterPackage(book: fixture.book, chapterIndex: 1))
+        #expect(inserted.content.contains("請假條"), "index 1 holds the inserted chapter, not 第二章's old file")
     }
 }

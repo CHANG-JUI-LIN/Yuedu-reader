@@ -23,11 +23,12 @@ struct ChapterFetchManagerSharedTests {
     }
 
     /// One manager owns in-flight dedup, priorities, generation tokens and quarantine counts:
-    /// the reader's coordinator and every `.shared` caller (TTS, AI, video, browser) share it.
+    /// the reader's chapter fetcher and every `.shared` caller (TTS, AI, video, browser) share it.
     @MainActor
     @Test func appDependenciesUseTheSharedManager() throws {
-        let coordinator = try #require(AppDependencies.live.onlineBookCoordinator as? OnlineBookCoordinator)
-        #expect(coordinator.chapterFetchManager === ChapterFetchManager.shared)
-        #expect(coordinator.bookSourceFetcher === BookSourceFetcher.shared)
+        let chapterFetcher = try #require(AppDependencies.live.chapterFetcher as? LiveChapterFetcher)
+        #expect(chapterFetcher.chapterFetchManager === ChapterFetchManager.shared)
+        let bookSourceFetcher = try #require(AppDependencies.live.bookSourceFetcher as? LiveBookSourceFetcher)
+        #expect(bookSourceFetcher.bookSourceFetcher === BookSourceFetcher.shared)
     }
 }

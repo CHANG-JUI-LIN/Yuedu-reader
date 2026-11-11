@@ -1,6 +1,5 @@
 import Foundation
 import SwiftUI
-import os
 
 extension Notification.Name {
     static let onlineChapterCacheDidUpdate = Notification.Name("onlineChapterCacheDidUpdate")
@@ -8,13 +7,6 @@ extension Notification.Name {
     /// book. An open reader holds `.ready` load states for chapters that no longer exist on
     /// disk, and it reads that pair as 資料不一致 — so whoever empties the cache has to say so.
     static let onlineChapterCacheDidClear = Notification.Name("onlineChapterCacheDidClear")
-}
-
-enum OnlineChapterLoadState: String {
-    case missing
-    case loading
-    case cached
-    case failed
 }
 
 enum OnlineChapterCacheWritePolicy {
@@ -87,7 +79,7 @@ enum ChapterFetchPriority: Int {
 }
 
 actor ChapterFetchManager {
-    /// The one chapter fetch manager: the reader's coordinator (`AppDependencies.live`) and every
+    /// The one chapter fetch manager: the reader's chapter fetcher (`AppDependencies.live`) and every
     /// other caller (TTS, AI, video, browser) share its in-flight dedup, priorities, generation
     /// tokens and quarantine counts. Built without the main actor — its first touch can come from
     /// any executor (Crashlytics f71d7b80: `OnlineChapterContentService.payload` on a worker).
@@ -96,7 +88,6 @@ actor ChapterFetchManager {
     private let bookSourceFetcher: BookSourceFetcher
     private let moduleReader: ModuleBookReader
     private var tasks: [String: Task<ChapterPackage, Error>] = [:]
-    private var states: [String: OnlineChapterLoadState] = [:]
     private var priorities: [String: ChapterFetchPriority] = [:]
 
     // MARK: - Generation Token
@@ -246,33 +237,6 @@ actor ChapterFetchManager {
         )
     }
 
-    /// What `prefetchChapters` asks before fetching: `.cached` exactly when the reader would
-    /// accept the chapter on disk. That is `isChapterCached(book:chapterIndex:)`, the probe
-    /// `ReaderViewModel.ensureChapterReady` uses, and it judges the file as `fetchChapter` does:
-    /// against the ref's URL (sanitized, then as written) and its TOC title.
-    ///
-    /// It needs the ref, not just the index. A TOC refresh keeps the old chapter files
-    /// (`BookStore` reconciles with `.preserveContent`), so after a source moved its chapter
-    /// URLs or inserted a chapter, the file at an index can belong to another URL or another
-    /// chapter. A probe that only looked for a file called that chapter cached, the gate below
-    /// skipped it, and every reader of the chapter rejected the file (`urlMismatch`) — the
-    /// neighbour sat on 載入中 with no fetch ever started (FB-59, YD-F846-VFX5, build 135).
-    ///
-    /// Going through `cachedChapterPackage` also clears a cached package the reader would not
-    /// reuse; `fetchChapter` clears the same package on the same condition before refetching.
-    func chapterState(book: ReadingBook, chapterIndex: Int) -> OnlineChapterLoadState {
-        if isChapterCached(book: book, chapterIndex: chapterIndex) {
-            return .cached
-        }
-        // Disk is the truth — the same rule legado applies with `BookHelp.hasContent`. A
-        // stored `.cached` that the probe above just contradicted is stale: 移除下載 deletes
-        // the files without telling this map, and `prefetchChapters` skips anything that is
-        // not `.missing`/`.failed`, so believing it killed prefetch for the entire book until
-        // the next relaunch.
-        let stored = states[key(bookId: book.id, chapterIndex: chapterIndex)] ?? .missing
-        return stored == .cached ? .missing : stored
-    }
-
     /// The chapters of `book` that need the network to be read — what 目錄 marks. One listing
     /// of the book's cache rather than `isChapterCached(book:chapterIndex:)` per row, and off
     /// this actor: it reads files and none of the actor's state. A volume heading has nothing
@@ -329,7 +293,6 @@ actor ChapterFetchManager {
             ) else { continue }
 
             if isReusableCachedPackage(cached, for: book) {
-                states[key(bookId: book.id, chapterIndex: chapterIndex)] = .cached
                 return cached
             }
             shouldClearCachedChapter = true
@@ -383,7 +346,6 @@ actor ChapterFetchManager {
             ])
         }
         if ref.shouldRenderAsVolumeSeparator {
-            states[key(bookId: book.id, chapterIndex: chapterIndex)] = .cached
             throw FetchError.volumeSeparator(ref.title)
         }
 
@@ -401,7 +363,6 @@ actor ChapterFetchManager {
             expectedTOCTitle: ref.title
         ) {
             if isReusableCachedPackage(cached, for: book) {
-                states[key(bookId: book.id, chapterIndex: chapterIndex)] = .cached
                 return cached
             }
             shouldClearCachedChapter = true
@@ -415,7 +376,6 @@ actor ChapterFetchManager {
             expectedTOCTitle: ref.title
         ) {
             if isReusableCachedPackage(legacyCached, for: book) {
-                states[key(bookId: book.id, chapterIndex: chapterIndex)] = .cached
                 return legacyCached
             }
             shouldClearCachedChapter = true
@@ -439,7 +399,6 @@ actor ChapterFetchManager {
                 tasks.removeValue(forKey: taskKey)
                 priorities.removeValue(forKey: taskKey)
                 generationTokens.removeValue(forKey: taskKey)
-                states[taskKey] = .missing
             } else {
                 do {
                     return try await existing.value
@@ -478,7 +437,6 @@ actor ChapterFetchManager {
         // fetches are few (the visible chapter plus its neighbours), so queuing is the
         // correct way to express "wait your turn". Do not reintroduce preemption here.
 
-        states[taskKey] = .loading
         if let bookRuntime = book.runtimeVariables, !bookRuntime.isEmpty {
             var mergedRuntime = bookRuntime
             if let chapterRuntime = ref.runtimeVariables {
@@ -657,7 +615,6 @@ actor ChapterFetchManager {
                         storeNormalizedHTML: book.chaptersBuiltByRules
                     )
                 }
-                states[taskKey] = .cached
                 // Success: reset failure counter
                 bookFailureCounts[bookId] = 0
                 ReaderTelemetry.shared.log(
@@ -671,7 +628,6 @@ actor ChapterFetchManager {
                     ]
                 )
             } else {
-                states[taskKey] = .failed
                 await handleFetchFailure(
                     bookId: bookId, chapterIndex: chapterIndex, sourceURL: ref.url, tocTitle: ref.title, store: store, startedAt: startedAt,
                     reason: "empty", pipelineKind: book.isOnline ? "online" : "txt")
@@ -699,7 +655,6 @@ actor ChapterFetchManager {
             guard generationTokens[taskKey] == myToken else {
                 throw CancellationError()
             }
-            states[taskKey] = .failed
             clearRequestTracking(for: taskKey, token: myToken)
             await handleFetchFailure(
                 bookId: bookId, chapterIndex: chapterIndex, sourceURL: ref.url, tocTitle: ref.title, store: store, startedAt: startedAt,
@@ -726,17 +681,23 @@ actor ChapterFetchManager {
         }
     }
 
-    func prefetchChapters(
-        book: ReadingBook, indices: [Int], priority: ChapterFetchPriority, store: BookStore?
-    ) {
-        for idx in indices {
-            let state = chapterState(book: book, chapterIndex: idx)
-            guard state == .missing || state == .failed else { continue }
-            Task(priority: priority.taskPriority) {
-                _ = try? await fetchChapter(
-                    book: book, chapterIndex: idx, priority: priority, store: store)
-            }
-        }
+    /// The chapters worth having before the reader reaches them, nearest first: N+1 … N+`ahead`
+    /// at `.prefetch` (readers mostly go forward; `ahead` is 網路設定 →「預讀章節數」, FB-125),
+    /// N-1, N-2 at `.background` (back-navigation). `ReaderViewModel.prefetchAround` requests
+    /// each through `ensureChapterReady`; how many of them run at once is the read-ahead gate
+    /// above, not the window's length.
+    static func adjacentPrefetchWindow(
+        center: Int,
+        chapterCount: Int,
+        ahead: Int
+    ) -> [(index: Int, priority: ChapterFetchPriority)] {
+        let valid = 0..<chapterCount
+        let ahead = NetworkSearchSettings.clampedChapterPrefetchCount(ahead)
+        let forward = (1...ahead).map { center + $0 }.filter(valid.contains)
+            .map { (index: $0, priority: ChapterFetchPriority.prefetch) }
+        let backward = [center - 1, center - 2].filter(valid.contains)
+            .map { (index: $0, priority: ChapterFetchPriority.background) }
+        return forward + backward
     }
 
     /// - Parameter includingDownloads: `false` leaves offline-download fetches running.
@@ -766,7 +727,6 @@ actor ChapterFetchManager {
             task.cancel()
             tasks.removeValue(forKey: taskKey)
             priorities.removeValue(forKey: taskKey)
-            states[taskKey] = .missing
         }
         generationTokens = generationTokens.filter {
             !$0.key.hasPrefix(prefix) || survivingKeys.contains($0.key)
@@ -779,7 +739,6 @@ actor ChapterFetchManager {
         tasks.removeValue(forKey: taskKey)
         priorities.removeValue(forKey: taskKey)
         generationTokens.removeValue(forKey: taskKey)
-        states[taskKey] = .missing
     }
 
     /// Cancels low-priority tasks (background/prefetch) while preserving immediate/jump tasks.
@@ -798,7 +757,6 @@ actor ChapterFetchManager {
             tasks[key]?.cancel()
             tasks.removeValue(forKey: key)
             priorities.removeValue(forKey: key)
-            states[key] = .missing
         }
     }
 
@@ -942,397 +900,3 @@ actor ChapterFetchManager {
         return allContent
     }
 }
-
-final class OnlineBookCoordinator: Sendable {
-    // MARK: - Injectable Dependencies (defaults to shared singletons, supports test substitution)
-
-    let bookSourceFetcher: BookSourceFetcher
-    let chapterFetchManager: ChapterFetchManager
-    let webViewFetcher: WebViewFetcher
-
-    init(
-        bookSourceFetcher: BookSourceFetcher,
-        chapterFetchManager: ChapterFetchManager,
-        webViewFetcher: WebViewFetcher
-    ) {
-        self.bookSourceFetcher = bookSourceFetcher
-        self.chapterFetchManager = chapterFetchManager
-        self.webViewFetcher = webViewFetcher
-    }
-
-    private static let chapterPlaceholderBody = "載入章節中…"
-
-    /// Per-book stable basePath. Avoids regenerating a new UUID directory on each
-    /// buildPackage call, which would cause reloadWithUpdatedPackage to detect a
-    /// basePath change and trigger a full reload.
-    private let stableBasePaths = OSAllocatedUnfairLock(initialState: [UUID: URL]())
-
-    /// Returns or creates a stable basePath for a book.
-    private func stableBasePath(for bookId: UUID) -> URL {
-        stableBasePaths.withLock { paths in
-            if let existing = paths[bookId] {
-                return existing
-            }
-            let path = FileManager.default.temporaryDirectory
-                .appendingPathComponent("online_xhtml_\(bookId.uuidString)")
-            paths[bookId] = path
-            return path
-        }
-    }
-
-    private static func placeholderHTML(title: String, body: String) -> String {
-        ReaderHTMLUtilities.normalizedChapterHTML(
-            title: title,
-            paragraphs: [body]
-        )
-    }
-
-    private static func makePlaceholderPackage(for book: ReadingBook) throws -> BookPackage {
-        let displayBookTitle = ReaderHTMLUtilities.displayText(fromHTMLFragment: book.title)
-        let title = displayBookTitle.isEmpty ? "網頁書籍" : displayBookTitle
-        let converted = try XHTMLBookBuilder.convert(
-            xhtmlChapters: [
-                XHTMLBookBuilder.XHTMLChapterInput(
-                    title: title,
-                    html: placeholderHTML(title: title, body: chapterPlaceholderBody),
-                    href: "chapter_0.xhtml"
-                )
-            ],
-            title: title,
-            basePathPrefix: "online_xhtml"
-        )
-        return XHTMLBookBuilder.package(
-            from: converted,
-            title: title,
-            author: book.author,
-            pipelineKind: .html,
-            originalSourceURL: book.bookInfoURL.flatMap(URL.init(string:))
-        )
-    }
-
-    /// Converts all book chapters to XHTML format.
-    /// O(N) operation (traverses all chapters). Only used for **offline download**
-    /// reading. Online reading uses CoreTextPageEngine's incremental loading
-    /// mechanism and does not go through this method.
-    private func buildConvertedBook(
-        for book: ReadingBook,
-        refs: [OnlineChapterRef],
-        reuseBasePath: URL? = nil
-    ) throws -> XHTMLBookBuilder.ConvertedBook {
-        let bsf = bookSourceFetcher
-        let xhtmlChapters = refs.enumerated().map { idx, ref in
-            let sanitizedURL = RuleEngine.sanitizeExtractedURL(ref.url)
-            // Try the cleaned URL first, then the original URL (legacy cache compat)
-            var chapterPackage = bsf.loadChapterPackageSync(
-                bookId: book.id,
-                chapterIndex: ref.index,
-                expectedSourceURL: sanitizedURL,
-                expectedTOCTitle: ref.title
-            )
-            if chapterPackage == nil && sanitizedURL != ref.url {
-                chapterPackage = bsf.loadChapterPackageSync(
-                    bookId: book.id,
-                    chapterIndex: ref.index,
-                    expectedSourceURL: ref.url,
-                    expectedTOCTitle: ref.title
-                )
-            }
-            let hasLooseCache = bsf.isChapterCached(
-                bookId: book.id,
-                chapterIndex: ref.index
-            )
-            let displayTitle = Self.resolvedDisplayTitle(
-                tocTitle: ref.title,
-                artifactTitle: chapterPackage?.canonicalTitle
-            )
-            let html: String
-            if let chapterPackage, chapterPackage.state == .cached, !chapterPackage.content.isEmpty {
-                let contentMatches = Self.validateContentMatchesTOCTitle(
-                    content: chapterPackage.content,
-                    tocTitle: ref.title,
-                    chapterIndex: ref.index,
-                    bookId: book.id
-                )
-                if !contentMatches {
-                    ReaderTelemetry.shared.log(
-                        "chapter_title_mismatch_softened",
-                        attributes: [
-                            "bookId": book.id.uuidString,
-                            "chapterIndex": "\(ref.index)",
-                            "tocTitle": String(ref.title.prefix(60)),
-                        ]
-                    )
-                }
-                html =
-                    bsf.loadNormalizedChapterHTMLSync(
-                        bookId: book.id,
-                        chapterIndex: ref.index,
-                        expectedSourceURL: ref.url,
-                        expectedTOCTitle: ref.title
-                    )
-                    ?? ChapterFetcher.shared.buildNormalizedHTML(
-                        title: displayTitle,
-                        content: chapterPackage.content
-                    )
-            } else if hasLooseCache {
-                bsf.clearChapterCache(
-                    bookId: book.id,
-                    chapterIndex: ref.index
-                )
-                html = Self.placeholderHTML(
-                    title: displayTitle,
-                    body: Self.chapterPlaceholderBody
-                )
-            } else if let chapterPackage, chapterPackage.state == .failed {
-                html = Self.placeholderHTML(
-                    title: displayTitle,
-                    body: Self.failurePlaceholder(for: displayTitle, reason: chapterPackage.failureReason)
-                )
-            } else {
-                html = Self.placeholderHTML(
-                    title: displayTitle,
-                    body: Self.chapterPlaceholderBody
-                )
-            }
-            return XHTMLBookBuilder.XHTMLChapterInput(
-                title: displayTitle,
-                html: html,
-                href: "chapter_\(idx).xhtml"
-            )
-        }
-
-        return try XHTMLBookBuilder.convert(
-            xhtmlChapters: xhtmlChapters,
-            title: book.title,
-            basePathPrefix: "online_xhtml",
-            reuseBasePath: reuseBasePath
-        )
-    }
-
-    func buildInitialPackage(for book: ReadingBook) throws -> BookPackage {
-        try buildPackage(for: book)
-    }
-
-    /// Builds a complete BookPackage for offline reading. Only called from the download flow.
-    /// Online reading uses OnlineProviderAttributedStringBuilder + CoreTextPageEngine and
-    /// does not go through this method.
-    func buildPackage(for book: ReadingBook, preferredChapter: Int? = nil) throws -> BookPackage {
-        guard let refs = book.onlineChapters, !refs.isEmpty else {
-            return try Self.makePlaceholderPackage(for: book)
-        }
-
-        let focus = preferredChapter ?? 0
-        let reusePath = stableBasePath(for: book.id)
-        let converted = try buildConvertedBook(for: book, refs: refs, reuseBasePath: reusePath)
-        let package = XHTMLBookBuilder.package(
-            from: converted,
-            title: book.title,
-            author: book.author,
-            pipelineKind: .html,
-            originalSourceURL: book.bookInfoURL.flatMap(URL.init(string:))
-        )
-
-        ReaderTelemetry.shared.log(
-            "progressive_package_update",
-            attributes: [
-                "bookId": book.id.uuidString,
-                "pipelineKind": package.pipelineKind.rawValue,
-                "focusChapter": "\(focus)",
-                "cachedChapterCount":
-                    "\(refs.filter { bookSourceFetcher.isChapterCached(bookId: book.id, chapterIndex: $0.index, expectedSourceURL: $0.url, expectedTOCTitle: $0.title) }.count)",
-            ]
-        )
-        return package
-    }
-
-    /// Warms the download-flow chapter window. Only called from the download flow.
-    func warmCurrentWindow(
-        for book: ReadingBook,
-        chapterIndex: Int,
-        store: BookStore?
-    ) async -> BookPackage? {
-        do {
-            let pkg = try await chapterFetchManager.fetchChapter(
-                book: book,
-                chapterIndex: chapterIndex,
-                priority: .immediate,
-                store: store
-            )
-            // Only return the package when fetchChapter actually obtained real content
-            guard pkg.state == .cached, !pkg.content.isEmpty else {
-                return nil
-            }
-            await prefetchAround(book: book, center: chapterIndex, store: store)
-            return try buildPackage(for: book, preferredChapter: chapterIndex)
-        } catch {
-            return nil
-        }
-    }
-
-    /// Jumps to a specific chapter and builds a BookPackage. Only for download/offline jump flow.
-    func fetchJumpTarget(
-        for book: ReadingBook,
-        chapterIndex: Int,
-        store: BookStore?
-    ) async -> BookPackage? {
-        await chapterFetchManager.cancelAll(for: book.id)
-        ReaderTelemetry.shared.log(
-            "jump_prefetch_promoted",
-            attributes: [
-                "bookId": book.id.uuidString,
-                "chapterIndex": "\(chapterIndex)",
-                "pipelineKind": "online",
-            ]
-        )
-        do {
-            let pkg = try await chapterFetchManager.fetchChapter(
-                book: book,
-                chapterIndex: chapterIndex,
-                priority: .jump,
-                store: store
-            )
-            guard pkg.state == .cached, !pkg.content.isEmpty else {
-                return nil
-            }
-            await prefetchAround(book: book, center: chapterIndex, store: store)
-            return try buildPackage(for: book, preferredChapter: chapterIndex)
-        } catch {
-            return nil
-        }
-    }
-
-    /// The chapters worth having before the reader reaches them, nearest first: N+1 … N+`ahead`
-    /// at `.prefetch` (readers mostly go forward; `ahead` is 網路設定 →「預讀章節數」, FB-125),
-    /// N-1, N-2 at `.background` (back-navigation).
-    /// The reader's own prefetch (`ReaderViewModel.prefetchAround`) and this coordinator's
-    /// share it, so the two can never disagree about what "around" means. How many of these
-    /// run at once is `ChapterFetchManager`'s read-ahead gate, not the window's length.
-    static func adjacentPrefetchWindow(
-        center: Int,
-        chapterCount: Int,
-        ahead: Int
-    ) -> [(index: Int, priority: ChapterFetchPriority)] {
-        let valid = 0..<chapterCount
-        let ahead = NetworkSearchSettings.clampedChapterPrefetchCount(ahead)
-        let forward = (1...ahead).map { center + $0 }.filter(valid.contains)
-            .map { (index: $0, priority: ChapterFetchPriority.prefetch) }
-        let backward = [center - 1, center - 2].filter(valid.contains)
-            .map { (index: $0, priority: ChapterFetchPriority.background) }
-        return forward + backward
-    }
-
-    func prefetchAround(book: ReadingBook, center: Int, store: BookStore?) async {
-        guard let refs = book.onlineChapters, !refs.isEmpty else { return }
-        let ahead = await MainActor.run { GlobalSettings.shared.chapterPrefetchCount }
-        let window = Self.adjacentPrefetchWindow(center: center, chapterCount: refs.count, ahead: ahead)
-        for priority in [ChapterFetchPriority.prefetch, .background] {
-            let indices = window.filter { $0.priority == priority }.map(\.index)
-            guard !indices.isEmpty else { continue }
-            await chapterFetchManager.prefetchChapters(
-                book: book, indices: indices, priority: priority, store: store)
-        }
-    }
-
-    // MARK: - Sanity Checks
-
-    /// Chapter heading regex: matches "Chapter N / Part N / Volume N / Section N / Part N"
-    /// (supports Chinese numerals + Arabic numerals).
-    private static let chapterHeadingRegex: NSRegularExpression? = {
-        try? NSRegularExpression(
-            pattern: #"^第\s*[\d零一二三四五六七八九十百千萬万]+\s*[章回卷節节篇部]"#,
-            options: .anchorsMatchLines
-        )
-    }()
-
-    private static func failurePlaceholder(for title: String, reason: String?) -> String {
-        let suffix: String
-        if let reason, !reason.isEmpty {
-            suffix = "章節載入失敗（\(reason)）\n請下拉刷新或重新進入本章。"
-        } else {
-            suffix = "章節載入失敗\n請下拉刷新或重新進入本章。"
-        }
-        return "\(title)\n\n\(suffix)"
-    }
-
-    private static func resolvedDisplayTitle(tocTitle: String, artifactTitle: String?) -> String {
-        let cleanedTOC = ReaderHTMLUtilities.displayText(fromHTMLFragment: tocTitle)
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-        guard let artifactTitle = artifactTitle.map({
-            ReaderHTMLUtilities.displayText(fromHTMLFragment: $0)
-                .trimmingCharacters(in: .whitespacesAndNewlines)
-        }), !artifactTitle.isEmpty else {
-            return cleanedTOC
-        }
-
-        let normalizedTOC =
-            cleanedTOC.replacingOccurrences(of: "\\s+", with: "", options: .regularExpression)
-            .lowercased()
-        let normalizedArtifact =
-            artifactTitle.replacingOccurrences(of: "\\s+", with: "", options: .regularExpression)
-            .lowercased()
-
-        if normalizedTOC.isEmpty
-            || (normalizedTOC != normalizedArtifact
-                && !normalizedTOC.contains(normalizedArtifact)
-                && !normalizedArtifact.contains(normalizedTOC))
-        {
-            return artifactTitle
-        }
-        return cleanedTOC
-    }
-
-    /// Validates that cached chapter content matches the TOC title.
-    /// If the first line looks like a different chapter title, logs a warning.
-    private static func validateContentMatchesTOCTitle(
-        content: String, tocTitle: String,
-        chapterIndex: Int, bookId: UUID
-    ) -> Bool {
-        let firstLine: String? =
-            content
-            .components(separatedBy: .newlines)
-            .first(where: { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty })
-
-        guard let firstLine, !firstLine.isEmpty else { return true }
-        let trimmedFirst = firstLine.trimmingCharacters(in: .whitespacesAndNewlines)
-
-        // Only check when the first line looks like a chapter title (short line + matches format)
-        guard trimmedFirst.count < 60 else { return true }
-        let nsRange = NSRange(trimmedFirst.startIndex..., in: trimmedFirst)
-        let looksLikeChapterTitle =
-            chapterHeadingRegex?.firstMatch(in: trimmedFirst, range: nsRange) != nil
-
-        guard looksLikeChapterTitle else { return true }
-
-        let normFirst =
-            trimmedFirst
-            .replacingOccurrences(of: "\\s+", with: "", options: .regularExpression)
-            .lowercased()
-        let normTOC =
-            tocTitle
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-            .replacingOccurrences(of: "\\s+", with: "", options: .regularExpression)
-            .lowercased()
-
-        if !normFirst.isEmpty && !normTOC.isEmpty
-            && !normFirst.contains(normTOC) && !normTOC.contains(normFirst)
-        {
-            ReaderTelemetry.shared.log(
-                "chapter_title_mismatch",
-                attributes: [
-                    "bookId": bookId.uuidString,
-                    "chapterIndex": "\(chapterIndex)",
-                    "tocTitle": String(tocTitle.prefix(60)),
-                    "contentFirstLine": String(trimmedFirst.prefix(60)),
-                ]
-            )
-            return false
-        }
-        return true
-    }
-}
-
-// MARK: - OnlineBookCoordinating Protocol Conformance
-// downloadBook(_:store:) and prefetchAround(book:center:store:) match the protocol
-// signature exactly; this extension only declares conformance.
-
-extension OnlineBookCoordinator: OnlineBookCoordinating {}

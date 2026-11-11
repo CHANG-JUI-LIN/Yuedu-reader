@@ -10,7 +10,7 @@ struct ChapterPrefetchWindowTests {
 
     @Test("the forward window is as long as the setting", arguments: [2, 5, 10])
     func forwardWindowFollowsSetting(ahead: Int) {
-        let window = OnlineBookCoordinator.adjacentPrefetchWindow(
+        let window = ChapterFetchManager.adjacentPrefetchWindow(
             center: 10, chapterCount: 100, ahead: ahead)
         let forward = window.filter { $0.priority == .prefetch }.map(\.index)
         let backward = window.filter { $0.priority == .background }.map(\.index)
@@ -23,7 +23,7 @@ struct ChapterPrefetchWindowTests {
 
     @Test("the window stops at the book's last chapter")
     func forwardWindowClipsAtEnd() {
-        let window = OnlineBookCoordinator.adjacentPrefetchWindow(
+        let window = ChapterFetchManager.adjacentPrefetchWindow(
             center: 7, chapterCount: 10, ahead: 10)
         #expect(window.map(\.index) == [8, 9, 6, 5])
     }

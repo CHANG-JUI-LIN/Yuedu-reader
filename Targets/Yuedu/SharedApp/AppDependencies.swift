@@ -186,12 +186,6 @@ extension BookSourceFetching {
     }
 }
 
-/// Protocol for online book download and neighborhood chapter prefetch,
-/// decoupling the reader from the concrete OnlineBookCoordinator implementation.
-protocol OnlineBookCoordinating: AnyObject, Sendable {
-    func prefetchAround(book: ReadingBook, center: Int, store: BookStore?) async
-}
-
 protocol ChapterFetching: Sendable {
     func isChapterCached(book: ReadingBook, chapterIndex: Int) async -> Bool
 
@@ -464,7 +458,6 @@ struct AppDependencies: Sendable {
     var webContentFetcher: WebContentFetching
     var bookSourceFetcher: BookSourceFetching
     var chapterFetcher: ChapterFetching
-    var onlineBookCoordinator: OnlineBookCoordinating
     var offlineDownloadManager: any OfflineDownloadManaging
     var offlineChapterStore: any OfflineChapterStoring
     var aozoraLibrary: any AozoraLibraryDownloading = MainActor.assumeIsolated { AozoraLibraryDownloadService() }
@@ -483,7 +476,6 @@ struct AppDependencies: Sendable {
         // in-flight dedup and priorities (the same chapter fetched twice), and a second
         // WebFetcher its own connection pool.
         let webFetcher = WebFetcher.shared
-        let webViewFetcher = MainActor.assumeIsolated { WebViewFetcher.shared }
         let bsf = BookSourceFetcher.shared
         let cfm = ChapterFetchManager.shared
         let liveChapterFetcher = LiveChapterFetcher(chapterFetchManager: cfm)
@@ -491,11 +483,6 @@ struct AppDependencies: Sendable {
         let offlineDownloadManager = OfflineDownloadManager(
             chapterFetcher: liveChapterFetcher,
             chapterStore: offlineChapterStore
-        )
-        let coordinator = OnlineBookCoordinator(
-            bookSourceFetcher: bsf,
-            chapterFetchManager: cfm,
-            webViewFetcher: webViewFetcher
         )
         let remoteLibrary = MainActor.assumeIsolated { RemoteLibraryService.shared }
         let writing = MainActor.assumeIsolated {
@@ -505,7 +492,6 @@ struct AppDependencies: Sendable {
             webContentFetcher: LiveWebContentFetcher(webFetcher: webFetcher),
             bookSourceFetcher: LiveBookSourceFetcher(bookSourceFetcher: bsf),
             chapterFetcher: liveChapterFetcher,
-            onlineBookCoordinator: coordinator,
             offlineDownloadManager: offlineDownloadManager,
             offlineChapterStore: offlineChapterStore,
             remoteLibrary: remoteLibrary,

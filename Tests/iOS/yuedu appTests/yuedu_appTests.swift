@@ -289,37 +289,6 @@ struct yuedu_appTests {
         )
     }
 
-    @Test @MainActor func onlineCoordinatorUsesCachedChapterAndPlaceholder() async throws {
-        let book = ReadingBook(title: "線上書", author: "作者", source: "https://example.com", contentFilename: "")
-        let bookId = book.id
-        let refs = [
-            OnlineChapterRef(index: 0, title: "章一", url: "https://example.com/1"),
-            OnlineChapterRef(index: 1, title: "章二", url: "https://example.com/2"),
-        ]
-        var onlineBook = book
-        onlineBook.isOnline = true
-        onlineBook.onlineChapters = refs
-
-        _ = try BookSourceFetcher.shared.saveToCache(
-            content: "已快取內容",
-            bookId: bookId,
-            chapterIndex: 0,
-            sourceURL: refs[0].url,
-            tocTitle: refs[0].title
-        )
-
-        let coordinator = try #require(
-            AppDependencies.live.onlineBookCoordinator as? OnlineBookCoordinator
-        )
-        let package = try coordinator.buildPackage(for: onlineBook, preferredChapter: 1)
-
-        #expect(package.parsedBook.chapters.count == 2)
-        #expect(package.parsedBook.chapters[0].html.contains("已快取內容"))
-        #expect(package.parsedBook.chapters[1].html.contains("載入章節中…"))
-
-        BookSourceFetcher.shared.clearAllChapterCache(bookId: bookId)
-    }
-
     @Test func readerLocatorRoundTripsAndSupportsLegacyKeys() throws {
         let locator = ReaderLocator(
             spineHref: "Text/chapter-3.xhtml",

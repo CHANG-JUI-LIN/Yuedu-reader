@@ -485,7 +485,7 @@ struct ReaderViewModelChapterStateTests {
 
     @Test("the neighbour window reads forward at prefetch and backward at background")
     func adjacentPrefetchWindowPriorities() {
-        let window = OnlineBookCoordinator.adjacentPrefetchWindow(center: 1, chapterCount: 4, ahead: 2)
+        let window = ChapterFetchManager.adjacentPrefetchWindow(center: 1, chapterCount: 4, ahead: 2)
         #expect(window.map(\.index) == [2, 3, 0])
         #expect(window.map(\.priority) == [.prefetch, .prefetch, .background])
     }

@@ -393,7 +393,6 @@ private enum DownloadManagementPreview {
         webContentFetcher: PreviewWebContentFetcher(),
         bookSourceFetcher: PreviewBookSourceFetcher(),
         chapterFetcher: PreviewChapterFetcher(),
-        onlineBookCoordinator: PreviewOnlineBookCoordinator(),
         offlineDownloadManager: PreviewOfflineDownloadManager(),
         offlineChapterStore: PreviewOfflineChapterStore(),
         readingPositionStore: JSONFileReadingPositionStore()
@@ -532,10 +531,6 @@ private struct PreviewChapterFetcher: ChapterFetching {
     func cancelChapter(bookId: UUID, chapterIndex: Int) async {}
 
     func cancelAll(for bookId: UUID) async {}
-}
-
-private final class PreviewOnlineBookCoordinator: OnlineBookCoordinating {
-    func prefetchAround(book: ReadingBook, center: Int, store: BookStore?) async {}
 }
 
 private struct PreviewOfflineDownloadManager: OfflineDownloadManaging {
