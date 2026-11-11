@@ -246,8 +246,22 @@ actor ChapterFetchManager {
         )
     }
 
-    func chapterState(bookId: UUID, chapterIndex: Int) -> OnlineChapterLoadState {
-        if bookSourceFetcher.isChapterCached(bookId: bookId, chapterIndex: chapterIndex) {
+    /// What `prefetchChapters` asks before fetching: `.cached` exactly when the reader would
+    /// accept the chapter on disk. That is `isChapterCached(book:chapterIndex:)`, the probe
+    /// `ReaderViewModel.ensureChapterReady` uses, and it judges the file as `fetchChapter` does:
+    /// against the ref's URL (sanitized, then as written) and its TOC title.
+    ///
+    /// It needs the ref, not just the index. A TOC refresh keeps the old chapter files
+    /// (`BookStore` reconciles with `.preserveContent`), so after a source moved its chapter
+    /// URLs or inserted a chapter, the file at an index can belong to another URL or another
+    /// chapter. A probe that only looked for a file called that chapter cached, the gate below
+    /// skipped it, and every reader of the chapter rejected the file (`urlMismatch`) — the
+    /// neighbour sat on 載入中 with no fetch ever started (FB-59, YD-F846-VFX5, build 135).
+    ///
+    /// Going through `cachedChapterPackage` also clears a cached package the reader would not
+    /// reuse; `fetchChapter` clears the same package on the same condition before refetching.
+    func chapterState(book: ReadingBook, chapterIndex: Int) -> OnlineChapterLoadState {
+        if isChapterCached(book: book, chapterIndex: chapterIndex) {
             return .cached
         }
         // Disk is the truth — the same rule legado applies with `BookHelp.hasContent`. A
@@ -255,7 +269,7 @@ actor ChapterFetchManager {
         // the files without telling this map, and `prefetchChapters` skips anything that is
         // not `.missing`/`.failed`, so believing it killed prefetch for the entire book until
         // the next relaunch.
-        let stored = states[key(bookId: bookId, chapterIndex: chapterIndex)] ?? .missing
+        let stored = states[key(bookId: book.id, chapterIndex: chapterIndex)] ?? .missing
         return stored == .cached ? .missing : stored
     }
 
@@ -716,7 +730,7 @@ actor ChapterFetchManager {
         book: ReadingBook, indices: [Int], priority: ChapterFetchPriority, store: BookStore?
     ) {
         for idx in indices {
-            let state = chapterState(bookId: book.id, chapterIndex: idx)
+            let state = chapterState(book: book, chapterIndex: idx)
             guard state == .missing || state == .failed else { continue }
             Task(priority: priority.taskPriority) {
                 _ = try? await fetchChapter(
@@ -1217,10 +1231,6 @@ final class OnlineBookCoordinator: Sendable {
             await chapterFetchManager.prefetchChapters(
                 book: book, indices: indices, priority: priority, store: store)
         }
-    }
-
-    func chapterState(bookId: UUID, chapterIndex: Int) async -> OnlineChapterLoadState {
-        await chapterFetchManager.chapterState(bookId: bookId, chapterIndex: chapterIndex)
     }
 
     // MARK: - Sanity Checks
