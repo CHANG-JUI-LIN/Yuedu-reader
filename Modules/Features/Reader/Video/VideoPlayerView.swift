@@ -398,20 +398,57 @@ struct VideoPlayerView: View {
     }
 
     private func bottomBar(_ controller: VideoPlaybackController) -> some View {
-        let shown = scrubTime ?? controller.currentTime
-        let range = controller.seekableRange
-        let end = range?.upperBound ?? controller.duration
-        return VStack(spacing: DSSpacing.xxs) {
-            Slider(
-                value: Binding(get: { shown }, set: { scrubTime = $0 }),
-                in: range ?? 0...max(shown, 1),
-                onEditingChanged: { editing in
-                    if !editing, let scrubTime {
-                        controller.seek(to: scrubTime)
-                        self.scrubTime = nil
-                    }
-                    touched()
-                }
+        VideoTimelineBar(
+            shown: scrubTime ?? controller.currentTime,
+            end: controller.seekableRange?.upperBound ?? controller.duration,
+            range: controller.seekableRange,
+            onScrub: { time in
+                if scrubTime == nil || time == nil { touched() }
+                scrubTime = time
+            },
+            onSeek: { time in
+                controller.seek(to: time)
+                scrubTime = nil
+                touched()
+            },
+            onSkip: { seconds in
+                controller.skip(by: seconds)
+                touched()
+            }
+        )
+    }
+}
+
+// MARK: - Timeline
+
+/// 播放進度 under the picture: the timeline and its two times.
+///
+/// A `ScrubSlider`, not SwiftUI's `Slider` (FB-175): on iOS 27.2 the `Slider` opened one editing
+/// session on the first drag and never closed it, so `onEditingChanged(false)` never came and no
+/// drag ever sought — the times showed the finger's while the picture played on.
+struct VideoTimelineBar: View {
+    /// The thumb's time: the finger's while it drags, the player's otherwise.
+    let shown: Double
+    let end: Double
+    /// Where the timeline can seek; nil while nothing is seekable.
+    let range: ClosedRange<Double>?
+    /// The time under the finger; nil once the drag is cancelled.
+    let onScrub: (Double?) -> Void
+    /// The time the finger was lifted at.
+    let onSeek: (Double) -> Void
+    /// VoiceOver's swipe up / down: seconds to move by.
+    let onSkip: (Double) -> Void
+
+    var body: some View {
+        VStack(spacing: DSSpacing.xxs) {
+            ScrubSlider(
+                value: shown,
+                bounds: range ?? 0...max(shown, 1),
+                tint: DSColor.accent,
+                onScrub: onScrub,
+                onCommit: onSeek,
+                onIncrement: { onSkip(VideoPan.jumpSeconds) },
+                onDecrement: { onSkip(-VideoPan.jumpSeconds) }
             )
             // Disabled only while nothing is seekable — a live stream with no window, or one
             // still loading. A playlist with no duration still seeks in its seekable ranges.
@@ -440,6 +477,22 @@ struct VideoPlayerView: View {
     ]
     return VideoPlayerView(content: .transient(book), onClose: {})
         .environmentObject(BookStore())
+}
+
+#Preview("Timeline") {
+    @Previewable @State var time = 93.0
+    @Previewable @State var scrub: Double?
+    ZStack {
+        DSColor.videoPlayerBackground.ignoresSafeArea()
+        VideoTimelineBar(
+            shown: scrub ?? time, end: 531, range: 0...531,
+            onScrub: { scrub = $0 },
+            onSeek: { time = $0; scrub = nil },
+            onSkip: { time = min(531, max(0, time + $0)) }
+        )
+        .foregroundStyle(DSColor.textOnFixedFill)
+        .padding(DSSpacing.lg)
+    }
 }
 
 #Preview("Seek badge") {

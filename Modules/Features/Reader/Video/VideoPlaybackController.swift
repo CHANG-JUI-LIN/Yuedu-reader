@@ -331,7 +331,11 @@ final class VideoPlaybackController {
         let target = min(max(seconds, range.lowerBound), range.upperBound)
         currentTime = target
         player.seek(to: CMTime(seconds: target, preferredTimescale: 600),
-                    toleranceBefore: .zero, toleranceAfter: .zero)
+                    toleranceBefore: .zero, toleranceAfter: .zero) { finished in
+            // A later seek or the next episode cuts one short; a seek that never lands while the
+            // picture plays on is what FB-175 looked like from outside, so it is on record.
+            if !finished { AppLogger.info("[Video] seek to \(Int(target)) s did not finish", level: .notice) }
+        }
     }
 
     func skip(by seconds: Double) {
