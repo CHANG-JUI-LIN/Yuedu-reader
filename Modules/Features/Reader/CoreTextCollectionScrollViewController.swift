@@ -39,6 +39,8 @@ final class CoreTextCollectionScrollViewController: UIViewController, @MainActor
     private let collectionView: UICollectionView
     let fragmentHost = ReaderViewportFragmentHost(frame: .zero)
     private var frameDiagnostics: ReaderScrollFrameDiagnostics?
+    /// FB-173 diagnostic: logs where a touch went that the page never answered.
+    private var pageTouchProbe: ReaderPageTouchProbe?
     private var lastBridgeViewportSize: CGSize = .zero
     private var cancellables: Set<AnyCancellable> = []
     /// The latest explicit navigation target or settled reading checkpoint.
@@ -344,8 +346,35 @@ final class CoreTextCollectionScrollViewController: UIViewController, @MainActor
         collectionView.addGestureRecognizer(longPress)
 
         configureTapPriority()
+        pageTouchProbe = ReaderPageTouchProbe(
+            page: collectionView,
+            answering: [collectionView.panGestureRecognizer, tapGesture, longPress],
+            owner: self
+        ) { [weak self] in
+            self?.pageTouchProbeState ?? "gone"
+        }
         bindEngine()
         if scrollAxis == .vertical { frameDiagnostics = ReaderScrollFrameDiagnostics(scrollView: collectionView) }
+    }
+
+    override func viewDidAppear(_ animated: Bool) {
+        super.viewDidAppear(animated)
+        pageTouchProbe?.install(on: view.window)
+    }
+
+    override func viewDidDisappear(_ animated: Bool) {
+        super.viewDidDisappear(animated)
+        pageTouchProbe?.uninstall()
+    }
+
+    /// What `ReaderPageTouchProbe` logs about the page beside the touch: whether it was moving,
+    /// and every flag that holds its position or its gestures back.
+    private var pageTouchProbeState: String {
+        "tracking=\(collectionView.isTracking) dragging=\(collectionView.isDragging)"
+            + " decelerating=\(collectionView.isDecelerating) resolving=\(isResolvingViewport)"
+            + " applying=\(isApplyingReadingPosition) applied=\(hasAppliedReadingPosition)"
+            + " awaitsAxisReset=\(awaitsAxisReset) segmentCross=\(segmentCrossStart != nil)"
+            + " selection=\(interactor.hasSelection) \(geometrySnapshot)"
     }
 
     // MARK: - Gesture priority
