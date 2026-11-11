@@ -302,6 +302,11 @@ final class CoreTextCollectionScrollViewController: UIViewController, @MainActor
         collectionView.showsVerticalScrollIndicator = false
         collectionView.showsHorizontalScrollIndicator = false
         collectionView.contentInsetAdjustmentBehavior = .never
+        // A tap on the status bar must not move the reading position. UIKit's scroll-to-top
+        // takes any tap that lands on it while the reading menu has it showing, and sends the
+        // page to the top of the loaded window — chapters back, the book's first chapter
+        // when the window starts there (FB-178, reported on 條漫, the same in 滾動).
+        collectionView.scrollsToTop = false
         // 上下滑動 is the only reading mode whose canvas is a real scroll view, so iOS
         // 26 paints its scroll-edge effect over the top of the page — an opaque band
         // under the toolbar that 翻頁 never gets, because a paged canvas is not a

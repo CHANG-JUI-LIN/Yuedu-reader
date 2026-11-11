@@ -115,6 +115,12 @@ final class FixedPageWebtoonViewController: UIViewController, FixedPageModeReade
         collectionView.showsVerticalScrollIndicator = false
         collectionView.alwaysBounceVertical = fixedPageReaderConfiguration.layout == .continuousVerticalScroll
         collectionView.contentInsetAdjustmentBehavior = .never
+        // A tap on the status bar is not a way to the first chapter. The strip holds every
+        // chapter from the book's start, so UIKit's scroll-to-top — which takes any tap that
+        // lands on the status bar, the one a reader makes reaching for the top-right corner
+        // while the controls are up — rolled the reader back to chapter 1 (FB-178).
+        // Aidoku's webtoon reader, which this one follows, turns it off for the same reason.
+        collectionView.scrollsToTop = false
         collectionView.dataSource = self
         collectionView.delegate = self
         collectionView.register(FixedPageWebtoonCell.self, forCellWithReuseIdentifier: FixedPageWebtoonCell.reuseID)
