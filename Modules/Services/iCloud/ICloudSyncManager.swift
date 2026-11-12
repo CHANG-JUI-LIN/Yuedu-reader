@@ -816,6 +816,7 @@ final class ICloudSyncManager: ObservableObject {
             id: { $0.bookId },
             hash: { Self.stableHash($0) },
             fallbackUpdatedAt: { savedAt[$0.bookId] ?? .distantPast },
+            firstMergeKeepsRemote: Self.unsyncedPositionYieldsToCloud,
             applyLocally: { merged in
                 let written = positionStore.applySyncItems(merged)
                 AppLogger.sync("⟐ reading positions: \(written) written from another device", level: .notice)
@@ -839,6 +840,7 @@ final class ICloudSyncManager: ObservableObject {
         hash: @escaping (T) -> String,
         fallbackUpdatedAt: @escaping (T) -> Date,
         kept: ([T]) -> [T] = { $0 },
+        firstMergeKeepsRemote: ((_ local: T, _ remote: T) -> Bool)? = nil,
         applyLocally: ([T]) async throws -> Bool
     ) async throws -> CloudSyncMergeResult<T> {
         let remote = try await downloadRecords(recordName, as: T.self, id: id, fallbackUpdatedAt: fallbackUpdatedAt)
@@ -850,7 +852,8 @@ final class ICloudSyncManager: ObservableObject {
             id: id,
             hash: hash,
             fallbackUpdatedAt: fallbackUpdatedAt,
-            kept: kept
+            kept: kept,
+            firstMergeKeepsRemote: firstMergeKeepsRemote
         )
         let uploaded = try await uploadRecords(
             recordName,
@@ -970,19 +973,48 @@ final class ICloudSyncManager: ObservableObject {
         func encode(to encoder: Encoder) throws {}
     }
 
+    /// A position this device never synced gives way to the cloud's when it is behind it — the
+    /// mark of a reader that opened before the position arrived (FB-179). One further along is
+    /// reading done here and keeps newest-wins. Fallback (disclosed): reading backwards on a new
+    /// device before its first sync loses to the cloud; deletable if positions ever carry
+    /// whether they were restored.
+    nonisolated static func unsyncedPositionYieldsToCloud(
+        _ local: ReadingPositionSyncItem, _ remote: ReadingPositionSyncItem
+    ) -> Bool {
+        (local.spineIndex, local.charOffset) < (remote.spineIndex, remote.charOffset)
+    }
+
     /// Everything `mergeType` decides between the download and the upload, apart
     /// from the network so it can be tested.
+    ///
+    /// - Parameter firstMergeKeepsRemote: on this device's first merge of the blob (no shadow
+    ///   at all: a fresh install, or the first sync), a local item the cloud also holds is
+    ///   dropped in favour of the cloud's copy when this says so, whatever their clocks. Without
+    ///   a shadow the local item's clock is only when its file was saved, and a reader opened
+    ///   after a reinstall, before the positions arrived, saved chapter 1 a minute ago: newest
+    ///   wins uploaded it over the place read on every device (FB-179).
     nonisolated static func resolveMerge<T>(
-        local: [T],
+        local allLocal: [T],
         remote: [FirestoreSyncRecord<T>],
         shadow loadedShadow: [String: SyncShadowEntry],
         id: (T) -> String,
         hash: (T) -> String,
         fallbackUpdatedAt: (T) -> Date,
         kept: ([T]) -> [T] = { $0 },
+        firstMergeKeepsRemote: ((_ local: T, _ remote: T) -> Bool)? = nil,
         now: Date = Date()
     ) -> (values: [T], shadow: [String: SyncShadowEntry], shouldApplyLocally: Bool) {
-        let localFingerprint = collectionFingerprint(local, id: id, hash: hash)
+        let localFingerprint = collectionFingerprint(allLocal, id: id, hash: hash)
+        var local = allLocal
+        if let firstMergeKeepsRemote, loadedShadow.isEmpty {
+            var held: [String: T] = [:]
+            for record in remote where !record.deleted {
+                if let value = record.value { held[record.id] = value }
+            }
+            local.removeAll { value in
+                held[id(value)].map { firstMergeKeepsRemote(value, $0) } ?? false
+            }
+        }
         var shadow = loadedShadow
         var localIDs = Set<String>(minimumCapacity: local.count)
         for v in local {
@@ -1433,6 +1465,11 @@ final class ICloudSyncManager: ObservableObject {
         // and sources update live. This also keeps Firestore (account sync) from
         // re-deleting the restored data via stale tombstones on the next launch.
         await FirestoreSyncManager.shared.adoptRestoredLocalData()
+
+        // The text readers' positions, by the sync's own merge. Without them a restored shelf
+        // showed 44% and the book opened at chapter 1 (FB-179). After the shelf, as in `sync`.
+        let positionMerge = try await mergeReadingPositions()
+        AppLogger.sync("restore: reading positions merged, uploaded=\(positionMerge.uploaded)", level: .notice)
 
         await MainActor.run {
             lastSyncDate = Date()

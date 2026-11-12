@@ -32,6 +32,115 @@ struct FixedPagePositionSaveTests {
         #expect(harness.store.books.first { $0.id == harness.bookID }?.mangaPage == 3)
     }
 
+    /// FB-179: after a reinstall the shelf comes back from iCloud without any book's table of
+    /// contents (each device keeps its own). The reader opened blank, and closing it saved
+    /// chapter 0 page 0 over the synced position, which the next sync uploaded.
+    @Test("an online manga opened without its chapters keeps its synced place when its list cannot be fetched (FB-179)")
+    func blankReaderSavesNothing() async throws {
+        let fixture = try ReinstalledManga()
+        defer { fixture.tearDown() }
+        struct Unreachable: Error {}
+        let state = FixedPageReaderState()
+        let reader = FixedPageReaderViewController(
+            book: fixture.book, store: fixture.store, state: state, chapterFetcher: MockChapterFetcher(),
+            refreshTableOfContents: { _ in throw Unreachable() }
+        )
+        let window = try fixture.show(reader)
+        defer { window.isHidden = true; window.rootViewController = nil }
+
+        let deadline = ContinuousClock.now + .seconds(3)
+        while state.errorMessage == nil, ContinuousClock.now < deadline {
+            try await Task.sleep(for: .milliseconds(20))
+        }
+        #expect(state.errorMessage != nil, "a list that could not be fetched is shown, with 重試")
+
+        reader.beginAppearanceTransition(false, animated: false)
+        reader.endAppearanceTransition()
+        let saved = try #require(fixture.store.books.first { $0.id == fixture.book.id })
+        #expect(saved.mangaChapterIndex == 7)
+        #expect(saved.mangaPage == 12)
+    }
+
+    @Test("an online manga opened without its chapters fetches them and opens at its synced place (FB-179)")
+    func fetchesTheListAndOpensAtTheSyncedPlace() async throws {
+        let fixture = try ReinstalledManga()
+        defer { fixture.tearDown() }
+        let fetcher = MockChapterFetcher()
+        for _ in 0..<6 {
+            await fetcher.enqueuePackage(
+                chapterIndex: 7, package: Harness.package(of: fixture.book, chapter: 7, pages: 20))
+        }
+        let store = fixture.store
+        let bookId = fixture.book.id
+        let state = FixedPageReaderState()
+        let reader = FixedPageReaderViewController(
+            book: fixture.book, store: store, state: state, chapterFetcher: fetcher,
+            refreshTableOfContents: { id in
+                // What `refreshOnlineBookMetadata` leaves: the list stored for the book.
+                var book = try #require(store.readingBook(id: id))
+                book.onlineChapters = (0..<10).map {
+                    OnlineChapterRef(index: $0, title: "Chapter \($0 + 1)", url: "https://example.invalid/chapter/\($0)")
+                }
+                store.replaceBooksFromSync([book])
+            }
+        )
+        let window = try fixture.show(reader)
+        defer { window.isHidden = true; window.rootViewController = nil }
+
+        let deadline = ContinuousClock.now + .seconds(5)
+        while state.totalPages != 20, ContinuousClock.now < deadline {
+            try await Task.sleep(for: .milliseconds(20))
+        }
+        try #require(state.totalPages == 20, "the saved chapter never opened")
+        #expect(state.currentChapterIndex == 7)
+        #expect(state.chapterListItems.count == 10)
+        #expect(reader.reader?.currentPageIndex() == 12)
+
+        reader.beginAppearanceTransition(false, animated: false)
+        reader.endAppearanceTransition()
+        let saved = try #require(store.books.first { $0.id == bookId })
+        #expect(saved.mangaChapterIndex == 7)
+        #expect(saved.mangaPage == 12)
+    }
+
+    /// A reinstalled shelf's online manga: its place synced (chapter 8, page 13), its chapters not.
+    @MainActor
+    private struct ReinstalledManga {
+        let directory: URL
+        let store: BookStore
+        let book: ReadingBook
+
+        init() throws {
+            directory = FileManager.default.temporaryDirectory
+                .appendingPathComponent("FixedPagePositionSaveTests-\(UUID().uuidString)", isDirectory: true)
+            try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+            store = BookStore(metadataFileURL: directory.appendingPathComponent("books_meta.json"))
+            var book = ReadingBook(title: "Manga", author: "", contentFilename: "")
+            book.isOnline = true
+            book.mangaChapterIndex = 7
+            book.mangaPage = 12
+            book.currentPosition = 0.35
+            store.replaceBooksFromSync([book])
+            store.waitForQueuedWrites()
+            store.readerSettings.setFixedPageConfiguration(.recommendedDefault(for: .webtoon), for: book.id)
+            self.book = book
+        }
+
+        func show(_ reader: UIViewController) throws -> UIWindow {
+            let scene = try #require(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first)
+            let window = UIWindow(windowScene: scene)
+            window.frame = CGRect(x: 0, y: 0, width: 390, height: 700)
+            window.rootViewController = reader
+            window.makeKeyAndVisible()
+            return window
+        }
+
+        func tearDown() {
+            store.waitForQueuedWrites()
+            try? FileManager.default.removeItem(at: directory)
+        }
+    }
+
     @Test("a strip closed while it is still moving stops watching its frames")
     func closingMidFlingStopsTheFrameProbe() async throws {
         let harness = try await Harness()
@@ -193,8 +302,8 @@ struct FixedPagePositionSaveTests {
             try? FileManager.default.removeItem(at: directory)
         }
 
-        private static func package(of book: ReadingBook, chapter: Int) -> ChapterPackage {
-            let content = (0..<pagesPerChapter)
+        static func package(of book: ReadingBook, chapter: Int, pages: Int = pagesPerChapter) -> ChapterPackage {
+            let content = (0..<pages)
                 .map { #"<img src="https://example.invalid/c\#(chapter)/p\#($0).jpg">"# }
                 .joined(separator: "\n")
             return ChapterPackage(

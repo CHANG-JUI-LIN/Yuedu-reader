@@ -46,6 +46,7 @@ struct ReadingPositionSyncTests {
             id: { $0.bookId },
             hash: hash,
             fallbackUpdatedAt: { savedAt[$0.bookId] ?? .distantPast },
+            firstMergeKeepsRemote: ICloudSyncManager.unsyncedPositionYieldsToCloud,
             now: now
         )
         let written = result.shouldApplyLocally ? device.store.applySyncItems(result.values) : 0
@@ -94,6 +95,33 @@ struct ReadingPositionSyncTests {
         _ = sync(iPhone, cloud: &cloud, now: lastSync.addingTimeInterval(5_200))
         #expect(iPhone.store.loadSync(for: bookId) == further)
         #expect(iPad.store.loadSync(for: bookId) == further)
+    }
+
+    /// FB-179: reinstalled, the reader opened a book before its position arrived and saved
+    /// chapter 1 just now. The first merge on the fresh install (no shadow) must not let that
+    /// newer file go up over the place read before.
+    @Test func aReinstalledDeviceTakesTheCloudsPlaceOverTheChapterItOpenedAt() async throws {
+        let bookId = UUID().uuidString
+        let place = CoreTextReadingPosition(spineIndex: 40, charOffset: 512)
+        var cloud = [FirestoreSyncRecord(
+            id: bookId,
+            value: ReadingPositionSyncItem(bookId: bookId, position: place, countsPictures: true),
+            updatedAt: lastSync,
+            deleted: false
+        )]
+        let reinstalled = try Device()
+        try await reinstalled.read(bookId, to: .chapterStart(0), at: lastSync.addingTimeInterval(86_400))
+
+        let first = sync(reinstalled, cloud: &cloud, now: lastSync.addingTimeInterval(86_460))
+        #expect(first.shouldApply)
+        #expect(reinstalled.store.loadSync(for: bookId) == place, "the reader restores the synced place")
+        #expect(cloud.first { $0.id == bookId }?.value?.spineIndex == 40, "the cloud keeps it")
+
+        // Read on from there: the device has a shadow now, and newest-wins is back.
+        let further = CoreTextReadingPosition(spineIndex: 41, charOffset: 0)
+        try await reinstalled.read(bookId, to: further, at: lastSync.addingTimeInterval(90_000))
+        _ = sync(reinstalled, cloud: &cloud, now: lastSync.addingTimeInterval(90_060))
+        #expect(cloud.first { $0.id == bookId }?.value?.spineIndex == 41)
     }
 
     @Test func onlyBookPositionFilesAreSynced() async throws {

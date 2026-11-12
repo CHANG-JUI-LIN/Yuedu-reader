@@ -101,7 +101,8 @@ struct FixedPageReaderView: View {
                     book: book,
                     store: store,
                     state: state,
-                    chapterFetcher: dependencies.chapterFetcher
+                    chapterFetcher: dependencies.chapterFetcher,
+                    dependencies: dependencies
                 )
                     .ignoresSafeArea()
 
@@ -260,13 +261,27 @@ private struct FixedPageReaderRepresentable: UIViewControllerRepresentable {
     let store: BookStore
     let state: FixedPageReaderState
     let chapterFetcher: any ChapterFetching
+    let dependencies: AppDependencies
 
     func makeUIViewController(context: Context) -> FixedPageReaderViewController {
-        FixedPageReaderViewController(
+        let store = store
+        let dependencies = dependencies
+        return FixedPageReaderViewController(
             book: book,
             store: store,
             state: state,
-            chapterFetcher: chapterFetcher
+            chapterFetcher: chapterFetcher,
+            // The text reader's repair for an online book opened without its chapters
+            // (`ReaderView.performInitialLoad`), with the same services.
+            refreshTableOfContents: { bookId in
+                _ = try await store.refreshOnlineBookMetadata(
+                    bookId: bookId,
+                    forceInfoRefresh: true,
+                    bookSourceFetcher: dependencies.bookSourceFetcher,
+                    offlineChapterStore: dependencies.offlineChapterStore,
+                    positionStore: dependencies.readingPositionStore
+                )
+            }
         )
     }
 

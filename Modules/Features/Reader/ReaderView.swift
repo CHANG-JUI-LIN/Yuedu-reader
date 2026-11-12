@@ -3321,6 +3321,9 @@ struct ReaderView: View {
             }
         } else {
             // No chapters: open as soon as the first batch of TOC arrives, without waiting for the full TOC.
+            // Except a book opening from its shelf progress (FB-179): that progress is a share of the
+            // whole list, and a first page of a multi-page TOC would put it in the wrong chapter.
+            let waitsForWholeList = opensFromShelfProgress
             Task {
                 _ = try? await store.refreshOnlineBookMetadata(
                     bookId: currentBook.id,
@@ -3329,7 +3332,8 @@ struct ReaderView: View {
                     offlineChapterStore: dependencies.offlineChapterStore,
                     positionStore: dependencies.readingPositionStore,
                     onFirstChaptersReady: { repairedBook in
-                        guard repairedBook.id == currentBook.id, self.chapters.isEmpty else { return }
+                        guard !waitsForWholeList,
+                              repairedBook.id == currentBook.id, self.chapters.isEmpty else { return }
                         self.loadContent()
                     }
                 )
@@ -3353,7 +3357,9 @@ struct ReaderView: View {
             return
         }
 
-        let position = restored.coreTextPosition
+        // No position file here: the navigator hands back its opening fallback. An online book's
+        // shelf progress, which syncs with the shelf, names the chapter instead (FB-179).
+        let position = shelfProgressOpeningPosition() ?? restored.coreTextPosition
         savedCoreTextRestoreTarget = (position.spineIndex, max(0, position.charOffset))
         setCoreTextExternalTarget(position)
         currentChapterIndex = position.spineIndex
@@ -3363,6 +3369,28 @@ struct ReaderView: View {
         progressTrace(
             "refreshInitialRestoreState source=positionStore target=(\(position.spineIndex),\(position.charOffset))"
         )
+    }
+
+    /// An online book with progress on the shelf but no saved position on this device opens at
+    /// the chapter that progress names (`OnlineInitialChapterResolver.shelfProgressChapter`).
+    /// After a reinstall the shelf comes back from iCloud before the position file can; the
+    /// reader opened at chapter 1, and its first save went up over the synced position (FB-179).
+    /// Nil while the chapter count is unknown (`totalChapterNum` is per device, set when the
+    /// table of contents is stored), and once the book has a position file.
+    func shelfProgressOpeningPosition() -> CoreTextReadingPosition? {
+        guard opensFromShelfProgress, let book else { return nil }
+        guard let chapter = OnlineInitialChapterResolver.shelfProgressChapter(
+            currentPosition: book.currentPosition,
+            totalChapterCount: book.totalChapterNum ?? 0
+        ) else { return nil }
+        return CoreTextReadingPosition(spineIndex: chapter, charOffset: 0)
+    }
+
+    /// The opening depends on the shelf's progress: an online book read on some device, with
+    /// no position saved on this one.
+    var opensFromShelfProgress: Bool {
+        guard let book, book.isOnline, book.currentPosition > 0 else { return false }
+        return dependencies.readingPositionStore.loadSync(for: book.id.uuidString) == nil
     }
 
     func applyInitialProgressIfNeeded() {

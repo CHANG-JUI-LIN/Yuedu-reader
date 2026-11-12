@@ -10,7 +10,9 @@ import Nuke
 
 final class FixedPageReaderViewController: UIViewController, FixedPageReaderContainer {
 
-    private let book: ReadingBook
+    /// Replaced once by the shelf's record when an online book opens without its table of
+    /// contents and the reader fetches it (`loadTableOfContents`).
+    private var book: ReadingBook
     private let source: BookSource?
     private weak var store: BookStore?
     private let state: FixedPageReaderState
@@ -18,8 +20,16 @@ final class FixedPageReaderViewController: UIViewController, FixedPageReaderCont
     /// The source's `ruleContent.imageDecode`, handed to every page it serves; nil for the
     /// sources without one.
     private let imageDecoder: FixedPageImageDecoder?
-    private let chapters: [OnlineChapterRef]
+    private var chapters: [OnlineChapterRef]
     private let chapterFetcher: any ChapterFetching
+    /// Fetches an online book's table of contents into the shelf — the same
+    /// `BookStore.refreshOnlineBookMetadata` the text reader repairs a missing list with.
+    private let refreshTableOfContents: @MainActor (UUID) async throws -> Void
+    /// A chapter's pages have been on screen. Until then the reader has no place of its own
+    /// to save: a fresh install opens an online manga with no table of contents (each device
+    /// keeps its own), and closing that blank reader saved chapter 0 page 0 over the synced
+    /// position, which the next sync then uploaded (FB-179).
+    private var hasShownChapter = false
 
     /// Chapter of the page on screen. Found through `heldChapters` as the reader moves.
     private var chapterIndex: Int
@@ -53,12 +63,16 @@ final class FixedPageReaderViewController: UIViewController, FixedPageReaderCont
         book: ReadingBook,
         store: BookStore,
         state: FixedPageReaderState,
-        chapterFetcher: any ChapterFetching
+        chapterFetcher: any ChapterFetching,
+        refreshTableOfContents: (@MainActor (UUID) async throws -> Void)? = nil
     ) {
         self.book = book
         self.store = store
         self.state = state
         self.chapterFetcher = chapterFetcher
+        self.refreshTableOfContents = refreshTableOfContents ?? { [weak store] bookId in
+            _ = try await store?.refreshOnlineBookMetadata(bookId: bookId, forceInfoRefresh: true)
+        }
         let resolvedSource = book.bookSourceId.flatMap { id in
             BookSourceStore.shared.source(id: id)
         }
@@ -75,7 +89,11 @@ final class FixedPageReaderViewController: UIViewController, FixedPageReaderCont
         } else {
             self.chapters = book.onlineChapters ?? []
         }
-        self.chapterIndex = min(max(0, book.mangaChapterIndex), max(0, self.chapters.count - 1))
+        // With no list yet the saved chapter waits as it is; `loadTableOfContents` clamps it
+        // against the list it fetches.
+        self.chapterIndex = self.chapters.isEmpty
+            ? max(0, book.mangaChapterIndex)
+            : min(max(0, book.mangaChapterIndex), self.chapters.count - 1)
         self.fixedPageReaderConfiguration = store.fixedPageConfiguration(for: book)
         super.init(nibName: nil, bundle: nil)
     }
@@ -105,7 +123,11 @@ final class FixedPageReaderViewController: UIViewController, FixedPageReaderCont
         state.onToggleAutoScroll = { [weak self] in self?.reader?.toggleAutoScroll() }
         state.onReload = { [weak self] in
             guard let self else { return }
-            self.loadChapter(at: self.chapterIndex, startPage: self.currentChapterPage)
+            if self.needsTableOfContents {
+                self.loadTableOfContents()
+            } else {
+                self.loadChapter(at: self.chapterIndex, startPage: self.currentChapterPage)
+            }
         }
 
         installReader()
@@ -126,6 +148,56 @@ final class FixedPageReaderViewController: UIViewController, FixedPageReaderCont
             self.state.followsMangaDefault = self.state.isManga
                 && self.store?.readerSettings.hasFixedPageConfiguration(for: self.book.id) == false
             self.state.chapterListItems = FixedPageChapterListItem.items(from: self.chapters)
+            self.state.currentChapterIndex = self.chapterIndex
+            if self.needsTableOfContents {
+                self.loadTableOfContents()
+            } else {
+                self.loadChapter(at: self.chapterIndex, startPage: self.restoredStartPage)
+            }
+        }
+    }
+
+    /// An online book with no chapters on this device: a fresh install restores the shelf
+    /// from iCloud without any book's table of contents.
+    private var needsTableOfContents: Bool {
+        book.isOnline && chapters.isEmpty
+    }
+
+    /// Fetches the table of contents, then opens the saved chapter and page.
+    private func loadTableOfContents() {
+        let token = UUID()
+        loadToken = token
+        state.isLoading = true
+        state.errorMessage = nil
+        let bookId = book.id
+        Task { [weak self] in
+            guard let self else { return }
+            do {
+                try await self.refreshTableOfContents(bookId)
+            } catch {
+                guard self.loadToken == token else { return }
+                AppLogger.network("⟐ fixed-page reader: table of contents fetch failed", context: [
+                    "bookId": bookId.uuidString,
+                    "error": error.localizedDescription,
+                ])
+                self.state.isLoading = false
+                self.state.errorMessage = error.localizedDescription
+                return
+            }
+            guard self.loadToken == token else { return }
+            guard let refreshed = self.store?.readingBook(id: bookId),
+                  let refs = refreshed.onlineChapters, !refs.isEmpty else {
+                AppLogger.network("⟐ fixed-page reader: table of contents came back empty", context: [
+                    "bookId": bookId.uuidString,
+                ])
+                self.state.isLoading = false
+                self.state.errorMessage = localized("目錄為空")
+                return
+            }
+            self.book = refreshed
+            self.chapters = refs
+            self.chapterIndex = min(max(0, refreshed.mangaChapterIndex), refs.count - 1)
+            self.state.chapterListItems = FixedPageChapterListItem.items(from: refs)
             self.state.currentChapterIndex = self.chapterIndex
             self.loadChapter(at: self.chapterIndex, startPage: self.restoredStartPage)
         }
@@ -167,13 +239,20 @@ final class FixedPageReaderViewController: UIViewController, FixedPageReaderCont
         super.viewWillDisappear(animated)
         restoreLegacyReaderToolbar()
         saveTask?.cancel()
-        let page = currentChapterPage
+        savePosition(page: currentChapterPage, notifyLibraryViews: true)
+    }
+
+    /// The one place this reader writes its position. Nothing is saved before a chapter has
+    /// been on screen (`hasShownChapter`).
+    private func savePosition(page: Int, chapter: Int? = nil, notifyLibraryViews: Bool) {
+        guard hasShownChapter else { return }
         store?.updateMangaPosition(
             bookId: book.id,
-            chapter: chapterIndex,
+            chapter: chapter ?? chapterIndex,
             page: page,
             totalChapters: progressChapterCount,
-            pageProgress: documentProgress(forPage: page)
+            pageProgress: documentProgress(forPage: page),
+            notifyLibraryViews: notifyLibraryViews
         )
     }
 
@@ -308,6 +387,7 @@ final class FixedPageReaderViewController: UIViewController, FixedPageReaderCont
                 self.currentPages = pages
                 self.heldChapters.reset(to: index, pageCount: pages.count)
                 self.reader?.setPages(pages, startPage: max(0, min(startPage, pages.count - 1)))
+                self.hasShownChapter = true
                 self.prefetchAroundChapters()
                 self.prefetchCurrentChapterPages(pages: pages, currentPage: max(0, min(startPage, pages.count - 1)))
             } catch {
@@ -399,6 +479,7 @@ final class FixedPageReaderViewController: UIViewController, FixedPageReaderCont
             }
             self.heldChapters.reset(to: self.chapterIndex, pageCount: pages.count)
             self.reader?.setPages(pages, startPage: resolvedStart)
+            self.hasShownChapter = true
             self.syncDocumentSection(forPage: resolvedStart)
             self.prefetchCurrentChapterPages(pages: pages, currentPage: resolvedStart)
         }
@@ -454,6 +535,7 @@ final class FixedPageReaderViewController: UIViewController, FixedPageReaderCont
                 self.currentPages = pages
                 self.heldChapters.reset(to: index, pageCount: pages.count)
                 self.reader?.setPages(pages, startPage: resolvedStart)
+                self.hasShownChapter = true
                 self.prefetchCurrentChapterPages(pages: pages, currentPage: resolvedStart)
             } catch {
                 guard self.loadToken == token else { return }
@@ -768,8 +850,6 @@ final class FixedPageReaderViewController: UIViewController, FixedPageReaderCont
     private func scheduleSave(page: Int) {
         saveTask?.cancel()
         let index = chapterIndex
-        let total = progressChapterCount
-        let progress = documentProgress(forPage: page)
         saveTask = Task { [weak self] in
             try? await Task.sleep(nanoseconds: 800_000_000)
             guard let self, !Task.isCancelled else { return }
@@ -779,14 +859,7 @@ final class FixedPageReaderViewController: UIViewController, FixedPageReaderCont
                 // every page read, the webtoon's missed frames about once a second (FB-133).
                 // The text reader saves its scrolling the same way; leaving the reader
                 // (`viewWillDisappear`) publishes the position for the shelf.
-                self.store?.updateMangaPosition(
-                    bookId: self.book.id,
-                    chapter: index,
-                    page: page,
-                    totalChapters: total,
-                    pageProgress: progress,
-                    notifyLibraryViews: false
-                )
+                self.savePosition(page: page, chapter: index, notifyLibraryViews: false)
             }
         }
     }
