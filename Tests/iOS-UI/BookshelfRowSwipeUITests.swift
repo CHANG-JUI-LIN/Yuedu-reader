@@ -113,6 +113,35 @@ final class BookshelfRowSwipeUITests: XCTestCase {
         XCTAssertTrue(last.isSelected, "closing the actions paged away from the group")
     }
 
+    /// In 選取 the list adds its multi-select pan, which the pager also waits on: a swipe on a
+    /// folder row and one on a book row still page.
+    @MainActor
+    func testSwipesStillPageWhileSelecting() throws {
+        let app = try launchShelf(seed: "grouped")
+        let chips = app.buttons.matching(identifier: "home_group_chip")
+        XCTAssertTrue(chips.firstMatch.waitForExistence(timeout: 20), app.debugDescription)
+        app.buttons["home_options_menu"].tap()
+        let select = app.buttons["選取"]
+        XCTAssertTrue(select.waitForExistence(timeout: 5), app.debugDescription)
+        select.tap()
+
+        let folder = app.descendants(matching: .any).matching(identifier: "home_group_folder").firstMatch
+        XCTAssertTrue(folder.waitForExistence(timeout: 10), app.debugDescription)
+        var frame = folder.frame
+        var start = folder.coordinate(withNormalizedOffset: .zero)
+            .withOffset(CGVector(dx: frame.width * 0.6, dy: frame.height * 0.3))
+        flick(start, to: start.withOffset(CGVector(dx: -frame.width * 0.5, dy: 0)))
+        let first = chips.element(boundBy: 1)
+        XCTAssertTrue(waitUntil(first, isSelected: true), "in 選取 a swipe left on a folder pages: \(app.debugDescription)")
+
+        let row = bookRow("\(first.label)書1", in: app)
+        frame = row.frame
+        start = row.coordinate(withNormalizedOffset: .zero)
+            .withOffset(CGVector(dx: frame.width * 0.3, dy: frame.height * 0.3))
+        flick(start, to: start.withOffset(CGVector(dx: frame.width * 0.6, dy: 0)))
+        XCTAssertTrue(waitUntil(chips.element(boundBy: 0), isSelected: true), "in 選取 a swipe right on a book row pages back")
+    }
+
     /// The control: no groups, one page, nothing to page.
     @MainActor
     func testRowSwipeOpensActionsWithoutGroups() throws {

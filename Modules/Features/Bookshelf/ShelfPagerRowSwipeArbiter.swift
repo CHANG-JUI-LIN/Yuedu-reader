@@ -17,7 +17,12 @@ import UIKit
 /// Hooked when the row's cell enters the window, so every page the lazy pager lays out is
 /// covered by its own rows; `require(toFail:)` keeps one entry per recognizer, so a row
 /// coming back adds nothing. Only rows on the pager's pages carry it: a folder's pushed page
-/// has no pager above its list.
+/// has no pager above its list. In 選取 the list's multi-select pan is among those waited on;
+/// it does not hold paging up (`BookshelfRowSwipeUITests.testSwipesStillPageWhileSelecting`).
+///
+/// Measured 2026-11-12: without it the swipe fails on iOS 17.5 and on 27.2 alike. Delete it
+/// once `BookshelfRowSwipeUITests` passes without it on every supported runtime — that is,
+/// once SwiftUI lets a List's swipe actions win over an enclosing paging `ScrollView` itself.
 struct ShelfPagerRowSwipeArbiter: UIViewRepresentable {
     func makeUIView(context: Context) -> ProbeView { ProbeView() }
     func updateUIView(_ view: ProbeView, context: Context) {}
