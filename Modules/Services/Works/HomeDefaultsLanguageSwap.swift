@@ -7,15 +7,15 @@ import Foundation
 ///
 /// - A list goes while it is as some defaults made it: a layout the defaults gave it (today's,
 ///   the band, or that of 2026-10-13 to 2026-10-25), no title, subtitle or parameters, shown. The
-///   band, the 頂部輪播圖, goes hidden too, and the band that comes in is hidden as it was:
-///   關閉輪播圖 is the reader's choice for the 輪播圖, not for the list on it.
-/// - A list the reader changed or hid stays, as does every other section, a 輪播圖 they chose
-///   (選擇輪播數據) among them.
+///   band goes hidden too, and the band that comes in is hidden as it was: until 2026-11-12 it
+///   was the home's 頂部輪播圖, and 關閉輪播圖 hid the 輪播圖, not the list on it.
+/// - A list the reader changed or hid stays, as does every other section, a band they gave
+///   another list (選擇輪播數據, until 2026-11-12) among them.
 /// - The new language's lists go where the first that went was. When none went, they go where
 ///   the defaults put them, unless the reader took every one of the last language's lists off:
 ///   then there is nothing they replace. One the page has already is not added again.
 /// - The first list that comes in with covers takes the band, unless a band stays. なろう has
-///   none, so Japanese has no 輪播圖, as its defaults have none.
+///   none, so Japanese has no band, as its defaults have none.
 ///
 /// `HomePageStore` runs it on 預設 only, when the language is not the one 預設's lists are for
 /// (`HomeConfigurations.defaultsLanguages`): the reader's own 首頁配置 are theirs.

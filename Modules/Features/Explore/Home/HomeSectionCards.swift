@@ -14,15 +14,14 @@ import SwiftUI
 //   colour: a large cover beside the category, title, author, a line of blurb and 查看作品.
 // The maintainer, 2026-10-25, after Apple Books' store and home
 // (`Technotes/AppleBooksHomeLayouts-2026-10-25.md`):
-// - 色帶書架: as Apple Books Japan's manga band, large covers alone under the header, all on
-//   the first cover's colour from edge to edge (`HomeBandGround`). Since 2026-10-27 the
-//   home's 頂部輪播圖 only, drawn when the row gives the band's colour (`bandCover`).
+// - `HomeSectionLayout.band`: Apple Books Japan's manga band, the home's 頂部輪播圖 from
+//   2026-10-27 until the maintainer took the 輪播圖 away (2026-11-12). Drawn as 大型封面書架.
 // - 大型封面書架: a row of larger covers with their titles, about two to a phone.
 // - 一大四小: as Apple Books' Customer Favorites (2026-10-27, 1:1), a large cover and four small
 //   ones beside it in two rows standing on its bottom edge, a group a page, the next peeking.
 // - 色帶 (2026-10-27): as Apple Books' Audiobooks We Love, the section on the first cover's
 //   colour from edge to edge, its first covers stacked at the leading margin and cut by the
-//   band's foot. Not the 頂部輪播圖, which keeps the page's first 色帶書架 (`HomeSectionLayout.band`).
+//   band's foot; 編輯首頁 draws its covers in a row, large and alone, on the band.
 // Ranks are 排行榜's (`HomeChartColumns`), a layout of lists since 2026-10-27: 顯示排名 is gone.
 // The grid and the list show a few rows when the section has 查看全部 and everything when it
 // has not, since nothing else would show the rest. A loading section draws the same layout
@@ -41,7 +40,7 @@ struct HomeSectionCards: View {
     /// 呈現方式's gallery: the rows a layout read downwards shows (`HomeLayoutPreview`).
     var previewRows: Int?
     /// The colour of the band the row draws, the first cover's, which the first cover reports
-    /// here: the 頂部輪播圖's large covers alone, whatever the layout, or 色帶's stack.
+    /// here: 色帶's stack, or its row of large covers in 編輯首頁.
     var bandCover: Binding<CoverTint.RGB?>?
 
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
@@ -93,7 +92,7 @@ struct HomeSectionCards: View {
                     Group {
                         if drawsSideways { band(cover: $ownBandCover) } else { fan(cover: $ownBandCover) }
                     }
-                    .modifier(HomeBandGround(cover: ownBandCover, isCarousel: false, cutsCovers: !drawsSideways))
+                    .modifier(HomeBandGround(cover: ownBandCover, cutsCovers: !drawsSideways))
                 case .heroGrid: heroGrid
                 // A layout of lists draws its cards (`HomeSectionLists`); a section of books drawn
                 // in one here is a stored value this build cannot read, drawn as a row.
@@ -145,9 +144,9 @@ struct HomeSectionCards: View {
         .modifier(HomeSidewaysScroll())
     }
 
-    // MARK: 頂部輪播圖
+    // MARK: 色帶, in 編輯首頁
 
-    /// Covers alone, larger than a row's; the first one's colour is the band's.
+    /// Covers alone in a row, larger than a row's; the first one's colour is the band's.
     private func band(cover: Binding<CoverTint.RGB?>) -> some View {
         let size = CGSize(width: DSLayout.homeBandCoverWidth,
                           height: DSLayout.homeBandCoverWidth / DSLayout.discoverCoverAspectRatio)
@@ -464,7 +463,7 @@ struct HomeSidewaysScroll: ViewModifier {
     }
 }
 
-/// A cover alone, for the layouts that draw no text with it (頂部輪播圖, 一大四小); VoiceOver
+/// A cover alone, for the layouts that draw no text with it (色帶, 一大四小); VoiceOver
 /// reads the card's label all the same. A shelf copy part read shows how far along its bottom.
 struct HomeCoverCard: View {
     let content: HomeCardContent
@@ -484,15 +483,11 @@ struct HomeCoverCard: View {
 /// the placeholder grey until that cover has drawn. Darkened until the header's line, the cover's
 /// hue made light (`line(for:)`), reads at 4.5:1 on it (7:1 with 增加對比), so the header's white
 /// does too, as 精簡閱讀卡片's ground is. Decoration: VoiceOver reads nothing of it. Inactive, it
-/// draws nothing, and the row keeps its identity as the band comes and goes.
-/// - The 頂部輪播圖's runs up behind the bars and the status bar (`DSLayout.homeCarouselBleed`),
-///   and whether it draws is reported up (`HomeCarouselBandKey`), for the bar's white 探索.
-/// - 色帶's (maintainer, 2026-10-27, as Apple Books' Audiobooks We Love) stays in its place on the
-///   page, and its covers run off its foot (`cutsCovers`).
+/// draws nothing, and the row keeps its identity as the band comes and goes. 色帶's (maintainer,
+/// 2026-10-27, as Apple Books' Audiobooks We Love) covers run off its foot (`cutsCovers`).
 struct HomeBandGround: ViewModifier {
     let cover: CoverTint.RGB?
     var isActive = true
-    var isCarousel = true
     /// The covers stand on the band's foot, cut by it: no space under them.
     var cutsCovers = false
 
@@ -515,20 +510,9 @@ struct HomeBandGround: ViewModifier {
             .padding(.top, isActive ? DSSpacing.xl : 0)
             .padding(.bottom, isActive && !cutsCovers ? DSSpacing.xl : 0)
             .frame(maxWidth: isActive ? .infinity : nil, alignment: .leading)
-            .background {
-                (isActive ? Self.ground(for: cover, contrast: contrast) : .clear)
-                    .padding(.top, isActive && isCarousel ? -DSLayout.homeCarouselBleed : 0)
-            }
+            .background { isActive ? Self.ground(for: cover, contrast: contrast) : .clear }
             .animation(DSAnimation.standard, value: cover)
-            .preference(key: HomeCarouselBandKey.self, value: isActive && isCarousel)
     }
-}
-
-/// The 頂部輪播圖 draws its band: the bar's 探索 and buttons are white only over it, never over
-/// a carousel drawn without one (a failure, no books, AI 推薦 not yet generated).
-struct HomeCarouselBandKey: PreferenceKey {
-    static var defaultValue: Bool { false }
-    static func reduce(value: inout Bool, nextValue: () -> Bool) { value = value || nextValue() }
 }
 
 // MARK: - 大型閱讀卡片

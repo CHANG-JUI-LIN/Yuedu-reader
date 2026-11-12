@@ -9,6 +9,7 @@ import Foundation
 // (`Technotes/AppleBooksHomeLayouts-2026-10-25.md`). 2026-10-27: 色帶書架 became the home's
 // 頂部輪播圖, and 大圖卡片 joined the layouts of lists; later that day a 色帶書架 of its own came
 // back as Audiobooks We Love's (`colorBand`), and 排行榜, Top Charts' columns, replaced 顯示排名.
+// 2026-11-12: the maintainer took the 頂部輪播圖 away; its section (`band`) is a row of large covers.
 
 /// One of the layouts.
 enum HomeLayoutStyle: String, CaseIterable, Identifiable, Sendable {
@@ -103,8 +104,8 @@ extension HomeSectionLayout {
         case .list: return .list
         case .featured: return .featured
         case .collection: return .collection
-        // The page's first band is its 頂部輪播圖, drawn by the home itself; another is drawn
-        // as the row of large covers it was closest to.
+        // The band was the home's 頂部輪播圖 until 2026-11-12: drawn as the row of large covers
+        // it was closest to.
         case .band, .largeRow: return .largeRow
         case .colorBand: return .colorBand
         case .heroGrid: return .heroGrid

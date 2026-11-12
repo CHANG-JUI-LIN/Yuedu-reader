@@ -733,7 +733,7 @@ enum DSLayout {
     static let homeArticleUnreadDot: CGFloat = 8
     /// The layouts after Apple Books' store and home (maintainer, 2026-10-25;
     /// `Technotes/AppleBooksHomeLayouts-2026-10-25.md`), all 2:3.
-    /// The 頂部輪播圖's covers, alone on the band: about two and a half to a 402pt phone. Not scaled:
+    /// 色帶書架's covers in 編輯首頁, alone on the band: about two and a half to a 402pt phone. Not scaled:
     /// no text goes with them.
     static let homeBandCoverWidth: CGFloat = 150
     /// 大型封面書架's covers, with their titles under them: two to a 402pt phone, the third
@@ -776,9 +776,6 @@ enum DSLayout {
     static let homeCollageCardAspect: CGFloat = 0.75
     static let homeCollageLargeShare: CGFloat = 146.0 / 278.0
     static let homeCollageSmallToLarge: CGFloat = 67.0 / 146.0
-    /// The 頂部輪播圖 (maintainer, 2026-10-27): its colour runs this far above its top, behind
-    /// the bars and the status bar, and past them when the page is pulled down to refresh.
-    static let homeCarouselBleed: CGFloat = 1000
     /// 大圖卡片, a 分類卡 (maintainer, 2026-10-27), as Apple Books' More to Explore: a card a page
     /// (1126 × 618 there); its designed face's drawing this share of the card's height tall,
     /// centred here and turned this much, where Romance's heart is.

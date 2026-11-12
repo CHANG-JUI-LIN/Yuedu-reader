@@ -44,9 +44,9 @@ struct HomeSectionLayout: RawRepresentable, Codable, Hashable, Sendable {
     /// `Technotes/AppleBooksHomeLayouts-2026-10-25.md`). A build before them draws a row, or
     /// 專題集合 for a section of lists, and keeps the value.
     /// 色帶書架: large covers under the header, all on the first cover's colour, as Apple Books
-    /// Japan's manga band. Since 2026-10-27 the home's 頂部輪播圖 (`HomePage.carouselSection`),
-    /// no longer a layout 呈現方式 offers: the page's first band is drawn at the top, from edge
-    /// to edge under the bars, and any other is drawn as 大型封面書架.
+    /// Japan's manga band. From 2026-10-27 the home's 頂部輪播圖, which a build until 2026-11-12
+    /// draws at the top of the page; no longer a layout 呈現方式 offers, and drawn as 大型封面書架.
+    /// The defaults still write it, so every page's first list of covers is drawn alike.
     static let band = Self(rawValue: "band")
     /// 大型封面書架: about two large covers to a phone, as Apple Books' 新刊&話題作.
     static let largeRow = Self(rawValue: "largeRow")
@@ -58,7 +58,7 @@ struct HomeSectionLayout: RawRepresentable, Codable, Hashable, Sendable {
     static let rankedRow = Self(rawValue: "rankedRow")
     /// 色帶書架 (maintainer, 2026-10-27, after Apple Books' Audiobooks We Love): the section on its
     /// first cover's colour from edge to edge, its first covers stacked and cut by the band's
-    /// foot. Not `band`, which the page's first is its 頂部輪播圖. A build before it draws a row.
+    /// foot. Not `band`, the 頂部輪播圖 that was. A build before it draws a row.
     static let colorBand = Self(rawValue: "colorBand")
     /// 分類卡片: a wide card per list, its name beside its covers, as Apple Books' More to Explore.
     static let categoryCards = Self(rawValue: "categoryCards")
@@ -406,7 +406,7 @@ enum HomePageDefaults {
     ///
     /// The maintainer, 2026-10-25, after Apple Books' home (`Technotes/AppleBooksHomeLayouts-2026-10-25.md`):
     /// each list in a rhythm of its own, and one band on the page. The first list with real
-    /// covers takes the band, since 2026-10-27 the home's 頂部輪播圖 (`HomePage.carouselSection`);
+    /// covers takes the band, drawn as 大型封面書架 since the 頂部輪播圖 went (2026-11-12);
     /// a ranking with covers is a ranked row, AniList's trending manga 一大四小
     /// and its trending novels, not a ranking, a row. なろう's ranking has no covers, so it stays
     /// 圖文資訊清單 with its ranks, and never takes the band.

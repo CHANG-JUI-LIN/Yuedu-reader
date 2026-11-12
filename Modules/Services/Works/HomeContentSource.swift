@@ -57,15 +57,6 @@ extension HomeSectionBinding {
     static var gutenbergCollections: [HomeSectionBinding] {
         [.gutenbergLists] + PublicLibraryCollection.all.map { .gutenbergCollection(id: $0.id) }
     }
-
-    /// What the 頂部輪播圖 can show (maintainer, 2026-10-27): books, for its band of covers. Not
-    /// lists, articles, or 青空文庫's indexes, which are places to go.
-    var showsBooks: Bool {
-        switch self {
-        case .gutenbergLists, .lists, .subscriptionArticles, .aozoraIndex: false
-        default: true
-        }
-    }
 }
 
 extension HomeSection {

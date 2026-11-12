@@ -49,12 +49,6 @@ extension HomeSection {
     }
 }
 
-extension EnvironmentValues {
-    /// The row is the home's 頂部輪播圖 (maintainer, 2026-10-27): its section's books on the band
-    /// at the top of the page, and its long press its own (選擇輪播數據, 關閉輪播圖).
-    @Entry var homeRowIsCarousel = false
-}
-
 /// What a row shows once loaded, resolved against the shelf as it is now.
 struct HomeRowContent {
     var cards: [HomeCardContent]
@@ -155,10 +149,9 @@ struct HomeRowView: View {
     /// A shelf copy's ••• on 精簡閱讀卡片 (5d-3c); none in a fixture.
     var bookActions: HomeBookActions?
 
-    @Environment(\.homeRowIsCarousel) private var isCarousel
     @Environment(\.colorSchemeContrast) private var contrast
     @Environment(\.homeDrawsSideways) private var drawsSideways
-    /// The 頂部輪播圖's colour, its first cover's, once that cover has drawn.
+    /// 色帶書架's colour, its first cover's, once that cover has drawn.
     @State private var bandCover: CoverTint.RGB?
 
     var body: some View {
@@ -171,19 +164,17 @@ struct HomeRowView: View {
                     header.homeRowControl()
                     stateContent
                 }
-                // 色帶書架's covers stand on the band's foot, but for 編輯首頁's row of them; only the
-                // 輪播圖 runs under the bars.
-                .modifier(HomeBandGround(cover: bandCover, isActive: drawsBand, isCarousel: isCarousel,
-                                         cutsCovers: !isCarousel && !drawsSideways))
+                // 色帶書架's covers stand on the band's foot, but for 編輯首頁's row of them.
+                .modifier(HomeBandGround(cover: bandCover, isActive: drawsBand, cutsCovers: !drawsSideways))
             }
         }
         .task { load() }
     }
 
-    /// The 頂部輪播圖, and 色帶書架, draw their band while their covers load and once they have;
-    /// one that failed, or that holds no books (訂閱的最新文章's articles), is drawn without it.
+    /// 色帶書架 draws its band while its covers load and once they have; one that failed, or
+    /// that holds no books (訂閱的最新文章's articles), is drawn without it.
     private var drawsBand: Bool {
-        guard isCarousel || group.section.layout.style == .colorBand else { return false }
+        guard group.section.layout.style == .colorBand else { return false }
         switch group.state {
         case .idle, .loading: return true
         case .failed: return false
@@ -313,7 +304,7 @@ struct HomeRowTitle: View {
     let title: String
     var subtitle: String? = nil
     var showsChevron = false
-    /// The 頂部輪播圖's header, on the cover's colour: the name and chevron white, the line this
+    /// 色帶書架's header, on the cover's colour: the name and chevron white, the line this
     /// colour (the cover's hue made light, as 精簡閱讀卡片's kind line).
     var bandLine: Color? = nil
 
@@ -346,21 +337,7 @@ struct HomeSectionActionsMenu: View {
     let section: HomeSection
     let actions: HomeSectionActions
 
-    @Environment(\.homeRowIsCarousel) private var isCarousel
-
     var body: some View {
-        if isCarousel {
-            // The 輪播圖's own, as 編輯首頁's header has them: its layout is the band, and
-            // closing it keeps what it shows.
-            Button(localized("選擇輪播數據"), systemImage: "rectangle.stack", action: actions.openSettings)
-            Button(localized("關閉輪播圖"), systemImage: "eye.slash", action: actions.hide)
-        } else {
-            sectionActions
-        }
-    }
-
-    @ViewBuilder
-    private var sectionActions: some View {
         let layout = section.layout
         let choices = HomeLayoutStyle.choices(for: section.binding)
         if choices.count > 1 {

@@ -39,24 +39,14 @@ private struct HomeDesignFixturePage: View {
 
     private let groups = HomeScopeFilter.groups(HomeDesignFixtureData.rows, in: nil)
 
-    /// The first band, drawn at the top as the home draws its 頂部輪播圖; the other draws as
-    /// 大型封面書架.
-    private var carousel: HomeSectionGroup? { groups.first { $0.section.layout == .band } }
-
     var body: some View {
         ScrollView {
-            VStack(spacing: 0) {
-                if let carousel {
-                    row(carousel)
-                        .environment(\.homeRowIsCarousel, true)
+            LazyVStack(alignment: .leading, spacing: DSSpacing.xxl) {
+                ForEach(groups) { group in
+                    row(group)
                 }
-                LazyVStack(alignment: .leading, spacing: DSSpacing.xxl) {
-                    ForEach(groups.filter { $0.id != carousel?.id }) { group in
-                        row(group)
-                    }
-                }
-                .padding(.vertical, DSSpacing.lg)
             }
+            .padding(.vertical, DSSpacing.lg)
         }
         .themedAppSurface(for: .explore)
     }
@@ -129,9 +119,8 @@ enum HomeDesignFixtureData {
                 name: localized("Project Gutenberg"), policy: .local, state: .loaded(collection)),
             row(.gutenbergCollection(id: chinese.id), layout: .coverGrid, source: gutenberg,
                 name: localized("Project Gutenberg"), policy: .local, state: .loading),
-            // After Apple Books' store and home (2026-10-25): the band loaded, drawn at the top
-            // as the 頂部輪播圖 (2026-10-27), and loading, drawn as 大型封面書架 as any band after
-            // the first is; the other new layouts of books, among them 色帶書架 (2026-10-27), and
+            // After Apple Books' store and home (2026-10-25): the band, loaded and loading, drawn
+            // as 大型封面書架; the other new layouts of books, among them 色帶書架 (2026-10-27), and
             // the layouts of lists, 排行榜 among them, written as a ranked row is.
             row(.gutenbergCollection(id: chinese.id), layout: .band, source: gutenberg,
                 name: localized("Project Gutenberg"), policy: .local, state: .loaded(collection)),

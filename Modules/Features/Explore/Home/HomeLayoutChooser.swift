@@ -12,7 +12,7 @@ import SwiftUI
 // editions for 精簡閱讀卡片 and 圖文資訊清單, and two lists, 漫畫 and 東方經典, for 專題集合.
 // 2026-10-25, with Apple Books' layouts: illustrated children's books for 大型封面書架, dime novels
 // for 一大四小, and two lists each for 分類卡片 (詩歌, 博物誌) and 拼貼卡片 (推理, 冒險).
-// 2026-10-27: the colour band left 呈現方式 for the 頂部輪播圖, and its boldly coloured Japanese
+// 2026-10-27: the colour band left 呈現方式 (the 頂部輪播圖 until 2026-11-12), and its boldly coloured Japanese
 // and Chinese first editions went to 大圖卡片's two lists (日本裝幀, 新文學), whose cards take their
 // first cover's colour.
 

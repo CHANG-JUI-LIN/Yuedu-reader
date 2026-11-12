@@ -23,10 +23,6 @@ struct AIRecommendationRow: View {
     @State private var showsPaywall = false
     @State private var showsMoreChooser = false
     @State private var moreSequence = DismissalSequencedPresentation<MoreAction>()
-    @Environment(\.homeRowIsCarousel) private var isCarousel
-    @Environment(\.colorSchemeContrast) private var contrast
-    /// The 頂部輪播圖's colour, its first cover's, once that cover has drawn.
-    @State private var bandCover: CoverTint.RGB?
 
     /// - Parameter service: the shared one; a preview passes its own, with its own store.
     init(section: HomeSection, title: String, actions: HomeSectionActions? = nil, canGenerate: Bool = true,
@@ -87,24 +83,14 @@ struct AIRecommendationRow: View {
         canGenerate && allowsAI && list != nil && !service.state.isRunning
     }
 
-    /// As the 頂部輪播圖 it draws its band under the header and the list while the list shows
-    /// alone; a status (產生中, a failure) draws the row without it, so its text keeps the page's
-    /// colours.
-    private var drawsBand: Bool {
-        guard isCarousel, allowsAI, !cards.isEmpty, case .idle = service.state else { return false }
-        return true
-    }
-
     var body: some View {
-        VStack(alignment: .leading, spacing: drawsBand ? DSSpacing.lg : DSSpacing.md) {
+        VStack(alignment: .leading, spacing: DSSpacing.md) {
             header.homeRowControl()
             status.homeRowControl()
             if allowsAI, !cards.isEmpty {
-                HomeSectionCards(layout: section.layout, cards: cards, rowID: rowID, hasShowAll: false, open: open,
-                                 bandCover: drawsBand ? $bandCover : nil)
+                HomeSectionCards(layout: section.layout, cards: cards, rowID: rowID, hasShowAll: false, open: open)
             }
         }
-        .modifier(HomeBandGround(cover: bandCover, isActive: drawsBand))
         .sheet(isPresented: $showsPaywall) {
             PaywallView(highlightedFeature: .aiReading)
                 .environmentObject(subscription)
@@ -124,11 +110,7 @@ struct AIRecommendationRow: View {
 
     private var header: some View {
         HStack(spacing: DSSpacing.sm) {
-            HomeRowTitle(title: title, subtitle: subtitle, bandLine: drawsBand ? HomeBandGround.line(for: bandCover).color : nil)
-                // The band's white name on the band's colour when its long press lifts it out,
-                // inside the safe area as the band is (FB-136, `HomeRowView.header`).
-                .background(drawsBand ? HomeBandGround.ground(for: bandCover, contrast: contrast) : .clear,
-                            ignoresSafeAreaEdges: [])
+            HomeRowTitle(title: title, subtitle: subtitle)
                 .accessibilityElement(children: .combine)
                 .accessibilityAddTraits(.isHeader)
                 .accessibilityIdentifier("home.row.header.\(rowID)")
@@ -160,7 +142,7 @@ struct AIRecommendationRow: View {
     private var moreControl: some View {
         let label = Image(systemName: "ellipsis")
             .font(DSFont.body.weight(.semibold))
-            .foregroundStyle(drawsBand ? DSColor.textOnFixedFill : DSColor.textSecondary)
+            .foregroundStyle(DSColor.textSecondary)
             .frame(width: DSLayout.minimumTapTarget, height: DSLayout.minimumTapTarget)
             .contentShape(Rectangle())
             .accessibilityHidden(true)

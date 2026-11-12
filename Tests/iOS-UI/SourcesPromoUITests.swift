@@ -197,8 +197,8 @@ final class SourcesPromoUITests: XCTestCase {
             _ = exploreBar.waitForExistence(timeout: 5)
         }
         XCTAssertTrue(exploreBar.exists, app.debugDescription)
-        let carousel = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH 'home.row.header.' AND label CONTAINS 'Trending Light Novels'")).firstMatch
-        XCTAssertTrue(carousel.waitForExistence(timeout: 30), app.debugDescription)
+        let trending = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH 'home.row.header.' AND label CONTAINS 'Trending Light Novels'")).firstMatch
+        XCTAssertTrue(trending.waitForExistence(timeout: 30), app.debugDescription)
         XCTAssertTrue(app.buttons["home.card.gutenberg.1342"].firstMatch.waitForExistence(timeout: 30), app.debugDescription)
         dwell(4.0)   // covers finish loading before the take starts
 

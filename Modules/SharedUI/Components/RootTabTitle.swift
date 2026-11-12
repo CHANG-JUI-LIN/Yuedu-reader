@@ -31,19 +31,8 @@ extension View {
     /// back buttons read it.
     ///
     /// Only the tab roots use this; every other page and sheet is `.inline`.
-    ///
-    /// - Parameter overColor: the page draws a dark colour behind the bar — 探索's 頂部輪播圖
-    ///   (maintainer, 2026-10-27) — so the title is white, and the bar dark, which turns the
-    ///   status bar's text white too.
-    func rootTabTitle(_ title: String, onScroll behavior: RootTabBarScrollBehavior, overColor: Bool = false) -> some View {
-        modifier(RootTabTitleModifier(title: title, behavior: behavior, overColor: overColor))
-    }
-
-    /// A tab root's bar button over the colour `rootTabTitle(_:onScroll:overColor:)` names: white
-    /// before iOS 26, where the button is its tinted symbol on the bar; from iOS 26 the button's
-    /// glass takes the colour under it and the symbol follows on its own.
-    func rootTabBarButton(overColor: Bool) -> some View {
-        modifier(RootTabBarButtonOverColor(overColor: overColor))
+    func rootTabTitle(_ title: String, onScroll behavior: RootTabBarScrollBehavior) -> some View {
+        modifier(RootTabTitleModifier(title: title, behavior: behavior))
     }
 
     /// Marks what a tab root scrolls, for its title's fade to follow: put it on a view
@@ -153,22 +142,9 @@ private struct FadesWithRootTabTitle: ViewModifier {
     }
 }
 
-private struct RootTabBarButtonOverColor: ViewModifier {
-    let overColor: Bool
-
-    func body(content: Content) -> some View {
-        if #available(iOS 26.0, *) {
-            content
-        } else {
-            content.foregroundStyle(overColor ? AnyShapeStyle(DSColor.textOnFixedFill) : AnyShapeStyle(.tint))
-        }
-    }
-}
-
 private struct RootTabTitleModifier: ViewModifier {
     let title: String
     let behavior: RootTabBarScrollBehavior
-    let overColor: Bool
 
     /// Held, not observed: the title alone redraws as the fade changes.
     @State private var titleFade = RootTabTitleFade()
@@ -192,16 +168,15 @@ private struct RootTabTitleModifier: ViewModifier {
                 #if compiler(>=6.2)
                 if #available(iOS 26.0, *) {
                     // Otherwise the title sits in a glass capsule, like a button.
-                    ToolbarItem(placement: .topBarLeading) { RootTabTitleText(title: title, fade: fade, overColor: overColor) }
+                    ToolbarItem(placement: .topBarLeading) { RootTabTitleText(title: title, fade: fade) }
                         .sharedBackgroundVisibility(.hidden)
                 } else {
-                    ToolbarItem(placement: .topBarLeading) { RootTabTitleText(title: title, fade: fade, overColor: overColor) }
+                    ToolbarItem(placement: .topBarLeading) { RootTabTitleText(title: title, fade: fade) }
                 }
                 #else
-                ToolbarItem(placement: .topBarLeading) { RootTabTitleText(title: title, fade: fade, overColor: overColor) }
+                ToolbarItem(placement: .topBarLeading) { RootTabTitleText(title: title, fade: fade) }
                 #endif
             }
-            .toolbarColorScheme(overColor ? .dark : nil, for: .navigationBar)
             .modifier(BarMinimization(minimizes: behavior == .minimizesBar))
     }
 }
@@ -258,13 +233,12 @@ private struct BarTitleHidden: ViewModifier {
 private struct RootTabTitleText: View {
     let title: String
     let fade: RootTabTitleFade?
-    let overColor: Bool
 
     var body: some View {
         if let fade {
-            FadingTitle(title: title, fade: fade, overColor: overColor)
+            FadingTitle(title: title, fade: fade)
         } else {
-            TitleText(title: title, overColor: overColor)
+            TitleText(title: title)
         }
     }
 
@@ -272,21 +246,19 @@ private struct RootTabTitleText: View {
     private struct FadingTitle: View {
         let title: String
         @ObservedObject var fade: RootTabTitleFade
-        let overColor: Bool
 
         var body: some View {
-            TitleText(title: title, overColor: overColor).opacity(fade.opacity)
+            TitleText(title: title).opacity(fade.opacity)
         }
     }
 
     private struct TitleText: View {
         let title: String
-        let overColor: Bool
 
         var body: some View {
             Text(title)
                 .font(DSFont.largeTitle.weight(.bold))
-                .foregroundStyle(overColor ? DSColor.textOnFixedFill : DSColor.textPrimary)
+                .foregroundStyle(DSColor.textPrimary)
                 .lineLimit(1)
                 .fixedSize()
                 // The bar keeps its height at every text size, as the system's own large

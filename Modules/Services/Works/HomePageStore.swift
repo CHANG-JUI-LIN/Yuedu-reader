@@ -228,7 +228,7 @@ final class HomePageStore: ObservableObject {
     // MARK: - 為你推薦, deleted
 
     /// Takes 為你推薦 off 預設 and every 首頁配置 (`HomeSectionBinding.isDeletedForYou`; maintainer,
-    /// 2026-10-27): its sections, the 頂部輪播圖 among them, and its cards in a section of lists,
+    /// 2026-10-27): its sections, and its cards in a section of lists,
     /// whose section goes with its last card. On every read, not once: nothing puts it on a home
     /// any more, so a home without it is left as it is. Returns whether any was taken off.
     @discardableResult

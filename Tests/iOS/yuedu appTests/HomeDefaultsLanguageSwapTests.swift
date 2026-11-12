@@ -49,18 +49,18 @@ struct HomeDefaultsLanguageSwapTests {
         }
     }
 
-    @Test("中文 to English: AniList takes Bangumi's place and the 輪播圖")
+    @Test("中文 to English: AniList takes Bangumi's place and the band")
     func chineseToEnglish() throws {
         let saved = defaults(["zh"])
         let outcome = Swap.apply(to: saved, from: ["zh"], to: context(["en"]))
         let place = try position(of: bangumiNovels, in: saved)
         #expect(outcome.sections[place].binding == anilistNovels)
-        #expect(HomePage(sections: outcome.sections).carouselSection?.binding == anilistNovels)
+        #expect(outcome.sections.first { $0.layout == .band }?.binding == anilistNovels)
         #expect(outcome.removed == 2)
         #expect(outcome.added == 2)
     }
 
-    @Test("日本語 has no 輪播圖: なろう has no covers")
+    @Test("日本語 has no band: なろう has no covers")
     func japaneseHasNoBand() {
         let outcome = Swap.apply(to: defaults(["zh"]), from: ["zh"], to: context(["ja"]))
         #expect(!outcome.sections.contains { $0.layout == .band })
@@ -95,28 +95,29 @@ struct HomeDefaultsLanguageSwapTests {
         }
     }
 
-    @Test("a 輪播圖 the reader chose stays, and AniList's novels come in as a row")
-    func chosenCarouselKept() {
-        var page = HomePage(sections: defaults(["zh"]))
-        page.setCarousel(.gutenbergCollection(id: "children"))
-        let outcome = Swap.apply(to: page.sections, from: ["zh"], to: context(["en"]))
-        let swapped = HomePage(sections: outcome.sections)
-        #expect(swapped.carouselSection == page.carouselSection)
-        #expect(outcome.sections.filter { $0.layout == .band }.count == 1)
+    @Test("a band the reader gave another list stays, and AniList's novels come in as a row")
+    func chosenBandKept() throws {
+        var saved = defaults(["zh"])
+        let band = try #require(saved.firstIndex { $0.layout == .band })
+        saved[band].binding = .gutenbergCollection(id: "children")
+        let outcome = Swap.apply(to: saved, from: ["zh"], to: context(["en"]))
+        #expect(outcome.sections.filter { $0.layout == .band } == [saved[band]])
         #expect(outcome.sections.first { $0.binding == anilistNovels }?.layout == .row)
         #expect(!outcome.sections.contains { $0.binding == bangumiManga })
     }
 
-    @Test("關閉輪播圖 holds for the new 輪播圖; a language without one shows its lists")
-    func hiddenCarousel() {
-        var page = HomePage(sections: defaults(["zh"]))
-        page.setCarouselShown(false)
-        let english = HomePage(sections: Swap.apply(to: page.sections, from: ["zh"], to: context(["en"])).sections)
-        #expect(english.carouselSection?.binding == anilistNovels)
-        #expect(english.carouselSection?.isEnabled == false)
-        #expect(!english.sections.contains { $0.binding == bangumiNovels })
+    @Test("a hidden band's list goes, and the new band comes in hidden; a language without one shows its lists")
+    func hiddenBand() throws {
+        var saved = defaults(["zh"])
+        let band = try #require(saved.firstIndex { $0.layout == .band })
+        saved[band].isEnabled = false
+        let english = Swap.apply(to: saved, from: ["zh"], to: context(["en"])).sections
+        let incoming = try #require(english.first { $0.layout == .band })
+        #expect(incoming.binding == anilistNovels)
+        #expect(!incoming.isEnabled)
+        #expect(!english.contains { $0.binding == bangumiNovels })
 
-        let japanese = Swap.apply(to: page.sections, from: ["zh"], to: context(["ja"])).sections
+        let japanese = Swap.apply(to: saved, from: ["zh"], to: context(["ja"])).sections
         #expect(!japanese.contains { $0.layout == .band })
         #expect(japanese.first { $0.binding == .module(moduleID: "narou", entryID: "weekly") }?.isEnabled == true)
     }

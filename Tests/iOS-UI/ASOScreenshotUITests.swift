@@ -133,7 +133,7 @@ final class ASOScreenshotUITests: XCTestCase {
             shoot("shelf")
         }
 
-        // 探索, its 頂部輪播圖 loaded.
+        // 探索, its rows loaded.
         tab(app, locale.explore).tap()
         pause(1)
         tab(app, locale.explore).tap()   // a second tap scrolls the home to its top
