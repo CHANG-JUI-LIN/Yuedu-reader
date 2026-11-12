@@ -1188,6 +1188,10 @@ struct HomeView: View {
                         )
                         .equatable()
                         .tag(book.id)
+                        // With groups, the pager would take the 左滑 below (FB-184).
+                        .background {
+                            if page.isOnPager { ShelfPagerRowSwipeArbiter() }
+                        }
                         // 左滑 (feedback #17), as legado's shelf: 置頂 and 刪除, the delete going
                         // through the same confirmation as the ••• menu's. The list only.
                         .swipeActions(edge: .trailing, allowsFullSwipe: false) {

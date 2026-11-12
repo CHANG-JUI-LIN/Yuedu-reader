@@ -1,10 +1,14 @@
+import StoreKitTest
 import XCTest
 
 /// 書架分組：左右滑在「全部」和各分組之間翻頁，分組列跟著選中；點分組翻到那一頁；一個字的
 /// 分組名也不會讓膠囊窄過 44pt。「全部」把每個分組收成一個資料夾，點了推入那個分組的頁面。
 ///
-/// Needs at least one group on the simulator's shelf; it does not create any.
+/// `-seed-shelf grouped` gives it a shelf of twelve books and two groups (`BookStoreTestSeed`).
 final class BookshelfGroupsUITests: XCTestCase {
+    /// An erased simulator has no Apple ID, and the app's StoreKit check asks for one over the
+    /// shelf; the local session answers it instead.
+    private var storeKitSession: SKTestSession?
 
     override func setUpWithError() throws {
         continueAfterFailure = false
@@ -15,13 +19,20 @@ final class BookshelfGroupsUITests: XCTestCase {
     @MainActor
     func testSwipingPagesBetweenGroups() throws {
         for isGrid in [false, true] {
-            let app = launchShelf(grid: isGrid)
+            let app = try launchShelf(grid: isGrid)
             let chips = groupChips(in: app)
             let all = chips.element(boundBy: 0)
             let firstGroup = chips.element(boundBy: 1)
             XCTAssertTrue(all.isSelected, "the shelf opens on 全部")
 
-            shelf(in: app, grid: isGrid).swipeLeft()
+            // On the first folder, which leads 全部: over a book row a swipe to the left opens its
+            // 置頂／刪除 instead (FB-184).
+            let folder = shelf(in: app, grid: isGrid)
+                .descendants(matching: .any).matching(identifier: "home_group_folder").firstMatch
+            XCTAssertTrue(folder.waitForExistence(timeout: 10), app.debugDescription)
+            folder.coordinate(withNormalizedOffset: CGVector(dx: 0.85, dy: 0.3))
+                .press(forDuration: 0.05, thenDragTo: folder.coordinate(withNormalizedOffset: CGVector(dx: 0.1, dy: 0.3)),
+                       withVelocity: 1200, thenHoldForDuration: 0)
             XCTAssertTrue(waitUntil(firstGroup, isSelected: true), "a swipe to the left pages to the first group")
             XCTAssertFalse(all.isSelected)
             assertOnePageInView(in: app, grid: isGrid)
@@ -38,7 +49,7 @@ final class BookshelfGroupsUITests: XCTestCase {
     /// on a page in between.
     @MainActor
     func testTappingAGroupPagesToIt() throws {
-        let app = launchShelf(grid: false)
+        let app = try launchShelf(grid: false)
         let chips = groupChips(in: app)
         let lastGroup = chips.element(boundBy: chips.count - 1)
         lastGroup.tap()
@@ -53,7 +64,7 @@ final class BookshelfGroupsUITests: XCTestCase {
 
     @MainActor
     func testGroupChipsKeepTheirMinimumWidth() throws {
-        let app = launchShelf(grid: false)
+        let app = try launchShelf(grid: false)
         let chips = groupChips(in: app)
         for index in 0..<chips.count {
             let chip = chips.element(boundBy: index)
@@ -67,7 +78,10 @@ final class BookshelfGroupsUITests: XCTestCase {
     /// leaves its top, and are back once it is at its top again.
     @MainActor
     func testGroupChipsLeaveWithTheTitle() throws {
-        let app = launchShelf(grid: false)
+        guard #available(iOS 26.0, *) else {
+            throw XCTSkip("Before iOS 26 nothing passes under the chips, so they stay (HomeView.groupedShelf).")
+        }
+        let app = try launchShelf(grid: false)
         let chips = groupChips(in: app)
         let shelf = shelf(in: app, grid: false)
 
@@ -95,7 +109,7 @@ final class BookshelfGroupsUITests: XCTestCase {
 
     @MainActor
     private func assertFolderMenuRenamesAndUngroupsOnlyWhenConfirmed(grid: Bool) throws {
-        let app = launchShelf(grid: grid)
+        let app = try launchShelf(grid: grid)
         _ = groupChips(in: app)
         let folder = shelf(in: app, grid: grid)
             .descendants(matching: .any).matching(identifier: "home_group_folder").firstMatch
@@ -135,7 +149,7 @@ final class BookshelfGroupsUITests: XCTestCase {
     @MainActor
     func testAllFoldsEachGroupIntoOneFolder() throws {
         for isGrid in [false, true] {
-            let app = launchShelf(grid: isGrid)
+            let app = try launchShelf(grid: isGrid)
             let chips = groupChips(in: app)
             let shelf = shelf(in: app, grid: isGrid)
             let folders = shelf.descendants(matching: .any).matching(identifier: "home_group_folder")
@@ -156,7 +170,7 @@ final class BookshelfGroupsUITests: XCTestCase {
     @MainActor
     func testFolderPushesItsGroupsPage() throws {
         for isGrid in [false, true] {
-            let app = launchShelf(grid: isGrid)
+            let app = try launchShelf(grid: isGrid)
             _ = groupChips(in: app)
             let folder = shelf(in: app, grid: isGrid)
                 .descendants(matching: .any).matching(identifier: "home_group_folder").firstMatch
@@ -203,7 +217,8 @@ final class BookshelfGroupsUITests: XCTestCase {
     }
 
     @MainActor
-    private func launchShelf(grid: Bool) -> XCUIApplication {
+    private func launchShelf(grid: Bool) throws -> XCUIApplication {
+        storeKitSession = try StoreKitTestSessions.fresh(StoreKitTestSessions.yueduPro())
         // A simulator that never answered the notification prompt shows it at launch, and
         // SpringBoard's alert takes every touch meant for the shelf until it is answered.
         addUIInterruptionMonitor(withDescription: "System permission prompt") { alert in
@@ -211,9 +226,11 @@ final class BookshelfGroupsUITests: XCTestCase {
             return true
         }
         let app = XCUIApplication()
+        // English, as the menu's labels here are: an erased simulator can come up in 繁中.
         app.launchArguments = ["-no-official-modules", "-onboarding.completed", "YES", "-yd_root_tab_visible_ids", "(bookshelf, settings)",
+                               "-AppleLanguages", "(en)", "-AppleLocale", "en_US",
                                "-bookLayoutIsGrid", grid ? "YES" : "NO",
-                               "-bookSortOrder", "manual"]
+                               "-bookSortOrder", "manual", "-seed-shelf", "grouped"]
         app.launch()
         return app
     }

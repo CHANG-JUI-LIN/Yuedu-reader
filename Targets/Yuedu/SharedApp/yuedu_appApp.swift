@@ -147,6 +147,10 @@ struct yuedu_appApp: App {
                 AppLogger.error("-explore-home-file: \(path) was not written as the home: \(error)")
             }
         }
+        // A shelf of the test's own, before anything reads `BookStore.shared`.
+        if let layout = Self.argument(after: "-seed-shelf") {
+            BookStoreTestSeed.writeShelf(layout)
+        }
         // AI 推薦 as before its first run (8f): no stored list, so the row offers 產生推薦.
         if ProcessInfo.processInfo.arguments.contains("-reset-ai-recommendations") {
             do {
