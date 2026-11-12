@@ -3174,7 +3174,13 @@ class BookStore: @MainActor ObservableObject, BookProvider {
         if abs(snapshot.currentPosition - persisted.currentPosition) >= Self.minimumProgressDeltaForMetadataWrite {
             return true
         }
-        if snapshot.mangaChapterIndex != persisted.mangaChapterIndex {
+        // A page turned inside one chapter moves only `mangaPage`: an online comic's
+        // progress is counted by chapter, so `currentPosition` stays put. Left to the
+        // 60-second ceiling, the pages read in the first minute after opening (which
+        // writes the shelf) were never written, and an app killed then reopened the
+        // comic where it was opened (FB-183). `saveMeta`'s debounce still bounds the writes.
+        if snapshot.mangaChapterIndex != persisted.mangaChapterIndex
+            || snapshot.mangaPage != persisted.mangaPage {
             return true
         }
         if snapshot.audioChapterIndex != persisted.audioChapterIndex {

@@ -32,6 +32,59 @@ struct FixedPagePositionSaveTests {
         #expect(harness.store.books.first { $0.id == harness.bookID }?.mangaPage == 3)
     }
 
+    /// 回饋 #183：線上漫畫開書後翻頁、從 App 切換器殺掉，重開回到第一頁。開書剛寫過書架
+    /// （`updateLastOpened`），同一章內翻頁只改 `mangaPage`，存檔判斷不把它當變化，等 60 秒才寫；
+    /// 離開前景時也沒有待寫的存檔可以沖掉。
+    @Test("a page turned within a chapter right after opening survives the app being killed (FB-183)")
+    func pageTurnRightAfterOpeningIsWritten() async throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("FixedPagePositionSaveTests-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let file = directory.appendingPathComponent("books_meta.json")
+        let store = BookStore(metadataFileURL: file)
+        var book = ReadingBook(title: "Manga", author: "", contentFilename: "")
+        book.isOnline = true
+        book.onlineChapters = (0..<3).map {
+            OnlineChapterRef(index: $0, title: "Chapter \($0 + 1)", url: "https://example.invalid/chapter/\($0)")
+        }
+        store.replaceBooksFromSync([book])
+        store.waitForQueuedWrites()
+
+        // Opening the book writes the shelf.
+        store.updateLastOpened(bookId: book.id)
+        store.flushPendingMetadataSave()
+        await BookStore.queuedWritesLanded()
+
+        // The reader's quiet save for a page turned in the same chapter.
+        store.updateMangaPosition(bookId: book.id, chapter: 0, page: 5, totalChapters: 3, notifyLibraryViews: false)
+        // The scene leaves the foreground; the app is then killed.
+        store.flushPendingMetadataSave()
+        await BookStore.queuedWritesLanded()
+
+        let relaunched = BookStore(metadataFileURL: file)
+        #expect(relaunched.books.first { $0.id == book.id }?.mangaPage == 5)
+    }
+
+    /// The reader waits 0.8 s on a page before saving it; an app sent to the background inside
+    /// that wait saves the page there and then, as the text reader does on resign-active.
+    @Test("resigning active saves the page on screen without waiting for the dwell (FB-183)")
+    func resigningActiveSavesTheCurrentPage() async throws {
+        let harness = try await Harness()
+        defer { harness.tearDown() }
+        let strip = try #require(harness.reader.reader as? FixedPageWebtoonViewController)
+
+        strip.goToPage(5, animated: false)
+        try #require(strip.currentPageIndex() == 5)
+        NotificationCenter.default.post(name: UIApplication.willResignActiveNotification, object: nil)
+        #expect(harness.store.books.first { $0.id == harness.bookID }?.mangaPage == 5)
+
+        harness.store.flushPendingMetadataSave()
+        await BookStore.queuedWritesLanded()
+        let relaunched = BookStore(metadataFileURL: harness.directory.appendingPathComponent("books_meta.json"))
+        #expect(relaunched.books.first { $0.id == harness.bookID }?.mangaPage == 5)
+    }
+
     /// FB-179: after a reinstall the shelf comes back from iCloud without any book's table of
     /// contents (each device keeps its own). The reader opened blank, and closing it saved
     /// chapter 0 page 0 over the synced position, which the next sync uploaded.

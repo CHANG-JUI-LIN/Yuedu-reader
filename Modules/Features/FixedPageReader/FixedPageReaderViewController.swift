@@ -113,6 +113,9 @@ final class FixedPageReaderViewController: UIViewController, FixedPageReaderCont
     override func viewDidLoad() {
         super.viewDidLoad()
         view.backgroundColor = .black
+        NotificationCenter.default.addObserver(
+            self, selector: #selector(saveBeforeResigningActive),
+            name: UIApplication.willResignActiveNotification, object: nil)
 
         state.onJumpToPage = { [weak self] page in self?.showPage(page) }
         state.onSelectChapter = { [weak self] index in self?.selectTableOfContentsEntry(at: index) }
@@ -244,7 +247,7 @@ final class FixedPageReaderViewController: UIViewController, FixedPageReaderCont
 
     /// The one place this reader writes its position. Nothing is saved before a chapter has
     /// been on screen (`hasShownChapter`).
-    private func savePosition(page: Int, chapter: Int? = nil, notifyLibraryViews: Bool) {
+    private func savePosition(page: Int, chapter: Int? = nil, forceSave: Bool = false, notifyLibraryViews: Bool) {
         guard hasShownChapter else { return }
         store?.updateMangaPosition(
             bookId: book.id,
@@ -252,6 +255,7 @@ final class FixedPageReaderViewController: UIViewController, FixedPageReaderCont
             page: page,
             totalChapters: progressChapterCount,
             pageProgress: documentProgress(forPage: page),
+            forceSave: forceSave,
             notifyLibraryViews: notifyLibraryViews
         )
     }
@@ -870,5 +874,21 @@ final class FixedPageReaderViewController: UIViewController, FixedPageReaderCont
     private func documentProgress(forPage page: Int) -> Double? {
         guard isSingleChapterDocumentBook, currentPages.count > 1 else { return nil }
         return Double(page) / Double(currentPages.count - 1)
+    }
+}
+
+extension FixedPageReaderViewController {
+    /// The app is leaving the foreground — from the app switcher it may be killed without
+    /// running again. The page on screen is written there and then, as the text reader
+    /// saves on resign-active (`ReaderView`), instead of in the 0.8 s save that may never
+    /// come (FB-183). Nothing is written while a chapter is still loading — a later chapter
+    /// too, after `hasShownChapter` — the reader holds no page then, and page 0 would
+    /// overwrite the place being opened.
+    @objc private func saveBeforeResigningActive() {
+        guard let reader, let position = heldChapters.position(ofHeldPage: reader.currentPageIndex()) else {
+            return
+        }
+        saveTask?.cancel()
+        savePosition(page: position.page, forceSave: true, notifyLibraryViews: false)
     }
 }
