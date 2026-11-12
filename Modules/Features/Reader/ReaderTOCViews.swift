@@ -232,6 +232,25 @@ enum ReaderTOCScrollTarget {
     }
 }
 
+/// The rows a 目錄 shows: the chapters in the reader's 正序／倒序, narrowed to the titles that
+/// contain the search query. One call is one pass over the 目錄, one match per chapter; the view
+/// calls it once per body and hands the result down. It used to be a computed property read by
+/// every row's separator check, a full ICU search of the 目錄 per row per keystroke, which held
+/// a long online 目錄's main thread past the watchdog (Crashlytics 629731e7).
+enum ReaderTOCFilter {
+    static func shown(
+        _ chapters: [BookChapter],
+        order: ChapterListOrder,
+        query rawQuery: String,
+        matches: (_ title: String, _ query: String) -> Bool = { $0.localizedCaseInsensitiveContains($1) }
+    ) -> [BookChapter] {
+        let query = rawQuery.trimmingCharacters(in: .whitespacesAndNewlines)
+        let ordered = order.arranged(chapters, level: \.level)
+        guard !query.isEmpty else { return ordered }
+        return ordered.filter { matches($0.title, query) }
+    }
+}
+
 /// 閱讀器目錄面板。
 ///
 /// 只有目錄——書籤與重點在 `ReaderBookmarkListView`。原本三者共用一個分段控制，
@@ -269,18 +288,11 @@ struct ReaderTOCView: View {
         !searchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
 
-    private var filteredChapters: [BookChapter] {
-        let query = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
-        let ordered = order.arranged(chapters, level: \.level)
-        guard !query.isEmpty else { return ordered }
-        return ordered.filter {
-            $0.title.localizedCaseInsensitiveContains(query)
-        }
-    }
-
     var body: some View {
+        // Once per body: everything below reads this list, never the filter itself.
+        let shown = ReaderTOCFilter.shown(chapters, order: order, query: searchText)
         NavigationStack {
-            content
+            content(shown)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .navigationTitle(bookTitle)
                 .toolbarTitleDisplayMode(.inline)
@@ -311,17 +323,17 @@ struct ReaderTOCView: View {
     }
 
     @ViewBuilder
-    private var content: some View {
+    private func content(_ shown: [BookChapter]) -> some View {
         if tocLayoutMode == .verticalRTLColumns {
-            verticalContent
+            verticalContent(shown)
         } else {
-            horizontalContent
+            horizontalContent(shown)
         }
     }
 
     @ViewBuilder
-    private var verticalContent: some View {
-        if filteredChapters.isEmpty {
+    private func verticalContent(_ shown: [BookChapter]) -> some View {
+        if shown.isEmpty {
             noMatchesView
         } else {
             VStack(spacing: 0) {
@@ -331,7 +343,7 @@ struct ReaderTOCView: View {
                 }
 
                 VerticalTOCView(
-                    chapters: filteredChapters,
+                    chapters: shown,
                     currentIndex: currentIndex,
                     currentChapterID: currentChapterID,
                     pageOffsets: pageOffsets,
@@ -355,11 +367,11 @@ struct ReaderTOCView: View {
     }
 
     @ViewBuilder
-    private var horizontalContent: some View {
-        if filteredChapters.isEmpty {
+    private func horizontalContent(_ shown: [BookChapter]) -> some View {
+        if shown.isEmpty {
             noMatchesView
         } else {
-            tocList
+            tocList(shown)
         }
     }
 
@@ -374,8 +386,9 @@ struct ReaderTOCView: View {
         return chapter.index + 1
     }
 
-    private var tocList: some View {
-        ScrollViewReader { proxy in
+    private func tocList(_ shown: [BookChapter]) -> some View {
+        let firstID = shown.first?.id
+        return ScrollViewReader { proxy in
             List {
                 if totalPages > 0, !isSearching {
                     pageCountText
@@ -385,8 +398,8 @@ struct ReaderTOCView: View {
                         .listRowSeparator(.hidden)
                 }
 
-                ForEach(filteredChapters) { chapter in
-                    chapterRow(chapter)
+                ForEach(shown) { chapter in
+                    chapterRow(chapter, isFirst: chapter.id == firstID)
                 }
             }
             .softScrollEdges()
@@ -395,7 +408,7 @@ struct ReaderTOCView: View {
             .contentMargins(.top, 0, for: .scrollContent)
             .onAppear {
                 guard !isSearching,
-                      let row = ReaderTOCScrollTarget.row(currentIndex: currentIndex, in: filteredChapters)
+                      let row = ReaderTOCScrollTarget.row(currentIndex: currentIndex, in: shown)
                 else { return }
                 // No animation: the list opens on the current chapter, it does not travel
                 // there each time the sheet comes up. Straight from onAppear, as 有聲書 and
@@ -405,14 +418,14 @@ struct ReaderTOCView: View {
             }
             // Switching 正序／倒序 moves the current chapter to the other end; follow it.
             .onChange(of: order) {
-                guard let row = ReaderTOCScrollTarget.row(currentIndex: currentIndex, in: filteredChapters)
+                guard let row = ReaderTOCScrollTarget.row(currentIndex: currentIndex, in: shown)
                 else { return }
                 proxy.scrollTo(row, anchor: .center)
             }
         }
     }
 
-    private func chapterRow(_ chapter: BookChapter) -> some View {
+    private func chapterRow(_ chapter: BookChapter, isFirst: Bool) -> some View {
         Button {
             onSelectChapter(chapter)
             isPresented = false
@@ -469,7 +482,7 @@ struct ReaderTOCView: View {
         .accessibilityValue(uncachedChapterIndexes.contains(chapter.index) ? localized("未下載") : "")
         .listRowBackground(Color.clear)
         .listRowInsets(EdgeInsets())
-        .listRowSeparator(.hidden, edges: chapter.id == filteredChapters.first?.id ? .top : [])
+        .listRowSeparator(.hidden, edges: isFirst ? .top : [])
         .listRowSeparator(.visible, edges: .bottom)
         .listRowSeparatorTint(Color.secondary.opacity(0.18))
         .id(chapter.index)
