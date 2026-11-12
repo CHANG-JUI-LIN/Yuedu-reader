@@ -614,8 +614,14 @@ struct CoreTextPageEngineView: UIViewControllerRepresentable {
                let next = fixedLayoutPairingProvider?.nextFixedLayoutSpreadPage(after: page) {
                 return next
             }
-            let target = page + pageStride
-            return target < currentEngine.totalPages ? target : nil
+            guard isDoublePageSpread else {
+                return page + 1 < currentEngine.totalPages ? page + 1 : nil
+            }
+            // The next spread opens after this one's last page: its partner, or the
+            // spread's only page where its chapter ends on it.
+            let start = currentEngine.spreadStart(containing: page)
+            let last = currentEngine.spreadPartner(of: start, pageCount: currentEngine.totalPages) ?? start
+            return last + 1 < currentEngine.totalPages ? last + 1 : nil
         }
 
         private func previousDisplayPage(before page: Int) -> Int? {
@@ -623,8 +629,9 @@ struct CoreTextPageEngineView: UIViewControllerRepresentable {
                let previous = fixedLayoutPairingProvider?.previousFixedLayoutSpreadPage(before: page) {
                 return previous
             }
-            let target = page - pageStride
-            return target >= 0 ? target : nil
+            guard isDoublePageSpread else { return page > 0 ? page - 1 : nil }
+            let start = currentEngine.spreadStart(containing: page)
+            return start > 0 ? currentEngine.spreadStart(containing: start - 1) : nil
         }
 
         /// The page one turn away from `page`, nil at the book's edge. Spreads only: a
@@ -1010,12 +1017,24 @@ struct CoreTextPageEngineView: UIViewControllerRepresentable {
                 .min { $0.globalPageIndex < $1.globalPageIndex }
         }
 
-        /// The first page of the mid-spine spread holding `page`. Spreads tile the book
-        /// (0,1)(2,3)…, as composed spreads do (`spreadViewController(containingPage:)`).
+        /// The first page of the mid-spine spread holding `page`. Spreads pair within a
+        /// chapter (`ReaderSpreadPairing`), as composed spreads do
+        /// (`spreadViewController(containingPage:)`).
         private func midSpineSpreadStart(containing page: Int) -> Int {
             let totalPages = currentEngine.totalPages
             let clamped = totalPages > 0 ? max(0, min(page, totalPages - 1)) : 0
-            return (clamped / 2) * 2
+            return currentEngine.spreadStart(containing: clamped)
+        }
+
+        private func isSpreadStart(_ page: Int) -> Bool {
+            currentEngine.spreadStart(containing: page) == page
+        }
+
+        private func midSpineBlank(facing page: Int) -> ReaderSpreadBlankPageViewController {
+            ReaderSpreadBlankPageViewController(
+                facingPage: page,
+                backgroundColor: UIColor(currentTheme.backgroundColor)
+            )
         }
 
         /// One page, as UIKit turns it around a mid spine. Not `displayViewController(at:)`,
@@ -1026,15 +1045,12 @@ struct CoreTextPageEngineView: UIViewControllerRepresentable {
             return page
         }
 
-        /// The page facing a spread's first page: the next one, or a blank page where the
-        /// book ends on a spread's first page (`ReaderSpreadBlankPageViewController`).
+        /// The page facing a spread's first page: the next page of its chapter, or a blank
+        /// page where the chapter or the book ends on a spread's first page
+        /// (`ReaderSpreadBlankPageViewController`).
         private func midSpinePartner(of firstPage: Int) -> UIViewController {
-            let partner = firstPage + 1
-            guard partner < curlNeighbourPageCount else {
-                return ReaderSpreadBlankPageViewController(
-                    facingPage: firstPage,
-                    backgroundColor: UIColor(currentTheme.backgroundColor)
-                )
+            guard let partner = currentEngine.spreadPartner(of: firstPage, pageCount: curlNeighbourPageCount) else {
+                return midSpineBlank(facing: firstPage)
             }
             return midSpinePage(at: partner)
         }
@@ -1042,13 +1058,17 @@ struct CoreTextPageEngineView: UIViewControllerRepresentable {
         /// The data source around a mid spine, one page at a time in reading order: the
         /// back of the sheet UIKit lifts is the page after the one on its front.
         private func midSpinePage(after viewController: UIViewController) -> UIViewController? {
-            if viewController is ReaderSpreadBlankPageViewController { return nil }
+            // A blank closes its spread; the next spread opens on the next chapter.
+            if let blank = viewController as? ReaderSpreadBlankPageViewController {
+                let next = blank.facingPage + 1
+                return next < curlNeighbourPageCount ? midSpinePage(at: next) : nil
+            }
             guard let page = (viewController as? any PageIndexProviding & UIViewController)
                 .map({ currentPageIndex(of: $0) }) else { return nil }
             // A spread's first page is always followed — by its partner, blank or not. UIKit
             // asks for a sheet's two sides in turn, and a nil for the second after a page
             // for the first is "number required (2)".
-            if page % 2 == 0 { return midSpinePartner(of: page) }
+            if isSpreadStart(page) { return midSpinePartner(of: page) }
             guard page + 1 < curlNeighbourPageCount else { return nil }
             return midSpinePage(at: page + 1)
         }
@@ -1060,7 +1080,13 @@ struct CoreTextPageEngineView: UIViewControllerRepresentable {
             guard let page = (viewController as? any PageIndexProviding & UIViewController)
                     .map({ currentPageIndex(of: $0) }),
                   page > 0 else { return nil }
-            return midSpinePage(at: page - 1)
+            let previous = page - 1
+            // Before a spread's first page is the previous spread's second side: a blank
+            // where the previous chapter ended on a spread's first page.
+            if isSpreadStart(page), isSpreadStart(previous) {
+                return midSpineBlank(facing: previous)
+            }
+            return midSpinePage(at: previous)
         }
 
         private var curlNeighbourPageCount: Int {
@@ -1299,10 +1325,24 @@ struct CoreTextPageEngineView: UIViewControllerRepresentable {
                 return makeDisplayViewController(at: page)
             }
 
-            let page = (currentEngine.pageViewController(for: position) as? any PageIndexProviding)?.globalPageIndex
-                ?? currentEngine.estimatedGlobalPage(for: position)
-                ?? 0
-            return usesMidSpine ? makeDisplayViewController(at: page) : spreadViewController(containingPage: page)
+            // The chapter is not laid out, so no spread can be paired yet. The 載入中 page
+            // that carries `position` stands in for the spread until the chapter lands and
+            // `handleChapterReady` pairs the real one. A spread built from the page's
+            // estimated index named whatever the estimates put there — the previous
+            // chapter's end, or its own start — and that became the saved position
+            // (回饋中心 #182).
+            let placeholder = currentEngine.pageViewController(for: position)
+            if usesMidSpine { return placeholder }
+            return ReaderSpreadPageViewController(
+                globalPageIndex: (placeholder as? any PageIndexProviding)?.globalPageIndex
+                    ?? currentEngine.estimatedGlobalPage(for: position)
+                    ?? 0,
+                primaryViewController: placeholder,
+                secondaryViewController: nil,
+                isRTL: isRTL,
+                gutter: spreadGutter,
+                backgroundColor: UIColor(currentTheme.backgroundColor)
+            )
         }
 
         /// Single funnel for VoiceOver wiring: every page the coordinator hands to
@@ -1344,18 +1384,18 @@ struct CoreTextPageEngineView: UIViewControllerRepresentable {
         /// swiping on from there.
         private func pageVoiceOverFocus(for page: Int) -> ReaderPageVoiceOverFocus? {
             guard usesMidSpine else { return voiceOverFocus }
-            return page % 2 == 0 ? voiceOverFocus : nil
+            return isSpreadStart(page) ? voiceOverFocus : nil
         }
 
         private func performAccessibilityAction(_ action: TouchAction) {
             DispatchQueue.main.async { self.onTapZone(action) }
         }
 
-        /// Build the two-page spread that contains `page`, snapping the pair to a
-        /// fixed even-page grid so spreads always tile (0,1)(2,3)… regardless of the
-        /// entry page (TOC jump, position restore). Without snapping, entering on an
-        /// odd page offsets every following spread by one and the centre gutter
-        /// appears to drift off-centre.
+        /// Build the two-page spread that contains `page`, snapping to the chapter's own
+        /// pairing (`ReaderSpreadPairing`) so the same page always opens the same spread
+        /// whatever the entry (TOC jump, position restore) and whichever other chapters
+        /// are laid out. A chapter ending on a spread's first page leaves its second side
+        /// empty.
         private func spreadViewController(containingPage page: Int) -> UIViewController {
             if let fixedLayoutPair = fixedLayoutPairingProvider?.fixedLayoutSpreadPair(containing: page) {
                 let left = fixedLayoutPair.leftPage.map { currentEngine.pageViewController(at: $0) }
@@ -1369,13 +1409,10 @@ struct CoreTextPageEngineView: UIViewControllerRepresentable {
                 )
             }
 
-            let totalPages = currentEngine.totalPages
-            let pairStart = (max(0, page) / 2) * 2
+            let pairStart = currentEngine.spreadStart(containing: page)
             let primary = currentEngine.pageViewController(at: pairStart)
-            let secondaryPage = pairStart + 1
-            let secondary = secondaryPage < totalPages
-                ? currentEngine.pageViewController(at: secondaryPage)
-                : nil
+            let secondary = currentEngine.spreadPartner(of: pairStart, pageCount: currentEngine.totalPages)
+                .map { currentEngine.pageViewController(at: $0) }
 
             return ReaderSpreadPageViewController(
                 globalPageIndex: pairStart,

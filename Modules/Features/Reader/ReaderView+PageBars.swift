@@ -37,15 +37,15 @@ extension ReaderView {
 
     /// The page the screen-fixed bars describe in a two-page spread: the later page of
     /// the pair in reading order, i.e. the last page the reader has on screen. Spreads
-    /// tile global pages (0,1)(2,3)… (`spreadViewController(containingPage:)`); a
-    /// final spread with no second page describes its only page. Nil where the pages
-    /// carry their own bars (`usesPageBakedBars`).
+    /// pair within a chapter (`ReaderSpreadPairing`); a spread with no second page
+    /// describes its only page. Nil where the pages carry their own bars
+    /// (`usesPageBakedBars`).
     var spreadBarsGlobalPage: Int? {
         guard pagesCarryBarsChannel, !usesPageBakedBars, effectiveReaderSpreadMode == .doublePage,
               let engine = epubRenderer.engine, engine.totalPages > 0
         else { return nil }
-        let pairStart = (max(0, currentPage) / 2) * 2
-        return min(pairStart + 1, engine.totalPages - 1)
+        let pairStart = engine.spreadStart(containing: min(currentPage, engine.totalPages - 1))
+        return engine.spreadPartner(of: pairStart, pageCount: engine.totalPages) ?? pairStart
     }
 
     var readerPageBarsEnvironment: ReaderPageBarsEnvironment {

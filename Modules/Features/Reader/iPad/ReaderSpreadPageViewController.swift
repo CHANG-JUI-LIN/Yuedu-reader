@@ -135,14 +135,15 @@ final class ReaderSpreadPageViewController: UIViewController, PageIndexProviding
 /// Under 仿真 a spread turns around its centre spine and UIKit holds both halves: it
 /// takes the stack in pairs, and asks the data source for pages in pairs, raising for
 /// half a pair ("The number of view controllers provided (1) doesn't match the number
-/// required (2)"). A book with an odd page count therefore ends on this page, the way a
-/// printed book's last leaf is blank on the back.
+/// required (2)"). Spreads pair within a chapter (`ReaderSpreadPairing`), so a chapter with
+/// an odd page count ends on this page, the way a printed chapter's last leaf can be blank
+/// on the back.
 ///
 /// Deliberately not `PageIndexProviding`: it is no page of the book, so nothing may read
 /// a reading position or a page number off it.
 @MainActor
 final class ReaderSpreadBlankPageViewController: UIViewController {
-    /// The book's last page, which this one faces.
+    /// The chapter's last page, which this one faces.
     let facingPage: Int
     private let backgroundUIColor: UIColor
 

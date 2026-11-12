@@ -96,29 +96,32 @@ struct iPadReaderAdaptationTests {
         #expect(pageIndices([previousBack]) == [last - 1])
     }
 
-    @Test("a 載入中 page beside the reading page is swapped in when its chapter lands", arguments: [false, true])
-    func midSpinePartnerChapterLands(isRTL: Bool) async throws {
+    /// 回饋中心 #182: spreads pair within a chapter, so no spread holds two chapters' pages
+    /// and a chapter's pages pair the same whichever other chapters are laid out.
+    @Test("a chapter ending on a spread's first page faces a blank, and the next chapter opens a spread", arguments: [false, true])
+    func midSpineChapterEndsOnBlank(isRTL: Bool) async throws {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: directory) }
         let engine = try await chapterBoundaryEngine(directory: directory)
-        // The first chapter ends on a spread's first page, so the next chapter's first
-        // page faces it — before that chapter is laid out.
         let last = try #require(engine.layouts[0]?.pageRanges.count) - 1
         let (pvc, window) = try show(spreadReader(engine: engine, isRTL: isRTL, page: last))
         defer { window.isHidden = true; window.rootViewController = nil }
-        #expect(pageIndices(pvc.viewControllers) == (isRTL ? [last + 1, last] : [last, last + 1]))
-        #expect(pvc.viewControllers?.contains { $0 is PlaceholderPageViewController } == true)
-
-        _ = await engine.preloadChapter(at: 1)
-        // The engine's own signal; the coordinator answers it on the next main-queue turn.
-        engine.onChapterReady?(1)
-        await withCheckedContinuation { continuation in
-            DispatchQueue.main.async { continuation.resume() }
-        }
-
         let stack = try #require(pvc.viewControllers)
-        #expect(!stack.contains { $0 is PlaceholderPageViewController })
-        #expect(pageIndices(stack) == (isRTL ? [last + 1, last] : [last, last + 1]))
+        #expect(stack.count == 2)
+        let blank = try #require(stack.compactMap { $0 as? ReaderSpreadBlankPageViewController }.first)
+        #expect(blank.facingPage == last)
+        #expect((isRTL ? stack.first : stack.last) === blank)
+
+        // On from the blank: the next chapter's first page — still 載入中 — then its partner.
+        let nextChapterFirst = try #require(forward(from: blank, in: pvc, isRTL: isRTL))
+        #expect(pageIndices([nextChapterFirst]) == [last + 1])
+        #expect(nextChapterFirst is PlaceholderPageViewController)
+
+        // Back from the next chapter's first page is the blank, then the page it faces.
+        let backBlank = try #require(backward(from: nextChapterFirst, in: pvc, isRTL: isRTL) as? ReaderSpreadBlankPageViewController)
+        #expect(backBlank.facingPage == last)
+        let lastPage = try #require(backward(from: backBlank, in: pvc, isRTL: isRTL))
+        #expect(pageIndices([lastPage]) == [last])
     }
 
     @Test("source browser uses a mobile viewport and keeps the bottom submit control reachable", .timeLimit(.minutes(1)))
